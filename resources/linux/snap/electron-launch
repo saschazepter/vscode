@@ -171,13 +171,9 @@ IFS=':' read -r -a data_dirs_array <<< "$XDG_DATA_DIRS"
 # Font Config
 export FONTCONFIG_PATH="/etc/fonts"
 export FONTCONFIG_FILE="/etc/fonts/fonts.conf"
-
-if [ "$needs_update" = true ]; then
-  rm -rf "$XDG_DATA_HOME"/fonts
-
-  if [ -d "$SNAP_REAL_HOME/.local/share/fonts" ]; then
-    ln -s "$SNAP_REAL_HOME/.local/share/fonts" "$XDG_DATA_HOME/fonts"
-  fi
+rm -rf "$XDG_DATA_HOME"/fonts
+if [ -d "$SNAP_REAL_HOME/.local/share/fonts" ]; then
+  ln -s "$SNAP_REAL_HOME/.local/share/fonts" "$XDG_DATA_HOME/fonts"
 fi
 
 # Build mime.cache needed for gtk and qt icon
