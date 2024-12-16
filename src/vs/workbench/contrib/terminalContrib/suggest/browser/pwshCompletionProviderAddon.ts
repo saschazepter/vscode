@@ -245,6 +245,7 @@ export class PwshCompletionProviderAddon extends Disposable implements ITerminal
 	}
 
 	provideCompletions(value: string, cursorPosition: number, token: CancellationToken): Promise<ITerminalCompletion[] | undefined> {
+		return Promise.resolve([]);
 		const builtinCompletionsConfig = this._configurationService.getValue<ITerminalSuggestConfiguration>(terminalSuggestConfigSection).builtinCompletions;
 		if (!this._codeCompletionsRequested && builtinCompletionsConfig.pwshCode) {
 			this._onDidRequestSendText.fire(RequestCompletionsSequence.Code);

@@ -16,6 +16,45 @@ let cachedBuiltinCommands: Map<string, string[]> | undefined;
 
 export const availableSpecs = [codeCompletionSpec, codeInsidersCompletionSpec, cdSpec];
 
+/**
+ * A map of the pwsh result type enum's value to the corresponding icon to use in completions.
+ *
+ * | Value | Name              | Description
+ * |-------|-------------------|------------
+ * | 0     | Text              | An unknown result type, kept as text only
+ * | 1     | History           | A history result type like the items out of get-history
+ * | 2     | Command           | A command result type like the items out of get-command
+ * | 3     | ProviderItem      | A provider item
+ * | 4     | ProviderContainer | A provider container
+ * | 5     | Property          | A property result type like the property items out of get-member
+ * | 6     | Method            | A method result type like the method items out of get-member
+ * | 7     | ParameterName     | A parameter name result type like the Parameters property out of get-command items
+ * | 8     | ParameterValue    | A parameter value result type
+ * | 9     | Variable          | A variable result type like the items out of get-childitem variable:
+ * | 10    | Namespace         | A namespace
+ * | 11    | Type              | A type name
+ * | 12    | Keyword           | A keyword
+ * | 13    | DynamicKeyword    | A dynamic keyword
+ *
+ * @see https://docs.microsoft.com/en-us/dotnet/api/system.management.automation.completionresulttype?view=powershellsdk-7.0.0
+ */
+const pwshTypeToIconMap: { [type: string]: vscode.TerminalCompletionItemKind | undefined } = {
+	0: undefined, // Codicon.symbolText
+	1: undefined, // Codicon.history
+	2: vscode.TerminalCompletionItemKind.Method, // Codicon.symbolMethod
+	3: vscode.TerminalCompletionItemKind.File, // Codicon.symbolFile
+	4: vscode.TerminalCompletionItemKind.Folder, // Codicon.folder
+	5: vscode.TerminalCompletionItemKind.Argument, // Codicon.symbolProperty
+	6: vscode.TerminalCompletionItemKind.Method, // Codicon.symbolMethod
+	7: undefined, // Codicon.symbolVariable
+	8: undefined, // Codicon.symbolValue
+	9: undefined, // Codicon.symbolVariable
+	10: undefined, // Codicon.symbolNamespace
+	11: undefined, // Codicon.symbolInterface
+	12: undefined, // Codicon.symbolKeyword
+	13: undefined, // Codicon.symbolKeyword
+};
+
 function getBuiltinCommands(shell: string): string[] | undefined {
 	try {
 		const shellType = path.basename(shell, path.extname(shell));
@@ -25,39 +64,45 @@ function getBuiltinCommands(shell: string): string[] | undefined {
 		}
 		const filter = (cmd: string) => cmd;
 		const options: ExecOptionsWithStringEncoding = { encoding: 'utf-8', shell };
+		let commands: string[] | undefined;
 		switch (shellType) {
 			case 'bash': {
 				const bashOutput = execSync('compgen -b', options);
-				const bashResult = bashOutput.split('\n').filter(filter);
-				if (bashResult.length) {
-					cachedBuiltinCommands?.set(shellType, bashResult);
-					return bashResult;
-				}
+				commands = bashOutput.split('\n').filter(filter);
 				break;
 			}
 			case 'zsh': {
 				const zshOutput = execSync('printf "%s\\n" ${(k)builtins}', options);
-				const zshResult = zshOutput.split('\n').filter(filter);
-				if (zshResult.length) {
-					cachedBuiltinCommands?.set(shellType, zshResult);
-					return zshResult;
-				}
+				commands = zshOutput.split('\n').filter(filter);
+				break;
 			}
 			case 'fish': {
 				// TODO: ghost text in the command line prevents
 				// completions from working ATM for fish
 				const fishOutput = execSync('functions -n', options);
-				const fishResult = fishOutput.split(', ').filter(filter);
-				if (fishResult.length) {
-					cachedBuiltinCommands?.set(shellType, fishResult);
-					return fishResult;
-				}
+				commands = fishOutput.split(', ').filter(filter);
 				break;
 			}
 			case 'pwsh': {
-				// native pwsh completions are builtin to vscode
-				return [];
+				const output = execSync('Get-Command | Select-Object Name, CommandType, DisplayName | ConvertTo-Json', options);
+				let json: any;
+				try {
+					json = JSON.parse(output);
+				} catch (e) {
+					console.error('Error parsing pwsh output:', e);
+					return [];
+				}
+				console.log('output', json);
+				// TODO: Apply pwshTypeToIconMap
+				// TODO: Return a rich type with kind and detail
+				commands = (json as any[]).map(e => e.Name);
+				break;
 			}
+		}
+		// TODO: Cache failure results too
+		if (commands?.length) {
+			cachedBuiltinCommands?.set(shellType, commands);
+			return commands;
 		}
 		return;
 
@@ -312,7 +357,8 @@ export async function getCompletionItemsFromSpecs(specs: Fig.Spec[], terminalCon
 	if (!specificSuggestionsProvided && (filesRequested === foldersRequested)) {
 		// Include builitin/available commands in the results
 		for (const command of availableCommands) {
-			if ((!terminalContext.commandLine.trim() || firstCommand && command.startsWith(firstCommand)) && !items.find(item => item.label === command)) {
+			// TODO: Don't filter out anything on the extension side
+			if ((!terminalContext.commandLine.trim() || firstCommand && command.toLowerCase().startsWith(firstCommand.toLowerCase())) && !items.find(item => item.label === command)) {
 				items.push(createCompletionItem(terminalContext.commandLine, terminalContext.cursorPosition, prefix, command));
 			}
 		}
