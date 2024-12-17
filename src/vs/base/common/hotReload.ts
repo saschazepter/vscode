@@ -7,7 +7,7 @@ import { IDisposable } from './lifecycle.js';
 import { env } from './process.js';
 
 function hotReloadDisabled() {
-	return true; // TODO@hediet fix hot reload.
+	return false; // TODO@hediet fix hot reload.
 }
 
 export function isHotReloadEnabled(): boolean {
