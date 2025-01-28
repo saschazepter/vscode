@@ -132,6 +132,7 @@ export class InstructionsAttachmentWidget extends Disposable {
 			title += `\n-\n[${errorCaption}]: ${details}`;
 		}
 
+		// TODO: @legomushroom - use a common util
 		const fileWithoutExtension = fileBasename.replace(PROMP_SNIPPET_FILE_EXTENSION, '');
 		label.setFile(URI.file(fileWithoutExtension), {
 			fileKind: FileKind.FILE,

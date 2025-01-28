@@ -20,7 +20,7 @@ import { ChatRequestAgentPart, ChatRequestAgentSubcommandPart, ChatRequestSlashC
 import { ChatRequestParser } from '../../common/chatRequestParser.js';
 
 // TODO: @legomushroom
-import { RUN_PROMPT_COMMAND_ID } from '../promptSyntax/contributions/fileActions.contribution.js';
+import { USE_PROMPT_COMMAND_ID } from '../promptSyntax/contributions/fileActions.contribution.js';
 
 const decorationDescription = 'chat';
 const placeholderDecorationType = 'chat-session-detail';
@@ -68,7 +68,7 @@ class InputEditorDecorations extends Disposable {
 		this.registerViewModelListeners();
 
 		// TODO: @legomushroom
-		console.log(RUN_PROMPT_COMMAND_ID);
+		console.log(USE_PROMPT_COMMAND_ID);
 	}
 
 	private registerViewModelListeners(): void {

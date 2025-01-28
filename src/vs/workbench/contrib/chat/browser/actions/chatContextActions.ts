@@ -8,7 +8,7 @@ import { Codicon } from '../../../../../base/common/codicons.js';
 import { KeyCode, KeyMod } from '../../../../../base/common/keyCodes.js';
 import { Schemas } from '../../../../../base/common/network.js';
 import { isElectron } from '../../../../../base/common/platform.js';
-import { dirname } from '../../../../../base/common/resources.js';
+import { basename, dirname } from '../../../../../base/common/resources.js';
 import { compare } from '../../../../../base/common/strings.js';
 import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { URI } from '../../../../../base/common/uri.js';
@@ -50,6 +50,7 @@ import { IChatRequestVariableEntry } from '../../common/chatModel.js';
 import { ChatRequestAgentPart } from '../../common/chatParserTypes.js';
 import { IChatVariableData, IChatVariablesService } from '../../common/chatVariables.js';
 import { ILanguageModelToolsService } from '../../common/languageModelToolsService.js';
+import { PROMP_SNIPPET_FILE_EXTENSION } from '../../common/promptSyntax/contentProviders/promptContentsProviderBase.js';
 import { IChatWidget, IChatWidgetService, IQuickChatService, showChatView, showEditsView } from '../chat.js';
 import { imageToHash, isImage } from '../chatPasteProviders.js';
 import { isQuickChat } from '../chatWidget.js';
@@ -932,9 +933,13 @@ const selectAndAttachPrompt = async (
 	const filesPromise = promptInstructions.listNonAttachedFiles()
 		.then((files) => {
 			return files.map((file) => {
+				// TODO: @legomushroom - use a common util
+				const fileBasename = basename(file);
+				const fileWithoutExtension = fileBasename.replace(PROMP_SNIPPET_FILE_EXTENSION, '');
+
 				const result: IQuickPickItem & { value: URI } = {
 					type: 'item',
-					label: labelService.getUriBasenameLabel(file),
+					label: fileWithoutExtension,
 					description: labelService.getUriLabel(dirname(file), { relative: true }),
 					tooltip: file.fsPath,
 					value: file,
@@ -967,7 +972,7 @@ const selectAndAttachPrompt = async (
 /**
  * TODO: @legomushroom
  */
-export interface IChatRunPromptActionOptions {
+export interface IChatUsePromptActionOptions {
 	resources?: URI[];
 	location: ChatAgentLocation;
 }
@@ -975,24 +980,24 @@ export interface IChatRunPromptActionOptions {
 /**
  * TODO: @legomushroom
  */
-export const RUN_PROMPT_ACTION_ID = 'workbench.action.chat.run.prompt';
+export const USE_PROMPT_ACTION_ID = 'workbench.action.chat.use.prompt';
 
 /**
  * TODO: @legomushroom
  */
 // TODO: @legomushroom - attach through the variables service?
-registerAction2(class RunPromptAction extends Action2 {
+registerAction2(class UsePromptAction extends Action2 {
 	constructor() {
 		super({
-			id: RUN_PROMPT_ACTION_ID,
-			title: localize2('workbench.action.chat.run.prompt.label', "Run prompt"),
+			id: USE_PROMPT_ACTION_ID,
+			title: localize2('workbench.action.chat.use.prompt.label', "Use Prompt"),
 			f1: false,
 			category: CHAT_CATEGORY,
 			// precondition: ChatContextKeys.location.isEqualTo(ChatAgentLocation.EditingSession)
 		});
 	}
 
-	public override async run(accessor: ServicesAccessor, options: IChatRunPromptActionOptions): Promise<void> {
+	public override async run(accessor: ServicesAccessor, options: IChatUsePromptActionOptions): Promise<void> {
 		const viewsService = accessor.get(IViewsService);
 		const labelService = accessor.get(ILabelService);
 		const quickInputService = accessor.get(IQuickInputService);
