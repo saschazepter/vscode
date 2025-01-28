@@ -581,39 +581,7 @@ export class AttachContextAction extends Action2 {
 					toAttach.push(convertBufferToScreenshotVariable(blob));
 				}
 			} else if (isPromptInstructionsQuickPickItem(pick)) {
-				const { promptInstructions } = widget.attachmentModel;
-
-				// find all prompt instruction files in the user project
-				// and present them to the user so they can select one
-				const filesPromise = promptInstructions.listNonAttachedFiles()
-					.then((files) => {
-						return files.map((file) => {
-							const result: IQuickPickItem & { value: URI } = {
-								type: 'item',
-								label: labelService.getUriBasenameLabel(file),
-								description: labelService.getUriLabel(dirname(file), { relative: true }),
-								tooltip: file.fsPath,
-								value: file,
-							};
-
-							return result;
-						});
-					});
-
-				const selectedFile = await quickInputService.pick(
-					filesPromise,
-					{
-						placeHolder: localize('promptInstructions', 'Add prompt instructions file'),
-						canPickMany: false,
-					});
-
-				// if the quick pick dialog was dismissed, nothing to do
-				if (!selectedFile) {
-					return;
-				}
-
-				// add selected prompt instructions reference to the chat attachments model
-				promptInstructions.add(selectedFile.value);
+				await selectAndAttachPrompt(widget, labelService, quickInputService);
 			} else {
 				// Anything else is an attachment
 				const attachmentPick = pick as IAttachmentQuickPickItem;
@@ -945,5 +913,113 @@ registerAction2(class AttachFilesAction extends AttachContextAction {
 		const context = args[0];
 		const attachFilesContext = { ...context, showFilesOnly: true, placeholder: localize('chatAttachFiles', 'Search for files to add to your working set') };
 		return super.run(accessor, attachFilesContext);
+	}
+});
+
+/**
+ * TODO: @legomushroom
+ */
+const selectAndAttachPrompt = async (
+	widget: IChatWidget,
+	labelService: ILabelService,
+	quickInputService: IQuickInputService,
+): Promise<void> => {
+	const { attachmentModel } = widget;
+	const { promptInstructions } = attachmentModel;
+
+	// find all prompt instruction files in the user project
+	// and present them to the user so they can select one
+	const filesPromise = promptInstructions.listNonAttachedFiles()
+		.then((files) => {
+			return files.map((file) => {
+				const result: IQuickPickItem & { value: URI } = {
+					type: 'item',
+					label: labelService.getUriBasenameLabel(file),
+					description: labelService.getUriLabel(dirname(file), { relative: true }),
+					tooltip: file.fsPath,
+					value: file,
+				};
+
+				return result;
+			});
+		});
+
+	const selectedFiles = await quickInputService.pick(
+		filesPromise,
+		{
+			placeHolder: localize('selectPrompt', 'Select prompt'),
+			canPickMany: false,
+		});
+
+	// if the quick pick dialog was dismissed, nothing to do
+	if (!selectedFiles) {
+		return;
+	}
+
+	// for (const selectedFile of selectedFiles) {
+	// 	// add selected prompt instructions reference to the chat attachments model
+	// 	promptInstructions.add(selectedFile.value);
+	// }
+	// add selected prompt instructions reference to the chat attachments model
+	promptInstructions.add(selectedFiles.value);
+};
+
+/**
+ * TODO: @legomushroom
+ */
+export interface IChatRunPromptActionOptions {
+	resources?: URI[];
+	location: ChatAgentLocation;
+}
+
+/**
+ * TODO: @legomushroom
+ */
+export const RUN_PROMPT_ACTION_ID = 'workbench.action.chat.run.prompt';
+
+/**
+ * TODO: @legomushroom
+ */
+// TODO: @legomushroom - attach through the variables service?
+registerAction2(class RunPromptAction extends Action2 {
+	constructor() {
+		super({
+			id: RUN_PROMPT_ACTION_ID,
+			title: localize2('workbench.action.chat.run.prompt.label', "Run prompt"),
+			f1: false,
+			category: CHAT_CATEGORY,
+			// precondition: ChatContextKeys.location.isEqualTo(ChatAgentLocation.EditingSession)
+		});
+	}
+
+	public override async run(accessor: ServicesAccessor, options: IChatRunPromptActionOptions): Promise<void> {
+		const viewsService = accessor.get(IViewsService);
+		const labelService = accessor.get(ILabelService);
+		const quickInputService = accessor.get(IQuickInputService);
+
+		const { resources, location } = options;
+
+		const widget = (location === ChatAgentLocation.Panel)
+			? await showChatView(viewsService)
+			: await showEditsView(viewsService);
+
+		if (!widget || !widget.viewModel) {
+			// TODO: @legomushroom - log an error here?
+			return;
+		}
+
+		if (resources) {
+			for (const resource of resources) {
+				widget.attachmentModel.promptInstructions.add(resource);
+			}
+		} else {
+			await selectAndAttachPrompt(
+				widget,
+				labelService,
+				quickInputService,
+			);
+		}
+
+		widget.focusInput();
 	}
 });

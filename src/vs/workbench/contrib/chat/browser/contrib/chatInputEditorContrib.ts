@@ -19,6 +19,9 @@ import { chatSlashCommandBackground, chatSlashCommandForeground } from '../../co
 import { ChatRequestAgentPart, ChatRequestAgentSubcommandPart, ChatRequestSlashCommandPart, ChatRequestTextPart, ChatRequestToolPart, ChatRequestVariablePart, IParsedChatRequestPart, chatAgentLeader, chatSubcommandLeader } from '../../common/chatParserTypes.js';
 import { ChatRequestParser } from '../../common/chatRequestParser.js';
 
+// TODO: @legomushroom
+import { RUN_PROMPT_COMMAND_ID } from '../promptSyntax/contributions/fileActions.contribution.js';
+
 const decorationDescription = 'chat';
 const placeholderDecorationType = 'chat-session-detail';
 const slashCommandTextDecorationType = 'chat-session-text';
@@ -63,6 +66,9 @@ class InputEditorDecorations extends Disposable {
 		this._register(this.chatAgentService.onDidChangeAgents(() => this.updateInputEditorDecorations()));
 
 		this.registerViewModelListeners();
+
+		// TODO: @legomushroom
+		console.log(RUN_PROMPT_COMMAND_ID);
 	}
 
 	private registerViewModelListeners(): void {
