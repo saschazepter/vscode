@@ -107,7 +107,7 @@ export class Editor {
 	}
 
 	private _editContextSelector() {
-		return this.code.quality === Quality.Stable ? 'textarea' : '.native-edit-context';
+		return this.code.quality === Quality.Stable ? 'textarea' : 'textarea';
 	}
 
 	async waitForEditorContents(filename: string, accept: (contents: string) => boolean, selectorPrefix = ''): Promise<any> {

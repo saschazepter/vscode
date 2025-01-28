@@ -9,7 +9,6 @@ import { findElement, findElements, Code } from './code';
 import { Quality } from './application';
 
 const VIEWLET = 'div[id="workbench.view.scm"]';
-const SCM_INPUT_NATIVE_EDIT_CONTEXT = `${VIEWLET} .scm-editor .native-edit-context`;
 const SCM_INPUT_TEXTAREA = `${VIEWLET} .scm-editor textarea`;
 const SCM_RESOURCE = `${VIEWLET} .monaco-list-row .resource`;
 const REFRESH_COMMAND = `div[id="workbench.parts.sidebar"] .actions-container a.action-label[aria-label="Refresh"]`;
@@ -80,6 +79,6 @@ export class SCM extends Viewlet {
 	}
 
 	private _editContextSelector(): string {
-		return this.code.quality === Quality.Stable ? SCM_INPUT_TEXTAREA : SCM_INPUT_NATIVE_EDIT_CONTEXT;
+		return this.code.quality === Quality.Stable ? SCM_INPUT_TEXTAREA : SCM_INPUT_TEXTAREA;
 	}
 }

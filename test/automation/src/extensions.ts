@@ -21,7 +21,7 @@ export class Extensions extends Viewlet {
 
 	async searchForExtension(id: string): Promise<any> {
 		await this.commands.runCommand('Extensions: Focus on Extensions View', { exactLabelMatch: true });
-		await this.code.waitForTypeInEditor(`div.extensions-viewlet[id="workbench.view.extensions"] .monaco-editor ${this.code.quality === Quality.Stable ? 'textarea' : '.native-edit-context'}`, `@id:${id}`);
+		await this.code.waitForTypeInEditor(`div.extensions-viewlet[id="workbench.view.extensions"] .monaco-editor ${this.code.quality === Quality.Stable ? 'textarea' : 'textarea'}`, `@id:${id}`);
 		await this.code.waitForTextContent(`div.part.sidebar div.composite.title h2`, 'Extensions: Marketplace');
 
 		let retrials = 1;
