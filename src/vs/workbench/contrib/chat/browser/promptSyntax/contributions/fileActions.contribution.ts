@@ -66,21 +66,14 @@ KeybindingsRegistry.registerCommandAndKeybindingRule({
 	}
 });
 
-// const REVEAL_ACTIVE_FILE_IN_OS_COMMAND_ID = 'workbench.action.files.revealActiveFileInWindows';
+// Command Palette
 
-// KeybindingsRegistry.registerCommandAndKeybindingRule({
-// 	weight: KeybindingWeight.WorkbenchContrib,
-// 	when: undefined,
-// 	primary: KeyChord(KeyMod.CtrlCmd | KeyCode.KeyK, KeyCode.KeyR),
-// 	id: REVEAL_ACTIVE_FILE_IN_OS_COMMAND_ID,
-// 	handler: (accessor: ServicesAccessor) => {
-// 		const editorService = accessor.get(IEditorService);
-// 		const activeInput = editorService.activeEditor;
-// 		const resource = EditorResourceAccessor.getOriginalUri(activeInput, { filterByScheme: Schemas.file, supportSideBySide: SideBySideEditor.PRIMARY });
-// 		const resources = resource ? [resource] : [];
-// 		revealResourcesInOS(resources, accessor.get(INativeHostService), accessor.get(IWorkspaceContextService));
-// 	}
-// });
+const category = nls.localize2('chatCategory', "Chat");
+appendToCommandPalette({
+	id: RUN_PROMPT_COMMAND_ID,
+	title: RUN_PROMPT_LABEL,
+	category,
+});
 
 appendEditorTitleContextMenuItem(RUN_PROMPT_COMMAND_ID, RUN_PROMPT_LABEL.value, RUN_PROMPT_WHEN_CONTEXT, '2_files', false, 0);
 
@@ -95,49 +88,3 @@ MenuRegistry.appendMenuItem(MenuId.ExplorerContext, {
 	},
 	when: RUN_PROMPT_WHEN_CONTEXT
 });
-
-// Command Palette
-
-const category = nls.localize2('chatCategory', "Chat");
-appendToCommandPalette({
-	id: RUN_PROMPT_COMMAND_ID,
-	title: RUN_PROMPT_LABEL,
-	category: category
-});
-
-// // Menu registration - open editors
-
-// const revealInOsCommand = {
-// 	id: REVEAL_IN_OS_COMMAND_ID,
-// 	title: REVEAL_IN_OS_LABEL.value
-// };
-// MenuRegistry.appendMenuItem(MenuId.OpenEditorsContext, {
-// 	group: 'navigation',
-// 	order: 20,
-// 	command: revealInOsCommand,
-// 	when: REVEAL_IN_OS_WHEN_CONTEXT
-// });
-// MenuRegistry.appendMenuItem(MenuId.OpenEditorsContextShare, {
-// 	title: nls.localize('miShare', "Share"),
-// 	submenu: MenuId.MenubarShare,
-// 	group: 'share',
-// 	order: 3,
-// });
-
-// // Menu registration - chat attachments context
-
-// MenuRegistry.appendMenuItem(MenuId.ChatAttachmentsContext, {
-// 	group: 'navigation',
-// 	order: 20,
-// 	command: revealInOsCommand,
-// 	when: REVEAL_IN_OS_WHEN_CONTEXT
-// });
-
-// // Menu registration - chat inline anchor
-
-// MenuRegistry.appendMenuItem(MenuId.ChatInlineResourceAnchorContext, {
-// 	group: 'navigation',
-// 	order: 20,
-// 	command: revealInOsCommand,
-// 	when: REVEAL_IN_OS_WHEN_CONTEXT
-// });
