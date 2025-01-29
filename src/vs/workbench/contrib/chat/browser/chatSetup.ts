@@ -124,7 +124,7 @@ export class ChatSetupContribution extends Disposable implements IWorkbenchContr
 		super();
 
 		if (
-			!this.productService.defaultChatAgent ||			// needs product config
+			this.productService.defaultChatAgent ||			// needs product config
 			(isWeb && !this.environmentService.remoteAuthority)	// only enabled locally or a remote backend
 		) {
 			return;
