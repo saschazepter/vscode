@@ -49,5 +49,6 @@
 	},
 	"hostRequirements": {
 		"memory": "9gb"
-	}
+	},
+	"remoteUser": "root"
 }
