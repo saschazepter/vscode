@@ -47,6 +47,7 @@ import { IBrowserWorkbenchEnvironmentService } from '../../environment/browser/e
 import { workbenchConfigurationNodeBase } from '../../../common/configuration.js';
 import { mainWindow } from '../../../../base/browser/window.js';
 import { runWhenWindowIdle } from '../../../../base/browser/dom.js';
+import { IContextKeyService, RawContextKey } from '../../../../platform/contextkey/common/contextkey.js';
 
 function getLocalUserConfigurationScopes(userDataProfile: IUserDataProfile, hasRemote: boolean): ConfigurationScope[] | undefined {
 	const isDefaultProfile = userDataProfile.isDefault || userDataProfile.useDefaultFlags?.settings;
@@ -491,6 +492,16 @@ export class WorkspaceService extends Disposable implements IWorkbenchConfigurat
 
 	acquireInstantiationService(instantiationService: IInstantiationService): void {
 		this.instantiationService = instantiationService;
+
+		const contextKeyService = this.instantiationService.invokeFunction(accessor =>
+			accessor.get(IContextKeyService));
+		this.policyConfiguration.acquireContextKeyService(contextKeyService);
+
+		// TODO: contextKeyService is a 'proxy' value in the debugger and all of below
+		//       does not read the value as expected
+		const previewFeaturesDisabled = new RawContextKey<any>('github.copilot.previewFeaturesDisabled', undefined).bindTo(contextKeyService);
+		const val = previewFeaturesDisabled.get();
+		this.logService.trace('acquired. Preview features disabled:', val);
 	}
 
 	isSettingAppliedForAllProfiles(key: string): boolean {

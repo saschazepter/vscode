@@ -16,6 +16,7 @@ import { IPolicyService, PolicyDefinition, PolicyName } from '../../policy/commo
 import { Registry } from '../../registry/common/platform.js';
 import { getErrorMessage } from '../../../base/common/errors.js';
 import * as json from '../../../base/common/json.js';
+import { IContextKeyService } from '../../contextkey/common/contextkey.js';
 
 export class DefaultConfiguration extends Disposable {
 
@@ -78,9 +79,13 @@ export interface IPolicyConfiguration {
 	readonly onDidChangeConfiguration: Event<ConfigurationModel>;
 	readonly configurationModel: ConfigurationModel;
 	initialize(): Promise<ConfigurationModel>;
+	acquireContextKeyService(contextKeyService: IContextKeyService): void;
 }
 
 export class NullPolicyConfiguration implements IPolicyConfiguration {
+	acquireContextKeyService(contextKeyService: IContextKeyService): void {
+		// no-op
+	}
 	readonly onDidChangeConfiguration = Event.None;
 	readonly configurationModel = ConfigurationModel.createEmptyModel(new NullLogService());
 	async initialize() { return this.configurationModel; }
@@ -90,7 +95,7 @@ export class PolicyConfiguration extends Disposable implements IPolicyConfigurat
 
 	private readonly _onDidChangeConfiguration = this._register(new Emitter<ConfigurationModel>());
 	readonly onDidChangeConfiguration = this._onDidChangeConfiguration.event;
-
+	private contextKeyService: IContextKeyService | undefined;
 	private readonly configurationRegistry: IConfigurationRegistry;
 
 	private _configurationModel = ConfigurationModel.createEmptyModel(this.logService);
@@ -99,7 +104,8 @@ export class PolicyConfiguration extends Disposable implements IPolicyConfigurat
 	constructor(
 		private readonly defaultConfiguration: DefaultConfiguration,
 		@IPolicyService private readonly policyService: IPolicyService,
-		@ILogService private readonly logService: ILogService
+		@ILogService private readonly logService: ILogService,
+		////// @IContextKeyService private readonly contextKeyService: IContextKeyService,
 	) {
 		super();
 		this.configurationRegistry = Registry.as<IConfigurationRegistry>(Extensions.Configuration);
@@ -108,11 +114,50 @@ export class PolicyConfiguration extends Disposable implements IPolicyConfigurat
 	async initialize(): Promise<ConfigurationModel> {
 		this.logService.trace('PolicyConfiguration#initialize');
 
-		this.update(await this.updatePolicyDefinitions(this.defaultConfiguration.configurationModel.keys), false);
-		this.update(await this.updatePolicyDefinitions(Object.keys(this.configurationRegistry.getExcludedConfigurationProperties())), false);
+		this.update(await this.updatePolicyDefinitions(this.defaultConfiguration.configurationModel.keys), false, false);
+		this.update(await this.updatePolicyDefinitions(Object.keys(this.configurationRegistry.getExcludedConfigurationProperties())), false, false);
+		this.update(await this.applyInternalPolicy(this.defaultConfiguration.configurationModel.keys), false, true);
 		this._register(this.policyService.onDidChange(policyNames => this.onDidChangePolicies(policyNames)));
-		this._register(this.defaultConfiguration.onDidChangeConfiguration(async ({ properties }) => this.update(await this.updatePolicyDefinitions(properties), true)));
+		this._register(this.defaultConfiguration.onDidChangeConfiguration(async ({ properties }) => {
+			this.update(await this.updatePolicyDefinitions(properties), true, false);
+			this.update(await this.applyInternalPolicy(properties), true, true);
+		}));
 		return this._configurationModel;
+	}
+
+	acquireContextKeyService(contextKeyService: IContextKeyService): void {
+		this.logService.trace('PolicyConfiguration#acquireInstantiationService');
+		this.contextKeyService = contextKeyService;
+
+
+		// TODO: This doesn't work
+		//       'abc' and 'def' are undefined and the debugger shows that contextKeyService is a 'proxy' value
+
+		// this._register(this.contextKeyService.onDidChangeContext(() => {
+		// 	this.logService.trace('PolicyConfiguration#onDidChangeContext');
+		// 	this.updatePolicyDefinitions(this.configurationRegistry.getPolicyConfigurations().keys());
+		// }));
+		const abc = this.contextKeyService.getContextKeyValue<boolean>('github.copilot.previewFeaturesDisabled');
+		const def = this.contextKeyService.getContextKeyValue<boolean>('github.copilot.debugReportFeedback');
+		this.logService.trace('PolicyConfiguration#acquireInstantiationService', abc, def);
+	}
+
+	private async applyInternalPolicy(properties: string[]): Promise<string[]> {
+		// TODO: Check context key here: https://github.com/microsoft/vscode-copilot/blob/main/src/extension/contextKeys/vscode-node/contextKeys.contribution.ts#L152-L163
+		this.logService.trace('PolicyConfiguration#applyInternalPolicyRules', properties);
+		const configurationProperties = this.configurationRegistry.getConfigurationProperties();
+		const excludedConfigurationProperties = this.configurationRegistry.getExcludedConfigurationProperties();
+		const keys: string[] = [];
+		for (const property of properties) {
+			if (property.startsWith('chat') || property.startsWith('github')) {
+				const config = configurationProperties[property] ?? excludedConfigurationProperties[property];
+				const { tags } = config;
+				if (tags && (tags.includes('experimental') || tags.includes('preview'))) {
+					keys.push(property);
+				}
+			}
+		}
+		return keys;
 	}
 
 	private async updatePolicyDefinitions(properties: string[]): Promise<string[]> {
@@ -150,10 +195,10 @@ export class PolicyConfiguration extends Disposable implements IPolicyConfigurat
 		this.logService.trace('PolicyConfiguration#onDidChangePolicies', policyNames);
 		const policyConfigurations = this.configurationRegistry.getPolicyConfigurations();
 		const keys = coalesce(policyNames.map(policyName => policyConfigurations.get(policyName)));
-		this.update(keys, true);
+		this.update(keys, true, false);
 	}
 
-	private update(keys: string[], trigger: boolean): void {
+	private update(keys: string[], trigger: boolean, internal: boolean): void {
 		this.logService.trace('PolicyConfiguration#update', keys);
 		const configurationProperties = this.configurationRegistry.getConfigurationProperties();
 		const excludedConfigurationProperties = this.configurationRegistry.getExcludedConfigurationProperties();
@@ -175,6 +220,25 @@ export class PolicyConfiguration extends Disposable implements IPolicyConfigurat
 				}
 				if (wasEmpty ? policyValue !== undefined : !equals(this._configurationModel.getValue(key), policyValue)) {
 					changed.push([key, policyValue]);
+				}
+			} else if (internal) {
+				let disabledValue = undefined;
+				// TODO: Think more about what 'disabled' means, just roll with this for now.
+				switch (proprety.type) {
+					case 'boolean':
+						disabledValue = false;
+						break;
+					case 'array':
+						disabledValue = [];
+						break;
+					case 'object':
+						disabledValue = {};
+						break;
+					// default:
+					// disabledValue = undefined;
+				}
+				if (wasEmpty ? disabledValue !== undefined : !equals(this._configurationModel.getValue(key), disabledValue)) {
+					changed.push([key, disabledValue]);
 				}
 			} else {
 				if (this._configurationModel.getValue(key) !== undefined) {

@@ -199,6 +199,8 @@ export class Workbench extends Layout {
 		instantiationService.invokeFunction(accessor => {
 			const lifecycleService = accessor.get(ILifecycleService);
 
+			// const contextKeyService = accessor.get(IContextKeyService);
+
 			// TODO@Sandeep debt around cyclic dependencies
 			const configurationService = accessor.get(IConfigurationService) as any;
 			if (typeof configurationService.acquireInstantiationService === 'function') {
