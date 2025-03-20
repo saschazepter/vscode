@@ -71,7 +71,6 @@ export class DefaultConfiguration extends Disposable {
 			}
 		}
 	}
-
 }
 
 export interface IPolicyConfiguration {
