@@ -12,20 +12,20 @@ import { asJson, IRequestService } from '../../../../platform/request/common/req
 import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { IExtensionService } from '../../extensions/common/extensions.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
-import { IContextKey, IContextKeyService, RawContextKey } from '../../../../platform/contextkey/common/contextkey.js';
+// import { IContextKey, IContextKeyService, RawContextKey } from '../../../../platform/contextkey/common/contextkey.js';
 import { Action2, MenuId, registerAction2 } from '../../../../platform/actions/common/actions.js';
 import { localize } from '../../../../nls.js';
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
 import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../common/contributions.js';
 import { Barrier } from '../../../../base/common/async.js';
 
-const enum DefaultAccountStatus {
-	Uninitialized = 'uninitialized',
-	Unavailable = 'unavailable',
-	Available = 'available',
-}
+// const enum DefaultAccountStatus {
+// 	Uninitialized = 'uninitialized',
+// 	Unavailable = 'unavailable',
+// 	Available = 'available',
+// }
 
-const CONTEXT_DEFAULT_ACCOUNT_STATE = new RawContextKey<string>('defaultAccountStatus', DefaultAccountStatus.Uninitialized);
+// const CONTEXT_DEFAULT_ACCOUNT_STATE = new RawContextKey<string>('defaultAccountStatus', DefaultAccountStatus.Uninitialized);
 
 export interface IDefaultAccount {
 	readonly sessionId: string;
@@ -84,13 +84,12 @@ export class DefaultAccountService extends Disposable implements IDefaultAccount
 	private readonly _onDidChangeDefaultAccount = this._register(new Emitter<IDefaultAccount | null>());
 	readonly onDidChangeDefaultAccount = this._onDidChangeDefaultAccount.event;
 
-	private readonly accountStatusContext: IContextKey<string>;
+	// private readonly accountStatusContext: IContextKey<string>;
 
 	constructor(
-		@IContextKeyService contextKeyService: IContextKeyService,
 	) {
 		super();
-		this.accountStatusContext = CONTEXT_DEFAULT_ACCOUNT_STATE.bindTo(contextKeyService);
+		// this.accountStatusContext = CONTEXT_DEFAULT_ACCOUNT_STATE.bindTo(contextKeyService);
 	}
 
 	async getDefaultAccount(): Promise<IDefaultAccount | null> {
@@ -102,11 +101,11 @@ export class DefaultAccountService extends Disposable implements IDefaultAccount
 		const oldAccount = this.defaultAccount;
 		this.defaultAccount = account;
 
-		if (this.defaultAccount) {
-			this.accountStatusContext.set(DefaultAccountStatus.Available);
-		} else {
-			this.accountStatusContext.set(DefaultAccountStatus.Unavailable);
-		}
+		// if (this.defaultAccount) {
+		// 	this.accountStatusContext.set(DefaultAccountStatus.Available);
+		// } else {
+		// 	this.accountStatusContext.set(DefaultAccountStatus.Unavailable);
+		// }
 
 		if (oldAccount !== this.defaultAccount) {
 			this._onDidChangeDefaultAccount.fire(this.defaultAccount);
@@ -204,7 +203,7 @@ export class DefaultAccountManagementContribution extends Disposable implements 
 					title: localize('sign in', "Sign in to {0}", authenticationProvider.label),
 					menu: {
 						id: MenuId.AccountsContext,
-						when: CONTEXT_DEFAULT_ACCOUNT_STATE.isEqualTo(DefaultAccountStatus.Unavailable),
+						// when: CONTEXT_DEFAULT_ACCOUNT_STATE.isEqualTo(DefaultAccountStatus.Unavailable),,
 						group: '0_signin',
 					}
 				});
