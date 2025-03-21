@@ -4,7 +4,9 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Codicon } from '../../../../base/common/codicons.js';
+import { SYMBOL_ICON_ENUMERATOR_FOREGROUND, SYMBOL_ICON_METHOD_FOREGROUND } from '../../../../editor/contrib/symbolIcons/browser/symbolIcons.js';
 import { localize } from '../../../../nls.js';
+import { registerColor } from '../../../../platform/theme/common/colorRegistry.js';
 import { registerIcon } from '../../../../platform/theme/common/iconRegistry.js';
 
 export const terminalViewIcon = registerIcon('terminal-view-icon', Codicon.terminal, localize('terminalViewIcon', 'View icon of the terminal view.'));
@@ -24,3 +26,14 @@ export const commandHistoryRemoveIcon = registerIcon('terminal-command-history-r
 export const commandHistoryOutputIcon = registerIcon('terminal-command-history-output', Codicon.output, localize('terminalCommandHistoryOutput', 'Icon for viewing output of a terminal command.'));
 export const commandHistoryFuzzySearchIcon = registerIcon('terminal-command-history-fuzzy-search', Codicon.searchFuzzy, localize('terminalCommandHistoryFuzzySearch', 'Icon for toggling fuzzy search of command history.'));
 export const commandHistoryOpenFileIcon = registerIcon('terminal-command-history-open-file', Codicon.symbolReference, localize('terminalCommandHistoryOpenFile', 'Icon for opening a shell history file.'));
+
+
+export const TERMINAL_SYMBOL_ICON_FLAG_FOREGROUND = registerColor('terminalSymbolIcon.flagForeground', SYMBOL_ICON_ENUMERATOR_FOREGROUND, localize('terminalSymbolIcon.flagForeground', 'The foreground color for an flag icon. These icons will appear in the terminal suggest widget.'));
+
+export const TERMINAL_SYMBOL_ICON_ALIAS_FOREGROUND = registerColor('terminalSymbolIcon.aliasForeground', SYMBOL_ICON_METHOD_FOREGROUND, localize('terminalSymbolIcon.aliasForeground', 'The foreground color for an alias icon. These icons will appear in the terminal suggest widget.'));
+
+export const TERMINAL_SYMBOL_ICON_ENUM_MEMBER_FOREGROUND = registerColor('terminalSymbolIcon.enumMemberForeground', SYMBOL_ICON_ENUMERATOR_FOREGROUND, localize('terminalSymbolIcon.enumMemberForeground', 'The foreground color for an enum member icon. These icons will appear in the terminal suggest widget.'));
+
+export const terminalSymbolFlagIcon = registerIcon('terminal-symbol-flag', Codicon.flag, localize('terminalSymbolFlagIcon', 'Icon for flags in the terminal suggest widget.'), TERMINAL_SYMBOL_ICON_FLAG_FOREGROUND);
+export const terminalSymbolAliasIcon = registerIcon('terminal-symbol-alias', Codicon.symbolMethod, localize('terminalSymbolAliasIcon', 'Icon for aliases in the terminal suggest widget.'), TERMINAL_SYMBOL_ICON_ALIAS_FOREGROUND);
+export const terminalSymbolEnumMember = registerIcon('symbol-enum-member', Codicon.symbolEnumMember, localize('terminalSymbolEnumMember', 'Icon for enum members in the terminal suggest widget.'), TERMINAL_SYMBOL_ICON_ENUM_MEMBER_FOREGROUND);

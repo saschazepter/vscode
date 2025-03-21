@@ -38,6 +38,7 @@ import { TerminalCompletionItem, TerminalCompletionItemKind, type ITerminalCompl
 import { IntervalTimer, TimeoutTimer } from '../../../../../base/common/async.js';
 import { localize } from '../../../../../nls.js';
 import { TerminalSuggestTelemetry } from './terminalSuggestTelemetry.js';
+import { terminalSymbolAliasIcon, terminalSymbolEnumMember, terminalSymbolFlagIcon } from '../../../terminal/browser/terminalIcons.js';
 
 export interface ISuggestController {
 	isPasting: boolean;
@@ -94,11 +95,11 @@ export class SuggestAddon extends Disposable implements ITerminalAddon, ISuggest
 		[TerminalCompletionItemKind.File, Codicon.file],
 		[TerminalCompletionItemKind.Folder, Codicon.folder],
 		[TerminalCompletionItemKind.Method, Codicon.symbolMethod],
-		[TerminalCompletionItemKind.Alias, Codicon.symbolMethodArrow],
+		[TerminalCompletionItemKind.Alias, terminalSymbolAliasIcon],
 		[TerminalCompletionItemKind.Argument, Codicon.symbolVariable],
 		[TerminalCompletionItemKind.Option, Codicon.symbolEnum],
-		[TerminalCompletionItemKind.OptionValue, Codicon.symbolEnumMember],
-		[TerminalCompletionItemKind.Flag, Codicon.flag],
+		[TerminalCompletionItemKind.OptionValue, terminalSymbolEnumMember],
+		[TerminalCompletionItemKind.Flag, terminalSymbolFlagIcon],
 		[TerminalCompletionItemKind.InlineSuggestion, Codicon.star],
 		[TerminalCompletionItemKind.InlineSuggestionAlwaysOnTop, Codicon.star],
 	]);

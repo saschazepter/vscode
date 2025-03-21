@@ -5,6 +5,7 @@
 
 import { isWindows } from '../../../../../base/common/platform.js';
 import { count } from '../../../../../base/common/strings.js';
+import { ThemeColor } from '../../../../../base/common/themables.js';
 import { SimpleCompletionModel, type LineContext } from '../../../../services/suggest/browser/simpleCompletionModel.js';
 import { TerminalCompletionItemKind, type TerminalCompletionItem } from './terminalCompletionItem.js';
 
@@ -104,20 +105,11 @@ const compareCompletionsFn = (leadingLineContent: string, a: TerminalCompletionI
 		}
 	}
 
-	if (a.completion.kind !== b.completion.kind) {
-		// Sort by kind
-		if ((a.completion.kind === TerminalCompletionItemKind.Method || a.completion.kind === TerminalCompletionItemKind.Alias) && (b.completion.kind !== TerminalCompletionItemKind.Method && b.completion.kind !== TerminalCompletionItemKind.Alias)) {
-			return -1; // Methods and aliases should come first
-		}
-		if ((b.completion.kind === TerminalCompletionItemKind.Method || b.completion.kind === TerminalCompletionItemKind.Alias) && (a.completion.kind !== TerminalCompletionItemKind.Method && a.completion.kind !== TerminalCompletionItemKind.Alias)) {
-			return 1; // Methods and aliases should come first
-		}
-		if ((a.completion.kind === TerminalCompletionItemKind.File || a.completion.kind === TerminalCompletionItemKind.Folder) && (b.completion.kind !== TerminalCompletionItemKind.File && b.completion.kind !== TerminalCompletionItemKind.Folder)) {
-			return 1; // Resources should come last
-		}
-		if ((b.completion.kind === TerminalCompletionItemKind.File || b.completion.kind === TerminalCompletionItemKind.Folder) && (a.completion.kind !== TerminalCompletionItemKind.File && a.completion.kind !== TerminalCompletionItemKind.Folder)) {
-			return -1; // Resources should come last
-		}
+	// Sort by icon color priority (purple > blue > orange > no color)
+	const colorScoreA = getColorPriorityScore(a.completion.icon?.color);
+	const colorScoreB = getColorPriorityScore(b.completion.icon?.color);
+	if (colorScoreA !== colorScoreB) {
+		return colorScoreB - colorScoreA;
 	}
 
 	// Sort alphabetically, ignoring punctuation causes dot files to be mixed in rather than
@@ -167,4 +159,19 @@ const fileExtScores = new Map<string, number>(isWindows ? [
 
 function fileExtScore(ext: string): number {
 	return fileExtScores.get(ext) || 0;
+}
+
+// Helper function to get color priority scores
+function getColorPriorityScore(color?: ThemeColor | undefined): number {
+	console.log(color);
+	if (!color) {
+		return 0;
+	}
+	switch (color.id.toLowerCase()) {
+		// to do match actual theme names
+		case 'purple': return 3;
+		case 'blue': return 2;
+		case 'orange': return 1;
+		default: return 0;
+	}
 }
