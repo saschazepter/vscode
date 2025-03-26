@@ -3,18 +3,25 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { ISelectPromptOptions } from '../askToSelectPrompt.js';
 import { IChatWidget, showChatView, showEditsView } from '../../../../../chat.js';
 import { IChatAttachPromptActionOptions } from '../../../chatAttachPromptAction.js';
 import { assertDefined, WithUriValue } from '../../../../../../../../../base/common/types.js';
-import { IQuickPickItem } from '../../../../../../../../../platform/quickinput/common/quickInput.js';
+import { IViewsService } from '../../../../../../../../services/views/common/viewsService.js';
+
+/**
+ * TODO: @legomushroom
+ */
+export interface IAttachPromptOptions {
+	readonly widget?: IChatWidget;
+	readonly viewsService: IViewsService;
+}
 
 /**
  * Attaches provided prompts to a chat input.
  */
 export const attachPrompts = async (
-	files: readonly WithUriValue<IQuickPickItem>[],
-	options: ISelectPromptOptions,
+	files: readonly WithUriValue<Object>[],
+	options: IAttachPromptOptions,
 	altOption: boolean,
 ): Promise<IChatWidget> => {
 	const widget = await getChatWidgetObject(options, altOption);
@@ -38,7 +45,7 @@ export const attachPrompts = async (
  * @throws if failed to reveal a chat widget.
  */
 const getChatWidgetObject = async (
-	options: IChatAttachPromptActionOptions,
+	options: IAttachPromptOptions,
 	altOption: boolean,
 ): Promise<IChatWidget> => {
 	const { widget, viewsService } = options;

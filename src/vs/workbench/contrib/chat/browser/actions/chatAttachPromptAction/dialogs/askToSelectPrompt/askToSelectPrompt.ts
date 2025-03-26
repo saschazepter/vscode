@@ -83,8 +83,8 @@ export const askToSelectPrompt = async (
 			return extUri.isEqual(file.value, resource);
 		});
 
-		// if no item for the `resource` was found, it means that the resource is not
-		// in the list of prompt files, so add a new item for it; this ensures that
+		// if no item for the `resource` was found, it means that the `resource` is not
+		// in the list of prompt files, so add a new list item for it; this ensures that
 		// the currently active prompt file is always available in the selection dialog,
 		// even if it is not included in the prompts list otherwise(from location setting)
 		if (!activeItem) {
@@ -123,7 +123,7 @@ export const askToSelectPrompt = async (
 		activeItem = fileOptions[0];
 	}
 
-	// otherwise show the prompt file selection dialog
+	// show the prompt file selection dialog
 	const quickPick = quickInputService.createQuickPick<WithUriValue<IQuickPickItem>>();
 	quickPick.activeItems = activeItem ? [activeItem] : [];
 	quickPick.placeholder = createPlaceholderText(options);
@@ -191,7 +191,7 @@ export const askToSelectPrompt = async (
 			disposables.dispose.bind(disposables),
 		));
 
-		// finally, reveal the dialog
+		// finally, reveal the prompt selection dialog
 		quickPick.show();
 	});
 };
