@@ -6,9 +6,10 @@
 import { CHAT_CATEGORY } from '../chatActions.js';
 import { localize2 } from '../../../../../../nls.js';
 import { URI } from '../../../../../../base/common/uri.js';
+import { ACTION_ID_NEW_CHAT } from '../chatClearActions.js';
 import { Codicon } from '../../../../../../base/common/codicons.js';
-import { ChatContextKeys } from '../../../common/chatContextKeys.js';
 import { assertDefined } from '../../../../../../base/common/types.js';
+import { TEXT_FILE_EDITOR_ID } from '../../../../files/common/files.js';
 import { IPromptsService } from '../../../common/promptSyntax/service/types.js';
 import { IFileService } from '../../../../../../platform/files/common/files.js';
 import { ILabelService } from '../../../../../../platform/label/common/label.js';
@@ -17,13 +18,20 @@ import { IViewsService } from '../../../../../services/views/common/viewsService
 import { IDialogService } from '../../../../../../platform/dialogs/common/dialogs.js';
 import { ServicesAccessor } from '../../../../../../editor/browser/editorExtensions.js';
 import { ICommandService } from '../../../../../../platform/commands/common/commands.js';
+import { ChatContextKeyExprs, ChatContextKeys } from '../../../common/chatContextKeys.js';
+import { ContextKeyExpr } from '../../../../../../platform/contextkey/common/contextkey.js';
+import { ActiveEditorContext, ResourceContextKey } from '../../../../../common/contextkeys.js';
 import { IQuickInputService } from '../../../../../../platform/quickinput/common/quickInput.js';
 import { Action2, MenuId, registerAction2 } from '../../../../../../platform/actions/common/actions.js';
 import { attachPrompts, IAttachPromptOptions } from './dialogs/askToSelectPrompt/utils/attachPrompts.js';
 import { ISelectPromptOptions, askToSelectPrompt } from './dialogs/askToSelectPrompt/askToSelectPrompt.js';
-import { ActiveEditorContext, ResourceContextKey } from '../../../../../common/contextkeys.js';
-import { ContextKeyExpr } from '../../../../../../platform/contextkey/common/contextkey.js';
-import { TEXT_FILE_EDITOR_ID } from '../../../../files/common/files.js';
+
+
+/**
+ * TODO: @legomushroom - list
+ * - use a base class instead of the `runPrompt` function
+ * - "new chat" command should remove attached prompts
+ */
 
 /**
  * Action ID for the `Attach Prompt` action.
@@ -114,20 +122,35 @@ class AttachPromptAction extends Action2 {
 /**
  * TODO: @legomushroom
  */
+export interface IRunPromptOptions {
+	resource: URI;
+	inNewChat: boolean;
+}
+
+/**
+ * TODO: @legomushroom
+ */
 const runPrompt = async (
 	accessor: ServicesAccessor,
-	resource: URI,
+	options: IRunPromptOptions,
 ): Promise<void> => {
 	const commandService = accessor.get(ICommandService);
+	const { resource, inNewChat } = options;
 
-	const options: IChatAttachPromptActionOptions = {
+	if (inNewChat) {
+		await commandService
+			.executeCommand(ACTION_ID_NEW_CHAT);
+	}
+
+
+	const attachOptions: IChatAttachPromptActionOptions = {
 		resource,
 		skipSelectionDialog: true,
 		// TODO: @lego - add widget type option here
 	};
 
 	return await commandService
-		.executeCommand(ATTACH_PROMPT_ACTION_ID, options);
+		.executeCommand(ATTACH_PROMPT_ACTION_ID, attachOptions);
 };
 
 /**
@@ -135,11 +158,12 @@ const runPrompt = async (
  */
 // TODO: @lego - condition on the `promptFiles` enablement
 const EDITOR_ACTIONS_CONDITION = ContextKeyExpr.and(
+	ChatContextKeyExprs.unifiedChatEnabled,
+	ResourceContextKey.HasResource,
 	ContextKeyExpr.regex(
 		ResourceContextKey.Filename.key,
 		/\.prompt\.md$/, // TODO: @lego - add custom instructions file
 	),
-	ResourceContextKey.HasResource,
 	ActiveEditorContext.isEqualTo(TEXT_FILE_EDITOR_ID)
 );
 
@@ -166,9 +190,9 @@ class RunCurrentPromptAction extends Action2 {
 					group: 'navigation',
 					order: 0,
 					alt: {
-						id: RUN_CURRENT_PROMPT_IN_EDITS_ACTION_ID,
-						title: localize2('workbench.action.chat.run-in-edits.prompt.current', "Run Prompt In Edits"),
-						icon: Codicon.playCircle,
+						id: RUN_CURRENT_PROMPT_IN_NEW_CHAT_ACTION_ID,
+						title: RUN_IN_NEW_CHAT_ACTION_TITLE,
+						icon: RUN_IN_NEW_CHAT_ACTION_ICON,
 					},
 					when: EDITOR_ACTIONS_CONDITION,
 				},
@@ -180,27 +204,43 @@ class RunCurrentPromptAction extends Action2 {
 		accessor: ServicesAccessor,
 		resource: URI,
 	): Promise<void> {
-		return await runPrompt(accessor, resource);
+		return await runPrompt(
+			accessor,
+			{
+				resource,
+				inNewChat: false,
+			},
+		);
 	}
 }
 
 /**
- * Action ID for the `Run Current Prompt In Edits` action.
+ * Action ID for the `Run Current Prompt In New Chat` action.
  */
-export const RUN_CURRENT_PROMPT_IN_EDITS_ACTION_ID = 'workbench.action.chat.run-in-edits.prompt.current';
+export const RUN_CURRENT_PROMPT_IN_NEW_CHAT_ACTION_ID = 'workbench.action.chat.run-in-new-chat.prompt.current';
+
+const RUN_IN_NEW_CHAT_ACTION_TITLE = localize2(
+	'workbench.action.chat.run-in-new-chat.prompt.current.label',
+	"Run Prompt In New Chat",
+);
 
 /**
  * TODO: @legomushroom
  */
-class RunCurrentPromptInEditsAction extends Action2 {
+const RUN_IN_NEW_CHAT_ACTION_ICON = Codicon.playCircle;
+
+/**
+ * TODO: @legomushroom
+ */
+class RunCurrentPromptInNewChatAction extends Action2 {
 	constructor() {
 		super({
-			id: RUN_CURRENT_PROMPT_IN_EDITS_ACTION_ID,
-			title: localize2('workbench.action.chat.run-in-edits.prompt.current.label', "Run Prompt In Edits"),
+			id: RUN_CURRENT_PROMPT_IN_NEW_CHAT_ACTION_ID,
+			title: RUN_IN_NEW_CHAT_ACTION_TITLE,
 			f1: false,
 			precondition: ChatContextKeys.enabled, // TODO: @legomushroom - remove?
 			category: CHAT_CATEGORY,
-			icon: Codicon.playCircle,
+			icon: RUN_IN_NEW_CHAT_ACTION_ICON,
 			menu: [
 				{
 					id: MenuId.EditorTitleRun,
@@ -216,43 +256,13 @@ class RunCurrentPromptInEditsAction extends Action2 {
 		accessor: ServicesAccessor,
 		resource: URI,
 	): Promise<void> {
-		return await runPrompt(accessor, resource);
-	}
-}
-
-/**
- * Action ID for the `Run Current Prompt In Agent` action.
- */
-export const RUN_CURRENT_PROMPT_IN_AGENT_ACTION_ID = 'workbench.action.chat.run-in-agent.prompt.current';
-
-/**
- * TODO: @legomushroom
- */
-class RunCurrentPromptInAgentAction extends Action2 {
-	constructor() {
-		super({
-			id: RUN_CURRENT_PROMPT_IN_AGENT_ACTION_ID,
-			title: localize2('workbench.action.chat.run-in-agent.prompt.current.label', "Run Prompt In Agent"),
-			f1: false,
-			precondition: ChatContextKeys.enabled, // TODO: @legomushroom - remove?
-			category: CHAT_CATEGORY,
-			icon: Codicon.playCircle,
-			menu: [
-				{
-					id: MenuId.EditorTitleRun,
-					group: 'navigation',
-					order: 2,
-					when: EDITOR_ACTIONS_CONDITION, // TODO: @lego - condition on the `unified` chat view setting
-				},
-			],
-		});
-	}
-
-	public override async run(
-		accessor: ServicesAccessor,
-		resource: URI,
-	): Promise<void> {
-		return await runPrompt(accessor, resource);
+		return await runPrompt(
+			accessor,
+			{
+				resource,
+				inNewChat: true,
+			},
+		);
 	}
 }
 
@@ -262,6 +272,5 @@ class RunCurrentPromptInAgentAction extends Action2 {
 export const registerReusablePromptActions = () => {
 	registerAction2(AttachPromptAction);
 	registerAction2(RunCurrentPromptAction);
-	registerAction2(RunCurrentPromptInEditsAction);
-	registerAction2(RunCurrentPromptInAgentAction);
+	registerAction2(RunCurrentPromptInNewChatAction);
 };
