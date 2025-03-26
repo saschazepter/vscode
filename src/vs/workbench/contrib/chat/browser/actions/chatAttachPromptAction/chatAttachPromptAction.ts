@@ -13,6 +13,7 @@ import { TEXT_FILE_EDITOR_ID } from '../../../../files/common/files.js';
 import { IPromptsService } from '../../../common/promptSyntax/service/types.js';
 import { IFileService } from '../../../../../../platform/files/common/files.js';
 import { ILabelService } from '../../../../../../platform/label/common/label.js';
+import { PromptsConfig } from '../../../../../../platform/prompts/common/config.js';
 import { IOpenerService } from '../../../../../../platform/opener/common/opener.js';
 import { IViewsService } from '../../../../../services/views/common/viewsService.js';
 import { IDialogService } from '../../../../../../platform/dialogs/common/dialogs.js';
@@ -59,7 +60,7 @@ class AttachPromptAction extends Action2 {
 			id: ATTACH_PROMPT_ACTION_ID,
 			title: localize2('workbench.action.chat.attach.prompt.label', "Use Prompt"),
 			f1: false,
-			precondition: ChatContextKeys.enabled, // TODO: @legomushroom - remove?
+			precondition: ContextKeyExpr.and(PromptsConfig.enabledCtx, ChatContextKeys.enabled),
 			category: CHAT_CATEGORY,
 		});
 	}
@@ -156,15 +157,15 @@ const runPrompt = async (
 /**
  * TODO: @legomushroom
  */
-// TODO: @lego - condition on the `promptFiles` enablement
 const EDITOR_ACTIONS_CONDITION = ContextKeyExpr.and(
+	ContextKeyExpr.and(PromptsConfig.enabledCtx, ChatContextKeys.enabled),
 	ChatContextKeyExprs.unifiedChatEnabled,
 	ResourceContextKey.HasResource,
 	ContextKeyExpr.regex(
 		ResourceContextKey.Filename.key,
 		/\.prompt\.md$/, // TODO: @lego - add custom instructions file
 	),
-	ActiveEditorContext.isEqualTo(TEXT_FILE_EDITOR_ID)
+	ActiveEditorContext.isEqualTo(TEXT_FILE_EDITOR_ID),
 );
 
 /**
@@ -181,7 +182,7 @@ class RunCurrentPromptAction extends Action2 {
 			id: RUN_CURRENT_PROMPT_ACTION_ID,
 			title: localize2('workbench.action.chat.run.prompt.current.label', "Run Prompt"),
 			f1: false,
-			precondition: ChatContextKeys.enabled, // TODO: @legomushroom - remove?
+			precondition: ContextKeyExpr.and(PromptsConfig.enabledCtx, ChatContextKeys.enabled),
 			category: CHAT_CATEGORY,
 			icon: Codicon.play,
 			menu: [
@@ -238,7 +239,7 @@ class RunCurrentPromptInNewChatAction extends Action2 {
 			id: RUN_CURRENT_PROMPT_IN_NEW_CHAT_ACTION_ID,
 			title: RUN_IN_NEW_CHAT_ACTION_TITLE,
 			f1: false,
-			precondition: ChatContextKeys.enabled, // TODO: @legomushroom - remove?
+			precondition: ContextKeyExpr.and(PromptsConfig.enabledCtx, ChatContextKeys.enabled),
 			category: CHAT_CATEGORY,
 			icon: RUN_IN_NEW_CHAT_ACTION_ICON,
 			menu: [
