@@ -50,7 +50,12 @@ export async function showChatView(viewsService: IViewsService): Promise<IChatWi
 }
 
 export async function showEditsView(viewsService: IViewsService): Promise<IChatWidget | undefined> {
-	return (await viewsService.openView<ChatViewPane>(EditsViewId))?.widget;
+	/**
+	 * TODO: @legomushroom
+	 */
+	const viewId = ChatViewId; // EditsViewId
+
+	return (await viewsService.openView<ChatViewPane>(viewId))?.widget;
 }
 
 export function preferCopilotEditsView(viewsService: IViewsService): boolean {

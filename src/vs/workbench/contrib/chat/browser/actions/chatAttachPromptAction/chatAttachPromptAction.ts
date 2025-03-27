@@ -13,6 +13,7 @@ import { TEXT_FILE_EDITOR_ID } from '../../../../files/common/files.js';
 import { IPromptsService } from '../../../common/promptSyntax/service/types.js';
 import { IFileService } from '../../../../../../platform/files/common/files.js';
 import { ILabelService } from '../../../../../../platform/label/common/label.js';
+import { KeyCode, KeyCodeUtils } from '../../../../../../base/common/keyCodes.js';
 import { PromptsConfig } from '../../../../../../platform/prompts/common/config.js';
 import { IOpenerService } from '../../../../../../platform/opener/common/opener.js';
 import { IViewsService } from '../../../../../services/views/common/viewsService.js';
@@ -26,6 +27,7 @@ import { IQuickInputService } from '../../../../../../platform/quickinput/common
 import { Action2, MenuId, registerAction2 } from '../../../../../../platform/actions/common/actions.js';
 import { attachPrompts, IAttachPromptOptions } from './dialogs/askToSelectPrompt/utils/attachPrompts.js';
 import { ISelectPromptOptions, askToSelectPrompt } from './dialogs/askToSelectPrompt/askToSelectPrompt.js';
+// import { COMMAND_KEY_BINDING as USE_PROMPT_COMMAND_KEY_BINDING } from '../../promptSyntax/contributions/usePromptCommand.js';
 
 
 /**
@@ -178,13 +180,35 @@ export const RUN_CURRENT_PROMPT_ACTION_ID = 'workbench.action.chat.run.prompt.cu
  */
 class RunCurrentPromptAction extends Action2 {
 	constructor() {
+		const keybindingLabel = [
+			// KeyCodeUtils.toString(KeyCode.Alt),
+			'⌥', // TODO: @lego - should be based on the current platform
+			'⌘', // TODO: @lego - should be based on the current platform
+			KeyCodeUtils.toString(KeyCode.Slash),
+			'  ',
+			KeyCodeUtils.toString(KeyCode.Enter),
+		].join('');
+
 		super({
 			id: RUN_CURRENT_PROMPT_ACTION_ID,
-			title: localize2('workbench.action.chat.run.prompt.current.label', "Run Prompt"),
+			title: localize2(
+				'workbench.action.chat.run.prompt.current.label',
+				"Run Prompt ({0})",
+				keybindingLabel,
+			),
 			f1: false,
 			precondition: ContextKeyExpr.and(PromptsConfig.enabledCtx, ChatContextKeys.enabled),
 			category: CHAT_CATEGORY,
 			icon: Codicon.play,
+			// TODO: @lego - remove
+			// keybinding: {
+			// 	when: EditorContextKeys.editorTextFocus,
+			// 	weight: KeybindingWeight.WorkbenchContrib + 99,
+			// 	/**
+			// 	 * TODO: @legomushroom - also add keybinding to the "in new chat" action
+			// 	 */
+			// 	primary: KeyChord(USE_PROMPT_COMMAND_KEY_BINDING, KeyCode.Enter),
+			// },
 			menu: [
 				{
 					id: MenuId.EditorTitleRun,
