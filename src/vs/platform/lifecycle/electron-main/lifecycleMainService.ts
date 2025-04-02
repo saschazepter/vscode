@@ -338,7 +338,7 @@ export class LifecycleMainService extends Disposable implements ILifecycleMainSe
 
 				this.trace('Lifecycle#app.on(will-quit) - calling app.quit()');
 
-				electron.app.quit();
+				electron.app.exit();
 			});
 		});
 	}
