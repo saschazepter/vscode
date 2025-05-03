@@ -32,6 +32,7 @@ import { IWorkbenchEnvironmentService } from '../../../services/environment/comm
 import { isWeb } from '../../../../base/common/platform.js';
 import { ILifecycleService } from '../../../services/lifecycle/common/lifecycle.js';
 import { Mutable } from '../../../../base/common/types.js';
+import { Action2, registerAction2 } from '../../../../platform/actions/common/actions.js';
 
 export const IChatEntitlementService = createDecorator<IChatEntitlementService>('chatEntitlementService');
 
@@ -412,8 +413,216 @@ export class ChatEntitlementRequests extends Disposable {
 		this.state = { entitlement: this.context.state.entitlement };
 
 		this.registerListeners();
+		this.registerCommands();
 
 		this.resolve();
+	}
+
+	private staticQuota: {
+		chat?: IQuotaSnapshotResponse;
+		completions?: IQuotaSnapshotResponse;
+		premium_interactions?: IQuotaSnapshotResponse;
+	} | undefined = undefined;
+
+	private registerCommands() {
+		const that = this;
+
+		class Quota1 extends Action2 {
+
+			constructor() {
+				super({
+					id: '1',
+					title: { original: 'Quota 1', value: 'Quota: 1 (Free)' },
+					f1: true,
+				});
+			}
+
+			override async run(): Promise<void> {
+				that.staticQuota = {
+					'chat': {
+						entitlement: 250,
+						percent_remaining: 40,
+						remaining: 100,
+						overage_permitted: false,
+						overage_count: 0,
+						unlimited: false
+					},
+					'completions': {
+						entitlement: 250,
+						percent_remaining: 12,
+						remaining: 12,
+						overage_permitted: false,
+						overage_count: 0,
+						unlimited: false
+					},
+					premium_interactions: undefined
+				};
+				that.forceResolveEntitlement(undefined, CancellationToken.None);
+			}
+		}
+
+		class Quota2 extends Action2 {
+
+			constructor() {
+				super({
+					id: '2',
+					title: { original: 'Quota 2', value: 'Quota: 2 (Free)' },
+					f1: true,
+				});
+			}
+
+			override async run(): Promise<void> {
+				that.staticQuota = {
+					'chat': {
+						entitlement: 250,
+						percent_remaining: 0,
+						remaining: 0,
+						overage_permitted: false,
+						overage_count: 0,
+						unlimited: false
+					},
+					'completions': {
+						entitlement: 250,
+						percent_remaining: 12,
+						remaining: 12,
+						overage_permitted: false,
+						overage_count: 0,
+						unlimited: false
+					},
+					premium_interactions: undefined
+				};
+				that.forceResolveEntitlement(undefined, CancellationToken.None);
+			}
+		}
+
+		class Quota3 extends Action2 {
+
+			constructor() {
+				super({
+					id: '3',
+					title: { original: 'Quota 3', value: 'Quota: 3 (Pro)' },
+					f1: true,
+				});
+			}
+
+			override async run(): Promise<void> {
+				that.staticQuota = {
+					'chat': {
+						entitlement: 250,
+						percent_remaining: 0,
+						remaining: 0,
+						overage_permitted: false,
+						overage_count: 0,
+						unlimited: true
+					},
+					'completions': {
+						entitlement: 250,
+						percent_remaining: 25,
+						remaining: 0,
+						overage_permitted: false,
+						overage_count: 0,
+						unlimited: true
+					},
+					'premium_interactions': {
+						entitlement: 250,
+						percent_remaining: 40,
+						remaining: 50,
+						overage_permitted: false,
+						overage_count: 0,
+						unlimited: false
+					},
+				};
+				that.forceResolveEntitlement(undefined, CancellationToken.None);
+			}
+		}
+
+		class Quota4 extends Action2 {
+
+			constructor() {
+				super({
+					id: '4',
+					title: { original: 'Quota 4', value: 'Quota: 4 (Pro)' },
+					f1: true,
+				});
+			}
+
+			override async run(): Promise<void> {
+				that.staticQuota = {
+					'chat': {
+						entitlement: 250,
+						percent_remaining: 0,
+						remaining: 0,
+						overage_permitted: false,
+						overage_count: 0,
+						unlimited: true
+					},
+					'completions': {
+						entitlement: 250,
+						percent_remaining: 25,
+						remaining: 0,
+						overage_permitted: false,
+						overage_count: 0,
+						unlimited: true
+					},
+					'premium_interactions': {
+						entitlement: 250,
+						percent_remaining: 0,
+						remaining: 0,
+						overage_permitted: true,
+						overage_count: 0,
+						unlimited: false
+					},
+				};
+				that.forceResolveEntitlement(undefined, CancellationToken.None);
+			}
+		}
+
+		class Quota5 extends Action2 {
+
+			constructor() {
+				super({
+					id: '5',
+					title: { original: 'Quota 5', value: 'Quota: 5 (Pro)' },
+					f1: true,
+				});
+			}
+
+			override async run(): Promise<void> {
+				that.staticQuota = {
+					'chat': {
+						entitlement: 250,
+						percent_remaining: 40,
+						remaining: 100,
+						overage_permitted: false,
+						overage_count: 0,
+						unlimited: true
+					},
+					'completions': {
+						entitlement: 250,
+						percent_remaining: 25,
+						remaining: 0,
+						overage_permitted: false,
+						overage_count: 0,
+						unlimited: true
+					},
+					'premium_interactions': {
+						entitlement: 250,
+						percent_remaining: 0,
+						remaining: 0,
+						overage_permitted: true,
+						overage_count: 20.25,
+						unlimited: false
+					},
+				};
+				that.forceResolveEntitlement(undefined, CancellationToken.None);
+			}
+		}
+
+		registerAction2(Quota1);
+		registerAction2(Quota2);
+		registerAction2(Quota3);
+		registerAction2(Quota4);
+		registerAction2(Quota5);
 	}
 
 	private registerListeners(): void {
@@ -574,6 +783,9 @@ export class ChatEntitlementRequests extends Disposable {
 		let entitlementsResponse: IEntitlementsResponse;
 		try {
 			entitlementsResponse = JSON.parse(responseText);
+			if (this.staticQuota) {
+				(entitlementsResponse as any).quota_snapshots = { ...this.staticQuota };
+			}
 			this.logService.trace(`[chat entitlement]: parsed result is ${JSON.stringify(entitlementsResponse)}`);
 		} catch (err) {
 			this.logService.trace(`[chat entitlement]: error parsing response (${err})`);
