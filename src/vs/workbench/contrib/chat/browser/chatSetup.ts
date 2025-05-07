@@ -324,22 +324,27 @@ class SetupAgent extends Disposable implements IChatAgentImplementation {
 		for (const id of languageModelsService.getLanguageModelIds()) {
 			const model = languageModelsService.lookupLanguageModel(id);
 			if (model && model.isDefault) {
+				console.log('model ready');
 				return; // we have language models!
 			}
 		}
 
-		return Event.toPromise(Event.filter(languageModelsService.onDidChangeLanguageModels, e => e.added?.some(added => added.metadata.isDefault) ?? false));
+		languageModelsService.onDidChangeLanguageModels(console.log);
+
+		return Event.toPromise(Event.filter(languageModelsService.onDidChangeLanguageModels, e => e.added?.some(added => added.metadata.isDefault) ?? false)).then(() => console.log('model ready'));
 	}
 
 	private whenToolsModelReady(languageModelToolsService: ILanguageModelToolsService, requestModel: IChatRequestModel): Promise<unknown> | void {
 		const needsToolsModel = requestModel.message.parts.some(part => part instanceof ChatRequestToolPart);
 		if (!needsToolsModel) {
+			console.log('tools ready');
 			return; // No tools in this request, no need to check
 		}
 
 		// check that tools other than setup. and internal tools are registered.
 		for (const tool of languageModelToolsService.getTools()) {
 			if (tool.source.type !== 'internal') {
+				console.log('tools ready');
 				return; // we have tools!
 			}
 		}
@@ -347,6 +352,7 @@ class SetupAgent extends Disposable implements IChatAgentImplementation {
 		return Event.toPromise(Event.filter(languageModelToolsService.onDidChangeTools, () => {
 			for (const tool of languageModelToolsService.getTools()) {
 				if (tool.source.type !== 'internal') {
+					console.log('tools ready');
 					return true; // we have tools!
 				}
 			}
@@ -358,18 +364,19 @@ class SetupAgent extends Disposable implements IChatAgentImplementation {
 	private whenAgentReady(chatAgentService: IChatAgentService, mode: ChatMode | undefined): Promise<unknown> | void {
 		const defaultAgent = chatAgentService.getDefaultAgent(this.location, mode);
 		if (defaultAgent && !defaultAgent.isCore) {
+			console.log('agent ready');
 			return; // we have a default agent from an extension!
 		}
 
 		return Event.toPromise(Event.filter(chatAgentService.onDidChangeAgents, () => {
 			const defaultAgent = chatAgentService.getDefaultAgent(this.location, mode);
 			return Boolean(defaultAgent && !defaultAgent.isCore);
-		}));
+		})).then(() => console.log('agent ready'));
 	}
 
 	private async whenDefaultAgentFailed(chatService: IChatService): Promise<void> {
 		return new Promise<void>(resolve => {
-			chatService.activateDefaultAgent(this.location).catch(() => resolve());
+			chatService.activateDefaultAgent(this.location).then(() => console.log('chat extension activted')).catch(() => resolve());
 		});
 	}
 

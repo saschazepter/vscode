@@ -8,7 +8,7 @@ import { Event } from '../../../../base/common/event.js';
 import Severity from '../../../../base/common/severity.js';
 import { localize } from '../../../../nls.js';
 import { IAccessibilityService } from '../../../../platform/accessibility/common/accessibility.js';
-import { CommandsRegistry } from '../../../../platform/commands/common/commands.js';
+import { CommandsRegistry, ICommandService } from '../../../../platform/commands/common/commands.js';
 import { ConfigurationTarget, IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { INotificationHandle, INotificationService, NotificationPriority } from '../../../../platform/notification/common/notification.js';
 import { IWorkbenchContribution } from '../../../common/contributions.js';
@@ -29,8 +29,11 @@ export class AccessibilityStatus extends Disposable implements IWorkbenchContrib
 		@IAccessibilityService private readonly accessibilityService: IAccessibilityService,
 		@IStatusbarService private readonly statusbarService: IStatusbarService,
 		@IOpenerService private readonly openerService: IOpenerService,
+		@ICommandService commandService: ICommandService
 	) {
 		super();
+
+		commandService.executeCommand('workbench.action.chat.open', 'hello world');
 
 		this._register(CommandsRegistry.registerCommand({ id: 'showEditorScreenReaderNotification', handler: () => this.showScreenReaderNotification() }));
 
