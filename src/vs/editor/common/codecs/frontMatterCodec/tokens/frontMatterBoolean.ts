@@ -57,10 +57,6 @@ export class FrontMatterBoolean extends FrontMatterValueToken<'boolean', readonl
 		}
 	}
 
-	/**
-	 * TODO: @legomushroom
-	 */
-	// TODO: @legomushroom - unit test
 	public override equals(other: BaseToken): other is typeof this {
 		if (super.equals(other) === false) {
 			return false;
