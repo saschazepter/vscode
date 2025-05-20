@@ -9,10 +9,10 @@ import { FrontMatterArray } from '../tokens/frontMatterArray.js';
 import { assertDefined } from '../../../../../base/common/types.js';
 import { VALID_INTER_RECORD_SPACING_TOKENS } from '../constants.js';
 import { FrontMatterValueToken } from '../tokens/frontMatterToken.js';
+import { FrontMatterSequence } from '../tokens/frontMatterSequence.js';
 import { TSimpleDecoderToken } from '../../simpleCodec/simpleDecoder.js';
 import { Comma, LeftBracket, RightBracket } from '../../simpleCodec/tokens/index.js';
 import { assertNotConsumed, ParserBase, TAcceptTokenResult } from '../../simpleCodec/parserBase.js';
-import { FrontMatterSequence } from '../tokens/frontMatterSequence.js';
 
 /**
  * List of tokens that can go in-between array items
@@ -26,7 +26,6 @@ const VALID_DELIMITER_TOKENS = Object.freeze([
 /**
  * Responsible for parsing an array syntax (or "inline sequence"
  * in YAML terms), e.g. `[1, '2', true, 2.54]`
-*/
 */
 export class PartialFrontMatterArray extends ParserBase<TSimpleDecoderToken, PartialFrontMatterArray | FrontMatterArray> {
 	/**
@@ -70,13 +69,6 @@ export class PartialFrontMatterArray extends ParserBase<TSimpleDecoderToken, Par
 			if (nextParser instanceof FrontMatterValueToken) {
 				this.currentTokens.push(nextParser);
 				delete this.currentValueParser;
-
-				// if token was not consume, call the `accept()` method
-				// recursively so that the current parser can re-process
-				// the token (e.g., a comma or a closing square bracket)
-				if (wasTokenConsumed === false) {
-					return this.accept(token);
-				}
 
 				// if token was not consume, call the `accept()` method
 				// recursively so that the current parser can re-process
