@@ -5,6 +5,7 @@
 
 import { IPromptsService } from '../../../service/types.js';
 import { ProviderInstanceBase } from './providerInstanceBase.js';
+import { ITextModel } from '../../../../../../../../editor/common/model.js';
 import { assertNever } from '../../../../../../../../base/common/assert.js';
 import { type ITextModel } from '../../../../../../../../editor/common/model.js';
 import { ProviderInstanceManagerBase, type TProviderClass } from './providerInstanceManagerBase.js';

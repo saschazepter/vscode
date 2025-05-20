@@ -27,6 +27,7 @@ const VALID_DELIMITER_TOKENS = Object.freeze([
  * Responsible for parsing an array syntax (or "inline sequence"
  * in YAML terms), e.g. `[1, '2', true, 2.54]`
 */
+*/
 export class PartialFrontMatterArray extends ParserBase<TSimpleDecoderToken, PartialFrontMatterArray | FrontMatterArray> {
 	/**
 	 * Current parser reference responsible for parsing an array "value".
@@ -34,6 +35,9 @@ export class PartialFrontMatterArray extends ParserBase<TSimpleDecoderToken, Par
 	private currentValueParser?: PartialFrontMatterValue;
 
 	/**
+	 * Whether an array item is allowed in the current position of the token
+	 * sequence. E.g., items are allowed after a command or a open bracket,
+	 * but not immediately after another item in the array.
 	 * Whether an array item is allowed in the current position of the token
 	 * sequence. E.g., items are allowed after a command or a open bracket,
 	 * but not immediately after another item in the array.
@@ -66,6 +70,13 @@ export class PartialFrontMatterArray extends ParserBase<TSimpleDecoderToken, Par
 			if (nextParser instanceof FrontMatterValueToken) {
 				this.currentTokens.push(nextParser);
 				delete this.currentValueParser;
+
+				// if token was not consume, call the `accept()` method
+				// recursively so that the current parser can re-process
+				// the token (e.g., a comma or a closing square bracket)
+				if (wasTokenConsumed === false) {
+					return this.accept(token);
+				}
 
 				// if token was not consume, call the `accept()` method
 				// recursively so that the current parser can re-process

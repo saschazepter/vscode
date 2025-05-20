@@ -5,6 +5,7 @@
 
 import * as dom from '../../../../base/browser/dom.js';
 import * as event from '../../../../base/common/event.js';
+import * as platform from '../../../../base/common/platform.js';
 import { $ } from '../../../../base/browser/dom.js';
 import { StandardKeyboardEvent } from '../../../../base/browser/keyboardEvent.js';
 import { Button } from '../../../../base/browser/ui/button/button.js';
@@ -25,7 +26,7 @@ import { IOpenerService, OpenInternalOptions } from '../../../../platform/opener
 import { IThemeService, FolderThemeIcon } from '../../../../platform/theme/common/themeService.js';
 import { IResourceLabel, ResourceLabels, IFileLabelOptions } from '../../../browser/labels.js';
 import { revealInSideBarCommand } from '../../files/browser/fileActions.contribution.js';
-import { IChatRequestPasteVariableEntry, IChatRequestVariableEntry, IElementVariableEntry, INotebookOutputVariableEntry, OmittedState } from '../common/chatModel.js';
+import { IChatRequestPasteVariableEntry, IChatRequestVariableEntry, IElementVariableEntry, INotebookOutputVariableEntry, ISCMHistoryItemVariableEntry, OmittedState } from '../common/chatModel.js';
 import { ILanguageModelChatMetadataAndIdentifier, ILanguageModelsService } from '../common/languageModels.js';
 import { chatAttachmentResourceContextKey } from './chatContentParts/chatAttachmentsContentPart.js';
 import { KeyCode } from '../../../../base/common/keyCodes.js';
@@ -50,7 +51,11 @@ import { getFlatContextMenuActions } from '../../../../platform/actions/browser/
 import { IContextMenuService } from '../../../../platform/contextview/browser/contextView.js';
 import { ResourceContextKey } from '../../../common/contextkeys.js';
 import { Location, SymbolKind } from '../../../../editor/common/languages.js';
-
+import { IChatContentReference } from '../common/chatService.js';
+import { MarkdownString } from '../../../../base/common/htmlContent.js';
+import { fromNow, safeIntl } from '../../../../base/common/date.js';
+import { historyItemHoverAdditionsForeground, historyItemHoverDeletionsForeground } from '../../scm/browser/scmHistory.js';
+import { getHistoryItemEditorTitle } from '../../scm/browser/util.js';
 
 abstract class AbstractChatAttachmentWidget extends Disposable {
 	public readonly element: HTMLElement;
@@ -163,6 +168,7 @@ export class FileAttachmentWidget extends AbstractChatAttachmentWidget {
 		resource: URI,
 		range: IRange | undefined,
 		attachment: IChatRequestVariableEntry,
+		correspondingContentReference: IChatContentReference | undefined,
 		currentLanguageModel: ILanguageModelChatMetadataAndIdentifier | undefined,
 		options: { shouldFocusClearButton: boolean; supportsDeletion: boolean },
 		container: HTMLElement,
@@ -186,7 +192,7 @@ export class FileAttachmentWidget extends AbstractChatAttachmentWidget {
 			ariaLabel = localize('chat.omittedFileAttachment', "Omitted this file: {0}", attachment.name);
 			this.renderOmittedWarning(friendlyName, ariaLabel, hoverDelegate);
 		} else {
-			const fileOptions: IFileLabelOptions = { hidePath: true };
+			const fileOptions: IFileLabelOptions = { hidePath: true, title: correspondingContentReference?.options?.status?.description };
 			this.label.setFile(resource, attachment.kind === 'file' ? {
 				...fileOptions,
 				fileKind: FileKind.FILE,
@@ -325,7 +331,7 @@ function createImageElements(resource: URI | undefined, name: string, fullName: 
 		disposable.add(hoverService.setupDelayedHover(element, { content: hoverElement, appearance: { showPointer: true } }));
 
 
-		const blob = new Blob([buffer], { type: 'image/png' });
+		const blob = new Blob([buffer as Uint8Array<ArrayBuffer>], { type: 'image/png' });
 		const url = URL.createObjectURL(blob);
 		const pillImg = dom.$('img.chat-attached-context-pill-image', { src: url, alt: '' });
 		const pill = dom.$('div.chat-attached-context-pill', {}, pillImg);
@@ -419,6 +425,7 @@ export class DefaultChatAttachmentWidget extends AbstractChatAttachmentWidget {
 		resource: URI | undefined,
 		range: IRange | undefined,
 		attachment: IChatRequestVariableEntry,
+		correspondingContentReference: IChatContentReference | undefined,
 		currentLanguageModel: ILanguageModelChatMetadataAndIdentifier | undefined,
 		options: { shouldFocusClearButton: boolean; supportsDeletion: boolean },
 		container: HTMLElement,
@@ -433,7 +440,7 @@ export class DefaultChatAttachmentWidget extends AbstractChatAttachmentWidget {
 
 		const attachmentLabel = attachment.fullName ?? attachment.name;
 		const withIcon = attachment.icon?.id ? `$(${attachment.icon.id})\u00A0${attachmentLabel}` : attachmentLabel;
-		this.label.setLabel(withIcon, undefined);
+		this.label.setLabel(withIcon, correspondingContentReference?.options?.status?.description);
 		this.element.ariaLabel = localize('chat.attachment', "Attached context, {0}", attachment.name);
 
 		if (attachment.kind === 'diagnostic') {
@@ -594,6 +601,105 @@ export class ElementChatAttachmentWidget extends AbstractChatAttachmentWidget {
 		}));
 
 		this.attachClearButton();
+	}
+}
+
+export class SCMHistoryItemAttachmentWidget extends AbstractChatAttachmentWidget {
+	constructor(
+		attachment: ISCMHistoryItemVariableEntry,
+		currentLanguageModel: ILanguageModelChatMetadataAndIdentifier | undefined,
+		options: { shouldFocusClearButton: boolean; supportsDeletion: boolean },
+		container: HTMLElement,
+		contextResourceLabels: ResourceLabels,
+		hoverDelegate: IHoverDelegate,
+		@ICommandService commandService: ICommandService,
+		@IHoverService hoverService: IHoverService,
+		@IOpenerService openerService: IOpenerService,
+		@IThemeService private readonly themeService: IThemeService
+	) {
+		super(attachment, options, container, contextResourceLabels, hoverDelegate, currentLanguageModel, commandService, openerService);
+
+		this.label.setLabel(attachment.name, undefined);
+
+		this.element.style.cursor = 'pointer';
+		this.element.ariaLabel = localize('chat.attachment', "Attached context, {0}", attachment.name);
+
+		this._store.add(hoverService.setupManagedHover(hoverDelegate, this.element, () => this._getHoverContent(attachment), { trapFocus: true }));
+
+		this._store.add(dom.addDisposableListener(this.element, dom.EventType.CLICK, (e: MouseEvent) => {
+			dom.EventHelper.stop(e, true);
+			this._openAttachment(attachment);
+		}));
+
+		this._store.add(dom.addDisposableListener(this.element, dom.EventType.KEY_DOWN, (e: KeyboardEvent) => {
+			const event = new StandardKeyboardEvent(e);
+			if (event.equals(KeyCode.Enter) || event.equals(KeyCode.Space)) {
+				dom.EventHelper.stop(e, true);
+				this._openAttachment(attachment);
+			}
+		}));
+
+		this.attachClearButton();
+	}
+
+	private _getHoverContent(attachment: ISCMHistoryItemVariableEntry): IManagedHoverTooltipMarkdownString {
+		const historyItem = attachment.historyItem;
+		const colorTheme = this.themeService.getColorTheme();
+		const markdown = new MarkdownString('', { isTrusted: true, supportThemeIcons: true });
+
+		if (historyItem.author) {
+			const icon = URI.isUri(historyItem.authorIcon)
+				? `![${historyItem.author}](${historyItem.authorIcon.toString()}|width=20,height=20)`
+				: ThemeIcon.isThemeIcon(historyItem.authorIcon)
+					? `$(${historyItem.authorIcon.id})`
+					: '$(account)';
+
+			if (historyItem.authorEmail) {
+				const emailTitle = localize('emailLinkTitle', "Email");
+				markdown.appendMarkdown(`${icon} [**${historyItem.author}**](mailto:${historyItem.authorEmail} "${emailTitle} ${historyItem.author}")`);
+			} else {
+				markdown.appendMarkdown(`${icon} **${historyItem.author}**`);
+			}
+
+			if (historyItem.timestamp) {
+				const dateFormatter = safeIntl.DateTimeFormat(platform.language, { year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: 'numeric' }).value;
+				markdown.appendMarkdown(`, $(history) ${fromNow(historyItem.timestamp, true, true)} (${dateFormatter.format(historyItem.timestamp)})`);
+			}
+
+			markdown.appendMarkdown('\n\n');
+		}
+
+		markdown.appendMarkdown(`${historyItem.message.replace(/\r\n|\r|\n/g, '\n\n')}\n\n`);
+
+		if (historyItem.statistics) {
+			markdown.appendMarkdown(`---\n\n`);
+
+			markdown.appendMarkdown(`<span>${historyItem.statistics.files === 1 ?
+				localize('fileChanged', "{0} file changed", historyItem.statistics.files) :
+				localize('filesChanged', "{0} files changed", historyItem.statistics.files)}</span>`);
+
+			if (historyItem.statistics.insertions) {
+				const additionsForegroundColor = colorTheme.getColor(historyItemHoverAdditionsForeground);
+				markdown.appendMarkdown(`,&nbsp;<span style="color:${additionsForegroundColor};">${historyItem.statistics.insertions === 1 ?
+					localize('insertion', "{0} insertion{1}", historyItem.statistics.insertions, '(+)') :
+					localize('insertions', "{0} insertions{1}", historyItem.statistics.insertions, '(+)')}</span>`);
+			}
+
+			if (historyItem.statistics.deletions) {
+				const deletionsForegroundColor = colorTheme.getColor(historyItemHoverDeletionsForeground);
+				markdown.appendMarkdown(`,&nbsp;<span style="color:${deletionsForegroundColor};">${historyItem.statistics.deletions === 1 ?
+					localize('deletion', "{0} deletion{1}", historyItem.statistics.deletions, '(-)') :
+					localize('deletions', "{0} deletions{1}", historyItem.statistics.deletions, '(-)')}</span>`);
+			}
+		}
+
+		return { markdown, markdownNotSupportedFallback: historyItem.message };
+	}
+
+	private async _openAttachment(attachment: ISCMHistoryItemVariableEntry): Promise<void> {
+		await this.commandService.executeCommand('_workbench.openMultiDiffEditor', {
+			title: getHistoryItemEditorTitle(attachment.historyItem), multiDiffSourceUri: attachment.value
+		});
 	}
 }
 

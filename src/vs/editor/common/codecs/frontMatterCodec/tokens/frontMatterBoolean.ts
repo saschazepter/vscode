@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { BaseToken } from '../../baseToken.js';
+import { BaseToken } from '../../baseToken.js';
 import { Word } from '../../simpleCodec/tokens/index.js';
 import { FrontMatterValueToken } from './frontMatterToken.js';
 import { assertDefined } from '../../../../../base/common/types.js';
