@@ -5,6 +5,7 @@
 
 import { Word } from '../simpleCodec/tokens/index.js';
 import { ObjectStream } from '../utils/objectStream.js';
+import { assert } from '../../../../base/common/assert.js';
 import { VSBuffer } from '../../../../base/common/buffer.js';
 import { VALID_INTER_RECORD_SPACING_TOKENS } from './constants.js';
 import { ReadableStream } from '../../../../base/common/stream.js';
