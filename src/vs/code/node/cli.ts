@@ -40,6 +40,13 @@ function shouldSpawnCliProcess(argv: NativeParsedArgs): boolean {
 		|| !!argv['telemetry'];
 }
 
+function detectChatPrompt(args: string[]): string | undefined {
+	if (args.some(arg => arg.includes('/') || arg.includes('\\'))) {
+		return undefined;
+	}
+	return args.join(' ');
+}
+
 export async function main(argv: string[]): Promise<any> {
 	let args: NativeParsedArgs;
 
@@ -298,6 +305,15 @@ export async function main(argv: string[]): Promise<any> {
 					}
 				}));
 			}
+		}
+
+		// Check if a positional argument looks like a chat prompt
+		const chatPrompt = detectChatPrompt(args._);
+		if (chatPrompt) {
+			argv = argv.filter(arg => !args._.includes(arg));
+			args._ = [];
+
+			addArg(argv, '--prompt', chatPrompt);
 		}
 
 		const isMacOSBigSurOrNewer = isMacintosh && release() > '20.0.0';

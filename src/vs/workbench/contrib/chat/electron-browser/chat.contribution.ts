@@ -11,6 +11,11 @@ import { IInstantiationService } from '../../../../platform/instantiation/common
 import { ILanguageModelToolsService } from '../common/languageModelToolsService.js';
 import { FetchWebPageTool, FetchWebPageToolData } from './tools/fetchPageTool.js';
 import { registerChatDeveloperActions } from './actions/chatDeveloperActions.js';
+import { INativeWorkbenchEnvironmentService } from '../../../services/environment/electron-browser/environmentService.js';
+import { ICommandService } from '../../../../platform/commands/common/commands.js';
+import { CHAT_OPEN_ACTION_ID, IChatViewOpenOptions } from '../browser/actions/chatActions.js';
+import { ChatMode } from '../common/constants.js';
+import { IWorkbenchLayoutService } from '../../../services/layout/browser/layoutService.js';
 
 class NativeBuiltinToolsContribution extends Disposable implements IWorkbenchContribution {
 
@@ -25,6 +30,32 @@ class NativeBuiltinToolsContribution extends Disposable implements IWorkbenchCon
 		const editTool = instantiationService.createInstance(FetchWebPageTool);
 		this._register(toolsService.registerToolData(FetchWebPageToolData));
 		this._register(toolsService.registerToolImplementation(FetchWebPageToolData.id, editTool));
+	}
+}
+
+class ChatCommandLineSupportContribution extends Disposable {
+
+	static readonly ID = 'workbench.contrib.chatCommandLineSupport';
+
+	constructor(
+		@INativeWorkbenchEnvironmentService private readonly environmentService: INativeWorkbenchEnvironmentService,
+		@ICommandService private readonly commandService: ICommandService,
+		@IWorkbenchLayoutService private readonly layoutService: IWorkbenchLayoutService
+	) {
+		super();
+
+		this.run();
+	}
+
+	private async run() {
+		if (this.environmentService.args.prompt) {
+			const opts: IChatViewOpenOptions = {
+				query: this.environmentService.args.prompt,
+				mode: ChatMode.Agent
+			};
+			this.commandService.executeCommand(CHAT_OPEN_ACTION_ID, opts);
+			this.layoutService.toggleMaximizeAuxiliarySidebar();
+		}
 	}
 }
 
@@ -47,3 +78,4 @@ registerChatDeveloperActions();
 
 registerWorkbenchContribution2(KeywordActivationContribution.ID, KeywordActivationContribution, WorkbenchPhase.AfterRestored);
 registerWorkbenchContribution2(NativeBuiltinToolsContribution.ID, NativeBuiltinToolsContribution, WorkbenchPhase.AfterRestored);
+registerWorkbenchContribution2(ChatCommandLineSupportContribution.ID, ChatCommandLineSupportContribution, WorkbenchPhase.AfterRestored);
