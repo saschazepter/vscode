@@ -55,7 +55,7 @@ registerAction2(class NotebookConfigureLayoutAction extends Action2 {
 		});
 	}
 	run(accessor: ServicesAccessor): void {
-		accessor.get(ICommandService).executeCommand('workbench.action.openWalkthrough', { category: 'notebooks', step: 'notebookProfile' }, true);
+		// Walkthroughs have been disabled - no action taken
 	}
 });
 

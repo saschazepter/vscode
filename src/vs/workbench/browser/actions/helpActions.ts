@@ -327,8 +327,7 @@ class GetStartedWithAccessibilityFeatures extends Action2 {
 		});
 	}
 	run(accessor: ServicesAccessor): void {
-		const commandService = accessor.get(ICommandService);
-		commandService.executeCommand('workbench.action.openWalkthrough', 'SetupAccessibility');
+		// Walkthroughs have been disabled - no action taken
 	}
 }
 

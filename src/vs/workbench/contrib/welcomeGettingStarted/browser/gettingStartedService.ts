@@ -465,9 +465,10 @@ export class WalkthroughsService extends Disposable implements IWalkthroughsServ
 			if (activeEditor instanceof GettingStartedInput) {
 				this.commandService.executeCommand('workbench.action.keepEditor');
 			}
-			this.commandService.executeCommand('workbench.action.openWalkthrough', sectionToOpen, {
-				inactive: this.layoutService.hasFocus(Parts.EDITOR_PART) // do not steal the active editor away
-			});
+			// Walkthroughs have been disabled - no action taken
+			// this.commandService.executeCommand('workbench.action.openWalkthrough', sectionToOpen, {
+			// 	inactive: this.layoutService.hasFocus(Parts.EDITOR_PART) // do not steal the active editor away
+			// });
 		}
 	}
 

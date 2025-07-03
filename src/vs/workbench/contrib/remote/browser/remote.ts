@@ -379,7 +379,7 @@ class GetStartedHelpItem extends HelpItemBase {
 			return;
 		}
 
-		this.commandService.executeCommand('workbench.action.openWalkthrough', urlOrWalkthroughId);
+		// Walkthroughs have been disabled - no action taken for walkthrough IDs
 	}
 }
 

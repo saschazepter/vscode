@@ -168,7 +168,8 @@ registerAction2(class extends Action2 {
 		disposables.add(quickPick.onDidAccept(() => {
 			const selection = quickPick.selectedItems[0];
 			if (selection) {
-				commandService.executeCommand('workbench.action.openWalkthrough', selection.id);
+				// Walkthroughs have been disabled - no action taken
+				// commandService.executeCommand('workbench.action.openWalkthrough', selection.id);
 			}
 			quickPick.hide();
 		}));
