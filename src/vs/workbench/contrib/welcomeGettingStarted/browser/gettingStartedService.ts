@@ -495,23 +495,8 @@ export class WalkthroughsService extends Disposable implements IWalkthroughsServ
 	}
 
 	getWalkthroughs(): IResolvedWalkthrough[] {
-
-		const registeredCategories = [...this.gettingStartedContributions.values()];
-		const categoriesWithCompletion = registeredCategories
-			.map(category => {
-				return {
-					...category,
-					content: {
-						type: 'steps' as const,
-						steps: category.steps
-					}
-				};
-			})
-			.filter(category => category.content.type !== 'steps' || category.content.steps.length)
-			.filter(category => category.id !== 'NewWelcomeExperience')
-			.map(category => this.resolveWalkthrough(category));
-
-		return categoriesWithCompletion;
+		// Walkthroughs have been disabled - return empty array
+		return [];
 	}
 
 	private resolveWalkthrough(category: IWalkthrough): IResolvedWalkthrough {

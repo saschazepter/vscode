@@ -25,7 +25,7 @@ Registry.as<IEditorPaneRegistry>(EditorExtensions.EditorPane)
 	),
 		[new SyncDescriptor(WalkThroughInput)]);
 
-registerAction2(EditorWalkThroughAction);
+
 
 Registry.as<IEditorFactoryRegistry>(EditorExtensions.EditorFactory).registerEditorSerializer(EditorWalkThroughInputSerializer.ID, EditorWalkThroughInputSerializer);
 
@@ -39,11 +39,4 @@ KeybindingsRegistry.registerCommandAndKeybindingRule(WalkThroughPageUp);
 
 KeybindingsRegistry.registerCommandAndKeybindingRule(WalkThroughPageDown);
 
-MenuRegistry.appendMenuItem(MenuId.MenubarHelpMenu, {
-	group: '1_welcome',
-	command: {
-		id: 'workbench.action.showInteractivePlayground',
-		title: localize({ key: 'miPlayground', comment: ['&& denotes a mnemonic'] }, "Editor Playgrou&&nd")
-	},
-	order: 3
-});
+

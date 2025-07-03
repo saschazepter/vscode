@@ -34,67 +34,7 @@ import { GettingStartedAccessibleView } from './gettingStartedAccessibleView.js'
 
 export * as icons from './gettingStartedIcons.js';
 
-registerAction2(class extends Action2 {
-	constructor() {
-		super({
-			id: 'workbench.action.openWalkthrough',
-			title: localize2('miWelcome', 'Welcome'),
-			category: Categories.Help,
-			f1: true,
-			menu: {
-				id: MenuId.MenubarHelpMenu,
-				group: '1_welcome',
-				order: 1,
-			},
-			metadata: {
-				description: localize2('minWelcomeDescription', 'Opens a Walkthrough to help you get started in VS Code.')
-			}
-		});
-	}
 
-	public run(
-		accessor: ServicesAccessor,
-		walkthroughID: string | { category: string; step: string } | undefined,
-		optionsOrToSide: { toSide?: boolean; inactive?: boolean } | boolean | undefined
-	) {
-		const editorService = accessor.get(IEditorService);
-		const commandService = accessor.get(ICommandService);
-
-		const toSide = typeof optionsOrToSide === 'object' ? optionsOrToSide.toSide : optionsOrToSide;
-		const inactive = typeof optionsOrToSide === 'object' ? optionsOrToSide.inactive : false;
-
-		if (walkthroughID) {
-			const selectedCategory = typeof walkthroughID === 'string' ? walkthroughID : walkthroughID.category;
-			let selectedStep: string | undefined;
-			if (typeof walkthroughID === 'object' && 'category' in walkthroughID && 'step' in walkthroughID) {
-				selectedStep = `${walkthroughID.category}#${walkthroughID.step}`;
-			} else {
-				selectedStep = undefined;
-			}
-
-			const activeEditor = editorService.activeEditor;
-			// If the walkthrough is already open just reveal the step
-			if (selectedStep && activeEditor instanceof GettingStartedInput && activeEditor.selectedCategory === selectedCategory) {
-				activeEditor.showWelcome = false;
-				commandService.executeCommand('walkthroughs.selectStep', selectedStep);
-				return;
-			}
-
-			// Otherwise open the walkthrough editor with the selected category and step
-			const options: GettingStartedEditorOptions = { selectedCategory: selectedCategory, selectedStep: selectedStep, showWelcome: false, preserveFocus: toSide ?? false, inactive };
-			editorService.openEditor({
-				resource: GettingStartedInput.RESOURCE,
-				options
-			}, toSide ? SIDE_GROUP : undefined);
-
-		} else {
-			editorService.openEditor({
-				resource: GettingStartedInput.RESOURCE,
-				options: { preserveFocus: toSide ?? false, inactive }
-			}, toSide ? SIDE_GROUP : undefined);
-		}
-	}
-});
 
 Registry.as<IEditorFactoryRegistry>(EditorExtensions.EditorFactory).registerEditorSerializer(GettingStartedInput.ID, GettingStartedInputSerializer);
 Registry.as<IEditorPaneRegistry>(EditorExtensions.EditorPane).registerEditorPane(
