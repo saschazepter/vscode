@@ -17,7 +17,7 @@ import { isTemporaryWorkspace, IWorkspaceContextService, WorkbenchState } from '
 import { IStorageService, StorageScope, StorageTarget } from '../../platform/storage/common/storage.js';
 import { IConfigurationChangeEvent, IConfigurationService, isConfigured } from '../../platform/configuration/common/configuration.js';
 import { ITitleService } from '../services/title/browser/titleService.js';
-import { ServicesAccessor } from '../../platform/instantiation/common/instantiation.js';
+import { IInstantiationService, ServicesAccessor } from '../../platform/instantiation/common/instantiation.js';
 import { StartupKind, ILifecycleService } from '../services/lifecycle/common/lifecycle.js';
 import { getMenuBarVisibility, IPath, hasNativeTitlebar, hasCustomTitlebar, TitleBarSetting, CustomTitleBarVisibility, useWindowControlsOverlay, DEFAULT_WINDOW_SIZE, hasNativeMenu, MenuSettings } from '../../platform/window/common/window.js';
 import { IHostService } from '../services/host/browser/host.js';
@@ -336,7 +336,7 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 		this.registerLayoutListeners();
 
 		// State
-		this.initLayoutState(accessor.get(ILifecycleService), accessor.get(IFileService), accessor.get(ICoreExperimentationService));
+		this.initLayoutState(accessor.get(IInstantiationService), accessor.get(ILifecycleService), accessor.get(IFileService), accessor.get(ICoreExperimentationService));
 	}
 
 	private registerLayoutListeners(): void {
@@ -630,7 +630,7 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 		}
 	}
 
-	private initLayoutState(lifecycleService: ILifecycleService, fileService: IFileService, coreExperimentationService: ICoreExperimentationService): void {
+	private initLayoutState(instantiationService: IInstantiationService, lifecycleService: ILifecycleService, fileService: IFileService, coreExperimentationService: ICoreExperimentationService): void {
 		this._mainContainerDimension = getClientArea(this.parent, DEFAULT_WINDOW_DIMENSIONS); // running with fallback to ensure no error is thrown (https://github.com/microsoft/vscode/issues/240242)
 
 		this.stateModel = new LayoutStateModel(this.storageService, this.configurationService, this.contextService, coreExperimentationService, this.environmentService, this.viewDescriptorService);
@@ -674,7 +674,7 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 			},
 			editor: {
 				restoreEditors: this.shouldRestoreEditors(this.contextService, initialEditorsState),
-				editorsToOpen: this.resolveEditorsToOpen(fileService, initialEditorsState),
+				editorsToOpen: this.resolveEditorsToOpen(instantiationService, fileService, initialEditorsState),
 			},
 			views: {
 				defaults: this.getDefaultLayoutViews(this.environmentService, this.storageService),
@@ -786,7 +786,7 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 		return this.state.initialization.editor.restoreEditors;
 	}
 
-	private async resolveEditorsToOpen(fileService: IFileService, initialEditorsState: IInitialEditorsState | undefined): Promise<IEditorToOpen[]> {
+	private async resolveEditorsToOpen(instantiationService: IInstantiationService, fileService: IFileService, initialEditorsState: IInitialEditorsState | undefined): Promise<IEditorToOpen[]> {
 		if (initialEditorsState) {
 
 			// Merge editor (single)
@@ -847,7 +847,8 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 			}];
 		}
 
-		return [];
+		const editors = await instantiationService.invokeFunction(startupEditorFactory);
+		return editors.map(editor => ({ editor }));
 	}
 
 	private _openedDefaultEditors: boolean = false;
@@ -3092,5 +3093,17 @@ class LayoutStateModel extends Disposable {
 		return value as T | undefined;
 	}
 }
+
+//#endregion
+
+//#region Startup Editors
+
+let startupEditorFactory = (accessor: ServicesAccessor): Promise<IUntypedEditorInput[]> => {
+	return Promise.resolve([]);
+};
+
+export const setStartupEditorFactory = (factory: (accessor: ServicesAccessor) => Promise<IUntypedEditorInput[]>) => {
+	startupEditorFactory = factory;
+};
 
 //#endregion

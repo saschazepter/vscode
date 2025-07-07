@@ -7,7 +7,7 @@ import { URI } from '../../../../base/common/uri.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import * as arrays from '../../../../base/common/arrays.js';
 import { IWorkbenchContribution } from '../../../common/contributions.js';
-import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
+import { IInstantiationService, ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
 import { IEditorService } from '../../../services/editor/common/editorService.js';
 import { onUnexpectedError } from '../../../../base/common/errors.js';
 import { IWorkspaceContextService, UNKNOWN_EMPTY_WINDOW_WORKSPACE, WorkbenchState } from '../../../../platform/workspace/common/workspace.js';
@@ -32,6 +32,8 @@ import { ILogService } from '../../../../platform/log/common/log.js';
 import { IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { startupExpContext, StartupExperimentGroup } from '../../../services/coreExperimentation/common/coreExperimentationService.js';
 import { AuxiliaryBarMaximizedContext } from '../../../common/contextkeys.js';
+import { setStartupEditorFactory } from '../../../browser/layout.js';
+import { IUntypedEditorInput } from '../../../common/editor.js';
 
 export const restoreWalkthroughsConfigurationKey = 'workbench.welcomePage.restorableWalkthroughs';
 export type RestoreWalkthroughsConfigurationValue = { folder: string; category?: string; step?: string };
@@ -77,6 +79,12 @@ export class StartupPageEditorResolverContribution extends Disposable implements
 		);
 	}
 }
+
+setStartupEditorFactory(async (accessor: ServicesAccessor): Promise<IUntypedEditorInput[]> => {
+	return [{
+		resource: GettingStartedInput.RESOURCE
+	}];
+});
 
 export class StartupPageRunnerContribution extends Disposable implements IWorkbenchContribution {
 
