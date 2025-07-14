@@ -2007,6 +2007,16 @@ export class Repository {
 		await this.exec(args);
 	}
 
+	async worktree(options: { name: string; path: string; baseBranch?: string }): Promise<void> {
+		let args = ['worktree', 'add'];
+		if (options.baseBranch) {
+			args = [...args, '-b', options.name, options.path, options.baseBranch];
+		} else {
+			args = [...args, options.path, options.name];
+		}
+		await this.exec(args);
+	}
+
 	async deleteWorktree(path: string): Promise<void> {
 		const args = ['worktree', 'remove', path];
 		await this.exec(args);

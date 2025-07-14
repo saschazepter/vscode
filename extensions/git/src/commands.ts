@@ -3336,6 +3336,89 @@ export class CommandCenter {
 		}
 	}
 
+	@command('git.createWorktree', { repository: true })
+	async createWorktree(repository: Repository): Promise<void> {
+		const config = workspace.getConfiguration('git');
+		const showRefDetails = config.get<boolean>('showReferenceDetails') === true;
+
+		const getBranchPicks = async () => {
+			const refs = await repository.getRefs({
+				pattern: 'refs/heads',
+				includeCommitDetails: showRefDetails
+			});
+			const processors = [new RefProcessor(RefType.Head, BranchItem)];
+			const itemsProcessor = new RefItemsProcessor(repository, processors);
+			return itemsProcessor.processRefs(refs);
+		};
+
+		const placeHolder = l10n.t('Select a branch to create the new worktree from');
+		const choice = await this.pickRef(getBranchPicks(), placeHolder);
+
+		if (!(choice instanceof BranchItem) || !choice.refName) {
+			return;
+		}
+
+		const branchName = await this.promptForBranchName(repository);
+		if (!branchName) {
+			return;
+		}
+
+		const defaultWorktreePath = path.join(repository.root, branchName);
+
+		const quickPickItems: QuickPickItem[] = [
+			{
+				label: l10n.t('$(folder) Create worktree from branch'),
+				description: defaultWorktreePath,
+				detail: l10n.t('Will create worktree in repository root under ${branchName}'),
+			},
+			{
+				label: l10n.t('$(file-directory) Choose a specific folder...'),
+			},
+		];
+
+		const quickPick = window.createQuickPick();
+		quickPick.items = quickPickItems;
+		quickPick.placeholder = l10n.t('Confirm Create Worktree');
+		quickPick.show();
+
+		const selected = await new Promise<QuickPickItem | undefined>(resolve => {
+			quickPick.onDidAccept(() => resolve(quickPick.activeItems[0]));
+			quickPick.onDidHide(() => resolve(undefined));
+		});
+		quickPick.dispose();
+
+		let worktreePath: string | undefined;
+
+		if (!selected) {
+			return;
+		}
+
+		if (selected.label === quickPickItems[0].label) {
+			worktreePath = defaultWorktreePath;
+		} else {
+			const folderUris = await window.showOpenDialog({
+				canSelectFolders: true,
+				canSelectFiles: false,
+				canSelectMany: false,
+				openLabel: l10n.t('Select folder for worktree'),
+			});
+			if (!folderUris || folderUris.length === 0) {
+				return;
+			}
+			worktreePath = path.join(folderUris[0].fsPath, branchName);
+		}
+
+		if (!worktreePath) {
+			return;
+		}
+
+		await repository.worktree({
+			name: branchName,
+			path: worktreePath,
+			baseBranch: choice.refName
+		});
+	}
+
 	@command('git.deleteWorktree', { repository: true })
 	async deleteWorktree(repository: Repository): Promise<void> {
 		const worktreePicks = async (): Promise<WorktreeDeleteItem[] | QuickPickItem[]> => {
