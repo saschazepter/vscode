@@ -3358,27 +3358,31 @@ export class CommandCenter {
 			return;
 		}
 
-		const branchName = await this.promptForBranchName(repository);
-		if (!branchName) {
-			return;
-		}
+		// const branchName = await this.promptForBranchName(repository);
+		// if (!branchName) {
+		// 	return;
+		// }
 
-		const defaultWorktreePath = path.join(repository.root, branchName);
+		const defaultWorktreePath = path.join(repository.root, choice.refName);
 
 		const quickPickItems: QuickPickItem[] = [
 			{
-				label: l10n.t('$(folder) Create worktree from branch'),
-				description: defaultWorktreePath,
-				detail: l10n.t('Will create worktree in repository root under ${branchName}'),
+				label: l10n.t('$(folder) Create worktree in'),
+				description: l10n.t(`<root>/${choice.refName}`),
+				detail: l10n.t(`Will create worktree in ${repository.root} under ${choice.refName}`),
 			},
 			{
-				label: l10n.t('$(file-directory) Choose a specific folder...'),
+				label: l10n.t('$(folder) Change root folder...'),
+				description: l10n.t('Current root: {0}', repository.root),
+			},
+			{
+				label: l10n.t('$(folder) Choose a specific folder...'),
 			},
 		];
 
 		const quickPick = window.createQuickPick();
 		quickPick.items = quickPickItems;
-		quickPick.placeholder = l10n.t('Confirm Create Worktree');
+		quickPick.placeholder = l10n.t('Select a location for the new worktree');
 		quickPick.show();
 
 		const selected = await new Promise<QuickPickItem | undefined>(resolve => {
@@ -3387,7 +3391,7 @@ export class CommandCenter {
 		});
 		quickPick.dispose();
 
-		let worktreePath: string | undefined;
+		let worktreePath: string;
 
 		if (!selected) {
 			return;
@@ -3400,12 +3404,12 @@ export class CommandCenter {
 				canSelectFolders: true,
 				canSelectFiles: false,
 				canSelectMany: false,
-				openLabel: l10n.t('Select folder for worktree'),
+				openLabel: l10n.t('Choose worktree folder'),
 			});
 			if (!folderUris || folderUris.length === 0) {
 				return;
 			}
-			worktreePath = path.join(folderUris[0].fsPath, branchName);
+			worktreePath = path.join(folderUris[0].fsPath, choice.refName);
 		}
 
 		if (!worktreePath) {
@@ -3413,9 +3417,8 @@ export class CommandCenter {
 		}
 
 		await repository.worktree({
-			name: branchName,
+			name: choice.refName,
 			path: worktreePath,
-			baseBranch: choice.refName
 		});
 	}
 
