@@ -348,6 +348,11 @@ export class NativeHostMainService extends Disposable implements INativeHostMain
 		window?.focus({ mode: options?.mode ?? FocusMode.Transfer });
 	}
 
+	async hasFocus(windowId: number | undefined, options?: INativeHostOptions): Promise<boolean> {
+		const window = this.windowById(options?.targetWindowId, windowId);
+		return window?.win?.isFocused() ?? false;
+	}
+
 	async setMinimumSize(windowId: number | undefined, width: number | undefined, height: number | undefined): Promise<void> {
 		const window = this.codeWindowById(windowId);
 		if (window?.win) {

@@ -6,6 +6,7 @@
 import * as dom from '../../../../../base/browser/dom.js';
 import { renderStringAsPlaintext } from '../../../../../base/browser/markdownRenderer.js';
 import { Button, ButtonWithDropdown, IButton, IButtonOptions } from '../../../../../base/browser/ui/button/button.js';
+import { CodeWindow } from '../../../../../base/browser/window.js';
 import { Action } from '../../../../../base/common/actions.js';
 import { Emitter, Event } from '../../../../../base/common/event.js';
 import { IMarkdownString, MarkdownString } from '../../../../../base/common/htmlContent.js';
@@ -15,7 +16,7 @@ import { localize } from '../../../../../nls.js';
 import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
 import { IContextMenuService } from '../../../../../platform/contextview/browser/contextView.js';
 import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
-import { FocusMode } from '../../../../../platform/native/common/native.js';
+import { FocusMode, INativeHostService } from '../../../../../platform/native/common/native.js';
 import { IOpenerService } from '../../../../../platform/opener/common/opener.js';
 import { defaultButtonStyles } from '../../../../../platform/theme/browser/defaultStyles.js';
 import { IHostService } from '../../../../services/host/browser/host.js';
@@ -128,7 +129,8 @@ abstract class BaseChatConfirmationWidget extends Disposable {
 		@IContextMenuService contextMenuService: IContextMenuService,
 		@IConfigurationService private readonly _configurationService: IConfigurationService,
 		@IHostService private readonly _hostService: IHostService,
-		@IViewsService private readonly _viewsService: IViewsService
+		@IViewsService private readonly _viewsService: IViewsService,
+		@INativeHostService private readonly _nativeHostService: INativeHostService
 	) {
 		super();
 
@@ -195,10 +197,15 @@ abstract class BaseChatConfirmationWidget extends Disposable {
 		}
 	}
 
-	private async notifyConfirmationNeeded(targetWindow: Window): Promise<void> {
+	private async notifyConfirmationNeeded(targetWindow: CodeWindow): Promise<void> {
 
 		// Focus Window
 		this._hostService.focus(targetWindow, { mode: FocusMode.Notify });
+
+		const hasFocus = await this._nativeHostService.hasFocus({ targetWindowId: targetWindow.vscodeWindowId });
+		if (hasFocus) {
+			return;
+		}
 
 		// Notify
 		const title = renderStringAsPlaintext(this.title);
@@ -239,9 +246,10 @@ export class ChatConfirmationWidget extends BaseChatConfirmationWidget {
 		@IContextMenuService contextMenuService: IContextMenuService,
 		@IConfigurationService configurationService: IConfigurationService,
 		@IHostService hostService: IHostService,
-		@IViewsService viewsService: IViewsService
+		@IViewsService viewsService: IViewsService,
+		@INativeHostService nativeHostService: INativeHostService
 	) {
-		super(title, subtitle, buttons, instantiationService, contextMenuService, configurationService, hostService, viewsService);
+		super(title, subtitle, buttons, instantiationService, contextMenuService, configurationService, hostService, viewsService, nativeHostService);
 		this.updateMessage(message);
 	}
 
@@ -267,9 +275,10 @@ export class ChatCustomConfirmationWidget extends BaseChatConfirmationWidget {
 		@IContextMenuService contextMenuService: IContextMenuService,
 		@IConfigurationService configurationService: IConfigurationService,
 		@IHostService hostService: IHostService,
-		@IViewsService viewsService: IViewsService
+		@IViewsService viewsService: IViewsService,
+		@INativeHostService nativeHostService: INativeHostService
 	) {
-		super(title, subtitle, buttons, instantiationService, contextMenuService, configurationService, hostService, viewsService);
+		super(title, subtitle, buttons, instantiationService, contextMenuService, configurationService, hostService, viewsService, nativeHostService);
 		this.renderMessage(messageElement, container);
 	}
 }

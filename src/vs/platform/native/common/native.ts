@@ -135,9 +135,10 @@ export interface ICommonNativeHostService {
 	/**
 	 * Make the window focused.
 	 * @param options specify the specific window to focus and the focus mode.
-	 * Defaults to {@link FocusMode.Transfer}.
+	 * Defaults to `FocusMode.Transfer`.
 	 */
 	focusWindow(options?: INativeHostOptions & { mode?: FocusMode }): Promise<void>;
+	hasFocus(options?: INativeHostOptions): Promise<boolean>;
 
 	// Dialogs
 	showMessageBox(options: MessageBoxOptions & INativeHostOptions): Promise<MessageBoxReturnValue>;
