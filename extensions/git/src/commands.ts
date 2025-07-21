@@ -3330,9 +3330,18 @@ export class CommandCenter {
 					pattern: 'refs/heads',
 					includeCommitDetails: showRefDetails
 				});
+
+				// Filter out local branches that are already checked out in worktrees
+				const worktrees = await repository.getWorktrees();
+				const worktreeBranchNames = new Set(worktrees.map(w => w.name));
+				const availableRefs = refs.filter(ref => {
+					const refName = ref.name;
+					return refName !== undefined && !worktreeBranchNames.has(refName);
+				});
+
 				const processors = [new RefProcessor(RefType.Head, BranchItem)];
 				const itemsProcessor = new RefItemsProcessor(repository, processors);
-				return itemsProcessor.processRefs(refs);
+				return itemsProcessor.processRefs(availableRefs);
 			};
 
 			const placeHolder = l10n.t('Select a branch to create the new worktree from');
