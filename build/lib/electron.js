@@ -120,7 +120,7 @@ function darwinBundleDocumentTypes(types, icon) {
 const { electronVersion, msBuildId } = util.getElectronVersion();
 exports.config = {
     version: electronVersion,
-    tag: product.electronRepository ? `v${electronVersion}-${msBuildId}` : undefined,
+    tag: product.electronRepository ? `v${electronVersion}-${msBuildId}-dev` : undefined,
     productAppName: product.nameLong,
     companyName: 'Microsoft Corporation',
     copyright: 'Copyright (C) 2024 Microsoft. All rights reserved',
