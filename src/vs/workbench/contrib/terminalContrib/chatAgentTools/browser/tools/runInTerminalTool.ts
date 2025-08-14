@@ -18,7 +18,7 @@ import { IInstantiationService } from '../../../../../../platform/instantiation/
 import { IStorageService, StorageScope, StorageTarget } from '../../../../../../platform/storage/common/storage.js';
 import { ITelemetryService } from '../../../../../../platform/telemetry/common/telemetry.js';
 import { TerminalCapability } from '../../../../../../platform/terminal/common/capabilities/capabilities.js';
-import { ITerminalLogService } from '../../../../../../platform/terminal/common/terminal.js';
+import { ITerminalLogService, TerminalSettingId } from '../../../../../../platform/terminal/common/terminal.js';
 import { IWorkspaceContextService } from '../../../../../../platform/workspace/common/workspace.js';
 import { IRemoteAgentService } from '../../../../../services/remote/common/remoteAgentService.js';
 import { IChatService, type IChatTerminalToolInvocationData } from '../../../../chat/common/chatService.js';
@@ -518,7 +518,14 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 				switch (toolTerminal.shellIntegrationQuality) {
 					case ShellIntegrationQuality.None: {
 						strategy = this._instantiationService.createInstance(NoneExecuteStrategy, toolTerminal.instance);
-						toolResultMessage = '$(info) Enable [shell integration](https://code.visualstudio.com/docs/terminal/shell-integration) to improve command detection';
+
+						// Check if shell integration is disabled in settings
+						const shellIntegrationEnabled = this._configurationService.getValue<boolean>(TerminalSettingId.ShellIntegrationEnabled);
+						if (shellIntegrationEnabled === false) {
+							toolResultMessage = '$(info) Enable the [`terminal.integrated.shellIntegration.enabled`](command:workbench.action.openSettings?["terminal.integrated.shellIntegration.enabled"]) setting to improve command detection';
+						} else {
+							toolResultMessage = '$(info) Enable [shell integration](https://code.visualstudio.com/docs/terminal/shell-integration) to improve command detection';
+						}
 						break;
 					}
 					case ShellIntegrationQuality.Basic: {
