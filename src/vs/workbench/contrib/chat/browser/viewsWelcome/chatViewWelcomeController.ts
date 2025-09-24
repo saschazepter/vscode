@@ -120,6 +120,9 @@ export interface IChatSuggestedPrompts {
 	readonly icon?: ThemeIcon;
 	readonly label: string;
 	readonly prompt: string;
+	readonly title?: string;
+	readonly description?: string;
+	readonly kind?: 'promptRecommendation';
 }
 
 export interface IChatViewWelcomeRenderOptions {
@@ -185,19 +188,36 @@ export class ChatViewWelcomePart extends Disposable {
 			// Render suggested prompts for both new user and regular modes
 			if (content.suggestedPrompts && content.suggestedPrompts.length) {
 				const suggestedPromptsContainer = dom.append(this.element, $('.chat-welcome-view-suggested-prompts'));
+				if (content.suggestedPrompts.some(prompt => prompt.kind === 'promptRecommendation')) {
+					suggestedPromptsContainer.classList.add('prompt-recommendations');
+				}
 				for (const prompt of content.suggestedPrompts) {
 					const promptElement = dom.append(suggestedPromptsContainer, $('.chat-welcome-view-suggested-prompt'));
+					if (prompt.kind === 'promptRecommendation') {
+						promptElement.classList.add('prompt-recommendation');
+					}
 					// Make the prompt element keyboard accessible
 					promptElement.setAttribute('role', 'button');
 					promptElement.setAttribute('tabindex', '0');
-					promptElement.setAttribute('aria-label', localize('suggestedPromptAriaLabel', 'Suggested prompt: {0}', prompt.label));
+					const accessibleLabel = prompt.title ? `/${prompt.title}${prompt.description ? ` ${prompt.description}` : ''}` : prompt.label;
+					promptElement.setAttribute('aria-label', localize('suggestedPromptAriaLabel', 'Suggested prompt: {0}', accessibleLabel));
 					if (prompt.icon) {
 						const iconElement = dom.append(promptElement, $('.chat-welcome-view-suggested-prompt-icon'));
 						iconElement.appendChild(renderIcon(prompt.icon));
 					}
 					const labelElement = dom.append(promptElement, $('.chat-welcome-view-suggested-prompt-label'));
-					labelElement.textContent = prompt.label;
-					labelElement.title = localize('runPromptTitle', "Suggested prompt: {0}", prompt.prompt);
+					if (prompt.title) {
+						const titleElement = dom.append(labelElement, dom.$('span.chat-welcome-view-suggested-prompt-title'));
+						titleElement.textContent = `/${prompt.title}`;
+						titleElement.setAttribute('aria-hidden', 'true');
+						if (prompt.description) {
+							const descriptionElement = dom.append(labelElement, dom.$('span.chat-welcome-view-suggested-prompt-description'));
+							descriptionElement.textContent = ` ${prompt.description}`;
+						}
+					} else {
+						labelElement.textContent = prompt.label;
+					}
+					labelElement.title = localize('runPromptTitle', "Suggested prompt: {0}", accessibleLabel);
 					const executePrompt = () => {
 						type SuggestedPromptClickEvent = { suggestedPrompt: string };
 

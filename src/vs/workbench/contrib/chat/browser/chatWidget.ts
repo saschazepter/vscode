@@ -1466,17 +1466,21 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			}
 		}
 
-		// Sort by score (descending) and take top 5
+		// Sort by score (descending) and take top 3
 		promptsWithScores.sort((a, b) => b.score - a.score);
-		const topPrompts = promptsWithScores.slice(0, 5);
+		const topPrompts = promptsWithScores.slice(0, 3);
 
 		// Build the final result array
 		for (const { promptName } of topPrompts) {
-			const description = this.promptDescriptionsCache.get(promptName);
+			const description = this.promptDescriptionsCache.get(promptName) ?? '';
+			const trimmedDescription = description.trim();
+			const promptLabel = trimmedDescription ? `/${promptName} ${trimmedDescription}` : `/${promptName}`;
 			result.push({
-				icon: Codicon.run,
-				label: description || localize('chatWidget.promptFile.suggestion', "/{0}", promptName),
-				prompt: `/${promptName} `
+				label: promptLabel,
+				prompt: `/${promptName} `,
+				title: promptName,
+				description: trimmedDescription || undefined,
+				kind: 'promptRecommendation'
 			});
 		}
 
