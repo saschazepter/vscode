@@ -365,8 +365,9 @@ export class ChatWidget extends Disposable implements IChatWidget {
 	// Cache for prompt file descriptions to avoid async calls during rendering
 	private readonly promptDescriptionsCache = new Map<string, string>();
 
-	// UI state for temporarily hiding chat history
+	// UI state for temporarily hiding empty state items
 	private _historyVisible = true;
+	private _labelsVisible = true;
 
 	private set viewModel(viewModel: ChatViewModel | undefined) {
 		if (this._viewModel === viewModel) {
@@ -913,6 +914,15 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		}
 	}
 
+	public toggleLabelsVisibility(): void {
+		this._labelsVisible = !this._labelsVisible;
+		this.updateLabelsVisibilityClass();
+	}
+
+	private updateLabelsVisibilityClass(): void {
+		this.welcomeMessageContainer.classList.toggle('hide-chat-labels', !this._labelsVisible);
+	}
+
 	private onDidChangeItems(skipDynamicLayout?: boolean) {
 		// Update context key when items change
 		this.updateEmptyStateWithHistoryContext();
@@ -1060,20 +1070,27 @@ export class ChatWidget extends Disposable implements IChatWidget {
 				);
 				dom.append(this.welcomeMessageContainer, this.welcomePart.value.element);
 
-				// Add right-click context menu to the entire welcome container
-				this._register(dom.addDisposableListener(this.welcomeMessageContainer, dom.EventType.CONTEXT_MENU, (e) => {
-					e.preventDefault();
-					e.stopPropagation();
-					this.contextMenuService.showContextMenu({
-						menuId: MenuId.ChatWelcomeHistoryContext,
-						menuActionOptions: { shouldForwardArgs: true },
-						contextKeyService: this.contextKeyService.createOverlay([
-							['chatHistoryVisible', this._historyVisible]
-						]),
-						getAnchor: () => ({ x: e.clientX, y: e.clientY }),
-						getActionsContext: () => ({})
-					});
-				}));
+				// Apply current labels visibility state after rendering
+				const historyEnabled = this.configurationService.getValue<boolean>(ChatConfiguration.EmptyStateHistoryEnabled);
+				this.updateLabelsVisibilityClass();
+
+				// Add right-click context menu to the entire welcome container (only when history is enabled)
+				if (historyEnabled) {
+					this._register(dom.addDisposableListener(this.welcomeMessageContainer, dom.EventType.CONTEXT_MENU, (e) => {
+						e.preventDefault();
+						e.stopPropagation();
+						this.contextMenuService.showContextMenu({
+							menuId: MenuId.ChatWelcomeHistoryContext,
+							menuActionOptions: { shouldForwardArgs: true },
+							contextKeyService: this.contextKeyService.createOverlay([
+								['chatHistoryVisible', this._historyVisible],
+								['chatLabelsVisible', this._labelsVisible]
+							]),
+							getAnchor: () => ({ x: e.clientX, y: e.clientY }),
+							getActionsContext: () => ({})
+						});
+					}));
+				}
 			}
 		}
 
@@ -1268,7 +1285,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		const disclaimerMessage = expEmptyState
 			? this.chatDisclaimer
 			: localize('chatMessage', "Chat is powered by AI, so mistakes are possible. Review output carefully before use.");
-		const icon = expEmptyState ? Codicon.chatSparkle : Codicon.copilotLarge;
+		const icon = undefined;
 
 
 		if (this.isLockedToCodingAgent) {
@@ -1281,7 +1298,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 				title: localize('codingAgentTitle', "Delegate to {0}", this._codingAgentPrefix),
 				message,
 				icon: Codicon.sendToRemoteAgent,
-				additionalMessage,
+				additionalMessage
 			};
 		}
 
@@ -1335,7 +1352,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			inputPart: this.inputPart.element,
 			additionalMessage,
 			isNew: true,
-			suggestedPrompts: this.getNewSuggestedPrompts(),
+			suggestedPrompts: this.getNewSuggestedPrompts()
 		};
 		return welcomeContent;
 	}

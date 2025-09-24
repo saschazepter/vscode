@@ -113,6 +113,7 @@ export interface IChatViewWelcomeContent {
 	readonly inputPart?: HTMLElement;
 	readonly isNew?: boolean;
 	readonly suggestedPrompts?: readonly IChatSuggestedPrompts[];
+	readonly labelsVisible?: boolean;
 }
 
 export interface IChatSuggestedPrompts {
@@ -146,12 +147,6 @@ export class ChatViewWelcomePart extends Disposable {
 
 		try {
 			const renderer = this.instantiationService.createInstance(MarkdownRenderer, {});
-
-			// Icon
-			const icon = dom.append(this.element, $('.chat-welcome-view-icon'));
-			if (content.icon) {
-				icon.appendChild(renderIcon(content.icon));
-			}
 
 			// Title
 			const title = dom.append(this.element, $('.chat-welcome-view-title'));

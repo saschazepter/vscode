@@ -33,6 +33,16 @@
 		container-type: inline-size;
 		container-name: chat-welcome;
 
+		&.hide-chat-labels {
+			.chat-welcome-view-title,
+			.chat-welcome-view-disclaimer,
+			.chat-welcome-view-additional-message,
+			.chat-welcome-view-message,
+			.chat-welcome-new-view-message {
+				display: none;
+			}
+		}
+
 		&.has-chat-history {
 			flex-direction: column;
 			justify-content: flex-start;
