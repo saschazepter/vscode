@@ -89,6 +89,7 @@ export namespace ChatContextKeys {
 	export const inEmptyStateWithHistoryEnabled = new RawContextKey<boolean>('chatInEmptyStateWithHistoryEnabled', false, { type: 'boolean', description: localize('chatInEmptyStateWithHistoryEnabled', "True when chat empty state history is enabled AND chat is in empty state.") });
 
 	export const labelsVisible = new RawContextKey<boolean>('chatLabelsVisible', true, { type: 'boolean', description: localize('chatLabelsVisible', "True when chat labels (title and disclaimers) are visible in empty state.") });
+	export const promptRecommendationsVisible = new RawContextKey<boolean>('chatPromptRecommendationsVisible', true, { type: 'boolean', description: localize('chatPromptRecommendationsVisible', "True when prompt file recommendations are visible in the chat empty state.") });
 
 	export const sessionType = new RawContextKey<string>('chatSessionType', '', { type: 'string', description: localize('chatSessionType', "The type of the current chat session item.") });
 	export const isHistoryItem = new RawContextKey<boolean>('chatIsHistoryItem', false, { type: 'boolean', description: localize('chatIsHistoryItem', "True when the chat session item is from history.") });

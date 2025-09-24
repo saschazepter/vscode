@@ -330,6 +330,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 	private requestInProgress: IContextKey<boolean>;
 	private agentInInput: IContextKey<boolean>;
 	private inEmptyStateWithHistoryEnabledKey: IContextKey<boolean>;
+	private promptRecommendationsVisibleContextKey: IContextKey<boolean>;
 	private currentRequest: Promise<void> | undefined;
 
 	private _visible = false;
@@ -368,6 +369,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 	// UI state for temporarily hiding empty state items
 	private _historyVisible = true;
 	private _labelsVisible = true;
+	private _promptRecommendationsVisible = true;
 
 	private set viewModel(viewModel: ChatViewModel | undefined) {
 		if (this._viewModel === viewModel) {
@@ -489,6 +491,8 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		ChatContextKeys.inQuickChat.bindTo(contextKeyService).set(isQuickChat(this));
 		this.agentInInput = ChatContextKeys.inputHasAgent.bindTo(contextKeyService);
 		this.requestInProgress = ChatContextKeys.requestInProgress.bindTo(contextKeyService);
+		this.promptRecommendationsVisibleContextKey = ChatContextKeys.promptRecommendationsVisible.bindTo(contextKeyService);
+		this.promptRecommendationsVisibleContextKey.set(this._promptRecommendationsVisible);
 
 		// Context key for when empty state history is enabled and in empty state
 		this.inEmptyStateWithHistoryEnabledKey = ChatContextKeys.inEmptyStateWithHistoryEnabled.bindTo(contextKeyService);
@@ -919,8 +923,21 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		this.updateLabelsVisibilityClass();
 	}
 
+	public togglePromptRecommendationsVisibility(): void {
+		this._promptRecommendationsVisible = !this._promptRecommendationsVisible;
+		this.updatePromptRecommendationsVisibilityClass();
+	}
+
 	private updateLabelsVisibilityClass(): void {
 		this.welcomeMessageContainer.classList.toggle('hide-chat-labels', !this._labelsVisible);
+	}
+
+	private updatePromptRecommendationsVisibilityClass(): void {
+		if (!this.welcomeMessageContainer) {
+			return;
+		}
+		this.welcomeMessageContainer.classList.toggle('hide-chat-prompt-recommendations', !this._promptRecommendationsVisible);
+		this.promptRecommendationsVisibleContextKey.set(this._promptRecommendationsVisible);
 	}
 
 	private onDidChangeItems(skipDynamicLayout?: boolean) {
@@ -1073,6 +1090,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 				// Apply current labels visibility state after rendering
 				const historyEnabled = this.configurationService.getValue<boolean>(ChatConfiguration.EmptyStateHistoryEnabled);
 				this.updateLabelsVisibilityClass();
+				this.updatePromptRecommendationsVisibilityClass();
 
 				// Add right-click context menu to the entire welcome container (only when history is enabled)
 				if (historyEnabled) {
@@ -1084,7 +1102,8 @@ export class ChatWidget extends Disposable implements IChatWidget {
 							menuActionOptions: { shouldForwardArgs: true },
 							contextKeyService: this.contextKeyService.createOverlay([
 								['chatHistoryVisible', this._historyVisible],
-								['chatLabelsVisible', this._labelsVisible]
+								['chatLabelsVisible', this._labelsVisible],
+								['chatPromptRecommendationsVisible', this._promptRecommendationsVisible]
 							]),
 							getAnchor: () => ({ x: e.clientX, y: e.clientY }),
 							getActionsContext: () => ({})

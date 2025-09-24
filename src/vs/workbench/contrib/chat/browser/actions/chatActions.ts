@@ -2037,6 +2037,26 @@ MenuRegistry.appendMenuItem(MenuId.ChatWelcomeHistoryContext, {
 	)
 });
 
+MenuRegistry.appendMenuItem(MenuId.ChatWelcomeHistoryContext, {
+	command: {
+		id: 'workbench.action.chat.toggleChatPromptRecommendationsVisibility',
+		title: localize('chat.showChatPromptRecommendations.label', "✓ Prompt File Recommendations")
+	},
+	group: '1_modify',
+	order: 3,
+	when: ContextKeyExpr.equals('chatPromptRecommendationsVisible', true)
+});
+
+MenuRegistry.appendMenuItem(MenuId.ChatWelcomeHistoryContext, {
+	command: {
+		id: 'workbench.action.chat.toggleChatPromptRecommendationsVisibility',
+		title: localize('chat.hideChatPromptRecommendations.label', "Prompt File Recommendations")
+	},
+	group: '1_modify',
+	order: 3,
+	when: ContextKeyExpr.equals('chatPromptRecommendationsVisible', false)
+});
+
 registerAction2(class ToggleChatHistoryVisibilityAction extends Action2 {
 	constructor() {
 		super({
@@ -2075,6 +2095,26 @@ registerAction2(class ToggleChatLabelsVisibilityAction extends Action2 {
 		const widget = widgetService.lastFocusedWidget;
 		if (widget && 'toggleLabelsVisibility' in widget) {
 			(widget as any).toggleLabelsVisibility();
+		}
+	}
+});
+
+registerAction2(class ToggleChatPromptRecommendationsVisibilityAction extends Action2 {
+	constructor() {
+		super({
+			id: 'workbench.action.chat.toggleChatPromptRecommendationsVisibility',
+			title: localize2('chat.toggleChatPromptRecommendationsVisibility.label', "Prompt File Recommendations"),
+			category: CHAT_CATEGORY,
+			precondition: ChatContextKeys.enabled
+		});
+	}
+
+	async run(accessor: ServicesAccessor): Promise<void> {
+		const widgetService = accessor.get(IChatWidgetService);
+		const widgets = widgetService.getWidgetsByLocations(ChatAgentLocation.Chat);
+		const widget = widgetService.lastFocusedWidget ?? widgets[0];
+		if (widget && 'togglePromptRecommendationsVisibility' in widget) {
+			(widget as any).togglePromptRecommendationsVisibility();
 		}
 	}
 });

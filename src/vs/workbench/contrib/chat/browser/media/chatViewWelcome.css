@@ -43,6 +43,12 @@
 			}
 		}
 
+		&.hide-chat-prompt-recommendations {
+			.chat-welcome-view-suggested-prompts {
+				display: none;
+			}
+		}
+
 		&.has-chat-history {
 			flex-direction: column;
 			justify-content: flex-start;
@@ -237,7 +243,7 @@ div.chat-welcome-view {
 			justify-content: flex-start;
 			gap: 4px;
 			row-gap: 4px;
-			margin-top: 8px;
+			margin-top: 48px;
 			width: 100%;
 			max-width: 100%;
 			align-self: stretch;
