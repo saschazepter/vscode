@@ -1329,7 +1329,45 @@ export function registerChatActions() {
 			const editorUri = editor.getModel()?.uri;
 			if (editorUri) {
 				const widgetService = accessor.get(IChatWidgetService);
-				widgetService.getWidgetByInputUri(editorUri)?.focusLastMessage();
+				widgetService.getWidgetByInputUri(editorUri)?.focusResponseItem();
+			}
+		}
+	});
+
+	registerAction2(class FocusMostRecentlyFocusedChatAction extends EditorAction2 {
+		constructor() {
+			super({
+				id: 'workbench.chat.action.focusLastFocused',
+				title: localize2('actions.interactiveSession.focusLastFocused', 'Focus Last Focused Chat List Item'),
+				precondition: ContextKeyExpr.and(ChatContextKeys.inChatInput),
+				category: CHAT_CATEGORY,
+				keybinding: [
+					// On mac, require that the cursor is at the top of the input, to avoid stealing cmd+up to move the cursor to the top
+					{
+						when: ContextKeyExpr.and(ChatContextKeys.inputCursorAtTop, ChatContextKeys.inQuickChat.negate()),
+						primary: KeyMod.CtrlCmd | KeyCode.UpArrow | KeyMod.Shift,
+						weight: KeybindingWeight.EditorContrib + 1,
+					},
+					// On win/linux, ctrl+up can always focus the chat list
+					{
+						when: ContextKeyExpr.and(ContextKeyExpr.or(IsWindowsContext, IsLinuxContext), ChatContextKeys.inQuickChat.negate()),
+						primary: KeyMod.CtrlCmd | KeyCode.UpArrow | KeyMod.Shift,
+						weight: KeybindingWeight.EditorContrib + 1,
+					},
+					{
+						when: ContextKeyExpr.and(ChatContextKeys.inChatSession, ChatContextKeys.inQuickChat),
+						primary: KeyMod.CtrlCmd | KeyCode.DownArrow | KeyMod.Shift,
+						weight: KeybindingWeight.WorkbenchContrib + 1,
+					}
+				]
+			});
+		}
+
+		runEditorCommand(accessor: ServicesAccessor, editor: ICodeEditor): void | Promise<void> {
+			const editorUri = editor.getModel()?.uri;
+			if (editorUri) {
+				const widgetService = accessor.get(IChatWidgetService);
+				widgetService.getWidgetByInputUri(editorUri)?.focusResponseItem(true);
 			}
 		}
 	});
@@ -2011,52 +2049,6 @@ MenuRegistry.appendMenuItem(MenuId.ChatWelcomeHistoryContext, {
 	when: ContextKeyExpr.equals('chatHistoryVisible', false)
 });
 
-MenuRegistry.appendMenuItem(MenuId.ChatWelcomeHistoryContext, {
-	command: {
-		id: 'workbench.action.chat.toggleChatLabelsVisibility',
-		title: localize('chat.showChatLabels.label', "✓ Title and Disclaimers")
-	},
-	group: '1_modify',
-	order: 2,
-	when: ContextKeyExpr.and(
-		ContextKeyExpr.equals('chatLabelsVisible', true),
-		ContextKeyExpr.equals('config.chat.emptyState.history.enabled', true)
-	)
-});
-
-MenuRegistry.appendMenuItem(MenuId.ChatWelcomeHistoryContext, {
-	command: {
-		id: 'workbench.action.chat.toggleChatLabelsVisibility',
-		title: localize('chat.hideChatLabels.label', "Title and Disclaimers")
-	},
-	group: '1_modify',
-	order: 2,
-	when: ContextKeyExpr.and(
-		ContextKeyExpr.equals('chatLabelsVisible', false),
-		ContextKeyExpr.equals('config.chat.emptyState.history.enabled', true)
-	)
-});
-
-MenuRegistry.appendMenuItem(MenuId.ChatWelcomeHistoryContext, {
-	command: {
-		id: 'workbench.action.chat.toggleChatPromptRecommendationsVisibility',
-		title: localize('chat.showChatPromptRecommendations.label', "✓ Prompt File Recommendations")
-	},
-	group: '1_modify',
-	order: 3,
-	when: ContextKeyExpr.equals('chatPromptRecommendationsVisible', true)
-});
-
-MenuRegistry.appendMenuItem(MenuId.ChatWelcomeHistoryContext, {
-	command: {
-		id: 'workbench.action.chat.toggleChatPromptRecommendationsVisibility',
-		title: localize('chat.hideChatPromptRecommendations.label', "Prompt File Recommendations")
-	},
-	group: '1_modify',
-	order: 3,
-	when: ContextKeyExpr.equals('chatPromptRecommendationsVisible', false)
-});
-
 registerAction2(class ToggleChatHistoryVisibilityAction extends Action2 {
 	constructor() {
 		super({
@@ -2071,50 +2063,8 @@ registerAction2(class ToggleChatHistoryVisibilityAction extends Action2 {
 		const chatWidgetService = accessor.get(IChatWidgetService);
 		const widgets = chatWidgetService.getWidgetsByLocations(ChatAgentLocation.Chat);
 		const widget = widgets?.[0];
-		if (widget && 'toggleHistoryVisibility' in widget) {
-			(widget as any).toggleHistoryVisibility();
-		}
-	}
-});
-
-registerAction2(class ToggleChatLabelsVisibilityAction extends Action2 {
-	constructor() {
-		super({
-			id: 'workbench.action.chat.toggleChatLabelsVisibility',
-			title: localize2('chat.toggleChatLabelsVisibility.label', "Title and Disclaimers"),
-			category: CHAT_CATEGORY,
-			precondition: ContextKeyExpr.and(
-				ChatContextKeys.enabled,
-				ContextKeyExpr.equals('config.chat.emptyState.history.enabled', true)
-			)
-		});
-	}
-
-	async run(accessor: ServicesAccessor): Promise<void> {
-		const widgetService = accessor.get(IChatWidgetService);
-		const widget = widgetService.lastFocusedWidget;
-		if (widget && 'toggleLabelsVisibility' in widget) {
-			(widget as any).toggleLabelsVisibility();
-		}
-	}
-});
-
-registerAction2(class ToggleChatPromptRecommendationsVisibilityAction extends Action2 {
-	constructor() {
-		super({
-			id: 'workbench.action.chat.toggleChatPromptRecommendationsVisibility',
-			title: localize2('chat.toggleChatPromptRecommendationsVisibility.label', "Prompt File Recommendations"),
-			category: CHAT_CATEGORY,
-			precondition: ChatContextKeys.enabled
-		});
-	}
-
-	async run(accessor: ServicesAccessor): Promise<void> {
-		const widgetService = accessor.get(IChatWidgetService);
-		const widgets = widgetService.getWidgetsByLocations(ChatAgentLocation.Chat);
-		const widget = widgetService.lastFocusedWidget ?? widgets[0];
-		if (widget && 'togglePromptRecommendationsVisibility' in widget) {
-			(widget as any).togglePromptRecommendationsVisibility();
+		if (widget) {
+			widget.toggleHistoryVisibility();
 		}
 	}
 });
@@ -2123,7 +2073,7 @@ registerAction2(class OpenChatEmptyStateSettingsAction extends Action2 {
 	constructor() {
 		super({
 			id: 'workbench.action.chat.openChatEmptyStateSettings',
-			title: localize2('chat.openChatEmptyStateSettings.label', "Configure Chat Empty State"),
+			title: localize2('chat.openChatEmptyStateSettings.label', "Configure Empty State"),
 			menu: [
 				{
 					id: MenuId.ChatWelcomeHistoryContext,

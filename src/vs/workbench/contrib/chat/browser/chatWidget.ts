@@ -36,7 +36,6 @@ import { IConfigurationService } from '../../../../platform/configuration/common
 import { ContextKeyExpr, IContextKey, IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { IContextMenuService } from '../../../../platform/contextview/browser/contextView.js';
 import { IHoverService, WorkbenchHoverDelegate } from '../../../../platform/hover/browser/hover.js';
-import { IHoverDelegate } from '../../../../base/browser/ui/hover/hoverDelegate.js';
 import { IHoverOptions } from '../../../../base/browser/ui/hover/hover.js';
 import { HoverPosition } from '../../../../base/browser/ui/hover/hoverWidget.js';
 import { IWorkbenchLayoutService, Position } from '../../../services/layout/browser/layoutService.js';
@@ -203,9 +202,7 @@ class ChatHistoryListRenderer implements IListRenderer<IChatHistoryListItem, ICh
 	constructor(
 		private readonly onDidClickItem: (item: IChatHistoryListItem) => void,
 		private readonly formatHistoryTimestamp: (timestamp: number, todayMidnightMs: number) => string,
-		private readonly todayMidnightMs: number,
-		private readonly hoverDelegate: IHoverDelegate,
-		@IHoverService private readonly hoverService: IHoverService
+		private readonly todayMidnightMs: number
 	) { }
 
 	renderTemplate(container: HTMLElement): IChatHistoryTemplate {
@@ -229,10 +226,6 @@ class ChatHistoryListRenderer implements IListRenderer<IChatHistoryListItem, ICh
 		title.textContent = element.title;
 		date.textContent = this.formatHistoryTimestamp(element.lastMessageDate, this.todayMidnightMs);
 		container.setAttribute('aria-label', element.title);
-
-		// Add hover tooltip for the title when it's truncated
-		const hoverContent = element.title;
-		disposables.add(this.hoverService.setupManagedHover(this.hoverDelegate, title, hoverContent));
 
 		disposables.add(dom.addDisposableListener(container, dom.EventType.CLICK, () => {
 			this.onDidClickItem(element);
@@ -368,8 +361,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 
 	// UI state for temporarily hiding empty state items
 	private _historyVisible = true;
-	private _labelsVisible = true;
-	private _promptRecommendationsVisible = true;
+	private _mostRecentlyFocusedItemIndex: number = -1;
 
 	private set viewModel(viewModel: ChatViewModel | undefined) {
 		if (this._viewModel === viewModel) {
@@ -905,39 +897,13 @@ export class ChatWidget extends Disposable implements IChatWidget {
 
 	public toggleHistoryVisibility(): void {
 		this._historyVisible = !this._historyVisible;
-		// Find and hide/show the existing history section
-		const historyRoot = this.welcomeMessageContainer.querySelector('.chat-welcome-history-root') as HTMLElement;
+		// Find and hide/show the existing history section via CSS class toggles
+		const historyRoot = this.welcomeMessageContainer.querySelector<HTMLElement>('.chat-welcome-history-root');
 		if (historyRoot) {
-			if (this._historyVisible) {
-				historyRoot.style.removeProperty('display');
-				this.welcomeMessageContainer.classList.add('has-chat-history');
-			} else {
-				historyRoot.style.display = 'none';
-				this.welcomeMessageContainer.classList.remove('has-chat-history');
-			}
+			historyRoot.classList.toggle('chat-welcome-history-hidden', !this._historyVisible);
 		}
-	}
-
-	public toggleLabelsVisibility(): void {
-		this._labelsVisible = !this._labelsVisible;
-		this.updateLabelsVisibilityClass();
-	}
-
-	public togglePromptRecommendationsVisibility(): void {
-		this._promptRecommendationsVisible = !this._promptRecommendationsVisible;
-		this.updatePromptRecommendationsVisibilityClass();
-	}
-
-	private updateLabelsVisibilityClass(): void {
-		this.welcomeMessageContainer.classList.toggle('hide-chat-labels', !this._labelsVisible);
-	}
-
-	private updatePromptRecommendationsVisibilityClass(): void {
-		if (!this.welcomeMessageContainer) {
-			return;
-		}
-		this.welcomeMessageContainer.classList.toggle('hide-chat-prompt-recommendations', !this._promptRecommendationsVisible);
-		this.promptRecommendationsVisibleContextKey.set(this._promptRecommendationsVisible);
+		const shouldShowHistory = this._historyVisible && !!historyRoot;
+		this.welcomeMessageContainer.classList.toggle('has-chat-history', shouldShowHistory);
 	}
 
 	private onDidChangeItems(skipDynamicLayout?: boolean) {
@@ -1139,7 +1105,8 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			}
 
 			this.historyListContainer = dom.append(container, $('.chat-welcome-history-list'));
-			this.welcomeMessageContainer.classList.toggle('has-chat-history', initialHistoryItems.length > 0);
+			historyRoot.classList.toggle('chat-welcome-history-hidden', !this._historyVisible);
+			this.welcomeMessageContainer.classList.toggle('has-chat-history', this._historyVisible && initialHistoryItems.length > 0);
 
 			// Compute today's midnight once for label decisions
 			const todayMidnight = new Date();
@@ -1160,8 +1127,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 					ChatHistoryListRenderer,
 					async (item) => await this.openHistorySession(item.sessionId),
 					(timestamp, todayMs) => this.formatHistoryTimestamp(timestamp, todayMs),
-					todayMidnightMs,
-					hoverDelegate
+					todayMidnightMs
 				);
 				this.historyList = this._register(this.instantiationService.createInstance(
 					WorkbenchList<IChatHistoryListItem>,
@@ -1200,7 +1166,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			previousChatsLink.setAttribute('tabindex', '0');
 			previousChatsLink.setAttribute('aria-label', localize('chat.history.showMoreAriaLabel', 'Open chat history'));
 
-			// Add hover tooltip with the same styling and logic as other hover states
+			// Add hover tooltip for the link at the end of the list
 			const hoverContent = localize('chat.history.showMoreHover', 'Show chat history...');
 			this._register(this.hoverService.setupManagedHover(hoverDelegate, previousChatsLink, hoverContent));
 
@@ -1699,6 +1665,18 @@ export class ChatWidget extends Disposable implements IChatWidget {
 					listInactiveSelectionIconForeground: undefined,
 				}
 			}));
+
+		this._register(this.tree.onDidChangeFocus(() => {
+			const focused = this.tree.getFocus();
+			if (focused && focused.length > 0) {
+				const focusedItem = focused[0];
+				const items = this.tree.getNode(null).children;
+				const idx = items.findIndex(i => i.element === focusedItem);
+				if (idx !== -1) {
+					this._mostRecentlyFocusedItemIndex = idx;
+				}
+			}
+		}));
 		this._register(this.tree.onContextMenu(e => this.onContextMenu(e)));
 
 		this._register(this.tree.onDidChangeContentHeight(() => {
@@ -2220,6 +2198,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			return;
 		}
 
+		this._mostRecentlyFocusedItemIndex = items.indexOf(node);
 		this.tree.setFocus([node.element]);
 		this.tree.domFocus();
 	}
@@ -2481,7 +2460,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 				this.currentRequest = result.responseCompletePromise.then(() => {
 					const responses = this.viewModel?.getItems().filter(isResponseVM);
 					const lastResponse = responses?.[responses.length - 1];
-					this.chatAccessibilityService.acceptResponse(lastResponse, requestId, options?.isVoiceInput);
+					this.chatAccessibilityService.acceptResponse(this, this.container, lastResponse, requestId, options?.isVoiceInput);
 					if (lastResponse?.result?.nextQuestion) {
 						const { prompt, participant, command } = lastResponse.result.nextQuestion;
 						const question = formatChatQuestion(this.chatAgentService, this.location, prompt, participant, command);
@@ -2526,18 +2505,22 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		return this.renderer.getLastFocusedFileTreeForResponse(response);
 	}
 
-	focusLastMessage(): void {
+	focusResponseItem(lastFocused?: boolean): void {
 		if (!this.viewModel) {
 			return;
 		}
-
 		const items = this.tree.getNode(null).children;
-		const lastItem = items[items.length - 1];
-		if (!lastItem) {
+		let item;
+		if (lastFocused) {
+			item = items[this._mostRecentlyFocusedItemIndex] ?? items[items.length - 1];
+		} else {
+			item = items[items.length - 1];
+		}
+		if (!item) {
 			return;
 		}
 
-		this.tree.setFocus([lastItem.element]);
+		this.tree.setFocus([item.element]);
 		this.tree.domFocus();
 	}
 
