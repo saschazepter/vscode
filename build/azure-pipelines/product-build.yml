@@ -427,7 +427,7 @@ extends:
           variables:
             BUILDSECMON_OPT_IN: true
           jobs:
-            - ${{ if eq(variables['VSCODE_CIBUILD'], true) }}:
+            - ${{ if eq(variables['VSCODE_CIBUILD'], false) }}:
               - template: build/azure-pipelines/darwin/product-build-darwin-ci.yml@self
                 parameters:
                   VSCODE_CIBUILD: ${{ variables.VSCODE_CIBUILD }}

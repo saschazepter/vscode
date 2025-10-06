@@ -1,6 +1,4 @@
 parameters:
-  - name: VSCODE_ARCH
-    type: string
   - name: VSCODE_CIBUILD
     type: boolean
   - name: VSCODE_RUN_ELECTRON_TESTS
