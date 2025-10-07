@@ -23,6 +23,7 @@ import { UriIdentityService } from '../../../../../platform/uriIdentity/common/u
 import { WorkspaceTrustEnablementService, WorkspaceTrustManagementService, WORKSPACE_TRUST_STORAGE_KEY } from '../../common/workspaceTrust.js';
 import { TestContextService, TestStorageService, TestWorkspaceTrustEnablementService } from '../../../../test/common/workbenchTestServices.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
+import { Mutable } from '../../../../../base/common/types.js';
 
 suite('Workspace Trust', () => {
 	const store = ensureNoDisposablesAreLeakedInTestSuite();
@@ -109,8 +110,7 @@ suite('Workspace Trust', () => {
 			const trustInfo: IWorkspaceTrustInfo = { uriTrustInfo: [{ uri: URI.parse('file:///Folder'), trusted: true }] };
 			storageService.store(WORKSPACE_TRUST_STORAGE_KEY, JSON.stringify(trustInfo), StorageScope.APPLICATION, StorageTarget.MACHINE);
 
-			// eslint-disable-next-line local/code-no-any-casts
-			(environmentService as any).filesToOpenOrCreate = [{ fileUri: URI.parse('file:///Folder/file.txt') }];
+			(environmentService as Mutable<IWorkbenchEnvironmentService>).filesToOpenOrCreate = [{ fileUri: URI.parse('file:///Folder/file.txt') }];
 			instantiationService.stub(IWorkbenchEnvironmentService, { ...environmentService });
 
 			workspaceService.setWorkspace(new Workspace('empty-workspace'));
@@ -122,8 +122,7 @@ suite('Workspace Trust', () => {
 		test('empty workspace - trusted, open untrusted file', async () => {
 			await configurationService.setUserConfiguration('security', getUserSettings(true, true));
 
-			// eslint-disable-next-line local/code-no-any-casts
-			(environmentService as any).filesToOpenOrCreate = [{ fileUri: URI.parse('file:///Folder/foo.txt') }];
+			(environmentService as Mutable<IWorkbenchEnvironmentService>).filesToOpenOrCreate = [{ fileUri: URI.parse('file:///Folder/foo.txt') }];
 			instantiationService.stub(IWorkbenchEnvironmentService, { ...environmentService });
 
 			workspaceService.setWorkspace(new Workspace('empty-workspace'));
