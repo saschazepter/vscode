@@ -170,7 +170,16 @@ async function exchangeCodeForToken(
 	if (enterpriseUri) {
 		body.append('github_enterprise', enterpriseUri.toString(true));
 	}
-	const result = await fetching(endpointUri.toString(true), {
+
+	// Append code_verifier as query parameter to endpointUri
+	// Refs https://docs.github.com/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-user-access-token-for-a-github-app
+	const endpointUriWithCodeVerifier = endpointUri.with({
+		query: endpointUri.query
+			? `${endpointUri.query}&code_verifier=${encodeURIComponent(codeVerifier)}`
+			: `code_verifier=${encodeURIComponent(codeVerifier)}`
+	});
+
+	const result = await fetching(endpointUriWithCodeVerifier.toString(true), {
 		logger,
 		retryFallbacks: true,
 		expectJSON: true,
