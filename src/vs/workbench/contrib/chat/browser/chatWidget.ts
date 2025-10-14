@@ -2643,6 +2643,78 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		this.welcomeMessageContainer.style.height = `${contentHeight - welcomeOffset}px`;
 		this.welcomeMessageContainer.style.paddingBottom = `${welcomeOffset}px`;
 
+		// Responsive welcome view hiding logic
+		const availableHeight = contentHeight - welcomeOffset;
+		const welcomeElement = this.welcomeMessageContainer.querySelector('.chat-welcome-view') as HTMLElement;
+		if (welcomeElement && welcomeElement.offsetParent) {
+			// Only apply if Copilot is installed and suggested prompts are present
+			const copilotInstalled = !!this.chatAgentService.getAgent('copilot');
+			const suggestedPrompts = welcomeElement.querySelector('.chat-welcome-view-suggested-prompts');
+			if (copilotInstalled && suggestedPrompts && suggestedPrompts.childElementCount > 0) {
+				const elementsInOrder = [
+					'.chat-welcome-view-icon',
+					'.chat-welcome-view-title',
+					'.chat-welcome-view-disclaimer',
+					'.chat-welcome-view-message',
+					'.chat-welcome-view-additional-message',
+					'.chat-welcome-history-root'
+				];
+				// Show all elements first
+				elementsInOrder.forEach(selector => {
+					const el = welcomeElement.querySelector(selector) as HTMLElement;
+					if (el) {
+						el.style.display = '';
+					}
+				});
+				// Ensure spacing between consecutive elements is at least 8px
+				const MIN_GAP = 8;
+				// Build list of present elements (in order)
+				const presentElements: HTMLElement[] = [];
+				for (const selector of elementsInOrder) {
+					const el = welcomeElement.querySelector(selector) as HTMLElement;
+					if (el) {
+						// reset display so we measure the natural layout
+						el.style.display = '';
+						presentElements.push(el);
+					}
+				}
+
+				// Iteratively hide elements that collide (less than MIN_GAP) with the previous visible element
+				let changed = true;
+				while (changed) {
+					changed = false;
+					let prevBottom = -Infinity;
+					for (const el of presentElements) {
+						if (el.style.display === 'none') {
+							continue;
+						}
+						const rect = el.getBoundingClientRect();
+						if (prevBottom !== -Infinity && rect.top - prevBottom < MIN_GAP) {
+							// Hide this element and mark that we changed layout
+							el.style.display = 'none';
+							changed = true;
+						} else {
+							prevBottom = rect.bottom;
+						}
+					}
+					// Recompute presentElements order won't change, but bounding rects will next loop
+				}
+
+				// If the welcome view still doesn't fit, hide elements (in order) until it does
+				let totalHeight = welcomeElement.offsetHeight;
+				for (const selector of elementsInOrder) {
+					if (totalHeight <= availableHeight - MIN_GAP) {
+						break;
+					}
+					const el = welcomeElement.querySelector(selector) as HTMLElement;
+					if (el && el.style.display !== 'none') {
+						el.style.display = 'none';
+						totalHeight = welcomeElement.offsetHeight;
+					}
+				}
+			}
+		}
+
 		this.renderer.layout(width);
 
 		const lastResponseIsRendering = isResponseVM(lastItem) && lastItem.renderData;

@@ -1,4 +1,4 @@
----
+Clarity ---
 mode: Plan
 description: Clarify before planning in more detail
 ---
