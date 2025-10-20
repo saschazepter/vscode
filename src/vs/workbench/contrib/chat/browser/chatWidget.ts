@@ -212,7 +212,7 @@ class ChatHistoryListRenderer implements IListRenderer<IChatHistoryListItem, ICh
 
 		container.classList.add('chat-welcome-history-item');
 		const title = dom.append(container, $('.chat-welcome-history-title'));
-		const date = dom.append(container, $('.chat-welcome-history-date'));
+		const date = dom.append(container, $('.timestamp.chat-welcome-history-date'));
 
 		container.tabIndex = 0;
 		container.setAttribute('role', 'button');
@@ -1294,9 +1294,9 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			const diffMs = Date.now() - last;
 			const minMs = 60 * 1000;
 			const adjusted = diffMs < minMs ? Date.now() - minMs : last;
-			return fromNow(adjusted, true, true);
+			return fromNow(adjusted, false);
 		}
-		return fromNowByDay(last, true, true);
+		return fromNowByDay(last, false);
 	}
 
 	private async openHistorySession(sessionId: string): Promise<void> {
