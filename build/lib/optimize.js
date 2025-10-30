@@ -125,7 +125,7 @@ function bundleESMTask(opts) {
                 format: 'esm',
                 sourcemap: 'external',
                 plugins: [contentsMapper, externalOverride],
-                target: ['es2022'],
+                target: ['es2024'],
                 loader: {
                     '.ttf': 'file',
                     '.svg': 'file',
@@ -197,7 +197,7 @@ function minifyTask(src, sourceMapBaseUrl) {
                 outdir: '.',
                 packages: 'external', // "external all the things", see https://esbuild.github.io/api/#packages
                 platform: 'neutral', // makes esm
-                target: ['es2022'],
+                target: ['es2024'],
                 write: false,
             }).then(res => {
                 const jsOrCSSFile = res.outputFiles.find(f => /\.(js|css)$/.test(f.path));
