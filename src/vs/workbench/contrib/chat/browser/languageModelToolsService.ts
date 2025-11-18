@@ -474,7 +474,7 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 		}
 
 		if (!isEligibleForAutoApproval && prepared?.confirmationMessages?.title && !prepared.confirmationMessages.disclaimer) {
-			prepared.confirmationMessages.disclaimer = localize('defaultToolConfirmation.disclaimer', 'Auto approval for \'{0}\' is restricted by \'{1}\'.', getToolReferenceName(tool.data), ChatConfiguration.EligibleForAutoApproval);
+			prepared.confirmationMessages.disclaimer = localize('defaultToolConfirmation.disclaimer', 'Auto approval for \'{0}\' is restricted by \'{1}\'.', getToolReferenceFullName(tool.data), ChatConfiguration.EligibleForAutoApproval);
 		}
 
 		if (prepared?.confirmationMessages?.title) {
