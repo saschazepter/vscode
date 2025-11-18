@@ -8,7 +8,7 @@ import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { MarkdownString } from '../../../../base/common/htmlContent.js';
 import { Lazy } from '../../../../base/common/lazy.js';
-import { Disposable, DisposableMap, DisposableStore, toDisposable } from '../../../../base/common/lifecycle.js';
+import { Disposable, DisposableMap, DisposableStore, IDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { equals } from '../../../../base/common/objects.js';
 import { autorun } from '../../../../base/common/observable.js';
 import { basename } from '../../../../base/common/resources.js';
@@ -45,21 +45,29 @@ export class McpLanguageModelToolContribution extends Disposable implements IWor
 	) {
 		super();
 
+		type Rec = { source?: ToolDataSource } & IDisposable;
+
 		// Keep tools in sync with the tools service.
-		const previous = this._register(new DisposableMap<IMcpServer, DisposableStore>());
+		const previous = this._register(new DisposableMap<IMcpServer, Rec>());
 		this._register(autorun(reader => {
 			const servers = mcpService.servers.read(reader);
 
 			const toDelete = new Set(previous.keys());
 			for (const server of servers) {
-				if (previous.has(server)) {
-					toDelete.delete(server);
-					continue;
+				const previousRec = previous.get(server);
+				if (previousRec) {
+					if (!previousRec.source || equals(previousRec.source, mcpServerToSourceData(server, reader))) {
+						toDelete.delete(server);
+						continue;
+					}
+
+					previousRec.dispose();
 				}
 
 				const store = new DisposableStore();
+				const rec: Rec = { dispose: () => store.dispose() };
 				const toolSet = new Lazy(() => {
-					const source = mcpServerToSourceData(server);
+					const source = rec.source = mcpServerToSourceData(server);
 					const toolSet = store.add(this._toolsService.createToolSet(
 						source,
 						server.definition.id, server.definition.label,
@@ -73,7 +81,7 @@ export class McpLanguageModelToolContribution extends Disposable implements IWor
 				});
 
 				this._syncTools(server, toolSet, store);
-				previous.set(server, store);
+				previous.set(server, rec);
 			}
 
 			for (const key of toDelete) {
