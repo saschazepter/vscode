@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { asArray } from '../../../../base/common/arrays.js';
+import { softAssertNever } from '../../../../base/common/assert.js';
 import { BugIndicatingError } from '../../../../base/common/errors.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { IMarkdownString, MarkdownString, isMarkdownString } from '../../../../base/common/htmlContent.js';
@@ -12,7 +13,7 @@ import { ResourceMap } from '../../../../base/common/map.js';
 import { revive } from '../../../../base/common/marshalling.js';
 import { Schemas } from '../../../../base/common/network.js';
 import { equals } from '../../../../base/common/objects.js';
-import { IObservable, autorunSelfDisposable, observableFromEvent, observableSignalFromEvent } from '../../../../base/common/observable.js';
+import { IObservable, autorun, autorunSelfDisposable, observableFromEvent, observableSignalFromEvent } from '../../../../base/common/observable.js';
 import { basename, isEqual } from '../../../../base/common/resources.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { URI, UriComponents, UriDto, isUriComponents } from '../../../../base/common/uri.js';
@@ -28,7 +29,7 @@ import { migrateLegacyTerminalToolSpecificData } from './chat.js';
 import { IChatAgentCommand, IChatAgentData, IChatAgentResult, IChatAgentService, UserSelectedTools, reviveSerializedAgent } from './chatAgents.js';
 import { IChatEditingService, IChatEditingSession } from './chatEditingService.js';
 import { ChatRequestTextPart, IParsedChatRequest, reviveParsedChatRequest } from './chatParserTypes.js';
-import { ChatAgentVoteDirection, ChatAgentVoteDownReason, ChatResponseClearToPreviousToolInvocationReason, IChatAgentMarkdownContentWithVulnerability, IChatClearToPreviousToolInvocation, IChatCodeCitation, IChatCommandButton, IChatConfirmation, IChatContentInlineReference, IChatContentReference, IChatEditingSessionAction, IChatElicitationRequest, IChatExtensionsContent, IChatFollowup, IChatLocationData, IChatMarkdownContent, IChatMcpServersStarting, IChatMultiDiffData, IChatNotebookEdit, IChatPrepareToolInvocationPart, IChatProgress, IChatProgressMessage, IChatPullRequestContent, IChatResponseCodeblockUriPart, IChatResponseProgressFileTreeData, IChatSessionContext, IChatTask, IChatTaskSerialized, IChatTextEdit, IChatThinkingPart, IChatToolInvocation, IChatToolInvocationSerialized, IChatTreeData, IChatUndoStop, IChatUsedContext, IChatWarningMessage, isIUsedContext } from './chatService.js';
+import { ChatAgentVoteDirection, ChatAgentVoteDownReason, ChatResponseClearToPreviousToolInvocationReason, ElicitationState, IChatAgentMarkdownContentWithVulnerability, IChatClearToPreviousToolInvocation, IChatCodeCitation, IChatCommandButton, IChatConfirmation, IChatContentInlineReference, IChatContentReference, IChatEditingSessionAction, IChatElicitationRequest, IChatElicitationRequestSerialized, IChatExtensionsContent, IChatFollowup, IChatLocationData, IChatMarkdownContent, IChatMcpServersStarting, IChatMultiDiffData, IChatNotebookEdit, IChatPrepareToolInvocationPart, IChatProgress, IChatProgressMessage, IChatPullRequestContent, IChatResponseCodeblockUriPart, IChatResponseProgressFileTreeData, IChatSessionContext, IChatTask, IChatTaskSerialized, IChatTextEdit, IChatThinkingPart, IChatToolInvocation, IChatToolInvocationSerialized, IChatTreeData, IChatUndoStop, IChatUsedContext, IChatWarningMessage, isIUsedContext } from './chatService.js';
 import { LocalChatSessionUri } from './chatUri.js';
 import { ChatRequestToolReferenceEntry, IChatRequestVariableEntry } from './chatVariableEntries.js';
 import { ChatAgentLocation, ChatModeKind } from './constants.js';
@@ -144,6 +145,7 @@ export type IChatProgressResponseContent =
 	| IChatUndoStop
 	| IChatPrepareToolInvocationPart
 	| IChatElicitationRequest
+	| IChatElicitationRequestSerialized
 	| IChatClearToPreviousToolInvocation
 	| IChatMcpServersStarting;
 
@@ -214,9 +216,10 @@ export interface IChatResponseModel {
 
 export type ChatResponseModelChangeReason =
 	| { reason: 'other' }
+	| { reason: 'completedRequest' }
 	| { reason: 'undoStop'; id: string };
 
-const defaultChatResponseModelChangeReason: ChatResponseModelChangeReason = { reason: 'other' };
+export const defaultChatResponseModelChangeReason: ChatResponseModelChangeReason = { reason: 'other' };
 
 export interface IChatRequestModeInfo {
 	kind: ChatModeKind | undefined; // is undefined in case of modeId == 'apply'
@@ -394,7 +397,8 @@ class AbstractResponse implements IResponse {
 				case 'pullRequest':
 				case 'undoStop':
 				case 'prepareToolInvocation':
-				case 'elicitation':
+				case 'elicitation2':
+				case 'elicitationSerialized':
 				case 'thinking':
 				case 'multiDiffData':
 				case 'mcpServersStarting':
@@ -432,7 +436,8 @@ class AbstractResponse implements IResponse {
 					segment = { text: part.content.value };
 					break;
 				default:
-					// Ignore any unknown/obsolete parts
+					// Ignore any unknown/obsolete parts, but assert that all are handled:
+					softAssertNever(part);
 					continue;
 			}
 
@@ -921,6 +926,7 @@ export class ChatResponseModel extends Disposable implements IChatResponseModel 
 			return this._response.value.some(part =>
 				part.kind === 'toolInvocation' && part.state.read(r).type === IChatToolInvocation.StateKind.WaitingForConfirmation
 				|| part.kind === 'confirmation' && part.isUsed === false
+				|| part.kind === 'elicitation2' && part.state.read(r) === ElicitationState.Pending
 			);
 		});
 
@@ -1006,13 +1012,13 @@ export class ChatResponseModel extends Disposable implements IChatResponseModel 
 		}
 
 		this._isComplete = true;
-		this._onDidChange.fire(defaultChatResponseModelChangeReason);
+		this._onDidChange.fire({ reason: 'completedRequest' });
 	}
 
 	cancel(): void {
 		this._isComplete = true;
 		this._isCanceled = true;
-		this._onDidChange.fire(defaultChatResponseModelChangeReason);
+		this._onDidChange.fire({ reason: 'completedRequest' });
 	}
 
 	setFollowups(followups: IChatFollowup[] | undefined): void {
@@ -1071,28 +1077,19 @@ export interface IChatModel extends IDisposable {
 	readonly initialLocation: ChatAgentLocation;
 	readonly title: string;
 	readonly hasCustomTitle: boolean;
-	readonly requestInProgress: boolean;
-	readonly requestInProgressObs: IObservable<boolean>;
+	/** True whenever a request is currently running */
+	readonly requestInProgress: IObservable<boolean>;
+	/** True whenever a request needs user interaction to continue */
+	readonly requestNeedsInput: IObservable<boolean>;
 	readonly inputPlaceholder?: string;
 	readonly editingSession?: IChatEditingSession | undefined;
-	/**
-	 * Sets requests as 'disabled', removing them from the UI. If a request ID
-	 * is given without undo stops, it's removed entirely. If an undo stop
-	 * is given, all content after that stop is removed.
-	 */
-	setDisabledRequests(requestIds: IChatRequestDisablement[]): void;
+	readonly checkpoint: IChatRequestModel | undefined;
 	getRequests(): IChatRequestModel[];
 	setCheckpoint(requestId: string | undefined): void;
-	readonly checkpoint: IChatRequestModel | undefined;
-	addRequest(message: IParsedChatRequest, variableData: IChatRequestVariableData, attempt: number, modeInfo?: IChatRequestModeInfo, chatAgent?: IChatAgentData, slashCommand?: IChatAgentCommand, confirmation?: string, locationData?: IChatLocationData, attachments?: IChatRequestVariableEntry[], isCompleteAddedRequest?: boolean, modelId?: string, userSelectedTools?: UserSelectedTools): IChatRequestModel;
-	acceptResponseProgress(request: IChatRequestModel, progress: IChatProgress, quiet?: boolean): void;
-	setResponse(request: IChatRequestModel, result: IChatAgentResult): void;
-	completeResponse(request: IChatRequestModel): void;
-	setCustomTitle(title: string): void;
+
 	toExport(): IExportableChatData;
 	toJSON(): ISerializableChatData;
 	readonly contributedChatSession: IChatSessionContext | undefined;
-	setContributedChatSession(session: IChatSessionContext | undefined): void;
 }
 
 export interface ISerializableChatsData {
@@ -1313,7 +1310,6 @@ export interface IChatRemoveRequestEvent {
 
 export interface IChatSetHiddenEvent {
 	kind: 'setHidden';
-	hiddenRequestIds: readonly IChatRequestDisablement[];
 }
 
 export interface IChatMoveEvent {
@@ -1375,12 +1371,8 @@ export class ChatModel extends Disposable implements IChatModel {
 		return this._sessionResource;
 	}
 
-	get requestInProgress(): boolean {
-		return this.requestInProgressObs.get();
-	}
-
-	readonly requestInProgressObs: IObservable<boolean>;
-
+	readonly requestInProgress: IObservable<boolean>;
+	readonly requestNeedsInput: IObservable<boolean>;
 
 	get hasRequests(): boolean {
 		return this._requests.length > 0;
@@ -1479,21 +1471,42 @@ export class ChatModel extends Disposable implements IChatModel {
 		this._initialLocation = initialData?.initialLocation ?? initialModelProps.initialLocation;
 		this._canUseTools = initialModelProps.canUseTools;
 
-		const lastResponse = observableFromEvent(this, this.onDidChange, () => this._requests.at(-1)?.response);
+		const lastRequest = observableFromEvent(this, this.onDidChange, () => this._requests.at(-1));
 
-		this.requestInProgressObs = lastResponse.map((response, r) => {
-			return response?.isInProgress.read(r) ?? false;
+		this._register(autorun(reader => {
+			const request = lastRequest.read(reader);
+			if (!request?.response) {
+				return;
+			}
+
+			reader.store.add(request.response.onDidChange(ev => {
+				if (ev.reason === 'completedRequest') {
+					this._onDidChange.fire({ kind: 'completedRequest', request });
+				}
+			}));
+		}));
+
+		this.requestInProgress = lastRequest.map((request, r) => {
+			return request?.response?.isInProgress.read(r) ?? false;
+		});
+
+		this.requestNeedsInput = lastRequest.map((request, r) => {
+			return request?.response?.isPendingConfirmation.read(r) ?? false;
 		});
 	}
 
 	startEditingSession(isGlobalEditingSession?: boolean, transferFromSession?: IChatEditingSession): void {
-		this._editingSession ??= this._register(
+		const session = this._editingSession ??= this._register(
 			transferFromSession
 				? this.chatEditingService.transferEditingSession(this, transferFromSession)
 				: isGlobalEditingSession
 					? this.chatEditingService.startOrContinueGlobalEditingSession(this)
 					: this.chatEditingService.createEditingSession(this)
 		);
+
+		this._register(autorun(reader => {
+			this._setDisabledRequests(session.requestDisablement.read(reader));
+		}));
 	}
 
 	private currentEditedFileEvents = new ResourceMap<IChatAgentEditedFileEvent>();
@@ -1671,7 +1684,7 @@ export class ChatModel extends Disposable implements IChatModel {
 		return this._checkpoint;
 	}
 
-	setDisabledRequests(requestIds: IChatRequestDisablement[]) {
+	private _setDisabledRequests(requestIds: IChatRequestDisablement[]) {
 		this._requests.forEach((request) => {
 			const shouldBeRemovedOnSend = requestIds.find(r => r.requestId === request.id);
 			request.shouldBeRemovedOnSend = shouldBeRemovedOnSend;
@@ -1680,10 +1693,7 @@ export class ChatModel extends Disposable implements IChatModel {
 			}
 		});
 
-		this._onDidChange.fire({
-			kind: 'setHidden',
-			hiddenRequestIds: requestIds,
-		});
+		this._onDidChange.fire({ kind: 'setHidden' });
 	}
 
 	addRequest(message: IParsedChatRequest, variableData: IChatRequestVariableData, attempt: number, modeInfo?: IChatRequestModeInfo, chatAgent?: IChatAgentData, slashCommand?: IChatAgentCommand, confirmation?: string, locationData?: IChatLocationData, attachments?: IChatRequestVariableEntry[], isCompleteAddedRequest?: boolean, modelId?: string, userSelectedTools?: UserSelectedTools): ChatRequestModel {
@@ -1763,7 +1773,6 @@ export class ChatModel extends Disposable implements IChatModel {
 			throw new Error('acceptResponseProgress: Adding progress to a completed response');
 		}
 
-
 		if (progress.kind === 'usedContext' || progress.kind === 'reference') {
 			request.response.applyReference(progress);
 		} else if (progress.kind === 'codeCitation') {
@@ -1809,15 +1818,6 @@ export class ChatModel extends Disposable implements IChatModel {
 		}
 
 		request.response.setResult(result);
-	}
-
-	completeResponse(request: ChatRequestModel): void {
-		if (!request.response) {
-			throw new Error('Call setResponse before completeResponse');
-		}
-
-		request.response.complete();
-		this._onDidChange.fire({ kind: 'completedRequest', request });
 	}
 
 	setFollowups(request: ChatRequestModel, followups: IChatFollowup[] | undefined): void {

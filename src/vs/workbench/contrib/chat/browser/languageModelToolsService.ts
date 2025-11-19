@@ -12,7 +12,7 @@ import { Codicon } from '../../../../base/common/codicons.js';
 import { toErrorMessage } from '../../../../base/common/errorMessage.js';
 import { CancellationError, isCancellationError } from '../../../../base/common/errors.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
-import { MarkdownString } from '../../../../base/common/htmlContent.js';
+import { createMarkdownCommandLink, MarkdownString } from '../../../../base/common/htmlContent.js';
 import { Iterable } from '../../../../base/common/iterator.js';
 import { combinedDisposable, Disposable, DisposableStore, IDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { IObservable, ObservableSet } from '../../../../base/common/observable.js';
@@ -318,7 +318,7 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 					IChatToolInvocation.confirmWith(toolInvocation, autoConfirmed);
 				}
 
-				model.acceptResponseProgress(request, toolInvocation);
+				this._chatService.appendProgress(request, toolInvocation);
 
 				dto.toolSpecificData = toolInvocation?.toolSpecificData;
 				if (preparedInvocation?.confirmationMessages?.title) {
@@ -459,26 +459,28 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 		const isEligibleForAutoApproval = this.isToolEligibleForAutoApproval(tool.data);
 
 		// Default confirmation messages if tool is not eligible for auto-approval
+		const toolReferenceName = getToolReferenceFullName(tool.data);
 		if (!isEligibleForAutoApproval && !prepared?.confirmationMessages?.title) {
 			if (!prepared) {
 				prepared = {};
 			}
-			const toolReferenceName = getToolReferenceFullName(tool.data);
 			// TODO: This should be more detailed per tool.
 			prepared.confirmationMessages = {
+				...prepared.confirmationMessages,
 				title: localize('defaultToolConfirmation.title', 'Allow tool to execute?'),
 				message: localize('defaultToolConfirmation.message', 'Run the \'{0}\' tool?', toolReferenceName),
-				disclaimer: localize('defaultToolConfirmation.disclaimer', 'Auto approval for \'{0}\' is restricted by \'{1}\'.', toolReferenceName, ChatConfiguration.EligibleForAutoApproval),
+				disclaimer: new MarkdownString(localize('defaultToolConfirmation.disclaimer', 'Auto approval for \'{0}\' is restricted via {1}.', toolReferenceName, createMarkdownCommandLink({ title: '`' + ChatConfiguration.EligibleForAutoApproval + '`', id: 'workbench.action.openSettings', arguments: [ChatConfiguration.EligibleForAutoApproval] }, false)), { isTrusted: true }),
 				allowAutoConfirm: false,
 			};
 		}
 
-		if (!isEligibleForAutoApproval && prepared?.confirmationMessages?.title && !prepared.confirmationMessages.disclaimer) {
-			prepared.confirmationMessages.disclaimer = localize('defaultToolConfirmation.disclaimer', 'Auto approval for \'{0}\' is restricted by \'{1}\'.', getToolReferenceFullName(tool.data), ChatConfiguration.EligibleForAutoApproval);
+		if (!isEligibleForAutoApproval && prepared?.confirmationMessages?.title) {
+			// Always overwrite the disclaimer if not eligible for auto-approval
+			prepared.confirmationMessages.disclaimer = new MarkdownString(localize('defaultToolConfirmation.disclaimer', 'Auto approval for \'{0}\' is restricted via {1}.', toolReferenceName, createMarkdownCommandLink({ title: '`' + ChatConfiguration.EligibleForAutoApproval + '`', id: 'workbench.action.openSettings', arguments: [ChatConfiguration.EligibleForAutoApproval] }, false)), { isTrusted: true });
 		}
 
 		if (prepared?.confirmationMessages?.title) {
-			if (prepared.toolSpecificData?.kind !== 'terminal' && typeof prepared.confirmationMessages.allowAutoConfirm !== 'boolean') {
+			if (prepared.toolSpecificData?.kind !== 'terminal' && prepared.confirmationMessages.allowAutoConfirm !== false) {
 				prepared.confirmationMessages.allowAutoConfirm = isEligibleForAutoApproval;
 			}
 
@@ -536,8 +538,19 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 		});
 	}
 
+	private getEligibleForAutoApprovalSpecialCase(toolData: IToolData): string | undefined {
+		if (toolData.id === 'vscode_fetchWebPage_internal') {
+			return 'fetch';
+		}
+		return undefined;
+	}
+
 	private isToolEligibleForAutoApproval(toolData: IToolData): boolean {
-		const toolReferenceName = getToolReferenceFullName(toolData);
+		const toolReferenceName = this.getEligibleForAutoApprovalSpecialCase(toolData) ?? getToolReferenceFullName(toolData);
+		if (toolData.id === 'copilot_fetchWebPage') {
+			// Special case, this fetch will call an internal tool 'vscode_fetchWebPage_internal'
+			return true;
+		}
 		const eligibilityConfig = this._configurationService.getValue<Record<string, boolean>>(ChatConfiguration.EligibleForAutoApproval);
 		return eligibilityConfig && typeof eligibilityConfig === 'object' && toolReferenceName
 			? (eligibilityConfig[toolReferenceName] ?? true) // Default to true if not specified

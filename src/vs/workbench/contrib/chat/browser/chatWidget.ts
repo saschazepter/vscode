@@ -20,7 +20,7 @@ import { FuzzyScore } from '../../../../base/common/filters.js';
 import { IMarkdownString, MarkdownString } from '../../../../base/common/htmlContent.js';
 import { Iterable } from '../../../../base/common/iterator.js';
 import { KeyCode } from '../../../../base/common/keyCodes.js';
-import { combinedDisposable, Disposable, DisposableStore, IDisposable, MutableDisposable, thenIfNotDisposed, toDisposable } from '../../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore, IDisposable, MutableDisposable, thenIfNotDisposed } from '../../../../base/common/lifecycle.js';
 import { ResourceSet } from '../../../../base/common/map.js';
 import { Schemas } from '../../../../base/common/network.js';
 import { filter } from '../../../../base/common/objects.js';
@@ -744,10 +744,6 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		return this.input.inputEditor;
 	}
 
-	get inputUri(): URI {
-		return this.input.inputUri;
-	}
-
 	get contentHeight(): number {
 		return this.input.contentHeight + this.tree.contentHeight + this.chatSuggestNextWidget.height;
 	}
@@ -832,7 +828,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			}
 		}).filter(isDefined);
 
-		this._register((this.chatWidgetService as ChatWidgetService).register(this));
+		this._register(this.chatWidgetService.register(this));
 
 		const parsedInput = observableFromEvent(this.onDidChangeParsedInput, () => this.parsedInput);
 		this._register(autorun(r => {
@@ -1788,7 +1784,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		if (isRequestVM(currentElement) && !this.viewModel?.editing) {
 
 			const requests = this.viewModel?.model.getRequests();
-			if (!requests) {
+			if (!requests || !this.viewModel?.sessionResource) {
 				return;
 			}
 
@@ -2210,7 +2206,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 				return;
 			}
 
-			this.requestInProgress.set(this.viewModel.requestInProgress);
+			this.requestInProgress.set(this.viewModel.model.requestInProgress.get());
 
 			// Update the editor's placeholder text when it changes in the view model
 			if (events?.some(e => e?.kind === 'changePlaceholder')) {
@@ -2436,7 +2432,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 	}
 
 	private async _acceptInput(query: { query: string } | undefined, options?: IChatAcceptInputOptions): Promise<IChatResponseModel | undefined> {
-		if (this.viewModel?.requestInProgress) {
+		if (this.viewModel?.model.requestInProgress.get()) {
 			return;
 		}
 
@@ -2469,6 +2465,11 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		};
 
 		const isUserQuery = !query;
+
+		if (this.viewModel?.editing) {
+			this.finishedEditing(true);
+			this.viewModel.model?.setCheckpoint(undefined);
+		}
 
 		// process the prompt command
 		await this._applyPromptFileIfSet(requestInputs);
@@ -2558,10 +2559,6 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			this.currentRequest = undefined;
 		});
 
-		if (this.viewModel?.editing) {
-			this.finishedEditing(true);
-			this.viewModel.model?.setCheckpoint(undefined);
-		}
 		return result.responseCreatedPromise;
 	}
 
@@ -2849,58 +2846,5 @@ export class ChatWidget extends Disposable implements IChatWidget {
 
 	delegateScrollFromMouseWheelEvent(browserEvent: IMouseWheelEvent): void {
 		this.tree.delegateScrollFromMouseWheelEvent(browserEvent);
-	}
-}
-
-export class ChatWidgetService extends Disposable implements IChatWidgetService {
-
-	declare readonly _serviceBrand: undefined;
-
-	private _widgets: ChatWidget[] = [];
-	private _lastFocusedWidget: ChatWidget | undefined = undefined;
-
-	private readonly _onDidAddWidget = this._register(new Emitter<ChatWidget>());
-	readonly onDidAddWidget: Event<IChatWidget> = this._onDidAddWidget.event;
-
-	get lastFocusedWidget(): IChatWidget | undefined {
-		return this._lastFocusedWidget;
-	}
-
-	getAllWidgets(): ReadonlyArray<IChatWidget> {
-		return this._widgets;
-	}
-
-	getWidgetsByLocations(location: ChatAgentLocation): ReadonlyArray<IChatWidget> {
-		return this._widgets.filter(w => w.location === location);
-	}
-
-	getWidgetByInputUri(uri: URI): ChatWidget | undefined {
-		return this._widgets.find(w => isEqual(w.inputUri, uri));
-	}
-
-	getWidgetBySessionResource(sessionResource: URI): ChatWidget | undefined {
-		return this._widgets.find(w => isEqual(w.viewModel?.sessionResource, sessionResource));
-	}
-
-	private setLastFocusedWidget(widget: ChatWidget | undefined): void {
-		if (widget === this._lastFocusedWidget) {
-			return;
-		}
-
-		this._lastFocusedWidget = widget;
-	}
-
-	register(newWidget: ChatWidget): IDisposable {
-		if (this._widgets.some(widget => widget === newWidget)) {
-			throw new Error('Cannot register the same widget multiple times');
-		}
-
-		this._widgets.push(newWidget);
-		this._onDidAddWidget.fire(newWidget);
-
-		return combinedDisposable(
-			newWidget.onDidFocus(() => this.setLastFocusedWidget(newWidget)),
-			toDisposable(() => this._widgets.splice(this._widgets.indexOf(newWidget), 1))
-		);
 	}
 }
