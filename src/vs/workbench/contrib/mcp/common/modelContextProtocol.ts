@@ -41,7 +41,7 @@ export namespace MCP {
 		| JSONRPCError;
 
 	/** @internal */
-	export const LATEST_PROTOCOL_VERSION = "2025-06-18";
+	export const LATEST_PROTOCOL_VERSION = "2024-11-05";
 	/** @internal */
 	export const JSONRPC_VERSION = "2.0";
 
