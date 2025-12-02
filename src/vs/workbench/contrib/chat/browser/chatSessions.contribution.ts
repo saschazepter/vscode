@@ -41,6 +41,8 @@ import { IChatModel, IChatProgressResponseContent, IChatRequestModel } from '../
 import { IChatService, IChatToolInvocation } from '../common/chatService.js';
 import { autorunSelfDisposable } from '../../../../base/common/observable.js';
 import { IChatRequestVariableEntry } from '../common/chatVariableEntries.js';
+import { renderAsPlaintext } from '../../../../base/browser/markdownRenderer.js';
+import { truncate } from '../../../../base/common/strings.js';
 
 const extensionPoint = ExtensionsRegistry.registerExtensionPoint<IChatSessionsExtensionPoint[]>({
 	extensionPoint: 'chatSessions',
@@ -941,8 +943,10 @@ export class ChatSessionsService extends Disposable implements IChatSessionsServ
 			if (!description && part.kind === 'progressMessage') {
 				description = part.content.value || '';
 			}
+			if (!description && part.kind === 'markdownContent') {
+				description = truncate(renderAsPlaintext(part.content).replace(/\r?\n/g, ' '), 20); // ensure to strip any markdown
+			}
 		}
-
 		return description;
 	}
 
