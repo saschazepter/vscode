@@ -676,10 +676,11 @@ export class ChatSessionsService extends Disposable implements IChatSessionsServ
 	private _enableContribution(contribution: IChatSessionsExtensionPoint, ext: IRelaxedExtensionDescription): void {
 		const disposableStore = new DisposableStore();
 		this._contributionDisposables.set(contribution.type, disposableStore);
-
-		disposableStore.add(this._registerAgent(contribution, ext));
-		disposableStore.add(this._registerCommands(contribution));
-		disposableStore.add(this._registerMenuItems(contribution, ext));
+		if (contribution.canDelegate) {
+			disposableStore.add(this._registerAgent(contribution, ext));
+			disposableStore.add(this._registerCommands(contribution));
+			disposableStore.add(this._registerMenuItems(contribution, ext));
+		}
 	}
 
 	private _disposeSessionsForContribution(contributionId: string): void {
