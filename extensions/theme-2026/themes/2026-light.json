@@ -180,6 +180,7 @@
 		"statusBar.noFolderForeground": "#666666",
 		"statusBarItem.activeBackground": "#E0E0E0",
 		"statusBarItem.hoverBackground": "#F2F2F2",
+		"statusBarItem.compactHoverBackground": "#E0E0E0",
 		"statusBarItem.focusBorder": "#1A5CFFFF",
 		"statusBarItem.prominentBackground": "#1A5CFF",
 		"statusBarItem.prominentForeground": "#FFFFFF",
