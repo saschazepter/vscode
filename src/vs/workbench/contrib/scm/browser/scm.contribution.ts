@@ -221,6 +221,16 @@ Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration).regis
 			description: localize('scm.diffDecorationsGutterAction', "Controls the behavior of Source Control diff gutter decorations."),
 			default: 'diff'
 		},
+		'scm.diffDecorationsRendering': {
+			type: 'string',
+			enum: ['peek', 'overlay'],
+			enumDescriptions: [
+				localize('scm.diffDecorationsRendering.peek', "Show the diff in a Peek view."),
+				localize('scm.diffDecorationsRendering.overlay', "Show the diff as an overlay widget.")
+			],
+			description: localize('scm.diffDecorationsRendering', "Controls how the diff is rendered when clicking on Source Control diff gutter decorations."),
+			default: 'peek'
+		},
 		'scm.diffDecorationsGutterPattern': {
 			type: 'object',
 			description: localize('diffGutterPattern', "Controls whether a pattern is used for the diff decorations in gutter."),

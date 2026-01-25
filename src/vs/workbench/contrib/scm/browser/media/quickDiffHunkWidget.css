@@ -1,0 +1,89 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+/* Quick Diff Hunk Widget */
+.quick-diff-hunk-widget {
+	opacity: 0;
+	transition: opacity 0.2s ease-in-out;
+	display: flex;
+	box-shadow: 0 2px 8px var(--vscode-widget-shadow);
+	border-radius: 6px;
+	overflow: hidden;
+}
+
+.quick-diff-hunk-widget.hover {
+	opacity: 1;
+}
+
+.quick-diff-hunk-widget .monaco-action-bar {
+	padding: 4px 4px;
+	border-radius: 6px 0 0 6px;
+	background-color: var(--vscode-editorWidget-background);
+	color: var(--vscode-foreground);
+	border: 1px solid var(--vscode-contrastBorder);
+	overflow: hidden;
+}
+
+.quick-diff-hunk-widget .monaco-action-bar .actions-container {
+	gap: 4px;
+}
+
+.quick-diff-hunk-widget .monaco-action-bar .action-item .action-label {
+	border-radius: 4px;
+	font-size: 11px;
+	line-height: 14px;
+	padding: 4px 6px;
+}
+
+.quick-diff-hunk-widget .monaco-action-bar .action-item .action-label.codicon:not(.separator) {
+	width: 22px;
+	height: 22px;
+	padding: 0;
+	font-size: 16px;
+	line-height: 22px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.quick-diff-hunk-widget .monaco-action-bar .action-item .action-label.codicon[class*='codicon-'] {
+	font-size: 16px;
+}
+
+/* Quick Diff Hunk Actions (navigation and close buttons) */
+.quick-diff-hunk-actions {
+	display: flex;
+	align-items: center;
+	padding: 0 4px;
+	gap: 2px;
+	background-color: var(--vscode-editorWidget-background);
+	border: 1px solid var(--vscode-contrastBorder);
+	border-left: none;
+	border-radius: 0 6px 6px 0;
+}
+
+.quick-diff-hunk-actions .action-label {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 22px;
+	height: 22px;
+	cursor: pointer;
+	border-radius: 4px;
+	color: var(--vscode-foreground);
+}
+
+.quick-diff-hunk-actions .action-label:hover {
+	background-color: var(--vscode-toolbar-hoverBackground);
+}
+
+/* Quick Diff Original Zone (deleted content) */
+.quick-diff-original-zone {
+	background-color: var(--vscode-diffEditor-removedLineBackground);
+}
+
+.quick-diff-original-zone.line-delete .view-line span span {
+	background-color: var(--vscode-diffEditor-removedTextBackground);
+}

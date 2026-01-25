@@ -17,18 +17,18 @@ import { peekViewBorder, peekViewTitleBackground, peekViewTitleForeground, peekV
 import { editorBackground } from '../../../../platform/theme/common/colorRegistry.js';
 import { IMenu, IMenuService, MenuId, MenuItemAction, MenuRegistry } from '../../../../platform/actions/common/actions.js';
 import { ICodeEditor, IEditorMouseEvent, MouseTargetType } from '../../../../editor/browser/editorBrowser.js';
+import { IEditorContribution, ScrollType } from '../../../../editor/common/editorCommon.js';
 import { EditorAction, registerEditorAction } from '../../../../editor/browser/editorExtensions.js';
 import { IInstantiationService, ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
 import { IKeybindingService } from '../../../../platform/keybinding/common/keybinding.js';
 import { EmbeddedDiffEditorWidget } from '../../../../editor/browser/widget/diffEditor/embeddedDiffEditorWidget.js';
-import { IEditorContribution, ScrollType } from '../../../../editor/common/editorCommon.js';
 import { IQuickDiffModelService, QuickDiffModel } from './quickDiffModel.js';
 import { Disposable, DisposableStore, IDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { ContextKeyExpr, IContextKey, IContextKeyService, RawContextKey } from '../../../../platform/contextkey/common/contextkey.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { rot } from '../../../../base/common/numbers.js';
 import { ISplice } from '../../../../base/common/sequence.js';
-import { ChangeType, getChangeHeight, getChangeType, getChangeTypeColor, getModifiedEndLineNumber, IQuickDiffService, lineIntersectsChange, QuickDiff, QuickDiffChange } from '../common/quickDiff.js';
+import { ChangeType, getChangeHeight, getChangeType, getChangeTypeColor, getModifiedEndLineNumber, IQuickDiffService, QuickDiff, QuickDiffChange } from '../common/quickDiff.js';
 import { ICodeEditorService } from '../../../../editor/browser/services/codeEditorService.js';
 import { TextCompareEditorActiveContext } from '../../../common/contextkeys.js';
 import { EditorContextKeys } from '../../../../editor/common/editorContextKeys.js';
@@ -51,6 +51,7 @@ import { KeyChord, KeyCode, KeyMod } from '../../../../base/common/keyCodes.js';
 import { getOuterEditor } from '../../../../editor/browser/widget/codeEditor/embeddedCodeEditorWidget.js';
 import { quickDiffDecorationCount } from './quickDiffDecorator.js';
 import { hasNativeContextMenu } from '../../../../platform/window/common/window.js';
+import { QuickDiffHunkController } from './quickDiffHunkController.js';
 
 export const isQuickDiffVisible = new RawContextKey<boolean>('dirtyDiffVisible', false);
 
@@ -488,6 +489,7 @@ export class QuickDiffEditorController extends Disposable implements IEditorCont
 
 	private model: QuickDiffModel | null = null;
 	private widget: QuickDiffWidget | null = null;
+	private hunkController: QuickDiffHunkController | null = null;
 	private readonly isQuickDiffVisible!: IContextKey<boolean>;
 	private session: IDisposable = Disposable.None;
 	private mouseDownInfo: { lineNumber: number } | null = null;
@@ -509,6 +511,9 @@ export class QuickDiffEditorController extends Disposable implements IEditorCont
 		if (this.enabled) {
 			this.isQuickDiffVisible = isQuickDiffVisible.bindTo(contextKeyService);
 			this._register(editor.onDidChangeModel(() => this.close()));
+
+			// Create the hunk controller for overlay widget mode
+			this.hunkController = this._register(this.instantiationService.createInstance(QuickDiffHunkController, this.editor));
 
 			const onDidChangeGutterAction = Event.filter(configurationService.onDidChangeConfiguration, e => e.affectsConfiguration('scm.diffDecorationsGutterAction'));
 			this._register(onDidChangeGutterAction(this.onDidChangeGutterAction, this));
@@ -601,6 +606,7 @@ export class QuickDiffEditorController extends Disposable implements IEditorCont
 	}
 
 	close(): void {
+		this.hunkController?.closeAllWidgets();
 		this.session.dispose();
 		this.session = Disposable.None;
 	}
@@ -730,33 +736,13 @@ export class QuickDiffEditorController extends Disposable implements IEditorCont
 			return;
 		}
 
-		const editorModel = this.editor.getModel();
-
-		if (!editorModel) {
-			return;
-		}
-
-		const modelRef = this.quickDiffModelService.createQuickDiffModelReference(editorModel.uri);
-
-		if (!modelRef) {
-			return;
-		}
-
-		try {
-			const index = modelRef.object.changes
-				.findIndex(change => lineIntersectsChange(lineNumber, change.change));
-
-			if (index < 0) {
-				return;
-			}
-
-			if (index === this.widget?.index) {
-				this.close();
-			} else {
-				this.next(lineNumber);
-			}
-		} finally {
-			modelRef.dispose();
+		const rendering = this.configurationService.getValue<'peek' | 'overlay'>('scm.diffDecorationsRendering');
+		if (rendering === 'overlay') {
+			// Delegate to the hunk controller
+			this.hunkController?.toggleWidget(lineNumber);
+		} else {
+			// Show peek widget
+			this.next(lineNumber);
 		}
 	}
 
