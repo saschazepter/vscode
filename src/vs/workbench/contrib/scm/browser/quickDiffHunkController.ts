@@ -239,7 +239,7 @@ export class QuickDiffHunkController extends Disposable {
 		const hunkWidget = this.instantiationService.createInstance(
 			QuickDiffHunkWidget,
 			this.editor,
-			uri,
+			modifiedModel.uri,
 			change.original,
 			providerChanges,
 			contextIndex,

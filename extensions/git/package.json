@@ -2775,10 +2775,12 @@
       "scm/change/title": [
         {
           "command": "git.stageChange",
+          "group": "navigation@1",
           "when": "config.git.enabled && !git.missing && originalResource =~ /^git\\:.*%22ref%22%3A%22%22%7D$/"
         },
         {
           "command": "git.revertChange",
+          "group": "navigation@2",
           "when": "config.git.enabled && !git.missing && originalResource =~ /^git\\:.*%22ref%22%3A%22%22%7D$/"
         },
         {

@@ -7,8 +7,9 @@ import './media/quickDiffHunkWidget.css';
 
 import * as nls from '../../../../nls.js';
 import * as dom from '../../../../base/browser/dom.js';
+import { ActionRunner, IAction } from '../../../../base/common/actions.js';
 import { ActionViewItem } from '../../../../base/browser/ui/actionbar/actionViewItems.js';
-import { MenuId } from '../../../../platform/actions/common/actions.js';
+import { MenuId, MenuItemAction } from '../../../../platform/actions/common/actions.js';
 import { ICodeEditor, IOverlayWidget, IOverlayWidgetPosition } from '../../../../editor/browser/editorBrowser.js';
 import { HiddenItemStrategy, MenuWorkbenchToolBar } from '../../../../platform/actions/browser/toolbar.js';
 import { URI } from '../../../../base/common/uri.js';
@@ -21,6 +22,16 @@ import { Codicon } from '../../../../base/common/codicons.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { ServiceCollection } from '../../../../platform/instantiation/common/serviceCollection.js';
 import { IKeybindingService } from '../../../../platform/keybinding/common/keybinding.js';
+
+class QuickDiffHunkWidgetActionRunner extends ActionRunner {
+
+	protected override runAction(action: IAction, context: unknown): Promise<void> {
+		if (action instanceof MenuItemAction && Array.isArray(context)) {
+			return action.run(...context);
+		}
+		return super.runAction(action, context);
+	}
+}
 
 export class QuickDiffHunkWidget implements IOverlayWidget {
 
@@ -67,13 +78,16 @@ export class QuickDiffHunkWidget implements IOverlayWidget {
 		const serviceCollection = new ServiceCollection([IContextKeyService, scopedContextKeyService]);
 		const scopedInstaService = instaService.createChild(serviceCollection, this._store);
 
+		const actionRunner = this._store.add(new QuickDiffHunkWidgetActionRunner());
+
 		const toolbar = scopedInstaService.createInstance(MenuWorkbenchToolBar, this._domNode, MenuId.SCMChangeContext, {
 			telemetrySource: 'quickDiffHunk',
 			hiddenItemStrategy: HiddenItemStrategy.NoHide,
+			actionRunner,
 			toolbarOptions: { primaryGroup: () => true },
 			menuOptions: {
 				renderShortTitle: true,
-				arg: [this._uri, this._changes, this._index],
+				shouldForwardArgs: true,
 			},
 			actionViewItemProvider: (action, options) => {
 				if (!action.class) {
@@ -89,6 +103,14 @@ export class QuickDiffHunkWidget implements IOverlayWidget {
 
 		this._store.add(toolbar);
 		this._store.add(toolbar.actionRunner.onWillRun(_ => _editor.focus()));
+		this._store.add(toolbar.actionRunner.onDidRun(e => {
+			if (!e.error) {
+				this._onClose();
+			}
+		}));
+
+		// Set the context for the toolbar actions
+		toolbar.context = [this._uri, this._changes, this._index];
 
 		// Add navigation and close actions
 		const actionsContainer = dom.append(this._domNode, dom.$('.quick-diff-hunk-actions'));
