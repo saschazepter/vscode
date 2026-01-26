@@ -274,6 +274,12 @@ export interface IHoverLifecycleOptions {
 	groupId?: string;
 
 	/**
+	 * Custom delay in milliseconds before showing the hover. If not specified, the
+	 * `workbench.hover.delay` setting is used.
+	 */
+	delay?: number;
+
+	/**
 	 * Whether to set up space and enter keyboard events for the hover, when these are pressed when
 	 * the hover's target is focused it will show and focus the hover.
 	 *

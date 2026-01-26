@@ -438,6 +438,29 @@ suite('HoverService', () => {
 			disposable.dispose();
 			hoverService.hideHover(true);
 		}));
+
+		test('should use custom delay from lifecycle options', () => runWithFakedTimers({ useFakeTimers: true }, async () => {
+			const target = createTarget();
+			const customDelay = 150;
+
+			const disposable = hoverService.setupDelayedHover(target, { content: 'Custom delay' }, { delay: customDelay });
+
+			// Trigger mouseover
+			target.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+
+			// Hover should not be visible before delay
+			await timeout(customDelay / 2);
+			const hoversBefore = mainWindow.document.querySelectorAll('.monaco-hover');
+			assert.strictEqual(hoversBefore.length, 0, 'Hover should not be visible before delay completes');
+
+			// Hover should be visible after delay
+			await timeout(customDelay);
+			const hoversAfter = mainWindow.document.querySelectorAll('.monaco-hover');
+			assert.strictEqual(hoversAfter.length, 1, 'Hover should be visible after custom delay');
+
+			disposable.dispose();
+			hoverService.hideHover(true);
+		}));
 	});
 
 	suite('setupManagedHover', () => {
@@ -495,6 +518,46 @@ suite('HoverService', () => {
 			lockedHover.dispose();
 			assertNotInDOM(lockedHover, 'Locked hover should be removed from DOM after dispose');
 		});
+
+		test('should use custom delay when provided', () => runWithFakedTimers({ useFakeTimers: true }, async () => {
+			const target = createTarget();
+			const customDelay = 100;
+
+			const hover = hoverService.showDelayedHover({
+				content: 'Custom delay hover',
+				target
+			}, { delay: customDelay });
+
+			assert.ok(hover, 'Hover should be created');
+			assertNotInDOM(hover, 'Hover should not be visible immediately');
+
+			// Wait less than custom delay - hover should still not be visible
+			await timeout(customDelay / 2);
+			assertNotInDOM(hover, 'Hover should not be visible before delay completes');
+
+			// Wait for full delay - hover should now be visible
+			await timeout(customDelay);
+			assertInDOM(hover, 'Hover should be visible after custom delay');
+
+			hover.dispose();
+		}));
+
+		test('should use default delay when custom delay is undefined', () => runWithFakedTimers({ useFakeTimers: true }, async () => {
+			const target = createTarget();
+			// Default delay is set to 0 in test setup
+			const hover = hoverService.showDelayedHover({
+				content: 'Default delay hover',
+				target
+			}, {});
+
+			assert.ok(hover, 'Hover should be created');
+
+			// Since default delay is 0 in tests, hover should appear after minimal timeout
+			await timeout(0);
+			assertInDOM(hover, 'Hover should be visible with default delay');
+
+			hover.dispose();
+		}));
 	});
 
 	suite('hover locking', () => {

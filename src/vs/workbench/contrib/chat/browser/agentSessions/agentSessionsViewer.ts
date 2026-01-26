@@ -83,6 +83,12 @@ export interface IAgentSessionRendererOptions {
 const SESSION_BADGE_ENABLED = false;
 const SESSION_DIFF_FILES_INDICATOR = false;
 
+/**
+ * Shorter hover delay for sessions that need user input, to make the
+ * pending state more visible and actionable.
+ */
+const NEEDS_INPUT_HOVER_DELAY = 300;
+
 export class AgentSessionRenderer extends Disposable implements ICompressibleTreeRenderer<IAgentSession, FuzzyScore, IAgentSessionItemTemplate> {
 
 	static readonly TEMPLATE_ID = 'agent-session';
@@ -380,8 +386,9 @@ export class AgentSessionRenderer extends Disposable implements ICompressibleTre
 			return; // the hover is complex and large, for now limit it to in-progress sessions only
 		}
 
+		const delay = session.element.status === AgentSessionStatus.NeedsInput ? NEEDS_INPUT_HOVER_DELAY : undefined;
 		template.elementDisposable.add(
-			this.hoverService.setupDelayedHover(template.element, () => this.buildHoverContent(session.element), { groupId: 'agent.sessions' })
+			this.hoverService.setupDelayedHover(template.element, () => this.buildHoverContent(session.element), { groupId: 'agent.sessions', delay })
 		);
 	}
 
