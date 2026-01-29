@@ -42,6 +42,10 @@ import { MarkdownString, IMarkdownString } from '../../../../../base/common/html
 import { AgentSessionHoverWidget } from './agentSessionHoverWidget.js';
 import { AgentSessionProviders } from './agentSessions.js';
 import { AgentSessionsGrouping } from './agentSessionsFilter.js';
+import { IWorkspaceContextService, WorkbenchState } from '../../../../../platform/workspace/common/workspace.js';
+import { URI } from '../../../../../base/common/uri.js';
+import { basename } from '../../../../../base/common/resources.js';
+import { isBackgroundChatSessionMetadata } from '../../common/chatSessionsService.js';
 
 export type AgentSessionListItem = IAgentSession | IAgentSessionSection;
 
@@ -98,6 +102,7 @@ export class AgentSessionRenderer extends Disposable implements ICompressibleTre
 		@IHoverService private readonly hoverService: IHoverService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@IContextKeyService private readonly contextKeyService: IContextKeyService,
+		@IWorkspaceContextService private readonly workspaceService: IWorkspaceContextService,
 	) {
 		super();
 	}
@@ -235,16 +240,32 @@ export class AgentSessionRenderer extends Disposable implements ICompressibleTre
 	}
 
 	private renderBadge(session: ITreeNode<IAgentSession, FuzzyScore>, template: IAgentSessionItemTemplate): boolean {
-		if (!SESSION_BADGE_ENABLED) {
-			return false;
-		}
-
-		const badge = session.element.badge;
+		const badge = this.getBadge(session.element);
 		if (badge) {
 			this.renderMarkdownOrText(badge, template.badge, template.elementDisposable);
 		}
 
 		return !!badge;
+	}
+
+	private getBadge(session: IAgentSession): string | IMarkdownString | undefined {
+		// Display badge for background sessions in empty window and multi-root workspace
+		if (session.providerType === AgentSessionProviders.Background && (
+			this.workspaceService.getWorkbenchState() === WorkbenchState.EMPTY ||
+			this.workspaceService.getWorkbenchState() === WorkbenchState.WORKSPACE)
+		) {
+			if (isBackgroundChatSessionMetadata(session.metadata)) {
+				const repositoryUri = session.metadata?.repositoryPath
+					? URI.file(session.metadata.repositoryPath)
+					: undefined;
+
+				return repositoryUri
+					? new MarkdownString(`$(repo) ${basename(repositoryUri)}`, { supportThemeIcons: true })
+					: undefined;
+			}
+		}
+
+		return SESSION_BADGE_ENABLED ? session.badge : undefined;
 	}
 
 	private renderMarkdownOrText(content: string | IMarkdownString, container: HTMLElement, disposables: DisposableStore): void {

@@ -66,6 +66,7 @@ interface IAgentSessionData extends Omit<IChatSessionItem, 'archived' | 'iconPat
 	readonly timing: IChatSessionItem['timing'];
 
 	readonly changes?: IChatSessionItem['changes'];
+	readonly metadata?: IChatSessionItem['metadata'];
 }
 
 /**
@@ -538,6 +539,7 @@ export class AgentSessionsModel extends Disposable implements IAgentSessionsMode
 					archived: session.archived,
 					timing: { created, lastRequestStarted, lastRequestEnded, },
 					changes: normalizedChanges,
+					metadata: session.metadata,
 				}));
 			}
 		}

@@ -290,4 +290,11 @@ export function isIChatSessionFileChange2(obj: unknown): obj is IChatSessionFile
 	return candidate && candidate.uri instanceof URI && typeof candidate.insertions === 'number' && typeof candidate.deletions === 'number';
 }
 
+export function isBackgroundChatSessionMetadata(obj: unknown): obj is { readonly repositoryPath?: string; readonly worktreePath?: string } {
+	const candidate = obj as { readonly [key: string]: unknown } | undefined;
+	return candidate !== undefined &&
+		(typeof candidate['repositoryPath'] === 'undefined' || typeof candidate['repositoryPath'] === 'string') &&
+		(typeof candidate['worktreePath'] === 'undefined' || typeof candidate['worktreePath'] === 'string');
+}
+
 export const IChatSessionsService = createDecorator<IChatSessionsService>('chatSessionsService');
