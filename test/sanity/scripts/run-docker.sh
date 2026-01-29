@@ -47,9 +47,7 @@ fi
 
 # For 64K page size, use QEMU system emulation with a 64K kernel
 if [ "$PAGE_SIZE" = "64k" ]; then
-	exec "$SCRIPT_DIR/run-qemu-64k.sh" \
-		--container "$CONTAINER" \
-		-- $ARGS
+	exec "$SCRIPT_DIR/run-qemu-64k-v2.sh" $ARGS
 else
 	echo "Running sanity tests in container"
 	docker run \
