@@ -13,6 +13,7 @@ import { toErrorMessage } from '../../../../../base/common/errorMessage.js';
 import { MarkdownString } from '../../../../../base/common/htmlContent.js';
 import { Lazy } from '../../../../../base/common/lazy.js';
 import { DisposableStore } from '../../../../../base/common/lifecycle.js';
+import { CancellationToken } from '../../../../../base/common/cancellation.js';
 import { IMarkdownRendererService } from '../../../../../platform/markdown/browser/markdownRenderer.js';
 import { localize } from '../../../../../nls.js';
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
@@ -77,14 +78,42 @@ export class ChatSetup {
 		this.skipDialogOnce = true;
 	}
 
-	async run(options?: { disableChatViewReveal?: boolean; forceSignInDialog?: boolean; additionalScopes?: readonly string[]; forceAnonymous?: ChatSetupAnonymous }): Promise<IChatSetupResult> {
+	async run(options?: { disableChatViewReveal?: boolean; forceSignInDialog?: boolean; additionalScopes?: readonly string[]; forceAnonymous?: ChatSetupAnonymous }, token?: CancellationToken): Promise<IChatSetupResult> {
+		// If there's already a pending run, cancel it when the new token is cancelled
 		if (this.pendingRun) {
+			// If the token is already cancelled, cancel the pending run immediately
+			if (token?.isCancellationRequested) {
+				this.pendingRun = undefined;
+				return { success: undefined, dialogSkipped: false };
+			}
+
+			// Listen for cancellation to abort the pending run
+			const cancellationPromise = token ? new Promise<IChatSetupResult>(resolve => {
+				token.onCancellationRequested(() => {
+					this.pendingRun = undefined;
+					resolve({ success: undefined, dialogSkipped: false });
+				});
+			}) : undefined;
+
+			// Race between the pending run and cancellation
+			if (cancellationPromise) {
+				return Promise.race([this.pendingRun, cancellationPromise]);
+			}
 			return this.pendingRun;
 		}
 
 		this.pendingRun = this.doRun(options);
 
 		try {
+			// If a token is provided, race between the run and cancellation
+			if (token) {
+				const cancellationPromise = new Promise<IChatSetupResult>(resolve => {
+					token.onCancellationRequested(() => {
+						resolve({ success: undefined, dialogSkipped: false });
+					});
+				});
+				return await Promise.race([this.pendingRun, cancellationPromise]);
+			}
 			return await this.pendingRun;
 		} finally {
 			this.pendingRun = undefined;
