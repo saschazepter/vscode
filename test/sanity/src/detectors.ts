@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import fs from 'fs';
+import os from 'os';
 import { webkit } from 'playwright';
 
 /**
@@ -35,7 +36,7 @@ export function detectCapabilities(): ReadonlySet<Capability> {
  * Detect the operating system.
  */
 function detectOS(capabilities: Set<Capability>) {
-	switch (process.platform) {
+	switch (os.platform()) {
 		case 'linux':
 			if (fs.existsSync('/etc/alpine-release')) {
 				capabilities.add('alpine');
@@ -50,7 +51,7 @@ function detectOS(capabilities: Set<Capability>) {
 			capabilities.add('windows');
 			break;
 		default:
-			throw new Error(`Unsupported platform: ${process.platform}`);
+			throw new Error(`Unsupported platform: ${os.platform()}`);
 	}
 }
 
@@ -58,7 +59,7 @@ function detectOS(capabilities: Set<Capability>) {
  * Detect the architecture.
  */
 function detectArch(capabilities: Set<Capability>) {
-	switch (process.arch) {
+	switch (os.arch()) {
 		case 'x64':
 			capabilities.add('x64');
 			break;
@@ -69,7 +70,7 @@ function detectArch(capabilities: Set<Capability>) {
 			capabilities.add('arm32');
 			break;
 		default:
-			throw new Error(`Unsupported architecture: ${process.arch}`);
+			throw new Error(`Unsupported architecture: ${os.arch()}`);
 	}
 }
 
@@ -77,7 +78,7 @@ function detectArch(capabilities: Set<Capability>) {
  * Detect the package managers.
  */
 function detectPackageManagers(capabilities: Set<Capability>) {
-	if (process.platform !== 'linux') {
+	if (os.platform() !== 'linux') {
 		return;
 	}
 	if (fs.existsSync('/usr/bin/dpkg')) {
@@ -95,7 +96,7 @@ function detectPackageManagers(capabilities: Set<Capability>) {
  * Detect if a desktop environment is available.
  */
 function detectDesktop(capabilities: Set<Capability>) {
-	if (process.platform !== 'linux' || !!process.env.DISPLAY) {
+	if (os.platform() !== 'linux' || !!process.env.DISPLAY) {
 		capabilities.add('desktop');
 	}
 }
@@ -104,7 +105,7 @@ function detectDesktop(capabilities: Set<Capability>) {
  * Detect if a browser environment is available.
  */
 function detectBrowser(capabilities: Set<Capability>) {
-	switch (process.platform) {
+	switch (os.platform()) {
 		case 'linux': {
 			const path = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
 			if (path && fs.existsSync(path)) {
@@ -132,7 +133,7 @@ function detectBrowser(capabilities: Set<Capability>) {
  * Detect if WSL is available on Windows.
  */
 function detectWSL(capabilities: Set<Capability>) {
-	if (process.platform !== 'win32') {
+	if (os.platform() !== 'win32') {
 		return;
 	}
 	const systemRoot = process.env['SystemRoot'];
