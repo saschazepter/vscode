@@ -22,7 +22,7 @@ import { AgentSessionStatus, IAgentSession, isSessionInProgressStatus } from '..
 import { BaseActionViewItem, IBaseActionViewItemOptions } from '../../../../../../base/browser/ui/actionbar/actionViewItems.js';
 import { IAction, Separator, SubmenuAction, toAction } from '../../../../../../base/common/actions.js';
 import { ILabelService } from '../../../../../../platform/label/common/label.js';
-import { IWorkspaceContextService } from '../../../../../../platform/workspace/common/workspace.js';
+import { isEmptyWorkspaceIdentifier, IWorkspaceContextService, toWorkspaceIdentifier } from '../../../../../../platform/workspace/common/workspace.js';
 import { IBrowserWorkbenchEnvironmentService } from '../../../../../services/environment/browser/environmentService.js';
 import { IEditorGroupsService } from '../../../../../services/editor/common/editorGroupsService.js';
 import { IEditorService } from '../../../../../services/editor/common/editorService.js';
@@ -782,7 +782,9 @@ export class AgentTitleBarStatusWidget extends BaseActionViewItem {
 		const viewSessionsEnabled = this.configurationService.getValue<boolean>(ChatConfiguration.ChatViewSessionsEnabled) !== false;
 
 		// Unread section (blue dot + count)
-		if (viewSessionsEnabled && hasUnreadSessions) {
+		// Don't show unread indicator in empty workspace
+		const isEmptyWorkspace = isEmptyWorkspaceIdentifier(toWorkspaceIdentifier(this.workspaceContextService.getWorkspace()));
+		if (viewSessionsEnabled && hasUnreadSessions && !isEmptyWorkspace) {
 			const { isFilteredToUnread } = this._getCurrentFilterState();
 			const unreadSection = $('span.agent-status-badge-section.unread');
 			if (isFilteredToUnread) {
