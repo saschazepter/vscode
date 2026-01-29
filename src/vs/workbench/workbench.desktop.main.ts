@@ -53,6 +53,7 @@ import './services/keybinding/electron-browser/nativeKeyboardLayout.js';
 import './services/path/electron-browser/pathService.js';
 import './services/themes/electron-browser/nativeHostColorSchemeService.js';
 import './services/extensionManagement/electron-browser/extensionManagementService.js';
+import './services/mcp/electron-browser/mcpGalleryManifestService.js';
 import './services/mcp/electron-browser/mcpWorkbenchManagementService.js';
 import './services/encryption/electron-browser/encryptionService.js';
 import './services/imageResize/electron-browser/imageResizeService.js';
@@ -154,6 +155,9 @@ import './contrib/externalTerminal/electron-browser/externalTerminal.contributio
 // Webview
 import './contrib/webview/electron-browser/webview.contribution.js';
 
+// Browser
+import './contrib/browserView/electron-browser/browserView.contribution.js';
+
 // Splash
 import './contrib/splash/electron-browser/splash.contribution.js';
 
@@ -180,6 +184,9 @@ import './contrib/emergencyAlert/electron-browser/emergencyAlert.contribution.js
 
 // MCP
 import './contrib/mcp/electron-browser/mcp.contribution.js';
+
+// Policy Export
+import './contrib/policyExport/electron-browser/policyExport.contribution.js';
 
 //#endregion
 
