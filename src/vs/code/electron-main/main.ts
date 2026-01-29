@@ -100,6 +100,8 @@ class CodeMain {
 		// default electron error dialog popping up
 		setUnexpectedErrorHandler(err => console.error(err));
 
+		console.log('hello world');
+
 		// Create services
 		const [instantiationService, instanceEnvironment, environmentMainService, configurationService, stateMainService, bufferLogger, productService, userDataProfilesMainService] = this.createServices();
 
