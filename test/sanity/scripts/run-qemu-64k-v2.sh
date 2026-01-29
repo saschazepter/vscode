@@ -34,6 +34,9 @@ sudo tar -xJf "$DOWNLOAD_DIR/$UBUNTU_ROOTFS" -C "$ROOTFS_DIR"
 echo "Copying $TEST_DIR into rootfs"
 sudo cp -r "$TEST_DIR"/* "$ROOTFS_DIR/root/"
 
+echo "Copying Node.js from host"
+sudo cp "$(which node)" "$ROOTFS_DIR/usr/local/bin/"
+
 echo "Pre-installing packages in rootfs (chroot on ARM64 host)"
 sudo rm -f "$ROOTFS_DIR/etc/resolv.conf"
 echo "nameserver 8.8.8.8" | sudo tee "$ROOTFS_DIR/etc/resolv.conf" > /dev/null
@@ -42,13 +45,10 @@ sudo mount --bind /dev/pts "$ROOTFS_DIR/dev/pts"
 sudo mount -t proc proc "$ROOTFS_DIR/proc"
 sudo mount -t sysfs sys "$ROOTFS_DIR/sys"
 sudo chroot "$ROOTFS_DIR" /bin/sh -c "
+	sed -i 's|http://ports.ubuntu.com|http://azure.ports.ubuntu.com|g' /etc/apt/sources.list.d/ubuntu.sources
 	apt-get update
 	apt-get install -y xvfb dbus-x11 libasound2t64 libgtk-3-0t64 libcurl4t64 libgbm1 libnss3 xdg-utils
 "
-
-echo "Copying Node.js from host"
-sudo cp "$(which node)" "$ROOTFS_DIR/usr/local/bin/"
-sudo cp "$(which npm)" "$ROOTFS_DIR/usr/local/bin/" 2>/dev/null || true
 sudo umount "$ROOTFS_DIR/sys"
 sudo umount "$ROOTFS_DIR/proc"
 sudo umount "$ROOTFS_DIR/dev/pts"
