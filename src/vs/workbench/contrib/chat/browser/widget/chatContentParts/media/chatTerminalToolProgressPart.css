@@ -107,7 +107,7 @@
 	display: flex;
 	gap: 4px;
 	margin-left: auto;
-	align-self: flex-start;
+	align-self: center;
 }
 
 /* Reset margin for action bar icons - they should have similar spacing to other action bars */
