@@ -52,7 +52,7 @@ export class InlineChatAffordance extends Disposable {
 
 		this._store.add(autorun(r => {
 			const value = debouncedSelection.read(r);
-			if (!value || value.isEmpty() || !explicitSelection) {
+			if (!value || value.isEmpty() || !explicitSelection || _editor.getModel()?.getValueInRange(value).match(/^\s+$/)) {
 				selectionData.set(undefined, undefined);
 				return;
 			}
