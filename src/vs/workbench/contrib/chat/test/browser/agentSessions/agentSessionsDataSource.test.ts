@@ -180,6 +180,9 @@ suite('AgentSessionsDataSource', () => {
 			const now = Date.now();
 			// Sessions between 24-48 hours ago display "1 day ago" via fromNow()
 			// They should be grouped as "Yesterday", not "Last Week"
+			// Note: "Today" uses calendar-based midnight, so sessions from before midnight
+			// but within 24 hours will be in "Yesterday" section (which is correct since
+			// they display as "X hrs ago" rather than relative to calendar day)
 			const sessions = [
 				createMockSession({ id: 'today', status: ChatSessionStatus.Completed, startTime: now, endTime: now }),
 				// 25 hours ago - should be Yesterday (displays "1 day ago")
