@@ -176,6 +176,46 @@ suite('AgentSessionsDataSource', () => {
 			assert.strictEqual(sections.filter(s => s.section === AgentSessionSection.Today).length, 1);
 		});
 
+		test('groups sessions within 48 hours as Yesterday to match fromNow display', () => {
+			const now = Date.now();
+			// Sessions between 24-48 hours ago display "1 day ago" via fromNow()
+			// They should be grouped as "Yesterday", not "Last Week"
+			const sessions = [
+				createMockSession({ id: 'today', status: ChatSessionStatus.Completed, startTime: now, endTime: now }),
+				// 25 hours ago - should be Yesterday (displays "1 day ago")
+				createMockSession({ id: 'yesterday1', status: ChatSessionStatus.Completed, startTime: now - 25 * 60 * 60 * 1000, endTime: now - 25 * 60 * 60 * 1000 }),
+				// 40 hours ago - should be Yesterday (displays "1 day ago")
+				createMockSession({ id: 'yesterday2', status: ChatSessionStatus.Completed, startTime: now - 40 * 60 * 60 * 1000, endTime: now - 40 * 60 * 60 * 1000 }),
+				// 49 hours ago - should be Last Week (displays "2 days ago")
+				createMockSession({ id: 'week', status: ChatSessionStatus.Completed, startTime: now - 49 * 60 * 60 * 1000, endTime: now - 49 * 60 * 60 * 1000 }),
+			];
+
+			const filter = createMockFilter({ groupBy: AgentSessionsGrouping.Date });
+			const sorter = createMockSorter();
+			const dataSource = new AgentSessionsDataSource(filter, sorter);
+
+			const mockModel = createMockModel(sessions);
+			const result = Array.from(dataSource.getChildren(mockModel));
+			const sections = getSectionsFromResult(result);
+
+			// Today section with 1 session
+			const todaySection = sections.find(s => s.section === AgentSessionSection.Today);
+			assert.ok(todaySection, 'Today section should exist');
+			assert.strictEqual(todaySection.sessions.length, 1);
+			assert.strictEqual(todaySection.sessions[0].label, 'Session today');
+
+			// Yesterday section with 2 sessions (both display "1 day ago")
+			const yesterdaySection = sections.find(s => s.section === AgentSessionSection.Yesterday);
+			assert.ok(yesterdaySection, 'Yesterday section should exist');
+			assert.strictEqual(yesterdaySection.sessions.length, 2);
+
+			// Week section with 1 session (displays "2 days ago")
+			const weekSection = sections.find(s => s.section === AgentSessionSection.Week);
+			assert.ok(weekSection, 'Week section should exist');
+			assert.strictEqual(weekSection.sessions.length, 1);
+			assert.strictEqual(weekSection.sessions[0].label, 'Session week');
+		});
+
 		test('adds Older header for sessions older than week threshold', () => {
 			const now = Date.now();
 			const sessions = [
@@ -344,8 +384,8 @@ suite('AgentSessionsDataSource', () => {
 			const sessions = [
 				createMockSession({ id: 'old1', status: ChatSessionStatus.Completed, startTime: now - WEEK_THRESHOLD - 2 * ONE_DAY, endTime: now - WEEK_THRESHOLD - 2 * ONE_DAY }),
 				createMockSession({ id: 'old2', status: ChatSessionStatus.Completed, startTime: now - WEEK_THRESHOLD - ONE_DAY, endTime: now - WEEK_THRESHOLD - ONE_DAY }),
-				createMockSession({ id: 'week1', status: ChatSessionStatus.Completed, startTime: now - 3 * ONE_DAY, endTime: now - 3 * ONE_DAY }),
-				createMockSession({ id: 'week2', status: ChatSessionStatus.Completed, startTime: now - 2 * ONE_DAY, endTime: now - 2 * ONE_DAY }),
+				createMockSession({ id: 'week1', status: ChatSessionStatus.Completed, startTime: now - 4 * ONE_DAY, endTime: now - 4 * ONE_DAY }),
+				createMockSession({ id: 'week2', status: ChatSessionStatus.Completed, startTime: now - 3 * ONE_DAY, endTime: now - 3 * ONE_DAY }),
 			];
 
 			const filter = createMockFilter({ groupBy: AgentSessionsGrouping.Date });
