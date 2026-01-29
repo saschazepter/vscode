@@ -520,6 +520,14 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 				}
 			}));
 
+			// Auto-resize textarea as user types
+			const autoResize = () => {
+				freeformTextarea.style.height = 'auto';
+				freeformTextarea.style.height = `${Math.min(freeformTextarea.scrollHeight, 200)}px`;
+				this._onDidChangeHeight.fire();
+			};
+			this._inputBoxes.add(dom.addDisposableListener(freeformTextarea, dom.EventType.INPUT, autoResize));
+
 			// uncheck radio when there is text
 			this._inputBoxes.add(dom.addDisposableListener(freeformTextarea, dom.EventType.INPUT, () => {
 				if (freeformTextarea.value.trim()) {
@@ -612,6 +620,14 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 					this.handleNext();
 				}
 			}));
+
+			// Auto-resize textarea as user types
+			const autoResize = () => {
+				freeformTextarea.style.height = 'auto';
+				freeformTextarea.style.height = `${Math.min(freeformTextarea.scrollHeight, 200)}px`;
+				this._onDidChangeHeight.fire();
+			};
+			this._inputBoxes.add(dom.addDisposableListener(freeformTextarea, dom.EventType.INPUT, autoResize));
 
 			// For multiSelect, both checkboxes and freeform input are combined, so don't uncheck on input
 

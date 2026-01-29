@@ -224,16 +224,18 @@
 
 .chat-question-freeform-textarea {
 	width: 100%;
+	min-height: 32px;
 	max-height: 200px;
 	padding: 6px 8px;
 	border: 1px solid var(--vscode-input-border, var(--vscode-chat-requestBorder));
 	background-color: var(--vscode-input-background);
 	color: var(--vscode-input-foreground);
 	border-radius: 4px;
-	resize: vertical;
+	resize: none;
 	font-family: var(--vscode-chat-font-family, inherit);
 	font-size: var(--vscode-chat-font-size-body-s);
 	box-sizing: border-box;
+	overflow-y: hidden;
 }
 
 .chat-question-freeform-textarea:focus {
