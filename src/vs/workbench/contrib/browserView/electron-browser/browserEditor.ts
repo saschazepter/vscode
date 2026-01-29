@@ -803,9 +803,13 @@ export class BrowserEditor extends EditorPane {
 			return;
 		}
 
-		// Capture screenshot and set as background image
-		const screenshot = await this._model.captureScreenshot({ quality: 80 });
-		this.setBackgroundImage(screenshot);
+		try {
+			// Capture screenshot and set as background image
+			const screenshot = await this._model.captureScreenshot({ quality: 80 });
+			this.setBackgroundImage(screenshot);
+		} catch (error) {
+			this._logService.error('Failed to capture browser view screenshot', error);
+		}
 
 		// Schedule next screenshot in 1 second
 		this._screenshotTimeout = setTimeout(() => this.doScreenshot(), 1000);
