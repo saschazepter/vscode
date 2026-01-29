@@ -9,14 +9,14 @@ TEST_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
 echo "Installing QEMU system emulation"
 sudo apt-get update && sudo apt-get install -y qemu-system-arm
 
-# Download Alpine minirootfs
-ALPINE_VERSION="3.21"
-ALPINE_ROOTFS="alpine-minirootfs-${ALPINE_VERSION}.0-aarch64.tar.gz"
-ALPINE_URL="https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VERSION}/releases/aarch64/$ALPINE_ROOTFS"
+# Download Ubuntu minimal rootfs (uses glibc, compatible with VS Code binaries)
+UBUNTU_VERSION="24.04.3"
+UBUNTU_ROOTFS="ubuntu-base-${UBUNTU_VERSION}-base-arm64.tar.gz"
+UBUNTU_URL="https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/$UBUNTU_ROOTFS"
 DOWNLOAD_DIR=$(mktemp -d)
 
-echo "Downloading Alpine minirootfs"
-curl -fL "$ALPINE_URL" -o "$DOWNLOAD_DIR/$ALPINE_ROOTFS"
+echo "Downloading Ubuntu minimal rootfs"
+curl -fL "$UBUNTU_URL" -o "$DOWNLOAD_DIR/$UBUNTU_ROOTFS"
 
 # Download 64k kernel
 KERNEL_VERSION="6.8.0-90"
@@ -31,7 +31,7 @@ VMLINUZ="$DOWNLOAD_DIR/boot/vmlinuz-${KERNEL_VERSION}-generic-64k"
 
 echo "Preparing rootfs"
 ROOTFS_DIR=$(mktemp -d)
-sudo tar -xzf "$DOWNLOAD_DIR/$ALPINE_ROOTFS" -C "$ROOTFS_DIR"
+sudo tar -xzf "$DOWNLOAD_DIR/$UBUNTU_ROOTFS" -C "$ROOTFS_DIR"
 
 # Copy mount directory contents into /root
 echo "Copying $TEST_DIR into rootfs"
@@ -45,7 +45,7 @@ sudo chmod +x "$ROOTFS_DIR/init"
 
 echo "Creating disk image"
 DISK_IMG=$(mktemp)
-dd if=/dev/zero of="$DISK_IMG" bs=1M count=512 status=none
+dd if=/dev/zero of="$DISK_IMG" bs=1M count=2048 status=none
 sudo mkfs.ext4 -q -d "$ROOTFS_DIR" "$DISK_IMG"
 sudo rm -rf "$ROOTFS_DIR"
 
@@ -57,7 +57,7 @@ timeout 1800 qemu-system-aarch64 \
 	-m 4096 \
 	-smp 2 \
 	-kernel "$VMLINUZ" \
-	-append "console=ttyAMA0 root=/dev/vda rw init=/init net.ifnames=0" \
+	-append "console=ttyAMA0 root=/dev/vda rw init=/init net.ifnames=0 ip=10.0.2.15::10.0.2.2:255.255.255.0::eth0:off" \
 	-drive file="$DISK_IMG",format=raw,if=virtio \
 	-netdev user,id=net0 \
 	-device virtio-net-pci,netdev=net0 \
