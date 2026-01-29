@@ -15,7 +15,7 @@ import { IQuickPickItem, IQuickInputService } from '../../../../platform/quickin
 import { Action2 } from '../../../../platform/actions/common/actions.js';
 import { ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
 import { IWorkspaceTrustManagementService } from '../../../../platform/workspace/common/workspaceTrust.js';
-import { ConfigurationTarget, IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
+import { ConfigurationTarget, IConfigurationService, isConfigured } from '../../../../platform/configuration/common/configuration.js';
 import { IOpenerService } from '../../../../platform/opener/common/opener.js';
 import { URI } from '../../../../base/common/uri.js';
 import { Event } from '../../../../base/common/event.js';
@@ -47,9 +47,13 @@ export class RunAutomaticTasks extends Disposable implements IWorkbenchContribut
 		if (!this._workspaceTrustManagementService.isWorkspaceTrusted()) {
 			return;
 		}
+		const allowAutomaticTasksSetting = this._configurationService.inspect<string>(ALLOW_AUTOMATIC_TASKS);
+		const allowAutomaticTasksValue = allowAutomaticTasksSetting.value;
 		const hasShownPromptForAutomaticTasks = this._storageService.getBoolean(HAS_PROMPTED_FOR_AUTOMATIC_TASKS, StorageScope.WORKSPACE, false);
+		// If the user has explicitly configured the setting, respect their choice without prompting
+		const userHasConfigured = isConfigured(allowAutomaticTasksSetting);
 		if (this._hasRunTasks ||
-			(this._configurationService.getValue(ALLOW_AUTOMATIC_TASKS) === 'off' && hasShownPromptForAutomaticTasks)) {
+			(allowAutomaticTasksValue === 'off' && (hasShownPromptForAutomaticTasks || userHasConfigured))) {
 			return;
 		}
 		this._hasRunTasks = true;
@@ -162,8 +166,13 @@ export class RunAutomaticTasks extends Disposable implements IWorkbenchContribut
 		if (taskNames.length === 0) {
 			return;
 		}
-		if (configurationService.getValue(ALLOW_AUTOMATIC_TASKS) === 'on') {
+		const allowAutomaticTasksSetting = configurationService.inspect<string>(ALLOW_AUTOMATIC_TASKS);
+		if (allowAutomaticTasksSetting.value === 'on') {
 			this._runTasks(taskService, tasks);
+			return;
+		}
+		// If the user has explicitly configured the setting to 'off', respect their choice without prompting
+		if (isConfigured(allowAutomaticTasksSetting)) {
 			return;
 		}
 		const hasShownPromptForAutomaticTasks = storageService.getBoolean(HAS_PROMPTED_FOR_AUTOMATIC_TASKS, StorageScope.WORKSPACE, false);
