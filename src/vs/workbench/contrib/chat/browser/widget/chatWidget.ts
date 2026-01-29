@@ -805,6 +805,14 @@ export class ChatWidget extends Disposable implements IChatWidget {
 				return;
 			}
 
+			// Skip welcome content when a core agent exists (Copilot is fully set up)
+			// This matches the condition in ChatViewPane.shouldShowWelcome()
+			const hasCoreAgent = this.chatAgentService.getAgents().some(agent => agent.isCore && agent.locations.includes(this.location));
+			if (hasCoreAgent) {
+				this.updateChatViewVisibility();
+				return;
+			}
+
 			const numItems = this.viewModel?.getItems().length ?? 0;
 			if (!numItems) {
 				const defaultAgent = this.chatAgentService.getDefaultAgent(this.location, this.input.currentModeKind);
