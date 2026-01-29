@@ -65,7 +65,7 @@ steps:
       cacheHitVar: NODE_MODULES_RESTORED
     displayName: Restore node_modules cache
 
-  - powershell: '& "C:\Program Files\Git\usr\bin\tar.exe" -xf .build/node_modules_cache/cache.tzst -P -C . --force-local --use-compress-program "zstd -d"'
+  - powershell: '& "C:\Program Files\Git\usr\bin\tar.exe" -xf .build/node_modules_cache/cache.tzst -C . --force-local --use-compress-program "zstd -d"'
     condition: and(succeeded(), eq(variables.NODE_MODULES_RESTORED, 'true'))
     displayName: Extract node_modules cache
 
