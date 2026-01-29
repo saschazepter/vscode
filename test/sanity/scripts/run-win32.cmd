@@ -81,6 +81,9 @@ curl -L -o "%MSI_PATH%" "%MSI_URL%"
 echo Installing WSL from %MSI_PATH%
 msiexec /i "%MSI_PATH%" /quiet /norestart
 
+echo Starting Host Compute Service
+sc start vmcompute
+
 echo Starting WSL service
 sc start wslservice
 
