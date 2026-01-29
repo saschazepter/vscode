@@ -699,24 +699,37 @@ class ExtHostTreeView<T> extends Disposable {
 		return asPromise(() => this._dataProvider.getParent!(element));
 	}
 
-	private _resolveTreeNode(element: T, parent?: TreeNode): Promise<TreeNode> {
+	private async _resolveTreeNode(element: T, parent?: TreeNode, retryCount = 0): Promise<TreeNode> {
 		const node = this._nodes.get(element);
 		if (node) {
-			return Promise.resolve(node);
+			return node;
 		}
-		return asPromise(() => this._dataProvider.getTreeItem(element))
-			.then(extTreeItem => this._createHandle(element, extTreeItem, parent, true))
-			.then(handle => this.getChildren(parent ? parent.item.handle : undefined)
-				.then(() => {
-					const cachedElement = this.getExtensionElement(handle);
-					if (cachedElement) {
-						const node = this._nodes.get(cachedElement);
-						if (node) {
-							return Promise.resolve(node);
-						}
-					}
-					throw new Error(`Cannot resolve tree item for element ${handle} from extension ${this._extension.identifier.value}`);
-				}));
+		const extTreeItem = await asPromise(() => this._dataProvider.getTreeItem(element));
+		const handle = this._createHandle(element, extTreeItem, parent, true);
+		const children = await this.getChildren(parent ? parent.item.handle : undefined);
+		// If getChildren returned undefined, it means a concurrent refresh invalidated
+		// the fetch. Retry a limited number of times to handle transient refresh races.
+		if (children === undefined && retryCount < 3) {
+			const newRetryCount = retryCount + 1;
+			this._logService.warn(`[${this._viewId}] Retrying _resolveTreeNode due to concurrent refresh (attempt ${newRetryCount}/3) for element ${handle} from extension ${this._extension.identifier.value}`);
+			if (newRetryCount === 1) {
+				// Log telemetry on first retry
+				this._proxy.$logResolveTreeNodeRetry(this._viewId, this._extension.identifier.value, newRetryCount, false);
+			}
+			return this._resolveTreeNode(element, parent, newRetryCount);
+		}
+		const cachedElement = this.getExtensionElement(handle);
+		if (cachedElement) {
+			const node = this._nodes.get(cachedElement);
+			if (node) {
+				return node;
+			}
+		}
+		// Log telemetry when retries are exhausted (retryCount === 3 means we've retried 3 times and still failed)
+		if (retryCount > 0) {
+			this._proxy.$logResolveTreeNodeRetry(this._viewId, this._extension.identifier.value, retryCount, true);
+		}
+		throw new Error(`Cannot resolve tree item for element ${handle} from extension ${this._extension.identifier.value}`);
 	}
 
 	private _getChildrenNodes(parentNodeOrHandle: TreeNode | TreeItemHandle | Root): TreeNode[] | undefined {
