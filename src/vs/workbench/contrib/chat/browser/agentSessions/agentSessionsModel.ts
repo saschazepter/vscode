@@ -515,6 +515,7 @@ export class AgentSessionsModel extends Disposable implements IAgentSessionsMode
 					archived: session.archived,
 					timing: session.timing,
 					changes: normalizedChanges,
+					metadata: session.metadata,
 				}));
 			}
 		}
