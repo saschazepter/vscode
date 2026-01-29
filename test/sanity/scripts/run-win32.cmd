@@ -33,7 +33,7 @@ set PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=C:\Program Files (x86)\Microsoft\Edge\Ap
 
 echo Running sanity tests
 node "%~dp0..\out\index.js" %*
-goto :eof
+exit /b %ERRORLEVEL%
 
 :install_wsl
 echo Ubuntu not found, installing via rootfs import
