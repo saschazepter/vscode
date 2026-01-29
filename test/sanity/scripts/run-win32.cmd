@@ -1,15 +1,19 @@
 @echo off
 setlocal
 
-powershell -NoProfile -Command "$arch = [int](Get-CimInstance Win32_Processor).Architecture; $archName = @{0='x86';5='ARM';9='AMD64';12='ARM64'}[$arch]; Write-Host ('System: ' + $env:OS + ' ' + $archName)"
+set "WSL=%SystemRoot%\System32\wsl.exe"
+
+for /f "tokens=*" %%a in ('powershell -NoProfile -Command "[int](Get-CimInstance Win32_Processor).Architecture"') do set ARCH=%%a
+if "%ARCH%"=="12" (set "ARCH_NAME=ARM64") else if "%ARCH%"=="9" (set "ARCH_NAME=AMD64") else if "%ARCH%"=="5" (set "ARCH_NAME=ARM") else (set "ARCH_NAME=x86")
+
+echo System: %OS% %ARCH_NAME%
 powershell -NoProfile -Command "$mem = (Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory; Write-Host ('Memory: {0:N0} GB' -f ($mem/1GB))"
 powershell -NoProfile -Command "$disk = Get-PSDrive C; Write-Host ('Disk C: {0:N0} GB free of {1:N0} GB' -f ($disk.Free/1GB), (($disk.Used+$disk.Free)/1GB))"
 
-set "UBUNTU_ROOTFS=%TEMP%\ubuntu-rootfs.tar.gz"
 set "UBUNTU_INSTALL=%LOCALAPPDATA%\WSL\Ubuntu"
 
 echo Checking if Ubuntu WSL is available
-powershell -Command "wsl -d Ubuntu echo 'WSL is ready'" 2>nul
+"%WSL%" -d Ubuntu echo "WSL is ready" 2>nul
 if errorlevel 1 call :install_wsl
 
 set PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
@@ -22,15 +26,23 @@ goto :eof
 :install_wsl
 echo Ubuntu not found, installing via rootfs import
 
+if "%ARCH%"=="12" (
+    set "UBUNTU_ROOTFS=%TEMP%\ubuntu-rootfs-arm64.tar.gz"
+    set "UBUNTU_URL=https://cloud-images.ubuntu.com/wsl/jammy/current/ubuntu-jammy-wsl-arm64-ubuntu22.04lts.rootfs.tar.gz"
+) else (
+    set "UBUNTU_ROOTFS=%TEMP%\ubuntu-rootfs-amd64.tar.gz"
+    set "UBUNTU_URL=https://cloud-images.ubuntu.com/wsl/jammy/current/ubuntu-jammy-wsl-amd64-ubuntu22.04lts.rootfs.tar.gz"
+)
+
 if not exist "%UBUNTU_ROOTFS%" (
-    echo Downloading Ubuntu rootfs
-    curl -L -o "%UBUNTU_ROOTFS%" https://cloud-images.ubuntu.com/wsl/jammy/current/ubuntu-jammy-wsl-amd64-ubuntu22.04lts.rootfs.tar.gz
+    echo Downloading Ubuntu rootfs from %UBUNTU_URL%
+    curl -L -o "%UBUNTU_ROOTFS%" "%UBUNTU_URL%"
 )
 
 echo Importing Ubuntu into WSL
 mkdir "%UBUNTU_INSTALL%" 2>nul
-wsl --import Ubuntu "%UBUNTU_INSTALL%" "%UBUNTU_ROOTFS%"
+"%WSL%" --import Ubuntu "%UBUNTU_INSTALL%" "%UBUNTU_ROOTFS%"
 
 echo Starting WSL
-wsl -d Ubuntu echo WSL is ready
+"%WSL%" -d Ubuntu echo WSL is ready
 goto :eof
