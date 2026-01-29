@@ -699,7 +699,7 @@ class ExtHostTreeView<T> extends Disposable {
 		return asPromise(() => this._dataProvider.getParent!(element));
 	}
 
-	private async _resolveTreeNode(element: T, parent?: TreeNode, retryCount = 0): Promise<TreeNode> {
+	private async _resolveTreeNode(element: T, parent?: TreeNode): Promise<TreeNode> {
 		const node = this._nodes.get(element);
 		if (node) {
 			return node;
@@ -708,15 +708,23 @@ class ExtHostTreeView<T> extends Disposable {
 		const handle = this._createHandle(element, extTreeItem, parent, true);
 		const children = await this.getChildren(parent ? parent.item.handle : undefined);
 		// If getChildren returned undefined, it means a concurrent refresh invalidated
-		// the fetch. Retry a limited number of times to handle transient refresh races.
-		if (children === undefined && retryCount < 3) {
-			const newRetryCount = retryCount + 1;
-			this._logService.warn(`[${this._viewId}] Retrying _resolveTreeNode due to concurrent refresh (attempt ${newRetryCount}/3) for element ${handle} from extension ${this._extension.identifier.value}`);
-			if (newRetryCount === 1) {
-				// Log telemetry on first retry
-				this._proxy.$logResolveTreeNodeRetry(this._extension.identifier.value, newRetryCount, false);
+		// the fetch. Wait for the refresh to complete and check if the element was resolved.
+		if (children === undefined) {
+			this._logService.warn(`[${this._viewId}] Concurrent refresh detected in _resolveTreeNode for element ${handle} from extension ${this._extension.identifier.value}, waiting for refresh to complete`);
+			this._proxy.$logResolveTreeNodeRetry(this._extension.identifier.value, 1, false);
+			// Wait for any pending refresh to complete
+			await this._refreshPromise;
+			// Check if the element is now in the cache after the refresh completed
+			const cachedElement = this.getExtensionElement(handle);
+			if (cachedElement) {
+				const node = this._nodes.get(cachedElement);
+				if (node) {
+					return node;
+				}
 			}
-			return this._resolveTreeNode(element, parent, newRetryCount);
+			// Still not found after refresh completed - log and throw
+			this._proxy.$logResolveTreeNodeRetry(this._extension.identifier.value, 1, true);
+			throw new Error(`Cannot resolve tree item for element ${handle} from extension ${this._extension.identifier.value}`);
 		}
 		const cachedElement = this.getExtensionElement(handle);
 		if (cachedElement) {
@@ -724,10 +732,6 @@ class ExtHostTreeView<T> extends Disposable {
 			if (node) {
 				return node;
 			}
-		}
-		// Log telemetry when retries were attempted
-		if (retryCount > 0) {
-			this._proxy.$logResolveTreeNodeRetry(this._extension.identifier.value, retryCount, retryCount >= 3);
 		}
 		throw new Error(`Cannot resolve tree item for element ${handle} from extension ${this._extension.identifier.value}`);
 	}
