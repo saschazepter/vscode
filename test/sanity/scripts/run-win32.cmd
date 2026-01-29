@@ -61,10 +61,7 @@ wsl -d Ubuntu echo WSL is ready
 goto :eof
 
 :install_wsl_feature
-echo WSL is not installed, enabling Windows feature and installing WSL
-
-powershell -Command "Start-Process -Wait -Verb RunAs dism.exe -ArgumentList '/online','/enable-feature','/featurename:Microsoft-Windows-Subsystem-Linux','/all','/norestart'"
-powershell -Command "Start-Process -Wait -Verb RunAs dism.exe -ArgumentList '/online','/enable-feature','/featurename:VirtualMachinePlatform','/all','/norestart'"
+echo WSL is not installed, installing from GitHub
 
 REM Download and install WSL from GitHub using MSI (architecture-specific)
 if "%ARCH%"=="12" (
