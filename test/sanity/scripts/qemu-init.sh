@@ -39,16 +39,8 @@ echo "nameserver 10.0.2.3" > /etc/resolv.conf
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export XDG_RUNTIME_DIR=/run/user/0
 
-echo "Installing Node.js 22"
-curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
-apt-get install -y nodejs
-
-echo "Installing X11 and D-Bus"
-apt-get install -y --no-install-recommends xvfb dbus dbus-x11
-
-echo "Installing VS Code dependencies"
-apt-get install -y --no-install-recommends \
-	libasound2t64 libgtk-3-0t64 libcurl4t64 libgbm1 libnss3 xdg-utils
+echo "Starting D-Bus"
+dbus-daemon --system --fork
 
 echo "Starting entrypoint"
 sh /root/containers/entrypoint.sh $(cat /test-args)

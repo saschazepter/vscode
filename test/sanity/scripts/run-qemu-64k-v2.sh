@@ -7,7 +7,7 @@ SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 TEST_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
 
 echo "Installing QEMU system emulation"
-sudo tdnf install -y qemu-system-aarch64 binutils curl xz e2fsprogs
+sudo tdnf install -y qemu-system-aarch64 binutils
 
 # Download Ubuntu minimal cloud image (has networking, curl, etc. pre-installed)
 UBUNTU_ROOTFS="ubuntu-24.04-minimal-cloudimg-arm64-root.tar.xz"
@@ -35,6 +35,20 @@ sudo tar -xJf "$DOWNLOAD_DIR/$UBUNTU_ROOTFS" -C "$ROOTFS_DIR"
 echo "Copying $TEST_DIR into rootfs"
 sudo cp -r "$TEST_DIR"/* "$ROOTFS_DIR/root/"
 
+echo "Pre-installing packages in rootfs (chroot on ARM64 host)"
+sudo rm -f "$ROOTFS_DIR/etc/resolv.conf"
+echo "nameserver 8.8.8.8" | sudo tee "$ROOTFS_DIR/etc/resolv.conf" > /dev/null
+sudo mount -t proc proc "$ROOTFS_DIR/proc"
+sudo mount -t sysfs sys "$ROOTFS_DIR/sys"
+sudo chroot "$ROOTFS_DIR" /bin/sh -c "
+	sed -i 's|http://ports.ubuntu.com|http://azure.ports.ubuntu.com|g' /etc/apt/sources.list.d/ubuntu.sources
+	apt-get update
+	curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+	apt-get install -y nodejs xvfb dbus dbus-x11 libasound2t64 libgtk-3-0t64 libcurl4t64 libgbm1 libnss3 xdg-utils
+"
+sudo umount "$ROOTFS_DIR/sys"
+sudo umount "$ROOTFS_DIR/proc"
+
 echo "Installing init script"
 echo "$ARGS" | sudo tee "$ROOTFS_DIR/test-args" > /dev/null
 date -u '+%Y-%m-%d %H:%M:%S' | sudo tee "$ROOTFS_DIR/host-time" > /dev/null
@@ -49,13 +63,15 @@ sudo rm -rf "$ROOTFS_DIR"
 
 echo "Starting QEMU VM with 64K page size kernel"
 ACCEL="tcg,thread=multi"
+CPU="max,pauth-impdef=on"
 if [ -w /dev/kvm ]; then
 	ACCEL="kvm"
+	CPU="host"
 	echo "Using KVM acceleration"
 fi
 timeout 1800 qemu-system-aarch64 \
 	-M virt \
-	-cpu max,pauth-impdef=on \
+	-cpu "$CPU" \
 	-accel "$ACCEL" \
 	-m 4096 \
 	-smp 2 \
