@@ -7,7 +7,6 @@ SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 TEST_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
 
 echo "Installing QEMU system emulation"
-sudo sed -i 's|http://archive.ubuntu.com|http://azure.archive.ubuntu.com|g' /etc/apt/sources.list
 sudo apt-get update && sudo apt-get install -y qemu-system-arm
 
 # Download Ubuntu minimal cloud image (has networking, curl, etc. pre-installed)
@@ -49,10 +48,15 @@ sudo mkfs.ext4 -q -d "$ROOTFS_DIR" "$DISK_IMG"
 sudo rm -rf "$ROOTFS_DIR"
 
 echo "Starting QEMU VM with 64K page size kernel"
+ACCEL="tcg,thread=multi"
+if [ -w /dev/kvm ]; then
+	ACCEL="kvm"
+	echo "Using KVM acceleration"
+fi
 timeout 1800 qemu-system-aarch64 \
 	-M virt \
 	-cpu max,pauth-impdef=on \
-	-accel tcg,thread=multi \
+	-accel "$ACCEL" \
 	-m 4096 \
 	-smp 2 \
 	-kernel "$VMLINUZ" \
