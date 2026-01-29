@@ -15,6 +15,7 @@ if errorlevel 1 (
     echo WSL is not installed, enabling Windows feature
     powershell -Command "Start-Process -Wait -Verb RunAs dism.exe -ArgumentList '/online','/enable-feature','/featurename:Microsoft-Windows-Subsystem-Linux','/all','/norestart'"
     powershell -Command "Start-Process -Wait -Verb RunAs dism.exe -ArgumentList '/online','/enable-feature','/featurename:VirtualMachinePlatform','/all','/norestart'"
+    set "PATH=%SystemRoot%\System32;%PATH%"
 )
 
 echo Checking if Ubuntu WSL is available
