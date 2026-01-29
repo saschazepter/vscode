@@ -1400,9 +1400,8 @@ suite('AgentSessions', () => {
 			instantiationService = disposables.add(workbenchInstantiationService(undefined, disposables));
 			instantiationService.stub(IChatSessionsService, mockChatSessionsService);
 			instantiationService.stub(ILifecycleService, disposables.add(new TestLifecycleService()));
-			// Set migration key to indicate migration has already happened
 			const storageService = instantiationService.get(IStorageService);
-			storageService.store('agentSessions.markAllReadMigration', 1, StorageScope.WORKSPACE, StorageTarget.MACHINE);
+			storageService.store('agentSessions.readDateBaseline', 1, StorageScope.WORKSPACE, StorageTarget.MACHINE);
 		});
 
 		teardown(() => {
@@ -1413,7 +1412,6 @@ suite('AgentSessions', () => {
 
 		test('should mark session as read and unread', async () => {
 			return runWithFakedTimers({}, async () => {
-				// Create session with timing after READ_STATE_INITIAL_DATE so it can be marked unread
 				const futureSessionTiming: IChatSessionItem['timing'] = {
 					created: Date.UTC(2026, 1 /* February */, 1),
 					lastRequestStarted: Date.UTC(2026, 1 /* February */, 1),
@@ -1566,7 +1564,6 @@ suite('AgentSessions', () => {
 
 		test('should consider sessions after initial date as unread by default', async () => {
 			return runWithFakedTimers({}, async () => {
-				// Session with timing after the READ_STATE_INITIAL_DATE (January 28, 2026)
 				const newSessionTiming: IChatSessionItem['timing'] = {
 					created: Date.UTC(2026, 1 /* February */, 1),
 					lastRequestStarted: Date.UTC(2026, 1 /* February */, 1),
@@ -1662,8 +1659,6 @@ suite('AgentSessions', () => {
 
 		test('should treat archived sessions as read', async () => {
 			return runWithFakedTimers({}, async () => {
-				// Session with timing after the READ_STATE_INITIAL_DATE (January 28, 2026)
-				// which would normally be unread
 				const newSessionTiming: IChatSessionItem['timing'] = {
 					created: Date.UTC(2026, 1 /* February */, 1),
 					lastRequestStarted: Date.UTC(2026, 1 /* February */, 1),
@@ -1703,7 +1698,6 @@ suite('AgentSessions', () => {
 
 		test('should mark session as read when archiving', async () => {
 			return runWithFakedTimers({}, async () => {
-				// Session with timing after the READ_STATE_INITIAL_DATE (January 28, 2026)
 				const newSessionTiming: IChatSessionItem['timing'] = {
 					created: Date.UTC(2026, 1 /* February */, 1),
 					lastRequestStarted: Date.UTC(2026, 1 /* February */, 1),
@@ -1749,7 +1743,6 @@ suite('AgentSessions', () => {
 
 		test('should fire onDidChangeSessions when archiving an unread session', async () => {
 			return runWithFakedTimers({}, async () => {
-				// Session with timing after the READ_STATE_INITIAL_DATE
 				const newSessionTiming: IChatSessionItem['timing'] = {
 					created: Date.UTC(2026, 1 /* February */, 1),
 					lastRequestStarted: Date.UTC(2026, 1 /* February */, 1),

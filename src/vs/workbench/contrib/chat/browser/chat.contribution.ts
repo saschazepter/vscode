@@ -435,11 +435,6 @@ configurationRegistry.registerConfiguration({
 			default: 'sideBySide',
 			description: nls.localize('chat.viewSessions.orientation', "Controls the orientation of the chat agent sessions view when it is shown alongside the chat."),
 		},
-		[ChatConfiguration.ChatViewTitleEnabled]: {
-			type: 'boolean',
-			default: true,
-			description: nls.localize('chat.viewTitle.enabled', "Show the title of the chat above the chat in the chat view."),
-		},
 		[ChatConfiguration.ChatViewProgressBadgeEnabled]: {
 			type: 'boolean',
 			default: false,
@@ -614,7 +609,7 @@ configurationRegistry.registerConfiguration({
 		[ChatConfiguration.AlternativeToolAction]: {
 			type: 'boolean',
 			description: nls.localize('chat.alternativeToolAction', "When enabled, shows the Configure Tools action in the mode picker dropdown on hover instead of in the chat input."),
-			default: true,
+			default: false,
 			tags: ['experimental'],
 			experiment: {
 				mode: 'auto'

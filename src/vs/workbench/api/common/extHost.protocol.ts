@@ -1613,6 +1613,7 @@ export interface MainThreadWorkspaceShape extends IDisposable {
 	$loadCertificates(): Promise<string[]>;
 	$requestResourceTrust(options: ResourceTrustRequestOptionsDto): Promise<boolean | undefined>;
 	$requestWorkspaceTrust(options?: WorkspaceTrustRequestOptions): Promise<boolean | undefined>;
+	$isResourceTrusted(resource: UriComponents): Promise<boolean>;
 	$registerEditSessionIdentityProvider(handle: number, scheme: string): void;
 	$unregisterEditSessionIdentityProvider(handle: number): void;
 	$registerCanonicalUriProvider(handle: number, scheme: string): void;
@@ -2096,6 +2097,7 @@ export interface ExtHostWorkspaceShape {
 	$acceptWorkspaceData(workspace: IWorkspaceData | null): void;
 	$handleTextSearchResult(result: search.IRawFileMatch2, requestId: number): void;
 	$onDidGrantWorkspaceTrust(): void;
+	$onDidChangeWorkspaceTrustedFolders(): void;
 	$getEditSessionIdentifier(folder: UriComponents, token: CancellationToken): Promise<string | undefined>;
 	$provideEditSessionIdentityMatch(folder: UriComponents, identity1: string, identity2: string, token: CancellationToken): Promise<EditSessionIdentityMatch | undefined>;
 	$onWillCreateEditSessionIdentity(folder: UriComponents, token: CancellationToken, timeout: number): Promise<void>;
@@ -2576,7 +2578,7 @@ export interface ExtHostQuickOpenShape {
 	$onDidAccept(sessionId: number): void;
 	$onDidChangeValue(sessionId: number, value: string): void;
 	$onDidTriggerButton(sessionId: number, handle: number, checked?: boolean): void;
-	$onDidTriggerItemButton(sessionId: number, itemHandle: number, buttonHandle: number): void;
+	$onDidTriggerItemButton(sessionId: number, itemHandle: number, buttonHandle: number, checked?: boolean): void;
 	$onDidHide(sessionId: number): void;
 }
 
