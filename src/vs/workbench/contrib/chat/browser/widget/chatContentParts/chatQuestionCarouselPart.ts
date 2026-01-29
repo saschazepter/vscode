@@ -102,7 +102,7 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 		this._prevButton = prevButton;
 
 		const nextLabel = localize('next', 'Next');
-		const nextButton = interactiveStore.add(new Button(arrowsContainer, { ...defaultButtonStyles, secondary: true, supportIcons: true, title: nextLabel }));
+		const nextButton = interactiveStore.add(new Button(arrowsContainer, { ...defaultButtonStyles, supportIcons: true, title: nextLabel }));
 		nextButton.element.classList.add('chat-question-nav-arrow', 'chat-question-nav-next');
 		nextButton.label = `$(${Codicon.chevronRight.id})`;
 		this._nextButton = nextButton;
@@ -490,9 +490,20 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 			listItem.appendChild(indicator);
 			indicators.push(indicator);
 
-			// Label
+			// Label with optional description (format: "Title - Description")
 			const label = dom.$('.chat-question-list-label');
-			label.textContent = option.label;
+			const separatorIndex = option.label.indexOf(' - ');
+			if (separatorIndex !== -1) {
+				const titleSpan = dom.$('span.chat-question-list-label-title');
+				titleSpan.textContent = option.label.substring(0, separatorIndex);
+				label.appendChild(titleSpan);
+
+				const descSpan = dom.$('span.chat-question-list-label-desc');
+				descSpan.textContent = ' - ' + option.label.substring(separatorIndex + 3);
+				label.appendChild(descSpan);
+			} else {
+				label.textContent = option.label;
+			}
 			listItem.appendChild(label);
 
 			if (isSelected) {
@@ -541,16 +552,10 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 		// Add freeform input if allowed
 		if (question.allowFreeformInput) {
 			const freeformContainer = dom.$('.chat-question-freeform');
-			const freeformLabelId = `freeform-label-${question.id}`;
-			const freeformLabel = dom.$('.chat-question-freeform-label');
-			freeformLabel.id = freeformLabelId;
-			freeformLabel.textContent = localize('chat.questionCarousel.orEnterOwn', 'Or enter your own:');
-			freeformContainer.appendChild(freeformLabel);
 
 			const freeformTextarea = dom.$<HTMLTextAreaElement>('textarea.chat-question-freeform-textarea');
 			freeformTextarea.placeholder = localize('chat.questionCarousel.enterCustomAnswer', 'Enter custom answer');
 			freeformTextarea.rows = 1;
-			freeformTextarea.setAttribute('aria-labelledby', freeformLabelId);
 
 			if (previousFreeform !== undefined) {
 				freeformTextarea.value = previousFreeform;
@@ -611,9 +616,20 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 			checkbox.domNode.tabIndex = -1;
 			listItem.appendChild(checkbox.domNode);
 
-			// Label
+			// Label with optional description (format: "Title - Description")
 			const label = dom.$('.chat-question-list-label');
-			label.textContent = option.label;
+			const separatorIndex = option.label.indexOf(' - ');
+			if (separatorIndex !== -1) {
+				const titleSpan = dom.$('span.chat-question-list-label-title');
+				titleSpan.textContent = option.label.substring(0, separatorIndex);
+				label.appendChild(titleSpan);
+
+				const descSpan = dom.$('span.chat-question-list-label-desc');
+				descSpan.textContent = ' - ' + option.label.substring(separatorIndex + 3);
+				label.appendChild(descSpan);
+			} else {
+				label.textContent = option.label;
+			}
 			listItem.appendChild(label);
 
 			if (isChecked) {
@@ -665,16 +681,10 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 		// Add freeform input if allowed
 		if (question.allowFreeformInput) {
 			const freeformContainer = dom.$('.chat-question-freeform');
-			const freeformLabelId = `freeform-label-${question.id}`;
-			const freeformLabel = dom.$('.chat-question-freeform-label');
-			freeformLabel.id = freeformLabelId;
-			freeformLabel.textContent = localize('chat.questionCarousel.orEnterOwn', 'Or enter your own:');
-			freeformContainer.appendChild(freeformLabel);
 
 			const freeformTextarea = dom.$<HTMLTextAreaElement>('textarea.chat-question-freeform-textarea');
 			freeformTextarea.placeholder = localize('chat.questionCarousel.enterCustomAnswer', 'Enter custom answer');
 			freeformTextarea.rows = 1;
-			freeformTextarea.setAttribute('aria-labelledby', freeformLabelId);
 
 			if (previousFreeform !== undefined) {
 				freeformTextarea.value = previousFreeform;

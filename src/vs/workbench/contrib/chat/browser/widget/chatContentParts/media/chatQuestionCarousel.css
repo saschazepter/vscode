@@ -55,6 +55,9 @@
 	gap: 8px;
 	min-width: 0;
 	flex-wrap: wrap;
+	padding-bottom: 8px;
+	border-bottom: 1px solid var(--vscode-chat-requestBorder);
+	margin-bottom: 8px;
 }
 
 .chat-question-header-row .chat-question-carousel-nav {
@@ -109,11 +112,25 @@
 	height: 22px;
 	padding: 0;
 	border: none;
+}
+
+/* Secondary buttons (prev) use gray secondary background */
+.chat-question-carousel-nav .monaco-button.chat-question-nav-arrow.chat-question-nav-prev {
+	background: var(--vscode-button-secondaryBackground) !important;
+	color: var(--vscode-button-secondaryForeground) !important;
+}
+
+.chat-question-carousel-nav .monaco-button.chat-question-nav-arrow.chat-question-nav-prev:hover:not(.disabled) {
+	background: var(--vscode-button-secondaryHoverBackground) !important;
+}
+
+/* Close button uses transparent background */
+.chat-question-carousel-nav .monaco-button.chat-question-nav-arrow.chat-question-close {
 	background: transparent !important;
 	color: var(--vscode-foreground) !important;
 }
 
-.chat-question-carousel-nav .monaco-button.chat-question-nav-arrow:hover:not(.disabled) {
+.chat-question-carousel-nav .monaco-button.chat-question-nav-arrow.chat-question-close:hover:not(.disabled) {
 	background: var(--vscode-toolbar-hoverBackground) !important;
 }
 
@@ -233,8 +250,22 @@
 	white-space: nowrap;
 }
 
+.chat-question-list-label-title {
+	font-weight: 600;
+}
+
+.chat-question-list-label-desc {
+	font-weight: normal;
+	color: var(--vscode-descriptionForeground);
+}
+
 .chat-question-list-item.selected .chat-question-list-label {
 	color: var(--vscode-list-activeSelectionForeground);
+}
+
+.chat-question-list-item.selected .chat-question-list-label-desc {
+	color: var(--vscode-list-activeSelectionForeground);
+	opacity: 0.8;
 }
 
 /* Legacy styles for backwards compatibility (to be removed) */
@@ -328,6 +359,8 @@
 
 .chat-question-freeform {
 	margin-top: 12px;
+	padding-top: 12px;
+	border-top: 1px solid var(--vscode-chat-requestBorder);
 	display: flex;
 	flex-direction: column;
 	gap: 4px;
