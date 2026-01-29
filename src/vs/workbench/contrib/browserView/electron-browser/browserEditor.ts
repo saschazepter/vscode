@@ -458,7 +458,7 @@ export class BrowserEditor extends EditorPane {
 
 				// Hide the browser view just before the next render.
 				// This attempts to give the screenshot some time to be captured and displayed.
-				// Tf we hide immediately it is more likely to flicker while the old screenshot is still visible.
+				// If we hide immediately it is more likely to flicker while the old screenshot is still visible.
 				this.window.requestAnimationFrame(() => this._model?.setVisible(false));
 			}
 		}
