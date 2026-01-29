@@ -1,3 +1,4 @@
+@echo off
 setlocal
 
 for /f "tokens=*" %%a in ('powershell -NoProfile -Command "[int](Get-CimInstance Win32_Processor).Architecture"') do set ARCH=%%a
@@ -24,7 +25,7 @@ if errorlevel 1 (
 )
 
 echo Checking if Ubuntu WSL is available
-wsl -d Ubuntu echo "WSL is ready" 2>nul
+powershell -NoProfile -Command "if ((wsl -l -q) -contains 'Ubuntu') { exit 0 } else { exit 1 }"
 if errorlevel 1 call :install_wsl
 
 :run_tests
