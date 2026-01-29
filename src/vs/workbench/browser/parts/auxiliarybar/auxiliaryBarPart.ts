@@ -21,6 +21,7 @@ import { ActivityBarPosition, IWorkbenchLayoutService, LayoutSettings, Parts, Po
 import { HoverPosition } from '../../../../base/browser/ui/hover/hoverWidget.js';
 import { IAction, Separator, SubmenuAction, toAction } from '../../../../base/common/actions.js';
 import { ToggleAuxiliaryBarAction } from './auxiliaryBarActions.js';
+import { DisposableMap } from '../../../../base/common/lifecycle.js';
 import { assertReturnsDefined } from '../../../../base/common/types.js';
 import { LayoutPriority } from '../../../../base/browser/ui/splitview/splitview.js';
 import { ToggleSidebarPositionAction } from '../../actions/layoutActions.js';
@@ -77,6 +78,7 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 	readonly priority = LayoutPriority.Low;
 
 	private configuration: IAuxiliaryBarPartConfiguration;
+	private readonly viewContainerModelListeners = this._register(new DisposableMap<string>());
 
 	constructor(
 		@INotificationService notificationService: INotificationService,
@@ -138,16 +140,51 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 
 		// Track view container changes to update composite bar visibility when autoHide is enabled
 		this._register(this.viewDescriptorService.onDidChangeViewContainers(({ added, removed }) => {
+			// Add listeners for new view containers
+			for (const { container, location } of added) {
+				if (location === ViewContainerLocation.AuxiliaryBar) {
+					this.addViewContainerModelListener(container.id);
+				}
+			}
+			// Remove listeners for removed view containers
+			for (const { container, location } of removed) {
+				if (location === ViewContainerLocation.AuxiliaryBar) {
+					this.viewContainerModelListeners.deleteAndDispose(container.id);
+				}
+			}
+
 			const relevantChange = [...added, ...removed].some(({ location }) => location === ViewContainerLocation.AuxiliaryBar);
 			if (relevantChange) {
 				this.onDidChangeAutoHideViewContainers();
 			}
 		}));
-		this._register(this.viewDescriptorService.onDidChangeContainerLocation(({ from, to }) => {
+		this._register(this.viewDescriptorService.onDidChangeContainerLocation(({ viewContainer, from, to }) => {
+			// Update listeners when container moves
+			if (from === ViewContainerLocation.AuxiliaryBar) {
+				this.viewContainerModelListeners.deleteAndDispose(viewContainer.id);
+			}
+			if (to === ViewContainerLocation.AuxiliaryBar) {
+				this.addViewContainerModelListener(viewContainer.id);
+			}
+
 			if (from === ViewContainerLocation.AuxiliaryBar || to === ViewContainerLocation.AuxiliaryBar) {
 				this.onDidChangeAutoHideViewContainers();
 			}
 		}));
+
+		// Initialize listeners for existing view containers
+		for (const container of this.viewDescriptorService.getViewContainersByLocation(ViewContainerLocation.AuxiliaryBar)) {
+			this.addViewContainerModelListener(container.id);
+		}
+	}
+
+	private addViewContainerModelListener(containerId: string): void {
+		const container = this.viewDescriptorService.getViewContainerById(containerId);
+		if (container) {
+			const model = this.viewDescriptorService.getViewContainerModel(container);
+			const listener = model.onDidChangeActiveViewDescriptors(() => this.onDidChangeAutoHideViewContainers());
+			this.viewContainerModelListeners.set(containerId, listener);
+		}
 	}
 
 	private onDidChangeAutoHideViewContainers(): void {
