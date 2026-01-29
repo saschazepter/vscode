@@ -47,7 +47,7 @@ jobs:
       - name: Extract node_modules cache
         if: steps.node-modules-cache.outputs.cache-hit == 'true'
         shell: pwsh
-        run: '& "C:\Program Files\Git\usr\bin\tar.exe" -xf .build/node_modules_cache/cache.tzst -P -C . --force-local --use-compress-program "zstd -d"'
+        run: '& "C:\Program Files\Git\usr\bin\tar.exe" -xf .build/node_modules_cache/cache.tzst -C . --force-local --use-compress-program "zstd -d"'
 
       - name: Install dependencies
         if: steps.node-modules-cache.outputs.cache-hit != 'true'
