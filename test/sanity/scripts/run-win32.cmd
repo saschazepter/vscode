@@ -1,8 +1,6 @@
 @echo off
 setlocal
 
-set "WSL=%SystemRoot%\System32\wsl.exe"
-
 for /f "tokens=*" %%a in ('powershell -NoProfile -Command "[int](Get-CimInstance Win32_Processor).Architecture"') do set ARCH=%%a
 if "%ARCH%"=="12" (set "ARCH_NAME=ARM64") else if "%ARCH%"=="9" (set "ARCH_NAME=AMD64") else if "%ARCH%"=="5" (set "ARCH_NAME=ARM") else (set "ARCH_NAME=x86")
 
@@ -12,10 +10,17 @@ powershell -NoProfile -Command "$disk = Get-PSDrive C; Write-Host ('Disk C: {0:N
 
 set "UBUNTU_INSTALL=%LOCALAPPDATA%\WSL\Ubuntu"
 
+where wsl >nul 2>nul
+if errorlevel 1 (
+    echo WSL is not installed, installing
+    powershell -Command "Start-Process -Wait -Verb RunAs wsl -ArgumentList '--install','--no-distribution'"
+)
+
 echo Checking if Ubuntu WSL is available
-"%WSL%" -d Ubuntu echo "WSL is ready" 2>nul
+wsl -d Ubuntu echo "WSL is ready" 2>nul
 if errorlevel 1 call :install_wsl
 
+:run_tests
 set PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 set PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe
 
@@ -41,8 +46,8 @@ if not exist "%UBUNTU_ROOTFS%" (
 
 echo Importing Ubuntu into WSL
 mkdir "%UBUNTU_INSTALL%" 2>nul
-"%WSL%" --import Ubuntu "%UBUNTU_INSTALL%" "%UBUNTU_ROOTFS%"
+wsl --import Ubuntu "%UBUNTU_INSTALL%" "%UBUNTU_ROOTFS%"
 
 echo Starting WSL
-"%WSL%" -d Ubuntu echo WSL is ready
+wsl -d Ubuntu echo WSL is ready
 goto :eof
