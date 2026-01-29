@@ -12,8 +12,9 @@ set "UBUNTU_INSTALL=%LOCALAPPDATA%\WSL\Ubuntu"
 
 where wsl >nul 2>nul
 if errorlevel 1 (
-    echo WSL is not installed, installing
-    powershell -Command "Start-Process -Wait -Verb RunAs wsl -ArgumentList '--install','--no-distribution'"
+    echo WSL is not installed, enabling Windows feature
+    powershell -Command "Start-Process -Wait -Verb RunAs dism.exe -ArgumentList '/online','/enable-feature','/featurename:Microsoft-Windows-Subsystem-Linux','/all','/norestart'"
+    powershell -Command "Start-Process -Wait -Verb RunAs dism.exe -ArgumentList '/online','/enable-feature','/featurename:VirtualMachinePlatform','/all','/norestart'"
 )
 
 echo Checking if Ubuntu WSL is available
