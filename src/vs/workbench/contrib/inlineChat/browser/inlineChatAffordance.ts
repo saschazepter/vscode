@@ -7,6 +7,7 @@ import { Disposable } from '../../../../base/common/lifecycle.js';
 import { autorun, debouncedObservable, derived, observableValue, runOnChange, waitForState } from '../../../../base/common/observable.js';
 import { ICodeEditor } from '../../../../editor/browser/editorBrowser.js';
 import { observableCodeEditor } from '../../../../editor/browser/observableCodeEditor.js';
+import { ScrollType } from '../../../../editor/common/editorCommon.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { InlineChatConfigKeys } from '../common/inlineChat.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
@@ -81,6 +82,9 @@ export class InlineChatAffordance extends Disposable {
 			if (!data) {
 				return;
 			}
+
+			// Reveal the line in case it's outside the viewport (e.g., when triggered from sticky scroll)
+			this._editor.revealLineInCenterIfOutsideViewport(data.lineNumber, ScrollType.Immediate);
 
 			const editorDomNode = this._editor.getDomNode()!;
 			const editorRect = editorDomNode.getBoundingClientRect();
