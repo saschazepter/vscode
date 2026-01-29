@@ -88,7 +88,7 @@ jobs:
       # Linux 64K page size (QEMU system emulation with Alpine rootfs)
       - ${{ if eq(parameters.pageSize, '64k') }}:
         - bash: |
-            sh $(TEST_DIR)/scripts/run-qemu-64k-v2.sh \
+            $(TEST_DIR)/scripts/run-qemu-64k-v2.sh \
               --quality "$(BUILD_QUALITY)" \
               --commit "$(BUILD_COMMIT)" \
               --test-results "/root/results.xml" \
