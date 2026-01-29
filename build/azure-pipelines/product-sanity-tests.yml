@@ -69,7 +69,7 @@ extends:
               displayName: MacOS x64 (no runtime)
               poolName: AcesShared
               os: macOS
-              args: --no-detection --grep "darwin-x64"
+              args: --no-detection --download-only --grep "darwin-x64"
 
           - template: build/azure-pipelines/common/sanity-tests.yml@self
             parameters:
@@ -92,7 +92,7 @@ extends:
               displayName: Windows arm64 (no runtime)
               poolName: 1es-windows-2022-x64
               os: windows
-              args: --no-detection --grep "win32-arm64"
+              args: --no-detection --download-only --grep "win32-arm64"
 
           # Alpine 3.22
           - template: build/azure-pipelines/common/sanity-tests.yml@self
@@ -323,4 +323,4 @@ extends:
               baseImage: ubuntu:24.04
               arch: arm64
               pageSize: 64k
-              args: --grep "desktop-linux-arm64"
+              args: --no-detection --grep "*-linux-arm64"

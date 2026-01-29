@@ -23,7 +23,8 @@ Use -g or -f command-line options to filter tests to match the host platform.
 |`--no-cleanup`||Do not cleanup downloaded files after each test|
 |`--no-signing-check`||Skip Authenticode and codesign signature checks|
 |`--no-headless`||Run tests with a visible UI (desktop tests only)|
-|`--no-detection`||Enable all tests regardless of platform and skip executable runs|
+|`--no-detection`||Enable all tests regardless of platform capabilities|
+|`--download-only`||Only test downloads, skip running executables|
 |`--grep <pattern>`|`-g`|Only run tests matching the given pattern (Mocha grep)|
 |`--fgrep <string>`|`-f`|Only run tests containing the given string (Mocha fgrep)|
 |`--test-results <path>`|`-t`|Output test results in JUnit format to the specified path|
@@ -50,6 +51,7 @@ Platform-specific scripts are provided in the `scripts/` directory to set up the
 |`run-ubuntu.sh`|Ubuntu|Sets up X11, Chromium, and Snap daemon, then runs tests|
 |`run-docker.sh`|Linux (Docker)|Builds and runs tests inside a Docker container|
 |`run-docker.cmd`|Windows (Docker)|Windows wrapper for Docker-based Linux tests|
+|`run-qemu-64k-v2.sh`|Linux (QEMU)|Runs tests in QEMU VM with 64K page size kernel|
 
 ### Docker Script Options
 
@@ -97,6 +99,24 @@ Some containers include web browser used for validating web server targets.
 ./scripts/run-docker.sh --container alpine --arch arm64 -c <commit> -q stable
 ```
 
+## 64K Page Size Testing
+
+The `run-qemu-64k-v2.sh` script tests VS Code on ARM64 Linux with a 64K page size kernel using QEMU system emulation. This is useful for testing compatibility with systems like AWS Graviton instances configured with 64K pages.
+
+The script:
+- Downloads Alpine minirootfs (~4MB) as the base filesystem
+- Downloads Ubuntu's 64K-enabled ARM64 kernel
+- Boots a QEMU VM with the 64K kernel
+- Runs sanity tests inside the VM
+
+Since executables are emulated (ARM64 on x86_64), only download tests are run (`--download-only`).
+
+### Running 64K Page Size Tests
+
+```bash
+./scripts/run-qemu-64k-v2.sh --commit <commit> --quality insider --download-only
+```
+
 ## CI/CD Pipeline
 
 Sanity tests run in Azure Pipelines via the `product-sanity-tests.yml` pipeline.
@@ -125,6 +145,7 @@ For the following platforms only downloads are validated (and not install/runtim
 
 - macOS x64
 - Windows arm64
+- Linux arm64 with 64K page size (via QEMU system emulation)
 
 **Linux Containers (amd64 and arm64):**
 

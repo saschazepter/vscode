@@ -14,9 +14,9 @@ import { setup as setupWSLTests } from './wsl.test.js';
 
 const options = minimist(process.argv.slice(2), {
 	string: ['commit', 'quality'],
-	boolean: ['cleanup', 'verbose', 'signing-check', 'headless', 'detection'],
+	boolean: ['cleanup', 'verbose', 'signing-check', 'headless', 'detection', 'download-only'],
 	alias: { commit: 'c', quality: 'q', verbose: 'v' },
-	default: { cleanup: true, verbose: false, 'signing-check': true, headless: true, 'detection': true },
+	default: { cleanup: true, verbose: false, 'signing-check': true, headless: true, 'detection': true, 'download-only': false },
 });
 
 if (!options.commit) {
@@ -34,7 +34,8 @@ const context = new TestContext({
 	cleanup: options.cleanup,
 	checkSigning: options['signing-check'],
 	headlessBrowser: options.headless,
-	downloadOnly: !options['detection'],
+	noDetection: !options['detection'],
+	downloadOnly: options['download-only'],
 });
 
 context.log(`Arguments: ${process.argv.slice(2).join(' ')}`);

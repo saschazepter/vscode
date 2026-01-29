@@ -45,6 +45,7 @@ export class TestContext {
 		cleanup: boolean;
 		checkSigning: boolean;
 		headlessBrowser: boolean;
+		noDetection: boolean;
 		downloadOnly: boolean;
 	}>) {
 	}
@@ -84,7 +85,7 @@ export class TestContext {
 	 * @returns The Mocha test object or void if the test is skipped.
 	 */
 	public test(name: string, require: Capability[], fn: () => Promise<void>): Mocha.Test | void {
-		if (!this.options.downloadOnly && require.some(o => !this.capabilities.has(o))) {
+		if (!this.options.noDetection && require.some(o => !this.capabilities.has(o))) {
 			return;
 		}
 
