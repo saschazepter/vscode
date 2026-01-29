@@ -203,7 +203,7 @@ export class MarkAllAgentSessionsReadAction extends Action2 {
 	constructor() {
 		super({
 			id: 'workbench.action.chat.markAllAgentSessionsRead',
-			title: localize2('markAllRead.label', "Mark All Read"),
+			title: localize2('markAllRead.label', "Mark All as Read"),
 			precondition: ChatContextKeys.enabled,
 			category: AGENT_SESSIONS_CATEGORY,
 			f1: true,
