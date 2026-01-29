@@ -486,8 +486,6 @@ export class AgentSessionsModel extends Disposable implements IAgentSessionsMode
 			}
 
 			for (const session of providerSessions) {
-
-				// Icon + Label
 				let icon: ThemeIcon;
 				let providerLabel: string;
 				const agentSessionProvider = getAgentSessionProvider(chatSessionType);
