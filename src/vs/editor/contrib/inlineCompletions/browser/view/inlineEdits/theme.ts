@@ -90,7 +90,12 @@ export const inlineEditIndicatorSecondaryForeground = registerColor(
 );
 export const inlineEditIndicatorSecondaryBorder = registerColor(
 	'inlineEdit.gutterIndicator.secondaryBorder',
-	buttonSecondaryBackground,
+	{
+		light: buttonSecondaryBackground,
+		dark: buttonSecondaryBackground,
+		hcDark: buttonSecondaryBackground,
+		hcLight: buttonSecondaryBackground,
+	},
 	localize('inlineEdit.gutterIndicator.secondaryBorder', 'Border color for the secondary inline edit gutter indicator.')
 );
 export const inlineEditIndicatorSecondaryBackground = registerColor(
