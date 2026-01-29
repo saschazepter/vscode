@@ -12,12 +12,11 @@ echo Checking if WSL is installed
 where wsl >nul 2>nul
 if errorlevel 1 (
     echo WSL is not installed, skipping WSL setup
-    goto :run_tests
+) else (
+    echo Checking if Ubuntu is available on WSL
+    powershell -NoProfile -Command "if ((wsl -l -q) -contains 'Ubuntu') { exit 0 } else { exit 1 }"
+    if errorlevel 1 call :install_ubuntu
 )
-
-echo Checking if Ubuntu is available on WSL
-powershell -NoProfile -Command "if ((wsl -l -q) -contains 'Ubuntu') { exit 0 } else { exit 1 }"
-if errorlevel 1 call :install_ubuntu
 
 :run_tests
 
