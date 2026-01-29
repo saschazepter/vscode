@@ -171,7 +171,7 @@ export class RunAutomaticTasks extends Disposable implements IWorkbenchContribut
 			this._runTasks(taskService, tasks);
 			return;
 		}
-		// If the user has explicitly configured the setting to 'off', respect their choice without prompting
+		// If the user has explicitly configured the setting, respect their choice without prompting
 		if (isConfigured(allowAutomaticTasksSetting)) {
 			return;
 		}
