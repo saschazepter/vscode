@@ -1,7 +1,7 @@
 @echo off
 setlocal
 
-echo System: %OS% %PROCESSOR_ARCHITECTURE%
+powershell -NoProfile -Command "$arch = [int](Get-CimInstance Win32_Processor).Architecture; $archName = @{0='x86';5='ARM';9='AMD64';12='ARM64'}[$arch]; Write-Host ('System: ' + $env:OS + ' ' + $archName)"
 powershell -NoProfile -Command "$mem = (Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory; Write-Host ('Memory: {0:N0} GB' -f ($mem/1GB))"
 powershell -NoProfile -Command "$disk = Get-PSDrive C; Write-Host ('Disk C: {0:N0} GB free of {1:N0} GB' -f ($disk.Free/1GB), (($disk.Used+$disk.Free)/1GB))"
 

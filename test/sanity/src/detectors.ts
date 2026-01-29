@@ -59,7 +59,18 @@ function detectOS(capabilities: Set<Capability>) {
  * Detect the architecture.
  */
 function detectArch(capabilities: Set<Capability>) {
-	switch (os.arch()) {
+	let arch = os.arch();
+
+	if (os.platform() === 'win32') {
+		const winArch = process.env['PROCESSOR_ARCHITEW6432'] || process.env['PROCESSOR_ARCHITECTURE'];
+		if (winArch === 'ARM64') {
+			arch = 'arm64';
+		} else if (winArch === 'AMD64') {
+			arch = 'x64';
+		}
+	}
+
+	switch (arch) {
 		case 'x64':
 			capabilities.add('x64');
 			break;
@@ -70,7 +81,7 @@ function detectArch(capabilities: Set<Capability>) {
 			capabilities.add('arm32');
 			break;
 		default:
-			throw new Error(`Unsupported architecture: ${os.arch()}`);
+			throw new Error(`Unsupported architecture: ${arch}`);
 	}
 }
 
