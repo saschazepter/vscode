@@ -99,8 +99,10 @@
 		padding: 8px 0 4px 0;
 	}
 
+	.interactive-session .chat-input-container.focused,
 	.interactive-session .chat-input-container {
-		border-color: transparent;
+		border-color: var(--vscode-inlineChat-background);
+		background-color: var(--vscode-inlineChat-background);
 		padding-left: 0;
 	}
 
@@ -116,6 +118,10 @@
 	/* TODO@jrieken this isn't the nicest selector... */
 	.request-in-progress .monaco-editor [class^="ced-chat-session-detail"]::after {
 		animation: pulse-opacity 2.5s ease-in-out infinite;
+	}
+
+	.chat-editor-container .interactive-input-editor .monaco-editor .monaco-editor-background {
+		background-color: var(--vscode-inlineChat-background);
 	}
 }
 
