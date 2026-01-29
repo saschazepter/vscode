@@ -20,7 +20,6 @@ echo Checking if Ubuntu WSL is available
 wsl -d Ubuntu echo "WSL is ready" 2>nul
 if errorlevel 1 call :install_wsl
 
-:run_tests
 set PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 set PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe
 
