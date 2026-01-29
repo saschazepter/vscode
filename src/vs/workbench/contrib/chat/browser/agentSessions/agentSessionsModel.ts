@@ -414,6 +414,11 @@ export class AgentSessionsModel extends Disposable implements IAgentSessionsMode
 		this._register(this.storageService.onWillSaveState(() => {
 			this.cache.saveCachedSessions(Array.from(this._sessions.values()));
 		}));
+
+		// Sessions state
+		this._register(this.cache.onDidChangeProfileState(() => {
+			this._onDidChangeSessions.fire();
+		}));
 	}
 
 	getSession(resource: URI): IAgentSession | undefined {
@@ -531,13 +536,12 @@ export class AgentSessionsModel extends Disposable implements IAgentSessionsMode
 		const workspaceArchived = this.cache.getWorkspaceSessionState(session.resource)?.archived;
 		const profileArchived = this.cache.getProfileSessionState(session.resource)?.archived;
 
-		if (typeof workspaceArchived === 'boolean') {
-			return workspaceArchived;
+		if (typeof workspaceArchived === 'boolean' || typeof profileArchived === 'boolean') {
+			// take archived=true in either workspace or profile state
+			// as a stronger signal than per-workspace preference
+			return !!workspaceArchived || !!profileArchived;
 		}
 
-		if (typeof profileArchived === 'boolean') {
-			return profileArchived;
-		}
 		return !!session.archived;
 	}
 
@@ -572,6 +576,10 @@ export class AgentSessionsModel extends Disposable implements IAgentSessionsMode
 
 		const profileReadDate = this.cache.getProfileSessionState(session.resource)?.read;
 
+		// We intentionally pick either workspace or profile read state
+		// and consider the more recent time without preferring workspace
+		// to prefer read-state synchronisation over per-workspace choice.
+		// Marking unread is still a per-workspace thing that always wins.
 		const effectiveReadDate = Math.max(
 			workspaceReadDate ?? 0,		// workspace read date
 			profileReadDate ?? 0,		// profile read date
@@ -781,6 +789,9 @@ class AgentSessionsCache extends Disposable {
 
 	//#region States
 
+	private readonly _onDidChangeProfileState = this._register(new Emitter<void>());
+	readonly onDidChangeProfileState = this._onDidChangeProfileState.event;
+
 	private static readonly STATE_STORAGE_KEY = 'agentSessions.state.cache';
 
 	private profileSessionStates: ResourceMap<IAgentSessionState>;
@@ -792,6 +803,8 @@ class AgentSessionsCache extends Disposable {
 		}
 
 		this.profileSessionStates = this.loadProfileSessionStates();
+
+		this._onDidChangeProfileState.fire();
 	}
 
 	private saveWorkspaceSessionStates(): void {
