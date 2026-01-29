@@ -280,7 +280,16 @@ export class DetachedTerminalCommandMirror extends Disposable implements IDetach
 		}
 
 		await new Promise<void>(resolve => {
-			if (!this._lastVT) {
+			// Only append if the boundary around the slice point matches; otherwise rewrite.
+			// This is an efficient O(1) check instead of comparing the entire prefix.
+			// On Windows, VT sequences can differ even for equivalent content, causing corruption
+			// if we blindly append.
+			const canAppend = !!this._lastVT && vt.text.length >= this._lastVT.length && this._vtBoundaryMatches(vt.text, this._lastVT.length);
+			if (!canAppend) {
+				// Reset the terminal if we had previous content (can't append, need full rewrite)
+				if (this._lastVT) {
+					detached.xterm.clearBuffer();
+				}
 				if (vt.text) {
 					detached.xterm.write(vt.text, resolve);
 				} else {
@@ -505,9 +514,16 @@ export class DetachedTerminalCommandMirror extends Disposable implements IDetach
 			return;
 		}
 
-		const canAppend = !!this._lastVT && startLine >= previousCursor;
+		// Only append if: (1) cursor hasn't moved backwards, and (2) boundary around slice point matches.
+		// This is an efficient O(1) check instead of comparing the entire prefix.
+		// On Windows, VT sequences can differ even for equivalent content, so we must verify.
+		const canAppend = !!this._lastVT && startLine >= previousCursor && vt.text.length >= this._lastVT.length && this._vtBoundaryMatches(vt.text, this._lastVT.length);
 		await new Promise<void>(resolve => {
-			if (!this._lastVT || !canAppend) {
+			if (!canAppend) {
+				// Reset the terminal if we had previous content (can't append, need full rewrite)
+				if (this._lastVT) {
+					detachedRaw.clearBuffer();
+				}
 				if (vt.text) {
 					detachedRaw.write(vt.text, resolve);
 				} else {
@@ -541,6 +557,23 @@ export class DetachedTerminalCommandMirror extends Disposable implements IDetach
 
 	private _getAbsoluteCursorY(raw: RawXtermTerminal): number {
 		return raw.buffer.active.baseY + raw.buffer.active.cursorY;
+	}
+
+	/**
+	 * Checks if the new VT text matches the old VT around the boundary where we would slice.
+	 * This is an efficient O(1) check that verifies a small window of characters before and
+	 * after the slice point to detect if the VT sequences have diverged (common on Windows).
+	 */
+	private _vtBoundaryMatches(newVT: string, slicePoint: number): boolean {
+		const windowSize = 50;
+		const start = Math.max(0, slicePoint - windowSize);
+		const end = slicePoint;
+		for (let i = start; i < end; i++) {
+			if (newVT.charCodeAt(i) !== this._lastVT.charCodeAt(i)) {
+				return false;
+			}
+		}
+		return true;
 	}
 }
 

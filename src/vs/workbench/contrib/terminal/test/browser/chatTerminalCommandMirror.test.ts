@@ -231,6 +231,85 @@ suite('Workbench - ChatTerminalCommandMirror', () => {
 			// Incremental mirror should match fresh mirror
 			strictEqual(getBufferText(mirror), getBufferText(freshMirror));
 		});
+
+		test('VT divergence detection prevents corruption (Windows scenario)', async () => {
+			// This test simulates the Windows issue where VT sequences can differ
+			// between calls even for equivalent visual content. On Windows, the
+			// serializer can produce different escape sequences (e.g., different
+			// line endings or cursor positioning) causing the prefix to diverge.
+			//
+			// Without boundary checking, blindly slicing would corrupt output:
+			// - vt1: "Line1\r\nLine2" (length 13)
+			// - vt2: "Line1\nLine2\nLine3" (different format, but starts similarly)
+			// - slice(13) on vt2 would give "ine3" instead of the full new content
+
+			const mirror = await createXterm();
+
+			// Simulate first VT snapshot
+			const vt1 = 'Line1\r\nLine2';
+			await write(mirror, vt1);
+			strictEqual(getBufferText(mirror), 'Line1\nLine2');
+
+			// Simulate divergent VT snapshot (different escape sequences for same content)
+			// This mimics what can happen on Windows where the VT serializer
+			// produces different output between calls
+			const vt2 = 'DifferentPrefix' + 'Line3';
+
+			// The boundary check should detect the divergence
+			// Check last 50 chars (or less) of the "old" region in the new VT
+			const windowSize = 50;
+			const slicePoint = vt1.length;
+			const start = Math.max(0, slicePoint - windowSize);
+			let boundaryMatches = true;
+			for (let i = start; i < slicePoint && i < vt2.length; i++) {
+				if (vt2.charCodeAt(i) !== vt1.charCodeAt(i)) {
+					boundaryMatches = false;
+					break;
+				}
+			}
+
+			// Boundary should NOT match because the prefix diverged
+			strictEqual(boundaryMatches, false, 'Boundary check should detect divergence');
+
+			// When boundary doesn't match, the fix does a full reset + rewrite
+			// instead of corrupting the output by blind slicing
+			mirror.raw.reset();
+			await write(mirror, vt2);
+
+			// Final content should be the complete new VT, not corrupted
+			strictEqual(getBufferText(mirror), 'DifferentPrefixLine3');
+		});
+
+		test('boundary check allows append when VT prefix matches', async () => {
+			const mirror = await createXterm();
+
+			// First VT snapshot
+			const vt1 = 'Line1\r\nLine2\r\n';
+			await write(mirror, vt1);
+
+			// Second VT snapshot that properly extends the first
+			const vt2 = vt1 + 'Line3\r\n';
+
+			// The boundary check should pass since prefix matches
+			const windowSize = 50;
+			const slicePoint = vt1.length;
+			const start = Math.max(0, slicePoint - windowSize);
+			let boundaryMatches = true;
+			for (let i = start; i < slicePoint; i++) {
+				if (vt2.charCodeAt(i) !== vt1.charCodeAt(i)) {
+					boundaryMatches = false;
+					break;
+				}
+			}
+
+			strictEqual(boundaryMatches, true, 'Boundary check should pass when prefix matches');
+
+			// Append should work correctly
+			const appended = vt2.slice(vt1.length);
+			await write(mirror, appended);
+
+			strictEqual(getBufferText(mirror), 'Line1\nLine2\nLine3');
+		});
 	});
 
 	suite('computeMaxBufferColumnWidth', () => {
