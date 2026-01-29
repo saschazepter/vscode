@@ -7,7 +7,7 @@ SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 TEST_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
 
 echo "Installing QEMU system emulation"
-sudo tdnf install -y qemu-system-aarch64 binutils curl xz
+sudo tdnf install -y qemu-system-aarch64 binutils curl xz e2fsprogs
 
 # Download Ubuntu minimal cloud image (has networking, curl, etc. pre-installed)
 UBUNTU_ROOTFS="ubuntu-24.04-minimal-cloudimg-arm64-root.tar.xz"
