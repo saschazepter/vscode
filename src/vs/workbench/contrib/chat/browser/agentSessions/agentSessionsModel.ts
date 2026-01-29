@@ -531,10 +531,13 @@ export class AgentSessionsModel extends Disposable implements IAgentSessionsMode
 		const workspaceArchived = this.cache.getWorkspaceSessionState(session.resource)?.archived;
 		const profileArchived = this.cache.getProfileSessionState(session.resource)?.archived;
 
-		if (typeof workspaceArchived === 'boolean' || typeof profileArchived === 'boolean') {
-			return !!workspaceArchived || !!profileArchived;
+		if (typeof workspaceArchived === 'boolean') {
+			return workspaceArchived;
 		}
 
+		if (typeof profileArchived === 'boolean') {
+			return profileArchived;
+		}
 		return !!session.archived;
 	}
 
