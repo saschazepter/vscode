@@ -422,6 +422,20 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 		}
 	}
 
+	/**
+	 * Sets up auto-resize behavior for a textarea element.
+	 * @returns A function that triggers the resize manually (useful for initial sizing).
+	 */
+	private setupTextareaAutoResize(textarea: HTMLTextAreaElement): () => void {
+		const autoResize = () => {
+			textarea.style.height = 'auto';
+			textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
+			this._onDidChangeHeight.fire();
+		};
+		this._inputBoxes.add(dom.addDisposableListener(textarea, dom.EventType.INPUT, autoResize));
+		return autoResize;
+	}
+
 	private renderTextInput(container: HTMLElement, question: IChatQuestion): void {
 		const textarea = dom.$<HTMLTextAreaElement>('textarea.chat-question-text-textarea');
 		textarea.placeholder = localize('chat.questionCarousel.enterText', 'Enter your answer');
@@ -436,13 +450,8 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 			textarea.value = String(question.defaultValue);
 		}
 
-		// Auto-resize textarea as user types
-		const autoResize = () => {
-			textarea.style.height = 'auto';
-			textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
-			this._onDidChangeHeight.fire();
-		};
-		this._inputBoxes.add(dom.addDisposableListener(textarea, dom.EventType.INPUT, autoResize));
+		// Setup auto-resize behavior
+		const autoResize = this.setupTextareaAutoResize(textarea);
 
 		// Handle Enter to submit (Shift+Enter for newline)
 		this._inputBoxes.add(dom.addDisposableListener(textarea, dom.EventType.KEY_DOWN, (e: KeyboardEvent) => {
@@ -541,13 +550,8 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 				}
 			}));
 
-			// Auto-resize textarea as user types
-			const autoResize = () => {
-				freeformTextarea.style.height = 'auto';
-				freeformTextarea.style.height = `${Math.min(freeformTextarea.scrollHeight, 200)}px`;
-				this._onDidChangeHeight.fire();
-			};
-			this._inputBoxes.add(dom.addDisposableListener(freeformTextarea, dom.EventType.INPUT, autoResize));
+			// Setup auto-resize behavior
+			const autoResize = this.setupTextareaAutoResize(freeformTextarea);
 
 			// uncheck radio when there is text
 			this._inputBoxes.add(dom.addDisposableListener(freeformTextarea, dom.EventType.INPUT, () => {
@@ -561,6 +565,11 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 			freeformContainer.appendChild(freeformTextarea);
 			container.appendChild(freeformContainer);
 			this._freeformTextareas.set(question.id, freeformTextarea);
+
+			// Resize textarea if it has restored content
+			if (previousFreeform !== undefined) {
+				this._inputBoxes.add(dom.runAtThisOrScheduleAtNextAnimationFrame(dom.getWindow(freeformTextarea), () => autoResize()));
+			}
 		}
 	}
 
@@ -642,19 +651,19 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 				}
 			}));
 
-			// Auto-resize textarea as user types
-			const autoResize = () => {
-				freeformTextarea.style.height = 'auto';
-				freeformTextarea.style.height = `${Math.min(freeformTextarea.scrollHeight, 200)}px`;
-				this._onDidChangeHeight.fire();
-			};
-			this._inputBoxes.add(dom.addDisposableListener(freeformTextarea, dom.EventType.INPUT, autoResize));
+			// Setup auto-resize behavior
+			const autoResize = this.setupTextareaAutoResize(freeformTextarea);
 
 			// For multiSelect, both checkboxes and freeform input are combined, so don't uncheck on input
 
 			freeformContainer.appendChild(freeformTextarea);
 			container.appendChild(freeformContainer);
 			this._freeformTextareas.set(question.id, freeformTextarea);
+
+			// Resize textarea if it has restored content
+			if (previousFreeform !== undefined) {
+				this._inputBoxes.add(dom.runAtThisOrScheduleAtNextAnimationFrame(dom.getWindow(freeformTextarea), () => autoResize()));
+			}
 		}
 	}
 
