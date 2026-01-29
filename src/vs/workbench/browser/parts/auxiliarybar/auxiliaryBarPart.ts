@@ -15,7 +15,7 @@ import { contrastBorder } from '../../../../platform/theme/common/colorRegistry.
 import { IThemeService } from '../../../../platform/theme/common/themeService.js';
 import { ActiveAuxiliaryContext, AuxiliaryBarFocusContext } from '../../../common/contextkeys.js';
 import { ACTIVITY_BAR_BADGE_BACKGROUND, ACTIVITY_BAR_BADGE_FOREGROUND, ACTIVITY_BAR_TOP_ACTIVE_BORDER, ACTIVITY_BAR_TOP_DRAG_AND_DROP_BORDER, ACTIVITY_BAR_TOP_FOREGROUND, ACTIVITY_BAR_TOP_INACTIVE_FOREGROUND, PANEL_ACTIVE_TITLE_BORDER, PANEL_ACTIVE_TITLE_FOREGROUND, PANEL_DRAG_AND_DROP_BORDER, PANEL_INACTIVE_TITLE_FOREGROUND, SIDE_BAR_BACKGROUND, SIDE_BAR_BORDER, SIDE_BAR_TITLE_BORDER, SIDE_BAR_FOREGROUND } from '../../../common/theme.js';
-import { IViewDescriptorService } from '../../../common/views.js';
+import { IViewDescriptorService, ViewContainerLocation } from '../../../common/views.js';
 import { IExtensionService } from '../../../services/extensions/common/extensions.js';
 import { ActivityBarPosition, IWorkbenchLayoutService, LayoutSettings, Parts, Position } from '../../../services/layout/browser/layoutService.js';
 import { HoverPosition } from '../../../../base/browser/ui/hover/hoverWidget.js';
@@ -131,8 +131,31 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 			} else if (e.affectsConfiguration('workbench.secondarySideBar.showLabels')) {
 				this.configuration = this.resolveConfiguration();
 				this.updateCompositeBar(true);
+			} else if (e.affectsConfiguration(LayoutSettings.ACTIVITY_BAR_AUTO_HIDE)) {
+				this.onDidChangeActivityBarLocation();
 			}
 		}));
+
+		// Track view container changes to update composite bar visibility when autoHide is enabled
+		this._register(this.viewDescriptorService.onDidChangeViewContainers(({ added, removed }) => {
+			const relevantChange = [...added, ...removed].some(({ location }) => location === ViewContainerLocation.AuxiliaryBar);
+			if (relevantChange) {
+				this.onDidChangeAutoHideViewContainers();
+			}
+		}));
+		this._register(this.viewDescriptorService.onDidChangeContainerLocation(({ from, to }) => {
+			if (from === ViewContainerLocation.AuxiliaryBar || to === ViewContainerLocation.AuxiliaryBar) {
+				this.onDidChangeAutoHideViewContainers();
+			}
+		}));
+	}
+
+	private onDidChangeAutoHideViewContainers(): void {
+		// Only update if auto-hide is enabled and composite bar would show
+		const autoHide = this.configurationService.getValue<boolean>(LayoutSettings.ACTIVITY_BAR_AUTO_HIDE);
+		if (autoHide && this.configuration.position !== ActivityBarPosition.HIDDEN) {
+			this.onDidChangeActivityBarLocation();
+		}
 	}
 
 	private resolveConfiguration(): IAuxiliaryBarPartConfiguration {
@@ -236,7 +259,23 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 	}
 
 	protected shouldShowCompositeBar(): boolean {
-		return this.configuration.position !== ActivityBarPosition.HIDDEN;
+		if (this.configuration.position === ActivityBarPosition.HIDDEN) {
+			return false;
+		}
+
+		// Check if auto-hide is enabled and there's only one view container
+		const autoHide = this.configurationService.getValue<boolean>(LayoutSettings.ACTIVITY_BAR_AUTO_HIDE);
+		if (autoHide) {
+			const viewContainers = this.viewDescriptorService.getViewContainersByLocation(ViewContainerLocation.AuxiliaryBar);
+			const visibleViewContainers = viewContainers.filter(container =>
+				this.viewDescriptorService.getViewContainerModel(container).activeViewDescriptors.length > 0
+			);
+			if (visibleViewContainers.length <= 1) {
+				return false;
+			}
+		}
+
+		return true;
 	}
 
 	protected getCompositeBarPosition(): CompositeBarPosition {

@@ -150,7 +150,7 @@ export abstract class AbstractPaneCompositePart extends CompositePart<PaneCompos
 		@IHoverService hoverService: IHoverService,
 		@IInstantiationService instantiationService: IInstantiationService,
 		@IThemeService themeService: IThemeService,
-		@IViewDescriptorService private readonly viewDescriptorService: IViewDescriptorService,
+		@IViewDescriptorService protected readonly viewDescriptorService: IViewDescriptorService,
 		@IContextKeyService protected readonly contextKeyService: IContextKeyService,
 		@IExtensionService private readonly extensionService: IExtensionService,
 		@IMenuService protected readonly menuService: IMenuService,

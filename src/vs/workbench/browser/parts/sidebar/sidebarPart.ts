@@ -20,7 +20,7 @@ import { AnchorAlignment } from '../../../../base/browser/ui/contextview/context
 import { IExtensionService } from '../../../services/extensions/common/extensions.js';
 import { LayoutPriority } from '../../../../base/browser/ui/grid/grid.js';
 import { assertReturnsDefined } from '../../../../base/common/types.js';
-import { IViewDescriptorService } from '../../../common/views.js';
+import { IViewDescriptorService, ViewContainerLocation } from '../../../common/views.js';
 import { AbstractPaneCompositePart, CompositeBarPosition } from '../paneCompositePart.js';
 import { ActivityBarCompositeBar, ActivitybarPart } from '../activitybar/activitybarPart.js';
 import { ActionsOrientation } from '../../../../base/browser/ui/actionbar/actionbar.js';
@@ -110,9 +110,34 @@ export class SidebarPart extends AbstractPaneCompositePart {
 			if (e.affectsConfiguration(LayoutSettings.ACTIVITY_BAR_LOCATION)) {
 				this.onDidChangeActivityBarLocation();
 			}
+			if (e.affectsConfiguration(LayoutSettings.ACTIVITY_BAR_AUTO_HIDE)) {
+				this.onDidChangeActivityBarLocation();
+			}
+		}));
+
+		// Track view container changes to update composite bar visibility when autoHide is enabled
+		this._register(this.viewDescriptorService.onDidChangeViewContainers(({ added, removed }) => {
+			const relevantChange = [...added, ...removed].some(({ location }) => location === ViewContainerLocation.Sidebar);
+			if (relevantChange) {
+				this.onDidChangeAutoHideViewContainers();
+			}
+		}));
+		this._register(this.viewDescriptorService.onDidChangeContainerLocation(({ from, to }) => {
+			if (from === ViewContainerLocation.Sidebar || to === ViewContainerLocation.Sidebar) {
+				this.onDidChangeAutoHideViewContainers();
+			}
 		}));
 
 		this.registerActions();
+	}
+
+	private onDidChangeAutoHideViewContainers(): void {
+		// Only update if auto-hide is enabled and composite bar position is top/bottom
+		const activityBarPosition = this.configurationService.getValue<ActivityBarPosition>(LayoutSettings.ACTIVITY_BAR_LOCATION);
+		const autoHide = this.configurationService.getValue<boolean>(LayoutSettings.ACTIVITY_BAR_AUTO_HIDE);
+		if (autoHide && (activityBarPosition === ActivityBarPosition.TOP || activityBarPosition === ActivityBarPosition.BOTTOM)) {
+			this.onDidChangeActivityBarLocation();
+		}
 	}
 
 	private onDidChangeActivityBarLocation(): void {
@@ -207,7 +232,23 @@ export class SidebarPart extends AbstractPaneCompositePart {
 
 	protected shouldShowCompositeBar(): boolean {
 		const activityBarPosition = this.configurationService.getValue<ActivityBarPosition>(LayoutSettings.ACTIVITY_BAR_LOCATION);
-		return activityBarPosition === ActivityBarPosition.TOP || activityBarPosition === ActivityBarPosition.BOTTOM;
+		if (activityBarPosition !== ActivityBarPosition.TOP && activityBarPosition !== ActivityBarPosition.BOTTOM) {
+			return false;
+		}
+
+		// Check if auto-hide is enabled and there's only one view container
+		const autoHide = this.configurationService.getValue<boolean>(LayoutSettings.ACTIVITY_BAR_AUTO_HIDE);
+		if (autoHide) {
+			const viewContainers = this.viewDescriptorService.getViewContainersByLocation(ViewContainerLocation.Sidebar);
+			const visibleViewContainers = viewContainers.filter(container =>
+				this.viewDescriptorService.getViewContainerModel(container).activeViewDescriptors.length > 0
+			);
+			if (visibleViewContainers.length <= 1) {
+				return false;
+			}
+		}
+
+		return true;
 	}
 
 	private shouldShowActivityBar(): boolean {
