@@ -56,10 +56,6 @@ echo WSL is not installed, enabling Windows feature and installing WSL
 powershell -Command "Start-Process -Wait -Verb RunAs dism.exe -ArgumentList '/online','/enable-feature','/featurename:Microsoft-Windows-Subsystem-Linux','/all','/norestart'"
 powershell -Command "Start-Process -Wait -Verb RunAs dism.exe -ArgumentList '/online','/enable-feature','/featurename:VirtualMachinePlatform','/all','/norestart'"
 REM Download and install WSL from GitHub (Microsoft Store alternative)
-if "%ARCH%"=="12" (
-    curl -L -o "%TEMP%\wsl.msixbundle" https://github.com/microsoft/WSL/releases/download/2.4.13/wsl.2.4.13.0.arm64.msix
-) else (
-    curl -L -o "%TEMP%\wsl.msixbundle" https://github.com/microsoft/WSL/releases/download/2.4.13/wsl.2.4.13.0.x64.msix
-)
+curl -L -o "%TEMP%\wsl.msixbundle" https://github.com/microsoft/WSL/releases/download/2.6.3/Microsoft.WSL_2.6.3.0_x64_ARM64.msixbundle
 powershell -Command "Add-AppxPackage '%TEMP%\wsl.msixbundle'"
 goto :eof
