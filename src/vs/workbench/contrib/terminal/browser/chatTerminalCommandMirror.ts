@@ -563,6 +563,9 @@ export class DetachedTerminalCommandMirror extends Disposable implements IDetach
 	 * Checks if the new VT text matches the old VT around the boundary where we would slice.
 	 * This is an efficient O(1) check that verifies a small window of characters before and
 	 * after the slice point to detect if the VT sequences have diverged (common on Windows).
+	 *
+	 * @param newVT The new VT text to compare against the previously stored VT.
+	 * @param slicePoint Must be <= this._lastVT.length and <= newVT.length.
 	 */
 	private _vtBoundaryMatches(newVT: string, slicePoint: number): boolean {
 		const windowSize = 50;
