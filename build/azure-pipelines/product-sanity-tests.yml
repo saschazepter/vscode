@@ -97,7 +97,7 @@ extends:
           # Alpine 3.22
           - template: build/azure-pipelines/common/sanity-tests.yml@self
             parameters:
-              name: alpine_amd64
+              name: alpine_3_22_amd64
               displayName: Alpine 3.22 amd64
               poolName: 1es-ubuntu-22.04-x64
               container: alpine
@@ -105,11 +105,20 @@ extends:
 
           - template: build/azure-pipelines/common/sanity-tests.yml@self
             parameters:
-              name: alpine_arm64
+              name: alpine_3_22_arm64
               displayName: Alpine 3.22 arm64
               poolName: 1es-azure-linux-3-arm64
               container: alpine
               arch: arm64
+
+          # Alpine 3.21 (64K page)
+          - template: build/azure-pipelines/common/sanity-tests.yml@self
+            parameters:
+              name: alpine_3_21_arm64_64k
+              displayName: Alpine 3.21 arm64 (64K page)
+              poolName: 1es-ubuntu-22.04-x64
+              pageSize: 64k
+              args: --no-detection --grep ".*-linux-arm64"
 
           # CentOS Stream 9
           - template: build/azure-pipelines/common/sanity-tests.yml@self
@@ -313,14 +322,3 @@ extends:
               container: ubuntu
               baseImage: ubuntu:24.04
               arch: arm64
-
-          - template: build/azure-pipelines/common/sanity-tests.yml@self
-            parameters:
-              name: ubuntu_24_04_arm64_64k
-              displayName: Ubuntu 24.04 arm64 (64K page)
-              poolName: 1es-ubuntu-22.04-x64
-              container: ubuntu
-              baseImage: ubuntu:24.04
-              arch: arm64
-              pageSize: 64k
-              args: --no-detection --grep "*-linux-arm64"
