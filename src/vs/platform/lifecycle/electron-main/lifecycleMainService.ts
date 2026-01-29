@@ -316,6 +316,8 @@ export class LifecycleMainService extends Disposable implements ILifecycleMainSe
 		electron.app.once('will-quit', e => {
 			this.trace('Lifecycle#app.on(will-quit) - begin');
 
+			console.log('bye code');
+
 			// Prevent the quit until the shutdown promise was resolved
 			e.preventDefault();
 
@@ -704,6 +706,8 @@ export class LifecycleMainService extends Disposable implements ILifecycleMainSe
 
 	async kill(code?: number): Promise<void> {
 		this.trace('Lifecycle#kill()');
+
+		console.log('bye code');
 
 		// Give main process participants a chance to orderly shutdown
 		await this.fireOnWillShutdown(ShutdownReason.KILL);
