@@ -196,6 +196,13 @@ export class ArchiveAllAgentSessionsAction extends Action2 {
 	}
 }
 
+function markAllAgentSessionsAsRead(agentSessionsService: IAgentSessionsService): void {
+	const sessionsToMarkRead = agentSessionsService.model.sessions.filter(session => !session.isArchived() && !session.isRead());
+	for (const session of sessionsToMarkRead) {
+		session.setRead(true);
+	}
+}
+
 export class MarkAllAgentSessionsReadAction extends Action2 {
 
 	constructor() {
@@ -209,15 +216,7 @@ export class MarkAllAgentSessionsReadAction extends Action2 {
 	}
 	async run(accessor: ServicesAccessor) {
 		const agentSessionsService = accessor.get(IAgentSessionsService);
-
-		const sessionsToMarkRead = agentSessionsService.model.sessions.filter(session => !session.isArchived() && !session.isRead());
-		if (sessionsToMarkRead.length === 0) {
-			return;
-		}
-
-		for (const session of sessionsToMarkRead) {
-			session.setRead(true);
-		}
+		markAllAgentSessionsAsRead(agentSessionsService);
 	}
 }
 
@@ -403,7 +402,7 @@ export class MarkAgentSessionUnreadAction extends BaseAgentSessionAction {
 			title: localize2('markUnread', "Mark as Unread"),
 			menu: {
 				id: MenuId.AgentSessionsContext,
-				group: '1_edit',
+				group: '0_read',
 				order: 1,
 				when: ContextKeyExpr.and(
 					ChatContextKeys.isReadAgentSession,
@@ -428,7 +427,7 @@ export class MarkAgentSessionReadAction extends BaseAgentSessionAction {
 			title: localize2('markRead', "Mark as Read"),
 			menu: {
 				id: MenuId.AgentSessionsContext,
-				group: '1_edit',
+				group: '0_read',
 				order: 1,
 				when: ContextKeyExpr.and(
 					ChatContextKeys.isReadAgentSession.negate(),
@@ -442,6 +441,27 @@ export class MarkAgentSessionReadAction extends BaseAgentSessionAction {
 		for (const session of sessions) {
 			session.setRead(true);
 		}
+	}
+}
+
+export class MarkAllAgentSessionsReadInSessionContextAction extends Action2 {
+
+	constructor() {
+		super({
+			id: 'agentSession.markAllRead',
+			title: localize2('markAllRead', "Mark All as Read"),
+			menu: {
+				id: MenuId.AgentSessionsContext,
+				group: '0_read',
+				order: 2,
+				when: ChatContextKeys.isArchivedAgentSession.negate() // no read state for archived sessions
+			}
+		});
+	}
+
+	async run(accessor: ServicesAccessor): Promise<void> {
+		const agentSessionsService = accessor.get(IAgentSessionsService);
+		markAllAgentSessionsAsRead(agentSessionsService);
 	}
 }
 
