@@ -39,7 +39,8 @@ const defaultCommonlyUsedSettings: string[] = [
 	'workbench.colorTheme',
 	'editor.tabSize',
 	'editor.mouseWheelZoom',
-	'editor.formatOnPaste'
+	'editor.formatOnPaste',
+	'editor.minimap.enabled'
 ];
 
 export function getCommonlyUsedData(settingGroups: ISettingsGroup[], commonlyUsed: string[] = defaultCommonlyUsedSettings): ITOCEntry<ISetting> {
