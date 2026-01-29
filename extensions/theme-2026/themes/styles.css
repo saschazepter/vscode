@@ -79,7 +79,16 @@
 .monaco-workbench .part.editor > .content .editor-group-container > .title .tabs-container > .tab.active {
 	box-shadow: inset var(--shadow-active-tab);
 	position: relative; z-index: 5;
+	border-radius: 0;
 	border-top: none !important;
+	background: linear-gradient(
+		to bottom,
+		color-mix(in srgb, var(--vscode-focusBorder) 10%, transparent) 0%,
+		transparent 100%
+	), var(--vscode-tab-activeBackground) !important;
+}
+.monaco-workbench .part.editor > .content .editor-group-container > .title .tabs-container > .tab:hover:not(.active) {
+	box-shadow: var(--shadow-sm);
 }
 .monaco-workbench .part.editor > .content .editor-group-container > .title .tabs-container > .tab:hover:not(.active) {
 	box-shadow: var(--shadow-sm);
@@ -94,11 +103,26 @@
 }
 
 /* Title Bar */
-.monaco-workbench .part.titlebar {
-	box-shadow: var(--shadow-md);
-	z-index: 60; position: relative;
+.monaco-workbench.vs .part.titlebar { box-shadow: var(--shadow-md); }
+
+.monaco-workbench.vs-dark .part.titlebar {
+	position: relative;
 	overflow: visible !important;
+	background: linear-gradient(
+		to bottom,
+		color-mix(in srgb, var(--vscode-focusBorder) 10%, transparent) 0%,
+		transparent 100%
+	), var(--vscode-titleBar-activeBackground) !important;
 }
+.monaco-workbench .part.titlebar.inactive {
+	background: var(--vscode-titleBar-inactiveBackground) !important;
+}
+.monaco-workbench .part.titlebar .titlebar-container,
+.monaco-workbench .part.titlebar .titlebar-center,
+.monaco-workbench .part.titlebar .titlebar-center .window-title,
+.monaco-workbench .part.titlebar .command-center,
+.monaco-workbench .part.titlebar .command-center .monaco-action-bar,
+.monaco-workbench .part.titlebar .command-center .actions-container { overflow: visible !important; }
 
 /* Status Bar */
 .monaco-workbench .part.statusbar { box-shadow: var(--shadow-md); z-index: 55; position: relative; }
@@ -358,7 +382,7 @@
 }
 
 /* Terminal */
-.monaco-workbench .pane-body.integrated-terminal { box-shadow: var(--shadow-inset-white); }
+.monaco-workbench.vs .pane-body.integrated-terminal { box-shadow: var(--shadow-inset-white); }
 
 /* SCM */
 .monaco-workbench .scm-view .scm-provider { box-shadow: var(--shadow-sm); border-radius: var(--radius-md); }

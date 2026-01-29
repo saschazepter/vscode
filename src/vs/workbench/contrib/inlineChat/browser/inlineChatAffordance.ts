@@ -87,8 +87,7 @@ export class InlineChatAffordance extends Disposable {
 		this._store.add(this._instantiationService.createInstance(
 			InlineChatEditorAffordance,
 			this._editor,
-			derived(r => affordance.read(r) === 'editor' ? selectionData.read(r) : undefined),
-			this._menuData
+			derived(r => affordance.read(r) === 'editor' ? selectionData.read(r) : undefined)
 		));
 
 		this._store.add(autorun(r => {
@@ -112,7 +111,6 @@ export class InlineChatAffordance extends Disposable {
 			const pos = this._inputWidget.position.read(r);
 			if (pos === null) {
 				this._menuData.set(undefined, undefined);
-				this._editor.focus();
 			}
 		}));
 	}
