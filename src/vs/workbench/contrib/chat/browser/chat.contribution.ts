@@ -320,7 +320,7 @@ configurationRegistry.registerConfiguration({
 				name: 'ChatToolsAutoApprove',
 				category: PolicyCategory.InteractiveSession,
 				minimumVersion: '1.99',
-				value: (account) => account.policyData?.chat_preview_features_enabled === false ? false : undefined,
+				value: (policyData) => policyData.chat_preview_features_enabled === false ? false : undefined,
 				localization: {
 					description: {
 						key: 'autoApprove2.description',
@@ -473,11 +473,11 @@ configurationRegistry.registerConfiguration({
 				name: 'ChatMCP',
 				category: PolicyCategory.InteractiveSession,
 				minimumVersion: '1.99',
-				value: (account) => {
-					if (account.policyData?.mcp === false) {
+				value: (policyData) => {
+					if (policyData.mcp === false) {
 						return McpAccessValue.None;
 					}
-					if (account.policyData?.mcpAccess === 'registry_only') {
+					if (policyData.mcpAccess === 'registry_only') {
 						return McpAccessValue.Registry;
 					}
 					return undefined;
@@ -588,7 +588,7 @@ configurationRegistry.registerConfiguration({
 				name: 'ChatAgentMode',
 				category: PolicyCategory.InteractiveSession,
 				minimumVersion: '1.99',
-				value: (account) => account.policyData?.chat_agent_enabled === false ? false : undefined,
+				value: (policyData) => policyData.chat_agent_enabled === false ? false : undefined,
 				localization: {
 					description: {
 						key: 'chat.agent.enabled.description',
@@ -665,7 +665,7 @@ configurationRegistry.registerConfiguration({
 				name: 'McpGalleryServiceUrl',
 				category: PolicyCategory.InteractiveSession,
 				minimumVersion: '1.101',
-				value: (account) => account.policyData?.mcpRegistryUrl,
+				value: (policyData) => policyData.mcpRegistryUrl,
 				localization: {
 					description: {
 						key: 'mcp.gallery.serviceUrl',
