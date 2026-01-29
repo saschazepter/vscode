@@ -406,6 +406,7 @@ export class BrowserEditor extends EditorPane {
 		this.updateErrorDisplay();
 		this.layoutBrowserContainer();
 		this.updateVisibility();
+		this.doScreenshot();
 	}
 
 	protected override setEditorVisible(visible: boolean): void {
@@ -808,7 +809,7 @@ export class BrowserEditor extends EditorPane {
 			const screenshot = await this._model.captureScreenshot({ quality: 80 });
 			this.setBackgroundImage(screenshot);
 		} catch (error) {
-			this._logService.error('Failed to capture browser view screenshot', error);
+			this.logService.error('Failed to capture browser view screenshot', error);
 		}
 
 		// Schedule next screenshot in 1 second
