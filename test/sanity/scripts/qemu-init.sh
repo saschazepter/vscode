@@ -45,4 +45,4 @@ echo $? > /exit-code
 sync
 
 echo "Powering off"
-echo o > /proc/sysrq-trigger
+poweroff -f

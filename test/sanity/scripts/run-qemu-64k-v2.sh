@@ -17,10 +17,10 @@ DOWNLOAD_DIR=$(mktemp -d)
 echo "Downloading Ubuntu minimal cloud image"
 curl -fL "$UBUNTU_URL" -o "$DOWNLOAD_DIR/$UBUNTU_ROOTFS"
 
-# Download 64k kernel (Azure mirror for faster downloads in CI)
+# Download 64k kernel
 KERNEL_VERSION="6.8.0-90"
 KERNEL_DEB="linux-image-unsigned-${KERNEL_VERSION}-generic-64k_${KERNEL_VERSION}.91_arm64.deb"
-KERNEL_URL="https://azure.ports.ubuntu.com/ubuntu-ports/pool/main/l/linux/$KERNEL_DEB"
+KERNEL_URL="http://ports.ubuntu.com/ubuntu-ports/pool/main/l/linux/$KERNEL_DEB"
 
 echo "Downloading Ubuntu 64k kernel"
 curl -fL "$KERNEL_URL" -o "$DOWNLOAD_DIR/kernel.deb"
@@ -34,6 +34,9 @@ sudo tar -xJf "$DOWNLOAD_DIR/$UBUNTU_ROOTFS" -C "$ROOTFS_DIR"
 echo "Copying $TEST_DIR into rootfs"
 sudo cp -r "$TEST_DIR"/* "$ROOTFS_DIR/root/"
 
+echo "Copying Node.js from host"
+sudo cp "$(which node)" "$ROOTFS_DIR/usr/local/bin/"
+
 echo "Pre-installing packages in rootfs (chroot on ARM64 host)"
 sudo rm -f "$ROOTFS_DIR/etc/resolv.conf"
 echo "nameserver 8.8.8.8" | sudo tee "$ROOTFS_DIR/etc/resolv.conf" > /dev/null
@@ -41,12 +44,7 @@ sudo mount --bind /dev "$ROOTFS_DIR/dev"
 sudo mount --bind /dev/pts "$ROOTFS_DIR/dev/pts"
 sudo mount -t proc proc "$ROOTFS_DIR/proc"
 sudo mount -t sysfs sys "$ROOTFS_DIR/sys"
-sudo chroot "$ROOTFS_DIR" /bin/sh -c "
-	sed -i 's|http://ports.ubuntu.com|http://azure.ports.ubuntu.com|g' /etc/apt/sources.list.d/ubuntu.sources
-	apt-get update
-	curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
-	apt-get install -y nodejs xvfb dbus dbus-x11 libasound2t64 libgtk-3-0t64 libcurl4t64 libgbm1 libnss3 xdg-utils
-"
+sudo chroot "$ROOTFS_DIR" /bin/sh -c "apt-get install -y xvfb dbus-x11 libasound2t64 libgtk-3-0t64 libcurl4t64 libgbm1 libnss3 xdg-utils"
 sudo umount "$ROOTFS_DIR/sys"
 sudo umount "$ROOTFS_DIR/proc"
 sudo umount "$ROOTFS_DIR/dev/pts"
