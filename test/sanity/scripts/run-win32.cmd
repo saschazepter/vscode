@@ -18,8 +18,6 @@ if errorlevel 1 (
     if errorlevel 1 call :install_ubuntu
 )
 
-:run_tests
-
 set PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 set PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe
 
