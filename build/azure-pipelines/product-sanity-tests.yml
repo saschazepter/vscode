@@ -116,7 +116,7 @@ extends:
             parameters:
               name: alpine_3_21_arm64_64k
               displayName: Alpine 3.21 arm64 (64K page)
-              poolName: 1es-ubuntu-22.04-x64
+              poolName: 1es-azure-linux-3-arm64
               pageSize: 64k
               args: --no-detection --grep ".*-linux-arm64"
               arch: arm64
