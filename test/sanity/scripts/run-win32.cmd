@@ -1,4 +1,3 @@
-@echo off
 setlocal
 
 for /f "tokens=*" %%a in ('powershell -NoProfile -Command "[int](Get-CimInstance Win32_Processor).Architecture"') do set ARCH=%%a
@@ -16,10 +15,19 @@ if errorlevel 1 call :install_wsl_feature
 REM Ensure wsl.exe is in PATH (may be in System32 or Program Files\WSL)
 set "PATH=%ProgramFiles%\WSL;%SystemRoot%\System32;%PATH%"
 
+REM Verify WSL can actually run (may need reboot after feature enablement)
+wsl --status >nul 2>nul
+if errorlevel 1 (
+    echo WSL is installed but cannot run - may require system reboot
+    echo Skipping WSL setup, tests requiring WSL will be skipped
+    goto :run_tests
+)
+
 echo Checking if Ubuntu WSL is available
 wsl -d Ubuntu echo "WSL is ready" 2>nul
 if errorlevel 1 call :install_wsl
 
+:run_tests
 set PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 set PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe
 

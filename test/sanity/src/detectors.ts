@@ -3,6 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import { spawnSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import { webkit } from 'playwright';
@@ -147,11 +148,13 @@ function detectWSL(capabilities: Set<Capability>) {
 	if (os.platform() !== 'win32') {
 		return;
 	}
-	const systemRoot = process.env['SystemRoot'];
-	if (systemRoot) {
-		const wslPath = `${systemRoot}\\System32\\wsl.exe`;
-		if (fs.existsSync(wslPath)) {
+	// Check if WSL can actually run (not just if the file exists)
+	try {
+		const result = spawnSync('wsl', ['--status'], { encoding: 'utf-8', timeout: 5000 });
+		if (result.status === 0 || result.status === null) {
 			capabilities.add('wsl');
 		}
+	} catch {
+		// WSL not available
 	}
 }
