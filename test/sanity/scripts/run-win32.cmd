@@ -11,17 +11,13 @@ powershell -NoProfile -Command "$disk = Get-PSDrive C; Write-Host ('Disk C: {0:N
 set "UBUNTU_INSTALL=%LOCALAPPDATA%\WSL\Ubuntu"
 
 where wsl >nul 2>nul
-if errorlevel 1 (
-    echo WSL is not installed, enabling Windows feature
-    powershell -Command "Start-Process -Wait -Verb RunAs dism.exe -ArgumentList '/online','/enable-feature','/featurename:Microsoft-Windows-Subsystem-Linux','/all','/norestart'"
-    powershell -Command "Start-Process -Wait -Verb RunAs dism.exe -ArgumentList '/online','/enable-feature','/featurename:VirtualMachinePlatform','/all','/norestart'"
-)
+if errorlevel 1 call :install_wsl_feature
 
-REM Ensure wsl.exe is in PATH (it may have just been installed)
-set "PATH=%SystemRoot%\System32;%PATH%"
+REM Ensure wsl.exe is in PATH (may be in System32 or Program Files\WSL)
+set "PATH=%ProgramFiles%\WSL;%SystemRoot%\System32;%PATH%"
 
 echo Checking if Ubuntu WSL is available
-"%SystemRoot%\System32\wsl.exe" -d Ubuntu echo "WSL is ready" 2>nul
+wsl -d Ubuntu echo "WSL is ready" 2>nul
 if errorlevel 1 call :install_wsl
 
 set PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
@@ -49,8 +45,21 @@ if not exist "%UBUNTU_ROOTFS%" (
 
 echo Importing Ubuntu into WSL
 mkdir "%UBUNTU_INSTALL%" 2>nul
-"%SystemRoot%\System32\wsl.exe" --import Ubuntu "%UBUNTU_INSTALL%" "%UBUNTU_ROOTFS%"
+wsl --import Ubuntu "%UBUNTU_INSTALL%" "%UBUNTU_ROOTFS%"
 
 echo Starting WSL
-"%SystemRoot%\System32\wsl.exe" -d Ubuntu echo WSL is ready
+wsl -d Ubuntu echo WSL is ready
+goto :eof
+
+:install_wsl_feature
+echo WSL is not installed, enabling Windows feature and installing WSL
+powershell -Command "Start-Process -Wait -Verb RunAs dism.exe -ArgumentList '/online','/enable-feature','/featurename:Microsoft-Windows-Subsystem-Linux','/all','/norestart'"
+powershell -Command "Start-Process -Wait -Verb RunAs dism.exe -ArgumentList '/online','/enable-feature','/featurename:VirtualMachinePlatform','/all','/norestart'"
+REM Download and install WSL from GitHub (Microsoft Store alternative)
+if "%ARCH%"=="12" (
+    curl -L -o "%TEMP%\wsl.msixbundle" https://github.com/microsoft/WSL/releases/download/2.4.13/wsl.2.4.13.0.arm64.msix
+) else (
+    curl -L -o "%TEMP%\wsl.msixbundle" https://github.com/microsoft/WSL/releases/download/2.4.13/wsl.2.4.13.0.x64.msix
+)
+powershell -Command "Add-AppxPackage '%TEMP%\wsl.msixbundle'"
 goto :eof
