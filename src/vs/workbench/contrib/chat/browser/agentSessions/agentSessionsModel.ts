@@ -598,7 +598,7 @@ export class AgentSessionsModel extends Disposable implements IAgentSessionsMode
 	}
 
 	private sessionTimeForReadStateTracking(session: IInternalAgentSessionData): number {
-		return session.timing.lastRequestEnded ?? session.timing.lastRequestStarted ?? session.timing.created;
+		return session.timing.lastRequestEnded ?? session.timing.created;
 	}
 
 	private setRead(session: IInternalAgentSessionData, read: boolean, skipEvent?: boolean): void {
