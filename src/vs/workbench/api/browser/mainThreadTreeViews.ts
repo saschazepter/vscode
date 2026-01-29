@@ -140,7 +140,7 @@ export class MainThreadTreeViews extends Disposable implements MainThreadTreeVie
 		this._dataProviders.deleteAndDispose(treeViewId);
 	}
 
-	$logResolveTreeNodeRetry(_treeViewId: string, extensionId: string, retryCount: number, exhausted: boolean): void {
+	$logResolveTreeNodeRetry(extensionId: string, retryCount: number, exhausted: boolean): void {
 		type TreeViewResolveRetryEvent = {
 			extensionId: string;
 			retryCount: number;

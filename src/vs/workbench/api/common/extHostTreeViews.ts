@@ -714,7 +714,7 @@ class ExtHostTreeView<T> extends Disposable {
 			this._logService.warn(`[${this._viewId}] Retrying _resolveTreeNode due to concurrent refresh (attempt ${newRetryCount}/3) for element ${handle} from extension ${this._extension.identifier.value}`);
 			if (newRetryCount === 1) {
 				// Log telemetry on first retry
-				this._proxy.$logResolveTreeNodeRetry(this._viewId, this._extension.identifier.value, newRetryCount, false);
+				this._proxy.$logResolveTreeNodeRetry(this._extension.identifier.value, newRetryCount, false);
 			}
 			return this._resolveTreeNode(element, parent, newRetryCount);
 		}
@@ -725,9 +725,9 @@ class ExtHostTreeView<T> extends Disposable {
 				return node;
 			}
 		}
-		// Log telemetry when retries are exhausted (retryCount === 3 means we've retried 3 times and still failed)
+		// Log telemetry when retries were attempted
 		if (retryCount > 0) {
-			this._proxy.$logResolveTreeNodeRetry(this._viewId, this._extension.identifier.value, retryCount, true);
+			this._proxy.$logResolveTreeNodeRetry(this._extension.identifier.value, retryCount, retryCount >= 3);
 		}
 		throw new Error(`Cannot resolve tree item for element ${handle} from extension ${this._extension.identifier.value}`);
 	}
