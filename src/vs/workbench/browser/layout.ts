@@ -117,6 +117,7 @@ interface IInitialEditorsState {
 
 const COMMAND_CENTER_SETTINGS = [
 	'chat.agentsControl.enabled',
+	'chat.unifiedAgentsBar.enabled',
 	'workbench.navigationControl.enabled',
 	'workbench.experimental.share.enabled',
 ];
@@ -396,10 +397,9 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 			].some(setting => e.affectsConfiguration(setting))) {
 
 				// Show Command Center if command center actions enabled
-				const shareEnabled = e.affectsConfiguration('workbench.experimental.share.enabled') && this.configurationService.getValue<boolean>('workbench.experimental.share.enabled');
-				const navigationControlEnabled = e.affectsConfiguration('workbench.navigationControl.enabled') && this.configurationService.getValue<boolean>('workbench.navigationControl.enabled');
+				const enabledCommandCenterAction = COMMAND_CENTER_SETTINGS.some(setting => e.affectsConfiguration(setting) && this.configurationService.getValue<boolean>(setting) === true);
 
-				if (shareEnabled || navigationControlEnabled) {
+				if (enabledCommandCenterAction) {
 					if (this.configurationService.getValue<boolean>(LayoutSettings.COMMAND_CENTER) === false) {
 						this.configurationService.updateValue(LayoutSettings.COMMAND_CENTER, true);
 						return; // onDidChangeConfiguration will be triggered again
