@@ -39,9 +39,6 @@ echo "nameserver 10.0.2.3" > /etc/resolv.conf
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export XDG_RUNTIME_DIR=/run/user/0
 
-echo "Starting D-Bus"
-dbus-daemon --system --fork
-
 echo "Starting entrypoint"
 sh /root/containers/entrypoint.sh $(cat /test-args)
 echo $? > /exit-code

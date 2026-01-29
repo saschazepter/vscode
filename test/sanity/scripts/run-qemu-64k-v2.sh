@@ -24,8 +24,7 @@ KERNEL_URL="https://azure.ports.ubuntu.com/ubuntu-ports/pool/main/l/linux/$KERNE
 
 echo "Downloading Ubuntu 64k kernel"
 curl -fL "$KERNEL_URL" -o "$DOWNLOAD_DIR/kernel.deb"
-cd "$DOWNLOAD_DIR" && ar x kernel.deb && rm kernel.deb
-tar xf data.tar* && rm -f debian-binary control.tar* data.tar*
+cd "$DOWNLOAD_DIR" && ar x kernel.deb && tar xf data.tar*
 VMLINUZ="$DOWNLOAD_DIR/boot/vmlinuz-${KERNEL_VERSION}-generic-64k"
 
 echo "Preparing rootfs"
@@ -63,20 +62,12 @@ echo "Creating disk image"
 DISK_IMG=$(mktemp)
 dd if=/dev/zero of="$DISK_IMG" bs=1M count=2048 status=none
 sudo mkfs.ext4 -q -d "$ROOTFS_DIR" "$DISK_IMG"
-sudo rm -rf "$ROOTFS_DIR"
 
 echo "Starting QEMU VM with 64K page size kernel"
-ACCEL="tcg,thread=multi"
-CPU="max,pauth-impdef=on"
-if [ -w /dev/kvm ]; then
-	ACCEL="kvm"
-	CPU="host"
-	echo "Using KVM acceleration"
-fi
 timeout 1800 qemu-system-aarch64 \
 	-M virt \
-	-cpu "$CPU" \
-	-accel "$ACCEL" \
+	-cpu max,pauth-impdef=on \
+	-accel tcg,thread=multi \
 	-m 4096 \
 	-smp 2 \
 	-kernel "$VMLINUZ" \
