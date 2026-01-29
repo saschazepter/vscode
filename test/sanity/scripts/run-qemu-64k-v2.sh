@@ -64,5 +64,16 @@ timeout 1800 qemu-system-aarch64 \
 	-nographic \
 	-no-reboot
 
+echo "Extracting test results from disk image"
+MOUNT_DIR=$(mktemp -d)
+sudo mount -o loop "$DISK_IMG" "$MOUNT_DIR"
+sudo cp "$MOUNT_DIR/root/results.xml" "$TEST_DIR/results.xml" 2>/dev/null || true
+sudo chown "$(id -u):$(id -g)" "$TEST_DIR/results.xml" 2>/dev/null || true
+
+EXIT_CODE=$(sudo cat "$MOUNT_DIR/exit-code" 2>/dev/null || echo 1)
+sudo umount "$MOUNT_DIR"
+rm -rf "$MOUNT_DIR"
 rm -f "$DISK_IMG"
 rm -rf "$DOWNLOAD_DIR"
+
+exit $EXIT_CODE

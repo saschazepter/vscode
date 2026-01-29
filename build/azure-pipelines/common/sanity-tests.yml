@@ -80,13 +80,25 @@ jobs:
           displayName: Run Sanity Tests
 
       # Native Linux host
-      - ${{ if and(eq(parameters.container, ''), eq(parameters.os, 'linux')) }}:
+      - ${{ if and(eq(parameters.container, ''), eq(parameters.os, 'linux'), ne(parameters.pageSize, '64k')) }}:
         - bash: $(TEST_DIR)/scripts/run-ubuntu.sh -c $(BUILD_COMMIT) -q $(BUILD_QUALITY) -t $(LOG_FILE) -v ${{ parameters.args }}
           workingDirectory: $(TEST_DIR)
           displayName: Run Sanity Tests
 
+      # Linux 64K page size (QEMU system emulation with Alpine rootfs)
+      - ${{ if eq(parameters.pageSize, '64k') }}:
+        - bash: |
+            $(TEST_DIR)/scripts/run-qemu-64k-v2.sh \
+              --quality "$(BUILD_QUALITY)" \
+              --commit "$(BUILD_COMMIT)" \
+              --test-results "/root/results.xml" \
+              --verbose \
+              ${{ parameters.args }}
+          workingDirectory: $(TEST_DIR)
+          displayName: Run Sanity Tests
+
       # Linux Docker container
-      - ${{ if ne(parameters.container, '') }}:
+      - ${{ if and(ne(parameters.container, ''), ne(parameters.pageSize, '64k')) }}:
         - task: Cache@2
           inputs:
             key: 'docker-v3 | "${{ parameters.container }}" | "${{ parameters.arch }}" | "${{ parameters.pageSize }}" | "$(Agent.OS)" | $(TEST_DIR)/containers/${{ parameters.container }}.dockerfile'
