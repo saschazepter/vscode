@@ -9,6 +9,7 @@ import { URI } from '../../../../../base/common/uri.js';
 export interface IChatViewTitleActionContext {
 	readonly $mid: MarshalledId.ChatViewContext;
 	readonly sessionResource: URI;
+	readonly metadata?: { readonly [key: string]: unknown };
 }
 
 export function isChatViewTitleActionContext(obj: unknown): obj is IChatViewTitleActionContext {

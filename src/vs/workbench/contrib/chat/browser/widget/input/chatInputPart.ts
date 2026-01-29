@@ -2567,7 +2567,11 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 				telemetrySource: this.options.menus.telemetrySource,
 				small: true,
 				menuOptions: {
-					arg: sessionResource && (isSessionMenu ? sessionResource : {
+					arg: sessionResource && (isSessionMenu ? {
+						$mid: MarshalledId.ChatViewContext,
+						sessionResource,
+						metadata: this.agentSessionsService.getSession(sessionResource)?.metadata,
+					} satisfies IChatViewTitleActionContext : {
 						$mid: MarshalledId.ChatViewContext,
 						sessionResource,
 					} satisfies IChatViewTitleActionContext),
