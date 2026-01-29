@@ -7,6 +7,7 @@ SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 TEST_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
 
 echo "Installing QEMU system emulation"
+sudo sed -i 's|http://archive.ubuntu.com|http://azure.archive.ubuntu.com|g' /etc/apt/sources.list
 sudo apt-get update && sudo apt-get install -y qemu-system-arm
 
 # Download Ubuntu minimal cloud image (has networking, curl, etc. pre-installed)
@@ -17,10 +18,10 @@ DOWNLOAD_DIR=$(mktemp -d)
 echo "Downloading Ubuntu minimal cloud image"
 curl -fL "$UBUNTU_URL" -o "$DOWNLOAD_DIR/$UBUNTU_ROOTFS"
 
-# Download 64k kernel
+# Download 64k kernel (Azure mirror for faster downloads in CI)
 KERNEL_VERSION="6.8.0-90"
 KERNEL_DEB="linux-image-unsigned-${KERNEL_VERSION}-generic-64k_${KERNEL_VERSION}.91_arm64.deb"
-KERNEL_URL="https://ports.ubuntu.com/ubuntu-ports/pool/main/l/linux/$KERNEL_DEB"
+KERNEL_URL="https://azure.ports.ubuntu.com/ubuntu-ports/pool/main/l/linux/$KERNEL_DEB"
 
 echo "Downloading Ubuntu 64k kernel"
 curl -fL "$KERNEL_URL" -o "$DOWNLOAD_DIR/kernel.deb"
@@ -69,9 +70,4 @@ sudo cp "$MOUNT_DIR/root/results.xml" "$TEST_DIR/results.xml" 2>/dev/null || tru
 sudo chown "$(id -u):$(id -g)" "$TEST_DIR/results.xml" 2>/dev/null || true
 
 EXIT_CODE=$(sudo cat "$MOUNT_DIR/exit-code" 2>/dev/null || echo 1)
-sudo umount "$MOUNT_DIR"
-rm -rf "$MOUNT_DIR"
-rm -f "$DISK_IMG"
-rm -rf "$DOWNLOAD_DIR"
-
 exit $EXIT_CODE
