@@ -9,13 +9,12 @@ TEST_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
 echo "Installing QEMU system emulation"
 sudo apt-get update && sudo apt-get install -y qemu-system-arm
 
-# Download Ubuntu minimal rootfs (uses glibc, compatible with VS Code binaries)
-UBUNTU_VERSION="24.04.3"
-UBUNTU_ROOTFS="ubuntu-base-${UBUNTU_VERSION}-base-arm64.tar.gz"
-UBUNTU_URL="https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/$UBUNTU_ROOTFS"
+# Download Ubuntu minimal cloud image (has networking, curl, etc. pre-installed)
+UBUNTU_ROOTFS="ubuntu-24.04-minimal-cloudimg-arm64-root.tar.xz"
+UBUNTU_URL="https://cloud-images.ubuntu.com/minimal/releases/noble/release/$UBUNTU_ROOTFS"
 DOWNLOAD_DIR=$(mktemp -d)
 
-echo "Downloading Ubuntu minimal rootfs"
+echo "Downloading Ubuntu minimal cloud image"
 curl -fL "$UBUNTU_URL" -o "$DOWNLOAD_DIR/$UBUNTU_ROOTFS"
 
 # Download 64k kernel
@@ -31,13 +30,12 @@ VMLINUZ="$DOWNLOAD_DIR/boot/vmlinuz-${KERNEL_VERSION}-generic-64k"
 
 echo "Preparing rootfs"
 ROOTFS_DIR=$(mktemp -d)
-sudo tar -xzf "$DOWNLOAD_DIR/$UBUNTU_ROOTFS" -C "$ROOTFS_DIR"
+sudo tar -xJf "$DOWNLOAD_DIR/$UBUNTU_ROOTFS" -C "$ROOTFS_DIR"
 
-# Copy mount directory contents into /root
 echo "Copying $TEST_DIR into rootfs"
 sudo cp -r "$TEST_DIR"/* "$ROOTFS_DIR/root/"
 
-# Install init script
+echo "Installing init script"
 echo "$ARGS" | sudo tee "$ROOTFS_DIR/test-args" > /dev/null
 date -u '+%Y-%m-%d %H:%M:%S' | sudo tee "$ROOTFS_DIR/host-time" > /dev/null
 sudo cp "$SCRIPT_DIR/qemu-init.sh" "$ROOTFS_DIR/init"
@@ -57,7 +55,7 @@ timeout 1800 qemu-system-aarch64 \
 	-m 4096 \
 	-smp 2 \
 	-kernel "$VMLINUZ" \
-	-append "console=ttyAMA0 root=/dev/vda rw init=/init net.ifnames=0 ip=10.0.2.15::10.0.2.2:255.255.255.0::eth0:off" \
+	-append "console=ttyAMA0 root=/dev/vda rw init=/init net.ifnames=0" \
 	-drive file="$DISK_IMG",format=raw,if=virtio \
 	-netdev user,id=net0 \
 	-device virtio-net-pci,netdev=net0 \
