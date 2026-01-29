@@ -15,11 +15,13 @@ if errorlevel 1 (
     echo WSL is not installed, enabling Windows feature
     powershell -Command "Start-Process -Wait -Verb RunAs dism.exe -ArgumentList '/online','/enable-feature','/featurename:Microsoft-Windows-Subsystem-Linux','/all','/norestart'"
     powershell -Command "Start-Process -Wait -Verb RunAs dism.exe -ArgumentList '/online','/enable-feature','/featurename:VirtualMachinePlatform','/all','/norestart'"
-    set "PATH=%SystemRoot%\System32;%PATH%"
 )
 
+REM Ensure wsl.exe is in PATH (it may have just been installed)
+set "PATH=%SystemRoot%\System32;%PATH%"
+
 echo Checking if Ubuntu WSL is available
-wsl -d Ubuntu echo "WSL is ready" 2>nul
+"%SystemRoot%\System32\wsl.exe" -d Ubuntu echo "WSL is ready" 2>nul
 if errorlevel 1 call :install_wsl
 
 set PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
@@ -47,8 +49,8 @@ if not exist "%UBUNTU_ROOTFS%" (
 
 echo Importing Ubuntu into WSL
 mkdir "%UBUNTU_INSTALL%" 2>nul
-wsl --import Ubuntu "%UBUNTU_INSTALL%" "%UBUNTU_ROOTFS%"
+"%SystemRoot%\System32\wsl.exe" --import Ubuntu "%UBUNTU_INSTALL%" "%UBUNTU_ROOTFS%"
 
 echo Starting WSL
-wsl -d Ubuntu echo WSL is ready
+"%SystemRoot%\System32\wsl.exe" -d Ubuntu echo WSL is ready
 goto :eof
