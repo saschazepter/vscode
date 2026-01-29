@@ -25,7 +25,7 @@ import { ILifecycleService } from '../../../../services/lifecycle/common/lifecyc
 import { Extensions, IOutputChannelRegistry, IOutputService } from '../../../../services/output/common/output.js';
 import { ChatSessionStatus as AgentSessionStatus, IChatSessionFileChange, IChatSessionFileChange2, IChatSessionItem, IChatSessionsExtensionPoint, IChatSessionsService } from '../../common/chatSessionsService.js';
 import { IChatWidgetService } from '../chat.js';
-import { AgentSessionProviders, getAgentSessionProvider, getAgentSessionProviderIcon, getAgentSessionProviderName } from './agentSessions.js';
+import { AgentSessionProviders, getAgentSessionProvider, getAgentSessionProviderIcon, getAgentSessionProviderName, isBuiltInAgentSessionProvider } from './agentSessions.js';
 
 //#region Interfaces, Types
 
@@ -543,8 +543,8 @@ export class AgentSessionsModel extends Disposable implements IAgentSessionsMode
 		}
 
 		for (const [, session] of this._sessions) {
-			if (!resolvedProviders.has(session.providerType)) {
-				sessions.set(session.resource, session); // fill in existing sessions for providers that did not resolve
+			if (!resolvedProviders.has(session.providerType) && (isBuiltInAgentSessionProvider(session.providerType) || mapSessionContributionToType.has(session.providerType))) {
+				sessions.set(session.resource, session); // fill in existing sessions for providers that did not resolve if they are known or built-in
 			}
 		}
 
