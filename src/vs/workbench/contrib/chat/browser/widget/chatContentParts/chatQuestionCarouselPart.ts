@@ -102,7 +102,7 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 		this._prevButton = prevButton;
 
 		const nextLabel = localize('next', 'Next');
-		const nextButton = interactiveStore.add(new Button(arrowsContainer, { ...defaultButtonStyles, supportIcons: true, title: nextLabel }));
+		const nextButton = interactiveStore.add(new Button(arrowsContainer, { ...defaultButtonStyles, secondary: true, supportIcons: true, title: nextLabel }));
 		nextButton.element.classList.add('chat-question-nav-arrow', 'chat-question-nav-next');
 		nextButton.label = `$(${Codicon.chevronRight.id})`;
 		this._nextButton = nextButton;
@@ -382,10 +382,14 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 			this._nextButton!.label = `$(${Codicon.check.id})`;
 			this._nextButton!.element.title = submitLabel;
 			this._nextButton!.element.setAttribute('aria-label', submitLabel);
+			// Switch to primary style for submit
+			this._nextButton!.element.classList.add('chat-question-nav-submit');
 		} else {
 			this._nextButton!.label = `$(${Codicon.chevronRight.id})`;
 			this._nextButton!.element.title = nextLabel;
 			this._nextButton!.element.setAttribute('aria-label', nextLabel);
+			// Keep secondary style for next
+			this._nextButton!.element.classList.remove('chat-question-nav-submit');
 		}
 
 		this._onDidChangeHeight.fire();
