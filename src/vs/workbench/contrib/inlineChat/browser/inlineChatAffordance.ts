@@ -98,7 +98,6 @@ export class InlineChatAffordance extends Disposable {
 			const pos = this._inputWidget.position.read(r);
 			if (pos === null) {
 				this._menuData.set(undefined, undefined);
-				this._editor.focus();
 			}
 		}));
 	}

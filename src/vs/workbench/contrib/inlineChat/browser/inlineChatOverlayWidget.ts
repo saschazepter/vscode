@@ -281,6 +281,11 @@ export class InlineChatInputWidget extends Disposable {
 	 * Hide the widget (removes from editor but does not dispose).
 	 */
 	private _hide(): void {
+		// Focus editor if focus is still within the editor's DOM
+		const editorDomNode = this._editorObs.editor.getDomNode();
+		if (editorDomNode && dom.isAncestorOfActiveElement(editorDomNode)) {
+			this._editorObs.editor.focus();
+		}
 		this._position.set(null, undefined);
 		this._showStore.clear();
 	}
