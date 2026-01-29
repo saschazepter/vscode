@@ -281,7 +281,7 @@ export class DetachedTerminalCommandMirror extends Disposable implements IDetach
 
 		await new Promise<void>(resolve => {
 			// Only append if the boundary around the slice point matches; otherwise rewrite.
-			// This is an efficient O(1) check instead of comparing the entire prefix.
+			// This is an efficient constant-time check (checking up to 50 characters) instead of comparing the entire prefix.
 			// On Windows, VT sequences can differ even for equivalent content, causing corruption
 			// if we blindly append.
 			const canAppend = !!this._lastVT && vt.text.length >= this._lastVT.length && this._vtBoundaryMatches(vt.text, this._lastVT.length);
