@@ -625,7 +625,7 @@ export class AgentSessionsModel extends Disposable implements IAgentSessionsMode
 		}
 	}
 
-	private static readonly READ_DATE_BASELINE_KEY = 'agentSessions.readDateBaseline';
+	private static readonly READ_DATE_BASELINE_KEY = 'agentSessions.readDateBaseline2';
 
 	private readonly readDateBaseline: number;
 
