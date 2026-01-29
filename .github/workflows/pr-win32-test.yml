@@ -86,7 +86,7 @@ jobs:
           $ErrorActionPreference = "Stop"
           exec { node build/azure-pipelines/common/listNodeModules.ts .build/node_modules_list.txt }
           exec { mkdir -Force .build/node_modules_cache }
-          exec { & "C:\Program Files\Git\usr\bin\tar.exe" --posix -cf .build/node_modules_cache/cache.tzst --exclude cache.tzst -P -C . --files-from .build/node_modules_list.txt --force-local --use-compress-program "zstd -T0" }
+          exec { & "C:\Program Files\Git\usr\bin\tar.exe" --posix -cf .build/node_modules_cache/cache.tzst --exclude cache.tzst -C . --files-from .build/node_modules_list.txt --force-local --use-compress-program "zstd -T0" }
 
       - name: Create .build folder
         shell: pwsh
