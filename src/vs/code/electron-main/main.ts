@@ -95,6 +95,7 @@ class CodeMain {
 	}
 
 	private async startup(): Promise<void> {
+		console.log('hello world');
 
 		// Set the error handler early enough so that we are not getting the
 		// default electron error dialog popping up
