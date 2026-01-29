@@ -203,5 +203,9 @@
 	],
 	"azureMcp.serverMode": "all",
 	"azureMcp.readOnly": true,
+<<<<<<< Updated upstream
+=======
+	"chat.tools.terminal.outputLocation": "chat",
+>>>>>>> Stashed changes
 	"debug.breakpointsView.presentation": "tree"
 }
