@@ -5,14 +5,15 @@ for /f "tokens=*" %%a in ('powershell -NoProfile -Command "[int](Get-CimInstance
 if "%ARCH%"=="12" (set "ARCH_NAME=ARM64") else if "%ARCH%"=="9" (set "ARCH_NAME=AMD64") else if "%ARCH%"=="5" (set "ARCH_NAME=ARM") else (set "ARCH_NAME=x86")
 
 echo System: %OS% %ARCH_NAME%
-powershell -NoProfile -Command "$mem = (Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory; Write-Host ('Memory: {0:N0} GB' -f ($mem/1GB))"
+powershell -NoProfile -Command "$os = Get-CimInstance Win32_OperatingSystem; $total = $os.TotalVisibleMemorySize/1MB; $free = $os.FreePhysicalMemory/1MB; Write-Host ('Memory: {0:N0} GB free of {1:N0} GB' -f $free, $total)"
 powershell -NoProfile -Command "$disk = Get-PSDrive C; Write-Host ('Disk C: {0:N0} GB free of {1:N0} GB' -f ($disk.Free/1GB), (($disk.Used+$disk.Free)/1GB))"
 
 echo Checking if WSL is installed
 where wsl >nul 2>nul
-if errorlevel 1 call :install_wsl
-
-set "PATH=%ProgramFiles%\WSL;%SystemRoot%\System32;%PATH%"
+if errorlevel 1 (
+    echo WSL is not installed, skipping WSL setup
+    goto :run_tests
+)
 
 echo Checking if Ubuntu is available on WSL
 powershell -NoProfile -Command "if ((wsl -l -q) -contains 'Ubuntu') { exit 0 } else { exit 1 }"
@@ -52,39 +53,5 @@ wsl --import Ubuntu "%ROOTFS_DIR%" "%ROOTFS_ZIP%"
 
 echo Starting Ubuntu on WSL
 wsl -d Ubuntu echo Ubuntu WSL is ready
-
-goto :eof
-
-REM ====================================================================================================================
-
-:install_wsl
-
-echo WSL does not appear to be installed
-
-echo Enabling VM Platform Windows feature
-powershell -Command "Start-Process -Wait -Verb RunAs dism.exe -ArgumentList '/online','/enable-feature','/featurename:VirtualMachinePlatform','/all','/norestart'"
-
-echo Enabling WSL Windows feature
-powershell -Command "Start-Process -Wait -Verb RunAs dism.exe -ArgumentList '/online','/enable-feature','/featurename:Microsoft-Windows-Subsystem-Linux','/all','/norestart'"
-
-if "%ARCH%"=="12" (
-    set "MSI_URL=https://github.com/microsoft/WSL/releases/download/2.6.3/wsl.2.6.3.0.arm64.msi"
-) else (
-    set "MSI_URL=https://github.com/microsoft/WSL/releases/download/2.6.3/wsl.2.6.3.0.x64.msi"
-)
-
-set "MSI_PATH=%TEMP%\wsl.msi"
-
-echo Downloading WSL from %MSI_URL% to %MSI_PATH%
-curl -L -o "%MSI_PATH%" "%MSI_URL%"
-
-echo Installing WSL from %MSI_PATH%
-msiexec /i "%MSI_PATH%" /quiet /norestart
-
-echo Starting Host Compute Service
-sc start vmcompute
-
-echo Starting WSL service
-sc start wslservice
 
 goto :eof
