@@ -44,7 +44,7 @@ export XDG_RUNTIME_DIR=/run/user/0
 
 echo "Installing packages"
 apk update
-apk add nodejs dbus dbus-x11 xvfb xorg-server
+apk add nodejs dbus dbus-x11 xvfb xorg-server gcompat libc6-compat
 
 echo "Starting entrypoint"
 sh /root/containers/entrypoint.sh $(cat /test-args)

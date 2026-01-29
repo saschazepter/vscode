@@ -119,6 +119,7 @@ extends:
               poolName: 1es-ubuntu-22.04-x64
               pageSize: 64k
               args: --no-detection --grep ".*-linux-arm64"
+              arch: arm64
 
           # CentOS Stream 9
           - template: build/azure-pipelines/common/sanity-tests.yml@self
