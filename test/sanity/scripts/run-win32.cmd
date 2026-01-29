@@ -15,40 +15,23 @@ if errorlevel 1 (
 ) else (
     echo Checking if Ubuntu is available on WSL
     powershell -NoProfile -Command "if ((wsl -l -q) -contains 'Ubuntu') { exit 0 } else { exit 1 }"
-    if errorlevel 1 call :install_ubuntu
+    if errorlevel 1 (
+        echo Ubuntu image is not present in WSL
+
+        echo Installing Ubuntu via WSL
+        wsl --install -d Ubuntu --no-launch
+
+        echo Starting Ubuntu on WSL
+        wsl -d Ubuntu echo Ubuntu WSL is ready
+    )
 )
 
 set PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
-set PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe
+if "%ARCH%"=="12" (
+	set PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=C:\Program Files\Microsoft\Edge\Application\msedge.exe
+) else (
+	set PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe
+)
 
 echo Running sanity tests
 node "%~dp0..\out\index.js" %*
-
-goto :eof
-
-REM ====================================================================================================================
-
-:install_ubuntu
-
-echo Ubuntu image is not present in WSL
-
-if "%ARCH%"=="12" (
-    set "ROOTFS_URL=https://cloud-images.ubuntu.com/wsl/jammy/current/ubuntu-jammy-wsl-arm64-ubuntu22.04lts.rootfs.tar.gz"
-) else (
-    set "ROOTFS_URL=https://cloud-images.ubuntu.com/wsl/jammy/current/ubuntu-jammy-wsl-amd64-ubuntu22.04lts.rootfs.tar.gz"
-)
-
-set "ROOTFS_ZIP=%TEMP%\ubuntu-rootfs.tar.gz"
-set "ROOTFS_DIR=%LOCALAPPDATA%\WSL\Ubuntu"
-
-echo Downloading Ubuntu rootfs from %ROOTFS_URL% to %ROOTFS_ZIP%
-curl -L -o "%ROOTFS_ZIP%" "%ROOTFS_URL%"
-
-echo Importing Ubuntu into WSL at %ROOTFS_DIR% from %ROOTFS_ZIP%
-mkdir "%ROOTFS_DIR%" 2>nul
-wsl --import Ubuntu "%ROOTFS_DIR%" "%ROOTFS_ZIP%"
-
-echo Starting Ubuntu on WSL
-wsl -d Ubuntu echo Ubuntu WSL is ready
-
-goto :eof
