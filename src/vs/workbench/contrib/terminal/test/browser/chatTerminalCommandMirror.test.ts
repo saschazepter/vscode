@@ -14,7 +14,7 @@ import { TerminalCapabilityStore } from '../../../../../platform/terminal/common
 import { XtermTerminal } from '../../browser/xterm/xtermTerminal.js';
 import { workbenchInstantiationService } from '../../../../test/browser/workbenchTestServices.js';
 import { TestXtermAddonImporter } from './xterm/xtermTestUtils.js';
-import { computeMaxBufferColumnWidth } from '../../browser/chatTerminalCommandMirror.js';
+import { computeMaxBufferColumnWidth, vtBoundaryMatches } from '../../browser/chatTerminalCommandMirror.js';
 
 const defaultTerminalConfig = {
 	fontFamily: 'monospace',
@@ -255,18 +255,8 @@ suite('Workbench - ChatTerminalCommandMirror', () => {
 			// produces different output between calls
 			const vt2 = 'DifferentPrefix' + 'Line3';
 
-			// The boundary check should detect the divergence
-			// Check last 50 chars (or less) of the "old" region in the new VT
-			const windowSize = 50;
-			const slicePoint = vt1.length;
-			const start = Math.max(0, slicePoint - windowSize);
-			let boundaryMatches = true;
-			for (let i = start; i < slicePoint && i < vt2.length; i++) {
-				if (vt2.charCodeAt(i) !== vt1.charCodeAt(i)) {
-					boundaryMatches = false;
-					break;
-				}
-			}
+			// Use the actual utility function to test boundary checking
+			const boundaryMatches = vtBoundaryMatches(vt2, vt1, vt1.length);
 
 			// Boundary should NOT match because the prefix diverged
 			strictEqual(boundaryMatches, false, 'Boundary check should detect divergence');
@@ -290,17 +280,8 @@ suite('Workbench - ChatTerminalCommandMirror', () => {
 			// Second VT snapshot that properly extends the first
 			const vt2 = vt1 + 'Line3\r\n';
 
-			// The boundary check should pass since prefix matches
-			const windowSize = 50;
-			const slicePoint = vt1.length;
-			const start = Math.max(0, slicePoint - windowSize);
-			let boundaryMatches = true;
-			for (let i = start; i < slicePoint; i++) {
-				if (vt2.charCodeAt(i) !== vt1.charCodeAt(i)) {
-					boundaryMatches = false;
-					break;
-				}
-			}
+			// Use the actual utility function to test boundary checking
+			const boundaryMatches = vtBoundaryMatches(vt2, vt1, vt1.length);
 
 			strictEqual(boundaryMatches, true, 'Boundary check should pass when prefix matches');
 
@@ -509,6 +490,69 @@ suite('Workbench - ChatTerminalCommandMirror', () => {
 				'c'.repeat(90)
 			], 150);
 			strictEqual(computeMaxBufferColumnWidth(buffer, 150), 120);
+		});
+	});
+
+	suite('vtBoundaryMatches', () => {
+
+		test('returns true when strings match at boundary', () => {
+			const oldVT = 'Line1\r\nLine2\r\n';
+			const newVT = oldVT + 'Line3\r\n';
+			strictEqual(vtBoundaryMatches(newVT, oldVT, oldVT.length), true);
+		});
+
+		test('returns false when strings diverge at boundary', () => {
+			const oldVT = 'Line1\r\nLine2';
+			const newVT = 'DifferentPrefixLine3';
+			strictEqual(vtBoundaryMatches(newVT, oldVT, oldVT.length), false);
+		});
+
+		test('returns false when single character differs in window', () => {
+			const oldVT = 'AAAAAAAAAA';
+			const newVT = 'AAAAABAAAA' + 'NewContent';
+			strictEqual(vtBoundaryMatches(newVT, oldVT, oldVT.length), false);
+		});
+
+		test('returns true for empty strings', () => {
+			strictEqual(vtBoundaryMatches('', '', 0), true);
+		});
+
+		test('returns true when slicePoint is 0', () => {
+			const oldVT = '';
+			const newVT = 'SomeContent';
+			strictEqual(vtBoundaryMatches(newVT, oldVT, 0), true);
+		});
+
+		test('handles strings shorter than window size', () => {
+			const oldVT = 'Short';
+			const newVT = 'Short' + 'Added';
+			strictEqual(vtBoundaryMatches(newVT, oldVT, oldVT.length), true);
+		});
+
+		test('respects custom window size parameter', () => {
+			// With default window (50), this would match since the diff is at position 70
+			const prefix = 'A'.repeat(80);
+			const oldVT = prefix;
+			const newVT = 'X' + 'A'.repeat(79) + 'NewContent'; // differs at position 0
+
+			// With window of 50, only checks chars 30-80, which would match
+			strictEqual(vtBoundaryMatches(newVT, oldVT, oldVT.length, 50), true);
+
+			// With window of 100, would check chars 0-80, which would NOT match
+			strictEqual(vtBoundaryMatches(newVT, oldVT, oldVT.length, 100), false);
+		});
+
+		test('detects divergence in escape sequences (Windows scenario)', () => {
+			// Simulates Windows issue where VT escape sequences differ
+			const oldVT = '\x1b[0m\x1b[1mBold\x1b[0m\r\n';
+			const newVT = '\x1b[0m\x1b[22mBold\x1b[0m\r\nMore'; // Different escape code for bold
+			strictEqual(vtBoundaryMatches(newVT, oldVT, oldVT.length), false);
+		});
+
+		test('handles matching escape sequences', () => {
+			const oldVT = '\x1b[31mRed\x1b[0m\r\n';
+			const newVT = '\x1b[31mRed\x1b[0m\r\nGreen';
+			strictEqual(vtBoundaryMatches(newVT, oldVT, oldVT.length), true);
 		});
 	});
 });

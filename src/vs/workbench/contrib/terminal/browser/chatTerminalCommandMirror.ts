@@ -68,6 +68,28 @@ export function computeMaxBufferColumnWidth(buffer: { readonly length: number; g
 	return maxWidth;
 }
 
+/**
+ * Checks if two VT strings match around a boundary where we would slice.
+ * This is an efficient O(1) check that verifies a small window of characters
+ * before the slice point to detect if the VT sequences have diverged (common on Windows).
+ *
+ * @param newVT The new VT text to compare.
+ * @param oldVT The old VT text to compare against.
+ * @param slicePoint The point where we would slice. Must be <= both string lengths.
+ * @param windowSize The number of characters before slicePoint to check (default 50).
+ * @returns True if the boundary matches, false if VT sequences have diverged.
+ */
+export function vtBoundaryMatches(newVT: string, oldVT: string, slicePoint: number, windowSize: number = 50): boolean {
+	const start = Math.max(0, slicePoint - windowSize);
+	const end = slicePoint;
+	for (let i = start; i < end; i++) {
+		if (newVT.charCodeAt(i) !== oldVT.charCodeAt(i)) {
+			return false;
+		}
+	}
+	return true;
+}
+
 export interface IDetachedTerminalCommandMirrorRenderResult {
 	lineCount?: number;
 	maxColumnWidth?: number;
@@ -561,22 +583,9 @@ export class DetachedTerminalCommandMirror extends Disposable implements IDetach
 
 	/**
 	 * Checks if the new VT text matches the old VT around the boundary where we would slice.
-	 * This is an efficient O(1) check that verifies a small window of characters before and
-	 * after the slice point to detect if the VT sequences have diverged (common on Windows).
-	 *
-	 * @param newVT The new VT text to compare against the previously stored VT.
-	 * @param slicePoint Must be <= this._lastVT.length and <= newVT.length.
 	 */
 	private _vtBoundaryMatches(newVT: string, slicePoint: number): boolean {
-		const windowSize = 50;
-		const start = Math.max(0, slicePoint - windowSize);
-		const end = slicePoint;
-		for (let i = start; i < end; i++) {
-			if (newVT.charCodeAt(i) !== this._lastVT.charCodeAt(i)) {
-				return false;
-			}
-		}
-		return true;
+		return vtBoundaryMatches(newVT, this._lastVT, slicePoint);
 	}
 }
 
