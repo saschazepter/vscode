@@ -72,7 +72,7 @@
 		justify-content: center;
 		pointer-events: none;
 		color: var(--vscode-foreground);
-		background-color: color-mix(in srgb, var(--vscode-editor-background) 20%, transparent);
+		background-color: color-mix(in srgb, var(--vscode-editor-background) 15%, transparent);
 		opacity: 0;
 		visibility: hidden;
 		transition: opacity 200ms ease-in;
