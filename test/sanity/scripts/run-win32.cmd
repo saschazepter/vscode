@@ -8,25 +8,14 @@ echo System: %OS% %ARCH_NAME%
 powershell -NoProfile -Command "$mem = (Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory; Write-Host ('Memory: {0:N0} GB' -f ($mem/1GB))"
 powershell -NoProfile -Command "$disk = Get-PSDrive C; Write-Host ('Disk C: {0:N0} GB free of {1:N0} GB' -f ($disk.Free/1GB), (($disk.Used+$disk.Free)/1GB))"
 
-set "UBUNTU_INSTALL=%LOCALAPPDATA%\WSL\Ubuntu"
-
 where wsl >nul 2>nul
 if errorlevel 1 call :install_wsl_feature
 
-REM Ensure wsl.exe is in PATH (may be in System32 or Program Files\WSL)
 set "PATH=%ProgramFiles%\WSL;%SystemRoot%\System32;%PATH%"
 
-REM Verify WSL can actually run (may need reboot after feature enablement)
-wsl --status >nul 2>nul
-if errorlevel 1 (
-    echo WSL is installed but cannot run - may require system reboot
-    echo Skipping WSL setup, tests requiring WSL will be skipped
-    goto :run_tests
-)
-
-echo Checking if Ubuntu WSL is available
+echo Checking if Ubuntu is available on WSL
 powershell -NoProfile -Command "if ((wsl -l -q) -contains 'Ubuntu') { exit 0 } else { exit 1 }"
-if errorlevel 1 call :install_wsl
+if errorlevel 1 call :install_ubuntu_image
 
 :run_tests
 set PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
@@ -36,39 +25,49 @@ echo Running sanity tests
 node "%~dp0..\out\index.js" %*
 exit /b %ERRORLEVEL%
 
-:install_wsl
-echo Ubuntu not found, installing via rootfs import
+:install_ubuntu_image
+
+echo Ubuntu image is not present in WSL
 
 if "%ARCH%"=="12" (
-    set "UBUNTU_ROOTFS=%TEMP%\ubuntu-rootfs-arm64.tar.gz"
-    set "UBUNTU_URL=https://cloud-images.ubuntu.com/wsl/jammy/current/ubuntu-jammy-wsl-arm64-ubuntu22.04lts.rootfs.tar.gz"
+    set "ROOTFS_URL=https://cloud-images.ubuntu.com/wsl/jammy/current/ubuntu-jammy-wsl-arm64-ubuntu22.04lts.rootfs.tar.gz"
 ) else (
-    set "UBUNTU_ROOTFS=%TEMP%\ubuntu-rootfs-amd64.tar.gz"
-    set "UBUNTU_URL=https://cloud-images.ubuntu.com/wsl/jammy/current/ubuntu-jammy-wsl-amd64-ubuntu22.04lts.rootfs.tar.gz"
+    set "ROOTFS_URL=https://cloud-images.ubuntu.com/wsl/jammy/current/ubuntu-jammy-wsl-amd64-ubuntu22.04lts.rootfs.tar.gz"
 )
 
-if not exist "%UBUNTU_ROOTFS%" (
-    echo Downloading Ubuntu rootfs from %UBUNTU_URL%
-    curl -L -o "%UBUNTU_ROOTFS%" "%UBUNTU_URL%"
-)
+set "ROOTFS_ZIP=%TEMP%\ubuntu-rootfs.tar.gz"
+set "ROOTFS_DIR=%LOCALAPPDATA%\WSL\Ubuntu"
 
-echo Importing Ubuntu into WSL
-mkdir "%UBUNTU_INSTALL%" 2>nul
-wsl --import Ubuntu "%UBUNTU_INSTALL%" "%UBUNTU_ROOTFS%"
+echo Downloading Ubuntu rootfs from %ROOTFS_URL% to %ROOTFS_ZIP%
+curl -L -o "%ROOTFS_ZIP%" "%ROOTFS_URL%"
 
-echo Starting WSL
+echo Importing Ubuntu into WSL at %ROOTFS_DIR% from %ROOTFS_ZIP%
+mkdir "%ROOTFS_DIR%" 2>nul
+wsl --import Ubuntu "%ROOTFS_DIR%" "%ROOTFS_ZIP%"
+
+echo Starting Ubuntu on WSL
 wsl -d Ubuntu echo WSL is ready
+
 goto :eof
 
 :install_wsl_feature
-echo WSL is not installed, installing from GitHub
 
-REM Download and install WSL from GitHub using MSI (architecture-specific)
+echo WSL does not appear to be installed
+
+echo Enabling WSL and Virtual Machine Platform features
+powershell -Command "Start-Process -Wait -Verb RunAs dism.exe -ArgumentList '/online','/enable-feature','/featurename:Microsoft-Windows-Subsystem-Linux','/all','/norestart'"
+powershell -Command "Start-Process -Wait -Verb RunAs dism.exe -ArgumentList '/online','/enable-feature','/featurename:VirtualMachinePlatform','/all','/norestart'"
+
 if "%ARCH%"=="12" (
-    curl -L -o "%TEMP%\wsl.msi" https://github.com/microsoft/WSL/releases/download/2.6.3/wsl.2.6.3.0.arm64.msi
+    set "MSI_URL=https://github.com/microsoft/WSL/releases/download/2.6.3/wsl.2.6.3.0.arm64.msi"
 ) else (
-    curl -L -o "%TEMP%\wsl.msi" https://github.com/microsoft/WSL/releases/download/2.6.3/wsl.2.6.3.0.x64.msi
+    set "MSI_URL=https://github.com/microsoft/WSL/releases/download/2.6.3/wsl.2.6.3.0.x64.msi"
 )
+
+echo Downloading WSL from %MSI_URL%
+curl -L -o "%TEMP%\wsl.msi" "%MSI_URL%"
+
+echo Installing WSL with Windows Installer
 msiexec /i "%TEMP%\wsl.msi" /quiet /norestart
 
 goto :eof
