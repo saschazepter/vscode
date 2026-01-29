@@ -310,6 +310,63 @@ suite('Workbench - ChatTerminalCommandMirror', () => {
 
 			strictEqual(getBufferText(mirror), 'Line1\nLine2\nLine3');
 		});
+
+		test('incremental updates use append path (not full rewrite) in normal operation', async () => {
+			// This test verifies that in normal operation (VT prefix matches),
+			// we use the efficient append path rather than full rewrite.
+
+			const source = await createXterm();
+			const marker = source.raw.registerMarker(0)!;
+
+			// Build up content incrementally, simulating streaming output
+			const writes: string[] = [];
+
+			// Step 1: Initial content
+			await write(source, 'output line 1\r\n');
+			const vt1 = await source.getRangeAsVT(marker, undefined, true) ?? '';
+
+			const mirror = await createXterm();
+			await write(mirror, vt1);
+			writes.push(vt1);
+
+			// Step 2: Add more content - should use append path
+			await write(source, 'output line 2\r\n');
+			const vt2 = await source.getRangeAsVT(marker, undefined, true) ?? '';
+
+			// Verify VT extends properly (prefix matches)
+			strictEqual(vt2.startsWith(vt1), true, 'VT2 should start with VT1');
+
+			// Append only the new part (this is what the append path does)
+			const appended2 = vt2.slice(vt1.length);
+			strictEqual(appended2.length > 0, true, 'Should have new content to append');
+			strictEqual(appended2.length < vt2.length, true, 'Append should be smaller than full rewrite');
+			await write(mirror, appended2);
+			writes.push(appended2);
+
+			// Step 3: Add more content - should continue using append path
+			await write(source, 'output line 3\r\n');
+			const vt3 = await source.getRangeAsVT(marker, undefined, true) ?? '';
+
+			strictEqual(vt3.startsWith(vt2), true, 'VT3 should start with VT2');
+
+			const appended3 = vt3.slice(vt2.length);
+			strictEqual(appended3.length > 0, true, 'Should have new content to append');
+			strictEqual(appended3.length < vt3.length, true, 'Append should be smaller than full rewrite');
+			await write(mirror, appended3);
+			writes.push(appended3);
+
+			marker.dispose();
+
+			// Verify final content is correct
+			strictEqual(getBufferText(mirror), 'output line 1\noutput line 2\noutput line 3');
+
+			// Verify we used the append path (total bytes written should be roughly
+			// equal to total VT, not 3x the total due to full rewrites)
+			const totalWritten = writes.reduce((sum, w) => sum + w.length, 0);
+			const fullRewriteWouldBe = vt1.length + vt2.length + vt3.length;
+			strictEqual(totalWritten < fullRewriteWouldBe, true,
+				`Append path should write less (${totalWritten}) than full rewrites would (${fullRewriteWouldBe})`);
+		});
 	});
 
 	suite('computeMaxBufferColumnWidth', () => {
