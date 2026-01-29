@@ -504,27 +504,6 @@ export class AgentSessionsModel extends Disposable implements IAgentSessionsMode
 					? { files: changes.files, insertions: changes.insertions, deletions: changes.deletions }
 					: changes;
 
-				// Times: it is important to always provide timing information to track
-				// unread/read state for example.
-				// If somehow the provider does not provide any, fallback to last known
-				let { created, lastRequestStarted, lastRequestEnded } = session.timing;
-				if (!created || !lastRequestEnded) {
-					const existing = this._sessions.get(session.resource);
-					if (!created && existing?.timing.created) {
-						created = existing.timing.created;
-					}
-
-					if (!lastRequestEnded && existing?.timing.lastRequestEnded) {
-						lastRequestEnded = existing.timing.lastRequestEnded;
-					}
-
-					if (!lastRequestStarted && existing?.timing.lastRequestStarted) {
-						lastRequestStarted = existing.timing.lastRequestStarted;
-					}
-				}
-
-				this.logger.logIfTrace(`Resolved session ${session.resource.toString()} with timings: created=${created}, lastRequestStarted=${lastRequestStarted}, lastRequestEnded=${lastRequestEnded}`);
-
 				sessions.set(session.resource, this.toAgentSession({
 					providerType: chatSessionType,
 					providerLabel,
@@ -536,7 +515,7 @@ export class AgentSessionsModel extends Disposable implements IAgentSessionsMode
 					tooltip: session.tooltip,
 					status: session.status ?? AgentSessionStatus.Completed,
 					archived: session.archived,
-					timing: { created, lastRequestStarted, lastRequestEnded, },
+					timing: session.timing,
 					changes: normalizedChanges,
 				}));
 			}
