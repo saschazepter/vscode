@@ -222,7 +222,8 @@
 	color: var(--vscode-descriptionForeground);
 }
 
-.chat-question-freeform-textarea {
+.chat-question-freeform-textarea,
+.chat-question-text-textarea {
 	width: 100%;
 	min-height: 32px;
 	max-height: 200px;
@@ -238,11 +239,13 @@
 	overflow-y: hidden;
 }
 
-.chat-question-freeform-textarea:focus {
+.chat-question-freeform-textarea:focus,
+.chat-question-text-textarea:focus {
 	outline: 1px solid var(--vscode-focusBorder);
 	border-color: var(--vscode-focusBorder);
 }
 
-.chat-question-freeform-textarea::placeholder {
+.chat-question-freeform-textarea::placeholder,
+.chat-question-text-textarea::placeholder {
 	color: var(--vscode-input-placeholderForeground);
 }
