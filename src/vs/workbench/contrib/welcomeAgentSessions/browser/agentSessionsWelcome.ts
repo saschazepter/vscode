@@ -137,7 +137,7 @@ export class AgentSessionsWelcomePage extends EditorPane {
 	private _recentWorkspaces: Array<IRecentWorkspace | IRecentFolder> = [];
 	private _isEmptyWorkspace: boolean = false;
 	private _workspaceKind: AgentSessionsWelcomeWorkspaceKind = 'empty';
-
+	private _storedInput: AgentSessionsWelcomeInput | undefined;
 	// Telemetry tracking
 	private _openedAt: number = 0;
 	private _closedBy: string = 'unknown';
@@ -177,6 +177,14 @@ export class AgentSessionsWelcomePage extends EditorPane {
 
 		this.contextService = this._register(contextKeyService.createScoped(this.container));
 		ChatContextKeys.inAgentSessionsWelcome.bindTo(this.contextService).set(true);
+
+		this._register(this.chatEntitlementService.onDidChangeSentiment(() => {
+			const input = this.input || this._storedInput;
+			if (this.chatEntitlementService.sentiment.hidden && input) {
+				this._closedBy = 'chatHidden';
+				this.group.closeEditor(input);
+			}
+		}));
 	}
 
 	protected createEditor(parent: HTMLElement): void {
@@ -192,6 +200,7 @@ export class AgentSessionsWelcomePage extends EditorPane {
 	}
 
 	override async setInput(input: AgentSessionsWelcomeInput, options: AgentSessionsWelcomeEditorOptions | undefined, context: IEditorOpenContext, token: CancellationToken): Promise<void> {
+		this._storedInput = input;
 		await super.setInput(input, options, context, token);
 		this._workspaceKind = input.workspaceKind ?? 'empty';
 		await this.buildContent();
