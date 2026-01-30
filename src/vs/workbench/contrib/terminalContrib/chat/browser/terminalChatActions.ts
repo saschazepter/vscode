@@ -360,6 +360,11 @@ registerAction2(class ShowChatTerminalsAction extends Action2 {
 			}
 		}
 
+		// If there are no hidden terminals, return early
+		if (all.size === 0) {
+			return;
+		}
+
 		// If there's only one hidden terminal, show it directly without the quick pick
 		if (all.size === 1) {
 			const instance = Array.from(all.values())[0];
