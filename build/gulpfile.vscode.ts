@@ -68,6 +68,7 @@ const vscodeResourceIncludes = [
 	// Electron Preload
 	'out-build/vs/base/parts/sandbox/electron-browser/preload.js',
 	'out-build/vs/base/parts/sandbox/electron-browser/preload-aux.js',
+	'out-build/vs/platform/browserView/electron-browser/preload-browserView.js',
 
 	// Node Scripts
 	'out-build/vs/base/node/{terminateProcess.sh,cpuUsage.sh,ps.sh}',

@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { WebContentsView, webContents } from 'electron';
+import { FileAccess } from '../../../base/common/network.js';
 import { Disposable } from '../../../base/common/lifecycle.js';
 import { Emitter, Event } from '../../../base/common/event.js';
 import { VSBuffer } from '../../../base/common/buffer.js';
@@ -89,6 +90,7 @@ export class BrowserView extends Disposable {
 			sandbox: true,
 			webviewTag: false,
 			session: viewSession,
+			preload: FileAccess.asFileUri('vs/platform/browserView/electron-browser/preload-browserView.js').fsPath,
 
 			// TODO@kycutler: Remove this once https://github.com/electron/electron/issues/42578 is fixed
 			type: 'browserView'
@@ -473,6 +475,23 @@ export class BrowserView extends Disposable {
 	 */
 	async stopFindInPage(keepSelection?: boolean): Promise<void> {
 		this._view.webContents.stopFindInPage(keepSelection ? 'keepSelection' : 'clearSelection');
+	}
+
+	/**
+	 * Get the currently selected text in the browser view.
+	 * Returns immediately with empty string if the page is still loading.
+	 */
+	async getSelectedText(): Promise<string> {
+		// we don't want to wait for the page to finish loading, which executeJavaScript normally does.
+		if (this._view.webContents.isLoading()) {
+			return '';
+		}
+		try {
+			// Uses the preload-exposed API window.vscodeBrowserView.
+			return await this._view.webContents.executeJavaScript('window.vscodeBrowserView?.getSelectedText?.() ?? ""');
+		} catch {
+			return '';
+		}
 	}
 
 	/**
