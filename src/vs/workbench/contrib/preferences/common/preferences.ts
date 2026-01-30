@@ -155,7 +155,23 @@ export async function getExperimentalExtensionToggleData(
 		return cachedExtensionToggleData;
 	}
 
-	if (productService.extensionRecommendations && productService.commonlyUsedSettings) {
+	const commonlyUsedSettings: string[] = [
+		'editor.fontSize',
+		'editor.formatOnSave',
+		'files.autoSave',
+		'GitHub.copilot.manageExtension',
+		'editor.defaultFormatter',
+		'editor.fontFamily',
+		'editor.wordWrap',
+		'chat.agent.maxRequests',
+		'files.exclude',
+		'workbench.colorTheme',
+		'editor.tabSize',
+		'editor.mouseWheelZoom',
+		'editor.formatOnPaste'
+	];
+
+	if (productService.extensionRecommendations) {
 		const settingsEditorRecommendedExtensions: IStringDictionary<IExtensionRecommendations> = {};
 		Object.keys(productService.extensionRecommendations).forEach(extensionId => {
 			const extensionInfo = productService.extensionRecommendations![extensionId];
@@ -189,7 +205,7 @@ export async function getExperimentalExtensionToggleData(
 		cachedExtensionToggleData = {
 			settingsEditorRecommendedExtensions,
 			recommendedExtensionsGalleryInfo,
-			commonlyUsed: productService.commonlyUsedSettings
+			commonlyUsed: commonlyUsedSettings
 		};
 		return cachedExtensionToggleData;
 	}
