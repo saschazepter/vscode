@@ -171,8 +171,6 @@ export async function getExperimentalExtensionToggleData(
 		return cachedExtensionToggleData;
 	}
 
-	const commonlyUsedSettings: string[] = COMMONLY_USED_SETTINGS;
-
 	if (productService.extensionRecommendations) {
 		const settingsEditorRecommendedExtensions: IStringDictionary<IExtensionRecommendations> = {};
 		Object.keys(productService.extensionRecommendations).forEach(extensionId => {
@@ -207,7 +205,7 @@ export async function getExperimentalExtensionToggleData(
 		cachedExtensionToggleData = {
 			settingsEditorRecommendedExtensions,
 			recommendedExtensionsGalleryInfo,
-			commonlyUsed: commonlyUsedSettings
+			commonlyUsed: COMMONLY_USED_SETTINGS
 		};
 		return cachedExtensionToggleData;
 	}
