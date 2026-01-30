@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Browser, Page } from 'playwright';
-import { TestContext } from './context';
+import { TestContext } from './context.js';
 
 /**
  * Handles GitHub authentication flows in the browser.

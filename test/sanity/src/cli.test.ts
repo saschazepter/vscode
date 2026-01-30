@@ -114,8 +114,12 @@ export function setup(context: TestContext) {
 					const url = context.getTunnelUrl(tunnelUrl, test.workspaceDir);
 					context.log(`CLI started successfully with tunnel URL: ${url}`);
 
+					if (!browser) {
+						throw new Error('Browser instance is not available');
+					}
+
 					context.log(`Navigating to ${url}`);
-					const page = await context.getPage(browser!.newPage());
+					const page = await context.getPage(browser.newPage());
 					await page.goto(url);
 
 					context.log('Waiting for the workbench to load');
@@ -135,7 +139,7 @@ export function setup(context: TestContext) {
 					await test.run(page);
 
 					context.log('Closing browser');
-					await browser!.close();
+					await browser.close();
 
 					test.validate();
 					return true;
