@@ -2375,7 +2375,6 @@ export interface IChatExternalToolInvocationUpdateDto {
 	toolCallId: string;
 	toolName: string;
 	isComplete: boolean;
-	errorMessage?: string;
 	invocationMessage?: string | IMarkdownString;
 	pastTenseMessage?: string | IMarkdownString;
 	toolSpecificData?: unknown;

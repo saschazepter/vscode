@@ -289,7 +289,7 @@ declare module 'vscode' {
 	export class ChatToolInvocationPart {
 		toolName: string;
 		toolCallId: string;
-		errorMessage?: string;
+		isError?: boolean;
 		invocationMessage?: string | MarkdownString;
 		originMessage?: string | MarkdownString;
 		pastTenseMessage?: string | MarkdownString;
@@ -298,6 +298,12 @@ declare module 'vscode' {
 		toolSpecificData?: ChatTerminalToolInvocationData | ChatMcpToolInvocationData | ChatSubagentToolInvocationData;
 		subAgentInvocationId?: string;
 		presentation?: 'hidden' | 'hiddenAfterComplete' | undefined;
+
+		/**
+		 * If this flag is set, this will be treated as an update to any previous tool call with the same id.
+		 * TODO@roblourens remove this and make it the default
+		 */
+		enablePartialUpdate?: boolean;
 
 		constructor(toolName: string, toolCallId: string, errorMessage?: string);
 	}

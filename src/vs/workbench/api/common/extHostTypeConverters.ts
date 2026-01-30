@@ -2876,7 +2876,7 @@ export namespace ChatToolInvocationPart {
 
 		if (part.toolSpecificData && isChatMcpToolInvocationData(part.toolSpecificData)) {
 			// Convert ChatMcpToolInvocationData to IToolResultInputOutputDetails
-			resultDetails = convertMcpToResultDetails(part.toolSpecificData, part.errorMessage);
+			resultDetails = convertMcpToResultDetails(part.toolSpecificData, part.isError);
 			toolSpecificData = undefined; // MCP data goes to resultDetails, not toolSpecificData
 		} else {
 			toolSpecificData = part.toolSpecificData ? convertToolSpecificData(part.toolSpecificData) : undefined;
@@ -2891,13 +2891,12 @@ export namespace ChatToolInvocationPart {
 		// When isComplete is explicitly set (not undefined), use the update DTO to enable
 		// live tool invocation updates. Extensions can push with isComplete: false to start
 		// an in-progress invocation, then push again with isComplete: true to complete it.
-		if (part.isComplete !== undefined) {
+		if (part.enablePartialUpdate) {
 			return {
 				kind: 'externalToolInvocationUpdate',
 				toolCallId: part.toolCallId,
 				toolName: part.toolName,
-				isComplete: part.isComplete,
-				errorMessage: part.errorMessage,
+				isComplete: !!part.isComplete,
 				invocationMessage: part.invocationMessage ? MarkdownString.from(part.invocationMessage) : undefined,
 				pastTenseMessage: part.pastTenseMessage ? MarkdownString.from(part.pastTenseMessage) : undefined,
 				toolSpecificData,
@@ -2929,7 +2928,7 @@ export namespace ChatToolInvocationPart {
 			'output' in data && Array.isArray(data.output);
 	}
 
-	function convertMcpToResultDetails(data: vscode.ChatMcpToolInvocationData, errorMessage?: string): IToolResultInputOutputDetails {
+	function convertMcpToResultDetails(data: vscode.ChatMcpToolInvocationData, isError?: boolean): IToolResultInputOutputDetails {
 		return {
 			input: data.input,
 			output: data.output.map((o) => {
@@ -2941,7 +2940,7 @@ export namespace ChatToolInvocationPart {
 					isText: isText,
 				};
 			}),
-			isError: !!errorMessage,
+			isError: isError ?? false,
 		};
 	}
 
