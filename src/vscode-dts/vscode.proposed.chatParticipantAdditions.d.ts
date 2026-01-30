@@ -264,28 +264,6 @@ declare module 'vscode' {
 		output: McpToolInvocationContentData[];
 	}
 
-	export interface ChatSubagentToolInvocationData {
-		/**
-		 * A description of the subagent's purpose or task.
-		 */
-		description?: string;
-
-		/**
-		 * The name of the subagent being invoked.
-		 */
-		agentName?: string;
-
-		/**
-		 * The prompt given to the subagent.
-		 */
-		prompt?: string;
-
-		/**
-		 * The result text from the subagent after completion.
-		 */
-		result?: string;
-	}
-
 	export class ChatToolInvocationPart {
 		toolName: string;
 		toolCallId: string;
@@ -295,7 +273,7 @@ declare module 'vscode' {
 		pastTenseMessage?: string | MarkdownString;
 		isConfirmed?: boolean;
 		isComplete?: boolean;
-		toolSpecificData?: ChatTerminalToolInvocationData | ChatMcpToolInvocationData | ChatSubagentToolInvocationData;
+		toolSpecificData?: ChatTerminalToolInvocationData | ChatMcpToolInvocationData;
 		subAgentInvocationId?: string;
 		presentation?: 'hidden' | 'hiddenAfterComplete' | undefined;
 
