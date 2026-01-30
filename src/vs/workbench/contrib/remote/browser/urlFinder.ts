@@ -5,15 +5,10 @@
 
 import { ITerminalInstance, ITerminalService } from '../../terminal/browser/terminal.js';
 import { Emitter } from '../../../../base/common/event.js';
-import { Disposable, IDisposable } from '../../../../base/common/lifecycle.js';
+import { Disposable, DisposableMap, IDisposable } from '../../../../base/common/lifecycle.js';
 import { IDebugService, IDebugSession, IReplElement } from '../../debug/common/debug.js';
 import { removeAnsiEscapeCodes } from '../../../../base/common/strings.js';
-
-interface TerminalDataBuffer {
-	data: string[];
-	totalLength: number;
-	timeoutId: ReturnType<typeof setTimeout> | undefined;
-}
+import { RunOnceWorker } from '../../../../base/common/async.js';
 
 export class UrlFinder extends Disposable {
 	/**
@@ -45,8 +40,8 @@ export class UrlFinder extends Disposable {
 
 	private _onDidMatchLocalUrl: Emitter<{ host: string; port: number }> = new Emitter();
 	public readonly onDidMatchLocalUrl = this._onDidMatchLocalUrl.event;
-	private listeners: Map<ITerminalInstance | string, IDisposable> = new Map();
-	private terminalDataBuffers: Map<ITerminalInstance, TerminalDataBuffer> = new Map();
+	private readonly listeners: Map<ITerminalInstance | string, IDisposable> = new Map();
+	private readonly terminalDataWorkers = this._register(new DisposableMap<ITerminalInstance, RunOnceWorker<string>>());
 
 	constructor(terminalService: ITerminalService, debugService: IDebugService) {
 		super();
@@ -60,7 +55,7 @@ export class UrlFinder extends Disposable {
 		this._register(terminalService.onDidDisposeInstance(instance => {
 			this.listeners.get(instance)?.dispose();
 			this.listeners.delete(instance);
-			this.disposeTerminalBuffer(instance);
+			this.terminalDataWorkers.deleteAndDispose(instance);
 		}));
 
 		// Debug
@@ -82,63 +77,27 @@ export class UrlFinder extends Disposable {
 	private registerTerminalInstance(instance: ITerminalInstance) {
 		if (!UrlFinder.excludeTerminals.includes(instance.title)) {
 			this.listeners.set(instance, instance.onData(data => {
-				this.bufferTerminalData(instance, data);
+				this.getOrCreateWorker(instance).work(data);
 			}));
 		}
 	}
 
-	private bufferTerminalData(instance: ITerminalInstance, data: string): void {
-		let buffer = this.terminalDataBuffers.get(instance);
-		if (buffer) {
-			// Skip buffering if already exceeded threshold (memory optimization)
-			if (buffer.totalLength > UrlFinder.maxDataLength) {
-				// Still reset the timer to ensure flush happens after data stops
-				if (buffer.timeoutId !== undefined) {
-					clearTimeout(buffer.timeoutId);
-				}
-				buffer.timeoutId = setTimeout(() => this.flushTerminalBuffer(instance), UrlFinder.dataDebounceTimeout);
-				return;
-			}
-			// Add to existing buffer
-			buffer.data.push(data);
-			buffer.totalLength += data.length;
-		} else {
-			// Create new buffer
-			buffer = { data: [data], totalLength: data.length, timeoutId: undefined };
-			this.terminalDataBuffers.set(instance, buffer);
+	private getOrCreateWorker(instance: ITerminalInstance): RunOnceWorker<string> {
+		let worker = this.terminalDataWorkers.get(instance);
+		if (!worker) {
+			worker = new RunOnceWorker<string>(chunks => this.processTerminalData(chunks), UrlFinder.dataDebounceTimeout);
+			this.terminalDataWorkers.set(instance, worker);
 		}
-
-		// Reset the debounce timer
-		if (buffer.timeoutId !== undefined) {
-			clearTimeout(buffer.timeoutId);
-		}
-		buffer.timeoutId = setTimeout(() => this.flushTerminalBuffer(instance), UrlFinder.dataDebounceTimeout);
+		return worker;
 	}
 
-	private flushTerminalBuffer(instance: ITerminalInstance): void {
-		const buffer = this.terminalDataBuffers.get(instance);
-		if (!buffer) {
-			return;
-		}
-
-		this.terminalDataBuffers.delete(instance);
-
+	private processTerminalData(chunks: string[]): void {
 		// Skip processing if data exceeds threshold (high-throughput scenario like games)
-		if (buffer.totalLength > UrlFinder.maxDataLength) {
+		const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+		if (totalLength > UrlFinder.maxDataLength) {
 			return;
 		}
-
-		this.processData(buffer.data.join(''));
-	}
-
-	private disposeTerminalBuffer(instance: ITerminalInstance): void {
-		const buffer = this.terminalDataBuffers.get(instance);
-		if (buffer) {
-			if (buffer.timeoutId !== undefined) {
-				clearTimeout(buffer.timeoutId);
-			}
-			this.terminalDataBuffers.delete(instance);
-		}
+		this.processData(chunks.join(''));
 	}
 
 	private replPositions: Map<string, { position: number; tail: IReplElement }> = new Map();
@@ -166,10 +125,6 @@ export class UrlFinder extends Disposable {
 		super.dispose();
 		for (const listener of this.listeners.values()) {
 			listener.dispose();
-		}
-		// Clear all terminal buffers and their timeouts
-		for (const instance of this.terminalDataBuffers.keys()) {
-			this.disposeTerminalBuffer(instance);
 		}
 	}
 
