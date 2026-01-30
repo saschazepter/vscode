@@ -3,9 +3,9 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import { spawn } from '@malept/cross-spawn-promise';
 import fs from 'fs';
 import path from 'path';
-import { spawn } from '@malept/cross-spawn-promise';
 
 const MACHO_MAGIC_NUMBERS = new Set([
 	0xFEEDFACE, // MH_MAGIC (32-bit)
@@ -29,54 +29,17 @@ function isMachOBinary(filePath: string): boolean {
 	}
 }
 
-function findMachOBinaries(dir: string): string[] {
-	const binaries: string[] = [];
-	const entries = fs.readdirSync(dir, { withFileTypes: true });
-
-	for (const entry of entries) {
-		const filePath = path.join(dir, entry.name);
-
-		if (entry.isDirectory()) {
-			// Skip node_modules/.cache and other non-essential directories
-			if (entry.name !== '.cache') {
-				binaries.push(...findMachOBinaries(filePath));
-			}
-		} else if (entry.isFile() && isMachOBinary(filePath)) {
-			binaries.push(filePath);
-		}
-	}
-
-	return binaries;
-}
-
-async function signBinary(filePath: string, identity: string, keychain: string, entitlementsPath: string): Promise<void> {
-	console.log(`Signing: ${filePath}`);
-
-	const args = [
-		'--sign', identity,
-		'--keychain', keychain,
-		'--options', 'runtime',
-		'--timestamp',
-		'--force',
-		'--entitlements', entitlementsPath,
-		filePath
-	];
-
-	await spawn('codesign', args);
-}
-
 async function main(serverDir: string): Promise<void> {
-	const tempDir = process.env['AGENT_TEMPDIRECTORY'];
-	const identity = process.env['CODESIGN_IDENTITY'];
-
-	if (!serverDir) {
+	if (!serverDir || !fs.existsSync(serverDir)) {
 		throw new Error('Server directory argument is required');
 	}
 
+	const tempDir = process.env['AGENT_TEMPDIRECTORY'];
 	if (!tempDir) {
 		throw new Error('$AGENT_TEMPDIRECTORY not set');
 	}
 
+	const identity = process.env['CODESIGN_IDENTITY'];
 	if (!identity) {
 		throw new Error('$CODESIGN_IDENTITY not set');
 	}
@@ -85,19 +48,24 @@ async function main(serverDir: string): Promise<void> {
 	const baseDir = path.dirname(import.meta.dirname);
 	const entitlementsPath = path.join(baseDir, 'azure-pipelines', 'darwin', 'server-entitlements.plist');
 
-	if (!fs.existsSync(serverDir)) {
-		throw new Error(`Server directory does not exist: ${serverDir}`);
+	console.log(`Signing Mach-O binaries in: ${serverDir}`);
+	for (const entry of fs.readdirSync(serverDir, { withFileTypes: true, recursive: true })) {
+		if (entry.isFile()) {
+			const filePath = path.join(entry.parentPath, entry.name);
+			if (isMachOBinary(filePath)) {
+				console.log(`Signing: ${filePath}`);
+				await spawn('codesign', [
+					'--sign', identity,
+					'--keychain', keychain,
+					'--options', 'runtime',
+					'--timestamp',
+					'--force',
+					'--entitlements', entitlementsPath,
+					filePath
+				]);
+			}
+		}
 	}
-
-	console.log(`Finding Mach-O binaries in: ${serverDir}`);
-	const binaries = findMachOBinaries(serverDir);
-	console.log(`Found ${binaries.length} Mach-O binaries to sign`);
-
-	for (const binary of binaries) {
-		await signBinary(binary, identity, keychain, entitlementsPath);
-	}
-
-	console.log(`Successfully signed ${binaries.length} binaries`);
 }
 
 if (import.meta.main) {
