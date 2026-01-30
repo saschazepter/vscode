@@ -85,8 +85,6 @@ export interface IPaneCompositeBarOptions {
 	readonly colors: (theme: IColorTheme) => ICompositeBarColors;
 }
 
-import { Emitter, Event } from '../../../base/common/event.js';
-
 export class PaneCompositeBar extends Disposable {
 
 	private readonly viewContainerDisposables = this._register(new DisposableMap<string, IDisposable>());
@@ -97,9 +95,6 @@ export class PaneCompositeBar extends Disposable {
 	private readonly compositeActions = new Map<string, { activityAction: ViewContainerActivityAction; pinnedAction: ToggleCompositePinnedAction; badgeAction: ToggleCompositeBadgeAction }>();
 
 	private hasExtensionsRegistered: boolean = false;
-
-	private readonly _onDidChange = this._register(new Emitter<void>());
-	readonly onDidChange: Event<void> = this._onDidChange.event;
 
 	constructor(
 		protected readonly options: IPaneCompositeBarOptions,
@@ -243,12 +238,8 @@ export class PaneCompositeBar extends Disposable {
 			this._register(this.compositeBar.onDidChange(() => {
 				this.updateCompositeBarItemsFromStorage(true);
 				this.saveCachedViewContainers();
-				this._onDidChange.fire();
 			}));
-			this._register(this.storageService.onDidChangeValue(StorageScope.PROFILE, this.options.pinnedViewContainersKey, this._store)(() => {
-				this.updateCompositeBarItemsFromStorage(false);
-				this._onDidChange.fire();
-			}));
+			this._register(this.storageService.onDidChangeValue(StorageScope.PROFILE, this.options.pinnedViewContainersKey, this._store)(() => this.updateCompositeBarItemsFromStorage(false)));
 		});
 	}
 

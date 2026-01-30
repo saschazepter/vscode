@@ -108,8 +108,8 @@ export class SidebarPart extends AbstractPaneCompositePart {
 		);
 
 		// Track visible view containers for auto-hide
-		this.visibleViewContainersTracker = this._register(new VisibleViewContainersTracker(ViewContainerLocation.Sidebar, this.viewDescriptorService));
-		this._register(this.visibleViewContainersTracker.onDidChange(() => this.onDidChangeAutoHideViewContainers()));
+		this.visibleViewContainersTracker = this._register(instantiationService.createInstance(VisibleViewContainersTracker, ViewContainerLocation.Sidebar));
+		this._register(this.visibleViewContainersTracker.onDidChange((e) => this.onDidChangeAutoHideViewContainers(e)));
 
 		this.rememberActivityBarVisiblePosition();
 		this._register(configurationService.onDidChangeConfiguration(e => {
@@ -124,18 +124,17 @@ export class SidebarPart extends AbstractPaneCompositePart {
 		this.registerActions();
 	}
 
-	private onDidChangeAutoHideViewContainers(): void {
+	private onDidChangeAutoHideViewContainers(e: { before: number; after: number }): void {
 		// Only update if auto-hide is enabled and composite bar position is top/bottom
 		const activityBarPosition = this.configurationService.getValue<ActivityBarPosition>(LayoutSettings.ACTIVITY_BAR_LOCATION);
 		const autoHide = this.configurationService.getValue<boolean>(LayoutSettings.ACTIVITY_BAR_AUTO_HIDE);
 		if (autoHide && (activityBarPosition === ActivityBarPosition.TOP || activityBarPosition === ActivityBarPosition.BOTTOM)) {
-			this.onDidChangeActivityBarLocation();
+			const visibleBefore = e.before > 1;
+			const visibleAfter = e.after > 1;
+			if (visibleBefore !== visibleAfter) {
+				this.onDidChangeActivityBarLocation();
+			}
 		}
-	}
-
-	protected override onCompositeBarChange(): void {
-		// When composite bar items change (e.g., user pins/unpins), re-evaluate auto-hide
-		this.onDidChangeAutoHideViewContainers();
 	}
 
 	private onDidChangeActivityBarLocation(): void {
@@ -240,7 +239,7 @@ export class SidebarPart extends AbstractPaneCompositePart {
 			// Use visible composite count from the composite bar if available (considers pinned state),
 			// otherwise fall back to the tracker's count (based on active view descriptors).
 			// Note: We access paneCompositeBar directly to avoid circular calls with getVisiblePaneCompositeIds()
-			const visibleCount = this.paneCompositeBar.value?.getVisiblePaneCompositeIds().length ?? this.visibleViewContainersTracker.visibleCount;
+			const visibleCount = this.visibleViewContainersTracker.visibleCount;
 			if (visibleCount <= 1) {
 				return false;
 			}

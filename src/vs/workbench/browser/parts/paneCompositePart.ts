@@ -122,7 +122,7 @@ export abstract class AbstractPaneCompositePart extends CompositePart<PaneCompos
 	private headerFooterCompositeBarContainer: HTMLElement | undefined;
 	protected readonly headerFooterCompositeBarDispoables = this._register(new DisposableStore());
 	private paneCompositeBarContainer: HTMLElement | undefined;
-	protected readonly paneCompositeBar = this._register(new MutableDisposable<PaneCompositeBar>());
+	private readonly paneCompositeBar = this._register(new MutableDisposable<PaneCompositeBar>());
 	private compositeBarPosition: CompositeBarPosition | undefined = undefined;
 	private emptyPaneMessageElement: HTMLElement | undefined;
 
@@ -150,7 +150,7 @@ export abstract class AbstractPaneCompositePart extends CompositePart<PaneCompos
 		@IHoverService hoverService: IHoverService,
 		@IInstantiationService instantiationService: IInstantiationService,
 		@IThemeService themeService: IThemeService,
-		@IViewDescriptorService protected readonly viewDescriptorService: IViewDescriptorService,
+		@IViewDescriptorService private readonly viewDescriptorService: IViewDescriptorService,
 		@IContextKeyService protected readonly contextKeyService: IContextKeyService,
 		@IExtensionService private readonly extensionService: IExtensionService,
 		@IMenuService protected readonly menuService: IMenuService,
@@ -434,9 +434,6 @@ export abstract class AbstractPaneCompositePart extends CompositePart<PaneCompos
 			this.paneCompositeBar.value = this.createCompositeBar();
 			this.paneCompositeBar.value.create(this.paneCompositeBarContainer);
 
-			// Notify child classes when composite bar content changes
-			this.paneCompositeBar.value.onDidChange(() => this.onCompositeBarChange());
-
 			if (newPosition === CompositeBarPosition.TOP) {
 				this.setHeaderArea(newCompositeBarContainer);
 			} else if (newPosition === CompositeBarPosition.BOTTOM) {
@@ -449,14 +446,6 @@ export abstract class AbstractPaneCompositePart extends CompositePart<PaneCompos
 		if (updateCompositeBarOption) {
 			this.layoutCompositeBar();
 		}
-	}
-
-	/**
-	 * Called when the composite bar content changes (e.g., when items are pinned/unpinned).
-	 * Child classes can override to react to these changes.
-	 */
-	protected onCompositeBarChange(): void {
-		// Default implementation does nothing
 	}
 
 	protected override createHeaderArea(): HTMLElement {

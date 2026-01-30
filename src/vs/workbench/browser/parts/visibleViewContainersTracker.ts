@@ -16,14 +16,14 @@ export class VisibleViewContainersTracker extends Disposable {
 
 	private readonly viewContainerModelListeners = this._register(new DisposableMap<string>());
 
-	private readonly _onDidChange = this._register(new Emitter<void>());
-	readonly onDidChange: Event<void> = this._onDidChange.event;
+	private readonly _onDidChange = this._register(new Emitter<{ before: number; after: number }>());
+	readonly onDidChange: Event<{ before: number; after: number }> = this._onDidChange.event;
 
 	private _visibleCount: number = 0;
 
 	constructor(
 		private readonly location: ViewContainerLocation,
-		private readonly viewDescriptorService: IViewDescriptorService
+		@IViewDescriptorService private readonly viewDescriptorService: IViewDescriptorService
 	) {
 		super();
 
@@ -101,8 +101,9 @@ export class VisibleViewContainersTracker extends Disposable {
 
 		const newCount = visibleViewContainers.length;
 		if (this._visibleCount !== newCount) {
+			const before = this._visibleCount;
 			this._visibleCount = newCount;
-			this._onDidChange.fire();
+			this._onDidChange.fire({ before, after: newCount });
 		}
 	}
 }
