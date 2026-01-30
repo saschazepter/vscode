@@ -735,9 +735,9 @@ export class Menubar extends Disposable {
 	private makeContextAwareClickHandler(click: (menuItem: MenuItem, win: BaseWindow, event: KeyboardEvent) => void, contextSpecificHandlers: IMenuItemClickHandler): (menuItem: MenuItem, win: BaseWindow | undefined, event: KeyboardEvent) => void {
 		return (menuItem: MenuItem, win: BaseWindow | undefined, event: KeyboardEvent) => {
 
-			// No Active Window, or focus is not in the workbench webContents
+			// No Active Window
 			const activeWindow = BrowserWindow.getFocusedWindow();
-			if (!activeWindow || !activeWindow.webContents.isFocused()) {
+			if (!activeWindow) {
 				return contextSpecificHandlers.inNoWindow();
 			}
 
@@ -745,6 +745,11 @@ export class Menubar extends Disposable {
 			if (activeWindow.webContents.isDevToolsFocused() &&
 				activeWindow.webContents.devToolsWebContents) {
 				return contextSpecificHandlers.inDevTools(activeWindow.webContents.devToolsWebContents);
+			}
+
+			// Focus is not in the workbench webContents
+			if (!activeWindow.webContents.isFocused()) {
+				return contextSpecificHandlers.inNoWindow();
 			}
 
 			// Finally execute command in Window
