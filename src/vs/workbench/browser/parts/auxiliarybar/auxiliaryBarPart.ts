@@ -265,8 +265,9 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 		const autoHide = this.configurationService.getValue<boolean>(LayoutSettings.ACTIVITY_BAR_AUTO_HIDE);
 		if (autoHide) {
 			// Use visible composite count from the composite bar if available (considers pinned state),
-			// otherwise fall back to the tracker's count (based on active view descriptors)
-			const visibleCount = this.getVisiblePaneCompositeIds().length || this.visibleViewContainersTracker.visibleCount;
+			// otherwise fall back to the tracker's count (based on active view descriptors).
+			// Note: We access paneCompositeBar directly to avoid circular calls with getVisiblePaneCompositeIds()
+			const visibleCount = this.paneCompositeBar.value?.getVisiblePaneCompositeIds().length ?? this.visibleViewContainersTracker.visibleCount;
 			if (visibleCount <= 1) {
 				return false;
 			}

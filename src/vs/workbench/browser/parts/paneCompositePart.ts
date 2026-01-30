@@ -122,7 +122,7 @@ export abstract class AbstractPaneCompositePart extends CompositePart<PaneCompos
 	private headerFooterCompositeBarContainer: HTMLElement | undefined;
 	protected readonly headerFooterCompositeBarDispoables = this._register(new DisposableStore());
 	private paneCompositeBarContainer: HTMLElement | undefined;
-	private readonly paneCompositeBar = this._register(new MutableDisposable<PaneCompositeBar>());
+	protected readonly paneCompositeBar = this._register(new MutableDisposable<PaneCompositeBar>());
 	private compositeBarPosition: CompositeBarPosition | undefined = undefined;
 	private emptyPaneMessageElement: HTMLElement | undefined;
 
