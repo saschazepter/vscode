@@ -549,7 +549,6 @@ export class PreferencesService extends Disposable implements IPreferencesServic
 			'editor.fontSize',
 			'editor.formatOnSave',
 			'files.autoSave',
-			'GitHub.copilot.manageExtension',
 			'editor.defaultFormatter',
 			'editor.fontFamily',
 			'editor.wordWrap',
