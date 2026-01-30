@@ -11,6 +11,7 @@ import { removeAnsiEscapeCodes } from '../../../../base/common/strings.js';
 
 interface TerminalDataBuffer {
 	data: string[];
+	totalLength: number;
 	timeoutId: ReturnType<typeof setTimeout> | undefined;
 }
 
@@ -89,11 +90,16 @@ export class UrlFinder extends Disposable {
 	private bufferTerminalData(instance: ITerminalInstance, data: string): void {
 		let buffer = this.terminalDataBuffers.get(instance);
 		if (buffer) {
+			// Skip buffering if already exceeded threshold (memory optimization)
+			if (buffer.totalLength > UrlFinder.maxDataLength) {
+				return;
+			}
 			// Add to existing buffer
 			buffer.data.push(data);
+			buffer.totalLength += data.length;
 		} else {
 			// Create new buffer
-			buffer = { data: [data], timeoutId: undefined };
+			buffer = { data: [data], totalLength: data.length, timeoutId: undefined };
 			this.terminalDataBuffers.set(instance, buffer);
 		}
 
@@ -113,12 +119,11 @@ export class UrlFinder extends Disposable {
 		this.terminalDataBuffers.delete(instance);
 
 		// Skip processing if data exceeds threshold (high-throughput scenario like games)
-		const combinedData = buffer.data.join('');
-		if (combinedData.length > UrlFinder.maxDataLength) {
+		if (buffer.totalLength > UrlFinder.maxDataLength) {
 			return;
 		}
 
-		this.processData(combinedData);
+		this.processData(buffer.data.join(''));
 	}
 
 	private disposeTerminalBuffer(instance: ITerminalInstance): void {
