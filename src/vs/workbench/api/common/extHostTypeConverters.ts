@@ -2876,7 +2876,7 @@ export namespace ChatToolInvocationPart {
 
 		if (part.toolSpecificData && isChatMcpToolInvocationData(part.toolSpecificData)) {
 			// Convert ChatMcpToolInvocationData to IToolResultInputOutputDetails
-			resultDetails = convertMcpToResultDetails(part.toolSpecificData, part.isError);
+			resultDetails = convertMcpToResultDetails(part.toolSpecificData, part.errorMessage);
 			toolSpecificData = undefined; // MCP data goes to resultDetails, not toolSpecificData
 		} else {
 			toolSpecificData = part.toolSpecificData ? convertToolSpecificData(part.toolSpecificData) : undefined;
@@ -2897,7 +2897,7 @@ export namespace ChatToolInvocationPart {
 				toolCallId: part.toolCallId,
 				toolName: part.toolName,
 				isComplete: part.isComplete,
-				isError: part.isError,
+				errorMessage: part.errorMessage,
 				invocationMessage: part.invocationMessage ? MarkdownString.from(part.invocationMessage) : undefined,
 				pastTenseMessage: part.pastTenseMessage ? MarkdownString.from(part.pastTenseMessage) : undefined,
 				toolSpecificData,
@@ -2929,7 +2929,7 @@ export namespace ChatToolInvocationPart {
 			'output' in data && Array.isArray(data.output);
 	}
 
-	function convertMcpToResultDetails(data: vscode.ChatMcpToolInvocationData, isError?: boolean): IToolResultInputOutputDetails {
+	function convertMcpToResultDetails(data: vscode.ChatMcpToolInvocationData, errorMessage?: string): IToolResultInputOutputDetails {
 		return {
 			input: data.input,
 			output: data.output.map((o) => {
@@ -2941,7 +2941,7 @@ export namespace ChatToolInvocationPart {
 					isText: isText,
 				};
 			}),
-			isError: isError ?? false,
+			isError: !!errorMessage,
 		};
 	}
 
@@ -2976,7 +2976,7 @@ export namespace ChatToolInvocationPart {
 		const toolInvocation = new types.ChatToolInvocationPart(
 			part.toolId || part.toolName,
 			part.toolCallId,
-			part.isError
+			part.errorMessage
 		);
 
 		if (part.invocationMessage) {
