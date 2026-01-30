@@ -9,6 +9,8 @@ import { Notification } from './notification';
 const CHAT_VIEW = 'div[id="workbench.panel.chat"]';
 const CHAT_EDITOR = `${CHAT_VIEW} .monaco-editor[role="code"]`;
 const CHAT_EDITOR_FOCUSED = `${CHAT_VIEW} .monaco-editor.focused[role="code"]`;
+const CHAT_RESPONSE = `${CHAT_VIEW} .interactive-item-container.interactive-response`;
+const CHAT_RESPONSE_COMPLETE = `${CHAT_RESPONSE}:not(.chat-response-loading)`;
 
 export class Chat {
 
@@ -43,5 +45,12 @@ export class Chat {
 
 		// Submit the message
 		await this.code.dispatchKeybinding('enter', () => Promise.resolve());
+	}
+
+	async waitForResponse(retryCount?: number): Promise<void> {
+		// First wait for a response element to appear
+		await this.code.waitForElement(CHAT_RESPONSE, undefined, retryCount);
+		// Then wait for it to complete (not loading)
+		await this.code.waitForElement(CHAT_RESPONSE_COMPLETE, undefined, retryCount);
 	}
 }
