@@ -122,7 +122,11 @@ function findFilePath(root: string, path: string): string {
 }
 
 function parseVersion(version: string) {
-	const [, major, minor, patch] = /^(\d+)\.(\d+)\.(\d+)/.exec(version)!;
+	const match = /^(\d+)\.(\d+)\.(\d+)/.exec(version);
+	if (!match) {
+		throw new Error(`Invalid version string: ${version}`);
+	}
+	const [, major, minor, patch] = match;
 	return { major: parseInt(major), minor: parseInt(minor), patch: parseInt(patch) };
 }
 
