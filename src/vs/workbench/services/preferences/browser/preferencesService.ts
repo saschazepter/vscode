@@ -34,6 +34,7 @@ import { IEditorService, SIDE_GROUP } from '../../editor/common/editorService.js
 import { KeybindingsEditorInput } from './keybindingsEditorInput.js';
 import { DEFAULT_SETTINGS_EDITOR_SETTING, FOLDER_SETTINGS_PATH, IKeybindingsEditorPane, IOpenKeybindingsEditorOptions, IOpenSettingsOptions, IPreferencesEditorModel, IPreferencesService, ISetting, ISettingsEditorOptions, ISettingsGroup, SETTINGS_AUTHORITY, USE_SPLIT_JSON_SETTING, validateSettingsEditorOptions } from '../common/preferences.js';
 import { PreferencesEditorInput, SettingsEditor2Input } from '../common/preferencesEditorInput.js';
+import { COMMONLY_USED_SETTINGS } from '../../../contrib/preferences/common/preferences.js';
 import { defaultKeybindingsContents, DefaultKeybindingsEditorModel, DefaultRawSettingsEditorModel, DefaultSettings, DefaultSettingsEditorModel, Settings2EditorModel, SettingsEditorModel, WorkspaceConfigurationEditorModel } from '../common/preferencesModels.js';
 import { IRemoteAgentService } from '../../remote/common/remoteAgentService.js';
 import { ITextEditorService } from '../../textfile/common/textEditorService.js';
@@ -545,20 +546,7 @@ export class PreferencesService extends Disposable implements IPreferencesServic
 	}
 
 	private getMostCommonlyUsedSettings(): string[] {
-		return [
-			'files.autoSave',
-			'editor.fontSize',
-			'editor.fontFamily',
-			'editor.tabSize',
-			'editor.renderWhitespace',
-			'editor.cursorStyle',
-			'editor.multiCursorModifier',
-			'editor.insertSpaces',
-			'editor.wordWrap',
-			'files.exclude',
-			'files.associations',
-			'workbench.editor.enablePreview'
-		];
+		return COMMONLY_USED_SETTINGS;
 	}
 
 	private async revealSetting(settingKey: string, edit: boolean, editor: IEditorPane, settingsResource: URI): Promise<void> {
