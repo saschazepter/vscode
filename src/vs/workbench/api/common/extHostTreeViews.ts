@@ -709,6 +709,9 @@ class ExtHostTreeView<T> extends Disposable {
 
 		const maxRetries = 3;
 		for (let attempt = 0; attempt < maxRetries; attempt++) {
+			if (attempt > 0) {
+				this._logService.info(`[TreeView:${this._viewId}] Retrying to resolve tree node for element ${handle}, attempt ${attempt}`);
+			}
 			await this.getChildren(parent ? parent.item.handle : undefined);
 			const cachedElement = this.getExtensionElement(handle);
 			if (cachedElement) {
@@ -721,6 +724,7 @@ class ExtHostTreeView<T> extends Disposable {
 				}
 			}
 		}
+		this._logService.error(`[TreeView:${this._viewId}] Failed to resolve tree node for element ${handle} after ${maxRetries} attempts`);
 		this._proxy.$logResolveTreeNodeRetry(this._extension.identifier.value, maxRetries - 1, true);
 		throw new Error(`Cannot resolve tree item for element ${handle} from extension ${this._extension.identifier.value}`);
 	}
