@@ -56,10 +56,33 @@ const organizationDisabledModels = [
 
 const organizationDisabledCategory = {
 	label: localize('chat.modelPicker.disabledByOrganization', "Disabled by your organization"),
-	order: DEFAULT_MODEL_PICKER_CATEGORY.order,
+	order: DEFAULT_MODEL_PICKER_CATEGORY.order + 1,
 	showHeader: true
 };
 
+function getOrganizationDisabledActions(delegate: IModelPickerDelegate, pickerOptions: IChatInputPickerOptions, chatEntitlementService: IChatEntitlementService): IActionWidgetDropdownAction[] {
+	if (chatEntitlementService.entitlement !== ChatEntitlement.Business && chatEntitlementService.entitlement !== ChatEntitlement.Enterprise) {
+		return [];
+	}
+
+	const availableModelIds = new Set(delegate.getAllModels().map(model => model.metadata.id));
+	const disabledModels = organizationDisabledModels.filter(model => !availableModelIds.has(model.id));
+	if (disabledModels.length === 0) {
+		return [];
+	}
+
+	return disabledModels.map(model => ({
+		id: `disabled.${model.id}`,
+		enabled: false,
+		checked: false,
+		category: organizationDisabledCategory,
+		class: undefined,
+		tooltip: localize('chat.modelPicker.disabledByOrganization.tooltip', "Disabled by your organization"),
+		label: model.label,
+		hover: { content: localize('chat.modelPicker.disabledByOrganization.tooltip', "Disabled by your organization"), position: pickerOptions.hoverPosition },
+		run: () => { }
+	} satisfies IActionWidgetDropdownAction));
+}
 
 function modelDelegateToWidgetActionsProvider(delegate: IModelPickerDelegate, telemetryService: ITelemetryService, pickerOptions: IChatInputPickerOptions, chatEntitlementService: IChatEntitlementService): IActionWidgetDropdownActionProvider {
 	return {
@@ -106,20 +129,7 @@ function modelDelegateToWidgetActionsProvider(delegate: IModelPickerDelegate, te
 				}));
 			}
 
-			if (chatEntitlementService.entitlement === ChatEntitlement.Business || chatEntitlementService.entitlement === ChatEntitlement.Enterprise) {
-				const availableModelIds = new Set(delegate.getAllModels().map(model => model.metadata.id));
-				const disabledModels = organizationDisabledModels.filter(model => !availableModelIds.has(model.id));
-				actions.push(...disabledModels.map(model => ({
-					id: `disabled.${model.id}`,
-					enabled: false,
-					checked: false,
-					category: organizationDisabledCategory,
-					class: undefined,
-					tooltip: localize('chat.modelPicker.disabledByOrganization.tooltip', "Disabled by your organization"),
-					label: model.label,
-					run: () => { }
-				} satisfies IActionWidgetDropdownAction)));
-			}
+			actions.push(...getOrganizationDisabledActions(delegate, pickerOptions, chatEntitlementService));
 
 			return actions;
 		}

@@ -1020,7 +1020,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		return !!model.metadata.capabilities?.toolCalling;
 	}
 
-	private getModels(onlySelectable = true, allowCached = true): ILanguageModelChatMetadataAndIdentifier[] {
+	private getModels(filterSelectable = true, allowCached = true): ILanguageModelChatMetadataAndIdentifier[] {
 		const cachedModels = this.storageService.getObject<ILanguageModelChatMetadataAndIdentifier[]>(CachedLanguageModelsKey, StorageScope.APPLICATION, []);
 		let models = this.languageModelsService.getLanguageModelIds()
 			.map(modelId => ({ identifier: modelId, metadata: this.languageModelsService.lookupLanguageModel(modelId)! }));
@@ -1031,7 +1031,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 			this.storageService.store(CachedLanguageModelsKey, models, StorageScope.APPLICATION, StorageTarget.MACHINE);
 		}
 		models.sort((a, b) => a.metadata.name.localeCompare(b.metadata.name));
-		if (!onlySelectable) {
+		if (!filterSelectable) {
 			return models;
 		}
 		return models.filter(entry => entry.metadata?.isUserSelectable && this.modelSupportedForDefaultAgent(entry) && this.modelSupportedForInlineChat(entry));
@@ -1971,7 +1971,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 							this.renderAttachedContext();
 						},
 						getModels: () => this.getModels(),
-						getAllModels: () => this.getModels(false, false)
+						getAllModels: () => this.getModels(false, false) // avoid cached fallback so disabled models reflect current access
 					};
 					return this.modelWidget = this.instantiationService.createInstance(ModelPickerActionItem, action, undefined, itemDelegate, pickerOptions);
 				} else if (action.id === OpenModePickerAction.ID && action instanceof MenuItemAction) {
