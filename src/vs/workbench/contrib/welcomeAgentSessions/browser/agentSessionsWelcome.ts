@@ -39,7 +39,7 @@ import { ChatWidget } from '../../chat/browser/widget/chatWidget.js';
 import { IAgentSessionsService } from '../../chat/browser/agentSessions/agentSessionsService.js';
 import { AgentSessionProviders } from '../../chat/browser/agentSessions/agentSessions.js';
 import { IAgentSession } from '../../chat/browser/agentSessions/agentSessionsModel.js';
-import { AgentSessionsWelcomeEditorOptions, AgentSessionsWelcomeInput } from './agentSessionsWelcomeInput.js';
+import { AgentSessionsWelcomeEditorOptions, AgentSessionsWelcomeInput, AgentSessionsWelcomeWorkspaceKind } from './agentSessionsWelcomeInput.js';
 import { IChatService } from '../../chat/common/chatService/chatService.js';
 import { IChatModel } from '../../chat/common/model/chatModel.js';
 import { ChatViewId, ChatViewPaneTarget, IChatWidgetService, ISessionTypePickerDelegate, IWorkspacePickerDelegate, IWorkspacePickerItem } from '../../chat/browser/chat.js';
@@ -65,6 +65,56 @@ const MAX_SESSIONS = 6;
 const MAX_REPO_PICKS = 10;
 const MAX_WALKTHROUGHS = 10;
 
+/**
+ * - visibleDurationMs: Do they close it right away or leave it open (#3)
+ * - closedBy: Track what action caused the close (viewAllSessions, chatSubmission, sessionClicked, etc.) (#5)
+ */
+type AgentSessionsWelcomeClosedClassification = {
+	visibleDurationMs: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; isMeasurement: true; comment: 'How long the welcome page was visible in milliseconds.' };
+	closedBy: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'What action caused the welcome page to close.' };
+	owner: 'osortega';
+	comment: 'Tracks when the agent sessions welcome page is closed to understand engagement.';
+};
+
+type AgentSessionsWelcomeClosedEvent = {
+	visibleDurationMs: number;
+	closedBy: string;
+};
+
+/**
+ * - mode/provider/workspaceKind: Track agent type, session provider, and workspace state (#4)
+ * - selectedRecentWorkspace: Do users select a recent workspace before submitting chat (#8)
+ */
+type AgentSessionsWelcomeChatSubmittedClassification = {
+	mode: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The chat mode used (ask, agent, edit).' };
+	provider: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The session provider (local, cloud).' };
+	workspaceKind: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The type of workspace - empty, folder, or workspace.' };
+	selectedRecentWorkspace: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'Whether a recent workspace was selected before submitting.' };
+	owner: 'osortega';
+	comment: 'Tracks chat submissions from the welcome page to understand session creation patterns.';
+};
+
+type AgentSessionsWelcomeChatSubmittedEvent = {
+	mode: string;
+	provider: string;
+	workspaceKind: AgentSessionsWelcomeWorkspaceKind;
+	selectedRecentWorkspace: boolean;
+};
+
+type AgentSessionsWelcomeActionClassification = {
+	action: { classification: 'PublicNonPersonalData'; purpose: 'FeatureInsight'; comment: 'The action being executed on the agent sessions welcome page.' };
+	actionId: { classification: 'PublicNonPersonalData'; purpose: 'FeatureInsight'; comment: 'Identifier of the action being executed, such as command ID or walkthrough ID.' };
+	welcomeKind: { classification: 'PublicNonPersonalData'; purpose: 'FeatureInsight'; comment: 'The kind of welcome page' };
+	owner: 'osortega';
+	comment: 'Help understand what actions are most commonly taken on the agent sessions welcome page';
+};
+
+type AgentSessionsWelcomeActionEvent = {
+	action: string;
+	welcomeKind: 'agentSessionsWelcomePage';
+	actionId: string | undefined;
+};
+
 export class AgentSessionsWelcomePage extends EditorPane {
 
 	static readonly ID = 'agentSessionsWelcomePage';
@@ -86,6 +136,12 @@ export class AgentSessionsWelcomePage extends EditorPane {
 	private _selectedWorkspace: IWorkspacePickerItem | undefined;
 	private _recentWorkspaces: Array<IRecentWorkspace | IRecentFolder> = [];
 	private _isEmptyWorkspace: boolean = false;
+	private _workspaceKind: AgentSessionsWelcomeWorkspaceKind = 'empty';
+
+	// Telemetry tracking
+	private _openedAt: number = 0;
+	private _closedBy: string = 'unknown';
+	private _storedInput: AgentSessionsWelcomeInput | undefined;
 
 	constructor(
 		group: IEditorGroup,
@@ -122,6 +178,14 @@ export class AgentSessionsWelcomePage extends EditorPane {
 
 		this.contextService = this._register(contextKeyService.createScoped(this.container));
 		ChatContextKeys.inAgentSessionsWelcome.bindTo(this.contextService).set(true);
+
+		this._register(this.chatEntitlementService.onDidChangeSentiment(() => {
+			const input = this.input || this._storedInput;
+			if (this.chatEntitlementService.sentiment.hidden && input) {
+				this._closedBy = 'chatHidden';
+				this.group.closeEditor(input);
+			}
+		}));
 	}
 
 	protected createEditor(parent: HTMLElement): void {
@@ -137,7 +201,9 @@ export class AgentSessionsWelcomePage extends EditorPane {
 	}
 
 	override async setInput(input: AgentSessionsWelcomeInput, options: AgentSessionsWelcomeEditorOptions | undefined, context: IEditorOpenContext, token: CancellationToken): Promise<void> {
+		this._storedInput = input;
 		await super.setInput(input, options, context, token);
+		this._workspaceKind = input.workspaceKind ?? 'empty';
 		await this.buildContent();
 	}
 
@@ -195,6 +261,7 @@ export class AgentSessionsWelcomePage extends EditorPane {
 				clearNode(sessionsSection);
 				this.buildSessionsOrPrompts(sessionsSection);
 			}
+			this.layoutSessionsControl();
 		}));
 
 		this.scrollableElement?.scanDomNode();
@@ -211,7 +278,13 @@ export class AgentSessionsWelcomePage extends EditorPane {
 			const button = append(container, $('button.agentSessionsWelcome-startEntry'));
 			button.appendChild(renderIcon(entry.icon));
 			button.appendChild(document.createTextNode(entry.label));
-			button.onclick = () => this.commandService.executeCommand(entry.command);
+			button.onclick = () => {
+				this.telemetryService.publicLog2<AgentSessionsWelcomeActionEvent, AgentSessionsWelcomeActionClassification>(
+					'gettingStarted.ActionExecuted',
+					{ welcomeKind: 'agentSessionsWelcomePage', action: 'executeCommand', actionId: entry.command }
+				);
+				this.commandService.executeCommand(entry.command);
+			};
 		}
 	}
 
@@ -333,6 +406,19 @@ export class AgentSessionsWelcomePage extends EditorPane {
 		// Automatically open the chat view when a request is submitted from this welcome view
 		this.contentDisposables.add(this.chatService.onDidSubmitRequest(({ chatSessionResource }) => {
 			if (this.chatModelRef?.object?.sessionResource.toString() === chatSessionResource.toString()) {
+				// Send chat submitted telemetry
+				const mode = this.chatWidget?.input.currentModeObs.get().name.get() || 'unknown';
+				this.telemetryService.publicLog2<AgentSessionsWelcomeChatSubmittedEvent, AgentSessionsWelcomeChatSubmittedClassification>(
+					'agentSessionsWelcome.chatSubmitted',
+					{
+						mode,
+						provider: this._selectedSessionProvider,
+						workspaceKind: this._workspaceKind,
+						selectedRecentWorkspace: this._selectedWorkspace !== undefined
+					}
+				);
+
+				this._closedBy = 'chatSubmission';
 				this.openSessionInChat(chatSessionResource);
 			}
 		}));
@@ -437,10 +523,7 @@ export class AgentSessionsWelcomePage extends EditorPane {
 		this.sessionsControl = undefined;
 		this.sessionsLoadingContainer = undefined;
 
-		const sessions = this.agentSessionsService.model.sessions;
-
-		// Toggle no-sessions class for proper margin handling
-		container.classList.toggle('no-sessions', sessions.length === 0);
+		const sessions = this.agentSessionsService.model.sessions.filter(s => !s.isArchived());
 
 		if (sessions.length > 0) {
 			this.buildSessionsGrid(container, sessions);
@@ -511,6 +594,7 @@ export class AgentSessionsWelcomePage extends EditorPane {
 			trackActiveEditorSession: () => false,
 			source: 'welcomeView',
 			notifySessionOpened: () => {
+				this._closedBy = 'sessionClicked';
 				const isProjectionEnabled = this.configurationService.getValue<boolean>(ChatConfiguration.AgentSessionProjectionEnabled);
 				if (!isProjectionEnabled) {
 					this.revealMaximizedChat();
@@ -542,6 +626,7 @@ export class AgentSessionsWelcomePage extends EditorPane {
 		const openButton = append(container, $('button.agentSessionsWelcome-openSessionsButton'));
 		openButton.textContent = localize('viewAllSessions', "View All Sessions");
 		openButton.onclick = () => {
+			this._closedBy = 'viewAllSessions';
 			this.revealMaximizedChat();
 		};
 	}
@@ -600,6 +685,10 @@ export class AgentSessionsWelcomePage extends EditorPane {
 
 		card.onclick = () => {
 			const walkthrough = activeWalkthroughs[currentIndex];
+			this.telemetryService.publicLog2<AgentSessionsWelcomeActionEvent, AgentSessionsWelcomeActionClassification>(
+				'gettingStarted.ActionExecuted',
+				{ welcomeKind: 'agentSessionsWelcomePage', action: 'openWalkthrough', actionId: walkthrough.id }
+			);
 			// Open walkthrough with returnToCommand so back button returns to agent sessions welcome
 			const options: GettingStartedEditorOptions = {
 				selectedCategory: walkthrough.id,
@@ -690,16 +779,6 @@ export class AgentSessionsWelcomePage extends EditorPane {
 	}
 
 	private buildFooter(container: HTMLElement): void {
-		const updateNoSessionsClass = () => {
-			container.classList.toggle('no-sessions', this.agentSessionsService.model.sessions.length === 0);
-		};
-		// Set initial state
-		updateNoSessionsClass();
-
-		// Keep footer in sync with session changes
-		this.contentDisposables.add(this.agentSessionsService.model.onDidChangeSessions(() => {
-			updateNoSessionsClass();
-		}));
 		// Privacy notice
 		this.buildPrivacyNotice(container);
 
@@ -820,6 +899,22 @@ export class AgentSessionsWelcomePage extends EditorPane {
 		if (chatViewLocation === ViewContainerLocation.AuxiliaryBar) {
 			this.layoutService.setAuxiliaryBarMaximized(true);
 		}
+	}
+
+	override dispose(): void {
+		// Send closed telemetry before disposing
+		if (this._openedAt > 0) {
+			const visibleDurationMs = Date.now() - this._openedAt;
+			this.telemetryService.publicLog2<AgentSessionsWelcomeClosedEvent, AgentSessionsWelcomeClosedClassification>(
+				'agentSessionsWelcome.closed',
+				{
+					visibleDurationMs,
+					closedBy: this._closedBy
+				}
+			);
+		}
+
+		super.dispose();
 	}
 }
 
