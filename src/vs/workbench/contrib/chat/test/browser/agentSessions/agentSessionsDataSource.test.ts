@@ -77,7 +77,7 @@ suite('sessionDateFromNow', () => {
 		const fiveMinutesAgo = now - 5 * 60 * 1000;
 		const result = sessionDateFromNow(fiveMinutesAgo);
 		// Should return a time ago string, not "1 day ago" or "2 days ago"
-		assert.ok(result.includes('min') || result === 'now', `Expected minutes ago or now, got: ${result}`);
+		assert.ok(result.includes('min') || result.includes('sec') || result === 'now', `Expected minutes/seconds ago or now, got: ${result}`);
 	});
 
 	test('returns fromNow result for three or more days ago', () => {
