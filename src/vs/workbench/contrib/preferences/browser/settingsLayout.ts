@@ -6,6 +6,7 @@
 import { isWeb, isWindows } from '../../../../base/common/platform.js';
 import { localize } from '../../../../nls.js';
 import { ISetting, ISettingsGroup } from '../../../services/preferences/common/preferences.js';
+import { COMMONLY_USED_SETTINGS } from '../common/preferences.js';
 
 export interface ITOCFilter {
 	include?: {
@@ -27,21 +28,7 @@ export interface ITOCEntry<T> {
 	hide?: boolean;
 }
 
-const defaultCommonlyUsedSettings: string[] = [
-	'editor.fontSize',
-	'editor.formatOnSave',
-	'files.autoSave',
-	'GitHub.copilot.manageExtension',
-	'editor.defaultFormatter',
-	'editor.fontFamily',
-	'editor.wordWrap',
-	'chat.agent.maxRequests',
-	'files.exclude',
-	'workbench.colorTheme',
-	'editor.tabSize',
-	'editor.mouseWheelZoom',
-	'editor.formatOnPaste'
-];
+const defaultCommonlyUsedSettings: string[] = COMMONLY_USED_SETTINGS;
 
 export function getCommonlyUsedData(settingGroups: ISettingsGroup[], commonlyUsed: string[] = defaultCommonlyUsedSettings): ITOCEntry<ISetting> {
 	const allSettings = new Map<string, ISetting>();
