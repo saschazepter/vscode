@@ -82,8 +82,8 @@ async function main(serverDir: string): Promise<void> {
 	}
 
 	const keychain = path.join(tempDir, 'buildagent.keychain');
-	const root = path.dirname(path.dirname(import.meta.dirname));
-	const entitlementsPath = path.join(root, 'azure-pipelines', 'darwin', 'server-entitlements.plist');
+	const baseDir = path.dirname(import.meta.dirname);
+	const entitlementsPath = path.join(baseDir, 'azure-pipelines', 'darwin', 'server-entitlements.plist');
 
 	if (!fs.existsSync(serverDir)) {
 		throw new Error(`Server directory does not exist: ${serverDir}`);
