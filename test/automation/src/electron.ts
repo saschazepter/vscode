@@ -152,6 +152,10 @@ export function getBuildElectronPath(root: string): string {
 			const packageJson = require(join(root, 'Contents', 'Resources', 'app', 'package.json'));
 			const product = require(join(root, 'Contents', 'Resources', 'app', 'product.json'));
 			const { major, minor } = parseVersion(packageJson.version);
+			// For macOS builds using the legacy Electron binary name, versions up to and including
+			// 1.109.x ship the executable as "Electron". From later versions onward, the executable
+			// is renamed to match product.nameShort. This check preserves compatibility with older
+			// builds; update the cutoff here only if the binary naming scheme changes again.
 			if (major === 1 && minor <= 109) {
 				return join(root, 'Contents', 'MacOS', 'Electron');
 			} else {
