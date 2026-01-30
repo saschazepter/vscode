@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import './media/chatModelsWidget.css';
-import { Disposable, DisposableStore, IDisposable, MutableDisposable } from '../../../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore, IDisposable } from '../../../../../base/common/lifecycle.js';
 import { Emitter } from '../../../../../base/common/event.js';
 import * as DOM from '../../../../../base/browser/dom.js';
 import { Button, IButtonOptions } from '../../../../../base/browser/ui/button/button.js';
@@ -16,7 +16,6 @@ import { IInstantiationService } from '../../../../../platform/instantiation/com
 import { WorkbenchTable } from '../../../../../platform/list/browser/listService.js';
 import { ITableVirtualDelegate, ITableRenderer } from '../../../../../base/browser/ui/table/table.js';
 import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
-import { getDefaultHoverDelegate } from '../../../../../base/browser/ui/hover/hoverDelegateFactory.js';
 import { MarkdownString } from '../../../../../base/common/htmlContent.js';
 import { IExtensionService } from '../../../../services/extensions/common/extensions.js';
 import { IContextMenuService } from '../../../../../platform/contextview/browser/contextView.js';
@@ -858,7 +857,6 @@ export class ChatModelsWidget extends Disposable {
 	private readonly searchFocusContextKey: IContextKey<boolean>;
 
 	private tableDisposables = this._register(new DisposableStore());
-	private readonly addButtonHover = this._register(new MutableDisposable<IDisposable>());
 
 	constructor(
 		@ILanguageModelsService private readonly languageModelsService: ILanguageModelsService,
@@ -868,8 +866,7 @@ export class ChatModelsWidget extends Disposable {
 		@IChatEntitlementService private readonly chatEntitlementService: IChatEntitlementService,
 		@IEditorProgressService private readonly editorProgressService: IEditorProgressService,
 		@ICommandService private readonly commandService: ICommandService,
-		@IContextKeyService contextKeyService: IContextKeyService,
-		@IHoverService private readonly hoverService: IHoverService,
+		@IContextKeyService contextKeyService: IContextKeyService
 	) {
 		super();
 
@@ -1282,11 +1279,7 @@ export class ChatModelsWidget extends Disposable {
 				&& !isManagedEntitlement);
 
 		this.addButton.enabled = supportsAddingModels && configurableVendors.length > 0;
-
-		this.addButtonHover.clear();
-		if (isManagedEntitlement && !this.chatEntitlementService.isInternal) {
-			this.addButtonHover.value = this.hoverService.setupManagedHover(getDefaultHoverDelegate('mouse'), this.addButton.element, localize('models.managedByOrganization', "Adding BYOK models is managed by your organization"));
-		}
+		this.addButton.setTitle(supportsAddingModels ? localize('models.addModels', "Add Models") : localize('models.managedByOrganization', "Adding models is managed by your organization"));
 
 		this.dropdownActions = configurableVendors.map(vendor => toAction({
 			id: `enable-${vendor.vendor}`,
