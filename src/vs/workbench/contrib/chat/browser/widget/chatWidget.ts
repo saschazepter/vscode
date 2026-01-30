@@ -561,17 +561,11 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		return this._attachmentCapabilities;
 	}
 
-	/**
-	 * Either the inline input (when editing) or the main input part
-	 */
 	get input(): ChatInputPart {
 		return this.viewModel?.editing && this.configurationService.getValue<string>('chat.editRequests') !== 'input' ? this.inlineInputPart : this.inputPart;
 	}
 
-	/**
-	 * The main input part at the buttom of the chat widget. Use `input` to get the active input (main or inline editing part).
-	 */
-	get inputPart(): ChatInputPart {
+	private get inputPart(): ChatInputPart {
 		return this.inputPartDisposable.value!;
 	}
 

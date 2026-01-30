@@ -29,6 +29,7 @@ import { ChatToolInvocationPart } from './toolInvocationParts/chatToolInvocation
 import { IChatMarkdownAnchorService } from './chatMarkdownAnchorService.js';
 import { MarkdownString } from '../../../../../../base/common/htmlContent.js';
 import './media/chatSubagentContent.css';
+import { IRunSubagentToolInputParams, RunSubagentTool } from '../../../common/tools/builtinTools/runSubagentTool.js';
 
 const MAX_TITLE_LENGTH = 100;
 
@@ -84,21 +85,12 @@ export class ChatSubagentContentPart extends ChatCollapsibleContentPart implemen
 	private autoExpandedForConfirmation: boolean = false;
 
 	/**
-	 * Check if a tool invocation is the parent subagent tool (the tool that spawns a subagent).
-	 * A parent subagent tool has subagent toolSpecificData but no subAgentInvocationId.
-	 */
-	private static isParentSubagentTool(toolInvocation: IChatToolInvocation | IChatToolInvocationSerialized): boolean {
-		return toolInvocation.toolSpecificData?.kind === 'subagent' && !toolInvocation.subAgentInvocationId;
-	}
-
-	/**
 	 * Extracts subagent info (description, agentName, prompt) from a tool invocation.
 	 */
 	private static extractSubagentInfo(toolInvocation: IChatToolInvocation | IChatToolInvocationSerialized): { description: string; agentName: string | undefined; prompt: string | undefined } {
 		const defaultDescription = localize('chat.subagent.defaultDescription', 'Running subagent...');
 
-		// Only parent subagent tools contain the full subagent info
-		if (!ChatSubagentContentPart.isParentSubagentTool(toolInvocation)) {
+		if (toolInvocation.toolId !== RunSubagentTool.Id) {
 			return { description: defaultDescription, agentName: undefined, prompt: undefined };
 		}
 
@@ -108,6 +100,19 @@ export class ChatSubagentContentPart extends ChatCollapsibleContentPart implemen
 				description: toolInvocation.toolSpecificData.description ?? defaultDescription,
 				agentName: toolInvocation.toolSpecificData.agentName,
 				prompt: toolInvocation.toolSpecificData.prompt,
+			};
+		}
+
+		// Fallback to parameters for live invocations
+		if (toolInvocation.kind === 'toolInvocation') {
+			const state = toolInvocation.state.get();
+			const params = state.type !== IChatToolInvocation.StateKind.Streaming ?
+				state.parameters as IRunSubagentToolInputParams | undefined
+				: undefined;
+			return {
+				description: params?.description ?? defaultDescription,
+				agentName: params?.agentName,
+				prompt: params?.prompt,
 			};
 		}
 
@@ -375,8 +380,7 @@ export class ChatSubagentContentPart extends ChatCollapsibleContentPart implemen
 	 * Handles both live and serialized invocations.
 	 */
 	private watchToolCompletion(toolInvocation: IChatToolInvocation | IChatToolInvocationSerialized): void {
-		// Only watch parent subagent tools for completion
-		if (!ChatSubagentContentPart.isParentSubagentTool(toolInvocation)) {
+		if (toolInvocation.toolId !== RunSubagentTool.Id) {
 			return;
 		}
 
@@ -716,20 +720,15 @@ export class ChatSubagentContentPart extends ChatCollapsibleContentPart implemen
 		}
 
 		// Match subagent tool invocations with the same subAgentInvocationId to keep them grouped
-		if ((other.kind === 'toolInvocation' || other.kind === 'toolInvocationSerialized')) {
-			const isOtherParentSubagent = ChatSubagentContentPart.isParentSubagentTool(other);
-			const isOtherSubagentRelated = other.subAgentInvocationId || isOtherParentSubagent;
-
-			if (isOtherSubagentRelated) {
-				// For parent subagent tool, use toolCallId as the effective ID
-				const otherEffectiveId = isOtherParentSubagent ? other.toolCallId : other.subAgentInvocationId;
-				// If both have IDs, they must match
-				if (this.subAgentInvocationId && otherEffectiveId) {
-					return this.subAgentInvocationId === otherEffectiveId;
-				}
-				// Fallback for tools without IDs - group if this part has no ID and tool has no ID
-				return !this.subAgentInvocationId && !otherEffectiveId;
+		if ((other.kind === 'toolInvocation' || other.kind === 'toolInvocationSerialized') && (other.subAgentInvocationId || other.toolId === RunSubagentTool.Id)) {
+			// For runSubagent tool, use toolCallId as the effective ID
+			const otherEffectiveId = other.toolId === RunSubagentTool.Id ? other.toolCallId : other.subAgentInvocationId;
+			// If both have IDs, they must match
+			if (this.subAgentInvocationId && otherEffectiveId) {
+				return this.subAgentInvocationId === otherEffectiveId;
 			}
+			// Fallback for tools without IDs - group if this part has no ID and tool has no ID
+			return !this.subAgentInvocationId && !otherEffectiveId;
 		}
 		return false;
 	}
