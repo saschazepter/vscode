@@ -106,19 +106,20 @@ export class DarwinUpdateService extends AbstractUpdateService implements IRelau
 
 		this.setState(State.CheckingForUpdates(explicit));
 
-		const url = this.buildUpdateFeedUrl(this.quality, pendingCommit ?? this.productService.commit!, { background: !explicit });
+		const background = !explicit && !this.shouldDisableProgressiveReleases();
+		const url = this.buildUpdateFeedUrl(this.quality, pendingCommit ?? this.productService.commit!, { background });
 
 		if (!url) {
 			return;
 		}
 
-    // When connection is metered and this is not an explicit check, avoid electron call as to not to trigger auto-download.
+		// When connection is metered and this is not an explicit check, avoid electron call as to not to trigger auto-download.
 		if (!explicit && this.meteredConnectionService.isConnectionMetered) {
 			this.logService.info('update#doCheckForUpdates - checking for update without auto-download because connection is metered');
 			this.checkForUpdateNoDownload(url);
 			return;
 		}
-    
+
 		electron.autoUpdater.checkForUpdates();
 	}
 

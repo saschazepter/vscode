@@ -16,7 +16,7 @@ import { getPromptsTypeForLanguageId, PromptsType } from '../promptTypes.js';
 import { IPromptsService } from '../service/promptsService.js';
 import { Iterable } from '../../../../../../base/common/iterator.js';
 import { IHeaderAttribute, PromptHeader, PromptHeaderAttributes } from '../promptFileParser.js';
-import { getValidAttributeNames, isGithubTarget, knownGithubCopilotTools } from './promptValidator.js';
+import { getAttributeDescription, getValidAttributeNames, isGithubTarget, knownGithubCopilotTools } from './promptValidator.js';
 import { localize } from '../../../../../../nls.js';
 
 export class PromptHeaderAutocompletion implements CompletionItemProvider {
@@ -127,6 +127,7 @@ export class PromptHeaderAutocompletion implements CompletionItemProvider {
 		for (const attribute of attributesToPropose) {
 			const item: CompletionItem = {
 				label: attribute,
+				documentation: getAttributeDescription(attribute, promptType),
 				kind: CompletionItemKind.Property,
 				insertText: getInsertText(attribute),
 				insertTextRules: CompletionItemInsertTextRule.InsertAsSnippet,
@@ -158,6 +159,13 @@ export class PromptHeaderAutocompletion implements CompletionItemProvider {
 		}
 
 		if (promptType === PromptsType.prompt || promptType === PromptsType.agent) {
+			if (attribute.key === PromptHeaderAttributes.model) {
+				if (attribute.value.type === 'array') {
+					// if the position is inside the tools metadata, we provide tool name completions
+					const getValues = async () => this.getModelNames(promptType === PromptsType.agent);
+					return this.provideArrayCompletions(model, position, attribute, getValues);
+				}
+			}
 			if (attribute.key === PromptHeaderAttributes.tools) {
 				if (attribute.value.type === 'array') {
 					// if the position is inside the tools metadata, we provide tool name completions
@@ -240,7 +248,7 @@ export class PromptHeaderAutocompletion implements CompletionItemProvider {
 				break;
 			case PromptHeaderAttributes.infer:
 				if (promptType === PromptsType.agent) {
-					return ['true', 'false'];
+					return ['all', 'user', 'agent', 'hidden', 'true', 'false'];
 				}
 				break;
 			case PromptHeaderAttributes.agents:
