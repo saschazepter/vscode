@@ -557,7 +557,8 @@ export class PreferencesService extends Disposable implements IPreferencesServic
 			'editor.wordWrap',
 			'files.exclude',
 			'files.associations',
-			'workbench.editor.enablePreview'
+			'workbench.editor.enablePreview',
+			'chat.agent.maxRequests'
 		];
 	}
 
