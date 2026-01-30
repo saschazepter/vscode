@@ -119,7 +119,7 @@ export class AgentSessionHoverWidget extends Disposable {
 
 		// Create the chat list widget
 		const container = dom.append(this.contentElement, dom.$('.interactive-list'));
-		const listWidget = this._register(this.instantiationService.createInstance(
+		this.listWidget = this._register(this.instantiationService.createInstance(
 			ChatListWidget,
 			container,
 			{
@@ -131,12 +131,12 @@ export class AgentSessionHoverWidget extends Disposable {
 				currentChatMode: () => ChatModeKind.Ask,
 			}
 		));
-		listWidget.layout(CHAT_LIST_HEIGHT, CHAT_HOVER_WIDTH);
-		listWidget.setScrollLock(true);
-		listWidget.setViewModel(viewModel);
-		listWidget.refresh();
+		this.listWidget.layout(CHAT_LIST_HEIGHT, CHAT_HOVER_WIDTH);
+		this.listWidget.setScrollLock(true);
+		this.listWidget.setViewModel(viewModel);
+		this.listWidget.refresh();
 
-		const viewModelScheudler = this._register(new RunOnceScheduler(() => listWidget.refresh(), 500));
+		const viewModelScheudler = this._register(new RunOnceScheduler(() => this.listWidget?.refresh(), 500));
 		this._register(viewModel.onDidChange(() => {
 			if (!viewModelScheudler.isScheduled()) {
 				viewModelScheudler.schedule();
@@ -144,7 +144,7 @@ export class AgentSessionHoverWidget extends Disposable {
 		}));
 
 		// Handle followup clicks - open the session and accept input
-		this._register(listWidget.onDidClickFollowup(async (followup) => {
+		this._register(this.listWidget.onDidClickFollowup(async (followup) => {
 			const widget = await this.chatWidgetService.openSession(model.sessionResource);
 			if (widget) {
 				widget.acceptInput(followup.message);
