@@ -34,7 +34,6 @@ import { IEditorService, SIDE_GROUP } from '../../editor/common/editorService.js
 import { KeybindingsEditorInput } from './keybindingsEditorInput.js';
 import { DEFAULT_SETTINGS_EDITOR_SETTING, FOLDER_SETTINGS_PATH, IKeybindingsEditorPane, IOpenKeybindingsEditorOptions, IOpenSettingsOptions, IPreferencesEditorModel, IPreferencesService, ISetting, ISettingsEditorOptions, ISettingsGroup, SETTINGS_AUTHORITY, USE_SPLIT_JSON_SETTING, validateSettingsEditorOptions } from '../common/preferences.js';
 import { PreferencesEditorInput, SettingsEditor2Input } from '../common/preferencesEditorInput.js';
-import { COMMONLY_USED_SETTINGS } from '../../../contrib/preferences/common/preferences.js';
 import { defaultKeybindingsContents, DefaultKeybindingsEditorModel, DefaultRawSettingsEditorModel, DefaultSettings, DefaultSettingsEditorModel, Settings2EditorModel, SettingsEditorModel, WorkspaceConfigurationEditorModel } from '../common/preferencesModels.js';
 import { IRemoteAgentService } from '../../remote/common/remoteAgentService.js';
 import { ITextEditorService } from '../../textfile/common/textEditorService.js';
@@ -478,14 +477,14 @@ export class PreferencesService extends Disposable implements IPreferencesServic
 
 	private getDefaultSettings(target: ConfigurationTarget): DefaultSettings {
 		if (target === ConfigurationTarget.WORKSPACE) {
-			this._defaultWorkspaceSettingsContentModel ??= this._register(new DefaultSettings(COMMONLY_USED_SETTINGS, target, this.configurationService));
+			this._defaultWorkspaceSettingsContentModel ??= this._register(new DefaultSettings(this.getMostCommonlyUsedSettings(), target, this.configurationService));
 			return this._defaultWorkspaceSettingsContentModel;
 		}
 		if (target === ConfigurationTarget.WORKSPACE_FOLDER) {
-			this._defaultFolderSettingsContentModel ??= this._register(new DefaultSettings(COMMONLY_USED_SETTINGS, target, this.configurationService));
+			this._defaultFolderSettingsContentModel ??= this._register(new DefaultSettings(this.getMostCommonlyUsedSettings(), target, this.configurationService));
 			return this._defaultFolderSettingsContentModel;
 		}
-		this._defaultUserSettingsContentModel ??= this._register(new DefaultSettings(COMMONLY_USED_SETTINGS, target, this.configurationService));
+		this._defaultUserSettingsContentModel ??= this._register(new DefaultSettings(this.getMostCommonlyUsedSettings(), target, this.configurationService));
 		return this._defaultUserSettingsContentModel;
 	}
 
@@ -543,6 +542,24 @@ export class PreferencesService extends Disposable implements IPreferencesServic
 			}
 
 		}
+	}
+
+	private getMostCommonlyUsedSettings(): string[] {
+		return [
+			'editor.fontSize',
+			'editor.formatOnSave',
+			'files.autoSave',
+			'GitHub.copilot.manageExtension',
+			'editor.defaultFormatter',
+			'editor.fontFamily',
+			'editor.wordWrap',
+			'chat.agent.maxRequests',
+			'files.exclude',
+			'workbench.colorTheme',
+			'editor.tabSize',
+			'editor.mouseWheelZoom',
+			'editor.formatOnPaste'
+		];
 	}
 
 	private async revealSetting(settingKey: string, edit: boolean, editor: IEditorPane, settingsResource: URI): Promise<void> {
