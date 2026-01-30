@@ -778,15 +778,13 @@ export class ChatWidget extends Disposable implements IChatWidget {
 	 * Updates the DOM visibility of welcome view and chat list immediately
 	 */
 	private updateChatViewVisibility(): void {
-		let hideWelcome = this.chatEntitlementService.sentiment.installed;
 		if (this.viewModel) {
 			const numItems = this.viewModel.getItems().length;
+			dom.setVisibility(numItems === 0, this.welcomeMessageContainer);
 			dom.setVisibility(numItems !== 0, this.listContainer);
-			hideWelcome = numItems > 0;
 		}
 
-		dom.setVisibility(!hideWelcome, this.welcomeMessageContainer);
-
+		this.container.classList.toggle('chat-view-getting-started-disabled', this.chatEntitlementService.sentiment.installed);
 
 		this._onDidChangeEmptyState.fire();
 	}
