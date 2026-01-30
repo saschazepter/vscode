@@ -22,7 +22,7 @@
     </array>
     <key>pfm_subkeys</key>
     <array>
-
+	
 		<dict>
 			<key>pfm_default</key>
 			<string>Configure Code - OSS</string>
@@ -185,7 +185,7 @@ Cette fonctionnalité désactive [les protections de sécurité critiques](https
 <key>pfm_default</key>
 <string></string>
 <key>pfm_description</key>
-<string>Spécifiez une liste d’extensions autorisées. Cela permet de maintenir un environnement de développement sécurisé et cohérent en limitant l’utilisation d’extensions non autorisées. Plus d’informations : https://aka.ms/vscode/enterprise/extensions/allowed</string>
+<string>Spécifiez une liste d’extensions autorisées. Cela permet de maintenir un environnement de développement sécurisé et cohérent en limitant l’utilisation d’extensions non autorisées. Plus d’informations : https://code.visualstudio.com/docs/setup/enterprise#_configure-allowed-extensions</string>
 <key>pfm_name</key>
 <string>AllowedExtensions</string>
 <key>pfm_title</key>

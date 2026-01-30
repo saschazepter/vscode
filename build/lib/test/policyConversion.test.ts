@@ -141,7 +141,7 @@ const policies: ExportedPolicyDataDto = {
 			localization: {
 				description: {
 					key: 'extensions.allowed.policy',
-					value: 'Specify a list of extensions that are allowed to use. This helps maintain a secure and consistent development environment by restricting the use of unauthorized extensions. More information: https://aka.ms/vscode/enterprise/extensions/allowed'
+					value: 'Specify a list of extensions that are allowed to use. This helps maintain a secure and consistent development environment by restricting the use of unauthorized extensions. More information: https://code.visualstudio.com/docs/setup/enterprise#_configure-allowed-extensions'
 				}
 			},
 			type: 'object',
@@ -372,7 +372,7 @@ const frenchTranslations = [
 
 Cette fonctionnalité désactive [les protections de sécurité critiques](https://code.visualstudio.com/docs/copilot/security) et facilite considérablement la compromission de la machine par un attaquant.`,
 				'mcp.gallery.serviceUrl': 'Configurer l’URL du service de la galerie MCP à laquelle se connecter',
-				'extensions.allowed.policy': 'Spécifiez une liste d’extensions autorisées. Cela permet de maintenir un environnement de développement sécurisé et cohérent en limitant l’utilisation d’extensions non autorisées. Plus d’informations : https://aka.ms/vscode/enterprise/extensions/allowed',
+				'extensions.allowed.policy': 'Spécifiez une liste d’extensions autorisées. Cela permet de maintenir un environnement de développement sécurisé et cohérent en limitant l’utilisation d’extensions non autorisées. Plus d’informations : https://code.visualstudio.com/docs/setup/enterprise#_configure-allowed-extensions',
 				'extensions.gallery.serviceUrl': 'Configurer l’URL du service Place de marché à laquelle se connecter',
 				'autoApproveMode.description': 'Contrôle s’il faut autoriser l’approbation automatique lors de l’exécution dans l’outil terminal.',
 				'telemetry.feedback.enabled': 'Activez les mécanismes de commentaires tels que le système de rapport de problèmes, les sondages et autres options de commentaires.',

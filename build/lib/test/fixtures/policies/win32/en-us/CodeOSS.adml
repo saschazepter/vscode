@@ -33,7 +33,7 @@ This feature disables critical security protections and makes it much easier for
 			<string id="McpGalleryServiceUrl">McpGalleryServiceUrl</string>
 			<string id="McpGalleryServiceUrl_mcp_gallery_serviceUrl">Configure the MCP Gallery service URL to connect to</string>
 			<string id="AllowedExtensions">AllowedExtensions</string>
-			<string id="AllowedExtensions_extensions_allowed_policy">Specify a list of extensions that are allowed to use. This helps maintain a secure and consistent development environment by restricting the use of unauthorized extensions. More information: https://aka.ms/vscode/enterprise/extensions/allowed</string>
+			<string id="AllowedExtensions_extensions_allowed_policy">Specify a list of extensions that are allowed to use. This helps maintain a secure and consistent development environment by restricting the use of unauthorized extensions. More information: https://code.visualstudio.com/docs/setup/enterprise#_configure-allowed-extensions</string>
 			<string id="ExtensionGalleryServiceUrl">ExtensionGalleryServiceUrl</string>
 			<string id="ExtensionGalleryServiceUrl_extensions_gallery_serviceUrl">Configure the Marketplace service URL to connect to</string>
 			<string id="ChatToolsTerminalEnableAutoApprove">ChatToolsTerminalEnableAutoApprove</string>

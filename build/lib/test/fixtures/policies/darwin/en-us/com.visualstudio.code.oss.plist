@@ -22,7 +22,7 @@
     </array>
     <key>pfm_subkeys</key>
     <array>
-
+	
 		<dict>
 			<key>pfm_default</key>
 			<string>Configure Code - OSS</string>
@@ -185,7 +185,7 @@ This feature disables critical security protections and makes it much easier for
 <key>pfm_default</key>
 <string></string>
 <key>pfm_description</key>
-<string>Specify a list of extensions that are allowed to use. This helps maintain a secure and consistent development environment by restricting the use of unauthorized extensions. More information: https://aka.ms/vscode/enterprise/extensions/allowed</string>
+<string>Specify a list of extensions that are allowed to use. This helps maintain a secure and consistent development environment by restricting the use of unauthorized extensions. More information: https://code.visualstudio.com/docs/setup/enterprise#_configure-allowed-extensions</string>
 <key>pfm_name</key>
 <string>AllowedExtensions</string>
 <key>pfm_title</key>
