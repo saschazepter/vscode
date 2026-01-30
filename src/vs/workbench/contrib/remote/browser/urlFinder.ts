@@ -92,6 +92,11 @@ export class UrlFinder extends Disposable {
 		if (buffer) {
 			// Skip buffering if already exceeded threshold (memory optimization)
 			if (buffer.totalLength > UrlFinder.maxDataLength) {
+				// Still reset the timer to ensure flush happens after data stops
+				if (buffer.timeoutId !== undefined) {
+					clearTimeout(buffer.timeoutId);
+				}
+				buffer.timeoutId = setTimeout(() => this.flushTerminalBuffer(instance), UrlFinder.dataDebounceTimeout);
 				return;
 			}
 			// Add to existing buffer

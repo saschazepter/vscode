@@ -62,7 +62,7 @@ suite('UrlFinder', () => {
 		const matchedUrls: { host: string; port: number }[] = [];
 		store.add(urlFinder.onDidMatchLocalUrl((url: { host: string; port: number }) => matchedUrls.push(url)));
 
-		// Fire data events rapidly - note that URLs on separate lines can be detected
+		// Fire data events rapidly - data is accumulated and processed together after debounce
 		mockInstance.fireData('http://localhost:3000/\n');
 		mockInstance.fireData('http://127.0.0.1:8080/\n');
 
@@ -72,7 +72,7 @@ suite('UrlFinder', () => {
 		// Wait for debounce timeout
 		await new Promise(resolve => setTimeout(resolve, DEBOUNCE_WAIT_MS));
 
-		// Both URLs should be processed after debounce when on separate lines
+		// Both URLs should be processed after debounce
 		assert.strictEqual(matchedUrls.length, 2, 'Both URLs should be processed after debounce');
 		assert.strictEqual(matchedUrls[0].host, 'localhost');
 		assert.strictEqual(matchedUrls[0].port, 3000);
@@ -95,7 +95,7 @@ suite('UrlFinder', () => {
 		mockInstance.fireData('http://localhost:3000/');
 
 		// Then flood with lots of data (simulating high-throughput like games)
-		// Generate more than 10000 characters to exceed the threshold
+		// Generate 10001 characters to exceed the 10000 character threshold (uses > comparison)
 		const largeData = 'x'.repeat(10001);
 		mockInstance.fireData(largeData);
 
