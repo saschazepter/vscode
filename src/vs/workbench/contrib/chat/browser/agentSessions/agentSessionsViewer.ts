@@ -768,7 +768,7 @@ export function sessionDateFromNow(sessionTime: number): string {
 
 	// our grouping by date uses absolute start times for "Today"
 	// and "Yesterday" while `fromNow` only works with full 24h
-	// and 48h ranges for these. To prevent a label like "1 days ago"
+	// and 48h ranges for these. To prevent a label like "1 day ago"
 	// to show under the "Last 7 Days" section, we do a bit of
 	// normalization logic.
 
