@@ -53,7 +53,7 @@ import { URI } from '../../../../../base/common/uri.js';
 import { IDefaultAccountService } from '../../../../../platform/defaultAccount/common/defaultAccount.js';
 import { IDefaultAccount } from '../../../../../base/common/defaultAccount.js';
 import { Schemas } from '../../../../../base/common/network.js';
-import { InlineCompletionsController } from '../controller/inlineCompletionsController.js';
+import { getInlineCompletionsController } from '../controller/common.js';
 
 export class InlineCompletionsModel extends Disposable {
 	private readonly _source;
@@ -935,7 +935,7 @@ export class InlineCompletionsModel extends Disposable {
 				// The edit targets a different document, open it and transplant the completion
 				const targetEditor = await this._codeEditorService.openCodeEditor({ resource: completion.originalTextRef.uri }, this._editor);
 				if (targetEditor) {
-					const controller = InlineCompletionsController.get(targetEditor);
+					const controller = getInlineCompletionsController(targetEditor);
 					const m = controller?.model.get();
 					targetEditor.focus();
 					m?.transplantCompletion(completion);
