@@ -9,7 +9,23 @@ import { Disposable, IDisposable } from '../../../../base/common/lifecycle.js';
 import { IDebugService, IDebugSession, IReplElement } from '../../debug/common/debug.js';
 import { removeAnsiEscapeCodes } from '../../../../base/common/strings.js';
 
+interface TerminalDataBuffer {
+	data: string[];
+	timeoutId: ReturnType<typeof setTimeout> | undefined;
+}
+
 export class UrlFinder extends Disposable {
+	/**
+	 * Debounce time in ms before processing accumulated terminal data.
+	 */
+	private static readonly dataDebounceTimeout = 500;
+
+	/**
+	 * Maximum amount of data to accumulate before skipping URL detection.
+	 * When data exceeds this threshold, it indicates high-throughput scenarios
+	 * (like games or animations) where URL detection is unlikely to find useful results.
+	 */
+	private static readonly maxDataLength = 10000;
 	/**
 	 * Local server url pattern matching following urls:
 	 * http://localhost:3000/ - commonly used across multiple frameworks
@@ -29,6 +45,7 @@ export class UrlFinder extends Disposable {
 	private _onDidMatchLocalUrl: Emitter<{ host: string; port: number }> = new Emitter();
 	public readonly onDidMatchLocalUrl = this._onDidMatchLocalUrl.event;
 	private listeners: Map<ITerminalInstance | string, IDisposable> = new Map();
+	private terminalDataBuffers: Map<ITerminalInstance, TerminalDataBuffer> = new Map();
 
 	constructor(terminalService: ITerminalService, debugService: IDebugService) {
 		super();
@@ -42,6 +59,7 @@ export class UrlFinder extends Disposable {
 		this._register(terminalService.onDidDisposeInstance(instance => {
 			this.listeners.get(instance)?.dispose();
 			this.listeners.delete(instance);
+			this.disposeTerminalBuffer(instance);
 		}));
 
 		// Debug
@@ -63,8 +81,53 @@ export class UrlFinder extends Disposable {
 	private registerTerminalInstance(instance: ITerminalInstance) {
 		if (!UrlFinder.excludeTerminals.includes(instance.title)) {
 			this.listeners.set(instance, instance.onData(data => {
-				this.processData(data);
+				this.bufferTerminalData(instance, data);
 			}));
+		}
+	}
+
+	private bufferTerminalData(instance: ITerminalInstance, data: string): void {
+		let buffer = this.terminalDataBuffers.get(instance);
+		if (buffer) {
+			// Add to existing buffer
+			buffer.data.push(data);
+		} else {
+			// Create new buffer
+			buffer = { data: [data], timeoutId: undefined };
+			this.terminalDataBuffers.set(instance, buffer);
+		}
+
+		// Reset the debounce timer
+		if (buffer.timeoutId !== undefined) {
+			clearTimeout(buffer.timeoutId);
+		}
+		buffer.timeoutId = setTimeout(() => this.flushTerminalBuffer(instance), UrlFinder.dataDebounceTimeout);
+	}
+
+	private flushTerminalBuffer(instance: ITerminalInstance): void {
+		const buffer = this.terminalDataBuffers.get(instance);
+		if (!buffer) {
+			return;
+		}
+
+		this.terminalDataBuffers.delete(instance);
+
+		// Skip processing if data exceeds threshold (high-throughput scenario like games)
+		const combinedData = buffer.data.join('');
+		if (combinedData.length > UrlFinder.maxDataLength) {
+			return;
+		}
+
+		this.processData(combinedData);
+	}
+
+	private disposeTerminalBuffer(instance: ITerminalInstance): void {
+		const buffer = this.terminalDataBuffers.get(instance);
+		if (buffer) {
+			if (buffer.timeoutId !== undefined) {
+				clearTimeout(buffer.timeoutId);
+			}
+			this.terminalDataBuffers.delete(instance);
 		}
 	}
 
@@ -91,9 +154,12 @@ export class UrlFinder extends Disposable {
 
 	override dispose() {
 		super.dispose();
-		const listeners = this.listeners.values();
-		for (const listener of listeners) {
+		for (const listener of this.listeners.values()) {
 			listener.dispose();
+		}
+		// Clear all terminal buffers and their timeouts
+		for (const instance of this.terminalDataBuffers.keys()) {
+			this.disposeTerminalBuffer(instance);
 		}
 	}
 
