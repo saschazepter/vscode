@@ -28,7 +28,7 @@ export interface ITOCEntry<T> {
 	hide?: boolean;
 }
 
-export function getCommonlyUsedData(settingGroups: ISettingsGroup[], commonlyUsed: string[] = COMMONLY_USED_SETTINGS): ITOCEntry<ISetting> {
+export function getCommonlyUsedData(settingGroups: ISettingsGroup[], commonlyUsed: readonly string[] = COMMONLY_USED_SETTINGS): ITOCEntry<ISetting> {
 	const allSettings = new Map<string, ISetting>();
 	for (const group of settingGroups) {
 		for (const section of group.sections) {

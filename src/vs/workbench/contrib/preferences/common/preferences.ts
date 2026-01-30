@@ -115,7 +115,7 @@ export const ENABLE_LANGUAGE_FILTER = true;
 export const ENABLE_EXTENSION_TOGGLE_SETTINGS = true;
 export const EXTENSION_FETCH_TIMEOUT_MS = 1000;
 
-export const COMMONLY_USED_SETTINGS: string[] = [
+export const COMMONLY_USED_SETTINGS: readonly string[] = [
 	'editor.fontSize',
 	'editor.formatOnSave',
 	'files.autoSave',
@@ -145,7 +145,7 @@ export enum WorkbenchSettingsEditorSettings {
 export type ExtensionToggleData = {
 	settingsEditorRecommendedExtensions: IStringDictionary<IExtensionRecommendations>;
 	recommendedExtensionsGalleryInfo: IStringDictionary<IGalleryExtension>;
-	commonlyUsed: string[];
+	commonlyUsed: readonly string[];
 };
 
 let cachedExtensionToggleData: ExtensionToggleData | undefined;
