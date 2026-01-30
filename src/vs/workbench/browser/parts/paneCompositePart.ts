@@ -434,6 +434,9 @@ export abstract class AbstractPaneCompositePart extends CompositePart<PaneCompos
 			this.paneCompositeBar.value = this.createCompositeBar();
 			this.paneCompositeBar.value.create(this.paneCompositeBarContainer);
 
+			// Notify child classes when composite bar content changes
+			this.paneCompositeBar.value.onDidChange(() => this.onCompositeBarChange());
+
 			if (newPosition === CompositeBarPosition.TOP) {
 				this.setHeaderArea(newCompositeBarContainer);
 			} else if (newPosition === CompositeBarPosition.BOTTOM) {
@@ -446,6 +449,14 @@ export abstract class AbstractPaneCompositePart extends CompositePart<PaneCompos
 		if (updateCompositeBarOption) {
 			this.layoutCompositeBar();
 		}
+	}
+
+	/**
+	 * Called when the composite bar content changes (e.g., when items are pinned/unpinned).
+	 * Child classes can override to react to these changes.
+	 */
+	protected onCompositeBarChange(): void {
+		// Default implementation does nothing
 	}
 
 	protected override createHeaderArea(): HTMLElement {

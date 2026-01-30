@@ -21,7 +21,6 @@ import { ActivityBarPosition, IWorkbenchLayoutService, LayoutSettings, Parts, Po
 import { HoverPosition } from '../../../../base/browser/ui/hover/hoverWidget.js';
 import { IAction, Separator, SubmenuAction, toAction } from '../../../../base/common/actions.js';
 import { ToggleAuxiliaryBarAction } from './auxiliaryBarActions.js';
-import { DisposableMap } from '../../../../base/common/lifecycle.js';
 import { assertReturnsDefined } from '../../../../base/common/types.js';
 import { LayoutPriority } from '../../../../base/browser/ui/splitview/splitview.js';
 import { ToggleSidebarPositionAction } from '../../actions/layoutActions.js';
@@ -33,6 +32,7 @@ import { IMenuService, MenuId } from '../../../../platform/actions/common/action
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { getContextMenuActions } from '../../../../platform/actions/browser/menuEntryActionViewItem.js';
 import { IHoverService } from '../../../../platform/hover/browser/hover.js';
+import { VisibleViewContainersTracker } from '../visibleViewContainersTracker.js';
 
 interface IAuxiliaryBarPartConfiguration {
 	position: ActivityBarPosition;
@@ -78,7 +78,7 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 	readonly priority = LayoutPriority.Low;
 
 	private configuration: IAuxiliaryBarPartConfiguration;
-	private readonly viewContainerModelListeners = this._register(new DisposableMap<string>());
+	private readonly visibleViewContainersTracker: VisibleViewContainersTracker;
 
 	constructor(
 		@INotificationService notificationService: INotificationService,
@@ -124,6 +124,10 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 			menuService,
 		);
 
+		// Track visible view containers for auto-hide
+		this.visibleViewContainersTracker = this._register(new VisibleViewContainersTracker(ViewContainerLocation.AuxiliaryBar, this.viewDescriptorService));
+		this._register(this.visibleViewContainersTracker.onDidChange(() => this.onDidChangeAutoHideViewContainers()));
+
 		this.configuration = this.resolveConfiguration();
 
 		this._register(configurationService.onDidChangeConfiguration(e => {
@@ -137,54 +141,6 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 				this.onDidChangeActivityBarLocation();
 			}
 		}));
-
-		// Track view container changes to update composite bar visibility when autoHide is enabled
-		this._register(this.viewDescriptorService.onDidChangeViewContainers(({ added, removed }) => {
-			// Add listeners for new view containers
-			for (const { container, location } of added) {
-				if (location === ViewContainerLocation.AuxiliaryBar) {
-					this.addViewContainerModelListener(container.id);
-				}
-			}
-			// Remove listeners for removed view containers
-			for (const { container, location } of removed) {
-				if (location === ViewContainerLocation.AuxiliaryBar) {
-					this.viewContainerModelListeners.deleteAndDispose(container.id);
-				}
-			}
-
-			const relevantChange = [...added, ...removed].some(({ location }) => location === ViewContainerLocation.AuxiliaryBar);
-			if (relevantChange) {
-				this.onDidChangeAutoHideViewContainers();
-			}
-		}));
-		this._register(this.viewDescriptorService.onDidChangeContainerLocation(({ viewContainer, from, to }) => {
-			// Update listeners when container moves
-			if (from === ViewContainerLocation.AuxiliaryBar) {
-				this.viewContainerModelListeners.deleteAndDispose(viewContainer.id);
-			}
-			if (to === ViewContainerLocation.AuxiliaryBar) {
-				this.addViewContainerModelListener(viewContainer.id);
-			}
-
-			if (from === ViewContainerLocation.AuxiliaryBar || to === ViewContainerLocation.AuxiliaryBar) {
-				this.onDidChangeAutoHideViewContainers();
-			}
-		}));
-
-		// Initialize listeners for existing view containers
-		for (const container of this.viewDescriptorService.getViewContainersByLocation(ViewContainerLocation.AuxiliaryBar)) {
-			this.addViewContainerModelListener(container.id);
-		}
-	}
-
-	private addViewContainerModelListener(containerId: string): void {
-		const container = this.viewDescriptorService.getViewContainerById(containerId);
-		if (container) {
-			const model = this.viewDescriptorService.getViewContainerModel(container);
-			const listener = model.onDidChangeActiveViewDescriptors(() => this.onDidChangeAutoHideViewContainers());
-			this.viewContainerModelListeners.set(containerId, listener);
-		}
 	}
 
 	private onDidChangeAutoHideViewContainers(): void {
@@ -193,6 +149,11 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 		if (autoHide && this.configuration.position !== ActivityBarPosition.HIDDEN) {
 			this.onDidChangeActivityBarLocation();
 		}
+	}
+
+	protected override onCompositeBarChange(): void {
+		// When composite bar items change (e.g., user pins/unpins), re-evaluate auto-hide
+		this.onDidChangeAutoHideViewContainers();
 	}
 
 	private resolveConfiguration(): IAuxiliaryBarPartConfiguration {
@@ -300,14 +261,13 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 			return false;
 		}
 
-		// Check if auto-hide is enabled and there's only one view container
+		// Check if auto-hide is enabled and there's only one visible view container
 		const autoHide = this.configurationService.getValue<boolean>(LayoutSettings.ACTIVITY_BAR_AUTO_HIDE);
 		if (autoHide) {
-			const viewContainers = this.viewDescriptorService.getViewContainersByLocation(ViewContainerLocation.AuxiliaryBar);
-			const visibleViewContainers = viewContainers.filter(container =>
-				this.viewDescriptorService.getViewContainerModel(container).activeViewDescriptors.length > 0
-			);
-			if (visibleViewContainers.length <= 1) {
+			// Use visible composite count from the composite bar if available (considers pinned state),
+			// otherwise fall back to the tracker's count (based on active view descriptors)
+			const visibleCount = this.getVisiblePaneCompositeIds().length || this.visibleViewContainersTracker.visibleCount;
+			if (visibleCount <= 1) {
 				return false;
 			}
 		}
