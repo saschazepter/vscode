@@ -245,6 +245,22 @@ steps:
       condition: eq(variables['BUILT_CLIENT'], 'true')
       displayName: Re-package client after entitlement
 
+    - script: |
+        set -e
+        SERVER_ARCHIVE_PATH="$(Pipeline.Workspace)/vscode_server_darwin_$(VSCODE_ARCH)_archive/vscode-server-darwin-$(VSCODE_ARCH).zip"
+        mkdir -p $(dirname $SERVER_ARCHIVE_PATH)
+        cp $(SERVER_PATH) $SERVER_ARCHIVE_PATH
+        echo "##vso[task.setvariable variable=SERVER_PATH]$SERVER_ARCHIVE_PATH"
+      displayName: Prepare server for codesign
+
+    - script: |
+        set -e
+        WEB_ARCHIVE_PATH="$(Pipeline.Workspace)/vscode_web_darwin_$(VSCODE_ARCH)_archive/vscode-server-darwin-$(VSCODE_ARCH)-web.zip"
+        mkdir -p $(dirname $WEB_ARCHIVE_PATH)
+        cp $(WEB_PATH) $WEB_ARCHIVE_PATH
+        echo "##vso[task.setvariable variable=WEB_PATH]$WEB_ARCHIVE_PATH"
+      displayName: Prepare web for codesign
+
     - task: UseDotNet@2
       inputs:
         version: 6.x
