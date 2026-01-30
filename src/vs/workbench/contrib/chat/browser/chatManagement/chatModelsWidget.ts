@@ -866,7 +866,7 @@ export class ChatModelsWidget extends Disposable {
 		@IChatEntitlementService private readonly chatEntitlementService: IChatEntitlementService,
 		@IEditorProgressService private readonly editorProgressService: IEditorProgressService,
 		@ICommandService private readonly commandService: ICommandService,
-		@IContextKeyService contextKeyService: IContextKeyService
+		@IContextKeyService contextKeyService: IContextKeyService,
 	) {
 		super();
 
@@ -1273,13 +1273,13 @@ export class ChatModelsWidget extends Disposable {
 
 		const entitlement = this.chatEntitlementService.entitlement;
 		const isManagedEntitlement = entitlement === ChatEntitlement.Business || entitlement === ChatEntitlement.Enterprise;
-		const supportsAddingModels = this.chatEntitlementService.isInternal
-			|| (entitlement !== ChatEntitlement.Unknown
+		const supportsAddingModels = /* this.chatEntitlementService.isInternal
+			||  */(entitlement !== ChatEntitlement.Unknown
 				&& entitlement !== ChatEntitlement.Available
 				&& !isManagedEntitlement);
 
 		this.addButton.enabled = supportsAddingModels && configurableVendors.length > 0;
-		this.addButton.setTitle(supportsAddingModels ? localize('models.addModels', "Add Models") : localize('models.managedByOrganization', "Adding models is managed by your organization"));
+		this.addButton.setTitle(!supportsAddingModels && isManagedEntitlement ? localize('models.managedByOrganization', "Adding models is managed by your organization") : '');
 
 		this.dropdownActions = configurableVendors.map(vendor => toAction({
 			id: `enable-${vendor.vendor}`,
