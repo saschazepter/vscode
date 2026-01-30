@@ -121,13 +121,18 @@ function findFilePath(root: string, path: string): string {
 	throw new Error(`Could not find ${path} in any subdirectory`);
 }
 
+function parseVersion(version: string) {
+	const [, major, minor, patch] = /^(\d+)\.(\d+)\.(\d+)/.exec(version)!;
+	return { major: parseInt(major), minor: parseInt(minor), patch: parseInt(patch) };
+}
+
 export function getDevElectronPath(): string {
 	const buildPath = join(root, '.build');
 	const product = require(join(root, 'product.json'));
 
 	switch (process.platform) {
 		case 'darwin':
-			return join(buildPath, 'electron', `${product.nameLong}.app`, 'Contents', 'MacOS', 'Electron');
+			return join(buildPath, 'electron', `${product.nameLong}.app`, 'Contents', 'MacOS', `${product.nameShort}`);
 		case 'linux':
 			return join(buildPath, 'electron', `${product.applicationName}`);
 		case 'win32':
@@ -139,8 +144,16 @@ export function getDevElectronPath(): string {
 
 export function getBuildElectronPath(root: string): string {
 	switch (process.platform) {
-		case 'darwin':
-			return join(root, 'Contents', 'MacOS', 'Electron');
+		case 'darwin': {
+			const packageJson = require(join(root, 'Contents', 'Resources', 'app', 'package.json'));
+			const product = require(join(root, 'Contents', 'Resources', 'app', 'product.json'));
+			const { major, minor } = parseVersion(packageJson.version);
+			if (major === 1 && minor <= 109) {
+				return join(root, 'Contents', 'MacOS', 'Electron');
+			} else {
+				return join(root, 'Contents', 'MacOS', product.nameShort);
+			}
+		}
 		case 'linux': {
 			const product = require(join(root, 'resources', 'app', 'product.json'));
 			return join(root, product.applicationName);
