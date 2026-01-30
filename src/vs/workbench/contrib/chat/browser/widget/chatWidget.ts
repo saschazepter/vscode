@@ -778,11 +778,15 @@ export class ChatWidget extends Disposable implements IChatWidget {
 	 * Updates the DOM visibility of welcome view and chat list immediately
 	 */
 	private updateChatViewVisibility(): void {
+		let hideWelcome = this.chatEntitlementService.sentiment.installed;
 		if (this.viewModel) {
 			const numItems = this.viewModel.getItems().length;
-			dom.setVisibility(numItems === 0, this.welcomeMessageContainer);
 			dom.setVisibility(numItems !== 0, this.listContainer);
+			hideWelcome = numItems > 0;
 		}
+
+		dom.setVisibility(!hideWelcome, this.welcomeMessageContainer);
+
 
 		this._onDidChangeEmptyState.fire();
 	}
@@ -802,17 +806,6 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		this._isRenderingWelcome = true;
 		try {
 			if (this.viewOptions.renderStyle === 'compact' || this.viewOptions.renderStyle === 'minimal' || this.lifecycleService.willShutdown) {
-				return;
-			}
-
-			// Skip welcome content when a core agent exists (Copilot is fully set up)
-			// This matches the primary condition from ChatViewPane.shouldShowWelcome()
-			const hasCoreAgent = this.chatAgentService.getAgents().some(agent => agent.isCore && agent.locations.includes(this.location));
-			if (hasCoreAgent) {
-				// Hide the welcome container since we're not rendering welcome content
-				dom.setVisibility(false, this.welcomeMessageContainer);
-				dom.setVisibility(true, this.listContainer);
-				this._onDidChangeEmptyState.fire();
 				return;
 			}
 
