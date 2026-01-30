@@ -1273,7 +1273,8 @@ class ChatTerminalToolOutputSection extends Disposable {
 
 	private _getOutputContentHeight(lineCount: number, rowHeight: number, padding: number): number {
 		const contentRows = Math.max(lineCount, MIN_OUTPUT_ROWS);
-		const adjustedRows = contentRows + (lineCount > MAX_OUTPUT_ROWS ? 1 : 0);
+		// Always add an extra row for buffer space to prevent the last line from being cut off during streaming
+		const adjustedRows = contentRows + 1;
 		return (adjustedRows * rowHeight) + padding;
 	}
 
