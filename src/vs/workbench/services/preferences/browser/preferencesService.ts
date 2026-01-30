@@ -478,14 +478,14 @@ export class PreferencesService extends Disposable implements IPreferencesServic
 
 	private getDefaultSettings(target: ConfigurationTarget): DefaultSettings {
 		if (target === ConfigurationTarget.WORKSPACE) {
-			this._defaultWorkspaceSettingsContentModel ??= this._register(new DefaultSettings(this.getMostCommonlyUsedSettings(), target, this.configurationService));
+			this._defaultWorkspaceSettingsContentModel ??= this._register(new DefaultSettings(COMMONLY_USED_SETTINGS, target, this.configurationService));
 			return this._defaultWorkspaceSettingsContentModel;
 		}
 		if (target === ConfigurationTarget.WORKSPACE_FOLDER) {
-			this._defaultFolderSettingsContentModel ??= this._register(new DefaultSettings(this.getMostCommonlyUsedSettings(), target, this.configurationService));
+			this._defaultFolderSettingsContentModel ??= this._register(new DefaultSettings(COMMONLY_USED_SETTINGS, target, this.configurationService));
 			return this._defaultFolderSettingsContentModel;
 		}
-		this._defaultUserSettingsContentModel ??= this._register(new DefaultSettings(this.getMostCommonlyUsedSettings(), target, this.configurationService));
+		this._defaultUserSettingsContentModel ??= this._register(new DefaultSettings(COMMONLY_USED_SETTINGS, target, this.configurationService));
 		return this._defaultUserSettingsContentModel;
 	}
 
@@ -543,10 +543,6 @@ export class PreferencesService extends Disposable implements IPreferencesServic
 			}
 
 		}
-	}
-
-	private getMostCommonlyUsedSettings(): string[] {
-		return COMMONLY_USED_SETTINGS;
 	}
 
 	private async revealSetting(settingKey: string, edit: boolean, editor: IEditorPane, settingsResource: URI): Promise<void> {
