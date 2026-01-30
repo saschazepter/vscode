@@ -34,7 +34,9 @@ export interface ITerminalSandboxService {
 
 export class TerminalSandboxService extends Disposable implements ITerminalSandboxService {
 	readonly _serviceBrand: undefined;
-	private _srtPath: string;
+	private _localSrtPath: string;
+	private _srtPath: string | undefined;
+	private _srtPathResolved = false;
 	private _execPath?: string;
 	private _sandboxConfigPath: string | undefined;
 	private _needsForceUpdateConfigFile = true;
@@ -52,7 +54,8 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 		super();
 		const appRoot = dirname(FileAccess.asFileUri('').fsPath);
 		// srt path is dist/cli.js inside the sandbox-runtime package.
-		this._srtPath = join(appRoot, 'node_modules', '@anthropic-ai', 'sandbox-runtime', 'dist', 'cli.js');
+		this._localSrtPath = join(appRoot, 'node_modules', '@anthropic-ai', 'sandbox-runtime', 'dist', 'cli.js');
+		this._srtPath = this._localSrtPath;
 		// Get the node executable path from native environment service if available (Electron's execPath with ELECTRON_RUN_AS_NODE)
 		const nativeEnv = this._environmentService as IEnvironmentService & { execPath?: string };
 		this._execPath = nativeEnv.execPath;
@@ -87,6 +90,9 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 		if (!this._execPath) {
 			throw new Error('Executable path not set to run sandbox commands');
 		}
+		if (!this._srtPath) {
+			throw new Error('Sandbox runtime path not resolved');
+		}
 		// Use ELECTRON_RUN_AS_NODE=1 to make Electron executable behave as Node.js
 		// TMPDIR must be set as environment variable before the command
 		// Use -c to pass the command string directly (like sh -c), avoiding argument parsing issues
@@ -103,11 +109,39 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 	}
 
 	public async getSandboxConfigPath(forceRefresh: boolean = false): Promise<string | undefined> {
+		await this._resolveSrtPath();
 		if (!this._sandboxConfigPath || forceRefresh || this._needsForceUpdateConfigFile) {
 			this._sandboxConfigPath = await this._createSandboxConfig();
 			this._needsForceUpdateConfigFile = false;
 		}
 		return this._sandboxConfigPath;
+	}
+
+	private async _resolveSrtPath(): Promise<void> {
+		if (this._srtPathResolved) {
+			return;
+		}
+		this._srtPathResolved = true;
+		const remoteEnv = await this._remoteAgentService.getEnvironment();
+		if (!remoteEnv) {
+			this._srtPath = this._localSrtPath;
+			return;
+		}
+		if (!remoteEnv.appRoot) {
+			throw new Error('Remote app root not available for sandbox runtime path');
+		}
+		const builtSrt = joinPath(remoteEnv.appRoot, 'node_modules', '@anthropic-ai', 'sandbox-runtime', 'dist', 'cli.js');
+
+		if (await this._fileService.exists(builtSrt)) {
+			this._srtPath = builtSrt.fsPath;
+			return;
+		}
+		// const devSrt = joinPath(remoteEnv.appRoot, 'resources', 'server', 'node_modules', '@anthropic-ai', 'sandbox-runtime', 'dist', 'cli.js');
+		// if (await this._fileService.exists(devSrt)) {
+		// 	this._srtPath = devSrt.fsPath;
+		// 	return;
+		// }
+		throw new Error('Sandbox runtime not found in remote app root');
 	}
 
 	private async _createSandboxConfig(): Promise<string | undefined> {
