@@ -1301,8 +1301,11 @@ class ChatTerminalToolOutputSection extends Disposable {
 		// Calculate the pixel width needed for the content
 		// Add some padding for scrollbar and visual comfort
 		// Account for container padding
+		// Add one extra character width (cursorWidth) to account for the cursor position
+		// which may be one character beyond the last content character during streaming
 		const horizontalPadding = 24;
-		const contentWidth = Math.ceil(maxColumnWidth * charWidth) + horizontalPadding;
+		const cursorWidth = charWidth;
+		const contentWidth = Math.ceil(maxColumnWidth * charWidth) + horizontalPadding + cursorWidth;
 
 		// Get the max available width (container's parent width)
 		const parentWidth = this.domNode.parentElement?.clientWidth ?? 0;
