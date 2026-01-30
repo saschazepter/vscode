@@ -16,6 +16,7 @@ import { ScrollbarVisibility } from '../../../../base/common/scrollable.js';
 import { basename } from '../../../../base/common/resources.js';
 import { URI } from '../../../../base/common/uri.js';
 import { localize } from '../../../../nls.js';
+import { MenuId } from '../../../../platform/actions/common/actions.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
@@ -46,7 +47,7 @@ import { ChatViewId, ChatViewPaneTarget, IChatWidgetService, ISessionTypePickerD
 import { ChatSessionPosition, getResourceForNewChatSession } from '../../chat/browser/chatSessions/chatSessions.contribution.js';
 import { IChatEntitlementService } from '../../../services/chat/common/chatEntitlementService.js';
 import { AgentSessionsControl, IAgentSessionsControlOptions } from '../../chat/browser/agentSessions/agentSessionsControl.js';
-import { IAgentSessionsFilter } from '../../chat/browser/agentSessions/agentSessionsViewer.js';
+import { AgentSessionsFilter } from '../../chat/browser/agentSessions/agentSessionsFilter.js';
 import { HoverPosition } from '../../../../base/browser/ui/hover/hoverWidget.js';
 import { IResolvedWalkthrough, IWalkthroughsService } from '../../welcomeGettingStarted/browser/gettingStartedService.js';
 import { GettingStartedEditorOptions, GettingStartedInput } from '../../welcomeGettingStarted/browser/gettingStartedInput.js';
@@ -571,25 +572,18 @@ export class AgentSessionsWelcomePage extends EditorPane {
 		// Hide the control initially until loading completes
 		this.sessionsControlContainer.style.display = 'none';
 
-		// Create a filter that limits results and excludes archived sessions
-		const onDidChangeEmitter = this.sessionsControlDisposables.add(new Emitter<void>());
-		const filter: IAgentSessionsFilter = {
-			onDidChange: onDidChangeEmitter.event,
+		// Create a filter that syncs with the chat side panel filter via shared storage
+		const sessionsFilter = this.sessionsControlDisposables.add(this.instantiationService.createInstance(AgentSessionsFilter, {
+			filterMenuId: MenuId.AgentSessionsWelcomeFilterSubMenu,
+			storageKey: `agentSessions.filterExcludes.${MenuId.AgentSessionsViewerFilterSubMenu.id.toLowerCase()}`,
 			limitResults: () => MAX_SESSIONS,
-			exclude: (session: IAgentSession) => session.isArchived(),
-			getExcludes: () => ({
-				providers: [],
-				states: [],
-				archived: true,
-				read: false,
-			}),
-		};
+		}));
 
 		const options: IAgentSessionsControlOptions = {
 			overrideStyles: getListStyles({
 				listBackground: editorBackground,
 			}),
-			filter,
+			filter: sessionsFilter,
 			getHoverPosition: () => HoverPosition.BELOW,
 			trackActiveEditorSession: () => false,
 			source: 'welcomeView',

@@ -24,6 +24,13 @@ export interface IAgentSessionsFilterOptions extends Partial<IAgentSessionsFilte
 
 	readonly filterMenuId: MenuId;
 
+	/**
+	 * Optional custom storage key for filter excludes.
+	 * If not provided, defaults to `agentSessions.filterExcludes.${filterMenuId.id.toLowerCase()}`.
+	 * Use this to share filter state between multiple filter instances with different menu IDs.
+	 */
+	readonly storageKey?: string;
+
 	readonly limitResults?: () => number | undefined;
 	notifyResults?(count: number): void;
 
@@ -61,7 +68,7 @@ export class AgentSessionsFilter extends Disposable implements Required<IAgentSe
 	) {
 		super();
 
-		this.STORAGE_KEY = `agentSessions.filterExcludes.${this.options.filterMenuId.id.toLowerCase()}`;
+		this.STORAGE_KEY = this.options.storageKey ?? `agentSessions.filterExcludes.${this.options.filterMenuId.id.toLowerCase()}`;
 
 		this.updateExcludes(false);
 
