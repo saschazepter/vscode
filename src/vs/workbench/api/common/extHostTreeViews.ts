@@ -706,15 +706,22 @@ class ExtHostTreeView<T> extends Disposable {
 		}
 		const extTreeItem = await asPromise(() => this._dataProvider.getTreeItem(element));
 		const handle = this._createHandle(element, extTreeItem, parent, true);
-		await this.getChildren(parent ? parent.item.handle : undefined);
-		const cachedElement = this.getExtensionElement(handle);
-		if (cachedElement) {
-			const node = this._nodes.get(cachedElement);
-			if (node) {
-				return node;
+
+		const maxRetries = 3;
+		for (let attempt = 0; attempt < maxRetries; attempt++) {
+			await this.getChildren(parent ? parent.item.handle : undefined);
+			const cachedElement = this.getExtensionElement(handle);
+			if (cachedElement) {
+				const node = this._nodes.get(cachedElement);
+				if (node) {
+					if (attempt > 0) {
+						this._proxy.$logResolveTreeNodeRetry(this._extension.identifier.value, attempt, false);
+					}
+					return node;
+				}
 			}
 		}
-		this._proxy.$logResolveTreeNodeRetry(this._extension.identifier.value, 1, true);
+		this._proxy.$logResolveTreeNodeRetry(this._extension.identifier.value, maxRetries - 1, true);
 		throw new Error(`Cannot resolve tree item for element ${handle} from extension ${this._extension.identifier.value}`);
 	}
 
