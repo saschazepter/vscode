@@ -407,7 +407,7 @@ describe(`VSCode Smoke Tests (${opts.web ? 'Web' : 'Electron'})`, () => {
 	if (!opts.web && !opts.remote && quality !== Quality.Dev && quality !== Quality.OSS) { setupLocalizationTests(logger); }
 	if (!opts.web && !opts.remote) { setupLaunchTests(logger); }
 	if (!opts.web) { setupChatTests(logger); }
-	if (!opts.web && process.env.VSCODE_RELEASE && quality === Quality.Insiders) {
+	if (!opts.web && process.env.VSCODE_RELEASE && (quality === Quality.Insiders || quality === Quality.Exploration)) {
 		// Limit this chat test to insider desktop builds on insiders
 		// that are set to be released: it is possible that we require
 		// a version of copilot chat that is not yet available on the
