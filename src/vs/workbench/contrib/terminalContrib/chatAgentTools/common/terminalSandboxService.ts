@@ -7,7 +7,7 @@ import { VSBuffer } from '../../../../../base/common/buffer.js';
 import { Event } from '../../../../../base/common/event.js';
 import { Disposable } from '../../../../../base/common/lifecycle.js';
 import { FileAccess } from '../../../../../base/common/network.js';
-import { dirname, join } from '../../../../../base/common/path.js';
+import { dirname, posix, win32 } from '../../../../../base/common/path.js';
 import { OperatingSystem, OS } from '../../../../../base/common/platform.js';
 import { joinPath } from '../../../../../base/common/resources.js';
 import { URI } from '../../../../../base/common/uri.js';
@@ -35,7 +35,6 @@ export interface ITerminalSandboxService {
 
 export class TerminalSandboxService extends Disposable implements ITerminalSandboxService {
 	readonly _serviceBrand: undefined;
-	private _localSrtPath: string;
 	private _srtPath: string | undefined;
 	private _srtPathResolved = false;
 	private _execPath?: string;
@@ -57,9 +56,6 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 	) {
 		super();
 		this._appRoot = dirname(FileAccess.asFileUri('').fsPath);
-		// srt path is dist/cli.js inside the sandbox-runtime package.
-		this._localSrtPath = join(this._appRoot, 'node_modules', '@anthropic-ai', 'sandbox-runtime', 'dist', 'cli.js');
-		this._srtPath = this._localSrtPath;
 		// Get the node executable path from native environment service if available (Electron's execPath with ELECTRON_RUN_AS_NODE)
 		const nativeEnv = this._environmentService as IEnvironmentService & { execPath?: string };
 		this._execPath = nativeEnv.execPath;
@@ -126,17 +122,18 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 	}
 
 	private async _resolveSrtPath(): Promise<void> {
+		// srt path is dist/cli.js inside the sandbox-runtime package.
+		this._srtPath = this._pathJoin(this._appRoot, 'node_modules', '@anthropic-ai', 'sandbox-runtime', 'dist', 'cli.js');
 		if (this._srtPathResolved) {
 			return;
 		}
 		this._srtPathResolved = true;
 		const remoteEnv = this._remoteEnvDetails;
 		if (!remoteEnv) {
-			this._srtPath = this._localSrtPath;
 			return;
 		}
-		this._execPath = joinPath(remoteEnv.appRoot, 'node').fsPath;
-		this._srtPath = joinPath(remoteEnv.appRoot, 'node_modules', '@anthropic-ai', 'sandbox-runtime', 'dist', 'cli.js').fsPath;
+		this._execPath = this._joinUriPath(remoteEnv.appRoot, 'node').fsPath;
+		this._srtPath = this._joinUriPath(remoteEnv.appRoot, 'node_modules', '@anthropic-ai', 'sandbox-runtime', 'dist', 'cli.js').fsPath;
 	}
 
 	private async _createSandboxConfig(): Promise<string | undefined> {
@@ -153,7 +150,7 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 			const macFileSystemSetting = os === OperatingSystem.Macintosh
 				? this._configurationService.getValue<ITerminalSandboxSettings['filesystem']>(TerminalChatAgentToolsSettingId.TerminalSandboxMacFileSystem) ?? {}
 				: {};
-			const configFileUri = joinPath(this._tempDir, `vscode-sandbox-settings-${this._sandboxSettingsId}.json`);
+			const configFileUri = this._joinUriPath(this._tempDir, `vscode-sandbox-settings-${this._sandboxSettingsId}.json`);
 			const sandboxSettings = {
 				network: {
 					allowedDomains: networkSetting.allowedDomains ?? [],
@@ -171,6 +168,18 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 		}
 		return undefined;
 	}
+
+	private _joinUriPath(base: URI, ...segments: string[]): URI {
+		if (base.scheme === 'file') {
+			return URI.file(this._pathJoin(base.fsPath, ...segments));
+		}
+		return joinPath(base, ...segments);
+	}
+
+	private _pathJoin = (...segments: string[]) => {
+		const path = this._os === OperatingSystem.Windows ? win32 : posix;
+		return path.join(...segments);
+	};
 
 	private async _initTempDir(): Promise<void> {
 		if (await this.isEnabled()) {
