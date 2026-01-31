@@ -49,7 +49,6 @@ import { IAuxiliaryWindowService } from '../services/auxiliaryWindow/browser/aux
 import { CodeWindow, mainWindow } from '../../base/browser/window.js';
 import { IChatEntitlementService } from '../services/chat/common/chatEntitlementService.js';
 
-
 //#region Layout Implementation
 
 interface ILayoutRuntimeState {
