@@ -72,7 +72,6 @@ MenuRegistry.appendMenuItem(MenuId.ChatWelcomeContext, {
 	when: ChatContextKeys.inChatEditor.negate()
 });
 
-
 export class SetAgentSessionsOrientationStackedAction extends Action2 {
 
 	constructor() {
