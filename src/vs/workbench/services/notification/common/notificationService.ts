@@ -11,7 +11,6 @@ import { Emitter, Event } from '../../../../base/common/event.js';
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
 import { IAction, Action } from '../../../../base/common/actions.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
-import { IWorkbenchEnvironmentService } from '../../environment/common/environmentService.js';
 
 export class NotificationService extends Disposable implements INotificationService {
 
@@ -20,8 +19,7 @@ export class NotificationService extends Disposable implements INotificationServ
 	readonly model = this._register(new NotificationsModel());
 
 	constructor(
-		@IStorageService private readonly storageService: IStorageService,
-		@IWorkbenchEnvironmentService private readonly environmentService: IWorkbenchEnvironmentService
+		@IStorageService private readonly storageService: IStorageService
 	) {
 		super();
 
@@ -136,14 +134,10 @@ export class NotificationService extends Disposable implements INotificationServ
 	}
 
 	private updateFilters(): void {
-		if (this.environmentService.enableSmokeTestDriver) {
-			this.model.setFilter({ global: NotificationsFilter.ERROR });
-		} else {
-			this.model.setFilter({
-				global: this.globalFilterEnabled ? NotificationsFilter.ERROR : NotificationsFilter.OFF,
-				sources: new Map([...this.mapSourceToFilter.values()].map(source => [source.id, source.filter]))
-			});
-		}
+		this.model.setFilter({
+			global: this.globalFilterEnabled ? NotificationsFilter.ERROR : NotificationsFilter.OFF,
+			sources: new Map([...this.mapSourceToFilter.values()].map(source => [source.id, source.filter]))
+		});
 	}
 
 	removeFilter(sourceId: string): void {
