@@ -78,7 +78,6 @@ export class AgentSessionsPicker {
 		const picker = disposables.add(this.quickInputService.createQuickPick<ISessionPickItem>({ useSeparators: true }));
 		const filter = disposables.add(this.instantiationService.createInstance(AgentSessionsFilter, {
 			filterMenuId: MenuId.AgentSessionsQuickPickFilterSubMenu,
-			storageKey: `agentSessions.filterExcludes.${MenuId.AgentSessionsViewerFilterSubMenu.id.toLowerCase()}`,
 		}));
 
 		picker.items = this.createPickerItems(filter);

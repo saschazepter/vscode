@@ -575,7 +575,6 @@ export class AgentSessionsWelcomePage extends EditorPane {
 		// Create a filter that syncs with the chat side panel filter via shared storage
 		const sessionsFilter = this.sessionsControlDisposables.add(this.instantiationService.createInstance(AgentSessionsFilter, {
 			filterMenuId: MenuId.AgentSessionsWelcomeFilterSubMenu,
-			storageKey: `agentSessions.filterExcludes.${MenuId.AgentSessionsViewerFilterSubMenu.id.toLowerCase()}`,
 			limitResults: () => MAX_SESSIONS,
 		}));
 
