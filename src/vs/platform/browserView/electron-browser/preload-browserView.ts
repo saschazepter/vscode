@@ -8,24 +8,22 @@
 /**
  * Preload script for pages loaded in Integrated Browser
  *
- * It runs in an isolated context that Electron calls an "Isolated World" (this one in particular has worldId of 999,
- * but one can create more isolated worlds with different ids).
- * In DevTools Console, this context shows up as "Electron Isolated Context".
+ * It runs in an isolated context that Electron calls an "isolated world".
+ * Despite being isolated, it still runs on the same page as the JS from the actual loaded website
+ * (which runs on the so-called "main world").
  *
- * Despite being isolated from each other, it still runs on the same page as the JS from the actual loaded website
- * (which runs on the so-called "Main World").
+ * Learn more: see Electron docs for Security, contextBridge, and Context Isolation.
  */
 (function () {
 
-	const { contextBridge } = require('electron');
+	const { contextBridge, webFrame } = require('electron');
 
 	// #######################################################################
-	// IMPORTANT NOTES ABOUT THIS `globals` OBJECT:
-	// - Once exposed via contextBridge.exposeInMainWorld, this object will be accessible to the JS of any arbitrary,
-	//   possibly malicious page that a user loads in the Integrated Browser, so ensure that anything exposed here is
-	//   safe to be accessed and called by such code.
-	// - Do not use get/set properties anywhere here unless the access is without side effects
-	//   (https://github.com/electron/electron/issues/25516).
+	// ###                                                                 ###
+	// ###       !!! DO NOT USE GET/SET PROPERTIES ANYWHERE HERE !!!       ###
+	// ###       !!!  UNLESS THE ACCESS IS WITHOUT SIDE EFFECTS  !!!       ###
+	// ###       (https://github.com/electron/electron/issues/25516)       ###
+	// ###                                                                 ###
 	// #######################################################################
 	const globals = {
 		/**
@@ -43,13 +41,17 @@
 	};
 
 	try {
-		// Use `contextBridge` APIs to expose globals to the the website loaded in the Integrated Browser.
+		// The worldId for the isolated world we will create.
+		// It's different from this preload script's isolated world, which has worldId 999 and shows up in DevTools as "Electron Isolated Context".
+		const isolatedWorldId = 1000;
+
+		// Set the name for our isolated world so it shows up nicely in DevTools
+		webFrame.setIsolatedWorldInfo(isolatedWorldId, { name: 'Integrated Browser Isolated Context' });
+
+		// Use `contextBridge` APIs to expose globals to our own isolated world.
 		// The globals object will be recursively frozen (and for functions also proxied) by Electron to prevent
-		// modification by the loaded page.
-		// Both the the website's own scripts and the current script run on the same page but they run in two mutually
-		// isolated contexts, called the "main world" (the website's scripts) and the "isolated world" (this script).
-		// Learn more: see Electron docs for Security, contextBridge, and Context Isolation.
-		contextBridge.exposeInMainWorld('browserViewAPI', globals);
+		// modification within the given context.
+		contextBridge.exposeInIsolatedWorld(isolatedWorldId, 'browserViewAPI', globals);
 	} catch (error) {
 		console.error(error);
 	}

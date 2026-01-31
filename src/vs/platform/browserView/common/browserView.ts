@@ -110,6 +110,11 @@ export enum BrowserViewStorageScope {
 
 export const ipcBrowserViewChannelName = 'browserView';
 
+/**
+ * This should match the isolated world ID defined in `preload-browserView.ts`.
+ */
+export const browserViewIsolatedWorldId = 1000;
+
 export interface IBrowserViewService {
 	/**
 	 * Dynamic events that return an Event for a specific browser view ID.
