@@ -39,7 +39,9 @@
 		// Use `contextBridge` APIs to expose globals to the the website loaded in the Integrated Browser.
 		// The globals object will be recursively frozen (and for functions also proxied) by Electron to prevent
 		// modification by the loaded page.
-		// See also: Electron docs for Security, contextBridge, and Context Isolation.
+		// Both the the website's own scripts and the current script run on the same page but they run in two mutually
+		// isolated contexts, called the "main world" (the website's scripts) and the "isolated world" (this script).
+		// Learn more: see Electron docs for Security, contextBridge, and Context Isolation.
 		contextBridge.exposeInMainWorld('browserViewAPI', globals);
 	} catch (error) {
 		console.error(error);
