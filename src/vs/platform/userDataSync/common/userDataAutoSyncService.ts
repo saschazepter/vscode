@@ -121,7 +121,7 @@ export class UserDataAutoSyncService extends Disposable implements IUserDataAuto
 			this._register(meteredConnectionService.onDidChangeIsConnectionMetered(() => {
 				if (!meteredConnectionService.isConnectionMetered) {
 					this.logService.info('[AutoSync] Connection is no longer metered. Triggering sync.');
-					this.triggerSync(['connectionNoLongerMetered']);
+					this.triggerSync(['connectionNoLongerMetered'], { skipIfSyncedRecently: true });
 				}
 			}));
 		}
