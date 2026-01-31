@@ -7,6 +7,13 @@
 
 /**
  * Preload script for pages loaded in Integrated Browser
+ *
+ * It runs in an isolated context that Electron calls an "Isolated World" (this one in particular has worldId of 999,
+ * but one can create more isolated worlds with different ids).
+ * In DevTools Console, this context shows up as "Electron Isolated Context".
+ *
+ * Despite being isolated from each other, it still runs on the same page as the JS from the actual loaded website
+ * (which runs on the so-called "Main World").
  */
 (function () {
 
