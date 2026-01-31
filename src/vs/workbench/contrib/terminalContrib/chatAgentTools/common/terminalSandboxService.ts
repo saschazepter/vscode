@@ -9,7 +9,6 @@ import { Disposable } from '../../../../../base/common/lifecycle.js';
 import { FileAccess } from '../../../../../base/common/network.js';
 import { dirname, posix, win32 } from '../../../../../base/common/path.js';
 import { OperatingSystem, OS } from '../../../../../base/common/platform.js';
-import { joinPath } from '../../../../../base/common/resources.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { generateUuid } from '../../../../../base/common/uuid.js';
 import { IConfigurationChangeEvent, IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
@@ -132,8 +131,8 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 		if (!remoteEnv) {
 			return;
 		}
-		this._execPath = this._joinUriPath(remoteEnv.appRoot, 'node').fsPath;
-		this._srtPath = this._joinUriPath(remoteEnv.appRoot, 'node_modules', '@anthropic-ai', 'sandbox-runtime', 'dist', 'cli.js').fsPath;
+		this._execPath = this._pathJoin(remoteEnv.appRoot.fsPath, 'node');
+		this._srtPath = this._pathJoin(remoteEnv.appRoot.fsPath, 'node_modules', '@anthropic-ai', 'sandbox-runtime', 'dist', 'cli.js');
 	}
 
 	private async _createSandboxConfig(): Promise<string | undefined> {
@@ -142,7 +141,7 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 			await this._initTempDir();
 		}
 		if (this._tempDir) {
-			const os = await this._os;
+			const os = this._os;
 			const networkSetting = this._configurationService.getValue<ITerminalSandboxSettings['network']>(TerminalChatAgentToolsSettingId.TerminalSandboxNetwork) ?? {};
 			const linuxFileSystemSetting = os === OperatingSystem.Linux
 				? this._configurationService.getValue<ITerminalSandboxSettings['filesystem']>(TerminalChatAgentToolsSettingId.TerminalSandboxLinuxFileSystem) ?? {}
@@ -150,7 +149,7 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 			const macFileSystemSetting = os === OperatingSystem.Macintosh
 				? this._configurationService.getValue<ITerminalSandboxSettings['filesystem']>(TerminalChatAgentToolsSettingId.TerminalSandboxMacFileSystem) ?? {}
 				: {};
-			const configFileUri = this._joinUriPath(this._tempDir, `vscode-sandbox-settings-${this._sandboxSettingsId}.json`);
+			const configFilePath = this._pathJoin(this._tempDir.fsPath, `vscode-sandbox-settings-${this._sandboxSettingsId}.json`);
 			const sandboxSettings = {
 				network: {
 					allowedDomains: networkSetting.allowedDomains ?? [],
@@ -162,18 +161,11 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 					denyWrite: os === OperatingSystem.Macintosh ? macFileSystemSetting.denyWrite : linuxFileSystemSetting.denyWrite,
 				}
 			};
-			this._sandboxConfigPath = configFileUri.fsPath;
-			await this._fileService.createFile(configFileUri, VSBuffer.fromString(JSON.stringify(sandboxSettings, null, '\t')), { overwrite: true });
+			this._sandboxConfigPath = configFilePath;
+			await this._fileService.createFile(URI.file(configFilePath), VSBuffer.fromString(JSON.stringify(sandboxSettings, null, '\t')), { overwrite: true });
 			return this._sandboxConfigPath;
 		}
 		return undefined;
-	}
-
-	private _joinUriPath(base: URI, ...segments: string[]): URI {
-		if (base.scheme === 'file') {
-			return URI.file(this._pathJoin(base.fsPath, ...segments));
-		}
-		return joinPath(base, ...segments);
 	}
 
 	private _pathJoin = (...segments: string[]) => {
