@@ -32,7 +32,8 @@
 		getSelectedText(): string {
 			try {
 				// Even if the page has overridden window.getSelection, our call here will still reach the original
-				// implementation.
+				// implementation. That's because Electron proxies functions, such as getSelectedText here, that are
+				// exposed to a different context via exposeInIsolatedWorld or exposeInMainWorld.
 				return window.getSelection()?.toString() ?? '';
 			} catch {
 				return '';
