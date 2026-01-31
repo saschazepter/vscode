@@ -7,16 +7,11 @@
 
 /**
  * Preload script for browser views that exposes safe APIs via contextBridge.
- *
- * This script runs in an isolated context BEFORE the page's scripts, so we can
- * capture references to native APIs before they can be tampered with by page content.
+ * Learn more: Search the Electron docs for Security, contextBridge, and Context Isolation.
  */
 (function () {
 
 	const { contextBridge } = require('electron');
-
-	// Capture native APIs before page scripts can override them
-	const nativeGetSelection = window.getSelection.bind(window);
 
 	// #######################################################################
 	// ###                                                                 ###
@@ -26,14 +21,17 @@
 	// ###                                                                 ###
 	// #######################################################################
 
+	// IMPORTANT: This API can be accessed by the JS of any arbitrary, possibly malicious page that a user loads in the
+	// Integrated Browser, so ensure that anything exposed here is safe to be accessed and called by such code.
 	const globals = {
-
 		/**
 		 * Get the currently selected text in the page.
 		 */
 		getSelectedText(): string {
 			try {
-				return nativeGetSelection()?.toString() ?? '';
+				// Even if the page has overridden window.getSelection, our call here will still reach the original
+				// implementation.
+				return window.getSelection()?.toString() ?? '';
 			} catch {
 				return '';
 			}
@@ -41,7 +39,8 @@
 	};
 
 	try {
-		contextBridge.exposeInMainWorld('vscodeBrowserView', globals);
+		// Use `contextBridge` APIs to expose globals to the the website loaded in the Integrated Browser
+		contextBridge.exposeInMainWorld('browserViewAPI', globals);
 	} catch (error) {
 		console.error(error);
 	}

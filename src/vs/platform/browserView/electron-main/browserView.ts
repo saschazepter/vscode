@@ -487,8 +487,9 @@ export class BrowserView extends Disposable {
 			return '';
 		}
 		try {
-			// Uses the preload-exposed API window.vscodeBrowserView.
-			return await this._view.webContents.executeJavaScript('window.vscodeBrowserView?.getSelectedText?.() ?? ""');
+			// Uses our preloaded, frozen, proxied, contextBridge-exposed API.
+			// It would not be safe to call window.getSelection directly, because the page could override it.
+			return await this._view.webContents.executeJavaScript('window.browserViewAPI?.getSelectedText?.() ?? ""');
 		} catch {
 			return '';
 		}
