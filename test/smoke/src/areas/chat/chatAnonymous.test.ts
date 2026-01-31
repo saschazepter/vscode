@@ -29,6 +29,9 @@ export function setup(logger: Logger) {
 
 			// Wait for a response to complete
 			await app.workbench.chat.waitForResponse();
+
+			// Wait for model name to appear in footer
+			await app.workbench.chat.waitForModelInFooter('GPT-5 mini');
 		});
 	});
 }
