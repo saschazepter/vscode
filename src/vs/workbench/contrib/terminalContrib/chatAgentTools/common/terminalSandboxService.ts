@@ -20,6 +20,7 @@ import { ILogService } from '../../../../../platform/log/common/log.js';
 import { ITerminalSandboxSettings } from './terminalSandbox.js';
 import { IRemoteAgentService } from '../../../../services/remote/common/remoteAgentService.js';
 import { TerminalChatAgentToolsSettingId } from './terminalChatAgentToolsConfiguration.js';
+import { IRemoteAgentEnvironment } from '../../../../../platform/remote/common/remoteAgentEnvironment.js';
 
 export const ITerminalSandboxService = createDecorator<ITerminalSandboxService>('terminalSandboxService');
 
@@ -42,7 +43,10 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 	private _needsForceUpdateConfigFile = true;
 	private _tempDir: URI | undefined;
 	private _sandboxSettingsId: string | undefined;
-	private _os: Promise<OperatingSystem>;
+	private _remoteEnvDetailsPromise: Promise<IRemoteAgentEnvironment | null>;
+	private _remoteEnvDetails: IRemoteAgentEnvironment | null = null;
+	private _appRoot: string;
+	private _os: OperatingSystem = OS;
 
 	constructor(
 		@IConfigurationService private readonly _configurationService: IConfigurationService,
@@ -52,15 +56,15 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 		@IRemoteAgentService private readonly _remoteAgentService: IRemoteAgentService,
 	) {
 		super();
-		const appRoot = dirname(FileAccess.asFileUri('').fsPath);
+		this._appRoot = dirname(FileAccess.asFileUri('').fsPath);
 		// srt path is dist/cli.js inside the sandbox-runtime package.
-		this._localSrtPath = join(appRoot, 'node_modules', '@anthropic-ai', 'sandbox-runtime', 'dist', 'cli.js');
+		this._localSrtPath = join(this._appRoot, 'node_modules', '@anthropic-ai', 'sandbox-runtime', 'dist', 'cli.js');
 		this._srtPath = this._localSrtPath;
 		// Get the node executable path from native environment service if available (Electron's execPath with ELECTRON_RUN_AS_NODE)
 		const nativeEnv = this._environmentService as IEnvironmentService & { execPath?: string };
 		this._execPath = nativeEnv.execPath;
 		this._sandboxSettingsId = generateUuid();
-		this._os = this._remoteAgentService.getEnvironment().then(remoteEnv => remoteEnv?.os ?? OS);
+		this._remoteEnvDetailsPromise = this._remoteAgentService.getEnvironment();
 
 		this._register(Event.runAndSubscribe(this._configurationService.onDidChangeConfiguration, (e: IConfigurationChangeEvent | undefined) => {
 			// If terminal sandbox settings changed, update sandbox config.
@@ -76,8 +80,9 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 	}
 
 	public async isEnabled(): Promise<boolean> {
-		const os = await this._os;
-		if (os === OperatingSystem.Windows) {
+		this._remoteEnvDetails = await this._remoteEnvDetailsPromise;
+		this._os = this._remoteEnvDetails ? this._remoteEnvDetails.os : OS;
+		if (this._os === OperatingSystem.Windows) {
 			return false;
 		}
 		return this._configurationService.getValue<boolean>(TerminalChatAgentToolsSettingId.TerminalSandboxEnabled);
@@ -97,6 +102,9 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 		// TMPDIR must be set as environment variable before the command
 		// Use -c to pass the command string directly (like sh -c), avoiding argument parsing issues
 		const wrappedCommand = `"${this._execPath}" "${this._srtPath}" TMPDIR=${this._tempDir.fsPath} --settings "${this._sandboxConfigPath}" -c "${command}"`;
+		if (this._remoteEnvDetails) {
+			return `${wrappedCommand}`;
+		}
 		return `ELECTRON_RUN_AS_NODE=1 ${wrappedCommand}`;
 	}
 
@@ -122,26 +130,13 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 			return;
 		}
 		this._srtPathResolved = true;
-		const remoteEnv = await this._remoteAgentService.getEnvironment();
+		const remoteEnv = this._remoteEnvDetails;
 		if (!remoteEnv) {
 			this._srtPath = this._localSrtPath;
 			return;
 		}
-		if (!remoteEnv.appRoot) {
-			throw new Error('Remote app root not available for sandbox runtime path');
-		}
-		const builtSrt = joinPath(remoteEnv.appRoot, 'node_modules', '@anthropic-ai', 'sandbox-runtime', 'dist', 'cli.js');
-
-		if (await this._fileService.exists(builtSrt)) {
-			this._srtPath = builtSrt.fsPath;
-			return;
-		}
-		// const devSrt = joinPath(remoteEnv.appRoot, 'resources', 'server', 'node_modules', '@anthropic-ai', 'sandbox-runtime', 'dist', 'cli.js');
-		// if (await this._fileService.exists(devSrt)) {
-		// 	this._srtPath = devSrt.fsPath;
-		// 	return;
-		// }
-		throw new Error('Sandbox runtime not found in remote app root');
+		this._execPath = joinPath(remoteEnv.appRoot, 'node').fsPath;
+		this._srtPath = joinPath(remoteEnv.appRoot, 'node_modules', '@anthropic-ai', 'sandbox-runtime', 'dist', 'cli.js').fsPath;
 	}
 
 	private async _createSandboxConfig(): Promise<string | undefined> {
@@ -180,8 +175,13 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 	private async _initTempDir(): Promise<void> {
 		if (await this.isEnabled()) {
 			this._needsForceUpdateConfigFile = true;
-			const environmentService = this._environmentService as IEnvironmentService & { tmpDir?: URI };
-			this._tempDir = environmentService.tmpDir;
+			const remoteEnv = this._remoteEnvDetails;
+			if (remoteEnv) {
+				this._tempDir = remoteEnv.userHome;
+			} else {
+				const environmentService = this._environmentService as IEnvironmentService & { tmpDir?: URI };
+				this._tempDir = environmentService.tmpDir;
+			}
 			if (!this._tempDir) {
 				this._logService.warn('TerminalSandboxService: Cannot create sandbox settings file because no tmpDir is available in this environment');
 			}
