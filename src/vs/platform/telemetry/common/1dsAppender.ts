@@ -7,8 +7,10 @@ import type { IExtendedConfiguration, IExtendedTelemetryItem, ITelemetryItem, IT
 import type { IChannelConfiguration, IXHROverride, PostChannel } from '@microsoft/1ds-post-js';
 import { importAMDNodeModule } from '../../../amdX.js';
 import { onUnexpectedError } from '../../../base/common/errors.js';
+import { Disposable } from '../../../base/common/lifecycle.js';
 import { mixin } from '../../../base/common/objects.js';
 import { isWeb } from '../../../base/common/platform.js';
+import { IMeteredConnectionService } from '../../meteredConnection/common/meteredConnection.js';
 import { ITelemetryAppender, validateTelemetryData } from './telemetryUtils.js';
 
 // Interface type which is a subset of @microsoft/1ds-core-js AppInsightsCore.
@@ -73,21 +75,34 @@ async function getClient(instrumentationKey: string, addInternalFlag?: boolean, 
 	return appInsightsCore;
 }
 
+interface IBufferedEvent {
+	eventName: string;
+	data: unknown;
+}
+
 // TODO @lramos15 maybe make more in line with src/vs/platform/telemetry/browser/appInsightsAppender.ts with caching support
-export abstract class AbstractOneDataSystemAppender implements ITelemetryAppender {
+export abstract class AbstractOneDataSystemAppender extends Disposable implements ITelemetryAppender {
+
+	private static readonly MAX_BUFFER_SIZE = 1000;
 
 	protected _aiCoreOrKey: IAppInsightsCore | string | undefined;
 	private _asyncAiCore: Promise<IAppInsightsCore> | null;
 	protected readonly endPointUrl = endpointUrl;
 	protected readonly endPointHealthUrl = endpointHealthUrl;
 
+	private readonly _meteredConnectionService: IMeteredConnectionService | undefined;
+	private _meteredBufferedEvents: IBufferedEvent[] = [];
+
 	constructor(
 		private readonly _isInternalTelemetry: boolean,
 		private _eventPrefix: string,
 		private _defaultData: { [key: string]: unknown } | null,
 		iKeyOrClientFactory: string | (() => IAppInsightsCore), // allow factory function for testing
-		private _xhrOverride?: IXHROverride
+		private _xhrOverride?: IXHROverride,
+		meteredConnectionService?: IMeteredConnectionService
 	) {
+		super();
+
 		if (!this._defaultData) {
 			this._defaultData = {};
 		}
@@ -98,6 +113,16 @@ export abstract class AbstractOneDataSystemAppender implements ITelemetryAppende
 			this._aiCoreOrKey = iKeyOrClientFactory;
 		}
 		this._asyncAiCore = null;
+
+		// Set up metered connection handling - buffer events when metered, flush when recovered
+		this._meteredConnectionService = meteredConnectionService;
+		if (this._meteredConnectionService) {
+			this._register(this._meteredConnectionService.onDidChangeIsConnectionMetered(() => {
+				if (!this._meteredConnectionService!.isConnectionMetered) {
+					this._flushMeteredBufferedEvents();
+				}
+			}));
+		}
 	}
 
 	private _withAIClient(callback: (aiCore: IAppInsightsCore) => void): void {
@@ -129,6 +154,23 @@ export abstract class AbstractOneDataSystemAppender implements ITelemetryAppende
 		if (!this._aiCoreOrKey) {
 			return;
 		}
+
+		// Buffer events when connection is metered
+		if (this._meteredConnectionService?.isConnectionMetered) {
+			if (this._meteredBufferedEvents.length < AbstractOneDataSystemAppender.MAX_BUFFER_SIZE) {
+				this._meteredBufferedEvents.push({ eventName, data });
+			}
+			return;
+		}
+
+		this._doLog(eventName, data);
+	}
+
+	private _doLog(eventName: string, data?: unknown): void {
+		if (!this._aiCoreOrKey) {
+			return;
+		}
+
 		data = mixin(data, this._defaultData);
 		const validatedData = validateTelemetryData(data);
 		const name = this._eventPrefix + '/' + eventName;
@@ -144,7 +186,17 @@ export abstract class AbstractOneDataSystemAppender implements ITelemetryAppende
 		} catch { }
 	}
 
+	private _flushMeteredBufferedEvents(): void {
+		for (const event of this._meteredBufferedEvents) {
+			this._doLog(event.eventName, event.data);
+		}
+		this._meteredBufferedEvents = [];
+	}
+
 	flush(): Promise<void> {
+		// Flush any remaining buffered events before disposing
+		this._flushMeteredBufferedEvents();
+
 		if (this._aiCoreOrKey) {
 			return new Promise(resolve => {
 				this._withAIClient((aiClient) => {
@@ -156,5 +208,10 @@ export abstract class AbstractOneDataSystemAppender implements ITelemetryAppende
 			});
 		}
 		return Promise.resolve(undefined);
+	}
+
+	override dispose(): void {
+		this.flush();
+		super.dispose();
 	}
 }

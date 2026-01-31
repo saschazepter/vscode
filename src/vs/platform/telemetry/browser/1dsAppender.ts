@@ -3,6 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import { IMeteredConnectionService } from '../../meteredConnection/common/meteredConnection.js';
 import { AbstractOneDataSystemAppender, IAppInsightsCore } from '../common/1dsAppender.js';
 
 
@@ -12,8 +13,9 @@ export class OneDataSystemWebAppender extends AbstractOneDataSystemAppender {
 		eventPrefix: string,
 		defaultData: { [key: string]: unknown } | null,
 		iKeyOrClientFactory: string | (() => IAppInsightsCore), // allow factory function for testing
+		meteredConnectionService?: IMeteredConnectionService
 	) {
-		super(isInternalTelemetry, eventPrefix, defaultData, iKeyOrClientFactory);
+		super(isInternalTelemetry, eventPrefix, defaultData, iKeyOrClientFactory, undefined, meteredConnectionService);
 
 		// If we cannot fetch the endpoint it means it is down and we should not send any telemetry.
 		// This is most likely due to ad blockers

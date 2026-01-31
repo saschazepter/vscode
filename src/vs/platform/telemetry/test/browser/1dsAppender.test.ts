@@ -30,7 +30,7 @@ suite('AIAdapter', () => {
 
 
 	teardown(() => {
-		adapter.flush();
+		adapter.dispose();
 	});
 
 	ensureNoDisposablesAreLeakedInTestSuite();
@@ -49,6 +49,7 @@ suite('AIAdapter', () => {
 	});
 
 	test('addional data', () => {
+		adapter.dispose(); // Dispose the adapter from setup before creating a new one
 		adapter = new OneDataSystemWebAppender(false, prefix, { first: '1st', second: 2, third: true }, () => appInsightsMock);
 		adapter.log('testEvent');
 

@@ -83,7 +83,7 @@ export class TelemetryService extends Disposable implements ITelemetryService {
 					};
 					appenders.push(remoteTelemetryProvider);
 				} else {
-					appenders.push(new OneDataSystemWebAppender(isInternal, 'monacoworkbench', null, productService.aiConfig?.ariaKey));
+					appenders.push(new OneDataSystemWebAppender(isInternal, 'monacoworkbench', null, productService.aiConfig?.ariaKey, meteredConnectionService));
 				}
 			}
 			appenders.push(new TelemetryLogAppender('', false, loggerService, environmentService, productService));
@@ -92,7 +92,6 @@ export class TelemetryService extends Disposable implements ITelemetryService {
 				commonProperties: resolveWorkbenchCommonProperties(storageService, productService, isInternal, environmentService.remoteAuthority, environmentService.options && environmentService.options.resolveCommonTelemetryProperties),
 				sendErrorTelemetry: this.sendErrorTelemetry,
 				waitForExperimentProperties: experimentsEnabled(configurationService, productService, environmentService),
-				meteredConnectionService,
 			};
 
 			return this._register(new BaseTelemetryService(config, configurationService, productService));

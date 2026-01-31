@@ -7,6 +7,7 @@ import type { IPayloadData, IXHROverride } from '@microsoft/1ds-post-js';
 import { streamToBuffer } from '../../../base/common/buffer.js';
 import { CancellationToken } from '../../../base/common/cancellation.js';
 import { IRequestOptions } from '../../../base/parts/request/common/request.js';
+import { IMeteredConnectionService } from '../../meteredConnection/common/meteredConnection.js';
 import { IRequestService } from '../../request/common/request.js';
 import { AbstractOneDataSystemAppender, IAppInsightsCore } from '../common/1dsAppender.js';
 
@@ -102,6 +103,7 @@ export class OneDataSystemAppender extends AbstractOneDataSystemAppender {
 		eventPrefix: string,
 		defaultData: { [key: string]: unknown } | null,
 		iKeyOrClientFactory: string | (() => IAppInsightsCore), // allow factory function for testing
+		meteredConnectionService?: IMeteredConnectionService
 	) {
 		// Override the way events get sent since node doesn't have XHTMLRequest
 		const customHttpXHROverride: IXHROverride = {
@@ -111,6 +113,6 @@ export class OneDataSystemAppender extends AbstractOneDataSystemAppender {
 			}
 		};
 
-		super(isInternalTelemetry, eventPrefix, defaultData, iKeyOrClientFactory, customHttpXHROverride);
+		super(isInternalTelemetry, eventPrefix, defaultData, iKeyOrClientFactory, customHttpXHROverride, meteredConnectionService);
 	}
 }
