@@ -1166,8 +1166,8 @@ export class NativeHostMainService extends Disposable implements INativeHostMain
 					body: options.body,
 					silent: options.silent,
 					actions: options.actions?.map(action => ({
-						type: action.type,
-						text: action.text
+						type: 'button',
+						text: action
 					}))
 				});
 

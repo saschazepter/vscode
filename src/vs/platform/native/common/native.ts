@@ -15,15 +15,12 @@ import { AuthInfo, Credentials } from '../../request/common/request.js';
 import { IPartsSplash } from '../../theme/common/themeService.js';
 import { IColorScheme, IOpenedAuxiliaryWindow, IOpenedMainWindow, IOpenEmptyWindowOptions, IOpenWindowOptions, IPoint, IRectangle, IWindowOpenable } from '../../window/common/window.js';
 
-export interface IOSToastAction {
-	readonly type: 'button';
-	readonly text: string;
-}
-
 export interface IOSToastOptions {
 	readonly title: string;
 	readonly body?: string;
-	readonly actions?: readonly IOSToastAction[];
+
+	readonly actions?: readonly string[];
+
 	readonly silent?: boolean;
 }
 

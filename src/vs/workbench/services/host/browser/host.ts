@@ -11,15 +11,12 @@ import { IWindowOpenable, IOpenWindowOptions, IOpenEmptyWindowOptions, IPoint, I
 
 export const IHostService = createDecorator<IHostService>('hostService');
 
-export interface IOSToastAction {
-	readonly type: 'button';
-	readonly text: string;
-}
-
 export interface IOSToastOptions {
 	readonly title: string;
 	readonly body?: string;
-	readonly actions?: readonly IOSToastAction[];
+
+	readonly actions?: readonly string[];
+
 	readonly silent?: boolean;
 }
 

@@ -107,10 +107,7 @@ export class ChatWindowNotifier extends Disposable implements IWorkbenchContribu
 			const result = await this._hostService.showOSToast({
 				title: notificationTitle,
 				body: info.detail ?? localize('notificationDetail', "Approval needed to continue."),
-				actions: [
-					{ type: 'button', text: localize('approveAction', "Approve") },
-					{ type: 'button', text: localize('showChat', "Show") }
-				]
+				actions: [localize('approveAction', "Approve"), localize('showChat', "Show")],
 			});
 
 			if (cts.token.isCancellationRequested) {
