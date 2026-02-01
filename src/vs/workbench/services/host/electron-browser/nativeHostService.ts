@@ -228,8 +228,6 @@ class WorkbenchHostService extends Disposable implements IHostService {
 
 		// Try native OS notifications first
 		const result = await this.nativeHostService.showOSToast(options);
-
-		// If native notifications are supported, return the result
 		if (result.supported) {
 			return result;
 		}

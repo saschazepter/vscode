@@ -96,10 +96,9 @@ export class ChatWindowNotifier extends Disposable implements IWorkbenchContribu
 		const cts = new CancellationTokenSource();
 		this._activeNotifications.set(sessionResource, toDisposable(() => cts.dispose(true)));
 
-		// Clear notification when window gains focus
 		const focusListener = this._hostService.onDidChangeFocus(focus => {
 			if (focus) {
-				this._clearNotification(sessionResource);
+				this._clearNotification(sessionResource); // Clear notification when window gains focus
 			}
 		});
 
@@ -121,7 +120,6 @@ export class ChatWindowNotifier extends Disposable implements IWorkbenchContribu
 				widget?.focusInput();
 
 				if (result.actionIndex === 0) {
-					// Trigger the accept tool confirmation command
 					await this._commandService.executeCommand(AcceptToolConfirmationActionId);
 				}
 			}
