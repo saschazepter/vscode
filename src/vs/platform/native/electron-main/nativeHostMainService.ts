@@ -1155,31 +1155,42 @@ export class NativeHostMainService extends Disposable implements INativeHostMain
 	//#region Toast Notifications
 
 	async showOSToast(windowId: number | undefined, options: IOSToastOptions): Promise<IOSToastResult> {
+
+		// Check if notifications are supported (can be unsupported on some Linux environments)
+		if (!Notification.isSupported()) {
+			return { supported: false, clicked: false };
+		}
+
 		return new Promise<IOSToastResult>(resolve => {
-			const notification = new Notification({
-				title: options.title,
-				body: options.body,
-				silent: options.silent,
-				actions: options.actions?.map(action => ({
-					type: action.type,
-					text: action.text
-				}))
-			});
+			try {
+				const notification = new Notification({
+					title: options.title,
+					body: options.body,
+					silent: options.silent,
+					actions: options.actions?.map(action => ({
+						type: action.type,
+						text: action.text
+					}))
+				});
 
-			let resolved = false;
-			const resolveOnce = (result: IOSToastResult) => {
-				if (!resolved) {
-					resolved = true;
-					notification.removeAllListeners();
-					resolve(result);
-				}
-			};
+				let resolved = false;
+				const resolveOnce = (result: IOSToastResult) => {
+					if (!resolved) {
+						resolved = true;
+						notification.removeAllListeners();
+						resolve(result);
+					}
+				};
 
-			notification.on('click', () => resolveOnce({ clicked: true }));
-			notification.on('action', (_event, actionIndex) => resolveOnce({ clicked: false, actionIndex }));
-			notification.on('close', () => resolveOnce({ clicked: false }));
+				notification.on('click', () => resolveOnce({ supported: true, clicked: true }));
+				notification.on('action', (_event, actionIndex) => resolveOnce({ supported: true, clicked: false, actionIndex }));
+				notification.on('close', () => resolveOnce({ supported: true, clicked: false }));
+				notification.on('failed', () => resolveOnce({ supported: false, clicked: false }));
 
-			notification.show();
+				notification.show();
+			} catch {
+				resolve({ supported: false, clicked: false });
+			}
 		});
 	}
 

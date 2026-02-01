@@ -24,6 +24,7 @@ export interface IToastOptions {
 }
 
 export interface IToastResult {
+	readonly supported: boolean;
 	readonly clicked: boolean;
 	readonly actionIndex?: number;
 }

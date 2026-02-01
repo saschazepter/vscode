@@ -739,7 +739,7 @@ export class BrowserHostService extends Disposable implements IHostService {
 		return new Promise<IToastResult>(resolve => {
 			Event.once(notification.onClick)(() => {
 				notification.dispose();
-				resolve({ clicked: true });
+				resolve({ supported: true, clicked: true });
 			});
 		});
 	}

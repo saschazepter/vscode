@@ -14,7 +14,7 @@ import { Disposable } from '../../../../base/common/lifecycle.js';
 import { NativeHostService } from '../../../../platform/native/common/nativeHostService.js';
 import { INativeWorkbenchEnvironmentService } from '../../environment/electron-browser/environmentService.js';
 import { IMainProcessService } from '../../../../platform/ipc/common/mainProcessService.js';
-import { disposableWindowInterval, getActiveDocument, getWindowId, getWindowsCount, hasWindow, onDidRegisterWindow } from '../../../../base/browser/dom.js';
+import { disposableWindowInterval, getActiveDocument, getWindowId, getWindowsCount, hasWindow, onDidRegisterWindow, triggerNotification } from '../../../../base/browser/dom.js';
 import { memoize } from '../../../../base/common/decorators.js';
 import { isAuxiliaryWindow } from '../../../../base/browser/window.js';
 import { VSBuffer } from '../../../../base/common/buffer.js';
@@ -223,8 +223,31 @@ class WorkbenchHostService extends Disposable implements IHostService {
 
 	//#region Toast Notifications
 
-	showToast(options: IToastOptions): Promise<IToastResult> {
-		return this.nativeHostService.showOSToast(options);
+	async showToast(options: IToastOptions): Promise<IToastResult | undefined> {
+		// Try native OS notifications first
+		const result = await this.nativeHostService.showOSToast(options);
+
+		// If native notifications are supported, return the result
+		if (result.supported) {
+			return result;
+		}
+
+		// Fallback to browser notifications (e.g., when native notifications are not supported on Linux)
+		const notification = await triggerNotification(options.title, {
+			detail: options.body,
+			sticky: !options.silent
+		});
+
+		if (!notification) {
+			return undefined;
+		}
+
+		return new Promise<IToastResult>(resolve => {
+			notification.onClick(() => {
+				notification.dispose();
+				resolve({ supported: true, clicked: true });
+			});
+		});
 	}
 
 	//#endregion
