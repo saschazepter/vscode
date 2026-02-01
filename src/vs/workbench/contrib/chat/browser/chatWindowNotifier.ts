@@ -119,7 +119,7 @@ export class ChatWindowNotifier extends Disposable implements IWorkbenchContribu
 				const widget = await this._chatWidgetService.openSession(sessionResource);
 				widget?.focusInput();
 
-				if (result.actionIndex === 0) {
+				if (result.actionIndex === 0 /* Approve */) {
 					await this._commandService.executeCommand(AcceptToolConfirmationActionId, { sessionResource } satisfies IToolConfirmationActionContext);
 				}
 			}

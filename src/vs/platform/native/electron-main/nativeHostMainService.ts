@@ -1182,7 +1182,7 @@ export class NativeHostMainService extends Disposable implements INativeHostMain
 				};
 
 				notification.on('click', () => resolveOnce({ supported: true, clicked: true }));
-				notification.on('action', (_event, actionIndex) => resolveOnce({ supported: true, clicked: false, actionIndex }));
+				notification.on('action', (_event, actionIndex) => resolveOnce({ supported: true, clicked: true, actionIndex }));
 				notification.on('close', () => resolveOnce({ supported: true, clicked: false }));
 				notification.on('failed', () => resolveOnce({ supported: false, clicked: false }));
 
