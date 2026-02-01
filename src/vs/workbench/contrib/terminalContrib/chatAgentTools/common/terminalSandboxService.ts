@@ -197,7 +197,7 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 			this._needsForceUpdateConfigFile = true;
 			const remoteEnv = this._remoteEnvDetails;
 			if (remoteEnv) {
-				this._tempDir = remoteEnv.userHome;
+				this._tempDir = URI.file(this._pathJoin(this._appRoot, 'vscode-sandbox-tmp'));
 			} else {
 				const environmentService = this._environmentService as IEnvironmentService & { tmpDir?: URI };
 				this._tempDir = environmentService.tmpDir;
