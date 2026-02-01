@@ -1154,6 +1154,8 @@ export class NativeHostMainService extends Disposable implements INativeHostMain
 
 	//#region Toast Notifications
 
+	private readonly activeToasts = new Set<Notification>();
+
 	async showOSToast(windowId: number | undefined, options: IOSToastOptions): Promise<IOSToastResult> {
 		if (!Notification.isSupported()) {
 			return { supported: false, clicked: false };
@@ -1171,10 +1173,13 @@ export class NativeHostMainService extends Disposable implements INativeHostMain
 					}))
 				});
 
+				this.activeToasts.add(notification);
+
 				let resolved = false;
 				const resolveOnce = (result: IOSToastResult) => {
 					if (!resolved) {
 						resolved = true;
+						this.activeToasts.delete(notification);
 						notification.removeAllListeners();
 
 						resolve(result);
@@ -1191,6 +1196,13 @@ export class NativeHostMainService extends Disposable implements INativeHostMain
 				resolve({ supported: false, clicked: false });
 			}
 		});
+	}
+
+	async clearOSToasts(): Promise<void> {
+		for (const toast of this.activeToasts) {
+			toast.close();
+		}
+		this.activeToasts.clear();
 	}
 
 	//#endregion

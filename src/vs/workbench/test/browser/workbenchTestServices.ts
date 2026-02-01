@@ -1366,6 +1366,8 @@ export class TestHostService implements IHostService {
 
 	async showOSToast(_options: IOSToastOptions): Promise<IOSToastResult> { return { supported: false, clicked: false }; }
 
+	async clearOSToasts(): Promise<void> { }
+
 	readonly colorScheme = ColorScheme.DARK;
 	onDidChangeColorScheme = Event.None;
 }

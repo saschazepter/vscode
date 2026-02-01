@@ -257,6 +257,11 @@ export interface ICommonNativeHostService {
 	 */
 	showOSToast(options: IOSToastOptions): Promise<IOSToastResult>;
 
+	/**
+	 * Clear all active OS toast notifications.
+	 */
+	clearOSToasts(): Promise<void>;
+
 	// Zip
 	/**
 	 * Creates a zip file at the specified path containing the provided files.

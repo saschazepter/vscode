@@ -168,5 +168,10 @@ export interface IHostService {
 	 */
 	showOSToast(options: IOSToastOptions, token: CancellationToken): Promise<IOSToastResult>;
 
+	/**
+	 * Clear all active OS-level toast notifications.
+	 */
+	clearOSToasts(): Promise<void>;
+
 	//#endregion
 }

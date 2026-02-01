@@ -14,7 +14,7 @@ import { Disposable } from '../../../../base/common/lifecycle.js';
 import { NativeHostService } from '../../../../platform/native/common/nativeHostService.js';
 import { INativeWorkbenchEnvironmentService } from '../../environment/electron-browser/environmentService.js';
 import { IMainProcessService } from '../../../../platform/ipc/common/mainProcessService.js';
-import { disposableWindowInterval, getActiveDocument, getWindowId, getWindowsCount, hasWindow, onDidRegisterWindow, triggerNotification } from '../../../../base/browser/dom.js';
+import { INotification, disposableWindowInterval, getActiveDocument, getWindowId, getWindowsCount, hasWindow, onDidRegisterWindow, triggerNotification } from '../../../../base/browser/dom.js';
 import { memoize } from '../../../../base/common/decorators.js';
 import { isAuxiliaryWindow } from '../../../../base/browser/window.js';
 import { VSBuffer } from '../../../../base/common/buffer.js';
@@ -224,6 +224,8 @@ class WorkbenchHostService extends Disposable implements IHostService {
 
 	//#region Toast Notifications
 
+	private readonly activeToasts = new Set<INotification>();
+
 	async showOSToast(options: IOSToastOptions, token: CancellationToken): Promise<IOSToastResult> {
 
 		// Try native OS notifications first
@@ -242,19 +244,38 @@ class WorkbenchHostService extends Disposable implements IHostService {
 			return { supported: false, clicked: false };
 		}
 
+		this.activeToasts.add(notification);
+
 		return new Promise<IOSToastResult>(resolve => {
-			token.onCancellationRequested(() => {
+			const cleanup = () => {
+				this.activeToasts.delete(notification);
 				notification.dispose();
+			};
+
+			token.onCancellationRequested(() => {
+				cleanup();
 
 				resolve({ supported: true, clicked: false });
 			});
 
 			notification.onClick(() => {
-				notification.dispose();
+				cleanup();
 
 				resolve({ supported: true, clicked: true });
 			});
 		});
+	}
+
+	async clearOSToasts(): Promise<void> {
+
+		// Clear native OS notifications
+		await this.nativeHostService.clearOSToasts();
+
+		// Clear browser fallback notifications
+		for (const toast of this.activeToasts) {
+			toast.dispose();
+		}
+		this.activeToasts.clear();
 	}
 
 	//#endregion

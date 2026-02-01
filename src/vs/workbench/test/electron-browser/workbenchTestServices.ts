@@ -177,6 +177,7 @@ export class TestNativeHostService implements INativeHostService {
 	async profileRenderer(): Promise<any> { throw new Error(); }
 	async getScreenshot(rect?: IRectangle): Promise<VSBuffer | undefined> { return undefined; }
 	showOSToast(options: IOSToastOptions): Promise<IOSToastResult> { throw new Error('Method not implemented.'); }
+	async clearOSToasts(): Promise<void> { }
 }
 
 export class TestExtensionTipsService extends AbstractNativeExtensionTipsService {

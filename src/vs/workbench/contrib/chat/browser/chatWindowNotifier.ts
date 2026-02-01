@@ -99,6 +99,7 @@ export class ChatWindowNotifier extends Disposable implements IWorkbenchContribu
 		const focusListener = this._hostService.onDidChangeFocus(focus => {
 			if (focus) {
 				this._clearNotification(sessionResource); // Clear notification when window gains focus
+				this._hostService.clearOSToasts(); // Clear all OS toasts
 			}
 		});
 

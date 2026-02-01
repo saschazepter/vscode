@@ -15,7 +15,7 @@ import { whenEditorClosed } from '../../../browser/editor.js';
 import { IWorkspace, IWorkspaceProvider } from '../../../browser/web.api.js';
 import { IFileService } from '../../../../platform/files/common/files.js';
 import { ILabelService, Verbosity } from '../../../../platform/label/common/label.js';
-import { EventType, ModifierKeyEmitter, addDisposableListener, addDisposableThrottledListener, detectFullscreen, disposableWindowInterval, getActiveDocument, getActiveWindow, getWindowId, onDidRegisterWindow, trackFocus, triggerNotification, getWindows as getDOMWindows } from '../../../../base/browser/dom.js';
+import { EventType, INotification, ModifierKeyEmitter, addDisposableListener, addDisposableThrottledListener, detectFullscreen, disposableWindowInterval, getActiveDocument, getActiveWindow, getWindowId, onDidRegisterWindow, trackFocus, triggerNotification, getWindows as getDOMWindows } from '../../../../base/browser/dom.js';
 import { Disposable, DisposableStore, toDisposable } from '../../../../base/common/lifecycle.js';
 import { IBrowserWorkbenchEnvironmentService } from '../../environment/browser/environmentService.js';
 import { memoize } from '../../../../base/common/decorators.js';
@@ -727,6 +727,8 @@ export class BrowserHostService extends Disposable implements IHostService {
 
 	//#region Toast Notifications
 
+	private readonly activeToasts = new Set<INotification>();
+
 	async showOSToast(options: IOSToastOptions, token: CancellationToken): Promise<IOSToastResult> {
 		const notification = await triggerNotification(options.title, {
 			detail: options.body,
@@ -737,17 +739,33 @@ export class BrowserHostService extends Disposable implements IHostService {
 			return { supported: false, clicked: false };
 		}
 
+		this.activeToasts.add(notification);
+
 		return new Promise<IOSToastResult>(resolve => {
+			const cleanup = () => {
+				this.activeToasts.delete(notification);
+				notification.dispose();
+			};
+
 			token.onCancellationRequested(() => {
+				cleanup();
+
 				resolve({ supported: true, clicked: false });
 			});
 
 			Event.once(notification.onClick)(() => {
-				notification.dispose();
+				cleanup();
 
 				resolve({ supported: true, clicked: true });
 			});
 		});
+	}
+
+	async clearOSToasts(): Promise<void> {
+		for (const toast of this.activeToasts) {
+			toast.dispose();
+		}
+		this.activeToasts.clear();
 	}
 
 	//#endregion
