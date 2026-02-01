@@ -30,6 +30,7 @@ export interface ITerminalSandboxService {
 	getSandboxConfigPath(forceRefresh?: boolean): Promise<string | undefined>;
 	getTempDir(): URI | undefined;
 	setNeedsForceUpdateConfigFile(): void;
+	cleanupSandboxConfigFiles(): Promise<void>;
 }
 
 export class TerminalSandboxService extends Disposable implements ITerminalSandboxService {
@@ -41,6 +42,7 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 	private _needsForceUpdateConfigFile = true;
 	private _tempDir: URI | undefined;
 	private _sandboxSettingsId: string | undefined;
+	private _sandboxConfigResource: URI | undefined;
 	private _remoteEnvDetailsPromise: Promise<IRemoteAgentEnvironment | null>;
 	private _remoteEnvDetails: IRemoteAgentEnvironment | null = null;
 	private _appRoot: string;
@@ -111,6 +113,21 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 		this._needsForceUpdateConfigFile = true;
 	}
 
+	public async cleanupSandboxConfigFiles(): Promise<void> {
+		if (!this._sandboxConfigResource) {
+			return;
+		}
+
+		const resource = this._sandboxConfigResource;
+		this._sandboxConfigResource = undefined;
+		this._sandboxConfigPath = undefined;
+		try {
+			await this._fileService.del(resource);
+		} catch (error) {
+			this._logService.warn(`TerminalSandboxService: Failed to delete sandbox settings file ${resource.toString()}: ${error}`);
+		}
+	}
+
 	public async getSandboxConfigPath(forceRefresh: boolean = false): Promise<string | undefined> {
 		await this._resolveSrtPath();
 		if (!this._sandboxConfigPath || forceRefresh || this._needsForceUpdateConfigFile) {
@@ -150,6 +167,7 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 				? this._configurationService.getValue<ITerminalSandboxSettings['filesystem']>(TerminalChatAgentToolsSettingId.TerminalSandboxMacFileSystem) ?? {}
 				: {};
 			const configFilePath = this._pathJoin(this._tempDir.fsPath, `vscode-sandbox-settings-${this._sandboxSettingsId}.json`);
+			const configFileResource = URI.file(configFilePath);
 			const sandboxSettings = {
 				network: {
 					allowedDomains: networkSetting.allowedDomains ?? [],
@@ -162,7 +180,8 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 				}
 			};
 			this._sandboxConfigPath = configFilePath;
-			await this._fileService.createFile(URI.file(configFilePath), VSBuffer.fromString(JSON.stringify(sandboxSettings, null, '\t')), { overwrite: true });
+			this._sandboxConfigResource = configFileResource;
+			await this._fileService.createFile(configFileResource, VSBuffer.fromString(JSON.stringify(sandboxSettings, null, '\t')), { overwrite: true });
 			return this._sandboxConfigPath;
 		}
 		return undefined;
