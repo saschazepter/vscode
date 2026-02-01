@@ -150,8 +150,8 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 			const macFileSystemSetting = os === OperatingSystem.Macintosh
 				? this._configurationService.getValue<ITerminalSandboxSettings['filesystem']>(TerminalChatAgentToolsSettingId.TerminalSandboxMacFileSystem) ?? {}
 				: {};
-			const configFilePath = this._pathJoin(this._tempDir.path, `vscode-sandbox-settings-${this._sandboxSettingsId}.json`);
-			const configFileResource = URI.file(configFilePath);
+			const configFileResource = URI.joinPath(this._tempDir, `vscode-sandbox-settings-${this._sandboxSettingsId}.json`);
+			const configFilePath = configFileResource.path;
 			const sandboxSettings = {
 				network: {
 					allowedDomains: networkSetting.allowedDomains ?? [],
