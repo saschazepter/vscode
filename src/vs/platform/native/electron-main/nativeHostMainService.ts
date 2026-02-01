@@ -10,7 +10,7 @@ import { arch, cpus, freemem, loadavg, platform, release, totalmem, type } from 
 import { promisify } from 'util';
 import { memoize } from '../../../base/common/decorators.js';
 import { Emitter, Event } from '../../../base/common/event.js';
-import { Disposable } from '../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore, toDisposable } from '../../../base/common/lifecycle.js';
 import { matchesSomeScheme, Schemas } from '../../../base/common/network.js';
 import { dirname, join, posix, resolve, win32 } from '../../../base/common/path.js';
 import { isLinux, isMacintosh, isWindows } from '../../../base/common/platform.js';
@@ -48,6 +48,7 @@ import { IConfigurationService } from '../../configuration/common/configuration.
 import { IProxyAuthService } from './auth.js';
 import { AuthInfo, Credentials, IRequestService } from '../../request/common/request.js';
 import { randomPath } from '../../../base/common/extpath.js';
+import { CancellationTokenSource } from '../../../base/common/cancellation.js';
 
 export interface INativeHostMainService extends AddFirstParameterToFunctions<ICommonNativeHostService, Promise<unknown> /* only methods, not events */, number | undefined /* window ID */> { }
 
@@ -1154,47 +1155,60 @@ export class NativeHostMainService extends Disposable implements INativeHostMain
 
 	//#region Toast Notifications
 
-	private readonly activeToasts = new Set<Notification>();
+	private readonly activeOSToasts = new Set<DisposableStore>();
 
 	async showOSToast(windowId: number | undefined, options: IOSToastOptions): Promise<IOSToastResult> {
 		if (!Notification.isSupported()) {
 			return { supported: false, clicked: false };
 		}
 
+		const notification = new Notification({
+			title: this.sanitizeOSToastText(options.title),
+			body: this.sanitizeOSToastText(options.body),
+			silent: options.silent,
+			actions: options.actions?.map(action => ({
+				type: 'button',
+				text: action
+			}))
+		});
+
+		const disposables = new DisposableStore();
+		this.activeOSToasts.add(disposables);
+
+		const cts = new CancellationTokenSource();
+		disposables.add(toDisposable(() => cts.dispose(true)));
+		disposables.add(toDisposable(() => notification.close()));
+
 		return new Promise<IOSToastResult>(resolve => {
-			try {
-				const notification = new Notification({
-					title: this.sanitizeOSToastText(options.title),
-					body: this.sanitizeOSToastText(options.body),
-					silent: options.silent,
-					actions: options.actions?.map(action => ({
-						type: 'button',
-						text: action
-					}))
-				});
+			const cleanup = () => {
+				notification.removeAllListeners();
+				this.activeOSToasts.delete(disposables);
+				disposables.dispose();
+			};
 
-				this.activeToasts.add(notification);
+			cts.token.onCancellationRequested(() => {
+				cleanup();
+				resolve({ supported: true, clicked: false });
+			});
 
-				let resolved = false;
-				const resolveOnce = (result: IOSToastResult) => {
-					if (!resolved) {
-						resolved = true;
-						this.activeToasts.delete(notification);
-						notification.removeAllListeners();
-
-						resolve(result);
-					}
-				};
-
-				notification.on('click', () => resolveOnce({ supported: true, clicked: true }));
-				notification.on('action', (_event, actionIndex) => resolveOnce({ supported: true, clicked: true, actionIndex }));
-				notification.on('close', () => resolveOnce({ supported: true, clicked: false }));
-				notification.on('failed', () => resolveOnce({ supported: false, clicked: false }));
-
-				notification.show();
-			} catch {
+			notification.on('click', () => {
+				cleanup();
+				resolve({ supported: true, clicked: true });
+			});
+			notification.on('action', (_event, actionIndex) => {
+				cleanup();
+				resolve({ supported: true, clicked: true, actionIndex });
+			});
+			notification.on('close', () => {
+				cleanup();
+				resolve({ supported: true, clicked: false });
+			});
+			notification.on('failed', () => {
+				cleanup();
 				resolve({ supported: false, clicked: false });
-			}
+			});
+
+			notification.show();
 		});
 	}
 
@@ -1202,14 +1216,15 @@ export class NativeHostMainService extends Disposable implements INativeHostMain
 		if (!text) {
 			return text;
 		}
+
 		return text.replace(/`/g, '\''); // convert backticks to single quotes
 	}
 
 	async clearOSToasts(): Promise<void> {
-		for (const toast of this.activeToasts) {
-			toast.close();
+		for (const toast of this.activeOSToasts) {
+			toast.dispose();
 		}
-		this.activeToasts.clear();
+		this.activeOSToasts.clear();
 	}
 
 	//#endregion
