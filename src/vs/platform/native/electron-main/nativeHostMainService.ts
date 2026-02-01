@@ -1155,8 +1155,6 @@ export class NativeHostMainService extends Disposable implements INativeHostMain
 	//#region Toast Notifications
 
 	async showOSToast(windowId: number | undefined, options: IOSToastOptions): Promise<IOSToastResult> {
-
-		// Check if notifications are supported (can be unsupported on some Linux environments)
 		if (!Notification.isSupported()) {
 			return { supported: false, clicked: false };
 		}
@@ -1178,6 +1176,7 @@ export class NativeHostMainService extends Disposable implements INativeHostMain
 					if (!resolved) {
 						resolved = true;
 						notification.removeAllListeners();
+
 						resolve(result);
 					}
 				};
