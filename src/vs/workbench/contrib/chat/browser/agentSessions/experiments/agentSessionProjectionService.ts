@@ -15,7 +15,7 @@ import { IEditorGroupsService, IEditorWorkingSet } from '../../../../../services
 import { IEditorService } from '../../../../../services/editor/common/editorService.js';
 import { ICommandService } from '../../../../../../platform/commands/common/commands.js';
 import { IAgentSession, isSessionInProgressStatus } from '../agentSessionsModel.js';
-import { ChatViewPaneTarget, IChatWidgetService } from '../../chat.js';
+import { IChatWidgetService } from '../../chat.js';
 import { AgentSessionProviders } from '../agentSessions.js';
 import { IChatSessionsService } from '../../../common/chatSessionsService.js';
 import { IWorkbenchLayoutService, Parts } from '../../../../../services/layout/browser/layoutService.js';
@@ -180,7 +180,7 @@ export class AgentSessionProjectionService extends Disposable implements IAgentS
 	private async _openSessionInChatPanel(session: IAgentSession): Promise<void> {
 		session.setRead(true);
 		await this.chatSessionsService.activateChatSessionItemProvider(session.providerType);
-		await this.chatWidgetService.openSession(session.resource, ChatViewPaneTarget, {
+		await this.chatWidgetService.openSession(session.resource, undefined, {
 			title: { preferred: session.label },
 			revealIfOpened: true
 		});

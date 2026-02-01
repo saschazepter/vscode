@@ -109,7 +109,7 @@ export class ChatWidgetService extends Disposable implements IChatWidgetService 
 		}
 
 		// Load this session in chat view
-		if (target === ChatViewPaneTarget) {
+		if (target === ChatViewPaneTarget || typeof target === 'undefined') {
 			const chatView = await this.viewsService.openView<ChatViewPane>(ChatViewId, !options?.preserveFocus);
 			if (chatView) {
 				await chatView.loadSession(sessionResource);

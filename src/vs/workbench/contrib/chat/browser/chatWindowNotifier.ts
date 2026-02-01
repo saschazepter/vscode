@@ -18,7 +18,7 @@ import { IHostService } from '../../../services/host/browser/host.js';
 import { IChatModel, IChatRequestNeedsInputInfo } from '../common/model/chatModel.js';
 import { IChatService } from '../common/chatService/chatService.js';
 import { IChatWidgetService } from './chat.js';
-import { AcceptToolConfirmationActionId } from './actions/chatToolActions.js';
+import { AcceptToolConfirmationActionId, IToolConfirmationActionContext } from './actions/chatToolActions.js';
 
 /**
  * Observes all live chat models and triggers OS notifications when any model
