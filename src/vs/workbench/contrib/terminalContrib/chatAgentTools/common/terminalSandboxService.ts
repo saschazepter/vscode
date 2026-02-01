@@ -148,8 +148,9 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 		if (!remoteEnv) {
 			return;
 		}
-		this._execPath = this._pathJoin(remoteEnv.appRoot.path, 'node');
-		this._srtPath = this._pathJoin(remoteEnv.appRoot.path, 'node_modules', '@anthropic-ai', 'sandbox-runtime', 'dist', 'cli.js');
+		this._appRoot = remoteEnv.appRoot.path;
+		this._execPath = this._pathJoin(this._appRoot, 'node');
+		this._srtPath = this._pathJoin(this._appRoot, 'node_modules', '@anthropic-ai', 'sandbox-runtime', 'dist', 'cli.js');
 	}
 
 	private async _createSandboxConfig(): Promise<string | undefined> {
@@ -197,7 +198,7 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 			this._needsForceUpdateConfigFile = true;
 			const remoteEnv = this._remoteEnvDetails;
 			if (remoteEnv) {
-				this._tempDir = URI.file(this._pathJoin(this._appRoot, 'vscode-sandbox-tmp'));
+				this._tempDir = remoteEnv.appRoot;
 			} else {
 				const environmentService = this._environmentService as IEnvironmentService & { tmpDir?: URI };
 				this._tempDir = environmentService.tmpDir;
