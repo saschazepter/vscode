@@ -13,7 +13,6 @@ import { ContextKeyExpr } from '../../../../../platform/contextkey/common/contex
 import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
 import { TerminalSettingId } from '../../../../../platform/terminal/common/terminal.js';
 import { registerWorkbenchContribution2, WorkbenchPhase, type IWorkbenchContribution } from '../../../../common/contributions.js';
-import { ILifecycleService } from '../../../../services/lifecycle/common/lifecycle.js';
 import { IChatWidgetService } from '../../../chat/browser/chat.js';
 import { ChatContextKeys } from '../../../chat/common/actions/chatContextKeys.js';
 import { ILanguageModelToolsService } from '../../../chat/common/tools/languageModelToolsService.js';
@@ -75,24 +74,6 @@ class OutputLocationMigrationContribution extends Disposable implements IWorkben
 	}
 }
 registerWorkbenchContribution2(OutputLocationMigrationContribution.ID, OutputLocationMigrationContribution, WorkbenchPhase.Eventually);
-
-class TerminalSandboxCleanupContribution extends Disposable implements IWorkbenchContribution {
-	static readonly ID = 'terminal.sandboxCleanup';
-
-	constructor(
-		@ILifecycleService lifecycleService: ILifecycleService,
-		@ITerminalSandboxService sandboxService: ITerminalSandboxService,
-	) {
-		super();
-		this._register(lifecycleService.onWillShutdown(e => {
-			e.join(sandboxService.cleanupSandboxConfigFiles(), {
-				id: 'join.terminalSandboxCleanup',
-				label: localize('terminalSandboxCleanup', 'Cleaning Up Terminal Sandbox Files')
-			});
-		}));
-	}
-}
-registerWorkbenchContribution2(TerminalSandboxCleanupContribution.ID, TerminalSandboxCleanupContribution, WorkbenchPhase.Eventually);
 
 class ChatAgentToolsContribution extends Disposable implements IWorkbenchContribution {
 
