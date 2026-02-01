@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { VSBuffer } from '../../../../base/common/buffer.js';
+import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { Event } from '../../../../base/common/event.js';
 import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
 import { FocusMode } from '../../../../platform/native/common/native.js';
@@ -165,7 +166,7 @@ export interface IHostService {
 	/**
 	 * Show an OS-level toast notification.
 	 */
-	showOSToast(options: IOSToastOptions): Promise<IOSToastResult>;
+	showOSToast(options: IOSToastOptions, token: CancellationToken): Promise<IOSToastResult>;
 
 	//#endregion
 }

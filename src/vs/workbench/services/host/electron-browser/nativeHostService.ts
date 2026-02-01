@@ -18,6 +18,7 @@ import { disposableWindowInterval, getActiveDocument, getWindowId, getWindowsCou
 import { memoize } from '../../../../base/common/decorators.js';
 import { isAuxiliaryWindow } from '../../../../base/browser/window.js';
 import { VSBuffer } from '../../../../base/common/buffer.js';
+import { CancellationToken } from '../../../../base/common/cancellation.js';
 
 class WorkbenchNativeHostService extends NativeHostService {
 
@@ -223,7 +224,7 @@ class WorkbenchHostService extends Disposable implements IHostService {
 
 	//#region Toast Notifications
 
-	async showOSToast(options: IOSToastOptions): Promise<IOSToastResult> {
+	async showOSToast(options: IOSToastOptions, token: CancellationToken): Promise<IOSToastResult> {
 
 		// Try native OS notifications first
 		const result = await this.nativeHostService.showOSToast(options);
@@ -244,6 +245,10 @@ class WorkbenchHostService extends Disposable implements IHostService {
 		}
 
 		return new Promise<IOSToastResult>(resolve => {
+			token.onCancellationRequested(() => {
+				resolve({ supported: true, clicked: false });
+			});
+
 			notification.onClick(() => {
 				notification.dispose();
 

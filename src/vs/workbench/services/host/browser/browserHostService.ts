@@ -43,6 +43,7 @@ import { IUserDataProfilesService } from '../../../../platform/userDataProfile/c
 import { URI } from '../../../../base/common/uri.js';
 import { VSBuffer } from '../../../../base/common/buffer.js';
 import { MarkdownString } from '../../../../base/common/htmlContent.js';
+import { CancellationToken } from '../../../../base/common/cancellation.js';
 
 enum HostShutdownReason {
 
@@ -726,7 +727,7 @@ export class BrowserHostService extends Disposable implements IHostService {
 
 	//#region Toast Notifications
 
-	async showOSToast(options: IOSToastOptions): Promise<IOSToastResult> {
+	async showOSToast(options: IOSToastOptions, token: CancellationToken): Promise<IOSToastResult> {
 		const notification = await triggerNotification(options.title, {
 			detail: options.body,
 			sticky: !options.silent
@@ -737,6 +738,10 @@ export class BrowserHostService extends Disposable implements IHostService {
 		}
 
 		return new Promise<IOSToastResult>(resolve => {
+			token.onCancellationRequested(() => {
+				resolve({ supported: true, clicked: false });
+			});
+
 			Event.once(notification.onClick)(() => {
 				notification.dispose();
 

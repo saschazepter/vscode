@@ -81,7 +81,7 @@ export class ChatWindowNotifier extends Disposable implements IWorkbenchContribu
 
 		// Only notify if window doesn't have focus
 		if (targetWindow.document.hasFocus()) {
-			// return;
+			return;
 		}
 
 		// Clear any existing notification for this session
@@ -90,7 +90,7 @@ export class ChatWindowNotifier extends Disposable implements IWorkbenchContribu
 		// Focus window in notify mode (flash taskbar/dock)
 		await this._hostService.focus(targetWindow, { mode: FocusMode.Notify });
 
-		// Create OS notification using native host service
+		// Create OS notification
 		const notificationTitle = info.title ? localize('chatTitle', "Chat: {0}", info.title) : localize('chat.untitledChat', "Untitled Chat");
 
 		const cts = new CancellationTokenSource();
@@ -108,28 +108,22 @@ export class ChatWindowNotifier extends Disposable implements IWorkbenchContribu
 				title: notificationTitle,
 				body: info.detail ?? localize('notificationDetail', "Approval needed to continue."),
 				actions: [localize('approveAction', "Approve"), localize('showChat', "Show")],
-			});
+			}, cts.token);
 
 			if (cts.token.isCancellationRequested) {
 				return;
 			}
 
-			// Handle "Approve" button click - approve the confirmation directly
-			if (result?.actionIndex === 0) {
+			if (result.clicked || typeof result.actionIndex === 'number') {
 				await this._hostService.focus(targetWindow, { mode: FocusMode.Force });
 
 				const widget = await this._chatWidgetService.openSession(sessionResource);
 				widget?.focusInput();
 
-				// Trigger the accept tool confirmation command
-				await this._commandService.executeCommand(AcceptToolConfirmationActionId);
-			}
-			// Handle "Show" button or notification body click - focus window and reveal chat
-			else if (result?.clicked || result?.actionIndex === 1) {
-				await this._hostService.focus(targetWindow, { mode: FocusMode.Force });
-
-				const widget = await this._chatWidgetService.openSession(sessionResource);
-				widget?.focusInput();
+				if (result.actionIndex === 0) {
+					// Trigger the accept tool confirmation command
+					await this._commandService.executeCommand(AcceptToolConfirmationActionId);
+				}
 			}
 		} finally {
 			focusListener.dispose();
