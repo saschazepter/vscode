@@ -15,6 +15,29 @@ import { AuthInfo, Credentials } from '../../request/common/request.js';
 import { IPartsSplash } from '../../theme/common/themeService.js';
 import { IColorScheme, IOpenedAuxiliaryWindow, IOpenedMainWindow, IOpenEmptyWindowOptions, IOpenWindowOptions, IPoint, IRectangle, IWindowOpenable } from '../../window/common/window.js';
 
+export interface IOSToastAction {
+	readonly type: 'button';
+	readonly text: string;
+}
+
+export interface IOSToastOptions {
+	readonly title: string;
+	readonly body?: string;
+	readonly actions?: readonly IOSToastAction[];
+	readonly silent?: boolean;
+}
+
+export interface IOSToastResult {
+	/**
+	 * Whether the user clicked the notification body itself.
+	 */
+	readonly clicked: boolean;
+	/**
+	 * The index of the action button that was clicked, if any.
+	 */
+	readonly actionIndex?: number;
+}
+
 export interface ICPUProperties {
 	model: string;
 	speed: number;
@@ -230,6 +253,14 @@ export interface ICommonNativeHostService {
 
 	// Registry (Windows only)
 	windowsGetStringRegKey(hive: 'HKEY_CURRENT_USER' | 'HKEY_LOCAL_MACHINE' | 'HKEY_CLASSES_ROOT' | 'HKEY_USERS' | 'HKEY_CURRENT_CONFIG', path: string, name: string): Promise<string | undefined>;
+
+	// Toast Notifications
+	/**
+	 * Shows an OS toast notification with optional action buttons.
+	 * Note: Action buttons are only supported on macOS.
+	 * @returns Information about how the notification was dismissed.
+	 */
+	showOSToast(options: IOSToastOptions): Promise<IOSToastResult>;
 
 	// Zip
 	/**

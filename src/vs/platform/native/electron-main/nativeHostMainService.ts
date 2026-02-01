@@ -5,7 +5,7 @@
 
 import * as fs from 'fs';
 import { exec } from 'child_process';
-import { app, BrowserWindow, clipboard, contentTracing, Display, Menu, MessageBoxOptions, MessageBoxReturnValue, OpenDevToolsOptions, OpenDialogOptions, OpenDialogReturnValue, powerMonitor, SaveDialogOptions, SaveDialogReturnValue, screen, shell, webContents } from 'electron';
+import { app, BrowserWindow, clipboard, contentTracing, Display, Menu, MessageBoxOptions, MessageBoxReturnValue, Notification, OpenDevToolsOptions, OpenDialogOptions, OpenDialogReturnValue, powerMonitor, SaveDialogOptions, SaveDialogReturnValue, screen, shell, webContents } from 'electron';
 import { arch, cpus, freemem, loadavg, platform, release, totalmem, type } from 'os';
 import { promisify } from 'util';
 import { memoize } from '../../../base/common/decorators.js';
@@ -27,7 +27,7 @@ import { IEnvironmentMainService } from '../../environment/electron-main/environ
 import { createDecorator, IInstantiationService } from '../../instantiation/common/instantiation.js';
 import { ILifecycleMainService, IRelaunchOptions } from '../../lifecycle/electron-main/lifecycleMainService.js';
 import { ILogService } from '../../log/common/log.js';
-import { FocusMode, ICommonNativeHostService, INativeHostOptions, IOSProperties, IOSStatistics } from '../common/native.js';
+import { FocusMode, ICommonNativeHostService, INativeHostOptions, IOSProperties, IOSStatistics, IOSToastOptions, IOSToastResult } from '../common/native.js';
 import { IProductService } from '../../product/common/productService.js';
 import { IPartsSplash } from '../../theme/common/themeService.js';
 import { IThemeMainService } from '../../theme/electron-main/themeMainService.js';
@@ -1151,6 +1151,46 @@ export class NativeHostMainService extends Disposable implements INativeHostMain
 	}
 
 	// #endregion
+
+	//#region Toast Notifications
+
+	async showOSToast(windowId: number | undefined, options: IOSToastOptions): Promise<IOSToastResult> {
+		return new Promise<IOSToastResult>(resolve => {
+			const notification = new Notification({
+				title: options.title,
+				body: options.body,
+				silent: options.silent,
+				actions: options.actions?.map(action => ({
+					type: action.type,
+					text: action.text
+				}))
+			});
+
+			let resolved = false;
+			const resolveOnce = (result: IOSToastResult) => {
+				if (!resolved) {
+					resolved = true;
+					resolve(result);
+				}
+			};
+
+			notification.on('click', () => {
+				resolveOnce({ clicked: true });
+			});
+
+			notification.on('action', (_event, actionIndex) => {
+				resolveOnce({ clicked: false, actionIndex });
+			});
+
+			notification.on('close', () => {
+				resolveOnce({ clicked: false });
+			});
+
+			notification.show();
+		});
+	}
+
+	//#endregion
 
 	//#region Registry (windows)
 

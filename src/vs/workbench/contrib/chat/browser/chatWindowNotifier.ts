@@ -5,18 +5,20 @@
 
 import * as dom from '../../../../base/browser/dom.js';
 import { mainWindow } from '../../../../base/browser/window.js';
-import { Event } from '../../../../base/common/event.js';
-import { Disposable, DisposableResourceMap, DisposableStore } from '../../../../base/common/lifecycle.js';
+import { CancellationTokenSource } from '../../../../base/common/cancellation.js';
+import { Disposable, DisposableResourceMap, toDisposable } from '../../../../base/common/lifecycle.js';
 import { autorunDelta, autorunIterableDelta } from '../../../../base/common/observable.js';
 import { URI } from '../../../../base/common/uri.js';
 import { localize } from '../../../../nls.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
-import { FocusMode } from '../../../../platform/native/common/native.js';
+import { ICommandService } from '../../../../platform/commands/common/commands.js';
+import { FocusMode, INativeHostService } from '../../../../platform/native/common/native.js';
 import { IWorkbenchContribution } from '../../../common/contributions.js';
 import { IHostService } from '../../../services/host/browser/host.js';
 import { IChatModel, IChatRequestNeedsInputInfo } from '../common/model/chatModel.js';
 import { IChatService } from '../common/chatService/chatService.js';
 import { IChatWidgetService } from './chat.js';
+import { AcceptToolConfirmationActionId } from './actions/chatToolActions.js';
 
 /**
  * Observes all live chat models and triggers OS notifications when any model
@@ -33,6 +35,8 @@ export class ChatWindowNotifier extends Disposable implements IWorkbenchContribu
 		@IChatWidgetService private readonly _chatWidgetService: IChatWidgetService,
 		@IHostService private readonly _hostService: IHostService,
 		@IConfigurationService private readonly _configurationService: IConfigurationService,
+		@INativeHostService private readonly _nativeHostService: INativeHostService,
+		@ICommandService private readonly _commandService: ICommandService,
 	) {
 		super();
 
@@ -78,7 +82,7 @@ export class ChatWindowNotifier extends Disposable implements IWorkbenchContribu
 
 		// Only notify if window doesn't have focus
 		if (targetWindow.document.hasFocus()) {
-			return;
+			// return;
 		}
 
 		// Clear any existing notification for this session
@@ -87,35 +91,53 @@ export class ChatWindowNotifier extends Disposable implements IWorkbenchContribu
 		// Focus window in notify mode (flash taskbar/dock)
 		await this._hostService.focus(targetWindow, { mode: FocusMode.Notify });
 
-		// Create OS notification
+		// Create OS notification using native host service
 		const notificationTitle = info.title ? localize('chatTitle', "Chat: {0}", info.title) : localize('chat.untitledChat', "Untitled Chat");
-		const notification = await dom.triggerNotification(notificationTitle, {
-			detail: info.detail ?? localize('notificationDetail', "Approval needed to continue.")
+
+		const cts = new CancellationTokenSource();
+		this._activeNotifications.set(sessionResource, toDisposable(() => cts.dispose(true)));
+
+		// Clear notification when window gains focus
+		const focusListener = this._hostService.onDidChangeFocus(focus => {
+			if (focus) {
+				this._clearNotification(sessionResource);
+			}
 		});
 
-		if (notification) {
-			const disposables = new DisposableStore();
+		try {
+			const result = await this._nativeHostService.showOSToast({
+				title: notificationTitle,
+				body: info.detail ?? localize('notificationDetail', "Approval needed to continue."),
+				actions: [
+					{ type: 'button', text: localize('approveAction', "Approve") },
+					{ type: 'button', text: localize('showChat', "Show") }
+				]
+			});
 
-			this._activeNotifications.set(sessionResource, disposables);
+			if (cts.token.isCancellationRequested) {
+				return;
+			}
 
-			disposables.add(notification);
-
-			// Handle notification click - focus window and reveal chat
-			disposables.add(Event.once(notification.onClick)(async () => {
+			// Handle "Approve" button click - approve the confirmation directly
+			if (result.actionIndex === 0) {
 				await this._hostService.focus(targetWindow, { mode: FocusMode.Force });
 
 				const widget = await this._chatWidgetService.openSession(sessionResource);
 				widget?.focusInput();
 
-				this._clearNotification(sessionResource);
-			}));
+				// Trigger the accept tool confirmation command
+				await this._commandService.executeCommand(AcceptToolConfirmationActionId);
+			}
+			// Handle "Show" button or notification body click - focus window and reveal chat
+			else if (result.clicked || result.actionIndex === 1) {
+				await this._hostService.focus(targetWindow, { mode: FocusMode.Force });
 
-			// Clear notification when window gains focus
-			disposables.add(this._hostService.onDidChangeFocus(focus => {
-				if (focus) {
-					this._clearNotification(sessionResource);
-				}
-			}));
+				const widget = await this._chatWidgetService.openSession(sessionResource);
+				widget?.focusInput();
+			}
+		} finally {
+			focusListener.dispose();
+			this._clearNotification(sessionResource);
 		}
 	}
 
