@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Emitter, Event } from '../../../../base/common/event.js';
-import { IHostService } from './host.js';
+import { IHostService, IToastOptions, IToastResult } from './host.js';
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
 import { ILayoutService } from '../../../../platform/layout/browser/layoutService.js';
 import { IEditorService } from '../../editor/common/editorService.js';
@@ -15,7 +15,7 @@ import { whenEditorClosed } from '../../../browser/editor.js';
 import { IWorkspace, IWorkspaceProvider } from '../../../browser/web.api.js';
 import { IFileService } from '../../../../platform/files/common/files.js';
 import { ILabelService, Verbosity } from '../../../../platform/label/common/label.js';
-import { EventType, ModifierKeyEmitter, addDisposableListener, addDisposableThrottledListener, detectFullscreen, disposableWindowInterval, getActiveDocument, getActiveWindow, getWindowId, onDidRegisterWindow, trackFocus, getWindows as getDOMWindows } from '../../../../base/browser/dom.js';
+import { EventType, ModifierKeyEmitter, addDisposableListener, addDisposableThrottledListener, detectFullscreen, disposableWindowInterval, getActiveDocument, getActiveWindow, getWindowId, onDidRegisterWindow, trackFocus, triggerNotification, getWindows as getDOMWindows } from '../../../../base/browser/dom.js';
 import { Disposable, DisposableStore, toDisposable } from '../../../../base/common/lifecycle.js';
 import { IBrowserWorkbenchEnvironmentService } from '../../environment/browser/environmentService.js';
 import { memoize } from '../../../../base/common/decorators.js';
@@ -720,6 +720,28 @@ export class BrowserHostService extends Disposable implements IHostService {
 
 	async getNativeWindowHandle(_windowId: number) {
 		return undefined;
+	}
+
+	//#endregion
+
+	//#region Toast Notifications
+
+	async showToast(options: IToastOptions): Promise<IToastResult | undefined> {
+		const notification = await triggerNotification(options.title, {
+			detail: options.body,
+			sticky: !options.silent
+		});
+
+		if (!notification) {
+			return undefined;
+		}
+
+		return new Promise<IToastResult>(resolve => {
+			Event.once(notification.onClick)(() => {
+				notification.dispose();
+				resolve({ clicked: true });
+			});
+		});
 	}
 
 	//#endregion

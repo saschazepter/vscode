@@ -12,7 +12,7 @@ import { URI } from '../../../../base/common/uri.js';
 import { localize } from '../../../../nls.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
-import { FocusMode, INativeHostService } from '../../../../platform/native/common/native.js';
+import { FocusMode } from '../../../../platform/native/common/native.js';
 import { IWorkbenchContribution } from '../../../common/contributions.js';
 import { IHostService } from '../../../services/host/browser/host.js';
 import { IChatModel, IChatRequestNeedsInputInfo } from '../common/model/chatModel.js';
@@ -35,7 +35,6 @@ export class ChatWindowNotifier extends Disposable implements IWorkbenchContribu
 		@IChatWidgetService private readonly _chatWidgetService: IChatWidgetService,
 		@IHostService private readonly _hostService: IHostService,
 		@IConfigurationService private readonly _configurationService: IConfigurationService,
-		@INativeHostService private readonly _nativeHostService: INativeHostService,
 		@ICommandService private readonly _commandService: ICommandService,
 	) {
 		super();
@@ -105,7 +104,7 @@ export class ChatWindowNotifier extends Disposable implements IWorkbenchContribu
 		});
 
 		try {
-			const result = await this._nativeHostService.showOSToast({
+			const result = await this._hostService.showToast({
 				title: notificationTitle,
 				body: info.detail ?? localize('notificationDetail', "Approval needed to continue."),
 				actions: [
@@ -119,7 +118,7 @@ export class ChatWindowNotifier extends Disposable implements IWorkbenchContribu
 			}
 
 			// Handle "Approve" button click - approve the confirmation directly
-			if (result.actionIndex === 0) {
+			if (result?.actionIndex === 0) {
 				await this._hostService.focus(targetWindow, { mode: FocusMode.Force });
 
 				const widget = await this._chatWidgetService.openSession(sessionResource);
@@ -129,7 +128,7 @@ export class ChatWindowNotifier extends Disposable implements IWorkbenchContribu
 				await this._commandService.executeCommand(AcceptToolConfirmationActionId);
 			}
 			// Handle "Show" button or notification body click - focus window and reveal chat
-			else if (result.clicked || result.actionIndex === 1) {
+			else if (result?.clicked || result?.actionIndex === 1) {
 				await this._hostService.focus(targetWindow, { mode: FocusMode.Force });
 
 				const widget = await this._chatWidgetService.openSession(sessionResource);

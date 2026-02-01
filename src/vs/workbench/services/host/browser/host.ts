@@ -11,6 +11,23 @@ import { IWindowOpenable, IOpenWindowOptions, IOpenEmptyWindowOptions, IPoint, I
 
 export const IHostService = createDecorator<IHostService>('hostService');
 
+export interface IToastAction {
+	readonly type: 'button';
+	readonly text: string;
+}
+
+export interface IToastOptions {
+	readonly title: string;
+	readonly body?: string;
+	readonly actions?: readonly IToastAction[];
+	readonly silent?: boolean;
+}
+
+export interface IToastResult {
+	readonly clicked: boolean;
+	readonly actionIndex?: number;
+}
+
 /**
  * A set of methods supported in both web and native environments.
  *
@@ -141,6 +158,15 @@ export interface IHostService {
 	 * Get the native handle of the window.
 	 */
 	getNativeWindowHandle(windowId: number): Promise<VSBuffer | undefined>;
+
+	//#endregion
+
+	//#region Toast Notifications
+
+	/**
+	 * Show an OS-level toast notification.
+	 */
+	showToast(options: IToastOptions): Promise<IToastResult | undefined>;
 
 	//#endregion
 }

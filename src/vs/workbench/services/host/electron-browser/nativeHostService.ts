@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Emitter, Event } from '../../../../base/common/event.js';
-import { IHostService } from '../browser/host.js';
+import { IHostService, IToastOptions, IToastResult } from '../browser/host.js';
 import { FocusMode, INativeHostService } from '../../../../platform/native/common/native.js';
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
 import { ILabelService, Verbosity } from '../../../../platform/label/common/label.js';
@@ -217,6 +217,14 @@ class WorkbenchHostService extends Disposable implements IHostService {
 			this._nativeWindowHandleCache.set(windowId, this.nativeHostService.getNativeWindowHandle(windowId));
 		}
 		return this._nativeWindowHandleCache.get(windowId)!;
+	}
+
+	//#endregion
+
+	//#region Toast Notifications
+
+	showToast(options: IToastOptions): Promise<IToastResult> {
+		return this.nativeHostService.showOSToast(options);
 	}
 
 	//#endregion
