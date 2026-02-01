@@ -56,7 +56,7 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 		@IRemoteAgentService private readonly _remoteAgentService: IRemoteAgentService,
 	) {
 		super();
-		this._appRoot = dirname(FileAccess.asFileUri('').fsPath);
+		this._appRoot = dirname(FileAccess.asFileUri('').path);
 		// Get the node executable path from native environment service if available (Electron's execPath with ELECTRON_RUN_AS_NODE)
 		const nativeEnv = this._environmentService as IEnvironmentService & { execPath?: string };
 		this._execPath = nativeEnv.execPath;
@@ -98,7 +98,7 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 		// Use ELECTRON_RUN_AS_NODE=1 to make Electron executable behave as Node.js
 		// TMPDIR must be set as environment variable before the command
 		// Use -c to pass the command string directly (like sh -c), avoiding argument parsing issues
-		const wrappedCommand = `"${this._execPath}" "${this._srtPath}" TMPDIR=${this._tempDir.fsPath} --settings "${this._sandboxConfigPath}" -c "${command}"`;
+		const wrappedCommand = `"${this._execPath}" "${this._srtPath}" TMPDIR=${this._tempDir.path} --settings "${this._sandboxConfigPath}" -c "${command}"`;
 		if (this._remoteEnvDetails) {
 			return `${wrappedCommand}`;
 		}
@@ -148,8 +148,8 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 		if (!remoteEnv) {
 			return;
 		}
-		this._execPath = this._pathJoin(remoteEnv.appRoot.fsPath, 'node');
-		this._srtPath = this._pathJoin(remoteEnv.appRoot.fsPath, 'node_modules', '@anthropic-ai', 'sandbox-runtime', 'dist', 'cli.js');
+		this._execPath = this._pathJoin(remoteEnv.appRoot.path, 'node');
+		this._srtPath = this._pathJoin(remoteEnv.appRoot.path, 'node_modules', '@anthropic-ai', 'sandbox-runtime', 'dist', 'cli.js');
 	}
 
 	private async _createSandboxConfig(): Promise<string | undefined> {
@@ -166,7 +166,7 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 			const macFileSystemSetting = os === OperatingSystem.Macintosh
 				? this._configurationService.getValue<ITerminalSandboxSettings['filesystem']>(TerminalChatAgentToolsSettingId.TerminalSandboxMacFileSystem) ?? {}
 				: {};
-			const configFilePath = this._pathJoin(this._tempDir.fsPath, `vscode-sandbox-settings-${this._sandboxSettingsId}.json`);
+			const configFilePath = this._pathJoin(this._tempDir.path, `vscode-sandbox-settings-${this._sandboxSettingsId}.json`);
 			const configFileResource = URI.file(configFilePath);
 			const sandboxSettings = {
 				network: {
