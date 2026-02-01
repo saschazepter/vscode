@@ -739,6 +739,7 @@ export class BrowserHostService extends Disposable implements IHostService {
 		return new Promise<IOSToastResult>(resolve => {
 			Event.once(notification.onClick)(() => {
 				notification.dispose();
+
 				resolve({ supported: true, clicked: true });
 			});
 		});

@@ -246,6 +246,7 @@ class WorkbenchHostService extends Disposable implements IHostService {
 		return new Promise<IOSToastResult>(resolve => {
 			notification.onClick(() => {
 				notification.dispose();
+
 				resolve({ supported: true, clicked: true });
 			});
 		});
