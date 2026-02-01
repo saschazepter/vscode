@@ -96,13 +96,6 @@ export class ChatWindowNotifier extends Disposable implements IWorkbenchContribu
 		const cts = new CancellationTokenSource();
 		this._activeNotifications.set(sessionResource, toDisposable(() => cts.dispose(true)));
 
-		const focusListener = this._hostService.onDidChangeFocus(focus => {
-			if (focus) {
-				this._clearNotification(sessionResource); // Clear notification when window gains focus
-				this._hostService.clearOSToasts(); // Clear all OS toasts
-			}
-		});
-
 		try {
 			const result = await this._hostService.showOSToast({
 				title: notificationTitle,
@@ -125,7 +118,6 @@ export class ChatWindowNotifier extends Disposable implements IWorkbenchContribu
 				}
 			}
 		} finally {
-			focusListener.dispose();
 			this._clearNotification(sessionResource);
 		}
 	}

@@ -15,7 +15,7 @@ import { whenEditorClosed } from '../../../browser/editor.js';
 import { IWorkspace, IWorkspaceProvider } from '../../../browser/web.api.js';
 import { IFileService } from '../../../../platform/files/common/files.js';
 import { ILabelService, Verbosity } from '../../../../platform/label/common/label.js';
-import { EventType, INotification, ModifierKeyEmitter, addDisposableListener, addDisposableThrottledListener, detectFullscreen, disposableWindowInterval, getActiveDocument, getActiveWindow, getWindowId, onDidRegisterWindow, trackFocus, triggerNotification, getWindows as getDOMWindows } from '../../../../base/browser/dom.js';
+import { EventType, ModifierKeyEmitter, addDisposableListener, addDisposableThrottledListener, detectFullscreen, disposableWindowInterval, getActiveDocument, getActiveWindow, getWindowId, onDidRegisterWindow, trackFocus, triggerNotification, getWindows as getDOMWindows } from '../../../../base/browser/dom.js';
 import { Disposable, DisposableStore, toDisposable } from '../../../../base/common/lifecycle.js';
 import { IBrowserWorkbenchEnvironmentService } from '../../environment/browser/environmentService.js';
 import { memoize } from '../../../../base/common/decorators.js';
@@ -43,7 +43,7 @@ import { IUserDataProfilesService } from '../../../../platform/userDataProfile/c
 import { URI } from '../../../../base/common/uri.js';
 import { VSBuffer } from '../../../../base/common/buffer.js';
 import { MarkdownString } from '../../../../base/common/htmlContent.js';
-import { CancellationToken } from '../../../../base/common/cancellation.js';
+import { CancellationToken, CancellationTokenSource } from '../../../../base/common/cancellation.js';
 
 enum HostShutdownReason {
 
@@ -107,6 +107,13 @@ export class BrowserHostService extends Disposable implements IHostService {
 
 		// Track modifier keys to detect keybinding usage
 		this._register(ModifierKeyEmitter.getInstance().event(() => this.updateShutdownReasonFromEvent()));
+
+		// Make sure to hide all OS toasts when the window gains focus
+		this._register(this.onDidChangeFocus(focus => {
+			if (focus) {
+				this.clearOSToasts();
+			}
+		}));
 	}
 
 	private onBeforeShutdown(e: BeforeShutdownEvent): void {
@@ -727,24 +734,29 @@ export class BrowserHostService extends Disposable implements IHostService {
 
 	//#region Toast Notifications
 
-	private readonly activeToasts = new Set<INotification>();
+	private readonly activeBrowserToasts = new Set<DisposableStore>();
 
 	async showOSToast(options: IOSToastOptions, token: CancellationToken): Promise<IOSToastResult> {
-		const notification = await triggerNotification(options.title, {
+		const browserToast = await triggerNotification(options.title, {
 			detail: options.body,
 			sticky: !options.silent
 		});
 
-		if (!notification) {
+		if (!browserToast) {
 			return { supported: false, clicked: false };
 		}
 
-		this.activeToasts.add(notification);
+		const disposables = new DisposableStore();
+		this.activeBrowserToasts.add(disposables);
+
+		const cts = new CancellationTokenSource(token);
+		disposables.add(toDisposable(() => cts.dispose(true)));
+		disposables.add(browserToast);
 
 		return new Promise<IOSToastResult>(resolve => {
 			const cleanup = () => {
-				this.activeToasts.delete(notification);
-				notification.dispose();
+				this.activeBrowserToasts.delete(disposables);
+				disposables.dispose();
 			};
 
 			token.onCancellationRequested(() => {
@@ -753,7 +765,7 @@ export class BrowserHostService extends Disposable implements IHostService {
 				resolve({ supported: true, clicked: false });
 			});
 
-			Event.once(notification.onClick)(() => {
+			Event.once(browserToast.onClick)(() => {
 				cleanup();
 
 				resolve({ supported: true, clicked: true });
@@ -761,11 +773,11 @@ export class BrowserHostService extends Disposable implements IHostService {
 		});
 	}
 
-	async clearOSToasts(): Promise<void> {
-		for (const toast of this.activeToasts) {
+	private async clearOSToasts(): Promise<void> {
+		for (const toast of this.activeBrowserToasts) {
 			toast.dispose();
 		}
-		this.activeToasts.clear();
+		this.activeBrowserToasts.clear();
 	}
 
 	//#endregion

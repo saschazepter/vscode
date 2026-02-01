@@ -1164,8 +1164,8 @@ export class NativeHostMainService extends Disposable implements INativeHostMain
 		return new Promise<IOSToastResult>(resolve => {
 			try {
 				const notification = new Notification({
-					title: options.title,
-					body: options.body,
+					title: this.sanitizeOSToastText(options.title),
+					body: this.sanitizeOSToastText(options.body),
 					silent: options.silent,
 					actions: options.actions?.map(action => ({
 						type: 'button',
@@ -1196,6 +1196,13 @@ export class NativeHostMainService extends Disposable implements INativeHostMain
 				resolve({ supported: false, clicked: false });
 			}
 		});
+	}
+
+	private sanitizeOSToastText(text: string | undefined): string | undefined {
+		if (!text) {
+			return text;
+		}
+		return text.replace(/`/g, '\''); // convert backticks to single quotes
 	}
 
 	async clearOSToasts(): Promise<void> {
