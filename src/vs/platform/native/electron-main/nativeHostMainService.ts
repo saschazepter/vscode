@@ -1170,21 +1170,14 @@ export class NativeHostMainService extends Disposable implements INativeHostMain
 			const resolveOnce = (result: IOSToastResult) => {
 				if (!resolved) {
 					resolved = true;
+					notification.removeAllListeners();
 					resolve(result);
 				}
 			};
 
-			notification.on('click', () => {
-				resolveOnce({ clicked: true });
-			});
-
-			notification.on('action', (_event, actionIndex) => {
-				resolveOnce({ clicked: false, actionIndex });
-			});
-
-			notification.on('close', () => {
-				resolveOnce({ clicked: false });
-			});
+			notification.on('click', () => resolveOnce({ clicked: true }));
+			notification.on('action', (_event, actionIndex) => resolveOnce({ clicked: false, actionIndex }));
+			notification.on('close', () => resolveOnce({ clicked: false }));
 
 			notification.show();
 		});

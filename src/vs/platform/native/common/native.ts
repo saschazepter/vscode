@@ -28,13 +28,7 @@ export interface IOSToastOptions {
 }
 
 export interface IOSToastResult {
-	/**
-	 * Whether the user clicked the notification body itself.
-	 */
 	readonly clicked: boolean;
-	/**
-	 * The index of the action button that was clicked, if any.
-	 */
 	readonly actionIndex?: number;
 }
 
@@ -257,7 +251,9 @@ export interface ICommonNativeHostService {
 	// Toast Notifications
 	/**
 	 * Shows an OS toast notification with optional action buttons.
+	 *
 	 * Note: Action buttons are only supported on macOS.
+	 *
 	 * @returns Information about how the notification was dismissed.
 	 */
 	showOSToast(options: IOSToastOptions): Promise<IOSToastResult>;
