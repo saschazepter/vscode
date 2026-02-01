@@ -104,7 +104,7 @@ export class ChatWindowNotifier extends Disposable implements IWorkbenchContribu
 		});
 
 		try {
-			const result = await this._hostService.showToast({
+			const result = await this._hostService.showOSToast({
 				title: notificationTitle,
 				body: info.detail ?? localize('notificationDetail', "Approval needed to continue."),
 				actions: [

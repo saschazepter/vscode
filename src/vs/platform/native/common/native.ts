@@ -29,6 +29,7 @@ export interface IOSToastOptions {
 
 export interface IOSToastResult {
 	readonly supported: boolean;
+
 	readonly clicked: boolean;
 	readonly actionIndex?: number;
 }

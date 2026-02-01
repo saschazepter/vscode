@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Emitter, Event } from '../../../../base/common/event.js';
-import { IHostService, IToastOptions, IToastResult } from '../browser/host.js';
+import { IHostService, IOSToastOptions, IOSToastResult } from '../browser/host.js';
 import { FocusMode, INativeHostService } from '../../../../platform/native/common/native.js';
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
 import { ILabelService, Verbosity } from '../../../../platform/label/common/label.js';
@@ -223,7 +223,8 @@ class WorkbenchHostService extends Disposable implements IHostService {
 
 	//#region Toast Notifications
 
-	async showToast(options: IToastOptions): Promise<IToastResult | undefined> {
+	async showOSToast(options: IOSToastOptions): Promise<IOSToastResult> {
+
 		// Try native OS notifications first
 		const result = await this.nativeHostService.showOSToast(options);
 
@@ -239,10 +240,10 @@ class WorkbenchHostService extends Disposable implements IHostService {
 		});
 
 		if (!notification) {
-			return undefined;
+			return { supported: false, clicked: false };
 		}
 
-		return new Promise<IToastResult>(resolve => {
+		return new Promise<IOSToastResult>(resolve => {
 			notification.onClick(() => {
 				notification.dispose();
 				resolve({ supported: true, clicked: true });

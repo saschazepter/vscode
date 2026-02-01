@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Emitter, Event } from '../../../../base/common/event.js';
-import { IHostService, IToastOptions, IToastResult } from './host.js';
+import { IHostService, IOSToastOptions, IOSToastResult } from './host.js';
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
 import { ILayoutService } from '../../../../platform/layout/browser/layoutService.js';
 import { IEditorService } from '../../editor/common/editorService.js';
@@ -726,17 +726,17 @@ export class BrowserHostService extends Disposable implements IHostService {
 
 	//#region Toast Notifications
 
-	async showToast(options: IToastOptions): Promise<IToastResult | undefined> {
+	async showOSToast(options: IOSToastOptions): Promise<IOSToastResult> {
 		const notification = await triggerNotification(options.title, {
 			detail: options.body,
 			sticky: !options.silent
 		});
 
 		if (!notification) {
-			return undefined;
+			return { supported: false, clicked: false };
 		}
 
-		return new Promise<IToastResult>(resolve => {
+		return new Promise<IOSToastResult>(resolve => {
 			Event.once(notification.onClick)(() => {
 				notification.dispose();
 				resolve({ supported: true, clicked: true });

@@ -11,20 +11,21 @@ import { IWindowOpenable, IOpenWindowOptions, IOpenEmptyWindowOptions, IPoint, I
 
 export const IHostService = createDecorator<IHostService>('hostService');
 
-export interface IToastAction {
+export interface IOSToastAction {
 	readonly type: 'button';
 	readonly text: string;
 }
 
-export interface IToastOptions {
+export interface IOSToastOptions {
 	readonly title: string;
 	readonly body?: string;
-	readonly actions?: readonly IToastAction[];
+	readonly actions?: readonly IOSToastAction[];
 	readonly silent?: boolean;
 }
 
-export interface IToastResult {
+export interface IOSToastResult {
 	readonly supported: boolean;
+
 	readonly clicked: boolean;
 	readonly actionIndex?: number;
 }
@@ -167,7 +168,7 @@ export interface IHostService {
 	/**
 	 * Show an OS-level toast notification.
 	 */
-	showToast(options: IToastOptions): Promise<IToastResult | undefined>;
+	showOSToast(options: IOSToastOptions): Promise<IOSToastResult>;
 
 	//#endregion
 }
