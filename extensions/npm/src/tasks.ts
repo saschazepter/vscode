@@ -13,7 +13,7 @@ import * as fs from 'fs';
 import minimatch from 'minimatch';
 import { Utils } from 'vscode-uri';
 import { findPreferredPM } from './preferred-pm';
-import { readScripts } from './readScripts';
+import { readScripts, IPositionOffsetTransformer } from './readScripts';
 
 const excludeRegex = new RegExp('^(node_modules|.vscode-test)$', 'i');
 
@@ -482,37 +482,37 @@ export function findScriptAtPosition(document: TextDocument, buffer: string, pos
 	return undefined;
 }
 
-// Helper to create a minimal TextDocument-like object from file content
-function createTextDocumentStub(uri: Uri, content: string): TextDocument {
-	const lines: string[] = content.split(/\r?\n/);
-	const lineOffsets: number[] = [0];
-	for (let i = 0; i < lines.length; i++) {
-		const currentOffset = lineOffsets[i] + lines[i].length;
-		// Check if there's a \r character (Windows line ending)
-		const nextCharOffset = currentOffset < content.length ? content[currentOffset] : undefined;
-		const lineEndingLength = nextCharOffset === '\r' ? 2 : 1;
-		lineOffsets.push(currentOffset + lineEndingLength);
+// Helper to transform offsets to positions for package.json content
+class PositionOffsetTransformer implements IPositionOffsetTransformer {
+	private readonly lineOffsets: number[];
+
+	constructor(public readonly uri: Uri, content: string) {
+		const lines = content.split(/\r?\n/);
+		this.lineOffsets = [0];
+		for (let i = 0; i < lines.length; i++) {
+			const currentOffset = this.lineOffsets[i] + lines[i].length;
+			// Check if there's a \r character (Windows line ending)
+			const nextCharOffset = currentOffset < content.length ? content[currentOffset] : undefined;
+			const lineEndingLength = nextCharOffset === '\r' ? 2 : 1;
+			this.lineOffsets.push(currentOffset + lineEndingLength);
+		}
 	}
 
-	return {
-		uri,
-		getText: () => content,
-		positionAt: (offset: number) => {
-			let low = 0;
-			let high = lineOffsets.length - 1;
-			while (low < high) {
-				const mid = Math.floor((low + high) / 2);
-				if (lineOffsets[mid] > offset) {
-					high = mid;
-				} else {
-					low = mid + 1;
-				}
+	positionAt(offset: number): Position {
+		let low = 0;
+		let high = this.lineOffsets.length - 1;
+		while (low < high) {
+			const mid = Math.floor((low + high) / 2);
+			if (this.lineOffsets[mid] > offset) {
+				high = mid;
+			} else {
+				low = mid + 1;
 			}
-			const line = low - 1;
-			const character = offset - lineOffsets[line];
-			return new Position(line, character);
 		}
-	} as TextDocument;
+		const line = low - 1;
+		const character = offset - this.lineOffsets[line];
+		return new Position(line, character);
+	}
 }
 
 export async function getScripts(packageJsonUri: Uri) {
@@ -538,8 +538,8 @@ export async function getScripts(packageJsonUri: Uri) {
 		// textDocument/didOpen notifications to language servers
 		const content = await workspace.fs.readFile(packageJsonUri);
 		const text = Buffer.from(content).toString('utf8');
-		const document = createTextDocumentStub(packageJsonUri, text);
-		const scripts = readScripts(document, text);
+		const transformer = new PositionOffsetTransformer(packageJsonUri, text);
+		const scripts = readScripts(transformer, text);
 		
 		// Cache the result
 		packageJsonCache.set(packageJson, { mtime: stat.mtime, scripts });
