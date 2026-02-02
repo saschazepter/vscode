@@ -17,6 +17,21 @@ export interface IChatTodo {
 	status: 'not-started' | 'in-progress' | 'completed';
 }
 
+/**
+ * Converts serialized todo list data to IChatTodo array with proper ID parsing
+ */
+export function parseTodoListContent(todoList: Array<{ id: string; title: string; status: 'not-started' | 'in-progress' | 'completed' }>): IChatTodo[] {
+	return todoList.map((todo, index) => {
+		const parsedId = parseInt(todo.id, 10);
+		const id = Number.isNaN(parsedId) ? index + 1 : parsedId;
+		return {
+			id,
+			title: todo.title,
+			status: todo.status
+		};
+	});
+}
+
 export interface IChatTodoListStorage {
 	getTodoList(sessionResource: URI): IChatTodo[];
 	setTodoList(sessionResource: URI, todoList: IChatTodo[]): void;

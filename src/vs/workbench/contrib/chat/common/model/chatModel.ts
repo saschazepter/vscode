@@ -30,7 +30,7 @@ import { CellUri, ICellEditOperation } from '../../../notebook/common/notebookCo
 import { ChatRequestToolReferenceEntry, IChatRequestVariableEntry, isImplicitVariableEntry, isStringImplicitContextValue, isStringVariableEntry } from '../attachments/chatVariableEntries.js';
 import { migrateLegacyTerminalToolSpecificData } from '../chat.js';
 import { ChatAgentVoteDirection, ChatAgentVoteDownReason, ChatResponseClearToPreviousToolInvocationReason, ElicitationState, IChatAgentMarkdownContentWithVulnerability, IChatClearToPreviousToolInvocation, IChatCodeCitation, IChatCommandButton, IChatConfirmation, IChatContentInlineReference, IChatContentReference, IChatEditingSessionAction, IChatElicitationRequest, IChatElicitationRequestSerialized, IChatExtensionsContent, IChatFollowup, IChatLocationData, IChatMarkdownContent, IChatMcpServersStarting, IChatMcpServersStartingSerialized, IChatModelReference, IChatMultiDiffData, IChatMultiDiffDataSerialized, IChatNotebookEdit, IChatProgress, IChatProgressMessage, IChatPullRequestContent, IChatQuestionCarousel, IChatResponseCodeblockUriPart, IChatResponseProgressFileTreeData, IChatService, IChatSessionContext, IChatSessionTiming, IChatTask, IChatTaskSerialized, IChatTextEdit, IChatThinkingPart, IChatToolInvocation, IChatToolInvocationSerialized, IChatTreeData, IChatUndoStop, IChatUsage, IChatUsedContext, IChatWarningMessage, IChatWorkspaceEdit, ResponseModelState, isIUsedContext } from '../chatService/chatService.js';
-import { IChatTodoListService } from '../tools/chatTodoListService.js';
+import { IChatTodoListService, parseTodoListContent } from '../tools/chatTodoListService.js';
 import { ChatAgentLocation, ChatModeKind } from '../constants.js';
 import { IChatEditingService, IChatEditingSession, ModifiedFileEntryState } from '../editing/chatEditingService.js';
 import { ILanguageModelChatMetadata, ILanguageModelChatMetadataAndIdentifier } from '../languageModels.js';
@@ -2153,15 +2153,7 @@ export class ChatModel extends Disposable implements IChatModel {
 				const part = responseParts[j];
 				if ((part.kind === 'toolInvocation' || part.kind === 'toolInvocationSerialized') && part.toolSpecificData?.kind === 'todoList') {
 					// Found a todo list - hydrate it and return (we only need the latest)
-					const todos = part.toolSpecificData.todoList.map((todo, index) => {
-						const parsedId = parseInt(todo.id, 10);
-						const id = Number.isNaN(parsedId) ? index + 1 : parsedId;
-						return {
-							id,
-							title: todo.title,
-							status: todo.status as 'not-started' | 'in-progress' | 'completed'
-						};
-					});
+					const todos = parseTodoListContent(part.toolSpecificData.todoList);
 					this.chatTodoListService.setTodos(this._sessionResource, todos);
 					return;
 				}
