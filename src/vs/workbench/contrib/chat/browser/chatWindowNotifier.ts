@@ -98,14 +98,10 @@ export class ChatWindowNotifier extends Disposable implements IWorkbenchContribu
 
 		try {
 			const result = await this._hostService.showToast({
-				title: notificationTitle,
-				body: info.detail ?? localize('notificationDetail', "Approval needed to continue."),
+				title: this._sanitizeOSToastText(notificationTitle),
+				body: info.detail ? this._sanitizeOSToastText(info.detail) : localize('notificationDetail', "Approval needed to continue."),
 				actions: [localize('approveAction', "Approve"), localize('showChat', "Show")],
 			}, cts.token);
-
-			if (cts.token.isCancellationRequested) {
-				return;
-			}
 
 			if (result.clicked || typeof result.actionIndex === 'number') {
 				await this._hostService.focus(targetWindow, { mode: FocusMode.Force });
@@ -120,6 +116,10 @@ export class ChatWindowNotifier extends Disposable implements IWorkbenchContribu
 		} finally {
 			this._clearNotification(sessionResource);
 		}
+	}
+
+	private _sanitizeOSToastText(text: string): string {
+		return text.replace(/`/g, '\''); // convert backticks to single quotes
 	}
 
 	private _clearNotification(sessionResource: URI): void {
