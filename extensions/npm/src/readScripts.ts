@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { JSONVisitor, visit } from 'jsonc-parser';
-import { Location, Position, Range, TextDocument } from 'vscode';
+import { Location, Position, Range, TextDocument, Uri } from 'vscode';
 
 export interface INpmScriptReference {
 	name: string;
@@ -18,7 +18,44 @@ export interface INpmScriptInfo {
 	scripts: INpmScriptReference[];
 }
 
+/**
+ * Computes a Position (line and character) from a byte offset in the given text.
+ */
+function positionAt(text: string, offset: number): Position {
+	offset = Math.max(0, Math.min(offset, text.length));
+	let line = 0;
+	let lastLineStart = 0;
+
+	for (let i = 0; i < offset; i++) {
+		const ch = text.charCodeAt(i);
+		if (ch === 13 /* \r */) {
+			if (i + 1 < text.length && text.charCodeAt(i + 1) === 10 /* \n */) {
+				i++; // Skip \n in \r\n
+			}
+			line++;
+			lastLineStart = i + 1;
+		} else if (ch === 10 /* \n */) {
+			line++;
+			lastLineStart = i + 1;
+		}
+	}
+
+	return new Position(line, offset - lastLineStart);
+}
+
 export const readScripts = (document: TextDocument, buffer = document.getText()): INpmScriptInfo | undefined => {
+	return readScriptsInternal(document.uri, buffer, (offset) => document.positionAt(offset));
+};
+
+/**
+ * Reads scripts from a package.json file content without opening it as a TextDocument.
+ * This avoids triggering textDocument/didOpen notifications to LSP servers.
+ */
+export const readScriptsFromText = (uri: Uri, buffer: string): INpmScriptInfo | undefined => {
+	return readScriptsInternal(uri, buffer, (offset) => positionAt(buffer, offset));
+};
+
+const readScriptsInternal = (uri: Uri, buffer: string, offsetToPosition: (offset: number) => Position): INpmScriptInfo | undefined => {
 	let start: Position | undefined;
 	let end: Position | undefined;
 	let inScripts = false;
@@ -35,7 +72,7 @@ export const readScripts = (document: TextDocument, buffer = document.getText())
 		},
 		onObjectEnd(offset) {
 			if (inScripts) {
-				end = document.positionAt(offset);
+				end = offsetToPosition(offset);
 				inScripts = false;
 			}
 			level--;
@@ -45,7 +82,7 @@ export const readScripts = (document: TextDocument, buffer = document.getText())
 				scripts.push({
 					...buildingScript,
 					value,
-					valueRange: new Range(document.positionAt(offset), document.positionAt(offset + length)),
+					valueRange: new Range(offsetToPosition(offset), offsetToPosition(offset + length)),
 				});
 				buildingScript = undefined;
 			}
@@ -53,11 +90,11 @@ export const readScripts = (document: TextDocument, buffer = document.getText())
 		onObjectProperty(property: string, offset: number, length: number) {
 			if (level === 1 && property === 'scripts') {
 				inScripts = true;
-				start = document.positionAt(offset);
+				start = offsetToPosition(offset);
 			} else if (inScripts) {
 				buildingScript = {
 					name: property,
-					nameRange: new Range(document.positionAt(offset), document.positionAt(offset + length))
+					nameRange: new Range(offsetToPosition(offset), offsetToPosition(offset + length))
 				};
 			}
 		},
@@ -69,5 +106,5 @@ export const readScripts = (document: TextDocument, buffer = document.getText())
 		return undefined;
 	}
 
-	return { location: new Location(document.uri, new Range(start, end ?? start)), scripts };
+	return { location: new Location(uri, new Range(start, end ?? start)), scripts };
 };

@@ -13,7 +13,7 @@ import * as fs from 'fs';
 import minimatch from 'minimatch';
 import { Utils } from 'vscode-uri';
 import { findPreferredPM } from './preferred-pm';
-import { readScripts } from './readScripts';
+import { readScripts, readScriptsFromText } from './readScripts';
 
 const excludeRegex = new RegExp('^(node_modules|.vscode-test)$', 'i');
 
@@ -484,8 +484,10 @@ export async function getScripts(packageJsonUri: Uri) {
 	}
 
 	try {
-		const document: TextDocument = await workspace.openTextDocument(packageJsonUri);
-		return readScripts(document);
+		// Read file directly from disk to avoid triggering textDocument/didOpen
+		// notifications to LSP servers registered for JSON documents
+		const content = await fs.promises.readFile(packageJson, 'utf8');
+		return readScriptsFromText(packageJsonUri, content);
 	} catch (e) {
 		const localizedParseError = l10n.t("Npm task detection: failed to parse the file {0}", packageJsonUri.fsPath);
 		throw new Error(localizedParseError);
