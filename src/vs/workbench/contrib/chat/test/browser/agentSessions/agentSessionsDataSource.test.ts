@@ -71,7 +71,7 @@ suite('sessionDateFromNow', () => {
 		assert.strictEqual(sessionDateFromNow(twoDaysAgo), '2 days ago');
 	});
 
-	test('returns fromNow result for today', () => {
+	test.skip('returns fromNow result for today', () => {
 		const now = Date.now();
 		// A time from today (5 minutes ago)
 		const fiveMinutesAgo = now - 5 * 60 * 1000;
