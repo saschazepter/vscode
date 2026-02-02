@@ -16,7 +16,6 @@ import { IEditorService } from '../../../../../services/editor/common/editorServ
 import { ICommandService } from '../../../../../../platform/commands/common/commands.js';
 import { IAgentSession, isSessionInProgressStatus } from '../agentSessionsModel.js';
 import { ChatViewPaneTarget, IChatWidgetService } from '../../chat.js';
-import { AgentSessionProviders } from '../agentSessions.js';
 import { IChatSessionsService } from '../../../common/chatSessionsService.js';
 import { IWorkbenchLayoutService, Parts } from '../../../../../services/layout/browser/layoutService.js';
 import { ACTION_ID_NEW_CHAT } from '../../actions/chatActions.js';
@@ -25,6 +24,7 @@ import { IAgentTitleBarStatusService } from './agentTitleBarStatusService.js';
 import { inAgentSessionProjection } from './agentSessionProjection.js';
 import { ChatConfiguration } from '../../../common/constants.js';
 import { IAgentSessionsService } from '../agentSessionsService.js';
+import { getAllSessionProviders, isLocalSessionProvider } from '../agentSessions.js';
 
 //#region Configuration
 
@@ -32,7 +32,9 @@ import { IAgentSessionsService } from '../agentSessionsService.js';
  * Provider types that support agent session projection mode.
  * Only sessions from these providers will trigger projection mode.
  */
-export const AGENT_SESSION_PROJECTION_ENABLED_PROVIDERS: Set<string> = new Set(Object.values(AgentSessionProviders));
+export function getAgentSessionProjectionEnabledProviders(chatSessionsService: IChatSessionsService): Set<string> {
+	return new Set(getAllSessionProviders(chatSessionsService));
+}
 
 //#endregion
 
@@ -245,7 +247,8 @@ export class AgentSessionProjectionService extends Disposable implements IAgentS
 		}
 
 		// Check if this session's provider type supports agent session projection
-		if (!AGENT_SESSION_PROJECTION_ENABLED_PROVIDERS.has(session.providerType)) {
+		const enabledProviders = getAgentSessionProjectionEnabledProviders(this.chatSessionsService);
+		if (!enabledProviders.has(session.providerType)) {
 			this.logService.trace(`[AgentSessionProjection] Provider type '${session.providerType}' does not support agent session projection`);
 			return;
 		}
@@ -267,7 +270,7 @@ export class AgentSessionProjectionService extends Disposable implements IAgentS
 		// For local sessions, check if there are pending edits to show
 		// If there's nothing to focus, just open the chat without entering projection mode
 		let hasUndecidedChanges = true;
-		if (session.providerType === AgentSessionProviders.Local) {
+		if (isLocalSessionProvider(session.providerType)) {
 			const editingSession = this.chatEditingService.getEditingSession(session.resource);
 			hasUndecidedChanges = editingSession?.entries.get().some(e => e.state.get() === ModifiedFileEntryState.Modified) ?? false;
 			if (!hasUndecidedChanges) {
@@ -297,7 +300,7 @@ export class AgentSessionProjectionService extends Disposable implements IAgentS
 			// For local sessions, changes are shown via chatEditing.viewChanges, not _openSessionFiles
 			// For other providers, try to open session files from session.changes
 			let filesOpened = false;
-			if (session.providerType === AgentSessionProviders.Local) {
+			if (isLocalSessionProvider(session.providerType)) {
 				// Local sessions use editing session for changes - we already verified hasUndecidedChanges above
 				// Clear editors to prepare for the changes view
 				await this.editorGroupsService.applyWorkingSet('empty', { preserveFocus: true });
@@ -348,7 +351,7 @@ export class AgentSessionProjectionService extends Disposable implements IAgentS
 
 		// For local sessions with changes, also pop open the edit session's changes view
 		// Must be after openSession so the editing session context is available
-		if (session.providerType === AgentSessionProviders.Local && hasUndecidedChanges) {
+		if (isLocalSessionProvider(session.providerType) && hasUndecidedChanges) {
 			await this.commandService.executeCommand('chatEditing.viewChanges');
 		}
 

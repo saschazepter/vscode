@@ -25,7 +25,7 @@ import { ILifecycleService } from '../../../../services/lifecycle/common/lifecyc
 import { Extensions, IOutputChannelRegistry, IOutputService } from '../../../../services/output/common/output.js';
 import { ChatSessionStatus as AgentSessionStatus, IChatSessionFileChange, IChatSessionFileChange2, IChatSessionItem, IChatSessionsExtensionPoint, IChatSessionsService } from '../../common/chatSessionsService.js';
 import { IChatWidgetService } from '../chat.js';
-import { AgentSessionProviders, getAgentSessionProvider, getAgentSessionProviderIcon, getAgentSessionProviderName, isBuiltInAgentSessionProvider } from './agentSessions.js';
+import { getAgentSessionProvider, getAgentSessionProviderIcon, getAgentSessionProviderName, isBuiltInAgentSessionProvider, isLocalSessionProvider } from './agentSessions.js';
 
 //#region Interfaces, Types
 
@@ -128,7 +128,7 @@ interface IInternalAgentSessionData extends IAgentSessionData {
 interface IInternalAgentSession extends IAgentSession, IInternalAgentSessionData { }
 
 export function isLocalAgentSessionItem(session: IAgentSession): boolean {
-	return session.providerType === AgentSessionProviders.Local;
+	return isLocalSessionProvider(session.providerType);
 }
 
 export function isAgentSession(obj: unknown): obj is IAgentSession {
@@ -490,8 +490,8 @@ export class AgentSessionsModel extends Disposable implements IAgentSessionsMode
 				let providerLabel: string;
 				const agentSessionProvider = getAgentSessionProvider(chatSessionType);
 				if (agentSessionProvider !== undefined) {
-					providerLabel = getAgentSessionProviderName(agentSessionProvider);
-					icon = getAgentSessionProviderIcon(agentSessionProvider);
+					providerLabel = getAgentSessionProviderName(agentSessionProvider, this.chatSessionsService);
+					icon = getAgentSessionProviderIcon(agentSessionProvider, this.chatSessionsService);
 				} else {
 					providerLabel = mapSessionContributionToType.get(chatSessionType)?.name ?? chatSessionType;
 					icon = session.iconPath ?? Codicon.terminal;
