@@ -44,7 +44,7 @@ import { URI } from '../../../../base/common/uri.js';
 import { VSBuffer } from '../../../../base/common/buffer.js';
 import { MarkdownString } from '../../../../base/common/htmlContent.js';
 import { CancellationToken, CancellationTokenSource } from '../../../../base/common/cancellation.js';
-import { triggerBrowserToast } from './osToasts.js';
+import { triggerBrowserToast } from './toasts.js';
 
 enum HostShutdownReason {
 

@@ -27,7 +27,7 @@ import { IEnvironmentMainService } from '../../environment/electron-main/environ
 import { createDecorator, IInstantiationService } from '../../instantiation/common/instantiation.js';
 import { ILifecycleMainService, IRelaunchOptions } from '../../lifecycle/electron-main/lifecycleMainService.js';
 import { ILogService } from '../../log/common/log.js';
-import { FocusMode, ICommonNativeHostService, INativeHostOptions, IOSProperties, IOSStatistics, IOSToastOptions, IOSToastResult } from '../common/native.js';
+import { FocusMode, ICommonNativeHostService, INativeHostOptions, IOSProperties, IOSStatistics, IToastOptions, IToastResult } from '../common/native.js';
 import { IProductService } from '../../product/common/productService.js';
 import { IPartsSplash } from '../../theme/common/themeService.js';
 import { IThemeMainService } from '../../theme/electron-main/themeMainService.js';
@@ -1155,16 +1155,16 @@ export class NativeHostMainService extends Disposable implements INativeHostMain
 
 	//#region Toast Notifications
 
-	private readonly activeOSToasts = new Set<DisposableStore>();
+	private readonly activeToasts = new Set<DisposableStore>();
 
-	async showOSToast(windowId: number | undefined, options: IOSToastOptions): Promise<IOSToastResult> {
+	async showToast(windowId: number | undefined, options: IToastOptions): Promise<IToastResult> {
 		if (!Notification.isSupported()) {
 			return { supported: false, clicked: false };
 		}
 
-		const notification = new Notification({
-			title: this.sanitizeOSToastText(options.title),
-			body: this.sanitizeOSToastText(options.body),
+		const toast = new Notification({
+			title: options.title,
+			body: options.body,
 			silent: options.silent,
 			actions: options.actions?.map(action => ({
 				type: 'button',
@@ -1173,58 +1173,40 @@ export class NativeHostMainService extends Disposable implements INativeHostMain
 		});
 
 		const disposables = new DisposableStore();
-		this.activeOSToasts.add(disposables);
+		this.activeToasts.add(disposables);
 
 		const cts = new CancellationTokenSource();
-		disposables.add(toDisposable(() => cts.dispose(true)));
-		disposables.add(toDisposable(() => notification.close()));
 
-		return new Promise<IOSToastResult>(resolve => {
-			const cleanup = () => {
-				notification.removeAllListeners();
-				this.activeOSToasts.delete(disposables);
-				disposables.dispose();
+		disposables.add(toDisposable(() => {
+			this.activeToasts.delete(disposables);
+			toast.removeAllListeners();
+			toast.close();
+			cts.dispose(true);
+		}));
+
+		return new Promise<IToastResult>(r => {
+			const resolve = (result: IToastResult) => {
+				r(result);				// first return the result before...
+				disposables.dispose();	// ...disposing which would invalidate the result object
 			};
 
-			cts.token.onCancellationRequested(() => {
-				cleanup();
-				resolve({ supported: true, clicked: false });
-			});
+			cts.token.onCancellationRequested(() => resolve({ supported: true, clicked: false }));
 
-			notification.on('click', () => {
-				cleanup();
-				resolve({ supported: true, clicked: true });
-			});
-			notification.on('action', (_event, actionIndex) => {
-				cleanup();
-				resolve({ supported: true, clicked: true, actionIndex });
-			});
-			notification.on('close', () => {
-				cleanup();
-				resolve({ supported: true, clicked: false });
-			});
-			notification.on('failed', () => {
-				cleanup();
-				resolve({ supported: false, clicked: false });
-			});
+			toast.on('click', () => resolve({ supported: true, clicked: true }));
+			toast.on('action', (_event, actionIndex) => resolve({ supported: true, clicked: true, actionIndex }));
+			toast.on('close', () => resolve({ supported: true, clicked: false }));
+			toast.on('failed', () => resolve({ supported: false, clicked: false }));
 
-			notification.show();
+			toast.show();
 		});
 	}
 
-	private sanitizeOSToastText(text: string | undefined): string | undefined {
-		if (!text) {
-			return text;
-		}
-
-		return text.replace(/`/g, '\''); // convert backticks to single quotes
-	}
-
-	async clearOSToasts(): Promise<void> {
-		for (const toast of this.activeOSToasts) {
+	async clearToasts(): Promise<void> {
+		for (const toast of this.activeToasts) {
 			toast.dispose();
 		}
-		this.activeOSToasts.clear();
+
+		this.activeToasts.clear();
 	}
 
 	//#endregion

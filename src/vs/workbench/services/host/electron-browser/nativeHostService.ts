@@ -19,7 +19,7 @@ import { memoize } from '../../../../base/common/decorators.js';
 import { isAuxiliaryWindow } from '../../../../base/browser/window.js';
 import { VSBuffer } from '../../../../base/common/buffer.js';
 import { CancellationToken, CancellationTokenSource } from '../../../../base/common/cancellation.js';
-import { triggerBrowserToast } from '../browser/osToasts.js';
+import { triggerBrowserToast } from '../browser/toasts.js';
 
 class WorkbenchNativeHostService extends NativeHostService {
 
@@ -242,7 +242,7 @@ class WorkbenchHostService extends Disposable implements IHostService {
 	async showOSToast(options: IOSToastOptions, token: CancellationToken): Promise<IOSToastResult> {
 
 		// Try native OS notifications first
-		const nativeToast = await this.nativeHostService.showOSToast(options);
+		const nativeToast = await this.nativeHostService.showToast(options);
 		if (nativeToast.supported) {
 			return nativeToast;
 		}
@@ -285,7 +285,7 @@ class WorkbenchHostService extends Disposable implements IHostService {
 	}
 
 	private async clearOSToasts(): Promise<void> {
-		await this.nativeHostService.clearOSToasts();
+		await this.nativeHostService.clearToasts();
 
 		for (const toast of this.activeBrowserToasts) {
 			toast.dispose();

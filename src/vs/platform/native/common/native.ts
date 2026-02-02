@@ -15,7 +15,7 @@ import { AuthInfo, Credentials } from '../../request/common/request.js';
 import { IPartsSplash } from '../../theme/common/themeService.js';
 import { IColorScheme, IOpenedAuxiliaryWindow, IOpenedMainWindow, IOpenEmptyWindowOptions, IOpenWindowOptions, IPoint, IRectangle, IWindowOpenable } from '../../window/common/window.js';
 
-export interface IOSToastOptions {
+export interface IToastOptions {
 	readonly title: string;
 	readonly body?: string;
 
@@ -24,7 +24,7 @@ export interface IOSToastOptions {
 	readonly silent?: boolean;
 }
 
-export interface IOSToastResult {
+export interface IToastResult {
 	readonly supported: boolean;
 
 	readonly clicked: boolean;
@@ -248,8 +248,8 @@ export interface ICommonNativeHostService {
 	windowsGetStringRegKey(hive: 'HKEY_CURRENT_USER' | 'HKEY_LOCAL_MACHINE' | 'HKEY_CLASSES_ROOT' | 'HKEY_USERS' | 'HKEY_CURRENT_CONFIG', path: string, name: string): Promise<string | undefined>;
 
 	// Toast Notifications
-	showOSToast(options: IOSToastOptions): Promise<IOSToastResult>;
-	clearOSToasts(): Promise<void>;
+	showToast(options: IToastOptions): Promise<IToastResult>;
+	clearToasts(): Promise<void>;
 
 	// Zip
 	/**
