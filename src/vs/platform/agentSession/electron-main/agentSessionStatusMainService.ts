@@ -8,6 +8,27 @@ import { Emitter } from '../../../base/common/event.js';
 import { Disposable } from '../../../base/common/lifecycle.js';
 import { isMacintosh, isWindows, isLinux } from '../../../base/common/platform.js';
 import { IAgentSessionNativeStatusInfo, IAgentSessionStatusMainService, AgentSessionNativeStatusMode } from '../common/agentSession.js';
+import { ITelemetryService } from '../../telemetry/common/telemetry.js';
+
+type AgentSessionNativeStatusUpdateEvent = {
+	platform: 'darwin' | 'win32' | 'linux';
+	mode: string;
+	hasSession: boolean;
+	activeCount: number;
+	unreadCount: number;
+	attentionCount: number;
+};
+
+type AgentSessionNativeStatusUpdateClassification = {
+	platform: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The platform where the native status is updated (macOS, Windows, or Linux).' };
+	mode: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The current mode of the agent status widget (default, sessionReady, or session).' };
+	hasSession: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; isMeasurement: true; comment: 'Whether a session is currently active.' };
+	activeCount: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; isMeasurement: true; comment: 'Number of active agent sessions.' };
+	unreadCount: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; isMeasurement: true; comment: 'Number of unread agent sessions.' };
+	attentionCount: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; isMeasurement: true; comment: 'Number of sessions needing user attention.' };
+	owner: 'joshspicer';
+	comment: 'Tracks usage of the native menu bar icon for agent sessions to understand feature adoption and usage patterns.';
+};
 
 /**
  * Implementation of agent session status for native menu bar/system tray.
@@ -25,9 +46,29 @@ export class AgentSessionStatusMainService extends Disposable implements IAgentS
 	private currentStatus: IAgentSessionNativeStatusInfo | undefined;
 	private badgeIcon: NativeImage | undefined;
 
+	constructor(
+		@ITelemetryService private readonly telemetryService: ITelemetryService,
+	) {
+		super();
+	}
+
 	updateStatus(info: IAgentSessionNativeStatusInfo): void {
 		this.currentStatus = info;
 		this._onDidChangeStatus.fire(info);
+
+		// Send telemetry
+		const platform = isMacintosh ? 'darwin' : isWindows ? 'win32' : 'linux';
+		this.telemetryService.publicLog2<AgentSessionNativeStatusUpdateEvent, AgentSessionNativeStatusUpdateClassification>(
+			'agentSessionNativeStatusUpdate',
+			{
+				platform,
+				mode: info.mode,
+				hasSession: !!info.sessionTitle,
+				activeCount: info.activeSessionsCount,
+				unreadCount: info.unreadSessionsCount,
+				attentionCount: info.attentionNeededCount,
+			}
+		);
 
 		if (isMacintosh) {
 			this.updateMacOSStatus(info);

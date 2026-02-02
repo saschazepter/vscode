@@ -1118,8 +1118,8 @@ export class CodeApplication extends Disposable {
 		// MCP
 		services.set(INativeMcpDiscoveryHelperService, new SyncDescriptor(NativeMcpDiscoveryHelperService));
 
-		// Agent Session Status
-		services.set(IAgentSessionStatusMainService, new SyncDescriptor(AgentSessionStatusMainService));
+		// Agent Session Status (requires telemetry service, so it's instantiated after telemetry)
+		services.set(IAgentSessionStatusMainService, new SyncDescriptor(AgentSessionStatusMainService, undefined, false /* proxied to other processes */));
 
 		// Dev Only: CSS service (for ESM)
 		services.set(ICSSDevelopmentService, new SyncDescriptor(CSSDevelopmentService, undefined, true));

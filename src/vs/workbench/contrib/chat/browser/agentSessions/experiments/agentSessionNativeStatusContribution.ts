@@ -10,6 +10,7 @@ import { IAgentSessionsService } from '../agentSessionsService.js';
 import { isSessionInProgressStatus, AgentSessionStatus } from '../agentSessionsModel.js';
 import { IAgentSessionStatusMainService, AgentSessionNativeStatusMode, IAgentSessionNativeStatusInfo } from '../../../../../platform/agentSession/common/agentSession.js';
 import { IChatWidgetService } from '../../chat.js';
+import { IChatEntitlementService } from '../../../../services/chat/common/chatEntitlementService.js';
 
 /**
  * Contribution that synchronizes agent session status from the workbench
@@ -23,8 +24,14 @@ export class AgentSessionNativeStatusContribution extends Disposable implements 
 		@IAgentSessionsService private readonly agentSessionsService: IAgentSessionsService,
 		@IAgentSessionStatusMainService private readonly agentSessionStatusMainService: IAgentSessionStatusMainService,
 		@IChatWidgetService private readonly chatWidgetService: IChatWidgetService,
+		@IChatEntitlementService private readonly chatEntitlementService: IChatEntitlementService,
 	) {
 		super();
+
+		// Only enable this feature if Chat is enabled and not hidden
+		if (this.chatEntitlementService.sentiment.hidden) {
+			return;
+		}
 
 		// Initial update
 		this._updateNativeStatus();
@@ -42,9 +49,30 @@ export class AgentSessionNativeStatusContribution extends Disposable implements 
 		this._register(this.agentSessionsService.model.onDidChangeSessions(() => {
 			this._updateNativeStatus();
 		}));
+
+		// Update when chat entitlement changes (e.g., user disables AI features)
+		this._register(this.chatEntitlementService.onDidChangeSentiment(() => {
+			if (this.chatEntitlementService.sentiment.hidden) {
+				// Clear the native status when AI features are disabled
+				this.agentSessionStatusMainService.updateStatus({
+					mode: AgentSessionNativeStatusMode.Default,
+					sessionTitle: undefined,
+					activeSessionsCount: 0,
+					unreadSessionsCount: 0,
+					attentionNeededCount: 0,
+				});
+			} else {
+				this._updateNativeStatus();
+			}
+		}));
 	}
 
 	private _updateNativeStatus(): void {
+		// Don't update if AI features are hidden
+		if (this.chatEntitlementService.sentiment.hidden) {
+			return;
+		}
+
 		const mode = this.agentTitleBarStatusService.mode;
 		const sessionInfo = this.agentTitleBarStatusService.sessionInfo;
 
