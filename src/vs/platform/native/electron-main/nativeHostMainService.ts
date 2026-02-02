@@ -10,7 +10,7 @@ import { arch, cpus, freemem, loadavg, platform, release, totalmem, type } from 
 import { promisify } from 'util';
 import { memoize } from '../../../base/common/decorators.js';
 import { Emitter, Event } from '../../../base/common/event.js';
-import { Disposable, DisposableStore, toDisposable } from '../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore, IDisposable, toDisposable } from '../../../base/common/lifecycle.js';
 import { matchesSomeScheme, Schemas } from '../../../base/common/network.js';
 import { dirname, join, posix, resolve, win32 } from '../../../base/common/path.js';
 import { isLinux, isMacintosh, isWindows } from '../../../base/common/platform.js';
@@ -1155,7 +1155,7 @@ export class NativeHostMainService extends Disposable implements INativeHostMain
 
 	//#region Toast Notifications
 
-	private readonly activeToasts = new Set<DisposableStore>();
+	private readonly activeToasts = new Set<IDisposable>();
 
 	async showToast(windowId: number | undefined, options: IToastOptions): Promise<IToastResult> {
 		if (!Notification.isSupported()) {
