@@ -4,15 +4,50 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { INotification, addDisposableListener } from '../../../../base/browser/dom.js';
-import { Emitter } from '../../../../base/common/event.js';
-import { DisposableStore, toDisposable } from '../../../../base/common/lifecycle.js';
+import { CancellationToken, CancellationTokenSource } from '../../../../base/common/cancellation.js';
+import { Emitter, Event } from '../../../../base/common/event.js';
+import { DisposableStore, IDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
+import { IToastOptions, IToastResult } from './host.js';
 
-
-function sanitizeNotificationText(text: string): string {
-	return text.replace(/`/g, '\''); // convert backticks to single quotes
+export interface IShowToastController {
+	onDidCreateToast: (toast: IDisposable) => void;
+	onDidDisposeToast: (toast: IDisposable) => void;
 }
 
-export async function triggerBrowserToast(message: string, options?: { detail?: string; sticky?: boolean }): Promise<INotification | undefined> {
+export async function showBrowserToast(controller: IShowToastController, options: IToastOptions, token: CancellationToken): Promise<IToastResult> {
+	const toast = await triggerBrowserToast(options.title, {
+		detail: options.body,
+		sticky: !options.silent
+	});
+
+	if (!toast) {
+		return { supported: false, clicked: false };
+	}
+
+	const disposables = new DisposableStore();
+	controller.onDidCreateToast(toast);
+
+	const cts = new CancellationTokenSource(token);
+
+	disposables.add(toDisposable(() => {
+		controller.onDidDisposeToast(toast);
+		toast.dispose();
+		cts.dispose(true);
+	}));
+
+	return new Promise<IToastResult>(r => {
+		const resolve = (result: IToastResult) => {
+			r(result);				// first return the result before...
+			disposables.dispose();	// ...disposing which would invalidate the result object
+		};
+
+		cts.token.onCancellationRequested(() => resolve({ supported: true, clicked: false }));
+
+		Event.once(toast.onClick)(() => resolve({ supported: true, clicked: true }));
+	});
+}
+
+async function triggerBrowserToast(message: string, options?: { detail?: string; sticky?: boolean }): Promise<INotification | undefined> {
 	const permission = await Notification.requestPermission();
 	if (permission !== 'granted') {
 		return;
@@ -20,8 +55,8 @@ export async function triggerBrowserToast(message: string, options?: { detail?: 
 
 	const disposables = new DisposableStore();
 
-	const notification = new Notification(sanitizeNotificationText(message), {
-		body: options?.detail ? sanitizeNotificationText(options.detail) : undefined,
+	const notification = new Notification(message, {
+		body: options?.detail,
 		requireInteraction: options?.sticky,
 	});
 

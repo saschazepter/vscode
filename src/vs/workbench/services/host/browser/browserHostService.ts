@@ -16,7 +16,7 @@ import { IWorkspace, IWorkspaceProvider } from '../../../browser/web.api.js';
 import { IFileService } from '../../../../platform/files/common/files.js';
 import { ILabelService, Verbosity } from '../../../../platform/label/common/label.js';
 import { EventType, ModifierKeyEmitter, addDisposableListener, addDisposableThrottledListener, detectFullscreen, disposableWindowInterval, getActiveDocument, getActiveWindow, getWindowId, onDidRegisterWindow, trackFocus, getWindows as getDOMWindows } from '../../../../base/browser/dom.js';
-import { Disposable, DisposableStore, toDisposable } from '../../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore, IDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { IBrowserWorkbenchEnvironmentService } from '../../environment/browser/environmentService.js';
 import { memoize } from '../../../../base/common/decorators.js';
 import { parseLineAndColumnAware } from '../../../../base/common/extpath.js';
@@ -43,8 +43,8 @@ import { IUserDataProfilesService } from '../../../../platform/userDataProfile/c
 import { URI } from '../../../../base/common/uri.js';
 import { VSBuffer } from '../../../../base/common/buffer.js';
 import { MarkdownString } from '../../../../base/common/htmlContent.js';
-import { CancellationToken, CancellationTokenSource } from '../../../../base/common/cancellation.js';
-import { triggerBrowserToast } from './toasts.js';
+import { CancellationToken } from '../../../../base/common/cancellation.js';
+import { showBrowserToast } from './toasts.js';
 
 enum HostShutdownReason {
 
@@ -109,7 +109,7 @@ export class BrowserHostService extends Disposable implements IHostService {
 		// Track modifier keys to detect keybinding usage
 		this._register(ModifierKeyEmitter.getInstance().event(() => this.updateShutdownReasonFromEvent()));
 
-		// Make sure to hide all OS toasts when the window gains focus
+		// Make sure to hide all toasts when the window gains focus
 		this._register(this.onDidChangeFocus(focus => {
 			if (focus) {
 				this.clearToasts();
@@ -735,50 +735,21 @@ export class BrowserHostService extends Disposable implements IHostService {
 
 	//#region Toast Notifications
 
-	private readonly activeBrowserToasts = new Set<DisposableStore>();
+	private readonly activeToasts = new Set<IDisposable>();
 
 	async showToast(options: IToastOptions, token: CancellationToken): Promise<IToastResult> {
-		const browserToast = await triggerBrowserToast(options.title, {
-			detail: options.body,
-			sticky: !options.silent
-		});
-
-		if (!browserToast) {
-			return { supported: false, clicked: false };
-		}
-
-		const disposables = new DisposableStore();
-		this.activeBrowserToasts.add(disposables);
-
-		const cts = new CancellationTokenSource(token);
-		disposables.add(toDisposable(() => cts.dispose(true)));
-		disposables.add(browserToast);
-
-		return new Promise<IToastResult>(resolve => {
-			const cleanup = () => {
-				this.activeBrowserToasts.delete(disposables);
-				disposables.dispose();
-			};
-
-			token.onCancellationRequested(() => {
-				cleanup();
-
-				resolve({ supported: true, clicked: false });
-			});
-
-			Event.once(browserToast.onClick)(() => {
-				cleanup();
-
-				resolve({ supported: true, clicked: true });
-			});
-		});
+		return showBrowserToast({
+			onDidCreateToast: disposable => this.activeToasts.add(disposable),
+			onDidDisposeToast: disposable => this.activeToasts.delete(disposable)
+		}, options, token);
 	}
 
 	private async clearToasts(): Promise<void> {
-		for (const toast of this.activeBrowserToasts) {
+		for (const toast of this.activeToasts) {
 			toast.dispose();
 		}
-		this.activeBrowserToasts.clear();
+
+		this.activeToasts.clear();
 	}
 
 	//#endregion

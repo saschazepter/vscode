@@ -10,7 +10,7 @@ import { InstantiationType, registerSingleton } from '../../../../platform/insta
 import { ILabelService, Verbosity } from '../../../../platform/label/common/label.js';
 import { IWorkbenchEnvironmentService } from '../../environment/common/environmentService.js';
 import { IWindowOpenable, IOpenWindowOptions, isFolderToOpen, isWorkspaceToOpen, IOpenEmptyWindowOptions, IPoint, IRectangle, IOpenedAuxiliaryWindow, IOpenedMainWindow } from '../../../../platform/window/common/window.js';
-import { Disposable, DisposableStore, toDisposable } from '../../../../base/common/lifecycle.js';
+import { Disposable, IDisposable } from '../../../../base/common/lifecycle.js';
 import { NativeHostService } from '../../../../platform/native/common/nativeHostService.js';
 import { INativeWorkbenchEnvironmentService } from '../../environment/electron-browser/environmentService.js';
 import { IMainProcessService } from '../../../../platform/ipc/common/mainProcessService.js';
@@ -18,8 +18,8 @@ import { disposableWindowInterval, getActiveDocument, getWindowId, getWindowsCou
 import { memoize } from '../../../../base/common/decorators.js';
 import { isAuxiliaryWindow } from '../../../../base/browser/window.js';
 import { VSBuffer } from '../../../../base/common/buffer.js';
-import { CancellationToken, CancellationTokenSource } from '../../../../base/common/cancellation.js';
-import { triggerBrowserToast } from '../browser/toasts.js';
+import { CancellationToken } from '../../../../base/common/cancellation.js';
+import { showBrowserToast } from '../browser/toasts.js';
 
 class WorkbenchNativeHostService extends NativeHostService {
 
@@ -237,7 +237,7 @@ class WorkbenchHostService extends Disposable implements IHostService {
 
 	//#region Toast Notifications
 
-	private readonly activeBrowserToasts = new Set<DisposableStore>();
+	private readonly activeBrowserToasts = new Set<IDisposable>();
 
 	async showToast(options: IToastOptions, token: CancellationToken): Promise<IToastResult> {
 
@@ -247,41 +247,11 @@ class WorkbenchHostService extends Disposable implements IHostService {
 			return nativeToast;
 		}
 
-		// Fallback to browser notifications (e.g., when native notifications are not supported on Linux)
-		const browserToast = await triggerBrowserToast(options.title, {
-			detail: options.body,
-			sticky: !options.silent
-		});
-
-		if (!browserToast) {
-			return { supported: false, clicked: false };
-		}
-
-		const disposables = new DisposableStore();
-		this.activeBrowserToasts.add(disposables);
-
-		const cts = new CancellationTokenSource(token);
-		disposables.add(toDisposable(() => cts.dispose(true)));
-		disposables.add(browserToast);
-
-		return new Promise<IToastResult>(resolve => {
-			const cleanup = () => {
-				this.activeBrowserToasts.delete(disposables);
-				disposables.dispose();
-			};
-
-			token.onCancellationRequested(() => {
-				cleanup();
-
-				resolve({ supported: true, clicked: false });
-			});
-
-			Event.once(browserToast.onClick)(() => {
-				cleanup();
-
-				resolve({ supported: true, clicked: true });
-			});
-		});
+		// Then fallback to browser notifications
+		return showBrowserToast({
+			onDidCreateToast: (toast: IDisposable) => this.activeBrowserToasts.add(toast),
+			onDidDisposeToast: (toast: IDisposable) => this.activeBrowserToasts.delete(toast)
+		}, options, token);
 	}
 
 	private async clearToasts(): Promise<void> {
