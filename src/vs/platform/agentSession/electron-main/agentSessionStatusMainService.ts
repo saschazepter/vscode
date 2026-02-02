@@ -127,22 +127,26 @@ export class AgentSessionStatusMainService extends Disposable implements IAgentS
 
 		// Add status information
 		if (info.attentionNeededCount > 0) {
+			const needsText = info.attentionNeededCount === 1 ? 'needs' : 'need';
+			const sessionText = info.attentionNeededCount === 1 ? 'session' : 'sessions';
 			dockMenuItems.push({
-				label: `⚠️ ${info.attentionNeededCount} session${info.attentionNeededCount > 1 ? 's' : ''} need${info.attentionNeededCount === 1 ? 's' : ''} attention`,
+				label: `⚠️ ${info.attentionNeededCount} ${sessionText} ${needsText} attention`,
 				enabled: false
 			});
 		}
 
 		if (info.activeSessionsCount > 0) {
+			const sessionText = info.activeSessionsCount === 1 ? 'session' : 'sessions';
 			dockMenuItems.push({
-				label: `🔄 ${info.activeSessionsCount} session${info.activeSessionsCount > 1 ? 's' : ''} in progress`,
+				label: `🔄 ${info.activeSessionsCount} ${sessionText} in progress`,
 				enabled: false
 			});
 		}
 
 		if (info.unreadSessionsCount > 0) {
+			const sessionText = info.unreadSessionsCount === 1 ? 'session' : 'sessions';
 			dockMenuItems.push({
-				label: `💬 ${info.unreadSessionsCount} unread session${info.unreadSessionsCount > 1 ? 's' : ''}`,
+				label: `💬 ${info.unreadSessionsCount} unread ${sessionText}`,
 				enabled: false
 			});
 		}
@@ -258,22 +262,26 @@ export class AgentSessionStatusMainService extends Disposable implements IAgentS
 
 		// Status information
 		if (info.attentionNeededCount > 0) {
+			const needsText = info.attentionNeededCount === 1 ? 'needs' : 'need';
+			const sessionText = info.attentionNeededCount === 1 ? 'session' : 'sessions';
 			menuItems.push({
-				label: `⚠️ ${info.attentionNeededCount} session${info.attentionNeededCount > 1 ? 's' : ''} need${info.attentionNeededCount === 1 ? 's' : ''} attention`,
+				label: `⚠️ ${info.attentionNeededCount} ${sessionText} ${needsText} attention`,
 				enabled: false
 			});
 		}
 
 		if (info.activeSessionsCount > 0) {
+			const sessionText = info.activeSessionsCount === 1 ? 'session' : 'sessions';
 			menuItems.push({
-				label: `🔄 ${info.activeSessionsCount} session${info.activeSessionsCount > 1 ? 's' : ''} in progress`,
+				label: `🔄 ${info.activeSessionsCount} ${sessionText} in progress`,
 				enabled: false
 			});
 		}
 
 		if (info.unreadSessionsCount > 0) {
+			const sessionText = info.unreadSessionsCount === 1 ? 'session' : 'sessions';
 			menuItems.push({
-				label: `💬 ${info.unreadSessionsCount} unread session${info.unreadSessionsCount > 1 ? 's' : ''}`,
+				label: `💬 ${info.unreadSessionsCount} unread ${sessionText}`,
 				enabled: false
 			});
 		}
