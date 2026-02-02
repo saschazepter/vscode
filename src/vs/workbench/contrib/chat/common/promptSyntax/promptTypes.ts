@@ -12,6 +12,7 @@ export const PROMPT_DOCUMENTATION_URL = 'https://aka.ms/vscode-ghcp-prompt-snipp
 export const INSTRUCTIONS_DOCUMENTATION_URL = 'https://aka.ms/vscode-ghcp-custom-instructions';
 export const AGENT_DOCUMENTATION_URL = 'https://aka.ms/vscode-ghcp-custom-chat-modes'; // todo
 export const SKILL_DOCUMENTATION_URL = 'https://aka.ms/vscode-agent-skills';
+export const HOOK_DOCUMENTATION_URL = 'https://docs.github.com/en/copilot/concepts/agents/coding-agent/about-hooks';
 
 /**
  * Language ID for the reusable prompt syntax.
@@ -34,9 +35,14 @@ export const AGENT_LANGUAGE_ID = 'chatagent';
 export const SKILL_LANGUAGE_ID = 'skill';
 
 /**
+ * Language ID for hook syntax (JSON).
+ */
+export const HOOK_LANGUAGE_ID = 'json';
+
+/**
  * Prompt and instructions files language selector.
  */
-export const ALL_PROMPTS_LANGUAGE_SELECTOR: LanguageSelector = [PROMPT_LANGUAGE_ID, INSTRUCTIONS_LANGUAGE_ID, AGENT_LANGUAGE_ID, SKILL_LANGUAGE_ID];
+export const ALL_PROMPTS_LANGUAGE_SELECTOR: LanguageSelector = [PROMPT_LANGUAGE_ID, INSTRUCTIONS_LANGUAGE_ID, AGENT_LANGUAGE_ID, SKILL_LANGUAGE_ID, HOOK_LANGUAGE_ID];
 
 /**
  * The language id for a prompts type.
@@ -51,6 +57,8 @@ export function getLanguageIdForPromptsType(type: PromptsType): string {
 			return AGENT_LANGUAGE_ID;
 		case PromptsType.skill:
 			return SKILL_LANGUAGE_ID;
+		case PromptsType.hook:
+			return HOOK_LANGUAGE_ID;
 		default:
 			throw new Error(`Unknown prompt type: ${type}`);
 	}
@@ -66,6 +74,7 @@ export function getPromptsTypeForLanguageId(languageId: string): PromptsType | u
 			return PromptsType.agent;
 		case SKILL_LANGUAGE_ID:
 			return PromptsType.skill;
+		// Note: hook uses 'json' language ID which is shared, so we don't map it here
 		default:
 			return undefined;
 	}
@@ -79,7 +88,8 @@ export enum PromptsType {
 	instructions = 'instructions',
 	prompt = 'prompt',
 	agent = 'agent',
-	skill = 'skill'
+	skill = 'skill',
+	hook = 'hook'
 }
 export function isValidPromptType(type: string): type is PromptsType {
 	return Object.values(PromptsType).includes(type as PromptsType);

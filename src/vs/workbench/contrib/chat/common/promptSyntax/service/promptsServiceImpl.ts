@@ -114,6 +114,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 		[PromptsType.instructions]: new ResourceMap<Promise<IExtensionPromptPath>>(),
 		[PromptsType.agent]: new ResourceMap<Promise<IExtensionPromptPath>>(),
 		[PromptsType.skill]: new ResourceMap<Promise<IExtensionPromptPath>>(),
+		[PromptsType.hook]: new ResourceMap<Promise<IExtensionPromptPath>>(),
 	};
 
 	constructor(
@@ -341,11 +342,15 @@ export class PromptsService extends Disposable implements IPromptsService {
 			.map(result => result.value);
 
 		const activationEvent = this.getProviderActivationEvent(type);
+		if (!activationEvent) {
+			// No provider activation event for this type (e.g., hooks)
+			return contributedFiles;
+		}
 		const providerFiles = await this.listFromProviders(type, activationEvent, token);
 		return [...contributedFiles, ...providerFiles];
 	}
 
-	private getProviderActivationEvent(type: PromptsType): string {
+	private getProviderActivationEvent(type: PromptsType): string | undefined {
 		switch (type) {
 			case PromptsType.agent:
 				return CUSTOM_AGENT_PROVIDER_ACTIVATION_EVENT;
@@ -355,6 +360,8 @@ export class PromptsService extends Disposable implements IPromptsService {
 				return PROMPT_FILE_PROVIDER_ACTIVATION_EVENT;
 			case PromptsType.skill:
 				return SKILL_PROVIDER_ACTIVATION_EVENT;
+			case PromptsType.hook:
+				return undefined; // hooks don't have extension providers
 		}
 	}
 

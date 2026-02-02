@@ -34,6 +34,11 @@ export const AGENT_FILE_EXTENSION = '.agent.md';
 export const SKILL_FILENAME = 'SKILL.md';
 
 /**
+ * File extension for hook configuration files.
+ */
+export const HOOK_FILE_EXTENSION = '.json';
+
+/**
  * Copilot custom instructions file name.
  */
 export const COPILOT_CUSTOM_INSTRUCTIONS_FILENAME = 'copilot-instructions.md';
@@ -58,6 +63,11 @@ export const LEGACY_MODE_DEFAULT_SOURCE_FOLDER = '.github/chatmodes';
  * Agents folder.
  */
 export const AGENTS_SOURCE_FOLDER = '.github/agents';
+
+/**
+ * Hooks folder.
+ */
+export const HOOKS_SOURCE_FOLDER = '.github/hooks';
 
 /**
  * Tracks where prompt files originate from.
@@ -141,11 +151,26 @@ export const DEFAULT_AGENT_SOURCE_FOLDERS: readonly IPromptSourceFolder[] = [
 ];
 
 /**
+ * Default hook source folders.
+ */
+export const DEFAULT_HOOK_SOURCE_FOLDERS: readonly IPromptSourceFolder[] = [
+	{ path: HOOKS_SOURCE_FOLDER, source: PromptFileSource.GitHubWorkspace, storage: PromptsStorage.local },
+];
+
+/**
  * Helper function to check if a file is directly in the .github/agents/ folder (not in subfolders).
  */
 function isInAgentsFolder(fileUri: URI): boolean {
 	const dir = dirname(fileUri.path);
 	return dir.endsWith('/' + AGENTS_SOURCE_FOLDER) || dir === AGENTS_SOURCE_FOLDER;
+}
+
+/**
+ * Helper function to check if a file is in the .github/hooks/ folder.
+ */
+function isInHooksFolder(fileUri: URI): boolean {
+	const dir = dirname(fileUri.path);
+	return dir.endsWith('/' + HOOKS_SOURCE_FOLDER) || dir === HOOKS_SOURCE_FOLDER;
 }
 
 /**
@@ -176,6 +201,11 @@ export function getPromptFileType(fileUri: URI): PromptsType | undefined {
 		return PromptsType.agent;
 	}
 
+	// Check if it's a .json file in the .github/hooks/ folder
+	if (filename.endsWith(HOOK_FILE_EXTENSION) && isInHooksFolder(fileUri)) {
+		return PromptsType.hook;
+	}
+
 	return undefined;
 }
 
@@ -196,6 +226,8 @@ export function getPromptFileExtension(type: PromptsType): string {
 			return AGENT_FILE_EXTENSION;
 		case PromptsType.skill:
 			return SKILL_FILENAME;
+		case PromptsType.hook:
+			return HOOK_FILE_EXTENSION;
 		default:
 			throw new Error('Unknown prompt type');
 	}
@@ -211,6 +243,8 @@ export function getPromptFileDefaultLocations(type: PromptsType): readonly IProm
 			return DEFAULT_AGENT_SOURCE_FOLDERS;
 		case PromptsType.skill:
 			return DEFAULT_SKILL_SOURCE_FOLDERS;
+		case PromptsType.hook:
+			return DEFAULT_HOOK_SOURCE_FOLDERS;
 		default:
 			throw new Error('Unknown prompt type');
 	}

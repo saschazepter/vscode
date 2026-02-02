@@ -54,9 +54,11 @@ import { ILanguageModelToolsConfirmationService } from '../common/tools/language
 import { ILanguageModelToolsService } from '../common/tools/languageModelToolsService.js';
 import { ChatPromptFilesExtensionPointHandler } from '../common/promptSyntax/chatPromptFilesContribution.js';
 import { PromptsConfig } from '../common/promptSyntax/config/config.js';
-import { INSTRUCTIONS_DEFAULT_SOURCE_FOLDER, INSTRUCTION_FILE_EXTENSION, LEGACY_MODE_DEFAULT_SOURCE_FOLDER, LEGACY_MODE_FILE_EXTENSION, PROMPT_DEFAULT_SOURCE_FOLDER, PROMPT_FILE_EXTENSION, DEFAULT_SKILL_SOURCE_FOLDERS, AGENTS_SOURCE_FOLDER, AGENT_FILE_EXTENSION, SKILL_FILENAME } from '../common/promptSyntax/config/promptFileLocations.js';
+import { INSTRUCTIONS_DEFAULT_SOURCE_FOLDER, INSTRUCTION_FILE_EXTENSION, LEGACY_MODE_DEFAULT_SOURCE_FOLDER, LEGACY_MODE_FILE_EXTENSION, PROMPT_DEFAULT_SOURCE_FOLDER, PROMPT_FILE_EXTENSION, DEFAULT_SKILL_SOURCE_FOLDERS, AGENTS_SOURCE_FOLDER, AGENT_FILE_EXTENSION, SKILL_FILENAME, HOOKS_SOURCE_FOLDER, HOOK_FILE_EXTENSION } from '../common/promptSyntax/config/promptFileLocations.js';
 import { PromptLanguageFeaturesProvider } from '../common/promptSyntax/promptFileContributions.js';
-import { AGENT_DOCUMENTATION_URL, INSTRUCTIONS_DOCUMENTATION_URL, PROMPT_DOCUMENTATION_URL, SKILL_DOCUMENTATION_URL } from '../common/promptSyntax/promptTypes.js';
+import { AGENT_DOCUMENTATION_URL, INSTRUCTIONS_DOCUMENTATION_URL, PROMPT_DOCUMENTATION_URL, SKILL_DOCUMENTATION_URL, HOOK_DOCUMENTATION_URL } from '../common/promptSyntax/promptTypes.js';
+import { hookFileSchema, HOOK_SCHEMA_URI, HOOK_FILE_GLOB } from '../common/promptSyntax/hookSchema.js';
+import { Extensions as JSONExtensions, IJSONContributionRegistry } from '../../../../platform/jsonschemas/common/jsonContributionRegistry.js';
 import { IPromptsService } from '../common/promptSyntax/service/promptsService.js';
 import { PromptsService } from '../common/promptSyntax/service/promptsServiceImpl.js';
 import { LanguageModelToolsExtensionPointHandler } from '../common/tools/languageModelToolsContribution.js';
@@ -140,6 +142,11 @@ import { ChatTipService, IChatTipService } from './chatTipService.js';
 
 const toolReferenceNameEnumValues: string[] = [];
 const toolReferenceNameEnumDescriptions: string[] = [];
+
+// Register JSON schema for hook files
+const jsonContributionRegistry = Registry.as<IJSONContributionRegistry>(JSONExtensions.JSONContribution);
+jsonContributionRegistry.registerSchema(HOOK_SCHEMA_URI, hookFileSchema);
+jsonContributionRegistry.registerSchemaAssociation(HOOK_SCHEMA_URI, HOOK_FILE_GLOB);
 
 // Register configuration
 const configurationRegistry = Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration);
@@ -888,6 +895,35 @@ configurationRegistry.registerConfiguration({
 					'my-skills': true,
 					'../shared-skills': true,
 					'~/.custom/skills': true,
+				},
+			],
+		},
+		[PromptsConfig.HOOKS_LOCATION_KEY]: {
+			type: 'object',
+			title: nls.localize('chat.hooksLocations.title', "Hook File Locations",),
+			markdownDescription: nls.localize(
+				'chat.hooksLocations.description',
+				"Specify location(s) of hook configuration files (`*{0}`) that define custom shell commands to execute at strategic points in an agent's workflow. [Learn More]({1}).\n\nRelative paths are resolved from the root folder(s) of your workspace.",
+				HOOK_FILE_EXTENSION,
+				HOOK_DOCUMENTATION_URL,
+			),
+			default: {
+				[HOOKS_SOURCE_FOLDER]: true,
+			},
+			additionalProperties: { type: 'boolean' },
+			propertyNames: {
+				pattern: VALID_PROMPT_FOLDER_PATTERN,
+				patternErrorMessage: nls.localize('chat.hooksLocations.invalidPath', "Paths must be relative or start with '~/'. Absolute paths and '\\' separators are not supported."),
+			},
+			restricted: true,
+			tags: ['prompts', 'hooks', 'agent'],
+			examples: [
+				{
+					[HOOKS_SOURCE_FOLDER]: true,
+				},
+				{
+					[HOOKS_SOURCE_FOLDER]: true,
+					'my-hooks': true,
 				},
 			],
 		},

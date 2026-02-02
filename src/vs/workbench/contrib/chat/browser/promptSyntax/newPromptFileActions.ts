@@ -5,6 +5,7 @@
 
 import { isEqual } from '../../../../../base/common/resources.js';
 import { URI } from '../../../../../base/common/uri.js';
+import { VSBuffer } from '../../../../../base/common/buffer.js';
 import { getCodeEditor } from '../../../../../editor/browser/editorBrowser.js';
 import { SnippetController2 } from '../../../../../editor/contrib/snippet/browser/snippetController2.js';
 import { localize, localize2 } from '../../../../../nls.js';
@@ -25,7 +26,7 @@ import { CHAT_CATEGORY } from '../actions/chatActions.js';
 import { askForPromptFileName } from './pickers/askForPromptName.js';
 import { askForPromptSourceFolder } from './pickers/askForPromptSourceFolder.js';
 import { IQuickInputService } from '../../../../../platform/quickinput/common/quickInput.js';
-import { getCleanPromptName, SKILL_FILENAME } from '../../common/promptSyntax/config/promptFileLocations.js';
+import { getCleanPromptName, SKILL_FILENAME, HOOK_FILE_EXTENSION } from '../../common/promptSyntax/config/promptFileLocations.js';
 
 
 class AbstractNewPromptFileAction extends Action2 {
@@ -175,6 +176,25 @@ function getDefaultContentSnippet(promptType: PromptsType, name: string | undefi
 				`---`,
 				`\${3:Define the functionality provided by this skill, including detailed instructions and examples}`,
 			].join('\n');
+		case PromptsType.hook:
+			return JSON.stringify({
+				version: 1,
+				hooks: {
+					sessionStart: [
+						{
+							type: 'command',
+							command: '${1:echo "Session started"}'
+						}
+					],
+					preToolUse: [
+						{
+							type: 'command',
+							command: '${2:./scripts/validate.sh}',
+							timeoutSec: 15
+						}
+					]
+				}
+			}, null, '\t');
 		default:
 			throw new Error(`Unsupported prompt type: ${promptType}`);
 	}
@@ -186,6 +206,7 @@ export const NEW_PROMPT_COMMAND_ID = 'workbench.command.new.prompt';
 export const NEW_INSTRUCTIONS_COMMAND_ID = 'workbench.command.new.instructions';
 export const NEW_AGENT_COMMAND_ID = 'workbench.command.new.agent';
 export const NEW_SKILL_COMMAND_ID = 'workbench.command.new.skill';
+export const NEW_HOOK_COMMAND_ID = 'workbench.command.new.hook';
 
 class NewPromptFileAction extends AbstractNewPromptFileAction {
 	constructor() {
@@ -288,6 +309,70 @@ class NewSkillFileAction extends Action2 {
 	}
 }
 
+class NewHookFileAction extends Action2 {
+	constructor() {
+		super({
+			id: NEW_HOOK_COMMAND_ID,
+			title: localize('commands.new.hook.local.title', "New Hook File..."),
+			f1: false,
+			precondition: ChatContextKeys.enabled,
+			category: CHAT_CATEGORY,
+			keybinding: {
+				weight: KeybindingWeight.WorkbenchContrib
+			},
+			menu: {
+				id: MenuId.CommandPalette,
+				when: ChatContextKeys.enabled
+			}
+		});
+	}
+
+	public override async run(accessor: ServicesAccessor) {
+		const openerService = accessor.get(IOpenerService);
+		const fileService = accessor.get(IFileService);
+		const instaService = accessor.get(IInstantiationService);
+		const quickInputService = accessor.get(IQuickInputService);
+
+		const selectedFolder = await instaService.invokeFunction(askForPromptSourceFolder, PromptsType.hook);
+		if (!selectedFolder) {
+			return;
+		}
+
+		// Ask for hook file name
+		const hookName = await quickInputService.input({
+			prompt: localize('commands.new.hook.name.prompt', "Enter a name for the hook file"),
+			placeHolder: localize('commands.new.hook.name.placeholder', "e.g., security-check, session-logging"),
+			validateInput: async (value) => {
+				if (!value || !value.trim()) {
+					return localize('commands.new.hook.name.required', "Hook name is required");
+				}
+				const name = value.trim();
+				// Allow alphanumeric, hyphens, and underscores
+				if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
+					return localize('commands.new.hook.name.invalidChars', "Hook name may only contain letters, numbers, hyphens, and underscores");
+				}
+				return undefined;
+			}
+		});
+
+		if (!hookName) {
+			return;
+		}
+
+		const trimmedName = hookName.trim();
+
+		// Create the hooks folder if it doesn't exist
+		await fileService.createFolder(selectedFolder.uri);
+
+		// Create the hook file with .json extension
+		const hookFileUri = URI.joinPath(selectedFolder.uri, trimmedName + HOOK_FILE_EXTENSION);
+		const defaultContent = getDefaultContentSnippet(PromptsType.hook, trimmedName);
+		await fileService.createFile(hookFileUri, VSBuffer.fromString(defaultContent));
+
+		await openerService.open(hookFileUri);
+	}
+}
+
 class NewUntitledPromptFileAction extends Action2 {
 	constructor() {
 		super({
@@ -333,5 +418,6 @@ export function registerNewPromptFileActions(): void {
 	registerAction2(NewInstructionsFileAction);
 	registerAction2(NewAgentFileAction);
 	registerAction2(NewSkillFileAction);
+	registerAction2(NewHookFileAction);
 	registerAction2(NewUntitledPromptFileAction);
 }

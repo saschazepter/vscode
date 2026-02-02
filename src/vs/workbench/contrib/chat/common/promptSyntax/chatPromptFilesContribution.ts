@@ -29,7 +29,7 @@ enum ChatContributionPoint {
 	chatInstructions = 'chatInstructions',
 	chatAgents = 'chatAgents',
 	chatPromptFiles = 'chatPromptFiles',
-	chatSkills = 'chatSkills'
+	chatSkills = 'chatSkills',
 }
 
 function registerChatFilesExtensionPoint(point: ChatContributionPoint) {
