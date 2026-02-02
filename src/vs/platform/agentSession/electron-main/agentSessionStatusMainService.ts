@@ -8,8 +8,6 @@ import { Emitter } from '../../../base/common/event.js';
 import { Disposable } from '../../../base/common/lifecycle.js';
 import { isMacintosh, isWindows, isLinux } from '../../../base/common/platform.js';
 import { IAgentSessionNativeStatusInfo, IAgentSessionStatusMainService, AgentSessionNativeStatusMode } from '../common/agentSession.js';
-import { join } from '../../../base/common/path.js';
-import { FileAccess } from '../../../base/common/network.js';
 
 /**
  * Implementation of agent session status for native menu bar/system tray.
@@ -166,10 +164,9 @@ export class AgentSessionStatusMainService extends Disposable implements IAgentS
 
 	private getDefaultTrayIcon(): NativeImage | undefined {
 		try {
-			// Use the VS Code icon or a sparkle icon for agent sessions
-			// The exact path depends on your resource structure
-			const iconPath = FileAccess.asFileUri('vs/workbench/contrib/chat/browser/media/sparkle.svg');
-			return nativeImage.createFromPath(iconPath.fsPath);
+			// For now, return an empty icon - in production, you would use an actual icon file
+			// The icon should be located in the resources folder
+			return nativeImage.createEmpty();
 		} catch (error) {
 			console.error('Failed to load tray icon:', error);
 			return undefined;
