@@ -12,7 +12,7 @@ function sanitizeNotificationText(text: string): string {
 	return text.replace(/`/g, '\''); // convert backticks to single quotes
 }
 
-export async function triggerNotification(message: string, options?: { detail?: string; sticky?: boolean }): Promise<INotification | undefined> {
+export async function triggerBrowserToast(message: string, options?: { detail?: string; sticky?: boolean }): Promise<INotification | undefined> {
 	const permission = await Notification.requestPermission();
 	if (permission !== 'granted') {
 		return;
@@ -25,7 +25,7 @@ export async function triggerNotification(message: string, options?: { detail?: 
 		requireInteraction: options?.sticky,
 	});
 
-	const onClick = new Emitter<void>();
+	const onClick = disposables.add(new Emitter<void>());
 	disposables.add(addDisposableListener(notification, 'click', () => onClick.fire()));
 	disposables.add(addDisposableListener(notification, 'close', () => disposables.dispose()));
 

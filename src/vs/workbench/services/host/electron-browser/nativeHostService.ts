@@ -19,7 +19,7 @@ import { memoize } from '../../../../base/common/decorators.js';
 import { isAuxiliaryWindow } from '../../../../base/browser/window.js';
 import { VSBuffer } from '../../../../base/common/buffer.js';
 import { CancellationToken, CancellationTokenSource } from '../../../../base/common/cancellation.js';
-import { triggerNotification } from '../browser/osToasts.js';
+import { triggerBrowserToast } from '../browser/osToasts.js';
 
 class WorkbenchNativeHostService extends NativeHostService {
 
@@ -248,7 +248,7 @@ class WorkbenchHostService extends Disposable implements IHostService {
 		}
 
 		// Fallback to browser notifications (e.g., when native notifications are not supported on Linux)
-		const browserToast = await triggerNotification(options.title, {
+		const browserToast = await triggerBrowserToast(options.title, {
 			detail: options.body,
 			sticky: !options.silent
 		});

@@ -44,7 +44,7 @@ import { URI } from '../../../../base/common/uri.js';
 import { VSBuffer } from '../../../../base/common/buffer.js';
 import { MarkdownString } from '../../../../base/common/htmlContent.js';
 import { CancellationToken, CancellationTokenSource } from '../../../../base/common/cancellation.js';
-import { triggerNotification } from './osToasts.js';
+import { triggerBrowserToast } from './osToasts.js';
 
 enum HostShutdownReason {
 
@@ -738,7 +738,7 @@ export class BrowserHostService extends Disposable implements IHostService {
 	private readonly activeBrowserToasts = new Set<DisposableStore>();
 
 	async showOSToast(options: IOSToastOptions, token: CancellationToken): Promise<IOSToastResult> {
-		const browserToast = await triggerNotification(options.title, {
+		const browserToast = await triggerBrowserToast(options.title, {
 			detail: options.body,
 			sticky: !options.silent
 		});
