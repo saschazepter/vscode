@@ -6,7 +6,6 @@
 import { isWeb, isWindows } from '../../../../base/common/platform.js';
 import { localize } from '../../../../nls.js';
 import { ISetting, ISettingsGroup } from '../../../services/preferences/common/preferences.js';
-import { COMMONLY_USED_SETTINGS } from '../common/preferences.js';
 
 export interface ITOCFilter {
 	include?: {
@@ -28,7 +27,23 @@ export interface ITOCEntry<T> {
 	hide?: boolean;
 }
 
-export function getCommonlyUsedData(settingGroups: ISettingsGroup[], commonlyUsed: readonly string[] = COMMONLY_USED_SETTINGS): ITOCEntry<ISetting> {
+const COMMONLY_USED_SETTINGS: readonly string[] = [
+	'editor.fontSize',
+	'editor.formatOnSave',
+	'files.autoSave',
+	'GitHub.copilot.manageExtension',
+	'editor.defaultFormatter',
+	'editor.fontFamily',
+	'editor.wordWrap',
+	'chat.agent.maxRequests',
+	'files.exclude',
+	'workbench.colorTheme',
+	'editor.tabSize',
+	'editor.mouseWheelZoom',
+	'editor.formatOnPaste'
+];
+
+export function getCommonlyUsedData(settingGroups: ISettingsGroup[]): ITOCEntry<ISetting> {
 	const allSettings = new Map<string, ISetting>();
 	for (const group of settingGroups) {
 		for (const section of group.sections) {
@@ -38,7 +53,7 @@ export function getCommonlyUsedData(settingGroups: ISettingsGroup[], commonlyUse
 		}
 	}
 	const settings: ISetting[] = [];
-	for (const id of commonlyUsed) {
+	for (const id of COMMONLY_USED_SETTINGS) {
 		const setting = allSettings.get(id);
 		if (setting) {
 			settings.push(setting);

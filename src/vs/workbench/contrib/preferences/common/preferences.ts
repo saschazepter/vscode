@@ -115,22 +115,6 @@ export const ENABLE_LANGUAGE_FILTER = true;
 export const ENABLE_EXTENSION_TOGGLE_SETTINGS = true;
 export const EXTENSION_FETCH_TIMEOUT_MS = 1000;
 
-export const COMMONLY_USED_SETTINGS: readonly string[] = [
-	'editor.fontSize',
-	'editor.formatOnSave',
-	'files.autoSave',
-	'GitHub.copilot.manageExtension',
-	'editor.defaultFormatter',
-	'editor.fontFamily',
-	'editor.wordWrap',
-	'chat.agent.maxRequests',
-	'files.exclude',
-	'workbench.colorTheme',
-	'editor.tabSize',
-	'editor.mouseWheelZoom',
-	'editor.formatOnPaste'
-];
-
 export const STRING_MATCH_SEARCH_PROVIDER_NAME = 'local';
 export const TF_IDF_SEARCH_PROVIDER_NAME = 'tfIdf';
 export const FILTER_MODEL_SEARCH_PROVIDER_NAME = 'filterModel';
@@ -145,7 +129,6 @@ export enum WorkbenchSettingsEditorSettings {
 export type ExtensionToggleData = {
 	settingsEditorRecommendedExtensions: IStringDictionary<IExtensionRecommendations>;
 	recommendedExtensionsGalleryInfo: IStringDictionary<IGalleryExtension>;
-	commonlyUsed: readonly string[];
 };
 
 let cachedExtensionToggleData: ExtensionToggleData | undefined;
@@ -204,8 +187,7 @@ export async function getExperimentalExtensionToggleData(
 
 		cachedExtensionToggleData = {
 			settingsEditorRecommendedExtensions,
-			recommendedExtensionsGalleryInfo,
-			commonlyUsed: COMMONLY_USED_SETTINGS
+			recommendedExtensionsGalleryInfo
 		};
 		return cachedExtensionToggleData;
 	}
