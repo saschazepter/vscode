@@ -1746,10 +1746,6 @@ export function triggerUpload(): Promise<FileList | undefined> {
 	});
 }
 
-export interface INotification extends IDisposable {
-	readonly onClick: event.Event<void>;
-}
-
 export enum DetectedFullscreenMode {
 
 	/**

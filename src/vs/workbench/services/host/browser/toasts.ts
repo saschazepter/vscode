@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { INotification, addDisposableListener } from '../../../../base/browser/dom.js';
+import { addDisposableListener } from '../../../../base/browser/dom.js';
 import { CancellationToken, CancellationTokenSource } from '../../../../base/common/cancellation.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { DisposableStore, IDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
@@ -44,7 +44,15 @@ export async function showBrowserToast(controller: IShowToastController, options
 		cts.token.onCancellationRequested(() => resolve({ supported: true, clicked: false }));
 
 		Event.once(toast.onClick)(() => resolve({ supported: true, clicked: true }));
+		Event.once(toast.onClose)(() => resolve({ supported: true, clicked: false }));
+		Event.once(toast.onError)(() => resolve({ supported: false, clicked: false }));
 	});
+}
+
+interface INotification extends IDisposable {
+	readonly onClick: Event<void>;
+	readonly onClose: Event<void>;
+	readonly onError: Event<void>;
 }
 
 async function triggerBrowserToast(message: string, options?: { detail?: string; sticky?: boolean }): Promise<INotification | undefined> {
@@ -61,13 +69,19 @@ async function triggerBrowserToast(message: string, options?: { detail?: string;
 	});
 
 	const onClick = disposables.add(new Emitter<void>());
+	const onClose = disposables.add(new Emitter<void>());
+	const onError = disposables.add(new Emitter<void>());
+
 	disposables.add(addDisposableListener(notification, 'click', () => onClick.fire()));
-	disposables.add(addDisposableListener(notification, 'close', () => disposables.dispose()));
+	disposables.add(addDisposableListener(notification, 'close', () => onClose.fire()));
+	disposables.add(addDisposableListener(notification, 'error', () => onError.fire()));
 
 	disposables.add(toDisposable(() => notification.close()));
 
 	return {
 		onClick: onClick.event,
+		onClose: onClose.event,
+		onError: onError.event,
 		dispose: () => disposables.dispose()
 	};
 }
