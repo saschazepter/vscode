@@ -16,6 +16,12 @@ const hookCommandSchema: IJSONSchema = {
 	type: 'object',
 	additionalProperties: false,
 	required: ['type'],
+	anyOf: [
+		{ required: ['command'] },
+		{ required: ['bash'] },
+		{ required: ['powershell'] }
+	],
+	errorMessage: nls.localize('hook.commandRequired', 'At least one of "command", "bash", or "powershell" must be specified.'),
 	properties: {
 		type: {
 			type: 'string',
