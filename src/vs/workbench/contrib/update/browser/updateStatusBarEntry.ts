@@ -341,12 +341,12 @@ export class UpdateStatusBarEntryContribution extends Disposable implements IWor
 		const details = dom.append(productInfo, dom.$('.product-details'));
 
 		const productName = dom.append(details, dom.$('.product-name'));
-		productName.textContent = 'Visual Studio Code - Insiders'; // this.productService.nameLong;
+		productName.textContent = this.productService.nameLong;
 
 		if (version) {
 			const productVersion = dom.append(details, dom.$('.product-version'));
 			productVersion.textContent = isUpdate ?
-				nls.localize('updateStatus.lastestVersionLabel', "Latest Version: {0}", version) :
+				nls.localize('updateStatus.latestVersionLabel', "Latest Version: {0}", version) :
 				nls.localize('updateStatus.currentVersionLabel', "Current Version: {0}", version);
 		}
 
@@ -450,7 +450,10 @@ export function computeDownloadTimeRemaining(state: Downloading): number | undef
 export function formatTimeRemaining(seconds: number): string {
 	const hours = seconds / 3600;
 	if (hours >= 1) {
-		return nls.localize('timeRemainingHours', "{0} hours", formatDecimal(hours));
+		const formattedHours = formatDecimal(hours);
+		return formattedHours === '1'
+			? nls.localize('timeRemainingHour', "{0} hour", formattedHours)
+			: nls.localize('timeRemainingHours', "{0} hours", formattedHours);
 	}
 
 	const minutes = Math.floor(seconds / 60);

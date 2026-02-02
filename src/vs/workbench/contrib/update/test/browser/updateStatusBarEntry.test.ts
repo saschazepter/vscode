@@ -74,7 +74,7 @@ suite('UpdateStatusBarEntry', () => {
 		});
 
 		test('formats fractional hours for values >= 1 hour', () => {
-			assert.strictEqual(formatTimeRemaining(3600), '1 hours');
+			assert.strictEqual(formatTimeRemaining(3600), '1 hour');
 			assert.strictEqual(formatTimeRemaining(5400), '1.5 hours'); // 1.5 hours
 			assert.strictEqual(formatTimeRemaining(7200), '2 hours');
 			assert.strictEqual(formatTimeRemaining(9000), '2.5 hours'); // 2.5 hours
