@@ -871,6 +871,7 @@ class ChatTerminalToolOutputSection extends Disposable {
 	private readonly _emptyElement: HTMLElement;
 	private _lastRenderedLineCount: number | undefined;
 	private _lastRenderedMaxColumnWidth: number | undefined;
+	private _needsHorizontalScroll: boolean = false;
 
 	private readonly _onDidFocusEmitter = this._register(new Emitter<void>());
 	public get onDidFocus() { return this._onDidFocusEmitter.event; }
@@ -1021,15 +1022,20 @@ class ChatTerminalToolOutputSection extends Disposable {
 		this.domNode.appendChild(scrollableDomNode);
 		this.updateAriaLabel();
 
-		// Show horizontal scrollbar on hover/focus, hide otherwise to prevent flickering during streaming
+		// Show horizontal scrollbar on hover/focus only when content requires scrolling,
+		// hide otherwise to prevent flickering during streaming
 		this._register(dom.addDisposableListener(this.domNode, dom.EventType.MOUSE_ENTER, () => {
-			this._scrollableContainer?.updateOptions({ horizontal: ScrollbarVisibility.Auto });
+			if (this._needsHorizontalScroll) {
+				this._scrollableContainer?.updateOptions({ horizontal: ScrollbarVisibility.Auto });
+			}
 		}));
 		this._register(dom.addDisposableListener(this.domNode, dom.EventType.MOUSE_LEAVE, () => {
 			this._scrollableContainer?.updateOptions({ horizontal: ScrollbarVisibility.Hidden });
 		}));
 		this._register(dom.addDisposableListener(this.domNode, dom.EventType.FOCUS_IN, () => {
-			this._scrollableContainer?.updateOptions({ horizontal: ScrollbarVisibility.Auto });
+			if (this._needsHorizontalScroll) {
+				this._scrollableContainer?.updateOptions({ horizontal: ScrollbarVisibility.Auto });
+			}
 		}));
 		this._register(dom.addDisposableListener(this.domNode, dom.EventType.FOCUS_OUT, () => {
 			this._scrollableContainer?.updateOptions({ horizontal: ScrollbarVisibility.Hidden });
@@ -1321,12 +1327,16 @@ class ChatTerminalToolOutputSection extends Disposable {
 			this._outputBody.style.width = `${contentWidth}px`;
 			this._terminalContainer.style.width = `${contentWidth}px`;
 			this._terminalContainer.classList.add('chat-terminal-output-terminal-clipped');
+			// No horizontal scroll needed when content fits
+			this._needsHorizontalScroll = false;
 		} else {
 			// Content needs full width or more (scrollbar will show)
 			scrollableDomNode.style.width = '';
 			this._outputBody.style.width = '';
 			this._terminalContainer.style.width = '';
 			this._terminalContainer.classList.remove('chat-terminal-output-terminal-clipped');
+			// Horizontal scroll may be needed when content exceeds container
+			this._needsHorizontalScroll = parentWidth > 0 && contentWidth > parentWidth;
 		}
 
 		this._scrollableContainer.scanDomNode();
