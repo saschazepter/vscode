@@ -3066,11 +3066,20 @@ export namespace ChatToolInvocationPart {
 		} else if (data.kind === 'todoList') {
 			// Convert internal todo tool data to extension API format
 			return {
-				todoList: data.todoList.map((todo: any) => ({
-					id: todo.id,
-					title: todo.title,
-					status: todoStatusStringToEnum(todo.status)
-				}))
+				todoList: data.todoList.map((todo: any, index: number) => {
+					let id: number;
+					if (typeof todo.id === 'number') {
+						id = todo.id;
+					} else {
+						const parsed = Number(todo.id);
+						id = Number.isFinite(parsed) ? parsed : index;
+					}
+					return {
+						id,
+						title: todo.title,
+						status: todoStatusStringToEnum(todo.status)
+					};
+				})
 			};
 		}
 		return data;
