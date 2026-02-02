@@ -8,6 +8,7 @@ import { localize } from '../../../../nls.js';
 import { $, addDisposableListener, addStandardDisposableListener, clearNode, EventHelper, EventType, getWindow, hide, isActiveElement, isAncestor, show } from '../../dom.js';
 import { StandardKeyboardEvent } from '../../keyboardEvent.js';
 import { ActionBar } from '../actionbar/actionbar.js';
+import { alert } from '../aria/aria.js';
 import { ButtonBar, ButtonBarAlignment, ButtonWithDescription, ButtonWithDropdown, IButton, IButtonStyles, IButtonWithDropdownOptions } from '../button/button.js';
 import { ICheckboxStyles, Checkbox } from '../toggle/toggle.js';
 import { IInputBoxStyles, InputBox } from '../inputbox/inputBox.js';
@@ -535,6 +536,9 @@ export class Dialog extends Disposable {
 			this.element.setAttribute('aria-labelledby', 'monaco-dialog-icon monaco-dialog-message-text');
 			this.element.setAttribute('aria-describedby', 'monaco-dialog-icon monaco-dialog-message-text monaco-dialog-message-detail monaco-dialog-message-body monaco-dialog-footer');
 			show(this.element);
+
+			// Announce dialog to screen readers
+			alert(this.message);
 
 			// Focus first element (input or button)
 			if (this.inputs.length > 0) {
