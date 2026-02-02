@@ -1254,6 +1254,18 @@ class ChatTerminalToolOutputSection extends Disposable {
 		const appliedHeight = Math.min(clampedHeight, measuredBodyHeight);
 		scrollableDomNode.style.height = appliedHeight < maxHeight ? `${appliedHeight}px` : '';
 		this._scrollableContainer.scanDomNode();
+
+		// Update horizontal scroll state based on actual scroll dimensions
+		// This handles cases where _applyContentWidth couldn't calculate (no maxColumnWidth)
+		this._updateNeedsHorizontalScroll();
+	}
+
+	private _updateNeedsHorizontalScroll(): void {
+		if (!this._scrollableContainer) {
+			return;
+		}
+		const dimensions = this._scrollableContainer.getScrollDimensions();
+		this._needsHorizontalScroll = dimensions.scrollWidth > dimensions.width;
 	}
 
 	private _computeIsAtBottom(): boolean {
@@ -1327,16 +1339,12 @@ class ChatTerminalToolOutputSection extends Disposable {
 			this._outputBody.style.width = `${contentWidth}px`;
 			this._terminalContainer.style.width = `${contentWidth}px`;
 			this._terminalContainer.classList.add('chat-terminal-output-terminal-clipped');
-			// No horizontal scroll needed when content fits
-			this._needsHorizontalScroll = false;
 		} else {
 			// Content needs full width or more (scrollbar will show)
 			scrollableDomNode.style.width = '';
 			this._outputBody.style.width = '';
 			this._terminalContainer.style.width = '';
 			this._terminalContainer.classList.remove('chat-terminal-output-terminal-clipped');
-			// Horizontal scroll may be needed when content exceeds container
-			this._needsHorizontalScroll = parentWidth > 0 && contentWidth > parentWidth;
 		}
 
 		this._scrollableContainer.scanDomNode();
