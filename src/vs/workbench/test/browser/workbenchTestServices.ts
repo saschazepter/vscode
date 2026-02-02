@@ -1364,7 +1364,7 @@ export class TestHostService implements IHostService {
 
 	async getNativeWindowHandle(_windowId: number): Promise<VSBuffer | undefined> { return undefined; }
 
-	async showOSToast(_options: IOSToastOptions): Promise<IOSToastResult> { return { supported: false, clicked: false }; }
+	async showOSToast(_options: IOSToastOptions, token: CancellationToken): Promise<IOSToastResult> { return { supported: false, clicked: false }; }
 
 	async clearOSToasts(): Promise<void> { }
 
