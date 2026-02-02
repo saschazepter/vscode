@@ -11,7 +11,7 @@ import { KeybindingWeight } from '../../../../platform/keybinding/common/keybind
 import { KeyMod, KeyCode } from '../../../../base/common/keyCodes.js';
 import { ACTIVE_GROUP, IEditorService, SIDE_GROUP } from '../../../services/editor/common/editorService.js';
 import { Codicon } from '../../../../base/common/codicons.js';
-import { BrowserEditor, CONTEXT_BROWSER_CAN_GO_BACK, CONTEXT_BROWSER_CAN_GO_FORWARD, CONTEXT_BROWSER_DEVTOOLS_OPEN, CONTEXT_BROWSER_FOCUSED, CONTEXT_BROWSER_STORAGE_SCOPE, CONTEXT_BROWSER_ELEMENT_SELECTION_ACTIVE, CONTEXT_BROWSER_FIND_WIDGET_FOCUSED, CONTEXT_BROWSER_FIND_WIDGET_VISIBLE } from './browserEditor.js';
+import { BrowserEditor, CONTEXT_BROWSER_CAN_GO_BACK, CONTEXT_BROWSER_CAN_GO_FORWARD, CONTEXT_BROWSER_DEVTOOLS_OPEN, CONTEXT_BROWSER_FOCUSED, CONTEXT_BROWSER_STORAGE_SCOPE, CONTEXT_BROWSER_ELEMENT_SELECTION_ACTIVE, CONTEXT_BROWSER_FIND_WIDGET_FOCUSED, CONTEXT_BROWSER_FIND_WIDGET_VISIBLE, CONTEXT_BROWSER_HAS_URL, CONTEXT_BROWSER_HAS_ERROR } from './browserEditor.js';
 import { BrowserViewUri } from '../../../../platform/browserView/common/browserViewUri.js';
 import { IBrowserViewWorkbenchService } from '../common/browserView.js';
 import { BrowserViewStorageScope } from '../../../../platform/browserView/common/browserView.js';
@@ -224,7 +224,7 @@ class AddElementToChatAction extends Action2 {
 			title: localize2('browser.addElementToChatAction', 'Add Element to Chat'),
 			icon: Codicon.inspect,
 			f1: false,
-			precondition: enabled,
+			precondition: ContextKeyExpr.and(enabled, CONTEXT_BROWSER_HAS_URL, CONTEXT_BROWSER_HAS_ERROR.negate()),
 			toggled: CONTEXT_BROWSER_ELEMENT_SELECTION_ACTIVE,
 			menu: {
 				id: MenuId.BrowserActionsToolbar,
@@ -292,6 +292,8 @@ class OpenInExternalBrowserAction extends Action2 {
 			category: BrowserCategory,
 			icon: Codicon.linkExternal,
 			f1: false,
+			// Note: We do allow opening in an external browser even if there is an error page shown
+			precondition: CONTEXT_BROWSER_HAS_URL,
 			menu: {
 				id: MenuId.BrowserActionsToolbar,
 				group: ActionGroupPage,
@@ -423,6 +425,7 @@ class ShowBrowserFindAction extends Action2 {
 			title: localize2('browser.showFindAction', 'Find in Page'),
 			category: BrowserCategory,
 			f1: false,
+			precondition: ContextKeyExpr.and(CONTEXT_BROWSER_HAS_URL, CONTEXT_BROWSER_HAS_ERROR.negate()),
 			menu: {
 				id: MenuId.BrowserActionsToolbar,
 				group: ActionGroupPage,
