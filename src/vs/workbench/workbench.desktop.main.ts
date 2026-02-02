@@ -90,6 +90,7 @@ import '../platform/userDataProfile/electron-browser/userDataProfileStorageServi
 import './services/auxiliaryWindow/electron-browser/auxiliaryWindowService.js';
 import '../platform/extensionManagement/electron-browser/extensionsProfileScannerService.js';
 import '../platform/webContentExtractor/electron-browser/webContentExtractorService.js';
+import '../platform/agentSession/electron-sandbox/agentSessionService.js';
 import './services/process/electron-browser/processService.js';
 
 import { registerSingleton } from '../platform/instantiation/common/extensions.js';
