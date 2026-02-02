@@ -100,7 +100,7 @@ export class ChatWindowNotifier extends Disposable implements IWorkbenchContribu
 			const result = await this._hostService.showToast({
 				title: this._sanitizeOSToastText(notificationTitle),
 				body: info.detail ? this._sanitizeOSToastText(info.detail) : localize('notificationDetail', "Approval needed to continue."),
-				actions: [localize('approveAction', "Approve"), localize('showChat', "Show")],
+				actions: [localize('allowAction', "Allow"), localize('showChat', "Show")],
 			}, cts.token);
 
 			if (result.clicked || typeof result.actionIndex === 'number') {
@@ -109,7 +109,7 @@ export class ChatWindowNotifier extends Disposable implements IWorkbenchContribu
 				const widget = await this._chatWidgetService.openSession(sessionResource);
 				widget?.focusInput();
 
-				if (result.actionIndex === 0 /* Approve */) {
+				if (result.actionIndex === 0 /* Allow */) {
 					await this._commandService.executeCommand(AcceptToolConfirmationActionId, { sessionResource } satisfies IToolConfirmationActionContext);
 				}
 			}
