@@ -487,7 +487,11 @@ function createTextDocumentStub(uri: Uri, content: string): TextDocument {
 	const lines: string[] = content.split(/\r?\n/);
 	const lineOffsets: number[] = [0];
 	for (let i = 0; i < lines.length; i++) {
-		lineOffsets.push(lineOffsets[i] + lines[i].length + (content[lineOffsets[i] + lines[i].length] === '\r' ? 2 : 1));
+		const currentOffset = lineOffsets[i] + lines[i].length;
+		// Check if there's a \r character (Windows line ending)
+		const nextCharOffset = currentOffset < content.length ? content[currentOffset] : undefined;
+		const lineEndingLength = nextCharOffset === '\r' ? 2 : 1;
+		lineOffsets.push(currentOffset + lineEndingLength);
 	}
 
 	return {
