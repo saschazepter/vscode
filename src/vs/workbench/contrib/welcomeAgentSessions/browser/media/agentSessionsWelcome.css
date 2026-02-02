@@ -43,7 +43,6 @@
 	margin: 0 0 12px 0;
 	color: var(--vscode-foreground);
 	line-height: 1.2;
-	word-wrap: break-word;
 	overflow-wrap: break-word;
 }
 
