@@ -248,18 +248,7 @@ export interface ICommonNativeHostService {
 	windowsGetStringRegKey(hive: 'HKEY_CURRENT_USER' | 'HKEY_LOCAL_MACHINE' | 'HKEY_CLASSES_ROOT' | 'HKEY_USERS' | 'HKEY_CURRENT_CONFIG', path: string, name: string): Promise<string | undefined>;
 
 	// Toast Notifications
-	/**
-	 * Shows an OS toast notification with optional action buttons.
-	 *
-	 * Note: Action buttons are only supported on macOS.
-	 *
-	 * @returns Information about how the notification was dismissed.
-	 */
 	showOSToast(options: IOSToastOptions): Promise<IOSToastResult>;
-
-	/**
-	 * Clear all active OS toast notifications.
-	 */
 	clearOSToasts(): Promise<void>;
 
 	// Zip
