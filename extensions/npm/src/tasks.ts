@@ -626,7 +626,7 @@ export async function getScripts(packageJsonUri: Uri) {
 		// Use workspace.fs.readFile instead of openTextDocument to avoid triggering
 		// textDocument/didOpen notifications to language servers
 		const content = await workspace.fs.readFile(packageJsonUri);
-		const text = Buffer.from(content).toString('utf8');
+		const text = new TextDecoder('utf-8').decode(content);
 		const transformer = new PositionOffsetTransformer(packageJsonUri, text);
 		const scripts = readScripts(transformer, text);
 		
