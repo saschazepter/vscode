@@ -63,6 +63,7 @@ export interface IViewModel extends ICursorSimpleModel, ISimpleModel {
 	getViewRangeWithCursorPadding(viewRange: Range): Range;
 
 	getHiddenAreas(): Range[];
+	getVisibleAreas(): Range[];
 
 	getLineCount(): number;
 	getLineContent(lineNumber: number): string;

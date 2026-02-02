@@ -26,6 +26,7 @@ export interface IViewModelLines extends IDisposable {
 	setWrappingSettings(fontInfo: FontInfo, wrappingStrategy: 'simple' | 'advanced', wrappingColumn: number, wrappingIndent: WrappingIndent, wordBreak: 'normal' | 'keepAll'): boolean;
 	setTabSize(newTabSize: number): boolean;
 	getHiddenAreas(): Range[];
+	getVisibleAreas(): Range[];
 	setHiddenAreas(_ranges: readonly Range[]): boolean;
 
 	createLineBreaksComputer(): ILineBreaksComputer;
@@ -171,6 +172,32 @@ export class ViewModelLinesFromProjectedModel implements IViewModelLines {
 		return this.hiddenAreasDecorationIds.map(
 			(decId) => this.model.getDecorationRange(decId)!
 		);
+	}
+
+	public getVisibleAreas(): Range[] {
+		const hiddenAreas = this.getHiddenAreas().sort(Range.compareRangesUsingStarts);
+		const lineCount = this.model.getLineCount();
+
+		if (hiddenAreas.length === 0) {
+			return [new Range(1, 1, lineCount, this.model.getLineMaxColumn(lineCount))];
+		}
+
+		const result: Range[] = [];
+		let currentStartLine = 1;
+
+		for (const hiddenArea of hiddenAreas) {
+			if (currentStartLine < hiddenArea.startLineNumber) {
+				const endLine = hiddenArea.startLineNumber - 1;
+				result.push(new Range(currentStartLine, 1, endLine, this.model.getLineMaxColumn(endLine)));
+			}
+			currentStartLine = hiddenArea.endLineNumber + 1;
+		}
+
+		if (currentStartLine <= lineCount) {
+			result.push(new Range(currentStartLine, 1, lineCount, this.model.getLineMaxColumn(lineCount)));
+		}
+
+		return result;
 	}
 
 	public setHiddenAreas(_ranges: Range[]): boolean {
@@ -1129,6 +1156,11 @@ export class ViewModelLinesFromModelAsIs implements IViewModelLines {
 
 	public getHiddenAreas(): Range[] {
 		return [];
+	}
+
+	public getVisibleAreas(): Range[] {
+		const lineCount = this.model.getLineCount();
+		return [new Range(1, 1, lineCount, this.model.getLineMaxColumn(lineCount))];
 	}
 
 	public setHiddenAreas(_ranges: Range[]): boolean {
