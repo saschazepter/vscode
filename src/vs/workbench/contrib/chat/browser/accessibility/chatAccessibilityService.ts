@@ -7,7 +7,7 @@ import * as dom from '../../../../../base/browser/dom.js';
 import { renderAsPlaintext } from '../../../../../base/browser/markdownRenderer.js';
 import { alert, status } from '../../../../../base/browser/ui/aria/aria.js';
 import { MarkdownString } from '../../../../../base/common/htmlContent.js';
-import { Disposable, DisposableMap, IDisposable, toDisposable } from '../../../../../base/common/lifecycle.js';
+import { Disposable, DisposableMap, DisposableSet, toDisposable } from '../../../../../base/common/lifecycle.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { localize } from '../../../../../nls.js';
 import { AccessibilitySignal, IAccessibilitySignalService } from '../../../../../platform/accessibilitySignal/browser/accessibilitySignalService.js';
@@ -30,7 +30,7 @@ export class ChatAccessibilityService extends Disposable implements IChatAccessi
 
 	private _pendingSignalMap: DisposableMap<URI, AccessibilityProgressSignalScheduler> = this._register(new DisposableMap());
 
-	private readonly toasts: Set<IDisposable> = new Set();
+	private readonly toasts = this._register(new DisposableSet());
 
 	constructor(
 		@IAccessibilitySignalService private readonly _accessibilitySignalService: IAccessibilitySignalService,
@@ -52,14 +52,6 @@ export class ChatAccessibilityService extends Disposable implements IChatAccessi
 			}
 			this.disposeRequest(e);
 		}));
-	}
-
-	override dispose(): void {
-		for (const ds of Array.from(this.toasts)) {
-			ds.dispose();
-		}
-		this.toasts.clear();
-		super.dispose();
 	}
 
 	acceptRequest(uri: URI, skipRequestSignal?: boolean): void {
@@ -120,19 +112,16 @@ export class ChatAccessibilityService extends Disposable implements IChatAccessi
 		await this._hostService.focus(targetWindow, { mode: FocusMode.Notify });
 
 		// Dispose any previous unhandled notifications to avoid replacement/coalescing.
-		for (const ds of Array.from(this.toasts)) {
-			ds.dispose();
-		}
-		this.toasts.clear();
+		this.toasts.clearAndDisposeAll();
 
 		const title = widget?.viewModel?.model.title ? localize('chatTitle', "Chat: {0}", widget.viewModel.model.title) : localize('chat.untitledChat', "Untitled Chat");
 
 		const cts = new CancellationTokenSource();
-		const toastDisposable = toDisposable(() => cts.dispose(true));
-		this.toasts.add(toastDisposable);
+		const disposable = toDisposable(() => cts.dispose(true));
+		this.toasts.add(disposable);
 
 		const { clicked } = await this._hostService.showToast({ title, body: localize('notificationDetail', "New chat response.") }, cts.token);
-		this.toasts.delete(toastDisposable);
+		this.toasts.deleteAndDispose(disposable);
 		if (clicked) {
 			await this._hostService.focus(targetWindow, { mode: FocusMode.Force });
 			await this._widgetService.reveal(widget);
