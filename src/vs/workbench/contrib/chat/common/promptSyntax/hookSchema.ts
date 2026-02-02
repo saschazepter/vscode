@@ -7,6 +7,68 @@ import { IJSONSchema } from '../../../../../base/common/jsonSchema.js';
 import * as nls from '../../../../../nls.js';
 
 /**
+ * Available hook types that can be configured in hooks.json
+ */
+export const HOOK_TYPES = [
+	{
+		id: 'sessionStart',
+		label: nls.localize('hookType.sessionStart.label', "Session Start"),
+		description: nls.localize('hookType.sessionStart.description', "Executed when a new agent session begins or when resuming an existing session.")
+	},
+	{
+		id: 'sessionEnd',
+		label: nls.localize('hookType.sessionEnd.label', "Session End"),
+		description: nls.localize('hookType.sessionEnd.description', "Executed when the agent session completes or is terminated.")
+	},
+	{
+		id: 'userPromptSubmitted',
+		label: nls.localize('hookType.userPromptSubmitted.label', "User Prompt Submitted"),
+		description: nls.localize('hookType.userPromptSubmitted.description', "Executed when the user submits a prompt to the agent.")
+	},
+	{
+		id: 'preToolUse',
+		label: nls.localize('hookType.preToolUse.label', "Pre-Tool Use"),
+		description: nls.localize('hookType.preToolUse.description', "Executed before the agent uses any tool (such as bash, edit, view).")
+	},
+	{
+		id: 'postToolUse',
+		label: nls.localize('hookType.postToolUse.label', "Post-Tool Use"),
+		description: nls.localize('hookType.postToolUse.description', "Executed after a tool completes execution (whether successful or failed).")
+	},
+	{
+		id: 'errorOccurred',
+		label: nls.localize('hookType.errorOccurred.label', "Error Occurred"),
+		description: nls.localize('hookType.errorOccurred.description', "Executed when an error occurs during agent execution.")
+	}
+] as const;
+
+export type HookTypeId = typeof HOOK_TYPES[number]['id'];
+
+/**
+ * A single hook command configuration.
+ */
+export interface IHookCommand {
+	readonly type: 'command';
+	readonly command: string;
+	readonly cwd?: string;
+	readonly env?: Record<string, string>;
+	readonly timeoutSec?: number;
+}
+
+/**
+ * Collected hooks for a chat request, organized by hook type.
+ * This is passed to the extension host so it knows what hooks are available.
+ */
+export interface IChatRequestHooks {
+	readonly sessionStart?: readonly IHookCommand[];
+	readonly sessionEnd?: readonly IHookCommand[];
+	readonly userPromptSubmitted?: readonly IHookCommand[];
+	readonly preToolUse?: readonly IHookCommand[];
+	readonly postToolUse?: readonly IHookCommand[];
+	readonly errorOccurred?: readonly IHookCommand[];
+}
+
+/**
  * JSON Schema for GitHub Copilot hook configuration files.
  * Hooks enable executing custom shell commands at strategic points in an agent's workflow.
  * @see https://docs.github.com/en/copilot/concepts/agents/coding-agent/about-hooks

@@ -26,7 +26,8 @@ import { CHAT_CATEGORY } from '../actions/chatActions.js';
 import { askForPromptFileName } from './pickers/askForPromptName.js';
 import { askForPromptSourceFolder } from './pickers/askForPromptSourceFolder.js';
 import { IQuickInputService } from '../../../../../platform/quickinput/common/quickInput.js';
-import { getCleanPromptName, SKILL_FILENAME, HOOK_FILE_EXTENSION } from '../../common/promptSyntax/config/promptFileLocations.js';
+import { getCleanPromptName, SKILL_FILENAME, HOOKS_FILENAME } from '../../common/promptSyntax/config/promptFileLocations.js';
+import { HOOK_TYPES, HookTypeId } from '../../common/promptSyntax/hookSchema.js';
 
 
 class AbstractNewPromptFileAction extends Action2 {
@@ -179,22 +180,8 @@ function getDefaultContentSnippet(promptType: PromptsType, name: string | undefi
 		case PromptsType.hook:
 			return JSON.stringify({
 				version: 1,
-				hooks: {
-					sessionStart: [
-						{
-							type: 'command',
-							command: '${1:echo "Session started"}'
-						}
-					],
-					preToolUse: [
-						{
-							type: 'command',
-							command: '${2:./scripts/validate.sh}',
-							timeoutSec: 15
-						}
-					]
-				}
-			}, null, '\t');
+				hooks: {}
+			}, null, 4);
 		default:
 			throw new Error(`Unsupported prompt type: ${promptType}`);
 	}
@@ -338,36 +325,65 @@ class NewHookFileAction extends Action2 {
 			return;
 		}
 
-		// Ask for hook file name
-		const hookName = await quickInputService.input({
-			prompt: localize('commands.new.hook.name.prompt', "Enter a name for the hook file"),
-			placeHolder: localize('commands.new.hook.name.placeholder', "e.g., security-check, session-logging"),
-			validateInput: async (value) => {
-				if (!value || !value.trim()) {
-					return localize('commands.new.hook.name.required', "Hook name is required");
-				}
-				const name = value.trim();
-				// Allow alphanumeric, hyphens, and underscores
-				if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
-					return localize('commands.new.hook.name.invalidChars', "Hook name may only contain letters, numbers, hyphens, and underscores");
-				}
-				return undefined;
-			}
+		// Ask which hook type to add
+		const hookTypeItems = HOOK_TYPES.map(hookType => ({
+			id: hookType.id,
+			label: hookType.label,
+			description: hookType.description
+		}));
+
+		const selectedHookType = await quickInputService.pick(hookTypeItems, {
+			placeHolder: localize('commands.new.hook.type.placeholder', "Select a hook type to add"),
+			title: localize('commands.new.hook.type.title', "Add Hook")
 		});
 
-		if (!hookName) {
+		if (!selectedHookType) {
 			return;
 		}
-
-		const trimmedName = hookName.trim();
 
 		// Create the hooks folder if it doesn't exist
 		await fileService.createFolder(selectedFolder.uri);
 
-		// Create the hook file with .json extension
-		const hookFileUri = URI.joinPath(selectedFolder.uri, trimmedName + HOOK_FILE_EXTENSION);
-		const defaultContent = getDefaultContentSnippet(PromptsType.hook, trimmedName);
-		await fileService.createFile(hookFileUri, VSBuffer.fromString(defaultContent));
+		// Use fixed hooks.json filename
+		const hookFileUri = URI.joinPath(selectedFolder.uri, HOOKS_FILENAME);
+
+		// Check if hooks.json already exists
+		let hooksContent: { version: number; hooks: Record<string, unknown[]> };
+		const fileExists = await fileService.exists(hookFileUri);
+
+		if (fileExists) {
+			// Parse existing file
+			const existingContent = await fileService.readFile(hookFileUri);
+			try {
+				hooksContent = JSON.parse(existingContent.value.toString());
+				// Ensure hooks object exists
+				if (!hooksContent.hooks) {
+					hooksContent.hooks = {};
+				}
+			} catch {
+				// If parsing fails, start fresh
+				hooksContent = { version: 1, hooks: {} };
+			}
+		} else {
+			// Create new structure
+			hooksContent = { version: 1, hooks: {} };
+		}
+
+		// Add the new hook entry (append if hook type already exists)
+		const hookTypeId = selectedHookType.id as HookTypeId;
+		const newHookEntry = {
+			type: 'command',
+			command: ''
+		};
+		if (!hooksContent.hooks[hookTypeId]) {
+			hooksContent.hooks[hookTypeId] = [newHookEntry];
+		} else {
+			hooksContent.hooks[hookTypeId].push(newHookEntry);
+		}
+
+		// Write the file
+		const jsonContent = JSON.stringify(hooksContent, null, '\t');
+		await fileService.writeFile(hookFileUri, VSBuffer.fromString(jsonContent));
 
 		await openerService.open(hookFileUri);
 	}

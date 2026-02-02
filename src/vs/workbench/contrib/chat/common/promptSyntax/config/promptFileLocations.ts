@@ -39,6 +39,11 @@ export const SKILL_FILENAME = 'SKILL.md';
 export const HOOK_FILE_EXTENSION = '.json';
 
 /**
+ * Default hook file name.
+ */
+export const HOOKS_FILENAME = 'hooks.json';
+
+/**
  * Copilot custom instructions file name.
  */
 export const COPILOT_CUSTOM_INSTRUCTIONS_FILENAME = 'copilot-instructions.md';

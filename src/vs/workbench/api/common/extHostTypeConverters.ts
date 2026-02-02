@@ -41,6 +41,7 @@ import { DEFAULT_EDITOR_ASSOCIATION, SaveReason } from '../../common/editor.js';
 import { IViewBadge } from '../../common/views.js';
 import { IChatAgentRequest, IChatAgentResult } from '../../contrib/chat/common/participants/chatAgents.js';
 import { IChatRequestModeInstructions } from '../../contrib/chat/common/model/chatModel.js';
+import { IChatRequestHooks } from '../../contrib/chat/common/promptSyntax/hookSchema.js';
 import { IChatAgentMarkdownContentWithVulnerability, IChatCodeCitation, IChatCommandButton, IChatConfirmation, IChatContentInlineReference, IChatContentReference, IChatExtensionsContent, IChatFollowup, IChatMarkdownContent, IChatMoveMessage, IChatMultiDiffDataSerialized, IChatProgressMessage, IChatPullRequestContent, IChatQuestionCarousel, IChatResponseCodeblockUriPart, IChatTaskDto, IChatTaskResult, IChatTerminalToolInvocationData, IChatTextEdit, IChatThinkingPart, IChatToolInvocationSerialized, IChatTreeData, IChatUserActionEvent, IChatWarningMessage, IChatWorkspaceEdit } from '../../contrib/chat/common/chatService/chatService.js';
 import { LocalChatSessionUri } from '../../contrib/chat/common/model/chatUri.js';
 import { ChatRequestToolReferenceEntry, IChatRequestVariableEntry, isImageVariableEntry, isPromptFileVariableEntry, isPromptTextVariableEntry } from '../../contrib/chat/common/attachments/chatVariableEntries.js';
@@ -3304,6 +3305,7 @@ export namespace ChatAgentRequest {
 			editedFileEvents: request.editedFileEvents,
 			modeInstructions: request.modeInstructions?.content,
 			modeInstructions2: ChatRequestModeInstructions.to(request.modeInstructions),
+			hooks: ChatRequestHooks.to(request.hooks),
 			subAgentInvocationId: request.subAgentInvocationId,
 			subAgentName: request.subAgentName,
 		};
@@ -3468,6 +3470,22 @@ export namespace ChatRequestModeInstructions {
 			};
 		}
 		return undefined;
+	}
+}
+
+export namespace ChatRequestHooks {
+	export function to(hooks: IChatRequestHooks | undefined): vscode.ChatRequestHooks | undefined {
+		if (!hooks) {
+			return undefined;
+		}
+		return {
+			sessionStart: hooks.sessionStart,
+			sessionEnd: hooks.sessionEnd,
+			userPromptSubmitted: hooks.userPromptSubmitted,
+			preToolUse: hooks.preToolUse,
+			postToolUse: hooks.postToolUse,
+			errorOccurred: hooks.errorOccurred,
+		};
 	}
 }
 

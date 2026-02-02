@@ -49,6 +49,8 @@ import { ChatAgentLocation, ChatConfiguration, ChatModeKind } from '../constants
 import { ChatMessageRole, IChatMessage } from '../languageModels.js';
 import { ILanguageModelToolsService } from '../tools/languageModelToolsService.js';
 import { ChatSessionOperationLog } from '../model/chatSessionOperationLog.js';
+import { CollectHooks } from '../promptSyntax/collectHooks.js';
+import { IChatRequestHooks } from '../promptSyntax/hookSchema.js';
 
 const serializedChatKey = 'interactive.sessions';
 
@@ -845,6 +847,15 @@ export class ChatService extends Disposable implements IChatService {
 			let detectedAgent: IChatAgentData | undefined;
 			let detectedCommand: IChatAgentCommand | undefined;
 
+			// Collect hooks from hooks.json files
+			const hookCollector = this.instantiationService.createInstance(CollectHooks);
+			let collectedHooks: IChatRequestHooks | undefined;
+			try {
+				collectedHooks = await hookCollector.collect(token);
+			} catch (error) {
+				this.logService.warn('[ChatService] Failed to collect hooks:', error);
+			}
+
 			const stopWatch = new StopWatch(false);
 			store.add(token.onCancellationRequested(() => {
 				this.trace('sendRequest', `Request for session ${model.sessionResource} was cancelled`);
@@ -905,6 +916,7 @@ export class ChatService extends Disposable implements IChatService {
 							userSelectedTools: options?.userSelectedTools?.get(),
 							modeInstructions: options?.modeInfo?.modeInstructions,
 							editedFileEvents: request.editedFileEvents,
+							hooks: collectedHooks,
 						};
 
 						let isInitialTools = true;
