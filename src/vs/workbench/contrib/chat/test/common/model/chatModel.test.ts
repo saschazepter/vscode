@@ -30,6 +30,8 @@ import { ChatRequestTextPart } from '../../../common/requestParser/chatParserTyp
 import { IChatService, IChatToolInvocation } from '../../../common/chatService/chatService.js';
 import { ChatAgentLocation } from '../../../common/constants.js';
 import { MockChatService } from '../chatService/mockChatService.js';
+import { IChatTodoListService } from '../../../common/tools/chatTodoListService.js';
+import { Event } from '../../../../../../base/common/event.js';
 
 suite('ChatModel', () => {
 	const testDisposables = ensureNoDisposablesAreLeakedInTestSuite();
@@ -45,6 +47,13 @@ suite('ChatModel', () => {
 		instantiationService.stub(IChatAgentService, testDisposables.add(instantiationService.createInstance(ChatAgentService)));
 		instantiationService.stub(IConfigurationService, new TestConfigurationService());
 		instantiationService.stub(IChatService, new MockChatService());
+		instantiationService.stub(IChatTodoListService, <IChatTodoListService>{
+			_serviceBrand: undefined,
+			onDidUpdateTodos: Event.None,
+			getTodos: () => [],
+			setTodos: () => { },
+			migrateTodos: () => { }
+		});
 	});
 
 	test('initialization with exported data only (imported)', async () => {
