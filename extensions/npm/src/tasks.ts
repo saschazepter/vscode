@@ -36,8 +36,97 @@ interface IPackageJsonCache {
 	scripts: ReturnType<typeof readScripts>;
 }
 
+// Simple LRU cache implementation for package.json entries
+class PackageJsonLRUCache {
+	private cache = new Map<string, IPackageJsonCache>();
+	private accessOrder: string[] = [];
+	private readonly maxSize: number;
+	private readonly storageKey = 'npm.packageJsonCache';
+
+	constructor(private readonly context: ExtensionContext | undefined, maxSize: number = 128) {
+		this.maxSize = maxSize;
+		this.loadFromStorage();
+	}
+
+	private loadFromStorage(): void {
+		if (!this.context) {
+			return;
+		}
+		try {
+			const stored = this.context.workspaceState.get<Record<string, IPackageJsonCache>>(this.storageKey);
+			if (stored) {
+				// Restore cache entries (up to maxSize)
+				const entries = Object.entries(stored);
+				for (const [key, value] of entries.slice(-this.maxSize)) {
+					this.cache.set(key, value);
+					this.accessOrder.push(key);
+				}
+			}
+		} catch (e) {
+			// Ignore errors loading from storage
+		}
+	}
+
+	private async saveToStorage(): Promise<void> {
+		if (!this.context) {
+			return;
+		}
+		try {
+			const toStore: Record<string, IPackageJsonCache> = {};
+			this.cache.forEach((value, key) => {
+				toStore[key] = value;
+			});
+			await this.context.workspaceState.update(this.storageKey, toStore);
+		} catch (e) {
+			// Ignore errors saving to storage
+		}
+	}
+
+	get(key: string): IPackageJsonCache | undefined {
+		const value = this.cache.get(key);
+		if (value !== undefined) {
+			// Move to end (most recently used)
+			this.accessOrder = this.accessOrder.filter(k => k !== key);
+			this.accessOrder.push(key);
+		}
+		return value;
+	}
+
+	set(key: string, value: IPackageJsonCache): void {
+		// If key exists, remove it from access order
+		if (this.cache.has(key)) {
+			this.accessOrder = this.accessOrder.filter(k => k !== key);
+		}
+
+		// Add to cache and access order
+		this.cache.set(key, value);
+		this.accessOrder.push(key);
+
+		// Evict least recently used if over capacity
+		if (this.cache.size > this.maxSize) {
+			const lru = this.accessOrder.shift();
+			if (lru !== undefined) {
+				this.cache.delete(lru);
+			}
+		}
+
+		// Persist to storage asynchronously
+		void this.saveToStorage();
+	}
+
+	clear(): void {
+		this.cache.clear();
+		this.accessOrder = [];
+		void this.saveToStorage();
+	}
+}
+
 // Cache for package.json file reading to avoid unnecessary reads
-const packageJsonCache = new Map<string, IPackageJsonCache>();
+let packageJsonCache: PackageJsonLRUCache;
+
+export function initializePackageJsonCache(context: ExtensionContext): void {
+	packageJsonCache = new PackageJsonLRUCache(context, 128);
+}
 
 export const INSTALL_SCRIPT = 'install';
 
