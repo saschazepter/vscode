@@ -31,6 +31,14 @@ type AutoDetect = 'on' | 'off';
 
 let cachedTasks: ITaskWithLocation[] | undefined = undefined;
 
+interface IPackageJsonCache {
+	mtime: number;
+	scripts: ReturnType<typeof readScripts>;
+}
+
+// Cache for package.json file reading to avoid unnecessary reads
+const packageJsonCache = new Map<string, IPackageJsonCache>();
+
 export const INSTALL_SCRIPT = 'install';
 
 export interface ITaskLocation {
@@ -88,6 +96,7 @@ export class NpmTaskProvider implements TaskProvider {
 
 export function invalidateTasksCache() {
 	cachedTasks = undefined;
+	packageJsonCache.clear();
 }
 
 const buildNames: string[] = ['build', 'compile', 'watch'];
@@ -473,6 +482,35 @@ export function findScriptAtPosition(document: TextDocument, buffer: string, pos
 	return undefined;
 }
 
+// Helper to create a minimal TextDocument-like object from file content
+function createTextDocumentStub(uri: Uri, content: string): TextDocument {
+	const lines: string[] = content.split(/\r?\n/);
+	const lineOffsets: number[] = [0];
+	for (let i = 0; i < lines.length; i++) {
+		lineOffsets.push(lineOffsets[i] + lines[i].length + (content[lineOffsets[i] + lines[i].length] === '\r' ? 2 : 1));
+	}
+
+	return {
+		uri,
+		getText: () => content,
+		positionAt: (offset: number) => {
+			let low = 0;
+			let high = lineOffsets.length - 1;
+			while (low < high) {
+				const mid = Math.floor((low + high) / 2);
+				if (lineOffsets[mid] > offset) {
+					high = mid;
+				} else {
+					low = mid + 1;
+				}
+			}
+			const line = low - 1;
+			const character = offset - lineOffsets[line];
+			return new Position(line, character);
+		}
+	} as TextDocument;
+}
+
 export async function getScripts(packageJsonUri: Uri) {
 	if (packageJsonUri.scheme !== 'file') {
 		return undefined;
@@ -484,8 +522,25 @@ export async function getScripts(packageJsonUri: Uri) {
 	}
 
 	try {
-		const document: TextDocument = await workspace.openTextDocument(packageJsonUri);
-		return readScripts(document);
+		// Check cache with mtime to avoid unnecessary file reads
+		const stat = await workspace.fs.stat(packageJsonUri);
+		const cached = packageJsonCache.get(packageJson);
+		
+		if (cached && cached.mtime === stat.mtime) {
+			return cached.scripts;
+		}
+
+		// Use workspace.fs.readFile instead of openTextDocument to avoid triggering
+		// textDocument/didOpen notifications to language servers
+		const content = await workspace.fs.readFile(packageJsonUri);
+		const text = Buffer.from(content).toString('utf8');
+		const document = createTextDocumentStub(packageJsonUri, text);
+		const scripts = readScripts(document, text);
+		
+		// Cache the result
+		packageJsonCache.set(packageJson, { mtime: stat.mtime, scripts });
+		
+		return scripts;
 	} catch (e) {
 		const localizedParseError = l10n.t("Npm task detection: failed to parse the file {0}", packageJsonUri.fsPath);
 		throw new Error(localizedParseError);
