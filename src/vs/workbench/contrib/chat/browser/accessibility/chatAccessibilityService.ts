@@ -30,7 +30,7 @@ export class ChatAccessibilityService extends Disposable implements IChatAccessi
 
 	private _pendingSignalMap: DisposableMap<URI, AccessibilityProgressSignalScheduler> = this._register(new DisposableMap());
 
-	private readonly osToasts: Set<IDisposable> = new Set();
+	private readonly toasts: Set<IDisposable> = new Set();
 
 	constructor(
 		@IAccessibilitySignalService private readonly _accessibilitySignalService: IAccessibilitySignalService,
@@ -55,10 +55,10 @@ export class ChatAccessibilityService extends Disposable implements IChatAccessi
 	}
 
 	override dispose(): void {
-		for (const ds of Array.from(this.osToasts)) {
+		for (const ds of Array.from(this.toasts)) {
 			ds.dispose();
 		}
-		this.osToasts.clear();
+		this.toasts.clear();
 		super.dispose();
 	}
 
@@ -120,19 +120,19 @@ export class ChatAccessibilityService extends Disposable implements IChatAccessi
 		await this._hostService.focus(targetWindow, { mode: FocusMode.Notify });
 
 		// Dispose any previous unhandled notifications to avoid replacement/coalescing.
-		for (const ds of Array.from(this.osToasts)) {
+		for (const ds of Array.from(this.toasts)) {
 			ds.dispose();
 		}
-		this.osToasts.clear();
+		this.toasts.clear();
 
 		const title = widget?.viewModel?.model.title ? localize('chatTitle', "Chat: {0}", widget.viewModel.model.title) : localize('chat.untitledChat', "Untitled Chat");
 
 		const cts = new CancellationTokenSource();
-		const osToastDisposable = toDisposable(() => cts.dispose(true));
-		this.osToasts.add(osToastDisposable);
+		const toastDisposable = toDisposable(() => cts.dispose(true));
+		this.toasts.add(toastDisposable);
 
-		const { clicked } = await this._hostService.showOSToast({ title, body: localize('notificationDetail', "New chat response.") }, cts.token);
-		this.osToasts.delete(osToastDisposable);
+		const { clicked } = await this._hostService.showToast({ title, body: localize('notificationDetail', "New chat response.") }, cts.token);
+		this.toasts.delete(toastDisposable);
 		if (clicked) {
 			await this._hostService.focus(targetWindow, { mode: FocusMode.Force });
 			await this._widgetService.reveal(widget);

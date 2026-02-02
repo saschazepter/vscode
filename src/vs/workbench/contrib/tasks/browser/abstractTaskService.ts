@@ -257,7 +257,7 @@ export abstract class AbstractTaskService extends Disposable implements ITaskSer
 
 	private _activatedTaskProviders: Set<string> = new Set();
 
-	private readonly osToast = this._register(new MutableDisposable<IDisposable>());
+	private readonly toast = this._register(new MutableDisposable<IDisposable>());
 
 	constructor(
 		@IConfigurationService private readonly _configurationService: IConfigurationService,
@@ -531,8 +531,8 @@ export abstract class AbstractTaskService extends Disposable implements ITaskSer
 			: nls.localize('task.longRunningTaskCompleted', 'Task finished in {0}.', durationText);
 		this._hostService.focus(targetWindow, { mode: FocusMode.Notify });
 		const cts = new CancellationTokenSource();
-		this.osToast.value = toDisposable(() => cts.dispose(true));
-		const { clicked } = await this._hostService.showOSToast({ title: message }, cts.token);
+		this.toast.value = toDisposable(() => cts.dispose(true));
+		const { clicked } = await this._hostService.showToast({ title: message }, cts.token);
 		if (clicked) {
 			this._hostService.focus(targetWindow, { mode: FocusMode.Force });
 		}

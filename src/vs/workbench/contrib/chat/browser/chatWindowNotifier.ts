@@ -97,7 +97,7 @@ export class ChatWindowNotifier extends Disposable implements IWorkbenchContribu
 		this._activeNotifications.set(sessionResource, toDisposable(() => cts.dispose(true)));
 
 		try {
-			const result = await this._hostService.showOSToast({
+			const result = await this._hostService.showToast({
 				title: notificationTitle,
 				body: info.detail ?? localize('notificationDetail', "Approval needed to continue."),
 				actions: [localize('approveAction', "Approve"), localize('showChat', "Show")],

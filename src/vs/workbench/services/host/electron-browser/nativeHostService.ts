@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Emitter, Event } from '../../../../base/common/event.js';
-import { IHostService, IOSToastOptions, IOSToastResult } from '../browser/host.js';
+import { IHostService, IToastOptions, IToastResult } from '../browser/host.js';
 import { FocusMode, INativeHostService } from '../../../../platform/native/common/native.js';
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
 import { ILabelService, Verbosity } from '../../../../platform/label/common/label.js';
@@ -60,7 +60,7 @@ class WorkbenchHostService extends Disposable implements IHostService {
 		// Make sure to hide all OS toasts when the window gains focus
 		this._register(this.onDidChangeFocus(focus => {
 			if (focus) {
-				this.clearOSToasts();
+				this.clearToasts();
 			}
 		}));
 	}
@@ -239,7 +239,7 @@ class WorkbenchHostService extends Disposable implements IHostService {
 
 	private readonly activeBrowserToasts = new Set<DisposableStore>();
 
-	async showOSToast(options: IOSToastOptions, token: CancellationToken): Promise<IOSToastResult> {
+	async showToast(options: IToastOptions, token: CancellationToken): Promise<IToastResult> {
 
 		// Try native OS notifications first
 		const nativeToast = await this.nativeHostService.showToast(options);
@@ -264,7 +264,7 @@ class WorkbenchHostService extends Disposable implements IHostService {
 		disposables.add(toDisposable(() => cts.dispose(true)));
 		disposables.add(browserToast);
 
-		return new Promise<IOSToastResult>(resolve => {
+		return new Promise<IToastResult>(resolve => {
 			const cleanup = () => {
 				this.activeBrowserToasts.delete(disposables);
 				disposables.dispose();
@@ -284,7 +284,7 @@ class WorkbenchHostService extends Disposable implements IHostService {
 		});
 	}
 
-	private async clearOSToasts(): Promise<void> {
+	private async clearToasts(): Promise<void> {
 		await this.nativeHostService.clearToasts();
 
 		for (const toast of this.activeBrowserToasts) {

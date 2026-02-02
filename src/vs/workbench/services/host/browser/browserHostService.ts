@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Emitter, Event } from '../../../../base/common/event.js';
-import { IHostService, IOSToastOptions, IOSToastResult } from './host.js';
+import { IHostService, IToastOptions, IToastResult } from './host.js';
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
 import { ILayoutService } from '../../../../platform/layout/browser/layoutService.js';
 import { IEditorService } from '../../editor/common/editorService.js';
@@ -112,7 +112,7 @@ export class BrowserHostService extends Disposable implements IHostService {
 		// Make sure to hide all OS toasts when the window gains focus
 		this._register(this.onDidChangeFocus(focus => {
 			if (focus) {
-				this.clearOSToasts();
+				this.clearToasts();
 			}
 		}));
 	}
@@ -737,7 +737,7 @@ export class BrowserHostService extends Disposable implements IHostService {
 
 	private readonly activeBrowserToasts = new Set<DisposableStore>();
 
-	async showOSToast(options: IOSToastOptions, token: CancellationToken): Promise<IOSToastResult> {
+	async showToast(options: IToastOptions, token: CancellationToken): Promise<IToastResult> {
 		const browserToast = await triggerBrowserToast(options.title, {
 			detail: options.body,
 			sticky: !options.silent
@@ -754,7 +754,7 @@ export class BrowserHostService extends Disposable implements IHostService {
 		disposables.add(toDisposable(() => cts.dispose(true)));
 		disposables.add(browserToast);
 
-		return new Promise<IOSToastResult>(resolve => {
+		return new Promise<IToastResult>(resolve => {
 			const cleanup = () => {
 				this.activeBrowserToasts.delete(disposables);
 				disposables.dispose();
@@ -774,7 +774,7 @@ export class BrowserHostService extends Disposable implements IHostService {
 		});
 	}
 
-	private async clearOSToasts(): Promise<void> {
+	private async clearToasts(): Promise<void> {
 		for (const toast of this.activeBrowserToasts) {
 			toast.dispose();
 		}
