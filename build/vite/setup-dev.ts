@@ -5,6 +5,7 @@
 
 /// <reference path="../../src/typings/vscode-globals-product.d.ts" />
 
+import './style.css';
 import { enableHotReload } from '../../src/vs/base/common/hotReload.ts';
 import { getSingletonServiceDescriptors, InstantiationType, registerSingleton } from '../../src/vs/platform/instantiation/common/extensions.ts';
 import { IWebWorkerService } from '../../src/vs/platform/webWorker/browser/webWorkerService.ts';
