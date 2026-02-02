@@ -10,7 +10,7 @@ import { arch, cpus, freemem, loadavg, platform, release, totalmem, type } from 
 import { promisify } from 'util';
 import { memoize } from '../../../base/common/decorators.js';
 import { Emitter, Event } from '../../../base/common/event.js';
-import { Disposable, DisposableSet, DisposableStore, toDisposable } from '../../../base/common/lifecycle.js';
+import { Disposable, DisposableMap, DisposableStore, toDisposable } from '../../../base/common/lifecycle.js';
 import { matchesSomeScheme, Schemas } from '../../../base/common/network.js';
 import { dirname, join, posix, resolve, win32 } from '../../../base/common/path.js';
 import { isLinux, isMacintosh, isWindows } from '../../../base/common/platform.js';
@@ -1155,7 +1155,7 @@ export class NativeHostMainService extends Disposable implements INativeHostMain
 
 	//#region Toast Notifications
 
-	private readonly activeToasts = this._register(new DisposableSet());
+	private readonly activeToasts = this._register(new DisposableMap<string>());
 
 	async showToast(windowId: number | undefined, options: IToastOptions): Promise<IToastResult> {
 		if (!Notification.isSupported()) {
@@ -1173,12 +1173,12 @@ export class NativeHostMainService extends Disposable implements INativeHostMain
 		});
 
 		const disposables = new DisposableStore();
-		this.activeToasts.add(disposables);
+		this.activeToasts.set(options.id, disposables);
 
 		const cts = new CancellationTokenSource();
 
 		disposables.add(toDisposable(() => {
-			this.activeToasts.deleteAndDispose(disposables);
+			this.activeToasts.deleteAndDispose(options.id);
 			toast.removeAllListeners();
 			toast.close();
 			cts.dispose(true);
@@ -1199,6 +1199,10 @@ export class NativeHostMainService extends Disposable implements INativeHostMain
 
 			toast.show();
 		});
+	}
+
+	async clearToast(windowId: number | undefined, toastId: string): Promise<void> {
+		this.activeToasts.deleteAndDispose(toastId);
 	}
 
 	async clearToasts(): Promise<void> {

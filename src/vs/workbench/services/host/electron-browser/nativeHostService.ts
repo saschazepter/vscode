@@ -20,6 +20,7 @@ import { isAuxiliaryWindow } from '../../../../base/browser/window.js';
 import { VSBuffer } from '../../../../base/common/buffer.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { showBrowserToast } from '../browser/toasts.js';
+import { generateUuid } from '../../../../base/common/uuid.js';
 
 class WorkbenchNativeHostService extends NativeHostService {
 
@@ -240,9 +241,11 @@ class WorkbenchHostService extends Disposable implements IHostService {
 	private readonly activeBrowserToasts = this._register(new DisposableSet());
 
 	async showToast(options: IToastOptions, token: CancellationToken): Promise<IToastResult> {
+		const id = generateUuid();
+		token.onCancellationRequested(() => this.nativeHostService.clearToast(id));
 
 		// Try native OS notifications first
-		const nativeToast = await this.nativeHostService.showToast(options);
+		const nativeToast = await this.nativeHostService.showToast({ ...options, id });
 		if (nativeToast.supported) {
 			return nativeToast;
 		}

@@ -16,6 +16,8 @@ import { IPartsSplash } from '../../theme/common/themeService.js';
 import { IColorScheme, IOpenedAuxiliaryWindow, IOpenedMainWindow, IOpenEmptyWindowOptions, IOpenWindowOptions, IPoint, IRectangle, IWindowOpenable } from '../../window/common/window.js';
 
 export interface IToastOptions {
+	readonly id: string;
+
 	readonly title: string;
 	readonly body?: string;
 
@@ -249,6 +251,7 @@ export interface ICommonNativeHostService {
 
 	// Toast Notifications
 	showToast(options: IToastOptions): Promise<IToastResult>;
+	clearToast(id: string): Promise<void>;
 	clearToasts(): Promise<void>;
 
 	// Zip
