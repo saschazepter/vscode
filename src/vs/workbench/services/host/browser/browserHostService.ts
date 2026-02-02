@@ -16,7 +16,7 @@ import { IWorkspace, IWorkspaceProvider } from '../../../browser/web.api.js';
 import { IFileService } from '../../../../platform/files/common/files.js';
 import { ILabelService, Verbosity } from '../../../../platform/label/common/label.js';
 import { EventType, ModifierKeyEmitter, addDisposableListener, addDisposableThrottledListener, detectFullscreen, disposableWindowInterval, getActiveDocument, getActiveWindow, getWindowId, onDidRegisterWindow, trackFocus, getWindows as getDOMWindows } from '../../../../base/browser/dom.js';
-import { Disposable, DisposableStore, IDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
+import { Disposable, DisposableSet, DisposableStore, toDisposable } from '../../../../base/common/lifecycle.js';
 import { IBrowserWorkbenchEnvironmentService } from '../../environment/browser/environmentService.js';
 import { memoize } from '../../../../base/common/decorators.js';
 import { parseLineAndColumnAware } from '../../../../base/common/extpath.js';
@@ -735,21 +735,17 @@ export class BrowserHostService extends Disposable implements IHostService {
 
 	//#region Toast Notifications
 
-	private readonly activeToasts = new Set<IDisposable>();
+	private readonly activeToasts = this._register(new DisposableSet());
 
 	async showToast(options: IToastOptions, token: CancellationToken): Promise<IToastResult> {
 		return showBrowserToast({
 			onDidCreateToast: disposable => this.activeToasts.add(disposable),
-			onDidDisposeToast: disposable => this.activeToasts.delete(disposable)
+			onDidDisposeToast: disposable => this.activeToasts.deleteAndDispose(disposable)
 		}, options, token);
 	}
 
 	private async clearToasts(): Promise<void> {
-		for (const toast of this.activeToasts) {
-			toast.dispose();
-		}
-
-		this.activeToasts.clear();
+		this.activeToasts.clearAndDisposeAll();
 	}
 
 	//#endregion

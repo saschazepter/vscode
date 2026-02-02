@@ -10,7 +10,7 @@ import { InstantiationType, registerSingleton } from '../../../../platform/insta
 import { ILabelService, Verbosity } from '../../../../platform/label/common/label.js';
 import { IWorkbenchEnvironmentService } from '../../environment/common/environmentService.js';
 import { IWindowOpenable, IOpenWindowOptions, isFolderToOpen, isWorkspaceToOpen, IOpenEmptyWindowOptions, IPoint, IRectangle, IOpenedAuxiliaryWindow, IOpenedMainWindow } from '../../../../platform/window/common/window.js';
-import { Disposable, IDisposable } from '../../../../base/common/lifecycle.js';
+import { Disposable, DisposableSet, IDisposable } from '../../../../base/common/lifecycle.js';
 import { NativeHostService } from '../../../../platform/native/common/nativeHostService.js';
 import { INativeWorkbenchEnvironmentService } from '../../environment/electron-browser/environmentService.js';
 import { IMainProcessService } from '../../../../platform/ipc/common/mainProcessService.js';
@@ -237,7 +237,7 @@ class WorkbenchHostService extends Disposable implements IHostService {
 
 	//#region Toast Notifications
 
-	private readonly activeBrowserToasts = new Set<IDisposable>();
+	private readonly activeBrowserToasts = this._register(new DisposableSet());
 
 	async showToast(options: IToastOptions, token: CancellationToken): Promise<IToastResult> {
 
@@ -250,17 +250,14 @@ class WorkbenchHostService extends Disposable implements IHostService {
 		// Then fallback to browser notifications
 		return showBrowserToast({
 			onDidCreateToast: (toast: IDisposable) => this.activeBrowserToasts.add(toast),
-			onDidDisposeToast: (toast: IDisposable) => this.activeBrowserToasts.delete(toast)
+			onDidDisposeToast: (toast: IDisposable) => this.activeBrowserToasts.deleteAndDispose(toast)
 		}, options, token);
 	}
 
 	private async clearToasts(): Promise<void> {
 		await this.nativeHostService.clearToasts();
 
-		for (const toast of this.activeBrowserToasts) {
-			toast.dispose();
-		}
-		this.activeBrowserToasts.clear();
+		this.activeBrowserToasts.clearAndDisposeAll();
 	}
 
 	//#endregion
