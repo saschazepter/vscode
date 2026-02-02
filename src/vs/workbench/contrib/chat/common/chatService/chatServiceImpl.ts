@@ -851,7 +851,9 @@ export class ChatService extends Disposable implements IChatService {
 			const hookCollector = this.instantiationService.createInstance(CollectHooks);
 			let collectedHooks: IChatRequestHooks | undefined;
 			try {
+				console.log('[hooks] collecting hooks');
 				collectedHooks = await hookCollector.collect(token);
+				console.log('[hooks] collected', collectedHooks);
 			} catch (error) {
 				this.logService.warn('[ChatService] Failed to collect hooks:', error);
 			}

@@ -21,8 +21,28 @@ import { ICommandService } from '../../../../../platform/commands/common/command
 import { URI } from '../../../../../base/common/uri.js';
 import { HOOK_TYPES, HookTypeId } from '../../common/promptSyntax/hookSchema.js';
 import { NEW_HOOK_COMMAND_ID } from './newPromptFileActions.js';
-import { basename } from '../../../../../base/common/path.js';
 import { ILabelService } from '../../../../../platform/label/common/label.js';
+
+/**
+ * Extracts the normalized command string from a hook item.
+ * Returns the command, bash, or powershell field, whichever is defined.
+ */
+function getNormalizedCommand(hookItem: unknown): string {
+	if (!hookItem || typeof hookItem !== 'object') {
+		return '';
+	}
+	const item = hookItem as Record<string, unknown>;
+	if (typeof item.command === 'string' && item.command) {
+		return item.command;
+	}
+	if (typeof item.bash === 'string' && item.bash) {
+		return item.bash;
+	}
+	if (typeof item.powershell === 'string' && item.powershell) {
+		return item.powershell;
+	}
+	return '';
+}
 
 /**
  * Action ID for the `Configure Hooks` action.
@@ -34,6 +54,8 @@ interface IHookEntry {
 	readonly hookTypeLabel: string;
 	readonly fileUri: URI;
 	readonly filePath: string;
+	readonly normalizedCommand: string;
+	readonly index: number;
 }
 
 interface IHookQuickPickItem extends IQuickPickItem {
@@ -84,13 +106,20 @@ class ManageHooksAction extends Action2 {
 				if (hooks && typeof hooks === 'object') {
 					for (const hookTypeId of Object.keys(hooks)) {
 						const hookType = HOOK_TYPES.find(h => h.id === hookTypeId);
-						if (hookType && Array.isArray(hooks[hookTypeId]) && hooks[hookTypeId].length > 0) {
-							hookEntries.push({
-								hookType: hookTypeId as HookTypeId,
-								hookTypeLabel: hookType.label,
-								fileUri: hookFile.uri,
-								filePath: labelService.getUriLabel(hookFile.uri, { relative: true })
-							});
+						if (hookType && Array.isArray(hooks[hookTypeId])) {
+							const hookArray = hooks[hookTypeId];
+							for (let i = 0; i < hookArray.length; i++) {
+								const hookItem = hookArray[i];
+								const normalizedCommand = getNormalizedCommand(hookItem);
+								hookEntries.push({
+									hookType: hookTypeId as HookTypeId,
+									hookTypeLabel: hookType.label,
+									fileUri: hookFile.uri,
+									filePath: labelService.getUriLabel(hookFile.uri, { relative: true }),
+									normalizedCommand,
+									index: i
+								});
+							}
 						}
 					}
 				}
@@ -136,7 +165,7 @@ class ManageHooksAction extends Action2 {
 
 			for (const entry of entries) {
 				items.push({
-					label: basename(entry.fileUri.path),
+					label: entry.normalizedCommand || localize('commands.hook.emptyCommand', '(empty command)'),
 					description: entry.filePath,
 					hookEntry: entry
 				});
