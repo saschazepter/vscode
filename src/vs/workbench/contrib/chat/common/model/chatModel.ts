@@ -30,6 +30,7 @@ import { CellUri, ICellEditOperation } from '../../../notebook/common/notebookCo
 import { ChatRequestToolReferenceEntry, IChatRequestVariableEntry, isImplicitVariableEntry, isStringImplicitContextValue, isStringVariableEntry } from '../attachments/chatVariableEntries.js';
 import { migrateLegacyTerminalToolSpecificData } from '../chat.js';
 import { ChatAgentVoteDirection, ChatAgentVoteDownReason, ChatResponseClearToPreviousToolInvocationReason, ElicitationState, IChatAgentMarkdownContentWithVulnerability, IChatClearToPreviousToolInvocation, IChatCodeCitation, IChatCommandButton, IChatConfirmation, IChatContentInlineReference, IChatContentReference, IChatEditingSessionAction, IChatElicitationRequest, IChatElicitationRequestSerialized, IChatExtensionsContent, IChatFollowup, IChatLocationData, IChatMarkdownContent, IChatMcpServersStarting, IChatMcpServersStartingSerialized, IChatModelReference, IChatMultiDiffData, IChatMultiDiffDataSerialized, IChatNotebookEdit, IChatProgress, IChatProgressMessage, IChatPullRequestContent, IChatQuestionCarousel, IChatResponseCodeblockUriPart, IChatResponseProgressFileTreeData, IChatService, IChatSessionContext, IChatSessionTiming, IChatTask, IChatTaskSerialized, IChatTextEdit, IChatThinkingPart, IChatToolInvocation, IChatToolInvocationSerialized, IChatTreeData, IChatUndoStop, IChatUsage, IChatUsedContext, IChatWarningMessage, IChatWorkspaceEdit, ResponseModelState, isIUsedContext } from '../chatService/chatService.js';
+import { IChatTodoListService } from '../tools/chatTodoListService.js';
 import { ChatAgentLocation, ChatModeKind } from '../constants.js';
 import { IChatEditingService, IChatEditingSession, ModifiedFileEntryState } from '../editing/chatEditingService.js';
 import { ILanguageModelChatMetadata, ILanguageModelChatMetadataAndIdentifier } from '../languageModels.js';
@@ -1907,6 +1908,7 @@ export class ChatModel extends Disposable implements IChatModel {
 		@IChatAgentService private readonly chatAgentService: IChatAgentService,
 		@IChatEditingService private readonly chatEditingService: IChatEditingService,
 		@IChatService private readonly chatService: IChatService,
+		@IChatTodoListService private readonly chatTodoListService: IChatTodoListService,
 	) {
 		super();
 
@@ -1925,6 +1927,9 @@ export class ChatModel extends Disposable implements IChatModel {
 		this._requests = initialData ? this._deserialize(initialData) : [];
 		this._timestamp = (isValidFullData && initialData.creationDate) || Date.now();
 		this._customTitle = isValidFullData ? initialData.customTitle : undefined;
+
+		// Hydrate todo list from serialized tool invocations
+		this._hydrateTodoList();
 
 		// Initialize input model from serialized data (undefined for new chats)
 		const serializedInputState = initialModelProps.inputState || (isValidFullData && initialData.inputState ? initialData.inputState : undefined);
@@ -2131,6 +2136,37 @@ export class ChatModel extends Disposable implements IChatModel {
 			text: message,
 			parts
 		};
+	}
+
+	private _hydrateTodoList(): void {
+		// Find the latest todo list from serialized tool invocations
+		// We scan from the end to find the most recent todo list for the session
+		for (let i = this._requests.length - 1; i >= 0; i--) {
+			const request = this._requests[i];
+			if (!request.response) {
+				continue;
+			}
+
+			// Scan through response parts to find todo list data
+			const responseParts = request.response.response.value;
+			for (let j = responseParts.length - 1; j >= 0; j--) {
+				const part = responseParts[j];
+				if ((part.kind === 'toolInvocation' || part.kind === 'toolInvocationSerialized') && part.toolSpecificData?.kind === 'todoList') {
+					// Found a todo list - hydrate it and return (we only need the latest)
+					const todos = part.toolSpecificData.todoList.map((todo, index) => {
+						const parsedId = parseInt(todo.id, 10);
+						const id = Number.isNaN(parsedId) ? index + 1 : parsedId;
+						return {
+							id,
+							title: todo.title,
+							status: todo.status as 'not-started' | 'in-progress' | 'completed'
+						};
+					});
+					this.chatTodoListService.setTodos(this._sessionResource, todos);
+					return;
+				}
+			}
+		}
 	}
 
 
