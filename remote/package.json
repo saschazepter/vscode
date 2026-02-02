@@ -32,7 +32,7 @@
     "https-proxy-agent": "^7.0.2",
     "jschardet": "3.1.4",
     "katex": "^0.16.22",
-    "kerberos": "2.1.1",
+    "kerberos": "git+https://github.com/mongodb-js/kerberos.git#d16dd0a7344e41edb52887a44f8f01f1ddb9761c",
     "minimist": "^1.2.8",
     "node-pty": "^1.2.0-beta.10",
     "tas-client": "0.3.1",
