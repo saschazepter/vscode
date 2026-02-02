@@ -533,6 +533,7 @@ export abstract class AbstractTaskService extends Disposable implements ITaskSer
 		const cts = new CancellationTokenSource();
 		this.toast.value = toDisposable(() => cts.dispose(true));
 		const { clicked } = await this._hostService.showToast({ title: message }, cts.token);
+		this.toast.clear();
 		if (clicked) {
 			this._hostService.focus(targetWindow, { mode: FocusMode.Force });
 		}
