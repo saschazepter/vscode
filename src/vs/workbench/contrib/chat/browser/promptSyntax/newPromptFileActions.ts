@@ -28,6 +28,7 @@ import { askForPromptSourceFolder } from './pickers/askForPromptSourceFolder.js'
 import { IQuickInputService } from '../../../../../platform/quickinput/common/quickInput.js';
 import { getCleanPromptName, SKILL_FILENAME, HOOKS_FILENAME } from '../../common/promptSyntax/config/promptFileLocations.js';
 import { HOOK_TYPES, HookTypeId } from '../../common/promptSyntax/hookSchema.js';
+import { findHookCommandSelection } from './hookUtils.js';
 
 
 class AbstractNewPromptFileAction extends Action2 {
@@ -315,7 +316,7 @@ class NewHookFileAction extends Action2 {
 	}
 
 	public override async run(accessor: ServicesAccessor) {
-		const openerService = accessor.get(IOpenerService);
+		const editorService = accessor.get(IEditorService);
 		const fileService = accessor.get(IFileService);
 		const instaService = accessor.get(IInstantiationService);
 		const quickInputService = accessor.get(IQuickInputService);
@@ -375,17 +376,29 @@ class NewHookFileAction extends Action2 {
 			type: 'command',
 			command: ''
 		};
+		let newHookIndex: number;
 		if (!hooksContent.hooks[hookTypeId]) {
 			hooksContent.hooks[hookTypeId] = [newHookEntry];
+			newHookIndex = 0;
 		} else {
 			hooksContent.hooks[hookTypeId].push(newHookEntry);
+			newHookIndex = hooksContent.hooks[hookTypeId].length - 1;
 		}
 
 		// Write the file
 		const jsonContent = JSON.stringify(hooksContent, null, '\t');
 		await fileService.writeFile(hookFileUri, VSBuffer.fromString(jsonContent));
 
-		await openerService.open(hookFileUri);
+		// Find the selection for the new hook's command field
+		const selection = findHookCommandSelection(jsonContent, hookTypeId, newHookIndex, 'command');
+
+		await editorService.openEditor({
+			resource: hookFileUri,
+			options: {
+				selection,
+				pinned: false
+			}
+		});
 	}
 }
 

@@ -12,7 +12,6 @@ import { Action2, registerAction2 } from '../../../../../platform/actions/common
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { ContextKeyExpr } from '../../../../../platform/contextkey/common/contextkey.js';
 import { PromptsType } from '../../common/promptSyntax/promptTypes.js';
-import { IOpenerService } from '../../../../../platform/opener/common/opener.js';
 import { IPromptsService } from '../../common/promptSyntax/service/promptsService.js';
 import { CancellationToken } from '../../../../../base/common/cancellation.js';
 import { IQuickInputService, IQuickPickItem, IQuickPickSeparator } from '../../../../../platform/quickinput/common/quickInput.js';
@@ -22,6 +21,9 @@ import { URI } from '../../../../../base/common/uri.js';
 import { HOOK_TYPES, HookTypeId } from '../../common/promptSyntax/hookSchema.js';
 import { NEW_HOOK_COMMAND_ID } from './newPromptFileActions.js';
 import { ILabelService } from '../../../../../platform/label/common/label.js';
+import { IEditorService } from '../../../../services/editor/common/editorService.js';
+import { ITextEditorSelection } from '../../../../../platform/editor/common/editor.js';
+import { findHookCommandSelection } from './hookUtils.js';
 
 /**
  * Extracts the normalized command string from a hook item.
@@ -45,6 +47,27 @@ function getNormalizedCommand(hookItem: unknown): string {
 }
 
 /**
+ * Gets the command field name that exists in the hook item.
+ * Returns 'command', 'bash', or 'powershell' in that order of preference.
+ */
+function getCommandFieldName(hookItem: unknown): 'command' | 'bash' | 'powershell' | undefined {
+	if (!hookItem || typeof hookItem !== 'object') {
+		return undefined;
+	}
+	const item = hookItem as Record<string, unknown>;
+	if (typeof item.command === 'string') {
+		return 'command';
+	}
+	if (typeof item.bash === 'string') {
+		return 'bash';
+	}
+	if (typeof item.powershell === 'string') {
+		return 'powershell';
+	}
+	return undefined;
+}
+
+/**
  * Action ID for the `Configure Hooks` action.
  */
 const CONFIGURE_HOOKS_ACTION_ID = 'workbench.action.chat.configure.hooks';
@@ -55,6 +78,7 @@ interface IHookEntry {
 	readonly fileUri: URI;
 	readonly filePath: string;
 	readonly normalizedCommand: string;
+	readonly commandFieldName: 'command' | 'bash' | 'powershell' | undefined;
 	readonly index: number;
 }
 
@@ -85,11 +109,12 @@ class ManageHooksAction extends Action2 {
 	public override async run(
 		accessor: ServicesAccessor,
 	): Promise<void> {
-		const openerService = accessor.get(IOpenerService);
 		const promptsService = accessor.get(IPromptsService);
 		const quickInputService = accessor.get(IQuickInputService);
 		const fileService = accessor.get(IFileService);
 		const labelService = accessor.get(ILabelService);
+		const commandService = accessor.get(ICommandService);
+		const editorService = accessor.get(IEditorService);
 
 		// Get all hook files
 		const hookFiles = await promptsService.listPromptFiles(PromptsType.hook, CancellationToken.None);
@@ -111,12 +136,14 @@ class ManageHooksAction extends Action2 {
 							for (let i = 0; i < hookArray.length; i++) {
 								const hookItem = hookArray[i];
 								const normalizedCommand = getNormalizedCommand(hookItem);
+								const commandFieldName = getCommandFieldName(hookItem);
 								hookEntries.push({
 									hookType: hookTypeId as HookTypeId,
 									hookTypeLabel: hookType.label,
 									fileUri: hookFile.uri,
 									filePath: labelService.getUriLabel(hookFile.uri, { relative: true }),
 									normalizedCommand,
+									commandFieldName,
 									index: i
 								});
 							}
@@ -187,10 +214,33 @@ class ManageHooksAction extends Action2 {
 
 		if (selected) {
 			if (selected.commandId) {
-				const commandService = accessor.get(ICommandService);
 				await commandService.executeCommand(selected.commandId);
 			} else if (selected.hookEntry) {
-				await openerService.open(selected.hookEntry.fileUri);
+				const entry = selected.hookEntry;
+				let selection: ITextEditorSelection | undefined;
+
+				// Try to find the command field to highlight
+				if (entry.commandFieldName) {
+					try {
+						const content = await fileService.readFile(entry.fileUri);
+						selection = findHookCommandSelection(
+							content.value.toString(),
+							entry.hookType,
+							entry.index,
+							entry.commandFieldName
+						);
+					} catch {
+						// Ignore errors and just open without selection
+					}
+				}
+
+				await editorService.openEditor({
+					resource: entry.fileUri,
+					options: {
+						selection,
+						pinned: false
+					}
+				});
 			}
 		}
 	}
