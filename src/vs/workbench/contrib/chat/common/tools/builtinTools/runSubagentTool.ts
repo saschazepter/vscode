@@ -153,12 +153,9 @@ export class RunSubagentTool extends Disposable implements IToolImpl {
 						// Find the actual model identifier from the qualified name(s)
 						for (const qualifiedName of modeModelQualifiedNames) {
 							const lmByQualifiedName = this.languageModelsService.lookupLanguageModelByQualifiedName(qualifiedName);
-							for (const fullId of this.languageModelsService.getLanguageModelIds()) {
-								const lmById = this.languageModelsService.lookupLanguageModel(fullId);
-								if (lmById && lmById?.id === lmByQualifiedName?.id) {
-									modeModelId = fullId;
-									break;
-								}
+							if (lmByQualifiedName?.identifier) {
+								modeModelId = lmByQualifiedName.identifier;
+								break;
 							}
 						}
 					}
