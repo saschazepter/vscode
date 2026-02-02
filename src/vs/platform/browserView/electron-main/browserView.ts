@@ -488,7 +488,6 @@ export class BrowserView extends Disposable {
 		}
 		try {
 			// Uses our preloaded contextBridge-exposed API.
-			// It would not be safe to call window.getSelection() directly here, because the page could override it.
 			return await this._view.webContents.executeJavaScriptInIsolatedWorld(browserViewIsolatedWorldId, [{ code: 'window.browserViewAPI?.getSelectedText?.() ?? ""' }]);
 		} catch {
 			return '';
