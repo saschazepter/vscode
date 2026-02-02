@@ -3447,6 +3447,19 @@ export enum ChatTodoStatus {
 	Completed = 3
 }
 
+export interface ChatMcpToolInvocationData {
+	input: string;
+	output: McpToolInvocationContentData[];
+}
+
+export interface ChatTodoToolInvocationData {
+	todoList: Array<{
+		id: number;
+		title: string;
+		status: ChatTodoStatus;
+	}>;
+}
+
 export class ChatToolInvocationPart {
 	toolName: string;
 	toolCallId: string;
@@ -3456,7 +3469,7 @@ export class ChatToolInvocationPart {
 	pastTenseMessage?: string | vscode.MarkdownString;
 	isConfirmed?: boolean;
 	isComplete?: boolean;
-	toolSpecificData?: ChatTerminalToolInvocationData2;
+	toolSpecificData?: ChatTerminalToolInvocationData2 | ChatMcpToolInvocationData | ChatTodoToolInvocationData;
 	subAgentInvocationId?: string;
 	subAgentName?: string;
 	presentation?: 'hidden' | 'hiddenAfterComplete' | undefined;
