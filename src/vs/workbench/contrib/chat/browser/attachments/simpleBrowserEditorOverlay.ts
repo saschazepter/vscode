@@ -371,11 +371,9 @@ class SimpleBrowserOverlayController {
 		@IContextKeyService private readonly contextKeyService: IContextKeyService,
 	) {
 
-		// Don't initialize if chat is not enabled or sendElementsToChat is not enabled
-		const chatEnabled = this.contextKeyService.getContextKeyValue<boolean>(ChatContextKeys.enabled.key);
+		// Don't initialize if sendElementsToChat is not enabled
 		const sendElementsEnabled = this.configurationService.getValue('chat.sendElementsToChat.enabled');
-
-		if (!chatEnabled || !sendElementsEnabled) {
+		if (!sendElementsEnabled) {
 			return;
 		}
 
