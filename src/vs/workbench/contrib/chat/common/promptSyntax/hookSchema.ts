@@ -248,11 +248,9 @@ export const HOOK_FILE_GLOB = 'hooks/hooks.json';
  * Normalizes a raw hook type identifier to the canonical HookType enum value.
  * Supports alternative casing and naming conventions from different tools:
  * - Claude Code: PreToolUse, PostToolUse, SessionStart, Stop, SubagentStart, SubagentStop, UserPromptSubmit
- * - Cursor: beforePromptSubmit
  * - GitHub Copilot: sessionStart, userPromptSubmitted, preToolUse, postToolUse, etc.
  *
- * @see https://code.claude.com/docs/en/hooks#hook-lifecycle
- * @see https://cursor.com/docs/agent/hooks#agent-and-tab-support
+ * @see https://docs.anthropic.com/en/docs/claude-code/hooks
  * @see https://docs.github.com/en/copilot/concepts/agents/coding-agent/about-hooks#types-of-hooks
  */
 export function normalizeHookTypeId(rawHookTypeId: string): HookType | undefined {
@@ -261,12 +259,11 @@ export function normalizeHookTypeId(rawHookTypeId: string): HookType | undefined
 		return rawHookTypeId as HookType;
 	}
 
-	// Handle alternative names from other tools
+	// Handle alternative names from Claude Code
 	switch (rawHookTypeId) {
 		case 'SessionStart':
 			return HookType.SessionStart;
 		case 'UserPromptSubmit':
-		case 'beforePromptSubmit':
 			return HookType.UserPromptSubmitted;
 		case 'PreToolUse':
 			return HookType.PreToolUse;

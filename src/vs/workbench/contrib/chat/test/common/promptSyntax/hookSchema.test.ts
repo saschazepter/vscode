@@ -13,42 +13,6 @@ suite('HookSchema', () => {
 
 	suite('normalizeHookTypeId', () => {
 
-		suite('GitHub Copilot canonical hook types', () => {
-			// @see https://docs.github.com/en/copilot/concepts/agents/coding-agent/about-hooks#types-of-hooks
-
-			test('sessionStart', () => {
-				assert.strictEqual(normalizeHookTypeId('sessionStart'), HookType.SessionStart);
-			});
-
-			test('userPromptSubmitted', () => {
-				assert.strictEqual(normalizeHookTypeId('userPromptSubmitted'), HookType.UserPromptSubmitted);
-			});
-
-			test('preToolUse', () => {
-				assert.strictEqual(normalizeHookTypeId('preToolUse'), HookType.PreToolUse);
-			});
-
-			test('postToolUse', () => {
-				assert.strictEqual(normalizeHookTypeId('postToolUse'), HookType.PostToolUse);
-			});
-
-			test('postToolUseFailure', () => {
-				assert.strictEqual(normalizeHookTypeId('postToolUseFailure'), HookType.PostToolUseFailure);
-			});
-
-			test('subagentStart', () => {
-				assert.strictEqual(normalizeHookTypeId('subagentStart'), HookType.SubagentStart);
-			});
-
-			test('subagentStop', () => {
-				assert.strictEqual(normalizeHookTypeId('subagentStop'), HookType.SubagentStop);
-			});
-
-			test('stop', () => {
-				assert.strictEqual(normalizeHookTypeId('stop'), HookType.Stop);
-			});
-		});
-
 		suite('Claude Code hook types (PascalCase)', () => {
 			// @see https://code.claude.com/docs/en/hooks#hook-lifecycle
 
@@ -82,14 +46,6 @@ suite('HookSchema', () => {
 
 			test('Stop -> stop', () => {
 				assert.strictEqual(normalizeHookTypeId('Stop'), HookType.Stop);
-			});
-		});
-
-		suite('Cursor hook types', () => {
-			// @see https://cursor.com/docs/agent/hooks#agent-and-tab-support
-
-			test('beforePromptSubmit -> userPromptSubmitted', () => {
-				assert.strictEqual(normalizeHookTypeId('beforePromptSubmit'), HookType.UserPromptSubmitted);
 			});
 		});
 

@@ -34,7 +34,8 @@ import { PromptFileParser, ParsedPromptFile, PromptHeaderAttributes } from '../p
 import { IAgentInstructions, IAgentSource, IChatPromptSlashCommand, ICustomAgent, IExtensionPromptPath, ILocalPromptPath, IPromptPath, IPromptsService, IAgentSkill, IUserPromptPath, PromptsStorage, ExtensionAgentSourceType, CUSTOM_AGENT_PROVIDER_ACTIVATION_EVENT, INSTRUCTIONS_PROVIDER_ACTIVATION_EVENT, IPromptFileContext, IPromptFileResource, PROMPT_FILE_PROVIDER_ACTIVATION_EVENT, SKILL_PROVIDER_ACTIVATION_EVENT, IPromptDiscoveryInfo, IPromptFileDiscoveryResult, ICustomAgentVisibility } from './promptsService.js';
 import { Delayer } from '../../../../../../base/common/async.js';
 import { Schemas } from '../../../../../../base/common/network.js';
-import { normalizeHookTypeId, resolveHookCommand, IChatRequestHooks, IHookCommand } from '../hookSchema.js';
+import { IChatRequestHooks, IHookCommand, HookType } from '../hookSchema.js';
+import { parseHooksFromFile } from '../hookCompatibility.js';
 import { IWorkspaceContextService } from '../../../../../../platform/workspace/common/workspace.js';
 import { IPathService } from '../../../../../services/path/common/pathService.js';
 
@@ -393,6 +394,11 @@ export class PromptsService extends Disposable implements IPromptsService {
 			}
 		} else {
 			for (const uri of await this.fileLocator.getConfigBasedSourceFolders(type)) {
+				// For hooks, exclude .claude paths since they use a different format (settings.json)
+				// and should be read-only from our perspective
+				if (type === PromptsType.hook && uri.path.includes('.claude')) {
+					continue;
+				}
 				result.push({ uri, storage: PromptsStorage.local, type });
 			}
 		}
@@ -885,24 +891,19 @@ export class PromptsService extends Disposable implements IPromptsService {
 		const userHomeUri = await this.pathService.userHome();
 		const userHome = userHomeUri.scheme === Schemas.file ? userHomeUri.fsPath : userHomeUri.path;
 
-		const collectedHooks: {
-			sessionStart: IHookCommand[];
-			userPromptSubmitted: IHookCommand[];
-			preToolUse: IHookCommand[];
-			postToolUse: IHookCommand[];
-			postToolUseFailure: IHookCommand[];
-			subagentStart: IHookCommand[];
-			subagentStop: IHookCommand[];
-			stop: IHookCommand[];
-		} = {
-			sessionStart: [],
-			userPromptSubmitted: [],
-			preToolUse: [],
-			postToolUse: [],
-			postToolUseFailure: [],
-			subagentStart: [],
-			subagentStop: [],
-			stop: [],
+		// Get workspace root for resolving relative cwd paths
+		const workspaceFolder = this.workspaceService.getWorkspace().folders[0];
+		const workspaceRootUri = workspaceFolder?.uri;
+
+		const collectedHooks: Record<HookType, IHookCommand[]> = {
+			[HookType.SessionStart]: [],
+			[HookType.UserPromptSubmitted]: [],
+			[HookType.PreToolUse]: [],
+			[HookType.PostToolUse]: [],
+			[HookType.PostToolUseFailure]: [],
+			[HookType.SubagentStart]: [],
+			[HookType.SubagentStop]: [],
+			[HookType.Stop]: [],
 		};
 
 		for (const hookFile of hookFiles) {
@@ -910,41 +911,13 @@ export class PromptsService extends Disposable implements IPromptsService {
 				const content = await this.fileService.readFile(hookFile.uri);
 				const json = JSON.parse(content.value.toString());
 
-				if (json.version !== 1) {
-					this.logger.warn(`[PromptsService] Unsupported hook file version: ${json.version} in ${hookFile.uri}`);
-					continue;
-				}
+				// Use format-aware parsing that handles Copilot, Claude, and Cursor formats
+				const { format, hooks } = parseHooksFromFile(hookFile.uri, json, workspaceRootUri, userHome);
 
-				const hooks = json.hooks;
-				if (!hooks || typeof hooks !== 'object') {
-					this.logger.trace(`[PromptsService] No hooks object in ${hookFile.uri}`);
-					continue;
-				}
-
-				// Get workspace root for resolving relative cwd paths
-				// Use first workspace folder as the active workspace root
-				const workspaceFolder = this.workspaceService.getWorkspace().folders[0];
-				const workspaceRootUri = workspaceFolder?.uri;
-
-				// Collect hooks by type
-				for (const rawHookTypeId of Object.keys(hooks)) {
-					const hookTypeId = normalizeHookTypeId(rawHookTypeId);
-					if (!hookTypeId) {
-						this.logger.warn(`[PromptsService] Unknown hook type: ${rawHookTypeId} in ${hookFile.uri}`);
-						continue;
-					}
-
-					const hookArray = hooks[rawHookTypeId];
-					if (!Array.isArray(hookArray)) {
-						continue;
-					}
-
-					for (const rawHookCommand of hookArray) {
-						const resolved = resolveHookCommand(rawHookCommand as Record<string, unknown>, workspaceRootUri, userHome);
-						if (resolved) {
-							collectedHooks[hookTypeId].push(resolved);
-							this.logger.trace(`[PromptsService] Collected ${hookTypeId} hook from ${hookFile.uri}`);
-						}
+				for (const [hookType, { hooks: commands }] of hooks) {
+					for (const command of commands) {
+						collectedHooks[hookType].push(command);
+						this.logger.trace(`[PromptsService] Collected ${hookType} hook from ${hookFile.uri} (format: ${format})`);
 					}
 				}
 			} catch (error) {
@@ -961,14 +934,14 @@ export class PromptsService extends Disposable implements IPromptsService {
 
 		// Build the result, only including hook types that have entries
 		const result: IChatRequestHooks = {
-			...(collectedHooks.sessionStart.length > 0 && { sessionStart: collectedHooks.sessionStart }),
-			...(collectedHooks.userPromptSubmitted.length > 0 && { userPromptSubmitted: collectedHooks.userPromptSubmitted }),
-			...(collectedHooks.preToolUse.length > 0 && { preToolUse: collectedHooks.preToolUse }),
-			...(collectedHooks.postToolUse.length > 0 && { postToolUse: collectedHooks.postToolUse }),
-			...(collectedHooks.postToolUseFailure.length > 0 && { postToolUseFailure: collectedHooks.postToolUseFailure }),
-			...(collectedHooks.subagentStart.length > 0 && { subagentStart: collectedHooks.subagentStart }),
-			...(collectedHooks.subagentStop.length > 0 && { subagentStop: collectedHooks.subagentStop }),
-			...(collectedHooks.stop.length > 0 && { stop: collectedHooks.stop }),
+			...(collectedHooks[HookType.SessionStart].length > 0 && { sessionStart: collectedHooks[HookType.SessionStart] }),
+			...(collectedHooks[HookType.UserPromptSubmitted].length > 0 && { userPromptSubmitted: collectedHooks[HookType.UserPromptSubmitted] }),
+			...(collectedHooks[HookType.PreToolUse].length > 0 && { preToolUse: collectedHooks[HookType.PreToolUse] }),
+			...(collectedHooks[HookType.PostToolUse].length > 0 && { postToolUse: collectedHooks[HookType.PostToolUse] }),
+			...(collectedHooks[HookType.PostToolUseFailure].length > 0 && { postToolUseFailure: collectedHooks[HookType.PostToolUseFailure] }),
+			...(collectedHooks[HookType.SubagentStart].length > 0 && { subagentStart: collectedHooks[HookType.SubagentStart] }),
+			...(collectedHooks[HookType.SubagentStop].length > 0 && { subagentStop: collectedHooks[HookType.SubagentStop] }),
+			...(collectedHooks[HookType.Stop].length > 0 && { stop: collectedHooks[HookType.Stop] }),
 		};
 
 		this.logger.trace(`[PromptsService] Collected hooks: ${JSON.stringify(Object.keys(result))}`);

@@ -24,48 +24,9 @@ import { ILabelService } from '../../../../../platform/label/common/label.js';
 import { IEditorService } from '../../../../services/editor/common/editorService.js';
 import { ITextEditorSelection } from '../../../../../platform/editor/common/editor.js';
 import { findHookCommandSelection } from './hookUtils.js';
-
-/**
- * Extracts the normalized command string from a hook item.
- * Returns the command, bash, or powershell field, whichever is defined.
- */
-function getNormalizedCommand(hookItem: unknown): string {
-	if (!hookItem || typeof hookItem !== 'object') {
-		return '';
-	}
-	const item = hookItem as Record<string, unknown>;
-	if (typeof item.command === 'string' && item.command) {
-		return item.command;
-	}
-	if (typeof item.bash === 'string' && item.bash) {
-		return item.bash;
-	}
-	if (typeof item.powershell === 'string' && item.powershell) {
-		return item.powershell;
-	}
-	return '';
-}
-
-/**
- * Gets the command field name that exists in the hook item.
- * Returns 'command', 'bash', or 'powershell' in that order of preference.
- */
-function getCommandFieldName(hookItem: unknown): 'command' | 'bash' | 'powershell' | undefined {
-	if (!hookItem || typeof hookItem !== 'object') {
-		return undefined;
-	}
-	const item = hookItem as Record<string, unknown>;
-	if (typeof item.command === 'string') {
-		return 'command';
-	}
-	if (typeof item.bash === 'string') {
-		return 'bash';
-	}
-	if (typeof item.powershell === 'string') {
-		return 'powershell';
-	}
-	return undefined;
-}
+import { getHookSourceFormatLabel, HookSourceFormat, isReadOnlyHookSource, parseHooksFromFile } from '../../common/promptSyntax/hookCompatibility.js';
+import { IWorkspaceContextService } from '../../../../../platform/workspace/common/workspace.js';
+import { IPathService } from '../../../../services/path/common/pathService.js';
 
 /**
  * Action ID for the `Configure Hooks` action.
@@ -80,6 +41,10 @@ interface IHookEntry {
 	readonly normalizedCommand: string;
 	readonly commandFieldName: 'command' | 'bash' | 'powershell' | undefined;
 	readonly index: number;
+	/** The source format (Copilot, Claude, Cursor) */
+	readonly sourceFormat: HookSourceFormat;
+	/** Whether this hook is from a read-only source (Claude/Cursor settings) */
+	readonly isReadOnly: boolean;
 }
 
 interface IHookQuickPickItem extends IQuickPickItem {
@@ -115,39 +80,49 @@ class ManageHooksAction extends Action2 {
 		const labelService = accessor.get(ILabelService);
 		const commandService = accessor.get(ICommandService);
 		const editorService = accessor.get(IEditorService);
+		const workspaceService = accessor.get(IWorkspaceContextService);
+		const pathService = accessor.get(IPathService);
+
+		// Get workspace root and user home for path resolution
+		const workspaceFolder = workspaceService.getWorkspace().folders[0];
+		const workspaceRootUri = workspaceFolder?.uri;
+		const userHomeUri = await pathService.userHome();
+		const userHome = userHomeUri.fsPath ?? userHomeUri.path;
 
 		// Get all hook files
 		const hookFiles = await promptsService.listPromptFiles(PromptsType.hook, CancellationToken.None);
 
-		// Parse hook files to extract hook entries
+		// Parse hook files to extract hook entries using format-aware parsing
 		const hookEntries: IHookEntry[] = [];
 
 		for (const hookFile of hookFiles) {
 			try {
 				const content = await fileService.readFile(hookFile.uri);
 				const json = JSON.parse(content.value.toString());
-				const hooks = json.hooks;
 
-				if (hooks && typeof hooks === 'object') {
-					for (const hookTypeId of Object.keys(hooks)) {
-						const hookType = HOOK_TYPES.find(h => h.id === hookTypeId);
-						if (hookType && Array.isArray(hooks[hookTypeId])) {
-							const hookArray = hooks[hookTypeId];
-							for (let i = 0; i < hookArray.length; i++) {
-								const hookItem = hookArray[i];
-								const normalizedCommand = getNormalizedCommand(hookItem);
-								const commandFieldName = getCommandFieldName(hookItem);
-								hookEntries.push({
-									hookType: hookTypeId as HookType,
-									hookTypeLabel: hookType.label,
-									fileUri: hookFile.uri,
-									filePath: labelService.getUriLabel(hookFile.uri, { relative: true }),
-									normalizedCommand,
-									commandFieldName,
-									index: i
-								});
-							}
-						}
+				// Use format-aware parsing
+				const { format, hooks } = parseHooksFromFile(hookFile.uri, json, workspaceRootUri, userHome);
+				const isReadOnly = isReadOnlyHookSource(format);
+
+				for (const [hookType, { hooks: commands }] of hooks) {
+					const hookTypeMeta = HOOK_TYPES.find(h => h.id === hookType);
+					if (!hookTypeMeta) {
+						continue;
+					}
+
+					for (let i = 0; i < commands.length; i++) {
+						const command = commands[i];
+						hookEntries.push({
+							hookType,
+							hookTypeLabel: hookTypeMeta.label,
+							fileUri: hookFile.uri,
+							filePath: labelService.getUriLabel(hookFile.uri, { relative: true }),
+							normalizedCommand: command.command,
+							commandFieldName: 'command', // Always 'command' after normalization
+							index: i,
+							sourceFormat: format,
+							isReadOnly
+						});
 					}
 				}
 			} catch {
@@ -191,9 +166,15 @@ class ManageHooksAction extends Action2 {
 			});
 
 			for (const entry of entries) {
+				// Build description with source format indicator for read-only hooks
+				let description = entry.filePath;
+				if (entry.isReadOnly) {
+					description = `$(lock) ${getHookSourceFormatLabel(entry.sourceFormat)} · ${description}`;
+				}
+
 				items.push({
 					label: entry.normalizedCommand || localize('commands.hook.emptyCommand', '(empty command)'),
-					description: entry.filePath,
+					description,
 					hookEntry: entry
 				});
 			}
