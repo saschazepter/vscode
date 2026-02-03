@@ -10,6 +10,7 @@ import { IInstantiationService } from '../../../../../platform/instantiation/com
 import { IMatch, matchesFuzzy } from '../../../../../base/common/filters.js';
 import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { IAgentSessionsService } from './agentSessionsService.js';
+import { IAgentSessionsViewerService } from './agentSessionsViewerService.js';
 import { AgentSessionsSorter, groupAgentSessionsByDate } from './agentSessionsViewer.js';
 import { IAgentSession } from './agentSessionsModel.js';
 import { openSession } from './agentSessionsOpener.js';
@@ -25,6 +26,7 @@ export class AgentSessionsQuickAccessProvider extends PickerQuickAccessProvider<
 
 	constructor(
 		@IAgentSessionsService private readonly agentSessionsService: IAgentSessionsService,
+		@IAgentSessionsViewerService private readonly agentSessionsViewerService: IAgentSessionsViewerService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@ICommandService private readonly commandService: ICommandService,
 	) {
@@ -39,7 +41,9 @@ export class AgentSessionsQuickAccessProvider extends PickerQuickAccessProvider<
 	protected async _getPicks(filter: string): Promise<(IQuickPickSeparator | IPickerQuickAccessItem)[]> {
 		const picks: Array<IPickerQuickAccessItem | IQuickPickSeparator> = [];
 
-		const sessions = this.agentSessionsService.model.sessions.sort(this.sorter.compare.bind(this.sorter));
+		const sessions = this.agentSessionsService.model.sessions
+			.filter(session => !this.agentSessionsViewerService.filter(session))
+			.sort(this.sorter.compare.bind(this.sorter));
 		const groupedSessions = groupAgentSessionsByDate(sessions);
 
 		for (const group of groupedSessions.values()) {

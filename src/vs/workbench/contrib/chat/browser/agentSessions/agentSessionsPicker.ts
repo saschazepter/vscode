@@ -14,6 +14,7 @@ import { IQuickInputButton, IQuickInputService, IQuickPickItem, IQuickPickSepara
 import { openSession } from './agentSessionsOpener.js';
 import { IAgentSession, isLocalAgentSessionItem } from './agentSessionsModel.js';
 import { IAgentSessionsService } from './agentSessionsService.js';
+import { IAgentSessionsViewerService } from './agentSessionsViewerService.js';
 import { AgentSessionsSorter, groupAgentSessionsByDate, sessionDateFromNow } from './agentSessionsViewer.js';
 import { AGENT_SESSION_DELETE_ACTION_ID, AGENT_SESSION_RENAME_ACTION_ID, getAgentSessionTime } from './agentSessions.js';
 
@@ -67,6 +68,7 @@ export class AgentSessionsPicker {
 
 	constructor(
 		@IAgentSessionsService private readonly agentSessionsService: IAgentSessionsService,
+		@IAgentSessionsViewerService private readonly agentSessionsViewerService: IAgentSessionsViewerService,
 		@IQuickInputService private readonly quickInputService: IQuickInputService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@ICommandService private readonly commandService: ICommandService,
@@ -125,7 +127,9 @@ export class AgentSessionsPicker {
 	}
 
 	private createPickerItems(): (ISessionPickItem | IQuickPickSeparator)[] {
-		const sessions = this.agentSessionsService.model.sessions.sort(this.sorter.compare.bind(this.sorter));
+		const sessions = this.agentSessionsService.model.sessions
+			.filter(session => !this.agentSessionsViewerService.filter(session))
+			.sort(this.sorter.compare.bind(this.sorter));
 		const items: (ISessionPickItem | IQuickPickSeparator)[] = [];
 
 		const groupedSessions = groupAgentSessionsByDate(sessions);
