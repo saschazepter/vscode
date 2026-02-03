@@ -46,7 +46,6 @@ import { LayoutSettings } from '../../../../../services/layout/browser/layoutSer
 import { ChatConfiguration } from '../../../common/constants.js';
 import { ChatEntitlement, IChatEntitlementService } from '../../../../../services/chat/common/chatEntitlementService.js';
 import { IChatWidgetService } from '../../chat.js';
-import { AgentSessionsFilter } from '../agentSessionsFilter.js';
 
 // Action IDs
 const TOGGLE_CHAT_ACTION_ID = 'workbench.action.chat.toggle';
@@ -54,6 +53,8 @@ const CHAT_SETUP_ACTION_ID = 'workbench.action.chat.triggerSetup';
 const OPEN_CHAT_QUOTA_EXCEEDED_DIALOG = 'workbench.action.chat.openQuotaExceededDialog';
 const QUICK_OPEN_ACTION_ID = 'workbench.action.quickOpenWithModes';
 
+// Storage key for filter state
+const FILTER_STORAGE_KEY = 'agentSessions.filterExcludes.agentsessionsviewerfiltersubmenu';
 // Storage key for saving user's filter state before we override it
 const PREVIOUS_FILTER_STORAGE_KEY = 'agentSessions.filterExcludes.previousUserFilter';
 
@@ -158,7 +159,7 @@ export class AgentTitleBarStatusWidget extends BaseActionViewItem {
 		}));
 
 		// Re-render when storage changes (e.g., filter state changes from sessions view)
-		this._register(this.storageService.onDidChangeValue(StorageScope.PROFILE, AgentSessionsFilter.STORAGE_KEY, this._store)(() => {
+		this._register(this.storageService.onDidChangeValue(StorageScope.PROFILE, 'agentSessions.filterExcludes.agentsessionsviewerfiltersubmenu', this._store)(() => {
 			this._render();
 		}));
 
@@ -908,7 +909,7 @@ export class AgentTitleBarStatusWidget extends BaseActionViewItem {
 	 * Get the stored filter object from storage.
 	 */
 	private _getStoredFilter(): { providers: string[]; states: AgentSessionStatus[]; archived: boolean; read: boolean } | undefined {
-		const filterStr = this.storageService.get(AgentSessionsFilter.STORAGE_KEY, StorageScope.PROFILE);
+		const filterStr = this.storageService.get(FILTER_STORAGE_KEY, StorageScope.PROFILE);
 		if (!filterStr) {
 			return undefined;
 		}
@@ -923,7 +924,7 @@ export class AgentTitleBarStatusWidget extends BaseActionViewItem {
 	 * Store a filter object to storage.
 	 */
 	private _storeFilter(filter: { providers: string[]; states: AgentSessionStatus[]; archived: boolean; read: boolean }): void {
-		this.storageService.store(AgentSessionsFilter.STORAGE_KEY, JSON.stringify(filter), StorageScope.PROFILE, StorageTarget.USER);
+		this.storageService.store(FILTER_STORAGE_KEY, JSON.stringify(filter), StorageScope.PROFILE, StorageTarget.USER);
 	}
 
 	/**

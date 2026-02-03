@@ -41,7 +41,7 @@ const DEFAULT_EXCLUDES: IAgentSessionsFilterExcludes = Object.freeze({
 
 export class AgentSessionsFilter extends Disposable implements Required<IAgentSessionsFilter> {
 
-	public static readonly STORAGE_KEY = 'agentSessions.filterExcludes.agentsessionsviewerfiltersubmenu';
+	private readonly STORAGE_KEY: string;
 
 	private readonly _onDidChange = this._register(new Emitter<void>());
 	readonly onDidChange = this._onDidChange.event;
@@ -61,6 +61,8 @@ export class AgentSessionsFilter extends Disposable implements Required<IAgentSe
 	) {
 		super();
 
+		this.STORAGE_KEY = `agentSessions.filterExcludes.${this.options.filterMenuId?.id.toLowerCase()}`;
+
 		this.updateExcludes(false);
 
 		this.registerListeners();
@@ -70,12 +72,12 @@ export class AgentSessionsFilter extends Disposable implements Required<IAgentSe
 		this._register(this.chatSessionsService.onDidChangeItemsProviders(() => this.updateFilterActions()));
 		this._register(this.chatSessionsService.onDidChangeAvailability(() => this.updateFilterActions()));
 
-		this._register(this.storageService.onDidChangeValue(StorageScope.PROFILE, AgentSessionsFilter.STORAGE_KEY, this._store)(() => this.updateExcludes(true)));
+		this._register(this.storageService.onDidChangeValue(StorageScope.PROFILE, this.STORAGE_KEY, this._store)(() => this.updateExcludes(true)));
 	}
 
 	private updateExcludes(fromEvent: boolean): void {
 		if (!this.isStoringExcludes) {
-			const excludedTypesRaw = this.storageService.get(AgentSessionsFilter.STORAGE_KEY, StorageScope.PROFILE);
+			const excludedTypesRaw = this.storageService.get(this.STORAGE_KEY, StorageScope.PROFILE);
 			if (excludedTypesRaw) {
 				try {
 					this.excludes = JSON.parse(excludedTypesRaw) as IAgentSessionsFilterExcludes;
@@ -102,9 +104,9 @@ export class AgentSessionsFilter extends Disposable implements Required<IAgentSe
 		this.isStoringExcludes = true;
 		try {
 			if (equals(this.excludes, DEFAULT_EXCLUDES)) {
-				this.storageService.remove(AgentSessionsFilter.STORAGE_KEY, StorageScope.PROFILE);
+				this.storageService.remove(this.STORAGE_KEY, StorageScope.PROFILE);
 			} else {
-				this.storageService.store(AgentSessionsFilter.STORAGE_KEY, JSON.stringify(this.excludes), StorageScope.PROFILE, StorageTarget.USER);
+				this.storageService.store(this.STORAGE_KEY, JSON.stringify(this.excludes), StorageScope.PROFILE, StorageTarget.USER);
 			}
 		} finally {
 			this.isStoringExcludes = false;
