@@ -677,6 +677,8 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		templateData.rowContainer.classList.toggle('editing-session', location === ChatAgentLocation.Chat);
 		templateData.rowContainer.classList.toggle('interactive-request', isRequestVM(element));
 		templateData.rowContainer.classList.toggle('interactive-response', isResponseVM(element));
+		// Clear pending-related classes from previous renders
+		templateData.rowContainer.classList.remove('pending-item', 'pending-divider', 'pending-request');
 		const progressMessageAtBottomOfResponse = checkModeOption(this.delegate.currentChatMode(), this.rendererOptions.progressMessageAtBottomOfResponse);
 		templateData.rowContainer.classList.toggle('show-detail-progress', isResponseVM(element) && !element.isComplete && !element.progressMessages.length && !progressMessageAtBottomOfResponse);
 		if (!this.rendererOptions.noHeader) {
@@ -775,7 +777,7 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 	private renderPendingDivider(element: IChatPendingDividerViewModel, templateData: IChatListItemTemplate): void {
 		templateData.rowContainer.classList.add('pending-item');
 		templateData.rowContainer.classList.add('pending-divider');
-		templateData.rowContainer.classList.remove('interactive-request', 'interactive-response');
+		templateData.rowContainer.classList.remove('interactive-request', 'interactive-response', 'pending-request');
 
 		// Hide header elements not applicable to pending divider
 		templateData.avatarContainer.classList.add('hidden');
@@ -793,7 +795,15 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 
 		const dividerContent = dom.$('.pending-divider-content');
 		const label = dom.append(dividerContent, dom.$('span.pending-divider-label'));
-		label.textContent = localize('pendingRequests', "Pending Requests");
+
+		if (element.dividerKind === ChatRequestQueueKind.Steering) {
+			label.textContent = localize('steeringDivider', "Steering");
+			label.title = localize('steeringDividerTooltip', "Steering message will be sent after the next tool call happens");
+		} else {
+			label.textContent = localize('queuedDivider', "Queued");
+			label.title = localize('queuedDividerTooltip', "Queued messages will be sent after the current request completes");
+		}
+
 		templateData.value.appendChild(dividerContent);
 	}
 
@@ -1065,13 +1075,6 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 				templateData.value.appendChild(newPart.domNode);
 			}
 			templateData.elementDisposables.add(newPart);
-		}
-
-		// Render pending request status if this is a queued request
-		if (element.pendingKind) {
-			const pendingBadge = dom.$('.chat-request-status');
-			pendingBadge.textContent = element.pendingKind === ChatRequestQueueKind.Steering ? localize('steering', "Steering") : localize('queued', "Queued");
-			templateData.value.appendChild(pendingBadge);
 		}
 	}
 

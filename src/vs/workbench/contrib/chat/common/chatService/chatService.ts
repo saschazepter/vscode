@@ -1154,6 +1154,54 @@ export interface IChatSendRequestData extends IChatSendRequestResponseState {
 	slashCommand?: IChatAgentCommand;
 }
 
+/**
+ * Result of a sendRequest call - a discriminated union of possible outcomes.
+ */
+export type ChatSendResult =
+	| ChatSendResultRejected
+	| ChatSendResultSent
+	| ChatSendResultQueued;
+
+export interface ChatSendResultRejected {
+	readonly kind: 'rejected';
+	readonly reason: string;
+}
+
+export interface ChatSendResultSent {
+	readonly kind: 'sent';
+	readonly data: IChatSendRequestData;
+}
+
+export interface ChatSendResultQueued {
+	readonly kind: 'queued';
+	/**
+	 * Promise that resolves when the queued message is actually processed.
+	 * Will resolve to a 'sent' or 'rejected' result.
+	 */
+	readonly deferred: Promise<ChatSendResult>;
+}
+
+export namespace ChatSendResult {
+	export function isSent(result: ChatSendResult): result is ChatSendResultSent {
+		return result.kind === 'sent';
+	}
+
+	export function isRejected(result: ChatSendResult): result is ChatSendResultRejected {
+		return result.kind === 'rejected';
+	}
+
+	export function isQueued(result: ChatSendResult): result is ChatSendResultQueued {
+		return result.kind === 'queued';
+	}
+
+	/** Assertion function for tests - asserts that the result is a sent result */
+	export function assertSent(result: ChatSendResult): asserts result is ChatSendResultSent {
+		if (result.kind !== 'sent') {
+			throw new Error(`Expected ChatSendResult to be 'sent', but was '${result.kind}'`);
+		}
+	}
+}
+
 export interface IChatEditorLocationData {
 	type: ChatAgentLocation.EditorInline;
 	id: string;
@@ -1257,9 +1305,10 @@ export interface IChatService {
 	getChatSessionFromInternalUri(sessionResource: URI): IChatSessionContext | undefined;
 
 	/**
-	 * Returns whether the request was accepted.`
+	 * Sends a chat request for the given session.
+	 * @returns A result indicating whether the request was sent, queued, or rejected.
 	 */
-	sendRequest(sessionResource: URI, message: string, options?: IChatSendRequestOptions): Promise<IChatSendRequestData | undefined>;
+	sendRequest(sessionResource: URI, message: string, options?: IChatSendRequestOptions): Promise<ChatSendResult>;
 
 	/**
 	 * Sets a custom title for a chat model.

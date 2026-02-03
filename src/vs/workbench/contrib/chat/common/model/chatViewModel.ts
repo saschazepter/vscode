@@ -225,9 +225,10 @@ export interface IChatResponseViewModel {
 
 export interface IChatPendingDividerViewModel {
 	readonly kind: 'pendingDivider';
-	readonly id: string; // e.g., 'pending-divider'
+	readonly id: string; // e.g., 'pending-divider-steering' or 'pending-divider-queued'
 	readonly sessionResource: URI;
 	readonly isComplete: true;
+	readonly dividerKind: ChatRequestQueueKind;
 	currentRenderedHeight: number | undefined;
 }
 
@@ -342,10 +343,26 @@ export class ChatViewModel extends Disposable implements IChatViewModel {
 
 		const pendingRequests = this._model.getPendingRequests();
 		if (pendingRequests.length > 0) {
-			items.push({ kind: 'pendingDivider', id: 'pending-divider', sessionResource: this._model.sessionResource, isComplete: true, currentRenderedHeight: undefined });
-			for (const pending of pendingRequests) {
-				const requestVM = this.instantiationService.createInstance(ChatRequestViewModel, pending.request, pending.kind);
-				items.push(requestVM);
+			// Separate steering and queued requests
+			const steeringRequests = pendingRequests.filter(p => p.kind === ChatRequestQueueKind.Steering);
+			const queuedRequests = pendingRequests.filter(p => p.kind === ChatRequestQueueKind.Queued);
+
+			// Add steering requests with their divider first
+			if (steeringRequests.length > 0) {
+				items.push({ kind: 'pendingDivider', id: 'pending-divider-steering', sessionResource: this._model.sessionResource, isComplete: true, dividerKind: ChatRequestQueueKind.Steering, currentRenderedHeight: undefined });
+				for (const pending of steeringRequests) {
+					const requestVM = this.instantiationService.createInstance(ChatRequestViewModel, pending.request, pending.kind);
+					items.push(requestVM);
+				}
+			}
+
+			// Add queued requests with their divider
+			if (queuedRequests.length > 0) {
+				items.push({ kind: 'pendingDivider', id: 'pending-divider-queued', sessionResource: this._model.sessionResource, isComplete: true, dividerKind: ChatRequestQueueKind.Queued, currentRenderedHeight: undefined });
+				for (const pending of queuedRequests) {
+					const requestVM = this.instantiationService.createInstance(ChatRequestViewModel, pending.request, pending.kind);
+					items.push(requestVM);
+				}
 			}
 		}
 

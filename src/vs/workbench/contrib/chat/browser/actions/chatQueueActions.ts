@@ -56,7 +56,6 @@ export class ChatQueueMessageAction extends Action2 {
 
 	override run(accessor: ServicesAccessor, ...args: unknown[]): void {
 		const widgetService = accessor.get(IChatWidgetService);
-		const chatService = accessor.get(IChatService);
 		const widget = widgetService.lastFocusedWidget;
 		if (!widget?.viewModel) {
 			return;
@@ -67,8 +66,7 @@ export class ChatQueueMessageAction extends Action2 {
 			return;
 		}
 
-		chatService.sendRequest(widget.viewModel.sessionResource, inputValue, { queue: ChatRequestQueueKind.Queued });
-		widget.setInput('');
+		widget.acceptInput(undefined, { queue: ChatRequestQueueKind.Queued });
 	}
 }
 
@@ -97,7 +95,6 @@ export class ChatSteerWithMessageAction extends Action2 {
 
 	override run(accessor: ServicesAccessor, ...args: unknown[]): void {
 		const widgetService = accessor.get(IChatWidgetService);
-		const chatService = accessor.get(IChatService);
 		const widget = widgetService.lastFocusedWidget;
 		if (!widget?.viewModel) {
 			return;
@@ -108,8 +105,7 @@ export class ChatSteerWithMessageAction extends Action2 {
 			return;
 		}
 
-		chatService.sendRequest(widget.viewModel.sessionResource, inputValue, { queue: ChatRequestQueueKind.Steering });
-		widget.setInput('');
+		widget.acceptInput(undefined, { queue: ChatRequestQueueKind.Steering });
 	}
 }
 

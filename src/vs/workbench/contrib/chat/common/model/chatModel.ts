@@ -29,7 +29,7 @@ import { ILogService } from '../../../../../platform/log/common/log.js';
 import { CellUri, ICellEditOperation } from '../../../notebook/common/notebookCommon.js';
 import { ChatRequestToolReferenceEntry, IChatRequestVariableEntry, isImplicitVariableEntry, isStringImplicitContextValue, isStringVariableEntry } from '../attachments/chatVariableEntries.js';
 import { migrateLegacyTerminalToolSpecificData } from '../chat.js';
-import { ChatAgentVoteDirection, ChatAgentVoteDownReason, ChatRequestQueueKind, ChatResponseClearToPreviousToolInvocationReason, ElicitationState, IChatAgentMarkdownContentWithVulnerability, IChatClearToPreviousToolInvocation, IChatCodeCitation, IChatCommandButton, IChatConfirmation, IChatContentInlineReference, IChatContentReference, IChatEditingSessionAction, IChatElicitationRequest, IChatElicitationRequestSerialized, IChatExtensionsContent, IChatFollowup, IChatLocationData, IChatMarkdownContent, IChatMcpServersStarting, IChatMcpServersStartingSerialized, IChatModelReference, IChatMultiDiffData, IChatMultiDiffDataSerialized, IChatNotebookEdit, IChatProgress, IChatProgressMessage, IChatPullRequestContent, IChatQuestionCarousel, IChatResponseCodeblockUriPart, IChatResponseProgressFileTreeData, IChatService, IChatSessionContext, IChatSessionTiming, IChatTask, IChatTaskSerialized, IChatTextEdit, IChatThinkingPart, IChatToolInvocation, IChatToolInvocationSerialized, IChatTreeData, IChatUndoStop, IChatUsage, IChatUsedContext, IChatWarningMessage, IChatWorkspaceEdit, ResponseModelState, isIUsedContext } from '../chatService/chatService.js';
+import { ChatAgentVoteDirection, ChatAgentVoteDownReason, ChatRequestQueueKind, ChatResponseClearToPreviousToolInvocationReason, ElicitationState, IChatAgentMarkdownContentWithVulnerability, IChatClearToPreviousToolInvocation, IChatCodeCitation, IChatCommandButton, IChatConfirmation, IChatContentInlineReference, IChatContentReference, IChatEditingSessionAction, IChatElicitationRequest, IChatElicitationRequestSerialized, IChatExtensionsContent, IChatFollowup, IChatLocationData, IChatMarkdownContent, IChatMcpServersStarting, IChatMcpServersStartingSerialized, IChatModelReference, IChatMultiDiffData, IChatMultiDiffDataSerialized, IChatNotebookEdit, IChatProgress, IChatProgressMessage, IChatPullRequestContent, IChatQuestionCarousel, IChatResponseCodeblockUriPart, IChatResponseProgressFileTreeData, IChatSendRequestOptions, IChatService, IChatSessionContext, IChatSessionTiming, IChatTask, IChatTaskSerialized, IChatTextEdit, IChatThinkingPart, IChatToolInvocation, IChatToolInvocationSerialized, IChatTreeData, IChatUndoStop, IChatUsage, IChatUsedContext, IChatWarningMessage, IChatWorkspaceEdit, ResponseModelState, isIUsedContext } from '../chatService/chatService.js';
 import { ChatAgentLocation, ChatModeKind } from '../constants.js';
 import { IChatEditingService, IChatEditingSession, ModifiedFileEntryState } from '../editing/chatEditingService.js';
 import { ILanguageModelChatMetadata, ILanguageModelChatMetadataAndIdentifier } from '../languageModels.js';
@@ -46,6 +46,11 @@ export interface IChatPendingRequest {
 	readonly id: string;
 	readonly request: IChatRequestModel;
 	readonly kind: ChatRequestQueueKind;
+	/**
+	 * The options that were passed to sendRequest when this request was queued.
+	 * userSelectedTools is snapshotted to a static observable at queue time.
+	 */
+	readonly sendOptions: IChatSendRequestOptions;
 }
 
 export const CHAT_ATTACHABLE_IMAGE_MIME_TYPES: Record<string, string> = {
@@ -1825,8 +1830,8 @@ export class ChatModel extends Disposable implements IChatModel {
 		for (const { requestId, kind } of requests) {
 			const existing = existingMap.get(requestId);
 			if (existing) {
-				// Update kind if changed, keep existing request
-				newPending.push(existing.kind === kind ? existing : { id: existing.id, request: existing.request, kind });
+				// Update kind if changed, keep existing request and sendOptions
+				newPending.push(existing.kind === kind ? existing : { id: existing.id, request: existing.request, kind, sendOptions: existing.sendOptions });
 			}
 		}
 		this._pendingRequests.length = 0;
@@ -1835,15 +1840,33 @@ export class ChatModel extends Disposable implements IChatModel {
 	}
 
 	/**
-	 * @internal Used by ChatService to add a request to the queue
+	 * @internal Used by ChatService to add a request to the queue.
+	 * Steering messages are placed before queued messages.
 	 */
-	addPendingRequest(request: ChatRequestModel, kind: ChatRequestQueueKind): IChatPendingRequest {
+	addPendingRequest(request: ChatRequestModel, kind: ChatRequestQueueKind, sendOptions: IChatSendRequestOptions): IChatPendingRequest {
 		const pendingRequest: IChatPendingRequest = {
 			id: request.id,
 			request,
 			kind,
+			sendOptions,
 		};
-		this._pendingRequests.push(pendingRequest);
+
+		if (kind === ChatRequestQueueKind.Steering) {
+			// Insert after the last steering message, or at the beginning if there is none
+			let insertIndex = 0;
+			for (let i = 0; i < this._pendingRequests.length; i++) {
+				if (this._pendingRequests[i].kind === ChatRequestQueueKind.Steering) {
+					insertIndex = i + 1;
+				} else {
+					break;
+				}
+			}
+			this._pendingRequests.splice(insertIndex, 0, pendingRequest);
+		} else {
+			// Queued messages always go at the end
+			this._pendingRequests.push(pendingRequest);
+		}
+
 		this._onDidChangePendingRequests.fire();
 		return pendingRequest;
 	}
