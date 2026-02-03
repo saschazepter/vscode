@@ -18,7 +18,7 @@ import { IQuickInputService, IQuickPickItem, IQuickPickSeparator } from '../../.
 import { IFileService } from '../../../../../platform/files/common/files.js';
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
 import { URI } from '../../../../../base/common/uri.js';
-import { HOOK_TYPES, HookTypeId } from '../../common/promptSyntax/hookSchema.js';
+import { HOOK_TYPES, HookType } from '../../common/promptSyntax/hookSchema.js';
 import { NEW_HOOK_COMMAND_ID } from './newPromptFileActions.js';
 import { ILabelService } from '../../../../../platform/label/common/label.js';
 import { IEditorService } from '../../../../services/editor/common/editorService.js';
@@ -73,7 +73,7 @@ function getCommandFieldName(hookItem: unknown): 'command' | 'bash' | 'powershel
 const CONFIGURE_HOOKS_ACTION_ID = 'workbench.action.chat.configure.hooks';
 
 interface IHookEntry {
-	readonly hookType: HookTypeId;
+	readonly hookType: HookType;
 	readonly hookTypeLabel: string;
 	readonly fileUri: URI;
 	readonly filePath: string;
@@ -138,7 +138,7 @@ class ManageHooksAction extends Action2 {
 								const normalizedCommand = getNormalizedCommand(hookItem);
 								const commandFieldName = getCommandFieldName(hookItem);
 								hookEntries.push({
-									hookType: hookTypeId as HookTypeId,
+									hookType: hookTypeId as HookType,
 									hookTypeLabel: hookType.label,
 									fileUri: hookFile.uri,
 									filePath: labelService.getUriLabel(hookFile.uri, { relative: true }),
@@ -166,7 +166,7 @@ class ManageHooksAction extends Action2 {
 		});
 
 		// Group entries by hook type
-		const groupedByType = new Map<HookTypeId, IHookEntry[]>();
+		const groupedByType = new Map<HookType, IHookEntry[]>();
 		for (const entry of hookEntries) {
 			const existing = groupedByType.get(entry.hookType) ?? [];
 			existing.push(entry);

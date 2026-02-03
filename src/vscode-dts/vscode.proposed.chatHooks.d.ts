@@ -10,7 +10,7 @@ declare module 'vscode' {
 	/**
 	 * The type of hook to execute.
 	 */
-	export type ChatHookType = 'sessionStart' | 'sessionEnd' | 'userPromptSubmitted' | 'preToolUse' | 'postToolUse' | 'errorOccurred';
+	export type ChatHookType = 'sessionStart' | 'userPromptSubmitted' | 'preToolUse' | 'postToolUse' | 'postToolUseFailure' | 'subagentStart' | 'subagentStop' | 'stop';
 
 	/**
 	 * Options for executing a hook command.
