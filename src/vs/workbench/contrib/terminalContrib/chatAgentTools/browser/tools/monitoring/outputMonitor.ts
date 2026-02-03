@@ -68,6 +68,17 @@ export class OutputMonitor extends Disposable implements IOutputMonitor {
 		return lastLine.length > 200 ? lastLine.slice(0, 200) + '…' : lastLine;
 	}
 
+	private _formatOptionsForLog(options: readonly string[]): string {
+		if (!options.length) {
+			return '[]';
+		}
+		// Keep bounded and single-line.
+		const maxOptions = 12;
+		const shown = options.slice(0, maxOptions).map(o => o.replace(/\r?\n/g, 'return'));
+		const suffix = options.length > maxOptions ? `, …(+${options.length - maxOptions})` : '';
+		return `[${shown.join(', ')}${suffix}]`;
+	}
+
 	private _lastPromptMarker: XtermMarker | undefined;
 
 	private _lastPrompt: string | undefined;
@@ -262,7 +273,7 @@ export class OutputMonitor extends Disposable implements IOutputMonitor {
 
 		this._logService.trace('OutputMonitor: Determining user input options via language model');
 		const confirmationPrompt = await this._determineUserInputOptions(this._execution, token);
-		this._logService.trace(`OutputMonitor: Input options result: ${confirmationPrompt ? `prompt=${this._formatLastLineForLog(confirmationPrompt.prompt)}, options=${confirmationPrompt.options.length}, freeForm=${!!confirmationPrompt.detectedRequestForFreeFormInput}` : 'none'}`);
+		this._logService.trace(`OutputMonitor: Input options result: ${confirmationPrompt ? `prompt=${this._formatLastLineForLog(confirmationPrompt.prompt)}, options=${confirmationPrompt.options.length} ${this._formatOptionsForLog(confirmationPrompt.options)}, freeForm=${!!confirmationPrompt.detectedRequestForFreeFormInput}` : 'none'}`);
 
 		// Check again after the async LLM call - user may have inputted while we were analyzing
 		if (this._userInputtedSinceIdleDetected) {
