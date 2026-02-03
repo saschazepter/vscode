@@ -20,7 +20,7 @@ import { IExtensionService } from '../../../services/extensions/common/extension
 import { ILifecycleService, LifecyclePhase } from '../../../services/lifecycle/common/lifecycle.js';
 import { IChatWidget, IChatWidgetService } from '../../chat/browser/chat.js';
 import { AgentSessionsControl, IAgentSessionsControlOptions } from '../../chat/browser/agentSessions/agentSessionsControl.js';
-import { AgentSessionsFilter, IAgentSessionsFilterOptions } from '../../chat/browser/agentSessions/agentSessionsFilter.js';
+import { AgentSessionsFilter, AgentSessionsGrouping, IAgentSessionsFilterOptions } from '../../chat/browser/agentSessions/agentSessionsFilter.js';
 import { IAgentSessionsService } from '../../chat/browser/agentSessions/agentSessionsService.js';
 import { IAgentSession } from '../../chat/browser/agentSessions/agentSessionsModel.js';
 import { LocalAgentsSessionsProvider } from '../../chat/browser/agentSessions/localAgentSessionsProvider.js';
@@ -187,7 +187,7 @@ export class AgentSessionController extends Disposable {
 			// Create the filter with date grouping enabled
 			const filterOptions: IAgentSessionsFilterOptions = {
 				filterMenuId: MenuId.AgentSessionsViewerFilterSubMenu,
-				groupResults: () => true,
+				groupResults: () => AgentSessionsGrouping.Date,
 			};
 			this._agentSessionsFilter = this._register(this._instantiationService.createInstance(AgentSessionsFilter, filterOptions));
 
