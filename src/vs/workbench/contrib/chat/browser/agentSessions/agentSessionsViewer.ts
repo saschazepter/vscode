@@ -43,6 +43,7 @@ import { MarkdownString, IMarkdownString } from '../../../../../base/common/html
 import { AgentSessionHoverWidget } from './agentSessionHoverWidget.js';
 import { AgentSessionProviders, getAgentSessionTime } from './agentSessions.js';
 import { AgentSessionsGrouping } from './agentSessionsFilter.js';
+import { IAgentSessionsFilterExcludes } from './agentSessionsViewerService.js';
 
 export type AgentSessionListItem = IAgentSession | IAgentSessionSection;
 
@@ -538,14 +539,6 @@ export class AgentSessionsAccessibilityProvider implements IListAccessibilityPro
 
 		return localize('agentSessionItemAriaLabel', "{0} session {1} ({2}), created {3}", element.providerLabel, element.label, toStatusLabel(element.status), new Date(element.timing.created).toLocaleString());
 	}
-}
-
-export interface IAgentSessionsFilterExcludes {
-	readonly providers: readonly string[];
-	readonly states: readonly AgentSessionStatus[];
-
-	readonly archived: boolean;
-	readonly read: boolean;
 }
 
 export interface IAgentSessionsFilter {
