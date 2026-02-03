@@ -37,6 +37,8 @@ import { IAction, toAction } from '../../../../../base/common/actions.js';
 import { WebviewInput } from '../../../webviewPanel/browser/webviewEditorInput.js';
 import { IBrowserTargetLocator, getDisplayNameFromOuterHTML } from '../../../../../platform/browserElements/common/browserElements.js';
 import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry.js';
+import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
+import { observableContextKey } from '../../../../../platform/observable/common/platformObservableUtils.js';
 
 type BrowserType = 'simpleBrowser' | 'livePreview';
 
@@ -366,9 +368,14 @@ class SimpleBrowserOverlayController {
 		@IInstantiationService instaService: IInstantiationService,
 		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@IBrowserElementsService private readonly _browserElementsService: IBrowserElementsService,
+		@IContextKeyService private readonly contextKeyService: IContextKeyService,
 	) {
 
-		if (!this.configurationService.getValue('chat.sendElementsToChat.enabled')) {
+		// Don't initialize if chat is not enabled or sendElementsToChat is not enabled
+		const chatEnabled = this.contextKeyService.getContextKeyValue<boolean>(ChatContextKeys.enabled.key);
+		const sendElementsEnabled = this.configurationService.getValue('chat.sendElementsToChat.enabled');
+		
+		if (!chatEnabled || !sendElementsEnabled) {
 			return;
 		}
 
@@ -444,11 +451,16 @@ class SimpleBrowserOverlayController {
 			return undefined;
 		});
 
+		// Observe chat enabled state
+		const chatEnabledObs = observableContextKey<boolean>(ChatContextKeys.enabled.key, this.contextKeyService);
+
 		this._store.add(autorun(r => {
 
 			const activeEditor = activeIdObs.read(r);
+			const isChatEnabled = chatEnabledObs.read(r);
 
-			if (!activeEditor) {
+			// Hide if chat is not enabled or no active editor
+			if (!isChatEnabled || !activeEditor) {
 				hide();
 				return;
 			}
