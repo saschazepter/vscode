@@ -80,7 +80,12 @@ export const HOOK_TYPES = [
  */
 export interface IHookCommand {
 	readonly type: 'command';
-	readonly command: string;
+	/** Cross-platform command to execute. */
+	readonly command?: string;
+	/** Bash-specific command. */
+	readonly bash?: string;
+	/** PowerShell-specific command. */
+	readonly powershell?: string;
 	/** Resolved working directory URI. */
 	readonly cwd?: URI;
 	readonly env?: Record<string, string>;
@@ -283,37 +288,50 @@ export function normalizeHookTypeId(rawHookTypeId: string): HookType | undefined
 }
 
 /**
- * Normalizes a raw hook command object, validating structure and converting
- * bash/powershell shorthand to command format.
+ * Normalizes a raw hook command object, validating structure.
  * This is an internal helper - use resolveHookCommand for the full resolution.
  */
-function normalizeHookCommand(raw: Record<string, unknown>): { command: string; cwd?: string; env?: Record<string, string>; timeoutSec?: number } | undefined {
+function normalizeHookCommand(raw: Record<string, unknown>): { command?: string; bash?: string; powershell?: string; cwd?: string; env?: Record<string, string>; timeoutSec?: number } | undefined {
 	if (raw.type !== 'command') {
 		return undefined;
 	}
 
-	let command: string | undefined;
+	const hasCommand = typeof raw.command === 'string' && raw.command.length > 0;
+	const hasBash = typeof raw.bash === 'string' && raw.bash.length > 0;
+	const hasPowerShell = typeof raw.powershell === 'string' && raw.powershell.length > 0;
 
-	if (typeof raw.command === 'string' && raw.command.length > 0) {
-		command = raw.command;
-	} else if (typeof raw.bash === 'string' && raw.bash.length > 0) {
-		// Convert bash to command by prefixing with 'bash -c'
-		command = `bash -c ${JSON.stringify(raw.bash)}`;
-	} else if (typeof raw.powershell === 'string' && raw.powershell.length > 0) {
-		// Convert powershell to command by prefixing with 'powershell -Command'
-		command = `powershell -Command ${JSON.stringify(raw.powershell)}`;
-	}
-
-	if (!command) {
+	if (!hasCommand && !hasBash && !hasPowerShell) {
 		return undefined;
 	}
 
 	return {
-		command,
+		...(hasCommand && { command: raw.command as string }),
+		...(hasBash && { bash: raw.bash as string }),
+		...(hasPowerShell && { powershell: raw.powershell as string }),
 		...(typeof raw.cwd === 'string' && { cwd: raw.cwd }),
 		...(typeof raw.env === 'object' && raw.env !== null && { env: raw.env as Record<string, string> }),
 		...(typeof raw.timeoutSec === 'number' && { timeoutSec: raw.timeoutSec }),
 	};
+}
+
+/**
+ * Formats a hook command for display.
+ * If `command` is present, returns just that value.
+ * Otherwise, joins "bash: <value>" and "powershell: <value>" with " | ".
+ */
+export function formatHookCommandLabel(hook: IHookCommand): string {
+	if (hook.command) {
+		return hook.command;
+	}
+
+	const parts: string[] = [];
+	if (hook.bash) {
+		parts.push(`bash: ${hook.bash}`);
+	}
+	if (hook.powershell) {
+		parts.push(`powershell: ${hook.powershell}`);
+	}
+	return parts.join(' | ');
 }
 
 /**
@@ -346,7 +364,9 @@ export function resolveHookCommand(raw: Record<string, unknown>, workspaceRootUr
 
 	return {
 		type: 'command',
-		command: normalized.command,
+		...(normalized.command && { command: normalized.command }),
+		...(normalized.bash && { bash: normalized.bash }),
+		...(normalized.powershell && { powershell: normalized.powershell }),
 		...(cwdUri && { cwd: cwdUri }),
 		...(normalized.env && { env: normalized.env }),
 		...(normalized.timeoutSec !== undefined && { timeoutSec: normalized.timeoutSec }),

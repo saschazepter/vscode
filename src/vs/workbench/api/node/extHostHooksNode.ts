@@ -71,7 +71,7 @@ export class NodeExtHostHooks implements IExtHostHooks {
 		const results: IHookResult[] = [];
 		for (const hookCommand of hookCommands) {
 			try {
-				this._logService.debug(`[ExtHostHooks] Running hook command: ${hookCommand.command}`);
+				this._logService.debug(`[ExtHostHooks] Running hook command: ${JSON.stringify(hookCommand)}`);
 				const result = await this._executeCommand(hookCommand, input, token);
 				this._logService.debug(`[ExtHostHooks] Hook completed with result kind: ${result.kind === HookResultKind.Success ? 'Success' : 'Error'}`);
 				this._logService.trace(`[ExtHostHooks] Hook output:`, result.result);
@@ -95,11 +95,24 @@ export class NodeExtHostHooks implements IExtHostHooks {
 		const home = homedir();
 		const cwd = hook.cwd ? hook.cwd.fsPath : home;
 
-		const child = spawn(hook.command, [], {
+		// Determine shell and command based on which property is specified
+		let shell: string | boolean = true;
+		let commandStr: string;
+		if (hook.bash) {
+			shell = 'bash';
+			commandStr = `-c ${JSON.stringify(hook.bash)}`;
+		} else if (hook.powershell) {
+			shell = 'powershell';
+			commandStr = `-Command ${JSON.stringify(hook.powershell)}`;
+		} else {
+			commandStr = hook.command!;
+		}
+
+		const child = spawn(commandStr, [], {
 			stdio: 'pipe',
 			cwd,
 			env: { ...process.env, ...hook.env },
-			shell: true,
+			shell,
 		});
 
 		return new Promise((resolve, reject) => {

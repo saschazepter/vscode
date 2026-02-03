@@ -6,7 +6,7 @@
 import assert from 'assert';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/test/common/utils.js';
 import { HookType } from '../../../common/promptSyntax/hookSchema.js';
-import { CLAUDE_HOOK_TYPE_MAP, parseClaudeHooks, resolveClaudeHookType, getClaudeHookTypeName } from '../../../common/promptSyntax/hookClaudeCompat.js';
+import { parseClaudeHooks, resolveClaudeHookType, getClaudeHookTypeName } from '../../../common/promptSyntax/hookClaudeCompat.js';
 import { URI } from '../../../../../../base/common/uri.js';
 
 suite('HookClaudeCompat', () => {

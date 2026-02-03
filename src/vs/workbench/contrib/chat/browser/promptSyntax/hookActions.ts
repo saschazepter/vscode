@@ -18,7 +18,7 @@ import { IQuickInputService, IQuickPickItem, IQuickPickSeparator } from '../../.
 import { IFileService } from '../../../../../platform/files/common/files.js';
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
 import { URI } from '../../../../../base/common/uri.js';
-import { HOOK_TYPES, HookType } from '../../common/promptSyntax/hookSchema.js';
+import { formatHookCommandLabel, HOOK_TYPES, HookType } from '../../common/promptSyntax/hookSchema.js';
 import { NEW_HOOK_COMMAND_ID } from './newPromptFileActions.js';
 import { ILabelService } from '../../../../../platform/label/common/label.js';
 import { IEditorService } from '../../../../services/editor/common/editorService.js';
@@ -38,7 +38,7 @@ interface IHookEntry {
 	readonly hookTypeLabel: string;
 	readonly fileUri: URI;
 	readonly filePath: string;
-	readonly normalizedCommand: string;
+	readonly displayLabel: string;
 	readonly commandFieldName: 'command' | 'bash' | 'powershell' | undefined;
 	readonly index: number;
 	/** The source format (Copilot, Claude, Cursor) */
@@ -111,14 +111,15 @@ class ManageHooksAction extends Action2 {
 					}
 
 					for (let i = 0; i < commands.length; i++) {
-						const command = commands[i];
+						const hookCommand = commands[i];
+						const displayLabel = formatHookCommandLabel(hookCommand) || localize('commands.hook.emptyCommand', '(empty command)');
 						hookEntries.push({
 							hookType,
 							hookTypeLabel: hookTypeMeta.label,
 							fileUri: hookFile.uri,
 							filePath: labelService.getUriLabel(hookFile.uri, { relative: true }),
-							normalizedCommand: command.command,
-							commandFieldName: 'command', // Always 'command' after normalization
+							displayLabel,
+							commandFieldName: hookCommand.command ? 'command' : hookCommand.bash ? 'bash' : 'powershell',
 							index: i,
 							sourceFormat: format,
 							isReadOnly
@@ -173,7 +174,7 @@ class ManageHooksAction extends Action2 {
 				}
 
 				items.push({
-					label: entry.normalizedCommand || localize('commands.hook.emptyCommand', '(empty command)'),
+					label: entry.displayLabel,
 					description,
 					hookEntry: entry
 				});
