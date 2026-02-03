@@ -468,12 +468,3 @@
 	opacity: 1;
 	color: var(--vscode-descriptionForeground);
 }
-
-/* Remove Borders */
-.monaco-workbench.vs .part.sidebar { border-right: none !important; border-left: none !important; }
-.monaco-workbench.vs .part.auxiliarybar { border-right: none !important; border-left: none !important; }
-.monaco-workbench .part.panel { border-top: none !important; }
-.monaco-workbench.vs .part.activitybar { border-right: none !important; border-left: none !important; }
-.monaco-workbench.vs .part.titlebar { border-bottom: none !important; }
-.monaco-workbench.vs .part.statusbar { border-top: none !important; }
-.monaco-workbench .pane-composite-part:not(.empty) > .header { border-bottom: none !important; }
