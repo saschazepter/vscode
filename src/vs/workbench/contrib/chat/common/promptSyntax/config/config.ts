@@ -101,6 +101,11 @@ export namespace PromptsConfig {
 	export const USE_AGENT_SKILLS = 'chat.useAgentSkills';
 
 	/**
+	 * Configuration key for chat hooks usage.
+	 */
+	export const USE_CHAT_HOOKS = 'chat.useChatHooks';
+
+	/**
 	 * Configuration key for enabling stronger skill adherence prompt (experimental).
 	 */
 	export const USE_SKILL_ADHERENCE_PROMPT = 'chat.experimental.useSkillAdherencePrompt';

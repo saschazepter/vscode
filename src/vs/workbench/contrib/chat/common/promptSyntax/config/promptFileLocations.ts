@@ -34,11 +34,6 @@ export const AGENT_FILE_EXTENSION = '.agent.md';
 export const SKILL_FILENAME = 'SKILL.md';
 
 /**
- * File extension for hook configuration files.
- */
-export const HOOK_FILE_EXTENSION = '.json';
-
-/**
  * Default hook file name (case insensitive).
  */
 export const HOOKS_FILENAME = 'hooks.json';

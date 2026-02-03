@@ -54,7 +54,7 @@ import { ILanguageModelToolsConfirmationService } from '../common/tools/language
 import { ILanguageModelToolsService } from '../common/tools/languageModelToolsService.js';
 import { ChatPromptFilesExtensionPointHandler } from '../common/promptSyntax/chatPromptFilesContribution.js';
 import { PromptsConfig } from '../common/promptSyntax/config/config.js';
-import { INSTRUCTIONS_DEFAULT_SOURCE_FOLDER, INSTRUCTION_FILE_EXTENSION, LEGACY_MODE_DEFAULT_SOURCE_FOLDER, LEGACY_MODE_FILE_EXTENSION, PROMPT_DEFAULT_SOURCE_FOLDER, PROMPT_FILE_EXTENSION, DEFAULT_SKILL_SOURCE_FOLDERS, AGENTS_SOURCE_FOLDER, AGENT_FILE_EXTENSION, SKILL_FILENAME, HOOKS_SOURCE_FOLDER, HOOK_FILE_EXTENSION } from '../common/promptSyntax/config/promptFileLocations.js';
+import { INSTRUCTIONS_DEFAULT_SOURCE_FOLDER, INSTRUCTION_FILE_EXTENSION, LEGACY_MODE_DEFAULT_SOURCE_FOLDER, LEGACY_MODE_FILE_EXTENSION, PROMPT_DEFAULT_SOURCE_FOLDER, PROMPT_FILE_EXTENSION, DEFAULT_SKILL_SOURCE_FOLDERS, AGENTS_SOURCE_FOLDER, AGENT_FILE_EXTENSION, SKILL_FILENAME, DEFAULT_HOOK_SOURCE_FOLDERS, HOOKS_FILENAME } from '../common/promptSyntax/config/promptFileLocations.js';
 import { PromptLanguageFeaturesProvider } from '../common/promptSyntax/promptFileContributions.js';
 import { AGENT_DOCUMENTATION_URL, INSTRUCTIONS_DOCUMENTATION_URL, PROMPT_DOCUMENTATION_URL, SKILL_DOCUMENTATION_URL, HOOK_DOCUMENTATION_URL } from '../common/promptSyntax/promptTypes.js';
 import { hookFileSchema, HOOK_SCHEMA_URI, HOOK_FILE_GLOB } from '../common/promptSyntax/hookSchema.js';
@@ -903,12 +903,12 @@ configurationRegistry.registerConfiguration({
 			title: nls.localize('chat.hooksLocations.title', "Hook File Locations",),
 			markdownDescription: nls.localize(
 				'chat.hooksLocations.description',
-				"Specify location(s) of hook configuration files (`*{0}`) that define custom shell commands to execute at strategic points in an agent's workflow. [Learn More]({1}).\n\nRelative paths are resolved from the root folder(s) of your workspace.",
-				HOOK_FILE_EXTENSION,
+				"Specify location(s) of hook configuration files (`{0}`) that define custom shell commands to execute at strategic points in an agent's workflow. [Learn More]({1}).\n\nRelative paths are resolved from the root folder(s) of your workspace.",
+				HOOKS_FILENAME,
 				HOOK_DOCUMENTATION_URL,
 			),
 			default: {
-				[HOOKS_SOURCE_FOLDER]: true,
+				...DEFAULT_HOOK_SOURCE_FOLDERS.map((folder) => ({ [folder.path]: true })).reduce((acc, curr) => ({ ...acc, ...curr }), {}),
 			},
 			additionalProperties: { type: 'boolean' },
 			propertyNames: {
@@ -919,13 +919,22 @@ configurationRegistry.registerConfiguration({
 			tags: ['prompts', 'hooks', 'agent'],
 			examples: [
 				{
-					[HOOKS_SOURCE_FOLDER]: true,
+					[DEFAULT_HOOK_SOURCE_FOLDERS[0].path]: true,
 				},
 				{
-					[HOOKS_SOURCE_FOLDER]: true,
+					[DEFAULT_HOOK_SOURCE_FOLDERS[0].path]: true,
 					'my-hooks': true,
 				},
 			],
+		},
+		[PromptsConfig.USE_CHAT_HOOKS]: {
+			type: 'boolean',
+			title: nls.localize('chat.useChatHooks.title', "Use Chat Hooks",),
+			markdownDescription: nls.localize('chat.useChatHooks.description', "Controls whether chat hooks are executed at strategic points during an agent's workflow. Hooks are loaded from the folders configured in `#chat.hooksLocations#`.",),
+			default: true,
+			restricted: true,
+			disallowConfigurationDefault: true,
+			tags: ['prompts', 'hooks', 'agent']
 		},
 		[PromptsConfig.PROMPT_FILES_SUGGEST_KEY]: {
 			type: 'object',

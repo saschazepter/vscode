@@ -21,6 +21,11 @@ export enum HookType {
 }
 
 /**
+ * String literal type derived from HookType enum values.
+ */
+export type HookTypeValue = `${HookType}`;
+
+/**
  * Metadata for hook types including localized labels and descriptions
  */
 export const HOOK_TYPES = [
