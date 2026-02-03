@@ -410,7 +410,7 @@ suite('ViewModel', () => {
 				],
 				{},
 				(viewModel, model) => {
-					const visibleAreas = viewModel.getVisibleAreas();
+					const visibleAreas = viewModel.getNonHiddenAreas();
 					assert.strictEqual(visibleAreas.length, 1);
 					assert.deepStrictEqual(visibleAreas[0], new Range(1, 1, 5, 6));
 				}
@@ -429,7 +429,7 @@ suite('ViewModel', () => {
 				{},
 				(viewModel, model) => {
 					viewModel.setHiddenAreas([new Range(3, 1, 3, 1)]);
-					const visibleAreas = viewModel.getVisibleAreas();
+					const visibleAreas = viewModel.getNonHiddenAreas();
 					assert.strictEqual(visibleAreas.length, 2);
 					assert.deepStrictEqual(visibleAreas[0], new Range(1, 1, 2, 6));
 					assert.deepStrictEqual(visibleAreas[1], new Range(4, 1, 5, 6));
@@ -449,7 +449,7 @@ suite('ViewModel', () => {
 				{},
 				(viewModel, model) => {
 					viewModel.setHiddenAreas([new Range(1, 1, 2, 1)]);
-					const visibleAreas = viewModel.getVisibleAreas();
+					const visibleAreas = viewModel.getNonHiddenAreas();
 					assert.strictEqual(visibleAreas.length, 1);
 					assert.deepStrictEqual(visibleAreas[0], new Range(3, 1, 5, 6));
 				}
@@ -468,7 +468,7 @@ suite('ViewModel', () => {
 				{},
 				(viewModel, model) => {
 					viewModel.setHiddenAreas([new Range(4, 1, 5, 1)]);
-					const visibleAreas = viewModel.getVisibleAreas();
+					const visibleAreas = viewModel.getNonHiddenAreas();
 					assert.strictEqual(visibleAreas.length, 1);
 					assert.deepStrictEqual(visibleAreas[0], new Range(1, 1, 3, 6));
 				}
@@ -492,7 +492,7 @@ suite('ViewModel', () => {
 						new Range(2, 1, 2, 1),
 						new Range(5, 1, 6, 1)
 					]);
-					const visibleAreas = viewModel.getVisibleAreas();
+					const visibleAreas = viewModel.getNonHiddenAreas();
 					assert.strictEqual(visibleAreas.length, 3);
 					assert.deepStrictEqual(visibleAreas[0], new Range(1, 1, 1, 6));
 					assert.deepStrictEqual(visibleAreas[1], new Range(3, 1, 4, 6));
@@ -515,7 +515,7 @@ suite('ViewModel', () => {
 					viewModel.setHiddenAreas([new Range(2, 1, 3, 1)]);
 
 					const hiddenAreas = viewModel.getHiddenAreas();
-					const visibleAreas = viewModel.getVisibleAreas();
+					const visibleAreas = viewModel.getNonHiddenAreas();
 
 					assert.strictEqual(hiddenAreas.length, 1);
 					assert.strictEqual(visibleAreas.length, 2);

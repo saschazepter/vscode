@@ -26,7 +26,7 @@ export interface IViewModelLines extends IDisposable {
 	setWrappingSettings(fontInfo: FontInfo, wrappingStrategy: 'simple' | 'advanced', wrappingColumn: number, wrappingIndent: WrappingIndent, wordBreak: 'normal' | 'keepAll'): boolean;
 	setTabSize(newTabSize: number): boolean;
 	getHiddenAreas(): Range[];
-	getVisibleAreas(): Range[];
+	getNonHiddenAreas(): Range[];
 	setHiddenAreas(_ranges: readonly Range[]): boolean;
 
 	createLineBreaksComputer(): ILineBreaksComputer;
@@ -168,35 +168,50 @@ export class ViewModelLinesFromProjectedModel implements IViewModelLines {
 		this.projectedModelLineLineCounts = new ConstantTimePrefixSumComputer(values);
 	}
 
+	/**
+	 * Gets the hidden areas as line ranges.
+	 * @returns Line ranges that represent the hidden areas in the model.
+	*/
 	public getHiddenAreas(): Range[] {
 		return this.hiddenAreasDecorationIds.map(
 			(decId) => this.model.getDecorationRange(decId)!
 		);
 	}
 
-	public getVisibleAreas(): Range[] {
-		const hiddenAreas = this.getHiddenAreas().sort(Range.compareRangesUsingStarts);
+	/**
+	 * Gets the non-hidden areas as position ranges.
+	 * These ranges span the visible portions of the model content,
+	 * such that concatenating their value would give the full visible content (including line breaks).
+	 * @returns Position ranges (line and column based) that represent all visible areas in the model.
+	*/
+	public getNonHiddenAreas(): Range[] {
 		const lineCount = this.model.getLineCount();
+		if (lineCount === 0) {
+			return [];
+		}
+
+		const hiddenAreas = this.getHiddenAreas()
+			.slice()
+			.sort(Range.compareRangesUsingStarts);
+
+		const fullRange = new Range(1, 1, lineCount, this.model.getLineMaxColumn(lineCount));
 
 		if (hiddenAreas.length === 0) {
-			return [new Range(1, 1, lineCount, this.model.getLineMaxColumn(lineCount))];
+			return [fullRange];
 		}
 
-		const result: Range[] = [];
-		let currentStartLine = 1;
-
-		for (const hiddenArea of hiddenAreas) {
-			if (currentStartLine < hiddenArea.startLineNumber) {
-				const endLine = hiddenArea.startLineNumber - 1;
-				result.push(new Range(currentStartLine, 1, endLine, this.model.getLineMaxColumn(endLine)));
+		// Convert line-based hidden areas to position-based ranges.
+		// A hidden area for lines [start, end] hides from (start, 1) to (end+1, 1)
+		// unless end is the last line, then to (end, maxCol).
+		const hiddenRanges = hiddenAreas.map(area => {
+			if (area.endLineNumber < lineCount) {
+				return new Range(area.startLineNumber, 1, area.endLineNumber + 1, 1);
+			} else {
+				return new Range(area.startLineNumber, 1, lineCount, this.model.getLineMaxColumn(lineCount));
 			}
-			currentStartLine = hiddenArea.endLineNumber + 1;
-		}
+		});
 
-		if (currentStartLine <= lineCount) {
-			result.push(new Range(currentStartLine, 1, lineCount, this.model.getLineMaxColumn(lineCount)));
-		}
-
+		const result = Range.subtractRanges(fullRange, hiddenRanges);
 		return result;
 	}
 
@@ -1158,9 +1173,8 @@ export class ViewModelLinesFromModelAsIs implements IViewModelLines {
 		return [];
 	}
 
-	public getVisibleAreas(): Range[] {
-		const lineCount = this.model.getLineCount();
-		return [new Range(1, 1, lineCount, this.model.getLineMaxColumn(lineCount))];
+	public getNonHiddenAreas(): Range[] {
+		return [this.model.getFullModelRange()];
 	}
 
 	public setHiddenAreas(_ranges: Range[]): boolean {

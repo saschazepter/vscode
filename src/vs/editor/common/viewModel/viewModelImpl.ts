@@ -631,8 +631,8 @@ export class ViewModel extends Disposable implements IViewModel {
 		return this._lines.getHiddenAreas();
 	}
 
-	public getVisibleAreas(): Range[] {
-		return this._lines.getVisibleAreas();
+	public getNonHiddenAreas(): Range[] {
+		return this._lines.getNonHiddenAreas();
 	}
 
 	private _toModelVisibleRanges(visibleViewRange: Range): Range[] {
