@@ -15,6 +15,7 @@ import { isWeb } from '../../../../base/common/platform.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import * as nls from '../../../../nls.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
+import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { IHoverService, nativeHoverDelegate } from '../../../../platform/hover/browser/hover.js';
 import { IProductService } from '../../../../platform/product/common/productService.js';
 import { defaultButtonStyles } from '../../../../platform/theme/browser/defaultStyles.js';
@@ -35,7 +36,8 @@ export class UpdateStatusBarEntryContribution extends Disposable implements IWor
 		@IStatusbarService private readonly statusbarService: IStatusbarService,
 		@IProductService private readonly productService: IProductService,
 		@ICommandService private readonly commandService: ICommandService,
-		@IHoverService private readonly hoverService: IHoverService
+		@IHoverService private readonly hoverService: IHoverService,
+		@IConfigurationService private readonly configurationService: IConfigurationService
 	) {
 		super();
 
@@ -44,10 +46,34 @@ export class UpdateStatusBarEntryContribution extends Disposable implements IWor
 		}
 
 		this._register(this.updateService.onStateChange(state => this.onUpdateStateChange(state)));
+		this._register(this.configurationService.onDidChangeConfiguration(e => {
+			if (e.affectsConfiguration('update.statusBar')) {
+				this.onUpdateStateChange(this.updateService.state);
+			}
+		}));
 		this.onUpdateStateChange(this.updateService.state);
 	}
 
 	private onUpdateStateChange(state: UpdateState) {
+		const statusBarMode = this.configurationService.getValue<string>('update.statusBar');
+
+		if (statusBarMode === 'hidden') {
+			this.statusBarEntryAccessor.clear();
+			return;
+		}
+
+		const actionRequiredStates = [
+			StateType.AvailableForDownload,
+			StateType.Downloaded,
+			StateType.Ready
+		];
+
+		// In 'onAction' mode, only show for states that require user action
+		if (statusBarMode === 'onAction' && !actionRequiredStates.includes(state.type)) {
+			this.statusBarEntryAccessor.clear();
+			return;
+		}
+
 		switch (state.type) {
 			case StateType.Uninitialized:
 			case StateType.Idle:
@@ -147,7 +173,7 @@ export class UpdateStatusBarEntryContribution extends Disposable implements IWor
 				const container = dom.$('.update-status-tooltip');
 
 				this.appendHeader(container, nls.localize('updateStatus.checkingForUpdatesTitle', "Checking for Updates"), store);
-				this.appendProductInfo(container, false, '1.108.0' /*this.productService.version*/, tryParseDate(this.productService.date));
+				this.appendProductInfo(container);
 
 				const waitMessage = dom.append(container, dom.$('.progress-details'));
 				waitMessage.textContent = nls.localize('updateStatus.checkingPleaseWait', "Checking for updates, please wait...");
@@ -164,7 +190,7 @@ export class UpdateStatusBarEntryContribution extends Disposable implements IWor
 				const container = dom.$('.update-status-tooltip');
 
 				this.appendHeader(container, nls.localize('updateStatus.updateAvailableTitle', "Update Available"), store);
-				this.appendProductInfo(container, true, update.productVersion, update.timestamp);
+				this.appendProductInfo(container, update);
 				this.appendWhatsIncluded(container);
 
 				this.appendActionButton(container, nls.localize('updateStatus.downloadButton', "Download"), store, () => {
@@ -194,7 +220,7 @@ export class UpdateStatusBarEntryContribution extends Disposable implements IWor
 				const container = dom.$('.update-status-tooltip');
 
 				this.appendHeader(container, nls.localize('updateStatus.downloadingUpdateTitle', "Downloading Update"), store);
-				this.appendProductInfo(container, true, state.update?.productVersion, state.update?.timestamp);
+				this.appendProductInfo(container, state.update);
 
 				const { downloadedBytes, totalBytes } = state;
 				if (downloadedBytes !== undefined && totalBytes !== undefined && totalBytes > 0) {
@@ -240,7 +266,7 @@ export class UpdateStatusBarEntryContribution extends Disposable implements IWor
 				const container = dom.$('.update-status-tooltip');
 
 				this.appendHeader(container, nls.localize('updateStatus.updateReadyTitle', "Update is Ready to Install"), store);
-				this.appendProductInfo(container, true, update.productVersion, update.timestamp);
+				this.appendProductInfo(container, update);
 				this.appendWhatsIncluded(container);
 
 				this.appendActionButton(container, nls.localize('updateStatus.installButton', "Install"), store, () => {
@@ -259,7 +285,7 @@ export class UpdateStatusBarEntryContribution extends Disposable implements IWor
 				const container = dom.$('.update-status-tooltip');
 
 				this.appendHeader(container, nls.localize('updateStatus.updateInstalledTitle', "Update Installed"), store);
-				this.appendProductInfo(container, true, update.productVersion, update.timestamp);
+				this.appendProductInfo(container, update);
 				this.appendWhatsIncluded(container);
 
 				this.appendActionButton(container, nls.localize('updateStatus.restartButton', "Restart"), store, () => {
@@ -278,7 +304,7 @@ export class UpdateStatusBarEntryContribution extends Disposable implements IWor
 				const container = dom.$('.update-status-tooltip');
 
 				this.appendHeader(container, nls.localize('updateStatus.installingUpdateTitle', "Installing Update"), store);
-				this.appendProductInfo(container, true, update.productVersion, update.timestamp);
+				this.appendProductInfo(container, update);
 
 				const message = dom.append(container, dom.$('.progress-details'));
 				message.textContent = nls.localize('updateStatus.installingPleaseWait', "Installing update, please wait...");
@@ -295,7 +321,7 @@ export class UpdateStatusBarEntryContribution extends Disposable implements IWor
 				const container = dom.$('.update-status-tooltip');
 
 				this.appendHeader(container, nls.localize('updateStatus.downloadingNewerUpdateTitle', "Downloading Newer Update"), store);
-				this.appendProductInfo(container, true, state.update.productVersion, state.update.timestamp);
+				this.appendProductInfo(container, state.update);
 
 				const message = dom.append(container, dom.$('.progress-details'));
 				message.textContent = nls.localize('updateStatus.downloadingNewerPleaseWait', "A newer update was released. Downloading, please wait...");
@@ -330,7 +356,7 @@ export class UpdateStatusBarEntryContribution extends Disposable implements IWor
 		})], { icon: true, label: false });
 	}
 
-	private appendProductInfo(container: HTMLElement, isUpdate: boolean, version: string | undefined, releaseDate: number | undefined) {
+	private appendProductInfo(container: HTMLElement, update?: IUpdate) {
 		const productInfo = dom.append(container, dom.$('.product-info'));
 
 		const logoContainer = dom.append(productInfo, dom.$('.product-logo'));
@@ -343,25 +369,32 @@ export class UpdateStatusBarEntryContribution extends Disposable implements IWor
 		const productName = dom.append(details, dom.$('.product-name'));
 		productName.textContent = this.productService.nameLong;
 
-		if (version) {
-			const productVersion = dom.append(details, dom.$('.product-version'));
-			productVersion.textContent = isUpdate ?
-				nls.localize('updateStatus.latestVersionLabel', "Latest Version: {0}", version) :
-				nls.localize('updateStatus.currentVersionLabel', "Current Version: {0}", version);
+		const productVersion = this.productService.version;
+		if (productVersion) {
+			const currentVersion = dom.append(details, dom.$('.product-version'));
+			currentVersion.textContent = nls.localize('updateStatus.currentVersionLabel', "Current Version: {0}", productVersion);
 		}
 
+		const version = update?.productVersion;
+		if (version) {
+			const latestVersion = dom.append(details, dom.$('.product-version'));
+			latestVersion.textContent = nls.localize('updateStatus.latestVersionLabel', "Latest Version: {0}", version);
+		}
+
+		const releaseDate = update?.timestamp ?? tryParseDate(this.productService.date);
 		if (releaseDate) {
 			const releaseDateNode = dom.append(details, dom.$('.product-release-date'));
 			releaseDateNode.textContent = nls.localize('updateStatus.releasedLabel', "Released {0}", formatDate(releaseDate));
 		}
 
-		if (version) {
+		const releaseNotesVersion = version ?? productVersion;
+		if (releaseNotesVersion) {
 			const link = dom.append(details, dom.$('a.release-notes-link')) as HTMLAnchorElement;
 			link.textContent = nls.localize('updateStatus.releaseNotesLink', "Release Notes");
 			link.href = '#';
 			link.addEventListener('click', (e) => {
 				e.preventDefault();
-				this.runCommandAndClose('update.showCurrentReleaseNotes', version);
+				this.runCommandAndClose('update.showCurrentReleaseNotes', releaseNotesVersion);
 			});
 		}
 	}
