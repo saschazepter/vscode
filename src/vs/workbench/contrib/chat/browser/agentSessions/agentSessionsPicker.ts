@@ -63,6 +63,7 @@ export function getSessionButtons(session: IAgentSession): IQuickInputButton[] {
 }
 
 export class AgentSessionsPicker {
+
 	private readonly sorter = new AgentSessionsSorter();
 
 	constructor(

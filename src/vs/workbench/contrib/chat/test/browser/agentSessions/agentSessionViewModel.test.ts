@@ -1138,18 +1138,17 @@ suite('AgentSessions', () => {
 
 			const session = createSession({ providerType: 'type-1' });
 
-			// Set excludes only for ViewTitle
+			// Set excludes using the shared storage key
 			const excludes = {
 				providers: ['type-1'],
 				states: [],
 				archived: false
 			};
-			storageService.store(`agentSessions.filterExcludes.${MenuId.ViewTitle.id.toLowerCase()}`, JSON.stringify(excludes), StorageScope.PROFILE, StorageTarget.USER);
+			storageService.store(AgentSessionsFilter.STORAGE_KEY, JSON.stringify(excludes), StorageScope.PROFILE, StorageTarget.USER);
 
-			// filter1 should exclude the session
+			// Both filters should exclude the session since they share the same storage
 			assert.strictEqual(filter1.exclude(session), true);
-			// filter2 should not exclude the session (different storage key)
-			assert.strictEqual(filter2.exclude(session), false);
+			assert.strictEqual(filter2.exclude(session), true);
 		});
 
 		test('should handle malformed storage data gracefully', () => {
