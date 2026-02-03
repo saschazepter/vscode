@@ -122,7 +122,9 @@ export function setup(logger: Logger, opts: { web?: boolean }, quality: Quality)
 							// These are used intentionally for selection semantics even though technically not spec-compliant
 							'aria-allowed-attr': ['monaco-list', 'monaco-list-row'],
 							// Some icon buttons have empty aria-label during rendering
-							'aria-command-name': ['codicon-plus']
+							'aria-command-name': ['codicon-plus'],
+							// Todo list widget has clear button nested inside expander button for layout purposes
+							'nested-interactive': ['todo-list-container']
 						}
 					});
 				});
@@ -158,7 +160,9 @@ export function setup(logger: Logger, opts: { web?: boolean }, quality: Quality)
 							// These are used intentionally for selection semantics even though technically not spec-compliant
 							'aria-allowed-attr': ['monaco-list', 'monaco-list-row'],
 							// Some icon buttons have empty aria-label during rendering
-							'aria-command-name': ['codicon-plus']
+							'aria-command-name': ['codicon-plus'],
+							// Todo list widget has clear button nested inside expander button for layout purposes
+							'nested-interactive': ['todo-list-container']
 						}
 					});
 				});
