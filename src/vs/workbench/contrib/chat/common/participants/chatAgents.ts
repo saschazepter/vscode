@@ -157,6 +157,14 @@ export interface IChatAgentRequest {
 	 * Display name of the subagent that is invoking this request.
 	 */
 	subAgentName?: string;
+	/**
+	 * Set to true by the editor to request the language model gracefully stop after its next opportunity.
+	 */
+	yieldRequested?: boolean;
+	/**
+	 * The request ID of the parent request that invoked this subagent.
+	 */
+	parentRequestId?: string;
 
 }
 
@@ -190,8 +198,6 @@ export interface IChatAgentResult {
 	readonly metadata?: { readonly [key: string]: unknown };
 	readonly details?: string;
 	nextQuestion?: IChatQuestion;
-	/** Token usage information for this request */
-	readonly usage?: IChatAgentResultUsage;
 }
 
 export const IChatAgentService = createDecorator<IChatAgentService>('chatAgentService');
