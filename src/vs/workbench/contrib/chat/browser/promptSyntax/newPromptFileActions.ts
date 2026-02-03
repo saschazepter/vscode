@@ -301,7 +301,7 @@ class NewHookFileAction extends Action2 {
 	constructor() {
 		super({
 			id: NEW_HOOK_COMMAND_ID,
-			title: localize('commands.new.hook.local.title', "New Hook File..."),
+			title: localize('commands.new.hook.local.title', "New Hook..."),
 			f1: false,
 			precondition: ChatContextKeys.enabled,
 			category: CHAT_CATEGORY,

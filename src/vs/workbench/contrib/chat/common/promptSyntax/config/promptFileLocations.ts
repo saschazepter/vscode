@@ -77,6 +77,7 @@ export enum PromptFileSource {
 	CopilotPersonal = 'copilot-personal',
 	ClaudePersonal = 'claude-personal',
 	ClaudeWorkspace = 'claude-workspace',
+	ClaudeWorkspaceLocal = 'claude-workspace-local',
 	ConfigWorkspace = 'config-workspace',
 	ConfigPersonal = 'config-personal',
 	ExtensionContribution = 'extension-contribution',
@@ -151,12 +152,13 @@ export const DEFAULT_AGENT_SOURCE_FOLDERS: readonly IPromptSourceFolder[] = [
 ];
 
 /**
- * Default hook source folders.
+ * Default hook file paths.
  */
-export const DEFAULT_HOOK_SOURCE_FOLDERS: readonly IPromptSourceFolder[] = [
-	{ path: HOOKS_SOURCE_FOLDER, source: PromptFileSource.GitHubWorkspace, storage: PromptsStorage.local },
-	{ path: '.claude', source: PromptFileSource.ClaudeWorkspace, storage: PromptsStorage.local },
-	{ path: '~/.claude', source: PromptFileSource.ClaudePersonal, storage: PromptsStorage.user },
+export const DEFAULT_HOOK_FILE_PATHS: readonly IPromptSourceFolder[] = [
+	{ path: '.github/hooks/hooks.json', source: PromptFileSource.GitHubWorkspace, storage: PromptsStorage.local },
+	{ path: '.claude/settings.local.json', source: PromptFileSource.ClaudeWorkspaceLocal, storage: PromptsStorage.local },
+	{ path: '.claude/settings.json', source: PromptFileSource.ClaudeWorkspace, storage: PromptsStorage.local },
+	{ path: '~/.claude/settings.json', source: PromptFileSource.ClaudePersonal, storage: PromptsStorage.user },
 ];
 
 /**
@@ -246,7 +248,7 @@ export function getPromptFileDefaultLocations(type: PromptsType): readonly IProm
 		case PromptsType.skill:
 			return DEFAULT_SKILL_SOURCE_FOLDERS;
 		case PromptsType.hook:
-			return DEFAULT_HOOK_SOURCE_FOLDERS;
+			return DEFAULT_HOOK_FILE_PATHS;
 		default:
 			throw new Error('Unknown prompt type');
 	}

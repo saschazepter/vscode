@@ -55,7 +55,7 @@ import { ILanguageModelToolsService } from '../common/tools/languageModelToolsSe
 import { HooksExecutionService, IHooksExecutionService } from '../common/hooksExecutionService.js';
 import { ChatPromptFilesExtensionPointHandler } from '../common/promptSyntax/chatPromptFilesContribution.js';
 import { PromptsConfig } from '../common/promptSyntax/config/config.js';
-import { INSTRUCTIONS_DEFAULT_SOURCE_FOLDER, INSTRUCTION_FILE_EXTENSION, LEGACY_MODE_DEFAULT_SOURCE_FOLDER, LEGACY_MODE_FILE_EXTENSION, PROMPT_DEFAULT_SOURCE_FOLDER, PROMPT_FILE_EXTENSION, DEFAULT_SKILL_SOURCE_FOLDERS, AGENTS_SOURCE_FOLDER, AGENT_FILE_EXTENSION, SKILL_FILENAME, DEFAULT_HOOK_SOURCE_FOLDERS, HOOKS_FILENAME } from '../common/promptSyntax/config/promptFileLocations.js';
+import { INSTRUCTIONS_DEFAULT_SOURCE_FOLDER, INSTRUCTION_FILE_EXTENSION, LEGACY_MODE_DEFAULT_SOURCE_FOLDER, LEGACY_MODE_FILE_EXTENSION, PROMPT_DEFAULT_SOURCE_FOLDER, PROMPT_FILE_EXTENSION, DEFAULT_SKILL_SOURCE_FOLDERS, AGENTS_SOURCE_FOLDER, AGENT_FILE_EXTENSION, SKILL_FILENAME, DEFAULT_HOOK_FILE_PATHS } from '../common/promptSyntax/config/promptFileLocations.js';
 import { PromptLanguageFeaturesProvider } from '../common/promptSyntax/promptFileContributions.js';
 import { AGENT_DOCUMENTATION_URL, INSTRUCTIONS_DOCUMENTATION_URL, PROMPT_DOCUMENTATION_URL, SKILL_DOCUMENTATION_URL, HOOK_DOCUMENTATION_URL } from '../common/promptSyntax/promptTypes.js';
 import { hookFileSchema, HOOK_SCHEMA_URI, HOOK_FILE_GLOB } from '../common/promptSyntax/hookSchema.js';
@@ -901,37 +901,36 @@ configurationRegistry.registerConfiguration({
 		},
 		[PromptsConfig.HOOKS_LOCATION_KEY]: {
 			type: 'object',
-			title: nls.localize('chat.hooksLocations.title', "Hook File Locations",),
+			title: nls.localize('chat.hookFilesLocations.title', "Hook File Locations",),
 			markdownDescription: nls.localize(
-				'chat.hooksLocations.description',
-				"Specify location(s) of hook configuration files (`{0}`) that define custom shell commands to execute at strategic points in an agent's workflow. [Learn More]({1}).\n\nRelative paths are resolved from the root folder(s) of your workspace.",
-				HOOKS_FILENAME,
+				'chat.hookFilesLocations.description',
+				"Specify paths to hook configuration files that define custom shell commands to execute at strategic points in an agent's workflow. [Learn More]({0}).\n\nRelative paths are resolved from the root folder(s) of your workspace. Supports Copilot hooks (`hooks.json`) and Claude Code hooks (`settings.json`, `settings.local.json`).",
 				HOOK_DOCUMENTATION_URL,
 			),
 			default: {
-				...DEFAULT_HOOK_SOURCE_FOLDERS.map((folder) => ({ [folder.path]: true })).reduce((acc, curr) => ({ ...acc, ...curr }), {}),
+				...DEFAULT_HOOK_FILE_PATHS.map((f) => ({ [f.path]: true })).reduce((acc, curr) => ({ ...acc, ...curr }), {}),
 			},
 			additionalProperties: { type: 'boolean' },
 			propertyNames: {
 				pattern: VALID_PROMPT_FOLDER_PATTERN,
-				patternErrorMessage: nls.localize('chat.hooksLocations.invalidPath', "Paths must be relative or start with '~/'. Absolute paths and '\\' separators are not supported."),
+				patternErrorMessage: nls.localize('chat.hookFilesLocations.invalidPath', "Paths must be relative or start with '~/'. Absolute paths and '\\' separators are not supported."),
 			},
 			restricted: true,
 			tags: ['prompts', 'hooks', 'agent'],
 			examples: [
 				{
-					[DEFAULT_HOOK_SOURCE_FOLDERS[0].path]: true,
+					[DEFAULT_HOOK_FILE_PATHS[0].path]: true,
 				},
 				{
-					[DEFAULT_HOOK_SOURCE_FOLDERS[0].path]: true,
-					'my-hooks': true,
+					[DEFAULT_HOOK_FILE_PATHS[0].path]: true,
+					'custom-hooks/hooks.json': true,
 				},
 			],
 		},
 		[PromptsConfig.USE_CHAT_HOOKS]: {
 			type: 'boolean',
 			title: nls.localize('chat.useChatHooks.title', "Use Chat Hooks",),
-			markdownDescription: nls.localize('chat.useChatHooks.description', "Controls whether chat hooks are executed at strategic points during an agent's workflow. Hooks are loaded from the folders configured in `#chat.hooksLocations#`.",),
+			markdownDescription: nls.localize('chat.useChatHooks.description', "Controls whether chat hooks are executed at strategic points during an agent's workflow. Hooks are loaded from the files configured in `#chat.hookFilesLocations#`.",),
 			default: true,
 			restricted: true,
 			disallowConfigurationDefault: true,

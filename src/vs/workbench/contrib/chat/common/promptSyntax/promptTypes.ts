@@ -12,7 +12,8 @@ export const PROMPT_DOCUMENTATION_URL = 'https://aka.ms/vscode-ghcp-prompt-snipp
 export const INSTRUCTIONS_DOCUMENTATION_URL = 'https://aka.ms/vscode-ghcp-custom-instructions';
 export const AGENT_DOCUMENTATION_URL = 'https://aka.ms/vscode-ghcp-custom-chat-modes'; // todo
 export const SKILL_DOCUMENTATION_URL = 'https://aka.ms/vscode-agent-skills';
-export const HOOK_DOCUMENTATION_URL = 'https://aka.ms/vscode-chat-hookss';
+// TODO: update link when available
+export const HOOK_DOCUMENTATION_URL = 'https://aka.ms/vscode-chat-hooks';
 
 /**
  * Language ID for the reusable prompt syntax.

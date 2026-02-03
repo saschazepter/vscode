@@ -300,10 +300,6 @@ function normalizeHookCommand(raw: Record<string, unknown>): { command?: string;
 	const hasBash = typeof raw.bash === 'string' && raw.bash.length > 0;
 	const hasPowerShell = typeof raw.powershell === 'string' && raw.powershell.length > 0;
 
-	if (!hasCommand && !hasBash && !hasPowerShell) {
-		return undefined;
-	}
-
 	return {
 		...(hasCommand && { command: raw.command as string }),
 		...(hasBash && { bash: raw.bash as string }),
