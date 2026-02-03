@@ -77,13 +77,6 @@ configurationRegistry.registerConfiguration({
 			scope: ConfigurationScope.APPLICATION,
 			description: localize('showReleaseNotes', "Show Release Notes after an update. The Release Notes are fetched from a Microsoft online service."),
 			tags: ['usesOnlineServices']
-		},
-		'update.respectMeteredConnections': {
-			type: 'boolean',
-			default: true,
-			scope: ConfigurationScope.APPLICATION,
-			description: localize('respectMeteredConnections', "When enabled, automatic updates and downloads will be postponed when on a metered network connection (such as mobile data or tethering)."),
-			tags: ['usesOnlineServices']
 		}
 	}
 });

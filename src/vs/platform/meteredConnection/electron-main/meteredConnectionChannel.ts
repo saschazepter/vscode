@@ -16,7 +16,7 @@ export class MeteredConnectionChannel implements IServerChannel {
 
 	public listen(_: unknown, event: any): Event<any> {
 		switch (event) {
-			case MeteredConnectionCommand.OnDidChangeConnectionState:
+			case MeteredConnectionCommand.OnDidChangeIsConnectionMetered:
 				return this.service.onDidChangeIsConnectionMetered;
 			default:
 				throw new Error(`Event not found: ${event}`);
@@ -27,8 +27,8 @@ export class MeteredConnectionChannel implements IServerChannel {
 		switch (command) {
 			case MeteredConnectionCommand.IsConnectionMetered:
 				return this.service.isConnectionMetered;
-			case MeteredConnectionCommand.SetNavigatorConnectionState:
-				this.service.setConnectionState(arg);
+			case MeteredConnectionCommand.SetIsBrowserConnectionMetered:
+				this.service.setIsBrowserConnectionMetered(arg);
 				break;
 			default:
 				throw new Error(`Call not found: ${command}`);

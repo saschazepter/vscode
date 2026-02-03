@@ -22,11 +22,11 @@ export class MeteredConnectionMainService extends AbstractMeteredConnectionServi
 		this.telemetryService = telemetryService;
 	}
 
-	protected override onChangeConnectionState() {
+	protected override onChangeBrowserConnection() {
 		// Fire event after sending telemetry if switching to metered since telemetry will be paused.
-		const fireAfter = this.connectionState;
+		const fireAfter = this.isBrowserConnectionMetered;
 		if (!fireAfter) {
-			super.onChangeConnectionState();
+			super.onChangeBrowserConnection();
 		}
 
 		type MeteredConnectionStateChangeEvent = {
@@ -38,11 +38,11 @@ export class MeteredConnectionMainService extends AbstractMeteredConnectionServi
 			connectionState: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'Whether the underlying network connection is metered according to the OS.' };
 		};
 		this.telemetryService?.publicLog2<MeteredConnectionStateChangeEvent, MeteredConnectionStateChangeClassification>('meteredConnectionStateChange', {
-			connectionState: this.connectionState,
+			connectionState: this.isBrowserConnectionMetered,
 		});
 
 		if (fireAfter) {
-			super.onChangeConnectionState();
+			super.onChangeBrowserConnection();
 		}
 	}
 }

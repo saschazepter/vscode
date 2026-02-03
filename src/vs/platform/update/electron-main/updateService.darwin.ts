@@ -16,7 +16,7 @@ import { ILogService } from '../../log/common/log.js';
 import { IProductService } from '../../product/common/productService.js';
 import { asJson, IRequestService } from '../../request/common/request.js';
 import { ITelemetryService } from '../../telemetry/common/telemetry.js';
-import { IUpdate, State, StateType, UpdateType } from '../common/update.js';
+import { AvailableForDownload, IUpdate, State, StateType, UpdateType } from '../common/update.js';
 import { IMeteredConnectionService } from '../../meteredConnection/common/meteredConnection.js';
 import { AbstractUpdateService, createUpdateURL, IUpdateURLOptions, UpdateErrorClassification } from './abstractUpdateService.js';
 
@@ -168,6 +168,13 @@ export class DarwinUpdateService extends AbstractUpdateService implements IRelau
 		}
 
 		this.setState(State.Idle(UpdateType.Archive));
+	}
+
+	protected override async doDownloadUpdate(state: AvailableForDownload): Promise<void> {
+		// Rebuild feed URL and trigger download via Electron's auto-updater
+		this.buildUpdateFeedUrl(this.quality!, state.update.version);
+		this.setState(State.CheckingForUpdates(true));
+		electron.autoUpdater.checkForUpdates();
 	}
 
 	protected override doQuitAndInstall(): void {

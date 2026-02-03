@@ -14,9 +14,9 @@ export const METERED_CONNECTION_CHANNEL = 'meteredConnection';
  * Commands supported by the metered connection IPC channel.
  */
 export enum MeteredConnectionCommand {
-	OnDidChangeConnectionState = 'OnDidChangeConnectionState',
+	OnDidChangeIsConnectionMetered = 'OnDidChangeIsConnectionMetered',
 	IsConnectionMetered = 'IsConnectionMetered',
-	SetNavigatorConnectionState = 'SetNavigatorConnectionState',
+	SetIsBrowserConnectionMetered = 'SetIsBrowserConnectionMetered',
 }
 
 /**
@@ -38,9 +38,12 @@ export class MeteredConnectionChannelClient extends Disposable implements IMeter
 
 		channel.call<boolean>(MeteredConnectionCommand.IsConnectionMetered).then(value => {
 			this._isConnectionMetered = value;
+			if (value) {
+				this._onDidChangeIsConnectionMetered.fire(value);
+			}
 		});
 
-		this._register(channel.listen<boolean>(MeteredConnectionCommand.OnDidChangeConnectionState)(value => {
+		this._register(channel.listen<boolean>(MeteredConnectionCommand.OnDidChangeIsConnectionMetered)(value => {
 			if (this._isConnectionMetered !== value) {
 				this._isConnectionMetered = value;
 				this._onDidChangeIsConnectionMetered.fire(value);

@@ -28,7 +28,7 @@ export interface IMeteredConnectionService {
 	readonly onDidChangeIsConnectionMetered: Event<boolean>;
 }
 
-export const METERED_CONNECTION_SETTING_KEY = 'update.respectMeteredConnections';
+export const METERED_CONNECTION_SETTING_KEY = 'network.respectMeteredConnections';
 
 /**
  * Network Information API
@@ -52,7 +52,7 @@ export interface NavigatorWithConnection {
 /**
  * Check if the current network connection is metered according to the Network Information API.
  */
-export function getIsConnectionMetered() {
+export function getIsBrowserConnectionMetered() {
 	const connection = (navigator as NavigatorWithConnection).connection;
 	if (!connection) {
 		return false;
@@ -76,15 +76,15 @@ export abstract class AbstractMeteredConnectionService extends Disposable implem
 	public readonly onDidChangeIsConnectionMetered = this._onDidChangeIsConnectionMetered.event;
 
 	private _isConnectionMetered: boolean;
-	private _connectionState: boolean;
+	private _isBrowserConnectionMetered: boolean;
 	private _respectMeteredConnections: boolean;
 
-	constructor(configurationService: IConfigurationService, connectionState: boolean) {
+	constructor(configurationService: IConfigurationService, isBrowserConnectionMetered: boolean) {
 		super();
 
-		this._connectionState = connectionState;
+		this._isBrowserConnectionMetered = isBrowserConnectionMetered;
 		this._respectMeteredConnections = configurationService.getValue<boolean>(METERED_CONNECTION_SETTING_KEY);
-		this._isConnectionMetered = this._respectMeteredConnections && this._connectionState;
+		this._isConnectionMetered = this._respectMeteredConnections && this._isBrowserConnectionMetered;
 
 		this._register(configurationService.onDidChangeConfiguration(e => {
 			if (e.affectsConfiguration(METERED_CONNECTION_SETTING_KEY)) {
@@ -101,23 +101,23 @@ export abstract class AbstractMeteredConnectionService extends Disposable implem
 		return this._isConnectionMetered;
 	}
 
-	protected get connectionState(): boolean {
-		return this._connectionState;
+	protected get isBrowserConnectionMetered(): boolean {
+		return this._isBrowserConnectionMetered;
 	}
 
-	public setConnectionState(value: boolean) {
-		if (value !== this._connectionState) {
-			this._connectionState = value;
-			this.onChangeConnectionState();
+	public setIsBrowserConnectionMetered(value: boolean) {
+		if (value !== this._isBrowserConnectionMetered) {
+			this._isBrowserConnectionMetered = value;
+			this.onChangeBrowserConnection();
 		}
 	}
 
-	protected onChangeConnectionState() {
+	protected onChangeBrowserConnection() {
 		this.onUpdated();
 	}
 
 	protected onUpdated() {
-		const value = this._respectMeteredConnections && this._connectionState;
+		const value = this._respectMeteredConnections && this._isBrowserConnectionMetered;
 		if (value !== this._isConnectionMetered) {
 			this._isConnectionMetered = value;
 			this.onChangeIsConnectionMetered();

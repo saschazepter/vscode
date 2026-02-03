@@ -8,7 +8,7 @@ import { IChannel } from '../../../base/parts/ipc/common/ipc.js';
 import { IConfigurationService } from '../../configuration/common/configuration.js';
 import { InstantiationType, registerSingleton } from '../../instantiation/common/extensions.js';
 import { IMainProcessService } from '../../ipc/common/mainProcessService.js';
-import { AbstractMeteredConnectionService, getIsConnectionMetered, IMeteredConnectionService, NavigatorWithConnection } from '../common/meteredConnection.js';
+import { AbstractMeteredConnectionService, getIsBrowserConnectionMetered, IMeteredConnectionService, NavigatorWithConnection } from '../common/meteredConnection.js';
 import { METERED_CONNECTION_CHANNEL, MeteredConnectionCommand } from '../common/meteredConnectionIpc.js';
 
 /**
@@ -22,12 +22,12 @@ export class NativeMeteredConnectionService extends AbstractMeteredConnectionSer
 		@IConfigurationService configurationService: IConfigurationService,
 		@IMainProcessService mainProcessService: IMainProcessService
 	) {
-		super(configurationService, getIsConnectionMetered());
+		super(configurationService, getIsBrowserConnectionMetered());
 		this._channel = mainProcessService.getChannel(METERED_CONNECTION_CHANNEL);
 
 		const connection = (navigator as NavigatorWithConnection).connection;
 		if (connection) {
-			const onChange = () => this.setConnectionState(getIsConnectionMetered());
+			const onChange = () => this.setIsBrowserConnectionMetered(getIsBrowserConnectionMetered());
 			connection.addEventListener('change', onChange);
 			this._register(toDisposable(() => connection.removeEventListener('change', onChange)));
 		}
@@ -36,9 +36,9 @@ export class NativeMeteredConnectionService extends AbstractMeteredConnectionSer
 	/**
 	 * Notify the main process about changes to the navigator connection state.
 	 */
-	protected override onChangeConnectionState(): void {
-		super.onChangeConnectionState();
-		this._channel.call(MeteredConnectionCommand.SetNavigatorConnectionState, this.connectionState);
+	protected override onChangeBrowserConnection(): void {
+		super.onChangeBrowserConnection();
+		this._channel.call(MeteredConnectionCommand.SetIsBrowserConnectionMetered, this.isBrowserConnectionMetered);
 	}
 }
 

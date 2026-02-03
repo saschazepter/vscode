@@ -6,7 +6,7 @@
 import { toDisposable } from '../../../base/common/lifecycle.js';
 import { IConfigurationService } from '../../configuration/common/configuration.js';
 import { InstantiationType, registerSingleton } from '../../instantiation/common/extensions.js';
-import { AbstractMeteredConnectionService, getIsConnectionMetered, IMeteredConnectionService, NavigatorWithConnection } from '../common/meteredConnection.js';
+import { AbstractMeteredConnectionService, getIsBrowserConnectionMetered, IMeteredConnectionService, NavigatorWithConnection } from '../common/meteredConnection.js';
 
 /**
  * Browser implementation of the metered connection service.
@@ -14,11 +14,11 @@ import { AbstractMeteredConnectionService, getIsConnectionMetered, IMeteredConne
  */
 export class MeteredConnectionService extends AbstractMeteredConnectionService {
 	constructor(@IConfigurationService configurationService: IConfigurationService) {
-		super(configurationService, getIsConnectionMetered());
+		super(configurationService, getIsBrowserConnectionMetered());
 
 		const connection = (navigator as NavigatorWithConnection).connection;
 		if (connection) {
-			const onChange = () => this.setConnectionState(getIsConnectionMetered());
+			const onChange = () => this.setIsBrowserConnectionMetered(getIsBrowserConnectionMetered());
 			connection.addEventListener('change', onChange);
 			this._register(toDisposable(() => connection.removeEventListener('change', onChange)));
 		}
