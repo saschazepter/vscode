@@ -99,24 +99,27 @@ suite('HookSchema', () => {
 				});
 			});
 
-			test('empty command returns undefined', () => {
+			test('empty command returns object without command', () => {
 				const result = resolveHookCommand({
 					type: 'command',
 					command: ''
 				}, workspaceRoot, userHome);
-				assert.strictEqual(result, undefined);
+				assert.deepStrictEqual(result, {
+					type: 'command',
+					cwd: workspaceRoot
+				});
 			});
 		});
 
 		suite('bash shorthand', () => {
-			test('resolves bash to command', () => {
+			test('preserves bash property', () => {
 				const result = resolveHookCommand({
 					type: 'command',
 					bash: 'echo "hello world"'
 				}, workspaceRoot, userHome);
 				assert.deepStrictEqual(result, {
 					type: 'command',
-					command: 'bash -c "echo \\"hello world\\""',
+					bash: 'echo "hello world"',
 					cwd: workspaceRoot
 				});
 			});
@@ -130,30 +133,33 @@ suite('HookSchema', () => {
 				}, workspaceRoot, userHome);
 				assert.deepStrictEqual(result, {
 					type: 'command',
-					command: 'bash -c "./test.sh"',
+					bash: './test.sh',
 					cwd: URI.file('/workspace/scripts'),
 					env: { DEBUG: '1' }
 				});
 			});
 
-			test('empty bash returns undefined', () => {
+			test('empty bash returns object without bash', () => {
 				const result = resolveHookCommand({
 					type: 'command',
 					bash: ''
 				}, workspaceRoot, userHome);
-				assert.strictEqual(result, undefined);
+				assert.deepStrictEqual(result, {
+					type: 'command',
+					cwd: workspaceRoot
+				});
 			});
 		});
 
 		suite('powershell shorthand', () => {
-			test('resolves powershell to command', () => {
+			test('preserves powershell property', () => {
 				const result = resolveHookCommand({
 					type: 'command',
 					powershell: 'Write-Host "hello"'
 				}, workspaceRoot, userHome);
 				assert.deepStrictEqual(result, {
 					type: 'command',
-					command: 'powershell -Command "Write-Host \\"hello\\""',
+					powershell: 'Write-Host "hello"',
 					cwd: workspaceRoot
 				});
 			});
@@ -166,23 +172,26 @@ suite('HookSchema', () => {
 				}, workspaceRoot, userHome);
 				assert.deepStrictEqual(result, {
 					type: 'command',
-					command: 'powershell -Command "Get-Process"',
+					powershell: 'Get-Process',
 					cwd: workspaceRoot,
 					timeoutSec: 30
 				});
 			});
 
-			test('empty powershell returns undefined', () => {
+			test('empty powershell returns object without powershell', () => {
 				const result = resolveHookCommand({
 					type: 'command',
 					powershell: ''
 				}, workspaceRoot, userHome);
-				assert.strictEqual(result, undefined);
+				assert.deepStrictEqual(result, {
+					type: 'command',
+					cwd: workspaceRoot
+				});
 			});
 		});
 
-		suite('priority when multiple specified', () => {
-			test('command takes precedence over bash', () => {
+		suite('multiple properties specified', () => {
+			test('preserves both command and bash', () => {
 				const result = resolveHookCommand({
 					type: 'command',
 					command: 'direct-command',
@@ -191,11 +200,12 @@ suite('HookSchema', () => {
 				assert.deepStrictEqual(result, {
 					type: 'command',
 					command: 'direct-command',
+					bash: 'bash-script.sh',
 					cwd: workspaceRoot
 				});
 			});
 
-			test('command takes precedence over powershell', () => {
+			test('preserves both command and powershell', () => {
 				const result = resolveHookCommand({
 					type: 'command',
 					command: 'direct-command',
@@ -204,11 +214,12 @@ suite('HookSchema', () => {
 				assert.deepStrictEqual(result, {
 					type: 'command',
 					command: 'direct-command',
+					powershell: 'ps-script.ps1',
 					cwd: workspaceRoot
 				});
 			});
 
-			test('bash takes precedence over powershell when no command', () => {
+			test('preserves both bash and powershell when no command', () => {
 				const result = resolveHookCommand({
 					type: 'command',
 					bash: 'bash-script.sh',
@@ -216,7 +227,8 @@ suite('HookSchema', () => {
 				}, workspaceRoot, userHome);
 				assert.deepStrictEqual(result, {
 					type: 'command',
-					command: 'bash -c "bash-script.sh"',
+					bash: 'bash-script.sh',
+					powershell: 'ps-script.ps1',
 					cwd: workspaceRoot
 				});
 			});
@@ -265,12 +277,15 @@ suite('HookSchema', () => {
 				assert.strictEqual(result, undefined);
 			});
 
-			test('no command/bash/powershell returns undefined', () => {
+			test('no command/bash/powershell returns object with just type and cwd', () => {
 				const result = resolveHookCommand({
 					type: 'command',
 					cwd: '/workspace'
 				}, workspaceRoot, userHome);
-				assert.strictEqual(result, undefined);
+				assert.deepStrictEqual(result, {
+					type: 'command',
+					cwd: URI.file('/workspace')
+				});
 			});
 
 			test('ignores non-string cwd', () => {
