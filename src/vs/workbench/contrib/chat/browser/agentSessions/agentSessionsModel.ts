@@ -515,6 +515,7 @@ export class AgentSessionsModel extends Disposable implements IAgentSessionsMode
 					archived: session.archived,
 					timing: session.timing,
 					changes: normalizedChanges,
+					metadata: session.metadata,
 				}));
 			}
 		}
@@ -669,6 +670,8 @@ interface ISerializedAgentSession {
 
 	readonly archived: boolean | undefined;
 
+	readonly metadata: { [key: string]: unknown } | undefined;
+
 	readonly timing: {
 		readonly created: number;
 		readonly lastRequestStarted?: number;
@@ -719,6 +722,7 @@ class AgentSessionsCache {
 			timing: session.timing,
 
 			changes: session.changes,
+			metadata: session.metadata
 		} satisfies ISerializedAgentSession));
 
 		this.storageService.store(AgentSessionsCache.SESSIONS_STORAGE_KEY, JSON.stringify(serialized), StorageScope.WORKSPACE, StorageTarget.MACHINE);
