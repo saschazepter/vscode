@@ -10,8 +10,6 @@ import { HookType, IHookCommand, normalizeHookTypeId, resolveHookCommand } from 
  * Maps Claude hook type names to our abstract HookType.
  * Claude uses PascalCase and slightly different names.
  * @see https://docs.anthropic.com/en/docs/claude-code/hooks
- *
- * Note: HookType.PostToolUseFailure is not supported in Claude.
  */
 export const CLAUDE_HOOK_TYPE_MAP: Record<string, HookType> = {
 	'SessionStart': HookType.SessionStart,

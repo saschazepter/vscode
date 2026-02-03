@@ -6,123 +6,338 @@
 import assert from 'assert';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/test/common/utils.js';
 import { findHookCommandSelection } from '../../../browser/promptSyntax/hookUtils.js';
+import { ITextEditorSelection } from '../../../../../../platform/editor/common/editor.js';
+
+/**
+ * Helper to extract the selected text from content using a selection range.
+ */
+function getSelectedText(content: string, selection: ITextEditorSelection): string {
+	const lines = content.split('\n');
+	if (selection.startLineNumber === selection.endLineNumber) {
+		return lines[selection.startLineNumber - 1].substring(selection.startColumn - 1, selection.endColumn! - 1);
+	}
+	// Multi-line selection
+	const result: string[] = [];
+	result.push(lines[selection.startLineNumber - 1].substring(selection.startColumn - 1));
+	for (let i = selection.startLineNumber; i < selection.endLineNumber! - 1; i++) {
+		result.push(lines[i]);
+	}
+	result.push(lines[selection.endLineNumber! - 1].substring(0, selection.endColumn! - 1));
+	return result.join('\n');
+}
 
 suite('hookUtils', () => {
 	ensureNoDisposablesAreLeakedInTestSuite();
 
 	suite('findHookCommandSelection', () => {
 
-		test('finds command field in first hook entry', () => {
-			const content = '{\n\t"sessionStart": [\n\t\t{\n\t\t\t"command": "echo hello"\n\t\t}\n\t]\n}';
-			const result = findHookCommandSelection(content, 'sessionStart', 0, 'command');
-			assert.deepStrictEqual(result, {
-				startLineNumber: 4,
-				startColumn: 16,
-				endLineNumber: 4,
-				endColumn: 26
+		suite('simple format', () => {
+			const simpleFormat = `{
+	"version": 1,
+	"hooks": {
+		"sessionStart": [
+			{
+				"type": "command",
+				"command": "echo first"
+			},
+			{
+				"type": "command",
+				"command": "echo second"
+			}
+		],
+		"userPromptSubmitted": [
+			{
+				"type": "command",
+				"command": "echo foo > test.derp"
+			}
+		]
+	}
+}`;
+
+			test('finds first command in sessionStart', () => {
+				const result = findHookCommandSelection(simpleFormat, 'sessionStart', 0, 'command');
+				assert.ok(result);
+				assert.strictEqual(getSelectedText(simpleFormat, result), 'echo first');
+				assert.deepStrictEqual(result, {
+					startLineNumber: 7,
+					startColumn: 17,
+					endLineNumber: 7,
+					endColumn: 27
+				});
+			});
+
+			test('finds second command in sessionStart', () => {
+				const result = findHookCommandSelection(simpleFormat, 'sessionStart', 1, 'command');
+				assert.ok(result);
+				assert.strictEqual(getSelectedText(simpleFormat, result), 'echo second');
+				assert.deepStrictEqual(result, {
+					startLineNumber: 11,
+					startColumn: 17,
+					endLineNumber: 11,
+					endColumn: 28
+				});
+			});
+
+			test('finds command in userPromptSubmitted', () => {
+				const result = findHookCommandSelection(simpleFormat, 'userPromptSubmitted', 0, 'command');
+				assert.ok(result);
+				assert.strictEqual(getSelectedText(simpleFormat, result), 'echo foo > test.derp');
+				assert.deepStrictEqual(result, {
+					startLineNumber: 17,
+					startColumn: 17,
+					endLineNumber: 17,
+					endColumn: 37
+				});
+			});
+
+			test('returns undefined for out of bounds index', () => {
+				const result = findHookCommandSelection(simpleFormat, 'sessionStart', 5, 'command');
+				assert.strictEqual(result, undefined);
+			});
+
+			test('returns undefined for non-existent hook type', () => {
+				const result = findHookCommandSelection(simpleFormat, 'nonExistent', 0, 'command');
+				assert.strictEqual(result, undefined);
 			});
 		});
 
-		test('finds command field in second hook entry', () => {
-			const content = '{\n\t"sessionStart": [\n\t\t{\n\t\t\t"command": "first"\n\t\t},\n\t\t{\n\t\t\t"command": "second"\n\t\t}\n\t]\n}';
-			const result = findHookCommandSelection(content, 'sessionStart', 1, 'command');
-			assert.deepStrictEqual(result, {
-				startLineNumber: 7,
-				startColumn: 16,
-				endLineNumber: 7,
-				endColumn: 22
+		suite('nested matcher format', () => {
+			const nestedFormat = `{
+	"forceLoginMethod": "console",
+	"hooks": {
+		"UserPromptSubmit": [
+			{
+				"matcher": "",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "echo 'foobarbaz5' > ~/foobarbaz.txt"
+					}
+				]
+			}
+		]
+	}
+}`;
+
+			test('finds command inside nested hooks', () => {
+				const result = findHookCommandSelection(nestedFormat, 'UserPromptSubmit', 0, 'command');
+				assert.ok(result);
+				assert.strictEqual(getSelectedText(nestedFormat, result), 'echo \'foobarbaz5\' > ~/foobarbaz.txt');
+				assert.deepStrictEqual(result, {
+					startLineNumber: 10,
+					startColumn: 19,
+					endLineNumber: 10,
+					endColumn: 54
+				});
+			});
+
+			test('returns undefined for non-existent field name', () => {
+				const result = findHookCommandSelection(nestedFormat, 'UserPromptSubmit', 0, 'bash');
+				assert.strictEqual(result, undefined);
 			});
 		});
 
-		test('finds bash field for platform-specific hook', () => {
-			const content = '{\n\t"preToolUse": [\n\t\t{\n\t\t\t"bash": "bash command",\n\t\t\t"powershell": "powershell command"\n\t\t}\n\t]\n}';
-			const result = findHookCommandSelection(content, 'preToolUse', 0, 'bash');
-			assert.deepStrictEqual(result, {
-				startLineNumber: 4,
-				startColumn: 12,
-				endLineNumber: 4,
-				endColumn: 24
+		suite('mixed format with multiple nested hooks', () => {
+			const mixedFormat = `{
+	"hooks": {
+		"preToolUse": [
+			{
+				"matcher": "edit_file",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "first nested"
+					},
+					{
+						"type": "command",
+						"command": "second nested"
+					}
+				]
+			},
+			{
+				"type": "command",
+				"command": "simple after nested"
+			}
+		]
+	}
+}`;
+
+			test('finds first command in first nested hooks array', () => {
+				const result = findHookCommandSelection(mixedFormat, 'preToolUse', 0, 'command');
+				assert.ok(result);
+				assert.strictEqual(getSelectedText(mixedFormat, result), 'first nested');
+				assert.deepStrictEqual(result, {
+					startLineNumber: 9,
+					startColumn: 19,
+					endLineNumber: 9,
+					endColumn: 31
+				});
+			});
+
+			test('finds second command in first nested hooks array', () => {
+				const result = findHookCommandSelection(mixedFormat, 'preToolUse', 1, 'command');
+				assert.ok(result);
+				assert.strictEqual(getSelectedText(mixedFormat, result), 'second nested');
+				assert.deepStrictEqual(result, {
+					startLineNumber: 13,
+					startColumn: 19,
+					endLineNumber: 13,
+					endColumn: 32
+				});
+			});
+
+			test('finds simple command after nested structure', () => {
+				const result = findHookCommandSelection(mixedFormat, 'preToolUse', 2, 'command');
+				assert.ok(result);
+				assert.strictEqual(getSelectedText(mixedFormat, result), 'simple after nested');
+				assert.deepStrictEqual(result, {
+					startLineNumber: 19,
+					startColumn: 17,
+					endLineNumber: 19,
+					endColumn: 36
+				});
 			});
 		});
 
-		test('finds powershell field for platform-specific hook', () => {
-			const content = '{\n\t"preToolUse": [\n\t\t{\n\t\t\t"bash": "bash command",\n\t\t\t"powershell": "powershell command"\n\t\t}\n\t]\n}';
-			const result = findHookCommandSelection(content, 'preToolUse', 0, 'powershell');
-			assert.deepStrictEqual(result, {
-				startLineNumber: 5,
-				startColumn: 18,
-				endLineNumber: 5,
-				endColumn: 36
+		suite('bash and powershell fields', () => {
+			const platformSpecificFormat = `{
+	"hooks": {
+		"sessionStart": [
+			{
+				"type": "command",
+				"bash": "echo hello from bash",
+				"powershell": "Write-Host hello"
+			}
+		]
+	}
+}`;
+
+			test('finds bash field', () => {
+				const result = findHookCommandSelection(platformSpecificFormat, 'sessionStart', 0, 'bash');
+				assert.ok(result);
+				assert.strictEqual(getSelectedText(platformSpecificFormat, result), 'echo hello from bash');
+				assert.deepStrictEqual(result, {
+					startLineNumber: 6,
+					startColumn: 14,
+					endLineNumber: 6,
+					endColumn: 34
+				});
+			});
+
+			test('finds powershell field', () => {
+				const result = findHookCommandSelection(platformSpecificFormat, 'sessionStart', 0, 'powershell');
+				assert.ok(result);
+				assert.strictEqual(getSelectedText(platformSpecificFormat, result), 'Write-Host hello');
+				assert.deepStrictEqual(result, {
+					startLineNumber: 7,
+					startColumn: 20,
+					endLineNumber: 7,
+					endColumn: 36
+				});
 			});
 		});
 
-		test('returns undefined for non-existent hook type', () => {
-			const content = '{\n\t"sessionStart": [\n\t\t{\n\t\t\t"command": "echo hello"\n\t\t}\n\t]\n}';
-			const result = findHookCommandSelection(content, 'nonExistent', 0, 'command');
-			assert.strictEqual(result, undefined);
-		});
+		suite('edge cases', () => {
+			test('returns undefined for empty content', () => {
+				const result = findHookCommandSelection('', 'sessionStart', 0, 'command');
+				assert.strictEqual(result, undefined);
+			});
 
-		test('returns undefined for out-of-bounds index', () => {
-			const content = '{\n\t"sessionStart": [\n\t\t{\n\t\t\t"command": "echo hello"\n\t\t}\n\t]\n}';
-			const result = findHookCommandSelection(content, 'sessionStart', 5, 'command');
-			assert.strictEqual(result, undefined);
-		});
+			test('returns undefined for invalid JSON', () => {
+				const result = findHookCommandSelection('{ invalid json }', 'sessionStart', 0, 'command');
+				assert.strictEqual(result, undefined);
+			});
 
-		test('returns undefined for non-existent field', () => {
-			const content = '{\n\t"sessionStart": [\n\t\t{\n\t\t\t"command": "echo hello"\n\t\t}\n\t]\n}';
-			const result = findHookCommandSelection(content, 'sessionStart', 0, 'bash');
-			assert.strictEqual(result, undefined);
-		});
+			test('returns undefined when hooks key is missing', () => {
+				const content = '{ "version": 1 }';
+				const result = findHookCommandSelection(content, 'sessionStart', 0, 'command');
+				assert.strictEqual(result, undefined);
+			});
 
-		test('returns undefined for invalid JSON', () => {
-			const content = '{ invalid json }';
-			const result = findHookCommandSelection(content, 'sessionStart', 0, 'command');
-			assert.strictEqual(result, undefined);
-		});
+			test('returns undefined when hook type array is empty', () => {
+				const content = '{ "hooks": { "sessionStart": [] } }';
+				const result = findHookCommandSelection(content, 'sessionStart', 0, 'command');
+				assert.strictEqual(result, undefined);
+			});
 
-		test('returns undefined for empty content', () => {
-			const result = findHookCommandSelection('', 'sessionStart', 0, 'command');
-			assert.strictEqual(result, undefined);
-		});
+			test('returns undefined when hook item is not an object', () => {
+				const content = '{ "hooks": { "sessionStart": ["not an object"] } }';
+				const result = findHookCommandSelection(content, 'sessionStart', 0, 'command');
+				assert.strictEqual(result, undefined);
+			});
 
-		test('handles command with special characters', () => {
-			const content = '{\n\t"sessionStart": [\n\t\t{\n\t\t\t"command": "echo \\"quoted\\""\n\t\t}\n\t]\n}';
-			const result = findHookCommandSelection(content, 'sessionStart', 0, 'command');
-			assert.deepStrictEqual(result, {
-				startLineNumber: 4,
-				startColumn: 16,
-				endLineNumber: 4,
-				endColumn: 32
+			test('handles empty command string', () => {
+				const content = `{
+	"hooks": {
+		"sessionStart": [
+			{
+				"type": "command",
+				"command": ""
+			}
+		]
+	}
+}`;
+				const result = findHookCommandSelection(content, 'sessionStart', 0, 'command');
+				assert.ok(result);
+				assert.strictEqual(getSelectedText(content, result), '');
+				assert.deepStrictEqual(result, {
+					startLineNumber: 6,
+					startColumn: 17,
+					endLineNumber: 6,
+					endColumn: 17
+				});
+			});
+
+			test('handles multiline command value', () => {
+				// JSON strings can contain escaped newlines
+				const content = `{
+	"hooks": {
+		"sessionStart": [
+			{
+				"type": "command",
+				"command": "line1\\nline2"
+			}
+		]
+	}
+}`;
+				const result = findHookCommandSelection(content, 'sessionStart', 0, 'command');
+				assert.ok(result);
+				assert.strictEqual(getSelectedText(content, result), 'line1\\nline2');
+				assert.deepStrictEqual(result, {
+					startLineNumber: 6,
+					startColumn: 17,
+					endLineNumber: 6,
+					endColumn: 29
+				});
 			});
 		});
 
-		test('works with different hook types', () => {
-			const content = '{\n\t"userPromptSubmitted": [\n\t\t{\n\t\t\t"command": "validate"\n\t\t}\n\t],\n\t"postToolUse": [\n\t\t{\n\t\t\t"command": "cleanup"\n\t\t}\n\t]\n}';
-			const result1 = findHookCommandSelection(content, 'userPromptSubmitted', 0, 'command');
-			assert.deepStrictEqual(result1, {
-				startLineNumber: 4,
-				startColumn: 16,
-				endLineNumber: 4,
-				endColumn: 24
-			});
+		suite('nested matcher with empty hooks array', () => {
+			const emptyNestedHooks = `{
+	"hooks": {
+		"UserPromptSubmit": [
+			{
+				"matcher": "some-pattern",
+				"hooks": []
+			},
+			{
+				"type": "command",
+				"command": "after empty nested"
+			}
+		]
+	}
+}`;
 
-			const result2 = findHookCommandSelection(content, 'postToolUse', 0, 'command');
-			assert.deepStrictEqual(result2, {
-				startLineNumber: 9,
-				startColumn: 16,
-				endLineNumber: 9,
-				endColumn: 23
-			});
-		});
-
-		test('handles hooks with additional properties', () => {
-			const content = '{\n\t"sessionStart": [\n\t\t{\n\t\t\t"command": "my-command",\n\t\t\t"cwd": "/some/path",\n\t\t\t"timeoutSec": 30\n\t\t}\n\t]\n}';
-			const result = findHookCommandSelection(content, 'sessionStart', 0, 'command');
-			assert.deepStrictEqual(result, {
-				startLineNumber: 4,
-				startColumn: 16,
-				endLineNumber: 4,
-				endColumn: 26
+			test('skips empty nested hooks and finds subsequent command', () => {
+				const result = findHookCommandSelection(emptyNestedHooks, 'UserPromptSubmit', 0, 'command');
+				assert.ok(result);
+				assert.strictEqual(getSelectedText(emptyNestedHooks, result), 'after empty nested');
+				assert.deepStrictEqual(result, {
+					startLineNumber: 10,
+					startColumn: 17,
+					endLineNumber: 10,
+					endColumn: 35
+				});
 			});
 		});
 	});

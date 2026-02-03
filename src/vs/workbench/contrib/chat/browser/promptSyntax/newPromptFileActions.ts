@@ -29,6 +29,8 @@ import { IQuickInputService } from '../../../../../platform/quickinput/common/qu
 import { getCleanPromptName, SKILL_FILENAME, HOOKS_FILENAME } from '../../common/promptSyntax/config/promptFileLocations.js';
 import { HOOK_TYPES, HookType } from '../../common/promptSyntax/hookSchema.js';
 import { findHookCommandSelection } from './hookUtils.js';
+import { IBulkEditService, ResourceTextEdit } from '../../../../../editor/browser/services/bulkEditService.js';
+import { Range } from '../../../../../editor/common/core/range.js';
 
 
 class AbstractNewPromptFileAction extends Action2 {
@@ -320,6 +322,7 @@ class NewHookFileAction extends Action2 {
 		const fileService = accessor.get(IFileService);
 		const instaService = accessor.get(IInstantiationService);
 		const quickInputService = accessor.get(IQuickInputService);
+		const bulkEditService = accessor.get(IBulkEditService);
 
 		const selectedFolder = await instaService.invokeFunction(askForPromptSourceFolder, PromptsType.hook);
 		if (!selectedFolder) {
@@ -426,12 +429,27 @@ class NewHookFileAction extends Action2 {
 				}
 			}
 		} else {
-			// File is not open - write to file system and open with selection
-			await fileService.writeFile(hookFileUri, VSBuffer.fromString(jsonContent));
+			// File is not currently open in an editor
+			if (!fileExists) {
+				// File doesn't exist - write new file directly and open
+				await fileService.writeFile(hookFileUri, VSBuffer.fromString(jsonContent));
+			} else {
+				// File exists but isn't open - open it first, then use bulk edit for undo support
+				await editorService.openEditor({
+					resource: hookFileUri,
+					options: { pinned: false }
+				});
+
+				// Apply the edit via bulk edit service for proper undo support
+				await bulkEditService.apply([
+					new ResourceTextEdit(hookFileUri, { range: new Range(1, 1, Number.MAX_SAFE_INTEGER, 1), text: jsonContent })
+				], { label: localize('addHook', "Add Hook") });
+			}
 
 			// Find the selection for the new hook's command field
 			const selection = findHookCommandSelection(jsonContent, hookTypeId, newHookIndex, 'command');
 
+			// Open editor with selection (or re-focus if already open)
 			await editorService.openEditor({
 				resource: hookFileUri,
 				options: {

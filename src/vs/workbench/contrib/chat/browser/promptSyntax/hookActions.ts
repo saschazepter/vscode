@@ -36,6 +36,8 @@ const CONFIGURE_HOOKS_ACTION_ID = 'workbench.action.chat.configure.hooks';
 interface IHookEntry {
 	readonly hookType: HookType;
 	readonly hookTypeLabel: string;
+	/** The original hook type ID as it appears in the JSON file (for selection lookup) */
+	readonly originalHookTypeId: string;
 	readonly fileUri: URI;
 	readonly filePath: string;
 	readonly displayLabel: string;
@@ -104,7 +106,7 @@ class ManageHooksAction extends Action2 {
 				const { format, hooks } = parseHooksFromFile(hookFile.uri, json, workspaceRootUri, userHome);
 				const isReadOnly = isReadOnlyHookSource(format);
 
-				for (const [hookType, { hooks: commands }] of hooks) {
+				for (const [hookType, { hooks: commands, originalId }] of hooks) {
 					const hookTypeMeta = HOOK_TYPES.find(h => h.id === hookType);
 					if (!hookTypeMeta) {
 						continue;
@@ -116,10 +118,11 @@ class ManageHooksAction extends Action2 {
 						hookEntries.push({
 							hookType,
 							hookTypeLabel: hookTypeMeta.label,
+							originalHookTypeId: originalId,
 							fileUri: hookFile.uri,
 							filePath: labelService.getUriLabel(hookFile.uri, { relative: true }),
 							displayLabel,
-							commandFieldName: hookCommand.command ? 'command' : hookCommand.bash ? 'bash' : 'powershell',
+							commandFieldName: hookCommand.command !== undefined ? 'command' : hookCommand.bash !== undefined ? 'bash' : 'powershell',
 							index: i,
 							sourceFormat: format,
 							isReadOnly
@@ -207,7 +210,7 @@ class ManageHooksAction extends Action2 {
 						const content = await fileService.readFile(entry.fileUri);
 						selection = findHookCommandSelection(
 							content.value.toString(),
-							entry.hookType,
+							entry.originalHookTypeId,
 							entry.index,
 							entry.commandFieldName
 						);
