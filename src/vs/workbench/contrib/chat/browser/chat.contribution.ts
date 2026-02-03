@@ -46,7 +46,7 @@ import { ChatTodoListService, IChatTodoListService } from '../common/tools/chatT
 import { ChatTransferService, IChatTransferService } from '../common/model/chatTransferService.js';
 import { IChatVariablesService } from '../common/attachments/chatVariables.js';
 import { ChatWidgetHistoryService, IChatWidgetHistoryService } from '../common/widget/chatWidgetHistoryService.js';
-import { ChatAgentLocation, ChatConfiguration, ChatModeKind } from '../common/constants.js';
+import { AgentsControlClickBehavior, ChatAgentLocation, ChatConfiguration, ChatModeKind } from '../common/constants.js';
 import { ILanguageModelIgnoredFilesService, LanguageModelIgnoredFilesService } from '../common/ignoredFiles.js';
 import { ILanguageModelsService, LanguageModelsService } from '../common/languageModels.js';
 import { ILanguageModelStatsService, LanguageModelStatsService } from '../common/languageModelStats.js';
@@ -64,7 +64,7 @@ import { BuiltinToolsContribution } from '../common/tools/builtinTools/tools.js'
 import { IVoiceChatService, VoiceChatService } from '../common/voiceChatService.js';
 import { registerChatAccessibilityActions } from './actions/chatAccessibilityActions.js';
 import { AgentChatAccessibilityHelp, EditsChatAccessibilityHelp, PanelChatAccessibilityHelp, QuickChatAccessibilityHelp } from './actions/chatAccessibilityHelp.js';
-import { ACTION_ID_NEW_CHAT, CopilotTitleBarMenuRendering, ModeOpenChatGlobalAction, registerChatActions } from './actions/chatActions.js';
+import { ACTION_ID_NEW_CHAT, ModeOpenChatGlobalAction, registerChatActions } from './actions/chatActions.js';
 import { CodeBlockActionRendering, registerChatCodeBlockActions, registerChatCodeCompareBlockActions } from './actions/chatCodeblockActions.js';
 import { ChatContextContributions } from './actions/chatContext.js';
 import { registerChatContextActions } from './actions/chatContextActions.js';
@@ -84,6 +84,7 @@ import { registerChatTitleActions } from './actions/chatTitleActions.js';
 import { registerChatElicitationActions } from './actions/chatElicitationActions.js';
 import { registerChatToolActions } from './actions/chatToolActions.js';
 import { ChatTransferContribution } from './actions/chatTransfer.js';
+import { registerChatCustomizationDiagnosticsAction } from './actions/chatCustomizationDiagnosticsAction.js';
 import './agentSessions/agentSessions.contribution.js';
 import { IAgentSessionsService } from './agentSessions/agentSessionsService.js';
 import { IChatAccessibilityService, IChatCodeBlockContextProviderService, IChatWidgetService, IQuickChatService } from './chat.js';
@@ -123,7 +124,6 @@ import { ChatImplicitContextContribution } from './attachments/chatImplicitConte
 import './widget/input/editor/chatInputCompletions.js';
 import './widget/input/editor/chatInputEditorContrib.js';
 import './widget/input/editor/chatInputEditorHover.js';
-import { ChatRelatedFilesContribution } from './attachments/chatInputRelatedFilesContrib.js';
 import { LanguageModelToolsConfirmationService } from './tools/languageModelToolsConfirmationService.js';
 import { LanguageModelToolsService, globalAutoApproveDescription } from './tools/languageModelToolsService.js';
 import './promptSyntax/promptCodingAgentActionContribution.js';
@@ -136,6 +136,7 @@ import { ILanguageModelsConfigurationService } from '../common/languageModelsCon
 import { ChatWindowNotifier } from './chatWindowNotifier.js';
 import { ChatRepoInfoContribution } from './chatRepoInfo.js';
 import { VALID_PROMPT_FOLDER_PATTERN } from '../common/promptSyntax/utils/promptFilesLocator.js';
+import { ChatTipService, IChatTipService } from './chatTipService.js';
 
 const toolReferenceNameEnumValues: string[] = [];
 const toolReferenceNameEnumDescriptions: string[] = [];
@@ -185,20 +186,21 @@ configurationRegistry.registerConfiguration({
 			description: nls.localize('interactiveSession.editor.lineHeight', "Controls the line height in pixels in chat codeblocks. Use 0 to compute the line height from the font size."),
 			default: 0
 		},
-		'chat.commandCenter.enabled': {
-			type: 'boolean',
-			markdownDescription: nls.localize('chat.commandCenter.enabled', "Controls whether the command center shows a menu for actions to control chat (requires {0}).", '`#window.commandCenter#`'),
-			default: false
-		},
-		[ChatConfiguration.CommandCenterTriStateToggle]: { // TODO@bpasero settle this
-			type: 'boolean',
-			markdownDescription: nls.localize('chat.commandCenter.triStateToggle', "When enabled, clicking the chat icon in the command center cycles through: show chat, maximize chat, hide chat. This requires chat to be contained in the secondary sidebar."),
-			default: product.quality !== 'stable',
+		[ChatConfiguration.AgentsControlClickBehavior]: {
+			type: 'string',
+			enum: [AgentsControlClickBehavior.Default, AgentsControlClickBehavior.Cycle, AgentsControlClickBehavior.Focus],
+			enumDescriptions: [
+				nls.localize('chat.agentsControl.clickBehavior.default', "Clicking chat icon toggles chat visibility."),
+				nls.localize('chat.agentsControl.clickBehavior.cycle', "Clicking chat icon cycles through: show chat, maximize chat, hide chat. This requires chat to be contained in the secondary sidebar."),
+				nls.localize('chat.agentsControl.clickBehavior.focus', "Clicking chat icon focuses the chat view and maximizes it if located in the secondary sidebar.")
+			],
+			markdownDescription: nls.localize('chat.agentsControl.clickBehavior', "Controls the behavior when clicking on the chat icon in the command center."),
+			default: product.quality !== 'stable' ? AgentsControlClickBehavior.Cycle : AgentsControlClickBehavior.Default,
 			tags: ['experimental']
 		},
 		[ChatConfiguration.AgentStatusEnabled]: {
 			type: 'boolean',
-			markdownDescription: nls.localize('chat.agentsControl.enabled', "Controls whether the 'Agent Status' indicator is shown in the title bar command center. Enabling this setting will automatically enable {0}.", '`#window.commandCenter#`'),
+			markdownDescription: nls.localize('chat.agentsControl.enabled', "Controls whether the 'Agent Status' indicator is shown in the title bar command center. Enabling this setting will automatically enable {0}. The unread/in-progress session indicators require {1} to be enabled.", '`#window.commandCenter#`', '`#chat.viewSessions.enabled#`'),
 			default: true,
 			tags: ['experimental']
 		},
@@ -264,6 +266,15 @@ configurationRegistry.registerConfiguration({
 				mode: 'auto'
 			}
 		},
+		'chat.tips.enabled': {
+			type: 'boolean',
+			description: nls.localize('chat.tips.enabled', "Controls whether tips are shown above user messages in chat. This is an experimental feature."),
+			default: false,
+			tags: ['experimental'],
+			experiment: {
+				mode: 'auto'
+			}
+		},
 		'chat.experimental.detectParticipant.enabled': {
 			type: 'boolean',
 			deprecationMessage: nls.localize('chat.experimental.detectParticipant.enabled.deprecated', "This setting is deprecated. Please use `chat.detectParticipant.enabled` instead."),
@@ -275,11 +286,6 @@ configurationRegistry.registerConfiguration({
 			description: nls.localize('chat.detectParticipant.enabled', "Enables chat participant autodetection for panel chat."),
 			default: true
 		},
-		'chat.renderRelatedFiles': {
-			type: 'boolean',
-			description: nls.localize('chat.renderRelatedFiles', "Controls whether related files should be rendered in the chat input."),
-			default: false
-		},
 		[ChatConfiguration.InlineReferencesStyle]: {
 			type: 'string',
 			enum: ['box', 'link'],
@@ -289,6 +295,15 @@ configurationRegistry.registerConfiguration({
 			],
 			description: nls.localize('chat.inlineReferences.style', "Controls how file and symbol references are displayed in chat messages."),
 			default: 'box'
+		},
+		[ChatConfiguration.EditorAssociations]: {
+			type: 'object',
+			markdownDescription: nls.localize('chat.editorAssociations', "Configure [glob patterns](https://aka.ms/vscode-glob-patterns) to editors for opening files from chat (for example `\"*.md\": \"vscode.markdown.preview.editor\"`)."),
+			additionalProperties: {
+				type: 'string'
+			},
+			default: {
+			}
 		},
 		'chat.notifyWindowOnConfirmation': {
 			type: 'boolean',
@@ -305,7 +320,7 @@ configurationRegistry.registerConfiguration({
 				name: 'ChatToolsAutoApprove',
 				category: PolicyCategory.InteractiveSession,
 				minimumVersion: '1.99',
-				value: (account) => account.policyData?.chat_preview_features_enabled === false ? false : undefined,
+				value: (policyData) => policyData.chat_preview_features_enabled === false ? false : undefined,
 				localization: {
 					description: {
 						key: 'autoApprove2.description',
@@ -319,8 +334,10 @@ configurationRegistry.registerConfiguration({
 				'**/*': true,
 				'**/.vscode/*.json': false,
 				'**/.git/**': false,
-				'**/{package.json,package-lock.json,server.xml,build.rs,web.config,.gitattributes,.env}': false,
+				'**/{package.json,server.xml,build.rs,web.config,.gitattributes,.env}': false,
 				'**/*.{code-workspace,csproj,fsproj,vbproj,vcxproj,proj,targets,props}': false,
+				'**/*.lock': false, // yarn.lock, bun.lock, etc.
+				'**/*-lock.{yaml,json}': false, // pnpm-lock.yaml, package-lock.json
 			},
 			markdownDescription: nls.localize('chat.tools.autoApprove.edits', "Controls whether edits made by chat are automatically approved. The default is to approve all edits except those made to certain files which have the potential to cause immediate unintended side-effects, such as `**/.vscode/*.json`.\n\nSet to `true` to automatically approve edits to matching files, `false` to always require explicit approval. The last pattern matching a given file will determine whether the edit is automatically approved."),
 			type: 'object',
@@ -408,11 +425,6 @@ configurationRegistry.registerConfiguration({
 			default: true,
 			description: nls.localize('chat.viewSessions.enabled', "Show chat agent sessions when chat is empty or to the side when chat view is wide enough."),
 		},
-		[ChatConfiguration.ChatViewSessionsShowPendingOnly]: {
-			type: 'boolean',
-			default: true,
-			markdownDescription: nls.localize('chat.viewSessions.showPendingOnly', "When enabled, only show pending sessions in the stacked sessions view. When disabled, show all sessions. This setting requires {0} to be enabled.", '`#chat.viewSessions.enabled#`'),
-		},
 		[ChatConfiguration.ChatViewSessionsOrientation]: {
 			type: 'string',
 			enum: ['stacked', 'sideBySide'],
@@ -423,10 +435,10 @@ configurationRegistry.registerConfiguration({
 			default: 'sideBySide',
 			description: nls.localize('chat.viewSessions.orientation', "Controls the orientation of the chat agent sessions view when it is shown alongside the chat."),
 		},
-		[ChatConfiguration.ChatViewTitleEnabled]: {
+		[ChatConfiguration.ChatViewProgressBadgeEnabled]: {
 			type: 'boolean',
-			default: true,
-			description: nls.localize('chat.viewTitle.enabled', "Show the title of the chat above the chat in the chat view."),
+			default: false,
+			description: nls.localize('chat.viewProgressBadge.enabled', "Show a progress badge on the chat view when an agent session is in progress that is opened in that view."),
 		},
 		[ChatConfiguration.NotifyWindowOnResponseReceived]: {
 			type: 'boolean',
@@ -461,11 +473,11 @@ configurationRegistry.registerConfiguration({
 				name: 'ChatMCP',
 				category: PolicyCategory.InteractiveSession,
 				minimumVersion: '1.99',
-				value: (account) => {
-					if (account.policyData?.mcp === false) {
+				value: (policyData) => {
+					if (policyData.mcp === false) {
 						return McpAccessValue.None;
 					}
-					if (account.policyData?.mcpAccess === 'registry_only') {
+					if (policyData.mcpAccess === 'registry_only') {
 						return McpAccessValue.Registry;
 					}
 					return undefined;
@@ -576,7 +588,7 @@ configurationRegistry.registerConfiguration({
 				name: 'ChatAgentMode',
 				category: PolicyCategory.InteractiveSession,
 				minimumVersion: '1.99',
-				value: (account) => account.policyData?.chat_agent_enabled === false ? false : undefined,
+				value: (policyData) => policyData.chat_agent_enabled === false ? false : undefined,
 				localization: {
 					description: {
 						key: 'chat.agent.enabled.description',
@@ -584,12 +596,6 @@ configurationRegistry.registerConfiguration({
 					}
 				}
 			}
-		},
-		[ChatConfiguration.ImplementationAgentModel]: {
-			type: 'string',
-			description: nls.localize('chat.implementationAgentModel', "Specifies the model to use when switching to an 'implement' agent following Plan mode. When set, this model will be automatically selected instead of the user's current model selection."),
-			default: '',
-			tags: ['experimental'],
 		},
 		[ChatConfiguration.EditModeHidden]: {
 			type: 'boolean',
@@ -659,7 +665,7 @@ configurationRegistry.registerConfiguration({
 				name: 'McpGalleryServiceUrl',
 				category: PolicyCategory.InteractiveSession,
 				minimumVersion: '1.101',
-				value: (account) => account.policyData?.mcpRegistryUrl,
+				value: (policyData) => policyData.mcpRegistryUrl,
 				localization: {
 					description: {
 						key: 'mcp.gallery.serviceUrl',
@@ -824,6 +830,18 @@ configurationRegistry.registerConfiguration({
 			disallowConfigurationDefault: true,
 			tags: ['prompts', 'reusable prompts', 'prompt snippets', 'instructions']
 		},
+		[PromptsConfig.USE_SKILL_ADHERENCE_PROMPT]: {
+			type: 'boolean',
+			title: nls.localize('chat.useSkillAdherencePrompt.title', "Use Skill Adherence Prompt",),
+			markdownDescription: nls.localize('chat.useSkillAdherencePrompt.description', "Controls whether a stronger skill adherence prompt is used that encourages the model to immediately invoke skills when relevant rather than just announcing them."),
+			default: false,
+			restricted: true,
+			disallowConfigurationDefault: true,
+			tags: ['experimental', 'prompts', 'reusable prompts', 'prompt snippets', 'instructions'],
+			experiment: {
+				mode: 'auto'
+			}
+		},
 		[PromptsConfig.INCLUDE_APPLYING_INSTRUCTIONS]: {
 			type: 'boolean',
 			title: nls.localize('chat.includeApplyingInstructions.title', "Include Applying Instructions",),
@@ -946,7 +964,7 @@ configurationRegistry.registerConfiguration({
 			default: true,
 			markdownDescription: nls.localize('chat.tools.autoExpandFailures', "When enabled, tool failures are automatically expanded in the chat UI to show error details."),
 		},
-		'chat.disableAIFeatures': {
+		[ChatConfiguration.AIDisabled]: {
 			type: 'boolean',
 			description: nls.localize('chat.disableAIFeatures', "Disable and hide built-in AI features provided by GitHub Copilot, including chat and inline suggestions."),
 			default: false,
@@ -1125,6 +1143,37 @@ class ChatAgentSettingContribution extends Disposable implements IWorkbenchContr
 
 
 /**
+ * Given builtin and custom modes, returns only the custom mode IDs that should have actions registered.
+ * Custom modes whose names conflict with builtin modes are excluded.
+ * If there are name collisions among custom modes, the later mode in the list wins.
+ */
+function getCustomModesWithUniqueNames(builtinModes: readonly IChatMode[], customModes: readonly IChatMode[]): Set<string> {
+	const customModeIds = new Set<string>();
+	const builtinNames = new Set(builtinModes.map(mode => mode.name.get()));
+	const customNameToId = new Map<string, string>();
+
+	for (const mode of customModes) {
+		const modeName = mode.name.get();
+
+		// Skip custom modes that conflict with builtin mode names
+		if (builtinNames.has(modeName)) {
+			continue;
+		}
+
+		// If there is a name collision among custom modes, the later one in the list wins
+		const existingId = customNameToId.get(modeName);
+		if (existingId) {
+			customModeIds.delete(existingId);
+		}
+
+		customNameToId.set(modeName, mode.id);
+		customModeIds.add(mode.id);
+	}
+
+	return customModeIds;
+}
+
+/**
  * Workbench contribution to register actions for custom chat modes via events
  */
 class ChatAgentActionsContribution extends Disposable implements IWorkbenchContribution {
@@ -1139,28 +1188,19 @@ class ChatAgentActionsContribution extends Disposable implements IWorkbenchContr
 		super();
 		this._store.add(this._modeActionDisposables);
 
-		// Register actions for existing custom modes
-		const { custom } = this.chatModeService.getModes();
+		// Register actions for existing custom modes (avoiding name collisions)
+		const { builtin, custom } = this.chatModeService.getModes();
+		const currentModeIds = getCustomModesWithUniqueNames(builtin, custom);
 		for (const mode of custom) {
-			this._registerModeAction(mode);
+			if (currentModeIds.has(mode.id)) {
+				this._registerModeAction(mode);
+			}
 		}
 
 		// Listen for custom mode changes by tracking snapshots
 		this._register(this.chatModeService.onDidChangeChatModes(() => {
-			const { custom } = this.chatModeService.getModes();
-			const currentModeIds = new Set<string>();
-			const currentModeNames = new Map<string, string>();
-
-			for (const mode of custom) {
-				const modeName = mode.name.get();
-				if (currentModeNames.has(modeName)) {
-					// If there is a name collision, the later one in the list wins
-					currentModeIds.delete(currentModeNames.get(modeName)!);
-				}
-
-				currentModeNames.set(modeName, mode.id);
-				currentModeIds.add(mode.id);
-			}
+			const { builtin, custom } = this.chatModeService.getModes();
+			const currentModeIds = getCustomModesWithUniqueNames(builtin, custom);
 
 			// Remove modes that no longer exist and those replaced by modes later in the list with same name
 			for (const modeId of this._modeActionDisposables.keys()) {
@@ -1317,14 +1357,13 @@ Registry.as<IEditorFactoryRegistry>(EditorExtensions.EditorFactory).registerEdit
 registerWorkbenchContribution2(ChatResolverContribution.ID, ChatResolverContribution, WorkbenchPhase.BlockStartup);
 registerWorkbenchContribution2(ChatLanguageModelsDataContribution.ID, ChatLanguageModelsDataContribution, WorkbenchPhase.BlockRestore);
 registerWorkbenchContribution2(ChatSlashStaticSlashCommandsContribution.ID, ChatSlashStaticSlashCommandsContribution, WorkbenchPhase.Eventually);
+
 registerWorkbenchContribution2(ChatExtensionPointHandler.ID, ChatExtensionPointHandler, WorkbenchPhase.BlockStartup);
 registerWorkbenchContribution2(LanguageModelToolsExtensionPointHandler.ID, LanguageModelToolsExtensionPointHandler, WorkbenchPhase.BlockRestore);
 registerWorkbenchContribution2(ChatPromptFilesExtensionPointHandler.ID, ChatPromptFilesExtensionPointHandler, WorkbenchPhase.BlockRestore);
 registerWorkbenchContribution2(ChatCompatibilityNotifier.ID, ChatCompatibilityNotifier, WorkbenchPhase.Eventually);
-registerWorkbenchContribution2(CopilotTitleBarMenuRendering.ID, CopilotTitleBarMenuRendering, WorkbenchPhase.BlockRestore);
 registerWorkbenchContribution2(CodeBlockActionRendering.ID, CodeBlockActionRendering, WorkbenchPhase.BlockRestore);
 registerWorkbenchContribution2(ChatImplicitContextContribution.ID, ChatImplicitContextContribution, WorkbenchPhase.Eventually);
-registerWorkbenchContribution2(ChatRelatedFilesContribution.ID, ChatRelatedFilesContribution, WorkbenchPhase.Eventually);
 registerWorkbenchContribution2(ChatViewsWelcomeHandler.ID, ChatViewsWelcomeHandler, WorkbenchPhase.BlockStartup);
 registerWorkbenchContribution2(ChatGettingStartedContribution.ID, ChatGettingStartedContribution, WorkbenchPhase.Eventually);
 registerWorkbenchContribution2(ChatSetupContribution.ID, ChatSetupContribution, WorkbenchPhase.BlockRestore);
@@ -1352,6 +1391,7 @@ registerWorkbenchContribution2(ChatRepoInfoContribution.ID, ChatRepoInfoContribu
 registerChatActions();
 registerChatAccessibilityActions();
 registerChatCopyActions();
+registerChatCustomizationDiagnosticsAction();
 registerChatCodeBlockActions();
 registerChatCodeCompareBlockActions();
 registerChatFileTreeActions();
@@ -1400,5 +1440,6 @@ registerSingleton(IChatAttachmentResolveService, ChatAttachmentResolveService, I
 registerSingleton(IChatTodoListService, ChatTodoListService, InstantiationType.Delayed);
 registerSingleton(IChatOutputRendererService, ChatOutputRendererService, InstantiationType.Delayed);
 registerSingleton(IChatLayoutService, ChatLayoutService, InstantiationType.Delayed);
+registerSingleton(IChatTipService, ChatTipService, InstantiationType.Delayed);
 
 ChatWidget.CONTRIBS.push(ChatDynamicVariableModel);

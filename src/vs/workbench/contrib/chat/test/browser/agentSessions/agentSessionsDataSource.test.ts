@@ -6,13 +6,92 @@
 import assert from 'assert';
 import { URI } from '../../../../../../base/common/uri.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/test/common/utils.js';
-import { AgentSessionsDataSource, AgentSessionListItem, groupAgentSessionsByPending, IAgentSessionsFilter } from '../../../browser/agentSessions/agentSessionsViewer.js';
+import { AgentSessionsDataSource, AgentSessionListItem, IAgentSessionsFilter, sessionDateFromNow } from '../../../browser/agentSessions/agentSessionsViewer.js';
 import { AgentSessionSection, IAgentSession, IAgentSessionSection, IAgentSessionsModel, isAgentSessionSection } from '../../../browser/agentSessions/agentSessionsModel.js';
 import { ChatSessionStatus, isSessionInProgressStatus } from '../../../common/chatSessionsService.js';
 import { ITreeSorter } from '../../../../../../base/browser/ui/tree/tree.js';
 import { Codicon } from '../../../../../../base/common/codicons.js';
 import { Event } from '../../../../../../base/common/event.js';
 import { AgentSessionsGrouping } from '../../../browser/agentSessions/agentSessionsFilter.js';
+import { getAgentSessionTime } from '../../../browser/agentSessions/agentSessions.js';
+import { IChatSessionTiming } from '../../../common/chatService/chatService.js';
+
+suite('getAgentSessionTime', () => {
+
+	ensureNoDisposablesAreLeakedInTestSuite();
+
+	test('returns lastRequestEnded when available', () => {
+		const timing: IChatSessionTiming = {
+			created: 1000,
+			lastRequestStarted: 2000,
+			lastRequestEnded: 3000,
+		};
+		assert.strictEqual(getAgentSessionTime(timing), 3000);
+	});
+
+	test('returns lastRequestStarted when lastRequestEnded is undefined', () => {
+		const timing: IChatSessionTiming = {
+			created: 1000,
+			lastRequestStarted: 2000,
+			lastRequestEnded: undefined,
+		};
+		assert.strictEqual(getAgentSessionTime(timing), 2000);
+	});
+
+	test('returns created when both lastRequestEnded and lastRequestStarted are undefined', () => {
+		const timing: IChatSessionTiming = {
+			created: 1000,
+			lastRequestStarted: undefined,
+			lastRequestEnded: undefined,
+		};
+		assert.strictEqual(getAgentSessionTime(timing), 1000);
+	});
+});
+
+suite('sessionDateFromNow', () => {
+
+	ensureNoDisposablesAreLeakedInTestSuite();
+
+	const ONE_DAY = 24 * 60 * 60 * 1000;
+
+	test('returns "1 day ago" for yesterday', () => {
+		const now = Date.now();
+		const startOfToday = new Date(now).setHours(0, 0, 0, 0);
+		// Time in the middle of yesterday
+		const yesterday = startOfToday - ONE_DAY / 2;
+		assert.strictEqual(sessionDateFromNow(yesterday), '1 day ago');
+	});
+
+	test('returns "2 days ago" for two days ago', () => {
+		const now = Date.now();
+		const startOfToday = new Date(now).setHours(0, 0, 0, 0);
+		const startOfYesterday = startOfToday - ONE_DAY;
+		// Time in the middle of two days ago
+		const twoDaysAgo = startOfYesterday - ONE_DAY / 2;
+		assert.strictEqual(sessionDateFromNow(twoDaysAgo), '2 days ago');
+	});
+
+	test('returns fromNow result for today', () => {
+		const now = Date.now();
+		const startOfToday = new Date(now).setHours(0, 0, 0, 0);
+		// A time from today - guaranteed to be after startOfToday
+		const fiveMinutesAfterMidnight = startOfToday + 5 * 60 * 1000;
+		const result = sessionDateFromNow(fiveMinutesAfterMidnight);
+		// Should return a time ago string, not "1 day ago" or "2 days ago"
+		assert.ok(result.includes('min') || result.includes('sec') || result.includes('hr') || result === 'now', `Expected minutes/seconds/hours ago or now, got: ${result}`);
+	});
+
+	test('returns fromNow result for three or more days ago', () => {
+		const now = Date.now();
+		const startOfToday = new Date(now).setHours(0, 0, 0, 0);
+		// Time 5 days ago
+		const fiveDaysAgo = startOfToday - 5 * ONE_DAY;
+		const result = sessionDateFromNow(fiveDaysAgo);
+		// Should return "5 days ago" from fromNow, not our special handling
+		assert.ok(result.includes('day'), `Expected days ago, got: ${result}`);
+		assert.ok(!result.includes('1 day') && !result.includes('2 days'), `Should not be 1 or 2 days ago, got: ${result}`);
+	});
+});
 
 suite('AgentSessionsDataSource', () => {
 
@@ -80,8 +159,8 @@ suite('AgentSessionsDataSource', () => {
 		return {
 			compare: (a, b) => {
 				// Sort by end time, most recent first
-				const aTime = a.timing.lastRequestEnded ?? a.timing.lastRequestStarted ?? a.timing.created;
-				const bTime = b.timing.lastRequestEnded ?? b.timing.lastRequestStarted ?? b.timing.created;
+				const aTime = getAgentSessionTime(a.timing);
+				const bTime = getAgentSessionTime(b.timing);
 				return bTime - aTime;
 			}
 		};
@@ -120,7 +199,7 @@ suite('AgentSessionsDataSource', () => {
 				createMockSession({ id: '3', status: ChatSessionStatus.NeedsInput, startTime: now - 2 * ONE_DAY }),
 			];
 
-			const filter = createMockFilter({ groupBy: AgentSessionsGrouping.Default });
+			const filter = createMockFilter({ groupBy: AgentSessionsGrouping.Date });
 			const sorter = createMockSorter();
 			const dataSource = new AgentSessionsDataSource(filter, sorter);
 
@@ -143,7 +222,7 @@ suite('AgentSessionsDataSource', () => {
 				createMockSession({ id: '2', status: ChatSessionStatus.InProgress, startTime: now - ONE_DAY }),
 			];
 
-			const filter = createMockFilter({ groupBy: AgentSessionsGrouping.Default });
+			const filter = createMockFilter({ groupBy: AgentSessionsGrouping.Date });
 			const sorter = createMockSorter();
 			const dataSource = new AgentSessionsDataSource(filter, sorter);
 
@@ -164,7 +243,7 @@ suite('AgentSessionsDataSource', () => {
 				createMockSession({ id: '2', status: ChatSessionStatus.Completed, startTime: now - ONE_DAY, endTime: now - ONE_DAY }),
 			];
 
-			const filter = createMockFilter({ groupBy: AgentSessionsGrouping.Default });
+			const filter = createMockFilter({ groupBy: AgentSessionsGrouping.Date });
 			const sorter = createMockSorter();
 			const dataSource = new AgentSessionsDataSource(filter, sorter);
 
@@ -183,7 +262,7 @@ suite('AgentSessionsDataSource', () => {
 				createMockSession({ id: '2', status: ChatSessionStatus.Completed, startTime: now - WEEK_THRESHOLD - ONE_DAY, endTime: now - WEEK_THRESHOLD - ONE_DAY }),
 			];
 
-			const filter = createMockFilter({ groupBy: AgentSessionsGrouping.Default });
+			const filter = createMockFilter({ groupBy: AgentSessionsGrouping.Date });
 			const sorter = createMockSorter();
 			const dataSource = new AgentSessionsDataSource(filter, sorter);
 
@@ -201,7 +280,7 @@ suite('AgentSessionsDataSource', () => {
 				createMockSession({ id: '2', status: ChatSessionStatus.Completed, isArchived: true, startTime: now - ONE_DAY, endTime: now - ONE_DAY }),
 			];
 
-			const filter = createMockFilter({ groupBy: AgentSessionsGrouping.Default });
+			const filter = createMockFilter({ groupBy: AgentSessionsGrouping.Date });
 			const sorter = createMockSorter();
 			const dataSource = new AgentSessionsDataSource(filter, sorter);
 
@@ -219,7 +298,7 @@ suite('AgentSessionsDataSource', () => {
 				createMockSession({ id: '2', status: ChatSessionStatus.Completed, startTime: now - WEEK_THRESHOLD - ONE_DAY, endTime: now - WEEK_THRESHOLD - ONE_DAY }),
 			];
 
-			const filter = createMockFilter({ groupBy: AgentSessionsGrouping.Default });
+			const filter = createMockFilter({ groupBy: AgentSessionsGrouping.Date });
 			const sorter = createMockSorter();
 			const dataSource = new AgentSessionsDataSource(filter, sorter);
 
@@ -239,7 +318,7 @@ suite('AgentSessionsDataSource', () => {
 				createMockSession({ id: 'active', status: ChatSessionStatus.InProgress, startTime: now }),
 			];
 
-			const filter = createMockFilter({ groupBy: AgentSessionsGrouping.Default });
+			const filter = createMockFilter({ groupBy: AgentSessionsGrouping.Date });
 			const sorter = createMockSorter();
 			const dataSource = new AgentSessionsDataSource(filter, sorter);
 
@@ -273,7 +352,7 @@ suite('AgentSessionsDataSource', () => {
 				createMockSession({ id: 'active', status: ChatSessionStatus.InProgress, startTime: now }),
 			];
 
-			const filter = createMockFilter({ groupBy: AgentSessionsGrouping.Default });
+			const filter = createMockFilter({ groupBy: AgentSessionsGrouping.Date });
 			const sorter = createMockSorter();
 			const dataSource = new AgentSessionsDataSource(filter, sorter);
 
@@ -308,7 +387,7 @@ suite('AgentSessionsDataSource', () => {
 		});
 
 		test('empty sessions returns empty result', () => {
-			const filter = createMockFilter({ groupBy: AgentSessionsGrouping.Default });
+			const filter = createMockFilter({ groupBy: AgentSessionsGrouping.Date });
 			const sorter = createMockSorter();
 			const dataSource = new AgentSessionsDataSource(filter, sorter);
 
@@ -325,7 +404,7 @@ suite('AgentSessionsDataSource', () => {
 				createMockSession({ id: '2', status: ChatSessionStatus.Completed, startTime: now - 1000, endTime: now - 1000 }),
 			];
 
-			const filter = createMockFilter({ groupBy: AgentSessionsGrouping.Default });
+			const filter = createMockFilter({ groupBy: AgentSessionsGrouping.Date });
 			const sorter = createMockSorter();
 			const dataSource = new AgentSessionsDataSource(filter, sorter);
 
@@ -348,7 +427,7 @@ suite('AgentSessionsDataSource', () => {
 				createMockSession({ id: 'week2', status: ChatSessionStatus.Completed, startTime: now - 2 * ONE_DAY, endTime: now - 2 * ONE_DAY }),
 			];
 
-			const filter = createMockFilter({ groupBy: AgentSessionsGrouping.Default });
+			const filter = createMockFilter({ groupBy: AgentSessionsGrouping.Date });
 			const sorter = createMockSorter();
 			const dataSource = new AgentSessionsDataSource(filter, sorter);
 
@@ -367,155 +446,6 @@ suite('AgentSessionsDataSource', () => {
 			assert.ok(olderSection);
 			assert.strictEqual(olderSection.sessions[0].label, 'Session old2');
 			assert.strictEqual(olderSection.sessions[1].label, 'Session old1');
-		});
-	});
-
-	suite('groupSessionsByPending', () => {
-
-		test('groups sessions into Pending and Done sections', () => {
-			const now = Date.now();
-			const sessions = [
-				createMockSession({ id: '1', status: ChatSessionStatus.Completed, startTime: now }),
-				createMockSession({ id: '2', status: ChatSessionStatus.Completed, startTime: now - ONE_DAY }),
-			];
-
-			const result = groupAgentSessionsByPending(sessions);
-
-			assert.strictEqual(result.size, 2);
-			assert.ok(result.has(AgentSessionSection.Pending));
-			assert.ok(result.has(AgentSessionSection.Done));
-		});
-
-		test('In-progress sessions appear in Pending', () => {
-			const now = Date.now();
-			const sessions = [
-				createMockSession({ id: '1', status: ChatSessionStatus.InProgress, startTime: now }),
-				createMockSession({ id: '2', status: ChatSessionStatus.NeedsInput, startTime: now - 1000 }),
-				createMockSession({ id: '3', status: ChatSessionStatus.Completed, startTime: now - 2000 }),
-				createMockSession({ id: '4', status: ChatSessionStatus.Completed, startTime: now - ONE_DAY }),
-			];
-
-			const result = groupAgentSessionsByPending(sessions);
-			const pendingSection = result.get(AgentSessionSection.Pending);
-			const doneSection = result.get(AgentSessionSection.Done);
-
-			assert.ok(pendingSection);
-			assert.ok(doneSection);
-			// In-progress sessions in Pending, plus session 1 is also the most recent non-archived
-			assert.ok(pendingSection.sessions.some(s => s.label === 'Session 1'));
-			assert.ok(pendingSection.sessions.some(s => s.label === 'Session 2'));
-			assert.strictEqual(pendingSection.sessions.length, 2);
-			// Completed sessions in Done
-			assert.ok(doneSection.sessions.some(s => s.label === 'Session 3'));
-			assert.ok(doneSection.sessions.some(s => s.label === 'Session 4'));
-		});
-
-		test('Unread sessions appear in Pending', () => {
-			const now = Date.now();
-			const sessions = [
-				createMockSession({ id: '1', status: ChatSessionStatus.Completed, startTime: now, isRead: false }),
-				createMockSession({ id: '2', status: ChatSessionStatus.Completed, startTime: now - 1000 }),
-				createMockSession({ id: '3', status: ChatSessionStatus.Completed, startTime: now - 2000 }),
-			];
-
-			const result = groupAgentSessionsByPending(sessions);
-			const pendingSection = result.get(AgentSessionSection.Pending);
-			const doneSection = result.get(AgentSessionSection.Done);
-
-			assert.ok(pendingSection);
-			assert.ok(doneSection);
-			// Unread session 1 is in Pending (also most recent)
-			assert.ok(pendingSection.sessions.some(s => s.label === 'Session 1'));
-			// Read sessions 2, 3 are in Done (session 2 not most recent since session 1 is)
-			assert.ok(doneSection.sessions.some(s => s.label === 'Session 2'));
-			assert.ok(doneSection.sessions.some(s => s.label === 'Session 3'));
-		});
-
-		test('Sessions with changes appear in Pending', () => {
-			const now = Date.now();
-			const sessions = [
-				createMockSession({ id: '1', status: ChatSessionStatus.Completed, startTime: now, hasChanges: true }),
-				createMockSession({ id: '2', status: ChatSessionStatus.Completed, startTime: now - 1000 }),
-				createMockSession({ id: '3', status: ChatSessionStatus.Completed, startTime: now - 2000, hasChanges: true }),
-			];
-
-			const result = groupAgentSessionsByPending(sessions);
-			const pendingSection = result.get(AgentSessionSection.Pending);
-			const doneSection = result.get(AgentSessionSection.Done);
-
-			assert.ok(pendingSection);
-			assert.ok(doneSection);
-			// Sessions with changes in Pending
-			assert.ok(pendingSection.sessions.some(s => s.label === 'Session 1'));
-			assert.ok(pendingSection.sessions.some(s => s.label === 'Session 3'));
-			// Session 2 is in Done (no changes, read)
-			assert.ok(doneSection.sessions.some(s => s.label === 'Session 2'));
-		});
-
-		test('Most recent non-archived session always appears in Pending', () => {
-			const now = Date.now();
-			const sessions = [
-				createMockSession({ id: '1', status: ChatSessionStatus.Completed, startTime: now }),
-				createMockSession({ id: '2', status: ChatSessionStatus.Completed, startTime: now - 1000 }),
-				createMockSession({ id: '3', status: ChatSessionStatus.Completed, startTime: now - 2000 }),
-			];
-
-			const result = groupAgentSessionsByPending(sessions);
-			const pendingSection = result.get(AgentSessionSection.Pending);
-			const doneSection = result.get(AgentSessionSection.Done);
-
-			assert.ok(pendingSection);
-			assert.ok(doneSection);
-			// Most recent non-archived (session 1) in Pending
-			assert.strictEqual(pendingSection.sessions.length, 1);
-			assert.strictEqual(pendingSection.sessions[0].label, 'Session 1');
-			// Other sessions in Done
-			assert.strictEqual(doneSection.sessions.length, 2);
-		});
-
-		test('Archived sessions go to Done even if unread or have changes', () => {
-			const now = Date.now();
-			const sessions = [
-				createMockSession({ id: '1', status: ChatSessionStatus.Completed, startTime: now }),
-				createMockSession({ id: '2', status: ChatSessionStatus.Completed, startTime: now - 1000, isArchived: true, isRead: false }),
-				createMockSession({ id: '3', status: ChatSessionStatus.Completed, startTime: now - 2000, isArchived: true, hasChanges: true }),
-			];
-
-			const result = groupAgentSessionsByPending(sessions);
-			const pendingSection = result.get(AgentSessionSection.Pending);
-			const doneSection = result.get(AgentSessionSection.Done);
-
-			assert.ok(pendingSection);
-			assert.ok(doneSection);
-			// Only most recent non-archived in Pending
-			assert.strictEqual(pendingSection.sessions.length, 1);
-			assert.strictEqual(pendingSection.sessions[0].label, 'Session 1');
-			// Archived sessions go to Done regardless of unread/changes
-			assert.strictEqual(doneSection.sessions.length, 2);
-			assert.ok(doneSection.sessions.some(s => s.label === 'Session 2'));
-			assert.ok(doneSection.sessions.some(s => s.label === 'Session 3'));
-		});
-
-		test('works with AgentSessionsDataSource when groupBy is Pending', () => {
-			const now = Date.now();
-			const sessions = [
-				createMockSession({ id: '1', status: ChatSessionStatus.InProgress, startTime: now }),
-				createMockSession({ id: '2', status: ChatSessionStatus.Completed, startTime: now - ONE_DAY }),
-				createMockSession({ id: '3', status: ChatSessionStatus.Completed, startTime: now - 2 * ONE_DAY }),
-			];
-
-			const filter = createMockFilter({ groupBy: AgentSessionsGrouping.Pending });
-			const sorter = createMockSorter();
-			const dataSource = new AgentSessionsDataSource(filter, sorter);
-
-			const mockModel = createMockModel(sessions);
-			const result = Array.from(dataSource.getChildren(mockModel));
-
-			assert.strictEqual(result.length, 2);
-			assert.ok(isAgentSessionSection(result[0]));
-			assert.ok(isAgentSessionSection(result[1]));
-			assert.strictEqual((result[0] as IAgentSessionSection).section, AgentSessionSection.Pending);
-			assert.strictEqual((result[1] as IAgentSessionSection).section, AgentSessionSection.Done);
 		});
 	});
 });

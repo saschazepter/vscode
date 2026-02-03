@@ -292,7 +292,7 @@ export class ChatImplicitContexts extends Disposable {
 	private _onDidChangeValue = this._register(new Emitter<void>());
 	readonly onDidChangeValue = this._onDidChangeValue.event;
 
-	private _values: DisposableMap<ChatImplicitContext, DisposableStore> = new DisposableMap();
+	private _values: DisposableMap<ChatImplicitContext, DisposableStore> = this._register(new DisposableMap());
 	private readonly _valuesDisposables: DisposableStore = this._register(new DisposableStore());
 
 	setValues(values: ImplicitContextWithSelection[]): void {
@@ -382,13 +382,17 @@ export class ChatImplicitContext extends Disposable implements IChatRequestImpli
 	get name(): string {
 		if (URI.isUri(this.value)) {
 			return `file:${basename(this.value)}`;
-		} else if (isStringImplicitContextValue(this.value)) {
-			return this.value.name;
-		} else if (this.value) {
-			return `file:${basename(this.value.uri)}`;
-		} else {
-			return 'implicit';
 		}
+		if (isLocation(this.value)) {
+			return `file:${basename(this.value.uri)}`;
+		}
+		if (isStringImplicitContextValue(this.value)) {
+			if (this.value.name === undefined && this.value.resourceUri === undefined) {
+				throw new Error('ChatContextItem must have either a label or a resourceUri');
+			}
+			return this.value.name ?? basename(this.value.resourceUri!);
+		}
+		return 'implicit';
 	}
 
 	readonly kind = 'implicit';
@@ -397,7 +401,11 @@ export class ChatImplicitContext extends Disposable implements IChatRequestImpli
 		if (URI.isUri(this.value)) {
 			return `User's active file`;
 		} else if (isStringImplicitContextValue(this.value)) {
-			return this.value.modelDescription ?? `User's active context from ${this.value.name}`;
+			if (this.value.name === undefined && this.value.resourceUri === undefined) {
+				throw new Error('ChatContextItem must have either a label or a resourceUri');
+			}
+			const contextName = this.value.name ?? basename(this.value.resourceUri!);
+			return this.value.modelDescription ?? `User's active context from ${contextName}`;
 		} else if (this._isSelection) {
 			return `User's active selection`;
 		} else {
@@ -471,6 +479,7 @@ export class ChatImplicitContext extends Disposable implements IChatRequestImpli
 					modelDescription: this.modelDescription,
 					icon: this.value.icon,
 					uri: this.value.uri,
+					resourceUri: this.value.resourceUri,
 					handle: this.value.handle,
 					commandId: this.value.commandId
 				}
