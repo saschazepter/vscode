@@ -41,9 +41,9 @@ interface IHookEntry {
 	readonly displayLabel: string;
 	readonly commandFieldName: 'command' | 'bash' | 'powershell' | undefined;
 	readonly index: number;
-	/** The source format (Copilot, Claude, Cursor) */
+	/** The source format (Copilot, Claude) */
 	readonly sourceFormat: HookSourceFormat;
-	/** Whether this hook is from a read-only source (Claude/Cursor settings) */
+	/** Whether this hook is from a read-only source (Claude settings) */
 	readonly isReadOnly: boolean;
 }
 

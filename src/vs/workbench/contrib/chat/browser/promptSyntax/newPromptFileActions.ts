@@ -362,8 +362,11 @@ class NewHookFileAction extends Action2 {
 					hooksContent.hooks = {};
 				}
 			} catch {
-				// If parsing fails, start fresh
-				hooksContent = { version: 1, hooks: {} };
+				// If parsing fails, show error and open file for user to fix
+				const notificationService = accessor.get(INotificationService);
+				notificationService.error(localize('commands.new.hook.parseError', "Failed to parse existing hooks.json. Please fix the JSON syntax errors and try again."));
+				await editorService.openEditor({ resource: hookFileUri });
+				return;
 			}
 		} else {
 			// Create new structure

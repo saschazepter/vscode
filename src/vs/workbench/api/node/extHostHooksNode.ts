@@ -95,20 +95,27 @@ export class NodeExtHostHooks implements IExtHostHooks {
 		const home = homedir();
 		const cwd = hook.cwd ? hook.cwd.fsPath : home;
 
-		// Determine shell and command based on which property is specified
-		let shell: string | boolean = true;
-		let commandStr: string;
+		// Determine command and args based on which property is specified
+		// For bash/powershell: spawn the shell directly with explicit args to avoid double shell wrapping
+		// For generic command: use shell=true to let the system shell handle it
+		let command: string;
+		let args: string[];
+		let shell: boolean;
 		if (hook.bash) {
-			shell = 'bash';
-			commandStr = `-c ${JSON.stringify(hook.bash)}`;
+			command = 'bash';
+			args = ['-c', hook.bash];
+			shell = false;
 		} else if (hook.powershell) {
-			shell = 'powershell';
-			commandStr = `-Command ${JSON.stringify(hook.powershell)}`;
+			command = 'powershell';
+			args = ['-Command', hook.powershell];
+			shell = false;
 		} else {
-			commandStr = hook.command!;
+			command = hook.command!;
+			args = [];
+			shell = true;
 		}
 
-		const child = spawn(commandStr, [], {
+		const child = spawn(command, args, {
 			stdio: 'pipe',
 			cwd,
 			env: { ...process.env, ...hook.env },
