@@ -20,7 +20,7 @@ import { IChatMode } from '../common/chatModes.js';
 import { IParsedChatRequest } from '../common/requestParser/chatParserTypes.js';
 import { CHAT_PROVIDER_ID } from '../common/participants/chatParticipantContribTypes.js';
 import { IChatElicitationRequest, IChatLocationData, IChatSendRequestOptions } from '../common/chatService/chatService.js';
-import { IChatRequestViewModel, IChatResponseViewModel, IChatViewModel } from '../common/model/chatViewModel.js';
+import { IChatRequestViewModel, IChatResponseViewModel, IChatViewModel, IChatPendingDividerViewModel } from '../common/model/chatViewModel.js';
 import { ChatAgentLocation, ChatModeKind } from '../common/constants.js';
 import { ChatAttachmentModel } from './attachments/chatAttachmentModel.js';
 import { IChatEditorOptions } from './widgetHosts/editor/chatEditor.js';
@@ -207,7 +207,7 @@ export interface IChatFileTreeInfo {
 	focus(): void;
 }
 
-export type ChatTreeItem = IChatRequestViewModel | IChatResponseViewModel;
+export type ChatTreeItem = IChatRequestViewModel | IChatResponseViewModel | IChatPendingDividerViewModel;
 
 export interface IChatListItemRendererOptions {
 	readonly renderStyle?: 'compact' | 'minimal';

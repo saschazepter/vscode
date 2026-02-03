@@ -1174,6 +1174,16 @@ export interface IChatTerminalLocationData {
 
 export type IChatLocationData = IChatEditorLocationData | IChatNotebookLocationData | IChatTerminalLocationData;
 
+/**
+ * The kind of queue request.
+ */
+export const enum ChatRequestQueueKind {
+	/** Request is queued to be sent after current request completes */
+	Queued = 'queued',
+	/** Request is queued and signals the active request to yield */
+	Steering = 'steering'
+}
+
 export interface IChatSendRequestOptions {
 	modeInfo?: IChatRequestModeInfo;
 	userSelectedModelId?: string;
@@ -1199,6 +1209,12 @@ export interface IChatSendRequestOptions {
 	 * The label of the confirmation action that was selected.
 	 */
 	confirmation?: string;
+
+	/**
+	 * When set, queues this message to be sent after the current request completes.
+	 * If Steering, also sets yieldRequested on any active request to signal it should wrap up.
+	 */
+	queue?: ChatRequestQueueKind;
 
 }
 
@@ -1254,6 +1270,19 @@ export interface IChatService {
 	adoptRequest(sessionResource: URI, request: IChatRequestModel): Promise<void>;
 	removeRequest(sessionResource: URI, requestId: string): Promise<void>;
 	cancelCurrentRequestForSession(sessionResource: URI): void;
+	/**
+	 * Sets yieldRequested on the active request for the given session.
+	 */
+	setYieldRequested(sessionResource: URI): void;
+	/**
+	 * Removes a pending request from the session's queue.
+	 */
+	removePendingRequest(sessionResource: URI, requestId: string): void;
+	/**
+	 * Sets the pending requests for a session, allowing for deletions/reordering.
+	 * Adding new requests should go through sendRequest with the queue option.
+	 */
+	setPendingRequests(sessionResource: URI, requests: readonly { requestId: string; kind: ChatRequestQueueKind }[]): void;
 	addCompleteRequest(sessionResource: URI, message: IParsedChatRequest | string, variableData: IChatRequestVariableData | undefined, attempt: number | undefined, response: IChatCompleteResponse): void;
 	setChatSessionTitle(sessionResource: URI, title: string): void;
 	getLocalSessionHistory(): Promise<IChatDetail[]>;

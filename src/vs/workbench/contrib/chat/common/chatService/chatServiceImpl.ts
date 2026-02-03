@@ -37,7 +37,7 @@ import { ChatModel, ChatRequestModel, ChatRequestRemovalReason, IChatModel, ICha
 import { ChatModelStore, IStartSessionProps } from '../model/chatModelStore.js';
 import { chatAgentLeader, ChatRequestAgentPart, ChatRequestAgentSubcommandPart, ChatRequestSlashCommandPart, ChatRequestTextPart, chatSubcommandLeader, getPromptText, IParsedChatRequest } from '../requestParser/chatParserTypes.js';
 import { ChatRequestParser } from '../requestParser/chatRequestParser.js';
-import { ChatMcpServersStarting, IChatCompleteResponse, IChatDetail, IChatFollowup, IChatModelReference, IChatProgress, IChatSendRequestData, IChatSendRequestOptions, IChatSendRequestResponseState, IChatService, IChatSessionContext, IChatSessionStartOptions, IChatUserActionEvent, ResponseModelState } from './chatService.js';
+import { ChatMcpServersStarting, ChatRequestQueueKind, IChatCompleteResponse, IChatDetail, IChatFollowup, IChatModelReference, IChatProgress, IChatSendRequestData, IChatSendRequestOptions, IChatSendRequestResponseState, IChatService, IChatSessionContext, IChatSessionStartOptions, IChatUserActionEvent, ResponseModelState } from './chatService.js';
 import { ChatRequestTelemetry, ChatServiceTelemetry } from './chatServiceTelemetry.js';
 import { IChatSessionsService } from '../chatSessionsService.js';
 import { ChatSessionStore, IChatSessionEntryMetadata } from '../model/chatSessionStore.js';
@@ -53,6 +53,12 @@ import { ChatSessionOperationLog } from '../model/chatSessionOperationLog.js';
 const serializedChatKey = 'interactive.sessions';
 
 class CancellableRequest implements IDisposable {
+	private _yieldRequested = false;
+
+	get yieldRequested(): boolean {
+		return this._yieldRequested;
+	}
+
 	constructor(
 		public readonly cancellationTokenSource: CancellationTokenSource,
 		public requestId: string | undefined,
@@ -69,6 +75,10 @@ class CancellableRequest implements IDisposable {
 		}
 
 		this.cancellationTokenSource.cancel();
+	}
+
+	setYieldRequested(): void {
+		this._yieldRequested = true;
 	}
 }
 
@@ -730,6 +740,31 @@ export class ChatService extends Disposable implements IChatService {
 		}
 
 		if (this._pendingRequests.has(sessionResource)) {
+			// A request is already in progress
+			if (options?.queue) {
+				// Queue this message to be sent after the current request completes
+				const location = options?.location ?? model.initialLocation;
+				const parsedRequest = this.parseChatRequest(sessionResource, request, location, options);
+				const requestModel = new ChatRequestModel({
+					session: model as ChatModel,
+					message: parsedRequest,
+					variableData: { variables: [] },
+					timestamp: Date.now(),
+					modeInfo: options?.modeInfo,
+					locationData: options?.locationData,
+					attachedContext: options?.attachedContext,
+					modelId: options?.userSelectedModelId,
+					userSelectedTools: options?.userSelectedTools?.get(),
+				});
+				(model as ChatModel).addPendingRequest(requestModel, options.queue);
+
+				if (options.queue === ChatRequestQueueKind.Steering) {
+					this.setYieldRequested(sessionResource);
+				}
+
+				this.trace('sendRequest', `Queued message for session ${sessionResource}`);
+				return undefined;
+			}
 			this.trace('sendRequest', `Session ${sessionResource} already has a pending request`);
 			return;
 		}
@@ -1066,12 +1101,45 @@ export class ChatService extends Disposable implements IChatService {
 		this._pendingRequests.set(model.sessionResource, this.instantiationService.createInstance(CancellableRequest, source, undefined));
 		rawResponsePromise.finally(() => {
 			this._pendingRequests.deleteAndDispose(model.sessionResource);
+			// Process the next pending request from the queue if any
+			this.processNextPendingRequest(model);
 		});
 		this._onDidSubmitRequest.fire({ chatSessionResource: model.sessionResource });
 		return {
 			responseCreatedPromise: responseCreated.p,
 			responseCompletePromise: rawResponsePromise,
 		};
+	}
+
+	/**
+	 * Process the next pending request from the model's queue, if any.
+	 * Called after a request completes to continue processing queued requests.
+	 */
+	private processNextPendingRequest(model: ChatModel): void {
+		const pendingRequest = model.dequeuePendingRequest();
+		if (!pendingRequest) {
+			return;
+		}
+
+		this.trace('processNextPendingRequest', `Processing queued request for session ${model.sessionResource}`);
+
+		const request = pendingRequest.request;
+		const location = request.locationData?.type ?? model.initialLocation;
+		const defaultAgent = this.chatAgentService.getDefaultAgent(location, request.modeInfo?.kind);
+		if (!defaultAgent) {
+			this.logService.warn('processNextPendingRequest', `No default agent for location ${location}`);
+			return;
+		}
+
+		const options: IChatSendRequestOptions = {
+			modeInfo: request.modeInfo,
+			locationData: request.locationData,
+			attachedContext: request.attachedContext,
+			userSelectedModelId: request.modelId,
+		};
+
+		// Send the queued request - this will add it to _pendingRequests and handle it normally
+		this._sendRequestAsync(model, model.sessionResource, request.message, request.attempt, true, defaultAgent, location, options);
 	}
 
 	private generateInitialChatTitleIfNeeded(model: ChatModel, request: IChatAgentRequest, defaultAgent: IChatAgentData, token: CancellationToken): void {
@@ -1219,6 +1287,27 @@ export class ChatService extends Disposable implements IChatService {
 		this.trace('cancelCurrentRequestForSession', `session: ${sessionResource}`);
 		this._pendingRequests.get(sessionResource)?.cancel();
 		this._pendingRequests.deleteAndDispose(sessionResource);
+	}
+
+	setYieldRequested(sessionResource: URI): void {
+		const pendingRequest = this._pendingRequests.get(sessionResource);
+		if (pendingRequest) {
+			pendingRequest.setYieldRequested();
+		}
+	}
+
+	removePendingRequest(sessionResource: URI, requestId: string): void {
+		const model = this._sessionModels.get(sessionResource) as ChatModel | undefined;
+		if (model) {
+			model.removePendingRequest(requestId);
+		}
+	}
+
+	setPendingRequests(sessionResource: URI, requests: readonly { requestId: string; kind: ChatRequestQueueKind }[]): void {
+		const model = this._sessionModels.get(sessionResource) as ChatModel | undefined;
+		if (model) {
+			model.setPendingRequests(requests);
+		}
 	}
 
 	public hasSessions(): boolean {
