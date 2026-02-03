@@ -162,13 +162,6 @@ class ChatSessionItemImpl implements vscode.ChatSessionItem {
 	}
 
 	set metadata(value: { readonly [key: string]: unknown } | undefined) {
-		if (value !== undefined) {
-			try {
-				JSON.stringify(value);
-			} catch {
-				throw new Error('metadata must be JSON-serializable');
-			}
-		}
 		if (!objects.equals(this.#metadata, value)) {
 			this.#metadata = value;
 			this.#onChanged();

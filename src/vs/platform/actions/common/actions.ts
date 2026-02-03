@@ -324,7 +324,6 @@ export class MenuId {
 
 export interface IMenuActionOptions {
 	arg?: unknown;
-	args?: unknown[];
 	shouldForwardArgs?: boolean;
 	renderShortTitle?: boolean;
 }
@@ -614,9 +613,7 @@ export class MenuItemAction implements IAction {
 	run(...args: unknown[]): Promise<void> {
 		let runArgs: unknown[] = [];
 
-		if (this._options?.args) {
-			runArgs = [...runArgs, ...this._options.args];
-		} else if (this._options?.arg) {
+		if (this._options?.arg) {
 			runArgs = [...runArgs, this._options.arg];
 		}
 
