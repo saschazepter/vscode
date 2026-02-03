@@ -17,7 +17,6 @@ import { IAgentSessionsService } from './agentSessionsService.js';
 import { AgentSessionsSorter, groupAgentSessionsByDate, sessionDateFromNow } from './agentSessionsViewer.js';
 import { AGENT_SESSION_DELETE_ACTION_ID, AGENT_SESSION_RENAME_ACTION_ID, getAgentSessionTime } from './agentSessions.js';
 import { AgentSessionsFilter } from './agentSessionsFilter.js';
-import { MenuId } from '../../../../../platform/actions/common/actions.js';
 
 interface ISessionPickItem extends IQuickPickItem {
 	readonly session: IAgentSession;
@@ -76,9 +75,7 @@ export class AgentSessionsPicker {
 	async pickAgentSession(): Promise<void> {
 		const disposables = new DisposableStore();
 		const picker = disposables.add(this.quickInputService.createQuickPick<ISessionPickItem>({ useSeparators: true }));
-		const filter = disposables.add(this.instantiationService.createInstance(AgentSessionsFilter, {
-			filterMenuId: MenuId.AgentSessionsQuickPickFilterSubMenu,
-		}));
+		const filter = disposables.add(this.instantiationService.createInstance(AgentSessionsFilter, {}));
 
 		picker.items = this.createPickerItems(filter);
 		picker.canAcceptInBackground = true;
