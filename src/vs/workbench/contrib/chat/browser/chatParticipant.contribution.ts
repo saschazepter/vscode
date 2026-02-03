@@ -45,6 +45,7 @@ const chatViewContainer: ViewContainer = Registry.as<IViewContainersRegistry>(Vi
 	storageId: ChatViewContainerId,
 	hideIfEmpty: true,
 	order: 1,
+	showInAgentSessions: true
 }, ViewContainerLocation.AuxiliaryBar, { isDefault: true, doNotRegisterOpenCommand: true });
 
 const chatViewDescriptor: IViewDescriptor = {
@@ -75,7 +76,8 @@ const chatViewDescriptor: IViewDescriptor = {
 		)?.negate(),
 		ChatContextKeys.panelParticipantRegistered,
 		ChatContextKeys.extensionInvalid
-	)
+	),
+	showInAgentSessions: true
 };
 Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry).registerViews([chatViewDescriptor], chatViewContainer);
 

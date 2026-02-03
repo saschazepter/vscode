@@ -39,7 +39,8 @@ export namespace Extensions {
 export const enum ViewContainerLocation {
 	Sidebar,
 	Panel,
-	AuxiliaryBar
+	AuxiliaryBar,
+
 }
 
 export const ViewContainerLocations = [ViewContainerLocation.Sidebar, ViewContainerLocation.Panel, ViewContainerLocation.AuxiliaryBar];
@@ -120,6 +121,12 @@ export interface IViewContainerDescriptor {
 	readonly viewOrderDelegate?: ViewOrderDelegate;
 
 	readonly rejectAddedViews?: boolean;
+
+	/**
+	 * If true, this view container will be shown in agent sessions workspace.
+	 * Defaults to false.
+	 */
+	readonly showInAgentSessions?: boolean;
 
 	requestedIndex?: number;
 }
@@ -301,6 +308,12 @@ export interface IViewDescriptor {
 	readonly openCommandActionDescriptor?: OpenCommandActionDescriptor;
 
 	readonly accessibilityHelpContent?: MarkdownString;
+
+	/**
+	 * If true, this view will be shown in agent sessions workspace.
+	 * Defaults to false.
+	 */
+	readonly showInAgentSessions?: boolean;
 }
 
 export interface ICustomViewDescriptor extends IViewDescriptor {

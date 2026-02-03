@@ -43,9 +43,7 @@ export class WorkbenchModeService extends Disposable implements IWorkbenchModeSe
 		@IStorageService private readonly storageService: IStorageService
 	) {
 		super();
-		this._workbenchMode = this.workspaceContextService.getWorkspace().isAgentSessionsWorkspace
-			? 'agent-sessions'
-			: this.storageService.get(WorkbenchModeService.WORKBENCH_MODE_STORAGE_KEY, StorageScope.WORKSPACE);
+		this._workbenchMode = undefined;
 		this.watchCurrentModeFile();
 	}
 

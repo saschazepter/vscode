@@ -111,6 +111,7 @@ const VIEW_CONTAINER = Registry.as<IViewContainersRegistry>(ViewContainerExtensi
 	storageId: TERMINAL_VIEW_ID,
 	hideIfEmpty: true,
 	order: 3,
+	showInAgentSessions: true
 }, ViewContainerLocation.Panel, { doNotRegisterOpenCommand: true, isDefault: true });
 Registry.as<IViewsRegistry>(ViewContainerExtensions.ViewsRegistry).registerViews([{
 	id: TERMINAL_VIEW_ID,
@@ -119,6 +120,7 @@ Registry.as<IViewsRegistry>(ViewContainerExtensions.ViewsRegistry).registerViews
 	canToggleVisibility: true,
 	canMoveView: true,
 	ctorDescriptor: new SyncDescriptor(TerminalViewPane),
+	showInAgentSessions: true,
 	openCommandActionDescriptor: {
 		id: TerminalCommandId.Toggle,
 		mnemonicTitle: nls.localize({ key: 'miToggleIntegratedTerminal', comment: ['&& denotes a mnemonic'] }, "&&Terminal"),

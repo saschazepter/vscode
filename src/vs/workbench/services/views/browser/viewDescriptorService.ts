@@ -24,6 +24,7 @@ import { ILogger, ILoggerService } from '../../../../platform/log/common/log.js'
 import { Lazy } from '../../../../base/common/lazy.js';
 import { IViewsService } from '../common/viewsService.js';
 import { windowLogGroup } from '../../log/common/logConstants.js';
+import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
 
 interface IViewsCustomizations {
 	viewContainerLocations: IStringDictionary<ViewContainerLocation>;
@@ -69,6 +70,7 @@ export class ViewDescriptorService extends Disposable implements IViewDescriptor
 	get viewContainers(): ReadonlyArray<ViewContainer> { return this.viewContainersRegistry.all; }
 
 	private readonly logger: Lazy<ILogger>;
+	private readonly isAgentSessionsWorkspace: boolean;
 
 	constructor(
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
@@ -77,10 +79,12 @@ export class ViewDescriptorService extends Disposable implements IViewDescriptor
 		@IExtensionService private readonly extensionService: IExtensionService,
 		@ITelemetryService private readonly telemetryService: ITelemetryService,
 		@ILoggerService loggerService: ILoggerService,
+		@IWorkspaceContextService workspaceContextService: IWorkspaceContextService,
 	) {
 		super();
 
 		this.logger = new Lazy(() => loggerService.createLogger(VIEWS_LOG_ID, { name: VIEWS_LOG_NAME, group: windowLogGroup }));
+		this.isAgentSessionsWorkspace = !!workspaceContextService.getWorkspace().isAgentSessionsWorkspace;
 
 		this.activeViewContextKeys = new Map<string, IContextKey<boolean>>();
 		this.movableViewContextKeys = new Map<string, IContextKey<boolean>>();
@@ -263,7 +267,11 @@ export class ViewDescriptorService extends Disposable implements IViewDescriptor
 	}
 
 	getViewDescriptorById(viewId: string): IViewDescriptor | null {
-		return this.viewsRegistry.getView(viewId);
+		const view = this.viewsRegistry.getView(viewId);
+		if (view && !this.isViewVisible(view)) {
+			return null;
+		}
+		return view;
 	}
 
 	getViewLocationById(viewId: string): ViewContainerLocation | null {
@@ -276,6 +284,12 @@ export class ViewDescriptorService extends Disposable implements IViewDescriptor
 	}
 
 	getViewContainerByViewId(viewId: string): ViewContainer | null {
+		// Check if the view itself should be visible in current workspace
+		const view = this.viewsRegistry.getView(viewId);
+		if (view && !this.isViewVisible(view)) {
+			return null;
+		}
+
 		const containerId = this.viewDescriptorsCustomLocations.get(viewId);
 
 		return containerId ?
@@ -300,11 +314,29 @@ export class ViewDescriptorService extends Disposable implements IViewDescriptor
 	}
 
 	getViewContainerById(id: string): ViewContainer | null {
-		return this.viewContainersRegistry.get(id) || null;
+		const viewContainer = this.viewContainersRegistry.get(id) || null;
+		if (viewContainer && !this.isViewContainerVisible(viewContainer)) {
+			return null;
+		}
+		return viewContainer;
 	}
 
 	getViewContainersByLocation(location: ViewContainerLocation): ViewContainer[] {
-		return this.viewContainers.filter(v => this.getViewContainerLocation(v) === location);
+		return this.viewContainers.filter(v => this.getViewContainerLocation(v) === location && this.isViewContainerVisible(v));
+	}
+
+	private isViewContainerVisible(viewContainer: ViewContainer): boolean {
+		if (this.isAgentSessionsWorkspace) {
+			return viewContainer.showInAgentSessions === true;
+		}
+		return true;
+	}
+
+	private isViewVisible(view: IViewDescriptor): boolean {
+		if (this.isAgentSessionsWorkspace) {
+			return view.showInAgentSessions === true;
+		}
+		return true;
 	}
 
 	getDefaultViewContainer(location: ViewContainerLocation): ViewContainer | undefined {

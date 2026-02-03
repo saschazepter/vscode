@@ -1,0 +1,47 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+.agent-sessions-view {
+	height: 100%;
+}
+
+.agent-sessions-add-folder {
+	display: flex;
+	align-items: center;
+	padding: 4px 8px;
+	cursor: pointer;
+}
+
+.agent-sessions-add-folder .icon {
+	margin-right: 6px;
+}
+
+.agent-sessions-add-folder .label {
+	flex: 1;
+}
+
+.agent-sessions-folder {
+	display: flex;
+	align-items: center;
+}
+
+.agent-sessions-folder .icon {
+	margin-right: 6px;
+}
+
+.agent-sessions-no-sessions {
+	padding-left: 22px;
+	opacity: 0.7;
+	font-style: italic;
+}
+
+.agent-sessions-session {
+	display: flex;
+	align-items: center;
+}
+
+.agent-sessions-session .icon {
+	margin-right: 6px;
+}
