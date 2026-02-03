@@ -27,7 +27,7 @@ import { askForPromptFileName } from './pickers/askForPromptName.js';
 import { askForPromptSourceFolder } from './pickers/askForPromptSourceFolder.js';
 import { IQuickInputService } from '../../../../../platform/quickinput/common/quickInput.js';
 import { getCleanPromptName, SKILL_FILENAME, HOOKS_FILENAME } from '../../common/promptSyntax/config/promptFileLocations.js';
-import { HOOK_TYPES, HookTypeId } from '../../common/promptSyntax/hookSchema.js';
+import { HOOK_TYPES, HookType } from '../../common/promptSyntax/hookSchema.js';
 import { findHookCommandSelection } from './hookUtils.js';
 
 
@@ -371,7 +371,7 @@ class NewHookFileAction extends Action2 {
 		}
 
 		// Add the new hook entry (append if hook type already exists)
-		const hookTypeId = selectedHookType.id as HookTypeId;
+		const hookTypeId = selectedHookType.id as HookType;
 		const newHookEntry = {
 			type: 'command',
 			command: ''

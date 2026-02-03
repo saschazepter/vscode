@@ -39,7 +39,7 @@ export const SKILL_FILENAME = 'SKILL.md';
 export const HOOK_FILE_EXTENSION = '.json';
 
 /**
- * Default hook file name.
+ * Default hook file name (case insensitive).
  */
 export const HOOKS_FILENAME = 'hooks.json';
 
@@ -171,14 +171,6 @@ function isInAgentsFolder(fileUri: URI): boolean {
 }
 
 /**
- * Helper function to check if a file is in the .github/hooks/ folder.
- */
-function isInHooksFolder(fileUri: URI): boolean {
-	const dir = dirname(fileUri.path);
-	return dir.endsWith('/' + HOOKS_SOURCE_FOLDER) || dir === HOOKS_SOURCE_FOLDER;
-}
-
-/**
  * Gets the prompt file type from the provided path.
  */
 export function getPromptFileType(fileUri: URI): PromptsType | undefined {
@@ -206,8 +198,8 @@ export function getPromptFileType(fileUri: URI): PromptsType | undefined {
 		return PromptsType.agent;
 	}
 
-	// Check if it's a .json file in the .github/hooks/ folder
-	if (filename.endsWith(HOOK_FILE_EXTENSION) && isInHooksFolder(fileUri)) {
+	// Check if it's a hooks.json file (case insensitive)
+	if (filename.toLowerCase() === HOOKS_FILENAME.toLowerCase()) {
 		return PromptsType.hook;
 	}
 
@@ -232,7 +224,7 @@ export function getPromptFileExtension(type: PromptsType): string {
 		case PromptsType.skill:
 			return SKILL_FILENAME;
 		case PromptsType.hook:
-			return HOOK_FILE_EXTENSION;
+			return HOOKS_FILENAME;
 		default:
 			throw new Error('Unknown prompt type');
 	}

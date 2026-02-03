@@ -7,42 +7,64 @@ import { IJSONSchema } from '../../../../../base/common/jsonSchema.js';
 import * as nls from '../../../../../nls.js';
 
 /**
- * Available hook types that can be configured in hooks.json
+ * Enum of available hook types that can be configured in hooks.json
+ */
+export const enum HookType {
+	SessionStart = 'sessionStart',
+	UserPromptSubmitted = 'userPromptSubmitted',
+	PreToolUse = 'preToolUse',
+	PostToolUse = 'postToolUse',
+	PostToolUseFailure = 'postToolUseFailure',
+	SubagentStart = 'subagentStart',
+	SubagentStop = 'subagentStop',
+	Stop = 'stop',
+}
+
+/**
+ * Metadata for hook types including localized labels and descriptions
  */
 export const HOOK_TYPES = [
 	{
-		id: 'sessionStart',
+		id: HookType.SessionStart,
 		label: nls.localize('hookType.sessionStart.label', "Session Start"),
 		description: nls.localize('hookType.sessionStart.description', "Executed when a new agent session begins or when resuming an existing session.")
 	},
 	{
-		id: 'sessionEnd',
-		label: nls.localize('hookType.sessionEnd.label', "Session End"),
-		description: nls.localize('hookType.sessionEnd.description', "Executed when the agent session completes or is terminated.")
-	},
-	{
-		id: 'userPromptSubmitted',
+		id: HookType.UserPromptSubmitted,
 		label: nls.localize('hookType.userPromptSubmitted.label', "User Prompt Submitted"),
 		description: nls.localize('hookType.userPromptSubmitted.description', "Executed when the user submits a prompt to the agent.")
 	},
 	{
-		id: 'preToolUse',
+		id: HookType.PreToolUse,
 		label: nls.localize('hookType.preToolUse.label', "Pre-Tool Use"),
 		description: nls.localize('hookType.preToolUse.description', "Executed before the agent uses any tool (such as bash, edit, view).")
 	},
 	{
-		id: 'postToolUse',
+		id: HookType.PostToolUse,
 		label: nls.localize('hookType.postToolUse.label', "Post-Tool Use"),
-		description: nls.localize('hookType.postToolUse.description', "Executed after a tool completes execution (whether successful or failed).")
+		description: nls.localize('hookType.postToolUse.description', "Executed after a tool completes execution successfully.")
 	},
 	{
-		id: 'errorOccurred',
-		label: nls.localize('hookType.errorOccurred.label', "Error Occurred"),
-		description: nls.localize('hookType.errorOccurred.description', "Executed when an error occurs during agent execution.")
+		id: HookType.PostToolUseFailure,
+		label: nls.localize('hookType.postToolUseFailure.label', "Post-Tool Use Failure"),
+		description: nls.localize('hookType.postToolUseFailure.description', "Executed after a tool completes execution with a failure.")
+	},
+	{
+		id: HookType.SubagentStart,
+		label: nls.localize('hookType.subagentStart.label', "Subagent Start"),
+		description: nls.localize('hookType.subagentStart.description', "Executed when a subagent is started.")
+	},
+	{
+		id: HookType.SubagentStop,
+		label: nls.localize('hookType.subagentStop.label', "Subagent Stop"),
+		description: nls.localize('hookType.subagentStop.description', "Executed when a subagent stops.")
+	},
+	{
+		id: HookType.Stop,
+		label: nls.localize('hookType.stop.label', "Stop"),
+		description: nls.localize('hookType.stop.description', "Executed when the agent stops.")
 	}
 ] as const;
-
-export type HookTypeId = typeof HOOK_TYPES[number]['id'];
 
 /**
  * A single hook command configuration.
@@ -60,20 +82,20 @@ export interface IHookCommand {
  * This is passed to the extension host so it knows what hooks are available.
  */
 export interface IChatRequestHooks {
-	readonly sessionStart?: readonly IHookCommand[];
-	readonly sessionEnd?: readonly IHookCommand[];
-	readonly userPromptSubmitted?: readonly IHookCommand[];
-	readonly preToolUse?: readonly IHookCommand[];
-	readonly postToolUse?: readonly IHookCommand[];
-	readonly errorOccurred?: readonly IHookCommand[];
+	readonly [HookType.SessionStart]?: readonly IHookCommand[];
+	readonly [HookType.UserPromptSubmitted]?: readonly IHookCommand[];
+	readonly [HookType.PreToolUse]?: readonly IHookCommand[];
+	readonly [HookType.PostToolUse]?: readonly IHookCommand[];
+	readonly [HookType.PostToolUseFailure]?: readonly IHookCommand[];
+	readonly [HookType.SubagentStart]?: readonly IHookCommand[];
+	readonly [HookType.SubagentStop]?: readonly IHookCommand[];
+	readonly [HookType.Stop]?: readonly IHookCommand[];
 }
 
 /**
  * JSON Schema for GitHub Copilot hook configuration files.
  * Hooks enable executing custom shell commands at strategic points in an agent's workflow.
- * @see https://docs.github.com/en/copilot/concepts/agents/coding-agent/about-hooks
  */
-
 const hookCommandSchema: IJSONSchema = {
 	type: 'object',
 	additionalProperties: false,
@@ -145,10 +167,6 @@ export const hookFileSchema: IJSONSchema = {
 					...hookArraySchema,
 					description: nls.localize('hookFile.sessionStart', 'Executed when a new agent session begins or when resuming an existing session. Use to initialize environments, log session starts, validate project state, or set up temporary resources.')
 				},
-				sessionEnd: {
-					...hookArraySchema,
-					description: nls.localize('hookFile.sessionEnd', 'Executed when the agent session completes or is terminated. Use to cleanup temporary resources, generate reports and logs, or send notifications.')
-				},
 				userPromptSubmitted: {
 					...hookArraySchema,
 					description: nls.localize('hookFile.userPromptSubmitted', 'Executed when the user submits a prompt to the agent. Use to log user requests for auditing and usage analysis.')
@@ -159,11 +177,23 @@ export const hookFileSchema: IJSONSchema = {
 				},
 				postToolUse: {
 					...hookArraySchema,
-					description: nls.localize('hookFile.postToolUse', 'Executed after a tool completes execution (whether successful or failed). Use to log execution results, track usage statistics, generate audit trails, monitor performance, or send failure alerts.')
+					description: nls.localize('hookFile.postToolUse', 'Executed after a tool completes execution successfully. Use to log execution results, track usage statistics, generate audit trails, or monitor performance.')
 				},
-				errorOccurred: {
+				postToolUseFailure: {
 					...hookArraySchema,
-					description: nls.localize('hookFile.errorOccurred', 'Executed when an error occurs during agent execution. Use to log errors for debugging, send notifications, track error patterns, or generate reports.')
+					description: nls.localize('hookFile.postToolUseFailure', 'Executed after a tool completes execution with a failure. Use to log errors, send failure alerts, or trigger recovery actions.')
+				},
+				subagentStart: {
+					...hookArraySchema,
+					description: nls.localize('hookFile.subagentStart', 'Executed when a subagent is started. Use to log subagent spawning, track nested agent usage, or initialize subagent-specific resources.')
+				},
+				subagentStop: {
+					...hookArraySchema,
+					description: nls.localize('hookFile.subagentStop', 'Executed when a subagent stops. Use to log subagent completion, cleanup subagent resources, or aggregate subagent results.')
+				},
+				stop: {
+					...hookArraySchema,
+					description: nls.localize('hookFile.stop', 'Executed when the agent session stops. Use to cleanup resources, generate final reports, or send completion notifications.')
 				}
 			}
 		}
@@ -202,4 +232,98 @@ export const HOOK_SCHEMA_URI = 'vscode://schemas/hooks';
 /**
  * Glob pattern for hook files.
  */
-export const HOOK_FILE_GLOB = '**/.github/hooks/*.json';
+export const HOOK_FILE_GLOB = 'hooks/hooks.json';
+
+/**
+ * Normalizes a raw hook type identifier to the canonical HookType enum value.
+ * Supports alternative casing and naming conventions from different tools:
+ * - Claude Code: PreToolUse, PostToolUse, SessionStart, Stop, SubagentStart, SubagentStop, UserPromptSubmit
+ * - Cursor: beforePromptSubmit
+ * - GitHub Copilot: sessionStart, userPromptSubmitted, preToolUse, postToolUse, etc.
+ *
+ * @see https://code.claude.com/docs/en/hooks#hook-lifecycle
+ * @see https://cursor.com/docs/agent/hooks#agent-and-tab-support
+ * @see https://docs.github.com/en/copilot/concepts/agents/coding-agent/about-hooks#types-of-hooks
+ */
+export function normalizeHookTypeId(rawHookTypeId: string): HookType | undefined {
+	// Handle alternative names that need mapping
+	switch (rawHookTypeId) {
+		// Canonical GitHub Copilot names
+		case HookType.SessionStart:
+		// Claude Code: SessionStart
+		case 'SessionStart':
+			return HookType.SessionStart;
+		// Canonical GitHub Copilot name
+		case HookType.UserPromptSubmitted:
+		// Claude Code: UserPromptSubmit; Cursor: beforePromptSubmit
+		case 'UserPromptSubmit':
+		case 'beforePromptSubmit':
+			return HookType.UserPromptSubmitted;
+		// Canonical GitHub Copilot name
+		case HookType.PreToolUse:
+		// Claude Code: PreToolUse
+		case 'PreToolUse':
+			return HookType.PreToolUse;
+		// Canonical GitHub Copilot name
+		case HookType.PostToolUse:
+		// Claude Code: PostToolUse
+		case 'PostToolUse':
+			return HookType.PostToolUse;
+		// Canonical GitHub Copilot name
+		case HookType.PostToolUseFailure:
+		// Claude Code: PostToolUseFailure
+		case 'PostToolUseFailure':
+			return HookType.PostToolUseFailure;
+		// Canonical GitHub Copilot name
+		case HookType.SubagentStart:
+		// Claude Code: SubagentStart
+		case 'SubagentStart':
+			return HookType.SubagentStart;
+		// Canonical GitHub Copilot name
+		case HookType.SubagentStop:
+		// Claude Code: SubagentStop
+		case 'SubagentStop':
+			return HookType.SubagentStop;
+		// Canonical GitHub Copilot name
+		case HookType.Stop:
+		// Claude Code: Stop
+		case 'Stop':
+			return HookType.Stop;
+		default:
+			return undefined;
+	}
+}
+
+/**
+ * Normalizes a raw hook command object to the canonical IHookCommand format.
+ * Supports 'bash' and 'powershell' shorthand properties in addition to 'command'.
+ */
+export function normalizeHookCommand(raw: Record<string, unknown>): IHookCommand | undefined {
+	if (raw.type !== 'command') {
+		return undefined;
+	}
+
+	let command: string | undefined;
+
+	if (typeof raw.command === 'string' && raw.command.length > 0) {
+		command = raw.command;
+	} else if (typeof raw.bash === 'string' && raw.bash.length > 0) {
+		// Convert bash to command by prefixing with 'bash -c'
+		command = `bash -c ${JSON.stringify(raw.bash)}`;
+	} else if (typeof raw.powershell === 'string' && raw.powershell.length > 0) {
+		// Convert powershell to command by prefixing with 'powershell -Command'
+		command = `powershell -Command ${JSON.stringify(raw.powershell)}`;
+	}
+
+	if (!command) {
+		return undefined;
+	}
+
+	return {
+		type: 'command',
+		command,
+		...(typeof raw.cwd === 'string' && { cwd: raw.cwd }),
+		...(typeof raw.env === 'object' && raw.env !== null && { env: raw.env as Record<string, string> }),
+		...(typeof raw.timeoutSec === 'number' && { timeoutSec: raw.timeoutSec }),
+	};
+}

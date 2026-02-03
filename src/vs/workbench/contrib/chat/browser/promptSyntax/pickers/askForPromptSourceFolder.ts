@@ -132,7 +132,7 @@ function getPlaceholderStringforMove(type: PromptsType, isMove: boolean): string
 			case PromptsType.skill:
 				return localize('skill.move.location.placeholder', "Select a location to move the skill to");
 			case PromptsType.hook:
-				return localize('hook.move.location.placeholder', "Select a location to move the hook file to");
+				throw new Error('Hooks cannot be moved');
 			default:
 				throw new Error('Unknown prompt type');
 		}
@@ -147,7 +147,7 @@ function getPlaceholderStringforMove(type: PromptsType, isMove: boolean): string
 		case PromptsType.skill:
 			return localize('skill.copy.location.placeholder', "Select a location to copy the skill to");
 		case PromptsType.hook:
-			return localize('hook.copy.location.placeholder', "Select a location to copy the hook file to");
+			throw new Error('Hooks cannot be copied');
 		default:
 			throw new Error('Unknown prompt type');
 	}

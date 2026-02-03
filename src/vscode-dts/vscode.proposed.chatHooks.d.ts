@@ -22,11 +22,13 @@ declare module 'vscode' {
 	 */
 	export interface ChatRequestHooks {
 		readonly sessionStart?: readonly ChatHookCommand[];
-		readonly sessionEnd?: readonly ChatHookCommand[];
 		readonly userPromptSubmitted?: readonly ChatHookCommand[];
 		readonly preToolUse?: readonly ChatHookCommand[];
 		readonly postToolUse?: readonly ChatHookCommand[];
-		readonly errorOccurred?: readonly ChatHookCommand[];
+		readonly postToolUseFailure?: readonly ChatHookCommand[];
+		readonly subagentStart?: readonly ChatHookCommand[];
+		readonly subagentStop?: readonly ChatHookCommand[];
+		readonly stop?: readonly ChatHookCommand[];
 	}
 
 	export interface ChatRequest {

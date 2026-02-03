@@ -34,7 +34,7 @@ import { PromptFileParser, ParsedPromptFile, PromptHeaderAttributes } from '../p
 import { IAgentInstructions, IAgentSource, IChatPromptSlashCommand, ICustomAgent, IExtensionPromptPath, ILocalPromptPath, IPromptPath, IPromptsService, IAgentSkill, IUserPromptPath, PromptsStorage, ExtensionAgentSourceType, CUSTOM_AGENT_PROVIDER_ACTIVATION_EVENT, INSTRUCTIONS_PROVIDER_ACTIVATION_EVENT, IPromptFileContext, IPromptFileResource, PROMPT_FILE_PROVIDER_ACTIVATION_EVENT, SKILL_PROVIDER_ACTIVATION_EVENT, IPromptDiscoveryInfo, IPromptFileDiscoveryResult, ICustomAgentVisibility } from './promptsService.js';
 import { Delayer } from '../../../../../../base/common/async.js';
 import { Schemas } from '../../../../../../base/common/network.js';
-import { HookTypeId, IChatRequestHooks, IHookCommand } from '../hookSchema.js';
+import { normalizeHookTypeId, normalizeHookCommand, IChatRequestHooks, IHookCommand } from '../hookSchema.js';
 
 /**
  * Error thrown when a skill file is missing the required name attribute.
@@ -879,18 +879,22 @@ export class PromptsService extends Disposable implements IPromptsService {
 
 		const collectedHooks: {
 			sessionStart: IHookCommand[];
-			sessionEnd: IHookCommand[];
 			userPromptSubmitted: IHookCommand[];
 			preToolUse: IHookCommand[];
 			postToolUse: IHookCommand[];
-			errorOccurred: IHookCommand[];
+			postToolUseFailure: IHookCommand[];
+			subagentStart: IHookCommand[];
+			subagentStop: IHookCommand[];
+			stop: IHookCommand[];
 		} = {
 			sessionStart: [],
-			sessionEnd: [],
 			userPromptSubmitted: [],
 			preToolUse: [],
 			postToolUse: [],
-			errorOccurred: [],
+			postToolUseFailure: [],
+			subagentStart: [],
+			subagentStop: [],
+			stop: [],
 		};
 
 		for (const hookFile of hookFiles) {
@@ -910,14 +914,20 @@ export class PromptsService extends Disposable implements IPromptsService {
 				}
 
 				// Collect hooks by type
-				for (const hookTypeId of Object.keys(hooks) as HookTypeId[]) {
-					const hookArray = hooks[hookTypeId];
+				for (const rawHookTypeId of Object.keys(hooks)) {
+					const hookTypeId = normalizeHookTypeId(rawHookTypeId);
+					if (!hookTypeId) {
+						this.logger.warn(`[PromptsService] Unknown hook type: ${rawHookTypeId} in ${hookFile.uri}`);
+						continue;
+					}
+
+					const hookArray = hooks[rawHookTypeId];
 					if (!Array.isArray(hookArray)) {
 						continue;
 					}
 
 					for (const rawHookCommand of hookArray) {
-						const normalized = this.normalizeHookCommand(rawHookCommand as Record<string, unknown>);
+						const normalized = normalizeHookCommand(rawHookCommand as Record<string, unknown>);
 						if (normalized) {
 							collectedHooks[hookTypeId].push(normalized);
 							this.logger.trace(`[PromptsService] Collected ${hookTypeId} hook from ${hookFile.uri}`);
@@ -939,45 +949,17 @@ export class PromptsService extends Disposable implements IPromptsService {
 		// Build the result, only including hook types that have entries
 		const result: IChatRequestHooks = {
 			...(collectedHooks.sessionStart.length > 0 && { sessionStart: collectedHooks.sessionStart }),
-			...(collectedHooks.sessionEnd.length > 0 && { sessionEnd: collectedHooks.sessionEnd }),
 			...(collectedHooks.userPromptSubmitted.length > 0 && { userPromptSubmitted: collectedHooks.userPromptSubmitted }),
 			...(collectedHooks.preToolUse.length > 0 && { preToolUse: collectedHooks.preToolUse }),
 			...(collectedHooks.postToolUse.length > 0 && { postToolUse: collectedHooks.postToolUse }),
-			...(collectedHooks.errorOccurred.length > 0 && { errorOccurred: collectedHooks.errorOccurred }),
+			...(collectedHooks.postToolUseFailure.length > 0 && { postToolUseFailure: collectedHooks.postToolUseFailure }),
+			...(collectedHooks.subagentStart.length > 0 && { subagentStart: collectedHooks.subagentStart }),
+			...(collectedHooks.subagentStop.length > 0 && { subagentStop: collectedHooks.subagentStop }),
+			...(collectedHooks.stop.length > 0 && { stop: collectedHooks.stop }),
 		};
 
 		this.logger.trace(`[PromptsService] Collected hooks: ${JSON.stringify(Object.keys(result))}`);
 		return result;
-	}
-
-	private normalizeHookCommand(raw: Record<string, unknown>): IHookCommand | undefined {
-		if (raw.type !== 'command') {
-			return undefined;
-		}
-
-		let command: string | undefined;
-
-		if (typeof raw.command === 'string' && raw.command.length > 0) {
-			command = raw.command;
-		} else if (typeof raw.bash === 'string' && raw.bash.length > 0) {
-			// Convert bash to command by prefixing with 'bash -c'
-			command = `bash -c ${JSON.stringify(raw.bash)}`;
-		} else if (typeof raw.powershell === 'string' && raw.powershell.length > 0) {
-			// Convert powershell to command by prefixing with 'powershell -Command'
-			command = `powershell -Command ${JSON.stringify(raw.powershell)}`;
-		}
-
-		if (!command) {
-			return undefined;
-		}
-
-		return {
-			type: 'command',
-			command,
-			...(typeof raw.cwd === 'string' && { cwd: raw.cwd }),
-			...(typeof raw.env === 'object' && raw.env !== null && { env: raw.env as Record<string, string> }),
-			...(typeof raw.timeoutSec === 'number' && { timeoutSec: raw.timeoutSec }),
-		};
 	}
 
 	public async getPromptDiscoveryInfo(type: PromptsType, token: CancellationToken): Promise<IPromptDiscoveryInfo> {

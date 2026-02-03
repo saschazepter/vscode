@@ -3480,11 +3480,13 @@ export namespace ChatRequestHooks {
 		}
 		return {
 			sessionStart: hooks.sessionStart,
-			sessionEnd: hooks.sessionEnd,
 			userPromptSubmitted: hooks.userPromptSubmitted,
 			preToolUse: hooks.preToolUse,
 			postToolUse: hooks.postToolUse,
-			errorOccurred: hooks.errorOccurred,
+			postToolUseFailure: hooks.postToolUseFailure,
+			subagentStart: hooks.subagentStart,
+			subagentStop: hooks.subagentStop,
+			stop: hooks.stop,
 		};
 	}
 }
