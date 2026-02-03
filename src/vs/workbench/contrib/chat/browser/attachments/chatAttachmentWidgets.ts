@@ -42,6 +42,8 @@ import { ITextEditorOptions } from '../../../../../platform/editor/common/editor
 import { FileKind, IFileService } from '../../../../../platform/files/common/files.js';
 import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
 import { IInstantiationService, ServicesAccessor } from '../../../../../platform/instantiation/common/instantiation.js';
+import { IDefaultAccountService } from '../../../../../platform/defaultAccount/common/defaultAccount.js';
+import { IPolicyData } from '../../../../../base/common/defaultAccount.js';
 import { ILabelService } from '../../../../../platform/label/common/label.js';
 import { IMarkdownRendererService } from '../../../../../platform/markdown/browser/markdownRenderer.js';
 import { IOpenerService, OpenInternalOptions } from '../../../../../platform/opener/common/opener.js';
@@ -193,6 +195,10 @@ abstract class AbstractChatAttachmentWidget extends Disposable {
 
 function modelSupportsVision(currentLanguageModel: ILanguageModelChatMetadataAndIdentifier | undefined) {
 	return currentLanguageModel?.metadata.capabilities?.vision ?? false;
+}
+
+function isVisionDisabledByPolicy(policyData: IPolicyData | null | undefined): boolean {
+	return policyData?.chat_preview_features_enabled === false;
 }
 
 export class FileAttachmentWidget extends AbstractChatAttachmentWidget {
@@ -388,6 +394,7 @@ export class ImageAttachmentWidget extends AbstractChatAttachmentWidget {
 		@ILanguageModelsService private readonly languageModelsService: ILanguageModelsService,
 		@IInstantiationService instantiationService: IInstantiationService,
 		@ILabelService private readonly labelService: ILabelService,
+		@IDefaultAccountService private readonly defaultAccountService: IDefaultAccountService,
 	) {
 		super(attachment, options, container, contextResourceLabels, currentLanguageModel, commandService, openerService, configurationService);
 
@@ -411,7 +418,8 @@ export class ImageAttachmentWidget extends AbstractChatAttachmentWidget {
 		const currentLanguageModelName = this.currentLanguageModel ? this.languageModelsService.lookupLanguageModel(this.currentLanguageModel.identifier)?.name ?? this.currentLanguageModel.identifier : 'Current model';
 
 		const fullName = resource ? this.labelService.getUriLabel(resource) : (attachment.fullName || attachment.name);
-		this._register(createImageElements(resource, attachment.name, fullName, this.element, attachment.value as Uint8Array, this.hoverService, ariaLabel, currentLanguageModelName, clickHandler, this.currentLanguageModel, attachment.omittedState));
+		const visionDisabledByPolicy = isVisionDisabledByPolicy(this.defaultAccountService.policyData);
+		this._register(createImageElements(resource, attachment.name, fullName, this.element, attachment.value as Uint8Array, this.hoverService, ariaLabel, currentLanguageModelName, clickHandler, this.currentLanguageModel, attachment.omittedState, visionDisabledByPolicy));
 
 		if (resource) {
 			this.addResourceOpenHandlers(resource, undefined);
@@ -429,7 +437,8 @@ function createImageElements(resource: URI | undefined, name: string, fullName: 
 	currentLanguageModelName: string | undefined,
 	clickHandler: () => void,
 	currentLanguageModel?: ILanguageModelChatMetadataAndIdentifier,
-	omittedState?: OmittedState): IDisposable {
+	omittedState?: OmittedState,
+	visionDisabledByPolicy?: boolean): IDisposable {
 
 	const disposable = new DisposableStore();
 	if (omittedState === OmittedState.Partial) {
@@ -444,7 +453,8 @@ function createImageElements(resource: URI | undefined, name: string, fullName: 
 		disposable.add(dom.addDisposableListener(element, 'click', clickHandler));
 	}
 	const supportsVision = modelSupportsVision(currentLanguageModel);
-	const pillIcon = dom.$('div.chat-attached-context-pill', {}, dom.$(supportsVision ? 'span.codicon.codicon-file-media' : 'span.codicon.codicon-warning'));
+	const showWarning = visionDisabledByPolicy || (!supportsVision && currentLanguageModel) || omittedState === OmittedState.Full;
+	const pillIcon = dom.$('div.chat-attached-context-pill', {}, dom.$(showWarning ? 'span.codicon.codicon-warning' : 'span.codicon.codicon-file-media'));
 	const textLabel = dom.$('span.chat-attached-context-custom-text', {}, name);
 	element.appendChild(pillIcon);
 	element.appendChild(textLabel);
@@ -452,7 +462,14 @@ function createImageElements(resource: URI | undefined, name: string, fullName: 
 	const hoverElement = dom.$('div.chat-attached-context-hover');
 	hoverElement.setAttribute('aria-label', ariaLabel);
 
-	if ((!supportsVision && currentLanguageModel) || omittedState === OmittedState.Full) {
+	if (visionDisabledByPolicy) {
+		element.classList.add('warning');
+		hoverElement.textContent = localize('chat.visionDisabledByOrganization', "Vision is disabled by your organization");
+		disposable.add(hoverService.setupDelayedHover(element, {
+			content: hoverElement,
+			style: HoverStyle.Pointer,
+		}));
+	} else if ((!supportsVision && currentLanguageModel) || omittedState === OmittedState.Full) {
 		element.classList.add('warning');
 		hoverElement.textContent = localize('chat.imageAttachmentHover', "{0} does not support images.", currentLanguageModelName ?? 'This model');
 		disposable.add(hoverService.setupDelayedHover(element, {
@@ -813,6 +830,7 @@ export class NotebookCellOutputChatAttachmentWidget extends AbstractChatAttachme
 		@ILanguageModelsService private readonly languageModelsService: ILanguageModelsService,
 		@INotebookService private readonly notebookService: INotebookService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
+		@IDefaultAccountService private readonly defaultAccountService: IDefaultAccountService,
 	) {
 		super(attachment, options, container, contextResourceLabels, currentLanguageModel, commandService, openerService, configurationService);
 
@@ -873,7 +891,8 @@ export class NotebookCellOutputChatAttachmentWidget extends AbstractChatAttachme
 		const clickHandler = async () => await this.openResource(resource, { editorOptions: { preserveFocus: true } }, false, undefined);
 		const currentLanguageModelName = this.currentLanguageModel ? this.languageModelsService.lookupLanguageModel(this.currentLanguageModel.identifier)?.name ?? this.currentLanguageModel.identifier : undefined;
 		const buffer = this.getOutputItem(resource, attachment)?.data.buffer ?? new Uint8Array();
-		this._register(createImageElements(resource, attachment.name, attachment.name, this.element, buffer, this.hoverService, ariaLabel, currentLanguageModelName, clickHandler, this.currentLanguageModel, attachment.omittedState));
+		const visionDisabledByPolicy = isVisionDisabledByPolicy(this.defaultAccountService.policyData);
+		this._register(createImageElements(resource, attachment.name, attachment.name, this.element, buffer, this.hoverService, ariaLabel, currentLanguageModelName, clickHandler, this.currentLanguageModel, attachment.omittedState, visionDisabledByPolicy));
 	}
 
 	private getOutputItem(resource: URI, attachment: INotebookOutputVariableEntry) {
