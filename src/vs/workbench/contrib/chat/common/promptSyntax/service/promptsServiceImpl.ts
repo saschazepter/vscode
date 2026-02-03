@@ -36,6 +36,7 @@ import { Delayer } from '../../../../../../base/common/async.js';
 import { Schemas } from '../../../../../../base/common/network.js';
 import { normalizeHookTypeId, resolveHookCommand, IChatRequestHooks, IHookCommand } from '../hookSchema.js';
 import { IWorkspaceContextService } from '../../../../../../platform/workspace/common/workspace.js';
+import { IPathService } from '../../../../../services/path/common/pathService.js';
 
 /**
  * Error thrown when a skill file is missing the required name attribute.
@@ -137,6 +138,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 		@IExtensionService private readonly extensionService: IExtensionService,
 		@ITelemetryService private readonly telemetryService: ITelemetryService,
 		@IWorkspaceContextService private readonly workspaceService: IWorkspaceContextService,
+		@IPathService private readonly pathService: IPathService,
 	) {
 		super();
 
@@ -879,6 +881,10 @@ export class PromptsService extends Disposable implements IPromptsService {
 
 		this.logger.trace(`[PromptsService] Found ${hookFiles.length} hook file(s).`);
 
+		// Get user home for tilde expansion
+		const userHomeUri = await this.pathService.userHome();
+		const userHome = userHomeUri.scheme === Schemas.file ? userHomeUri.fsPath : userHomeUri.path;
+
 		const collectedHooks: {
 			sessionStart: IHookCommand[];
 			userPromptSubmitted: IHookCommand[];
@@ -934,7 +940,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 					}
 
 					for (const rawHookCommand of hookArray) {
-						const resolved = resolveHookCommand(rawHookCommand as Record<string, unknown>, workspaceRootUri);
+						const resolved = resolveHookCommand(rawHookCommand as Record<string, unknown>, workspaceRootUri, userHome);
 						if (resolved) {
 							collectedHooks[hookTypeId].push(resolved);
 							this.logger.trace(`[PromptsService] Collected ${hookTypeId} hook from ${hookFile.uri}`);

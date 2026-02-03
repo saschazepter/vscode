@@ -8,6 +8,7 @@ import * as nls from '../../../../../nls.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { joinPath } from '../../../../../base/common/resources.js';
 import { isAbsolute } from '../../../../../base/common/path.js';
+import { untildify } from '../../../../../base/common/labels.js';
 
 /**
  * Enum of available hook types that can be configured in hooks.json
@@ -323,8 +324,9 @@ function normalizeHookCommand(raw: Record<string, unknown>): { command: string; 
  * Normalizes the command and resolves the cwd path relative to the workspace root.
  * @param raw The raw hook command object from JSON
  * @param workspaceRootUri The workspace root URI to resolve relative cwd paths against
+ * @param userHome The user's home directory path for tilde expansion
  */
-export function resolveHookCommand(raw: Record<string, unknown>, workspaceRootUri: URI | undefined): IHookCommand | undefined {
+export function resolveHookCommand(raw: Record<string, unknown>, workspaceRootUri: URI | undefined, userHome: string): IHookCommand | undefined {
 	const normalized = normalizeHookCommand(raw);
 	if (!normalized) {
 		return undefined;
@@ -332,12 +334,14 @@ export function resolveHookCommand(raw: Record<string, unknown>, workspaceRootUr
 
 	let cwdUri: URI | undefined;
 	if (normalized.cwd) {
-		if (isAbsolute(normalized.cwd)) {
+		// Expand tilde to user home directory
+		const expandedCwd = untildify(normalized.cwd, userHome);
+		if (isAbsolute(expandedCwd)) {
 			// Use absolute path directly
-			cwdUri = URI.file(normalized.cwd);
+			cwdUri = URI.file(expandedCwd);
 		} else if (workspaceRootUri) {
 			// Resolve relative to workspace root
-			cwdUri = joinPath(workspaceRootUri, normalized.cwd);
+			cwdUri = joinPath(workspaceRootUri, expandedCwd);
 		}
 	} else {
 		cwdUri = workspaceRootUri;
