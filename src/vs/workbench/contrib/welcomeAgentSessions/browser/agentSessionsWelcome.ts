@@ -566,16 +566,13 @@ export class AgentSessionsWelcomePage extends EditorPane {
 		// Hide the control initially until loading completes
 		this.sessionsControlContainer.style.display = 'none';
 
-		// Create a filter that syncs with the chat side panel filter via shared storage
-		const sessionsFilter = this.sessionsControlDisposables.add(this.instantiationService.createInstance(AgentSessionsFilter, {
-			limitResults: () => MAX_SESSIONS,
-		}));
-
 		const options: IAgentSessionsControlOptions = {
 			overrideStyles: getListStyles({
 				listBackground: editorBackground,
 			}),
-			filter: sessionsFilter,
+			filter: this.sessionsControlDisposables.add(this.instantiationService.createInstance(AgentSessionsFilter, {
+				limitResults: () => MAX_SESSIONS,
+			})),
 			getHoverPosition: () => HoverPosition.BELOW,
 			trackActiveEditorSession: () => false,
 			source: 'welcomeView',

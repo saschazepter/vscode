@@ -127,11 +127,12 @@ export class AgentSessionsPicker {
 	}
 
 	private createPickerItems(filter: AgentSessionsFilter): (ISessionPickItem | IQuickPickSeparator)[] {
-		const sessions = this.agentSessionsService.model.sessions.filter(session => !filter.exclude(session));
-		const sortedSessions = sessions.sort(this.sorter.compare.bind(this.sorter));
+		const sessions = this.agentSessionsService.model.sessions
+			.filter(session => !filter.exclude(session))
+			.sort(this.sorter.compare.bind(this.sorter));
 		const items: (ISessionPickItem | IQuickPickSeparator)[] = [];
 
-		const groupedSessions = groupAgentSessionsByDate(sortedSessions);
+		const groupedSessions = groupAgentSessionsByDate(sessions);
 		for (const group of groupedSessions.values()) {
 			if (group.sessions.length > 0) {
 				items.push({ type: 'separator', label: group.label });
