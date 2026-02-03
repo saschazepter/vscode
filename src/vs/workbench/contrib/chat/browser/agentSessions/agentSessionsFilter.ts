@@ -32,7 +32,7 @@ export interface IAgentSessionsFilterOptions extends Partial<IAgentSessionsViewe
 
 export class AgentSessionsFilter extends Disposable implements Required<IAgentSessionsViewerFilter> {
 
-	readonly onDidChange = this.agentSessionsService.onDidChangeFilter;
+	readonly onDidChange = this.agentSessionsViewerService.onDidChangeFilter;
 
 	readonly limitResults = () => this.options.limitResults?.();
 	readonly groupResults = () => this.options.groupResults?.();
@@ -42,7 +42,7 @@ export class AgentSessionsFilter extends Disposable implements Required<IAgentSe
 	constructor(
 		private readonly options: IAgentSessionsFilterOptions,
 		@IChatSessionsService private readonly chatSessionsService: IChatSessionsService,
-		@IAgentSessionsViewerService private readonly agentSessionsService: IAgentSessionsViewerService,
+		@IAgentSessionsViewerService private readonly agentSessionsViewerService: IAgentSessionsViewerService,
 	) {
 		super();
 
@@ -53,15 +53,15 @@ export class AgentSessionsFilter extends Disposable implements Required<IAgentSe
 	private registerListeners(): void {
 		this._register(this.chatSessionsService.onDidChangeItemsProviders(() => this.updateFilterActions()));
 		this._register(this.chatSessionsService.onDidChangeAvailability(() => this.updateFilterActions()));
-		this._register(this.agentSessionsService.onDidChangeFilter(() => this.updateFilterActions()));
+		this._register(this.agentSessionsViewerService.onDidChangeFilter(() => this.updateFilterActions()));
 	}
 
 	private get excludes(): IAgentSessionsFilter {
-		return this.agentSessionsService.getFilter();
+		return this.agentSessionsViewerService.getFilter();
 	}
 
 	private setExcludes(excludes: IAgentSessionsFilter): void {
-		this.agentSessionsService.setFilter(excludes);
+		this.agentSessionsViewerService.setFilter(excludes);
 	}
 
 	private updateFilterActions(): void {
@@ -209,13 +209,13 @@ export class AgentSessionsFilter extends Disposable implements Required<IAgentSe
 				});
 			}
 			run(): void {
-				that.agentSessionsService.resetFilter();
+				that.agentSessionsViewerService.resetFilter();
 			}
 		}));
 	}
 
 	isDefault(): boolean {
-		return this.agentSessionsService.isDefaultFilter();
+		return this.agentSessionsViewerService.isDefaultFilter();
 	}
 
 	getExcludes(): IAgentSessionsFilter {
@@ -229,7 +229,7 @@ export class AgentSessionsFilter extends Disposable implements Required<IAgentSe
 		}
 
 		// Use the service for core filtering logic (read, provider, status)
-		if (this.agentSessionsService.filter(session)) {
+		if (this.agentSessionsViewerService.filter(session)) {
 			return true;
 		}
 
