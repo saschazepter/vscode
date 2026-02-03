@@ -4,16 +4,18 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { spawn } from 'child_process';
-import { CancellationToken } from '../../../base/common/cancellation.js';
 import { homedir } from 'os';
-import { ChatHookResultKind, IChatHookExecutionOptions, IChatHookResult, IExtHostHooks } from '../common/extHostHooks.js';
-import { IExtensionDescription } from '../../../platform/extensions/common/extensions.js';
-import { isToolInvocationContext, IToolInvocationContext } from '../../contrib/chat/common/tools/languageModelToolsService.js';
-import { HookTypeValue, IHookCommand, IChatRequestHooks } from '../../contrib/chat/common/promptSyntax/hookSchema.js';
-import { ExtHostChatAgents2 } from '../common/extHostChatAgents2.js';
-import { DisposableStore, MutableDisposable } from '../../../base/common/lifecycle.js';
 import { disposableTimeout } from '../../../base/common/async.js';
+import { CancellationToken } from '../../../base/common/cancellation.js';
+import { DisposableStore, MutableDisposable } from '../../../base/common/lifecycle.js';
+import { URI, UriComponents } from '../../../base/common/uri.js';
 import { ILogService } from '../../../platform/log/common/log.js';
+import { HookTypeValue, IChatRequestHooks, IHookCommand } from '../../contrib/chat/common/promptSyntax/hookSchema.js';
+import { isToolInvocationContext, IToolInvocationContext } from '../../contrib/chat/common/tools/languageModelToolsService.js';
+import { IHookResultDto } from '../common/extHost.protocol.js';
+import { ExtHostChatAgents2 } from '../common/extHostChatAgents2.js';
+import { IChatHookExecutionOptions, IExtHostHooks } from '../common/extHostHooks.js';
+import { HookResultKind, IHookResult } from '../../contrib/chat/common/hooksExecutionService.js';
 
 const SIGKILL_DELAY_MS = 5000;
 
@@ -29,7 +31,7 @@ export class NodeExtHostHooks implements IExtHostHooks {
 		this._extHostChatAgents = extHostChatAgents;
 	}
 
-	async executeHook(extension: IExtensionDescription, hookType: HookTypeValue, options: IChatHookExecutionOptions, token?: CancellationToken): Promise<IChatHookResult[]> {
+	async executeHook(hookType: HookTypeValue, options: IChatHookExecutionOptions, token?: CancellationToken): Promise<IHookResult[]> {
 		if (!this._extHostChatAgents) {
 			throw new Error('ExtHostHooks not initialized');
 		}
@@ -39,7 +41,21 @@ export class NodeExtHostHooks implements IExtHostHooks {
 		}
 
 		const context = options.toolInvocationToken as IToolInvocationContext;
-		const hooks = this._extHostChatAgents.getHooksForSession(context.sessionResource);
+		return this._executeHooks(hookType, context.sessionResource, options.input, token);
+	}
+
+	async $executeHook(hookType: string, sessionResource: UriComponents, input: unknown): Promise<IHookResultDto[]> {
+		if (!this._extHostChatAgents) {
+			return [];
+		}
+
+		const uri = URI.revive(sessionResource);
+		const results = await this._executeHooks(hookType as HookTypeValue, uri, input, undefined);
+		return results.map(r => ({ kind: r.kind, result: r.result }));
+	}
+
+	private async _executeHooks(hookType: HookTypeValue, sessionResource: URI, input: unknown, token?: CancellationToken): Promise<IHookResult[]> {
+		const hooks = this._extHostChatAgents!.getHooksForSession(sessionResource);
 		if (!hooks) {
 			return [];
 		}
@@ -50,20 +66,20 @@ export class NodeExtHostHooks implements IExtHostHooks {
 		}
 
 		this._logService.debug(`[ExtHostHooks] Executing ${hookCommands.length} hook(s) for type '${hookType}'`);
-		this._logService.trace(`[ExtHostHooks] Hook input:`, options.input);
+		this._logService.trace(`[ExtHostHooks] Hook input:`, input);
 
-		const results: IChatHookResult[] = [];
+		const results: IHookResult[] = [];
 		for (const hookCommand of hookCommands) {
 			try {
 				this._logService.debug(`[ExtHostHooks] Running hook command: ${hookCommand.command}`);
-				const result = await this._executeCommand(hookCommand, options.input, token);
-				this._logService.debug(`[ExtHostHooks] Hook completed with result kind: ${ChatHookResultKind[result.kind]}`);
+				const result = await this._executeCommand(hookCommand, input, token);
+				this._logService.debug(`[ExtHostHooks] Hook completed with result kind: ${result.kind === HookResultKind.Success ? 'Success' : 'Error'}`);
 				this._logService.trace(`[ExtHostHooks] Hook output:`, result.result);
 				results.push(result);
 			} catch (err) {
 				this._logService.debug(`[ExtHostHooks] Hook failed with error: ${err instanceof Error ? err.message : String(err)}`);
 				results.push({
-					kind: ChatHookResultKind.Error,
+					kind: HookResultKind.Error,
 					result: err instanceof Error ? err.message : String(err)
 				});
 			}
@@ -75,7 +91,7 @@ export class NodeExtHostHooks implements IExtHostHooks {
 		return hooks[hookType];
 	}
 
-	private _executeCommand(hook: IHookCommand, input: unknown, token?: CancellationToken): Promise<IChatHookResult> {
+	private _executeCommand(hook: IHookCommand, input: unknown, token?: CancellationToken): Promise<IHookResult> {
 		const home = homedir();
 		const cwd = hook.cwd ? hook.cwd.fsPath : home;
 
@@ -152,10 +168,10 @@ export class NodeExtHostHooks implements IExtHostHooks {
 					} catch {
 						// Keep as string if not valid JSON
 					}
-					resolve({ kind: ChatHookResultKind.Success, result });
+					resolve({ kind: HookResultKind.Success, result });
 				} else {
 					// Error
-					resolve({ kind: ChatHookResultKind.Error, result: stderrStr });
+					resolve({ kind: HookResultKind.Error, result: stderrStr });
 				}
 			});
 

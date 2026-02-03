@@ -4,11 +4,12 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { CancellationToken } from '../../../base/common/cancellation.js';
+import { UriComponents } from '../../../base/common/uri.js';
 import { createDecorator } from '../../../platform/instantiation/common/instantiation.js';
-import { IExtensionDescription } from '../../../platform/extensions/common/extensions.js';
+import { IHookResult } from '../../contrib/chat/common/hooksExecutionService.js';
 import { HookTypeValue } from '../../contrib/chat/common/promptSyntax/hookSchema.js';
+import { ExtHostHooksShape, IHookResultDto } from './extHost.protocol.js';
 import { ExtHostChatAgents2 } from './extHostChatAgents2.js';
-import { ChatHookResultKind } from './extHostTypes.js';
 
 export const IExtHostHooks = createDecorator<IExtHostHooks>('IExtHostHooks');
 
@@ -17,14 +18,8 @@ export interface IChatHookExecutionOptions {
 	readonly toolInvocationToken: unknown;
 }
 
-export { ChatHookResultKind };
-
-export interface IChatHookResult {
-	readonly kind: ChatHookResultKind;
-	readonly result: string | object;
-}
-
-export interface IExtHostHooks {
+export interface IExtHostHooks extends ExtHostHooksShape {
 	initialize(extHostChatAgents: ExtHostChatAgents2): void;
-	executeHook(extension: IExtensionDescription, hookType: HookTypeValue, options: IChatHookExecutionOptions, token?: CancellationToken): Promise<IChatHookResult[]>;
+	executeHook(hookType: HookTypeValue, options: IChatHookExecutionOptions, token?: CancellationToken): Promise<IHookResult[]>;
+	$executeHook(hookType: string, sessionResource: UriComponents, input: unknown): Promise<IHookResultDto[]>;
 }

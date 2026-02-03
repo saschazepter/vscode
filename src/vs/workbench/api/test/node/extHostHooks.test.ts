@@ -8,12 +8,11 @@ import { CancellationTokenSource } from '../../../../base/common/cancellation.js
 import { URI } from '../../../../base/common/uri.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/common/utils.js';
 import { NullLogService } from '../../../../platform/log/common/log.js';
-import { ChatHookResultKind } from '../../common/extHostHooks.js';
 import { NodeExtHostHooks } from '../../node/extHostHooksNode.js';
 import { HookType, IChatRequestHooks, IHookCommand } from '../../../contrib/chat/common/promptSyntax/hookSchema.js';
 import { ExtHostChatAgents2 } from '../../common/extHostChatAgents2.js';
 import { IToolInvocationContext } from '../../../contrib/chat/common/tools/languageModelToolsService.js';
-import { nullExtensionDescription } from '../../../services/extensions/common/extensions.js';
+import { ChatHookResultKind } from '../../common/extHostTypes.js';
 
 function createHookCommand(command: string, options?: Partial<Omit<IHookCommand, 'type' | 'command'>>): IHookCommand {
 	return {
@@ -54,7 +53,6 @@ suite('ExtHostHooks', () => {
 
 		await assert.rejects(
 			() => hooksService.executeHook(
-				nullExtensionDescription,
 				HookType.SessionStart,
 				{ toolInvocationToken },
 				undefined
@@ -68,7 +66,6 @@ suite('ExtHostHooks', () => {
 
 		await assert.rejects(
 			() => hooksService.executeHook(
-				nullExtensionDescription,
 				HookType.SessionStart,
 				{ toolInvocationToken: undefined },
 				undefined
@@ -78,7 +75,6 @@ suite('ExtHostHooks', () => {
 
 		await assert.rejects(
 			() => hooksService.executeHook(
-				nullExtensionDescription,
 				HookType.SessionStart,
 				{ toolInvocationToken: { invalid: 'token' } },
 				undefined
@@ -92,7 +88,6 @@ suite('ExtHostHooks', () => {
 
 		const toolInvocationToken = createMockToolInvocationContext(sessionResource);
 		const results = await hooksService.executeHook(
-			nullExtensionDescription,
 			HookType.SessionStart,
 			{ toolInvocationToken },
 			undefined
@@ -110,7 +105,6 @@ suite('ExtHostHooks', () => {
 
 		const toolInvocationToken = createMockToolInvocationContext(sessionResource);
 		const results = await hooksService.executeHook(
-			nullExtensionDescription,
 			HookType.SessionStart,
 			{ toolInvocationToken },
 			undefined
@@ -127,7 +121,6 @@ suite('ExtHostHooks', () => {
 
 		const toolInvocationToken = createMockToolInvocationContext(sessionResource);
 		const results = await hooksService.executeHook(
-			nullExtensionDescription,
 			HookType.SessionStart,
 			{ toolInvocationToken },
 			undefined
@@ -146,7 +139,6 @@ suite('ExtHostHooks', () => {
 
 		const toolInvocationToken = createMockToolInvocationContext(sessionResource);
 		const results = await hooksService.executeHook(
-			nullExtensionDescription,
 			HookType.SessionStart,
 			{ toolInvocationToken },
 			undefined
@@ -165,7 +157,6 @@ suite('ExtHostHooks', () => {
 
 		const toolInvocationToken = createMockToolInvocationContext(sessionResource);
 		const results = await hooksService.executeHook(
-			nullExtensionDescription,
 			HookType.SessionStart,
 			{ toolInvocationToken },
 			undefined
@@ -183,7 +174,6 @@ suite('ExtHostHooks', () => {
 
 		const toolInvocationToken = createMockToolInvocationContext(sessionResource);
 		const results = await hooksService.executeHook(
-			nullExtensionDescription,
 			HookType.SessionStart,
 			{ toolInvocationToken },
 			undefined
@@ -206,7 +196,6 @@ suite('ExtHostHooks', () => {
 
 		const toolInvocationToken = createMockToolInvocationContext(sessionResource);
 		const results = await hooksService.executeHook(
-			nullExtensionDescription,
 			HookType.SessionStart,
 			{ toolInvocationToken },
 			undefined
@@ -230,7 +219,6 @@ suite('ExtHostHooks', () => {
 		const toolInvocationToken = createMockToolInvocationContext(sessionResource);
 		const input = { tool: 'bash', args: { command: 'ls' } };
 		const results = await hooksService.executeHook(
-			nullExtensionDescription,
 			HookType.PreToolUse,
 			{ toolInvocationToken, input },
 			undefined
@@ -251,7 +239,6 @@ suite('ExtHostHooks', () => {
 		const cts = disposables.add(new CancellationTokenSource());
 
 		const resultPromise = hooksService.executeHook(
-			nullExtensionDescription,
 			HookType.SessionStart,
 			{ toolInvocationToken },
 			cts.token
@@ -276,7 +263,6 @@ suite('ExtHostHooks', () => {
 
 		const startTime = Date.now();
 		const results = await hooksService.executeHook(
-			nullExtensionDescription,
 			HookType.SessionStart,
 			{ toolInvocationToken },
 			undefined
@@ -297,7 +283,6 @@ suite('ExtHostHooks', () => {
 
 		const toolInvocationToken = createMockToolInvocationContext(sessionResource);
 		const results = await hooksService.executeHook(
-			nullExtensionDescription,
 			HookType.SessionStart,
 			{ toolInvocationToken },
 			undefined
@@ -315,7 +300,6 @@ suite('ExtHostHooks', () => {
 
 		const toolInvocationToken = createMockToolInvocationContext(sessionResource);
 		const results = await hooksService.executeHook(
-			nullExtensionDescription,
 			HookType.SessionStart,
 			{ toolInvocationToken },
 			undefined

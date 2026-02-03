@@ -239,6 +239,7 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 	const extHostEmbeddings = rpcProtocol.set(ExtHostContext.ExtHostEmbeddings, new ExtHostEmbeddings(rpcProtocol));
 
 	rpcProtocol.set(ExtHostContext.ExtHostMcp, accessor.get(IExtHostMpcService));
+	rpcProtocol.set(ExtHostContext.ExtHostHooks, accessor.get(IExtHostHooks));
 
 	// Check that no named customers are missing
 	const expected = Object.values<ProxyIdentifier<any>>(ExtHostContext);
@@ -1596,7 +1597,7 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 			},
 			executeHook(hookType: vscode.ChatHookType, options: vscode.ChatHookExecutionOptions, token?: vscode.CancellationToken): Thenable<vscode.ChatHookResult[]> {
 				checkProposedApiEnabled(extension, 'chatHooks');
-				return extHostHooks.executeHook(extension, hookType, options, token);
+				return extHostHooks.executeHook(hookType, options, token);
 			},
 		};
 
