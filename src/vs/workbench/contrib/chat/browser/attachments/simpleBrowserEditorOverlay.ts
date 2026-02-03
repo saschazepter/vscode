@@ -38,7 +38,7 @@ import { WebviewInput } from '../../../webviewPanel/browser/webviewEditorInput.j
 import { IBrowserTargetLocator, getDisplayNameFromOuterHTML } from '../../../../../platform/browserElements/common/browserElements.js';
 import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry.js';
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
-import { observableContextKey } from '../../../../../platform/observable/common/platformObservableUtils.js';
+import { observableConfigValue, observableContextKey } from '../../../../../platform/observable/common/platformObservableUtils.js';
 
 type BrowserType = 'simpleBrowser' | 'livePreview';
 
@@ -371,12 +371,6 @@ class SimpleBrowserOverlayController {
 		@IContextKeyService private readonly contextKeyService: IContextKeyService,
 	) {
 
-		// Don't initialize if sendElementsToChat is not enabled
-		const sendElementsEnabled = this.configurationService.getValue('chat.sendElementsToChat.enabled');
-		if (!sendElementsEnabled) {
-			return;
-		}
-
 		this._domNode.classList.add('chat-simple-browser-overlay');
 		this._domNode.style.position = 'absolute';
 		this._domNode.style.bottom = `5px`;
@@ -449,16 +443,18 @@ class SimpleBrowserOverlayController {
 			return undefined;
 		});
 
-		// Observe chat enabled state
+		// Observe chat enabled state and sendElementsToChat configuration
 		const chatEnabledObs = observableContextKey<boolean>(ChatContextKeys.enabled.key, this.contextKeyService);
+		const sendElementsEnabledObs = observableConfigValue<boolean>('chat.sendElementsToChat.enabled', false, this.configurationService);
 
 		this._store.add(autorun(r => {
 
 			const activeEditor = activeIdObs.read(r);
 			const isChatEnabled = chatEnabledObs.read(r);
+			const isSendElementsEnabled = sendElementsEnabledObs.read(r);
 
-			// Hide if chat is not enabled or no active editor
-			if (!isChatEnabled || !activeEditor) {
+			// Hide if chat is not enabled, sendElementsToChat is not enabled, or no active editor
+			if (!isChatEnabled || !isSendElementsEnabled || !activeEditor) {
 				hide();
 				return;
 			}
