@@ -276,20 +276,28 @@ export class MenuId {
 	static readonly ChatToolOutputResourceContext = new MenuId('ChatToolOutputResourceContext');
 	static readonly ChatMultiDiffContext = new MenuId('ChatMultiDiffContext');
 	static readonly ChatConfirmationMenu = new MenuId('ChatConfirmationMenu');
+	static readonly ChatEditorInlineGutter = new MenuId('ChatEditorInlineGutter');
 	static readonly ChatEditorInlineExecute = new MenuId('ChatEditorInputExecute');
 	static readonly ChatEditorInlineInputSide = new MenuId('ChatEditorInputSide');
+	static readonly InlineChatEditorAffordance = new MenuId('InlineChatEditorAffordance');
 	static readonly AccessibleView = new MenuId('AccessibleView');
 	static readonly MultiDiffEditorContent = new MenuId('MultiDiffEditorContent');
 	static readonly MultiDiffEditorFileToolbar = new MenuId('MultiDiffEditorFileToolbar');
 	static readonly DiffEditorHunkToolbar = new MenuId('DiffEditorHunkToolbar');
 	static readonly DiffEditorSelectionToolbar = new MenuId('DiffEditorSelectionToolbar');
+	static readonly BrowserNavigationToolbar = new MenuId('BrowserNavigationToolbar');
+	static readonly BrowserActionsToolbar = new MenuId('BrowserActionsToolbar');
 	static readonly AgentSessionsViewerFilterSubMenu = new MenuId('AgentSessionsViewerFilterSubMenu');
 	static readonly AgentSessionsContext = new MenuId('AgentSessionsContext');
+	static readonly AgentSessionSectionContext = new MenuId('AgentSessionSectionContext');
 	static readonly AgentSessionsCreateSubMenu = new MenuId('AgentSessionsCreateSubMenu');
 	static readonly AgentSessionsToolbar = new MenuId('AgentSessionsToolbar');
 	static readonly AgentSessionItemToolbar = new MenuId('AgentSessionItemToolbar');
+	static readonly AgentSessionSectionToolbar = new MenuId('AgentSessionSectionToolbar');
+	static readonly AgentsTitleBarControlMenu = new MenuId('AgentsTitleBarControlMenu');
 	static readonly ChatViewSessionTitleNavigationToolbar = new MenuId('ChatViewSessionTitleNavigationToolbar');
 	static readonly ChatViewSessionTitleToolbar = new MenuId('ChatViewSessionTitleToolbar');
+	static readonly ChatContextUsageActions = new MenuId('ChatContextUsageActions');
 
 	/**
 	 * Create or reuse a `MenuId` with the given identifier
@@ -316,6 +324,7 @@ export class MenuId {
 
 export interface IMenuActionOptions {
 	arg?: unknown;
+	args?: unknown[];
 	shouldForwardArgs?: boolean;
 	renderShortTitle?: boolean;
 }
@@ -605,7 +614,9 @@ export class MenuItemAction implements IAction {
 	run(...args: unknown[]): Promise<void> {
 		let runArgs: unknown[] = [];
 
-		if (this._options?.arg) {
+		if (this._options?.args) {
+			runArgs = [...runArgs, ...this._options.args];
+		} else if (this._options?.arg) {
 			runArgs = [...runArgs, this._options.arg];
 		}
 

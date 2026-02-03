@@ -8,7 +8,7 @@ import { IStringDictionary } from '../../../../base/common/collections.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import * as glob from '../../../../base/common/glob.js';
 import * as json from '../../../../base/common/json.js';
-import { Disposable, DisposableStore, dispose, IDisposable, IReference, MutableDisposable } from '../../../../base/common/lifecycle.js';
+import { Disposable, dispose, IDisposable, IReference, MutableDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { LRUCache, Touch } from '../../../../base/common/map.js';
 import * as Objects from '../../../../base/common/objects.js';
 import { ValidationState, ValidationStatus } from '../../../../base/common/parsers.js';
@@ -86,8 +86,8 @@ import { IPreferencesService } from '../../../services/preferences/common/prefer
 import { IRemoteAgentService } from '../../../services/remote/common/remoteAgentService.js';
 import { IViewsService } from '../../../services/views/common/viewsService.js';
 import { CHAT_OPEN_ACTION_ID } from '../../chat/browser/actions/chatActions.js';
-import { IChatAgentService } from '../../chat/common/chatAgents.js';
-import { IChatService } from '../../chat/common/chatService.js';
+import { IChatAgentService } from '../../chat/common/participants/chatAgents.js';
+import { IChatService } from '../../chat/common/chatService/chatService.js';
 import { configureTaskIcon, isWorkspaceFolder, ITaskQuickPickEntry, QUICKOPEN_DETAIL_CONFIG, QUICKOPEN_SKIP_CONFIG, TaskQuickPick } from './taskQuickPick.js';
 import { IHostService } from '../../../services/host/browser/host.js';
 import * as dom from '../../../../base/browser/dom.js';
@@ -257,7 +257,7 @@ export abstract class AbstractTaskService extends Disposable implements ITaskSer
 
 	private _activatedTaskProviders: Set<string> = new Set();
 
-	private readonly notification = this._register(new MutableDisposable<DisposableStore>());
+	private readonly toast = this._register(new MutableDisposable<IDisposable>());
 
 	constructor(
 		@IConfigurationService private readonly _configurationService: IConfigurationService,
@@ -530,20 +530,12 @@ export abstract class AbstractTaskService extends Disposable implements ITaskSer
 			? nls.localize('task.longRunningTaskCompletedWithLabel', 'Task "{0}" finished in {1}.', taskLabel, durationText)
 			: nls.localize('task.longRunningTaskCompleted', 'Task finished in {0}.', durationText);
 		this._hostService.focus(targetWindow, { mode: FocusMode.Notify });
-		const notification = await dom.triggerNotification(message);
-		if (notification) {
-			const disposables = this.notification.value = new DisposableStore();
-			disposables.add(notification);
-
-			disposables.add(Event.once(notification.onClick)(() => {
-				this._hostService.focus(targetWindow, { mode: FocusMode.Force });
-			}));
-
-			disposables.add(this._hostService.onDidChangeFocus(focus => {
-				if (focus) {
-					disposables.dispose();
-				}
-			}));
+		const cts = new CancellationTokenSource();
+		this.toast.value = toDisposable(() => cts.dispose(true));
+		const { clicked } = await this._hostService.showToast({ title: message }, cts.token);
+		this.toast.clear();
+		if (clicked) {
+			this._hostService.focus(targetWindow, { mode: FocusMode.Force });
 		}
 	}
 
@@ -2190,8 +2182,11 @@ export abstract class AbstractTaskService extends Disposable implements ITaskSer
 			if (updatedTask) {
 				await this.run(updatedTask);
 			} else {
-				// Task no longer exists, show warning
-				this._notificationService.warn(nls.localize('TaskSystem.taskNoLongerExists', 'Task {0} no longer exists or has been modified. Cannot restart.', task.configurationProperties.name));
+				const success = await this.run(task);
+				if (!success || (typeof success.exitCode === 'number' && success.exitCode !== 0)) {
+					// Task no longer exists, show warning
+					this._notificationService.warn(nls.localize('TaskSystem.taskNoLongerExists', 'Task {0} no longer exists or has been modified. Cannot restart.', task.configurationProperties.name));
+				}
 			}
 		} catch {
 			// eat the error, we don't care about it here
@@ -3015,7 +3010,12 @@ export abstract class AbstractTaskService extends Disposable implements ITaskSer
 		return entries;
 	}
 	private async _showTwoLevelQuickPick(placeHolder: string, defaultEntry?: ITaskQuickPickEntry, type?: string, name?: string) {
-		return this._instantiationService.createInstance(TaskQuickPick).show(placeHolder, defaultEntry, type, name);
+		const taskQuickPick = this._instantiationService.createInstance(TaskQuickPick);
+		try {
+			return await taskQuickPick.show(placeHolder, defaultEntry, type, name);
+		} finally {
+			taskQuickPick.dispose();
+		}
 	}
 
 	private async _showQuickPick(tasks: Promise<Task[]> | Task[], placeHolder: string, defaultEntry?: ITaskQuickPickEntry, group: boolean = false, sort: boolean = false, selectedEntry?: ITaskQuickPickEntry, additionalEntries?: ITaskQuickPickEntry[], name?: string): Promise<ITaskQuickPickEntry | undefined | null> {

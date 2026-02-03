@@ -5,36 +5,62 @@
 
 import { renderAsPlaintext } from '../../../../../base/browser/markdownRenderer.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
-import { fromNow } from '../../../../../base/common/date.js';
 import { DisposableStore } from '../../../../../base/common/lifecycle.js';
 import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { localize } from '../../../../../nls.js';
+import { ICommandService } from '../../../../../platform/commands/common/commands.js';
 import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
 import { IQuickInputButton, IQuickInputService, IQuickPickItem, IQuickPickSeparator } from '../../../../../platform/quickinput/common/quickInput.js';
-import { IChatService } from '../../common/chatService.js';
 import { openSession } from './agentSessionsOpener.js';
 import { IAgentSession, isLocalAgentSessionItem } from './agentSessionsModel.js';
 import { IAgentSessionsService } from './agentSessionsService.js';
-import { AgentSessionsSorter } from './agentSessionsViewer.js';
+import { AgentSessionsSorter, groupAgentSessionsByDate, sessionDateFromNow } from './agentSessionsViewer.js';
+import { AGENT_SESSION_DELETE_ACTION_ID, AGENT_SESSION_RENAME_ACTION_ID, getAgentSessionTime } from './agentSessions.js';
+import { AgentSessionsFilter } from './agentSessionsFilter.js';
 
 interface ISessionPickItem extends IQuickPickItem {
 	readonly session: IAgentSession;
 }
 
-const archiveButton: IQuickInputButton = {
+export const archiveButton: IQuickInputButton = {
 	iconClass: ThemeIcon.asClassName(Codicon.archive),
 	tooltip: localize('archiveSession', "Archive")
 };
 
-const unarchiveButton: IQuickInputButton = {
+export const unarchiveButton: IQuickInputButton = {
 	iconClass: ThemeIcon.asClassName(Codicon.inbox),
 	tooltip: localize('unarchiveSession', "Unarchive")
 };
 
-const renameButton: IQuickInputButton = {
+export const renameButton: IQuickInputButton = {
 	iconClass: ThemeIcon.asClassName(Codicon.edit),
 	tooltip: localize('renameSession', "Rename")
 };
+
+export const deleteButton: IQuickInputButton = {
+	iconClass: ThemeIcon.asClassName(Codicon.trash),
+	tooltip: localize('deleteSession', "Delete")
+};
+
+export function getSessionDescription(session: IAgentSession): string {
+	const descriptionText = typeof session.description === 'string' ? session.description : session.description ? renderAsPlaintext(session.description) : undefined;
+	const timeAgo = sessionDateFromNow(getAgentSessionTime(session.timing));
+	const descriptionParts = [descriptionText, session.providerLabel, timeAgo].filter(part => !!part);
+
+	return descriptionParts.join(' • ');
+}
+
+export function getSessionButtons(session: IAgentSession): IQuickInputButton[] {
+	const buttons: IQuickInputButton[] = [];
+
+	if (isLocalAgentSessionItem(session)) {
+		buttons.push(renameButton);
+		buttons.push(deleteButton);
+	}
+	buttons.push(session.isArchived() ? unarchiveButton : archiveButton);
+
+	return buttons;
+}
 
 export class AgentSessionsPicker {
 
@@ -44,14 +70,15 @@ export class AgentSessionsPicker {
 		@IAgentSessionsService private readonly agentSessionsService: IAgentSessionsService,
 		@IQuickInputService private readonly quickInputService: IQuickInputService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
-		@IChatService private readonly chatService: IChatService,
+		@ICommandService private readonly commandService: ICommandService,
 	) { }
 
 	async pickAgentSession(): Promise<void> {
 		const disposables = new DisposableStore();
 		const picker = disposables.add(this.quickInputService.createQuickPick<ISessionPickItem>({ useSeparators: true }));
+		const filter = disposables.add(this.instantiationService.createInstance(AgentSessionsFilter, {}));
 
-		picker.items = this.createPickerItems();
+		picker.items = this.createPickerItems(filter);
 		picker.canAcceptInBackground = true;
 		picker.placeholder = localize('chatAgentPickerPlaceholder', "Search agent sessions by name");
 
@@ -62,7 +89,7 @@ export class AgentSessionsPicker {
 					sideBySide: e.inBackground,
 					editorOptions: {
 						preserveFocus: e.inBackground,
-						pinned: false
+						pinned: e.inBackground
 					}
 				});
 			}
@@ -75,90 +102,50 @@ export class AgentSessionsPicker {
 		disposables.add(picker.onDidTriggerItemButton(async e => {
 			const session = e.item.session;
 
+			let reopenResolved: boolean = false;
 			if (e.button === renameButton) {
-				const title = await this.quickInputService.input({ prompt: localize('newChatTitle', "New agent session title"), value: session.label });
-				if (title) {
-					this.chatService.setChatSessionTitle(session.resource, title);
-				}
+				reopenResolved = true;
+				await this.commandService.executeCommand(AGENT_SESSION_RENAME_ACTION_ID, session);
+			} else if (e.button === deleteButton) {
+				reopenResolved = true;
+				await this.commandService.executeCommand(AGENT_SESSION_DELETE_ACTION_ID, session);
 			} else {
 				const newArchivedState = !session.isArchived();
 				session.setArchived(newArchivedState);
 			}
 
-			picker.items = this.createPickerItems();
+			if (reopenResolved) {
+				await this.agentSessionsService.model.resolve(session.providerType);
+				this.pickAgentSession();
+			} else {
+				picker.items = this.createPickerItems(filter);
+			}
 		}));
 
 		disposables.add(picker.onDidHide(() => disposables.dispose()));
 		picker.show();
 	}
 
-	private createPickerItems(): (ISessionPickItem | IQuickPickSeparator)[] {
-		const sessions = this.agentSessionsService.model.sessions.sort(this.sorter.compare.bind(this.sorter));
+	private createPickerItems(filter: AgentSessionsFilter): (ISessionPickItem | IQuickPickSeparator)[] {
+		const sessions = this.agentSessionsService.model.sessions
+			.filter(session => !filter.exclude(session))
+			.sort(this.sorter.compare.bind(this.sorter));
 		const items: (ISessionPickItem | IQuickPickSeparator)[] = [];
 
-		const now = Date.now();
-		const todayStart = new Date(now).setHours(0, 0, 0, 0);
-		const recentThreshold = now - 7 * 24 * 60 * 60 * 1000; // 7 days ago
-
-		// Separate sessions into groups
-		const todaySessions: IAgentSession[] = [];
-		const recentSessions: IAgentSession[] = [];
-		const olderSessions: IAgentSession[] = [];
-		const archivedSessions: IAgentSession[] = [];
-
-		for (const session of sessions) {
-			if (session.isArchived()) {
-				archivedSessions.push(session);
-			} else {
-				const sessionTime = session.timing.endTime || session.timing.startTime;
-				if (sessionTime >= todayStart) {
-					todaySessions.push(session);
-				} else if (sessionTime >= recentThreshold) {
-					recentSessions.push(session);
-				} else {
-					olderSessions.push(session);
-				}
+		const groupedSessions = groupAgentSessionsByDate(sessions);
+		for (const group of groupedSessions.values()) {
+			if (group.sessions.length > 0) {
+				items.push({ type: 'separator', label: group.label });
+				items.push(...group.sessions.map(session => this.toPickItem(session)));
 			}
-		}
-
-		// Today's sessions
-		if (todaySessions.length > 0) {
-			items.push({ type: 'separator', label: localize('todaySessions', "Today") });
-			items.push(...todaySessions.map(session => this.toPickItem(session)));
-		}
-
-		// Recent sessions (last 7 days)
-		if (recentSessions.length > 0) {
-			items.push({ type: 'separator', label: localize('recentSessions', "Recent") });
-			items.push(...recentSessions.map(session => this.toPickItem(session)));
-		}
-
-		// Older sessions
-		if (olderSessions.length > 0) {
-			items.push({ type: 'separator', label: localize('olderSessions', "Older") });
-			items.push(...olderSessions.map(session => this.toPickItem(session)));
-		}
-
-		// Archived sessions
-		if (archivedSessions.length > 0) {
-			items.push({ type: 'separator', label: localize('archivedSessions', "Archived") });
-			items.push(...archivedSessions.map(session => this.toPickItem(session)));
 		}
 
 		return items;
 	}
 
 	private toPickItem(session: IAgentSession): ISessionPickItem {
-		const descriptionText = typeof session.description === 'string' ? session.description : session.description ? renderAsPlaintext(session.description) : undefined;
-		const timeAgo = fromNow(session.timing.endTime || session.timing.startTime);
-		const descriptionParts = [descriptionText, session.providerLabel, timeAgo].filter(part => !!part);
-		const description = descriptionParts.join(' • ');
-
-		const buttons: IQuickInputButton[] = [];
-		if (isLocalAgentSessionItem(session)) {
-			buttons.push(renameButton);
-		}
-		buttons.push(session.isArchived() ? unarchiveButton : archiveButton);
+		const description = getSessionDescription(session);
+		const buttons = getSessionButtons(session);
 
 		return {
 			id: session.resource.toString(),
