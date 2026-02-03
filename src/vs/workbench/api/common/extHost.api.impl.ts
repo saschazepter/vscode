@@ -65,6 +65,7 @@ import { IExtHostConsumerFileSystem } from './extHostFileSystemConsumer.js';
 import { ExtHostFileSystemEventService, FileSystemWatcherCreateOptions } from './extHostFileSystemEventService.js';
 import { IExtHostFileSystemInfo } from './extHostFileSystemInfo.js';
 import { IExtHostInitDataService } from './extHostInitDataService.js';
+import { IExtHostHooks } from './extHostHooks.js';
 import { ExtHostInteractive } from './extHostInteractive.js';
 import { ExtHostLabelService } from './extHostLabelService.js';
 import { ExtHostLanguageFeatures } from './extHostLanguageFeatures.js';
@@ -249,6 +250,8 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 	const extHostMessageService = new ExtHostMessageService(rpcProtocol, extHostLogService);
 	const extHostDialogs = new ExtHostDialogs(rpcProtocol);
 	const extHostChatStatus = new ExtHostChatStatus(rpcProtocol);
+	const extHostHooks = accessor.get(IExtHostHooks);
+	extHostHooks.initialize(extHostChatAgents2);
 
 	// Register API-ish commands
 	ExtHostApiCommands.register(extHostCommands);
@@ -1590,6 +1593,10 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 			registerSkillProvider(provider: vscode.ChatSkillProvider): vscode.Disposable {
 				checkProposedApiEnabled(extension, 'chatPromptFiles');
 				return extHostChatAgents2.registerPromptFileProvider(extension, PromptsType.skill, provider);
+			},
+			executeHook(options: vscode.ChatHookExecutionOptions, token?: vscode.CancellationToken): Thenable<vscode.ChatHookResult[]> {
+				checkProposedApiEnabled(extension, 'chatHooks');
+				return extHostHooks.executeHook(extension, options, token);
 			},
 		};
 
