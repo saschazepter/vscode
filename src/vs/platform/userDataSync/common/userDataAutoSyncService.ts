@@ -116,14 +116,7 @@ export class UserDataAutoSyncService extends Disposable implements IUserDataAuto
 			this._register(userDataSyncService.onDidChangeLocal(source => this.triggerSync([source])));
 			this._register(Event.filter(this.userDataSyncEnablementService.onDidChangeResourceEnablement, ([, enabled]) => enabled)(() => this.triggerSync(['resourceEnablement'])));
 			this._register(this.userDataSyncStoreManagementService.onDidChangeUserDataSyncStore(() => this.triggerSync(['userDataSyncStoreChanged'])));
-
-			// Resume sync when connection becomes non-metered
-			this._register(meteredConnectionService.onDidChangeIsConnectionMetered(() => {
-				if (!meteredConnectionService.isConnectionMetered) {
-					this.logService.info('[AutoSync] Connection is no longer metered. Triggering sync.');
-					this.triggerSync(['connectionNoLongerMetered'], { skipIfSyncedRecently: true });
-				}
-			}));
+			this._register(meteredConnectionService.onDidChangeIsConnectionMetered(() => this.updateAutoSync()));
 		}
 	}
 
@@ -131,7 +124,7 @@ export class UserDataAutoSyncService extends Disposable implements IUserDataAuto
 		const { enabled, message } = this.isAutoSyncEnabled();
 		if (enabled) {
 			if (this.autoSync.value === undefined) {
-				this.autoSync.value = new AutoSync(this.lastSyncUrl, 1000 * 60 * 5 /* 5 minutes */, this.userDataSyncStoreManagementService, this.userDataSyncStoreService, this.userDataSyncService, this.userDataSyncMachinesService, this.logService, this.telemetryService, this.storageService, this.meteredConnectionService);
+				this.autoSync.value = new AutoSync(this.lastSyncUrl, 1000 * 60 * 5 /* 5 miutes */, this.userDataSyncStoreManagementService, this.userDataSyncStoreService, this.userDataSyncService, this.userDataSyncMachinesService, this.logService, this.telemetryService, this.storageService);
 				this.autoSync.value.register(this.autoSync.value.onDidStartSync(() => this.lastSyncTriggerTime = new Date().getTime()));
 				this.autoSync.value.register(this.autoSync.value.onDidFinishSync(e => this.onDidFinishSync(e)));
 				if (this.startAutoSync()) {
@@ -169,6 +162,9 @@ export class UserDataAutoSyncService extends Disposable implements IUserDataAuto
 		}
 		if (this.suspendUntilRestart) {
 			return { enabled: false, message: '[AutoSync] Suspended until restart.' };
+		}
+		if (this.meteredConnectionService.isConnectionMetered) {
+			return { enabled: false, message: '[AutoSync] Suspended because connection is metered.' };
 		}
 		return { enabled: true };
 	}
@@ -397,7 +393,6 @@ class AutoSync extends Disposable {
 		private readonly logService: IUserDataSyncLogService,
 		private readonly telemetryService: ITelemetryService,
 		private readonly storageService: IStorageService,
-		private readonly meteredConnectionService: IMeteredConnectionService,
 	) {
 		super();
 	}
@@ -460,11 +455,6 @@ class AutoSync extends Disposable {
 
 	private async doSync(reason: string, disableCache: boolean, token: CancellationToken): Promise<void> {
 		this.logService.info(`[AutoSync] Triggered by ${reason}`);
-
-		if (this.meteredConnectionService.isConnectionMetered) {
-			this.logService.info('[AutoSync] Skipping sync because connection is metered');
-			return;
-		}
 
 		this._onDidStartSync.fire();
 
