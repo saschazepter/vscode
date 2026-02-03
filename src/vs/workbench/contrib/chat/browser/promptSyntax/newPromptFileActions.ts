@@ -387,18 +387,56 @@ class NewHookFileAction extends Action2 {
 
 		// Write the file
 		const jsonContent = JSON.stringify(hooksContent, null, '\t');
-		await fileService.writeFile(hookFileUri, VSBuffer.fromString(jsonContent));
 
-		// Find the selection for the new hook's command field
-		const selection = findHookCommandSelection(jsonContent, hookTypeId, newHookIndex, 'command');
+		// Check if the file is already open in an editor
+		const existingEditor = editorService.editors.find(e => isEqual(e.resource, hookFileUri));
 
-		await editorService.openEditor({
-			resource: hookFileUri,
-			options: {
-				selection,
-				pinned: false
+		if (existingEditor) {
+			// File is already open - first focus the editor, then update its model directly
+			await editorService.openEditor({
+				resource: hookFileUri,
+				options: {
+					pinned: false
+				}
+			});
+
+			// Get the code editor and update its content directly
+			const editor = getCodeEditor(editorService.activeTextEditorControl);
+			if (editor && editor.hasModel() && isEqual(editor.getModel().uri, hookFileUri)) {
+				const model = editor.getModel();
+				// Apply the full content replacement using executeEdits
+				model.pushEditOperations([], [{
+					range: model.getFullModelRange(),
+					text: jsonContent
+				}], () => null);
+
+				// Find and apply the selection
+				const selection = findHookCommandSelection(jsonContent, hookTypeId, newHookIndex, 'command');
+				if (selection && selection.endLineNumber !== undefined && selection.endColumn !== undefined) {
+					editor.setSelection({
+						startLineNumber: selection.startLineNumber,
+						startColumn: selection.startColumn,
+						endLineNumber: selection.endLineNumber,
+						endColumn: selection.endColumn
+					});
+					editor.revealLineInCenter(selection.startLineNumber);
+				}
 			}
-		});
+		} else {
+			// File is not open - write to file system and open with selection
+			await fileService.writeFile(hookFileUri, VSBuffer.fromString(jsonContent));
+
+			// Find the selection for the new hook's command field
+			const selection = findHookCommandSelection(jsonContent, hookTypeId, newHookIndex, 'command');
+
+			await editorService.openEditor({
+				resource: hookFileUri,
+				options: {
+					selection,
+					pinned: false
+				}
+			});
+		}
 	}
 }
 

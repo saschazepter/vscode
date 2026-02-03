@@ -6,8 +6,6 @@
 import { spawn } from 'child_process';
 import { CancellationToken } from '../../../base/common/cancellation.js';
 import { homedir } from 'os';
-import * as path from '../../../base/common/path.js';
-import { untildify } from '../../../base/common/labels.js';
 import { IChatHookExecutionOptions, IChatHookResult, IExtHostHooks } from '../common/extHostHooks.js';
 import { IExtensionDescription } from '../../../platform/extensions/common/extensions.js';
 import { isToolInvocationContext, IToolInvocationContext } from '../../contrib/chat/common/tools/languageModelToolsService.js';
@@ -67,10 +65,7 @@ export class NodeExtHostHooks implements IExtHostHooks {
 
 	private _executeCommand(hook: IHookCommand, input: unknown, token?: CancellationToken): Promise<IChatHookResult> {
 		const home = homedir();
-		let cwd = hook.cwd ? untildify(hook.cwd, home) : home;
-		if (!path.isAbsolute(cwd)) {
-			cwd = path.join(home, cwd);
-		}
+		const cwd = hook.cwd ? hook.cwd.fsPath : home;
 
 		const child = spawn(hook.command, [], {
 			stdio: 'pipe',

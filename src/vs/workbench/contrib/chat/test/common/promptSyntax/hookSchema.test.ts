@@ -5,7 +5,8 @@
 
 import assert from 'assert';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/test/common/utils.js';
-import { HookType, normalizeHookTypeId, normalizeHookCommand } from '../../../common/promptSyntax/hookSchema.js';
+import { HookType, normalizeHookTypeId, resolveHookCommand } from '../../../common/promptSyntax/hookSchema.js';
+import { URI } from '../../../../../../base/common/uri.js';
 
 suite('HookSchema', () => {
 	ensureNoDisposablesAreLeakedInTestSuite();
@@ -108,52 +109,53 @@ suite('HookSchema', () => {
 		});
 	});
 
-	suite('normalizeHookCommand', () => {
+	suite('resolveHookCommand', () => {
+		const workspaceRoot = URI.file('/workspace');
 
 		suite('command property', () => {
-			test('normalizes basic command', () => {
-				const result = normalizeHookCommand({
+			test('resolves basic command', () => {
+				const result = resolveHookCommand({
 					type: 'command',
 					command: 'echo hello'
-				});
+				}, workspaceRoot);
 				assert.deepStrictEqual(result, {
 					type: 'command',
 					command: 'echo hello'
 				});
 			});
 
-			test('normalizes command with all optional properties', () => {
-				const result = normalizeHookCommand({
+			test('resolves command with all optional properties', () => {
+				const result = resolveHookCommand({
 					type: 'command',
 					command: './scripts/validate.sh',
-					cwd: '/workspace',
+					cwd: 'src',
 					env: { NODE_ENV: 'test' },
 					timeoutSec: 60
-				});
+				}, workspaceRoot);
 				assert.deepStrictEqual(result, {
 					type: 'command',
 					command: './scripts/validate.sh',
-					cwd: '/workspace',
+					cwd: URI.file('/workspace/src'),
 					env: { NODE_ENV: 'test' },
 					timeoutSec: 60
 				});
 			});
 
 			test('empty command returns undefined', () => {
-				const result = normalizeHookCommand({
+				const result = resolveHookCommand({
 					type: 'command',
 					command: ''
-				});
+				}, workspaceRoot);
 				assert.strictEqual(result, undefined);
 			});
 		});
 
 		suite('bash shorthand', () => {
-			test('normalizes bash to command', () => {
-				const result = normalizeHookCommand({
+			test('resolves bash to command', () => {
+				const result = resolveHookCommand({
 					type: 'command',
 					bash: 'echo "hello world"'
-				});
+				}, workspaceRoot);
 				assert.deepStrictEqual(result, {
 					type: 'command',
 					command: 'bash -c "echo \\"hello world\\""'
@@ -161,35 +163,35 @@ suite('HookSchema', () => {
 			});
 
 			test('bash with cwd and env', () => {
-				const result = normalizeHookCommand({
+				const result = resolveHookCommand({
 					type: 'command',
 					bash: './test.sh',
-					cwd: '/home/user',
+					cwd: 'scripts',
 					env: { DEBUG: '1' }
-				});
+				}, workspaceRoot);
 				assert.deepStrictEqual(result, {
 					type: 'command',
 					command: 'bash -c "./test.sh"',
-					cwd: '/home/user',
+					cwd: URI.file('/workspace/scripts'),
 					env: { DEBUG: '1' }
 				});
 			});
 
 			test('empty bash returns undefined', () => {
-				const result = normalizeHookCommand({
+				const result = resolveHookCommand({
 					type: 'command',
 					bash: ''
-				});
+				}, workspaceRoot);
 				assert.strictEqual(result, undefined);
 			});
 		});
 
 		suite('powershell shorthand', () => {
-			test('normalizes powershell to command', () => {
-				const result = normalizeHookCommand({
+			test('resolves powershell to command', () => {
+				const result = resolveHookCommand({
 					type: 'command',
 					powershell: 'Write-Host "hello"'
-				});
+				}, workspaceRoot);
 				assert.deepStrictEqual(result, {
 					type: 'command',
 					command: 'powershell -Command "Write-Host \\"hello\\""'
@@ -197,11 +199,11 @@ suite('HookSchema', () => {
 			});
 
 			test('powershell with timeoutSec', () => {
-				const result = normalizeHookCommand({
+				const result = resolveHookCommand({
 					type: 'command',
 					powershell: 'Get-Process',
 					timeoutSec: 30
-				});
+				}, workspaceRoot);
 				assert.deepStrictEqual(result, {
 					type: 'command',
 					command: 'powershell -Command "Get-Process"',
@@ -210,21 +212,21 @@ suite('HookSchema', () => {
 			});
 
 			test('empty powershell returns undefined', () => {
-				const result = normalizeHookCommand({
+				const result = resolveHookCommand({
 					type: 'command',
 					powershell: ''
-				});
+				}, workspaceRoot);
 				assert.strictEqual(result, undefined);
 			});
 		});
 
 		suite('priority when multiple specified', () => {
 			test('command takes precedence over bash', () => {
-				const result = normalizeHookCommand({
+				const result = resolveHookCommand({
 					type: 'command',
 					command: 'direct-command',
 					bash: 'bash-script.sh'
-				});
+				}, workspaceRoot);
 				assert.deepStrictEqual(result, {
 					type: 'command',
 					command: 'direct-command'
@@ -232,11 +234,11 @@ suite('HookSchema', () => {
 			});
 
 			test('command takes precedence over powershell', () => {
-				const result = normalizeHookCommand({
+				const result = resolveHookCommand({
 					type: 'command',
 					command: 'direct-command',
 					powershell: 'ps-script.ps1'
-				});
+				}, workspaceRoot);
 				assert.deepStrictEqual(result, {
 					type: 'command',
 					command: 'direct-command'
@@ -244,11 +246,11 @@ suite('HookSchema', () => {
 			});
 
 			test('bash takes precedence over powershell when no command', () => {
-				const result = normalizeHookCommand({
+				const result = resolveHookCommand({
 					type: 'command',
 					bash: 'bash-script.sh',
 					powershell: 'ps-script.ps1'
-				});
+				}, workspaceRoot);
 				assert.deepStrictEqual(result, {
 					type: 'command',
 					command: 'bash -c "bash-script.sh"'
@@ -256,36 +258,63 @@ suite('HookSchema', () => {
 			});
 		});
 
-		suite('invalid inputs', () => {
-			test('wrong type returns undefined', () => {
-				const result = normalizeHookCommand({
-					type: 'script',
+		suite('cwd resolution', () => {
+			test('cwd is not resolved when no workspace root', () => {
+				const result = resolveHookCommand({
+					type: 'command',
+					command: 'echo hello',
+					cwd: 'src'
+				}, undefined);
+				assert.deepStrictEqual(result, {
+					type: 'command',
 					command: 'echo hello'
 				});
+			});
+
+			test('cwd is resolved relative to workspace root', () => {
+				const result = resolveHookCommand({
+					type: 'command',
+					command: 'echo hello',
+					cwd: 'nested/path'
+				}, workspaceRoot);
+				assert.deepStrictEqual(result, {
+					type: 'command',
+					command: 'echo hello',
+					cwd: URI.file('/workspace/nested/path')
+				});
+			});
+		});
+
+		suite('invalid inputs', () => {
+			test('wrong type returns undefined', () => {
+				const result = resolveHookCommand({
+					type: 'script',
+					command: 'echo hello'
+				}, workspaceRoot);
 				assert.strictEqual(result, undefined);
 			});
 
 			test('missing type returns undefined', () => {
-				const result = normalizeHookCommand({
+				const result = resolveHookCommand({
 					command: 'echo hello'
-				});
+				}, workspaceRoot);
 				assert.strictEqual(result, undefined);
 			});
 
 			test('no command/bash/powershell returns undefined', () => {
-				const result = normalizeHookCommand({
+				const result = resolveHookCommand({
 					type: 'command',
 					cwd: '/workspace'
-				});
+				}, workspaceRoot);
 				assert.strictEqual(result, undefined);
 			});
 
 			test('ignores non-string cwd', () => {
-				const result = normalizeHookCommand({
+				const result = resolveHookCommand({
 					type: 'command',
 					command: 'echo hello',
 					cwd: 123
-				});
+				}, workspaceRoot);
 				assert.deepStrictEqual(result, {
 					type: 'command',
 					command: 'echo hello'
@@ -293,11 +322,11 @@ suite('HookSchema', () => {
 			});
 
 			test('ignores non-object env', () => {
-				const result = normalizeHookCommand({
+				const result = resolveHookCommand({
 					type: 'command',
 					command: 'echo hello',
 					env: 'invalid'
-				});
+				}, workspaceRoot);
 				assert.deepStrictEqual(result, {
 					type: 'command',
 					command: 'echo hello'
@@ -305,11 +334,11 @@ suite('HookSchema', () => {
 			});
 
 			test('ignores non-number timeoutSec', () => {
-				const result = normalizeHookCommand({
+				const result = resolveHookCommand({
 					type: 'command',
 					command: 'echo hello',
 					timeoutSec: '30'
-				});
+				}, workspaceRoot);
 				assert.deepStrictEqual(result, {
 					type: 'command',
 					command: 'echo hello'

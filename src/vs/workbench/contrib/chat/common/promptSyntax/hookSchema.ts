@@ -5,6 +5,9 @@
 
 import { IJSONSchema } from '../../../../../base/common/jsonSchema.js';
 import * as nls from '../../../../../nls.js';
+import { URI } from '../../../../../base/common/uri.js';
+import { joinPath } from '../../../../../base/common/resources.js';
+import { isAbsolute } from '../../../../../base/common/path.js';
 
 /**
  * Enum of available hook types that can be configured in hooks.json
@@ -77,7 +80,8 @@ export const HOOK_TYPES = [
 export interface IHookCommand {
 	readonly type: 'command';
 	readonly command: string;
-	readonly cwd?: string;
+	/** Resolved working directory URI. */
+	readonly cwd?: URI;
 	readonly env?: Record<string, string>;
 	readonly timeoutSec?: number;
 }
@@ -281,10 +285,11 @@ export function normalizeHookTypeId(rawHookTypeId: string): HookType | undefined
 }
 
 /**
- * Normalizes a raw hook command object to the canonical IHookCommand format.
- * Supports 'bash' and 'powershell' shorthand properties in addition to 'command'.
+ * Normalizes a raw hook command object, validating structure and converting
+ * bash/powershell shorthand to command format.
+ * This is an internal helper - use resolveHookCommand for the full resolution.
  */
-export function normalizeHookCommand(raw: Record<string, unknown>): IHookCommand | undefined {
+function normalizeHookCommand(raw: Record<string, unknown>): { command: string; cwd?: string; env?: Record<string, string>; timeoutSec?: number } | undefined {
 	if (raw.type !== 'command') {
 		return undefined;
 	}
@@ -306,10 +311,43 @@ export function normalizeHookCommand(raw: Record<string, unknown>): IHookCommand
 	}
 
 	return {
-		type: 'command',
 		command,
 		...(typeof raw.cwd === 'string' && { cwd: raw.cwd }),
 		...(typeof raw.env === 'object' && raw.env !== null && { env: raw.env as Record<string, string> }),
 		...(typeof raw.timeoutSec === 'number' && { timeoutSec: raw.timeoutSec }),
+	};
+}
+
+/**
+ * Resolves a raw hook command object to the canonical IHookCommand format.
+ * Normalizes the command and resolves the cwd path relative to the workspace root.
+ * @param raw The raw hook command object from JSON
+ * @param workspaceRootUri The workspace root URI to resolve relative cwd paths against
+ */
+export function resolveHookCommand(raw: Record<string, unknown>, workspaceRootUri: URI | undefined): IHookCommand | undefined {
+	const normalized = normalizeHookCommand(raw);
+	if (!normalized) {
+		return undefined;
+	}
+
+	let cwdUri: URI | undefined;
+	if (normalized.cwd) {
+		if (isAbsolute(normalized.cwd)) {
+			// Use absolute path directly
+			cwdUri = URI.file(normalized.cwd);
+		} else if (workspaceRootUri) {
+			// Resolve relative to workspace root
+			cwdUri = joinPath(workspaceRootUri, normalized.cwd);
+		}
+	} else {
+		cwdUri = workspaceRootUri;
+	}
+
+	return {
+		type: 'command',
+		command: normalized.command,
+		...(cwdUri && { cwd: cwdUri }),
+		...(normalized.env && { env: normalized.env }),
+		...(normalized.timeoutSec !== undefined && { timeoutSec: normalized.timeoutSec }),
 	};
 }

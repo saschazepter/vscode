@@ -34,7 +34,8 @@ import { PromptFileParser, ParsedPromptFile, PromptHeaderAttributes } from '../p
 import { IAgentInstructions, IAgentSource, IChatPromptSlashCommand, ICustomAgent, IExtensionPromptPath, ILocalPromptPath, IPromptPath, IPromptsService, IAgentSkill, IUserPromptPath, PromptsStorage, ExtensionAgentSourceType, CUSTOM_AGENT_PROVIDER_ACTIVATION_EVENT, INSTRUCTIONS_PROVIDER_ACTIVATION_EVENT, IPromptFileContext, IPromptFileResource, PROMPT_FILE_PROVIDER_ACTIVATION_EVENT, SKILL_PROVIDER_ACTIVATION_EVENT, IPromptDiscoveryInfo, IPromptFileDiscoveryResult, ICustomAgentVisibility } from './promptsService.js';
 import { Delayer } from '../../../../../../base/common/async.js';
 import { Schemas } from '../../../../../../base/common/network.js';
-import { normalizeHookTypeId, normalizeHookCommand, IChatRequestHooks, IHookCommand } from '../hookSchema.js';
+import { normalizeHookTypeId, resolveHookCommand, IChatRequestHooks, IHookCommand } from '../hookSchema.js';
+import { IWorkspaceContextService } from '../../../../../../platform/workspace/common/workspace.js';
 
 /**
  * Error thrown when a skill file is missing the required name attribute.
@@ -135,6 +136,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 		@IStorageService private readonly storageService: IStorageService,
 		@IExtensionService private readonly extensionService: IExtensionService,
 		@ITelemetryService private readonly telemetryService: ITelemetryService,
+		@IWorkspaceContextService private readonly workspaceService: IWorkspaceContextService,
 	) {
 		super();
 
@@ -913,6 +915,11 @@ export class PromptsService extends Disposable implements IPromptsService {
 					continue;
 				}
 
+				// Get workspace root for resolving relative cwd paths
+				// Use first workspace folder as the active workspace root
+				const workspaceFolder = this.workspaceService.getWorkspace().folders[0];
+				const workspaceRootUri = workspaceFolder?.uri;
+
 				// Collect hooks by type
 				for (const rawHookTypeId of Object.keys(hooks)) {
 					const hookTypeId = normalizeHookTypeId(rawHookTypeId);
@@ -927,9 +934,9 @@ export class PromptsService extends Disposable implements IPromptsService {
 					}
 
 					for (const rawHookCommand of hookArray) {
-						const normalized = normalizeHookCommand(rawHookCommand as Record<string, unknown>);
-						if (normalized) {
-							collectedHooks[hookTypeId].push(normalized);
+						const resolved = resolveHookCommand(rawHookCommand as Record<string, unknown>, workspaceRootUri);
+						if (resolved) {
+							collectedHooks[hookTypeId].push(resolved);
 							this.logger.trace(`[PromptsService] Collected ${hookTypeId} hook from ${hookFile.uri}`);
 						}
 					}
