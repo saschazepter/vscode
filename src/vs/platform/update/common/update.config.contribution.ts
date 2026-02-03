@@ -80,13 +80,13 @@ configurationRegistry.registerConfiguration({
 		},
 		'update.statusBar': {
 			type: 'string',
-			enum: ['hidden', 'onAction', 'detailed'],
+			enum: ['hidden', 'actionable', 'detailed'],
 			default: 'detailed',
 			scope: ConfigurationScope.APPLICATION,
 			description: localize('statusBar', "Controls the visibility of the update status bar entry."),
 			enumDescriptions: [
 				localize('hidden', "The status bar entry is never shown."),
-				localize('onAction', "The status bar entry is shown when an action is required (e.g., download, install, or restart)."),
+				localize('actionable', "The status bar entry is shown when an action is required (e.g., download, install, or restart)."),
 				localize('detailed', "The status bar entry is shown for all update states including progress.")
 			]
 		}

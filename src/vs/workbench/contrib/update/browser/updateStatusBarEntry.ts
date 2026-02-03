@@ -68,8 +68,8 @@ export class UpdateStatusBarEntryContribution extends Disposable implements IWor
 			StateType.Ready
 		];
 
-		// In 'onAction' mode, only show for states that require user action
-		if (statusBarMode === 'onAction' && !actionRequiredStates.includes(state.type)) {
+		// In 'actionable' mode, only show for states that require user action
+		if (statusBarMode === 'actionable' && !actionRequiredStates.includes(state.type)) {
 			this.statusBarEntryAccessor.clear();
 			return;
 		}
