@@ -161,6 +161,10 @@ export interface IChatAgentRequest {
 	 * Set to true by the editor to request the language model gracefully stop after its next opportunity.
 	 */
 	yieldRequested?: boolean;
+	/**
+	 * The request ID of the parent request that invoked this subagent.
+	 */
+	parentRequestId?: string;
 
 }
 
