@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as dom from '../../../../base/browser/dom.js';
+import { asCSSUrl } from '../../../../base/browser/cssValue.js';
 import { ActionBar } from '../../../../base/browser/ui/actionbar/actionbar.js';
 import { Button } from '../../../../base/browser/ui/button/button.js';
 import { toAction } from '../../../../base/common/actions.js';
@@ -30,6 +31,7 @@ import './media/updateStatusBarEntry.css';
 export class UpdateStatusBarEntryContribution extends Disposable implements IWorkbenchContribution {
 	private static readonly NAME = nls.localize('updateStatus', "Update Status");
 	private readonly statusBarEntryAccessor = this._register(new MutableDisposable<IStatusbarEntryAccessor>());
+	private lastStateType: StateType | undefined;
 
 	constructor(
 		@IUpdateService private readonly updateService: IUpdateService,
@@ -55,6 +57,11 @@ export class UpdateStatusBarEntryContribution extends Disposable implements IWor
 	}
 
 	private onUpdateStateChange(state: UpdateState) {
+		if (this.lastStateType !== state.type) {
+			this.statusBarEntryAccessor.clear();
+			this.lastStateType = state.type;
+		}
+
 		const statusBarMode = this.configurationService.getValue<string>('update.statusBar');
 
 		if (statusBarMode === 'hidden') {
@@ -94,8 +101,8 @@ export class UpdateStatusBarEntryContribution extends Disposable implements IWor
 			case StateType.AvailableForDownload:
 				this.updateStatusBarEntry({
 					name: UpdateStatusBarEntryContribution.NAME,
-					text: nls.localize('updateStatus.updateAvailableStatus', "$(cloud-download) Update is available. Click to download."),
-					ariaLabel: nls.localize('updateStatus.updateAvailableAria', "Update available. Click to download."),
+					text: nls.localize('updateStatus.updateAvailableStatus', "$(cloud-download) Update is available. Click here to download."),
+					ariaLabel: nls.localize('updateStatus.updateAvailableAria', "Update available. Click here to download."),
 					tooltip: this.getAvailableTooltip(state.update),
 					command: 'update.downloadNow'
 				});
@@ -114,8 +121,8 @@ export class UpdateStatusBarEntryContribution extends Disposable implements IWor
 			case StateType.Downloaded:
 				this.updateStatusBarEntry({
 					name: UpdateStatusBarEntryContribution.NAME,
-					text: nls.localize('updateStatus.updateReadyStatus', "$(package) Downloaded update. Click to install."),
-					ariaLabel: nls.localize('updateStatus.updateReadyAria', "Downloaded update. Click to install."),
+					text: nls.localize('updateStatus.updateReadyStatus', "$(package) Downloaded update. Click here to install."),
+					ariaLabel: nls.localize('updateStatus.updateReadyAria', "Downloaded update. Click here to install."),
 					tooltip: this.getReadyToInstallTooltip(state.update),
 					command: 'update.install'
 				});
@@ -134,8 +141,8 @@ export class UpdateStatusBarEntryContribution extends Disposable implements IWor
 			case StateType.Ready:
 				this.updateStatusBarEntry({
 					name: UpdateStatusBarEntryContribution.NAME,
-					text: nls.localize('updateStatus.restartToUpdateStatus', "$(debug-restart) Update is ready. Click to restart."),
-					ariaLabel: nls.localize('updateStatus.restartToUpdateAria', "Update is ready. Click to restart."),
+					text: nls.localize('updateStatus.restartToUpdateStatus', "$(debug-restart) Update is ready. Click here to restart."),
+					ariaLabel: nls.localize('updateStatus.restartToUpdateAria', "Update is ready. Click here to restart."),
 					tooltip: this.getRestartToUpdateTooltip(state.update),
 					command: 'update.restart'
 				});
@@ -352,7 +359,7 @@ export class UpdateStatusBarEntryContribution extends Disposable implements IWor
 			id: 'update.openSettings',
 			label: nls.localize('updateStatus.settingsTooltip', "Update Settings"),
 			class: ThemeIcon.asClassName(Codicon.gear),
-			run: () => this.runCommandAndClose('workbench.action.openSettings', 'update'),
+			run: () => this.runCommandAndClose('workbench.action.openSettings', '@id:update*'),
 		})], { icon: true, label: false });
 	}
 
@@ -360,9 +367,9 @@ export class UpdateStatusBarEntryContribution extends Disposable implements IWor
 		const productInfo = dom.append(container, dom.$('.product-info'));
 
 		const logoContainer = dom.append(productInfo, dom.$('.product-logo'));
-		const logo = dom.append(logoContainer, dom.$('img')) as HTMLImageElement;
-		logo.src = FileAccess.asBrowserUri('vs/workbench/browser/media/code-icon.svg').toString(true);
-		logo.alt = this.productService.nameLong;
+		logoContainer.style.backgroundImage = asCSSUrl(FileAccess.asBrowserUri('vs/workbench/browser/media/code-icon.svg'));
+		logoContainer.setAttribute('role', 'img');
+		logoContainer.setAttribute('aria-label', this.productService.nameLong);
 
 		const details = dom.append(productInfo, dom.$('.product-details'));
 
