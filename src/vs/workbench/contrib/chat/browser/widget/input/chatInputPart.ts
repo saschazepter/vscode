@@ -151,7 +151,6 @@ export interface IChatInputPartOptions {
 	supportsChangingModes?: boolean;
 	dndContainer?: HTMLElement;
 	widgetViewKindTag: string;
-	isQuickChat?: boolean;
 	/**
 	 * Optional delegate for the session target picker.
 	 * When provided, allows the input part to maintain independent state for the selected session type.
@@ -2142,7 +2141,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		}));
 		this._register(inputResizeObserver.observe(this.container));
 
-		if (this.options.renderStyle === 'compact' && this.options.isQuickChat) {
+		if (this.options.renderStyle === 'compact') {
 			const toolbarsResizeObserver = this._register(new dom.DisposableResizeObserver(() => {
 				// Have to layout the editor when the toolbars change size, when they share width with the editor.
 				// This handles ensuring we layout when quick chat is shown/hidden.
