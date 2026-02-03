@@ -29,6 +29,13 @@ const nativeShortcuts = new Set([
 	KeyMod.CtrlCmd | KeyCode.KeyZ,
 	KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyZ
 ]);
+const builtInSchemes = new Set([
+	'http',
+	'https',
+	'file',
+	'about',
+	'data'
+]);
 
 /**
  * Represents a single browser view instance with its WebContentsView and all associated logic.
@@ -333,7 +340,7 @@ export class BrowserView extends Disposable {
 	 */
 	private maybeHandleExternalURL(url: string): boolean {
 		const uri = URI.parse(url);
-		if (!this.viewSession.protocol.isProtocolHandled(uri.scheme)) {
+		if (!builtInSchemes.has(uri.scheme)) {
 			// Pass to URL service with trusted=false to trigger confirmation dialogs
 			this.urlService.open(uri, { trusted: false });
 			return true;
