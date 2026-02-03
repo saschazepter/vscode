@@ -574,6 +574,16 @@ export class ButtonBar {
 	private readonly _buttons: IButton[] = [];
 	private readonly _buttonStore = new DisposableStore();
 
+	private _context: unknown;
+
+	get context(): unknown {
+		return this._context;
+	}
+
+	set context(context: unknown) {
+		this._context = context;
+	}
+
 	constructor(private readonly container: HTMLElement, private readonly options?: { alignment?: ButtonBarAlignment }) { }
 
 	dispose(): void {
