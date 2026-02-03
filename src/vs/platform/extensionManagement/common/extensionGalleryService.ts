@@ -1981,7 +1981,7 @@ export abstract class AbstractExtensionGalleryService implements IExtensionGalle
 			extension: {
 				id: this.productService.defaultChatAgent.chatExtensionId,
 				displayName: 'GitHub Copilot Chat',
-				autoMigrate: { storage: false },
+				autoMigrate: { storage: false, donotDisable: true },
 				preRelease: this.productService.quality !== 'stable'
 			}
 		};
