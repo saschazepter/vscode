@@ -764,6 +764,7 @@ class AgentSessionsCache {
 					insertions: change.insertions,
 					deletions: change.deletions,
 				})) : session.changes,
+				metadata: session.metadata,
 			}));
 		} catch {
 			return []; // invalid data in storage, fallback to empty sessions list
