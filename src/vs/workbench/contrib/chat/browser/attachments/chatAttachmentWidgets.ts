@@ -394,7 +394,7 @@ export class ImageAttachmentWidget extends AbstractChatAttachmentWidget {
 		@ILanguageModelsService private readonly languageModelsService: ILanguageModelsService,
 		@IInstantiationService instantiationService: IInstantiationService,
 		@ILabelService private readonly labelService: ILabelService,
-		@IDefaultAccountService private readonly defaultAccountService: IDefaultAccountService,
+		@IDefaultAccountService private readonly defaultAccountService?: IDefaultAccountService,
 	) {
 		super(attachment, options, container, contextResourceLabels, currentLanguageModel, commandService, openerService, configurationService);
 
@@ -418,7 +418,7 @@ export class ImageAttachmentWidget extends AbstractChatAttachmentWidget {
 		const currentLanguageModelName = this.currentLanguageModel ? this.languageModelsService.lookupLanguageModel(this.currentLanguageModel.identifier)?.name ?? this.currentLanguageModel.identifier : 'Current model';
 
 		const fullName = resource ? this.labelService.getUriLabel(resource) : (attachment.fullName || attachment.name);
-		const visionDisabledByPolicy = isVisionDisabledByPolicy(this.defaultAccountService.policyData);
+		const visionDisabledByPolicy = isVisionDisabledByPolicy(this.defaultAccountService?.policyData);
 		this._register(createImageElements(resource, attachment.name, fullName, this.element, attachment.value as Uint8Array, this.hoverService, ariaLabel, currentLanguageModelName, clickHandler, this.currentLanguageModel, attachment.omittedState, visionDisabledByPolicy));
 
 		if (resource) {
@@ -830,7 +830,7 @@ export class NotebookCellOutputChatAttachmentWidget extends AbstractChatAttachme
 		@ILanguageModelsService private readonly languageModelsService: ILanguageModelsService,
 		@INotebookService private readonly notebookService: INotebookService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
-		@IDefaultAccountService private readonly defaultAccountService: IDefaultAccountService,
+		@IDefaultAccountService private readonly defaultAccountService?: IDefaultAccountService,
 	) {
 		super(attachment, options, container, contextResourceLabels, currentLanguageModel, commandService, openerService, configurationService);
 
@@ -891,7 +891,7 @@ export class NotebookCellOutputChatAttachmentWidget extends AbstractChatAttachme
 		const clickHandler = async () => await this.openResource(resource, { editorOptions: { preserveFocus: true } }, false, undefined);
 		const currentLanguageModelName = this.currentLanguageModel ? this.languageModelsService.lookupLanguageModel(this.currentLanguageModel.identifier)?.name ?? this.currentLanguageModel.identifier : undefined;
 		const buffer = this.getOutputItem(resource, attachment)?.data.buffer ?? new Uint8Array();
-		const visionDisabledByPolicy = isVisionDisabledByPolicy(this.defaultAccountService.policyData);
+		const visionDisabledByPolicy = isVisionDisabledByPolicy(this.defaultAccountService?.policyData);
 		this._register(createImageElements(resource, attachment.name, attachment.name, this.element, buffer, this.hoverService, ariaLabel, currentLanguageModelName, clickHandler, this.currentLanguageModel, attachment.omittedState, visionDisabledByPolicy));
 	}
 
