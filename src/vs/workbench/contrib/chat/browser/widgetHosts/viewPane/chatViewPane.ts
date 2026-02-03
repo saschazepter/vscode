@@ -51,6 +51,7 @@ import { AgentSessionsControl } from '../../agentSessions/agentSessionsControl.j
 import { ACTION_ID_NEW_CHAT } from '../../actions/chatActions.js';
 import { ChatWidget } from '../../widget/chatWidget.js';
 import { ChatViewWelcomeController, IViewWelcomeDelegate } from '../../viewsWelcome/chatViewWelcomeController.js';
+import { IChatViewsWelcomeDescriptor } from '../../viewsWelcome/chatViewsWelcome.js';
 import { IWorkbenchLayoutService, LayoutSettings, Position } from '../../../../../services/layout/browser/layoutService.js';
 import { AgentSessionsViewerOrientation, AgentSessionsViewerPosition } from '../../agentSessions/agentSessions.js';
 import { IProgressService } from '../../../../../../platform/progress/common/progress.js';
@@ -841,16 +842,6 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 				newSessionsViewerOrientation = width >= ChatViewPane.SESSIONS_SIDEBAR_VIEW_MIN_WIDTH ? AgentSessionsViewerOrientation.SideBySide : AgentSessionsViewerOrientation.Stacked;
 		}
 
-		if (
-			newSessionsViewerOrientation === AgentSessionsViewerOrientation.Stacked &&
-			width >= ChatViewPane.SESSIONS_SIDEBAR_VIEW_MIN_WIDTH &&
-			this.getViewPositionAndLocation().location === ViewContainerLocation.AuxiliaryBar &&
-			this.layoutService.isAuxiliaryBarMaximized()
-		) {
-			// Always side-by-side in maximized auxiliary bar if space allows
-			newSessionsViewerOrientation = AgentSessionsViewerOrientation.SideBySide;
-		}
-
 		this.sessionsViewerOrientation = newSessionsViewerOrientation;
 
 		if (newSessionsViewerOrientation === AgentSessionsViewerOrientation.SideBySide) {
@@ -1025,6 +1016,10 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 		this.logService.trace(`ChatViewPane#shouldShowWelcome() = ${shouldShow}: hasCoreAgent=${hasCoreAgent} hasDefaultAgent=${hasDefaultAgent} || noViewModel=${!this._widget?.viewModel} && noPersistedSessions=${noPersistedSessions}`);
 
 		return !!shouldShow;
+	}
+
+	getMatchingWelcomeView(): IChatViewsWelcomeDescriptor | undefined {
+		return this.welcomeController?.getMatchingWelcomeView();
 	}
 
 	override getActionsContext(): IChatViewTitleActionContext | undefined {

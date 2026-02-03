@@ -78,6 +78,8 @@ export enum PromptFileSource {
 	ClaudePersonal = 'claude-personal',
 	ClaudeWorkspace = 'claude-workspace',
 	ClaudeWorkspaceLocal = 'claude-workspace-local',
+	AgentsWorkspace = 'agents-workspace',
+	AgentsPersonal = 'agents-personal',
 	ConfigWorkspace = 'config-workspace',
 	ConfigPersonal = 'config-personal',
 	ExtensionContribution = 'extension-contribution',
@@ -125,8 +127,10 @@ export interface IResolvedPromptFile {
  */
 export const DEFAULT_SKILL_SOURCE_FOLDERS: readonly IPromptSourceFolder[] = [
 	{ path: '.github/skills', source: PromptFileSource.GitHubWorkspace, storage: PromptsStorage.local },
+	{ path: '.agents/skills', source: PromptFileSource.AgentsWorkspace, storage: PromptsStorage.local },
 	{ path: '.claude/skills', source: PromptFileSource.ClaudeWorkspace, storage: PromptsStorage.local },
 	{ path: '~/.copilot/skills', source: PromptFileSource.CopilotPersonal, storage: PromptsStorage.user },
+	{ path: '~/.agents/skills', source: PromptFileSource.AgentsPersonal, storage: PromptsStorage.user },
 	{ path: '~/.claude/skills', source: PromptFileSource.ClaudePersonal, storage: PromptsStorage.user },
 ];
 

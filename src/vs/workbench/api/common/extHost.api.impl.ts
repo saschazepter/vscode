@@ -2024,6 +2024,7 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 			McpToolInvocationContentData: extHostTypes.McpToolInvocationContentData,
 			SettingsSearchResultKind: extHostTypes.SettingsSearchResultKind,
 			ChatHookResultKind: extHostTypes.ChatHookResultKind,
+			ChatTodoStatus: extHostTypes.ChatTodoStatus,
 		};
 	};
 }
