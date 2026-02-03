@@ -587,7 +587,7 @@ export class InstallAction extends ExtensionAction {
 
 		this.extensionsWorkbenchService.open(this.extension, { showPreReleaseVersion: this.options.installPreReleaseVersion, preserveFocus: true });
 
-		alert(localize('installExtensionStartBackground', "Installing extension {0} started. Opening extension details in the background.", this.extension.displayName));
+		alert(localize('installExtensionStart', "Installing extension {0} started. An editor is now open with more details on this extension", this.extension.displayName));
 
 		/* __GDPR__
 			"extensions:action:install" : {
@@ -825,7 +825,7 @@ export abstract class InstallInOtherServerAction extends ExtensionAction {
 			return;
 		}
 		this.extensionsWorkbenchService.open(this.extension, { preserveFocus: true });
-		alert(localize('installExtensionStartBackground', "Installing extension {0} started. Opening extension details in the background.", this.extension.displayName));
+		alert(localize('installExtensionStart', "Installing extension {0} started. An editor is now open with more details on this extension", this.extension.displayName));
 		return this.extensionsWorkbenchService.installInServer(this.extension, this.server);
 	}
 
