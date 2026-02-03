@@ -8,22 +8,23 @@ import { createDecorator } from '../../../platform/instantiation/common/instanti
 import { IExtensionDescription } from '../../../platform/extensions/common/extensions.js';
 import { HookTypeValue } from '../../contrib/chat/common/promptSyntax/hookSchema.js';
 import { ExtHostChatAgents2 } from './extHostChatAgents2.js';
+import { ChatHookResultKind } from './extHostTypes.js';
 
 export const IExtHostHooks = createDecorator<IExtHostHooks>('IExtHostHooks');
 
 export interface IChatHookExecutionOptions {
-	readonly hookType: HookTypeValue;
 	readonly input?: unknown;
 	readonly toolInvocationToken: unknown;
 }
 
+export { ChatHookResultKind };
+
 export interface IChatHookResult {
-	readonly exitCode: number;
-	readonly stdout: string;
-	readonly stderr: string;
+	readonly kind: ChatHookResultKind;
+	readonly result: string | object;
 }
 
 export interface IExtHostHooks {
 	initialize(extHostChatAgents: ExtHostChatAgents2): void;
-	executeHook(extension: IExtensionDescription, options: IChatHookExecutionOptions, token?: CancellationToken): Promise<IChatHookResult[]>;
+	executeHook(extension: IExtensionDescription, hookType: HookTypeValue, options: IChatHookExecutionOptions, token?: CancellationToken): Promise<IChatHookResult[]>;
 }

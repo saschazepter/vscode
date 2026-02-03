@@ -6,13 +6,14 @@
 import { spawn } from 'child_process';
 import { CancellationToken } from '../../../base/common/cancellation.js';
 import { homedir } from 'os';
-import { IChatHookExecutionOptions, IChatHookResult, IExtHostHooks } from '../common/extHostHooks.js';
+import { ChatHookResultKind, IChatHookExecutionOptions, IChatHookResult, IExtHostHooks } from '../common/extHostHooks.js';
 import { IExtensionDescription } from '../../../platform/extensions/common/extensions.js';
 import { isToolInvocationContext, IToolInvocationContext } from '../../contrib/chat/common/tools/languageModelToolsService.js';
 import { HookTypeValue, IHookCommand, IChatRequestHooks } from '../../contrib/chat/common/promptSyntax/hookSchema.js';
 import { ExtHostChatAgents2 } from '../common/extHostChatAgents2.js';
 import { DisposableStore, MutableDisposable } from '../../../base/common/lifecycle.js';
 import { disposableTimeout } from '../../../base/common/async.js';
+import { ILogService } from '../../../platform/log/common/log.js';
 
 const SIGKILL_DELAY_MS = 5000;
 
@@ -20,11 +21,15 @@ export class NodeExtHostHooks implements IExtHostHooks {
 
 	private _extHostChatAgents: ExtHostChatAgents2 | undefined;
 
+	constructor(
+		@ILogService private readonly _logService: ILogService
+	) { }
+
 	initialize(extHostChatAgents: ExtHostChatAgents2): void {
 		this._extHostChatAgents = extHostChatAgents;
 	}
 
-	async executeHook(extension: IExtensionDescription, options: IChatHookExecutionOptions, token?: CancellationToken): Promise<IChatHookResult[]> {
+	async executeHook(extension: IExtensionDescription, hookType: HookTypeValue, options: IChatHookExecutionOptions, token?: CancellationToken): Promise<IChatHookResult[]> {
 		if (!this._extHostChatAgents) {
 			throw new Error('ExtHostHooks not initialized');
 		}
@@ -39,20 +44,27 @@ export class NodeExtHostHooks implements IExtHostHooks {
 			return [];
 		}
 
-		const hookCommands = this._getHooksForType(hooks, options.hookType);
+		const hookCommands = this._getHooksForType(hooks, hookType);
 		if (!hookCommands || hookCommands.length === 0) {
 			return [];
 		}
 
+		this._logService.debug(`[ExtHostHooks] Executing ${hookCommands.length} hook(s) for type '${hookType}'`);
+		this._logService.trace(`[ExtHostHooks] Hook input:`, options.input);
+
 		const results: IChatHookResult[] = [];
 		for (const hookCommand of hookCommands) {
 			try {
-				results.push(await this._executeCommand(hookCommand, options.input, token));
+				this._logService.debug(`[ExtHostHooks] Running hook command: ${hookCommand.command}`);
+				const result = await this._executeCommand(hookCommand, options.input, token);
+				this._logService.debug(`[ExtHostHooks] Hook completed with result kind: ${ChatHookResultKind[result.kind]}`);
+				this._logService.trace(`[ExtHostHooks] Hook output:`, result.result);
+				results.push(result);
 			} catch (err) {
+				this._logService.debug(`[ExtHostHooks] Hook failed with error: ${err instanceof Error ? err.message : String(err)}`);
 				results.push({
-					exitCode: -1,
-					stdout: '',
-					stderr: err instanceof Error ? err.message : String(err)
+					kind: ChatHookResultKind.Error,
+					result: err instanceof Error ? err.message : String(err)
 				});
 			}
 		}
@@ -128,11 +140,23 @@ export class NodeExtHostHooks implements IExtHostHooks {
 			// Resolve on close (after streams flush)
 			child.on('close', () => {
 				cleanup();
-				resolve({
-					stdout: stdout.join(''),
-					stderr: stderr.join(''),
-					exitCode: exitCode ?? 1,
-				});
+				const code = exitCode ?? 1;
+				const stdoutStr = stdout.join('');
+				const stderrStr = stderr.join('');
+
+				if (code === 0) {
+					// Success - try to parse stdout as JSON, otherwise return as string
+					let result: string | object = stdoutStr;
+					try {
+						result = JSON.parse(stdoutStr);
+					} catch {
+						// Keep as string if not valid JSON
+					}
+					resolve({ kind: ChatHookResultKind.Success, result });
+				} else {
+					// Error
+					resolve({ kind: ChatHookResultKind.Error, result: stderrStr });
+				}
 			});
 
 			child.on('error', err => {

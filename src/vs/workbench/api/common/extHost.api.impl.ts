@@ -1594,9 +1594,9 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 				checkProposedApiEnabled(extension, 'chatPromptFiles');
 				return extHostChatAgents2.registerPromptFileProvider(extension, PromptsType.skill, provider);
 			},
-			executeHook(options: vscode.ChatHookExecutionOptions, token?: vscode.CancellationToken): Thenable<vscode.ChatHookResult[]> {
+			executeHook(hookType: vscode.ChatHookType, options: vscode.ChatHookExecutionOptions, token?: vscode.CancellationToken): Thenable<vscode.ChatHookResult[]> {
 				checkProposedApiEnabled(extension, 'chatHooks');
-				return extHostHooks.executeHook(extension, options, token);
+				return extHostHooks.executeHook(extension, hookType, options, token);
 			},
 		};
 
@@ -2020,6 +2020,7 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 			McpToolAvailability: extHostTypes.McpToolAvailability,
 			McpToolInvocationContentData: extHostTypes.McpToolInvocationContentData,
 			SettingsSearchResultKind: extHostTypes.SettingsSearchResultKind,
+			ChatHookResultKind: extHostTypes.ChatHookResultKind,
 		};
 	};
 }

@@ -3929,6 +3929,15 @@ export enum SettingsSearchResultKind {
 
 //#endregion
 
+//#region Chat Hooks
+
+export enum ChatHookResultKind {
+	Success = 1,
+	Error = 2
+}
+
+//#endregion
+
 //#region Speech
 
 export enum SpeechToTextStatus {
