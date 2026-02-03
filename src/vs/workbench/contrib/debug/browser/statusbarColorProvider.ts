@@ -93,8 +93,9 @@ export class StatusBarColorProvider implements IWorkbenchContribution {
 		const isInCommandCenter = debugConfig.toolBarLocation === 'commandCenter';
 
 		this.styleSheet.textContent = isInCommandCenter && isInDebugMode ? `
-			.monaco-workbench {
-				${asCssVariableName(COMMAND_CENTER_BACKGROUND)}: ${asCssVariable(COMMAND_CENTER_DEBUGGING_BACKGROUND)};
+			/* Apply debugging background only to the command center search box, not agent status */
+			.monaco-workbench .part.titlebar > .titlebar-container > .titlebar-center > .window-title > .command-center .action-item.command-center-center {
+				background-color: ${asCssVariable(COMMAND_CENTER_DEBUGGING_BACKGROUND)};
 			}
 		` : '';
 	}
