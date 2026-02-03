@@ -35,14 +35,9 @@ export const AGENT_LANGUAGE_ID = 'chatagent';
 export const SKILL_LANGUAGE_ID = 'skill';
 
 /**
- * Language ID for hook syntax (JSON).
- */
-export const HOOK_LANGUAGE_ID = 'json';
-
-/**
  * Prompt and instructions files language selector.
  */
-export const ALL_PROMPTS_LANGUAGE_SELECTOR: LanguageSelector = [PROMPT_LANGUAGE_ID, INSTRUCTIONS_LANGUAGE_ID, AGENT_LANGUAGE_ID, SKILL_LANGUAGE_ID, HOOK_LANGUAGE_ID];
+export const ALL_PROMPTS_LANGUAGE_SELECTOR: LanguageSelector = [PROMPT_LANGUAGE_ID, INSTRUCTIONS_LANGUAGE_ID, AGENT_LANGUAGE_ID, SKILL_LANGUAGE_ID];
 
 /**
  * The language id for a prompts type.
@@ -58,7 +53,8 @@ export function getLanguageIdForPromptsType(type: PromptsType): string {
 		case PromptsType.skill:
 			return SKILL_LANGUAGE_ID;
 		case PromptsType.hook:
-			return HOOK_LANGUAGE_ID;
+			// Hooks use JSON syntax with schema validation
+			return 'json';
 		default:
 			throw new Error(`Unknown prompt type: ${type}`);
 	}

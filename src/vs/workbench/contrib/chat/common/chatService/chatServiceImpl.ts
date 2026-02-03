@@ -49,7 +49,7 @@ import { ChatAgentLocation, ChatConfiguration, ChatModeKind } from '../constants
 import { ChatMessageRole, IChatMessage } from '../languageModels.js';
 import { ILanguageModelToolsService } from '../tools/languageModelToolsService.js';
 import { ChatSessionOperationLog } from '../model/chatSessionOperationLog.js';
-import { CollectHooks } from '../promptSyntax/collectHooks.js';
+import { IPromptsService } from '../promptSyntax/service/promptsService.js';
 import { IChatRequestHooks } from '../promptSyntax/hookSchema.js';
 
 const serializedChatKey = 'interactive.sessions';
@@ -143,6 +143,7 @@ export class ChatService extends Disposable implements IChatService {
 		@IChatTransferService private readonly chatTransferService: IChatTransferService,
 		@IChatSessionsService private readonly chatSessionService: IChatSessionsService,
 		@IMcpService private readonly mcpService: IMcpService,
+		@IPromptsService private readonly promptsService: IPromptsService,
 	) {
 		super();
 
@@ -848,11 +849,9 @@ export class ChatService extends Disposable implements IChatService {
 			let detectedCommand: IChatAgentCommand | undefined;
 
 			// Collect hooks from hooks.json files
-			const hookCollector = this.instantiationService.createInstance(CollectHooks);
 			let collectedHooks: IChatRequestHooks | undefined;
 			try {
-				console.log('[hooks] collecting hooks');
-				collectedHooks = await hookCollector.collect(token);
+				collectedHooks = await this.promptsService.getHooks(token);
 				console.log('[hooks] collected', collectedHooks);
 			} catch (error) {
 				this.logService.warn('[ChatService] Failed to collect hooks:', error);

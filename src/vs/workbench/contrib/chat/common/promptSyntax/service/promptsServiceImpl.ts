@@ -34,6 +34,7 @@ import { PromptFileParser, ParsedPromptFile, PromptHeaderAttributes } from '../p
 import { IAgentInstructions, IAgentSource, IChatPromptSlashCommand, ICustomAgent, IExtensionPromptPath, ILocalPromptPath, IPromptPath, IPromptsService, IAgentSkill, IUserPromptPath, PromptsStorage, ExtensionAgentSourceType, CUSTOM_AGENT_PROVIDER_ACTIVATION_EVENT, INSTRUCTIONS_PROVIDER_ACTIVATION_EVENT, IPromptFileContext, IPromptFileResource, PROMPT_FILE_PROVIDER_ACTIVATION_EVENT, SKILL_PROVIDER_ACTIVATION_EVENT, IPromptDiscoveryInfo, IPromptFileDiscoveryResult, ICustomAgentVisibility } from './promptsService.js';
 import { Delayer } from '../../../../../../base/common/async.js';
 import { Schemas } from '../../../../../../base/common/network.js';
+import { HookTypeId, IChatRequestHooks, IHookCommand } from '../hookSchema.js';
 
 /**
  * Error thrown when a skill file is missing the required name attribute.
@@ -86,6 +87,11 @@ export class PromptsService extends Disposable implements IPromptsService {
 	 * Cached slash commands. Caching only happens if the `onDidChangeSlashCommands` event is used.
 	 */
 	private readonly cachedSlashCommands: CachedPromise<readonly IChatPromptSlashCommand[]>;
+
+	/**
+	 * Cached hooks. Invalidated when hook files change.
+	 */
+	private readonly cachedHooks: CachedPromise<IChatRequestHooks | undefined>;
 
 	/**
 	 * Cache for parsed prompt files keyed by URI.
@@ -147,6 +153,14 @@ export class PromptsService extends Disposable implements IPromptsService {
 			(token) => this.computePromptSlashCommands(token),
 			() => Event.any(this.getFileLocatorEvent(PromptsType.prompt), Event.filter(modelChangeEvent, e => e.promptType === PromptsType.prompt))
 		));
+
+		this.cachedHooks = this._register(new CachedPromise(
+			(token) => this.computeHooks(token),
+			() => this.getFileLocatorEvent(PromptsType.hook)
+		));
+
+		// Hack: Subscribe to activate caching (CachedPromise only caches when onDidChange has listeners)
+		this._register(this.cachedHooks.onDidChange(() => { }));
 	}
 
 	private getFileLocatorEvent(type: PromptsType): Event<void> {
@@ -847,6 +861,123 @@ export class PromptsService extends Disposable implements IPromptsService {
 		});
 
 		return result;
+	}
+
+	public getHooks(token: CancellationToken): Promise<IChatRequestHooks | undefined> {
+		return this.cachedHooks.get(token);
+	}
+
+	private async computeHooks(token: CancellationToken): Promise<IChatRequestHooks | undefined> {
+		const hookFiles = await this.listPromptFiles(PromptsType.hook, token);
+
+		if (hookFiles.length === 0) {
+			this.logger.trace('[PromptsService] No hook files found.');
+			return undefined;
+		}
+
+		this.logger.trace(`[PromptsService] Found ${hookFiles.length} hook file(s).`);
+
+		const collectedHooks: {
+			sessionStart: IHookCommand[];
+			sessionEnd: IHookCommand[];
+			userPromptSubmitted: IHookCommand[];
+			preToolUse: IHookCommand[];
+			postToolUse: IHookCommand[];
+			errorOccurred: IHookCommand[];
+		} = {
+			sessionStart: [],
+			sessionEnd: [],
+			userPromptSubmitted: [],
+			preToolUse: [],
+			postToolUse: [],
+			errorOccurred: [],
+		};
+
+		for (const hookFile of hookFiles) {
+			try {
+				const content = await this.fileService.readFile(hookFile.uri);
+				const json = JSON.parse(content.value.toString());
+
+				if (json.version !== 1) {
+					this.logger.warn(`[PromptsService] Unsupported hook file version: ${json.version} in ${hookFile.uri}`);
+					continue;
+				}
+
+				const hooks = json.hooks;
+				if (!hooks || typeof hooks !== 'object') {
+					this.logger.trace(`[PromptsService] No hooks object in ${hookFile.uri}`);
+					continue;
+				}
+
+				// Collect hooks by type
+				for (const hookTypeId of Object.keys(hooks) as HookTypeId[]) {
+					const hookArray = hooks[hookTypeId];
+					if (!Array.isArray(hookArray)) {
+						continue;
+					}
+
+					for (const rawHookCommand of hookArray) {
+						const normalized = this.normalizeHookCommand(rawHookCommand as Record<string, unknown>);
+						if (normalized) {
+							collectedHooks[hookTypeId].push(normalized);
+							this.logger.trace(`[PromptsService] Collected ${hookTypeId} hook from ${hookFile.uri}`);
+						}
+					}
+				}
+			} catch (error) {
+				this.logger.warn(`[PromptsService] Failed to parse hook file: ${hookFile.uri}`, error);
+			}
+		}
+
+		// Check if any hooks were collected
+		const hasHooks = Object.values(collectedHooks).some(arr => arr.length > 0);
+		if (!hasHooks) {
+			this.logger.trace('[PromptsService] No valid hooks collected.');
+			return undefined;
+		}
+
+		// Build the result, only including hook types that have entries
+		const result: IChatRequestHooks = {
+			...(collectedHooks.sessionStart.length > 0 && { sessionStart: collectedHooks.sessionStart }),
+			...(collectedHooks.sessionEnd.length > 0 && { sessionEnd: collectedHooks.sessionEnd }),
+			...(collectedHooks.userPromptSubmitted.length > 0 && { userPromptSubmitted: collectedHooks.userPromptSubmitted }),
+			...(collectedHooks.preToolUse.length > 0 && { preToolUse: collectedHooks.preToolUse }),
+			...(collectedHooks.postToolUse.length > 0 && { postToolUse: collectedHooks.postToolUse }),
+			...(collectedHooks.errorOccurred.length > 0 && { errorOccurred: collectedHooks.errorOccurred }),
+		};
+
+		this.logger.trace(`[PromptsService] Collected hooks: ${JSON.stringify(Object.keys(result))}`);
+		return result;
+	}
+
+	private normalizeHookCommand(raw: Record<string, unknown>): IHookCommand | undefined {
+		if (raw.type !== 'command') {
+			return undefined;
+		}
+
+		let command: string | undefined;
+
+		if (typeof raw.command === 'string' && raw.command.length > 0) {
+			command = raw.command;
+		} else if (typeof raw.bash === 'string' && raw.bash.length > 0) {
+			// Convert bash to command by prefixing with 'bash -c'
+			command = `bash -c ${JSON.stringify(raw.bash)}`;
+		} else if (typeof raw.powershell === 'string' && raw.powershell.length > 0) {
+			// Convert powershell to command by prefixing with 'powershell -Command'
+			command = `powershell -Command ${JSON.stringify(raw.powershell)}`;
+		}
+
+		if (!command) {
+			return undefined;
+		}
+
+		return {
+			type: 'command',
+			command,
+			...(typeof raw.cwd === 'string' && { cwd: raw.cwd }),
+			...(typeof raw.env === 'object' && raw.env !== null && { env: raw.env as Record<string, string> }),
+			...(typeof raw.timeoutSec === 'number' && { timeoutSec: raw.timeoutSec }),
+		};
 	}
 
 	public async getPromptDiscoveryInfo(type: PromptsType, token: CancellationToken): Promise<IPromptDiscoveryInfo> {
