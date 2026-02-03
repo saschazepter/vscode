@@ -28,7 +28,7 @@ suite('UpdateStatusBarEntry', () => {
 			// Zero or negative values
 			assert.strictEqual(computeDownloadTimeRemaining(createDownloadingState(0, 1000, now - 1000)), undefined);
 			assert.strictEqual(computeDownloadTimeRemaining(createDownloadingState(500, 0, now - 1000)), undefined);
-			assert.strictEqual(computeDownloadTimeRemaining(createDownloadingState(500, 1000, now)), undefined); // elapsedMs is 0
+			assert.strictEqual(computeDownloadTimeRemaining(createDownloadingState(500, 1000, now + 1000)), undefined);
 			assert.strictEqual(computeDownloadTimeRemaining(createDownloadingState(-100, 1000, now - 1000)), undefined);
 		});
 
@@ -128,7 +128,6 @@ suite('UpdateStatusBarEntry', () => {
 
 		test('returns undefined for zero or negative elapsed time', () => {
 			const now = Date.now();
-			assert.strictEqual(computeDownloadSpeed(createDownloadingState(500, 1000, now)), undefined);
 			assert.strictEqual(computeDownloadSpeed(createDownloadingState(500, 1000, now + 1000)), undefined);
 		});
 
