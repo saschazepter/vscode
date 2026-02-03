@@ -228,19 +228,13 @@ export class AgentSessionsFilter extends Disposable implements Required<IAgentSe
 			return overrideExclude;
 		}
 
+		// Use the service for core filtering logic (read, provider, status)
+		if (this.agentSessionsService.excludeSession(session)) {
+			return true;
+		}
+
+		// Handle archived sessions separately since it depends on groupResults
 		const excludes = this.excludes;
-		if (excludes.read && session.isRead()) {
-			return true;
-		}
-
-		if (excludes.providers.includes(session.providerType)) {
-			return true;
-		}
-
-		if (excludes.states.includes(session.status)) {
-			return true;
-		}
-
 		if (excludes.archived && this.groupResults?.() === AgentSessionsGrouping.Capped && session.isArchived()) {
 			return true; // exclude archived sessions when grouped by capped where we have no "Archived" group
 		}

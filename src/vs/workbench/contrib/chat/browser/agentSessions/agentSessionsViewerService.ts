@@ -8,7 +8,7 @@ import { Disposable } from '../../../../../base/common/lifecycle.js';
 import { equals } from '../../../../../base/common/objects.js';
 import { createDecorator } from '../../../../../platform/instantiation/common/instantiation.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
-import { AgentSessionStatus } from './agentSessionsModel.js';
+import { AgentSessionStatus, IAgentSession } from './agentSessionsModel.js';
 
 export interface IAgentSessionsFilterExcludes {
 	readonly providers: readonly string[];
@@ -52,6 +52,12 @@ export interface IAgentSessionsViewerService {
 	 * Check if the current filter excludes are the default.
 	 */
 	isDefaultFilterExcludes(): boolean;
+
+	/**
+	 * Check if a session should be excluded based on the current filter excludes.
+	 * This only applies the core filtering logic (read, provider, status).
+	 */
+	excludeSession(session: IAgentSession): boolean;
 }
 
 export class AgentSessionsViewerService extends Disposable implements IAgentSessionsViewerService {
@@ -131,6 +137,24 @@ export class AgentSessionsViewerService extends Disposable implements IAgentSess
 
 	isDefaultFilterExcludes(): boolean {
 		return equals(this.filterExcludes, DEFAULT_FILTER_EXCLUDES);
+	}
+
+	excludeSession(session: IAgentSession): boolean {
+		const excludes = this.filterExcludes;
+
+		if (excludes.read && session.isRead()) {
+			return true;
+		}
+
+		if (excludes.providers.includes(session.providerType)) {
+			return true;
+		}
+
+		if (excludes.states.includes(session.status)) {
+			return true;
+		}
+
+		return false;
 	}
 }
 
