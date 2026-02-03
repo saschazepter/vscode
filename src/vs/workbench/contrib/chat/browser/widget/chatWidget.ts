@@ -1664,7 +1664,8 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			widgetViewKindTag: this.getWidgetViewKindTag(),
 			defaultMode: this.viewOptions.defaultMode,
 			sessionTypePickerDelegate: this.viewOptions.sessionTypePickerDelegate,
-			workspacePickerDelegate: this.viewOptions.workspacePickerDelegate
+			workspacePickerDelegate: this.viewOptions.workspacePickerDelegate,
+			isQuickChat: isQuickChat(this)
 		};
 
 		if (this.viewModel?.editing) {
