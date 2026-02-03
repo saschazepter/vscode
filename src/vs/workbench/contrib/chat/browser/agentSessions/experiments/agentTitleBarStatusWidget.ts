@@ -86,6 +86,10 @@ export class AgentTitleBarStatusWidget extends BaseActionViewItem {
 	/** First focusable element for keyboard navigation */
 	private _firstFocusableElement: HTMLElement | undefined;
 
+	/** Tracks if this window applied a badge filter (unread/inProgress), so we only auto-clear our own filters */
+	// TODO: This is imperfect. Targetted fix for vscode#290863. We should revisit storing filter state per-window to avoid this
+	private _badgeFilterAppliedByThisWindow: 'unread' | 'inProgress' | null = null;
+
 	/** Reusable menu for CommandCenterCenter items (e.g., debug toolbar) */
 	private readonly _commandCenterMenu;
 
@@ -692,7 +696,7 @@ export class AgentTitleBarStatusWidget extends BaseActionViewItem {
 		const hasUnreadSessions = unreadSessions.length > 0;
 		const hasAttentionNeeded = attentionNeededSessions.length > 0;
 
-		// Auto-clear filter if the filtered category becomes empty
+		// Auto-clear filter if the filtered category becomes empty if this window applied it
 		this._clearFilterIfCategoryEmpty(hasUnreadSessions, hasActiveSessions);
 
 		const badge = $('div.agent-status-badge');
@@ -871,12 +875,14 @@ export class AgentTitleBarStatusWidget extends BaseActionViewItem {
 	/**
 	 * Clear the filter if the currently filtered category becomes empty.
 	 * For example, if filtered to "unread" but no unread sessions exist, restore user's previous filter.
+	 * Only auto-clears if THIS window applied the badge filter to avoid cross-window interference.
 	 */
 	private _clearFilterIfCategoryEmpty(hasUnreadSessions: boolean, hasActiveSessions: boolean): void {
-		const { isFilteredToUnread, isFilteredToInProgress } = this._getCurrentFilterState();
-
-		// Restore user's filter if filtered category is now empty
-		if ((isFilteredToUnread && !hasUnreadSessions) || (isFilteredToInProgress && !hasActiveSessions)) {
+		// Only auto-clear if this window applied the badge filter
+		// This prevents Window B from clearing filters that Window A set
+		if (this._badgeFilterAppliedByThisWindow === 'unread' && !hasUnreadSessions) {
+			this._restoreUserFilter();
+		} else if (this._badgeFilterAppliedByThisWindow === 'inProgress' && !hasActiveSessions) {
 			this._restoreUserFilter();
 		}
 	}
@@ -971,6 +977,8 @@ export class AgentTitleBarStatusWidget extends BaseActionViewItem {
 		}
 		// Clear the saved filter after restoring
 		this.storageService.remove(PREVIOUS_FILTER_STORAGE_KEY, StorageScope.PROFILE);
+		// Clear the per-window badge filter tracking
+		this._badgeFilterAppliedByThisWindow = null;
 	}
 
 	/**
@@ -999,6 +1007,8 @@ export class AgentTitleBarStatusWidget extends BaseActionViewItem {
 					archived: true,
 					read: true
 				});
+				// Track that this window applied the badge filter
+				this._badgeFilterAppliedByThisWindow = 'unread';
 			}
 		} else {
 			if (isFilteredToInProgress) {
@@ -1014,6 +1024,8 @@ export class AgentTitleBarStatusWidget extends BaseActionViewItem {
 					archived: true,
 					read: false
 				});
+				// Track that this window applied the badge filter
+				this._badgeFilterAppliedByThisWindow = 'inProgress';
 			}
 		}
 

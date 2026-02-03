@@ -185,7 +185,7 @@ export class RunSubagentTool extends Disposable implements IToolImpl {
 						metadata: instructions.metadata,
 					};
 				} else {
-					this.logService.warn(`RunSubagentTool: Agent '${args.agentName}' not found, using current configuration`);
+					throw new Error(`Requested agent '${args.agentName}' not found. Try again with the correct agent name, or omit the agentName to use the current agent.`);
 				}
 			}
 
@@ -241,10 +241,11 @@ export class RunSubagentTool extends Disposable implements IToolImpl {
 				variables: { variables: variableSet.asArray() },
 				location: ChatAgentLocation.Chat,
 				subAgentInvocationId: invocation.callId,
-				subAgentName: args.agentName ?? 'subagent',
+				subAgentName: mode?.name.get(),
 				userSelectedModelId: modeModelId,
 				userSelectedTools: modeTools,
 				modeInstructions,
+				parentRequestId: invocation.chatRequestId,
 			};
 
 			// Subscribe to tool invocations to clear markdown parts when a tool is invoked
@@ -302,12 +303,14 @@ export class RunSubagentTool extends Disposable implements IToolImpl {
 	async prepareToolInvocation(context: IToolInvocationPreparationContext, _token: CancellationToken): Promise<IPreparedToolInvocation | undefined> {
 		const args = context.parameters as IRunSubagentToolInputParams;
 
+		const mode = args.agentName ? this.chatModeService.findModeByName(args.agentName) : undefined;
+
 		return {
 			invocationMessage: args.description,
 			toolSpecificData: {
 				kind: 'subagent',
 				description: args.description,
-				agentName: args.agentName,
+				agentName: mode?.name.get(),
 				prompt: args.prompt,
 			},
 		};
