@@ -41,7 +41,7 @@ const DEFAULT_EXCLUDES: IAgentSessionsFilterExcludes = Object.freeze({
 
 export class AgentSessionsFilter extends Disposable implements Required<IAgentSessionsFilter> {
 
-	private readonly STORAGE_KEY: string;
+	private readonly STORAGE_KEY = `agentSessions.filterExcludes.agentsessionsviewerfiltersubmenu`;
 
 	private readonly _onDidChange = this._register(new Emitter<void>());
 	readonly onDidChange = this._onDidChange.event;
@@ -60,8 +60,6 @@ export class AgentSessionsFilter extends Disposable implements Required<IAgentSe
 		@IStorageService private readonly storageService: IStorageService,
 	) {
 		super();
-
-		this.STORAGE_KEY = `agentSessions.filterExcludes.${this.options.filterMenuId?.id.toLowerCase()}`;
 
 		this.updateExcludes(false);
 
