@@ -155,6 +155,8 @@ export const DEFAULT_AGENT_SOURCE_FOLDERS: readonly IPromptSourceFolder[] = [
  */
 export const DEFAULT_HOOK_SOURCE_FOLDERS: readonly IPromptSourceFolder[] = [
 	{ path: HOOKS_SOURCE_FOLDER, source: PromptFileSource.GitHubWorkspace, storage: PromptsStorage.local },
+	{ path: '.claude', source: PromptFileSource.ClaudeWorkspace, storage: PromptsStorage.local },
+	{ path: '~/.claude', source: PromptFileSource.ClaudePersonal, storage: PromptsStorage.user },
 ];
 
 /**
@@ -196,6 +198,14 @@ export function getPromptFileType(fileUri: URI): PromptsType | undefined {
 	// Check if it's a hooks.json file (case insensitive)
 	if (filename.toLowerCase() === HOOKS_FILENAME.toLowerCase()) {
 		return PromptsType.hook;
+	}
+
+	// Check if it's a settings.local.json or settings.json file in a .claude folder
+	if (filename.toLowerCase() === 'settings.local.json' || filename.toLowerCase() === 'settings.json') {
+		const dir = dirname(fileUri.path);
+		if (dir.endsWith('/.claude') || dir === '.claude') {
+			return PromptsType.hook;
+		}
 	}
 
 	return undefined;

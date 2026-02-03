@@ -1597,7 +1597,9 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 			},
 			executeHook(hookType: vscode.ChatHookType, options: vscode.ChatHookExecutionOptions, token?: vscode.CancellationToken): Thenable<vscode.ChatHookResult[]> {
 				checkProposedApiEnabled(extension, 'chatHooks');
-				return extHostHooks.executeHook(hookType, options, token);
+				return extHostHooks.executeHook(hookType, options, token).then(results =>
+					results.map(r => ({ kind: r.kind as unknown as vscode.ChatHookResultKind, result: r.result }))
+				);
 			},
 		};
 

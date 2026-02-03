@@ -111,16 +111,18 @@ suite('HookSchema', () => {
 
 	suite('resolveHookCommand', () => {
 		const workspaceRoot = URI.file('/workspace');
+		const userHome = '/home/user';
 
 		suite('command property', () => {
 			test('resolves basic command', () => {
 				const result = resolveHookCommand({
 					type: 'command',
 					command: 'echo hello'
-				}, workspaceRoot);
+				}, workspaceRoot, userHome);
 				assert.deepStrictEqual(result, {
 					type: 'command',
-					command: 'echo hello'
+					command: 'echo hello',
+					cwd: workspaceRoot
 				});
 			});
 
@@ -131,7 +133,7 @@ suite('HookSchema', () => {
 					cwd: 'src',
 					env: { NODE_ENV: 'test' },
 					timeoutSec: 60
-				}, workspaceRoot);
+				}, workspaceRoot, userHome);
 				assert.deepStrictEqual(result, {
 					type: 'command',
 					command: './scripts/validate.sh',
@@ -145,7 +147,7 @@ suite('HookSchema', () => {
 				const result = resolveHookCommand({
 					type: 'command',
 					command: ''
-				}, workspaceRoot);
+				}, workspaceRoot, userHome);
 				assert.strictEqual(result, undefined);
 			});
 		});
@@ -155,10 +157,11 @@ suite('HookSchema', () => {
 				const result = resolveHookCommand({
 					type: 'command',
 					bash: 'echo "hello world"'
-				}, workspaceRoot);
+				}, workspaceRoot, userHome);
 				assert.deepStrictEqual(result, {
 					type: 'command',
-					command: 'bash -c "echo \\"hello world\\""'
+					command: 'bash -c "echo \\"hello world\\""',
+					cwd: workspaceRoot
 				});
 			});
 
@@ -168,7 +171,7 @@ suite('HookSchema', () => {
 					bash: './test.sh',
 					cwd: 'scripts',
 					env: { DEBUG: '1' }
-				}, workspaceRoot);
+				}, workspaceRoot, userHome);
 				assert.deepStrictEqual(result, {
 					type: 'command',
 					command: 'bash -c "./test.sh"',
@@ -181,7 +184,7 @@ suite('HookSchema', () => {
 				const result = resolveHookCommand({
 					type: 'command',
 					bash: ''
-				}, workspaceRoot);
+				}, workspaceRoot, userHome);
 				assert.strictEqual(result, undefined);
 			});
 		});
@@ -191,10 +194,11 @@ suite('HookSchema', () => {
 				const result = resolveHookCommand({
 					type: 'command',
 					powershell: 'Write-Host "hello"'
-				}, workspaceRoot);
+				}, workspaceRoot, userHome);
 				assert.deepStrictEqual(result, {
 					type: 'command',
-					command: 'powershell -Command "Write-Host \\"hello\\""'
+					command: 'powershell -Command "Write-Host \\"hello\\""',
+					cwd: workspaceRoot
 				});
 			});
 
@@ -203,10 +207,11 @@ suite('HookSchema', () => {
 					type: 'command',
 					powershell: 'Get-Process',
 					timeoutSec: 30
-				}, workspaceRoot);
+				}, workspaceRoot, userHome);
 				assert.deepStrictEqual(result, {
 					type: 'command',
 					command: 'powershell -Command "Get-Process"',
+					cwd: workspaceRoot,
 					timeoutSec: 30
 				});
 			});
@@ -215,7 +220,7 @@ suite('HookSchema', () => {
 				const result = resolveHookCommand({
 					type: 'command',
 					powershell: ''
-				}, workspaceRoot);
+				}, workspaceRoot, userHome);
 				assert.strictEqual(result, undefined);
 			});
 		});
@@ -226,10 +231,11 @@ suite('HookSchema', () => {
 					type: 'command',
 					command: 'direct-command',
 					bash: 'bash-script.sh'
-				}, workspaceRoot);
+				}, workspaceRoot, userHome);
 				assert.deepStrictEqual(result, {
 					type: 'command',
-					command: 'direct-command'
+					command: 'direct-command',
+					cwd: workspaceRoot
 				});
 			});
 
@@ -238,10 +244,11 @@ suite('HookSchema', () => {
 					type: 'command',
 					command: 'direct-command',
 					powershell: 'ps-script.ps1'
-				}, workspaceRoot);
+				}, workspaceRoot, userHome);
 				assert.deepStrictEqual(result, {
 					type: 'command',
-					command: 'direct-command'
+					command: 'direct-command',
+					cwd: workspaceRoot
 				});
 			});
 
@@ -250,10 +257,11 @@ suite('HookSchema', () => {
 					type: 'command',
 					bash: 'bash-script.sh',
 					powershell: 'ps-script.ps1'
-				}, workspaceRoot);
+				}, workspaceRoot, userHome);
 				assert.deepStrictEqual(result, {
 					type: 'command',
-					command: 'bash -c "bash-script.sh"'
+					command: 'bash -c "bash-script.sh"',
+					cwd: workspaceRoot
 				});
 			});
 		});
@@ -264,7 +272,7 @@ suite('HookSchema', () => {
 					type: 'command',
 					command: 'echo hello',
 					cwd: 'src'
-				}, undefined);
+				}, undefined, userHome);
 				assert.deepStrictEqual(result, {
 					type: 'command',
 					command: 'echo hello'
@@ -276,7 +284,7 @@ suite('HookSchema', () => {
 					type: 'command',
 					command: 'echo hello',
 					cwd: 'nested/path'
-				}, workspaceRoot);
+				}, workspaceRoot, userHome);
 				assert.deepStrictEqual(result, {
 					type: 'command',
 					command: 'echo hello',
@@ -290,14 +298,14 @@ suite('HookSchema', () => {
 				const result = resolveHookCommand({
 					type: 'script',
 					command: 'echo hello'
-				}, workspaceRoot);
+				}, workspaceRoot, userHome);
 				assert.strictEqual(result, undefined);
 			});
 
 			test('missing type returns undefined', () => {
 				const result = resolveHookCommand({
 					command: 'echo hello'
-				}, workspaceRoot);
+				}, workspaceRoot, userHome);
 				assert.strictEqual(result, undefined);
 			});
 
@@ -305,7 +313,7 @@ suite('HookSchema', () => {
 				const result = resolveHookCommand({
 					type: 'command',
 					cwd: '/workspace'
-				}, workspaceRoot);
+				}, workspaceRoot, userHome);
 				assert.strictEqual(result, undefined);
 			});
 
@@ -314,10 +322,11 @@ suite('HookSchema', () => {
 					type: 'command',
 					command: 'echo hello',
 					cwd: 123
-				}, workspaceRoot);
+				}, workspaceRoot, userHome);
 				assert.deepStrictEqual(result, {
 					type: 'command',
-					command: 'echo hello'
+					command: 'echo hello',
+					cwd: workspaceRoot
 				});
 			});
 
@@ -326,10 +335,11 @@ suite('HookSchema', () => {
 					type: 'command',
 					command: 'echo hello',
 					env: 'invalid'
-				}, workspaceRoot);
+				}, workspaceRoot, userHome);
 				assert.deepStrictEqual(result, {
 					type: 'command',
-					command: 'echo hello'
+					command: 'echo hello',
+					cwd: workspaceRoot
 				});
 			});
 
@@ -338,10 +348,11 @@ suite('HookSchema', () => {
 					type: 'command',
 					command: 'echo hello',
 					timeoutSec: '30'
-				}, workspaceRoot);
+				}, workspaceRoot, userHome);
 				assert.deepStrictEqual(result, {
 					type: 'command',
-					command: 'echo hello'
+					command: 'echo hello',
+					cwd: workspaceRoot
 				});
 			});
 		});
