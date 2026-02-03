@@ -8,10 +8,10 @@ import { CancellationToken } from '../../../base/common/cancellation.js';
 import { homedir } from 'os';
 import * as path from '../../../base/common/path.js';
 import { untildify } from '../../../base/common/labels.js';
-import { ChatHookType, IChatHookExecutionOptions, IChatHookResult, IExtHostHooks } from '../common/extHostHooks.js';
+import { IChatHookExecutionOptions, IChatHookResult, IExtHostHooks } from '../common/extHostHooks.js';
 import { IExtensionDescription } from '../../../platform/extensions/common/extensions.js';
 import { isToolInvocationContext, IToolInvocationContext } from '../../contrib/chat/common/tools/languageModelToolsService.js';
-import { IHookCommand, IChatRequestHooks } from '../../contrib/chat/common/promptSyntax/hookSchema.js';
+import { HookType, IHookCommand, IChatRequestHooks } from '../../contrib/chat/common/promptSyntax/hookSchema.js';
 import { ExtHostChatAgents2 } from '../common/extHostChatAgents2.js';
 import { DisposableStore, MutableDisposable } from '../../../base/common/lifecycle.js';
 import { disposableTimeout } from '../../../base/common/async.js';
@@ -61,7 +61,7 @@ export class NodeExtHostHooks implements IExtHostHooks {
 		return results;
 	}
 
-	private _getHooksForType(hooks: IChatRequestHooks, hookType: ChatHookType): readonly IHookCommand[] | undefined {
+	private _getHooksForType(hooks: IChatRequestHooks, hookType: HookType): readonly IHookCommand[] | undefined {
 		return hooks[hookType];
 	}
 

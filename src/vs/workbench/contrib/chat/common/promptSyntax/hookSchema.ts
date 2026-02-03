@@ -9,7 +9,7 @@ import * as nls from '../../../../../nls.js';
 /**
  * Enum of available hook types that can be configured in hooks.json
  */
-export const enum HookType {
+export enum HookType {
 	SessionStart = 'sessionStart',
 	UserPromptSubmitted = 'userPromptSubmitted',
 	PreToolUse = 'preToolUse',
@@ -246,47 +246,28 @@ export const HOOK_FILE_GLOB = 'hooks/hooks.json';
  * @see https://docs.github.com/en/copilot/concepts/agents/coding-agent/about-hooks#types-of-hooks
  */
 export function normalizeHookTypeId(rawHookTypeId: string): HookType | undefined {
-	// Handle alternative names that need mapping
+	// Check if it's already a canonical HookType value
+	if (Object.values(HookType).includes(rawHookTypeId as HookType)) {
+		return rawHookTypeId as HookType;
+	}
+
+	// Handle alternative names from other tools
 	switch (rawHookTypeId) {
-		// Canonical GitHub Copilot names
-		case HookType.SessionStart:
-		// Claude Code: SessionStart
 		case 'SessionStart':
 			return HookType.SessionStart;
-		// Canonical GitHub Copilot name
-		case HookType.UserPromptSubmitted:
-		// Claude Code: UserPromptSubmit; Cursor: beforePromptSubmit
 		case 'UserPromptSubmit':
 		case 'beforePromptSubmit':
 			return HookType.UserPromptSubmitted;
-		// Canonical GitHub Copilot name
-		case HookType.PreToolUse:
-		// Claude Code: PreToolUse
 		case 'PreToolUse':
 			return HookType.PreToolUse;
-		// Canonical GitHub Copilot name
-		case HookType.PostToolUse:
-		// Claude Code: PostToolUse
 		case 'PostToolUse':
 			return HookType.PostToolUse;
-		// Canonical GitHub Copilot name
-		case HookType.PostToolUseFailure:
-		// Claude Code: PostToolUseFailure
 		case 'PostToolUseFailure':
 			return HookType.PostToolUseFailure;
-		// Canonical GitHub Copilot name
-		case HookType.SubagentStart:
-		// Claude Code: SubagentStart
 		case 'SubagentStart':
 			return HookType.SubagentStart;
-		// Canonical GitHub Copilot name
-		case HookType.SubagentStop:
-		// Claude Code: SubagentStop
 		case 'SubagentStop':
 			return HookType.SubagentStop;
-		// Canonical GitHub Copilot name
-		case HookType.Stop:
-		// Claude Code: Stop
 		case 'Stop':
 			return HookType.Stop;
 		default:

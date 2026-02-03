@@ -6,14 +6,13 @@
 import { CancellationToken } from '../../../base/common/cancellation.js';
 import { createDecorator } from '../../../platform/instantiation/common/instantiation.js';
 import { IExtensionDescription } from '../../../platform/extensions/common/extensions.js';
+import { HookType } from '../../contrib/chat/common/promptSyntax/hookSchema.js';
 import { ExtHostChatAgents2 } from './extHostChatAgents2.js';
 
 export const IExtHostHooks = createDecorator<IExtHostHooks>('IExtHostHooks');
 
-export type ChatHookType = 'sessionStart' | 'userPromptSubmitted' | 'preToolUse' | 'postToolUse' | 'postToolUseFailure' | 'subagentStart' | 'subagentStop' | 'stop';
-
 export interface IChatHookExecutionOptions {
-	readonly hookType: ChatHookType;
+	readonly hookType: HookType;
 	readonly input?: unknown;
 	readonly toolInvocationToken: unknown;
 }
