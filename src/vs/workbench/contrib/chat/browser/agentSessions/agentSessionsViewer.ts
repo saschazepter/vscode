@@ -43,7 +43,7 @@ import { MarkdownString, IMarkdownString } from '../../../../../base/common/html
 import { AgentSessionHoverWidget } from './agentSessionHoverWidget.js';
 import { AgentSessionProviders, getAgentSessionTime } from './agentSessions.js';
 import { AgentSessionsGrouping } from './agentSessionsFilter.js';
-import { IAgentSessionsFilterExcludes } from './agentSessionsViewerService.js';
+import { IAgentSessionsFilter } from './agentSessionsViewerService.js';
 
 export type AgentSessionListItem = IAgentSession | IAgentSessionSection;
 
@@ -541,7 +541,7 @@ export class AgentSessionsAccessibilityProvider implements IListAccessibilityPro
 	}
 }
 
-export interface IAgentSessionsFilter {
+export interface IAgentSessionsViewerFilter {
 
 	/**
 	 * An event that fires when the filter changes and sessions
@@ -574,7 +574,7 @@ export interface IAgentSessionsFilter {
 	/**
 	 * Get the current filter excludes for display in the UI.
 	 */
-	getExcludes(): IAgentSessionsFilterExcludes;
+	getExcludes(): IAgentSessionsFilter;
 }
 
 export class AgentSessionsDataSource implements IAsyncDataSource<IAgentSessionsModel, AgentSessionListItem> {
@@ -582,7 +582,7 @@ export class AgentSessionsDataSource implements IAsyncDataSource<IAgentSessionsM
 	private static readonly CAPPED_SESSIONS_LIMIT = 3;
 
 	constructor(
-		private readonly filter: IAgentSessionsFilter | undefined,
+		private readonly filter: IAgentSessionsViewerFilter | undefined,
 		private readonly sorter: ITreeSorter<IAgentSession>,
 	) { }
 

@@ -10,15 +10,15 @@ import { ContextKeyExpr } from '../../../../../platform/contextkey/common/contex
 import { IChatSessionsService } from '../../common/chatSessionsService.js';
 import { AgentSessionProviders, getAgentSessionProviderName } from './agentSessions.js';
 import { AgentSessionStatus, IAgentSession } from './agentSessionsModel.js';
-import { IAgentSessionsFilter } from './agentSessionsViewer.js';
-import { IAgentSessionsFilterExcludes, IAgentSessionsViewerService } from './agentSessionsViewerService.js';
+import { IAgentSessionsViewerFilter } from './agentSessionsViewer.js';
+import { IAgentSessionsFilter, IAgentSessionsViewerService } from './agentSessionsViewerService.js';
 
 export enum AgentSessionsGrouping {
 	Capped = 'capped',
 	Date = 'date'
 }
 
-export interface IAgentSessionsFilterOptions extends Partial<IAgentSessionsFilter> {
+export interface IAgentSessionsFilterOptions extends Partial<IAgentSessionsViewerFilter> {
 
 	readonly filterMenuId: MenuId;
 
@@ -30,9 +30,9 @@ export interface IAgentSessionsFilterOptions extends Partial<IAgentSessionsFilte
 	overrideExclude?(session: IAgentSession): boolean | undefined;
 }
 
-export class AgentSessionsFilter extends Disposable implements Required<IAgentSessionsFilter> {
+export class AgentSessionsFilter extends Disposable implements Required<IAgentSessionsViewerFilter> {
 
-	readonly onDidChange = this.agentSessionsService.onDidChangeFilterExcludes;
+	readonly onDidChange = this.agentSessionsService.onDidChangeFilter;
 
 	readonly limitResults = () => this.options.limitResults?.();
 	readonly groupResults = () => this.options.groupResults?.();
@@ -53,15 +53,15 @@ export class AgentSessionsFilter extends Disposable implements Required<IAgentSe
 	private registerListeners(): void {
 		this._register(this.chatSessionsService.onDidChangeItemsProviders(() => this.updateFilterActions()));
 		this._register(this.chatSessionsService.onDidChangeAvailability(() => this.updateFilterActions()));
-		this._register(this.agentSessionsService.onDidChangeFilterExcludes(() => this.updateFilterActions()));
+		this._register(this.agentSessionsService.onDidChangeFilter(() => this.updateFilterActions()));
 	}
 
-	private get excludes(): IAgentSessionsFilterExcludes {
-		return this.agentSessionsService.getFilterExcludes();
+	private get excludes(): IAgentSessionsFilter {
+		return this.agentSessionsService.getFilter();
 	}
 
-	private setExcludes(excludes: IAgentSessionsFilterExcludes): void {
-		this.agentSessionsService.setFilterExcludes(excludes);
+	private setExcludes(excludes: IAgentSessionsFilter): void {
+		this.agentSessionsService.setFilter(excludes);
 	}
 
 	private updateFilterActions(): void {
@@ -209,16 +209,16 @@ export class AgentSessionsFilter extends Disposable implements Required<IAgentSe
 				});
 			}
 			run(): void {
-				that.agentSessionsService.resetFilterExcludes();
+				that.agentSessionsService.resetFilter();
 			}
 		}));
 	}
 
 	isDefault(): boolean {
-		return this.agentSessionsService.isDefaultFilterExcludes();
+		return this.agentSessionsService.isDefaultFilter();
 	}
 
-	getExcludes(): IAgentSessionsFilterExcludes {
+	getExcludes(): IAgentSessionsFilter {
 		return this.excludes;
 	}
 
@@ -229,7 +229,7 @@ export class AgentSessionsFilter extends Disposable implements Required<IAgentSe
 		}
 
 		// Use the service for core filtering logic (read, provider, status)
-		if (this.agentSessionsService.excludeSession(session)) {
+		if (this.agentSessionsService.filter(session)) {
 			return true;
 		}
 

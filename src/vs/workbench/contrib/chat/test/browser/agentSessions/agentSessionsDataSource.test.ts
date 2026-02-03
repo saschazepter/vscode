@@ -6,7 +6,7 @@
 import assert from 'assert';
 import { URI } from '../../../../../../base/common/uri.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/test/common/utils.js';
-import { AgentSessionsDataSource, AgentSessionListItem, IAgentSessionsFilter, sessionDateFromNow } from '../../../browser/agentSessions/agentSessionsViewer.js';
+import { AgentSessionsDataSource, AgentSessionListItem, IAgentSessionsViewerFilter, sessionDateFromNow } from '../../../browser/agentSessions/agentSessionsViewer.js';
 import { AgentSessionSection, IAgentSession, IAgentSessionSection, IAgentSessionsModel, isAgentSessionSection } from '../../../browser/agentSessions/agentSessionsModel.js';
 import { ChatSessionStatus, isSessionInProgressStatus } from '../../../common/chatSessionsService.js';
 import { ITreeSorter } from '../../../../../../base/browser/ui/tree/tree.js';
@@ -146,7 +146,7 @@ suite('AgentSessionsDataSource', () => {
 	function createMockFilter(options: {
 		groupBy?: AgentSessionsGrouping;
 		exclude?: (session: IAgentSession) => boolean;
-	}): IAgentSessionsFilter {
+	}): IAgentSessionsViewerFilter {
 		return {
 			onDidChange: Event.None,
 			groupResults: () => options.groupBy,

@@ -10,14 +10,14 @@ import { createDecorator } from '../../../../../platform/instantiation/common/in
 import { IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
 import { AgentSessionStatus, IAgentSession } from './agentSessionsModel.js';
 
-export interface IAgentSessionsFilterExcludes {
+export interface IAgentSessionsFilter {
 	readonly providers: readonly string[];
 	readonly states: readonly AgentSessionStatus[];
 	readonly archived: boolean;
 	readonly read: boolean;
 }
 
-export const DEFAULT_FILTER_EXCLUDES: IAgentSessionsFilterExcludes = Object.freeze({
+export const DEFAULT_FILTER: IAgentSessionsFilter = Object.freeze({
 	providers: [] as const,
 	states: [] as const,
 	archived: true as const /* archived are never excluded but toggle between expanded and collapsed */,
@@ -29,35 +29,35 @@ export interface IAgentSessionsViewerService {
 	readonly _serviceBrand: undefined;
 
 	/**
-	 * Event that fires when the filter excludes change.
+	 * Event that fires when the filter changes^.
 	 */
-	readonly onDidChangeFilterExcludes: Event<void>;
+	readonly onDidChangeFilter: Event<void>;
 
 	/**
-	 * Get the current filter excludes.
+	 * Get the current filter.
 	 */
-	getFilterExcludes(): IAgentSessionsFilterExcludes;
+	getFilter(): IAgentSessionsFilter;
 
 	/**
-	 * Set the filter excludes.
+	 * Set the filter.
 	 */
-	setFilterExcludes(excludes: IAgentSessionsFilterExcludes): void;
+	setFilter(filter: IAgentSessionsFilter): void;
 
 	/**
-	 * Reset the filter excludes to the default.
+	 * Reset the filter to the default.
 	 */
-	resetFilterExcludes(): void;
+	resetFilter(): void;
 
 	/**
-	 * Check if the current filter excludes are the default.
+	 * Check if the current filter is the default.
 	 */
-	isDefaultFilterExcludes(): boolean;
+	isDefaultFilter(): boolean;
 
 	/**
-	 * Check if a session should be excluded based on the current filter excludes.
+	 * Check if a session should be excluded based on the current filter.
 	 * This only applies the core filtering logic (read, provider, status).
 	 */
-	excludeSession(session: IAgentSession): boolean;
+	filter(session: IAgentSession): boolean;
 }
 
 export class AgentSessionsViewerService extends Disposable implements IAgentSessionsViewerService {
@@ -69,88 +69,86 @@ export class AgentSessionsViewerService extends Disposable implements IAgentSess
 	) {
 		super();
 
-		this.loadFilterExcludes(false);
+		this.loadFilter(false);
 		this.registerListeners();
 	}
 
 	private static readonly STORAGE_KEY = 'agentSessions.filterExcludes.agentsessionsviewerfiltersubmenu';
 
-	private readonly _onDidChangeFilterExcludes = this._register(new Emitter<void>());
-	readonly onDidChangeFilterExcludes = this._onDidChangeFilterExcludes.event;
+	private readonly _onDidChangeFilter = this._register(new Emitter<void>());
+	readonly onDidChangeFilter = this._onDidChangeFilter.event;
 
-	private filterExcludes = DEFAULT_FILTER_EXCLUDES;
-	private isStoringExcludes = false;
+	private currentFilter = DEFAULT_FILTER;
+	private isStoringFilter = false;
 
 	private registerListeners(): void {
-		this._register(this.storageService.onDidChangeValue(StorageScope.PROFILE, AgentSessionsViewerService.STORAGE_KEY, this._store)(() => this.loadFilterExcludes(true)));
+		this._register(this.storageService.onDidChangeValue(StorageScope.PROFILE, AgentSessionsViewerService.STORAGE_KEY, this._store)(() => this.loadFilter(true)));
 	}
 
-	private loadFilterExcludes(fromEvent: boolean): void {
-		if (!this.isStoringExcludes) {
-			const excludesRaw = this.storageService.get(AgentSessionsViewerService.STORAGE_KEY, StorageScope.PROFILE);
-			if (excludesRaw) {
+	private loadFilter(fromEvent: boolean): void {
+		if (!this.isStoringFilter) {
+			const filterRaw = this.storageService.get(AgentSessionsViewerService.STORAGE_KEY, StorageScope.PROFILE);
+			if (filterRaw) {
 				try {
-					this.filterExcludes = JSON.parse(excludesRaw) as IAgentSessionsFilterExcludes;
+					this.currentFilter = JSON.parse(filterRaw) as IAgentSessionsFilter;
 				} catch {
-					this.filterExcludes = { ...DEFAULT_FILTER_EXCLUDES };
+					this.currentFilter = { ...DEFAULT_FILTER };
 				}
 			} else {
-				this.filterExcludes = { ...DEFAULT_FILTER_EXCLUDES };
+				this.currentFilter = { ...DEFAULT_FILTER };
 			}
 		}
 
 		if (fromEvent) {
-			this._onDidChangeFilterExcludes.fire();
+			this._onDidChangeFilter.fire();
 		}
 	}
 
-	getFilterExcludes(): IAgentSessionsFilterExcludes {
-		return this.filterExcludes;
+	getFilter(): IAgentSessionsFilter {
+		return this.currentFilter;
 	}
 
-	setFilterExcludes(excludes: IAgentSessionsFilterExcludes): void {
-		if (equals(this.filterExcludes, excludes)) {
+	setFilter(filter: IAgentSessionsFilter): void {
+		if (equals(this.currentFilter, filter)) {
 			return;
 		}
 
-		this.filterExcludes = excludes;
+		this.currentFilter = filter;
 
 		// Set guard before storage operation to prevent our own listener from
 		// re-triggering loadFilterExcludes
-		this.isStoringExcludes = true;
+		this.isStoringFilter = true;
 		try {
-			if (equals(this.filterExcludes, DEFAULT_FILTER_EXCLUDES)) {
+			if (equals(this.currentFilter, DEFAULT_FILTER)) {
 				this.storageService.remove(AgentSessionsViewerService.STORAGE_KEY, StorageScope.PROFILE);
 			} else {
-				this.storageService.store(AgentSessionsViewerService.STORAGE_KEY, JSON.stringify(this.filterExcludes), StorageScope.PROFILE, StorageTarget.USER);
+				this.storageService.store(AgentSessionsViewerService.STORAGE_KEY, JSON.stringify(this.currentFilter), StorageScope.PROFILE, StorageTarget.USER);
 			}
 		} finally {
-			this.isStoringExcludes = false;
+			this.isStoringFilter = false;
 		}
 
-		this._onDidChangeFilterExcludes.fire();
+		this._onDidChangeFilter.fire();
 	}
 
-	resetFilterExcludes(): void {
-		this.setFilterExcludes({ ...DEFAULT_FILTER_EXCLUDES });
+	resetFilter(): void {
+		this.setFilter({ ...DEFAULT_FILTER });
 	}
 
-	isDefaultFilterExcludes(): boolean {
-		return equals(this.filterExcludes, DEFAULT_FILTER_EXCLUDES);
+	isDefaultFilter(): boolean {
+		return equals(this.currentFilter, DEFAULT_FILTER);
 	}
 
-	excludeSession(session: IAgentSession): boolean {
-		const excludes = this.filterExcludes;
-
-		if (excludes.read && session.isRead()) {
+	filter(session: IAgentSession): boolean {
+		if (this.currentFilter.read && session.isRead()) {
 			return true;
 		}
 
-		if (excludes.providers.includes(session.providerType)) {
+		if (this.currentFilter.providers.includes(session.providerType)) {
 			return true;
 		}
 
-		if (excludes.states.includes(session.status)) {
+		if (this.currentFilter.states.includes(session.status)) {
 			return true;
 		}
 

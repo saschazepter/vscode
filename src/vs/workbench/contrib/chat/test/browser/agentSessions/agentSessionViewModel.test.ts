@@ -824,7 +824,7 @@ suite('AgentSessions', () => {
 			assert.strictEqual(filter.exclude(session2), false);
 
 			// Exclude type-1 by setting it via service
-			viewerService.setFilterExcludes({
+			viewerService.setFilter({
 				providers: ['type-1'],
 				states: [],
 				archived: false,
@@ -848,7 +848,7 @@ suite('AgentSessions', () => {
 			const session3 = createSession({ providerType: 'type-3' });
 
 			// Exclude type-1 and type-2
-			viewerService.setFilterExcludes({
+			viewerService.setFilter({
 				providers: ['type-1', 'type-2'],
 				states: [],
 				archived: false,
@@ -882,7 +882,7 @@ suite('AgentSessions', () => {
 			assert.strictEqual(filter.exclude(activeSession), false);
 
 			// Exclude archived by setting archived to true via service
-			viewerService.setFilterExcludes({
+			viewerService.setFilter({
 				providers: [],
 				states: [],
 				archived: true,
@@ -922,7 +922,7 @@ suite('AgentSessions', () => {
 			assert.strictEqual(filter.exclude(inProgressSession), false);
 
 			// Exclude failed status by setting it via service
-			viewerService.setFilterExcludes({
+			viewerService.setFilter({
 				providers: [],
 				states: [ChatSessionStatus.Failed],
 				archived: false,
@@ -947,7 +947,7 @@ suite('AgentSessions', () => {
 			const inProgressSession = createSession({ status: ChatSessionStatus.InProgress });
 
 			// Exclude failed and in-progress
-			viewerService.setFilterExcludes({
+			viewerService.setFilter({
 				providers: [],
 				states: [ChatSessionStatus.Failed, ChatSessionStatus.InProgress],
 				archived: false,
@@ -979,7 +979,7 @@ suite('AgentSessions', () => {
 			});
 
 			// Exclude type-1, failed status, and archived
-			viewerService.setFilterExcludes({
+			viewerService.setFilter({
 				providers: ['type-1'],
 				states: [ChatSessionStatus.Failed],
 				archived: true,
@@ -1005,7 +1005,7 @@ suite('AgentSessions', () => {
 			}));
 
 			// Update excludes via service
-			viewerService.setFilterExcludes({
+			viewerService.setFilter({
 				providers: ['type-1'],
 				states: [],
 				archived: false,
@@ -1028,7 +1028,7 @@ suite('AgentSessions', () => {
 			assert.strictEqual(filter.exclude(session), false);
 
 			// Simulate update via service (as if from another window)
-			viewerService.setFilterExcludes({
+			viewerService.setFilter({
 				providers: ['type-1'],
 				states: [],
 				archived: false,
@@ -1093,7 +1093,7 @@ suite('AgentSessions', () => {
 			});
 
 			// Disable all filters
-			viewerService.setFilterExcludes({
+			viewerService.setFilter({
 				providers: [],
 				states: [],
 				archived: false,
@@ -1114,7 +1114,7 @@ suite('AgentSessions', () => {
 			const session = createSession({ providerType: 'type-1' });
 
 			// Set empty provider list
-			viewerService.setFilterExcludes({
+			viewerService.setFilter({
 				providers: [],
 				states: [],
 				archived: false,
@@ -1141,7 +1141,7 @@ suite('AgentSessions', () => {
 			const session = createSession({ providerType: 'type-1' });
 
 			// Set global excludes
-			viewerService.setFilterExcludes({
+			viewerService.setFilter({
 				providers: ['type-1'],
 				states: [],
 				archived: false,
@@ -1182,7 +1182,7 @@ suite('AgentSessions', () => {
 			});
 
 			// Set excludes for provider and status, but include archived
-			viewerService.setFilterExcludes({
+			viewerService.setFilter({
 				providers: ['type-1'],
 				states: [ChatSessionStatus.Completed],
 				archived: true,
@@ -1205,7 +1205,7 @@ suite('AgentSessions', () => {
 			const failedSession = createSession({ status: ChatSessionStatus.Failed });
 
 			// Exclude all statuses
-			viewerService.setFilterExcludes({
+			viewerService.setFilter({
 				providers: [],
 				states: [ChatSessionStatus.Completed, ChatSessionStatus.InProgress, ChatSessionStatus.Failed],
 				archived: false,

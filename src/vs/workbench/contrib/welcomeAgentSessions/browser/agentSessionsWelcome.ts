@@ -46,7 +46,7 @@ import { ChatViewId, IChatWidgetService, ISessionTypePickerDelegate, IWorkspaceP
 import { ChatSessionPosition, getResourceForNewChatSession } from '../../chat/browser/chatSessions/chatSessions.contribution.js';
 import { IChatEntitlementService } from '../../../services/chat/common/chatEntitlementService.js';
 import { AgentSessionsControl, IAgentSessionsControlOptions } from '../../chat/browser/agentSessions/agentSessionsControl.js';
-import { IAgentSessionsFilter } from '../../chat/browser/agentSessions/agentSessionsViewer.js';
+import { IAgentSessionsViewerFilter } from '../../chat/browser/agentSessions/agentSessionsViewer.js';
 import { HoverPosition } from '../../../../base/browser/ui/hover/hoverWidget.js';
 import { IResolvedWalkthrough, IWalkthroughsService } from '../../welcomeGettingStarted/browser/gettingStartedService.js';
 import { GettingStartedEditorOptions, GettingStartedInput } from '../../welcomeGettingStarted/browser/gettingStartedInput.js';
@@ -568,7 +568,7 @@ export class AgentSessionsWelcomePage extends EditorPane {
 
 		// Create a filter that limits results and excludes archived sessions
 		const onDidChangeEmitter = this.sessionsControlDisposables.add(new Emitter<void>());
-		const filter: IAgentSessionsFilter = {
+		const filter: IAgentSessionsViewerFilter = {
 			onDidChange: onDidChangeEmitter.event,
 			limitResults: () => MAX_SESSIONS,
 			exclude: (session: IAgentSession) => session.isArchived(),
