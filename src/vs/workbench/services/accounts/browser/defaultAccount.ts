@@ -274,7 +274,13 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 			return;
 		}
 
-		await this.extensionService.whenInstalledExtensionsRegistered();
+		try {
+			await this.extensionService.whenInstalledExtensionsRegistered();
+			this.logService.debug('[DefaultAccount] Installed extensions registered.');
+		} catch (error) {
+			this.logService.error('[DefaultAccount] Error while waiting for installed extensions to be registered', getErrorMessage(error));
+		}
+
 		this.logService.debug('[DefaultAccount] Starting initialization');
 		await this.doUpdateDefaultAccount();
 		this.logService.debug('[DefaultAccount] Initialization complete');
