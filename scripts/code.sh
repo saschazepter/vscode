@@ -18,7 +18,7 @@ function code() {
 
 	if [[ "$OSTYPE" == "darwin"* ]]; then
 		NAME=`node -p "require('./product.json').nameLong"`
-		EXE_NAME=`node -p "require('./product.json').nameShort"`
+		EXE_NAME="Electron"
 		CODE="./.build/electron/$NAME.app/Contents/MacOS/$EXE_NAME"
 	else
 		NAME=`node -p "require('./product.json').applicationName"`
