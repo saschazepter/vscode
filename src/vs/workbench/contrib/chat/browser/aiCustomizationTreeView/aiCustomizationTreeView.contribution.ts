@@ -15,9 +15,9 @@ import { ViewAction } from '../../../../browser/parts/views/viewPane.js';
 import { Extensions as ViewContainerExtensions, IViewContainersRegistry, IViewDescriptor, IViewsRegistry, ViewContainerLocation } from '../../../../common/views.js';
 import { IViewsService } from '../../../../services/views/common/viewsService.js';
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
-import { AICustomizationItemMenuId, AICustomizationNewMenuId, AI_CUSTOMIZATION_CATEGORY, AI_CUSTOMIZATION_STORAGE_ID, AI_CUSTOMIZATION_VIEW_ID, AI_CUSTOMIZATION_VIEWLET_ID } from './aiCustomization.js';
-import { aiCustomizationViewIcon } from './aiCustomizationIcons.js';
-import { AICustomizationIsEmptyContextKey, AICustomizationItemTypeContextKey, AICustomizationViewPane } from './aiCustomizationViews.js';
+import { AICustomizationItemMenuId, AICustomizationNewMenuId, AI_CUSTOMIZATION_CATEGORY, AI_CUSTOMIZATION_STORAGE_ID, AI_CUSTOMIZATION_VIEW_ID, AI_CUSTOMIZATION_VIEWLET_ID } from './aiCustomizationTreeView.js';
+import { aiCustomizationViewIcon } from './aiCustomizationTreeViewIcons.js';
+import { AICustomizationIsEmptyContextKey, AICustomizationItemTypeContextKey, AICustomizationViewPane } from './aiCustomizationTreeViewViews.js';
 import { IOpenerService } from '../../../../../platform/opener/common/opener.js';
 import { PromptFilePickers } from '../promptSyntax/pickers/promptFilePickers.js';
 import { PromptsType } from '../../common/promptSyntax/promptTypes.js';
@@ -25,6 +25,7 @@ import { Codicon } from '../../../../../base/common/codicons.js';
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { IEditorService } from '../../../../services/editor/common/editorService.js';
+import { AI_CUSTOMIZATION_EDITOR_ID } from '../aiCustomizationEditor/aiCustomizationEditor.js';
 
 //#region Utilities
 
@@ -195,7 +196,7 @@ registerAction2(class extends ViewAction<AICustomizationViewPane> {
 
 //#region Context Menu Actions
 
-// Open file action
+// Open file action (in AI Customization Editor)
 const OPEN_AI_CUSTOMIZATION_FILE_ID = 'aiCustomization.openFile';
 registerAction2(class extends Action2 {
 	constructor() {
@@ -207,7 +208,29 @@ registerAction2(class extends Action2 {
 	}
 	async run(accessor: ServicesAccessor, context: URIContext): Promise<void> {
 		const editorService = accessor.get(IEditorService);
-		await editorService.openEditor({ resource: extractURI(context) });
+		await editorService.openEditor({
+			resource: extractURI(context),
+			options: { override: AI_CUSTOMIZATION_EDITOR_ID }
+		});
+	}
+});
+
+// Open as text action (in standard text editor)
+const OPEN_AI_CUSTOMIZATION_AS_TEXT_ID = 'aiCustomization.openAsText';
+registerAction2(class extends Action2 {
+	constructor() {
+		super({
+			id: OPEN_AI_CUSTOMIZATION_AS_TEXT_ID,
+			title: localize2('openAsText', "Open as Text"),
+			icon: Codicon.file,
+		});
+	}
+	async run(accessor: ServicesAccessor, context: URIContext): Promise<void> {
+		const editorService = accessor.get(IEditorService);
+		await editorService.openEditor({
+			resource: extractURI(context),
+			options: { override: 'default' }
+		});
 	}
 });
 
@@ -232,6 +255,12 @@ MenuRegistry.appendMenuItem(AICustomizationItemMenuId, {
 	command: { id: OPEN_AI_CUSTOMIZATION_FILE_ID, title: localize('open', "Open") },
 	group: '1_open',
 	order: 1,
+});
+
+MenuRegistry.appendMenuItem(AICustomizationItemMenuId, {
+	command: { id: OPEN_AI_CUSTOMIZATION_AS_TEXT_ID, title: localize('openAsText', "Open as Text") },
+	group: '1_open',
+	order: 2,
 });
 
 MenuRegistry.appendMenuItem(AICustomizationItemMenuId, {

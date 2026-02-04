@@ -1,0 +1,269 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+/* AI Customization Management Editor */
+.ai-customization-management-editor {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	overflow: hidden;
+}
+
+/* Header */
+.ai-customization-management-editor .management-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 12px 16px;
+	border-bottom: 1px solid var(--vscode-panel-border);
+	flex-shrink: 0;
+}
+
+.ai-customization-management-editor .header-title-container {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.ai-customization-management-editor .header-title {
+	font-size: 14px;
+	font-weight: 600;
+	color: var(--vscode-foreground);
+}
+
+.ai-customization-management-editor .header-actions {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.ai-customization-management-editor .new-button {
+	padding: 4px 12px;
+}
+
+/* Split View Container */
+.ai-customization-management-editor .management-split-view {
+	flex: 1;
+	overflow: hidden;
+}
+
+/* Sidebar */
+.ai-customization-management-editor .management-sidebar {
+	background-color: var(--vscode-sideBar-background);
+	height: 100%;
+	overflow: hidden;
+}
+
+.ai-customization-management-editor .sidebar-content {
+	height: 100%;
+	padding: 8px 0;
+}
+
+/* Section list items */
+.ai-customization-management-editor .section-list-item {
+	display: flex;
+	align-items: center;
+	padding: 4px 12px;
+	gap: 8px;
+	cursor: pointer;
+}
+
+.ai-customization-management-editor .section-list-item:hover {
+	background-color: var(--vscode-list-hoverBackground);
+}
+
+.ai-customization-management-editor .section-icon {
+	flex-shrink: 0;
+	width: 16px;
+	height: 16px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.ai-customization-management-editor .section-label {
+	flex: 1;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: 13px;
+}
+
+.ai-customization-management-editor .section-count {
+	flex-shrink: 0;
+	font-size: 12px;
+	color: var(--vscode-descriptionForeground);
+	padding: 0 6px;
+	background-color: var(--vscode-badge-background);
+	color: var(--vscode-badge-foreground);
+	border-radius: 10px;
+	min-width: 18px;
+	text-align: center;
+}
+
+.ai-customization-management-editor .section-count:empty {
+	display: none;
+}
+
+/* Content area */
+.ai-customization-management-editor .management-content {
+	background-color: var(--vscode-editor-background);
+	height: 100%;
+	overflow: hidden;
+}
+
+.ai-customization-management-editor .content-inner {
+	height: 100%;
+	padding: 8px 12px;
+}
+
+/* List Widget */
+.ai-customization-list-widget {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+}
+
+.ai-customization-list-widget .list-search-container {
+	flex-shrink: 0;
+	margin-bottom: 8px;
+}
+
+.ai-customization-list-widget .list-search-container .monaco-inputbox {
+	width: 100%;
+}
+
+.ai-customization-list-widget .list-container {
+	flex: 1;
+	overflow: hidden;
+}
+
+.ai-customization-list-widget .list-empty-message {
+	padding: 12px;
+	text-align: center;
+	color: var(--vscode-descriptionForeground);
+	font-style: italic;
+}
+
+/* List item styling */
+.ai-customization-list-item {
+	display: flex;
+	align-items: center;
+	padding: 6px 8px;
+	cursor: pointer;
+	border-radius: 4px;
+	margin: 2px 0;
+}
+
+.ai-customization-list-item:hover {
+	background-color: var(--vscode-list-hoverBackground);
+}
+
+.ai-customization-list-item .item-left {
+	display: flex;
+	align-items: center;
+	flex: 1;
+	overflow: hidden;
+	gap: 8px;
+}
+
+.ai-customization-list-item .item-icon {
+	flex-shrink: 0;
+	width: 16px;
+	height: 16px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.ai-customization-list-item .item-text {
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	flex: 1;
+}
+
+.ai-customization-list-item .item-name {
+	font-size: 13px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.ai-customization-list-item .item-description {
+	font-size: 11px;
+	color: var(--vscode-descriptionForeground);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.ai-customization-list-item .item-right {
+	display: flex;
+	align-items: center;
+	flex-shrink: 0;
+	margin-left: 8px;
+}
+
+.ai-customization-list-item .storage-badge {
+	width: 16px;
+	height: 16px;
+	opacity: 0.7;
+}
+
+.ai-customization-list-item:hover .storage-badge {
+	opacity: 1;
+}
+
+/* Highlighted matches */
+.ai-customization-list-item .highlight {
+	font-weight: bold;
+	color: var(--vscode-list-highlightForeground);
+}
+
+/* Info box at the bottom of the list */
+.ai-customization-list-widget .list-info-box {
+	flex-shrink: 0;
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+	padding: 12px;
+	margin-top: 8px;
+	background-color: var(--vscode-textBlockQuote-background);
+	border: 1px solid var(--vscode-textBlockQuote-border);
+	border-radius: 4px;
+}
+
+.ai-customization-list-widget .list-info-box .info-icon {
+	flex-shrink: 0;
+	width: 16px;
+	height: 16px;
+	color: var(--vscode-notificationsInfoIcon-foreground);
+	opacity: 0.8;
+}
+
+.ai-customization-list-widget .list-info-box .info-content {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.ai-customization-list-widget .list-info-box .info-text {
+	font-size: 12px;
+	color: var(--vscode-descriptionForeground);
+	line-height: 1.4;
+}
+
+.ai-customization-list-widget .list-info-box .info-link {
+	font-size: 12px;
+	color: var(--vscode-textLink-foreground);
+	text-decoration: none;
+	cursor: pointer;
+}
+
+.ai-customization-list-widget .list-info-box .info-link:hover {
+	text-decoration: underline;
+	color: var(--vscode-textLink-activeForeground);
+}

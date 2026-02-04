@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import './media/aiCustomization.css';
+import './media/aiCustomizationTreeView.css';
 import * as dom from '../../../../../base/browser/dom.js';
 import { CancellationToken } from '../../../../../base/common/cancellation.js';
 import { DisposableStore } from '../../../../../base/common/lifecycle.js';
@@ -26,13 +26,14 @@ import { IViewPaneOptions, ViewPane } from '../../../../browser/parts/views/view
 import { IViewDescriptorService } from '../../../../common/views.js';
 import { IPromptsService, PromptsStorage, IAgentSkill, IPromptPath } from '../../common/promptSyntax/service/promptsService.js';
 import { PromptsType } from '../../common/promptSyntax/promptTypes.js';
-import { agentIcon, extensionIcon, instructionsIcon, promptIcon, skillIcon, userIcon, workspaceIcon } from './aiCustomizationIcons.js';
-import { AICustomizationItemMenuId } from './aiCustomization.js';
+import { agentIcon, extensionIcon, instructionsIcon, promptIcon, skillIcon, userIcon, workspaceIcon } from './aiCustomizationTreeViewIcons.js';
+import { AICustomizationItemMenuId } from './aiCustomizationTreeView.js';
 import { IAsyncDataSource, ITreeNode, ITreeRenderer, ITreeContextMenuEvent } from '../../../../../base/browser/ui/tree/tree.js';
 import { FuzzyScore } from '../../../../../base/common/filters.js';
 import { IListVirtualDelegate } from '../../../../../base/browser/ui/list/list.js';
 import { IEditorService } from '../../../../services/editor/common/editorService.js';
 import { ILogService } from '../../../../../platform/log/common/log.js';
+import { AI_CUSTOMIZATION_EDITOR_ID } from '../aiCustomizationEditor/aiCustomizationEditor.js';
 
 //#region Context Keys
 
@@ -558,10 +559,13 @@ export class AICustomizationViewPane extends ViewPane {
 			}
 		));
 
-		// Handle double-click to open file
+		// Handle double-click to open file in AI Customization Editor
 		this.treeDisposables.add(this.tree.onDidOpen(e => {
 			if (e.element && e.element.type === 'file') {
-				this.editorService.openEditor({ resource: e.element.uri });
+				this.editorService.openEditor({
+					resource: e.element.uri,
+					options: { override: AI_CUSTOMIZATION_EDITOR_ID }
+				});
 			}
 		}));
 
