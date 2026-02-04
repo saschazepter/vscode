@@ -42,7 +42,7 @@ import { ChatConfiguration } from '../../common/constants.js';
 import { ILanguageModelChatMetadata } from '../../common/languageModels.js';
 import { ChatToolInvocation } from '../../common/model/chatProgressTypes/chatToolInvocation.js';
 import { ILanguageModelToolsConfirmationService } from '../../common/tools/languageModelToolsConfirmationService.js';
-import { CountTokensCallback, createToolSchemaUri, IBeginToolCallOptions, ILanguageModelToolsService, IPreparedToolInvocation, IToolAndToolSetEnablementMap, IToolData, IToolImpl, IToolInvocation, IToolResult, IToolResultInputOutputDetails, SpecedToolAliases, stringifyPromptTsxPart, isToolSet, ToolDataSource, toolMatchesModel, ToolSet, VSCodeToolReference, IToolSet, ToolSetForModel } from '../../common/tools/languageModelToolsService.js';
+import { CountTokensCallback, createToolSchemaUri, IBeginToolCallOptions, ILanguageModelToolsService, IPreparedToolInvocation, IToolAndToolSetEnablementMap, IToolData, IToolImpl, IToolInvocation, IToolResult, IToolResultInputOutputDetails, SpecedToolAliases, stringifyPromptTsxPart, isToolSet, ToolDataSource, toolMatchesModel, ToolSet, VSCodeToolReference, IToolSet, ToolSetForModel, IToolInvokedEvent } from '../../common/tools/languageModelToolsService.js';
 import { getToolConfirmationAlert } from '../accessibility/chatAccessibilityProvider.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { chatSessionResourceToId } from '../../common/model/chatUri.js';
@@ -88,6 +88,8 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 	readonly onDidChangeTools = this._onDidChangeTools.event;
 	private readonly _onDidPrepareToolCallBecomeUnresponsive = this._register(new Emitter<{ sessionResource: URI; toolData: IToolData }>());
 	readonly onDidPrepareToolCallBecomeUnresponsive = this._onDidPrepareToolCallBecomeUnresponsive.event;
+	private readonly _onDidInvokeTool = this._register(new Emitter<IToolInvokedEvent>());
+	readonly onDidInvokeTool = this._onDidInvokeTool.event;
 
 	/** Throttle tools updates because it sends all tools and runs on context key updates */
 	private readonly _onDidChangeToolsScheduler = new RunOnceScheduler(() => this._onDidChangeTools.fire(), 750);
@@ -357,6 +359,14 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 	async invokeTool(dto: IToolInvocation, countTokens: CountTokensCallback, token: CancellationToken): Promise<IToolResult> {
 		this._logService.trace(`[LanguageModelToolsService#invokeTool] Invoking tool ${dto.toolId} with parameters ${JSON.stringify(dto.parameters)}`);
 
+		// Fire the event to notify listeners that a tool is being invoked
+		this._onDidInvokeTool.fire({
+			toolId: dto.toolId,
+			sessionResource: dto.context?.sessionResource,
+			requestId: dto.chatRequestId,
+			subagentInvocationId: dto.subAgentInvocationId,
+		});
+
 		// When invoking a tool, don't validate the "when" clause. An extension may have invoked a tool just as it was becoming disabled, and just let it go through rather than throw and break the chat.
 		let tool = this._tools.get(dto.toolId);
 		if (!tool) {
@@ -433,7 +443,7 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 				preparedInvocation = await this.prepareToolInvocation(tool, dto, token);
 				prepareTimeWatch.stop();
 
-				const autoConfirmed = await this.shouldAutoConfirm(tool.data.id, tool.data.runsInWorkspace, tool.data.source, dto.parameters);
+				const autoConfirmed = await this.shouldAutoConfirm(tool.data.id, tool.data.runsInWorkspace, tool.data.source, dto.parameters, dto.context?.sessionResource);
 
 
 				// Important: a tool invocation that will be autoconfirmed should never
@@ -480,7 +490,7 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 				prepareTimeWatch = StopWatch.create(true);
 				preparedInvocation = await this.prepareToolInvocation(tool, dto, token);
 				prepareTimeWatch.stop();
-				if (preparedInvocation?.confirmationMessages?.title && !(await this.shouldAutoConfirm(tool.data.id, tool.data.runsInWorkspace, tool.data.source, dto.parameters))) {
+				if (preparedInvocation?.confirmationMessages?.title && !(await this.shouldAutoConfirm(tool.data.id, tool.data.runsInWorkspace, tool.data.source, dto.parameters, undefined))) {
 					const result = await this._dialogService.confirm({ message: renderAsPlaintext(preparedInvocation.confirmationMessages.title), detail: renderAsPlaintext(preparedInvocation.confirmationMessages.message!) });
 					if (!result.confirmed) {
 						throw new CancellationError();
@@ -502,12 +512,10 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 			invocationTimeWatch.stop();
 			this.ensureToolDetails(dto, toolResult, tool.data);
 
-			if (toolInvocation?.didExecuteTool(toolResult).type === IChatToolInvocation.StateKind.WaitingForPostApproval) {
-				const autoConfirmedPost = await this.shouldAutoConfirmPostExecution(tool.data.id, tool.data.runsInWorkspace, tool.data.source, dto.parameters);
-				if (autoConfirmedPost) {
-					IChatToolInvocation.confirmWith(toolInvocation, autoConfirmedPost);
-				}
+			const afterExecuteState = await toolInvocation?.didExecuteTool(toolResult, undefined, () =>
+				this.shouldAutoConfirmPostExecution(tool.data.id, tool.data.runsInWorkspace, tool.data.source, dto.parameters, dto.context?.sessionResource));
 
+			if (toolInvocation && afterExecuteState?.type === IChatToolInvocation.StateKind.WaitingForPostApproval) {
 				const postConfirm = await IChatToolInvocation.awaitPostConfirmation(toolInvocation, token);
 				if (postConfirm.type === ToolConfirmKind.Denied) {
 					throw new CancellationError();
@@ -547,7 +555,9 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 					prepareTimeMs: prepareTimeWatch?.elapsed(),
 					invocationTimeMs: invocationTimeWatch?.elapsed(),
 				});
-			this._logService.error(`[LanguageModelToolsService#invokeTool] Error from tool ${dto.toolId} with parameters ${JSON.stringify(dto.parameters)}:\n${toErrorMessage(err, true)}`);
+			if (!isCancellationError(err)) {
+				this._logService.error(`[LanguageModelToolsService#invokeTool] Error from tool ${dto.toolId} with parameters ${JSON.stringify(dto.parameters)}:\n${toErrorMessage(err, true)}`);
+			}
 
 			toolResult ??= { content: [] };
 			toolResult.toolResultError = err instanceof Error ? err.message : String(err);
@@ -715,6 +725,16 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 		if (autoApproved) {
 			return;
 		}
+
+		// Filter out any tool invocations that have already been confirmed/denied.
+		// This is a defensive check - normally the call site should prevent this,
+		// but tools may be auto-approved through various mechanisms (per-session rules,
+		// per-workspace rules, etc.) that could cause a race condition.
+		const pendingInvocations = toolInvocations.filter(inv => !IChatToolInvocation.executionConfirmedOrDenied(inv));
+		if (pendingInvocations.length === 0) {
+			return;
+		}
+
 		const setting: { sound?: 'auto' | 'on' | 'off'; announcement?: 'auto' | 'off' } | undefined = this._configurationService.getValue(AccessibilitySignal.chatUserActionRequired.settingsKey);
 		if (!setting) {
 			return;
@@ -722,7 +742,7 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 		const soundEnabled = setting.sound === 'on' || (setting.sound === 'auto' && (this._accessibilityService.isScreenReaderOptimized()));
 		const announcementEnabled = this._accessibilityService.isScreenReaderOptimized() && setting.announcement === 'auto';
 		if (soundEnabled || announcementEnabled) {
-			this._accessibilitySignalService.playSignal(AccessibilitySignal.chatUserActionRequired, { customAlertMessage: this._instantiationService.invokeFunction(getToolConfirmationAlert, toolInvocations), userGesture: true, modality: !soundEnabled ? 'announcement' : undefined });
+			this._accessibilitySignalService.playSignal(AccessibilitySignal.chatUserActionRequired, { customAlertMessage: this._instantiationService.invokeFunction(getToolConfirmationAlert, pendingInvocations), userGesture: true, modality: !soundEnabled ? 'announcement' : undefined });
 		}
 	}
 
@@ -792,7 +812,7 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 		return true;
 	}
 
-	private async shouldAutoConfirm(toolId: string, runsInWorkspace: boolean | undefined, source: ToolDataSource, parameters: unknown): Promise<ConfirmedReason | undefined> {
+	private async shouldAutoConfirm(toolId: string, runsInWorkspace: boolean | undefined, source: ToolDataSource, parameters: unknown, chatSessionResource: URI | undefined): Promise<ConfirmedReason | undefined> {
 		const tool = this._tools.get(toolId);
 		if (!tool) {
 			return undefined;
@@ -802,7 +822,7 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 			return undefined;
 		}
 
-		const reason = this._confirmationService.getPreConfirmAction({ toolId, source, parameters });
+		const reason = this._confirmationService.getPreConfirmAction({ toolId, source, parameters, chatSessionResource });
 		if (reason) {
 			return reason;
 		}
@@ -829,12 +849,12 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 		return undefined;
 	}
 
-	private async shouldAutoConfirmPostExecution(toolId: string, runsInWorkspace: boolean | undefined, source: ToolDataSource, parameters: unknown): Promise<ConfirmedReason | undefined> {
+	private async shouldAutoConfirmPostExecution(toolId: string, runsInWorkspace: boolean | undefined, source: ToolDataSource, parameters: unknown, chatSessionResource: URI | undefined): Promise<ConfirmedReason | undefined> {
 		if (this._configurationService.getValue<boolean>(ChatConfiguration.GlobalAutoApprove) && await this._checkGlobalAutoApprove()) {
 			return { type: ToolConfirmKind.Setting, id: ChatConfiguration.GlobalAutoApprove };
 		}
 
-		return this._confirmationService.getPostConfirmAction({ toolId, source, parameters });
+		return this._confirmationService.getPostConfirmAction({ toolId, source, parameters, chatSessionResource });
 	}
 
 	private async _checkGlobalAutoApprove(): Promise<boolean> {
@@ -1116,7 +1136,7 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 				}
 
 			}
-		}(id, referenceName, options?.icon ?? Codicon.tools, source, options?.description, options?.legacyFullNames);
+		}(id, referenceName, options?.icon ?? Codicon.tools, source, options?.description, options?.legacyFullNames, this._contextKeyService);
 
 		this._toolSets.add(result);
 		return result;

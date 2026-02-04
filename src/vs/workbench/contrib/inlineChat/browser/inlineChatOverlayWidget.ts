@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import './media/inlineChatSessionOverlay.css';
+import './media/inlineChatOverlayWidget.css';
 import * as dom from '../../../../base/browser/dom.js';
 import { renderAsPlaintext } from '../../../../base/browser/markdownRenderer.js';
 import { StandardKeyboardEvent } from '../../../../base/browser/keyboardEvent.js';
@@ -12,10 +12,10 @@ import { ActionBar, ActionsOrientation } from '../../../../base/browser/ui/actio
 import { Codicon } from '../../../../base/common/codicons.js';
 import { KeyCode } from '../../../../base/common/keyCodes.js';
 import { Disposable, DisposableStore, toDisposable } from '../../../../base/common/lifecycle.js';
-import { autorun, constObservable, derived, IObservable, observableFromEventOpts, observableValue } from '../../../../base/common/observable.js';
+import { autorun, constObservable, derived, IObservable, observableFromEvent, observableFromEventOpts, observableValue } from '../../../../base/common/observable.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { URI } from '../../../../base/common/uri.js';
-import { ContentWidgetPositionPreference, IActiveCodeEditor, IContentWidgetPosition, IOverlayWidgetPosition } from '../../../../editor/browser/editorBrowser.js';
+import { IActiveCodeEditor, IOverlayWidgetPosition } from '../../../../editor/browser/editorBrowser.js';
 import { ObservableCodeEditor } from '../../../../editor/browser/observableCodeEditor.js';
 import { EditorOption } from '../../../../editor/common/config/editorOptions.js';
 import { EditorExtensionsRegistry } from '../../../../editor/browser/editorExtensions.js';
@@ -28,6 +28,7 @@ import { IContextKeyService } from '../../../../platform/contextkey/common/conte
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { ChatEditingAcceptRejectActionViewItem } from '../../chat/browser/chatEditing/chatEditingEditorOverlay.js';
 import { ACTION_START } from '../common/inlineChat.js';
+import { StickyScrollController } from '../../../../editor/contrib/stickyScroll/browser/stickyScrollController.js';
 import { IKeybindingService } from '../../../../platform/keybinding/common/keybinding.js';
 import { getFlatActionBarActions } from '../../../../platform/actions/browser/menuEntryActionViewItem.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
@@ -36,7 +37,6 @@ import { PlaceholderTextContribution } from '../../../../editor/contrib/placehol
 import { InlineChatRunOptions } from './inlineChatController.js';
 import { IInlineChatSession2 } from './inlineChatSessionService.js';
 import { Position } from '../../../../editor/common/core/position.js';
-import { SelectionDirection } from '../../../../editor/common/core/selection.js';
 import { CancelChatActionId } from '../../chat/browser/actions/chatExecuteActions.js';
 import { assertType } from '../../../../base/common/types.js';
 
@@ -51,15 +51,15 @@ export class InlineChatInputWidget extends Disposable {
 	private readonly _input: IActiveCodeEditor;
 	private readonly _position = observableValue<IOverlayWidgetPosition | null>(this, null);
 	readonly position: IObservable<IOverlayWidgetPosition | null> = this._position;
-	readonly minContentWidthInPx = constObservable(0);
+
 
 	private readonly _showStore = this._store.add(new DisposableStore());
+	private readonly _stickyScrollHeight: IObservable<number>;
 	private _inlineStartAction: IAction | undefined;
 	private _anchorLineNumber: number = 0;
 	private _anchorLeft: number = 0;
 	private _anchorAbove: boolean = false;
 
-	readonly allowEditorOverflow = true;
 
 	constructor(
 		private readonly _editorObs: ObservableCodeEditor,
@@ -106,18 +106,20 @@ export class InlineChatInputWidget extends Disposable {
 
 		const model = this._store.add(modelService.createModel('', null, URI.parse(`gutter-input:${Date.now()}`), true));
 		this._input.setModel(model);
-		this._input.layout({ width: 200, height: 18 });
+
+		// Initialize sticky scroll height observable
+		const stickyScrollController = StickyScrollController.get(this._editorObs.editor);
+		this._stickyScrollHeight = stickyScrollController ? observableFromEvent(stickyScrollController.onDidChangeStickyScrollHeight, () => stickyScrollController.stickyScrollWidgetHeight) : constObservable(0);
 
 		// Update placeholder based on selection state
 		this._store.add(autorun(r => {
 			const selection = this._editorObs.cursorSelection.read(r);
 			const hasSelection = selection && !selection.isEmpty();
 			const placeholderText = hasSelection
-				? localize('placeholderWithSelection', "Edit selection")
+				? localize('placeholderWithSelection', "Modify selected code")
 				: localize('placeholderNoSelection', "Generate code");
-			this._input.updateOptions({
-				placeholder: this._keybindingService.appendKeybinding(placeholderText, ACTION_START)
-			});
+
+			this._input.updateOptions({ placeholder: this._keybindingService.appendKeybinding(placeholderText, ACTION_START) });
 		}));
 
 		// Listen to content size changes and resize the input editor (max 3 lines)
@@ -198,8 +200,7 @@ export class InlineChatInputWidget extends Disposable {
 
 		// Clear input state
 		this._input.getModel().setValue('');
-		this._inputContainer.style.height = '26px';
-		this._input.layout({ width: 200, height: 18 });
+		this._updateInputHeight(this._input.getContentHeight());
 
 		// Refresh actions from menu
 		this._refreshActions();
@@ -216,8 +217,8 @@ export class InlineChatInputWidget extends Disposable {
 		this._showStore.add(this._editorObs.createOverlayWidget({
 			domNode: this._domNode,
 			position: this._position,
-			minContentWidthInPx: this.minContentWidthInPx,
-			allowEditorOverflow: this.allowEditorOverflow,
+			minContentWidthInPx: constObservable(0),
+			allowEditorOverflow: true,
 		}));
 
 		// If anchoring above, adjust position after render to account for widget height
@@ -225,13 +226,14 @@ export class InlineChatInputWidget extends Disposable {
 			this._updatePosition();
 		}
 
-		// Update position on scroll, hide if anchor line is out of view
+		// Update position on scroll, hide if anchor line is out of view (only when input is empty)
 		this._showStore.add(this._editorObs.editor.onDidScrollChange(() => {
 			const visibleRanges = this._editorObs.editor.getVisibleRanges();
 			const isLineVisible = visibleRanges.some(range =>
 				this._anchorLineNumber >= range.startLineNumber && this._anchorLineNumber <= range.endLineNumber
 			);
-			if (!isLineVisible) {
+			const hasContent = !!this._input.getModel().getValue();
+			if (!isLineVisible && !hasContent) {
 				this._hide();
 			} else {
 				this._updatePosition();
@@ -244,6 +246,7 @@ export class InlineChatInputWidget extends Disposable {
 
 	private _updatePosition(): void {
 		const editor = this._editorObs.editor;
+		const lineHeight = editor.getOption(EditorOption.lineHeight);
 		const top = editor.getTopForLineNumber(this._anchorLineNumber) - editor.getScrollTop();
 		let adjustedTop = top;
 
@@ -251,12 +254,22 @@ export class InlineChatInputWidget extends Disposable {
 			const widgetHeight = this._domNode.offsetHeight;
 			adjustedTop = top - widgetHeight;
 		} else {
-			const lineHeight = editor.getOption(EditorOption.lineHeight);
 			adjustedTop = top + lineHeight;
 		}
 
+		// Clamp to viewport bounds when anchor line is out of view
+		const stickyScrollHeight = this._stickyScrollHeight.get();
+		const layoutInfo = editor.getLayoutInfo();
+		const widgetHeight = this._domNode.offsetHeight;
+		const minTop = stickyScrollHeight;
+		const maxTop = layoutInfo.height - widgetHeight;
+
+		const clampedTop = Math.max(minTop, Math.min(adjustedTop, maxTop));
+		const isClamped = clampedTop !== adjustedTop;
+		this._domNode.classList.toggle('clamped', isClamped);
+
 		this._position.set({
-			preference: { top: adjustedTop, left: this._anchorLeft },
+			preference: { top: clampedTop, left: this._anchorLeft },
 			stackOrdinal: 10000,
 		}, undefined);
 	}
@@ -265,6 +278,11 @@ export class InlineChatInputWidget extends Disposable {
 	 * Hide the widget (removes from editor but does not dispose).
 	 */
 	private _hide(): void {
+		// Focus editor if focus is still within the editor's DOM
+		const editorDomNode = this._editorObs.editor.getDomNode();
+		if (editorDomNode && dom.isAncestorOfActiveElement(editorDomNode)) {
+			this._editorObs.editor.focus();
+		}
 		this._position.set(null, undefined);
 		this._showStore.clear();
 	}
@@ -312,7 +330,10 @@ export class InlineChatSessionOverlayWidget extends Disposable {
 	private readonly _toolbarNode: HTMLElement;
 
 	private readonly _showStore = this._store.add(new DisposableStore());
-	private readonly _position = observableValue<IContentWidgetPosition | null>(this, null);
+	private readonly _position = observableValue<IOverlayWidgetPosition | null>(this, null);
+	private readonly _minContentWidthInPx = constObservable(0);
+
+	private readonly _stickyScrollHeight: IObservable<number>;
 
 	constructor(
 		private readonly _editorObs: ObservableCodeEditor,
@@ -321,9 +342,11 @@ export class InlineChatSessionOverlayWidget extends Disposable {
 	) {
 		super();
 
+		this._domNode.classList.add('inline-chat-session-overlay-widget');
+
 		this._container = document.createElement('div');
 		this._domNode.appendChild(this._container);
-		this._container.classList.add('inline-chat-session-overlay-widget');
+		this._container.classList.add('inline-chat-session-overlay-container');
 
 		// Create status node with icon and message
 		this._statusNode = document.createElement('div');
@@ -335,6 +358,10 @@ export class InlineChatSessionOverlayWidget extends Disposable {
 		// Create toolbar node
 		this._toolbarNode = document.createElement('div');
 		this._toolbarNode.classList.add('toolbar');
+
+		// Initialize sticky scroll height observable
+		const stickyScrollController = StickyScrollController.get(this._editorObs.editor);
+		this._stickyScrollHeight = stickyScrollController ? observableFromEvent(stickyScrollController.onDidChangeStickyScrollHeight, () => stickyScrollController.stickyScrollWidgetHeight) : constObservable(0);
 	}
 
 	show(session: IInlineChatSession2): void {
@@ -344,7 +371,7 @@ export class InlineChatSessionOverlayWidget extends Disposable {
 		// Derived entry observable for this session
 		const entry = derived(r => session.editingSession.readEntry(session.uri, r));
 
-		// Set up status message observable
+		// Set up status message and icon observable
 		const requestMessage = derived(r => {
 			const chatModel = session?.chatModel;
 			if (!session || !chatModel) {
@@ -353,17 +380,27 @@ export class InlineChatSessionOverlayWidget extends Disposable {
 
 			const response = chatModel.lastRequestObs.read(r)?.response;
 			if (!response) {
-				return { message: localize('working', "Working...") };
+				return { message: localize('working', "Working..."), icon: ThemeIcon.modify(Codicon.loading, 'spin') };
 			}
 
 			if (response.isComplete) {
+				// Check for errors first
+				const result = response.result;
+				if (result?.errorDetails) {
+					return {
+						message: localize('error', "Sorry, your request failed"),
+						icon: Codicon.error
+					};
+				}
+
 				const changes = entry.read(r)?.changesCount.read(r) ?? 0;
 				return {
 					message: changes === 0
 						? localize('done', "Done")
 						: changes === 1
 							? localize('done1', "Done, 1 change")
-							: localize('doneN', "Done, {0} changes", changes)
+							: localize('doneN', "Done, {0} changes", changes),
+					icon: Codicon.check
 				};
 			}
 
@@ -373,11 +410,11 @@ export class InlineChatSessionOverlayWidget extends Disposable {
 				.at(-1);
 
 			if (lastPart?.kind === 'toolInvocation') {
-				return { message: lastPart.invocationMessage };
+				return { message: lastPart.invocationMessage, icon: ThemeIcon.modify(Codicon.loading, 'spin') };
 			} else if (lastPart?.kind === 'progressMessage') {
-				return { message: lastPart.content };
+				return { message: lastPart.content, icon: ThemeIcon.modify(Codicon.loading, 'spin') };
 			} else {
-				return { message: localize('working', "Working...") };
+				return { message: localize('working', "Working..."), icon: ThemeIcon.modify(Codicon.loading, 'spin') };
 			}
 		});
 
@@ -385,20 +422,12 @@ export class InlineChatSessionOverlayWidget extends Disposable {
 			const value = requestMessage.read(r);
 			if (value) {
 				this._message.innerText = renderAsPlaintext(value.message);
+				this._icon.className = '';
+				this._icon.classList.add(...ThemeIcon.asClassNameArray(value.icon));
 			} else {
 				this._message.innerText = '';
+				this._icon.className = '';
 			}
-		}));
-
-		// Keep active class in sync with whether edits are being streamed or done
-		this._showStore.add(autorun(r => {
-			const e = entry.read(r);
-			const isBusy = !e || !!e.isCurrentlyBeingModifiedBy.read(r);
-			const isDone = e?.lastModifyingResponse.read(r)?.isComplete;
-			this._container.classList.toggle('active', isBusy || isDone);
-
-			this._icon.className = '';
-			this._icon.classList.add(...ThemeIcon.asClassNameArray(isDone ? Codicon.check : ThemeIcon.modify(Codicon.loading, 'spin')));
 		}));
 
 		// Add toolbar
@@ -427,41 +456,43 @@ export class InlineChatSessionOverlayWidget extends Disposable {
 			}
 		}));
 
-		// Position based on diff info, updating as changes stream in
-		const selection = this._editorObs.cursorSelection.get()!;
-		const above = selection.getDirection() === SelectionDirection.RTL;
+		// Position in top right of editor, below sticky scroll
+		const lineHeight = this._editorObs.getOption(EditorOption.lineHeight);
+
+		// Track widget width changes
+		const widgetWidth = observableValue<number>(this, 0);
+		const resizeObserver = new dom.DisposableResizeObserver(() => {
+			widgetWidth.set(this._domNode.offsetWidth, undefined);
+		});
+		this._showStore.add(resizeObserver);
+		this._showStore.add(resizeObserver.observe(this._domNode));
 
 		this._showStore.add(autorun(r => {
-			const e = entry.read(r);
-			const diffInfo = e?.diffInfo?.read(r);
+			const layoutInfo = this._editorObs.layoutInfo.read(r);
+			const stickyScrollHeight = this._stickyScrollHeight.read(r);
+			const width = widgetWidth.read(r);
+			const padding = Math.round(lineHeight.read(r) * 2 / 3);
 
-			// Build combined range from selection and all diff changes
-			let startLine = selection.startLineNumber;
-			let endLineExclusive = selection.endLineNumber + 1;
+			// Cap max-width to the editor viewport (content area)
+			const maxWidth = layoutInfo.contentWidth - 2 * padding;
+			this._domNode.style.maxWidth = `${maxWidth}px`;
 
-			if (diffInfo) {
-				for (const change of diffInfo.changes) {
-					startLine = Math.min(startLine, change.modified.startLineNumber);
-					endLineExclusive = Math.max(endLineExclusive, change.modified.endLineNumberExclusive);
-				}
-			}
-
-			// Position at start (above) or end (below) of the combined range
-			const newPosition = above
-				? new Position(startLine, 1)
-				: new Position(endLineExclusive - 1, 1);
+			// Position: top right, below sticky scroll with padding, left of minimap and scrollbar
+			const top = stickyScrollHeight + padding;
+			const left = layoutInfo.width - width - layoutInfo.verticalScrollbarWidth - layoutInfo.minimap.minimapWidth - padding;
 
 			this._position.set({
-				position: newPosition,
-				preference: [above ? ContentWidgetPositionPreference.ABOVE : ContentWidgetPositionPreference.BELOW]
+				preference: { top, left },
+				stackOrdinal: 10000,
 			}, undefined);
 		}));
 
-		// Create content widget
-		this._showStore.add(this._editorObs.createContentWidget({
+		// Create overlay widget
+		this._showStore.add(this._editorObs.createOverlayWidget({
 			domNode: this._domNode,
 			position: this._position,
-			allowEditorOverflow: true,
+			minContentWidthInPx: this._minContentWidthInPx,
+			allowEditorOverflow: false,
 		}));
 	}
 
