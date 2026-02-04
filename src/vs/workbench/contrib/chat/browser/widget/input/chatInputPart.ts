@@ -2484,7 +2484,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 			editSessionEntries.read(reader).length > 0 || sessionFiles.read(reader).length > 0);
 
 		this._renderingChatEdits.value = autorun(reader => {
-			if (this.options.renderWorkingSet && shouldRender.read(reader)) {
+			if (!this._widget?.showFullWelcome && this.options.renderWorkingSet && shouldRender.read(reader)) {
 				this.renderChatEditingSessionWithEntries(
 					reader.store,
 					chatEditingSession,

@@ -77,7 +77,7 @@ export class ChatBarPart extends AbstractPaneCompositePart {
 		super(
 			Parts.CHATBAR_PART,
 			{
-				hasTitle: true,
+				hasTitle: false,
 				trailingSeparator: true,
 				borderWidth: () => (this.getColor(SIDE_BAR_BORDER) || this.getColor(contrastBorder)) ? 1 : 0,
 			},

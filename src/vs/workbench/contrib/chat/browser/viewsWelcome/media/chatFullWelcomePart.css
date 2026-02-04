@@ -58,6 +58,8 @@
 /* Contain the Monaco editor view-lines within the input border */
 .chat-full-welcome-inputSlot .chat-input-container {
 	overflow: hidden;
+	background-color: var(--vscode-sideBar-background);
+	border-color: var(--vscode-contrastBorder, var(--vscode-editorWidget-border));
 }
 
 .chat-full-welcome-startEntries {
@@ -637,9 +639,7 @@
 	transform: scale(1.08);
 }
 
-/* ===========================================
-   Configuration Toolbar (horizontal layout)
-   =========================================== */
+/* Configuration Toolbar (horizontal layout) */
 
 /* Config toolbar - horizontal row with collapsed mode icon + separator + pickers */
 .chat-full-welcome-config-toolbar {

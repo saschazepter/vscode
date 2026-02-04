@@ -8,9 +8,10 @@ import * as dom from '../../../../base/browser/dom.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { DisposableStore, MutableDisposable } from '../../../../base/common/lifecycle.js';
-import { autorun, derived, observableValue } from '../../../../base/common/observable.js';
+import { autorun, derived, observableFromEvent, observableValue } from '../../../../base/common/observable.js';
 import { IActivityService, NumberBadge } from '../../../services/activity/common/activity.js';
 import { ScrollbarVisibility } from '../../../../base/common/scrollable.js';
+import { Iterable } from '../../../../base/common/iterator.js';
 import { localize } from '../../../../nls.js';
 import { MenuWorkbenchButtonBar } from '../../../../platform/actions/browser/buttonbar.js';
 import { MenuId } from '../../../../platform/actions/common/actions.js';
@@ -40,6 +41,9 @@ import { IExtensionService } from '../../../services/extensions/common/extension
 import { IWorkbenchLayoutService } from '../../../services/layout/browser/layoutService.js';
 import { URI } from '../../../../base/common/uri.js';
 import { IChatWidgetService } from '../../../contrib/chat/browser/chat.js';
+import { isEqual } from '../../../../base/common/resources.js';
+import { IAgentSessionsService } from '../../../contrib/chat/browser/agentSessions/agentSessionsService.js';
+import { isIChatSessionFileChange2 } from '../../../contrib/chat/common/chatSessionsService.js';
 
 const $ = dom.$;
 
@@ -86,6 +90,7 @@ export class ChangesViewPane extends ViewPane {
 		@IEditorService private readonly editorService: IEditorService,
 		@IChatWidgetService private readonly chatWidgetService: IChatWidgetService,
 		@IActivityService private readonly activityService: IActivityService,
+		@IAgentSessionsService private readonly agentSessionsService: IAgentSessionsService,
 	) {
 		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
 
@@ -145,17 +150,38 @@ export class ChangesViewPane extends ViewPane {
 	}
 
 	private registerBadgeTracking(): void {
+		// Observable for session file changes from agentSessionsService (cloud/background sessions)
+		const sessionFileChangesObs = observableFromEvent(
+			this,
+			this.agentSessionsService.model.onDidChangeSessions,
+			() => {
+				const sessionResource = this.activeSessionResource.get();
+				if (!sessionResource) {
+					return Iterable.empty();
+				}
+				const model = this.agentSessionsService.getSession(sessionResource);
+				return model?.changes instanceof Array ? model.changes : Iterable.empty();
+			},
+		);
+
 		// Create observable for the number of files changed in the active session
+		// Combines both editing session entries and session file changes (for cloud/background sessions)
 		const fileCountObs = derived(reader => {
 			const sessionResource = this.activeSessionResource.read(reader);
 			if (!sessionResource) {
 				return 0;
 			}
-			const session = this.chatEditingService.getEditingSession(sessionResource);
-			if (!session) {
-				return 0;
-			}
-			return session.entries.read(reader).length;
+
+			// Count from editing session entries
+			const sessions = this.chatEditingService.editingSessionsObs.read(reader);
+			const session = sessions.find(candidate => isEqual(candidate.chatSessionResource, sessionResource));
+			const editingSessionCount = session ? session.entries.read(reader).length : 0;
+
+			// Count from session file changes (cloud/background sessions)
+			const sessionFiles = [...sessionFileChangesObs.read(reader)];
+			const sessionFilesCount = sessionFiles.length;
+
+			return editingSessionCount + sessionFilesCount;
 		});
 
 		// Update badge when file count changes
@@ -218,15 +244,18 @@ export class ChangesViewPane extends ViewPane {
 		this.renderDisposables.clear();
 
 		// Create observable for the active editing session
+		// Note: We must read editingSessionsObs to establish a reactive dependency,
+		// so that the view updates when a new editing session is added (e.g., cloud sessions)
 		const activeEditingSessionObs = derived(reader => {
 			const sessionResource = this.activeSessionResource.read(reader);
 			if (!sessionResource) {
 				return undefined;
 			}
-			return this.chatEditingService.getEditingSession(sessionResource);
+			const sessions = this.chatEditingService.editingSessionsObs.read(reader);
+			return sessions.find(candidate => isEqual(candidate.chatSessionResource, sessionResource));
 		});
 
-		// Create observable for edit session entries from the ACTIVE session only
+		// Create observable for edit session entries from the ACTIVE session only (local editing sessions)
 		const editSessionEntriesObs = derived(reader => {
 			const session = activeEditingSessionObs.read(reader);
 			if (!session) {
@@ -258,9 +287,49 @@ export class ChangesViewPane extends ViewPane {
 			return items;
 		});
 
-		// Calculate stats
+		// Create observable for session file changes from agentSessionsService (cloud/background sessions)
+		const sessionFileChangesObs = observableFromEvent(
+			this.renderDisposables,
+			this.agentSessionsService.model.onDidChangeSessions,
+			() => {
+				const sessionResource = this.activeSessionResource.get();
+				if (!sessionResource) {
+					return Iterable.empty();
+				}
+				const model = this.agentSessionsService.getSession(sessionResource);
+				return model?.changes instanceof Array ? model.changes : Iterable.empty();
+			},
+		);
+
+		// Convert session file changes to list items (cloud/background sessions)
+		const sessionFilesObs = derived(reader =>
+			[...sessionFileChangesObs.read(reader)].map((entry): IChatCollapsibleListItem => ({
+				reference: isIChatSessionFileChange2(entry)
+					? entry.modifiedUri ?? entry.uri
+					: entry.modifiedUri,
+				state: ModifiedFileEntryState.Accepted,
+				kind: 'reference',
+				options: {
+					diffMeta: { added: entry.insertions, removed: entry.deletions },
+					isDeletion: entry.modifiedUri === undefined,
+					originalUri: entry.originalUri,
+					status: undefined
+				}
+			}))
+		);
+
+		// Combine both entry sources for display
+		const combinedEntriesObs = derived(reader => {
+			const editEntries = editSessionEntriesObs.read(reader);
+			const sessionFiles = sessionFilesObs.read(reader);
+			return [...editEntries, ...sessionFiles];
+		});
+
+		// Calculate stats from combined entries
 		const topLevelStats = derived(reader => {
-			const entries = editSessionEntriesObs.read(reader);
+			const editEntries = editSessionEntriesObs.read(reader);
+			const sessionFiles = sessionFilesObs.read(reader);
+			const entries = [...editEntries, ...sessionFiles];
 
 			let added = 0, removed = 0;
 
@@ -272,8 +341,9 @@ export class ChangesViewPane extends ViewPane {
 			}
 
 			const files = entries.length;
+			const isSessionMenu = editEntries.length === 0 && sessionFiles.length > 0;
 
-			return { files, added, removed };
+			return { files, added, removed, isSessionMenu };
 		});
 
 		// Setup context keys and actions toolbar
@@ -307,22 +377,28 @@ export class ChangesViewPane extends ViewPane {
 				return files > 0;
 			}));
 
-			this.renderDisposables.add(scopedInstantiationService.createInstance(
-				MenuWorkbenchButtonBar,
-				this.actionsContainer,
-				MenuId.ChatEditingWidgetToolbar,
-				{
-					telemetrySource: 'changesView',
-					small: true,
-					menuOptions: { shouldForwardArgs: true },
-					buttonConfigProvider: (action) => {
-						if (action.id === 'chatEditing.viewChanges' || action.id === 'chatEditing.viewPreviousEdits' || action.id === 'chatEditing.viewAllSessionChanges') {
-							return { showIcon: true, showLabel: false, isSecondary: true };
+			this.renderDisposables.add(autorun(reader => {
+				const { isSessionMenu } = topLevelStats.read(reader);
+				const sessionResource = this.activeSessionResource.read(reader);
+				reader.store.add(scopedInstantiationService.createInstance(
+					MenuWorkbenchButtonBar,
+					this.actionsContainer!,
+					isSessionMenu ? MenuId.ChatEditingSessionChangesToolbar : MenuId.ChatEditingWidgetToolbar,
+					{
+						telemetrySource: 'changesView',
+						small: true,
+						menuOptions: isSessionMenu && sessionResource
+							? { args: [sessionResource] }
+							: { shouldForwardArgs: true },
+						buttonConfigProvider: (action) => {
+							if (action.id === 'chatEditing.viewChanges' || action.id === 'chatEditing.viewPreviousEdits' || action.id === 'chatEditing.viewAllSessionChanges') {
+								return { showIcon: true, showLabel: false, isSecondary: true };
+							}
+							return undefined;
 						}
-						return undefined;
 					}
-				}
-			));
+				));
+			}));
 		}
 
 		// Update visibility based on entries
@@ -392,9 +468,9 @@ export class ChangesViewPane extends ViewPane {
 			}));
 		}
 
-		// Update list data
+		// Update list data with combined entries
 		this.renderDisposables.add(autorun(reader => {
-			const entries = editSessionEntriesObs.read(reader);
+			const entries = combinedEntriesObs.read(reader);
 
 			if (!this.listRef) {
 				return;

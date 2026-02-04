@@ -287,63 +287,68 @@ export abstract class AbstractPaneCompositePart extends CompositePart<PaneCompos
 			this.emptyPaneMessageElement!.style.backgroundColor = backgroundColor;
 		};
 
-		this._register(CompositeDragAndDropObserver.INSTANCE.registerTarget(this.element, {
-			onDragOver: (e) => {
-				EventHelper.stop(e.eventData, true);
-				if (this.paneCompositeBar.value) {
-					const validDropTarget = this.paneCompositeBar.value.dndHandler.onDragEnter(e.dragAndDropData, undefined, e.eventData);
-					toggleDropEffect(e.eventData.dataTransfer, 'move', validDropTarget);
-				}
-			},
-			onDragEnter: (e) => {
-				EventHelper.stop(e.eventData, true);
-				if (this.paneCompositeBar.value) {
-					const validDropTarget = this.paneCompositeBar.value.dndHandler.onDragEnter(e.dragAndDropData, undefined, e.eventData);
-					setDropBackgroundFeedback(validDropTarget);
-				}
-			},
-			onDragLeave: (e) => {
-				EventHelper.stop(e.eventData, true);
-				setDropBackgroundFeedback(false);
-			},
-			onDragEnd: (e) => {
-				EventHelper.stop(e.eventData, true);
-				setDropBackgroundFeedback(false);
-			},
-			onDrop: (e) => {
-				EventHelper.stop(e.eventData, true);
-				setDropBackgroundFeedback(false);
-				if (this.paneCompositeBar.value) {
-					this.paneCompositeBar.value.dndHandler.drop(e.dragAndDropData, undefined, e.eventData);
-				} else {
-					// Allow opening views/composites if the composite bar is hidden
-					const dragData = e.dragAndDropData.getData();
-
-					if (dragData.type === 'composite') {
-						const currentContainer = this.viewDescriptorService.getViewContainerById(dragData.id)!;
-						this.viewDescriptorService.moveViewContainerToLocation(currentContainer, this.location, undefined, 'dnd');
-						this.openPaneComposite(currentContainer.id, true);
+		if (this.viewDescriptorService.canMoveViews()) {
+			this._register(CompositeDragAndDropObserver.INSTANCE.registerTarget(this.element, {
+				onDragOver: (e) => {
+					EventHelper.stop(e.eventData, true);
+					if (this.paneCompositeBar.value) {
+						const validDropTarget = this.paneCompositeBar.value.dndHandler.onDragEnter(e.dragAndDropData, undefined, e.eventData);
+						toggleDropEffect(e.eventData.dataTransfer, 'move', validDropTarget);
 					}
+				},
+				onDragEnter: (e) => {
+					EventHelper.stop(e.eventData, true);
+					if (this.paneCompositeBar.value) {
+						const validDropTarget = this.paneCompositeBar.value.dndHandler.onDragEnter(e.dragAndDropData, undefined, e.eventData);
+						setDropBackgroundFeedback(validDropTarget);
+					}
+				},
+				onDragLeave: (e) => {
+					EventHelper.stop(e.eventData, true);
+					setDropBackgroundFeedback(false);
+				},
+				onDragEnd: (e) => {
+					EventHelper.stop(e.eventData, true);
+					setDropBackgroundFeedback(false);
+				},
+				onDrop: (e) => {
+					EventHelper.stop(e.eventData, true);
+					setDropBackgroundFeedback(false);
+					if (this.paneCompositeBar.value) {
+						this.paneCompositeBar.value.dndHandler.drop(e.dragAndDropData, undefined, e.eventData);
+					} else {
+						// Allow opening views/composites if the composite bar is hidden
+						const dragData = e.dragAndDropData.getData();
 
-					else if (dragData.type === 'view') {
-						const viewToMove = this.viewDescriptorService.getViewDescriptorById(dragData.id)!;
-						if (viewToMove.canMoveView) {
-							this.viewDescriptorService.moveViewToLocation(viewToMove, this.location, 'dnd');
+						if (dragData.type === 'composite') {
+							const currentContainer = this.viewDescriptorService.getViewContainerById(dragData.id)!;
+							this.viewDescriptorService.moveViewContainerToLocation(currentContainer, this.location, undefined, 'dnd');
+							this.openPaneComposite(currentContainer.id, true);
+						}
 
-							const newContainer = this.viewDescriptorService.getViewContainerByViewId(viewToMove.id)!;
+						else if (dragData.type === 'view') {
+							const viewToMove = this.viewDescriptorService.getViewDescriptorById(dragData.id)!;
+							if (viewToMove.canMoveView) {
+								this.viewDescriptorService.moveViewToLocation(viewToMove, this.location, 'dnd');
 
-							this.openPaneComposite(newContainer.id, true).then(composite => {
-								composite?.openView(viewToMove.id, true);
-							});
+								const newContainer = this.viewDescriptorService.getViewContainerByViewId(viewToMove.id)!;
+
+								this.openPaneComposite(newContainer.id, true).then(composite => {
+									composite?.openView(viewToMove.id, true);
+								});
+							}
 						}
 					}
-				}
-			},
-		}));
+				},
+			}));
+		}
 	}
 
-	protected override createTitleArea(parent: HTMLElement): HTMLElement {
+	protected override createTitleArea(parent: HTMLElement): HTMLElement | undefined {
 		const titleArea = super.createTitleArea(parent);
+		if (!titleArea) {
+			return undefined;
+		}
 
 		this._register(addDisposableListener(titleArea, EventType.CONTEXT_MENU, e => {
 			this.onTitleAreaContextMenu(new StandardMouseEvent(getWindow(titleArea), e));
@@ -379,7 +384,7 @@ export abstract class AbstractPaneCompositePart extends CompositePart<PaneCompos
 		this.titleContainer = parent;
 
 		const titleLabel = super.createTitleLabel(parent);
-		this.titleLabelElement!.draggable = true;
+		this.titleLabelElement!.draggable = this.viewDescriptorService.canMoveViews();
 		const draggedItemProvider = (): { type: 'view' | 'composite'; id: string } => {
 			const activeViewlet = this.getActivePaneComposite()!;
 			return { type: 'composite', id: activeViewlet.getId() };
