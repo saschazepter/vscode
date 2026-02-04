@@ -34,13 +34,13 @@ The Agent Sessions Workbench (`AgentSessionsWorkbench`) provides a simplified, f
 
 #### Included Parts
 
-| Part | ID Constant | Position | Visibility |
-|------|-------------|----------|------------|
+| Part | ID Constant | Position | Default Visibility |
+|------|-------------|----------|--------------------|
 | Titlebar | `Parts.TITLEBAR_PART` | Top, full width | Always visible |
-| Sidebar | `Parts.SIDEBAR_PART` | Left, in middle section | Toggleable |
-| Auxiliary Bar | `Parts.AUXILIARYBAR_PART` | Center-left, in middle section | Toggleable |
-| Editor | `Parts.EDITOR_PART` | Right, in middle section | Toggleable |
-| Panel | `Parts.PANEL_PART` | Bottom, full width | Toggleable |
+| Sidebar | `Parts.SIDEBAR_PART` | Left, in middle section | Visible |
+| Auxiliary Bar | `Parts.AUXILIARYBAR_PART` | Center-left, in middle section | Visible |
+| Editor | `Parts.EDITOR_PART` | Right, in middle section | Hidden (auto-shows when editors open) |
+| Panel | `Parts.PANEL_PART` | Bottom, full width | Hidden |
 
 #### Excluded Parts
 
@@ -118,6 +118,9 @@ setPartHidden(hidden: boolean, part: Parts): void
 **Behavior:**
 - Hiding a part also hides its active pane composite
 - Showing a part restores the last active pane composite
+- **Editor Part Auto-Visibility:**
+  - Automatically shows when an editor is about to open (`onWillOpenEditor`)
+  - Automatically hides when the last editor closes (`onDidCloseEditor` + all groups empty)
 
 ### 5.2 Part Sizing
 
@@ -270,7 +273,14 @@ interface IPartVisibilityState {
 }
 ```
 
-Initial state: All parts visible (`true`).
+**Initial state:**
+
+| Part | Initial Visibility |
+|------|--------------------|
+| Sidebar | `true` (visible) |
+| Auxiliary Bar | `true` (visible) |
+| Editor | `false` (hidden) |
+| Panel | `false` (hidden) |
 
 ---
 
@@ -278,4 +288,5 @@ Initial state: All parts visible (`true`).
 
 | Date | Change |
 |------|--------|
+| 2026-02-04 | Editor and Panel hidden by default; Editor auto-shows on editor open, auto-hides when last editor closes |
 | Initial | Document created with base layout specification |

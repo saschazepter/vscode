@@ -17,6 +17,7 @@ import { ILayoutOffsetInfo } from '../../../platform/layout/browser/layoutServic
 import { Part } from '../../browser/part.js';
 import { Direction, ISerializableView, ISerializedGrid, ISerializedLeafNode, ISerializedNode, IViewSize, Orientation, SerializableGrid } from '../../../base/browser/ui/grid/grid.js';
 import { IEditorGroupsService } from '../../services/editor/common/editorGroupsService.js';
+import { IEditorService } from '../../services/editor/common/editorService.js';
 import { IPaneCompositePartService } from '../../services/panecomposite/browser/panecomposite.js';
 import { ViewContainerLocation } from '../../common/views.js';
 import { ILogService } from '../../../platform/log/common/log.js';
@@ -226,8 +227,8 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 	private readonly partVisibility: IPartVisibilityState = {
 		sidebar: true,
 		auxiliaryBar: true,
-		editor: true,
-		panel: true
+		editor: false,
+		panel: false
 	};
 
 	private mainWindowFullscreen = false;
@@ -244,6 +245,7 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 	//#region Services
 
 	private editorGroupService!: IEditorGroupsService;
+	private editorService!: IEditorService;
 	private paneCompositeService!: IPaneCompositePartService;
 
 	//#endregion
@@ -587,14 +589,38 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 		// Services - accessing these triggers their instantiation
 		// which creates and registers the parts
 		this.editorGroupService = accessor.get(IEditorGroupsService);
+		this.editorService = accessor.get(IEditorService);
 		this.paneCompositeService = accessor.get(IPaneCompositePartService);
 		accessor.get(ITitleService);
 
 		// Register layout listeners
 		this.registerLayoutListeners();
 
+		// Show editor part when an editor opens
+		this._register(this.editorService.onWillOpenEditor(() => {
+			if (!this.partVisibility.editor) {
+				this.setEditorHidden(false);
+			}
+		}));
+
+		// Hide editor part when last editor closes
+		this._register(this.editorService.onDidCloseEditor(() => {
+			if (this.partVisibility.editor && this.areAllGroupsEmpty()) {
+				this.setEditorHidden(true);
+			}
+		}));
+
 		// Initialize layout state (must be done before createWorkbenchLayout)
 		this._mainContainerDimension = getClientArea(this.parent, new Dimension(800, 600));
+	}
+
+	private areAllGroupsEmpty(): boolean {
+		for (const group of this.editorGroupService.groups) {
+			if (!group.isEmpty) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private registerLayoutListeners(): void {
