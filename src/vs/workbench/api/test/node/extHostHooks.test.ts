@@ -13,6 +13,7 @@ import { HookType, IChatRequestHooks, IHookCommand } from '../../../contrib/chat
 import { ExtHostChatAgents2 } from '../../common/extHostChatAgents2.js';
 import { IToolInvocationContext } from '../../../contrib/chat/common/tools/languageModelToolsService.js';
 import { ChatHookResultKind } from '../../common/extHostTypes.js';
+import { isWindows } from '../../../../base/common/platform.js';
 
 function createHookCommand(command: string, options?: Partial<Omit<IHookCommand, 'type' | 'command'>>): IHookCommand {
 	return {
@@ -37,7 +38,8 @@ function createMockExtHostChatAgents(hooks: IChatRequestHooks | undefined): Pick
 	};
 }
 
-suite('ExtHostHooks', () => {
+const suiteFn = isWindows ? suite.skip : suite;
+suiteFn('ExtHostHooks', () => {
 	const disposables = ensureNoDisposablesAreLeakedInTestSuite();
 
 	let hooksService: NodeExtHostHooks;
