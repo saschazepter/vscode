@@ -344,8 +344,11 @@ export abstract class AbstractPaneCompositePart extends CompositePart<PaneCompos
 		}
 	}
 
-	protected override createTitleArea(parent: HTMLElement): HTMLElement {
+	protected override createTitleArea(parent: HTMLElement): HTMLElement | undefined {
 		const titleArea = super.createTitleArea(parent);
+		if (!titleArea) {
+			return undefined;
+		}
 
 		this._register(addDisposableListener(titleArea, EventType.CONTEXT_MENU, e => {
 			this.onTitleAreaContextMenu(new StandardMouseEvent(getWindow(titleArea), e));
