@@ -8,7 +8,7 @@ import { MenuId, MenuRegistry, registerAction2, Action2 } from '../../../platfor
 import { Categories } from '../../../platform/action/common/actionCommonCategories.js';
 import { IConfigurationService } from '../../../platform/configuration/common/configuration.js';
 import { alert } from '../../../base/browser/ui/aria/aria.js';
-import { EditorActionsLocation, EditorTabsMode, IWorkbenchLayoutService, LayoutSettings, Parts, Position, ZenModeSettings, positionToString } from '../../services/layout/browser/layoutService.js';
+import { ActivityBarPosition, EditorActionsLocation, EditorTabsMode, IWorkbenchLayoutService, LayoutSettings, Parts, Position, ZenModeSettings, isHorizontal, positionToString } from '../../services/layout/browser/layoutService.js';
 import { ServicesAccessor, IInstantiationService } from '../../../platform/instantiation/common/instantiation.js';
 import { KeyMod, KeyCode, KeyChord } from '../../../base/common/keyCodes.js';
 import { isWindows, isLinux, isWeb, isMacintosh, isNative } from '../../../base/common/platform.js';
@@ -21,9 +21,9 @@ import { QuickPickItem, IQuickInputService, IQuickPickItem, IQuickPickSeparator,
 import { IDialogService } from '../../../platform/dialogs/common/dialogs.js';
 import { IPaneCompositePartService } from '../../services/panecomposite/browser/panecomposite.js';
 import { ToggleAuxiliaryBarAction } from '../parts/auxiliarybar/auxiliaryBarActions.js';
-import { TogglePanelAction } from '../parts/panel/panelActions.js';
+import { closeIcon, TogglePanelAction } from '../parts/panel/panelActions.js';
 import { ICommandService } from '../../../platform/commands/common/commands.js';
-import { AuxiliaryBarVisibleContext, PanelAlignmentContext, PanelVisibleContext, SideBarVisibleContext, FocusedViewContext, InEditorZenModeContext, IsMainEditorCenteredLayoutContext, MainEditorAreaVisibleContext, IsMainWindowFullscreenContext, PanelPositionContext, IsAuxiliaryWindowFocusedContext, TitleBarStyleContext, IsAuxiliaryWindowContext } from '../../common/contextkeys.js';
+import { AuxiliaryBarVisibleContext, PanelAlignmentContext, PanelVisibleContext, SideBarVisibleContext, FocusedViewContext, InEditorZenModeContext, IsMainEditorCenteredLayoutContext, MainEditorAreaVisibleContext, IsMainWindowFullscreenContext, PanelPositionContext, IsAuxiliaryWindowFocusedContext, TitleBarStyleContext, IsAuxiliaryWindowContext, PanelMaximizedContext, AuxiliaryBarMaximizedContext } from '../../common/contextkeys.js';
 import { Codicon } from '../../../base/common/codicons.js';
 import { ThemeIcon } from '../../../base/common/themables.js';
 import { DisposableStore } from '../../../base/common/lifecycle.js';
@@ -35,36 +35,40 @@ import { MenuSettings, TitlebarStyle } from '../../../platform/window/common/win
 import { IPreferencesService } from '../../services/preferences/common/preferences.js';
 import { QuickInputAlignmentContextKey } from '../../../platform/quickinput/browser/quickInput.js';
 import { IEditorGroupsService } from '../../services/editor/common/editorGroupsService.js';
+import { INotificationService } from '../../../platform/notification/common/notification.js';
 
 // Register Icons
 const menubarIcon = registerIcon('menuBar', Codicon.layoutMenubar, localize('menuBarIcon', "Represents the menu bar"));
 const activityBarLeftIcon = registerIcon('activity-bar-left', Codicon.layoutActivitybarLeft, localize('activityBarLeft', "Represents the activity bar in the left position"));
 const activityBarRightIcon = registerIcon('activity-bar-right', Codicon.layoutActivitybarRight, localize('activityBarRight', "Represents the activity bar in the right position"));
-const panelLeftIcon = registerIcon('panel-left', Codicon.layoutSidebarLeft, localize('panelLeft', "Represents a side bar in the left position"));
-const panelLeftOffIcon = registerIcon('panel-left-off', Codicon.layoutSidebarLeftOff, localize('panelLeftOff', "Represents a side bar in the left position toggled off"));
-const panelRightIcon = registerIcon('panel-right', Codicon.layoutSidebarRight, localize('panelRight', "Represents side bar in the right position"));
-const panelRightOffIcon = registerIcon('panel-right-off', Codicon.layoutSidebarRightOff, localize('panelRightOff', "Represents side bar in the right position toggled off"));
-const panelIcon = registerIcon('panel-bottom', Codicon.layoutPanel, localize('panelBottom', "Represents the bottom panel"));
 const statusBarIcon = registerIcon('statusBar', Codicon.layoutStatusbar, localize('statusBarIcon', "Represents the status bar"));
+const quickInputAlignmentTopIcon = registerIcon('quickInputAlignmentTop', Codicon.arrowUp, localize('quickInputAlignmentTop', "Represents quick input alignment set to the top"));
+const quickInputAlignmentCenterIcon = registerIcon('quickInputAlignmentCenter', Codicon.circle, localize('quickInputAlignmentCenter', "Represents quick input alignment set to the center"));
 
 const panelAlignmentLeftIcon = registerIcon('panel-align-left', Codicon.layoutPanelLeft, localize('panelBottomLeft', "Represents the bottom panel alignment set to the left"));
 const panelAlignmentRightIcon = registerIcon('panel-align-right', Codicon.layoutPanelRight, localize('panelBottomRight', "Represents the bottom panel alignment set to the right"));
 const panelAlignmentCenterIcon = registerIcon('panel-align-center', Codicon.layoutPanelCenter, localize('panelBottomCenter', "Represents the bottom panel alignment set to the center"));
 const panelAlignmentJustifyIcon = registerIcon('panel-align-justify', Codicon.layoutPanelJustify, localize('panelBottomJustify', "Represents the bottom panel alignment set to justified"));
-
-const quickInputAlignmentTopIcon = registerIcon('quickInputAlignmentTop', Codicon.arrowUp, localize('quickInputAlignmentTop', "Represents quick input alignment set to the top"));
-const quickInputAlignmentCenterIcon = registerIcon('quickInputAlignmentCenter', Codicon.circle, localize('quickInputAlignmentCenter', "Represents quick input alignment set to the center"));
+const panelLeftIcon = registerIcon('panel-left', Codicon.layoutSidebarLeft, localize('panelLeft', "Represents a side bar in the left position"));
+const panelLeftOffIcon = registerIcon('panel-left-off', Codicon.layoutSidebarLeftOff, localize('panelLeftOff', "Represents a side bar in the left position toggled off"));
+const panelRightIcon = registerIcon('panel-right', Codicon.layoutSidebarRight, localize('panelRight', "Represents side bar in the right position"));
+const panelRightOffIcon = registerIcon('panel-right-off', Codicon.layoutSidebarRightOff, localize('panelRightOff', "Represents side bar in the right position toggled off"));
+const panelIcon = registerIcon('panel-bottom', Codicon.layoutPanel, localize('panelBottom', "Represents the bottom panel"));
+const panelMaximizeIcon = registerIcon('panel-maximize', Codicon.screenFull, localize('maximizeIcon', 'Icon to maximize a panel.'));
+const panelOnIcon = registerIcon('panel-layout-icon', Codicon.layoutPanel, localize('togglePanelOffIcon', 'Icon to toggle the panel off when it is on.'));
+const panelOffIcon = registerIcon('panel-layout-icon-off', Codicon.layoutPanelOff, localize('togglePanelOnIcon', 'Icon to toggle the panel on when it is off.'));
+const panelRestoreIcon = registerIcon('panel-restore', Codicon.screenNormal, localize('restoreIcon', 'Icon to restore a panel.'));
 
 const fullscreenIcon = registerIcon('fullscreen', Codicon.screenFull, localize('fullScreenIcon', "Represents full screen"));
 const centerLayoutIcon = registerIcon('centerLayoutIcon', Codicon.layoutCentered, localize('centerLayoutIcon', "Represents centered layout mode"));
 const zenModeIcon = registerIcon('zenMode', Codicon.target, localize('zenModeIcon', "Represents zen mode"));
-const panelOnIcon = registerIcon('panel-layout-icon', Codicon.layoutPanel, localize('togglePanelOffIcon', 'Icon to toggle the panel off when it is on.'));
-const panelOffIcon = registerIcon('panel-layout-icon-off', Codicon.layoutPanelOff, localize('togglePanelOnIcon', 'Icon to toggle the panel on when it is off.'));
 
+const auxiliaryBarMaximizeIcon = registerIcon('auxiliarybar-maximize', Codicon.screenFull, localize('maximizeAuxiliaryBarIcon', 'Icon to maximize the secondary side bar.'));
 const auxiliaryBarRightIcon = registerIcon('auxiliarybar-right-layout-icon', Codicon.layoutSidebarRight, localize('toggleAuxiliaryIconRight', 'Icon to toggle the secondary side bar off in its right position.'));
 const auxiliaryBarRightOffIcon = registerIcon('auxiliarybar-right-off-layout-icon', Codicon.layoutSidebarRightOff, localize('toggleAuxiliaryIconRightOn', 'Icon to toggle the secondary side bar on in its right position.'));
 const auxiliaryBarLeftIcon = registerIcon('auxiliarybar-left-layout-icon', Codicon.layoutSidebarLeft, localize('toggleAuxiliaryIconLeft', 'Icon to toggle the secondary side bar in its left position.'));
 const auxiliaryBarLeftOffIcon = registerIcon('auxiliarybar-left-off-layout-icon', Codicon.layoutSidebarLeftOff, localize('toggleAuxiliaryIconLeftOn', 'Icon to toggle the secondary side bar on in its left position.'));
+const auxiliaryBarRestoreIcon = registerIcon('auxiliarybar-restore', Codicon.screenNormal, localize('auxiliaryBarRestoreIcon', 'Icon to restore the secondary side bar.'));
 
 export const ToggleActivityBarVisibilityActionId = 'workbench.action.toggleActivityBarVisibility';
 
@@ -1418,6 +1422,64 @@ class CustomizeLayoutAction extends Action2 {
 	}
 }
 
+class MaximizeAuxiliaryBar extends Action2 {
+
+	static readonly ID = 'workbench.action.maximizeAuxiliaryBar';
+
+	constructor() {
+		super({
+			id: MaximizeAuxiliaryBar.ID,
+			title: localize2('maximizeAuxiliaryBar', 'Maximize Secondary Side Bar'),
+			tooltip: localize('maximizeAuxiliaryBarTooltip', "Maximize Secondary Side Bar Size"),
+			category: Categories.View,
+			f1: true,
+			precondition: AuxiliaryBarMaximizedContext.negate(),
+			icon: auxiliaryBarMaximizeIcon,
+			menu: {
+				id: MenuId.AuxiliaryBarTitle,
+				group: 'navigation',
+				order: 1,
+				when: AuxiliaryBarMaximizedContext.negate()
+			}
+		});
+	}
+
+	run(accessor: ServicesAccessor) {
+		const layoutService = accessor.get(IWorkbenchLayoutService);
+
+		layoutService.setAuxiliaryBarMaximized(true);
+	}
+}
+
+class RestoreAuxiliaryBar extends Action2 {
+
+	static readonly ID = 'workbench.action.restoreAuxiliaryBar';
+
+	constructor() {
+		super({
+			id: RestoreAuxiliaryBar.ID,
+			title: localize2('restoreAuxiliaryBar', 'Restore Secondary Side Bar'),
+			tooltip: localize('restoreAuxiliaryBarTooltip', "Restore Secondary Side Bar Size"),
+			category: Categories.View,
+			f1: true,
+			precondition: AuxiliaryBarMaximizedContext,
+			icon: auxiliaryBarRestoreIcon,
+			menu: {
+				id: MenuId.AuxiliaryBarTitle,
+				group: 'navigation',
+				order: 1,
+				when: AuxiliaryBarMaximizedContext
+			}
+		});
+	}
+
+	run(accessor: ServicesAccessor) {
+		const layoutService = accessor.get(IWorkbenchLayoutService);
+
+		layoutService.setAuxiliaryBarMaximized(false);
+	}
+}
+
 /**
  * Registers all default workbench layout actions.
  * This function should be called from workbench.ts to register actions specific to the default layout.
@@ -1736,5 +1798,87 @@ export function registerLayoutActions(): void {
 			}
 		}
 	]);
+
+	const panelMaximizationSupportedWhen = ContextKeyExpr.or(PanelAlignmentContext.isEqualTo('center'), ContextKeyExpr.and(PanelPositionContext.notEqualsTo('bottom'), PanelPositionContext.notEqualsTo('top')));
+	const ToggleMaximizedPanelActionId = 'workbench.action.toggleMaximizedPanel';
+
+	registerAction2(class extends Action2 {
+		constructor() {
+			super({
+				id: ToggleMaximizedPanelActionId,
+				title: localize2('toggleMaximizedPanel', 'Toggle Maximized Panel'),
+				tooltip: localize('maximizePanel', "Maximize Panel Size"),
+				category: Categories.View,
+				f1: true,
+				icon: panelMaximizeIcon,
+				precondition: panelMaximizationSupportedWhen, // the workbench grid currently prevents us from supporting panel maximization with non-center panel alignment
+			});
+		}
+		run(accessor: ServicesAccessor) {
+			const layoutService = accessor.get(IWorkbenchLayoutService);
+			const notificationService = accessor.get(INotificationService);
+			if (layoutService.getPanelAlignment() !== 'center' && isHorizontal(layoutService.getPanelPosition())) {
+				notificationService.warn(localize('panelMaxNotSupported', "Maximizing the panel is only supported when it is center aligned."));
+				return;
+			}
+
+			if (!layoutService.isVisible(Parts.PANEL_PART)) {
+				layoutService.setPartHidden(false, Parts.PANEL_PART);
+				// If the panel is not already maximized, maximize it
+				if (!layoutService.isPanelMaximized()) {
+					layoutService.toggleMaximizedPanel();
+				}
+			}
+			else {
+				layoutService.toggleMaximizedPanel();
+			}
+		}
+	});
+
+	MenuRegistry.appendMenuItem(MenuId.PanelTitle, {
+		command: {
+			id: TogglePanelAction.ID,
+			title: localize('closePanel', 'Hide Panel'),
+			icon: closeIcon
+		},
+		group: 'navigation',
+		order: 2
+	});
+
+	MenuRegistry.appendMenuItem(MenuId.PanelTitle, {
+		command: {
+			id: ToggleMaximizedPanelActionId,
+			title: localize('maximizePanel', "Maximize Panel Size"),
+			icon: panelMaximizeIcon
+		},
+		group: 'navigation',
+		order: 1,
+		when: ContextKeyExpr.and(panelMaximizationSupportedWhen, PanelMaximizedContext.negate())
+	});
+
+	MenuRegistry.appendMenuItem(MenuId.PanelTitle, {
+		command: {
+			id: ToggleMaximizedPanelActionId,
+			title: localize('minimizePanel', "Restore Panel Size"),
+			icon: panelRestoreIcon
+		},
+		group: 'navigation',
+		order: 1,
+		when: ContextKeyExpr.and(panelMaximizationSupportedWhen, PanelMaximizedContext)
+	});
+
+	registerAction2(MaximizeAuxiliaryBar);
+	registerAction2(RestoreAuxiliaryBar);
+
+	MenuRegistry.appendMenuItem(MenuId.AuxiliaryBarTitle, {
+		command: {
+			id: ToggleAuxiliaryBarAction.ID,
+			title: localize('closeSecondarySideBar', 'Hide Secondary Side Bar'),
+			icon: closeIcon
+		},
+		group: 'navigation',
+		order: 2,
+		when: ContextKeyExpr.equals(`config.${LayoutSettings.ACTIVITY_BAR_LOCATION}`, ActivityBarPosition.DEFAULT)
+	});
 
 }

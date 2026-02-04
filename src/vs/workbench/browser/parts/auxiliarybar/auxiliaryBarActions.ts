@@ -10,17 +10,15 @@ import { ContextKeyExpr } from '../../../../platform/contextkey/common/contextke
 import { registerIcon } from '../../../../platform/theme/common/iconRegistry.js';
 import { Categories } from '../../../../platform/action/common/actionCommonCategories.js';
 import { alert } from '../../../../base/browser/ui/aria/aria.js';
-import { AuxiliaryBarMaximizedContext, AuxiliaryBarVisibleContext } from '../../../common/contextkeys.js';
+import { AuxiliaryBarVisibleContext } from '../../../common/contextkeys.js';
 import { ViewContainerLocation, ViewContainerLocationToString } from '../../../common/views.js';
-import { ActivityBarPosition, IWorkbenchLayoutService, LayoutSettings, Parts } from '../../../services/layout/browser/layoutService.js';
+import { IWorkbenchLayoutService, Parts } from '../../../services/layout/browser/layoutService.js';
 import { IPaneCompositePartService } from '../../../services/panecomposite/browser/panecomposite.js';
 import { ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
 import { KeybindingWeight } from '../../../../platform/keybinding/common/keybindingsRegistry.js';
 import { KeyCode, KeyMod } from '../../../../base/common/keyCodes.js';
 import { SwitchCompositeViewAction } from '../compositeBarActions.js';
 
-const maximizeIcon = registerIcon('auxiliarybar-maximize', Codicon.screenFull, localize('maximizeIcon', 'Icon to maximize the secondary side bar.'));
-const restoreIcon = registerIcon('auxiliarybar-restore', Codicon.screenNormal, localize('restoreIcon', 'Icon to restore the secondary side bar.'));
 const closeIcon = registerIcon('auxiliarybar-close', Codicon.close, localize('closeIcon', 'Icon to close the secondary side bar.'));
 
 export class ToggleAuxiliaryBarAction extends Action2 {
@@ -78,17 +76,6 @@ export class ToggleAuxiliaryBarAction extends Action2 {
 }
 
 registerAction2(ToggleAuxiliaryBarAction);
-
-MenuRegistry.appendMenuItem(MenuId.AuxiliaryBarTitle, {
-	command: {
-		id: ToggleAuxiliaryBarAction.ID,
-		title: localize('closeSecondarySideBar', 'Hide Secondary Side Bar'),
-		icon: closeIcon
-	},
-	group: 'navigation',
-	order: 2,
-	when: ContextKeyExpr.equals(`config.${LayoutSettings.ACTIVITY_BAR_LOCATION}`, ActivityBarPosition.DEFAULT)
-});
 
 registerAction2(class extends Action2 {
 	constructor() {
@@ -171,67 +158,6 @@ registerAction2(class extends SwitchCompositeViewAction {
 	}
 });
 
-// --- Maximized Mode
-
-class MaximizeAuxiliaryBar extends Action2 {
-
-	static readonly ID = 'workbench.action.maximizeAuxiliaryBar';
-
-	constructor() {
-		super({
-			id: MaximizeAuxiliaryBar.ID,
-			title: localize2('maximizeAuxiliaryBar', 'Maximize Secondary Side Bar'),
-			tooltip: localize('maximizeAuxiliaryBarTooltip', "Maximize Secondary Side Bar Size"),
-			category: Categories.View,
-			f1: true,
-			precondition: AuxiliaryBarMaximizedContext.negate(),
-			icon: maximizeIcon,
-			menu: {
-				id: MenuId.AuxiliaryBarTitle,
-				group: 'navigation',
-				order: 1,
-				when: AuxiliaryBarMaximizedContext.negate()
-			}
-		});
-	}
-
-	run(accessor: ServicesAccessor) {
-		const layoutService = accessor.get(IWorkbenchLayoutService);
-
-		layoutService.setAuxiliaryBarMaximized(true);
-	}
-}
-registerAction2(MaximizeAuxiliaryBar);
-
-class RestoreAuxiliaryBar extends Action2 {
-
-	static readonly ID = 'workbench.action.restoreAuxiliaryBar';
-
-	constructor() {
-		super({
-			id: RestoreAuxiliaryBar.ID,
-			title: localize2('restoreAuxiliaryBar', 'Restore Secondary Side Bar'),
-			tooltip: localize('restoreAuxiliaryBarTooltip', "Restore Secondary Side Bar Size"),
-			category: Categories.View,
-			f1: true,
-			precondition: AuxiliaryBarMaximizedContext,
-			icon: restoreIcon,
-			menu: {
-				id: MenuId.AuxiliaryBarTitle,
-				group: 'navigation',
-				order: 1,
-				when: AuxiliaryBarMaximizedContext
-			}
-		});
-	}
-
-	run(accessor: ServicesAccessor) {
-		const layoutService = accessor.get(IWorkbenchLayoutService);
-
-		layoutService.setAuxiliaryBarMaximized(false);
-	}
-}
-registerAction2(RestoreAuxiliaryBar);
 
 class ToggleMaximizedAuxiliaryBar extends Action2 {
 
