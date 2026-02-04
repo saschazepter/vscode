@@ -24,7 +24,6 @@ import { CHAT_CATEGORY, CHAT_CONFIG_MENU_ID } from './chatActions.js';
 import { ChatViewId } from '../chat.js';
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
 import { IWorkspaceContextService, IWorkspaceFolder } from '../../../../../platform/workspace/common/workspace.js';
-import { HOOK_TYPES, HookType } from '../../common/promptSyntax/hookSchema.js';
 import { IPathService } from '../../../../services/path/common/pathService.js';
 import { parseAllHookFiles, IParsedHook } from '../promptSyntax/hookUtils.js';
 
@@ -505,17 +504,24 @@ export function formatStatusOutput(
 
 		// Show stats line - use "skills" for skills type, "hooks" for hooks type, "files" for others
 		const statsParts: string[] = [];
-		if (loadedCount > 0) {
-			if (info.type === PromptsType.skill) {
+		if (info.type === PromptsType.hook) {
+			// For hooks, show both file count and individual hook count
+			if (loadedCount > 0) {
 				statsParts.push(loadedCount === 1
-					? nls.localize('status.skillLoaded', '1 skill loaded')
-					: nls.localize('status.skillsLoaded', '{0} skills loaded', loadedCount));
-			} else if (info.type === PromptsType.hook && info.parsedHooks) {
-				// For hooks, show count of individual hooks instead of files
+					? nls.localize('status.fileLoaded', '1 file loaded')
+					: nls.localize('status.filesLoaded', '{0} files loaded', loadedCount));
+			}
+			if (info.parsedHooks && info.parsedHooks.length > 0) {
 				const hookCount = info.parsedHooks.length;
 				statsParts.push(hookCount === 1
 					? nls.localize('status.hookLoaded', '1 hook loaded')
 					: nls.localize('status.hooksLoaded', '{0} hooks loaded', hookCount));
+			}
+		} else if (loadedCount > 0) {
+			if (info.type === PromptsType.skill) {
+				statsParts.push(loadedCount === 1
+					? nls.localize('status.skillLoaded', '1 skill loaded')
+					: nls.localize('status.skillsLoaded', '{0} skills loaded', loadedCount));
 			} else {
 				statsParts.push(loadedCount === 1
 					? nls.localize('status.fileLoaded', '1 file loaded')
@@ -556,47 +562,51 @@ export function formatStatusOutput(
 		}
 
 		// Render each path with its files as a tree
+		// Skip for hooks since we show files with their hooks below
 		let hasContent = false;
-		for (const path of allPaths) {
-			const pathFiles = filesByPath.get(path.uri.toString()) || [];
+		if (info.type !== PromptsType.hook) {
+			for (const path of allPaths) {
+				const pathFiles = filesByPath.get(path.uri.toString()) || [];
 
-			if (path.exists) {
-				lines.push(`${path.displayPath}<br>`);
-			} else if (path.isDefault) {
-				// Default folders that don't exist - no error icon
-				lines.push(`${path.displayPath}<br>`);
-			} else {
-				// Custom folders that don't exist - show error
-				lines.push(`${ICON_ERROR} ${path.displayPath} - *${nls.localize('status.folderNotFound', 'Folder does not exist')}*<br>`);
-			}
+				if (path.exists) {
+					lines.push(`${path.displayPath}<br>`);
+				} else if (path.isDefault) {
+					// Default folders that don't exist - no error icon
+					lines.push(`${path.displayPath}<br>`);
+				} else {
+					// Custom folders that don't exist - show error
+					lines.push(`${ICON_ERROR} ${path.displayPath} - *${nls.localize('status.folderNotFound', 'Folder does not exist')}*<br>`);
+				}
 
-			if (path.exists && pathFiles.length > 0) {
-				for (let i = 0; i < pathFiles.length; i++) {
-					const file = pathFiles[i];
-					// Show the file ID: skill name for skills, basename for others
-					let fileName: string;
-					if (info.type === PromptsType.skill) {
-						fileName = file.name || `${basename(dirname(file.uri))}`;
-					} else {
-						fileName = basename(file.uri);
-					}
-					const isLast = i === pathFiles.length - 1;
-					const prefix = isLast ? TREE_END : TREE_BRANCH;
-					const filePath = getRelativePath(file.uri, workspaceFolders);
-					if (file.status === 'loaded') {
-						lines.push(`${prefix} [\`${fileName}\`](${filePath})<br>`);
-					} else if (file.status === 'overwritten') {
-						lines.push(`${prefix} ${ICON_WARN} [\`${fileName}\`](${filePath}) - *${nls.localize('status.overwrittenByHigherPriority', 'Overwritten by higher priority file')}*<br>`);
-					} else {
-						lines.push(`${prefix} ${ICON_ERROR} [\`${fileName}\`](${filePath}) - *${file.reason}*<br>`);
+				if (path.exists && pathFiles.length > 0) {
+					for (let i = 0; i < pathFiles.length; i++) {
+						const file = pathFiles[i];
+						// Show the file ID: skill name for skills, basename for others
+						let fileName: string;
+						if (info.type === PromptsType.skill) {
+							fileName = file.name || `${basename(dirname(file.uri))}`;
+						} else {
+							fileName = basename(file.uri);
+						}
+						const isLast = i === pathFiles.length - 1;
+						const prefix = isLast ? TREE_END : TREE_BRANCH;
+						const filePath = getRelativePath(file.uri, workspaceFolders);
+						if (file.status === 'loaded') {
+							lines.push(`${prefix} [\`${fileName}\`](${filePath})<br>`);
+						} else if (file.status === 'overwritten') {
+							lines.push(`${prefix} ${ICON_WARN} [\`${fileName}\`](${filePath}) - *${nls.localize('status.overwrittenByHigherPriority', 'Overwritten by higher priority file')}*<br>`);
+						} else {
+							lines.push(`${prefix} ${ICON_ERROR} [\`${fileName}\`](${filePath}) - *${file.reason}*<br>`);
+						}
 					}
 				}
+				hasContent = true;
 			}
-			hasContent = true;
 		}
 
 		// Render unmatched files (e.g., from extensions) - group by extension ID
-		if (unmatchedFiles.length > 0) {
+		// Skip for hooks since we show files with their hooks below
+		if (info.type !== PromptsType.hook && unmatchedFiles.length > 0) {
 			// Group files by extension ID
 			const filesByExtension = new Map<string, IFileStatusInfo[]>();
 			for (const file of unmatchedFiles) {
@@ -671,37 +681,34 @@ export function formatStatusOutput(
 			}
 		}
 
-		// Special handling for hooks - display grouped by lifecycle
+		// Special handling for hooks - display grouped by file, then by lifecycle
 		if (info.type === PromptsType.hook && info.parsedHooks && info.parsedHooks.length > 0) {
-			// Group hooks by lifecycle (hook type)
-			const hooksByType = new Map<HookType, IParsedHook[]>();
+			// Group hooks first by file, then by lifecycle within each file
+			const hooksByFile = new Map<string, IParsedHook[]>();
 			for (const hook of info.parsedHooks) {
-				const existing = hooksByType.get(hook.hookType) ?? [];
+				const fileKey = hook.fileUri.toString();
+				const existing = hooksByFile.get(fileKey) ?? [];
 				existing.push(hook);
-				hooksByType.set(hook.hookType, existing);
+				hooksByFile.set(fileKey, existing);
 			}
 
-			// Sort hook types by their position in HOOK_TYPES
-			const sortedHookTypes = Array.from(hooksByType.keys()).sort((a, b) => {
-				const indexA = HOOK_TYPES.findIndex(h => h.id === a);
-				const indexB = HOOK_TYPES.findIndex(h => h.id === b);
-				return indexA - indexB;
-			});
+			// Display hooks grouped by file
+			const fileUris = Array.from(hooksByFile.keys());
+			for (let fileIdx = 0; fileIdx < fileUris.length; fileIdx++) {
+				const fileKey = fileUris[fileIdx];
+				const fileHooks = hooksByFile.get(fileKey)!;
+				const firstHook = fileHooks[0];
+				const filePath = getRelativePath(firstHook.fileUri, workspaceFolders);
 
-			// Display hooks grouped by lifecycle
-			for (let typeIdx = 0; typeIdx < sortedHookTypes.length; typeIdx++) {
-				const hookType = sortedHookTypes[typeIdx];
-				const hooks = hooksByType.get(hookType)!;
-				const hookTypeMeta = HOOK_TYPES.find(h => h.id === hookType)!;
+				// File as clickable link
+				lines.push(`[${firstHook.filePath}](${filePath})<br>`);
 
-				lines.push(`${hookTypeMeta.label}<br>`);
-
-				for (let i = 0; i < hooks.length; i++) {
-					const hook = hooks[i];
-					const isLast = i === hooks.length - 1;
+				// Flatten hooks with their lifecycle label
+				for (let i = 0; i < fileHooks.length; i++) {
+					const hook = fileHooks[i];
+					const isLast = i === fileHooks.length - 1;
 					const prefix = isLast ? TREE_END : TREE_BRANCH;
-					const filePath = getRelativePath(hook.fileUri, workspaceFolders);
-					lines.push(`${prefix} \`${hook.commandLabel}\` - [${hook.filePath}](${filePath})<br>`);
+					lines.push(`${prefix} ${hook.hookTypeLabel}: \`${hook.commandLabel}\`<br>`);
 				}
 			}
 			hasContent = true;
