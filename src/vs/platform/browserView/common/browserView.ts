@@ -120,7 +120,7 @@ export const ipcBrowserViewChannelName = 'browserView';
 /**
  * This should match the isolated world ID defined in `preload-browserView.ts`.
  */
-export const browserViewIsolatedWorldId = 1000;
+export const browserViewIsolatedWorldId = 999;
 
 export interface IBrowserViewService {
 	/**
