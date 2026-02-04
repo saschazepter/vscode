@@ -17,6 +17,7 @@ import { language } from '../../../../../base/common/platform.js';
 import { basename } from '../../../../../base/common/resources.js';
 import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { URI } from '../../../../../base/common/uri.js';
+import { Schemas } from '../../../../../base/common/network.js';
 import { ICodeEditor } from '../../../../../editor/browser/editorBrowser.js';
 import { EditorAction2 } from '../../../../../editor/browser/editorExtensions.js';
 import { IRange } from '../../../../../editor/common/core/range.js';
@@ -252,8 +253,8 @@ abstract class OpenChatGlobalAction extends Action2 {
 				// If the chat is empty and currently local, replace it with a new session of the specified type
 				const isEmpty = chatWidget.isEmpty();
 				const viewModel = chatWidget.viewModel;
-				const isLocalSession = viewModel?.sessionResource.scheme === 'vscode-local-chat-session' ||
-					viewModel?.sessionResource.scheme === 'vscode-chat-editor';
+				const isLocalSession = viewModel?.sessionResource.scheme === Schemas.vscodeLocalChatSession ||
+					viewModel?.sessionResource.scheme === Schemas.vscodeChatEditor;
 
 				if (isEmpty && isLocalSession && targetProvider !== AgentSessionProviders.Local) {
 					// Create a new session with the specified target type
