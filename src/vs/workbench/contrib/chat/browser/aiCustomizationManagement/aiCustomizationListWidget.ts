@@ -331,31 +331,36 @@ export class AICustomizationListWidget extends Disposable {
 		let title: string;
 		let description: string;
 		let docsUrl: string;
+		let learnMoreLabel: string;
 		switch (this.currentSection) {
 			case AICustomizationManagementSection.Agents:
 				title = localize('agentsTitle', "Agents");
 				description = localize('agentsDescription', "Custom chat participants with their own instructions, tools, and knowledge. Use agents to create specialized AI assistants for specific workflows like code review, testing, or documentation.");
 				docsUrl = 'https://code.visualstudio.com/docs/copilot/customization/custom-agents';
+				learnMoreLabel = localize('learnMoreAgents', "Learn more about agents");
 				break;
 			case AICustomizationManagementSection.Skills:
 				title = localize('skillsTitle', "Skills");
 				description = localize('skillsDescription', "Reusable prompt files that define specific capabilities. Skills can be attached to agents or used directly in chat to perform tasks like fetching documentation, running analysis, or generating code.");
 				docsUrl = 'https://code.visualstudio.com/docs/copilot/customization/agent-skills';
+				learnMoreLabel = localize('learnMoreSkills', "Learn more about skills");
 				break;
 			case AICustomizationManagementSection.Instructions:
 				title = localize('instructionsTitle', "Instructions");
 				description = localize('instructionsDescription', "Contextual guidelines that teach Copilot about your codebase. Instructions can apply to specific files or folders and help the AI follow your coding conventions and project patterns.");
 				docsUrl = 'https://code.visualstudio.com/docs/copilot/customization/custom-instructions';
+				learnMoreLabel = localize('learnMoreInstructions', "Learn more about instructions");
 				break;
 			case AICustomizationManagementSection.Prompts:
 				title = localize('promptsTitle', "Prompts");
 				description = localize('promptsDescription', "Reusable message templates that you can quickly run in chat. Create prompts for common questions, code generation patterns, or multi-step tasks that you perform frequently.");
 				docsUrl = 'https://code.visualstudio.com/docs/copilot/customization/prompt-files';
+				learnMoreLabel = localize('learnMorePrompts', "Learn more about prompts");
 				break;
 		}
 		this.sectionTitle.textContent = title;
 		this.sectionDescription.textContent = description;
-		this.sectionLink.textContent = localize('learnMoreDocs', "Learn more about customization");
+		this.sectionLink.textContent = learnMoreLabel;
 		this.sectionLink.href = docsUrl;
 	}
 

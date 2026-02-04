@@ -12,7 +12,7 @@ import { IInstantiationService, ServicesAccessor } from '../../../../../platform
 import { Registry } from '../../../../../platform/registry/common/platform.js';
 import { ViewPaneContainer } from '../../../../browser/parts/views/viewPaneContainer.js';
 import { ViewAction } from '../../../../browser/parts/views/viewPane.js';
-import { Extensions as ViewContainerExtensions, IViewContainersRegistry, IViewDescriptor, IViewsRegistry, ViewContainerLocation } from '../../../../common/views.js';
+import { Extensions as ViewContainerExtensions, IViewContainersRegistry, IViewDescriptor, IViewsRegistry, LayoutVisibility, ViewContainerLocation } from '../../../../common/views.js';
 import { IViewsService } from '../../../../services/views/common/viewsService.js';
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
 import { AICustomizationItemMenuId, AICustomizationNewMenuId, AI_CUSTOMIZATION_CATEGORY, AI_CUSTOMIZATION_STORAGE_ID, AI_CUSTOMIZATION_VIEW_ID, AI_CUSTOMIZATION_VIEWLET_ID } from './aiCustomizationTreeView.js';
@@ -69,6 +69,7 @@ export const AI_CUSTOMIZATION_VIEW_CONTAINER = viewContainersRegistry.registerVi
 		hideIfEmpty: false,
 		storageId: AI_CUSTOMIZATION_STORAGE_ID,
 		alwaysUseContainerInfo: true,
+		layoutVisibility: LayoutVisibility.Both,
 		openCommandActionDescriptor: {
 			id: AI_CUSTOMIZATION_VIEWLET_ID,
 			mnemonicTitle: localize({ key: 'miViewAICustomization', comment: ['&& denotes a mnemonic'] }, "AI &&Customization"),
@@ -107,9 +108,9 @@ const aiCustomizationOverviewViewDescriptor: IViewDescriptor = {
 	canToggleVisibility: true,
 	canMoveView: true,
 	order: 1,
-	when: ChatContextKeys.enabled,
 	collapsed: false,
 	weight: 20,
+	layoutVisibility: LayoutVisibility.Both,
 };
 
 viewsRegistry.registerViews([aiCustomizationOverviewViewDescriptor, aiCustomizationViewDescriptor], AI_CUSTOMIZATION_VIEW_CONTAINER);

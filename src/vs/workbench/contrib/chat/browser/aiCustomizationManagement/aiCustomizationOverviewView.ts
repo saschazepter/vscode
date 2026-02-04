@@ -43,6 +43,7 @@ interface ISectionSummary {
  */
 export class AICustomizationOverviewView extends ViewPane {
 
+	private bodyElement!: HTMLElement;
 	private container!: HTMLElement;
 	private sectionsContainer!: HTMLElement;
 	private readonly sections: ISectionSummary[] = [];
@@ -80,11 +81,15 @@ export class AICustomizationOverviewView extends ViewPane {
 	protected override renderBody(container: HTMLElement): void {
 		super.renderBody(container);
 
+		this.bodyElement = container;
 		this.container = DOM.append(container, $('.ai-customization-overview'));
 		this.sectionsContainer = DOM.append(this.container, $('.overview-sections'));
 
 		this.renderSections();
 		void this.loadCounts();
+
+		// Force initial layout
+		this.layoutBody(this.bodyElement.offsetHeight, this.bodyElement.offsetWidth);
 	}
 
 	private renderSections(): void {
