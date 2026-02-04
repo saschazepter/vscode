@@ -1125,6 +1125,12 @@ export class ChatService extends Disposable implements IChatService {
 					}
 
 					if (shouldContinueFromStopHook && stopHookReason) {
+						// Show a progress message indicating the hook blocked stopping
+						progressCallback([{
+							kind: 'progressMessage',
+							content: new MarkdownString(localize('stopHookBlocked', "Stop hook error: \"{0}\"", stopHookReason))
+						}]);
+
 						// Don't complete the response yet - queue a continuation request
 						request.response?.complete();
 						// Send a continuation request with the stop hook's reason
