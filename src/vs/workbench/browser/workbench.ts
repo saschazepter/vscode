@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import './style.js';
+import { registerLayoutActions } from './actions/layoutActions.js';
 import { runWhenWindowIdle } from '../../base/browser/dom.js';
 import { Event, Emitter, setGlobalLeakWarningThreshold } from '../../base/common/event.js';
 import { RunOnceScheduler, timeout } from '../../base/common/async.js';
@@ -84,6 +85,9 @@ export class Workbench extends Layout {
 		mark('code/willStartWorkbench');
 
 		this.registerErrorHandler(logService);
+
+		// Register layout actions specific to the default workbench
+		registerLayoutActions();
 	}
 
 	private registerErrorHandler(logService: ILogService): void {
