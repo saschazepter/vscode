@@ -48,6 +48,7 @@ import { CountTokensCallback, createToolSchemaUri, IBeginToolCallOptions, ILangu
 import { getToolConfirmationAlert } from '../accessibility/chatAccessibilityProvider.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { chatSessionResourceToId } from '../../common/model/chatUri.js';
+import { HookType } from '../../common/promptSyntax/hookSchema.js';
 
 const jsonSchemaRegistry = Registry.as<JSONContributionRegistry.IJSONContributionRegistry>(JSONContributionRegistry.Extensions.JSONContribution);
 
@@ -384,7 +385,7 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 
 		if (hookResult?.permissionDecision === 'deny') {
 			const hookReason = hookResult.permissionDecisionReason ?? localize('hookDeniedNoReason', "Hook denied tool execution");
-			const reason = localize('deniedByPreToolUseHook', "Denied by {0} hook: {1}", 'preToolUse', hookReason);
+			const reason = localize('deniedByPreToolUseHook', "Denied by {0} hook: {1}", HookType.PreToolUse, hookReason);
 			this._logService.debug(`[LanguageModelToolsService#invokeTool] Tool ${dto.toolId} denied by preToolUse hook: ${hookReason}`);
 
 			// Handle the tool invocation in cancelled state

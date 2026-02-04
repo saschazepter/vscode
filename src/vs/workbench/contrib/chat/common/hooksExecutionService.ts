@@ -33,6 +33,31 @@ export interface ICommonHookInput {
 
 //#endregion
 
+//#region Common Hook Output
+
+/**
+ * Common output fields that can be present in any hook result.
+ * These fields control execution flow and user feedback.
+ */
+export interface ICommonHookOutput {
+	/**
+	 * If set, stops processing entirely after this hook.
+	 * The message is shown to the user but not to the agent.
+	 */
+	readonly stopReason?: string;
+	/**
+	 * Message shown to the user.
+	 */
+	readonly systemMessage?: string;
+}
+
+const commonHookOutputValidator = vObj({
+	stopReason: vOptionalProp(vString()),
+	systemMessage: vOptionalProp(vString()),
+});
+
+//#endregion
+
 //#region PreToolUse Hook Types
 
 /**
@@ -73,15 +98,60 @@ const preToolUseOutputValidator = vObj({
 
 //#endregion
 
-export const enum HookResultKind {
+export const enum HookCommandResultKind {
 	Success = 1,
 	Error = 2
 }
 
-export interface IHookResult {
-	readonly kind: HookResultKind;
+//#region Hook Result Types
+
+/**
+ * Raw result from spawning a hook command.
+ * This is the low-level result before semantic processing.
+ */
+export interface IHookCommandResult {
+	readonly kind: HookCommandResultKind;
+	/**
+	 * For success, this is stdout (parsed as JSON if valid, otherwise string).
+	 * For errors, this is stderr.
+	 */
 	readonly result: string | object;
 }
+
+/**
+ * Semantic hook result with common fields extracted and defaults applied.
+ * This is what callers receive from executeHook.
+ */
+export interface IHookResult {
+	/**
+	 * If set, the agent should stop processing entirely after this hook.
+	 * The message is shown to the user but not to the agent.
+	 */
+	readonly stopReason?: string;
+	/**
+	 * Message shown to the user.
+	 */
+	readonly messageForUser?: string;
+	/**
+	 * The hook's output (hook-specific fields only).
+	 * For errors, this is the error message string.
+	 */
+	readonly output: unknown;
+	/**
+	 * Whether the hook command executed successfully (exit code 0).
+	 */
+	readonly success: boolean;
+}
+
+/**
+ * Result from preToolUse hooks with permission decision fields.
+ */
+export interface IPreToolUseHookResult extends IHookResult {
+	readonly permissionDecision?: PreToolUsePermissionDecision;
+	readonly permissionDecisionReason?: string;
+}
+
+//#endregion
 
 export interface IHooksExecutionOptions {
 	readonly input?: unknown;
@@ -93,7 +163,7 @@ export interface IHooksExecutionOptions {
  * MainThreadHooks implements this to forward calls to the extension host.
  */
 export interface IHooksExecutionProxy {
-	runHookCommand(hookCommand: IHookCommand, input: unknown, token: CancellationToken): Promise<IHookResult>;
+	runHookCommand(hookCommand: IHookCommand, input: unknown, token: CancellationToken): Promise<IHookCommandResult>;
 }
 
 export const IHooksExecutionService = createDecorator<IHooksExecutionService>('hooksExecutionService');
@@ -124,9 +194,9 @@ export interface IHooksExecutionService {
 	/**
 	 * Execute preToolUse hooks with typed input and validated output.
 	 * The execution service builds the full hook input from the caller input plus session context.
-	 * Output is optional, but if provided, it must conform to the expected schema.
+	 * Returns a combined result with common fields and permission decision.
 	 */
-	executePreToolUseHook(sessionResource: URI, input: IPreToolUseCallerInput, token?: CancellationToken): Promise<IPreToolUseHookOutput | undefined>;
+	executePreToolUseHook(sessionResource: URI, input: IPreToolUseCallerInput, token?: CancellationToken): Promise<IPreToolUseHookResult | undefined>;
 }
 
 export class HooksExecutionService implements IHooksExecutionService {
@@ -198,18 +268,75 @@ export class HooksExecutionService implements IHooksExecutionService {
 
 		const sw = StopWatch.create();
 		try {
-			const result = await this._proxy!.runHookCommand(hookCommand, fullInput, token);
-			this._logResult(requestId, hookType, result, Math.round(sw.elapsed()));
+			const commandResult = await this._proxy!.runHookCommand(hookCommand, fullInput, token);
+			const result = this._toInternalResult(commandResult);
+			this._logCommandResult(requestId, hookType, commandResult, Math.round(sw.elapsed()));
 			return result;
 		} catch (err) {
 			const errMessage = err instanceof Error ? err.message : String(err);
 			this._log(requestId, hookType, `Error in ${Math.round(sw.elapsed())}ms: ${errMessage}`);
-			return { kind: HookResultKind.Error, result: errMessage };
+			return this._createErrorResult(errMessage);
 		}
 	}
 
-	private _logResult(requestId: number, hookType: HookTypeValue, result: IHookResult, elapsed: number): void {
-		const resultKindStr = result.kind === HookResultKind.Success ? 'Success' : 'Error';
+	private _createErrorResult(errorMessage: string): IHookResult {
+		return {
+			output: errorMessage,
+			success: false,
+		};
+	}
+
+	private _toInternalResult(commandResult: IHookCommandResult): IHookResult {
+		if (commandResult.kind !== HookCommandResultKind.Success) {
+			return this._createErrorResult(
+				typeof commandResult.result === 'string' ? commandResult.result : JSON.stringify(commandResult.result)
+			);
+		}
+
+		// For string results, no common fields to extract
+		if (typeof commandResult.result !== 'object') {
+			return {
+				output: commandResult.result,
+				success: true,
+			};
+		}
+
+		// Extract and validate common fields
+		const validationResult = commonHookOutputValidator.validate(commandResult.result);
+		const commonFields = validationResult.error ? {} : validationResult.content;
+
+		// Extract only known hook-specific fields for output
+		const resultObj = commandResult.result as Record<string, unknown>;
+		const hookOutput = this._extractHookSpecificOutput(resultObj);
+
+		return {
+			stopReason: commonFields.stopReason,
+			messageForUser: commonFields.systemMessage,
+			output: Object.keys(hookOutput).length > 0 ? hookOutput : undefined,
+			success: true,
+		};
+	}
+
+	/**
+	 * Extract only known hook-specific output fields.
+	 * This prevents unknown fields from being passed through.
+	 */
+	private _extractHookSpecificOutput(result: Record<string, unknown>): Record<string, unknown> {
+		const output: Record<string, unknown> = {};
+
+		// PreToolUse hook fields
+		if (result.permissionDecision !== undefined) {
+			output.permissionDecision = result.permissionDecision;
+		}
+		if (result.permissionDecisionReason !== undefined) {
+			output.permissionDecisionReason = result.permissionDecisionReason;
+		}
+
+		return output;
+	}
+
+	private _logCommandResult(requestId: number, hookType: HookTypeValue, result: IHookCommandResult, elapsed: number): void {
+		const resultKindStr = result.kind === HookCommandResultKind.Success ? 'Success' : 'Error';
 		const resultStr = typeof result.result === 'string' ? result.result : JSON.stringify(result.result);
 		const hasOutput = resultStr.length > 0 && resultStr !== '{}' && resultStr !== '[]';
 		if (hasOutput) {
@@ -257,12 +384,18 @@ export class HooksExecutionService implements IHooksExecutionService {
 		for (const hookCommand of hookCommands) {
 			const result = await this._runSingleHook(requestId, hookType, hookCommand, sessionResource, options?.input, token);
 			results.push(result);
+
+			// If stopReason is set, stop processing remaining hooks
+			if (result.stopReason) {
+				this._log(requestId, hookType, `Stopping: ${result.stopReason}`);
+				break;
+			}
 		}
 
 		return results;
 	}
 
-	async executePreToolUseHook(sessionResource: URI, input: IPreToolUseCallerInput, token?: CancellationToken): Promise<IPreToolUseHookOutput | undefined> {
+	async executePreToolUseHook(sessionResource: URI, input: IPreToolUseCallerInput, token?: CancellationToken): Promise<IPreToolUseHookResult | undefined> {
 		// Pass the caller input directly - common properties are added in _runSingleHook
 		const results = await this.executeHook(HookType.PreToolUse, sessionResource, {
 			input,
@@ -270,19 +403,25 @@ export class HooksExecutionService implements IHooksExecutionService {
 		});
 
 		// Collect all valid outputs - "any deny wins" for security
-		let lastAllowOutput: IPreToolUseHookOutput | undefined;
+		let lastAllowResult: IPreToolUseHookResult | undefined;
 		for (const result of results) {
-			if (result.kind === HookResultKind.Success && typeof result.result === 'object') {
-				const validationResult = preToolUseOutputValidator.validate(result.result);
+			if (result.success && typeof result.output === 'object' && result.output !== null) {
+				const validationResult = preToolUseOutputValidator.validate(result.output);
 				if (!validationResult.error) {
-					const output = validationResult.content;
+					const hookOutput = validationResult.content;
+					const preToolUseResult: IPreToolUseHookResult = {
+						...result,
+						permissionDecision: hookOutput.permissionDecision,
+						permissionDecisionReason: hookOutput.permissionDecisionReason,
+					};
+
 					// If any hook denies, return immediately with that denial
-					if (output.permissionDecision === 'deny') {
-						return output;
+					if (hookOutput.permissionDecision === 'deny') {
+						return preToolUseResult;
 					}
 					// Track the last allow in case we need to return it
-					if (output.permissionDecision === 'allow') {
-						lastAllowOutput = output;
+					if (hookOutput.permissionDecision === 'allow') {
+						lastAllowResult = preToolUseResult;
 					}
 				} else {
 					// If validation fails, log a warning and continue to next result
@@ -291,7 +430,7 @@ export class HooksExecutionService implements IHooksExecutionService {
 			}
 		}
 
-		// Return the last allow output, or undefined if no valid outputs
-		return lastAllowOutput;
+		// Return the last allow result, or undefined if no valid outputs
+		return lastAllowResult;
 	}
 }

@@ -32,7 +32,7 @@ import { ILanguageModelToolsConfirmationService } from '../../../common/tools/la
 import { MockLanguageModelToolsConfirmationService } from '../../common/tools/mockLanguageModelToolsConfirmationService.js';
 import { runWithFakedTimers } from '../../../../../../base/test/common/timeTravelScheduler.js';
 import { ILanguageModelChatMetadata } from '../../../common/languageModels.js';
-import { IHooksExecutionService, IPreToolUseCallerInput, IPreToolUseHookOutput, IHooksExecutionOptions, IHookResult, IHooksExecutionProxy } from '../../../common/hooksExecutionService.js';
+import { IHooksExecutionService, IPreToolUseCallerInput, IPreToolUseHookResult, IHooksExecutionOptions, IHookResult, IHooksExecutionProxy } from '../../../common/hooksExecutionService.js';
 import { HookTypeValue, IChatRequestHooks } from '../../../common/promptSyntax/hookSchema.js';
 import { IDisposable } from '../../../../../../base/common/lifecycle.js';
 
@@ -64,7 +64,7 @@ class TestTelemetryService implements Partial<ITelemetryService> {
 
 class MockHooksExecutionService implements IHooksExecutionService {
 	readonly _serviceBrand: undefined;
-	public preToolUseHookResult: IPreToolUseHookOutput | undefined = undefined;
+	public preToolUseHookResult: IPreToolUseHookResult | undefined = undefined;
 	public lastPreToolUseInput: IPreToolUseCallerInput | undefined = undefined;
 
 	setProxy(_proxy: IHooksExecutionProxy): void { }
@@ -73,7 +73,7 @@ class MockHooksExecutionService implements IHooksExecutionService {
 	executeHook(_hookType: HookTypeValue, _sessionResource: URI, _options?: IHooksExecutionOptions): Promise<IHookResult[]> {
 		return Promise.resolve([]);
 	}
-	async executePreToolUseHook(_sessionResource: URI, input: IPreToolUseCallerInput, _token?: CancellationToken): Promise<IPreToolUseHookOutput | undefined> {
+	async executePreToolUseHook(_sessionResource: URI, input: IPreToolUseCallerInput, _token?: CancellationToken): Promise<IPreToolUseHookResult | undefined> {
 		this.lastPreToolUseInput = input;
 		return this.preToolUseHookResult;
 	}
@@ -3732,6 +3732,9 @@ suite('LanguageModelToolsService', () => {
 
 		test('when hook denies, tool returns error and creates cancelled invocation', async () => {
 			mockHooksService.preToolUseHookResult = {
+				suppressOutput: false,
+				output: undefined,
+				success: true,
 				permissionDecision: 'deny',
 				permissionDecisionReason: 'Destructive operations require approval',
 			};
@@ -3762,12 +3765,15 @@ suite('LanguageModelToolsService', () => {
 			assert.strictEqual(state.type, IChatToolInvocation.StateKind.Cancelled);
 			if (state.type === IChatToolInvocation.StateKind.Cancelled) {
 				assert.strictEqual(state.reason, ToolConfirmKind.Denied);
-				assert.strictEqual(state.reasonMessage, 'Denied by preToolUse hook: Destructive operations require approval');
+				assert.strictEqual(state.reasonMessage, 'Denied by PreToolUse hook: Destructive operations require approval');
 			}
 		});
 
 		test('when hook allows, tool executes normally', async () => {
 			mockHooksService.preToolUseHookResult = {
+				suppressOutput: false,
+				output: undefined,
+				success: true,
 				permissionDecision: 'allow',
 			};
 
@@ -3810,6 +3816,9 @@ suite('LanguageModelToolsService', () => {
 
 		test('hook receives correct input parameters', async () => {
 			mockHooksService.preToolUseHookResult = {
+				suppressOutput: false,
+				output: undefined,
+				success: true,
 				permissionDecision: 'allow',
 			};
 
@@ -3832,6 +3841,9 @@ suite('LanguageModelToolsService', () => {
 
 		test('when hook denies, tool invoke is never called', async () => {
 			mockHooksService.preToolUseHookResult = {
+				suppressOutput: false,
+				output: undefined,
+				success: true,
 				permissionDecision: 'deny',
 				permissionDecisionReason: 'Operation not allowed',
 			};
