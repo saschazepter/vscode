@@ -46,10 +46,15 @@ export class TokenizationFontDecorationProvider extends Disposable implements De
 			const affectedLineHeights = new Set<LineHeightChangingDecoration>();
 			const affectedLineFonts = new Set<LineFontChangingDecoration>();
 
+			console.log('fontChanges : ', JSON.stringify(fontChanges));
+
 			for (const annotation of fontChanges.changes.annotations) {
 
 				const startPosition = this.textModel.getPositionAt(annotation.range.start);
-				const lineNumber = startPosition.lineNumber;
+				const startLineNumber = startPosition.lineNumber;
+				const endPosition = this.textModel.getPositionAt(annotation.range.endExclusive);
+				const endLineNumber = endPosition.lineNumber;
+				console.log('annotation range : ', annotation.range.start, annotation.range.endExclusive, ' startLineNumber : ', startLineNumber, ' endLineNumber : ', endLineNumber);
 
 				let fontTokenAnnotation: IAnnotationUpdate<IFontTokenAnnotation>;
 				if (annotation.annotation === undefined) {
@@ -69,29 +74,37 @@ export class TokenizationFontDecorationProvider extends Disposable implements De
 					};
 					TokenizationFontDecorationProvider.DECORATION_COUNT++;
 
-					if (annotation.annotation.lineHeightMultiplier) {
-						affectedLineHeights.add(new LineHeightChangingDecoration(0, decorationId, lineNumber, annotation.annotation.lineHeightMultiplier));
+					for (let lineNumber = startLineNumber; lineNumber <= endLineNumber; lineNumber++) {
+						if (annotation.annotation.lineHeightMultiplier) {
+							affectedLineHeights.add(new LineHeightChangingDecoration(0, decorationId, lineNumber, annotation.annotation.lineHeightMultiplier));
+						}
+						affectedLineFonts.add(new LineFontChangingDecoration(0, decorationId, lineNumber));
 					}
-					affectedLineFonts.add(new LineFontChangingDecoration(0, decorationId, lineNumber));
-
 				}
 				fontTokenAnnotations.push(fontTokenAnnotation);
 
-				if (!linesChanged.has(lineNumber)) {
-					// Signal the removal of the font tokenization decorations on the line number
-					const lineNumberStartOffset = this.textModel.getOffsetAt(new Position(lineNumber, 1));
-					const lineNumberEndOffset = this.textModel.getOffsetAt(new Position(lineNumber, this.textModel.getLineMaxColumn(lineNumber)));
-					const lineOffsetRange = new OffsetRange(lineNumberStartOffset, lineNumberEndOffset);
-					const lineAnnotations = this._fontAnnotatedString.getAnnotationsIntersecting(lineOffsetRange);
-					for (const annotation of lineAnnotations) {
-						const decorationId = annotation.annotation.decorationId;
-						affectedLineHeights.add(new LineHeightChangingDecoration(0, decorationId, lineNumber, null));
-						affectedLineFonts.add(new LineFontChangingDecoration(0, decorationId, lineNumber));
+				for (let lineNumber = startLineNumber; lineNumber <= endLineNumber; lineNumber++) {
+					if (!linesChanged.has(lineNumber)) {
+						console.log('lineNumber changed : ', lineNumber);
+						// Signal the removal of the font tokenization decorations on the line number
+						const lineNumberStartOffset = this.textModel.getOffsetAt(new Position(lineNumber, 1));
+						const lineNumberEndOffset = this.textModel.getOffsetAt(new Position(lineNumber, this.textModel.getLineMaxColumn(lineNumber)));
+						const lineOffsetRange = new OffsetRange(lineNumberStartOffset, lineNumberEndOffset);
+						const lineAnnotations = this._fontAnnotatedString.getAnnotationsIntersecting(lineOffsetRange);
+						console.log('this._fontAnnotatedString : ', JSON.stringify(this._fontAnnotatedString));
+						console.log('lineOffsetRange : ', JSON.stringify(lineOffsetRange));
+						console.log('lineAnnotations : ', JSON.stringify(lineAnnotations));
+						for (const annotation of lineAnnotations) {
+							const decorationId = annotation.annotation.decorationId;
+							affectedLineHeights.add(new LineHeightChangingDecoration(0, decorationId, lineNumber, null));
+							affectedLineFonts.add(new LineFontChangingDecoration(0, decorationId, lineNumber));
+						}
+						linesChanged.add(lineNumber);
 					}
-					linesChanged.add(lineNumber);
 				}
 			}
 			this._fontAnnotatedString.setAnnotations(AnnotationsUpdate.create(fontTokenAnnotations));
+			console.log('affectedLineHeights : ', JSON.stringify([...affectedLineHeights]));
 			this._onDidChangeLineHeight.fire(affectedLineHeights);
 			this._onDidChangeFont.fire(affectedLineFonts);
 		}));

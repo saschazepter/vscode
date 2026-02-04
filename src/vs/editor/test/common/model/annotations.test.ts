@@ -381,6 +381,17 @@ suite('Annotations Suite', () => {
 		assert.deepStrictEqual(result.map(a => a.annotation), ['1', '2', '3']);
 	});
 
+	test('getAnnotationsIntersecting 6', () => {
+		const annotatedString = new AnnotatedString<string>([
+			{ range: new OffsetRange(222, 229), annotation: '1' },
+			{ range: new OffsetRange(229, 230), annotation: '2' },
+			{ range: new OffsetRange(230, 293), annotation: '3' }
+		]);
+		const result = annotatedString.getAnnotationsIntersecting(new OffsetRange(229, 229));
+		assert.strictEqual(result.length, 1);
+		assert.deepStrictEqual(result.map(a => a.annotation), ['2']);
+	});
+
 	test('applyEdit 1 - deletion within annotation', () => {
 		const result = visualizeEdit(
 			'[1:Lorem] ipsum [2:dolor] sit [3:amet]',
