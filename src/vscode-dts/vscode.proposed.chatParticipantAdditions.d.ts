@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-// version: 1
+// version: 2
 
 declare module 'vscode' {
 
@@ -266,6 +266,11 @@ declare module 'vscode' {
 		output: McpToolInvocationContentData[];
 	}
 
+	export interface ChatSimpleToolInvocationData {
+		input: string | MarkdownString;
+		output: string | MarkdownString;
+	}
+
 	export enum ChatTodoStatus {
 		NotStarted = 1,
 		InProgress = 2,
@@ -296,7 +301,7 @@ declare module 'vscode' {
 		pastTenseMessage?: string | MarkdownString;
 		isConfirmed?: boolean;
 		isComplete?: boolean;
-		toolSpecificData?: ChatTerminalToolInvocationData | ChatMcpToolInvocationData | ChatTodoToolInvocationData | ChatToolResourcesInvocationData;
+		toolSpecificData?: ChatTerminalToolInvocationData | ChatMcpToolInvocationData | ChatTodoToolInvocationData | ChatSimpleToolInvocationData | ChatToolResourcesInvocationData;
 		subAgentInvocationId?: string;
 		presentation?: 'hidden' | 'hiddenAfterComplete' | undefined;
 
