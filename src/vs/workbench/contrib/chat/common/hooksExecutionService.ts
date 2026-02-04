@@ -73,6 +73,53 @@ const preToolUseOutputValidator = vObj({
 
 //#endregion
 
+//#region Stop Hook Types
+
+/**
+ * Input provided by the caller when invoking the stop hook.
+ */
+export interface IStopHookCallerInput {
+	/**
+	 * True when agent is already continuing as a result of a stop hook to prevent infinite loops.
+	 */
+	readonly stop_hook_active: boolean;
+}
+
+/**
+ * Full input passed to the stop hook.
+ * Combines the caller input with common hook properties.
+ */
+export interface IStopHookInput extends ICommonHookInput {
+	readonly stop_hook_active: boolean;
+}
+
+/**
+ * Valid decisions for stop hooks.
+ * "block" prevents Claude from stopping.
+ */
+export type StopHookDecision = 'block';
+
+/**
+ * Output from the stop hook.
+ */
+export interface IStopHookOutput {
+	/**
+	 * "block" prevents Claude from stopping. Omit to allow Claude to stop.
+	 */
+	readonly decision: StopHookDecision;
+	/**
+	 * Required when decision is "block". Tells Claude why it should continue.
+	 */
+	readonly reason: string;
+}
+
+const stopHookOutputValidator = vObj({
+	decision: vEnum('block'),
+	reason: vString(),
+});
+
+//#endregion
+
 export const enum HookResultKind {
 	Success = 1,
 	Error = 2
@@ -127,6 +174,13 @@ export interface IHooksExecutionService {
 	 * Output is optional, but if provided, it must conform to the expected schema.
 	 */
 	executePreToolUseHook(sessionResource: URI, input: IPreToolUseCallerInput, token?: CancellationToken): Promise<IPreToolUseHookOutput | undefined>;
+
+	/**
+	 * Execute stop hooks with typed input and validated output.
+	 * The execution service builds the full hook input from the caller input plus session context.
+	 * Returns the hook output if any hook returns decision "block", otherwise undefined.
+	 */
+	executeStopHook(sessionResource: URI, input: IStopHookCallerInput, token?: CancellationToken): Promise<IStopHookOutput | undefined>;
 }
 
 export class HooksExecutionService implements IHooksExecutionService {
@@ -293,5 +347,33 @@ export class HooksExecutionService implements IHooksExecutionService {
 
 		// Return the last allow output, or undefined if no valid outputs
 		return lastAllowOutput;
+	}
+
+	async executeStopHook(sessionResource: URI, input: IStopHookCallerInput, token?: CancellationToken): Promise<IStopHookOutput | undefined> {
+		// Pass the caller input directly - common properties are added in _runSingleHook
+		const results = await this.executeHook(HookType.Stop, sessionResource, {
+			input,
+			token: token ?? CancellationToken.None,
+		});
+
+		// Check all results - if any hook blocks, return that decision
+		for (const result of results) {
+			if (result.kind === HookResultKind.Success && typeof result.result === 'object') {
+				const validationResult = stopHookOutputValidator.validate(result.result);
+				if (!validationResult.error) {
+					const output = validationResult.content;
+					// If any hook blocks, return immediately with that block decision
+					if (output.decision === 'block') {
+						return output;
+					}
+				} else {
+					// If validation fails, log a warning and continue to next result
+					this._logService.warn(`[HooksExecutionService] stop hook output validation failed: ${validationResult.error.message}`);
+				}
+			}
+		}
+
+		// No valid block decisions, return undefined to allow stopping
+		return undefined;
 	}
 }

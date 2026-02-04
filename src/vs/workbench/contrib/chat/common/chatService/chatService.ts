@@ -1271,6 +1271,12 @@ export interface IChatSendRequestOptions {
 	 */
 	queue?: ChatRequestQueueKind;
 
+	/**
+	 * True when this request is a continuation triggered by a stop hook blocking.
+	 * Used to prevent infinite loops - the hook receives this as `stop_hook_active`.
+	 */
+	stopHookActive?: boolean;
+
 }
 
 export type IChatModelReference = IReference<IChatModel>;

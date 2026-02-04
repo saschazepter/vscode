@@ -32,7 +32,7 @@ import { ILanguageModelToolsConfirmationService } from '../../../common/tools/la
 import { MockLanguageModelToolsConfirmationService } from '../../common/tools/mockLanguageModelToolsConfirmationService.js';
 import { runWithFakedTimers } from '../../../../../../base/test/common/timeTravelScheduler.js';
 import { ILanguageModelChatMetadata } from '../../../common/languageModels.js';
-import { IHooksExecutionService, IPreToolUseCallerInput, IPreToolUseHookOutput, IHooksExecutionOptions, IHookResult, IHooksExecutionProxy } from '../../../common/hooksExecutionService.js';
+import { IHooksExecutionService, IPreToolUseCallerInput, IPreToolUseHookOutput, IHooksExecutionOptions, IHookResult, IHooksExecutionProxy, IStopHookCallerInput, IStopHookOutput } from '../../../common/hooksExecutionService.js';
 import { HookTypeValue, IChatRequestHooks } from '../../../common/promptSyntax/hookSchema.js';
 import { IDisposable } from '../../../../../../base/common/lifecycle.js';
 
@@ -66,6 +66,8 @@ class MockHooksExecutionService implements IHooksExecutionService {
 	readonly _serviceBrand: undefined;
 	public preToolUseHookResult: IPreToolUseHookOutput | undefined = undefined;
 	public lastPreToolUseInput: IPreToolUseCallerInput | undefined = undefined;
+	public stopHookResult: IStopHookOutput | undefined = undefined;
+	public lastStopInput: IStopHookCallerInput | undefined = undefined;
 
 	setProxy(_proxy: IHooksExecutionProxy): void { }
 	registerHooks(_sessionResource: URI, _hooks: IChatRequestHooks): IDisposable { return { dispose: () => { } }; }
@@ -76,6 +78,10 @@ class MockHooksExecutionService implements IHooksExecutionService {
 	async executePreToolUseHook(_sessionResource: URI, input: IPreToolUseCallerInput, _token?: CancellationToken): Promise<IPreToolUseHookOutput | undefined> {
 		this.lastPreToolUseInput = input;
 		return this.preToolUseHookResult;
+	}
+	async executeStopHook(_sessionResource: URI, input: IStopHookCallerInput, _token?: CancellationToken): Promise<IStopHookOutput | undefined> {
+		this.lastStopInput = input;
+		return this.stopHookResult;
 	}
 }
 
