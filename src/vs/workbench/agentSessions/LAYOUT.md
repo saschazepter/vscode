@@ -223,20 +223,83 @@ Applied during workbench render:
 
 ---
 
-## 8. File Structure
+## 8. Agent Session Parts
+
+The Agent Sessions workbench uses specialized part implementations that extend the base pane composite infrastructure but are simplified for agent session contexts.
+
+### 8.1 Part Classes
+
+| Part | Class | Extends | Location |
+|------|-------|---------|----------|
+| Sidebar | `AgentSessionSidebarPart` | `AbstractPaneCompositePart` | `agentSessions/browser/parts/agentSessionSidebarPart.ts` |
+| Auxiliary Bar | `AgentSessionAuxiliaryBarPart` | `AbstractPaneCompositePart` | `agentSessions/browser/parts/agentSessionAuxiliaryBarPart.ts` |
+| Panel | `AgentSessionPanelPart` | `AbstractPaneCompositePart` | `agentSessions/browser/parts/agentSessionPanelPart.ts` |
+
+### 8.2 Key Differences from Standard Parts
+
+| Feature | Standard Parts | Agent Session Parts |
+|---------|----------------|---------------------|
+| Activity Bar integration | Full support | No activity bar |
+| Composite bar position | Configurable (top/bottom/title/hidden) | Fixed: Title |
+| Auto-hide support | Configurable | Disabled |
+| Configuration listening | Many settings | Minimal |
+| Context menu actions | Full set | Simplified |
+
+### 8.3 Part Selection
+
+The `PaneCompositePartService` automatically selects the correct part implementation based on the workspace type:
+
+```typescript
+// In paneCompositePartService.ts
+const isAgentSessionsWorkspace = !!workspaceContextService.getWorkspace().isAgentSessionsWorkspace;
+
+const panelPart = isAgentSessionsWorkspace
+    ? instantiationService.createInstance(AgentSessionPanelPart)
+    : instantiationService.createInstance(PanelPart);
+const sideBarPart = isAgentSessionsWorkspace
+    ? instantiationService.createInstance(AgentSessionSidebarPart)
+    : instantiationService.createInstance(SidebarPart);
+const auxiliaryBarPart = isAgentSessionsWorkspace
+    ? instantiationService.createInstance(AgentSessionAuxiliaryBarPart)
+    : instantiationService.createInstance(AuxiliaryBarPart);
+```
+
+### 8.4 Storage Keys
+
+Each agent session part uses separate storage keys to avoid conflicts with regular workbench state:
+
+| Part | Setting | Storage Key |
+|------|---------|-------------|
+| Sidebar | Active viewlet | `workbench.agentsession.sidebar.activeviewletid` |
+| Auxiliary Bar | Active panel | `workbench.agentsession.auxiliarybar.activepanelid` |
+| Auxiliary Bar | Pinned views | `workbench.agentsession.auxiliarybar.pinnedPanels` |
+| Auxiliary Bar | Placeholders | `workbench.agentsession.auxiliarybar.placeholderPanels` |
+| Auxiliary Bar | Workspace state | `workbench.agentsession.auxiliarybar.viewContainersWorkspaceState` |
+| Panel | Active panel | `workbench.agentsession.panelpart.activepanelid` |
+| Panel | Pinned panels | `workbench.agentsession.panel.pinnedPanels` |
+| Panel | Placeholders | `workbench.agentsession.panel.placeholderPanels` |
+| Panel | Workspace state | `workbench.agentsession.panel.viewContainersWorkspaceState` |
+
+---
+
+## 9. File Structure
 
 ```
 src/vs/workbench/agentSessions/
 ├── browser/
-│   ├── agentSessionsWorkbench.ts   # Main layout implementation
+│   ├── agentSessionsWorkbench.ts       # Main layout implementation
+│   ├── parts/
+│   │   ├── agentSessionSidebarPart.ts      # Agent session sidebar
+│   │   ├── agentSessionAuxiliaryBarPart.ts # Agent session auxiliary bar
+│   │   └── agentSessionPanelPart.ts        # Agent session panel
 │   └── media/
 │       └── agentSessionsWorkbench.css  # Layout-specific styles
-└── LAYOUT.md                        # This specification
+└── LAYOUT.md                           # This specification
 ```
 
 ---
 
-## 9. Implementation Requirements
+## 10. Implementation Requirements
 
 When modifying the Agent Sessions layout:
 
@@ -246,12 +309,13 @@ When modifying the Agent Sessions layout:
 4. **Update this spec** — All changes must be documented here
 5. **Preserve no-op methods** — Unsupported features should remain as no-ops, not throw errors
 6. **Handle pane composite lifecycle** — When hiding/showing parts, manage the associated pane composites
+7. **Use agent session parts** — New functionality for parts should be added to the agent session part classes, not the standard parts
 
 ---
 
-## 10. Lifecycle
+## 11. Lifecycle
 
-### 10.1 Startup Sequence
+### 11.1 Startup Sequence
 
 1. `constructor()` — Register error handlers
 2. `startup()` — Initialize services and layout
@@ -262,7 +326,7 @@ When modifying the Agent Sessions layout:
 7. `layout()` — Perform initial layout
 8. `restore()` — Set lifecycle to `Restored`, then `Eventually`
 
-### 10.2 State Tracking
+### 11.2 State Tracking
 
 ```typescript
 interface IPartVisibilityState {
@@ -288,5 +352,6 @@ interface IPartVisibilityState {
 
 | Date | Change |
 |------|--------|
+| 2026-02-04 | Added agent session specific parts (AgentSessionSidebarPart, AgentSessionAuxiliaryBarPart, AgentSessionPanelPart) in `agentSessions/browser/parts/`; PaneCompositePartService now selects parts based on isAgentSessionsWorkspace |
 | 2026-02-04 | Editor and Panel hidden by default; Editor auto-shows on editor open, auto-hides when last editor closes |
 | Initial | Document created with base layout specification |

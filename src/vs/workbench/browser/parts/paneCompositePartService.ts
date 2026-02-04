@@ -12,11 +12,15 @@ import { PaneCompositeDescriptor } from '../panecomposite.js';
 import { AuxiliaryBarPart } from './auxiliarybar/auxiliaryBarPart.js';
 import { PanelPart } from './panel/panelPart.js';
 import { SidebarPart } from './sidebar/sidebarPart.js';
+import { AgentSessionAuxiliaryBarPart } from '../../agentSessions/browser/parts/agentSessionAuxiliaryBarPart.js';
+import { AgentSessionPanelPart } from '../../agentSessions/browser/parts/agentSessionPanelPart.js';
+import { AgentSessionSidebarPart } from '../../agentSessions/browser/parts/agentSessionSidebarPart.js';
 import { IPaneComposite } from '../../common/panecomposite.js';
 import { ViewContainerLocation, ViewContainerLocations } from '../../common/views.js';
 import { IPaneCompositePartService } from '../../services/panecomposite/browser/panecomposite.js';
 import { Disposable, DisposableStore } from '../../../base/common/lifecycle.js';
 import { IPaneCompositePart } from './paneCompositePart.js';
+import { IWorkspaceContextService } from '../../../platform/workspace/common/workspace.js';
 
 export class PaneCompositePartService extends Disposable implements IPaneCompositePartService {
 
@@ -29,12 +33,21 @@ export class PaneCompositePartService extends Disposable implements IPaneComposi
 
 	constructor(
 		@IInstantiationService instantiationService: IInstantiationService,
+		@IWorkspaceContextService workspaceContextService: IWorkspaceContextService,
 	) {
 		super();
 
-		const panelPart = instantiationService.createInstance(PanelPart);
-		const sideBarPart = instantiationService.createInstance(SidebarPart);
-		const auxiliaryBarPart = instantiationService.createInstance(AuxiliaryBarPart);
+		const isAgentSessionsWorkspace = !!workspaceContextService.getWorkspace().isAgentSessionsWorkspace;
+
+		const panelPart = isAgentSessionsWorkspace
+			? instantiationService.createInstance(AgentSessionPanelPart)
+			: instantiationService.createInstance(PanelPart);
+		const sideBarPart = isAgentSessionsWorkspace
+			? instantiationService.createInstance(AgentSessionSidebarPart)
+			: instantiationService.createInstance(SidebarPart);
+		const auxiliaryBarPart = isAgentSessionsWorkspace
+			? instantiationService.createInstance(AgentSessionAuxiliaryBarPart)
+			: instantiationService.createInstance(AuxiliaryBarPart);
 
 		this.paneCompositeParts.set(ViewContainerLocation.Panel, panelPart);
 		this.paneCompositeParts.set(ViewContainerLocation.Sidebar, sideBarPart);
