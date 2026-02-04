@@ -97,6 +97,11 @@ export class PromptsService extends Disposable implements IPromptsService {
 	private readonly cachedHooks: CachedPromise<IChatRequestHooks | undefined>;
 
 	/**
+ * Cached skills. Caching only happens if the `onDidChangeSkills` event is used.
+ */
+	private readonly cachedSkills: CachedPromise<IAgentSkill[]>;
+
+	/**
 	 * Cache for parsed prompt files keyed by URI.
 	 * The number in the returned tuple is textModel.getVersionId(), which is an internal VS Code counter that increments every time the text model's content changes.
 	 */
@@ -156,7 +161,16 @@ export class PromptsService extends Disposable implements IPromptsService {
 
 		this.cachedSlashCommands = this._register(new CachedPromise(
 			(token) => this.computePromptSlashCommands(token),
-			() => Event.any(this.getFileLocatorEvent(PromptsType.prompt), Event.filter(modelChangeEvent, e => e.promptType === PromptsType.prompt))
+			() => Event.any(
+				this.getFileLocatorEvent(PromptsType.prompt),
+				this.getFileLocatorEvent(PromptsType.skill),
+				Event.filter(modelChangeEvent, e => e.promptType === PromptsType.prompt),
+				Event.filter(modelChangeEvent, e => e.promptType === PromptsType.skill)),
+		));
+
+		this.cachedSkills = this._register(new CachedPromise(
+			(token) => this.computeAgentSkills(token),
+			() => Event.any(this.getFileLocatorEvent(PromptsType.skill), Event.filter(modelChangeEvent, e => e.promptType === PromptsType.skill))
 		));
 
 		this.cachedHooks = this._register(new CachedPromise(
@@ -165,6 +179,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 		));
 
 		// Hack: Subscribe to activate caching (CachedPromise only caches when onDidChange has listeners)
+		this._register(this.cachedSkills.onDidChange(() => { }));
 		this._register(this.cachedHooks.onDidChange(() => { }));
 	}
 
@@ -253,6 +268,8 @@ export class PromptsService extends Disposable implements IPromptsService {
 					this.cachedSlashCommands.refresh();
 				} else if (type === PromptsType.skill) {
 					this.cachedFileLocations[PromptsType.skill] = undefined;
+					this.cachedSkills.refresh();
+					this.cachedSlashCommands.refresh();
 				}
 			}));
 		}
@@ -268,6 +285,8 @@ export class PromptsService extends Disposable implements IPromptsService {
 			this.cachedSlashCommands.refresh();
 		} else if (type === PromptsType.skill) {
 			this.cachedFileLocations[PromptsType.skill] = undefined;
+			this.cachedSkills.refresh();
+			this.cachedSlashCommands.refresh();
 		}
 
 		disposables.add({
@@ -285,6 +304,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 						this.cachedSlashCommands.refresh();
 					} else if (type === PromptsType.skill) {
 						this.cachedFileLocations[PromptsType.skill] = undefined;
+						this.cachedSlashCommands.refresh();
 					}
 				}
 			}
@@ -433,7 +453,9 @@ export class PromptsService extends Disposable implements IPromptsService {
 
 	private async computePromptSlashCommands(token: CancellationToken): Promise<readonly IChatPromptSlashCommand[]> {
 		const promptFiles = await this.listPromptFiles(PromptsType.prompt, token);
-		const details = await Promise.all(promptFiles.map(async promptPath => {
+		const skills = await this.listPromptFiles(PromptsType.skill, token);
+		const slashCommandFiles = [...promptFiles, ...skills];
+		const details = await Promise.all(slashCommandFiles.map(async promptPath => {
 			try {
 				const parsedPromptFile = await this.parseNew(promptPath.uri, token);
 				return this.asChatPromptSlashCommand(parsedPromptFile, promptPath);
@@ -783,12 +805,20 @@ export class PromptsService extends Disposable implements IPromptsService {
 		return sanitized;
 	}
 
+	public get onDidChangeSkills(): Event<void> {
+		return this.cachedSkills.onDidChange;
+	}
+
 	public async findAgentSkills(token: CancellationToken): Promise<IAgentSkill[] | undefined> {
 		const useAgentSkills = this.configurationService.getValue(PromptsConfig.USE_AGENT_SKILLS);
 		if (!useAgentSkills) {
 			return undefined;
 		}
 
+		return this.cachedSkills.get(token);
+	}
+
+	private async computeAgentSkills(token: CancellationToken): Promise<IAgentSkill[]> {
 		const { files, skillsBySource } = await this.computeSkillDiscoveryInfo(token);
 
 		// Extract loaded skills
