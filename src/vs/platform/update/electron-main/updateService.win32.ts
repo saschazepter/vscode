@@ -18,6 +18,7 @@ import { transform } from '../../../base/common/stream.js';
 import { URI } from '../../../base/common/uri.js';
 import { checksum } from '../../../base/node/crypto.js';
 import * as pfs from '../../../base/node/pfs.js';
+import { killTree } from '../../../base/node/processes.js';
 import { IConfigurationService } from '../../configuration/common/configuration.js';
 import { IEnvironmentMainService } from '../../environment/electron-main/environmentMainService.js';
 import { IFileService } from '../../files/common/files.js';
@@ -352,23 +353,17 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 
 		this.logService.trace('update#cancelPendingUpdate(): cancelling pending update');
 
-		// Kill the Inno Setup process if it's running
+		// Kill the Inno Setup process tree if it's running
 		if (this.availableUpdate.updateProcess) {
-			this.logService.trace('update#cancelPendingUpdate(): killing Inno Setup process');
+			this.logService.trace('update#cancelPendingUpdate(): killing Inno Setup process tree');
 
 			// Remove all listeners to prevent the exit handler from changing state
 			this.availableUpdate.updateProcess.removeAllListeners();
 
 			const pid = this.availableUpdate.updateProcess.pid;
 			if (pid) {
-				try {
-					process.kill(pid);
-				} catch (err) {
-					// If we can't kill the process, don't proceed with overwrite
-					// as we might end up with two Inno Setup processes running
-					this.logService.error('update#cancelPendingUpdate(): failed to kill Inno Setup process, aborting cancellation', err);
-					throw err;
-				}
+				// Use killTree to kill the process and all its children (forceful=true for Windows)
+				await killTree(pid, true);
 			}
 			this.availableUpdate.updateProcess = undefined;
 		}
