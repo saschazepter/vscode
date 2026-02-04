@@ -97,8 +97,8 @@ export class PromptsService extends Disposable implements IPromptsService {
 	private readonly cachedHooks: CachedPromise<IChatRequestHooks | undefined>;
 
 	/**
- * Cached skills. Caching only happens if the `onDidChangeSkills` event is used.
- */
+	 * Cached skills. Caching only happens if the `onDidChangeSkills` event is used.
+	 */
 	private readonly cachedSkills: CachedPromise<IAgentSkill[]>;
 
 	/**
