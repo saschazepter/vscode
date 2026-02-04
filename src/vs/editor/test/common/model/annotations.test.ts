@@ -328,8 +328,8 @@ suite('Annotations Suite', () => {
 
 	test('setAnnotations 4', () => {
 		// 54 chars before 'i': "Lorem ipsum dolor sit amet, consectetur adipiscing el"
-		const vas = fromVisual('Lorem ipsum dolor sit amet, consectetur adipiscing el[:i]t');
-		vas.setAnnotations(updateFromVisual('Lorem ipsum dolor sit amet, consectetur adipiscing el<_:>it'));
+		const vas = fromVisual('Lorem ipsum dolor sit amet, consectetur adipiscing el[:it]');
+		vas.setAnnotations(updateFromVisual('Lorem ipsum dolor sit amet, consectetur adipiscing el<_:i>t'));
 		assertVisual(vas, 'Lorem ipsum dolor sit amet, consectetur adipiscing elit');
 	});
 
