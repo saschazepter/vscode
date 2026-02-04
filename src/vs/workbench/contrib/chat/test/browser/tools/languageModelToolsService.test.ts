@@ -24,7 +24,7 @@ import { LanguageModelToolsService } from '../../../browser/tools/languageModelT
 import { ChatModel, IChatModel } from '../../../common/model/chatModel.js';
 import { IChatService, IChatToolInputInvocationData, IChatToolInvocation, ToolConfirmKind } from '../../../common/chatService/chatService.js';
 import { ChatConfiguration } from '../../../common/constants.js';
-import { SpecedToolAliases, isToolResultInputOutputDetails, IToolData, IToolImpl, IToolInvocation, ToolDataSource, ToolSet } from '../../../common/tools/languageModelToolsService.js';
+import { SpecedToolAliases, isToolResultInputOutputDetails, IToolData, IToolImpl, IToolInvocation, ToolDataSource, ToolSet, IToolResultTextPart } from '../../../common/tools/languageModelToolsService.js';
 import { MockChatService } from '../../common/chatService/mockChatService.js';
 import { ChatToolInvocation } from '../../../common/model/chatProgressTypes/chatToolInvocation.js';
 import { LocalChatSessionUri } from '../../../common/model/chatUri.js';
@@ -32,6 +32,9 @@ import { ILanguageModelToolsConfirmationService } from '../../../common/tools/la
 import { MockLanguageModelToolsConfirmationService } from '../../common/tools/mockLanguageModelToolsConfirmationService.js';
 import { runWithFakedTimers } from '../../../../../../base/test/common/timeTravelScheduler.js';
 import { ILanguageModelChatMetadata } from '../../../common/languageModels.js';
+import { IHooksExecutionService, IPreToolUseCallerInput, IPreToolUseHookOutput, IHooksExecutionOptions, IHookResult, IHooksExecutionProxy } from '../../../common/hooksExecutionService.js';
+import { HookTypeValue, IChatRequestHooks } from '../../../common/promptSyntax/hookSchema.js';
+import { IDisposable } from '../../../../../../base/common/lifecycle.js';
 
 // --- Test helpers to reduce repetition and improve readability ---
 
@@ -56,6 +59,23 @@ class TestTelemetryService implements Partial<ITelemetryService> {
 
 	reset() {
 		this.events = [];
+	}
+}
+
+class MockHooksExecutionService implements IHooksExecutionService {
+	readonly _serviceBrand: undefined;
+	public preToolUseHookResult: IPreToolUseHookOutput | undefined = undefined;
+	public lastPreToolUseInput: IPreToolUseCallerInput | undefined = undefined;
+
+	setProxy(_proxy: IHooksExecutionProxy): void { }
+	registerHooks(_sessionResource: URI, _hooks: IChatRequestHooks): IDisposable { return { dispose: () => { } }; }
+	getHooksForSession(_sessionResource: URI): IChatRequestHooks | undefined { return undefined; }
+	executeHook(_hookType: HookTypeValue, _sessionResource: URI, _options?: IHooksExecutionOptions): Promise<IHookResult[]> {
+		return Promise.resolve([]);
+	}
+	async executePreToolUseHook(_sessionResource: URI, input: IPreToolUseCallerInput, _token?: CancellationToken): Promise<IPreToolUseHookOutput | undefined> {
+		this.lastPreToolUseInput = input;
+		return this.preToolUseHookResult;
 	}
 }
 
@@ -3718,6 +3738,153 @@ suite('LanguageModelToolsService', () => {
 			assert.ok(toolIds.includes('parentTool'), 'Parent tool should be in tool set');
 			assert.ok(toolIds.includes('childToolWithoutWhen'), 'Child tool without when should be in tool set');
 			assert.ok(!toolIds.includes('childToolWithWhen'), 'Child tool with when=true should NOT be in tool set when context key is false');
+		});
+	});
+
+	suite('preToolUse hooks', () => {
+		let mockHooksService: MockHooksExecutionService;
+		let hookService: LanguageModelToolsService;
+		let hookChatService: MockChatService;
+
+		setup(() => {
+			configurationService = new TestConfigurationService();
+			configurationService.setUserConfiguration(ChatConfiguration.ExtensionToolsEnabled, true);
+			const instaService = workbenchInstantiationService({
+				contextKeyService: () => store.add(new ContextKeyService(configurationService)),
+				configurationService: () => configurationService
+			}, store);
+			hookChatService = new MockChatService();
+			mockHooksService = new MockHooksExecutionService();
+			instaService.stub(IChatService, hookChatService);
+			instaService.stub(ILanguageModelToolsConfirmationService, new MockLanguageModelToolsConfirmationService());
+			instaService.stub(IHooksExecutionService, mockHooksService);
+			hookService = store.add(instaService.createInstance(LanguageModelToolsService));
+		});
+
+		test('when hook denies, tool returns error and creates cancelled invocation', async () => {
+			mockHooksService.preToolUseHookResult = {
+				permissionDecision: 'deny',
+				permissionDecisionReason: 'Destructive operations require approval',
+			};
+
+			const tool = registerToolForTest(hookService, store, 'hookDenyTool', {
+				invoke: async () => ({ content: [{ kind: 'text', value: 'should not run' }] })
+			});
+
+			const capture: { invocation?: ChatToolInvocation } = {};
+			stubGetSession(hookChatService, 'hook-test', { requestId: 'req1', capture });
+
+			const result = await hookService.invokeTool(
+				tool.makeDto({ test: 1 }, { sessionId: 'hook-test' }),
+				async () => 0,
+				CancellationToken.None
+			);
+
+			// Verify error result returned
+			assert.ok(result.toolResultError);
+			assert.ok(result.toolResultError.includes('Destructive operations require approval'));
+			assert.strictEqual(result.content[0].kind, 'text');
+			assert.ok((result.content[0] as IToolResultTextPart).value.includes('Tool execution denied'));
+
+			// Verify a cancelled invocation was created
+			const invocation = await waitForPublishedInvocation(capture);
+			assert.ok(invocation);
+			const state = invocation.state.get();
+			assert.strictEqual(state.type, IChatToolInvocation.StateKind.Cancelled);
+			if (state.type === IChatToolInvocation.StateKind.Cancelled) {
+				assert.strictEqual(state.reason, ToolConfirmKind.Denied);
+				assert.strictEqual(state.reasonMessage, 'Denied by preToolUse hook: Destructive operations require approval');
+			}
+		});
+
+		test('when hook allows, tool executes normally', async () => {
+			mockHooksService.preToolUseHookResult = {
+				permissionDecision: 'allow',
+			};
+
+			const tool = registerToolForTest(hookService, store, 'hookAllowTool', {
+				invoke: async () => ({ content: [{ kind: 'text', value: 'success' }] })
+			});
+
+			const capture: { invocation?: ChatToolInvocation } = {};
+			stubGetSession(hookChatService, 'hook-test-allow', { requestId: 'req1', capture });
+
+			const result = await hookService.invokeTool(
+				tool.makeDto({ test: 1 }, { sessionId: 'hook-test-allow' }),
+				async () => 0,
+				CancellationToken.None
+			);
+
+			assert.strictEqual(result.content[0].kind, 'text');
+			assert.strictEqual((result.content[0] as IToolResultTextPart).value, 'success');
+			assert.ok(!result.toolResultError);
+		});
+
+		test('when hook returns undefined, tool executes normally', async () => {
+			mockHooksService.preToolUseHookResult = undefined;
+
+			const tool = registerToolForTest(hookService, store, 'hookUndefinedTool', {
+				invoke: async () => ({ content: [{ kind: 'text', value: 'success' }] })
+			});
+
+			stubGetSession(hookChatService, 'hook-test-undefined', { requestId: 'req1' });
+
+			const result = await hookService.invokeTool(
+				tool.makeDto({ test: 1 }, { sessionId: 'hook-test-undefined' }),
+				async () => 0,
+				CancellationToken.None
+			);
+
+			assert.strictEqual(result.content[0].kind, 'text');
+			assert.strictEqual((result.content[0] as IToolResultTextPart).value, 'success');
+		});
+
+		test('hook receives correct input parameters', async () => {
+			mockHooksService.preToolUseHookResult = {
+				permissionDecision: 'allow',
+			};
+
+			const tool = registerToolForTest(hookService, store, 'hookInputTool', {
+				invoke: async () => ({ content: [{ kind: 'text', value: 'success' }] })
+			});
+
+			stubGetSession(hookChatService, 'hook-test-input', { requestId: 'req1' });
+
+			await hookService.invokeTool(
+				tool.makeDto({ param1: 'value1', param2: 42 }, { sessionId: 'hook-test-input' }),
+				async () => 0,
+				CancellationToken.None
+			);
+
+			assert.ok(mockHooksService.lastPreToolUseInput);
+			assert.strictEqual(mockHooksService.lastPreToolUseInput.toolName, 'hookInputTool');
+			assert.deepStrictEqual(mockHooksService.lastPreToolUseInput.toolArgs, { param1: 'value1', param2: 42 });
+		});
+
+		test('when hook denies, tool invoke is never called', async () => {
+			mockHooksService.preToolUseHookResult = {
+				permissionDecision: 'deny',
+				permissionDecisionReason: 'Operation not allowed',
+			};
+
+			let invokeCalled = false;
+			const tool = registerToolForTest(hookService, store, 'hookNeverInvokeTool', {
+				invoke: async () => {
+					invokeCalled = true;
+					return { content: [{ kind: 'text', value: 'should not run' }] };
+				}
+			});
+
+			const capture: { invocation?: unknown } = {};
+			stubGetSession(hookChatService, 'hook-test-no-invoke', { requestId: 'req1', capture });
+
+			await hookService.invokeTool(
+				tool.makeDto({ test: 1 }, { sessionId: 'hook-test-no-invoke' }),
+				async () => 0,
+				CancellationToken.None
+			);
+
+			assert.strictEqual(invokeCalled, false, 'Tool invoke should not be called when hook denies');
 		});
 	});
 });

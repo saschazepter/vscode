@@ -613,6 +613,8 @@ export namespace IChatToolInvocation {
 	interface IChatToolInvocationCancelledState extends IChatToolInvocationStateBase, IChatToolInvocationPostStreamState {
 		type: StateKind.Cancelled;
 		reason: ToolConfirmKind.Denied | ToolConfirmKind.Skipped;
+		/** Optional message explaining why the tool was cancelled (e.g., from hook denial) */
+		reasonMessage?: string | IMarkdownString;
 	}
 
 	export type State =

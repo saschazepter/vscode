@@ -34,12 +34,14 @@ import { Registry } from '../../../../../platform/registry/common/platform.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
 import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry.js';
 import { IExtensionService } from '../../../../services/extensions/common/extensions.js';
+import { IHooksExecutionService, IPreToolUseCallerInput } from '../../common/hooksExecutionService.js';
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
 import { ChatRequestToolReferenceEntry, toToolSetVariableEntry, toToolVariableEntry } from '../../common/attachments/chatVariableEntries.js';
 import { IVariableReference } from '../../common/chatModes.js';
 import { ConfirmedReason, IChatService, IChatToolInvocation, ToolConfirmKind } from '../../common/chatService/chatService.js';
 import { ChatConfiguration } from '../../common/constants.js';
 import { ILanguageModelChatMetadata } from '../../common/languageModels.js';
+import { IChatModel, IChatRequestModel } from '../../common/model/chatModel.js';
 import { ChatToolInvocation } from '../../common/model/chatProgressTypes/chatToolInvocation.js';
 import { ILanguageModelToolsConfirmationService } from '../../common/tools/languageModelToolsConfirmationService.js';
 import { CountTokensCallback, createToolSchemaUri, IBeginToolCallOptions, ILanguageModelToolsService, IPreparedToolInvocation, IToolAndToolSetEnablementMap, IToolData, IToolImpl, IToolInvocation, IToolResult, IToolResultInputOutputDetails, SpecedToolAliases, stringifyPromptTsxPart, isToolSet, ToolDataSource, toolMatchesModel, ToolSet, VSCodeToolReference, IToolSet, ToolSetForModel, IToolInvokedEvent } from '../../common/tools/languageModelToolsService.js';
@@ -117,6 +119,7 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 		@IAccessibilitySignalService private readonly _accessibilitySignalService: IAccessibilitySignalService,
 		@IStorageService private readonly _storageService: IStorageService,
 		@ILanguageModelToolsConfirmationService private readonly _confirmationService: ILanguageModelToolsConfirmationService,
+		@IHooksExecutionService private readonly _hooksExecutionService: IHooksExecutionService,
 	) {
 		super();
 
@@ -356,8 +359,92 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 		return undefined;
 	}
 
+	/**
+	 * Execute the preToolUse hook and handle denial.
+	 * Returns a tool result if the hook denied execution, or undefined to continue.
+	 * @param pendingInvocation If there's an existing streaming invocation from beginToolCall, pass it here to cancel it instead of creating a new one.
+	 */
+	private async _executePreToolUseHookAndHandleDenial(
+		dto: IToolInvocation,
+		toolData: IToolData | undefined,
+		request: IChatRequestModel | undefined,
+		pendingInvocation: ChatToolInvocation | undefined,
+		token: CancellationToken
+	): Promise<IToolResult | undefined> {
+		// Skip hook if no session context or tool doesn't exist
+		if (!dto.context?.sessionResource || !toolData) {
+			return undefined;
+		}
+
+		const hookInput: IPreToolUseCallerInput = {
+			toolName: dto.toolId,
+			toolArgs: dto.parameters,
+		};
+		const hookResult = await this._hooksExecutionService.executePreToolUseHook(dto.context.sessionResource, hookInput, token);
+
+		if (hookResult?.permissionDecision === 'deny') {
+			const hookReason = hookResult.permissionDecisionReason ?? localize('hookDeniedNoReason', "Hook denied tool execution");
+			const reason = localize('deniedByPreToolUseHook', "Denied by {0} hook: {1}", 'preToolUse', hookReason);
+			this._logService.debug(`[LanguageModelToolsService#invokeTool] Tool ${dto.toolId} denied by preToolUse hook: ${hookReason}`);
+
+			// Handle the tool invocation in cancelled state
+			if (toolData) {
+				if (pendingInvocation) {
+					// If there's an existing streaming invocation, cancel it
+					pendingInvocation.cancelFromStreaming(ToolConfirmKind.Denied, reason);
+				} else if (request) {
+					// Otherwise create a new cancelled invocation and add it to the chat model
+					const toolInvocation = ChatToolInvocation.createCancelled(
+						{ toolCallId: dto.callId, toolId: dto.toolId, toolData, subagentInvocationId: dto.subAgentInvocationId, chatRequestId: dto.chatRequestId },
+						dto.parameters,
+						ToolConfirmKind.Denied,
+						reason
+					);
+					this._chatService.appendProgress(request, toolInvocation);
+				}
+			}
+
+			const denialMessage = localize('toolExecutionDenied', "Tool execution denied: {0}", hookReason);
+			return {
+				content: [{ kind: 'text', value: denialMessage }],
+				toolResultError: hookReason,
+			};
+		}
+
+		return undefined;
+	}
+
 	async invokeTool(dto: IToolInvocation, countTokens: CountTokensCallback, token: CancellationToken): Promise<IToolResult> {
 		this._logService.trace(`[LanguageModelToolsService#invokeTool] Invoking tool ${dto.toolId} with parameters ${JSON.stringify(dto.parameters)}`);
+
+		const toolData = this._tools.get(dto.toolId)?.data;
+		let model: IChatModel | undefined;
+		let request: IChatRequestModel | undefined;
+		if (dto.context?.sessionResource) {
+			model = this._chatService.getSession(dto.context.sessionResource);
+			request = model?.getRequests().at(-1);
+		}
+
+		// Check if there's an existing pending tool call from streaming phase BEFORE hook check
+		let pendingToolCallKey: string | undefined;
+		let toolInvocation: ChatToolInvocation | undefined;
+		if (this._pendingToolCalls.has(dto.callId)) {
+			pendingToolCallKey = dto.callId;
+			toolInvocation = this._pendingToolCalls.get(dto.callId);
+		} else if (dto.chatStreamToolCallId && this._pendingToolCalls.has(dto.chatStreamToolCallId)) {
+			pendingToolCallKey = dto.chatStreamToolCallId;
+			toolInvocation = this._pendingToolCalls.get(dto.chatStreamToolCallId);
+		}
+
+		// Execute preToolUse hook - returns early if hook denies execution
+		const hookDenialResult = await this._executePreToolUseHookAndHandleDenial(dto, toolData, request, toolInvocation, token);
+		if (hookDenialResult) {
+			// Clean up pending tool call if it exists
+			if (pendingToolCallKey) {
+				this._pendingToolCalls.delete(pendingToolCallKey);
+			}
+			return hookDenialResult;
+		}
 
 		// Fire the event to notify listeners that a tool is being invoked
 		this._onDidInvokeTool.fire({
@@ -383,17 +470,7 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 			}
 		}
 
-		// Check if there's an existing pending tool call from streaming phase
-		// Try both the callId and the chatStreamToolCallId (if provided) as lookup keys
-		let pendingToolCallKey: string | undefined;
-		let toolInvocation: ChatToolInvocation | undefined;
-		if (this._pendingToolCalls.has(dto.callId)) {
-			pendingToolCallKey = dto.callId;
-			toolInvocation = this._pendingToolCalls.get(dto.callId);
-		} else if (dto.chatStreamToolCallId && this._pendingToolCalls.has(dto.chatStreamToolCallId)) {
-			pendingToolCallKey = dto.chatStreamToolCallId;
-			toolInvocation = this._pendingToolCalls.get(dto.chatStreamToolCallId);
-		}
+		// Note: pending invocation lookup was already done above for the hook check
 		const hadPendingInvocation = !!toolInvocation;
 		if (hadPendingInvocation && pendingToolCallKey) {
 			// Remove from pending since we're now invoking it
@@ -409,12 +486,13 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 		try {
 			if (dto.context) {
 				store = new DisposableStore();
-				const model = this._chatService.getSession(dto.context.sessionResource);
 				if (!model) {
 					throw new Error(`Tool called for unknown chat session`);
 				}
 
-				const request = model.getRequests().at(-1)!;
+				if (!request) {
+					throw new Error(`Tool called for unknown chat request`);
+				}
 				requestId = request.id;
 				dto.modelId = request.modelId;
 				dto.userSelectedTools = request.userSelectedTools && { ...request.userSelectedTools };
