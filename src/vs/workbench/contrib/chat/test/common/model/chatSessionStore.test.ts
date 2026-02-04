@@ -457,7 +457,7 @@ suite('ChatSessionStore', () => {
 			// Simulate workspace transition - use proper identifier types
 			// Empty workspace only has 'id', single folder has 'uri' property too
 			const oldWorkspace: IAnyWorkspaceIdentifier = { id: 'empty-window-id' };
-			const newWorkspace: IAnyWorkspaceIdentifier = { id: 'new-workspace-id', uri: URI.file('/test/folder') } as IAnyWorkspaceIdentifier;
+			const newWorkspace: IAnyWorkspaceIdentifier = { id: 'new-workspace-id', uri: URI.file('/test/folder') };
 
 			await mockWorkspaceEditingService.fireWorkspaceTransition(oldWorkspace, newWorkspace);
 

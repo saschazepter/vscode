@@ -110,10 +110,10 @@ export class ChatSessionStore extends Disposable {
 			joinPath(this.environmentService.workspaceStorageHome, newWorkspaceId, 'chatSessions');
 
 		// Migrate session files from old to new location
-		await this.migrateSessionsToNewWorkspace(oldStorageRoot, wasEmptyWindow, newWorkspaceId, isNewWorkspaceEmpty);
+		await this.migrateSessionsToNewWorkspace(oldStorageRoot, wasEmptyWindow, isNewWorkspaceEmpty);
 	}
 
-	private async migrateSessionsToNewWorkspace(oldStorageRoot: URI, wasEmptyWindow: boolean, newWorkspaceId: string, isNewWorkspaceEmpty: boolean): Promise<void> {
+	private async migrateSessionsToNewWorkspace(oldStorageRoot: URI, wasEmptyWindow: boolean, isNewWorkspaceEmpty: boolean): Promise<void> {
 		try {
 			// Check if old storage location exists
 			const oldStorageExists = await this.fileService.exists(oldStorageRoot);
@@ -147,7 +147,7 @@ export class ChatSessionStore extends Disposable {
 				}
 			}
 
-			this.logService.info(`ChatSessionStore: Migrated ${migratedCount} chat session files from ${wasEmptyWindow ? 'empty window' : oldStorageRoot.path} to ${isNewWorkspaceEmpty ? 'empty window' : newWorkspaceId}`);
+			this.logService.info(`ChatSessionStore: Migrated ${migratedCount} chat session files from ${wasEmptyWindow ? 'empty window' : oldStorageRoot.toString()} to ${isNewWorkspaceEmpty ? 'empty window' : this.storageRoot.toString()}`);
 
 			// Clear the index cache to force re-reading from the new location
 			this.indexCache = undefined;
