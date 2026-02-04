@@ -22,11 +22,10 @@ import { PromptsConfig } from './config/config.js';
 import { isPromptOrInstructionsFile } from './config/promptFileLocations.js';
 import { PromptsType } from './promptTypes.js';
 import { ParsedPromptFile } from './promptFileParser.js';
-import { ICustomAgent, IPromptPath, IPromptsService } from './service/promptsService.js';
+import { AgentFileType, ICustomAgent, IPromptPath, IPromptsService } from './service/promptsService.js';
 import { OffsetRange } from '../../../../../editor/common/core/ranges/offsetRange.js';
 import { ChatConfiguration, ChatModeKind } from '../constants.js';
 import { UserSelectedTools } from '../participants/chatAgents.js';
-import { IChatMode } from '../chatModes.js';
 
 export type InstructionsCollectionEvent = {
 	applyingInstructionsCount: number;
@@ -54,7 +53,7 @@ export class ComputeAutomaticInstructions {
 	private _parseResults: ResourceMap<ParsedPromptFile> = new ResourceMap();
 
 	constructor(
-		private readonly _agent: IChatMode,
+		private readonly _modeKind: ChatModeKind,
 		private readonly _enabledTools: UserSelectedTools | undefined,
 		private readonly _enabledSubagents: (readonly string[]) | undefined,
 		@IPromptsService private readonly _promptsService: IPromptsService,
@@ -119,7 +118,7 @@ export class ComputeAutomaticInstructions {
 	/** public for testing */
 	public async addApplyingInstructions(instructionFiles: readonly IPromptPath[], context: { files: ResourceSet; instructions: ResourceSet }, variables: ChatRequestVariableSet, telemetryEvent: InstructionsCollectionEvent, token: CancellationToken): Promise<void> {
 		const includeApplyingInstructions = this._configurationService.getValue(PromptsConfig.INCLUDE_APPLYING_INSTRUCTIONS);
-		if (!includeApplyingInstructions && this._agent.kind !== ChatModeKind.Edit) {
+		if (!includeApplyingInstructions && this._modeKind !== ChatModeKind.Edit) {
 			this._logService.trace(`[InstructionsContextComputer] includeApplyingInstructions is disabled and agent kind is not Edit. No applying instructions will be added.`);
 			return;
 		}
@@ -178,31 +177,33 @@ export class ComputeAutomaticInstructions {
 	}
 
 	private async _addAgentInstructions(variables: ChatRequestVariableSet, telemetryEvent: InstructionsCollectionEvent, token: CancellationToken): Promise<void> {
-		const useCopilotInstructionsFiles = this._configurationService.getValue(PromptsConfig.USE_COPILOT_INSTRUCTION_FILES);
-		const useAgentMd = this._configurationService.getValue(PromptsConfig.USE_AGENT_MD);
-		if (!useCopilotInstructionsFiles && !useAgentMd) {
-			this._logService.trace(`[InstructionsContextComputer] No agent instructions files added (settings disabled).`);
-			return;
-		}
+		const logger = {
+			logInfo: (message: string) => this._logService.trace(`[InstructionsContextComputer] ${message}`)
+		};
+		const allCandidates = await this._promptsService.listAgentInstructions(token, logger);
 
 		const entries: ChatRequestVariableSet = new ChatRequestVariableSet();
-		if (useCopilotInstructionsFiles) {
-			const files: URI[] = await this._promptsService.listCopilotInstructionsMDs(token);
-			for (const file of files) {
-				entries.add(toPromptFileVariableEntry(file, PromptFileVariableKind.Instruction, localize('instruction.file.reason.copilot', 'Automatically attached as setting {0} is enabled', PromptsConfig.USE_COPILOT_INSTRUCTION_FILES), true));
-				telemetryEvent.agentInstructionsCount++;
-				this._logService.trace(`[InstructionsContextComputer] copilot-instruction.md files added: ${file.toString()}`);
+		const copilotEntries: ChatRequestVariableSet = new ChatRequestVariableSet();
+
+		for (const { uri, type } of allCandidates) {
+			const varEntry = toPromptFileVariableEntry(uri, PromptFileVariableKind.Instruction, undefined, true);
+			entries.add(varEntry);
+			if (type === AgentFileType.copilotInstructionsMd) {
+				copilotEntries.add(varEntry);
 			}
-			await this._addReferencedInstructions(entries, telemetryEvent, token);
+
+			telemetryEvent.agentInstructionsCount++;
+			logger.logInfo(`Agent instruction file added: ${uri.toString()}`);
 		}
-		if (useAgentMd) {
-			const files = await this._promptsService.listAgentMDs(token, false);
-			for (const file of files) {
-				entries.add(toPromptFileVariableEntry(file, PromptFileVariableKind.Instruction, localize('instruction.file.reason.agentsmd', 'Automatically attached as setting {0} is enabled', PromptsConfig.USE_AGENT_MD), true));
-				telemetryEvent.agentInstructionsCount++;
-				this._logService.trace(`[InstructionsContextComputer] AGENTS.md files added: ${file.toString()}`);
+
+		// Process referenced instructions from copilot files (maintaining original behavior)
+		if (copilotEntries.length > 0) {
+			await this._addReferencedInstructions(copilotEntries, telemetryEvent, token);
+			for (const entry of copilotEntries.asArray()) {
+				variables.add(entry);
 			}
 		}
+
 		for (const entry of entries.asArray()) {
 			variables.add(entry);
 		}
@@ -264,7 +265,7 @@ export class ComputeAutomaticInstructions {
 		if (readTool) {
 
 			const searchNestedAgentMd = this._configurationService.getValue(PromptsConfig.USE_NESTED_AGENT_MD);
-			const agentsMdPromise = searchNestedAgentMd ? this._promptsService.findAgentMDsInWorkspace(token) : Promise.resolve([]);
+			const agentsMdPromise = searchNestedAgentMd ? this._promptsService.listNestedAgentMDs(token) : Promise.resolve([]);
 
 			entries.push('<instructions>');
 			entries.push('Here is a list of instruction files that contain rules for working with this codebase.');
@@ -295,7 +296,7 @@ export class ComputeAutomaticInstructions {
 			}
 
 			const agentsMdFiles = await agentsMdPromise;
-			for (const uri of agentsMdFiles) {
+			for (const { uri } of agentsMdFiles) {
 				const folderName = this._labelService.getUriLabel(dirname(uri), { relative: true });
 				const description = folderName.trim().length === 0 ? localize('instruction.file.description.agentsmd.root', 'Instructions for the workspace') : localize('instruction.file.description.agentsmd.folder', 'Instructions for folder \'{0}\'', folderName);
 				entries.push('<instruction>');
@@ -318,13 +319,17 @@ export class ComputeAutomaticInstructions {
 				entries.push('<skills>');
 				if (useSkillAdherencePrompt) {
 					// Stronger skill adherence prompt for experimental feature
-					entries.push('Skills are curated collections of best practices and detailed guidance for producing high-quality outputs across various domains. Each skill folder contains refined instructions developed through extensive testing to help achieve professional results. Examples include presentation skills for creating polished slides, document skills for well-formatted reports, and many others. Multiple skills can be combined when a task spans different domains.');
-					entries.push(`IMPORTANT: Reading skill documentation BEFORE taking action significantly improves output quality. When you receive a task, first review the available skills listed below to identify which ones apply. Use the ${readTool.variable} tool to load the relevant SKILL.md file(s) and follow their guidance.`);
-					entries.push('Examples of proper skill usage:');
-					entries.push(`- Task: "Create a presentation about our product roadmap" -> First load the presentation skill via ${readTool.variable}`);
-					entries.push(`- Task: "Clean up the formatting in this document" -> First load the document editing skill via ${readTool.variable}`);
-					entries.push(`- Task: "Add a flowchart to the README" -> Load both the documentation skill and any diagram-related skill`);
-					entries.push('Taking time to read the skill instructions first leads to substantially better results.');
+					entries.push('Skills provide specialized capabilities, domain knowledge, and refined workflows for producing high-quality outputs. Each skill folder contains tested instructions for specific domains like testing strategies, API design, or performance optimization. Multiple skills can be combined when a task spans different domains.');
+					entries.push(`BLOCKING REQUIREMENT: When a skill applies to the user's request, you MUST load and read the SKILL.md file IMMEDIATELY as your first action, BEFORE generating any other response or taking action on the task. Use ${readTool.variable} to load the relevant skill(s).`);
+					entries.push('NEVER just mention or reference a skill in your response without actually reading it first. If a skill is relevant, load it before proceeding.');
+					entries.push('How to determine if a skill applies:');
+					entries.push('1. Review the available skills below and match their descriptions against the user\'s request');
+					entries.push('2. If any skill\'s domain overlaps with the task, load that skill immediately');
+					entries.push('3. When multiple skills apply (e.g., a flowchart in documentation), load all relevant skills');
+					entries.push('Examples:');
+					entries.push(`- "Help me write unit tests for this module" -> Load the testing skill via ${readTool.variable} FIRST, then proceed`);
+					entries.push(`- "Optimize this slow function" -> Load the performance-profiling skill via ${readTool.variable} FIRST, then proceed`);
+					entries.push(`- "Add a discount code field to checkout" -> Load both the checkout-flow and form-validation skills FIRST`);
 					entries.push('Available skills:');
 				} else {
 					entries.push('Here is a list of skills that contain domain specific knowledge on a variety of topics.');
@@ -346,7 +351,7 @@ export class ComputeAutomaticInstructions {
 		if (runSubagentTool && this._configurationService.getValue(ChatConfiguration.SubagentToolCustomAgents)) {
 			const canUseAgent = (() => {
 				if (!this._enabledSubagents || this._enabledSubagents.includes('*')) {
-					return (agent: ICustomAgent) => (agent.infer === 'all' || agent.infer === 'agent');
+					return (agent: ICustomAgent) => agent.visibility.agentInvokable;
 				} else {
 					const subagents = this._enabledSubagents;
 					return (agent: ICustomAgent) => subagents.includes(agent.name);
@@ -396,7 +401,7 @@ export class ComputeAutomaticInstructions {
 
 	private async _addReferencedInstructions(attachedContext: ChatRequestVariableSet, telemetryEvent: InstructionsCollectionEvent, token: CancellationToken): Promise<void> {
 		const includeReferencedInstructions = this._configurationService.getValue(PromptsConfig.INCLUDE_REFERENCED_INSTRUCTIONS);
-		if (!includeReferencedInstructions && this._agent.kind !== ChatModeKind.Edit) {
+		if (!includeReferencedInstructions && this._modeKind !== ChatModeKind.Edit) {
 			this._logService.trace(`[InstructionsContextComputer] includeReferencedInstructions is disabled and agent kind is not Edit. No referenced instructions will be added.`);
 			return;
 		}

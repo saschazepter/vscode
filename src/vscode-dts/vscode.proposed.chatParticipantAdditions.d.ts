@@ -3,6 +3,8 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+// version: 1
+
 declare module 'vscode' {
 
 	export interface ChatParticipant {
@@ -264,6 +266,27 @@ declare module 'vscode' {
 		output: McpToolInvocationContentData[];
 	}
 
+	export enum ChatTodoStatus {
+		NotStarted = 1,
+		InProgress = 2,
+		Completed = 3
+	}
+
+	export interface ChatTodoToolInvocationData {
+		todoList: Array<{
+			id: number;
+			title: string;
+			status: ChatTodoStatus;
+		}>;
+	}
+
+	export interface ChatToolResourcesInvocationData {
+		/**
+		 * Array of file URIs or locations to display as a collapsible list
+		 */
+		values: Array<Uri | Location>;
+	}
+
 	export class ChatToolInvocationPart {
 		toolName: string;
 		toolCallId: string;
@@ -273,7 +296,7 @@ declare module 'vscode' {
 		pastTenseMessage?: string | MarkdownString;
 		isConfirmed?: boolean;
 		isComplete?: boolean;
-		toolSpecificData?: ChatTerminalToolInvocationData | ChatMcpToolInvocationData;
+		toolSpecificData?: ChatTerminalToolInvocationData | ChatMcpToolInvocationData | ChatTodoToolInvocationData | ChatToolResourcesInvocationData;
 		subAgentInvocationId?: string;
 		presentation?: 'hidden' | 'hiddenAfterComplete' | undefined;
 
@@ -553,6 +576,13 @@ declare module 'vscode' {
 		push(part: ExtendedChatResponsePart): void;
 
 		clearToPreviousToolInvocation(reason: ChatResponseClearToPreviousToolInvocationReason): void;
+
+		/**
+		 * Report token usage information for this request.
+		 * This is typically called when the underlying language model provides usage statistics.
+		 * @param usage Token usage information including prompt and completion tokens
+		 */
+		usage(usage: ChatResultUsage): void;
 	}
 
 	export enum ChatResponseReferencePartStatusKind {
@@ -744,12 +774,6 @@ declare module 'vscode' {
 		 * An optional detail string that will be rendered at the end of the response in certain UI contexts.
 		 */
 		details?: string;
-
-		/**
-		 * Token usage information for this request, if available.
-		 * This is typically provided by the underlying language model.
-		 */
-		readonly usage?: ChatResultUsage;
 	}
 
 	export namespace chat {

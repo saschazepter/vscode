@@ -5,14 +5,14 @@
 
 import './media/browser.css';
 import { localize } from '../../../../nls.js';
-import { $, addDisposableListener, Dimension, disposableWindowInterval, EventType, IDomPosition, registerExternalFocusChecker } from '../../../../base/browser/dom.js';
+import { $, addDisposableListener, Dimension, EventType, IDomPosition, registerExternalFocusChecker } from '../../../../base/browser/dom.js';
 import { renderIcon } from '../../../../base/browser/ui/iconLabel/iconLabels.js';
 import { CancellationToken, CancellationTokenSource } from '../../../../base/common/cancellation.js';
 import { RawContextKey, IContextKey, IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { MenuId } from '../../../../platform/actions/common/actions.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { ServiceCollection } from '../../../../platform/instantiation/common/serviceCollection.js';
-import { IEditorService } from '../../../services/editor/common/editorService.js';
+import { AUX_WINDOW_GROUP, IEditorService } from '../../../services/editor/common/editorService.js';
 import { EditorPane } from '../../../browser/parts/editor/editorPane.js';
 import { IEditorOpenContext } from '../../../common/editor.js';
 import { BrowserEditorInput } from './browserEditorInput.js';
@@ -21,7 +21,7 @@ import { IBrowserViewModel } from '../../browserView/common/browserView.js';
 import { IThemeService } from '../../../../platform/theme/common/themeService.js';
 import { ITelemetryService } from '../../../../platform/telemetry/common/telemetry.js';
 import { IStorageService } from '../../../../platform/storage/common/storage.js';
-import { IBrowserViewKeyDownEvent, IBrowserViewNavigationEvent, IBrowserViewLoadError } from '../../../../platform/browserView/common/browserView.js';
+import { IBrowserViewKeyDownEvent, IBrowserViewNavigationEvent, IBrowserViewLoadError, BrowserNewPageLocation } from '../../../../platform/browserView/common/browserView.js';
 import { IEditorGroup } from '../../../services/editor/common/editorGroupsService.js';
 import { IEditorOptions } from '../../../../platform/editor/common/editor.js';
 import { IKeybindingService } from '../../../../platform/keybinding/common/keybinding.js';
@@ -45,6 +45,7 @@ import { encodeBase64, VSBuffer } from '../../../../base/common/buffer.js';
 import { IChatRequestVariableEntry } from '../../chat/common/attachments/chatVariableEntries.js';
 import { IBrowserTargetLocator, getDisplayNameFromOuterHTML } from '../../../../platform/browserElements/common/browserElements.js';
 import { logBrowserOpen } from './browserViewTelemetry.js';
+import { URI } from '../../../../base/common/uri.js';
 
 export const CONTEXT_BROWSER_CAN_GO_BACK = new RawContextKey<boolean>('browserCanGoBack', false, localize('browser.canGoBack', "Whether the browser can go back"));
 export const CONTEXT_BROWSER_CAN_GO_FORWARD = new RawContextKey<boolean>('browserCanGoForward', false, localize('browser.canGoForward', "Whether the browser can go forward"));
@@ -192,6 +193,7 @@ export class BrowserEditor extends EditorPane {
 	private readonly _inputDisposables = this._register(new DisposableStore());
 	private overlayManager: BrowserOverlayManager | undefined;
 	private _elementSelectionCts: CancellationTokenSource | undefined;
+	private _screenshotTimeout: ReturnType<typeof setTimeout> | undefined;
 
 	constructor(
 		group: IEditorGroup,
@@ -341,8 +343,15 @@ export class BrowserEditor extends EditorPane {
 		this.setBackgroundImage(this._model.screenshot);
 
 		if (context.newInGroup) {
-			this.focusUrlInput();
+			if (this._model.url) {
+				this._browserContainer.focus();
+			} else {
+				this.focusUrlInput();
+			}
 		}
+
+		// Start / stop screenshots when the model visibility changes
+		this._inputDisposables.add(this._model.onDidChangeVisibility(() => this.doScreenshot()));
 
 		// Listen to model events for UI updates
 		this._inputDisposables.add(this._model.onDidKeyCommand(keyEvent => {
@@ -374,18 +383,27 @@ export class BrowserEditor extends EditorPane {
 			this._devToolsOpenContext.set(e.isDevToolsOpen);
 		}));
 
-		this._inputDisposables.add(this._model.onDidRequestNewPage(({ url, name, background }) => {
-			logBrowserOpen(this.telemetryService, background ? 'browserLinkBackground' : 'browserLinkForeground');
+		this._inputDisposables.add(this._model.onDidRequestNewPage(({ resource, location, position }) => {
+			logBrowserOpen(this.telemetryService, (() => {
+				switch (location) {
+					case BrowserNewPageLocation.Background: return 'browserLinkBackground';
+					case BrowserNewPageLocation.Foreground: return 'browserLinkForeground';
+					case BrowserNewPageLocation.NewWindow: return 'browserLinkNewWindow';
+				}
+			})());
 
-			// Open a new browser tab for the requested URL
-			const browserUri = BrowserViewUri.forUrl(url, name ? `${input.id}-${name}` : undefined);
+			const targetGroup = location === BrowserNewPageLocation.NewWindow ? AUX_WINDOW_GROUP : this.group;
 			this.editorService.openEditor({
-				resource: browserUri,
+				resource: URI.from(resource),
 				options: {
 					pinned: true,
-					inactive: background
+					inactive: location === BrowserNewPageLocation.Background,
+					auxiliary: {
+						bounds: position,
+						compact: true
+					}
 				}
-			}, this.group);
+			}, targetGroup);
 		}));
 
 		this._inputDisposables.add(this.overlayManager!.onDidChangeOverlayState(() => {
@@ -398,16 +416,11 @@ export class BrowserEditor extends EditorPane {
 				this.layoutBrowserContainer();
 			}
 		}));
-		// Capture screenshot periodically (once per second) to keep background updated
-		this._inputDisposables.add(disposableWindowInterval(
-			this.window,
-			() => this.capturePlaceholderSnapshot(),
-			1000
-		));
 
 		this.updateErrorDisplay();
 		this.layoutBrowserContainer();
-		await this._model.setVisible(this.shouldShowView);
+		this.updateVisibility();
+		this.doScreenshot();
 	}
 
 	protected override setEditorVisible(visible: boolean): void {
@@ -442,14 +455,26 @@ export class BrowserEditor extends EditorPane {
 
 		if (this._model) {
 			const show = this.shouldShowView;
-			void this._model.setVisible(show);
-			if (
-				show &&
-				this._browserContainer.ownerDocument.hasFocus() &&
-				this._browserContainer.ownerDocument.activeElement === this._browserContainer
-			) {
-				// If the editor is focused, ensure the browser view also gets focus
-				void this._model.focus();
+			if (show === this._model.visible) {
+				return;
+			}
+
+			if (show) {
+				this._model.setVisible(true);
+				if (
+					this._browserContainer.ownerDocument.hasFocus() &&
+					this._browserContainer.ownerDocument.activeElement === this._browserContainer
+				) {
+					// If the editor is focused, ensure the browser view also gets focus
+					void this._model.focus();
+				}
+			} else {
+				this.doScreenshot();
+
+				// Hide the browser view just before the next render.
+				// This attempts to give the screenshot some time to be captured and displayed.
+				// If we hide immediately it is more likely to flicker while the old screenshot is still visible.
+				this.window.requestAnimationFrame(() => this._model?.setVisible(false));
 			}
 		}
 	}
@@ -575,10 +600,15 @@ export class BrowserEditor extends EditorPane {
 	}
 
 	/**
-	 * Show the find widget
+	 * Show the find widget, optionally pre-populated with selected text from the browser view
 	 */
-	showFind(): void {
-		this._findWidget.value.reveal();
+	async showFind(): Promise<void> {
+		// Get selected text from the browser view to pre-populate the search box.
+		const selectedText = await this._model?.getSelectedText();
+
+		// Only use the selected text if it doesn't contain newlines (single line selection)
+		const textToReveal = selectedText && !/[\r\n]/.test(selectedText) ? selectedText : undefined;
+		this._findWidget.value.reveal(textToReveal);
 		this._findWidget.value.layout(this._findWidgetContainer.clientWidth);
 	}
 
@@ -780,17 +810,35 @@ export class BrowserEditor extends EditorPane {
 		}
 	}
 
-	/**
-	 * Capture a screenshot of the current browser view to use as placeholder background
-	 */
-	private async capturePlaceholderSnapshot(): Promise<void> {
-		if (this._model && !this._overlayVisible) {
-			try {
-				const buffer = await this._model.captureScreenshot({ quality: 80 });
-				this.setBackgroundImage(buffer);
-			} catch (error) {
-				this.logService.error('BrowserEditor.capturePlaceholderSnapshot: Failed to capture screenshot', error);
-			}
+	private async doScreenshot(): Promise<void> {
+		if (!this._model) {
+			return;
+		}
+
+		// Cancel any existing timeout
+		this.cancelScheduledScreenshot();
+
+		// Only take screenshots if the model is visible
+		if (!this._model.visible) {
+			return;
+		}
+
+		try {
+			// Capture screenshot and set as background image
+			const screenshot = await this._model.captureScreenshot({ quality: 80 });
+			this.setBackgroundImage(screenshot);
+		} catch (error) {
+			this.logService.error('Failed to capture browser view screenshot', error);
+		}
+
+		// Schedule next screenshot in 1 second
+		this._screenshotTimeout = setTimeout(() => this.doScreenshot(), 1000);
+	}
+
+	private cancelScheduledScreenshot(): void {
+		if (this._screenshotTimeout) {
+			clearTimeout(this._screenshotTimeout);
+			this._screenshotTimeout = undefined;
 		}
 	}
 
@@ -858,6 +906,9 @@ export class BrowserEditor extends EditorPane {
 			this._elementSelectionCts.dispose(true);
 			this._elementSelectionCts = undefined;
 		}
+
+		// Cancel any scheduled screenshots
+		this.cancelScheduledScreenshot();
 
 		// Clear find widget model
 		this._findWidget.rawValue?.setModel(undefined);
