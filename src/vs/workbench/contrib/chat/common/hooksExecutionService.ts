@@ -5,7 +5,7 @@
 
 import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
 import { URI } from '../../../../base/common/uri.js';
-import { HookTypeValue, IChatRequestHooks, IHookCommand } from './promptSyntax/hookSchema.js';
+import { HookType, HookTypeValue, IChatRequestHooks, IHookCommand } from './promptSyntax/hookSchema.js';
 import { IDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
@@ -13,9 +13,65 @@ import { StopWatch } from '../../../../base/common/stopwatch.js';
 import { Extensions, IOutputChannelRegistry, IOutputService } from '../../../services/output/common/output.js';
 import { Registry } from '../../../../platform/registry/common/platform.js';
 import { localize } from '../../../../nls.js';
+import { vEnum, vObj, vOptionalProp, vString } from '../../../../base/common/validation.js';
 
 export const hooksOutputChannelId = 'hooksExecution';
 const hooksOutputChannelLabel = localize('hooksExecutionChannel', "Hooks");
+
+//#region Hook Input Types
+
+/**
+ * Common properties added to all hook inputs by the execution service.
+ * These are built internally when executing hooks - callers don't provide them.
+ */
+export interface ICommonHookInput {
+	readonly timestamp: string;
+	readonly cwd: string;
+	readonly sessionId: string;
+	readonly hookEventName: string;
+}
+
+//#endregion
+
+//#region PreToolUse Hook Types
+
+/**
+ * Input provided by the caller when invoking the preToolUse hook.
+ * This is the minimal set of data that the tool service knows about.
+ */
+export interface IPreToolUseCallerInput {
+	readonly toolName: string;
+	readonly toolArgs: unknown;
+}
+
+/**
+ * Full input passed to the preToolUse hook.
+ * Combines the caller input with common hook properties.
+ */
+export interface IPreToolUseHookInput extends ICommonHookInput {
+	readonly toolName: string;
+	readonly toolArgs: unknown;
+}
+
+/**
+ * Valid permission decisions for preToolUse hooks.
+ */
+export type PreToolUsePermissionDecision = 'allow' | 'deny';
+
+/**
+ * Output from the preToolUse hook.
+ */
+export interface IPreToolUseHookOutput {
+	readonly permissionDecision: PreToolUsePermissionDecision;
+	readonly permissionDecisionReason?: string;
+}
+
+const preToolUseOutputValidator = vObj({
+	permissionDecision: vEnum('allow', 'deny'),
+	permissionDecisionReason: vOptionalProp(vString()),
+});
+
+//#endregion
 
 export const enum HookResultKind {
 	Success = 1,
@@ -64,6 +120,13 @@ export interface IHooksExecutionService {
 	 * Execute hooks of the given type for the given session
 	 */
 	executeHook(hookType: HookTypeValue, sessionResource: URI, options?: IHooksExecutionOptions): Promise<IHookResult[]>;
+
+	/**
+	 * Execute preToolUse hooks with typed input and validated output.
+	 * The execution service builds the full hook input from the caller input plus session context.
+	 * Output is optional, but if provided, it must conform to the expected schema.
+	 */
+	executePreToolUseHook(sessionResource: URI, input: IPreToolUseCallerInput, token?: CancellationToken): Promise<IPreToolUseHookOutput | undefined>;
 }
 
 export class HooksExecutionService implements IHooksExecutionService {
@@ -99,7 +162,7 @@ export class HooksExecutionService implements IHooksExecutionService {
 		this._ensureOutputChannel();
 		const channel = this._outputService.getChannel(hooksOutputChannelId);
 		if (channel) {
-			channel.append(`[${new Date().toISOString()}] [#${requestId}] [${hookType}] ${message}\n`);
+			channel.append(`${new Date().toISOString()} [#${requestId}] [${hookType}] ${message}\n`);
 		}
 	}
 
@@ -107,26 +170,40 @@ export class HooksExecutionService implements IHooksExecutionService {
 		requestId: number,
 		hookType: HookTypeValue,
 		hookCommand: IHookCommand,
-		input: unknown,
+		sessionResource: URI,
+		callerInput: unknown,
 		token: CancellationToken
 	): Promise<IHookResult> {
+		// Build the common hook input properties
+		const commonInput: ICommonHookInput = {
+			timestamp: new Date().toISOString(),
+			cwd: hookCommand.cwd?.fsPath ?? '',
+			sessionId: sessionResource.toString(),
+			hookEventName: hookType,
+		};
+
+		// Merge common properties with caller-specific input
+		const fullInput = callerInput !== undefined && callerInput !== null && typeof callerInput === 'object'
+			? { ...commonInput, ...callerInput }
+			: commonInput;
+
 		const hookCommandJson = JSON.stringify({
 			...hookCommand,
 			cwd: hookCommand.cwd?.fsPath
 		});
 		this._log(requestId, hookType, `Running: ${hookCommandJson}`);
-		if (input !== undefined) {
-			this._log(requestId, hookType, `Input: ${JSON.stringify(input)}`);
-		}
+		// Log input with toolArgs truncated to avoid excessively long logs
+		const inputForLog = { ...fullInput as object, toolArgs: '...' };
+		this._log(requestId, hookType, `Input: ${JSON.stringify(inputForLog)}`);
 
 		const sw = StopWatch.create();
 		try {
-			const result = await this._proxy!.runHookCommand(hookCommand, input, token);
-			this._logResult(requestId, hookType, result, sw.elapsed());
+			const result = await this._proxy!.runHookCommand(hookCommand, fullInput, token);
+			this._logResult(requestId, hookType, result, Math.round(sw.elapsed()));
 			return result;
 		} catch (err) {
 			const errMessage = err instanceof Error ? err.message : String(err);
-			this._log(requestId, hookType, `Error in ${sw.elapsed()}ms: ${errMessage}`);
+			this._log(requestId, hookType, `Error in ${Math.round(sw.elapsed())}ms: ${errMessage}`);
 			return { kind: HookResultKind.Error, result: errMessage };
 		}
 	}
@@ -178,10 +255,43 @@ export class HooksExecutionService implements IHooksExecutionService {
 
 		const results: IHookResult[] = [];
 		for (const hookCommand of hookCommands) {
-			const result = await this._runSingleHook(requestId, hookType, hookCommand, options?.input, token);
+			const result = await this._runSingleHook(requestId, hookType, hookCommand, sessionResource, options?.input, token);
 			results.push(result);
 		}
 
 		return results;
+	}
+
+	async executePreToolUseHook(sessionResource: URI, input: IPreToolUseCallerInput, token?: CancellationToken): Promise<IPreToolUseHookOutput | undefined> {
+		// Pass the caller input directly - common properties are added in _runSingleHook
+		const results = await this.executeHook(HookType.PreToolUse, sessionResource, {
+			input,
+			token: token ?? CancellationToken.None,
+		});
+
+		// Collect all valid outputs - "any deny wins" for security
+		let lastAllowOutput: IPreToolUseHookOutput | undefined;
+		for (const result of results) {
+			if (result.kind === HookResultKind.Success && typeof result.result === 'object') {
+				const validationResult = preToolUseOutputValidator.validate(result.result);
+				if (!validationResult.error) {
+					const output = validationResult.content;
+					// If any hook denies, return immediately with that denial
+					if (output.permissionDecision === 'deny') {
+						return output;
+					}
+					// Track the last allow in case we need to return it
+					if (output.permissionDecision === 'allow') {
+						lastAllowOutput = output;
+					}
+				} else {
+					// If validation fails, log a warning and continue to next result
+					this._logService.warn(`[HooksExecutionService] preToolUse hook output validation failed: ${validationResult.error.message}`);
+				}
+			}
+		}
+
+		// Return the last allow output, or undefined if no valid outputs
+		return lastAllowOutput;
 	}
 }
