@@ -5,6 +5,8 @@
 
 import * as dom from '../../../../../../base/browser/dom.js';
 import { StandardKeyboardEvent } from '../../../../../../base/browser/keyboardEvent.js';
+import { getBaseLayerHoverDelegate } from '../../../../../../base/browser/ui/hover/hoverDelegate2.js';
+import { getDefaultHoverDelegate } from '../../../../../../base/browser/ui/hover/hoverDelegateFactory.js';
 import { Emitter, Event } from '../../../../../../base/common/event.js';
 import { KeyCode } from '../../../../../../base/common/keyCodes.js';
 import { Disposable, DisposableStore, MutableDisposable } from '../../../../../../base/common/lifecycle.js';
@@ -146,7 +148,11 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 		// Register keyboard navigation - handle Enter on text inputs and freeform textareas
 		interactiveStore.add(dom.addDisposableListener(this.domNode, dom.EventType.KEY_DOWN, (e: KeyboardEvent) => {
 			const event = new StandardKeyboardEvent(e);
-			if (event.keyCode === KeyCode.Enter && !event.shiftKey) {
+			if (event.keyCode === KeyCode.Escape && this.carousel.allowSkip) {
+				e.preventDefault();
+				e.stopPropagation();
+				this.ignore();
+			} else if (event.keyCode === KeyCode.Enter && !event.shiftKey) {
 				// Handle Enter key for text inputs and freeform textareas, not radio/checkbox or buttons
 				// Buttons have their own Enter/Space handling via Button class
 				const target = e.target as HTMLElement;
@@ -157,6 +163,8 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 					e.stopPropagation();
 					this.handleNext();
 				}
+			} else if ((event.ctrlKey || event.metaKey) && (event.keyCode === KeyCode.Backspace || event.keyCode === KeyCode.Delete)) {
+				e.stopPropagation();
 			}
 		}));
 
@@ -373,6 +381,8 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 				? questionText
 				: questionText.value;
 
+			title.setAttribute('aria-label', messageContent);
+
 			// Check for subtitle in parentheses at the end
 			const parenMatch = messageContent.match(/^(.+?)\s*(\([^)]+\))\s*$/);
 			if (parenMatch) {
@@ -543,6 +553,7 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 			const listItem = dom.$('.chat-question-list-item');
 			listItem.setAttribute('role', 'option');
 			listItem.setAttribute('aria-selected', String(isSelected));
+			listItem.setAttribute('aria-label', localize('chat.questionCarousel.optionLabel', "Option {0}: {1}", index + 1, option.label));
 			listItem.id = `option-${question.id}-${index}`;
 			listItem.tabIndex = -1;
 
@@ -577,6 +588,8 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 			if (isSelected) {
 				listItem.classList.add('selected');
 			}
+
+			this._inputBoxes.add(getBaseLayerHoverDelegate().setupManagedHover(getDefaultHoverDelegate('mouse'), listItem, option.label));
 
 			// Click handler
 			this._inputBoxes.add(dom.addDisposableListener(listItem, dom.EventType.CLICK, (e: MouseEvent) => {
@@ -723,6 +736,7 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 			const listItem = dom.$('.chat-question-list-item.multi-select');
 			listItem.setAttribute('role', 'option');
 			listItem.setAttribute('aria-selected', String(isChecked));
+			listItem.setAttribute('aria-label', localize('chat.questionCarousel.optionLabel', "Option {0}: {1}", index + 1, option.label));
 			listItem.id = `option-${question.id}-${index}`;
 			listItem.tabIndex = -1;
 
@@ -776,6 +790,8 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 					checkbox.domNode.click();
 				}
 			}));
+
+			this._inputBoxes.add(getBaseLayerHoverDelegate().setupManagedHover(getDefaultHoverDelegate('mouse'), listItem, option.label));
 
 			selectContainer.appendChild(listItem);
 			checkboxes.push(checkbox);
@@ -1053,7 +1069,11 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 		}
 	}
 
-	hasSameContent(other: IChatRendererContent, _followingContent: IChatRendererContent[], _element: ChatTreeItem): boolean {
+	hasSameContent(other: IChatRendererContent, _followingContent: IChatRendererContent[], element: ChatTreeItem): boolean {
+		// does not have same content when it is not skipped and is active and we stop the response
+		if (!this._isSkipped && !this.carousel.isUsed && isResponseVM(element) && element.isComplete) {
+			return false;
+		}
 		return other.kind === 'questionCarousel' && other === this.carousel;
 	}
 
