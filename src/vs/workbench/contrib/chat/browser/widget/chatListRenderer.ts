@@ -648,6 +648,7 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		ChatContextKeys.isResponse.bindTo(templateData.contextKeyService).set(isResponseVM(element));
 		ChatContextKeys.itemId.bindTo(templateData.contextKeyService).set(element.id);
 		ChatContextKeys.isRequest.bindTo(templateData.contextKeyService).set(isRequestVM(element));
+		ChatContextKeys.isPendingRequest.bindTo(templateData.contextKeyService).set(isRequestVM(element) && !!element.pendingKind);
 		ChatContextKeys.responseDetectedAgentCommand.bindTo(templateData.contextKeyService).set(isResponseVM(element) && element.agentOrSlashCommandDetected);
 		if (isResponseVM(element)) {
 			ChatContextKeys.responseSupportsIssueReporting.bindTo(templateData.contextKeyService).set(!!element.agent?.metadata.supportIssueReporting);
@@ -698,11 +699,12 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		templateData.checkpointToolbar.context = element;
 		const checkpointEnabled = this.configService.getValue<boolean>(ChatConfiguration.CheckpointsEnabled)
 			&& (this.rendererOptions.restorable ?? true);
+		const isPendingRequest = isRequestVM(element) && !!element.pendingKind;
 
-		templateData.checkpointContainer.classList.toggle('hidden', isResponseVM(element) || !(checkpointEnabled));
+		templateData.checkpointContainer.classList.toggle('hidden', isResponseVM(element) || isPendingRequest || !(checkpointEnabled));
 
-		// Only show restore container when we have a checkpoint and not editing
-		const shouldShowRestore = this.viewModel?.model.checkpoint && !this.viewModel?.editing && (index === this.delegate.getListLength() - 1);
+		// Only show restore container when we have a checkpoint and not editing, and not a pending request
+		const shouldShowRestore = this.viewModel?.model.checkpoint && !this.viewModel?.editing && (index === this.delegate.getListLength() - 1) && !isPendingRequest;
 		templateData.checkpointRestoreContainer.classList.toggle('hidden', !(shouldShowRestore && checkpointEnabled));
 
 		const editing = element.id === this.viewModel?.editing?.id;
