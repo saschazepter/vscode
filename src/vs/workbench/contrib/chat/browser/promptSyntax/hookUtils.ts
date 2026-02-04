@@ -171,8 +171,9 @@ export async function parseAllHookFiles(
 					});
 				}
 			}
-		} catch {
-			// Skip files that can't be parsed
+		} catch (error) {
+			// Skip files that can't be parsed, but surface the failure for diagnostics
+			console.error('Failed to read or parse hook file', hookFile.uri.toString(), error);
 		}
 	}
 
