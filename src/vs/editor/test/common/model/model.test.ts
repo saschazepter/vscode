@@ -121,7 +121,7 @@ suite('Editor Model - Model', () => {
 		const e = withEventCapturing(() => {
 			thisModel.applyEdits([EditOperation.insert(new Position(1, 1), '')]);
 		});
-		assert.deepStrictEqual(e, null, 'wast no expecting event');
+		assert.deepStrictEqual(e, null, 'was not expecting event');
 	});
 
 	test('model insert text without newline eventing', () => {
