@@ -91,15 +91,18 @@
 	font-size: 13px;
 }
 
+
+
+
 .ai-customization-management-editor .section-count {
 	flex-shrink: 0;
-	font-size: 12px;
-	color: var(--vscode-descriptionForeground);
-	padding: 0 6px;
+	font-size: 10px;
+	padding: 0 4px;
 	background-color: var(--vscode-badge-background);
 	color: var(--vscode-badge-foreground);
-	border-radius: 10px;
-	min-width: 18px;
+	border-radius: 8px;
+	border: 1px solid transparent;
+	min-width: 14px;
 	text-align: center;
 }
 
@@ -281,6 +284,7 @@
 	gap: 8px;
 }
 
+
 .ai-customization-overview .overview-section {
 	display: flex;
 	align-items: center;
@@ -326,14 +330,17 @@
 	white-space: nowrap;
 }
 
+
+
 .ai-customization-overview .overview-section .section-count {
 	flex-shrink: 0;
-	font-size: 11px;
+	font-size: 9px;
 	font-weight: 600;
-	padding: 2px 8px;
+	padding: 1px 5px;
 	background-color: var(--vscode-badge-background);
 	color: var(--vscode-badge-foreground);
-	border-radius: 10px;
-	min-width: 20px;
+	border-radius: 8px;
+	border: 1px solid transparent;
+	min-width: 14px;
 	text-align: center;
 }
