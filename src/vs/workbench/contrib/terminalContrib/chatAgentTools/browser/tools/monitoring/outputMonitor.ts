@@ -547,12 +547,12 @@ export class OutputMonitor extends Disposable implements IOutputMonitor {
 		if (!suggestedOption) {
 			return;
 		}
-		const parsed = suggestedOption.replace(/['"`]/g, '').trim();
-		const index = confirmationPrompt.options.indexOf(parsed);
-		const validOption = confirmationPrompt.options.find(opt => parsed === opt.replace(/['"`]/g, '').trim());
-		if (!validOption || index === -1) {
+		const match = matchTerminalPromptOption(confirmationPrompt.options, suggestedOption);
+		if (!match.option || match.index === -1) {
 			return;
 		}
+		const validOption = match.option;
+		const index = match.index;
 		let sentToTerminal = false;
 		if (this._configurationService.getValue(TerminalChatAgentToolsSettingId.AutoReplyToPrompts)) {
 			await this._execution.instance.sendText(validOption, true);
@@ -827,6 +827,39 @@ type SuggestedOption = string | { description: string; option: string };
 interface ISuggestedOptionResult {
 	suggestedOption?: SuggestedOption;
 	sentToTerminal?: boolean;
+}
+
+export function matchTerminalPromptOption(options: readonly string[], suggestedOption: string): { option: string | undefined; index: number } {
+	const normalize = (value: string) => value.replace(/['"`]/g, '').trim().replace(/[.,:;]+$/, '');
+
+	const normalizedSuggestion = normalize(suggestedOption);
+	if (!normalizedSuggestion) {
+		return { option: undefined, index: -1 };
+	}
+
+	const candidates: string[] = [normalizedSuggestion];
+	const firstWhitespaceToken = normalizedSuggestion.split(/\s+/)[0];
+	if (firstWhitespaceToken && firstWhitespaceToken !== normalizedSuggestion) {
+		candidates.push(firstWhitespaceToken);
+	}
+	const firstAlphaNum = normalizedSuggestion.match(/[A-Za-z0-9]+/);
+	if (firstAlphaNum?.[0] && firstAlphaNum[0] !== normalizedSuggestion && firstAlphaNum[0] !== firstWhitespaceToken) {
+		candidates.push(firstAlphaNum[0]);
+	}
+
+	for (const candidate of candidates) {
+		const exactIndex = options.findIndex(opt => normalize(opt) === candidate);
+		if (exactIndex !== -1) {
+			return { option: options[exactIndex], index: exactIndex };
+		}
+		const lowerCandidate = candidate.toLowerCase();
+		const ciIndex = options.findIndex(opt => normalize(opt).toLowerCase() === lowerCandidate);
+		if (ciIndex !== -1) {
+			return { option: options[ciIndex], index: ciIndex };
+		}
+	}
+
+	return { option: undefined, index: -1 };
 }
 
 export function detectsInputRequiredPattern(cursorLine: string): boolean {
