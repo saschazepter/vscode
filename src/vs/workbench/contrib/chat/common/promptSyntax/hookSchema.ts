@@ -169,7 +169,7 @@ export const hookFileSchema: IJSONSchema = {
 		hooks: {
 			type: 'object',
 			description: nls.localize('hookFile.hooks', 'Hook definitions organized by type.'),
-			additionalProperties: false,
+			additionalProperties: true,
 			properties: {
 				SessionStart: {
 					...hookArraySchema,

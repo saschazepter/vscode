@@ -976,15 +976,9 @@ export class PromptsService extends Disposable implements IPromptsService {
 		}
 
 		// Build the result, only including hook types that have entries
-		const result: IChatRequestHooks = {
-			...(collectedHooks[HookType.SessionStart].length > 0 && { [HookType.SessionStart]: collectedHooks[HookType.SessionStart] }),
-			...(collectedHooks[HookType.UserPromptSubmit].length > 0 && { [HookType.UserPromptSubmit]: collectedHooks[HookType.UserPromptSubmit] }),
-			...(collectedHooks[HookType.PreToolUse].length > 0 && { [HookType.PreToolUse]: collectedHooks[HookType.PreToolUse] }),
-			...(collectedHooks[HookType.PostToolUse].length > 0 && { [HookType.PostToolUse]: collectedHooks[HookType.PostToolUse] }),
-			...(collectedHooks[HookType.SubagentStart].length > 0 && { [HookType.SubagentStart]: collectedHooks[HookType.SubagentStart] }),
-			...(collectedHooks[HookType.SubagentStop].length > 0 && { [HookType.SubagentStop]: collectedHooks[HookType.SubagentStop] }),
-			...(collectedHooks[HookType.Stop].length > 0 && { [HookType.Stop]: collectedHooks[HookType.Stop] }),
-		};
+		const result: IChatRequestHooks = Object.fromEntries(
+			Object.entries(collectedHooks).filter(([_, commands]) => commands.length > 0)
+		) as IChatRequestHooks;
 
 		this.logger.trace(`[PromptsService] Collected hooks: ${JSON.stringify(Object.keys(result))}`);
 		return result;
