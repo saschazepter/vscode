@@ -24,6 +24,9 @@ import { CHAT_CATEGORY, CHAT_CONFIG_MENU_ID } from './chatActions.js';
 import { ChatViewId } from '../chat.js';
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
 import { IWorkspaceContextService, IWorkspaceFolder } from '../../../../../platform/workspace/common/workspace.js';
+import { HOOK_TYPES, HookType } from '../../common/promptSyntax/hookSchema.js';
+import { IPathService } from '../../../../services/path/common/pathService.js';
+import { parseAllHookFiles, IParsedHook } from '../promptSyntax/hookUtils.js';
 
 /**
  * URL encodes path segments for use in markdown links.
@@ -103,6 +106,8 @@ export interface ITypeStatusInfo {
 	paths: IPathInfo[];
 	files: IFileStatusInfo[];
 	enabled: boolean;
+	/** For hooks only: parsed hooks grouped by lifecycle */
+	parsedHooks?: IParsedHook[];
 }
 
 /**
@@ -144,6 +149,7 @@ export function registerChatCustomizationDiagnosticsAction() {
 
 			const token = CancellationToken.None;
 			const workspaceFolders = workspaceContextService.getWorkspace().folders;
+			const pathService = accessor.get(IPathService);
 
 			// Collect status for each type
 			const statusInfos: ITypeStatusInfo[] = [];
@@ -164,7 +170,11 @@ export function registerChatCustomizationDiagnosticsAction() {
 			const skillsStatus = await collectSkillsStatus(promptsService, configurationService, fileService, token);
 			statusInfos.push(skillsStatus);
 
-			// 5. Special files (AGENTS.md, copilot-instructions.md)
+			// 5. Hooks
+			const hooksStatus = await collectHooksStatus(promptsService, fileService, pathService, workspaceContextService, token);
+			statusInfos.push(hooksStatus);
+
+			// 6. Special files (AGENTS.md, copilot-instructions.md)
 			const specialFilesStatus = await collectSpecialFilesStatus(promptsService, configurationService, token);
 
 			// Generate the markdown output
@@ -272,6 +282,53 @@ async function collectSkillsStatus(
 	const files = discoveryInfo.files.map(convertDiscoveryResultToFileStatus);
 
 	return { type, paths, files, enabled };
+}
+
+/**
+ * Collects status for hook files.
+ */
+async function collectHooksStatus(
+	promptsService: IPromptsService,
+	fileService: IFileService,
+	pathService: IPathService,
+	workspaceContextService: IWorkspaceContextService,
+	token: CancellationToken
+): Promise<ITypeStatusInfo> {
+	const type = PromptsType.hook;
+	const enabled = true; // Hooks are always enabled
+
+	// Get resolved source folders using the shared path resolution logic
+	const resolvedFolders = await promptsService.getResolvedSourceFolders(type);
+	const paths = await convertResolvedFoldersToPathInfo(resolvedFolders, fileService);
+
+	// Get discovery info from the service (handles all duplicate detection and error tracking)
+	const discoveryInfo = await promptsService.getPromptDiscoveryInfo(type, token);
+	const files = discoveryInfo.files.map(convertDiscoveryResultToFileStatus);
+
+	// Parse hook files to extract individual hooks grouped by lifecycle
+	const parsedHooks = await parseHookFiles(promptsService, fileService, pathService, workspaceContextService, token);
+
+	return { type, paths, files, enabled, parsedHooks };
+}
+
+/**
+ * Parses all hook files and extracts individual hooks.
+ */
+async function parseHookFiles(
+	promptsService: IPromptsService,
+	fileService: IFileService,
+	pathService: IPathService,
+	workspaceContextService: IWorkspaceContextService,
+	token: CancellationToken
+): Promise<IParsedHook[]> {
+	// Get workspace root and user home for path resolution
+	const workspaceFolder = workspaceContextService.getWorkspace().folders[0];
+	const workspaceRootUri = workspaceFolder?.uri;
+	const userHomeUri = await pathService.userHome();
+	const userHome = userHomeUri.fsPath ?? userHomeUri.path;
+
+	// Use the shared helper
+	return parseAllHookFiles(promptsService, fileService, workspaceRootUri, userHome, workspaceFolder, token);
 }
 
 /**
@@ -446,13 +503,19 @@ export function formatStatusOutput(
 
 		lines.push(`**${typeName}**${enabledStatus}<br>`);
 
-		// Show stats line - use "skills" for skills type, "files" for others
+		// Show stats line - use "skills" for skills type, "hooks" for hooks type, "files" for others
 		const statsParts: string[] = [];
 		if (loadedCount > 0) {
 			if (info.type === PromptsType.skill) {
 				statsParts.push(loadedCount === 1
 					? nls.localize('status.skillLoaded', '1 skill loaded')
 					: nls.localize('status.skillsLoaded', '{0} skills loaded', loadedCount));
+			} else if (info.type === PromptsType.hook && info.parsedHooks) {
+				// For hooks, show count of individual hooks instead of files
+				const hookCount = info.parsedHooks.length;
+				statsParts.push(hookCount === 1
+					? nls.localize('status.hookLoaded', '1 hook loaded')
+					: nls.localize('status.hooksLoaded', '{0} hooks loaded', hookCount));
 			} else {
 				statsParts.push(loadedCount === 1
 					? nls.localize('status.fileLoaded', '1 file loaded')
@@ -608,6 +671,42 @@ export function formatStatusOutput(
 			}
 		}
 
+		// Special handling for hooks - display grouped by lifecycle
+		if (info.type === PromptsType.hook && info.parsedHooks && info.parsedHooks.length > 0) {
+			// Group hooks by lifecycle (hook type)
+			const hooksByType = new Map<HookType, IParsedHook[]>();
+			for (const hook of info.parsedHooks) {
+				const existing = hooksByType.get(hook.hookType) ?? [];
+				existing.push(hook);
+				hooksByType.set(hook.hookType, existing);
+			}
+
+			// Sort hook types by their position in HOOK_TYPES
+			const sortedHookTypes = Array.from(hooksByType.keys()).sort((a, b) => {
+				const indexA = HOOK_TYPES.findIndex(h => h.id === a);
+				const indexB = HOOK_TYPES.findIndex(h => h.id === b);
+				return indexA - indexB;
+			});
+
+			// Display hooks grouped by lifecycle
+			for (let typeIdx = 0; typeIdx < sortedHookTypes.length; typeIdx++) {
+				const hookType = sortedHookTypes[typeIdx];
+				const hooks = hooksByType.get(hookType)!;
+				const hookTypeMeta = HOOK_TYPES.find(h => h.id === hookType)!;
+
+				lines.push(`${hookTypeMeta.label}<br>`);
+
+				for (let i = 0; i < hooks.length; i++) {
+					const hook = hooks[i];
+					const isLast = i === hooks.length - 1;
+					const prefix = isLast ? TREE_END : TREE_BRANCH;
+					const filePath = getRelativePath(hook.fileUri, workspaceFolders);
+					lines.push(`${prefix} \`${hook.commandLabel}\` - [${hook.filePath}](${filePath})<br>`);
+				}
+			}
+			hasContent = true;
+		}
+
 		if (!hasContent && info.enabled) {
 			lines.push(`*${nls.localize('status.noFilesLoaded', 'No files loaded')}*`);
 		}
@@ -639,6 +738,8 @@ function getTypeName(type: PromptsType): string {
 			return nls.localize('status.type.prompts', 'Prompt Files');
 		case PromptsType.skill:
 			return nls.localize('status.type.skills', 'Skills');
+		case PromptsType.hook:
+			return nls.localize('status.type.hooks', 'Hooks');
 		default:
 			return type;
 	}
