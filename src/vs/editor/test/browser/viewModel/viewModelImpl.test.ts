@@ -101,7 +101,7 @@ suite('ViewModel', () => {
 		const ed1 = disposables.add(instantiateTestCodeEditor(instantiationService, model));
 		disposables.add(instantiateTestCodeEditor(instantiationService, model));
 
-		// Add a nasy listener which modifies the model during the model change event
+		// Add a nasty listener which modifies the model during the model change event
 		let isFirst = true;
 		disposables.add(ed1.onDidChangeModelContent((e) => {
 			if (isFirst) {
