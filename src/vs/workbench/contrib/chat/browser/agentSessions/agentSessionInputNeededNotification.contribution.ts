@@ -30,6 +30,7 @@ MenuRegistry.appendMenuItem(MenuId.CommandCenter, {
 	},
 	when: ContextKeyExpr.and(
 		ChatContextKeys.enabled,
+		ChatContextKeys.hasAgentSessionsNeedingInput,
 		ContextKeyExpr.has(`config.${ChatConfiguration.AgentSessionInputNeededNotification}`)
 	),
 	order: 10003 // to the right of agents control

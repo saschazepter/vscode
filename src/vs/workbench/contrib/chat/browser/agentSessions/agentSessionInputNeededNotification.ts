@@ -23,6 +23,8 @@ import { ChatConfiguration } from '../../common/constants.js';
 import { IChatWidgetService } from '../chat.js';
 import { renderAsPlaintext } from '../../../../../base/browser/markdownRenderer.js';
 import { IChatEntitlementService } from '../../../../services/chat/common/chatEntitlementService.js';
+import { IContextKey, IContextKeyService } from '../../../../../platform/contextkey/common/contextkey.js';
+import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
 
 /**
  * Widget that displays a notification badge in the command center when agent sessions need user input.
@@ -218,29 +220,60 @@ export class AgentSessionInputNeededNotificationWidget extends BaseActionViewIte
 export class AgentSessionInputNeededNotificationRendering extends Disposable implements IWorkbenchContribution {
 	static readonly ID = 'chat.agentSessionInputNeededNotification';
 
+	private readonly _hasSessionsNeedingInputContext: IContextKey<boolean>;
+
 	constructor(
 		@IInstantiationService instantiationService: IInstantiationService,
 		@IConfigurationService configurationService: IConfigurationService,
 		@IChatEntitlementService chatEntitlementService: IChatEntitlementService,
-		@IAgentSessionsService agentSessionsService: IAgentSessionsService,
-		@IChatWidgetService chatWidgetService: IChatWidgetService,
+		@IAgentSessionsService private readonly agentSessionsService: IAgentSessionsService,
+		@IChatWidgetService private readonly chatWidgetService: IChatWidgetService,
 		@IHoverService hoverService: IHoverService,
+		@IContextKeyService contextKeyService: IContextKeyService,
 	) {
 		super();
+
+		// Create context key for controlling visibility
+		this._hasSessionsNeedingInputContext = ChatContextKeys.hasAgentSessionsNeedingInput.bindTo(contextKeyService);
 
 		// Check if AI features are hidden - if so, don't show notification
 		if (chatEntitlementService.sentiment.hidden) {
 			return;
 		}
 
-		// TODO: This implementation needs to be integrated with the command center
-		// For now, we'll set up the core logic without rendering
-		
+		// Update context key when sessions change
+		this._register(this.agentSessionsService.model.onDidChangeSessions(() => {
+			this._updateContextKey();
+		}));
+
+		// Update context key when chat widgets are added or backgrounded
+		this._register(this.chatWidgetService.onDidAddWidget(() => {
+			this._updateContextKey();
+		}));
+
+		this._register(this.chatWidgetService.onDidBackgroundSession(() => {
+			this._updateContextKey();
+		}));
+
+		// Initial update
+		this._updateContextKey();
+
 		// React to sentiment changes to hide UI if AI features become disabled
 		this._register(chatEntitlementService.onDidChangeSentiment(() => {
 			if (chatEntitlementService.sentiment.hidden) {
-				// Widget will be disposed and removed by workbench contribution lifecycle
+				this._hasSessionsNeedingInputContext.set(false);
 			}
 		}));
+	}
+
+	private _updateContextKey(): void {
+		// Get sessions needing input (excluding those with open widgets)
+		const attentionNeededSessions = this.agentSessionsService.model.sessions.filter(s =>
+			s.status === AgentSessionStatus.NeedsInput &&
+			!s.isArchived() &&
+			!this.chatWidgetService.getWidgetBySessionResource(s.resource)
+		);
+
+		this._hasSessionsNeedingInputContext.set(attentionNeededSessions.length > 0);
 	}
 }
