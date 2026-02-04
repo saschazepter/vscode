@@ -379,6 +379,7 @@ export class ChangesViewPane extends ViewPane {
 
 			this.renderDisposables.add(autorun(reader => {
 				const { isSessionMenu } = topLevelStats.read(reader);
+				const sessionResource = this.activeSessionResource.read(reader);
 				reader.store.add(scopedInstantiationService.createInstance(
 					MenuWorkbenchButtonBar,
 					this.actionsContainer!,
@@ -386,7 +387,9 @@ export class ChangesViewPane extends ViewPane {
 					{
 						telemetrySource: 'changesView',
 						small: true,
-						menuOptions: { shouldForwardArgs: true },
+						menuOptions: isSessionMenu && sessionResource
+							? { args: [sessionResource] }
+							: { shouldForwardArgs: true },
 						buttonConfigProvider: (action) => {
 							if (action.id === 'chatEditing.viewChanges' || action.id === 'chatEditing.viewPreviousEdits' || action.id === 'chatEditing.viewAllSessionChanges') {
 								return { showIcon: true, showLabel: false, isSecondary: true };
