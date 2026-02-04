@@ -16,7 +16,7 @@ import { ActiveAuxiliaryContext, AuxiliaryBarFocusContext } from '../../../commo
 import { ACTIVITY_BAR_BADGE_BACKGROUND, ACTIVITY_BAR_BADGE_FOREGROUND, ACTIVITY_BAR_TOP_ACTIVE_BORDER, ACTIVITY_BAR_TOP_DRAG_AND_DROP_BORDER, ACTIVITY_BAR_TOP_FOREGROUND, ACTIVITY_BAR_TOP_INACTIVE_FOREGROUND, PANEL_ACTIVE_TITLE_BORDER, PANEL_ACTIVE_TITLE_FOREGROUND, PANEL_DRAG_AND_DROP_BORDER, PANEL_INACTIVE_TITLE_FOREGROUND, SIDE_BAR_BACKGROUND, SIDE_BAR_BORDER, SIDE_BAR_TITLE_BORDER, SIDE_BAR_FOREGROUND } from '../../../common/theme.js';
 import { IViewDescriptorService } from '../../../common/views.js';
 import { IExtensionService } from '../../../services/extensions/common/extensions.js';
-import { ActivityBarPosition, IWorkbenchLayoutService, LayoutSettings, Parts, Position } from '../../../services/layout/browser/layoutService.js';
+import { IWorkbenchLayoutService, Parts, Position } from '../../../services/layout/browser/layoutService.js';
 import { HoverPosition } from '../../../../base/browser/ui/hover/hoverWidget.js';
 import { IAction } from '../../../../base/common/actions.js';
 import { assertReturnsDefined } from '../../../../base/common/types.js';
@@ -25,15 +25,7 @@ import { AbstractPaneCompositePart, CompositeBarPosition } from '../../../browse
 import { ActionsOrientation } from '../../../../base/browser/ui/actionbar/actionbar.js';
 import { IPaneCompositeBarOptions } from '../../../browser/parts/paneCompositeBar.js';
 import { IMenuService } from '../../../../platform/actions/common/actions.js';
-import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { IHoverService } from '../../../../platform/hover/browser/hover.js';
-
-interface IAgentSessionAuxiliaryBarPartConfiguration {
-	position: ActivityBarPosition;
-
-	canShowLabels: boolean;
-	showLabels: boolean;
-}
 
 /**
  * Auxiliary bar part specifically for agent sessions workbench.
@@ -73,8 +65,6 @@ export class AgentSessionAuxiliaryBarPart extends AbstractPaneCompositePart {
 
 	readonly priority = LayoutPriority.Low;
 
-	private configuration: IAgentSessionAuxiliaryBarPartConfiguration;
-
 	constructor(
 		@INotificationService notificationService: INotificationService,
 		@IStorageService storageService: IStorageService,
@@ -88,7 +78,6 @@ export class AgentSessionAuxiliaryBarPart extends AbstractPaneCompositePart {
 		@IContextKeyService contextKeyService: IContextKeyService,
 		@IExtensionService extensionService: IExtensionService,
 		@IMenuService menuService: IMenuService,
-		@IConfigurationService private readonly configurationService: IConfigurationService
 	) {
 		super(
 			Parts.AUXILIARYBAR_PART,
@@ -118,35 +107,6 @@ export class AgentSessionAuxiliaryBarPart extends AbstractPaneCompositePart {
 			menuService,
 		);
 
-		this.configuration = this.resolveConfiguration();
-
-		this._register(configurationService.onDidChangeConfiguration(e => {
-			if (e.affectsConfiguration(LayoutSettings.ACTIVITY_BAR_LOCATION)) {
-				this.configuration = this.resolveConfiguration();
-				this.onDidChangeActivityBarLocation();
-			} else if (e.affectsConfiguration('workbench.secondarySideBar.showLabels')) {
-				this.configuration = this.resolveConfiguration();
-				this.updateCompositeBar(true);
-			}
-		}));
-	}
-
-	private resolveConfiguration(): IAgentSessionAuxiliaryBarPartConfiguration {
-		const position = this.configurationService.getValue<ActivityBarPosition>(LayoutSettings.ACTIVITY_BAR_LOCATION);
-
-		const canShowLabels = position !== ActivityBarPosition.TOP && position !== ActivityBarPosition.BOTTOM;
-		const showLabels = canShowLabels && this.configurationService.getValue('workbench.secondarySideBar.showLabels') !== false;
-
-		return { position, canShowLabels, showLabels };
-	}
-
-	private onDidChangeActivityBarLocation(): void {
-		this.updateCompositeBar();
-
-		const id = this.getActiveComposite()?.getId();
-		if (id) {
-			this.onTitleAreaUpdate(id);
-		}
 	}
 
 	override updateStyles(): void {
@@ -176,7 +136,7 @@ export class AgentSessionAuxiliaryBarPart extends AbstractPaneCompositePart {
 			pinnedViewContainersKey: AgentSessionAuxiliaryBarPart.pinnedViewsKey,
 			placeholderViewContainersKey: AgentSessionAuxiliaryBarPart.placeholdeViewContainersKey,
 			viewContainersWorkspaceStateKey: AgentSessionAuxiliaryBarPart.viewContainersWorkspaceStateKey,
-			icon: !this.configuration.showLabels,
+			icon: false,
 			orientation: ActionsOrientation.HORIZONTAL,
 			recomputeSizes: true,
 			activityHoverOptions: {
