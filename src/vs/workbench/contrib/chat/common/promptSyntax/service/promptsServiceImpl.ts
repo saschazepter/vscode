@@ -8,7 +8,7 @@ import { CancellationError } from '../../../../../../base/common/errors.js';
 import { Emitter, Event } from '../../../../../../base/common/event.js';
 import { Disposable, DisposableStore, IDisposable } from '../../../../../../base/common/lifecycle.js';
 import { ResourceMap, ResourceSet } from '../../../../../../base/common/map.js';
-import { basename, dirname, isEqual } from '../../../../../../base/common/resources.js';
+import { basename, dirname, isEqual, joinPath } from '../../../../../../base/common/resources.js';
 import { URI } from '../../../../../../base/common/uri.js';
 import { OffsetRange } from '../../../../../../editor/common/core/ranges/offsetRange.js';
 import { type ITextModel } from '../../../../../../editor/common/model.js';
@@ -27,7 +27,7 @@ import { ITelemetryService } from '../../../../../../platform/telemetry/common/t
 import { IUserDataProfileService } from '../../../../../services/userDataProfile/common/userDataProfile.js';
 import { IVariableReference } from '../../chatModes.js';
 import { PromptsConfig } from '../config/config.js';
-import { getCleanPromptName, IResolvedPromptFile, IResolvedPromptSourceFolder, PromptFileSource } from '../config/promptFileLocations.js';
+import { AGENT_MD_FILENAME, CLAUDE_LOCAL_MD_FILENAME, CLAUDE_MD_FILENAME, getCleanPromptName, IResolvedPromptFile, IResolvedPromptSourceFolder, PromptFileSource } from '../config/promptFileLocations.js';
 import { PROMPT_LANGUAGE_ID, PromptsType, getPromptsTypeForLanguageId } from '../promptTypes.js';
 import { PromptFilesLocator } from '../utils/promptFilesLocator.js';
 import { PromptFileParser, ParsedPromptFile, PromptHeaderAttributes } from '../promptFileParser.js';
@@ -651,10 +651,6 @@ export class PromptsService extends Disposable implements IPromptsService {
 		}
 	}
 
-	findAgentMDsInWorkspace(token: CancellationToken): Promise<URI[]> {
-		return this.fileLocator.findAgentMDsInWorkspace(token);
-	}
-
 	public async listAgentMDs(token: CancellationToken, includeNested: boolean): Promise<URI[]> {
 		const useAgentMD = this.configurationService.getValue(PromptsConfig.USE_AGENT_MD);
 		if (!useAgentMD) {
@@ -663,8 +659,25 @@ export class PromptsService extends Disposable implements IPromptsService {
 		if (includeNested) {
 			return await this.fileLocator.findAgentMDsInWorkspace(token);
 		} else {
-			return await this.fileLocator.findAgentMDsInWorkspaceRoots(token);
+			return await this.fileLocator.findFilesInWorkspaceRoots(AGENT_MD_FILENAME, undefined, token);
 		}
+	}
+
+	public async listClaudeMDs(token: CancellationToken): Promise<URI[]> {
+		// see https://code.claude.com/docs/en/memory
+		const useClaudeMD = this.configurationService.getValue(PromptsConfig.USE_CLAUDE_MD);
+		if (!useClaudeMD) {
+			return [];
+		}
+		const results: URI[] = [];
+		const userClaudeFolder = joinPath(this.userDataService.currentProfile.promptsHome, '.claude');
+		await Promise.all([
+			this.fileLocator.findFilesInWorkspaceRoots(CLAUDE_MD_FILENAME, undefined, token, results), // in workspace roots
+			this.fileLocator.findFilesInWorkspaceRoots(CLAUDE_LOCAL_MD_FILENAME, undefined, token, results), // CLAUDE.local in workspace roots
+			this.fileLocator.findFilesInWorkspaceRoots(CLAUDE_MD_FILENAME, '.claude', token, results), // in workspace/.claude folders
+			this.fileLocator.findFilesInRoots([userClaudeFolder], CLAUDE_MD_FILENAME, token, results) // in ~/.claude folder
+		]);
+		return results.sort((a, b) => a.toString().localeCompare(b.toString()));
 	}
 
 	public async listCopilotInstructionsMDs(token: CancellationToken): Promise<URI[]> {

@@ -894,14 +894,16 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		try {
 			const useCopilotInstructionsFiles = this.configurationService.getValue(PromptsConfig.USE_COPILOT_INSTRUCTION_FILES);
 			const useAgentMd = this.configurationService.getValue(PromptsConfig.USE_AGENT_MD);
-			if (!useCopilotInstructionsFiles && !useAgentMd) {
-				// If both settings are disabled, return true to hide the hint (since the features aren't enabled)
+			const useClaudeMd = this.configurationService.getValue(PromptsConfig.USE_CLAUDE_MD);
+			if (!useCopilotInstructionsFiles && !useAgentMd && !useClaudeMd) {
+				// If all settings are disabled, return true to hide the hint (since the features aren't enabled)
 				return true;
 			}
 			return (
 				(await this.promptsService.listCopilotInstructionsMDs(CancellationToken.None)).length > 0 ||
 				// Note: only checking for AGENTS.md files at the root folder, not ones in subfolders.
-				(await this.promptsService.listAgentMDs(CancellationToken.None, false)).length > 0
+				(await this.promptsService.listAgentMDs(CancellationToken.None, false)).length > 0 ||
+				(await this.promptsService.listClaudeMDs(CancellationToken.None)).length > 0
 			);
 		} catch (error) {
 			// On error, assume no instruction files exist to be safe

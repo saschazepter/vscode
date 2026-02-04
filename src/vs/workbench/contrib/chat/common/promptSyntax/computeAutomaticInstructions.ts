@@ -179,7 +179,8 @@ export class ComputeAutomaticInstructions {
 	private async _addAgentInstructions(variables: ChatRequestVariableSet, telemetryEvent: InstructionsCollectionEvent, token: CancellationToken): Promise<void> {
 		const useCopilotInstructionsFiles = this._configurationService.getValue(PromptsConfig.USE_COPILOT_INSTRUCTION_FILES);
 		const useAgentMd = this._configurationService.getValue(PromptsConfig.USE_AGENT_MD);
-		if (!useCopilotInstructionsFiles && !useAgentMd) {
+		const useClaudeMd = this._configurationService.getValue(PromptsConfig.USE_CLAUDE_MD);
+		if (!useCopilotInstructionsFiles && !useAgentMd && !useClaudeMd) {
 			this._logService.trace(`[InstructionsContextComputer] No agent instructions files added (settings disabled).`);
 			return;
 		}
@@ -200,6 +201,14 @@ export class ComputeAutomaticInstructions {
 				entries.add(toPromptFileVariableEntry(file, PromptFileVariableKind.Instruction, localize('instruction.file.reason.agentsmd', 'Automatically attached as setting {0} is enabled', PromptsConfig.USE_AGENT_MD), true));
 				telemetryEvent.agentInstructionsCount++;
 				this._logService.trace(`[InstructionsContextComputer] AGENTS.md files added: ${file.toString()}`);
+			}
+		}
+		if (useClaudeMd) {
+			const files = await this._promptsService.listClaudeMDs(token);
+			for (const file of files) {
+				entries.add(toPromptFileVariableEntry(file, PromptFileVariableKind.Instruction, localize('instruction.file.reason.claudesmd', 'Automatically attached as setting {0} is enabled', PromptsConfig.USE_CLAUDE_MD), true));
+				telemetryEvent.agentInstructionsCount++;
+				this._logService.trace(`[InstructionsContextComputer] CLAUDE.md files added: ${file.toString()}`);
 			}
 		}
 		for (const entry of entries.asArray()) {
@@ -263,7 +272,7 @@ export class ComputeAutomaticInstructions {
 		if (readTool) {
 
 			const searchNestedAgentMd = this._configurationService.getValue(PromptsConfig.USE_NESTED_AGENT_MD);
-			const agentsMdPromise = searchNestedAgentMd ? this._promptsService.findAgentMDsInWorkspace(token) : Promise.resolve([]);
+			const agentsMdPromise = searchNestedAgentMd ? this._promptsService.listAgentMDs(token, true) : Promise.resolve([]);
 
 			entries.push('<instructions>');
 			entries.push('Here is a list of instruction files that contain rules for working with this codebase.');

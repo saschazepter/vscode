@@ -599,17 +599,27 @@ export class PromptFilesLocator {
 	}
 
 	/**
-	 * Gets list of `AGENTS.md` files only at the root workspace folder(s).
+	 * Gets list of files at the root workspace folder(s).
 	 */
-	public async findAgentMDsInWorkspaceRoots(token: CancellationToken): Promise<URI[]> {
-		const result: URI[] = [];
+	public async findFilesInWorkspaceRoots(fileName: string, folder: string | undefined, token: CancellationToken, result: URI[] = []): Promise<URI[]> {
 		const { folders } = this.workspaceService.getWorkspace();
-		const resolvedRoots = await this.fileService.resolveAll(folders.map(f => ({ resource: f.uri })));
+		if (folder) {
+			return this.findFilesInRoots(folders.map(f => joinPath(f.uri, folder)), fileName, token, result);
+		}
+		return this.findFilesInRoots(folders.map(f => f.uri), fileName, token, result);
+	}
+
+	public async findFilesInRoots(roots: URI[], fileName: string, token: CancellationToken, result: URI[] = []): Promise<URI[]> {
+		const fileNameLower = fileName.toLowerCase();
+		const resolvedRoots = await this.fileService.resolveAll(roots.map(uri => ({ resource: uri })));
+		if (token.isCancellationRequested) {
+			return result;
+		}
 		for (const root of resolvedRoots) {
 			if (root.success && root.stat?.children) {
-				const agentMd = root.stat.children.find(c => c.isFile && c.name.toLowerCase() === 'agents.md');
-				if (agentMd) {
-					result.push(agentMd.resource);
+				const file = root.stat.children.find(c => c.isFile && c.name.toLowerCase() === fileNameLower);
+				if (file) {
+					result.push(file.resource);
 				}
 			}
 		}

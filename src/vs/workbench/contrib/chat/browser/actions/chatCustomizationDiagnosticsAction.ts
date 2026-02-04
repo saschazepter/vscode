@@ -274,6 +274,12 @@ async function collectSkillsStatus(
 	return { type, paths, files, enabled };
 }
 
+export interface ISpecialFilesStatus {
+	agentsMd: { enabled: boolean; files: URI[] };
+	copilotInstructions: { enabled: boolean; files: URI[] };
+	claudeMd: { enabled: boolean; files: URI[] };
+}
+
 /**
  * Collects status for special files like AGENTS.md and copilot-instructions.md.
  */
@@ -281,12 +287,18 @@ async function collectSpecialFilesStatus(
 	promptsService: IPromptsService,
 	configurationService: IConfigurationService,
 	token: CancellationToken
-): Promise<{ agentsMd: { enabled: boolean; files: URI[] }; copilotInstructions: { enabled: boolean; files: URI[] } }> {
+): Promise<ISpecialFilesStatus> {
 	// AGENTS.md
 	const useAgentMd = configurationService.getValue<boolean>(PromptsConfig.USE_AGENT_MD) ?? false;
 	let agentMdFiles: URI[] = [];
 	if (useAgentMd) {
 		agentMdFiles = await promptsService.listAgentMDs(token, false);
+	}
+
+	const useClaudeMd = configurationService.getValue<boolean>(PromptsConfig.USE_CLAUDE_MD) ?? false;
+	let claudeMdFiles: URI[] = [];
+	if (useClaudeMd) {
+		claudeMdFiles = await promptsService.listClaudeMDs(token);
 	}
 
 	// copilot-instructions.md
@@ -298,6 +310,7 @@ async function collectSpecialFilesStatus(
 
 	return {
 		agentsMd: { enabled: useAgentMd, files: agentMdFiles },
+		claudeMd: { enabled: useClaudeMd, files: claudeMdFiles },
 		copilotInstructions: { enabled: useCopilotInstructions, files: copilotInstructionsFiles }
 	};
 }
@@ -407,7 +420,7 @@ function convertDiscoveryResultToFileStatus(result: IPromptFileDiscoveryResult):
  */
 export function formatStatusOutput(
 	statusInfos: ITypeStatusInfo[],
-	specialFiles: { agentsMd: { enabled: boolean; files: URI[] }; copilotInstructions: { enabled: boolean; files: URI[] } },
+	specialFiles: ISpecialFilesStatus,
 	workspaceFolders: readonly IWorkspaceFolder[]
 ): string {
 	const lines: string[] = [];
@@ -441,6 +454,9 @@ export function formatStatusOutput(
 			}
 			if (specialFiles.copilotInstructions.enabled) {
 				loadedCount += specialFiles.copilotInstructions.files.length;
+			}
+			if (specialFiles.claudeMd.enabled) {
+				loadedCount += specialFiles.claudeMd.files.length;
 			}
 		}
 
