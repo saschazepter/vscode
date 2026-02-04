@@ -96,25 +96,6 @@ export class StatusBarColorProvider implements IWorkbenchContribution {
 			.monaco-workbench {
 				${asCssVariableName(COMMAND_CENTER_BACKGROUND)}: ${asCssVariable(COMMAND_CENTER_DEBUGGING_BACKGROUND)};
 			}
-			/* Keep agent status indicator at normal command center background, not debugging color */
-			.agent-status-pill,
-			.agent-status-badge {
-				background-color: rgba(255, 255, 255, 0.05);
-			}
-			.vs-dark .agent-status-pill,
-			.vs-dark .agent-status-badge {
-				background-color: rgba(255, 255, 255, 0.05);
-			}
-			.vs .agent-status-pill,
-			.vs .agent-status-badge {
-				background-color: rgba(0, 0, 0, 0.05);
-			}
-			.hc-black .agent-status-pill,
-			.hc-black .agent-status-badge,
-			.hc-light .agent-status-pill,
-			.hc-light .agent-status-badge {
-				background-color: transparent;
-			}
 		` : '';
 	}
 
