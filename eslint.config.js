@@ -1661,7 +1661,9 @@ export default tseslint.config(
 						'vs/workbench/~',
 						'vs/workbench/browser/**',
 						'vs/workbench/services/*/~',
-						'vs/workbench/agentSessions/~'
+						'vs/workbench/agentSessions/~',
+						'vs/workbench/contrib/chat/~',
+						'vs/workbench/contrib/files/~'
 					]
 				},
 				{
