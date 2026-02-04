@@ -73,7 +73,7 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 		@INativeHostMainService private readonly nativeHostMainService: INativeHostMainService,
 		@IProductService productService: IProductService
 	) {
-		super(lifecycleMainService, configurationService, environmentMainService, requestService, logService, productService, false);
+		super(lifecycleMainService, configurationService, environmentMainService, requestService, logService, productService, true);
 
 		lifecycleMainService.setRelaunchHandler(this);
 	}
@@ -173,7 +173,11 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 
 		const background = !explicit && !this.shouldDisableProgressiveReleases();
 		const url = this.buildUpdateFeedUrl(this.quality, pendingCommit ?? this.productService.commit!, { background });
-		this.setState(State.CheckingForUpdates(explicit));
+
+		// Only set CheckingForUpdates if we're not already in Overwriting state
+		if (this.state.type !== StateType.Overwriting) {
+			this.setState(State.CheckingForUpdates(explicit));
+		}
 
 		this.requestService.request({ url }, CancellationToken.None)
 			.then<IUpdate | null>(asJson)
@@ -181,7 +185,13 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 				const updateType = getUpdateType();
 
 				if (!update || !update.url || !update.version || !update.productVersion) {
-					this.setState(State.Idle(updateType));
+					// If we were checking for an overwrite update and found nothing newer,
+					// restore the Ready state with the pending update
+					if (this.state.type === StateType.Overwriting) {
+						this.setState(State.Ready(this.state.update, explicit, false));
+					} else {
+						this.setState(State.Idle(updateType));
+					}
 					return Promise.resolve(null);
 				}
 
@@ -254,7 +264,14 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 
 				// only show message when explicitly checking for updates
 				const message: string | undefined = explicit ? (err.message || err) : undefined;
-				this.setState(State.Idle(getUpdateType(), message));
+
+				// If we were checking for an overwrite update and it failed,
+				// restore the Ready state with the pending update
+				if (this.state.type === StateType.Overwriting) {
+					this.setState(State.Ready(this.state.update, explicit, false));
+				} else {
+					this.setState(State.Idle(getUpdateType(), message));
+				}
 			});
 	}
 
