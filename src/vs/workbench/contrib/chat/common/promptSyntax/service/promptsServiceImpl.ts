@@ -304,6 +304,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 						this.cachedSlashCommands.refresh();
 					} else if (type === PromptsType.skill) {
 						this.cachedFileLocations[PromptsType.skill] = undefined;
+						this.cachedSkills.refresh();
 						this.cachedSlashCommands.refresh();
 					}
 				}
@@ -453,7 +454,8 @@ export class PromptsService extends Disposable implements IPromptsService {
 
 	private async computePromptSlashCommands(token: CancellationToken): Promise<readonly IChatPromptSlashCommand[]> {
 		const promptFiles = await this.listPromptFiles(PromptsType.prompt, token);
-		const skills = await this.listPromptFiles(PromptsType.skill, token);
+		const useAgentSkills = this.configurationService.getValue(PromptsConfig.USE_AGENT_SKILLS);
+		const skills = useAgentSkills ? await this.listPromptFiles(PromptsType.skill, token) : [];
 		const slashCommandFiles = [...promptFiles, ...skills];
 		const details = await Promise.all(slashCommandFiles.map(async promptPath => {
 			try {
@@ -649,6 +651,10 @@ export class PromptsService extends Disposable implements IPromptsService {
 					this.cachedCustomAgents.refresh();
 					break;
 				case PromptsType.prompt:
+					this.cachedSlashCommands.refresh();
+					break;
+				case PromptsType.skill:
+					this.cachedSkills.refresh();
 					this.cachedSlashCommands.refresh();
 					break;
 			}
