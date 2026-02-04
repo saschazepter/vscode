@@ -11,7 +11,7 @@
  * It runs in an isolated context that Electron calls an "isolated world".
  * Specifically the isolated world with worldId 999, which shows in DevTools as "Electron Isolated Context".
  * Despite being isolated, it still runs on the same page as the JS from the actual loaded website
- * which runs on the so-called "main world".
+ * which runs on the so-called "main world" (worldId 0. In DevTools as "top").
  *
  * Learn more: see Electron docs for Security, contextBridge, and Context Isolation.
  */
