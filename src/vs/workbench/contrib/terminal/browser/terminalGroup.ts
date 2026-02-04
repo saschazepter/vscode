@@ -575,7 +575,6 @@ export class TerminalGroup extends Disposable implements ITerminalGroup {
 			default:
 				return this._panelPosition;
 		}
-		return this._panelPosition;
 	}
 
 	private _getOrientation(): Orientation {
