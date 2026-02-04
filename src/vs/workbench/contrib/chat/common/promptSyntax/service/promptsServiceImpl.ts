@@ -730,6 +730,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 				logger?.logInfo(`Skipping symlinked agent instructions file ${symlink.uri} as target already included: ${symlink.realPath}`);
 			} else {
 				result.push(symlink);
+				seenFileURI.add(symlink.realPath);
 			}
 		}
 		return result;
