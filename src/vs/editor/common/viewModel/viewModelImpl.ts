@@ -313,6 +313,9 @@ export class ViewModel extends Disposable implements IViewModel {
 		}
 	}
 
+	/**
+	 * Gets called directly by the text model.
+	 */
 	onDidChangeContentOrInjectedText(e: textModelEvents.InternalModelContentChangeEvent | textModelEvents.ModelInjectedTextChangedEvent): void {
 
 		try {
@@ -440,6 +443,9 @@ export class ViewModel extends Disposable implements IViewModel {
 		this._handleVisibleLinesChanged();
 	}
 
+	/**
+	 * Gets called directly by the text model.
+	 */
 	emitContentChangeEvent(e: textModelEvents.InternalModelContentChangeEvent | textModelEvents.ModelInjectedTextChangedEvent): void {
 		this._emitViewEvent((eventsCollector) => {
 			if (e instanceof textModelEvents.InternalModelContentChangeEvent) {
