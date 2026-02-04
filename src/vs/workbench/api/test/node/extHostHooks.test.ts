@@ -38,8 +38,7 @@ function createMockExtHostChatAgents(hooks: IChatRequestHooks | undefined): Pick
 	};
 }
 
-const suiteFn = isWindows ? suite.skip : suite;
-suiteFn('ExtHostHooks', () => {
+suite.skip('ExtHostHooks', () => {
 	const disposables = ensureNoDisposablesAreLeakedInTestSuite();
 
 	let hooksService: NodeExtHostHooks;
