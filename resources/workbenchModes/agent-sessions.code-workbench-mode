@@ -18,6 +18,7 @@
 		"workbench.startupEditor": "none",
 		"workbench.tips.enabled": false,
 		"workbench.layoutControl.type": "toggles",
-		"chat.sessions.dedicatedView.enabled": true
+		"chat.sessions.dedicatedView.enabled": true,
+		"workbench.colorTheme": "Experimental Dark"
 	}
 }
