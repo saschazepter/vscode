@@ -296,8 +296,7 @@ function doSanitizeHtml(untrusted: string, config: DomSanitizerConfig | undefine
 
 		hookDomPurifyHrefAndSrcSanitizer(
 			{
-				override: typeof config?.allowedLinkProtocols?.override === 'function' ? config.allowedLinkProtocols.override : config?.allowedLinkProtocols?.override ?? [Schemas.http, Schemas.https],
-				allowRelativePaths: config?.allowRelativeLinkPaths ?? false
+				override: config?.allowedLinkProtocols?.override ?? [Schemas.http, Schemas.https], allowRelativePaths: config?.allowRelativeLinkPaths ?? false
 			},
 			{
 				override: config?.allowedMediaProtocols?.override ?? [Schemas.http, Schemas.https],
