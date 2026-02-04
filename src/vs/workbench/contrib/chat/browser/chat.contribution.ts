@@ -454,6 +454,12 @@ configurationRegistry.registerConfiguration({
 			default: true,
 			description: nls.localize('chat.notifyWindowOnResponseReceived', "Controls whether a chat session should present the user with an OS notification when a response is received while the window is not in focus. This includes a window badge as well as notification toast."),
 		},
+		[ChatConfiguration.AgentSessionsViewEnabled]: { // TODO@bpasero follow up and polish
+			type: 'boolean',
+			default: false,
+			description: nls.localize('chat.sessions.dedicatedView.enabled', "When enabled, shows chat sessions in a dedicated view in the secondary side bar instead of alongside the chat."),
+			tags: ['advanced'],
+		},
 		'chat.checkpoints.enabled': {
 			type: 'boolean',
 			default: true,

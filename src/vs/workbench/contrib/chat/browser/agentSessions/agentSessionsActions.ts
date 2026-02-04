@@ -8,11 +8,12 @@ import { AgentSessionSection, IAgentSession, IAgentSessionSection, IMarshalledAg
 import { Action2, MenuId, MenuRegistry } from '../../../../../platform/actions/common/actions.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { ServicesAccessor } from '../../../../../editor/browser/editorExtensions.js';
-import { AGENT_SESSION_DELETE_ACTION_ID, AGENT_SESSION_RENAME_ACTION_ID, AgentSessionProviders, AgentSessionsViewerOrientation, IAgentSessionsControl } from './agentSessions.js';
+import { AGENT_SESSION_DELETE_ACTION_ID, AGENT_SESSION_RENAME_ACTION_ID, AgentSessionProviders, AgentSessionsViewerOrientation, AgentSessionsViewId, IAgentSessionsControl } from './agentSessions.js';
 import { IChatService } from '../../common/chatService/chatService.js';
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
 import { IChatEditorOptions } from '../widgetHosts/editor/chatEditor.js';
 import { ChatViewId, IChatWidgetService } from '../chat.js';
+import { AgentSessionsViewPane } from './experiments/agentSessionsViewPane.js';
 import { ACTIVE_GROUP, AUX_WINDOW_GROUP, PreferredGroup, SIDE_GROUP } from '../../../../services/editor/common/editorService.js';
 import { IViewDescriptorService, ViewContainerLocation } from '../../../../common/views.js';
 import { getPartByLocation } from '../../../../services/views/browser/viewsService.js';
@@ -51,7 +52,10 @@ export class ToggleShowAgentSessionsAction extends Action2 {
 				id: MenuId.ChatWelcomeContext,
 				group: '0_sessions',
 				order: 2,
-				when: ChatContextKeys.inChatEditor.negate()
+				when: ContextKeyExpr.and(
+					ChatContextKeys.inChatEditor.negate(),
+					ChatContextKeys.agentSessionsViewerDedicated.negate()
+				)
 			}
 		});
 	}
@@ -69,7 +73,10 @@ MenuRegistry.appendMenuItem(MenuId.ChatWelcomeContext, {
 	title: localize2('chat.sessionsOrientation', "Sessions Orientation"),
 	group: '0_sessions',
 	order: 1,
-	when: ChatContextKeys.inChatEditor.negate()
+	when: ContextKeyExpr.and(
+		ChatContextKeys.inChatEditor.negate(),
+		ChatContextKeys.agentSessionsViewerDedicated.negate()
+	)
 });
 
 export class SetAgentSessionsOrientationStackedAction extends Action2 {
@@ -794,16 +801,28 @@ export class RefreshAgentSessionsViewerAction extends Action2 {
 			id: 'agentSessionsViewer.refresh',
 			title: localize2('refresh', "Refresh Agent Sessions"),
 			icon: Codicon.refresh,
-			menu: {
+			menu: [{
 				id: MenuId.AgentSessionsToolbar,
 				group: 'navigation',
 				order: 1,
-			},
+			}, {
+				id: MenuId.ViewTitle,
+				group: 'navigation',
+				order: 1,
+				when: ContextKeyExpr.equals('view', AgentSessionsViewId),
+			}],
 		});
 	}
 
-	override run(accessor: ServicesAccessor, agentSessionsControl: IAgentSessionsControl) {
-		agentSessionsControl.refresh();
+	override run(accessor: ServicesAccessor, agentSessionsControl?: IAgentSessionsControl) {
+		const viewsService = accessor.get(IViewsService);
+
+		let viewer: IAgentSessionsControl | AgentSessionsViewPane | undefined | null = agentSessionsControl;
+		if (!viewer) {
+			viewer = viewsService.getActiveViewWithId<AgentSessionsViewPane>(AgentSessionsViewId);
+		}
+
+		return viewer?.refresh();
 	}
 }
 
@@ -814,16 +833,28 @@ export class FindAgentSessionInViewerAction extends Action2 {
 			id: 'agentSessionsViewer.find',
 			title: localize2('find', "Find Agent Session"),
 			icon: Codicon.search,
-			menu: {
+			menu: [{
 				id: MenuId.AgentSessionsToolbar,
 				group: 'navigation',
 				order: 2,
-			}
+			}, {
+				id: MenuId.ViewTitle,
+				group: 'navigation',
+				order: 2,
+				when: ContextKeyExpr.equals('view', AgentSessionsViewId),
+			}]
 		});
 	}
 
-	override run(accessor: ServicesAccessor, agentSessionsControl: IAgentSessionsControl) {
-		return agentSessionsControl.openFind();
+	override run(accessor: ServicesAccessor, agentSessionsControl?: IAgentSessionsControl) {
+		const viewsService = accessor.get(IViewsService);
+
+		let viewer: IAgentSessionsControl | AgentSessionsViewPane | undefined | null = agentSessionsControl;
+		if (!viewer) {
+			viewer = viewsService.getActiveViewWithId<AgentSessionsViewPane>(AgentSessionsViewId);
+		}
+
+		return viewer?.openFind();
 	}
 }
 

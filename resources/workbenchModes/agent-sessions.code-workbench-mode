@@ -24,5 +24,6 @@
 		"workbench.tips.enabled": false,
 		"workbench.layoutControl.type": "toggles",
 		"workbench.activityBar.autoHide": true
+		"chat.sessions.dedicatedView.enabled": true
 	}
 }
