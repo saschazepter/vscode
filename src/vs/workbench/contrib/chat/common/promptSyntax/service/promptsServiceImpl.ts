@@ -905,10 +905,9 @@ export class PromptsService extends Disposable implements IPromptsService {
 
 		const collectedHooks: Record<HookType, IHookCommand[]> = {
 			[HookType.SessionStart]: [],
-			[HookType.UserPromptSubmitted]: [],
+			[HookType.UserPromptSubmit]: [],
 			[HookType.PreToolUse]: [],
 			[HookType.PostToolUse]: [],
-			[HookType.PostToolUseFailure]: [],
 			[HookType.SubagentStart]: [],
 			[HookType.SubagentStop]: [],
 			[HookType.Stop]: [],
@@ -941,16 +940,9 @@ export class PromptsService extends Disposable implements IPromptsService {
 		}
 
 		// Build the result, only including hook types that have entries
-		const result: IChatRequestHooks = {
-			...(collectedHooks[HookType.SessionStart].length > 0 && { sessionStart: collectedHooks[HookType.SessionStart] }),
-			...(collectedHooks[HookType.UserPromptSubmitted].length > 0 && { userPromptSubmitted: collectedHooks[HookType.UserPromptSubmitted] }),
-			...(collectedHooks[HookType.PreToolUse].length > 0 && { preToolUse: collectedHooks[HookType.PreToolUse] }),
-			...(collectedHooks[HookType.PostToolUse].length > 0 && { postToolUse: collectedHooks[HookType.PostToolUse] }),
-			...(collectedHooks[HookType.PostToolUseFailure].length > 0 && { postToolUseFailure: collectedHooks[HookType.PostToolUseFailure] }),
-			...(collectedHooks[HookType.SubagentStart].length > 0 && { subagentStart: collectedHooks[HookType.SubagentStart] }),
-			...(collectedHooks[HookType.SubagentStop].length > 0 && { subagentStop: collectedHooks[HookType.SubagentStop] }),
-			...(collectedHooks[HookType.Stop].length > 0 && { stop: collectedHooks[HookType.Stop] }),
-		};
+		const result: IChatRequestHooks = Object.fromEntries(
+			Object.entries(collectedHooks).filter(([_, commands]) => commands.length > 0)
+		) as IChatRequestHooks;
 
 		this.logger.trace(`[PromptsService] Collected hooks: ${JSON.stringify(Object.keys(result))}`);
 		return result;
