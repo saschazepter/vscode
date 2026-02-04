@@ -10,7 +10,7 @@ import { localize2 } from '../../../../../nls.js';
 import { Action2, MenuId, registerAction2 } from '../../../../../platform/actions/common/actions.js';
 import { ContextKeyExpr } from '../../../../../platform/contextkey/common/contextkey.js';
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
-import { IPromptsService, PromptsStorage, IPromptFileDiscoveryResult, PromptFileSkipReason } from '../../common/promptSyntax/service/promptsService.js';
+import { IPromptsService, PromptsStorage, IPromptFileDiscoveryResult, PromptFileSkipReason, AgentFileType } from '../../common/promptSyntax/service/promptsService.js';
 import { PromptsConfig } from '../../common/promptSyntax/config/config.js';
 import { PromptsType } from '../../common/promptSyntax/promptTypes.js';
 import { basename, dirname, relativePath } from '../../../../../base/common/resources.js';
@@ -288,30 +288,25 @@ async function collectSpecialFilesStatus(
 	configurationService: IConfigurationService,
 	token: CancellationToken
 ): Promise<ISpecialFilesStatus> {
-	// AGENTS.md
 	const useAgentMd = configurationService.getValue<boolean>(PromptsConfig.USE_AGENT_MD) ?? false;
-	let agentMdFiles: URI[] = [];
-	if (useAgentMd) {
-		agentMdFiles = await promptsService.listAgentMDs(token, false);
-	}
-
 	const useClaudeMd = configurationService.getValue<boolean>(PromptsConfig.USE_CLAUDE_MD) ?? false;
-	let claudeMdFiles: URI[] = [];
-	if (useClaudeMd) {
-		claudeMdFiles = await promptsService.listClaudeMDs(token);
-	}
-
-	// copilot-instructions.md
 	const useCopilotInstructions = configurationService.getValue<boolean>(PromptsConfig.USE_COPILOT_INSTRUCTION_FILES) ?? false;
-	let copilotInstructionsFiles: URI[] = [];
-	if (useCopilotInstructions) {
-		copilotInstructionsFiles = await promptsService.listCopilotInstructionsMDs(token);
-	}
+
+	const allFiles = await promptsService.listAgentInstructions(token);
 
 	return {
-		agentsMd: { enabled: useAgentMd, files: agentMdFiles },
-		claudeMd: { enabled: useClaudeMd, files: claudeMdFiles },
-		copilotInstructions: { enabled: useCopilotInstructions, files: copilotInstructionsFiles }
+		agentsMd: {
+			enabled: useAgentMd,
+			files: allFiles.filter(f => f.type === AgentFileType.agentsMd).map(f => f.uri)
+		},
+		claudeMd: {
+			enabled: useClaudeMd,
+			files: allFiles.filter(f => f.type === AgentFileType.claudeMd).map(f => f.uri)
+		},
+		copilotInstructions: {
+			enabled: useCopilotInstructions,
+			files: allFiles.filter(f => f.type === AgentFileType.copilotInstructionsMd).map(f => f.uri)
+		}
 	};
 }
 

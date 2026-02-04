@@ -5,8 +5,52 @@
 
 import { URI } from '../../../../../../../base/common/uri.js';
 import { VSBuffer } from '../../../../../../../base/common/buffer.js';
-import { IFileService } from '../../../../../../../platform/files/common/files.js';
+import { FileSystemProviderCapabilities, IFileService, IFileSystemProviderWithFileRealpathCapability } from '../../../../../../../platform/files/common/files.js';
 import { dirname } from '../../../../../../../base/common/resources.js';
+import { InMemoryFileSystemProvider } from '../../../../../../../platform/files/common/inMemoryFilesystemProvider.js';
+import { ResourceMap } from '../../../../../../../base/common/map.js';
+
+/**
+ * Test file system provider that extends InMemoryFileSystemProvider with realpath support.
+ * Allows tests to define custom realpath mappings to simulate symlinks.
+ */
+export class TestInMemoryFileSystemProviderWithRealPath extends InMemoryFileSystemProvider implements IFileSystemProviderWithFileRealpathCapability {
+	private readonly realPathMappings = new ResourceMap<URI>();
+
+	override get capabilities(): FileSystemProviderCapabilities {
+		return super.capabilities | FileSystemProviderCapabilities.FileRealpath;
+	}
+
+	/**
+	 * Defines a realpath mapping for a URI.
+	 * When realpath() is called for the given URI, it will return the mapped realPath.
+	 * Use this to simulate symlinks - multiple URIs can map to the same realPath.
+	 */
+	setRealPath(uri: URI, realPath: URI): void {
+		this.realPathMappings.set(uri, realPath);
+	}
+
+	/**
+	 * Clears all realpath mappings.
+	 */
+	clearRealPathMappings(): void {
+		this.realPathMappings.clear();
+	}
+
+	/**
+	 * Returns the realpath for the given resource.
+	 * If a mapping was set via setRealPath(), returns that mapped path.
+	 * Otherwise returns the original path (simulating a non-symlink file).
+	 */
+	async realpath(resource: URI): Promise<string> {
+		const mapped = this.realPathMappings.get(resource);
+		if (mapped) {
+			return mapped.path;
+		}
+		// Default: return original path (not a symlink)
+		return resource.path;
+	}
+}
 
 /**
  * Represents a generic file system node.

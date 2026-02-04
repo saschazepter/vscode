@@ -17,7 +17,6 @@ import { IConfigurationService } from '../../../../../../platform/configuration/
 import { TestConfigurationService } from '../../../../../../platform/configuration/test/common/testConfigurationService.js';
 import { IFileService } from '../../../../../../platform/files/common/files.js';
 import { FileService } from '../../../../../../platform/files/common/fileService.js';
-import { InMemoryFileSystemProvider } from '../../../../../../platform/files/common/inMemoryFilesystemProvider.js';
 import { TestInstantiationService } from '../../../../../../platform/instantiation/test/common/instantiationServiceMock.js';
 import { ILabelService } from '../../../../../../platform/label/common/label.js';
 import { ILogService, NullLogService } from '../../../../../../platform/log/common/log.js';
@@ -34,7 +33,7 @@ import { INSTRUCTION_FILE_EXTENSION, INSTRUCTIONS_DEFAULT_SOURCE_FOLDER, LEGACY_
 import { INSTRUCTIONS_LANGUAGE_ID, PROMPT_LANGUAGE_ID } from '../../../common/promptSyntax/promptTypes.js';
 import { IPromptsService } from '../../../common/promptSyntax/service/promptsService.js';
 import { PromptsService } from '../../../common/promptSyntax/service/promptsServiceImpl.js';
-import { mockFiles } from './testUtils/mockFilesystem.js';
+import { mockFiles, TestInMemoryFileSystemProviderWithRealPath } from './testUtils/mockFilesystem.js';
 import { InMemoryStorageService, IStorageService } from '../../../../../../platform/storage/common/storage.js';
 import { IPathService } from '../../../../../services/path/common/pathService.js';
 import { IFileQuery, ISearchService } from '../../../../../services/search/common/search.js';
@@ -53,6 +52,7 @@ suite('ComputeAutomaticInstructions', () => {
 	let testConfigService: TestConfigurationService;
 	let fileService: IFileService;
 	let toolsService: ILanguageModelToolsService;
+	let fileSystemProvider: TestInMemoryFileSystemProviderWithRealPath;
 
 	setup(async () => {
 		instaService = disposables.add(new TestInstantiationService());
@@ -110,7 +110,7 @@ suite('ComputeAutomaticInstructions', () => {
 			}
 		});
 
-		const fileSystemProvider = disposables.add(new InMemoryFileSystemProvider());
+		fileSystemProvider = disposables.add(new TestInMemoryFileSystemProviderWithRealPath());
 		disposables.add(fileService.registerProvider(Schemas.file, fileSystemProvider));
 
 		const pathService = {
@@ -174,6 +174,7 @@ suite('ComputeAutomaticInstructions', () => {
 
 	teardown(() => {
 		sinon.restore();
+		fileSystemProvider.clearRealPathMappings();
 	});
 
 	suite('collect', () => {
@@ -1624,5 +1625,177 @@ suite('ComputeAutomaticInstructions', () => {
 		assert.ok(paths.includes(`${rootFolder1}/CLAUDE.local.md`), 'Should include CLAUDE.local.md from first root');
 		assert.ok(paths.includes(`${rootFolder2}/CLAUDE.md`), 'Should include CLAUDE.md from second root');
 		assert.ok(paths.includes(`${rootFolder2}/CLAUDE.local.md`), 'Should include CLAUDE.local.md from second root');
+	});
+
+	test('should filter duplicate files with same realPath (symlinks)', async () => {
+		const rootFolderName = 'symlink-test';
+		const rootFolder = `/${rootFolderName}`;
+		const rootFolderUri = URI.file(rootFolder);
+
+		workspaceContextService.setWorkspace(testWorkspace(rootFolderUri));
+
+		const copilotUri = URI.joinPath(rootFolderUri, '.github/copilot-instructions.md');
+		const agentMdUri = URI.joinPath(rootFolderUri, 'AGENTS.md');
+		const claudeMdUri = URI.joinPath(rootFolderUri, 'CLAUDE.md');
+
+		// Create all three agent instruction files
+		await mockFiles(fileService, [
+			{
+				path: `${rootFolder}/src/file.ts`,
+				contents: ['console.log("test");'],
+			},
+			{
+				path: copilotUri.path,
+				contents: ['# Copilot Instructions'],
+			},
+			{
+				path: agentMdUri.path,
+				contents: ['# Agents Instructions'],
+			},
+			{
+				path: claudeMdUri.path,
+				contents: ['# Claude Instructions'],
+			},
+		]);
+
+		// Enable all three types of agent instructions
+		testConfigService.setUserConfiguration(PromptsConfig.USE_COPILOT_INSTRUCTION_FILES, true);
+		testConfigService.setUserConfiguration(PromptsConfig.USE_AGENT_MD, true);
+		testConfigService.setUserConfiguration(PromptsConfig.USE_CLAUDE_MD, true);
+
+		// Set up realpath mappings - all three files point to the same realpath (simulating symlinks)
+		const sharedRealPath = URI.file('/actual/instructions.md');
+		fileSystemProvider.setRealPath(copilotUri, sharedRealPath);
+		fileSystemProvider.setRealPath(agentMdUri, sharedRealPath);
+		fileSystemProvider.setRealPath(claudeMdUri, sharedRealPath);
+
+		const contextComputer = instaService.createInstance(ComputeAutomaticInstructions, ChatModeKind.Agent, undefined, undefined);
+		const variables = new ChatRequestVariableSet();
+		variables.add(toFileVariableEntry(URI.joinPath(rootFolderUri, 'src/file.ts')));
+
+		await contextComputer.collect(variables, CancellationToken.None);
+
+		const instructionFiles = variables.asArray().filter(v => isPromptFileVariableEntry(v));
+
+		// Only one file should be added since they all have the same realPath
+		assert.strictEqual(instructionFiles.length, 1, 'Should only include one file when all have the same realPath (symlinks)');
+		// The first one processed (AGENTS.md) should be the one that's kept
+		// (listAgentInstructions processes: agentMDs, then claudeMDs, then copilotInstructionsMDs)
+		assert.ok(isPromptFileVariableEntry(instructionFiles[0]) && instructionFiles[0].value.path === agentMdUri.path,
+			'The first file (AGENTS.md) should be kept');
+	});
+
+	test('should not filter files with different realPaths', async () => {
+		const rootFolderName = 'different-realpath-test';
+		const rootFolder = `/${rootFolderName}`;
+		const rootFolderUri = URI.file(rootFolder);
+
+		workspaceContextService.setWorkspace(testWorkspace(rootFolderUri));
+
+		const copilotUri = URI.joinPath(rootFolderUri, '.github/copilot-instructions.md');
+		const agentMdUri = URI.joinPath(rootFolderUri, 'AGENTS.md');
+		const claudeMdUri = URI.joinPath(rootFolderUri, 'CLAUDE.md');
+
+		// Create all three agent instruction files
+		await mockFiles(fileService, [
+			{
+				path: `${rootFolder}/src/file.ts`,
+				contents: ['console.log("test");'],
+			},
+			{
+				path: copilotUri.path,
+				contents: ['# Copilot Instructions'],
+			},
+			{
+				path: agentMdUri.path,
+				contents: ['# Agents Instructions'],
+			},
+			{
+				path: claudeMdUri.path,
+				contents: ['# Claude Instructions'],
+			},
+		]);
+
+		// Enable all three types of agent instructions
+		testConfigService.setUserConfiguration(PromptsConfig.USE_COPILOT_INSTRUCTION_FILES, true);
+		testConfigService.setUserConfiguration(PromptsConfig.USE_AGENT_MD, true);
+		testConfigService.setUserConfiguration(PromptsConfig.USE_CLAUDE_MD, true);
+
+		// No realPath mappings set - each file has its own realPath (not symlinks)
+
+		const contextComputer = instaService.createInstance(ComputeAutomaticInstructions, ChatModeKind.Agent, undefined, undefined);
+		const variables = new ChatRequestVariableSet();
+		variables.add(toFileVariableEntry(URI.joinPath(rootFolderUri, 'src/file.ts')));
+
+		await contextComputer.collect(variables, CancellationToken.None);
+
+		const instructionFiles = variables.asArray().filter(v => isPromptFileVariableEntry(v));
+		const paths = instructionFiles.map(i => isPromptFileVariableEntry(i) ? i.value.path : undefined);
+
+		// All three files should be added since they have different realPaths
+		assert.strictEqual(instructionFiles.length, 3, 'Should include all three files when they have different realPaths');
+		assert.ok(paths.includes(copilotUri.path), 'Should include copilot-instructions.md');
+		assert.ok(paths.includes(agentMdUri.path), 'Should include AGENTS.md');
+		assert.ok(paths.includes(claudeMdUri.path), 'Should include CLAUDE.md');
+	});
+
+	test('should filter only files that share the same realPath', async () => {
+		const rootFolderName = 'partial-symlink-test';
+		const rootFolder = `/${rootFolderName}`;
+		const rootFolderUri = URI.file(rootFolder);
+
+		workspaceContextService.setWorkspace(testWorkspace(rootFolderUri));
+
+		const copilotUri = URI.joinPath(rootFolderUri, '.github/copilot-instructions.md');
+		const agentMdUri = URI.joinPath(rootFolderUri, 'AGENTS.md');
+		const claudeMdUri = URI.joinPath(rootFolderUri, 'CLAUDE.md');
+
+		// Create all three agent instruction files
+		await mockFiles(fileService, [
+			{
+				path: `${rootFolder}/src/file.ts`,
+				contents: ['console.log("test");'],
+			},
+			{
+				path: copilotUri.path,
+				contents: ['# Copilot Instructions'],
+			},
+			{
+				path: agentMdUri.path,
+				contents: ['# Agents Instructions'],
+			},
+			{
+				path: claudeMdUri.path,
+				contents: ['# Claude Instructions'],
+			},
+		]);
+
+		// Enable all three types of agent instructions
+		testConfigService.setUserConfiguration(PromptsConfig.USE_COPILOT_INSTRUCTION_FILES, true);
+		testConfigService.setUserConfiguration(PromptsConfig.USE_AGENT_MD, true);
+		testConfigService.setUserConfiguration(PromptsConfig.USE_CLAUDE_MD, true);
+
+		// Only AGENTS.md and CLAUDE.md are symlinks to the same file
+		const sharedRealPath = URI.file('/actual/shared-instructions.md');
+		fileSystemProvider.setRealPath(agentMdUri, sharedRealPath);
+		fileSystemProvider.setRealPath(claudeMdUri, sharedRealPath);
+		// copilotUri has no mapping, so it will use its own path as realPath
+
+		const contextComputer = instaService.createInstance(ComputeAutomaticInstructions, ChatModeKind.Agent, undefined, undefined);
+		const variables = new ChatRequestVariableSet();
+		variables.add(toFileVariableEntry(URI.joinPath(rootFolderUri, 'src/file.ts')));
+
+		await contextComputer.collect(variables, CancellationToken.None);
+
+		const instructionFiles = variables.asArray().filter(v => isPromptFileVariableEntry(v));
+		const paths = instructionFiles.map(i => isPromptFileVariableEntry(i) ? i.value.path : undefined);
+
+		// copilot-instructions.md should be included (unique realPath)
+		// AGENTS.md should be included (first with shared realPath)
+		// CLAUDE.md should be filtered out (duplicate realPath with AGENTS.md)
+		assert.strictEqual(instructionFiles.length, 2, 'Should include 2 files (copilot + first symlink)');
+		assert.ok(paths.includes(copilotUri.path), 'Should include copilot-instructions.md');
+		assert.ok(paths.includes(agentMdUri.path), 'Should include AGENTS.md (first with shared realPath)');
+		assert.ok(!paths.includes(claudeMdUri.path), 'Should NOT include CLAUDE.md (duplicate realPath)');
 	});
 });
