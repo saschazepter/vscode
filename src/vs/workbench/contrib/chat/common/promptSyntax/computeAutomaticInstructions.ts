@@ -199,6 +199,9 @@ export class ComputeAutomaticInstructions {
 		// Process referenced instructions from copilot files (maintaining original behavior)
 		if (copilotEntries.length > 0) {
 			await this._addReferencedInstructions(copilotEntries, telemetryEvent, token);
+			for (const entry of copilotEntries.asArray()) {
+				variables.add(entry);
+			}
 		}
 
 		for (const entry of entries.asArray()) {
