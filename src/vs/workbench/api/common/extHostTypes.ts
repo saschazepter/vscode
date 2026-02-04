@@ -3441,6 +3441,12 @@ export interface ChatTerminalToolInvocationData2 {
 	language: string;
 }
 
+export enum ChatTodoStatus {
+	NotStarted = 1,
+	InProgress = 2,
+	Completed = 3
+}
+
 export class ChatToolInvocationPart {
 	toolName: string;
 	toolCallId: string;
@@ -3925,6 +3931,15 @@ export enum SettingsSearchResultKind {
 	EMBEDDED = 1,
 	LLM_RANKED = 2,
 	CANCELED = 3,
+}
+
+//#endregion
+
+//#region Chat Hooks
+
+export enum ChatHookResultKind {
+	Success = 1,
+	Error = 2
 }
 
 //#endregion
