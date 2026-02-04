@@ -147,7 +147,7 @@ export class ChatSessionStore extends Disposable {
 				}
 			}
 
-			this.logService.info(`ChatSessionStore: Migrated ${migratedCount} chat session files from ${wasEmptyWindow ? 'empty window' : oldStorageRoot.toString()} to ${isNewWorkspaceEmpty ? 'empty window' : this.storageRoot.toString()}`);
+			this.logService.info(`ChatSessionStore: Copied ${migratedCount} chat session files from ${wasEmptyWindow ? 'empty window' : oldStorageRoot.toString()} to ${isNewWorkspaceEmpty ? 'empty window' : this.storageRoot.toString()} (originals preserved at old location)`);
 
 			// Clear the index cache to force re-reading from the new location
 			this.indexCache = undefined;
