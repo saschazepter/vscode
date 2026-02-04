@@ -233,6 +233,11 @@ export interface IWorkbenchLayoutService extends ILayoutService {
 	isVisible(part: Parts, targetWindow: Window): boolean;
 
 	/**
+	 * Returns true if the activity bar is hidden.
+	 */
+	isActivityBarHidden(): boolean;
+
+	/**
 	 * Set part hidden or not in the target window.
 	 */
 	setPartHidden(hidden: boolean, part: Parts): void;

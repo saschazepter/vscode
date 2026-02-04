@@ -962,6 +962,10 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 
 	//#region Part Visibility
 
+	isActivityBarHidden(): boolean {
+		return true;
+	}
+
 	isVisible(part: SINGLE_WINDOW_PARTS): boolean;
 	isVisible(part: MULTI_WINDOW_PARTS, targetWindow: Window): boolean;
 	isVisible(part: Parts, targetWindow?: Window): boolean {
