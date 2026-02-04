@@ -4,11 +4,11 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { localize } from '../../../../nls.js';
-import { asCssVariable, registerColor, transparent } from '../../../../platform/theme/common/colorRegistry.js';
+import { asCssVariable, asCssVariableName, registerColor, transparent } from '../../../../platform/theme/common/colorRegistry.js';
 import { IWorkbenchContribution } from '../../../common/contributions.js';
 import { IDebugService, State, IDebugSession, IDebugConfiguration } from '../common/debug.js';
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
-import { STATUS_BAR_FOREGROUND, STATUS_BAR_BORDER } from '../../../common/theme.js';
+import { STATUS_BAR_FOREGROUND, STATUS_BAR_BORDER, COMMAND_CENTER_BACKGROUND } from '../../../common/theme.js';
 import { DisposableStore, IDisposable } from '../../../../base/common/lifecycle.js';
 import { IStatusbarService } from '../../../services/statusbar/browser/statusbar.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
@@ -93,9 +93,27 @@ export class StatusBarColorProvider implements IWorkbenchContribution {
 		const isInCommandCenter = debugConfig.toolBarLocation === 'commandCenter';
 
 		this.styleSheet.textContent = isInCommandCenter && isInDebugMode ? `
-			/* Apply debugging background only to the command center search box, not agent status */
-			.monaco-workbench .part.titlebar > .titlebar-container > .titlebar-center > .window-title > .command-center .action-item.command-center-center {
-				background-color: ${asCssVariable(COMMAND_CENTER_DEBUGGING_BACKGROUND)};
+			.monaco-workbench {
+				${asCssVariableName(COMMAND_CENTER_BACKGROUND)}: ${asCssVariable(COMMAND_CENTER_DEBUGGING_BACKGROUND)};
+			}
+			/* Keep agent status indicator at normal command center background, not debugging color */
+			.agent-status-pill,
+			.agent-status-badge {
+				background-color: rgba(255, 255, 255, 0.05);
+			}
+			.vs-dark .agent-status-pill,
+			.vs-dark .agent-status-badge {
+				background-color: rgba(255, 255, 255, 0.05);
+			}
+			.vs .agent-status-pill,
+			.vs .agent-status-badge {
+				background-color: rgba(0, 0, 0, 0.05);
+			}
+			.hc-black .agent-status-pill,
+			.hc-black .agent-status-badge,
+			.hc-light .agent-status-pill,
+			.hc-light .agent-status-badge {
+				background-color: transparent;
 			}
 		` : '';
 	}
