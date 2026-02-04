@@ -347,22 +347,22 @@ The Agent Sessions workbench uses specialized part implementations that extend t
 
 ### 8.3 Part Selection
 
-The `PaneCompositePartService` automatically selects the correct part implementation based on the workspace type:
+Each workbench layout is responsible for passing the appropriate pane composite part descriptors to the `PaneCompositePartService`. The parts are defined as `SyncDescriptor0` instances via `IPaneCompositePartsConfiguration`, and the service lazily instantiates them when first requested:
 
 ```typescript
-// In paneCompositePartService.ts
-const isAgentSessionsWorkspace = !!workspaceContextService.getWorkspace().isAgentSessionsWorkspace;
-
-const panelPart = isAgentSessionsWorkspace
-    ? instantiationService.createInstance(AgentSessionPanelPart)
-    : instantiationService.createInstance(PanelPart);
-const sideBarPart = isAgentSessionsWorkspace
-    ? instantiationService.createInstance(AgentSessionSidebarPart)
-    : instantiationService.createInstance(SidebarPart);
-const auxiliaryBarPart = isAgentSessionsWorkspace
-    ? instantiationService.createInstance(AgentSessionAuxiliaryBarPart)
-    : instantiationService.createInstance(AuxiliaryBarPart);
+// In agentSessionsWorkbench.ts (initServices)
+const paneCompositePartsConfiguration: IPaneCompositePartsConfiguration = {
+    panelPart: new SyncDescriptor(AgentSessionPanelPart),
+    sideBarPart: new SyncDescriptor(AgentSessionSidebarPart),
+    auxiliaryBarPart: new SyncDescriptor(AgentSessionAuxiliaryBarPart),
+    chatBarPart: new SyncDescriptor(ChatBarPart),
+};
+serviceCollection.set(IPaneCompositePartService, new SyncDescriptor(PaneCompositePartService, [paneCompositePartsConfiguration]));
 ```
+
+This architecture ensures that:
+1. The `PaneCompositePartService` has no knowledge of the workspace type—it simply receives part descriptors from the layout class
+2. Parts are only instantiated when first accessed, enabling lazy initialization
 
 ### 8.4 Storage Keys
 
@@ -486,6 +486,8 @@ interface IPartVisibilityState {
 |------|--------|
 | 2026-02-04 | Modal sizing (80%, min/max constraints) moved from CSS to TypeScript; `EditorModal.layout()` now accepts workbench dimensions |
 | 2026-02-04 | Editor now renders as modal overlay instead of in grid; Added `EditorModal` class in `parts/editorModal.ts`; Closing modal closes all editors; Grid layout is now Sidebar \| Chat Bar \| Auxiliary Bar |
+| 2026-02-04 | Changed part creation to use `SyncDescriptor0` for lazy instantiation—parts are created when first accessed, not at service construction time |
+| 2026-02-04 | Refactored part creation: each layout class now creates and passes parts to `PaneCompositePartService` via `IPaneCompositePartsConfiguration`, removing `isAgentSessionsWorkspace` dependency from the service |
 | 2026-02-04 | Added `restoreParts()` to automatically open default view containers for visible parts during startup |
 | 2026-02-04 | Restored Editor part; Layout order is now Sidebar \| Chat Bar \| Editor \| Auxiliary Bar |
 | 2026-02-04 | Removed Editor part; Chat Bar now takes max width; Layout order changed to Sidebar \| Auxiliary Bar \| Chat Bar |

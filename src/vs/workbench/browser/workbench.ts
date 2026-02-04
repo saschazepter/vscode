@@ -51,6 +51,13 @@ import { AccessibleViewRegistry } from '../../platform/accessibility/browser/acc
 import { NotificationAccessibleView } from './parts/notifications/notificationAccessibleView.js';
 import { IMarkdownRendererService } from '../../platform/markdown/browser/markdownRenderer.js';
 import { EditorMarkdownCodeBlockRenderer } from '../../editor/browser/widget/markdownRenderer/browser/editorMarkdownCodeBlockRenderer.js';
+import { IPaneCompositePartService } from '../services/panecomposite/browser/panecomposite.js';
+import { IPaneCompositePartsConfiguration, PaneCompositePartService } from './parts/paneCompositePartService.js';
+import { AuxiliaryBarPart } from './parts/auxiliarybar/auxiliaryBarPart.js';
+import { PanelPart } from './parts/panel/panelPart.js';
+import { SidebarPart } from './parts/sidebar/sidebarPart.js';
+import { ChatBarPart } from '../agentSessions/browser/parts/chatbar/chatBarPart.js';
+import { SyncDescriptor } from '../../platform/instantiation/common/descriptors.js';
 
 export interface IWorkbenchOptions {
 
@@ -206,6 +213,15 @@ export class Workbench extends Layout {
 		//       is desktop only.
 		//
 		// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+		// Pane Composite Parts Service - pass descriptors for parts specific to default workbench
+		const paneCompositePartsConfiguration: IPaneCompositePartsConfiguration = {
+			panelPart: new SyncDescriptor(PanelPart),
+			sideBarPart: new SyncDescriptor(SidebarPart),
+			auxiliaryBarPart: new SyncDescriptor(AuxiliaryBarPart),
+			chatBarPart: new SyncDescriptor(ChatBarPart),
+		};
+		serviceCollection.set(IPaneCompositePartService, new SyncDescriptor(PaneCompositePartService, [paneCompositePartsConfiguration]));
 
 		// All Contributed Services
 		const contributedServices = getSingletonServiceDescriptors();
