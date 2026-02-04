@@ -515,7 +515,7 @@ export class PromptFilesLocator {
 			try {
 				const stat = await this.fileService.stat(file);
 				if (stat.isFile) {
-					const realPath = await this.fileService.realpath(file);
+					const realPath = stat.isSymbolicLink ? await this.fileService.realpath(file) : undefined;
 					result.push({ uri: file, realPath, type: AgentFileType.copilotInstructionsMd });
 				}
 			} catch (error) {
@@ -556,7 +556,7 @@ export class PromptFilesLocator {
 				// Resolve real paths for duplicate detection
 				const results: IResolvedAgentFile[] = [];
 				for (const r of searchResult.results) {
-					const realPath = await this.fileService.realpath(r.resource);
+					const realPath = undefined; // We can skip realpath resolution here for performance; duplicates can be handled later if needed
 					results.push({ uri: r.resource, realPath, type: AgentFileType.agentsMd });
 				}
 				return results;
@@ -588,7 +588,7 @@ export class PromptFilesLocator {
 			try {
 				const stat = await this.fileService.resolve(uri);
 				if (stat.isFile && stat.name.toLowerCase() === agentsMdFileName) {
-					const realPath = await this.fileService.realpath(stat.resource);
+					const realPath = stat.isSymbolicLink ? await this.fileService.realpath(stat.resource) : undefined;
 					result.push({ uri: stat.resource, realPath, type: AgentFileType.agentsMd });
 				} else if (stat.isDirectory && stat.children) {
 					// Recursively traverse subdirectories
@@ -627,7 +627,7 @@ export class PromptFilesLocator {
 			if (root.success && root.stat?.children) {
 				const file = root.stat.children.find(c => c.isFile && c.name.toLowerCase() === fileNameLower);
 				if (file) {
-					const realPath = await this.fileService.realpath(file.resource);
+					const realPath = file.isSymbolicLink ? await this.fileService.realpath(file.resource) : undefined;
 					result.push({ uri: file.resource, realPath, type });
 				}
 			}

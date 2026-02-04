@@ -5,7 +5,7 @@
 
 import { URI } from '../../../../../../../base/common/uri.js';
 import { VSBuffer } from '../../../../../../../base/common/buffer.js';
-import { FileSystemProviderCapabilities, IFileService, IFileSystemProviderWithFileRealpathCapability } from '../../../../../../../platform/files/common/files.js';
+import { FileSystemProviderCapabilities, FileType, IFileService, IFileSystemProviderWithFileRealpathCapability, IStat } from '../../../../../../../platform/files/common/files.js';
 import { dirname } from '../../../../../../../base/common/resources.js';
 import { InMemoryFileSystemProvider } from '../../../../../../../platform/files/common/inMemoryFilesystemProvider.js';
 import { ResourceMap } from '../../../../../../../base/common/map.js';
@@ -49,6 +49,35 @@ export class TestInMemoryFileSystemProviderWithRealPath extends InMemoryFileSyst
 		}
 		// Default: return original path (not a symlink)
 		return resource.path;
+	}
+
+	/**
+	 * Override stat to mark files with realPath mappings as symbolic links.
+	 */
+	override async stat(resource: URI): Promise<IStat> {
+		const baseStat = await super.stat(resource);
+		const isSymlink = this.realPathMappings.has(resource);
+		if (isSymlink) {
+			return {
+				...baseStat,
+				type: baseStat.type | FileType.SymbolicLink
+			};
+		}
+		return baseStat;
+	}
+
+	/**
+	 * Override readdir to mark files with realPath mappings as symbolic links.
+	 */
+	override async readdir(resource: URI): Promise<[string, FileType][]> {
+		const entries = await super.readdir(resource);
+		return entries.map(([name, type]) => {
+			const childUri = URI.joinPath(resource, name);
+			if (this.realPathMappings.has(childUri)) {
+				return [name, type | FileType.SymbolicLink];
+			}
+			return [name, type];
+		});
 	}
 }
 

@@ -709,25 +709,29 @@ export class PromptsService extends Disposable implements IPromptsService {
 		if (token.isCancellationRequested) {
 			return [];
 		}
-		// filter out duplicates based on realPath (symlinks etc)
-		const seenRealPaths = new ResourceSet();
+		// remember which entr
+		const seenFileURI = new ResourceSet();
+		const symlinks: (IResolvedAgentFile & { realPath: URI })[] = [];
 		const result: IResolvedAgentFile[] = [];
 		const add = (file: IResolvedAgentFile) => {
-			if (file.realPath && seenRealPaths.has(file.realPath)) {
-				if (logger) {
-					logger.logInfo(`Skipping duplicate file (symlink): ${file.uri.toString()}`);
-				}
-				return false;
-			}
 			if (file.realPath) {
-				seenRealPaths.add(file.realPath);
+				symlinks.push(file as IResolvedAgentFile & { realPath: URI });
+			} else {
+				result.push(file);
+				seenFileURI.add(file.uri);
 			}
-			result.push(file);
 			return true;
 		};
 		agentMDs.forEach(add);
 		claudeMDs.forEach(add);
 		copilotInstructionsMDs.forEach(add);
+		for (const symlink of symlinks) {
+			if (seenFileURI.has(symlink.realPath)) {
+				logger?.logInfo(`Skipping symlinked agent instructions file ${symlink.uri} as target already included: ${symlink.realPath}`);
+			} else {
+				result.push(symlink);
+			}
+		}
 		return result;
 	}
 
