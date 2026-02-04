@@ -106,8 +106,8 @@ export function setup(logger: Logger, opts: { web?: boolean }, quality: Quality)
 					// Wait for chat view to be visible
 					await app.workbench.chat.waitForChatView();
 
-					// Send a simple message
-					await app.workbench.chat.sendMessage('Create a file called hello.txt in the current workspace with the text "Hello World"');
+					// Send a simple message that does not require tools to avoid external path confirmations
+					await app.workbench.chat.sendMessage('Explain what "Hello World" means in programming. Include a short fenced code block that shows "Hello World".');
 
 					// Wait for the response to complete (1500 retries ~= 150 seconds at 100ms per retry)
 					await app.workbench.chat.waitForResponse(1500);
