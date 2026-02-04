@@ -107,7 +107,7 @@ export function setup(logger: Logger, opts: { web?: boolean }, quality: Quality)
 					await app.workbench.chat.waitForChatView();
 
 					// Send a simple message
-					await app.workbench.chat.sendMessage('Create a simple hello.txt file with the text "Hello World"');
+					await app.workbench.chat.sendMessage('Create a file called hello.txt in the current workspace with the text "Hello World"');
 
 					// Wait for the response to complete (1500 retries ~= 150 seconds at 100ms per retry)
 					await app.workbench.chat.waitForResponse(1500);
@@ -135,6 +135,8 @@ export function setup(logger: Logger, opts: { web?: boolean }, quality: Quality)
 					// Extend timeout for this test since AI responses can take a while
 					this.timeout(3 * 60 * 1000);
 
+					// Enable anonymous chat access
+					await app.workbench.settingsEditor.addUserSetting('chat.allowAnonymousAccess', 'true');
 					// Enable auto-approve for tools so terminal commands run automatically
 					await app.workbench.settingsEditor.addUserSetting('chat.tools.global.autoApprove', 'true');
 
