@@ -176,7 +176,7 @@ export class AgentSessionSidebarPart extends AbstractPaneCompositePart {
 	}
 
 	protected shouldShowCompositeBar(): boolean {
-		return true;
+		return false;
 	}
 
 	protected getCompositeBarPosition(): CompositeBarPosition {
