@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { spawn } from 'child_process';
+import { ChildProcess, spawn } from 'child_process';
 import { existsSync, unlinkSync } from 'fs';
 import { mkdir, readFile, unlink } from 'fs/promises';
 import { tmpdir } from 'os';
@@ -39,6 +39,8 @@ async function pollUntil(fn: () => boolean, millis = 1000): Promise<void> {
 interface IAvailableUpdate {
 	packagePath: string;
 	updateFilePath?: string;
+	/** The Inno Setup process that is applying the update in the background */
+	updateProcess?: ChildProcess;
 }
 
 let _updateType: UpdateType | undefined = undefined;
@@ -248,10 +250,8 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 						this.setState(State.Downloaded(update, explicit, this._overwrite));
 
 						const fastUpdatesEnabled = this.configurationService.getValue('update.enableWindowsBackgroundUpdates');
-						if (fastUpdatesEnabled) {
-							if (this.productService.target === 'user') {
-								this.doApplyUpdate();
-							}
+						if (fastUpdatesEnabled && this.productService.target === 'user') {
+							this.doApplyUpdate();
 						} else {
 							this.setState(State.Ready(update, explicit, this._overwrite));
 						}
@@ -329,6 +329,9 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 			windowsVerbatimArguments: true
 		});
 
+		// Track the process so we can cancel it if needed
+		this.availableUpdate.updateProcess = child;
+
 		child.once('exit', () => {
 			this.availableUpdate = undefined;
 			this.setState(State.Idle(getUpdateType()));
@@ -340,6 +343,49 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 		// poll for mutex-ready
 		pollUntil(() => mutex.isActive(readyMutexName))
 			.then(() => this.setState(State.Ready(update, explicit, this._overwrite)));
+	}
+
+	protected override async cancelPendingUpdate(): Promise<void> {
+		if (!this.availableUpdate) {
+			return;
+		}
+
+		this.logService.trace('update#cancelPendingUpdate(): cancelling pending update');
+
+		// Kill the Inno Setup process if it's running
+		if (this.availableUpdate.updateProcess) {
+			this.logService.trace('update#cancelPendingUpdate(): killing Inno Setup process');
+
+			// Remove all listeners to prevent the exit handler from changing state
+			this.availableUpdate.updateProcess.removeAllListeners();
+
+			const pid = this.availableUpdate.updateProcess.pid;
+			if (pid) {
+				try {
+					process.kill(pid);
+				} catch (err) {
+					// If we can't kill the process, don't proceed with overwrite
+					// as we might end up with two Inno Setup processes running
+					this.logService.error('update#cancelPendingUpdate(): failed to kill Inno Setup process, aborting cancellation', err);
+					throw err;
+				}
+			}
+			this.availableUpdate.updateProcess = undefined;
+		}
+
+		// Delete the flag file to clean up
+		if (this.availableUpdate.updateFilePath) {
+			this.logService.trace('update#cancelPendingUpdate(): deleting flag file');
+			try {
+				await unlink(this.availableUpdate.updateFilePath);
+			} catch (err) {
+				// Flag file deletion failure is not critical - Inno Setup is already killed
+				this.logService.warn('update#cancelPendingUpdate(): failed to delete flag file', err);
+			}
+			this.availableUpdate.updateFilePath = undefined;
+		}
+
+		this.availableUpdate = undefined;
 	}
 
 	protected override doQuitAndInstall(): void {
@@ -375,10 +421,8 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 		this.availableUpdate = { packagePath };
 		this.setState(State.Downloaded(update, true, false));
 
-		if (fastUpdatesEnabled) {
-			if (this.productService.target === 'user') {
-				this.doApplyUpdate();
-			}
+		if (fastUpdatesEnabled && this.productService.target === 'user') {
+			this.doApplyUpdate();
 		} else {
 			this.setState(State.Ready(update, true, false));
 		}
