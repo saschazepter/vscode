@@ -561,6 +561,15 @@ class CodeMain {
 			args._ = [];
 		}
 
+		// Detect vscode-remote:// URIs in positional arguments and treat them as folder URIs
+		// This enables: code vscode-remote://ssh-remote+host/path
+		const remoteUriPrefix = Schemas.vscodeRemote + '://';
+		const remoteUris = args._.filter(arg => arg.startsWith(remoteUriPrefix));
+		if (remoteUris.length > 0) {
+			args['folder-uri'] = [...(args['folder-uri'] || []), ...remoteUris];
+			args._ = args._.filter(arg => !arg.startsWith(remoteUriPrefix));
+		}
+
 		// Normalize paths and watch out for goto line mode
 		if (!args['remote']) {
 			const paths = this.doValidatePaths(args._, args.goto);

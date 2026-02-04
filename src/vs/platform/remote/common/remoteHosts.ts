@@ -6,6 +6,14 @@
 import { Schemas } from '../../../base/common/network.js';
 import { URI } from '../../../base/common/uri.js';
 
+/**
+ * Checks if a string argument is a vscode-remote:// URI.
+ * Used to detect remote URIs passed as CLI positional arguments.
+ */
+export function isVscodeRemoteUri(arg: string): boolean {
+	return arg.startsWith(Schemas.vscodeRemote + '://');
+}
+
 export function getRemoteAuthority(uri: URI): string | undefined {
 	return uri.scheme === Schemas.vscodeRemote ? uri.authority : undefined;
 }
