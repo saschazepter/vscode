@@ -337,6 +337,10 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		return !!this.viewOptions.supportsChangingModes;
 	}
 
+	get showFullWelcome(): boolean {
+		return !!this.viewOptions.showFullWelcome;
+	}
+
 	private readonly _inputPrefixContent = observableValue<string | undefined>(this, undefined);
 
 	get inputPrefixContentObs() {

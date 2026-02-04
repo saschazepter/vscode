@@ -385,6 +385,7 @@ export interface IChatWidget {
 	readonly contribs: readonly IChatWidgetContrib[];
 
 	readonly supportsChangingModes: boolean;
+	readonly showFullWelcome: boolean;
 
 	/**
 	 * Observable for the input prefix decoration content (e.g., '> ').
