@@ -126,6 +126,57 @@ async function waitForPublishedInvocation(capture: { invocation?: any }, tries =
 	return capture.invocation;
 }
 
+interface TestToolsServiceSetup {
+	configurationService: TestConfigurationService;
+	chatService: MockChatService;
+	service: LanguageModelToolsService;
+	contextKeyService: IContextKeyService;
+}
+
+interface TestToolsServiceOptions {
+	accessibilityService?: IAccessibilityService;
+	accessibilitySignalService?: Partial<IAccessibilitySignalService>;
+	telemetryService?: Partial<ITelemetryService>;
+	hooksExecutionService?: MockHooksExecutionService;
+	/** Called after configurationService is created but before the service is instantiated */
+	configureServices?: (config: TestConfigurationService) => void;
+}
+
+/**
+ * Helper to create a LanguageModelToolsService with all common test stubs.
+ * Reduces boilerplate when tests need custom service configurations.
+ */
+function createTestToolsService(store: ReturnType<typeof ensureNoDisposablesAreLeakedInTestSuite>, options?: TestToolsServiceOptions): TestToolsServiceSetup {
+	const configurationService = new TestConfigurationService();
+	configurationService.setUserConfiguration(ChatConfiguration.ExtensionToolsEnabled, true);
+
+	// Allow tests to configure before service creation
+	options?.configureServices?.(configurationService);
+
+	const instaService = workbenchInstantiationService({
+		contextKeyService: () => store.add(new ContextKeyService(configurationService)),
+		configurationService: () => configurationService
+	}, store);
+	const contextKeyService = instaService.get(IContextKeyService);
+	const chatService = new MockChatService();
+	instaService.stub(IChatService, chatService);
+	instaService.stub(ILanguageModelToolsConfirmationService, new MockLanguageModelToolsConfirmationService());
+	instaService.stub(IHooksExecutionService, options?.hooksExecutionService ?? new MockHooksExecutionService());
+
+	if (options?.accessibilityService) {
+		instaService.stub(IAccessibilityService, options.accessibilityService);
+	}
+	if (options?.accessibilitySignalService) {
+		instaService.stub(IAccessibilitySignalService, options.accessibilitySignalService as unknown as IAccessibilitySignalService);
+	}
+	if (options?.telemetryService) {
+		instaService.stub(ITelemetryService, options.telemetryService);
+	}
+
+	const service = store.add(instaService.createInstance(LanguageModelToolsService));
+	return { configurationService, chatService, service, contextKeyService };
+}
+
 suite('LanguageModelToolsService', () => {
 	const store = ensureNoDisposablesAreLeakedInTestSuite();
 
@@ -135,18 +186,11 @@ suite('LanguageModelToolsService', () => {
 	let configurationService: TestConfigurationService;
 
 	setup(() => {
-		configurationService = new TestConfigurationService();
-		configurationService.setUserConfiguration(ChatConfiguration.ExtensionToolsEnabled, true);
-		const instaService = workbenchInstantiationService({
-			contextKeyService: () => store.add(new ContextKeyService(configurationService)),
-			configurationService: () => configurationService
-		}, store);
-		contextKeyService = instaService.get(IContextKeyService);
-		chatService = new MockChatService();
-		instaService.stub(IChatService, chatService);
-		instaService.stub(ILanguageModelToolsConfirmationService, new MockLanguageModelToolsConfirmationService());
-		instaService.stub(IHooksExecutionService, new MockHooksExecutionService());
-		service = store.add(instaService.createInstance(LanguageModelToolsService));
+		const setup = createTestToolsService(store);
+		configurationService = setup.configurationService;
+		chatService = setup.chatService;
+		service = setup.service;
+		contextKeyService = setup.contextKeyService;
 	});
 
 	function setupToolsForTest(service: LanguageModelToolsService, store: any) {
@@ -1206,11 +1250,6 @@ suite('LanguageModelToolsService', () => {
 	});
 
 	test('accessibility signal for tool confirmation', async () => {
-		// Create a test configuration service with proper settings
-		const testConfigService = new TestConfigurationService();
-		testConfigService.setUserConfiguration('chat.tools.global.autoApprove', false);
-		testConfigService.setUserConfiguration('accessibility.signals.chatUserActionRequired', { sound: 'auto', announcement: 'auto' });
-
 		// Create a test accessibility service that simulates screen reader being enabled
 		const testAccessibilityService = new class extends TestAccessibilityService {
 			override isScreenReaderOptimized(): boolean { return true; }
@@ -1219,17 +1258,14 @@ suite('LanguageModelToolsService', () => {
 		// Create a test accessibility signal service that tracks calls
 		const testAccessibilitySignalService = new TestAccessibilitySignalService();
 
-		// Create a new service instance with the test services
-		const instaService = workbenchInstantiationService({
-			contextKeyService: () => store.add(new ContextKeyService(testConfigService)),
-			configurationService: () => testConfigService
-		}, store);
-		instaService.stub(IChatService, chatService);
-		instaService.stub(IAccessibilityService, testAccessibilityService);
-		instaService.stub(IAccessibilitySignalService, testAccessibilitySignalService as unknown as IAccessibilitySignalService);
-		instaService.stub(ILanguageModelToolsConfirmationService, new MockLanguageModelToolsConfirmationService());
-		instaService.stub(IHooksExecutionService, new MockHooksExecutionService());
-		const testService = store.add(instaService.createInstance(LanguageModelToolsService));
+		const { service: testService, chatService: testChatService } = createTestToolsService(store, {
+			accessibilityService: testAccessibilityService,
+			accessibilitySignalService: testAccessibilitySignalService,
+			configureServices: config => {
+				config.setUserConfiguration('chat.tools.global.autoApprove', false);
+				config.setUserConfiguration('accessibility.signals.chatUserActionRequired', { sound: 'auto', announcement: 'auto' });
+			}
+		});
 
 		const toolData: IToolData = {
 			id: 'testAccessibilityTool',
@@ -1245,7 +1281,7 @@ suite('LanguageModelToolsService', () => {
 
 		const sessionId = 'sessionId-accessibility';
 		const capture: { invocation?: any } = {};
-		stubGetSession(chatService, sessionId, { requestId: 'requestId-accessibility', capture });
+		stubGetSession(testChatService, sessionId, { requestId: 'requestId-accessibility', capture });
 
 		const dto = tool.makeDto({ param: 'value' }, { sessionId });
 
@@ -1269,11 +1305,6 @@ suite('LanguageModelToolsService', () => {
 	});
 
 	test('accessibility signal respects autoApprove configuration', async () => {
-		// Create a test configuration service with auto-approve enabled
-		const testConfigService = new TestConfigurationService();
-		testConfigService.setUserConfiguration('chat.tools.global.autoApprove', true);
-		testConfigService.setUserConfiguration('accessibility.signals.chatUserActionRequired', { sound: 'auto', announcement: 'auto' });
-
 		// Create a test accessibility service that simulates screen reader being enabled
 		const testAccessibilityService = new class extends TestAccessibilityService {
 			override isScreenReaderOptimized(): boolean { return true; }
@@ -1282,17 +1313,14 @@ suite('LanguageModelToolsService', () => {
 		// Create a test accessibility signal service that tracks calls
 		const testAccessibilitySignalService = new TestAccessibilitySignalService();
 
-		// Create a new service instance with the test services
-		const instaService = workbenchInstantiationService({
-			contextKeyService: () => store.add(new ContextKeyService(testConfigService)),
-			configurationService: () => testConfigService
-		}, store);
-		instaService.stub(IChatService, chatService);
-		instaService.stub(IAccessibilityService, testAccessibilityService);
-		instaService.stub(IAccessibilitySignalService, testAccessibilitySignalService as unknown as IAccessibilitySignalService);
-		instaService.stub(ILanguageModelToolsConfirmationService, new MockLanguageModelToolsConfirmationService());
-		instaService.stub(IHooksExecutionService, new MockHooksExecutionService());
-		const testService = store.add(instaService.createInstance(LanguageModelToolsService));
+		const { service: testService, chatService: testChatService } = createTestToolsService(store, {
+			accessibilityService: testAccessibilityService,
+			accessibilitySignalService: testAccessibilitySignalService,
+			configureServices: config => {
+				config.setUserConfiguration('chat.tools.global.autoApprove', true);
+				config.setUserConfiguration('accessibility.signals.chatUserActionRequired', { sound: 'auto', announcement: 'auto' });
+			}
+		});
 
 		const toolData: IToolData = {
 			id: 'testAutoApproveTool',
@@ -1308,7 +1336,7 @@ suite('LanguageModelToolsService', () => {
 
 		const sessionId = 'sessionId-auto-approve';
 		const capture: { invocation?: any } = {};
-		stubGetSession(chatService, sessionId, { requestId: 'requestId-auto-approve', capture });
+		stubGetSession(testChatService, sessionId, { requestId: 'requestId-auto-approve', capture });
 
 		const dto = tool.makeDto({ config: 'test' }, { sessionId });
 
@@ -1322,17 +1350,11 @@ suite('LanguageModelToolsService', () => {
 
 	test('shouldAutoConfirm with basic configuration', async () => {
 		// Test basic shouldAutoConfirm behavior with simple configuration
-		const testConfigService = new TestConfigurationService();
-		testConfigService.setUserConfiguration('chat.tools.global.autoApprove', true); // Global enabled
-
-		const instaService = workbenchInstantiationService({
-			contextKeyService: () => store.add(new ContextKeyService(testConfigService)),
-			configurationService: () => testConfigService
-		}, store);
-		instaService.stub(IChatService, chatService);
-		instaService.stub(ILanguageModelToolsConfirmationService, new MockLanguageModelToolsConfirmationService());
-		instaService.stub(IHooksExecutionService, new MockHooksExecutionService());
-		const testService = store.add(instaService.createInstance(LanguageModelToolsService));
+		const { service: testService, chatService: testChatService } = createTestToolsService(store, {
+			configureServices: config => {
+				config.setUserConfiguration('chat.tools.global.autoApprove', true); // Global enabled
+			}
+		});
 
 		// Register a tool that should be auto-approved
 		const autoTool = registerToolForTest(testService, store, 'autoTool', {
@@ -1341,7 +1363,7 @@ suite('LanguageModelToolsService', () => {
 		});
 
 		const sessionId = 'test-basic-config';
-		stubGetSession(chatService, sessionId, { requestId: 'req1' });
+		stubGetSession(testChatService, sessionId, { requestId: 'req1' });
 
 		// Tool should be auto-approved (global config = true)
 		const result = await testService.invokeTool(
@@ -1354,20 +1376,14 @@ suite('LanguageModelToolsService', () => {
 
 	test('shouldAutoConfirm with per-tool configuration object', async () => {
 		// Test per-tool configuration: { toolId: true/false }
-		const testConfigService = new TestConfigurationService();
-		testConfigService.setUserConfiguration('chat.tools.global.autoApprove', {
-			'approvedTool': true,
-			'deniedTool': false
+		const { service: testService, chatService: testChatService } = createTestToolsService(store, {
+			configureServices: config => {
+				config.setUserConfiguration('chat.tools.global.autoApprove', {
+					'approvedTool': true,
+					'deniedTool': false
+				});
+			}
 		});
-
-		const instaService = workbenchInstantiationService({
-			contextKeyService: () => store.add(new ContextKeyService(testConfigService)),
-			configurationService: () => testConfigService
-		}, store);
-		instaService.stub(IChatService, chatService);
-		instaService.stub(ILanguageModelToolsConfirmationService, new MockLanguageModelToolsConfirmationService());
-		instaService.stub(IHooksExecutionService, new MockHooksExecutionService());
-		const testService = store.add(instaService.createInstance(LanguageModelToolsService));
 
 		// Tool explicitly approved
 		const approvedTool = registerToolForTest(testService, store, 'approvedTool', {
@@ -1376,7 +1392,7 @@ suite('LanguageModelToolsService', () => {
 		});
 
 		const sessionId = 'test-per-tool';
-		stubGetSession(chatService, sessionId, { requestId: 'req1' });
+		stubGetSession(testChatService, sessionId, { requestId: 'req1' });
 
 		// Approved tool should auto-approve
 		const approvedResult = await testService.invokeTool(
@@ -1393,7 +1409,7 @@ suite('LanguageModelToolsService', () => {
 		});
 
 		const capture: { invocation?: any } = {};
-		stubGetSession(chatService, sessionId + '2', { requestId: 'req2', capture });
+		stubGetSession(testChatService, sessionId + '2', { requestId: 'req2', capture });
 		const unspecifiedPromise = testService.invokeTool(
 			unspecifiedTool.makeDto({ test: 2 }, { sessionId: sessionId + '2' }),
 			async () => 0,
@@ -1409,20 +1425,14 @@ suite('LanguageModelToolsService', () => {
 
 	test('eligibleForAutoApproval setting controls tool eligibility', async () => {
 		// Test the new eligibleForAutoApproval setting
-		const testConfigService = new TestConfigurationService();
-		testConfigService.setUserConfiguration(ChatConfiguration.EligibleForAutoApproval, {
-			'eligibleToolRef': true,
-			'ineligibleToolRef': false
+		const { service: testService, chatService: testChatService } = createTestToolsService(store, {
+			configureServices: config => {
+				config.setUserConfiguration(ChatConfiguration.EligibleForAutoApproval, {
+					'eligibleToolRef': true,
+					'ineligibleToolRef': false
+				});
+			}
 		});
-
-		const instaService = workbenchInstantiationService({
-			contextKeyService: () => store.add(new ContextKeyService(testConfigService)),
-			configurationService: () => testConfigService
-		}, store);
-		instaService.stub(IChatService, chatService);
-		instaService.stub(ILanguageModelToolsConfirmationService, new MockLanguageModelToolsConfirmationService());
-		instaService.stub(IHooksExecutionService, new MockHooksExecutionService());
-		const testService = store.add(instaService.createInstance(LanguageModelToolsService));
 
 		// Tool explicitly marked as eligible (using toolReferenceName) - no confirmation needed
 		const eligibleTool = registerToolForTest(testService, store, 'eligibleTool', {
@@ -1433,7 +1443,7 @@ suite('LanguageModelToolsService', () => {
 		});
 
 		const sessionId = 'test-eligible';
-		stubGetSession(chatService, sessionId, { requestId: 'req1' });
+		stubGetSession(testChatService, sessionId, { requestId: 'req1' });
 
 		// Eligible tool should not get default confirmation messages injected
 		const eligibleResult = await testService.invokeTool(
@@ -1452,7 +1462,7 @@ suite('LanguageModelToolsService', () => {
 		});
 
 		const capture: { invocation?: any } = {};
-		stubGetSession(chatService, sessionId + '2', { requestId: 'req2', capture });
+		stubGetSession(testChatService, sessionId + '2', { requestId: 'req2', capture });
 		const ineligiblePromise = testService.invokeTool(
 			ineligibleTool.makeDto({ test: 2 }, { sessionId: sessionId + '2' }),
 			async () => 0,
@@ -1538,15 +1548,9 @@ suite('LanguageModelToolsService', () => {
 	test('tool error handling and telemetry', async () => {
 		const testTelemetryService = new TestTelemetryService();
 
-		const instaService = workbenchInstantiationService({
-			contextKeyService: () => store.add(new ContextKeyService(configurationService)),
-			configurationService: () => configurationService
-		}, store);
-		instaService.stub(IChatService, chatService);
-		instaService.stub(ITelemetryService, testTelemetryService);
-		instaService.stub(ILanguageModelToolsConfirmationService, new MockLanguageModelToolsConfirmationService());
-		instaService.stub(IHooksExecutionService, new MockHooksExecutionService());
-		const testService = store.add(instaService.createInstance(LanguageModelToolsService));
+		const { service: testService, chatService: testChatService } = createTestToolsService(store, {
+			telemetryService: testTelemetryService
+		});
 
 		// Test successful invocation telemetry
 		const successTool = registerToolForTest(testService, store, 'successTool', {
@@ -1555,7 +1559,7 @@ suite('LanguageModelToolsService', () => {
 		});
 
 		const sessionId = 'telemetry-test';
-		stubGetSession(chatService, sessionId, { requestId: 'req1' });
+		stubGetSession(testChatService, sessionId, { requestId: 'req1' });
 
 		await testService.invokeTool(
 			successTool.makeDto({ test: 1 }, { sessionId }),
@@ -1578,7 +1582,7 @@ suite('LanguageModelToolsService', () => {
 			invoke: async () => { throw new Error('Tool error'); }
 		});
 
-		stubGetSession(chatService, sessionId + '2', { requestId: 'req2' });
+		stubGetSession(testChatService, sessionId + '2', { requestId: 'req2' });
 
 		try {
 			await testService.invokeTool(
@@ -2075,18 +2079,11 @@ suite('LanguageModelToolsService', () => {
 	});
 
 	test('shouldAutoConfirm with workspace-specific tool configuration', async () => {
-		const testConfigService = new TestConfigurationService();
-		// Configure per-tool settings at different scopes
-		testConfigService.setUserConfiguration('chat.tools.global.autoApprove', { 'workspaceTool': true });
-
-		const instaService = workbenchInstantiationService({
-			contextKeyService: () => store.add(new ContextKeyService(testConfigService)),
-			configurationService: () => testConfigService
-		}, store);
-		instaService.stub(IChatService, chatService);
-		instaService.stub(ILanguageModelToolsConfirmationService, new MockLanguageModelToolsConfirmationService());
-		instaService.stub(IHooksExecutionService, new MockHooksExecutionService());
-		const testService = store.add(instaService.createInstance(LanguageModelToolsService));
+		const { service: testService, chatService: testChatService } = createTestToolsService(store, {
+			configureServices: config => {
+				config.setUserConfiguration('chat.tools.global.autoApprove', { 'workspaceTool': true });
+			}
+		});
 
 		const workspaceTool = registerToolForTest(testService, store, 'workspaceTool', {
 			prepareToolInvocation: async () => ({ confirmationMessages: { title: 'Test', message: 'Workspace tool' } }),
@@ -2094,7 +2091,7 @@ suite('LanguageModelToolsService', () => {
 		}, { runsInWorkspace: true });
 
 		const sessionId = 'workspace-test';
-		stubGetSession(chatService, sessionId, { requestId: 'req1' });
+		stubGetSession(testChatService, sessionId, { requestId: 'req1' });
 
 		// Should auto-approve based on user configuration
 		const result = await testService.invokeTool(
@@ -2188,23 +2185,15 @@ suite('LanguageModelToolsService', () => {
 	test('eligibleForAutoApproval setting can be configured via policy', async () => {
 		// Test that policy configuration works for eligibleForAutoApproval
 		// Policy values should be JSON strings for object-type settings
-		const testConfigService = new TestConfigurationService();
-
-		// Simulate policy configuration (would come from policy file)
-		const policyValue = {
-			'toolA': true,
-			'toolB': false
-		};
-		testConfigService.setUserConfiguration(ChatConfiguration.EligibleForAutoApproval, policyValue);
-
-		const instaService = workbenchInstantiationService({
-			contextKeyService: () => store.add(new ContextKeyService(testConfigService)),
-			configurationService: () => testConfigService
-		}, store);
-		instaService.stub(IChatService, chatService);
-		instaService.stub(ILanguageModelToolsConfirmationService, new MockLanguageModelToolsConfirmationService());
-		instaService.stub(IHooksExecutionService, new MockHooksExecutionService());
-		const testService = store.add(instaService.createInstance(LanguageModelToolsService));
+		const { service: testService, chatService: testChatService } = createTestToolsService(store, {
+			configureServices: config => {
+				// Simulate policy configuration (would come from policy file)
+				config.setUserConfiguration(ChatConfiguration.EligibleForAutoApproval, {
+					'toolA': true,
+					'toolB': false
+				});
+			}
+		});
 
 		// Tool A is eligible (true in policy)
 		const toolA = registerToolForTest(testService, store, 'toolA', {
@@ -2223,7 +2212,7 @@ suite('LanguageModelToolsService', () => {
 		});
 
 		const sessionId = 'test-policy';
-		stubGetSession(chatService, sessionId, { requestId: 'req1' });
+		stubGetSession(testChatService, sessionId, { requestId: 'req1' });
 
 		// Tool A should execute without confirmation (eligible)
 		const resultA = await testService.invokeTool(
@@ -2235,7 +2224,7 @@ suite('LanguageModelToolsService', () => {
 
 		// Tool B should require confirmation (ineligible)
 		const capture: { invocation?: any } = {};
-		stubGetSession(chatService, sessionId + '2', { requestId: 'req2', capture });
+		stubGetSession(testChatService, sessionId + '2', { requestId: 'req2', capture });
 		const promiseB = testService.invokeTool(
 			toolB.makeDto({ test: 2 }, { sessionId: sessionId + '2' }),
 			async () => 0,
@@ -2252,19 +2241,13 @@ suite('LanguageModelToolsService', () => {
 
 	test('eligibleForAutoApproval with legacy tool reference names - eligible', async () => {
 		// Test backwards compatibility: configuring a legacy name as eligible should work
-		const testConfigService = new TestConfigurationService();
-		testConfigService.setUserConfiguration(ChatConfiguration.EligibleForAutoApproval, {
-			'oldToolName': true  // Using legacy name
+		const { service: testService, chatService: testChatService } = createTestToolsService(store, {
+			configureServices: config => {
+				config.setUserConfiguration(ChatConfiguration.EligibleForAutoApproval, {
+					'oldToolName': true  // Using legacy name
+				});
+			}
 		});
-
-		const instaService = workbenchInstantiationService({
-			contextKeyService: () => store.add(new ContextKeyService(testConfigService)),
-			configurationService: () => testConfigService
-		}, store);
-		instaService.stub(IChatService, chatService);
-		instaService.stub(ILanguageModelToolsConfirmationService, new MockLanguageModelToolsConfirmationService());
-		instaService.stub(IHooksExecutionService, new MockHooksExecutionService());
-		const testService = store.add(instaService.createInstance(LanguageModelToolsService));
 
 		// Tool has been renamed but has legacy name
 		const renamedTool = registerToolForTest(testService, store, 'renamedTool', {
@@ -2276,7 +2259,7 @@ suite('LanguageModelToolsService', () => {
 		});
 
 		const sessionId = 'test-legacy-eligible';
-		stubGetSession(chatService, sessionId, { requestId: 'req1' });
+		stubGetSession(testChatService, sessionId, { requestId: 'req1' });
 
 		// Tool should be eligible even though we configured the legacy name
 		const result = await testService.invokeTool(
@@ -2289,19 +2272,13 @@ suite('LanguageModelToolsService', () => {
 
 	test('eligibleForAutoApproval with legacy tool reference names - ineligible', async () => {
 		// Test backwards compatibility: configuring a legacy name as ineligible should work
-		const testConfigService = new TestConfigurationService();
-		testConfigService.setUserConfiguration(ChatConfiguration.EligibleForAutoApproval, {
-			'deprecatedToolName': false  // Using legacy name
+		const { service: testService, chatService: testChatService } = createTestToolsService(store, {
+			configureServices: config => {
+				config.setUserConfiguration(ChatConfiguration.EligibleForAutoApproval, {
+					'deprecatedToolName': false  // Using legacy name
+				});
+			}
 		});
-
-		const instaService = workbenchInstantiationService({
-			contextKeyService: () => store.add(new ContextKeyService(testConfigService)),
-			configurationService: () => testConfigService
-		}, store);
-		instaService.stub(IChatService, chatService);
-		instaService.stub(ILanguageModelToolsConfirmationService, new MockLanguageModelToolsConfirmationService());
-		instaService.stub(IHooksExecutionService, new MockHooksExecutionService());
-		const testService = store.add(instaService.createInstance(LanguageModelToolsService));
 
 		// Tool has been renamed but has legacy name
 		const renamedTool = registerToolForTest(testService, store, 'renamedTool2', {
@@ -2314,7 +2291,7 @@ suite('LanguageModelToolsService', () => {
 
 		const sessionId = 'test-legacy-ineligible';
 		const capture: { invocation?: any } = {};
-		stubGetSession(chatService, sessionId, { requestId: 'req1', capture });
+		stubGetSession(testChatService, sessionId, { requestId: 'req1', capture });
 
 		// Tool should be ineligible and require confirmation
 		const promise = testService.invokeTool(
@@ -2333,19 +2310,13 @@ suite('LanguageModelToolsService', () => {
 
 	test('eligibleForAutoApproval with multiple legacy names', async () => {
 		// Test that any of the legacy names can be used in the configuration
-		const testConfigService = new TestConfigurationService();
-		testConfigService.setUserConfiguration(ChatConfiguration.EligibleForAutoApproval, {
-			'secondLegacyName': true  // Using the second legacy name
+		const { service: testService, chatService: testChatService } = createTestToolsService(store, {
+			configureServices: config => {
+				config.setUserConfiguration(ChatConfiguration.EligibleForAutoApproval, {
+					'secondLegacyName': true  // Using the second legacy name
+				});
+			}
 		});
-
-		const instaService = workbenchInstantiationService({
-			contextKeyService: () => store.add(new ContextKeyService(testConfigService)),
-			configurationService: () => testConfigService
-		}, store);
-		instaService.stub(IChatService, chatService);
-		instaService.stub(ILanguageModelToolsConfirmationService, new MockLanguageModelToolsConfirmationService());
-		instaService.stub(IHooksExecutionService, new MockHooksExecutionService());
-		const testService = store.add(instaService.createInstance(LanguageModelToolsService));
 
 		// Tool has multiple legacy names
 		const multiLegacyTool = registerToolForTest(testService, store, 'multiLegacyTool', {
@@ -2357,7 +2328,7 @@ suite('LanguageModelToolsService', () => {
 		});
 
 		const sessionId = 'test-multi-legacy';
-		stubGetSession(chatService, sessionId, { requestId: 'req1' });
+		stubGetSession(testChatService, sessionId, { requestId: 'req1' });
 
 		// Tool should be eligible via second legacy name
 		const result = await testService.invokeTool(
@@ -2370,20 +2341,14 @@ suite('LanguageModelToolsService', () => {
 
 	test('eligibleForAutoApproval current name takes precedence over legacy names', async () => {
 		// Test forward compatibility: current name in config should take precedence
-		const testConfigService = new TestConfigurationService();
-		testConfigService.setUserConfiguration(ChatConfiguration.EligibleForAutoApproval, {
-			'currentName': false,      // Current name says ineligible
-			'oldName': true           // Legacy name says eligible
+		const { service: testService, chatService: testChatService } = createTestToolsService(store, {
+			configureServices: config => {
+				config.setUserConfiguration(ChatConfiguration.EligibleForAutoApproval, {
+					'currentName': false,      // Current name says ineligible
+					'oldName': true           // Legacy name says eligible
+				});
+			}
 		});
-
-		const instaService = workbenchInstantiationService({
-			contextKeyService: () => store.add(new ContextKeyService(testConfigService)),
-			configurationService: () => testConfigService
-		}, store);
-		instaService.stub(IChatService, chatService);
-		instaService.stub(ILanguageModelToolsConfirmationService, new MockLanguageModelToolsConfirmationService());
-		instaService.stub(IHooksExecutionService, new MockHooksExecutionService());
-		const testService = store.add(instaService.createInstance(LanguageModelToolsService));
 
 		const tool = registerToolForTest(testService, store, 'precedenceTool', {
 			prepareToolInvocation: async () => ({}),
@@ -2395,7 +2360,7 @@ suite('LanguageModelToolsService', () => {
 
 		const sessionId = 'test-precedence';
 		const capture: { invocation?: any } = {};
-		stubGetSession(chatService, sessionId, { requestId: 'req1', capture });
+		stubGetSession(testChatService, sessionId, { requestId: 'req1', capture });
 
 		// Current name should take precedence, so tool should be ineligible
 		const promise = testService.invokeTool(
@@ -2414,19 +2379,13 @@ suite('LanguageModelToolsService', () => {
 
 	test('eligibleForAutoApproval with legacy full reference names from toolsets', async () => {
 		// Test legacy names that include toolset prefixes (e.g., 'oldToolSet/oldToolName')
-		const testConfigService = new TestConfigurationService();
-		testConfigService.setUserConfiguration(ChatConfiguration.EligibleForAutoApproval, {
-			'oldToolSet/oldToolName': false  // Legacy full reference name from old toolset
+		const { service: testService, chatService: testChatService } = createTestToolsService(store, {
+			configureServices: config => {
+				config.setUserConfiguration(ChatConfiguration.EligibleForAutoApproval, {
+					'oldToolSet/oldToolName': false  // Legacy full reference name from old toolset
+				});
+			}
 		});
-
-		const instaService = workbenchInstantiationService({
-			contextKeyService: () => store.add(new ContextKeyService(testConfigService)),
-			configurationService: () => testConfigService
-		}, store);
-		instaService.stub(IChatService, chatService);
-		instaService.stub(ILanguageModelToolsConfirmationService, new MockLanguageModelToolsConfirmationService());
-		instaService.stub(IHooksExecutionService, new MockHooksExecutionService());
-		const testService = store.add(instaService.createInstance(LanguageModelToolsService));
 
 		// Tool was in an old toolset but now standalone
 		const migratedTool = registerToolForTest(testService, store, 'migratedTool', {
@@ -2439,7 +2398,7 @@ suite('LanguageModelToolsService', () => {
 
 		const sessionId = 'test-fullReferenceName-legacy';
 		const capture: { invocation?: any } = {};
-		stubGetSession(chatService, sessionId, { requestId: 'req1', capture });
+		stubGetSession(testChatService, sessionId, { requestId: 'req1', capture });
 
 		// Tool should be ineligible based on legacy full reference name
 		const promise = testService.invokeTool(
@@ -2458,21 +2417,15 @@ suite('LanguageModelToolsService', () => {
 
 	test('eligibleForAutoApproval mixed current and legacy names', async () => {
 		// Test realistic migration scenario with mixed current and legacy names
-		const testConfigService = new TestConfigurationService();
-		testConfigService.setUserConfiguration(ChatConfiguration.EligibleForAutoApproval, {
-			'modernTool': true,           // Current name
-			'legacyToolOld': false,      // Legacy name
-			'unchangedTool': true        // Tool that never changed
+		const { service: testService, chatService: testChatService } = createTestToolsService(store, {
+			configureServices: config => {
+				config.setUserConfiguration(ChatConfiguration.EligibleForAutoApproval, {
+					'modernTool': true,           // Current name
+					'legacyToolOld': false,      // Legacy name
+					'unchangedTool': true        // Tool that never changed
+				});
+			}
 		});
-
-		const instaService = workbenchInstantiationService({
-			contextKeyService: () => store.add(new ContextKeyService(testConfigService)),
-			configurationService: () => testConfigService
-		}, store);
-		instaService.stub(IChatService, chatService);
-		instaService.stub(ILanguageModelToolsConfirmationService, new MockLanguageModelToolsConfirmationService());
-		instaService.stub(IHooksExecutionService, new MockHooksExecutionService());
-		const testService = store.add(instaService.createInstance(LanguageModelToolsService));
 
 		// Modern tool with current name
 		const tool1 = registerToolForTest(testService, store, 'tool1', {
@@ -2500,7 +2453,7 @@ suite('LanguageModelToolsService', () => {
 		});
 
 		const sessionId = 'test-mixed';
-		stubGetSession(chatService, sessionId, { requestId: 'req1' });
+		stubGetSession(testChatService, sessionId, { requestId: 'req1' });
 
 		// Tool 1 should be eligible (current name)
 		const result1 = await testService.invokeTool(
@@ -2512,7 +2465,7 @@ suite('LanguageModelToolsService', () => {
 
 		// Tool 2 should be ineligible (legacy name)
 		const capture2: { invocation?: any } = {};
-		stubGetSession(chatService, sessionId + '2', { requestId: 'req2', capture: capture2 });
+		stubGetSession(testChatService, sessionId + '2', { requestId: 'req2', capture: capture2 });
 		const promise2 = testService.invokeTool(
 			tool2.makeDto({ test: 2 }, { sessionId: sessionId + '2' }),
 			async () => 0,
@@ -3769,18 +3722,12 @@ suite('LanguageModelToolsService', () => {
 		let hookChatService: MockChatService;
 
 		setup(() => {
-			configurationService = new TestConfigurationService();
-			configurationService.setUserConfiguration(ChatConfiguration.ExtensionToolsEnabled, true);
-			const instaService = workbenchInstantiationService({
-				contextKeyService: () => store.add(new ContextKeyService(configurationService)),
-				configurationService: () => configurationService
-			}, store);
-			hookChatService = new MockChatService();
 			mockHooksService = new MockHooksExecutionService();
-			instaService.stub(IChatService, hookChatService);
-			instaService.stub(ILanguageModelToolsConfirmationService, new MockLanguageModelToolsConfirmationService());
-			instaService.stub(IHooksExecutionService, mockHooksService);
-			hookService = store.add(instaService.createInstance(LanguageModelToolsService));
+			const setup = createTestToolsService(store, {
+				hooksExecutionService: mockHooksService
+			});
+			hookService = setup.service;
+			hookChatService = setup.chatService;
 		});
 
 		test('when hook denies, tool returns error and creates cancelled invocation', async () => {
