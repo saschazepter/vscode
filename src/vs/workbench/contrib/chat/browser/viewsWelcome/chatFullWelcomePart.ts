@@ -27,9 +27,6 @@ import { HoverPosition } from '../../../../../base/browser/ui/hover/hoverWidget.
 import { IAction } from '../../../../../base/common/actions.js';
 import { IChatInputPickerOptions } from '../widget/input/chatInputPickerActionItem.js';
 
-// Re-export for convenience
-export { QuickStartType } from './chatQuickStartPart.js';
-
 const MAX_SESSIONS = 6;
 
 /**
