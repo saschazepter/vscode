@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { URI } from '../../../../../base/common/uri.js';
-import { HookType, IHookCommand, normalizeHookTypeId, resolveHookCommand } from './hookSchema.js';
+import { HookType, IHookCommand, toHookType, resolveHookCommand } from './hookSchema.js';
 
 /**
  * Maps Claude hook type names to our abstract HookType.
@@ -92,7 +92,7 @@ export function parseClaudeHooks(
 
 	for (const originalId of Object.keys(hooksObj)) {
 		// Resolve Claude hook type name to our canonical HookType
-		const hookType = resolveClaudeHookType(originalId) ?? normalizeHookTypeId(originalId);
+		const hookType = resolveClaudeHookType(originalId) ?? toHookType(originalId);
 		if (!hookType) {
 			continue;
 		}

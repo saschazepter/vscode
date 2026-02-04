@@ -944,7 +944,6 @@ export class PromptsService extends Disposable implements IPromptsService {
 			[HookType.UserPromptSubmitted]: [],
 			[HookType.PreToolUse]: [],
 			[HookType.PostToolUse]: [],
-			[HookType.PostToolUseFailure]: [],
 			[HookType.SubagentStart]: [],
 			[HookType.SubagentStop]: [],
 			[HookType.Stop]: [],
@@ -978,14 +977,13 @@ export class PromptsService extends Disposable implements IPromptsService {
 
 		// Build the result, only including hook types that have entries
 		const result: IChatRequestHooks = {
-			...(collectedHooks[HookType.SessionStart].length > 0 && { sessionStart: collectedHooks[HookType.SessionStart] }),
-			...(collectedHooks[HookType.UserPromptSubmitted].length > 0 && { userPromptSubmitted: collectedHooks[HookType.UserPromptSubmitted] }),
-			...(collectedHooks[HookType.PreToolUse].length > 0 && { preToolUse: collectedHooks[HookType.PreToolUse] }),
-			...(collectedHooks[HookType.PostToolUse].length > 0 && { postToolUse: collectedHooks[HookType.PostToolUse] }),
-			...(collectedHooks[HookType.PostToolUseFailure].length > 0 && { postToolUseFailure: collectedHooks[HookType.PostToolUseFailure] }),
-			...(collectedHooks[HookType.SubagentStart].length > 0 && { subagentStart: collectedHooks[HookType.SubagentStart] }),
-			...(collectedHooks[HookType.SubagentStop].length > 0 && { subagentStop: collectedHooks[HookType.SubagentStop] }),
-			...(collectedHooks[HookType.Stop].length > 0 && { stop: collectedHooks[HookType.Stop] }),
+			...(collectedHooks[HookType.SessionStart].length > 0 && { [HookType.SessionStart]: collectedHooks[HookType.SessionStart] }),
+			...(collectedHooks[HookType.UserPromptSubmitted].length > 0 && { [HookType.UserPromptSubmitted]: collectedHooks[HookType.UserPromptSubmitted] }),
+			...(collectedHooks[HookType.PreToolUse].length > 0 && { [HookType.PreToolUse]: collectedHooks[HookType.PreToolUse] }),
+			...(collectedHooks[HookType.PostToolUse].length > 0 && { [HookType.PostToolUse]: collectedHooks[HookType.PostToolUse] }),
+			...(collectedHooks[HookType.SubagentStart].length > 0 && { [HookType.SubagentStart]: collectedHooks[HookType.SubagentStart] }),
+			...(collectedHooks[HookType.SubagentStop].length > 0 && { [HookType.SubagentStop]: collectedHooks[HookType.SubagentStop] }),
+			...(collectedHooks[HookType.Stop].length > 0 && { [HookType.Stop]: collectedHooks[HookType.Stop] }),
 		};
 
 		this.logger.trace(`[PromptsService] Collected hooks: ${JSON.stringify(Object.keys(result))}`);

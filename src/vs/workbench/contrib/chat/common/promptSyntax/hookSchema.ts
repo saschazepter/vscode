@@ -14,14 +14,13 @@ import { untildify } from '../../../../../base/common/labels.js';
  * Enum of available hook types that can be configured in hooks.json
  */
 export enum HookType {
-	SessionStart = 'sessionStart',
-	UserPromptSubmitted = 'userPromptSubmitted',
-	PreToolUse = 'preToolUse',
-	PostToolUse = 'postToolUse',
-	PostToolUseFailure = 'postToolUseFailure',
-	SubagentStart = 'subagentStart',
-	SubagentStop = 'subagentStop',
-	Stop = 'stop',
+	SessionStart = 'SessionStart',
+	UserPromptSubmitted = 'UserPromptSubmitted',
+	PreToolUse = 'PreToolUse',
+	PostToolUse = 'PostToolUse',
+	SubagentStart = 'SubagentStart',
+	SubagentStop = 'SubagentStop',
+	Stop = 'Stop',
 }
 
 /**
@@ -52,11 +51,6 @@ export const HOOK_TYPES = [
 		id: HookType.PostToolUse,
 		label: nls.localize('hookType.postToolUse.label', "Post-Tool Use"),
 		description: nls.localize('hookType.postToolUse.description', "Executed after a tool completes execution successfully.")
-	},
-	{
-		id: HookType.PostToolUseFailure,
-		label: nls.localize('hookType.postToolUseFailure.label', "Post-Tool Use Failure"),
-		description: nls.localize('hookType.postToolUseFailure.description', "Executed after a tool completes execution with a failure.")
 	},
 	{
 		id: HookType.SubagentStart,
@@ -101,7 +95,6 @@ export interface IChatRequestHooks {
 	readonly [HookType.UserPromptSubmitted]?: readonly IHookCommand[];
 	readonly [HookType.PreToolUse]?: readonly IHookCommand[];
 	readonly [HookType.PostToolUse]?: readonly IHookCommand[];
-	readonly [HookType.PostToolUseFailure]?: readonly IHookCommand[];
 	readonly [HookType.SubagentStart]?: readonly IHookCommand[];
 	readonly [HookType.SubagentStop]?: readonly IHookCommand[];
 	readonly [HookType.Stop]?: readonly IHookCommand[];
@@ -251,40 +244,14 @@ export const HOOK_FILE_GLOB = 'hooks/hooks.json';
 
 /**
  * Normalizes a raw hook type identifier to the canonical HookType enum value.
- * Supports alternative casing and naming conventions from different tools:
- * - Claude Code: PreToolUse, PostToolUse, SessionStart, Stop, SubagentStart, SubagentStop, UserPromptSubmit
- * - GitHub Copilot: sessionStart, userPromptSubmitted, preToolUse, postToolUse, etc.
- *
- * @see https://docs.anthropic.com/en/docs/claude-code/hooks
- * @see https://docs.github.com/en/copilot/concepts/agents/coding-agent/about-hooks#types-of-hooks
+ * Only matches exact enum values. For tool-specific naming conventions (e.g., Claude, Copilot CLI),
+ * use the corresponding compat module's resolver function.
  */
-export function normalizeHookTypeId(rawHookTypeId: string): HookType | undefined {
-	// Check if it's already a canonical HookType value
+export function toHookType(rawHookTypeId: string): HookType | undefined {
 	if (Object.values(HookType).includes(rawHookTypeId as HookType)) {
 		return rawHookTypeId as HookType;
 	}
-
-	// Handle alternative names from Claude Code
-	switch (rawHookTypeId) {
-		case 'SessionStart':
-			return HookType.SessionStart;
-		case 'UserPromptSubmit':
-			return HookType.UserPromptSubmitted;
-		case 'PreToolUse':
-			return HookType.PreToolUse;
-		case 'PostToolUse':
-			return HookType.PostToolUse;
-		case 'PostToolUseFailure':
-			return HookType.PostToolUseFailure;
-		case 'SubagentStart':
-			return HookType.SubagentStart;
-		case 'SubagentStop':
-			return HookType.SubagentStop;
-		case 'Stop':
-			return HookType.Stop;
-		default:
-			return undefined;
-	}
+	return undefined;
 }
 
 /**
