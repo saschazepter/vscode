@@ -294,6 +294,7 @@ export class MenuId {
 	static readonly AgentSessionSectionContext = new MenuId('AgentSessionSectionContext');
 	static readonly AgentSessionsCreateSubMenu = new MenuId('AgentSessionsCreateSubMenu');
 	static readonly AgentSessionsToolbar = new MenuId('AgentSessionsToolbar');
+	static readonly AgentSessionsViewFilterSubMenu = new MenuId('AgentSessionsViewFilterSubMenu');
 	static readonly AgentSessionItemToolbar = new MenuId('AgentSessionItemToolbar');
 	static readonly AgentSessionSectionToolbar = new MenuId('AgentSessionSectionToolbar');
 	static readonly AgentsTitleBarControlMenu = new MenuId('AgentsTitleBarControlMenu');

@@ -745,7 +745,8 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 				// allow to restore a non-default viewlet in development mode or when window reloads
 			} else if (
 				viewContainerToRestore !== this.viewDescriptorService.getDefaultViewContainer(ViewContainerLocation.Sidebar)?.id &&
-				viewContainerToRestore !== this.viewDescriptorService.getDefaultViewContainer(ViewContainerLocation.AuxiliaryBar)?.id
+				viewContainerToRestore !== this.viewDescriptorService.getDefaultViewContainer(ViewContainerLocation.AuxiliaryBar)?.id &&
+				viewContainerToRestore !== 'workbench.view.agentSessionsContainer' // agent sessions view container
 			) {
 				// fallback to default viewlet otherwise if the viewlet is not a default viewlet
 				viewContainerToRestore = this.viewDescriptorService.getDefaultViewContainer(ViewContainerLocation.Sidebar)?.id;

@@ -18,5 +18,6 @@
 		"workbench.startupEditor": "none",
 		"workbench.tips.enabled": false,
 		"workbench.layoutControl.type": "toggles",
+		"chat.sessions.dedicatedView.enabled": true
 	}
 }

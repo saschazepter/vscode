@@ -475,6 +475,8 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 		let newSessionsContainerVisible: boolean;
 		if (!this.configurationService.getValue<boolean>(ChatConfiguration.ChatViewSessionsEnabled)) {
 			newSessionsContainerVisible = false; // disabled in settings
+		} else if (this.configurationService.getValue<boolean>(ChatConfiguration.AgentSessionsViewEnabled)) {
+			newSessionsContainerVisible = false; // disabled due to dedicated sessions view
 		} else {
 
 			// Sessions control: stacked
@@ -674,11 +676,11 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 		// Sessions control visibility is impacted by multiple things:
 		// - chat widget being in empty state or showing a chat
 		// - extensions provided welcome view showing or not
-		// - configuration setting
+		// - configuration setting (sessions enablement, dedicated view enablement)
 		this._chatWidgetDisposables.add(Event.any(
 			chatWidget.onDidChangeEmptyState,
 			Event.fromObservable(welcomeController.isShowingWelcome),
-			Event.filter(this.configurationService.onDidChangeConfiguration, e => e.affectsConfiguration(ChatConfiguration.ChatViewSessionsEnabled))
+			Event.filter(this.configurationService.onDidChangeConfiguration, e => e.affectsConfiguration(ChatConfiguration.ChatViewSessionsEnabled) || e.affectsConfiguration(ChatConfiguration.AgentSessionsViewEnabled))
 		)(() => {
 			if (this.sessionsViewerOrientation === AgentSessionsViewerOrientation.Stacked) {
 				sessionsControl.clearFocus(); // improve visual appearance when switching visibility by clearing focus

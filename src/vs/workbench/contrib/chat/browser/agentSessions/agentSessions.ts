@@ -11,6 +11,13 @@ import { localChatSessionType } from '../../common/chatSessionsService.js';
 import { IChatSessionTiming } from '../../common/chatService/chatService.js';
 import { foreground, listActiveSelectionForeground, registerColor, transparent } from '../../../../../platform/theme/common/colorRegistry.js';
 import { getChatSessionType } from '../../common/model/chatUri.js';
+import { IViewsService } from '../../../../services/views/common/viewsService.js';
+import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
+import { ChatConfiguration } from '../../common/constants.js';
+import { ChatViewId } from '../chat.js';
+
+export const AgentSessionsViewId = 'workbench.view.agentSessions';
+export const AgentSessionsViewContainerId = 'workbench.view.agentSessionsContainer';
 
 export enum AgentSessionProviders {
 	Local = localChatSessionType,
@@ -156,4 +163,13 @@ export const AGENT_SESSION_DELETE_ACTION_ID = 'agentSession.delete';
 
 export function getAgentSessionTime(timing: IChatSessionTiming): number {
 	return timing.lastRequestEnded ?? timing.lastRequestStarted ?? timing.created;
+}
+
+export function openAgentSessionsView(viewsService: IViewsService, configurationService: IConfigurationService): void {
+	const sessionsViewEnabled = configurationService.getValue<boolean>(ChatConfiguration.AgentSessionsViewEnabled);
+	if (sessionsViewEnabled) {
+		viewsService.openView(AgentSessionsViewId, true); // dedicated sessions view is enabled
+	} else {
+		viewsService.openView(ChatViewId, true); // sessions are within the chat view
+	}
 }

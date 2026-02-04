@@ -46,7 +46,7 @@ import product from '../../../../../platform/product/common/product.js';
 import { contrastBorder, inputValidationErrorBorder, inputValidationInfoBorder, inputValidationWarningBorder, registerColor, transparent } from '../../../../../platform/theme/common/colorRegistry.js';
 import { Color } from '../../../../../base/common/color.js';
 import { IViewsService } from '../../../../services/views/common/viewsService.js';
-import { ChatViewId } from '../chat.js';
+import { openAgentSessionsView } from '../agentSessions/agentSessions.js';
 import { isCompletionsEnabled } from '../../../../../editor/common/services/completionsEnablement.js';
 
 const defaultChat = product.defaultChatAgent;
@@ -229,7 +229,7 @@ export class ChatStatusDashboard extends DomWidget {
 					tooltip: localize('viewChatSessionsTooltip', "View Agent Sessions"),
 					class: ThemeIcon.asClassName(Codicon.eye),
 					run: () => {
-						this.viewService.openView(ChatViewId, true);
+						openAgentSessionsView(this.viewService, this.configurationService);
 						this.hoverService.hideHover(true);
 					}
 				}));
