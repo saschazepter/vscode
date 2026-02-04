@@ -2961,7 +2961,7 @@ export namespace ChatToolInvocationPart {
 					status: todoStatusEnumToString(todo.status)
 				}))
 			};
-		} else if (data && Array.isArray(data) || (data.some((v: any) => v instanceof types.Location || URI.isUri(v)))) {
+		} else if (data && 'values' in data && Array.isArray(data.values)) {
 			// Convert extension API resources tool data to internal format
 			return {
 				kind: 'resources',
