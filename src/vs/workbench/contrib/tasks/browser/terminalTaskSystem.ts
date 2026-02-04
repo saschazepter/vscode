@@ -1113,7 +1113,7 @@ export class TerminalTaskSystem extends Disposable implements ITaskSystem {
 						onData.dispose();
 						startStopProblemMatcher.done();
 						startStopProblemMatcher.dispose();
-						this._store.delete(problemMatcherListener);
+						problemMatcherListener.dispose();
 					}, 100);
 					if (!processStartedSignaled && terminal) {
 						this._fireTaskEvent(TaskEvent.processStarted(task, terminal.instanceId, terminal.processId!));
