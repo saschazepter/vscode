@@ -119,7 +119,7 @@ function stubGetSession(chatService: MockChatService, sessionId: string, options
 	return fakeModel;
 }
 
-async function waitForPublishedInvocation(capture: { invocation?: any }, tries = 5): Promise<ChatToolInvocation> {
+async function waitForPublishedInvocation(capture: { invocation?: any }, tries = 10): Promise<ChatToolInvocation> {
 	for (let i = 0; i < tries && !capture.invocation; i++) {
 		await Promise.resolve();
 	}
@@ -145,6 +145,7 @@ suite('LanguageModelToolsService', () => {
 		chatService = new MockChatService();
 		instaService.stub(IChatService, chatService);
 		instaService.stub(ILanguageModelToolsConfirmationService, new MockLanguageModelToolsConfirmationService());
+		instaService.stub(IHooksExecutionService, new MockHooksExecutionService());
 		service = store.add(instaService.createInstance(LanguageModelToolsService));
 	});
 
@@ -1227,6 +1228,7 @@ suite('LanguageModelToolsService', () => {
 		instaService.stub(IAccessibilityService, testAccessibilityService);
 		instaService.stub(IAccessibilitySignalService, testAccessibilitySignalService as unknown as IAccessibilitySignalService);
 		instaService.stub(ILanguageModelToolsConfirmationService, new MockLanguageModelToolsConfirmationService());
+		instaService.stub(IHooksExecutionService, new MockHooksExecutionService());
 		const testService = store.add(instaService.createInstance(LanguageModelToolsService));
 
 		const toolData: IToolData = {
@@ -1289,6 +1291,7 @@ suite('LanguageModelToolsService', () => {
 		instaService.stub(IAccessibilityService, testAccessibilityService);
 		instaService.stub(IAccessibilitySignalService, testAccessibilitySignalService as unknown as IAccessibilitySignalService);
 		instaService.stub(ILanguageModelToolsConfirmationService, new MockLanguageModelToolsConfirmationService());
+		instaService.stub(IHooksExecutionService, new MockHooksExecutionService());
 		const testService = store.add(instaService.createInstance(LanguageModelToolsService));
 
 		const toolData: IToolData = {
@@ -1328,6 +1331,7 @@ suite('LanguageModelToolsService', () => {
 		}, store);
 		instaService.stub(IChatService, chatService);
 		instaService.stub(ILanguageModelToolsConfirmationService, new MockLanguageModelToolsConfirmationService());
+		instaService.stub(IHooksExecutionService, new MockHooksExecutionService());
 		const testService = store.add(instaService.createInstance(LanguageModelToolsService));
 
 		// Register a tool that should be auto-approved
@@ -1362,6 +1366,7 @@ suite('LanguageModelToolsService', () => {
 		}, store);
 		instaService.stub(IChatService, chatService);
 		instaService.stub(ILanguageModelToolsConfirmationService, new MockLanguageModelToolsConfirmationService());
+		instaService.stub(IHooksExecutionService, new MockHooksExecutionService());
 		const testService = store.add(instaService.createInstance(LanguageModelToolsService));
 
 		// Tool explicitly approved
@@ -1416,6 +1421,7 @@ suite('LanguageModelToolsService', () => {
 		}, store);
 		instaService.stub(IChatService, chatService);
 		instaService.stub(ILanguageModelToolsConfirmationService, new MockLanguageModelToolsConfirmationService());
+		instaService.stub(IHooksExecutionService, new MockHooksExecutionService());
 		const testService = store.add(instaService.createInstance(LanguageModelToolsService));
 
 		// Tool explicitly marked as eligible (using toolReferenceName) - no confirmation needed
@@ -1539,6 +1545,7 @@ suite('LanguageModelToolsService', () => {
 		instaService.stub(IChatService, chatService);
 		instaService.stub(ITelemetryService, testTelemetryService);
 		instaService.stub(ILanguageModelToolsConfirmationService, new MockLanguageModelToolsConfirmationService());
+		instaService.stub(IHooksExecutionService, new MockHooksExecutionService());
 		const testService = store.add(instaService.createInstance(LanguageModelToolsService));
 
 		// Test successful invocation telemetry
@@ -1629,6 +1636,7 @@ suite('LanguageModelToolsService', () => {
 		instaService1.stub(IAccessibilityService, testAccessibilityService1);
 		instaService1.stub(IAccessibilitySignalService, testAccessibilitySignalService as unknown as IAccessibilitySignalService);
 		instaService1.stub(ILanguageModelToolsConfirmationService, new MockLanguageModelToolsConfirmationService());
+		instaService1.stub(IHooksExecutionService, new MockHooksExecutionService());
 		const testService1 = store.add(instaService1.createInstance(LanguageModelToolsService));
 
 		const tool1 = registerToolForTest(testService1, store, 'soundOnlyTool', {
@@ -1670,6 +1678,7 @@ suite('LanguageModelToolsService', () => {
 		instaService2.stub(IAccessibilityService, testAccessibilityService2);
 		instaService2.stub(IAccessibilitySignalService, testAccessibilitySignalService as unknown as IAccessibilitySignalService);
 		instaService2.stub(ILanguageModelToolsConfirmationService, new MockLanguageModelToolsConfirmationService());
+		instaService2.stub(IHooksExecutionService, new MockHooksExecutionService());
 		const testService2 = store.add(instaService2.createInstance(LanguageModelToolsService));
 
 		const tool2 = registerToolForTest(testService2, store, 'autoScreenReaderTool', {
@@ -1712,6 +1721,7 @@ suite('LanguageModelToolsService', () => {
 		instaService3.stub(IAccessibilityService, testAccessibilityService3);
 		instaService3.stub(IAccessibilitySignalService, testAccessibilitySignalService as unknown as IAccessibilitySignalService);
 		instaService3.stub(ILanguageModelToolsConfirmationService, new MockLanguageModelToolsConfirmationService());
+		instaService3.stub(IHooksExecutionService, new MockHooksExecutionService());
 		const testService3 = store.add(instaService3.createInstance(LanguageModelToolsService));
 
 		const tool3 = registerToolForTest(testService3, store, 'offTool', {
@@ -2075,6 +2085,7 @@ suite('LanguageModelToolsService', () => {
 		}, store);
 		instaService.stub(IChatService, chatService);
 		instaService.stub(ILanguageModelToolsConfirmationService, new MockLanguageModelToolsConfirmationService());
+		instaService.stub(IHooksExecutionService, new MockHooksExecutionService());
 		const testService = store.add(instaService.createInstance(LanguageModelToolsService));
 
 		const workspaceTool = registerToolForTest(testService, store, 'workspaceTool', {
@@ -2192,6 +2203,7 @@ suite('LanguageModelToolsService', () => {
 		}, store);
 		instaService.stub(IChatService, chatService);
 		instaService.stub(ILanguageModelToolsConfirmationService, new MockLanguageModelToolsConfirmationService());
+		instaService.stub(IHooksExecutionService, new MockHooksExecutionService());
 		const testService = store.add(instaService.createInstance(LanguageModelToolsService));
 
 		// Tool A is eligible (true in policy)
@@ -2251,6 +2263,7 @@ suite('LanguageModelToolsService', () => {
 		}, store);
 		instaService.stub(IChatService, chatService);
 		instaService.stub(ILanguageModelToolsConfirmationService, new MockLanguageModelToolsConfirmationService());
+		instaService.stub(IHooksExecutionService, new MockHooksExecutionService());
 		const testService = store.add(instaService.createInstance(LanguageModelToolsService));
 
 		// Tool has been renamed but has legacy name
@@ -2287,6 +2300,7 @@ suite('LanguageModelToolsService', () => {
 		}, store);
 		instaService.stub(IChatService, chatService);
 		instaService.stub(ILanguageModelToolsConfirmationService, new MockLanguageModelToolsConfirmationService());
+		instaService.stub(IHooksExecutionService, new MockHooksExecutionService());
 		const testService = store.add(instaService.createInstance(LanguageModelToolsService));
 
 		// Tool has been renamed but has legacy name
@@ -2330,6 +2344,7 @@ suite('LanguageModelToolsService', () => {
 		}, store);
 		instaService.stub(IChatService, chatService);
 		instaService.stub(ILanguageModelToolsConfirmationService, new MockLanguageModelToolsConfirmationService());
+		instaService.stub(IHooksExecutionService, new MockHooksExecutionService());
 		const testService = store.add(instaService.createInstance(LanguageModelToolsService));
 
 		// Tool has multiple legacy names
@@ -2367,6 +2382,7 @@ suite('LanguageModelToolsService', () => {
 		}, store);
 		instaService.stub(IChatService, chatService);
 		instaService.stub(ILanguageModelToolsConfirmationService, new MockLanguageModelToolsConfirmationService());
+		instaService.stub(IHooksExecutionService, new MockHooksExecutionService());
 		const testService = store.add(instaService.createInstance(LanguageModelToolsService));
 
 		const tool = registerToolForTest(testService, store, 'precedenceTool', {
@@ -2409,6 +2425,7 @@ suite('LanguageModelToolsService', () => {
 		}, store);
 		instaService.stub(IChatService, chatService);
 		instaService.stub(ILanguageModelToolsConfirmationService, new MockLanguageModelToolsConfirmationService());
+		instaService.stub(IHooksExecutionService, new MockHooksExecutionService());
 		const testService = store.add(instaService.createInstance(LanguageModelToolsService));
 
 		// Tool was in an old toolset but now standalone
@@ -2454,6 +2471,7 @@ suite('LanguageModelToolsService', () => {
 		}, store);
 		instaService.stub(IChatService, chatService);
 		instaService.stub(ILanguageModelToolsConfirmationService, new MockLanguageModelToolsConfirmationService());
+		instaService.stub(IHooksExecutionService, new MockHooksExecutionService());
 		const testService = store.add(instaService.createInstance(LanguageModelToolsService));
 
 		// Modern tool with current name
@@ -2528,6 +2546,7 @@ suite('LanguageModelToolsService', () => {
 		}, store);
 		instaService.stub(IChatService, chatService);
 		instaService.stub(ILanguageModelToolsConfirmationService, new MockLanguageModelToolsConfirmationService());
+		instaService.stub(IHooksExecutionService, new MockHooksExecutionService());
 		const testService = store.add(instaService.createInstance(LanguageModelToolsService));
 
 		const tool = registerToolForTest(testService, store, 'gitCommitTool', {
@@ -2566,6 +2585,7 @@ suite('LanguageModelToolsService', () => {
 		}, store);
 		instaService.stub(IChatService, chatService);
 		instaService.stub(ILanguageModelToolsConfirmationService, new MockLanguageModelToolsConfirmationService());
+		instaService.stub(IHooksExecutionService, new MockHooksExecutionService());
 		const testService = store.add(instaService.createInstance(LanguageModelToolsService));
 
 		// Tool that was previously namespaced under extension but is now internal
@@ -2605,6 +2625,7 @@ suite('LanguageModelToolsService', () => {
 		}, store);
 		instaService.stub(IChatService, chatService);
 		instaService.stub(ILanguageModelToolsConfirmationService, new MockLanguageModelToolsConfirmationService());
+		instaService.stub(IHooksExecutionService, new MockHooksExecutionService());
 		const testService = store.add(instaService.createInstance(LanguageModelToolsService));
 
 		// Tool that was previously namespaced under extension but is now internal
@@ -2647,6 +2668,7 @@ suite('LanguageModelToolsService', () => {
 		}, store);
 		instaService.stub(IChatService, chatService);
 		instaService.stub(ILanguageModelToolsConfirmationService, new MockLanguageModelToolsConfirmationService());
+		instaService.stub(IHooksExecutionService, new MockHooksExecutionService());
 		const testService = store.add(instaService.createInstance(LanguageModelToolsService));
 
 		// Tool that was previously namespaced under extension but is now internal

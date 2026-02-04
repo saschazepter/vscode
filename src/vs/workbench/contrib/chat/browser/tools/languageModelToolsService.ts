@@ -436,6 +436,31 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 			toolInvocation = this._pendingToolCalls.get(dto.chatStreamToolCallId);
 		}
 
+		let requestId: string | undefined;
+		let store: DisposableStore | undefined;
+		if (dto.context && request) {
+			requestId = request.id;
+			store = new DisposableStore();
+			if (!this._callsByRequestId.has(requestId)) {
+				this._callsByRequestId.set(requestId, []);
+			}
+			const trackedCall: ITrackedCall = { store };
+			this._callsByRequestId.get(requestId)!.push(trackedCall);
+
+			const source = new CancellationTokenSource();
+			store.add(toDisposable(() => {
+				source.dispose(true);
+			}));
+			store.add(token.onCancellationRequested((() => {
+				IChatToolInvocation.confirmWith(toolInvocation, { type: ToolConfirmKind.Denied });
+				source.cancel();
+			})));
+			store.add(source.token.onCancellationRequested(() => {
+				IChatToolInvocation.confirmWith(toolInvocation, { type: ToolConfirmKind.Denied });
+			}));
+			token = source.token;
+		}
+
 		// Execute preToolUse hook - returns early if hook denies execution
 		const hookDenialResult = await this._executePreToolUseHookAndHandleDenial(dto, toolData, request, toolInvocation, token);
 		if (hookDenialResult) {
@@ -477,15 +502,12 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 			this._pendingToolCalls.delete(pendingToolCallKey);
 		}
 
-		let requestId: string | undefined;
-		let store: DisposableStore | undefined;
 		let toolResult: IToolResult | undefined;
 		let prepareTimeWatch: StopWatch | undefined;
 		let invocationTimeWatch: StopWatch | undefined;
 		let preparedInvocation: IPreparedToolInvocation | undefined;
 		try {
 			if (dto.context) {
-				store = new DisposableStore();
 				if (!model) {
 					throw new Error(`Tool called for unknown chat session`);
 				}
@@ -493,29 +515,8 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 				if (!request) {
 					throw new Error(`Tool called for unknown chat request`);
 				}
-				requestId = request.id;
 				dto.modelId = request.modelId;
 				dto.userSelectedTools = request.userSelectedTools && { ...request.userSelectedTools };
-
-				// Replace the token with a new token that we can cancel when cancelToolCallsForRequest is called
-				if (!this._callsByRequestId.has(requestId)) {
-					this._callsByRequestId.set(requestId, []);
-				}
-				const trackedCall: ITrackedCall = { store };
-				this._callsByRequestId.get(requestId)!.push(trackedCall);
-
-				const source = new CancellationTokenSource();
-				store.add(toDisposable(() => {
-					source.dispose(true);
-				}));
-				store.add(token.onCancellationRequested(() => {
-					IChatToolInvocation.confirmWith(toolInvocation, { type: ToolConfirmKind.Denied });
-					source.cancel();
-				}));
-				store.add(source.token.onCancellationRequested(() => {
-					IChatToolInvocation.confirmWith(toolInvocation, { type: ToolConfirmKind.Denied });
-				}));
-				token = source.token;
 
 				prepareTimeWatch = StopWatch.create(true);
 				preparedInvocation = await this.prepareToolInvocation(tool, dto, token);
