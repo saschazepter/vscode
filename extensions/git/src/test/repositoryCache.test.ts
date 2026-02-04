@@ -194,4 +194,37 @@ suite('RepositoryCache', () => {
 		assert.ok(withGit, 'should find repo when querying with .git');
 		assert.deepStrictEqual(withoutGit, withGit, 'should return same result regardless of .git suffix');
 	});
+
+	test('skips untitled workspaces', () => {
+		const memento = new InMemoryMemento();
+		// Simulate an untitled workspace - uses 'untitled' scheme with a numeric timestamp as path
+		const untitledWorkspaceFile = Uri.parse('untitled:1761808101585');
+		const folder = Uri.file('/workspace/repo');
+		const cache = new TestRepositoryCache(memento, new MockLogOutputChannel(), untitledWorkspaceFile, [{ uri: folder, name: 'workspace', index: 0 }]);
+
+		// When we have an untitled workspace, we should NOT use its fsPath (which would be just '1761808101585')
+		// Instead, we should fall back to using the workspace folders
+		cache.set('https://example.com/repo.git', folder.fsPath);
+		const folders = cache.get('https://example.com/repo.git')?.map(f => f.workspacePath);
+
+		assert.ok(folders, 'folders should be defined');
+		// The stored path should be the folder path, not the untitled workspace's invalid fsPath
+		assert.deepStrictEqual(folders, [folder.fsPath]);
+		// Verify we didn't store the untitled workspace's invalid path
+		assert.ok(!folders.includes('1761808101585'), 'should not store untitled workspace numeric ID as path');
+	});
+
+	test('uses workspace file when it has file scheme', () => {
+		const memento = new InMemoryMemento();
+		const workspaceFile = Uri.file('/path/to/my.code-workspace');
+		const folder = Uri.file('/workspace/repo');
+		const cache = new TestRepositoryCache(memento, new MockLogOutputChannel(), workspaceFile, [{ uri: folder, name: 'workspace', index: 0 }]);
+
+		cache.set('https://example.com/repo.git', folder.fsPath);
+		const folders = cache.get('https://example.com/repo.git')?.map(f => f.workspacePath);
+
+		assert.ok(folders, 'folders should be defined');
+		// When we have a saved workspace file (file: scheme), we should use it
+		assert.deepStrictEqual(folders, [workspaceFile.fsPath]);
+	});
 });

@@ -110,7 +110,9 @@ export class RepositoryCache {
 		// If the current workspace is a workspace file, use that. Otherwise, find the workspace folder that contains the rootUri
 		let folderPathOrWorkspaceFile: string | undefined;
 		try {
-			if (this._workspaceFile) {
+			// Only use workspace files with 'file' scheme - untitled workspaces have
+			// 'untitled' scheme and their fsPath is just a numeric ID, not a valid path
+			if (this._workspaceFile && this._workspaceFile.scheme === 'file') {
 				folderPathOrWorkspaceFile = this._workspaceFile.fsPath;
 			} else if (this._workspaceFolders && this._workspaceFolders.length) {
 				const sorted = [...this._workspaceFolders].sort((a, b) => b.uri.fsPath.length - a.uri.fsPath.length);
