@@ -21,13 +21,28 @@ The Agent Sessions Workbench (`AgentSessionsWorkbench`) provides a simplified, f
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                            Titlebar                             │
-├─────────┬─────────────────┬─────────────────┬───────────────────┤
-│         │                 │                 │                   │
-│ Sidebar │    Chat Bar     │     Editor      │   Auxiliary Bar   │
-│         │                 │                 │                   │
-├─────────┴─────────────────┴─────────────────┴───────────────────┤
+├─────────┬───────────────────────────────────┬───────────────────┤
+│         │                                   │                   │
+│ Sidebar │            Chat Bar               │   Auxiliary Bar   │
+│         │                                   │                   │
+├─────────┴───────────────────────────────────┴───────────────────┤
 │                             Panel                               │
 └─────────────────────────────────────────────────────────────────┘
+
+         ┌───────────────────────────────────────┐
+         │     ╔═══════════════════════════╗     │
+         │     ║    Editor Modal Overlay   ║     │
+         │     ║  ┌─────────────────────┐  ║     │
+         │     ║  │ [header]        [X] │  ║     │
+         │     ║  ├─────────────────────┤  ║     │
+         │     ║  │                     │  ║     │
+         │     ║  │    Editor Part      │  ║     │
+         │     ║  │                     │  ║     │
+         │     ║  │                     │  ║     │
+         │     ║  └─────────────────────┘  ║     │
+         │     ╚═══════════════════════════╝     │
+         └───────────────────────────────────────┘
+               (shown when editors are open)
 ```
 
 ### 2.2 Parts
@@ -38,8 +53,8 @@ The Agent Sessions Workbench (`AgentSessionsWorkbench`) provides a simplified, f
 |------|-------------|----------|------------|----------------------|
 | Titlebar | `Parts.TITLEBAR_PART` | Top, full width | Always visible | — |
 | Sidebar | `Parts.SIDEBAR_PART` | Left, in middle section | Visible | `ViewContainerLocation.Sidebar` |
-| Chat Bar | `Parts.CHATBAR_PART` | Second in middle section | Visible | `ViewContainerLocation.ChatBar` |
-| Editor | `Parts.EDITOR_PART` | Third in middle section | Hidden | — |
+| Chat Bar | `Parts.CHATBAR_PART` | Center, takes remaining width | Visible | `ViewContainerLocation.ChatBar` |
+| Editor | `Parts.EDITOR_PART` | **Modal overlay** (not in grid) | Hidden | — |
 | Auxiliary Bar | `Parts.AUXILIARYBAR_PART` | Right, in middle section | Visible | `ViewContainerLocation.AuxiliaryBar` |
 | Panel | `Parts.PANEL_PART` | Bottom, full width | Hidden | `ViewContainerLocation.Panel` |
 
@@ -61,13 +76,14 @@ The layout uses `SerializableGrid` from `vs/base/browser/ui/grid/grid.js`.
 
 ### 3.1 Grid Tree
 
+The Editor part is **not** in the grid — it is rendered as a modal overlay (see Section 3.3).
+
 ```
 Orientation: VERTICAL (root)
 ├── Titlebar (leaf, size: titleBarHeight)
 ├── Middle Section (branch, HORIZONTAL, size: remaining height - panel)
 │   ├── Sidebar (leaf, size: 300px default)
 │   ├── Chat Bar (leaf, size: remaining width)
-│   ├── Editor (leaf, size: remaining width, hidden by default)
 │   └── Auxiliary Bar (leaf, size: 300px default)
 └── Panel (leaf, size: 300px default, hidden by default)
 ```
@@ -79,9 +95,87 @@ Orientation: VERTICAL (root)
 | Sidebar | 300px width |
 | Auxiliary Bar | 300px width |
 | Chat Bar | Remaining space |
-| Editor | Remaining space |
+| Editor Modal | 80% of workbench (min 400x300, max 1200x900), calculated in TypeScript |
 | Panel | 300px height |
 | Titlebar | Determined by `minimumHeight` (~30px) |
+
+### 3.3 Editor Modal
+
+The Editor part is rendered as a **modal overlay** rather than being part of the grid. This provides a focused editing experience that hovers above the main workbench layout.
+
+#### Modal Structure
+
+```
+EditorModal
+├── Overlay (semi-transparent backdrop)
+├── Container (centered dialog)
+│   ├── Header (32px, contains close button)
+│   └── Content (editor part fills remaining space)
+```
+
+#### Behavior
+
+| Trigger | Action |
+|---------|--------|
+| Editor opens (`onWillOpenEditor`) | Modal shows automatically |
+| All editors close | Modal hides automatically |
+| Click backdrop | Close all editors, hide modal |
+| Click close button (X) | Close all editors, hide modal |
+| Press Escape key | Close all editors, hide modal |
+
+#### Modal Sizing
+
+Modal dimensions are calculated in TypeScript rather than CSS. The `EditorModal.layout()` method receives workbench dimensions and computes the modal size with constraints:
+
+| Property | Value | Constant |
+|----------|-------|----------|
+| Size Percentage | 80% of workbench | `MODAL_SIZE_PERCENTAGE = 0.8` |
+| Max Width | 1200px | `MODAL_MAX_WIDTH = 1200` |
+| Max Height | 900px | `MODAL_MAX_HEIGHT = 900` |
+| Min Width | 400px | `MODAL_MIN_WIDTH = 400` |
+| Min Height | 300px | `MODAL_MIN_HEIGHT = 300` |
+| Header Height | 32px | `MODAL_HEADER_HEIGHT = 32` |
+
+The calculation:
+```typescript
+modalWidth = min(MODAL_MAX_WIDTH, max(MODAL_MIN_WIDTH, workbenchWidth * MODAL_SIZE_PERCENTAGE))
+modalHeight = min(MODAL_MAX_HEIGHT, max(MODAL_MIN_HEIGHT, workbenchHeight * MODAL_SIZE_PERCENTAGE))
+contentHeight = modalHeight - MODAL_HEADER_HEIGHT
+```
+
+#### CSS Classes
+
+| Class | Applied To | Notes |
+|-------|------------|-------|
+| `editor-modal-overlay` | Overlay container | Positioned absolute, full size |
+| `editor-modal-overlay.visible` | When modal is shown | Enables pointer events |
+| `editor-modal-backdrop` | Semi-transparent backdrop | Clicking closes modal |
+| `editor-modal-container` | Centered modal dialog | Width/height set in TypeScript |
+| `editor-modal-header` | Header with close button | Fixed 32px height |
+| `editor-modal-content` | Editor content area | Width/height set in TypeScript |
+| `editor-modal-visible` | Added to `mainContainer` when modal is visible | — |
+
+#### Implementation
+
+The modal is implemented in `EditorModal` class (`parts/editorModal.ts`):
+
+```typescript
+class EditorModal extends Disposable {
+    // Events
+    readonly onDidChangeVisibility: Event<boolean>;
+
+    // State
+    get visible(): boolean;
+
+    // Methods
+    show(): void;   // Show modal using stored dimensions
+    hide(): void;   // Hide modal
+    close(): void;  // Close all editors, then hide
+    layout(workbenchWidth: number, workbenchHeight: number): void; // Store dimensions, re-layout if visible
+}
+```
+
+The `AgentSessionsWorkbench.layout()` passes the workbench dimensions to `EditorModal.layout()`, which calculates and applies the modal size with min/max constraints. Dimensions are stored so that `show()` can use them when the modal becomes visible.
 
 ---
 
@@ -205,10 +299,11 @@ Applied to `mainContainer` based on part visibility:
 | Class | Applied When |
 |-------|--------------|
 | `nosidebar` | Sidebar is hidden |
-| `nomaineditorarea` | Editor is hidden |
+| `nomaineditorarea` | Editor modal is hidden |
 | `noauxiliarybar` | Auxiliary bar is hidden |
 | `nochatbar` | Chat bar is hidden |
 | `nopanel` | Panel is hidden |
+| `editor-modal-visible` | Editor modal is visible |
 
 ### 7.2 Window State Classes
 
@@ -238,6 +333,7 @@ The Agent Sessions workbench uses specialized part implementations that extend t
 | Sidebar | `AgentSessionSidebarPart` | `AbstractPaneCompositePart` | `agentSessions/browser/parts/agentSessionSidebarPart.ts` |
 | Auxiliary Bar | `AgentSessionAuxiliaryBarPart` | `AbstractPaneCompositePart` | `agentSessions/browser/parts/agentSessionAuxiliaryBarPart.ts` |
 | Panel | `AgentSessionPanelPart` | `AbstractPaneCompositePart` | `agentSessions/browser/parts/agentSessionPanelPart.ts` |
+| Editor Modal | `EditorModal` | `Disposable` | `agentSessions/browser/parts/editorModal.ts` |
 
 ### 8.2 Key Differences from Standard Parts
 
@@ -292,18 +388,17 @@ Each agent session part uses separate storage keys to avoid conflicts with regul
 src/vs/workbench/agentSessions/
 ├── browser/
 │   ├── agentSessionsWorkbench.ts           # Main layout implementation
+│   ├── style.css                           # Layout-specific styles (including editor modal)
 │   ├── parts/
 │   │   ├── agentSessionSidebarPart.ts      # Agent session sidebar
 │   │   ├── agentSessionAuxiliaryBarPart.ts # Agent session auxiliary bar
-│   │   └── agentSessionPanelPart.ts        # Agent session panel
-│   ├── media/
-│   │   └── agentSessionsWorkbench.css  # Layout-specific styles
-│   └── parts/
-│       └── chatbar/
-│           ├── chatBarPart.ts          # Chat Bar part implementation
-│           └── media/
-│               └── chatBarPart.css     # Chat Bar styles
-└── LAYOUT.md                              # This specification
+│   │   ├── agentSessionPanelPart.ts        # Agent session panel
+│   │   ├── editorModal.ts                  # Editor modal overlay implementation
+│   │   └── chatbar/
+│   │       ├── chatBarPart.ts              # Chat Bar part implementation
+│   │       └── media/
+│   │           └── chatBarPart.css         # Chat Bar styles
+└── LAYOUT.md                               # This specification
 ```
 
 ---
@@ -389,6 +484,8 @@ interface IPartVisibilityState {
 
 | Date | Change |
 |------|--------|
+| 2026-02-04 | Modal sizing (80%, min/max constraints) moved from CSS to TypeScript; `EditorModal.layout()` now accepts workbench dimensions |
+| 2026-02-04 | Editor now renders as modal overlay instead of in grid; Added `EditorModal` class in `parts/editorModal.ts`; Closing modal closes all editors; Grid layout is now Sidebar \| Chat Bar \| Auxiliary Bar |
 | 2026-02-04 | Added `restoreParts()` to automatically open default view containers for visible parts during startup |
 | 2026-02-04 | Restored Editor part; Layout order is now Sidebar \| Chat Bar \| Editor \| Auxiliary Bar |
 | 2026-02-04 | Removed Editor part; Chat Bar now takes max width; Layout order changed to Sidebar \| Auxiliary Bar \| Chat Bar |
