@@ -2830,6 +2830,24 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	flex-shrink: 0;
 }
 
+/* Delegation button styling (for Continue in Execute/Delegate buttons) */
+.chat-welcome-view-suggested-prompt.chat-delegation-button {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.chat-delegation-button-icon {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	opacity: 0.9;
+}
+
+.chat-delegation-button-icon .codicon {
+	font-size: 14px;
+}
+
 /* Show more attachments button styling */
 .chat-attachments-show-more-button {
 	opacity: 0.8;

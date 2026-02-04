@@ -140,23 +140,6 @@ export class ChatFullWelcomePart extends Disposable {
 	}
 
 	/**
-	 * Sets the selected quick-start type programmatically.
-	 */
-	public setSelectedQuickStartType(type: QuickStartType | undefined): void {
-		this._selectedQuickStartType = type;
-		this.quickStartPart?.setSelectedType(type);
-		if (type) {
-			const option = this.quickStartPart?.getOption(type);
-			if (option) {
-				this._selectedOption = option;
-				this.expandConfig(option);
-			}
-		} else {
-			this.collapseConfig();
-		}
-	}
-
-	/**
 	 * Gets the currently selected option with its configuration.
 	 */
 	public getSelectedOption(): IQuickStartOption | undefined {
@@ -179,7 +162,6 @@ export class ChatFullWelcomePart extends Disposable {
 			onQuickStartSelected: (option: IQuickStartOption) => {
 				this._selectedQuickStartType = option.type;
 				this._selectedOption = option;
-
 				// Collapse the quick-start buttons and show config toolbar
 				this.expandConfig(option);
 
@@ -511,8 +493,19 @@ export class ChatFullWelcomePart extends Disposable {
 		}
 
 		// Filter the options
-		this._isFiltering = true;
 		const matchingOptions = this.quickStartPart.filterByText(trimmedText);
+
+		// If no matches found, clear the filter and leave no mode selected
+		if (matchingOptions.length === 0) {
+			if (this._isFiltering) {
+				this._isFiltering = false;
+				this.quickStartPart.clearFilter();
+				this.updateDescriptionForFilter([]);
+			}
+			return;
+		}
+
+		this._isFiltering = true;
 		this.updateDescriptionForFilter(matchingOptions);
 	}
 
@@ -531,27 +524,21 @@ export class ChatFullWelcomePart extends Disposable {
 			return;
 		}
 
-		if (matchingOptions.length === 0) {
-			append(this.descriptionElement, $('span.chat-full-welcome-description-text.no-matches', {},
-				localize('quickStart.noMatches', "No matching modes. Try a different search or select a mode above.")
-			));
-		} else {
-			// Get the best match based on intent scoring
-			const bestMatch = this.quickStartPart.getBestMatch();
-			if (bestMatch) {
-				// Show the two-step flow hint
-				const container = append(this.descriptionElement, $('span.chat-full-welcome-description-text.single-match'));
+		// Get the best match based on intent scoring
+		const bestMatch = this.quickStartPart.getBestMatch();
+		if (bestMatch) {
+			// Show the two-step flow hint
+			const container = append(this.descriptionElement, $('span.chat-full-welcome-description-text.single-match'));
 
-				// First part: "Press Enter to use"
-				append(container, document.createTextNode(localize('quickStart.pressEnter', "Press Enter to use ")));
+			// First part: "Press Enter to use"
+			append(container, document.createTextNode(localize('quickStart.pressEnter', "Press Enter to use ")));
 
-				// Bold the mode name
-				const strong = append(container, $('strong'));
-				strong.textContent = bestMatch.label;
+			// Bold the mode name
+			const strong = append(container, $('strong'));
+			strong.textContent = bestMatch.label;
 
-				// Second part: explain the two-step flow
-				append(container, document.createTextNode(localize('quickStart.thenSend', ", then Enter again to send.")));
-			}
+			// Second part: explain the two-step flow
+			append(container, document.createTextNode(localize('quickStart.thenSend', ", then Enter again to send.")));
 		}
 	}
 
@@ -639,17 +626,6 @@ export class ChatFullWelcomePart extends Disposable {
 		setTimeout(() => {
 			this.quickStartPart?.element.classList.remove('expanding');
 		}, 350);
-	}
-
-	private collapseConfig(): void {
-		if (!this.configToolbar || !this.quickStartPart) {
-			return;
-		}
-
-		this.disposePickerWidgets();
-		this.quickStartPart.setCollapsed(false);
-		this.configToolbar.style.display = 'none';
-		this._selectedOption = undefined;
 	}
 
 	/**

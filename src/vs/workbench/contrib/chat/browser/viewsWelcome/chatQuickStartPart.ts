@@ -5,7 +5,6 @@
 
 import { $, append, clearNode } from '../../../../../base/browser/dom.js';
 import { renderIcon } from '../../../../../base/browser/ui/iconLabel/iconLabels.js';
-import { Codicon } from '../../../../../base/common/codicons.js';
 import { Emitter, Event } from '../../../../../base/common/event.js';
 import { Disposable, DisposableStore } from '../../../../../base/common/lifecycle.js';
 import { ThemeIcon } from '../../../../../base/common/themables.js';
@@ -13,6 +12,7 @@ import { localize } from '../../../../../nls.js';
 import { AgentSessionProviders, getAgentSessionProvider, getAgentSessionProviderDescription, getAgentSessionProviderIcon, getAgentSessionProviderName, isFirstPartyAgentSessionProvider } from '../agentSessions/agentSessions.js';
 import { ChatModeKind } from '../../common/constants.js';
 import { IChatSessionsExtensionPoint, IChatSessionsService } from '../../common/chatSessionsService.js';
+import { Codicon } from '../../../../../base/common/codicons.js';
 
 /**
  * Quick-start type identifier. Can be a built-in type or an extension-contributed type.
@@ -69,20 +69,76 @@ export interface IIntentPattern {
 	readonly inputStyle?: 'question' | 'command' | 'any';
 }
 
+
+/**
+ * Returns the user-friendly display name for an agent session provider.
+ * These names are shown in UI buttons and should match across the welcome view and delegation widgets.
+ */
+export function getAgentSessionProviderDisplayName(provider: AgentSessionProviders): string {
+	switch (provider) {
+		case AgentSessionProviders.Local:
+			return localize('chat.session.providerDisplayName.local', "Explore");
+		case AgentSessionProviders.Background:
+			return localize('chat.session.providerDisplayName.background', "Code");
+		case AgentSessionProviders.Cloud:
+			return localize('chat.session.providerDisplayName.cloud', "Cloud");
+		case AgentSessionProviders.Claude:
+			return 'Claude';
+		case AgentSessionProviders.Codex:
+			return 'Codex';
+	}
+}
+
+
+/**
+ * Returns the user-friendly display icon for an agent session provider.
+ * These icons are shown in UI buttons and should match across the welcome view and delegation widgets.
+ */
+export function getAgentSessionProviderDisplayIcon(provider: AgentSessionProviders): ThemeIcon {
+	switch (provider) {
+		case AgentSessionProviders.Local:
+			return Codicon.question; // Explore mode icon
+		case AgentSessionProviders.Background:
+			return Codicon.remote; // Code/Execute mode icon
+		case AgentSessionProviders.Cloud:
+			return Codicon.cloud; // Delegate/Cloud mode icon
+		case AgentSessionProviders.Claude:
+			return Codicon.claude;
+		case AgentSessionProviders.Codex:
+			return Codicon.openai;
+	}
+}
+
+/**
+ * Returns whether the user should be able to select a model for this provider.
+ * Cloud-based and third-party agents typically manage their own model selection.
+ */
+export function getAgentSessionProviderShowsModelPicker(provider: AgentSessionProviders): boolean {
+	switch (provider) {
+		case AgentSessionProviders.Local:
+			return true; // Explore mode - user picks the model
+		case AgentSessionProviders.Background:
+		case AgentSessionProviders.Cloud:
+		case AgentSessionProviders.Claude:
+		case AgentSessionProviders.Codex:
+			return false; // These agents manage their own model selection
+	}
+}
+
 /**
  * Built-in first-party quick-start options with descriptions and intent patterns.
  */
 export const QuickStartOptions: IQuickStartOption[] = [
 	{
 		type: 'explore',
-		label: localize('quickStart.explore', "Explore"),
-		icon: Codicon.question,
+		label: getAgentSessionProviderDisplayName(AgentSessionProviders.Local),
+		icon: getAgentSessionProviderDisplayIcon(AgentSessionProviders.Local),
 		sessionProvider: AgentSessionProviders.Local,
 		modeKind: ChatModeKind.Ask,
 		lockMode: true,
 		description: localize('quickStart.explore.description', "Explore and understand your code."),
 		pickerConfig: {
-			showModelPicker: true,
+			showModelPicker: getAgentSessionProviderShowsModelPicker(AgentSessionProviders.Local),
 			showRepoPicker: false,
 			showBranchPicker: false,
 		},
@@ -103,14 +159,14 @@ export const QuickStartOptions: IQuickStartOption[] = [
 	},
 	{
 		type: 'background',
-		label: localize('quickStart.background', "Execute"),
-		icon: Codicon.worktree,
+		label: getAgentSessionProviderDisplayName(AgentSessionProviders.Background),
+		icon: getAgentSessionProviderDisplayIcon(AgentSessionProviders.Background),
 		sessionProvider: AgentSessionProviders.Background,
 		modeKind: ChatModeKind.Agent,
 		lockMode: true,
 		description: localize('quickStart.background.description', "Delegate tasks to a background agent running locally in a worktree on your machine."),
 		pickerConfig: {
-			showModelPicker: true,
+			showModelPicker: getAgentSessionProviderShowsModelPicker(AgentSessionProviders.Background),
 			showRepoPicker: true,
 			showBranchPicker: false,
 		},
@@ -128,14 +184,14 @@ export const QuickStartOptions: IQuickStartOption[] = [
 	},
 	{
 		type: 'cloud',
-		label: localize('quickStart.cloud', "Delegate"),
-		icon: Codicon.cloud,
+		label: getAgentSessionProviderDisplayName(AgentSessionProviders.Cloud),
+		icon: getAgentSessionProviderDisplayIcon(AgentSessionProviders.Cloud),
 		sessionProvider: AgentSessionProviders.Cloud,
 		modeKind: ChatModeKind.Agent,
 		lockMode: true,
 		description: localize('quickStart.cloud.description', "Delegate tasks to a GitHub cloud agent."),
 		pickerConfig: {
-			showModelPicker: true,
+			showModelPicker: getAgentSessionProviderShowsModelPicker(AgentSessionProviders.Cloud),
 			showRepoPicker: true,
 			showBranchPicker: true,
 		},
@@ -191,7 +247,7 @@ export function contributionToQuickStartOption(contribution: IChatSessionsExtens
 		lockMode: true,
 		description: contribution.description || getAgentSessionProviderDescription(agentProvider),
 		pickerConfig: {
-			showModelPicker: true,
+			showModelPicker: getAgentSessionProviderShowsModelPicker(agentProvider),
 			showRepoPicker: contribution.canDelegate ?? false,
 			showBranchPicker: false,
 		},
@@ -596,6 +652,7 @@ export class ChatQuickStartPart extends Disposable {
 
 	/**
 	 * Updates the visual state of buttons based on current filter.
+	 * Never dims buttons - only highlights the best match when confident.
 	 */
 	private updateFilteredState(): void {
 		const hasFilter = this._currentFilterText.trim().length > 0;
@@ -605,7 +662,8 @@ export class ChatQuickStartPart extends Disposable {
 			const isMatching = this._matchingTypes.has(type);
 			const isBestMatch = bestMatch?.type === type;
 
-			button.classList.toggle('dimmed', hasFilter && !isMatching);
+			// Never dim buttons - just highlight matches
+			button.classList.remove('dimmed');
 			button.classList.toggle('matching', hasFilter && isMatching);
 			button.classList.toggle('best-match', hasFilter && isBestMatch);
 		}
