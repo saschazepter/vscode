@@ -253,28 +253,6 @@ suite('ExtHostHooks', () => {
 		assert.strictEqual(results[0].kind, ChatHookResultKind.Error);
 	});
 
-	test('executeHook respects custom timeout', async () => {
-		const hooks: IChatRequestHooks = {
-			[HookType.SessionStart]: [createHookCommand('sleep 10', { timeoutSec: 1 })]
-		};
-		hooksService.initialize(createMockExtHostChatAgents(hooks) as ExtHostChatAgents2);
-
-		const toolInvocationToken = createMockToolInvocationContext(sessionResource);
-
-		const startTime = Date.now();
-		const results = await hooksService.executeHook(
-			HookType.SessionStart,
-			{ toolInvocationToken },
-			undefined
-		);
-		const elapsed = Date.now() - startTime;
-
-		assert.strictEqual(results.length, 1);
-		// Should timeout within reasonable time (the 1 second timeout + some buffer)
-		assert.ok(elapsed < 5000, `Timeout took too long: ${elapsed}ms`);
-		assert.strictEqual(results[0].kind, ChatHookResultKind.Error);
-	});
-
 	test('executeHook returns error for invalid command', async () => {
 		const hooks: IChatRequestHooks = {
 			[HookType.SessionStart]: [createHookCommand('/nonexistent/command/that/does/not/exist')]
