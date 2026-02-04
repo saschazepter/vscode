@@ -2580,12 +2580,12 @@ export function getCodeCitationsMessage(citations: ReadonlyArray<IChatCodeCitati
 }
 
 function getFenceForContent(content: string): string {
-	const backtickMatch = content.matchAll(/`+/g);
-	if (!backtickMatch) {
+	const backtickMatches = Array.from(content.matchAll(/`+/g), s => s[0].length);
+	if (backtickMatches.length === 0) {
 		return '```';
 	}
 
-	const maxBackticks = Math.max(...Array.from(backtickMatch, s => s[0].length));
+	const maxBackticks = Math.max(...backtickMatches);
 	return '`'.repeat(Math.max(3, maxBackticks + 1));
 }
 
