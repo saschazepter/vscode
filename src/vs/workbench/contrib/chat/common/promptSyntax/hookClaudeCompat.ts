@@ -13,7 +13,7 @@ import { HookType, IHookCommand, toHookType, resolveHookCommand } from './hookSc
  */
 export const CLAUDE_HOOK_TYPE_MAP: Record<string, HookType> = {
 	'SessionStart': HookType.SessionStart,
-	'UserPromptSubmit': HookType.UserPromptSubmitted,
+	'UserPromptSubmit': HookType.UserPromptSubmit,
 	'PreToolUse': HookType.PreToolUse,
 	'PostToolUse': HookType.PostToolUse,
 	'SubagentStart': HookType.SubagentStart,

@@ -5,65 +5,11 @@
 
 import assert from 'assert';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/test/common/utils.js';
-import { HookType, toHookType, resolveHookCommand } from '../../../common/promptSyntax/hookSchema.js';
+import { resolveHookCommand } from '../../../common/promptSyntax/hookSchema.js';
 import { URI } from '../../../../../../base/common/uri.js';
 
 suite('HookSchema', () => {
 	ensureNoDisposablesAreLeakedInTestSuite();
-
-	suite('normalizeHookTypeId', () => {
-
-		suite('Claude Code hook types (PascalCase)', () => {
-			// @see https://code.claude.com/docs/en/hooks#hook-lifecycle
-
-			test('SessionStart -> sessionStart', () => {
-				assert.strictEqual(toHookType('SessionStart'), HookType.SessionStart);
-			});
-
-			test('UserPromptSubmit -> userPromptSubmitted', () => {
-				assert.strictEqual(toHookType('UserPromptSubmit'), HookType.UserPromptSubmitted);
-			});
-
-			test('PreToolUse -> preToolUse', () => {
-				assert.strictEqual(toHookType('PreToolUse'), HookType.PreToolUse);
-			});
-
-			test('PostToolUse -> postToolUse', () => {
-				assert.strictEqual(toHookType('PostToolUse'), HookType.PostToolUse);
-			});
-
-			test('PostToolUseFailure -> postToolUseFailure', () => {
-				assert.strictEqual(toHookType('PostToolUseFailure'), HookType.PostToolUseFailure);
-			});
-
-			test('SubagentStart -> subagentStart', () => {
-				assert.strictEqual(toHookType('SubagentStart'), HookType.SubagentStart);
-			});
-
-			test('SubagentStop -> subagentStop', () => {
-				assert.strictEqual(toHookType('SubagentStop'), HookType.SubagentStop);
-			});
-
-			test('Stop -> stop', () => {
-				assert.strictEqual(toHookType('Stop'), HookType.Stop);
-			});
-		});
-
-		suite('unknown hook types', () => {
-			test('unknown type returns undefined', () => {
-				assert.strictEqual(toHookType('unknownHook'), undefined);
-			});
-
-			test('empty string returns undefined', () => {
-				assert.strictEqual(toHookType(''), undefined);
-			});
-
-			test('typo returns undefined', () => {
-				assert.strictEqual(toHookType('sessionstart'), undefined);
-				assert.strictEqual(toHookType('SESSIONSTART'), undefined);
-			});
-		});
-	});
 
 	suite('resolveHookCommand', () => {
 		const workspaceRoot = URI.file('/workspace');

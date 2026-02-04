@@ -15,7 +15,7 @@ import { untildify } from '../../../../../base/common/labels.js';
  */
 export enum HookType {
 	SessionStart = 'SessionStart',
-	UserPromptSubmitted = 'UserPromptSubmitted',
+	UserPromptSubmit = 'UserPromptSubmit',
 	PreToolUse = 'PreToolUse',
 	PostToolUse = 'PostToolUse',
 	SubagentStart = 'SubagentStart',
@@ -38,9 +38,9 @@ export const HOOK_TYPES = [
 		description: nls.localize('hookType.sessionStart.description', "Executed when a new agent session begins or when resuming an existing session.")
 	},
 	{
-		id: HookType.UserPromptSubmitted,
-		label: nls.localize('hookType.userPromptSubmitted.label', "User Prompt Submitted"),
-		description: nls.localize('hookType.userPromptSubmitted.description', "Executed when the user submits a prompt to the agent.")
+		id: HookType.UserPromptSubmit,
+		label: nls.localize('hookType.userPromptSubmit.label', "User Prompt Submit"),
+		description: nls.localize('hookType.userPromptSubmit.description', "Executed when the user submits a prompt to the agent.")
 	},
 	{
 		id: HookType.PreToolUse,
@@ -92,7 +92,7 @@ export interface IHookCommand {
  */
 export interface IChatRequestHooks {
 	readonly [HookType.SessionStart]?: readonly IHookCommand[];
-	readonly [HookType.UserPromptSubmitted]?: readonly IHookCommand[];
+	readonly [HookType.UserPromptSubmit]?: readonly IHookCommand[];
 	readonly [HookType.PreToolUse]?: readonly IHookCommand[];
 	readonly [HookType.PostToolUse]?: readonly IHookCommand[];
 	readonly [HookType.SubagentStart]?: readonly IHookCommand[];
@@ -171,35 +171,31 @@ export const hookFileSchema: IJSONSchema = {
 			description: nls.localize('hookFile.hooks', 'Hook definitions organized by type.'),
 			additionalProperties: false,
 			properties: {
-				sessionStart: {
+				SessionStart: {
 					...hookArraySchema,
 					description: nls.localize('hookFile.sessionStart', 'Executed when a new agent session begins or when resuming an existing session. Use to initialize environments, log session starts, validate project state, or set up temporary resources.')
 				},
-				userPromptSubmitted: {
+				UserPromptSubmit: {
 					...hookArraySchema,
-					description: nls.localize('hookFile.userPromptSubmitted', 'Executed when the user submits a prompt to the agent. Use to log user requests for auditing and usage analysis.')
+					description: nls.localize('hookFile.userPromptSubmit', 'Executed when the user submits a prompt to the agent. Use to log user requests for auditing and usage analysis.')
 				},
-				preToolUse: {
+				PreToolUse: {
 					...hookArraySchema,
 					description: nls.localize('hookFile.preToolUse', 'Executed before the agent uses any tool (such as bash, edit, view). This is the most powerful hook as it can approve or deny tool executions. Use to block dangerous commands, enforce security policies, require approval for sensitive operations, or log tool usage.')
 				},
-				postToolUse: {
+				PostToolUse: {
 					...hookArraySchema,
 					description: nls.localize('hookFile.postToolUse', 'Executed after a tool completes execution successfully. Use to log execution results, track usage statistics, generate audit trails, or monitor performance.')
 				},
-				postToolUseFailure: {
-					...hookArraySchema,
-					description: nls.localize('hookFile.postToolUseFailure', 'Executed after a tool completes execution with a failure. Use to log errors, send failure alerts, or trigger recovery actions.')
-				},
-				subagentStart: {
+				SubagentStart: {
 					...hookArraySchema,
 					description: nls.localize('hookFile.subagentStart', 'Executed when a subagent is started. Use to log subagent spawning, track nested agent usage, or initialize subagent-specific resources.')
 				},
-				subagentStop: {
+				SubagentStop: {
 					...hookArraySchema,
 					description: nls.localize('hookFile.subagentStop', 'Executed when a subagent stops. Use to log subagent completion, cleanup subagent resources, or aggregate subagent results.')
 				},
-				stop: {
+				Stop: {
 					...hookArraySchema,
 					description: nls.localize('hookFile.stop', 'Executed when the agent session stops. Use to cleanup resources, generate final reports, or send completion notifications.')
 				}

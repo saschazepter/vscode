@@ -11,7 +11,7 @@ import { HookType } from './hookSchema.js';
  */
 export const COPILOT_CLI_HOOK_TYPE_MAP: Record<string, HookType> = {
 	'sessionStart': HookType.SessionStart,
-	'userPromptSubmitted': HookType.UserPromptSubmitted,
+	'userPromptSubmitted': HookType.UserPromptSubmit,
 	'preToolUse': HookType.PreToolUse,
 	'postToolUse': HookType.PostToolUse,
 };

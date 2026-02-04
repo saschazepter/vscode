@@ -941,7 +941,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 
 		const collectedHooks: Record<HookType, IHookCommand[]> = {
 			[HookType.SessionStart]: [],
-			[HookType.UserPromptSubmitted]: [],
+			[HookType.UserPromptSubmit]: [],
 			[HookType.PreToolUse]: [],
 			[HookType.PostToolUse]: [],
 			[HookType.SubagentStart]: [],
@@ -978,7 +978,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 		// Build the result, only including hook types that have entries
 		const result: IChatRequestHooks = {
 			...(collectedHooks[HookType.SessionStart].length > 0 && { [HookType.SessionStart]: collectedHooks[HookType.SessionStart] }),
-			...(collectedHooks[HookType.UserPromptSubmitted].length > 0 && { [HookType.UserPromptSubmitted]: collectedHooks[HookType.UserPromptSubmitted] }),
+			...(collectedHooks[HookType.UserPromptSubmit].length > 0 && { [HookType.UserPromptSubmit]: collectedHooks[HookType.UserPromptSubmit] }),
 			...(collectedHooks[HookType.PreToolUse].length > 0 && { [HookType.PreToolUse]: collectedHooks[HookType.PreToolUse] }),
 			...(collectedHooks[HookType.PostToolUse].length > 0 && { [HookType.PostToolUse]: collectedHooks[HookType.PostToolUse] }),
 			...(collectedHooks[HookType.SubagentStart].length > 0 && { [HookType.SubagentStart]: collectedHooks[HookType.SubagentStart] }),
