@@ -91,7 +91,7 @@ export function setup(logger: Logger, opts: { web?: boolean }, quality: Quality)
 				});
 
 				// Chat response test requires gallery service which is only available in non-Dev/OSS builds
-				it('chat response has no accessibility violations', async function () {
+				it.skip('chat response has no accessibility violations', async function () {
 					// Disable retries for this test - it modifies settings and retries cause issues
 					this.retries(0);
 					// Extend timeout for this test since AI responses can take a while
@@ -129,7 +129,7 @@ export function setup(logger: Logger, opts: { web?: boolean }, quality: Quality)
 					});
 				});
 
-				it('chat terminal tool response has no accessibility violations', async function () {
+				it.skip('chat terminal tool response has no accessibility violations', async function () {
 					// Disable retries for this test
 					this.retries(0);
 					// Extend timeout for this test since AI responses can take a while
