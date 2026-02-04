@@ -64,6 +64,7 @@ import { ChatViewId, IChatWidget, IChatWidgetService } from '../chat.js';
 import { IChatEditorOptions } from '../widgetHosts/editor/chatEditor.js';
 import { ChatEditorInput, showClearEditingSessionConfirmation } from '../widgetHosts/editor/chatEditorInput.js';
 import { convertBufferToScreenshotVariable } from '../attachments/chatScreenshotContext.js';
+import { AgentSessionProviders } from '../agentSessions/agentSessions.js';
 
 export const CHAT_CATEGORY = localize2('chat.category', 'Chat');
 
@@ -171,6 +172,13 @@ export interface IChatViewOpenOptions {
 	 * but explicit tool exclusions always win.
 	 */
 	toolsExclude?: string[];
+
+	/**
+	 * The session target to set in the chat input dropdown.
+	 * Valid values are: 'local', 'background', 'cloud', 'claude', 'codex'
+	 * This corresponds to AgentSessionProviders enum values.
+	 */
+	target?: 'local' | 'background' | 'cloud' | 'claude' | 'codex';
 }
 
 export interface IChatViewOpenRequestEntry {
@@ -226,6 +234,39 @@ abstract class OpenChatGlobalAction extends Action2 {
 		const switchToMode = (opts?.mode ? chatModeService.findModeByName(opts?.mode) : undefined) ?? this.mode;
 		if (switchToMode) {
 			await this.handleSwitchToMode(switchToMode, chatWidget, instaService, commandService);
+		}
+
+		// Handle target parameter to set session target dropdown
+		if (opts?.target) {
+			// Map the target string to AgentSessionProviders enum
+			const targetMap: Record<string, AgentSessionProviders> = {
+				'local': AgentSessionProviders.Local,
+				'background': AgentSessionProviders.Background,
+				'cloud': AgentSessionProviders.Cloud,
+				'claude': AgentSessionProviders.Claude,
+				'codex': AgentSessionProviders.Codex
+			};
+
+			const targetProvider = targetMap[opts.target];
+			if (targetProvider) {
+				// If the chat is empty and currently local, replace it with a new session of the specified type
+				const isEmpty = chatWidget.isEmpty();
+				const viewModel = chatWidget.viewModel;
+				const isLocalSession = viewModel?.sessionResource.scheme === 'vscode-local-chat-session' ||
+					viewModel?.sessionResource.scheme === 'vscode-chat-editor';
+
+				if (isEmpty && isLocalSession && targetProvider !== AgentSessionProviders.Local) {
+					// Create a new session with the specified target type
+					const position = chatWidget.location === ChatAgentLocation.Panel ? 'sidebar' : 'editor';
+					await commandService.executeCommand(`workbench.action.chat.openNewChatSessionInPlace.${targetProvider}`, position);
+					// Get the updated widget after session change
+					chatWidget = widgetService.lastFocusedWidget ?? chatWidget;
+				}
+				// Note: For non-empty sessions or when target is 'local', the dropdown will show the current session type
+				// Users can manually switch using the session target picker if needed
+			} else {
+				logService.warn(`Invalid target value: ${opts.target}. Valid values are: local, background, cloud, claude, codex`);
+			}
 		}
 
 		if (opts?.modelSelector) {
