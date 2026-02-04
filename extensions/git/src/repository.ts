@@ -957,11 +957,14 @@ export class Repository implements Disposable {
 				: new ThemeIcon('repo');
 
 		// Hidden
-		// This is a temporary solution to hide worktrees created by Copilot
-		// when the main repository is opened. Users can still manually open
-		// the worktree from the Repositories view.
-		this._isHidden = repository.kind === 'worktree' &&
-			isCopilotWorktree(repository.root) && parent !== undefined;
+		// This is a temporary solution to hide:
+		// * repositories in the empty window
+		// * worktrees created by Copilot when the main repository
+		//   is opened. Users can still manually open the worktree
+		//   from the Repositories view.
+		this._isHidden = workspace.workspaceFolders === undefined ||
+			(repository.kind === 'worktree' &&
+				isCopilotWorktree(repository.root) && parent !== undefined);
 
 		const root = Uri.file(repository.root);
 		this._sourceControl = scm.createSourceControl('git', 'Git', root, icon, this._isHidden, parent);
@@ -1902,7 +1905,7 @@ export class Repository implements Disposable {
 
 	private async _getWorktreeIncludePaths(): Promise<Set<string>> {
 		const config = workspace.getConfiguration('git', Uri.file(this.root));
-		const worktreeIncludeFiles = config.get<string[]>('worktreeIncludeFiles', ['**/node_modules/**']);
+		const worktreeIncludeFiles = config.get<string[]>('worktreeIncludeFiles', []);
 
 		if (worktreeIncludeFiles.length === 0) {
 			return new Set<string>();
@@ -2387,8 +2390,8 @@ export class Repository implements Disposable {
 		return this.run(Operation.Show, () => this.repository.detectObjectType(object));
 	}
 
-	async apply(patch: string, reverse?: boolean): Promise<void> {
-		return await this.run(Operation.Apply, () => this.repository.apply(patch, reverse));
+	async apply(patch: string, options?: { allowEmpty?: boolean; reverse?: boolean; threeWay?: boolean }): Promise<void> {
+		return await this.run(Operation.Apply, () => this.repository.apply(patch, options));
 	}
 
 	async getStashes(): Promise<Stash[]> {
