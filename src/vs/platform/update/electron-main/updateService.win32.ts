@@ -166,13 +166,13 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 		return createUpdateURL(this.productService.updateUrl!, platform, quality, commit, options);
 	}
 
-	protected doCheckForUpdates(explicit: boolean): void {
+	protected doCheckForUpdates(explicit: boolean, pendingCommit?: string): void {
 		if (!this.quality) {
 			return;
 		}
 
 		const background = !explicit && !this.shouldDisableProgressiveReleases();
-		const url = this.buildUpdateFeedUrl(this.quality, this.productService.commit!, { background });
+		const url = this.buildUpdateFeedUrl(this.quality, pendingCommit ?? this.productService.commit!, { background });
 		this.setState(State.CheckingForUpdates(explicit));
 
 		this.requestService.request({ url }, CancellationToken.None)
