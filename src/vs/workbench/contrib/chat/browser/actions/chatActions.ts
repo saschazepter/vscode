@@ -265,7 +265,7 @@ abstract class OpenChatGlobalAction extends Action2 {
 		if (opts?.target) {
 			const targetProvider = TARGET_TO_PROVIDER_MAP[opts.target];
 			if (targetProvider) {
-				const isEmpty = chatWidget.isEmpty();
+				const isEmpty = (chatWidget.viewModel?.getItems().length ?? 0) === 0;
 				const viewModel = chatWidget.viewModel;
 				const isLocalSession = viewModel && (
 					viewModel.sessionResource.scheme === Schemas.vscodeLocalChatSession ||
@@ -282,7 +282,7 @@ abstract class OpenChatGlobalAction extends Action2 {
 					// Session has content and target is different - don't disrupt existing work
 				} else if (isLocalSession && targetProvider !== AgentSessionProviders.Local) {
 					// Empty local session, switch to the specified target type
-					const position = chatWidget.location === ChatAgentLocation.Panel ? ChatSessionPosition.Sidebar : ChatSessionPosition.Editor;
+					const position = chatWidget.location === ChatAgentLocation.Chat ? ChatSessionPosition.Sidebar : ChatSessionPosition.Editor;
 					await commandService.executeCommand(`workbench.action.chat.openNewChatSessionInPlace.${targetProvider}`, position);
 					// Get the updated widget after session change
 					chatWidget = widgetService.lastFocusedWidget ?? chatWidget;
