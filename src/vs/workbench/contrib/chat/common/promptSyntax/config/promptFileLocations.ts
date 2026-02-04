@@ -34,6 +34,29 @@ export const AGENT_FILE_EXTENSION = '.agent.md';
 export const SKILL_FILENAME = 'SKILL.md';
 
 /**
+<<<<<<< HEAD
+=======
+ * AGENT file name
+ */
+export const AGENT_MD_FILENAME = 'AGENTS.md';
+
+/**
+ * Claude file name.
+ */
+export const CLAUDE_MD_FILENAME = 'CLAUDE.md';
+
+/**
+ * Claude local file name.
+ */
+export const CLAUDE_LOCAL_MD_FILENAME = 'CLAUDE.local.md';
+
+/**
+ * Default hook file name (case insensitive).
+ */
+export const HOOKS_FILENAME = 'hooks.json';
+
+/**
+>>>>>>> 6a7cce3c3f9 (add claude.md support (#292898))
  * Copilot custom instructions file name.
  */
 export const COPILOT_CUSTOM_INSTRUCTIONS_FILENAME = 'copilot-instructions.md';
