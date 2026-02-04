@@ -142,11 +142,11 @@ export class AgentSessionInputNeededNotificationWidget extends BaseActionViewIte
 
 		// Setup hover tooltip
 		const hoverDelegate = getDefaultHoverDelegate('mouse');
-		const tooltip = description
-			? localize('openSessionTooltip', "Open session: {0}", description)
-			: (attentionNeededSessions.length === 1
-				? localize('needsInputTooltip1', "{0} session needs input", attentionNeededSessions.length)
-				: localize('needsInputTooltip', "{0} sessions need input", attentionNeededSessions.length));
+		const tooltip = attentionNeededSessions.length === 1
+			? (description
+				? localize('openSessionTooltip', "Click to open session: {0}", description)
+				: localize('needsInputTooltip1Simple', "Session needs input"))
+			: localize('needsInputTooltip', "{0} sessions need input", attentionNeededSessions.length);
 		this._dynamicDisposables.add(this.hoverService.setupManagedHover(hoverDelegate, badge, tooltip));
 
 		// Click handler

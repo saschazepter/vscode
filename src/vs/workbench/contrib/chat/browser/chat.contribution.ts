@@ -217,6 +217,7 @@ configurationRegistry.registerConfiguration({
 			type: 'boolean',
 			markdownDescription: nls.localize('chat.agentSessions.inputNeeded.notification', "Controls whether a notification badge is shown in the command center when agent sessions need user input. Click the notification to open the session requiring attention."),
 			default: true,
+			scope: ConfigurationScope.WINDOW,
 		},
 		[ChatConfiguration.UnifiedAgentsBar]: {
 			type: 'boolean',
