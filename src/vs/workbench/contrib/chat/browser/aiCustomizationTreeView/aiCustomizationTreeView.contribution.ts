@@ -3,21 +3,13 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { KeyCode, KeyMod } from '../../../../../base/common/keyCodes.js';
 import { localize, localize2, ILocalizedString } from '../../../../../nls.js';
 import { Action2, MenuId, MenuRegistry, registerAction2 } from '../../../../../platform/actions/common/actions.js';
 import { ContextKeyExpr } from '../../../../../platform/contextkey/common/contextkey.js';
-import { SyncDescriptor } from '../../../../../platform/instantiation/common/descriptors.js';
 import { IInstantiationService, ServicesAccessor } from '../../../../../platform/instantiation/common/instantiation.js';
-import { Registry } from '../../../../../platform/registry/common/platform.js';
-import { ViewPaneContainer } from '../../../../browser/parts/views/viewPaneContainer.js';
-import { ViewAction } from '../../../../browser/parts/views/viewPane.js';
-import { Extensions as ViewContainerExtensions, IViewContainersRegistry, IViewDescriptor, IViewsRegistry, LayoutVisibility, ViewContainerLocation } from '../../../../common/views.js';
-import { IViewsService } from '../../../../services/views/common/viewsService.js';
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
-import { AICustomizationItemMenuId, AICustomizationNewMenuId, AI_CUSTOMIZATION_CATEGORY, AI_CUSTOMIZATION_STORAGE_ID, AI_CUSTOMIZATION_VIEW_ID, AI_CUSTOMIZATION_VIEWLET_ID } from './aiCustomizationTreeView.js';
-import { aiCustomizationViewIcon } from './aiCustomizationTreeViewIcons.js';
-import { AICustomizationIsEmptyContextKey, AICustomizationItemTypeContextKey, AICustomizationViewPane } from './aiCustomizationTreeViewViews.js';
+import { AICustomizationItemMenuId, AICustomizationNewMenuId, AI_CUSTOMIZATION_CATEGORY, AI_CUSTOMIZATION_VIEW_ID } from './aiCustomizationTreeView.js';
+import { AICustomizationItemTypeContextKey } from './aiCustomizationTreeViewViews.js';
 import { IOpenerService } from '../../../../../platform/opener/common/opener.js';
 import { PromptFilePickers } from '../promptSyntax/pickers/promptFilePickers.js';
 import { PromptsType } from '../../common/promptSyntax/promptTypes.js';
@@ -26,7 +18,6 @@ import { ICommandService } from '../../../../../platform/commands/common/command
 import { URI } from '../../../../../base/common/uri.js';
 import { IEditorService } from '../../../../services/editor/common/editorService.js';
 import { AI_CUSTOMIZATION_EDITOR_ID } from '../aiCustomizationEditor/aiCustomizationEditor.js';
-import { AICustomizationOverviewView, AI_CUSTOMIZATION_OVERVIEW_VIEW_ID } from '../aiCustomizationManagement/aiCustomizationOverviewView.js';
 
 //#region Utilities
 
@@ -52,77 +43,6 @@ function extractURI(context: URIContext): URI {
 	}
 	return URI.parse(context.uri as string);
 }
-
-//#endregion
-
-//#region View Container Registration
-
-const viewContainersRegistry = Registry.as<IViewContainersRegistry>(ViewContainerExtensions.ViewContainersRegistry);
-
-export const AI_CUSTOMIZATION_VIEW_CONTAINER = viewContainersRegistry.registerViewContainer(
-	{
-		id: AI_CUSTOMIZATION_VIEWLET_ID,
-		title: localize2('aiCustomization', "AI Customization"),
-		ctorDescriptor: new SyncDescriptor(ViewPaneContainer, [AI_CUSTOMIZATION_VIEWLET_ID, { mergeViewWithContainerWhenSingleView: true }]),
-		icon: aiCustomizationViewIcon,
-		order: 10,
-		hideIfEmpty: false,
-		storageId: AI_CUSTOMIZATION_STORAGE_ID,
-		alwaysUseContainerInfo: true,
-		layoutVisibility: LayoutVisibility.Both,
-		openCommandActionDescriptor: {
-			id: AI_CUSTOMIZATION_VIEWLET_ID,
-			mnemonicTitle: localize({ key: 'miViewAICustomization', comment: ['&& denotes a mnemonic'] }, "AI &&Customization"),
-			keybindings: { primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyI },
-			order: 10,
-		},
-	},
-	ViewContainerLocation.Sidebar
-);
-
-//#endregion
-
-//#region Views Registration
-
-const viewsRegistry = Registry.as<IViewsRegistry>(ViewContainerExtensions.ViewsRegistry);
-
-// Unified AI Customization View (Tree)
-const aiCustomizationViewDescriptor: IViewDescriptor = {
-	id: AI_CUSTOMIZATION_VIEW_ID,
-	name: localize2('aiCustomizationTree', "Tree"),
-	ctorDescriptor: new SyncDescriptor(AICustomizationViewPane),
-	containerIcon: aiCustomizationViewIcon,
-	canToggleVisibility: true,
-	canMoveView: true,
-	order: 2,
-	when: ChatContextKeys.enabled,
-	hideByDefault: true,
-};
-
-// Overview View (compact snapshot with deep-links)
-const aiCustomizationOverviewViewDescriptor: IViewDescriptor = {
-	id: AI_CUSTOMIZATION_OVERVIEW_VIEW_ID,
-	name: localize2('aiCustomizationOverview', "Overview"),
-	ctorDescriptor: new SyncDescriptor(AICustomizationOverviewView),
-	containerIcon: aiCustomizationViewIcon,
-	canToggleVisibility: true,
-	canMoveView: true,
-	order: 1,
-	collapsed: false,
-	weight: 20,
-	layoutVisibility: LayoutVisibility.Both,
-};
-
-viewsRegistry.registerViews([aiCustomizationOverviewViewDescriptor, aiCustomizationViewDescriptor], AI_CUSTOMIZATION_VIEW_CONTAINER);
-
-//#endregion
-
-//#region Welcome Content
-
-viewsRegistry.registerViewWelcomeContent(AI_CUSTOMIZATION_VIEW_ID, {
-	content: localize('noCustomizations', "No AI customizations found.\n[Create Agent](command:workbench.action.aiCustomization.newAgent)\n[Create Skill](command:workbench.action.aiCustomization.newSkill)\n[Create Instructions](command:workbench.action.aiCustomization.newInstructions)\n[Create Prompt](command:workbench.action.aiCustomization.newPrompt)"),
-	when: AICustomizationIsEmptyContextKey,
-});
 
 //#endregion
 
@@ -161,52 +81,6 @@ MenuRegistry.appendMenuItem(AICustomizationNewMenuId, {
 	command: { id: 'workbench.action.aiCustomization.newPrompt', title: localize('newPrompt', "New Prompt") },
 	group: '1_create',
 	order: 4,
-});
-
-// Refresh action
-registerAction2(class extends ViewAction<AICustomizationViewPane> {
-	constructor() {
-		super({
-			id: 'aiCustomization.refresh',
-			viewId: AI_CUSTOMIZATION_VIEW_ID,
-			title: localize('refresh', "Refresh"),
-			f1: false,
-			icon: Codicon.refresh,
-			menu: {
-				id: MenuId.ViewTitle,
-				order: 10,
-				group: 'navigation',
-				when: ContextKeyExpr.equals('view', AI_CUSTOMIZATION_VIEW_ID)
-			}
-		});
-	}
-
-	runInView(_accessor: ServicesAccessor, view: AICustomizationViewPane) {
-		view.refresh();
-	}
-});
-
-// Collapse All action
-registerAction2(class extends ViewAction<AICustomizationViewPane> {
-	constructor() {
-		super({
-			id: 'aiCustomization.collapseAll',
-			viewId: AI_CUSTOMIZATION_VIEW_ID,
-			title: localize('collapseAll', "Collapse All"),
-			f1: false,
-			icon: Codicon.collapseAll,
-			menu: {
-				id: MenuId.ViewTitle,
-				order: 20,
-				group: 'navigation',
-				when: ContextKeyExpr.equals('view', AI_CUSTOMIZATION_VIEW_ID)
-			}
-		});
-	}
-
-	runInView(_accessor: ServicesAccessor, view: AICustomizationViewPane) {
-		view.collapseAll();
-	}
 });
 
 //#endregion
@@ -291,27 +165,7 @@ MenuRegistry.appendMenuItem(AICustomizationItemMenuId, {
 
 //#region Actions
 
-// Open AI Customization View
-registerAction2(class extends Action2 {
-	constructor() {
-		super({
-			id: 'workbench.action.openAICustomizationView',
-			title: localize2('openAICustomizationView', "Open AI Customization View"),
-			category: AI_CUSTOMIZATION_CATEGORY,
-			f1: true,
-			keybinding: {
-				weight: 200, // KeybindingWeight.WorkbenchContrib
-				primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyI,
-			},
-			precondition: ChatContextKeys.enabled,
-		});
-	}
 
-	async run(accessor: ServicesAccessor): Promise<void> {
-		const viewsService = accessor.get(IViewsService);
-		await viewsService.openViewContainer(AI_CUSTOMIZATION_VIEWLET_ID);
-	}
-});
 
 /**
  * Factory function to create and register "New [Type]" actions for AI customization files.
