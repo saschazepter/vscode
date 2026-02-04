@@ -12,7 +12,7 @@ const root = path.dirname(path.dirname(import.meta.dirname));
 const npx = process.platform === 'win32' ? 'npx.cmd' : 'npx';
 const ansiRegex = /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g;
 
-export function spawnTsgo(projectPath: string): Promise<void> {
+export function spawnTsgo(projectPath: string, onComplete?: () => Promise<void> | void): Promise<void> {
 	const reporter = createReporter('extensions');
 	let report: NodeJS.ReadWriteStream | undefined;
 
@@ -31,7 +31,7 @@ export function spawnTsgo(projectPath: string): Promise<void> {
 		report = undefined;
 	};
 
-	const args = ['tsgo', '--project', projectPath, '--pretty', 'false'];
+	const args = ['tsgo', '--project', projectPath, '--pretty', 'false', '--sourceMap', '--inlineSources'];
 
 	beginReport(false);
 
@@ -87,7 +87,7 @@ export function spawnTsgo(projectPath: string): Promise<void> {
 			}
 			endReport();
 			if (code === 0) {
-				resolve();
+				Promise.resolve(onComplete?.()).then(() => resolve(), reject);
 				return;
 			}
 			reject(new Error(`tsgo exited with code ${code ?? 'unknown'}`));
@@ -101,10 +101,10 @@ export function spawnTsgo(projectPath: string): Promise<void> {
 	return done;
 }
 
-export function createTsgoStream(projectPath: string): NodeJS.ReadWriteStream {
+export function createTsgoStream(projectPath: string, onComplete?: () => Promise<void> | void): NodeJS.ReadWriteStream {
 	const stream = es.through();
 
-	spawnTsgo(projectPath).then(() => {
+	spawnTsgo(projectPath, onComplete).then(() => {
 		stream.emit('end');
 	}).catch(() => {
 		// Errors are already reported by spawnTsgo via the reporter.

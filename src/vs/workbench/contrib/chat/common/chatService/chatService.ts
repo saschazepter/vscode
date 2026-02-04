@@ -1332,6 +1332,13 @@ export interface IChatService {
 	 * Adding new requests should go through sendRequest with the queue option.
 	 */
 	setPendingRequests(sessionResource: URI, requests: readonly { requestId: string; kind: ChatRequestQueueKind }[]): void;
+	/**
+	 * Ensures pending requests for the session are processing. If restoring from
+	 * storage or after an error, pending requests may be present without an
+	 * active chat message 'loop' happening. THis triggers the loop to happen
+	 * as needed. Idempotent, safe to call at any time.
+	 */
+	processPendingRequests(sessionResource: URI): void;
 	addCompleteRequest(sessionResource: URI, message: IParsedChatRequest | string, variableData: IChatRequestVariableData | undefined, attempt: number | undefined, response: IChatCompleteResponse): void;
 	setChatSessionTitle(sessionResource: URI, title: string): void;
 	getLocalSessionHistory(): Promise<IChatDetail[]>;
