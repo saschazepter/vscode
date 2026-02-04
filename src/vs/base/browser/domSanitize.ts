@@ -196,7 +196,7 @@ export interface DomSanitizerConfig {
 	 * List of allowed protocols for `href` attributes.
 	 */
 	readonly allowedLinkProtocols?: {
-		readonly override?: ReadonlyArray<string | '*' | ((link: string) => boolean)>;
+		readonly override?: ReadonlyArray<string | ((link: string) => boolean)> | '*';
 	};
 
 	/**

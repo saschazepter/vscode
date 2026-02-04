@@ -591,7 +591,7 @@ export const allowedMarkdownHtmlAttributes = Object.freeze<Array<string | domSan
 
 function getDomSanitizerConfig(mdStrConfig: MdStrConfig, options: MarkdownSanitizerConfig): domSanitize.DomSanitizerConfig {
 	const isTrusted = mdStrConfig.isTrusted ?? false;
-	const allowedLinkSchemes = [
+	const allowedLinkSchemes: Array<string | ((link: string) => boolean)> = [
 		Schemas.http,
 		Schemas.https,
 		Schemas.mailto,
