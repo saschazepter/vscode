@@ -1108,41 +1108,7 @@ export class ChatService extends Disposable implements IChatService {
 
 					shouldProcessPending = !rawResult.errorDetails && !token.isCancellationRequested;
 
-					// Execute stop hook before completing the response
-					let shouldContinueFromStopHook = false;
-					let stopHookReason: string | undefined;
-					if (shouldProcessPending && collectedHooks) {
-						const stopHookResult = await this.hooksExecutionService.executeStopHook(
-							model.sessionResource,
-							{ stop_hook_active: options?.stopHookActive ?? false },
-							token
-						);
-						if (stopHookResult?.decision === 'block') {
-							this.logService.debug(`[ChatService] Stop hook blocked completion with reason: ${stopHookResult.reason}`);
-							shouldContinueFromStopHook = true;
-							stopHookReason = stopHookResult.reason;
-						}
-					}
-
-					if (shouldContinueFromStopHook && stopHookReason) {
-						// Show a progress message indicating the hook blocked stopping
-						progressCallback([{
-							kind: 'progressMessage',
-							content: new MarkdownString(localize('stopHookBlocked', "Stop hook error: \"{0}\"", stopHookReason))
-						}]);
-
-						// Don't complete the response yet - queue a continuation request
-						request.response?.complete();
-						// Send a continuation request with the stop hook's reason
-						const continuationOptions: IChatSendRequestOptions = {
-							...options,
-							stopHookActive: true,
-							queue: ChatRequestQueueKind.Queued,
-						};
-						this.sendRequest(model.sessionResource, stopHookReason, continuationOptions);
-					} else {
-						request.response?.complete();
-					}
+					request.response?.complete();
 					if (agentOrCommandFollowups) {
 						agentOrCommandFollowups.then(followups => {
 							model.setFollowups(request, followups);
