@@ -109,6 +109,11 @@ class InputEditorDecorations extends Disposable {
 			// Trigger decoration update when mode or its properties change
 			this.triggerInputEditorDecorationsUpdate();
 		}));
+		this._register(autorun(reader => {
+			// Watch for changes to the input prefix content
+			this.widget.inputPrefixContentObs.read(reader);
+			this.triggerInputEditorDecorationsUpdate();
+		}));
 
 		this.registerViewModelListeners();
 	}
@@ -166,9 +171,9 @@ class InputEditorDecorations extends Disposable {
 			return;
 		}
 
-		// Handle persistent prefix for full welcome mode
-		if (this.widget.shouldHidePlaceholder) {
-			// Always show the '>' prefix decoration
+		// Handle persistent prefix decoration (e.g., '> ' for full welcome mode)
+		const prefixContent = this.widget.inputPrefixContentObs.get();
+		if (prefixContent) {
 			const prefixDecoration: IDecorationOptions[] = [{
 				range: {
 					startLineNumber: 1,
@@ -178,20 +183,20 @@ class InputEditorDecorations extends Disposable {
 				},
 				renderOptions: {
 					before: {
-						contentText: '> ',
+						contentText: prefixContent,
 						color: this.getPlaceholderColor()
 					}
 				}
 			}];
 			this.widget.inputEditor.setDecorationsByType(decorationDescription, inputPrefixDecorationType, prefixDecoration);
 
-			// No placeholder text needed
+			// No placeholder text needed when prefix is shown
 			this.updateAriaPlaceholder(undefined);
 			this.widget.inputEditor.setDecorationsByType(decorationDescription, placeholderDecorationType, []);
 			return;
 		}
 
-		// Clear prefix decoration when not in full welcome mode
+		// Clear prefix decoration when no prefix content is set
 		this.widget.inputEditor.setDecorationsByType(decorationDescription, inputPrefixDecorationType, []);
 
 		if (!inputValue) {

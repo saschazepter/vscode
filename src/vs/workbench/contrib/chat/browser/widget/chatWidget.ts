@@ -261,8 +261,6 @@ export class ChatWidget extends Disposable implements IChatWidget {
 	private readonly _agentSupportsAttachmentsContextKey: IContextKey<boolean>;
 	private readonly _sessionIsEmptyContextKey: IContextKey<boolean>;
 	private readonly _showFullWelcomeContextKey: IContextKey<boolean>;
-	private readonly _quickStartTypeContextKey: IContextKey<string>;
-	private readonly _isExploreModeContextKey: IContextKey<boolean>;
 	private _attachmentCapabilities: IChatAgentAttachmentCapabilities = supportsAllAttachments;
 
 	// Cache for prompt file descriptions to avoid async calls during rendering
@@ -338,8 +336,14 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		return !!this.viewOptions.supportsChangingModes;
 	}
 
-	get shouldHidePlaceholder(): boolean {
-		return !!this.viewOptions.showFullWelcome && !!this.viewOptions.fullWelcomeOptions?.hidePlaceholder;
+	private readonly _inputPrefixContent = observableValue<string | undefined>(this, undefined);
+
+	get inputPrefixContentObs() {
+		return this._inputPrefixContent;
+	}
+
+	setInputPrefixContent(content: string | undefined): void {
+		this._inputPrefixContent.set(content, undefined);
 	}
 
 	get locationData() {
@@ -383,8 +387,6 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		this._sessionIsEmptyContextKey = ChatContextKeys.chatSessionIsEmpty.bindTo(this.contextKeyService);
 		this._showFullWelcomeContextKey = ChatContextKeys.showFullWelcome.bindTo(this.contextKeyService);
 		this._showFullWelcomeContextKey.set(!!viewOptions.showFullWelcome);
-		this._quickStartTypeContextKey = ChatContextKeys.quickStartType.bindTo(this.contextKeyService);
-		this._isExploreModeContextKey = ChatContextKeys.isExploreMode.bindTo(this.contextKeyService);
 
 		this.viewContext = viewContext ?? {};
 
@@ -626,6 +628,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 				{
 					productName: product.nameLong,
 					fullWelcomeOptions: this.viewOptions.fullWelcomeOptions,
+					setInputPrefixContent: (content: string | undefined) => this.setInputPrefixContent(content),
 				}
 			);
 			dom.append(this.fullWelcomeContainer, this.fullWelcomePart.value.element);
@@ -875,9 +878,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			const numItems = this.viewModel?.getItems().length ?? 0;
 			if (!numItems) {
 				// Use full welcome view if showFullWelcome is enabled
-				if (this.viewOptions.showFullWelcome && this.fullWelcomeContainer) {
-					this.renderFullWelcomeView();
-				} else {
+				if (!this.viewOptions.showFullWelcome && !this.fullWelcomeContainer) {
 					this.renderStandardWelcomeView();
 				}
 			}
@@ -886,15 +887,6 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		} finally {
 			this._isRenderingWelcome = false;
 		}
-	}
-
-	/**
-	 * Renders the full welcome view with header, sessions grid, and footer.
-	 * The full welcome part is created in render() so this method just validates it exists.
-	 */
-	private renderFullWelcomeView(): void {
-		// Full welcome part is created in render() when showFullWelcome is enabled
-		// This method is a no-op since the part is already rendered
 	}
 
 	/**
@@ -1312,10 +1304,6 @@ export class ChatWidget extends Disposable implements IChatWidget {
 	}
 
 	private handleQuickStartSelection(e: IQuickStartSelectionEvent): void {
-		// Update context keys
-		this._quickStartTypeContextKey.set(e.option.type);
-		this._isExploreModeContextKey.set(e.option.type === 'explore');
-
 		// Update the session type picker delegate if available
 		if (this.viewOptions.sessionTypePickerDelegate?.setActiveSessionProvider) {
 			this.viewOptions.sessionTypePickerDelegate.setActiveSessionProvider(e.sessionProvider);

@@ -116,16 +116,6 @@ export namespace ChatContextKeys {
 	 * True when the chat widget is rendering the full welcome view (with header, sessions grid, footer).
 	 */
 	export const showFullWelcome = new RawContextKey<boolean>('chatShowFullWelcome', false, { type: 'boolean', description: localize('chatShowFullWelcome', "True when the chat widget is showing the full welcome view with sessions grid.") });
-
-	/**
-	 * Quick-start selection type in the welcome view: 'explore' | 'background' | 'cloud' | ''
-	 */
-	export const quickStartType = new RawContextKey<string>('chatQuickStartType', '', { type: 'string', description: localize('chatQuickStartType', "The selected quick-start type in the welcome view (explore, background, or cloud).") });
-
-	/**
-	 * True when the chat is in "Explore" mode, which locks the session to Ask mode only.
-	 */
-	export const isExploreMode = new RawContextKey<boolean>('chatIsExploreMode', false, { type: 'boolean', description: localize('chatIsExploreMode', "True when the chat is in Explore mode, locked to Ask mode for local exploration.") });
 }
 
 export namespace ChatContextKeyExprs {

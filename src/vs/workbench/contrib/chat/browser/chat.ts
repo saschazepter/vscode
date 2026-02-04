@@ -6,6 +6,7 @@
 import { IMouseWheelEvent } from '../../../../base/browser/mouseEvent.js';
 import { Event } from '../../../../base/common/event.js';
 import { IDisposable } from '../../../../base/common/lifecycle.js';
+import { IObservable } from '../../../../base/common/observable.js';
 import { URI } from '../../../../base/common/uri.js';
 import { ICodeEditor } from '../../../../editor/browser/editorBrowser.js';
 import { Selection } from '../../../../editor/common/core/selection.js';
@@ -236,11 +237,7 @@ export interface IChatFullWelcomeOptions {
 	 */
 	readonly showStartupCheckbox?: boolean;
 
-	/**
-	 * Whether to hide the input placeholder text.
-	 * When true, the input will not show any placeholder text.
-	 */
-	readonly hidePlaceholder?: boolean;
+
 
 	/**
 	 * Callback when a session is opened from the welcome view.
@@ -385,10 +382,16 @@ export interface IChatWidget {
 	readonly supportsChangingModes: boolean;
 
 	/**
-	 * Whether the input placeholder should be hidden.
-	 * Used in full welcome mode where description is shown separately.
+	 * Observable for the input prefix decoration content (e.g., '> ').
+	 * When set, this is shown as a non-editable prefix before any user input.
 	 */
-	readonly shouldHidePlaceholder: boolean;
+	readonly inputPrefixContentObs: IObservable<string | undefined>;
+
+	/**
+	 * Sets the input prefix decoration content.
+	 * Call with undefined to clear the prefix.
+	 */
+	setInputPrefixContent(content: string | undefined): void;
 
 	getContrib<T extends IChatWidgetContrib>(id: string): T | undefined;
 	reveal(item: ChatTreeItem): void;

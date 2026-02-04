@@ -57,6 +57,12 @@ export interface IChatFullWelcomePartOptions {
 	 * Initial quick-start selection type.
 	 */
 	readonly initialQuickStartType?: QuickStartType;
+
+	/**
+	 * Callback to set the input prefix decoration content (e.g., '> ').
+	 * Called by the welcome part to control the input prefix display.
+	 */
+	readonly setInputPrefixContent?: (content: string | undefined) => void;
 }
 
 /**
@@ -121,6 +127,9 @@ export class ChatFullWelcomePart extends Disposable {
 		this._selectedQuickStartType = options.initialQuickStartType;
 
 		this.buildContent();
+
+		// Set the input prefix decoration for the welcome view
+		this.options.setInputPrefixContent?.('> ');
 	}
 
 	/**

@@ -64,6 +64,7 @@ import { IAgentSessionsService } from '../../agentSessions/agentSessionsService.
 import { HoverPosition } from '../../../../../../base/browser/ui/hover/hoverWidget.js';
 import { IAgentSession } from '../../agentSessions/agentSessionsModel.js';
 import { IChatEntitlementService } from '../../../../../services/chat/common/chatEntitlementService.js';
+import { IWorkspaceContextService } from '../../../../../../platform/workspace/common/workspace.js';
 
 interface IChatViewPaneState extends Partial<IChatModelInputState> {
 	sessionId?: string;
@@ -127,6 +128,7 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 		@IChatEntitlementService private readonly chatEntitlementService: IChatEntitlementService,
 		@ICommandService private readonly commandService: ICommandService,
 		@IActivityService private readonly activityService: IActivityService,
+		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
 	) {
 		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
 
@@ -188,9 +190,16 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 
 	/**
 	 * Determines whether the full welcome view should be shown based on the current
-	 * view location and maximized state. Only shows full welcome when maximized.
+	 * view location and maximized state. Shows full welcome when:
+	 * - In agent sessions workspace mode (always)
+	 * - Panel/Auxiliary bar is maximized
 	 */
 	private shouldShowFullWelcome(): boolean {
+		// Always show full welcome in agent sessions workspace mode
+		if (this.workspaceContextService.getWorkspace().isAgentSessionsWorkspace) {
+			return true;
+		}
+
 		const viewLocation = this.viewDescriptorService.getViewLocationById(this.id);
 
 		switch (viewLocation) {
@@ -610,9 +619,7 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 			{ viewId: this.id },
 			{
 				showFullWelcome: this._currentShowFullWelcome,
-				fullWelcomeOptions: {
-					hidePlaceholder: true,
-				},
+				fullWelcomeOptions: {},
 				sessionTypePickerDelegate,
 				autoScroll: mode => mode !== ChatModeKind.Ask,
 				renderFollowups: true,
