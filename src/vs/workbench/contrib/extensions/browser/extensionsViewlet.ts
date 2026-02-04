@@ -109,7 +109,9 @@ export class ExtensionsViewletViewsContribution extends Disposable implements IW
 		super();
 
 		this.container = viewDescriptorService.getViewContainerById(VIEWLET_ID)!;
-		// this.registerViews();
+		if (this.container) {
+			this.registerViews();
+		}
 	}
 
 	private registerViews(): void {
