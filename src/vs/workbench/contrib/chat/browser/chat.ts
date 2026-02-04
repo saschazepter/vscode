@@ -221,6 +221,38 @@ export interface IChatListItemRendererOptions {
 	readonly progressMessageAtBottomOfResponse?: boolean | ((mode: ChatModeKind) => boolean);
 }
 
+/**
+ * Configuration options for the full welcome view in ChatWidget.
+ * When showFullWelcome is enabled, these options customize the welcome experience.
+ */
+export interface IChatFullWelcomeOptions {
+	/**
+	 * Maximum number of sessions to display in the grid.
+	 */
+	readonly maxSessions?: number;
+
+	/**
+	 * Whether to show the "Show on startup" checkbox.
+	 */
+	readonly showStartupCheckbox?: boolean;
+
+	/**
+	 * Whether to hide the input placeholder text.
+	 * When true, the input will not show any placeholder text.
+	 */
+	readonly hidePlaceholder?: boolean;
+
+	/**
+	 * Callback when a session is opened from the welcome view.
+	 */
+	readonly onSessionOpened?: () => void;
+
+	/**
+	 * Callback when "View All Sessions" is clicked.
+	 */
+	readonly onViewAllSessions?: () => void;
+}
+
 export interface IChatWidgetViewOptions {
 	autoScroll?: boolean | ((mode: ChatModeKind) => boolean);
 	renderInputOnTop?: boolean;
@@ -277,6 +309,18 @@ export interface IChatWidgetViewOptions {
 	 * redirect to a different workspace rather than executing locally.
 	 */
 	submitHandler?: (query: string, mode: ChatModeKind) => Promise<boolean>;
+
+	/**
+	 * When true, renders a full welcome view similar to AgentSessionsWelcomePage
+	 * with header, sessions grid, and footer when the session is empty.
+	 */
+	showFullWelcome?: boolean;
+
+	/**
+	 * Configuration options for the full welcome view.
+	 * Only used when showFullWelcome is true.
+	 */
+	fullWelcomeOptions?: IChatFullWelcomeOptions;
 }
 
 export interface IChatViewViewContext {
@@ -339,6 +383,12 @@ export interface IChatWidget {
 	readonly contribs: readonly IChatWidgetContrib[];
 
 	readonly supportsChangingModes: boolean;
+
+	/**
+	 * Whether the input placeholder should be hidden.
+	 * Used in full welcome mode where description is shown separately.
+	 */
+	readonly shouldHidePlaceholder: boolean;
 
 	getContrib<T extends IChatWidgetContrib>(id: string): T | undefined;
 	reveal(item: ChatTreeItem): void;

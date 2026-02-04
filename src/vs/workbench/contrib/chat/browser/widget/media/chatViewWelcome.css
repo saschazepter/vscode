@@ -234,3 +234,15 @@ div.chat-welcome-view {
 		background-color: var(--vscode-list-hoverBackground);
 	}
 }
+
+/* Full welcome container - used when showFullWelcome option is enabled */
+.interactive-session .chat-full-welcome-container {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	overflow-y: auto;
+	flex: 1;
+	padding: 40px;
+	box-sizing: border-box;
+}

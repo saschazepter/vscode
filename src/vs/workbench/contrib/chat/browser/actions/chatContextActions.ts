@@ -462,6 +462,7 @@ export class AttachContextAction extends Action2 {
 			},
 			menu: {
 				when: ContextKeyExpr.and(
+					ChatContextKeys.showFullWelcome.negate(),
 					ContextKeyExpr.or(
 						ChatContextKeys.location.isEqualTo(ChatAgentLocation.Chat),
 						ContextKeyExpr.and(ChatContextKeys.location.isEqualTo(ChatAgentLocation.EditorInline), CTX_INLINE_CHAT_V2_ENABLED)

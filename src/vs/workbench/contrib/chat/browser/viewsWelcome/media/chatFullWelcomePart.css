@@ -1,0 +1,832 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+.chat-full-welcome {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	width: 100%;
+	box-sizing: border-box;
+	overflow-x: hidden;
+}
+
+/* Header */
+.chat-full-welcome-header {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	width: 100%;
+	max-width: 800px;
+}
+
+.chat-full-welcome-header h1.product-name {
+	font-size: 32px;
+	font-weight: 400;
+	margin: 0 0 16px 0;
+	padding-top: 4px;
+	color: var(--vscode-foreground);
+	text-align: center;
+	line-height: 1.2;
+}
+
+/* Input slot - where ChatWidget inserts the input part */
+.chat-full-welcome-inputSlot {
+	width: 100%;
+	max-width: 800px;
+	margin-top: 0;
+	box-sizing: border-box;
+}
+
+/* Ensure the input editor fits properly */
+.chat-full-welcome-inputSlot .interactive-input-part {
+	margin: 0;
+	padding: 0;
+	max-width: 100%;
+	box-sizing: border-box;
+}
+
+.chat-full-welcome-inputSlot .interactive-input-part .monaco-editor {
+	min-height: 0;
+}
+
+.chat-full-welcome-inputSlot .interactive-input-part .monaco-editor .view-lines {
+	min-height: 0;
+}
+
+/* Contain the Monaco editor view-lines within the input border */
+.chat-full-welcome-inputSlot .chat-input-container {
+	overflow: hidden;
+}
+
+.chat-full-welcome-startEntries {
+	display: flex;
+	gap: 16px;
+	flex-wrap: wrap;
+	justify-content: center;
+}
+
+.chat-full-welcome-startEntry {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 4px 8px;
+	padding-left: 0;
+	border: none;
+	border-radius: 4px;
+	background-color: transparent;
+	color: var(--vscode-descriptionForeground);
+	font-size: 13px;
+	cursor: pointer;
+}
+
+.chat-full-welcome-startEntry:hover {
+	color: var(--vscode-textLink-foreground);
+}
+
+.chat-full-welcome-startEntry .codicon {
+	color: var(--vscode-descriptionForeground) !important;
+}
+
+/* Sessions section */
+.chat-full-welcome-sessionsSection {
+	width: 100%;
+	max-width: 800px;
+	margin-top: 24px;
+}
+
+/* Sessions grid */
+.chat-full-welcome-sessionsGrid {
+	width: 100%;
+	overflow: hidden;
+}
+
+/* Style the agent sessions control - 2 column layout */
+.chat-full-welcome-sessionsGrid .agent-sessions-viewer {
+	height: auto;
+	min-height: 0;
+}
+
+.chat-full-welcome-sessionsGrid .agent-sessions-viewer .monaco-list {
+	background: transparent !important;
+}
+
+.chat-full-welcome-sessionsGrid .agent-sessions-viewer .monaco-list-rows {
+	background: transparent !important;
+}
+
+/* Hide scrollbars in sessions list */
+.chat-full-welcome-sessionsGrid .agent-sessions-viewer .monaco-scrollable-element > .scrollbar {
+	display: none !important;
+}
+
+/* 2-column grid layout using CSS transforms on virtualized list */
+.chat-full-welcome-sessionsGrid .monaco-list-row {
+	width: 50% !important;
+}
+
+/* Transform items into 2-column layout */
+.chat-full-welcome-sessionsGrid .monaco-list-row:nth-child(3) {
+	transform: translateY(-52px);
+}
+.chat-full-welcome-sessionsGrid .monaco-list-row:nth-child(5) {
+	transform: translateY(-104px);
+}
+
+.chat-full-welcome-sessionsGrid .monaco-list-row:nth-child(2) {
+	transform: translateX(100%) translateY(-52px);
+}
+.chat-full-welcome-sessionsGrid .monaco-list-row:nth-child(4) {
+	transform: translateX(100%) translateY(-104px);
+}
+.chat-full-welcome-sessionsGrid .monaco-list-row:nth-child(6) {
+	transform: translateX(100%) translateY(-156px);
+}
+
+/* Style individual session items */
+.chat-full-welcome-sessionsGrid .agent-session-item {
+	border-radius: 4px;
+}
+
+.chat-full-welcome-sessionsGrid .agent-session-item:hover {
+	background-color: var(--vscode-list-hoverBackground);
+}
+
+/* Hide toolbar on items for cleaner look */
+.chat-full-welcome-sessionsGrid .agent-session-title-toolbar {
+	display: none !important;
+}
+
+.chat-full-welcome-openSessionsButton {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	width: 100%;
+	padding: 8px 16px;
+	margin-top: 12px;
+	border: none;
+	border-radius: 4px;
+	background-color: var(--vscode-toolbar-hoverBackground);
+	color: var(--vscode-foreground);
+	font-size: 13px;
+	cursor: pointer;
+}
+
+.chat-full-welcome-openSessionsButton:hover {
+	background-color: var(--vscode-toolbar-activeBackground);
+	color: var(--vscode-textLink-foreground);
+}
+
+/* Walkthroughs section */
+.chat-full-welcome-sessionsSection .chat-full-welcome-walkthroughCard {
+	width: 100%;
+	box-sizing: border-box;
+}
+
+.chat-full-welcome-walkthroughCard {
+	display: flex;
+	align-items: center;
+	padding: 15px;
+	border: 1px solid var(--vscode-welcomePage-tileBorder, var(--vscode-contrastBorder, transparent));
+	border-radius: 8px;
+	background-color: transparent;
+	cursor: pointer;
+	transition: background-color 0.1s;
+	gap: 12px;
+}
+
+.chat-full-welcome-walkthroughCard:hover {
+	background-color: var(--vscode-list-hoverBackground);
+}
+
+.chat-full-welcome-walkthroughCard-icon {
+	flex-shrink: 0;
+	width: 20px;
+	height: 20px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.chat-full-welcome-walkthroughCard-icon .codicon {
+	font-size: 20px;
+	color: var(--vscode-descriptionForeground);
+}
+
+.chat-full-welcome-walkthroughCard-content {
+	flex: 1;
+	min-width: 0;
+}
+
+.chat-full-welcome-walkthroughCard-title {
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--vscode-foreground);
+	margin: 0;
+	line-height: 1.4;
+}
+
+.chat-full-welcome-walkthroughCard-description {
+	font-size: 13px;
+	color: var(--vscode-descriptionForeground);
+	margin: 0;
+	line-height: 1.4;
+}
+
+.chat-full-welcome-walkthroughCard-nav {
+	display: flex;
+	gap: 4px;
+}
+
+.chat-full-welcome-walkthroughCard-nav .nav-button {
+	width: 24px;
+	height: 24px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border: none;
+	border-radius: 4px;
+	background-color: transparent;
+	color: var(--vscode-descriptionForeground);
+	cursor: pointer;
+}
+
+.chat-full-welcome-walkthroughCard-nav .nav-button:hover:not(:disabled) {
+	background-color: var(--vscode-toolbar-hoverBackground);
+}
+
+.chat-full-welcome-walkthroughCard-nav .nav-button:disabled {
+	opacity: 0.4;
+	cursor: default;
+}
+
+/* Footer */
+.chat-full-welcome-footer {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 8px;
+	width: 100%;
+	max-width: 800px;
+	margin-top: 24px;
+}
+
+.chat-full-welcome-showOnStartup {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 12px;
+	color: var(--vscode-descriptionForeground);
+}
+
+.chat-full-welcome-showOnStartup label {
+	cursor: pointer;
+}
+
+.chat-full-welcome-checkbox {
+	width: 18px;
+	height: 18px;
+	float: none;
+	margin-left: 0;
+	border: 1px solid var(--vscode-checkbox-border) !important;
+	border-radius: 3px;
+	padding: 0;
+	background-color: var(--vscode-checkbox-background) !important;
+	color: var(--vscode-checkbox-foreground) !important;
+}
+
+.chat-full-welcome-checkbox.checked {
+	background-color: var(--vscode-descriptionForeground) !important;
+	border-color: var(--vscode-descriptionForeground) !important;
+	color: var(--vscode-editor-background) !important;
+}
+
+.chat-full-welcome-checkbox.codicon:not(.checked)::before {
+	opacity: 0;
+}
+
+/* TOS/Privacy card */
+.chat-full-welcome-tosCard {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	width: 100%;
+	max-width: 800px;
+	padding: 15px;
+	box-sizing: border-box;
+	cursor: default;
+	border: 1px solid var(--vscode-welcomePage-tileBorder, var(--vscode-contrastBorder, transparent));
+	border-radius: 8px;
+	background-color: transparent;
+}
+
+.chat-full-welcome-tosCard:hover {
+	background-color: var(--vscode-list-hoverBackground);
+}
+
+.chat-full-welcome-tosCard .chat-full-welcome-walkthroughCard-icon {
+	width: 20px;
+	height: 20px;
+	flex-shrink: 0;
+}
+
+.chat-full-welcome-tosCard .chat-full-welcome-walkthroughCard-icon .codicon {
+	font-size: 20px;
+	color: var(--vscode-descriptionForeground);
+}
+
+.chat-full-welcome-tosCard .chat-full-welcome-walkthroughCard-content {
+	flex: 1;
+}
+
+.chat-full-welcome-tosCard .chat-full-welcome-walkthroughCard-title {
+	font-size: 13px;
+	font-weight: 600;
+	margin: 0;
+	line-height: 1.4;
+}
+
+.chat-full-welcome-tosCard .chat-full-welcome-walkthroughCard-description {
+	font-size: 13px;
+	margin: 0;
+	line-height: 1.4;
+}
+
+.chat-full-welcome-tosCard .chat-full-welcome-walkthroughCard-description p {
+	margin: 0;
+}
+
+.chat-full-welcome-tosCard .chat-full-welcome-walkthroughCard-description a {
+	color: var(--vscode-textLink-foreground);
+}
+
+.chat-full-welcome-tosCard-dismiss {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 22px;
+	height: 22px;
+	border: none;
+	border-radius: 4px;
+	background-color: transparent;
+	color: var(--vscode-descriptionForeground);
+	cursor: pointer;
+	flex-shrink: 0;
+	opacity: 0;
+	transition: opacity 0.1s;
+}
+
+.chat-full-welcome-tosCard:hover .chat-full-welcome-tosCard-dismiss {
+	opacity: 1;
+}
+
+.chat-full-welcome-tosCard-dismiss:hover {
+	background-color: var(--vscode-toolbar-hoverBackground);
+	color: var(--vscode-foreground);
+}
+
+/* Loading skeleton */
+.chat-full-welcome-sessionsLoading {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 0;
+	width: 100%;
+}
+
+.chat-full-welcome-sessionSkeleton {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	padding: 8px 12px 8px 8px;
+	border-radius: 4px;
+	height: 52px;
+	box-sizing: border-box;
+}
+
+.chat-full-welcome-sessionSkeleton-icon {
+	width: 20px;
+	height: 20px;
+	border-radius: 4px;
+	background: var(--vscode-welcomePage-tileBorder, var(--vscode-contrastBorder, rgba(128, 128, 128, 0.2)));
+	animation: chat-full-welcome-shimmer 1.5s ease-in-out infinite;
+}
+
+.chat-full-welcome-sessionSkeleton-content {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.chat-full-welcome-sessionSkeleton-title {
+	height: 12px;
+	border-radius: 2px;
+	background: var(--vscode-welcomePage-tileBorder, var(--vscode-contrastBorder, rgba(128, 128, 128, 0.2)));
+	animation: chat-full-welcome-shimmer 1.5s ease-in-out infinite;
+	animation-delay: 0.1s;
+}
+
+.chat-full-welcome-sessionSkeleton-description {
+	height: 10px;
+	width: 60%;
+	border-radius: 2px;
+	background: var(--vscode-welcomePage-tileBorder, var(--vscode-contrastBorder, rgba(128, 128, 128, 0.2)));
+	animation: chat-full-welcome-shimmer 1.5s ease-in-out infinite;
+	animation-delay: 0.2s;
+}
+
+@keyframes chat-full-welcome-shimmer {
+	0%, 100% {
+		opacity: 0.3;
+	}
+	50% {
+		opacity: 0.6;
+	}
+}
+
+/* Quick-start buttons */
+.chat-full-welcome-quickStart {
+	display: flex;
+	gap: 8px;
+	flex-wrap: wrap;
+	justify-content: center;
+	width: 100%;
+	max-width: 800px;
+	margin-bottom: 0;
+	padding-bottom: 8px;
+}
+
+/* Expanded container - shows all buttons */
+.chat-full-welcome-quickStart-expanded {
+	display: flex;
+	gap: 8px;
+	flex-wrap: wrap;
+	justify-content: center;
+}
+
+/* Animation when expanding back from collapsed state */
+.chat-full-welcome-quickStart.expanding .chat-full-welcome-quickStart-expanded {
+	animation: expandButtons 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes expandButtons {
+	from {
+		opacity: 0;
+		transform: scale(0.9);
+	}
+	to {
+		opacity: 1;
+		transform: scale(1);
+	}
+}
+
+/* Collapsed container - shows only selected icon */
+.chat-full-welcome-quickStart-collapsed {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+/* When quick-start is collapsed, hide the expanded view */
+.chat-full-welcome-quickStart.collapsed .chat-full-welcome-quickStart-expanded {
+	display: none;
+}
+
+.chat-full-welcome-quickStart.collapsed .chat-full-welcome-quickStart-collapsed {
+	display: flex;
+}
+
+/* Collapsed button - shows only the icon */
+.chat-full-welcome-quickStart-collapsed-button {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 32px;
+	height: 32px;
+	padding: 0;
+	border: 1px solid var(--vscode-focusBorder);
+	border-radius: 4px;
+	background-color: var(--vscode-list-activeSelectionBackground);
+	color: var(--vscode-list-activeSelectionForeground);
+	cursor: pointer;
+	transition: background-color 0.15s ease, transform 0.15s ease;
+}
+
+.chat-full-welcome-quickStart-collapsed-button:hover {
+	background-color: var(--vscode-list-hoverBackground);
+	transform: scale(1.05);
+}
+
+.chat-full-welcome-quickStart-collapsed-button:focus-visible {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: 2px;
+}
+
+.chat-full-welcome-quickStart-collapsed-button .chat-full-welcome-quickStart-icon {
+	width: 16px;
+	height: 16px;
+}
+
+.chat-full-welcome-quickStart-collapsed-button .chat-full-welcome-quickStart-icon .codicon {
+	font-size: 16px;
+	color: var(--vscode-list-activeSelectionForeground) !important;
+}
+
+.chat-full-welcome-quickStart-button {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 6px 12px;
+	border: 1px solid var(--vscode-welcomePage-tileBorder, var(--vscode-contrastBorder, transparent));
+	border-radius: 4px;
+	background-color: transparent;
+	color: var(--vscode-foreground);
+	cursor: pointer;
+	transition: background-color 0.1s, border-color 0.1s;
+}
+
+.chat-full-welcome-quickStart-button:hover {
+	background-color: var(--vscode-list-hoverBackground);
+}
+
+.chat-full-welcome-quickStart-button:focus-visible {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: 2px;
+}
+
+.chat-full-welcome-quickStart-button.selected {
+	border-color: var(--vscode-focusBorder);
+	background-color: var(--vscode-list-activeSelectionBackground);
+	color: var(--vscode-list-activeSelectionForeground);
+}
+
+.chat-full-welcome-quickStart-button.selected .codicon {
+	color: var(--vscode-list-activeSelectionForeground) !important;
+}
+
+.chat-full-welcome-quickStart-icon {
+	flex-shrink: 0;
+	width: 16px;
+	height: 16px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.chat-full-welcome-quickStart-icon .codicon {
+	font-size: 14px;
+	color: var(--vscode-descriptionForeground);
+}
+
+.chat-full-welcome-quickStart-label {
+	font-size: 12px;
+	font-weight: 500;
+	line-height: 1.2;
+}
+
+/* Extension-contributed button styling */
+.chat-full-welcome-quickStart-button.extension-contributed {
+	border-style: dashed;
+}
+
+.chat-full-welcome-quickStart-button.extension-contributed:hover,
+.chat-full-welcome-quickStart-button.extension-contributed.selected {
+	border-style: solid;
+}
+
+/* Filtering state - when user types without selecting a mode */
+.chat-full-welcome-quickStart.filtering .chat-full-welcome-quickStart-button.dimmed {
+	opacity: 0.35;
+	transform: scale(0.95);
+	transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.chat-full-welcome-quickStart.filtering .chat-full-welcome-quickStart-button.matching {
+	border-color: var(--vscode-focusBorder);
+	background-color: var(--vscode-list-hoverBackground);
+	transform: scale(1.02);
+	transition: border-color 0.15s ease, background-color 0.15s ease, transform 0.15s ease;
+}
+
+.chat-full-welcome-quickStart.filtering .chat-full-welcome-quickStart-button.matching:hover {
+	background-color: var(--vscode-list-activeSelectionBackground);
+	color: var(--vscode-list-activeSelectionForeground);
+}
+
+.chat-full-welcome-quickStart.filtering .chat-full-welcome-quickStart-button.matching:hover .codicon {
+	color: var(--vscode-list-activeSelectionForeground) !important;
+}
+
+/* Best match - strongest visual emphasis */
+.chat-full-welcome-quickStart.filtering .chat-full-welcome-quickStart-button.best-match {
+	border-color: var(--vscode-focusBorder);
+	background-color: var(--vscode-list-activeSelectionBackground);
+	color: var(--vscode-list-activeSelectionForeground);
+	transform: scale(1.05);
+	box-shadow: 0 0 0 2px var(--vscode-focusBorder);
+	transition: all 0.15s ease;
+}
+
+.chat-full-welcome-quickStart.filtering .chat-full-welcome-quickStart-button.best-match .codicon {
+	color: var(--vscode-list-activeSelectionForeground) !important;
+}
+
+.chat-full-welcome-quickStart.filtering .chat-full-welcome-quickStart-button.best-match:hover {
+	transform: scale(1.08);
+}
+
+/* ===========================================
+   Configuration Toolbar (horizontal layout)
+   =========================================== */
+
+/* Config toolbar - horizontal row with collapsed mode icon + separator + pickers */
+.chat-full-welcome-config-toolbar {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	gap: 12px;
+	width: 100%;
+	max-width: 800px;
+	padding: 8px 0;
+	box-sizing: border-box;
+}
+
+/* Collapsed mode button in toolbar - slides from original position while collapsing */
+.chat-full-welcome-collapsed-mode-button {
+	--collapse-from-width: 80px; /* Set dynamically via JavaScript */
+	--slide-from-x: 0px; /* Set dynamically via JavaScript */
+	--slide-from-y: 0px; /* Set dynamically via JavaScript */
+	display: flex;
+	align-items: center;
+	justify-content: flex-start;
+	width: 32px;
+	height: 32px;
+	padding: 0;
+	border: 1px solid var(--vscode-focusBorder);
+	border-radius: 4px;
+	background-color: var(--vscode-list-activeSelectionBackground);
+	color: var(--vscode-list-activeSelectionForeground);
+	cursor: pointer;
+	transition: background-color 0.15s ease;
+	flex-shrink: 0;
+	overflow: hidden;
+	animation: collapseAndSlide 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes collapseAndSlide {
+	from {
+		width: var(--collapse-from-width);
+		transform: translate(var(--slide-from-x), var(--slide-from-y));
+	}
+	to {
+		width: 32px;
+		transform: translate(0, 0);
+	}
+}
+
+/* Keep icon centered in the final collapsed state */
+.chat-full-welcome-collapsed-mode-icon {
+	width: 32px;
+	height: 32px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+}
+
+.chat-full-welcome-collapsed-mode-button:hover {
+	background-color: var(--vscode-list-hoverBackground);
+	transform: scale(1.05);
+}
+
+.chat-full-welcome-collapsed-mode-button:focus-visible {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: 2px;
+}
+
+.chat-full-welcome-collapsed-mode-icon .codicon {
+	font-size: 16px;
+	color: var(--vscode-list-activeSelectionForeground) !important;
+}
+
+/* Vertical separator between mode icon and pickers */
+.chat-full-welcome-toolbar-separator {
+	width: 1px;
+	height: 24px;
+	background-color: var(--vscode-welcomePage-tileBorder, var(--vscode-contrastBorder, rgba(128, 128, 128, 0.35)));
+	flex-shrink: 0;
+	animation: separatorReveal 0.2s cubic-bezier(0.4, 0, 0.2, 1) 0.2s both;
+}
+
+@keyframes separatorReveal {
+	from {
+		opacity: 0;
+		transform: scaleY(0);
+	}
+	to {
+		opacity: 1;
+		transform: scaleY(1);
+	}
+}
+
+/* Pickers container - slides in from the right as button collapses */
+.chat-full-welcome-pickers {
+	display: flex;
+	flex-direction: row;
+	flex-wrap: wrap;
+	gap: 16px;
+	align-items: center;
+	justify-content: flex-start;
+	box-sizing: border-box;
+	animation: pickersReveal 0.3s cubic-bezier(0.4, 0, 0.2, 1) 0.15s both;
+}
+
+@keyframes pickersReveal {
+	from {
+		opacity: 0;
+		transform: translateX(30px);
+	}
+	to {
+		opacity: 1;
+		transform: translateX(0);
+	}
+}
+
+/* Hide pickers container when empty */
+.chat-full-welcome-pickers:empty {
+	display: none;
+}
+
+/* Individual picker row */
+.chat-full-welcome-picker-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.chat-full-welcome-picker-label {
+	font-size: 12px;
+	font-weight: 500;
+	color: var(--vscode-descriptionForeground);
+}
+
+.chat-full-welcome-picker-slot {
+	display: flex;
+	align-items: center;
+}
+
+/* Style the picker action items rendered inside the slots */
+.chat-full-welcome-picker-slot .action-label {
+	padding: 4px 8px;
+	border: 1px solid var(--vscode-welcomePage-tileBorder, var(--vscode-contrastBorder, transparent));
+	border-radius: 4px;
+	background-color: transparent;
+	color: var(--vscode-foreground);
+	font-size: 12px;
+	cursor: pointer;
+	display: flex;
+	align-items: center;
+	gap: 4px;
+}
+
+.chat-full-welcome-picker-slot .action-label:hover {
+	background-color: var(--vscode-list-hoverBackground);
+}
+
+.chat-full-welcome-picker-slot .action-label .codicon {
+	font-size: 12px;
+}
+
+/* Description below the input */
+.chat-full-welcome-description {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 100%;
+	max-width: 800px;
+	padding: 8px 0;
+	box-sizing: border-box;
+}
+
+.chat-full-welcome-description-text {
+	font-size: 12px;
+	line-height: 1.5;
+	color: var(--vscode-descriptionForeground);
+	text-align: center;
+}
+
+/* Filter feedback in description */
+.chat-full-welcome-description-text.no-matches {
+	color: var(--vscode-errorForeground, var(--vscode-descriptionForeground));
+}
+
+.chat-full-welcome-description-text.single-match {
+	color: var(--vscode-textLink-foreground);
+}
+
+.chat-full-welcome-description-text.multiple-matches {
+	color: var(--vscode-descriptionForeground);
+}
