@@ -61,14 +61,9 @@ export interface MarkdownSanitizerConfig {
 		readonly override: ReadonlyArray<string | domSanitize.SanitizeAttributeRule>;
 	};
 	readonly allowedLinkSchemes?: {
-		readonly augment: readonly string[];
+		readonly augment: ReadonlyArray<string | ((link: string) => boolean)>;
 	};
 	readonly remoteImageIsAllowed?: (uri: URI) => boolean;
-	/**
-	 * Optional callback to allow specific links regardless of their protocol.
-	 * If this returns true, the link is allowed without checking the protocol.
-	 */
-	readonly isLinkAllowed?: (href: string) => boolean;
 }
 
 const defaultMarkedRenderers = Object.freeze({
@@ -645,7 +640,6 @@ function getDomSanitizerConfig(mdStrConfig: MdStrConfig, options: MarkdownSaniti
 		},
 		allowRelativeMediaPaths: !!mdStrConfig.baseUri,
 		replaceWithPlaintext: options.replaceWithPlaintext,
-		isLinkAllowed: options.isLinkAllowed,
 	};
 }
 

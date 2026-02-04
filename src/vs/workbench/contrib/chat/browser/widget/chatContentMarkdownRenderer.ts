@@ -81,21 +81,22 @@ export class ChatContentMarkdownRenderer implements IMarkdownRenderer {
 					override: allowedChatMarkdownHtmlTags,
 				},
 				...options?.sanitizerConfig,
-				allowedLinkSchemes: { augment: [product.urlProtocol] },
-				remoteImageIsAllowed: (_uri) => false,
-				isLinkAllowed: (href) => {
-					// Allow links to known prompt resources (skills, prompts, instructions, agents)
-					// regardless of their URI scheme
-					try {
-						const uri = URI.parse(href);
-						// Normalize URI by dropping query and fragment parameters
-						const normalizedUri = uri.with({ query: null, fragment: null });
-						const result = this.promptsService.isKnownResourceUri(normalizedUri);
-						return result;
-					} catch {
-						return false;
-					}
+				allowedLinkSchemes: {
+					augment: [(href) => {
+						// Allow links to known prompt resources (skills, prompts, instructions, agents)
+						// regardless of their URI scheme
+						try {
+							const uri = URI.parse(href);
+							// Normalize URI by dropping query and fragment parameters
+							const normalizedUri = uri.with({ query: null, fragment: null });
+							const result = this.promptsService.isKnownResourceUri(normalizedUri);
+							return result;
+						} catch {
+							return false;
+						}
+					}, product.urlProtocol]
 				},
+				remoteImageIsAllowed: (_uri) => false,
 			}
 		};
 

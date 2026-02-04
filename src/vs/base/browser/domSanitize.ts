@@ -106,7 +106,7 @@ export const defaultAllowedAttrs = Object.freeze([
 const fakeRelativeUrlProtocol = 'vscode-relative-path';
 
 interface AllowedLinksConfig {
-	readonly override: readonly string[] | '*';
+	readonly override: ReadonlyArray<string | ((link: string) => boolean)> | '*';
 	readonly allowRelativePaths: boolean;
 }
 
@@ -117,8 +117,12 @@ function validateLink(value: string, allowedProtocols: AllowedLinksConfig): bool
 
 	try {
 		const url = new URL(value, fakeRelativeUrlProtocol + '://');
-		if (allowedProtocols.override.includes(url.protocol.replace(/:$/, ''))) {
-			return true;
+		for (const override of allowedProtocols.override) {
+			if (
+				typeof override === 'function' && override(value)
+				|| typeof override === 'string' && url.protocol.replace(/:$/, '') === override) {
+				return true;
+			}
 		}
 
 		if (allowedProtocols.allowRelativePaths
@@ -138,17 +142,13 @@ function validateLink(value: string, allowedProtocols: AllowedLinksConfig): bool
  * Hooks dompurify using `afterSanitizeAttributes` to check that all `href` and `src`
  * attributes are valid.
  */
-function hookDomPurifyHrefAndSrcSanitizer(allowedLinkProtocols: AllowedLinksConfig, allowedMediaProtocols: AllowedLinksConfig, isLinkAllowed?: (href: string) => boolean) {
+function hookDomPurifyHrefAndSrcSanitizer(allowedLinkProtocols: AllowedLinksConfig, allowedMediaProtocols: AllowedLinksConfig) {
 	dompurify.addHook('afterSanitizeAttributes', (node) => {
 		// check all href/src attributes for validity
 		for (const attr of ['href', 'src']) {
 			if (node.hasAttribute(attr)) {
 				const attrValue = node.getAttribute(attr) as string;
 				if (attr === 'href') {
-					// Check custom isLinkAllowed callback first
-					if (isLinkAllowed?.(attrValue)) {
-						continue;
-					}
 					if (!attrValue.startsWith('#') && !validateLink(attrValue, allowedLinkProtocols)) {
 						node.removeAttribute(attr);
 					}
@@ -177,13 +177,6 @@ export interface SanitizeAttributeRule {
 
 export interface DomSanitizerConfig {
 	/**
-	 * Optional callback to allow specific links regardless of their protocol.
-	 * If this returns true, the link is allowed without checking the protocol.
-	 * This is useful for allowing links to known resources (e.g., registered skill URIs).
-	 */
-	readonly isLinkAllowed?: (href: string) => boolean;
-
-	/**
 	 * Configured the allowed html tags.
 	 */
 	readonly allowedTags?: {
@@ -203,7 +196,7 @@ export interface DomSanitizerConfig {
 	 * List of allowed protocols for `href` attributes.
 	 */
 	readonly allowedLinkProtocols?: {
-		readonly override?: readonly string[] | '*';
+		readonly override?: ReadonlyArray<string | '*' | ((link: string) => boolean)>;
 	};
 
 	/**
@@ -303,14 +296,14 @@ function doSanitizeHtml(untrusted: string, config: DomSanitizerConfig | undefine
 
 		hookDomPurifyHrefAndSrcSanitizer(
 			{
-				override: config?.allowedLinkProtocols?.override ?? [Schemas.http, Schemas.https],
+				override: typeof config?.allowedLinkProtocols?.override === 'function' ? config.allowedLinkProtocols.override : config?.allowedLinkProtocols?.override ?? [Schemas.http, Schemas.https],
 				allowRelativePaths: config?.allowRelativeLinkPaths ?? false
 			},
 			{
 				override: config?.allowedMediaProtocols?.override ?? [Schemas.http, Schemas.https],
 				allowRelativePaths: config?.allowRelativeMediaPaths ?? false
 			},
-			config?.isLinkAllowed);
+		);
 
 		if (config?.replaceWithPlaintext) {
 			dompurify.addHook('uponSanitizeElement', replaceWithPlainTextHook);
