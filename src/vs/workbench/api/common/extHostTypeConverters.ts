@@ -2965,7 +2965,7 @@ export namespace ChatToolInvocationPart {
 			// Convert extension API resources tool data to internal format
 			return {
 				kind: 'resources',
-				values: data.map((v: any) => {
+				values: data.values.map((v: any) => {
 					if (v instanceof types.Location) {
 						return Location.from(v);
 					} else {
