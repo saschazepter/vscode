@@ -20,7 +20,7 @@ import { ArchiveAgentSessionAction, ArchiveAgentSessionSectionAction, UnarchiveA
 import { AgentSessionsQuickAccessProvider, AGENT_SESSIONS_QUICK_ACCESS_PREFIX } from './agentSessionsQuickAccess.js';
 import { SyncDescriptor } from '../../../../../platform/instantiation/common/descriptors.js';
 import { ViewPaneContainer } from '../../../../browser/parts/views/viewPaneContainer.js';
-import { IViewContainersRegistry, IViewDescriptor, IViewsRegistry, ViewContainer, ViewContainerLocation, Extensions as ViewExtensions } from '../../../../common/views.js';
+import { IViewContainersRegistry, IViewDescriptor, IViewsRegistry, LayoutVisibility, ViewContainer, ViewContainerLocation, Extensions as ViewExtensions } from '../../../../common/views.js';
 import { registerIcon } from '../../../../../platform/theme/common/iconRegistry.js';
 import { AgentSessionsViewPane } from './experiments/agentSessionsViewPane.js';
 
@@ -34,11 +34,12 @@ const agentSessionsViewContainer: ViewContainer = Registry.as<IViewContainersReg
 	id: AgentSessionsViewContainerId,
 	title: AGENT_SESSIONS_VIEW_TITLE,
 	icon: agentSessionsViewIcon,
-	ctorDescriptor: new SyncDescriptor(ViewPaneContainer, [AgentSessionsViewContainerId, { mergeViewWithContainerWhenSingleView: true }]),
+	ctorDescriptor: new SyncDescriptor(ViewPaneContainer, [AgentSessionsViewContainerId, { mergeViewWithContainerWhenSingleView: true, }]),
 	storageId: AgentSessionsViewContainerId,
 	hideIfEmpty: true,
 	order: 6,
-}, ViewContainerLocation.Sidebar);
+	layoutVisibility: LayoutVisibility.Both
+}, ViewContainerLocation.Sidebar, { isDefault: true });
 
 const agentSessionsViewDescriptor: IViewDescriptor = {
 	id: AgentSessionsViewId,
@@ -57,7 +58,8 @@ const agentSessionsViewDescriptor: IViewDescriptor = {
 		ChatContextKeys.Setup.hidden.negate(),
 		ChatContextKeys.Setup.disabled.negate(),
 		ChatContextKeys.agentSessionsViewerDedicated
-	)
+	),
+	layoutVisibility: LayoutVisibility.Both
 };
 Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry).registerViews([agentSessionsViewDescriptor], agentSessionsViewContainer);
 
