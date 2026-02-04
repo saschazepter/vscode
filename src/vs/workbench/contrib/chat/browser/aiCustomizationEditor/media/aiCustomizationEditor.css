@@ -1,0 +1,263 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+.ai-customization-editor {
+	height: 100%;
+	width: 100%;
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+}
+
+/* Header */
+.ai-customization-editor .ai-customization-header {
+	display: flex;
+	align-items: center;
+	padding: 8px 16px;
+	border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border);
+	min-height: 40px;
+	gap: 8px;
+}
+
+.ai-customization-editor .ai-customization-header .title {
+	font-size: 14px;
+	font-weight: 600;
+	flex: 1;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.ai-customization-editor .ai-customization-header .toolbar {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+}
+
+.ai-customization-editor .ai-customization-header .toolbar .monaco-icon-button {
+	padding: 4px 6px;
+}
+
+.ai-customization-editor .ai-customization-header .toolbar .monaco-icon-button.disabled {
+	opacity: 0.5;
+	pointer-events: none;
+}
+
+/* Body (SplitView container) */
+.ai-customization-editor .ai-customization-body {
+	flex: 1;
+	overflow: hidden;
+}
+
+/* TOC Container */
+.ai-customization-editor .ai-customization-toc-container {
+	height: 100%;
+	overflow: hidden;
+}
+
+/* TOC Section */
+.ai-customization-toc-section {
+	display: flex;
+	align-items: center;
+	padding: 4px 8px;
+	cursor: pointer;
+}
+
+.ai-customization-toc-section .icon {
+	width: 16px;
+	height: 16px;
+	margin-right: 6px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.ai-customization-toc-section .label {
+	flex: 1;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* Editor Container */
+.ai-customization-editor .ai-customization-editor-container {
+	height: 100%;
+	overflow: hidden;
+}
+
+.ai-customization-editor .ai-customization-editor-container > .monaco-scrollable-element {
+	height: 100%;
+}
+
+.ai-customization-field-content {
+	padding: 16px 24px;
+	max-width: 800px;
+}
+
+/* Field Editor Placeholder */
+.ai-customization-field-editor-placeholder {
+	color: var(--vscode-descriptionForeground);
+	padding: 20px;
+	text-align: center;
+}
+
+/* Narrow mode - hide TOC */
+.ai-customization-editor.narrow-width .ai-customization-toc-container {
+	display: none;
+}
+
+/* Field Sections */
+.ai-customization-field-section {
+	margin-bottom: 32px;
+}
+
+.ai-customization-field-section .section-header {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-weight: 600;
+	font-size: 13px;
+	margin-bottom: 16px;
+	padding-bottom: 8px;
+	border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border);
+}
+
+.ai-customization-field-section .section-header .icon {
+	width: 16px;
+	height: 16px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.ai-customization-field-section .section-content {
+	display: flex;
+	flex-direction: column;
+	gap: 16px;
+}
+
+/* Field Items */
+.ai-customization-field-item {
+	display: flex;
+	flex-direction: column;
+}
+
+.ai-customization-field-item .field-label {
+	font-size: 12px;
+	font-weight: 500;
+	margin-bottom: 4px;
+	color: var(--vscode-foreground);
+}
+
+.ai-customization-field-item .field-label .required {
+	color: var(--vscode-inputValidation-errorForeground);
+	margin-left: 2px;
+}
+
+.ai-customization-field-item .field-description {
+	font-size: 11px;
+	color: var(--vscode-descriptionForeground);
+	margin-bottom: 6px;
+}
+
+.ai-customization-field-item .field-control {
+	width: 100%;
+}
+
+.ai-customization-field-item .field-control .monaco-inputbox {
+	width: 100%;
+}
+
+.ai-customization-field-item .field-control .monaco-inputbox .input {
+	padding: 4px 8px;
+}
+
+/* Multiline fields */
+.ai-customization-field-item.multiline-field textarea {
+	width: 100%;
+	min-height: 150px;
+	padding: 8px;
+	border: 1px solid var(--vscode-input-border);
+	background-color: var(--vscode-input-background);
+	color: var(--vscode-input-foreground);
+	border-radius: 2px;
+	resize: vertical;
+	font-family: var(--monaco-monospace-font);
+	font-size: 13px;
+	line-height: 1.4;
+}
+
+.ai-customization-field-item.multiline-field textarea:focus {
+	outline: none;
+	border-color: var(--vscode-focusBorder);
+}
+
+/* Readonly fields */
+.ai-customization-field-item.readonly-field .field-value {
+	padding: 4px 8px;
+	background-color: var(--vscode-input-background);
+	border: 1px solid var(--vscode-input-border);
+	border-radius: 2px;
+	color: var(--vscode-disabledForeground);
+}
+
+/* Validation */
+.ai-customization-field-item.invalid .field-control input,
+.ai-customization-field-item.invalid .field-control textarea {
+	border-color: var(--vscode-inputValidation-errorBorder);
+}
+
+.ai-customization-field-item .validation-message {
+	font-size: 11px;
+	color: var(--vscode-inputValidation-errorForeground);
+	margin-top: 4px;
+}
+
+/* Checkbox fields */
+.ai-customization-field-item.checkbox-field {
+	flex-direction: row;
+	align-items: center;
+}
+
+.ai-customization-field-item.checkbox-field .field-control {
+	width: auto;
+	flex-shrink: 0;
+}
+
+.ai-customization-field-item.checkbox-field .field-label {
+	margin-bottom: 0;
+	margin-left: 8px;
+}
+
+/* Array fields (tools, models) */
+.ai-customization-array-field .array-items {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.ai-customization-array-field .array-item {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.ai-customization-array-field .array-item .monaco-inputbox {
+	flex: 1;
+}
+
+.ai-customization-array-field .array-item .monaco-icon-button {
+	padding: 4px;
+	min-width: 24px;
+}
+
+.ai-customization-array-field .add-item-button {
+	margin-top: 8px;
+}
+
+.ai-customization-array-field .add-item-button .monaco-text-button {
+	width: auto;
+	padding: 4px 12px;
+}
