@@ -87,4 +87,11 @@
 			padding: 0 8px 0 16px;
 		}
 	}
+
+	/* Dedicated sessions view: increase left padding since no back button shows */
+	&.dedicated-sessions-view:not(.has-sessions-control.sessions-control-orientation-sidebyside) {
+		.chat-view-title-container {
+			padding-left: 18px;
+		}
+	}
 }
