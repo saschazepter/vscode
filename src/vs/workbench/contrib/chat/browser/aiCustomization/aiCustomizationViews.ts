@@ -6,16 +6,15 @@
 import './media/aiCustomization.css';
 import * as dom from '../../../../../base/browser/dom.js';
 import { CancellationToken } from '../../../../../base/common/cancellation.js';
-import { Emitter } from '../../../../../base/common/event.js';
-import { DisposableStore, MutableDisposable } from '../../../../../base/common/lifecycle.js';
+import { DisposableStore } from '../../../../../base/common/lifecycle.js';
 import { basename, dirname } from '../../../../../base/common/resources.js';
 import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { localize } from '../../../../../nls.js';
 import { getContextMenuActions } from '../../../../../platform/actions/browser/menuEntryActionViewItem.js';
-import { IMenuService, MenuId } from '../../../../../platform/actions/common/actions.js';
+import { IMenuService } from '../../../../../platform/actions/common/actions.js';
 import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
-import { IContextKeyService } from '../../../../../platform/contextkey/common/contextkey.js';
+import { IContextKey, IContextKeyService, RawContextKey } from '../../../../../platform/contextkey/common/contextkey.js';
 import { IContextMenuService } from '../../../../../platform/contextview/browser/contextView.js';
 import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
 import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
@@ -25,25 +24,58 @@ import { IOpenerService } from '../../../../../platform/opener/common/opener.js'
 import { IThemeService } from '../../../../../platform/theme/common/themeService.js';
 import { IViewPaneOptions, ViewPane } from '../../../../browser/parts/views/viewPane.js';
 import { IViewDescriptorService } from '../../../../common/views.js';
-import { IPromptsService, PromptsStorage, IAgentSkill } from '../../common/promptSyntax/service/promptsService.js';
+import { IPromptsService, PromptsStorage, IAgentSkill, IPromptPath } from '../../common/promptSyntax/service/promptsService.js';
 import { PromptsType } from '../../common/promptSyntax/promptTypes.js';
 import { agentIcon, extensionIcon, instructionsIcon, promptIcon, skillIcon, userIcon, workspaceIcon } from './aiCustomizationIcons.js';
-import { AgentsViewItemMenuId, InstructionsViewItemMenuId, PromptsViewItemMenuId, SkillsViewItemMenuId } from './aiCustomization.js';
+import { AICustomizationItemMenuId } from './aiCustomization.js';
 import { IAsyncDataSource, ITreeNode, ITreeRenderer, ITreeContextMenuEvent } from '../../../../../base/browser/ui/tree/tree.js';
 import { FuzzyScore } from '../../../../../base/common/filters.js';
 import { IListVirtualDelegate } from '../../../../../base/browser/ui/list/list.js';
 import { IEditorService } from '../../../../services/editor/common/editorService.js';
+import { ILogService } from '../../../../../platform/log/common/log.js';
+
+//#region Context Keys
+
+/**
+ * Context key indicating whether the AI Customization view has no items.
+ */
+export const AICustomizationIsEmptyContextKey = new RawContextKey<boolean>('aiCustomization.isEmpty', true);
+
+/**
+ * Context key for the current item's prompt type in context menus.
+ */
+export const AICustomizationItemTypeContextKey = new RawContextKey<string>('aiCustomizationItemType', '');
+
+//#endregion
 
 //#region Tree Item Types
 
 /**
- * Represents a group header in the tree (e.g., "Workspace", "User", "Extensions").
+ * Root element marker for the tree.
+ */
+const ROOT_ELEMENT = Symbol('root');
+type RootElement = typeof ROOT_ELEMENT;
+
+/**
+ * Represents a type category in the tree (e.g., "Custom Agents", "Skills").
+ */
+interface IAICustomizationTypeItem {
+	readonly type: 'category';
+	readonly id: string;
+	readonly label: string;
+	readonly promptType: PromptsType;
+	readonly icon: ThemeIcon;
+}
+
+/**
+ * Represents a storage group header in the tree (e.g., "Workspace", "User", "Extensions").
  */
 interface IAICustomizationGroupItem {
 	readonly type: 'group';
 	readonly id: string;
 	readonly label: string;
 	readonly storage: PromptsStorage;
+	readonly promptType: PromptsType;
 	readonly icon: ThemeIcon;
 }
 
@@ -60,7 +92,7 @@ interface IAICustomizationFileItem {
 	readonly promptType: PromptsType;
 }
 
-type AICustomizationTreeItem = IAICustomizationGroupItem | IAICustomizationFileItem;
+type AICustomizationTreeItem = IAICustomizationTypeItem | IAICustomizationGroupItem | IAICustomizationFileItem;
 
 //#endregion
 
@@ -72,8 +104,21 @@ class AICustomizationTreeDelegate implements IListVirtualDelegate<AICustomizatio
 	}
 
 	getTemplateId(element: AICustomizationTreeItem): string {
-		return element.type === 'group' ? 'group' : 'file';
+		switch (element.type) {
+			case 'category':
+				return 'category';
+			case 'group':
+				return 'group';
+			case 'file':
+				return 'file';
+		}
 	}
+}
+
+interface ICategoryTemplateData {
+	readonly container: HTMLElement;
+	readonly icon: HTMLElement;
+	readonly label: HTMLElement;
 }
 
 interface IGroupTemplateData {
@@ -85,7 +130,25 @@ interface IFileTemplateData {
 	readonly container: HTMLElement;
 	readonly icon: HTMLElement;
 	readonly name: HTMLElement;
-	readonly description: HTMLElement;
+}
+
+class AICustomizationCategoryRenderer implements ITreeRenderer<IAICustomizationTypeItem, FuzzyScore, ICategoryTemplateData> {
+	readonly templateId = 'category';
+
+	renderTemplate(container: HTMLElement): ICategoryTemplateData {
+		const element = dom.append(container, dom.$('.ai-customization-category'));
+		const icon = dom.append(element, dom.$('.icon'));
+		const label = dom.append(element, dom.$('.label'));
+		return { container: element, icon, label };
+	}
+
+	renderElement(node: ITreeNode<IAICustomizationTypeItem, FuzzyScore>, _index: number, templateData: ICategoryTemplateData): void {
+		templateData.icon.className = 'icon';
+		templateData.icon.classList.add(...ThemeIcon.asClassNameArray(node.element.icon));
+		templateData.label.textContent = node.element.label;
+	}
+
+	disposeTemplate(_templateData: ICategoryTemplateData): void { }
 }
 
 class AICustomizationGroupRenderer implements ITreeRenderer<IAICustomizationGroupItem, FuzzyScore, IGroupTemplateData> {
@@ -111,8 +174,7 @@ class AICustomizationFileRenderer implements ITreeRenderer<IAICustomizationFileI
 		const element = dom.append(container, dom.$('.ai-customization-tree-item'));
 		const icon = dom.append(element, dom.$('.icon'));
 		const name = dom.append(element, dom.$('.name'));
-		const description = dom.append(element, dom.$('.description'));
-		return { container: element, icon, name, description };
+		return { container: element, icon, name };
 	}
 
 	renderElement(node: ITreeNode<IAICustomizationFileItem, FuzzyScore>, _index: number, templateData: IFileTemplateData): void {
@@ -140,7 +202,6 @@ class AICustomizationFileRenderer implements ITreeRenderer<IAICustomizationFileI
 		templateData.icon.classList.add(...ThemeIcon.asClassNameArray(icon));
 
 		templateData.name.textContent = item.name;
-		templateData.description.textContent = item.description || '';
 
 		// Set tooltip with name and description
 		const tooltip = item.description ? `${item.name} - ${item.description}` : item.name;
@@ -150,135 +211,218 @@ class AICustomizationFileRenderer implements ITreeRenderer<IAICustomizationFileI
 	disposeTemplate(_templateData: IFileTemplateData): void { }
 }
 
-class AICustomizationDataSource implements IAsyncDataSource<PromptsType, AICustomizationTreeItem> {
-	private cachedSkills: IAgentSkill[] | undefined;
+/**
+ * Cached data for a specific prompt type.
+ */
+interface ICachedTypeData {
+	skills?: IAgentSkill[];
+	files?: Map<PromptsStorage, readonly IPromptPath[]>;
+}
+
+/**
+ * Data source for the AI Customization tree with efficient caching.
+ * Caches data per-type to avoid redundant fetches when expanding groups.
+ */
+class UnifiedAICustomizationDataSource implements IAsyncDataSource<RootElement, AICustomizationTreeItem> {
+	private cache = new Map<PromptsType, ICachedTypeData>();
+	private totalItemCount = 0;
 
 	constructor(
 		private readonly promptsService: IPromptsService,
-		private readonly promptType: PromptsType,
+		private readonly logService: ILogService,
+		private readonly onItemCountChanged: (count: number) => void,
 	) { }
 
-	hasChildren(element: PromptsType | AICustomizationTreeItem): boolean {
-		if (typeof element === 'string') {
-			// Root element (the PromptsType)
+	/**
+	 * Clears the cache. Should be called when the view refreshes.
+	 */
+	clearCache(): void {
+		this.cache.clear();
+		this.totalItemCount = 0;
+	}
+
+	hasChildren(element: RootElement | AICustomizationTreeItem): boolean {
+		if (element === ROOT_ELEMENT) {
 			return true;
 		}
-		return element.type === 'group';
+		return element.type === 'category' || element.type === 'group';
 	}
 
-	async getChildren(element: PromptsType | AICustomizationTreeItem): Promise<AICustomizationTreeItem[]> {
-		if (typeof element === 'string') {
-			// Root: return grouped items
-			return this.getGroupedItems();
-		}
+	async getChildren(element: RootElement | AICustomizationTreeItem): Promise<AICustomizationTreeItem[]> {
+		try {
+			if (element === ROOT_ELEMENT) {
+				return this.getTypeCategories();
+			}
 
-		if (element.type === 'group') {
-			// Get files for this storage type
-			return this.getFilesForStorage(element.storage);
-		}
+			if (element.type === 'category') {
+				return this.getStorageGroups(element.promptType);
+			}
 
-		return [];
+			if (element.type === 'group') {
+				return this.getFilesForStorageAndType(element.storage, element.promptType);
+			}
+
+			return [];
+		} catch (error) {
+			this.logService.error('[AICustomization] Error fetching tree children:', error);
+			return [];
+		}
 	}
 
-	private async getGroupedItems(): Promise<IAICustomizationGroupItem[]> {
+	private getTypeCategories(): IAICustomizationTypeItem[] {
+		return [
+			{
+				type: 'category',
+				id: 'category-agents',
+				label: localize('customAgents', "Custom Agents"),
+				promptType: PromptsType.agent,
+				icon: agentIcon,
+			},
+			{
+				type: 'category',
+				id: 'category-skills',
+				label: localize('skills', "Skills"),
+				promptType: PromptsType.skill,
+				icon: skillIcon,
+			},
+			{
+				type: 'category',
+				id: 'category-instructions',
+				label: localize('instructions', "Instructions"),
+				promptType: PromptsType.instructions,
+				icon: instructionsIcon,
+			},
+			{
+				type: 'category',
+				id: 'category-prompts',
+				label: localize('prompts', "Prompts"),
+				promptType: PromptsType.prompt,
+				icon: promptIcon,
+			},
+		];
+	}
+
+	/**
+	 * Fetches and caches data for a prompt type, returning storage groups with items.
+	 */
+	private async getStorageGroups(promptType: PromptsType): Promise<IAICustomizationGroupItem[]> {
 		const groups: IAICustomizationGroupItem[] = [];
 
-		// For skills, use findAgentSkills which has the proper names
-		if (this.promptType === PromptsType.skill) {
-			const skills = await this.promptsService.findAgentSkills(CancellationToken.None);
-			this.cachedSkills = skills || [];
+		// Check cache first
+		let cached = this.cache.get(promptType);
+		if (!cached) {
+			cached = {};
+			this.cache.set(promptType, cached);
+		}
 
-			const workspaceSkills = this.cachedSkills.filter(s => s.storage === PromptsStorage.local);
-			const userSkills = this.cachedSkills.filter(s => s.storage === PromptsStorage.user);
-			const extensionSkills = this.cachedSkills.filter(s => s.storage === PromptsStorage.extension);
+		// For skills, use findAgentSkills which has the proper names from frontmatter
+		if (promptType === PromptsType.skill) {
+			if (!cached.skills) {
+				const skills = await this.promptsService.findAgentSkills(CancellationToken.None);
+				cached.skills = skills || [];
+				this.totalItemCount += cached.skills.length;
+				this.onItemCountChanged(this.totalItemCount);
+			}
+
+			const workspaceSkills = cached.skills.filter(s => s.storage === PromptsStorage.local);
+			const userSkills = cached.skills.filter(s => s.storage === PromptsStorage.user);
+			const extensionSkills = cached.skills.filter(s => s.storage === PromptsStorage.extension);
 
 			if (workspaceSkills.length > 0) {
-				groups.push({
-					type: 'group',
-					id: 'workspace',
-					label: localize('workspace', "Workspace"),
-					storage: PromptsStorage.local,
-					icon: workspaceIcon,
-				});
+				groups.push(this.createGroupItem(promptType, PromptsStorage.local, workspaceSkills.length));
 			}
-
 			if (userSkills.length > 0) {
-				groups.push({
-					type: 'group',
-					id: 'user',
-					label: localize('user', "User"),
-					storage: PromptsStorage.user,
-					icon: userIcon,
-				});
+				groups.push(this.createGroupItem(promptType, PromptsStorage.user, userSkills.length));
 			}
-
 			if (extensionSkills.length > 0) {
-				groups.push({
-					type: 'group',
-					id: 'extensions',
-					label: localize('extensions', "Extensions"),
-					storage: PromptsStorage.extension,
-					icon: extensionIcon,
-				});
+				groups.push(this.createGroupItem(promptType, PromptsStorage.extension, extensionSkills.length));
 			}
 
 			return groups;
 		}
 
-		// For other types, use listPromptFilesForStorage
-		const [workspaceItems, userItems, extensionItems] = await Promise.all([
-			this.promptsService.listPromptFilesForStorage(this.promptType, PromptsStorage.local, CancellationToken.None),
-			this.promptsService.listPromptFilesForStorage(this.promptType, PromptsStorage.user, CancellationToken.None),
-			this.promptsService.listPromptFilesForStorage(this.promptType, PromptsStorage.extension, CancellationToken.None),
-		]);
+		// For other types, fetch all storage locations and cache results
+		if (!cached.files) {
+			const [workspaceItems, userItems, extensionItems] = await Promise.all([
+				this.promptsService.listPromptFilesForStorage(promptType, PromptsStorage.local, CancellationToken.None),
+				this.promptsService.listPromptFilesForStorage(promptType, PromptsStorage.user, CancellationToken.None),
+				this.promptsService.listPromptFilesForStorage(promptType, PromptsStorage.extension, CancellationToken.None),
+			]);
+
+			cached.files = new Map([
+				[PromptsStorage.local, workspaceItems],
+				[PromptsStorage.user, userItems],
+				[PromptsStorage.extension, extensionItems],
+			]);
+
+			const itemCount = workspaceItems.length + userItems.length + extensionItems.length;
+			this.totalItemCount += itemCount;
+			this.onItemCountChanged(this.totalItemCount);
+		}
+
+		const workspaceItems = cached.files!.get(PromptsStorage.local) || [];
+		const userItems = cached.files!.get(PromptsStorage.user) || [];
+		const extensionItems = cached.files!.get(PromptsStorage.extension) || [];
 
 		if (workspaceItems.length > 0) {
-			groups.push({
-				type: 'group',
-				id: 'workspace',
-				label: localize('workspace', "Workspace"),
-				storage: PromptsStorage.local,
-				icon: workspaceIcon,
-			});
+			groups.push(this.createGroupItem(promptType, PromptsStorage.local, workspaceItems.length));
 		}
-
 		if (userItems.length > 0) {
-			groups.push({
-				type: 'group',
-				id: 'user',
-				label: localize('user', "User"),
-				storage: PromptsStorage.user,
-				icon: userIcon,
-			});
+			groups.push(this.createGroupItem(promptType, PromptsStorage.user, userItems.length));
 		}
-
 		if (extensionItems.length > 0) {
-			groups.push({
-				type: 'group',
-				id: 'extensions',
-				label: localize('extensions', "Extensions"),
-				storage: PromptsStorage.extension,
-				icon: extensionIcon,
-			});
+			groups.push(this.createGroupItem(promptType, PromptsStorage.extension, extensionItems.length));
 		}
 
 		return groups;
 	}
 
-	private async getFilesForStorage(storage: PromptsStorage): Promise<IAICustomizationFileItem[]> {
-		// For skills, use findAgentSkills which has proper names from frontmatter
-		if (this.promptType === PromptsType.skill) {
-			// Ensure we have cached skills, fetch if needed
-			if (!this.cachedSkills) {
-				const skills = await this.promptsService.findAgentSkills(CancellationToken.None);
-				this.cachedSkills = skills || [];
-			}
+	/**
+	 * Creates a group item with consistent structure.
+	 */
+	private createGroupItem(promptType: PromptsType, storage: PromptsStorage, count: number): IAICustomizationGroupItem {
+		const storageLabels: Record<PromptsStorage, string> = {
+			[PromptsStorage.local]: localize('workspaceWithCount', "Workspace ({0})", count),
+			[PromptsStorage.user]: localize('userWithCount', "User ({0})", count),
+			[PromptsStorage.extension]: localize('extensionsWithCount', "Extensions ({0})", count),
+		};
 
-			return this.cachedSkills
+		const storageIcons: Record<PromptsStorage, ThemeIcon> = {
+			[PromptsStorage.local]: workspaceIcon,
+			[PromptsStorage.user]: userIcon,
+			[PromptsStorage.extension]: extensionIcon,
+		};
+
+		const storageSuffixes: Record<PromptsStorage, string> = {
+			[PromptsStorage.local]: 'workspace',
+			[PromptsStorage.user]: 'user',
+			[PromptsStorage.extension]: 'extensions',
+		};
+
+		return {
+			type: 'group',
+			id: `group-${promptType}-${storageSuffixes[storage]}`,
+			label: storageLabels[storage],
+			storage,
+			promptType,
+			icon: storageIcons[storage],
+		};
+	}
+
+	/**
+	 * Returns files for a specific storage/type combination from cache.
+	 * getStorageGroups must be called first to populate the cache.
+	 */
+	private async getFilesForStorageAndType(storage: PromptsStorage, promptType: PromptsType): Promise<IAICustomizationFileItem[]> {
+		const cached = this.cache.get(promptType);
+
+		// For skills, use the cached skills data
+		if (promptType === PromptsType.skill) {
+			const skills = cached?.skills || [];
+			return skills
 				.filter(skill => skill.storage === storage)
 				.map(skill => {
 					// Use skill name from frontmatter, or fallback to parent folder name
-					// Skills are stored as skill-name/SKILL.md, so the parent folder is the skill name
 					const skillName = skill.name || basename(dirname(skill.uri)) || basename(skill.uri);
 					return {
 						type: 'file' as const,
@@ -287,13 +431,13 @@ class AICustomizationDataSource implements IAsyncDataSource<PromptsType, AICusto
 						name: skillName,
 						description: skill.description,
 						storage: skill.storage,
-						promptType: this.promptType,
+						promptType,
 					};
 				});
 		}
 
-		const items = await this.promptsService.listPromptFilesForStorage(this.promptType, storage, CancellationToken.None);
-
+		// Use cached files data (already fetched in getStorageGroups)
+		const items = cached?.files?.get(storage) || [];
 		return items.map(item => ({
 			type: 'file' as const,
 			id: item.uri.toString(),
@@ -301,30 +445,31 @@ class AICustomizationDataSource implements IAsyncDataSource<PromptsType, AICusto
 			name: item.name || basename(item.uri),
 			description: item.description,
 			storage: item.storage,
-			promptType: this.promptType,
+			promptType,
 		}));
 	}
 }
 
 //#endregion
 
-//#region Base View Pane
+//#region Unified View Pane
 
 /**
- * Base class for AI Customization view panes that display tree views.
+ * Unified view pane for all AI Customization items (agents, skills, instructions, prompts).
  */
-export abstract class AICustomizationTreeViewPane extends ViewPane {
+export class AICustomizationViewPane extends ViewPane {
+	static readonly ID = 'aiCustomization.view';
 
-	protected tree: WorkbenchAsyncDataTree<PromptsType, AICustomizationTreeItem, FuzzyScore> | undefined;
-	protected treeContainer: HTMLElement | undefined;
-	protected readonly treeDisposables = this._register(new DisposableStore());
-	protected readonly refreshScheduler = this._register(new MutableDisposable());
+	private tree: WorkbenchAsyncDataTree<RootElement, AICustomizationTreeItem, FuzzyScore> | undefined;
+	private dataSource: UnifiedAICustomizationDataSource | undefined;
+	private treeContainer: HTMLElement | undefined;
+	private readonly treeDisposables = this._register(new DisposableStore());
 
-	private readonly _onDidChangeTreeData = this._register(new Emitter<void>());
-	readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
+	// Context keys for controlling menu visibility and welcome content
+	private readonly isEmptyContextKey: IContextKey<boolean>;
+	private readonly itemTypeContextKey: IContextKey<string>;
 
 	constructor(
-		protected readonly promptType: PromptsType,
 		options: IViewPaneOptions,
 		@IKeybindingService keybindingService: IKeybindingService,
 		@IContextMenuService contextMenuService: IContextMenuService,
@@ -335,20 +480,20 @@ export abstract class AICustomizationTreeViewPane extends ViewPane {
 		@IOpenerService openerService: IOpenerService,
 		@IThemeService themeService: IThemeService,
 		@IHoverService hoverService: IHoverService,
-		@IPromptsService protected readonly promptsService: IPromptsService,
-		@IEditorService protected readonly editorService: IEditorService,
-		@IMenuService protected readonly menuService: IMenuService,
+		@IPromptsService private readonly promptsService: IPromptsService,
+		@IEditorService private readonly editorService: IEditorService,
+		@IMenuService private readonly menuService: IMenuService,
+		@ILogService private readonly logService: ILogService,
 	) {
 		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
 
-		// Subscribe to prompt service events to refresh tree
-		this._register(this.promptsService.onDidChangeCustomAgents(() => this.onPromptDataChanged()));
-		this._register(this.promptsService.onDidChangeSlashCommands(() => this.onPromptDataChanged()));
-	}
+		// Initialize context keys
+		this.isEmptyContextKey = AICustomizationIsEmptyContextKey.bindTo(contextKeyService);
+		this.itemTypeContextKey = AICustomizationItemTypeContextKey.bindTo(contextKeyService);
 
-	private onPromptDataChanged(): void {
-		// Refresh the tree when data changes
-		this.refresh();
+		// Subscribe to prompt service events to refresh tree
+		this._register(this.promptsService.onDidChangeCustomAgents(() => this.refresh()));
+		this._register(this.promptsService.onDidChangeSlashCommands(() => this.refresh()));
 	}
 
 	protected override renderBody(container: HTMLElement): void {
@@ -365,30 +510,50 @@ export abstract class AICustomizationTreeViewPane extends ViewPane {
 			return;
 		}
 
-		const dataSource = new AICustomizationDataSource(this.promptsService, this.promptType);
+		// Create data source with callback for tracking item count
+		this.dataSource = new UnifiedAICustomizationDataSource(
+			this.promptsService,
+			this.logService,
+			(count) => this.isEmptyContextKey.set(count === 0)
+		);
 
 		this.tree = this.treeDisposables.add(this.instantiationService.createInstance(
-			WorkbenchAsyncDataTree<PromptsType, AICustomizationTreeItem, FuzzyScore>,
-			`AICustomization-${this.promptType}`,
+			WorkbenchAsyncDataTree<RootElement, AICustomizationTreeItem, FuzzyScore>,
+			'AICustomization',
 			this.treeContainer,
 			new AICustomizationTreeDelegate(),
 			[
+				new AICustomizationCategoryRenderer(),
 				new AICustomizationGroupRenderer(),
 				new AICustomizationFileRenderer(),
 			],
-			dataSource,
+			this.dataSource,
 			{
 				identityProvider: {
 					getId: (element: AICustomizationTreeItem) => element.id,
 				},
 				accessibilityProvider: {
 					getAriaLabel: (element: AICustomizationTreeItem) => {
+						if (element.type === 'category') {
+							return element.label;
+						}
 						if (element.type === 'group') {
 							return element.label;
 						}
-						return element.name;
+						// For files, include description if available
+						return element.description
+							? localize('fileAriaLabel', "{0}, {1}", element.name, element.description)
+							: element.name;
 					},
-					getWidgetAriaLabel: () => this.getAriaLabel(),
+					getWidgetAriaLabel: () => localize('aiCustomizationTree', "AI Customization Items"),
+				},
+				keyboardNavigationLabelProvider: {
+					getKeyboardNavigationLabel: (element: AICustomizationTreeItem) => {
+						if (element.type === 'file') {
+							return element.name;
+						}
+						return element.label;
+					},
 				},
 			}
 		));
@@ -403,12 +568,21 @@ export abstract class AICustomizationTreeViewPane extends ViewPane {
 		// Handle context menu
 		this.treeDisposables.add(this.tree.onContextMenu(e => this.onContextMenu(e)));
 
-		// Initial load
-		this.tree.setInput(this.promptType);
+		// Initial load and auto-expand category nodes
+		void this.tree.setInput(ROOT_ELEMENT).then(() => this.autoExpandCategories());
 	}
 
-	protected getAriaLabel(): string {
-		return this.title;
+	private async autoExpandCategories(): Promise<void> {
+		if (!this.tree) {
+			return;
+		}
+		// Auto-expand all category nodes to show storage groups
+		const rootNode = this.tree.getNode(ROOT_ELEMENT);
+		for (const child of rootNode.children) {
+			if (child.element !== ROOT_ELEMENT) {
+				await this.tree.expand(child.element);
+			}
+		}
 	}
 
 	protected override layoutBody(height: number, width: number): void {
@@ -417,8 +591,18 @@ export abstract class AICustomizationTreeViewPane extends ViewPane {
 	}
 
 	public refresh(): void {
-		this.tree?.setInput(this.promptType);
-		this._onDidChangeTreeData.fire();
+		// Clear the cache before refreshing
+		this.dataSource?.clearCache();
+		this.isEmptyContextKey.set(true); // Reset until we know the count
+		void this.tree?.setInput(ROOT_ELEMENT).then(() => this.autoExpandCategories());
+	}
+
+	public collapseAll(): void {
+		this.tree?.collapseAll();
+	}
+
+	public expandAll(): void {
+		this.tree?.expandAll();
 	}
 
 	private onContextMenu(e: ITreeContextMenuEvent<AICustomizationTreeItem | null>): void {
@@ -428,7 +612,9 @@ export abstract class AICustomizationTreeViewPane extends ViewPane {
 		}
 
 		const element = e.element;
-		const menuId = this.getContextMenuId();
+
+		// Set context key for the item type so menu items can use `when` clauses
+		this.itemTypeContextKey.set(element.promptType);
 
 		// Get menu actions from the menu service
 		const context = {
@@ -436,7 +622,7 @@ export abstract class AICustomizationTreeViewPane extends ViewPane {
 			name: element.name,
 			promptType: element.promptType,
 		};
-		const menu = this.menuService.getMenuActions(menuId, this.contextKeyService, { arg: context, shouldForwardArgs: true });
+		const menu = this.menuService.getMenuActions(AICustomizationItemMenuId, this.contextKeyService, { arg: context, shouldForwardArgs: true });
 		const { secondary } = getContextMenuActions(menu, 'inline');
 
 		// Show the context menu
@@ -444,126 +630,13 @@ export abstract class AICustomizationTreeViewPane extends ViewPane {
 			this.contextMenuService.showContextMenu({
 				getAnchor: () => e.anchor,
 				getActions: () => secondary,
-				getActionsContext: () => element,
+				getActionsContext: () => context,
+				onHide: () => {
+					// Clear the context key when menu closes
+					this.itemTypeContextKey.reset();
+				},
 			});
 		}
-	}
-
-	protected getContextMenuId(): MenuId {
-		switch (this.promptType) {
-			case PromptsType.agent:
-				return AgentsViewItemMenuId;
-			case PromptsType.skill:
-				return SkillsViewItemMenuId;
-			case PromptsType.instructions:
-				return InstructionsViewItemMenuId;
-			case PromptsType.prompt:
-				return PromptsViewItemMenuId;
-		}
-	}
-}
-
-//#endregion
-
-//#region Specific View Panes
-
-/**
- * View pane for custom agents (.agent.md files).
- */
-export class CustomAgentsViewPane extends AICustomizationTreeViewPane {
-	static readonly ID = 'aiCustomization.agents';
-
-	constructor(
-		options: IViewPaneOptions,
-		@IKeybindingService keybindingService: IKeybindingService,
-		@IContextMenuService contextMenuService: IContextMenuService,
-		@IConfigurationService configurationService: IConfigurationService,
-		@IContextKeyService contextKeyService: IContextKeyService,
-		@IViewDescriptorService viewDescriptorService: IViewDescriptorService,
-		@IInstantiationService instantiationService: IInstantiationService,
-		@IOpenerService openerService: IOpenerService,
-		@IThemeService themeService: IThemeService,
-		@IHoverService hoverService: IHoverService,
-		@IPromptsService promptsService: IPromptsService,
-		@IEditorService editorService: IEditorService,
-		@IMenuService menuService: IMenuService,
-	) {
-		super(PromptsType.agent, options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService, promptsService, editorService, menuService);
-	}
-}
-
-/**
- * View pane for skills (SKILL.md files).
- */
-export class SkillsViewPane extends AICustomizationTreeViewPane {
-	static readonly ID = 'aiCustomization.skills';
-
-	constructor(
-		options: IViewPaneOptions,
-		@IKeybindingService keybindingService: IKeybindingService,
-		@IContextMenuService contextMenuService: IContextMenuService,
-		@IConfigurationService configurationService: IConfigurationService,
-		@IContextKeyService contextKeyService: IContextKeyService,
-		@IViewDescriptorService viewDescriptorService: IViewDescriptorService,
-		@IInstantiationService instantiationService: IInstantiationService,
-		@IOpenerService openerService: IOpenerService,
-		@IThemeService themeService: IThemeService,
-		@IHoverService hoverService: IHoverService,
-		@IPromptsService promptsService: IPromptsService,
-		@IEditorService editorService: IEditorService,
-		@IMenuService menuService: IMenuService,
-	) {
-		super(PromptsType.skill, options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService, promptsService, editorService, menuService);
-	}
-}
-
-/**
- * View pane for instruction files (.instructions.md).
- */
-export class InstructionsViewPane extends AICustomizationTreeViewPane {
-	static readonly ID = 'aiCustomization.instructions';
-
-	constructor(
-		options: IViewPaneOptions,
-		@IKeybindingService keybindingService: IKeybindingService,
-		@IContextMenuService contextMenuService: IContextMenuService,
-		@IConfigurationService configurationService: IConfigurationService,
-		@IContextKeyService contextKeyService: IContextKeyService,
-		@IViewDescriptorService viewDescriptorService: IViewDescriptorService,
-		@IInstantiationService instantiationService: IInstantiationService,
-		@IOpenerService openerService: IOpenerService,
-		@IThemeService themeService: IThemeService,
-		@IHoverService hoverService: IHoverService,
-		@IPromptsService promptsService: IPromptsService,
-		@IEditorService editorService: IEditorService,
-		@IMenuService menuService: IMenuService,
-	) {
-		super(PromptsType.instructions, options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService, promptsService, editorService, menuService);
-	}
-}
-
-/**
- * View pane for prompt files (.prompt.md).
- */
-export class PromptsViewPane extends AICustomizationTreeViewPane {
-	static readonly ID = 'aiCustomization.prompts';
-
-	constructor(
-		options: IViewPaneOptions,
-		@IKeybindingService keybindingService: IKeybindingService,
-		@IContextMenuService contextMenuService: IContextMenuService,
-		@IConfigurationService configurationService: IConfigurationService,
-		@IContextKeyService contextKeyService: IContextKeyService,
-		@IViewDescriptorService viewDescriptorService: IViewDescriptorService,
-		@IInstantiationService instantiationService: IInstantiationService,
-		@IOpenerService openerService: IOpenerService,
-		@IThemeService themeService: IThemeService,
-		@IHoverService hoverService: IHoverService,
-		@IPromptsService promptsService: IPromptsService,
-		@IEditorService editorService: IEditorService,
-		@IMenuService menuService: IMenuService,
-	) {
-		super(PromptsType.prompt, options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService, promptsService, editorService, menuService);
 	}
 }
 

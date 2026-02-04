@@ -4,19 +4,20 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { KeyCode, KeyMod } from '../../../../../base/common/keyCodes.js';
-import { localize, localize2 } from '../../../../../nls.js';
+import { localize, localize2, ILocalizedString } from '../../../../../nls.js';
 import { Action2, MenuId, MenuRegistry, registerAction2 } from '../../../../../platform/actions/common/actions.js';
 import { ContextKeyExpr } from '../../../../../platform/contextkey/common/contextkey.js';
 import { SyncDescriptor } from '../../../../../platform/instantiation/common/descriptors.js';
 import { IInstantiationService, ServicesAccessor } from '../../../../../platform/instantiation/common/instantiation.js';
 import { Registry } from '../../../../../platform/registry/common/platform.js';
 import { ViewPaneContainer } from '../../../../browser/parts/views/viewPaneContainer.js';
+import { ViewAction } from '../../../../browser/parts/views/viewPane.js';
 import { Extensions as ViewContainerExtensions, IViewContainersRegistry, IViewDescriptor, IViewsRegistry, ViewContainerLocation } from '../../../../common/views.js';
 import { IViewsService } from '../../../../services/views/common/viewsService.js';
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
-import { AgentsViewItemMenuId, AI_CUSTOMIZATION_AGENTS_VIEW_ID, AI_CUSTOMIZATION_CATEGORY, AI_CUSTOMIZATION_INSTRUCTIONS_VIEW_ID, AI_CUSTOMIZATION_PROMPTS_VIEW_ID, AI_CUSTOMIZATION_SKILLS_VIEW_ID, AI_CUSTOMIZATION_STORAGE_ID, AI_CUSTOMIZATION_VIEWLET_ID, InstructionsViewItemMenuId, PromptsViewItemMenuId, SkillsViewItemMenuId } from './aiCustomization.js';
+import { AICustomizationItemMenuId, AICustomizationNewMenuId, AI_CUSTOMIZATION_CATEGORY, AI_CUSTOMIZATION_STORAGE_ID, AI_CUSTOMIZATION_VIEW_ID, AI_CUSTOMIZATION_VIEWLET_ID } from './aiCustomization.js';
 import { aiCustomizationViewIcon } from './aiCustomizationIcons.js';
-import { CustomAgentsViewPane, InstructionsViewPane, PromptsViewPane, SkillsViewPane } from './aiCustomizationViews.js';
+import { AICustomizationIsEmptyContextKey, AICustomizationItemTypeContextKey, AICustomizationViewPane } from './aiCustomizationViews.js';
 import { IOpenerService } from '../../../../../platform/opener/common/opener.js';
 import { PromptFilePickers } from '../promptSyntax/pickers/promptFilePickers.js';
 import { PromptsType } from '../../common/promptSyntax/promptTypes.js';
@@ -24,6 +25,33 @@ import { Codicon } from '../../../../../base/common/codicons.js';
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { IEditorService } from '../../../../services/editor/common/editorService.js';
+
+//#region Utilities
+
+/**
+ * Type for context passed to actions from tree context menus.
+ * Handles both direct URI arguments and serialized context objects.
+ */
+type URIContext = { uri: URI | string;[key: string]: unknown } | URI | string;
+
+/**
+ * Extracts a URI from various context formats.
+ * Context can be a URI, string, or an object with uri property.
+ */
+function extractURI(context: URIContext): URI {
+	if (URI.isUri(context)) {
+		return context;
+	}
+	if (typeof context === 'string') {
+		return URI.parse(context);
+	}
+	if (URI.isUri(context.uri)) {
+		return context.uri;
+	}
+	return URI.parse(context.uri as string);
+}
+
+//#endregion
 
 //#region View Container Registration
 
@@ -33,7 +61,7 @@ export const AI_CUSTOMIZATION_VIEW_CONTAINER = viewContainersRegistry.registerVi
 	{
 		id: AI_CUSTOMIZATION_VIEWLET_ID,
 		title: localize2('aiCustomization', "AI Customization"),
-		ctorDescriptor: new SyncDescriptor(ViewPaneContainer, [AI_CUSTOMIZATION_VIEWLET_ID, { mergeViewWithContainerWhenSingleView: false }]),
+		ctorDescriptor: new SyncDescriptor(ViewPaneContainer, [AI_CUSTOMIZATION_VIEWLET_ID, { mergeViewWithContainerWhenSingleView: true }]),
 		icon: aiCustomizationViewIcon,
 		order: 10,
 		hideIfEmpty: false,
@@ -55,11 +83,11 @@ export const AI_CUSTOMIZATION_VIEW_CONTAINER = viewContainersRegistry.registerVi
 
 const viewsRegistry = Registry.as<IViewsRegistry>(ViewContainerExtensions.ViewsRegistry);
 
-// Custom Agents View
-const customAgentsViewDescriptor: IViewDescriptor = {
-	id: AI_CUSTOMIZATION_AGENTS_VIEW_ID,
-	name: localize2('customAgents', "Custom Agents"),
-	ctorDescriptor: new SyncDescriptor(CustomAgentsViewPane),
+// Unified AI Customization View
+const aiCustomizationViewDescriptor: IViewDescriptor = {
+	id: AI_CUSTOMIZATION_VIEW_ID,
+	name: localize2('aiCustomization', "AI Customization"),
+	ctorDescriptor: new SyncDescriptor(AICustomizationViewPane),
 	containerIcon: aiCustomizationViewIcon,
 	canToggleVisibility: true,
 	canMoveView: true,
@@ -67,111 +95,107 @@ const customAgentsViewDescriptor: IViewDescriptor = {
 	when: ChatContextKeys.enabled,
 };
 
-// Skills View
-const skillsViewDescriptor: IViewDescriptor = {
-	id: AI_CUSTOMIZATION_SKILLS_VIEW_ID,
-	name: localize2('skills', "Skills"),
-	ctorDescriptor: new SyncDescriptor(SkillsViewPane),
-	containerIcon: aiCustomizationViewIcon,
-	canToggleVisibility: true,
-	canMoveView: true,
-	order: 2,
-	when: ChatContextKeys.enabled,
-};
-
-// Instructions View
-const instructionsViewDescriptor: IViewDescriptor = {
-	id: AI_CUSTOMIZATION_INSTRUCTIONS_VIEW_ID,
-	name: localize2('instructions', "Instructions"),
-	ctorDescriptor: new SyncDescriptor(InstructionsViewPane),
-	containerIcon: aiCustomizationViewIcon,
-	canToggleVisibility: true,
-	canMoveView: true,
-	order: 3,
-	when: ChatContextKeys.enabled,
-};
-
-// Prompts View
-const promptsViewDescriptor: IViewDescriptor = {
-	id: AI_CUSTOMIZATION_PROMPTS_VIEW_ID,
-	name: localize2('prompts', "Prompts"),
-	ctorDescriptor: new SyncDescriptor(PromptsViewPane),
-	containerIcon: aiCustomizationViewIcon,
-	canToggleVisibility: true,
-	canMoveView: true,
-	order: 4,
-	when: ChatContextKeys.enabled,
-};
-
-viewsRegistry.registerViews([
-	customAgentsViewDescriptor,
-	skillsViewDescriptor,
-	instructionsViewDescriptor,
-	promptsViewDescriptor,
-], AI_CUSTOMIZATION_VIEW_CONTAINER);
+viewsRegistry.registerViews([aiCustomizationViewDescriptor], AI_CUSTOMIZATION_VIEW_CONTAINER);
 
 //#endregion
 
 //#region Welcome Content
 
-viewsRegistry.registerViewWelcomeContent(AI_CUSTOMIZATION_AGENTS_VIEW_ID, {
-	content: localize('noAgents', "No custom agents found.\n[Create Agent](command:workbench.command.new.agent)"),
-	when: ContextKeyExpr.deserialize('default'),
-});
-
-viewsRegistry.registerViewWelcomeContent(AI_CUSTOMIZATION_SKILLS_VIEW_ID, {
-	content: localize('noSkills', "No skills found.\n[Create Skill](command:workbench.command.new.skill)"),
-	when: ContextKeyExpr.deserialize('default'),
-});
-
-viewsRegistry.registerViewWelcomeContent(AI_CUSTOMIZATION_INSTRUCTIONS_VIEW_ID, {
-	content: localize('noInstructions', "No instruction files found.\n[Create Instructions](command:workbench.command.new.instructions)"),
-	when: ContextKeyExpr.deserialize('default'),
-});
-
-viewsRegistry.registerViewWelcomeContent(AI_CUSTOMIZATION_PROMPTS_VIEW_ID, {
-	content: localize('noPrompts', "No prompt files found.\n[Create Prompt](command:workbench.command.new.prompt)"),
-	when: ContextKeyExpr.deserialize('default'),
+viewsRegistry.registerViewWelcomeContent(AI_CUSTOMIZATION_VIEW_ID, {
+	content: localize('noCustomizations', "No AI customizations found.\n[Create Agent](command:workbench.action.aiCustomization.newAgent)\n[Create Skill](command:workbench.action.aiCustomization.newSkill)\n[Create Instructions](command:workbench.action.aiCustomization.newInstructions)\n[Create Prompt](command:workbench.action.aiCustomization.newPrompt)"),
+	when: AICustomizationIsEmptyContextKey,
 });
 
 //#endregion
 
 //#region View Title Menu Actions
 
-// Add "New" button to each view's title bar
+// Add dropdown menu for creating new items
 MenuRegistry.appendMenuItem(MenuId.ViewTitle, {
-	command: { id: 'workbench.command.new.agent', title: localize('newAgent', "New Agent"), icon: Codicon.add },
-	when: ContextKeyExpr.equals('view', AI_CUSTOMIZATION_AGENTS_VIEW_ID),
+	submenu: AICustomizationNewMenuId,
+	title: localize('new', "New..."),
+	icon: Codicon.add,
+	when: ContextKeyExpr.equals('view', AI_CUSTOMIZATION_VIEW_ID),
 	group: 'navigation',
 	order: 1,
 });
 
-MenuRegistry.appendMenuItem(MenuId.ViewTitle, {
-	command: { id: 'workbench.command.new.skill', title: localize('newSkill', "New Skill"), icon: Codicon.add },
-	when: ContextKeyExpr.equals('view', AI_CUSTOMIZATION_SKILLS_VIEW_ID),
-	group: 'navigation',
+// Register the submenu
+MenuRegistry.appendMenuItem(AICustomizationNewMenuId, {
+	command: { id: 'workbench.action.aiCustomization.newAgent', title: localize('newAgent', "New Agent") },
+	group: '1_create',
 	order: 1,
 });
 
-MenuRegistry.appendMenuItem(MenuId.ViewTitle, {
-	command: { id: 'workbench.command.new.instructions', title: localize('newInstructions', "New Instructions"), icon: Codicon.add },
-	when: ContextKeyExpr.equals('view', AI_CUSTOMIZATION_INSTRUCTIONS_VIEW_ID),
-	group: 'navigation',
-	order: 1,
+MenuRegistry.appendMenuItem(AICustomizationNewMenuId, {
+	command: { id: 'workbench.action.aiCustomization.newSkill', title: localize('newSkill', "New Skill") },
+	group: '1_create',
+	order: 2,
 });
 
-MenuRegistry.appendMenuItem(MenuId.ViewTitle, {
-	command: { id: 'workbench.command.new.prompt', title: localize('newPrompt', "New Prompt"), icon: Codicon.add },
-	when: ContextKeyExpr.equals('view', AI_CUSTOMIZATION_PROMPTS_VIEW_ID),
-	group: 'navigation',
-	order: 1,
+MenuRegistry.appendMenuItem(AICustomizationNewMenuId, {
+	command: { id: 'workbench.action.aiCustomization.newInstructions', title: localize('newInstructions', "New Instructions") },
+	group: '1_create',
+	order: 3,
+});
+
+MenuRegistry.appendMenuItem(AICustomizationNewMenuId, {
+	command: { id: 'workbench.action.aiCustomization.newPrompt', title: localize('newPrompt', "New Prompt") },
+	group: '1_create',
+	order: 4,
+});
+
+// Refresh action
+registerAction2(class extends ViewAction<AICustomizationViewPane> {
+	constructor() {
+		super({
+			id: 'aiCustomization.refresh',
+			viewId: AI_CUSTOMIZATION_VIEW_ID,
+			title: localize('refresh', "Refresh"),
+			f1: false,
+			icon: Codicon.refresh,
+			menu: {
+				id: MenuId.ViewTitle,
+				order: 10,
+				group: 'navigation',
+				when: ContextKeyExpr.equals('view', AI_CUSTOMIZATION_VIEW_ID)
+			}
+		});
+	}
+
+	runInView(_accessor: ServicesAccessor, view: AICustomizationViewPane) {
+		view.refresh();
+	}
+});
+
+// Collapse All action
+registerAction2(class extends ViewAction<AICustomizationViewPane> {
+	constructor() {
+		super({
+			id: 'aiCustomization.collapseAll',
+			viewId: AI_CUSTOMIZATION_VIEW_ID,
+			title: localize('collapseAll', "Collapse All"),
+			f1: false,
+			icon: Codicon.collapseAll,
+			menu: {
+				id: MenuId.ViewTitle,
+				order: 20,
+				group: 'navigation',
+				when: ContextKeyExpr.equals('view', AI_CUSTOMIZATION_VIEW_ID)
+			}
+		});
+	}
+
+	runInView(_accessor: ServicesAccessor, view: AICustomizationViewPane) {
+		view.collapseAll();
+	}
 });
 
 //#endregion
 
 //#region Context Menu Actions
 
-// Open file action (shared across all views)
+// Open file action
 const OPEN_AI_CUSTOMIZATION_FILE_ID = 'aiCustomization.openFile';
 registerAction2(class extends Action2 {
 	constructor() {
@@ -181,9 +205,9 @@ registerAction2(class extends Action2 {
 			icon: Codicon.goToFile,
 		});
 	}
-	async run(accessor: ServicesAccessor, uri: URI): Promise<void> {
+	async run(accessor: ServicesAccessor, context: URIContext): Promise<void> {
 		const editorService = accessor.get(IEditorService);
-		await editorService.openEditor({ resource: uri });
+		await editorService.openEditor({ resource: extractURI(context) });
 	}
 });
 
@@ -197,44 +221,24 @@ registerAction2(class extends Action2 {
 			icon: Codicon.play,
 		});
 	}
-	async run(accessor: ServicesAccessor, uri: URI): Promise<void> {
+	async run(accessor: ServicesAccessor, context: URIContext): Promise<void> {
 		const commandService = accessor.get(ICommandService);
-		await commandService.executeCommand('workbench.action.chat.run.prompt.current', uri);
+		await commandService.executeCommand('workbench.action.chat.run.prompt.current', extractURI(context));
 	}
 });
 
-// Register context menu items for Agents
-MenuRegistry.appendMenuItem(AgentsViewItemMenuId, {
+// Register context menu items
+MenuRegistry.appendMenuItem(AICustomizationItemMenuId, {
 	command: { id: OPEN_AI_CUSTOMIZATION_FILE_ID, title: localize('open', "Open") },
 	group: '1_open',
 	order: 1,
 });
 
-// Register context menu items for Skills
-MenuRegistry.appendMenuItem(SkillsViewItemMenuId, {
-	command: { id: OPEN_AI_CUSTOMIZATION_FILE_ID, title: localize('open', "Open") },
-	group: '1_open',
-	order: 1,
-});
-
-// Register context menu items for Instructions
-MenuRegistry.appendMenuItem(InstructionsViewItemMenuId, {
-	command: { id: OPEN_AI_CUSTOMIZATION_FILE_ID, title: localize('open', "Open") },
-	group: '1_open',
-	order: 1,
-});
-
-// Register context menu items for Prompts
-MenuRegistry.appendMenuItem(PromptsViewItemMenuId, {
-	command: { id: OPEN_AI_CUSTOMIZATION_FILE_ID, title: localize('open', "Open") },
-	group: '1_open',
-	order: 1,
-});
-
-MenuRegistry.appendMenuItem(PromptsViewItemMenuId, {
+MenuRegistry.appendMenuItem(AICustomizationItemMenuId, {
 	command: { id: RUN_PROMPT_FROM_VIEW_ID, title: localize('runPrompt', "Run Prompt"), icon: Codicon.play },
 	group: '2_run',
 	order: 1,
+	when: ContextKeyExpr.equals(AICustomizationItemTypeContextKey.key, PromptsType.prompt),
 });
 
 //#endregion
@@ -242,7 +246,7 @@ MenuRegistry.appendMenuItem(PromptsViewItemMenuId, {
 //#region Actions
 
 // Open AI Customization View
-class OpenAICustomizationViewAction extends Action2 {
+registerAction2(class extends Action2 {
 	constructor() {
 		super({
 			id: 'workbench.action.openAICustomizationView',
@@ -261,133 +265,75 @@ class OpenAICustomizationViewAction extends Action2 {
 		const viewsService = accessor.get(IViewsService);
 		await viewsService.openViewContainer(AI_CUSTOMIZATION_VIEWLET_ID);
 	}
-}
+});
 
-// New Agent Action
-class NewAgentAction extends Action2 {
-	constructor() {
-		super({
-			id: 'workbench.action.aiCustomization.newAgent',
-			title: localize2('newCustomAgent', "New Custom Agent..."),
-			category: AI_CUSTOMIZATION_CATEGORY,
-			icon: Codicon.add,
-			f1: true,
-			precondition: ChatContextKeys.enabled,
-		});
-	}
-
-	async run(accessor: ServicesAccessor): Promise<void> {
-		const openerService = accessor.get(IOpenerService);
-		const instantiationService = accessor.get(IInstantiationService);
-
-		const pickers = instantiationService.createInstance(PromptFilePickers);
-		const result = await pickers.selectPromptFile({
-			placeholder: localize('selectAgent', 'Select agent to open or create new'),
-			type: PromptsType.agent,
-			optionEdit: true,
-		});
-
-		if (result !== undefined) {
-			await openerService.open(result.promptFile);
+/**
+ * Factory function to create and register "New [Type]" actions for AI customization files.
+ * Reduces code duplication across the four prompt type actions.
+ */
+function registerNewPromptAction(
+	id: string,
+	title: ILocalizedString,
+	placeholder: string,
+	type: PromptsType,
+): void {
+	registerAction2(class extends Action2 {
+		constructor() {
+			super({
+				id,
+				title,
+				category: AI_CUSTOMIZATION_CATEGORY,
+				icon: Codicon.add,
+				f1: true,
+				precondition: ChatContextKeys.enabled,
+			});
 		}
-	}
-}
 
-// New Skill Action
-class NewSkillAction extends Action2 {
-	constructor() {
-		super({
-			id: 'workbench.action.aiCustomization.newSkill',
-			title: localize2('newSkillAction', "New Skill..."),
-			category: AI_CUSTOMIZATION_CATEGORY,
-			icon: Codicon.add,
-			f1: true,
-			precondition: ChatContextKeys.enabled,
-		});
-	}
+		async run(accessor: ServicesAccessor): Promise<void> {
+			const openerService = accessor.get(IOpenerService);
+			const instantiationService = accessor.get(IInstantiationService);
 
-	async run(accessor: ServicesAccessor): Promise<void> {
-		const openerService = accessor.get(IOpenerService);
-		const instantiationService = accessor.get(IInstantiationService);
+			const pickers = instantiationService.createInstance(PromptFilePickers);
+			const result = await pickers.selectPromptFile({
+				placeholder,
+				type,
+				optionEdit: true,
+			});
 
-		const pickers = instantiationService.createInstance(PromptFilePickers);
-		const result = await pickers.selectPromptFile({
-			placeholder: localize('selectSkill', 'Select skill to open or create new'),
-			type: PromptsType.skill,
-			optionEdit: true,
-		});
-
-		if (result !== undefined) {
-			await openerService.open(result.promptFile);
+			if (result !== undefined) {
+				await openerService.open(result.promptFile);
+			}
 		}
-	}
+	});
 }
 
-// New Instructions Action
-class NewInstructionsAction extends Action2 {
-	constructor() {
-		super({
-			id: 'workbench.action.aiCustomization.newInstructions',
-			title: localize2('newInstructionsAction', "New Instructions..."),
-			category: AI_CUSTOMIZATION_CATEGORY,
-			icon: Codicon.add,
-			f1: true,
-			precondition: ChatContextKeys.enabled,
-		});
-	}
+// Register all New actions using the factory
+registerNewPromptAction(
+	'workbench.action.aiCustomization.newAgent',
+	localize2('newCustomAgent', 'New Custom Agent...'),
+	localize('selectAgent', 'Select agent to open or create new'),
+	PromptsType.agent,
+);
 
-	async run(accessor: ServicesAccessor): Promise<void> {
-		const openerService = accessor.get(IOpenerService);
-		const instantiationService = accessor.get(IInstantiationService);
+registerNewPromptAction(
+	'workbench.action.aiCustomization.newSkill',
+	localize2('newSkillAction', 'New Skill...'),
+	localize('selectSkill', 'Select skill to open or create new'),
+	PromptsType.skill,
+);
 
-		const pickers = instantiationService.createInstance(PromptFilePickers);
-		const result = await pickers.selectPromptFile({
-			placeholder: localize('selectInstructions', 'Select instructions to open or create new'),
-			type: PromptsType.instructions,
-			optionEdit: true,
-		});
+registerNewPromptAction(
+	'workbench.action.aiCustomization.newInstructions',
+	localize2('newInstructionsAction', 'New Instructions...'),
+	localize('selectInstructions', 'Select instructions to open or create new'),
+	PromptsType.instructions,
+);
 
-		if (result !== undefined) {
-			await openerService.open(result.promptFile);
-		}
-	}
-}
-
-// New Prompt Action
-class NewPromptAction extends Action2 {
-	constructor() {
-		super({
-			id: 'workbench.action.aiCustomization.newPrompt',
-			title: localize2('newPromptAction', "New Prompt..."),
-			category: AI_CUSTOMIZATION_CATEGORY,
-			icon: Codicon.add,
-			f1: true,
-			precondition: ChatContextKeys.enabled,
-		});
-	}
-
-	async run(accessor: ServicesAccessor): Promise<void> {
-		const openerService = accessor.get(IOpenerService);
-		const instantiationService = accessor.get(IInstantiationService);
-
-		const pickers = instantiationService.createInstance(PromptFilePickers);
-		const result = await pickers.selectPromptFile({
-			placeholder: localize('selectPrompt', 'Select prompt to open or create new'),
-			type: PromptsType.prompt,
-			optionEdit: true,
-		});
-
-		if (result !== undefined) {
-			await openerService.open(result.promptFile);
-		}
-	}
-}
-
-// Register all actions
-registerAction2(OpenAICustomizationViewAction);
-registerAction2(NewAgentAction);
-registerAction2(NewSkillAction);
-registerAction2(NewInstructionsAction);
-registerAction2(NewPromptAction);
+registerNewPromptAction(
+	'workbench.action.aiCustomization.newPrompt',
+	localize2('newPromptAction', 'New Prompt...'),
+	localize('selectPrompt', 'Select prompt to open or create new'),
+	PromptsType.prompt,
+);
 
 //#endregion
