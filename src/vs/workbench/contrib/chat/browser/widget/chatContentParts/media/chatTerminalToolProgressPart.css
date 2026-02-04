@@ -207,7 +207,7 @@ div.chat-terminal-content-part.progress-step > div.chat-terminal-output-containe
 	display: block;
 }
 
-.chat-terminal-output-container .xterm-scrollable-element .scrollbar {
+.chat-terminal-output-container .xterm-scrollable-element .xterm-scrollbar {
 	display: none;
 }
 
