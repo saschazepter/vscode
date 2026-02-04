@@ -454,9 +454,10 @@ suite('ChatSessionStore', () => {
 			const initialStorageRoot = store.getChatStorageFolder();
 			assert.ok(initialStorageRoot.path.includes('emptyWindowChatSessions'), 'Initial storage should be empty window location');
 
-			// Simulate workspace transition
+			// Simulate workspace transition - use proper identifier types
+			// Empty workspace only has 'id', single folder has 'uri' property too
 			const oldWorkspace: IAnyWorkspaceIdentifier = { id: 'empty-window-id' };
-			const newWorkspace: IAnyWorkspaceIdentifier = { id: 'new-workspace-id' };
+			const newWorkspace: IAnyWorkspaceIdentifier = { id: 'new-workspace-id', uri: URI.file('/test/folder') } as IAnyWorkspaceIdentifier;
 
 			await mockWorkspaceEditingService.fireWorkspaceTransition(oldWorkspace, newWorkspace);
 
