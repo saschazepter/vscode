@@ -77,7 +77,7 @@ const aiCustomizationOverviewViewDescriptor: IViewDescriptor = {
 	order: 0, // At the top
 	collapsed: false,
 	weight: 15,
-	layoutVisibility: LayoutVisibility.Both,
+	layoutVisibility: LayoutVisibility.AgentSessions,
 };
 Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry).registerViews([aiCustomizationOverviewViewDescriptor], agentSessionsViewContainer);
 
