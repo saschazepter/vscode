@@ -892,13 +892,6 @@ export class ChatWidget extends Disposable implements IChatWidget {
 	 */
 	private async _checkForAgentInstructionFiles(): Promise<boolean> {
 		try {
-			const useCopilotInstructionsFiles = this.configurationService.getValue(PromptsConfig.USE_COPILOT_INSTRUCTION_FILES);
-			const useAgentMd = this.configurationService.getValue(PromptsConfig.USE_AGENT_MD);
-			const useClaudeMd = this.configurationService.getValue(PromptsConfig.USE_CLAUDE_MD);
-			if (!useCopilotInstructionsFiles && !useAgentMd && !useClaudeMd) {
-				// If all settings are disabled, return true to hide the hint (since the features aren't enabled)
-				return true;
-			}
 			return (await this.promptsService.listAgentInstructions(CancellationToken.None)).length > 0;
 		} catch (error) {
 			// On error, assume no instruction files exist to be safe

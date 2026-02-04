@@ -186,13 +186,7 @@ export class ComputeAutomaticInstructions {
 		const copilotEntries: ChatRequestVariableSet = new ChatRequestVariableSet();
 
 		for (const { uri, type } of allCandidates) {
-			const reason = type === AgentFileType.copilotInstructionsMd
-				? localize('instruction.file.reason.copilot', 'Automatically attached as setting {0} is enabled', PromptsConfig.USE_COPILOT_INSTRUCTION_FILES)
-				: type === AgentFileType.agentsMd
-					? localize('instruction.file.reason.agentsmd', 'Automatically attached as setting {0} is enabled', PromptsConfig.USE_AGENT_MD)
-					: localize('instruction.file.reason.claudesmd', 'Automatically attached as setting {0} is enabled', PromptsConfig.USE_CLAUDE_MD);
-
-			const varEntry = toPromptFileVariableEntry(uri, PromptFileVariableKind.Instruction, reason, true);
+			const varEntry = toPromptFileVariableEntry(uri, PromptFileVariableKind.Instruction, undefined, true);
 			entries.add(varEntry);
 			if (type === AgentFileType.copilotInstructionsMd) {
 				copilotEntries.add(varEntry);
