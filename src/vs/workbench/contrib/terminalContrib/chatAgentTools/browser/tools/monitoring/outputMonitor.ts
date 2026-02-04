@@ -478,14 +478,14 @@ export class OutputMonitor extends Disposable implements IOutputMonitor {
 		try {
 			const match = responseText.match(/\{[\s\S]*\}/);
 			if (match) {
-				const obj = JSON.parse(match[0]) as unknown;
+				const parsed = JSON.parse(match[0]) as unknown;
 				if (
-					isObject(obj) &&
-					'prompt' in obj && isString(obj.prompt) &&
-					'options' in obj &&
-					'options' in obj &&
-					'freeFormInput' in obj && typeof obj.freeFormInput === 'boolean'
+					isObject(parsed) &&
+					Object.hasOwn(parsed, 'prompt') && isString((parsed as Record<string, unknown>).prompt) &&
+					Object.hasOwn(parsed, 'options') &&
+					Object.hasOwn(parsed, 'freeFormInput') && typeof (parsed as Record<string, unknown>).freeFormInput === 'boolean'
 				) {
+					const obj = parsed as { prompt: string; options: unknown; freeFormInput: boolean };
 					if (this._lastPrompt === obj.prompt) {
 						return;
 					}
@@ -644,7 +644,7 @@ export class OutputMonitor extends Disposable implements IOutputMonitor {
 				let option: string | undefined = undefined;
 				if (value === true) {
 					option = suggestedOptionValue;
-				} else if (typeof value === 'object' && 'label' in value) {
+				} else if (typeof value === 'object' && Object.hasOwn(value, 'label')) {
 					option = value.label.split(' (')[0];
 				}
 				this._outputMonitorTelemetryCounters.inputToolManualAcceptCount++;
