@@ -67,7 +67,6 @@ export class AnnotatedString<T> implements IAnnotatedString<T> {
 
 	/**
 	 * Returns all annotations that intersect with the given offset range.
-	 * For empty ranges (cursor positions), returns annotations that start at that position.
 	 */
 	public getAnnotationsIntersecting(range: OffsetRange): IAnnotation<T>[] {
 		const startIndex = this._getStartIndexOfIntersectingAnnotation(range.start);
@@ -83,6 +82,11 @@ export class AnnotatedString<T> implements IAnnotatedString<T> {
 		let startIndex: number;
 		if (startIndexWhereToReplace >= 0) {
 			startIndex = startIndexWhereToReplace;
+			// Also include the next annotation if it ends exactly at offset (touching boundary)
+			const nextCandidate = this._annotations[startIndex]?.range;
+			if (nextCandidate && nextCandidate.endExclusive === offset) {
+				startIndex--;
+			}
 		} else {
 			const candidate = this._annotations[- (startIndexWhereToReplace + 2)]?.range;
 			if (candidate && offset >= candidate.start && offset < candidate.endExclusive) {
@@ -101,13 +105,9 @@ export class AnnotatedString<T> implements IAnnotatedString<T> {
 		});
 		let endIndexExclusive: number;
 		if (endIndexWhereToReplace >= 0) {
-			console.log('endIndexWhereToReplace >= 0');
-			console.log('endIndexWhereToReplace : ', endIndexWhereToReplace);
-			console.log('offset : ', offset);
 			endIndexExclusive = endIndexWhereToReplace + 1;
 			// Also include the next annotation if it starts exactly at offset (touching boundary)
 			const nextCandidate = this._annotations[endIndexExclusive]?.range;
-			console.log('nextCandidate : ', JSON.stringify(nextCandidate));
 			if (nextCandidate && nextCandidate.start === offset) {
 				endIndexExclusive++;
 			}

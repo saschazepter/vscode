@@ -382,12 +382,8 @@ suite('Annotations Suite', () => {
 	});
 
 	test('getAnnotationsIntersecting 6', () => {
-		const annotatedString = new AnnotatedString<string>([
-			{ range: new OffsetRange(222, 229), annotation: '1' },
-			{ range: new OffsetRange(229, 230), annotation: '2' },
-			{ range: new OffsetRange(230, 293), annotation: '3' }
-		]);
-		const result = annotatedString.getAnnotationsIntersecting(new OffsetRange(229, 229));
+		const vas = fromVisual('[1:Lorem ][2:ip][3:sum]');
+		const result = vas.getAnnotationsIntersecting(new OffsetRange(6, 6));
 		assert.strictEqual(result.length, 1);
 		assert.deepStrictEqual(result.map(a => a.annotation), ['2']);
 	});
