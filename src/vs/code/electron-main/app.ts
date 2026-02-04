@@ -3,8 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import * as electron from 'electron';
-import { app, powerMonitor, protocol, session, Session, systemPreferences, WebFrameMain } from 'electron';
+import { app, dialog, powerMonitor, protocol, session, Session, systemPreferences, WebFrameMain } from 'electron';
 import { execFileSync } from 'child_process';
 import { addUNCHostToAllowlist, disableUNCAccessRestrictions } from '../../base/node/unc.js';
 import { validatedIpcMain } from '../../base/parts/ipc/electron-main/ipcMain.js';
@@ -1444,7 +1443,7 @@ export class CodeApplication extends Disposable {
 
 		this.logService.info('App is not in Applications folder, prompting user to move');
 
-		const { response, checkboxChecked } = await electron.dialog.showMessageBox({
+		const { response, checkboxChecked } = await dialog.showMessageBox({
 			type: 'question',
 			buttons: [
 				localize({ key: 'move', comment: ['&& denotes a mnemonic'] }, "&&Move to Applications"),
@@ -1487,7 +1486,7 @@ export class CodeApplication extends Disposable {
 					conflictHandler: (conflictType) => {
 						// If there's an existing app, ask user what to do
 						if (conflictType === 'exists') {
-							const overwriteResult = electron.dialog.showMessageBoxSync({
+							const overwriteResult = dialog.showMessageBoxSync({
 								type: 'warning',
 								buttons: [
 									localize({ key: 'replace', comment: ['&& denotes a mnemonic'] }, "&&Replace Existing"),
@@ -1513,7 +1512,7 @@ export class CodeApplication extends Disposable {
 				this.logService.error('Failed to move app to Applications folder:', error);
 
 				// Show error to user
-				electron.dialog.showMessageBoxSync({
+				dialog.showMessageBoxSync({
 					type: 'error',
 					buttons: [localize('ok', "OK")],
 					message: localize('moveToApplicationsFailed', "Failed to Move to Applications"),
