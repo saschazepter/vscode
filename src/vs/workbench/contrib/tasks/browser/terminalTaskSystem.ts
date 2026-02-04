@@ -472,10 +472,10 @@ export class TerminalTaskSystem extends Disposable implements ITaskSystem {
 			return Promise.resolve<ITaskTerminateResponse>({ success: false, task: undefined });
 		}
 		return new Promise<ITaskTerminateResponse>((resolve, reject) => {
-			const onDisposedListener = this._register(terminal.onDisposed(terminal => {
+			const onDisposedListener = terminal.onDisposed(terminal => {
 				this._fireTaskEvent(TaskEvent.terminated(task, terminal.instanceId, terminal.exitReason));
-				this._store.delete(onDisposedListener);
-			}));
+				onDisposedListener.dispose();
+			});
 			const onExit = terminal.onExit(() => {
 				const task = activeTerminal.task;
 				try {
@@ -1050,7 +1050,7 @@ export class TerminalTaskSystem extends Disposable implements ITaskSystem {
 			const startStopProblemMatcher = new StartStopProblemCollector(problemMatchers, this._markerService, this._modelService, ProblemHandlingStrategy.Clean, this._fileService);
 			this._terminalStatusManager.addTerminal(task, terminal, startStopProblemMatcher);
 			this._taskProblemMonitor.addTerminal(terminal, startStopProblemMatcher);
-			const problemMatcherListener = this._register(startStopProblemMatcher.onDidStateChange((event) => {
+			const problemMatcherListener = startStopProblemMatcher.onDidStateChange((event) => {
 				if (event.kind === ProblemCollectorEventKind.BackgroundProcessingBegins) {
 					this._fireTaskEvent(TaskEvent.general(TaskEventKind.ProblemMatcherStarted, task, terminal?.instanceId));
 				} else if (event.kind === ProblemCollectorEventKind.BackgroundProcessingEnds) {
@@ -1061,7 +1061,7 @@ export class TerminalTaskSystem extends Disposable implements ITaskSystem {
 						this._fireTaskEvent(TaskEvent.problemMatcherEnded(task, this._taskHasErrors(task), terminal?.instanceId));
 					}
 				}
-			}));
+			});
 			let processStartedSignaled = false;
 			terminal.processReady.then(() => {
 				if (!processStartedSignaled) {
@@ -1412,10 +1412,10 @@ export class TerminalTaskSystem extends Disposable implements ITaskSystem {
 	private async _doCreateTerminal(task: Task, group: string | undefined, launchConfigs: IShellLaunchConfig): Promise<ITerminalInstance> {
 		const reconnectedTerminal = await this._reconnectToTerminal(task);
 		const registerOnDisposed = (terminal: ITerminalInstance) => {
-			const listener = this._register(terminal.onDisposed(() => {
+			const listener = terminal.onDisposed(() => {
 				this._fireTaskEvent(TaskEvent.terminated(task, terminal.instanceId, terminal.exitReason));
-				this._store.delete(listener);
-			}));
+				listener.dispose();
+			});
 		};
 		if (reconnectedTerminal) {
 			if ('command' in task && task.command.presentation) {
@@ -1462,10 +1462,10 @@ export class TerminalTaskSystem extends Disposable implements ITaskSystem {
 				if (data) {
 					const terminalData = { lastTask: data.lastTask, group: data.group, terminal, shellIntegrationNonce: data.shellIntegrationNonce };
 					this._terminals[terminal.instanceId] = terminalData;
-					const listener = this._register(terminal.onDisposed(() => {
+					const listener = terminal.onDisposed(() => {
 						this._deleteTaskAndTerminal(terminal, terminalData);
-						this._store.delete(listener);
-					}));
+						listener.dispose();
+					});
 					this._logService.trace('Reconnecting to task terminal', terminalData.lastTask, terminal.instanceId);
 				}
 			}
@@ -1588,10 +1588,10 @@ export class TerminalTaskSystem extends Disposable implements ITaskSystem {
 		}
 		const terminalKey = terminal.instanceId.toString();
 		const terminalData = { terminal: terminal, lastTask: taskKey, group, shellIntegrationNonce: terminal.shellLaunchConfig.shellIntegrationNonce };
-		const onDisposedListener = this._register(terminal.onDisposed(() => {
+		const onDisposedListener = terminal.onDisposed(() => {
 			this._deleteTaskAndTerminal(terminal, terminalData);
-			this._store.delete(onDisposedListener);
-		}));
+			onDisposedListener.dispose();
+		});
 		this._terminals[terminalKey] = terminalData;
 		terminal.shellLaunchConfig.tabActions = this._terminalTabActions;
 		return [terminal, undefined];
