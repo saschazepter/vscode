@@ -670,7 +670,8 @@ export class PromptsService extends Disposable implements IPromptsService {
 			return [];
 		}
 		const results: URI[] = [];
-		const userClaudeFolder = joinPath(this.userDataService.currentProfile.promptsHome, '.claude');
+		const userHome = await this.pathService.userHome();
+		const userClaudeFolder = joinPath(userHome, '.claude');
 		await Promise.all([
 			this.fileLocator.findFilesInWorkspaceRoots(CLAUDE_MD_FILENAME, undefined, token, results), // in workspace roots
 			this.fileLocator.findFilesInWorkspaceRoots(CLAUDE_LOCAL_MD_FILENAME, undefined, token, results), // CLAUDE.local in workspace roots
