@@ -26,6 +26,7 @@ import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
 import { IWorkspaceContextService, IWorkspaceFolder } from '../../../../../platform/workspace/common/workspace.js';
 import { IPathService } from '../../../../services/path/common/pathService.js';
 import { parseAllHookFiles, IParsedHook } from '../promptSyntax/hookUtils.js';
+import { ILabelService } from '../../../../../platform/label/common/label.js';
 
 /**
  * URL encodes path segments for use in markdown links.
@@ -145,6 +146,7 @@ export function registerChatCustomizationDiagnosticsAction() {
 			const untitledTextEditorService = accessor.get(IUntitledTextEditorService);
 			const commandService = accessor.get(ICommandService);
 			const workspaceContextService = accessor.get(IWorkspaceContextService);
+			const labelService = accessor.get(ILabelService);
 
 			const token = CancellationToken.None;
 			const workspaceFolders = workspaceContextService.getWorkspace().folders;
@@ -170,7 +172,7 @@ export function registerChatCustomizationDiagnosticsAction() {
 			statusInfos.push(skillsStatus);
 
 			// 5. Hooks
-			const hooksStatus = await collectHooksStatus(promptsService, fileService, pathService, workspaceContextService, token);
+			const hooksStatus = await collectHooksStatus(promptsService, fileService, labelService, pathService, workspaceContextService, token);
 			statusInfos.push(hooksStatus);
 
 			// 6. Special files (AGENTS.md, copilot-instructions.md)
@@ -289,6 +291,7 @@ async function collectSkillsStatus(
 async function collectHooksStatus(
 	promptsService: IPromptsService,
 	fileService: IFileService,
+	labelService: ILabelService,
 	pathService: IPathService,
 	workspaceContextService: IWorkspaceContextService,
 	token: CancellationToken
@@ -305,7 +308,7 @@ async function collectHooksStatus(
 	const files = discoveryInfo.files.map(convertDiscoveryResultToFileStatus);
 
 	// Parse hook files to extract individual hooks grouped by lifecycle
-	const parsedHooks = await parseHookFiles(promptsService, fileService, pathService, workspaceContextService, token);
+	const parsedHooks = await parseHookFiles(promptsService, fileService, labelService, pathService, workspaceContextService, token);
 
 	return { type, paths, files, enabled, parsedHooks };
 }
@@ -316,6 +319,7 @@ async function collectHooksStatus(
 async function parseHookFiles(
 	promptsService: IPromptsService,
 	fileService: IFileService,
+	labelService: ILabelService,
 	pathService: IPathService,
 	workspaceContextService: IWorkspaceContextService,
 	token: CancellationToken
@@ -327,7 +331,7 @@ async function parseHookFiles(
 	const userHome = userHomeUri.fsPath ?? userHomeUri.path;
 
 	// Use the shared helper
-	return parseAllHookFiles(promptsService, fileService, workspaceRootUri, userHome, workspaceFolder, token);
+	return parseAllHookFiles(promptsService, fileService, labelService, workspaceRootUri, userHome, token);
 }
 
 /**

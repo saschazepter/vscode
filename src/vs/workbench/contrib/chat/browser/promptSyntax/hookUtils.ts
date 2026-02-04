@@ -12,9 +12,8 @@ import { IFileService } from '../../../../../platform/files/common/files.js';
 import { CancellationToken } from '../../../../../base/common/cancellation.js';
 import { formatHookCommandLabel, HOOK_TYPES, HookType, IHookCommand } from '../../common/promptSyntax/hookSchema.js';
 import { parseHooksFromFile } from '../../common/promptSyntax/hookCompatibility.js';
-import { relativePath } from '../../../../../base/common/resources.js';
 import * as nls from '../../../../../nls.js';
-import { IWorkspaceFolder } from '../../../../../platform/workspace/common/workspace.js';
+import { ILabelService } from '../../../../../platform/label/common/label.js';
 
 /**
  * Converts an offset in content to a 1-based line and column.
@@ -135,9 +134,9 @@ export interface IParsedHook {
 export async function parseAllHookFiles(
 	promptsService: IPromptsService,
 	fileService: IFileService,
+	labelService: ILabelService,
 	workspaceRootUri: URI | undefined,
 	userHome: string,
-	workspaceFolder: IWorkspaceFolder | undefined,
 	token: CancellationToken
 ): Promise<IParsedHook[]> {
 	const hookFiles = await promptsService.listPromptFiles(PromptsType.hook, token);
@@ -166,7 +165,7 @@ export async function parseAllHookFiles(
 						command,
 						commandLabel,
 						fileUri: hookFile.uri,
-						filePath: relativePath(workspaceFolder?.uri, hookFile.uri) || hookFile.uri.path,
+						filePath: labelService.getUriLabel(hookFile.uri, { relative: true }),
 						index: i,
 						originalHookTypeId: originalId
 					});

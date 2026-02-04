@@ -11,14 +11,12 @@ import { ServicesAccessor } from '../../../../../editor/browser/editorExtensions
 import { Action2, registerAction2 } from '../../../../../platform/actions/common/actions.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { ContextKeyExpr } from '../../../../../platform/contextkey/common/contextkey.js';
-import { PromptsType } from '../../common/promptSyntax/promptTypes.js';
 import { IPromptsService } from '../../common/promptSyntax/service/promptsService.js';
 import { CancellationToken } from '../../../../../base/common/cancellation.js';
 import { IQuickInputService, IQuickPickItem, IQuickPickSeparator } from '../../../../../platform/quickinput/common/quickInput.js';
 import { IFileService } from '../../../../../platform/files/common/files.js';
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
-import { URI } from '../../../../../base/common/uri.js';
-import { formatHookCommandLabel, HOOK_TYPES, HookType } from '../../common/promptSyntax/hookSchema.js';
+import { HOOK_TYPES, HookType } from '../../common/promptSyntax/hookSchema.js';
 import { NEW_HOOK_COMMAND_ID } from './newPromptFileActions.js';
 import { ILabelService } from '../../../../../platform/label/common/label.js';
 import { IEditorService } from '../../../../services/editor/common/editorService.js';
@@ -73,14 +71,12 @@ class ManageHooksAction extends Action2 {
 		const workspaceRootUri = workspaceFolder?.uri;
 		const userHomeUri = await pathService.userHome();
 		const userHome = userHomeUri.fsPath ?? userHomeUri.path;
-
-		// Parse all hook files using the shared helper
 		const hookEntries = await parseAllHookFiles(
 			promptsService,
 			fileService,
+			labelService,
 			workspaceRootUri,
 			userHome,
-			workspaceFolder,
 			CancellationToken.None
 		);
 
