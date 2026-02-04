@@ -3205,6 +3205,15 @@ export interface IStartMcpOptions {
 	errorOnUserInteraction?: boolean;
 }
 
+export interface IHookResultDto {
+	readonly kind: number;
+	readonly result: string | object;
+}
+
+export interface ExtHostHooksShape {
+	$executeHook(hookType: string, sessionResource: UriComponents, input: unknown): Promise<IHookResultDto[]>;
+}
+
 
 
 export interface ExtHostMcpShape {
@@ -3258,6 +3267,10 @@ export interface MainThreadMcpShape {
 }
 
 export interface MainThreadDataChannelsShape extends IDisposable {
+}
+
+export interface MainThreadHooksShape extends IDisposable {
+	// Empty - main thread only calls extension host, no callbacks needed
 }
 
 export interface ExtHostDataChannelsShape {
@@ -3494,6 +3507,7 @@ export const MainContext = {
 	MainThreadChatStatus: createProxyIdentifier<MainThreadChatStatusShape>('MainThreadChatStatus'),
 	MainThreadAiSettingsSearch: createProxyIdentifier<MainThreadAiSettingsSearchShape>('MainThreadAiSettingsSearch'),
 	MainThreadDataChannels: createProxyIdentifier<MainThreadDataChannelsShape>('MainThreadDataChannels'),
+	MainThreadHooks: createProxyIdentifier<MainThreadHooksShape>('MainThreadHooks'),
 	MainThreadChatSessions: createProxyIdentifier<MainThreadChatSessionsShape>('MainThreadChatSessions'),
 	MainThreadChatOutputRenderer: createProxyIdentifier<MainThreadChatOutputRendererShape>('MainThreadChatOutputRenderer'),
 	MainThreadChatContext: createProxyIdentifier<MainThreadChatContextShape>('MainThreadChatContext'),
@@ -3572,6 +3586,7 @@ export const ExtHostContext = {
 	ExtHostMeteredConnection: createProxyIdentifier<ExtHostMeteredConnectionShape>('ExtHostMeteredConnection'),
 	ExtHostLocalization: createProxyIdentifier<ExtHostLocalizationShape>('ExtHostLocalization'),
 	ExtHostMcp: createProxyIdentifier<ExtHostMcpShape>('ExtHostMcp'),
+	ExtHostHooks: createProxyIdentifier<ExtHostHooksShape>('ExtHostHooks'),
 	ExtHostDataChannels: createProxyIdentifier<ExtHostDataChannelsShape>('ExtHostDataChannels'),
 	ExtHostChatSessions: createProxyIdentifier<ExtHostChatSessionsShape>('ExtHostChatSessions'),
 };

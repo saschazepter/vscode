@@ -8,11 +8,13 @@ import { existsSync, unlinkSync } from 'fs';
 import { mkdir, readFile, unlink } from 'fs/promises';
 import { tmpdir } from 'os';
 import { app } from 'electron';
-import { timeout } from '../../../base/common/async.js';
+import { Delayer, timeout } from '../../../base/common/async.js';
+import { VSBuffer } from '../../../base/common/buffer.js';
 import { CancellationToken } from '../../../base/common/cancellation.js';
 import { memoize } from '../../../base/common/decorators.js';
 import { hash } from '../../../base/common/hash.js';
 import * as path from '../../../base/common/path.js';
+import { transform } from '../../../base/common/stream.js';
 import { URI } from '../../../base/common/uri.js';
 import { checksum } from '../../../base/node/crypto.js';
 import * as pfs from '../../../base/node/pfs.js';
@@ -198,7 +200,16 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 					return Promise.resolve(null);
 				}
 
-				this.setState(State.Downloading(explicit, this._overwrite));
+				// When connection is metered and this is not an explicit check,
+				// show update is available but don't start downloading
+				if (!explicit && this.meteredConnectionService.isConnectionMetered) {
+					this.logService.info('update#doCheckForUpdates - update available but skipping download because connection is metered');
+					this.setState(State.AvailableForDownload(update));
+					return Promise.resolve(null);
+				}
+
+				const startTime = Date.now();
+				this.setState(State.Downloading(update, explicit, this._overwrite, 0, undefined, startTime));
 
 				return this.cleanup(update.version).then(() => {
 					return this.getUpdatePackagePath(update.version).then(updatePackagePath => {
@@ -210,7 +221,32 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 							const downloadPath = `${updatePackagePath}.tmp`;
 
 							return this.requestService.request({ url: update.url }, CancellationToken.None)
-								.then(context => this.fileService.writeFile(URI.file(downloadPath), context.stream))
+								.then(context => {
+									// Get total size from Content-Length header
+									const contentLengthHeader = context.res.headers['content-length'];
+									const contentLength = typeof contentLengthHeader === 'string' ? contentLengthHeader : undefined;
+									const totalBytes = contentLength ? parseInt(contentLength, 10) : undefined;
+
+									// Track downloaded bytes and update state periodically using Delayer
+									let downloadedBytes = 0;
+									const progressDelayer = new Delayer<void>(500);
+									const progressStream = transform<VSBuffer, VSBuffer>(
+										context.stream,
+										{
+											data: data => {
+												downloadedBytes += data.byteLength;
+												progressDelayer.trigger(() => {
+													this.setState(State.Downloading(update, explicit, this._overwrite, downloadedBytes, totalBytes, startTime));
+												});
+												return data;
+											}
+										},
+										chunks => VSBuffer.concat(chunks)
+									);
+
+									return this.fileService.writeFile(URI.file(downloadPath), progressStream)
+										.finally(() => progressDelayer.dispose());
+								})
 								.then(update.sha256hash ? () => checksum(downloadPath, update.sha256hash) : () => undefined)
 								.then(() => pfs.Promises.rename(downloadPath, updatePackagePath, false /* no retry */))
 								.then(() => updatePackagePath);
@@ -336,7 +372,7 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 		const fastUpdatesEnabled = this.configurationService.getValue('update.enableWindowsBackgroundUpdates');
 		const update: IUpdate = { version: 'unknown', productVersion: 'unknown' };
 
-		this.setState(State.Downloading(true, false));
+		this.setState(State.Downloading(update, true, false));
 		this.availableUpdate = { packagePath };
 		this.setState(State.Downloaded(update, true, false));
 
