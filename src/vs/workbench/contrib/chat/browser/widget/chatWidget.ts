@@ -76,6 +76,7 @@ import { IChatListItemTemplate } from './chatListRenderer.js';
 import { ChatListWidget } from './chatListWidget.js';
 import { ChatEditorOptions } from './chatOptions.js';
 import { ChatViewWelcomePart, IChatSuggestedPrompts, IChatViewWelcomeContent } from '../viewsWelcome/chatViewWelcomeController.js';
+import { ChatFullWelcomePart, IQuickStartSelectionEvent } from '../viewsWelcome/chatFullWelcomePart.js';
 import { IAgentSessionsService } from '../agentSessions/agentSessionsService.js';
 
 const $ = dom.$;
@@ -230,6 +231,8 @@ export class ChatWidget extends Disposable implements IChatWidget {
 
 	private welcomeMessageContainer!: HTMLElement;
 	private readonly welcomePart: MutableDisposable<ChatViewWelcomePart> = this._register(new MutableDisposable());
+	private readonly fullWelcomePart: MutableDisposable<ChatFullWelcomePart> = this._register(new MutableDisposable());
+	private fullWelcomeContainer: HTMLElement | undefined;
 
 	private readonly chatSuggestNextWidget: ChatSuggestNextWidget;
 
@@ -257,6 +260,9 @@ export class ChatWidget extends Disposable implements IChatWidget {
 	private readonly _lockedToCodingAgentContextKey: IContextKey<boolean>;
 	private readonly _agentSupportsAttachmentsContextKey: IContextKey<boolean>;
 	private readonly _sessionIsEmptyContextKey: IContextKey<boolean>;
+	private readonly _showFullWelcomeContextKey: IContextKey<boolean>;
+	private readonly _quickStartTypeContextKey: IContextKey<string>;
+	private readonly _isExploreModeContextKey: IContextKey<boolean>;
 	private _attachmentCapabilities: IChatAgentAttachmentCapabilities = supportsAllAttachments;
 
 	// Cache for prompt file descriptions to avoid async calls during rendering
@@ -332,6 +338,10 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		return !!this.viewOptions.supportsChangingModes;
 	}
 
+	get shouldHidePlaceholder(): boolean {
+		return !!this.viewOptions.showFullWelcome && !!this.viewOptions.fullWelcomeOptions?.hidePlaceholder;
+	}
+
 	get locationData() {
 		return this._location.resolveData?.();
 	}
@@ -371,6 +381,10 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		this._lockedToCodingAgentContextKey = ChatContextKeys.lockedToCodingAgent.bindTo(this.contextKeyService);
 		this._agentSupportsAttachmentsContextKey = ChatContextKeys.agentSupportsAttachments.bindTo(this.contextKeyService);
 		this._sessionIsEmptyContextKey = ChatContextKeys.chatSessionIsEmpty.bindTo(this.contextKeyService);
+		this._showFullWelcomeContextKey = ChatContextKeys.showFullWelcome.bindTo(this.contextKeyService);
+		this._showFullWelcomeContextKey.set(!!viewOptions.showFullWelcome);
+		this._quickStartTypeContextKey = ChatContextKeys.quickStartType.bindTo(this.contextKeyService);
+		this._isExploreModeContextKey = ChatContextKeys.isExploreMode.bindTo(this.contextKeyService);
 
 		this.viewContext = viewContext ?? {};
 
@@ -600,6 +614,34 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		const renderInputToolbarBelowInput = this.viewOptions.renderInputToolbarBelowInput ?? false;
 
 		this.container = dom.append(parent, $('.interactive-session'));
+
+		// Full welcome container (used when showFullWelcome is enabled)
+		// Create immediately so the input can be placed inside it
+		if (this.viewOptions.showFullWelcome) {
+			this.fullWelcomeContainer = dom.append(this.container, $('.chat-full-welcome-container', { style: 'display: none' }));
+
+			// Create the full welcome part immediately so we can use its inputSlot
+			this.fullWelcomePart.value = this.instantiationService.createInstance(
+				ChatFullWelcomePart,
+				{
+					productName: product.nameLong,
+					fullWelcomeOptions: this.viewOptions.fullWelcomeOptions,
+				}
+			);
+			dom.append(this.fullWelcomeContainer, this.fullWelcomePart.value.element);
+
+			// Handle quick-start selection
+			this._register(this.fullWelcomePart.value.onDidSelectQuickStart((e: IQuickStartSelectionEvent) => {
+				this.handleQuickStartSelection(e);
+			}));
+
+			// Create input inside the full welcome's input slot
+			this.createInput(this.fullWelcomePart.value.inputSlot, { renderFollowups: false, renderStyle, renderInputToolbarBelowInput });
+
+			// Connect the input editor to the welcome part for type-to-search filtering
+			this._register(this.fullWelcomePart.value.connectInputEditor(this.input.inputEditor));
+		}
+
 		this.welcomeMessageContainer = dom.append(this.container, $('.chat-welcome-view-container', { style: 'display: none' }));
 		this._register(dom.addStandardDisposableListener(this.welcomeMessageContainer, dom.EventType.CLICK, () => this.focusInput()));
 
@@ -612,13 +654,20 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			this.handleNextPromptSelection(handoff, agentId);
 		}));
 
-		if (renderInputOnTop) {
-			this.createInput(this.container, { renderFollowups, renderStyle, renderInputToolbarBelowInput });
-			this.listContainer = dom.append(this.container, $(`.interactive-list`));
+		// Only create input in main container if not in full welcome mode
+		if (!this.viewOptions.showFullWelcome) {
+			if (renderInputOnTop) {
+				this.createInput(this.container, { renderFollowups, renderStyle, renderInputToolbarBelowInput });
+				this.listContainer = dom.append(this.container, $(`.interactive-list`));
+			} else {
+				this.listContainer = dom.append(this.container, $(`.interactive-list`));
+				dom.append(this.container, this.chatSuggestNextWidget.domNode);
+				this.createInput(this.container, { renderFollowups, renderStyle, renderInputToolbarBelowInput });
+			}
 		} else {
+			// In full welcome mode, still create list container for when conversation starts
 			this.listContainer = dom.append(this.container, $(`.interactive-list`));
 			dom.append(this.container, this.chatSuggestNextWidget.domNode);
-			this.createInput(this.container, { renderFollowups, renderStyle, renderInputToolbarBelowInput });
 		}
 
 		this.renderWelcomeViewContentIfNeeded();
@@ -786,7 +835,16 @@ export class ChatWidget extends Disposable implements IChatWidget {
 	private updateChatViewVisibility(): void {
 		if (this.viewModel) {
 			const numItems = this.viewModel.getItems().length;
-			dom.setVisibility(numItems === 0, this.welcomeMessageContainer);
+			const showWelcome = numItems === 0;
+
+			// Handle full welcome container visibility
+			if (this.fullWelcomeContainer && this.viewOptions.showFullWelcome) {
+				dom.setVisibility(showWelcome, this.fullWelcomeContainer);
+				dom.setVisibility(false, this.welcomeMessageContainer); // Hide standard welcome when using full welcome
+			} else {
+				dom.setVisibility(showWelcome, this.welcomeMessageContainer);
+			}
+
 			dom.setVisibility(numItems !== 0, this.listContainer);
 		}
 
@@ -816,36 +874,57 @@ export class ChatWidget extends Disposable implements IChatWidget {
 
 			const numItems = this.viewModel?.getItems().length ?? 0;
 			if (!numItems) {
-				const defaultAgent = this.chatAgentService.getDefaultAgent(this.location, this.input.currentModeKind);
-				let additionalMessage: string | IMarkdownString | undefined;
-				if (this.chatEntitlementService.anonymous && !this.chatEntitlementService.sentiment.installed) {
-					const providers = product.defaultChatAgent.provider;
-					additionalMessage = new MarkdownString(localize({ key: 'settings', comment: ['{Locked="]({2})"}', '{Locked="]({3})"}'] }, "By continuing with {0} Copilot, you agree to {1}'s [Terms]({2}) and [Privacy Statement]({3}).", providers.default.name, providers.default.name, product.defaultChatAgent.termsStatementUrl, product.defaultChatAgent.privacyStatementUrl), { isTrusted: true });
+				// Use full welcome view if showFullWelcome is enabled
+				if (this.viewOptions.showFullWelcome && this.fullWelcomeContainer) {
+					this.renderFullWelcomeView();
 				} else {
-					additionalMessage = defaultAgent?.metadata.additionalWelcomeMessage;
-				}
-				if (!additionalMessage && !this._lockedAgent) {
-					additionalMessage = this._getGenerateInstructionsMessage();
-				}
-				const welcomeContent = this.getWelcomeViewContent(additionalMessage);
-				if (!this.welcomePart.value || this.welcomePart.value.needsRerender(welcomeContent)) {
-					dom.clearNode(this.welcomeMessageContainer);
-
-					this.welcomePart.value = this.instantiationService.createInstance(
-						ChatViewWelcomePart,
-						welcomeContent,
-						{
-							location: this.location,
-							isWidgetAgentWelcomeViewContent: this.input?.currentModeKind === ChatModeKind.Agent
-						}
-					);
-					dom.append(this.welcomeMessageContainer, this.welcomePart.value.element);
+					this.renderStandardWelcomeView();
 				}
 			}
 
 			this.updateChatViewVisibility();
 		} finally {
 			this._isRenderingWelcome = false;
+		}
+	}
+
+	/**
+	 * Renders the full welcome view with header, sessions grid, and footer.
+	 * The full welcome part is created in render() so this method just validates it exists.
+	 */
+	private renderFullWelcomeView(): void {
+		// Full welcome part is created in render() when showFullWelcome is enabled
+		// This method is a no-op since the part is already rendered
+	}
+
+	/**
+	 * Renders the standard welcome view with icon, title, message, and optional prompts.
+	 */
+	private renderStandardWelcomeView(): void {
+		const defaultAgent = this.chatAgentService.getDefaultAgent(this.location, this.input.currentModeKind);
+		let additionalMessage: string | IMarkdownString | undefined;
+		if (this.chatEntitlementService.anonymous && !this.chatEntitlementService.sentiment.installed) {
+			const providers = product.defaultChatAgent.provider;
+			additionalMessage = new MarkdownString(localize({ key: 'settings', comment: ['{Locked="]({2})"}', '{Locked="]({3})"}'] }, "By continuing with {0} Copilot, you agree to {1}'s [Terms]({2}) and [Privacy Statement]({3}).", providers.default.name, providers.default.name, product.defaultChatAgent.termsStatementUrl, product.defaultChatAgent.privacyStatementUrl), { isTrusted: true });
+		} else {
+			additionalMessage = defaultAgent?.metadata.additionalWelcomeMessage;
+		}
+		if (!additionalMessage && !this._lockedAgent) {
+			additionalMessage = this._getGenerateInstructionsMessage();
+		}
+		const welcomeContent = this.getWelcomeViewContent(additionalMessage);
+		if (!this.welcomePart.value || this.welcomePart.value.needsRerender(welcomeContent)) {
+			dom.clearNode(this.welcomeMessageContainer);
+
+			this.welcomePart.value = this.instantiationService.createInstance(
+				ChatViewWelcomePart,
+				welcomeContent,
+				{
+					location: this.location,
+					isWidgetAgentWelcomeViewContent: this.input?.currentModeKind === ChatModeKind.Agent
+				}
+			);
+			dom.append(this.welcomeMessageContainer, this.welcomePart.value.element);
 		}
 	}
 
@@ -1230,6 +1309,24 @@ export class ChatWidget extends Disposable implements IChatWidget {
 				this.acceptInput();
 			}
 		}
+	}
+
+	private handleQuickStartSelection(e: IQuickStartSelectionEvent): void {
+		// Update context keys
+		this._quickStartTypeContextKey.set(e.option.type);
+		this._isExploreModeContextKey.set(e.option.type === 'explore');
+
+		// Update the session type picker delegate if available
+		if (this.viewOptions.sessionTypePickerDelegate?.setActiveSessionProvider) {
+			this.viewOptions.sessionTypePickerDelegate.setActiveSessionProvider(e.sessionProvider);
+		}
+
+		// Switch the mode based on the quick-start selection
+		const targetModeId = e.modeKind === ChatModeKind.Ask ? ChatMode.Ask.id : ChatMode.Agent.id;
+		this.input.setChatMode(targetModeId, false);
+
+		// Focus the input for immediate typing
+		this.input.focus();
 	}
 
 	async handleDelegationExitIfNeeded(sourceAgent: Pick<IChatAgentData, 'id' | 'name'> | undefined, targetAgent: IChatAgentData | undefined): Promise<void> {
@@ -2003,6 +2100,18 @@ export class ChatWidget extends Disposable implements IChatWidget {
 	}
 
 	async acceptInput(query?: string, options?: IChatAcceptInputOptions): Promise<IChatResponseModel | undefined> {
+		// If we're in the full welcome view with type-to-search filtering active,
+		// the first Enter selects the best matching mode but KEEPS the input text.
+		// The second Enter (after mode is selected) will send the actual request.
+		if (this.fullWelcomePart.value?.isFiltering() && !this.fullWelcomePart.value.getSelectedQuickStartType()) {
+			const selected = this.fullWelcomePart.value.selectFirstMatchingOption();
+			if (selected) {
+				// Keep the input text - user will press Enter again to send
+				// Focus is already set by handleQuickStartSelection
+				return undefined;
+			}
+		}
+
 		return this._acceptInput(query ? { query } : undefined, options);
 	}
 
@@ -2249,6 +2358,12 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		this.listWidget.layout(contentHeight, width);
 
 		this.welcomeMessageContainer.style.height = `${contentHeight}px`;
+
+		// Layout full welcome part if active
+		if (this.fullWelcomePart.value && this.fullWelcomeContainer) {
+			this.fullWelcomeContainer.style.height = `${contentHeight}px`;
+			this.fullWelcomePart.value.layout(width);
+		}
 
 		const lastResponseIsRendering = isResponseVM(lastItem) && lastItem.renderData;
 		if (lastElementVisible && (!lastResponseIsRendering || checkModeOption(this.input.currentModeKind, this.viewOptions.autoScroll))) {

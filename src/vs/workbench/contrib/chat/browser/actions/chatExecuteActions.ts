@@ -219,6 +219,7 @@ export class ChatSubmitAction extends SubmitAction {
 						whenNotInProgress,
 						menuCondition,
 						ChatContextKeys.withinEditSessionDiff.negate(),
+						ChatContextKeys.showFullWelcome.negate(),
 					),
 					group: 'navigation',
 					alt: {
@@ -409,6 +410,7 @@ export class OpenModelPickerAction extends Action2 {
 				group: 'navigation',
 				when:
 					ContextKeyExpr.and(
+						ChatContextKeys.showFullWelcome.negate(),
 						ChatContextKeys.lockedToCodingAgent.negate(),
 						ContextKeyExpr.or(
 							ContextKeyExpr.equals(ChatContextKeys.location.key, ChatAgentLocation.Chat),
@@ -456,9 +458,12 @@ export class OpenModePickerAction extends Action2 {
 					id: MenuId.ChatInput,
 					order: 1,
 					when: ContextKeyExpr.and(
+						ChatContextKeys.showFullWelcome.negate(),
 						ChatContextKeys.enabled,
 						ChatContextKeys.location.isEqualTo(ChatAgentLocation.Chat),
 						ChatContextKeys.inQuickChat.negate(),
+						// Hide when in explore mode (mode is locked to Ask)
+						ChatContextKeys.isExploreMode.negate(),
 						ContextKeyExpr.or(
 							ChatContextKeys.lockedToCodingAgent.negate(),
 							ChatContextKeys.chatSessionHasCustomAgentTarget),
@@ -497,6 +502,7 @@ export class OpenSessionTargetPickerAction extends Action2 {
 					id: MenuId.ChatInput,
 					order: 0,
 					when: ContextKeyExpr.and(
+						ChatContextKeys.showFullWelcome.negate(),
 						ChatContextKeys.enabled,
 						ChatContextKeys.location.isEqualTo(ChatAgentLocation.Chat),
 						ChatContextKeys.inQuickChat.negate(),
@@ -532,6 +538,7 @@ export class OpenDelegationPickerAction extends Action2 {
 					id: MenuId.ChatInput,
 					order: 0.5,
 					when: ContextKeyExpr.and(
+						ChatContextKeys.showFullWelcome.negate(),
 						ChatContextKeys.enabled,
 						ChatContextKeys.location.isEqualTo(ChatAgentLocation.Chat),
 						ChatContextKeys.inQuickChat.negate(),
@@ -567,6 +574,7 @@ export class OpenWorkspacePickerAction extends Action2 {
 					id: MenuId.ChatInput,
 					order: 0.6,
 					when: ContextKeyExpr.and(
+						ChatContextKeys.showFullWelcome.negate(),
 						ChatContextKeys.inAgentSessionsWelcome,
 						ChatContextKeys.chatSessionType.isEqualTo('local')
 					),
@@ -596,6 +604,7 @@ export class ChatSessionPrimaryPickerAction extends Action2 {
 				group: 'navigation',
 				when:
 					ContextKeyExpr.and(
+						ChatContextKeys.showFullWelcome.negate(),
 						ChatContextKeys.chatSessionHasModels,
 						ContextKeyExpr.or(
 							ChatContextKeys.lockedToCodingAgent,
@@ -668,7 +677,8 @@ export class ChatEditingSessionSubmitAction extends SubmitAction {
 					order: 4,
 					when: ContextKeyExpr.and(
 						ChatContextKeys.requestInProgress.negate(),
-						menuCondition),
+						menuCondition,
+						ChatContextKeys.showFullWelcome.negate()),
 					group: 'navigation',
 					alt: {
 						id: 'workbench.action.chat.sendToNewChat',
