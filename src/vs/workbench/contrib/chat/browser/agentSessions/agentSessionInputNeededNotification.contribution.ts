@@ -3,8 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Disposable } from '../../../../../base/common/lifecycle.js';
-import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../../common/contributions.js';
+import { registerWorkbenchContribution2, WorkbenchPhase } from '../../../../common/contributions.js';
 import { MenuId, MenuRegistry } from '../../../../../platform/actions/common/actions.js';
 import { localize } from '../../../../../nls.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
@@ -12,6 +11,7 @@ import { ContextKeyExpr } from '../../../../../platform/contextkey/common/contex
 import { ChatConfiguration } from '../../common/constants.js';
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
 import { AgentSessionInputNeededNotificationRendering } from './agentSessionInputNeededNotification.js';
+import './agentSessionInputNeededNotificationActions.js'; // Register actions
 
 // Register the input needed notification rendering contribution
 registerWorkbenchContribution2(
