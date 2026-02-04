@@ -203,7 +203,14 @@ suite('HooksExecutionService', () => {
 			const testInput = { foo: 'bar', nested: { value: 123 } };
 			await service.executeHook(HookType.PreToolUse, sessionUri, { input: testInput });
 
-			assert.deepStrictEqual(receivedInput, testInput);
+			// Input includes caller properties merged with common hook properties
+			assert.ok(typeof receivedInput === 'object' && receivedInput !== null);
+			const input = receivedInput as Record<string, unknown>;
+			assert.strictEqual(input['foo'], 'bar');
+			assert.deepStrictEqual(input['nested'], { value: 123 });
+			// Common properties are also present
+			assert.strictEqual(typeof input['timestamp'], 'string');
+			assert.strictEqual(input['hookEventName'], HookType.PreToolUse);
 		});
 	});
 

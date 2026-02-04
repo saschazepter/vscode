@@ -95,7 +95,7 @@ export interface IStopHookInput extends ICommonHookInput {
 
 /**
  * Valid decisions for stop hooks.
- * "block" prevents Claude from stopping.
+ * "block" prevents the agent from stopping.
  */
 export type StopHookDecision = 'block';
 
@@ -104,11 +104,11 @@ export type StopHookDecision = 'block';
  */
 export interface IStopHookOutput {
 	/**
-	 * "block" prevents Claude from stopping. Omit to allow Claude to stop.
+	 * "block" prevents the agent from stopping. Omit to allow the agent to stop.
 	 */
 	readonly decision: StopHookDecision;
 	/**
-	 * Required when decision is "block". Tells Claude why it should continue.
+	 * Required when decision is "block". Tells the agent why it should continue.
 	 */
 	readonly reason: string;
 }

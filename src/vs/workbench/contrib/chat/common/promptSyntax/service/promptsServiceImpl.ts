@@ -1056,6 +1056,8 @@ export class PromptsService extends Disposable implements IPromptsService {
 			return this.getPromptSlashCommandDiscoveryInfo(token);
 		} else if (type === PromptsType.instructions) {
 			return this.getInstructionsDiscoveryInfo(token);
+		} else if (type === PromptsType.hook) {
+			return this.getHookDiscoveryInfo(token);
 		}
 
 		return { type, files };
@@ -1278,6 +1280,70 @@ export class PromptsService extends Disposable implements IPromptsService {
 		}
 
 		return { type: PromptsType.instructions, files };
+	}
+
+	private async getHookDiscoveryInfo(token: CancellationToken): Promise<IPromptDiscoveryInfo> {
+		const files: IPromptFileDiscoveryResult[] = [];
+
+		const hookFiles = await this.listPromptFiles(PromptsType.hook, token);
+		for (const promptPath of hookFiles) {
+			const uri = promptPath.uri;
+			const storage = promptPath.storage;
+			const extensionId = promptPath.extension?.identifier?.value;
+			const name = basename(uri);
+
+			try {
+				// Try to parse the JSON to validate it
+				const content = await this.fileService.readFile(uri);
+				const json = JSON.parse(content.value.toString());
+
+				// Validate it's an object
+				if (!json || typeof json !== 'object') {
+					files.push({
+						uri,
+						storage,
+						status: 'skipped',
+						skipReason: 'parse-error',
+						errorMessage: 'Invalid hooks file: must be a JSON object',
+						name,
+						extensionId
+					});
+					continue;
+				}
+
+				// Validate version field for Copilot hooks.json format
+				const filename = basename(uri).toLowerCase();
+				if (filename === 'hooks.json' && json.version !== 1) {
+					files.push({
+						uri,
+						storage,
+						status: 'skipped',
+						skipReason: 'parse-error',
+						errorMessage: json.version === undefined
+							? 'Missing version field (expected: 1)'
+							: `Invalid version: ${json.version} (expected: 1)`,
+						name,
+						extensionId
+					});
+					continue;
+				}
+
+				// File is valid
+				files.push({ uri, storage, status: 'loaded', name, extensionId });
+			} catch (e) {
+				files.push({
+					uri,
+					storage,
+					status: 'skipped',
+					skipReason: 'parse-error',
+					errorMessage: e instanceof Error ? e.message : String(e),
+					name,
+					extensionId
+				});
+			}
+		}
+
+		return { type: PromptsType.hook, files };
 	}
 }
 
