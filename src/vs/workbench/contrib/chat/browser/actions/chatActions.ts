@@ -66,6 +66,7 @@ import { IChatEditorOptions } from '../widgetHosts/editor/chatEditor.js';
 import { ChatEditorInput, showClearEditingSessionConfirmation } from '../widgetHosts/editor/chatEditorInput.js';
 import { convertBufferToScreenshotVariable } from '../attachments/chatScreenshotContext.js';
 import { AgentSessionProviders } from '../agentSessions/agentSessions.js';
+import { ChatSessionPosition } from '../chatSessions/chatSessions.contribution.js';
 
 export const CHAT_CATEGORY = localize2('chat.category', 'Chat');
 
@@ -191,6 +192,15 @@ export const CHAT_CONFIG_MENU_ID = new MenuId('workbench.chat.menu.config');
 
 const OPEN_CHAT_QUOTA_EXCEEDED_DIALOG = 'workbench.action.chat.openQuotaExceededDialog';
 
+// Map target parameter values to AgentSessionProviders enum
+const TARGET_TO_PROVIDER_MAP: Record<string, AgentSessionProviders> = {
+	'local': AgentSessionProviders.Local,
+	'background': AgentSessionProviders.Background,
+	'cloud': AgentSessionProviders.Cloud,
+	'claude': AgentSessionProviders.Claude,
+	'codex': AgentSessionProviders.Codex
+};
+
 abstract class OpenChatGlobalAction extends Action2 {
 	constructor(overrides: Pick<ICommandPaletteOptions, 'keybinding' | 'title' | 'id' | 'menu'>, private readonly mode?: IChatMode) {
 		super({
@@ -239,26 +249,19 @@ abstract class OpenChatGlobalAction extends Action2 {
 
 		// Handle target parameter to set session target dropdown
 		if (opts?.target) {
-			// Map the target string to AgentSessionProviders enum
-			const targetMap: Record<string, AgentSessionProviders> = {
-				'local': AgentSessionProviders.Local,
-				'background': AgentSessionProviders.Background,
-				'cloud': AgentSessionProviders.Cloud,
-				'claude': AgentSessionProviders.Claude,
-				'codex': AgentSessionProviders.Codex
-			};
-
-			const targetProvider = targetMap[opts.target];
+			const targetProvider = TARGET_TO_PROVIDER_MAP[opts.target];
 			if (targetProvider) {
 				// If the chat is empty and currently local, replace it with a new session of the specified type
 				const isEmpty = chatWidget.isEmpty();
 				const viewModel = chatWidget.viewModel;
-				const isLocalSession = viewModel?.sessionResource.scheme === Schemas.vscodeLocalChatSession ||
-					viewModel?.sessionResource.scheme === Schemas.vscodeChatEditor;
+				const isLocalSession = viewModel && (
+					viewModel.sessionResource.scheme === Schemas.vscodeLocalChatSession ||
+					viewModel.sessionResource.scheme === Schemas.vscodeChatEditor
+				);
 
 				if (isEmpty && isLocalSession && targetProvider !== AgentSessionProviders.Local) {
 					// Create a new session with the specified target type
-					const position = chatWidget.location === ChatAgentLocation.Panel ? 'sidebar' : 'editor';
+					const position = chatWidget.location === ChatAgentLocation.Panel ? ChatSessionPosition.Sidebar : ChatSessionPosition.Editor;
 					await commandService.executeCommand(`workbench.action.chat.openNewChatSessionInPlace.${targetProvider}`, position);
 					// Get the updated widget after session change
 					chatWidget = widgetService.lastFocusedWidget ?? chatWidget;
