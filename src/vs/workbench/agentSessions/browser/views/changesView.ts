@@ -327,7 +327,9 @@ export class ChangesViewPane extends ViewPane {
 
 		// Calculate stats from combined entries
 		const topLevelStats = derived(reader => {
-			const entries = combinedEntriesObs.read(reader);
+			const editEntries = editSessionEntriesObs.read(reader);
+			const sessionFiles = sessionFilesObs.read(reader);
+			const entries = [...editEntries, ...sessionFiles];
 
 			let added = 0, removed = 0;
 
@@ -339,8 +341,9 @@ export class ChangesViewPane extends ViewPane {
 			}
 
 			const files = entries.length;
+			const isSessionMenu = editEntries.length === 0 && sessionFiles.length > 0;
 
-			return { files, added, removed };
+			return { files, added, removed, isSessionMenu };
 		});
 
 		// Setup context keys and actions toolbar
@@ -374,22 +377,25 @@ export class ChangesViewPane extends ViewPane {
 				return files > 0;
 			}));
 
-			this.renderDisposables.add(scopedInstantiationService.createInstance(
-				MenuWorkbenchButtonBar,
-				this.actionsContainer,
-				MenuId.ChatEditingWidgetToolbar,
-				{
-					telemetrySource: 'changesView',
-					small: true,
-					menuOptions: { shouldForwardArgs: true },
-					buttonConfigProvider: (action) => {
-						if (action.id === 'chatEditing.viewChanges' || action.id === 'chatEditing.viewPreviousEdits' || action.id === 'chatEditing.viewAllSessionChanges') {
-							return { showIcon: true, showLabel: false, isSecondary: true };
+			this.renderDisposables.add(autorun(reader => {
+				const { isSessionMenu } = topLevelStats.read(reader);
+				reader.store.add(scopedInstantiationService.createInstance(
+					MenuWorkbenchButtonBar,
+					this.actionsContainer!,
+					isSessionMenu ? MenuId.ChatEditingSessionChangesToolbar : MenuId.ChatEditingWidgetToolbar,
+					{
+						telemetrySource: 'changesView',
+						small: true,
+						menuOptions: { shouldForwardArgs: true },
+						buttonConfigProvider: (action) => {
+							if (action.id === 'chatEditing.viewChanges' || action.id === 'chatEditing.viewPreviousEdits' || action.id === 'chatEditing.viewAllSessionChanges') {
+								return { showIcon: true, showLabel: false, isSecondary: true };
+							}
+							return undefined;
 						}
-						return undefined;
 					}
-				}
-			));
+				));
+			}));
 		}
 
 		// Update visibility based on entries
