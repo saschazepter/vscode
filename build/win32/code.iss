@@ -1326,6 +1326,12 @@ var
 begin
   Result := True;
 
+  // Create a mutex early during background updates only to prevent app launch
+  // while the update is in progress.
+  if IsBackgroundUpdate() then begin
+    CreateMutex('{#AppMutex}-updating');
+  end;
+
   #if "user" == InstallTarget
     if not WizardSilent() and IsAdmin() then begin
       if MsgBox('This User Installer is not meant to be run as an Administrator. If you would like to install VS Code for all users in this system, download the System Installer instead from https://code.visualstudio.com. Are you sure you want to continue?', mbError, MB_OKCANCEL) = IDCANCEL then begin
