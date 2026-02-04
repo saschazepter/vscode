@@ -5,7 +5,7 @@
 
 import * as electron from 'electron';
 import { app, powerMonitor, protocol, session, Session, systemPreferences, WebFrameMain } from 'electron';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import { addUNCHostToAllowlist, disableUNCAccessRestrictions } from '../../base/node/unc.js';
 import { validatedIpcMain } from '../../base/parts/ipc/electron-main/ipcMain.js';
 import { hostname, release } from 'os';
@@ -1475,7 +1475,7 @@ export class CodeApplication extends Disposable {
 				// The app path points to the resources folder, we need the .app bundle
 				const appBundlePath = appPath.replace(/\/Contents\/Resources\/app(\.asar)?$/, '');
 				this.logService.info('Removing quarantine flag from:', appBundlePath);
-				execSync(`xattr -dr com.apple.quarantine "${appBundlePath}"`, { encoding: 'utf8' });
+				execFileSync('xattr', ['-dr', 'com.apple.quarantine', appBundlePath], { encoding: 'utf8' });
 				this.logService.info('Successfully removed quarantine flag');
 			} catch (quarantineError) {
 				// Non-fatal: the app might not have a quarantine flag, or we might not have permission
