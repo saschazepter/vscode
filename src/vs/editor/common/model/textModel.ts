@@ -464,7 +464,7 @@ export class TextModel extends Disposable implements model.ITextModel, IDecorati
 		return this._buffer;
 	}
 
-	private _emitContentChangedEvent(rawChange: ModelRawContentChangedEvent, change: IModelContentChangedEvent): void {
+	private _emitContentChangedEvent(rawChange: ModelRawContentChangedEvent, change: IModelContentChangedEvent, resultingSelection: Selection[] | null = null): void {
 		if (this.__isDisposing) {
 			// Do not confuse listeners by emitting any event after disposing
 			return;
@@ -473,6 +473,10 @@ export class TextModel extends Disposable implements model.ITextModel, IDecorati
 		this._bracketPairs.handleDidChangeContent(change);
 		this._fontTokenDecorationsProvider.handleDidChangeContent(change);
 		const contentChangeEvent = new InternalModelContentChangeEvent(rawChange, change);
+		// Set resultingSelection early so viewModels can use it for cursor positioning
+		if (resultingSelection) {
+			contentChangeEvent.rawContentChangedEvent.resultingSelection = resultingSelection;
+		}
 		this._onDidChangeContentOrInjectedText(contentChangeEvent);
 		this._eventEmitter.fire(contentChangeEvent);
 	}
@@ -1464,7 +1468,8 @@ export class TextModel extends Disposable implements model.ITextModel, IDecorati
 			this._eventEmitter.beginDeferredEmit();
 			this._isUndoing = isUndoing;
 			this._isRedoing = isRedoing;
-			this.applyEdits(edits, false);
+			const operations = this._validateEditOperations(edits);
+			this._doApplyEdits(operations, false, EditSources.applyEdits(), resultingSelection);
 			this.setEOL(eol);
 			this._overwriteAlternativeVersionId(resultingAlternativeVersionId);
 		} finally {
@@ -1495,7 +1500,7 @@ export class TextModel extends Disposable implements model.ITextModel, IDecorati
 		}
 	}
 
-	private _doApplyEdits(rawOperations: model.ValidAnnotatedEditOperation[], computeUndoEdits: boolean, reason: TextModelEditSource): void | model.IValidEditOperation[] {
+	private _doApplyEdits(rawOperations: model.ValidAnnotatedEditOperation[], computeUndoEdits: boolean, reason: TextModelEditSource, resultingSelection: Selection[] | null = null): void | model.IValidEditOperation[] {
 
 		const oldLineCount = this._buffer.getLineCount();
 		const result = this._buffer.applyEdits(rawOperations, this._options.trimAutoWhitespace, computeUndoEdits);
@@ -1615,7 +1620,8 @@ export class TextModel extends Disposable implements model.ITextModel, IDecorati
 					isFlush: false,
 					detailedReasons: [reason],
 					detailedReasonsChangeLengths: [contentChanges.length],
-				}
+				},
+				resultingSelection
 			);
 		}
 
