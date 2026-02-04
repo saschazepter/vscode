@@ -204,6 +204,7 @@ export const OPTIONS: OptionDescriptions<Required<NativeParsedArgs>> = {
 	'enable-rdp-display-tracking': { type: 'boolean' },
 	'disable-layout-restore': { type: 'boolean' },
 	'disable-experiments': { type: 'boolean' },
+	'skip-apps-folder-prompt': { type: 'boolean' },
 
 	// chromium flags
 	'no-proxy-server': { type: 'boolean' },

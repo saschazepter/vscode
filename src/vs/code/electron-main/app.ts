@@ -3,7 +3,9 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import * as electron from 'electron';
 import { app, powerMonitor, protocol, session, Session, systemPreferences, WebFrameMain } from 'electron';
+import { execSync } from 'child_process';
 import { addUNCHostToAllowlist, disableUNCAccessRestrictions } from '../../base/node/unc.js';
 import { validatedIpcMain } from '../../base/parts/ipc/electron-main/ipcMain.js';
 import { hostname, release } from 'os';
@@ -15,7 +17,7 @@ import { getPathLabel } from '../../base/common/labels.js';
 import { Disposable, DisposableStore } from '../../base/common/lifecycle.js';
 import { Schemas, VSCODE_AUTHORITY } from '../../base/common/network.js';
 import { join, posix } from '../../base/common/path.js';
-import { IProcessEnvironment, isLinux, isLinuxSnap, isMacintosh, isWindows, OS } from '../../base/common/platform.js';
+import { IProcessEnvironment, isLinux, isLinuxSnap, isMacintosh, isWindows, OS, isCI } from '../../base/common/platform.js';
 import { assertType } from '../../base/common/types.js';
 import { URI } from '../../base/common/uri.js';
 import { generateUuid } from '../../base/common/uuid.js';
@@ -555,6 +557,16 @@ export class CodeApplication extends Disposable {
 			}
 		} catch (error) {
 			this.logService.error(error);
+		}
+
+		// macOS: Offer to move the app to the Applications folder if it's not there
+		// This helps ensure auto-updates work properly and avoids quarantine issues
+		// See: https://github.com/microsoft/vscode/issues/213909
+		if (isMacintosh) {
+			const moved = await this.handleMoveToApplicationsFolder();
+			if (moved) {
+				return; // The app will restart after moving
+			}
 		}
 
 		// Main process server (electron IPC based)
@@ -1372,6 +1384,147 @@ export class CodeApplication extends Disposable {
 			forceProfile,
 			forceTempProfile
 		});
+	}
+
+	private static readonly SKIP_MOVE_TO_APPLICATIONS_FOLDER_STATE_KEY = 'skipMoveToApplicationsFolder';
+
+	/**
+	 * Checks if the application is running from the Applications folder on macOS.
+	 * If not, prompts the user to move it there to ensure proper auto-update functionality.
+	 *
+	 * @returns `true` if the app was moved and will restart, `false` otherwise
+	 */
+	private async handleMoveToApplicationsFolder(): Promise<boolean> {
+		// Only relevant for macOS
+		if (!isMacintosh) {
+			return false;
+		}
+
+		// Skip if already in Applications folder
+		if (app.isInApplicationsFolder()) {
+			this.logService.trace('App is already in Applications folder');
+			return false;
+		}
+
+		// Skip if user passed --skip-apps-folder-prompt
+		if (this.environmentMainService.args['skip-apps-folder-prompt']) {
+			this.logService.trace('Skipping Applications folder check due to --skip-apps-folder-prompt flag');
+			return false;
+		}
+
+		// Skip if this is an extension development instance or testing
+		if (this.environmentMainService.isExtensionDevelopment || this.environmentMainService.args['enable-smoke-test-driver']) {
+			this.logService.trace('Skipping Applications folder check for development/testing');
+			return false;
+		}
+
+		// Skip if launched from CLI (user knows what they're doing)
+		if (isLaunchedFromCli(process.env)) {
+			this.logService.trace('Skipping Applications folder check because app was launched from CLI');
+			return false;
+		}
+
+		// Skip if running in portable mode
+		if (process.env['VSCODE_PORTABLE']) {
+			this.logService.trace('Skipping Applications folder check for portable mode');
+			return false;
+		}
+
+		// Skip if running in CI environment
+		if (isCI) {
+			this.logService.trace('Skipping Applications folder check in CI environment');
+			return false;
+		}
+
+		// Skip if user previously chose not to be asked again
+		if (this.stateService.getItem<boolean>(CodeApplication.SKIP_MOVE_TO_APPLICATIONS_FOLDER_STATE_KEY, false)) {
+			this.logService.trace('Skipping Applications folder check due to user preference');
+			return false;
+		}
+
+		this.logService.info('App is not in Applications folder, prompting user to move');
+
+		const { response, checkboxChecked } = await electron.dialog.showMessageBox({
+			type: 'question',
+			buttons: [
+				localize({ key: 'move', comment: ['&& denotes a mnemonic'] }, "&&Move to Applications"),
+				localize({ key: 'dontMove', comment: ['&& denotes a mnemonic'] }, "&&Keep Current Location")
+			],
+			defaultId: 0,
+			cancelId: 1,
+			message: localize('moveToApplications', "Move {0} to the Applications Folder?", this.productService.nameLong),
+			detail: localize('moveToApplicationsDetail', "{0} is currently not in the Applications folder. Moving it will enable automatic updates and is the recommended location for applications on macOS.", this.productService.nameLong),
+			checkboxLabel: localize('doNotAskAgain', "Don't ask again"),
+			checkboxChecked: false
+		});
+
+		// Remember "Don't ask again" preference
+		if (checkboxChecked) {
+			this.stateService.setItem(CodeApplication.SKIP_MOVE_TO_APPLICATIONS_FOLDER_STATE_KEY, true);
+		}
+
+		if (response === 0) {
+			// User chose to move
+			this.logService.info('User chose to move app to Applications folder');
+
+			// Remove quarantine flag before moving (while still in user-owned location)
+			// This ensures auto-updates will work after moving
+			// See: https://github.com/microsoft/vscode/issues/7426#issuecomment-425093469
+			try {
+				const appPath = app.getAppPath();
+				// The app path points to the resources folder, we need the .app bundle
+				const appBundlePath = appPath.replace(/\/Contents\/Resources\/app(\.asar)?$/, '');
+				this.logService.info('Removing quarantine flag from:', appBundlePath);
+				execSync(`xattr -dr com.apple.quarantine "${appBundlePath}"`, { encoding: 'utf8' });
+				this.logService.info('Successfully removed quarantine flag');
+			} catch (quarantineError) {
+				// Non-fatal: the app might not have a quarantine flag, or we might not have permission
+				this.logService.warn('Could not remove quarantine flag (this is not fatal):', quarantineError);
+			}
+
+			try {
+				const moved = app.moveToApplicationsFolder({
+					conflictHandler: (conflictType) => {
+						// If there's an existing app, ask user what to do
+						if (conflictType === 'exists') {
+							const overwriteResult = electron.dialog.showMessageBoxSync({
+								type: 'warning',
+								buttons: [
+									localize({ key: 'replace', comment: ['&& denotes a mnemonic'] }, "&&Replace Existing"),
+									localize({ key: 'cancelReplace', comment: ['&& denotes a mnemonic'] }, "&&Cancel")
+								],
+								defaultId: 0,
+								cancelId: 1,
+								message: localize('appExistsInApplications', "{0} Already Exists in Applications", this.productService.nameLong),
+								detail: localize('appExistsInApplicationsDetail', "Would you like to replace the existing version in the Applications folder?")
+							});
+
+							return overwriteResult === 0;
+						}
+						return true;
+					}
+				});
+
+				if (moved) {
+					this.logService.info('App successfully moved to Applications folder, restarting...');
+					return true; // App will quit and relaunch
+				}
+			} catch (error) {
+				this.logService.error('Failed to move app to Applications folder:', error);
+
+				// Show error to user
+				electron.dialog.showMessageBoxSync({
+					type: 'error',
+					buttons: [localize('ok', "OK")],
+					message: localize('moveToApplicationsFailed', "Failed to Move to Applications"),
+					detail: localize('moveToApplicationsFailedDetail', "An error occurred while moving {0} to the Applications folder. You can try moving it manually.", this.productService.nameLong)
+				});
+			}
+		} else {
+			this.logService.info('User chose to keep current location');
+		}
+
+		return false;
 	}
 
 	private afterWindowOpen(instantiationService: IInstantiationService): void {
