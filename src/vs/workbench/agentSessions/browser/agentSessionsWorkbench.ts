@@ -574,6 +574,9 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 		mark('code/didStartWorkbench');
 		performance.measure('perf: workbench create & restore', 'code/didLoadWorkbenchMain', 'code/didStartWorkbench');
 
+		// Restore parts (open default view containers)
+		this.restoreParts();
+
 		// Set lifecycle phase to `Restored`
 		lifecycleService.phase = LifecyclePhase.Restored;
 
@@ -585,6 +588,25 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 			this._register(runWhenWindowIdle(mainWindow, () => lifecycleService.phase = LifecyclePhase.Eventually, 2500));
 		}, 2500));
 		eventuallyPhaseScheduler.schedule();
+	}
+
+	private restoreParts(): void {
+		// Open default view containers for each visible part
+		const partsToRestore: { location: ViewContainerLocation; visible: boolean }[] = [
+			{ location: ViewContainerLocation.Sidebar, visible: this.partVisibility.sidebar },
+			{ location: ViewContainerLocation.Panel, visible: this.partVisibility.panel },
+			{ location: ViewContainerLocation.AuxiliaryBar, visible: this.partVisibility.auxiliaryBar },
+			{ location: ViewContainerLocation.ChatBar, visible: this.partVisibility.chatBar },
+		];
+
+		for (const { location, visible } of partsToRestore) {
+			if (visible) {
+				const defaultViewContainer = this.viewDescriptorService.getDefaultViewContainer(location);
+				if (defaultViewContainer) {
+					this.paneCompositeService.openPaneComposite(defaultViewContainer.id, location);
+				}
+			}
+		}
 	}
 
 	//#endregion

@@ -333,9 +333,35 @@ When modifying the Agent Sessions layout:
 5. `renderWorkbench()` — Create DOM, create parts, set up notifications
 6. `createWorkbenchLayout()` — Build the grid structure
 7. `layout()` — Perform initial layout
-8. `restore()` — Set lifecycle to `Restored`, then `Eventually`
+8. `restore()` — Restore parts (open default view containers), set lifecycle to `Restored`, then `Eventually`
 
-### 11.2 State Tracking
+### 11.2 Part Restoration
+
+During the `restore()` phase, `restoreParts()` is called to open the default view container for each visible part:
+
+```typescript
+private restoreParts(): void {
+    const partsToRestore = [
+        { location: ViewContainerLocation.Sidebar, visible: this.partVisibility.sidebar },
+        { location: ViewContainerLocation.Panel, visible: this.partVisibility.panel },
+        { location: ViewContainerLocation.AuxiliaryBar, visible: this.partVisibility.auxiliaryBar },
+        { location: ViewContainerLocation.ChatBar, visible: this.partVisibility.chatBar },
+    ];
+
+    for (const { location, visible } of partsToRestore) {
+        if (visible) {
+            const defaultViewContainer = this.viewDescriptorService.getDefaultViewContainer(location);
+            if (defaultViewContainer) {
+                this.paneCompositeService.openPaneComposite(defaultViewContainer.id, location);
+            }
+        }
+    }
+}
+```
+
+This ensures that when a part is visible, its default view container is automatically opened and displayed.
+
+### 11.3 State Tracking
 
 ```typescript
 interface IPartVisibilityState {
@@ -363,6 +389,7 @@ interface IPartVisibilityState {
 
 | Date | Change |
 |------|--------|
+| 2026-02-04 | Added `restoreParts()` to automatically open default view containers for visible parts during startup |
 | 2026-02-04 | Restored Editor part; Layout order is now Sidebar \| Chat Bar \| Editor \| Auxiliary Bar |
 | 2026-02-04 | Removed Editor part; Chat Bar now takes max width; Layout order changed to Sidebar \| Auxiliary Bar \| Chat Bar |
 | 2026-02-04 | Added agent session specific parts (AgentSessionSidebarPart, AgentSessionAuxiliaryBarPart, AgentSessionPanelPart) in `agentSessions/browser/parts/`; PaneCompositePartService now selects parts based on isAgentSessionsWorkspace |
