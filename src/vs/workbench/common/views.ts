@@ -45,6 +45,24 @@ export const enum ViewContainerLocation {
 
 export const ViewContainerLocations = [ViewContainerLocation.Sidebar, ViewContainerLocation.Panel, ViewContainerLocation.AuxiliaryBar, ViewContainerLocation.ChatBar];
 
+/**
+ * Specifies in which layout a view or view container should be visible.
+ */
+export const enum LayoutVisibility {
+	/**
+	 * Visible only in the main workbench (default).
+	 */
+	Workbench = 1,
+	/**
+	 * Visible only in agent sessions workbench.
+	 */
+	AgentSessions = 2,
+	/**
+	 * Visible in both main workbench and agent sessions workbench.
+	 */
+	Both = 3,
+}
+
 export function ViewContainerLocationToString(viewContainerLocation: ViewContainerLocation) {
 	switch (viewContainerLocation) {
 		case ViewContainerLocation.Sidebar: return 'sidebar';
@@ -124,10 +142,10 @@ export interface IViewContainerDescriptor {
 	readonly rejectAddedViews?: boolean;
 
 	/**
-	 * If true, this view container will be shown in agent sessions workspace.
-	 * Defaults to false.
+	 * Specifies in which layout this view container should be visible.
+	 * Defaults to LayoutVisibility.Workbench (main workbench only).
 	 */
-	readonly showInAgentSessions?: boolean;
+	readonly layoutVisibility?: LayoutVisibility;
 
 	requestedIndex?: number;
 }
@@ -311,10 +329,10 @@ export interface IViewDescriptor {
 	readonly accessibilityHelpContent?: MarkdownString;
 
 	/**
-	 * If true, this view will be shown in agent sessions workspace.
-	 * Defaults to false.
+	 * Specifies in which layout this view should be visible.
+	 * Defaults to LayoutVisibility.Workbench (main workbench only).
 	 */
-	readonly showInAgentSessions?: boolean;
+	readonly layoutVisibility?: LayoutVisibility;
 }
 
 export interface ICustomViewDescriptor extends IViewDescriptor {
