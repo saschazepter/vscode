@@ -1642,11 +1642,26 @@ export default tseslint.config(
 						'vs/editor/contrib/*/~',
 						'vs/workbench/~',
 						'vs/workbench/services/*/~',
+						'vs/workbench/agentSessions/~',
 						'assert',
 						{
 							'when': 'test',
 							'pattern': 'vs/workbench/contrib/*/~'
 						} // TODO@layers
+					]
+				},
+				{
+					'target': 'src/vs/workbench/agentSessions/~',
+					'restrictions': [
+						'vs/base/~',
+						'vs/base/parts/*/~',
+						'vs/platform/*/~',
+						'vs/editor/~',
+						'vs/editor/contrib/*/~',
+						'vs/workbench/~',
+						'vs/workbench/browser/**',
+						'vs/workbench/services/*/~',
+						'vs/workbench/agentSessions/~'
 					]
 				},
 				{

@@ -67,6 +67,7 @@ import { AccountPolicyService } from '../services/policies/common/accountPolicyS
 import { MultiplexPolicyService } from '../services/policies/common/multiplexPolicyService.js';
 import { WorkbenchModeService } from '../services/layout/browser/workbenchModeService.js';
 import { IWorkbenchModeService } from '../services/layout/common/workbenchModeService.js';
+import { AgentSessionsWorkbench } from '../agentSessions/browser/agentSessionsWorkbench.js';
 
 export class DesktopMain extends Disposable {
 
@@ -128,14 +129,14 @@ export class DesktopMain extends Disposable {
 		this.applyWindowZoomLevel(services.configurationService);
 
 		// Create Workbench - use AgentSessionsWorkbench for agent sessions workspace
-		const workbench = /* services.configurationService.getWorkspace().isAgentSessionsWorkspace
+		const workbench = services.configurationService.getWorkspace().isAgentSessionsWorkspace
 			? new AgentSessionsWorkbench(mainWindow.document.body, {
 				extraClasses: this.getExtraClasses(),
 			}, services.serviceCollection, services.logService)
-			:  */new Workbench(mainWindow.document.body, {
-			extraClasses: this.getExtraClasses(),
-			resetLayout: this.configuration['disable-layout-restore'] === true
-		}, services.serviceCollection, services.logService);
+			: new Workbench(mainWindow.document.body, {
+				extraClasses: this.getExtraClasses(),
+				resetLayout: this.configuration['disable-layout-restore'] === true
+			}, services.serviceCollection, services.logService);
 
 		// Listeners
 		this.registerListeners(workbench, services.storageService);
@@ -167,7 +168,7 @@ export class DesktopMain extends Disposable {
 		return [];
 	}
 
-	private registerListeners(workbench: Workbench, storageService: NativeWorkbenchStorageService): void {
+	private registerListeners(workbench: Workbench | AgentSessionsWorkbench, storageService: NativeWorkbenchStorageService): void {
 
 		// Workbench Lifecycle
 		this._register(workbench.onWillShutdown(event => event.join(storageService.close(), { id: 'join.closeStorage', label: localize('join.closeStorage', "Saving UI state") })));

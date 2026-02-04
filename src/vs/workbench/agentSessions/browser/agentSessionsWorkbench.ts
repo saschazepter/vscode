@@ -1,0 +1,1263 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+import '../../browser/style.js';
+import { Disposable, DisposableStore, IDisposable, toDisposable } from '../../../base/common/lifecycle.js';
+import { Emitter, Event, setGlobalLeakWarningThreshold } from '../../../base/common/event.js';
+import { getActiveDocument, getActiveElement, getClientArea, getWindowId, getWindows, IDimension, isAncestorUsingFlowTo, size, Dimension, runWhenWindowIdle } from '../../../base/browser/dom.js';
+import { DeferredPromise, RunOnceScheduler } from '../../../base/common/async.js';
+import { isFullscreen, onDidChangeFullscreen, isChrome, isFirefox, isSafari } from '../../../base/browser/browser.js';
+import { mark } from '../../../base/common/performance.js';
+import { onUnexpectedError, setUnexpectedErrorHandler } from '../../../base/common/errors.js';
+import { isWindows, isLinux, isWeb, isNative, isMacintosh } from '../../../base/common/platform.js';
+import { Parts, Position, PanelAlignment, IWorkbenchLayoutService, SINGLE_WINDOW_PARTS, MULTI_WINDOW_PARTS, IPartVisibilityChangeEvent, positionToString } from '../../services/layout/browser/layoutService.js';
+import { ILayoutOffsetInfo } from '../../../platform/layout/browser/layoutService.js';
+import { Part } from '../../browser/part.js';
+import { Direction, ISerializableView, ISerializedGrid, ISerializedLeafNode, ISerializedNode, IViewSize, Orientation, SerializableGrid } from '../../../base/browser/ui/grid/grid.js';
+import { IEditorGroupsService } from '../../services/editor/common/editorGroupsService.js';
+import { IPaneCompositePartService } from '../../services/panecomposite/browser/panecomposite.js';
+import { ViewContainerLocation } from '../../common/views.js';
+import { ILogService } from '../../../platform/log/common/log.js';
+import { IInstantiationService, ServicesAccessor } from '../../../platform/instantiation/common/instantiation.js';
+import { ITitleService } from '../../services/title/browser/titleService.js';
+import { mainWindow, CodeWindow } from '../../../base/browser/window.js';
+import { coalesce } from '../../../base/common/arrays.js';
+import { ServiceCollection } from '../../../platform/instantiation/common/serviceCollection.js';
+import { InstantiationService } from '../../../platform/instantiation/common/instantiationService.js';
+import { getSingletonServiceDescriptors } from '../../../platform/instantiation/common/extensions.js';
+import { ILifecycleService, LifecyclePhase, WillShutdownEvent } from '../../services/lifecycle/common/lifecycle.js';
+import { IStorageService, WillSaveStateReason, StorageScope, StorageTarget } from '../../../platform/storage/common/storage.js';
+import { IConfigurationChangeEvent, IConfigurationService } from '../../../platform/configuration/common/configuration.js';
+import { IHostService } from '../../services/host/browser/host.js';
+import { IDialogService } from '../../../platform/dialogs/common/dialogs.js';
+import { INotificationService } from '../../../platform/notification/common/notification.js';
+import { NotificationService } from '../../services/notification/common/notificationService.js';
+import { IHoverService, WorkbenchHoverDelegate } from '../../../platform/hover/browser/hover.js';
+import { setHoverDelegateFactory } from '../../../base/browser/ui/hover/hoverDelegateFactory.js';
+import { setBaseLayerHoverDelegate } from '../../../base/browser/ui/hover/hoverDelegate2.js';
+import { Registry } from '../../../platform/registry/common/platform.js';
+import { IWorkbenchContributionsRegistry, Extensions as WorkbenchExtensions } from '../../common/contributions.js';
+import { IEditorFactoryRegistry, EditorExtensions } from '../../common/editor.js';
+import { setARIAContainer } from '../../../base/browser/ui/aria/aria.js';
+import { FontMeasurements } from '../../../editor/browser/config/fontMeasurements.js';
+import { createBareFontInfoFromRawSettings } from '../../../editor/common/config/fontInfoFromSettings.js';
+import { toErrorMessage } from '../../../base/common/errorMessage.js';
+import { WorkbenchContextKeysHandler } from '../../browser/contextkeys.js';
+import { PixelRatio } from '../../../base/browser/pixelRatio.js';
+import { AccessibilityProgressSignalScheduler } from '../../../platform/accessibilitySignal/browser/progressAccessibilitySignalScheduler.js';
+import { setProgressAccessibilitySignalScheduler } from '../../../base/browser/ui/progressbar/progressAccessibilitySignal.js';
+import { AccessibleViewRegistry } from '../../../platform/accessibility/browser/accessibleViewRegistry.js';
+import { NotificationAccessibleView } from '../../browser/parts/notifications/notificationAccessibleView.js';
+import { NotificationsCenter } from '../../browser/parts/notifications/notificationsCenter.js';
+import { NotificationsAlerts } from '../../browser/parts/notifications/notificationsAlerts.js';
+import { NotificationsStatus } from '../../browser/parts/notifications/notificationsStatus.js';
+import { registerNotificationCommands } from '../../browser/parts/notifications/notificationsCommands.js';
+import { NotificationsToasts } from '../../browser/parts/notifications/notificationsToasts.js';
+import { IMarkdownRendererService } from '../../../platform/markdown/browser/markdownRenderer.js';
+import { EditorMarkdownCodeBlockRenderer } from '../../../editor/browser/widget/markdownRenderer/browser/editorMarkdownCodeBlockRenderer.js';
+
+//#region Workbench Options
+
+export interface IAgentSessionsWorkbenchOptions {
+	/**
+	 * Extra classes to be added to the workbench container.
+	 */
+	extraClasses?: string[];
+}
+
+//#endregion
+
+//#region Layout Classes
+
+enum LayoutClasses {
+	SIDEBAR_HIDDEN = 'nosidebar',
+	MAIN_EDITOR_AREA_HIDDEN = 'nomaineditorarea',
+	PANEL_HIDDEN = 'nopanel',
+	AUXILIARYBAR_HIDDEN = 'noauxiliarybar',
+	FULLSCREEN = 'fullscreen',
+	MAXIMIZED = 'maximized'
+}
+
+//#endregion
+
+//#region Part Visibility State
+
+interface IPartVisibilityState {
+	sidebar: boolean;
+	auxiliaryBar: boolean;
+	editor: boolean;
+	panel: boolean;
+}
+
+//#endregion
+
+export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayoutService {
+
+	declare readonly _serviceBrand: undefined;
+
+	//#region Lifecycle Events
+
+	private readonly _onWillShutdown = this._register(new Emitter<WillShutdownEvent>());
+	readonly onWillShutdown = this._onWillShutdown.event;
+
+	private readonly _onDidShutdown = this._register(new Emitter<void>());
+	readonly onDidShutdown = this._onDidShutdown.event;
+
+	//#endregion
+
+	//#region Events
+
+	private readonly _onDidChangeZenMode = this._register(new Emitter<boolean>());
+	readonly onDidChangeZenMode = this._onDidChangeZenMode.event;
+
+	private readonly _onDidChangeMainEditorCenteredLayout = this._register(new Emitter<boolean>());
+	readonly onDidChangeMainEditorCenteredLayout = this._onDidChangeMainEditorCenteredLayout.event;
+
+	private readonly _onDidChangePanelAlignment = this._register(new Emitter<PanelAlignment>());
+	readonly onDidChangePanelAlignment = this._onDidChangePanelAlignment.event;
+
+	private readonly _onDidChangeWindowMaximized = this._register(new Emitter<{ windowId: number; maximized: boolean }>());
+	readonly onDidChangeWindowMaximized = this._onDidChangeWindowMaximized.event;
+
+	private readonly _onDidChangePanelPosition = this._register(new Emitter<string>());
+	readonly onDidChangePanelPosition = this._onDidChangePanelPosition.event;
+
+	private readonly _onDidChangePartVisibility = this._register(new Emitter<IPartVisibilityChangeEvent>());
+	readonly onDidChangePartVisibility = this._onDidChangePartVisibility.event;
+
+	private readonly _onDidChangeNotificationsVisibility = this._register(new Emitter<boolean>());
+	readonly onDidChangeNotificationsVisibility = this._onDidChangeNotificationsVisibility.event;
+
+	private readonly _onDidChangeAuxiliaryBarMaximized = this._register(new Emitter<void>());
+	readonly onDidChangeAuxiliaryBarMaximized = this._onDidChangeAuxiliaryBarMaximized.event;
+
+	private readonly _onDidLayoutMainContainer = this._register(new Emitter<IDimension>());
+	readonly onDidLayoutMainContainer = this._onDidLayoutMainContainer.event;
+
+	private readonly _onDidLayoutActiveContainer = this._register(new Emitter<IDimension>());
+	readonly onDidLayoutActiveContainer = this._onDidLayoutActiveContainer.event;
+
+	private readonly _onDidLayoutContainer = this._register(new Emitter<{ container: HTMLElement; dimension: IDimension }>());
+	readonly onDidLayoutContainer = this._onDidLayoutContainer.event;
+
+	private readonly _onDidAddContainer = this._register(new Emitter<{ container: HTMLElement; disposables: DisposableStore }>());
+	readonly onDidAddContainer = this._onDidAddContainer.event;
+
+	private readonly _onDidChangeActiveContainer = this._register(new Emitter<void>());
+	readonly onDidChangeActiveContainer = this._onDidChangeActiveContainer.event;
+
+	//#endregion
+
+	//#region Properties
+
+	readonly mainContainer = document.createElement('div');
+
+	get activeContainer(): HTMLElement {
+		return this.getContainerFromDocument(getActiveDocument());
+	}
+
+	get containers(): Iterable<HTMLElement> {
+		const containers: HTMLElement[] = [];
+		for (const { window } of getWindows()) {
+			containers.push(this.getContainerFromDocument(window.document));
+		}
+		return containers;
+	}
+
+	private getContainerFromDocument(targetDocument: Document): HTMLElement {
+		if (targetDocument === this.mainContainer.ownerDocument) {
+			return this.mainContainer;
+		} else {
+			// eslint-disable-next-line no-restricted-syntax
+			return targetDocument.body.getElementsByClassName('monaco-workbench')[0] as HTMLElement;
+		}
+	}
+
+	private _mainContainerDimension!: IDimension;
+	get mainContainerDimension(): IDimension { return this._mainContainerDimension; }
+
+	get activeContainerDimension(): IDimension {
+		return this.getContainerDimension(this.activeContainer);
+	}
+
+	private getContainerDimension(container: HTMLElement): IDimension {
+		if (container === this.mainContainer) {
+			return this.mainContainerDimension;
+		} else {
+			return getClientArea(container);
+		}
+	}
+
+	get mainContainerOffset(): ILayoutOffsetInfo {
+		return this.computeContainerOffset();
+	}
+
+	get activeContainerOffset(): ILayoutOffsetInfo {
+		return this.computeContainerOffset();
+	}
+
+	private computeContainerOffset(): ILayoutOffsetInfo {
+		let top = 0;
+		let quickPickTop = 0;
+
+		if (this.isVisible(Parts.TITLEBAR_PART, mainWindow)) {
+			top = this.getPart(Parts.TITLEBAR_PART).maximumHeight;
+			quickPickTop = top;
+		}
+
+		return { top, quickPickTop };
+	}
+
+	//#endregion
+
+	//#region State
+
+	private readonly parts = new Map<string, Part>();
+	private workbenchGrid!: SerializableGrid<ISerializableView>;
+
+	private titleBarPartView!: ISerializableView;
+	private sideBarPartView!: ISerializableView;
+	private panelPartView!: ISerializableView;
+	private auxiliaryBarPartView!: ISerializableView;
+	private editorPartView!: ISerializableView;
+
+	private readonly partVisibility: IPartVisibilityState = {
+		sidebar: true,
+		auxiliaryBar: true,
+		editor: true,
+		panel: true
+	};
+
+	private mainWindowFullscreen = false;
+	private readonly maximized = new Set<number>();
+
+	private readonly restoredPromise = new DeferredPromise<void>();
+	readonly whenRestored = this.restoredPromise.p;
+	private restored = false;
+
+	readonly openedDefaultEditors = false;
+
+	//#endregion
+
+	//#region Services
+
+	private editorGroupService!: IEditorGroupsService;
+	private paneCompositeService!: IPaneCompositePartService;
+
+	//#endregion
+
+	constructor(
+		protected readonly parent: HTMLElement,
+		private readonly options: IAgentSessionsWorkbenchOptions | undefined,
+		private readonly serviceCollection: ServiceCollection,
+		private readonly logService: ILogService
+	) {
+		super();
+
+		// Perf: measure workbench startup time
+		mark('code/willStartWorkbench');
+
+		this.registerErrorHandler(logService);
+	}
+
+	//#region Error Handling
+
+	private registerErrorHandler(logService: ILogService): void {
+		// Increase stack trace limit for better errors stacks
+		if (!isFirefox) {
+			Error.stackTraceLimit = 100;
+		}
+
+		// Listen on unhandled rejection events
+		// Note: intentionally not registered as disposable to handle
+		//       errors that can occur during shutdown phase.
+		mainWindow.addEventListener('unhandledrejection', (event) => {
+			// See https://developer.mozilla.org/en-US/docs/Web/API/PromiseRejectionEvent
+			onUnexpectedError(event.reason);
+
+			// Prevent the printing of this event to the console
+			event.preventDefault();
+		});
+
+		// Install handler for unexpected errors
+		setUnexpectedErrorHandler(error => this.handleUnexpectedError(error, logService));
+	}
+
+	private previousUnexpectedError: { message: string | undefined; time: number } = { message: undefined, time: 0 };
+	private handleUnexpectedError(error: unknown, logService: ILogService): void {
+		const message = toErrorMessage(error, true);
+		if (!message) {
+			return;
+		}
+
+		const now = Date.now();
+		if (message === this.previousUnexpectedError.message && now - this.previousUnexpectedError.time <= 1000) {
+			return; // Return if error message identical to previous and shorter than 1 second
+		}
+
+		this.previousUnexpectedError.time = now;
+		this.previousUnexpectedError.message = message;
+
+		// Log it
+		logService.error(message);
+	}
+
+	//#endregion
+
+	//#region Startup
+
+	startup(): IInstantiationService {
+		try {
+			// Configure emitter leak warning threshold
+			this._register(setGlobalLeakWarningThreshold(175));
+
+			// Services
+			const instantiationService = this.initServices(this.serviceCollection);
+
+			instantiationService.invokeFunction(accessor => {
+				const lifecycleService = accessor.get(ILifecycleService);
+				const storageService = accessor.get(IStorageService);
+				const configurationService = accessor.get(IConfigurationService);
+				const hostService = accessor.get(IHostService);
+				const hoverService = accessor.get(IHoverService);
+				const dialogService = accessor.get(IDialogService);
+				const notificationService = accessor.get(INotificationService) as NotificationService;
+				const markdownRendererService = accessor.get(IMarkdownRendererService);
+
+				// Set code block renderer for markdown rendering
+				markdownRendererService.setDefaultCodeBlockRenderer(instantiationService.createInstance(EditorMarkdownCodeBlockRenderer));
+
+				// Default Hover Delegate must be registered before creating any workbench/layout components
+				setHoverDelegateFactory((placement, enableInstantHover) => instantiationService.createInstance(WorkbenchHoverDelegate, placement, { instantHover: enableInstantHover }, {}));
+				setBaseLayerHoverDelegate(hoverService);
+
+				// Layout
+				this.initLayout(accessor);
+
+				// Registries - this creates and registers all parts
+				Registry.as<IWorkbenchContributionsRegistry>(WorkbenchExtensions.Workbench).start(accessor);
+				Registry.as<IEditorFactoryRegistry>(EditorExtensions.EditorFactory).start(accessor);
+
+				// Context Keys
+				this._register(instantiationService.createInstance(WorkbenchContextKeysHandler));
+
+				// Register Listeners
+				this.registerListeners(lifecycleService, storageService, configurationService, hostService, dialogService);
+
+				// Render Workbench
+				this.renderWorkbench(instantiationService, notificationService, storageService, configurationService);
+
+				// Workbench Layout
+				this.createWorkbenchLayout();
+
+				// Layout
+				this.layout();
+
+				// Restore
+				this.restore(lifecycleService);
+			});
+
+			return instantiationService;
+		} catch (error) {
+			onUnexpectedError(error);
+
+			throw error; // rethrow because this is a critical issue we cannot handle properly here
+		}
+	}
+
+	private initServices(serviceCollection: ServiceCollection): IInstantiationService {
+		// Layout Service
+		serviceCollection.set(IWorkbenchLayoutService, this);
+
+		// All Contributed Services
+		const contributedServices = getSingletonServiceDescriptors();
+		for (const [id, descriptor] of contributedServices) {
+			serviceCollection.set(id, descriptor);
+		}
+
+		const instantiationService = new InstantiationService(serviceCollection, true);
+
+		// Wrap up
+		instantiationService.invokeFunction(accessor => {
+			const lifecycleService = accessor.get(ILifecycleService);
+
+			// Signal to lifecycle that services are set
+			lifecycleService.phase = LifecyclePhase.Ready;
+		});
+
+		return instantiationService;
+	}
+
+	private registerListeners(lifecycleService: ILifecycleService, storageService: IStorageService, configurationService: IConfigurationService, hostService: IHostService, dialogService: IDialogService): void {
+		// Configuration changes
+		this._register(configurationService.onDidChangeConfiguration(e => this.updateFontAliasing(e, configurationService)));
+
+		// Font Info
+		if (isNative) {
+			this._register(storageService.onWillSaveState(e => {
+				if (e.reason === WillSaveStateReason.SHUTDOWN) {
+					this.storeFontInfo(storageService);
+				}
+			}));
+		} else {
+			this._register(lifecycleService.onWillShutdown(() => this.storeFontInfo(storageService)));
+		}
+
+		// Lifecycle
+		this._register(lifecycleService.onWillShutdown(event => this._onWillShutdown.fire(event)));
+		this._register(lifecycleService.onDidShutdown(() => {
+			this._onDidShutdown.fire();
+			this.dispose();
+		}));
+
+		// Flush storage on window focus loss
+		this._register(hostService.onDidChangeFocus(focus => {
+			if (!focus) {
+				storageService.flush();
+			}
+		}));
+
+		// Dialogs showing/hiding
+		this._register(dialogService.onWillShowDialog(() => this.mainContainer.classList.add('modal-dialog-visible')));
+		this._register(dialogService.onDidShowDialog(() => this.mainContainer.classList.remove('modal-dialog-visible')));
+	}
+
+	//#region Font Aliasing and Caching
+
+	private fontAliasing: 'default' | 'antialiased' | 'none' | 'auto' | undefined;
+	private updateFontAliasing(e: IConfigurationChangeEvent | undefined, configurationService: IConfigurationService) {
+		if (!isMacintosh) {
+			return; // macOS only
+		}
+
+		if (e && !e.affectsConfiguration('workbench.fontAliasing')) {
+			return;
+		}
+
+		const aliasing = configurationService.getValue<'default' | 'antialiased' | 'none' | 'auto'>('workbench.fontAliasing');
+		if (this.fontAliasing === aliasing) {
+			return;
+		}
+
+		this.fontAliasing = aliasing;
+
+		// Remove all
+		const fontAliasingValues: (typeof aliasing)[] = ['antialiased', 'none', 'auto'];
+		this.mainContainer.classList.remove(...fontAliasingValues.map(value => `monaco-font-aliasing-${value}`));
+
+		// Add specific
+		if (fontAliasingValues.some(option => option === aliasing)) {
+			this.mainContainer.classList.add(`monaco-font-aliasing-${aliasing}`);
+		}
+	}
+
+	private restoreFontInfo(storageService: IStorageService, configurationService: IConfigurationService): void {
+		const storedFontInfoRaw = storageService.get('editorFontInfo', StorageScope.APPLICATION);
+		if (storedFontInfoRaw) {
+			try {
+				const storedFontInfo = JSON.parse(storedFontInfoRaw);
+				if (Array.isArray(storedFontInfo)) {
+					FontMeasurements.restoreFontInfo(mainWindow, storedFontInfo);
+				}
+			} catch (err) {
+				/* ignore */
+			}
+		}
+
+		FontMeasurements.readFontInfo(mainWindow, createBareFontInfoFromRawSettings(configurationService.getValue('editor'), PixelRatio.getInstance(mainWindow).value));
+	}
+
+	private storeFontInfo(storageService: IStorageService): void {
+		const serializedFontInfo = FontMeasurements.serializeFontInfo(mainWindow);
+		if (serializedFontInfo) {
+			storageService.store('editorFontInfo', JSON.stringify(serializedFontInfo), StorageScope.APPLICATION, StorageTarget.MACHINE);
+		}
+	}
+
+	//#endregion
+
+	private renderWorkbench(instantiationService: IInstantiationService, notificationService: NotificationService, storageService: IStorageService, configurationService: IConfigurationService): void {
+		// ARIA & Signals
+		setARIAContainer(this.mainContainer);
+		setProgressAccessibilitySignalScheduler((msDelayTime: number, msLoopTime?: number) => instantiationService.createInstance(AccessibilityProgressSignalScheduler, msDelayTime, msLoopTime));
+
+		// State specific classes
+		const platformClass = isWindows ? 'windows' : isLinux ? 'linux' : 'mac';
+		const workbenchClasses = coalesce([
+			'monaco-workbench',
+			platformClass,
+			isWeb ? 'web' : undefined,
+			isChrome ? 'chromium' : isFirefox ? 'firefox' : isSafari ? 'safari' : undefined,
+			...this.getLayoutClasses(),
+			...(this.options?.extraClasses ? this.options.extraClasses : [])
+		]);
+
+		this.mainContainer.classList.add(...workbenchClasses);
+
+		// Apply font aliasing
+		this.updateFontAliasing(undefined, configurationService);
+
+		// Warm up font cache information before building up too many dom elements
+		this.restoreFontInfo(storageService, configurationService);
+
+		// Create Parts
+		for (const { id, role, classes, options } of [
+			{ id: Parts.TITLEBAR_PART, role: 'none', classes: ['titlebar'] },
+			{ id: Parts.SIDEBAR_PART, role: 'none', classes: ['sidebar', 'left'] },
+			{ id: Parts.AUXILIARYBAR_PART, role: 'none', classes: ['auxiliarybar', 'basepanel', 'right'] },
+			{ id: Parts.EDITOR_PART, role: 'main', classes: ['editor'], options: { restorePreviousState: false } },
+			{ id: Parts.PANEL_PART, role: 'none', classes: ['panel', 'basepanel', positionToString(this.getPanelPosition())] },
+		]) {
+			const partContainer = this.createPartContainer(id, role, classes);
+
+			mark(`code/willCreatePart/${id}`);
+			this.getPart(id).create(partContainer, options);
+			mark(`code/didCreatePart/${id}`);
+		}
+
+		// Notification Handlers
+		this.createNotificationsHandlers(instantiationService, notificationService);
+
+		// Add Workbench to DOM
+		this.parent.appendChild(this.mainContainer);
+	}
+
+	private createNotificationsHandlers(instantiationService: IInstantiationService, notificationService: NotificationService): void {
+		// Instantiate Notification components
+		const notificationsCenter = this._register(instantiationService.createInstance(NotificationsCenter, this.mainContainer, notificationService.model));
+		const notificationsToasts = this._register(instantiationService.createInstance(NotificationsToasts, this.mainContainer, notificationService.model));
+		this._register(instantiationService.createInstance(NotificationsAlerts, notificationService.model));
+		const notificationsStatus = instantiationService.createInstance(NotificationsStatus, notificationService.model);
+
+		// Visibility
+		this._register(notificationsCenter.onDidChangeVisibility(() => {
+			notificationsStatus.update(notificationsCenter.isVisible, notificationsToasts.isVisible);
+			notificationsToasts.update(notificationsCenter.isVisible);
+		}));
+
+		this._register(notificationsToasts.onDidChangeVisibility(() => {
+			notificationsStatus.update(notificationsCenter.isVisible, notificationsToasts.isVisible);
+		}));
+
+		// Register Commands
+		registerNotificationCommands(notificationsCenter, notificationsToasts, notificationService.model);
+
+		// Register notification accessible view
+		AccessibleViewRegistry.register(new NotificationAccessibleView());
+
+		// Register with Layout
+		this.registerNotifications({
+			onDidChangeNotificationsVisibility: Event.map(Event.any(notificationsToasts.onDidChangeVisibility, notificationsCenter.onDidChangeVisibility), () => notificationsToasts.isVisible || notificationsCenter.isVisible)
+		});
+	}
+
+	private createPartContainer(id: string, role: string, classes: string[]): HTMLElement {
+		const part = document.createElement('div');
+		part.classList.add('part', ...classes);
+		part.id = id;
+		part.setAttribute('role', role);
+		return part;
+	}
+
+	private restore(lifecycleService: ILifecycleService): void {
+		// Update perf marks
+		mark('code/didStartWorkbench');
+		performance.measure('perf: workbench create & restore', 'code/didLoadWorkbenchMain', 'code/didStartWorkbench');
+
+		// Set lifecycle phase to `Restored`
+		lifecycleService.phase = LifecyclePhase.Restored;
+
+		// Mark as restored
+		this.setRestored();
+
+		// Set lifecycle phase to `Eventually` after a short delay and when idle (min 2.5sec, max 5sec)
+		const eventuallyPhaseScheduler = this._register(new RunOnceScheduler(() => {
+			this._register(runWhenWindowIdle(mainWindow, () => lifecycleService.phase = LifecyclePhase.Eventually, 2500));
+		}, 2500));
+		eventuallyPhaseScheduler.schedule();
+	}
+
+	//#endregion
+
+	//#region Initialization
+
+	initLayout(accessor: ServicesAccessor): void {
+		// Services - accessing these triggers their instantiation
+		// which creates and registers the parts
+		this.editorGroupService = accessor.get(IEditorGroupsService);
+		this.paneCompositeService = accessor.get(IPaneCompositePartService);
+		accessor.get(ITitleService);
+
+		// Register layout listeners
+		this.registerLayoutListeners();
+
+		// Initialize layout state (must be done before createWorkbenchLayout)
+		this._mainContainerDimension = getClientArea(this.parent, new Dimension(800, 600));
+	}
+
+	private registerLayoutListeners(): void {
+		// Fullscreen changes
+		this._register(onDidChangeFullscreen(windowId => {
+			if (windowId === getWindowId(mainWindow)) {
+				this.mainWindowFullscreen = isFullscreen(mainWindow);
+				this.updateFullscreenClass();
+				this.layout();
+			}
+		}));
+	}
+
+	private updateFullscreenClass(): void {
+		if (this.mainWindowFullscreen) {
+			this.mainContainer.classList.add(LayoutClasses.FULLSCREEN);
+		} else {
+			this.mainContainer.classList.remove(LayoutClasses.FULLSCREEN);
+		}
+	}
+
+	//#endregion
+
+	//#region Workbench Layout Creation
+
+	createWorkbenchLayout(): void {
+		const titleBar = this.getPart(Parts.TITLEBAR_PART);
+		const editorPart = this.getPart(Parts.EDITOR_PART);
+		const panelPart = this.getPart(Parts.PANEL_PART);
+		const auxiliaryBarPart = this.getPart(Parts.AUXILIARYBAR_PART);
+		const sideBar = this.getPart(Parts.SIDEBAR_PART);
+
+		// View references for all parts
+		this.titleBarPartView = titleBar;
+		this.sideBarPartView = sideBar;
+		this.editorPartView = editorPart;
+		this.panelPartView = panelPart;
+		this.auxiliaryBarPartView = auxiliaryBarPart;
+
+		const viewMap: { [key: string]: ISerializableView } = {
+			[Parts.TITLEBAR_PART]: this.titleBarPartView,
+			[Parts.EDITOR_PART]: this.editorPartView,
+			[Parts.PANEL_PART]: this.panelPartView,
+			[Parts.SIDEBAR_PART]: this.sideBarPartView,
+			[Parts.AUXILIARYBAR_PART]: this.auxiliaryBarPartView
+		};
+
+		const fromJSON = ({ type }: { type: string }) => viewMap[type];
+		const workbenchGrid = SerializableGrid.deserialize(
+			this.createGridDescriptor(),
+			{ fromJSON },
+			{ proportionalLayout: false }
+		);
+
+		this.mainContainer.prepend(workbenchGrid.element);
+		this.mainContainer.setAttribute('role', 'application');
+		this.workbenchGrid = workbenchGrid;
+		this.workbenchGrid.edgeSnapping = this.mainWindowFullscreen;
+
+		// Listen for part visibility changes
+		for (const part of [titleBar, editorPart, panelPart, sideBar, auxiliaryBarPart]) {
+			this._register(part.onDidVisibilityChange(visible => {
+				if (part === sideBar) {
+					this.setSideBarHidden(!visible);
+				} else if (part === panelPart) {
+					this.setPanelHidden(!visible);
+				} else if (part === auxiliaryBarPart) {
+					this.setAuxiliaryBarHidden(!visible);
+				} else if (part === editorPart) {
+					this.setEditorHidden(!visible);
+				}
+
+				this._onDidChangePartVisibility.fire({ partId: part.getId(), visible });
+				this.handleContainerDidLayout(this.mainContainer, this._mainContainerDimension);
+			}));
+		}
+	}
+
+	/**
+	 * Creates the grid descriptor for the Agent Sessions layout.
+	 *
+	 * Structure (vertical orientation):
+	 * - Titlebar (top)
+	 * - Middle section (horizontal): Sidebar | Auxiliary Bar | Editor
+	 * - Panel (bottom, full width)
+	 */
+	private createGridDescriptor(): ISerializedGrid {
+		const { width, height } = this._mainContainerDimension;
+
+		// Default sizes
+		const sideBarSize = 300;
+		const auxiliaryBarSize = 300;
+		const panelSize = 300;
+		const titleBarHeight = this.titleBarPartView?.minimumHeight ?? 30;
+
+		const middleSectionHeight = height - titleBarHeight - panelSize;
+
+		// Calculate editor size (remaining width)
+		const editorWidth = Math.max(0, width - sideBarSize - auxiliaryBarSize);
+
+		const titleBarNode: ISerializedLeafNode = {
+			type: 'leaf',
+			data: { type: Parts.TITLEBAR_PART },
+			size: titleBarHeight,
+			visible: true
+		};
+
+		const sideBarNode: ISerializedLeafNode = {
+			type: 'leaf',
+			data: { type: Parts.SIDEBAR_PART },
+			size: sideBarSize,
+			visible: this.partVisibility.sidebar
+		};
+
+		const auxiliaryBarNode: ISerializedLeafNode = {
+			type: 'leaf',
+			data: { type: Parts.AUXILIARYBAR_PART },
+			size: auxiliaryBarSize,
+			visible: this.partVisibility.auxiliaryBar
+		};
+
+		const editorNode: ISerializedLeafNode = {
+			type: 'leaf',
+			data: { type: Parts.EDITOR_PART },
+			size: editorWidth,
+			visible: this.partVisibility.editor
+		};
+
+		const panelNode: ISerializedLeafNode = {
+			type: 'leaf',
+			data: { type: Parts.PANEL_PART },
+			size: panelSize,
+			visible: this.partVisibility.panel
+		};
+
+		// Middle section: Sidebar | Auxiliary Bar | Editor (horizontal layout)
+		const middleSection: ISerializedNode = {
+			type: 'branch',
+			data: [sideBarNode, auxiliaryBarNode, editorNode],
+			size: middleSectionHeight
+		};
+
+		const result: ISerializedGrid = {
+			root: {
+				type: 'branch',
+				size: width,
+				data: [
+					titleBarNode,
+					middleSection,
+					panelNode
+				]
+			},
+			orientation: Orientation.VERTICAL,
+			width,
+			height
+		};
+
+		return result;
+	}
+
+	//#endregion
+
+	//#region Layout Methods
+
+	layout(): void {
+		this._mainContainerDimension = getClientArea(
+			this.mainWindowFullscreen ? mainWindow.document.body : this.parent
+		);
+		this.logService.trace(`AgentSessionsWorkbench#layout, height: ${this._mainContainerDimension.height}, width: ${this._mainContainerDimension.width}`);
+
+		size(this.mainContainer, this._mainContainerDimension.width, this._mainContainerDimension.height);
+
+		// Layout the grid widget
+		this.workbenchGrid.layout(this._mainContainerDimension.width, this._mainContainerDimension.height);
+
+		// Emit as event
+		this.handleContainerDidLayout(this.mainContainer, this._mainContainerDimension);
+	}
+
+	private handleContainerDidLayout(container: HTMLElement, dimension: IDimension): void {
+		this._onDidLayoutContainer.fire({ container, dimension });
+		if (container === this.mainContainer) {
+			this._onDidLayoutMainContainer.fire(dimension);
+		}
+		if (container === this.activeContainer) {
+			this._onDidLayoutActiveContainer.fire(dimension);
+		}
+	}
+
+	getLayoutClasses(): string[] {
+		return coalesce([
+			!this.partVisibility.sidebar ? LayoutClasses.SIDEBAR_HIDDEN : undefined,
+			!this.partVisibility.editor ? LayoutClasses.MAIN_EDITOR_AREA_HIDDEN : undefined,
+			!this.partVisibility.panel ? LayoutClasses.PANEL_HIDDEN : undefined,
+			!this.partVisibility.auxiliaryBar ? LayoutClasses.AUXILIARYBAR_HIDDEN : undefined,
+			this.mainWindowFullscreen ? LayoutClasses.FULLSCREEN : undefined
+		]);
+	}
+
+	//#endregion
+
+	//#region Part Management
+
+	registerPart(part: Part): IDisposable {
+		const id = part.getId();
+		this.parts.set(id, part);
+		return toDisposable(() => this.parts.delete(id));
+	}
+
+	getPart(key: Parts): Part {
+		const part = this.parts.get(key);
+		if (!part) {
+			throw new Error(`Unknown part ${key}`);
+		}
+		return part;
+	}
+
+	hasFocus(part: Parts): boolean {
+		const container = this.getContainer(mainWindow, part);
+		if (!container) {
+			return false;
+		}
+
+		const activeElement = getActiveElement();
+		if (!activeElement) {
+			return false;
+		}
+
+		return isAncestorUsingFlowTo(activeElement, container);
+	}
+
+	focusPart(part: MULTI_WINDOW_PARTS, targetWindow: Window): void;
+	focusPart(part: SINGLE_WINDOW_PARTS): void;
+	focusPart(part: Parts, targetWindow: Window = mainWindow): void {
+		switch (part) {
+			case Parts.EDITOR_PART:
+				this.editorGroupService.activeGroup.focus();
+				break;
+			case Parts.PANEL_PART:
+				this.paneCompositeService.getActivePaneComposite(ViewContainerLocation.Panel)?.focus();
+				break;
+			case Parts.SIDEBAR_PART:
+				this.paneCompositeService.getActivePaneComposite(ViewContainerLocation.Sidebar)?.focus();
+				break;
+			case Parts.AUXILIARYBAR_PART:
+				this.paneCompositeService.getActivePaneComposite(ViewContainerLocation.AuxiliaryBar)?.focus();
+				break;
+			default: {
+				const container = this.getContainer(targetWindow, part);
+				container?.focus();
+			}
+		}
+	}
+
+	focus(): void {
+		this.focusPart(Parts.EDITOR_PART, mainWindow);
+	}
+
+	//#endregion
+
+	//#region Container Methods
+
+	getContainer(targetWindow: Window): HTMLElement;
+	getContainer(targetWindow: Window, part: Parts): HTMLElement | undefined;
+	getContainer(targetWindow: Window, part?: Parts): HTMLElement | undefined {
+		if (typeof part === 'undefined') {
+			return this.getContainerFromDocument(targetWindow.document);
+		}
+
+		if (targetWindow === mainWindow) {
+			return this.parts.get(part)?.getContainer();
+		}
+
+		// For auxiliary windows, only editor part is supported
+		if (part === Parts.EDITOR_PART) {
+			const container = this.getContainerFromDocument(targetWindow.document);
+			const partCandidate = this.editorGroupService.getPart(container);
+			if (partCandidate instanceof Part) {
+				return partCandidate.getContainer();
+			}
+		}
+
+		return undefined;
+	}
+
+	whenContainerStylesLoaded(_window: CodeWindow): Promise<void> | undefined {
+		return undefined;
+	}
+
+	//#endregion
+
+	//#region Part Visibility
+
+	isVisible(part: SINGLE_WINDOW_PARTS): boolean;
+	isVisible(part: MULTI_WINDOW_PARTS, targetWindow: Window): boolean;
+	isVisible(part: Parts, targetWindow?: Window): boolean {
+		switch (part) {
+			case Parts.TITLEBAR_PART:
+				return true; // Always visible
+			case Parts.SIDEBAR_PART:
+				return this.partVisibility.sidebar;
+			case Parts.AUXILIARYBAR_PART:
+				return this.partVisibility.auxiliaryBar;
+			case Parts.EDITOR_PART:
+				return this.partVisibility.editor;
+			case Parts.PANEL_PART:
+				return this.partVisibility.panel;
+			case Parts.ACTIVITYBAR_PART:
+			case Parts.STATUSBAR_PART:
+			case Parts.BANNER_PART:
+				return false; // Not included in this layout
+			default:
+				return false;
+		}
+	}
+
+	setPartHidden(hidden: boolean, part: Parts): void {
+		switch (part) {
+			case Parts.SIDEBAR_PART:
+				this.setSideBarHidden(hidden);
+				break;
+			case Parts.AUXILIARYBAR_PART:
+				this.setAuxiliaryBarHidden(hidden);
+				break;
+			case Parts.EDITOR_PART:
+				this.setEditorHidden(hidden);
+				break;
+			case Parts.PANEL_PART:
+				this.setPanelHidden(hidden);
+				break;
+		}
+	}
+
+	private setSideBarHidden(hidden: boolean): void {
+		if (this.partVisibility.sidebar === !hidden) {
+			return;
+		}
+
+		this.partVisibility.sidebar = !hidden;
+
+		// Adjust CSS
+		if (hidden) {
+			this.mainContainer.classList.add(LayoutClasses.SIDEBAR_HIDDEN);
+		} else {
+			this.mainContainer.classList.remove(LayoutClasses.SIDEBAR_HIDDEN);
+		}
+
+		// Propagate to grid
+		this.workbenchGrid.setViewVisible(this.sideBarPartView, !hidden);
+
+		// If sidebar becomes hidden, also hide the current active Viewlet if any
+		if (hidden && this.paneCompositeService.getActivePaneComposite(ViewContainerLocation.Sidebar)) {
+			this.paneCompositeService.hideActivePaneComposite(ViewContainerLocation.Sidebar);
+		}
+
+		// If sidebar becomes visible, show last active Viewlet or default viewlet
+		if (!hidden && !this.paneCompositeService.getActivePaneComposite(ViewContainerLocation.Sidebar)) {
+			const viewletToOpen = this.paneCompositeService.getLastActivePaneCompositeId(ViewContainerLocation.Sidebar);
+			if (viewletToOpen) {
+				this.paneCompositeService.openPaneComposite(viewletToOpen, ViewContainerLocation.Sidebar);
+			}
+		}
+	}
+
+	private setAuxiliaryBarHidden(hidden: boolean): void {
+		if (this.partVisibility.auxiliaryBar === !hidden) {
+			return;
+		}
+
+		this.partVisibility.auxiliaryBar = !hidden;
+
+		// Adjust CSS
+		if (hidden) {
+			this.mainContainer.classList.add(LayoutClasses.AUXILIARYBAR_HIDDEN);
+		} else {
+			this.mainContainer.classList.remove(LayoutClasses.AUXILIARYBAR_HIDDEN);
+		}
+
+		// Propagate to grid
+		this.workbenchGrid.setViewVisible(this.auxiliaryBarPartView, !hidden);
+
+		// If auxiliary bar becomes hidden, also hide the current active pane composite
+		if (hidden && this.paneCompositeService.getActivePaneComposite(ViewContainerLocation.AuxiliaryBar)) {
+			this.paneCompositeService.hideActivePaneComposite(ViewContainerLocation.AuxiliaryBar);
+		}
+
+		// If auxiliary bar becomes visible, show last active pane composite
+		if (!hidden && !this.paneCompositeService.getActivePaneComposite(ViewContainerLocation.AuxiliaryBar)) {
+			const paneCompositeToOpen = this.paneCompositeService.getLastActivePaneCompositeId(ViewContainerLocation.AuxiliaryBar);
+			if (paneCompositeToOpen) {
+				this.paneCompositeService.openPaneComposite(paneCompositeToOpen, ViewContainerLocation.AuxiliaryBar);
+			}
+		}
+	}
+
+	private setEditorHidden(hidden: boolean): void {
+		if (this.partVisibility.editor === !hidden) {
+			return;
+		}
+
+		this.partVisibility.editor = !hidden;
+
+		// Adjust CSS
+		if (hidden) {
+			this.mainContainer.classList.add(LayoutClasses.MAIN_EDITOR_AREA_HIDDEN);
+		} else {
+			this.mainContainer.classList.remove(LayoutClasses.MAIN_EDITOR_AREA_HIDDEN);
+		}
+
+		// Propagate to grid
+		this.workbenchGrid.setViewVisible(this.editorPartView, !hidden);
+	}
+
+	private setPanelHidden(hidden: boolean): void {
+		if (this.partVisibility.panel === !hidden) {
+			return;
+		}
+
+		this.partVisibility.panel = !hidden;
+
+		// Adjust CSS
+		if (hidden) {
+			this.mainContainer.classList.add(LayoutClasses.PANEL_HIDDEN);
+		} else {
+			this.mainContainer.classList.remove(LayoutClasses.PANEL_HIDDEN);
+		}
+
+		// Propagate to grid
+		this.workbenchGrid.setViewVisible(this.panelPartView, !hidden);
+
+		// If panel becomes hidden, also hide the current active panel
+		if (hidden && this.paneCompositeService.getActivePaneComposite(ViewContainerLocation.Panel)) {
+			this.paneCompositeService.hideActivePaneComposite(ViewContainerLocation.Panel);
+		}
+
+		// If panel becomes visible, show last active panel
+		if (!hidden && !this.paneCompositeService.getActivePaneComposite(ViewContainerLocation.Panel)) {
+			const panelToOpen = this.paneCompositeService.getLastActivePaneCompositeId(ViewContainerLocation.Panel);
+			if (panelToOpen) {
+				this.paneCompositeService.openPaneComposite(panelToOpen, ViewContainerLocation.Panel);
+			}
+		}
+	}
+
+	//#endregion
+
+	//#region Position Methods (Fixed - Not Configurable)
+
+	getSideBarPosition(): Position {
+		return Position.LEFT; // Always left in this layout
+	}
+
+	getPanelPosition(): Position {
+		return Position.BOTTOM; // Always bottom in this layout
+	}
+
+	setPanelPosition(_position: Position): void {
+		// No-op: Panel position is fixed in this layout
+	}
+
+	getPanelAlignment(): PanelAlignment {
+		return 'justify'; // Full width panel
+	}
+
+	setPanelAlignment(_alignment: PanelAlignment): void {
+		// No-op: Panel alignment is fixed in this layout
+	}
+
+	//#endregion
+
+	//#region Size Methods
+
+	getSize(part: Parts): IViewSize {
+		const view = this.getPartView(part);
+		if (!view) {
+			return { width: 0, height: 0 };
+		}
+		return this.workbenchGrid.getViewSize(view);
+	}
+
+	setSize(part: Parts, size: IViewSize): void {
+		const view = this.getPartView(part);
+		if (view) {
+			this.workbenchGrid.resizeView(view, size);
+		}
+	}
+
+	resizePart(part: Parts, sizeChangeWidth: number, sizeChangeHeight: number): void {
+		const view = this.getPartView(part);
+		if (!view) {
+			return;
+		}
+
+		const currentSize = this.workbenchGrid.getViewSize(view);
+		this.workbenchGrid.resizeView(view, {
+			width: currentSize.width + sizeChangeWidth,
+			height: currentSize.height + sizeChangeHeight
+		});
+	}
+
+	private getPartView(part: Parts): ISerializableView | undefined {
+		switch (part) {
+			case Parts.TITLEBAR_PART:
+				return this.titleBarPartView;
+			case Parts.SIDEBAR_PART:
+				return this.sideBarPartView;
+			case Parts.AUXILIARYBAR_PART:
+				return this.auxiliaryBarPartView;
+			case Parts.EDITOR_PART:
+				return this.editorPartView;
+			case Parts.PANEL_PART:
+				return this.panelPartView;
+			default:
+				return undefined;
+		}
+	}
+
+	getMaximumEditorDimensions(_container: HTMLElement): IDimension {
+		// Return the available space for editor (excluding other parts)
+		const sidebarWidth = this.partVisibility.sidebar ? this.workbenchGrid.getViewSize(this.sideBarPartView).width : 0;
+		const auxiliaryBarWidth = this.partVisibility.auxiliaryBar ? this.workbenchGrid.getViewSize(this.auxiliaryBarPartView).width : 0;
+		const panelHeight = this.partVisibility.panel ? this.workbenchGrid.getViewSize(this.panelPartView).height : 0;
+		const titleBarHeight = this.workbenchGrid.getViewSize(this.titleBarPartView).height;
+
+		return new Dimension(
+			this._mainContainerDimension.width - sidebarWidth - auxiliaryBarWidth,
+			this._mainContainerDimension.height - titleBarHeight - panelHeight
+		);
+	}
+
+	//#endregion
+
+	//#region Unsupported Features (No-ops)
+
+	toggleMaximizedPanel(): void {
+		// No-op: Maximize not supported in this layout
+	}
+
+	isPanelMaximized(): boolean {
+		return false; // Maximize not supported
+	}
+
+	toggleMaximizedAuxiliaryBar(): void {
+		// No-op: Maximize not supported in this layout
+	}
+
+	setAuxiliaryBarMaximized(_maximized: boolean): boolean {
+		return false; // Maximize not supported
+	}
+
+	isAuxiliaryBarMaximized(): boolean {
+		return false; // Maximize not supported
+	}
+
+	toggleZenMode(): void {
+		// No-op: Zen mode not supported in this layout
+	}
+
+	toggleMenuBar(): void {
+		// No-op: Menu bar toggle not supported in this layout
+	}
+
+	isMainEditorLayoutCentered(): boolean {
+		return false; // Centered layout not supported
+	}
+
+	centerMainEditorLayout(_active: boolean): void {
+		// No-op: Centered layout not supported in this layout
+	}
+
+	hasMainWindowBorder(): boolean {
+		return false;
+	}
+
+	getMainWindowBorderRadius(): string | undefined {
+		return undefined;
+	}
+
+	//#endregion
+
+	//#region Window Maximized State
+
+	isWindowMaximized(targetWindow: Window): boolean {
+		return this.maximized.has(getWindowId(targetWindow));
+	}
+
+	updateWindowMaximizedState(targetWindow: Window, maximized: boolean): void {
+		const windowId = getWindowId(targetWindow);
+		if (maximized) {
+			this.maximized.add(windowId);
+			if (targetWindow === mainWindow) {
+				this.mainContainer.classList.add(LayoutClasses.MAXIMIZED);
+			}
+		} else {
+			this.maximized.delete(windowId);
+			if (targetWindow === mainWindow) {
+				this.mainContainer.classList.remove(LayoutClasses.MAXIMIZED);
+			}
+		}
+
+		this._onDidChangeWindowMaximized.fire({ windowId, maximized });
+	}
+
+	//#endregion
+
+	//#region Neighbor Parts
+
+	getVisibleNeighborPart(part: Parts, direction: Direction): Parts | undefined {
+		if (!this.workbenchGrid) {
+			return undefined;
+		}
+
+		const view = this.getPartView(part);
+		if (!view) {
+			return undefined;
+		}
+
+		const neighbor = this.workbenchGrid.getNeighborViews(view, direction, false);
+		if (neighbor.length === 0) {
+			return undefined;
+		}
+
+		const neighborView = neighbor[0];
+
+		if (neighborView === this.titleBarPartView) {
+			return Parts.TITLEBAR_PART;
+		}
+		if (neighborView === this.sideBarPartView) {
+			return Parts.SIDEBAR_PART;
+		}
+		if (neighborView === this.auxiliaryBarPartView) {
+			return Parts.AUXILIARYBAR_PART;
+		}
+		if (neighborView === this.editorPartView) {
+			return Parts.EDITOR_PART;
+		}
+		if (neighborView === this.panelPartView) {
+			return Parts.PANEL_PART;
+		}
+
+		return undefined;
+	}
+
+	//#endregion
+
+	//#region Restore
+
+	isRestored(): boolean {
+		return this.restored;
+	}
+
+	setRestored(): void {
+		this.restored = true;
+		this.restoredPromise.complete();
+	}
+
+	//#endregion
+
+	//#region Notifications Registration
+
+	registerNotifications(delegate: { onDidChangeNotificationsVisibility: Event<boolean> }): void {
+		this._register(delegate.onDidChangeNotificationsVisibility(visible => this._onDidChangeNotificationsVisibility.fire(visible)));
+	}
+
+	//#endregion
+}
