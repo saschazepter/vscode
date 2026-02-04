@@ -3732,7 +3732,6 @@ suite('LanguageModelToolsService', () => {
 
 		test('when hook denies, tool returns error and creates cancelled invocation', async () => {
 			mockHooksService.preToolUseHookResult = {
-				suppressOutput: false,
 				output: undefined,
 				success: true,
 				permissionDecision: 'deny',
@@ -3771,7 +3770,6 @@ suite('LanguageModelToolsService', () => {
 
 		test('when hook allows, tool executes normally', async () => {
 			mockHooksService.preToolUseHookResult = {
-				suppressOutput: false,
 				output: undefined,
 				success: true,
 				permissionDecision: 'allow',
@@ -3816,7 +3814,6 @@ suite('LanguageModelToolsService', () => {
 
 		test('hook receives correct input parameters', async () => {
 			mockHooksService.preToolUseHookResult = {
-				suppressOutput: false,
 				output: undefined,
 				success: true,
 				permissionDecision: 'allow',
@@ -3841,7 +3838,6 @@ suite('LanguageModelToolsService', () => {
 
 		test('when hook denies, tool invoke is never called', async () => {
 			mockHooksService.preToolUseHookResult = {
-				suppressOutput: false,
 				output: undefined,
 				success: true,
 				permissionDecision: 'deny',

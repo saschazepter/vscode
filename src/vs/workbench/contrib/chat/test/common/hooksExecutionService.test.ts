@@ -117,7 +117,6 @@ suite('HooksExecutionService', () => {
 			assert.strictEqual(results.length, 1);
 			assert.strictEqual(results[0].success, true);
 			assert.strictEqual(results[0].stopReason, undefined);
-			assert.strictEqual(results[0].suppressOutput, false);
 			assert.strictEqual(results[0].output, 'executed: echo test');
 		});
 
@@ -156,7 +155,6 @@ suite('HooksExecutionService', () => {
 			assert.strictEqual(results[0].output, 'proxy failed');
 			// Error results still have default common fields
 			assert.strictEqual(results[0].stopReason, undefined);
-			assert.strictEqual(results[0].suppressOutput, false);
 		});
 
 		test('passes cancellation token to proxy', async () => {
@@ -197,7 +195,6 @@ suite('HooksExecutionService', () => {
 				kind: HookCommandResultKind.Success,
 				result: {
 					stopReason: 'User requested stop',
-					suppressOutput: true,
 					systemMessage: 'Warning: hook triggered',
 					permissionDecision: 'allow'
 				}
@@ -212,8 +209,7 @@ suite('HooksExecutionService', () => {
 			assert.strictEqual(results.length, 1);
 			assert.strictEqual(results[0].success, true);
 			assert.strictEqual(results[0].stopReason, 'User requested stop');
-			assert.strictEqual(results[0].suppressOutput, true);
-			assert.strictEqual(results[0].systemMessage, 'Warning: hook triggered');
+			assert.strictEqual(results[0].messageForUser, 'Warning: hook triggered');
 			// Hook-specific fields are in output
 			assert.deepStrictEqual(results[0].output, { permissionDecision: 'allow' });
 		});
@@ -232,8 +228,7 @@ suite('HooksExecutionService', () => {
 
 			assert.strictEqual(results.length, 1);
 			assert.strictEqual(results[0].stopReason, undefined);
-			assert.strictEqual(results[0].suppressOutput, false);
-			assert.strictEqual(results[0].systemMessage, undefined);
+			assert.strictEqual(results[0].messageForUser, undefined);
 			assert.deepStrictEqual(results[0].output, { permissionDecision: 'allow' });
 		});
 
@@ -254,7 +249,6 @@ suite('HooksExecutionService', () => {
 			assert.strictEqual(results[0].output, 'command failed with error');
 			// Defaults are still applied
 			assert.strictEqual(results[0].stopReason, undefined);
-			assert.strictEqual(results[0].suppressOutput, false);
 		});
 
 		test('passes input to proxy', async () => {
