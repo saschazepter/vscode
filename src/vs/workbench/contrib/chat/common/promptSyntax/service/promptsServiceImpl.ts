@@ -709,7 +709,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 		if (token.isCancellationRequested) {
 			return [];
 		}
-		// remember which entr
+		// first look at non-symlinked files, then add symlinks only if target not already included
 		const seenFileURI = new ResourceSet();
 		const symlinks: (IResolvedAgentFile & { realPath: URI })[] = [];
 		const result: IResolvedAgentFile[] = [];

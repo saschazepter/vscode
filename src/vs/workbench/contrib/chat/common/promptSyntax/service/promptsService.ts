@@ -236,6 +236,9 @@ export enum AgentFileType {
  */
 export interface IResolvedAgentFile {
 	readonly uri: URI;
+	/**
+	 * The real path of the file, if it is a symlink.
+	 */
 	readonly realPath: URI | undefined;
 	readonly type: AgentFileType;
 }
