@@ -197,7 +197,7 @@ export class ChatToolInvocationPart extends Disposable implements IChatContentPa
 				this.toolInvocation.pastTenseMessage ?? this.toolInvocation.invocationMessage,
 				this.toolInvocation.originMessage,
 				this.toolInvocation.toolSpecificData,
-				false, // Error state is not tracked in simple tool invocation data
+				false,
 			);
 		}
 

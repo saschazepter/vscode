@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { ProgressBar } from '../../../../../../../base/browser/ui/progressbar/progressbar.js';
-import { IMarkdownString, isMarkdownString } from '../../../../../../../base/common/htmlContent.js';
+import { IMarkdownString } from '../../../../../../../base/common/htmlContent.js';
 import { Lazy } from '../../../../../../../base/common/lazy.js';
 import { toDisposable } from '../../../../../../../base/common/lifecycle.js';
 import { autorun } from '../../../../../../../base/common/observable.js';
@@ -49,44 +49,23 @@ export class ChatSimpleToolProgressPart extends BaseChatToolInvocationSubPart {
 		let codeBlockIndex = codeBlockStartIndex;
 
 		// Helper to convert string or MarkdownString to a collapsible part
-		const createIOPart = (content: string | IMarkdownString, label: string): IChatCollapsibleIOCodePart | ChatCollapsibleIOPart => {
-			if (isMarkdownString(content)) {
-				// For MarkdownString, create a markdown code part with the markdown content
-				return {
-					kind: 'code',
-					data: content.value,
-					languageId: 'markdown',
-					codeBlockIndex: codeBlockIndex++,
-					ownerMarkdownPartId: this.codeblocksPartId,
-					options: {
-						hideToolbar: true,
-						reserveWidth: 19,
-						maxHeightInLines: 13,
-						verticalPadding: 5,
-						editorOptions: {
-							wordWrap: 'on'
-						}
+		const createIOPart = (content: string, label: string): IChatCollapsibleIOCodePart | ChatCollapsibleIOPart => {
+			return {
+				kind: 'code',
+				data: content,
+				languageId: 'plaintext',
+				codeBlockIndex: codeBlockIndex++,
+				ownerMarkdownPartId: this.codeblocksPartId,
+				options: {
+					hideToolbar: true,
+					reserveWidth: 19,
+					maxHeightInLines: 13,
+					verticalPadding: 5,
+					editorOptions: {
+						wordWrap: 'on'
 					}
-				};
-			} else {
-				// For plain string, create a text code part
-				return {
-					kind: 'code',
-					data: content,
-					languageId: 'plaintext',
-					codeBlockIndex: codeBlockIndex++,
-					ownerMarkdownPartId: this.codeblocksPartId,
-					options: {
-						hideToolbar: true,
-						reserveWidth: 19,
-						maxHeightInLines: 13,
-						verticalPadding: 5,
-						editorOptions: {
-							wordWrap: 'on'
-						}
-					}
-				};
-			}
+				}
+			};
 		};
 
 		const inputPart = createIOPart(data.input, 'Input') as IChatCollapsibleIOCodePart;

@@ -2965,8 +2965,8 @@ export namespace ChatToolInvocationPart {
 			// Convert extension API simple tool invocation data to internal format
 			return {
 				kind: 'simpleToolInvocation',
-				input: typeof data.input === 'string' ? data.input : MarkdownString.from(data.input),
-				output: typeof data.output === 'string' ? data.output : MarkdownString.from(data.output)
+				input: typeof data.input === 'string' ? data.input : '',
+				output: typeof data.output === 'string' ? data.output : ''
 			};
 		} else if (data && 'values' in data && Array.isArray(data.values)) {
 			// Convert extension API resources tool data to internal format

@@ -119,12 +119,8 @@ export function getToolSpecificDataDescription(toolSpecificData: ToolSpecificDat
 			return localize('resourcesList', "Resources: {0}", paths);
 		}
 		case 'simpleToolInvocation': {
-			const inputText = typeof toolSpecificData.input === 'string'
-				? toolSpecificData.input
-				: toolSpecificData.input.value;
-			const outputText = typeof toolSpecificData.output === 'string'
-				? toolSpecificData.output
-				: toolSpecificData.output.value;
+			const inputText = toolSpecificData.input;
+			const outputText = toolSpecificData.output;
 			return localize('simpleToolInvocation', "Input: {0}, Output: {1}", inputText, outputText);
 		}
 		default:

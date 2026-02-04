@@ -842,8 +842,8 @@ export interface IChatTodoListContent {
 
 export interface IChatSimpleToolInvocationData {
 	kind: 'simpleToolInvocation';
-	input: string | IMarkdownString;
-	output: string | IMarkdownString;
+	input: string;
+	output: string;
 }
 
 export interface IChatToolResourcesInvocationData {
