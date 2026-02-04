@@ -26,12 +26,11 @@ import { Delayer } from '../../../../../base/common/async.js';
 import { IContextViewService } from '../../../../../platform/contextview/browser/contextView.js';
 import { HighlightedLabel } from '../../../../../base/browser/ui/highlightedlabel/highlightedLabel.js';
 import { matchesFuzzy, IMatch } from '../../../../../base/common/filters.js';
-import { Codicon } from '../../../../../base/common/codicons.js';
 import { IOpenerService } from '../../../../../platform/opener/common/opener.js';
 
 const $ = DOM.$;
 
-const ITEM_HEIGHT = 32;
+const ITEM_HEIGHT = 44;
 
 /**
  * Represents an AI customization item in the list.
@@ -207,14 +206,15 @@ export class AICustomizationListWidget extends Disposable {
 
 	readonly element: HTMLElement;
 
+	private sectionHeader!: HTMLElement;
+	private sectionTitle!: HTMLElement;
+	private sectionDescription!: HTMLElement;
+	private sectionLink!: HTMLAnchorElement;
 	private searchContainer!: HTMLElement;
 	private searchInput!: InputBox;
 	private listContainer!: HTMLElement;
 	private list!: WorkbenchList<IAICustomizationListItem>;
 	private emptyMessage!: HTMLElement;
-	private infoBox!: HTMLElement;
-	private infoBoxText!: HTMLElement;
-	private infoBoxLink!: HTMLAnchorElement;
 
 	private currentSection: AICustomizationManagementSection = AICustomizationManagementSection.Agents;
 	private allItems: IAICustomizationListItem[] = [];
@@ -242,6 +242,20 @@ export class AICustomizationListWidget extends Disposable {
 	}
 
 	private create(): void {
+		// Section header at top with description and link
+		this.sectionHeader = DOM.append(this.element, $('.section-header'));
+		this.sectionTitle = DOM.append(this.sectionHeader, $('h2.section-header-title'));
+		this.sectionDescription = DOM.append(this.sectionHeader, $('p.section-header-description'));
+		this.sectionLink = DOM.append(this.sectionHeader, $('a.section-header-link')) as HTMLAnchorElement;
+		this._register(DOM.addDisposableListener(this.sectionLink, 'click', (e) => {
+			e.preventDefault();
+			const href = this.sectionLink.href;
+			if (href) {
+				this.openerService.open(URI.parse(href));
+			}
+		}));
+		this.updateSectionHeader();
+
 		// Search container
 		this.searchContainer = DOM.append(this.element, $('.list-search-container'));
 		this.searchInput = this._register(new InputBox(this.searchContainer, this.contextViewService, {
@@ -299,23 +313,6 @@ export class AICustomizationListWidget extends Disposable {
 		// Subscribe to prompt service changes
 		this._register(this.promptsService.onDidChangeCustomAgents(() => this.refresh()));
 		this._register(this.promptsService.onDidChangeSlashCommands(() => this.refresh()));
-
-		// Info box at the bottom
-		this.infoBox = DOM.append(this.element, $('.list-info-box'));
-		const infoIcon = DOM.append(this.infoBox, $('.info-icon'));
-		infoIcon.classList.add(...ThemeIcon.asClassNameArray(Codicon.info));
-		const infoContent = DOM.append(this.infoBox, $('.info-content'));
-		this.infoBoxText = DOM.append(infoContent, $('.info-text'));
-		this.infoBoxLink = DOM.append(infoContent, $('a.info-link')) as HTMLAnchorElement;
-		this.infoBoxLink.textContent = localize('learnMore', "Learn more");
-		this._register(DOM.addDisposableListener(this.infoBoxLink, 'click', (e) => {
-			e.preventDefault();
-			const href = this.infoBoxLink.href;
-			if (href) {
-				this.openerService.open(URI.parse(href));
-			}
-		}));
-		this.updateInfoBoxText();
 	}
 
 	/**
@@ -323,36 +320,43 @@ export class AICustomizationListWidget extends Disposable {
 	 */
 	async setSection(section: AICustomizationManagementSection): Promise<void> {
 		this.currentSection = section;
-		this.updateInfoBoxText();
+		this.updateSectionHeader();
 		await this.loadItems();
 	}
 
 	/**
-	 * Updates the info box text based on the current section.
+	 * Updates the section header based on the current section.
 	 */
-	private updateInfoBoxText(): void {
-		let text: string;
+	private updateSectionHeader(): void {
+		let title: string;
+		let description: string;
 		let docsUrl: string;
 		switch (this.currentSection) {
 			case AICustomizationManagementSection.Agents:
-				text = localize('agentsInfo', "Agents are AI assistants with custom instructions, tools, and behaviors. Create an agent to automate complex tasks or provide specialized assistance.");
+				title = localize('agentsTitle', "Agents");
+				description = localize('agentsDescription', "Custom chat participants with their own instructions, tools, and knowledge. Use agents to create specialized AI assistants for specific workflows like code review, testing, or documentation.");
 				docsUrl = 'https://code.visualstudio.com/docs/copilot/customization/custom-agents';
 				break;
 			case AICustomizationManagementSection.Skills:
-				text = localize('skillsInfo', "Skills are reusable capabilities that can be added to agents. They define specific tasks an agent can perform, like searching documentation or running tests.");
-				docsUrl = 'https://code.visualstudio.com/docs/copilot/customization/skills';
+				title = localize('skillsTitle', "Skills");
+				description = localize('skillsDescription', "Reusable prompt files that define specific capabilities. Skills can be attached to agents or used directly in chat to perform tasks like fetching documentation, running analysis, or generating code.");
+				docsUrl = 'https://code.visualstudio.com/docs/copilot/customization/agent-skills';
 				break;
 			case AICustomizationManagementSection.Instructions:
-				text = localize('instructionsInfo', "Instructions are guidelines that apply to specific files or folders. Use them to teach the AI about coding conventions, project structure, or domain-specific rules.");
-				docsUrl = 'https://code.visualstudio.com/docs/copilot/customization/instructions';
+				title = localize('instructionsTitle', "Instructions");
+				description = localize('instructionsDescription', "Contextual guidelines that teach Copilot about your codebase. Instructions can apply to specific files or folders and help the AI follow your coding conventions and project patterns.");
+				docsUrl = 'https://code.visualstudio.com/docs/copilot/customization/custom-instructions';
 				break;
 			case AICustomizationManagementSection.Prompts:
-				text = localize('promptsInfo', "Prompts are reusable message templates you can quickly insert in chat. Create prompts for common questions, code reviews, or repetitive tasks.");
-				docsUrl = 'https://code.visualstudio.com/docs/copilot/customization/prompts';
+				title = localize('promptsTitle', "Prompts");
+				description = localize('promptsDescription', "Reusable message templates that you can quickly run in chat. Create prompts for common questions, code generation patterns, or multi-step tasks that you perform frequently.");
+				docsUrl = 'https://code.visualstudio.com/docs/copilot/customization/prompt-files';
 				break;
 		}
-		this.infoBoxText.textContent = text;
-		this.infoBoxLink.href = docsUrl;
+		this.sectionTitle.textContent = title;
+		this.sectionDescription.textContent = description;
+		this.sectionLink.textContent = localize('learnMoreDocs', "Learn more about customization");
+		this.sectionLink.href = docsUrl;
 	}
 
 	/**
@@ -489,9 +493,9 @@ export class AICustomizationListWidget extends Disposable {
 	 * Layouts the widget.
 	 */
 	layout(height: number, width: number): void {
+		const sectionHeaderHeight = this.sectionHeader.offsetHeight || 100;
 		const searchHeight = this.searchContainer.offsetHeight || 32;
-		const infoBoxHeight = this.infoBox.offsetHeight || 80;
-		const listHeight = height - searchHeight - infoBoxHeight - 24; // Extra padding
+		const listHeight = height - sectionHeaderHeight - searchHeight - 24; // Extra padding
 
 		this.searchInput.layout();
 		this.listContainer.style.height = `${listHeight}px`;

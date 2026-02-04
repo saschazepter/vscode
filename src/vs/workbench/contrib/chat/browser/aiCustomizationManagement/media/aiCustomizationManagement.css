@@ -150,11 +150,12 @@
 /* List item styling */
 .ai-customization-list-item {
 	display: flex;
-	align-items: center;
+	align-items: flex-start;
 	padding: 6px 8px;
 	cursor: pointer;
 	border-radius: 4px;
 	margin: 2px 0;
+	min-height: 32px;
 }
 
 .ai-customization-list-item:hover {
@@ -163,10 +164,11 @@
 
 .ai-customization-list-item .item-left {
 	display: flex;
-	align-items: center;
+	align-items: flex-start;
 	flex: 1;
 	overflow: hidden;
 	gap: 8px;
+	min-width: 0;
 }
 
 .ai-customization-list-item .item-icon {
@@ -176,6 +178,7 @@
 	display: flex;
 	align-items: center;
 	justify-content: center;
+	margin-top: 2px;
 }
 
 .ai-customization-list-item .item-text {
@@ -183,6 +186,7 @@
 	flex-direction: column;
 	overflow: hidden;
 	flex: 1;
+	min-width: 0;
 }
 
 .ai-customization-list-item .item-name {
@@ -190,6 +194,7 @@
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
+	line-height: 18px;
 }
 
 .ai-customization-list-item .item-description {
@@ -198,13 +203,15 @@
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
+	line-height: 14px;
 }
 
 .ai-customization-list-item .item-right {
 	display: flex;
-	align-items: center;
+	align-items: flex-start;
 	flex-shrink: 0;
 	margin-left: 8px;
+	margin-top: 2px;
 }
 
 .ai-customization-list-item .storage-badge {
@@ -223,47 +230,108 @@
 	color: var(--vscode-list-highlightForeground);
 }
 
-/* Info box at the bottom of the list */
-.ai-customization-list-widget .list-info-box {
+/* Section header at top of list widget */
+.ai-customization-list-widget .section-header {
 	flex-shrink: 0;
-	display: flex;
-	align-items: flex-start;
-	gap: 8px;
-	padding: 12px;
-	margin-top: 8px;
-	background-color: var(--vscode-textBlockQuote-background);
-	border: 1px solid var(--vscode-textBlockQuote-border);
-	border-radius: 4px;
+	padding: 12px 4px 16px 4px;
+	border-bottom: 1px solid var(--vscode-widget-border);
+	margin-bottom: 12px;
 }
 
-.ai-customization-list-widget .list-info-box .info-icon {
-	flex-shrink: 0;
-	width: 16px;
-	height: 16px;
-	color: var(--vscode-notificationsInfoIcon-foreground);
-	opacity: 0.8;
+.ai-customization-list-widget .section-header .section-header-title {
+	font-size: 18px;
+	font-weight: 500;
+	color: var(--vscode-foreground);
+	margin: 0 0 8px 0;
 }
 
-.ai-customization-list-widget .list-info-box .info-content {
-	display: flex;
-	flex-direction: column;
-	gap: 4px;
-}
-
-.ai-customization-list-widget .list-info-box .info-text {
-	font-size: 12px;
+.ai-customization-list-widget .section-header .section-header-description {
+	font-size: 13px;
 	color: var(--vscode-descriptionForeground);
-	line-height: 1.4;
+	line-height: 1.5;
+	margin: 0 0 8px 0;
 }
 
-.ai-customization-list-widget .list-info-box .info-link {
-	font-size: 12px;
+.ai-customization-list-widget .section-header .section-header-link {
+	font-size: 13px;
 	color: var(--vscode-textLink-foreground);
 	text-decoration: none;
 	cursor: pointer;
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
 }
 
-.ai-customization-list-widget .list-info-box .info-link:hover {
+.ai-customization-list-widget .section-header .section-header-link:hover {
 	text-decoration: underline;
 	color: var(--vscode-textLink-activeForeground);
+}
+
+/* Overview View (compact snapshot) */
+.ai-customization-overview {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	padding: 8px;
+}
+
+.ai-customization-overview .overview-sections {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 8px;
+}
+
+.ai-customization-overview .overview-section {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 10px 12px;
+	background-color: var(--vscode-sideBar-background);
+	border: 1px solid var(--vscode-widget-border);
+	border-radius: 6px;
+	cursor: pointer;
+	transition: background-color 0.1s ease;
+}
+
+.ai-customization-overview .overview-section:hover {
+	background-color: var(--vscode-list-hoverBackground);
+	border-color: var(--vscode-focusBorder);
+}
+
+.ai-customization-overview .overview-section:focus {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: -1px;
+}
+
+.ai-customization-overview .overview-section .section-icon {
+	flex-shrink: 0;
+	width: 16px;
+	height: 16px;
+	opacity: 0.9;
+}
+
+.ai-customization-overview .overview-section .section-text {
+	flex: 1;
+	min-width: 0;
+}
+
+.ai-customization-overview .overview-section .section-label {
+	font-size: 12px;
+	font-weight: 500;
+	color: var(--vscode-foreground);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.ai-customization-overview .overview-section .section-count {
+	flex-shrink: 0;
+	font-size: 11px;
+	font-weight: 600;
+	padding: 2px 8px;
+	background-color: var(--vscode-badge-background);
+	color: var(--vscode-badge-foreground);
+	border-radius: 10px;
+	min-width: 20px;
+	text-align: center;
 }

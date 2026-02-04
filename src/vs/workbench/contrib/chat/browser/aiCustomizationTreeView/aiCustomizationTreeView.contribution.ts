@@ -26,6 +26,7 @@ import { ICommandService } from '../../../../../platform/commands/common/command
 import { URI } from '../../../../../base/common/uri.js';
 import { IEditorService } from '../../../../services/editor/common/editorService.js';
 import { AI_CUSTOMIZATION_EDITOR_ID } from '../aiCustomizationEditor/aiCustomizationEditor.js';
+import { AICustomizationOverviewView, AI_CUSTOMIZATION_OVERVIEW_VIEW_ID } from '../aiCustomizationManagement/aiCustomizationOverviewView.js';
 
 //#region Utilities
 
@@ -84,19 +85,34 @@ export const AI_CUSTOMIZATION_VIEW_CONTAINER = viewContainersRegistry.registerVi
 
 const viewsRegistry = Registry.as<IViewsRegistry>(ViewContainerExtensions.ViewsRegistry);
 
-// Unified AI Customization View
+// Unified AI Customization View (Tree)
 const aiCustomizationViewDescriptor: IViewDescriptor = {
 	id: AI_CUSTOMIZATION_VIEW_ID,
-	name: localize2('aiCustomization', "AI Customization"),
+	name: localize2('aiCustomizationTree', "Tree"),
 	ctorDescriptor: new SyncDescriptor(AICustomizationViewPane),
+	containerIcon: aiCustomizationViewIcon,
+	canToggleVisibility: true,
+	canMoveView: true,
+	order: 2,
+	when: ChatContextKeys.enabled,
+	hideByDefault: true,
+};
+
+// Overview View (compact snapshot with deep-links)
+const aiCustomizationOverviewViewDescriptor: IViewDescriptor = {
+	id: AI_CUSTOMIZATION_OVERVIEW_VIEW_ID,
+	name: localize2('aiCustomizationOverview', "Overview"),
+	ctorDescriptor: new SyncDescriptor(AICustomizationOverviewView),
 	containerIcon: aiCustomizationViewIcon,
 	canToggleVisibility: true,
 	canMoveView: true,
 	order: 1,
 	when: ChatContextKeys.enabled,
+	collapsed: false,
+	weight: 20,
 };
 
-viewsRegistry.registerViews([aiCustomizationViewDescriptor], AI_CUSTOMIZATION_VIEW_CONTAINER);
+viewsRegistry.registerViews([aiCustomizationOverviewViewDescriptor, aiCustomizationViewDescriptor], AI_CUSTOMIZATION_VIEW_CONTAINER);
 
 //#endregion
 

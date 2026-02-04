@@ -27,6 +27,7 @@ import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { Button } from '../../../../../base/browser/ui/button/button.js';
 import { defaultButtonStyles } from '../../../../../platform/theme/browser/defaultStyles.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
+import { ICommandService } from '../../../../../platform/commands/common/commands.js';
 import { IContextMenuService } from '../../../../../platform/contextview/browser/contextView.js';
 import { toAction } from '../../../../../base/common/actions.js';
 import { registerColor } from '../../../../../platform/theme/common/colorRegistry.js';
@@ -47,6 +48,8 @@ import {
 } from './aiCustomizationManagement.js';
 import { agentIcon, instructionsIcon, promptIcon, skillIcon } from '../aiCustomizationTreeView/aiCustomizationTreeViewIcons.js';
 import { AI_CUSTOMIZATION_EDITOR_ID } from '../aiCustomizationEditor/aiCustomizationEditor.js';
+import { IPromptsService, PromptsStorage } from '../../common/promptSyntax/service/promptsService.js';
+import { PromptsType } from '../../common/promptSyntax/promptTypes.js';
 
 const $ = DOM.$;
 
@@ -144,6 +147,8 @@ export class AICustomizationManagementEditor extends EditorPane {
 		@IContextKeyService contextKeyService: IContextKeyService,
 		@IContextMenuService private readonly contextMenuService: IContextMenuService,
 		@IEditorService private readonly editorService: IEditorService,
+		@ICommandService private readonly commandService: ICommandService,
+		@IPromptsService private readonly promptsService: IPromptsService,
 	) {
 		super(AICustomizationManagementEditor.ID, group, telemetryService, themeService, storageService);
 
@@ -163,6 +168,10 @@ export class AICustomizationManagementEditor extends EditorPane {
 		if (savedSection && Object.values(AICustomizationManagementSection).includes(savedSection as AICustomizationManagementSection)) {
 			this.selectedSection = savedSection as AICustomizationManagementSection;
 		}
+
+		// Listen to promptsService changes to update all counts
+		this._register(this.promptsService.onDidChangeCustomAgents(() => this.loadAllSectionCounts()));
+		this._register(this.promptsService.onDidChangeSlashCommands(() => this.loadAllSectionCounts()));
 	}
 
 	protected override createEditor(parent: HTMLElement): void {
@@ -201,22 +210,22 @@ export class AICustomizationManagementEditor extends EditorPane {
 			toAction({
 				id: 'newAgent',
 				label: localize('newAgent', "New Agent"),
-				run: () => this.createNewItem(AICustomizationManagementSection.Agents),
+				run: () => this.commandService.executeCommand('workbench.action.aiCustomization.newAgent'),
 			}),
 			toAction({
 				id: 'newSkill',
 				label: localize('newSkill', "New Skill"),
-				run: () => this.createNewItem(AICustomizationManagementSection.Skills),
+				run: () => this.commandService.executeCommand('workbench.action.aiCustomization.newSkill'),
 			}),
 			toAction({
 				id: 'newInstructions',
 				label: localize('newInstructions', "New Instructions"),
-				run: () => this.createNewItem(AICustomizationManagementSection.Instructions),
+				run: () => this.commandService.executeCommand('workbench.action.aiCustomization.newInstructions'),
 			}),
 			toAction({
 				id: 'newPrompt',
 				label: localize('newPrompt', "New Prompt"),
-				run: () => this.createNewItem(AICustomizationManagementSection.Prompts),
+				run: () => this.commandService.executeCommand('workbench.action.aiCustomization.newPrompt'),
 			}),
 		];
 
@@ -224,12 +233,6 @@ export class AICustomizationManagementEditor extends EditorPane {
 			getAnchor: () => this.newButton.element,
 			getActions: () => actions,
 		});
-	}
-
-	private async createNewItem(section: AICustomizationManagementSection): Promise<void> {
-		// TODO: Implement creating new items
-		// For now, we'll just log this - we can add proper template creation later
-		console.log('Create new item for section:', section);
 	}
 
 	private createSplitView(): void {
@@ -345,8 +348,9 @@ export class AICustomizationManagementEditor extends EditorPane {
 			this.updateSectionCount(this.selectedSection, count);
 		}));
 
-		// Load items for the initial section
+		// Load items for the initial section and load all section counts
 		void this.listWidget.setSection(this.selectedSection);
+		void this.loadAllSectionCounts();
 	}
 
 	private selectSection(section: AICustomizationManagementSection): void {
@@ -375,6 +379,48 @@ export class AICustomizationManagementEditor extends EditorPane {
 			if (selectedIndex >= 0) {
 				this.sectionsList.setSelection([selectedIndex]);
 			}
+		}
+	}
+
+	/**
+	 * Loads counts for all sections to display badges.
+	 */
+	private async loadAllSectionCounts(): Promise<void> {
+		const sectionPromptTypes: Array<{ section: AICustomizationManagementSection; type: PromptsType }> = [
+			{ section: AICustomizationManagementSection.Agents, type: PromptsType.agent },
+			{ section: AICustomizationManagementSection.Skills, type: PromptsType.skill },
+			{ section: AICustomizationManagementSection.Instructions, type: PromptsType.instructions },
+			{ section: AICustomizationManagementSection.Prompts, type: PromptsType.prompt },
+		];
+
+		await Promise.all(sectionPromptTypes.map(async ({ section, type }) => {
+			let count = 0;
+			if (type === PromptsType.skill) {
+				// Skills use a different API
+				const skills = await this.promptsService.findAgentSkills(CancellationToken.None);
+				count = skills?.length || 0;
+			} else {
+				// Other types: count from all storage locations
+				const [workspaceItems, userItems, extensionItems] = await Promise.all([
+					this.promptsService.listPromptFilesForStorage(type, PromptsStorage.local, CancellationToken.None),
+					this.promptsService.listPromptFilesForStorage(type, PromptsStorage.user, CancellationToken.None),
+					this.promptsService.listPromptFilesForStorage(type, PromptsStorage.extension, CancellationToken.None),
+				]);
+				count = workspaceItems.length + userItems.length + extensionItems.length;
+			}
+
+			const sectionItem = this.sections.find(s => s.id === section);
+			if (sectionItem) {
+				sectionItem.count = count;
+			}
+		}));
+
+		// Re-render the sections list with all counts
+		this.sectionsList.splice(0, this.sectionsList.length, this.sections);
+		// Re-select the current section
+		const selectedIndex = this.sections.findIndex(s => s.id === this.selectedSection);
+		if (selectedIndex >= 0) {
+			this.sectionsList.setSelection([selectedIndex]);
 		}
 	}
 
