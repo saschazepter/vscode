@@ -21,7 +21,6 @@ import { LayoutPriority } from '../../../../base/browser/ui/grid/grid.js';
 import { assertReturnsDefined } from '../../../../base/common/types.js';
 import { IViewDescriptorService } from '../../../common/views.js';
 import { AbstractPaneCompositePart, CompositeBarPosition } from '../../../browser/parts/paneCompositePart.js';
-import { ActivityBarCompositeBar, ActivitybarPart } from '../../../browser/parts/activitybar/activitybarPart.js';
 import { ActionsOrientation } from '../../../../base/browser/ui/actionbar/actionbar.js';
 import { HoverPosition } from '../../../../base/browser/ui/hover/hoverWidget.js';
 import { IPaneCompositeBarOptions } from '../../../browser/parts/paneCompositeBar.js';
@@ -36,6 +35,10 @@ import { IHoverService } from '../../../../platform/hover/browser/hover.js';
 export class AgentSessionSidebarPart extends AbstractPaneCompositePart {
 
 	static readonly activeViewletSettingsKey = 'workbench.agentsession.sidebar.activeviewletid';
+	static readonly pinnedViewContainersKey = 'workbench.agentsession.pinnedViewlets2';
+	static readonly placeholderViewContainersKey = 'workbench.agentsession.placeholderViewlets';
+	static readonly viewContainersWorkspaceStateKey = 'workbench.agentsession.viewletsWorkspaceState';
+
 
 	//#region IView
 
@@ -134,17 +137,13 @@ export class AgentSessionSidebarPart extends AbstractPaneCompositePart {
 		return this.layoutService.getSideBarPosition() === SideBarPosition.LEFT ? AnchorAlignment.LEFT : AnchorAlignment.RIGHT;
 	}
 
-	protected override createCompositeBar(): ActivityBarCompositeBar {
-		return this.instantiationService.createInstance(ActivityBarCompositeBar, this.getCompositeBarOptions(), this.partId, this, false);
-	}
-
 	protected getCompositeBarOptions(): IPaneCompositeBarOptions {
 		return {
 			partContainerClass: 'sidebar',
-			pinnedViewContainersKey: ActivitybarPart.pinnedViewContainersKey,
-			placeholderViewContainersKey: ActivitybarPart.placeholderViewContainersKey,
-			viewContainersWorkspaceStateKey: ActivitybarPart.viewContainersWorkspaceStateKey,
-			icon: true,
+			pinnedViewContainersKey: AgentSessionSidebarPart.pinnedViewContainersKey,
+			placeholderViewContainersKey: AgentSessionSidebarPart.placeholderViewContainersKey,
+			viewContainersWorkspaceStateKey: AgentSessionSidebarPart.viewContainersWorkspaceStateKey,
+			icon: false,
 			orientation: ActionsOrientation.HORIZONTAL,
 			recomputeSizes: true,
 			activityHoverOptions: {
