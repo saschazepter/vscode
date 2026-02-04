@@ -718,18 +718,22 @@ function getPaneCompositeExtension(viewContainerLocation: ViewContainerLocation)
 			return PaneCompositeExtensions.Auxiliary;
 		case ViewContainerLocation.Panel:
 			return PaneCompositeExtensions.Panels;
+		case ViewContainerLocation.ChatBar:
+			return PaneCompositeExtensions.ChatBar;
 		case ViewContainerLocation.Sidebar:
 		default:
 			return PaneCompositeExtensions.Viewlets;
 	}
 }
 
-export function getPartByLocation(viewContainerLocation: ViewContainerLocation): Parts.AUXILIARYBAR_PART | Parts.SIDEBAR_PART | Parts.PANEL_PART {
+export function getPartByLocation(viewContainerLocation: ViewContainerLocation): Parts.AUXILIARYBAR_PART | Parts.SIDEBAR_PART | Parts.PANEL_PART | Parts.CHATBAR_PART {
 	switch (viewContainerLocation) {
 		case ViewContainerLocation.AuxiliaryBar:
 			return Parts.AUXILIARYBAR_PART;
 		case ViewContainerLocation.Panel:
 			return Parts.PANEL_PART;
+		case ViewContainerLocation.ChatBar:
+			return Parts.CHATBAR_PART;
 		case ViewContainerLocation.Sidebar:
 		default:
 			return Parts.SIDEBAR_PART;

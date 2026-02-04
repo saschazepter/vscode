@@ -19,28 +19,29 @@ The Agent Sessions Workbench (`AgentSessionsWorkbench`) provides a simplified, f
 ### 2.1 Visual Representation
 
 ```
-┌─────────────────────────────────────────────────┐
-│                    Titlebar                     │
-├─────────┬────────────────┬──────────────────────┤
-│         │                │                      │
-│ Sidebar │  Auxiliary Bar │       Editor         │
-│         │                │                      │
-├─────────┴────────────────┴──────────────────────┤
-│                     Panel                       │
-└─────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                            Titlebar                             │
+├─────────┬─────────────────┬─────────────────┬───────────────────┤
+│         │                 │                 │                   │
+│ Sidebar │    Chat Bar     │     Editor      │   Auxiliary Bar   │
+│         │                 │                 │                   │
+├─────────┴─────────────────┴─────────────────┴───────────────────┤
+│                             Panel                               │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ### 2.2 Parts
 
 #### Included Parts
 
-| Part | ID Constant | Position | Default Visibility |
-|------|-------------|----------|--------------------|
-| Titlebar | `Parts.TITLEBAR_PART` | Top, full width | Always visible |
-| Sidebar | `Parts.SIDEBAR_PART` | Left, in middle section | Visible |
-| Auxiliary Bar | `Parts.AUXILIARYBAR_PART` | Center-left, in middle section | Visible |
-| Editor | `Parts.EDITOR_PART` | Right, in middle section | Hidden (auto-shows when editors open) |
-| Panel | `Parts.PANEL_PART` | Bottom, full width | Hidden |
+| Part | ID Constant | Position | Default Visibility | ViewContainerLocation |
+|------|-------------|----------|------------|----------------------|
+| Titlebar | `Parts.TITLEBAR_PART` | Top, full width | Always visible | — |
+| Sidebar | `Parts.SIDEBAR_PART` | Left, in middle section | Visible | `ViewContainerLocation.Sidebar` |
+| Chat Bar | `Parts.CHATBAR_PART` | Second in middle section | Visible | `ViewContainerLocation.ChatBar` |
+| Editor | `Parts.EDITOR_PART` | Third in middle section | Hidden | — |
+| Auxiliary Bar | `Parts.AUXILIARYBAR_PART` | Right, in middle section | Visible | `ViewContainerLocation.AuxiliaryBar` |
+| Panel | `Parts.PANEL_PART` | Bottom, full width | Hidden | `ViewContainerLocation.Panel` |
 
 #### Excluded Parts
 
@@ -65,9 +66,10 @@ Orientation: VERTICAL (root)
 ├── Titlebar (leaf, size: titleBarHeight)
 ├── Middle Section (branch, HORIZONTAL, size: remaining height - panel)
 │   ├── Sidebar (leaf, size: 300px default)
-│   ├── Auxiliary Bar (leaf, size: 300px default)
-│   └── Editor (leaf, size: remaining width)
-└── Panel (leaf, size: 300px default)
+│   ├── Chat Bar (leaf, size: remaining width)
+│   ├── Editor (leaf, size: remaining width, hidden by default)
+│   └── Auxiliary Bar (leaf, size: 300px default)
+└── Panel (leaf, size: 300px default, hidden by default)
 ```
 
 ### 3.2 Default Sizes
@@ -76,9 +78,10 @@ Orientation: VERTICAL (root)
 |------|--------------|
 | Sidebar | 300px width |
 | Auxiliary Bar | 300px width |
+| Chat Bar | Remaining space |
+| Editor | Remaining space |
 | Panel | 300px height |
 | Titlebar | Determined by `minimumHeight` (~30px) |
-| Editor | Remaining space |
 
 ---
 
@@ -202,8 +205,9 @@ Applied to `mainContainer` based on part visibility:
 | Class | Applied When |
 |-------|--------------|
 | `nosidebar` | Sidebar is hidden |
-| `noauxiliarybar` | Auxiliary bar is hidden |
 | `nomaineditorarea` | Editor is hidden |
+| `noauxiliarybar` | Auxiliary bar is hidden |
+| `nochatbar` | Chat bar is hidden |
 | `nopanel` | Panel is hidden |
 
 ### 7.2 Window State Classes
@@ -287,14 +291,19 @@ Each agent session part uses separate storage keys to avoid conflicts with regul
 ```
 src/vs/workbench/agentSessions/
 ├── browser/
-│   ├── agentSessionsWorkbench.ts       # Main layout implementation
+│   ├── agentSessionsWorkbench.ts           # Main layout implementation
 │   ├── parts/
 │   │   ├── agentSessionSidebarPart.ts      # Agent session sidebar
 │   │   ├── agentSessionAuxiliaryBarPart.ts # Agent session auxiliary bar
 │   │   └── agentSessionPanelPart.ts        # Agent session panel
-│   └── media/
-│       └── agentSessionsWorkbench.css  # Layout-specific styles
-└── LAYOUT.md                           # This specification
+│   ├── media/
+│   │   └── agentSessionsWorkbench.css  # Layout-specific styles
+│   └── parts/
+│       └── chatbar/
+│           ├── chatBarPart.ts          # Chat Bar part implementation
+│           └── media/
+│               └── chatBarPart.css     # Chat Bar styles
+└── LAYOUT.md                              # This specification
 ```
 
 ---
@@ -334,6 +343,7 @@ interface IPartVisibilityState {
     auxiliaryBar: boolean;
     editor: boolean;
     panel: boolean;
+    chatBar: boolean;
 }
 ```
 
@@ -343,6 +353,7 @@ interface IPartVisibilityState {
 |------|--------------------|
 | Sidebar | `true` (visible) |
 | Auxiliary Bar | `true` (visible) |
+| Chat Bar | `true` (visible) |
 | Editor | `false` (hidden) |
 | Panel | `false` (hidden) |
 
@@ -352,6 +363,9 @@ interface IPartVisibilityState {
 
 | Date | Change |
 |------|--------|
+| 2026-02-04 | Restored Editor part; Layout order is now Sidebar \| Chat Bar \| Editor \| Auxiliary Bar |
+| 2026-02-04 | Removed Editor part; Chat Bar now takes max width; Layout order changed to Sidebar \| Auxiliary Bar \| Chat Bar |
 | 2026-02-04 | Added agent session specific parts (AgentSessionSidebarPart, AgentSessionAuxiliaryBarPart, AgentSessionPanelPart) in `agentSessions/browser/parts/`; PaneCompositePartService now selects parts based on isAgentSessionsWorkspace |
 | 2026-02-04 | Editor and Panel hidden by default; Editor auto-shows on editor open, auto-hides when last editor closes |
+| 2026-02-04 | Added Chat Bar part with `ViewContainerLocation.ChatBar` |
 | Initial | Document created with base layout specification |

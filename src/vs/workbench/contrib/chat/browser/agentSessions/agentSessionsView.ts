@@ -6,7 +6,7 @@
 import './media/agentSessionsView.css';
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { DisposableStore } from '../../../../../base/common/lifecycle.js';
-import { localize, localize2 } from '../../../../../nls.js';
+import { localize } from '../../../../../nls.js';
 import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
 import { IKeybindingService } from '../../../../../platform/keybinding/common/keybinding.js';
 import { IContextMenuService } from '../../../../../platform/contextview/browser/contextView.js';
@@ -15,12 +15,8 @@ import { IConfigurationService } from '../../../../../platform/configuration/com
 import { IOpenerService } from '../../../../../platform/opener/common/opener.js';
 import { IThemeService } from '../../../../../platform/theme/common/themeService.js';
 import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
-import { IViewContainersRegistry, IViewDescriptor, IViewDescriptorService, IViewsRegistry, ViewContainer, ViewContainerLocation, Extensions as ViewExtensions } from '../../../../common/views.js';
+import { IViewDescriptorService } from '../../../../common/views.js';
 import { ViewPane, IViewPaneOptions } from '../../../../browser/parts/views/viewPane.js';
-import { ViewPaneContainer } from '../../../../browser/parts/views/viewPaneContainer.js';
-import { SyncDescriptor } from '../../../../../platform/instantiation/common/descriptors.js';
-import { Registry } from '../../../../../platform/registry/common/platform.js';
-import { registerIcon } from '../../../../../platform/theme/common/iconRegistry.js';
 import { IWorkspaceContextService, IWorkspaceFolder } from '../../../../../platform/workspace/common/workspace.js';
 import { IListVirtualDelegate, IIdentityProvider } from '../../../../../base/browser/ui/list/list.js';
 import { IAsyncDataSource, ITreeNode, ITreeRenderer } from '../../../../../base/browser/ui/tree/tree.js';
@@ -33,8 +29,6 @@ import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
 
 // --- Constants
-
-const agentSessionsViewIcon = registerIcon('agent-sessions-view-icon', Codicon.folder, localize('agentSessionsViewIcon', 'View icon of the agent sessions view.'));
 
 export const AGENT_SESSIONS_VIEW_CONTAINER_ID = 'workbench.view.agentSessions';
 export const AGENT_SESSIONS_VIEW_ID = 'workbench.view.agentSessions.folders';
@@ -372,32 +366,3 @@ export class AgentSessionsViewPane extends ViewPane {
 		this.tree?.domFocus();
 	}
 }
-
-// --- View Container & View Registration
-
-console.log('[AgentSessionsView] Registering view container and view for AgentSessionsSideBar');
-
-const agentSessionsViewContainer: ViewContainer = Registry.as<IViewContainersRegistry>(ViewExtensions.ViewContainersRegistry).registerViewContainer({
-	id: AGENT_SESSIONS_VIEW_CONTAINER_ID,
-	title: localize2('agentSessions.viewContainer.label', "Agent Sessions"),
-	icon: agentSessionsViewIcon,
-	ctorDescriptor: new SyncDescriptor(ViewPaneContainer, [AGENT_SESSIONS_VIEW_CONTAINER_ID, { mergeViewWithContainerWhenSingleView: true }]),
-	storageId: AGENT_SESSIONS_VIEW_CONTAINER_ID,
-	hideIfEmpty: false,
-	order: 1,
-	showInAgentSessions: true,
-}, ViewContainerLocation.Sidebar);
-
-const agentSessionsViewDescriptor: IViewDescriptor = {
-	id: AGENT_SESSIONS_VIEW_ID,
-	containerIcon: agentSessionsViewContainer.icon,
-	containerTitle: agentSessionsViewContainer.title.value,
-	singleViewPaneContainerTitle: agentSessionsViewContainer.title.value,
-	name: localize2('agentSessions.view.label', "Folders"),
-	canToggleVisibility: false,
-	canMoveView: false,
-	ctorDescriptor: new SyncDescriptor(AgentSessionsViewPane),
-	showInAgentSessions: true,
-};
-
-Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry).registerViews([agentSessionsViewDescriptor], agentSessionsViewContainer);

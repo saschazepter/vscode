@@ -48,7 +48,7 @@ export enum CompositeBarPosition {
 
 export interface IPaneCompositePart extends IView {
 
-	readonly partId: Parts.PANEL_PART | Parts.AUXILIARYBAR_PART | Parts.SIDEBAR_PART;
+	readonly partId: Parts.PANEL_PART | Parts.AUXILIARYBAR_PART | Parts.SIDEBAR_PART | Parts.CHATBAR_PART;
 
 	readonly onDidPaneCompositeOpen: Event<IPaneComposite>;
 	readonly onDidPaneCompositeClose: Event<IPaneComposite>;
@@ -133,7 +133,7 @@ export abstract class AbstractPaneCompositePart extends CompositePart<PaneCompos
 	protected contentDimension: Dimension | undefined;
 
 	constructor(
-		readonly partId: Parts.PANEL_PART | Parts.AUXILIARYBAR_PART | Parts.SIDEBAR_PART,
+		readonly partId: Parts.PANEL_PART | Parts.AUXILIARYBAR_PART | Parts.SIDEBAR_PART | Parts.CHATBAR_PART,
 		partOptions: ICompositePartOptions,
 		activePaneCompositeSettingsKey: string,
 		private readonly activePaneContextKey: IContextKey<string>,
@@ -166,6 +166,10 @@ export abstract class AbstractPaneCompositePart extends CompositePart<PaneCompos
 			location = ViewContainerLocation.AuxiliaryBar;
 			registryId = Extensions.Auxiliary;
 			globalActionsMenuId = MenuId.AuxiliaryBarTitle;
+		} else if (partId === Parts.CHATBAR_PART) {
+			location = ViewContainerLocation.ChatBar;
+			registryId = Extensions.ChatBar;
+			globalActionsMenuId = MenuId.ChatBarTitle;
 		}
 		super(
 			notificationService,

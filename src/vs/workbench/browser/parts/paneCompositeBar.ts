@@ -113,7 +113,8 @@ export class PaneCompositeBar extends Disposable {
 
 		this.location = paneCompositePart.partId === Parts.PANEL_PART
 			? ViewContainerLocation.Panel : paneCompositePart.partId === Parts.AUXILIARYBAR_PART
-				? ViewContainerLocation.AuxiliaryBar : ViewContainerLocation.Sidebar;
+				? ViewContainerLocation.AuxiliaryBar : paneCompositePart.partId === Parts.CHATBAR_PART
+					? ViewContainerLocation.ChatBar : ViewContainerLocation.Sidebar;
 
 		this.dndHandler = new CompositeDragAndDrop(this.viewDescriptorService, this.location, this.options.orientation,
 			async (id: string, focus?: boolean) => { return await this.paneCompositePart.openPaneComposite(id, focus) ?? null; },

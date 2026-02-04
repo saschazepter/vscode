@@ -19,7 +19,7 @@ import { Direction, ISerializableView, ISerializedGrid, ISerializedLeafNode, ISe
 import { IEditorGroupsService } from '../../services/editor/common/editorGroupsService.js';
 import { IEditorService } from '../../services/editor/common/editorService.js';
 import { IPaneCompositePartService } from '../../services/panecomposite/browser/panecomposite.js';
-import { ViewContainerLocation } from '../../common/views.js';
+import { IViewDescriptorService, ViewContainerLocation } from '../../common/views.js';
 import { ILogService } from '../../../platform/log/common/log.js';
 import { IInstantiationService, ServicesAccessor } from '../../../platform/instantiation/common/instantiation.js';
 import { ITitleService } from '../../services/title/browser/titleService.js';
@@ -77,6 +77,7 @@ enum LayoutClasses {
 	MAIN_EDITOR_AREA_HIDDEN = 'nomaineditorarea',
 	PANEL_HIDDEN = 'nopanel',
 	AUXILIARYBAR_HIDDEN = 'noauxiliarybar',
+	CHATBAR_HIDDEN = 'nochatbar',
 	FULLSCREEN = 'fullscreen',
 	MAXIMIZED = 'maximized'
 }
@@ -90,6 +91,7 @@ interface IPartVisibilityState {
 	auxiliaryBar: boolean;
 	editor: boolean;
 	panel: boolean;
+	chatBar: boolean;
 }
 
 //#endregion
@@ -223,12 +225,14 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 	private panelPartView!: ISerializableView;
 	private auxiliaryBarPartView!: ISerializableView;
 	private editorPartView!: ISerializableView;
+	private chatBarPartView!: ISerializableView;
 
 	private readonly partVisibility: IPartVisibilityState = {
 		sidebar: true,
 		auxiliaryBar: true,
 		editor: false,
-		panel: false
+		panel: false,
+		chatBar: true
 	};
 
 	private mainWindowFullscreen = false;
@@ -247,6 +251,7 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 	private editorGroupService!: IEditorGroupsService;
 	private editorService!: IEditorService;
 	private paneCompositeService!: IPaneCompositePartService;
+	private viewDescriptorService!: IViewDescriptorService;
 
 	//#endregion
 
@@ -510,6 +515,7 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 			{ id: Parts.SIDEBAR_PART, role: 'none', classes: ['sidebar', 'left'] },
 			{ id: Parts.AUXILIARYBAR_PART, role: 'none', classes: ['auxiliarybar', 'basepanel', 'right'] },
 			{ id: Parts.EDITOR_PART, role: 'main', classes: ['editor'], options: { restorePreviousState: false } },
+			{ id: Parts.CHATBAR_PART, role: 'main', classes: ['chatbar', 'basepanel', 'right'] },
 			{ id: Parts.PANEL_PART, role: 'none', classes: ['panel', 'basepanel', positionToString(this.getPanelPosition())] },
 		]) {
 			const partContainer = this.createPartContainer(id, role, classes);
@@ -591,6 +597,7 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 		this.editorGroupService = accessor.get(IEditorGroupsService);
 		this.editorService = accessor.get(IEditorService);
 		this.paneCompositeService = accessor.get(IPaneCompositePartService);
+		this.viewDescriptorService = accessor.get(IViewDescriptorService);
 		accessor.get(ITitleService);
 
 		// Register layout listeners
@@ -652,6 +659,7 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 		const panelPart = this.getPart(Parts.PANEL_PART);
 		const auxiliaryBarPart = this.getPart(Parts.AUXILIARYBAR_PART);
 		const sideBar = this.getPart(Parts.SIDEBAR_PART);
+		const chatBarPart = this.getPart(Parts.CHATBAR_PART);
 
 		// View references for all parts
 		this.titleBarPartView = titleBar;
@@ -659,13 +667,15 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 		this.editorPartView = editorPart;
 		this.panelPartView = panelPart;
 		this.auxiliaryBarPartView = auxiliaryBarPart;
+		this.chatBarPartView = chatBarPart;
 
 		const viewMap: { [key: string]: ISerializableView } = {
 			[Parts.TITLEBAR_PART]: this.titleBarPartView,
 			[Parts.EDITOR_PART]: this.editorPartView,
 			[Parts.PANEL_PART]: this.panelPartView,
 			[Parts.SIDEBAR_PART]: this.sideBarPartView,
-			[Parts.AUXILIARYBAR_PART]: this.auxiliaryBarPartView
+			[Parts.AUXILIARYBAR_PART]: this.auxiliaryBarPartView,
+			[Parts.CHATBAR_PART]: this.chatBarPartView
 		};
 
 		const fromJSON = ({ type }: { type: string }) => viewMap[type];
@@ -681,7 +691,7 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 		this.workbenchGrid.edgeSnapping = this.mainWindowFullscreen;
 
 		// Listen for part visibility changes
-		for (const part of [titleBar, editorPart, panelPart, sideBar, auxiliaryBarPart]) {
+		for (const part of [titleBar, editorPart, panelPart, sideBar, auxiliaryBarPart, chatBarPart]) {
 			this._register(part.onDidVisibilityChange(visible => {
 				if (part === sideBar) {
 					this.setSideBarHidden(!visible);
@@ -691,6 +701,8 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 					this.setAuxiliaryBarHidden(!visible);
 				} else if (part === editorPart) {
 					this.setEditorHidden(!visible);
+				} else if (part === chatBarPart) {
+					this.setChatBarHidden(!visible);
 				}
 
 				this._onDidChangePartVisibility.fire({ partId: part.getId(), visible });
@@ -704,7 +716,7 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 	 *
 	 * Structure (vertical orientation):
 	 * - Titlebar (top)
-	 * - Middle section (horizontal): Sidebar | Auxiliary Bar | Editor
+	 * - Middle section (horizontal): Sidebar | Chat Bar (takes remaining width) | Editor | Auxiliary Bar
 	 * - Panel (bottom, full width)
 	 */
 	private createGridDescriptor(): ISerializedGrid {
@@ -720,6 +732,9 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 
 		// Calculate editor size (remaining width)
 		const editorWidth = Math.max(0, width - sideBarSize - auxiliaryBarSize);
+
+		// Calculate chat bar size (remaining width)
+		const chatBarWidth = Math.max(0, width - sideBarSize - auxiliaryBarSize);
 
 		const titleBarNode: ISerializedLeafNode = {
 			type: 'leaf',
@@ -749,6 +764,13 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 			visible: this.partVisibility.editor
 		};
 
+		const chatBarNode: ISerializedLeafNode = {
+			type: 'leaf',
+			data: { type: Parts.CHATBAR_PART },
+			size: chatBarWidth,
+			visible: this.partVisibility.chatBar
+		};
+
 		const panelNode: ISerializedLeafNode = {
 			type: 'leaf',
 			data: { type: Parts.PANEL_PART },
@@ -756,10 +778,10 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 			visible: this.partVisibility.panel
 		};
 
-		// Middle section: Sidebar | Auxiliary Bar | Editor (horizontal layout)
+		// Middle section: Sidebar | Chat Bar | Editor | Auxiliary Bar (horizontal layout)
 		const middleSection: ISerializedNode = {
 			type: 'branch',
-			data: [sideBarNode, auxiliaryBarNode, editorNode],
+			data: [sideBarNode, chatBarNode, editorNode, auxiliaryBarNode],
 			size: middleSectionHeight
 		};
 
@@ -816,6 +838,7 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 			!this.partVisibility.editor ? LayoutClasses.MAIN_EDITOR_AREA_HIDDEN : undefined,
 			!this.partVisibility.panel ? LayoutClasses.PANEL_HIDDEN : undefined,
 			!this.partVisibility.auxiliaryBar ? LayoutClasses.AUXILIARYBAR_HIDDEN : undefined,
+			!this.partVisibility.chatBar ? LayoutClasses.CHATBAR_HIDDEN : undefined,
 			this.mainWindowFullscreen ? LayoutClasses.FULLSCREEN : undefined
 		]);
 	}
@@ -868,6 +891,9 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 			case Parts.AUXILIARYBAR_PART:
 				this.paneCompositeService.getActivePaneComposite(ViewContainerLocation.AuxiliaryBar)?.focus();
 				break;
+			case Parts.CHATBAR_PART:
+				this.paneCompositeService.getActivePaneComposite(ViewContainerLocation.ChatBar)?.focus();
+				break;
 			default: {
 				const container = this.getContainer(targetWindow, part);
 				container?.focus();
@@ -876,7 +902,7 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 	}
 
 	focus(): void {
-		this.focusPart(Parts.EDITOR_PART, mainWindow);
+		this.focusPart(Parts.CHATBAR_PART);
 	}
 
 	//#endregion
@@ -928,10 +954,11 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 				return this.partVisibility.editor;
 			case Parts.PANEL_PART:
 				return this.partVisibility.panel;
+			case Parts.CHATBAR_PART:
+				return this.partVisibility.chatBar;
 			case Parts.ACTIVITYBAR_PART:
 			case Parts.STATUSBAR_PART:
 			case Parts.BANNER_PART:
-				return false; // Not included in this layout
 			default:
 				return false;
 		}
@@ -950,6 +977,9 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 				break;
 			case Parts.PANEL_PART:
 				this.setPanelHidden(hidden);
+				break;
+			case Parts.CHATBAR_PART:
+				this.setChatBarHidden(hidden);
 				break;
 		}
 	}
@@ -1065,6 +1095,38 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 		}
 	}
 
+	private setChatBarHidden(hidden: boolean): void {
+		if (this.partVisibility.chatBar === !hidden) {
+			return;
+		}
+
+		this.partVisibility.chatBar = !hidden;
+
+		// Adjust CSS
+		if (hidden) {
+			this.mainContainer.classList.add(LayoutClasses.CHATBAR_HIDDEN);
+		} else {
+			this.mainContainer.classList.remove(LayoutClasses.CHATBAR_HIDDEN);
+		}
+
+		// Propagate to grid
+		this.workbenchGrid.setViewVisible(this.chatBarPartView, !hidden);
+
+		// If chat bar becomes hidden, also hide the current active pane composite
+		if (hidden && this.paneCompositeService.getActivePaneComposite(ViewContainerLocation.ChatBar)) {
+			this.paneCompositeService.hideActivePaneComposite(ViewContainerLocation.ChatBar);
+		}
+
+		// If chat bar becomes visible, show last active pane composite or default
+		if (!hidden && !this.paneCompositeService.getActivePaneComposite(ViewContainerLocation.ChatBar)) {
+			const paneCompositeToOpen = this.paneCompositeService.getLastActivePaneCompositeId(ViewContainerLocation.ChatBar) ??
+				this.viewDescriptorService.getDefaultViewContainer(ViewContainerLocation.ChatBar)?.id;
+			if (paneCompositeToOpen) {
+				this.paneCompositeService.openPaneComposite(paneCompositeToOpen, ViewContainerLocation.ChatBar);
+			}
+		}
+	}
+
 	//#endregion
 
 	//#region Position Methods (Fixed - Not Configurable)
@@ -1133,6 +1195,8 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 				return this.editorPartView;
 			case Parts.PANEL_PART:
 				return this.panelPartView;
+			case Parts.CHATBAR_PART:
+				return this.chatBarPartView;
 			default:
 				return undefined;
 		}
@@ -1259,6 +1323,9 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 		}
 		if (neighborView === this.panelPartView) {
 			return Parts.PANEL_PART;
+		}
+		if (neighborView === this.chatBarPartView) {
+			return Parts.CHATBAR_PART;
 		}
 
 		return undefined;

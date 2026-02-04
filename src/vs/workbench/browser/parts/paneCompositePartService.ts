@@ -10,6 +10,7 @@ import { IInstantiationService } from '../../../platform/instantiation/common/in
 import { IProgressIndicator } from '../../../platform/progress/common/progress.js';
 import { PaneCompositeDescriptor } from '../panecomposite.js';
 import { AuxiliaryBarPart } from './auxiliarybar/auxiliaryBarPart.js';
+import { ChatBarPart } from '../../agentSessions/browser/parts/chatbar/chatBarPart.js';
 import { PanelPart } from './panel/panelPart.js';
 import { SidebarPart } from './sidebar/sidebarPart.js';
 import { AgentSessionAuxiliaryBarPart } from '../../agentSessions/browser/parts/agentSessionAuxiliaryBarPart.js';
@@ -48,10 +49,12 @@ export class PaneCompositePartService extends Disposable implements IPaneComposi
 		const auxiliaryBarPart = isAgentSessionsWorkspace
 			? instantiationService.createInstance(AgentSessionAuxiliaryBarPart)
 			: instantiationService.createInstance(AuxiliaryBarPart);
+		const chatBarPart = instantiationService.createInstance(ChatBarPart);
 
 		this.paneCompositeParts.set(ViewContainerLocation.Panel, panelPart);
 		this.paneCompositeParts.set(ViewContainerLocation.Sidebar, sideBarPart);
 		this.paneCompositeParts.set(ViewContainerLocation.AuxiliaryBar, auxiliaryBarPart);
+		this.paneCompositeParts.set(ViewContainerLocation.ChatBar, chatBarPart);
 
 		const eventDisposables = this._register(new DisposableStore());
 		this.onDidPaneCompositeOpen = Event.any(...ViewContainerLocations.map(loc => Event.map(this.paneCompositeParts.get(loc)!.onDidPaneCompositeOpen, composite => { return { composite, viewContainerLocation: loc }; }, eventDisposables)));
