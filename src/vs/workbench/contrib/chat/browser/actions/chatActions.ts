@@ -65,7 +65,7 @@ import { ChatViewId, IChatWidget, IChatWidgetService } from '../chat.js';
 import { IChatEditorOptions } from '../widgetHosts/editor/chatEditor.js';
 import { ChatEditorInput, showClearEditingSessionConfirmation } from '../widgetHosts/editor/chatEditorInput.js';
 import { convertBufferToScreenshotVariable } from '../attachments/chatScreenshotContext.js';
-import { AgentSessionProviders } from '../agentSessions/agentSessions.js';
+import { AgentSessionProviders, getAgentSessionProvider } from '../agentSessions/agentSessions.js';
 import { ChatSessionPosition } from '../chatSessions/chatSessions.contribution.js';
 
 export const CHAT_CATEGORY = localize2('chat.category', 'Chat');
@@ -181,6 +181,13 @@ export interface IChatViewOpenOptions {
 	 * This corresponds to AgentSessionProviders enum values.
 	 */
 	target?: 'local' | 'background' | 'cloud' | 'claude' | 'codex';
+
+	/**
+	 * If true, creates a new chat session before applying other parameters.
+	 * This ensures mode, prompt, target, and other options are applied to a fresh session
+	 * rather than modifying an existing one.
+	 */
+	newSession?: boolean;
 }
 
 export interface IChatViewOpenRequestEntry {
@@ -242,16 +249,22 @@ abstract class OpenChatGlobalAction extends Action2 {
 			return;
 		}
 
+		// Handle newSession parameter - create a new chat session before applying other options
+		if (opts?.newSession) {
+			await commandService.executeCommand(ACTION_ID_NEW_CHAT);
+			chatWidget = widgetService.lastFocusedWidget ?? chatWidget;
+		}
+
 		const switchToMode = (opts?.mode ? chatModeService.findModeByName(opts?.mode) : undefined) ?? this.mode;
 		if (switchToMode) {
 			await this.handleSwitchToMode(switchToMode, chatWidget, instaService, commandService);
 		}
 
 		// Handle target parameter to set session target dropdown
+		// Only switch session type if needed and session is empty
 		if (opts?.target) {
 			const targetProvider = TARGET_TO_PROVIDER_MAP[opts.target];
 			if (targetProvider) {
-				// If the chat is empty and currently local, replace it with a new session of the specified type
 				const isEmpty = chatWidget.isEmpty();
 				const viewModel = chatWidget.viewModel;
 				const isLocalSession = viewModel && (
@@ -259,15 +272,21 @@ abstract class OpenChatGlobalAction extends Action2 {
 					viewModel.sessionResource.scheme === Schemas.vscodeChatEditor
 				);
 
-				if (isEmpty && isLocalSession && targetProvider !== AgentSessionProviders.Local) {
-					// Create a new session with the specified target type
+				// Determine current session's provider type
+				const currentProvider = viewModel ? getAgentSessionProvider(viewModel.sessionResource) ?? AgentSessionProviders.Local : AgentSessionProviders.Local;
+
+				// If the current session already matches the target, no action needed
+				if (currentProvider === targetProvider) {
+					// Already on the correct target, nothing to do
+				} else if (!isEmpty) {
+					// Session has content and target is different - don't disrupt existing work
+				} else if (isLocalSession && targetProvider !== AgentSessionProviders.Local) {
+					// Empty local session, switch to the specified target type
 					const position = chatWidget.location === ChatAgentLocation.Panel ? ChatSessionPosition.Sidebar : ChatSessionPosition.Editor;
 					await commandService.executeCommand(`workbench.action.chat.openNewChatSessionInPlace.${targetProvider}`, position);
 					// Get the updated widget after session change
 					chatWidget = widgetService.lastFocusedWidget ?? chatWidget;
 				}
-				// Note: For non-empty sessions or when target is 'local', the dropdown will show the current session type
-				// Users can manually switch using the session target picker if needed
 			} else {
 				logService.warn(`Invalid target value: ${opts.target}. Valid values are: local, background, cloud, claude, codex`);
 			}
