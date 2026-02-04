@@ -133,16 +133,16 @@ suite('MainThreadHostTreeView', function () {
 		}();
 
 		// Register a view with drag support
-		const viewDescriptor2: ITreeViewDescriptor = {
+		const viewDescriptorWithDrag: ITreeViewDescriptor = {
 			id: testTreeViewIdWithDrag,
 			ctorDescriptor: null!,
 			name: nls.localize2('Test View 2', 'Test View 2'),
 			treeView: disposables.add(instantiationService.createInstance(CustomTreeView, 'testTree2', 'Test Title 2', 'extension.id')),
 		};
-		ViewsRegistry.registerViews([viewDescriptor2], container);
+		ViewsRegistry.registerViews([viewDescriptorWithDrag], container);
 
-		const testExtensionService2 = new TestExtensionService();
-		const mainThreadTreeViews2 = disposables.add(new MainThreadTreeViews(
+		const dragTestExtensionService = new TestExtensionService();
+		const dragTestMainThreadTreeViews = disposables.add(new MainThreadTreeViews(
 			new class implements IExtHostContext {
 				remoteAuthority = '';
 				extensionHostKind = ExtensionHostKind.LocalProcess;
@@ -153,8 +153,8 @@ suite('MainThreadHostTreeView', function () {
 					return mockExtHostWithDrag;
 				}
 				drain(): any { return null; }
-			}, new TestViewsService(), new TestNotificationService(), testExtensionService2, new NullLogService(), NullTelemetryService));
-		mainThreadTreeViews2.$registerTreeViewDataProvider(testTreeViewIdWithDrag, {
+			}, new TestViewsService(), new TestNotificationService(), dragTestExtensionService, new NullLogService(), NullTelemetryService));
+		dragTestMainThreadTreeViews.$registerTreeViewDataProvider(testTreeViewIdWithDrag, {
 			showCollapseAll: false,
 			canSelectMany: false,
 			dropMimeTypes: [],
@@ -163,11 +163,11 @@ suite('MainThreadHostTreeView', function () {
 			hasHandleDrop: false,
 			manuallyManageCheckboxes: false
 		});
-		await testExtensionService2.whenInstalledExtensionsRegistered();
+		await dragTestExtensionService.whenInstalledExtensionsRegistered();
 
 		// Get the tree view and its drag controller
-		const treeView2: ITreeView = (<ITreeViewDescriptor>ViewsRegistry.getView(testTreeViewIdWithDrag)).treeView;
-		const dragController = treeView2.dragAndDropController;
+		const dragTestTreeView: ITreeView = (<ITreeViewDescriptor>ViewsRegistry.getView(testTreeViewIdWithDrag)).treeView;
+		const dragController = dragTestTreeView.dragAndDropController;
 		assert(dragController, 'Drag controller should exist');
 
 		// Call handleDrag
