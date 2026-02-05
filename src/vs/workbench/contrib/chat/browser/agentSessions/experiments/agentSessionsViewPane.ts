@@ -7,6 +7,8 @@ import './media/agentSessionsViewPane.css';
 import * as DOM from '../../../../../../base/browser/dom.js';
 import { $, append } from '../../../../../../base/browser/dom.js';
 import { CancellationToken } from '../../../../../../base/common/cancellation.js';
+import { Codicon } from '../../../../../../base/common/codicons.js';
+import { autorun } from '../../../../../../base/common/observable.js';
 import { ThemeIcon } from '../../../../../../base/common/themables.js';
 import { IContextKeyService } from '../../../../../../platform/contextkey/common/contextkey.js';
 import { IContextMenuService } from '../../../../../../platform/contextview/browser/contextView.js';
@@ -32,15 +34,19 @@ import { IEditorGroupsService } from '../../../../../services/editor/common/edit
 import { AICustomizationManagementSection } from '../../aiCustomizationManagement/aiCustomizationManagement.js';
 import { AICustomizationManagementEditorInput } from '../../aiCustomizationManagement/aiCustomizationManagementEditorInput.js';
 import { AICustomizationManagementEditor } from '../../aiCustomizationManagement/aiCustomizationManagementEditor.js';
+import { ModelsManagementEditorInput } from '../../chatManagement/chatManagementEditorInput.js';
 import { agentIcon, instructionsIcon, promptIcon, skillIcon } from '../../aiCustomizationTreeView/aiCustomizationTreeViewIcons.js';
 import { IPromptsService, PromptsStorage } from '../../../common/promptSyntax/service/promptsService.js';
 import { PromptsType } from '../../../common/promptSyntax/promptTypes.js';
+import { ILanguageModelsService } from '../../../common/languageModels.js';
+import { IMcpService } from '../../../../mcp/common/mcpTypes.js';
+import { McpManagementEditorInput } from '../../aiCustomizationManagement/mcpManagementEditorInput.js';
 
 interface IShortcutItem {
 	readonly label: string;
-	readonly section: AICustomizationManagementSection;
 	readonly icon: ThemeIcon;
-	readonly promptType: PromptsType;
+	readonly action: () => Promise<void>;
+	readonly getCount?: () => Promise<number>;
 	countElement?: HTMLElement;
 }
 
@@ -67,20 +73,29 @@ export class AgentSessionsViewPane extends ViewPane {
 		@ICommandService private readonly commandService: ICommandService,
 		@IEditorGroupsService private readonly editorGroupsService: IEditorGroupsService,
 		@IPromptsService private readonly promptsService: IPromptsService,
+		@ILanguageModelsService private readonly languageModelsService: ILanguageModelsService,
+		@IMcpService private readonly mcpService: IMcpService,
 	) {
 		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
 
 		// Initialize shortcuts
 		this.shortcuts = [
-			{ label: localize('agents', "Agents"), section: AICustomizationManagementSection.Agents, icon: agentIcon, promptType: PromptsType.agent },
-			{ label: localize('skills', "Skills"), section: AICustomizationManagementSection.Skills, icon: skillIcon, promptType: PromptsType.skill },
-			{ label: localize('instructions', "Instructions"), section: AICustomizationManagementSection.Instructions, icon: instructionsIcon, promptType: PromptsType.instructions },
-			{ label: localize('prompts', "Prompts"), section: AICustomizationManagementSection.Prompts, icon: promptIcon, promptType: PromptsType.prompt },
+			{ label: localize('agents', "Agents"), icon: agentIcon, action: () => this.openAICustomizationSection(AICustomizationManagementSection.Agents), getCount: () => this.getPromptCount(PromptsType.agent) },
+			{ label: localize('skills', "Skills"), icon: skillIcon, action: () => this.openAICustomizationSection(AICustomizationManagementSection.Skills), getCount: () => this.getSkillCount() },
+			{ label: localize('instructions', "Instructions"), icon: instructionsIcon, action: () => this.openAICustomizationSection(AICustomizationManagementSection.Instructions), getCount: () => this.getPromptCount(PromptsType.instructions) },
+			{ label: localize('prompts', "Prompts"), icon: promptIcon, action: () => this.openAICustomizationSection(AICustomizationManagementSection.Prompts), getCount: () => this.getPromptCount(PromptsType.prompt) },
+			{ label: localize('models', "Models"), icon: Codicon.sparkle, action: () => this.openModelsEditor(), getCount: () => Promise.resolve(this.languageModelsService.getLanguageModelIds().length) },
+			{ label: localize('mcpServers', "MCP Servers"), icon: Codicon.server, action: () => this.openMcpServersEditor(), getCount: () => Promise.resolve(this.mcpService.servers.get().length) },
 		];
 
 		// Listen to changes to update counts
 		this._register(this.promptsService.onDidChangeCustomAgents(() => this.updateCounts()));
 		this._register(this.promptsService.onDidChangeSlashCommands(() => this.updateCounts()));
+		this._register(this.languageModelsService.onDidChangeLanguageModels(() => this.updateCounts()));
+		this._register(autorun(reader => {
+			this.mcpService.servers.read(reader);
+			this.updateCounts();
+		}));
 	}
 
 	protected override renderBody(parent: HTMLElement): void {
@@ -159,13 +174,13 @@ export class AgentSessionsViewPane extends ViewPane {
 
 			this._register(DOM.addDisposableListener(link, 'click', (e) => {
 				DOM.EventHelper.stop(e);
-				this.openAICustomizationSection(shortcut.section);
+				shortcut.action();
 			}));
 
 			this._register(DOM.addDisposableListener(link, 'keydown', (e: KeyboardEvent) => {
 				if (e.key === 'Enter' || e.key === ' ') {
 					e.preventDefault();
-					this.openAICustomizationSection(shortcut.section);
+					shortcut.action();
 				}
 			}));
 		}
@@ -176,24 +191,28 @@ export class AgentSessionsViewPane extends ViewPane {
 
 	private async updateCounts(): Promise<void> {
 		for (const shortcut of this.shortcuts) {
-			let count = 0;
-			if (shortcut.promptType === PromptsType.skill) {
-				const skills = await this.promptsService.findAgentSkills(CancellationToken.None);
-				count = skills?.length || 0;
-			} else {
-				const [workspaceItems, userItems, extensionItems] = await Promise.all([
-					this.promptsService.listPromptFilesForStorage(shortcut.promptType, PromptsStorage.local, CancellationToken.None),
-					this.promptsService.listPromptFilesForStorage(shortcut.promptType, PromptsStorage.user, CancellationToken.None),
-					this.promptsService.listPromptFilesForStorage(shortcut.promptType, PromptsStorage.extension, CancellationToken.None),
-				]);
-				count = workspaceItems.length + userItems.length + extensionItems.length;
+			if (!shortcut.getCount || !shortcut.countElement) {
+				continue;
 			}
 
-			if (shortcut.countElement) {
-				shortcut.countElement.textContent = count > 0 ? `${count}` : '';
-				shortcut.countElement.classList.toggle('hidden', count === 0);
-			}
+			const count = await shortcut.getCount();
+			shortcut.countElement.textContent = count > 0 ? `${count}` : '';
+			shortcut.countElement.classList.toggle('hidden', count === 0);
 		}
+	}
+
+	private async getPromptCount(promptType: PromptsType): Promise<number> {
+		const [workspaceItems, userItems, extensionItems] = await Promise.all([
+			this.promptsService.listPromptFilesForStorage(promptType, PromptsStorage.local, CancellationToken.None),
+			this.promptsService.listPromptFilesForStorage(promptType, PromptsStorage.user, CancellationToken.None),
+			this.promptsService.listPromptFilesForStorage(promptType, PromptsStorage.extension, CancellationToken.None),
+		]);
+		return workspaceItems.length + userItems.length + extensionItems.length;
+	}
+
+	private async getSkillCount(): Promise<number> {
+		const skills = await this.promptsService.findAgentSkills(CancellationToken.None);
+		return skills?.length || 0;
 	}
 
 	private async openAICustomizationSection(sectionId: AICustomizationManagementSection): Promise<void> {
@@ -203,6 +222,14 @@ export class AgentSessionsViewPane extends ViewPane {
 		if (editor instanceof AICustomizationManagementEditor) {
 			editor.selectSectionById(sectionId);
 		}
+	}
+
+	private async openModelsEditor(): Promise<void> {
+		await this.editorGroupsService.activeGroup.openEditor(new ModelsManagementEditorInput(), { pinned: true });
+	}
+
+	private async openMcpServersEditor(): Promise<void> {
+		await this.editorGroupsService.activeGroup.openEditor(new McpManagementEditorInput(), { pinned: true });
 	}
 
 	private getSessionHoverPosition(): HoverPosition {
