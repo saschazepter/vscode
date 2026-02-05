@@ -372,14 +372,14 @@ export class PreferencesService extends Disposable implements IPreferencesServic
 	}
 
 	private getEditorGroupFromOptions(options: { groupId?: number; openInModal?: boolean; openToSide?: boolean }): PreferredGroup {
-		if (options?.groupId !== undefined) {
-			return this.editorGroupService.getGroup(options.groupId) ?? this.editorGroupService.activeGroup;
-		}
 		if (options.openToSide) {
 			return SIDE_GROUP;
 		}
 		if (options.openInModal) {
 			return MODAL_GROUP;
+		}
+		if (options?.groupId !== undefined) {
+			return this.editorGroupService.getGroup(options.groupId) ?? this.editorGroupService.activeGroup;
 		}
 		return ACTIVE_GROUP;
 	}
