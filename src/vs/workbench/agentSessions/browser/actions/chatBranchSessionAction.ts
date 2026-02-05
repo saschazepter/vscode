@@ -15,6 +15,7 @@ import { IChatEditorOptions } from '../../../contrib/chat/browser/widgetHosts/ed
 import { ChatEditorInput } from '../../../contrib/chat/browser/widgetHosts/editor/chatEditorInput.js';
 import { ACTIVE_GROUP } from '../../../services/editor/common/editorService.js';
 import { IChatExecuteActionContext } from '../../../contrib/chat/browser/actions/chatExecuteActions.js';
+import { revive } from '../../../../base/common/marshalling.js';
 
 
 /**
@@ -68,9 +69,8 @@ export class BranchChatSessionAction extends Action2 {
 			return;
 		}
 
-		// Export the current session data and deep clone it to strip getter-only properties
-		// The toExport() may return objects with getters that can't be set during deserialization
-		const exportedData = JSON.parse(JSON.stringify(chatModel.toExport())) as IExportableChatData;
+		// Export the current session data and deep clone it with proper revival of URIs and special objects
+		const exportedData = revive(JSON.parse(JSON.stringify(chatModel.toExport()))) as IExportableChatData;
 
 		// Clear sessionId to ensure a new session is created (not reusing the original)
 		delete (exportedData as { sessionId?: string }).sessionId;
@@ -80,40 +80,35 @@ export class BranchChatSessionAction extends Action2 {
 			return;
 		}
 
-		// Create a new editor URI for the local session
-		const newSessionResource = ChatEditorInput.getNewEditorUri();
-
 		// Include any current input draft and attached context in the branched session
 		const sessionResource = widget.viewModel.sessionResource;
 		const attachedContext = widget.input.getAttachedAndImplicitContext(sessionResource);
 		const currentInput = widget.getInput();
 
-		// Create the branched session with initial data
-		const branchedData: IExportableChatData = {
-			...exportedData,
-			// Preserve the location for the branched session
-			initialLocation: exportedData.initialLocation,
-		};
-
-		// Open the branched session in an editor
+		// Use the same pattern as Import Chat for editors:
+		// Pass the data in options.target.data, let ChatEditorInput create the model
+		const newSessionResource = ChatEditorInput.getNewEditorUri();
 		const options: IChatEditorOptions = {
-			target: { data: branchedData },
+			target: { data: exportedData },
 			pinned: true,
 		};
 
-		await widgetService.openSession(newSessionResource, ACTIVE_GROUP, options);
+		const newWidget = await widgetService.openSession(newSessionResource, ACTIVE_GROUP, options);
 
 		// After opening, set up the new session with current input if any
 		if (currentInput || attachedContext.length > 0) {
-			const newWidget = widgetService.getWidgetBySessionResource(newSessionResource);
-			if (newWidget) {
-				// Set the input text from the original
-				if (currentInput) {
-					newWidget.input.setValue(currentInput, false);
-				}
-				// Add attached context to the new session
-				for (const entry of attachedContext.asArray()) {
-					newWidget.attachmentModel.addContext(entry);
+			const actualSessionResource = newWidget?.viewModel?.sessionResource;
+			if (actualSessionResource) {
+				const foundWidget = widgetService.getWidgetBySessionResource(actualSessionResource);
+				if (foundWidget) {
+					// Set the input text from the original
+					if (currentInput) {
+						foundWidget.input.setValue(currentInput, false);
+					}
+					// Add attached context to the new session
+					for (const entry of attachedContext.asArray()) {
+						foundWidget.attachmentModel.addContext(entry);
+					}
 				}
 			}
 		}
