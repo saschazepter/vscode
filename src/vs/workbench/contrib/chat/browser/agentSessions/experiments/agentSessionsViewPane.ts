@@ -92,7 +92,7 @@ export class AgentSessionsViewPane extends ViewPane {
 			{ label: localize('prompts', "Prompts"), icon: promptIcon, action: () => this.openAICustomizationSection(AICustomizationManagementSection.Prompts), getCount: () => this.getPromptCount(PromptsType.prompt) },
 			{ label: localize('hooks', "Hooks"), icon: hookIcon, action: () => this.openAICustomizationSection(AICustomizationManagementSection.Hooks), getCount: () => this.getPromptCount(PromptsType.hook) },
 			{ label: localize('mcpServers', "MCP Servers"), icon: Codicon.server, action: () => this.openAICustomizationSection(AICustomizationManagementSection.McpServers), getCount: () => Promise.resolve(this.mcpService.servers.get().length) },
-			{ label: localize('models', "Models"), icon: Codicon.sparkle, action: () => this.openAICustomizationSection(AICustomizationManagementSection.Models), getCount: () => Promise.resolve(this.languageModelsService.getLanguageModelIds().length) },
+			{ label: localize('models', "Models"), icon: Codicon.vm, action: () => this.openAICustomizationSection(AICustomizationManagementSection.Models), getCount: () => Promise.resolve(this.languageModelsService.getLanguageModelIds().length) },
 			{ label: localize('memory', "Memory"), icon: memoryIcon, action: () => this.openAICustomizationSection(AICustomizationManagementSection.Memory), getCount: () => Promise.resolve(this.memorySuggestionService.getPendingSuggestionCount()) },
 		];
 
