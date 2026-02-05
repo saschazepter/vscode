@@ -24,6 +24,7 @@ import { localize } from '../../../../../../nls.js';
 import { AgentSessionsControl } from '../agentSessionsControl.js';
 import { AgentSessionsFilter, AgentSessionsGrouping } from '../agentSessionsFilter.js';
 import { MenuId } from '../../../../../../platform/actions/common/actions.js';
+import { MenuWorkbenchToolBar } from '../../../../../../platform/actions/browser/toolbar.js';
 import { HoverPosition } from '../../../../../../base/browser/ui/hover/hoverWidget.js';
 import { IWorkbenchLayoutService } from '../../../../../services/layout/browser/layoutService.js';
 import { Button } from '../../../../../../base/browser/ui/button/button.js';
@@ -40,8 +41,6 @@ import { PromptsType } from '../../../common/promptSyntax/promptTypes.js';
 import { ILanguageModelsService } from '../../../common/languageModels.js';
 import { IMcpService } from '../../../../mcp/common/mcpTypes.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../../../platform/storage/common/storage.js';
-import { memoryIcon } from '../../aiCustomizationMemory/aiCustomizationMemory.js';
-import { IChatMemorySuggestionService } from '../../../common/chatMemory/chatMemorySuggestionService.js';
 
 interface IShortcutItem {
 	readonly label: string;
@@ -52,7 +51,6 @@ interface IShortcutItem {
 }
 
 const CUSTOMIZATIONS_COLLAPSED_KEY = 'agentSessions.customizationsCollapsed';
-const SESSIONS_COLLAPSED_KEY = 'agentSessions.sessionsCollapsed';
 
 export class AgentSessionsViewPane extends ViewPane {
 
@@ -80,7 +78,6 @@ export class AgentSessionsViewPane extends ViewPane {
 		@ILanguageModelsService private readonly languageModelsService: ILanguageModelsService,
 		@IMcpService private readonly mcpService: IMcpService,
 		@IStorageService private readonly storageService: IStorageService,
-		@IChatMemorySuggestionService private readonly memorySuggestionService: IChatMemorySuggestionService,
 	) {
 		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
 
@@ -93,14 +90,12 @@ export class AgentSessionsViewPane extends ViewPane {
 			{ label: localize('hooks', "Hooks"), icon: hookIcon, action: () => this.openAICustomizationSection(AICustomizationManagementSection.Hooks), getCount: () => this.getPromptCount(PromptsType.hook) },
 			{ label: localize('mcpServers', "MCP Servers"), icon: Codicon.server, action: () => this.openAICustomizationSection(AICustomizationManagementSection.McpServers), getCount: () => Promise.resolve(this.mcpService.servers.get().length) },
 			{ label: localize('models', "Models"), icon: Codicon.vm, action: () => this.openAICustomizationSection(AICustomizationManagementSection.Models), getCount: () => Promise.resolve(this.languageModelsService.getLanguageModelIds().length) },
-			{ label: localize('memory', "Memory"), icon: memoryIcon, action: () => this.openAICustomizationSection(AICustomizationManagementSection.Memory), getCount: () => Promise.resolve(this.memorySuggestionService.getPendingSuggestionCount()) },
 		];
 
 		// Listen to changes to update counts
 		this._register(this.promptsService.onDidChangeCustomAgents(() => this.updateCounts()));
 		this._register(this.promptsService.onDidChangeSlashCommands(() => this.updateCounts()));
 		this._register(this.languageModelsService.onDidChangeLanguageModels(() => this.updateCounts()));
-		this._register(this.memorySuggestionService.onDidChangeSuggestions(() => this.updateCounts()));
 		this._register(autorun(reader => {
 			this.mcpService.servers.read(reader);
 			this.updateCounts();
@@ -132,41 +127,21 @@ export class AgentSessionsViewPane extends ViewPane {
 		// Sessions section
 		const sessionsSection = append(sessionsContainer, $('.agent-sessions-section'));
 
-		// Sessions header (collapsible)
-		const sessionsCollapsed = this.storageService.getBoolean(SESSIONS_COLLAPSED_KEY, StorageScope.PROFILE, false);
+		// Sessions header with toolbar
 		const sessionsHeader = append(sessionsSection, $('.agent-sessions-header'));
-		sessionsHeader.tabIndex = 0;
-		sessionsHeader.setAttribute('role', 'button');
-		sessionsHeader.setAttribute('aria-expanded', String(!sessionsCollapsed));
 
-		const sessionsHeaderText = DOM.append(sessionsHeader, $('span'));
+		// Header text
+		const sessionsHeaderText = DOM.append(sessionsHeader, $('span.agent-sessions-header-text'));
 		sessionsHeaderText.textContent = localize('sessions', "SESSIONS");
 
-		const sessionsChevron = DOM.append(sessionsHeader, $('.agent-sessions-chevron'));
-		sessionsChevron.classList.add(...ThemeIcon.asClassNameArray(sessionsCollapsed ? Codicon.chevronRight : Codicon.chevronDown));
-
-		// Sessions content container (for collapse)
-		const sessionsContent = append(sessionsSection, $('.agent-sessions-content'));
-		if (sessionsCollapsed) {
-			sessionsContent.classList.add('collapsed');
-		}
-
-		// Toggle collapse on sessions header click
-		const toggleSessionsCollapse = () => {
-			const collapsed = sessionsContent.classList.toggle('collapsed');
-			this.storageService.store(SESSIONS_COLLAPSED_KEY, collapsed, StorageScope.PROFILE, StorageTarget.USER);
-			sessionsHeader.setAttribute('aria-expanded', String(!collapsed));
-			sessionsChevron.classList.remove(...ThemeIcon.asClassNameArray(Codicon.chevronRight), ...ThemeIcon.asClassNameArray(Codicon.chevronDown));
-			sessionsChevron.classList.add(...ThemeIcon.asClassNameArray(collapsed ? Codicon.chevronRight : Codicon.chevronDown));
-		};
-
-		this._register(DOM.addDisposableListener(sessionsHeader, 'click', toggleSessionsCollapse));
-		this._register(DOM.addDisposableListener(sessionsHeader, 'keydown', (e: KeyboardEvent) => {
-			if (e.key === 'Enter' || e.key === ' ') {
-				e.preventDefault();
-				toggleSessionsCollapse();
-			}
+		// Toolbar with filter, refresh, etc.
+		const sessionsToolbarContainer = DOM.append(sessionsHeader, $('.agent-sessions-header-toolbar'));
+		const sessionsToolbar = this._register(this.instantiationService.createInstance(MenuWorkbenchToolBar, sessionsToolbarContainer, MenuId.AgentSessionsToolbar, {
+			menuOptions: { shouldForwardArgs: true }
 		}));
+
+		// Sessions content container
+		const sessionsContent = append(sessionsSection, $('.agent-sessions-content'));
 
 		// New Session Button
 		const newSessionButtonContainer = this.newSessionButtonContainer = append(sessionsContent, $('.agent-sessions-new-button-container'));
@@ -185,6 +160,9 @@ export class AgentSessionsViewPane extends ViewPane {
 			collapseOlderSections: () => true,
 		}));
 		this._register(this.onDidChangeBodyVisibility(visible => sessionsControl.setVisible(visible)));
+
+		// Set toolbar context to sessions control for actions to work
+		sessionsToolbar.context = sessionsControl;
 	}
 
 	private createAICustomizationShortcuts(container: HTMLElement): void {

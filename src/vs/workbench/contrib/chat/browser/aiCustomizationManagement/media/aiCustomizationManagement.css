@@ -62,6 +62,35 @@
 .ai-customization-management-editor .sidebar-content {
 	height: 100%;
 	padding: 12px 0 12px 4px;
+	display: flex;
+	flex-direction: column;
+}
+
+.ai-customization-management-editor .sidebar-sections-list {
+	flex: 1;
+	overflow: hidden;
+}
+
+.ai-customization-management-editor .sidebar-bottom-section {
+	flex-shrink: 0;
+	border-top: 1px solid var(--vscode-panel-border);
+	padding-top: 8px;
+	padding-bottom: 12px;
+	margin-top: 8px;
+}
+
+/* Memory item in bottom section - direct selection styling (match WorkbenchList selected style) */
+.ai-customization-management-editor .sidebar-bottom-section .section-list-item.selected {
+	background-color: var(--vscode-list-activeSelectionBackground);
+	color: var(--vscode-list-activeSelectionForeground);
+}
+
+.ai-customization-management-editor .sidebar-bottom-section .section-list-item.selected .section-icon {
+	color: var(--vscode-list-activeSelectionIconForeground, var(--vscode-list-activeSelectionForeground));
+}
+
+.ai-customization-management-editor .sidebar-bottom-section .section-list-item.selected .section-label {
+	color: var(--vscode-list-activeSelectionForeground);
 }
 
 /* Section list items */

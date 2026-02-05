@@ -51,7 +51,7 @@ import { agentIcon, instructionsIcon, promptIcon, skillIcon, hookIcon } from '..
 import { AI_CUSTOMIZATION_EDITOR_ID } from '../aiCustomizationEditor/aiCustomizationEditor.js';
 import { ChatModelsWidget } from '../chatManagement/chatModelsWidget.js';
 import { MemoryListWidget } from '../aiCustomizationMemory/memoryListWidget.js';
-import { memoryIcon } from '../aiCustomizationMemory/aiCustomizationMemory.js';
+import { memoryIcon as memoryIcon_ } from '../aiCustomizationMemory/aiCustomizationMemory.js';
 
 const $ = DOM.$;
 
@@ -133,6 +133,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 	private modelsHeaderElement!: HTMLElement;
 	private memoryContentContainer!: HTMLElement;
 	private memoryListWidget!: MemoryListWidget;
+	private memorySidebarItem!: HTMLElement;
 
 	private dimension: Dimension | undefined;
 	private readonly sections: ISectionItem[] = [];
@@ -160,7 +161,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 		this.inEditorContextKey = CONTEXT_AI_CUSTOMIZATION_MANAGEMENT_EDITOR.bindTo(contextKeyService);
 		this.sectionContextKey = CONTEXT_AI_CUSTOMIZATION_MANAGEMENT_SECTION.bindTo(contextKeyService);
 
-		// Initialize sections
+		// Initialize sections (Memory is rendered separately at the bottom)
 		this.sections.push(
 			{ id: AICustomizationManagementSection.Agents, label: localize('agents', "Agents"), icon: agentIcon },
 			{ id: AICustomizationManagementSection.Skills, label: localize('skills', "Skills"), icon: skillIcon },
@@ -168,8 +169,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 			{ id: AICustomizationManagementSection.Prompts, label: localize('prompts', "Prompts"), icon: promptIcon },
 			{ id: AICustomizationManagementSection.Hooks, label: localize('hooks', "Hooks"), icon: hookIcon },
 			{ id: AICustomizationManagementSection.McpServers, label: localize('mcpServers', "MCP Servers"), icon: Codicon.server },
-			{ id: AICustomizationManagementSection.Models, label: localize('models', "Models"), icon: Codicon.sparkle },
-			{ id: AICustomizationManagementSection.Memory, label: localize('memory', "Memory"), icon: memoryIcon },
+			{ id: AICustomizationManagementSection.Models, label: localize('models', "Models"), icon: Codicon.wand },
 		);
 
 		// Restore selected section from storage
@@ -300,7 +300,10 @@ export class AICustomizationManagementEditor extends EditorPane {
 			layout: (width, _, height) => {
 				this.sidebarContainer.style.width = `${width}px`;
 				if (height !== undefined) {
-					this.sectionsList.layout(height, width);
+					// Account for padding (24px) and bottom section height (~50px)
+					const bottomSectionHeight = this.memorySidebarItem?.parentElement?.offsetHeight || 50;
+					const listHeight = height - 24 - bottomSectionHeight;
+					this.sectionsList.layout(listHeight, width);
 				}
 			},
 		}, savedWidth, undefined, true);
@@ -341,10 +344,13 @@ export class AICustomizationManagementEditor extends EditorPane {
 	private createSidebar(): void {
 		const sidebarContent = DOM.append(this.sidebarContainer, $('.sidebar-content'));
 
+		// Main sections list container (takes remaining space)
+		const sectionsListContainer = DOM.append(sidebarContent, $('.sidebar-sections-list'));
+
 		this.sectionsList = this.editorDisposables.add(this.instantiationService.createInstance(
 			WorkbenchList<ISectionItem>,
 			'AICustomizationManagementSections',
-			sidebarContent,
+			sectionsListContainer,
 			new SectionItemDelegate(),
 			[new SectionItemRenderer()],
 			{
@@ -364,16 +370,39 @@ export class AICustomizationManagementEditor extends EditorPane {
 
 		this.sectionsList.splice(0, this.sectionsList.length, this.sections);
 
-		// Select the saved section
-		const selectedIndex = this.sections.findIndex(s => s.id === this.selectedSection);
-		if (selectedIndex >= 0) {
-			this.sectionsList.setSelection([selectedIndex]);
+		// Select the saved section (if not Memory)
+		if (this.selectedSection !== AICustomizationManagementSection.Memory) {
+			const selectedIndex = this.sections.findIndex(s => s.id === this.selectedSection);
+			if (selectedIndex >= 0) {
+				this.sectionsList.setSelection([selectedIndex]);
+			}
 		}
 
 		this.editorDisposables.add(this.sectionsList.onDidChangeSelection(e => {
 			if (e.elements.length > 0) {
 				this.selectSection(e.elements[0].id);
+				// Clear Memory selection when selecting from main list
+				this.memorySidebarItem.classList.remove('selected');
 			}
+		}));
+
+		// Bottom section for Memory (pushed to bottom)
+		const bottomSection = DOM.append(sidebarContent, $('.sidebar-bottom-section'));
+		this.memorySidebarItem = DOM.append(bottomSection, $('.section-list-item.memory-item'));
+		const memoryIcon = DOM.append(this.memorySidebarItem, $('.section-icon'));
+		memoryIcon.classList.add(...ThemeIcon.asClassNameArray(memoryIcon_));
+		const memoryLabel = DOM.append(this.memorySidebarItem, $('.section-label'));
+		memoryLabel.textContent = localize('memory', "Memory");
+
+		// Select Memory if it was the saved selection
+		if (this.selectedSection === AICustomizationManagementSection.Memory) {
+			this.memorySidebarItem.classList.add('selected');
+		}
+
+		this.editorDisposables.add(DOM.addDisposableListener(this.memorySidebarItem, 'click', () => {
+			this.sectionsList.setSelection([]); // Clear main list selection
+			this.memorySidebarItem.classList.add('selected');
+			this.selectSection(AICustomizationManagementSection.Memory);
 		}));
 	}
 

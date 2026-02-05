@@ -125,8 +125,12 @@
 		align-items: center;
 		gap: 4px;
 		padding-top: 10px;
-		cursor: pointer;
+		padding-right: 12px;
 		user-select: none;
+	}
+
+	.agent-sessions-header .agent-sessions-header-toolbar {
+		margin-left: auto;
 	}
 
 	.agent-sessions-header:hover {
