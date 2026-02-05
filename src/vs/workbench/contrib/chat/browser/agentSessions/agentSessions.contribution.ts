@@ -24,8 +24,6 @@ import { ViewPaneContainer } from '../../../../browser/parts/views/viewPaneConta
 import { IViewContainersRegistry, IViewDescriptor, IViewsRegistry, LayoutVisibility, ViewContainer, ViewContainerLocation, Extensions as ViewExtensions } from '../../../../common/views.js';
 import { registerIcon } from '../../../../../platform/theme/common/iconRegistry.js';
 import { AgentSessionsViewPane } from './experiments/agentSessionsViewPane.js';
-import { AICustomizationOverviewView, AI_CUSTOMIZATION_OVERVIEW_VIEW_ID } from '../aiCustomizationManagement/aiCustomizationOverviewView.js';
-import { aiCustomizationViewIcon } from '../aiCustomizationTreeView/aiCustomizationTreeViewIcons.js';
 
 //#region View Registration
 
@@ -65,21 +63,6 @@ const agentSessionsViewDescriptor: IViewDescriptor = {
 	layoutVisibility: LayoutVisibility.Both
 };
 Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry).registerViews([agentSessionsViewDescriptor], agentSessionsViewContainer);
-
-// AI Customization Overview View (at the top of Agent Sessions)
-const aiCustomizationOverviewViewDescriptor: IViewDescriptor = {
-	id: AI_CUSTOMIZATION_OVERVIEW_VIEW_ID,
-	name: localize2('aiCustomization', "AI Customization"),
-	ctorDescriptor: new SyncDescriptor(AICustomizationOverviewView),
-	containerIcon: aiCustomizationViewIcon,
-	canToggleVisibility: true,
-	canMoveView: false,
-	order: 0, // At the top
-	collapsed: false,
-	weight: 15,
-	layoutVisibility: LayoutVisibility.AgentSessions,
-};
-Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry).registerViews([aiCustomizationOverviewViewDescriptor], agentSessionsViewContainer);
 
 // --- Agent Sessions View Toolbar
 

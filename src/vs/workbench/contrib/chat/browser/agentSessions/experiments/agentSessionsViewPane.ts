@@ -4,7 +4,10 @@
  *--------------------------------------------------------------------------------------------*/
 
 import './media/agentSessionsViewPane.css';
+import * as DOM from '../../../../../../base/browser/dom.js';
 import { $, append } from '../../../../../../base/browser/dom.js';
+import { CancellationToken } from '../../../../../../base/common/cancellation.js';
+import { ThemeIcon } from '../../../../../../base/common/themables.js';
 import { IContextKeyService } from '../../../../../../platform/contextkey/common/contextkey.js';
 import { IContextMenuService } from '../../../../../../platform/contextview/browser/contextView.js';
 import { IInstantiationService } from '../../../../../../platform/instantiation/common/instantiation.js';
@@ -25,6 +28,21 @@ import { Button } from '../../../../../../base/browser/ui/button/button.js';
 import { defaultButtonStyles } from '../../../../../../platform/theme/browser/defaultStyles.js';
 import { ICommandService } from '../../../../../../platform/commands/common/commands.js';
 import { ACTION_ID_NEW_CHAT } from '../../actions/chatActions.js';
+import { IEditorGroupsService } from '../../../../../services/editor/common/editorGroupsService.js';
+import { AICustomizationManagementSection } from '../../aiCustomizationManagement/aiCustomizationManagement.js';
+import { AICustomizationManagementEditorInput } from '../../aiCustomizationManagement/aiCustomizationManagementEditorInput.js';
+import { AICustomizationManagementEditor } from '../../aiCustomizationManagement/aiCustomizationManagementEditor.js';
+import { agentIcon, instructionsIcon, promptIcon, skillIcon } from '../../aiCustomizationTreeView/aiCustomizationTreeViewIcons.js';
+import { IPromptsService, PromptsStorage } from '../../../common/promptSyntax/service/promptsService.js';
+import { PromptsType } from '../../../common/promptSyntax/promptTypes.js';
+
+interface IShortcutItem {
+	readonly label: string;
+	readonly section: AICustomizationManagementSection;
+	readonly icon: ThemeIcon;
+	readonly promptType: PromptsType;
+	countElement?: HTMLElement;
+}
 
 export class AgentSessionsViewPane extends ViewPane {
 
@@ -32,6 +50,7 @@ export class AgentSessionsViewPane extends ViewPane {
 	private newSessionButtonContainer: HTMLElement | undefined;
 	private sessionsControlContainer: HTMLElement | undefined;
 	private sessionsControl: AgentSessionsControl | undefined;
+	private readonly shortcuts: IShortcutItem[] = [];
 
 	constructor(
 		options: IViewPaneOptions,
@@ -46,8 +65,22 @@ export class AgentSessionsViewPane extends ViewPane {
 		@IHoverService hoverService: IHoverService,
 		@IWorkbenchLayoutService private readonly layoutService: IWorkbenchLayoutService,
 		@ICommandService private readonly commandService: ICommandService,
+		@IEditorGroupsService private readonly editorGroupsService: IEditorGroupsService,
+		@IPromptsService private readonly promptsService: IPromptsService,
 	) {
 		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
+
+		// Initialize shortcuts
+		this.shortcuts = [
+			{ label: localize('agents', "Agents"), section: AICustomizationManagementSection.Agents, icon: agentIcon, promptType: PromptsType.agent },
+			{ label: localize('skills', "Skills"), section: AICustomizationManagementSection.Skills, icon: skillIcon, promptType: PromptsType.skill },
+			{ label: localize('instructions', "Instructions"), section: AICustomizationManagementSection.Instructions, icon: instructionsIcon, promptType: PromptsType.instructions },
+			{ label: localize('prompts', "Prompts"), section: AICustomizationManagementSection.Prompts, icon: promptIcon, promptType: PromptsType.prompt },
+		];
+
+		// Listen to changes to update counts
+		this._register(this.promptsService.onDidChangeCustomAgents(() => this.updateCounts()));
+		this._register(this.promptsService.onDidChangeSlashCommands(() => this.updateCounts()));
 	}
 
 	protected override renderBody(parent: HTMLElement): void {
@@ -68,14 +101,25 @@ export class AgentSessionsViewPane extends ViewPane {
 			groupResults: () => AgentSessionsGrouping.Date
 		}));
 
+		// AI Customization shortcuts (compact row of links)
+		const aiCustomizationContainer = append(sessionsContainer, $('.ai-customization-shortcuts'));
+		this.createAICustomizationShortcuts(aiCustomizationContainer);
+
+		// Sessions section
+		const sessionsSection = append(sessionsContainer, $('.agent-sessions-section'));
+
+		// Sessions header
+		const sessionsHeader = append(sessionsSection, $('.agent-sessions-header'));
+		sessionsHeader.textContent = localize('sessions', "SESSIONS");
+
 		// New Session Button
-		const newSessionButtonContainer = this.newSessionButtonContainer = append(sessionsContainer, $('.agent-sessions-new-button-container'));
+		const newSessionButtonContainer = this.newSessionButtonContainer = append(sessionsSection, $('.agent-sessions-new-button-container'));
 		const newSessionButton = this._register(new Button(newSessionButtonContainer, { ...defaultButtonStyles, secondary: true }));
 		newSessionButton.label = localize('newSession', "New Session");
 		this._register(newSessionButton.onDidClick(() => this.commandService.executeCommand(ACTION_ID_NEW_CHAT)));
 
 		// Sessions Control
-		this.sessionsControlContainer = append(sessionsContainer, $('.agent-sessions-control-container'));
+		this.sessionsControlContainer = append(sessionsSection, $('.agent-sessions-control-container'));
 		const sessionsControl = this.sessionsControl = this._register(this.instantiationService.createInstance(AgentSessionsControl, this.sessionsControlContainer, {
 			source: 'agentSessionsViewPane',
 			filter: sessionsFilter,
@@ -84,6 +128,80 @@ export class AgentSessionsViewPane extends ViewPane {
 			trackActiveEditorSession: () => true,
 		}));
 		this._register(this.onDidChangeBodyVisibility(visible => sessionsControl.setVisible(visible)));
+	}
+
+	private createAICustomizationShortcuts(container: HTMLElement): void {
+		// Header
+		const header = DOM.append(container, $('.ai-customization-header'));
+		header.textContent = localize('customizations', "CUSTOMIZATIONS");
+
+		// Links container
+		const linksContainer = DOM.append(container, $('.ai-customization-links'));
+
+		for (const shortcut of this.shortcuts) {
+			const link = DOM.append(linksContainer, $('a.ai-customization-link'));
+			link.tabIndex = 0;
+			link.setAttribute('role', 'button');
+			link.setAttribute('aria-label', shortcut.label);
+
+			// Icon
+			const iconElement = DOM.append(link, $('.link-icon'));
+			iconElement.classList.add(...ThemeIcon.asClassNameArray(shortcut.icon));
+
+			// Label
+			const labelElement = DOM.append(link, $('.link-label'));
+			labelElement.textContent = shortcut.label;
+
+			// Count badge (right-aligned)
+			const countElement = DOM.append(link, $('.link-count'));
+			shortcut.countElement = countElement;
+
+			this._register(DOM.addDisposableListener(link, 'click', (e) => {
+				DOM.EventHelper.stop(e);
+				this.openAICustomizationSection(shortcut.section);
+			}));
+
+			this._register(DOM.addDisposableListener(link, 'keydown', (e: KeyboardEvent) => {
+				if (e.key === 'Enter' || e.key === ' ') {
+					e.preventDefault();
+					this.openAICustomizationSection(shortcut.section);
+				}
+			}));
+		}
+
+		// Load initial counts
+		this.updateCounts();
+	}
+
+	private async updateCounts(): Promise<void> {
+		for (const shortcut of this.shortcuts) {
+			let count = 0;
+			if (shortcut.promptType === PromptsType.skill) {
+				const skills = await this.promptsService.findAgentSkills(CancellationToken.None);
+				count = skills?.length || 0;
+			} else {
+				const [workspaceItems, userItems, extensionItems] = await Promise.all([
+					this.promptsService.listPromptFilesForStorage(shortcut.promptType, PromptsStorage.local, CancellationToken.None),
+					this.promptsService.listPromptFilesForStorage(shortcut.promptType, PromptsStorage.user, CancellationToken.None),
+					this.promptsService.listPromptFilesForStorage(shortcut.promptType, PromptsStorage.extension, CancellationToken.None),
+				]);
+				count = workspaceItems.length + userItems.length + extensionItems.length;
+			}
+
+			if (shortcut.countElement) {
+				shortcut.countElement.textContent = count > 0 ? `${count}` : '';
+				shortcut.countElement.classList.toggle('hidden', count === 0);
+			}
+		}
+	}
+
+	private async openAICustomizationSection(sectionId: AICustomizationManagementSection): Promise<void> {
+		const input = AICustomizationManagementEditorInput.getOrCreate();
+		const editor = await this.editorGroupsService.activeGroup.openEditor(input, { pinned: true });
+
+		if (editor instanceof AICustomizationManagementEditor) {
+			editor.selectSectionById(sectionId);
+		}
 	}
 
 	private getSessionHoverPosition(): HoverPosition {
