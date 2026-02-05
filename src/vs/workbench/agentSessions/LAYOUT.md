@@ -19,15 +19,15 @@ The Agent Sessions Workbench (`AgentSessionsWorkbench`) provides a simplified, f
 ### 2.1 Visual Representation
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                            Titlebar                             │
-├─────────┬───────────────────────────────────┬───────────────────┤
-│         │                                   │                   │
-│ Sidebar │            Chat Bar               │   Auxiliary Bar   │
-│         │                                   │                   │
-├─────────┴───────────────────────────────────┴───────────────────┤
-│                             Panel                               │
-└─────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                                 Titlebar                                │
+├────────────┬─────────┬───────────────────────────────┬──────────────────┤
+│            │         │                               │                  │
+│ Project    │ Sidebar │          Chat Bar             │   Auxiliary Bar  │
+│ Bar        │         │                               │                  │
+├────────────┴─────────┴───────────────────────────────┴──────────────────┤
+│                                  Panel                                  │
+└─────────────────────────────────────────────────────────────────────────┘
 
          ┌───────────────────────────────────────┐
          │     ╔═══════════════════════════╗     │
@@ -52,7 +52,8 @@ The Agent Sessions Workbench (`AgentSessionsWorkbench`) provides a simplified, f
 | Part | ID Constant | Position | Default Visibility | ViewContainerLocation |
 |------|-------------|----------|------------|----------------------|
 | Titlebar | `Parts.TITLEBAR_PART` | Top, full width | Always visible | — |
-| Sidebar | `Parts.SIDEBAR_PART` | Left, in middle section | Visible | `ViewContainerLocation.Sidebar` |
+| Project Bar | `Parts.PROJECTBAR_PART` | Left-most, in middle section | Visible | — |
+| Sidebar | `Parts.SIDEBAR_PART` | Left of center, in middle section | Visible | `ViewContainerLocation.Sidebar` |
 | Chat Bar | `Parts.CHATBAR_PART` | Center, takes remaining width | Visible | `ViewContainerLocation.ChatBar` |
 | Editor | `Parts.EDITOR_PART` | **Modal overlay** (not in grid) | Hidden | — |
 | Auxiliary Bar | `Parts.AUXILIARYBAR_PART` | Right, in middle section | Visible | `ViewContainerLocation.AuxiliaryBar` |
@@ -82,6 +83,7 @@ The Editor part is **not** in the grid — it is rendered as a modal overlay (se
 Orientation: VERTICAL (root)
 ├── Titlebar (leaf, size: titleBarHeight)
 ├── Middle Section (branch, HORIZONTAL, size: remaining height - panel)
+│   ├── Project Bar (leaf, size: 48px)
 │   ├── Sidebar (leaf, size: 300px default)
 │   ├── Chat Bar (leaf, size: remaining width)
 │   └── Auxiliary Bar (leaf, size: 300px default)
@@ -92,6 +94,7 @@ Orientation: VERTICAL (root)
 
 | Part | Default Size |
 |------|--------------|
+| Project Bar | 48px width (fixed) |
 | Sidebar | 300px width |
 | Auxiliary Bar | 300px width |
 | Chat Bar | Remaining space |
@@ -299,6 +302,7 @@ Applied to `mainContainer` based on part visibility:
 | Class | Applied When |
 |-------|--------------|
 | `nosidebar` | Sidebar is hidden |
+| `noprojectbar` | Project bar is hidden |
 | `nomaineditorarea` | Editor modal is hidden |
 | `noauxiliarybar` | Auxiliary bar is hidden |
 | `nochatbar` | Chat bar is hidden |
@@ -330,16 +334,58 @@ The Agent Sessions workbench uses specialized part implementations that extend t
 
 | Part | Class | Extends | Location |
 |------|-------|---------|----------|
+| Project Bar | `ProjectBarPart` | `Part` | `agentSessions/browser/parts/projectbar/projectBarPart.ts` |
 | Sidebar | `AgentSessionSidebarPart` | `AbstractPaneCompositePart` | `agentSessions/browser/parts/agentSessionSidebarPart.ts` |
 | Auxiliary Bar | `AgentSessionAuxiliaryBarPart` | `AbstractPaneCompositePart` | `agentSessions/browser/parts/agentSessionAuxiliaryBarPart.ts` |
 | Panel | `AgentSessionPanelPart` | `AbstractPaneCompositePart` | `agentSessions/browser/parts/agentSessionPanelPart.ts` |
 | Editor Modal | `EditorModal` | `Disposable` | `agentSessions/browser/parts/editorModal.ts` |
 
-### 8.2 Key Differences from Standard Parts
+### 8.2 Project Bar
+
+The Project Bar is a new part specific to the Agent Sessions workbench that displays workspace folders and allows selection between them.
+
+#### Features
+
+| Feature | Description |
+|---------|-------------|
+| Workspace folder display | Shows first letter of each workspace folder as an icon button |
+| Folder selection | Click to select and switch between workspace folders |
+| Add folder button | Button with `+` icon to add new folders via `workbench.action.addRootFolder` command |
+| Hover tooltips | Shows full folder name on hover |
+| Keyboard navigation | Supports `Tab`, `Enter`, and `Space` for accessibility |
+
+#### Visual Style
+
+- Uses Activity Bar styling (`ACTIVITY_BAR_BACKGROUND`, `ACTIVITY_BAR_BORDER`)
+- Fixed width: 48px (same as activity bar)
+- Action item height: 48px
+- Selected folder shows `checked` class with active indicator
+
+#### Events
+
+| Event | Fired When |
+|-------|------------|
+| `onDidSelectWorkspace` | User selects a different workspace folder |
+
+#### API
+
+```typescript
+class ProjectBarPart extends Part {
+    // Properties
+    readonly minimumWidth: number = 48;
+    readonly maximumWidth: number = 48;
+    get selectedWorkspaceFolder(): IWorkspaceFolder | undefined;
+
+    // Events
+    readonly onDidSelectWorkspace: Event<IWorkspaceFolder | undefined>;
+}
+```
+
+### 8.3 Key Differences from Standard Parts
 
 | Feature | Standard Parts | Agent Session Parts |
 |---------|----------------|---------------------|
-| Activity Bar integration | Full support | No activity bar |
+| Activity Bar integration | Full support | No activity bar (replaced by Project Bar) |
 | Composite bar position | Configurable (top/bottom/title/hidden) | Fixed: Title |
 | Auto-hide support | Configurable | Disabled |
 | Configuration listening | Many settings | Minimal |
@@ -387,6 +433,7 @@ Each agent session part uses separate storage keys to avoid conflicts with regul
 ```
 src/vs/workbench/agentSessions/
 ├── browser/
+│   ├── agentSessions.contributions.ts      # Workbench contributions
 │   ├── agentSessionsWorkbench.ts           # Main layout implementation
 │   ├── style.css                           # Layout-specific styles (including editor modal)
 │   ├── parts/
@@ -394,10 +441,13 @@ src/vs/workbench/agentSessions/
 │   │   ├── agentSessionAuxiliaryBarPart.ts # Agent session auxiliary bar
 │   │   ├── agentSessionPanelPart.ts        # Agent session panel
 │   │   ├── editorModal.ts                  # Editor modal overlay implementation
-│   │   └── chatbar/
-│   │       ├── chatBarPart.ts              # Chat Bar part implementation
-│   │       └── media/
-│   │           └── chatBarPart.css         # Chat Bar styles
+│   │   ├── chatbar/
+│   │   │   ├── chatBarPart.ts              # Chat Bar part implementation
+│   │   │   └── media/
+│   │   │       └── chatBarPart.css         # Chat Bar styles
+│   │   └── projectbar/
+│   │       ├── projectBarPart.ts           # Project Bar part implementation
+│   │       └── projectBarPart.css          # Project Bar styles
 └── LAYOUT.md                               # This specification
 ```
 
@@ -461,6 +511,7 @@ This ensures that when a part is visible, its default view container is automati
 ```typescript
 interface IPartVisibilityState {
     sidebar: boolean;
+    projectBar: boolean;
     auxiliaryBar: boolean;
     editor: boolean;
     panel: boolean;
@@ -473,6 +524,7 @@ interface IPartVisibilityState {
 | Part | Initial Visibility |
 |------|--------------------|
 | Sidebar | `true` (visible) |
+| Project Bar | `true` (visible) |
 | Auxiliary Bar | `true` (visible) |
 | Chat Bar | `true` (visible) |
 | Editor | `false` (hidden) |
@@ -484,6 +536,7 @@ interface IPartVisibilityState {
 
 | Date | Change |
 |------|--------|
+| 2026-02-05 | Added Project Bar part (`ProjectBarPart`) to display and select workspace folders; Layout order is now Project Bar \| Sidebar \| Chat Bar \| Auxiliary Bar |
 | 2026-02-04 | Modal sizing (80%, min/max constraints) moved from CSS to TypeScript; `EditorModal.layout()` now accepts workbench dimensions |
 | 2026-02-04 | Editor now renders as modal overlay instead of in grid; Added `EditorModal` class in `parts/editorModal.ts`; Closing modal closes all editors; Grid layout is now Sidebar \| Chat Bar \| Auxiliary Bar |
 | 2026-02-04 | Changed part creation to use `SyncDescriptor0` for lazy instantiation—parts are created when first accessed, not at service construction time |
