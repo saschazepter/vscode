@@ -9,7 +9,11 @@ import { SyncDescriptor } from '../../../platform/instantiation/common/descripto
 import { Registry } from '../../../platform/registry/common/platform.js';
 import { registerIcon } from '../../../platform/theme/common/iconRegistry.js';
 import { IViewContainersRegistry, ViewContainerLocation, IViewsRegistry, Extensions as ViewContainerExtensions, LayoutVisibility } from '../../common/views.js';
+import { registerChatBranchActions } from './actions/chatBranchSessionAction.js';
 import { CHANGES_VIEW_CONTAINER_ID, CHANGES_VIEW_ID, ChangesViewPane, ChangesViewPaneContainer } from './views/changesView.js';
+
+// --- Actions
+registerChatBranchActions();
 
 // --- Changes
 
