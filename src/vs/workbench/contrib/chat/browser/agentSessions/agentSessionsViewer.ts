@@ -347,8 +347,9 @@ export class AgentSessionRenderer extends Disposable implements ICompressibleTre
 			return timeLabel;
 		};
 
-		// Provider icon
-		template.statusProviderIcon.className = `agent-session-status-provider-icon ${ThemeIcon.asClassName(session.element.icon)}`;
+		// Provider icon (only shown for non-local sessions)
+		const isLocal = session.element.providerType === AgentSessionProviders.Local;
+		template.statusProviderIcon.className = isLocal ? '' : `agent-session-status-provider-icon ${ThemeIcon.asClassName(session.element.icon)}`;
 
 		// Time label
 		template.statusTime.textContent = getTimeLabel(session.element);
@@ -656,6 +657,10 @@ export class AgentSessionsDataSource implements IAsyncDataSource<IAgentSessionsM
 		const sortedSessions = sessions.sort(this.sorter.compare.bind(this.sorter));
 
 		if (this.filter?.groupResults?.() === AgentSessionsGrouping.Capped) {
+			if (this.filter?.getExcludes().read) {
+				return sortedSessions; // When filtering to show only unread sessions, show a flat list
+			}
+
 			return this.groupSessionsCapped(sortedSessions);
 		} else {
 			return this.groupSessionsByDate(sortedSessions);
