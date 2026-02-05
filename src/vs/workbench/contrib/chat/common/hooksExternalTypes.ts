@@ -21,7 +21,7 @@
 /**
  * Common properties added to all hook command inputs.
  */
-export interface ICommonHookCommandInput {
+export interface IHookCommandInput {
 	readonly timestamp: string;
 	readonly cwd: string;
 	readonly sessionId: string;
@@ -32,7 +32,7 @@ export interface ICommonHookCommandInput {
  * Common output fields that can be present in any hook command result.
  * These fields control execution flow and user feedback.
  */
-export interface ICommonHookCommandOutput {
+export interface IHookCommandOutput {
 	/**
 	 * If set, stops processing entirely after this hook.
 	 * The message is shown to the user but not to the agent.
@@ -68,7 +68,7 @@ export interface IHookCommandResult {
 
 /**
  * Tool-specific command input fields for preToolUse hook.
- * These are mixed with ICommonHookCommandInput at runtime.
+ * These are mixed with IHookCommandInput at runtime.
  */
 export interface IPreToolUseCommandInput {
 	readonly tool_name: string;
@@ -80,7 +80,7 @@ export interface IPreToolUseCommandInput {
  * External command output for preToolUse hook.
  * Extends common output with hookSpecificOutput wrapper.
  */
-export interface IPreToolUseCommandOutput extends ICommonHookCommandOutput {
+export interface IPreToolUseCommandOutput extends IHookCommandOutput {
 	readonly hookSpecificOutput?: {
 		readonly hookEventName?: string;
 		readonly permissionDecision?: 'allow' | 'deny';

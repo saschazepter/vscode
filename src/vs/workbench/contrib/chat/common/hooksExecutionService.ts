@@ -15,7 +15,7 @@ import { Registry } from '../../../../platform/registry/common/platform.js';
 import { localize } from '../../../../nls.js';
 import {
 	HookCommandResultKind,
-	ICommonHookCommandInput,
+	IHookCommandInput,
 	IHookCommandResult,
 	IPreToolUseCommandInput,
 } from './hooksExternalTypes.js';
@@ -30,8 +30,8 @@ import {
 // Re-export external types for consumers
 export {
 	HookCommandResultKind,
-	ICommonHookCommandInput,
-	ICommonHookCommandOutput,
+	IHookCommandInput,
+	IHookCommandOutput,
 	IHookCommandResult,
 	IPreToolUseCommandInput,
 	IPreToolUseCommandOutput,
@@ -140,7 +140,7 @@ export class HooksExecutionService implements IHooksExecutionService {
 		token: CancellationToken
 	): Promise<IHookResult> {
 		// Build the common hook input properties
-		const commonInput: ICommonHookCommandInput = {
+		const commonInput: IHookCommandInput = {
 			timestamp: new Date().toISOString(),
 			cwd: hookCommand.cwd?.fsPath ?? '',
 			sessionId: sessionResource.toString(),
