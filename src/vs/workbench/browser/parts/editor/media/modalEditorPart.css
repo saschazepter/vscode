@@ -10,8 +10,8 @@
 	width: 100%;
 	left: 0;
 	top: 0;
-	z-index: 2500;
-	/* Below dialogs (2575), above most other things */
+	/* z-index cannot be above iframes (50) to support showing them */
+	z-index: 40;
 	display: flex;
 	justify-content: center;
 	align-items: center;

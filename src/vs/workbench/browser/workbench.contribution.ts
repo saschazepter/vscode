@@ -352,7 +352,7 @@ const registry = Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Con
 			'workbench.editor.allowOpenInModalEditor': {
 				'type': 'boolean',
 				'description': localize('allowOpenInModalEditor', "Controls whether editors can be opened in a modal overlay. When enabled, certain editors such as Settings and Keyboard Shortcuts may open in a centered modal overlay instead of as a regular editor tab."),
-				'default': false,
+				'default': product.quality !== 'stable', // TODO@bpasero figure out the default for stable
 				tags: ['experimental'],
 				experiment: {
 					mode: 'auto'
