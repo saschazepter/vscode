@@ -18,7 +18,7 @@ import { IConfigurationService } from '../../../../platform/configuration/common
 import { IHoverService, nativeHoverDelegate } from '../../../../platform/hover/browser/hover.js';
 import { IProductService } from '../../../../platform/product/common/productService.js';
 import { defaultButtonStyles } from '../../../../platform/theme/browser/defaultStyles.js';
-import { Downloading, IUpdate, IUpdateService, Overwriting, StateType, State as UpdateState } from '../../../../platform/update/common/update.js';
+import { Downloading, IUpdate, IUpdateService, Overwriting, StateType, State as UpdateState, Updating } from '../../../../platform/update/common/update.js';
 import { IWorkbenchContribution } from '../../../common/contributions.js';
 import { IStatusbarEntry, IStatusbarEntryAccessor, IStatusbarService, ShowTooltipCommand, StatusbarAlignment, TooltipContent } from '../../../services/statusbar/browser/statusbar.js';
 import './media/updateStatusBarEntry.css';
@@ -129,9 +129,9 @@ export class UpdateStatusBarEntryContribution extends Disposable implements IWor
 			case StateType.Updating:
 				this.updateStatusBarEntry({
 					name: UpdateStatusBarEntryContribution.NAME,
-					text: nls.localize('updateStatus.installingUpdateStatus', "$(sync~spin) Installing update..."),
+					text: this.getUpdatingText(state),
 					ariaLabel: nls.localize('updateStatus.installingUpdateAria', "Installing update"),
-					tooltip: this.getUpdatingTooltip(state.update),
+					tooltip: this.getUpdatingTooltip(state),
 					command: ShowTooltipCommand
 				});
 				break;
@@ -302,17 +302,40 @@ export class UpdateStatusBarEntryContribution extends Disposable implements IWor
 		};
 	}
 
-	private getUpdatingTooltip(update: IUpdate): TooltipContent {
+	private getUpdatingText({ currentProgress, maxProgress }: Updating): string {
+		if (currentProgress !== undefined && maxProgress !== undefined && maxProgress > 0) {
+			return nls.localize('updateStatus.installingUpdateProgressStatus', "$(sync~spin) Installing update: {0}%",
+				Math.round((currentProgress / maxProgress) * 100));
+		} else {
+			return nls.localize('updateStatus.installingUpdateStatus', "$(sync~spin) Installing update...");
+		}
+	}
+
+	private getUpdatingTooltip(state: Updating): TooltipContent {
 		return {
 			element: (token: CancellationToken) => {
 				const store = this.createTooltipDisposableStore(token);
 				const container = dom.$('.update-status-tooltip');
 
 				this.appendHeader(container, nls.localize('updateStatus.installingUpdateTitle', "Installing Update"), store);
-				this.appendProductInfo(container, update);
+				this.appendProductInfo(container, state.update);
 
-				const message = dom.append(container, dom.$('.progress-details'));
-				message.textContent = nls.localize('updateStatus.installingPleaseWait', "Installing update, please wait...");
+				const { currentProgress, maxProgress } = state;
+				if (currentProgress !== undefined && maxProgress !== undefined && maxProgress > 0) {
+					const percentage = Math.round((currentProgress / maxProgress) * 100);
+
+					const progressContainer = dom.append(container, dom.$('.progress-container'));
+					const progressBar = dom.append(progressContainer, dom.$('.progress-bar'));
+					const progressFill = dom.append(progressBar, dom.$('.progress-fill'));
+					progressFill.style.width = `${percentage}%`;
+
+					const progressText = dom.append(progressContainer, dom.$('.progress-text'));
+					const percentageSpan = dom.append(progressText, dom.$('span'));
+					percentageSpan.textContent = `${percentage}%`;
+				} else {
+					const message = dom.append(container, dom.$('.progress-details'));
+					message.textContent = nls.localize('updateStatus.installingPleaseWait', "Installing update, please wait...");
+				}
 
 				return container;
 			}

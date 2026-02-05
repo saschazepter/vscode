@@ -1317,6 +1317,31 @@ begin
   Result := '{#VersionedResourcesFolder}' <> '';
 end;
 
+function GetProgressFilePath(): String;
+var
+  UpdateFilePath: String;
+begin
+  UpdateFilePath := ExpandConstant('{param:update}');
+  if UpdateFilePath <> '' then
+    Result := UpdateFilePath + '.progress'
+  else
+    Result := '';
+end;
+
+procedure CurInstallProgressChanged(CurProgress, MaxProgress: Integer);
+var
+  ProgressFilePath: String;
+  ProgressContent: String;
+begin
+  if IsBackgroundUpdate() then begin
+    ProgressFilePath := GetProgressFilePath();
+    if ProgressFilePath <> '' then begin
+      ProgressContent := IntToStr(CurProgress) + ',' + IntToStr(MaxProgress);
+      SaveStringToFile(ProgressFilePath, ProgressContent, False);
+    end;
+  end;
+end;
+
 // Don't allow installing conflicting architectures
 function InitializeSetup(): Boolean;
 var
@@ -1613,6 +1638,8 @@ begin
 
     if IsBackgroundUpdate() then
     begin
+      // Clean up the progress file used for install progress reporting
+      DeleteFile(GetProgressFilePath());
       SaveStringToFile(ExpandConstant('{app}\updating_version'), '{#Commit}', False);
       CreateMutex('{#AppMutex}-ready');
 

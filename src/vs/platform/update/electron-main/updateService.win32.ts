@@ -304,6 +304,7 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 		const sessionEndFlagPath = path.join(cachePath, 'session-ending.flag');
 
 		this.availableUpdate.updateFilePath = path.join(cachePath, `CodeSetup-${this.productService.quality}-${update.version}.flag`);
+		const progressFilePath = `${this.availableUpdate.updateFilePath}.progress`;
 
 		await pfs.Promises.writeFile(this.availableUpdate.updateFilePath, 'flag');
 		const child = spawn(this.availableUpdate.packagePath, ['/verysilent', '/log', `/update="${this.availableUpdate.updateFilePath}"`, `/sessionend="${sessionEndFlagPath}"`, '/nocloseapplications', '/mergetasks=runcode,!desktopicon,!quicklaunchicon'], {
@@ -319,6 +320,27 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 
 		const readyMutexName = `${this.productService.win32MutexName}-ready`;
 		const mutex = await import('@vscode/windows-mutex');
+
+		// Poll for progress and ready mutex
+		const pollProgress = async () => {
+			while (this.state.type === StateType.Updating && !mutex.isActive(readyMutexName)) {
+				try {
+					const progressContent = await readFile(progressFilePath, 'utf8');
+					const [currentStr, maxStr] = progressContent.split(',');
+					const currentProgress = parseInt(currentStr, 10);
+					const maxProgress = parseInt(maxStr, 10);
+					if (!isNaN(currentProgress) && !isNaN(maxProgress) && this.state.type === StateType.Updating) {
+						this.setState(State.Updating(update, currentProgress, maxProgress));
+					}
+				} catch {
+					// Progress file may not exist yet or be locked, ignore
+				}
+				await timeout(500);
+			}
+		};
+
+		// Start polling for progress
+		pollProgress();
 
 		// poll for mutex-ready
 		pollUntil(() => mutex.isActive(readyMutexName))
