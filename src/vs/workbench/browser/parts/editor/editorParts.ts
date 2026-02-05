@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { localize } from '../../../../nls.js';
-import { EditorGroupLayout, GroupDirection, GroupLocation, GroupOrientation, GroupsArrangement, GroupsOrder, IAuxiliaryEditorPart, IEditorGroupContextKeyProvider, IEditorDropTargetDelegate, IEditorGroupsService, IEditorSideGroup, IEditorWorkingSet, IFindGroupScope, IMergeGroupOptions, IEditorWorkingSetOptions, IEditorPart } from '../../../services/editor/common/editorGroupsService.js';
+import { EditorGroupLayout, GroupDirection, GroupLocation, GroupOrientation, GroupsArrangement, GroupsOrder, IAuxiliaryEditorPart, IEditorGroupContextKeyProvider, IEditorDropTargetDelegate, IEditorGroupsService, IEditorSideGroup, IEditorWorkingSet, IFindGroupScope, IMergeGroupOptions, IEditorWorkingSetOptions, IEditorPart, IModalEditorPart } from '../../../services/editor/common/editorGroupsService.js';
 import { Emitter } from '../../../../base/common/event.js';
 import { DisposableMap, DisposableStore, IDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { GroupIdentifier, IEditorPartOptions } from '../../../common/editor.js';
@@ -14,6 +14,7 @@ import { InstantiationType, registerSingleton } from '../../../../platform/insta
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { distinct } from '../../../../base/common/arrays.js';
 import { AuxiliaryEditorPart, IAuxiliaryEditorPartOpenOptions } from './auxiliaryEditorPart.js';
+import { ModalEditorPart } from './modalEditorPart.js';
 import { MultiWindowParts } from '../../part.js';
 import { DeferredPromise } from '../../../../base/common/async.js';
 import { IStorageService, IStorageValueChangeEvent, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
@@ -21,7 +22,7 @@ import { IThemeService } from '../../../../platform/theme/common/themeService.js
 import { IAuxiliaryWindowOpenOptions, IAuxiliaryWindowService } from '../../../services/auxiliaryWindow/browser/auxiliaryWindowService.js';
 import { generateUuid } from '../../../../base/common/uuid.js';
 import { ContextKeyValue, IContextKey, IContextKeyService, RawContextKey } from '../../../../platform/contextkey/common/contextkey.js';
-import { isHTMLElement } from '../../../../base/browser/dom.js';
+import { getActiveElement, isAncestor, isHTMLElement } from '../../../../base/browser/dom.js';
 import { ServiceCollection } from '../../../../platform/instantiation/common/serviceCollection.js';
 import { IEditorService } from '../../../services/editor/common/editorService.js';
 import { DeepPartial } from '../../../../base/common/types.js';
@@ -137,6 +138,31 @@ export class EditorParts extends MultiWindowParts<EditorPart, IEditorPartsMement
 
 	//#endregion
 
+	//#region Modal Editor Parts
+
+	private modalEditorPart: IModalEditorPart | undefined;
+
+	async createModalEditorPart(): Promise<IModalEditorPart> {
+
+		// Reuse existing modal editor part if it exists
+		if (this.modalEditorPart) {
+			return this.modalEditorPart;
+		}
+
+		const { part, disposables } = await this.instantiationService.createInstance(ModalEditorPart, this).create();
+
+		// Keep reference to reuse
+		this.modalEditorPart = part;
+		disposables.add(toDisposable(() => this.modalEditorPart = undefined));
+
+		// Events
+		this._onDidAddGroup.fire(part.activeGroup);
+
+		return part;
+	}
+
+	//#endregion
+
 	//#region Registration
 
 	override registerPart(part: EditorPart): IDisposable {
@@ -217,6 +243,27 @@ export class EditorParts extends MultiWindowParts<EditorPart, IEditorPartsMement
 	//#endregion
 
 	//#region Helpers
+
+	protected override getPartByDocument(document: Document): EditorPart {
+		if (this._parts.size > 1) {
+			const activeElement = getActiveElement();
+
+			// Find parts that match the document and check if any
+			// non-main part contains the active element. This handles
+			// modal parts that share the same document as the main part.
+
+			for (const part of this._parts) {
+				if (part !== this.mainPart && part.element?.ownerDocument === document) {
+					const container = part.getContainer();
+					if (container && isAncestor(activeElement, container)) {
+						return part;
+					}
+				}
+			}
+		}
+
+		return super.getPartByDocument(document);
+	}
 
 	override getPart(group: IEditorGroupView | GroupIdentifier): EditorPart;
 	override getPart(element: HTMLElement): EditorPart;
@@ -309,14 +356,13 @@ export class EditorParts extends MultiWindowParts<EditorPart, IEditorPartsMement
 
 	private createState(): IEditorPartsUIState {
 		return {
-			auxiliary: this.parts.filter(part => part !== this.mainPart).map(part => {
-				const auxiliaryWindow = this.auxiliaryWindowService.getWindow(part.windowId);
-
-				return {
+			auxiliary: this.parts
+				.map(part => ({ part, auxiliaryWindow: this.auxiliaryWindowService.getWindow(part.windowId) }))
+				.filter(({ auxiliaryWindow }) => auxiliaryWindow !== undefined)
+				.map(({ part, auxiliaryWindow }) => ({
 					state: part.createState(),
-					...auxiliaryWindow?.createState()
-				};
-			}),
+					...auxiliaryWindow!.createState()
+				})),
 			mru: this.mostRecentActiveParts.map(part => this.parts.indexOf(part))
 		};
 	}

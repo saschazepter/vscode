@@ -1,0 +1,55 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+/** Modal Editor Part: Modal Block */
+.monaco-modal-editor-block {
+	position: fixed;
+	height: 100%;
+	width: 100%;
+	left: 0;
+	top: 0;
+	z-index: 2500;
+	/* Below dialogs, above most other things */
+	display: flex;
+	justify-content: center;
+	align-items: center;
+}
+
+.monaco-modal-editor-block.dimmed {
+	background: rgba(0, 0, 0, 0.4);
+}
+
+/** Modal Editor Part: Shadow Container */
+.monaco-modal-editor-block .modal-editor-shadow {
+	display: flex;
+	justify-content: center;
+	align-items: center;
+	box-shadow: 0 5px 25px rgba(0, 0, 0, 0.3);
+	border-radius: 6px;
+	overflow: hidden;
+}
+
+/** Modal Editor Part: Editor Container */
+.monaco-modal-editor-block .modal-editor-part {
+	display: flex;
+	flex-direction: column;
+	min-width: 400px;
+	min-height: 300px;
+	background-color: var(--vscode-editor-background);
+	border: 1px solid var(--vscode-editorWidget-border, var(--vscode-contrastBorder));
+	border-radius: 6px;
+	overflow: hidden;
+}
+
+.monaco-modal-editor-block .modal-editor-part:focus {
+	outline: none;
+}
+
+/** Modal Editor Part: Ensure proper sizing */
+.monaco-modal-editor-block .modal-editor-part .content {
+	flex: 1;
+	position: relative;
+	overflow: hidden;
+}
