@@ -153,7 +153,12 @@ class ModalEditorPartImpl extends EditorPart implements IModalEditorPart {
 		// Modal editor parts enforce compact options
 		this.optionsDisposable.value = this.enforcePartOptions({
 			showTabs: 'single',
-			closeEmptyGroups: true
+			closeEmptyGroups: true,
+			tabActionCloseVisibility: false,
+			alwaysShowEditorActions: true,
+			editorActionsLocation: 'default',
+			tabHeight: 'default',
+			wrapTabs: false
 		});
 	}
 
