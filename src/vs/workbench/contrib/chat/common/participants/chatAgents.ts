@@ -89,6 +89,7 @@ export interface IChatWelcomeMessageContent {
 export interface IChatAgentImplementation {
 	invoke(request: IChatAgentRequest, progress: (parts: IChatProgress[]) => void, history: IChatAgentHistoryEntry[], token: CancellationToken): Promise<IChatAgentResult>;
 	setRequestTools?(requestId: string, tools: UserSelectedTools): void;
+	setYieldRequested?(requestId: string): void;
 	provideFollowups?(request: IChatAgentRequest, result: IChatAgentResult, history: IChatAgentHistoryEntry[], token: CancellationToken): Promise<IChatFollowup[]>;
 	provideChatTitle?: (history: IChatAgentHistoryEntry[], token: CancellationToken) => Promise<string | undefined>;
 	provideChatSummary?: (history: IChatAgentHistoryEntry[], token: CancellationToken) => Promise<string | undefined>;
@@ -157,10 +158,6 @@ export interface IChatAgentRequest {
 	 * Display name of the subagent that is invoking this request.
 	 */
 	subAgentName?: string;
-	/**
-	 * Set to true by the editor to request the language model gracefully stop after its next opportunity.
-	 */
-	yieldRequested?: boolean;
 	/**
 	 * The request ID of the parent request that invoked this subagent.
 	 */
@@ -235,6 +232,7 @@ export interface IChatAgentService {
 	hasChatParticipantDetectionProviders(): boolean;
 	invokeAgent(agent: string, request: IChatAgentRequest, progress: (parts: IChatProgress[]) => void, history: IChatAgentHistoryEntry[], token: CancellationToken): Promise<IChatAgentResult>;
 	setRequestTools(agent: string, requestId: string, tools: UserSelectedTools): void;
+	setYieldRequested(agent: string, requestId: string): void;
 	getFollowups(id: string, request: IChatAgentRequest, result: IChatAgentResult, history: IChatAgentHistoryEntry[], token: CancellationToken): Promise<IChatFollowup[]>;
 	getChatTitle(id: string, history: IChatAgentHistoryEntry[], token: CancellationToken): Promise<string | undefined>;
 	getChatSummary(id: string, history: IChatAgentHistoryEntry[], token: CancellationToken): Promise<string | undefined>;
@@ -524,6 +522,15 @@ export class ChatAgentService extends Disposable implements IChatAgentService {
 		data.impl.setRequestTools?.(requestId, tools);
 	}
 
+	setYieldRequested(id: string, requestId: string): void {
+		const data = this._agents.get(id);
+		if (!data?.impl) {
+			return;
+		}
+
+		data.impl.setYieldRequested?.(requestId);
+	}
+
 	async getFollowups(id: string, request: IChatAgentRequest, result: IChatAgentResult, history: IChatAgentHistoryEntry[], token: CancellationToken): Promise<IChatFollowup[]> {
 		const data = this._agents.get(id);
 		if (!data?.impl?.provideFollowups) {
@@ -636,6 +643,10 @@ export class MergedChatAgent implements IChatAgent {
 
 	setRequestTools(requestId: string, tools: UserSelectedTools): void {
 		this.impl.setRequestTools?.(requestId, tools);
+	}
+
+	setYieldRequested(requestId: string): void {
+		this.impl.setYieldRequested?.(requestId);
 	}
 
 	async provideFollowups(request: IChatAgentRequest, result: IChatAgentResult, history: IChatAgentHistoryEntry[], token: CancellationToken): Promise<IChatFollowup[]> {
