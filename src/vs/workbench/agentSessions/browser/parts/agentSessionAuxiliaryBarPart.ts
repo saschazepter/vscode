@@ -22,10 +22,14 @@ import { IAction } from '../../../../base/common/actions.js';
 import { assertReturnsDefined } from '../../../../base/common/types.js';
 import { LayoutPriority } from '../../../../base/browser/ui/splitview/splitview.js';
 import { AbstractPaneCompositePart, CompositeBarPosition } from '../../../browser/parts/paneCompositePart.js';
-import { ActionsOrientation } from '../../../../base/browser/ui/actionbar/actionbar.js';
+import { ActionsOrientation, IActionViewItem } from '../../../../base/browser/ui/actionbar/actionbar.js';
 import { IPaneCompositeBarOptions } from '../../../browser/parts/paneCompositeBar.js';
-import { IMenuService } from '../../../../platform/actions/common/actions.js';
+import { IMenuService, IMenu, MenuId, MenuItemAction } from '../../../../platform/actions/common/actions.js';
 import { IHoverService } from '../../../../platform/hover/browser/hover.js';
+import { DropdownWithPrimaryActionViewItem } from '../../../../platform/actions/browser/dropdownWithPrimaryActionViewItem.js';
+import { IBaseActionViewItemOptions } from '../../../../base/browser/ui/actionbar/actionViewItems.js';
+import { getFlatContextMenuActions } from '../../../../platform/actions/browser/menuEntryActionViewItem.js';
+import { IDisposable, MutableDisposable } from '../../../../base/common/lifecycle.js';
 
 /**
  * Auxiliary bar part specifically for agent sessions workbench.
@@ -37,6 +41,15 @@ export class AgentSessionAuxiliaryBarPart extends AbstractPaneCompositePart {
 	static readonly pinnedViewsKey = 'workbench.agentsession.auxiliarybar.pinnedPanels';
 	static readonly placeholdeViewContainersKey = 'workbench.agentsession.auxiliarybar.placeholderPanels';
 	static readonly viewContainersWorkspaceStateKey = 'workbench.agentsession.auxiliarybar.viewContainersWorkspaceState';
+
+	// Action ID for run script - defined here to avoid layering issues
+	private static readonly RUN_SCRIPT_ACTION_ID = 'workbench.action.agentSessions.runScript';
+	private static readonly RUN_SCRIPT_DROPDOWN_MENU_ID = MenuId.for('AgentSessionsRunScriptDropdown');
+
+	// Run script dropdown management
+	private readonly _runScriptDropdown = this._register(new MutableDisposable<DropdownWithPrimaryActionViewItem>());
+	private readonly _runScriptMenu = this._register(new MutableDisposable<IMenu>());
+	private readonly _runScriptMenuListener = this._register(new MutableDisposable<IDisposable>());
 
 	// Use the side bar dimensions
 	override readonly minimumWidth: number = 170;
@@ -158,6 +171,66 @@ export class AgentSessionAuxiliaryBarPart extends AbstractPaneCompositePart {
 			}),
 			compact: true
 		};
+	}
+
+	protected override actionViewItemProvider(action: IAction, options: IBaseActionViewItemOptions): IActionViewItem | undefined {
+		// Create a DropdownWithPrimaryActionViewItem for the run script action
+		if (action.id === AgentSessionAuxiliaryBarPart.RUN_SCRIPT_ACTION_ID && action instanceof MenuItemAction) {
+			// Create and store the menu so we can listen for changes
+			if (!this._runScriptMenu.value) {
+				this._runScriptMenu.value = this.menuService.createMenu(AgentSessionAuxiliaryBarPart.RUN_SCRIPT_DROPDOWN_MENU_ID, this.contextKeyService);
+				this._runScriptMenuListener.value = this._runScriptMenu.value.onDidChange(() => this._updateRunScriptDropdown());
+			}
+
+			const dropdownActions = this._getRunScriptDropdownActions();
+
+			const dropdownAction: IAction = {
+				id: 'runScriptDropdown',
+				label: '',
+				tooltip: '',
+				class: undefined,
+				enabled: true,
+				run: () => { }
+			};
+
+			this._runScriptDropdown.value = this.instantiationService.createInstance(
+				DropdownWithPrimaryActionViewItem,
+				action,
+				dropdownAction,
+				dropdownActions,
+				'',
+				{
+					hoverDelegate: options.hoverDelegate,
+					getKeyBinding: (action: IAction) => this.keybindingService.lookupKeybinding(action.id, this.contextKeyService)
+				}
+			);
+
+			return this._runScriptDropdown.value;
+		}
+
+		return super.actionViewItemProvider(action, options);
+	}
+
+	private _getRunScriptDropdownActions(): IAction[] {
+		if (!this._runScriptMenu.value) {
+			return [];
+		}
+		return getFlatContextMenuActions(this._runScriptMenu.value.getActions({ shouldForwardArgs: true }));
+	}
+
+	private _updateRunScriptDropdown(): void {
+		if (this._runScriptDropdown.value) {
+			const dropdownActions = this._getRunScriptDropdownActions();
+			const dropdownAction: IAction = {
+				id: 'runScriptDropdown',
+				label: '',
+				tooltip: '',
+				class: undefined,
+				enabled: true,
+				run: () => { }
+			};
+			this._runScriptDropdown.value.update(dropdownAction, dropdownActions);
+		}
 	}
 
 	private fillExtraContextMenuActions(_actions: IAction[]): void { }
