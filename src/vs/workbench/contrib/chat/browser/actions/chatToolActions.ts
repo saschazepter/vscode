@@ -127,7 +127,6 @@ class ConfigureToolsAction extends Action2 {
 			precondition: ChatContextKeys.chatModeKind.isEqualTo(ChatModeKind.Agent),
 			menu: [{
 				when: ContextKeyExpr.and(
-					ChatContextKeys.showFullWelcome.negate(),
 					ChatContextKeys.chatModeKind.isEqualTo(ChatModeKind.Agent),
 					ChatContextKeys.lockedToCodingAgent.negate(),
 					ContextKeyExpr.notEquals(`config.${ChatConfiguration.AlternativeToolAction}`, true)

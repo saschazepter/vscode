@@ -77,7 +77,7 @@ import { IChatListItemTemplate } from './chatListRenderer.js';
 import { ChatListWidget } from './chatListWidget.js';
 import { ChatEditorOptions } from './chatOptions.js';
 import { ChatViewWelcomePart, IChatSuggestedPrompts, IChatViewWelcomeContent } from '../viewsWelcome/chatViewWelcomeController.js';
-import { ChatFullWelcomePart, IQuickStartSelectionEvent } from '../viewsWelcome/chatFullWelcomePart.js';
+import { ChatFullWelcomePart } from '../viewsWelcome/chatFullWelcomePart.js';
 import { IAgentSessionsService } from '../agentSessions/agentSessionsService.js';
 
 const $ = dom.$;
@@ -635,21 +635,13 @@ export class ChatWidget extends Disposable implements IChatWidget {
 				{
 					productName: product.nameLong,
 					fullWelcomeOptions: this.viewOptions.fullWelcomeOptions,
-					setInputPrefixContent: (content: string | undefined) => this.setInputPrefixContent(content),
 				}
 			);
 			dom.append(this.fullWelcomeContainer, this.fullWelcomePart.value.element);
 
-			// Handle quick-start selection
-			this._register(this.fullWelcomePart.value.onDidSelectQuickStart((e: IQuickStartSelectionEvent) => {
-				this.handleQuickStartSelection(e);
-			}));
-
 			// Create input inside the full welcome's input slot
 			this.createInput(this.fullWelcomePart.value.inputSlot, { renderFollowups: false, renderStyle, renderInputToolbarBelowInput });
 
-			// Connect the input editor to the welcome part for type-to-search filtering
-			this._register(this.fullWelcomePart.value.connectInputEditor(this.input.inputEditor));
 		}
 
 		this.welcomeMessageContainer = dom.append(this.container, $('.chat-welcome-view-container', { style: 'display: none' }));
@@ -1383,20 +1375,6 @@ export class ChatWidget extends Disposable implements IChatWidget {
 
 		// Auto-submit to start the delegation
 		this.acceptInput().catch(e => this.logService.error('Failed to handle delegation', e));
-	}
-
-	private handleQuickStartSelection(e: IQuickStartSelectionEvent): void {
-		// Update the session type picker delegate if available
-		if (this.viewOptions.sessionTypePickerDelegate?.setActiveSessionProvider) {
-			this.viewOptions.sessionTypePickerDelegate.setActiveSessionProvider(e.sessionProvider);
-		}
-
-		// Switch the mode based on the quick-start selection
-		const targetModeId = e.modeKind === ChatModeKind.Ask ? ChatMode.Ask.id : ChatMode.Agent.id;
-		this.input.setChatMode(targetModeId, false);
-
-		// Focus the input for immediate typing
-		this.input.focus();
 	}
 
 	async handleDelegationExitIfNeeded(sourceAgent: Pick<IChatAgentData, 'id' | 'name'> | undefined, targetAgent: IChatAgentData | undefined): Promise<void> {
@@ -2177,18 +2155,6 @@ export class ChatWidget extends Disposable implements IChatWidget {
 	}
 
 	async acceptInput(query?: string, options?: IChatAcceptInputOptions): Promise<IChatResponseModel | undefined> {
-		// If we're in the full welcome view with type-to-search filtering active,
-		// the first Enter selects the best matching mode but KEEPS the input text.
-		// The second Enter (after mode is selected) will send the actual request.
-		if (this.fullWelcomePart.value?.isFiltering() && !this.fullWelcomePart.value.getSelectedQuickStartType()) {
-			const selected = this.fullWelcomePart.value.selectFirstMatchingOption();
-			if (selected) {
-				// Keep the input text - user will press Enter again to send
-				// Focus is already set by handleQuickStartSelection
-				return undefined;
-			}
-		}
-
 		return this._acceptInput(query ? { query } : undefined, options);
 	}
 
