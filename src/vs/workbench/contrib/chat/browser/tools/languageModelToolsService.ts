@@ -379,7 +379,8 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 
 		const hookInput: IPreToolUseCallerInput = {
 			toolName: dto.toolId,
-			toolArgs: dto.parameters,
+			toolInput: dto.parameters,
+			toolCallId: dto.callId,
 		};
 		const hookResult = await this._hooksExecutionService.executePreToolUseHook(dto.context.sessionResource, hookInput, token);
 

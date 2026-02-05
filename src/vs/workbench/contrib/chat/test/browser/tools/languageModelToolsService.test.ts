@@ -3833,7 +3833,7 @@ suite('LanguageModelToolsService', () => {
 
 			assert.ok(mockHooksService.lastPreToolUseInput);
 			assert.strictEqual(mockHooksService.lastPreToolUseInput.toolName, 'hookInputTool');
-			assert.deepStrictEqual(mockHooksService.lastPreToolUseInput.toolArgs, { param1: 'value1', param2: 42 });
+			assert.deepStrictEqual(mockHooksService.lastPreToolUseInput.toolInput, { param1: 'value1', param2: 42 });
 		});
 
 		test('when hook denies, tool invoke is never called', async () => {
