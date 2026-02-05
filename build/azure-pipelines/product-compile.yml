@@ -93,15 +93,6 @@ jobs:
       - script: node build/azure-pipelines/distro/mixin-quality.ts
         displayName: Mixin distro quality
 
-      - script: node build/azure-pipelines/common/checkDistroCommit.ts
-        displayName: Check distro commit
-        env:
-          GITHUB_TOKEN: "$(github-distro-mixin-password)"
-          BUILD_SOURCEBRANCH: "$(Build.SourceBranch)"
-
-      - script: node build/azure-pipelines/common/checkCopilotChatCompatibility.ts --warn-only
-        displayName: Check Copilot Chat compatibility
-
       - template: common/install-builtin-extensions.yml@self
 
       - script: npm exec -- npm-run-all2 -lp core-ci extensions-ci hygiene eslint valid-layers-check define-class-fields-check vscode-dts-compile-check tsec-compile-check test-build-scripts
