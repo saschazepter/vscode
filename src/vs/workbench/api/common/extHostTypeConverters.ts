@@ -2961,6 +2961,13 @@ export namespace ChatToolInvocationPart {
 					status: todoStatusEnumToString(todo.status)
 				}))
 			};
+		} else if ('input' in data && 'output' in data && !Array.isArray(data.output)) {
+			// Convert extension API simple tool invocation data to internal format
+			return {
+				kind: 'simpleToolInvocation',
+				input: typeof data.input === 'string' ? data.input : '',
+				output: typeof data.output === 'string' ? data.output : ''
+			};
 		} else if (data && 'values' in data && Array.isArray(data.values)) {
 			// Convert extension API resources tool data to internal format
 			return {
