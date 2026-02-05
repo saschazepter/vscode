@@ -4,7 +4,6 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as dom from '../../../../../../base/browser/dom.js';
-import { renderIcon } from '../../../../../../base/browser/ui/iconLabel/iconLabels.js';
 import { Action } from '../../../../../../base/common/actions.js';
 import { Emitter, Event } from '../../../../../../base/common/event.js';
 import { Disposable, DisposableStore } from '../../../../../../base/common/lifecycle.js';
@@ -12,20 +11,13 @@ import { ThemeIcon } from '../../../../../../base/common/themables.js';
 import { localize } from '../../../../../../nls.js';
 import { IContextMenuService } from '../../../../../../platform/contextview/browser/contextView.js';
 import { IChatMode } from '../../../common/chatModes.js';
-import { IChatSessionsExtensionPoint, IChatSessionsService } from '../../../common/chatSessionsService.js';
+import { IChatSessionsService } from '../../../common/chatSessionsService.js';
 import { IHandOff } from '../../../common/promptSyntax/promptFileParser.js';
-import { AgentSessionProviders, getAgentCanContinueIn, getAgentSessionProvider, getAgentSessionProviderIcon, getAgentSessionProviderName } from '../../agentSessions/agentSessions.js';
-import { getAgentSessionProviderDisplayIcon, getAgentSessionProviderDisplayName } from '../../viewsWelcome/chatQuickStartPart.js';
+import { getAgentCanContinueIn, getAgentSessionProvider, getAgentSessionProviderIcon, getAgentSessionProviderName } from '../../agentSessions/agentSessions.js';
 
 export interface INextPromptSelection {
 	readonly handoff: IHandOff;
 	readonly agentId?: string;
-}
-
-export interface IDelegationSelection {
-	readonly contribution?: IChatSessionsExtensionPoint;
-	readonly provider: AgentSessionProviders;
-	readonly agentName?: string;
 }
 
 export class ChatSuggestNextWidget extends Disposable {
@@ -36,9 +28,6 @@ export class ChatSuggestNextWidget extends Disposable {
 
 	private readonly _onDidSelectPrompt = this._register(new Emitter<INextPromptSelection>());
 	public readonly onDidSelectPrompt: Event<INextPromptSelection> = this._onDidSelectPrompt.event;
-
-	private readonly _onDidSelectDelegation = this._register(new Emitter<IDelegationSelection>());
-	public readonly onDidSelectDelegation: Event<IDelegationSelection> = this._onDidSelectDelegation.event;
 
 	private promptsContainer!: HTMLElement;
 	private titleElement!: HTMLElement;
@@ -238,115 +227,6 @@ export class ChatSuggestNextWidget extends Disposable {
 			this.domNode.style.display = 'none';
 			this._onDidChangeHeight.fire();
 		}
-	}
-
-	/**
-	 * Renders delegation options (Continue in Execute/Delegate) for modes without explicit handoffs.
-	 * Used in full welcome mode when the user is in Explore mode and has received a response.
-	 */
-	public renderDelegationOptions(): void {
-		// Get contributions that can delegate
-		const contributions = this.chatSessionsService.getAllChatSessionContributions();
-		const availableContributions = contributions.filter(c => {
-			if (!c.canDelegate) {
-				return false;
-			}
-			const provider = getAgentSessionProvider(c.type);
-			return provider !== undefined && getAgentCanContinueIn(provider);
-		});
-
-		// If no contributions with canDelegate, fall back to known first-party providers
-		// This ensures delegation buttons show even before extensions register their contributions
-		const delegationTargets: { provider: AgentSessionProviders; contribution?: IChatSessionsExtensionPoint }[] = [];
-
-		if (availableContributions.length > 0) {
-			for (const contrib of availableContributions) {
-				const provider = getAgentSessionProvider(contrib.type);
-				if (provider) {
-					delegationTargets.push({ provider, contribution: contrib });
-				}
-			}
-		} else {
-			// Fall back to known first-party providers that support delegation
-			const fallbackProviders = [AgentSessionProviders.Background, AgentSessionProviders.Cloud];
-			for (const provider of fallbackProviders) {
-				if (getAgentCanContinueIn(provider)) {
-					// Try to find the contribution for the provider
-					const contrib = contributions.find(c => c.type === provider);
-					delegationTargets.push({ provider, contribution: contrib });
-				}
-			}
-		}
-
-		if (delegationTargets.length === 0) {
-			this.hide();
-			return;
-		}
-
-		// Update title
-		this.titleElement.textContent = localize('chat.continueIn', 'Continue In');
-
-		// Clear existing buttons (keep title which is first child)
-		const childrenToRemove: HTMLElement[] = [];
-		for (let i = 1; i < this.promptsContainer.children.length; i++) {
-			childrenToRemove.push(this.promptsContainer.children[i] as HTMLElement);
-		}
-		for (const child of childrenToRemove) {
-			const disposables = this.buttonDisposables.get(child);
-			if (disposables) {
-				disposables.dispose();
-				this.buttonDisposables.delete(child);
-			}
-			this.promptsContainer.removeChild(child);
-		}
-
-		// Create buttons for each available delegation target
-		for (const target of delegationTargets) {
-			const button = this.createDelegationButtonForProvider(target.provider, target.contribution);
-			this.promptsContainer.appendChild(button);
-		}
-
-		this.domNode.style.display = 'flex';
-		this._onDidChangeHeight.fire();
-	}
-
-	/**
-	 * Creates a button for delegating to a specific agent session provider.
-	 */
-	private createDelegationButtonForProvider(provider: AgentSessionProviders, contrib?: IChatSessionsExtensionPoint): HTMLElement {
-		const disposables = new DisposableStore();
-		const icon = getAgentSessionProviderDisplayIcon(provider);
-		// Use the display name (Execute/Delegate) to match the welcome view buttons
-		const name = getAgentSessionProviderDisplayName(provider);
-		const agentName = contrib?.name;
-
-		const button = dom.$('.chat-welcome-view-suggested-prompt.chat-delegation-button');
-		button.setAttribute('tabindex', '0');
-		button.setAttribute('role', 'button');
-		button.setAttribute('aria-label', localize('chat.continueInProvider', 'Continue in {0}', name));
-
-		// Add icon if available
-		if (icon) {
-			const iconElement = dom.append(button, dom.$('.chat-delegation-button-icon'));
-			iconElement.appendChild(renderIcon(icon));
-		}
-
-		const titleElement = dom.append(button, dom.$('.chat-welcome-view-suggested-prompt-title'));
-		titleElement.textContent = name;
-
-		disposables.add(dom.addDisposableListener(button, 'click', () => {
-			this._onDidSelectDelegation.fire({ contribution: contrib, provider, agentName });
-		}));
-
-		disposables.add(dom.addDisposableListener(button, 'keydown', (e) => {
-			if (e.key === 'Enter' || e.key === ' ') {
-				e.preventDefault();
-				this._onDidSelectDelegation.fire({ contribution: contrib, provider, agentName });
-			}
-		}));
-
-		this.buttonDisposables.set(button, disposables);
-		return button;
 	}
 
 	public override dispose(): void {

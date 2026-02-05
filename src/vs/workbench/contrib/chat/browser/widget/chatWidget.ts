@@ -71,7 +71,7 @@ import { IPromptsService } from '../../common/promptSyntax/service/promptsServic
 import { handleModeSwitch } from '../actions/chatActions.js';
 import { ChatTreeItem, IChatAcceptInputOptions, IChatAccessibilityService, IChatCodeBlockInfo, IChatFileTreeInfo, IChatListItemRendererOptions, IChatWidget, IChatWidgetService, IChatWidgetViewContext, IChatWidgetViewModelChangeEvent, IChatWidgetViewOptions, isIChatResourceViewContext, isIChatViewViewContext } from '../chat.js';
 import { ChatAttachmentModel } from '../attachments/chatAttachmentModel.js';
-import { ChatSuggestNextWidget, IDelegationSelection } from './chatContentParts/chatSuggestNextWidget.js';
+import { ChatSuggestNextWidget } from './chatContentParts/chatSuggestNextWidget.js';
 import { ChatInputPart, IChatInputPartOptions, IChatInputStyles } from './input/chatInputPart.js';
 import { IChatListItemTemplate } from './chatListRenderer.js';
 import { ChatListWidget } from './chatListWidget.js';
@@ -654,9 +654,6 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		}));
 		this._register(this.chatSuggestNextWidget.onDidSelectPrompt(({ handoff, agentId }) => {
 			this.handleNextPromptSelection(handoff, agentId);
-		}));
-		this._register(this.chatSuggestNextWidget.onDidSelectDelegation((selection) => {
-			this.handleDelegationSelection(selection);
 		}));
 
 		// Only create input in main container if not in full welcome mode
@@ -1284,18 +1281,6 @@ export class ChatWidget extends Disposable implements IChatWidget {
 					handoffCount: handoffs.length
 				});
 			}
-		} else if (this.viewOptions.showFullWelcome && currentMode?.kind === ChatModeKind.Ask) {
-			// In full welcome mode with Explore (Ask mode), show delegation options
-			// so users can send the conversation to Execute or Delegate
-			const wasHidden = this.chatSuggestNextWidget.domNode.style.display === 'none';
-			this.chatSuggestNextWidget.renderDelegationOptions();
-
-			if (wasHidden && this.chatSuggestNextWidget.domNode.style.display !== 'none') {
-				this.telemetryService.publicLog2<ChatHandoffWidgetShownEvent, ChatHandoffWidgetShownClassification>('chat.handoffWidgetShown', {
-					agent: currentMode.id,
-					handoffCount: 2 // Background and Cloud
-				});
-			}
 		} else {
 			this.chatSuggestNextWidget.hide();
 		}
@@ -1346,35 +1331,6 @@ export class ChatWidget extends Disposable implements IChatWidget {
 				this.acceptInput();
 			}
 		}
-	}
-
-	/**
-	 * Handles delegation selection from the suggest-next widget (used in full welcome mode).
-	 * Sends the current conversation to the selected agent session provider.
-	 */
-	private handleDelegationSelection(selection: IDelegationSelection): void {
-		// Hide the widget after selection
-		this.chatSuggestNextWidget.hide();
-
-		// Get the agent name from contribution or fall back to provider type
-		const agentName = selection.agentName ?? selection.contribution?.name ?? selection.provider;
-
-		// Log telemetry
-		const currentMode = this.input.currentModeObs.get();
-		this.telemetryService.publicLog2<ChatHandoffClickEvent, ChatHandoffClickClassification>('chat.handoffClicked', {
-			fromAgent: currentMode?.id ?? 'explore',
-			toAgent: selection.provider,
-			hasPrompt: false,
-			autoSend: true
-		});
-
-		// Delegate by using @agentName with a default prompt
-		const defaultPrompt = localize('chat.delegationPrompt', "Implement this based on the conversation above.");
-		this.input.setValue(`@${agentName} ${defaultPrompt}`, false);
-		this.input.focus();
-
-		// Auto-submit to start the delegation
-		this.acceptInput().catch(e => this.logService.error('Failed to handle delegation', e));
 	}
 
 	async handleDelegationExitIfNeeded(sourceAgent: Pick<IChatAgentData, 'id' | 'name'> | undefined, targetAgent: IChatAgentData | undefined): Promise<void> {
