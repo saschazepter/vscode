@@ -511,6 +511,14 @@ export function registerChatActions() {
 		override async run(accessor: ServicesAccessor): Promise<void> {
 			const commandService = accessor.get(ICommandService);
 			const widgetService = accessor.get(IChatWidgetService);
+			const chatModeService = accessor.get(IChatModeService);
+
+			// Check if Plan mode exists before attempting to switch
+			const planMode = chatModeService.findModeByName('Plan');
+			if (!planMode) {
+				// Plan mode doesn't exist - fail silently since this is expected in many workspaces
+				return;
+			}
 
 			// Preserve the current input query when switching modes
 			const currentQuery = widgetService.lastFocusedWidget?.inputEditor.getValue() ?? '';
