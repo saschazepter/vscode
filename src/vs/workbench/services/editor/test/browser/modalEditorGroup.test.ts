@@ -5,7 +5,7 @@
 
 import assert from 'assert';
 import { workbenchInstantiationService, registerTestEditor, TestFileEditorInput, createEditorParts } from '../../../../test/browser/workbenchTestServices.js';
-import { GroupDirection, GroupsOrder, IEditorGroupsService } from '../../common/editorGroupsService.js';
+import { GroupsOrder, IEditorGroupsService } from '../../common/editorGroupsService.js';
 import { EditorExtensions, IEditorFactoryRegistry } from '../../../../common/editor.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { SyncDescriptor } from '../../../../../platform/instantiation/common/descriptors.js';
@@ -103,26 +103,6 @@ suite('Modal Editor Group', () => {
 
 		// Modal part's group should be added to the total groups
 		assert.strictEqual(parts.groups.length, initialGroupCount + 1);
-
-		modalPart.close();
-	});
-
-	test('modal editor part can add groups (split)', async () => {
-		const instantiationService = workbenchInstantiationService({ contextKeyService: instantiationService => instantiationService.createInstance(MockScopableContextKeyService) }, disposables);
-		instantiationService.invokeFunction(accessor => Registry.as<IEditorFactoryRegistry>(EditorExtensions.EditorFactory).start(accessor));
-		const parts = await createEditorParts(instantiationService, disposables);
-		instantiationService.stub(IEditorGroupsService, parts);
-
-		const modalPart = await parts.createModalEditorPart();
-
-		const initialGroup = modalPart.activeGroup;
-		const input = createTestFileEditorInput(URI.file('foo/bar'), TEST_EDITOR_INPUT_ID);
-		await initialGroup.openEditor(input, { pinned: true });
-
-		// Splitting should work within the modal part
-		const newGroup = modalPart.addGroup(initialGroup, GroupDirection.RIGHT);
-		assert.ok(newGroup);
-		assert.notStrictEqual(newGroup.id, initialGroup.id);
 
 		modalPart.close();
 	});
@@ -244,7 +224,7 @@ suite('Modal Editor Group', () => {
 		(await parts.createModalEditorPart()).close();
 	});
 
-	test('modal editor part enforces single tab mode', async () => {
+	test('modal editor part enforces no tabs mode', async () => {
 		const instantiationService = workbenchInstantiationService({ contextKeyService: instantiationService => instantiationService.createInstance(MockScopableContextKeyService) }, disposables);
 		instantiationService.invokeFunction(accessor => Registry.as<IEditorFactoryRegistry>(EditorExtensions.EditorFactory).start(accessor));
 		const parts = await createEditorParts(instantiationService, disposables);
@@ -252,8 +232,8 @@ suite('Modal Editor Group', () => {
 
 		const modalPart = await parts.createModalEditorPart();
 
-		// Modal parts should enforce single tab mode
-		assert.strictEqual(modalPart.partOptions.showTabs, 'single');
+		// Modal parts should enforce no tabs mode
+		assert.strictEqual(modalPart.partOptions.showTabs, 'none');
 
 		modalPart.close();
 	});

@@ -95,20 +95,34 @@ export class EditorParts extends MultiWindowParts<EditorPart, IEditorPartsMement
 	//#region Scoped Instantiation Services
 
 	private readonly mapPartToInstantiationService = new Map<number /* window ID */, IInstantiationService>();
+	private modalPartInstantiationService: IInstantiationService | undefined;
 
 	getScopedInstantiationService(part: IEditorPart): IInstantiationService {
+
+		// Main Part
 		if (part === this.mainPart) {
-			if (!this.mapPartToInstantiationService.has(part.windowId)) {
-				this.instantiationService.invokeFunction(accessor => {
+			let mainPartInstantiationService = this.mapPartToInstantiationService.get(part.windowId);
+			if (!mainPartInstantiationService) {
+				mainPartInstantiationService = this.instantiationService.invokeFunction(accessor => {
 					const editorService = accessor.get(IEditorService);
 					const statusbarService = accessor.get(IStatusbarService);
 
-					this.mapPartToInstantiationService.set(part.windowId, this._register(this.mainPart.scopedInstantiationService.createChild(new ServiceCollection(
+					const mainPartInstantiationService = this._register(this.mainPart.scopedInstantiationService.createChild(new ServiceCollection(
 						[IEditorService, editorService.createScoped(this.mainPart, this._store)],
 						[IStatusbarService, statusbarService.createScoped(statusbarService, this._store)]
-					))));
+					)));
+					this.mapPartToInstantiationService.set(part.windowId, mainPartInstantiationService);
+
+					return mainPartInstantiationService;
 				});
 			}
+
+			return mainPartInstantiationService;
+		}
+
+		// Modal Part (if opened)
+		if (part === this.modalEditorPart && this.modalPartInstantiationService) {
+			return this.modalPartInstantiationService;
 		}
 
 		return this.mapPartToInstantiationService.get(part.windowId) ?? this.instantiationService;
@@ -138,7 +152,7 @@ export class EditorParts extends MultiWindowParts<EditorPart, IEditorPartsMement
 
 	//#endregion
 
-	//#region Modal Editor Parts
+	//#region Modal Editor Part
 
 	private modalEditorPart: IModalEditorPart | undefined;
 
@@ -149,11 +163,15 @@ export class EditorParts extends MultiWindowParts<EditorPart, IEditorPartsMement
 			return this.modalEditorPart;
 		}
 
-		const { part, disposables } = await this.instantiationService.createInstance(ModalEditorPart, this).create();
+		const { part, instantiationService, disposables } = await this.instantiationService.createInstance(ModalEditorPart, this).create();
 
-		// Keep reference to reuse
+		// Keep instantiation service and reference to reuse
 		this.modalEditorPart = part;
-		disposables.add(toDisposable(() => this.modalEditorPart = undefined));
+		this.modalPartInstantiationService = instantiationService;
+		disposables.add(toDisposable(() => {
+			this.modalPartInstantiationService = undefined;
+			this.modalEditorPart = undefined;
+		}));
 
 		// Events
 		this._onDidAddGroup.fire(part.activeGroup);

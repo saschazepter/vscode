@@ -15,20 +15,48 @@
 	display: flex;
 	justify-content: center;
 	align-items: center;
+	pointer-events: none;
+	visibility: hidden;
 }
 
-.monaco-modal-editor-block.dimmed {
-	background: rgba(0, 0, 0, 0.4);
+.monaco-modal-editor-block.visible {
+	pointer-events: auto;
+	visibility: visible;
+}
+
+/** Modal Editor Part: Backdrop */
+.monaco-modal-editor-block .modal-editor-backdrop {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 100%;
+	height: 100%;
+	background-color: rgba(0, 0, 0, 0.4);
+	opacity: 0;
+	transition: opacity 0.15s ease-out;
+}
+
+.monaco-modal-editor-block.visible .modal-editor-backdrop {
+	opacity: 1;
 }
 
 /** Modal Editor Part: Shadow Container */
 .monaco-modal-editor-block .modal-editor-shadow {
+	position: relative;
 	display: flex;
 	justify-content: center;
 	align-items: center;
-	box-shadow: 0 5px 25px rgba(0, 0, 0, 0.3);
-	border-radius: 6px;
+	box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+	border-radius: 8px;
 	overflow: hidden;
+	transform: scale(0.95);
+	opacity: 0;
+	transition: transform 0.15s ease-out, opacity 0.15s ease-out;
+}
+
+.monaco-modal-editor-block.visible .modal-editor-shadow {
+	transform: scale(1);
+	opacity: 1;
 }
 
 /** Modal Editor Part: Editor Container */
@@ -39,12 +67,42 @@
 	min-height: 300px;
 	background-color: var(--vscode-editor-background);
 	border: 1px solid var(--vscode-editorWidget-border, var(--vscode-contrastBorder));
-	border-radius: 6px;
+	border-radius: 8px;
 	overflow: hidden;
 }
 
 .monaco-modal-editor-block .modal-editor-part:focus {
 	outline: none;
+}
+
+/** Modal Editor Part: Header with title and close button */
+.monaco-modal-editor-block .modal-editor-header {
+	display: grid;
+	grid-template-columns: 1fr auto 1fr;
+	align-items: center;
+	height: 32px;
+	min-height: 32px;
+	padding: 0 8px;
+	background-color: var(--vscode-editorGroupHeader-tabsBackground);
+	border-bottom: 1px solid var(--vscode-editorGroupHeader-tabsBorder, transparent);
+}
+
+.monaco-modal-editor-block .modal-editor-title {
+	grid-column: 2;
+	font-size: 12px;
+	font-weight: 500;
+	color: var(--vscode-foreground);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	text-align: center;
+}
+
+.monaco-modal-editor-block .modal-editor-action-container {
+	grid-column: 3;
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
 }
 
 /** Modal Editor Part: Ensure proper sizing */

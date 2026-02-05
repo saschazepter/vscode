@@ -4,9 +4,13 @@
  *--------------------------------------------------------------------------------------------*/
 
 import './media/modalEditorPart.css';
-import { $, addDisposableListener, EventType } from '../../../../base/browser/dom.js';
+import { $, addDisposableListener, append, EventType } from '../../../../base/browser/dom.js';
+import { ActionBar } from '../../../../base/browser/ui/actionbar/actionbar.js';
+import { Action } from '../../../../base/common/actions.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
-import { DisposableStore, MutableDisposable } from '../../../../base/common/lifecycle.js';
+import { DisposableStore, MutableDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
+import { ThemeIcon } from '../../../../base/common/themables.js';
+import { widgetClose } from '../../../../platform/theme/common/iconRegistry.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
@@ -14,9 +18,10 @@ import { ServiceCollection } from '../../../../platform/instantiation/common/ser
 import { IStorageService } from '../../../../platform/storage/common/storage.js';
 import { IThemeService } from '../../../../platform/theme/common/themeService.js';
 import { IEditorGroupView, IEditorPartsView } from './editor.js';
-import { EditorPart, IEditorPartUIState } from './editorPart.js';
+import { EditorPart } from './editorPart.js';
 import { GroupDirection, GroupsOrder, IModalEditorPart } from '../../../services/editor/common/editorGroupsService.js';
 import { IEditorService } from '../../../services/editor/common/editorService.js';
+import { Verbosity } from '../../../common/editor.js';
 import { IHostService } from '../../../services/host/browser/host.js';
 import { IWorkbenchLayoutService } from '../../../services/layout/browser/layoutService.js';
 import { mainWindow } from '../../../../base/browser/window.js';
@@ -36,52 +41,76 @@ export class ModalEditorPart {
 		private readonly editorPartsView: IEditorPartsView,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@IEditorService private readonly editorService: IEditorService,
-		@IWorkbenchLayoutService private readonly layoutService: IWorkbenchLayoutService
+		@IWorkbenchLayoutService private readonly layoutService: IWorkbenchLayoutService,
 	) {
 	}
 
 	async create(): Promise<ICreateModalEditorPartResult> {
 		const disposables = new DisposableStore();
 
-		// Create modal backdrop
-		const modalElement = $('.monaco-modal-editor-block.dimmed');
+		// Create modal container
+		const modalElement = $('.monaco-modal-editor-block');
 		modalElement.tabIndex = -1;
-		const mainContainer = this.layoutService.mainContainer;
-		mainContainer.appendChild(modalElement);
-		disposables.add({ dispose: () => modalElement.remove() });
+		this.layoutService.mainContainer.appendChild(modalElement);
+		disposables.add(toDisposable(() => modalElement.remove()));
 
-		// Create shadow container for the modal
+		const backdropElement = modalElement.appendChild($('.modal-editor-backdrop'));
 		const shadowElement = modalElement.appendChild($('.modal-editor-shadow'));
 
 		// Create editor part container
+		const titleId = 'modal-editor-title';
 		const editorPartContainer = $('.part.editor.modal-editor-part', {
 			role: 'dialog',
 			'aria-modal': 'true',
-			'aria-label': localize('modalEditorPart', "Modal Editor")
+			'aria-labelledby': titleId
 		});
 		shadowElement.appendChild(editorPartContainer);
+
+		// Create header with title and close button
+		const headerElement = editorPartContainer.appendChild($('.modal-editor-header'));
+
+		// Title element (centered)
+		const titleElement = append(headerElement, $('div.modal-editor-title'));
+		titleElement.id = titleId;
+		titleElement.textContent = '';
+
+		// Close button using ActionBar for proper accessibility
+		const actionBarContainer = append(headerElement, $('div.modal-editor-action-container'));
+		const actionBar = disposables.add(new ActionBar(actionBarContainer));
+		const closeAction = disposables.add(new Action(
+			'modalEditorPart.close',
+			localize('close', "Close"),
+			ThemeIcon.asClassName(widgetClose),
+			true,
+			async () => editorPart.close()
+		));
+		actionBar.push(closeAction, { icon: true, label: false, keybinding: localize('escape', "Escape") });
 
 		// Create the editor part
 		const editorPart = disposables.add(this.instantiationService.createInstance(
 			ModalEditorPartImpl,
 			mainWindow.vscodeWindowId,
 			this.editorPartsView,
-			undefined,
-			localize('modalEditorPart', "Modal Editor")
+			localize('modalEditorPart', "Modal Editor Area")
 		));
 		disposables.add(this.editorPartsView.registerPart(editorPart));
 		editorPart.create(editorPartContainer);
 
 		// Create scoped instantiation service
+		const modalEditorService = this.editorService.createScoped(editorPart, disposables);
 		const scopedInstantiationService = disposables.add(editorPart.scopedInstantiationService.createChild(new ServiceCollection(
-			[IEditorService, this.editorService.createScoped(editorPart, disposables)]
+			[IEditorService, modalEditorService]
 		)));
 
-		// Handle close on click outside
-		disposables.add(addDisposableListener(modalElement, EventType.MOUSE_DOWN, e => {
-			if (e.target === modalElement) {
-				editorPart.close();
-			}
+		// Update title when active editor changes
+		disposables.add(Event.runAndSubscribe(modalEditorService.onDidActiveEditorChange, (() => {
+			const activeEditor = editorPart.activeGroup.activeEditor;
+			titleElement.textContent = activeEditor?.getTitle(Verbosity.MEDIUM) ?? '';
+		})));
+
+		// Handle close on click outside (backdrop)
+		disposables.add(addDisposableListener(backdropElement, EventType.MOUSE_DOWN, () => {
+			editorPart.close();
 		}));
 
 		// Handle escape key to close
@@ -98,7 +127,7 @@ export class ModalEditorPart {
 		}));
 
 		// Layout the modal editor part
-		const layout = () => {
+		disposables.add(Event.runAndSubscribe(this.layoutService.onDidLayoutMainContainer, () => {
 			const containerDimension = this.layoutService.mainContainerDimension;
 			const width = Math.min(containerDimension.width * 0.8, 1200);
 			const height = Math.min(containerDimension.height * 0.8, 800);
@@ -106,13 +135,12 @@ export class ModalEditorPart {
 			editorPartContainer.style.width = `${width}px`;
 			editorPartContainer.style.height = `${height}px`;
 
-			// Account for 1px border on all sides (box-sizing: border-box in .part CSS)
-			const borderSize = 2;
-			editorPart.layout(width - borderSize, height - borderSize, 0, 0);
-		};
+			const borderSize = 2; // Account for 1px border on all sides and modal header height
+			const headerHeight = 35;
+			editorPart.layout(width - borderSize, height - borderSize - headerHeight, 0, 0);
+		}));
 
-		layout();
-		disposables.add(this.layoutService.onDidLayoutMainContainer(() => layout()));
+		modalElement.classList.add('visible');
 
 		// Focus the modal
 		editorPartContainer.focus();
@@ -137,7 +165,6 @@ class ModalEditorPartImpl extends EditorPart implements IModalEditorPart {
 	constructor(
 		windowId: number,
 		editorPartsView: IEditorPartsView,
-		private readonly state: IEditorPartUIState | undefined,
 		groupsLabel: string,
 		@IInstantiationService instantiationService: IInstantiationService,
 		@IThemeService themeService: IThemeService,
@@ -150,12 +177,11 @@ class ModalEditorPartImpl extends EditorPart implements IModalEditorPart {
 		const id = ModalEditorPartImpl.COUNTER++;
 		super(editorPartsView, `workbench.parts.modalEditor.${id}`, groupsLabel, windowId, instantiationService, themeService, configurationService, storageService, layoutService, hostService, contextKeyService);
 
-		// Modal editor parts enforce compact options
+		// Enforce some editor part options for modal editors
 		this.optionsDisposable.value = this.enforcePartOptions({
-			showTabs: 'single',
+			showTabs: 'none',
 			closeEmptyGroups: true,
 			tabActionCloseVisibility: false,
-			alwaysShowEditorActions: true,
 			editorActionsLocation: 'default',
 			tabHeight: 'default',
 			wrapTabs: false
@@ -193,10 +219,6 @@ class ModalEditorPartImpl extends EditorPart implements IModalEditorPart {
 		this.doClose(false /* do not merge any confirming editors to main part */);
 	}
 
-	protected override loadState(): IEditorPartUIState | undefined {
-		return this.state;
-	}
-
 	protected override saveState(): void {
 		return; // disabled, modal editor part state is not persisted
 	}
@@ -217,8 +239,7 @@ class ModalEditorPartImpl extends EditorPart implements IModalEditorPart {
 			// Then merge remaining to main part
 			result = this.mergeGroupsToMainPart();
 			if (!result) {
-				// Do not close when editors could not be merged back.
-				return false;
+				return false; // Do not close when editors could not be merged back
 			}
 		}
 
