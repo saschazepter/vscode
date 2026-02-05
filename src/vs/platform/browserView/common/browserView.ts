@@ -109,6 +109,16 @@ export interface IBrowserViewFindInPageResult {
 	finalUpdate: boolean;
 }
 
+/**
+ * Request to open a new browser view (initiated via CDP Target.createTarget)
+ */
+export interface IBrowserViewOpenRequest {
+	/** The target ID for the new browser view */
+	targetId: string;
+	/** The URL to navigate to */
+	url: string;
+}
+
 export enum BrowserViewStorageScope {
 	Global = 'global',
 	Workspace = 'workspace',
@@ -117,7 +127,18 @@ export enum BrowserViewStorageScope {
 
 export const ipcBrowserViewChannelName = 'browserView';
 
+export interface IBrowserViewDebugInfo {
+	port: number;
+	webSocketDebuggerUrl: string;
+}
+
 export interface IBrowserViewService {
+	/**
+	 * Event fired when a new browser view should be opened (e.g., via CDP Target.createTarget).
+	 * The workbench should listen to this and open an editor for the target.
+	 */
+	onDidRequestOpenBrowser: Event<IBrowserViewOpenRequest>;
+
 	/**
 	 * Dynamic events that return an Event for a specific browser view ID.
 	 */

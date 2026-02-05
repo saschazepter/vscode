@@ -38,6 +38,7 @@ import { EncryptionMainService } from '../../platform/encryption/electron-main/e
 import { NativeBrowserElementsMainService, INativeBrowserElementsMainService } from '../../platform/browserElements/electron-main/nativeBrowserElementsMainService.js';
 import { ipcBrowserViewChannelName } from '../../platform/browserView/common/browserView.js';
 import { BrowserViewMainService, IBrowserViewMainService } from '../../platform/browserView/electron-main/browserViewMainService.js';
+import { BrowserViewDebugProxyService, IBrowserViewDebugProxyService } from '../../platform/browserView/electron-main/browserViewDebugProxyService.js';
 import { NativeParsedArgs } from '../../platform/environment/common/argv.js';
 import { IEnvironmentMainService } from '../../platform/environment/electron-main/environmentMainService.js';
 import { isLaunchedFromCli } from '../../platform/environment/node/argvHelper.js';
@@ -1028,6 +1029,7 @@ export class CodeApplication extends Disposable {
 		services.set(INativeBrowserElementsMainService, new SyncDescriptor(NativeBrowserElementsMainService, undefined, false /* proxied to other processes */));
 
 		// Browser View
+		services.set(IBrowserViewDebugProxyService, new SyncDescriptor(BrowserViewDebugProxyService, undefined, true /* singleton */));
 		services.set(IBrowserViewMainService, new SyncDescriptor(BrowserViewMainService, undefined, false /* proxied to other processes */));
 
 		// Keyboard Layout
@@ -1180,6 +1182,10 @@ export class CodeApplication extends Disposable {
 		// Browser View
 		const browserViewChannel = ProxyChannel.fromService(accessor.get(IBrowserViewMainService), disposables);
 		mainProcessElectronServer.registerChannel(ipcBrowserViewChannelName, browserViewChannel);
+
+		// Browser View Debug Proxy
+		const browserViewDebugProxyChannel = ProxyChannel.fromService(accessor.get(IBrowserViewDebugProxyService), disposables);
+		mainProcessElectronServer.registerChannel('browserViewDebugProxy', browserViewDebugProxyChannel);
 
 		// Signing
 		const signChannel = ProxyChannel.fromService(accessor.get(ISignService), disposables);
