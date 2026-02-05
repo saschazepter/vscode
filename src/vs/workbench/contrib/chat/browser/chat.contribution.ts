@@ -609,7 +609,7 @@ configurationRegistry.registerConfiguration({
 		[ChatConfiguration.RequestQueueingEnabled]: {
 			type: 'boolean',
 			description: nls.localize('chat.requestQueuing.enabled.description', "When enabled, allows queuing additional messages while a request is in progress and steering the current request with a new message."),
-			default: false,
+			default: true,
 			tags: ['experimental'],
 		},
 		[ChatConfiguration.EditModeHidden]: {
