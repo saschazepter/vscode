@@ -76,6 +76,11 @@ export interface IHooksExecutionService {
 	executePreToolUseHook(sessionResource: URI, input: IPreToolUseCallerInput, token?: CancellationToken): Promise<IPreToolUseHookResult | undefined>;
 }
 
+/**
+ * Keys that should be redacted when logging hook input.
+ */
+const redactedInputKeys = ['toolArgs'];
+
 export class HooksExecutionService implements IHooksExecutionService {
 	declare readonly _serviceBrand: undefined;
 
@@ -113,6 +118,16 @@ export class HooksExecutionService implements IHooksExecutionService {
 		}
 	}
 
+	private _redactForLogging(input: object): object {
+		const result: Record<string, unknown> = { ...input };
+		for (const key of redactedInputKeys) {
+			if (Object.hasOwn(result, key)) {
+				result[key] = '...';
+			}
+		}
+		return result;
+	}
+
 	private async _runSingleHook(
 		requestId: number,
 		hookType: HookTypeValue,
@@ -139,8 +154,7 @@ export class HooksExecutionService implements IHooksExecutionService {
 			cwd: hookCommand.cwd?.fsPath
 		});
 		this._log(requestId, hookType, `Running: ${hookCommandJson}`);
-		// Log input with tool_input truncated to avoid excessively long logs
-		const inputForLog = { ...fullInput as object, tool_input: '...' };
+		const inputForLog = this._redactForLogging(fullInput);
 		this._log(requestId, hookType, `Input: ${JSON.stringify(inputForLog)}`);
 
 		const sw = StopWatch.create();
@@ -195,16 +209,15 @@ export class HooksExecutionService implements IHooksExecutionService {
 	}
 
 	/**
-	 * Extract only known hook-specific output fields.
-	 * This prevents unknown fields from being passed through.
-	 * Handles hookSpecificOutput wrapper structure.
+	 * Extract hook-specific output fields, excluding common fields.
 	 */
 	private _extractHookSpecificOutput(result: Record<string, unknown>): Record<string, unknown> {
+		const commonFields = new Set(['stopReason', 'systemMessage']);
 		const output: Record<string, unknown> = {};
-
-		// PreToolUse hook uses hookSpecificOutput wrapper
-		if (result.hookSpecificOutput !== undefined && typeof result.hookSpecificOutput === 'object' && result.hookSpecificOutput !== null) {
-			output.hookSpecificOutput = result.hookSpecificOutput;
+		for (const [key, value] of Object.entries(result)) {
+			if (value !== undefined && !commonFields.has(key)) {
+				output[key] = value;
+			}
 		}
 
 		return output;
