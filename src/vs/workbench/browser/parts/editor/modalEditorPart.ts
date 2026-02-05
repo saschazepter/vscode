@@ -49,12 +49,11 @@ export class ModalEditorPart {
 		const disposables = new DisposableStore();
 
 		// Create modal container
-		const modalElement = $('.monaco-modal-editor-block');
+		const modalElement = $('.monaco-modal-editor-block.dimmed');
 		modalElement.tabIndex = -1;
 		this.layoutService.mainContainer.appendChild(modalElement);
 		disposables.add(toDisposable(() => modalElement.remove()));
 
-		const backdropElement = modalElement.appendChild($('.modal-editor-backdrop'));
 		const shadowElement = modalElement.appendChild($('.modal-editor-shadow'));
 
 		// Create editor part container
@@ -108,9 +107,11 @@ export class ModalEditorPart {
 			titleElement.textContent = activeEditor?.getTitle(Verbosity.MEDIUM) ?? '';
 		})));
 
-		// Handle close on click outside (backdrop)
-		disposables.add(addDisposableListener(backdropElement, EventType.MOUSE_DOWN, () => {
-			editorPart.close();
+		// Handle close on click outside (on the dimmed background)
+		disposables.add(addDisposableListener(modalElement, EventType.MOUSE_DOWN, e => {
+			if (e.target === modalElement) {
+				editorPart.close();
+			}
 		}));
 
 		// Handle escape key to close
@@ -139,8 +140,6 @@ export class ModalEditorPart {
 			const headerHeight = 35;
 			editorPart.layout(width - borderSize, height - borderSize - headerHeight, 0, 0);
 		}));
-
-		modalElement.classList.add('visible');
 
 		// Focus the modal
 		editorPartContainer.focus();

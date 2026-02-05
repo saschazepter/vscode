@@ -11,52 +11,21 @@
 	left: 0;
 	top: 0;
 	z-index: 2500;
-	/* Below dialogs, above most other things */
+	/* Below dialogs (2575), above most other things */
 	display: flex;
 	justify-content: center;
 	align-items: center;
-	pointer-events: none;
-	visibility: hidden;
 }
 
-.monaco-modal-editor-block.visible {
-	pointer-events: auto;
-	visibility: visible;
-}
-
-/** Modal Editor Part: Backdrop */
-.monaco-modal-editor-block .modal-editor-backdrop {
-	position: absolute;
-	top: 0;
-	left: 0;
-	width: 100%;
-	height: 100%;
-	background-color: rgba(0, 0, 0, 0.4);
-	opacity: 0;
-	transition: opacity 0.15s ease-out;
-}
-
-.monaco-modal-editor-block.visible .modal-editor-backdrop {
-	opacity: 1;
+.monaco-modal-editor-block.dimmed {
+	background: rgba(0, 0, 0, 0.3);
 }
 
 /** Modal Editor Part: Shadow Container */
 .monaco-modal-editor-block .modal-editor-shadow {
-	position: relative;
-	display: flex;
-	justify-content: center;
-	align-items: center;
 	box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
 	border-radius: 8px;
 	overflow: hidden;
-	transform: scale(0.95);
-	opacity: 0;
-	transition: transform 0.15s ease-out, opacity 0.15s ease-out;
-}
-
-.monaco-modal-editor-block.visible .modal-editor-shadow {
-	transform: scale(1);
-	opacity: 1;
 }
 
 /** Modal Editor Part: Editor Container */
