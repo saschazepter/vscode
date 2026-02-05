@@ -1190,7 +1190,7 @@ export class NativeHostMainService extends Disposable implements INativeHostMain
 				disposables.dispose();	// ...disposing which would invalidate the result object
 			};
 
-			cts.token.onCancellationRequested(() => resolve({ supported: true, clicked: false }));
+			disposables.add(cts.token.onCancellationRequested(() => resolve({ supported: true, clicked: false })));
 
 			toast.on('click', () => resolve({ supported: true, clicked: true }));
 			toast.on('action', (_event, actionIndex) => resolve({ supported: true, clicked: true, actionIndex }));
