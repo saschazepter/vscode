@@ -50,6 +50,8 @@ import {
 import { agentIcon, instructionsIcon, promptIcon, skillIcon, hookIcon } from '../aiCustomizationTreeView/aiCustomizationTreeViewIcons.js';
 import { AI_CUSTOMIZATION_EDITOR_ID } from '../aiCustomizationEditor/aiCustomizationEditor.js';
 import { ChatModelsWidget } from '../chatManagement/chatModelsWidget.js';
+import { MemoryListWidget } from '../aiCustomizationMemory/memoryListWidget.js';
+import { memoryIcon } from '../aiCustomizationMemory/aiCustomizationMemory.js';
 
 const $ = DOM.$;
 
@@ -129,6 +131,8 @@ export class AICustomizationManagementEditor extends EditorPane {
 	private mcpContentContainer!: HTMLElement;
 	private modelsContentContainer!: HTMLElement;
 	private modelsHeaderElement!: HTMLElement;
+	private memoryContentContainer!: HTMLElement;
+	private memoryListWidget!: MemoryListWidget;
 
 	private dimension: Dimension | undefined;
 	private readonly sections: ISectionItem[] = [];
@@ -165,6 +169,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 			{ id: AICustomizationManagementSection.Hooks, label: localize('hooks', "Hooks"), icon: hookIcon },
 			{ id: AICustomizationManagementSection.McpServers, label: localize('mcpServers', "MCP Servers"), icon: Codicon.server },
 			{ id: AICustomizationManagementSection.Models, label: localize('models', "Models"), icon: Codicon.sparkle },
+			{ id: AICustomizationManagementSection.Memory, label: localize('memory', "Memory"), icon: memoryIcon },
 		);
 
 		// Restore selected section from storage
@@ -255,6 +260,11 @@ export class AICustomizationManagementEditor extends EditorPane {
 					title: localize('mcpServersTitle', "MCP Servers"),
 					// MCP Servers has its own "Add Server" button in the widget
 				};
+			case AICustomizationManagementSection.Memory:
+				return {
+					title: localize('memoryTitle', "Memory"),
+					// Memory has its own controls in the widget
+				};
 		}
 	}
 
@@ -306,6 +316,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 				if (height !== undefined) {
 					this.listWidget.layout(height - 16, width - 24); // Account for padding
 					this.mcpListWidget.layout(height - 16, width - 24); // Account for padding
+					this.memoryListWidget.layout(height - 16, width - 24); // Account for padding
 					// Models widget has header, subtract header height
 					const modelsHeaderHeight = this.modelsHeaderElement?.offsetHeight || 80;
 					this.modelsWidget.layout(height - 16 - modelsHeaderHeight, width);
@@ -402,6 +413,11 @@ export class AICustomizationManagementEditor extends EditorPane {
 		this.mcpListWidget = this.editorDisposables.add(this.instantiationService.createInstance(McpListWidget));
 		this.mcpContentContainer.appendChild(this.mcpListWidget.element);
 
+		// Container for Memory content
+		this.memoryContentContainer = DOM.append(contentInner, $('.memory-content-container'));
+		this.memoryListWidget = this.editorDisposables.add(this.instantiationService.createInstance(MemoryListWidget));
+		this.memoryContentContainer.appendChild(this.memoryListWidget.element);
+
 		// Set initial visibility based on selected section
 		this.updateContentVisibility();
 
@@ -446,10 +462,12 @@ export class AICustomizationManagementEditor extends EditorPane {
 		const isPromptsSection = this.isPromptsSection(this.selectedSection);
 		const isModelsSection = this.selectedSection === AICustomizationManagementSection.Models;
 		const isMcpSection = this.selectedSection === AICustomizationManagementSection.McpServers;
+		const isMemorySection = this.selectedSection === AICustomizationManagementSection.Memory;
 
 		this.promptsContentContainer.style.display = isPromptsSection ? '' : 'none';
 		this.modelsContentContainer.style.display = isModelsSection ? '' : 'none';
 		this.mcpContentContainer.style.display = isMcpSection ? '' : 'none';
+		this.memoryContentContainer.style.display = isMemorySection ? '' : 'none';
 
 		// Render and layout models widget when switching to it
 		if (isModelsSection) {
@@ -509,6 +527,8 @@ export class AICustomizationManagementEditor extends EditorPane {
 			this.mcpListWidget?.focus();
 		} else if (this.selectedSection === AICustomizationManagementSection.Models) {
 			this.modelsWidget?.focusSearch();
+		} else if (this.selectedSection === AICustomizationManagementSection.Memory) {
+			this.memoryListWidget?.focus();
 		} else {
 			this.listWidget?.focusSearch();
 		}

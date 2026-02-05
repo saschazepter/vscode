@@ -1,0 +1,171 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+.memory-list-widget {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	padding: 12px;
+}
+
+.memory-header {
+	display: flex;
+	justify-content: space-between;
+	align-items: flex-start;
+	margin-bottom: 8px;
+}
+
+.memory-header-left {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.memory-header-title {
+	font-size: 14px;
+	font-weight: 600;
+}
+
+.memory-header-info {
+	display: flex;
+	gap: 12px;
+	font-size: 12px;
+	color: var(--vscode-descriptionForeground);
+}
+
+.memory-mode-label {
+	opacity: 0.8;
+}
+
+.memory-last-run {
+	opacity: 0.6;
+}
+
+.memory-header-right {
+	display: flex;
+	gap: 8px;
+}
+
+.memory-description {
+	font-size: 12px;
+	color: var(--vscode-descriptionForeground);
+	margin-bottom: 16px;
+	line-height: 1.4;
+}
+
+.memory-list-container {
+	flex: 1;
+	overflow: hidden;
+}
+
+/* Suggestion item styles */
+.memory-suggestion-item {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 8px 12px;
+	gap: 12px;
+	height: 72px;
+	box-sizing: border-box;
+}
+
+.memory-suggestion-item:hover {
+	background-color: var(--vscode-list-hoverBackground);
+}
+
+.suggestion-left {
+	display: flex;
+	align-items: flex-start;
+	gap: 10px;
+	flex: 1;
+	min-width: 0;
+}
+
+.suggestion-icon {
+	flex-shrink: 0;
+	font-size: 16px;
+	width: 20px;
+	height: 20px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	margin-top: 2px;
+	color: var(--vscode-symbolIcon-fieldForeground);
+}
+
+.suggestion-text {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	min-width: 0;
+	flex: 1;
+}
+
+.suggestion-content {
+	font-size: 13px;
+	line-height: 1.4;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
+	font-style: italic;
+	color: var(--vscode-foreground);
+}
+
+.suggestion-target {
+	font-size: 11px;
+	color: var(--vscode-descriptionForeground);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.suggestion-actions {
+	display: flex;
+	gap: 4px;
+	flex-shrink: 0;
+	opacity: 0;
+	transition: opacity 0.1s ease-in-out;
+}
+
+.memory-suggestion-item:hover .suggestion-actions {
+	opacity: 1;
+}
+
+.suggestion-action-button {
+	padding: 4px 8px !important;
+	min-width: 28px !important;
+}
+
+/* Empty state */
+.memory-empty-state {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding: 40px 20px;
+	text-align: center;
+	gap: 12px;
+}
+
+.memory-empty-state .empty-state-icon {
+	font-size: 32px;
+	opacity: 0.5;
+	color: var(--vscode-descriptionForeground);
+}
+
+.memory-empty-state .empty-state-text {
+	font-size: 14px;
+	font-weight: 500;
+	color: var(--vscode-foreground);
+}
+
+.memory-empty-state .empty-state-subtext {
+	font-size: 12px;
+	color: var(--vscode-descriptionForeground);
+	max-width: 300px;
+	line-height: 1.4;
+}

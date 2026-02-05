@@ -40,6 +40,8 @@ import { PromptsType } from '../../../common/promptSyntax/promptTypes.js';
 import { ILanguageModelsService } from '../../../common/languageModels.js';
 import { IMcpService } from '../../../../mcp/common/mcpTypes.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../../../platform/storage/common/storage.js';
+import { memoryIcon } from '../../aiCustomizationMemory/aiCustomizationMemory.js';
+import { IChatMemorySuggestionService } from '../../../common/chatMemory/chatMemorySuggestionService.js';
 
 interface IShortcutItem {
 	readonly label: string;
@@ -78,6 +80,7 @@ export class AgentSessionsViewPane extends ViewPane {
 		@ILanguageModelsService private readonly languageModelsService: ILanguageModelsService,
 		@IMcpService private readonly mcpService: IMcpService,
 		@IStorageService private readonly storageService: IStorageService,
+		@IChatMemorySuggestionService private readonly memorySuggestionService: IChatMemorySuggestionService,
 	) {
 		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
 
@@ -90,12 +93,14 @@ export class AgentSessionsViewPane extends ViewPane {
 			{ label: localize('hooks', "Hooks"), icon: hookIcon, action: () => this.openAICustomizationSection(AICustomizationManagementSection.Hooks), getCount: () => this.getPromptCount(PromptsType.hook) },
 			{ label: localize('mcpServers', "MCP Servers"), icon: Codicon.server, action: () => this.openAICustomizationSection(AICustomizationManagementSection.McpServers), getCount: () => Promise.resolve(this.mcpService.servers.get().length) },
 			{ label: localize('models', "Models"), icon: Codicon.sparkle, action: () => this.openAICustomizationSection(AICustomizationManagementSection.Models), getCount: () => Promise.resolve(this.languageModelsService.getLanguageModelIds().length) },
+			{ label: localize('memory', "Memory"), icon: memoryIcon, action: () => this.openAICustomizationSection(AICustomizationManagementSection.Memory), getCount: () => Promise.resolve(this.memorySuggestionService.getPendingSuggestionCount()) },
 		];
 
 		// Listen to changes to update counts
 		this._register(this.promptsService.onDidChangeCustomAgents(() => this.updateCounts()));
 		this._register(this.promptsService.onDidChangeSlashCommands(() => this.updateCounts()));
 		this._register(this.languageModelsService.onDidChangeLanguageModels(() => this.updateCounts()));
+		this._register(this.memorySuggestionService.onDidChangeSuggestions(() => this.updateCounts()));
 		this._register(autorun(reader => {
 			this.mcpService.servers.read(reader);
 			this.updateCounts();
