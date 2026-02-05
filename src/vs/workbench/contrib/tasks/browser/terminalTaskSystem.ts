@@ -472,9 +472,11 @@ export class TerminalTaskSystem extends Disposable implements ITaskSystem {
 			return Promise.resolve<ITaskTerminateResponse>({ success: false, task: undefined });
 		}
 		return new Promise<ITaskTerminateResponse>((resolve, reject) => {
-			this._register(terminal.onDisposed(terminal => {
+			// No need to register this listener - terminal is about to be disposed
+			// and the listener will be cleaned up when the terminal is disposed
+			terminal.onDisposed(terminal => {
 				this._fireTaskEvent(TaskEvent.terminated(task, terminal.instanceId, terminal.exitReason));
-			}));
+			});
 			const onExit = terminal.onExit(() => {
 				const task = activeTerminal.task;
 				try {
