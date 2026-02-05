@@ -4,14 +4,12 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as dom from '../../../../base/browser/dom.js';
-import { asCSSUrl } from '../../../../base/browser/cssValue.js';
 import { ActionBar } from '../../../../base/browser/ui/actionbar/actionbar.js';
 import { Button } from '../../../../base/browser/ui/button/button.js';
 import { toAction } from '../../../../base/common/actions.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { Disposable, DisposableStore, MutableDisposable } from '../../../../base/common/lifecycle.js';
-import { FileAccess } from '../../../../base/common/network.js';
 import { isWeb } from '../../../../base/common/platform.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import * as nls from '../../../../nls.js';
@@ -367,7 +365,6 @@ export class UpdateStatusBarEntryContribution extends Disposable implements IWor
 		const productInfo = dom.append(container, dom.$('.product-info'));
 
 		const logoContainer = dom.append(productInfo, dom.$('.product-logo'));
-		logoContainer.style.backgroundImage = asCSSUrl(FileAccess.asBrowserUri('vs/workbench/browser/media/code-icon.svg'));
 		logoContainer.setAttribute('role', 'img');
 		logoContainer.setAttribute('aria-label', this.productService.nameLong);
 

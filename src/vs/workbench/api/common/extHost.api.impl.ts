@@ -255,7 +255,6 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 	const extHostDialogs = new ExtHostDialogs(rpcProtocol);
 	const extHostChatStatus = new ExtHostChatStatus(rpcProtocol);
 	const extHostHooks = accessor.get(IExtHostHooks);
-	extHostHooks.initialize(extHostChatAgents2);
 
 	// Register API-ish commands
 	ExtHostApiCommands.register(extHostCommands);
@@ -1606,11 +1605,9 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 				checkProposedApiEnabled(extension, 'chatPromptFiles');
 				return extHostChatAgents2.registerPromptFileProvider(extension, PromptsType.skill, provider);
 			},
-			executeHook(hookType: vscode.ChatHookType, options: vscode.ChatHookExecutionOptions, token?: vscode.CancellationToken): Thenable<vscode.ChatHookResult[]> {
+			async executeHook(hookType: vscode.ChatHookType, options: vscode.ChatHookExecutionOptions, token?: vscode.CancellationToken): Promise<vscode.ChatHookResult[]> {
 				checkProposedApiEnabled(extension, 'chatHooks');
-				return extHostHooks.executeHook(hookType, options, token).then(results =>
-					results.map(r => ({ kind: r.kind as unknown as vscode.ChatHookResultKind, result: r.result }))
-				);
+				return extHostHooks.executeHook(hookType, options, token);
 			},
 		};
 
@@ -2034,7 +2031,6 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 			McpToolAvailability: extHostTypes.McpToolAvailability,
 			McpToolInvocationContentData: extHostTypes.McpToolInvocationContentData,
 			SettingsSearchResultKind: extHostTypes.SettingsSearchResultKind,
-			ChatHookResultKind: extHostTypes.ChatHookResultKind,
 			ChatTodoStatus: extHostTypes.ChatTodoStatus,
 		};
 	};
