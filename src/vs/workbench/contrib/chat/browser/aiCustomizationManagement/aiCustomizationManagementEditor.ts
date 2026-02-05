@@ -47,7 +47,6 @@ import {
 } from './aiCustomizationManagement.js';
 import { agentIcon, instructionsIcon, promptIcon, skillIcon } from '../aiCustomizationTreeView/aiCustomizationTreeViewIcons.js';
 import { AI_CUSTOMIZATION_EDITOR_ID } from '../aiCustomizationEditor/aiCustomizationEditor.js';
-import { PromptsType } from '../../common/promptSyntax/promptTypes.js';
 import { ChatModelsWidget } from '../chatManagement/chatModelsWidget.js';
 
 const $ = DOM.$;

@@ -198,6 +198,7 @@ function sectionToPromptType(section: AICustomizationManagementSection): Prompts
 		case AICustomizationManagementSection.Instructions:
 			return PromptsType.instructions;
 		case AICustomizationManagementSection.Prompts:
+		default:
 			return PromptsType.prompt;
 	}
 }
@@ -372,6 +373,7 @@ export class AICustomizationListWidget extends Disposable {
 				learnMoreLabel = localize('learnMoreInstructions', "Learn more about custom instructions");
 				break;
 			case AICustomizationManagementSection.Prompts:
+			default:
 				description = localize('promptsDescription', "Reusable prompts for common development tasks like generating code, performing reviews, or scaffolding components.");
 				docsUrl = 'https://code.visualstudio.com/docs/copilot/customization/prompt-files';
 				learnMoreLabel = localize('learnMorePrompts', "Learn more about prompt files");
