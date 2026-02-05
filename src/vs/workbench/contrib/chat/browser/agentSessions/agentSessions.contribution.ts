@@ -18,6 +18,7 @@ import { registerWorkbenchContribution2, WorkbenchPhase } from '../../../../comm
 import { ISubmenuItem, MenuId, MenuRegistry, registerAction2 } from '../../../../../platform/actions/common/actions.js';
 import { ArchiveAgentSessionAction, ArchiveAgentSessionSectionAction, UnarchiveAgentSessionAction, OpenAgentSessionInEditorGroupAction, OpenAgentSessionInNewEditorGroupAction, OpenAgentSessionInNewWindowAction, ShowAgentSessionsSidebar, HideAgentSessionsSidebar, ToggleAgentSessionsSidebar, RefreshAgentSessionsViewerAction, FindAgentSessionInViewerAction, MarkAgentSessionUnreadAction, MarkAgentSessionReadAction, FocusAgentSessionsAction, SetAgentSessionsOrientationStackedAction, SetAgentSessionsOrientationSideBySideAction, PickAgentSessionAction, ArchiveAllAgentSessionsAction, MarkAllAgentSessionsReadAction, RenameAgentSessionAction, DeleteAgentSessionAction, DeleteAllLocalSessionsAction, MarkAgentSessionSectionReadAction, ToggleShowAgentSessionsAction, UnarchiveAgentSessionSectionAction } from './agentSessionsActions.js';
 import { AgentSessionsQuickAccessProvider, AGENT_SESSIONS_QUICK_ACCESS_PREFIX } from './agentSessionsQuickAccess.js';
+import { ViewContainerLocation } from '../../../../common/views.js';
 
 //#region Actions and Menus
 
@@ -146,6 +147,22 @@ MenuRegistry.appendMenuItem(MenuId.ChatViewSessionTitleToolbar, {
 			ChatContextKeys.agentSessionsViewerOrientation.isEqualTo(AgentSessionsViewerOrientation.Stacked),
 		),
 		ChatContextKeys.agentSessionsViewerPosition.isEqualTo(AgentSessionsViewerPosition.Right)
+	)
+});
+
+// --- Panel Title
+
+MenuRegistry.appendMenuItem(MenuId.PanelTitle, {
+	command: {
+		id: HideAgentSessionsSidebar.ID,
+		title: localize('hideAgentSessionsSidebar', 'Hide Agent Sessions Sidebar'),
+		icon: Codicon.close
+	},
+	group: 'navigation',
+	order: 3,
+	when: ContextKeyExpr.and(
+		ChatContextKeys.panelLocation.isEqualTo(ViewContainerLocation.Panel),
+		ChatContextKeys.agentSessionsViewerOrientation.isEqualTo(AgentSessionsViewerOrientation.SideBySide)
 	)
 });
 
