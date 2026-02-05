@@ -34,12 +34,7 @@ const subscriptionCache: Map<string, { stream: Stream; subscription: Promise<wat
 function createWatcher(root: string): Stream {
 	const result = es.through();
 
-	const subscription = watcher.subscribe(root, (err, events) => {
-		if (err) {
-			result.emit('error', err);
-			return;
-		}
-
+	const subscription = watcher.subscribe(root, (_err, events) => {
 		for (const event of events) {
 			const relativePath = path.relative(root, event.path);
 
@@ -61,8 +56,6 @@ function createWatcher(root: string): Stream {
 			'**/out/**'
 		]
 	});
-
-	subscription.catch(err => result.emit('error', err));
 
 	// Cleanup on process exit
 	const cleanup = () => {

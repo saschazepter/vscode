@@ -7,7 +7,6 @@ import { localize } from '../../../../../nls.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { ThemeIcon } from '../../../../../base/common/themables.js';
-import { localChatSessionType } from '../../common/chatSessionsService.js';
 import { IChatSessionTiming } from '../../common/chatService/chatService.js';
 import { foreground, listActiveSelectionForeground, registerColor, transparent } from '../../../../../platform/theme/common/colorRegistry.js';
 import { getChatSessionType } from '../../common/model/chatUri.js';
@@ -20,7 +19,7 @@ export const AgentSessionsViewId = 'workbench.view.agentSessions';
 export const AgentSessionsViewContainerId = 'workbench.view.agentSessionsContainer';
 
 export enum AgentSessionProviders {
-	Local = localChatSessionType,
+	Local = 'local',
 	Background = 'copilotcli',
 	Cloud = 'copilot-cloud-agent',
 	Claude = 'claude-code',
