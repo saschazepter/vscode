@@ -309,7 +309,8 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 		const child = spawn(this.availableUpdate.packagePath, ['/verysilent', '/log', `/update="${this.availableUpdate.updateFilePath}"`, `/sessionend="${sessionEndFlagPath}"`, '/nocloseapplications', '/mergetasks=runcode,!desktopicon,!quicklaunchicon'], {
 			detached: true,
 			stdio: ['ignore', 'ignore', 'ignore'],
-			windowsVerbatimArguments: true
+			windowsVerbatimArguments: true,
+			windowsHide: true
 		});
 
 		child.once('exit', () => {
