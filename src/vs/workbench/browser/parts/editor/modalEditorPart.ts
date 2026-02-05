@@ -4,14 +4,9 @@
  *--------------------------------------------------------------------------------------------*/
 
 import './media/modalEditorPart.css';
-import { $, addDisposableListener, append, EventType } from '../../../../base/browser/dom.js';
-import { ActionBar } from '../../../../base/browser/ui/actionbar/actionbar.js';
-import { Action } from '../../../../base/common/actions.js';
+import { $, addDisposableListener, EventType } from '../../../../base/browser/dom.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { DisposableStore, MutableDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
-import { ThemeIcon } from '../../../../base/common/themables.js';
-import { Codicon } from '../../../../base/common/codicons.js';
-import { widgetClose } from '../../../../platform/theme/common/iconRegistry.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
@@ -22,7 +17,6 @@ import { IEditorGroupView, IEditorPartsView } from './editor.js';
 import { EditorPart } from './editorPart.js';
 import { GroupDirection, GroupsOrder, IModalEditorPart } from '../../../services/editor/common/editorGroupsService.js';
 import { IEditorService } from '../../../services/editor/common/editorService.js';
-import { Verbosity } from '../../../common/editor.js';
 import { IHostService } from '../../../services/host/browser/host.js';
 import { IWorkbenchLayoutService } from '../../../services/layout/browser/layoutService.js';
 import { mainWindow } from '../../../../base/browser/window.js';
@@ -66,44 +60,6 @@ export class ModalEditorPart {
 		});
 		shadowElement.appendChild(editorPartContainer);
 
-		// Create header with title and close button
-		const headerElement = editorPartContainer.appendChild($('.modal-editor-header'));
-
-		// Title element (centered)
-		const titleElement = append(headerElement, $('div.modal-editor-title'));
-		titleElement.id = titleId;
-		titleElement.textContent = '';
-
-		// Action buttons using ActionBar for proper accessibility
-		const actionBarContainer = append(headerElement, $('div.modal-editor-action-container'));
-		const actionBar = disposables.add(new ActionBar(actionBarContainer));
-
-		// Open as Editor
-		const openAsEditorAction = disposables.add(new Action(
-			'modalEditorPart.openAsEditor',
-			localize('openAsEditor', "Open as Editor"),
-			ThemeIcon.asClassName(Codicon.openInProduct),
-			true,
-			async () => {
-				const activeEditor = editorPart.activeGroup.activeEditor;
-				if (activeEditor) {
-					await this.editorService.openEditor(activeEditor, { pinned: true, preserveFocus: false }, this.editorPartsView.mainPart.activeGroup.id);
-					editorPart.close();
-				}
-			}
-		));
-		actionBar.push(openAsEditorAction, { icon: true, label: false });
-
-		// Close action
-		const closeAction = disposables.add(new Action(
-			'modalEditorPart.close',
-			localize('close', "Close"),
-			ThemeIcon.asClassName(widgetClose),
-			true,
-			async () => editorPart.close()
-		));
-		actionBar.push(closeAction, { icon: true, label: false, keybinding: localize('escape', "Escape") });
-
 		// Create the editor part
 		const editorPart = disposables.add(this.instantiationService.createInstance(
 			ModalEditorPartImpl,
@@ -119,12 +75,6 @@ export class ModalEditorPart {
 		const scopedInstantiationService = disposables.add(editorPart.scopedInstantiationService.createChild(new ServiceCollection(
 			[IEditorService, modalEditorService]
 		)));
-
-		// Update title when active editor changes
-		disposables.add(Event.runAndSubscribe(modalEditorService.onDidActiveEditorChange, (() => {
-			const activeEditor = editorPart.activeGroup.activeEditor;
-			titleElement.textContent = activeEditor?.getTitle(Verbosity.MEDIUM) ?? '';
-		})));
 
 		// Handle close on click outside (on the dimmed background)
 		disposables.add(addDisposableListener(modalElement, EventType.MOUSE_DOWN, e => {
@@ -197,7 +147,7 @@ class ModalEditorPartImpl extends EditorPart implements IModalEditorPart {
 
 		// Enforce some editor part options for modal editors
 		this.optionsDisposable.value = this.enforcePartOptions({
-			showTabs: 'none',
+			showTabs: 'single',
 			closeEmptyGroups: true,
 			tabActionCloseVisibility: false,
 			editorActionsLocation: 'default',
