@@ -807,7 +807,7 @@ export class ChatSessionsService extends Disposable implements IChatSessionsServ
 					const activeWorkspaceFolderUri = this._agentWorkbenchWorkspaceService.activeWorkspaceFolderUri?.fsPath;
 					if (activeWorkspaceFolderUri) {
 						items = providerSessions.filter(session => {
-							const sessionWorkingFolder = session.metadata?.repositoryFolder;
+							const sessionWorkingFolder = session.metadata?.repositoryPath;
 							return sessionWorkingFolder === activeWorkspaceFolderUri;
 						});
 					}
