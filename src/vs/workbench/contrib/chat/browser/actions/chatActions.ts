@@ -66,12 +66,8 @@ import { ChatViewId, IChatWidget, IChatWidgetService } from '../chat.js';
 import { IChatEditorOptions } from '../widgetHosts/editor/chatEditor.js';
 import { ChatEditorInput, showClearEditingSessionConfirmation } from '../widgetHosts/editor/chatEditorInput.js';
 import { convertBufferToScreenshotVariable } from '../attachments/chatScreenshotContext.js';
-<<<<<<< copilot/add-target-parameter-chat-link
 import { AgentSessionProviders, getAgentSessionProvider } from '../agentSessions/agentSessions.js';
 import { ChatSessionPosition } from '../chatSessions/chatSessions.contribution.js';
-=======
-import { LocalChatSessionUri } from '../../common/model/chatUri.js';
->>>>>>> main
 
 export const CHAT_CATEGORY = localize2('chat.category', 'Chat');
 
