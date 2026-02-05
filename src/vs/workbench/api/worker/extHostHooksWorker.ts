@@ -11,8 +11,9 @@ import { isToolInvocationContext, IToolInvocationContext } from '../../contrib/c
 import { IHookCommandDto, MainContext, MainThreadHooksShape } from '../common/extHost.protocol.js';
 import { IChatHookExecutionOptions, IExtHostHooks } from '../common/extHostHooks.js';
 import { IExtHostRpcService } from '../common/extHostRpcService.js';
-import { HookCommandResultKind, IHookCommandResult, IHookResult } from '../../contrib/chat/common/hooksExecutionService.js';
 import * as typeConverters from '../common/extHostTypeConverters.js';
+import { IHookResult } from '../../contrib/chat/common/hooks/hooksTypes.js';
+import { HookCommandResultKind, IHookCommandResult } from '../../contrib/chat/common/hooks/hooksCommandTypes.js';
 
 export class WorkerExtHostHooks implements IExtHostHooks {
 
