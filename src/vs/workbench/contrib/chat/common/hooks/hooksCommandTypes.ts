@@ -13,7 +13,7 @@
  * - IPreToolUseCommandInput: sent TO the spawned command via stdin
  * - IPreToolUseCommandOutput: received FROM the spawned command via stdout
  *
- * Internal types (in hooksInternalTypes.ts) are used within VS Code and use camelCase.
+ * Internal types (in hooksTypes.ts) are used within VS Code.
  */
 
 //#region Common Hook Types

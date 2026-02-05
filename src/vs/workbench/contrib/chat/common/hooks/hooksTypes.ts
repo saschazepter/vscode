@@ -13,11 +13,10 @@
  * - IPreToolUseCallerInput: provided by VS Code callers (e.g., LanguageModelToolsService)
  * - IPreToolUseHookResult: returned TO VS Code callers after processing command output
  *
- * External types (in hooksExternalTypes.ts) define the contract with spawned commands
- * and use snake_case.
+ * External types (in hooksCommandTypes.ts) define the contract with spawned commands.
  */
 
-import { vEnum, vObj, vOptionalProp, vString } from '../../../../base/common/validation.js';
+import { vEnum, vObj, vOptionalProp, vString } from '../../../../../base/common/validation.js';
 
 //#region Common Hook Types
 
