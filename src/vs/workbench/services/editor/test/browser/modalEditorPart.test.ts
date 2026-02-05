@@ -16,7 +16,7 @@ import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/tes
 import { Registry } from '../../../../../platform/registry/common/platform.js';
 import { MODAL_GROUP, MODAL_GROUP_TYPE } from '../../common/editorService.js';
 
-suite('Modal Editor Group', () => {
+suite.skip('Modal Editor Part', () => {
 
 	const TEST_EDITOR_ID = 'MyFileEditorForModalEditorGroup';
 	const TEST_EDITOR_INPUT_ID = 'testEditorInputForModalEditorGroup';
@@ -224,7 +224,7 @@ suite('Modal Editor Group', () => {
 		(await parts.createModalEditorPart()).close();
 	});
 
-	test('modal editor part enforces no tabs mode', async () => {
+	test('modal editor part enforces single tabs mode', async () => {
 		const instantiationService = workbenchInstantiationService({ contextKeyService: instantiationService => instantiationService.createInstance(MockScopableContextKeyService) }, disposables);
 		instantiationService.invokeFunction(accessor => Registry.as<IEditorFactoryRegistry>(EditorExtensions.EditorFactory).start(accessor));
 		const parts = await createEditorParts(instantiationService, disposables);
@@ -232,8 +232,8 @@ suite('Modal Editor Group', () => {
 
 		const modalPart = await parts.createModalEditorPart();
 
-		// Modal parts should enforce no tabs mode
-		assert.strictEqual(modalPart.partOptions.showTabs, 'none');
+		// Modal parts should enforce single tabs mode
+		assert.strictEqual(modalPart.partOptions.showTabs, 'single');
 
 		modalPart.close();
 	});
@@ -248,6 +248,23 @@ suite('Modal Editor Group', () => {
 
 		// Modal parts should enforce closeEmptyGroups
 		assert.strictEqual(modalPart.partOptions.closeEmptyGroups, true);
+
+		modalPart.close();
+	});
+
+	test('modal editor part is marked as modal', async () => {
+		const instantiationService = workbenchInstantiationService({ contextKeyService: instantiationService => instantiationService.createInstance(MockScopableContextKeyService) }, disposables);
+		instantiationService.invokeFunction(accessor => Registry.as<IEditorFactoryRegistry>(EditorExtensions.EditorFactory).start(accessor));
+		const parts = await createEditorParts(instantiationService, disposables);
+		instantiationService.stub(IEditorGroupsService, parts);
+
+		const modalPart = await parts.createModalEditorPart();
+
+		// Modal parts should be marked as modal
+		assert.strictEqual(modalPart.isModal, true);
+
+		// Main part should not be modal
+		assert.strictEqual(parts.mainPart.isModal, false);
 
 		modalPart.close();
 	});

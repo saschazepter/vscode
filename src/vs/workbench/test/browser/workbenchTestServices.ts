@@ -857,6 +857,7 @@ export class TestEditorGroupsService implements IEditorGroupsService {
 	readonly parts: readonly IEditorPart[] = [this];
 
 	windowId = mainWindow.vscodeWindowId;
+	isModal = false;
 
 	readonly onDidCreateAuxiliaryEditorPart: Event<IAuxiliaryEditorPart> = Event.None;
 	readonly onDidChangeActiveGroup: Event<IEditorGroup> = Event.None;
@@ -1009,6 +1010,7 @@ export class TestEditorGroupAccessor implements IEditorGroupsView {
 
 	label: string = '';
 	windowId = mainWindow.vscodeWindowId;
+	isModal = false;
 
 	groups: IEditorGroupView[] = [];
 	activeGroup!: IEditorGroupView;

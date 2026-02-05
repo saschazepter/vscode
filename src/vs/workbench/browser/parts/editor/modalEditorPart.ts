@@ -52,11 +52,9 @@ export class ModalEditorPart {
 		const shadowElement = modalElement.appendChild($('.modal-editor-shadow'));
 
 		// Create editor part container
-		const titleId = 'modal-editor-title';
 		const editorPartContainer = $('.part.editor.modal-editor-part', {
 			role: 'dialog',
 			'aria-modal': 'true',
-			'aria-labelledby': titleId
 		});
 		shadowElement.appendChild(editorPartContainer);
 
@@ -149,12 +147,13 @@ class ModalEditorPartImpl extends EditorPart implements IModalEditorPart {
 		this.optionsDisposable.value = this.enforcePartOptions({
 			showTabs: 'single',
 			closeEmptyGroups: true,
-			tabActionCloseVisibility: false,
 			editorActionsLocation: 'default',
 			tabHeight: 'default',
 			wrapTabs: false
 		});
 	}
+
+	override get isModal(): boolean { return true; }
 
 	override removeGroup(group: number | IEditorGroupView, preserveFocus?: boolean): void {
 

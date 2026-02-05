@@ -13,7 +13,7 @@ import { IToolbarActions } from '../../../common/editor.js';
 export class NoEditorTabsControl extends EditorTabsControl {
 	private activeEditor: EditorInput | null = null;
 
-	protected prepareEditorActions(editorActions: IToolbarActions): IToolbarActions {
+	protected override prepareEditorActions(editorActions: IToolbarActions): IToolbarActions {
 		return {
 			primary: [],
 			secondary: []

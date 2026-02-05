@@ -31,7 +31,7 @@ import { CloseDirection, EditorInputCapabilities, EditorsOrder, IResourceDiffEdi
 import { EditorInput } from '../../../common/editor/editorInput.js';
 import { SideBySideEditorInput } from '../../../common/editor/sideBySideEditorInput.js';
 import { EditorGroupColumn, columnToEditorGroup } from '../../../services/editor/common/editorGroupColumn.js';
-import { EditorGroupLayout, GroupDirection, GroupLocation, GroupsOrder, IEditorGroup, IEditorGroupsService, IEditorReplacement, preferredSideBySideGroupDirection } from '../../../services/editor/common/editorGroupsService.js';
+import { EditorGroupLayout, GroupDirection, GroupLocation, GroupsOrder, IEditorGroup, IEditorGroupsService, IEditorReplacement, IModalEditorPart, preferredSideBySideGroupDirection } from '../../../services/editor/common/editorGroupsService.js';
 import { IEditorResolverService } from '../../../services/editor/common/editorResolverService.js';
 import { IEditorService, SIDE_GROUP } from '../../../services/editor/common/editorService.js';
 import { IPathService } from '../../../services/path/common/pathService.js';
@@ -102,6 +102,8 @@ export const MOVE_EDITOR_GROUP_INTO_NEW_WINDOW_COMMAND_ID = 'workbench.action.mo
 export const COPY_EDITOR_GROUP_INTO_NEW_WINDOW_COMMAND_ID = 'workbench.action.copyEditorGroupToNewWindow';
 
 export const NEW_EMPTY_EDITOR_WINDOW_COMMAND_ID = 'workbench.action.newEmptyEditorWindow';
+
+export const CLOSE_MODAL_EDITOR_COMMAND_ID = 'workbench.action.closeModalEditor';
 
 export const API_OPEN_EDITOR_COMMAND_ID = '_workbench.open';
 export const API_OPEN_DIFF_EDITOR_COMMAND_ID = '_workbench.diff';
@@ -1272,6 +1274,19 @@ function registerFocusSideEditorsCommands(): void {
 	});
 }
 
+function registerCloseModalEditorCommand(): void {
+	CommandsRegistry.registerCommand(CLOSE_MODAL_EDITOR_COMMAND_ID, (accessor: ServicesAccessor) => {
+		const editorGroupsService = accessor.get(IEditorGroupsService);
+
+		for (const part of editorGroupsService.parts) {
+			if (part.isModal) {
+				(part as IModalEditorPart).close();
+				break;
+			}
+		}
+	});
+}
+
 function registerOtherEditorCommands(): void {
 
 	KeybindingsRegistry.registerCommandAndKeybindingRule({
@@ -1407,6 +1422,7 @@ export function setup(): void {
 	registerOpenEditorAPICommands();
 	registerOpenEditorAtIndexCommands();
 	registerCloseEditorCommands();
+	registerCloseModalEditorCommand();
 	registerOtherEditorCommands();
 	registerSplitEditorInGroupCommands();
 	registerFocusSideEditorsCommands();

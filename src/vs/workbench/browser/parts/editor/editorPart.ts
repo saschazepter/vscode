@@ -216,6 +216,8 @@ export class EditorPart extends Part<IEditorPartMemento> implements IEditorPart,
 	private _partOptions: IEditorPartOptions;
 	get partOptions(): IEditorPartOptions { return this._partOptions; }
 
+	get isModal(): boolean { return false; }
+
 	enforcePartOptions(options: DeepPartial<IEditorPartOptions>): IDisposable {
 		this.enforcedPartOptions.push(options);
 		this.handleChangedPartOptions();

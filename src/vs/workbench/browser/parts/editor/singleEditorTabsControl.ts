@@ -4,14 +4,13 @@
  *--------------------------------------------------------------------------------------------*/
 
 import './media/singleeditortabscontrol.css';
-import { EditorResourceAccessor, Verbosity, IEditorPartOptions, SideBySideEditor, preventEditorClose, EditorCloseMethod, IToolbarActions } from '../../../common/editor.js';
+import { EditorResourceAccessor, Verbosity, IEditorPartOptions, SideBySideEditor, preventEditorClose, EditorCloseMethod } from '../../../common/editor.js';
 import { EditorInput } from '../../../common/editor/editorInput.js';
 import { EditorTabsControl } from './editorTabsControl.js';
 import { ResourceLabel, IResourceLabel } from '../../labels.js';
 import { TAB_ACTIVE_FOREGROUND, TAB_UNFOCUSED_ACTIVE_FOREGROUND } from '../../../common/theme.js';
 import { EventType as TouchEventType, GestureEvent, Gesture } from '../../../../base/browser/touch.js';
 import { addDisposableListener, EventType, EventHelper, Dimension, isAncestor, DragAndDropObserver, isHTMLElement, $ } from '../../../../base/browser/dom.js';
-import { CLOSE_EDITOR_COMMAND_ID, UNLOCK_GROUP_COMMAND_ID } from './editorCommands.js';
 import { Color } from '../../../../base/common/color.js';
 import { assertReturnsDefined, assertReturnsAllDefined } from '../../../../base/common/types.js';
 import { equals } from '../../../../base/common/objects.js';
@@ -339,23 +338,6 @@ export class SingleEditorTabsControl extends EditorTabsControl {
 			case 'short': return Verbosity.SHORT;
 			case 'long': return Verbosity.LONG;
 			default: return Verbosity.MEDIUM;
-		}
-	}
-
-	protected override prepareEditorActions(editorActions: IToolbarActions): IToolbarActions {
-		const isGroupActive = this.groupsView.activeGroup === this.groupView;
-
-		// Active: allow all actions
-		if (isGroupActive) {
-			return editorActions;
-		}
-
-		// Inactive: only show "Close, "Unlock" and secondary actions
-		else {
-			return {
-				primary: this.groupsView.partOptions.alwaysShowEditorActions ? editorActions.primary : editorActions.primary.filter(action => action.id === CLOSE_EDITOR_COMMAND_ID || action.id === UNLOCK_GROUP_COMMAND_ID),
-				secondary: editorActions.secondary
-			};
 		}
 	}
 

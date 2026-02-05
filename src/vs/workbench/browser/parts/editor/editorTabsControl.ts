@@ -13,7 +13,7 @@ import { IAction, ActionRunner } from '../../../../base/common/actions.js';
 import { ResolvedKeybinding } from '../../../../base/common/keybindings.js';
 import { DisposableStore, IDisposable } from '../../../../base/common/lifecycle.js';
 import { createActionViewItem } from '../../../../platform/actions/browser/menuEntryActionViewItem.js';
-import { MenuId } from '../../../../platform/actions/common/actions.js';
+import { MenuId, MenuItemAction } from '../../../../platform/actions/common/actions.js';
 import { IContextKeyService, IContextKey } from '../../../../platform/contextkey/common/contextkey.js';
 import { IContextMenuService } from '../../../../platform/contextview/browser/contextView.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
@@ -38,7 +38,7 @@ import { DraggedTreeItemsIdentifier } from '../../../../editor/common/services/t
 import { IEditorResolverService } from '../../../services/editor/common/editorResolverService.js';
 import { IEditorTitleControlDimensions } from './editorTitleControl.js';
 import { IReadonlyEditorGroupModel } from '../../../common/editor/editorGroupModel.js';
-import { EDITOR_CORE_NAVIGATION_COMMANDS } from './editorCommands.js';
+import { CLOSE_EDITOR_COMMAND_ID, CLOSE_MODAL_EDITOR_COMMAND_ID, EDITOR_CORE_NAVIGATION_COMMANDS, UNLOCK_GROUP_COMMAND_ID } from './editorCommands.js';
 import { IAuxiliaryEditorPart, MergeGroupMode } from '../../../services/editor/common/editorGroupsService.js';
 import { isMacintosh } from '../../../../base/common/platform.js';
 import { IHostService } from '../../../services/host/browser/host.js';
@@ -47,6 +47,8 @@ import { IBaseActionViewItemOptions } from '../../../../base/browser/ui/actionba
 import { MarkdownString } from '../../../../base/common/htmlContent.js';
 import { IManagedHoverTooltipMarkdownString } from '../../../../base/browser/ui/hover/hover.js';
 import { applyDragImage } from '../../../../base/browser/ui/dnd/dnd.js';
+import { Codicon } from '../../../../base/common/codicons.js';
+import { ICommandService } from '../../../../platform/commands/common/commands.js';
 
 export class EditorCommandsContextActionRunner extends ActionRunner {
 
@@ -140,6 +142,7 @@ export abstract class EditorTabsControl extends Themable implements IEditorTabsC
 		@IThemeService themeService: IThemeService,
 		@IEditorResolverService private readonly editorResolverService: IEditorResolverService,
 		@IHostService private readonly hostService: IHostService,
+		@ICommandService protected readonly commandService: ICommandService
 	) {
 		super(themeService);
 
@@ -265,7 +268,34 @@ export abstract class EditorTabsControl extends Themable implements IEditorTabsC
 		editorActionsToolbar.setActions(prepareActions(primary), prepareActions(secondary));
 	}
 
-	protected abstract prepareEditorActions(editorActions: IToolbarActions): IToolbarActions;
+	protected prepareEditorActions(editorActions: IToolbarActions): IToolbarActions {
+
+		// Modal: show opiniated actions (TODO@bpasero contribute them properly via context)
+		if (this.groupsView.isModal) {
+			return {
+				primary: [
+					new MenuItemAction({
+						id: CLOSE_MODAL_EDITOR_COMMAND_ID,
+						title: localize('close', "Close"),
+						icon: Codicon.close,
+					}, undefined, undefined, undefined, undefined, this.contextKeyService, this.commandService)
+				],
+				secondary: []
+			};
+		}
+
+		// Active: allow all actions
+		if (this.groupsView.activeGroup === this.groupView) {
+			return editorActions;
+		}
+
+		// Inactive: only show "Close, "Unlock" and secondary actions
+		return {
+			primary: this.groupsView.partOptions.alwaysShowEditorActions ? editorActions.primary : editorActions.primary.filter(action => action.id === CLOSE_EDITOR_COMMAND_ID || action.id === UNLOCK_GROUP_COMMAND_ID),
+			secondary: editorActions.secondary
+		};
+	}
+
 	private getEditorPaneAwareContextKeyService(): IContextKeyService {
 		return this.groupView.activeEditorPane?.scopedContextKeyService ?? this.contextKeyService;
 	}

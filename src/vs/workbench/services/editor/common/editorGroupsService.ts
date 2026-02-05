@@ -471,6 +471,11 @@ export interface IEditorPart extends IEditorGroupsContainer {
 	readonly windowId: number;
 
 	/**
+	 * Whether this editor part is a modal editor part.
+	 */
+	readonly isModal: boolean;
+
+	/**
 	 * The size of the editor part.
 	 */
 	readonly contentDimension: IDimension;

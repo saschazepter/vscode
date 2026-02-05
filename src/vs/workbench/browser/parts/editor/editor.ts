@@ -213,6 +213,8 @@ export interface IEditorGroupsView {
 	readonly partOptions: IEditorPartOptions;
 	readonly onDidChangeEditorPartOptions: Event<IEditorPartOptionsChangeEvent>;
 
+	readonly isModal: boolean;
+
 	readonly onDidVisibilityChange: Event<boolean>;
 
 	getGroup(identifier: GroupIdentifier): IEditorGroupView | undefined;
