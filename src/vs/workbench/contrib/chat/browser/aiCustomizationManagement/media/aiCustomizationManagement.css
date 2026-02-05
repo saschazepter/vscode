@@ -347,7 +347,8 @@
 
 /* Content container visibility */
 .ai-customization-management-editor .prompts-content-container,
-.ai-customization-management-editor .mcp-content-container {
+.ai-customization-management-editor .mcp-content-container,
+.ai-customization-management-editor .models-content-container {
 	height: 100%;
 }
 

@@ -36,6 +36,7 @@ export const AICustomizationManagementSection = {
 	Skills: 'skills',
 	Instructions: 'instructions',
 	Prompts: 'prompts',
+	Models: 'models',
 	McpServers: 'mcpServers',
 } as const;
 

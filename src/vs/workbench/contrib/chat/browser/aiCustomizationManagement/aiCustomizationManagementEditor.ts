@@ -53,6 +53,8 @@ import { IPromptsService, PromptsStorage } from '../../common/promptSyntax/servi
 import { PromptsType } from '../../common/promptSyntax/promptTypes.js';
 import { IMcpService } from '../../../mcp/common/mcpTypes.js';
 import { autorun } from '../../../../../base/common/observable.js';
+import { ChatModelsWidget } from '../chatManagement/chatModelsWidget.js';
+import { ILanguageModelsService } from '../../common/languageModels.js';
 
 const $ = DOM.$;
 
@@ -131,8 +133,10 @@ export class AICustomizationManagementEditor extends EditorPane {
 	private contentContainer!: HTMLElement;
 	private listWidget!: AICustomizationListWidget;
 	private mcpListWidget!: McpListWidget;
+	private modelsWidget!: ChatModelsWidget;
 	private promptsContentContainer!: HTMLElement;
 	private mcpContentContainer!: HTMLElement;
+	private modelsContentContainer!: HTMLElement;
 
 	private dimension: Dimension | undefined;
 	private readonly sections: ISectionItem[] = [];
@@ -156,6 +160,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 		@ICommandService private readonly commandService: ICommandService,
 		@IPromptsService private readonly promptsService: IPromptsService,
 		@IMcpService private readonly mcpService: IMcpService,
+		@ILanguageModelsService private readonly languageModelsService: ILanguageModelsService,
 	) {
 		super(AICustomizationManagementEditor.ID, group, telemetryService, themeService, storageService);
 
@@ -168,6 +173,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 			{ id: AICustomizationManagementSection.Skills, label: localize('skills', "Skills"), icon: skillIcon },
 			{ id: AICustomizationManagementSection.Instructions, label: localize('instructions', "Instructions"), icon: instructionsIcon },
 			{ id: AICustomizationManagementSection.Prompts, label: localize('prompts', "Prompts"), icon: promptIcon },
+			{ id: AICustomizationManagementSection.Models, label: localize('models', "Models"), icon: Codicon.sparkle },
 			{ id: AICustomizationManagementSection.McpServers, label: localize('mcpServers', "MCP Servers"), icon: Codicon.server },
 		);
 
@@ -186,6 +192,9 @@ export class AICustomizationManagementEditor extends EditorPane {
 			this.mcpService.servers.read(reader);
 			this.updateMcpSectionCount();
 		}));
+
+		// Listen to language model changes to update Models count
+		this._register(this.languageModelsService.onDidChangeLanguageModels(() => this.updateModelsSectionCount()));
 	}
 
 	protected override createEditor(parent: HTMLElement): void {
@@ -290,6 +299,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 				if (height !== undefined) {
 					this.listWidget.layout(height - 16, width - 24); // Account for padding
 					this.mcpListWidget.layout(height - 16, width - 24); // Account for padding
+					this.modelsWidget.layout(height - 16, width - 24); // Account for padding
 				}
 			},
 		}, Sizing.Distribute, undefined, true);
@@ -365,6 +375,11 @@ export class AICustomizationManagementEditor extends EditorPane {
 			this.updateSectionCount(this.selectedSection, count);
 		}));
 
+		// Container for Models content
+		this.modelsContentContainer = DOM.append(contentInner, $('.models-content-container'));
+		this.modelsWidget = this.editorDisposables.add(this.instantiationService.createInstance(ChatModelsWidget));
+		this.modelsContentContainer.appendChild(this.modelsWidget.element);
+
 		// Container for MCP content
 		this.mcpContentContainer = DOM.append(contentInner, $('.mcp-content-container'));
 		this.mcpListWidget = this.editorDisposables.add(this.instantiationService.createInstance(McpListWidget));
@@ -374,10 +389,17 @@ export class AICustomizationManagementEditor extends EditorPane {
 		this.updateContentVisibility();
 
 		// Load items for the initial section and load all section counts
-		if (this.selectedSection !== AICustomizationManagementSection.McpServers) {
+		if (this.isPromptsSection(this.selectedSection)) {
 			void this.listWidget.setSection(this.selectedSection);
 		}
 		void this.loadAllSectionCounts();
+	}
+
+	private isPromptsSection(section: AICustomizationManagementSection): boolean {
+		return section === AICustomizationManagementSection.Agents ||
+			section === AICustomizationManagementSection.Skills ||
+			section === AICustomizationManagementSection.Instructions ||
+			section === AICustomizationManagementSection.Prompts;
 	}
 
 	private selectSection(section: AICustomizationManagementSection): void {
@@ -395,15 +417,24 @@ export class AICustomizationManagementEditor extends EditorPane {
 		this.updateContentVisibility();
 
 		// Load items for the new section (only for prompts-based sections)
-		if (section !== AICustomizationManagementSection.McpServers) {
+		if (this.isPromptsSection(section)) {
 			void this.listWidget.setSection(section);
 		}
 	}
 
 	private updateContentVisibility(): void {
+		const isPromptsSection = this.isPromptsSection(this.selectedSection);
+		const isModelsSection = this.selectedSection === AICustomizationManagementSection.Models;
 		const isMcpSection = this.selectedSection === AICustomizationManagementSection.McpServers;
-		this.promptsContentContainer.style.display = isMcpSection ? 'none' : '';
+
+		this.promptsContentContainer.style.display = isPromptsSection ? '' : 'none';
+		this.modelsContentContainer.style.display = isModelsSection ? '' : 'none';
 		this.mcpContentContainer.style.display = isMcpSection ? '' : 'none';
+
+		// Render models widget when switching to it
+		if (isModelsSection) {
+			this.modelsWidget.render();
+		}
 	}
 
 	private updateSectionCount(section: AICustomizationManagementSection, count: number): void {
@@ -453,6 +484,12 @@ export class AICustomizationManagementEditor extends EditorPane {
 			}
 		}));
 
+		// Load Models count
+		const modelsSection = this.sections.find(s => s.id === AICustomizationManagementSection.Models);
+		if (modelsSection) {
+			modelsSection.count = this.languageModelsService.getLanguageModelIds().length;
+		}
+
 		// Re-render the sections list with all counts
 		this.sectionsList.splice(0, this.sectionsList.length, this.sections);
 		// Re-select the current section
@@ -468,6 +505,24 @@ export class AICustomizationManagementEditor extends EditorPane {
 	private updateMcpSectionCount(): void {
 		const count = this.mcpService.servers.get().length;
 		const sectionItem = this.sections.find(s => s.id === AICustomizationManagementSection.McpServers);
+		if (sectionItem) {
+			sectionItem.count = count;
+			// Re-render the sections list to show updated count
+			this.sectionsList.splice(0, this.sectionsList.length, this.sections);
+			// Re-select the current section
+			const selectedIndex = this.sections.findIndex(s => s.id === this.selectedSection);
+			if (selectedIndex >= 0) {
+				this.sectionsList.setSelection([selectedIndex]);
+			}
+		}
+	}
+
+	/**
+	 * Updates the count for the Models section.
+	 */
+	private updateModelsSectionCount(): void {
+		const count = this.languageModelsService.getLanguageModelIds().length;
+		const sectionItem = this.sections.find(s => s.id === AICustomizationManagementSection.Models);
 		if (sectionItem) {
 			sectionItem.count = count;
 			// Re-render the sections list to show updated count
@@ -527,6 +582,8 @@ export class AICustomizationManagementEditor extends EditorPane {
 		super.focus();
 		if (this.selectedSection === AICustomizationManagementSection.McpServers) {
 			this.mcpListWidget?.focus();
+		} else if (this.selectedSection === AICustomizationManagementSection.Models) {
+			this.modelsWidget?.focusSearch();
 		} else {
 			this.listWidget?.focusSearch();
 		}
