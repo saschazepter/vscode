@@ -28,6 +28,7 @@
 	height: 100%;
 	display: flex;
 	flex-direction: column;
+	justify-content: space-between;
 }
 
 .monaco-workbench .projectbar > .content > .actions-container {
@@ -35,6 +36,7 @@
 	flex-direction: column;
 	align-items: center;
 	width: 100%;
+	margin-bottom: auto;
 }
 
 /* Action items (both add button and workspace entries) */
@@ -138,4 +140,104 @@
 .monaco-workbench.hc-black .projectbar .action-item:hover .action-label::before,
 .monaco-workbench.hc-light .projectbar .action-item:hover .action-label::before {
 	outline: 1px dashed var(--vscode-contrastActiveBorder);
+}
+
+/* ===== Global Composite Bar (Accounts, Settings) at bottom ===== */
+
+.monaco-workbench .projectbar > .content > .monaco-action-bar {
+	text-align: center;
+	background-color: inherit;
+}
+
+.monaco-workbench .projectbar > .content > .monaco-action-bar .action-item {
+	display: block;
+	position: relative;
+}
+
+.monaco-workbench .projectbar > .content > .monaco-action-bar .action-label {
+	position: relative;
+	z-index: 1;
+	display: flex;
+	overflow: hidden;
+	width: 48px;
+	height: 48px;
+	margin-right: 0;
+	box-sizing: border-box;
+}
+
+.monaco-workbench .projectbar > .content > .monaco-action-bar .action-label.codicon {
+	font-size: 24px;
+	align-items: center;
+	justify-content: center;
+	color: var(--vscode-activityBar-inactiveForeground);
+}
+
+.monaco-workbench .projectbar > .content > .monaco-action-bar .action-item.active .action-label.codicon,
+.monaco-workbench .projectbar > .content > .monaco-action-bar .action-item:focus .action-label.codicon,
+.monaco-workbench .projectbar > .content > .monaco-action-bar .action-item:hover .action-label.codicon {
+	color: var(--vscode-activityBar-foreground) !important;
+}
+
+.monaco-workbench .projectbar > .content > .monaco-action-bar .action-item:focus {
+	outline: 0 !important;
+}
+
+.monaco-workbench .projectbar > .content > .monaco-action-bar .profile-badge,
+.monaco-workbench .projectbar > .content > .monaco-action-bar .active-item-indicator,
+.monaco-workbench .projectbar > .content > .monaco-action-bar .badge {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	margin: auto;
+	left: 0;
+	overflow: hidden;
+	width: 100%;
+	height: 100%;
+}
+
+.monaco-workbench .projectbar > .content > .monaco-action-bar .active-item-indicator,
+.monaco-workbench .projectbar > .content > .monaco-action-bar .badge {
+	z-index: 2;
+}
+
+.monaco-workbench .projectbar > .content > .monaco-action-bar .profile-badge {
+	z-index: 1;
+}
+
+.monaco-workbench .projectbar > .content > .monaco-action-bar .active-item-indicator {
+	pointer-events: none;
+}
+
+.monaco-workbench .projectbar > .content > .monaco-action-bar .badge .badge-content {
+	position: absolute;
+	top: 24px;
+	right: 8px;
+	font-size: 9px;
+	font-weight: 600;
+	min-width: 8px;
+	height: 16px;
+	line-height: 16px;
+	padding: 0 4px;
+	border-radius: 20px;
+	text-align: center;
+}
+
+.monaco-workbench .projectbar > .content > .monaco-action-bar .profile-badge .profile-text-overlay {
+	position: absolute;
+	font-weight: 600;
+	font-size: 9px;
+	line-height: 10px;
+	top: 24px;
+	right: 6px;
+	padding: 2px 3px;
+	border-radius: 7px;
+	background-color: var(--vscode-profileBadge-background);
+	color: var(--vscode-profileBadge-foreground);
+	border: 2px solid var(--vscode-activityBar-background);
+}
+
+.monaco-workbench .projectbar > .content > .monaco-action-bar .action-item:active .profile-text-overlay,
+.monaco-workbench .projectbar > .content > .monaco-action-bar .action-item:focus .profile-text-overlay,
+.monaco-workbench .projectbar > .content > .monaco-action-bar .action-item:hover .profile-text-overlay {
+	color: var(--vscode-activityBar-foreground);
 }

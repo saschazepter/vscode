@@ -65,7 +65,7 @@ The following parts from the default workbench are **not included**:
 
 | Part | ID Constant | Reason |
 |------|-------------|--------|
-| Activity Bar | `Parts.ACTIVITYBAR_PART` | Simplified navigation |
+| Activity Bar | `Parts.ACTIVITYBAR_PART` | Simplified navigation; global activities (Accounts, Manage) are in Project Bar instead |
 | Status Bar | `Parts.STATUSBAR_PART` | Reduced chrome |
 | Banner | `Parts.BANNER_PART` | Not needed |
 
@@ -383,7 +383,7 @@ The Agent Sessions workbench uses specialized part implementations that extend t
 
 ### 9.2 Project Bar
 
-The Project Bar is a new part specific to the Agent Sessions workbench that displays workspace folders and allows selection between them.
+The Project Bar is a new part specific to the Agent Sessions workbench that displays workspace folders and allows selection between them. It also hosts global activity actions (Accounts and Manage/Settings) at the bottom.
 
 #### Features
 
@@ -394,6 +394,7 @@ The Project Bar is a new part specific to the Agent Sessions workbench that disp
 | Add folder button | Button with `+` icon to add new folders via `workbench.action.addRootFolder` command |
 | Hover tooltips | Shows full folder name on hover |
 | Keyboard navigation | Supports `Tab`, `Enter`, and `Space` for accessibility |
+| Global activities | Accounts and Manage icons at bottom via `GlobalCompositeBar` |
 
 #### Visual Style
 
@@ -401,6 +402,32 @@ The Project Bar is a new part specific to the Agent Sessions workbench that disp
 - Fixed width: 48px (same as activity bar)
 - Action item height: 48px
 - Selected folder shows `checked` class with active indicator
+- Global activities (accounts, settings) pinned to bottom
+
+#### Structure
+
+```
+ProjectBarPart
+├── Content
+│   ├── Actions Container (workspace folders at top)
+│   │   ├── Add Folder Button (+)
+│   │   └── Workspace Entries (one per folder)
+│   └── GlobalCompositeBar (accounts, settings at bottom)
+```
+
+#### GlobalCompositeBar
+
+The Project Bar includes a `GlobalCompositeBar` instance at the bottom, providing:
+
+| Activity | ID | Icon | Description |
+|----------|-----|------|-------------|
+| Accounts | `ACCOUNTS_ACTIVITY_ID` | `account` | Account management menu |
+| Manage | `GLOBAL_ACTIVITY_ID` | Profile icon | Settings and profile management |
+
+The GlobalCompositeBar:
+- Uses the same colors as the Activity Bar for consistency
+- Hover position is dynamically set based on sidebar position (right when sidebar is left)
+- Supports activity badges for notifications
 
 #### Events
 
@@ -419,6 +446,10 @@ class ProjectBarPart extends Part {
 
     // Events
     readonly onDidSelectWorkspace: Event<IWorkspaceFolder | undefined>;
+
+    // Methods
+    focus(): void;                    // Focus add folder button
+    focusGlobalCompositeBar(): void;  // Focus global activities
 }
 ```
 
@@ -579,6 +610,7 @@ interface IPartVisibilityState {
 
 | Date | Change |
 |------|--------|
+| 2026-02-05 | Added `GlobalCompositeBar` to Project Bar for Accounts (`ACCOUNTS_ACTIVITY_ID`) and Manage (`GLOBAL_ACTIVITY_ID`) activities at the bottom; Added `focusGlobalCompositeBar()` method |
 | 2026-02-05 | Added configurable titlebar via `ITitlebarPartOptions` and `ITitlebarPartConfiguration`; Titlebar now disables command center, menubar, and editor actions; Added left toolbar with `MenuId.TitleBarLeft`; Added `ToggleSidebarVisibilityAction` in `agentSessionsLayoutActions.ts` |
 | 2026-02-05 | Added Project Bar part (`ProjectBarPart`) to display and select workspace folders; Layout order is now Project Bar \| Sidebar \| Chat Bar \| Auxiliary Bar |
 | 2026-02-04 | Modal sizing (80%, min/max constraints) moved from CSS to TypeScript; `EditorModal.layout()` now accepts workbench dimensions |

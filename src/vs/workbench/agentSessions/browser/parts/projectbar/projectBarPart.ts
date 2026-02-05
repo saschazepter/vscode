@@ -5,8 +5,8 @@
 
 import './projectBarPart.css';
 import { Part } from '../../../../browser/part.js';
-import { IWorkbenchLayoutService, Parts } from '../../../../services/layout/browser/layoutService.js';
-import { IThemeService } from '../../../../../platform/theme/common/themeService.js';
+import { IWorkbenchLayoutService, Parts, Position } from '../../../../services/layout/browser/layoutService.js';
+import { IColorTheme, IThemeService } from '../../../../../platform/theme/common/themeService.js';
 import { IStorageService } from '../../../../../platform/storage/common/storage.js';
 import { IWorkspaceContextService, IWorkspaceFolder, IWorkspaceFoldersChangeEvent } from '../../../../../platform/workspace/common/workspace.js';
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
@@ -14,18 +14,22 @@ import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
 import { DisposableStore, MutableDisposable } from '../../../../../base/common/lifecycle.js';
 import { $, addDisposableListener, append, clearNode, EventType } from '../../../../../base/browser/dom.js';
 import { Emitter, Event } from '../../../../../base/common/event.js';
-import { ACTIVITY_BAR_BACKGROUND, ACTIVITY_BAR_BORDER } from '../../../../common/theme.js';
+import { ACTIVITY_BAR_BACKGROUND, ACTIVITY_BAR_BADGE_BACKGROUND, ACTIVITY_BAR_BADGE_FOREGROUND, ACTIVITY_BAR_BORDER, ACTIVITY_BAR_FOREGROUND, ACTIVITY_BAR_INACTIVE_FOREGROUND } from '../../../../common/theme.js';
 import { contrastBorder } from '../../../../../platform/theme/common/colorRegistry.js';
 import { assertReturnsDefined } from '../../../../../base/common/types.js';
 import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { HoverPosition } from '../../../../../base/browser/ui/hover/hoverWidget.js';
+import { GlobalCompositeBar } from '../../../../browser/parts/globalCompositeBar.js';
+import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
+import { IAction } from '../../../../../base/common/actions.js';
 
-const hover_group_id = 'projectbar';
+const HOVER_GROUP_ID = 'projectbar';
 
 /**
  * ProjectBarPart displays workspace folders and allows selection between them.
  * It is positioned to the left of the sidebar and has the same visual style as the activity bar.
+ * Also includes global activities (accounts, settings) at the bottom.
  */
 export class ProjectBarPart extends Part {
 
@@ -45,6 +49,7 @@ export class ProjectBarPart extends Part {
 	private addFolderButton: HTMLElement | undefined;
 	private workspaceFolders: IWorkspaceFolder[] = [];
 	private _selectedFolderIndex: number = 0;
+	private readonly globalCompositeBar: GlobalCompositeBar;
 
 	private readonly workspaceEntryDisposables = this._register(new MutableDisposable<DisposableStore>());
 
@@ -58,11 +63,34 @@ export class ProjectBarPart extends Part {
 		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
 		@ICommandService private readonly commandService: ICommandService,
 		@IHoverService private readonly hoverService: IHoverService,
+		@IInstantiationService instantiationService: IInstantiationService,
 	) {
 		super(Parts.PROJECTBAR_PART, { hasTitle: false }, themeService, storageService, layoutService);
 
+		// Create the global composite bar for accounts and settings at the bottom
+		this.globalCompositeBar = this._register(instantiationService.createInstance(
+			GlobalCompositeBar,
+			() => this.getContextMenuActions(),
+			(theme: IColorTheme) => ({
+				activeForegroundColor: theme.getColor(ACTIVITY_BAR_FOREGROUND),
+				inactiveForegroundColor: theme.getColor(ACTIVITY_BAR_INACTIVE_FOREGROUND),
+				badgeBackground: theme.getColor(ACTIVITY_BAR_BADGE_BACKGROUND),
+				badgeForeground: theme.getColor(ACTIVITY_BAR_BADGE_FOREGROUND),
+				activeBackgroundColor: undefined,
+				inactiveBackgroundColor: undefined,
+				activeBorderBottomColor: undefined,
+			}),
+			{
+				position: () => this.layoutService.getSideBarPosition() === Position.LEFT ? HoverPosition.RIGHT : HoverPosition.LEFT,
+			}
+		));
+
 		// Listen for workspace folder changes
 		this._register(this.workspaceContextService.onDidChangeWorkspaceFolders(e => this.onWorkspaceFoldersChanged(e)));
+	}
+
+	private getContextMenuActions(): IAction[] {
+		return this.globalCompositeBar.getContextMenuActions();
 	}
 
 	protected override createContentArea(parent: HTMLElement): HTMLElement {
@@ -72,11 +100,14 @@ export class ProjectBarPart extends Part {
 		// Initialize workspace folders
 		this.workspaceFolders = this.workspaceContextService.getWorkspace().folders;
 
-		// Create actions container
+		// Create actions container for workspace folders and add button
 		this.actionsContainer = append(this.content, $('.actions-container'));
 
-		// Create the UI
+		// Create the UI for workspace folders
 		this.renderContent();
+
+		// Create global composite bar at the bottom (accounts, settings)
+		this.globalCompositeBar.create(this.content);
 
 		return this.content;
 	}
@@ -113,7 +144,7 @@ export class ProjectBarPart extends Part {
 					position: { hoverPosition: HoverPosition.RIGHT },
 					content: 'Add Folder to Workspace'
 				},
-				{ groupId: hover_group_id }
+				{ groupId: HOVER_GROUP_ID }
 			)
 		);
 
@@ -175,7 +206,7 @@ export class ProjectBarPart extends Part {
 					position: { hoverPosition: HoverPosition.RIGHT },
 					content: folderName
 				},
-				{ groupId: hover_group_id }
+				{ groupId: HOVER_GROUP_ID }
 			)
 		);
 
@@ -263,8 +294,15 @@ export class ProjectBarPart extends Part {
 		this.addFolderButton?.focus();
 	}
 
+	focusGlobalCompositeBar(): void {
+		this.globalCompositeBar.focus();
+	}
+
 	override layout(width: number, height: number): void {
 		super.layout(width, height, 0, 0);
+
+		// The global composite bar takes some height at the bottom
+		// The actions container will take the remaining space due to CSS flex layout
 	}
 
 	toJSON(): object {

@@ -574,7 +574,7 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 		// Create Parts (excluding editor - it will be in a modal)
 		for (const { id, role, classes } of [
 			{ id: Parts.TITLEBAR_PART, role: 'none', classes: ['titlebar'] },
-			{ id: Parts.PROJECTBAR_PART, role: 'navigation', classes: ['projectbar', 'left'] },
+			{ id: Parts.PROJECTBAR_PART, role: 'navigation', classes: ['projectbar', 'activitybar', 'left'] },
 			{ id: Parts.SIDEBAR_PART, role: 'none', classes: ['sidebar', 'left'] },
 			{ id: Parts.AUXILIARYBAR_PART, role: 'none', classes: ['auxiliarybar', 'basepanel', 'right'] },
 			{ id: Parts.CHATBAR_PART, role: 'main', classes: ['chatbar', 'basepanel', 'right'] },
@@ -1053,7 +1053,7 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 	//#region Part Visibility
 
 	isActivityBarHidden(): boolean {
-		return true;
+		return !this.isVisible(Parts.PROJECTBAR_PART);
 	}
 
 	isVisible(part: SINGLE_WINDOW_PARTS): boolean;
