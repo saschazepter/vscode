@@ -1635,11 +1635,20 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 
 		// Get current active session type
 		const getActiveSessionType = (): AgentSessionProviders | undefined => {
+			// Prefer actual session resource type when available - this ensures
+			// the correct button is highlighted when opening an existing session
+			const sessionResource = this._widget?.viewModel?.sessionResource;
+			if (sessionResource) {
+				const sessionType = getAgentSessionProvider(sessionResource);
+				if (sessionType) {
+					return sessionType;
+				}
+			}
+			// Fall back to delegate for initial state before session is created
 			if (this.options.sessionTypePickerDelegate?.getActiveSessionProvider) {
 				return this.options.sessionTypePickerDelegate.getActiveSessionProvider();
 			}
-			const sessionResource = this._widget?.viewModel?.sessionResource;
-			return sessionResource ? getAgentSessionProvider(sessionResource) : undefined;
+			return undefined;
 		};
 
 		const activeType = getActiveSessionType() ?? AgentSessionProviders.Local;
