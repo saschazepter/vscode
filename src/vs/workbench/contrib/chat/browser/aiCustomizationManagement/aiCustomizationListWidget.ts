@@ -33,6 +33,11 @@ import { ICommandService } from '../../../../../platform/commands/common/command
 import { IMenuService } from '../../../../../platform/actions/common/actions.js';
 import { IContextKeyService } from '../../../../../platform/contextkey/common/contextkey.js';
 import { getFlatContextMenuActions } from '../../../../../platform/actions/browser/menuEntryActionViewItem.js';
+import { IFileService } from '../../../../../platform/files/common/files.js';
+import { IWorkspaceContextService } from '../../../../../platform/workspace/common/workspace.js';
+import { IPathService } from '../../../../services/path/common/pathService.js';
+import { ILabelService } from '../../../../../platform/label/common/label.js';
+import { parseAllHookFiles } from '../promptSyntax/hookUtils.js';
 
 const $ = DOM.$;
 
@@ -215,7 +220,6 @@ export class AICustomizationListWidget extends Disposable {
 	private emptyStateIcon!: HTMLElement;
 	private emptyStateText!: HTMLElement;
 	private emptyStateSubtext!: HTMLElement;
-	private emptyStateButton!: Button;
 
 	private currentSection: AICustomizationManagementSection = AICustomizationManagementSection.Agents;
 	private allItems: IAICustomizationListItem[] = [];
@@ -239,6 +243,10 @@ export class AICustomizationListWidget extends Disposable {
 		@IContextMenuService private readonly contextMenuService: IContextMenuService,
 		@IMenuService private readonly menuService: IMenuService,
 		@IContextKeyService private readonly contextKeyService: IContextKeyService,
+		@IFileService private readonly fileService: IFileService,
+		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
+		@IPathService private readonly pathService: IPathService,
+		@ILabelService private readonly labelService: ILabelService,
 	) {
 		super();
 		this.element = $('.ai-customization-list-widget');
@@ -289,9 +297,6 @@ export class AICustomizationListWidget extends Disposable {
 		this.emptyStateIcon = DOM.append(this.emptyStateContainer, $('.empty-state-icon'));
 		this.emptyStateText = DOM.append(this.emptyStateContainer, $('.empty-state-text'));
 		this.emptyStateSubtext = DOM.append(this.emptyStateContainer, $('.empty-state-subtext'));
-		this.emptyStateButton = this._register(new Button(this.emptyStateContainer, { ...defaultButtonStyles, supportIcons: true }));
-		this.emptyStateButton.element.classList.add('empty-state-button');
-		this._register(this.emptyStateButton.onDidClick(() => this.executeCreateAction()));
 		this.emptyStateContainer.style.display = 'none';
 
 		// Create list
@@ -505,19 +510,32 @@ export class AICustomizationListWidget extends Disposable {
 				});
 			}
 		} else if (promptType === PromptsType.hook) {
-			// Hooks are JSON configuration files - list them directly
-			const hookFiles = await this.promptsService.listPromptFiles(promptType, CancellationToken.None);
-			for (const hookFile of hookFiles) {
-				const filename = basename(hookFile.uri);
-				// Derive a friendly name based on the file location
-				const friendlyName = this.getHookConfigName(hookFile.uri, hookFile.storage);
+			// Parse hook files and display individual hooks
+			const workspaceFolder = this.workspaceContextService.getWorkspace().folders[0];
+			const workspaceRootUri = workspaceFolder?.uri;
+			const userHomeUri = await this.pathService.userHome();
+			const userHome = userHomeUri.fsPath ?? userHomeUri.path;
+
+			const parsedHooks = await parseAllHookFiles(
+				this.promptsService,
+				this.fileService,
+				this.labelService,
+				workspaceRootUri,
+				userHome,
+				CancellationToken.None
+			);
+
+			for (const hook of parsedHooks) {
+				// Determine storage from the file path
+				const storage = hook.filePath.startsWith('~') ? PromptsStorage.user : PromptsStorage.local;
+
 				items.push({
-					id: hookFile.uri.toString(),
-					uri: hookFile.uri,
-					name: friendlyName,
-					filename,
-					description: localize('hookConfigDescription', "Hook configuration file"),
-					storage: hookFile.storage,
+					id: `${hook.fileUri.toString()}#${hook.hookType}-${hook.index}`,
+					uri: hook.fileUri,
+					name: `${hook.hookTypeLabel}: ${hook.commandLabel}`,
+					filename: basename(hook.fileUri),
+					description: hook.filePath,
+					storage,
 					promptType,
 				});
 			}
@@ -577,31 +595,6 @@ export class AICustomizationListWidget extends Disposable {
 	}
 
 	/**
-	 * Derives a friendly name for hook configuration files based on their path.
-	 */
-	private getHookConfigName(uri: URI, storage: PromptsStorage): string {
-		const path = uri.path;
-
-		// Check for common hook file patterns
-		if (path.includes('.github/hooks')) {
-			return storage === PromptsStorage.local
-				? localize('workspaceHooks', "Workspace Hooks")
-				: localize('userHooks', "User Hooks");
-		}
-		if (path.includes('.claude/settings.local.json')) {
-			return localize('claudeLocalHooks', "Claude Local Hooks");
-		}
-		if (path.includes('.claude/settings.json')) {
-			return storage === PromptsStorage.user
-				? localize('claudeUserHooks', "Claude User Hooks")
-				: localize('claudeWorkspaceHooks', "Claude Workspace Hooks");
-		}
-
-		// Fallback to filename
-		return basename(uri);
-	}
-
-	/**
 	 * Filters items based on the current search query.
 	 */
 	private filterItems(): void {
@@ -644,14 +637,11 @@ export class AICustomizationListWidget extends Disposable {
 				// Search with no results
 				this.emptyStateText.textContent = localize('noMatchingItems', "No items match '{0}'", this.searchQuery);
 				this.emptyStateSubtext.textContent = localize('tryDifferentSearch', "Try a different search term");
-				this.emptyStateButton.element.style.display = 'none';
 			} else {
-				// No items at all - show create action
+				// No items at all - show empty state with create hint
 				const emptyInfo = this.getEmptyStateInfo();
 				this.emptyStateText.textContent = emptyInfo.title;
 				this.emptyStateSubtext.textContent = emptyInfo.description;
-				this.emptyStateButton.label = emptyInfo.buttonLabel;
-				this.emptyStateButton.element.style.display = '';
 			}
 		} else {
 			this.emptyStateContainer.style.display = 'none';
