@@ -6,7 +6,7 @@
 import { $, addDisposableListener, append, EventType } from '../../../../../../base/browser/dom.js';
 import { StandardKeyboardEvent } from '../../../../../../base/browser/keyboardEvent.js';
 import { ActionViewItem, BaseActionViewItem, IActionViewItemOptions } from '../../../../../../base/browser/ui/actionbar/actionViewItems.js';
-import { Action } from '../../../../../../base/common/actions.js';
+import { Action, IAction } from '../../../../../../base/common/actions.js';
 import { Codicon } from '../../../../../../base/common/codicons.js';
 import { KeyCode } from '../../../../../../base/common/keyCodes.js';
 import { IDisposable } from '../../../../../../base/common/lifecycle.js';
@@ -187,7 +187,6 @@ export class ChatQueuePickerActionItem extends BaseActionViewItem {
 			label: localize('chat.sendImmediately', "Send Immediately"),
 			tooltip: '',
 			enabled: true,
-			checked: false,
 			icon: Codicon.send,
 			class: undefined,
 			hover: {
