@@ -18,32 +18,14 @@ import {
 	IHookCommandInput,
 	IHookCommandResult,
 	IPreToolUseCommandInput,
-} from './hooksExternalTypes.js';
+} from './hooksCommandTypes.js';
 import {
 	commonHookOutputValidator,
 	IHookResult,
 	IPreToolUseCallerInput,
 	IPreToolUseHookResult,
 	preToolUseOutputValidator,
-} from './hooksInternalTypes.js';
-
-// Re-export external types for consumers
-export {
-	HookCommandResultKind,
-	IHookCommandInput,
-	IHookCommandOutput,
-	IHookCommandResult,
-	IPreToolUseCommandInput,
-	IPreToolUseCommandOutput,
-} from './hooksExternalTypes.js';
-
-// Re-export internal types for consumers that need them
-export {
-	IHookResult,
-	IPreToolUseCallerInput,
-	IPreToolUseHookResult,
-	PreToolUsePermissionDecision,
-} from './hooksInternalTypes.js';
+} from './hooksTypes.js';
 
 export const hooksOutputChannelId = 'hooksExecution';
 const hooksOutputChannelLabel = localize('hooksExecutionChannel', "Hooks");

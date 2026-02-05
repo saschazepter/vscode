@@ -8,7 +8,8 @@ import { CancellationToken, CancellationTokenSource } from '../../../../../base/
 import { URI } from '../../../../../base/common/uri.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
 import { NullLogService } from '../../../../../platform/log/common/log.js';
-import { HookCommandResultKind, HooksExecutionService, IHookCommandResult, IHooksExecutionProxy } from '../../common/hooksExecutionService.js';
+import { HookCommandResultKind, IHookCommandResult } from '../../common/hooksCommandTypes.js';
+import { HooksExecutionService, IHooksExecutionProxy } from '../../common/hooksExecutionService.js';
 import { HookType, IHookCommand } from '../../common/promptSyntax/hookSchema.js';
 import { IOutputChannel, IOutputService } from '../../../../services/output/common/output.js';
 

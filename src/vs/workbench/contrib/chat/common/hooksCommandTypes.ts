@@ -7,7 +7,7 @@
  * External hook types - types that cross the process boundary to/from spawned hook commands.
  *
  * "External" means these types define the contract between VS Code and the external hook
- * command process. They use snake_case for field names to match the external API convention.
+ * command process.
  *
  * Examples:
  * - IPreToolUseCommandInput: sent TO the spawned command via stdin
