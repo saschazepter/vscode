@@ -47,16 +47,9 @@
 	overflow: hidden;
 }
 
-/* Overview section (header) */
+/* Overview section (header) - hidden since actions moved outside card */
 .changes-view-body .chat-editing-session-overview {
-	display: flex;
-	flex-direction: row;
-	justify-content: space-between;
-	gap: 6px;
-	height: 22px;
-	line-height: 22px;
-	border-bottom: 1px solid var(--vscode-input-border);
-	padding-bottom: 4px;
+	display: none;
 }
 
 /* Summary container */
@@ -97,6 +90,30 @@
 	align-items: center;
 }
 
+/* Actions container outside the card - new layout experiment */
+.changes-view-body .chat-editing-session-actions.outside-card {
+	margin-bottom: 8px;
+	justify-content: flex-end;
+}
+
+/* Larger action buttons matching SCM ActionButton style */
+.changes-view-body .chat-editing-session-actions.outside-card .monaco-button {
+	height: 26px;
+	padding: 4px 14px;
+	border-radius: 4px;
+	font-size: 12px;
+	line-height: 18px;
+}
+
+/* Primary button grows to fill available space */
+.changes-view-body .chat-editing-session-actions.outside-card .monaco-button:not(.secondary) {
+	flex: 1;
+}
+
+.changes-view-body .chat-editing-session-actions.outside-card .monaco-button.secondary.monaco-text-button.codicon {
+	padding: 4px 8px;
+	font-size: 16px !important;
+}
 .changes-view-body .chat-editing-session-actions .monaco-button {
 	width: fit-content;
 	overflow: hidden;

@@ -61,8 +61,9 @@ export class ChangesViewPane extends ViewPane {
 	private contentContainer: HTMLElement | undefined;
 	private overviewContainer: HTMLElement | undefined;
 	private summaryContainer: HTMLElement | undefined;
-	private actionsContainer: HTMLElement | undefined;
 	private listContainer: HTMLElement | undefined;
+	// Actions container is positioned outside the card for this layout experiment
+	private actionsContainer: HTMLElement | undefined;
 
 	private readonly listPool: CollapsibleListPool;
 	private listRef: { object: import('../../../../platform/list/browser/listService.js').WorkbenchList<IChatCollapsibleListItem>; dispose(): void } | undefined;
@@ -214,14 +215,16 @@ export class ChangesViewPane extends ViewPane {
 		const welcomeMessage = dom.append(this.welcomeContainer, $('.changes-welcome-message'));
 		welcomeMessage.textContent = localize('changesView.noChanges', "No files have been changed.");
 
-		// Main container with file icons support
+		// Actions container - positioned outside and above the card
+		this.actionsContainer = dom.append(this.bodyContainer, $('.chat-editing-session-actions.outside-card'));
+
+		// Main container with file icons support (the "card")
 		this.contentContainer = dom.append(this.bodyContainer, $('.chat-editing-session-container.show-file-icons'));
 		this._register(createFileIconThemableTreeContainerScope(this.contentContainer, this.themeService));
 
-		// Overview section (header with summary and actions)
+		// Overview section (header with summary only - actions moved outside card)
 		this.overviewContainer = dom.append(this.contentContainer, $('.chat-editing-session-overview'));
 		this.summaryContainer = dom.append(this.overviewContainer, $('.changes-summary'));
-		this.actionsContainer = dom.append(this.overviewContainer, $('.chat-editing-session-actions'));
 
 		// List container
 		this.listContainer = dom.append(this.contentContainer, $('.chat-editing-session-list'));
@@ -386,7 +389,6 @@ export class ChangesViewPane extends ViewPane {
 					isSessionMenu ? MenuId.ChatEditingSessionChangesToolbar : MenuId.ChatEditingWidgetToolbar,
 					{
 						telemetrySource: 'changesView',
-						small: true,
 						menuOptions: isSessionMenu && sessionResource
 							? { args: [sessionResource] }
 							: { shouldForwardArgs: true },
@@ -407,6 +409,7 @@ export class ChangesViewPane extends ViewPane {
 			const hasEntries = files > 0;
 
 			dom.setVisibility(hasEntries, this.contentContainer!);
+			dom.setVisibility(hasEntries, this.actionsContainer!);
 			dom.setVisibility(!hasEntries, this.welcomeContainer!);
 		}));
 
