@@ -492,6 +492,31 @@ export function registerChatActions() {
 	registerAction2(class extends ModeOpenChatGlobalAction {
 		constructor() { super(ChatMode.Edit); }
 	});
+	registerAction2(class OpenPlanModeAction extends Action2 {
+		static readonly ID = 'workbench.action.chat.openPlan';
+		constructor() {
+			super({
+				id: OpenPlanModeAction.ID,
+				title: localize2('openChatPlan', "Open Chat (Plan)"),
+				f1: true,
+				category: CHAT_CATEGORY,
+				keybinding: {
+					weight: KeybindingWeight.WorkbenchContrib,
+					primary: KeyMod.Shift | KeyCode.Tab,
+					when: ChatContextKeys.inChatSession,
+				}
+			});
+		}
+
+		override async run(accessor: ServicesAccessor): Promise<void> {
+			const commandService = accessor.get(ICommandService);
+			const widgetService = accessor.get(IChatWidgetService);
+
+			// Preserve the current input query when switching modes
+			const currentQuery = widgetService.lastFocusedWidget?.inputEditor.getValue() ?? '';
+			await commandService.executeCommand(CHAT_OPEN_ACTION_ID, { query: currentQuery, mode: 'Plan' } satisfies IChatViewOpenOptions);
+		}
+	});
 
 	registerAction2(class ToggleChatAction extends Action2 {
 		constructor() {
