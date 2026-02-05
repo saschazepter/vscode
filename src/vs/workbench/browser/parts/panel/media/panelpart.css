@@ -3,9 +3,85 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+/* Fluent 2 Motion: Panel entrance animations */
+@keyframes panelEnterFromBottom {
+	from {
+		opacity: 0;
+		transform: translateY(16px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+@keyframes panelEnterFromRight {
+	from {
+		opacity: 0;
+		transform: translateX(16px);
+	}
+	to {
+		opacity: 1;
+		transform: translateX(0);
+	}
+}
+
+@keyframes panelEnterFromLeft {
+	from {
+		opacity: 0;
+		transform: translateX(-16px);
+	}
+	to {
+		opacity: 1;
+		transform: translateX(0);
+	}
+}
+
+@keyframes panelEnterFromTop {
+	from {
+		opacity: 0;
+		transform: translateY(-16px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
 .monaco-workbench.nopanel .part.panel {
 	display: none !important;
 	visibility: hidden !important;
+}
+
+/* Fluent 2 Motion: Apply entrance animation when panel becomes visible */
+.monaco-workbench.panel-animating .part.panel.bottom {
+	animation: panelEnterFromBottom 400ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+	will-change: transform, opacity;
+}
+
+.monaco-workbench.panel-animating .part.panel.right {
+	animation: panelEnterFromRight 400ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+	will-change: transform, opacity;
+}
+
+.monaco-workbench.panel-animating .part.panel.left {
+	animation: panelEnterFromLeft 400ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+	will-change: transform, opacity;
+}
+
+.monaco-workbench.panel-animating .part.panel.top {
+	animation: panelEnterFromTop 400ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+	will-change: transform, opacity;
+}
+
+/* Respect reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+	.monaco-workbench.panel-animating .part.panel.bottom,
+	.monaco-workbench.panel-animating .part.panel.right,
+	.monaco-workbench.panel-animating .part.panel.left,
+	.monaco-workbench.panel-animating .part.panel.top {
+		animation: none;
+	}
 }
 
 .monaco-workbench .part.panel.bottom .composite.title {

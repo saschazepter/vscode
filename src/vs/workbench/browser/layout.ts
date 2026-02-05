@@ -94,9 +94,12 @@ interface ILayoutState {
 
 enum LayoutClasses {
 	SIDEBAR_HIDDEN = 'nosidebar',
+	SIDEBAR_ANIMATING = 'sidebar-animating',
 	MAIN_EDITOR_AREA_HIDDEN = 'nomaineditorarea',
 	PANEL_HIDDEN = 'nopanel',
+	PANEL_ANIMATING = 'panel-animating',
 	AUXILIARYBAR_HIDDEN = 'noauxiliarybar',
+	AUXILIARYBAR_ANIMATING = 'auxiliarybar-animating',
 	STATUSBAR_HIDDEN = 'nostatusbar',
 	FULLSCREEN = 'fullscreen',
 	MAXIMIZED = 'maximized',
@@ -1867,8 +1870,14 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 		// Adjust CSS
 		if (hidden) {
 			this.mainContainer.classList.add(LayoutClasses.SIDEBAR_HIDDEN);
+			this.mainContainer.classList.remove(LayoutClasses.SIDEBAR_ANIMATING);
 		} else {
 			this.mainContainer.classList.remove(LayoutClasses.SIDEBAR_HIDDEN);
+			// Trigger entrance animation
+			this.mainContainer.classList.add(LayoutClasses.SIDEBAR_ANIMATING);
+			setTimeout(() => {
+				this.mainContainer.classList.remove(LayoutClasses.SIDEBAR_ANIMATING);
+			}, 400);
 		}
 
 		// Propagate to grid
@@ -2011,8 +2020,15 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 		// Adjust CSS
 		if (hidden) {
 			this.mainContainer.classList.add(LayoutClasses.PANEL_HIDDEN);
+			this.mainContainer.classList.remove(LayoutClasses.PANEL_ANIMATING);
 		} else {
 			this.mainContainer.classList.remove(LayoutClasses.PANEL_HIDDEN);
+			// Trigger entrance animation by adding animation class
+			this.mainContainer.classList.add(LayoutClasses.PANEL_ANIMATING);
+			// Remove animation class after animation completes to allow re-triggering
+			setTimeout(() => {
+				this.mainContainer.classList.remove(LayoutClasses.PANEL_ANIMATING);
+			}, 400);
 		}
 
 		// If maximized and in process of hiding, unmaximize FIRST before
@@ -2205,8 +2221,14 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 		// Adjust CSS
 		if (hidden) {
 			this.mainContainer.classList.add(LayoutClasses.AUXILIARYBAR_HIDDEN);
+			this.mainContainer.classList.remove(LayoutClasses.AUXILIARYBAR_ANIMATING);
 		} else {
 			this.mainContainer.classList.remove(LayoutClasses.AUXILIARYBAR_HIDDEN);
+			// Trigger entrance animation
+			this.mainContainer.classList.add(LayoutClasses.AUXILIARYBAR_ANIMATING);
+			setTimeout(() => {
+				this.mainContainer.classList.remove(LayoutClasses.AUXILIARYBAR_ANIMATING);
+			}, 400);
 		}
 
 		// Propagate to grid

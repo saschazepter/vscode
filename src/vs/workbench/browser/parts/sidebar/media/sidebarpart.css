@@ -3,9 +3,51 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+/* Fluent 2 Motion: Sidebar entrance animation */
+@keyframes sidebarEnterFromLeft {
+	from {
+		opacity: 0;
+		transform: translateX(-16px);
+	}
+	to {
+		opacity: 1;
+		transform: translateX(0);
+	}
+}
+
+@keyframes sidebarEnterFromRight {
+	from {
+		opacity: 0;
+		transform: translateX(16px);
+	}
+	to {
+		opacity: 1;
+		transform: translateX(0);
+	}
+}
+
 .monaco-workbench.nosidebar > .part.sidebar {
 	display: none !important;
 	visibility: hidden !important;
+}
+
+/* Fluent 2 Motion: Apply entrance animation when sidebar becomes visible */
+.monaco-workbench.sidebar-animating .part.sidebar.left {
+	animation: sidebarEnterFromLeft 400ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+	will-change: transform, opacity;
+}
+
+.monaco-workbench.sidebar-animating .part.sidebar.right {
+	animation: sidebarEnterFromRight 400ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+	will-change: transform, opacity;
+}
+
+/* Respect reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+	.monaco-workbench.sidebar-animating .part.sidebar.left,
+	.monaco-workbench.sidebar-animating .part.sidebar.right {
+		animation: none;
+	}
 }
 
 .monaco-workbench .part.sidebar .title-actions .actions-container {
