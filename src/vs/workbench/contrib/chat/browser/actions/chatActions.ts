@@ -495,7 +495,6 @@ export function registerChatActions() {
 	// OpenPlanModeAction: Unlike built-in modes (Ask, Edit, Agent), Plan is a custom mode
 	// that may or may not exist depending on workspace configuration. This action uses
 	// a different pattern to dynamically look up the Plan mode and handle its absence gracefully.
-	// No default keybinding is provided to avoid conflicts; users can configure their own.
 	registerAction2(class OpenPlanModeAction extends Action2 {
 		static readonly ID = 'workbench.action.chat.openPlan';
 		constructor() {
@@ -504,6 +503,11 @@ export function registerChatActions() {
 				title: localize2('openChatPlan', "Open Chat (Plan)"),
 				f1: true,
 				category: CHAT_CATEGORY,
+				keybinding: {
+					weight: KeybindingWeight.WorkbenchContrib,
+					primary: KeyMod.Shift | KeyCode.Tab,
+					when: ChatContextKeys.inChatSession,
+				}
 			});
 		}
 
