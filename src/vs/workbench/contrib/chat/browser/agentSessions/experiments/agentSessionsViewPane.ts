@@ -41,6 +41,8 @@ import { PromptsType } from '../../../common/promptSyntax/promptTypes.js';
 import { ILanguageModelsService } from '../../../common/languageModels.js';
 import { IMcpService } from '../../../../mcp/common/mcpTypes.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../../../platform/storage/common/storage.js';
+import { IWorkspaceContextService } from '../../../../../../platform/workspace/common/workspace.js';
+import { IAgentWorkbenchWorkspaceService } from '../../../../../services/agentSessions/browser/agentWorkbenchWorkspaceService.js';
 
 interface IShortcutItem {
 	readonly label: string;
@@ -78,6 +80,8 @@ export class AgentSessionsViewPane extends ViewPane {
 		@ILanguageModelsService private readonly languageModelsService: ILanguageModelsService,
 		@IMcpService private readonly mcpService: IMcpService,
 		@IStorageService private readonly storageService: IStorageService,
+		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
+		@IAgentWorkbenchWorkspaceService private readonly agentWorkbenchWorkspaceService: IAgentWorkbenchWorkspaceService,
 	) {
 		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
 
@@ -100,6 +104,9 @@ export class AgentSessionsViewPane extends ViewPane {
 			this.mcpService.servers.read(reader);
 			this.updateCounts();
 		}));
+
+		// Listen to workspace folder changes to update counts (for workspace filtering)
+		this._register(this.agentWorkbenchWorkspaceService.onDidChangeActiveWorkspaceFolder(() => this.updateCounts()));
 	}
 
 	protected override renderBody(parent: HTMLElement): void {
@@ -259,12 +266,47 @@ export class AgentSessionsViewPane extends ViewPane {
 			this.promptsService.listPromptFilesForStorage(promptType, PromptsStorage.user, CancellationToken.None),
 			this.promptsService.listPromptFilesForStorage(promptType, PromptsStorage.extension, CancellationToken.None),
 		]);
-		return workspaceItems.length + userItems.length + extensionItems.length;
+
+		// Filter local items by active workspace folder when in agent sessions workspace
+		const activeWorkspaceFolderUri = this.workspaceContextService.getWorkspace().isAgentSessionsWorkspace
+			? this.agentWorkbenchWorkspaceService.activeWorkspaceFolderUri
+			: undefined;
+
+		let filteredWorkspaceItems = workspaceItems;
+		if (activeWorkspaceFolderUri) {
+			filteredWorkspaceItems = workspaceItems.filter(item => {
+				const itemFolder = this.workspaceContextService.getWorkspaceFolder(item.uri);
+				return itemFolder?.uri.toString() === activeWorkspaceFolderUri.toString();
+			});
+		}
+
+		return filteredWorkspaceItems.length + userItems.length + extensionItems.length;
 	}
 
 	private async getSkillCount(): Promise<number> {
 		const skills = await this.promptsService.findAgentSkills(CancellationToken.None);
-		return skills?.length || 0;
+		if (!skills) {
+			return 0;
+		}
+
+		// Filter skills by active workspace folder when in agent sessions workspace
+		const activeWorkspaceFolderUri = this.workspaceContextService.getWorkspace().isAgentSessionsWorkspace
+			? this.agentWorkbenchWorkspaceService.activeWorkspaceFolderUri
+			: undefined;
+
+		if (activeWorkspaceFolderUri) {
+			const filteredSkills = skills.filter(skill => {
+				// Only filter local skills; user and extension skills are always included
+				if (skill.storage !== PromptsStorage.local) {
+					return true;
+				}
+				const skillFolder = this.workspaceContextService.getWorkspaceFolder(skill.uri);
+				return skillFolder?.uri.toString() === activeWorkspaceFolderUri.toString();
+			});
+			return filteredSkills.length;
+		}
+
+		return skills.length;
 	}
 
 	private async openAICustomizationSection(sectionId: AICustomizationManagementSection): Promise<void> {
@@ -304,6 +346,10 @@ export class AgentSessionsViewPane extends ViewPane {
 		super.focus();
 
 		this.sessionsControl?.focus();
+	}
+
+	override getOptimalWidth(): number {
+		return 220;
 	}
 
 	refresh(): void {

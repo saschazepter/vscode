@@ -169,7 +169,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 			{ id: AICustomizationManagementSection.Prompts, label: localize('prompts', "Prompts"), icon: promptIcon },
 			{ id: AICustomizationManagementSection.Hooks, label: localize('hooks', "Hooks"), icon: hookIcon },
 			{ id: AICustomizationManagementSection.McpServers, label: localize('mcpServers', "MCP Servers"), icon: Codicon.server },
-			{ id: AICustomizationManagementSection.Models, label: localize('models', "Models"), icon: Codicon.wand },
+			{ id: AICustomizationManagementSection.Models, label: localize('models', "Models"), icon: Codicon.vm },
 		);
 
 		// Restore selected section from storage
@@ -262,7 +262,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 				};
 			case AICustomizationManagementSection.Memory:
 				return {
-					title: localize('memoryTitle', "Memory"),
+					title: localize('memorySuggestionsTitle', "Memory Suggestions"),
 					// Memory has its own controls in the widget
 				};
 		}
@@ -392,7 +392,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 		const memoryIcon = DOM.append(this.memorySidebarItem, $('.section-icon'));
 		memoryIcon.classList.add(...ThemeIcon.asClassNameArray(memoryIcon_));
 		const memoryLabel = DOM.append(this.memorySidebarItem, $('.section-label'));
-		memoryLabel.textContent = localize('memory', "Memory");
+		memoryLabel.textContent = localize('memorySuggestions', "Memory Suggestions");
 
 		// Select Memory if it was the saved selection
 		if (this.selectedSection === AICustomizationManagementSection.Memory) {

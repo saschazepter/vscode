@@ -38,6 +38,7 @@ import { IWorkspaceContextService } from '../../../../../platform/workspace/comm
 import { IPathService } from '../../../../services/path/common/pathService.js';
 import { ILabelService } from '../../../../../platform/label/common/label.js';
 import { parseAllHookFiles } from '../promptSyntax/hookUtils.js';
+import { IAgentWorkbenchWorkspaceService } from '../../../../services/agentSessions/browser/agentWorkbenchWorkspaceService.js';
 
 const $ = DOM.$;
 
@@ -247,10 +248,14 @@ export class AICustomizationListWidget extends Disposable {
 		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
 		@IPathService private readonly pathService: IPathService,
 		@ILabelService private readonly labelService: ILabelService,
+		@IAgentWorkbenchWorkspaceService private readonly agentWorkbenchWorkspaceService: IAgentWorkbenchWorkspaceService,
 	) {
 		super();
 		this.element = $('.ai-customization-list-widget');
 		this.create();
+
+		// Listen for workspace folder changes to refresh items
+		this._register(this.agentWorkbenchWorkspaceService.onDidChangeActiveWorkspaceFolder(() => this.refresh()));
 	}
 
 	private create(): void {
@@ -567,12 +572,28 @@ export class AICustomizationListWidget extends Disposable {
 			items.push(...extensionItems.map(mapToListItem));
 		}
 
-		// Sort items by name
-		items.sort((a, b) => a.name.localeCompare(b.name));
+		// Filter local items by active workspace folder when in agent sessions workspace
+		const activeWorkspaceFolderUri = this.workspaceContextService.getWorkspace().isAgentSessionsWorkspace
+			? this.agentWorkbenchWorkspaceService.activeWorkspaceFolderUri
+			: undefined;
 
-		this.allItems = items;
+		const filteredItems = activeWorkspaceFolderUri
+			? items.filter(item => {
+				// Only filter local items; user and extension items are always included
+				if (item.storage !== PromptsStorage.local) {
+					return true;
+				}
+				const itemFolder = this.workspaceContextService.getWorkspaceFolder(item.uri);
+				return itemFolder?.uri.toString() === activeWorkspaceFolderUri.toString();
+			})
+			: items;
+
+		// Sort items by name
+		filteredItems.sort((a, b) => a.name.localeCompare(b.name));
+
+		this.allItems = filteredItems;
 		this.filterItems();
-		this._onDidChangeItemCount.fire(items.length);
+		this._onDidChangeItemCount.fire(filteredItems.length);
 	}
 
 	/**
