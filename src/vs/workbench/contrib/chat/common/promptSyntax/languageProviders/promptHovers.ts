@@ -15,7 +15,7 @@ import { ILanguageModelToolsService, isToolSet, IToolSet } from '../../tools/lan
 import { IChatModeService, isBuiltinChatMode } from '../../chatModes.js';
 import { getPromptsTypeForLanguageId, PromptsType } from '../promptTypes.js';
 import { IPromptsService } from '../service/promptsService.js';
-import { IHeaderAttribute, PromptBody, PromptHeader, PromptHeaderAttributes } from '../promptFileParser.js';
+import { IHeaderAttribute, parseCommaSeparatedList, PromptBody, PromptHeader, PromptHeaderAttributes } from '../promptFileParser.js';
 import { getAttributeDescription, isGithubTarget } from './promptValidator.js';
 
 export class PromptHoverProvider implements HoverProvider {
@@ -94,8 +94,12 @@ export class PromptHoverProvider implements HoverProvider {
 	}
 
 	private getToolHover(node: IHeaderAttribute, position: Position, baseMessage: string): Hover | undefined {
-		if (node.value.type === 'array') {
-			for (const toolName of node.value.items) {
+		let value = node.value;
+		if (value.type === 'string') {
+			value = parseCommaSeparatedList(value);
+		}
+		if (value.type === 'array') {
+			for (const toolName of value.items) {
 				if (toolName.type === 'string' && toolName.range.containsPosition(position)) {
 					const description = this.getToolHoverByName(toolName.value, toolName.range);
 					if (description) {

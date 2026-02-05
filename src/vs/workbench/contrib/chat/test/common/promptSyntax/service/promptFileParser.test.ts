@@ -8,9 +8,9 @@ import assert from 'assert';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../../base/test/common/utils.js';
 import { Range } from '../../../../../../../editor/common/core/range.js';
 import { URI } from '../../../../../../../base/common/uri.js';
-import { PromptFileParser } from '../../../../common/promptSyntax/promptFileParser.js';
+import { IStringValue, parseCommaSeparatedList, PromptFileParser } from '../../../../common/promptSyntax/promptFileParser.js';
 
-suite('NewPromptsParser', () => {
+suite('PromptFileParser', () => {
 	ensureNoDisposablesAreLeakedInTestSuite();
 
 	test('agent', async () => {
@@ -372,4 +372,94 @@ suite('NewPromptsParser', () => {
 		assert.deepEqual(result.header.description, 'Agent without restrictions');
 		assert.deepEqual(result.header.agents, undefined);
 	});
+
+	suite('parseCommaSeparatedList', () => {
+
+		function assertCommaSeparatedList(input: string, expected: IStringValue[]): void {
+			const actual = parseCommaSeparatedList({ type: 'string', value: input, range: new Range(1, 1, 1, input.length + 1) });
+			assert.deepStrictEqual(actual.items, expected);
+		}
+
+		test('simple unquoted values', () => {
+			assertCommaSeparatedList('a, b, c', [
+				{ type: 'string', value: 'a', range: new Range(1, 1, 1, 2) },
+				{ type: 'string', value: 'b', range: new Range(1, 4, 1, 5) },
+				{ type: 'string', value: 'c', range: new Range(1, 7, 1, 8) }
+			]);
+		});
+
+		test('unquoted values without spaces', () => {
+			assertCommaSeparatedList('foo,bar,baz', [
+				{ type: 'string', value: 'foo', range: new Range(1, 1, 1, 4) },
+				{ type: 'string', value: 'bar', range: new Range(1, 5, 1, 8) },
+				{ type: 'string', value: 'baz', range: new Range(1, 9, 1, 12) }
+			]);
+		});
+
+		test('double quoted values', () => {
+			assertCommaSeparatedList('"hello", "world"', [
+				{ type: 'string', value: 'hello', range: new Range(1, 1, 1, 8) },
+				{ type: 'string', value: 'world', range: new Range(1, 10, 1, 17) }
+			]);
+		});
+
+		test('single quoted values', () => {
+			assertCommaSeparatedList(`'one', 'two'`, [
+				{ type: 'string', value: 'one', range: new Range(1, 1, 1, 6) },
+				{ type: 'string', value: 'two', range: new Range(1, 8, 1, 13) }
+			]);
+		});
+
+		test('mixed quoted and unquoted values', () => {
+			assertCommaSeparatedList('unquoted, "double", \'single\'', [
+				{ type: 'string', value: 'unquoted', range: new Range(1, 1, 1, 9) },
+				{ type: 'string', value: 'double', range: new Range(1, 11, 1, 19) },
+				{ type: 'string', value: 'single', range: new Range(1, 21, 1, 29) }
+			]);
+		});
+
+		test('quoted values with commas inside', () => {
+			assertCommaSeparatedList('"a,b", "c,d"', [
+				{ type: 'string', value: 'a,b', range: new Range(1, 1, 1, 6) },
+				{ type: 'string', value: 'c,d', range: new Range(1, 8, 1, 13) }
+			]);
+		});
+
+		test('empty string', () => {
+			assertCommaSeparatedList('', []);
+		});
+
+		test('single value', () => {
+			assertCommaSeparatedList('single', [
+				{ type: 'string', value: 'single', range: new Range(1, 1, 1, 7) }
+			]);
+		});
+
+		test('values with extra whitespace', () => {
+			assertCommaSeparatedList('  a  ,  b  ,  c  ', [
+				{ type: 'string', value: 'a', range: new Range(1, 3, 1, 4) },
+				{ type: 'string', value: 'b', range: new Range(1, 9, 1, 10) },
+				{ type: 'string', value: 'c', range: new Range(1, 15, 1, 16) }
+			]);
+		});
+
+		test('quoted value with spaces', () => {
+			assertCommaSeparatedList('"hello world", "foo bar"', [
+				{ type: 'string', value: 'hello world', range: new Range(1, 1, 1, 14) },
+				{ type: 'string', value: 'foo bar', range: new Range(1, 16, 1, 25) }
+			]);
+		});
+
+		test('with position offset', () => {
+			// Simulate parsing a list that starts at line 5, character 10
+			const result = parseCommaSeparatedList({ type: 'string', value: 'a, b, c', range: new Range(6, 11, 6, 18) });
+			assert.deepStrictEqual(result.items, [
+				{ type: 'string', value: 'a', range: new Range(6, 11, 6, 12) },
+				{ type: 'string', value: 'b', range: new Range(6, 14, 6, 15) },
+				{ type: 'string', value: 'c', range: new Range(6, 17, 6, 18) }
+			]);
+		});
+
+	});
+
 });

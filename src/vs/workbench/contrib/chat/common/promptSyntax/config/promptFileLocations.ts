@@ -80,6 +80,11 @@ export const LEGACY_MODE_DEFAULT_SOURCE_FOLDER = '.github/chatmodes';
 export const AGENTS_SOURCE_FOLDER = '.github/agents';
 
 /**
+ * Claude agents folder.
+ */
+export const CLAUDE_AGENTS_SOURCE_FOLDER = '.claude/agents';
+
+/**
  * Hooks folder.
  */
 export const HOOKS_SOURCE_FOLDER = '.github/hooks';
@@ -168,6 +173,7 @@ export const DEFAULT_PROMPT_SOURCE_FOLDERS: readonly IPromptSourceFolder[] = [
  */
 export const DEFAULT_AGENT_SOURCE_FOLDERS: readonly IPromptSourceFolder[] = [
 	{ path: AGENTS_SOURCE_FOLDER, source: PromptFileSource.GitHubWorkspace, storage: PromptsStorage.local },
+	{ path: CLAUDE_AGENTS_SOURCE_FOLDER, source: PromptFileSource.ClaudeWorkspace, storage: PromptsStorage.local },
 ];
 
 /**

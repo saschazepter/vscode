@@ -16,7 +16,7 @@ import { ChatModeKind } from '../../constants.js';
 import { ILanguageModelChatMetadata, ILanguageModelsService } from '../../languageModels.js';
 import { ILanguageModelToolsService, SpecedToolAliases } from '../../tools/languageModelToolsService.js';
 import { getPromptsTypeForLanguageId, PromptsType } from '../promptTypes.js';
-import { GithubPromptHeaderAttributes, IArrayValue, IHeaderAttribute, IStringValue, ParsedPromptFile, PromptHeader, PromptHeaderAttributes, Target } from '../promptFileParser.js';
+import { GithubPromptHeaderAttributes, IArrayValue, IHeaderAttribute, IStringValue, parseCommaSeparatedList, ParsedPromptFile, PromptHeader, PromptHeaderAttributes, Target } from '../promptFileParser.js';
 import { Disposable, DisposableStore, toDisposable } from '../../../../../../base/common/lifecycle.js';
 import { Delayer } from '../../../../../../base/common/async.js';
 import { ResourceMap } from '../../../../../../base/common/map.js';
@@ -161,9 +161,10 @@ export class PromptValidator {
 		if (!header) {
 			return;
 		}
+		const target = header.target;
 		const attributes = header.attributes;
-		const isGitHubTarget = isGithubTarget(promptType, header.target);
-		this.checkForInvalidArguments(attributes, promptType, isGitHubTarget, report);
+		const isGitHubTarget = isGithubTarget(promptType, target);
+		this.checkForInvalidArguments(attributes, promptType, target, report);
 
 		this.validateName(attributes, isGitHubTarget, report);
 		this.validateDescription(attributes, report);
@@ -171,7 +172,7 @@ export class PromptValidator {
 		switch (promptType) {
 			case PromptsType.prompt: {
 				const agent = this.validateAgent(attributes, report);
-				this.validateTools(attributes, agent?.kind ?? ChatModeKind.Agent, header.target, report);
+				this.validateTools(attributes, agent?.kind ?? ChatModeKind.Agent, target, report);
 				this.validateModel(attributes, agent?.kind ?? ChatModeKind.Agent, report);
 				break;
 			}
@@ -201,19 +202,21 @@ export class PromptValidator {
 		}
 	}
 
-	private checkForInvalidArguments(attributes: IHeaderAttribute[], promptType: PromptsType, isGitHubTarget: boolean, report: (markers: IMarkerData) => void): void {
-		const validAttributeNames = getValidAttributeNames(promptType, true, isGitHubTarget);
-		const validGithubCopilotAttributeNames = new Lazy(() => new Set(getValidAttributeNames(promptType, false, true)));
+	private checkForInvalidArguments(attributes: IHeaderAttribute[], promptType: PromptsType, target: string | undefined, report: (markers: IMarkerData) => void): void {
+		const validAttributeNames = getValidAttributeNames(promptType, true, target);
+		const validGithubCopilotAttributeNames = new Lazy(() => new Set(getValidAttributeNames(promptType, false, Target.GitHubCopilot)));
 		for (const attribute of attributes) {
 			if (!validAttributeNames.includes(attribute.key)) {
-				const supportedNames = new Lazy(() => getValidAttributeNames(promptType, false, isGitHubTarget).sort().join(', '));
+				const supportedNames = new Lazy(() => getValidAttributeNames(promptType, false, target).sort().join(', '));
 				switch (promptType) {
 					case PromptsType.prompt:
 						report(toMarker(localize('promptValidator.unknownAttribute.prompt', "Attribute '{0}' is not supported in prompt files. Supported: {1}.", attribute.key, supportedNames.value), attribute.range, MarkerSeverity.Warning));
 						break;
 					case PromptsType.agent:
-						if (isGitHubTarget) {
+						if (target === Target.GitHubCopilot) {
 							report(toMarker(localize('promptValidator.unknownAttribute.github-agent', "Attribute '{0}' is not supported in custom GitHub Copilot agent files. Supported: {1}.", attribute.key, supportedNames.value), attribute.range, MarkerSeverity.Warning));
+						} else if (target === Target.Claude) {
+							// ignore for now as we don't have a full list of supported attributes for claude target
 						} else {
 							if (validGithubCopilotAttributeNames.value.has(attribute.key)) {
 								report(toMarker(localize('promptValidator.ignoredAttribute.vscode-agent', "Attribute '{0}' is ignored when running locally in VS Code.", attribute.key), attribute.range, MarkerSeverity.Info));
@@ -393,17 +396,18 @@ export class PromptValidator {
 		if (agentKind !== ChatModeKind.Agent) {
 			report(toMarker(localize('promptValidator.toolsOnlyInAgent', "The 'tools' attribute is only supported when using agents. Attribute will be ignored."), attribute.range, MarkerSeverity.Warning));
 		}
-
-		switch (attribute.value.type) {
-			case 'array':
-				if (target === Target.GitHubCopilot) {
-					// no validation for github-copilot target
-				} else {
-					this.validateVSCodeTools(attribute.value, target, report);
-				}
-				break;
-			default:
-				report(toMarker(localize('promptValidator.toolsMustBeArrayOrMap', "The 'tools' attribute must be an array."), attribute.value.range, MarkerSeverity.Error));
+		let value = attribute.value;
+		if (value.type === 'string') {
+			value = parseCommaSeparatedList(value);
+		}
+		if (value.type !== 'array') {
+			report(toMarker(localize('promptValidator.toolsMustBeArrayOrMap', "The 'tools' attribute must be an array or a comma separated string."), attribute.value.range, MarkerSeverity.Error));
+			return;
+		}
+		if (target === Target.GitHubCopilot || target === Target.Claude) {
+			// no validation for github-copilot target and claude
+		} else {
+			this.validateVSCodeTools(value, target, report);
 		}
 	}
 
@@ -637,9 +641,25 @@ const recommendedAttributeNames: Record<PromptsType, string[]> = {
 	[PromptsType.hook]: [], // hooks are JSON files, not markdown with YAML frontmatter
 };
 
-export function getValidAttributeNames(promptType: PromptsType, includeNonRecommended: boolean, isGitHubTarget: boolean): string[] {
-	if (isGitHubTarget && promptType === PromptsType.agent) {
-		return githubCopilotAgentAttributeNames;
+const claudeAgentAttributes: Record<string, string> = {
+  'name': localize('attribute.name', "Unique identifier using lowercase letters and hyphens (required)"),
+  'description': localize('attribute.description', "When Claude should delegate to this subagent (required)"),
+  'tools': localize('attribute.tools', "Array of tools the subagent can use. Inherits all tools if omitted"),
+  'disallowedTools': localize('attribute.disallowedTools', "Tools to deny, removed from inherited or specified list"),
+  'model': localize('attribute.model', "Model to use: sonnet, opus, haiku, or inherit. Defaults to inherit"),
+  'permissionMode': localize('attribute.permissionMode', "Permission mode: default, acceptEdits, dontAsk, bypassPermissions, or plan"),
+  'skills': localize('attribute.skills', "Skills to load into the subagent's context at startup"),
+  'hooks': localize('attribute.hooks', "Lifecycle hooks scoped to this subagent"),
+  'memory': localize('attribute.memory', "Persistent memory scope: user, project, or local. Enables cross-session learning")
+};
+
+export function getValidAttributeNames(promptType: PromptsType, includeNonRecommended: boolean, target: string | undefined): string[] {
+	if (target === Target.Claude) {
+		return Object.keys(claudeAgentAttributes);
+	} else if (target === Target.GitHubCopilot) {
+		if (promptType === PromptsType.agent) {
+			return githubCopilotAgentAttributeNames;
+		}
 	}
 	return includeNonRecommended ? allAttributeNames[promptType] : recommendedAttributeNames[promptType];
 }
@@ -719,6 +739,22 @@ export function getAttributeDescription(attributeName: string, promptType: Promp
 export const knownGithubCopilotTools = [
 	SpecedToolAliases.execute, SpecedToolAliases.read, SpecedToolAliases.edit, SpecedToolAliases.search, SpecedToolAliases.agent,
 ];
+
+export const knownClaudeTools = {
+	'Bash': localize('claude.bash', 'Execute shell commands'),
+	'Edit': localize('claude.edit', 'Make targeted file edits'),
+	'Glob': localize('claude.glob', 'Find files by pattern'),
+	'Grep': localize('claude.grep', 'Search file contents with regex'),
+	'Read': localize('claude.read', 'Read file contents'),
+	'Write': localize('claude.write', 'Create/overwrite files'),
+	'WebFetch': localize('claude.webFetch', 'Fetch URL content'),
+	'WebSearch': localize('claude.webSearch', 'Perform web searches'),
+	'Task': localize('claude.task', 'Run subagents for complex tasks'),
+	'Skill': localize('claude.skill', 'Execute skills'),
+	'LSP': localize('claude.lsp', 'Code intelligence (requires plugin)'),
+	'NotebookEdit': localize('claude.notebookEdit', 'Modify Jupyter notebooks'),
+	'AskUserQuestion': localize('claude.askUserQuestion', 'Ask multiple-choice questions')
+};
 
 export function isGithubTarget(promptType: PromptsType, target: string | undefined): boolean {
 	return promptType === PromptsType.agent && target === Target.GitHubCopilot;

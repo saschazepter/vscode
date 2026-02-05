@@ -15,8 +15,8 @@ import { IChatModeService } from '../../chatModes.js';
 import { getPromptsTypeForLanguageId, PromptsType } from '../promptTypes.js';
 import { IPromptsService } from '../service/promptsService.js';
 import { Iterable } from '../../../../../../base/common/iterator.js';
-import { IHeaderAttribute, PromptHeader, PromptHeaderAttributes } from '../promptFileParser.js';
-import { getAttributeDescription, getValidAttributeNames, isGithubTarget, knownGithubCopilotTools } from './promptValidator.js';
+import { IHeaderAttribute, PromptHeader, PromptHeaderAttributes, Target } from '../promptFileParser.js';
+import { getAttributeDescription, getValidAttributeNames, isGithubTarget, knownClaudeTools, knownGithubCopilotTools } from './promptValidator.js';
 import { localize } from '../../../../../../nls.js';
 
 export class PromptHeaderAutocompletion implements CompletionItemProvider {
@@ -152,11 +152,12 @@ export class PromptHeaderAutocompletion implements CompletionItemProvider {
 		if (!attribute) {
 			return undefined;
 		}
-
-		const isGitHubTarget = isGithubTarget(promptType, header.target);
-		if (!getValidAttributeNames(promptType, true, isGitHubTarget).includes(attribute.key)) {
+		const target = header.target;
+		if (!getValidAttributeNames(promptType, true, target).includes(attribute.key)) {
 			return undefined;
 		}
+
+		const isVSCodeAgent = promptType === PromptsType.agent && (target === Target.VSCode || target === undefined);
 
 		if (promptType === PromptsType.prompt || promptType === PromptsType.agent) {
 			if (attribute.key === PromptHeaderAttributes.model) {
@@ -169,16 +170,23 @@ export class PromptHeaderAutocompletion implements CompletionItemProvider {
 			if (attribute.key === PromptHeaderAttributes.tools) {
 				if (attribute.value.type === 'array') {
 					// if the position is inside the tools metadata, we provide tool name completions
-					const getValues = async () => isGitHubTarget ? knownGithubCopilotTools : Array.from(this.languageModelToolsService.getFullReferenceNames());
+					const getValues = async () => {
+						if (target === Target.GitHubCopilot) {
+							// for GitHub Copilot agent files, we only suggest the known set of tools that are supported by GitHub Copilot, instead of all tools that the user has defined, because many tools won't work with GitHub Copilot and it would be frustrating for users to select a tool that doesn't work
+							return knownGithubCopilotTools;
+						} else if (target === Target.Claude) {
+							return Object.keys(knownClaudeTools);
+						} else {
+							return Array.from(this.languageModelToolsService.getFullReferenceNames());
+						}
+					};
 					return this.provideArrayCompletions(model, position, attribute, getValues);
 				}
 			}
 		}
-		if (promptType === PromptsType.agent) {
-			if (attribute.key === PromptHeaderAttributes.agents && !isGitHubTarget) {
-				if (attribute.value.type === 'array') {
-					return this.provideArrayCompletions(model, position, attribute, async () => (await this.promptsService.getCustomAgents(CancellationToken.None)).map(agent => agent.name));
-				}
+		if (attribute.key === PromptHeaderAttributes.agents && isVSCodeAgent) {
+			if (attribute.value.type === 'array') {
+				return this.provideArrayCompletions(model, position, attribute, async () => (await this.promptsService.getCustomAgents(CancellationToken.None)).map(agent => agent.name));
 			}
 		}
 		const lineContent = model.getLineContent(attribute.range.startLineNumber);
@@ -193,7 +201,7 @@ export class PromptHeaderAutocompletion implements CompletionItemProvider {
 			};
 			suggestions.push(item);
 		}
-		if (attribute.key === PromptHeaderAttributes.handOffs && (promptType === PromptsType.agent)) {
+		if (attribute.key === PromptHeaderAttributes.handOffs && isVSCodeAgent) {
 			const value = [
 				'',
 				'  - label: Start Implementation',
