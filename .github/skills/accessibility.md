@@ -46,9 +46,9 @@ An accessibility help dialog tells the user what the feature does, which keyboar
 ### Example skeleton
 
 ```ts
-import { AccessibleViewType, AccessibleContentProvider, AccessibleViewProviderId, IAccessibleViewContentProvider, IAccessibleViewOptions } from '…/accessibleView.js';
-import { IAccessibleViewImplementation } from '…/accessibleViewRegistry.js';
-import { AccessibilityVerbositySettingId } from '…/accessibilityConfiguration.js';
+import { AccessibleViewType, AccessibleContentProvider, AccessibleViewProviderId, IAccessibleViewContentProvider, IAccessibleViewOptions } from '../../../../platform/accessibility/browser/accessibleView.js';
+import { IAccessibleViewImplementation } from '../../../../platform/accessibility/browser/accessibleViewRegistry.js';
+import { AccessibilityVerbositySettingId } from '../../../../platform/accessibility/common/accessibilityConfiguration.js';
 
 export class MyFeatureAccessibilityHelp implements IAccessibleViewImplementation {
 	readonly priority = 100;
