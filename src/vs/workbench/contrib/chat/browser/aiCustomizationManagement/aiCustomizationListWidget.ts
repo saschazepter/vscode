@@ -42,6 +42,7 @@ export interface IAICustomizationListItem {
 	readonly id: string;
 	readonly uri: URI;
 	readonly name: string;
+	readonly filename: string;
 	readonly description?: string;
 	readonly storage: PromptsStorage;
 	readonly promptType: PromptsType;
@@ -64,7 +65,7 @@ class AICustomizationListDelegate implements IListVirtualDelegate<IAICustomizati
 
 interface IAICustomizationItemTemplateData {
 	readonly container: HTMLElement;
-	readonly icon: HTMLElement;
+	readonly actionsContainer: HTMLElement;
 	readonly nameLabel: HighlightedLabel;
 	readonly description: HighlightedLabel;
 	readonly storageBadge: HTMLElement;
@@ -89,17 +90,18 @@ class AICustomizationItemRenderer implements IListRenderer<IAICustomizationListI
 		container.classList.add('ai-customization-list-item');
 
 		const leftSection = DOM.append(container, $('.item-left'));
-		const icon = DOM.append(leftSection, $('.item-icon'));
+		// Storage badge on left (shows workspace/user/extension)
+		const storageBadge = DOM.append(leftSection, $('.storage-badge'));
 		const textContainer = DOM.append(leftSection, $('.item-text'));
 		const nameLabel = disposables.add(new HighlightedLabel(DOM.append(textContainer, $('.item-name'))));
 		const description = disposables.add(new HighlightedLabel(DOM.append(textContainer, $('.item-description'))));
 
-		const rightSection = DOM.append(container, $('.item-right'));
-		const storageBadge = DOM.append(rightSection, $('.storage-badge'));
+		// Right section for actions (hover-visible)
+		const actionsContainer = DOM.append(container, $('.item-right'));
 
 		return {
 			container,
-			icon,
+			actionsContainer,
 			nameLabel,
 			description,
 			storageBadge,
@@ -111,34 +113,16 @@ class AICustomizationItemRenderer implements IListRenderer<IAICustomizationListI
 	renderElement(element: IAICustomizationListItem, index: number, templateData: IAICustomizationItemTemplateData): void {
 		templateData.elementDisposables.clear();
 
-		// Set icon based on prompt type
-		let icon: ThemeIcon;
-		switch (element.promptType) {
-			case PromptsType.agent:
-				icon = agentIcon;
-				break;
-			case PromptsType.skill:
-				icon = skillIcon;
-				break;
-			case PromptsType.instructions:
-				icon = instructionsIcon;
-				break;
-			case PromptsType.prompt:
-			default:
-				icon = promptIcon;
-				break;
-		}
-
-		templateData.icon.className = 'item-icon';
-		templateData.icon.classList.add(...ThemeIcon.asClassNameArray(icon));
-
 		// Name with highlights
 		templateData.nameLabel.set(element.name, element.nameMatches);
 
-		// Description with highlights
-		if (element.description) {
-			templateData.description.set(element.description, element.descriptionMatches);
+		// Description - show either description or filename as secondary text
+		const secondaryText = element.description || element.filename;
+		if (secondaryText) {
+			templateData.description.set(secondaryText, element.description ? element.descriptionMatches : undefined);
 			templateData.description.element.style.display = '';
+			// Style differently for filename vs description
+			templateData.description.element.classList.toggle('is-filename', !element.description);
 		} else {
 			templateData.description.set('', undefined);
 			templateData.description.element.style.display = 'none';
@@ -166,13 +150,16 @@ class AICustomizationItemRenderer implements IListRenderer<IAICustomizationListI
 		templateData.storageBadge.classList.add(...ThemeIcon.asClassNameArray(storageBadgeIcon));
 		templateData.storageBadge.title = storageBadgeLabel;
 
-		// Hover tooltip
-		const tooltip = element.description
-			? `${element.name}\n${element.description}\n\n${storageBadgeLabel}`
-			: `${element.name}\n\n${storageBadgeLabel}`;
+		// Build rich tooltip content
+		const tooltipLines: string[] = [element.name];
+		if (element.description) {
+			tooltipLines.push(element.description);
+		}
+		tooltipLines.push('');
+		tooltipLines.push(`${storageBadgeLabel} \u2022 ${element.filename}`);
 
 		templateData.elementDisposables.add(this.hoverService.setupDelayedHoverAtMouse(templateData.container, () => ({
-			content: tooltip,
+			content: tooltipLines.join('\n'),
 			appearance: {
 				compact: true,
 				skipFadeInAnimation: true,
@@ -421,36 +408,74 @@ export class AICustomizationListWidget extends Disposable {
 		const promptType = sectionToPromptType(this.currentSection);
 		const items: IAICustomizationListItem[] = [];
 
-		// For skills, use findAgentSkills which has the proper names from frontmatter
-		if (promptType === PromptsType.skill) {
+		if (promptType === PromptsType.agent) {
+			// Use getCustomAgents which has parsed name/description from frontmatter
+			const agents = await this.promptsService.getCustomAgents(CancellationToken.None);
+			for (const agent of agents) {
+				const filename = basename(agent.uri);
+				items.push({
+					id: agent.uri.toString(),
+					uri: agent.uri,
+					name: agent.name,
+					filename,
+					description: agent.description,
+					storage: agent.source.storage,
+					promptType,
+				});
+			}
+		} else if (promptType === PromptsType.skill) {
+			// Use findAgentSkills which has parsed name/description from frontmatter
 			const skills = await this.promptsService.findAgentSkills(CancellationToken.None);
 			for (const skill of skills || []) {
-				const skillName = skill.name || basename(dirname(skill.uri)) || basename(skill.uri);
+				const filename = basename(skill.uri);
+				const skillName = skill.name || basename(dirname(skill.uri)) || filename;
 				items.push({
 					id: skill.uri.toString(),
 					uri: skill.uri,
 					name: skillName,
+					filename,
 					description: skill.description,
 					storage: skill.storage,
 					promptType,
 				});
 			}
+		} else if (promptType === PromptsType.prompt) {
+			// Use getPromptSlashCommands which has parsed name/description from frontmatter
+			const commands = await this.promptsService.getPromptSlashCommands(CancellationToken.None);
+			for (const command of commands) {
+				const filename = basename(command.promptPath.uri);
+				items.push({
+					id: command.promptPath.uri.toString(),
+					uri: command.promptPath.uri,
+					name: command.name,
+					filename,
+					description: command.description,
+					storage: command.promptPath.storage,
+					promptType,
+				});
+			}
 		} else {
-			// For other types, fetch all storage locations
+			// For instructions, fetch all storage locations
 			const [workspaceItems, userItems, extensionItems] = await Promise.all([
 				this.promptsService.listPromptFilesForStorage(promptType, PromptsStorage.local, CancellationToken.None),
 				this.promptsService.listPromptFilesForStorage(promptType, PromptsStorage.user, CancellationToken.None),
 				this.promptsService.listPromptFilesForStorage(promptType, PromptsStorage.extension, CancellationToken.None),
 			]);
 
-			const mapToListItem = (item: IPromptPath): IAICustomizationListItem => ({
-				id: item.uri.toString(),
-				uri: item.uri,
-				name: item.name || basename(item.uri),
-				description: item.description,
-				storage: item.storage,
-				promptType,
-			});
+			const mapToListItem = (item: IPromptPath): IAICustomizationListItem => {
+				const filename = basename(item.uri);
+				// For instructions, derive a friendly name from filename
+				const friendlyName = item.name || this.getFriendlyName(filename);
+				return {
+					id: item.uri.toString(),
+					uri: item.uri,
+					name: friendlyName,
+					filename,
+					description: item.description,
+					storage: item.storage,
+					promptType,
+				};
+			};
 
 			items.push(...workspaceItems.map(mapToListItem));
 			items.push(...userItems.map(mapToListItem));
@@ -466,6 +491,25 @@ export class AICustomizationListWidget extends Disposable {
 	}
 
 	/**
+	 * Derives a friendly name from a filename by removing extension suffixes.
+	 */
+	private getFriendlyName(filename: string): string {
+		// Remove common prompt file extensions like .instructions.md, .prompt.md, etc.
+		let name = filename
+			.replace(/\.instructions\.md$/i, '')
+			.replace(/\.prompt\.md$/i, '')
+			.replace(/\.agent\.md$/i, '')
+			.replace(/\.md$/i, '');
+
+		// Convert kebab-case or snake_case to Title Case
+		name = name
+			.replace(/[-_]/g, ' ')
+			.replace(/\b\w/g, c => c.toUpperCase());
+
+		return name || filename;
+	}
+
+	/**
 	 * Filters items based on the current search query.
 	 */
 	private filterItems(): void {
@@ -478,8 +522,9 @@ export class AICustomizationListWidget extends Disposable {
 			for (const item of this.allItems) {
 				const nameMatches = matchesFuzzy(query, item.name, true);
 				const descriptionMatches = item.description ? matchesFuzzy(query, item.description, true) : null;
+				const filenameMatches = matchesFuzzy(query, item.filename, true);
 
-				if (nameMatches || descriptionMatches) {
+				if (nameMatches || descriptionMatches || filenameMatches) {
 					this.filteredItems.push({
 						...item,
 						nameMatches: nameMatches || undefined,

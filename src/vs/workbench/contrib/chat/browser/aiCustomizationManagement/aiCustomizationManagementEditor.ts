@@ -28,6 +28,8 @@ import { Button } from '../../../../../base/browser/ui/button/button.js';
 import { defaultButtonStyles } from '../../../../../platform/theme/browser/defaultStyles.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
+import { IOpenerService } from '../../../../../platform/opener/common/opener.js';
+import { URI } from '../../../../../base/common/uri.js';
 import { registerColor } from '../../../../../platform/theme/common/colorRegistry.js';
 import { PANEL_BORDER } from '../../../../common/theme.js';
 import { AICustomizationManagementEditorInput } from './aiCustomizationManagementEditorInput.js';
@@ -126,6 +128,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 	private promptsContentContainer!: HTMLElement;
 	private mcpContentContainer!: HTMLElement;
 	private modelsContentContainer!: HTMLElement;
+	private modelsHeaderElement!: HTMLElement;
 
 	private dimension: Dimension | undefined;
 	private readonly sections: ISectionItem[] = [];
@@ -146,6 +149,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 		@IContextKeyService contextKeyService: IContextKeyService,
 		@IEditorService private readonly editorService: IEditorService,
 		@ICommandService private readonly commandService: ICommandService,
+		@IOpenerService private readonly openerService: IOpenerService,
 	) {
 		super(AICustomizationManagementEditor.ID, group, telemetryService, themeService, storageService);
 
@@ -296,8 +300,9 @@ export class AICustomizationManagementEditor extends EditorPane {
 				if (height !== undefined) {
 					this.listWidget.layout(height - 16, width - 24); // Account for padding
 					this.mcpListWidget.layout(height - 16, width - 24); // Account for padding
-					// Models widget has its own internal padding calculation, pass width without extra subtraction
-					this.modelsWidget.layout(height - 16, width);
+					// Models widget has header, subtract header height
+					const modelsHeaderHeight = this.modelsHeaderElement?.offsetHeight || 80;
+					this.modelsWidget.layout(height - 16 - modelsHeaderHeight, width);
 				}
 			},
 		}, Sizing.Distribute, undefined, true);
@@ -370,6 +375,19 @@ export class AICustomizationManagementEditor extends EditorPane {
 
 		// Container for Models content
 		this.modelsContentContainer = DOM.append(contentInner, $('.models-content-container'));
+
+		// Models description header
+		this.modelsHeaderElement = DOM.append(this.modelsContentContainer, $('.section-header'));
+		const modelsDescription = DOM.append(this.modelsHeaderElement, $('p.section-header-description'));
+		modelsDescription.textContent = localize('modelsDescription', "Browse and manage language models from different providers. Select models for use in chat, code completion, and other AI features.");
+		const modelsLink = DOM.append(this.modelsHeaderElement, $('a.section-header-link')) as HTMLAnchorElement;
+		modelsLink.textContent = localize('learnMoreModels', "Learn more about language models");
+		modelsLink.href = 'https://code.visualstudio.com/docs/copilot/customization/custom-models';
+		this.editorDisposables.add(DOM.addDisposableListener(modelsLink, 'click', (e) => {
+			e.preventDefault();
+			this.openerService.open(URI.parse(modelsLink.href));
+		}));
+
 		this.modelsWidget = this.editorDisposables.add(this.instantiationService.createInstance(ChatModelsWidget));
 		this.modelsContentContainer.appendChild(this.modelsWidget.element);
 

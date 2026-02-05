@@ -61,7 +61,7 @@
 
 .ai-customization-management-editor .sidebar-content {
 	height: 100%;
-	padding: 12px 0;
+	padding: 12px 0 12px 4px;
 }
 
 /* Section list items */
@@ -71,7 +71,7 @@
 	padding: 8px 16px;
 	gap: 10px;
 	cursor: pointer;
-	margin: 2px 8px;
+	margin: 2px 6px;
 	border-radius: 6px;
 	transition: background-color 0.1s ease, opacity 0.1s ease;
 }
@@ -227,21 +227,25 @@
 
 .ai-customization-list-item .item-left {
 	display: flex;
-	align-items: flex-start;
+	align-items: center;
 	flex: 1;
 	overflow: hidden;
-	gap: 8px;
+	gap: 10px;
 	min-width: 0;
 }
 
-.ai-customization-list-item .item-icon {
+.ai-customization-list-item .storage-badge {
 	flex-shrink: 0;
 	width: 16px;
 	height: 16px;
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	margin-top: 2px;
+	opacity: 0.7;
+}
+
+.ai-customization-list-item:hover .storage-badge {
+	opacity: 1;
 }
 
 .ai-customization-list-item .item-text {
@@ -269,21 +273,24 @@
 	line-height: 14px;
 }
 
-.ai-customization-list-item .item-right {
-	display: flex;
-	align-items: flex-start;
-	flex-shrink: 0;
-	margin-left: 8px;
-	margin-top: 2px;
-}
-
-.ai-customization-list-item .storage-badge {
-	width: 16px;
-	height: 16px;
+.ai-customization-list-item .item-description.is-filename {
+	font-family: monospace;
+	font-size: 10px;
 	opacity: 0.7;
 }
 
-.ai-customization-list-item:hover .storage-badge {
+.ai-customization-list-item .item-right {
+	display: flex;
+	align-items: center;
+	flex-shrink: 0;
+	margin-left: 8px;
+	gap: 4px;
+	opacity: 0;
+	transition: opacity 0.1s ease;
+}
+
+.ai-customization-list-item:hover .item-right,
+.ai-customization-list-item:focus-within .item-right {
 	opacity: 1;
 }
 
@@ -403,11 +410,45 @@
 .ai-customization-management-editor .mcp-content-container,
 .ai-customization-management-editor .models-content-container {
 	height: 100%;
+	display: flex;
+	flex-direction: column;
+}
+
+/* Models section header */
+.ai-customization-management-editor .models-content-container .section-header {
+	flex-shrink: 0;
+	padding: 8px 4px 16px 4px;
+	border-bottom: 1px solid var(--vscode-widget-border);
+	margin-bottom: 12px;
+}
+
+.ai-customization-management-editor .models-content-container .section-header-description {
+	font-size: 13px;
+	color: var(--vscode-descriptionForeground);
+	line-height: 1.5;
+	margin: 0 0 8px 0;
+}
+
+.ai-customization-management-editor .models-content-container .section-header-link {
+	font-size: 13px;
+	color: var(--vscode-textLink-foreground);
+	text-decoration: none;
+	cursor: pointer;
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+}
+
+.ai-customization-management-editor .models-content-container .section-header-link:hover {
+	text-decoration: underline;
+	color: var(--vscode-textLink-activeForeground);
 }
 
 /* Override models widget padding when embedded in management editor */
 .ai-customization-management-editor .models-content-container .models-widget {
 	padding-right: 0;
+	flex: 1;
+	overflow: hidden;
 }
 
 /* MCP List Widget */
