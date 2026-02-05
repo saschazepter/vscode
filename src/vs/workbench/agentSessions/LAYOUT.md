@@ -19,15 +19,15 @@ The Agent Sessions Workbench (`AgentSessionsWorkbench`) provides a simplified, f
 ### 2.1 Visual Representation
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                                 Titlebar                                │
-├────────────┬─────────┬───────────────────────────────┬──────────────────┤
-│            │         │                               │                  │
-│ Project    │ Sidebar │          Chat Bar             │   Auxiliary Bar  │
-│ Bar        │         │                               │                  │
-├────────────┴─────────┴───────────────────────────────┴──────────────────┤
-│                                  Panel                                  │
-└─────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                            Titlebar                             │
+├────────────┬─────────┬────────────────────────┬─────────────────┤
+│            │         │                        │                 │
+│ Project    │ Sidebar │       Chat Bar         │  Auxiliary Bar  │
+│ Bar        │         │                        │                 │
+├────────────┴─────────┴────────────────────────┴─────────────────┤
+│                             Panel                               │
+└─────────────────────────────────────────────────────────────────┘
 
          ┌───────────────────────────────────────┐
          │     ╔═══════════════════════════╗     │
@@ -71,13 +71,54 @@ The following parts from the default workbench are **not included**:
 
 ---
 
-## 3. Grid Structure
+## 3. Titlebar Configuration
+
+The Agent Sessions workbench uses a customized titlebar with reduced functionality compared to the default workbench.
+
+### 3.1 Titlebar Options
+
+The titlebar is configured via `ITitlebarPartConfiguration` passed to the title service:
+
+| Option | Default Workbench | Agent Sessions | Notes |
+|--------|-------------------|----------------|-------|
+| `supportsCommandCenter` | `true` | `false` | No command center in titlebar |
+| `supportsMenubar` | `true` | `false` | No menubar in titlebar |
+| `supportsEditorActions` | `true` | `false` | No editor actions in titlebar |
+| `supportsActivityActions` | `true` | `true` | Activity actions supported |
+| `supportsGlobalActions` | `true` | `true` | Global actions supported |
+| `supportsLayoutActions` | `true` | `true` | Layout actions supported |
+| `contextMenuId` | `MenuId.TitleBarContext` | `MenuId.TitleBarContext` | Default context menu |
+| `leftToolbarMenuId` | `undefined` | `MenuId.TitleBarLeft` | Custom left toolbar |
+
+### 3.2 Left Toolbar
+
+The Agent Sessions titlebar includes a custom left toolbar that appears after the app icon. This toolbar:
+
+- Uses `MenuId.TitleBarLeft` for its actions
+- Uses `HiddenItemStrategy.NoHide` so actions cannot be hidden by users
+- Displays actions registered to `MenuId.TitleBarLeft`
+
+### 3.3 Titlebar Actions
+
+| Action | ID | Location | Behavior |
+|--------|-----|----------|----------|
+| Toggle Sidebar | `workbench.action.agentToggleSidebarVisibility` | Left toolbar | Toggles primary sidebar visibility |
+
+The toggle sidebar action:
+- Shows `layoutSidebarLeft` icon when sidebar is visible
+- Shows `layoutSidebarLeftOff` icon when sidebar is hidden
+- Bound to `Ctrl+B` / `Cmd+B` keybinding
+- Announces visibility changes to screen readers
+
+---
+
+## 4. Grid Structure
 
 The layout uses `SerializableGrid` from `vs/base/browser/ui/grid/grid.js`.
 
-### 3.1 Grid Tree
+### 4.1 Grid Tree
 
-The Editor part is **not** in the grid — it is rendered as a modal overlay (see Section 3.3).
+The Editor part is **not** in the grid — it is rendered as a modal overlay (see Section 4.3).
 
 ```
 Orientation: VERTICAL (root)
@@ -90,7 +131,7 @@ Orientation: VERTICAL (root)
 └── Panel (leaf, size: 300px default, hidden by default)
 ```
 
-### 3.2 Default Sizes
+### 4.2 Default Sizes
 
 | Part | Default Size |
 |------|--------------|
@@ -102,7 +143,7 @@ Orientation: VERTICAL (root)
 | Panel | 300px height |
 | Titlebar | Determined by `minimumHeight` (~30px) |
 
-### 3.3 Editor Modal
+### 4.3 Editor Modal
 
 The Editor part is rendered as a **modal overlay** rather than being part of the grid. This provides a focused editing experience that hovers above the main workbench layout.
 
@@ -182,7 +223,7 @@ The `AgentSessionsWorkbench.layout()` passes the workbench dimensions to `Editor
 
 ---
 
-## 4. Feature Support Matrix
+## 5. Feature Support Matrix
 
 | Feature | Default Workbench | Agent Sessions | Notes |
 |---------|-------------------|----------------|-------|
@@ -203,9 +244,9 @@ The `AgentSessionsWorkbench.layout()` passes the workbench dimensions to `Editor
 
 ---
 
-## 5. API Reference
+## 6. API Reference
 
-### 5.1 Part Visibility
+### 6.1 Part Visibility
 
 ```typescript
 // Check if a part is visible
@@ -222,7 +263,7 @@ setPartHidden(hidden: boolean, part: Parts): void
   - Automatically shows when an editor is about to open (`onWillOpenEditor`)
   - Automatically hides when the last editor closes (`onDidCloseEditor` + all groups empty)
 
-### 5.2 Part Sizing
+### 6.2 Part Sizing
 
 ```typescript
 // Get current size of a part
@@ -235,7 +276,7 @@ setSize(part: Parts, size: IViewSize): void
 resizePart(part: Parts, sizeChangeWidth: number, sizeChangeHeight: number): void
 ```
 
-### 5.3 Focus Management
+### 6.3 Focus Management
 
 ```typescript
 // Focus a specific part
@@ -248,7 +289,7 @@ hasFocus(part: Parts): boolean
 focus(): void
 ```
 
-### 5.4 Container Access
+### 6.4 Container Access
 
 ```typescript
 // Get the main container or active container
@@ -259,7 +300,7 @@ get activeContainer(): HTMLElement
 getContainer(targetWindow: Window, part?: Parts): HTMLElement | undefined
 ```
 
-### 5.5 Layout Offset
+### 6.5 Layout Offset
 
 ```typescript
 // Get offset info for positioning elements
@@ -271,7 +312,7 @@ Returns `{ top, quickPickTop }` where `top` is the titlebar height.
 
 ---
 
-## 6. Events
+## 7. Events
 
 | Event | Fired When |
 |-------|------------|
@@ -293,9 +334,9 @@ Returns `{ top, quickPickTop }` where `top` is the titlebar height.
 
 ---
 
-## 7. CSS Classes
+## 8. CSS Classes
 
-### 7.1 Visibility Classes
+### 8.1 Visibility Classes
 
 Applied to `mainContainer` based on part visibility:
 
@@ -309,14 +350,14 @@ Applied to `mainContainer` based on part visibility:
 | `nopanel` | Panel is hidden |
 | `editor-modal-visible` | Editor modal is visible |
 
-### 7.2 Window State Classes
+### 8.2 Window State Classes
 
 | Class | Applied When |
 |-------|--------------|
 | `fullscreen` | Window is in fullscreen mode |
 | `maximized` | Window is maximized |
 
-### 7.3 Platform Classes
+### 8.3 Platform Classes
 
 Applied during workbench render:
 - `monaco-workbench`
@@ -326,11 +367,11 @@ Applied during workbench render:
 
 ---
 
-## 8. Agent Session Parts
+## 9. Agent Session Parts
 
 The Agent Sessions workbench uses specialized part implementations that extend the base pane composite infrastructure but are simplified for agent session contexts.
 
-### 8.1 Part Classes
+### 9.1 Part Classes
 
 | Part | Class | Extends | Location |
 |------|-------|---------|----------|
@@ -340,7 +381,7 @@ The Agent Sessions workbench uses specialized part implementations that extend t
 | Panel | `AgentSessionPanelPart` | `AbstractPaneCompositePart` | `agentSessions/browser/parts/agentSessionPanelPart.ts` |
 | Editor Modal | `EditorModal` | `Disposable` | `agentSessions/browser/parts/editorModal.ts` |
 
-### 8.2 Project Bar
+### 9.2 Project Bar
 
 The Project Bar is a new part specific to the Agent Sessions workbench that displays workspace folders and allows selection between them.
 
@@ -381,7 +422,7 @@ class ProjectBarPart extends Part {
 }
 ```
 
-### 8.3 Key Differences from Standard Parts
+### 9.3 Key Differences from Standard Parts
 
 | Feature | Standard Parts | Agent Session Parts |
 |---------|----------------|---------------------|
@@ -391,7 +432,7 @@ class ProjectBarPart extends Part {
 | Configuration listening | Many settings | Minimal |
 | Context menu actions | Full set | Simplified |
 
-### 8.3 Part Selection
+### 9.4 Part Selection
 
 Each workbench layout is responsible for passing the appropriate pane composite part descriptors to the `PaneCompositePartService`. The parts are defined as `SyncDescriptor0` instances via `IPaneCompositePartsConfiguration`, and the service lazily instantiates them when first requested:
 
@@ -410,7 +451,7 @@ This architecture ensures that:
 1. The `PaneCompositePartService` has no knowledge of the workspace type—it simply receives part descriptors from the layout class
 2. Parts are only instantiated when first accessed, enabling lazy initialization
 
-### 8.4 Storage Keys
+### 9.5 Storage Keys
 
 Each agent session part uses separate storage keys to avoid conflicts with regular workbench state:
 
@@ -428,13 +469,15 @@ Each agent session part uses separate storage keys to avoid conflicts with regul
 
 ---
 
-## 9. File Structure
+## 10. File Structure
 
 ```
 src/vs/workbench/agentSessions/
 ├── browser/
 │   ├── agentSessions.contributions.ts      # Workbench contributions
 │   ├── agentSessionsWorkbench.ts           # Main layout implementation
+│   ├── agentSessions.contributions.ts      # View registrations and contributions
+│   ├── agentSessionsLayoutActions.ts       # Layout actions (toggle sidebar, etc.)
 │   ├── style.css                           # Layout-specific styles (including editor modal)
 │   ├── parts/
 │   │   ├── agentSessionSidebarPart.ts      # Agent session sidebar
@@ -453,7 +496,7 @@ src/vs/workbench/agentSessions/
 
 ---
 
-## 10. Implementation Requirements
+## 11. Implementation Requirements
 
 When modifying the Agent Sessions layout:
 
@@ -467,9 +510,9 @@ When modifying the Agent Sessions layout:
 
 ---
 
-## 11. Lifecycle
+## 12. Lifecycle
 
-### 11.1 Startup Sequence
+### 12.1 Startup Sequence
 
 1. `constructor()` — Register error handlers
 2. `startup()` — Initialize services and layout
@@ -480,7 +523,7 @@ When modifying the Agent Sessions layout:
 7. `layout()` — Perform initial layout
 8. `restore()` — Restore parts (open default view containers), set lifecycle to `Restored`, then `Eventually`
 
-### 11.2 Part Restoration
+### 12.2 Part Restoration
 
 During the `restore()` phase, `restoreParts()` is called to open the default view container for each visible part:
 
@@ -506,7 +549,7 @@ private restoreParts(): void {
 
 This ensures that when a part is visible, its default view container is automatically opened and displayed.
 
-### 11.3 State Tracking
+### 12.3 State Tracking
 
 ```typescript
 interface IPartVisibilityState {
@@ -536,6 +579,7 @@ interface IPartVisibilityState {
 
 | Date | Change |
 |------|--------|
+| 2026-02-05 | Added configurable titlebar via `ITitlebarPartOptions` and `ITitlebarPartConfiguration`; Titlebar now disables command center, menubar, and editor actions; Added left toolbar with `MenuId.TitleBarLeft`; Added `ToggleSidebarVisibilityAction` in `agentSessionsLayoutActions.ts` |
 | 2026-02-05 | Added Project Bar part (`ProjectBarPart`) to display and select workspace folders; Layout order is now Project Bar \| Sidebar \| Chat Bar \| Auxiliary Bar |
 | 2026-02-04 | Modal sizing (80%, min/max constraints) moved from CSS to TypeScript; `EditorModal.layout()` now accepts workbench dimensions |
 | 2026-02-04 | Editor now renders as modal overlay instead of in grid; Added `EditorModal` class in `parts/editorModal.ts`; Closing modal closes all editors; Grid layout is now Sidebar \| Chat Bar \| Auxiliary Bar |

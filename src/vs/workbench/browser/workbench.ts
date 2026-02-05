@@ -19,7 +19,7 @@ import { getSingletonServiceDescriptors } from '../../platform/instantiation/com
 import { Position, Parts, IWorkbenchLayoutService, positionToString } from '../services/layout/browser/layoutService.js';
 import { IStorageService, WillSaveStateReason, StorageScope, StorageTarget } from '../../platform/storage/common/storage.js';
 import { IConfigurationChangeEvent, IConfigurationService } from '../../platform/configuration/common/configuration.js';
-import { IInstantiationService } from '../../platform/instantiation/common/instantiation.js';
+import { IConstructorSignature, IInstantiationService } from '../../platform/instantiation/common/instantiation.js';
 import { ServiceCollection } from '../../platform/instantiation/common/serviceCollection.js';
 import { LifecyclePhase, ILifecycleService, WillShutdownEvent } from '../services/lifecycle/common/lifecycle.js';
 import { INotificationService } from '../../platform/notification/common/notification.js';
@@ -58,6 +58,9 @@ import { PanelPart } from './parts/panel/panelPart.js';
 import { SidebarPart } from './parts/sidebar/sidebarPart.js';
 import { ChatBarPart } from '../agentSessions/browser/parts/chatbar/chatBarPart.js';
 import { SyncDescriptor } from '../../platform/instantiation/common/descriptors.js';
+import { registerTitleBarActions } from './parts/titlebar/titlebarActions.js';
+import { ITitleService } from '../services/title/browser/titleService.js';
+import { BrowserTitleService, ITitlebarPartConfiguration } from './parts/titlebar/titlebarPart.js';
 
 export interface IWorkbenchOptions {
 
@@ -70,6 +73,11 @@ export interface IWorkbenchOptions {
 	 * Whether to reset the workbench parts layout on startup.
 	 */
 	resetLayout?: boolean;
+
+	/**
+	 * The title service class to use. Defaults to BrowserTitleService.
+	 */
+	titleService?: IConstructorSignature<ITitleService, [ITitlebarPartConfiguration]>;
 }
 
 export class Workbench extends Layout {
@@ -95,6 +103,7 @@ export class Workbench extends Layout {
 
 		// Register layout actions specific to the default workbench
 		registerLayoutActions();
+		registerTitleBarActions();
 	}
 
 	private registerErrorHandler(logService: ILogService): void {
@@ -222,6 +231,13 @@ export class Workbench extends Layout {
 			chatBarPart: new SyncDescriptor(ChatBarPart),
 		};
 		serviceCollection.set(IPaneCompositePartService, new SyncDescriptor(PaneCompositePartService, [paneCompositePartsConfiguration]));
+
+		// Title Service - pass configuration for titlebar parts with full feature support
+		const titlebarConfiguration: ITitlebarPartConfiguration = {
+			mainOptions: {},
+			auxiliaryOptions: {}
+		};
+		serviceCollection.set(ITitleService, new SyncDescriptor(this.options?.titleService ?? BrowserTitleService, [titlebarConfiguration]));
 
 		// All Contributed Services
 		const contributedServices = getSingletonServiceDescriptors();

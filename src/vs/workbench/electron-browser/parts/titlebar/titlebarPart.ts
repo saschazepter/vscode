@@ -13,7 +13,7 @@ import { INativeWorkbenchEnvironmentService } from '../../../services/environmen
 import { IHostService } from '../../../services/host/browser/host.js';
 import { isMacintosh, isWindows, isLinux, isTahoeOrNewer } from '../../../../base/common/platform.js';
 import { IMenuService, MenuId } from '../../../../platform/actions/common/actions.js';
-import { BrowserTitlebarPart, BrowserTitleService, IAuxiliaryTitlebarPart } from '../../../browser/parts/titlebar/titlebarPart.js';
+import { BrowserTitlebarPart, BrowserTitleService, IAuxiliaryTitlebarPart, ITitlebarPartOptions } from '../../../browser/parts/titlebar/titlebarPart.js';
 import { IContextMenuService } from '../../../../platform/contextview/browser/contextView.js';
 import { IThemeService } from '../../../../platform/theme/common/themeService.js';
 import { IWorkbenchLayoutService, Parts } from '../../../services/layout/browser/layoutService.js';
@@ -63,6 +63,7 @@ export class NativeTitlebarPart extends BrowserTitlebarPart {
 		id: string,
 		targetWindow: CodeWindow,
 		editorGroupsContainer: IEditorGroupsContainer,
+		options: ITitlebarPartOptions,
 		@IContextMenuService contextMenuService: IContextMenuService,
 		@IConfigurationService configurationService: IConfigurationService,
 		@INativeWorkbenchEnvironmentService environmentService: INativeWorkbenchEnvironmentService,
@@ -78,7 +79,7 @@ export class NativeTitlebarPart extends BrowserTitlebarPart {
 		@IMenuService menuService: IMenuService,
 		@IKeybindingService keybindingService: IKeybindingService
 	) {
-		super(id, targetWindow, editorGroupsContainer, contextMenuService, configurationService, environmentService, instantiationService, themeService, storageService, layoutService, contextKeyService, hostService, editorService, menuService, keybindingService);
+		super(id, targetWindow, editorGroupsContainer, options, contextMenuService, configurationService, environmentService, instantiationService, themeService, storageService, layoutService, contextKeyService, hostService, editorService, menuService, keybindingService);
 
 		this.tahoeOrNewer = isTahoeOrNewer(environmentService.os.release);
 
@@ -287,6 +288,7 @@ export class NativeTitlebarPart extends BrowserTitlebarPart {
 export class MainNativeTitlebarPart extends NativeTitlebarPart {
 
 	constructor(
+		options: ITitlebarPartOptions,
 		@IContextMenuService contextMenuService: IContextMenuService,
 		@IConfigurationService configurationService: IConfigurationService,
 		@INativeWorkbenchEnvironmentService environmentService: INativeWorkbenchEnvironmentService,
@@ -302,7 +304,7 @@ export class MainNativeTitlebarPart extends NativeTitlebarPart {
 		@IMenuService menuService: IMenuService,
 		@IKeybindingService keybindingService: IKeybindingService
 	) {
-		super(Parts.TITLEBAR_PART, mainWindow, editorGroupService.mainPart, contextMenuService, configurationService, environmentService, instantiationService, themeService, storageService, layoutService, contextKeyService, hostService, nativeHostService, editorGroupService, editorService, menuService, keybindingService);
+		super(Parts.TITLEBAR_PART, mainWindow, editorGroupService.mainPart, options, contextMenuService, configurationService, environmentService, instantiationService, themeService, storageService, layoutService, contextKeyService, hostService, nativeHostService, editorGroupService, editorService, menuService, keybindingService);
 	}
 }
 
@@ -316,6 +318,7 @@ export class AuxiliaryNativeTitlebarPart extends NativeTitlebarPart implements I
 		readonly container: HTMLElement,
 		editorGroupsContainer: IEditorGroupsContainer,
 		private readonly mainTitlebar: BrowserTitlebarPart,
+		options: ITitlebarPartOptions,
 		@IContextMenuService contextMenuService: IContextMenuService,
 		@IConfigurationService configurationService: IConfigurationService,
 		@INativeWorkbenchEnvironmentService environmentService: INativeWorkbenchEnvironmentService,
@@ -332,7 +335,7 @@ export class AuxiliaryNativeTitlebarPart extends NativeTitlebarPart implements I
 		@IKeybindingService keybindingService: IKeybindingService
 	) {
 		const id = AuxiliaryNativeTitlebarPart.COUNTER++;
-		super(`workbench.parts.auxiliaryTitle.${id}`, getWindow(container), editorGroupsContainer, contextMenuService, configurationService, environmentService, instantiationService, themeService, storageService, layoutService, contextKeyService, hostService, nativeHostService, editorGroupService, editorService, menuService, keybindingService);
+		super(`workbench.parts.auxiliaryTitle.${id}`, getWindow(container), editorGroupsContainer, options, contextMenuService, configurationService, environmentService, instantiationService, themeService, storageService, layoutService, contextKeyService, hostService, nativeHostService, editorGroupService, editorService, menuService, keybindingService);
 	}
 
 	override get preventZoom(): boolean {
@@ -350,10 +353,10 @@ export class AuxiliaryNativeTitlebarPart extends NativeTitlebarPart implements I
 export class NativeTitleService extends BrowserTitleService {
 
 	protected override createMainTitlebarPart(): MainNativeTitlebarPart {
-		return this.instantiationService.createInstance(MainNativeTitlebarPart);
+		return this.instantiationService.createInstance(MainNativeTitlebarPart, this.configuration.mainOptions);
 	}
 
 	protected override doCreateAuxiliaryTitlebarPart(container: HTMLElement, editorGroupsContainer: IEditorGroupsContainer, instantiationService: IInstantiationService): AuxiliaryNativeTitlebarPart {
-		return instantiationService.createInstance(AuxiliaryNativeTitlebarPart, container, editorGroupsContainer, this.mainPart);
+		return instantiationService.createInstance(AuxiliaryNativeTitlebarPart, container, editorGroupsContainer, this.mainPart, this.configuration.auxiliaryOptions);
 	}
 }

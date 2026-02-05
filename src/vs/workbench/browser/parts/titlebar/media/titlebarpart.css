@@ -462,3 +462,31 @@
 	border-radius: 16px;
 	text-align: center;
 }
+
+/* Left Tool Bar Container */
+.monaco-workbench .part.titlebar > .titlebar-container > .titlebar-left > .left-toolbar-container {
+	display: none;
+	padding-left: 4px;
+	flex-grow: 0;
+	flex-shrink: 0;
+	text-align: center;
+	position: relative;
+	z-index: 2500;
+	-webkit-app-region: no-drag;
+	height: 100%;
+	order: 2;
+}
+
+.monaco-workbench .part.titlebar > .titlebar-container > .titlebar-left > .left-toolbar-container:not(.has-no-actions) {
+	display: flex;
+	justify-content: center;
+	align-items: center;
+}
+
+.monaco-workbench .part.titlebar > .titlebar-container > .titlebar-left > .left-toolbar-container .codicon {
+	color: inherit;
+}
+
+.monaco-workbench .part.titlebar > .titlebar-container > .titlebar-left > .left-toolbar-container .monaco-action-bar .action-item {
+	display: flex;
+}

@@ -169,6 +169,7 @@ export class MenuId {
 	static readonly TitleBar = new MenuId('TitleBar');
 	static readonly TitleBarContext = new MenuId('TitleBarContext');
 	static readonly TitleBarTitleContext = new MenuId('TitleBarTitleContext');
+	static readonly TitleBarLeft = new MenuId('TitleBarLeft');
 	static readonly TunnelContext = new MenuId('TunnelContext');
 	static readonly TunnelPrivacy = new MenuId('TunnelPrivacy');
 	static readonly TunnelProtocol = new MenuId('TunnelProtocol');

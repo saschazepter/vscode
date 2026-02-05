@@ -68,6 +68,9 @@ import { AgentSessionSidebarPart } from './parts/agentSessionSidebarPart.js';
 import { ChatBarPart } from './parts/chatbar/chatBarPart.js';
 import { ProjectBarPart } from './parts/projectbar/projectBarPart.js';
 import { SyncDescriptor } from '../../../platform/instantiation/common/descriptors.js';
+import { BrowserTitleService, ITitlebarPartConfiguration } from '../../browser/parts/titlebar/titlebarPart.js';
+import { MenuId } from '../../../platform/actions/common/actions.js';
+import { registerAgentSessionsLayoutActions } from './agentSessionsLayoutActions.js';
 
 //#region Workbench Options
 
@@ -284,6 +287,8 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 		mark('code/willStartWorkbench');
 
 		this.registerErrorHandler(logService);
+
+		registerAgentSessionsLayoutActions();
 	}
 
 	//#region Error Handling
@@ -403,6 +408,29 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 			chatBarPart: new SyncDescriptor(ChatBarPart),
 		};
 		serviceCollection.set(IPaneCompositePartService, new SyncDescriptor(PaneCompositePartService, [paneCompositePartsConfiguration]));
+
+		// Title Service - pass configuration for titlebar parts with limited feature support
+		const titlebarConfiguration: ITitlebarPartConfiguration = {
+			mainOptions: {
+				supportsCommandCenter: false,
+				supportsMenubar: false,
+				supportsEditorActions: false,
+				supportsActivityActions: true,
+				supportsGlobalActions: true,
+				supportsLayoutActions: true,
+				leftToolbarMenuId: MenuId.TitleBarLeft
+			},
+			auxiliaryOptions: {
+				supportsCommandCenter: false,
+				supportsMenubar: false,
+				supportsEditorActions: false,
+				supportsActivityActions: true,
+				supportsGlobalActions: true,
+				supportsLayoutActions: true,
+				leftToolbarMenuId: MenuId.TitleBarLeft
+			}
+		};
+		serviceCollection.set(ITitleService, new SyncDescriptor(BrowserTitleService, [titlebarConfiguration]));
 
 		// All Contributed Services
 		const contributedServices = getSingletonServiceDescriptors();
