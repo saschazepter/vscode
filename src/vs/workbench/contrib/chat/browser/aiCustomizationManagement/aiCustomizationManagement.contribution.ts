@@ -17,8 +17,6 @@ import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
 import { CHAT_CATEGORY } from '../actions/chatActions.js';
 import { AICustomizationManagementEditor } from './aiCustomizationManagementEditor.js';
 import { AICustomizationManagementEditorInput } from './aiCustomizationManagementEditorInput.js';
-import { McpManagementEditor } from './mcpManagementEditor.js';
-import { McpManagementEditorInput } from './mcpManagementEditorInput.js';
 import {
 	AI_CUSTOMIZATION_MANAGEMENT_EDITOR_ID,
 	AI_CUSTOMIZATION_MANAGEMENT_EDITOR_INPUT_ID,
@@ -37,17 +35,6 @@ Registry.as<IEditorPaneRegistry>(EditorExtensions.EditorPane).registerEditorPane
 	[
 		// Note: Using the class directly since we use a singleton pattern
 		new SyncDescriptor(AICustomizationManagementEditorInput as unknown as { new(): AICustomizationManagementEditorInput })
-	]
-);
-
-Registry.as<IEditorPaneRegistry>(EditorExtensions.EditorPane).registerEditorPane(
-	EditorPaneDescriptor.create(
-		McpManagementEditor,
-		McpManagementEditor.ID,
-		localize('mcpManagement', "MCP Servers")
-	),
-	[
-		new SyncDescriptor(McpManagementEditorInput)
 	]
 );
 
@@ -73,26 +60,6 @@ class AICustomizationManagementEditorInputSerializer implements IEditorSerialize
 Registry.as<IEditorFactoryRegistry>(EditorExtensions.EditorFactory).registerEditorSerializer(
 	AI_CUSTOMIZATION_MANAGEMENT_EDITOR_INPUT_ID,
 	AICustomizationManagementEditorInputSerializer
-);
-
-class McpManagementEditorInputSerializer implements IEditorSerializer {
-
-	canSerialize(input: McpManagementEditorInput): boolean {
-		return true;
-	}
-
-	serialize(input: McpManagementEditorInput): string {
-		return '';
-	}
-
-	deserialize(instantiationService: IInstantiationService): McpManagementEditorInput {
-		return instantiationService.createInstance(McpManagementEditorInput);
-	}
-}
-
-Registry.as<IEditorFactoryRegistry>(EditorExtensions.EditorFactory).registerEditorSerializer(
-	McpManagementEditorInput.ID,
-	McpManagementEditorInputSerializer
 );
 
 //#endregion

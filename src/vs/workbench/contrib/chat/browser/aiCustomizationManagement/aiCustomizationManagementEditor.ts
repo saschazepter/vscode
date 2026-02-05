@@ -34,6 +34,7 @@ import { registerColor } from '../../../../../platform/theme/common/colorRegistr
 import { PANEL_BORDER } from '../../../../common/theme.js';
 import { AICustomizationManagementEditorInput } from './aiCustomizationManagementEditorInput.js';
 import { AICustomizationListWidget, IAICustomizationListItem } from './aiCustomizationListWidget.js';
+import { McpListWidget } from './mcpListWidget.js';
 import {
 	AI_CUSTOMIZATION_MANAGEMENT_EDITOR_ID,
 	AI_CUSTOMIZATION_MANAGEMENT_SIDEBAR_WIDTH_KEY,
@@ -50,6 +51,8 @@ import { agentIcon, instructionsIcon, promptIcon, skillIcon } from '../aiCustomi
 import { AI_CUSTOMIZATION_EDITOR_ID } from '../aiCustomizationEditor/aiCustomizationEditor.js';
 import { IPromptsService, PromptsStorage } from '../../common/promptSyntax/service/promptsService.js';
 import { PromptsType } from '../../common/promptSyntax/promptTypes.js';
+import { IMcpService } from '../../../mcp/common/mcpTypes.js';
+import { autorun } from '../../../../../base/common/observable.js';
 
 const $ = DOM.$;
 
@@ -127,6 +130,9 @@ export class AICustomizationManagementEditor extends EditorPane {
 	private sectionsList!: WorkbenchList<ISectionItem>;
 	private contentContainer!: HTMLElement;
 	private listWidget!: AICustomizationListWidget;
+	private mcpListWidget!: McpListWidget;
+	private promptsContentContainer!: HTMLElement;
+	private mcpContentContainer!: HTMLElement;
 
 	private dimension: Dimension | undefined;
 	private readonly sections: ISectionItem[] = [];
@@ -149,6 +155,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 		@IEditorService private readonly editorService: IEditorService,
 		@ICommandService private readonly commandService: ICommandService,
 		@IPromptsService private readonly promptsService: IPromptsService,
+		@IMcpService private readonly mcpService: IMcpService,
 	) {
 		super(AICustomizationManagementEditor.ID, group, telemetryService, themeService, storageService);
 
@@ -161,6 +168,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 			{ id: AICustomizationManagementSection.Skills, label: localize('skills', "Skills"), icon: skillIcon },
 			{ id: AICustomizationManagementSection.Instructions, label: localize('instructions', "Instructions"), icon: instructionsIcon },
 			{ id: AICustomizationManagementSection.Prompts, label: localize('prompts', "Prompts"), icon: promptIcon },
+			{ id: AICustomizationManagementSection.McpServers, label: localize('mcpServers', "MCP Servers"), icon: Codicon.server },
 		);
 
 		// Restore selected section from storage
@@ -172,6 +180,12 @@ export class AICustomizationManagementEditor extends EditorPane {
 		// Listen to promptsService changes to update all counts
 		this._register(this.promptsService.onDidChangeCustomAgents(() => this.loadAllSectionCounts()));
 		this._register(this.promptsService.onDidChangeSlashCommands(() => this.loadAllSectionCounts()));
+
+		// Listen to mcpService changes to update MCP count
+		this._register(autorun(reader => {
+			this.mcpService.servers.read(reader);
+			this.updateMcpSectionCount();
+		}));
 	}
 
 	protected override createEditor(parent: HTMLElement): void {
@@ -275,6 +289,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 				this.contentContainer.style.width = `${width}px`;
 				if (height !== undefined) {
 					this.listWidget.layout(height - 16, width - 24); // Account for padding
+					this.mcpListWidget.layout(height - 16, width - 24); // Account for padding
 				}
 			},
 		}, Sizing.Distribute, undefined, true);
@@ -335,8 +350,10 @@ export class AICustomizationManagementEditor extends EditorPane {
 	private createContent(): void {
 		const contentInner = DOM.append(this.contentContainer, $('.content-inner'));
 
+		// Container for prompts-based content (Agents, Skills, Instructions, Prompts)
+		this.promptsContentContainer = DOM.append(contentInner, $('.prompts-content-container'));
 		this.listWidget = this.editorDisposables.add(this.instantiationService.createInstance(AICustomizationListWidget));
-		contentInner.appendChild(this.listWidget.element);
+		this.promptsContentContainer.appendChild(this.listWidget.element);
 
 		// Handle item selection - open in form editor
 		this.editorDisposables.add(this.listWidget.onDidSelectItem(item => {
@@ -348,8 +365,18 @@ export class AICustomizationManagementEditor extends EditorPane {
 			this.updateSectionCount(this.selectedSection, count);
 		}));
 
+		// Container for MCP content
+		this.mcpContentContainer = DOM.append(contentInner, $('.mcp-content-container'));
+		this.mcpListWidget = this.editorDisposables.add(this.instantiationService.createInstance(McpListWidget));
+		this.mcpContentContainer.appendChild(this.mcpListWidget.element);
+
+		// Set initial visibility based on selected section
+		this.updateContentVisibility();
+
 		// Load items for the initial section and load all section counts
-		void this.listWidget.setSection(this.selectedSection);
+		if (this.selectedSection !== AICustomizationManagementSection.McpServers) {
+			void this.listWidget.setSection(this.selectedSection);
+		}
 		void this.loadAllSectionCounts();
 	}
 
@@ -364,8 +391,19 @@ export class AICustomizationManagementEditor extends EditorPane {
 		// Persist selection
 		this.storageService.store(AI_CUSTOMIZATION_MANAGEMENT_SELECTED_SECTION_KEY, section, StorageScope.PROFILE, StorageTarget.USER);
 
-		// Load items for the new section
-		void this.listWidget.setSection(section);
+		// Update content visibility
+		this.updateContentVisibility();
+
+		// Load items for the new section (only for prompts-based sections)
+		if (section !== AICustomizationManagementSection.McpServers) {
+			void this.listWidget.setSection(section);
+		}
+	}
+
+	private updateContentVisibility(): void {
+		const isMcpSection = this.selectedSection === AICustomizationManagementSection.McpServers;
+		this.promptsContentContainer.style.display = isMcpSection ? 'none' : '';
+		this.mcpContentContainer.style.display = isMcpSection ? '' : 'none';
 	}
 
 	private updateSectionCount(section: AICustomizationManagementSection, count: number): void {
@@ -424,6 +462,24 @@ export class AICustomizationManagementEditor extends EditorPane {
 		}
 	}
 
+	/**
+	 * Updates the count for the MCP Servers section.
+	 */
+	private updateMcpSectionCount(): void {
+		const count = this.mcpService.servers.get().length;
+		const sectionItem = this.sections.find(s => s.id === AICustomizationManagementSection.McpServers);
+		if (sectionItem) {
+			sectionItem.count = count;
+			// Re-render the sections list to show updated count
+			this.sectionsList.splice(0, this.sectionsList.length, this.sections);
+			// Re-select the current section
+			const selectedIndex = this.sections.findIndex(s => s.id === this.selectedSection);
+			if (selectedIndex >= 0) {
+				this.sectionsList.setSelection([selectedIndex]);
+			}
+		}
+	}
+
 	private openItem(item: IAICustomizationListItem): void {
 		this.editorService.openEditor({
 			resource: item.uri,
@@ -469,7 +525,11 @@ export class AICustomizationManagementEditor extends EditorPane {
 
 	override focus(): void {
 		super.focus();
-		this.listWidget?.focusSearch();
+		if (this.selectedSection === AICustomizationManagementSection.McpServers) {
+			this.mcpListWidget?.focus();
+		} else {
+			this.listWidget?.focusSearch();
+		}
 	}
 
 	/**

@@ -36,6 +36,7 @@ export const AICustomizationManagementSection = {
 	Skills: 'skills',
 	Instructions: 'instructions',
 	Prompts: 'prompts',
+	McpServers: 'mcpServers',
 } as const;
 
 export type AICustomizationManagementSection = typeof AICustomizationManagementSection[keyof typeof AICustomizationManagementSection];

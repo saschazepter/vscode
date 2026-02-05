@@ -40,7 +40,6 @@ import { IPromptsService, PromptsStorage } from '../../../common/promptSyntax/se
 import { PromptsType } from '../../../common/promptSyntax/promptTypes.js';
 import { ILanguageModelsService } from '../../../common/languageModels.js';
 import { IMcpService } from '../../../../mcp/common/mcpTypes.js';
-import { McpManagementEditorInput } from '../../aiCustomizationManagement/mcpManagementEditorInput.js';
 
 interface IShortcutItem {
 	readonly label: string;
@@ -85,7 +84,7 @@ export class AgentSessionsViewPane extends ViewPane {
 			{ label: localize('instructions', "Instructions"), icon: instructionsIcon, action: () => this.openAICustomizationSection(AICustomizationManagementSection.Instructions), getCount: () => this.getPromptCount(PromptsType.instructions) },
 			{ label: localize('prompts', "Prompts"), icon: promptIcon, action: () => this.openAICustomizationSection(AICustomizationManagementSection.Prompts), getCount: () => this.getPromptCount(PromptsType.prompt) },
 			{ label: localize('models', "Models"), icon: Codicon.sparkle, action: () => this.openModelsEditor(), getCount: () => Promise.resolve(this.languageModelsService.getLanguageModelIds().length) },
-			{ label: localize('mcpServers', "MCP Servers"), icon: Codicon.server, action: () => this.openMcpServersEditor(), getCount: () => Promise.resolve(this.mcpService.servers.get().length) },
+			{ label: localize('mcpServers', "MCP Servers"), icon: Codicon.server, action: () => this.openAICustomizationSection(AICustomizationManagementSection.McpServers), getCount: () => Promise.resolve(this.mcpService.servers.get().length) },
 		];
 
 		// Listen to changes to update counts
@@ -226,10 +225,6 @@ export class AgentSessionsViewPane extends ViewPane {
 
 	private async openModelsEditor(): Promise<void> {
 		await this.editorGroupsService.activeGroup.openEditor(new ModelsManagementEditorInput(), { pinned: true });
-	}
-
-	private async openMcpServersEditor(): Promise<void> {
-		await this.editorGroupsService.activeGroup.openEditor(new McpManagementEditorInput(), { pinned: true });
 	}
 
 	private getSessionHoverPosition(): HoverPosition {
