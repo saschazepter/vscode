@@ -22,12 +22,10 @@ The Agent Sessions Workbench (`AgentSessionsWorkbench`) provides a simplified, f
 ┌─────────────────────────────────────────────────────────────────┐
 │                            Titlebar                             │
 ├────────────┬─────────┬────────────────────────┬─────────────────┤
-│            │         │                        │                 │
-│ Project    │ Sidebar │       Chat Bar         │  Auxiliary Bar  │
-│ Bar        │         │                        │                 │
-├────────────┴─────────┴────────────────────────┴─────────────────┤
-│                             Panel                               │
-└─────────────────────────────────────────────────────────────────┘
+│            │         │       Chat Bar         │  Auxiliary Bar  │
+│ Project    │ Sidebar ├────────────────────────┴─────────────────┤
+│ Bar        │         │                 Panel                    │
+└────────────┴─────────┴──────────────────────────────────────────┘
 
          ┌───────────────────────────────────────┐
          │     ╔═══════════════════════════╗     │
@@ -52,12 +50,12 @@ The Agent Sessions Workbench (`AgentSessionsWorkbench`) provides a simplified, f
 | Part | ID Constant | Position | Default Visibility | ViewContainerLocation |
 |------|-------------|----------|------------|----------------------|
 | Titlebar | `Parts.TITLEBAR_PART` | Top, full width | Always visible | — |
-| Project Bar | `Parts.PROJECTBAR_PART` | Left-most, in middle section | Visible | — |
-| Sidebar | `Parts.SIDEBAR_PART` | Left of center, in middle section | Visible | `ViewContainerLocation.Sidebar` |
-| Chat Bar | `Parts.CHATBAR_PART` | Center, takes remaining width | Visible | `ViewContainerLocation.ChatBar` |
+| Project Bar | `Parts.PROJECTBAR_PART` | Left-most, in main content | Visible | — |
+| Sidebar | `Parts.SIDEBAR_PART` | Left of right section, in main content | Visible | `ViewContainerLocation.Sidebar` |
+| Chat Bar | `Parts.CHATBAR_PART` | Top-right section, takes remaining width | Visible | `ViewContainerLocation.ChatBar` |
 | Editor | `Parts.EDITOR_PART` | **Modal overlay** (not in grid) | Hidden | — |
-| Auxiliary Bar | `Parts.AUXILIARYBAR_PART` | Right, in middle section | Visible | `ViewContainerLocation.AuxiliaryBar` |
-| Panel | `Parts.PANEL_PART` | Bottom, full width | Hidden | `ViewContainerLocation.Panel` |
+| Auxiliary Bar | `Parts.AUXILIARYBAR_PART` | Top-right section, right side | Visible | `ViewContainerLocation.AuxiliaryBar` |
+| Panel | `Parts.PANEL_PART` | Below Chat Bar and Auxiliary Bar (right section only) | Hidden | `ViewContainerLocation.Panel` |
 
 #### Excluded Parts
 
@@ -110,6 +108,21 @@ The toggle sidebar action:
 - Bound to `Ctrl+B` / `Cmd+B` keybinding
 - Announces visibility changes to screen readers
 
+### 3.4 Panel Title Actions
+
+The panel title bar includes actions for controlling the panel:
+
+| Action | ID | Icon | Order | Behavior |
+|--------|-----|------|-------|----------|
+| Toggle Maximize | `workbench.action.agentTogglePanelMaximized` | `screenFull` / `screenNormal` | 1 | Maximizes or restores panel size |
+| Hide Panel | `workbench.action.agentTogglePanelVisibility` | `close` | 2 | Hides the panel |
+
+The toggle maximize action:
+- Shows `screenFull` icon when panel is not maximized
+- Shows `screenNormal` icon when panel is maximized
+- Uses `PanelMaximizedContext` to toggle between states
+- Announces state changes to screen readers
+
 ---
 
 ## 4. Grid Structure
@@ -123,13 +136,17 @@ The Editor part is **not** in the grid — it is rendered as a modal overlay (se
 ```
 Orientation: VERTICAL (root)
 ├── Titlebar (leaf, size: titleBarHeight)
-├── Middle Section (branch, HORIZONTAL, size: remaining height - panel)
-│   ├── Project Bar (leaf, size: 48px)
-│   ├── Sidebar (leaf, size: 300px default)
-│   ├── Chat Bar (leaf, size: remaining width)
-│   └── Auxiliary Bar (leaf, size: 300px default)
-└── Panel (leaf, size: 300px default, hidden by default)
+└── Main Content (branch, HORIZONTAL, size: remaining height)
+    ├── Project Bar (leaf, size: 48px)
+    ├── Sidebar (leaf, size: 300px default)
+    └── Right Section (branch, VERTICAL, size: remaining width)
+        ├── Top Right (branch, HORIZONTAL, size: remaining height - panel)
+        │   ├── Chat Bar (leaf, size: remaining width)
+        │   └── Auxiliary Bar (leaf, size: 300px default)
+        └── Panel (leaf, size: 300px default, hidden by default)
 ```
+
+This structure places the panel below only the Chat Bar and Auxiliary Bar, leaving the Project Bar and Sidebar to span the full height of the main content area.
 
 ### 4.2 Default Sizes
 
@@ -232,7 +249,7 @@ The `AgentSessionsWorkbench.layout()` passes the workbench dimensions to `Editor
 | Sidebar Position | ✅ Left/Right | 🔒 Fixed: Left | `getSideBarPosition()` returns `Position.LEFT` |
 | Panel Position | ✅ Top/Bottom/Left/Right | 🔒 Fixed: Bottom | `getPanelPosition()` returns `Position.BOTTOM` |
 | Panel Alignment | ✅ Left/Center/Right/Justify | 🔒 Fixed: Justify | `getPanelAlignment()` returns `'justify'` |
-| Maximize Panel | ✅ Supported | ❌ No-op | `toggleMaximizedPanel()` does nothing |
+| Maximize Panel | ✅ Supported | ✅ Supported | Excludes titlebar and project bar when maximizing |
 | Maximize Auxiliary Bar | ✅ Supported | ❌ No-op | `toggleMaximizedAuxiliaryBar()` does nothing |
 | Zen Mode | ✅ Supported | ❌ No-op | `toggleZenMode()` does nothing |
 | Centered Editor Layout | ✅ Supported | ❌ No-op | `centerMainEditorLayout()` does nothing |
@@ -259,6 +276,8 @@ setPartHidden(hidden: boolean, part: Parts): void
 **Behavior:**
 - Hiding a part also hides its active pane composite
 - Showing a part restores the last active pane composite
+- **Panel Part:**
+  - If the panel is maximized when hiding, it exits maximized state first
 - **Editor Part Auto-Visibility:**
   - Automatically shows when an editor is about to open (`onWillOpenEditor`)
   - Automatically hides when the last editor closes (`onDidCloseEditor` + all groups empty)
@@ -610,6 +629,9 @@ interface IPartVisibilityState {
 
 | Date | Change |
 |------|--------|
+| 2026-02-05 | Hiding panel now exits maximized state first if panel was maximized |
+| 2026-02-05 | Added panel maximize/minimize support via `toggleMaximizedPanel()`; Uses `Grid.maximizeView()` with exclusions for titlebar and project bar; Added `TogglePanelMaximizedAction` and `TogglePanelVisibilityAction` to panel title bar |
+| 2026-02-05 | Changed layout structure: Panel is now below Chat Bar and Auxiliary Bar only (not full width); Project Bar and Sidebar span full height |
 | 2026-02-05 | Added `GlobalCompositeBar` to Project Bar for Accounts (`ACCOUNTS_ACTIVITY_ID`) and Manage (`GLOBAL_ACTIVITY_ID`) activities at the bottom; Added `focusGlobalCompositeBar()` method |
 | 2026-02-05 | Added configurable titlebar via `ITitlebarPartOptions` and `ITitlebarPartConfiguration`; Titlebar now disables command center, menubar, and editor actions; Added left toolbar with `MenuId.TitleBarLeft`; Added `ToggleSidebarVisibilityAction` in `agentSessionsLayoutActions.ts` |
 | 2026-02-05 | Added Project Bar part (`ProjectBarPart`) to display and select workspace folders; Layout order is now Project Bar \| Sidebar \| Chat Bar \| Auxiliary Bar |
