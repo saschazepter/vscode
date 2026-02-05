@@ -10,6 +10,7 @@ import { Action } from '../../../../base/common/actions.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { DisposableStore, MutableDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
+import { Codicon } from '../../../../base/common/codicons.js';
 import { widgetClose } from '../../../../platform/theme/common/iconRegistry.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
@@ -73,9 +74,27 @@ export class ModalEditorPart {
 		titleElement.id = titleId;
 		titleElement.textContent = '';
 
-		// Close button using ActionBar for proper accessibility
+		// Action buttons using ActionBar for proper accessibility
 		const actionBarContainer = append(headerElement, $('div.modal-editor-action-container'));
 		const actionBar = disposables.add(new ActionBar(actionBarContainer));
+
+		// Open as Editor
+		const openAsEditorAction = disposables.add(new Action(
+			'modalEditorPart.openAsEditor',
+			localize('openAsEditor', "Open as Editor"),
+			ThemeIcon.asClassName(Codicon.openInProduct),
+			true,
+			async () => {
+				const activeEditor = editorPart.activeGroup.activeEditor;
+				if (activeEditor) {
+					await this.editorService.openEditor(activeEditor, { pinned: true, preserveFocus: false }, this.editorPartsView.mainPart.activeGroup.id);
+					editorPart.close();
+				}
+			}
+		));
+		actionBar.push(openAsEditorAction, { icon: true, label: false });
+
+		// Close action
 		const closeAction = disposables.add(new Action(
 			'modalEditorPart.close',
 			localize('close', "Close"),
