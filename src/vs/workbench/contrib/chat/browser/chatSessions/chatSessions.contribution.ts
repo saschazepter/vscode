@@ -50,6 +50,8 @@ import { IEditorGroupsService } from '../../../../services/editor/common/editorG
 import { LocalChatSessionUri } from '../../common/model/chatUri.js';
 import { assertNever } from '../../../../../base/common/assert.js';
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
+import { IWorkspaceContextService } from '../../../../../platform/workspace/common/workspace.js';
+import { IAgentWorkbenchWorkspaceService } from '../../../../services/agentSessions/browser/agentWorkbenchWorkspaceService.js';
 
 const extensionPoint = ExtensionsRegistry.registerExtensionPoint<IChatSessionsExtensionPoint[]>({
 	extensionPoint: 'chatSessions',
@@ -299,7 +301,9 @@ export class ChatSessionsService extends Disposable implements IChatSessionsServ
 		@IContextKeyService private readonly _contextKeyService: IContextKeyService,
 		@IMenuService private readonly _menuService: IMenuService,
 		@IThemeService private readonly _themeService: IThemeService,
-		@ILabelService private readonly _labelService: ILabelService
+		@ILabelService private readonly _labelService: ILabelService,
+		@IWorkspaceContextService private readonly _workspaceContextService: IWorkspaceContextService,
+		@IAgentWorkbenchWorkspaceService private readonly _agentWorkbenchWorkspaceService: IAgentWorkbenchWorkspaceService,
 	) {
 		super();
 
@@ -793,7 +797,23 @@ export class ChatSessionsService extends Disposable implements IChatSessionsServ
 			try {
 				const providerSessions = await raceCancellationError(provider.provideChatSessionItems(token), token);
 				this._logService.trace(`[ChatSessionsService] Resolved ${providerSessions.length} sessions for provider ${provider.chatSessionType}`);
-				results.push({ chatSessionType: provider.chatSessionType, items: providerSessions });
+
+				// Filter background sessions when in the agent sessions window
+				let items = providerSessions;
+				if (
+					provider.chatSessionType === AgentSessionProviders.Background &&
+					this._workspaceContextService.getWorkspace().isAgentSessionsWorkspace
+				) {
+					const activeWorkspaceFolderUri = this._agentWorkbenchWorkspaceService.activeWorkspaceFolderUri?.fsPath;
+					if (activeWorkspaceFolderUri) {
+						items = providerSessions.filter(session => {
+							const sessionWorkingFolder = session.metadata?.repositoryFolder;
+							return sessionWorkingFolder === activeWorkspaceFolderUri;
+						});
+					}
+				}
+
+				results.push({ chatSessionType: provider.chatSessionType, items });
 				resolvedProviderTypes.add(provider.chatSessionType);
 			} catch (error) {
 				// Log error but continue with other providers
