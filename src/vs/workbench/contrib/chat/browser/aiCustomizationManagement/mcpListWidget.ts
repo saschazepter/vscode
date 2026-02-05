@@ -5,11 +5,11 @@
 
 import './media/aiCustomizationManagement.css';
 import * as DOM from '../../../../../base/browser/dom.js';
-import { Disposable, DisposableStore } from '../../../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore, isDisposable } from '../../../../../base/common/lifecycle.js';
 import { localize } from '../../../../../nls.js';
 import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
 import { WorkbenchList } from '../../../../../platform/list/browser/listService.js';
-import { IListVirtualDelegate, IListRenderer } from '../../../../../base/browser/ui/list/list.js';
+import { IListVirtualDelegate, IListRenderer, IListContextMenuEvent } from '../../../../../base/browser/ui/list/list.js';
 import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { Button } from '../../../../../base/browser/ui/button/button.js';
@@ -21,8 +21,10 @@ import { autorun } from '../../../../../base/common/observable.js';
 import { IOpenerService } from '../../../../../platform/opener/common/opener.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { InputBox } from '../../../../../base/browser/ui/inputbox/inputBox.js';
-import { IContextViewService } from '../../../../../platform/contextview/browser/contextView.js';
+import { IContextMenuService, IContextViewService } from '../../../../../platform/contextview/browser/contextView.js';
 import { Delayer } from '../../../../../base/common/async.js';
+import { IAction, Separator } from '../../../../../base/common/actions.js';
+import { getContextMenuActions } from '../../../mcp/browser/mcpServerActions.js';
 
 const $ = DOM.$;
 
@@ -146,6 +148,7 @@ export class McpListWidget extends Disposable {
 		@ICommandService private readonly commandService: ICommandService,
 		@IOpenerService private readonly openerService: IOpenerService,
 		@IContextViewService private readonly contextViewService: IContextViewService,
+		@IContextMenuService private readonly contextMenuService: IContextMenuService,
 	) {
 		super();
 		this.element = $('.mcp-list-widget');
@@ -247,6 +250,9 @@ export class McpListWidget extends Disposable {
 			}
 		}));
 
+		// Handle context menu
+		this._register(this.list.onContextMenu(e => this.onContextMenu(e)));
+
 		// Listen to MCP service changes
 		this._register(this.mcpWorkbenchService.onChange(() => this.refresh()));
 		this._register(autorun(reader => {
@@ -310,5 +316,40 @@ export class McpListWidget extends Disposable {
 		if (servers > 0) {
 			this.list.setFocus([0]);
 		}
+	}
+
+	/**
+	 * Handles context menu for MCP server items.
+	 */
+	private onContextMenu(e: IListContextMenuEvent<IWorkbenchMcpServer>): void {
+		if (!e.element) {
+			return;
+		}
+
+		const disposables = new DisposableStore();
+		const mcpServer = this.mcpWorkbenchService.local.find(local => local.id === e.element!.id) || e.element;
+
+		// Get context menu actions from the MCP module
+		const groups: IAction[][] = getContextMenuActions(mcpServer, false, this.instantiationService);
+		const actions: IAction[] = [];
+		for (const menuActions of groups) {
+			for (const menuAction of menuActions) {
+				actions.push(menuAction);
+				if (isDisposable(menuAction)) {
+					disposables.add(menuAction);
+				}
+			}
+			actions.push(new Separator());
+		}
+		// Remove trailing separator
+		if (actions.length > 0 && actions[actions.length - 1] instanceof Separator) {
+			actions.pop();
+		}
+
+		this.contextMenuService.showContextMenu({
+			getAnchor: () => e.anchor,
+			getActions: () => actions,
+			onHide: () => disposables.dispose()
+		});
 	}
 }

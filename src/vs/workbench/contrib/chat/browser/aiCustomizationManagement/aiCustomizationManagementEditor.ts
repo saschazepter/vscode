@@ -47,7 +47,7 @@ import {
 	SIDEBAR_MAX_WIDTH,
 	CONTENT_MIN_WIDTH,
 } from './aiCustomizationManagement.js';
-import { agentIcon, instructionsIcon, promptIcon, skillIcon } from '../aiCustomizationTreeView/aiCustomizationTreeViewIcons.js';
+import { agentIcon, instructionsIcon, promptIcon, skillIcon, hookIcon } from '../aiCustomizationTreeView/aiCustomizationTreeViewIcons.js';
 import { AI_CUSTOMIZATION_EDITOR_ID } from '../aiCustomizationEditor/aiCustomizationEditor.js';
 import { ChatModelsWidget } from '../chatManagement/chatModelsWidget.js';
 
@@ -162,6 +162,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 			{ id: AICustomizationManagementSection.Skills, label: localize('skills', "Skills"), icon: skillIcon },
 			{ id: AICustomizationManagementSection.Instructions, label: localize('instructions', "Instructions"), icon: instructionsIcon },
 			{ id: AICustomizationManagementSection.Prompts, label: localize('prompts', "Prompts"), icon: promptIcon },
+			{ id: AICustomizationManagementSection.Hooks, label: localize('hooks', "Hooks"), icon: hookIcon },
 			{ id: AICustomizationManagementSection.McpServers, label: localize('mcpServers', "MCP Servers"), icon: Codicon.server },
 			{ id: AICustomizationManagementSection.Models, label: localize('models', "Models"), icon: Codicon.sparkle },
 		);
@@ -237,6 +238,11 @@ export class AICustomizationManagementEditor extends EditorPane {
 			case AICustomizationManagementSection.Prompts:
 				return {
 					title: localize('promptsTitle', "Prompts"),
+					// Button is now in the search bar area within the widget
+				};
+			case AICustomizationManagementSection.Hooks:
+				return {
+					title: localize('hooksTitle', "Hooks"),
 					// Button is now in the search bar area within the widget
 				};
 			case AICustomizationManagementSection.Models:
@@ -409,7 +415,8 @@ export class AICustomizationManagementEditor extends EditorPane {
 		return section === AICustomizationManagementSection.Agents ||
 			section === AICustomizationManagementSection.Skills ||
 			section === AICustomizationManagementSection.Instructions ||
-			section === AICustomizationManagementSection.Prompts;
+			section === AICustomizationManagementSection.Prompts ||
+			section === AICustomizationManagementSection.Hooks;
 	}
 
 	private selectSection(section: AICustomizationManagementSection): void {

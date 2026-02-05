@@ -15,21 +15,24 @@ import { Codicon } from '../../../../../base/common/codicons.js';
 import { localize } from '../../../../../nls.js';
 import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
 import { WorkbenchList } from '../../../../../platform/list/browser/listService.js';
-import { IListVirtualDelegate, IListRenderer } from '../../../../../base/browser/ui/list/list.js';
+import { IListVirtualDelegate, IListRenderer, IListContextMenuEvent } from '../../../../../base/browser/ui/list/list.js';
 import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
 import { IPromptsService, PromptsStorage, IPromptPath } from '../../common/promptSyntax/service/promptsService.js';
 import { PromptsType } from '../../common/promptSyntax/promptTypes.js';
-import { agentIcon, instructionsIcon, promptIcon, skillIcon, userIcon, workspaceIcon, extensionIcon } from '../aiCustomizationTreeView/aiCustomizationTreeViewIcons.js';
-import { AICustomizationManagementSection } from './aiCustomizationManagement.js';
+import { agentIcon, instructionsIcon, promptIcon, skillIcon, hookIcon, userIcon, workspaceIcon, extensionIcon } from '../aiCustomizationTreeView/aiCustomizationTreeViewIcons.js';
+import { AICustomizationManagementItemMenuId, AICustomizationManagementSection } from './aiCustomizationManagement.js';
 import { InputBox } from '../../../../../base/browser/ui/inputbox/inputBox.js';
 import { defaultButtonStyles, defaultInputBoxStyles } from '../../../../../platform/theme/browser/defaultStyles.js';
 import { Delayer } from '../../../../../base/common/async.js';
-import { IContextViewService } from '../../../../../platform/contextview/browser/contextView.js';
+import { IContextMenuService, IContextViewService } from '../../../../../platform/contextview/browser/contextView.js';
 import { HighlightedLabel } from '../../../../../base/browser/ui/highlightedlabel/highlightedLabel.js';
 import { matchesFuzzy, IMatch } from '../../../../../base/common/filters.js';
 import { IOpenerService } from '../../../../../platform/opener/common/opener.js';
 import { Button } from '../../../../../base/browser/ui/button/button.js';
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
+import { IMenuService } from '../../../../../platform/actions/common/actions.js';
+import { IContextKeyService } from '../../../../../platform/contextkey/common/contextkey.js';
+import { getFlatContextMenuActions } from '../../../../../platform/actions/browser/menuEntryActionViewItem.js';
 
 const $ = DOM.$;
 
@@ -184,6 +187,8 @@ function sectionToPromptType(section: AICustomizationManagementSection): Prompts
 			return PromptsType.skill;
 		case AICustomizationManagementSection.Instructions:
 			return PromptsType.instructions;
+		case AICustomizationManagementSection.Hooks:
+			return PromptsType.hook;
 		case AICustomizationManagementSection.Prompts:
 		default:
 			return PromptsType.prompt;
@@ -231,6 +236,9 @@ export class AICustomizationListWidget extends Disposable {
 		@IContextViewService private readonly contextViewService: IContextViewService,
 		@IOpenerService private readonly openerService: IOpenerService,
 		@ICommandService private readonly commandService: ICommandService,
+		@IContextMenuService private readonly contextMenuService: IContextMenuService,
+		@IMenuService private readonly menuService: IMenuService,
+		@IContextKeyService private readonly contextKeyService: IContextKeyService,
 	) {
 		super();
 		this.element = $('.ai-customization-list-widget');
@@ -320,9 +328,44 @@ export class AICustomizationListWidget extends Disposable {
 			}
 		}));
 
+		// Handle context menu
+		this._register(this.list.onContextMenu(e => this.onContextMenu(e)));
+
 		// Subscribe to prompt service changes
 		this._register(this.promptsService.onDidChangeCustomAgents(() => this.refresh()));
 		this._register(this.promptsService.onDidChangeSlashCommands(() => this.refresh()));
+	}
+
+	/**
+	 * Handles context menu for list items.
+	 */
+	private onContextMenu(e: IListContextMenuEvent<IAICustomizationListItem>): void {
+		if (!e.element) {
+			return;
+		}
+
+		const item = e.element;
+
+		// Create context for the menu actions
+		const context = {
+			uri: item.uri.toString(),
+			name: item.name,
+			promptType: item.promptType,
+			storage: item.storage,
+		};
+
+		// Get menu actions
+		const actions = this.menuService.getMenuActions(AICustomizationManagementItemMenuId, this.contextKeyService, {
+			arg: context,
+			shouldForwardArgs: true,
+		});
+
+		const flatActions = getFlatContextMenuActions(actions);
+
+		this.contextMenuService.showContextMenu({
+			getAnchor: () => e.anchor,
+			getActions: () => flatActions,
+		});
 	}
 
 	/**
@@ -358,6 +401,11 @@ export class AICustomizationListWidget extends Disposable {
 				docsUrl = 'https://code.visualstudio.com/docs/copilot/customization/custom-instructions';
 				learnMoreLabel = localize('learnMoreInstructions', "Learn more about custom instructions");
 				break;
+			case AICustomizationManagementSection.Hooks:
+				description = localize('hooksDescription', "Prompts executed at specific points during an agentic lifecycle.");
+				docsUrl = 'https://code.visualstudio.com/docs/copilot#hooks-docs-do-not-exist-yet';
+				learnMoreLabel = localize('learnMoreHooks', "Learn more about hooks");
+				break;
 			case AICustomizationManagementSection.Prompts:
 			default:
 				description = localize('promptsDescription', "Reusable prompts for common development tasks like generating code, performing reviews, or scaffolding components.");
@@ -384,6 +432,9 @@ export class AICustomizationListWidget extends Disposable {
 				break;
 			case AICustomizationManagementSection.Instructions:
 				buttonLabel = localize('newInstructions', "New Instructions");
+				break;
+			case AICustomizationManagementSection.Hooks:
+				buttonLabel = localize('newHook', "New Hook");
 				break;
 			case AICustomizationManagementSection.Prompts:
 			default:
@@ -453,6 +504,23 @@ export class AICustomizationListWidget extends Disposable {
 					promptType,
 				});
 			}
+		} else if (promptType === PromptsType.hook) {
+			// Hooks are JSON configuration files - list them directly
+			const hookFiles = await this.promptsService.listPromptFiles(promptType, CancellationToken.None);
+			for (const hookFile of hookFiles) {
+				const filename = basename(hookFile.uri);
+				// Derive a friendly name based on the file location
+				const friendlyName = this.getHookConfigName(hookFile.uri, hookFile.storage);
+				items.push({
+					id: hookFile.uri.toString(),
+					uri: hookFile.uri,
+					name: friendlyName,
+					filename,
+					description: localize('hookConfigDescription', "Hook configuration file"),
+					storage: hookFile.storage,
+					promptType,
+				});
+			}
 		} else {
 			// For instructions, fetch all storage locations
 			const [workspaceItems, userItems, extensionItems] = await Promise.all([
@@ -506,6 +574,31 @@ export class AICustomizationListWidget extends Disposable {
 			.replace(/\b\w/g, c => c.toUpperCase());
 
 		return name || filename;
+	}
+
+	/**
+	 * Derives a friendly name for hook configuration files based on their path.
+	 */
+	private getHookConfigName(uri: URI, storage: PromptsStorage): string {
+		const path = uri.path;
+
+		// Check for common hook file patterns
+		if (path.includes('.github/hooks')) {
+			return storage === PromptsStorage.local
+				? localize('workspaceHooks', "Workspace Hooks")
+				: localize('userHooks', "User Hooks");
+		}
+		if (path.includes('.claude/settings.local.json')) {
+			return localize('claudeLocalHooks', "Claude Local Hooks");
+		}
+		if (path.includes('.claude/settings.json')) {
+			return storage === PromptsStorage.user
+				? localize('claudeUserHooks', "Claude User Hooks")
+				: localize('claudeWorkspaceHooks', "Claude Workspace Hooks");
+		}
+
+		// Fallback to filename
+		return basename(uri);
 	}
 
 	/**
@@ -574,6 +667,8 @@ export class AICustomizationListWidget extends Disposable {
 				return skillIcon;
 			case AICustomizationManagementSection.Instructions:
 				return instructionsIcon;
+			case AICustomizationManagementSection.Hooks:
+				return hookIcon;
 			case AICustomizationManagementSection.Prompts:
 			default:
 				return promptIcon;
@@ -602,6 +697,13 @@ export class AICustomizationListWidget extends Disposable {
 					description: localize('createFirstInstructions', "Add instructions to teach Copilot about your codebase"),
 					buttonLabel: localize('createInstructions', "Create Instructions"),
 					command: 'workbench.action.aiCustomization.newInstructions'
+				};
+			case AICustomizationManagementSection.Hooks:
+				return {
+					title: localize('noHooks', "No hooks yet"),
+					description: localize('createFirstHook', "Create hooks to execute commands at agent lifecycle events"),
+					buttonLabel: localize('createHook', "Create Hook"),
+					command: 'workbench.command.new.hook'
 				};
 			case AICustomizationManagementSection.Prompts:
 			default:

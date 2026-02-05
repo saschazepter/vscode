@@ -34,7 +34,7 @@ import { IEditorGroupsService } from '../../../../../services/editor/common/edit
 import { AICustomizationManagementSection } from '../../aiCustomizationManagement/aiCustomizationManagement.js';
 import { AICustomizationManagementEditorInput } from '../../aiCustomizationManagement/aiCustomizationManagementEditorInput.js';
 import { AICustomizationManagementEditor } from '../../aiCustomizationManagement/aiCustomizationManagementEditor.js';
-import { agentIcon, instructionsIcon, promptIcon, skillIcon } from '../../aiCustomizationTreeView/aiCustomizationTreeViewIcons.js';
+import { agentIcon, instructionsIcon, promptIcon, skillIcon, hookIcon } from '../../aiCustomizationTreeView/aiCustomizationTreeViewIcons.js';
 import { IPromptsService, PromptsStorage } from '../../../common/promptSyntax/service/promptsService.js';
 import { PromptsType } from '../../../common/promptSyntax/promptTypes.js';
 import { ILanguageModelsService } from '../../../common/languageModels.js';
@@ -87,6 +87,7 @@ export class AgentSessionsViewPane extends ViewPane {
 			{ label: localize('skills', "Skills"), icon: skillIcon, action: () => this.openAICustomizationSection(AICustomizationManagementSection.Skills), getCount: () => this.getSkillCount() },
 			{ label: localize('instructions', "Instructions"), icon: instructionsIcon, action: () => this.openAICustomizationSection(AICustomizationManagementSection.Instructions), getCount: () => this.getPromptCount(PromptsType.instructions) },
 			{ label: localize('prompts', "Prompts"), icon: promptIcon, action: () => this.openAICustomizationSection(AICustomizationManagementSection.Prompts), getCount: () => this.getPromptCount(PromptsType.prompt) },
+			{ label: localize('hooks', "Hooks"), icon: hookIcon, action: () => this.openAICustomizationSection(AICustomizationManagementSection.Hooks), getCount: () => this.getPromptCount(PromptsType.hook) },
 			{ label: localize('mcpServers', "MCP Servers"), icon: Codicon.server, action: () => this.openAICustomizationSection(AICustomizationManagementSection.McpServers), getCount: () => Promise.resolve(this.mcpService.servers.get().length) },
 			{ label: localize('models', "Models"), icon: Codicon.sparkle, action: () => this.openAICustomizationSection(AICustomizationManagementSection.Models), getCount: () => Promise.resolve(this.languageModelsService.getLanguageModelIds().length) },
 		];

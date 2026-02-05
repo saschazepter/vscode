@@ -33,6 +33,11 @@ export const instructionsIcon = registerIcon('ai-customization-instructions', Co
 export const promptIcon = registerIcon('ai-customization-prompt', Codicon.bookmark, localize('aiCustomizationPromptIcon', "Icon for prompt files."));
 
 /**
+ * Icon for hooks.
+ */
+export const hookIcon = registerIcon('ai-customization-hook', Codicon.zap, localize('aiCustomizationHookIcon', "Icon for hooks."));
+
+/**
  * Icon for adding a new item.
  */
 export const addIcon = registerIcon('ai-customization-add', Codicon.add, localize('aiCustomizationAddIcon', "Icon for adding new items."));
