@@ -11,9 +11,8 @@ import { registerIcon } from '../../../platform/theme/common/iconRegistry.js';
 import { IViewContainersRegistry, ViewContainerLocation, IViewsRegistry, Extensions as ViewContainerExtensions, LayoutVisibility } from '../../common/views.js';
 import { registerChatBranchActions } from './actions/chatBranchSessionAction.js';
 import { CHANGES_VIEW_CONTAINER_ID, CHANGES_VIEW_ID, ChangesViewPane, ChangesViewPaneContainer } from './views/changesView.js';
-
-// --- Actions
-registerChatBranchActions();
+import { registerWorkbenchContribution2, WorkbenchPhase } from '../../common/contributions.js';
+import { AuxiliaryBarVisibilityContribution } from './contrib/auxiliaryBarVisibilityContribution.js';
 
 // --- Changes
 
@@ -44,3 +43,10 @@ viewsRegistry.registerViews([{
 	order: 1,
 	layoutVisibility: LayoutVisibility.AgentSessions
 }], changesViewContainer);
+
+export function registerAgentWorkbenchContributions() {
+	registerChatBranchActions();
+
+	// Workbench contributions
+	registerWorkbenchContribution2(AuxiliaryBarVisibilityContribution.ID, AuxiliaryBarVisibilityContribution, WorkbenchPhase.AfterRestored);
+}

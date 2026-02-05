@@ -54,7 +54,7 @@ The Agent Sessions Workbench (`AgentSessionsWorkbench`) provides a simplified, f
 | Sidebar | `Parts.SIDEBAR_PART` | Left of right section, in main content | Visible | `ViewContainerLocation.Sidebar` |
 | Chat Bar | `Parts.CHATBAR_PART` | Top-right section, takes remaining width | Visible | `ViewContainerLocation.ChatBar` |
 | Editor | `Parts.EDITOR_PART` | **Modal overlay** (not in grid) | Hidden | — |
-| Auxiliary Bar | `Parts.AUXILIARYBAR_PART` | Top-right section, right side | Visible | `ViewContainerLocation.AuxiliaryBar` |
+| Auxiliary Bar | `Parts.AUXILIARYBAR_PART` | Top-right section, right side | Hidden (auto-shows when chat has content) | `ViewContainerLocation.AuxiliaryBar` |
 | Panel | `Parts.PANEL_PART` | Below Chat Bar and Auxiliary Bar (right section only) | Hidden | `ViewContainerLocation.Panel` |
 
 #### Excluded Parts
@@ -519,7 +519,45 @@ Each agent session part uses separate storage keys to avoid conflicts with regul
 
 ---
 
-## 10. File Structure
+## 10. Workbench Contributions
+
+The Agent Sessions workbench registers workbench contributions for automatic behaviors.
+
+### 10.1 AuxiliaryBarVisibilityContribution
+
+**ID:** `workbench.contrib.agentSessions.auxiliaryBarVisibility`
+**Phase:** `WorkbenchPhase.AfterRestored`
+**Location:** `agentSessions/browser/contrib/auxiliaryBarVisibilityContribution.ts`
+
+This contribution automatically shows or hides the Auxiliary Bar based on the chat session state:
+
+| Chat Session State | Auxiliary Bar |
+|--------------------|---------------|
+| Empty (no requests) | Hidden |
+| Has requests | Shown |
+
+#### Behavior
+
+1. Observes all chat widgets at `ChatAgentLocation.Chat` location
+2. Listens for `onDidChangeViewModel` and model `onDidChange` events
+3. When a request is added (`addRequest` event), shows the auxiliary bar
+4. When a request is removed and session becomes empty (`removeRequest` event), hides the auxiliary bar
+5. Also listens for `onDidAddWidget` to observe newly created chat widgets
+
+#### Registration
+
+```typescript
+// In agentSessions.contributions.ts
+registerWorkbenchContribution2(
+    AuxiliaryBarVisibilityContribution.ID,
+    AuxiliaryBarVisibilityContribution,
+    WorkbenchPhase.AfterRestored
+);
+```
+
+---
+
+## 11. File Structure
 
 ```
 src/vs/workbench/agentSessions/
@@ -529,6 +567,8 @@ src/vs/workbench/agentSessions/
 │   ├── agentSessions.contributions.ts      # View registrations and contributions
 │   ├── agentSessionsLayoutActions.ts       # Layout actions (toggle sidebar, etc.)
 │   ├── style.css                           # Layout-specific styles (including editor modal)
+│   ├── contrib/
+│   │   └── auxiliaryBarVisibilityContribution.ts  # Auto show/hide auxiliary bar based on chat state
 │   ├── parts/
 │   │   ├── agentSessionSidebarPart.ts      # Agent session sidebar
 │   │   ├── agentSessionAuxiliaryBarPart.ts # Agent session auxiliary bar
@@ -546,7 +586,7 @@ src/vs/workbench/agentSessions/
 
 ---
 
-## 11. Implementation Requirements
+## 12. Implementation Requirements
 
 When modifying the Agent Sessions layout:
 
@@ -560,7 +600,7 @@ When modifying the Agent Sessions layout:
 
 ---
 
-## 12. Lifecycle
+## 13. Lifecycle
 
 ### 12.1 Startup Sequence
 
@@ -618,7 +658,7 @@ interface IPartVisibilityState {
 |------|--------------------|
 | Sidebar | `true` (visible) |
 | Project Bar | `true` (visible) |
-| Auxiliary Bar | `true` (visible) |
+| Auxiliary Bar | `false` (hidden) |
 | Chat Bar | `true` (visible) |
 | Editor | `false` (hidden) |
 | Panel | `false` (hidden) |
@@ -629,6 +669,7 @@ interface IPartVisibilityState {
 
 | Date | Change |
 |------|--------|
+| 2026-02-05 | Auxiliary Bar now hidden by default; Added `AuxiliaryBarVisibilityContribution` to auto-show when chat session has requests, auto-hide when empty |
 | 2026-02-05 | Hiding panel now exits maximized state first if panel was maximized |
 | 2026-02-05 | Added panel maximize/minimize support via `toggleMaximizedPanel()`; Uses `Grid.maximizeView()` with exclusions for titlebar and project bar; Added `TogglePanelMaximizedAction` and `TogglePanelVisibilityAction` to panel title bar |
 | 2026-02-05 | Changed layout structure: Panel is now below Chat Bar and Auxiliary Bar only (not full width); Project Bar and Sidebar span full height |

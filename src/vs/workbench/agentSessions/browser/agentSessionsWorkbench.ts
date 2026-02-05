@@ -5,7 +5,6 @@
 
 import '../../browser/style.js';
 import './style.css';
-import './agentSessions.contributions.js';
 import { Disposable, DisposableStore, IDisposable, toDisposable } from '../../../base/common/lifecycle.js';
 import { Emitter, Event, setGlobalLeakWarningThreshold } from '../../../base/common/event.js';
 import { getActiveDocument, getActiveElement, getClientArea, getWindowId, getWindows, IDimension, isAncestorUsingFlowTo, size, Dimension, runWhenWindowIdle } from '../../../base/browser/dom.js';
@@ -71,6 +70,7 @@ import { SyncDescriptor } from '../../../platform/instantiation/common/descripto
 import { BrowserTitleService, ITitlebarPartConfiguration } from '../../browser/parts/titlebar/titlebarPart.js';
 import { MenuId } from '../../../platform/actions/common/actions.js';
 import { registerAgentSessionsLayoutActions } from './agentSessionsLayoutActions.js';
+import { registerAgentWorkbenchContributions } from './agentSessions.contributions.js';
 
 //#region Workbench Options
 
@@ -249,7 +249,7 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 	private readonly partVisibility: IPartVisibilityState = {
 		sidebar: true,
 		projectBar: true,
-		auxiliaryBar: true,
+		auxiliaryBar: false,
 		editor: false,
 		panel: false,
 		chatBar: true
@@ -288,6 +288,7 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 
 		this.registerErrorHandler(logService);
 
+		registerAgentWorkbenchContributions();
 		registerAgentSessionsLayoutActions();
 	}
 
