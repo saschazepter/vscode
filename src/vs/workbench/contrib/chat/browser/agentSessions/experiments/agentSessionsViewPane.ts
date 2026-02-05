@@ -39,6 +39,7 @@ import { IPromptsService, PromptsStorage } from '../../../common/promptSyntax/se
 import { PromptsType } from '../../../common/promptSyntax/promptTypes.js';
 import { ILanguageModelsService } from '../../../common/languageModels.js';
 import { IMcpService } from '../../../../mcp/common/mcpTypes.js';
+import { IStorageService, StorageScope, StorageTarget } from '../../../../../../platform/storage/common/storage.js';
 
 interface IShortcutItem {
 	readonly label: string;
@@ -47,6 +48,9 @@ interface IShortcutItem {
 	readonly getCount?: () => Promise<number>;
 	countElement?: HTMLElement;
 }
+
+const CUSTOMIZATIONS_COLLAPSED_KEY = 'agentSessions.customizationsCollapsed';
+const SESSIONS_COLLAPSED_KEY = 'agentSessions.sessionsCollapsed';
 
 export class AgentSessionsViewPane extends ViewPane {
 
@@ -73,6 +77,7 @@ export class AgentSessionsViewPane extends ViewPane {
 		@IPromptsService private readonly promptsService: IPromptsService,
 		@ILanguageModelsService private readonly languageModelsService: ILanguageModelsService,
 		@IMcpService private readonly mcpService: IMcpService,
+		@IStorageService private readonly storageService: IStorageService,
 	) {
 		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
 
@@ -82,8 +87,8 @@ export class AgentSessionsViewPane extends ViewPane {
 			{ label: localize('skills', "Skills"), icon: skillIcon, action: () => this.openAICustomizationSection(AICustomizationManagementSection.Skills), getCount: () => this.getSkillCount() },
 			{ label: localize('instructions', "Instructions"), icon: instructionsIcon, action: () => this.openAICustomizationSection(AICustomizationManagementSection.Instructions), getCount: () => this.getPromptCount(PromptsType.instructions) },
 			{ label: localize('prompts', "Prompts"), icon: promptIcon, action: () => this.openAICustomizationSection(AICustomizationManagementSection.Prompts), getCount: () => this.getPromptCount(PromptsType.prompt) },
-			{ label: localize('models', "Models"), icon: Codicon.sparkle, action: () => this.openAICustomizationSection(AICustomizationManagementSection.Models), getCount: () => Promise.resolve(this.languageModelsService.getLanguageModelIds().length) },
 			{ label: localize('mcpServers', "MCP Servers"), icon: Codicon.server, action: () => this.openAICustomizationSection(AICustomizationManagementSection.McpServers), getCount: () => Promise.resolve(this.mcpService.servers.get().length) },
+			{ label: localize('models', "Models"), icon: Codicon.sparkle, action: () => this.openAICustomizationSection(AICustomizationManagementSection.Models), getCount: () => Promise.resolve(this.languageModelsService.getLanguageModelIds().length) },
 		];
 
 		// Listen to changes to update counts
@@ -121,18 +126,50 @@ export class AgentSessionsViewPane extends ViewPane {
 		// Sessions section
 		const sessionsSection = append(sessionsContainer, $('.agent-sessions-section'));
 
-		// Sessions header
+		// Sessions header (collapsible)
+		const sessionsCollapsed = this.storageService.getBoolean(SESSIONS_COLLAPSED_KEY, StorageScope.PROFILE, false);
 		const sessionsHeader = append(sessionsSection, $('.agent-sessions-header'));
-		sessionsHeader.textContent = localize('sessions', "SESSIONS");
+		sessionsHeader.tabIndex = 0;
+		sessionsHeader.setAttribute('role', 'button');
+		sessionsHeader.setAttribute('aria-expanded', String(!sessionsCollapsed));
+
+		const sessionsHeaderText = DOM.append(sessionsHeader, $('span'));
+		sessionsHeaderText.textContent = localize('sessions', "SESSIONS");
+
+		const sessionsChevron = DOM.append(sessionsHeader, $('.agent-sessions-chevron'));
+		sessionsChevron.classList.add(...ThemeIcon.asClassNameArray(sessionsCollapsed ? Codicon.chevronRight : Codicon.chevronDown));
+
+		// Sessions content container (for collapse)
+		const sessionsContent = append(sessionsSection, $('.agent-sessions-content'));
+		if (sessionsCollapsed) {
+			sessionsContent.classList.add('collapsed');
+		}
+
+		// Toggle collapse on sessions header click
+		const toggleSessionsCollapse = () => {
+			const collapsed = sessionsContent.classList.toggle('collapsed');
+			this.storageService.store(SESSIONS_COLLAPSED_KEY, collapsed, StorageScope.PROFILE, StorageTarget.USER);
+			sessionsHeader.setAttribute('aria-expanded', String(!collapsed));
+			sessionsChevron.classList.remove(...ThemeIcon.asClassNameArray(Codicon.chevronRight), ...ThemeIcon.asClassNameArray(Codicon.chevronDown));
+			sessionsChevron.classList.add(...ThemeIcon.asClassNameArray(collapsed ? Codicon.chevronRight : Codicon.chevronDown));
+		};
+
+		this._register(DOM.addDisposableListener(sessionsHeader, 'click', toggleSessionsCollapse));
+		this._register(DOM.addDisposableListener(sessionsHeader, 'keydown', (e: KeyboardEvent) => {
+			if (e.key === 'Enter' || e.key === ' ') {
+				e.preventDefault();
+				toggleSessionsCollapse();
+			}
+		}));
 
 		// New Session Button
-		const newSessionButtonContainer = this.newSessionButtonContainer = append(sessionsSection, $('.agent-sessions-new-button-container'));
+		const newSessionButtonContainer = this.newSessionButtonContainer = append(sessionsContent, $('.agent-sessions-new-button-container'));
 		const newSessionButton = this._register(new Button(newSessionButtonContainer, { ...defaultButtonStyles, secondary: true }));
 		newSessionButton.label = localize('newSession', "New Session");
 		this._register(newSessionButton.onDidClick(() => this.commandService.executeCommand(ACTION_ID_NEW_CHAT)));
 
 		// Sessions Control
-		this.sessionsControlContainer = append(sessionsSection, $('.agent-sessions-control-container'));
+		this.sessionsControlContainer = append(sessionsContent, $('.agent-sessions-control-container'));
 		const sessionsControl = this.sessionsControl = this._register(this.instantiationService.createInstance(AgentSessionsControl, this.sessionsControlContainer, {
 			source: 'agentSessionsViewPane',
 			filter: sessionsFilter,
@@ -145,12 +182,45 @@ export class AgentSessionsViewPane extends ViewPane {
 	}
 
 	private createAICustomizationShortcuts(container: HTMLElement): void {
-		// Header
+		// Get initial collapsed state
+		const isCollapsed = this.storageService.getBoolean(CUSTOMIZATIONS_COLLAPSED_KEY, StorageScope.PROFILE, false);
+
+		// Header (clickable to toggle)
 		const header = DOM.append(container, $('.ai-customization-header'));
-		header.textContent = localize('customizations', "CUSTOMIZATIONS");
+		header.tabIndex = 0;
+		header.setAttribute('role', 'button');
+		header.setAttribute('aria-expanded', String(!isCollapsed));
+
+		// Header text
+		const headerText = DOM.append(header, $('span'));
+		headerText.textContent = localize('customizations', "CUSTOMIZATIONS");
+
+		// Chevron icon (right-aligned, shown on hover)
+		const chevron = DOM.append(header, $('.ai-customization-chevron'));
+		chevron.classList.add(...ThemeIcon.asClassNameArray(isCollapsed ? Codicon.chevronRight : Codicon.chevronDown));
 
 		// Links container
 		const linksContainer = DOM.append(container, $('.ai-customization-links'));
+		if (isCollapsed) {
+			linksContainer.classList.add('collapsed');
+		}
+
+		// Toggle collapse on header click
+		const toggleCollapse = () => {
+			const collapsed = linksContainer.classList.toggle('collapsed');
+			this.storageService.store(CUSTOMIZATIONS_COLLAPSED_KEY, collapsed, StorageScope.PROFILE, StorageTarget.USER);
+			header.setAttribute('aria-expanded', String(!collapsed));
+			chevron.classList.remove(...ThemeIcon.asClassNameArray(Codicon.chevronRight), ...ThemeIcon.asClassNameArray(Codicon.chevronDown));
+			chevron.classList.add(...ThemeIcon.asClassNameArray(collapsed ? Codicon.chevronRight : Codicon.chevronDown));
+		};
+
+		this._register(DOM.addDisposableListener(header, 'click', toggleCollapse));
+		this._register(DOM.addDisposableListener(header, 'keydown', (e: KeyboardEvent) => {
+			if (e.key === 'Enter' || e.key === ' ') {
+				e.preventDefault();
+				toggleCollapse();
+			}
+		}));
 
 		for (const shortcut of this.shortcuts) {
 			const link = DOM.append(linksContainer, $('a.ai-customization-link'));

@@ -13,13 +13,16 @@ import { IListVirtualDelegate, IListRenderer } from '../../../../../base/browser
 import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { Button } from '../../../../../base/browser/ui/button/button.js';
-import { defaultButtonStyles } from '../../../../../platform/theme/browser/defaultStyles.js';
+import { defaultButtonStyles, defaultInputBoxStyles } from '../../../../../platform/theme/browser/defaultStyles.js';
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
 import { IMcpWorkbenchService, IWorkbenchMcpServer, McpConnectionState, IMcpService } from '../../../mcp/common/mcpTypes.js';
 import { McpCommandIds } from '../../../mcp/common/mcpCommandIds.js';
 import { autorun } from '../../../../../base/common/observable.js';
 import { IOpenerService } from '../../../../../platform/opener/common/opener.js';
 import { URI } from '../../../../../base/common/uri.js';
+import { InputBox } from '../../../../../base/browser/ui/inputbox/inputBox.js';
+import { IContextViewService } from '../../../../../platform/contextview/browser/contextView.js';
+import { Delayer } from '../../../../../base/common/async.js';
 
 const $ = DOM.$;
 
@@ -123,12 +126,18 @@ export class McpListWidget extends Disposable {
 	readonly element: HTMLElement;
 
 	private sectionHeader!: HTMLElement;
-	private sectionTitle!: HTMLElement;
 	private sectionDescription!: HTMLElement;
 	private sectionLink!: HTMLAnchorElement;
+	private searchAndButtonContainer!: HTMLElement;
+	private searchInput!: InputBox;
 	private listContainer!: HTMLElement;
 	private list!: WorkbenchList<IWorkbenchMcpServer>;
 	private emptyContainer!: HTMLElement;
+
+	private allServers: IWorkbenchMcpServer[] = [];
+	private filteredServers: IWorkbenchMcpServer[] = [];
+	private searchQuery: string = '';
+	private readonly delayedFilter = new Delayer<void>(200);
 
 	constructor(
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
@@ -136,6 +145,7 @@ export class McpListWidget extends Disposable {
 		@IMcpService private readonly mcpService: IMcpService,
 		@ICommandService private readonly commandService: ICommandService,
 		@IOpenerService private readonly openerService: IOpenerService,
+		@IContextViewService private readonly contextViewService: IContextViewService,
 	) {
 		super();
 		this.element = $('.mcp-list-widget');
@@ -145,19 +155,41 @@ export class McpListWidget extends Disposable {
 	private create(): void {
 		// Section header at top with description and link
 		this.sectionHeader = DOM.append(this.element, $('.section-header'));
-		this.sectionTitle = DOM.append(this.sectionHeader, $('h2.section-header-title'));
-		this.sectionTitle.textContent = localize('mcpServersTitle', "MCP Servers");
 		this.sectionDescription = DOM.append(this.sectionHeader, $('p.section-header-description'));
-		this.sectionDescription.textContent = localize('mcpServersDescription', "Model Context Protocol servers that provide additional tools and capabilities. MCP servers can extend Copilot with custom tools, data sources, and integrations.");
+		this.sectionDescription.textContent = localize('mcpServersDescription', "An open standard that lets AI use external tools and services. MCP servers provide tools for file operations, databases, APIs, and more.");
 		this.sectionLink = DOM.append(this.sectionHeader, $('a.section-header-link')) as HTMLAnchorElement;
 		this.sectionLink.textContent = localize('learnMoreMcp', "Learn more about MCP servers");
-		this.sectionLink.href = 'https://code.visualstudio.com/docs/copilot/customization/mcp-servers';
+		this.sectionLink.href = 'https://code.visualstudio.com/docs/copilot/chat/mcp-servers';
 		this._register(DOM.addDisposableListener(this.sectionLink, 'click', (e) => {
 			e.preventDefault();
 			const href = this.sectionLink.href;
 			if (href) {
 				this.openerService.open(URI.parse(href));
 			}
+		}));
+
+		// Search and button container
+		this.searchAndButtonContainer = DOM.append(this.element, $('.list-search-and-button-container'));
+
+		// Search container
+		const searchContainer = DOM.append(this.searchAndButtonContainer, $('.list-search-container'));
+		this.searchInput = this._register(new InputBox(searchContainer, this.contextViewService, {
+			placeholder: localize('searchMcpPlaceholder', "Type to search..."),
+			inputBoxStyles: defaultInputBoxStyles,
+		}));
+
+		this._register(this.searchInput.onDidChange(() => {
+			this.searchQuery = this.searchInput.value;
+			this.delayedFilter.trigger(() => this.filterServers());
+		}));
+
+		// Add button next to search
+		const addButtonContainer = DOM.append(this.searchAndButtonContainer, $('.list-add-button-container'));
+		const addButton = this._register(new Button(addButtonContainer, { ...defaultButtonStyles, supportIcons: true }));
+		addButton.label = `$(${Codicon.add.id}) ${localize('addServer', "Add Server")}`;
+		addButton.element.classList.add('list-add-button');
+		this._register(addButton.onDidClick(() => {
+			this.commandService.executeCommand(McpCommandIds.AddConfiguration);
 		}));
 
 		// Empty state
@@ -169,8 +201,8 @@ export class McpListWidget extends Disposable {
 		const emptySubtext = DOM.append(this.emptyContainer, $('.empty-subtext'));
 		emptySubtext.textContent = localize('addMcpServer', "Add an MCP server configuration to get started");
 
-		const emptyButton = this._register(new Button(this.emptyContainer, { ...defaultButtonStyles }));
-		emptyButton.label = localize('addConfiguration', "Add Configuration");
+		const emptyButton = this._register(new Button(this.emptyContainer, { ...defaultButtonStyles, supportIcons: true }));
+		emptyButton.label = `$(${Codicon.add.id}) ${localize('addConfiguration', "Add Configuration")}`;
 		this._register(emptyButton.onDidClick(() => {
 			this.commandService.executeCommand(McpCommandIds.AddConfiguration);
 		}));
@@ -227,17 +259,34 @@ export class McpListWidget extends Disposable {
 	}
 
 	private async refresh(): Promise<void> {
-		const servers = await this.mcpWorkbenchService.queryLocal();
+		this.allServers = await this.mcpWorkbenchService.queryLocal();
+		this.filterServers();
+	}
 
-		if (servers.length === 0) {
+	private filterServers(): void {
+		const query = this.searchQuery.toLowerCase().trim();
+
+		if (query) {
+			this.filteredServers = this.allServers.filter(server =>
+				server.label.toLowerCase().includes(query) ||
+				(server.description?.toLowerCase().includes(query))
+			);
+		} else {
+			this.filteredServers = [...this.allServers];
+		}
+
+		// Show empty state only when there are no servers at all (not when filtered to empty)
+		if (this.allServers.length === 0) {
 			this.emptyContainer.style.display = 'flex';
 			this.listContainer.style.display = 'none';
+			this.searchAndButtonContainer.style.display = 'none';
 		} else {
 			this.emptyContainer.style.display = 'none';
 			this.listContainer.style.display = '';
+			this.searchAndButtonContainer.style.display = '';
 		}
 
-		this.list.splice(0, this.list.length, servers);
+		this.list.splice(0, this.list.length, this.filteredServers);
 	}
 
 	/**
@@ -245,7 +294,8 @@ export class McpListWidget extends Disposable {
 	 */
 	layout(height: number, width: number): void {
 		const sectionHeaderHeight = this.sectionHeader.offsetHeight || 100;
-		const listHeight = height - sectionHeaderHeight - 24; // Extra padding
+		const searchBarHeight = this.searchAndButtonContainer.offsetHeight || 40;
+		const listHeight = height - sectionHeaderHeight - searchBarHeight - 24; // Extra padding
 
 		this.listContainer.style.height = `${listHeight}px`;
 		this.list.layout(listHeight, width);

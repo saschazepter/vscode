@@ -16,9 +16,10 @@
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	padding: 12px 16px;
+	padding: 16px 20px;
 	border-bottom: 1px solid var(--vscode-panel-border);
 	flex-shrink: 0;
+	background-color: var(--vscode-editor-background);
 }
 
 .ai-customization-management-editor .header-title-container {
@@ -28,9 +29,10 @@
 }
 
 .ai-customization-management-editor .header-title {
-	font-size: 14px;
-	font-weight: 600;
+	font-size: 18px;
+	font-weight: 500;
 	color: var(--vscode-foreground);
+	letter-spacing: -0.02em;
 }
 
 .ai-customization-management-editor .header-actions {
@@ -40,7 +42,7 @@
 }
 
 .ai-customization-management-editor .new-button {
-	padding: 4px 12px;
+	padding: 4px 14px;
 }
 
 /* Split View Container */
@@ -54,24 +56,42 @@
 	background-color: var(--vscode-sideBar-background);
 	height: 100%;
 	overflow: hidden;
+	border-right: 1px solid var(--vscode-panel-border);
 }
 
 .ai-customization-management-editor .sidebar-content {
 	height: 100%;
-	padding: 8px 0;
+	padding: 12px 0;
 }
 
 /* Section list items */
 .ai-customization-management-editor .section-list-item {
 	display: flex;
 	align-items: center;
-	padding: 4px 12px;
-	gap: 8px;
+	padding: 8px 16px;
+	gap: 10px;
 	cursor: pointer;
+	margin: 2px 8px;
+	border-radius: 6px;
+	transition: background-color 0.1s ease, opacity 0.1s ease;
 }
 
 .ai-customization-management-editor .section-list-item:hover {
 	background-color: var(--vscode-list-hoverBackground);
+}
+
+/* Selected section - using list selection */
+.ai-customization-management-editor .monaco-list .monaco-list-row.selected .section-list-item {
+	background-color: var(--vscode-list-activeSelectionBackground);
+	color: var(--vscode-list-activeSelectionForeground);
+}
+
+.ai-customization-management-editor .monaco-list .monaco-list-row.selected .section-list-item .section-icon {
+	color: var(--vscode-list-activeSelectionIconForeground, var(--vscode-list-activeSelectionForeground));
+}
+
+.ai-customization-management-editor .monaco-list .monaco-list-row.selected .section-list-item .section-label {
+	color: var(--vscode-list-activeSelectionForeground);
 }
 
 .ai-customization-management-editor .section-icon {
@@ -81,6 +101,7 @@
 	display: flex;
 	align-items: center;
 	justify-content: center;
+	opacity: 0.85;
 }
 
 .ai-customization-management-editor .section-label {
@@ -89,25 +110,7 @@
 	text-overflow: ellipsis;
 	white-space: nowrap;
 	font-size: 13px;
-}
-
-
-
-
-.ai-customization-management-editor .section-count {
-	flex-shrink: 0;
-	font-size: 10px;
-	padding: 0 4px;
-	background-color: var(--vscode-badge-background);
-	color: var(--vscode-badge-foreground);
-	border-radius: 8px;
-	border: 1px solid transparent;
-	min-width: 14px;
-	text-align: center;
-}
-
-.ai-customization-management-editor .section-count:empty {
-	display: none;
+	font-weight: 400;
 }
 
 /* Content area */
@@ -129,13 +132,35 @@
 	height: 100%;
 }
 
-.ai-customization-list-widget .list-search-container {
+/* Search and button container - consistent with Models view */
+.ai-customization-list-widget .list-search-and-button-container,
+.mcp-list-widget .list-search-and-button-container {
+	display: flex;
+	align-items: center;
+	gap: 8px;
 	flex-shrink: 0;
-	margin-bottom: 8px;
+	margin-bottom: 12px;
 }
 
-.ai-customization-list-widget .list-search-container .monaco-inputbox {
+.ai-customization-list-widget .list-search-container,
+.mcp-list-widget .list-search-container {
+	flex: 1;
+}
+
+.ai-customization-list-widget .list-search-container .monaco-inputbox,
+.mcp-list-widget .list-search-container .monaco-inputbox {
 	width: 100%;
+}
+
+.ai-customization-list-widget .list-add-button-container,
+.mcp-list-widget .list-add-button-container {
+	flex-shrink: 0;
+}
+
+.ai-customization-list-widget .list-add-button,
+.mcp-list-widget .list-add-button {
+	white-space: nowrap;
+	padding: 5px 10px;
 }
 
 .ai-customization-list-widget .list-container {
@@ -148,6 +173,41 @@
 	text-align: center;
 	color: var(--vscode-descriptionForeground);
 	font-style: italic;
+}
+
+/* Empty state - engaging design */
+.ai-customization-list-widget .list-empty-state {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding: 48px 24px;
+	gap: 12px;
+	text-align: center;
+	flex: 1;
+}
+
+.ai-customization-list-widget .list-empty-state .empty-state-icon {
+	font-size: 48px;
+	opacity: 0.4;
+	margin-bottom: 8px;
+}
+
+.ai-customization-list-widget .list-empty-state .empty-state-text {
+	font-size: 16px;
+	font-weight: 500;
+	color: var(--vscode-foreground);
+}
+
+.ai-customization-list-widget .list-empty-state .empty-state-subtext {
+	font-size: 13px;
+	color: var(--vscode-descriptionForeground);
+	max-width: 300px;
+	line-height: 1.4;
+}
+
+.ai-customization-list-widget .list-empty-state .empty-state-button {
+	margin-top: 16px;
 }
 
 /* List item styling */
@@ -236,16 +296,9 @@
 /* Section header at top of list widget */
 .ai-customization-list-widget .section-header {
 	flex-shrink: 0;
-	padding: 12px 4px 16px 4px;
+	padding: 8px 4px 16px 4px;
 	border-bottom: 1px solid var(--vscode-widget-border);
 	margin-bottom: 12px;
-}
-
-.ai-customization-list-widget .section-header .section-header-title {
-	font-size: 18px;
-	font-weight: 500;
-	color: var(--vscode-foreground);
-	margin: 0 0 8px 0;
 }
 
 .ai-customization-list-widget .section-header .section-header-description {
@@ -352,6 +405,11 @@
 	height: 100%;
 }
 
+/* Override models widget padding when embedded in management editor */
+.ai-customization-management-editor .models-content-container .models-widget {
+	padding-right: 0;
+}
+
 /* MCP List Widget */
 .mcp-list-widget {
 	display: flex;
@@ -361,16 +419,9 @@
 
 .mcp-list-widget .section-header {
 	flex-shrink: 0;
-	padding: 12px 4px 16px 4px;
+	padding: 8px 4px 16px 4px;
 	border-bottom: 1px solid var(--vscode-widget-border);
 	margin-bottom: 12px;
-}
-
-.mcp-list-widget .section-header .section-header-title {
-	font-size: 18px;
-	font-weight: 500;
-	color: var(--vscode-foreground);
-	margin: 0 0 8px 0;
 }
 
 .mcp-list-widget .section-header .section-header-description {
@@ -409,22 +460,30 @@
 	padding: 48px 24px;
 	gap: 12px;
 	text-align: center;
+	flex: 1;
 }
 
 .mcp-list-widget .mcp-empty-state .empty-icon {
 	font-size: 48px;
-	opacity: 0.5;
+	opacity: 0.4;
+	margin-bottom: 8px;
 }
 
 .mcp-list-widget .mcp-empty-state .empty-text {
-	font-size: 14px;
+	font-size: 16px;
 	font-weight: 500;
 	color: var(--vscode-foreground);
 }
 
 .mcp-list-widget .mcp-empty-state .empty-subtext {
-	font-size: 12px;
+	font-size: 13px;
 	color: var(--vscode-descriptionForeground);
+	max-width: 300px;
+	line-height: 1.4;
+}
+
+.mcp-list-widget .mcp-empty-state .monaco-button {
+	margin-top: 16px;
 }
 
 /* MCP Server Item */

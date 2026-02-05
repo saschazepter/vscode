@@ -11,6 +11,7 @@ import { CancellationToken } from '../../../../../base/common/cancellation.js';
 import { basename, dirname } from '../../../../../base/common/resources.js';
 import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { URI } from '../../../../../base/common/uri.js';
+import { Codicon } from '../../../../../base/common/codicons.js';
 import { localize } from '../../../../../nls.js';
 import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
 import { WorkbenchList } from '../../../../../platform/list/browser/listService.js';
@@ -21,12 +22,14 @@ import { PromptsType } from '../../common/promptSyntax/promptTypes.js';
 import { agentIcon, instructionsIcon, promptIcon, skillIcon, userIcon, workspaceIcon, extensionIcon } from '../aiCustomizationTreeView/aiCustomizationTreeViewIcons.js';
 import { AICustomizationManagementSection } from './aiCustomizationManagement.js';
 import { InputBox } from '../../../../../base/browser/ui/inputbox/inputBox.js';
-import { defaultInputBoxStyles } from '../../../../../platform/theme/browser/defaultStyles.js';
+import { defaultButtonStyles, defaultInputBoxStyles } from '../../../../../platform/theme/browser/defaultStyles.js';
 import { Delayer } from '../../../../../base/common/async.js';
 import { IContextViewService } from '../../../../../platform/contextview/browser/contextView.js';
 import { HighlightedLabel } from '../../../../../base/browser/ui/highlightedlabel/highlightedLabel.js';
 import { matchesFuzzy, IMatch } from '../../../../../base/common/filters.js';
 import { IOpenerService } from '../../../../../platform/opener/common/opener.js';
+import { Button } from '../../../../../base/browser/ui/button/button.js';
+import { ICommandService } from '../../../../../platform/commands/common/commands.js';
 
 const $ = DOM.$;
 
@@ -207,14 +210,19 @@ export class AICustomizationListWidget extends Disposable {
 	readonly element: HTMLElement;
 
 	private sectionHeader!: HTMLElement;
-	private sectionTitle!: HTMLElement;
 	private sectionDescription!: HTMLElement;
 	private sectionLink!: HTMLAnchorElement;
+	private searchAndButtonContainer!: HTMLElement;
 	private searchContainer!: HTMLElement;
 	private searchInput!: InputBox;
+	private addButton!: Button;
 	private listContainer!: HTMLElement;
 	private list!: WorkbenchList<IAICustomizationListItem>;
-	private emptyMessage!: HTMLElement;
+	private emptyStateContainer!: HTMLElement;
+	private emptyStateIcon!: HTMLElement;
+	private emptyStateText!: HTMLElement;
+	private emptyStateSubtext!: HTMLElement;
+	private emptyStateButton!: Button;
 
 	private currentSection: AICustomizationManagementSection = AICustomizationManagementSection.Agents;
 	private allItems: IAICustomizationListItem[] = [];
@@ -235,6 +243,7 @@ export class AICustomizationListWidget extends Disposable {
 		@IHoverService hoverService: IHoverService,
 		@IContextViewService private readonly contextViewService: IContextViewService,
 		@IOpenerService private readonly openerService: IOpenerService,
+		@ICommandService private readonly commandService: ICommandService,
 	) {
 		super();
 		this.element = $('.ai-customization-list-widget');
@@ -244,7 +253,6 @@ export class AICustomizationListWidget extends Disposable {
 	private create(): void {
 		// Section header at top with description and link
 		this.sectionHeader = DOM.append(this.element, $('.section-header'));
-		this.sectionTitle = DOM.append(this.sectionHeader, $('h2.section-header-title'));
 		this.sectionDescription = DOM.append(this.sectionHeader, $('p.section-header-description'));
 		this.sectionLink = DOM.append(this.sectionHeader, $('a.section-header-link')) as HTMLAnchorElement;
 		this._register(DOM.addDisposableListener(this.sectionLink, 'click', (e) => {
@@ -256,10 +264,13 @@ export class AICustomizationListWidget extends Disposable {
 		}));
 		this.updateSectionHeader();
 
+		// Search and button container
+		this.searchAndButtonContainer = DOM.append(this.element, $('.list-search-and-button-container'));
+
 		// Search container
-		this.searchContainer = DOM.append(this.element, $('.list-search-container'));
+		this.searchContainer = DOM.append(this.searchAndButtonContainer, $('.list-search-container'));
 		this.searchInput = this._register(new InputBox(this.searchContainer, this.contextViewService, {
-			placeholder: localize('searchPlaceholder', "Search customizations..."),
+			placeholder: localize('searchPlaceholder', "Type to search..."),
 			inputBoxStyles: defaultInputBoxStyles,
 		}));
 
@@ -268,13 +279,25 @@ export class AICustomizationListWidget extends Disposable {
 			this.delayedFilter.trigger(() => this.filterItems());
 		}));
 
+		// Add button next to search
+		const addButtonContainer = DOM.append(this.searchAndButtonContainer, $('.list-add-button-container'));
+		this.addButton = this._register(new Button(addButtonContainer, { ...defaultButtonStyles, supportIcons: true }));
+		this.addButton.element.classList.add('list-add-button');
+		this._register(this.addButton.onDidClick(() => this.executeCreateAction()));
+		this.updateAddButton();
+
 		// List container
 		this.listContainer = DOM.append(this.element, $('.list-container'));
 
-		// Empty message
-		this.emptyMessage = DOM.append(this.element, $('.list-empty-message'));
-		this.emptyMessage.textContent = localize('noItems', "No items found");
-		this.emptyMessage.style.display = 'none';
+		// Empty state container
+		this.emptyStateContainer = DOM.append(this.element, $('.list-empty-state'));
+		this.emptyStateIcon = DOM.append(this.emptyStateContainer, $('.empty-state-icon'));
+		this.emptyStateText = DOM.append(this.emptyStateContainer, $('.empty-state-text'));
+		this.emptyStateSubtext = DOM.append(this.emptyStateContainer, $('.empty-state-subtext'));
+		this.emptyStateButton = this._register(new Button(this.emptyStateContainer, { ...defaultButtonStyles, supportIcons: true }));
+		this.emptyStateButton.element.classList.add('empty-state-button');
+		this._register(this.emptyStateButton.onDidClick(() => this.executeCreateAction()));
+		this.emptyStateContainer.style.display = 'none';
 
 		// Create list
 		this.list = this._register(this.instantiationService.createInstance(
@@ -321,6 +344,7 @@ export class AICustomizationListWidget extends Disposable {
 	async setSection(section: AICustomizationManagementSection): Promise<void> {
 		this.currentSection = section;
 		this.updateSectionHeader();
+		this.updateAddButton();
 		await this.loadItems();
 	}
 
@@ -328,40 +352,57 @@ export class AICustomizationListWidget extends Disposable {
 	 * Updates the section header based on the current section.
 	 */
 	private updateSectionHeader(): void {
-		let title: string;
 		let description: string;
 		let docsUrl: string;
 		let learnMoreLabel: string;
 		switch (this.currentSection) {
 			case AICustomizationManagementSection.Agents:
-				title = localize('agentsTitle', "Agents");
-				description = localize('agentsDescription', "Custom chat participants with their own instructions, tools, and knowledge. Use agents to create specialized AI assistants for specific workflows like code review, testing, or documentation.");
+				description = localize('agentsDescription', "Configure the AI to adopt different personas tailored to specific development tasks. Each agent has its own instructions, tools, and behavior.");
 				docsUrl = 'https://code.visualstudio.com/docs/copilot/customization/custom-agents';
-				learnMoreLabel = localize('learnMoreAgents', "Learn more about agents");
+				learnMoreLabel = localize('learnMoreAgents', "Learn more about custom agents");
 				break;
 			case AICustomizationManagementSection.Skills:
-				title = localize('skillsTitle', "Skills");
-				description = localize('skillsDescription', "Reusable prompt files that define specific capabilities. Skills can be attached to agents or used directly in chat to perform tasks like fetching documentation, running analysis, or generating code.");
+				description = localize('skillsDescription', "Folders of instructions, scripts, and resources that Copilot loads when relevant to perform specialized tasks.");
 				docsUrl = 'https://code.visualstudio.com/docs/copilot/customization/agent-skills';
-				learnMoreLabel = localize('learnMoreSkills', "Learn more about skills");
+				learnMoreLabel = localize('learnMoreSkills', "Learn more about agent skills");
 				break;
 			case AICustomizationManagementSection.Instructions:
-				title = localize('instructionsTitle', "Instructions");
-				description = localize('instructionsDescription', "Contextual guidelines that teach Copilot about your codebase. Instructions can apply to specific files or folders and help the AI follow your coding conventions and project patterns.");
+				description = localize('instructionsDescription', "Define common guidelines and rules that automatically influence how AI generates code and handles development tasks.");
 				docsUrl = 'https://code.visualstudio.com/docs/copilot/customization/custom-instructions';
-				learnMoreLabel = localize('learnMoreInstructions', "Learn more about instructions");
+				learnMoreLabel = localize('learnMoreInstructions', "Learn more about custom instructions");
 				break;
 			case AICustomizationManagementSection.Prompts:
-				title = localize('promptsTitle', "Prompts");
-				description = localize('promptsDescription', "Reusable message templates that you can quickly run in chat. Create prompts for common questions, code generation patterns, or multi-step tasks that you perform frequently.");
+				description = localize('promptsDescription', "Reusable prompts for common development tasks like generating code, performing reviews, or scaffolding components.");
 				docsUrl = 'https://code.visualstudio.com/docs/copilot/customization/prompt-files';
-				learnMoreLabel = localize('learnMorePrompts', "Learn more about prompts");
+				learnMoreLabel = localize('learnMorePrompts', "Learn more about prompt files");
 				break;
 		}
-		this.sectionTitle.textContent = title;
 		this.sectionDescription.textContent = description;
 		this.sectionLink.textContent = learnMoreLabel;
 		this.sectionLink.href = docsUrl;
+	}
+
+	/**
+	 * Updates the add button label based on the current section.
+	 */
+	private updateAddButton(): void {
+		let buttonLabel: string;
+		switch (this.currentSection) {
+			case AICustomizationManagementSection.Agents:
+				buttonLabel = localize('newAgent', "New Agent");
+				break;
+			case AICustomizationManagementSection.Skills:
+				buttonLabel = localize('newSkill', "New Skill");
+				break;
+			case AICustomizationManagementSection.Instructions:
+				buttonLabel = localize('newInstructions', "New Instructions");
+				break;
+			case AICustomizationManagementSection.Prompts:
+			default:
+				buttonLabel = localize('newPrompt', "New Prompt");
+				break;
+		}
+		this.addButton.label = `$(${Codicon.add.id}) ${buttonLabel}`;
 	}
 
 	/**
@@ -447,20 +488,89 @@ export class AICustomizationListWidget extends Disposable {
 		}
 
 		this.list.splice(0, this.list.length, this.filteredItems);
-		this.updateEmptyMessage();
+		this.updateEmptyState();
 	}
 
-	private updateEmptyMessage(): void {
+	private updateEmptyState(): void {
 		if (this.filteredItems.length === 0) {
-			this.emptyMessage.style.display = '';
+			this.emptyStateContainer.style.display = 'flex';
+			this.listContainer.style.display = 'none';
+
+			// Update icon based on section
+			this.emptyStateIcon.className = 'empty-state-icon';
+			const sectionIcon = this.getSectionIcon();
+			this.emptyStateIcon.classList.add(...ThemeIcon.asClassNameArray(sectionIcon));
+
 			if (this.searchQuery.trim()) {
-				this.emptyMessage.textContent = localize('noMatchingItems', "No items match '{0}'", this.searchQuery);
+				// Search with no results
+				this.emptyStateText.textContent = localize('noMatchingItems', "No items match '{0}'", this.searchQuery);
+				this.emptyStateSubtext.textContent = localize('tryDifferentSearch', "Try a different search term");
+				this.emptyStateButton.element.style.display = 'none';
 			} else {
-				this.emptyMessage.textContent = localize('noItems', "No items found");
+				// No items at all - show create action
+				const emptyInfo = this.getEmptyStateInfo();
+				this.emptyStateText.textContent = emptyInfo.title;
+				this.emptyStateSubtext.textContent = emptyInfo.description;
+				this.emptyStateButton.label = emptyInfo.buttonLabel;
+				this.emptyStateButton.element.style.display = '';
 			}
 		} else {
-			this.emptyMessage.style.display = 'none';
+			this.emptyStateContainer.style.display = 'none';
+			this.listContainer.style.display = '';
 		}
+	}
+
+	private getSectionIcon(): ThemeIcon {
+		switch (this.currentSection) {
+			case AICustomizationManagementSection.Agents:
+				return agentIcon;
+			case AICustomizationManagementSection.Skills:
+				return skillIcon;
+			case AICustomizationManagementSection.Instructions:
+				return instructionsIcon;
+			case AICustomizationManagementSection.Prompts:
+			default:
+				return promptIcon;
+		}
+	}
+
+	private getEmptyStateInfo(): { title: string; description: string; buttonLabel: string; command: string } {
+		switch (this.currentSection) {
+			case AICustomizationManagementSection.Agents:
+				return {
+					title: localize('noAgents', "No agents yet"),
+					description: localize('createFirstAgent', "Create your first custom agent to get started"),
+					buttonLabel: localize('createAgent', "Create Agent"),
+					command: 'workbench.action.aiCustomization.newAgent'
+				};
+			case AICustomizationManagementSection.Skills:
+				return {
+					title: localize('noSkills', "No skills yet"),
+					description: localize('createFirstSkill', "Create your first skill to extend agent capabilities"),
+					buttonLabel: localize('createSkill', "Create Skill"),
+					command: 'workbench.action.aiCustomization.newSkill'
+				};
+			case AICustomizationManagementSection.Instructions:
+				return {
+					title: localize('noInstructions', "No instructions yet"),
+					description: localize('createFirstInstructions', "Add instructions to teach Copilot about your codebase"),
+					buttonLabel: localize('createInstructions', "Create Instructions"),
+					command: 'workbench.action.aiCustomization.newInstructions'
+				};
+			case AICustomizationManagementSection.Prompts:
+			default:
+				return {
+					title: localize('noPrompts', "No prompts yet"),
+					description: localize('createFirstPrompt', "Create reusable prompts for common tasks"),
+					buttonLabel: localize('createPrompt', "Create Prompt"),
+					command: 'workbench.action.aiCustomization.newPrompt'
+				};
+		}
+	}
+
+	private executeCreateAction(): void {
+		const emptyInfo = this.getEmptyStateInfo();
+		this.commandService.executeCommand(emptyInfo.command);
 	}
 
 	/**
@@ -499,8 +609,8 @@ export class AICustomizationListWidget extends Disposable {
 	 */
 	layout(height: number, width: number): void {
 		const sectionHeaderHeight = this.sectionHeader.offsetHeight || 100;
-		const searchHeight = this.searchContainer.offsetHeight || 32;
-		const listHeight = height - sectionHeaderHeight - searchHeight - 24; // Extra padding
+		const searchBarHeight = this.searchAndButtonContainer.offsetHeight || 40;
+		const listHeight = height - sectionHeaderHeight - searchBarHeight - 24; // Extra padding
 
 		this.searchInput.layout();
 		this.listContainer.style.height = `${listHeight}px`;

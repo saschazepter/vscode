@@ -28,8 +28,6 @@ import { Button } from '../../../../../base/browser/ui/button/button.js';
 import { defaultButtonStyles } from '../../../../../platform/theme/browser/defaultStyles.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
-import { IContextMenuService } from '../../../../../platform/contextview/browser/contextView.js';
-import { toAction } from '../../../../../base/common/actions.js';
 import { registerColor } from '../../../../../platform/theme/common/colorRegistry.js';
 import { PANEL_BORDER } from '../../../../common/theme.js';
 import { AICustomizationManagementEditorInput } from './aiCustomizationManagementEditorInput.js';
@@ -49,12 +47,8 @@ import {
 } from './aiCustomizationManagement.js';
 import { agentIcon, instructionsIcon, promptIcon, skillIcon } from '../aiCustomizationTreeView/aiCustomizationTreeViewIcons.js';
 import { AI_CUSTOMIZATION_EDITOR_ID } from '../aiCustomizationEditor/aiCustomizationEditor.js';
-import { IPromptsService, PromptsStorage } from '../../common/promptSyntax/service/promptsService.js';
 import { PromptsType } from '../../common/promptSyntax/promptTypes.js';
-import { IMcpService } from '../../../mcp/common/mcpTypes.js';
-import { autorun } from '../../../../../base/common/observable.js';
 import { ChatModelsWidget } from '../chatManagement/chatModelsWidget.js';
-import { ILanguageModelsService } from '../../common/languageModels.js';
 
 const $ = DOM.$;
 
@@ -70,7 +64,6 @@ interface ISectionItem {
 	readonly id: AICustomizationManagementSection;
 	readonly label: string;
 	readonly icon: ThemeIcon;
-	count?: number;
 }
 
 class SectionItemDelegate implements IListVirtualDelegate<ISectionItem> {
@@ -87,7 +80,6 @@ interface ISectionItemTemplateData {
 	readonly container: HTMLElement;
 	readonly icon: HTMLElement;
 	readonly label: HTMLElement;
-	readonly count: HTMLElement;
 }
 
 class SectionItemRenderer implements IListRenderer<ISectionItem, ISectionItemTemplateData> {
@@ -97,15 +89,13 @@ class SectionItemRenderer implements IListRenderer<ISectionItem, ISectionItemTem
 		container.classList.add('section-list-item');
 		const icon = DOM.append(container, $('.section-icon'));
 		const label = DOM.append(container, $('.section-label'));
-		const count = DOM.append(container, $('.section-count'));
-		return { container, icon, label, count };
+		return { container, icon, label };
 	}
 
 	renderElement(element: ISectionItem, index: number, templateData: ISectionItemTemplateData): void {
 		templateData.icon.className = 'section-icon';
 		templateData.icon.classList.add(...ThemeIcon.asClassNameArray(element.icon));
 		templateData.label.textContent = element.label;
-		templateData.count.textContent = element.count !== undefined ? `${element.count}` : '';
 	}
 
 	disposeTemplate(): void { }
@@ -155,12 +145,8 @@ export class AICustomizationManagementEditor extends EditorPane {
 		@IStorageService private readonly storageService: IStorageService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@IContextKeyService contextKeyService: IContextKeyService,
-		@IContextMenuService private readonly contextMenuService: IContextMenuService,
 		@IEditorService private readonly editorService: IEditorService,
 		@ICommandService private readonly commandService: ICommandService,
-		@IPromptsService private readonly promptsService: IPromptsService,
-		@IMcpService private readonly mcpService: IMcpService,
-		@ILanguageModelsService private readonly languageModelsService: ILanguageModelsService,
 	) {
 		super(AICustomizationManagementEditor.ID, group, telemetryService, themeService, storageService);
 
@@ -173,8 +159,8 @@ export class AICustomizationManagementEditor extends EditorPane {
 			{ id: AICustomizationManagementSection.Skills, label: localize('skills', "Skills"), icon: skillIcon },
 			{ id: AICustomizationManagementSection.Instructions, label: localize('instructions', "Instructions"), icon: instructionsIcon },
 			{ id: AICustomizationManagementSection.Prompts, label: localize('prompts', "Prompts"), icon: promptIcon },
-			{ id: AICustomizationManagementSection.Models, label: localize('models', "Models"), icon: Codicon.sparkle },
 			{ id: AICustomizationManagementSection.McpServers, label: localize('mcpServers', "MCP Servers"), icon: Codicon.server },
+			{ id: AICustomizationManagementSection.Models, label: localize('models', "Models"), icon: Codicon.sparkle },
 		);
 
 		// Restore selected section from storage
@@ -182,19 +168,6 @@ export class AICustomizationManagementEditor extends EditorPane {
 		if (savedSection && Object.values(AICustomizationManagementSection).includes(savedSection as AICustomizationManagementSection)) {
 			this.selectedSection = savedSection as AICustomizationManagementSection;
 		}
-
-		// Listen to promptsService changes to update all counts
-		this._register(this.promptsService.onDidChangeCustomAgents(() => this.loadAllSectionCounts()));
-		this._register(this.promptsService.onDidChangeSlashCommands(() => this.loadAllSectionCounts()));
-
-		// Listen to mcpService changes to update MCP count
-		this._register(autorun(reader => {
-			this.mcpService.servers.read(reader);
-			this.updateMcpSectionCount();
-		}));
-
-		// Listen to language model changes to update Models count
-		this._register(this.languageModelsService.onDidChangeLanguageModels(() => this.updateModelsSectionCount()));
 	}
 
 	protected override createEditor(parent: HTMLElement): void {
@@ -209,53 +182,78 @@ export class AICustomizationManagementEditor extends EditorPane {
 	private createHeader(): void {
 		this.headerContainer = DOM.append(this.container, $('.management-header'));
 
-		// Title
+		// Title - dynamically shows selected section
 		const titleContainer = DOM.append(this.headerContainer, $('.header-title-container'));
 		this.titleElement = DOM.append(titleContainer, $('.header-title'));
-		this.titleElement.textContent = localize('aiCustomizations', "AI Customizations");
 
-		// New button with dropdown
+		// New button - context-aware based on selected section
 		const buttonContainer = DOM.append(this.headerContainer, $('.header-actions'));
 		this.newButton = this.editorDisposables.add(new Button(buttonContainer, {
 			...defaultButtonStyles,
 			supportIcons: true,
 		}));
-		this.newButton.label = `$(${Codicon.add.id}) ${localize('new', "New")}`;
 		this.newButton.element.classList.add('new-button');
 
 		this.editorDisposables.add(this.newButton.onDidClick(() => {
-			this.showNewItemMenu();
+			this.executeNewItemAction();
 		}));
+
+		// Initialize header with current section
+		this.updateHeader();
 	}
 
-	private showNewItemMenu(): void {
-		const actions = [
-			toAction({
-				id: 'newAgent',
-				label: localize('newAgent', "New Agent"),
-				run: () => this.commandService.executeCommand('workbench.action.aiCustomization.newAgent'),
-			}),
-			toAction({
-				id: 'newSkill',
-				label: localize('newSkill', "New Skill"),
-				run: () => this.commandService.executeCommand('workbench.action.aiCustomization.newSkill'),
-			}),
-			toAction({
-				id: 'newInstructions',
-				label: localize('newInstructions', "New Instructions"),
-				run: () => this.commandService.executeCommand('workbench.action.aiCustomization.newInstructions'),
-			}),
-			toAction({
-				id: 'newPrompt',
-				label: localize('newPrompt', "New Prompt"),
-				run: () => this.commandService.executeCommand('workbench.action.aiCustomization.newPrompt'),
-			}),
-		];
+	private updateHeader(): void {
+		const sectionInfo = this.getSectionInfo(this.selectedSection);
+		this.titleElement.textContent = sectionInfo.title;
 
-		this.contextMenuService.showContextMenu({
-			getAnchor: () => this.newButton.element,
-			getActions: () => actions,
-		});
+		if (sectionInfo.newButtonLabel) {
+			this.newButton.label = `$(${Codicon.add.id}) ${sectionInfo.newButtonLabel}`;
+			this.newButton.element.style.display = '';
+		} else {
+			this.newButton.element.style.display = 'none';
+		}
+	}
+
+	private getSectionInfo(section: AICustomizationManagementSection): { title: string; newButtonLabel?: string; newCommand?: string } {
+		switch (section) {
+			case AICustomizationManagementSection.Agents:
+				return {
+					title: localize('agentsTitle', "Agents"),
+					// Button is now in the search bar area within the widget
+				};
+			case AICustomizationManagementSection.Skills:
+				return {
+					title: localize('skillsTitle', "Skills"),
+					// Button is now in the search bar area within the widget
+				};
+			case AICustomizationManagementSection.Instructions:
+				return {
+					title: localize('instructionsTitle', "Instructions"),
+					// Button is now in the search bar area within the widget
+				};
+			case AICustomizationManagementSection.Prompts:
+				return {
+					title: localize('promptsTitle', "Prompts"),
+					// Button is now in the search bar area within the widget
+				};
+			case AICustomizationManagementSection.Models:
+				return {
+					title: localize('modelsTitle', "Models"),
+					// Models has its own "Add Models..." button in the widget
+				};
+			case AICustomizationManagementSection.McpServers:
+				return {
+					title: localize('mcpServersTitle', "MCP Servers"),
+					// MCP Servers has its own "Add Server" button in the widget
+				};
+		}
+	}
+
+	private executeNewItemAction(): void {
+		const sectionInfo = this.getSectionInfo(this.selectedSection);
+		if (sectionInfo.newCommand) {
+			this.commandService.executeCommand(sectionInfo.newCommand);
+		}
 	}
 
 	private createSplitView(): void {
@@ -299,7 +297,8 @@ export class AICustomizationManagementEditor extends EditorPane {
 				if (height !== undefined) {
 					this.listWidget.layout(height - 16, width - 24); // Account for padding
 					this.mcpListWidget.layout(height - 16, width - 24); // Account for padding
-					this.modelsWidget.layout(height - 16, width - 24); // Account for padding
+					// Models widget has its own internal padding calculation, pass width without extra subtraction
+					this.modelsWidget.layout(height - 16, width);
 				}
 			},
 		}, Sizing.Distribute, undefined, true);
@@ -370,11 +369,6 @@ export class AICustomizationManagementEditor extends EditorPane {
 			this.openItem(item);
 		}));
 
-		// Update section counts when items change
-		this.editorDisposables.add(this.listWidget.onDidChangeItemCount(count => {
-			this.updateSectionCount(this.selectedSection, count);
-		}));
-
 		// Container for Models content
 		this.modelsContentContainer = DOM.append(contentInner, $('.models-content-container'));
 		this.modelsWidget = this.editorDisposables.add(this.instantiationService.createInstance(ChatModelsWidget));
@@ -388,11 +382,10 @@ export class AICustomizationManagementEditor extends EditorPane {
 		// Set initial visibility based on selected section
 		this.updateContentVisibility();
 
-		// Load items for the initial section and load all section counts
+		// Load items for the initial section
 		if (this.isPromptsSection(this.selectedSection)) {
 			void this.listWidget.setSection(this.selectedSection);
 		}
-		void this.loadAllSectionCounts();
 	}
 
 	private isPromptsSection(section: AICustomizationManagementSection): boolean {
@@ -413,6 +406,9 @@ export class AICustomizationManagementEditor extends EditorPane {
 		// Persist selection
 		this.storageService.store(AI_CUSTOMIZATION_MANAGEMENT_SELECTED_SECTION_KEY, section, StorageScope.PROFILE, StorageTarget.USER);
 
+		// Update header to reflect new section
+		this.updateHeader();
+
 		// Update content visibility
 		this.updateContentVisibility();
 
@@ -431,106 +427,11 @@ export class AICustomizationManagementEditor extends EditorPane {
 		this.modelsContentContainer.style.display = isModelsSection ? '' : 'none';
 		this.mcpContentContainer.style.display = isMcpSection ? '' : 'none';
 
-		// Render models widget when switching to it
+		// Render and layout models widget when switching to it
 		if (isModelsSection) {
 			this.modelsWidget.render();
-		}
-	}
-
-	private updateSectionCount(section: AICustomizationManagementSection, count: number): void {
-		const sectionItem = this.sections.find(s => s.id === section);
-		if (sectionItem) {
-			sectionItem.count = count;
-			// Re-render the sections list to show updated count
-			this.sectionsList.splice(0, this.sectionsList.length, this.sections);
-			// Re-select the current section
-			const selectedIndex = this.sections.findIndex(s => s.id === this.selectedSection);
-			if (selectedIndex >= 0) {
-				this.sectionsList.setSelection([selectedIndex]);
-			}
-		}
-	}
-
-	/**
-	 * Loads counts for all sections to display badges.
-	 */
-	private async loadAllSectionCounts(): Promise<void> {
-		const sectionPromptTypes: Array<{ section: AICustomizationManagementSection; type: PromptsType }> = [
-			{ section: AICustomizationManagementSection.Agents, type: PromptsType.agent },
-			{ section: AICustomizationManagementSection.Skills, type: PromptsType.skill },
-			{ section: AICustomizationManagementSection.Instructions, type: PromptsType.instructions },
-			{ section: AICustomizationManagementSection.Prompts, type: PromptsType.prompt },
-		];
-
-		await Promise.all(sectionPromptTypes.map(async ({ section, type }) => {
-			let count = 0;
-			if (type === PromptsType.skill) {
-				// Skills use a different API
-				const skills = await this.promptsService.findAgentSkills(CancellationToken.None);
-				count = skills?.length || 0;
-			} else {
-				// Other types: count from all storage locations
-				const [workspaceItems, userItems, extensionItems] = await Promise.all([
-					this.promptsService.listPromptFilesForStorage(type, PromptsStorage.local, CancellationToken.None),
-					this.promptsService.listPromptFilesForStorage(type, PromptsStorage.user, CancellationToken.None),
-					this.promptsService.listPromptFilesForStorage(type, PromptsStorage.extension, CancellationToken.None),
-				]);
-				count = workspaceItems.length + userItems.length + extensionItems.length;
-			}
-
-			const sectionItem = this.sections.find(s => s.id === section);
-			if (sectionItem) {
-				sectionItem.count = count;
-			}
-		}));
-
-		// Load Models count
-		const modelsSection = this.sections.find(s => s.id === AICustomizationManagementSection.Models);
-		if (modelsSection) {
-			modelsSection.count = this.languageModelsService.getLanguageModelIds().length;
-		}
-
-		// Re-render the sections list with all counts
-		this.sectionsList.splice(0, this.sectionsList.length, this.sections);
-		// Re-select the current section
-		const selectedIndex = this.sections.findIndex(s => s.id === this.selectedSection);
-		if (selectedIndex >= 0) {
-			this.sectionsList.setSelection([selectedIndex]);
-		}
-	}
-
-	/**
-	 * Updates the count for the MCP Servers section.
-	 */
-	private updateMcpSectionCount(): void {
-		const count = this.mcpService.servers.get().length;
-		const sectionItem = this.sections.find(s => s.id === AICustomizationManagementSection.McpServers);
-		if (sectionItem) {
-			sectionItem.count = count;
-			// Re-render the sections list to show updated count
-			this.sectionsList.splice(0, this.sectionsList.length, this.sections);
-			// Re-select the current section
-			const selectedIndex = this.sections.findIndex(s => s.id === this.selectedSection);
-			if (selectedIndex >= 0) {
-				this.sectionsList.setSelection([selectedIndex]);
-			}
-		}
-	}
-
-	/**
-	 * Updates the count for the Models section.
-	 */
-	private updateModelsSectionCount(): void {
-		const count = this.languageModelsService.getLanguageModelIds().length;
-		const sectionItem = this.sections.find(s => s.id === AICustomizationManagementSection.Models);
-		if (sectionItem) {
-			sectionItem.count = count;
-			// Re-render the sections list to show updated count
-			this.sectionsList.splice(0, this.sectionsList.length, this.sections);
-			// Re-select the current section
-			const selectedIndex = this.sections.findIndex(s => s.id === this.selectedSection);
-			if (selectedIndex >= 0) {
-				this.sectionsList.setSelection([selectedIndex]);
+			if (this.dimension) {
+				this.layout(this.dimension);
 			}
 		}
 	}

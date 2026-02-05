@@ -16,6 +16,39 @@
 		letter-spacing: 0.05em;
 	}
 
+	/* Customization header - clickable for collapse */
+	.ai-customization-header {
+		display: flex;
+		align-items: center;
+		cursor: pointer;
+		user-select: none;
+	}
+
+	.ai-customization-header:hover {
+		background-color: var(--vscode-list-hoverBackground);
+	}
+
+	.ai-customization-header:focus {
+		outline: 1px solid var(--vscode-focusBorder);
+		outline-offset: -1px;
+	}
+
+	.ai-customization-chevron,
+	.agent-sessions-chevron {
+		flex-shrink: 0;
+		margin-left: auto;
+		padding-right: 4px;
+		opacity: 0;
+		transition: opacity 0.1s ease-in-out;
+	}
+
+	.ai-customization-header:hover .ai-customization-chevron,
+	.ai-customization-header:focus .ai-customization-chevron,
+	.agent-sessions-header:hover .agent-sessions-chevron,
+	.agent-sessions-header:focus .agent-sessions-chevron {
+		opacity: 0.7;
+	}
+
 	/* AI Customization section */
 	.ai-customization-shortcuts {
 		display: flex;
@@ -27,6 +60,10 @@
 	.ai-customization-shortcuts .ai-customization-links {
 		display: flex;
 		flex-direction: column;
+	}
+
+	.ai-customization-shortcuts .ai-customization-links.collapsed {
+		display: none;
 	}
 
 	.ai-customization-shortcuts .ai-customization-link {
@@ -84,7 +121,32 @@
 	}
 
 	.agent-sessions-header {
+		display: flex;
+		align-items: center;
+		gap: 4px;
 		padding-top: 10px;
+		cursor: pointer;
+		user-select: none;
+	}
+
+	.agent-sessions-header:hover {
+		background-color: var(--vscode-list-hoverBackground);
+	}
+
+	.agent-sessions-header:focus {
+		outline: 1px solid var(--vscode-focusBorder);
+		outline-offset: -1px;
+	}
+
+	.agent-sessions-content {
+		display: flex;
+		flex-direction: column;
+		flex: 1;
+		overflow: hidden;
+	}
+
+	.agent-sessions-content.collapsed {
+		display: none;
 	}
 
 	.agent-sessions-new-button-container {
