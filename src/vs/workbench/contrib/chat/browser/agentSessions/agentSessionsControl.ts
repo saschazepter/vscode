@@ -43,6 +43,7 @@ export interface IAgentSessionsControlOptions extends IAgentSessionsSorterOption
 
 	getHoverPosition(): HoverPosition;
 	trackActiveEditorSession(): boolean;
+	collapseOlderSections?(): boolean;
 
 	overrideSessionOpenOptions?(openEvent: IOpenEvent<AgentSessionListItem | undefined>): ISessionOpenOptions;
 	notifySessionOpened?(resource: URI, widget: IChatWidget): void;
@@ -141,6 +142,13 @@ export class AgentSessionsControl extends Disposable implements IAgentSessionsCo
 				}
 				if (element.section === AgentSessionSection.Archived && this.options.filter.getExcludes().archived) {
 					return true; // Archived section is collapsed when archived are excluded
+				}
+				// Collapse older time sections if option is enabled
+				if (this.options.collapseOlderSections?.()) {
+					const olderSections = [AgentSessionSection.Week, AgentSessionSection.Older, AgentSessionSection.Archived];
+					if (olderSections.includes(element.section)) {
+						return true;
+					}
 				}
 			}
 

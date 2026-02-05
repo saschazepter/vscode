@@ -126,6 +126,7 @@ export class AgentSessionsViewPane extends ViewPane {
 			overrideStyles: this.getLocationBasedColors().listOverrideStyles,
 			getHoverPosition: () => this.getSessionHoverPosition(),
 			trackActiveEditorSession: () => true,
+			collapseOlderSections: () => true,
 		}));
 		this._register(this.onDidChangeBodyVisibility(visible => sessionsControl.setVisible(visible)));
 	}
