@@ -919,11 +919,6 @@
 	font-weight: 600;
 }
 
-/* When input is focused, active button gets accent color */
-.chat-full-welcome .interactive-input-part:has(.chat-input-container.focused) .chat-target-button.active .chat-target-button-label {
-	color: var(--vscode-focusBorder);
-}
-
 /* Session pickers in the right toolbar (like repo selector) */
 .chat-full-welcome .chat-input-toolbars-right .chat-sessionPicker-container {
 	display: flex;
