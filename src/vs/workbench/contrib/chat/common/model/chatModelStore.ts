@@ -21,6 +21,7 @@ export interface IStartSessionProps {
 	readonly transferEditingSession?: IChatEditingSession;
 	readonly disableBackgroundKeepAlive?: boolean;
 	readonly inputState?: ISerializableChatModelInputState;
+	readonly workingFolder?: string;
 }
 
 export interface ChatModelStoreDelegate {

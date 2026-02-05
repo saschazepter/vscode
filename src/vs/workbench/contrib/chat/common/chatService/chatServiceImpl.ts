@@ -52,6 +52,8 @@ import { ChatSessionOperationLog } from '../model/chatSessionOperationLog.js';
 import { IPromptsService } from '../promptSyntax/service/promptsService.js';
 import { IChatRequestHooks } from '../promptSyntax/hookSchema.js';
 import { IHooksExecutionService } from '../hooks/hooksExecutionService.js';
+// eslint-disable-next-line local/code-layering, local/code-import-patterns
+import { IAgentWorkbenchWorkspaceService } from '../../../../services/agentSessions/browser/agentWorkbenchWorkspaceService.js';
 
 const serializedChatKey = 'interactive.sessions';
 
@@ -157,6 +159,7 @@ export class ChatService extends Disposable implements IChatService {
 		@IMcpService private readonly mcpService: IMcpService,
 		@IPromptsService private readonly promptsService: IPromptsService,
 		@IHooksExecutionService private readonly hooksExecutionService: IHooksExecutionService,
+		@IAgentWorkbenchWorkspaceService private readonly agentWorkbenchWorkspaceService: IAgentWorkbenchWorkspaceService,
 	) {
 		super();
 
@@ -382,6 +385,7 @@ export class ChatService extends Disposable implements IChatService {
 					isActive: true,
 					stats: await awaitStatsForSession(session),
 					lastResponseState: session.lastRequest?.response?.state ?? ResponseModelState.Pending,
+					workingFolder: session.workingFolder,
 				};
 			}));
 	}
@@ -435,19 +439,26 @@ export class ChatService extends Disposable implements IChatService {
 		this.trace('startSession');
 		const sessionId = generateUuid();
 		const sessionResource = LocalChatSessionUri.forSession(sessionId);
+
+		// Agent sessions window
+		const activeWorkspaceFolderUri = this.workspaceContextService.getWorkspace().isAgentSessionsWorkspace
+			? this.agentWorkbenchWorkspaceService?.activeWorkspaceFolderUri?.toString()
+			: undefined;
+
 		return this._sessionModels.acquireOrCreate({
 			initialData: undefined,
 			location,
 			sessionResource,
 			sessionId,
 			canUseTools: options?.canUseTools ?? true,
-			disableBackgroundKeepAlive: options?.disableBackgroundKeepAlive
+			disableBackgroundKeepAlive: options?.disableBackgroundKeepAlive,
+			workingFolder: activeWorkspaceFolderUri
 		});
 	}
 
 	private _startSession(props: IStartSessionProps): ChatModel {
-		const { initialData, location, sessionResource, sessionId, canUseTools, transferEditingSession, disableBackgroundKeepAlive, inputState } = props;
-		const model = this.instantiationService.createInstance(ChatModel, initialData, { initialLocation: location, canUseTools, resource: sessionResource, sessionId, disableBackgroundKeepAlive, inputState });
+		const { initialData, location, sessionResource, sessionId, canUseTools, transferEditingSession, disableBackgroundKeepAlive, inputState, workingFolder } = props;
+		const model = this.instantiationService.createInstance(ChatModel, initialData, { initialLocation: location, canUseTools, resource: sessionResource, sessionId, disableBackgroundKeepAlive, inputState, workingFolder });
 		if (location === ChatAgentLocation.Chat) {
 			model.startEditingSession(true, transferEditingSession);
 		}

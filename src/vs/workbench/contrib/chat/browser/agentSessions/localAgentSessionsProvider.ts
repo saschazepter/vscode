@@ -11,11 +11,13 @@ import { Disposable } from '../../../../../base/common/lifecycle.js';
 import { ResourceSet } from '../../../../../base/common/map.js';
 import { Schemas } from '../../../../../base/common/network.js';
 import { IWorkbenchContribution } from '../../../../common/contributions.js';
+import { IAgentWorkbenchWorkspaceService } from '../../../../services/agentSessions/browser/agentWorkbenchWorkspaceService.js';
 import { IChatModel } from '../../common/model/chatModel.js';
 import { convertLegacyChatSessionTiming, IChatDetail, IChatService, ResponseModelState } from '../../common/chatService/chatService.js';
 import { ChatSessionStatus, IChatSessionItem, IChatSessionItemProvider, IChatSessionsService, localChatSessionType } from '../../common/chatSessionsService.js';
 import { getChatSessionType } from '../../common/model/chatUri.js';
 import { ILogService } from '../../../../../platform/log/common/log.js';
+import { IWorkspaceContextService } from '../../../../../platform/workspace/common/workspace.js';
 
 interface IChatSessionItemWithProvider extends IChatSessionItem {
 	readonly provider: IChatSessionItemProvider;
@@ -37,6 +39,8 @@ export class LocalAgentsSessionsProvider extends Disposable implements IChatSess
 		@IChatService private readonly chatService: IChatService,
 		@IChatSessionsService private readonly chatSessionsService: IChatSessionsService,
 		@ILogService private readonly logService: ILogService,
+		@IAgentWorkbenchWorkspaceService private readonly agentWorkbenchWorkspaceService: IAgentWorkbenchWorkspaceService,
+		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
 	) {
 		super();
 
@@ -64,13 +68,27 @@ export class LocalAgentsSessionsProvider extends Disposable implements IChatSess
 				this._onDidChangeChatSessionItems.fire();
 			}
 		}));
+
+		this._register(this.agentWorkbenchWorkspaceService.onDidChangeActiveWorkspaceFolder(() => {
+			this._onDidChangeChatSessionItems.fire();
+		}));
 	}
 
 	async provideChatSessionItems(token: CancellationToken): Promise<IChatSessionItem[]> {
 		const sessions: IChatSessionItemWithProvider[] = [];
 		const sessionsByResource = new ResourceSet();
 
+		// Get the active workspace folder URI for filtering (only in agent sessions workspace)
+		const activeWorkspaceFolderUri = this.workspaceContextService.getWorkspace().isAgentSessionsWorkspace
+			? this.agentWorkbenchWorkspaceService?.activeWorkspaceFolderUri?.toString()
+			: undefined;
+
 		for (const sessionDetail of await this.chatService.getLiveSessionItems()) {
+			// Filter by active workspace folder if in agent sessions workspace
+			if (activeWorkspaceFolderUri && sessionDetail.workingFolder !== activeWorkspaceFolderUri) {
+				continue;
+			}
+
 			const editorSession = this.toChatSessionItem(sessionDetail);
 			if (!editorSession) {
 				continue;
@@ -90,8 +108,18 @@ export class LocalAgentsSessionsProvider extends Disposable implements IChatSess
 
 	private async getHistoryItems(): Promise<IChatSessionItemWithProvider[]> {
 		try {
-			const historyItems = await this.chatService.getHistorySessionItems();
+			let historyItems = await this.chatService.getHistorySessionItems();
 
+			// Filter by active workspace folder if in agent sessions workspace
+			const activeWorkspaceFolderUri = this.workspaceContextService.getWorkspace().isAgentSessionsWorkspace
+				? this.agentWorkbenchWorkspaceService?.activeWorkspaceFolderUri?.toString()
+				: undefined;
+
+			if (activeWorkspaceFolderUri) {
+				historyItems = historyItems.filter(item => item.workingFolder === activeWorkspaceFolderUri);
+			}
+
+			// History items are known to have requests (they were persisted), so skip hasRequests check
 			return coalesce(historyItems.map(history => this.toChatSessionItem(history)));
 		} catch (error) {
 			return [];
@@ -122,7 +150,10 @@ export class LocalAgentsSessionsProvider extends Disposable implements IChatSess
 				insertions: chat.stats.added,
 				deletions: chat.stats.removed,
 				files: chat.stats.fileCount,
-			} : undefined
+			} : undefined,
+			metadata: chat.workingFolder
+				? { workingFolder: chat.workingFolder }
+				: undefined
 		};
 	}
 

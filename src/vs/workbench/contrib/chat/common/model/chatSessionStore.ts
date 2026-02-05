@@ -26,7 +26,7 @@ import { awaitStatsForSession } from '../chat.js';
 import { IChatSessionStats, IChatSessionTiming, ResponseModelState } from '../chatService/chatService.js';
 import { ChatAgentLocation } from '../constants.js';
 import { ModifiedFileEntryState } from '../editing/chatEditingService.js';
-import { ChatModel, ISerializableChatData, ISerializableChatDataIn, ISerializableChatsData, ISerializedChatDataReference, normalizeSerializableChatData } from './chatModel.js';
+import { ChatModel, ISerializableChatData, ISerializableChatData3, ISerializableChatDataIn, ISerializableChatsData, ISerializedChatDataReference, normalizeSerializableChatData } from './chatModel.js';
 import { ChatSessionOperationLog } from './chatSessionOperationLog.js';
 import { LocalChatSessionUri } from './chatUri.js';
 
@@ -616,6 +616,7 @@ export interface IChatSessionEntryMetadata {
 	hasPendingEdits?: boolean;
 	stats?: IChatSessionStats;
 	lastResponseState: ResponseModelState;
+	workingFolder?: string;
 
 	/**
 	 * This only exists because the migrated data from the storage service had empty sessions persisted, and it's impossible to know which ones are
@@ -712,6 +713,7 @@ async function getSessionMetadata(session: ChatModel | ISerializableChatData): P
 		stats,
 		isExternal: session instanceof ChatModel && !LocalChatSessionUri.parseLocalSessionId(session.sessionResource),
 		lastResponseState,
+		workingFolder: session instanceof ChatModel ? session.workingFolder : (session as ISerializableChatData3).workingFolder,
 	};
 }
 

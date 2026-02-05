@@ -178,6 +178,7 @@ export const storageSchema = Adapt.object<IChatModel, ISerializableChatData>({
 	hasPendingEdits: Adapt.v(m => m.editingSession?.entries.get().some(e => e.state.get() === ModifiedFileEntryState.Modified)),
 	repoData: Adapt.v(m => m.repoData, objectsEqual),
 	pendingRequests: Adapt.t(m => m.getPendingRequests(), Adapt.array(pendingRequestSchema)),
+	workingFolder: Adapt.v(m => m.workingFolder),
 });
 
 export class ChatSessionOperationLog extends Adapt.ObjectMutationLog<IChatModel, ISerializableChatData> implements IChatDataSerializerLog {

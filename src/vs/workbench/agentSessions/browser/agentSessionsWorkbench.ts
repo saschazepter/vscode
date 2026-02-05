@@ -67,6 +67,8 @@ import { AgentSessionSidebarPart } from './parts/agentSessionSidebarPart.js';
 import { ChatBarPart } from './parts/chatbar/chatBarPart.js';
 import { ProjectBarPart } from './parts/projectbar/projectBarPart.js';
 import { SyncDescriptor } from '../../../platform/instantiation/common/descriptors.js';
+import { AgentWorkbenchWorkspaceService } from './agentWorkbenchWorkspaceService.js';
+import { IAgentWorkbenchWorkspaceService } from '../../services/agentSessions/browser/agentWorkbenchWorkspaceService.js';
 import { BrowserTitleService, ITitlebarPartConfiguration } from '../../browser/parts/titlebar/titlebarPart.js';
 import { MenuId } from '../../../platform/actions/common/actions.js';
 import { registerAgentSessionsLayoutActions } from './agentSessionsLayoutActions.js';
@@ -701,6 +703,13 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 		const instantiationService = accessor.get(IInstantiationService);
 		const projectBarPart = this._register(instantiationService.createInstance(ProjectBarPart));
 		this._register(this.registerPart(projectBarPart));
+
+		// Create and register the AgentWorkbenchWorkspaceService
+		const agentWorkbenchWorkspaceService = this._register(new AgentWorkbenchWorkspaceService(
+			projectBarPart.selectedWorkspaceFolder,
+			projectBarPart.onDidSelectWorkspace
+		));
+		this.serviceCollection.set(IAgentWorkbenchWorkspaceService, agentWorkbenchWorkspaceService);
 
 		// Register layout listeners
 		this.registerLayoutListeners();
