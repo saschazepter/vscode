@@ -817,7 +817,11 @@ export interface IChatExtensionsContent {
 }
 
 export interface IChatPullRequestContent {
-	uri: URI;
+	/**
+	 * @deprecated use `command` instead
+	 */
+	uri?: URI;
+	command: Command;
 	title: string;
 	description: string;
 	author: string;
