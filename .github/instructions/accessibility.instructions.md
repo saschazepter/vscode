@@ -161,7 +161,7 @@ Accessibility signals provide audible and spoken feedback for events that happen
 
 ### When to use
 
-- **Use an existing signal** when the event already has one defined (see `AccessibilitySignal.*` static members — e.g., `AccessibilitySignal.error`, `AccessibilitySignal.terminalQuickFix`, `AccessibilitySignal.clear`).
+- **Use an existing signal** when the event already has one defined (see `AccessibilitySignal.*` static members — e.g., `AccessibilitySignal.errorAtPosition`, `AccessibilitySignal.terminalQuickFix`, `AccessibilitySignal.clear`).
 - **If no existing signal fits**, reach out to @meganrogge to discuss adding a new one. Do not register new signals without coordinating first.
 
 ### How signals work
