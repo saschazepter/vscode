@@ -146,6 +146,8 @@ import './contrib/tags/electron-browser/workspaceTagsService.js';
 import './contrib/tags/electron-browser/tags.contribution.js';
 // Performance
 import './contrib/performance/electron-browser/performance.contribution.js';
+// GPU detection
+import './contrib/gpu/electron-browser/gpu.contribution.js';
 
 // Tasks
 import './contrib/tasks/electron-browser/taskService.js';

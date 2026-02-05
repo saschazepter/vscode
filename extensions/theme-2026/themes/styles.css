@@ -300,6 +300,20 @@
 	-webkit-backdrop-filter: var(--backdrop-blur-md);
 }
 
+/* Fallback for environments without GPU / with software rendering */
+.monaco-workbench.gpu-unsupported .action-widget,
+.monaco-workbench.gpu-unsupported .quick-input-widget,
+.monaco-workbench.gpu-unsupported .notification-toast-container,
+.monaco-workbench.gpu-unsupported .notifications-center,
+.monaco-workbench.gpu-unsupported .monaco-editor .suggest-widget,
+.monaco-workbench.gpu-unsupported .monaco-editor .peekview-widget,
+.monaco-workbench.gpu-unsupported .monaco-editor .monaco-hover,
+.monaco-workbench.gpu-unsupported .monaco-dialog-box {
+	backdrop-filter: none !important;
+	-webkit-backdrop-filter: none !important;
+	background-color: red !important; /* Debug fallback */
+}
+
 .monaco-workbench .action-widget .action-widget-action-bar {
 	background: transparent;
 }

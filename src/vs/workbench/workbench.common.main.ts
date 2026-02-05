@@ -198,6 +198,8 @@ import './contrib/preferences/browser/preferencesSearch.js';
 
 // Performance
 import './contrib/performance/browser/performance.contribution.js';
+// GPU detection
+import './contrib/gpu/browser/gpu.contribution.js';
 
 // Notebook
 import './contrib/notebook/browser/notebook.contribution.js';
