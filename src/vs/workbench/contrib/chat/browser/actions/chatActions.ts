@@ -492,6 +492,9 @@ export function registerChatActions() {
 	registerAction2(class extends ModeOpenChatGlobalAction {
 		constructor() { super(ChatMode.Edit); }
 	});
+	// OpenPlanModeAction: Unlike built-in modes (Ask, Edit, Agent), Plan is a custom mode
+	// that may or may not exist depending on workspace configuration. This action uses
+	// a different pattern to dynamically look up the Plan mode and handle its absence gracefully.
 	registerAction2(class OpenPlanModeAction extends Action2 {
 		static readonly ID = 'workbench.action.chat.openPlan';
 		constructor() {
@@ -502,8 +505,8 @@ export function registerChatActions() {
 				category: CHAT_CATEGORY,
 				keybinding: {
 					weight: KeybindingWeight.WorkbenchContrib,
-					primary: KeyMod.Shift | KeyCode.Tab,
-					when: ChatContextKeys.inChatSession,
+					primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyP,
+					when: ContextKeyExpr.and(ChatContextKeys.inChatSession, ContextKeyExpr.not('editorTextFocus')),
 				}
 			});
 		}
@@ -511,6 +514,14 @@ export function registerChatActions() {
 		override async run(accessor: ServicesAccessor): Promise<void> {
 			const commandService = accessor.get(ICommandService);
 			const widgetService = accessor.get(IChatWidgetService);
+			const chatModeService = accessor.get(IChatModeService);
+
+			// Check if Plan mode exists before attempting to switch
+			const planMode = chatModeService.findModeByName('Plan');
+			if (!planMode) {
+				// Plan mode doesn't exist - fail silently since this is expected in many workspaces
+				return;
+			}
 
 			// Preserve the current input query when switching modes
 			const currentQuery = widgetService.lastFocusedWidget?.inputEditor.getValue() ?? '';
