@@ -2352,8 +2352,9 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	outline: none;
 	border: none;
 
-	.codicon.codicon-file-media {
+	.codicon.codicon-file-media, .codicon.codicon-warning {
 		font-size: 12px;
+		margin-right: 2px;
 	}
 }
 

@@ -12,7 +12,7 @@ import { Disposable, MutableDisposable } from '../../../../base/common/lifecycle
 import { IRequestContext } from '../../../../base/parts/request/common/request.js';
 import { localize } from '../../../../nls.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
-import { IContextKey, IContextKeyService, RawContextKey } from '../../../../platform/contextkey/common/contextkey.js';
+import { ContextKeyExpr, IContextKey, IContextKeyService, RawContextKey } from '../../../../platform/contextkey/common/contextkey.js';
 import { IDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 import { createDecorator, IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
@@ -139,6 +139,8 @@ export interface IChatEntitlementService {
 
 	readonly entitlement: ChatEntitlement;
 	readonly entitlementObs: IObservable<ChatEntitlement>;
+
+	readonly previewFeaturesDisabled: boolean;
 
 	readonly organisations: string[] | undefined;
 	readonly isInternal: boolean;
@@ -371,6 +373,10 @@ export class ChatEntitlementService extends Disposable implements IChatEntitleme
 
 	get copilotTrackingId(): string | undefined {
 		return this.context?.value.state.copilotTrackingId;
+	}
+
+	get previewFeaturesDisabled(): boolean {
+		return this.contextKeyService.getContextKeyValue<boolean>('github.copilot.previewFeaturesDisabled') === true;
 	}
 
 	//#endregion
