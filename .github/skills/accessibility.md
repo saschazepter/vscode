@@ -45,7 +45,12 @@ An accessibility help dialog tells the user what the feature does, which keyboar
 
 ### Example skeleton
 
+The simplest approach is to return an `AccessibleContentProvider` directly from `getProvider()`. This is the most common pattern in the codebase (used by chat, inline chat, quick chat, etc.):
+
 ```ts
+import { AccessibleViewType, AccessibleContentProvider, AccessibleViewProviderId } from '…/accessibleView.js';
+import { IAccessibleViewImplementation } from '…/accessibleViewRegistry.js';
+import { AccessibilityVerbositySettingId } from '…/accessibilityConfiguration.js';
 import { AccessibleViewType, AccessibleContentProvider, AccessibleViewProviderId, IAccessibleViewContentProvider, IAccessibleViewOptions } from '../../../../platform/accessibility/browser/accessibleView.js';
 import { IAccessibleViewImplementation } from '../../../../platform/accessibility/browser/accessibleViewRegistry.js';
 import { AccessibilityVerbositySettingId } from '../../../../platform/accessibility/common/accessibilityConfiguration.js';
@@ -57,24 +62,36 @@ export class MyFeatureAccessibilityHelp implements IAccessibleViewImplementation
 	readonly when = MyFeatureContextKeys.isFocused;
 
 	getProvider(accessor: ServicesAccessor) {
-		return new MyFeatureAccessibilityHelpProvider();
+		const helpText = [
+			localize('myFeature.help.overview', "You are in My Feature. …"),
+			localize('myFeature.help.key1', "- {0}: Do something", '<keybinding:myFeature.doSomething>'),
+		].join('\n');
+		return new AccessibleContentProvider(
+			AccessibleViewProviderId.MyFeature,
+			{ type: AccessibleViewType.Help },
+			() => helpText,
+			() => { /* onClose — refocus whatever was focused before */ },
+			AccessibilityVerbositySettingId.MyFeature,
+		);
 	}
 }
+```
 
+Alternatively, if the provider needs injected services or must track state (e.g., storing a reference to the previously focused element), create a custom class that extends `Disposable` and implements `IAccessibleViewContentProvider`, then instantiate it via `IInstantiationService` (see `CommentsAccessibilityHelpProvider` for an example):
+
+```ts
 class MyFeatureAccessibilityHelpProvider extends Disposable implements IAccessibleViewContentProvider {
 	readonly id = AccessibleViewProviderId.MyFeature;
 	readonly verbositySettingKey = AccessibilityVerbositySettingId.MyFeature;
 	readonly options: IAccessibleViewOptions = { type: AccessibleViewType.Help };
 
-	provideContent(): string {
-		return [
-			localize('myFeature.help.header', "Accessibility Help: My Feature"),
-			localize('myFeature.help.overview', "You are in My Feature. …"),
-			'',
-			localize('myFeature.help.keys', "Keyboard shortcuts:"),
-			localize('myFeature.help.key1', "- {0}: Do something", '<keybinding:myFeature.doSomething>'),
-		].join('\n');
-	}
+	provideContent(): string { /* … */ }
+	onClose(): void { /* … */ }
+}
+
+// In getProvider():
+getProvider(accessor: ServicesAccessor) {
+	return accessor.get(IInstantiationService).createInstance(MyFeatureAccessibilityHelpProvider);
 }
 ```
 
@@ -119,7 +136,7 @@ export class MyFeatureAccessibleView implements IAccessibleViewImplementation {
 			AccessibleViewProviderId.MyFeature,
 			{ type: AccessibleViewType.View },
 			() => content,
-			() => { /* refocus the feature's main element, e.g., myFeatureElement.focus() */ },
+			() => { /* onClose — refocus whatever was focused before the accessible view opened */ },
 			AccessibilityVerbositySettingId.MyFeature,
 		);
 	}
