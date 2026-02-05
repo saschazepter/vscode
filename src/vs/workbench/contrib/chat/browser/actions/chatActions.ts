@@ -492,9 +492,6 @@ export function registerChatActions() {
 	registerAction2(class extends ModeOpenChatGlobalAction {
 		constructor() { super(ChatMode.Edit); }
 	});
-	// OpenPlanModeAction: Unlike built-in modes (Ask, Edit, Agent), Plan is a custom mode
-	// that may or may not exist depending on workspace configuration. This action uses
-	// a different pattern to dynamically look up the Plan mode and handle its absence gracefully.
 	registerAction2(class OpenPlanModeAction extends Action2 {
 		static readonly ID = 'workbench.action.chat.openPlan';
 		constructor() {
