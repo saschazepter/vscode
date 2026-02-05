@@ -826,8 +826,11 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 	 *
 	 * Structure (vertical orientation):
 	 * - Titlebar (top)
-	 * - Middle section (horizontal): Project Bar | Sidebar | Chat Bar (takes remaining width) | Auxiliary Bar
-	 * - Panel (bottom, full width)
+	 * - Main content (horizontal):
+	 *   - Project Bar | Sidebar
+	 *   - Right section (vertical):
+	 *     - Top right (horizontal): Chat Bar | Auxiliary Bar
+	 *     - Panel (below chat and auxiliary bar only)
 	 */
 	private createGridDescriptor(): ISerializedGrid {
 		const { width, height } = this._mainContainerDimension;
@@ -839,10 +842,12 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 		const panelSize = 300;
 		const titleBarHeight = this.titleBarPartView?.minimumHeight ?? 30;
 
-		const middleSectionHeight = height - titleBarHeight - panelSize;
+		const mainContentHeight = height - titleBarHeight;
+		const topRightHeight = mainContentHeight - panelSize;
 
-		// Calculate chat bar size (remaining width)
-		const chatBarWidth = Math.max(0, width - projectBarSize - sideBarSize - auxiliaryBarSize);
+		// Calculate right section width and chat bar width
+		const rightSectionWidth = Math.max(0, width - projectBarSize - sideBarSize);
+		const chatBarWidth = Math.max(0, rightSectionWidth - auxiliaryBarSize);
 
 		const titleBarNode: ISerializedLeafNode = {
 			type: 'leaf',
@@ -886,11 +891,25 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 			visible: this.partVisibility.panel
 		};
 
-		// Middle section: Project Bar | Sidebar | Chat Bar | Auxiliary Bar (horizontal layout)
-		const middleSection: ISerializedNode = {
+		// Top right section: Chat Bar | Auxiliary Bar (horizontal)
+		const topRightSection: ISerializedNode = {
 			type: 'branch',
-			data: [projectBarNode, sideBarNode, chatBarNode, auxiliaryBarNode],
-			size: middleSectionHeight
+			data: [chatBarNode, auxiliaryBarNode],
+			size: topRightHeight
+		};
+
+		// Right section: Top Right | Panel (vertical)
+		const rightSection: ISerializedNode = {
+			type: 'branch',
+			data: [topRightSection, panelNode],
+			size: rightSectionWidth
+		};
+
+		// Main content: Project Bar | Sidebar | Right Section (horizontal)
+		const mainContent: ISerializedNode = {
+			type: 'branch',
+			data: [projectBarNode, sideBarNode, rightSection],
+			size: mainContentHeight
 		};
 
 		const result: ISerializedGrid = {
@@ -899,8 +918,7 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 				size: width,
 				data: [
 					titleBarNode,
-					middleSection,
-					panelNode
+					mainContent
 				]
 			},
 			orientation: Orientation.VERTICAL,
@@ -1214,6 +1232,11 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 			return;
 		}
 
+		// If hiding and the panel is maximized, exit maximized state first
+		if (hidden && this.workbenchGrid.hasMaximizedView()) {
+			this.workbenchGrid.exitMaximizedView();
+		}
+
 		this.partVisibility.panel = !hidden;
 
 		// Adjust CSS
@@ -1368,11 +1391,23 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 	//#region Unsupported Features (No-ops)
 
 	toggleMaximizedPanel(): void {
-		// No-op: Maximize not supported in this layout
+		if (!this.workbenchGrid) {
+			return;
+		}
+
+		if (this.isPanelMaximized()) {
+			this.workbenchGrid.exitMaximizedView();
+		} else {
+			this.workbenchGrid.maximizeView(this.panelPartView, [this.titleBarPartView, this.projectBarPartView]);
+		}
 	}
 
 	isPanelMaximized(): boolean {
-		return false; // Maximize not supported
+		if (!this.workbenchGrid) {
+			return false;
+		}
+
+		return this.workbenchGrid.isViewMaximized(this.panelPartView);
 	}
 
 	toggleMaximizedAuxiliaryBar(): void {
