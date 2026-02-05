@@ -1261,3 +1261,67 @@ export function getResourceForNewChatSession(options: NewChatSessionOpenOptions)
 function isAgentSessionProviderType(type: string): boolean {
 	return Object.values(AgentSessionProviders).includes(type as AgentSessionProviders);
 }
+
+// Register the worktree mode action for the chat agents view
+// This demonstrates the extensible menu pattern - extensions can contribute similar items via package.json
+registerAction2(class SelectWorktreeModeAction extends Action2 {
+	static readonly ID = 'chat.agentsView.worktree';
+
+	constructor() {
+		super({
+			id: SelectWorktreeModeAction.ID,
+			title: localize2('chat.agentsView.worktree', "Worktree"),
+			icon: Codicon.repoForked,
+			toggled: {
+				condition: ContextKeyExpr.equals('chatAgentsViewWorkspaceMode', 'worktree'),
+				icon: Codicon.repoForked,
+			},
+			menu: {
+				id: MenuId.ChatAgentsView,
+				when: ContextKeyExpr.equals('chatSessionType', AgentSessionProviders.Background),
+				group: '1_mode@1',
+			},
+			tooltip: localize('chat.agentsView.worktree.tooltip', "Run in a separate worktree"),
+		});
+	}
+
+	run(accessor: ServicesAccessor): void {
+		const contextKeyService = accessor.get(IContextKeyService);
+		contextKeyService.createKey('chatAgentsViewWorkspaceMode', 'worktree').set('worktree');
+	}
+});
+
+// Register the workspace mode action for the chat agents view
+registerAction2(class SelectWorkspaceModeAction extends Action2 {
+	static readonly ID = 'chat.agentsView.workspace';
+
+	constructor() {
+		super({
+			id: SelectWorkspaceModeAction.ID,
+			title: localize2('chat.agentsView.workspace', "Workspace"),
+			icon: Codicon.folder,
+			toggled: {
+				condition: ContextKeyExpr.equals('chatAgentsViewWorkspaceMode', 'workspace'),
+				icon: Codicon.folder,
+			},
+			menu: {
+				id: MenuId.ChatAgentsView,
+				when: ContextKeyExpr.equals('chatSessionType', AgentSessionProviders.Background),
+				group: '1_mode@2',
+			},
+			tooltip: localize('chat.agentsView.workspace.tooltip', "Run in the current workspace"),
+		});
+	}
+
+	run(accessor: ServicesAccessor): void {
+		const contextKeyService = accessor.get(IContextKeyService);
+		contextKeyService.createKey('chatAgentsViewWorkspaceMode', 'workspace').set('workspace');
+	}
+});
+
+// Initialize the workspace mode context key with default value
+// This runs when the module loads to ensure the context key exists
+(function initializeWorkspaceModeContextKey() {
+	// The context key will be initialized when first accessed by the actions
+	// Default will be 'worktree' when the first action runs
+})();

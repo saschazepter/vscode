@@ -26,6 +26,9 @@ import { SearchableOptionPickerActionItem } from '../chatSessions/searchableOpti
 import { HoverPosition } from '../../../../../base/browser/ui/hover/hoverWidget.js';
 import { IAction } from '../../../../../base/common/actions.js';
 import { IChatInputPickerOptions } from '../widget/input/chatInputPickerActionItem.js';
+import { IMenuService, MenuId, MenuItemAction } from '../../../../../platform/actions/common/actions.js';
+import { IContextKeyService } from '../../../../../platform/contextkey/common/contextkey.js';
+import { ThemeIcon } from '../../../../../base/common/themables.js';
 
 const MAX_SESSIONS = 6;
 
@@ -37,6 +40,8 @@ export interface IQuickStartSelectionEvent {
 	readonly sessionProvider: AgentSessionProviders;
 	readonly modeKind: ChatModeKind;
 	readonly lockMode: boolean;
+	/** The name of the chat mode to switch to (e.g., 'Plan') */
+	readonly modeName?: string;
 }
 
 export interface IChatFullWelcomePartOptions {
@@ -115,6 +120,8 @@ export class ChatFullWelcomePart extends Disposable {
 		@IChatSessionsService private readonly chatSessionsService: IChatSessionsService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@ILanguageModelsService private readonly languageModelsService: ILanguageModelsService,
+		@IMenuService private readonly menuService: IMenuService,
+		@IContextKeyService private readonly contextKeyService: IContextKeyService,
 	) {
 		super();
 
@@ -168,6 +175,7 @@ export class ChatFullWelcomePart extends Disposable {
 					sessionProvider: option.sessionProvider,
 					modeKind: option.modeKind,
 					lockMode: option.lockMode,
+					modeName: option.modeName,
 				});
 			},
 			getSelectedQuickStart: () => this._selectedQuickStartType,
@@ -282,12 +290,18 @@ export class ChatFullWelcomePart extends Disposable {
 			}
 		}
 
+		// Render menu-contributed items for the agents view (e.g., worktree/workspace toggle)
+		const hasMenuItems = this.renderAgentsViewMenu(this.pickersContainer, sessionType);
+
+		// Update whether there are any items in the toolbar (pickers OR menu items)
+		const hasToolbarItems = hasPickers || hasMenuItems;
+
 		// Update description (below the input)
 		clearNode(this.descriptionElement);
 		append(this.descriptionElement, $('span.chat-full-welcome-description-text', {}, option.description));
 
-		// Show/hide separator based on whether there are pickers
-		this.toolbarSeparator.style.display = hasPickers ? 'block' : 'none';
+		// Show/hide separator based on whether there are toolbar items
+		this.toolbarSeparator.style.display = hasToolbarItems ? 'block' : 'none';
 
 		// Make toolbar visible (it was already display:flex but opacity:0)
 		this.configToolbar.style.opacity = '';
@@ -409,6 +423,135 @@ export class ChatFullWelcomePart extends Disposable {
 		);
 		picker.render(pickerSlot);
 		this.sessionOptionPickers.set(optionGroup.id, picker);
+	}
+
+	/**
+	 * Renders menu-contributed items for the agents view as a segmented toggle.
+	 * Extensions can contribute items via the 'chat/agentsView' menu using static package.json contributions.
+	 * Items in the same group are rendered as a segmented toggle button.
+	 * @returns true if any menu items were rendered
+	 */
+	private renderAgentsViewMenu(container: HTMLElement, sessionType: string): boolean {
+		// Create a context key overlay with the current session type
+		const overlayContextKeyService = this.contextKeyService.createOverlay([
+			['chatSessionType', sessionType]
+		]);
+
+		// Get menu actions for the agents view
+		const menu = this.menuService.createMenu(MenuId.ChatAgentsView, overlayContextKeyService);
+		this.pickerWidgetsDisposables.add(menu);
+
+		const actions = menu.getActions({ shouldForwardArgs: true });
+		let hasRenderedItems = false;
+
+		// Group actions by their group id
+		const groupedActions = new Map<string, MenuItemAction[]>();
+		for (const [group, items] of actions) {
+			const groupItems: MenuItemAction[] = [];
+			for (const item of items) {
+				if (item instanceof MenuItemAction) {
+					groupItems.push(item);
+				}
+			}
+			if (groupItems.length > 0) {
+				groupedActions.set(group, groupItems);
+			}
+		}
+
+		// Render each group as a segmented toggle
+		for (const [group, items] of groupedActions) {
+			this.renderMenuGroupAsSegmentedToggle(container, items, group, overlayContextKeyService);
+			hasRenderedItems = true;
+		}
+
+		return hasRenderedItems;
+	}
+
+	/**
+	 * Renders a group of menu items as a segmented toggle.
+	 */
+	private renderMenuGroupAsSegmentedToggle(container: HTMLElement, actions: MenuItemAction[], _group: string, overlayContextKeyService: IContextKeyService): void {
+		const toggleRow = append(container, $('.chat-full-welcome-picker-row.menu-toggle-row'));
+		const toggleSlot = append(toggleRow, $('.chat-full-welcome-picker-slot'));
+
+		// Create the segmented toggle container
+		const toggleContainer = append(toggleSlot, $('.chat-full-welcome-menu-toggle'));
+
+		// Keep references to buttons and action IDs for state updates
+		const buttons: HTMLButtonElement[] = [];
+		const actionIds: string[] = [];
+
+		// Render each action as a toggle option
+		for (const action of actions) {
+			const button = append(toggleContainer, $('button.chat-full-welcome-toggle-option')) as HTMLButtonElement;
+			button.setAttribute('type', 'button');
+			buttons.push(button);
+			actionIds.push(action.id);
+
+			// Icon
+			const iconElement = append(button, $('.toggle-option-icon'));
+			const icon = action.item.icon;
+			if (ThemeIcon.isThemeIcon(icon)) {
+				iconElement.appendChild(renderIcon(icon));
+			}
+
+			// Update state based on action's checked state
+			button.classList.toggle('selected', !!action.checked);
+			const label = typeof action.label === 'string' ? action.label : action.item.id;
+			button.setAttribute('aria-label', action.tooltip || label);
+			button.title = action.tooltip || label;
+			button.setAttribute('aria-pressed', String(!!action.checked));
+
+			// Click handler
+			this.pickerWidgetsDisposables.add({
+				dispose: () => {
+					button.onclick = null;
+				}
+			});
+
+			button.onclick = () => {
+				action.run();
+				// Re-render the toggle after action runs (state may have changed)
+				// Need to re-query menu to get fresh action instances with updated checked state
+				this.updateSegmentedToggleStateFromMenu(buttons, actionIds, overlayContextKeyService);
+			};
+		}
+
+		// Listen for menu changes to update toggle state
+		const updateMenu = this.menuService.createMenu(MenuId.ChatAgentsView, overlayContextKeyService);
+		this.pickerWidgetsDisposables.add(updateMenu);
+		this.pickerWidgetsDisposables.add(updateMenu.onDidChange(() => {
+			this.updateSegmentedToggleStateFromMenu(buttons, actionIds, overlayContextKeyService);
+		}));
+	}
+
+	/**
+	 * Updates the state of toggle buttons by re-querying the menu for fresh action states.
+	 */
+	private updateSegmentedToggleStateFromMenu(buttons: HTMLButtonElement[], actionIds: string[], overlayContextKeyService: IContextKeyService): void {
+		// Create a fresh menu to get updated action states
+		const menu = this.menuService.createMenu(MenuId.ChatAgentsView, overlayContextKeyService);
+		const actions = menu.getActions({ shouldForwardArgs: true });
+		menu.dispose();
+
+		// Build a map of action id to checked state
+		const checkedStates = new Map<string, boolean>();
+		for (const [, items] of actions) {
+			for (const item of items) {
+				if (item instanceof MenuItemAction) {
+					checkedStates.set(item.id, !!item.checked);
+				}
+			}
+		}
+
+		// Update button states
+		buttons.forEach((button, index) => {
+			if (index < actionIds.length) {
+				const checked = checkedStates.get(actionIds[index]) ?? false;
+				button.classList.toggle('selected', checked);
+				button.setAttribute('aria-pressed', String(checked));
+			}
+		});
 	}
 
 	/**
@@ -584,6 +727,7 @@ export class ChatFullWelcomePart extends Disposable {
 			sessionProvider: bestOption.sessionProvider,
 			modeKind: bestOption.modeKind,
 			lockMode: bestOption.lockMode,
+			modeName: bestOption.modeName,
 		});
 
 		return true;

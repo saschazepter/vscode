@@ -457,7 +457,7 @@
 	width: 100%;
 	max-width: 800px;
 	margin-bottom: 0;
-	padding-bottom: 8px;
+	padding: 8px 0; /* Match config toolbar padding to prevent UI jump when switching */
 }
 
 /* Expanded container - shows all buttons */
@@ -540,7 +540,7 @@
 	display: flex;
 	align-items: center;
 	gap: 6px;
-	padding: 6px 12px;
+	padding: 7px 12px; /* 7px vertical to match 32px collapsed mode button height */
 	border: 1px solid var(--vscode-welcomePage-tileBorder, var(--vscode-contrastBorder, transparent));
 	border-radius: 4px;
 	background-color: transparent;
@@ -809,6 +809,78 @@
 	max-width: 800px;
 	padding: 8px 0;
 	box-sizing: border-box;
+	min-height: 34px;
+}
+
+/* Menu-contributed Segmented Toggle (e.g., worktree/workspace) */
+.chat-full-welcome-menu-toggle {
+	display: flex;
+	align-items: center;
+	border: 1px solid var(--vscode-welcomePage-tileBorder, var(--vscode-contrastBorder, transparent));
+	border-radius: 4px;
+	overflow: hidden;
+	background-color: transparent;
+}
+
+/* Individual toggle options */
+.chat-full-welcome-toggle-option {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	padding: 6px 10px;
+	border: none;
+	background-color: transparent;
+	color: var(--vscode-descriptionForeground);
+	font-size: 12px;
+	font-weight: 500;
+	cursor: pointer;
+	transition: background-color 0.1s, color 0.1s;
+}
+
+.chat-full-welcome-toggle-option:first-child {
+	border-right: 1px solid var(--vscode-welcomePage-tileBorder, var(--vscode-contrastBorder, transparent));
+}
+
+.chat-full-welcome-toggle-option:hover:not(.selected) {
+	background-color: var(--vscode-list-hoverBackground);
+	color: var(--vscode-foreground);
+}
+
+.chat-full-welcome-toggle-option:focus-visible {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: -1px;
+}
+
+.chat-full-welcome-toggle-option.selected {
+	background-color: var(--vscode-list-activeSelectionBackground);
+	color: var(--vscode-list-activeSelectionForeground);
+}
+
+.chat-full-welcome-toggle-option.selected .codicon {
+	color: var(--vscode-list-activeSelectionForeground) !important;
+}
+
+.chat-full-welcome-toggle-option .toggle-option-icon {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 14px;
+	height: 14px;
+}
+
+.chat-full-welcome-toggle-option .toggle-option-icon .codicon {
+	font-size: 14px;
+}
+
+.chat-full-welcome-toggle-option .toggle-option-label {
+	white-space: nowrap;
+}
+
+/* Menu-contributed toggle row layout */
+.chat-full-welcome-picker-row.menu-toggle-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
 }
 
 .chat-full-welcome-description-text {

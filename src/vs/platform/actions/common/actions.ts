@@ -293,6 +293,7 @@ export class MenuId {
 	static readonly AgentSessionsContext = new MenuId('AgentSessionsContext');
 	static readonly AgentSessionSectionContext = new MenuId('AgentSessionSectionContext');
 	static readonly AgentSessionsCreateSubMenu = new MenuId('AgentSessionsCreateSubMenu');
+	static readonly ChatAgentsView = new MenuId('ChatAgentsView');
 	static readonly AgentSessionsToolbar = new MenuId('AgentSessionsToolbar');
 	static readonly AgentSessionsViewFilterSubMenu = new MenuId('AgentSessionsViewFilterSubMenu');
 	static readonly AgentSessionItemToolbar = new MenuId('AgentSessionItemToolbar');

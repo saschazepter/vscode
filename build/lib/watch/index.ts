@@ -62,7 +62,7 @@ function createWatcher(root: string): Stream {
 		]
 	});
 
-	subscription.catch(err => result.emit('error', err));
+	// subscription.catch(err => result.emit('error', err));
 
 	// Cleanup on process exit
 	const cleanup = () => {

@@ -1377,8 +1377,20 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		}
 
 		// Switch the mode based on the quick-start selection
-		const targetModeId = e.modeKind === ChatModeKind.Ask ? ChatMode.Ask.id : ChatMode.Agent.id;
-		this.input.setChatMode(targetModeId, false);
+		// Prefer modeName if specified (for custom modes like 'Plan'), otherwise fall back to modeKind
+		if (e.modeName) {
+			const customMode = this.chatModeService.findModeByName(e.modeName);
+			if (customMode) {
+				this.input.setChatMode(customMode.id, false);
+			} else {
+				// Fall back to modeKind if the named mode isn't found
+				const targetModeId = e.modeKind === ChatModeKind.Ask ? ChatMode.Ask.id : ChatMode.Agent.id;
+				this.input.setChatMode(targetModeId, false);
+			}
+		} else {
+			const targetModeId = e.modeKind === ChatModeKind.Ask ? ChatMode.Ask.id : ChatMode.Agent.id;
+			this.input.setChatMode(targetModeId, false);
+		}
 
 		// Focus the input for immediate typing
 		this.input.focus();

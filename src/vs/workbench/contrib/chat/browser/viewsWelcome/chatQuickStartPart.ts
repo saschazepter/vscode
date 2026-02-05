@@ -39,6 +39,8 @@ export interface IQuickStartOption {
 	readonly description: string;
 	/** Configuration for which pickers to show */
 	readonly pickerConfig: IProviderPickerConfig;
+	/** The name of the chat mode to switch to (e.g., 'Plan'). If not specified, uses modeKind. */
+	readonly modeName?: string;
 	/** Whether this option was contributed by an extension */
 	readonly isExtensionContributed?: boolean;
 	/** Sort order for display (lower numbers first) */
@@ -77,7 +79,7 @@ export interface IIntentPattern {
 export function getAgentSessionProviderDisplayName(provider: AgentSessionProviders): string {
 	switch (provider) {
 		case AgentSessionProviders.Local:
-			return localize('chat.session.providerDisplayName.local', "Explore");
+			return localize('chat.session.providerDisplayName.local', "Plan");
 		case AgentSessionProviders.Background:
 			return localize('chat.session.providerDisplayName.background', "Code");
 		case AgentSessionProviders.Cloud:
@@ -97,7 +99,7 @@ export function getAgentSessionProviderDisplayName(provider: AgentSessionProvide
 export function getAgentSessionProviderDisplayIcon(provider: AgentSessionProviders): ThemeIcon {
 	switch (provider) {
 		case AgentSessionProviders.Local:
-			return Codicon.question; // Explore mode icon
+			return Codicon.tasklist; // Plan mode icon
 		case AgentSessionProviders.Background:
 			return Codicon.remote; // Code/Execute mode icon
 		case AgentSessionProviders.Cloud:
@@ -134,8 +136,9 @@ export const QuickStartOptions: IQuickStartOption[] = [
 		label: getAgentSessionProviderDisplayName(AgentSessionProviders.Local),
 		icon: getAgentSessionProviderDisplayIcon(AgentSessionProviders.Local),
 		sessionProvider: AgentSessionProviders.Local,
-		modeKind: ChatModeKind.Ask,
+		modeKind: ChatModeKind.Agent,
 		lockMode: true,
+		modeName: 'Plan',
 		description: localize('quickStart.explore.description', "Explore and understand your code."),
 		pickerConfig: {
 			showModelPicker: getAgentSessionProviderShowsModelPicker(AgentSessionProviders.Local),
@@ -164,7 +167,7 @@ export const QuickStartOptions: IQuickStartOption[] = [
 		sessionProvider: AgentSessionProviders.Background,
 		modeKind: ChatModeKind.Agent,
 		lockMode: true,
-		description: localize('quickStart.background.description', "Delegate tasks to a background agent running locally in a worktree on your machine."),
+		description: localize('quickStart.background.description', "Delegate tasks to a background agent running locally on your machine."),
 		pickerConfig: {
 			showModelPicker: getAgentSessionProviderShowsModelPicker(AgentSessionProviders.Background),
 			showRepoPicker: true,

@@ -502,6 +502,13 @@ const apiMenus: IAPIMenu[] = [
 		proposed: 'chatSessionsProvider',
 	},
 	{
+		key: 'chat/agentsView',
+		id: MenuId.ChatAgentsView,
+		description: localize('menus.chatAgentsView', "The Chat Agents View menu for configuring agent session modes."),
+		supportsSubmenus: false,
+		proposed: 'chatSessionsProvider',
+	},
+	{
 		key: 'chat/editor/inlineGutter',
 		id: MenuId.ChatEditorInlineGutter,
 		description: localize('menus.chatEditorInlineGutter', "The inline gutter menu in the chat editor."),
