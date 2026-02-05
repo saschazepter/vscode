@@ -119,7 +119,7 @@ export class MyFeatureAccessibleView implements IAccessibleViewImplementation {
 			AccessibleViewProviderId.MyFeature,
 			{ type: AccessibleViewType.View },
 			() => content,
-			() => { /* onClose — refocus whatever was focused before the accessible view opened */ },
+			() => { /* refocus the feature's main element, e.g., myFeatureElement.focus() */ },
 			AccessibilityVerbositySettingId.MyFeature,
 		);
 	}
