@@ -3470,6 +3470,17 @@ export class ChatToolInvocationPart {
 	}
 }
 
+export class ChatToolInvocationResult {
+	invocationMessage?: string | vscode.MarkdownString;
+	pastTenseMessage?: string | vscode.MarkdownString;
+	isError?: boolean;
+	isConfirmed?: boolean;
+	toolSpecificData?: any;
+	presentation?: 'hidden' | 'hiddenAfterComplete';
+
+	constructor() { }
+}
+
 export class ChatRequestTurn implements vscode.ChatRequestTurn2 {
 	constructor(
 		readonly prompt: string,

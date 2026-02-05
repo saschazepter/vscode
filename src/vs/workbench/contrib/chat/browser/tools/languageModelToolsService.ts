@@ -45,7 +45,7 @@ import { ILanguageModelChatMetadata } from '../../common/languageModels.js';
 import { IChatModel, IChatRequestModel } from '../../common/model/chatModel.js';
 import { ChatToolInvocation } from '../../common/model/chatProgressTypes/chatToolInvocation.js';
 import { ILanguageModelToolsConfirmationService } from '../../common/tools/languageModelToolsConfirmationService.js';
-import { CountTokensCallback, createToolSchemaUri, IBeginToolCallOptions, ILanguageModelToolsService, IPreparedToolInvocation, IToolAndToolSetEnablementMap, IToolData, IToolImpl, IToolInvocation, IToolResult, IToolResultInputOutputDetails, SpecedToolAliases, stringifyPromptTsxPart, isToolSet, ToolDataSource, toolMatchesModel, ToolSet, VSCodeToolReference, IToolSet, ToolSetForModel, IToolInvokedEvent } from '../../common/tools/languageModelToolsService.js';
+import { CountTokensCallback, createToolSchemaUri, IBeginToolCallOptions, ICompleteToolStreamResult, ILanguageModelToolsService, IPreparedToolInvocation, IToolAndToolSetEnablementMap, IToolData, IToolImpl, IToolInvocation, IToolResult, IToolResultInputOutputDetails, SpecedToolAliases, stringifyPromptTsxPart, isToolSet, ToolDataSource, toolMatchesModel, ToolSet, VSCodeToolReference, IToolSet, ToolSetForModel, IToolInvokedEvent } from '../../common/tools/languageModelToolsService.js';
 import { getToolConfirmationAlert } from '../accessibility/chatAccessibilityProvider.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { chatSessionResourceToId } from '../../common/model/chatUri.js';
@@ -725,21 +725,26 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 		// First try to look up by tool ID (the package.json "name" field),
 		// then fall back to looking up by toolReferenceName
 		const toolEntry = this._tools.get(options.toolId);
-		if (!toolEntry) {
+
+		// For registered tools, require handleToolStream implementation.
+		// These tools will have their invocation created directly in invokeToolInternal.
+		if (toolEntry && !toolEntry.impl?.handleToolStream) {
 			return undefined;
 		}
 
-		// Don't create a streaming invocation for tools that don't implement handleToolStream.
-		// These tools will have their invocation created directly in invokeToolInternal.
-		if (!toolEntry.impl?.handleToolStream) {
-			return undefined;
-		}
+		// For unregistered tools (e.g., Copilot CLI), create synthetic tool data
+		const toolData: IToolData = toolEntry?.data ?? {
+			id: options.toolId,
+			source: ToolDataSource.External,
+			displayName: options.toolId,
+			modelDescription: '',
+		};
 
 		// Create the invocation in streaming state
 		const invocation = ChatToolInvocation.createStreaming({
 			toolCallId: options.toolCallId,
 			toolId: options.toolId,
-			toolData: toolEntry.data,
+			toolData,
 			subagentInvocationId: options.subagentInvocationId,
 			chatRequestId: options.chatRequestId,
 		});
@@ -761,8 +766,10 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 			}
 		}
 
-		// Call handleToolStream to get initial streaming message
-		this._callHandleToolStream(toolEntry, invocation, options.toolCallId, undefined, CancellationToken.None);
+		// Call handleToolStream to get initial streaming message (only for registered tools)
+		if (toolEntry) {
+			this._callHandleToolStream(toolEntry, invocation, options.toolCallId, undefined, CancellationToken.None);
+		}
 
 		return invocation;
 	}
@@ -800,6 +807,35 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 		if (toolEntry) {
 			await this._callHandleToolStream(toolEntry, invocation, toolCallId, partialInput, token);
 		}
+	}
+
+	completeToolStream(toolCallId: string, result: ICompleteToolStreamResult): void {
+		const invocation = this._pendingToolCalls.get(toolCallId);
+		if (!invocation) {
+			return;
+		}
+
+		this._pendingToolCalls.delete(toolCallId);
+
+		// Update invocation fields from result
+		if (result.invocationMessage) {
+			invocation.invocationMessage = result.invocationMessage;
+		}
+		if (result.pastTenseMessage) {
+			invocation.pastTenseMessage = result.pastTenseMessage;
+		}
+		if (result.toolSpecificData) {
+			invocation.toolSpecificData = result.toolSpecificData;
+		}
+		if (result.presentation !== undefined) {
+			invocation.presentation = result.presentation;
+		}
+
+		// Transition directly from Streaming to Completed/Cancelled
+		invocation.completeFromStreaming({
+			isConfirmed: result.isConfirmed,
+			resultDetails: result.resultDetails,
+		});
 	}
 
 	private playAccessibilitySignal(toolInvocations: ChatToolInvocation[]): void {

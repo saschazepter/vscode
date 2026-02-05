@@ -184,6 +184,37 @@ export class ChatToolInvocation implements IChatToolInvocation {
 	}
 
 	/**
+	 * Complete a streaming invocation directly, bypassing the normal
+	 * Streaming -> Executing -> Completed flow.
+	 * Used for externally-managed tool invocations (e.g., Copilot CLI tools).
+	 */
+	public completeFromStreaming(options: { isConfirmed?: boolean; resultDetails?: IToolResult['toolResultDetails'] }): void {
+		const currentState = this._state.get();
+		if (currentState.type !== IChatToolInvocation.StateKind.Streaming) {
+			return;
+		}
+
+		if (options.isConfirmed === false) {
+			this._state.set({
+				type: IChatToolInvocation.StateKind.Cancelled,
+				reason: ToolConfirmKind.Denied,
+				parameters: this.parameters,
+				confirmationMessages: this.confirmationMessages,
+			}, undefined);
+		} else {
+			this._state.set({
+				type: IChatToolInvocation.StateKind.Completed,
+				confirmed: { type: ToolConfirmKind.ConfirmationNotNeeded },
+				resultDetails: options.resultDetails,
+				postConfirmed: undefined,
+				contentForModel: [],
+				parameters: this.parameters,
+				confirmationMessages: this.confirmationMessages,
+			}, undefined);
+		}
+	}
+
+	/**
 	 * Transition from streaming state to prepared/executing state.
 	 * Called when the full tool call is ready.
 	 */

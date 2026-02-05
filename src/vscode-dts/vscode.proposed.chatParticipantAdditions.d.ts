@@ -302,6 +302,20 @@ declare module 'vscode' {
 		values: Array<Uri | Location>;
 	}
 
+	/**
+	 * Result data for completing an externally-managed tool invocation.
+	 */
+	export class ChatToolInvocationResult {
+		invocationMessage?: string | MarkdownString;
+		pastTenseMessage?: string | MarkdownString;
+		isError?: boolean;
+		isConfirmed?: boolean;
+		toolSpecificData?: ChatTerminalToolInvocationData | ChatMcpToolInvocationData | ChatTodoToolInvocationData | ChatSimpleToolResultData | ChatToolResourcesInvocationData;
+		presentation?: 'hidden' | 'hiddenAfterComplete' | undefined;
+
+		constructor();
+	}
+
 	export class ChatToolInvocationPart {
 		toolName: string;
 		toolCallId: string;
@@ -587,6 +601,15 @@ declare module 'vscode' {
 		 * @param streamData New streaming data with updated partial arguments.
 		 */
 		updateToolInvocation(toolCallId: string, streamData: ChatToolInvocationStreamData): void;
+
+		/**
+		 * Complete a tool invocation that was started with {@link beginToolInvocation}.
+		 * This transitions the tool from its streaming/executing state to completed,
+		 * updating the UI with the final result data.
+		 * @param toolCallId The tool call ID that was passed to {@link beginToolInvocation}.
+		 * @param result The result data for the completed tool invocation.
+		 */
+		completeToolInvocation(toolCallId: string, result: ChatToolInvocationResult): void;
 
 		push(part: ExtendedChatResponsePart): void;
 

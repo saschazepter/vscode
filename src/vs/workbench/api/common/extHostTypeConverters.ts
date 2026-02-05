@@ -2868,6 +2868,119 @@ export namespace ChatResponseMovePart {
 	}
 }
 
+function isToolInvocationMcpData(data: any): data is vscode.ChatMcpToolInvocationData {
+	return data !== null && typeof data === 'object' &&
+		'input' in data && typeof data.input === 'string' &&
+		'output' in data && Array.isArray(data.output);
+}
+
+function convertToolInvocationMcpToResultDetails(data: vscode.ChatMcpToolInvocationData, isError?: boolean): IToolResultInputOutputDetails {
+	return {
+		input: data.input,
+		output: data.output.map((o) => {
+			const isText = o.mimeType.startsWith('text/');
+			return {
+				type: 'embed' as const,
+				mimeType: o.mimeType,
+				value: isText ? VSBuffer.wrap(o.data).toString() : encodeBase64(VSBuffer.wrap(o.data)),
+				isText: isText,
+			};
+		}),
+		isError: isError ?? false,
+	};
+}
+
+function convertToolInvocationSpecificData(data: any): any {
+	// Convert extension API terminal tool data to internal format
+	if ('command' in data && 'language' in data) {
+		return {
+			kind: 'terminal',
+			command: data.command,
+			language: data.language
+		};
+	} else if ('commandLine' in data && 'language' in data) {
+		const result: IChatTerminalToolInvocationData = {
+			kind: 'terminal',
+			commandLine: data.commandLine,
+			language: data.language,
+			terminalCommandOutput: typeof data.output?.text === 'string' ? {
+				text: data.output.text,
+			} : undefined,
+			terminalCommandState: data.state ? {
+				exitCode: data.state.exitCode,
+				duration: data.state.duration,
+			} : undefined,
+		};
+
+		return result;
+	} else if ('todoList' in data && Array.isArray(data.todoList)) {
+		// Convert extension API todo tool data to internal format
+		return {
+			kind: 'todoList',
+			todoList: data.todoList.map((todo: any) => ({
+				id: String(todo.id),
+				title: todo.title,
+				status: todoStatusEnumToString(todo.status)
+			}))
+		};
+	} else if ('input' in data && 'output' in data && !Array.isArray(data.output)) {
+		// Convert extension API simple tool invocation data to internal format
+		return {
+			kind: 'simpleToolInvocation',
+			input: typeof data.input === 'string' ? data.input : '',
+			output: typeof data.output === 'string' ? data.output : ''
+		};
+	} else if (data && 'values' in data && Array.isArray(data.values)) {
+		// Convert extension API resources tool data to internal format
+		return {
+			kind: 'resources',
+			values: data.values.map((v: any) => {
+				if (v instanceof types.Location) {
+					return Location.from(v);
+				} else {
+					return URI.revive(v);
+				}
+			})
+		};
+	}
+	return data;
+}
+
+function todoStatusEnumToString(status: types.ChatTodoStatus | string): string {
+	// Handle enum values
+	switch (status) {
+		case types.ChatTodoStatus.NotStarted:
+			return 'not-started';
+		case types.ChatTodoStatus.InProgress:
+			return 'in-progress';
+		case types.ChatTodoStatus.Completed:
+			return 'completed';
+		default:
+			return 'not-started';
+	}
+}
+
+function todoStatusStringToEnum(status: string): types.ChatTodoStatus {
+	switch (status) {
+		case 'not-started':
+			return types.ChatTodoStatus.NotStarted;
+		case 'in-progress':
+			return types.ChatTodoStatus.InProgress;
+		case 'completed':
+			return types.ChatTodoStatus.Completed;
+		default:
+			return types.ChatTodoStatus.NotStarted;
+	}
+}
+
+function convertToolInvocationPresentation(presentation: string | undefined): ToolInvocationPresentation | undefined {
+	return presentation === 'hidden'
+		? ToolInvocationPresentation.Hidden
+		: presentation === 'hiddenAfterComplete'
+			? ToolInvocationPresentation.HiddenAfterComplete
+			: undefined;
+}
+
 export namespace ChatToolInvocationPart {
 	export function from(part: vscode.ChatToolInvocationPart): IChatToolInvocationSerialized {
 		// Check if toolSpecificData is ChatMcpToolInvocationData (has input and output)
@@ -2875,12 +2988,12 @@ export namespace ChatToolInvocationPart {
 		let resultDetails: IToolResultInputOutputDetails | undefined;
 		let toolSpecificData: any;
 
-		if (part.toolSpecificData && isChatMcpToolInvocationData(part.toolSpecificData)) {
+		if (part.toolSpecificData && isToolInvocationMcpData(part.toolSpecificData)) {
 			// Convert ChatMcpToolInvocationData to IToolResultInputOutputDetails
-			resultDetails = convertMcpToResultDetails(part.toolSpecificData, part.isError);
+			resultDetails = convertToolInvocationMcpToResultDetails(part.toolSpecificData, part.isError);
 			toolSpecificData = undefined; // MCP data goes to resultDetails, not toolSpecificData
 		} else {
-			toolSpecificData = part.toolSpecificData ? convertToolSpecificData(part.toolSpecificData) : undefined;
+			toolSpecificData = part.toolSpecificData ? convertToolInvocationSpecificData(part.toolSpecificData) : undefined;
 		}
 
 		// Convert extension API ChatToolInvocationPart to internal serialized format
@@ -2897,118 +3010,9 @@ export namespace ChatToolInvocationPart {
 			// isError: part.isError ?? false,
 			toolSpecificData,
 			resultDetails,
-			presentation: part.presentation === 'hidden'
-				? ToolInvocationPresentation.Hidden
-				: part.presentation === 'hiddenAfterComplete'
-					? ToolInvocationPresentation.HiddenAfterComplete
-					: undefined,
+			presentation: convertToolInvocationPresentation(part.presentation),
 			subAgentInvocationId: part.subAgentInvocationId
 		};
-	}
-
-	function isChatMcpToolInvocationData(data: any): data is vscode.ChatMcpToolInvocationData {
-		return data !== null && typeof data === 'object' &&
-			'input' in data && typeof data.input === 'string' &&
-			'output' in data && Array.isArray(data.output);
-	}
-
-	function convertMcpToResultDetails(data: vscode.ChatMcpToolInvocationData, isError?: boolean): IToolResultInputOutputDetails {
-		return {
-			input: data.input,
-			output: data.output.map((o) => {
-				const isText = o.mimeType.startsWith('text/');
-				return {
-					type: 'embed' as const,
-					mimeType: o.mimeType,
-					value: isText ? VSBuffer.wrap(o.data).toString() : encodeBase64(VSBuffer.wrap(o.data)),
-					isText: isText,
-				};
-			}),
-			isError: isError ?? false,
-		};
-	}
-
-	function convertToolSpecificData(data: any): any {
-		// Convert extension API terminal tool data to internal format
-		if ('command' in data && 'language' in data) {
-			return {
-				kind: 'terminal',
-				command: data.command,
-				language: data.language
-			};
-		} else if ('commandLine' in data && 'language' in data) {
-			const result: IChatTerminalToolInvocationData = {
-				kind: 'terminal',
-				commandLine: data.commandLine,
-				language: data.language,
-				terminalCommandOutput: typeof data.output?.text === 'string' ? {
-					text: data.output.text,
-				} : undefined,
-				terminalCommandState: data.state ? {
-					exitCode: data.state.exitCode,
-					duration: data.state.duration,
-				} : undefined,
-			};
-
-			return result;
-		} else if ('todoList' in data && Array.isArray(data.todoList)) {
-			// Convert extension API todo tool data to internal format
-			return {
-				kind: 'todoList',
-				todoList: data.todoList.map((todo: any) => ({
-					id: String(todo.id),
-					title: todo.title,
-					status: todoStatusEnumToString(todo.status)
-				}))
-			};
-		} else if ('input' in data && 'output' in data && !Array.isArray(data.output)) {
-			// Convert extension API simple tool invocation data to internal format
-			return {
-				kind: 'simpleToolInvocation',
-				input: typeof data.input === 'string' ? data.input : '',
-				output: typeof data.output === 'string' ? data.output : ''
-			};
-		} else if (data && 'values' in data && Array.isArray(data.values)) {
-			// Convert extension API resources tool data to internal format
-			return {
-				kind: 'resources',
-				values: data.values.map((v: any) => {
-					if (v instanceof types.Location) {
-						return Location.from(v);
-					} else {
-						return URI.revive(v);
-					}
-				})
-			};
-		}
-		return data;
-	}
-
-	function todoStatusEnumToString(status: types.ChatTodoStatus | string): string {
-		// Handle enum values
-		switch (status) {
-			case types.ChatTodoStatus.NotStarted:
-				return 'not-started';
-			case types.ChatTodoStatus.InProgress:
-				return 'in-progress';
-			case types.ChatTodoStatus.Completed:
-				return 'completed';
-			default:
-				return 'not-started';
-		}
-	}
-
-	function todoStatusStringToEnum(status: string): types.ChatTodoStatus {
-		switch (status) {
-			case 'not-started':
-				return types.ChatTodoStatus.NotStarted;
-			case 'in-progress':
-				return types.ChatTodoStatus.InProgress;
-			case 'completed':
-				return types.ChatTodoStatus.Completed;
-			default:
-				return types.ChatTodoStatus.NotStarted;
-		}
 	}
 
 	export function to(part: any): vscode.ChatToolInvocationPart {
@@ -3097,6 +3101,32 @@ export namespace ChatToolInvocationPart {
 			};
 		}
 		return data;
+	}
+}
+
+export namespace ChatToolInvocationResult {
+	export function from(toolCallId: string, result: vscode.ChatToolInvocationResult): extHostProtocol.IChatCompleteToolInvocationDto {
+		let resultDetails: IToolResultInputOutputDetails | undefined;
+		let toolSpecificData: unknown;
+
+		if (result.toolSpecificData && isToolInvocationMcpData(result.toolSpecificData)) {
+			resultDetails = convertToolInvocationMcpToResultDetails(result.toolSpecificData, result.isError);
+			toolSpecificData = undefined;
+		} else {
+			toolSpecificData = result.toolSpecificData ? convertToolInvocationSpecificData(result.toolSpecificData) : undefined;
+		}
+
+		return {
+			kind: 'completeToolInvocation',
+			toolCallId,
+			invocationMessage: result.invocationMessage ? MarkdownString.from(result.invocationMessage) : undefined,
+			pastTenseMessage: result.pastTenseMessage ? MarkdownString.from(result.pastTenseMessage) : undefined,
+			isError: result.isError,
+			isConfirmed: result.isConfirmed,
+			toolSpecificData,
+			resultDetails,
+			presentation: convertToolInvocationPresentation(result.presentation),
+		};
 	}
 }
 

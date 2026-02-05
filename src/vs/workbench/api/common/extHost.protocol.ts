@@ -1562,6 +1562,7 @@ export type IChatProgressDto =
 	| IChatResponseClearToPreviousToolInvocationDto
 	| IChatBeginToolInvocationDto
 	| IChatUpdateToolInvocationDto
+	| IChatCompleteToolInvocationDto
 	| IChatUsageDto;
 
 export interface ExtHostUrlsShape {
@@ -2371,6 +2372,18 @@ export interface IChatUpdateToolInvocationDto {
 	streamData: {
 		partialInput?: unknown;
 	};
+}
+
+export interface IChatCompleteToolInvocationDto {
+	kind: 'completeToolInvocation';
+	toolCallId: string;
+	invocationMessage?: string | IMarkdownString;
+	pastTenseMessage?: string | IMarkdownString;
+	isError?: boolean;
+	isConfirmed?: boolean;
+	toolSpecificData?: unknown;
+	presentation?: IPreparedToolInvocation['presentation'];
+	resultDetails?: unknown;
 }
 
 export interface IChatUsageDto {

@@ -119,6 +119,10 @@ export class MockLanguageModelToolsService extends Disposable implements ILangua
 		// Mock implementation - do nothing
 	}
 
+	completeToolStream(_toolCallId: string, _result: unknown): void {
+		// Mock implementation - do nothing
+	}
+
 	toolSets: IObservable<readonly IToolSet[]> = constObservable([]);
 
 	getToolSetsForModel(model: ILanguageModelChatMetadata | undefined, reader?: IReader): Iterable<IToolSet> {

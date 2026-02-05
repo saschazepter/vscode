@@ -365,6 +365,14 @@ export class ChatAgentResponseStream {
 					_report(dto);
 					return this;
 				},
+				completeToolInvocation(toolCallId, result) {
+					throwIfDone(this.completeToolInvocation);
+					checkProposedApiEnabled(that._extension, 'chatParticipantAdditions');
+
+					const dto: IChatProgressDto = typeConvert.ChatToolInvocationResult.from(toolCallId, result);
+					_report(dto);
+					return this;
+				},
 				push(part) {
 					throwIfDone(this.push);
 
