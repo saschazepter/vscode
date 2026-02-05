@@ -3,19 +3,19 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { localize, localize2 } from '../../../../../nls.js';
-import { Action2, MenuId, MenuRegistry } from '../../../../../platform/actions/common/actions.js';
-import { Codicon } from '../../../../../base/common/codicons.js';
-import { ContextKeyExpr } from '../../../../../platform/contextkey/common/contextkey.js';
-import { ServicesAccessor } from '../../../../../platform/instantiation/common/instantiation.js';
-import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
-import { ViewContainerLocation } from '../../../../common/views.js';
-import { AgentSessionsViewerOrientation } from './agentSessions.js';
-import { HideAgentSessionsSidebar } from './agentSessionsActions.js';
-import { IWorkbenchLayoutService, Parts } from '../../../../services/layout/browser/layoutService.js';
-import { IViewDescriptorService } from '../../../../common/views.js';
-import { ChatViewId } from '../chat.js';
-import { registerIcon } from '../../../../../platform/theme/common/iconRegistry.js';
+import { localize, localize2 } from '../../../nls.js';
+import { Action2, MenuId, MenuRegistry } from '../../../platform/actions/common/actions.js';
+import { Codicon } from '../../../base/common/codicons.js';
+import { ContextKeyExpr } from '../../../platform/contextkey/common/contextkey.js';
+import { ServicesAccessor } from '../../../platform/instantiation/common/instantiation.js';
+import { ChatContextKeys } from '../../contrib/chat/common/actions/chatContextKeys.js';
+import { ViewContainerLocation } from '../../common/views.js';
+import { AgentSessionsViewerOrientation } from '../../contrib/chat/browser/agentSessions/agentSessions.js';
+import { HideAgentSessionsSidebar } from '../../contrib/chat/browser/agentSessions/agentSessionsActions.js';
+import { IWorkbenchLayoutService, Parts } from '../../services/layout/browser/layoutService.js';
+import { IViewDescriptorService } from '../../common/views.js';
+import { ChatViewId } from '../../contrib/chat/browser/chat.js';
+import { registerIcon } from '../../../platform/theme/common/iconRegistry.js';
 
 // Icons
 const panelMaximizeActionIcon = registerIcon('agent-sessions-panel-maximize', Codicon.chevronUp, localize('agentSessionsPanelMaximizeIcon', 'Icon for maximizing agent sessions panel.'));
