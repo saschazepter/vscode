@@ -29,7 +29,7 @@ import { IsLinuxContext, IsWindowsContext } from '../../../../../platform/contex
 import { IDialogService } from '../../../../../platform/dialogs/common/dialogs.js';
 import { IFileService } from '../../../../../platform/files/common/files.js';
 import { IInstantiationService, ServicesAccessor } from '../../../../../platform/instantiation/common/instantiation.js';
-import { KeybindingWeight } from '../../../../../platform/keybinding/common/keybindingsRegistry.js';
+import { KeybindingWeight, KeybindingsRegistry } from '../../../../../platform/keybinding/common/keybindingsRegistry.js';
 import { ILogService } from '../../../../../platform/log/common/log.js';
 import { INotificationService } from '../../../../../platform/notification/common/notification.js';
 import { IOpenerService } from '../../../../../platform/opener/common/opener.js';
@@ -492,30 +492,13 @@ export function registerChatActions() {
 	registerAction2(class extends ModeOpenChatGlobalAction {
 		constructor() { super(ChatMode.Edit); }
 	});
-	registerAction2(class OpenPlanModeAction extends Action2 {
-		static readonly ID = 'workbench.action.chat.openPlan';
-		constructor() {
-			super({
-				id: OpenPlanModeAction.ID,
-				title: localize2('openChatPlan', "Open Chat (Plan)"),
-				f1: true,
-				category: CHAT_CATEGORY,
-				keybinding: {
-					weight: KeybindingWeight.WorkbenchContrib,
-					primary: KeyMod.Shift | KeyCode.Tab,
-					when: ChatContextKeys.inChatSession,
-				}
-			});
-		}
 
-		override async run(accessor: ServicesAccessor): Promise<void> {
-			const commandService = accessor.get(ICommandService);
-			const widgetService = accessor.get(IChatWidgetService);
-
-			// Preserve the current input query when switching modes
-			const currentQuery = widgetService.lastFocusedWidget?.inputEditor.getValue() ?? '';
-			await commandService.executeCommand(CHAT_OPEN_ACTION_ID, { query: currentQuery, mode: 'Plan' } satisfies IChatViewOpenOptions);
-		}
+	// Register keybinding for the dynamically-registered Plan mode action
+	KeybindingsRegistry.registerKeybindingRule({
+		id: 'workbench.action.chat.openPlan',
+		weight: KeybindingWeight.WorkbenchContrib,
+		primary: KeyMod.Shift | KeyCode.Tab,
+		when: ChatContextKeys.inChatSession,
 	});
 
 	registerAction2(class ToggleChatAction extends Action2 {
