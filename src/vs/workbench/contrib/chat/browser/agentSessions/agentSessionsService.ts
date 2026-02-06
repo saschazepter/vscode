@@ -113,6 +113,18 @@ export class ActiveAgentSessionService extends Disposable implements IActiveAgen
 		this._register(this.storageService.onWillSaveState(() => {
 			this.saveLastSelectedSession();
 		}));
+
+		// Update active session when session options change
+		this._register(this.chatSessionsService.onDidChangeSessionOptions(sessionResource => {
+			const currentActive = this._activeSession.get();
+			if (currentActive && currentActive.resource.toString() === sessionResource.toString()) {
+				// Re-fetch the repository from session options and update the active session
+				const repository = this.getRepositoryFromSessionOption(sessionResource);
+				if (currentActive.repository?.toString() !== repository?.toString()) {
+					this._activeSession.set({ ...currentActive, repository }, undefined);
+				}
+			}
+		}));
 	}
 
 	private registerChatBarWidgetTracking(): void {
@@ -188,7 +200,7 @@ export class ActiveAgentSessionService extends Disposable implements IActiveAgen
 			return undefined;
 		}
 
-		const folderPath = metadata?.worktreePath as string | undefined;
+		const folderPath = metadata?.repositoryPath as string | undefined;
 		if (typeof folderPath === 'string') {
 			return URI.parse(folderPath);
 		}
