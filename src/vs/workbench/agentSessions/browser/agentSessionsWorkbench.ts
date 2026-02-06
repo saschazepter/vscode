@@ -65,7 +65,6 @@ import { AgentSessionAuxiliaryBarPart } from './parts/agentSessionAuxiliaryBarPa
 import { AgentSessionPanelPart } from './parts/agentSessionPanelPart.js';
 import { AgentSessionSidebarPart } from './parts/agentSessionSidebarPart.js';
 import { ChatBarPart } from './parts/chatbar/chatBarPart.js';
-import { ProjectBarPart } from './parts/projectbar/projectBarPart.js';
 import { SyncDescriptor } from '../../../platform/instantiation/common/descriptors.js';
 import { BrowserTitleService, ITitlebarPartConfiguration } from '../../browser/parts/titlebar/titlebarPart.js';
 import { MenuId } from '../../../platform/actions/common/actions.js';
@@ -87,7 +86,6 @@ export interface IAgentSessionsWorkbenchOptions {
 
 enum LayoutClasses {
 	SIDEBAR_HIDDEN = 'nosidebar',
-	PROJECTBAR_HIDDEN = 'noprojectbar',
 	MAIN_EDITOR_AREA_HIDDEN = 'nomaineditorarea',
 	PANEL_HIDDEN = 'nopanel',
 	AUXILIARYBAR_HIDDEN = 'noauxiliarybar',
@@ -103,7 +101,6 @@ enum LayoutClasses {
 
 interface IPartVisibilityState {
 	sidebar: boolean;
-	projectBar: boolean;
 	auxiliaryBar: boolean;
 	editor: boolean;
 	panel: boolean;
@@ -237,7 +234,6 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 	private workbenchGrid!: SerializableGrid<ISerializableView>;
 
 	private titleBarPartView!: ISerializableView;
-	private projectBarPartView!: ISerializableView;
 	private sideBarPartView!: ISerializableView;
 	private panelPartView!: ISerializableView;
 	private auxiliaryBarPartView!: ISerializableView;
@@ -248,7 +244,6 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 
 	private readonly partVisibility: IPartVisibilityState = {
 		sidebar: true,
-		projectBar: true,
 		auxiliaryBar: false,
 		editor: false,
 		panel: false,
@@ -575,7 +570,6 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 		// Create Parts (excluding editor - it will be in a modal)
 		for (const { id, role, classes } of [
 			{ id: Parts.TITLEBAR_PART, role: 'none', classes: ['titlebar'] },
-			{ id: Parts.PROJECTBAR_PART, role: 'navigation', classes: ['projectbar', 'activitybar', 'left'] },
 			{ id: Parts.SIDEBAR_PART, role: 'none', classes: ['sidebar', 'left'] },
 			{ id: Parts.AUXILIARYBAR_PART, role: 'none', classes: ['auxiliarybar', 'basepanel', 'right'] },
 			{ id: Parts.CHATBAR_PART, role: 'main', classes: ['chatbar', 'basepanel', 'right'] },
@@ -697,11 +691,6 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 		this.viewDescriptorService = accessor.get(IViewDescriptorService);
 		accessor.get(ITitleService);
 
-		// Create and register the ProjectBarPart
-		const instantiationService = accessor.get(IInstantiationService);
-		const projectBarPart = this._register(instantiationService.createInstance(ProjectBarPart));
-		this._register(this.registerPart(projectBarPart));
-
 		// Register layout listeners
 		this.registerLayoutListeners();
 
@@ -761,12 +750,10 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 		const panelPart = this.getPart(Parts.PANEL_PART);
 		const auxiliaryBarPart = this.getPart(Parts.AUXILIARYBAR_PART);
 		const sideBar = this.getPart(Parts.SIDEBAR_PART);
-		const projectBar = this.getPart(Parts.PROJECTBAR_PART);
 		const chatBarPart = this.getPart(Parts.CHATBAR_PART);
 
 		// View references for parts in the grid (editor is NOT in grid)
 		this.titleBarPartView = titleBar;
-		this.projectBarPartView = projectBar;
 		this.sideBarPartView = sideBar;
 		this.panelPartView = panelPart;
 		this.auxiliaryBarPartView = auxiliaryBarPart;
@@ -774,7 +761,6 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 
 		const viewMap: { [key: string]: ISerializableView } = {
 			[Parts.TITLEBAR_PART]: this.titleBarPartView,
-			[Parts.PROJECTBAR_PART]: this.projectBarPartView,
 			[Parts.PANEL_PART]: this.panelPartView,
 			[Parts.SIDEBAR_PART]: this.sideBarPartView,
 			[Parts.AUXILIARYBAR_PART]: this.auxiliaryBarPartView,
@@ -794,12 +780,10 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 		this.workbenchGrid.edgeSnapping = this.mainWindowFullscreen;
 
 		// Listen for part visibility changes (for parts in grid)
-		for (const part of [titleBar, panelPart, projectBar, sideBar, auxiliaryBarPart, chatBarPart]) {
+		for (const part of [titleBar, panelPart, sideBar, auxiliaryBarPart, chatBarPart]) {
 			this._register(part.onDidVisibilityChange(visible => {
 				if (part === sideBar) {
 					this.setSideBarHidden(!visible);
-				} else if (part === projectBar) {
-					this.setProjectBarHidden(!visible);
 				} else if (part === panelPart) {
 					this.setPanelHidden(!visible);
 				} else if (part === auxiliaryBarPart) {
@@ -828,7 +812,7 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 	 * Structure (vertical orientation):
 	 * - Titlebar (top)
 	 * - Main content (horizontal):
-	 *   - Project Bar | Sidebar
+	 *   - Sidebar
 	 *   - Right section (vertical):
 	 *     - Top right (horizontal): Chat Bar | Auxiliary Bar
 	 *     - Panel (below chat and auxiliary bar only)
@@ -837,7 +821,6 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 		const { width, height } = this._mainContainerDimension;
 
 		// Default sizes
-		const projectBarSize = 48; // Same width as activity bar
 		const sideBarSize = 300;
 		const auxiliaryBarSize = 300;
 		const panelSize = 300;
@@ -847,7 +830,7 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 		const topRightHeight = mainContentHeight - panelSize;
 
 		// Calculate right section width and chat bar width
-		const rightSectionWidth = Math.max(0, width - projectBarSize - sideBarSize);
+		const rightSectionWidth = Math.max(0, width - sideBarSize);
 		const chatBarWidth = Math.max(0, rightSectionWidth - auxiliaryBarSize);
 
 		const titleBarNode: ISerializedLeafNode = {
@@ -855,13 +838,6 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 			data: { type: Parts.TITLEBAR_PART },
 			size: titleBarHeight,
 			visible: true
-		};
-
-		const projectBarNode: ISerializedLeafNode = {
-			type: 'leaf',
-			data: { type: Parts.PROJECTBAR_PART },
-			size: projectBarSize,
-			visible: this.partVisibility.projectBar
 		};
 
 		const sideBarNode: ISerializedLeafNode = {
@@ -906,10 +882,10 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 			size: rightSectionWidth
 		};
 
-		// Main content: Project Bar | Sidebar | Right Section (horizontal)
+		// Main content: Sidebar | Right Section (horizontal)
 		const mainContent: ISerializedNode = {
 			type: 'branch',
-			data: [projectBarNode, sideBarNode, rightSection],
+			data: [sideBarNode, rightSection],
 			size: mainContentHeight
 		};
 
@@ -965,7 +941,6 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 	getLayoutClasses(): string[] {
 		return coalesce([
 			!this.partVisibility.sidebar ? LayoutClasses.SIDEBAR_HIDDEN : undefined,
-			!this.partVisibility.projectBar ? LayoutClasses.PROJECTBAR_HIDDEN : undefined,
 			!this.partVisibility.editor ? LayoutClasses.MAIN_EDITOR_AREA_HIDDEN : undefined,
 			!this.partVisibility.panel ? LayoutClasses.PANEL_HIDDEN : undefined,
 			!this.partVisibility.auxiliaryBar ? LayoutClasses.AUXILIARYBAR_HIDDEN : undefined,
@@ -1072,7 +1047,7 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 	//#region Part Visibility
 
 	isActivityBarHidden(): boolean {
-		return !this.isVisible(Parts.PROJECTBAR_PART);
+		return true; // No activity bar in this layout
 	}
 
 	isVisible(part: SINGLE_WINDOW_PARTS): boolean;
@@ -1083,8 +1058,6 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 				return true; // Always visible
 			case Parts.SIDEBAR_PART:
 				return this.partVisibility.sidebar;
-			case Parts.PROJECTBAR_PART:
-				return this.partVisibility.projectBar;
 			case Parts.AUXILIARYBAR_PART:
 				return this.partVisibility.auxiliaryBar;
 			case Parts.EDITOR_PART:
@@ -1105,9 +1078,6 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 		switch (part) {
 			case Parts.SIDEBAR_PART:
 				this.setSideBarHidden(hidden);
-				break;
-			case Parts.PROJECTBAR_PART:
-				this.setProjectBarHidden(hidden);
 				break;
 			case Parts.AUXILIARYBAR_PART:
 				this.setAuxiliaryBarHidden(hidden);
@@ -1153,24 +1123,6 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 				this.paneCompositeService.openPaneComposite(viewletToOpen, ViewContainerLocation.Sidebar);
 			}
 		}
-	}
-
-	private setProjectBarHidden(hidden: boolean): void {
-		if (this.partVisibility.projectBar === !hidden) {
-			return;
-		}
-
-		this.partVisibility.projectBar = !hidden;
-
-		// Adjust CSS
-		if (hidden) {
-			this.mainContainer.classList.add(LayoutClasses.PROJECTBAR_HIDDEN);
-		} else {
-			this.mainContainer.classList.remove(LayoutClasses.PROJECTBAR_HIDDEN);
-		}
-
-		// Propagate to grid
-		this.workbenchGrid.setViewVisible(this.projectBarPartView, !hidden);
 	}
 
 	private setAuxiliaryBarHidden(hidden: boolean): void {
@@ -1356,8 +1308,6 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 		switch (part) {
 			case Parts.TITLEBAR_PART:
 				return this.titleBarPartView;
-			case Parts.PROJECTBAR_PART:
-				return this.projectBarPartView;
 			case Parts.SIDEBAR_PART:
 				return this.sideBarPartView;
 			case Parts.AUXILIARYBAR_PART:
@@ -1375,14 +1325,13 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 
 	getMaximumEditorDimensions(_container: HTMLElement): IDimension {
 		// Return the available space for editor (excluding other parts)
-		const projectBarWidth = this.partVisibility.projectBar ? this.workbenchGrid.getViewSize(this.projectBarPartView).width : 0;
 		const sidebarWidth = this.partVisibility.sidebar ? this.workbenchGrid.getViewSize(this.sideBarPartView).width : 0;
 		const auxiliaryBarWidth = this.partVisibility.auxiliaryBar ? this.workbenchGrid.getViewSize(this.auxiliaryBarPartView).width : 0;
 		const panelHeight = this.partVisibility.panel ? this.workbenchGrid.getViewSize(this.panelPartView).height : 0;
 		const titleBarHeight = this.workbenchGrid.getViewSize(this.titleBarPartView).height;
 
 		return new Dimension(
-			this._mainContainerDimension.width - projectBarWidth - sidebarWidth - auxiliaryBarWidth,
+			this._mainContainerDimension.width - sidebarWidth - auxiliaryBarWidth,
 			this._mainContainerDimension.height - titleBarHeight - panelHeight
 		);
 	}
@@ -1399,7 +1348,7 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 		if (this.isPanelMaximized()) {
 			this.workbenchGrid.exitMaximizedView();
 		} else {
-			this.workbenchGrid.maximizeView(this.panelPartView, [this.titleBarPartView, this.projectBarPartView]);
+			this.workbenchGrid.maximizeView(this.panelPartView, [this.titleBarPartView]);
 		}
 	}
 
