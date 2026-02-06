@@ -52,8 +52,7 @@ import { ChatSessionOperationLog } from '../model/chatSessionOperationLog.js';
 import { IPromptsService } from '../promptSyntax/service/promptsService.js';
 import { IChatRequestHooks } from '../promptSyntax/hookSchema.js';
 import { IHooksExecutionService } from '../hooks/hooksExecutionService.js';
-// eslint-disable-next-line local/code-layering, local/code-import-patterns
-import { IAgentWorkbenchWorkspaceService } from '../../../../services/agentSessions/browser/agentWorkbenchWorkspaceService.js';
+import { IUriIdentityService } from '../../../../../platform/uriIdentity/common/uriIdentity.js';
 
 const serializedChatKey = 'interactive.sessions';
 
@@ -114,6 +113,9 @@ export class ChatService extends Disposable implements IChatService {
 	private readonly _onDidDisposeSession = this._register(new Emitter<{ readonly sessionResource: URI[]; reason: 'cleared' }>());
 	public readonly onDidDisposeSession = this._onDidDisposeSession.event;
 
+	private readonly _onDidChangeSessions = this._register(new Emitter<void>());
+	public readonly onDidChangeSessions = this._onDidChangeSessions.event;
+
 	private readonly _sessionFollowupCancelTokens = this._register(new DisposableResourceMap<CancellationTokenSource>());
 	private readonly _chatServiceTelemetry: ChatServiceTelemetry;
 	private readonly _chatSessionStore: ChatSessionStore;
@@ -151,6 +153,7 @@ export class ChatService extends Disposable implements IChatService {
 		@IExtensionService private readonly extensionService: IExtensionService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
+		@IUriIdentityService private readonly uriIdentityService: IUriIdentityService,
 		@IChatSlashCommandService private readonly chatSlashCommandService: IChatSlashCommandService,
 		@IChatAgentService private readonly chatAgentService: IChatAgentService,
 		@IConfigurationService private readonly configurationService: IConfigurationService,
@@ -159,7 +162,6 @@ export class ChatService extends Disposable implements IChatService {
 		@IMcpService private readonly mcpService: IMcpService,
 		@IPromptsService private readonly promptsService: IPromptsService,
 		@IHooksExecutionService private readonly hooksExecutionService: IHooksExecutionService,
-		@IAgentWorkbenchWorkspaceService private readonly agentWorkbenchWorkspaceService: IAgentWorkbenchWorkspaceService,
 	) {
 		super();
 
@@ -182,6 +184,8 @@ export class ChatService extends Disposable implements IChatService {
 		this._register(this._sessionModels.onDidDisposeModel(model => {
 			this._onDidDisposeSession.fire({ sessionResource: [model.sessionResource], reason: 'cleared' });
 		}));
+
+		this._register(workspaceContextService.onDidChangeWorkspaceFolders(() => this._onDidChangeSessions.fire()));
 
 		this._chatServiceTelemetry = this.instantiationService.createInstance(ChatServiceTelemetry);
 		this._chatSessionStore = this._register(this.instantiationService.createInstance(ChatSessionStore));
@@ -375,6 +379,7 @@ export class ChatService extends Disposable implements IChatService {
 	async getLiveSessionItems(): Promise<IChatDetail[]> {
 		return await Promise.all(Array.from(this._sessionModels.values())
 			.filter(session => this.shouldBeInHistory(session))
+			.filter(session => this.isPartOfWorkspace(session.workingFolder))
 			.map(async (session): Promise<IChatDetail> => {
 				const title = session.title || localize('newChat', "New Chat");
 				return {
@@ -398,6 +403,7 @@ export class ChatService extends Disposable implements IChatService {
 		return Object.values(index)
 			.filter(entry => !entry.isExternal)
 			.filter(entry => !this._sessionModels.has(LocalChatSessionUri.forSession(entry.sessionId)) && entry.initialLocation === ChatAgentLocation.Chat && !entry.isEmpty)
+			.filter(entry => this.isPartOfWorkspace(entry.workingFolder))
 			.map((entry): IChatDetail => {
 				const sessionResource = LocalChatSessionUri.forSession(entry.sessionId);
 				return ({
@@ -422,6 +428,20 @@ export class ChatService extends Disposable implements IChatService {
 		return undefined;
 	}
 
+	private isPartOfWorkspace(workingFolder: string | undefined): boolean {
+		const folders = this.workspaceContextService.getWorkspace().folders;
+		if (!workingFolder) {
+			return true;
+		}
+		if (folders.length === 0) {
+			return true;
+		}
+		if (folders.length === 1) {
+			return this.uriIdentityService.extUri.isEqual(folders[0].uri, URI.parse(workingFolder));
+		}
+		return false;
+	}
+
 	private shouldBeInHistory(entry: ChatModel): boolean {
 		return !entry.isImported && !!LocalChatSessionUri.parseLocalSessionId(entry.sessionResource) && entry.initialLocation === ChatAgentLocation.Chat;
 	}
@@ -440,9 +460,9 @@ export class ChatService extends Disposable implements IChatService {
 		const sessionId = generateUuid();
 		const sessionResource = LocalChatSessionUri.forSession(sessionId);
 
-		// Agent sessions window
-		const activeWorkspaceFolderUri = this.workspaceContextService.getWorkspace().isAgentSessionsWorkspace
-			? this.agentWorkbenchWorkspaceService?.activeWorkspaceFolderUri?.toString()
+		const folders = this.workspaceContextService.getWorkspace().folders;
+		const activeWorkspaceFolderUri = folders.length === 1
+			? folders[0].uri.toString()
 			: undefined;
 
 		return this._sessionModels.acquireOrCreate({

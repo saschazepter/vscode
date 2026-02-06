@@ -22,6 +22,7 @@ export class MockChatService implements IChatService {
 	transferredSessionResource: URI | undefined;
 	readonly onDidSubmitRequest: Event<{ readonly chatSessionResource: URI }> = Event.None;
 	readonly onDidCreateModel: Event<IChatModel> = Event.None;
+	readonly onDidChangeSessions: Event<void> = Event.None;
 
 	private sessions = new ResourceMap<IChatModel>();
 

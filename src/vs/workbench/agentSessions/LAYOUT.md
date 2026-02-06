@@ -402,18 +402,19 @@ The Agent Sessions workbench uses specialized part implementations that extend t
 
 ### 9.2 Project Bar
 
-The Project Bar is a new part specific to the Agent Sessions workbench that displays workspace folders and allows selection between them. It also hosts global activity actions (Accounts and Manage/Settings) at the bottom.
+The Project Bar is a new part specific to the Agent Sessions workbench that displays project folder entries and allows selection between them. Folder entries are stored in workspace-scoped storage rather than being added as workspace root folders. When a folder is selected, the workspace editing service replaces the current workspace folder with the selected one. It also hosts global activity actions (Accounts and Manage/Settings) at the bottom.
 
 #### Features
 
 | Feature | Description |
 |---------|-------------|
-| Workspace folder display | Shows first letter of each workspace folder as an icon button |
-| Folder selection | Click to select and switch between workspace folders |
-| Add folder button | Button with `+` icon to add new folders via `workbench.action.addRootFolder` command |
-| Hover tooltips | Shows full folder name on hover |
+| Folder entry display | Shows first letter of each stored folder entry as an icon button |
+| Folder selection | Click to select a folder; replaces the current workspace folder via `IWorkspaceEditingService.updateFolders()` |
+| Add folder button | Button with `+` icon to pick a folder via `IFileDialogService` and store it in workspace storage |
+| Hover tooltips | Shows full folder path on hover (via `ILabelService`) |
 | Keyboard navigation | Supports `Tab`, `Enter`, and `Space` for accessibility |
 | Global activities | Accounts and Manage icons at bottom via `GlobalCompositeBar` |
+| Storage-based state | Folder entries persisted in workspace storage (`StorageScope.WORKSPACE`, `StorageTarget.MACHINE`) |
 
 #### Visual Style
 
@@ -428,9 +429,9 @@ The Project Bar is a new part specific to the Agent Sessions workbench that disp
 ```
 ProjectBarPart
 ├── Content
-│   ├── Actions Container (workspace folders at top)
+│   ├── Actions Container (folder entries at top)
 │   │   ├── Add Folder Button (+)
-│   │   └── Workspace Entries (one per folder)
+│   │   └── Folder Entries (one per stored folder, from workspace storage)
 │   └── GlobalCompositeBar (accounts, settings at bottom)
 ```
 
@@ -452,7 +453,7 @@ The GlobalCompositeBar:
 
 | Event | Fired When |
 |-------|------------|
-| `onDidSelectWorkspace` | User selects a different workspace folder |
+| `onDidSelectWorkspace` | User selects a different folder entry |
 
 #### API
 
@@ -461,10 +462,10 @@ class ProjectBarPart extends Part {
     // Properties
     readonly minimumWidth: number = 48;
     readonly maximumWidth: number = 48;
-    get selectedWorkspaceFolder(): IWorkspaceFolder | undefined;
+    get selectedWorkspaceFolder(): URI | undefined;
 
     // Events
-    readonly onDidSelectWorkspace: Event<IWorkspaceFolder | undefined>;
+    readonly onDidSelectWorkspace: Event<URI | undefined>;
 
     // Methods
     focus(): void;                    // Focus add folder button
@@ -516,6 +517,7 @@ Each agent session part uses separate storage keys to avoid conflicts with regul
 | Panel | Pinned panels | `workbench.agentsession.panel.pinnedPanels` |
 | Panel | Placeholders | `workbench.agentsession.panel.placeholderPanels` |
 | Panel | Workspace state | `workbench.agentsession.panel.viewContainersWorkspaceState` |
+| Project Bar | Folder entries | `workbench.agentsession.projectbar.folders` |
 
 ---
 
@@ -669,6 +671,7 @@ interface IPartVisibilityState {
 
 | Date | Change |
 |------|--------|
+| 2026-02-06 | Project Bar now stores folder entries in workspace storage (`StorageScope.WORKSPACE`) instead of adding as workspace root folders; selecting a folder uses `IWorkspaceEditingService.updateFolders()` to replace current workspace folder; events and API now use `URI` instead of `IWorkspaceFolder` |
 | 2026-02-05 | Auxiliary Bar now hidden by default; Added `AuxiliaryBarVisibilityContribution` to auto-show when chat session has requests, auto-hide when empty |
 | 2026-02-05 | Hiding panel now exits maximized state first if panel was maximized |
 | 2026-02-05 | Added panel maximize/minimize support via `toggleMaximizedPanel()`; Uses `Grid.maximizeView()` with exclusions for titlebar and project bar; Added `TogglePanelMaximizedAction` and `TogglePanelVisibilityAction` to panel title bar |

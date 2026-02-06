@@ -15,8 +15,8 @@ import { IInstantiationService } from '../../../../../platform/instantiation/com
 import { IQuickInputService, IQuickPickItem, IQuickPickSeparator } from '../../../../../platform/quickinput/common/quickInput.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
 import { TerminalLocation } from '../../../../../platform/terminal/common/terminal.js';
+import { IWorkspaceContextService } from '../../../../../platform/workspace/common/workspace.js';
 import { IWorkbenchContribution } from '../../../../common/contributions.js';
-import { IAgentWorkbenchWorkspaceService } from '../../../../services/agentSessions/browser/agentWorkbenchWorkspaceService.js';
 import { IDebugService, ILaunch } from '../../../debug/common/debug.js';
 import { ITerminalService } from '../../../terminal/browser/terminal.js';
 
@@ -63,7 +63,7 @@ export class RunScriptContribution extends Disposable implements IWorkbenchContr
 		@IStorageService private readonly _storageService: IStorageService,
 		@IDebugService private readonly _debugService: IDebugService,
 		@IInstantiationService _instantiationService: IInstantiationService,
-		@IAgentWorkbenchWorkspaceService private readonly _agentWorkbenchWorkspaceService: IAgentWorkbenchWorkspaceService,
+		@IWorkspaceContextService private readonly _workspaceContextService: IWorkspaceContextService,
 	) {
 		super();
 
@@ -76,13 +76,13 @@ export class RunScriptContribution extends Disposable implements IWorkbenchContr
 		});
 
 		// Listen for active workspace changes
-		this._workspaceListener.value = this._agentWorkbenchWorkspaceService.onDidChangeActiveWorkspaceFolder(() => {
+		this._workspaceListener.value = this._workspaceContextService.onDidChangeWorkspaceFolders(() => {
 			this._registerDropdownMenuItems();
 		});
 	}
 
 	private _getStorageKey(): string {
-		const activeWorkspaceUri = this._agentWorkbenchWorkspaceService.activeWorkspaceFolderUri;
+		const activeWorkspaceUri = this.getActiveWorkspaceFolderUri();
 		if (activeWorkspaceUri) {
 			return `${STORAGE_KEY_DEFAULT_RUN_ACTION}.${activeWorkspaceUri.toString()}`;
 		}
@@ -175,6 +175,14 @@ export class RunScriptContribution extends Disposable implements IWorkbenchContr
 		}));
 	}
 
+	private getActiveWorkspaceFolderUri(): URI | undefined {
+		const folders = this._workspaceContextService.getWorkspace().folders;
+		if (folders.length === 1) {
+			return folders[0].uri;
+		}
+		return undefined;
+	}
+
 	private _registerDropdownMenuItems(): void {
 		this._menuDisposables.clear();
 
@@ -182,7 +190,7 @@ export class RunScriptContribution extends Disposable implements IWorkbenchContr
 		const allConfigs = configManager.getAllConfigurations();
 
 		// Filter to only show configurations from the active workspace
-		const activeWorkspaceUri = this._agentWorkbenchWorkspaceService.activeWorkspaceFolderUri;
+		const activeWorkspaceUri = this.getActiveWorkspaceFolderUri();
 		const filteredConfigs = activeWorkspaceUri
 			? allConfigs.filter(config => this._isLaunchFromWorkspace(config.launch, activeWorkspaceUri))
 			: [];
@@ -228,7 +236,7 @@ export class RunScriptContribution extends Disposable implements IWorkbenchContr
 		const allConfigs = configManager.getAllConfigurations();
 
 		// Filter to only show configurations from the active workspace
-		const activeWorkspaceUri = this._agentWorkbenchWorkspaceService.activeWorkspaceFolderUri;
+		const activeWorkspaceUri = this.getActiveWorkspaceFolderUri();
 		const filteredConfigs = activeWorkspaceUri
 			? allConfigs.filter(config => this._isLaunchFromWorkspace(config.launch, activeWorkspaceUri))
 			: [];
@@ -324,7 +332,7 @@ export class RunScriptContribution extends Disposable implements IWorkbenchContr
 		const terminalService = accessor.get(ITerminalService);
 
 		// Get the active workspace folder as cwd
-		const cwd = this._agentWorkbenchWorkspaceService.activeWorkspaceFolderUri;
+		const cwd = this.getActiveWorkspaceFolderUri();
 
 		// Create a new terminal and run the command
 		const terminal = await terminalService.createTerminal({

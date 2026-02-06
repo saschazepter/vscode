@@ -22,7 +22,6 @@ import { IProductService } from '../../../../../platform/product/common/productS
 import { Registry } from '../../../../../platform/registry/common/platform.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
 import { IWorkspaceContextService } from '../../../../../platform/workspace/common/workspace.js';
-import { IAgentWorkbenchWorkspaceService } from '../../../../services/agentSessions/browser/agentWorkbenchWorkspaceService.js';
 import { IChatEntitlementService } from '../../../../services/chat/common/chatEntitlementService.js';
 import { ILifecycleService } from '../../../../services/lifecycle/common/lifecycle.js';
 import { Extensions, IOutputChannelRegistry, IOutputService } from '../../../../services/output/common/output.js';
@@ -400,7 +399,6 @@ export class AgentSessionsModel extends Disposable implements IAgentSessionsMode
 		@IProductService private readonly productService: IProductService,
 		@IChatWidgetService private readonly chatWidgetService: IChatWidgetService,
 		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
-		@IAgentWorkbenchWorkspaceService private readonly agentWorkbenchWorkspaceService: IAgentWorkbenchWorkspaceService
 	) {
 		super();
 
@@ -428,11 +426,7 @@ export class AgentSessionsModel extends Disposable implements IAgentSessionsMode
 	}
 
 	private registerListeners(): void {
-		// Agent sessions window project
-		if (this.workspaceContextService.getWorkspace().isAgentSessionsWorkspace) {
-			this._register(this.agentWorkbenchWorkspaceService.onDidChangeActiveWorkspaceFolder(() => this.resolve(undefined)));
-		}
-
+		this._register(this.workspaceContextService.onDidChangeWorkspaceFolders(() => this.resolve(undefined)));
 		// Sessions changes
 		this._register(this.chatSessionsService.onDidChangeItemsProviders(({ chatSessionType }) => this.resolve(chatSessionType)));
 		this._register(this.chatSessionsService.onDidChangeAvailability(() => this.resolve(undefined)));
