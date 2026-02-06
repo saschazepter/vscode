@@ -497,12 +497,29 @@ export class SetupAgent extends Disposable implements IChatAgentImplementation {
 		}
 
 		return new Promise<void>(resolve => {
-			disposables.add(Event.any(
-				chatViewsWelcomeRegistry.onDidChange,
-				Event.map(this.contextKeyService.onDidChangeContext, () => { })
-			)(() => {
+			let descriptorKeys: Set<string>;
+			const updateDescriptorKeys = () => {
+				const descriptors = chatViewsWelcomeRegistry.get();
+				descriptorKeys = new Set(descriptors.flatMap(d => d.when.keys()));
+			};
+
+			// Initialize the set of context keys
+			updateDescriptorKeys();
+
+			// Listen to registry changes and recompute keys
+			disposables.add(chatViewsWelcomeRegistry.onDidChange(() => {
+				updateDescriptorKeys();
 				if (panelAgentHasGuidance()) {
 					resolve();
+				}
+			}));
+
+			// Listen to context changes, but only check when relevant keys change
+			disposables.add(this.contextKeyService.onDidChangeContext(e => {
+				if (e.affectsSome(descriptorKeys)) {
+					if (panelAgentHasGuidance()) {
+						resolve();
+					}
 				}
 			}));
 		});
