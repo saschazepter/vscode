@@ -11,7 +11,7 @@ import { toErrorMessage } from '../../../../../base/common/errorMessage.js';
 import { Emitter, Event } from '../../../../../base/common/event.js';
 import { MarkdownString } from '../../../../../base/common/htmlContent.js';
 import { Lazy } from '../../../../../base/common/lazy.js';
-import { Disposable, DisposableStore, IDisposable } from '../../../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore, IDisposable, toDisposable } from '../../../../../base/common/lifecycle.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { localize, localize2 } from '../../../../../nls.js';
 import { ContextKeyExpr, IContextKeyService } from '../../../../../platform/contextkey/common/contextkey.js';
@@ -323,11 +323,12 @@ export class SetupAgent extends Disposable implements IChatAgentImplementation {
 				});
 			}, 10000);
 
-			const whenPanelAgentHasGuidance = this.whenPanelAgentHasGuidance();
+			const disposables = new DisposableStore();
+			disposables.add(toDisposable(() => clearTimeout(timeoutHandle)));
 			try {
 				const ready = await Promise.race([
 					timeout(this.environmentService.remoteAuthority ? 60000 /* increase for remote scenarios */ : 20000).then(() => 'timedout'),
-					whenPanelAgentHasGuidance.promise.then(() => 'panelGuidance'),
+					this.whenPanelAgentHasGuidance(disposables).then(() => 'panelGuidance'),
 					Promise.allSettled([
 						whenAgentActivated,
 						whenAgentReady,
@@ -477,8 +478,7 @@ export class SetupAgent extends Disposable implements IChatAgentImplementation {
 					return;
 				}
 			} finally {
-				whenPanelAgentHasGuidance.dispose();
-				clearTimeout(timeoutHandle);
+				disposables.dispose();
 			}
 		}
 
@@ -489,28 +489,23 @@ export class SetupAgent extends Disposable implements IChatAgentImplementation {
 		});
 	}
 
-	private whenPanelAgentHasGuidance(): { promise: Promise<void> } & IDisposable {
-		const disposables = new DisposableStore();
+	private async whenPanelAgentHasGuidance(disposables: DisposableStore): Promise<void> {
 		const panelAgentHasGuidance = () => chatViewsWelcomeRegistry.get().some(descriptor => this.contextKeyService.contextMatchesRules(descriptor.when));
 
 		if (panelAgentHasGuidance()) {
-			return { promise: Promise.resolve(), dispose: () => { } };
+			return;
 		}
 
-		return {
-			promise: new Promise<void>(resolve => {
-				disposables.add(Event.any(
-					chatViewsWelcomeRegistry.onDidChange,
-					Event.map(this.contextKeyService.onDidChangeContext, () => { })
-				)(() => {
-					if (panelAgentHasGuidance()) {
-						disposables.dispose();
-						resolve();
-					}
-				}));
-			}),
-			dispose: () => disposables.dispose()
-		};
+		return new Promise<void>(resolve => {
+			disposables.add(Event.any(
+				chatViewsWelcomeRegistry.onDidChange,
+				Event.map(this.contextKeyService.onDidChangeContext, () => { })
+			)(() => {
+				if (panelAgentHasGuidance()) {
+					resolve();
+				}
+			}));
+		});
 	}
 
 	private whenLanguageModelReady(languageModelsService: ILanguageModelsService, modelId: string | undefined): Promise<unknown> | void {
