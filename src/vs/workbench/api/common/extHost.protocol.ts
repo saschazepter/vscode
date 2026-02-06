@@ -99,7 +99,8 @@ import { IExtHostDocumentSaveDelegate } from './extHostDocumentData.js';
 import { TerminalShellExecutionCommandLineConfidence } from './extHostTypes.js';
 import * as tasks from './shared/tasks.js';
 import { PromptsType } from '../../contrib/chat/common/promptSyntax/promptTypes.js';
-import { IHookCommandResult, IHookResult } from '../../contrib/chat/common/hooksExecutionService.js';
+import { IHookCommandResult } from '../../contrib/chat/common/hooks/hooksCommandTypes.js';
+import { IHookResult } from '../../contrib/chat/common/hooks/hooksTypes.js';
 import { IHookCommand } from '../../contrib/chat/common/promptSyntax/hookSchema.js';
 
 export type IconPathDto =
@@ -1477,6 +1478,7 @@ export interface ExtHostChatAgentsShape2 {
 	$detectChatParticipant(handle: number, request: Dto<IChatAgentRequest>, context: { history: IChatAgentHistoryEntryDto[] }, options: { participants: IChatParticipantMetadata[]; location: ChatAgentLocation }, token: CancellationToken): Promise<IChatParticipantDetectionResult | null | undefined>;
 	$providePromptFiles(handle: number, type: PromptsType, context: IPromptFileContext, token: CancellationToken): Promise<Dto<IPromptFileResource>[] | undefined>;
 	$setRequestTools(requestId: string, tools: UserSelectedTools): void;
+	$setYieldRequested(requestId: string): void;
 }
 export interface IChatParticipantMetadata {
 	participant: string;
@@ -2919,6 +2921,31 @@ export interface ExtHostWindowShape {
 	$onDidChangeActiveNativeWindowHandle(handle: string | undefined): void;
 }
 
+export type PowerSystemIdleState = 'active' | 'idle' | 'locked' | 'unknown';
+export type PowerThermalState = 'unknown' | 'nominal' | 'fair' | 'serious' | 'critical';
+export type PowerSaveBlockerType = 'prevent-app-suspension' | 'prevent-display-sleep';
+
+export interface MainThreadPowerShape extends IDisposable {
+	$getSystemIdleState(idleThreshold: number): Promise<PowerSystemIdleState>;
+	$getSystemIdleTime(): Promise<number>;
+	$getCurrentThermalState(): Promise<PowerThermalState>;
+	$isOnBatteryPower(): Promise<boolean>;
+	$startPowerSaveBlocker(type: PowerSaveBlockerType): Promise<number>;
+	$stopPowerSaveBlocker(id: number): Promise<boolean>;
+	$isPowerSaveBlockerStarted(id: number): Promise<boolean>;
+}
+
+export interface ExtHostPowerShape {
+	$onDidSuspend(): void;
+	$onDidResume(): void;
+	$onDidChangeOnBatteryPower(isOnBattery: boolean): void;
+	$onDidChangeThermalState(state: PowerThermalState): void;
+	$onDidChangeSpeedLimit(limit: number): void;
+	$onWillShutdown(): void;
+	$onDidLockScreen(): void;
+	$onDidUnlockScreen(): void;
+}
+
 export interface ExtHostLogLevelServiceShape {
 	$setLogLevel(level: LogLevel, resource?: UriComponents): void;
 }
@@ -3261,6 +3288,8 @@ export interface MainThreadMcpShape {
 	$getTokenFromServerMetadata(id: number, authDetails: IMcpAuthenticationDetails, options?: IMcpAuthenticationOptions): Promise<string | undefined>;
 	$getTokenForProviderId(id: number, providerId: string, scopes: string[], options?: IMcpAuthenticationOptions): Promise<string | undefined>;
 	$logMcpAuthSetup(data: IAuthMetadataSource): void;
+	$startMcpGateway(): Promise<{ address: UriComponents; gatewayId: string } | undefined>;
+	$disposeMcpGateway(gatewayId: string): void;
 }
 
 export interface MainThreadDataChannelsShape extends IDisposable {
@@ -3485,6 +3514,7 @@ export const MainContext = {
 	MainThreadShare: createProxyIdentifier<MainThreadShareShape>('MainThreadShare'),
 	MainThreadTask: createProxyIdentifier<MainThreadTaskShape>('MainThreadTask'),
 	MainThreadWindow: createProxyIdentifier<MainThreadWindowShape>('MainThreadWindow'),
+	MainThreadPower: createProxyIdentifier<MainThreadPowerShape>('MainThreadPower'),
 	MainThreadLabelService: createProxyIdentifier<MainThreadLabelServiceShape>('MainThreadLabelService'),
 	MainThreadNotebook: createProxyIdentifier<MainThreadNotebookShape>('MainThreadNotebook'),
 	MainThreadNotebookDocuments: createProxyIdentifier<MainThreadNotebookDocumentsShape>('MainThreadNotebookDocumentsShape'),
@@ -3541,6 +3571,7 @@ export const ExtHostContext = {
 	ExtHostTask: createProxyIdentifier<ExtHostTaskShape>('ExtHostTask'),
 	ExtHostWorkspace: createProxyIdentifier<ExtHostWorkspaceShape>('ExtHostWorkspace'),
 	ExtHostWindow: createProxyIdentifier<ExtHostWindowShape>('ExtHostWindow'),
+	ExtHostPower: createProxyIdentifier<ExtHostPowerShape>('ExtHostPower'),
 	ExtHostWebviews: createProxyIdentifier<ExtHostWebviewsShape>('ExtHostWebviews'),
 	ExtHostWebviewPanels: createProxyIdentifier<ExtHostWebviewPanelsShape>('ExtHostWebviewPanels'),
 	ExtHostCustomEditors: createProxyIdentifier<ExtHostCustomEditorsShape>('ExtHostCustomEditors'),
