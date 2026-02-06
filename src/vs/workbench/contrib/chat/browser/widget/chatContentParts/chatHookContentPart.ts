@@ -5,10 +5,9 @@
 
 import { $ } from '../../../../../../base/browser/dom.js';
 import { Codicon } from '../../../../../../base/common/codicons.js';
-import { ThemeIcon } from '../../../../../../base/common/themables.js';
 import { localize } from '../../../../../../nls.js';
 import { IHoverService } from '../../../../../../platform/hover/browser/hover.js';
-import { ChatHookOutcome, ChatHookType, IChatHookPart } from '../../../common/chatService/chatService.js';
+import { ChatHookType, IChatHookPart } from '../../../common/chatService/chatService.js';
 import { IChatRendererContent } from '../../../common/model/chatViewModel.js';
 import { ChatTreeItem } from '../../chat.js';
 import { ChatCollapsibleContentPart } from './chatCollapsibleContentPart.js';
@@ -31,26 +30,6 @@ function getHookTypeLabel(hookType: ChatHookType): string {
 	}
 }
 
-function getHookOutcomeIcon(outcome: ChatHookOutcome): ThemeIcon {
-	switch (outcome) {
-		case 'success': return Codicon.check;
-		case 'blocked': return Codicon.warning;
-		case 'denied': return Codicon.close;
-		case 'error': return Codicon.error;
-		default: return Codicon.info;
-	}
-}
-
-function getHookOutcomeClass(outcome: ChatHookOutcome): string {
-	switch (outcome) {
-		case 'success': return 'chat-hook-outcome-success';
-		case 'blocked': return 'chat-hook-outcome-blocked';
-		case 'denied': return 'chat-hook-outcome-denied';
-		case 'error': return 'chat-hook-outcome-error';
-		default: return '';
-	}
-}
-
 export class ChatHookContentPart extends ChatCollapsibleContentPart implements IChatContentPart {
 
 	constructor(
@@ -59,32 +38,16 @@ export class ChatHookContentPart extends ChatCollapsibleContentPart implements I
 		@IHoverService hoverService: IHoverService,
 	) {
 		const hookTypeLabel = getHookTypeLabel(hookPart.hookType);
-		let title: string;
-		switch (hookPart.outcome) {
-			case 'success':
-				title = localize('hook.title.success', "{0} hook ran successfully", hookTypeLabel);
-				break;
-			case 'blocked':
-				title = localize('hook.title.blocked', "Blocked by {0} hook", hookTypeLabel);
-				break;
-			case 'denied':
-				title = localize('hook.title.denied', "Denied by {0} hook", hookTypeLabel);
-				break;
-			case 'error':
-				title = localize('hook.title.error', "{0} hook encountered an error", hookTypeLabel);
-				break;
-			default:
-				title = localize('hook.title.default', "{0} hook", hookTypeLabel);
-				break;
-		}
+		const title = hookPart.continue
+			? localize('hook.title.continued', "{0} hook ran successfully", hookTypeLabel)
+			: localize('hook.title.stopped', "Blocked by {0} hook", hookTypeLabel);
 
 		super(title, context, undefined, hoverService);
 
-		this.icon = getHookOutcomeIcon(hookPart.outcome);
+		this.icon = hookPart.continue ? Codicon.check : Codicon.warning;
 
-		const outcomeClass = getHookOutcomeClass(hookPart.outcome);
-		if (outcomeClass) {
-			this.domNode.classList.add(outcomeClass);
+		if (!hookPart.continue) {
+			this.domNode.classList.add('chat-hook-outcome-blocked');
 		}
 
 		this.setExpanded(false);
@@ -93,11 +56,11 @@ export class ChatHookContentPart extends ChatCollapsibleContentPart implements I
 	protected override initContent(): HTMLElement {
 		const content = $('.chat-hook-details.chat-used-context-list');
 
-		if (this.hookPart.reason) {
-			const reasonElement = $('.chat-hook-reason', undefined, this.hookPart.reason);
+		if (this.hookPart.stopReason) {
+			const reasonElement = $('.chat-hook-reason', undefined, this.hookPart.stopReason);
 			content.appendChild(reasonElement);
-		} else if (this.hookPart.message) {
-			const messageElement = $('.chat-hook-message', undefined, this.hookPart.message);
+		} else if (this.hookPart.systemMessage) {
+			const messageElement = $('.chat-hook-message', undefined, this.hookPart.systemMessage);
 			content.appendChild(messageElement);
 		}
 
@@ -109,8 +72,8 @@ export class ChatHookContentPart extends ChatCollapsibleContentPart implements I
 			return false;
 		}
 		return other.hookType === this.hookPart.hookType &&
-			other.message === this.hookPart.message &&
-			other.outcome === this.hookPart.outcome &&
-			other.reason === this.hookPart.reason;
+			other.continue === this.hookPart.continue &&
+			other.stopReason === this.hookPart.stopReason &&
+			other.systemMessage === this.hookPart.systemMessage;
 	}
 }

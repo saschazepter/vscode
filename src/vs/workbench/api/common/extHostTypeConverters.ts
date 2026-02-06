@@ -2826,14 +2826,14 @@ export namespace ChatResponseHookPart {
 		return {
 			kind: 'hook',
 			hookType: part.hookType,
-			message: part.message,
-			outcome: part.outcome,
-			reason: part.reason,
+			continue: part.continue,
+			stopReason: part.stopReason,
+			systemMessage: part.systemMessage,
 			metadata: part.metadata
 		};
 	}
 	export function to(part: Dto<IChatHookPart>): vscode.ChatResponseHookPart {
-		return new types.ChatResponseHookPart(part.hookType, part.message, part.outcome, part.reason, part.metadata);
+		return new types.ChatResponseHookPart(part.hookType, part.continue, part.stopReason, part.systemMessage, part.metadata);
 	}
 }
 

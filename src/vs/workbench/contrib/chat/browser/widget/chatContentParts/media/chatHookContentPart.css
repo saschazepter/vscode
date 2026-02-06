@@ -3,17 +3,8 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-.chat-used-context.chat-hook-outcome-success .chat-used-context-label .codicon {
-	color: var(--vscode-testing-iconPassed, #73c991) !important;
-}
-
 .chat-used-context.chat-hook-outcome-blocked .chat-used-context-label .codicon {
 	color: var(--vscode-notificationsWarningIcon-foreground) !important;
-}
-
-.chat-used-context.chat-hook-outcome-denied .chat-used-context-label .codicon,
-.chat-used-context.chat-hook-outcome-error .chat-used-context-label .codicon {
-	color: var(--vscode-errorForeground) !important;
 }
 
 .chat-hook-details {
@@ -23,14 +14,8 @@
 	padding: 8px 12px;
 }
 
-.chat-hook-message {
+.chat-hook-message, .chat-hook-reason {
 	font-size: var(--vscode-chat-font-size-body-s);
 	padding: 4px 10px;
 	color: var(--vscode-descriptionForeground);
-}
-
-.chat-hook-reason {
-	font-size: var(--vscode-chat-font-size-body-s);
-	opacity: 0.8;
-	font-style: italic;
 }

@@ -426,23 +426,19 @@ export interface IChatThinkingPart {
 export type ChatHookType = 'SessionStart' | 'UserPromptSubmit' | 'PreToolUse' | 'PostToolUse' | 'SubagentStart' | 'SubagentStop' | 'Stop';
 
 /**
- * The outcome of a hook execution.
- */
-export type ChatHookOutcome = 'success' | 'blocked' | 'denied' | 'error';
-
-/**
  * A progress part representing the execution result of a hook.
+ * Aligned with the hook output JSON structure: { continue, stopReason, systemMessage, hookSpecificOutput }.
  */
 export interface IChatHookPart {
 	kind: 'hook';
 	/** The type of hook that was executed */
 	hookType: ChatHookType;
-	/** A message describing the hook execution result */
-	message: string;
-	/** The outcome of the hook execution */
-	outcome: ChatHookOutcome;
-	/** Optional reason for the outcome (e.g., why the hook blocked/denied) */
-	reason?: string;
+	/** Whether processing should continue after hook execution. When false, the hook has blocked/denied the operation. */
+	continue: boolean;
+	/** Message shown to the user when the hook stopped processing (i.e., continue=false) */
+	stopReason?: string;
+	/** Warning/system message from the hook, shown to the user */
+	systemMessage?: string;
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	metadata?: { readonly [key: string]: any };
 }
