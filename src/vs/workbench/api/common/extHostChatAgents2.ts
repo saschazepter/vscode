@@ -206,6 +206,14 @@ export class ChatAgentResponseStream {
 					_report(dto);
 					return this;
 				},
+				hookProgress(hookType: vscode.ChatHookType, message: string, outcome: vscode.ChatHookOutcome, reason?: string) {
+					throwIfDone(this.hookProgress);
+					checkProposedApiEnabled(that._extension, 'chatParticipantAdditions');
+					const part = new extHostTypes.ChatResponseHookPart(hookType, message, outcome, reason);
+					const dto = typeConvert.ChatResponseHookPart.from(part);
+					_report(dto);
+					return this;
+				},
 				warning(value) {
 					throwIfDone(this.progress);
 					checkProposedApiEnabled(that._extension, 'chatParticipantAdditions');

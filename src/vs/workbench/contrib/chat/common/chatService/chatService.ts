@@ -420,6 +420,33 @@ export interface IChatThinkingPart {
 	generatedTitle?: string;
 }
 
+/**
+ * Hook types that can be reported in the chat UI.
+ */
+export type ChatHookType = 'SessionStart' | 'UserPromptSubmit' | 'PreToolUse' | 'PostToolUse' | 'SubagentStart' | 'SubagentStop' | 'Stop';
+
+/**
+ * The outcome of a hook execution.
+ */
+export type ChatHookOutcome = 'success' | 'blocked' | 'denied' | 'error';
+
+/**
+ * A progress part representing the execution result of a hook.
+ */
+export interface IChatHookPart {
+	kind: 'hook';
+	/** The type of hook that was executed */
+	hookType: ChatHookType;
+	/** A message describing the hook execution result */
+	message: string;
+	/** The outcome of the hook execution */
+	outcome: ChatHookOutcome;
+	/** Optional reason for the outcome (e.g., why the hook blocked/denied) */
+	reason?: string;
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	metadata?: { readonly [key: string]: any };
+}
+
 export interface IChatTerminalToolInvocationData {
 	kind: 'terminal';
 	commandLine: {
@@ -928,7 +955,8 @@ export type IChatProgress =
 	| IChatElicitationRequest
 	| IChatElicitationRequestSerialized
 	| IChatMcpServersStarting
-	| IChatMcpServersStartingSerialized;
+	| IChatMcpServersStartingSerialized
+	| IChatHookPart;
 
 export interface IChatFollowup {
 	kind: 'reply';
