@@ -12,7 +12,7 @@ import { IConfigurationService } from '../../../../../../platform/configuration/
 import { createDecorator } from '../../../../../../platform/instantiation/common/instantiation.js';
 import { ILogService } from '../../../../../../platform/log/common/log.js';
 import { IEditorGroupsService, IEditorWorkingSet } from '../../../../../services/editor/common/editorGroupsService.js';
-import { IEditorService } from '../../../../../services/editor/common/editorService.js';
+import { IEditorService, MODAL_GROUP } from '../../../../../services/editor/common/editorService.js';
 import { ICommandService } from '../../../../../../platform/commands/common/commands.js';
 import { IAgentSession, isSessionInProgressStatus } from '../agentSessionsModel.js';
 import { IChatWidgetService } from '../../chat.js';
@@ -213,17 +213,17 @@ export class AgentSessionProjectionService extends Disposable implements IAgentS
 			this.logService.trace(`[AgentSessionProjection] Found ${diffResources.length} files with diffs to display`);
 
 			if (diffResources.length > 0) {
-				// Clear editors only when we know we have content to display
-				await this.editorGroupsService.applyWorkingSet('empty', { preserveFocus: true });
+				// Open multi-diff editor showing all changes in a modal editor
+				await this.editorService.openEditor({
+					multiDiffSource: session.resource.with({ scheme: session.resource.scheme + '-agent-session-projection' }),
+					resources: diffResources.map(dr => ({
+						original: { resource: dr.originalUri },
+						modified: { resource: dr.modifiedUri }
+					})),
+					label: localize('agentSessionProjection.changes.title', '{0} - All Changes', session.label),
+				}, MODAL_GROUP);
 
-				// Open multi-diff editor showing all changes
-				await this.commandService.executeCommand('_workbench.openMultiDiffEditor', {
-					multiDiffSourceUri: session.resource.with({ scheme: session.resource.scheme + '-agent-session-projection' }),
-					title: localize('agentSessionProjection.changes.title', '{0} - All Changes', session.label),
-					resources: diffResources,
-				});
-
-				this.logService.trace(`[AgentSessionProjection] Multi-diff editor opened successfully`);
+				this.logService.trace(`[AgentSessionProjection] Multi-diff editor opened successfully in modal view`);
 
 				// Save this as the session's working set
 				const sessionKey = session.resource.toString();
@@ -331,13 +331,11 @@ export class AgentSessionProjectionService extends Disposable implements IAgentS
 			}
 
 			try {
-				// For local sessions, changes are shown via chatEditing.viewChanges, not _openSessionFiles
+				// For local sessions, changes are shown via editingSession.show(), not _openSessionFiles
 				// For other providers, try to open session files from session.changes
 				let filesOpened = false;
 				if (session.providerType === AgentSessionProviders.Local) {
 					// Local sessions use editing session for changes - we already verified hasUndecidedChanges above
-					// Clear editors to prepare for the changes view
-					await this.editorGroupsService.applyWorkingSet('empty', { preserveFocus: true });
 					filesOpened = true;
 				} else {
 					// Try to open session files - only continue with projection if files were displayed
@@ -387,10 +385,13 @@ export class AgentSessionProjectionService extends Disposable implements IAgentS
 		// Open the session in the chat panel (always, even without changes)
 		await this._openSessionInChatPanel(session);
 
-		// For local sessions with changes, also pop open the edit session's changes view
+		// For local sessions with changes, also pop open the edit session's changes view in modal
 		// Must be after openSession so the editing session context is available
 		if (session.providerType === AgentSessionProviders.Local && hasUndecidedChanges) {
-			await this.commandService.executeCommand('chatEditing.viewChanges');
+			const editingSession = this.chatEditingService.getEditingSession(session.resource);
+			if (editingSession) {
+				await editingSession.show(false, MODAL_GROUP);
+			}
 		}
 
 		// If auxiliary bar was maximized, hide it during projection to show full editor

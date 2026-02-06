@@ -32,7 +32,7 @@ import { IInstantiationService } from '../../../../../platform/instantiation/com
 import { ILogService } from '../../../../../platform/log/common/log.js';
 import { DiffEditorInput } from '../../../../common/editor/diffEditorInput.js';
 import { IEditorGroupsService } from '../../../../services/editor/common/editorGroupsService.js';
-import { IEditorService } from '../../../../services/editor/common/editorService.js';
+import { IEditorService, PreferredGroup } from '../../../../services/editor/common/editorService.js';
 import { MultiDiffEditor } from '../../../multiDiffEditor/browser/multiDiffEditor.js';
 import { MultiDiffEditorInput } from '../../../multiDiffEditor/browser/multiDiffEditorInput.js';
 import { CellUri, ICellEditOperation } from '../../../notebook/common/notebookCommon.js';
@@ -436,13 +436,18 @@ export class ChatEditingSession extends Disposable implements IChatEditingSessio
 		return applicableEntries.length;
 	}
 
-	async show(previousChanges?: boolean): Promise<void> {
+	async show(previousChanges?: boolean, group?: PreferredGroup): Promise<void> {
 		this._assertNotDisposed();
 		if (this._editorPane) {
 			if (this._editorPane.isVisible()) {
 				return;
 			} else if (this._editorPane.input) {
-				await this._editorGroupsService.activeGroup.openEditor(this._editorPane.input, { pinned: true, activation: EditorActivation.ACTIVATE });
+				// If a group is specified, use it; otherwise use activeGroup
+				if (group !== undefined) {
+					await this._editorService.openEditor(this._editorPane.input, { pinned: true, activation: EditorActivation.ACTIVATE }, group);
+				} else {
+					await this._editorGroupsService.activeGroup.openEditor(this._editorPane.input, { pinned: true, activation: EditorActivation.ACTIVATE });
+				}
 				return;
 			}
 		}
@@ -451,7 +456,12 @@ export class ChatEditingSession extends Disposable implements IChatEditingSessio
 			label: localize('multiDiffEditorInput.name', "Suggested Edits")
 		}, this._instantiationService);
 
-		this._editorPane = await this._editorGroupsService.activeGroup.openEditor(input, { pinned: true, activation: EditorActivation.ACTIVATE }) as MultiDiffEditor | undefined;
+		// If a group is specified, use editorService; otherwise use activeGroup
+		if (group !== undefined) {
+			this._editorPane = await this._editorService.openEditor(input, { pinned: true, activation: EditorActivation.ACTIVATE }, group) as MultiDiffEditor | undefined;
+		} else {
+			this._editorPane = await this._editorGroupsService.activeGroup.openEditor(input, { pinned: true, activation: EditorActivation.ACTIVATE }) as MultiDiffEditor | undefined;
+		}
 	}
 
 	private _stopPromise: Promise<void> | undefined;
