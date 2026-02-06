@@ -453,8 +453,10 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 		}
 
 		if (hookResult?.additionalContext) {
-			// Append additional context to the tool result content
-			toolResult.content.push({ kind: 'text', value: '\n<PostToolUse-context>\n' + hookResult.additionalContext + '\n</PostToolUse-context>' });
+			// Append additional context from all hooks to the tool result content
+			for (const context of hookResult.additionalContext) {
+				toolResult.content.push({ kind: 'text', value: '\n<PostToolUse-context>\n' + context + '\n</PostToolUse-context>' });
+			}
 		}
 	}
 
