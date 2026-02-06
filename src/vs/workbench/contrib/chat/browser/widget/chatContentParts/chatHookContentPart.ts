@@ -27,15 +27,19 @@ export class ChatHookContentPart extends ChatCollapsibleContentPart implements I
 		@IHoverService hoverService: IHoverService,
 	) {
 		const hookTypeLabel = getHookTypeLabel(hookPart.hookType);
-		const title = hookPart.continue
-			? localize('hook.title.continued', "{0} hook ran successfully", hookTypeLabel)
-			: localize('hook.title.stopped', "Blocked by {0} hook", hookTypeLabel);
+		const isStopped = !!hookPart.stopReason;
+		const isWarning = !!hookPart.systemMessage;
+		const title = isStopped
+			? localize('hook.title.stopped', "Blocked by {0} hook", hookTypeLabel)
+			: isWarning
+				? localize('hook.title.warning', "Warning from {0} hook", hookTypeLabel)
+				: localize('hook.title.continued', "{0} hook ran successfully", hookTypeLabel);
 
 		super(title, context, undefined, hoverService);
 
-		this.icon = hookPart.continue ? Codicon.check : Codicon.warning;
+		this.icon = isStopped ? Codicon.circleSlash : isWarning ? Codicon.warning : Codicon.check;
 
-		if (!hookPart.continue) {
+		if (isStopped) {
 			this.domNode.classList.add('chat-hook-outcome-blocked');
 		}
 
@@ -61,7 +65,6 @@ export class ChatHookContentPart extends ChatCollapsibleContentPart implements I
 			return false;
 		}
 		return other.hookType === this.hookPart.hookType &&
-			other.continue === this.hookPart.continue &&
 			other.stopReason === this.hookPart.stopReason &&
 			other.systemMessage === this.hookPart.systemMessage;
 	}
