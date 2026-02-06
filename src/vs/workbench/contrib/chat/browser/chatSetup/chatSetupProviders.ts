@@ -14,7 +14,7 @@ import { Lazy } from '../../../../../base/common/lazy.js';
 import { Disposable, DisposableStore, IDisposable } from '../../../../../base/common/lifecycle.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { localize, localize2 } from '../../../../../nls.js';
-import { ContextKeyExpr } from '../../../../../platform/contextkey/common/contextkey.js';
+import { ContextKeyExpr, IContextKeyService } from '../../../../../platform/contextkey/common/contextkey.js';
 import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
 import { ILogService } from '../../../../../platform/log/common/log.js';
 import product from '../../../../../platform/product/common/product.js';
@@ -36,6 +36,7 @@ import { CHAT_OPEN_ACTION_ID, CHAT_SETUP_ACTION_ID } from '../actions/chatAction
 import { ChatViewId, IChatWidgetService } from '../chat.js';
 import { IViewsService } from '../../../../services/views/common/viewsService.js';
 import { ChatViewPane } from '../widgetHosts/viewPane/chatViewPane.js';
+import { chatViewsWelcomeRegistry, IChatViewsWelcomeDescriptor } from '../viewsWelcome/chatViewsWelcome.js';
 import { ILanguageFeaturesService } from '../../../../../editor/common/services/languageFeatures.js';
 import { CodeAction, CodeActionList, Command, NewSymbolName, NewSymbolNameTriggerKind } from '../../../../../editor/common/languages.js';
 import { ITextModel } from '../../../../../editor/common/model.js';
@@ -191,6 +192,7 @@ export class SetupAgent extends Disposable implements IChatAgentImplementation {
 		@IWorkspaceTrustManagementService private readonly workspaceTrustManagementService: IWorkspaceTrustManagementService,
 		@IChatEntitlementService private readonly chatEntitlementService: IChatEntitlementService,
 		@IViewsService private readonly viewsService: IViewsService,
+		@IContextKeyService private readonly contextKeyService: IContextKeyService,
 	) {
 		super();
 
@@ -321,20 +323,30 @@ export class SetupAgent extends Disposable implements IChatAgentImplementation {
 				});
 			}, 10000);
 
+			// Poll for extension welcome view errors while waiting
+			const welcomeViewError = this.whenWelcomeViewErrorDetected();
+
 			try {
 				const ready = await Promise.race([
-					timeout(this.environmentService.remoteAuthority ? 60000 /* increase for remote scenarios */ : 20000).then(() => 'timedout'),
+					timeout(this.environmentService.remoteAuthority ? 60000 /* increase for remote scenarios */ : 20000).then(() => 'timedout' as const),
 					Promise.allSettled([
 						whenAgentActivated,
 						whenAgentReady,
 						whenLanguageModelReady,
 						whenToolsModelReady
-					])
+					]),
+					...(welcomeViewError ? [welcomeViewError.promise.then(descriptor => ({ welcomeError: descriptor }))] : [])
 				]);
 
-				if (ready === 'timedout') {
+				if (ready === 'timedout' || (typeof ready === 'object' && 'welcomeError' in ready)) {
+					const isWelcomeError = typeof ready === 'object' && 'welcomeError' in ready;
+					const matchingWelcomeView: IChatViewsWelcomeDescriptor | undefined = isWelcomeError ? ready.welcomeError : undefined;
+
 					let warningMessage: string;
-					if (this.chatEntitlementService.anonymous) {
+					if (matchingWelcomeView) {
+						// Show the extension's welcome error message directly
+						warningMessage = matchingWelcomeView.content.value;
+					} else if (this.chatEntitlementService.anonymous) {
 						warningMessage = localize('chatTookLongWarningAnonymous', "Chat took too long to get ready. Please ensure that the extension `{0}` is installed and enabled. Click restart to try again if this issue persists.", defaultChat.chatExtensionId);
 					} else {
 						warningMessage = localize('chatTookLongWarning', "Chat took too long to get ready. Please ensure you are signed in to {0} and that the extension `{1}` is installed and enabled. Click restart to try again if this issue persists.", defaultChat.provider.default.name, defaultChat.chatExtensionId);
@@ -396,6 +408,7 @@ export class SetupAgent extends Disposable implements IChatAgentImplementation {
 						isRemote: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'Whether this is a remote scenario.' };
 						isAnonymous: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'Whether anonymous access is enabled.' };
 						matchingWelcomeViewWhen: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The when clause of the matching extension welcome view, if any.' };
+						isWelcomeError: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'Whether the error was detected via a matching welcome view before timeout.' };
 					};
 					type ChatSetupTimeoutEvent = {
 						agentActivated: boolean;
@@ -415,29 +428,54 @@ export class SetupAgent extends Disposable implements IChatAgentImplementation {
 						isRemote: boolean;
 						isAnonymous: boolean;
 						matchingWelcomeViewWhen: string;
+						isWelcomeError: boolean;
 					};
 					const chatViewPane = this.viewsService.getActiveViewWithId(ChatViewId) as ChatViewPane | undefined;
-					const matchingWelcomeView = chatViewPane?.getMatchingWelcomeView();
-
-					this.telemetryService.publicLog2<ChatSetupTimeoutEvent, ChatSetupTimeoutClassification>('chatSetup.timeout', {
-						agentActivated,
-						agentReady,
-						agentHasDefault,
-						agentDefaultIsCore,
-						agentHasContributedDefault,
-						agentContributedDefaultIsCore,
-						agentActivatedCount,
-						agentLocation: this.location,
-						agentModeKind: modeInfo?.kind ?? '',
-						languageModelReady,
-						languageModelCount: languageModelIds.length,
-						languageModelDefaultCount,
-						languageModelHasRequestedModel: !!requestModel.modelId,
-						toolsModelReady,
-						isRemote: !!this.environmentService.remoteAuthority,
-						isAnonymous: this.chatEntitlementService.anonymous,
-						matchingWelcomeViewWhen: matchingWelcomeView?.when.serialize() ?? (chatViewPane ? 'noWelcomeView' : 'noChatViewPane'),
-					});
+					if (!matchingWelcomeView) {
+						// Only check for matching welcome view if we don't already have one from the race
+						const timeoutMatchingWelcomeView = chatViewPane?.getMatchingWelcomeView();
+						this.telemetryService.publicLog2<ChatSetupTimeoutEvent, ChatSetupTimeoutClassification>('chatSetup.timeout', {
+							agentActivated,
+							agentReady,
+							agentHasDefault,
+							agentDefaultIsCore,
+							agentHasContributedDefault,
+							agentContributedDefaultIsCore,
+							agentActivatedCount,
+							agentLocation: this.location,
+							agentModeKind: modeInfo?.kind ?? '',
+							languageModelReady,
+							languageModelCount: languageModelIds.length,
+							languageModelDefaultCount,
+							languageModelHasRequestedModel: !!requestModel.modelId,
+							toolsModelReady,
+							isRemote: !!this.environmentService.remoteAuthority,
+							isAnonymous: this.chatEntitlementService.anonymous,
+							matchingWelcomeViewWhen: timeoutMatchingWelcomeView?.when.serialize() ?? (chatViewPane ? 'noWelcomeView' : 'noChatViewPane'),
+							isWelcomeError: false,
+						});
+					} else {
+						this.telemetryService.publicLog2<ChatSetupTimeoutEvent, ChatSetupTimeoutClassification>('chatSetup.timeout', {
+							agentActivated,
+							agentReady,
+							agentHasDefault,
+							agentDefaultIsCore,
+							agentHasContributedDefault,
+							agentContributedDefaultIsCore,
+							agentActivatedCount,
+							agentLocation: this.location,
+							agentModeKind: modeInfo?.kind ?? '',
+							languageModelReady,
+							languageModelCount: languageModelIds.length,
+							languageModelDefaultCount,
+							languageModelHasRequestedModel: !!requestModel.modelId,
+							toolsModelReady,
+							isRemote: !!this.environmentService.remoteAuthority,
+							isAnonymous: this.chatEntitlementService.anonymous,
+							matchingWelcomeViewWhen: matchingWelcomeView.when.serialize(),
+							isWelcomeError: true,
+						});
+					}
 
 					progress({
 						kind: 'warning',
@@ -460,6 +498,7 @@ export class SetupAgent extends Disposable implements IChatAgentImplementation {
 				}
 			} finally {
 				clearTimeout(timeoutHandle);
+				welcomeViewError?.disposable.dispose();
 			}
 		}
 
@@ -535,6 +574,41 @@ export class SetupAgent extends Disposable implements IChatAgentImplementation {
 		} catch (error) {
 			this.logService.error(error);
 		}
+	}
+
+	private whenWelcomeViewErrorDetected(): { promise: Promise<IChatViewsWelcomeDescriptor>; disposable: IDisposable } | undefined {
+		const chatViewPane = this.viewsService.getActiveViewWithId(ChatViewId) as ChatViewPane | undefined;
+		if (!chatViewPane) {
+			return undefined;
+		}
+
+		// Check if a matching welcome view is already present
+		const existingMatch = chatViewPane.getMatchingWelcomeView();
+		if (existingMatch) {
+			return { promise: Promise.resolve(existingMatch), disposable: { dispose() { } } };
+		}
+
+		// Listen for changes in welcome view registry and context keys
+		// to detect when the extension sets an error welcome context
+		const disposables = new DisposableStore();
+		const descriptors = chatViewsWelcomeRegistry.get();
+		const descriptorKeys: Set<string> = new Set(descriptors.flatMap(d => d.when.keys()));
+
+		const onWelcomeChange = Event.any(
+			chatViewsWelcomeRegistry.onDidChange,
+			Event.filter(this.contextKeyService.onDidChangeContext, e => e.affectsSome(descriptorKeys))
+		);
+
+		const promise = new Promise<IChatViewsWelcomeDescriptor>(resolve => {
+			disposables.add(onWelcomeChange(() => {
+				const match = chatViewPane.getMatchingWelcomeView();
+				if (match) {
+					resolve(match);
+				}
+			}));
+		});
+
+		return { promise, disposable: disposables };
 	}
 
 	private async doInvokeWithSetup(request: IChatAgentRequest, progress: (part: IChatProgress) => void, chatService: IChatService, languageModelsService: ILanguageModelsService, chatWidgetService: IChatWidgetService, chatAgentService: IChatAgentService, languageModelToolsService: ILanguageModelToolsService, defaultAccountService: IDefaultAccountService): Promise<IChatAgentResult> {
