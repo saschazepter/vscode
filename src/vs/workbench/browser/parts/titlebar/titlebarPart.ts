@@ -588,9 +588,10 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 				}
 			}
 
-			if (isMacintosh && isNative && primaryWindowControlsLocation === 'left') {
+			if (isMacintosh && isNative && primaryWindowControlsLocation === 'left' && !this.titlebarOptions.leftToolbarMenuId) {
 				// macOS native: controls are on the left and the container is not needed to make room
-				// for something, except for web where a custom menu being supported). not putting the
+				// for something, except for web where a custom menu being supported, or when there's
+				// a left toolbar menu that needs spacing from the traffic lights. not putting the
 				// container helps with allowing to move the window when clicking very close to the
 				// window control buttons.
 			} else if (getWindowControlsStyle(this.configurationService) === WindowControlsStyle.HIDDEN) {

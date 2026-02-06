@@ -337,6 +337,10 @@
 	width: 70px;
 }
 
+.monaco-workbench:not(.web).mac .part.titlebar .titlebar-left .window-controls-container {
+	width: 80px;
+}
+
 /* Window Control Icons */
 .monaco-workbench .part.titlebar .window-controls-container > .window-icon {
 	display: flex;
