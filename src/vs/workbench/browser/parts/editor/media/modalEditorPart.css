@@ -52,6 +52,7 @@
 	height: 32px;
 	min-height: 32px;
 	padding: 0 8px 0 16px;
+	color: var(--vscode-titleBar-activeForeground);
 	background-color: var(--vscode-titleBar-activeBackground);
 	border-bottom: 1px solid var(--vscode-titleBar-border, transparent);
 }
@@ -75,6 +76,10 @@
 
 .monaco-modal-editor-block .modal-editor-action-container .actions-container {
 	gap: 4px;
+}
+
+.monaco-modal-editor-block .modal-editor-action-container .actions-container .codicon {
+	color: inherit;
 }
 
 /** Modal Editor Part: Ensure proper sizing */
