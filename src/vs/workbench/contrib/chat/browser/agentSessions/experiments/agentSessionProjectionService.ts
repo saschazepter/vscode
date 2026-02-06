@@ -331,7 +331,7 @@ export class AgentSessionProjectionService extends Disposable implements IAgentS
 			}
 
 			try {
-				// For local sessions, changes are shown via editingSession.show(), not _openSessionFiles
+				// For local sessions, changes are shown via chatEditing.viewChanges, not _openSessionFiles
 				// For other providers, try to open session files from session.changes
 				let filesOpened = false;
 				if (session.providerType === AgentSessionProviders.Local) {
@@ -385,13 +385,10 @@ export class AgentSessionProjectionService extends Disposable implements IAgentS
 		// Open the session in the chat panel (always, even without changes)
 		await this._openSessionInChatPanel(session);
 
-		// For local sessions with changes, also pop open the edit session's changes view in modal
+		// For local sessions with changes, also pop open the edit session's changes view
 		// Must be after openSession so the editing session context is available
 		if (session.providerType === AgentSessionProviders.Local && hasUndecidedChanges) {
-			const editingSession = this.chatEditingService.getEditingSession(session.resource);
-			if (editingSession) {
-				await editingSession.show(false, MODAL_GROUP);
-			}
+			await this.commandService.executeCommand('chatEditing.viewChanges');
 		}
 
 		// If auxiliary bar was maximized, hide it during projection to show full editor

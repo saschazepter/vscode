@@ -19,7 +19,6 @@ import { localize } from '../../../../../nls.js';
 import { RawContextKey } from '../../../../../platform/contextkey/common/contextkey.js';
 import { createDecorator } from '../../../../../platform/instantiation/common/instantiation.js';
 import { IEditorPane } from '../../../../common/editor.js';
-import { PreferredGroup } from '../../../../services/editor/common/editorService.js';
 import { ICellEditOperation } from '../../../notebook/common/notebookCommon.js';
 import { IChatMultiDiffData, IChatMultiDiffDataSerialized, IChatProgress, IChatWorkspaceEdit } from '../chatService/chatService.js';
 import { ChatModel, IChatRequestDisablement, IChatResponseModel } from '../model/chatModel.js';
@@ -97,7 +96,7 @@ export interface IChatEditingSession extends IDisposable {
 	/** Requests disabled by undo/redo in the session */
 	readonly requestDisablement: IObservable<IChatRequestDisablement[]>;
 
-	show(previousChanges?: boolean, group?: PreferredGroup): Promise<void>;
+	show(previousChanges?: boolean): Promise<void>;
 	accept(...uris: URI[]): Promise<void>;
 	reject(...uris: URI[]): Promise<void>;
 	getEntry(uri: URI): IModifiedFileEntry | undefined;
