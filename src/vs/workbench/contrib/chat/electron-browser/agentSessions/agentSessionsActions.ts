@@ -17,9 +17,8 @@ import { IWorkbenchModeService } from '../../../../services/layout/common/workbe
 import { IsAgentSessionsWorkspaceContext, WorkbenchModeContext } from '../../../../common/contextkeys.js';
 import { CHAT_CATEGORY } from '../../browser/actions/chatActions.js';
 import { ProductQualityContext } from '../../../../../platform/contextkey/common/contextkeys.js';
-import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
-import { IAgentSession, isAgentSession } from '../../browser/agentSessions/agentSessionsModel.js';
 import { IAgentSessionsService } from '../../browser/agentSessions/agentSessionsService.js';
+import { IChatWidgetService } from '../../browser/chat.js';
 
 export class OpenAgentSessionsWindowAction extends Action2 {
 	constructor() {
@@ -106,36 +105,29 @@ export class OpenSessionWorktreeInVSCodeAction extends Action2 {
 			title: localize2('openInVSCode', 'Open in VS Code'),
 			icon: Codicon.vscodeInsiders,
 			category: CHAT_CATEGORY,
-			precondition: ContextKeyExpr.and(
-				IsAgentSessionsWorkspaceContext,
-				ChatContextKeys.hasAgentSessionChanges
-			),
 			menu: [
 				{
-					id: MenuId.ChatEditingSessionChangesToolbar,
+					id: MenuId.AuxiliaryBarTitle,
 					group: 'navigation',
-					order: 5,
-					when: ContextKeyExpr.and(IsAgentSessionsWorkspaceContext, ChatContextKeys.hasAgentSessionChanges)
+					order: 2,
+					when: IsAgentSessionsWorkspaceContext
 				}
 			],
 		});
 	}
 
-	override async run(accessor: ServicesAccessor, sessionOrSessionResource?: URI | IAgentSession, metadata?: { readonly [key: string]: unknown }): Promise<void> {
+	override async run(accessor: ServicesAccessor,): Promise<void> {
 		const nativeHostService = accessor.get(INativeHostService);
 		const agentSessionsService = accessor.get(IAgentSessionsService);
+		const chatWidgetService = accessor.get(IChatWidgetService);
 
-		let folderPath: string | undefined;
-
-		// Get the worktree path from the metadata
-		if (URI.isUri(sessionOrSessionResource)) {
-			const session = agentSessionsService.getSession(sessionOrSessionResource);
-			folderPath = session?.metadata?.worktreePath as string | undefined;
-		} else if (isAgentSession(sessionOrSessionResource)) {
-			folderPath = sessionOrSessionResource.metadata?.worktreePath as string | undefined;
-		} else if (metadata) {
-			folderPath = metadata.worktreePath as string | undefined;
+		const sessionResource = chatWidgetService.lastFocusedWidget?.viewModel?.sessionResource;
+		if (!sessionResource) {
+			return;
 		}
+
+		const session = agentSessionsService.getSession(sessionResource);
+		const folderPath = session?.metadata?.worktreePath as string | undefined;
 
 		if (!folderPath) {
 			return;
