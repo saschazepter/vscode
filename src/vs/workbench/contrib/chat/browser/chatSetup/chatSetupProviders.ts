@@ -53,7 +53,6 @@ import { chatViewsWelcomeRegistry } from '../viewsWelcome/chatViewsWelcome.js';
 import { CommandsRegistry } from '../../../../../platform/commands/common/commands.js';
 import { IDefaultAccountService } from '../../../../../platform/defaultAccount/common/defaultAccount.js';
 import { IHostService } from '../../../../services/host/browser/host.js';
-import { mainWindow } from '../../../../../base/browser/window.js';
 
 const defaultChat = {
 	extensionId: product.defaultChatAgent?.extensionId ?? '',
@@ -491,28 +490,26 @@ export class SetupAgent extends Disposable implements IChatAgentImplementation {
 	}
 
 	private whenPanelAgentHasGuidance(): { promise: Promise<void> } & IDisposable {
-		let interval: number | undefined;
+		const disposables = new DisposableStore();
+		const panelAgentHasGuidance = () => chatViewsWelcomeRegistry.get().some(descriptor => this.contextKeyService.contextMatchesRules(descriptor.when));
+
+		if (panelAgentHasGuidance()) {
+			return { promise: Promise.resolve(), dispose: () => { } };
+		}
+
 		return {
 			promise: new Promise<void>(resolve => {
-				const panelAgentHasGuidance = () => chatViewsWelcomeRegistry.get().some(descriptor => this.contextKeyService.contextMatchesRules(descriptor.when));
-				if (panelAgentHasGuidance()) {
-					resolve();
-				} else {
-					interval = mainWindow.setInterval(() => {
-						if (panelAgentHasGuidance()) {
-							mainWindow.clearInterval(interval);
-							interval = undefined;
-							resolve();
-						}
-					}, 1000);
-				}
+				disposables.add(Event.any(
+					chatViewsWelcomeRegistry.onDidChange,
+					Event.map(this.contextKeyService.onDidChangeContext, () => { })
+				)(() => {
+					if (panelAgentHasGuidance()) {
+						disposables.dispose();
+						resolve();
+					}
+				}));
 			}),
-			dispose: () => {
-				if (interval !== undefined) {
-					mainWindow.clearInterval(interval);
-					interval = undefined;
-				}
-			}
+			dispose: () => disposables.dispose()
 		};
 	}
 
