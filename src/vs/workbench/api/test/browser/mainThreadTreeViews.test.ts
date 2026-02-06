@@ -93,10 +93,10 @@ suite('MainThreadHostTreeView', function () {
 		assert((<CustomTreeItem>children![0]).customProp === customValue, 'Tree Items should keep custom properties');
 	});
 
-	test('canSelectMany is properly set', async () => {
+	test('canSelectMany defaults to false when registered with canSelectMany: false', async () => {
 		const treeView: ITreeView = (<ITreeViewDescriptor>ViewsRegistry.getView(testTreeViewId)).treeView;
 		// Default should be false as we registered with canSelectMany: false
-		assert.strictEqual(treeView.canSelectMany, false, 'canSelectMany should be false by default');
+		assert.strictEqual(treeView.canSelectMany, false, 'canSelectMany should be false when registered with canSelectMany: false');
 	});
 
 	test('canSelectMany can be updated after registration', async () => {
