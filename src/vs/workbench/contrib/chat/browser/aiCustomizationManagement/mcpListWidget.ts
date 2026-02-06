@@ -135,6 +135,8 @@ export class McpListWidget extends Disposable {
 	private listContainer!: HTMLElement;
 	private list!: WorkbenchList<IWorkbenchMcpServer>;
 	private emptyContainer!: HTMLElement;
+	private emptyText!: HTMLElement;
+	private emptySubtext!: HTMLElement;
 
 	private allServers: IWorkbenchMcpServer[] = [];
 	private filteredServers: IWorkbenchMcpServer[] = [];
@@ -199,16 +201,8 @@ export class McpListWidget extends Disposable {
 		this.emptyContainer = DOM.append(this.element, $('.mcp-empty-state'));
 		const emptyIcon = DOM.append(this.emptyContainer, $('.empty-icon'));
 		emptyIcon.classList.add(...ThemeIcon.asClassNameArray(Codicon.server));
-		const emptyText = DOM.append(this.emptyContainer, $('.empty-text'));
-		emptyText.textContent = localize('noMcpServers', "No MCP servers configured");
-		const emptySubtext = DOM.append(this.emptyContainer, $('.empty-subtext'));
-		emptySubtext.textContent = localize('addMcpServer', "Add an MCP server configuration to get started");
-
-		const emptyButton = this._register(new Button(this.emptyContainer, { ...defaultButtonStyles, supportIcons: true }));
-		emptyButton.label = `$(${Codicon.add.id}) ${localize('addConfiguration', "Add Configuration")}`;
-		this._register(emptyButton.onDidClick(() => {
-			this.commandService.executeCommand(McpCommandIds.AddConfiguration);
-		}));
+		this.emptyText = DOM.append(this.emptyContainer, $('.empty-text'));
+		this.emptySubtext = DOM.append(this.emptyContainer, $('.empty-subtext'));
 
 		// List container
 		this.listContainer = DOM.append(this.element, $('.mcp-list-container'));
@@ -282,14 +276,22 @@ export class McpListWidget extends Disposable {
 		}
 
 		// Show empty state only when there are no servers at all (not when filtered to empty)
-		if (this.allServers.length === 0) {
+		if (this.filteredServers.length === 0) {
 			this.emptyContainer.style.display = 'flex';
 			this.listContainer.style.display = 'none';
-			this.searchAndButtonContainer.style.display = 'none';
+
+			if (this.searchQuery.trim()) {
+				// Search with no results
+				this.emptyText.textContent = localize('noMatchingServers', "No servers match '{0}'", this.searchQuery);
+				this.emptySubtext.textContent = localize('tryDifferentSearch', "Try a different search term");
+			} else {
+				// No servers configured
+				this.emptyText.textContent = localize('noMcpServers', "No MCP servers configured");
+				this.emptySubtext.textContent = localize('addMcpServer', "Add an MCP server configuration to get started");
+			}
 		} else {
 			this.emptyContainer.style.display = 'none';
 			this.listContainer.style.display = '';
-			this.searchAndButtonContainer.style.display = '';
 		}
 
 		this.list.splice(0, this.list.length, this.filteredServers);
@@ -305,6 +307,13 @@ export class McpListWidget extends Disposable {
 
 		this.listContainer.style.height = `${listHeight}px`;
 		this.list.layout(listHeight, width);
+	}
+
+	/**
+	 * Focuses the search input.
+	 */
+	focusSearch(): void {
+		this.searchInput.focus();
 	}
 
 	/**

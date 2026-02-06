@@ -5,14 +5,18 @@
 
 import './media/aiCustomizationManagement.css';
 import * as DOM from '../../../../../base/browser/dom.js';
-import { Dimension } from '../../../../../base/browser/dom.js';
+import { Dimension, getWindow } from '../../../../../base/browser/dom.js';
 import { CancellationToken } from '../../../../../base/common/cancellation.js';
-import { DisposableStore, IReference, MutableDisposable } from '../../../../../base/common/lifecycle.js';
+import { DisposableStore, IReference, MutableDisposable, toDisposable } from '../../../../../base/common/lifecycle.js';
 import { Event } from '../../../../../base/common/event.js';
 import { Orientation, Sizing, SplitView } from '../../../../../base/browser/ui/splitview/splitview.js';
 import { CodeEditorWidget } from '../../../../../editor/browser/widget/codeEditor/codeEditorWidget.js';
 import { IResolvedTextEditorModel, ITextModelService } from '../../../../../editor/common/services/resolverService.js';
+import { SnippetController2 } from '../../../../../editor/contrib/snippet/browser/snippetController2.js';
 import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
+import { IFileService } from '../../../../../platform/files/common/files.js';
+import { ILayoutService } from '../../../../../platform/layout/browser/layoutService.js';
+import { IQuickInputService } from '../../../../../platform/quickinput/common/quickInput.js';
 import { getSimpleEditorOptions } from '../../../codeEditor/browser/simpleEditorOptions.js';
 import { localize } from '../../../../../nls.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
@@ -30,7 +34,6 @@ import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { Button } from '../../../../../base/browser/ui/button/button.js';
 import { defaultButtonStyles } from '../../../../../platform/theme/browser/defaultStyles.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
-import { ICommandService } from '../../../../../platform/commands/common/commands.js';
 import { IOpenerService } from '../../../../../platform/opener/common/opener.js';
 import { basename } from '../../../../../base/common/resources.js';
 import { URI } from '../../../../../base/common/uri.js';
@@ -53,6 +56,11 @@ import {
 } from './aiCustomizationManagement.js';
 import { agentIcon, instructionsIcon, promptIcon, skillIcon, hookIcon } from '../aiCustomizationTreeView/aiCustomizationTreeViewIcons.js';
 import { ChatModelsWidget } from '../chatManagement/chatModelsWidget.js';
+import { PromptsType } from '../../common/promptSyntax/promptTypes.js';
+import { getCleanPromptName, SKILL_FILENAME } from '../../common/promptSyntax/config/promptFileLocations.js';
+import { getDefaultContentSnippet } from '../promptSyntax/newPromptFileActions.js';
+import { askForPromptSourceFolder } from '../promptSyntax/pickers/askForPromptSourceFolder.js';
+import { askForPromptFileName } from '../promptSyntax/pickers/askForPromptName.js';
 
 const $ = DOM.$;
 
@@ -159,10 +167,12 @@ export class AICustomizationManagementEditor extends EditorPane {
 		@IStorageService private readonly storageService: IStorageService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@IContextKeyService contextKeyService: IContextKeyService,
-		@ICommandService private readonly commandService: ICommandService,
 		@IOpenerService private readonly openerService: IOpenerService,
 		@ITextModelService private readonly textModelService: ITextModelService,
 		@IConfigurationService private readonly configurationService: IConfigurationService,
+		@IFileService private readonly fileService: IFileService,
+		@ILayoutService private readonly layoutService: ILayoutService,
+		@IQuickInputService private readonly quickInputService: IQuickInputService,
 	) {
 		super(AICustomizationManagementEditor.ID, group, telemetryService, themeService, storageService);
 
@@ -274,7 +284,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 	private executeNewItemAction(): void {
 		const sectionInfo = this.getSectionInfo(this.selectedSection);
 		if (sectionInfo.newCommand) {
-			this.commandService.executeCommand(sectionInfo.newCommand);
+			// Create actions are handled via the list widget's create button
 		}
 	}
 
@@ -400,9 +410,14 @@ export class AICustomizationManagementEditor extends EditorPane {
 		this.listWidget = this.editorDisposables.add(this.instantiationService.createInstance(AICustomizationListWidget));
 		this.promptsContentContainer.appendChild(this.listWidget.element);
 
-		// Handle item selection - open in form editor
+		// Handle item selection - open in embedded editor
 		this.editorDisposables.add(this.listWidget.onDidSelectItem(item => {
 			this.openItem(item);
+		}));
+
+		// Handle create actions - create file directly and open in embedded editor
+		this.editorDisposables.add(this.listWidget.onDidRequestCreate(promptType => {
+			this.createNewItem(promptType);
 		}));
 
 		// Container for Models content
@@ -499,7 +514,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 	}
 
 	private openItem(item: IAICustomizationListItem): void {
-		this.showEmbeddedEditor(item);
+		this.showEmbeddedEditor(item.uri, item.name);
 	}
 
 	/**
@@ -527,6 +542,11 @@ export class AICustomizationManagementEditor extends EditorPane {
 		// Editor container
 		this.embeddedEditorContainer = DOM.append(this.editorContentContainer, $('.embedded-editor-container'));
 
+		// Overflow widgets container - appended to the workbench root container so
+		// hovers, suggest widgets, etc. are not clipped by overflow:hidden parents.
+		const overflowWidgetsDomNode = this.layoutService.getContainer(getWindow(this.embeddedEditorContainer)).appendChild($('.embedded-editor-overflow-widgets.monaco-editor'));
+		this.editorDisposables.add(toDisposable(() => overflowWidgetsDomNode.remove()));
+
 		// Create the CodeEditorWidget
 		const editorOptions = {
 			...getSimpleEditorOptions(this.configurationService),
@@ -542,6 +562,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 				vertical: 'auto' as const,
 				horizontal: 'auto' as const,
 			},
+			overflowWidgetsDomNode,
 		};
 
 		this.embeddedEditor = this.editorDisposables.add(this.instantiationService.createInstance(
@@ -550,7 +571,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 			editorOptions,
 			{
 				isSimpleWidget: false,
-				contributions: [],
+				// Use default contributions for full IntelliSense, completions, linting, etc.
 			}
 		));
 	}
@@ -558,7 +579,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 	/**
 	 * Shows the embedded editor with the content of the given item.
 	 */
-	private async showEmbeddedEditor(item: IAICustomizationListItem): Promise<void> {
+	private async showEmbeddedEditor(uri: URI, displayName: string): Promise<void> {
 		// Dispose previous model reference if any
 		this.currentModelRef?.dispose();
 		this.currentModelRef = undefined;
@@ -566,15 +587,15 @@ export class AICustomizationManagementEditor extends EditorPane {
 		this.viewMode = 'editor';
 
 		// Update header info
-		this.editorItemNameElement.textContent = item.name;
-		this.editorItemPathElement.textContent = basename(item.uri);
+		this.editorItemNameElement.textContent = displayName;
+		this.editorItemPathElement.textContent = basename(uri);
 
 		// Update visibility
 		this.updateContentVisibility();
 
 		try {
 			// Get the text model for the file
-			const ref = await this.textModelService.createModelReference(item.uri);
+			const ref = await this.textModelService.createModelReference(uri);
 			this.currentModelRef = ref;
 			this.embeddedEditor.setModel(ref.object.textEditorModel);
 
@@ -615,6 +636,82 @@ export class AICustomizationManagementEditor extends EditorPane {
 
 		// Focus the list
 		this.listWidget?.focusSearch();
+	}
+
+	/**
+	 * Creates a new prompt file directly (folder picker, name input, file creation)
+	 * and opens it in the embedded editor with the default snippet template.
+	 */
+	private async createNewItem(type: PromptsType): Promise<void> {
+		// Step 1: Ask for source folder
+		const selectedFolder = await this.instantiationService.invokeFunction(askForPromptSourceFolder, type);
+		if (!selectedFolder) {
+			return;
+		}
+
+		let fileUri: URI;
+		let cleanName: string;
+
+		if (type === PromptsType.skill) {
+			// Skills have a special flow: subfolder + SKILL.md
+			const skillName = await this.quickInputService.input({
+				prompt: localize('newSkillNamePrompt', "Enter a name for the skill (lowercase letters, numbers, and hyphens only)"),
+				placeHolder: localize('newSkillNamePlaceholder', "e.g., pdf-processing, data-analysis"),
+				validateInput: async (value) => {
+					if (!value || !value.trim()) {
+						return localize('skillNameRequired', "Skill name is required");
+					}
+					const name = value.trim();
+					if (name.length > 64) {
+						return localize('skillNameTooLong', "Skill name must be 64 characters or less");
+					}
+					if (!/^[a-z0-9-]+$/.test(name)) {
+						return localize('skillNameInvalidChars', "Skill name may only contain lowercase letters, numbers, and hyphens");
+					}
+					if (name.startsWith('-') || name.endsWith('-')) {
+						return localize('skillNameHyphenEdge', "Skill name must not start or end with a hyphen");
+					}
+					if (name.includes('--')) {
+						return localize('skillNameConsecutiveHyphens', "Skill name must not contain consecutive hyphens");
+					}
+					return undefined;
+				}
+			});
+			if (!skillName) {
+				return;
+			}
+			const trimmedName = skillName.trim();
+			const skillFolder = URI.joinPath(selectedFolder.uri, trimmedName);
+			await this.fileService.createFolder(skillFolder);
+			fileUri = URI.joinPath(skillFolder, SKILL_FILENAME);
+			cleanName = trimmedName;
+		} else {
+			// Standard flow: ask for file name
+			const fileName = await this.instantiationService.invokeFunction(askForPromptFileName, type, selectedFolder.uri);
+			if (!fileName) {
+				return;
+			}
+			await this.fileService.createFolder(selectedFolder.uri);
+			fileUri = URI.joinPath(selectedFolder.uri, fileName);
+			cleanName = getCleanPromptName(fileUri);
+		}
+
+		// Step 2: Create the file
+		await this.fileService.createFile(fileUri);
+
+		// Step 3: Open in embedded editor
+		await this.showEmbeddedEditor(fileUri, cleanName);
+
+		// Step 4: Apply the default snippet template
+		if (this.embeddedEditor.hasModel()) {
+			SnippetController2.get(this.embeddedEditor)?.apply([{
+				range: this.embeddedEditor.getModel()!.getFullModelRange(),
+				template: getDefaultContentSnippet(type, cleanName),
+			}]);
+		}
+
+		// Step 5: Refresh the list so the new item appears
+		void this.listWidget.refresh();
 	}
 
 	override updateStyles(): void {
@@ -667,7 +764,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 			return;
 		}
 		if (this.selectedSection === AICustomizationManagementSection.McpServers) {
-			this.mcpListWidget?.focus();
+			this.mcpListWidget?.focusSearch();
 		} else if (this.selectedSection === AICustomizationManagementSection.Models) {
 			this.modelsWidget?.focusSearch();
 		} else {

@@ -29,7 +29,6 @@ import { HighlightedLabel } from '../../../../../base/browser/ui/highlightedlabe
 import { matchesFuzzy, IMatch } from '../../../../../base/common/filters.js';
 import { IOpenerService } from '../../../../../platform/opener/common/opener.js';
 import { Button } from '../../../../../base/browser/ui/button/button.js';
-import { ICommandService } from '../../../../../platform/commands/common/commands.js';
 import { IMenuService } from '../../../../../platform/actions/common/actions.js';
 import { IContextKeyService } from '../../../../../platform/contextkey/common/contextkey.js';
 import { getFlatContextMenuActions } from '../../../../../platform/actions/browser/menuEntryActionViewItem.js';
@@ -184,7 +183,7 @@ class AICustomizationItemRenderer implements IListRenderer<IAICustomizationListI
 /**
  * Maps section ID to prompt type.
  */
-function sectionToPromptType(section: AICustomizationManagementSection): PromptsType {
+export function sectionToPromptType(section: AICustomizationManagementSection): PromptsType {
 	switch (section) {
 		case AICustomizationManagementSection.Agents:
 			return PromptsType.agent;
@@ -234,12 +233,14 @@ export class AICustomizationListWidget extends Disposable {
 	private readonly _onDidChangeItemCount = this._register(new Emitter<number>());
 	readonly onDidChangeItemCount: Event<number> = this._onDidChangeItemCount.event;
 
+	private readonly _onDidRequestCreate = this._register(new Emitter<PromptsType>());
+	readonly onDidRequestCreate: Event<PromptsType> = this._onDidRequestCreate.event;
+
 	constructor(
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@IPromptsService private readonly promptsService: IPromptsService,
 		@IContextViewService private readonly contextViewService: IContextViewService,
 		@IOpenerService private readonly openerService: IOpenerService,
-		@ICommandService private readonly commandService: ICommandService,
 		@IContextMenuService private readonly contextMenuService: IContextMenuService,
 		@IMenuService private readonly menuService: IMenuService,
 		@IContextKeyService private readonly contextKeyService: IContextKeyService,
@@ -709,8 +710,7 @@ export class AICustomizationListWidget extends Disposable {
 	}
 
 	private executeCreateAction(): void {
-		const emptyInfo = this.getEmptyStateInfo();
-		this.commandService.executeCommand(emptyInfo.command);
+		this._onDidRequestCreate.fire(sectionToPromptType(this.currentSection));
 	}
 
 	/**
