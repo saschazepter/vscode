@@ -107,6 +107,7 @@ import { RunSubagentTool } from '../../common/tools/builtinTools/runSubagentTool
 import { isEqual } from '../../../../../base/common/resources.js';
 import { IChatTipService } from '../chatTipService.js';
 import { IAccessibilityService } from '../../../../../platform/accessibility/common/accessibility.js';
+import { ChatHookContentPart } from './chatContentParts/chatHookContentPart.js';
 
 const $ = dom.$;
 
@@ -1934,10 +1935,9 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 	}
 
 	private renderHookPart(hookPart: IChatHookPart, context: IChatContentPartRenderContext): IChatContentPart {
-		// render nothing for now
-		// if (hookPart.stopReason || hookPart.systemMessage) {
-		// 	return this.instantiationService.createInstance(ChatHookContentPart, hookPart, context);
-		// }
+		if (hookPart.stopReason || hookPart.systemMessage) {
+			return this.instantiationService.createInstance(ChatHookContentPart, hookPart, context);
+		}
 		return this.renderNoContent(other => other.kind === 'hook' && other.hookType === hookPart.hookType);
 	}
 
