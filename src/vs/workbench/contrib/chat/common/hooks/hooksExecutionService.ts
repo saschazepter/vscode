@@ -5,7 +5,7 @@
 
 import { CancellationToken } from '../../../../../base/common/cancellation.js';
 import { Emitter, Event } from '../../../../../base/common/event.js';
-import { DisposableStore, IDisposable, toDisposable } from '../../../../../base/common/lifecycle.js';
+import { Disposable, IDisposable, toDisposable } from '../../../../../base/common/lifecycle.js';
 import { StopWatch } from '../../../../../base/common/stopwatch.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { localize } from '../../../../../nls.js';
@@ -95,11 +95,10 @@ export interface IHooksExecutionService {
  */
 const redactedInputKeys = ['toolArgs'];
 
-export class HooksExecutionService implements IHooksExecutionService {
+export class HooksExecutionService extends Disposable implements IHooksExecutionService {
 	declare readonly _serviceBrand: undefined;
 
-	private readonly _disposables = new DisposableStore();
-	private readonly _onDidExecuteHook = this._disposables.add(new Emitter<IHookExecutedEvent>());
+	private readonly _onDidExecuteHook = this._register(new Emitter<IHookExecutedEvent>());
 	readonly onDidExecuteHook: Event<IHookExecutedEvent> = this._onDidExecuteHook.event;
 
 	private _proxy: IHooksExecutionProxy | undefined;
@@ -110,7 +109,9 @@ export class HooksExecutionService implements IHooksExecutionService {
 	constructor(
 		@ILogService private readonly _logService: ILogService,
 		@IOutputService private readonly _outputService: IOutputService,
-	) { }
+	) {
+		super();
+	}
 
 	setProxy(proxy: IHooksExecutionProxy): void {
 		this._proxy = proxy;
