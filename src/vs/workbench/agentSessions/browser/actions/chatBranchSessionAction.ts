@@ -9,13 +9,12 @@ import { ContextKeyExpr } from '../../../../platform/contextkey/common/contextke
 import { ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
 import { ChatContextKeys } from '../../../contrib/chat/common/actions/chatContextKeys.js';
 import { Codicon } from '../../../../base/common/codicons.js';
-import { IChatWidgetService } from '../../../contrib/chat/browser/chat.js';
-import { ChatModel, IExportableChatData } from '../../../contrib/chat/common/model/chatModel.js';
-import { IChatEditorOptions } from '../../../contrib/chat/browser/widgetHosts/editor/chatEditor.js';
-import { ChatEditorInput } from '../../../contrib/chat/browser/widgetHosts/editor/chatEditorInput.js';
-import { ACTIVE_GROUP } from '../../../services/editor/common/editorService.js';
-import { IChatExecuteActionContext } from '../../../contrib/chat/browser/actions/chatExecuteActions.js';
+import { generateUuid } from '../../../../base/common/uuid.js';
+import { ChatTreeItem, ChatViewPaneTarget, IChatWidgetService } from '../../../contrib/chat/browser/chat.js';
+import { ChatModel, ISerializableChatData } from '../../../contrib/chat/common/model/chatModel.js';
+import { isRequestVM, isResponseVM } from '../../../contrib/chat/common/model/chatViewModel.js';
 import { revive } from '../../../../base/common/marshalling.js';
+import { IChatService } from '../../../contrib/chat/common/chatService/chatService.js';
 
 
 /**
@@ -24,8 +23,9 @@ import { revive } from '../../../../base/common/marshalling.js';
 export const ACTION_ID_BRANCH_CHAT_SESSION = 'workbench.action.chat.branchChatSession';
 
 /**
- * Action that allows users to branch the current chat session to a new local session.
- * This creates a copy of the current conversation while keeping the original session intact.
+ * Action that allows users to branch the current chat session from a specific checkpoint.
+ * This creates a copy of the conversation up to the selected checkpoint, allowing users
+ * to explore alternative paths from any point in the conversation.
  */
 export class BranchChatSessionAction extends Action2 {
 
@@ -37,16 +37,17 @@ export class BranchChatSessionAction extends Action2 {
 			title: localize2('branchChatSession', "Branch Chat"),
 			tooltip: localize2('branchChatSessionTooltip', "Branch to new session"),
 			icon: Codicon.reply,
+			f1: false,
 			precondition: ContextKeyExpr.and(
 				ChatContextKeys.enabled,
 				ChatContextKeys.requestInProgress.negate(),
 			),
 			menu: [{
-				id: MenuId.ChatExecute,
+				id: MenuId.ChatMessageCheckpoint,
 				group: 'navigation',
-				order: 3.5,
+				order: 3,
 				when: ContextKeyExpr.and(
-					ChatContextKeys.showFullWelcome,
+					ChatContextKeys.isRequest,
 					ChatContextKeys.lockedToCodingAgent.negate(),
 				),
 			}]
@@ -54,11 +55,16 @@ export class BranchChatSessionAction extends Action2 {
 	}
 
 	override async run(accessor: ServicesAccessor, ...args: unknown[]): Promise<void> {
-		const context = args[0] as IChatExecuteActionContext | undefined;
+		const item = args[0] as ChatTreeItem | undefined;
 		const widgetService = accessor.get(IChatWidgetService);
+		const chatService = accessor.get(IChatService);
 
-		// Get widget from context (toolbar button) or fall back to last focused widget
-		const widget = context?.widget ?? widgetService.lastFocusedWidget;
+		// Item must be a valid request or response from the checkpoint toolbar context
+		if (!item || (!isRequestVM(item) && !isResponseVM(item))) {
+			return;
+		}
+
+		const widget = widgetService.getWidgetBySessionResource(item.sessionResource);
 		if (!widget || !widget.viewModel) {
 			return;
 		}
@@ -69,49 +75,39 @@ export class BranchChatSessionAction extends Action2 {
 			return;
 		}
 
-		// Export the current session data and deep clone it with proper revival of URIs and special objects
-		const exportedData = revive(JSON.parse(JSON.stringify(chatModel.toExport()))) as IExportableChatData;
+		const checkpointRequestId = isRequestVM(item) ? item.id : item.requestId;
+		const serializedData = revive(structuredClone(chatModel.toJSON())) as ISerializableChatData;
+		serializedData.sessionId = generateUuid();
 
-		// Clear sessionId to ensure a new session is created (not reusing the original)
-		delete (exportedData as { sessionId?: string }).sessionId;
+		delete serializedData.customTitle;
 
-		// If there's no conversation history yet, don't branch
-		if (exportedData.requests.length === 0) {
+		const checkpointIndex = serializedData.requests.findIndex(r => r.requestId === checkpointRequestId);
+		if (checkpointIndex === -1) {
 			return;
 		}
 
-		// Include any current input draft and attached context in the branched session
-		const sessionResource = widget.viewModel.sessionResource;
-		const attachedContext = widget.input.getAttachedAndImplicitContext(sessionResource);
-		const currentInput = widget.getInput();
+		serializedData.requests = serializedData.requests.slice(0, checkpointIndex);
 
-		// Use the same pattern as Import Chat for editors:
-		// Pass the data in options.target.data, let ChatEditorInput create the model
-		const newSessionResource = ChatEditorInput.getNewEditorUri();
-		const options: IChatEditorOptions = {
-			target: { data: exportedData },
-			pinned: true,
-		};
-
-		const newWidget = await widgetService.openSession(newSessionResource, ACTIVE_GROUP, options);
-
-		// After opening, set up the new session with current input if any
-		if (currentInput || attachedContext.length > 0) {
-			const actualSessionResource = newWidget?.viewModel?.sessionResource;
-			if (actualSessionResource) {
-				const foundWidget = widgetService.getWidgetBySessionResource(actualSessionResource);
-				if (foundWidget) {
-					// Set the input text from the original
-					if (currentInput) {
-						foundWidget.input.setValue(currentInput, false);
-					}
-					// Add attached context to the new session
-					for (const entry of attachedContext.asArray()) {
-						foundWidget.attachmentModel.addContext(entry);
-					}
-				}
-			}
+		// Clear shouldBeRemovedOnSend for all requests in the branched session
+		// This ensures all requests are visible in the new session
+		for (const request of serializedData.requests) {
+			delete request.shouldBeRemovedOnSend;
+			delete (request as { isHidden?: boolean }).isHidden;
 		}
+
+		// If there's no conversation history to branch, don't proceed
+		if (serializedData.requests.length === 0) {
+			return;
+		}
+
+		// Load the branched data into a new session model
+		const modelRef = chatService.loadSessionFromContent(serializedData);
+		if (!modelRef) {
+			return;
+		}
+
+		// Open the branched session in the chat view pane
+		await widgetService.openSession(modelRef.object.sessionResource, ChatViewPaneTarget);
 	}
 }
 
