@@ -13,6 +13,7 @@ import { registerChatBranchActions } from './actions/chatBranchSessionAction.js'
 import { CHANGES_VIEW_CONTAINER_ID, CHANGES_VIEW_ID, ChangesViewPane, ChangesViewPaneContainer } from './views/changesView.js';
 import { registerWorkbenchContribution2, WorkbenchPhase } from '../../common/contributions.js';
 import { AuxiliaryBarVisibilityContribution } from './contribs/auxiliaryBarVisibilityContribution.js';
+import { ClearChatOnWorkspaceChangeContribution } from './contribs/clearChatOnWorkspaceChangeContribution.js';
 import { RunScriptContribution } from '../../contrib/chat/browser/agentSessions/runScriptContribution.js';
 
 // --- Changes
@@ -50,5 +51,6 @@ export function registerAgentWorkbenchContributions() {
 
 	// Workbench contributions
 	registerWorkbenchContribution2(AuxiliaryBarVisibilityContribution.ID, AuxiliaryBarVisibilityContribution, WorkbenchPhase.AfterRestored);
+	registerWorkbenchContribution2(ClearChatOnWorkspaceChangeContribution.ID, ClearChatOnWorkspaceChangeContribution, WorkbenchPhase.AfterRestored);
 	registerWorkbenchContribution2(RunScriptContribution.ID, RunScriptContribution, WorkbenchPhase.AfterRestored);
 }
