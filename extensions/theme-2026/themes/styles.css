@@ -659,6 +659,19 @@
 	box-shadow: inset var(--shadow-sm);
 }
 
+/* Modal overlays - frosted glass backdrop */
+.monaco-dialog-modal-block.dimmed {
+	background: rgba(0, 0, 0, 0.2);
+	backdrop-filter: blur(8px);
+	-webkit-backdrop-filter: blur(8px);
+}
+
+.monaco-modal-editor-block.dimmed {
+	background: rgba(0, 0, 0, 0.2);
+	backdrop-filter: blur(8px);
+	-webkit-backdrop-filter: blur(8px);
+}
+
 .monaco-dialog-modal-block .dialog-shadow {
 	border-radius: var(--radius-xl);
 }
