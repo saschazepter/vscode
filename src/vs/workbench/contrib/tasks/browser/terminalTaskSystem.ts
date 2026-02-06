@@ -1915,6 +1915,8 @@ export class TerminalTaskSystem extends Disposable implements ITaskSystem {
 				const value = options.env[key];
 				if (Types.isString(value)) {
 					result.env![key] = await this._resolveVariable(resolver, value);
+				} else {
+					result.env![key] = String(value);
 				}
 			}
 		}

@@ -1485,8 +1485,8 @@ export abstract class AbstractTaskService extends Disposable implements ITaskSer
 	private _getTypeForTask(task: Task): string {
 		let type: string;
 		if (CustomTask.is(task)) {
-			const configProperties = task._source.config.element as TaskConfig.IConfigurationProperties;
-			type = (configProperties as unknown as Record<string, unknown>).type as string;
+			const configProperties = task._source.config.element as TaskConfig.ICustomTask;
+			type = configProperties.type ?? '';
 		} else {
 			type = task.getDefinition()!.type;
 		}
@@ -1568,8 +1568,8 @@ export abstract class AbstractTaskService extends Disposable implements ITaskSer
 		entries.unshift({ type: 'separator', label: nls.localize('TaskService.associate', 'associate') });
 		let taskType: string;
 		if (CustomTask.is(task)) {
-			const configProperties = task._source.config.element as TaskConfig.IConfigurationProperties;
-			taskType = (configProperties as unknown as Record<string, unknown>).type as string;
+			const configProperties = task._source.config.element as TaskConfig.ICustomTask;
+			taskType = configProperties.type ?? '';
 		} else {
 			taskType = task.getDefinition().type;
 		}
@@ -3131,7 +3131,7 @@ export abstract class AbstractTaskService extends Disposable implements ITaskSer
 				}
 			}
 		}
-		const exactMatchTask = !taskName ? undefined : tasks.find(t => t.configurationProperties.identifier === taskName || ((t.getDefinition(true) as Record<string, unknown> | undefined)?.configurationProperties as Record<string, unknown> | undefined)?.identifier === taskName);
+		const exactMatchTask = !taskName ? undefined : tasks.find(t => t.configurationProperties.identifier === taskName);
 		if (!exactMatchTask) {
 			return this._doRunTaskCommand(tasks, type, taskName);
 		}

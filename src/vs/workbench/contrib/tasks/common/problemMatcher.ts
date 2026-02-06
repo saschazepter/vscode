@@ -358,7 +358,7 @@ abstract class AbstractLineMatcher implements ILineMatcher {
 			if (trim) {
 				value = Strings.trim(value)!;
 			}
-			(data as unknown as Record<string, unknown>)[property] += endOfLine + value;
+			(data as Record<string, string | undefined>)[property] = data[property]! + endOfLine + value;
 		}
 	}
 
@@ -370,7 +370,7 @@ abstract class AbstractLineMatcher implements ILineMatcher {
 				if (trim) {
 					value = Strings.trim(value)!;
 				}
-				(data as unknown as Record<string, unknown>)[property] = value;
+				(data as Record<string, string | undefined>)[property] = value;
 			}
 		}
 	}
