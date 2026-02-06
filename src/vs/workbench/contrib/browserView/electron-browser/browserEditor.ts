@@ -52,7 +52,8 @@ export const CONTEXT_BROWSER_FOCUSED = new RawContextKey<boolean>('browserFocuse
 export const CONTEXT_BROWSER_STORAGE_SCOPE = new RawContextKey<string>('browserStorageScope', '', localize('browser.storageScope', "The storage scope of the current browser view"));
 export const CONTEXT_BROWSER_DEVTOOLS_OPEN = new RawContextKey<boolean>('browserDevToolsOpen', false, localize('browser.devToolsOpen', "Whether developer tools are open for the current browser view"));
 export const CONTEXT_BROWSER_ELEMENT_SELECTION_ACTIVE = new RawContextKey<boolean>('browserElementSelectionActive', false, localize('browser.elementSelectionActive', "Whether element selection is currently active"));
-export const CONTEXT_BROWSER_HAS_URL = new RawContextKey<boolean>('browserHasUrl', false, localize('browser.hasUrl', "Whether the browser has a URL loaded"));
+export const CONTEXT_BROWSER_URL = new RawContextKey<string>('browserUrl', '', localize('browser.url', "The current URL of the browser"));
+export const CONTEXT_BROWSER_HAS_ACTIVE_PAGE = new RawContextKey<boolean>('browserHasActivePage', false, localize('browser.hasActivePage', "Whether the browser has an active page"));
 export const CONTEXT_BROWSER_HAS_ERROR = new RawContextKey<boolean>('browserHasError', false, localize('browser.hasError', "Whether the browser has a load error"));
 
 // Re-export find widget context keys for use in actions
@@ -189,7 +190,8 @@ export class BrowserEditor extends EditorPane {
 	private _storageScopeContext!: IContextKey<string>;
 	private _devToolsOpenContext!: IContextKey<boolean>;
 	private _elementSelectionActiveContext!: IContextKey<boolean>;
-	private _hasUrlContext!: IContextKey<boolean>;
+	private _urlContext!: IContextKey<string>;
+	private _hasActivePageContext!: IContextKey<boolean>;
 	private _hasErrorContext!: IContextKey<boolean>;
 
 	private _model: IBrowserViewModel | undefined;
@@ -228,7 +230,8 @@ export class BrowserEditor extends EditorPane {
 		this._storageScopeContext = CONTEXT_BROWSER_STORAGE_SCOPE.bindTo(contextKeyService);
 		this._devToolsOpenContext = CONTEXT_BROWSER_DEVTOOLS_OPEN.bindTo(contextKeyService);
 		this._elementSelectionActiveContext = CONTEXT_BROWSER_ELEMENT_SELECTION_ACTIVE.bindTo(contextKeyService);
-		this._hasUrlContext = CONTEXT_BROWSER_HAS_URL.bindTo(contextKeyService);
+		this._urlContext = CONTEXT_BROWSER_URL.bindTo(contextKeyService);
+		this._hasActivePageContext = CONTEXT_BROWSER_HAS_ACTIVE_PAGE.bindTo(contextKeyService);
 		this._hasErrorContext = CONTEXT_BROWSER_HAS_ERROR.bindTo(contextKeyService);
 
 		// Currently this is always true since it is scoped to the editor container
@@ -754,7 +757,8 @@ export class BrowserEditor extends EditorPane {
 		// Update context keys for command enablement
 		this._canGoBackContext.set(event.canGoBack);
 		this._canGoForwardContext.set(event.canGoForward);
-		this._hasUrlContext.set(!!event.url);
+		this._urlContext.set(event.url ?? '');
+		this._hasActivePageContext.set(!!event.url);
 
 		// Update visibility (welcome screen, error, browser view)
 		this.updateVisibility();
@@ -911,7 +915,8 @@ export class BrowserEditor extends EditorPane {
 		this._storageScopeContext.reset();
 		this._devToolsOpenContext.reset();
 		this._elementSelectionActiveContext.reset();
-		this._hasUrlContext.reset();
+		this._urlContext.reset();
+		this._hasActivePageContext.reset();
 		this._hasErrorContext.reset();
 
 		this._navigationBar.clear();
