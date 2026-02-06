@@ -6,6 +6,7 @@
 import type * as vscode from 'vscode';
 import { spawn } from 'child_process';
 import { homedir } from 'os';
+import * as nls from '../../../nls.js';
 import { disposableTimeout } from '../../../base/common/async.js';
 import { CancellationToken } from '../../../base/common/cancellation.js';
 import { DisposableStore, MutableDisposable } from '../../../base/common/lifecycle.js';
@@ -68,7 +69,7 @@ export class NodeExtHostHooks implements IExtHostHooks {
 		if (!effectiveCommand) {
 			return Promise.resolve({
 				kind: HookCommandResultKind.NonBlockingError,
-				result: 'No command specified for the current platform'
+				result: nls.localize('noCommandForPlatform', "No command specified for the current platform")
 			});
 		}
 
