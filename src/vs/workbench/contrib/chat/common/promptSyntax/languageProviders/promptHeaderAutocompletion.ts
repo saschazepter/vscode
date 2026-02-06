@@ -257,12 +257,12 @@ export class PromptHeaderAutocompletion implements CompletionItemProvider {
 				}
 				break;
 			case PromptHeaderAttributes.userInvokable:
-				if (promptType === PromptsType.agent || promptType === PromptsType.skill) {
+				if (promptType === PromptsType.agent) {
 					return ['true', 'false'];
 				}
 				break;
 			case PromptHeaderAttributes.disableModelInvocation:
-				if (promptType === PromptsType.agent || promptType === PromptsType.skill) {
+				if (promptType === PromptsType.agent) {
 					return ['true', 'false'];
 				}
 				break;

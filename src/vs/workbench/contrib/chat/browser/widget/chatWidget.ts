@@ -1550,7 +1550,6 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			this.inputPart.dnd.setDisabledOverlay(!isInput);
 			this.input.renderAttachedContext();
 			this.input.setValue(currentElement.messageText, false);
-			this.listWidget.suppressAutoScroll = true;
 			this.onDidChangeItems();
 			this.input.inputEditor.focus();
 
@@ -1587,7 +1586,6 @@ export class ChatWidget extends Disposable implements IChatWidget {
 
 	finishedEditing(completedEdit?: boolean): void {
 		// reset states
-		this.listWidget.suppressAutoScroll = false;
 		const editedRequest = this.listWidget.getTemplateDataForRequestId(this.viewModel?.editing?.id);
 		if (this.recentlyRestoredCheckpoint) {
 			this.recentlyRestoredCheckpoint = false;

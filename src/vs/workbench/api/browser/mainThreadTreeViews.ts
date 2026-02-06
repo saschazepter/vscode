@@ -14,9 +14,7 @@ import { Registry } from '../../../platform/registry/common/platform.js';
 import { IExtensionService } from '../../services/extensions/common/extensions.js';
 import { ILogService } from '../../../platform/log/common/log.js';
 import { CancellationToken } from '../../../base/common/cancellation.js';
-import { createStringDataTransferItem, UriList, VSDataTransfer } from '../../../base/common/dataTransfer.js';
-import { Mimes } from '../../../base/common/mime.js';
-import { URI } from '../../../base/common/uri.js';
+import { createStringDataTransferItem, VSDataTransfer } from '../../../base/common/dataTransfer.js';
 import { VSBuffer } from '../../../base/common/buffer.js';
 import { DataTransferFileCache } from '../common/shared/dataTransferCache.js';
 import * as typeConvert from '../common/extHostTypeConverters.js';
@@ -266,11 +264,7 @@ class TreeViewDragAndDropController implements ITreeViewDragAndDropController {
 
 		const additionalDataTransfer = new VSDataTransfer();
 		additionalDataTransferDTO.items.forEach(([type, item]) => {
-			// For text/uri-list, reconstruct from uriListData which has been transformed by the URI transformer
-			const value = type === Mimes.uriList && item.uriListData
-				? UriList.create(item.uriListData.map(part => typeof part === 'string' ? part : URI.revive(part)))
-				: item.asString;
-			additionalDataTransfer.replace(type, createStringDataTransferItem(value));
+			additionalDataTransfer.replace(type, createStringDataTransferItem(item.asString));
 		});
 		return additionalDataTransfer;
 	}

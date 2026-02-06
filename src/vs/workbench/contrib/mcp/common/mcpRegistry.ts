@@ -408,13 +408,13 @@ export class McpRegistry extends Disposable implements IMcpRegistry {
 		}));
 
 		return new Promise<string[] | undefined>(resolve => {
-			store.add(picker.onDidAccept(() => {
+			picker.onDidAccept(() => {
 				resolve(picker.selectedItems.map(item => item.definitonId));
 				picker.hide();
-			}));
-			store.add(picker.onDidHide(() => {
+			});
+			picker.onDidHide(() => {
 				resolve(undefined);
-			}));
+			});
 			picker.show();
 		}).finally(() => store.dispose());
 	}

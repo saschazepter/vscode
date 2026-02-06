@@ -201,14 +201,8 @@ class SlashCommandCompletions extends Disposable {
 					return null;
 				}
 
-				// Filter out commands that are not user-invokable (hidden from / menu)
-				const userInvokableCommands = promptCommands.filter(c => c.parsedPromptFile?.header?.userInvokable !== false);
-				if (userInvokableCommands.length === 0) {
-					return null;
-				}
-
 				return {
-					suggestions: userInvokableCommands.map((c, i): CompletionItem => {
+					suggestions: promptCommands.map((c, i): CompletionItem => {
 						const label = `/${c.name}`;
 						const description = c.description;
 						return {

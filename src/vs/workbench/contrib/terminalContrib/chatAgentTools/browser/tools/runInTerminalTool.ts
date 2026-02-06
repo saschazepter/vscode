@@ -305,7 +305,7 @@ const telemetryIgnoredSequences = [
 	'\x1b[O', // Focus out
 ];
 
-const altBufferMessage = '\n' + localize('runInTerminalTool.altBufferMessage', "The command opened the alternate buffer.");
+const altBufferMessage = localize('runInTerminalTool.altBufferMessage', "The command opened the alternate buffer.");
 
 
 export class RunInTerminalTool extends Disposable implements IToolImpl {
@@ -638,14 +638,12 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 			}
 		}
 
-		// If forceConfirmationReason is set, always show confirmation regardless of auto-approval
-		const shouldShowConfirmation = !isFinalAutoApproved || context.forceConfirmationReason !== undefined;
-		const confirmationMessages = shouldShowConfirmation ? {
+		const confirmationMessages = isFinalAutoApproved ? undefined : {
 			title: confirmationTitle,
 			message: new MarkdownString(localize('runInTerminal.confirmationMessage', "Explanation: {0}\n\nGoal: {1}", args.explanation, args.goal)),
 			disclaimer,
 			terminalCustomActions: customActions,
-		} : undefined;
+		};
 
 		return {
 			confirmationMessages,

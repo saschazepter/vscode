@@ -3,28 +3,28 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { CancellationToken } from '../../../../../base/common/cancellation.js';
-import { IDisposable, toDisposable } from '../../../../../base/common/lifecycle.js';
-import { StopWatch } from '../../../../../base/common/stopwatch.js';
-import { URI } from '../../../../../base/common/uri.js';
-import { localize } from '../../../../../nls.js';
 import { createDecorator } from '../../../../../platform/instantiation/common/instantiation.js';
-import { ILogService } from '../../../../../platform/log/common/log.js';
-import { Registry } from '../../../../../platform/registry/common/platform.js';
-import { Extensions, IOutputChannelRegistry, IOutputService } from '../../../../services/output/common/output.js';
+import { URI } from '../../../../../base/common/uri.js';
 import { HookType, HookTypeValue, IChatRequestHooks, IHookCommand } from '../promptSyntax/hookSchema.js';
+import { IDisposable, toDisposable } from '../../../../../base/common/lifecycle.js';
+import { ILogService } from '../../../../../platform/log/common/log.js';
+import { CancellationToken } from '../../../../../base/common/cancellation.js';
+import { StopWatch } from '../../../../../base/common/stopwatch.js';
+import { Extensions, IOutputChannelRegistry, IOutputService } from '../../../../services/output/common/output.js';
+import { Registry } from '../../../../../platform/registry/common/platform.js';
+import { localize } from '../../../../../nls.js';
 import {
 	HookCommandResultKind,
 	IHookCommandInput,
 	IHookCommandResult,
-	IPreToolUseCommandInput
+	IPreToolUseCommandInput,
 } from './hooksCommandTypes.js';
 import {
 	commonHookOutputValidator,
 	IHookResult,
 	IPreToolUseCallerInput,
 	IPreToolUseHookResult,
-	preToolUseOutputValidator
+	preToolUseOutputValidator,
 } from './hooksTypes.js';
 
 export const hooksOutputChannelId = 'hooksExecution';
@@ -296,8 +296,7 @@ export class HooksExecutionService implements IHooksExecutionService {
 			token: token ?? CancellationToken.None,
 		});
 
-		// Collect all valid outputs - priority order: deny > ask > allow
-		let lastAskResult: IPreToolUseHookResult | undefined;
+		// Collect all valid outputs - "any deny wins" for security
 		let lastAllowResult: IPreToolUseHookResult | undefined;
 		for (const result of results) {
 			if (result.success && typeof result.output === 'object' && result.output !== null) {
@@ -306,12 +305,6 @@ export class HooksExecutionService implements IHooksExecutionService {
 					// Extract from hookSpecificOutput wrapper
 					const hookSpecificOutput = validationResult.content.hookSpecificOutput;
 					if (hookSpecificOutput) {
-						// Validate hookEventName if present - must match the hook type
-						if (hookSpecificOutput.hookEventName !== undefined && hookSpecificOutput.hookEventName !== HookType.PreToolUse) {
-							this._logService.warn(`[HooksExecutionService] preToolUse hook returned invalid hookEventName '${hookSpecificOutput.hookEventName}', expected '${HookType.PreToolUse}'`);
-							continue;
-						}
-
 						const preToolUseResult: IPreToolUseHookResult = {
 							...result,
 							permissionDecision: hookSpecificOutput.permissionDecision,
@@ -322,10 +315,6 @@ export class HooksExecutionService implements IHooksExecutionService {
 						// If any hook denies, return immediately with that denial
 						if (hookSpecificOutput.permissionDecision === 'deny') {
 							return preToolUseResult;
-						}
-						// Track 'ask' results (ask takes priority over allow)
-						if (hookSpecificOutput.permissionDecision === 'ask') {
-							lastAskResult = preToolUseResult;
 						}
 						// Track the last allow in case we need to return it
 						if (hookSpecificOutput.permissionDecision === 'allow') {
@@ -339,7 +328,7 @@ export class HooksExecutionService implements IHooksExecutionService {
 			}
 		}
 
-		// Return with priority: ask > allow > undefined
-		return lastAskResult ?? lastAllowResult;
+		// Return the last allow result, or undefined if no valid outputs
+		return lastAllowResult;
 	}
 }

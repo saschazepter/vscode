@@ -178,8 +178,7 @@ abstract class SubmitAction extends Action2 {
 	}
 }
 
-const requestInProgressOrPendingToolCall = ContextKeyExpr.or(ChatContextKeys.requestInProgress, ChatContextKeys.Editing.hasToolConfirmation);
-const whenNotInProgress = ContextKeyExpr.and(ChatContextKeys.requestInProgress.negate(), ChatContextKeys.Editing.hasToolConfirmation.negate());
+const whenNotInProgress = ChatContextKeys.requestInProgress.negate();
 
 export class ChatSubmitAction extends SubmitAction {
 	static readonly ID = 'workbench.action.chat.submit';
@@ -668,7 +667,7 @@ export class ChatEditingSessionSubmitAction extends SubmitAction {
 					id: MenuId.ChatExecute,
 					order: 4,
 					when: ContextKeyExpr.and(
-						whenNotInProgress,
+						ChatContextKeys.requestInProgress.negate(),
 						menuCondition),
 					group: 'navigation',
 					alt: {
@@ -822,7 +821,7 @@ export class CancelAction extends Action2 {
 			menu: [{
 				id: MenuId.ChatExecute,
 				when: ContextKeyExpr.and(
-					requestInProgressOrPendingToolCall,
+					ChatContextKeys.requestInProgress,
 					ChatContextKeys.remoteJobCreating.negate(),
 					ChatContextKeys.currentlyEditing.negate(),
 				),
@@ -842,7 +841,7 @@ export class CancelAction extends Action2 {
 				weight: KeybindingWeight.WorkbenchContrib,
 				primary: KeyMod.CtrlCmd | KeyCode.Escape,
 				when: ContextKeyExpr.and(
-					requestInProgressOrPendingToolCall,
+					ChatContextKeys.requestInProgress,
 					ChatContextKeys.remoteJobCreating.negate()
 				),
 				win: { primary: KeyMod.Alt | KeyCode.Backspace },

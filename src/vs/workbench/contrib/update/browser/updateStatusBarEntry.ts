@@ -5,6 +5,7 @@
 
 import * as dom from '../../../../base/browser/dom.js';
 import { ActionBar } from '../../../../base/browser/ui/actionbar/actionbar.js';
+import { Button } from '../../../../base/browser/ui/button/button.js';
 import { toAction } from '../../../../base/common/actions.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { Codicon } from '../../../../base/common/codicons.js';
@@ -16,6 +17,7 @@ import { ICommandService } from '../../../../platform/commands/common/commands.j
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { IHoverService, nativeHoverDelegate } from '../../../../platform/hover/browser/hover.js';
 import { IProductService } from '../../../../platform/product/common/productService.js';
+import { defaultButtonStyles } from '../../../../platform/theme/browser/defaultStyles.js';
 import { Downloading, IUpdate, IUpdateService, Overwriting, StateType, State as UpdateState } from '../../../../platform/update/common/update.js';
 import { IWorkbenchContribution } from '../../../common/contributions.js';
 import { IStatusbarEntry, IStatusbarEntryAccessor, IStatusbarService, ShowTooltipCommand, StatusbarAlignment, TooltipContent } from '../../../services/statusbar/browser/statusbar.js';
@@ -196,6 +198,10 @@ export class UpdateStatusBarEntryContribution extends Disposable implements IWor
 				this.appendProductInfo(container, update);
 				this.appendWhatsIncluded(container);
 
+				this.appendActionButton(container, nls.localize('updateStatus.downloadButton', "Download"), store, () => {
+					this.runCommandAndClose('update.downloadNow');
+				});
+
 				return container;
 			}
 		};
@@ -268,6 +274,10 @@ export class UpdateStatusBarEntryContribution extends Disposable implements IWor
 				this.appendProductInfo(container, update);
 				this.appendWhatsIncluded(container);
 
+				this.appendActionButton(container, nls.localize('updateStatus.installButton', "Install"), store, () => {
+					this.runCommandAndClose('update.install');
+				});
+
 				return container;
 			}
 		};
@@ -282,6 +292,10 @@ export class UpdateStatusBarEntryContribution extends Disposable implements IWor
 				this.appendHeader(container, nls.localize('updateStatus.updateInstalledTitle', "Update Installed"), store);
 				this.appendProductInfo(container, update);
 				this.appendWhatsIncluded(container);
+
+				this.appendActionButton(container, nls.localize('updateStatus.restartButton', "Restart"), store, () => {
+					this.runCommandAndClose('update.restart');
+				});
 
 				return container;
 			}
@@ -389,8 +403,7 @@ export class UpdateStatusBarEntryContribution extends Disposable implements IWor
 		}
 	}
 
-	private appendWhatsIncluded(container: HTMLElement) {
-		/*
+	private appendWhatsIncluded(container: HTMLElement): void {
 		const whatsIncluded = dom.append(container, dom.$('.whats-included'));
 
 		const sectionTitle = dom.append(whatsIncluded, dom.$('.section-title'));
@@ -408,7 +421,13 @@ export class UpdateStatusBarEntryContribution extends Disposable implements IWor
 			const li = dom.append(list, dom.$('li'));
 			li.textContent = item;
 		}
-		*/
+	}
+
+	private appendActionButton(container: HTMLElement, label: string, store: DisposableStore, onClick: () => void): void {
+		const buttonContainer = dom.append(container, dom.$('.action-button-container'));
+		const button = store.add(new Button(buttonContainer, { ...defaultButtonStyles, secondary: true, hoverDelegate: nativeHoverDelegate }));
+		button.label = label;
+		store.add(button.onDidClick(onClick));
 	}
 }
 

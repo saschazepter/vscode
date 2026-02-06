@@ -488,16 +488,12 @@ declare module 'vscode' {
 	}
 
 	export class ChatResponsePullRequestPart {
-		/**
-		 * @deprecated use `command` instead
-		 */
-		readonly uri?: Uri;
-		readonly command: Command;
+		readonly uri: Uri;
 		readonly linkTag: string;
 		readonly title: string;
 		readonly description: string;
 		readonly author: string;
-		constructor(uriOrCommand: Uri | Command, title: string, description: string, author: string, linkTag: string);
+		constructor(uri: Uri, title: string, description: string, author: string, linkTag: string);
 	}
 
 	export interface ChatResponseStream {
