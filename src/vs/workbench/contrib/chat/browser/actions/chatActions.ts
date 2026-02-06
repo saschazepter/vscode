@@ -67,7 +67,6 @@ import { IChatEditorOptions } from '../widgetHosts/editor/chatEditor.js';
 import { ChatEditorInput, showClearEditingSessionConfirmation } from '../widgetHosts/editor/chatEditorInput.js';
 import { convertBufferToScreenshotVariable } from '../attachments/chatScreenshotContext.js';
 import { AgentSessionProviders, getAgentSessionProvider } from '../agentSessions/agentSessions.js';
-import { ChatSessionPosition } from '../chatSessions/chatSessions.contribution.js';
 
 export const CHAT_CATEGORY = localize2('chat.category', 'Chat');
 
@@ -283,7 +282,7 @@ abstract class OpenChatGlobalAction extends Action2 {
 					// Session has content and target is different - don't disrupt existing work
 				} else if (isLocalSession && targetProvider !== AgentSessionProviders.Local) {
 					// Empty local session, switch to the specified target type
-					const position = chatWidget.location === ChatAgentLocation.Chat ? ChatSessionPosition.Sidebar : ChatSessionPosition.Editor;
+					const position = chatWidget.location === ChatAgentLocation.Chat ? 'sidebar' : 'editor';
 					await commandService.executeCommand(`workbench.action.chat.openNewChatSessionInPlace.${targetProvider}`, position);
 					// Get the updated widget after session change
 					chatWidget = widgetService.lastFocusedWidget ?? chatWidget;
