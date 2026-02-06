@@ -45,7 +45,7 @@ import { IChatAgentMarkdownContentWithVulnerability, IChatCodeCitation, IChatCom
 import { LocalChatSessionUri } from '../../contrib/chat/common/model/chatUri.js';
 import { ChatRequestToolReferenceEntry, IChatRequestVariableEntry, isImageVariableEntry, isPromptFileVariableEntry, isPromptTextVariableEntry } from '../../contrib/chat/common/attachments/chatVariableEntries.js';
 import { ChatAgentLocation } from '../../contrib/chat/common/constants.js';
-import { HookResultKind, IHookResult } from '../../contrib/chat/common/hooksExecutionService.js';
+import { IHookResult } from '../../contrib/chat/common/hooks/hooksTypes.js';
 import { IToolInvocationContext, IToolResult, IToolResultInputOutputDetails, IToolResultOutputDetails, ToolDataSource, ToolInvocationPresentation } from '../../contrib/chat/common/tools/languageModelToolsService.js';
 import * as chatProvider from '../../contrib/chat/common/languageModels.js';
 import { IChatMessageDataPart, IChatResponseDataPart, IChatResponsePromptTsxPart, IChatResponseTextPart } from '../../contrib/chat/common/languageModels.js';
@@ -2843,14 +2843,29 @@ export namespace ChatResponseExtensionsPart {
 }
 
 export namespace ChatResponsePullRequestPart {
-	export function from(part: vscode.ChatResponsePullRequestPart): Dto<IChatPullRequestContent> {
+	export function from(part: Omit<vscode.ChatResponsePullRequestPart, 'command'> & { command?: vscode.Command }, commandsConverter: CommandsConverter, commandDisposables: DisposableStore): Dto<IChatPullRequestContent> {
+		// If the command isn't in the converter, then this session may have been restored, and the command args don't exist anymore
+		let command: extHostProtocol.ICommandDto;
+		if (!part.command) {
+			if (!part.uri) {
+				throw new Error('Pull request part must have a command if URI is provided');
+			}
+			command = {
+				title: 'Open Pull Request',
+				id: 'vscode.open',
+				arguments: [part.uri]
+			};
+		} else {
+			command = commandsConverter.toInternal(part.command, commandDisposables);
+		}
 		return {
 			kind: 'pullRequest',
 			author: part.author,
 			title: part.title,
 			description: part.description,
 			uri: part.uri,
-			linkTag: part.linkTag
+			linkTag: part.linkTag,
+			command
 		};
 	}
 }
@@ -2960,6 +2975,25 @@ export namespace ChatToolInvocationPart {
 					title: todo.title,
 					status: todoStatusEnumToString(todo.status)
 				}))
+			};
+		} else if ('input' in data && 'output' in data && !Array.isArray(data.output)) {
+			// Convert extension API simple tool invocation data to internal format
+			return {
+				kind: 'simpleToolInvocation',
+				input: typeof data.input === 'string' ? data.input : '',
+				output: typeof data.output === 'string' ? data.output : ''
+			};
+		} else if (data && 'values' in data && Array.isArray(data.values)) {
+			// Convert extension API resources tool data to internal format
+			return {
+				kind: 'resources',
+				values: data.values.map((v: any) => {
+					if (v instanceof types.Location) {
+						return Location.from(v);
+					} else {
+						return URI.revive(v);
+					}
+				})
 			};
 		}
 		return data;
@@ -3277,7 +3311,7 @@ export namespace ChatResponsePart {
 		} else if (part instanceof types.ChatResponseExtensionsPart) {
 			return ChatResponseExtensionsPart.from(part);
 		} else if (part instanceof types.ChatResponsePullRequestPart) {
-			return ChatResponsePullRequestPart.from(part);
+			return ChatResponsePullRequestPart.from(part, commandsConverter, commandDisposables);
 		} else if (part instanceof types.ChatToolInvocationPart) {
 			return ChatToolInvocationPart.from(part);
 		} else if (part instanceof types.ChatResponseWorkspaceEditPart) {
@@ -4004,10 +4038,10 @@ export namespace SourceControlInputBoxValidationType {
 export namespace ChatHookResult {
 	export function to(result: IHookResult): vscode.ChatHookResult {
 		return {
-			kind: result.kind === HookResultKind.Success
-				? types.ChatHookResultKind.Success
-				: types.ChatHookResultKind.Error,
-			result: result.result
+			stopReason: result.stopReason,
+			messageForUser: result.messageForUser,
+			output: result.output,
+			success: result.success,
 		};
 	}
 }

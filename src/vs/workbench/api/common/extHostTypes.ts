@@ -14,7 +14,7 @@ import { MarshalledId } from '../../../base/common/marshallingIds.js';
 import { Mimes } from '../../../base/common/mime.js';
 import { nextCharLength } from '../../../base/common/strings.js';
 import { isNumber, isObject, isString, isStringArray } from '../../../base/common/types.js';
-import { URI } from '../../../base/common/uri.js';
+import { isUriComponents, URI } from '../../../base/common/uri.js';
 import { generateUuid } from '../../../base/common/uuid.js';
 import { TextEditorSelectionSource } from '../../../platform/editor/common/editor.js';
 import { ExtensionIdentifier, IExtensionDescription } from '../../../platform/extensions/common/extensions.js';
@@ -3298,13 +3298,26 @@ export class ChatResponseExtensionsPart {
 }
 
 export class ChatResponsePullRequestPart {
+	public readonly uri?: vscode.Uri;
+	public readonly command: vscode.Command;
+
 	constructor(
-		public readonly uri: vscode.Uri,
+		uriOrCommand: vscode.Uri | vscode.Command,
 		public readonly title: string,
 		public readonly description: string,
 		public readonly author: string,
 		public readonly linkTag: string
 	) {
+		if (isUriComponents(uriOrCommand)) {
+			this.uri = uriOrCommand as vscode.Uri;
+			this.command = {
+				title: 'Open Pull Request',
+				command: 'vscode.open',
+				arguments: [uriOrCommand]
+			};
+		} else {
+			this.command = uriOrCommand;
+		}
 	}
 
 	toJSON() {
@@ -3931,15 +3944,6 @@ export enum SettingsSearchResultKind {
 	EMBEDDED = 1,
 	LLM_RANKED = 2,
 	CANCELED = 3,
-}
-
-//#endregion
-
-//#region Chat Hooks
-
-export enum ChatHookResultKind {
-	Success = 1,
-	Error = 2
 }
 
 //#endregion
