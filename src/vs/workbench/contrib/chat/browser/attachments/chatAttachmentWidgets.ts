@@ -43,8 +43,6 @@ import { ITextEditorOptions } from '../../../../../platform/editor/common/editor
 import { FileKind, IFileService } from '../../../../../platform/files/common/files.js';
 import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
 import { IInstantiationService, ServicesAccessor } from '../../../../../platform/instantiation/common/instantiation.js';
-import { IDefaultAccountService } from '../../../../../platform/defaultAccount/common/defaultAccount.js';
-import { IPolicyData } from '../../../../../base/common/defaultAccount.js';
 import { ILabelService } from '../../../../../platform/label/common/label.js';
 import { IMarkdownRendererService } from '../../../../../platform/markdown/browser/markdownRenderer.js';
 import { IOpenerService, OpenInternalOptions } from '../../../../../platform/opener/common/opener.js';
@@ -199,9 +197,6 @@ function modelSupportsVision(currentLanguageModel: ILanguageModelChatMetadataAnd
 	return currentLanguageModel?.metadata.capabilities?.vision ?? false;
 }
 
-function isVisionDisabledByPolicy(policyData: IPolicyData | null | undefined): boolean {
-	return policyData?.chat_preview_features_enabled === false;
-}
 
 export class FileAttachmentWidget extends AbstractChatAttachmentWidget {
 
@@ -464,7 +459,7 @@ function createImageElements(resource: URI | undefined, name: string, fullName: 
 
 	if (previewFeaturesDisabled) {
 		element.classList.add('warning');
-		hoverElement.textContent = localize('chat.imageAttachmentPreviewFeaturesDisabled', "Vision is disabled because preview features are off.");
+		hoverElement.textContent = localize('chat.imageAttachmentPreviewFeaturesDisabled', "Vision is disabled by your organization.");
 		disposable.add(hoverService.setupDelayedHover(element, {
 			content: hoverElement,
 			style: HoverStyle.Pointer,
