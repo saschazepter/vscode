@@ -687,6 +687,199 @@ suite('HooksExecutionService', () => {
 		});
 	});
 
+	suite('preToolUse smoke tests — input → output', () => {
+		test('single hook: allow', async () => {
+			const proxy = createMockProxy(() => ({
+				kind: HookCommandResultKind.Success,
+				result: {
+					hookSpecificOutput: {
+						permissionDecision: 'allow',
+						permissionDecisionReason: 'Trusted tool',
+					}
+				}
+			}));
+			service.setProxy(proxy);
+
+			const hooks = { [HookType.PreToolUse]: [cmd('lint-check')] };
+			store.add(service.registerHooks(sessionUri, hooks));
+
+			const input = { toolName: 'readFile', toolInput: { path: '/src/index.ts' }, toolCallId: 'call-1' };
+			const result = await service.executePreToolUseHook(sessionUri, input);
+
+			assert.deepStrictEqual(
+				JSON.stringify({ permissionDecision: result?.permissionDecision, permissionDecisionReason: result?.permissionDecisionReason, additionalContext: result?.additionalContext }),
+				JSON.stringify({ permissionDecision: 'allow', permissionDecisionReason: 'Trusted tool', additionalContext: undefined })
+			);
+		});
+
+		test('single hook: deny', async () => {
+			const proxy = createMockProxy(() => ({
+				kind: HookCommandResultKind.Success,
+				result: {
+					hookSpecificOutput: {
+						permissionDecision: 'deny',
+						permissionDecisionReason: 'Path is outside workspace',
+					}
+				}
+			}));
+			service.setProxy(proxy);
+
+			const hooks = { [HookType.PreToolUse]: [cmd('path-guard')] };
+			store.add(service.registerHooks(sessionUri, hooks));
+
+			const input = { toolName: 'writeFile', toolInput: { path: '/etc/passwd' }, toolCallId: 'call-2' };
+			const result = await service.executePreToolUseHook(sessionUri, input);
+
+			assert.deepStrictEqual(
+				JSON.stringify({ permissionDecision: result?.permissionDecision, permissionDecisionReason: result?.permissionDecisionReason }),
+				JSON.stringify({ permissionDecision: 'deny', permissionDecisionReason: 'Path is outside workspace' })
+			);
+		});
+
+		test('multiple hooks: deny wins over allow and ask', async () => {
+			// Three hooks return allow, ask, deny (in that order).
+			// deny must win regardless of ordering.
+			let callCount = 0;
+			const decisions = ['allow', 'ask', 'deny'] as const;
+			const proxy = createMockProxy(() => {
+				const decision = decisions[callCount++];
+				return {
+					kind: HookCommandResultKind.Success,
+					result: { hookSpecificOutput: { permissionDecision: decision, permissionDecisionReason: `hook-${callCount}` } }
+				};
+			});
+			service.setProxy(proxy);
+
+			const hooks = { [HookType.PreToolUse]: [cmd('h1'), cmd('h2'), cmd('h3')] };
+			store.add(service.registerHooks(sessionUri, hooks));
+
+			const result = await service.executePreToolUseHook(
+				sessionUri,
+				{ toolName: 'runCommand', toolInput: { cmd: 'rm -rf /' }, toolCallId: 'call-3' }
+			);
+
+			assert.deepStrictEqual(
+				JSON.stringify({ permissionDecision: result?.permissionDecision, permissionDecisionReason: result?.permissionDecisionReason }),
+				JSON.stringify({ permissionDecision: 'deny', permissionDecisionReason: 'hook-3' })
+			);
+		});
+
+		test('multiple hooks: ask wins over allow', async () => {
+			let callCount = 0;
+			const decisions = ['allow', 'ask'] as const;
+			const proxy = createMockProxy(() => {
+				const decision = decisions[callCount++];
+				return {
+					kind: HookCommandResultKind.Success,
+					result: { hookSpecificOutput: { permissionDecision: decision, permissionDecisionReason: `reason-${decision}` } }
+				};
+			});
+			service.setProxy(proxy);
+
+			const hooks = { [HookType.PreToolUse]: [cmd('h1'), cmd('h2')] };
+			store.add(service.registerHooks(sessionUri, hooks));
+
+			const result = await service.executePreToolUseHook(
+				sessionUri,
+				{ toolName: 'exec', toolInput: {}, toolCallId: 'call-4' }
+			);
+
+			assert.deepStrictEqual(
+				JSON.stringify({ permissionDecision: result?.permissionDecision, permissionDecisionReason: result?.permissionDecisionReason }),
+				JSON.stringify({ permissionDecision: 'ask', permissionDecisionReason: 'reason-ask' })
+			);
+		});
+	});
+
+	suite('postToolUse smoke tests — input → output', () => {
+		test('single hook: block', async () => {
+			const proxy = createMockProxy(() => ({
+				kind: HookCommandResultKind.Success,
+				result: {
+					decision: 'block',
+					reason: 'Lint errors found'
+				}
+			}));
+			service.setProxy(proxy);
+
+			const hooks = { [HookType.PostToolUse]: [cmd('lint')] };
+			store.add(service.registerHooks(sessionUri, hooks));
+
+			const input = { toolName: 'writeFile', toolInput: { path: 'foo.ts' }, getToolResponseText: () => 'wrote 42 bytes', toolCallId: 'call-5' };
+			const result = await service.executePostToolUseHook(sessionUri, input);
+
+			assert.deepStrictEqual(
+				JSON.stringify({ decision: result?.decision, reason: result?.reason, additionalContext: result?.additionalContext }),
+				JSON.stringify({ decision: 'block', reason: 'Lint errors found', additionalContext: undefined })
+			);
+		});
+
+		test('single hook: additionalContext only', async () => {
+			const proxy = createMockProxy(() => ({
+				kind: HookCommandResultKind.Success,
+				result: {
+					hookSpecificOutput: {
+						additionalContext: 'Tests still pass after this edit'
+					}
+				}
+			}));
+			service.setProxy(proxy);
+
+			const hooks = { [HookType.PostToolUse]: [cmd('test-runner')] };
+			store.add(service.registerHooks(sessionUri, hooks));
+
+			const input = { toolName: 'editFile', toolInput: {}, getToolResponseText: () => 'ok', toolCallId: 'call-6' };
+			const result = await service.executePostToolUseHook(sessionUri, input);
+
+			assert.deepStrictEqual(
+				JSON.stringify({ decision: result?.decision, reason: result?.reason, additionalContext: result?.additionalContext }),
+				JSON.stringify({ decision: undefined, reason: undefined, additionalContext: 'Tests still pass after this edit' })
+			);
+		});
+
+		test('multiple hooks: block wins immediately (second hook never runs)', async () => {
+			let callCount = 0;
+			const proxy = createMockProxy(() => {
+				callCount++;
+				if (callCount === 1) {
+					return { kind: HookCommandResultKind.Success, result: { decision: 'block', reason: 'Tests failed' } };
+				}
+				return { kind: HookCommandResultKind.Success, result: { hookSpecificOutput: { additionalContext: 'should never appear' } } };
+			});
+			service.setProxy(proxy);
+
+			const hooks = { [HookType.PostToolUse]: [cmd('test'), cmd('lint')] };
+			store.add(service.registerHooks(sessionUri, hooks));
+
+			const result = await service.executePostToolUseHook(
+				sessionUri,
+				{ toolName: 'writeFile', toolInput: {}, getToolResponseText: () => 'data', toolCallId: 'call-7' }
+			);
+
+			assert.deepStrictEqual(
+				JSON.stringify({ decision: result?.decision, reason: result?.reason }),
+				JSON.stringify({ decision: 'block', reason: 'Tests failed' })
+			);
+		});
+
+		test('no hooks registered → undefined (getter never called)', async () => {
+			const proxy = createMockProxy();
+			service.setProxy(proxy);
+
+			// Register PreToolUse only — no PostToolUse
+			store.add(service.registerHooks(sessionUri, { [HookType.PreToolUse]: [cmd('h')] }));
+
+			let getterCalled = false;
+			const result = await service.executePostToolUseHook(
+				sessionUri,
+				{ toolName: 't', toolInput: {}, getToolResponseText: () => { getterCalled = true; return ''; }, toolCallId: 'c' }
+			);
+
+			assert.strictEqual(result, undefined);
+			assert.strictEqual(getterCalled, false);
+		});
+	});
+
 	function createMockProxy(handler?: (cmd: IHookCommand, input: unknown, token: CancellationToken) => IHookCommandResult): IHooksExecutionProxy {
 		return {
 			runHookCommand: async (hookCommand, input, token) => {
