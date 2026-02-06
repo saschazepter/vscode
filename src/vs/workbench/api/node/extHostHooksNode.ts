@@ -169,10 +169,10 @@ export class NodeExtHostHooks implements IExtHostHooks {
 					}
 					resolve({ kind: HookCommandResultKind.Success, result });
 				} else if (code === 2) {
-					// Blocking error - show stderr to model and block tool call
+					// Blocking error - show stderr to model and stop processing
 					resolve({ kind: HookCommandResultKind.Error, result: stderrStr });
 				} else {
-					// Non-blocking error - show stderr to user only, continue with tool call
+					// Non-blocking error - show stderr to user only
 					resolve({ kind: HookCommandResultKind.NonBlockingError, result: stderrStr });
 				}
 			});
