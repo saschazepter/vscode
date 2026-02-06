@@ -496,6 +496,197 @@ suite('HooksExecutionService', () => {
 		});
 	});
 
+	suite('executePostToolUseHook', () => {
+		test('returns undefined when no hooks configured', async () => {
+			const proxy = createMockProxy();
+			service.setProxy(proxy);
+
+			const hooks = { [HookType.PreToolUse]: [cmd('hook')] };
+			store.add(service.registerHooks(sessionUri, hooks));
+
+			const result = await service.executePostToolUseHook(
+				sessionUri,
+				{ toolName: 'test-tool', toolInput: {}, getToolResponseText: () => 'tool output', toolCallId: 'call-1' }
+			);
+
+			assert.strictEqual(result, undefined);
+		});
+
+		test('returns block decision when hook blocks', async () => {
+			const proxy = createMockProxy(() => ({
+				kind: HookCommandResultKind.Success,
+				result: {
+					decision: 'block',
+					reason: 'Lint errors found'
+				}
+			}));
+			service.setProxy(proxy);
+
+			const hooks = { [HookType.PostToolUse]: [cmd('hook')] };
+			store.add(service.registerHooks(sessionUri, hooks));
+
+			const result = await service.executePostToolUseHook(
+				sessionUri,
+				{ toolName: 'test-tool', toolInput: {}, getToolResponseText: () => 'tool output', toolCallId: 'call-1' }
+			);
+
+			assert.ok(result);
+			assert.strictEqual(result.decision, 'block');
+			assert.strictEqual(result.reason, 'Lint errors found');
+		});
+
+		test('returns additionalContext from hookSpecificOutput', async () => {
+			const proxy = createMockProxy(() => ({
+				kind: HookCommandResultKind.Success,
+				result: {
+					hookSpecificOutput: {
+						hookEventName: 'PostToolUse',
+						additionalContext: 'File was modified successfully'
+					}
+				}
+			}));
+			service.setProxy(proxy);
+
+			const hooks = { [HookType.PostToolUse]: [cmd('hook')] };
+			store.add(service.registerHooks(sessionUri, hooks));
+
+			const result = await service.executePostToolUseHook(
+				sessionUri,
+				{ toolName: 'test-tool', toolInput: {}, getToolResponseText: () => 'tool output', toolCallId: 'call-1' }
+			);
+
+			assert.ok(result);
+			assert.strictEqual(result.additionalContext, 'File was modified successfully');
+			assert.strictEqual(result.decision, undefined);
+		});
+
+		test('block takes priority and returns immediately', async () => {
+			let callCount = 0;
+			const proxy = createMockProxy(() => {
+				callCount++;
+				if (callCount === 1) {
+					return {
+						kind: HookCommandResultKind.Success,
+						result: {
+							decision: 'block',
+							reason: 'Tests failed'
+						}
+					};
+				} else {
+					return {
+						kind: HookCommandResultKind.Success,
+						result: {
+							hookSpecificOutput: {
+								additionalContext: 'This should not be returned'
+							}
+						}
+					};
+				}
+			});
+			service.setProxy(proxy);
+
+			const hooks = { [HookType.PostToolUse]: [cmd('hook1'), cmd('hook2')] };
+			store.add(service.registerHooks(sessionUri, hooks));
+
+			const result = await service.executePostToolUseHook(
+				sessionUri,
+				{ toolName: 'test-tool', toolInput: {}, getToolResponseText: () => 'tool output', toolCallId: 'call-1' }
+			);
+
+			assert.ok(result);
+			assert.strictEqual(result.decision, 'block');
+			assert.strictEqual(result.reason, 'Tests failed');
+		});
+
+		test('ignores results with wrong hookEventName', async () => {
+			let callCount = 0;
+			const proxy = createMockProxy(() => {
+				callCount++;
+				if (callCount === 1) {
+					return {
+						kind: HookCommandResultKind.Success,
+						result: {
+							hookSpecificOutput: {
+								hookEventName: 'PreToolUse',
+								additionalContext: 'Should be ignored'
+							}
+						}
+					};
+				} else {
+					return {
+						kind: HookCommandResultKind.Success,
+						result: {
+							hookSpecificOutput: {
+								hookEventName: 'PostToolUse',
+								additionalContext: 'Correct context'
+							}
+						}
+					};
+				}
+			});
+			service.setProxy(proxy);
+
+			const hooks = { [HookType.PostToolUse]: [cmd('hook1'), cmd('hook2')] };
+			store.add(service.registerHooks(sessionUri, hooks));
+
+			const result = await service.executePostToolUseHook(
+				sessionUri,
+				{ toolName: 'test-tool', toolInput: {}, getToolResponseText: () => 'tool output', toolCallId: 'call-1' }
+			);
+
+			assert.ok(result);
+			assert.strictEqual(result.additionalContext, 'Correct context');
+		});
+
+		test('passes tool response text as string to external command', async () => {
+			let receivedInput: unknown;
+			const proxy = createMockProxy((_cmd, input) => {
+				receivedInput = input;
+				return { kind: HookCommandResultKind.Success, result: {} };
+			});
+			service.setProxy(proxy);
+
+			const hooks = { [HookType.PostToolUse]: [cmd('hook')] };
+			store.add(service.registerHooks(sessionUri, hooks));
+
+			await service.executePostToolUseHook(
+				sessionUri,
+				{ toolName: 'my-tool', toolInput: { arg: 'val' }, getToolResponseText: () => 'file contents here', toolCallId: 'call-42' }
+			);
+
+			assert.ok(typeof receivedInput === 'object' && receivedInput !== null);
+			const input = receivedInput as Record<string, unknown>;
+			assert.strictEqual(input['tool_name'], 'my-tool');
+			assert.deepStrictEqual(input['tool_input'], { arg: 'val' });
+			assert.strictEqual(input['tool_response'], 'file contents here');
+			assert.strictEqual(input['tool_use_id'], 'call-42');
+			assert.strictEqual(input['hookEventName'], HookType.PostToolUse);
+		});
+
+		test('does not call getter when no PostToolUse hooks registered', async () => {
+			const proxy = createMockProxy();
+			service.setProxy(proxy);
+
+			// Register hooks only for PreToolUse, not PostToolUse
+			const hooks = { [HookType.PreToolUse]: [cmd('hook')] };
+			store.add(service.registerHooks(sessionUri, hooks));
+
+			let getterCalled = false;
+			const result = await service.executePostToolUseHook(
+				sessionUri,
+				{
+					toolName: 'test-tool',
+					toolInput: {},
+					getToolResponseText: () => { getterCalled = true; return ''; },
+					toolCallId: 'call-1'
+				}
+			);
+
+			assert.strictEqual(result, undefined);
+			assert.strictEqual(getterCalled, false);
+		});
+	});
+
 	function createMockProxy(handler?: (cmd: IHookCommand, input: unknown, token: CancellationToken) => IHookCommandResult): IHooksExecutionProxy {
 		return {
 			runHookCommand: async (hookCommand, input, token) => {
