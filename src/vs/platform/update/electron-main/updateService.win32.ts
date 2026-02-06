@@ -40,6 +40,8 @@ async function pollUntil(fn: () => boolean, millis = 1000): Promise<void> {
 interface IAvailableUpdate {
 	packagePath: string;
 	updateFilePath?: string;
+	/** File path used to signal the Inno Setup installer to cancel */
+	cancelFilePath?: string;
 	/** The Inno Setup process that is applying the update in the background */
 	updateProcess?: ChildProcess;
 }
@@ -191,7 +193,8 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 					// If we were checking for an overwrite update and found nothing newer,
 					// restore the Ready state with the pending update
 					if (this.state.type === StateType.Overwriting) {
-						this.setState(State.Ready(this.state.update, explicit, false));
+						this._overwrite = false;
+						this.setState(State.Ready(this.state.update, this.state.explicit, false));
 					} else {
 						this.setState(State.Idle(updateType));
 					}
@@ -269,7 +272,8 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 				// If we were checking for an overwrite update and it failed,
 				// restore the Ready state with the pending update
 				if (this.state.type === StateType.Overwriting) {
-					this.setState(State.Ready(this.state.update, explicit, false));
+					this._overwrite = false;
+					this.setState(State.Ready(this.state.update, this.state.explicit, false));
 				} else {
 					this.setState(State.Idle(getUpdateType(), message));
 				}
@@ -320,11 +324,13 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 
 		const cachePath = await this.cachePath;
 		const sessionEndFlagPath = path.join(cachePath, 'session-ending.flag');
+		const cancelFilePath = path.join(cachePath, `${this.productService.win32MutexName}-cancel`);
 
 		this.availableUpdate.updateFilePath = path.join(cachePath, `CodeSetup-${this.productService.quality}-${update.version}.flag`);
+		this.availableUpdate.cancelFilePath = cancelFilePath;
 
 		await pfs.Promises.writeFile(this.availableUpdate.updateFilePath, 'flag');
-		const child = spawn(this.availableUpdate.packagePath, ['/verysilent', '/log', `/update="${this.availableUpdate.updateFilePath}"`, `/sessionend="${sessionEndFlagPath}"`, '/nocloseapplications', '/mergetasks=runcode,!desktopicon,!quicklaunchicon'], {
+		const child = spawn(this.availableUpdate.packagePath, ['/verysilent', '/log', `/update="${this.availableUpdate.updateFilePath}"`, `/sessionend="${sessionEndFlagPath}"`, `/cancel="${cancelFilePath}"`, '/nocloseapplications', '/mergetasks=runcode,!desktopicon,!quicklaunchicon'], {
 			detached: true,
 			stdio: ['ignore', 'ignore', 'ignore'],
 			windowsVerbatimArguments: true
@@ -351,33 +357,59 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 			return;
 		}
 
-		this.logService.trace('update#cancelPendingUpdate(): cancelling pending update');
+		this.logService.trace('update#cancelPendingUpdate: cancelling pending update');
 
-		// Kill the Inno Setup process tree if it's running
 		if (this.availableUpdate.updateProcess) {
-			this.logService.trace('update#cancelPendingUpdate(): killing Inno Setup process tree');
-
 			// Remove all listeners to prevent the exit handler from changing state
 			this.availableUpdate.updateProcess.removeAllListeners();
 
+			// Write the cancel file to signal Inno Setup to exit gracefully
+			if (this.availableUpdate.cancelFilePath) {
+				this.logService.trace('update#cancelPendingUpdate: writing cancel signal file');
+				try {
+					await pfs.Promises.writeFile(this.availableUpdate.cancelFilePath, 'cancel');
+				} catch (err) {
+					this.logService.warn('update#cancelPendingUpdate: failed to write cancel file', err);
+				}
+			}
+
+			// Wait for the process to exit gracefully, then force-kill if needed
 			const pid = this.availableUpdate.updateProcess.pid;
 			if (pid) {
-				// Use killTree to kill the process and all its children (forceful=true for Windows)
-				await killTree(pid, true);
+				const exited = await Promise.race([
+					new Promise<boolean>(resolve => this.availableUpdate?.updateProcess?.once('exit', () => resolve(true))),
+					timeout(30 * 1000).then(() => false)
+				]);
+
+				if (!exited) {
+					this.logService.trace('update#cancelPendingUpdate: process did not exit gracefully, killing process tree');
+					await killTree(pid, true);
+				} else {
+					this.logService.trace('update#cancelPendingUpdate: process exited gracefully');
+				}
 			}
 			this.availableUpdate.updateProcess = undefined;
 		}
 
 		// Delete the flag file to clean up
 		if (this.availableUpdate.updateFilePath) {
-			this.logService.trace('update#cancelPendingUpdate(): deleting flag file');
+			this.logService.trace('update#cancelPendingUpdate: deleting flag file');
 			try {
 				await unlink(this.availableUpdate.updateFilePath);
 			} catch (err) {
-				// Flag file deletion failure is not critical - Inno Setup is already killed
-				this.logService.warn('update#cancelPendingUpdate(): failed to delete flag file', err);
+				this.logService.warn('update#cancelPendingUpdate: failed to delete flag file', err);
 			}
 			this.availableUpdate.updateFilePath = undefined;
+		}
+
+		// Delete the cancel file to clean up
+		if (this.availableUpdate.cancelFilePath) {
+			try {
+				await unlink(this.availableUpdate.cancelFilePath);
+			} catch (err) {
+				// ignore
+			}
+			this.availableUpdate.cancelFilePath = undefined;
 		}
 
 		this.availableUpdate = undefined;
