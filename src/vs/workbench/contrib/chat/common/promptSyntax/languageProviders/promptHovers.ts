@@ -15,8 +15,8 @@ import { ILanguageModelToolsService, isToolSet, IToolSet } from '../../tools/lan
 import { IChatModeService, isBuiltinChatMode } from '../../chatModes.js';
 import { getPromptsTypeForLanguageId, PromptsType } from '../promptTypes.js';
 import { IPromptsService } from '../service/promptsService.js';
-import { IHeaderAttribute, parseCommaSeparatedList, PromptBody, PromptHeader, PromptHeaderAttributes } from '../promptFileParser.js';
-import { getAttributeDescription, isGithubTarget } from './promptValidator.js';
+import { IHeaderAttribute, parseCommaSeparatedList, PromptBody, PromptHeader, PromptHeaderAttributes, Target } from '../promptFileParser.js';
+import { getAttributeDescription, getTarget, isVSCodeOrDefaultTarget, knownClaudeModels, knownClaudeTools } from './promptValidator.js';
 
 export class PromptHoverProvider implements HoverProvider {
 	/**
@@ -48,40 +48,43 @@ export class PromptHoverProvider implements HoverProvider {
 		}
 
 		const promptAST = this.promptsService.getParsedPromptFile(model);
+		const target = getTarget(promptType, promptAST.header);
+
 		if (promptAST.header?.range.containsPosition(position)) {
-			return this.provideHeaderHover(position, promptType, promptAST.header);
+			return this.provideHeaderHover(position, promptType, promptAST.header, target);
 		}
 		if (promptAST.body?.range.containsPosition(position)) {
-			return this.provideBodyHover(position, promptAST.body);
+			return this.provideBodyHover(position, promptAST.body, target);
 		}
 		return undefined;
 	}
 
-	private async provideBodyHover(position: Position, body: PromptBody): Promise<Hover | undefined> {
+	private async provideBodyHover(position: Position, body: PromptBody, target: Target): Promise<Hover | undefined> {
 		for (const ref of body.variableReferences) {
 			if (ref.range.containsPosition(position)) {
 				const toolName = ref.name;
-				return this.getToolHoverByName(toolName, ref.range);
+
+				return this.getToolHoverByName(toolName, ref.range, target);
 			}
 		}
 		return undefined;
 	}
 
-	private async provideHeaderHover(position: Position, promptType: PromptsType, header: PromptHeader): Promise<Hover | undefined> {
+	private async provideHeaderHover(position: Position, promptType: PromptsType, header: PromptHeader, target: Target): Promise<Hover | undefined> {
 		for (const attribute of header.attributes) {
 			if (attribute.range.containsPosition(position)) {
-				const description = getAttributeDescription(attribute.key, promptType);
+				const description = getAttributeDescription(attribute.key, promptType, target);
 				if (description) {
 					switch (attribute.key) {
 						case PromptHeaderAttributes.model:
-							return this.getModelHover(attribute, position, description, promptType === PromptsType.agent && isGithubTarget(promptType, header.target));
+							return this.getModelHover(attribute, position, description, target);
 						case PromptHeaderAttributes.tools:
-							return this.getToolHover(attribute, position, description);
+							return this.getToolHover(attribute, position, description, target);
 						case PromptHeaderAttributes.agent:
 						case PromptHeaderAttributes.mode:
 							return this.getAgentHover(attribute, position, description);
 						case PromptHeaderAttributes.handOffs:
-							return this.getHandsOffHover(attribute, position, promptType === PromptsType.agent && isGithubTarget(promptType, header.target));
+							return this.getHandsOffHover(attribute, position, target);
 						case PromptHeaderAttributes.infer:
 							return this.createHover(description + '\n\n' + localize('promptHeader.attribute.infer.hover', 'Deprecated: Use `user-invokable` and `disable-model-invocation` instead.'), attribute.range);
 						default:
@@ -93,7 +96,7 @@ export class PromptHoverProvider implements HoverProvider {
 		return undefined;
 	}
 
-	private getToolHover(node: IHeaderAttribute, position: Position, baseMessage: string): Hover | undefined {
+	private getToolHover(node: IHeaderAttribute, position: Position, baseMessage: string, target: Target): Hover | undefined {
 		let value = node.value;
 		if (value.type === 'string') {
 			value = parseCommaSeparatedList(value);
@@ -101,7 +104,7 @@ export class PromptHoverProvider implements HoverProvider {
 		if (value.type === 'array') {
 			for (const toolName of value.items) {
 				if (toolName.type === 'string' && toolName.range.containsPosition(position)) {
-					const description = this.getToolHoverByName(toolName.value, toolName.range);
+					const description = this.getToolHoverByName(toolName.value, toolName.range, target);
 					if (description) {
 						return description;
 					}
@@ -111,7 +114,14 @@ export class PromptHoverProvider implements HoverProvider {
 		return this.createHover(baseMessage, node.range);
 	}
 
-	private getToolHoverByName(toolName: string, range: Range): Hover | undefined {
+	private getToolHoverByName(toolName: string, range: Range, target: Target): Hover | undefined {
+		if (target === Target.Claude) {
+			const description = knownClaudeTools.find(tool => tool.name === toolName)?.description;
+			if (description) {
+				return this.createHover(description, range);
+			}
+			return undefined;
+		}
 		const tool = this.languageModelToolsService.getToolByFullReferenceName(toolName);
 		if (tool !== undefined) {
 			if (isToolSet(tool)) {
@@ -135,11 +145,16 @@ export class PromptHoverProvider implements HoverProvider {
 		return this.createHover(lines.join('\n'), range);
 	}
 
-	private getModelHover(node: IHeaderAttribute, position: Position, baseMessage: string, isGitHubTarget: boolean): Hover | undefined {
-		if (isGitHubTarget) {
+	private getModelHover(node: IHeaderAttribute, position: Position, baseMessage: string, target: Target): Hover | undefined {
+		if (target === Target.GitHubCopilot) {
 			return this.createHover(baseMessage + '\n\n' + localize('promptHeader.agent.model.githubCopilot', 'Note: This attribute is not used when target is github-copilot.'), node.range);
 		}
 		const modelHoverContent = (modelName: string): Hover | undefined => {
+			if (target === Target.Claude) {
+				const description = knownClaudeModels.find(model => model.name === modelName)?.description;
+				return description ? this.createHover(description, node.range) : undefined;
+			}
+
 			const result = this.languageModelsService.lookupLanguageModelByQualifiedName(modelName);
 			if (result) {
 				const meta = result.metadata;
@@ -206,10 +221,10 @@ export class PromptHoverProvider implements HoverProvider {
 		return this.createHover(lines.join('\n'), agentAttribute.range);
 	}
 
-	private getHandsOffHover(attribute: IHeaderAttribute, position: Position, isGitHubTarget: boolean): Hover | undefined {
-		const handoffsBaseMessage = getAttributeDescription(PromptHeaderAttributes.handOffs, PromptsType.agent)!;
-		if (isGitHubTarget) {
-			return this.createHover(handoffsBaseMessage + '\n\n' + localize('promptHeader.agent.handoffs.githubCopilot', 'Note: This attribute is not used when target is github-copilot.'), attribute.range);
+	private getHandsOffHover(attribute: IHeaderAttribute, position: Position, target: Target): Hover | undefined {
+		const handoffsBaseMessage = getAttributeDescription(PromptHeaderAttributes.handOffs, PromptsType.agent, target)!;
+		if (!isVSCodeOrDefaultTarget(target)) {
+			return this.createHover(handoffsBaseMessage + '\n\n' + localize('promptHeader.agent.handoffs.githubCopilot', 'Note: This attribute is not used in GitHub Copilot or Claude targets.'), attribute.range);
 		}
 		return this.createHover(handoffsBaseMessage, attribute.range);
 

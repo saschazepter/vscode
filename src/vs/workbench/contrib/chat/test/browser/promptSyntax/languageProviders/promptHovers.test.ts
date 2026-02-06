@@ -168,7 +168,7 @@ suite('PromptHoverProvider', () => {
 			const expected = [
 				'Possible handoff actions when the agent has completed its task.',
 				'',
-				'Note: This attribute is not used when target is github-copilot.'
+				'Note: This attribute is not used in GitHub Copilot or Claude targets.'
 			].join('\n');
 			assert.strictEqual(hover, expected);
 		});

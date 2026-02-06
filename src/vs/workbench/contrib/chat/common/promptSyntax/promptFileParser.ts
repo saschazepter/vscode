@@ -32,7 +32,7 @@ export class PromptFileParser {
 			}
 			// range starts on the line after the ---, and ends at the beginning of the line that has the closing ---
 			const range = new Range(2, 1, headerEndLine + 1, 1);
-			header = new PromptHeader(range, linesWithEOL);
+			header = new PromptHeader(range, uri, linesWithEOL);
 		}
 		if (bodyStartLine < linesWithEOL.length) {
 			// range starts  on the line after the ---, and ends at the beginning of line after the last line
@@ -87,16 +87,25 @@ export namespace GithubPromptHeaderAttributes {
 	export const mcpServers = 'mcp-servers';
 }
 
+export namespace ClaudeHeaderAttributes {
+	export const disallowedTools = 'disallowedTools';
+}
+
 export enum Target {
 	VSCode = 'vscode',
 	GitHubCopilot = 'github-copilot',
-	Claude = 'claude'
+	Claude = 'claude',
+	Undefined = 'undefined',
+}
+
+export function isTarget(value: unknown): value is Target {
+	return value === Target.VSCode || value === Target.GitHubCopilot || value === Target.Claude || value === Target.Undefined;
 }
 
 export class PromptHeader {
 	private _parsed: ParsedHeader | undefined;
 
-	constructor(public readonly range: Range, private readonly linesWithEOL: string[]) {
+	constructor(public readonly range: Range, public readonly uri: URI, private readonly linesWithEOL: string[]) {
 	}
 
 	private get _parsedHeader(): ParsedHeader {

@@ -10,7 +10,7 @@ import { EditOperation } from '../../../../../editor/common/core/editOperation.j
 import { Range } from '../../../../../editor/common/core/range.js';
 import { ITextModel } from '../../../../../editor/common/model.js';
 import { ILanguageModelToolsService, IToolAndToolSetEnablementMap } from '../../common/tools/languageModelToolsService.js';
-import { IValue, PromptHeaderAttributes } from '../../common/promptSyntax/promptFileParser.js';
+import { PromptHeaderAttributes } from '../../common/promptSyntax/promptFileParser.js';
 import { IPromptsService } from '../../common/promptSyntax/service/promptsService.js';
 
 export class PromptFileRewriter {
@@ -43,15 +43,15 @@ export class PromptFileRewriter {
 			this.rewriteAttribute(model, '', toolsAttr.range);
 			return;
 		} else {
-			this.rewriteTools(model, newTools, toolsAttr.value);
+			this.rewriteTools(model, newTools, toolsAttr.value.range, toolsAttr.value.type === 'string');
 		}
 	}
 
-	public rewriteTools(model: ITextModel, newTools: IToolAndToolSetEnablementMap, oldValue: IValue): void {
+	public rewriteTools(model: ITextModel, newTools: IToolAndToolSetEnablementMap, range: Range, isString: boolean): void {
 		const newToolNames = this._languageModelToolsService.toFullReferenceNames(newTools);
-		const newEntries = newToolNames.map(name => /[\w\/\.-]+/.test(name) ? name : `'${name}'`).join(', ');
-		const newValue = oldValue.type === 'string' ? newEntries : `[${newEntries}]`;
-		this.rewriteAttribute(model, newValue, oldValue.range);
+		const newEntries = newToolNames.map(name => /^[\w\/\.-]+$/.test(name) ? name : `'${name}'`).join(', ');
+		const newValue = isString ? newEntries : `[${newEntries}]`;
+		this.rewriteAttribute(model, newValue, range);
 	}
 
 	private rewriteAttribute(model: ITextModel, newValue: string, range: Range): void {

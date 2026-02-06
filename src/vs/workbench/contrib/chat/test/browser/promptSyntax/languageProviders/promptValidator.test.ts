@@ -206,7 +206,7 @@ suite('PromptValidator', () => {
 			);
 		});
 
-		test('tools must be array', async () => {
+		test('tools must be array or string', async () => {
 			const content = [
 				'---',
 				'description: "Test"',
@@ -214,8 +214,7 @@ suite('PromptValidator', () => {
 				'---',
 			].join('\n');
 			const markers = await validate(content, PromptsType.agent);
-			assert.strictEqual(markers.length, 1);
-			assert.deepStrictEqual(markers.map(m => m.message), [`The 'tools' attribute must be an array.`]);
+			assert.strictEqual(markers.length, 0);
 		});
 
 		test('model as string array - valid', async () => {

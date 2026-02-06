@@ -4,9 +4,11 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { URI } from '../../../../../../base/common/uri.js';
-import { basename, dirname } from '../../../../../../base/common/path.js';
+import { posix } from '../../../../../../base/common/path.js';
 import { PromptsType } from '../promptTypes.js';
 import { PromptsStorage } from '../service/promptsService.js';
+
+const { basename, dirname } = posix;
 
 /**
  * File extension for the reusable prompt files.
@@ -47,6 +49,11 @@ export const CLAUDE_MD_FILENAME = 'CLAUDE.md';
  * Claude local file name.
  */
 export const CLAUDE_LOCAL_MD_FILENAME = 'CLAUDE.local.md';
+
+/**
+ * Claude configuration folder name.
+ */
+export const CLAUDE_CONFIG_FOLDER = '.claude';
 
 /**
  * Default hook file name (case insensitive).
@@ -230,11 +237,10 @@ export function getPromptFileType(fileUri: URI): PromptsType | undefined {
 	// Check if it's a settings.local.json or settings.json file in a .claude folder
 	if (filename.toLowerCase() === 'settings.local.json' || filename.toLowerCase() === 'settings.json') {
 		const dir = dirname(fileUri.path);
-		if (dir.endsWith('/.claude') || dir === '.claude') {
+		if (basename(dir) === CLAUDE_CONFIG_FOLDER) {
 			return PromptsType.hook;
 		}
 	}
-
 	return undefined;
 }
 
