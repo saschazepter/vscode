@@ -406,11 +406,13 @@ export class URI implements UriComponents {
 			return data;
 		} else if (data instanceof URI) {
 			return data;
-		} else {
+		} else if (typeof data === 'object') {
 			const result = new Uri(data);
 			result._formatted = (<UriState>data).external ?? null;
 			result._fsPath = (<UriState>data)._sep === _pathSepMarker ? (<UriState>data).fsPath ?? null : null;
 			return result;
+		} else {
+			return undefined;
 		}
 	}
 

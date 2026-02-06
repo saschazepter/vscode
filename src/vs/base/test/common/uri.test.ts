@@ -502,6 +502,22 @@ suite('URI', () => {
 		assert.strictEqual(URI.revive({ scheme: '' }).scheme, '');
 	});
 
+	test('revive - handles invalid data gracefully', function () {
+		// URI.revive should not throw on invalid data
+		// When data is not an object, it should return undefined
+		assert.strictEqual(URI.revive('invalid-string' as any), undefined);
+		assert.strictEqual(URI.revive(123 as any), undefined);
+		assert.strictEqual(URI.revive(true as any), undefined);
+		// Falsy values should pass through as-is
+		assert.strictEqual(URI.revive(null), null);
+		assert.strictEqual(URI.revive(undefined), undefined);
+		// Valid UriComponents should work
+		const revived = URI.revive({ scheme: 'file', path: '/test' });
+		assert.ok(revived);
+		assert.strictEqual(revived.scheme, 'file');
+		assert.strictEqual(revived.path, '/test');
+	});
+
 	test('Unable to open \'%A0.txt\': URI malformed #76506, part 2', function () {
 		assert.strictEqual(URI.parse('file://some/%.txt').toString(), 'file://some/%25.txt');
 		assert.strictEqual(URI.parse('file://some/%A0.txt').toString(), 'file://some/%25A0.txt');
