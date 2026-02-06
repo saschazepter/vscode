@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Disposable } from '../../../../base/common/lifecycle.js';
-import { IBrowserViewService, ipcBrowserViewChannelName, IBrowserViewOpenRequest, IBrowserViewDebugInfo } from '../../../../platform/browserView/common/browserView.js';
+import { IBrowserViewService, ipcBrowserViewChannelName, IBrowserViewOpenRequest } from '../../../../platform/browserView/common/browserView.js';
 import { BrowserViewUri } from '../../../../platform/browserView/common/browserViewUri.js';
 import { IBrowserViewWorkbenchService, IBrowserViewModel, BrowserViewModel } from '../common/browserView.js';
 import { IMainProcessService } from '../../../../platform/ipc/common/mainProcessService.js';
@@ -15,16 +15,10 @@ import { IEditorService } from '../../../services/editor/common/editorService.js
 import { Event } from '../../../../base/common/event.js';
 import { IConfigurationResolverService } from '../../../services/configurationResolver/common/configurationResolver.js';
 
-interface IBrowserViewDebugProxyServiceProxy {
-	ensureStarted(): Promise<IBrowserViewDebugInfo>;
-	getDebugInfo(targetId?: string): Promise<IBrowserViewDebugInfo | undefined>;
-}
-
 export class BrowserViewWorkbenchService extends Disposable implements IBrowserViewWorkbenchService {
 	declare readonly _serviceBrand: undefined;
 
 	private readonly _browserViewService: IBrowserViewService;
-	private readonly _debugProxyService: IBrowserViewDebugProxyServiceProxy;
 	private readonly _models = new Map<string, IBrowserViewModel>();
 
 	constructor(
@@ -38,9 +32,6 @@ export class BrowserViewWorkbenchService extends Disposable implements IBrowserV
 		const channel = mainProcessService.getChannel(ipcBrowserViewChannelName);
 		this._browserViewService = ProxyChannel.toService<IBrowserViewService>(channel);
 
-		const debugProxyChannel = mainProcessService.getChannel('browserViewDebugProxy');
-		this._debugProxyService = ProxyChannel.toService<IBrowserViewDebugProxyServiceProxy>(debugProxyChannel);
-
 		// Listen for requests to open new browser views (e.g., from CDP Target.createTarget)
 		this._register(this._browserViewService.onDidRequestOpenBrowser((request) => {
 			this.handleOpenBrowserRequest(request);
@@ -48,7 +39,7 @@ export class BrowserViewWorkbenchService extends Disposable implements IBrowserV
 
 		// Contribute the browserDebugPort variable for use in launch.json
 		configurationResolverService.contributeVariable('browserDebugPort', async () => {
-			const debugInfo = await this._debugProxyService.ensureStarted();
+			const debugInfo = await this._browserViewService.ensureDebugProxyStarted();
 			return debugInfo?.port.toString();
 		});
 	}

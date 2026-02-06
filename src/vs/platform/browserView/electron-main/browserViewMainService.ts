@@ -7,17 +7,20 @@ import { session } from 'electron';
 import { Emitter, Event } from '../../../base/common/event.js';
 import { Disposable, DisposableMap } from '../../../base/common/lifecycle.js';
 import { VSBuffer } from '../../../base/common/buffer.js';
-import { IBrowserViewBounds, IBrowserViewKeyDownEvent, IBrowserViewState, IBrowserViewService, BrowserViewStorageScope, IBrowserViewCaptureScreenshotOptions, IBrowserViewFindInPageOptions, IBrowserViewOpenRequest } from '../common/browserView.js';
+import { IBrowserViewBounds, IBrowserViewKeyDownEvent, IBrowserViewState, IBrowserViewService, BrowserViewStorageScope, IBrowserViewCaptureScreenshotOptions, IBrowserViewFindInPageOptions, IBrowserViewOpenRequest, IBrowserViewDebugInfo } from '../common/browserView.js';
+import { ICDPService } from '../common/cdp/types.js';
+import { BrowserViewCDPProxyServer } from './browserViewCDPProxyServer.js';
+import { ILogService } from '../../log/common/log.js';
 import { joinPath } from '../../../base/common/resources.js';
 import { IEnvironmentMainService } from '../../environment/electron-main/environmentMainService.js';
 import { createDecorator, IInstantiationService } from '../../instantiation/common/instantiation.js';
+import { IProductService } from '../../product/common/productService.js';
 import { BrowserView } from './browserView.js';
 import { generateUuid } from '../../../base/common/uuid.js';
-import { IBrowserViewDebugProxyService } from './browserViewDebugProxyService.js';
 
 export const IBrowserViewMainService = createDecorator<IBrowserViewMainService>('browserViewMainService');
 
-export interface IBrowserViewMainService extends IBrowserViewService {
+export interface IBrowserViewMainService extends IBrowserViewService, ICDPService {
 	tryGetBrowserView(id: string): BrowserView | undefined;
 }
 
@@ -41,27 +44,25 @@ export class BrowserViewMainService extends Disposable implements IBrowserViewMa
 	}
 
 	private readonly browserViews = this._register(new DisposableMap<string, BrowserView>());
+	private debugProxy: BrowserViewCDPProxyServer | undefined;
 
 	private readonly _onDidRequestOpenBrowser = this._register(new Emitter<IBrowserViewOpenRequest>());
 	readonly onDidRequestOpenBrowser: Event<IBrowserViewOpenRequest> = this._onDidRequestOpenBrowser.event;
 
+	// ICDPService events
+	private readonly _onTargetCreated = this._register(new Emitter<BrowserView>());
+	readonly onTargetCreated: Event<BrowserView> = this._onTargetCreated.event;
+
+	private readonly _onTargetDestroyed = this._register(new Emitter<string>());
+	readonly onTargetDestroyed: Event<string> = this._onTargetDestroyed.event;
+
 	constructor(
 		@IEnvironmentMainService private readonly environmentMainService: IEnvironmentMainService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
-		@IBrowserViewDebugProxyService private readonly debugProxyService: IBrowserViewDebugProxyService
+		@ILogService private readonly logService: ILogService,
+		@IProductService private readonly productService: IProductService
 	) {
 		super();
-
-		// Listen for CDP requests to create/close browser views
-		this._register(this.debugProxyService.onDidRequestCreateTarget(request => {
-			this._onDidRequestOpenBrowser.fire(request);
-		}));
-
-		this._register(this.debugProxyService.onDidRequestCloseTarget(({ targetId }) => {
-			if (this.browserViews.has(targetId)) {
-				this.browserViews.deleteAndDispose(targetId);
-			}
-		}));
 	}
 
 	/**
@@ -114,8 +115,8 @@ export class BrowserViewMainService extends Disposable implements IBrowserViewMa
 		);
 		this.browserViews.set(id, view);
 
-		// Register with debug proxy service for CDP debugging
-		this.debugProxyService.registerTarget(id, view.webContents);
+		// Fire target created event for CDP
+		this._onTargetCreated.fire(view);
 
 		return view;
 	}
@@ -139,6 +140,43 @@ export class BrowserViewMainService extends Disposable implements IBrowserViewMa
 
 	tryGetBrowserView(id: string): BrowserView | undefined {
 		return this.browserViews.get(id);
+	}
+
+	// ICDPService implementation
+
+	getTarget(targetId: string): BrowserView | undefined {
+		return this.browserViews.get(targetId);
+	}
+
+	getTargets(): IterableIterator<BrowserView> {
+		return this.browserViews.values();
+	}
+
+	async createTarget(url: string): Promise<{ targetId: string }> {
+		const targetId = generateUuid();
+		const { session, resolvedScope } = this.getSession(BrowserViewStorageScope.Ephemeral, targetId);
+		this.configureSession(session);
+		BrowserViewMainService.knownSessions.add(session);
+
+		const view = this.createBrowserView(targetId, session, resolvedScope);
+		await view.loadURL(url);
+
+		return { targetId };
+	}
+
+	async closeTarget(targetId: string): Promise<boolean> {
+		if (!this.browserViews.has(targetId)) {
+			return false;
+		}
+		await this.destroyBrowserView(targetId);
+		return true;
+	}
+
+	async ensureDebugProxyStarted(): Promise<IBrowserViewDebugInfo> {
+		if (!this.debugProxy) {
+			this.debugProxy = this._register(new BrowserViewCDPProxyServer(this, this.productService, this.logService));
+		}
+		return this.debugProxy.ensureStarted();
 	}
 
 	/**
@@ -197,7 +235,10 @@ export class BrowserViewMainService extends Disposable implements IBrowserViewMa
 	}
 
 	async destroyBrowserView(id: string): Promise<void> {
-		this.browserViews.deleteAndDispose(id);
+		if (this.browserViews.has(id)) {
+			this._onTargetDestroyed.fire(id);
+			this.browserViews.deleteAndDispose(id);
+		}
 	}
 
 	async layout(id: string, bounds: IBrowserViewBounds): Promise<void> {

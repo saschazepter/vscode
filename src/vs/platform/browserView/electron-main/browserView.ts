@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { WebContentsView, webContents } from 'electron';
-import { Disposable } from '../../../base/common/lifecycle.js';
+import { Disposable, IDisposable } from '../../../base/common/lifecycle.js';
 import { Emitter, Event } from '../../../base/common/event.js';
 import { VSBuffer } from '../../../base/common/buffer.js';
 import { IBrowserViewBounds, IBrowserViewDevToolsStateEvent, IBrowserViewFocusEvent, IBrowserViewKeyDownEvent, IBrowserViewState, IBrowserViewNavigationEvent, IBrowserViewLoadingEvent, IBrowserViewLoadError, IBrowserViewTitleChangeEvent, IBrowserViewFaviconChangeEvent, IBrowserViewNewPageRequest, BrowserViewStorageScope, IBrowserViewCaptureScreenshotOptions, IBrowserViewFindInPageOptions, IBrowserViewFindInPageResult, IBrowserViewVisibilityEvent, BrowserNewPageLocation } from '../common/browserView.js';
@@ -15,6 +15,9 @@ import { IAuxiliaryWindowsMainService } from '../../auxiliaryWindow/electron-mai
 import { IAuxiliaryWindow } from '../../auxiliaryWindow/electron-main/auxiliaryWindow.js';
 import { isMacintosh } from '../../../base/common/platform.js';
 import { BrowserViewUri } from '../common/browserViewUri.js';
+import { BrowserViewDebugger } from './browserViewDebugger.js';
+import { ILogService } from '../../log/common/log.js';
+import { ICDPDebugTarget, ICDPDebuggerClient, CDPTargetInfo } from '../common/cdp/types.js';
 
 /** Key combinations that are used in system-level shortcuts. */
 const nativeShortcuts = new Set([
@@ -32,7 +35,7 @@ const nativeShortcuts = new Set([
  * Represents a single browser view instance with its WebContentsView and all associated logic.
  * This class encapsulates all operations and events for a single browser view.
  */
-export class BrowserView extends Disposable {
+export class BrowserView extends Disposable implements ICDPDebugTarget {
 	private readonly _view: WebContentsView;
 	private readonly _faviconRequestCache = new Map<string, Promise<string>>();
 
@@ -41,6 +44,7 @@ export class BrowserView extends Disposable {
 	private _lastError: IBrowserViewLoadError | undefined = undefined;
 	private _lastUserGestureTimestamp: number = -Infinity;
 
+	private _debugger: BrowserViewDebugger;
 	private _window: IBaseWindow | undefined;
 	private _isSendingKeyEvent = false;
 
@@ -84,7 +88,8 @@ export class BrowserView extends Disposable {
 		createChildView: (options?: Electron.WebContentsViewConstructorOptions) => BrowserView,
 		options: Electron.WebContentsViewConstructorOptions | undefined,
 		@IWindowsMainService private readonly windowsMainService: IWindowsMainService,
-		@IAuxiliaryWindowsMainService private readonly auxiliaryWindowsMainService: IAuxiliaryWindowsMainService
+		@IAuxiliaryWindowsMainService private readonly auxiliaryWindowsMainService: IAuxiliaryWindowsMainService,
+		@ILogService private readonly logService: ILogService
 	) {
 		super();
 
@@ -145,6 +150,16 @@ export class BrowserView extends Disposable {
 		this._view.webContents.on('destroyed', () => {
 			this._onDidClose.fire();
 		});
+
+		this._debugger = new BrowserViewDebugger(
+			this.id,
+			() => this._view.webContents.getTitle(),
+			() => this._view.webContents.getURL(),
+			() => this._lastFavicon,
+			this._view.webContents.debugger,
+			this._view.webContents.id,
+			this.logService
+		);
 
 		this.setupEventListeners();
 	}
@@ -549,7 +564,32 @@ export class BrowserView extends Disposable {
 		return this._view;
 	}
 
+	// ============ ICDPDebugTarget implementation ============
+
+	/**
+	 * Get CDP target info using internal browser view ID.
+	 */
+	getTargetInfo(): CDPTargetInfo {
+		return this._debugger.getTargetInfo();
+	}
+
+	/**
+	 * Attach a client to receive debugger events
+	 * @returns A disposable that detaches the client when disposed
+	 */
+	attach(client: ICDPDebuggerClient): Promise<IDisposable> {
+		return this._debugger.attach(client);
+	}
+
 	override dispose(): void {
+		// Fire close event BEFORE disposing emitters
+		if (!this._view.webContents.isDestroyed()) {
+			this._onDidClose.fire();
+		}
+
+		// Dispose debugger if created
+		this._debugger?.dispose();
+
 		// Remove from parent window
 		this._window?.win?.contentView.removeChildView(this._view);
 

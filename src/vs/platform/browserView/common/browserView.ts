@@ -283,4 +283,10 @@ export interface IBrowserViewService {
 	 * @param id The browser view identifier
 	 */
 	clearStorage(id: string): Promise<void>;
+
+	/**
+	 * Ensure the debug proxy server is started.
+	 * @returns Debug connection information
+	 */
+	ensureDebugProxyStarted(): Promise<IBrowserViewDebugInfo>;
 }

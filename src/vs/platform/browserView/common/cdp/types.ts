@@ -3,6 +3,9 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import type { Event } from '../../../../base/common/event.js';
+import type { IDisposable } from '../../../../base/common/lifecycle.js';
+
 /**
  * CDP message types
  */
@@ -51,54 +54,57 @@ export interface CDPConnectionContext {
 }
 
 /**
- * Result from a CDP domain method handler
+ * CDP command with callbacks for response handling.
+ * Emitted by client, consumed by target.
  */
-export interface CDPMethodResult {
-	/** The result to send back to the client */
-	result?: unknown;
-	/** Error to send back (if any) */
-	error?: { code: number; message: string };
+export interface CDPCommand {
+	method: string;
+	params?: unknown;
+	/** Call with the result on success */
+	resolve(result: unknown): void;
+	/** Call with an error on failure */
+	reject(error: Error): void;
 }
 
-import type { CDPSession } from './cdpSession.js';
-import type { DebugTarget } from './debugTarget.js';
+/**
+ * Platform-agnostic debugger target interface.
+ * Used by the proxy to interact with targets without Electron dependencies.
+ */
+export interface ICDPDebugTarget {
+	/** Get target info for CDP protocol using internal browser view ID */
+	getTargetInfo(): CDPTargetInfo;
+	/** Attach a client to receive events and send commands. Dispose to detach. */
+	attach(client: ICDPDebuggerClient): Promise<IDisposable>;
+}
 
 /**
- * Service interface for CDP operations
+ * Client interface for CDP communication with a target.
+ * The target subscribes to onCommand during attach and calls handleDebuggerEvent for events.
+ */
+export interface ICDPDebuggerClient {
+	/** Event fired when client wants to send a CDP command to the target */
+	readonly onCommand: Event<CDPCommand>;
+
+	/** Called when the debugger receives an event from Electron */
+	handleEvent(event: CDPEvent): void;
+}
+
+/**
+ * Service interface for CDP operations.
+ * Provides target management capabilities to domain handlers.
  */
 export interface ICDPService {
-	/** Get all target infos for CDP protocol */
-	getAllTargetInfos(): CDPTargetInfo[];
+	/** Event fired when a target is created */
+	readonly onTargetCreated: Event<ICDPDebugTarget>;
+	/** Event fired when a target is destroyed */
+	readonly onTargetDestroyed: Event<string>;
+
 	/** Get a target by ID */
-	getTarget(targetId: string): DebugTarget | undefined;
-	/** Get the first available target ID */
-	getFirstTargetId(): string | undefined;
-	/** Create a new target (optional) */
-	createTarget?(url: string): Promise<{ targetId: string }>;
-	/** Close a target (optional) */
-	closeTarget?(targetId: string): Promise<boolean>;
-}
-
-/**
- * Client interface for CDP operations
- */
-export interface ICDPClient {
-	/** Get the CDP session */
-	getSession(): CDPSession;
-	/** Send a CDP event to the client */
-	sendEvent(method: string, params: unknown, sessionId?: string): void;
-	/** Attach to a page target (returns session ID) */
-	attachToPageTarget(targetId: string, target: DebugTarget): string;
-}
-
-/**
- * Context passed to CDP domain method handlers
- */
-export interface CDPMethodContext {
-	/** Session ID from the request */
-	sessionId?: string;
-	/** The CDP client */
-	client: ICDPClient;
-	/** The CDP service */
-	service: ICDPService;
+	getTarget(targetId: string): ICDPDebugTarget | undefined;
+	/** Get all available targets */
+	getTargets(): IterableIterator<ICDPDebugTarget>;
+	/** Create a new target */
+	createTarget(url: string): Promise<{ targetId: string }>;
+	/** Close a target */
+	closeTarget(targetId: string): Promise<boolean>;
 }
