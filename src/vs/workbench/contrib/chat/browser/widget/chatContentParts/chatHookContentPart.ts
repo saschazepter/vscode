@@ -13,7 +13,7 @@ import { IChatRendererContent } from '../../../common/model/chatViewModel.js';
 import { ChatTreeItem } from '../../chat.js';
 import { ChatCollapsibleContentPart } from './chatCollapsibleContentPart.js';
 import { IChatContentPart, IChatContentPartRenderContext } from './chatContentParts.js';
-import './media/chatHookContent.css';
+import './media/chatHookContentPart.css';
 
 /**
  * Maps hook types to human-readable labels.
