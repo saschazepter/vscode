@@ -5,7 +5,6 @@
 
 import './media/aiCustomizationManagement.css';
 import * as DOM from '../../../../../base/browser/dom.js';
-import { Dimension, getWindow } from '../../../../../base/browser/dom.js';
 import { CancellationToken } from '../../../../../base/common/cancellation.js';
 import { DisposableStore, IReference, MutableDisposable, toDisposable } from '../../../../../base/common/lifecycle.js';
 import { Event } from '../../../../../base/common/event.js';
@@ -31,8 +30,6 @@ import { IContextKey, IContextKeyService } from '../../../../../platform/context
 import { WorkbenchList } from '../../../../../platform/list/browser/listService.js';
 import { IListVirtualDelegate, IListRenderer } from '../../../../../base/browser/ui/list/list.js';
 import { ThemeIcon } from '../../../../../base/common/themables.js';
-import { Button } from '../../../../../base/browser/ui/button/button.js';
-import { defaultButtonStyles } from '../../../../../platform/theme/browser/defaultStyles.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { IOpenerService } from '../../../../../platform/opener/common/opener.js';
 import { basename } from '../../../../../base/common/resources.js';
@@ -127,7 +124,6 @@ export class AICustomizationManagementEditor extends EditorPane {
 	private container!: HTMLElement;
 	private headerContainer!: HTMLElement;
 	private titleElement!: HTMLElement;
-	private newButton!: Button;
 	private splitViewContainer!: HTMLElement;
 	private splitView!: SplitView<number>;
 	private sidebarContainer!: HTMLElement;
@@ -150,7 +146,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 	private currentModelRef: IReference<IResolvedTextEditorModel> | undefined;
 	private viewMode: 'list' | 'editor' = 'list';
 
-	private dimension: Dimension | undefined;
+	private dimension: DOM.Dimension | undefined;
 	private readonly sections: ISectionItem[] = [];
 	private selectedSection: AICustomizationManagementSection = AICustomizationManagementSection.Agents;
 
@@ -178,6 +174,12 @@ export class AICustomizationManagementEditor extends EditorPane {
 
 		this.inEditorContextKey = CONTEXT_AI_CUSTOMIZATION_MANAGEMENT_EDITOR.bindTo(contextKeyService);
 		this.sectionContextKey = CONTEXT_AI_CUSTOMIZATION_MANAGEMENT_SECTION.bindTo(contextKeyService);
+
+		// Safety disposal for the embedded editor model reference
+		this._register(toDisposable(() => {
+			this.currentModelRef?.dispose();
+			this.currentModelRef = undefined;
+		}));
 
 		this.sections.push(
 			{ id: AICustomizationManagementSection.Agents, label: localize('agents', "Agents"), icon: agentIcon },
@@ -212,79 +214,30 @@ export class AICustomizationManagementEditor extends EditorPane {
 		const titleContainer = DOM.append(this.headerContainer, $('.header-title-container'));
 		this.titleElement = DOM.append(titleContainer, $('.header-title'));
 
-		// New button - context-aware based on selected section
-		const buttonContainer = DOM.append(this.headerContainer, $('.header-actions'));
-		this.newButton = this.editorDisposables.add(new Button(buttonContainer, {
-			...defaultButtonStyles,
-			supportIcons: true,
-		}));
-		this.newButton.element.classList.add('new-button');
-
-		this.editorDisposables.add(this.newButton.onDidClick(() => {
-			this.executeNewItemAction();
-		}));
-
 		// Initialize header with current section
 		this.updateHeader();
 	}
 
 	private updateHeader(): void {
-		const sectionInfo = this.getSectionInfo(this.selectedSection);
-		this.titleElement.textContent = sectionInfo.title;
-
-		if (sectionInfo.newButtonLabel) {
-			this.newButton.label = `$(${Codicon.add.id}) ${sectionInfo.newButtonLabel}`;
-			this.newButton.element.style.display = '';
-		} else {
-			this.newButton.element.style.display = 'none';
-		}
+		this.titleElement.textContent = this.getSectionTitle(this.selectedSection);
 	}
 
-	private getSectionInfo(section: AICustomizationManagementSection): { title: string; newButtonLabel?: string; newCommand?: string } {
+	private getSectionTitle(section: AICustomizationManagementSection): string {
 		switch (section) {
 			case AICustomizationManagementSection.Agents:
-				return {
-					title: localize('agentsTitle', "Agents"),
-					// Button is now in the search bar area within the widget
-				};
+				return localize('agentsTitle', "Agents");
 			case AICustomizationManagementSection.Skills:
-				return {
-					title: localize('skillsTitle', "Skills"),
-					// Button is now in the search bar area within the widget
-				};
+				return localize('skillsTitle', "Skills");
 			case AICustomizationManagementSection.Instructions:
-				return {
-					title: localize('instructionsTitle', "Instructions"),
-					// Button is now in the search bar area within the widget
-				};
+				return localize('instructionsTitle', "Instructions");
 			case AICustomizationManagementSection.Prompts:
-				return {
-					title: localize('promptsTitle', "Prompts"),
-					// Button is now in the search bar area within the widget
-				};
+				return localize('promptsTitle', "Prompts");
 			case AICustomizationManagementSection.Hooks:
-				return {
-					title: localize('hooksTitle', "Hooks"),
-					// Button is now in the search bar area within the widget
-				};
+				return localize('hooksTitle', "Hooks");
 			case AICustomizationManagementSection.Models:
-				return {
-					title: localize('modelsTitle', "Models"),
-					// Models has its own "Add Models..." button in the widget
-				};
+				return localize('modelsTitle', "Models");
 			case AICustomizationManagementSection.McpServers:
-				return {
-					title: localize('mcpServersTitle', "MCP Servers"),
-					// MCP Servers has its own "Add Server" button in the widget
-				};
-
-		}
-	}
-
-	private executeNewItemAction(): void {
-		const sectionInfo = this.getSectionInfo(this.selectedSection);
-		if (sectionInfo.newCommand) {
-			// Create actions are handled via the list widget's create button
+				return localize('mcpServersTitle', "MCP Servers");
 		}
 	}
 
@@ -544,7 +497,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 
 		// Overflow widgets container - appended to the workbench root container so
 		// hovers, suggest widgets, etc. are not clipped by overflow:hidden parents.
-		const overflowWidgetsDomNode = this.layoutService.getContainer(getWindow(this.embeddedEditorContainer)).appendChild($('.embedded-editor-overflow-widgets.monaco-editor'));
+		const overflowWidgetsDomNode = this.layoutService.getContainer(DOM.getWindow(this.embeddedEditorContainer)).appendChild($('.embedded-editor-overflow-widgets.monaco-editor'));
 		this.editorDisposables.add(toDisposable(() => overflowWidgetsDomNode.remove()));
 
 		// Create the CodeEditorWidget
@@ -696,8 +649,14 @@ export class AICustomizationManagementEditor extends EditorPane {
 			cleanName = getCleanPromptName(fileUri);
 		}
 
-		// Step 2: Create the file
-		await this.fileService.createFile(fileUri);
+		// Step 2: Create the file and open in embedded editor
+		try {
+			await this.fileService.createFile(fileUri);
+		} catch (error) {
+			// File creation failed (e.g., already exists, permissions)
+			console.error('Failed to create file:', error);
+			return;
+		}
 
 		// Step 3: Open in embedded editor
 		await this.showEmbeddedEditor(fileUri, cleanName);
@@ -744,7 +703,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 		super.clearInput();
 	}
 
-	override layout(dimension: Dimension): void {
+	override layout(dimension: DOM.Dimension): void {
 		this.dimension = dimension;
 
 		if (this.container && this.splitView) {

@@ -668,43 +668,33 @@ export class AICustomizationListWidget extends Disposable {
 		}
 	}
 
-	private getEmptyStateInfo(): { title: string; description: string; buttonLabel: string; command: string } {
+	private getEmptyStateInfo(): { title: string; description: string } {
 		switch (this.currentSection) {
 			case AICustomizationManagementSection.Agents:
 				return {
 					title: localize('noAgents', "No agents yet"),
 					description: localize('createFirstAgent', "Create your first custom agent to get started"),
-					buttonLabel: localize('createAgent', "Create Agent"),
-					command: 'workbench.action.aiCustomization.newAgent'
 				};
 			case AICustomizationManagementSection.Skills:
 				return {
 					title: localize('noSkills', "No skills yet"),
 					description: localize('createFirstSkill', "Create your first skill to extend agent capabilities"),
-					buttonLabel: localize('createSkill', "Create Skill"),
-					command: 'workbench.action.aiCustomization.newSkill'
 				};
 			case AICustomizationManagementSection.Instructions:
 				return {
 					title: localize('noInstructions', "No instructions yet"),
 					description: localize('createFirstInstructions', "Add instructions to teach Copilot about your codebase"),
-					buttonLabel: localize('createInstructions', "Create Instructions"),
-					command: 'workbench.action.aiCustomization.newInstructions'
 				};
 			case AICustomizationManagementSection.Hooks:
 				return {
 					title: localize('noHooks', "No hooks yet"),
 					description: localize('createFirstHook', "Create hooks to execute commands at agent lifecycle events"),
-					buttonLabel: localize('createHook', "Create Hook"),
-					command: 'workbench.command.new.hook'
 				};
 			case AICustomizationManagementSection.Prompts:
 			default:
 				return {
 					title: localize('noPrompts', "No prompts yet"),
 					description: localize('createFirstPrompt', "Create reusable prompts for common tasks"),
-					buttonLabel: localize('createPrompt', "Create Prompt"),
-					command: 'workbench.action.aiCustomization.newPrompt'
 				};
 		}
 	}

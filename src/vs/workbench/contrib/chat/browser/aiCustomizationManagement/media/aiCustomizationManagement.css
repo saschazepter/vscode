@@ -34,19 +34,8 @@
 	color: var(--vscode-foreground);
 	letter-spacing: -0.02em;
 }
-
-.ai-customization-management-editor .header-actions {
-	display: flex;
-	align-items: center;
-	gap: 8px;
-}
-
-.ai-customization-management-editor .new-button {
-	padding: 4px 14px;
-}
-
-/* Split View Container */
-.ai-customization-management-editor .management-split-view {
+/* Split View Container */.ai-customization-management-editor .header-title {
+	font-size: 18px;
 	flex: 1;
 	overflow: hidden;
 }

@@ -5,7 +5,6 @@
 
 import './media/agentSessionsViewPane.css';
 import * as DOM from '../../../../../../base/browser/dom.js';
-import { $, append } from '../../../../../../base/browser/dom.js';
 import { CancellationToken } from '../../../../../../base/common/cancellation.js';
 import { Codicon } from '../../../../../../base/common/codicons.js';
 import { autorun } from '../../../../../../base/common/observable.js';
@@ -44,6 +43,8 @@ import { IMcpService } from '../../../../mcp/common/mcpTypes.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../../../platform/storage/common/storage.js';
 import { IWorkspaceContextService } from '../../../../../../platform/workspace/common/workspace.js';
 
+const $ = DOM.$;
+
 interface IShortcutItem {
 	readonly label: string;
 	readonly icon: ThemeIcon;
@@ -61,6 +62,7 @@ export class AgentSessionsViewPane extends ViewPane {
 	private newSessionButtonContainer: HTMLElement | undefined;
 	private sessionsControlContainer: HTMLElement | undefined;
 	private sessionsControl: AgentSessionsControl | undefined;
+	private aiCustomizationContainer: HTMLElement | undefined;
 	private readonly shortcuts: IShortcutItem[] = [];
 
 	/**
@@ -129,7 +131,7 @@ export class AgentSessionsViewPane extends ViewPane {
 	}
 
 	private createControls(parent: HTMLElement): void {
-		const sessionsContainer = append(parent, $('.agent-sessions-container'));
+		const sessionsContainer = DOM.append(parent, $('.agent-sessions-container'));
 
 		// Sessions Filter (actions go to view title bar via menu registration)
 		const sessionsFilter = this._register(this.instantiationService.createInstance(AgentSessionsFilter, {
@@ -137,15 +139,11 @@ export class AgentSessionsViewPane extends ViewPane {
 			groupResults: () => AgentSessionsGrouping.Date
 		}));
 
-		// AI Customization shortcuts (compact row of links)
-		const aiCustomizationContainer = append(sessionsContainer, $('.ai-customization-shortcuts'));
-		this.createAICustomizationShortcuts(aiCustomizationContainer);
-
-		// Sessions section
-		const sessionsSection = append(sessionsContainer, $('.agent-sessions-section'));
+		// Sessions section (top, fills available space)
+		const sessionsSection = DOM.append(sessionsContainer, $('.agent-sessions-section'));
 
 		// Sessions header with toolbar
-		const sessionsHeader = append(sessionsSection, $('.agent-sessions-header'));
+		const sessionsHeader = DOM.append(sessionsSection, $('.agent-sessions-header'));
 
 		// Header text
 		const sessionsHeaderText = DOM.append(sessionsHeader, $('span.agent-sessions-header-text'));
@@ -158,16 +156,16 @@ export class AgentSessionsViewPane extends ViewPane {
 		}));
 
 		// Sessions content container
-		const sessionsContent = append(sessionsSection, $('.agent-sessions-content'));
+		const sessionsContent = DOM.append(sessionsSection, $('.agent-sessions-content'));
 
 		// New Session Button
-		const newSessionButtonContainer = this.newSessionButtonContainer = append(sessionsContent, $('.agent-sessions-new-button-container'));
+		const newSessionButtonContainer = this.newSessionButtonContainer = DOM.append(sessionsContent, $('.agent-sessions-new-button-container'));
 		const newSessionButton = this._register(new Button(newSessionButtonContainer, { ...defaultButtonStyles, secondary: true }));
 		newSessionButton.label = localize('newSession', "New Session");
 		this._register(newSessionButton.onDidClick(() => this.commandService.executeCommand(ACTION_ID_NEW_CHAT)));
 
 		// Sessions Control
-		this.sessionsControlContainer = append(sessionsContent, $('.agent-sessions-control-container'));
+		this.sessionsControlContainer = DOM.append(sessionsContent, $('.agent-sessions-control-container'));
 		const sessionsControl = this.sessionsControl = this._register(this.instantiationService.createInstance(AgentSessionsControl, this.sessionsControlContainer, {
 			source: 'agentSessionsViewPane',
 			filter: sessionsFilter,
@@ -188,6 +186,10 @@ export class AgentSessionsViewPane extends ViewPane {
 
 		// Set toolbar context to sessions control for actions to work
 		sessionsToolbar.context = sessionsControl;
+
+		// AI Customization shortcuts (bottom, fixed height)
+		this.aiCustomizationContainer = DOM.append(sessionsContainer, $('.ai-customization-shortcuts'));
+		this.createAICustomizationShortcuts(this.aiCustomizationContainer);
 	}
 
 	private onSessionOpened(sessionResource: URI): void {
@@ -269,6 +271,16 @@ export class AgentSessionsViewPane extends ViewPane {
 			header.setAttribute('aria-expanded', String(!collapsed));
 			chevron.classList.remove(...ThemeIcon.asClassNameArray(Codicon.chevronRight), ...ThemeIcon.asClassNameArray(Codicon.chevronDown));
 			chevron.classList.add(...ThemeIcon.asClassNameArray(collapsed ? Codicon.chevronRight : Codicon.chevronDown));
+
+			// Re-layout after the transition so sessions control gets the right height
+			const onTransitionEnd = () => {
+				linksContainer.removeEventListener('transitionend', onTransitionEnd);
+				if (this.viewPaneContainer) {
+					const { offsetHeight, offsetWidth } = this.viewPaneContainer;
+					this.layoutBody(offsetHeight, offsetWidth);
+				}
+			};
+			linksContainer.addEventListener('transitionend', onTransitionEnd);
 		};
 
 		this._register(DOM.addDisposableListener(header, 'click', toggleCollapse));
@@ -369,7 +381,8 @@ export class AgentSessionsViewPane extends ViewPane {
 		}
 
 		const buttonHeight = this.newSessionButtonContainer.offsetHeight;
-		const availableSessionsHeight = height - buttonHeight;
+		const customizationHeight = this.aiCustomizationContainer?.offsetHeight || 0;
+		const availableSessionsHeight = height - buttonHeight - customizationHeight;
 		this.sessionsControl.layout(availableSessionsHeight, width);
 	}
 

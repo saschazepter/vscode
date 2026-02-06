@@ -5,6 +5,13 @@
 
 .agent-sessions-viewpane {
 
+	.agent-sessions-container {
+		display: flex;
+		flex-direction: column;
+		height: 100%;
+		overflow: hidden;
+	}
+
 	/* Section headers - more prominent than time-based groupings */
 	.ai-customization-header,
 	.agent-sessions-header {
@@ -49,21 +56,27 @@
 		opacity: 0.7;
 	}
 
-	/* AI Customization section */
+	/* AI Customization section - pinned to bottom */
 	.ai-customization-shortcuts {
 		display: flex;
 		flex-direction: column;
+		flex-shrink: 0;
+		border-top: 1px solid var(--vscode-widget-border);
+		margin-top: 8px;
+		padding-top: 4px;
 		padding-bottom: 8px;
-		border-bottom: 1px solid var(--vscode-widget-border);
 	}
 
 	.ai-customization-shortcuts .ai-customization-links {
 		display: flex;
 		flex-direction: column;
+		max-height: 500px;
+		overflow: hidden;
+		transition: max-height 0.2s ease-out;
 	}
 
 	.ai-customization-shortcuts .ai-customization-links.collapsed {
-		display: none;
+		max-height: 0;
 	}
 
 	.ai-customization-shortcuts .ai-customization-link {
@@ -112,12 +125,13 @@
 		display: none;
 	}
 
-	/* Sessions section */
+	/* Sessions section - fills remaining space above customizations */
 	.agent-sessions-section {
 		display: flex;
 		flex-direction: column;
 		flex: 1;
 		overflow: hidden;
+		min-height: 0;
 	}
 
 	.agent-sessions-header {
