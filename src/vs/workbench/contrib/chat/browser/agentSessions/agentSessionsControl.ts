@@ -16,7 +16,7 @@ import { IMenuService, MenuId } from '../../../../../platform/actions/common/act
 import { IChatSessionsService } from '../../common/chatSessionsService.js';
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
 import { ACTION_ID_NEW_CHAT } from '../actions/chatActions.js';
-import { Event } from '../../../../../base/common/event.js';
+import { Emitter, Event } from '../../../../../base/common/event.js';
 import { Disposable } from '../../../../../base/common/lifecycle.js';
 import { Throttler } from '../../../../../base/common/async.js';
 import { ITreeContextMenuEvent } from '../../../../../base/browser/ui/tree/tree.js';
@@ -70,6 +70,9 @@ export class AgentSessionsControl extends Disposable implements IAgentSessionsCo
 	private sessionsListFindIsOpen = false;
 
 	private readonly updateSessionsListThrottler = this._register(new Throttler());
+
+	private readonly _onDidUpdate = this._register(new Emitter<void>());
+	readonly onDidUpdate: Event<void> = this._onDidUpdate.event;
 
 	private visible: boolean = true;
 
@@ -349,7 +352,10 @@ export class AgentSessionsControl extends Disposable implements IAgentSessionsCo
 	}
 
 	async update(): Promise<void> {
-		return this.updateSessionsListThrottler.queue(async () => this.sessionsList?.updateChildren());
+		return this.updateSessionsListThrottler.queue(async () => {
+			await this.sessionsList?.updateChildren();
+			this._onDidUpdate.fire();
+		});
 	}
 
 	setVisible(visible: boolean): void {
@@ -409,6 +415,22 @@ export class AgentSessionsControl extends Disposable implements IAgentSessionsCo
 
 		this.sessionsList.setFocus([session]);
 		this.sessionsList.setSelection([session]);
+
+		return true;
+	}
+
+	select(sessionResource: URI, options?: { createNewIfNotFound?: boolean }): boolean {
+		if (!this.reveal(sessionResource)) {
+			if (options?.createNewIfNotFound) {
+				this.commandService.executeCommand(ACTION_ID_NEW_CHAT);
+			}
+			return false;
+		}
+
+		const session = this.agentSessionsService.model.getSession(sessionResource);
+		if (session) {
+			this.openAgentSession({ element: session, editorOptions: { preserveFocus: true }, sideBySide: false });
+		}
 
 		return true;
 	}
