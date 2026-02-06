@@ -300,6 +300,13 @@ export class AccessibleView extends Disposable {
 			onHide: () => {
 				if (!showAccessibleViewHelp) {
 					this._updateLastProvider();
+					// Save cursor position before disposing so it can be restored on reopen
+					if (this._currentProvider) {
+						const currentPosition = this._editorWidget.getPosition();
+						if (currentPosition) {
+							this._lastProviderPosition.set(this._currentProvider.id, currentPosition);
+						}
+					}
 					this._currentProvider?.dispose();
 					this._currentProvider = undefined;
 					this._resetContextKeys();
@@ -324,6 +331,7 @@ export class AccessibleView extends Disposable {
 				if (this._lastProvider?.options.id === id) {
 					this._lastProvider = undefined;
 				}
+				this._lastProviderPosition.delete(id);
 			}));
 		}
 		if (provider.options.id) {
@@ -649,7 +657,7 @@ export class AccessibleView extends Disposable {
 					// Only restore if the saved position is still valid within the current content
 					if (savedPosition.lineNumber <= lineCount) {
 						this._editorWidget.setPosition(savedPosition);
-						this._editorWidget.revealLine(savedPosition.lineNumber);
+						this._editorWidget.revealPosition(savedPosition);
 					}
 				}
 			}
