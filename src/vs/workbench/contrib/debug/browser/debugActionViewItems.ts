@@ -310,7 +310,6 @@ export class FocusSessionActionViewItem extends SelectActionViewItem<IDebugSessi
 			sessionListeners.set(session.getId(), store);
 
 			store.add(session.onDidChangeName(() => this.update()));
-			store.add(session.onDidEndAdapter(() => sessionListeners.deleteAndDispose(session.getId())));
 		};
 
 		this._register(this.debugService.onDidNewSession(session => {
