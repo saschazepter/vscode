@@ -24,11 +24,13 @@
 }
 
 .chat-hook-message {
-	font-size: 13px;
+	font-size: var(--vscode-chat-font-size-body-s);
+	padding: 4px 10px;
+	color: var(--vscode-descriptionForeground);
 }
 
 .chat-hook-reason {
-	font-size: 12px;
+	font-size: var(--vscode-chat-font-size-body-s);
 	opacity: 0.8;
 	font-style: italic;
 }

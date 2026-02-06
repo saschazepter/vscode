@@ -59,9 +59,24 @@ export class ChatHookContentPart extends ChatCollapsibleContentPart implements I
 		@IHoverService hoverService: IHoverService,
 	) {
 		const hookTypeLabel = getHookTypeLabel(hookPart.hookType);
-		const title = hookPart.outcome === 'success'
-			? localize('hook.title.success', "{0} hook ran successfully", hookTypeLabel)
-			: localize('hook.title.outcome', "{0} hook: {1}", hookTypeLabel, hookPart.message);
+		let title: string;
+		switch (hookPart.outcome) {
+			case 'success':
+				title = localize('hook.title.success', "{0} hook ran successfully", hookTypeLabel);
+				break;
+			case 'blocked':
+				title = localize('hook.title.blocked', "Blocked by {0} hook", hookTypeLabel);
+				break;
+			case 'denied':
+				title = localize('hook.title.denied', "Denied by {0} hook", hookTypeLabel);
+				break;
+			case 'error':
+				title = localize('hook.title.error', "{0} hook encountered an error", hookTypeLabel);
+				break;
+			default:
+				title = localize('hook.title.default', "{0} hook", hookTypeLabel);
+				break;
+		}
 
 		super(title, context, undefined, hoverService);
 
@@ -76,16 +91,14 @@ export class ChatHookContentPart extends ChatCollapsibleContentPart implements I
 	}
 
 	protected override initContent(): HTMLElement {
-		const content = $('.chat-hook-details');
-
-		if (this.hookPart.message) {
-			const messageElement = $('.chat-hook-message', undefined, this.hookPart.message);
-			content.appendChild(messageElement);
-		}
+		const content = $('.chat-hook-details.chat-used-context-list');
 
 		if (this.hookPart.reason) {
 			const reasonElement = $('.chat-hook-reason', undefined, this.hookPart.reason);
 			content.appendChild(reasonElement);
+		} else if (this.hookPart.message) {
+			const messageElement = $('.chat-hook-message', undefined, this.hookPart.message);
+			content.appendChild(messageElement);
 		}
 
 		return content;
