@@ -569,6 +569,10 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 						return toolResult;
 					}
 
+					if (userConfirmed.type === ToolConfirmKind.UserAction && userConfirmed.selectedButton) {
+						dto.selectedCustomButton = userConfirmed.selectedButton;
+					}
+
 					if (dto.toolSpecificData?.kind === 'input') {
 						dto.parameters = dto.toolSpecificData.rawInput;
 						dto.toolSpecificData = undefined;

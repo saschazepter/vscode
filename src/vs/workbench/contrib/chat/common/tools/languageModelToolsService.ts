@@ -182,6 +182,8 @@ export interface IToolInvocation {
 	toolSpecificData?: IChatTerminalToolInvocationData | IChatToolInputInvocationData | IChatExtensionsContent | IChatTodoListContent | IChatSubagentToolInvocationData | IChatSimpleToolInvocationData;
 	modelId?: string;
 	userSelectedTools?: UserSelectedTools;
+	/** The label of the custom button selected by the user during confirmation, if custom buttons were used. */
+	selectedCustomButton?: string;
 }
 
 export interface IToolInvocationContext {
@@ -314,6 +316,8 @@ export interface IToolConfirmationMessages {
 	confirmResults?: boolean;
 	/** If title is not set (no confirmation needed), this reason will be shown to explain why confirmation was not needed */
 	confirmationNotNeededReason?: string | IMarkdownString;
+	/** Custom button labels to display instead of the default Allow/Skip buttons. */
+	customButtons?: string[];
 }
 
 export interface IToolConfirmationAction {
