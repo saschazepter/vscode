@@ -358,54 +358,48 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 		}
 
 		this.logService.trace('update#cancelPendingUpdate: cancelling pending update');
+		const { updateProcess, updateFilePath, cancelFilePath } = this.availableUpdate;
 
-		if (this.availableUpdate.updateProcess) {
+		if (updateProcess && updateProcess.exitCode === null) {
 			// Remove all listeners to prevent the exit handler from changing state
-			this.availableUpdate.updateProcess.removeAllListeners();
+			updateProcess.removeAllListeners();
+			const exitPromise = new Promise<boolean>(resolve => updateProcess.once('exit', () => resolve(true)));
 
 			// Write the cancel file to signal Inno Setup to exit gracefully
-			if (this.availableUpdate.cancelFilePath) {
-				this.logService.trace('update#cancelPendingUpdate: writing cancel signal file');
+			if (cancelFilePath) {
 				try {
-					await pfs.Promises.writeFile(this.availableUpdate.cancelFilePath, 'cancel');
+					await pfs.Promises.writeFile(cancelFilePath, 'cancel');
 				} catch (err) {
 					this.logService.warn('update#cancelPendingUpdate: failed to write cancel file', err);
 				}
 			}
 
 			// Wait for the process to exit gracefully, then force-kill if needed
-			const pid = this.availableUpdate.updateProcess.pid;
-			if (pid) {
-				const exited = await Promise.race([
-					new Promise<boolean>(resolve => this.availableUpdate?.updateProcess?.once('exit', () => resolve(true))),
-					timeout(30 * 1000).then(() => false)
-				]);
-
+			const pid = updateProcess.pid;
+			if (pid && updateProcess.exitCode === null) {
+				const exited = await Promise.race([exitPromise, timeout(30 * 1000).then(() => false)]);
 				if (!exited) {
 					this.logService.trace('update#cancelPendingUpdate: process did not exit gracefully, killing process tree');
 					await killTree(pid, true);
-				} else {
-					this.logService.trace('update#cancelPendingUpdate: process exited gracefully');
 				}
 			}
 			this.availableUpdate.updateProcess = undefined;
 		}
 
 		// Delete the flag file to clean up
-		if (this.availableUpdate.updateFilePath) {
-			this.logService.trace('update#cancelPendingUpdate: deleting flag file');
+		if (updateFilePath) {
 			try {
-				await unlink(this.availableUpdate.updateFilePath);
+				await unlink(updateFilePath);
 			} catch (err) {
-				this.logService.warn('update#cancelPendingUpdate: failed to delete flag file', err);
+				// ignore
 			}
 			this.availableUpdate.updateFilePath = undefined;
 		}
 
 		// Delete the cancel file to clean up
-		if (this.availableUpdate.cancelFilePath) {
+		if (cancelFilePath) {
 			try {
-				await unlink(this.availableUpdate.cancelFilePath);
+				await unlink(cancelFilePath);
 			} catch (err) {
 				// ignore
 			}
