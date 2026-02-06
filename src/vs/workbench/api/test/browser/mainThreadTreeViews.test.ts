@@ -99,5 +99,18 @@ suite('MainThreadHostTreeView', function () {
 		assert.strictEqual(treeView.canSelectMany, false, 'canSelectMany should be false by default');
 	});
 
+	test('canSelectMany can be updated after registration', async () => {
+		const treeView: ITreeView = (<ITreeViewDescriptor>ViewsRegistry.getView(testTreeViewId)).treeView;
+		assert.strictEqual(treeView.canSelectMany, false, 'canSelectMany should be false initially');
+
+		// Update canSelectMany
+		treeView.canSelectMany = true;
+		assert.strictEqual(treeView.canSelectMany, true, 'canSelectMany should be true after update');
+
+		// Setting to same value should not throw
+		treeView.canSelectMany = true;
+		assert.strictEqual(treeView.canSelectMany, true, 'canSelectMany should remain true');
+	});
+
 
 });
