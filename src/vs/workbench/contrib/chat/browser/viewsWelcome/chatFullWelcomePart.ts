@@ -25,6 +25,7 @@ import { FileAccess } from '../../../../../base/common/network.js';
 import { AgentSessionProviders, getAgentSessionProviderName } from '../agentSessions/agentSessions.js';
 import { IProductService } from '../../../../../platform/product/common/productService.js';
 import { WorkspaceFolderCountContext } from '../../../../common/contextkeys.js';
+import { localize } from '../../../../../nls.js';
 
 const MAX_SESSIONS = 6;
 
@@ -335,7 +336,9 @@ export class ChatFullWelcomePart extends Disposable {
 
 		this.targetButtons = [];
 		for (const sessionType of targetTypes) {
-			const name = getAgentSessionProviderName(sessionType);
+			const name = sessionType === AgentSessionProviders.Background
+				? localize('chat.session.chatFullWelcome.local', "Local")
+				: getAgentSessionProviderName(sessionType);
 			const button = dom.$('.chat-full-welcome-target-button');
 			const labelEl = dom.$('span.chat-full-welcome-target-label', undefined, name);
 			button.appendChild(labelEl);
