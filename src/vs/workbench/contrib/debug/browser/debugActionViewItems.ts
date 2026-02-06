@@ -16,7 +16,7 @@ import { ThemeIcon } from '../../../../base/common/themables.js';
 import { selectBorder, selectBackground, asCssVariable } from '../../../../platform/theme/common/colorRegistry.js';
 import { IContextViewService } from '../../../../platform/contextview/browser/contextView.js';
 import { IWorkspaceContextService, WorkbenchState } from '../../../../platform/workspace/common/workspace.js';
-import { IDisposable, dispose } from '../../../../base/common/lifecycle.js';
+import { IDisposable, dispose, DisposableMap, DisposableStore } from '../../../../base/common/lifecycle.js';
 import { ADD_CONFIGURATION_ID } from './debugCommands.js';
 import { BaseActionViewItem, IBaseActionViewItemOptions, SelectActionViewItem } from '../../../../base/browser/ui/actionbar/actionViewItems.js';
 import { debugStart } from './debugIcons.js';
@@ -302,19 +302,29 @@ export class FocusSessionActionViewItem extends SelectActionViewItem<IDebugSessi
 			}
 		}));
 
+		// Track listeners per session to avoid leaking disposables
+		const sessionListeners = this._register(new DisposableMap<string, DisposableStore>());
+
+		const registerSessionListeners = (session: IDebugSession) => {
+			const store = new DisposableStore();
+			sessionListeners.set(session.getId(), store);
+
+			store.add(session.onDidChangeName(() => this.update()));
+			store.add(session.onDidEndAdapter(() => sessionListeners.deleteAndDispose(session.getId())));
+		};
+
 		this._register(this.debugService.onDidNewSession(session => {
-			const sessionListeners: IDisposable[] = [];
-			sessionListeners.push(session.onDidChangeName(() => this.update()));
-			sessionListeners.push(session.onDidEndAdapter(() => dispose(sessionListeners)));
+			registerSessionListeners(session);
 			this.update();
 		}));
+
 		// Apply the same pattern to existing sessions - track listeners for cleanup
-		this.getSessions().forEach(session => {
-			const sessionListeners: IDisposable[] = [];
-			sessionListeners.push(session.onDidChangeName(() => this.update()));
-			sessionListeners.push(session.onDidEndAdapter(() => dispose(sessionListeners)));
-		});
-		this._register(this.debugService.onDidEndSession(() => this.update()));
+		this.getSessions().forEach(registerSessionListeners);
+
+		this._register(this.debugService.onDidEndSession(({ session }) => {
+			sessionListeners.deleteAndDispose(session.getId());
+			this.update();
+		}));
 
 		const selectedSession = session ? this.mapFocusedSessionToSelected(session) : undefined;
 		this.update(selectedSession);
