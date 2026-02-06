@@ -61,7 +61,7 @@ export const ConfirmationToolWithOptionsData: IToolData = {
 			buttons: {
 				type: 'array',
 				items: { type: 'string' },
-				description: 'Custom button labels to display. A Cancel button is always added. If not provided, the default Allow/Skip buttons are shown.'
+				description: 'Custom button labels to display.'
 			}
 		},
 		required: ['title', 'message', 'buttons'],
