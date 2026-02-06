@@ -11,6 +11,7 @@ import { isCodeEditor } from '../../../../editor/browser/editorBrowser.js';
 import { InlineCompletionsController } from '../../../../editor/contrib/inlineCompletions/browser/controller/inlineCompletionsController.js';
 import { localize } from '../../../../nls.js';
 import { IWorkbenchContribution } from '../../../common/contributions.js';
+import { IChatEntitlementService } from '../../../services/chat/common/chatEntitlementService.js';
 import { IEditorService } from '../../../services/editor/common/editorService.js';
 import { ILanguageStatusService } from '../../../services/languageStatus/common/languageStatusService.js';
 
@@ -26,6 +27,7 @@ export class InlineCompletionLanguageStatusBarContribution extends Disposable im
 	constructor(
 		@ILanguageStatusService private readonly _languageStatusService: ILanguageStatusService,
 		@IEditorService private readonly _editorService: IEditorService,
+		@IChatEntitlementService private readonly _chatEntitlementService: IChatEntitlementService,
 	) {
 		super();
 
@@ -52,6 +54,11 @@ export class InlineCompletionLanguageStatusBarContribution extends Disposable im
 		this._register(autorunWithStore((reader, store) => {
 			const state = this._state.read(reader);
 			if (!state) {
+				return;
+			}
+
+			// Do not show the Copilot icon in the language status when AI features are disabled
+			if (this._chatEntitlementService.sentiment.hidden) {
 				return;
 			}
 
