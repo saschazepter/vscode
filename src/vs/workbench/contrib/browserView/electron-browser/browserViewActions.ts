@@ -292,7 +292,7 @@ class OpenInExternalBrowserAction extends Action2 {
 			icon: Codicon.linkExternal,
 			f1: true,
 			// Note: We do allow opening in an external browser even if there is an error page shown
-			precondition: ContextKeyExpr.and(BROWSER_EDITOR_ACTIVE, CONTEXT_BROWSER_URL),
+			precondition: ContextKeyExpr.and(BROWSER_EDITOR_ACTIVE, CONTEXT_BROWSER_URL.notEqualsTo('')),
 			menu: {
 				id: MenuId.BrowserActionsToolbar,
 				group: ActionGroupPage,
