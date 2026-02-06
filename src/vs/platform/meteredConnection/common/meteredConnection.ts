@@ -18,7 +18,7 @@ export interface IMeteredConnectionService {
 
 	/**
 	 * Whether the current network connection is metered.
-	 * Always returns `false` if the `update.respectMeteredConnections` setting is disabled.
+	 * Always returns `false` if the `network.respectMeteredConnections` setting is disabled.
 	 */
 	readonly isConnectionMetered: boolean;
 
