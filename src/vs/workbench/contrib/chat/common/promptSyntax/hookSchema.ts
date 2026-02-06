@@ -174,7 +174,7 @@ export const hookFileSchema: IJSONSchema = {
 	$schema: 'http://json-schema.org/draft-07/schema#',
 	type: 'object',
 	description: nls.localize('hookFile.description', 'GitHub Copilot hook configuration file. Hooks enable executing custom shell commands at strategic points in an agent\'s workflow.'),
-	additionalProperties: false,
+	additionalProperties: true,
 	required: ['hooks'],
 	properties: {
 		hooks: {
@@ -351,6 +351,23 @@ export function isUsingPlatformOverride(hook: IHookCommand): boolean {
 		return true;
 	}
 	return false;
+}
+
+/**
+ * Gets the source shell type for the effective command on the current platform.
+ * Returns 'powershell' if the Windows command came from a powershell field,
+ * 'bash' if the Linux/macOS command came from a bash field,
+ * or undefined for default shell handling.
+ */
+export function getEffectiveCommandSource(hook: IHookCommand): 'powershell' | 'bash' | undefined {
+	if (platform.isWindows && hook.windows && hook.windowsSource === 'powershell') {
+		return 'powershell';
+	} else if (platform.isMacintosh && hook.osx && hook.osxSource === 'bash') {
+		return 'bash';
+	} else if (platform.isLinux && hook.linux && hook.linuxSource === 'bash') {
+		return 'bash';
+	}
+	return undefined;
 }
 
 /**

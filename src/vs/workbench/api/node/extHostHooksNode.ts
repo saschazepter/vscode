@@ -11,7 +11,7 @@ import { CancellationToken } from '../../../base/common/cancellation.js';
 import { DisposableStore, MutableDisposable } from '../../../base/common/lifecycle.js';
 import { URI } from '../../../base/common/uri.js';
 import { ILogService } from '../../../platform/log/common/log.js';
-import { HookTypeValue, resolveEffectiveCommand } from '../../contrib/chat/common/promptSyntax/hookSchema.js';
+import { HookTypeValue, getEffectiveCommandSource, resolveEffectiveCommand } from '../../contrib/chat/common/promptSyntax/hookSchema.js';
 import { isToolInvocationContext, IToolInvocationContext } from '../../contrib/chat/common/tools/languageModelToolsService.js';
 import { IHookCommandDto, MainContext, MainThreadHooksShape } from '../common/extHost.protocol.js';
 import { IChatHookExecutionOptions, IExtHostHooks } from '../common/extHostHooks.js';
@@ -72,12 +72,34 @@ export class NodeExtHostHooks implements IExtHostHooks {
 			});
 		}
 
-		const child = spawn(effectiveCommand, [], {
-			stdio: 'pipe',
-			cwd,
-			env: { ...process.env, ...hook.env },
-			shell: true,
-		});
+		// Execute the command, preserving legacy behavior for explicit shell types:
+		// - powershell source: run through PowerShell so PowerShell-specific commands work
+		// - bash source: run through bash so bash-specific commands work
+		// - otherwise: use default shell via spawn with shell: true
+		const commandSource = getEffectiveCommandSource(hook as Parameters<typeof getEffectiveCommandSource>[0]);
+		let shellExecutable: string | undefined;
+		let shellArgs: string[] | undefined;
+
+		if (commandSource === 'powershell') {
+			shellExecutable = 'powershell.exe';
+			shellArgs = ['-Command', effectiveCommand];
+		} else if (commandSource === 'bash') {
+			shellExecutable = 'bash';
+			shellArgs = ['-c', effectiveCommand];
+		}
+
+		const child = shellExecutable && shellArgs
+			? spawn(shellExecutable, shellArgs, {
+				stdio: 'pipe',
+				cwd,
+				env: { ...process.env, ...hook.env },
+			})
+			: spawn(effectiveCommand, [], {
+				stdio: 'pipe',
+				cwd,
+				env: { ...process.env, ...hook.env },
+				shell: true,
+			});
 
 		return new Promise((resolve, reject) => {
 			const stdout: string[] = [];
