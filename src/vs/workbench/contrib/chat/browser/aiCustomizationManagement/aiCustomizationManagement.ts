@@ -39,7 +39,6 @@ export const AICustomizationManagementSection = {
 	Hooks: 'hooks',
 	McpServers: 'mcpServers',
 	Models: 'models',
-	Memory: 'memory',
 } as const;
 
 export type AICustomizationManagementSection = typeof AICustomizationManagementSection[keyof typeof AICustomizationManagementSection];

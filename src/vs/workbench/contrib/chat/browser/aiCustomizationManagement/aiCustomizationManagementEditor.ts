@@ -50,8 +50,6 @@ import {
 import { agentIcon, instructionsIcon, promptIcon, skillIcon, hookIcon } from '../aiCustomizationTreeView/aiCustomizationTreeViewIcons.js';
 import { AI_CUSTOMIZATION_EDITOR_ID } from '../aiCustomizationEditor/aiCustomizationEditor.js';
 import { ChatModelsWidget } from '../chatManagement/chatModelsWidget.js';
-import { MemoryListWidget } from '../aiCustomizationMemory/memoryListWidget.js';
-import { memoryIcon as memoryIcon_ } from '../aiCustomizationMemory/aiCustomizationMemory.js';
 
 const $ = DOM.$;
 
@@ -131,9 +129,6 @@ export class AICustomizationManagementEditor extends EditorPane {
 	private mcpContentContainer!: HTMLElement;
 	private modelsContentContainer!: HTMLElement;
 	private modelsHeaderElement!: HTMLElement;
-	private memoryContentContainer!: HTMLElement;
-	private memoryListWidget!: MemoryListWidget;
-	private memorySidebarItem!: HTMLElement;
 
 	private dimension: Dimension | undefined;
 	private readonly sections: ISectionItem[] = [];
@@ -161,7 +156,6 @@ export class AICustomizationManagementEditor extends EditorPane {
 		this.inEditorContextKey = CONTEXT_AI_CUSTOMIZATION_MANAGEMENT_EDITOR.bindTo(contextKeyService);
 		this.sectionContextKey = CONTEXT_AI_CUSTOMIZATION_MANAGEMENT_SECTION.bindTo(contextKeyService);
 
-		// Initialize sections (Memory is rendered separately at the bottom)
 		this.sections.push(
 			{ id: AICustomizationManagementSection.Agents, label: localize('agents', "Agents"), icon: agentIcon },
 			{ id: AICustomizationManagementSection.Skills, label: localize('skills', "Skills"), icon: skillIcon },
@@ -260,11 +254,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 					title: localize('mcpServersTitle', "MCP Servers"),
 					// MCP Servers has its own "Add Server" button in the widget
 				};
-			case AICustomizationManagementSection.Memory:
-				return {
-					title: localize('memorySuggestionsTitle', "Memory Suggestions"),
-					// Memory has its own controls in the widget
-				};
+
 		}
 	}
 
@@ -300,9 +290,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 			layout: (width, _, height) => {
 				this.sidebarContainer.style.width = `${width}px`;
 				if (height !== undefined) {
-					// Account for padding (24px) and bottom section height (~50px)
-					const bottomSectionHeight = this.memorySidebarItem?.parentElement?.offsetHeight || 50;
-					const listHeight = height - 24 - bottomSectionHeight;
+					const listHeight = height - 24;
 					this.sectionsList.layout(listHeight, width);
 				}
 			},
@@ -319,7 +307,6 @@ export class AICustomizationManagementEditor extends EditorPane {
 				if (height !== undefined) {
 					this.listWidget.layout(height - 16, width - 24); // Account for padding
 					this.mcpListWidget.layout(height - 16, width - 24); // Account for padding
-					this.memoryListWidget.layout(height - 16, width - 24); // Account for padding
 					// Models widget has header, subtract header height
 					const modelsHeaderHeight = this.modelsHeaderElement?.offsetHeight || 80;
 					this.modelsWidget.layout(height - 16 - modelsHeaderHeight, width);
@@ -370,39 +357,16 @@ export class AICustomizationManagementEditor extends EditorPane {
 
 		this.sectionsList.splice(0, this.sectionsList.length, this.sections);
 
-		// Select the saved section (if not Memory)
-		if (this.selectedSection !== AICustomizationManagementSection.Memory) {
-			const selectedIndex = this.sections.findIndex(s => s.id === this.selectedSection);
-			if (selectedIndex >= 0) {
-				this.sectionsList.setSelection([selectedIndex]);
-			}
+		// Select the saved section
+		const selectedIndex = this.sections.findIndex(s => s.id === this.selectedSection);
+		if (selectedIndex >= 0) {
+			this.sectionsList.setSelection([selectedIndex]);
 		}
 
 		this.editorDisposables.add(this.sectionsList.onDidChangeSelection(e => {
 			if (e.elements.length > 0) {
 				this.selectSection(e.elements[0].id);
-				// Clear Memory selection when selecting from main list
-				this.memorySidebarItem.classList.remove('selected');
 			}
-		}));
-
-		// Bottom section for Memory (pushed to bottom)
-		const bottomSection = DOM.append(sidebarContent, $('.sidebar-bottom-section'));
-		this.memorySidebarItem = DOM.append(bottomSection, $('.section-list-item.memory-item'));
-		const memoryIcon = DOM.append(this.memorySidebarItem, $('.section-icon'));
-		memoryIcon.classList.add(...ThemeIcon.asClassNameArray(memoryIcon_));
-		const memoryLabel = DOM.append(this.memorySidebarItem, $('.section-label'));
-		memoryLabel.textContent = localize('memorySuggestions', "Memory Suggestions");
-
-		// Select Memory if it was the saved selection
-		if (this.selectedSection === AICustomizationManagementSection.Memory) {
-			this.memorySidebarItem.classList.add('selected');
-		}
-
-		this.editorDisposables.add(DOM.addDisposableListener(this.memorySidebarItem, 'click', () => {
-			this.sectionsList.setSelection([]); // Clear main list selection
-			this.memorySidebarItem.classList.add('selected');
-			this.selectSection(AICustomizationManagementSection.Memory);
 		}));
 	}
 
@@ -441,11 +405,6 @@ export class AICustomizationManagementEditor extends EditorPane {
 		this.mcpContentContainer = DOM.append(contentInner, $('.mcp-content-container'));
 		this.mcpListWidget = this.editorDisposables.add(this.instantiationService.createInstance(McpListWidget));
 		this.mcpContentContainer.appendChild(this.mcpListWidget.element);
-
-		// Container for Memory content
-		this.memoryContentContainer = DOM.append(contentInner, $('.memory-content-container'));
-		this.memoryListWidget = this.editorDisposables.add(this.instantiationService.createInstance(MemoryListWidget));
-		this.memoryContentContainer.appendChild(this.memoryListWidget.element);
 
 		// Set initial visibility based on selected section
 		this.updateContentVisibility();
@@ -491,12 +450,10 @@ export class AICustomizationManagementEditor extends EditorPane {
 		const isPromptsSection = this.isPromptsSection(this.selectedSection);
 		const isModelsSection = this.selectedSection === AICustomizationManagementSection.Models;
 		const isMcpSection = this.selectedSection === AICustomizationManagementSection.McpServers;
-		const isMemorySection = this.selectedSection === AICustomizationManagementSection.Memory;
 
 		this.promptsContentContainer.style.display = isPromptsSection ? '' : 'none';
 		this.modelsContentContainer.style.display = isModelsSection ? '' : 'none';
 		this.mcpContentContainer.style.display = isMcpSection ? '' : 'none';
-		this.memoryContentContainer.style.display = isMemorySection ? '' : 'none';
 
 		// Render and layout models widget when switching to it
 		if (isModelsSection) {
@@ -556,8 +513,6 @@ export class AICustomizationManagementEditor extends EditorPane {
 			this.mcpListWidget?.focus();
 		} else if (this.selectedSection === AICustomizationManagementSection.Models) {
 			this.modelsWidget?.focusSearch();
-		} else if (this.selectedSection === AICustomizationManagementSection.Memory) {
-			this.memoryListWidget?.focus();
 		} else {
 			this.listWidget?.focusSearch();
 		}
