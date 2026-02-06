@@ -127,20 +127,18 @@ export class DarwinUpdateService extends AbstractUpdateService implements IRelau
 	 * Manually check the update feed URL without triggering Electron's auto-download.
 	 * Used when connection is metered to show update availability without downloading.
 	 */
-	private checkForUpdateNoDownload(url: string): void {
-		this.requestService.request({ url }, CancellationToken.None)
-			.then<IUpdate | null>(asJson)
-			.then(update => {
-				if (!update || !update.url || !update.version || !update.productVersion) {
-					this.setState(State.Idle(UpdateType.Archive));
-				} else {
-					this.setState(State.AvailableForDownload(update));
-				}
-			})
-			.then(undefined, err => {
-				this.logService.error(err);
+	private async checkForUpdateNoDownload(url: string): Promise<void> {
+		try {
+			const update = await asJson<IUpdate>(await this.requestService.request({ url }, CancellationToken.None));
+			if (!update || !update.url || !update.version || !update.productVersion) {
 				this.setState(State.Idle(UpdateType.Archive));
-			});
+			} else {
+				this.setState(State.AvailableForDownload(update));
+			}
+		} catch (err) {
+			this.logService.error(err);
+			this.setState(State.Idle(UpdateType.Archive));
+		}
 	}
 
 	private onUpdateAvailable(): void {
