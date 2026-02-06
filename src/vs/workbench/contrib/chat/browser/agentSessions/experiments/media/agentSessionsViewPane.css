@@ -19,7 +19,7 @@
 		font-weight: 500;
 		text-transform: uppercase;
 		color: var(--vscode-sideBarSectionHeader-foreground, var(--vscode-foreground));
-		padding: 6px 20px;
+		padding: 6px 20px 6px 12px;
 		letter-spacing: 0.05em;
 	}
 
@@ -174,5 +174,10 @@
 	.agent-sessions-control-container {
 		flex: 1;
 		overflow: hidden;
+
+		/* Override section header padding to align with dot indicators */
+		.agent-session-section {
+			padding-left: 12px;
+		}
 	}
 }

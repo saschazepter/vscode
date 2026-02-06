@@ -9,7 +9,7 @@ import { IContextMenuService } from '../../../../../platform/contextview/browser
 import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
 import { IOpenEvent, WorkbenchCompressibleAsyncDataTree } from '../../../../../platform/list/browser/listService.js';
 import { $, append, EventHelper } from '../../../../../base/browser/dom.js';
-import { AgentSessionSection, IAgentSession, IAgentSessionSection, IAgentSessionsModel, IMarshalledAgentSessionContext, isAgentSession, isAgentSessionSection } from './agentSessionsModel.js';
+import { AgentSessionSection, IAgentSession, IAgentSessionSection, IAgentSessionsModel, IMarshalledAgentSessionContext, isAgentSession, isAgentSessionSection, isSessionInProgressStatus } from './agentSessionsModel.js';
 import { AgentSessionListItem, AgentSessionRenderer, AgentSessionsAccessibilityProvider, AgentSessionsCompressionDelegate, AgentSessionsDataSource, AgentSessionsDragAndDrop, AgentSessionsIdentityProvider, AgentSessionsKeyboardNavigationLabelProvider, AgentSessionsListDelegate, AgentSessionSectionRenderer, AgentSessionsSorter, IAgentSessionsFilter, IAgentSessionsSorterOptions } from './agentSessionsViewer.js';
 import { FuzzyScore } from '../../../../../base/common/filters.js';
 import { IMenuService, MenuId } from '../../../../../platform/actions/common/actions.js';
@@ -27,7 +27,7 @@ import { IAgentSessionsService } from './agentSessionsService.js';
 import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry.js';
 import { IListStyles } from '../../../../../base/browser/ui/list/listWidget.js';
 import { IStyleOverride } from '../../../../../platform/theme/browser/defaultStyles.js';
-import { IAgentSessionsControl } from './agentSessions.js';
+import { getAgentSessionTime, IAgentSessionsControl } from './agentSessions.js';
 import { HoverPosition } from '../../../../../base/browser/ui/hover/hoverWidget.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { ISessionOpenOptions, openSession } from './agentSessionsOpener.js';
@@ -150,6 +150,10 @@ export class AgentSessionsControl extends Disposable implements IAgentSessionsCo
 				if (this.options.collapseOlderSections?.()) {
 					const olderSections = [AgentSessionSection.Week, AgentSessionSection.Older, AgentSessionSection.Archived];
 					if (olderSections.includes(element.section)) {
+						return true;
+					}
+					// Also collapse Yesterday when there are sessions from Today
+					if (element.section === AgentSessionSection.Yesterday && this.hasTodaySessions()) {
 						return true;
 					}
 				}
@@ -349,6 +353,20 @@ export class AgentSessionsControl extends Disposable implements IAgentSessionsCo
 
 	refresh(): Promise<void> {
 		return this.agentSessionsService.model.resolve(undefined);
+	}
+
+	/**
+	 * Returns whether there are any non-archived sessions from today
+	 * (either in-progress or with activity since midnight).
+	 */
+	private hasTodaySessions(): boolean {
+		const startOfToday = new Date().setHours(0, 0, 0, 0);
+		return this.agentSessionsService.model.sessions.some(session =>
+			!session.isArchived() && (
+				isSessionInProgressStatus(session.status) ||
+				getAgentSessionTime(session.timing) >= startOfToday
+			)
+		);
 	}
 
 	async update(): Promise<void> {
