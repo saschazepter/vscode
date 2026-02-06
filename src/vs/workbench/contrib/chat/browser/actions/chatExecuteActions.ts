@@ -178,7 +178,8 @@ abstract class SubmitAction extends Action2 {
 	}
 }
 
-const whenNotInProgress = ChatContextKeys.requestInProgress.negate();
+const requestInProgressOrPendingToolCall = ContextKeyExpr.or(ChatContextKeys.requestInProgress, ChatContextKeys.Editing.hasToolConfirmation);
+const whenNotInProgress = ContextKeyExpr.and(ChatContextKeys.requestInProgress.negate(), ChatContextKeys.Editing.hasToolConfirmation.negate());
 
 export class ChatSubmitAction extends SubmitAction {
 	static readonly ID = 'workbench.action.chat.submit';
@@ -414,7 +415,11 @@ export class OpenModelPickerAction extends Action2 {
 							ContextKeyExpr.equals(ChatContextKeys.location.key, ChatAgentLocation.Chat),
 							ContextKeyExpr.equals(ChatContextKeys.location.key, ChatAgentLocation.EditorInline),
 							ContextKeyExpr.equals(ChatContextKeys.location.key, ChatAgentLocation.Notebook),
-							ContextKeyExpr.equals(ChatContextKeys.location.key, ChatAgentLocation.Terminal))
+							ContextKeyExpr.equals(ChatContextKeys.location.key, ChatAgentLocation.Terminal)),
+						// Hide in welcome view when session type is not local
+						ContextKeyExpr.or(
+							ChatContextKeys.inAgentSessionsWelcome.negate(),
+							ChatContextKeys.agentSessionType.isEqualTo(AgentSessionProviders.Local))
 					)
 			}
 		});
@@ -457,7 +462,11 @@ export class OpenModePickerAction extends Action2 {
 						ChatContextKeys.inQuickChat.negate(),
 						ContextKeyExpr.or(
 							ChatContextKeys.lockedToCodingAgent.negate(),
-							ChatContextKeys.chatSessionHasCustomAgentTarget)),
+							ChatContextKeys.chatSessionHasCustomAgentTarget),
+						// Hide in welcome view when session type is not local
+						ContextKeyExpr.or(
+							ChatContextKeys.inAgentSessionsWelcome.negate(),
+							ChatContextKeys.agentSessionType.isEqualTo(AgentSessionProviders.Local))),
 					group: 'navigation',
 				},
 			]
@@ -483,7 +492,7 @@ export class OpenSessionTargetPickerAction extends Action2 {
 			tooltip: localize('setSessionTarget', "Set Session Target"),
 			category: CHAT_CATEGORY,
 			f1: false,
-			precondition: ContextKeyExpr.and(ChatContextKeys.enabled, ChatContextKeys.hasCanDelegateProviders, ContextKeyExpr.or(ChatContextKeys.chatSessionIsEmpty, ChatContextKeys.inAgentSessionsWelcome)),
+			precondition: ContextKeyExpr.and(ChatContextKeys.enabled, ContextKeyExpr.or(ChatContextKeys.chatSessionIsEmpty, ChatContextKeys.inAgentSessionsWelcome), ChatContextKeys.currentlyEditingInput.negate(), ChatContextKeys.currentlyEditing.negate()),
 			menu: [
 				{
 					id: MenuId.ChatInput,
@@ -492,8 +501,7 @@ export class OpenSessionTargetPickerAction extends Action2 {
 						ChatContextKeys.enabled,
 						ChatContextKeys.location.isEqualTo(ChatAgentLocation.Chat),
 						ChatContextKeys.inQuickChat.negate(),
-						ChatContextKeys.hasCanDelegateProviders,
-						ContextKeyExpr.or(ChatContextKeys.chatSessionIsEmpty, ChatContextKeys.hasCanDelegateProviders.negate())),
+						ChatContextKeys.chatSessionIsEmpty),
 					group: 'navigation',
 				},
 			]
@@ -519,7 +527,7 @@ export class OpenDelegationPickerAction extends Action2 {
 			tooltip: localize('delegateSession', "Delegate Session"),
 			category: CHAT_CATEGORY,
 			f1: false,
-			precondition: ContextKeyExpr.and(ChatContextKeys.enabled, ChatContextKeys.hasCanDelegateProviders, ChatContextKeys.chatSessionIsEmpty.negate()),
+			precondition: ContextKeyExpr.and(ChatContextKeys.enabled, ChatContextKeys.chatSessionIsEmpty.negate(), ChatContextKeys.currentlyEditingInput.negate(), ChatContextKeys.currentlyEditing.negate()),
 			menu: [
 				{
 					id: MenuId.ChatInput,
@@ -528,8 +536,7 @@ export class OpenDelegationPickerAction extends Action2 {
 						ChatContextKeys.enabled,
 						ChatContextKeys.location.isEqualTo(ChatAgentLocation.Chat),
 						ChatContextKeys.inQuickChat.negate(),
-						ChatContextKeys.hasCanDelegateProviders,
-						ContextKeyExpr.and(ChatContextKeys.chatSessionIsEmpty.negate(), ChatContextKeys.hasCanDelegateProviders)),
+						ChatContextKeys.chatSessionIsEmpty.negate()),
 					group: 'navigation',
 				},
 			]
@@ -580,7 +587,7 @@ export class ChatSessionPrimaryPickerAction extends Action2 {
 	constructor() {
 		super({
 			id: ChatSessionPrimaryPickerAction.ID,
-			title: localize2('interactive.openChatSessionPrimaryPicker.label', "Open Picker"),
+			title: localize2('interactive.openChatSessionPrimaryPicker.label', "Open Model Picker"),
 			category: CHAT_CATEGORY,
 			f1: false,
 			precondition: ChatContextKeys.enabled,
@@ -661,7 +668,7 @@ export class ChatEditingSessionSubmitAction extends SubmitAction {
 					id: MenuId.ChatExecute,
 					order: 4,
 					when: ContextKeyExpr.and(
-						ChatContextKeys.requestInProgress.negate(),
+						whenNotInProgress,
 						menuCondition),
 					group: 'navigation',
 					alt: {
@@ -815,8 +822,9 @@ export class CancelAction extends Action2 {
 			menu: [{
 				id: MenuId.ChatExecute,
 				when: ContextKeyExpr.and(
-					ChatContextKeys.requestInProgress,
-					ChatContextKeys.remoteJobCreating.negate()
+					requestInProgressOrPendingToolCall,
+					ChatContextKeys.remoteJobCreating.negate(),
+					ChatContextKeys.currentlyEditing.negate(),
 				),
 				order: 4,
 				group: 'navigation',
@@ -834,7 +842,7 @@ export class CancelAction extends Action2 {
 				weight: KeybindingWeight.WorkbenchContrib,
 				primary: KeyMod.CtrlCmd | KeyCode.Escape,
 				when: ContextKeyExpr.and(
-					ChatContextKeys.requestInProgress,
+					requestInProgressOrPendingToolCall,
 					ChatContextKeys.remoteJobCreating.negate()
 				),
 				win: { primary: KeyMod.Alt | KeyCode.Backspace },

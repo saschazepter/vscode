@@ -100,7 +100,9 @@ import { IDataChannelService, NullDataChannelService } from '../../../platform/d
 import { IWebWorkerService } from '../../../platform/webWorker/browser/webWorkerService.js';
 import { StandaloneWebWorkerService } from './services/standaloneWebWorkerService.js';
 import { IDefaultAccountService } from '../../../platform/defaultAccount/common/defaultAccount.js';
-import { IDefaultAccount, IDefaultAccountAuthenticationProvider } from '../../../base/common/defaultAccount.js';
+import { IDefaultAccount, IDefaultAccountAuthenticationProvider, IPolicyData } from '../../../base/common/defaultAccount.js';
+import { IUserInteractionService } from '../../../platform/userInteraction/browser/userInteractionService.js';
+import { UserInteractionService } from '../../../platform/userInteraction/browser/userInteractionServiceImpl.js';
 
 class SimpleModel implements IResolvedTextEditorModel {
 
@@ -220,7 +222,7 @@ class StandaloneEnvironmentService implements IEnvironmentService {
 	readonly keyboardLayoutResource: URI = URI.from({ scheme: 'monaco', authority: 'keyboardLayoutResource' });
 	readonly argvResource: URI = URI.from({ scheme: 'monaco', authority: 'argvResource' });
 	readonly untitledWorkspacesHome: URI = URI.from({ scheme: 'monaco', authority: 'untitledWorkspacesHome' });
-	readonly builtinProfilesHome: URI = URI.from({ scheme: 'monaco', authority: 'builtinProfilesHome' });
+	readonly builtinWorkbenchModesHome: URI = URI.from({ scheme: 'monaco', authority: 'builtinWorkbenchModesHome' });
 	readonly workspaceStorageHome: URI = URI.from({ scheme: 'monaco', authority: 'workspaceStorageHome' });
 	readonly localHistoryHome: URI = URI.from({ scheme: 'monaco', authority: 'localHistoryHome' });
 	readonly cacheHome: URI = URI.from({ scheme: 'monaco', authority: 'cacheHome' });
@@ -1115,6 +1117,8 @@ class StandaloneDefaultAccountService implements IDefaultAccountService {
 	declare readonly _serviceBrand: undefined;
 
 	readonly onDidChangeDefaultAccount: Event<IDefaultAccount | null> = Event.None;
+	readonly onDidChangePolicyData: Event<IPolicyData | null> = Event.None;
+	readonly policyData: IPolicyData | null = null;
 
 	async getDefaultAccount(): Promise<IDefaultAccount | null> {
 		return null;
@@ -1181,6 +1185,7 @@ registerSingleton(ILoggerService, NullLoggerService, InstantiationType.Eager);
 registerSingleton(IDataChannelService, NullDataChannelService, InstantiationType.Eager);
 registerSingleton(IDefaultAccountService, StandaloneDefaultAccountService, InstantiationType.Eager);
 registerSingleton(IRenameSymbolTrackerService, NullRenameSymbolTrackerService, InstantiationType.Eager);
+registerSingleton(IUserInteractionService, UserInteractionService, InstantiationType.Eager);
 
 /**
  * We don't want to eagerly instantiate services because embedders get a one time chance

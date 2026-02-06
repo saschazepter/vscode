@@ -25,7 +25,6 @@ import { ThinkingDisplayMode } from '../../../../common/constants.js';
 import { CodeBlockModelCollection } from '../../../../common/widget/codeBlockModelCollection.js';
 import { EditorPool, DiffEditorPool } from '../../../../browser/widget/chatContentParts/chatContentCodePools.js';
 import { IHoverService } from '../../../../../../../platform/hover/browser/hover.js';
-import { ChatTreeItem } from '../../../../browser/chat.js';
 import { ILanguageModelsService } from '../../../../common/languageModels.js';
 import { URI } from '../../../../../../../base/common/uri.js';
 
@@ -49,7 +48,7 @@ suite('ChatThinkingContentPart', () => {
 		};
 
 		return {
-			element: mockElement as ChatTreeItem,
+			element: mockElement as IChatResponseViewModel,
 			elementIndex: 0,
 			container: mainWindow.document.createElement('div'),
 			content: [],
@@ -1128,24 +1127,6 @@ suite('ChatThinkingContentPart', () => {
 	suite('DOM structure', () => {
 		setup(() => {
 			mockConfigurationService.setUserConfiguration('chat.agent.thinkingStyle', ThinkingDisplayMode.Collapsed);
-		});
-
-		test('should be focusable via tabIndex', () => {
-			const content = createThinkingPart('**Content**');
-			const context = createMockRenderContext(false);
-
-			const part = store.add(instantiationService.createInstance(
-				ChatThinkingContentPart,
-				content,
-				context,
-				mockMarkdownRenderer,
-				false
-			));
-
-			mainWindow.document.body.appendChild(part.domNode);
-			disposables.add(toDisposable(() => part.domNode.remove()));
-
-			assert.strictEqual(part.domNode.tabIndex, 0, 'Should be focusable');
 		});
 
 		test('should have proper aria-expanded attribute', () => {
