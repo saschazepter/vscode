@@ -522,6 +522,95 @@ suite('LanguageModelToolsService', () => {
 		assert.strictEqual(result.content[0].value, 'ran');
 	});
 
+	test('selectedCustomButton is passed to tool invoke when user selects a custom button', async () => {
+		let receivedInvocation: IToolInvocation | undefined;
+		const tool = registerToolForTest(service, store, 'testToolCustomButton', {
+			prepareToolInvocation: async () => ({
+				confirmationMessages: {
+					title: 'Confirm',
+					message: 'Pick an option',
+					customButtons: ['Option A', 'Option B'],
+					allowAutoConfirm: false,
+				}
+			}),
+			invoke: async (invocation) => {
+				receivedInvocation = invocation;
+				return { content: [{ kind: 'text', value: invocation.selectedCustomButton ?? 'none' }] };
+			},
+		});
+
+		const sessionId = 'sessionId-custom-btn';
+		const capture: { invocation?: any } = {};
+		stubGetSession(chatService, sessionId, { requestId: 'requestId-custom-btn', capture });
+
+		const dto = tool.makeDto({ x: 1 }, { sessionId });
+
+		const promise = service.invokeTool(dto, async () => 0, CancellationToken.None);
+		const published = await waitForPublishedInvocation(capture);
+		assert.ok(published, 'expected ChatToolInvocation to be published');
+
+		IChatToolInvocation.confirmWith(published, { type: ToolConfirmKind.UserAction, selectedButton: 'Option A' });
+		const result = await promise;
+		assert.strictEqual(receivedInvocation?.selectedCustomButton, 'Option A');
+		assert.strictEqual(result.content[0].value, 'Option A');
+	});
+
+	test('selectedCustomButton is not set when user confirms without custom button', async () => {
+		let receivedInvocation: IToolInvocation | undefined;
+		const tool = registerToolForTest(service, store, 'testToolNoCustomBtn', {
+			prepareToolInvocation: async () => ({
+				confirmationMessages: { title: 'Confirm', message: 'Go?' }
+			}),
+			invoke: async (invocation) => {
+				receivedInvocation = invocation;
+				return { content: [{ kind: 'text', value: 'ok' }] };
+			},
+		});
+
+		const sessionId = 'sessionId-no-custom-btn';
+		const capture: { invocation?: any } = {};
+		stubGetSession(chatService, sessionId, { requestId: 'requestId-no-custom-btn', capture });
+
+		const dto = tool.makeDto({ x: 1 }, { sessionId });
+
+		const promise = service.invokeTool(dto, async () => 0, CancellationToken.None);
+		const published = await waitForPublishedInvocation(capture);
+		assert.ok(published);
+
+		IChatToolInvocation.confirmWith(published, { type: ToolConfirmKind.UserAction });
+		const result = await promise;
+		assert.strictEqual(receivedInvocation?.selectedCustomButton, undefined);
+		assert.strictEqual(result.content[0].value, 'ok');
+	});
+
+	test('confirmationMessages with customButtons disables allowAutoConfirm', async () => {
+		const tool = registerToolForTest(service, store, 'testToolCustomBtnNoAuto', {
+			prepareToolInvocation: async () => ({
+				confirmationMessages: {
+					title: 'Confirm',
+					message: 'Choose',
+					customButtons: ['Yes', 'No'],
+					allowAutoConfirm: false,
+				}
+			}),
+			invoke: async () => ({ content: [{ kind: 'text', value: 'done' }] }),
+		});
+
+		const sessionId = 'sessionId-custom-noauto';
+		const capture: { invocation?: any } = {};
+		stubGetSession(chatService, sessionId, { requestId: 'requestId-custom-noauto', capture });
+
+		const dto = tool.makeDto({ x: 1 }, { sessionId });
+
+		const promise = service.invokeTool(dto, async () => 0, CancellationToken.None);
+		const published = await waitForPublishedInvocation(capture);
+		assert.ok(published, 'expected ChatToolInvocation to be published');
+		assert.deepStrictEqual(published.confirmationMessages?.customButtons, ['Yes', 'No']);
+
+		IChatToolInvocation.confirmWith(published, { type: ToolConfirmKind.UserAction, selectedButton: 'Yes' });
+		await promise;
+	});
+
 	test('cancel tool call', async () => {
 		const toolBarrier = new Barrier();
 		const tool = registerToolForTest(service, store, 'testTool', {
