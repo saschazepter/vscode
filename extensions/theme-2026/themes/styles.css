@@ -37,9 +37,12 @@
 
 /* Activity Bar */
 .monaco-workbench .part.activitybar {
-	box-shadow: var(--shadow-md);
 	z-index: 50;
 	position: relative;
+}
+
+.monaco-workbench.nosidebar .part.activitybar {
+	box-shadow: var(--shadow-md);
 }
 
 .monaco-workbench.activitybar-right .part.activitybar {
@@ -59,7 +62,7 @@
 
 .monaco-workbench .part.auxiliarybar {
 	box-shadow: var(--shadow-md);
-	z-index: 40;
+	z-index: 35;
 	position: relative;
 }
 
@@ -82,7 +85,7 @@
 /* Panel */
 .monaco-workbench .part.panel {
 	box-shadow: var(--shadow-md);
-	z-index: 35;
+	/* z-index: 35; */
 	position: relative;
 }
 
@@ -100,15 +103,19 @@
 
 /* Sashes - ensure they extend full height and are above other panels */
 .monaco-workbench .monaco-sash {
-	z-index: 45;
+	z-index: 35;
 }
 
 .monaco-workbench .monaco-sash.vertical {
+	z-index: 40;
+}
+
+.monaco-workbench .monaco-sash.vertical:nth-child(2) {
 	z-index: 45;
 }
 
 .monaco-workbench .monaco-sash.horizontal {
-	z-index: 45;
+	z-index: 35;
 }
 
 /* Editor */
@@ -159,13 +166,6 @@
 	& > * {
 		opacity: 0.3;
 	}
-}
-
-/* Status Bar */
-.monaco-workbench .part.statusbar {
-	box-shadow: var(--shadow-md);
-	z-index: 55;
-	position: relative;
 }
 
 /* Quick Input (Command Palette) */
@@ -608,9 +608,9 @@
 
 /* Notebook */
 
-.monaco-workbench .notebookOverlay.notebook-editor {
+/* .monaco-workbench .notebookOverlay.notebook-editor {
 	z-index: 35 !important;
-}
+} */
 
 .monaco-workbench .notebookOverlay .monaco-list-row .cell-editor-part:before {
 	box-shadow: inset var(--shadow-sm);

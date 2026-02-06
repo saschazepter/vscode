@@ -17,13 +17,17 @@ import {
 	HookCommandResultKind,
 	IHookCommandInput,
 	IHookCommandResult,
+	IPostToolUseCommandInput,
 	IPreToolUseCommandInput
 } from './hooksCommandTypes.js';
 import {
 	commonHookOutputValidator,
 	IHookResult,
+	IPostToolUseCallerInput,
+	IPostToolUseHookResult,
 	IPreToolUseCallerInput,
 	IPreToolUseHookResult,
+	postToolUseOutputValidator,
 	preToolUseOutputValidator
 } from './hooksTypes.js';
 
@@ -74,6 +78,14 @@ export interface IHooksExecutionService {
 	 * Returns a combined result with common fields and permission decision.
 	 */
 	executePreToolUseHook(sessionResource: URI, input: IPreToolUseCallerInput, token?: CancellationToken): Promise<IPreToolUseHookResult | undefined>;
+
+	/**
+	 * Execute postToolUse hooks with typed input and validated output.
+	 * Called after a tool completes successfully. The execution service builds the full hook input
+	 * from the caller input plus session context.
+	 * Returns a combined result with decision and additional context.
+	 */
+	executePostToolUseHook(sessionResource: URI, input: IPostToolUseCallerInput, token?: CancellationToken): Promise<IPostToolUseHookResult | undefined>;
 }
 
 /**
@@ -284,7 +296,6 @@ export class HooksExecutionService implements IHooksExecutionService {
 	}
 
 	async executePreToolUseHook(sessionResource: URI, input: IPreToolUseCallerInput, token?: CancellationToken): Promise<IPreToolUseHookResult | undefined> {
-		// Convert camelCase caller input to snake_case for external command
 		const toolSpecificInput: IPreToolUseCommandInput = {
 			tool_name: input.toolName,
 			tool_input: input.toolInput,
@@ -341,5 +352,67 @@ export class HooksExecutionService implements IHooksExecutionService {
 
 		// Return with priority: ask > allow > undefined
 		return lastAskResult ?? lastAllowResult;
+	}
+
+	async executePostToolUseHook(sessionResource: URI, input: IPostToolUseCallerInput, token?: CancellationToken): Promise<IPostToolUseHookResult | undefined> {
+		// Check if there are PostToolUse hooks registered before doing any work stringifying tool results
+		const hooks = this.getHooksForSession(sessionResource);
+		const hookCommands = hooks?.[HookType.PostToolUse];
+		if (!hookCommands || hookCommands.length === 0) {
+			return undefined;
+		}
+
+		// Lazily render tool response text only when hooks are registered
+		const toolResponseText = input.getToolResponseText();
+
+		const toolSpecificInput: IPostToolUseCommandInput = {
+			tool_name: input.toolName,
+			tool_input: input.toolInput,
+			tool_response: toolResponseText,
+			tool_use_id: input.toolCallId,
+		};
+
+		const results = await this.executeHook(HookType.PostToolUse, sessionResource, {
+			input: toolSpecificInput,
+			token: token ?? CancellationToken.None,
+		});
+
+		// Collect results - if any hook blocks, return it
+		let lastResultWithContext: IPostToolUseHookResult | undefined;
+		for (const result of results) {
+			if (result.success && typeof result.output === 'object' && result.output !== null) {
+				const validationResult = postToolUseOutputValidator.validate(result.output);
+				if (!validationResult.error) {
+					const validated = validationResult.content;
+
+					// Validate hookEventName if present
+					if (validated.hookSpecificOutput?.hookEventName !== undefined && validated.hookSpecificOutput.hookEventName !== HookType.PostToolUse) {
+						this._logService.warn(`[HooksExecutionService] postToolUse hook returned invalid hookEventName '${validated.hookSpecificOutput.hookEventName}', expected '${HookType.PostToolUse}'`);
+						continue;
+					}
+
+					const postToolUseResult: IPostToolUseHookResult = {
+						...result,
+						decision: validated.decision,
+						reason: validated.reason,
+						additionalContext: validated.hookSpecificOutput?.additionalContext,
+					};
+
+					// If any hook blocks, return immediately with that block
+					if (validated.decision === 'block') {
+						return postToolUseResult;
+					}
+
+					// Track last result that has additional context
+					if (validated.hookSpecificOutput?.additionalContext) {
+						lastResultWithContext = postToolUseResult;
+					}
+				} else {
+					this._logService.warn(`[HooksExecutionService] postToolUse hook output validation failed: ${validationResult.error.message}`);
+				}
+			}
+		}
+
+		return lastResultWithContext;
 	}
 }
