@@ -67,7 +67,7 @@ export class NodeExtHostHooks implements IExtHostHooks {
 		const effectiveCommand = resolveEffectiveCommand(hook as Parameters<typeof resolveEffectiveCommand>[0]);
 		if (!effectiveCommand) {
 			return Promise.resolve({
-				kind: HookCommandResultKind.Error,
+				kind: HookCommandResultKind.NonBlockingError,
 				result: 'No command specified for the current platform'
 			});
 		}
@@ -168,9 +168,12 @@ export class NodeExtHostHooks implements IExtHostHooks {
 						// Keep as string if not valid JSON
 					}
 					resolve({ kind: HookCommandResultKind.Success, result });
-				} else {
-					// Error
+				} else if (code === 2) {
+					// Blocking error - show stderr to model and block tool call
 					resolve({ kind: HookCommandResultKind.Error, result: stderrStr });
+				} else {
+					// Non-blocking error - show stderr to user only, continue with tool call
+					resolve({ kind: HookCommandResultKind.NonBlockingError, result: stderrStr });
 				}
 			});
 

@@ -190,10 +190,21 @@ export class HooksExecutionService implements IHooksExecutionService {
 	}
 
 	private _toInternalResult(commandResult: IHookCommandResult): IHookResult {
-		if (commandResult.kind !== HookCommandResultKind.Success) {
+		if (commandResult.kind === HookCommandResultKind.Error) {
+			// Blocking error - show to model and block tool call
 			return this._createErrorResult(
 				typeof commandResult.result === 'string' ? commandResult.result : JSON.stringify(commandResult.result)
 			);
+		}
+
+		if (commandResult.kind === HookCommandResultKind.NonBlockingError) {
+			// Non-blocking error - show to user only, continue with tool call
+			const errorMessage = typeof commandResult.result === 'string' ? commandResult.result : JSON.stringify(commandResult.result);
+			return {
+				output: undefined,
+				messageForUser: errorMessage,
+				success: true,
+			};
 		}
 
 		// For string results, no common fields to extract
@@ -236,7 +247,9 @@ export class HooksExecutionService implements IHooksExecutionService {
 	}
 
 	private _logCommandResult(requestId: number, hookType: HookTypeValue, result: IHookCommandResult, elapsed: number): void {
-		const resultKindStr = result.kind === HookCommandResultKind.Success ? 'Success' : 'Error';
+		const resultKindStr = result.kind === HookCommandResultKind.Success ? 'Success'
+			: result.kind === HookCommandResultKind.NonBlockingError ? 'NonBlockingError'
+				: 'Error';
 		const resultStr = typeof result.result === 'string' ? result.result : JSON.stringify(result.result);
 		const hasOutput = resultStr.length > 0 && resultStr !== '{}' && resultStr !== '[]';
 		if (hasOutput) {
