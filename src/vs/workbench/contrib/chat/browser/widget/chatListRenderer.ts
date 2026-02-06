@@ -965,7 +965,8 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 			((lastPart.kind === 'toolInvocation' || lastPart.kind === 'toolInvocationSerialized') && (IChatToolInvocation.isComplete(lastPart) || lastPart.presentation === 'hidden')) ||
 			((lastPart.kind === 'textEditGroup' || lastPart.kind === 'notebookEditGroup') && lastPart.done && !partsToRender.some(part => part.kind === 'toolInvocation' && !IChatToolInvocation.isComplete(part))) ||
 			(lastPart.kind === 'progressTask' && lastPart.deferred.isSettled) ||
-			lastPart.kind === 'mcpServersStarting'
+			lastPart.kind === 'mcpServersStarting' ||
+			lastPart.kind === 'hook'
 		) {
 			return true;
 		}
@@ -1933,8 +1934,10 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 	}
 
 	private renderHookPart(hookPart: IChatHookPart, context: IChatContentPartRenderContext): IChatContentPart {
-		// render nothing for now, it can be noisy
-		// return this.instantiationService.createInstance(ChatHookContentPart, hookPart, context);
+		// render nothing for now
+		// if (hookPart.stopReason || hookPart.systemMessage) {
+		// 	return this.instantiationService.createInstance(ChatHookContentPart, hookPart, context);
+		// }
 		return this.renderNoContent(other => other.kind === 'hook' && other.hookType === hookPart.hookType);
 	}
 

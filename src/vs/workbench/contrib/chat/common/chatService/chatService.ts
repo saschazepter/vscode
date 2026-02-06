@@ -422,11 +422,6 @@ export interface IChatThinkingPart {
 }
 
 /**
- * Hook types that can be reported in the chat UI.
- */
-export type ChatHookType = HookTypeValue;
-
-/**
  * A progress part representing the execution result of a hook.
  * Aligned with the hook output JSON structure: { stopReason, systemMessage, hookSpecificOutput }.
  * If {@link stopReason} is set, the hook blocked/denied the operation.
@@ -434,7 +429,7 @@ export type ChatHookType = HookTypeValue;
 export interface IChatHookPart {
 	kind: 'hook';
 	/** The type of hook that was executed */
-	hookType: ChatHookType;
+	hookType: HookTypeValue;
 	/** If set, the hook blocked processing. This message is shown to the user. */
 	stopReason?: string;
 	/** Warning/system message from the hook, shown to the user */

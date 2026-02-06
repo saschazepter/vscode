@@ -7,15 +7,15 @@ import { $ } from '../../../../../../base/browser/dom.js';
 import { Codicon } from '../../../../../../base/common/codicons.js';
 import { localize } from '../../../../../../nls.js';
 import { IHoverService } from '../../../../../../platform/hover/browser/hover.js';
-import { ChatHookType, IChatHookPart } from '../../../common/chatService/chatService.js';
+import { IChatHookPart } from '../../../common/chatService/chatService.js';
 import { IChatRendererContent } from '../../../common/model/chatViewModel.js';
-import { HOOK_TYPES } from '../../../common/promptSyntax/hookSchema.js';
+import { HOOK_TYPES, HookTypeValue } from '../../../common/promptSyntax/hookSchema.js';
 import { ChatTreeItem } from '../../chat.js';
 import { ChatCollapsibleContentPart } from './chatCollapsibleContentPart.js';
 import { IChatContentPart, IChatContentPartRenderContext } from './chatContentParts.js';
 import './media/chatHookContentPart.css';
 
-function getHookTypeLabel(hookType: ChatHookType): string {
+function getHookTypeLabel(hookType: HookTypeValue): string {
 	return HOOK_TYPES.find(hook => hook.id === hookType)?.label ?? hookType;
 }
 
@@ -31,9 +31,7 @@ export class ChatHookContentPart extends ChatCollapsibleContentPart implements I
 		const isWarning = !!hookPart.systemMessage;
 		const title = isStopped
 			? localize('hook.title.stopped', "Blocked by {0} hook", hookTypeLabel)
-			: isWarning
-				? localize('hook.title.warning', "Warning from {0} hook", hookTypeLabel)
-				: localize('hook.title.continued', "{0} hook ran successfully", hookTypeLabel);
+			: localize('hook.title.warning', "Warning from {0} hook", hookTypeLabel);
 
 		super(title, context, undefined, hoverService);
 
