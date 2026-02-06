@@ -440,6 +440,17 @@ Each agent session part uses separate storage keys to avoid conflicts with regul
 | Panel | Placeholders | `workbench.agentsession.panel.placeholderPanels` |
 | Panel | Workspace state | `workbench.agentsession.panel.viewContainersWorkspaceState` |
 
+### 9.5 Part Borders
+
+Each part manages its own border styling via the `updateStyles()` method. Borders are applied selectively based on grid position to avoid visual duplication:
+
+| Part | Border | Color Token | Notes |
+|------|--------|-------------|-------|
+| Sidebar | Right edge | `SIDE_BAR_BORDER` / `contrastBorder` | Separates sidebar from right section |
+| Chat Bar | None | — | No borders since it's centered in the grid between sidebar and auxiliary bar |
+| Auxiliary Bar | Left edge | `SIDE_BAR_BORDER` / `contrastBorder` | Separates from chat bar |
+| Panel | Top edge | `PANEL_BORDER` / `contrastBorder` | Separates from chat bar and auxiliary bar above |
+
 ---
 
 ## 10. Workbench Contributions

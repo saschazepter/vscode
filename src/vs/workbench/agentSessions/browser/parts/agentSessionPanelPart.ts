@@ -116,13 +116,9 @@ export class AgentSessionPanelPart extends AbstractPaneCompositePart {
 		const container = assertReturnsDefined(this.getContainer());
 		container.style.backgroundColor = this.getColor(PANEL_BACKGROUND) || '';
 		const borderColor = this.getColor(PANEL_BORDER) || this.getColor(contrastBorder) || '';
-		container.style.borderLeftColor = borderColor;
-		container.style.borderRightColor = borderColor;
-		container.style.borderBottomColor = borderColor;
-
-		if (this.titleArea) {
-			this.titleArea.style.borderTopColor = this.getColor(PANEL_BORDER) || this.getColor(contrastBorder) || '';
-		}
+		container.style.borderTopColor = borderColor;
+		container.style.borderTopStyle = borderColor ? 'solid' : '';
+		container.style.borderTopWidth = borderColor ? '1px' : '';
 	}
 
 	protected getCompositeBarOptions(): IPaneCompositeBarOptions {

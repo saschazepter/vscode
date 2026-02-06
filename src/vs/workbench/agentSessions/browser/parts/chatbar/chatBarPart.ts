@@ -10,13 +10,12 @@ import { IInstantiationService } from '../../../../../platform/instantiation/com
 import { IKeybindingService } from '../../../../../platform/keybinding/common/keybinding.js';
 import { INotificationService } from '../../../../../platform/notification/common/notification.js';
 import { IStorageService } from '../../../../../platform/storage/common/storage.js';
-import { contrastBorder } from '../../../../../platform/theme/common/colorRegistry.js';
 import { IThemeService } from '../../../../../platform/theme/common/themeService.js';
 import { ActiveChatBarContext, ChatBarFocusContext } from '../../../../common/contextkeys.js';
-import { ACTIVITY_BAR_BADGE_BACKGROUND, ACTIVITY_BAR_BADGE_FOREGROUND, PANEL_ACTIVE_TITLE_BORDER, PANEL_ACTIVE_TITLE_FOREGROUND, PANEL_DRAG_AND_DROP_BORDER, PANEL_INACTIVE_TITLE_FOREGROUND, SIDE_BAR_BACKGROUND, SIDE_BAR_BORDER, SIDE_BAR_TITLE_BORDER, SIDE_BAR_FOREGROUND } from '../../../../common/theme.js';
+import { ACTIVITY_BAR_BADGE_BACKGROUND, ACTIVITY_BAR_BADGE_FOREGROUND, PANEL_ACTIVE_TITLE_BORDER, PANEL_ACTIVE_TITLE_FOREGROUND, PANEL_DRAG_AND_DROP_BORDER, PANEL_INACTIVE_TITLE_FOREGROUND, SIDE_BAR_BACKGROUND, SIDE_BAR_TITLE_BORDER, SIDE_BAR_FOREGROUND } from '../../../../common/theme.js';
 import { IViewDescriptorService } from '../../../../common/views.js';
 import { IExtensionService } from '../../../../services/extensions/common/extensions.js';
-import { IWorkbenchLayoutService, Parts, Position } from '../../../../services/layout/browser/layoutService.js';
+import { IWorkbenchLayoutService, Parts } from '../../../../services/layout/browser/layoutService.js';
 import { HoverPosition } from '../../../../../base/browser/ui/hover/hoverWidget.js';
 import { assertReturnsDefined } from '../../../../../base/common/types.js';
 import { LayoutPriority } from '../../../../../base/browser/ui/splitview/splitview.js';
@@ -79,7 +78,7 @@ export class ChatBarPart extends AbstractPaneCompositePart {
 			{
 				hasTitle: false,
 				trailingSeparator: true,
-				borderWidth: () => (this.getColor(SIDE_BAR_BORDER) || this.getColor(contrastBorder)) ? 1 : 0,
+				borderWidth: () => 0,
 			},
 			ChatBarPart.activeViewSettingsKey,
 			ActiveChatBarContext.bindTo(contextKeyService),
@@ -108,19 +107,7 @@ export class ChatBarPart extends AbstractPaneCompositePart {
 
 		const container = assertReturnsDefined(this.getContainer());
 		container.style.backgroundColor = this.getColor(SIDE_BAR_BACKGROUND) || '';
-		const borderColor = this.getColor(SIDE_BAR_BORDER) || this.getColor(contrastBorder);
-		const isPositionLeft = this.layoutService.getSideBarPosition() === Position.RIGHT;
-
 		container.style.color = this.getColor(SIDE_BAR_FOREGROUND) || '';
-
-		container.style.borderLeftColor = borderColor ?? '';
-		container.style.borderRightColor = borderColor ?? '';
-
-		container.style.borderLeftStyle = borderColor && !isPositionLeft ? 'solid' : 'none';
-		container.style.borderRightStyle = borderColor && isPositionLeft ? 'solid' : 'none';
-
-		container.style.borderLeftWidth = borderColor && !isPositionLeft ? '1px' : '0px';
-		container.style.borderRightWidth = borderColor && isPositionLeft ? '1px' : '0px';
 	}
 
 	protected getCompositeBarOptions(): IPaneCompositeBarOptions {
