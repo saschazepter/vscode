@@ -337,11 +337,23 @@ export class SetupAgent extends Disposable implements IChatAgentImplementation {
 					])
 				]);
 
-				if (ready === 'timedout' || ready === 'panelGuidance') {
+				if (ready === 'panelGuidance') {
+					const warningMessage = localize('chatTookLongWarningExtension', "Please try again.");
+
+					progress({
+						kind: 'markdownContent',
+						content: new MarkdownString(warningMessage)
+					});
+
+					// This means Chat is unhealthy and we cannot retry the
+					// request. Signal this to the outside via an event.
+					this._onUnresolvableError.fire();
+					return;
+				}
+
+				if (ready === 'timedout') {
 					let warningMessage: string;
-					if (ready === 'panelGuidance') {
-						warningMessage = localize('chatTookLongWarningExtension', "Please try again.");
-					} else if (this.chatEntitlementService.anonymous) {
+					if (this.chatEntitlementService.anonymous) {
 						warningMessage = localize('chatTookLongWarningAnonymous', "Chat took too long to get ready. Please ensure that the extension `{0}` is installed and enabled. Click restart to try again if this issue persists.", defaultChat.chatExtensionId);
 					} else {
 						warningMessage = localize('chatTookLongWarning', "Chat took too long to get ready. Please ensure you are signed in to {0} and that the extension `{1}` is installed and enabled. Click restart to try again if this issue persists.", defaultChat.provider.default.name, defaultChat.chatExtensionId);
@@ -447,20 +459,18 @@ export class SetupAgent extends Disposable implements IChatAgentImplementation {
 					});
 
 					progress({
-						kind: ready === 'panelGuidance' ? 'markdownContent' : 'warning',
+						kind: 'warning',
 						content: new MarkdownString(warningMessage)
 					});
 
-					if (ready !== 'panelGuidance') {
-						progress({
-							kind: 'command',
-							command: {
-								id: SetupAgent.CHAT_RETRY_COMMAND_ID,
-								title: localize('retryChat', "Restart"),
-								arguments: [requestModel.session.sessionResource]
-							}
-						});
-					}
+					progress({
+						kind: 'command',
+						command: {
+							id: SetupAgent.CHAT_RETRY_COMMAND_ID,
+							title: localize('retryChat', "Restart"),
+							arguments: [requestModel.session.sessionResource]
+						}
+					});
 
 					// This means Chat is unhealthy and we cannot retry the
 					// request. Signal this to the outside via an event.
