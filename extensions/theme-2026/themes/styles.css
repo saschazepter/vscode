@@ -656,15 +656,16 @@
 
 /* Modal overlays - frosted glass backdrop */
 .monaco-dialog-modal-block.dimmed {
-	background: rgba(0, 0, 0, 0.2);
+	background: color-mix(in srgb, var(--vscode-editor-background) 60%, transparent) !important;
 	backdrop-filter: blur(8px);
 	-webkit-backdrop-filter: blur(8px);
 }
 
 .monaco-modal-editor-block.dimmed {
-	background: rgba(0, 0, 0, 0.2);
+	background: color-mix(in srgb, var(--vscode-editor-background) 60%, transparent) !important;
 	backdrop-filter: blur(8px);
 	-webkit-backdrop-filter: blur(8px);
+	z-index: 60;
 }
 
 .monaco-dialog-modal-block .dialog-shadow {
