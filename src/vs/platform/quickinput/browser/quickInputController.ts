@@ -880,7 +880,7 @@ export class QuickInputController extends Disposable {
 				// Beware:
 				// We need to add some extra pixels to the height to account for the input and padding.
 				const containerHeight = Math.floor(listHeight) + 6 + 26 + 16;
-				const { top, left, right, bottom, anchorAlignment, anchorPosition } = layout2d(container, { width, height: containerHeight }, anchor);
+				const { top, left, right, bottom, anchorAlignment, anchorPosition } = layout2d(container, { width, height: containerHeight }, anchor, { anchorPosition: AnchorPosition.ABOVE });
 
 				if (anchorAlignment === AnchorAlignment.RIGHT) {
 					style.right = `${right}px`;
@@ -890,7 +890,7 @@ export class QuickInputController extends Disposable {
 					style.right = 'initial';
 				}
 
-				if (anchorPosition === AnchorPosition.BELOW) {
+				if (anchorPosition === AnchorPosition.ABOVE) {
 					style.bottom = `${bottom}px`;
 					style.top = 'initial';
 				} else {

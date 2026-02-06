@@ -107,14 +107,14 @@ export interface ILayout2DResult {
 
 export function layout2d(viewport: IRect, view: ISize, anchor: IRect, options?: ILayout2DOptions): ILayout2DResult {
 	let anchorAlignment = options?.anchorAlignment ?? AnchorAlignment.LEFT;
-	let anchorPosition = options?.anchorPosition ?? AnchorPosition.ABOVE;
+	let anchorPosition = options?.anchorPosition ?? AnchorPosition.BELOW;
 	const anchorAxisAlignment = options?.anchorAxisAlignment ?? AnchorAxisAlignment.VERTICAL;
 
 	let top: number;
 	let left: number;
 
 	if (anchorAxisAlignment === AnchorAxisAlignment.VERTICAL) {
-		const verticalAnchor: ILayoutAnchor = { offset: anchor.top - viewport.top, size: anchor.height, position: anchorPosition === AnchorPosition.BELOW ? LayoutAnchorPosition.After : LayoutAnchorPosition.Before };
+		const verticalAnchor: ILayoutAnchor = { offset: anchor.top - viewport.top, size: anchor.height, position: anchorPosition === AnchorPosition.BELOW ? LayoutAnchorPosition.Before : LayoutAnchorPosition.After };
 		const horizontalAnchor: ILayoutAnchor = { offset: anchor.left, size: anchor.width, position: anchorAlignment === AnchorAlignment.LEFT ? LayoutAnchorPosition.Before : LayoutAnchorPosition.After, mode: LayoutAnchorMode.ALIGN };
 
 		const verticalLayoutResult = layout(viewport.height, view.height, verticalAnchor);
@@ -137,7 +137,7 @@ export function layout2d(viewport: IRect, view: ISize, anchor: IRect, options?: 
 		}
 	} else {
 		const horizontalAnchor: ILayoutAnchor = { offset: anchor.left, size: anchor.width, position: anchorAlignment === AnchorAlignment.LEFT ? LayoutAnchorPosition.Before : LayoutAnchorPosition.After };
-		const verticalAnchor: ILayoutAnchor = { offset: anchor.top, size: anchor.height, position: anchorPosition === AnchorPosition.BELOW ? LayoutAnchorPosition.After : LayoutAnchorPosition.Before, mode: LayoutAnchorMode.ALIGN };
+		const verticalAnchor: ILayoutAnchor = { offset: anchor.top, size: anchor.height, position: anchorPosition === AnchorPosition.BELOW ? LayoutAnchorPosition.Before : LayoutAnchorPosition.After, mode: LayoutAnchorMode.ALIGN };
 
 		const horizontalLayoutResult = layout(viewport.width, view.width, horizontalAnchor);
 		left = horizontalLayoutResult.position;
