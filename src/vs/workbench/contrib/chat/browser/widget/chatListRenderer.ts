@@ -107,6 +107,7 @@ import { RunSubagentTool } from '../../common/tools/builtinTools/runSubagentTool
 import { isEqual } from '../../../../../base/common/resources.js';
 import { IChatTipService } from '../chatTipService.js';
 import { IAccessibilityService } from '../../../../../platform/accessibility/common/accessibility.js';
+import { ChatPendingDragController } from './chatPendingDragAndDrop.js';
 
 const $ = dom.$;
 
@@ -123,6 +124,9 @@ export interface IChatListItemTemplate {
 	 * Element used to track whether the template is mounted in the DOM.
 	 */
 	renderedPartsMounted?: boolean;
+
+	/** Drag handle element for reordering pending requests, if currently rendered. */
+	dragHandle?: HTMLElement;
 
 	readonly rowContainer: HTMLElement;
 	readonly titleToolbar?: MenuWorkbenchToolBar;
@@ -276,6 +280,12 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 				carousels.clear();
 			}
 		}));
+	}
+
+	private _pendingDragController: ChatPendingDragController | undefined;
+
+	set pendingDragController(controller: ChatPendingDragController) {
+		this._pendingDragController = controller;
 	}
 
 	public updateOptions(options: IChatListItemRendererOptions): void {
@@ -689,8 +699,12 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		templateData.rowContainer.classList.toggle('editing-session', location === ChatAgentLocation.Chat);
 		templateData.rowContainer.classList.toggle('interactive-request', isRequestVM(element));
 		templateData.rowContainer.classList.toggle('interactive-response', isResponseVM(element));
-		// Clear pending-related classes from previous renders
+		// Clear pending-related classes and drag handle from previous renders
 		templateData.rowContainer.classList.remove('pending-item', 'pending-divider', 'pending-request');
+		templateData.dragHandle?.remove();
+		templateData.dragHandle = undefined;
+		delete templateData.rowContainer.dataset.pendingRequestId;
+		delete templateData.rowContainer.dataset.pendingKind;
 		const progressMessageAtBottomOfResponse = checkModeOption(this.delegate.currentChatMode(), this.rendererOptions.progressMessageAtBottomOfResponse);
 		templateData.rowContainer.classList.toggle('show-detail-progress', isResponseVM(element) && !element.isComplete && !element.progressMessages.length && !progressMessageAtBottomOfResponse);
 		if (!this.rendererOptions.noHeader) {
@@ -988,6 +1002,20 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 	private renderChatRequest(element: IChatRequestViewModel, index: number, templateData: IChatListItemTemplate) {
 		templateData.rowContainer.classList.toggle('chat-response-loading', false);
 		templateData.rowContainer.classList.toggle('pending-request', !!element.pendingKind);
+
+		if (element.pendingKind && this._pendingDragController) {
+			templateData.rowContainer.dataset.pendingRequestId = element.id;
+			templateData.rowContainer.dataset.pendingKind = element.pendingKind;
+
+			const sameKindCount = (this.viewModel?.model.getPendingRequests() ?? []).filter(p => p.kind === element.pendingKind).length;
+			if (sameKindCount > 1) {
+				const handle = dom.$('.chat-pending-drag-handle' + ThemeIcon.asCSSSelector(Codicon.gripper));
+				templateData.rowContainer.prepend(handle);
+				templateData.dragHandle = handle;
+				this._pendingDragController.attachDragHandle(element, handle, templateData.rowContainer, templateData.elementDisposables);
+			}
+		}
+
 		if (element.id === this.viewModel?.editing?.id) {
 			this._onDidRerender.fire(templateData);
 		}

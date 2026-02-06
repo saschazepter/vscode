@@ -530,7 +530,7 @@ export type ConfirmedReason =
 	| { type: ToolConfirmKind.ConfirmationNotNeeded; reason?: string | IMarkdownString }
 	| { type: ToolConfirmKind.Setting; id: string }
 	| { type: ToolConfirmKind.LmServicePerTool; scope: 'session' | 'workspace' | 'profile' }
-	| { type: ToolConfirmKind.UserAction }
+	| { type: ToolConfirmKind.UserAction; selectedButton?: string }
 	| { type: ToolConfirmKind.Skipped };
 
 export interface IChatToolInvocation {
