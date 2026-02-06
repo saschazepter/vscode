@@ -779,7 +779,12 @@ export class QuickInputController extends Disposable {
 		this.controller = null;
 		this.onHideEmitter.fire();
 		if (container) {
-			container.style.display = 'none';
+			// Add exit animation class and delay hiding
+			container.classList.add('quick-input-widget-exiting');
+			setTimeout(() => {
+				container.classList.remove('quick-input-widget-exiting');
+				container.style.display = 'none';
+			}, 50);
 		}
 		if (!focusChanged) {
 			let currentElement = this.previousFocusElement;

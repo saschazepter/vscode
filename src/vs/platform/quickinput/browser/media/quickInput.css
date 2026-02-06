@@ -15,6 +15,18 @@
 	}
 }
 
+/* Fluent 2 Motion: Exit animation for quick input widget */
+@keyframes quickInputExit {
+	from {
+		opacity: 1;
+		transform: translateY(0) scale(1);
+	}
+	to {
+		opacity: 0;
+		transform: translateY(-8px) scale(0.98);
+	}
+}
+
 .quick-input-widget {
 	position: absolute;
 	width: 600px;
@@ -23,13 +35,19 @@
 	-webkit-app-region: no-drag;
 	border-radius: 8px;
 	/* Fluent 2 Motion: Entrance animation - fade + slide down + scale */
-	animation: quickInputEnter 350ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+	animation: quickInputEnter 200ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
 	will-change: transform, opacity;
+}
+
+/* Fluent 2 Motion: Exit animation class */
+.quick-input-widget.quick-input-widget-exiting {
+	animation: quickInputExit 50ms cubic-bezier(0.4, 0, 1, 1) forwards;
 }
 
 /* Respect reduced motion preference */
 @media (prefers-reduced-motion: reduce) {
-	.quick-input-widget {
+	.quick-input-widget,
+	.quick-input-widget.quick-input-widget-exiting {
 		animation: none;
 	}
 }

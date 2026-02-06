@@ -26,6 +26,29 @@
 	}
 }
 
+/* Fluent 2 Motion: Auxiliary bar exit animation */
+@keyframes auxiliaryBarExitToLeft {
+	from {
+		opacity: 1;
+		transform: translateX(0);
+	}
+	to {
+		opacity: 0;
+		transform: translateX(-12px);
+	}
+}
+
+@keyframes auxiliaryBarExitToRight {
+	from {
+		opacity: 1;
+		transform: translateX(0);
+	}
+	to {
+		opacity: 0;
+		transform: translateX(12px);
+	}
+}
+
 .monaco-workbench.noauxiliarybar .part.auxiliarybar {
 	display: none !important;
 	visibility: hidden !important;
@@ -33,19 +56,32 @@
 
 /* Fluent 2 Motion: Apply entrance animation when auxiliary bar becomes visible */
 .monaco-workbench.auxiliarybar-animating .part.auxiliarybar.left {
-	animation: auxiliaryBarEnterFromLeft 400ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+	animation: auxiliaryBarEnterFromLeft 250ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
 	will-change: transform, opacity;
 }
 
 .monaco-workbench.auxiliarybar-animating .part.auxiliarybar.right {
-	animation: auxiliaryBarEnterFromRight 400ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+	animation: auxiliaryBarEnterFromRight 250ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+	will-change: transform, opacity;
+}
+
+/* Fluent 2 Motion: Exit animations when auxiliary bar is closing */
+.monaco-workbench.auxiliarybar-exiting .part.auxiliarybar.left {
+	animation: auxiliaryBarExitToLeft 80ms cubic-bezier(0.4, 0, 1, 1) forwards;
+	will-change: transform, opacity;
+}
+
+.monaco-workbench.auxiliarybar-exiting .part.auxiliarybar.right {
+	animation: auxiliaryBarExitToRight 80ms cubic-bezier(0.4, 0, 1, 1) forwards;
 	will-change: transform, opacity;
 }
 
 /* Respect reduced motion preference */
 @media (prefers-reduced-motion: reduce) {
 	.monaco-workbench.auxiliarybar-animating .part.auxiliarybar.left,
-	.monaco-workbench.auxiliarybar-animating .part.auxiliarybar.right {
+	.monaco-workbench.auxiliarybar-animating .part.auxiliarybar.right,
+	.monaco-workbench.auxiliarybar-exiting .part.auxiliarybar.left,
+	.monaco-workbench.auxiliarybar-exiting .part.auxiliarybar.right {
 		animation: none;
 	}
 }

@@ -48,6 +48,51 @@
 	}
 }
 
+/* Fluent 2 Motion: Panel exit animations */
+@keyframes panelExitToBottom {
+	from {
+		opacity: 1;
+		transform: translateY(0);
+	}
+	to {
+		opacity: 0;
+		transform: translateY(12px);
+	}
+}
+
+@keyframes panelExitToRight {
+	from {
+		opacity: 1;
+		transform: translateX(0);
+	}
+	to {
+		opacity: 0;
+		transform: translateX(12px);
+	}
+}
+
+@keyframes panelExitToLeft {
+	from {
+		opacity: 1;
+		transform: translateX(0);
+	}
+	to {
+		opacity: 0;
+		transform: translateX(-12px);
+	}
+}
+
+@keyframes panelExitToTop {
+	from {
+		opacity: 1;
+		transform: translateY(0);
+	}
+	to {
+		opacity: 0;
+		transform: translateY(-12px);
+	}
+}
+
 .monaco-workbench.nopanel .part.panel {
 	display: none !important;
 	visibility: hidden !important;
@@ -55,22 +100,22 @@
 
 /* Fluent 2 Motion: Apply entrance animation when panel becomes visible */
 .monaco-workbench.panel-animating .part.panel.bottom {
-	animation: panelEnterFromBottom 400ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+	animation: panelEnterFromBottom 250ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
 	will-change: transform, opacity;
 }
 
 .monaco-workbench.panel-animating .part.panel.right {
-	animation: panelEnterFromRight 400ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+	animation: panelEnterFromRight 250ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
 	will-change: transform, opacity;
 }
 
 .monaco-workbench.panel-animating .part.panel.left {
-	animation: panelEnterFromLeft 400ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+	animation: panelEnterFromLeft 250ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
 	will-change: transform, opacity;
 }
 
 .monaco-workbench.panel-animating .part.panel.top {
-	animation: panelEnterFromTop 400ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+	animation: panelEnterFromTop 250ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
 	will-change: transform, opacity;
 }
 
@@ -79,9 +124,34 @@
 	.monaco-workbench.panel-animating .part.panel.bottom,
 	.monaco-workbench.panel-animating .part.panel.right,
 	.monaco-workbench.panel-animating .part.panel.left,
-	.monaco-workbench.panel-animating .part.panel.top {
+	.monaco-workbench.panel-animating .part.panel.top,
+	.monaco-workbench.panel-exiting .part.panel.bottom,
+	.monaco-workbench.panel-exiting .part.panel.right,
+	.monaco-workbench.panel-exiting .part.panel.left,
+	.monaco-workbench.panel-exiting .part.panel.top {
 		animation: none;
 	}
+}
+
+/* Fluent 2 Motion: Exit animations when panel is closing */
+.monaco-workbench.panel-exiting .part.panel.bottom {
+	animation: panelExitToBottom 80ms cubic-bezier(0.4, 0, 1, 1) forwards;
+	will-change: transform, opacity;
+}
+
+.monaco-workbench.panel-exiting .part.panel.right {
+	animation: panelExitToRight 80ms cubic-bezier(0.4, 0, 1, 1) forwards;
+	will-change: transform, opacity;
+}
+
+.monaco-workbench.panel-exiting .part.panel.left {
+	animation: panelExitToLeft 80ms cubic-bezier(0.4, 0, 1, 1) forwards;
+	will-change: transform, opacity;
+}
+
+.monaco-workbench.panel-exiting .part.panel.top {
+	animation: panelExitToTop 80ms cubic-bezier(0.4, 0, 1, 1) forwards;
+	will-change: transform, opacity;
 }
 
 .monaco-workbench .part.panel.bottom .composite.title {

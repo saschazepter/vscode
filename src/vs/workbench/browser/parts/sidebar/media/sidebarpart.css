@@ -26,6 +26,29 @@
 	}
 }
 
+/* Fluent 2 Motion: Sidebar exit animation */
+@keyframes sidebarExitToLeft {
+	from {
+		opacity: 1;
+		transform: translateX(0);
+	}
+	to {
+		opacity: 0;
+		transform: translateX(-12px);
+	}
+}
+
+@keyframes sidebarExitToRight {
+	from {
+		opacity: 1;
+		transform: translateX(0);
+	}
+	to {
+		opacity: 0;
+		transform: translateX(12px);
+	}
+}
+
 .monaco-workbench.nosidebar > .part.sidebar {
 	display: none !important;
 	visibility: hidden !important;
@@ -33,19 +56,32 @@
 
 /* Fluent 2 Motion: Apply entrance animation when sidebar becomes visible */
 .monaco-workbench.sidebar-animating .part.sidebar.left {
-	animation: sidebarEnterFromLeft 400ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+	animation: sidebarEnterFromLeft 250ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
 	will-change: transform, opacity;
 }
 
 .monaco-workbench.sidebar-animating .part.sidebar.right {
-	animation: sidebarEnterFromRight 400ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+	animation: sidebarEnterFromRight 250ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+	will-change: transform, opacity;
+}
+
+/* Fluent 2 Motion: Exit animations when sidebar is closing */
+.monaco-workbench.sidebar-exiting .part.sidebar.left {
+	animation: sidebarExitToLeft 80ms cubic-bezier(0.4, 0, 1, 1) forwards;
+	will-change: transform, opacity;
+}
+
+.monaco-workbench.sidebar-exiting .part.sidebar.right {
+	animation: sidebarExitToRight 80ms cubic-bezier(0.4, 0, 1, 1) forwards;
 	will-change: transform, opacity;
 }
 
 /* Respect reduced motion preference */
 @media (prefers-reduced-motion: reduce) {
 	.monaco-workbench.sidebar-animating .part.sidebar.left,
-	.monaco-workbench.sidebar-animating .part.sidebar.right {
+	.monaco-workbench.sidebar-animating .part.sidebar.right,
+	.monaco-workbench.sidebar-exiting .part.sidebar.left,
+	.monaco-workbench.sidebar-exiting .part.sidebar.right {
 		animation: none;
 	}
 }

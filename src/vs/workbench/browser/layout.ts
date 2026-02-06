@@ -95,11 +95,14 @@ interface ILayoutState {
 enum LayoutClasses {
 	SIDEBAR_HIDDEN = 'nosidebar',
 	SIDEBAR_ANIMATING = 'sidebar-animating',
+	SIDEBAR_EXITING = 'sidebar-exiting',
 	MAIN_EDITOR_AREA_HIDDEN = 'nomaineditorarea',
 	PANEL_HIDDEN = 'nopanel',
 	PANEL_ANIMATING = 'panel-animating',
+	PANEL_EXITING = 'panel-exiting',
 	AUXILIARYBAR_HIDDEN = 'noauxiliarybar',
 	AUXILIARYBAR_ANIMATING = 'auxiliarybar-animating',
+	AUXILIARYBAR_EXITING = 'auxiliarybar-exiting',
 	STATUSBAR_HIDDEN = 'nostatusbar',
 	FULLSCREEN = 'fullscreen',
 	MAXIMIZED = 'maximized',
@@ -1865,38 +1868,67 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 			return; // return: leaving maximised auxiliary bar made this part visible
 		}
 
-		this.stateModel.setRuntimeValue(LayoutStateKeys.SIDEBAR_HIDDEN, hidden);
+		const wasHidden = !this.isVisible(Parts.SIDEBAR_PART);
 
-		// Adjust CSS
-		if (hidden) {
+		// Helper function to perform the actual hide operations
+		const performHide = () => {
+			this.mainContainer.classList.remove(LayoutClasses.SIDEBAR_EXITING);
 			this.mainContainer.classList.add(LayoutClasses.SIDEBAR_HIDDEN);
+
+			// Propagate to grid
+			this.workbenchGrid.setViewVisible(this.sideBarPartView, false);
+
+			// Hide the current active Viewlet if any
+			if (this.paneCompositeService.getActivePaneComposite(ViewContainerLocation.Sidebar)) {
+				this.paneCompositeService.hideActivePaneComposite(ViewContainerLocation.Sidebar);
+
+				if (!this.isAuxiliaryBarMaximized()) {
+					this.focusPanelOrEditor(); // do not auto focus when auxiliary bar is maximized
+				}
+			}
+		};
+
+		// Adjust CSS and handle animations
+		if (hidden) {
+			// Don't proceed if already hidden
+			if (wasHidden) {
+				return;
+			}
+
+			this.stateModel.setRuntimeValue(LayoutStateKeys.SIDEBAR_HIDDEN, hidden);
+
+			// Start exit animation before actually hiding
 			this.mainContainer.classList.remove(LayoutClasses.SIDEBAR_ANIMATING);
+			this.mainContainer.classList.add(LayoutClasses.SIDEBAR_EXITING);
+
+			// Delay the actual hiding to allow exit animation to play
+			setTimeout(performHide, 80);
 		} else {
+			// Don't proceed if already visible
+			if (!wasHidden) {
+				return;
+			}
+
 			this.mainContainer.classList.remove(LayoutClasses.SIDEBAR_HIDDEN);
+			this.mainContainer.classList.remove(LayoutClasses.SIDEBAR_EXITING);
+
+			this.stateModel.setRuntimeValue(LayoutStateKeys.SIDEBAR_HIDDEN, hidden);
+
+			// Propagate to grid
+			this.workbenchGrid.setViewVisible(this.sideBarPartView, true);
+
 			// Trigger entrance animation
 			this.mainContainer.classList.add(LayoutClasses.SIDEBAR_ANIMATING);
 			setTimeout(() => {
 				this.mainContainer.classList.remove(LayoutClasses.SIDEBAR_ANIMATING);
-			}, 400);
-		}
+			}, 250);
 
-		// Propagate to grid
-		this.workbenchGrid.setViewVisible(this.sideBarPartView, !hidden);
-
-		// If sidebar becomes hidden, also hide the current active Viewlet if any
-		if (hidden && this.paneCompositeService.getActivePaneComposite(ViewContainerLocation.Sidebar)) {
-			this.paneCompositeService.hideActivePaneComposite(ViewContainerLocation.Sidebar);
-
-			if (!this.isAuxiliaryBarMaximized()) {
-				this.focusPanelOrEditor(); // do not auto focus when auxiliary bar is maximized
-			}
-		}
-
-		// If sidebar becomes visible, show last active Viewlet or default viewlet
-		else if (!hidden && !this.paneCompositeService.getActivePaneComposite(ViewContainerLocation.Sidebar)) {
-			const viewletToOpen = this.paneCompositeService.getLastActivePaneCompositeId(ViewContainerLocation.Sidebar);
-			if (viewletToOpen) {
-				this.openViewContainer(ViewContainerLocation.Sidebar, viewletToOpen);
+			// Show last active Viewlet or default viewlet
+			if (!this.paneCompositeService.getActivePaneComposite(ViewContainerLocation.Sidebar)) {
+				const viewletToOpen = this.paneCompositeService.getLastActivePaneCompositeId(ViewContainerLocation.Sidebar);
+				if (viewletToOpen) {
+					this.openViewContainer(ViewContainerLocation.Sidebar, viewletToOpen);
+				}
 			}
 		}
 	}
@@ -2013,80 +2045,100 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 		const wasHidden = !this.isVisible(Parts.PANEL_PART);
 		const isPanelMaximized = this.isPanelMaximized();
 
-		this.stateModel.setRuntimeValue(LayoutStateKeys.PANEL_HIDDEN, hidden);
-
-		const panelOpensMaximized = this.panelOpensMaximized();
-
-		// Adjust CSS
-		if (hidden) {
+		// Helper function to perform the actual hide operations
+		const performHide = () => {
+			this.mainContainer.classList.remove(LayoutClasses.PANEL_EXITING);
 			this.mainContainer.classList.add(LayoutClasses.PANEL_HIDDEN);
+
+			// Propagate layout changes to grid
+			this.workbenchGrid.setViewVisible(this.panelPartView, false);
+
+			// Hide the current active panel if any
+			let focusEditor = false;
+			if (this.paneCompositeService.getActivePaneComposite(ViewContainerLocation.Panel)) {
+				this.paneCompositeService.hideActivePaneComposite(ViewContainerLocation.Panel);
+				if (
+					!isIOS &&						// do not auto focus on iOS (https://github.com/microsoft/vscode/issues/127832)
+					!this.isAuxiliaryBarMaximized()	// do not auto focus when auxiliary bar is maximized
+				) {
+					focusEditor = true;
+				}
+			}
+
+			// Remember whether the panel is maximized or not
+			this.stateModel.setRuntimeValue(LayoutStateKeys.PANEL_WAS_LAST_MAXIMIZED, isPanelMaximized);
+
+			if (focusEditor) {
+				this.editorGroupService.mainPart.activeGroup.focus(); // Pass focus to editor group if panel part is now hidden
+			}
+		};
+
+		// Adjust CSS and handle animations
+		if (hidden) {
+			// Don't proceed if we have already done this before
+			if (wasHidden) {
+				return;
+			}
+
+			this.stateModel.setRuntimeValue(LayoutStateKeys.PANEL_HIDDEN, hidden);
+
+			// If maximized and in process of hiding, unmaximize FIRST before
+			// changing visibility to prevent conflict with setEditorHidden
+			// which would force panel visible again (fixes #281772)
+			if (isPanelMaximized) {
+				this.toggleMaximizedPanel();
+			}
+
+			// Start exit animation before actually hiding
 			this.mainContainer.classList.remove(LayoutClasses.PANEL_ANIMATING);
+			this.mainContainer.classList.add(LayoutClasses.PANEL_EXITING);
+
+			// Delay the actual hiding to allow exit animation to play
+			setTimeout(performHide, 80);
 		} else {
+			// Don't proceed if we have already done this before
+			if (!wasHidden) {
+				return;
+			}
+
 			this.mainContainer.classList.remove(LayoutClasses.PANEL_HIDDEN);
+			this.mainContainer.classList.remove(LayoutClasses.PANEL_EXITING);
+
+			this.stateModel.setRuntimeValue(LayoutStateKeys.PANEL_HIDDEN, hidden);
+
+			const panelOpensMaximized = this.panelOpensMaximized();
+
+			// Propagate layout changes to grid
+			this.workbenchGrid.setViewVisible(this.panelPartView, true);
+
 			// Trigger entrance animation by adding animation class
 			this.mainContainer.classList.add(LayoutClasses.PANEL_ANIMATING);
 			// Remove animation class after animation completes to allow re-triggering
 			setTimeout(() => {
 				this.mainContainer.classList.remove(LayoutClasses.PANEL_ANIMATING);
-			}, 400);
-		}
+			}, 250);
 
-		// If maximized and in process of hiding, unmaximize FIRST before
-		// changing visibility to prevent conflict with setEditorHidden
-		// which would force panel visible again (fixes #281772)
-		if (hidden && isPanelMaximized) {
-			this.toggleMaximizedPanel();
-		}
+			// Show last active panel or default panel
+			if (!this.paneCompositeService.getActivePaneComposite(ViewContainerLocation.Panel)) {
+				let panelToOpen: string | undefined = this.paneCompositeService.getLastActivePaneCompositeId(ViewContainerLocation.Panel);
 
-		// Propagate layout changes to grid
-		this.workbenchGrid.setViewVisible(this.panelPartView, !hidden);
+				// verify that the panel we try to open has views before we default to it
+				// otherwise fall back to any view that has views still refs #111463
+				if (!panelToOpen || !this.hasViews(panelToOpen)) {
+					panelToOpen = this.viewDescriptorService
+						.getViewContainersByLocation(ViewContainerLocation.Panel)
+						.find(viewContainer => this.hasViews(viewContainer.id))?.id;
+				}
 
-		// If panel part becomes hidden, also hide the current active panel if any
-		let focusEditor = false;
-		if (hidden && this.paneCompositeService.getActivePaneComposite(ViewContainerLocation.Panel)) {
-			this.paneCompositeService.hideActivePaneComposite(ViewContainerLocation.Panel);
-			if (
-				!isIOS &&						// do not auto focus on iOS (https://github.com/microsoft/vscode/issues/127832)
-				!this.isAuxiliaryBarMaximized()	// do not auto focus when auxiliary bar is maximized
-			) {
-				focusEditor = true;
-			}
-		}
-
-		// If panel part becomes visible, show last active panel or default panel
-		else if (!hidden && !this.paneCompositeService.getActivePaneComposite(ViewContainerLocation.Panel)) {
-			let panelToOpen: string | undefined = this.paneCompositeService.getLastActivePaneCompositeId(ViewContainerLocation.Panel);
-
-			// verify that the panel we try to open has views before we default to it
-			// otherwise fall back to any view that has views still refs #111463
-			if (!panelToOpen || !this.hasViews(panelToOpen)) {
-				panelToOpen = this.viewDescriptorService
-					.getViewContainersByLocation(ViewContainerLocation.Panel)
-					.find(viewContainer => this.hasViews(viewContainer.id))?.id;
+				if (panelToOpen) {
+					this.openViewContainer(ViewContainerLocation.Panel, panelToOpen, !skipLayout);
+				}
 			}
 
-			if (panelToOpen) {
-				this.openViewContainer(ViewContainerLocation.Panel, panelToOpen, !skipLayout);
-			}
-		}
-
-		// Don't proceed if we have already done this before
-		if (wasHidden === hidden) {
-			return;
-		}
-
-		// If in process of showing, toggle whether or not panel is maximized
-		if (!hidden) {
+			// Toggle whether or not panel is maximized
 			if (!skipLayout && isPanelMaximized !== panelOpensMaximized) {
 				this.toggleMaximizedPanel();
 			}
-		} else {
-			// If in process of hiding, remember whether the panel is maximized or not
-			this.stateModel.setRuntimeValue(LayoutStateKeys.PANEL_WAS_LAST_MAXIMIZED, isPanelMaximized);
-		}
-
-		if (focusEditor) {
-			this.editorGroupService.mainPart.activeGroup.focus(); // Pass focus to editor group if panel part is now hidden
 		}
 	}
 
@@ -2216,44 +2268,73 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 			return; // return: leaving maximised auxiliary bar made this part hidden
 		}
 
-		this.stateModel.setRuntimeValue(LayoutStateKeys.AUXILIARYBAR_HIDDEN, hidden);
+		const wasHidden = !this.isVisible(Parts.AUXILIARYBAR_PART);
 
-		// Adjust CSS
-		if (hidden) {
+		// Helper function to perform the actual hide operations
+		const performHide = () => {
+			this.mainContainer.classList.remove(LayoutClasses.AUXILIARYBAR_EXITING);
 			this.mainContainer.classList.add(LayoutClasses.AUXILIARYBAR_HIDDEN);
+
+			// Propagate to grid
+			this.workbenchGrid.setViewVisible(this.auxiliaryBarPartView, false);
+
+			// Hide the current active pane composite if any
+			if (this.paneCompositeService.getActivePaneComposite(ViewContainerLocation.AuxiliaryBar)) {
+				this.paneCompositeService.hideActivePaneComposite(ViewContainerLocation.AuxiliaryBar);
+				this.focusPanelOrEditor();
+			}
+		};
+
+		// Adjust CSS and handle animations
+		if (hidden) {
+			// Don't proceed if already hidden
+			if (wasHidden) {
+				return;
+			}
+
+			this.stateModel.setRuntimeValue(LayoutStateKeys.AUXILIARYBAR_HIDDEN, hidden);
+
+			// Start exit animation before actually hiding
 			this.mainContainer.classList.remove(LayoutClasses.AUXILIARYBAR_ANIMATING);
+			this.mainContainer.classList.add(LayoutClasses.AUXILIARYBAR_EXITING);
+
+			// Delay the actual hiding to allow exit animation to play
+			setTimeout(performHide, 80);
 		} else {
+			// Don't proceed if already visible
+			if (!wasHidden) {
+				return;
+			}
+
 			this.mainContainer.classList.remove(LayoutClasses.AUXILIARYBAR_HIDDEN);
+			this.mainContainer.classList.remove(LayoutClasses.AUXILIARYBAR_EXITING);
+
+			this.stateModel.setRuntimeValue(LayoutStateKeys.AUXILIARYBAR_HIDDEN, hidden);
+
+			// Propagate to grid
+			this.workbenchGrid.setViewVisible(this.auxiliaryBarPartView, true);
+
 			// Trigger entrance animation
 			this.mainContainer.classList.add(LayoutClasses.AUXILIARYBAR_ANIMATING);
 			setTimeout(() => {
 				this.mainContainer.classList.remove(LayoutClasses.AUXILIARYBAR_ANIMATING);
-			}, 400);
-		}
+			}, 250);
 
-		// Propagate to grid
-		this.workbenchGrid.setViewVisible(this.auxiliaryBarPartView, !hidden);
+			// Show last active pane composite or default pane composite
+			if (!this.paneCompositeService.getActivePaneComposite(ViewContainerLocation.AuxiliaryBar)) {
+				let viewletToOpen: string | undefined = this.paneCompositeService.getLastActivePaneCompositeId(ViewContainerLocation.AuxiliaryBar);
 
-		// If auxiliary bar becomes hidden, also hide the current active pane composite if any
-		if (hidden && this.paneCompositeService.getActivePaneComposite(ViewContainerLocation.AuxiliaryBar)) {
-			this.paneCompositeService.hideActivePaneComposite(ViewContainerLocation.AuxiliaryBar);
-			this.focusPanelOrEditor();
-		}
+				// verify that the viewlet we try to open has views before we default to it
+				// otherwise fall back to any view that has views still refs #111463
+				if (!viewletToOpen || !this.hasViews(viewletToOpen)) {
+					viewletToOpen = this.viewDescriptorService
+						.getViewContainersByLocation(ViewContainerLocation.AuxiliaryBar)
+						.find(viewContainer => this.hasViews(viewContainer.id))?.id;
+				}
 
-		// If auxiliary bar becomes visible, show last active pane composite or default pane composite
-		else if (!hidden && !this.paneCompositeService.getActivePaneComposite(ViewContainerLocation.AuxiliaryBar)) {
-			let viewletToOpen: string | undefined = this.paneCompositeService.getLastActivePaneCompositeId(ViewContainerLocation.AuxiliaryBar);
-
-			// verify that the viewlet we try to open has views before we default to it
-			// otherwise fall back to any view that has views still refs #111463
-			if (!viewletToOpen || !this.hasViews(viewletToOpen)) {
-				viewletToOpen = this.viewDescriptorService
-					.getViewContainersByLocation(ViewContainerLocation.AuxiliaryBar)
-					.find(viewContainer => this.hasViews(viewContainer.id))?.id;
-			}
-
-			if (viewletToOpen) {
-				this.openViewContainer(ViewContainerLocation.AuxiliaryBar, viewletToOpen, !skipLayout);
+				if (viewletToOpen) {
+					this.openViewContainer(ViewContainerLocation.AuxiliaryBar, viewletToOpen, !skipLayout);
+				}
 			}
 		}
 	}
