@@ -7,7 +7,6 @@ import type { IExtendedConfiguration, IExtendedTelemetryItem, ITelemetryItem, IT
 import type { IChannelConfiguration, IXHROverride, PostChannel } from '@microsoft/1ds-post-js';
 import { importAMDNodeModule } from '../../../amdX.js';
 import { onUnexpectedError } from '../../../base/common/errors.js';
-import { Disposable } from '../../../base/common/lifecycle.js';
 import { mixin } from '../../../base/common/objects.js';
 import { isWeb } from '../../../base/common/platform.js';
 import { ITelemetryAppender, validateTelemetryData } from './telemetryUtils.js';
@@ -75,7 +74,7 @@ async function getClient(instrumentationKey: string, addInternalFlag?: boolean, 
 }
 
 // TODO @lramos15 maybe make more in line with src/vs/platform/telemetry/browser/appInsightsAppender.ts with caching support
-export abstract class AbstractOneDataSystemAppender extends Disposable implements ITelemetryAppender {
+export abstract class AbstractOneDataSystemAppender implements ITelemetryAppender {
 
 	protected _aiCoreOrKey: IAppInsightsCore | string | undefined;
 	private _asyncAiCore: Promise<IAppInsightsCore> | null;
@@ -87,10 +86,8 @@ export abstract class AbstractOneDataSystemAppender extends Disposable implement
 		private _eventPrefix: string,
 		private _defaultData: { [key: string]: unknown } | null,
 		iKeyOrClientFactory: string | (() => IAppInsightsCore), // allow factory function for testing
-		private _xhrOverride?: IXHROverride,
+		private _xhrOverride?: IXHROverride
 	) {
-		super();
-
 		if (!this._defaultData) {
 			this._defaultData = {};
 		}
@@ -132,7 +129,6 @@ export abstract class AbstractOneDataSystemAppender extends Disposable implement
 		if (!this._aiCoreOrKey) {
 			return;
 		}
-
 		data = mixin(data, this._defaultData);
 		const validatedData = validateTelemetryData(data);
 		const name = this._eventPrefix + '/' + eventName;
@@ -149,7 +145,6 @@ export abstract class AbstractOneDataSystemAppender extends Disposable implement
 	}
 
 	flush(): Promise<void> {
-
 		if (this._aiCoreOrKey) {
 			return new Promise(resolve => {
 				this._withAIClient((aiClient) => {
@@ -161,10 +156,5 @@ export abstract class AbstractOneDataSystemAppender extends Disposable implement
 			});
 		}
 		return Promise.resolve(undefined);
-	}
-
-	override dispose(): void {
-		this.flush();
-		super.dispose();
 	}
 }
