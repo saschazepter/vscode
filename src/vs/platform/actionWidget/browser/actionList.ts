@@ -64,6 +64,10 @@ export interface IActionListItem<T> {
 	readonly hideIcon?: boolean;
 	readonly tooltip?: string;
 	/**
+	 * Optional badge text shown next to the label.
+	 */
+	readonly badge?: string;
+	/**
 	 * Optional toolbar actions shown when the item is focused or hovered.
 	 */
 	readonly toolbarActions?: IAction[];
@@ -73,6 +77,7 @@ interface IActionMenuTemplateData {
 	readonly container: HTMLElement;
 	readonly icon: HTMLElement;
 	readonly text: HTMLElement;
+	readonly badge: HTMLElement;
 	readonly description?: HTMLElement;
 	readonly keybinding: KeybindingLabel;
 	readonly toolbar: HTMLElement;
@@ -159,6 +164,10 @@ class ActionItemRenderer<T> implements IListRenderer<IActionListItem<T>, IAction
 		text.className = 'title';
 		container.append(text);
 
+		const badge = document.createElement('span');
+		badge.className = 'action-list-badge';
+		container.append(badge);
+
 		const description = document.createElement('span');
 		description.className = 'description';
 		container.append(description);
@@ -171,7 +180,7 @@ class ActionItemRenderer<T> implements IListRenderer<IActionListItem<T>, IAction
 
 		const elementDisposables = new DisposableStore();
 
-		return { container, icon, text, description, keybinding, toolbar, elementDisposables };
+		return { container, icon, text, badge, description, keybinding, toolbar, elementDisposables };
 	}
 
 	renderElement(element: IActionListItem<T>, _index: number, data: IActionMenuTemplateData): void {
@@ -195,6 +204,14 @@ class ActionItemRenderer<T> implements IListRenderer<IActionListItem<T>, IAction
 		dom.setVisibility(!element.hideIcon, data.icon);
 
 		data.text.textContent = stripNewlines(element.label);
+
+		if (element.badge) {
+			data.badge.textContent = element.badge;
+			data.badge.style.display = 'inline';
+		} else {
+			data.badge.textContent = '';
+			data.badge.style.display = 'none';
+		}
 
 		// if there is a keybinding, prioritize over description for now
 		if (element.keybinding) {

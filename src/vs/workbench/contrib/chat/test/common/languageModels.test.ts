@@ -981,3 +981,169 @@ suite('LanguageModels - Vendor Change Events', function () {
 		assert.strictEqual(eventFired, false, 'Should not fire event when vendor list is unchanged');
 	});
 });
+
+suite('LanguageModels - New Model Detection', function () {
+
+	const disposables = new DisposableStore();
+
+	function createService(storageService: TestStorageService) {
+		const service = new LanguageModelsService(
+			new class extends mock<IExtensionService>() {
+				override activateByEvent() {
+					return Promise.resolve();
+				}
+			},
+			new NullLogService(),
+			storageService,
+			new MockContextKeyService(),
+			new class extends mock<ILanguageModelsConfigurationService>() {
+				override onDidChangeLanguageModelGroups = Event.None;
+				override getLanguageModelsProviderGroups() {
+					return [];
+				}
+			},
+			new class extends mock<IQuickInputService>() { },
+			new TestSecretStorageService(),
+		);
+
+		service.deltaLanguageModelChatProviderDescriptors([
+			{ vendor: 'test-vendor', displayName: 'Test Vendor', configuration: undefined, managementCommand: undefined, when: undefined }
+		], []);
+
+		return service;
+	}
+
+	function registerModels(service: LanguageModelsService, models: { id: string; name: string }[]) {
+		return service.registerLanguageModelProvider('test-vendor', {
+			onDidChange: Event.None,
+			provideLanguageModelChatInfo: async () => models.map(m => ({
+				metadata: {
+					extension: nullExtensionDescription.identifier,
+					name: m.name,
+					vendor: 'test-vendor',
+					family: 'family',
+					version: '1.0',
+					id: m.id,
+					maxInputTokens: 100,
+					maxOutputTokens: 100,
+					modelPickerCategory: undefined,
+					isDefaultForLocation: {}
+				} satisfies ILanguageModelChatMetadata,
+				identifier: m.id,
+			})),
+			sendChatRequest: async () => { throw new Error(); },
+			provideTokenCount: async () => { throw new Error(); },
+		});
+	}
+
+	teardown(function () {
+		disposables.clear();
+	});
+
+	ensureNoDisposablesAreLeakedInTestSuite();
+
+	test('first launch: all models are treated as known', async function () {
+		const storageService = disposables.add(new TestStorageService());
+		const service = disposables.add(createService(storageService));
+		disposables.add(registerModels(service, [
+			{ id: 'model-a', name: 'Model A' },
+			{ id: 'model-b', name: 'Model B' },
+		]));
+
+		// Resolve models (populates cache and initializes known set)
+		await service.selectLanguageModels({});
+
+		// On first launch, nothing should be "new"
+		assert.strictEqual(service.isNewModel('model-a'), false);
+		assert.strictEqual(service.isNewModel('model-b'), false);
+	});
+
+	test('new model detected after storage is seeded', async function () {
+		const storageService = disposables.add(new TestStorageService());
+
+		// --- Session 1: seed known models ---
+		const service1 = disposables.add(createService(storageService));
+		disposables.add(registerModels(service1, [
+			{ id: 'model-a', name: 'Model A' },
+		]));
+		await service1.selectLanguageModels({});
+		// Mark as seen so storage is populated
+		service1.markModelsAsSeen();
+		service1.dispose();
+
+		// --- Session 2: provider now returns an additional model ---
+		const service2 = disposables.add(createService(storageService));
+		disposables.add(registerModels(service2, [
+			{ id: 'model-a', name: 'Model A' },
+			{ id: 'model-b', name: 'Model B' },
+		]));
+		await service2.selectLanguageModels({});
+
+		assert.strictEqual(service2.isNewModel('model-a'), false, 'model-a should be known');
+		assert.strictEqual(service2.isNewModel('model-b'), true, 'model-b should be new');
+	});
+
+	test('markModelsAsSeen clears new status', async function () {
+		const storageService = disposables.add(new TestStorageService());
+
+		// Session 1: seed
+		const service1 = disposables.add(createService(storageService));
+		disposables.add(registerModels(service1, [{ id: 'model-a', name: 'Model A' }]));
+		await service1.selectLanguageModels({});
+		service1.markModelsAsSeen();
+		service1.dispose();
+
+		// Session 2: new model appears
+		const service2 = disposables.add(createService(storageService));
+		disposables.add(registerModels(service2, [
+			{ id: 'model-a', name: 'Model A' },
+			{ id: 'model-b', name: 'Model B' },
+		]));
+		await service2.selectLanguageModels({});
+
+		assert.strictEqual(service2.isNewModel('model-b'), true, 'model-b is new before marking');
+
+		service2.markModelsAsSeen();
+
+		assert.strictEqual(service2.isNewModel('model-b'), false, 'model-b is no longer new after marking');
+	});
+
+	test('markModelsAsSeen persists across sessions', async function () {
+		const storageService = disposables.add(new TestStorageService());
+
+		// Session 1: seed with model-a
+		const service1 = disposables.add(createService(storageService));
+		disposables.add(registerModels(service1, [{ id: 'model-a', name: 'Model A' }]));
+		await service1.selectLanguageModels({});
+		service1.markModelsAsSeen();
+		service1.dispose();
+
+		// Session 2: model-b appears, user opens picker (marks seen)
+		const service2 = disposables.add(createService(storageService));
+		disposables.add(registerModels(service2, [
+			{ id: 'model-a', name: 'Model A' },
+			{ id: 'model-b', name: 'Model B' },
+		]));
+		await service2.selectLanguageModels({});
+		service2.markModelsAsSeen();
+		service2.dispose();
+
+		// Session 3: same models — nothing should be new
+		const service3 = disposables.add(createService(storageService));
+		disposables.add(registerModels(service3, [
+			{ id: 'model-a', name: 'Model A' },
+			{ id: 'model-b', name: 'Model B' },
+		]));
+		await service3.selectLanguageModels({});
+
+		assert.strictEqual(service3.isNewModel('model-a'), false);
+		assert.strictEqual(service3.isNewModel('model-b'), false);
+	});
+
+	test('isNewModel returns false before models are resolved', function () {
+		const storageService = disposables.add(new TestStorageService());
+		const service = disposables.add(createService(storageService));
+		// No models resolved yet
+		assert.strictEqual(service.isNewModel('anything'), false);
+	});
+});

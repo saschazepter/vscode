@@ -194,6 +194,19 @@
 	background: var(--vscode-actionBar-toggledBackground) !important;
 }
 
+.action-widget .monaco-list .monaco-list-row .action-list-badge {
+	display: none;
+	margin-left: 0.5em;
+	padding: 1px 6px;
+	border-radius: 9999px;
+	font-size: 10px;
+	line-height: 16px;
+	background-color: rgba(56, 132, 210, 0.65);
+	color: #fff;
+	flex-shrink: 0;
+	font-weight: 500;
+}
+
 .action-widget .monaco-list .monaco-list-row .description {
 	opacity: 0.7;
 	margin-left: 0.5em;

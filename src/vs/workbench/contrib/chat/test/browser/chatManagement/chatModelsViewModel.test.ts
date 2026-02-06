@@ -70,6 +70,13 @@ class MockLanguageModelsService implements ILanguageModelsService {
 		}
 	}
 
+	isNewModel(_modelIdentifier: string): boolean {
+		return false;
+	}
+
+	markModelsAsSeen(): void {
+	}
+
 	getVendors(): ILanguageModelProviderDescriptor[] {
 		return this.vendors.map(v => ({ ...v, isDefault: v.vendor === 'copilot' }));
 	}

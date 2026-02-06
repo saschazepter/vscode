@@ -291,6 +291,19 @@ export interface ILanguageModelsService {
 
 	updateModelPickerPreference(modelIdentifier: string, showInModelPicker: boolean): void;
 
+	/**
+	 * Returns true if the model has not been seen by the user before.
+	 * A model is considered "new" if it wasn't present the last time
+	 * the user opened the model picker.
+	 */
+	isNewModel(modelIdentifier: string): boolean;
+
+	/**
+	 * Marks all currently known models as "seen", clearing the "new" badge.
+	 * Call this when the model picker is opened.
+	 */
+	markModelsAsSeen(): void;
+
 	getLanguageModelIds(): string[];
 
 	getVendors(): ILanguageModelProviderDescriptor[];
@@ -414,6 +427,7 @@ export const languageModelChatProviderExtensionPoint = ExtensionsRegistry.regist
 });
 
 const CHAT_MODEL_PICKER_PREFERENCES_STORAGE_KEY = 'chatModelPickerPreferences';
+const CHAT_KNOWN_MODEL_IDS_STORAGE_KEY = 'chatKnownModelIds';
 
 export class LanguageModelsService implements ILanguageModelsService {
 
@@ -435,6 +449,8 @@ export class LanguageModelsService implements ILanguageModelsService {
 	private readonly _resolveLMSequencer = new SequencerByKey<string>();
 	private _modelPickerUserPreferences: IStringDictionary<boolean> = {};
 	private readonly _hasUserSelectableModels: IContextKey<boolean>;
+	private _knownModelIds: Set<string>;
+	private _knownModelIdsInitialized = false;
 
 	private readonly _onLanguageModelChange = this._store.add(new Emitter<string>());
 	readonly onDidChangeLanguageModels: Event<string> = this._onLanguageModelChange.event;
@@ -450,6 +466,7 @@ export class LanguageModelsService implements ILanguageModelsService {
 	) {
 		this._hasUserSelectableModels = ChatContextKeys.languageModelsAreUserSelectable.bindTo(_contextKeyService);
 		this._modelPickerUserPreferences = this._readModelPickerPreferences();
+		this._knownModelIds = this._readKnownModelIds();
 		this._store.add(this._storageService.onDidChangeValue(StorageScope.PROFILE, CHAT_MODEL_PICKER_PREFERENCES_STORAGE_KEY, this._store)(() => this._onDidChangeModelPickerPreferences()));
 
 		this._store.add(this.onDidChangeLanguageModels(() => this._hasUserSelectableModels.set(this._modelCache.size > 0 && Array.from(this._modelCache.values()).some(model => model.isUserSelectable))));
@@ -550,6 +567,38 @@ export class LanguageModelsService implements ILanguageModelsService {
 
 	private _readModelPickerPreferences(): IStringDictionary<boolean> {
 		return this._storageService.getObject<IStringDictionary<boolean>>(CHAT_MODEL_PICKER_PREFERENCES_STORAGE_KEY, StorageScope.PROFILE, {});
+	}
+
+	private _readKnownModelIds(): Set<string> {
+		const stored = this._storageService.getObject<string[]>(CHAT_KNOWN_MODEL_IDS_STORAGE_KEY, StorageScope.PROFILE, []);
+		return new Set(stored);
+	}
+
+	private _saveKnownModelIds(): void {
+		this._storageService.store(CHAT_KNOWN_MODEL_IDS_STORAGE_KEY, Array.from(this._knownModelIds), StorageScope.PROFILE, StorageTarget.USER);
+	}
+
+	isNewModel(modelIdentifier: string): boolean {
+		// If this is the first time we populate known models (empty storage),
+		// treat all models as already known so the user doesn't see
+		// everything badged as "new" on first launch.
+		if (!this._knownModelIdsInitialized) {
+			return false;
+		}
+		return !this._knownModelIds.has(modelIdentifier);
+	}
+
+	markModelsAsSeen(): void {
+		let changed = false;
+		for (const modelId of this._modelCache.keys()) {
+			if (!this._knownModelIds.has(modelId)) {
+				this._knownModelIds.add(modelId);
+				changed = true;
+			}
+		}
+		if (changed) {
+			this._saveKnownModelIds();
+		}
 	}
 
 	private _onDidChangeModelPickerPreferences(): void {
@@ -742,6 +791,19 @@ export class LanguageModelsService implements ILanguageModelsService {
 			}
 			this._logService.trace(`[LM] Resolved language models for vendor ${vendorId}`, allModels);
 			hasChanges = hasChanges || oldModels.size > 0;
+
+			// Track known model IDs for "new" badge detection.
+			// On first initialization (empty storage), seed with all current
+			// models so the user doesn't see everything badged as "new".
+			if (!this._knownModelIdsInitialized) {
+				this._knownModelIdsInitialized = true;
+				if (this._knownModelIds.size === 0) {
+					for (const modelId of this._modelCache.keys()) {
+						this._knownModelIds.add(modelId);
+					}
+					this._saveKnownModelIds();
+				}
+			}
 
 			if (hasChanges) {
 				this._onLanguageModelChange.fire(vendorId);

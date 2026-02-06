@@ -28,6 +28,13 @@ export class NullLanguageModelsService implements ILanguageModelsService {
 		return;
 	}
 
+	isNewModel(_modelIdentifier: string): boolean {
+		return false;
+	}
+
+	markModelsAsSeen(): void {
+	}
+
 	getVendors(): ILanguageModelProviderDescriptor[] {
 		return [];
 	}

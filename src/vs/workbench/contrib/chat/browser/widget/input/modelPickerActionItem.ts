@@ -21,7 +21,7 @@ import { ITelemetryService } from '../../../../../../platform/telemetry/common/t
 import { TelemetryTrustedValue } from '../../../../../../platform/telemetry/common/telemetryUtils.js';
 import { ChatEntitlement, IChatEntitlementService } from '../../../../../services/chat/common/chatEntitlementService.js';
 import { MANAGE_CHAT_COMMAND_ID } from '../../../common/constants.js';
-import { ILanguageModelChatMetadataAndIdentifier } from '../../../common/languageModels.js';
+import { ILanguageModelChatMetadataAndIdentifier, ILanguageModelsService } from '../../../common/languageModels.js';
 import { DEFAULT_MODEL_PICKER_CATEGORY } from '../../../common/widget/input/modelPickerWidget.js';
 import { ChatInputPickerActionViewItem, IChatInputPickerOptions } from './chatInputPickerActionItem.js';
 
@@ -44,7 +44,7 @@ type ChatModelChangeEvent = {
 };
 
 
-function modelDelegateToWidgetActionsProvider(delegate: IModelPickerDelegate, telemetryService: ITelemetryService, pickerOptions: IChatInputPickerOptions): IActionWidgetDropdownActionProvider {
+function modelDelegateToWidgetActionsProvider(delegate: IModelPickerDelegate, languageModelsService: ILanguageModelsService, telemetryService: ITelemetryService, pickerOptions: IChatInputPickerOptions): IActionWidgetDropdownActionProvider {
 	return {
 		getActions: () => {
 			const models = delegate.getModels();
@@ -62,8 +62,10 @@ function modelDelegateToWidgetActionsProvider(delegate: IModelPickerDelegate, te
 					run: () => { }
 				} satisfies IActionWidgetDropdownAction];
 			}
-			return models.map(model => {
+
+			const modelActions = models.map(model => {
 				const hoverContent = model.metadata.tooltip;
+				const isNew = languageModelsService.isNewModel(model.identifier);
 				return {
 					id: model.metadata.id,
 					enabled: true,
@@ -72,6 +74,7 @@ function modelDelegateToWidgetActionsProvider(delegate: IModelPickerDelegate, te
 					category: model.metadata.modelPickerCategory || DEFAULT_MODEL_PICKER_CATEGORY,
 					class: undefined,
 					description: model.metadata.multiplier ?? model.metadata.detail,
+					badge: isNew ? localize('chat.modelPicker.newBadge', "New") : undefined,
 					tooltip: hoverContent ? '' : model.metadata.name,
 					hover: hoverContent ? { content: hoverContent, position: pickerOptions.hoverPosition } : undefined,
 					label: model.metadata.name,
@@ -85,6 +88,11 @@ function modelDelegateToWidgetActionsProvider(delegate: IModelPickerDelegate, te
 					}
 				} satisfies IActionWidgetDropdownAction;
 			});
+
+			// Mark all models as seen now that the picker has been opened
+			languageModelsService.markModelsAsSeen();
+
+			return modelActions;
 		}
 	};
 }
@@ -157,6 +165,7 @@ export class ModelPickerActionItem extends ChatInputPickerActionViewItem {
 		@IKeybindingService keybindingService: IKeybindingService,
 		@ITelemetryService telemetryService: ITelemetryService,
 		@IProductService productService: IProductService,
+		@ILanguageModelsService languageModelsService: ILanguageModelsService,
 	) {
 		// Modify the original action with a different label and make it show the current model
 		const actionWithLabel: IAction = {
@@ -166,7 +175,7 @@ export class ModelPickerActionItem extends ChatInputPickerActionViewItem {
 		};
 
 		const modelPickerActionWidgetOptions: Omit<IActionWidgetDropdownOptions, 'label' | 'labelRenderer'> = {
-			actionProvider: modelDelegateToWidgetActionsProvider(delegate, telemetryService, pickerOptions),
+			actionProvider: modelDelegateToWidgetActionsProvider(delegate, languageModelsService, telemetryService, pickerOptions),
 			actionBarActionProvider: getModelPickerActionBarActionProvider(commandService, chatEntitlementService, productService),
 			reporter: { id: 'ChatModelPicker', name: 'ChatModelPicker', includeOptions: true },
 		};
