@@ -14,7 +14,7 @@ import { Lazy } from '../../../../../base/common/lazy.js';
 import { Disposable, DisposableStore, IDisposable } from '../../../../../base/common/lifecycle.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { localize, localize2 } from '../../../../../nls.js';
-import { ContextKeyExpr } from '../../../../../platform/contextkey/common/contextkey.js';
+import { ContextKeyExpr, IContextKeyService } from '../../../../../platform/contextkey/common/contextkey.js';
 import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
 import { ILogService } from '../../../../../platform/log/common/log.js';
 import product from '../../../../../platform/product/common/product.js';
@@ -49,9 +49,11 @@ import { IMarker, IMarkerService, MarkerSeverity } from '../../../../../platform
 import { ChatSetupController } from './chatSetupController.js';
 import { ChatSetupAnonymous, ChatSetupStep, IChatSetupResult } from './chatSetup.js';
 import { ChatSetup } from './chatSetupRunner.js';
+import { chatViewsWelcomeRegistry } from '../viewsWelcome/chatViewsWelcome.js';
 import { CommandsRegistry } from '../../../../../platform/commands/common/commands.js';
 import { IDefaultAccountService } from '../../../../../platform/defaultAccount/common/defaultAccount.js';
 import { IHostService } from '../../../../services/host/browser/host.js';
+import { mainWindow } from '../../../../../base/browser/window.js';
 
 const defaultChat = {
 	extensionId: product.defaultChatAgent?.extensionId ?? '',
@@ -191,6 +193,7 @@ export class SetupAgent extends Disposable implements IChatAgentImplementation {
 		@IWorkspaceTrustManagementService private readonly workspaceTrustManagementService: IWorkspaceTrustManagementService,
 		@IChatEntitlementService private readonly chatEntitlementService: IChatEntitlementService,
 		@IViewsService private readonly viewsService: IViewsService,
+		@IContextKeyService private readonly contextKeyService: IContextKeyService,
 	) {
 		super();
 
@@ -321,9 +324,11 @@ export class SetupAgent extends Disposable implements IChatAgentImplementation {
 				});
 			}, 10000);
 
+			const whenPanelAgentHasGuidance = this.whenPanelAgentHasGuidance();
 			try {
 				const ready = await Promise.race([
 					timeout(this.environmentService.remoteAuthority ? 60000 /* increase for remote scenarios */ : 20000).then(() => 'timedout'),
+					whenPanelAgentHasGuidance.promise.then(() => 'panelGuidance'),
 					Promise.allSettled([
 						whenAgentActivated,
 						whenAgentReady,
@@ -332,9 +337,11 @@ export class SetupAgent extends Disposable implements IChatAgentImplementation {
 					])
 				]);
 
-				if (ready === 'timedout') {
+				if (ready === 'timedout' || ready === 'panelGuidance') {
 					let warningMessage: string;
-					if (this.chatEntitlementService.anonymous) {
+					if (ready === 'panelGuidance') {
+						warningMessage = localize('chatTookLongWarningExtension', "Please try again.");
+					} else if (this.chatEntitlementService.anonymous) {
 						warningMessage = localize('chatTookLongWarningAnonymous', "Chat took too long to get ready. Please ensure that the extension `{0}` is installed and enabled. Click restart to try again if this issue persists.", defaultChat.chatExtensionId);
 					} else {
 						warningMessage = localize('chatTookLongWarning', "Chat took too long to get ready. Please ensure you are signed in to {0} and that the extension `{1}` is installed and enabled. Click restart to try again if this issue persists.", defaultChat.provider.default.name, defaultChat.chatExtensionId);
@@ -440,18 +447,20 @@ export class SetupAgent extends Disposable implements IChatAgentImplementation {
 					});
 
 					progress({
-						kind: 'warning',
+						kind: ready === 'panelGuidance' ? 'markdownContent' : 'warning',
 						content: new MarkdownString(warningMessage)
 					});
 
-					progress({
-						kind: 'command',
-						command: {
-							id: SetupAgent.CHAT_RETRY_COMMAND_ID,
-							title: localize('retryChat', "Restart"),
-							arguments: [requestModel.session.sessionResource]
-						}
-					});
+					if (ready !== 'panelGuidance') {
+						progress({
+							kind: 'command',
+							command: {
+								id: SetupAgent.CHAT_RETRY_COMMAND_ID,
+								title: localize('retryChat', "Restart"),
+								arguments: [requestModel.session.sessionResource]
+							}
+						});
+					}
 
 					// This means Chat is unhealthy and we cannot retry the
 					// request. Signal this to the outside via an event.
@@ -459,6 +468,7 @@ export class SetupAgent extends Disposable implements IChatAgentImplementation {
 					return;
 				}
 			} finally {
+				whenPanelAgentHasGuidance.dispose();
 				clearTimeout(timeoutHandle);
 			}
 		}
@@ -468,6 +478,32 @@ export class SetupAgent extends Disposable implements IChatAgentImplementation {
 			modeInfo,
 			userSelectedModelId: widget?.input.currentLanguageModel
 		});
+	}
+
+	private whenPanelAgentHasGuidance(): { promise: Promise<void> } & IDisposable {
+		let interval: number | undefined;
+		return {
+			promise: new Promise<void>(resolve => {
+				const panelAgentHasGuidance = () => chatViewsWelcomeRegistry.get().some(descriptor => this.contextKeyService.contextMatchesRules(descriptor.when));
+				if (panelAgentHasGuidance()) {
+					resolve();
+				} else {
+					interval = mainWindow.setInterval(() => {
+						if (panelAgentHasGuidance()) {
+							mainWindow.clearInterval(interval);
+							interval = undefined;
+							resolve();
+						}
+					}, 1000);
+				}
+			}),
+			dispose: () => {
+				if (interval !== undefined) {
+					mainWindow.clearInterval(interval);
+					interval = undefined;
+				}
+			}
+		};
 	}
 
 	private whenLanguageModelReady(languageModelsService: ILanguageModelsService, modelId: string | undefined): Promise<unknown> | void {
