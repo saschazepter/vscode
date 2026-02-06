@@ -16,7 +16,7 @@ import { CancellationToken } from '../../../../../base/common/cancellation.js';
 import { IQuickInputService, IQuickPickItem, IQuickPickSeparator } from '../../../../../platform/quickinput/common/quickInput.js';
 import { IFileService } from '../../../../../platform/files/common/files.js';
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
-import { HOOK_TYPES, HookType } from '../../common/promptSyntax/hookSchema.js';
+import { HOOK_TYPES, HookType, getEffectiveCommandFieldKey } from '../../common/promptSyntax/hookSchema.js';
 import { NEW_HOOK_COMMAND_ID } from './newPromptFileActions.js';
 import { ILabelService } from '../../../../../platform/label/common/label.js';
 import { IEditorService } from '../../../../services/editor/common/editorService.js';
@@ -147,13 +147,8 @@ class ManageHooksAction extends Action2 {
 				const entry = selected.hookEntry;
 				let selection: ITextEditorSelection | undefined;
 
-				// Determine the command field name to highlight based on platform
-				// Priority: platform-specific > command
-				const commandFieldName = entry.command.windows !== undefined ? 'windows'
-					: entry.command.linux !== undefined ? 'linux'
-						: entry.command.osx !== undefined ? 'osx'
-							: entry.command.command !== undefined ? 'command'
-								: undefined;
+				// Determine the command field name to highlight based on current platform
+				const commandFieldName = getEffectiveCommandFieldKey(entry.command);
 
 				// Try to find the command field to highlight
 				if (commandFieldName) {
