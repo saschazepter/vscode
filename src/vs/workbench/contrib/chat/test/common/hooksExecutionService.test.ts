@@ -34,7 +34,7 @@ suite('HooksExecutionService', () => {
 	const sessionUri = URI.file('/test/session');
 
 	setup(() => {
-		service = new HooksExecutionService(new NullLogService(), createMockOutputService());
+		service = store.add(new HooksExecutionService(new NullLogService(), createMockOutputService()));
 	});
 
 	suite('registerHooks', () => {
