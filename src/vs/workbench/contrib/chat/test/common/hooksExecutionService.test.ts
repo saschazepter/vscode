@@ -556,11 +556,11 @@ suite('HooksExecutionService', () => {
 			);
 
 			assert.ok(result);
-			assert.strictEqual(result.additionalContext, 'File was modified successfully');
+			assert.deepStrictEqual(result.additionalContext, ['File was modified successfully']);
 			assert.strictEqual(result.decision, undefined);
 		});
 
-		test('block takes priority and returns immediately', async () => {
+		test('block takes priority and collects all additionalContext', async () => {
 			let callCount = 0;
 			const proxy = createMockProxy(() => {
 				callCount++;
@@ -577,7 +577,7 @@ suite('HooksExecutionService', () => {
 						kind: HookCommandResultKind.Success,
 						result: {
 							hookSpecificOutput: {
-								additionalContext: 'This should not be returned'
+								additionalContext: 'Extra context from second hook'
 							}
 						}
 					};
@@ -596,6 +596,7 @@ suite('HooksExecutionService', () => {
 			assert.ok(result);
 			assert.strictEqual(result.decision, 'block');
 			assert.strictEqual(result.reason, 'Tests failed');
+			assert.deepStrictEqual(result.additionalContext, ['Extra context from second hook']);
 		});
 
 		test('ignores results with wrong hookEventName', async () => {
@@ -635,7 +636,7 @@ suite('HooksExecutionService', () => {
 			);
 
 			assert.ok(result);
-			assert.strictEqual(result.additionalContext, 'Correct context');
+			assert.deepStrictEqual(result.additionalContext, ['Correct context']);
 		});
 
 		test('passes tool response text as string to external command', async () => {
@@ -833,18 +834,18 @@ suite('HooksExecutionService', () => {
 
 			assert.deepStrictEqual(
 				JSON.stringify({ decision: result?.decision, reason: result?.reason, additionalContext: result?.additionalContext }),
-				JSON.stringify({ decision: undefined, reason: undefined, additionalContext: 'Tests still pass after this edit' })
+				JSON.stringify({ decision: undefined, reason: undefined, additionalContext: ['Tests still pass after this edit'] })
 			);
 		});
 
-		test('multiple hooks: block wins immediately (second hook never runs)', async () => {
+		test('multiple hooks: block wins and all hooks run', async () => {
 			let callCount = 0;
 			const proxy = createMockProxy(() => {
 				callCount++;
 				if (callCount === 1) {
 					return { kind: HookCommandResultKind.Success, result: { decision: 'block', reason: 'Tests failed' } };
 				}
-				return { kind: HookCommandResultKind.Success, result: { hookSpecificOutput: { additionalContext: 'should never appear' } } };
+				return { kind: HookCommandResultKind.Success, result: { hookSpecificOutput: { additionalContext: 'context from second hook' } } };
 			});
 			service.setProxy(proxy);
 
@@ -857,8 +858,8 @@ suite('HooksExecutionService', () => {
 			);
 
 			assert.deepStrictEqual(
-				JSON.stringify({ decision: result?.decision, reason: result?.reason }),
-				JSON.stringify({ decision: 'block', reason: 'Tests failed' })
+				JSON.stringify({ decision: result?.decision, reason: result?.reason, additionalContext: result?.additionalContext }),
+				JSON.stringify({ decision: 'block', reason: 'Tests failed', additionalContext: ['context from second hook'] })
 			);
 		});
 

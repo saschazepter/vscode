@@ -4002,7 +4002,7 @@ suite('LanguageModelToolsService', () => {
 			mockHooksService.postToolUseHookResult = {
 				output: undefined,
 				success: true,
-				additionalContext: 'Consider running tests after this change',
+				additionalContext: ['Consider running tests after this change'],
 			};
 
 			const tool = registerToolForTest(hookService, store, 'postHookContextTool', {
@@ -4075,7 +4075,7 @@ suite('LanguageModelToolsService', () => {
 				success: true,
 				decision: 'block',
 				reason: 'Security issue found',
-				additionalContext: 'Please review the file permissions',
+				additionalContext: ['Please review the file permissions'],
 			};
 
 			const tool = registerToolForTest(hookService, store, 'postHookBlockContextTool', {
