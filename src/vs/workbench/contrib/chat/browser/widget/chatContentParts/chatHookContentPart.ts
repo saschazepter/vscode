@@ -9,25 +9,14 @@ import { localize } from '../../../../../../nls.js';
 import { IHoverService } from '../../../../../../platform/hover/browser/hover.js';
 import { ChatHookType, IChatHookPart } from '../../../common/chatService/chatService.js';
 import { IChatRendererContent } from '../../../common/model/chatViewModel.js';
+import { HOOK_TYPES } from '../../../common/promptSyntax/hookSchema.js';
 import { ChatTreeItem } from '../../chat.js';
 import { ChatCollapsibleContentPart } from './chatCollapsibleContentPart.js';
 import { IChatContentPart, IChatContentPartRenderContext } from './chatContentParts.js';
 import './media/chatHookContentPart.css';
 
-/**
- * Maps hook types to human-readable labels.
- */
 function getHookTypeLabel(hookType: ChatHookType): string {
-	switch (hookType) {
-		case 'SessionStart': return localize('hook.sessionStart', "Session Start");
-		case 'UserPromptSubmit': return localize('hook.userPromptSubmit', "User Prompt Submit");
-		case 'PreToolUse': return localize('hook.preToolUse', "Pre-Tool Use");
-		case 'PostToolUse': return localize('hook.postToolUse', "Post-Tool Use");
-		case 'SubagentStart': return localize('hook.subagentStart', "Subagent Start");
-		case 'SubagentStop': return localize('hook.subagentStop', "Subagent Stop");
-		case 'Stop': return localize('hook.stop', "Stop");
-		default: return hookType;
-	}
+	return HOOK_TYPES.find(hook => hook.id === hookType)?.label ?? hookType;
 }
 
 export class ChatHookContentPart extends ChatCollapsibleContentPart implements IChatContentPart {
