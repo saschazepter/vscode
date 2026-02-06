@@ -428,6 +428,7 @@ export class DropdownWithDefaultActionViewItem extends BaseActionViewItem {
 	private _container: HTMLElement | null = null;
 	private readonly _storageKey: string;
 	private readonly _primaryActionListener = this._register(new MutableDisposable());
+	private _currentDefaultActionId: string | undefined;
 
 	get onDidChangeDropdownVisibility(): Event<boolean> {
 		return this._dropdown.onDidChangeVisibility;
@@ -456,6 +457,7 @@ export class DropdownWithDefaultActionViewItem extends BaseActionViewItem {
 		if (!defaultAction) {
 			defaultAction = submenuAction.actions[0];
 		}
+		this._currentDefaultActionId = defaultAction?.id;
 
 		this._defaultAction = this._defaultActionDisposables.add(this._instaService.createInstance(MenuEntryActionViewItem, <MenuItemAction>defaultAction, { keybinding: this._getDefaultActionKeybindingLabel(defaultAction) }));
 
@@ -467,7 +469,12 @@ export class DropdownWithDefaultActionViewItem extends BaseActionViewItem {
 			actionRunner: options?.actionRunner ?? this._register(new ActionRunner()),
 		};
 
-		this._dropdown = this._register(new DropdownMenuActionViewItem(submenuAction, submenuAction.actions, this._contextMenuService, dropdownOptions));
+		// Use an action provider to filter out the current primary action from the dropdown
+		const actionProvider = {
+			getActions: () => submenuAction.actions.filter(a => a.id !== this._currentDefaultActionId)
+		};
+
+		this._dropdown = this._register(new DropdownMenuActionViewItem(submenuAction, actionProvider, this._contextMenuService, dropdownOptions));
 		if (options?.togglePrimaryAction) {
 			this.registerTogglePrimaryActionListener();
 		}
@@ -486,6 +493,7 @@ export class DropdownWithDefaultActionViewItem extends BaseActionViewItem {
 			this._storageService.store(this._storageKey, lastAction.id, StorageScope.WORKSPACE, StorageTarget.MACHINE);
 		}
 
+		this._currentDefaultActionId = lastAction.id;
 		this._defaultActionDisposables.clear();
 		this._defaultAction = this._defaultActionDisposables.add(this._instaService.createInstance(MenuEntryActionViewItem, lastAction, { keybinding: this._getDefaultActionKeybindingLabel(lastAction) }));
 		this._defaultAction.actionRunner = this._defaultActionDisposables.add(new class extends ActionRunner {
