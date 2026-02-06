@@ -840,10 +840,7 @@ export class CancelAction extends Action2 {
 			keybinding: {
 				weight: KeybindingWeight.WorkbenchContrib,
 				primary: KeyMod.CtrlCmd | KeyCode.Escape,
-				when: ContextKeyExpr.and(
-					ChatContextKeys.requestInProgress,
-					ChatContextKeys.remoteJobCreating.negate()
-				),
+				when: ChatContextKeys.inChatSession,
 				win: { primary: KeyMod.Alt | KeyCode.Backspace },
 			}
 		});
