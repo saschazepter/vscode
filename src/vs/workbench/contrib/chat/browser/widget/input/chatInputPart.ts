@@ -594,7 +594,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 				newOptions.autoSurround = this.configurationService.getValue('editor.autoSurround');
 			}
 
-			this.inputEditor.updateOptions(newOptions);
+			this._inputEditor?.updateOptions(newOptions);
 		}));
 
 		this._chatEditsListPool = this._register(this.instantiationService.createInstance(CollapsibleListPool, this._onDidChangeVisibility.event, MenuId.ChatEditingWidgetModifiedFilesToolbar, { verticalScrollMode: ScrollbarVisibility.Visible }));
@@ -1612,13 +1612,18 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 	 * Only shown in full welcome view (when showFullWelcome is enabled and session is empty).
 	 */
 	private renderSpreadTargetButtons(): void {
-		if (!this.targetButtonsContainer || this.options.renderStyle === 'compact' || !this._widget?.showFullWelcome) {
+		if (!this.targetButtonsContainer || this.options.renderStyle === 'compact') {
 			return;
 		}
 
 		// Clear any existing buttons
 		this.targetButtonsDisposable.clear();
 		dom.clearNode(this.targetButtonsContainer);
+
+		// In full welcome mode, target buttons are rendered by ChatFullWelcomePart
+		if (this._widget?.showFullWelcome) {
+			return;
+		}
 
 		// Show spread buttons in welcome view (empty session or no model set)
 		// Once a message is sent, hide them and show the target picker inside the input instead
@@ -2144,6 +2149,15 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 					};
 					return this.modelWidget = this.instantiationService.createInstance(ModelPickerActionItem, action, undefined, itemDelegate, pickerOptions);
 				} else if (action.id === OpenModePickerAction.ID && action instanceof MenuItemAction) {
+					// In full welcome mode, hide the mode picker since the target
+					// selection is handled by ChatFullWelcomePart above the input
+					if (this._widget?.showFullWelcome) {
+						const empty = new BaseActionViewItem(undefined, action);
+						if (empty.element) {
+							empty.element.style.display = 'none';
+						}
+						return empty;
+					}
 					const delegate: IModePickerDelegate = {
 						currentMode: this._currentModeObservable,
 						sessionResource: () => this._widget?.viewModel?.sessionResource,
@@ -2200,6 +2214,15 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 						return empty;
 					}
 				} else if (action.id === ChatSessionPrimaryPickerAction.ID && action instanceof MenuItemAction) {
+					// In full welcome mode, hide option group pickers from the toolbar
+					// since they are rendered above the input by ChatFullWelcomePart
+					if (this._widget?.showFullWelcome) {
+						const empty = new BaseActionViewItem(undefined, action);
+						if (empty.element) {
+							empty.element.style.display = 'none';
+						}
+						return empty;
+					}
 					// Create all pickers and return a container action view item
 					const widgets = this.createChatSessionPickerWidgets(action);
 					if (widgets.length === 0) {
@@ -2625,6 +2648,9 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 	}
 
 	renderChatEditingSessionState(chatEditingSession: IChatEditingSession | null) {
+		if (!this.chatEditingSessionWidgetContainer) {
+			return;
+		}
 		dom.setVisibility(Boolean(chatEditingSession), this.chatEditingSessionWidgetContainer);
 
 		if (chatEditingSession) {

@@ -7,9 +7,17 @@
 	display: flex;
 	flex-direction: column;
 	align-items: center;
+	justify-content: center;
 	width: 100%;
+	height: 100%;
 	box-sizing: border-box;
 	overflow-x: hidden;
+	transition: justify-content 0.4s ease;
+}
+
+/* Once revealed, content still centers vertically */
+.chat-full-welcome.revealed {
+	justify-content: center;
 }
 
 /* Header */
@@ -19,6 +27,35 @@
 	align-items: center;
 	width: 100%;
 	max-width: 800px;
+	overflow: visible;
+}
+
+/* Mascot */
+.chat-full-welcome-mascot {
+	width: 80px;
+	height: 80px;
+	background-size: contain;
+	background-repeat: no-repeat;
+	background-position: center;
+	margin-top: 8px;
+	margin-bottom: 12px;
+	animation: chat-full-welcome-mascot-bounce 1s ease-in-out infinite;
+	transition: animation-duration 0.3s ease;
+	background-image: url('../../../../../browser/media/code-icon.svg');
+}
+
+/* Slow down bounce once revealed */
+.chat-full-welcome.revealed .chat-full-welcome-mascot {
+	animation-duration: 2s;
+}
+
+@keyframes chat-full-welcome-mascot-bounce {
+	0%, 100% {
+		transform: translateY(0);
+	}
+	50% {
+		transform: translateY(-6px);
+	}
 }
 
 .chat-full-welcome-header h1.product-name {
@@ -37,6 +74,44 @@
 	max-width: 800px;
 	margin-top: 0;
 	box-sizing: border-box;
+	display: none;
+}
+
+.chat-full-welcome.revealed .chat-full-welcome-inputSlot {
+	display: block;
+	animation: chat-full-welcome-fade-in 0.35s ease 0.15s both;
+}
+
+/* Option group pickers container - renders between header and input */
+.chat-full-welcome-pickers-container {
+	display: none;
+	justify-content: center;
+	width: 100%;
+	max-width: 800px;
+	margin-bottom: 8px;
+	box-sizing: border-box;
+}
+
+.chat-full-welcome.revealed .chat-full-welcome-pickers-container {
+	display: flex;
+	animation: chat-full-welcome-fade-in 0.35s ease 0.1s both;
+}
+
+@keyframes chat-full-welcome-fade-in {
+	from {
+		opacity: 0;
+		transform: translateY(12px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+/* Hide pickers container when empty */
+.chat-full-welcome-pickers-container:empty {
+	display: none;
+	margin-bottom: 0;
 }
 
 /* Ensure the input editor fits properly */
@@ -732,16 +807,15 @@
 	}
 }
 
-/* Pickers container - slides in from the right as button collapses */
+/* Pickers row */
 .chat-full-welcome-pickers {
 	display: flex;
 	flex-direction: row;
-	flex-wrap: wrap;
+	flex-wrap: nowrap;
 	gap: 16px;
 	align-items: center;
-	justify-content: flex-start;
+	justify-content: center;
 	box-sizing: border-box;
-	animation: pickersReveal 0.3s cubic-bezier(0.4, 0, 0.2, 1) 0.15s both;
 }
 
 @keyframes pickersReveal {
@@ -757,6 +831,118 @@
 
 /* Hide pickers container when empty */
 .chat-full-welcome-pickers:empty {
+	display: none;
+}
+
+/* Target session type buttons (Local, Background) */
+.chat-full-welcome-target-button {
+	display: flex;
+	align-items: center;
+	padding: 4px 2px;
+	border-radius: 4px;
+	cursor: pointer;
+	font-size: 12px;
+	color: var(--vscode-descriptionForeground);
+	background-color: transparent;
+	border: none;
+	position: relative;
+	z-index: 1;
+}
+
+.chat-full-welcome-target-button:hover {
+	color: var(--vscode-foreground);
+}
+
+.chat-full-welcome-target-label {
+	font-weight: 500;
+	padding: 2px 4px;
+	border-radius: 4px;
+}
+
+.chat-full-welcome-target-button:hover .chat-full-welcome-target-label {
+	background-color: transparent;
+}
+
+.chat-full-welcome-target-button.active {
+	color: var(--vscode-foreground);
+}
+
+/* When a selection has been made, dim the inactive button */
+.chat-full-welcome-target-group.has-selection .chat-full-welcome-target-button:not(.active) {
+	color: var(--vscode-disabledForeground);
+}
+
+.chat-full-welcome-target-group.has-selection .chat-full-welcome-target-button:not(.active):hover {
+	color: var(--vscode-foreground);
+}
+
+/* Separator between target buttons and extension-contributed pickers */
+.chat-full-welcome-pickers-separator {
+	width: 1px;
+	height: 20px;
+	background-color: var(--vscode-welcomePage-tileBorder, var(--vscode-contrastBorder, rgba(128, 128, 128, 0.35)));
+	flex-shrink: 0;
+	margin: 0 4px;
+	align-self: center;
+	transition: opacity 0.2s ease;
+}
+
+.chat-full-welcome-pickers-separator.hidden {
+	opacity: 0;
+	pointer-events: none;
+}
+
+/* Target buttons group */
+.chat-full-welcome-target-group {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	flex-shrink: 0;
+	position: relative;
+}
+
+/* Sliding indicator behind the active target button */
+.chat-full-welcome-target-indicator {
+	position: absolute;
+	top: 0;
+	left: 0;
+	height: 100%;
+	border-radius: 4px;
+	background-color: var(--vscode-toolbar-hoverBackground);
+	transition: left 0.25s cubic-bezier(0.4, 0, 0.2, 1), width 0.25s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.15s ease;
+	pointer-events: none;
+	opacity: 0;
+	z-index: 0;
+}
+
+.chat-full-welcome-target-indicator.visible {
+	opacity: 1;
+}
+
+/* Extension-contributed pickers */
+.chat-full-welcome-extension-pickers {
+	display: flex;
+	flex-direction: row;
+	flex-wrap: nowrap;
+	gap: 16px;
+	align-items: center;
+}
+
+/* Fade-in animation when extension pickers are swapped */
+.chat-full-welcome-extension-pickers.fade-in {
+	animation: extensionPickersFadeIn 0.2s ease both;
+}
+
+@keyframes extensionPickersFadeIn {
+	from {
+		opacity: 0;
+	}
+	to {
+		opacity: 1;
+	}
+}
+
+.chat-full-welcome-extension-pickers:empty {
 	display: none;
 }
 

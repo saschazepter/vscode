@@ -633,15 +633,14 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			this.fullWelcomePart.value = this.instantiationService.createInstance(
 				ChatFullWelcomePart,
 				{
-					productName: product.nameLong,
 					fullWelcomeOptions: this.viewOptions.fullWelcomeOptions,
+					sessionTypePickerDelegate: this.viewOptions.sessionTypePickerDelegate,
 				}
 			);
 			dom.append(this.fullWelcomeContainer, this.fullWelcomePart.value.element);
 
 			// Create input inside the full welcome's input slot
 			this.createInput(this.fullWelcomePart.value.inputSlot, { renderFollowups: false, renderStyle, renderInputToolbarBelowInput });
-
 		}
 
 		this.welcomeMessageContainer = dom.append(this.container, $('.chat-welcome-view-container', { style: 'display: none' }));
@@ -858,36 +857,38 @@ export class ChatWidget extends Disposable implements IChatWidget {
 	 * Updates the DOM visibility of welcome view and chat list immediately
 	 */
 	private updateChatViewVisibility(): void {
-		if (this.viewModel) {
-			const numItems = this.viewModel.getItems().length;
-			const showWelcome = numItems === 0;
+		const numItems = this.viewModel?.getItems().length ?? 0;
+		const showWelcome = numItems === 0;
 
-			// Handle full welcome container visibility
-			if (this.fullWelcomeContainer && this.viewOptions.showFullWelcome) {
-				dom.setVisibility(showWelcome, this.fullWelcomeContainer);
+		// Handle full welcome container visibility
+		if (this.fullWelcomeContainer && this.viewOptions.showFullWelcome) {
+			dom.setVisibility(showWelcome, this.fullWelcomeContainer);
+			if (this.welcomeMessageContainer) {
 				dom.setVisibility(false, this.welcomeMessageContainer); // Hide standard welcome when using full welcome
-
-				// Move input between welcome inputSlot and main container
-				if (this.fullWelcomePart.value && this.mainInputContainer) {
-					const inputElement = this.input.element;
-					if (showWelcome) {
-						// Move input back to welcome inputSlot
-						if (inputElement.parentElement !== this.fullWelcomePart.value.inputSlot) {
-							this.fullWelcomePart.value.inputSlot.appendChild(inputElement);
-						}
-						dom.setVisibility(false, this.mainInputContainer);
-					} else {
-						// Move input to main container for conversation view
-						if (inputElement.parentElement !== this.mainInputContainer) {
-							this.mainInputContainer.appendChild(inputElement);
-						}
-						dom.setVisibility(true, this.mainInputContainer);
-					}
-				}
-			} else {
-				dom.setVisibility(showWelcome, this.welcomeMessageContainer);
 			}
 
+			// Move input between welcome inputSlot and main container
+			if (this.fullWelcomePart.value && this.mainInputContainer) {
+				const inputElement = this.input.element;
+				if (showWelcome) {
+					// Move input back to welcome inputSlot
+					if (inputElement.parentElement !== this.fullWelcomePart.value.inputSlot) {
+						this.fullWelcomePart.value.inputSlot.appendChild(inputElement);
+					}
+					dom.setVisibility(false, this.mainInputContainer);
+				} else {
+					// Move input to main container for conversation view
+					if (inputElement.parentElement !== this.mainInputContainer) {
+						this.mainInputContainer.appendChild(inputElement);
+					}
+					dom.setVisibility(true, this.mainInputContainer);
+				}
+			}
+		} else if (this.viewModel && this.welcomeMessageContainer) {
+			dom.setVisibility(showWelcome, this.welcomeMessageContainer);
+		}
+
+		if (this.viewModel && this.listContainer) {
 			dom.setVisibility(numItems !== 0, this.listContainer);
 		}
 
@@ -1471,8 +1472,8 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		const wasVisible = this._visible;
 		this._visible = visible;
 		this.visibleChangeCount++;
-		this.listWidget.setVisible(visible);
-		this.input.setVisible(visible);
+		this.listWidget?.setVisible(visible);
+		this.input?.setVisible(visible);
 
 		if (visible) {
 			if (!wasVisible) {

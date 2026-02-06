@@ -589,6 +589,11 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 		// Track the current showFullWelcome state
 		this._currentShowFullWelcome = this.shouldShowFullWelcome();
 
+		// Default to Background session provider in full welcome mode
+		if (this._currentShowFullWelcome) {
+			this._selectedSessionProvider = AgentSessionProviders.Background;
+		}
+
 		// Create and store the actual chat controls container
 		const chatControlsContainer = this._chatControlsContainer = append(parent, $('.chat-controls-container'));
 
@@ -762,6 +767,27 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 		this._chatWidgetDisposables.add(chatWidget.onDidChangeViewModel(() => updateProgressBadge()));
 		this._chatWidgetDisposables.add(Event.filter(this.configurationService.onDidChangeConfiguration, e => e.affectsConfiguration(ChatConfiguration.ChatViewProgressBadgeEnabled))(() => updateProgressBadge()));
 		updateProgressBadge();
+
+		// When option groups arrive and we are in full welcome mode, the extension
+		// provider is now registered. If the current session was created as a local
+		// fallback (because the provider wasn't ready yet), recreate it with the
+		// correct copilotcli / cloud scheme so pickers and session type match.
+		this._chatWidgetDisposables.add(this.chatSessionsService.onDidChangeOptionGroups(sessionType => {
+			if (!this._currentShowFullWelcome) {
+				return;
+			}
+
+			if (sessionType !== this._selectedSessionProvider) {
+				return; // not relevant to the currently selected provider
+			}
+
+			const currentResource = this.modelRef.value?.object.sessionResource;
+			if (currentResource && getChatSessionType(currentResource) === this._selectedSessionProvider) {
+				return; // session already has the correct type
+			}
+
+			this.recreateSessionForProvider(this._selectedSessionProvider);
+		}));
 	}
 
 	private setupContextMenu(parent: HTMLElement): void {
@@ -779,6 +805,13 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 	//#region Model Management
 
 	private async applyModel(): Promise<void> {
+		// In full welcome mode, always create a Background session regardless
+		// of any persisted local session from a previous run.
+		if (this._currentShowFullWelcome) {
+			await this.recreateSessionForProvider(AgentSessionProviders.Background);
+			return;
+		}
+
 		const sessionResource = this.getTransferredOrPersistedSessionInfo();
 		const modelRef = sessionResource ? await this.chatService.getOrRestoreSession(sessionResource) : undefined;
 		await this.showModel(modelRef);
@@ -896,8 +929,10 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 		});
 
 		// Load the session for the new resource
-		const ref = await this.chatService.loadSessionForResource(newResource, ChatAgentLocation.Chat, CancellationToken.None)
-			?? this.chatService.startSession(ChatAgentLocation.Chat);
+		const loadedRef = await this.chatService.loadSessionForResource(newResource, ChatAgentLocation.Chat, CancellationToken.None);
+
+		const ref = loadedRef ?? this.chatService.startSession(ChatAgentLocation.Chat);
+
 		this.modelRef.value = ref;
 
 		if (ref?.object) {

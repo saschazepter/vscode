@@ -93,6 +93,9 @@ const vscodeResourceIncludes = [
 	// Welcome
 	'out-build/vs/workbench/contrib/welcomeGettingStarted/common/media/**/*.{svg,png}',
 
+	// Chat Welcome
+	'out-build/vs/workbench/contrib/chat/browser/viewsWelcome/media/*.svg',
+
 	// Extensions
 	'out-build/vs/workbench/contrib/extensions/browser/media/{theme-icon.png,language-icon.svg}',
 	'out-build/vs/workbench/services/extensionManagement/common/media/*.{svg,png}',
