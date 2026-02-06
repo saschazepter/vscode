@@ -57,7 +57,7 @@ export class ChatQueueMessageAction extends Action2 {
 					requestInProgressOrPendingToolCall,
 					queueingEnabledCondition
 				),
-				primary: KeyCode.Enter,
+				primary: KeyMod.Alt | KeyCode.Enter,
 				weight: KeybindingWeight.EditorContrib + 1
 			},
 		});
@@ -101,7 +101,7 @@ export class ChatSteerWithMessageAction extends Action2 {
 					requestInProgressOrPendingToolCall,
 					queueingEnabledCondition
 				),
-				primary: KeyMod.Alt | KeyCode.Enter,
+				primary: KeyCode.Enter,
 				weight: KeybindingWeight.EditorContrib + 1
 			},
 		});
@@ -290,7 +290,6 @@ export function registerChatQueueActions(): void {
 		when: ContextKeyExpr.and(
 			queueingEnabledCondition,
 			requestInProgressOrPendingToolCall,
-			ChatContextKeys.inputHasText
 		),
 		group: 'navigation',
 		order: 4,
