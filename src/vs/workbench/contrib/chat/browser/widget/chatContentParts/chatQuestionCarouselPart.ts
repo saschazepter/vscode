@@ -76,6 +76,7 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 		// Set up accessibility attributes for the carousel container
 		this.domNode.tabIndex = 0;
 		this.domNode.setAttribute('role', 'region');
+		this.domNode.setAttribute('aria-roledescription', localize('chat.questionCarousel.roleDescription', 'chat question'));
 		this._updateAriaLabel();
 
 		// Restore answers from carousel data if already submitted (e.g., after re-render due to virtualization)
