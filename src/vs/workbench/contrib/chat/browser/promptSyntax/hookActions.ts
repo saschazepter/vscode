@@ -147,11 +147,13 @@ class ManageHooksAction extends Action2 {
 				const entry = selected.hookEntry;
 				let selection: ITextEditorSelection | undefined;
 
-				// Determine the command field name to highlight
-				const commandFieldName = entry.command.command !== undefined ? 'command'
-					: entry.command.bash !== undefined ? 'bash'
-						: entry.command.powershell !== undefined ? 'powershell'
-							: undefined;
+				// Determine the command field name to highlight based on platform
+				// Priority: platform-specific > command
+				const commandFieldName = entry.command.windows !== undefined ? 'windows'
+					: entry.command.linux !== undefined ? 'linux'
+						: entry.command.osx !== undefined ? 'osx'
+							: entry.command.command !== undefined ? 'command'
+								: undefined;
 
 				// Try to find the command field to highlight
 				if (commandFieldName) {
