@@ -23,6 +23,7 @@ export class InlineCompletionLanguageStatusBarContribution extends Disposable im
 
 	private _activeEditor;
 	private _state;
+	private _sentiment;
 
 	constructor(
 		@ILanguageStatusService private readonly _languageStatusService: ILanguageStatusService,
@@ -33,6 +34,7 @@ export class InlineCompletionLanguageStatusBarContribution extends Disposable im
 
 
 		this._activeEditor = observableFromEvent(this, _editorService.onDidActiveEditorChange, () => this._editorService.activeTextEditorControl);
+		this._sentiment = this._chatEntitlementService.sentimentObs;
 		this._state = derived(this, reader => {
 			const editor = this._activeEditor.read(reader);
 			if (!editor || !isCodeEditor(editor)) {
@@ -58,7 +60,8 @@ export class InlineCompletionLanguageStatusBarContribution extends Disposable im
 			}
 
 			// Do not show the Copilot icon in the language status when AI features are disabled
-			if (this._chatEntitlementService.sentiment.hidden) {
+			const sentiment = this._sentiment.read(reader);
+			if (sentiment.hidden) {
 				return;
 			}
 
