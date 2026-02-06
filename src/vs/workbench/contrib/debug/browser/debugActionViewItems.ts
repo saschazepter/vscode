@@ -308,7 +308,7 @@ export class FocusSessionActionViewItem extends SelectActionViewItem<IDebugSessi
 		const registerSessionListeners = (session: IDebugSession) => {
 			// Dispose any existing listeners for this session ID before creating new ones
 			sessionListeners.deleteAndDispose(session.getId());
-			
+
 			const store = new DisposableStore();
 			sessionListeners.set(session.getId(), store);
 
