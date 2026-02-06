@@ -11,17 +11,19 @@ import { IStorageService, StorageScope, StorageTarget } from '../../../../../pla
 import { IWorkspaceContextService } from '../../../../../platform/workspace/common/workspace.js';
 import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
 import { DisposableStore, MutableDisposable } from '../../../../../base/common/lifecycle.js';
-import { $, addDisposableListener, append, clearNode, EventType, getWindow } from '../../../../../base/browser/dom.js';
+import { $, addDisposableListener, append, clearNode, Dimension, EventType, getActiveDocument, getWindow } from '../../../../../base/browser/dom.js';
 import { Emitter, Event } from '../../../../../base/common/event.js';
 import { ACTIVITY_BAR_BACKGROUND, ACTIVITY_BAR_BADGE_BACKGROUND, ACTIVITY_BAR_BADGE_FOREGROUND, ACTIVITY_BAR_BORDER, ACTIVITY_BAR_FOREGROUND, ACTIVITY_BAR_INACTIVE_FOREGROUND } from '../../../../common/theme.js';
 import { contrastBorder } from '../../../../../platform/theme/common/colorRegistry.js';
 import { assertReturnsDefined } from '../../../../../base/common/types.js';
 import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
+import { codiconsLibrary } from '../../../../../base/common/codiconsLibrary.js';
+import { Lazy } from '../../../../../base/common/lazy.js';
 import { HoverPosition } from '../../../../../base/browser/ui/hover/hoverWidget.js';
 import { GlobalCompositeBar } from '../../../../browser/parts/globalCompositeBar.js';
 import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
-import { IAction, Action } from '../../../../../base/common/actions.js';
+import { IAction, Action, Separator } from '../../../../../base/common/actions.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { IFileDialogService } from '../../../../../platform/dialogs/common/dialogs.js';
 import { IPathService } from '../../../../services/path/common/pathService.js';
@@ -30,14 +32,48 @@ import { ILabelService } from '../../../../../platform/label/common/label.js';
 import { basename } from '../../../../../base/common/resources.js';
 import { IContextMenuService } from '../../../../../platform/contextview/browser/contextView.js';
 import { StandardMouseEvent } from '../../../../../base/browser/mouseEvent.js';
+import { IQuickInputService, IQuickPickItem } from '../../../../../platform/quickinput/common/quickInput.js';
+import { getIconRegistry, IconContribution } from '../../../../../platform/theme/common/iconRegistry.js';
+import { defaultInputBoxStyles } from '../../../../../platform/theme/browser/defaultStyles.js';
+import { WorkbenchIconSelectBox } from '../../../../services/userDataProfile/browser/iconSelectBox.js';
+import { localize } from '../../../../../nls.js';
 
 const HOVER_GROUP_ID = 'projectbar';
 const PROJECT_BAR_FOLDERS_KEY = 'workbench.agentsession.projectbar.folders';
 
+type ProjectBarEntryDisplayType = 'letter' | 'icon';
+
+interface IProjectBarEntryData {
+	readonly uri: string;
+	readonly displayType?: ProjectBarEntryDisplayType;
+	readonly iconId?: string;
+}
+
 interface IProjectBarEntry {
 	readonly uri: URI;
 	readonly name: string;
+	displayType: ProjectBarEntryDisplayType;
+	iconId?: string;
 }
+
+const icons = new Lazy<IconContribution[]>(() => {
+	const iconDefinitions = getIconRegistry().getIcons();
+	const includedChars = new Set<string>();
+	const dedupedIcons = iconDefinitions.filter(e => {
+		if (e.id === codiconsLibrary.blank.id) {
+			return false;
+		}
+		if (ThemeIcon.isThemeIcon(e.defaults)) {
+			return false;
+		}
+		if (includedChars.has(e.defaults.fontCharacter)) {
+			return false;
+		}
+		includedChars.add(e.defaults.fontCharacter);
+		return true;
+	});
+	return dedupedIcons;
+});
 
 /**
  * ProjectBarPart displays project folder entries stored in workspace storage and allows selection between them.
@@ -81,7 +117,8 @@ export class ProjectBarPart extends Part {
 		@ILabelService private readonly labelService: ILabelService,
 		@IHoverService private readonly hoverService: IHoverService,
 		@IContextMenuService private readonly contextMenuService: IContextMenuService,
-		@IInstantiationService instantiationService: IInstantiationService,
+		@IQuickInputService private readonly quickInputService: IQuickInputService,
+		@IInstantiationService private readonly instantiationService: IInstantiationService,
 	) {
 		super(Parts.PROJECTBAR_PART, { hasTitle: false }, themeService, storageService, layoutService);
 
@@ -115,10 +152,21 @@ export class ProjectBarPart extends Part {
 		const raw = this.storageService.get(PROJECT_BAR_FOLDERS_KEY, StorageScope.WORKSPACE);
 		if (raw) {
 			try {
-				const uris: string[] = JSON.parse(raw);
-				this.entries = uris.map(uriStr => {
-					const uri = URI.parse(uriStr);
-					return { uri, name: basename(uri) };
+				const data: (string | IProjectBarEntryData)[] = JSON.parse(raw);
+				this.entries = data.map(item => {
+					// Support legacy format (just URIs as strings) and new format (objects with display settings)
+					if (typeof item === 'string') {
+						const uri = URI.parse(item);
+						return { uri, name: basename(uri), displayType: 'letter' as ProjectBarEntryDisplayType };
+					} else {
+						const uri = URI.parse(item.uri);
+						return {
+							uri,
+							name: basename(uri),
+							displayType: item.displayType ?? 'letter',
+							iconId: item.iconId
+						};
+					}
 				});
 			} catch {
 				this.entries = [];
@@ -133,8 +181,12 @@ export class ProjectBarPart extends Part {
 	}
 
 	private saveEntriesToStorage(): void {
-		const uris = this.entries.map(e => e.uri.toString());
-		this.storageService.store(PROJECT_BAR_FOLDERS_KEY, JSON.stringify(uris), StorageScope.WORKSPACE, StorageTarget.MACHINE);
+		const data: IProjectBarEntryData[] = this.entries.map(e => ({
+			uri: e.uri.toString(),
+			displayType: e.displayType,
+			iconId: e.iconId
+		}));
+		this.storageService.store(PROJECT_BAR_FOLDERS_KEY, JSON.stringify(data), StorageScope.WORKSPACE, StorageTarget.MACHINE);
 	}
 
 	private addFolderEntry(uri: URI): void {
@@ -143,7 +195,7 @@ export class ProjectBarPart extends Part {
 			return;
 		}
 
-		this.entries.push({ uri, name: basename(uri) });
+		this.entries.push({ uri, name: basename(uri), displayType: 'letter' });
 		this.saveEntriesToStorage();
 
 		// Select the newly added folder
@@ -277,10 +329,19 @@ export class ProjectBarPart extends Part {
 		const actionLabel = append(entryElement, $('span.action-label.workspace-icon'));
 		append(entryElement, $('span.active-item-indicator'));
 
-		// Get first letter of folder name
+		// Render based on display type
 		const folderName = entry.name;
-		const firstLetter = folderName.charAt(0).toUpperCase();
-		actionLabel.textContent = firstLetter;
+		if (entry.displayType === 'icon' && entry.iconId) {
+			// Render codicon
+			const icon = ThemeIcon.fromId(entry.iconId);
+			actionLabel.classList.add(...ThemeIcon.asClassNameArray(icon));
+			actionLabel.classList.add('codicon-icon');
+			actionLabel.textContent = '';
+		} else {
+			// Default: render first letter of folder name
+			const firstLetter = folderName.charAt(0).toUpperCase();
+			actionLabel.textContent = firstLetter;
+		}
 
 		// Set selected state
 		const isSelected = this._selectedFolderUri?.toString() === entry.uri.toString();
@@ -325,7 +386,7 @@ export class ProjectBarPart extends Part {
 			})
 		);
 
-		// Context menu with remove action
+		// Context menu with customize and remove actions
 		entryDisposables.add(
 			addDisposableListener(entryElement, EventType.CONTEXT_MENU, (e: MouseEvent) => {
 				e.preventDefault();
@@ -334,7 +395,9 @@ export class ProjectBarPart extends Part {
 				this.contextMenuService.showContextMenu({
 					getAnchor: () => event,
 					getActions: () => [
-						new Action('projectbar.removeFolder', 'Remove Folder', undefined, true, () => this.removeFolderEntry(index))
+						new Action('projectbar.customize', localize('projectbar.customize', "Customize"), undefined, true, () => this.showCustomizeQuickPick(index)),
+						new Separator(),
+						new Action('projectbar.removeFolder', localize('projectbar.removeFolder', "Remove Folder"), undefined, true, () => this.removeFolderEntry(index))
 					]
 				});
 			})
@@ -386,6 +449,98 @@ export class ProjectBarPart extends Part {
 		}
 
 		this.renderContent();
+	}
+
+	private async showCustomizeQuickPick(index: number): Promise<void> {
+		if (index < 0 || index >= this.entries.length) {
+			return;
+		}
+
+		const entry = this.entries[index];
+
+		interface ICustomizeQuickPickItem extends IQuickPickItem {
+			customType: 'letter' | 'icon';
+		}
+
+		const items: ICustomizeQuickPickItem[] = [
+			{
+				customType: 'letter',
+				label: localize('projectbar.customize.letter', "Letter"),
+				description: localize('projectbar.customize.letter.description', "Show the first letter of the workspace name")
+			},
+			{
+				customType: 'icon',
+				label: localize('projectbar.customize.icon', "Icon"),
+				description: localize('projectbar.customize.icon.description', "Choose a codicon to represent the workspace")
+			}
+		];
+
+		const picked = await this.quickInputService.pick(items, {
+			placeHolder: localize('projectbar.customize.placeholder', "Choose how to display the workspace in the project bar"),
+			title: localize('projectbar.customize.title', "Customize Workspace Appearance")
+		});
+
+		if (!picked) {
+			return;
+		}
+
+		if (picked.customType === 'letter') {
+			entry.displayType = 'letter';
+			entry.iconId = undefined;
+			this.saveEntriesToStorage();
+			this.renderContent();
+		} else if (picked.customType === 'icon') {
+			const icon = await this.pickIcon();
+			if (icon) {
+				entry.displayType = 'icon';
+				entry.iconId = icon.id;
+				this.saveEntriesToStorage();
+				this.renderContent();
+			}
+		}
+	}
+
+	private async pickIcon(): Promise<ThemeIcon | undefined> {
+		const iconSelectBox = this.instantiationService.createInstance(WorkbenchIconSelectBox, {
+			icons: icons.value,
+			inputBoxStyles: defaultInputBoxStyles
+		});
+
+		const dimension = new Dimension(486, 260);
+		return new Promise<ThemeIcon | undefined>(resolve => {
+			const disposables = new DisposableStore();
+
+			disposables.add(iconSelectBox.onDidSelect(e => {
+				resolve(e);
+				disposables.dispose();
+				iconSelectBox.dispose();
+			}));
+
+			iconSelectBox.clearInput();
+			const body = getActiveDocument().body;
+			const bodyRect = body.getBoundingClientRect();
+			const hoverWidget = this.hoverService.showInstantHover({
+				content: iconSelectBox.domNode,
+				target: {
+					targetElements: [body],
+					x: bodyRect.left + (bodyRect.width - dimension.width) / 2,
+					y: bodyRect.top + this.layoutService.activeContainerOffset.top
+				},
+				position: {
+					hoverPosition: HoverPosition.BELOW,
+				},
+				persistence: {
+					sticky: true,
+				},
+			}, true);
+
+			if (hoverWidget) {
+				disposables.add(hoverWidget);
+			}
+
+			iconSelectBox.layout(dimension);
+			iconSelectBox.focus();
+		});
 	}
 
 	get selectedWorkspaceFolder(): URI | undefined {
