@@ -68,6 +68,8 @@ suite('HookSchema', () => {
 					type: 'command',
 					linux: 'echo "hello world"',
 					osx: 'echo "hello world"',
+					linuxSource: 'bash',
+					osxSource: 'bash',
 					cwd: workspaceRoot
 				});
 			});
@@ -83,6 +85,8 @@ suite('HookSchema', () => {
 					type: 'command',
 					linux: './test.sh',
 					osx: './test.sh',
+					linuxSource: 'bash',
+					osxSource: 'bash',
 					cwd: URI.file('/workspace/scripts'),
 					env: { DEBUG: '1' }
 				});
@@ -109,6 +113,7 @@ suite('HookSchema', () => {
 				assert.deepStrictEqual(result, {
 					type: 'command',
 					windows: 'Write-Host "hello"',
+					windowsSource: 'powershell',
 					cwd: workspaceRoot
 				});
 			});
@@ -122,6 +127,7 @@ suite('HookSchema', () => {
 				assert.deepStrictEqual(result, {
 					type: 'command',
 					windows: 'Get-Process',
+					windowsSource: 'powershell',
 					cwd: workspaceRoot,
 					timeoutSec: 30
 				});
@@ -151,6 +157,8 @@ suite('HookSchema', () => {
 					command: 'direct-command',
 					linux: 'bash-script.sh',
 					osx: 'bash-script.sh',
+					linuxSource: 'bash',
+					osxSource: 'bash',
 					cwd: workspaceRoot
 				});
 			});
@@ -165,6 +173,7 @@ suite('HookSchema', () => {
 					type: 'command',
 					command: 'direct-command',
 					windows: 'ps-script.ps1',
+					windowsSource: 'powershell',
 					cwd: workspaceRoot
 				});
 			});
@@ -180,6 +189,9 @@ suite('HookSchema', () => {
 					windows: 'ps-script.ps1',
 					linux: 'bash-script.sh',
 					osx: 'bash-script.sh',
+					windowsSource: 'powershell',
+					linuxSource: 'bash',
+					osxSource: 'bash',
 					cwd: workspaceRoot
 				});
 			});
@@ -290,6 +302,7 @@ suite('HookSchema', () => {
 					type: 'command',
 					command: 'default-command',
 					windows: 'win-command',
+					windowsSource: 'windows',
 					cwd: workspaceRoot
 				});
 			});
@@ -304,6 +317,7 @@ suite('HookSchema', () => {
 					type: 'command',
 					command: 'default-command',
 					linux: 'linux-command',
+					linuxSource: 'linux',
 					cwd: workspaceRoot
 				});
 			});
@@ -318,6 +332,7 @@ suite('HookSchema', () => {
 					type: 'command',
 					command: 'default-command',
 					osx: 'osx-command',
+					osxSource: 'osx',
 					cwd: workspaceRoot
 				});
 			});
@@ -336,6 +351,9 @@ suite('HookSchema', () => {
 					windows: 'win-command',
 					linux: 'linux-command',
 					osx: 'osx-command',
+					windowsSource: 'windows',
+					linuxSource: 'linux',
+					osxSource: 'osx',
 					cwd: workspaceRoot
 				});
 			});
@@ -350,6 +368,8 @@ suite('HookSchema', () => {
 					type: 'command',
 					linux: 'explicit-linux.sh',
 					osx: 'default.sh',
+					linuxSource: 'linux',
+					osxSource: 'bash',
 					cwd: workspaceRoot
 				});
 			});
