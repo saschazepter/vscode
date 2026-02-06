@@ -306,7 +306,8 @@ export class FocusSessionActionViewItem extends SelectActionViewItem<IDebugSessi
 		const sessionListeners = this._register(new DisposableMap<string, DisposableStore>());
 
 		const registerSessionListeners = (session: IDebugSession) => {
-			// Dispose any existing listeners for this session ID before creating new ones
+			// Defensive: dispose any existing listeners for this session ID before creating new ones
+			// This should not happen in normal operation but prevents leaks if called multiple times
 			sessionListeners.deleteAndDispose(session.getId());
 
 			const store = new DisposableStore();
