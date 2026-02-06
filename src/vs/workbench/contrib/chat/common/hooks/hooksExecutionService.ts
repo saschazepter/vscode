@@ -4,7 +4,8 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { CancellationToken } from '../../../../../base/common/cancellation.js';
-import { IDisposable, toDisposable } from '../../../../../base/common/lifecycle.js';
+import { Emitter, Event } from '../../../../../base/common/event.js';
+import { Disposable, IDisposable, toDisposable } from '../../../../../base/common/lifecycle.js';
 import { StopWatch } from '../../../../../base/common/stopwatch.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { localize } from '../../../../../nls.js';
@@ -28,6 +29,7 @@ import {
 	IPreToolUseCallerInput,
 	IPreToolUseHookResult,
 	postToolUseOutputValidator,
+	PreToolUsePermissionDecision,
 	preToolUseOutputValidator
 } from './hooksTypes.js';
 
@@ -37,6 +39,14 @@ const hooksOutputChannelLabel = localize('hooksExecutionChannel', "Hooks");
 export interface IHooksExecutionOptions {
 	readonly input?: unknown;
 	readonly token?: CancellationToken;
+}
+
+export interface IHookExecutedEvent {
+	readonly hookType: HookTypeValue;
+	readonly sessionResource: URI;
+	readonly input: unknown;
+	readonly results: readonly IHookResult[];
+	readonly durationMs: number;
 }
 
 /**
@@ -51,6 +61,11 @@ export const IHooksExecutionService = createDecorator<IHooksExecutionService>('h
 
 export interface IHooksExecutionService {
 	_serviceBrand: undefined;
+
+	/**
+	 * Fires when a hook has finished executing.
+	 */
+	readonly onDidExecuteHook: Event<IHookExecutedEvent>;
 
 	/**
 	 * Called by mainThreadHooks when extension host is ready
@@ -93,8 +108,11 @@ export interface IHooksExecutionService {
  */
 const redactedInputKeys = ['toolArgs'];
 
-export class HooksExecutionService implements IHooksExecutionService {
+export class HooksExecutionService extends Disposable implements IHooksExecutionService {
 	declare readonly _serviceBrand: undefined;
+
+	private readonly _onDidExecuteHook = this._register(new Emitter<IHookExecutedEvent>());
+	readonly onDidExecuteHook: Event<IHookExecutedEvent> = this._onDidExecuteHook.event;
 
 	private _proxy: IHooksExecutionProxy | undefined;
 	private readonly _sessionHooks = new Map<string, IChatRequestHooks>();
@@ -104,7 +122,9 @@ export class HooksExecutionService implements IHooksExecutionService {
 	constructor(
 		@ILogService private readonly _logService: ILogService,
 		@IOutputService private readonly _outputService: IOutputService,
-	) { }
+	) {
+		super();
+	}
 
 	setProxy(proxy: IHooksExecutionProxy): void {
 		this._proxy = proxy;
@@ -260,39 +280,51 @@ export class HooksExecutionService implements IHooksExecutionService {
 	}
 
 	async executeHook(hookType: HookTypeValue, sessionResource: URI, options?: IHooksExecutionOptions): Promise<IHookResult[]> {
-		if (!this._proxy) {
-			return [];
-		}
-
-		const hooks = this.getHooksForSession(sessionResource);
-		if (!hooks) {
-			return [];
-		}
-
-		const hookCommands = hooks[hookType];
-		if (!hookCommands || hookCommands.length === 0) {
-			return [];
-		}
-
-		const requestId = this._requestCounter++;
-		const token = options?.token ?? CancellationToken.None;
-
-		this._logService.debug(`[HooksExecutionService] Executing ${hookCommands.length} hook(s) for type '${hookType}'`);
-		this._log(requestId, hookType, `Executing ${hookCommands.length} hook(s)`);
-
+		const sw = StopWatch.create();
 		const results: IHookResult[] = [];
-		for (const hookCommand of hookCommands) {
-			const result = await this._runSingleHook(requestId, hookType, hookCommand, sessionResource, options?.input, token);
-			results.push(result);
 
-			// If stopReason is set, stop processing remaining hooks
-			if (result.stopReason) {
-				this._log(requestId, hookType, `Stopping: ${result.stopReason}`);
-				break;
+		try {
+			if (!this._proxy) {
+				return results;
 			}
-		}
 
-		return results;
+			const hooks = this.getHooksForSession(sessionResource);
+			if (!hooks) {
+				return results;
+			}
+
+			const hookCommands = hooks[hookType];
+			if (!hookCommands || hookCommands.length === 0) {
+				return results;
+			}
+
+			const requestId = this._requestCounter++;
+			const token = options?.token ?? CancellationToken.None;
+
+			this._logService.debug(`[HooksExecutionService] Executing ${hookCommands.length} hook(s) for type '${hookType}'`);
+			this._log(requestId, hookType, `Executing ${hookCommands.length} hook(s)`);
+
+			for (const hookCommand of hookCommands) {
+				const result = await this._runSingleHook(requestId, hookType, hookCommand, sessionResource, options?.input, token);
+				results.push(result);
+
+				// If stopReason is set, stop processing remaining hooks
+				if (result.stopReason) {
+					this._log(requestId, hookType, `Stopping: ${result.stopReason}`);
+					break;
+				}
+			}
+
+			return results;
+		} finally {
+			this._onDidExecuteHook.fire({
+				hookType,
+				sessionResource,
+				input: options?.input,
+				results,
+				durationMs: Math.round(sw.elapsed()),
+			});
+		}
 	}
 
 	async executePreToolUseHook(sessionResource: URI, input: IPreToolUseCallerInput, token?: CancellationToken): Promise<IPreToolUseHookResult | undefined> {
@@ -307,14 +339,17 @@ export class HooksExecutionService implements IHooksExecutionService {
 			token: token ?? CancellationToken.None,
 		});
 
-		// Collect all valid outputs - priority order: deny > ask > allow
-		let lastAskResult: IPreToolUseHookResult | undefined;
-		let lastAllowResult: IPreToolUseHookResult | undefined;
+		// Run all hooks and collapse results. Most restrictive decision wins: deny > ask > allow.
+		// Collect all additionalContext strings from every hook.
+		const allAdditionalContext: string[] = [];
+		let mostRestrictiveDecision: PreToolUsePermissionDecision | undefined;
+		let winningResult: IHookResult | undefined;
+		let winningReason: string | undefined;
+
 		for (const result of results) {
 			if (result.success && typeof result.output === 'object' && result.output !== null) {
 				const validationResult = preToolUseOutputValidator.validate(result.output);
 				if (!validationResult.error) {
-					// Extract from hookSpecificOutput wrapper
 					const hookSpecificOutput = validationResult.content.hookSpecificOutput;
 					if (hookSpecificOutput) {
 						// Validate hookEventName if present - must match the hook type
@@ -323,35 +358,44 @@ export class HooksExecutionService implements IHooksExecutionService {
 							continue;
 						}
 
-						const preToolUseResult: IPreToolUseHookResult = {
-							...result,
-							permissionDecision: hookSpecificOutput.permissionDecision,
-							permissionDecisionReason: hookSpecificOutput.permissionDecisionReason,
-							additionalContext: hookSpecificOutput.additionalContext,
-						};
+						// Collect additionalContext from every hook
+						if (hookSpecificOutput.additionalContext) {
+							allAdditionalContext.push(hookSpecificOutput.additionalContext);
+						}
 
-						// If any hook denies, return immediately with that denial
-						if (hookSpecificOutput.permissionDecision === 'deny') {
-							return preToolUseResult;
-						}
-						// Track 'ask' results (ask takes priority over allow)
-						if (hookSpecificOutput.permissionDecision === 'ask') {
-							lastAskResult = preToolUseResult;
-						}
-						// Track the last allow in case we need to return it
-						if (hookSpecificOutput.permissionDecision === 'allow') {
-							lastAllowResult = preToolUseResult;
+						// Track the most restrictive decision: deny > ask > allow
+						const decision = hookSpecificOutput.permissionDecision;
+						if (decision && this._isMoreRestrictive(decision, mostRestrictiveDecision)) {
+							mostRestrictiveDecision = decision;
+							winningResult = result;
+							winningReason = hookSpecificOutput.permissionDecisionReason;
 						}
 					}
 				} else {
-					// If validation fails, log a warning and continue to next result
 					this._logService.warn(`[HooksExecutionService] preToolUse hook output validation failed: ${validationResult.error.message}`);
 				}
 			}
 		}
 
-		// Return with priority: ask > allow > undefined
-		return lastAskResult ?? lastAllowResult;
+		if (!mostRestrictiveDecision || !winningResult) {
+			return undefined;
+		}
+
+		return {
+			...winningResult,
+			permissionDecision: mostRestrictiveDecision,
+			permissionDecisionReason: winningReason,
+			additionalContext: allAdditionalContext.length > 0 ? allAdditionalContext : undefined,
+		};
+	}
+
+	/**
+	 * Returns true if `candidate` is more restrictive than `current`.
+	 * Restriction order: deny > ask > allow.
+	 */
+	private _isMoreRestrictive(candidate: PreToolUsePermissionDecision, current: PreToolUsePermissionDecision | undefined): boolean {
+		const order: Record<PreToolUsePermissionDecision, number> = { 'deny': 2, 'ask': 1, 'allow': 0 };
+		return current === undefined || order[candidate] > order[current];
 	}
 
 	async executePostToolUseHook(sessionResource: URI, input: IPostToolUseCallerInput, token?: CancellationToken): Promise<IPostToolUseHookResult | undefined> {
@@ -377,8 +421,13 @@ export class HooksExecutionService implements IHooksExecutionService {
 			token: token ?? CancellationToken.None,
 		});
 
-		// Collect results - if any hook blocks, return it
-		let lastResultWithContext: IPostToolUseHookResult | undefined;
+		// Run all hooks and collapse results. Block is the most restrictive decision.
+		// Collect all additionalContext strings from every hook.
+		const allAdditionalContext: string[] = [];
+		let hasBlock = false;
+		let blockReason: string | undefined;
+		let blockResult: IHookResult | undefined;
+
 		for (const result of results) {
 			if (result.success && typeof result.output === 'object' && result.output !== null) {
 				const validationResult = postToolUseOutputValidator.validate(result.output);
@@ -391,21 +440,16 @@ export class HooksExecutionService implements IHooksExecutionService {
 						continue;
 					}
 
-					const postToolUseResult: IPostToolUseHookResult = {
-						...result,
-						decision: validated.decision,
-						reason: validated.reason,
-						additionalContext: validated.hookSpecificOutput?.additionalContext,
-					};
-
-					// If any hook blocks, return immediately with that block
-					if (validated.decision === 'block') {
-						return postToolUseResult;
+					// Collect additionalContext from every hook
+					if (validated.hookSpecificOutput?.additionalContext) {
+						allAdditionalContext.push(validated.hookSpecificOutput.additionalContext);
 					}
 
-					// Track last result that has additional context
-					if (validated.hookSpecificOutput?.additionalContext) {
-						lastResultWithContext = postToolUseResult;
+					// Track the first block decision (most restrictive)
+					if (validated.decision === 'block' && !hasBlock) {
+						hasBlock = true;
+						blockReason = validated.reason;
+						blockResult = result;
 					}
 				} else {
 					this._logService.warn(`[HooksExecutionService] postToolUse hook output validation failed: ${validationResult.error.message}`);
@@ -413,6 +457,17 @@ export class HooksExecutionService implements IHooksExecutionService {
 			}
 		}
 
-		return lastResultWithContext;
+		// Return combined result if there's a block decision or any additional context
+		if (!hasBlock && allAdditionalContext.length === 0) {
+			return undefined;
+		}
+
+		const baseResult = blockResult ?? results[0];
+		return {
+			...baseResult,
+			decision: hasBlock ? 'block' : undefined,
+			reason: blockReason,
+			additionalContext: allAdditionalContext.length > 0 ? allAdditionalContext : undefined,
+		};
 	}
 }

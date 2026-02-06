@@ -8,6 +8,7 @@ import { Barrier } from '../../../../../../base/common/async.js';
 import { VSBuffer } from '../../../../../../base/common/buffer.js';
 import { CancellationToken } from '../../../../../../base/common/cancellation.js';
 import { CancellationError, isCancellationError } from '../../../../../../base/common/errors.js';
+import { Event } from '../../../../../../base/common/event.js';
 import { URI } from '../../../../../../base/common/uri.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/test/common/utils.js';
 import { IAccessibilityService } from '../../../../../../platform/accessibility/common/accessibility.js';
@@ -65,6 +66,7 @@ class TestTelemetryService implements Partial<ITelemetryService> {
 
 class MockHooksExecutionService implements IHooksExecutionService {
 	readonly _serviceBrand: undefined;
+	readonly onDidExecuteHook = Event.None;
 	public preToolUseHookResult: IPreToolUseHookResult | undefined = undefined;
 	public postToolUseHookResult: IPostToolUseHookResult | undefined = undefined;
 	public lastPreToolUseInput: IPreToolUseCallerInput | undefined = undefined;
@@ -526,6 +528,95 @@ suite('LanguageModelToolsService', () => {
 		const result = await promise;
 		assert.strictEqual(invoked, true, 'invoke should have run after confirmation');
 		assert.strictEqual(result.content[0].value, 'ran');
+	});
+
+	test('selectedCustomButton is passed to tool invoke when user selects a custom button', async () => {
+		let receivedInvocation: IToolInvocation | undefined;
+		const tool = registerToolForTest(service, store, 'testToolCustomButton', {
+			prepareToolInvocation: async () => ({
+				confirmationMessages: {
+					title: 'Confirm',
+					message: 'Pick an option',
+					customButtons: ['Option A', 'Option B'],
+					allowAutoConfirm: false,
+				}
+			}),
+			invoke: async (invocation) => {
+				receivedInvocation = invocation;
+				return { content: [{ kind: 'text', value: invocation.selectedCustomButton ?? 'none' }] };
+			},
+		});
+
+		const sessionId = 'sessionId-custom-btn';
+		const capture: { invocation?: any } = {};
+		stubGetSession(chatService, sessionId, { requestId: 'requestId-custom-btn', capture });
+
+		const dto = tool.makeDto({ x: 1 }, { sessionId });
+
+		const promise = service.invokeTool(dto, async () => 0, CancellationToken.None);
+		const published = await waitForPublishedInvocation(capture);
+		assert.ok(published, 'expected ChatToolInvocation to be published');
+
+		IChatToolInvocation.confirmWith(published, { type: ToolConfirmKind.UserAction, selectedButton: 'Option A' });
+		const result = await promise;
+		assert.strictEqual(receivedInvocation?.selectedCustomButton, 'Option A');
+		assert.strictEqual(result.content[0].value, 'Option A');
+	});
+
+	test('selectedCustomButton is not set when user confirms without custom button', async () => {
+		let receivedInvocation: IToolInvocation | undefined;
+		const tool = registerToolForTest(service, store, 'testToolNoCustomBtn', {
+			prepareToolInvocation: async () => ({
+				confirmationMessages: { title: 'Confirm', message: 'Go?' }
+			}),
+			invoke: async (invocation) => {
+				receivedInvocation = invocation;
+				return { content: [{ kind: 'text', value: 'ok' }] };
+			},
+		});
+
+		const sessionId = 'sessionId-no-custom-btn';
+		const capture: { invocation?: any } = {};
+		stubGetSession(chatService, sessionId, { requestId: 'requestId-no-custom-btn', capture });
+
+		const dto = tool.makeDto({ x: 1 }, { sessionId });
+
+		const promise = service.invokeTool(dto, async () => 0, CancellationToken.None);
+		const published = await waitForPublishedInvocation(capture);
+		assert.ok(published);
+
+		IChatToolInvocation.confirmWith(published, { type: ToolConfirmKind.UserAction });
+		const result = await promise;
+		assert.strictEqual(receivedInvocation?.selectedCustomButton, undefined);
+		assert.strictEqual(result.content[0].value, 'ok');
+	});
+
+	test('confirmationMessages with customButtons disables allowAutoConfirm', async () => {
+		const tool = registerToolForTest(service, store, 'testToolCustomBtnNoAuto', {
+			prepareToolInvocation: async () => ({
+				confirmationMessages: {
+					title: 'Confirm',
+					message: 'Choose',
+					customButtons: ['Yes', 'No'],
+					allowAutoConfirm: false,
+				}
+			}),
+			invoke: async () => ({ content: [{ kind: 'text', value: 'done' }] }),
+		});
+
+		const sessionId = 'sessionId-custom-noauto';
+		const capture: { invocation?: any } = {};
+		stubGetSession(chatService, sessionId, { requestId: 'requestId-custom-noauto', capture });
+
+		const dto = tool.makeDto({ x: 1 }, { sessionId });
+
+		const promise = service.invokeTool(dto, async () => 0, CancellationToken.None);
+		const published = await waitForPublishedInvocation(capture);
+		assert.ok(published, 'expected ChatToolInvocation to be published');
+		assert.deepStrictEqual(published.confirmationMessages?.customButtons, ['Yes', 'No']);
+
+		IChatToolInvocation.confirmWith(published, { type: ToolConfirmKind.UserAction, selectedButton: 'Yes' });
+		await promise;
 	});
 
 	test('cancel tool call', async () => {
@@ -2009,35 +2100,31 @@ suite('LanguageModelToolsService', () => {
 		// Change the context key value
 		contextKeyService.createKey('dynamicKey', true);
 
-		// Wait a bit for the scheduler
-		await new Promise(resolve => setTimeout(resolve, 800));
+		service.flushToolUpdates();
 
 		assert.strictEqual(changeEventFired, true, 'onDidChangeTools should fire when context keys change');
 	});
 
 	test('configuration changes trigger tool updates', async () => {
-		return runWithFakedTimers({}, async () => {
-			let changeEventFired = false;
-			const disposable = service.onDidChangeTools(() => {
-				changeEventFired = true;
-			});
-			store.add(disposable);
-
-			// Change the correct configuration key
-			configurationService.setUserConfiguration('chat.extensionTools.enabled', false);
-			// Fire the configuration change event manually
-			configurationService.onDidChangeConfigurationEmitter.fire({
-				affectsConfiguration: () => true,
-				affectedKeys: new Set(['chat.extensionTools.enabled']),
-				change: null!,
-				source: ConfigurationTarget.USER
-			} satisfies IConfigurationChangeEvent);
-
-			// Wait a bit for the scheduler
-			await new Promise(resolve => setTimeout(resolve, 800));
-
-			assert.strictEqual(changeEventFired, true, 'onDidChangeTools should fire when configuration changes');
+		let changeEventFired = false;
+		const disposable = service.onDidChangeTools(() => {
+			changeEventFired = true;
 		});
+		store.add(disposable);
+
+		// Change the correct configuration key
+		configurationService.setUserConfiguration('chat.extensionTools.enabled', false);
+		// Fire the configuration change event manually
+		configurationService.onDidChangeConfigurationEmitter.fire({
+			affectsConfiguration: () => true,
+			affectedKeys: new Set(['chat.extensionTools.enabled']),
+			change: null!,
+			source: ConfigurationTarget.USER
+		} satisfies IConfigurationChangeEvent);
+
+		service.flushToolUpdates();
+
+		assert.strictEqual(changeEventFired, true, 'onDidChangeTools should fire when configuration changes');
 	});
 
 	test('toToolAndToolSetEnablementMap with MCP toolset enables contained tools', () => {
@@ -3100,47 +3187,44 @@ suite('LanguageModelToolsService', () => {
 		configurationService.setUserConfiguration(ChatConfiguration.ExtensionToolsEnabled, true);
 	});
 
-	test('observeTools changes when context key changes', async () => {
-		return runWithFakedTimers({}, async () => {
-			const testCtxKey = contextKeyService.createKey<string>('dynamicTestKey', 'value1');
+	test('observeTools changes when context key changes', () => {
+		const testCtxKey = contextKeyService.createKey<string>('dynamicTestKey', 'value1');
 
-			const tool1: IToolData = {
-				id: 'dynamicTool1',
-				modelDescription: 'Dynamic Tool 1',
-				displayName: 'Dynamic Tool 1',
-				source: ToolDataSource.Internal,
-				when: ContextKeyEqualsExpr.create('dynamicTestKey', 'value1'),
-			};
+		const tool1: IToolData = {
+			id: 'dynamicTool1',
+			modelDescription: 'Dynamic Tool 1',
+			displayName: 'Dynamic Tool 1',
+			source: ToolDataSource.Internal,
+			when: ContextKeyEqualsExpr.create('dynamicTestKey', 'value1'),
+		};
 
-			const tool2: IToolData = {
-				id: 'dynamicTool2',
-				modelDescription: 'Dynamic Tool 2',
-				displayName: 'Dynamic Tool 2',
-				source: ToolDataSource.Internal,
-				when: ContextKeyEqualsExpr.create('dynamicTestKey', 'value2'),
-			};
+		const tool2: IToolData = {
+			id: 'dynamicTool2',
+			modelDescription: 'Dynamic Tool 2',
+			displayName: 'Dynamic Tool 2',
+			source: ToolDataSource.Internal,
+			when: ContextKeyEqualsExpr.create('dynamicTestKey', 'value2'),
+		};
 
-			store.add(service.registerToolData(tool1));
-			store.add(service.registerToolData(tool2));
+		store.add(service.registerToolData(tool1));
+		store.add(service.registerToolData(tool2));
 
-			const toolsObs = service.observeTools(undefined);
+		const toolsObs = service.observeTools(undefined);
 
-			// Initial state: value1 matches tool1
-			let tools = toolsObs.get();
-			assert.strictEqual(tools.length, 1, 'should have 1 tool initially');
-			assert.strictEqual(tools[0].id, 'dynamicTool1', 'should be dynamicTool1');
+		// Initial state: value1 matches tool1
+		let tools = toolsObs.get();
+		assert.strictEqual(tools.length, 1, 'should have 1 tool initially');
+		assert.strictEqual(tools[0].id, 'dynamicTool1', 'should be dynamicTool1');
 
-			// Change context key to value2
-			testCtxKey.set('value2');
+		// Change context key to value2
+		testCtxKey.set('value2');
 
-			// Wait for scheduler to trigger
-			await new Promise(resolve => setTimeout(resolve, 800));
+		service.flushToolUpdates();
 
-			// Now tool2 should be available
-			tools = toolsObs.get();
-			assert.strictEqual(tools.length, 1, 'should have 1 tool after change');
-			assert.strictEqual(tools[0].id, 'dynamicTool2', 'should be dynamicTool2 after context change');
-		});
+		// Now tool2 should be available
+		tools = toolsObs.get();
+		assert.strictEqual(tools.length, 1, 'should have 1 tool after change');
+		assert.strictEqual(tools[0].id, 'dynamicTool2', 'should be dynamicTool2 after context change');
 	});
 
 	test('isPermitted allows tools in permitted toolsets when agent mode is disabled', () => {
@@ -3536,62 +3620,59 @@ suite('LanguageModelToolsService', () => {
 			assert.ok(!toolIds.includes('toolWithWhenTrue'), 'Tool with when=true should NOT be in tool set when context key is false');
 		});
 
-		test('ToolSet.getTools updates when context key changes', async () => {
-			return runWithFakedTimers({}, async () => {
-				// Create a context key for testing
-				const testKey = contextKeyService.createKey<string>('dynamicTestKey', 'value1');
+		test('ToolSet.getTools updates when context key changes', () => {
+			// Create a context key for testing
+			const testKey = contextKeyService.createKey<string>('dynamicTestKey', 'value1');
 
-				// Create tools with when clauses
-				const toolWithValue1: IToolData = {
-					id: 'toolWithValue1',
-					modelDescription: 'Tool with value1',
-					displayName: 'Tool with value1',
-					source: ToolDataSource.Internal,
-					when: ContextKeyEqualsExpr.create('dynamicTestKey', 'value1'),
-				};
+			// Create tools with when clauses
+			const toolWithValue1: IToolData = {
+				id: 'toolWithValue1',
+				modelDescription: 'Tool with value1',
+				displayName: 'Tool with value1',
+				source: ToolDataSource.Internal,
+				when: ContextKeyEqualsExpr.create('dynamicTestKey', 'value1'),
+			};
 
-				const toolWithValue2: IToolData = {
-					id: 'toolWithValue2',
-					modelDescription: 'Tool with value2',
-					displayName: 'Tool with value2',
-					source: ToolDataSource.Internal,
-					when: ContextKeyEqualsExpr.create('dynamicTestKey', 'value2'),
-				};
+			const toolWithValue2: IToolData = {
+				id: 'toolWithValue2',
+				modelDescription: 'Tool with value2',
+				displayName: 'Tool with value2',
+				source: ToolDataSource.Internal,
+				when: ContextKeyEqualsExpr.create('dynamicTestKey', 'value2'),
+			};
 
-				// Create a tool set and add the tools
-				const dynamicToolSet = store.add(service.createToolSet(
-					ToolDataSource.Internal,
-					'dynamicToolSet',
-					'dynamicToolSetRef',
-					{ description: 'Dynamic Tool Set' }
-				));
+			// Create a tool set and add the tools
+			const dynamicToolSet = store.add(service.createToolSet(
+				ToolDataSource.Internal,
+				'dynamicToolSet',
+				'dynamicToolSetRef',
+				{ description: 'Dynamic Tool Set' }
+			));
 
-				store.add(service.registerToolData(toolWithValue1));
-				store.add(service.registerToolData(toolWithValue2));
+			store.add(service.registerToolData(toolWithValue1));
+			store.add(service.registerToolData(toolWithValue2));
 
-				store.add(dynamicToolSet.addTool(toolWithValue1));
-				store.add(dynamicToolSet.addTool(toolWithValue2));
+			store.add(dynamicToolSet.addTool(toolWithValue1));
+			store.add(dynamicToolSet.addTool(toolWithValue2));
 
-				// Initial state: value1 is set
-				let tools = Array.from(dynamicToolSet.getTools());
-				let toolIds = tools.map(t => t.id);
+			// Initial state: value1 is set
+			let tools = Array.from(dynamicToolSet.getTools());
+			let toolIds = tools.map(t => t.id);
 
-				assert.strictEqual(tools.length, 1, 'Should have 1 tool initially');
-				assert.strictEqual(toolIds[0], 'toolWithValue1', 'Should be toolWithValue1');
+			assert.strictEqual(tools.length, 1, 'Should have 1 tool initially');
+			assert.strictEqual(toolIds[0], 'toolWithValue1', 'Should be toolWithValue1');
 
-				// Change context key to value2
-				testKey.set('value2');
+			// Change context key to value2
+			testKey.set('value2');
 
-				// Wait for scheduler to trigger
-				await new Promise(resolve => setTimeout(resolve, 800));
+			service.flushToolUpdates();
 
-				// Now toolWithValue2 should be available
-				tools = Array.from(dynamicToolSet.getTools());
-				toolIds = tools.map(t => t.id);
+			// Now toolWithValue2 should be available
+			tools = Array.from(dynamicToolSet.getTools());
+			toolIds = tools.map(t => t.id);
 
-				assert.strictEqual(tools.length, 1, 'Should have 1 tool after change');
-				assert.strictEqual(toolIds[0], 'toolWithValue2', 'Should be toolWithValue2 after context change');
-			});
+			assert.strictEqual(tools.length, 1, 'Should have 1 tool after change');
+			assert.strictEqual(toolIds[0], 'toolWithValue2', 'Should be toolWithValue2 after context change');
 		});
 
 		test('ToolSet.getTools with complex when expressions', () => {
@@ -3904,9 +3985,7 @@ suite('LanguageModelToolsService', () => {
 				CancellationToken.None
 			);
 
-			// Wait for invocation to be captured
-			await new Promise(resolve => setTimeout(resolve, 50));
-			const invocation = capture.invocation;
+			const invocation = await waitForPublishedInvocation(capture);
 			assert.ok(invocation, 'Tool invocation should be created');
 
 			// Check that the tool is waiting for confirmation (not auto-approved)
@@ -4014,7 +4093,7 @@ suite('LanguageModelToolsService', () => {
 			mockHooksService.postToolUseHookResult = {
 				output: undefined,
 				success: true,
-				additionalContext: 'Consider running tests after this change',
+				additionalContext: ['Consider running tests after this change'],
 			};
 
 			const tool = registerToolForTest(hookService, store, 'postHookContextTool', {
@@ -4087,7 +4166,7 @@ suite('LanguageModelToolsService', () => {
 				success: true,
 				decision: 'block',
 				reason: 'Security issue found',
-				additionalContext: 'Please review the file permissions',
+				additionalContext: ['Please review the file permissions'],
 			};
 
 			const tool = registerToolForTest(hookService, store, 'postHookBlockContextTool', {
