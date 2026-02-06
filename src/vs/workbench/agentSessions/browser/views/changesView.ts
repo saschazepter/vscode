@@ -46,6 +46,7 @@ import { IAgentSessionsService } from '../../../contrib/chat/browser/agentSessio
 import { isIChatSessionFileChange2 } from '../../../contrib/chat/common/chatSessionsService.js';
 import { getChatSessionType } from '../../../contrib/chat/common/model/chatUri.js';
 import { AgentSessionProviders } from '../../../contrib/chat/browser/agentSessions/agentSessions.js';
+import { MarkdownString } from '../../../../base/common/htmlContent.js';
 
 const $ = dom.$;
 
@@ -396,7 +397,7 @@ export class ChangesViewPane extends ViewPane {
 			}));
 
 			this.renderDisposables.add(autorun(reader => {
-				const { isSessionMenu } = topLevelStats.read(reader);
+				const { isSessionMenu, added, removed } = topLevelStats.read(reader);
 				const sessionResource = this.activeSessionResource.read(reader);
 				reader.store.add(scopedInstantiationService.createInstance(
 					MenuWorkbenchButtonBar,
@@ -409,7 +410,11 @@ export class ChangesViewPane extends ViewPane {
 							: { shouldForwardArgs: true },
 						buttonConfigProvider: (action) => {
 							if (action.id === 'chatEditing.viewChanges' || action.id === 'chatEditing.viewPreviousEdits' || action.id === 'chatEditing.viewAllSessionChanges' || action.id === 'chat.openSessionWorktreeInVSCode') {
-								return { showIcon: true, showLabel: false, isSecondary: true };
+								const diffStatsLabel = new MarkdownString(
+									`<span class="working-set-lines-added">+${added}</span>&nbsp;<span class="working-set-lines-removed">-${removed}</span>`,
+									{ supportHtml: true }
+								);
+								return { showIcon: true, showLabel: true, isSecondary: true, customClass: 'working-set-diff-stats', customLabel: diffStatsLabel };
 							}
 							if (action.id === 'github.createPullRequest') {
 								return { showIcon: true, showLabel: true };
