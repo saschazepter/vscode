@@ -7,9 +7,13 @@ import './media/aiCustomizationManagement.css';
 import * as DOM from '../../../../../base/browser/dom.js';
 import { Dimension } from '../../../../../base/browser/dom.js';
 import { CancellationToken } from '../../../../../base/common/cancellation.js';
-import { DisposableStore, MutableDisposable } from '../../../../../base/common/lifecycle.js';
+import { DisposableStore, IReference, MutableDisposable } from '../../../../../base/common/lifecycle.js';
 import { Event } from '../../../../../base/common/event.js';
 import { Orientation, Sizing, SplitView } from '../../../../../base/browser/ui/splitview/splitview.js';
+import { CodeEditorWidget } from '../../../../../editor/browser/widget/codeEditor/codeEditorWidget.js';
+import { IResolvedTextEditorModel, ITextModelService } from '../../../../../editor/common/services/resolverService.js';
+import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
+import { getSimpleEditorOptions } from '../../../codeEditor/browser/simpleEditorOptions.js';
 import { localize } from '../../../../../nls.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
 import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry.js';
@@ -18,7 +22,6 @@ import { IEditorOptions } from '../../../../../platform/editor/common/editor.js'
 import { EditorPane } from '../../../../browser/parts/editor/editorPane.js';
 import { IEditorOpenContext } from '../../../../common/editor.js';
 import { IEditorGroup } from '../../../../services/editor/common/editorGroupsService.js';
-import { IEditorService } from '../../../../services/editor/common/editorService.js';
 import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
 import { IContextKey, IContextKeyService } from '../../../../../platform/contextkey/common/contextkey.js';
 import { WorkbenchList } from '../../../../../platform/list/browser/listService.js';
@@ -29,6 +32,7 @@ import { defaultButtonStyles } from '../../../../../platform/theme/browser/defau
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
 import { IOpenerService } from '../../../../../platform/opener/common/opener.js';
+import { basename } from '../../../../../base/common/resources.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { registerColor } from '../../../../../platform/theme/common/colorRegistry.js';
 import { PANEL_BORDER } from '../../../../common/theme.js';
@@ -48,7 +52,6 @@ import {
 	CONTENT_MIN_WIDTH,
 } from './aiCustomizationManagement.js';
 import { agentIcon, instructionsIcon, promptIcon, skillIcon, hookIcon } from '../aiCustomizationTreeView/aiCustomizationTreeViewIcons.js';
-import { AI_CUSTOMIZATION_EDITOR_ID } from '../aiCustomizationEditor/aiCustomizationEditor.js';
 import { ChatModelsWidget } from '../chatManagement/chatModelsWidget.js';
 
 const $ = DOM.$;
@@ -130,6 +133,15 @@ export class AICustomizationManagementEditor extends EditorPane {
 	private modelsContentContainer!: HTMLElement;
 	private modelsHeaderElement!: HTMLElement;
 
+	// Embedded editor state
+	private editorContentContainer!: HTMLElement;
+	private embeddedEditorContainer!: HTMLElement;
+	private embeddedEditor!: CodeEditorWidget;
+	private editorItemNameElement!: HTMLElement;
+	private editorItemPathElement!: HTMLElement;
+	private currentModelRef: IReference<IResolvedTextEditorModel> | undefined;
+	private viewMode: 'list' | 'editor' = 'list';
+
 	private dimension: Dimension | undefined;
 	private readonly sections: ISectionItem[] = [];
 	private selectedSection: AICustomizationManagementSection = AICustomizationManagementSection.Agents;
@@ -147,9 +159,10 @@ export class AICustomizationManagementEditor extends EditorPane {
 		@IStorageService private readonly storageService: IStorageService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@IContextKeyService contextKeyService: IContextKeyService,
-		@IEditorService private readonly editorService: IEditorService,
 		@ICommandService private readonly commandService: ICommandService,
 		@IOpenerService private readonly openerService: IOpenerService,
+		@ITextModelService private readonly textModelService: ITextModelService,
+		@IConfigurationService private readonly configurationService: IConfigurationService,
 	) {
 		super(AICustomizationManagementEditor.ID, group, telemetryService, themeService, storageService);
 
@@ -310,6 +323,15 @@ export class AICustomizationManagementEditor extends EditorPane {
 					// Models widget has header, subtract header height
 					const modelsHeaderHeight = this.modelsHeaderElement?.offsetHeight || 80;
 					this.modelsWidget.layout(height - 16 - modelsHeaderHeight, width);
+
+					// Layout embedded editor when in editor mode
+					if (this.viewMode === 'editor' && this.embeddedEditor) {
+						const editorHeaderHeight = 50; // Back button + item info header
+						const padding = 24; // Content inner padding
+						const editorHeight = height - editorHeaderHeight - padding;
+						const editorWidth = width - padding;
+						this.embeddedEditor.layout({ width: Math.max(0, editorWidth), height: Math.max(0, editorHeight) });
+					}
 				}
 			},
 		}, Sizing.Distribute, undefined, true);
@@ -406,6 +428,10 @@ export class AICustomizationManagementEditor extends EditorPane {
 		this.mcpListWidget = this.editorDisposables.add(this.instantiationService.createInstance(McpListWidget));
 		this.mcpContentContainer.appendChild(this.mcpListWidget.element);
 
+		// Container for embedded editor view
+		this.editorContentContainer = DOM.append(contentInner, $('.editor-content-container'));
+		this.createEmbeddedEditor();
+
 		// Set initial visibility based on selected section
 		this.updateContentVisibility();
 
@@ -428,6 +454,11 @@ export class AICustomizationManagementEditor extends EditorPane {
 			return;
 		}
 
+		// If in editor view, go back to list first
+		if (this.viewMode === 'editor') {
+			this.goBackToList();
+		}
+
 		this.selectedSection = section;
 		this.sectionContextKey.set(section);
 
@@ -447,13 +478,16 @@ export class AICustomizationManagementEditor extends EditorPane {
 	}
 
 	private updateContentVisibility(): void {
+		const isEditorMode = this.viewMode === 'editor';
 		const isPromptsSection = this.isPromptsSection(this.selectedSection);
 		const isModelsSection = this.selectedSection === AICustomizationManagementSection.Models;
 		const isMcpSection = this.selectedSection === AICustomizationManagementSection.McpServers;
 
-		this.promptsContentContainer.style.display = isPromptsSection ? '' : 'none';
-		this.modelsContentContainer.style.display = isModelsSection ? '' : 'none';
-		this.mcpContentContainer.style.display = isMcpSection ? '' : 'none';
+		// Hide all list containers when in editor mode
+		this.promptsContentContainer.style.display = !isEditorMode && isPromptsSection ? '' : 'none';
+		this.modelsContentContainer.style.display = !isEditorMode && isModelsSection ? '' : 'none';
+		this.mcpContentContainer.style.display = !isEditorMode && isMcpSection ? '' : 'none';
+		this.editorContentContainer.style.display = isEditorMode ? '' : 'none';
 
 		// Render and layout models widget when switching to it
 		if (isModelsSection) {
@@ -465,10 +499,122 @@ export class AICustomizationManagementEditor extends EditorPane {
 	}
 
 	private openItem(item: IAICustomizationListItem): void {
-		this.editorService.openEditor({
-			resource: item.uri,
-			options: { override: AI_CUSTOMIZATION_EDITOR_ID }
-		});
+		this.showEmbeddedEditor(item);
+	}
+
+	/**
+	 * Creates the embedded editor container with back button and CodeEditorWidget.
+	 */
+	private createEmbeddedEditor(): void {
+		// Header with back button and item info
+		const editorHeader = DOM.append(this.editorContentContainer, $('.editor-header'));
+
+		// Back button
+		const backButton = DOM.append(editorHeader, $('button.editor-back-button'));
+		backButton.setAttribute('aria-label', localize('backToList', "Back to list"));
+		const backIcon = DOM.append(backButton, $(`.codicon.codicon-${Codicon.arrowLeft.id}`));
+		backIcon.setAttribute('aria-hidden', 'true');
+
+		this.editorDisposables.add(DOM.addDisposableListener(backButton, 'click', () => {
+			this.goBackToList();
+		}));
+
+		// Item info
+		const itemInfo = DOM.append(editorHeader, $('.editor-item-info'));
+		this.editorItemNameElement = DOM.append(itemInfo, $('.editor-item-name'));
+		this.editorItemPathElement = DOM.append(itemInfo, $('.editor-item-path'));
+
+		// Editor container
+		this.embeddedEditorContainer = DOM.append(this.editorContentContainer, $('.embedded-editor-container'));
+
+		// Create the CodeEditorWidget
+		const editorOptions = {
+			...getSimpleEditorOptions(this.configurationService),
+			readOnly: false,
+			minimap: { enabled: false },
+			lineNumbers: 'on' as const,
+			wordWrap: 'on' as const,
+			scrollBeyondLastLine: false,
+			automaticLayout: false,
+			folding: true,
+			renderLineHighlight: 'all' as const,
+			scrollbar: {
+				vertical: 'auto' as const,
+				horizontal: 'auto' as const,
+			},
+		};
+
+		this.embeddedEditor = this.editorDisposables.add(this.instantiationService.createInstance(
+			CodeEditorWidget,
+			this.embeddedEditorContainer,
+			editorOptions,
+			{
+				isSimpleWidget: false,
+				contributions: [],
+			}
+		));
+	}
+
+	/**
+	 * Shows the embedded editor with the content of the given item.
+	 */
+	private async showEmbeddedEditor(item: IAICustomizationListItem): Promise<void> {
+		// Dispose previous model reference if any
+		this.currentModelRef?.dispose();
+		this.currentModelRef = undefined;
+
+		this.viewMode = 'editor';
+
+		// Update header info
+		this.editorItemNameElement.textContent = item.name;
+		this.editorItemPathElement.textContent = basename(item.uri);
+
+		// Update visibility
+		this.updateContentVisibility();
+
+		try {
+			// Get the text model for the file
+			const ref = await this.textModelService.createModelReference(item.uri);
+			this.currentModelRef = ref;
+			this.embeddedEditor.setModel(ref.object.textEditorModel);
+
+			// Layout the editor
+			if (this.dimension) {
+				this.layout(this.dimension);
+			}
+
+			// Focus the editor
+			this.embeddedEditor.focus();
+		} catch (error) {
+			// If we can't load the model, go back to the list
+			console.error('Failed to load model for embedded editor:', error);
+			this.goBackToList();
+		}
+	}
+
+	/**
+	 * Goes back from the embedded editor view to the list view.
+	 */
+	private goBackToList(): void {
+		// Dispose model reference
+		this.currentModelRef?.dispose();
+		this.currentModelRef = undefined;
+
+		// Clear editor model
+		this.embeddedEditor.setModel(null);
+
+		this.viewMode = 'list';
+
+		// Update visibility
+		this.updateContentVisibility();
+
+		// Re-layout
+		if (this.dimension) {
+			this.layout(this.dimension);
+		}
+
+		// Focus the list
+		this.listWidget?.focusSearch();
 	}
 
 	override updateStyles(): void {
@@ -492,6 +638,12 @@ export class AICustomizationManagementEditor extends EditorPane {
 	override clearInput(): void {
 		this.inEditorContextKey.set(false);
 		this.inputDisposables.clear();
+
+		// Clean up embedded editor state
+		if (this.viewMode === 'editor') {
+			this.goBackToList();
+		}
+
 		super.clearInput();
 	}
 
@@ -509,6 +661,11 @@ export class AICustomizationManagementEditor extends EditorPane {
 
 	override focus(): void {
 		super.focus();
+		// When in editor mode, focus the editor
+		if (this.viewMode === 'editor') {
+			this.embeddedEditor?.focus();
+			return;
+		}
 		if (this.selectedSection === AICustomizationManagementSection.McpServers) {
 			this.mcpListWidget?.focus();
 		} else if (this.selectedSection === AICustomizationManagementSection.Models) {
