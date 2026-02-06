@@ -24,6 +24,7 @@ import { asCSSUrl } from '../../../../../base/browser/cssValue.js';
 import { FileAccess } from '../../../../../base/common/network.js';
 import { AgentSessionProviders, getAgentSessionProviderName } from '../agentSessions/agentSessions.js';
 import { IProductService } from '../../../../../platform/product/common/productService.js';
+import { WorkspaceFolderCountContext } from '../../../../common/contextkeys.js';
 
 const MAX_SESSIONS = 6;
 
@@ -93,6 +94,14 @@ export class ChatFullWelcomePart extends Disposable {
 		this._register(this.chatSessionsService.onDidChangeOptionGroups(() => {
 			this.renderExtensionPickers();
 			this.tryReveal();
+		}));
+
+		const workspaceFolderCountKey = new Set([WorkspaceFolderCountContext.key]);
+		this._register(this.contextKeyService.onDidChangeContext(e => {
+			if (e.affectsSome(workspaceFolderCountKey)) {
+				this.renderExtensionPickers();
+				this.tryReveal();
+			}
 		}));
 
 		// Listen for session type changes from the delegate

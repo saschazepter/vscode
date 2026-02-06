@@ -126,6 +126,7 @@ import { IModePickerDelegate, ModePickerActionItem } from './modePickerActionIte
 import { SessionTypePickerActionItem } from './sessionTargetPickerActionItem.js';
 import { WorkspacePickerActionItem } from './workspacePickerActionItem.js';
 import { ChatContextUsageWidget } from '../../widgetHosts/viewPane/chatContextUsageWidget.js';
+import { WorkspaceFolderCountContext } from '../../../../../common/contextkeys.js';
 
 const $ = dom.$;
 
@@ -2172,7 +2173,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 					// In full welcome mode (showFullWelcome), hide the target picker since:
 					// - For empty sessions: we show spread buttons in the bottom bar
 					// - For non-empty sessions: only delegation picker should appear
-					if (this._widget?.showFullWelcome && action.id === OpenSessionTargetPickerAction.ID) {
+					if (this._widget?.showFullWelcome && action.id === OpenSessionTargetPickerAction.ID && this.contextKeyService.contextMatchesRules(WorkspaceFolderCountContext.notEqualsTo(1))) {
 						const empty = new BaseActionViewItem(undefined, action);
 						if (empty.element) {
 							empty.element.style.display = 'none';
