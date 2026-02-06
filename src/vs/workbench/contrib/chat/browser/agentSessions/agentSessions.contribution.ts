@@ -13,7 +13,7 @@ import { Registry } from '../../../../../platform/registry/common/platform.js';
 import { Extensions as QuickAccessExtensions, IQuickAccessRegistry } from '../../../../../platform/quickinput/common/quickAccess.js';
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
 import { AgentSessionsViewContainerId, AgentSessionsViewerOrientation, AgentSessionsViewerPosition, AgentSessionsViewId } from './agentSessions.js';
-import { IAgentSessionsService, AgentSessionsService } from './agentSessionsService.js';
+import { IAgentSessionsService, AgentSessionsService, IActiveAgentSessionService, ActiveAgentSessionService } from './agentSessionsService.js';
 import { LocalAgentsSessionsProvider } from './localAgentSessionsProvider.js';
 import { registerWorkbenchContribution2, WorkbenchPhase } from '../../../../common/contributions.js';
 import { ISubmenuItem, MenuId, MenuRegistry, registerAction2 } from '../../../../../platform/actions/common/actions.js';
@@ -236,5 +236,6 @@ Registry.as<IQuickAccessRegistry>(QuickAccessExtensions.Quickaccess).registerQui
 registerWorkbenchContribution2(LocalAgentsSessionsProvider.ID, LocalAgentsSessionsProvider, WorkbenchPhase.AfterRestored);
 
 registerSingleton(IAgentSessionsService, AgentSessionsService, InstantiationType.Delayed);
+registerSingleton(IActiveAgentSessionService, ActiveAgentSessionService, InstantiationType.Delayed);
 
 //#endregion

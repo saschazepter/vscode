@@ -23,6 +23,7 @@ import { IHoverService } from '../../../../../../platform/hover/browser/hover.js
 import { localize } from '../../../../../../nls.js';
 import { AgentSessionsControl } from '../agentSessionsControl.js';
 import { AgentSessionsFilter, AgentSessionsGrouping } from '../agentSessionsFilter.js';
+import { IActiveAgentSessionService } from '../agentSessionsService.js';
 import { MenuId } from '../../../../../../platform/actions/common/actions.js';
 import { MenuWorkbenchToolBar } from '../../../../../../platform/actions/browser/toolbar.js';
 import { HoverPosition } from '../../../../../../base/browser/ui/hover/hoverWidget.js';
@@ -41,7 +42,6 @@ import { PromptsType } from '../../../common/promptSyntax/promptTypes.js';
 import { ILanguageModelsService } from '../../../common/languageModels.js';
 import { IMcpService } from '../../../../mcp/common/mcpTypes.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../../../platform/storage/common/storage.js';
-import { IWorkspaceContextService } from '../../../../../../platform/workspace/common/workspace.js';
 
 const $ = DOM.$;
 
@@ -54,7 +54,6 @@ interface IShortcutItem {
 }
 
 const CUSTOMIZATIONS_COLLAPSED_KEY = 'agentSessions.customizationsCollapsed';
-const LAST_SELECTED_SESSION_PER_FOLDER_KEY = 'agentSessionsViewPane.lastSelectedPerFolder';
 
 export class AgentSessionsViewPane extends ViewPane {
 
@@ -64,11 +63,6 @@ export class AgentSessionsViewPane extends ViewPane {
 	private sessionsControl: AgentSessionsControl | undefined;
 	private aiCustomizationContainer: HTMLElement | undefined;
 	private readonly shortcuts: IShortcutItem[] = [];
-
-	/**
-	 * Maps workspace folder URI (string) to the last selected session resource for that folder.
-	 */
-	private readonly lastSelectedSessionPerFolder: Map<string, URI>;
 
 	constructor(
 		options: IViewPaneOptions,
@@ -88,17 +82,9 @@ export class AgentSessionsViewPane extends ViewPane {
 		@ILanguageModelsService private readonly languageModelsService: ILanguageModelsService,
 		@IMcpService private readonly mcpService: IMcpService,
 		@IStorageService private readonly storageService: IStorageService,
-		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
+		@IActiveAgentSessionService private readonly activeSessionService: IActiveAgentSessionService,
 	) {
 		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
-
-		// Load last selected sessions per folder
-		this.lastSelectedSessionPerFolder = this.loadLastSelectedSessionsPerFolder();
-
-		// Save on shutdown
-		this._register(this.storageService.onWillSaveState(() => {
-			this.saveLastSelectedSessionsPerFolder();
-		}));
 
 		// Initialize shortcuts
 		this.shortcuts = [
@@ -192,52 +178,16 @@ export class AgentSessionsViewPane extends ViewPane {
 		this.createAICustomizationShortcuts(this.aiCustomizationContainer);
 	}
 
-	private onSessionOpened(sessionResource: URI): void {
-		const workspaceKey = this.getWorkspaceKey();
-		if (workspaceKey) {
-			this.lastSelectedSessionPerFolder.set(workspaceKey, sessionResource);
-		}
-	}
-
-	private getWorkspaceKey(): string | undefined {
-		const folders = this.workspaceContextService.getWorkspace().folders;
-		return folders.length > 0 ? folders[0].uri.toString() : undefined;
+	private onSessionOpened(_sessionResource: URI): void {
+		// The active session is now tracked by the ActiveSessionService
+		// This callback is still needed for the AgentSessionsControl
 	}
 
 	private restoreLastSelectedSession(): void {
-		const workspaceKey = this.getWorkspaceKey();
-		const lastSessionResource = workspaceKey ? this.lastSelectedSessionPerFolder.get(workspaceKey) : undefined;
-
-		if (lastSessionResource && this.sessionsControl) {
-			this.sessionsControl.select(lastSessionResource, { createNewIfNotFound: true });
+		const activeSession = this.activeSessionService.getActiveSession();
+		if (activeSession && this.sessionsControl) {
+			this.sessionsControl.select(activeSession.resource, { createNewIfNotFound: true });
 		}
-	}
-
-	private loadLastSelectedSessionsPerFolder(): Map<string, URI> {
-		const result = new Map<string, URI>();
-		const cached = this.storageService.get(LAST_SELECTED_SESSION_PER_FOLDER_KEY, StorageScope.WORKSPACE);
-		if (!cached) {
-			return result;
-		}
-
-		try {
-			const parsed = JSON.parse(cached) as Array<{ folderKey: string; sessionResource: string }>;
-			for (const entry of parsed) {
-				result.set(entry.folderKey, URI.parse(entry.sessionResource));
-			}
-		} catch {
-			// invalid data in storage, fallback to empty map
-		}
-
-		return result;
-	}
-
-	private saveLastSelectedSessionsPerFolder(): void {
-		const serialized: Array<{ folderKey: string; sessionResource: string }> = [];
-		for (const [folderKey, sessionResource] of this.lastSelectedSessionPerFolder) {
-			serialized.push({ folderKey, sessionResource: sessionResource.toString() });
-		}
-		this.storageService.store(LAST_SELECTED_SESSION_PER_FOLDER_KEY, JSON.stringify(serialized), StorageScope.WORKSPACE, StorageTarget.MACHINE);
 	}
 
 	private createAICustomizationShortcuts(container: HTMLElement): void {
