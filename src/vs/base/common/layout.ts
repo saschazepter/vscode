@@ -92,7 +92,7 @@ export function layout(viewportSize: number, viewSize: number, anchor: ILayoutAn
 
 interface ILayout2DOptions {
 	readonly anchorAlignment?: AnchorAlignment; // default: left
-	readonly anchorPosition?: AnchorPosition; // default: below
+	readonly anchorPosition?: AnchorPosition; // default: above
 	readonly anchorAxisAlignment?: AnchorAxisAlignment; // default: vertical
 }
 
