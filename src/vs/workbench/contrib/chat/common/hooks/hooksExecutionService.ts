@@ -6,7 +6,8 @@
 import { createDecorator } from '../../../../../platform/instantiation/common/instantiation.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { HookType, HookTypeValue, IChatRequestHooks, IHookCommand } from '../promptSyntax/hookSchema.js';
-import { IDisposable, toDisposable } from '../../../../../base/common/lifecycle.js';
+import { DisposableStore, IDisposable, toDisposable } from '../../../../../base/common/lifecycle.js';
+import { Emitter, Event } from '../../../../../base/common/event.js';
 import { ILogService } from '../../../../../platform/log/common/log.js';
 import { CancellationToken } from '../../../../../base/common/cancellation.js';
 import { StopWatch } from '../../../../../base/common/stopwatch.js';
@@ -35,6 +36,14 @@ export interface IHooksExecutionOptions {
 	readonly token?: CancellationToken;
 }
 
+export interface IHookExecutedEvent {
+	readonly hookType: HookTypeValue;
+	readonly sessionResource: URI;
+	readonly input: unknown;
+	readonly results: readonly IHookResult[];
+	readonly durationMs: number;
+}
+
 /**
  * Callback interface for hook execution proxies.
  * MainThreadHooks implements this to forward calls to the extension host.
@@ -47,6 +56,11 @@ export const IHooksExecutionService = createDecorator<IHooksExecutionService>('h
 
 export interface IHooksExecutionService {
 	_serviceBrand: undefined;
+
+	/**
+	 * Fires when a hook has finished executing.
+	 */
+	readonly onDidExecuteHook: Event<IHookExecutedEvent>;
 
 	/**
 	 * Called by mainThreadHooks when extension host is ready
@@ -83,6 +97,10 @@ const redactedInputKeys = ['toolArgs'];
 
 export class HooksExecutionService implements IHooksExecutionService {
 	declare readonly _serviceBrand: undefined;
+
+	private readonly _disposables = new DisposableStore();
+	private readonly _onDidExecuteHook = this._disposables.add(new Emitter<IHookExecutedEvent>());
+	readonly onDidExecuteHook: Event<IHookExecutedEvent> = this._onDidExecuteHook.event;
 
 	private _proxy: IHooksExecutionProxy | undefined;
 	private readonly _sessionHooks = new Map<string, IChatRequestHooks>();
@@ -264,6 +282,7 @@ export class HooksExecutionService implements IHooksExecutionService {
 
 		const requestId = this._requestCounter++;
 		const token = options?.token ?? CancellationToken.None;
+		const sw = StopWatch.create();
 
 		this._logService.debug(`[HooksExecutionService] Executing ${hookCommands.length} hook(s) for type '${hookType}'`);
 		this._log(requestId, hookType, `Executing ${hookCommands.length} hook(s)`);
@@ -279,6 +298,14 @@ export class HooksExecutionService implements IHooksExecutionService {
 				break;
 			}
 		}
+
+		this._onDidExecuteHook.fire({
+			hookType,
+			sessionResource,
+			input: options?.input,
+			results,
+			durationMs: Math.round(sw.elapsed()),
+		});
 
 		return results;
 	}
