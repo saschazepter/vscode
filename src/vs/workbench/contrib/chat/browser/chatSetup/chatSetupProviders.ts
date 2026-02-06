@@ -585,25 +585,36 @@ export class SetupAgent extends Disposable implements IChatAgentImplementation {
 		// Check if a matching welcome view is already present
 		const existingMatch = chatViewPane.getMatchingWelcomeView();
 		if (existingMatch) {
-			return { promise: Promise.resolve(existingMatch), disposable: { dispose() { } } };
+			return { promise: Promise.resolve(existingMatch), disposable: Disposable.None };
 		}
 
 		// Listen for changes in welcome view registry and context keys
 		// to detect when the extension sets an error welcome context
 		const disposables = new DisposableStore();
-		const descriptors = chatViewsWelcomeRegistry.get();
-		const descriptorKeys: Set<string> = new Set(descriptors.flatMap(d => d.when.keys()));
-
-		const onWelcomeChange = Event.any(
-			chatViewsWelcomeRegistry.onDidChange,
-			Event.filter(this.contextKeyService.onDidChangeContext, e => e.affectsSome(descriptorKeys))
-		);
+		const descriptorKeys: Set<string> = new Set(chatViewsWelcomeRegistry.get().flatMap(d => d.when.keys()));
 
 		const promise = new Promise<IChatViewsWelcomeDescriptor>(resolve => {
-			disposables.add(onWelcomeChange(() => {
+			const checkForMatch = () => {
 				const match = chatViewPane.getMatchingWelcomeView();
 				if (match) {
 					resolve(match);
+				}
+			};
+
+			// When new welcome view descriptors are registered, update
+			// tracked context keys and check for a match
+			disposables.add(chatViewsWelcomeRegistry.onDidChange(() => {
+				for (const key of chatViewsWelcomeRegistry.get().flatMap(d => d.when.keys())) {
+					descriptorKeys.add(key);
+				}
+				checkForMatch();
+			}));
+
+			// When context keys relevant to welcome view descriptors
+			// change, check for a match
+			disposables.add(this.contextKeyService.onDidChangeContext(e => {
+				if (e.affectsSome(descriptorKeys)) {
+					checkForMatch();
 				}
 			}));
 		});
