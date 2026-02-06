@@ -5,7 +5,7 @@
 
 import { CancellationToken } from '../../../../../base/common/cancellation.js';
 import { Emitter, Event } from '../../../../../base/common/event.js';
-import { Disposable, IDisposable, toDisposable } from '../../../../../base/common/lifecycle.js';
+import { DisposableStore, IDisposable, toDisposable } from '../../../../../base/common/lifecycle.js';
 import { StopWatch } from '../../../../../base/common/stopwatch.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { localize } from '../../../../../nls.js';
@@ -95,10 +95,11 @@ export interface IHooksExecutionService {
  */
 const redactedInputKeys = ['toolArgs'];
 
-export class HooksExecutionService extends Disposable implements IHooksExecutionService {
+export class HooksExecutionService implements IHooksExecutionService {
 	declare readonly _serviceBrand: undefined;
 
-	private readonly _onDidExecuteHook = this._register(new Emitter<IHookExecutedEvent>());
+	private readonly _disposables = new DisposableStore();
+	private readonly _onDidExecuteHook = this._disposables.add(new Emitter<IHookExecutedEvent>());
 	readonly onDidExecuteHook: Event<IHookExecutedEvent> = this._onDidExecuteHook.event;
 
 	private _proxy: IHooksExecutionProxy | undefined;
@@ -109,9 +110,7 @@ export class HooksExecutionService extends Disposable implements IHooksExecution
 	constructor(
 		@ILogService private readonly _logService: ILogService,
 		@IOutputService private readonly _outputService: IOutputService,
-	) {
-		super();
-	}
+	) { }
 
 	setProxy(proxy: IHooksExecutionProxy): void {
 		this._proxy = proxy;
@@ -267,48 +266,51 @@ export class HooksExecutionService extends Disposable implements IHooksExecution
 	}
 
 	async executeHook(hookType: HookTypeValue, sessionResource: URI, options?: IHooksExecutionOptions): Promise<IHookResult[]> {
-		if (!this._proxy) {
-			return [];
-		}
-
-		const hooks = this.getHooksForSession(sessionResource);
-		if (!hooks) {
-			return [];
-		}
-
-		const hookCommands = hooks[hookType];
-		if (!hookCommands || hookCommands.length === 0) {
-			return [];
-		}
-
-		const requestId = this._requestCounter++;
-		const token = options?.token ?? CancellationToken.None;
 		const sw = StopWatch.create();
-
-		this._logService.debug(`[HooksExecutionService] Executing ${hookCommands.length} hook(s) for type '${hookType}'`);
-		this._log(requestId, hookType, `Executing ${hookCommands.length} hook(s)`);
-
 		const results: IHookResult[] = [];
-		for (const hookCommand of hookCommands) {
-			const result = await this._runSingleHook(requestId, hookType, hookCommand, sessionResource, options?.input, token);
-			results.push(result);
 
-			// If stopReason is set, stop processing remaining hooks
-			if (result.stopReason) {
-				this._log(requestId, hookType, `Stopping: ${result.stopReason}`);
-				break;
+		try {
+			if (!this._proxy) {
+				return results;
 			}
+
+			const hooks = this.getHooksForSession(sessionResource);
+			if (!hooks) {
+				return results;
+			}
+
+			const hookCommands = hooks[hookType];
+			if (!hookCommands || hookCommands.length === 0) {
+				return results;
+			}
+
+			const requestId = this._requestCounter++;
+			const token = options?.token ?? CancellationToken.None;
+
+			this._logService.debug(`[HooksExecutionService] Executing ${hookCommands.length} hook(s) for type '${hookType}'`);
+			this._log(requestId, hookType, `Executing ${hookCommands.length} hook(s)`);
+
+			for (const hookCommand of hookCommands) {
+				const result = await this._runSingleHook(requestId, hookType, hookCommand, sessionResource, options?.input, token);
+				results.push(result);
+
+				// If stopReason is set, stop processing remaining hooks
+				if (result.stopReason) {
+					this._log(requestId, hookType, `Stopping: ${result.stopReason}`);
+					break;
+				}
+			}
+
+			return results;
+		} finally {
+			this._onDidExecuteHook.fire({
+				hookType,
+				sessionResource,
+				input: options?.input,
+				results,
+				durationMs: Math.round(sw.elapsed()),
+			});
 		}
-
-		this._onDidExecuteHook.fire({
-			hookType,
-			sessionResource,
-			input: options?.input,
-			results,
-			durationMs: Math.round(sw.elapsed()),
-		});
-
-		return results;
 	}
 
 	async executePreToolUseHook(sessionResource: URI, input: IPreToolUseCallerInput, token?: CancellationToken): Promise<IPreToolUseHookResult | undefined> {
