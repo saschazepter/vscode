@@ -244,7 +244,7 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 
 	private readonly partVisibility: IPartVisibilityState = {
 		sidebar: true,
-		auxiliaryBar: false,
+		auxiliaryBar: true,
 		editor: false,
 		panel: false,
 		chatBar: true

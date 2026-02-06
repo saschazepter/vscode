@@ -53,7 +53,7 @@ The Agent Sessions Workbench (`AgentSessionsWorkbench`) provides a simplified, f
 | Sidebar | `Parts.SIDEBAR_PART` | Left of right section, in main content | Visible | `ViewContainerLocation.Sidebar` |
 | Chat Bar | `Parts.CHATBAR_PART` | Top-right section, takes remaining width | Visible | `ViewContainerLocation.ChatBar` |
 | Editor | `Parts.EDITOR_PART` | **Modal overlay** (not in grid) | Hidden | — |
-| Auxiliary Bar | `Parts.AUXILIARYBAR_PART` | Top-right section, right side | Hidden (auto-shows when chat has content) | `ViewContainerLocation.AuxiliaryBar` |
+| Auxiliary Bar | `Parts.AUXILIARYBAR_PART` | Top-right section, right side | Visible | `ViewContainerLocation.AuxiliaryBar` |
 | Panel | `Parts.PANEL_PART` | Below Chat Bar and Auxiliary Bar (right section only) | Hidden | `ViewContainerLocation.Panel` |
 
 #### Excluded Parts
@@ -457,37 +457,7 @@ Each part manages its own border styling via the `updateStyles()` method. Border
 
 The Agent Sessions workbench registers workbench contributions for automatic behaviors.
 
-### 10.1 AuxiliaryBarVisibilityContribution
-
-**ID:** `workbench.contrib.agentSessions.auxiliaryBarVisibility`
-**Phase:** `WorkbenchPhase.AfterRestored`
-**Location:** `agentSessions/browser/contrib/auxiliaryBarVisibilityContribution.ts`
-
-This contribution automatically shows or hides the Auxiliary Bar based on the chat session state:
-
-| Chat Session State | Auxiliary Bar |
-|--------------------|---------------|
-| Empty (no requests) | Hidden |
-| Has requests | Shown |
-
-#### Behavior
-
-1. Observes all chat widgets at `ChatAgentLocation.Chat` location
-2. Listens for `onDidChangeViewModel` and model `onDidChange` events
-3. When a request is added (`addRequest` event), shows the auxiliary bar
-4. When a request is removed and session becomes empty (`removeRequest` event), hides the auxiliary bar
-5. Also listens for `onDidAddWidget` to observe newly created chat widgets
-
-#### Registration
-
-```typescript
-// In agentSessions.contributions.ts
-registerWorkbenchContribution2(
-    AuxiliaryBarVisibilityContribution.ID,
-    AuxiliaryBarVisibilityContribution,
-    WorkbenchPhase.AfterRestored
-);
-```
+(Currently no contributions registered - section reserved for future use)
 
 ---
 
@@ -501,8 +471,6 @@ src/vs/workbench/agentSessions/
 │   ├── agentSessions.contributions.ts      # View registrations and contributions
 │   ├── agentSessionsLayoutActions.ts       # Layout actions (toggle sidebar, command center, etc.)
 │   ├── style.css                           # Layout-specific styles (including editor modal)
-│   ├── contrib/
-│   │   └── auxiliaryBarVisibilityContribution.ts  # Auto show/hide auxiliary bar based on chat state
 │   ├── parts/
 │   │   ├── agentSessionSidebarPart.ts      # Agent session sidebar
 │   │   ├── agentSessionAuxiliaryBarPart.ts # Agent session auxiliary bar
@@ -587,7 +555,7 @@ interface IPartVisibilityState {
 | Part | Initial Visibility |
 |------|--------------------|
 | Sidebar | `true` (visible) |
-| Auxiliary Bar | `false` (hidden) |
+| Auxiliary Bar | `true` (visible) |
 | Chat Bar | `true` (visible) |
 | Editor | `false` (hidden) |
 | Panel | `false` (hidden) |
@@ -598,6 +566,7 @@ interface IPartVisibilityState {
 
 | Date | Change |
 |------|--------|
+| 2026-02-06 | Auxiliary Bar now visible by default; Removed `AuxiliaryBarVisibilityContribution` (no longer auto-shows/hides based on chat state) |
 | 2026-02-06 | Removed Command Center and Project Bar completely; Layout is now: Sidebar \| Chat Bar \| Auxiliary Bar; Global activities (Accounts, Settings) in titlebar via `supportsActivityActions` |
 | 2026-02-06 | ~~Removed Project Bar; Added Command Center to titlebar~~ (superseded) |
 | 2026-02-06 | ~~Project Bar now stores folder entries in workspace storage~~ (superseded) |
