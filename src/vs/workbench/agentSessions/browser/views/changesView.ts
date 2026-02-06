@@ -44,6 +44,8 @@ import { IChatWidgetService } from '../../../contrib/chat/browser/chat.js';
 import { isEqual } from '../../../../base/common/resources.js';
 import { IAgentSessionsService } from '../../../contrib/chat/browser/agentSessions/agentSessionsService.js';
 import { isIChatSessionFileChange2 } from '../../../contrib/chat/common/chatSessionsService.js';
+import { getChatSessionType } from '../../../contrib/chat/common/model/chatUri.js';
+import { AgentSessionProviders } from '../../../contrib/chat/browser/agentSessions/agentSessions.js';
 
 const $ = dom.$;
 
@@ -173,10 +175,16 @@ export class ChangesViewPane extends ViewPane {
 				return 0;
 			}
 
-			// Count from editing session entries
-			const sessions = this.chatEditingService.editingSessionsObs.read(reader);
-			const session = sessions.find(candidate => isEqual(candidate.chatSessionResource, sessionResource));
-			const editingSessionCount = session ? session.entries.read(reader).length : 0;
+			// Background chat sessions render the working set based on the session files, not the editing session
+			const isBackgroundSession = getChatSessionType(sessionResource) === AgentSessionProviders.Background;
+
+			// Count from editing session entries (skip for background sessions)
+			let editingSessionCount = 0;
+			if (!isBackgroundSession) {
+				const sessions = this.chatEditingService.editingSessionsObs.read(reader);
+				const session = sessions.find(candidate => isEqual(candidate.chatSessionResource, sessionResource));
+				editingSessionCount = session ? session.entries.read(reader).length : 0;
+			}
 
 			// Count from session file changes (cloud/background sessions)
 			const sessionFiles = [...sessionFileChangesObs.read(reader)];
@@ -260,6 +268,13 @@ export class ChangesViewPane extends ViewPane {
 
 		// Create observable for edit session entries from the ACTIVE session only (local editing sessions)
 		const editSessionEntriesObs = derived(reader => {
+			const sessionResource = this.activeSessionResource.read(reader);
+
+			// Background chat sessions render the working set based on the session files, not the editing session
+			if (sessionResource && getChatSessionType(sessionResource) === AgentSessionProviders.Background) {
+				return [];
+			}
+
 			const session = activeEditingSessionObs.read(reader);
 			if (!session) {
 				return [];
@@ -390,10 +405,10 @@ export class ChangesViewPane extends ViewPane {
 					{
 						telemetrySource: 'changesView',
 						menuOptions: isSessionMenu && sessionResource
-							? { args: [sessionResource] }
+							? { args: [sessionResource, this.agentSessionsService.getSession(sessionResource)?.metadata] }
 							: { shouldForwardArgs: true },
 						buttonConfigProvider: (action) => {
-							if (action.id === 'chatEditing.viewChanges' || action.id === 'chatEditing.viewPreviousEdits' || action.id === 'chatEditing.viewAllSessionChanges') {
+							if (action.id === 'chatEditing.viewChanges' || action.id === 'chatEditing.viewPreviousEdits' || action.id === 'chatEditing.viewAllSessionChanges' || action.id === 'chat.openSessionWorktreeInVSCode') {
 								return { showIcon: true, showLabel: false, isSecondary: true };
 							}
 							return undefined;

@@ -3,9 +3,11 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 import { VSBuffer } from '../../../../../base/common/buffer.js';
+import { URI } from '../../../../../base/common/uri.js';
+import { Codicon } from '../../../../../base/common/codicons.js';
 import { ServicesAccessor } from '../../../../../editor/browser/editorExtensions.js';
 import { localize2 } from '../../../../../nls.js';
-import { Action2 } from '../../../../../platform/actions/common/actions.js';
+import { Action2, MenuId, registerAction2 } from '../../../../../platform/actions/common/actions.js';
 import { ContextKeyExpr } from '../../../../../platform/contextkey/common/contextkey.js';
 import { INativeEnvironmentService } from '../../../../../platform/environment/common/environment.js';
 import { IFileService } from '../../../../../platform/files/common/files.js';
@@ -15,6 +17,9 @@ import { IWorkbenchModeService } from '../../../../services/layout/common/workbe
 import { IsAgentSessionsWorkspaceContext, WorkbenchModeContext } from '../../../../common/contextkeys.js';
 import { CHAT_CATEGORY } from '../../browser/actions/chatActions.js';
 import { ProductQualityContext } from '../../../../../platform/contextkey/common/contextkeys.js';
+import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
+import { IAgentSession, isAgentSession } from '../../browser/agentSessions/agentSessionsModel.js';
+import { IAgentSessionsService } from '../../browser/agentSessions/agentSessionsService.js';
 
 export class OpenAgentSessionsWindowAction extends Action2 {
 	constructor() {
@@ -91,3 +96,52 @@ export class SwitchToNormalModeAction extends Action2 {
 		await workbenchModeService.setWorkbenchMode(undefined);
 	}
 }
+
+export class OpenSessionWorktreeInVSCodeAction extends Action2 {
+	static readonly ID = 'chat.openSessionWorktreeInVSCode';
+
+	constructor() {
+		super({
+			id: OpenSessionWorktreeInVSCodeAction.ID,
+			title: localize2('openInVSCode', 'Open in VS Code'),
+			icon: Codicon.vscodeInsiders,
+			category: CHAT_CATEGORY,
+			precondition: ContextKeyExpr.and(
+				IsAgentSessionsWorkspaceContext,
+				ChatContextKeys.hasAgentSessionChanges
+			),
+			menu: [
+				{
+					id: MenuId.ChatEditingSessionChangesToolbar,
+					group: 'navigation',
+					order: 5,
+					when: ContextKeyExpr.and(IsAgentSessionsWorkspaceContext, ChatContextKeys.hasAgentSessionChanges)
+				}
+			],
+		});
+	}
+
+	override async run(accessor: ServicesAccessor, sessionOrSessionResource?: URI | IAgentSession, metadata?: { readonly [key: string]: unknown }): Promise<void> {
+		const nativeHostService = accessor.get(INativeHostService);
+		const agentSessionsService = accessor.get(IAgentSessionsService);
+
+		let folderPath: string | undefined;
+
+		// Get the worktree path from the metadata
+		if (URI.isUri(sessionOrSessionResource)) {
+			const session = agentSessionsService.getSession(sessionOrSessionResource);
+			folderPath = session?.metadata?.worktreePath as string | undefined;
+		} else if (isAgentSession(sessionOrSessionResource)) {
+			folderPath = sessionOrSessionResource.metadata?.worktreePath as string | undefined;
+		} else if (metadata) {
+			folderPath = metadata.worktreePath as string | undefined;
+		}
+
+		if (!folderPath) {
+			return;
+		}
+
+		await nativeHostService.openWindow([{ folderUri: URI.file(folderPath) }], { forceNewWindow: true });
+	}
+}
+registerAction2(OpenSessionWorktreeInVSCodeAction);
