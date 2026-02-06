@@ -411,6 +411,9 @@ export class ChangesViewPane extends ViewPane {
 							if (action.id === 'chatEditing.viewChanges' || action.id === 'chatEditing.viewPreviousEdits' || action.id === 'chatEditing.viewAllSessionChanges' || action.id === 'chat.openSessionWorktreeInVSCode') {
 								return { showIcon: true, showLabel: false, isSecondary: true };
 							}
+							if (action.id === 'github.createPullRequest') {
+								return { showIcon: true, showLabel: true };
+							}
 							return undefined;
 						}
 					}

@@ -30,14 +30,12 @@ import { ChatViewPane } from '../widgetHosts/viewPane/chatViewPane.js';
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
 import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
 import { AgentSessionsPicker } from './agentSessionsPicker.js';
-import { ActiveEditorContext, IsAgentSessionsWorkspaceContext } from '../../../../common/contextkeys.js';
+import { ActiveEditorContext } from '../../../../common/contextkeys.js';
 import { IQuickInputService } from '../../../../../platform/quickinput/common/quickInput.js';
 import { KeybindingWeight } from '../../../../../platform/keybinding/common/keybindingsRegistry.js';
 import { KeyCode, KeyMod } from '../../../../../base/common/keyCodes.js';
 import { coalesce } from '../../../../../base/common/arrays.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
-import { ITerminalGroupService, ITerminalService } from '../../../../contrib/terminal/browser/terminal.js';
-import { URI } from '../../../../../base/common/uri.js';
 
 const AGENT_SESSIONS_CATEGORY = localize2('chatSessions', "Chat Agent Sessions");
 
@@ -456,45 +454,6 @@ export class MarkAgentSessionReadAction extends BaseAgentSessionAction {
 	}
 }
 
-export class OpenSessionInTerminalAction extends BaseAgentSessionAction {
-
-	constructor() {
-		super({
-			id: 'agentSession.openInTerminal',
-			title: localize2('openInTerminal', "Open in Integrated Terminal"),
-			icon: Codicon.terminal,
-			menu: [{
-				id: MenuId.AgentSessionItemToolbar,
-				group: 'navigation',
-				order: 0,
-				when: ContextKeyExpr.and(
-					IsAgentSessionsWorkspaceContext,
-					ChatContextKeys.agentSessionType.isEqualTo(AgentSessionProviders.Background),
-					ChatContextKeys.isArchivedAgentSession.negate()
-				),
-			}]
-		});
-	}
-
-	async runWithSessions(sessions: IAgentSession[], accessor: ServicesAccessor): Promise<void> {
-		const terminalService = accessor.get(ITerminalService);
-		const terminalGroupService = accessor.get(ITerminalGroupService);
-
-		for (const session of sessions) {
-			const worktreePath = session.metadata?.worktreePath as string | undefined;
-			if (!worktreePath) {
-				continue;
-			}
-
-			const instance = await terminalService.createTerminal({ config: { cwd: URI.file(worktreePath) } });
-			if (instance) {
-				terminalService.setActiveInstance(instance);
-				terminalGroupService.showPanel(true);
-			}
-		}
-	}
-}
-
 export class ArchiveAgentSessionAction extends BaseAgentSessionAction {
 
 	constructor() {
@@ -514,7 +473,7 @@ export class ArchiveAgentSessionAction extends BaseAgentSessionAction {
 			menu: [{
 				id: MenuId.AgentSessionItemToolbar,
 				group: 'navigation',
-				order: 1,
+				order: 2,
 				when: ChatContextKeys.isArchivedAgentSession.negate(),
 			}, {
 				id: MenuId.AgentSessionsContext,

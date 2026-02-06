@@ -2822,6 +2822,9 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 					if (action.id === ChatEditingShowChangesAction.ID || action.id === ViewPreviousEditsAction.Id || action.id === ViewAllSessionChangesAction.ID || action.id === 'chat.openSessionWorktreeInVSCode') {
 						return { showIcon: true, showLabel: false, isSecondary: true };
 					}
+					if (action.id === 'github.createPullRequest') {
+						return { showIcon: true, showLabel: true };
+					}
 					return undefined;
 				}
 			}));

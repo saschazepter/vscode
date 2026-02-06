@@ -19,6 +19,7 @@ import { CHAT_CATEGORY } from '../../browser/actions/chatActions.js';
 import { ProductQualityContext } from '../../../../../platform/contextkey/common/contextkeys.js';
 import { IAgentSessionsService } from '../../browser/agentSessions/agentSessionsService.js';
 import { IChatWidgetService } from '../../browser/chat.js';
+import { ITerminalGroupService, ITerminalService } from '../../../terminal/browser/terminal.js';
 
 export class OpenAgentSessionsWindowAction extends Action2 {
 	constructor() {
@@ -137,3 +138,47 @@ export class OpenSessionWorktreeInVSCodeAction extends Action2 {
 	}
 }
 registerAction2(OpenSessionWorktreeInVSCodeAction);
+
+export class OpenSessionInTerminalAction extends Action2 {
+
+	constructor() {
+		super({
+			id: 'agentSession.openInTerminal',
+			title: localize2('openInTerminal', "Open in Integrated Terminal"),
+			icon: Codicon.terminal,
+			menu: [{
+				id: MenuId.AuxiliaryBarTitle,
+				group: 'navigation',
+				order: 1,
+				when: IsAgentSessionsWorkspaceContext,
+			}]
+		});
+	}
+
+	override async run(accessor: ServicesAccessor,): Promise<void> {
+		const terminalService = accessor.get(ITerminalService);
+		const terminalGroupService = accessor.get(ITerminalGroupService);
+		const agentSessionsService = accessor.get(IAgentSessionsService);
+		const chatWidgetService = accessor.get(IChatWidgetService);
+
+		const sessionResource = chatWidgetService.lastFocusedWidget?.viewModel?.sessionResource;
+		if (!sessionResource) {
+			return;
+		}
+
+		const session = agentSessionsService.getSession(sessionResource);
+		const folderPath = session?.metadata?.worktreePath as string | undefined;
+
+		if (!folderPath) {
+			return;
+		}
+
+		const instance = await terminalService.createTerminal({ config: { cwd: URI.file(folderPath) } });
+		if (instance) {
+			terminalService.setActiveInstance(instance);
+			terminalGroupService.showPanel(true);
+		}
+	}
+}
+
+registerAction2(OpenSessionInTerminalAction);
