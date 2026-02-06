@@ -23,6 +23,10 @@ import { IOpenerService } from '../../../../platform/opener/common/opener.js';
 import { createNativeAboutDialogDetails } from '../../../../platform/dialogs/electron-browser/dialog.js';
 import { IWorkbenchEnvironmentService } from '../../../services/environment/common/environmentService.js';
 import { IMarkdownRendererService } from '../../../../platform/markdown/browser/markdownRenderer.js';
+import { IThemeService } from '../../../../platform/theme/common/themeService.js';
+import { useWindowControlsOverlay } from '../../../../platform/window/common/window.js';
+import { TITLE_BAR_ACTIVE_BACKGROUND, TITLE_BAR_ACTIVE_FOREGROUND } from '../../../common/theme.js';
+import { Color, RGBA } from '../../../../base/common/color.js';
 
 export class DialogHandlerContribution extends Disposable implements IWorkbenchContribution {
 
@@ -47,6 +51,7 @@ export class DialogHandlerContribution extends Disposable implements IWorkbenchC
 		@IWorkbenchEnvironmentService private environmentService: IWorkbenchEnvironmentService,
 		@IOpenerService openerService: IOpenerService,
 		@IMarkdownRendererService markdownRendererService: IMarkdownRendererService,
+		@IThemeService private themeService: IThemeService,
 	) {
 		super();
 
@@ -69,12 +74,15 @@ export class DialogHandlerContribution extends Disposable implements IWorkbenchC
 			this.currentDialog = this.model.dialogs[0];
 
 			let result: IDialogResult | Error | undefined = undefined;
+			let useCustom = false;
 			try {
 
 				// Confirm
 				if (this.currentDialog.args.confirmArgs) {
 					const args = this.currentDialog.args.confirmArgs;
-					result = (this.useCustomDialog || args?.confirmation.custom) ?
+					useCustom = this.useCustomDialog || !!args?.confirmation.custom;
+					this.updateWindowControlsOverlay(useCustom);
+					result = useCustom ?
 						await this.browserImpl.value.confirm(args.confirmation) :
 						await this.nativeImpl.value.confirm(args.confirmation);
 				}
@@ -82,13 +90,17 @@ export class DialogHandlerContribution extends Disposable implements IWorkbenchC
 				// Input (custom only)
 				else if (this.currentDialog.args.inputArgs) {
 					const args = this.currentDialog.args.inputArgs;
+					useCustom = true;
+					this.updateWindowControlsOverlay(useCustom);
 					result = await this.browserImpl.value.input(args.input);
 				}
 
 				// Prompt
 				else if (this.currentDialog.args.promptArgs) {
 					const args = this.currentDialog.args.promptArgs;
-					result = (this.useCustomDialog || args?.prompt.custom) ?
+					useCustom = this.useCustomDialog || !!args?.prompt.custom;
+					this.updateWindowControlsOverlay(useCustom);
+					result = useCustom ?
 						await this.browserImpl.value.prompt(args.prompt) :
 						await this.nativeImpl.value.prompt(args.prompt);
 				}
@@ -96,8 +108,10 @@ export class DialogHandlerContribution extends Disposable implements IWorkbenchC
 				// About
 				else {
 					const aboutDialogDetails = createNativeAboutDialogDetails(this.productService, await this.nativeHostService.getOSProperties());
+					useCustom = this.useCustomDialog;
+					this.updateWindowControlsOverlay(useCustom);
 
-					if (this.useCustomDialog) {
+					if (useCustom) {
 						await this.browserImpl.value.about(aboutDialogDetails.title, aboutDialogDetails.details, aboutDialogDetails.detailsToCopy);
 					} else {
 						await this.nativeImpl.value.about(aboutDialogDetails.title, aboutDialogDetails.details, aboutDialogDetails.detailsToCopy);
@@ -109,6 +123,32 @@ export class DialogHandlerContribution extends Disposable implements IWorkbenchC
 
 			this.currentDialog.close(result);
 			this.currentDialog = undefined;
+
+			if (useCustom) {
+				this.updateWindowControlsOverlay(false);
+			}
+		}
+	}
+
+	private updateWindowControlsOverlay(dimmed: boolean): void {
+		if (!useWindowControlsOverlay(this.configurationService)) {
+			return;
+		}
+
+		const theme = this.themeService.getColorTheme();
+
+		const titleBackground = theme.getColor(TITLE_BAR_ACTIVE_BACKGROUND);
+		const titleForeground = theme.getColor(TITLE_BAR_ACTIVE_FOREGROUND);
+
+		if (dimmed) {
+			const dimOverlay = new Color(new RGBA(0, 0, 0, 0.3));
+			const backgroundColor = titleBackground ? dimOverlay.makeOpaque(titleBackground).toString() : undefined;
+			const foregroundColor = titleForeground ? dimOverlay.makeOpaque(titleForeground).toString() : undefined;
+			this.nativeHostService.updateWindowControls({ backgroundColor, foregroundColor });
+		} else {
+			const backgroundColor = titleBackground?.toString();
+			const foregroundColor = titleForeground?.toString();
+			this.nativeHostService.updateWindowControls({ backgroundColor, foregroundColor });
 		}
 	}
 
