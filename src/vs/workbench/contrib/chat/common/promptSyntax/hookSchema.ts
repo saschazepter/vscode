@@ -109,13 +109,15 @@ export interface IChatRequestHooks {
  */
 const hookCommandSchema: IJSONSchema = {
 	type: 'object',
-	additionalProperties: false,
+	additionalProperties: true,
 	required: ['type'],
 	anyOf: [
 		{ required: ['command'] },
 		{ required: ['windows'] },
 		{ required: ['linux'] },
-		{ required: ['osx'] }
+		{ required: ['osx'] },
+		{ required: ['bash'] },
+		{ required: ['powershell'] }
 	],
 	errorMessage: nls.localize('hook.commandRequired', 'At least one of "command", "windows", "linux", or "osx" must be specified.'),
 	properties: {
