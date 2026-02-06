@@ -437,19 +437,4 @@ export class AgentSessionsControl extends Disposable implements IAgentSessionsCo
 		return true;
 	}
 
-	select(sessionResource: URI, options?: { createNewIfNotFound?: boolean }): boolean {
-		if (!this.reveal(sessionResource)) {
-			if (options?.createNewIfNotFound) {
-				this.commandService.executeCommand(ACTION_ID_NEW_CHAT);
-			}
-			return false;
-		}
-
-		const session = this.agentSessionsService.model.getSession(sessionResource);
-		if (session) {
-			this.openAgentSession({ element: session, editorOptions: { preserveFocus: true }, sideBySide: false });
-		}
-
-		return true;
-	}
 }

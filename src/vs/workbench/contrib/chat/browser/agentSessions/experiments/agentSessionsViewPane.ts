@@ -186,7 +186,7 @@ export class AgentSessionsViewPane extends ViewPane {
 	private restoreLastSelectedSession(): void {
 		const activeSession = this.activeSessionService.getActiveSession();
 		if (activeSession && this.sessionsControl) {
-			this.sessionsControl.select(activeSession.resource, { createNewIfNotFound: true });
+			this.sessionsControl.reveal(activeSession.resource);
 		}
 	}
 
