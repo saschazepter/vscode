@@ -50,9 +50,12 @@
 }
 
 @keyframes chat-full-welcome-mascot-bounce {
-	0%, 100% {
+
+	0%,
+	100% {
 		transform: translateY(0);
 	}
+
 	50% {
 		transform: translateY(-6px);
 	}
@@ -102,6 +105,7 @@
 		opacity: 0;
 		transform: translateY(12px);
 	}
+
 	to {
 		opacity: 1;
 		transform: translateY(0);
@@ -133,8 +137,11 @@
 /* Contain the Monaco editor view-lines within the input border */
 .chat-full-welcome-inputSlot .chat-input-container {
 	overflow: hidden;
-	background-color: var(--vscode-sideBar-background);
 	border-color: var(--vscode-contrastBorder, var(--vscode-editorWidget-border));
+}
+
+.chat-controls-container .monaco-editor-background {
+	background-color: var(--vscode-input-background) !important;
 }
 
 .chat-full-welcome-startEntries {
@@ -207,6 +214,7 @@
 .chat-full-welcome-sessionsGrid .monaco-list-row:nth-child(3) {
 	transform: translateY(-52px);
 }
+
 .chat-full-welcome-sessionsGrid .monaco-list-row:nth-child(5) {
 	transform: translateY(-104px);
 }
@@ -214,9 +222,11 @@
 .chat-full-welcome-sessionsGrid .monaco-list-row:nth-child(2) {
 	transform: translateX(100%) translateY(-52px);
 }
+
 .chat-full-welcome-sessionsGrid .monaco-list-row:nth-child(4) {
 	transform: translateX(100%) translateY(-104px);
 }
+
 .chat-full-welcome-sessionsGrid .monaco-list-row:nth-child(6) {
 	transform: translateX(100%) translateY(-156px);
 }
@@ -515,9 +525,12 @@
 }
 
 @keyframes chat-full-welcome-shimmer {
-	0%, 100% {
+
+	0%,
+	100% {
 		opacity: 0.3;
 	}
+
 	50% {
 		opacity: 0.6;
 	}
@@ -553,6 +566,7 @@
 		opacity: 0;
 		transform: scale(0.9);
 	}
+
 	to {
 		opacity: 1;
 		transform: scale(1);
@@ -731,9 +745,12 @@
 
 /* Collapsed mode button in toolbar - slides from original position while collapsing */
 .chat-full-welcome-collapsed-mode-button {
-	--collapse-from-width: 80px; /* Set dynamically via JavaScript */
-	--slide-from-x: 0px; /* Set dynamically via JavaScript */
-	--slide-from-y: 0px; /* Set dynamically via JavaScript */
+	--collapse-from-width: 80px;
+	/* Set dynamically via JavaScript */
+	--slide-from-x: 0px;
+	/* Set dynamically via JavaScript */
+	--slide-from-y: 0px;
+	/* Set dynamically via JavaScript */
 	display: flex;
 	align-items: center;
 	justify-content: flex-start;
@@ -756,6 +773,7 @@
 		width: var(--collapse-from-width);
 		transform: translate(var(--slide-from-x), var(--slide-from-y));
 	}
+
 	to {
 		width: 32px;
 		transform: translate(0, 0);
@@ -801,6 +819,7 @@
 		opacity: 0;
 		transform: scaleY(0);
 	}
+
 	to {
 		opacity: 1;
 		transform: scaleY(1);
@@ -823,6 +842,7 @@
 		opacity: 0;
 		transform: translateX(30px);
 	}
+
 	to {
 		opacity: 1;
 		transform: translateX(0);
@@ -937,6 +957,7 @@
 	from {
 		opacity: 0;
 	}
+
 	to {
 		opacity: 1;
 	}
