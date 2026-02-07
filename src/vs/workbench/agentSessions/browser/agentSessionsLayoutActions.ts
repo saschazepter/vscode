@@ -8,7 +8,8 @@ import { Codicon } from '../../../base/common/codicons.js';
 import { KeyCode, KeyMod } from '../../../base/common/keyCodes.js';
 import { localize, localize2 } from '../../../nls.js';
 import { Categories } from '../../../platform/action/common/actionCommonCategories.js';
-import { Action2, MenuId, registerAction2 } from '../../../platform/actions/common/actions.js';
+import { Action2, MenuId, MenuRegistry, registerAction2 } from '../../../platform/actions/common/actions.js';
+import { AgentSessionsWorkbenchMenus } from './agentSessionsWorkbenchMenus.js';
 import { ServicesAccessor } from '../../../platform/instantiation/common/instantiation.js';
 import { KeybindingWeight } from '../../../platform/keybinding/common/keybindingsRegistry.js';
 import { registerIcon } from '../../../platform/theme/common/iconRegistry.js';
@@ -51,7 +52,7 @@ class ToggleSidebarVisibilityAction extends Action2 {
 			},
 			menu: [
 				{
-					id: MenuId.TitleBarLeft,
+					id: AgentSessionsWorkbenchMenus.TitleBarLeft,
 					group: 'navigation',
 					order: 0
 				}
@@ -96,7 +97,7 @@ class ToggleSecondarySidebarVisibilityAction extends Action2 {
 			f1: true,
 			menu: [
 				{
-					id: MenuId.TitleBar,
+					id: AgentSessionsWorkbenchMenus.TitleBarRight,
 					group: 'navigation',
 					order: 10
 				}
@@ -199,4 +200,15 @@ export function registerAgentSessionsLayoutActions() {
 	registerAction2(ToggleSecondarySidebarVisibilityAction);
 	registerAction2(TogglePanelVisibilityAction);
 	registerAction2(TogglePanelMaximizedAction);
+
+	// Add existing toggle terminal command to the agent sessions titlebar
+	MenuRegistry.appendMenuItem(AgentSessionsWorkbenchMenus.TitleBarRight, {
+		command: {
+			id: 'workbench.action.terminal.toggleTerminal',
+			title: localize('toggleTerminal', 'Toggle Terminal'),
+			icon: Codicon.terminal,
+		},
+		group: 'navigation',
+		order: 9,
+	});
 }

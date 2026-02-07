@@ -78,28 +78,48 @@ The titlebar is configured via `ITitlebarPartConfiguration` passed to the title 
 
 | Option | Default Workbench | Agent Sessions | Notes |
 |--------|-------------------|----------------|-------|
-| `supportsCommandCenter` | `true` | `false` | No command center in titlebar |
+| `supportsCommandCenter` | `true` | `true` | Uses custom `AgentSessionsCommandCenter` menu IDs |
 | `supportsMenubar` | `true` | `false` | No menubar in titlebar |
 | `supportsEditorActions` | `true` | `false` | No editor actions in titlebar |
 | `supportsActivityActions` | `true` | `true` | Activity actions supported (Accounts, Settings) |
 | `supportsGlobalActions` | `true` | `true` | Global actions supported |
 | `supportsLayoutActions` | `true` | `true` | Layout actions supported |
-| `contextMenuId` | `MenuId.TitleBarContext` | `MenuId.TitleBarContext` | Default context menu |
-| `leftToolbarMenuId` | `undefined` | `MenuId.TitleBarLeft` | Custom left toolbar |
+| `contextMenuId` | `MenuId.TitleBarContext` | `AgentSessionsWorkbenchMenus.TitleBarContext` | Custom context menu for agent sessions titlebar |
+| `leftToolbarMenuId` | `undefined` | `AgentSessionsWorkbenchMenus.TitleBarLeft` | Custom left toolbar |
+| `commandCenterMenuId` | `MenuId.CommandCenter` | `AgentSessionsWorkbenchMenus.CommandCenter` | Custom command center menu |
+| `commandCenterCenterMenuId` | `MenuId.CommandCenterCenter` | `AgentSessionsWorkbenchMenus.CommandCenterCenter` | Custom command center center submenu |
+| `titleBarMenuId` | `MenuId.TitleBar` | `AgentSessionsWorkbenchMenus.TitleBarRight` | Custom global (right-side) toolbar |
 
-### 3.2 Left Toolbar
+### 3.2 Command Center
+
+The Agent Sessions titlebar includes a command center with a custom title bar widget (`AgentSessionsTitleBarWidget`). It uses custom menu IDs separate from the default workbench command center to avoid conflicts:
+
+- **`AgentSessionsWorkbenchMenus.CommandCenter`** — The outer command center toolbar menu (replaces `MenuId.CommandCenter`)
+- **`AgentSessionsWorkbenchMenus.TitleBarControlMenu`** — A submenu registered in the command center whose rendering is intercepted by `IActionViewItemService` to display the custom widget
+
+The widget:
+- Extends `BaseActionViewItem` and renders a clickable label showing the active session title
+- On click, opens the `AgentSessionsPicker` quick pick to switch between sessions
+- Gets the active session label from `IActiveAgentSessionService.getActiveSession()`, falling back to "New Session" if no active session is found
+- Re-renders automatically when the active session changes via `autorun` on `IActiveAgentSessionService.activeSession`
+- Is registered via `AgentSessionsTitleBarContribution` (an `IWorkbenchContribution`) that calls `IActionViewItemService.register()` to intercept the submenu rendering
+
+### 3.3 Left Toolbar
 
 The Agent Sessions titlebar includes a custom left toolbar that appears after the app icon. This toolbar:
 
-- Uses `MenuId.TitleBarLeft` for its actions
+- Uses `AgentSessionsWorkbenchMenus.TitleBarLeft` for its actions
 - Uses `HiddenItemStrategy.NoHide` so actions cannot be hidden by users
-- Displays actions registered to `MenuId.TitleBarLeft`
+- Displays actions registered to `AgentSessionsWorkbenchMenus.TitleBarLeft`
 
-### 3.3 Titlebar Actions
+### 3.4 Titlebar Actions
 
 | Action | ID | Location | Behavior |
 |--------|-----|----------|----------|
-| Toggle Sidebar | `workbench.action.agentToggleSidebarVisibility` | Left toolbar | Toggles primary sidebar visibility |
+| Toggle Sidebar | `workbench.action.agentToggleSidebarVisibility` | Left toolbar (`TitleBarLeft`) | Toggles primary sidebar visibility |
+| Toggle Terminal | `workbench.action.terminal.toggleTerminal` | Right toolbar (`TitleBarRight`) | Toggles terminal (standard command, added via `MenuRegistry.appendMenuItem`) |
+| Toggle Secondary Sidebar | `workbench.action.agentToggleSecondarySidebarVisibility` | Right toolbar (`TitleBarRight`) | Toggles auxiliary bar visibility |
+| Show Sessions | — | Title bar widget click | Opens the `AgentSessionsPicker` quick pick |
 
 The toggle sidebar action:
 - Shows `layoutSidebarLeft` icon when sidebar is visible
@@ -107,7 +127,12 @@ The toggle sidebar action:
 - Bound to `Ctrl+B` / `Cmd+B` keybinding
 - Announces visibility changes to screen readers
 
-### 3.4 Panel Title Actions
+The toggle terminal action:
+- Shows `terminal` icon in the right toolbar
+- Uses the standard `workbench.action.terminal.toggleTerminal` command (added via `MenuRegistry.appendMenuItem`)
+- Inherits keybinding from the standard terminal contribution (`` Ctrl+` `` / `` Cmd+` ``)
+
+### 3.5 Panel Title Actions
 
 The panel title bar includes actions for controlling the panel:
 
@@ -301,7 +326,7 @@ focusPart(part: Parts): void
 // Check if a part has focus
 hasFocus(part: Parts): boolean
 
-// Focus the editor (default focus target)
+// Focus the Chat Bar (default focus target)
 focus(): void
 ```
 
@@ -376,6 +401,7 @@ Applied to `mainContainer` based on part visibility:
 
 Applied during workbench render:
 - `monaco-workbench`
+- `agent-sessions-workbench`
 - `windows` / `linux` / `mac`
 - `web` (if running in browser)
 - `chromium` / `firefox` / `safari`
@@ -393,6 +419,7 @@ The Agent Sessions workbench uses specialized part implementations that extend t
 | Sidebar | `AgentSessionSidebarPart` | `AbstractPaneCompositePart` | `agentSessions/browser/parts/agentSessionSidebarPart.ts` |
 | Auxiliary Bar | `AgentSessionAuxiliaryBarPart` | `AbstractPaneCompositePart` | `agentSessions/browser/parts/agentSessionAuxiliaryBarPart.ts` |
 | Panel | `AgentSessionPanelPart` | `AbstractPaneCompositePart` | `agentSessions/browser/parts/agentSessionPanelPart.ts` |
+| Chat Bar | `ChatBarPart` | `AbstractPaneCompositePart` | `agentSessions/browser/parts/chatbar/chatBarPart.ts` |
 | Editor Modal | `EditorModal` | `Disposable` | `agentSessions/browser/parts/editorModal.ts` |
 
 ### 9.2 Key Differences from Standard Parts
@@ -401,9 +428,11 @@ The Agent Sessions workbench uses specialized part implementations that extend t
 |---------|----------------|---------------------|
 | Activity Bar integration | Full support | No activity bar; global activities in titlebar |
 | Composite bar position | Configurable (top/bottom/title/hidden) | Fixed: Title |
+| Composite bar visibility | Configurable | Sidebar: hidden (`shouldShowCompositeBar()` returns `false`); ChatBar: hidden; Auxiliary Bar & Panel: visible |
 | Auto-hide support | Configurable | Disabled |
 | Configuration listening | Many settings | Minimal |
 | Context menu actions | Full set | Simplified |
+| Title bar | Full support | Sidebar & ChatBar: `hasTitle: false`; Auxiliary Bar & Panel: `hasTitle: true` |
 
 ### 9.3 Part Selection
 
@@ -431,6 +460,9 @@ Each agent session part uses separate storage keys to avoid conflicts with regul
 | Part | Setting | Storage Key |
 |------|---------|-------------|
 | Sidebar | Active viewlet | `workbench.agentsession.sidebar.activeviewletid` |
+| Sidebar | Pinned viewlets | `workbench.agentsession.pinnedViewlets2` |
+| Sidebar | Placeholders | `workbench.agentsession.placeholderViewlets` |
+| Sidebar | Workspace state | `workbench.agentsession.viewletsWorkspaceState` |
 | Auxiliary Bar | Active panel | `workbench.agentsession.auxiliarybar.activepanelid` |
 | Auxiliary Bar | Pinned views | `workbench.agentsession.auxiliarybar.pinnedPanels` |
 | Auxiliary Bar | Placeholders | `workbench.agentsession.auxiliarybar.placeholderPanels` |
@@ -439,6 +471,10 @@ Each agent session part uses separate storage keys to avoid conflicts with regul
 | Panel | Pinned panels | `workbench.agentsession.panel.pinnedPanels` |
 | Panel | Placeholders | `workbench.agentsession.panel.placeholderPanels` |
 | Panel | Workspace state | `workbench.agentsession.panel.viewContainersWorkspaceState` |
+| Chat Bar | Active panel | `workbench.chatbar.activepanelid` |
+| Chat Bar | Pinned panels | `workbench.chatbar.pinnedPanels` |
+| Chat Bar | Placeholders | `workbench.chatbar.placeholderPanels` |
+| Chat Bar | Workspace state | `workbench.chatbar.viewContainersWorkspaceState` |
 
 ### 9.5 Part Borders
 
@@ -447,17 +483,40 @@ Each part manages its own border styling via the `updateStyles()` method. Border
 | Part | Border | Color Token | Notes |
 |------|--------|-------------|-------|
 | Sidebar | Right edge | `SIDE_BAR_BORDER` / `contrastBorder` | Separates sidebar from right section |
-| Chat Bar | None | — | No borders since it's centered in the grid between sidebar and auxiliary bar |
+| Chat Bar | None | — | No borders; `borderWidth` returns `0` |
 | Auxiliary Bar | Left edge | `SIDE_BAR_BORDER` / `contrastBorder` | Separates from chat bar |
 | Panel | Top edge | `PANEL_BORDER` / `contrastBorder` | Separates from chat bar and auxiliary bar above |
 
 ---
 
+### 9.6 Auxiliary Bar Run Script Dropdown
+
+The `AgentSessionAuxiliaryBarPart` provides a custom `DropdownWithPrimaryActionViewItem` for the run script action (`workbench.action.agentSessions.runScript`). This is rendered as a split button with:
+
+- **Primary action**: Runs the main script action
+- **Dropdown**: Shows additional actions from the `AgentSessionsRunScriptDropdown` menu
+- The dropdown menu is created from `MenuId.for('AgentSessionsRunScriptDropdown')` and updates dynamically when menu items change
+
+---
+
 ## 10. Workbench Contributions
 
-The Agent Sessions workbench registers workbench contributions for automatic behaviors.
+The Agent Sessions workbench registers contributions in `agentSessions.contributions.ts` via `registerAgentWorkbenchContributions()`:
 
-(Currently no contributions registered - section reserved for future use)
+| Contribution | Class | Phase | Description |
+|-------------|-------|-------|-------------|
+| Run Script | `RunScriptContribution` | `AfterRestored` | Script execution support for agent sessions |
+| Title Bar Widget | `AgentSessionsTitleBarContribution` | `AfterRestored` | Custom title bar widget with session picker |
+
+Additionally, `registerChatBranchActions()` is called to register chat branch session actions.
+
+### 10.1 Changes View
+
+The contributions file also registers the Changes view:
+
+- **Container**: `CHANGES_VIEW_CONTAINER_ID` in `ViewContainerLocation.AuxiliaryBar` (default, hidden if empty)
+- **View**: `CHANGES_VIEW_ID` with `ChangesViewPane`
+- **Layout visibility**: `LayoutVisibility.AgentSessions` (only visible in agent sessions workbench)
 
 ---
 
@@ -466,14 +525,24 @@ The Agent Sessions workbench registers workbench contributions for automatic beh
 ```
 src/vs/workbench/agentSessions/
 ├── browser/
-│   ├── agentSessions.contributions.ts      # Workbench contributions
+│   ├── agentSessions.contributions.ts      # Workbench contributions, view registrations, and contribution bootstrapping
+│   ├── agentSessionsCommandCenter.ts       # Legacy title bar widget (superseded by agentSessionTitleBarWidget.ts)
+│   ├── agentSessionTitleBarWidget.ts       # Title bar widget and rendering contribution (active)
 │   ├── agentSessionsWorkbench.ts           # Main layout implementation
-│   ├── agentSessions.contributions.ts      # View registrations and contributions
-│   ├── agentSessionsLayoutActions.ts       # Layout actions (toggle sidebar, command center, etc.)
+│   ├── agentSessionsWorkbenchMenus.ts      # Agent sessions workbench menu IDs
+│   ├── agentSessionsLayoutActions.ts       # Layout actions (toggle sidebar, secondary sidebar, panel, terminal)
 │   ├── style.css                           # Layout-specific styles (including editor modal)
+│   ├── media/
+│   │   └── agentSessionTitleBarWidget.css   # Title bar widget styles
+│   ├── actions/
+│   │   └── chatBranchSessionAction.ts      # Chat branch session actions
+│   ├── views/
+│   │   ├── changesView.ts                  # Changes view pane and container
+│   │   └── media/
+│   │       └── changesView.css             # Changes view styles
 │   ├── parts/
 │   │   ├── agentSessionSidebarPart.ts      # Agent session sidebar
-│   │   ├── agentSessionAuxiliaryBarPart.ts # Agent session auxiliary bar
+│   │   ├── agentSessionAuxiliaryBarPart.ts # Agent session auxiliary bar (with run script dropdown)
 │   │   ├── agentSessionPanelPart.ts        # Agent session panel
 │   │   ├── editorModal.ts                  # Editor modal overlay implementation
 │   │   └── chatbar/
@@ -501,9 +570,9 @@ When modifying the Agent Sessions layout:
 
 ## 13. Lifecycle
 
-### 12.1 Startup Sequence
+### 13.1 Startup Sequence
 
-1. `constructor()` — Register error handlers
+1. `constructor()` — Register error handlers, register workbench contributions (`registerAgentWorkbenchContributions()`), register layout actions (`registerAgentSessionsLayoutActions()`)
 2. `startup()` — Initialize services and layout
 3. `initServices()` — Set up service collection, set lifecycle to `Ready`
 4. `initLayout()` — Get services, register layout listeners
@@ -512,7 +581,7 @@ When modifying the Agent Sessions layout:
 7. `layout()` — Perform initial layout
 8. `restore()` — Restore parts (open default view containers), set lifecycle to `Restored`, then `Eventually`
 
-### 12.2 Part Restoration
+### 13.2 Part Restoration
 
 During the `restore()` phase, `restoreParts()` is called to open the default view container for each visible part:
 
@@ -538,7 +607,7 @@ private restoreParts(): void {
 
 This ensures that when a part is visible, its default view container is automatically opened and displayed.
 
-### 12.3 State Tracking
+### 13.3 State Tracking
 
 ```typescript
 interface IPartVisibilityState {
@@ -566,6 +635,14 @@ interface IPartVisibilityState {
 
 | Date | Change |
 |------|--------|
+| 2026-02-07 | Comprehensive spec update: fixed widget class names (`AgentSessionsTitleBarWidget`/`AgentSessionsTitleBarContribution`), corrected click behavior (uses `AgentSessionsPicker` not `FocusAgentSessionsAction`), corrected session label source (`IActiveAgentSessionService`), fixed toggle terminal details (uses standard `toggleTerminal` command via `MenuRegistry.appendMenuItem` on right toolbar), added sidebar/chatbar storage keys, added chatbar to part classes table, documented contributions section with `RunScriptContribution`/`AgentSessionsTitleBarContribution`/Changes view, added `agent-sessions-workbench` platform class, documented auxiliary bar run script dropdown, updated file structure with `actions/`, `views/`, `media/` directories, fixed lifecycle section numbering, corrected `focus()` target to ChatBar |
+| 2026-02-07 | Moved `ToggleTerminalAction` to `contrib/terminal/browser/terminalAgentSessionActions.ts`; Menu item registered via `MenuRegistry.appendMenuItem` from `agentSessionsLayoutActions.ts` to avoid layering violation |\n| 2026-02-07 | Added `TitleBarLeft`, `TitleBarCenter`, `TitleBarRight` menu IDs to `AgentSessionsWorkbenchMenus`; Added `titleBarMenuId` option to `ITitlebarPartOptions` for overriding the global toolbar menu; Actions now use agent-session-specific menu IDs instead of shared `MenuId.TitleBarLeft` / `MenuId.TitleBar` |
+| 2026-02-07 | Moved agent sessions workbench menu IDs to `agentSessionsWorkbenchMenus.ts`; Renamed `AgentSessionMenus` to `AgentSessionsWorkbenchMenus` |
+| 2026-02-07 | Added `MenuId.AgentSessionsTitleBarContext` as a separate titlebar context menu ID; `contextMenuId` option now set in both main and auxiliary titlebar configurations |
+| 2026-02-07 | Added `ToggleTerminalAction` to left toolbar; toggles panel with terminal view; bound to `` Ctrl+` `` |
+| 2026-02-06 | `AgentSessionsTitleBarStatusWidget` now shows active chat session title instead of workspace label; Clicking opens sessions view via `FocusAgentSessionsAction`; Removed folder picker and recent folders |
+| 2026-02-06 | Replaced command center folder picker with `AgentSessionsTitleBarStatusWidget` (custom `BaseActionViewItem`); Uses `IActionViewItemService` to intercept `AgentSessionsTitleBarControlMenu` submenu; Shows workspace label pill with quick pick for recent folders |
+| 2026-02-06 | Added Command Center with custom `AgentSessionsCommandCenter` menu IDs; Dropdown shows recent folders and Open Folder action; Added `AgentSessionsCommandCenterContribution` |
 | 2026-02-06 | Auxiliary Bar now visible by default; Removed `AuxiliaryBarVisibilityContribution` (no longer auto-shows/hides based on chat state) |
 | 2026-02-06 | Removed Command Center and Project Bar completely; Layout is now: Sidebar \| Chat Bar \| Auxiliary Bar; Global activities (Accounts, Settings) in titlebar via `supportsActivityActions` |
 | 2026-02-06 | ~~Removed Project Bar; Added Command Center to titlebar~~ (superseded) |

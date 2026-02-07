@@ -35,20 +35,26 @@ export class CommandCenterControl {
 	constructor(
 		windowTitle: WindowTitle,
 		hoverDelegate: IHoverDelegate,
+		commandCenterMenuId: MenuId | undefined,
+		commandCenterCenterMenuId: MenuId | undefined,
+		contextMenuId: MenuId | undefined,
 		@IInstantiationService instantiationService: IInstantiationService,
 		@IQuickInputService quickInputService: IQuickInputService,
 	) {
 		this.element.classList.add('command-center');
 
-		const titleToolbar = instantiationService.createInstance(MenuWorkbenchToolBar, this.element, MenuId.CommandCenter, {
-			contextMenu: MenuId.TitleBarContext,
+		const menuId = commandCenterMenuId ?? MenuId.CommandCenter;
+		const centerMenuId = commandCenterCenterMenuId ?? MenuId.CommandCenterCenter;
+
+		const titleToolbar = instantiationService.createInstance(MenuWorkbenchToolBar, this.element, menuId, {
+			contextMenu: contextMenuId ?? MenuId.TitleBarContext,
 			hiddenItemStrategy: HiddenItemStrategy.NoHide,
 			toolbarOptions: {
 				primaryGroup: () => true,
 			},
 			telemetrySource: 'commandCenter',
 			actionViewItemProvider: (action, options) => {
-				if (action instanceof SubmenuItemAction && action.item.submenu === MenuId.CommandCenterCenter) {
+				if (action instanceof SubmenuItemAction && action.item.submenu === centerMenuId) {
 					return instantiationService.createInstance(CommandCenterCenterViewItem, action, windowTitle, { ...options, hoverDelegate });
 				} else {
 					return createActionViewItem(instantiationService, action, { ...options, hoverDelegate });

@@ -606,7 +606,9 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 		}
 
 		// Chat Title
-		this.createChatTitleControl(chatControlsContainer);
+		if (this.viewDescriptorService.getViewLocationById(this.id) !== ViewContainerLocation.ChatBar) {
+			this.createChatTitleControl(chatControlsContainer);
+		}
 
 		// Create session type picker delegate
 		const sessionTypePickerDelegate: ISessionTypePickerDelegate = {

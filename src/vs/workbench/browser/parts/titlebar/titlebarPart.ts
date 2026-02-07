@@ -118,6 +118,24 @@ export interface ITitlebarPartOptions {
 	 * If provided, a toolbar will be rendered on the left side of the titlebar.
 	 */
 	readonly leftToolbarMenuId?: MenuId;
+
+	/**
+	 * The menu ID to use for the command center toolbar.
+	 * If provided, overrides the default `MenuId.CommandCenter`.
+	 */
+	readonly commandCenterMenuId?: MenuId;
+
+	/**
+	 * The menu ID to use for the command center center submenu.
+	 * If provided, overrides the default `MenuId.CommandCenterCenter`.
+	 */
+	readonly commandCenterCenterMenuId?: MenuId;
+
+	/**
+	 * The menu ID to use for the global (right-side) toolbar.
+	 * If provided, overrides the default `MenuId.TitleBar`.
+	 */
+	readonly titleBarMenuId?: MenuId;
 }
 
 /**
@@ -667,7 +685,14 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 
 		// Menu Title
 		else {
-			const commandCenter = this.instantiationService.createInstance(CommandCenterControl, this.windowTitle, this.hoverDelegate);
+			const commandCenter = this.instantiationService.createInstance(
+				CommandCenterControl,
+				this.windowTitle,
+				this.hoverDelegate,
+				this.titlebarOptions.commandCenterMenuId,
+				this.titlebarOptions.commandCenterCenterMenuId,
+				this.titlebarOptions.contextMenuId,
+			);
 			reset(this.title, commandCenter.element);
 			this.titleDisposables.add(commandCenter);
 		}
@@ -848,7 +873,7 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 			this.globalToolbarMenuDisposables.clear();
 
 			if (this.globalActionsEnabled) {
-				this.globalToolbarMenu = this.menuService.createMenu(MenuId.TitleBar, this.contextKeyService);
+				this.globalToolbarMenu = this.menuService.createMenu(this.titlebarOptions.titleBarMenuId ?? MenuId.TitleBar, this.contextKeyService);
 
 				this.globalToolbarMenuDisposables.add(this.globalToolbarMenu);
 				this.globalToolbarMenuDisposables.add(this.globalToolbarMenu.onDidChange(() => updateToolBarActions()));

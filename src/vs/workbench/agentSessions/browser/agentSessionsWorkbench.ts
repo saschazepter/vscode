@@ -67,7 +67,7 @@ import { AgentSessionSidebarPart } from './parts/agentSessionSidebarPart.js';
 import { ChatBarPart } from './parts/chatbar/chatBarPart.js';
 import { SyncDescriptor } from '../../../platform/instantiation/common/descriptors.js';
 import { BrowserTitleService, ITitlebarPartConfiguration } from '../../browser/parts/titlebar/titlebarPart.js';
-import { MenuId } from '../../../platform/actions/common/actions.js';
+import { AgentSessionsWorkbenchMenus } from './agentSessionsWorkbenchMenus.js';
 import { registerAgentSessionsLayoutActions } from './agentSessionsLayoutActions.js';
 import { registerAgentWorkbenchContributions } from './agentSessions.contributions.js';
 
@@ -408,22 +408,30 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 		// Title Service - pass configuration for titlebar parts with limited feature support
 		const titlebarConfiguration: ITitlebarPartConfiguration = {
 			mainOptions: {
-				supportsCommandCenter: false,
+				supportsCommandCenter: true,
 				supportsMenubar: false,
 				supportsEditorActions: false,
 				supportsActivityActions: true,
 				supportsGlobalActions: true,
 				supportsLayoutActions: true,
-				leftToolbarMenuId: MenuId.TitleBarLeft
+				contextMenuId: AgentSessionsWorkbenchMenus.TitleBarContext,
+				leftToolbarMenuId: AgentSessionsWorkbenchMenus.TitleBarLeft,
+				commandCenterMenuId: AgentSessionsWorkbenchMenus.CommandCenter,
+				commandCenterCenterMenuId: AgentSessionsWorkbenchMenus.CommandCenterCenter,
+				titleBarMenuId: AgentSessionsWorkbenchMenus.TitleBarRight,
 			},
 			auxiliaryOptions: {
-				supportsCommandCenter: false,
+				supportsCommandCenter: true,
 				supportsMenubar: false,
 				supportsEditorActions: false,
 				supportsActivityActions: true,
 				supportsGlobalActions: true,
 				supportsLayoutActions: true,
-				leftToolbarMenuId: MenuId.TitleBarLeft
+				contextMenuId: AgentSessionsWorkbenchMenus.TitleBarContext,
+				leftToolbarMenuId: AgentSessionsWorkbenchMenus.TitleBarLeft,
+				commandCenterMenuId: AgentSessionsWorkbenchMenus.CommandCenter,
+				commandCenterCenterMenuId: AgentSessionsWorkbenchMenus.CommandCenterCenter,
+				titleBarMenuId: AgentSessionsWorkbenchMenus.TitleBarRight,
 			}
 		};
 		serviceCollection.set(ITitleService, new SyncDescriptor(BrowserTitleService, [titlebarConfiguration]));

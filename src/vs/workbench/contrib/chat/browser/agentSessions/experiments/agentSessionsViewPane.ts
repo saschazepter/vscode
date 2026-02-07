@@ -170,6 +170,16 @@ export class AgentSessionsViewPane extends ViewPane {
 			}
 		}));
 
+		// When the active session changes, select it in the tree
+		this._register(autorun(reader => {
+			const activeSession = this.activeSessionService.activeSession.read(reader);
+			if (activeSession) {
+				if (!sessionsControl.reveal(activeSession.resource)) {
+					sessionsControl.clearFocus();
+				}
+			}
+		}));
+
 		// Set toolbar context to sessions control for actions to work
 		sessionsToolbar.context = sessionsControl;
 
