@@ -60,6 +60,7 @@ import { ALWAYS_SHOW_ADVANCED_SETTINGS_SETTING, IOpenSettingsOptions, IPreferenc
 import { SettingsEditor2Input } from '../../../services/preferences/common/preferencesEditorInput.js';
 import { nullRange, Settings2EditorModel } from '../../../services/preferences/common/preferencesModels.js';
 import { IUserDataProfileService } from '../../../services/userDataProfile/common/userDataProfile.js';
+import { IRemoteAgentService } from '../../../services/remote/common/remoteAgentService.js';
 import { IUserDataSyncWorkbenchService } from '../../../services/userDataSync/common/userDataSync.js';
 import { SuggestEnabledInput } from '../../codeEditor/browser/suggestEnabledInput/suggestEnabledInput.js';
 import { ADVANCED_SETTING_TAG, CONTEXT_AI_SETTING_RESULTS_AVAILABLE, CONTEXT_SETTINGS_EDITOR, CONTEXT_SETTINGS_ROW_FOCUS, CONTEXT_SETTINGS_SEARCH_FOCUS, CONTEXT_TOC_ROW_FOCUS, EMBEDDINGS_SEARCH_PROVIDER_NAME, ENABLE_LANGUAGE_FILTER, EXTENSION_FETCH_TIMEOUT_MS, EXTENSION_SETTING_TAG, FEATURE_SETTING_TAG, FILTER_MODEL_SEARCH_PROVIDER_NAME, getExperimentalExtensionToggleData, ID_SETTING_TAG, IPreferencesSearchService, ISearchProvider, LANGUAGE_SETTING_TAG, LLM_RANKED_SEARCH_PROVIDER_NAME, MODIFIED_SETTING_TAG, POLICY_SETTING_TAG, REQUIRE_TRUSTED_WORKSPACE_SETTING_TAG, SETTINGS_EDITOR_COMMAND_CLEAR_SEARCH_RESULTS, SETTINGS_EDITOR_COMMAND_SHOW_AI_RESULTS, SETTINGS_EDITOR_COMMAND_SUGGEST_FILTERS, SETTINGS_EDITOR_COMMAND_TOGGLE_AI_SEARCH, STRING_MATCH_SEARCH_PROVIDER_NAME, TF_IDF_SEARCH_PROVIDER_NAME, WorkbenchSettingsEditorSettings, WORKSPACE_TRUST_SETTING_TAG } from '../common/preferences.js';
@@ -191,6 +192,7 @@ export class SettingsEditor2 extends EditorPane {
 	private clearFilterLinkContainer!: HTMLElement;
 
 	private tocTreeContainer!: HTMLElement;
+	private tocTreeWrapper!: HTMLElement;
 	private tocTree!: TOCTree;
 
 	private searchDelayer: Delayer<void>;
@@ -270,7 +272,8 @@ export class SettingsEditor2 extends EditorPane {
 		@IUserDataProfileService userDataProfileService: IUserDataProfileService,
 		@IKeybindingService private readonly keybindingService: IKeybindingService,
 		@IChatEntitlementService private readonly chatEntitlementService: IChatEntitlementService,
-		@IEditorService private readonly editorService: IEditorService
+		@IEditorService private readonly editorService: IEditorService,
+		@IRemoteAgentService private readonly remoteAgentService: IRemoteAgentService
 	) {
 		super(SettingsEditor2.ID, group, telemetryService, themeService, storageService);
 		this.searchDelayer = new Delayer(200);
@@ -800,6 +803,10 @@ export class SettingsEditor2 extends EditorPane {
 			}));
 		}
 
+		// Place header controls (User/Workspace tabs) below the search row,
+		// left-aligned under the search input.
+		DOM.append(this.headerContainer, this.headerControlsContainer);
+
 		this.controlsElement = DOM.append(this.searchContainer, DOM.$('.search-container-widgets'));
 
 		this.searchInputActionBar = this._register(new ActionBar(this.controlsElement, {
@@ -936,6 +943,9 @@ export class SettingsEditor2 extends EditorPane {
 		let resource: URI | null = null;
 		if (currentSettingsTarget === ConfigurationTarget.USER_LOCAL) {
 			resource = this.preferencesService.userSettingsResource;
+		} else if (currentSettingsTarget === ConfigurationTarget.USER_REMOTE) {
+			const environment = await this.remoteAgentService.getEnvironment();
+			resource = environment?.settingsPath ?? null;
 		} else if (currentSettingsTarget === ConfigurationTarget.WORKSPACE) {
 			resource = this.preferencesService.workspaceSettingsResource;
 		} else if (URI.isUri(currentSettingsTarget)) {
@@ -1017,10 +1027,6 @@ export class SettingsEditor2 extends EditorPane {
 		this.tocTreeContainer = $('.settings-toc-container');
 		this.settingsTreeContainer = $('.settings-tree-container');
 
-		// Prepend header controls (User/Workspace toggles) into the TOC column
-		// so they appear at the same vertical level as the settings headings.
-		DOM.append(this.tocTreeContainer, this.headerControlsContainer);
-
 		this.createTOC(this.tocTreeContainer);
 		this.createSettingsTree(this.settingsTreeContainer);
 
@@ -1036,10 +1042,8 @@ export class SettingsEditor2 extends EditorPane {
 			layout: (width, _, height) => {
 				this.tocTreeContainer.style.width = `${width}px`;
 				if (height !== undefined) {
-					const controlsHeight = this.headerControlsContainer.offsetHeight;
-					const controlsMarginBottom = 8; // Matches margin-bottom in settingsEditor2.css
-					const tocWrapperPaddingTop = 12; // Matches padding-top in settingsEditor2.css
-					this.tocTree.layout(height - controlsHeight - controlsMarginBottom - tocWrapperPaddingTop, width);
+					const tocWrapperPaddingTop = parseFloat(DOM.getWindow(this.tocTreeWrapper).getComputedStyle(this.tocTreeWrapper).paddingTop) || 0;
+					this.tocTree.layout(height - tocWrapperPaddingTop, width);
 				}
 			}
 		}, SettingsEditor2.TOC_RESET_WIDTH, undefined, true);
@@ -1073,11 +1077,12 @@ export class SettingsEditor2 extends EditorPane {
 	private createTOC(container: HTMLElement): void {
 		this.tocTreeModel = this.instantiationService.createInstance(TOCTreeModel, this.viewState);
 
+		this.tocTreeWrapper = DOM.append(container, $('.settings-toc-wrapper', {
+			'role': 'navigation',
+			'aria-label': localize('settings', "Settings"),
+		}));
 		this.tocTree = this._register(this.instantiationService.createInstance(TOCTree,
-			DOM.append(container, $('.settings-toc-wrapper', {
-				'role': 'navigation',
-				'aria-label': localize('settings', "Settings"),
-			})),
+			this.tocTreeWrapper,
 			this.viewState));
 		this.tocTreeDisposed = false;
 
