@@ -1446,7 +1446,7 @@ function registerModalEditorCommands(): void {
 				precondition: EditorPartModalContext,
 				keybinding: {
 					primary: KeyCode.Escape,
-					weight: KeybindingWeight.WorkbenchContrib + 10,
+					weight: KeybindingWeight.WorkbenchContrib,
 					when: EditorPartModalContext
 				},
 				menu: {
