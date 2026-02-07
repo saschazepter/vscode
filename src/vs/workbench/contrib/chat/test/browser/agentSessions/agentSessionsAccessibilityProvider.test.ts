@@ -44,10 +44,10 @@ suite('AgentSessionsAccessibilityProvider', () => {
 		};
 	}
 
-	function createMockSection(section: AgentSessionSection = AgentSessionSection.Today): IAgentSessionSection {
+	function createMockSection(section: AgentSessionSection = AgentSessionSection.ThisWeek): IAgentSessionSection {
 		return {
 			section,
-			label: 'Today',
+			label: 'This week',
 			sessions: []
 		};
 	}

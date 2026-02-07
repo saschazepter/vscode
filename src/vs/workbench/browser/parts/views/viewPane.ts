@@ -345,6 +345,19 @@ export abstract class ViewPane extends Pane implements IView {
 		return this._singleViewPaneContainerTitle;
 	}
 
+	public get singleViewPaneContainerDescription(): string | undefined {
+		return undefined;
+	}
+
+	/**
+	 * Renders rich description content into the provided container element.
+	 * Override to provide custom rendering with styled elements.
+	 * @returns true if content was rendered, false to fall back to string description.
+	 */
+	public renderSingleViewPaneContainerDescription(_container: HTMLElement): boolean {
+		return false;
+	}
+
 	readonly menuActions: ViewMenuActions;
 
 	private progressBar?: ProgressBar;

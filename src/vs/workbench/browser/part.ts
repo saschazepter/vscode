@@ -17,6 +17,7 @@ import { IDisposable, toDisposable } from '../../base/common/lifecycle.js';
 export interface IPartOptions {
 	readonly hasTitle?: boolean;
 	readonly borderWidth?: () => number;
+	readonly titleHeight?: number;
 }
 
 export interface ILayoutContentResult {
@@ -215,7 +216,8 @@ class PartLayout {
 		// Title Size: Width (Fill), Height (Variable)
 		let titleSize: Dimension;
 		if (this.options.hasTitle) {
-			titleSize = new Dimension(width, Math.min(height, PartLayout.TITLE_HEIGHT));
+			const titleHeight = this.options.titleHeight ?? PartLayout.TITLE_HEIGHT;
+			titleSize = new Dimension(width, Math.min(height, titleHeight));
 		} else {
 			titleSize = Dimension.None;
 		}

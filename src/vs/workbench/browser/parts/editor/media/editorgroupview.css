@@ -114,6 +114,7 @@
 
 .monaco-workbench .part.editor > .content .editor-group-container > .editor-group-watermark .shortcuts dt {
 	letter-spacing: 0.04em;
+	color: var(--vscode-disabledForeground);
 }
 
 .monaco-workbench .part.editor > .content .editor-group-container > .editor-group-watermark .shortcuts dd {

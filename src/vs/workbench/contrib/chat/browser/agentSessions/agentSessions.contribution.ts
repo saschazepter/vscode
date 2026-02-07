@@ -52,7 +52,7 @@ MenuRegistry.appendMenuItem(MenuId.AgentSessionsToolbar, {
 	title: localize2('filterAgentSessions', "Filter Agent Sessions"),
 	group: 'navigation',
 	order: 3,
-	icon: Codicon.filter,
+	icon: Codicon.treeFilterOnTypeOn,
 } satisfies ISubmenuItem);
 
 //#endregion

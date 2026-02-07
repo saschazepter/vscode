@@ -216,7 +216,7 @@ suite('AgentSessionsDataSource', () => {
 			assert.ok(activeSessions.every(s => isSessionInProgressStatus(s.status) || s.status === ChatSessionStatus.NeedsInput));
 		});
 
-		test('adds Today header when there are active sessions', () => {
+		test('adds This week header when there are active sessions', () => {
 			const now = Date.now();
 			const sessions = [
 				createMockSession({ id: '1', status: ChatSessionStatus.Completed, startTime: now, endTime: now }),
@@ -231,13 +231,13 @@ suite('AgentSessionsDataSource', () => {
 			const result = Array.from(dataSource.getChildren(mockModel));
 			const sections = getSectionsFromResult(result);
 
-			// Now all sections have headers, so we expect In Progress and Today sections
+			// We expect In Progress and This week sections
 			assert.strictEqual(sections.length, 2);
 			assert.strictEqual(sections[0].section, AgentSessionSection.InProgress);
-			assert.strictEqual(sections[1].section, AgentSessionSection.Today);
+			assert.strictEqual(sections[1].section, AgentSessionSection.ThisWeek);
 		});
 
-		test('adds Today header when there are no active sessions', () => {
+		test('adds This week header when there are no active sessions', () => {
 			const now = Date.now();
 			const sessions = [
 				createMockSession({ id: '1', status: ChatSessionStatus.Completed, startTime: now, endTime: now }),
@@ -252,8 +252,8 @@ suite('AgentSessionsDataSource', () => {
 			const result = Array.from(dataSource.getChildren(mockModel));
 			const sections = getSectionsFromResult(result);
 
-			// Now all sections have headers, so Today section should be present
-			assert.strictEqual(sections.filter(s => s.section === AgentSessionSection.Today).length, 1);
+			// This week section should be present
+			assert.strictEqual(sections.filter(s => s.section === AgentSessionSection.ThisWeek).length, 1);
 		});
 
 		test('adds Older header for sessions older than week threshold', () => {
@@ -343,7 +343,7 @@ suite('AgentSessionsDataSource', () => {
 			assert.strictEqual(archivedSection.sessions[0].label, 'Session archived-active');
 		});
 
-		test('correct order: active, today, week, older, archived', () => {
+		test('correct order: active, this week, older, archived', () => {
 			const now = Date.now();
 			const sessions = [
 				createMockSession({ id: 'archived', status: ChatSessionStatus.Completed, isArchived: true, startTime: now, endTime: now }),
@@ -360,31 +360,27 @@ suite('AgentSessionsDataSource', () => {
 			const mockModel = createMockModel(sessions);
 			const result = Array.from(dataSource.getChildren(mockModel));
 
-			// All sections now have headers
 			// In Progress section
 			assert.ok(isAgentSessionSection(result[0]));
 			assert.strictEqual((result[0] as IAgentSessionSection).section, AgentSessionSection.InProgress);
 			assert.strictEqual((result[0] as IAgentSessionSection).sessions[0].label, 'Session active');
 
-			// Today section
+			// This week section (contains both 'today' and 'week' sessions)
 			assert.ok(isAgentSessionSection(result[1]));
-			assert.strictEqual((result[1] as IAgentSessionSection).section, AgentSessionSection.Today);
+			assert.strictEqual((result[1] as IAgentSessionSection).section, AgentSessionSection.ThisWeek);
+			assert.strictEqual((result[1] as IAgentSessionSection).sessions.length, 2);
 			assert.strictEqual((result[1] as IAgentSessionSection).sessions[0].label, 'Session today');
-
-			// Week section
-			assert.ok(isAgentSessionSection(result[2]));
-			assert.strictEqual((result[2] as IAgentSessionSection).section, AgentSessionSection.Week);
-			assert.strictEqual((result[2] as IAgentSessionSection).sessions[0].label, 'Session week');
+			assert.strictEqual((result[1] as IAgentSessionSection).sessions[1].label, 'Session week');
 
 			// Older section
-			assert.ok(isAgentSessionSection(result[3]));
-			assert.strictEqual((result[3] as IAgentSessionSection).section, AgentSessionSection.Older);
-			assert.strictEqual((result[3] as IAgentSessionSection).sessions[0].label, 'Session old');
+			assert.ok(isAgentSessionSection(result[2]));
+			assert.strictEqual((result[2] as IAgentSessionSection).section, AgentSessionSection.Older);
+			assert.strictEqual((result[2] as IAgentSessionSection).sessions[0].label, 'Session old');
 
 			// Archived section
-			assert.ok(isAgentSessionSection(result[4]));
-			assert.strictEqual((result[4] as IAgentSessionSection).section, AgentSessionSection.Archived);
-			assert.strictEqual((result[4] as IAgentSessionSection).sessions[0].label, 'Session archived');
+			assert.ok(isAgentSessionSection(result[3]));
+			assert.strictEqual((result[3] as IAgentSessionSection).section, AgentSessionSection.Archived);
+			assert.strictEqual((result[3] as IAgentSessionSection).sessions[0].label, 'Session archived');
 		});
 
 		test('empty sessions returns empty result', () => {
@@ -398,7 +394,7 @@ suite('AgentSessionsDataSource', () => {
 			assert.strictEqual(result.length, 0);
 		});
 
-		test('only today sessions produces a Today section header', () => {
+		test('only recent sessions produces a This week section header', () => {
 			const now = Date.now();
 			const sessions = [
 				createMockSession({ id: '1', status: ChatSessionStatus.Completed, startTime: now, endTime: now }),
@@ -413,9 +409,8 @@ suite('AgentSessionsDataSource', () => {
 			const result = Array.from(dataSource.getChildren(mockModel));
 			const sections = getSectionsFromResult(result);
 
-			// All sections now have headers, so a Today section should be present
 			assert.strictEqual(sections.length, 1);
-			assert.strictEqual(sections[0].section, AgentSessionSection.Today);
+			assert.strictEqual(sections[0].section, AgentSessionSection.ThisWeek);
 			assert.strictEqual(sections[0].sessions.length, 2);
 		});
 
@@ -435,12 +430,11 @@ suite('AgentSessionsDataSource', () => {
 			const mockModel = createMockModel(sessions);
 			const result = Array.from(dataSource.getChildren(mockModel));
 
-			// All sections now have headers
-			// Week section should be first and contain sorted sessions
-			const weekSection = result.find((item): item is IAgentSessionSection => isAgentSessionSection(item) && item.section === AgentSessionSection.Week);
-			assert.ok(weekSection);
-			assert.strictEqual(weekSection.sessions[0].label, 'Session week2');
-			assert.strictEqual(weekSection.sessions[1].label, 'Session week1');
+			// This week section should contain sorted sessions
+			const thisWeekSection = result.find((item): item is IAgentSessionSection => isAgentSessionSection(item) && item.section === AgentSessionSection.ThisWeek);
+			assert.ok(thisWeekSection);
+			assert.strictEqual(thisWeekSection.sessions[0].label, 'Session week2');
+			assert.strictEqual(thisWeekSection.sessions[1].label, 'Session week1');
 
 			// Older section with sorted sessions
 			const olderSection = result.find((item): item is IAgentSessionSection => isAgentSessionSection(item) && item.section === AgentSessionSection.Older);

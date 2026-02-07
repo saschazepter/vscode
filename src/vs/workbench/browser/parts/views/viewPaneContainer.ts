@@ -559,6 +559,24 @@ export class ViewPaneContainer<MementoType extends object = object> extends Comp
 		return containerTitle;
 	}
 
+	getDescription(): string | undefined {
+		if (this.isViewMergedWithContainer()) {
+			return this.paneItems[0].pane.singleViewPaneContainerDescription;
+		}
+		return undefined;
+	}
+
+	/**
+	 * Renders rich description content into the provided container.
+	 * @returns true if content was rendered, false to fall back to string description.
+	 */
+	renderDescription(container: HTMLElement): boolean {
+		if (this.isViewMergedWithContainer()) {
+			return this.paneItems[0].pane.renderSingleViewPaneContainerDescription(container);
+		}
+		return false;
+	}
+
 	private showContextMenu(event: StandardMouseEvent): void {
 		for (const paneItem of this.paneItems) {
 			// Do not show context menu if target is coming from inside pane views

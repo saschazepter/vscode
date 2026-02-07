@@ -33,6 +33,10 @@ import { IConfigurationService } from '../../../../platform/configuration/common
 import { getContextMenuActions } from '../../../../platform/actions/browser/menuEntryActionViewItem.js';
 import { IHoverService } from '../../../../platform/hover/browser/hover.js';
 import { VisibleViewContainersTracker } from '../visibleViewContainersTracker.js';
+import { ICompositeTitleLabel } from '../compositePart.js';
+import { $, append, reset } from '../../../../base/browser/dom.js';
+import { renderLabelWithIcons } from '../../../../base/browser/ui/iconLabel/iconLabels.js';
+import { PaneComposite } from '../../panecomposite.js';
 
 interface IAuxiliaryBarPartConfiguration {
 	position: ActivityBarPosition;
@@ -100,6 +104,7 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 			Parts.AUXILIARYBAR_PART,
 			{
 				hasTitle: true,
+				titleHeight: 52,
 				trailingSeparator: false,
 				borderWidth: () => (this.getColor(SIDE_BAR_BORDER) || this.getColor(contrastBorder)) ? 1 : 0,
 			},
@@ -257,6 +262,48 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 
 	protected shouldShowCompositeBar(): boolean {
 		return false;
+	}
+
+	private titleDescriptionElement: HTMLElement | undefined;
+
+	protected override createTitleLabel(parent: HTMLElement): ICompositeTitleLabel {
+		const titleLabel = super.createTitleLabel(parent);
+
+		// Append a description element below the title label
+		const titleLabelContainer = parent.querySelector('.title-label');
+		if (titleLabelContainer) {
+			this.titleDescriptionElement = append(titleLabelContainer as HTMLElement, $('span.title-description'));
+		}
+
+		const originalUpdateStyles = titleLabel.updateStyles.bind(titleLabel);
+
+		return {
+			updateTitle: titleLabel.updateTitle,
+			updateStyles: () => {
+				originalUpdateStyles();
+				// Remove bottom border - the two-row header doesn't use one
+				parent.style.borderBottom = '';
+			}
+		};
+	}
+
+	protected override onTitleAreaUpdate(compositeId: string): void {
+		super.onTitleAreaUpdate(compositeId);
+
+		// Update the description from the active pane's view pane container
+		if (this.titleDescriptionElement) {
+			reset(this.titleDescriptionElement);
+			const viewPaneContainer = (this.getActivePaneComposite() as PaneComposite)?.getViewPaneContainer();
+			if (viewPaneContainer) {
+				// Try rich rendering first, then fall back to string description
+				if (!viewPaneContainer.renderDescription(this.titleDescriptionElement)) {
+					const description = viewPaneContainer.getDescription();
+					if (description) {
+						reset(this.titleDescriptionElement, ...renderLabelWithIcons(description));
+					}
+				}
+			}
+		}
 	}
 
 	protected getCompositeBarPosition(): CompositeBarPosition {

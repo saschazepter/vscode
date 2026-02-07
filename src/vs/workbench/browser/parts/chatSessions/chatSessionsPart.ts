@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import './media/chatSessionsPart.css';
-import { $, append } from '../../../../base/browser/dom.js';
+import { $, append, h } from '../../../../base/browser/dom.js';
 import { Button } from '../../../../base/browser/ui/button/button.js';
 import { HoverPosition } from '../../../../base/browser/ui/hover/hoverWidget.js';
 import { LayoutPriority } from '../../../../base/browser/ui/splitview/splitview.js';
@@ -13,7 +13,7 @@ import { MenuId } from '../../../../platform/actions/common/actions.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
 import { createDecorator, IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
-import { IStorageService } from '../../../../platform/storage/common/storage.js';
+import { IStorageService, StorageScope } from '../../../../platform/storage/common/storage.js';
 import { defaultButtonStyles } from '../../../../platform/theme/browser/defaultStyles.js';
 import { SIDE_BAR_BACKGROUND, SIDE_BAR_BORDER, SIDE_BAR_FOREGROUND } from '../../../common/theme.js';
 import { IThemeService } from '../../../../platform/theme/common/themeService.js';
@@ -23,6 +23,7 @@ import { AgentSessionsControl } from '../../../contrib/chat/browser/agentSession
 import { AgentSessionsFilter, AgentSessionsGrouping } from '../../../contrib/chat/browser/agentSessions/agentSessionsFilter.js';
 import { ACTION_ID_NEW_CHAT } from '../../../contrib/chat/browser/actions/chatActions.js';
 import { IAgentSession } from '../../../contrib/chat/browser/agentSessions/agentSessionsModel.js';
+import { MenuWorkbenchToolBar } from '../../../../platform/actions/browser/toolbar.js';
 
 export const IChatSessionsPartService = createDecorator<IChatSessionsPartService>('chatSessionsPartService');
 
@@ -48,10 +49,11 @@ export class ChatSessionsPart extends Part implements IChatSessionsPartService {
 	private sessionsControl: AgentSessionsControl | undefined;
 	private sessionsControlContainer: HTMLElement | undefined;
 	private newSessionButtonContainer: HTMLElement | undefined;
+	private titleBarContainer: HTMLElement | undefined;
 
 	constructor(
 		@IThemeService themeService: IThemeService,
-		@IStorageService storageService: IStorageService,
+		@IStorageService private readonly storageService: IStorageService,
 		@IWorkbenchLayoutService layoutService: IWorkbenchLayoutService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@ICommandService private readonly commandService: ICommandService,
@@ -62,6 +64,15 @@ export class ChatSessionsPart extends Part implements IChatSessionsPartService {
 	protected override createContentArea(parent: HTMLElement): HTMLElement {
 		this.element = parent;
 		const contentContainer = append(parent, $('.chat-sessions-content'));
+
+		// Title Bar
+		const titleBarElements = h('div.chat-sessions-titlebar', [
+			h('span.chat-sessions-titlebar-label@label'),
+			h('div.chat-sessions-titlebar-actions@actions'),
+		]);
+		this.titleBarContainer = titleBarElements.root;
+		titleBarElements.label.textContent = localize('sessions', "Sessions");
+		append(contentContainer, this.titleBarContainer);
 
 		// New Session Button
 		this.newSessionButtonContainer = append(contentContainer, $('.chat-sessions-new-button-container'));
@@ -87,6 +98,23 @@ export class ChatSessionsPart extends Part implements IChatSessionsPartService {
 			getHoverPosition: () => this.getSessionHoverPosition(),
 			trackActiveEditorSession: () => true,
 		}));
+
+		// Title Bar Toolbar (after sessionsControl is created so we can set context)
+		const toolbar = this._register(this.instantiationService.createInstance(MenuWorkbenchToolBar, titleBarElements.actions, MenuId.AgentSessionsToolbar, {
+			menuOptions: { shouldForwardArgs: true },
+		}));
+		toolbar.context = this.sessionsControl;
+
+		// Filter active indicator
+		const filterStorageKey = 'agentSessions.filterExcludes.agentsessionsviewerfiltersubmenu';
+		const updateFilterIndicator = () => {
+			const hasStoredFilter = !!this.storageService.get(filterStorageKey, StorageScope.PROFILE);
+			titleBarElements.actions.classList.toggle('filter-active', hasStoredFilter);
+		};
+		this._register(this.storageService.onDidChangeValue(StorageScope.PROFILE, filterStorageKey, this._store)(() => {
+			updateFilterIndicator();
+		}));
+		updateFilterIndicator();
 
 		return contentContainer;
 	}
@@ -123,7 +151,9 @@ export class ChatSessionsPart extends Part implements IChatSessionsPartService {
 		super.layout(width, height, top, left);
 
 		const contentResult = this.layoutContents(width, height);
-		const controlHeight = contentResult.contentSize.height - (this.newSessionButtonContainer?.offsetHeight ?? 0);
+		const titleBarHeight = this.titleBarContainer?.offsetHeight ?? 0;
+		const buttonHeight = this.newSessionButtonContainer?.offsetHeight ?? 0;
+		const controlHeight = contentResult.contentSize.height - titleBarHeight - buttonHeight;
 
 		if (this.sessionsControl && this.sessionsControlContainer) {
 			this.sessionsControlContainer.style.height = `${controlHeight}px`;

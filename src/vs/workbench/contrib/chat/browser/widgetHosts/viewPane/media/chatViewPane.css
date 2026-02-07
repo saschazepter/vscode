@@ -3,6 +3,11 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+/* Add top padding to the auxiliarybar title-actions when the chat view is active */
+.monaco-workbench .auxiliarybar.part.pane-composite-part:has(.chat-viewpane) > .composite.title > .title-actions {
+	padding-top: 8px;
+}
+
 /* Overall styles */
 .chat-viewpane {
 	display: flex;

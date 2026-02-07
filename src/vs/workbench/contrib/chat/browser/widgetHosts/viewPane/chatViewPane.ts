@@ -7,6 +7,7 @@ import './media/chatViewPane.css';
 import { $, addDisposableListener, append, EventHelper, EventType, getWindow } from '../../../../../../base/browser/dom.js';
 import { renderAsPlaintext } from '../../../../../../base/browser/markdownRenderer.js';
 import { StandardMouseEvent } from '../../../../../../base/browser/mouseEvent.js';
+import { renderIcon } from '../../../../../../base/browser/ui/iconLabel/iconLabels.js';
 import { CancellationToken } from '../../../../../../base/common/cancellation.js';
 import { Event } from '../../../../../../base/common/event.js';
 import { MarkdownString } from '../../../../../../base/common/htmlContent.js';
@@ -53,6 +54,8 @@ import { ChatViewId } from '../../chat.js';
 import { IActivityService, ProgressBadge } from '../../../../../services/activity/common/activity.js';
 import { disposableTimeout } from '../../../../../../base/common/async.js';
 import { IAgentSessionsService } from '../../agentSessions/agentSessionsService.js';
+import { AgentSessionProviders, getAgentSessionProvider, getAgentSessionProviderIcon, getAgentSessionProviderName } from '../../agentSessions/agentSessions.js';
+import { getAgentChangesSummary, hasValidDiff } from '../../agentSessions/agentSessionsModel.js';
 
 interface IChatViewPaneState extends Partial<IChatModelInputState> {
 	sessionId?: string;
@@ -81,9 +84,14 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 	private readonly activityBadge = this._register(new MutableDisposable());
 
 	private _currentSessionTitle: string | undefined;
+	private _currentSessionDescription: string | undefined;
 	private readonly _modelTitleDisposable = this._register(new MutableDisposable());
 	override get singleViewPaneContainerTitle(): string | undefined {
 		return this._currentSessionTitle;
+	}
+
+	override get singleViewPaneContainerDescription(): string | undefined {
+		return this._currentSessionDescription;
 	}
 
 	constructor(
@@ -327,11 +335,80 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 
 	private setSessionTitle(model: IChatModel | undefined): void {
 		const markdownTitle = new MarkdownString(model?.title ?? '');
-		const newTitle = renderAsPlaintext(markdownTitle) || undefined;
-		if (this._currentSessionTitle !== newTitle) {
+		const newTitle = renderAsPlaintext(markdownTitle) || localize('chat.newChat', "New Chat");
+		const newDescription = this.getSessionDescription(model);
+		if (this._currentSessionTitle !== newTitle || this._currentSessionDescription !== newDescription) {
 			this._currentSessionTitle = newTitle;
+			this._currentSessionDescription = newDescription;
 			this._onDidChangeTitleArea.fire();
 		}
+	}
+
+	private getSessionDescription(model: IChatModel | undefined): string | undefined {
+		if (!model) {
+			return undefined;
+		}
+
+		const parts: string[] = [];
+
+		// Provider icon + name
+		const providerType = getAgentSessionProvider(model.sessionResource);
+		const provider = providerType ?? AgentSessionProviders.Local;
+		const providerIcon = getAgentSessionProviderIcon(provider);
+		parts.push(`$(${providerIcon.id}) ${getAgentSessionProviderName(provider)}`);
+
+		// File count
+		const agentSession = this.agentSessionsService.getSession(model.sessionResource);
+		if (agentSession) {
+			const diff = getAgentChangesSummary(agentSession.changes);
+			if (diff && hasValidDiff(agentSession.changes)) {
+				if (diff.files > 0) {
+					parts.push('·');
+					parts.push(diff.files === 1 ? localize('description.file', "1 file") : localize('description.files', "{0} files", diff.files));
+				}
+				// Insertions/deletions are rendered as colored elements in renderSingleViewPaneContainerDescription
+				if (diff.insertions > 0 || diff.deletions > 0) {
+					parts.push(`+${diff.insertions} -${diff.deletions}`);
+				}
+			}
+		}
+
+		return parts.join(' ');
+	}
+
+	override renderSingleViewPaneContainerDescription(container: HTMLElement): boolean {
+		const model = this.widget?.viewModel?.model;
+		if (!model) {
+			return false;
+		}
+
+		// Provider icon + name (matches hover widget structure)
+		const providerType = getAgentSessionProvider(model.sessionResource);
+		const provider = providerType ?? AgentSessionProviders.Local;
+		const providerIcon = getAgentSessionProviderIcon(provider);
+		container.append(renderIcon(providerIcon));
+		container.append($('span', undefined, getAgentSessionProviderName(provider)));
+
+		// Diff info
+		const agentSession = this.agentSessionsService.getSession(model.sessionResource);
+		if (agentSession) {
+			const diff = getAgentChangesSummary(agentSession.changes);
+			if (diff && hasValidDiff(agentSession.changes)) {
+				container.append($('span.separator', undefined, '\u2022'));
+				const diffContainer = append(container, $('.diff'));
+				if (diff.files > 0) {
+					diffContainer.append($('span', undefined, diff.files === 1 ? localize('description.file', "1 file") : localize('description.files', "{0} files", diff.files)));
+				}
+				if (diff.insertions > 0) {
+					diffContainer.append($('span.insertions', undefined, `+${diff.insertions}`));
+				}
+				if (diff.deletions > 0) {
+					diffContainer.append($('span.deletions', undefined, `-${diff.deletions}`));
+				}
+			}
+		}
+
+		return true;
 	}
 
 	private registerControlsListeners(chatWidget: ChatWidget, welcomeController: ChatViewWelcomeController): void {

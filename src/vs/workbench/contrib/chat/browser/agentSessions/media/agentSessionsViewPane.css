@@ -9,7 +9,7 @@
 	height: 100%;
 
 	.agent-sessions-new-button-container {
-		padding: 8px;
+		padding: 0 8px 8px;
 	}
 
 	.agent-sessions-control-container {

@@ -14,8 +14,48 @@
 	overflow: hidden;
 }
 
+.chat-sessions-titlebar {
+	display: flex;
+	align-items: center;
+	padding: 2px 6px 0 12px;
+	height: 35px;
+	flex-shrink: 0;
+}
+
+.chat-sessions-titlebar-label {
+	flex: 1;
+	font-size: 11px;
+	font-weight: 500;
+	color: var(--vscode-descriptionForeground);
+}
+
+.chat-sessions-titlebar-actions {
+	display: flex;
+	align-items: center;
+
+	.monaco-action-bar .actions-container {
+		gap: 4px;
+	}
+}
+
+.chat-sessions-titlebar-actions .codicon-tree-filter-on-type-on {
+	position: relative;
+	overflow: visible;
+}
+
+.chat-sessions-titlebar-actions.filter-active .codicon-tree-filter-on-type-on::after {
+	content: '';
+	position: absolute;
+	width: 6px;
+	height: 6px;
+	top: 2px;
+	right: 2px;
+	border-radius: 50%;
+	background-color: var(--vscode-badge-background);
+}
+
 .chat-sessions-new-button-container {
-	padding: 8px;
+	padding: 0 8px 8px;
 	flex-shrink: 0;
 }
 

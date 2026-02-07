@@ -300,6 +300,10 @@
 	border-color: var(--vscode-textBlockQuote-border);
 }
 
+.interactive-item-container .value .rendered-markdown strong {
+	font-weight: 600;
+}
+
 .interactive-item-container .value .rendered-markdown table {
 	width: 100%;
 	text-align: left;
@@ -599,37 +603,31 @@
 }
 
 /* #region list indent rules */
-.interactive-item-container .value .rendered-markdown ul {
-	/* Keep this in sync with the values for dedented codeblocks below */
-	padding-inline-start: 24px;
-}
-
+.interactive-item-container .value .rendered-markdown ul,
 .interactive-item-container .value .rendered-markdown ol {
 	/* Keep this in sync with the values for dedented codeblocks below */
-	padding-inline-start: 28px;
+	padding-inline-start: 1.625em;
+	margin: 1em 0;
+}
+
+.interactive-item-container .value .rendered-markdown li {
+	margin: 0.5em 0;
+	padding: 0 0 0 0.375em;
 }
 
 /* NOTE- We want to dedent codeblocks in lists specifically to give them the full width. No more elegant way to do this, these values
-have to be updated for changes to the rules above, or to support more deeply nested lists. */
-.interactive-item-container .value .rendered-markdown ul .interactive-result-code-block {
-	margin-left: -24px;
-}
-
-.interactive-item-container .value .rendered-markdown ul ul .interactive-result-code-block {
-	margin-left: -48px;
-}
-
+have to be updated for changes to the rules above, or to support more deeply nested lists.
+Total indent per level = padding-inline-start (1.625em) + li padding-left (0.375em) = 2em */
+.interactive-item-container .value .rendered-markdown ul .interactive-result-code-block,
 .interactive-item-container .value .rendered-markdown ol .interactive-result-code-block {
-	margin-left: -28px;
+	margin-left: -2em;
 }
 
-.interactive-item-container .value .rendered-markdown ol ol .interactive-result-code-block {
-	margin-left: -56px;
-}
-
+.interactive-item-container .value .rendered-markdown ul ul .interactive-result-code-block,
+.interactive-item-container .value .rendered-markdown ol ol .interactive-result-code-block,
 .interactive-item-container .value .rendered-markdown ol ul .interactive-result-code-block,
 .interactive-item-container .value .rendered-markdown ul ol .interactive-result-code-block {
-	margin-left: -52px;
+	margin-left: -4em;
 }
 
 /* #endregion list indent rules */

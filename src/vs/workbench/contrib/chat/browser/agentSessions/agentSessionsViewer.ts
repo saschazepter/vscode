@@ -714,9 +714,7 @@ export class AgentSessionsDataSource implements IAsyncDataSource<IAgentSessionsM
 
 export const AgentSessionSectionLabels = {
 	[AgentSessionSection.InProgress]: localize('agentSessions.inProgressSection', "In progress"),
-	[AgentSessionSection.Today]: localize('agentSessions.todaySection', "Today"),
-	[AgentSessionSection.Yesterday]: localize('agentSessions.yesterdaySection', "Yesterday"),
-	[AgentSessionSection.Week]: localize('agentSessions.weekSection', "Last 7 days"),
+	[AgentSessionSection.ThisWeek]: localize('agentSessions.thisWeekSection', "This week"),
 	[AgentSessionSection.Older]: localize('agentSessions.olderSection', "Older"),
 	[AgentSessionSection.Archived]: localize('agentSessions.archivedSection', "Archived"),
 	[AgentSessionSection.More]: localize('agentSessions.moreSection', "More"),
@@ -727,14 +725,10 @@ const WEEK_THRESHOLD = 7 * DAY_THRESHOLD;
 
 export function groupAgentSessionsByDate(sessions: IAgentSession[]): Map<AgentSessionSection, IAgentSessionSection> {
 	const now = Date.now();
-	const startOfToday = new Date(now).setHours(0, 0, 0, 0);
-	const startOfYesterday = startOfToday - DAY_THRESHOLD;
 	const weekThreshold = now - WEEK_THRESHOLD;
 
 	const inProgressSessions: IAgentSession[] = [];
-	const todaySessions: IAgentSession[] = [];
-	const yesterdaySessions: IAgentSession[] = [];
-	const weekSessions: IAgentSession[] = [];
+	const thisWeekSessions: IAgentSession[] = [];
 	const olderSessions: IAgentSession[] = [];
 	const archivedSessions: IAgentSession[] = [];
 
@@ -745,12 +739,8 @@ export function groupAgentSessionsByDate(sessions: IAgentSession[]): Map<AgentSe
 			inProgressSessions.push(session);
 		} else {
 			const sessionTime = getAgentSessionTime(session.timing);
-			if (sessionTime >= startOfToday) {
-				todaySessions.push(session);
-			} else if (sessionTime >= startOfYesterday) {
-				yesterdaySessions.push(session);
-			} else if (sessionTime >= weekThreshold) {
-				weekSessions.push(session);
+			if (sessionTime >= weekThreshold) {
+				thisWeekSessions.push(session);
 			} else {
 				olderSessions.push(session);
 			}
@@ -759,9 +749,7 @@ export function groupAgentSessionsByDate(sessions: IAgentSession[]): Map<AgentSe
 
 	return new Map<AgentSessionSection, IAgentSessionSection>([
 		[AgentSessionSection.InProgress, { section: AgentSessionSection.InProgress, label: AgentSessionSectionLabels[AgentSessionSection.InProgress], sessions: inProgressSessions }],
-		[AgentSessionSection.Today, { section: AgentSessionSection.Today, label: AgentSessionSectionLabels[AgentSessionSection.Today], sessions: todaySessions }],
-		[AgentSessionSection.Yesterday, { section: AgentSessionSection.Yesterday, label: AgentSessionSectionLabels[AgentSessionSection.Yesterday], sessions: yesterdaySessions }],
-		[AgentSessionSection.Week, { section: AgentSessionSection.Week, label: AgentSessionSectionLabels[AgentSessionSection.Week], sessions: weekSessions }],
+		[AgentSessionSection.ThisWeek, { section: AgentSessionSection.ThisWeek, label: AgentSessionSectionLabels[AgentSessionSection.ThisWeek], sessions: thisWeekSessions }],
 		[AgentSessionSection.Older, { section: AgentSessionSection.Older, label: AgentSessionSectionLabels[AgentSessionSection.Older], sessions: olderSessions }],
 		[AgentSessionSection.Archived, { section: AgentSessionSection.Archived, label: localize('agentSessions.archivedSectionWithCount', "Archived ({0})", archivedSessions.length), sessions: archivedSessions }],
 	]);
