@@ -88,12 +88,12 @@ export type PreToolUsePermissionDecision = 'allow' | 'deny' | 'ask';
 
 /**
  * Result from preToolUse hooks with permission decision fields.
- * Returned to VS Code callers.
+ * Returned to VS Code callers. Represents the collapsed result of all hooks.
  */
 export interface IPreToolUseHookResult extends IHookResult {
 	readonly permissionDecision?: PreToolUsePermissionDecision;
 	readonly permissionDecisionReason?: string;
-	readonly additionalContext?: string;
+	readonly additionalContext?: string[];
 }
 
 //#endregion
@@ -125,12 +125,12 @@ export type PostToolUseDecision = 'block';
 
 /**
  * Result from postToolUse hooks with decision fields.
- * Returned to VS Code callers.
+ * Returned to VS Code callers. Represents the collapsed result of all hooks.
  */
 export interface IPostToolUseHookResult extends IHookResult {
 	readonly decision?: PostToolUseDecision;
 	readonly reason?: string;
-	readonly additionalContext?: string;
+	readonly additionalContext?: string[];
 }
 
 //#endregion
