@@ -1579,8 +1579,8 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 			return;
 		}
 
-		const effectiveSessionType = this.getEffectiveSessionType(ctx);
-		const optionGroups = this.chatSessionsService.getOptionGroupsForSessionType(effectiveSessionType);
+		const sessionType = this.getSessionType(ctx);
+		const optionGroups = this.chatSessionsService.getOptionGroupsForSessionType(sessionType);
 		const optionGroup = optionGroups?.find(g => g.id === optionGroupId);
 		if (!optionGroup || optionGroup.items.length === 0) {
 			return;
@@ -1601,7 +1601,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 
 	}
 
-	private getEffectiveSessionType(ctx: IChatSessionContext | undefined): string {
+	private getSessionType(ctx: IChatSessionContext | undefined): string {
 		return ctx?.chatSessionType || '';
 	}
 
@@ -1954,12 +1954,12 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 					};
 					return this.modeWidget = this.instantiationService.createInstance(ModePickerActionItem, action, delegate, pickerOptions);
 				} else if ((action.id === OpenSessionTargetPickerAction.ID || action.id === OpenDelegationPickerAction.ID) && action instanceof MenuItemAction) {
-					// Create standard delegate without custom options
+					// Create picker state object for session type switching
 					const getActiveSessionType = () => {
 						const sessionResource = this._widget?.viewModel?.sessionResource;
 						return sessionResource ? getAgentSessionProvider(sessionResource) : undefined;
 					};
-					const delegate = {
+					const sessionPickerState = {
 						getActiveSessionProvider: () => getActiveSessionType(),
 						getPendingDelegationTarget: () => this._pendingDelegationTarget,
 						setPendingDelegationTarget: (provider: AgentSessionProviders) => {
@@ -1972,7 +1972,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 					};
 					// Use delegation picker for session switching in non-empty sessions
 					const Picker = action.id === OpenSessionTargetPickerAction.ID ? SessionTypePickerActionItem : DelegationSessionPickerActionItem;
-					return this.sessionTargetWidget = this.instantiationService.createInstance(Picker, action, location === ChatWidgetLocation.Editor ? 'editor' : 'sidebar', delegate, pickerOptions);
+					return this.sessionTargetWidget = this.instantiationService.createInstance(Picker, action, location === ChatWidgetLocation.Editor ? 'editor' : 'sidebar', sessionPickerState, pickerOptions);
 				} else if (action.id === OpenWorkspacePickerAction.ID && action instanceof MenuItemAction) {
 					// Workspace picker not supported - hide the action
 					const empty = new BaseActionViewItem(undefined, action);
