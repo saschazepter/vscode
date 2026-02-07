@@ -835,6 +835,7 @@ export interface IChatSubagentToolInvocationData {
 	agentName?: string;
 	prompt?: string;
 	result?: string;
+	modelName?: string;
 }
 
 export interface IChatTodoListContent {

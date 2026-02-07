@@ -77,6 +77,7 @@ suite('RunSubagentTool', () => {
 						description: 'Test task',
 						agentName: 'CustomAgent',
 					},
+					toolCallId: 'test-call-1',
 					chatSessionResource: URI.parse('test://session'),
 				},
 				CancellationToken.None
@@ -89,6 +90,7 @@ suite('RunSubagentTool', () => {
 				description: 'Test task',
 				agentName: 'CustomAgent',
 				prompt: 'Test prompt',
+				modelName: undefined,
 			});
 		});
 	});
