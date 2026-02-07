@@ -506,6 +506,7 @@ class RenderedStickyLine {
 		const foldingIcon = this._renderFoldingIconForLine(editor, foldingModel, lineNumber, lineHeight, isOnGlyphMargin);
 		if (foldingIcon) {
 			lineNumberHTMLNode.appendChild(foldingIcon.domNode);
+			foldingIcon.domNode.setAttribute(STICKY_INDEX_ATTR, String(index));
 			foldingIcon.domNode.style.left = `${layoutInfo.lineNumbersWidth + layoutInfo.lineNumbersLeft}px`;
 			foldingIcon.domNode.style.lineHeight = `${lineHeight}px`;
 		}
@@ -564,5 +565,6 @@ class StickyFoldingIcon {
 	public setVisible(visible: boolean) {
 		this.domNode.style.cursor = visible ? 'pointer' : 'default';
 		this.domNode.style.opacity = visible ? '1' : '0';
+		this.domNode.style.pointerEvents = visible ? 'auto' : 'none';
 	}
 }
