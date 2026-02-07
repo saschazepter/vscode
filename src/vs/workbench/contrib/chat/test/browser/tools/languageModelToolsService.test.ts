@@ -3826,7 +3826,7 @@ suite('LanguageModelToolsService', () => {
 		test('when hook denies, tool returns error and creates cancelled invocation', async () => {
 			mockHooksService.preToolUseHookResult = {
 				output: undefined,
-				success: true,
+				resultKind: 'success',
 				permissionDecision: 'deny',
 				permissionDecisionReason: 'Destructive operations require approval',
 			};
@@ -3864,7 +3864,7 @@ suite('LanguageModelToolsService', () => {
 		test('when hook allows, tool executes normally', async () => {
 			mockHooksService.preToolUseHookResult = {
 				output: undefined,
-				success: true,
+				resultKind: 'success',
 				permissionDecision: 'allow',
 			};
 
@@ -3908,7 +3908,7 @@ suite('LanguageModelToolsService', () => {
 		test('hook receives correct input parameters', async () => {
 			mockHooksService.preToolUseHookResult = {
 				output: undefined,
-				success: true,
+				resultKind: 'success',
 				permissionDecision: 'allow',
 			};
 
@@ -3932,7 +3932,7 @@ suite('LanguageModelToolsService', () => {
 		test('when hook denies, tool invoke is never called', async () => {
 			mockHooksService.preToolUseHookResult = {
 				output: undefined,
-				success: true,
+				resultKind: 'success',
 				permissionDecision: 'deny',
 				permissionDecisionReason: 'Operation not allowed',
 			};
@@ -3960,7 +3960,7 @@ suite('LanguageModelToolsService', () => {
 		test('when hook returns ask, tool is not auto-approved', async () => {
 			mockHooksService.preToolUseHookResult = {
 				output: undefined,
-				success: true,
+				resultKind: 'success',
 				permissionDecision: 'ask',
 				permissionDecisionReason: 'Requires user confirmation',
 			};
@@ -4008,7 +4008,7 @@ suite('LanguageModelToolsService', () => {
 		test('when hook returns allow, tool is auto-approved', async () => {
 			mockHooksService.preToolUseHookResult = {
 				output: undefined,
-				success: true,
+				resultKind: 'success',
 				permissionDecision: 'allow',
 			};
 
@@ -4207,7 +4207,7 @@ suite('LanguageModelToolsService', () => {
 		test('when hook blocks, block context is appended to tool result', async () => {
 			mockHooksService.postToolUseHookResult = {
 				output: undefined,
-				success: true,
+				resultKind: 'success',
 				decision: 'block',
 				reason: 'Lint errors detected',
 			};
@@ -4243,7 +4243,7 @@ suite('LanguageModelToolsService', () => {
 		test('when hook returns additionalContext, it is appended to tool result', async () => {
 			mockHooksService.postToolUseHookResult = {
 				output: undefined,
-				success: true,
+				resultKind: 'success',
 				additionalContext: ['Consider running tests after this change'],
 			};
 
@@ -4314,7 +4314,7 @@ suite('LanguageModelToolsService', () => {
 		test('when hook blocks with both decision and additionalContext, both are appended', async () => {
 			mockHooksService.postToolUseHookResult = {
 				output: undefined,
-				success: true,
+				resultKind: 'success',
 				decision: 'block',
 				reason: 'Security issue found',
 				additionalContext: ['Please review the file permissions'],

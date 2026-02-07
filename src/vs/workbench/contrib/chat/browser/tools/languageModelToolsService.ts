@@ -821,10 +821,12 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 		if (tool.impl!.prepareToolInvocation) {
 			const preparePromise = tool.impl!.prepareToolInvocation({
 				parameters: dto.parameters,
+				toolCallId: dto.callId,
 				chatRequestId: dto.chatRequestId,
 				chatSessionId: dto.context?.sessionId,
 				chatSessionResource: dto.context?.sessionResource,
 				chatInteractionId: dto.chatInteractionId,
+				modelId: dto.modelId,
 				forceConfirmationReason: forceConfirmationReason
 			}, token);
 

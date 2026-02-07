@@ -21,29 +21,34 @@ import { vEnum, vObj, vObjAny, vOptionalProp, vString } from '../../../../../bas
 //#region Common Hook Types
 
 /**
+ * The kind of result from executing a hook command.
+ */
+export type HookResultKind = 'success' | 'error' | 'warning';
+
+/**
  * Semantic hook result with common fields extracted and defaults applied.
  * This is what callers receive from executeHook.
  */
 export interface IHookResult {
+	/**
+	 * The kind of result from executing the hook.
+	 */
+	readonly resultKind: HookResultKind;
 	/**
 	 * If set, the agent should stop processing entirely after this hook.
 	 * The message is shown to the user but not to the agent.
 	 */
 	readonly stopReason?: string;
 	/**
-	 * Message shown to the user.
-	 * (Mapped from `systemMessage` in command output.)
+	 * Warning message shown to the user.
+	 * (Mapped from `systemMessage` in command output, or stderr for non-blocking errors.)
 	 */
-	readonly messageForUser?: string;
+	readonly warningMessage?: string;
 	/**
 	 * The hook's output (hook-specific fields only).
 	 * For errors, this is the error message string.
 	 */
 	readonly output: unknown;
-	/**
-	 * Whether the hook command executed successfully (exit code 0).
-	 */
-	readonly success: boolean;
 }
 
 export const commonHookOutputValidator = vObj({

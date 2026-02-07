@@ -1012,6 +1012,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 			[HookType.UserPromptSubmit]: [],
 			[HookType.PreToolUse]: [],
 			[HookType.PostToolUse]: [],
+			[HookType.PreCompact]: [],
 			[HookType.SubagentStart]: [],
 			[HookType.SubagentStop]: [],
 			[HookType.Stop]: [],
