@@ -12,7 +12,7 @@ import { getPromptFileLocationsConfigKey, isTildePath, PromptsConfig } from '../
 import { basename, dirname, isEqualOrParent, joinPath } from '../../../../../../base/common/resources.js';
 import { IWorkspaceContextService } from '../../../../../../platform/workspace/common/workspace.js';
 import { IConfigurationService } from '../../../../../../platform/configuration/common/configuration.js';
-import { COPILOT_CUSTOM_INSTRUCTIONS_FILENAME, AGENTS_SOURCE_FOLDER, getPromptFileExtension, getPromptFileType, LEGACY_MODE_FILE_EXTENSION, getCleanPromptName, AGENT_FILE_EXTENSION, getPromptFileDefaultLocations, SKILL_FILENAME, IPromptSourceFolder, DEFAULT_AGENT_SOURCE_FOLDERS, DEFAULT_HOOK_FILE_PATHS, IResolvedPromptFile, IResolvedPromptSourceFolder, PromptFileSource, HOOKS_SOURCE_FOLDER } from '../config/promptFileLocations.js';
+import { COPILOT_CUSTOM_INSTRUCTIONS_FILENAME, AGENTS_SOURCE_FOLDER, getPromptFileExtension, getPromptFileType, LEGACY_MODE_FILE_EXTENSION, getCleanPromptName, AGENT_FILE_EXTENSION, getPromptFileDefaultLocations, SKILL_FILENAME, IPromptSourceFolder, DEFAULT_AGENT_SOURCE_FOLDERS, DEFAULT_HOOK_FILE_PATHS, IResolvedPromptFile, IResolvedPromptSourceFolder, PromptFileSource } from '../config/promptFileLocations.js';
 import { PromptsType } from '../promptTypes.js';
 import { IWorkbenchEnvironmentService } from '../../../../../services/environment/common/environmentService.js';
 import { Schemas } from '../../../../../../base/common/network.js';
@@ -212,11 +212,36 @@ export class PromptFilesLocator {
 
 	/**
 	 * Gets the hook source folders for creating new hooks.
-	 * Returns only the Copilot hooks folder (.github/hooks) since Claude paths are read-only.
+	 * Returns folders from config, excluding user storage and Claude paths (which are read-only).
 	 */
 	public async getHookSourceFolders(): Promise<readonly URI[]> {
-		const { folders } = this.workspaceService.getWorkspace();
-		return folders.map(folder => joinPath(folder.uri, HOOKS_SOURCE_FOLDER));
+		const userHome = await this.pathService.userHome();
+		const configuredLocations = PromptsConfig.promptSourceFolders(this.configService, PromptsType.hook);
+
+		// Filter to only local storage paths (no user paths like ~/...)
+		// and exclude Claude paths (they start with .claude)
+		const localHookFolders = configuredLocations.filter(loc =>
+			loc.storage === PromptsStorage.local && !loc.path.includes('.claude')
+		);
+
+		// Convert to absolute URIs
+		const result = new ResourceSet();
+		const absoluteLocations = this.toAbsoluteLocations(PromptsType.hook, localHookFolders, userHome);
+
+		for (const location of absoluteLocations) {
+			// For hook configs, entries are directories unless the path ends with .json (specific file)
+			// Default entries have filePattern, user entries don't but are still directories
+			const isSpecificFile = location.uri.path.endsWith('.json');
+			if (isSpecificFile) {
+				// It's a specific file path (like .github/hooks/hooks.json), use parent directory
+				result.add(dirname(location.uri));
+			} else {
+				// It's a directory path (like .github/hooks or .github/books)
+				result.add(location.uri);
+			}
+		}
+
+		return [...result];
 	}
 
 	/**
