@@ -6,7 +6,7 @@
 import { findNodeAtLocation, Node, parseTree } from '../../../../../base/common/json.js';
 import { ITextEditorSelection } from '../../../../../platform/editor/common/editor.js';
 import { URI } from '../../../../../base/common/uri.js';
-import { IPromptsService, PromptsStorage } from '../../common/promptSyntax/service/promptsService.js';
+import { IPromptsService } from '../../common/promptSyntax/service/promptsService.js';
 import { PromptsType } from '../../common/promptSyntax/promptTypes.js';
 import { IFileService } from '../../../../../platform/files/common/files.js';
 import { CancellationToken } from '../../../../../base/common/cancellation.js';
