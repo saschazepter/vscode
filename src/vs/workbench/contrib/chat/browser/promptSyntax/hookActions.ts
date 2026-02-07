@@ -414,7 +414,7 @@ class ManageHooksAction extends Action2 {
 				}
 			} catch {
 				// If parsing fails, show error and open file for user to fix
-				notificationService.error(localize('commands.new.hook.parseError', "Failed to parse existing hooks.json. Please fix the JSON syntax errors and try again."));
+				notificationService.error(localize('commands.new.hook.parseError', "Failed to parse existing hooks file. Please fix the JSON syntax errors and try again."));
 				await editorService.openEditor({ resource: hookFileUri });
 				return;
 			}
