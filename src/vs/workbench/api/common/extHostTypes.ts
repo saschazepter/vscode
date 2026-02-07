@@ -14,7 +14,7 @@ import { MarshalledId } from '../../../base/common/marshallingIds.js';
 import { Mimes } from '../../../base/common/mime.js';
 import { nextCharLength } from '../../../base/common/strings.js';
 import { isNumber, isObject, isString, isStringArray } from '../../../base/common/types.js';
-import { URI } from '../../../base/common/uri.js';
+import { isUriComponents, URI } from '../../../base/common/uri.js';
 import { generateUuid } from '../../../base/common/uuid.js';
 import { TextEditorSelectionSource } from '../../../platform/editor/common/editor.js';
 import { ExtensionIdentifier, IExtensionDescription } from '../../../platform/extensions/common/extensions.js';
@@ -32,6 +32,7 @@ import { SnippetString } from './extHostTypes/snippetString.js';
 import { SymbolKind, SymbolTag } from './extHostTypes/symbolInformation.js';
 import { TextEdit } from './extHostTypes/textEdit.js';
 import { WorkspaceEdit } from './extHostTypes/workspaceEdit.js';
+import { HookTypeValue } from '../../contrib/chat/common/promptSyntax/hookSchema.js';
 
 export { CodeActionKind } from './extHostTypes/codeActionKind.js';
 export {
@@ -3231,6 +3232,19 @@ export class ChatResponseThinkingProgressPart {
 	}
 }
 
+export class ChatResponseHookPart {
+	hookType: HookTypeValue;
+	stopReason?: string;
+	systemMessage?: string;
+	metadata?: { readonly [key: string]: unknown };
+	constructor(hookType: HookTypeValue, stopReason?: string, systemMessage?: string, metadata?: { readonly [key: string]: unknown }) {
+		this.hookType = hookType;
+		this.stopReason = stopReason;
+		this.systemMessage = systemMessage;
+		this.metadata = metadata;
+	}
+}
+
 export class ChatResponseWarningPart {
 	value: vscode.MarkdownString;
 	constructor(value: string | vscode.MarkdownString) {
@@ -3298,13 +3312,26 @@ export class ChatResponseExtensionsPart {
 }
 
 export class ChatResponsePullRequestPart {
+	public readonly uri?: vscode.Uri;
+	public readonly command: vscode.Command;
+
 	constructor(
-		public readonly uri: vscode.Uri,
+		uriOrCommand: vscode.Uri | vscode.Command,
 		public readonly title: string,
 		public readonly description: string,
 		public readonly author: string,
 		public readonly linkTag: string
 	) {
+		if (isUriComponents(uriOrCommand)) {
+			this.uri = uriOrCommand as vscode.Uri;
+			this.command = {
+				title: 'Open Pull Request',
+				command: 'vscode.open',
+				arguments: [uriOrCommand]
+			};
+		} else {
+			this.command = uriOrCommand;
+		}
 	}
 
 	toJSON() {

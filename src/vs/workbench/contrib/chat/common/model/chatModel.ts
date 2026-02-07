@@ -29,7 +29,7 @@ import { ILogService } from '../../../../../platform/log/common/log.js';
 import { CellUri, ICellEditOperation } from '../../../notebook/common/notebookCommon.js';
 import { ChatRequestToolReferenceEntry, IChatRequestVariableEntry, isImplicitVariableEntry, isStringImplicitContextValue, isStringVariableEntry } from '../attachments/chatVariableEntries.js';
 import { migrateLegacyTerminalToolSpecificData } from '../chat.js';
-import { ChatAgentVoteDirection, ChatAgentVoteDownReason, ChatRequestQueueKind, ChatResponseClearToPreviousToolInvocationReason, ElicitationState, IChatAgentMarkdownContentWithVulnerability, IChatClearToPreviousToolInvocation, IChatCodeCitation, IChatCommandButton, IChatConfirmation, IChatContentInlineReference, IChatContentReference, IChatEditingSessionAction, IChatElicitationRequest, IChatElicitationRequestSerialized, IChatExtensionsContent, IChatFollowup, IChatLocationData, IChatMarkdownContent, IChatMcpServersStarting, IChatMcpServersStartingSerialized, IChatModelReference, IChatMultiDiffData, IChatMultiDiffDataSerialized, IChatNotebookEdit, IChatProgress, IChatProgressMessage, IChatPullRequestContent, IChatQuestionCarousel, IChatResponseCodeblockUriPart, IChatResponseProgressFileTreeData, IChatSendRequestOptions, IChatService, IChatSessionContext, IChatSessionTiming, IChatTask, IChatTaskSerialized, IChatTextEdit, IChatThinkingPart, IChatToolInvocation, IChatToolInvocationSerialized, IChatTreeData, IChatUndoStop, IChatUsage, IChatUsedContext, IChatWarningMessage, IChatWorkspaceEdit, ResponseModelState, isIUsedContext } from '../chatService/chatService.js';
+import { ChatAgentVoteDirection, ChatAgentVoteDownReason, ChatRequestQueueKind, ChatResponseClearToPreviousToolInvocationReason, ElicitationState, IChatAgentMarkdownContentWithVulnerability, IChatClearToPreviousToolInvocation, IChatCodeCitation, IChatCommandButton, IChatConfirmation, IChatContentInlineReference, IChatContentReference, IChatEditingSessionAction, IChatElicitationRequest, IChatElicitationRequestSerialized, IChatExtensionsContent, IChatFollowup, IChatHookPart, IChatLocationData, IChatMarkdownContent, IChatMcpServersStarting, IChatMcpServersStartingSerialized, IChatModelReference, IChatMultiDiffData, IChatMultiDiffDataSerialized, IChatNotebookEdit, IChatProgress, IChatProgressMessage, IChatPullRequestContent, IChatQuestionCarousel, IChatResponseCodeblockUriPart, IChatResponseProgressFileTreeData, IChatSendRequestOptions, IChatService, IChatSessionContext, IChatSessionTiming, IChatTask, IChatTaskSerialized, IChatTextEdit, IChatThinkingPart, IChatToolInvocation, IChatToolInvocationSerialized, IChatTreeData, IChatUndoStop, IChatUsage, IChatUsedContext, IChatWarningMessage, IChatWorkspaceEdit, ResponseModelState, isIUsedContext } from '../chatService/chatService.js';
 import { ChatAgentLocation, ChatModeKind } from '../constants.js';
 import { IChatEditingService, IChatEditingSession, ModifiedFileEntryState } from '../editing/chatEditingService.js';
 import { ILanguageModelChatMetadata, ILanguageModelChatMetadataAndIdentifier } from '../languageModels.js';
@@ -188,6 +188,7 @@ export type IChatProgressHistoryResponseContent =
 	| IChatQuestionCarousel
 	| IChatExtensionsContent
 	| IChatThinkingPart
+	| IChatHookPart
 	| IChatPullRequestContent
 	| IChatWorkspaceEdit;
 
@@ -495,6 +496,7 @@ class AbstractResponse implements IResponse {
 				case 'elicitation2':
 				case 'elicitationSerialized':
 				case 'thinking':
+				case 'hook':
 				case 'multiDiffData':
 				case 'mcpServersStarting':
 				case 'questionCarousel':
@@ -2305,6 +2307,9 @@ export class ChatModel extends Disposable implements IChatModel {
 	resetCheckpoint(): void {
 		for (const request of this._requests) {
 			request.setShouldBeBlocked(false);
+			if (request.response) {
+				request.response.setBlockedState(false);
+			}
 		}
 	}
 
@@ -2329,6 +2334,9 @@ export class ChatModel extends Disposable implements IChatModel {
 			const request = this._requests[i];
 			if (this._checkpoint && !checkpoint) {
 				request.setShouldBeBlocked(false);
+				if (request.response) {
+					request.response.setBlockedState(false);
+				}
 			} else if (checkpoint && i >= checkpointIndex) {
 				request.setShouldBeBlocked(true);
 				if (request.response) {
@@ -2336,6 +2344,9 @@ export class ChatModel extends Disposable implements IChatModel {
 				}
 			} else if (checkpoint && i < checkpointIndex) {
 				request.setShouldBeBlocked(false);
+				if (request.response) {
+					request.response.setBlockedState(false);
+				}
 			}
 		}
 
