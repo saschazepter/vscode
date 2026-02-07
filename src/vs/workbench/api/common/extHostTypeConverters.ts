@@ -4058,10 +4058,10 @@ export namespace SourceControlInputBoxValidationType {
 export namespace ChatHookResult {
 	export function to(result: IHookResult): vscode.ChatHookResult {
 		return {
+			resultKind: result.resultKind,
 			stopReason: result.stopReason,
-			messageForUser: result.messageForUser,
+			warningMessage: result.warningMessage,
 			output: result.output,
-			success: result.success,
 		};
 	}
 }
