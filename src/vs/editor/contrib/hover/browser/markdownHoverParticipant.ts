@@ -233,6 +233,7 @@ class MarkdownRenderedHoverParts implements IRenderedHoverParts<MarkdownHover> {
 	public renderedHoverParts: RenderedMarkdownHoverPart[];
 
 	private _ongoingHoverOperations: Map<HoverProvider, { verbosityDelta: number; tokenSource: CancellationTokenSource }> = new Map();
+	private _lastScrollEvent: ScrollEvent | undefined;
 
 	private readonly _disposables = new DisposableStore();
 
@@ -335,6 +336,7 @@ class MarkdownRenderedHoverParts implements IRenderedHoverParts<MarkdownHover> {
 	}
 
 	public handleScroll(e: ScrollEvent): void {
+		this._lastScrollEvent = e;
 		this.renderedHoverParts.forEach(renderedHoverPart => {
 			const actionsContainerInner = renderedHoverPart.actionsContainer;
 			if (!actionsContainerInner) {
@@ -454,6 +456,10 @@ class MarkdownRenderedHoverParts implements IRenderedHoverParts<MarkdownHover> {
 		);
 		currentRenderedHoverPart.dispose();
 		this.renderedHoverParts[index] = newRenderedHoverPart;
+		// Reapply scroll positioning after updating the hover part
+		if (this._lastScrollEvent) {
+			this.handleScroll(this._lastScrollEvent);
+		}
 		return newRenderedHoverPart;
 	}
 
