@@ -232,7 +232,8 @@ function patchDarwinInfoPlist(): NodeJS.ReadWriteStream {
 	}
 
 	return es.mapSync(function (f: any) {
-		if (!f.relative.endsWith('Info.plist') || !f.relative.includes('Contents')) {
+		// Only patch the main app's Info.plist, not nested helpers (which may be binary plists)
+		if (!/^[^/\\]+\.app[/\\]Contents[/\\]Info\.plist$/.test(f.relative)) {
 			return f;
 		}
 		const contents = f.contents.toString('utf8');
