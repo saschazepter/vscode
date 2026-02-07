@@ -166,6 +166,9 @@ class ModalEditorPartImpl extends EditorPart implements IModalEditorPart {
 		const id = ModalEditorPartImpl.COUNTER++;
 		super(editorPartsView, `workbench.parts.modalEditor.${id}`, groupsLabel, windowId, instantiationService, themeService, configurationService, storageService, layoutService, hostService, contextKeyService);
 
+		EditorPartModalContext.bindTo(contextKeyService).set(true);
+		this._register(toDisposable(() => EditorPartModalContext.bindTo(contextKeyService).set(false)));
+
 		this.enforceModalPartOptions();
 	}
 
@@ -183,13 +186,6 @@ class ModalEditorPartImpl extends EditorPart implements IModalEditorPart {
 
 	notifyActiveEditorChanged(): void {
 		this.enforceModalPartOptions();
-	}
-
-	protected override handleContextKeys(): void {
-		const isModalEditorPartContext = EditorPartModalContext.bindTo(this.scopedContextKeyService);
-		isModalEditorPartContext.set(true);
-
-		super.handleContextKeys();
 	}
 
 	override removeGroup(group: number | IEditorGroupView, preserveFocus?: boolean): void {
