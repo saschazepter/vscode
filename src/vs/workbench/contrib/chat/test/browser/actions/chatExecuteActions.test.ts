@@ -53,10 +53,14 @@ suite('SendToNewChatAction', () => {
 			getInput: () => inputText,
 			setInput: (value: string) => {
 				if (value === '') {
+					// Verify input is cleared before session is cleared
+					assert.strictEqual(sessionCleared, false, 'Input should be cleared before session is cleared');
 					inputCleared = true;
 				}
 			},
 			clear: async () => {
+				// Verify input was cleared before session clear
+				assert.strictEqual(inputCleared, true, 'Input should be cleared before session is cleared');
 				sessionCleared = true;
 			},
 			acceptInput: async (query?: string) => {
