@@ -456,7 +456,11 @@ class MarkdownRenderedHoverParts implements IRenderedHoverParts<MarkdownHover> {
 		);
 		currentRenderedHoverPart.dispose();
 		this.renderedHoverParts[index] = newRenderedHoverPart;
-		// Reapply scroll positioning after updating the hover part
+		// Reapply scroll positioning after updating the hover part.
+		// The new actionsContainerInner element needs its position recalculated based on the current
+		// scroll state to prevent the buttons from jumping to their default CSS position.
+		// The position calculation in handleScroll uses current DOM metrics (offsetTop, clientHeight),
+		// so it will correctly adapt to the new content dimensions.
 		if (this._lastScrollEvent) {
 			this.handleScroll(this._lastScrollEvent);
 		}
