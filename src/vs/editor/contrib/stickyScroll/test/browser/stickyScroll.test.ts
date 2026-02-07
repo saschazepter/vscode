@@ -182,7 +182,8 @@ suite('Sticky Scroll Tests', () => {
 
 				editor.setScrollTop(1);
 				state = stickyScrollController.findScrollWidgetState();
-				assert.deepStrictEqual(state.startLineNumbers, [1]);
+				// Line 1 should not show in sticky scroll when minimally scrolled to prevent blocking interaction
+				assert.deepStrictEqual(state.startLineNumbers, []);
 
 				editor.setScrollTop(lineHeight + 1);
 				state = stickyScrollController.findScrollWidgetState();
@@ -237,7 +238,8 @@ suite('Sticky Scroll Tests', () => {
 
 				editor.setScrollTop(1);
 				state = stickyScrollController.findScrollWidgetState();
-				assert.deepStrictEqual(state.startLineNumbers, [1]);
+				// Line 1 should not show in sticky scroll when minimally scrolled to prevent blocking interaction
+				assert.deepStrictEqual(state.startLineNumbers, []);
 
 				editor.setScrollTop(lineHeight + 1);
 				state = stickyScrollController.findScrollWidgetState();
@@ -335,10 +337,12 @@ suite('Sticky Scroll Tests', () => {
 
 				editor.setScrollTop(1);
 				state = stickyScrollController.findScrollWidgetState();
-				assert.deepStrictEqual(state.startLineNumbers, [1, 2]);
+				// Line 1 should not show in sticky scroll when minimally scrolled to prevent blocking interaction
+				assert.deepStrictEqual(state.startLineNumbers, []);
 
 				editor.setScrollTop(lineHeight + 1);
 				state = stickyScrollController.findScrollWidgetState();
+				// After scrolling past line 1, both lines 1 and 2 should show as they are nested scopes
 				assert.deepStrictEqual(state.startLineNumbers, [1, 2]);
 
 				editor.setScrollTop(2 * lineHeight + 1);
