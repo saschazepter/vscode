@@ -20,7 +20,7 @@ import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase 
 import { Schemas } from '../../../../base/common/network.js';
 import { IBrowserViewWorkbenchService } from '../common/browserView.js';
 import { BrowserViewWorkbenchService } from './browserViewWorkbenchService.js';
-import { BrowserViewStorageScope } from '../../../../platform/browserView/common/browserView.js';
+import { BrowserViewStorageScope, IBrowserViewService, ipcBrowserViewChannelName } from '../../../../platform/browserView/common/browserView.js';
 import { IOpenerService, IOpener, OpenInternalOptions, OpenExternalOptions } from '../../../../platform/opener/common/opener.js';
 import { isLocalhostAuthority } from '../../../../platform/url/common/trustedDomains.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
@@ -29,6 +29,8 @@ import { Disposable } from '../../../../base/common/lifecycle.js';
 import { URI } from '../../../../base/common/uri.js';
 import { ITelemetryService } from '../../../../platform/telemetry/common/telemetry.js';
 import { logBrowserOpen } from './browserViewTelemetry.js';
+import { IMainProcessService } from '../../../../platform/ipc/common/mainProcessService.js';
+import { ProxyChannel } from '../../../../base/parts/ipc/common/ipc.js';
 
 // Register actions
 import './browserViewActions.js';
@@ -59,7 +61,7 @@ class BrowserEditorResolverContribution implements IWorkbenchContribution {
 		editorResolverService.registerEditor(
 			`${Schemas.vscodeBrowser}:/**`,
 			{
-				id: BrowserEditorInput.ID,
+				id: BrowserEditor.ID,
 				label: localize('browser.editorLabel', "Browser"),
 				priority: RegisteredEditorPriority.exclusive
 			},
@@ -142,6 +144,31 @@ class LocalhostLinkOpenerContribution extends Disposable implements IWorkbenchCo
 }
 
 registerWorkbenchContribution2(LocalhostLinkOpenerContribution.ID, LocalhostLinkOpenerContribution, WorkbenchPhase.BlockStartup);
+
+/**
+ * Listens for CDP Target.createTarget requests and opens browser editors.
+ * Must be a contribution to run at startup before any CDP clients connect.
+ */
+class BrowserViewCDPListenerContribution extends Disposable implements IWorkbenchContribution {
+	static readonly ID = 'workbench.contrib.browserViewCDPListener';
+
+	constructor(
+		@IMainProcessService mainProcessService: IMainProcessService,
+		@IEditorService private readonly editorService: IEditorService
+	) {
+		super();
+
+		const channel = mainProcessService.getChannel(ipcBrowserViewChannelName);
+		const browserViewService = ProxyChannel.toService<IBrowserViewService>(channel);
+
+		this._register(browserViewService.onDidRequestOpenBrowser(async (request) => {
+			const resource = BrowserViewUri.forUrl(request.url, request.targetId);
+			await this.editorService.openEditor({ resource });
+		}));
+	}
+}
+
+registerWorkbenchContribution2(BrowserViewCDPListenerContribution.ID, BrowserViewCDPListenerContribution, WorkbenchPhase.AfterRestored);
 
 registerSingleton(IBrowserViewWorkbenchService, BrowserViewWorkbenchService, InstantiationType.Delayed);
 

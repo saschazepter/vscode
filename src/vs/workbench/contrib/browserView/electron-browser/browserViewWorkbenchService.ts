@@ -3,6 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import { Disposable } from '../../../../base/common/lifecycle.js';
 import { IBrowserViewService, ipcBrowserViewChannelName } from '../../../../platform/browserView/common/browserView.js';
 import { IBrowserViewWorkbenchService, IBrowserViewModel, BrowserViewModel } from '../common/browserView.js';
 import { IMainProcessService } from '../../../../platform/ipc/common/mainProcessService.js';
@@ -10,8 +11,9 @@ import { ProxyChannel } from '../../../../base/parts/ipc/common/ipc.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
 import { Event } from '../../../../base/common/event.js';
+import { IConfigurationResolverService } from '../../../services/configurationResolver/common/configurationResolver.js';
 
-export class BrowserViewWorkbenchService implements IBrowserViewWorkbenchService {
+export class BrowserViewWorkbenchService extends Disposable implements IBrowserViewWorkbenchService {
 	declare readonly _serviceBrand: undefined;
 
 	private readonly _browserViewService: IBrowserViewService;
@@ -20,10 +22,18 @@ export class BrowserViewWorkbenchService implements IBrowserViewWorkbenchService
 	constructor(
 		@IMainProcessService mainProcessService: IMainProcessService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
-		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService
+		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
+		@IConfigurationResolverService configurationResolverService: IConfigurationResolverService
 	) {
+		super();
 		const channel = mainProcessService.getChannel(ipcBrowserViewChannelName);
 		this._browserViewService = ProxyChannel.toService<IBrowserViewService>(channel);
+
+		// Contribute the browserDebugPort variable for use in launch.json
+		configurationResolverService.contributeVariable('browserDebugPort', async () => {
+			const debugInfo = await this._browserViewService.ensureDebugProxyStarted();
+			return debugInfo?.port.toString();
+		});
 	}
 
 	async getOrCreateBrowserViewModel(id: string): Promise<IBrowserViewModel> {
