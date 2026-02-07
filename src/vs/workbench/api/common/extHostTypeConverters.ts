@@ -3324,6 +3324,7 @@ export namespace ChatAgentRequest {
 			modeInstructions2: ChatRequestModeInstructions.to(request.modeInstructions),
 			subAgentInvocationId: request.subAgentInvocationId,
 			subAgentName: request.subAgentName,
+			hasHooksEnabled: request.hasHooksEnabled ?? false,
 		};
 
 		if (!isProposedApiEnabled(extension, 'chatParticipantPrivate')) {
@@ -3347,6 +3348,8 @@ export namespace ChatAgentRequest {
 			delete (requestWithAllProps as any).subAgentInvocationId;
 			// eslint-disable-next-line local/code-no-any-casts
 			delete (requestWithAllProps as any).subAgentName;
+			// eslint-disable-next-line local/code-no-any-casts
+			delete (requestWithAllProps as any).hasHooksEnabled;
 		}
 
 		if (!isProposedApiEnabled(extension, 'chatParticipantAdditions')) {

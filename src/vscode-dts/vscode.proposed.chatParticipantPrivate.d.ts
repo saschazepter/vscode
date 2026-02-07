@@ -110,6 +110,11 @@ declare module 'vscode' {
 		 * Display name of the subagent that is invoking this request.
 		 */
 		readonly subAgentName?: string;
+
+		/**
+		 * Whether any hooks are enabled for this request.
+		 */
+		readonly hasHooksEnabled: boolean;
 	}
 
 	export enum ChatRequestEditedFileEventKind {
