@@ -68,7 +68,7 @@
 
 	/* On hover or keyboard focus: show toolbar, hide status */
 	.monaco-list-row:hover,
-	&:not(.mouse-focused) .monaco-list-row.focused {
+	.monaco-list-row.focused {
 
 		.agent-session-title-toolbar {
 			display: block;
