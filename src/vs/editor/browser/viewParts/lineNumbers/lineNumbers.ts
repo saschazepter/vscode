@@ -74,15 +74,12 @@ export class LineNumbersOverlay extends DynamicViewOverlay {
 		const primaryViewPosition = e.selections[0].getPosition();
 		this._lastCursorModelPosition = this._context.viewModel.coordinatesConverter.convertViewPositionToModelPosition(primaryViewPosition);
 
-		let shouldRender = false;
+		// Only re-render if the active line number changed
 		if (this._activeModelLineNumber !== this._lastCursorModelPosition.lineNumber) {
 			this._activeModelLineNumber = this._lastCursorModelPosition.lineNumber;
-			shouldRender = true;
+			return true;
 		}
-		if (this._renderLineNumbers === RenderLineNumbersType.Relative || this._renderLineNumbers === RenderLineNumbersType.Interval) {
-			shouldRender = true;
-		}
-		return shouldRender;
+		return false;
 	}
 	public override onFlushed(e: viewEvents.ViewFlushedEvent): boolean {
 		return true;
