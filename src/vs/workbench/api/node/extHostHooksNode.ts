@@ -6,6 +6,7 @@
 import type * as vscode from 'vscode';
 import { spawn } from 'child_process';
 import { homedir } from 'os';
+import * as nls from '../../../nls.js';
 import { disposableTimeout } from '../../../base/common/async.js';
 import { CancellationToken } from '../../../base/common/cancellation.js';
 import { DisposableStore, MutableDisposable } from '../../../base/common/lifecycle.js';
@@ -68,8 +69,8 @@ export class NodeExtHostHooks implements IExtHostHooks {
 		const effectiveCommand = resolveEffectiveCommand(hook as Parameters<typeof resolveEffectiveCommand>[0], OS);
 		if (!effectiveCommand) {
 			return Promise.resolve({
-				kind: HookCommandResultKind.Error,
-				result: 'No command specified for the current platform'
+				kind: HookCommandResultKind.NonBlockingError,
+				result: nls.localize('noCommandForPlatform', "No command specified for the current platform")
 			});
 		}
 
@@ -176,9 +177,12 @@ export class NodeExtHostHooks implements IExtHostHooks {
 						// Keep as string if not valid JSON
 					}
 					resolve({ kind: HookCommandResultKind.Success, result });
-				} else {
-					// Error
+				} else if (code === 2) {
+					// Blocking error - show stderr to model and stop processing
 					resolve({ kind: HookCommandResultKind.Error, result: stderrStr });
+				} else {
+					// Non-blocking error - show stderr to user only
+					resolve({ kind: HookCommandResultKind.NonBlockingError, result: stderrStr });
 				}
 			});
 
