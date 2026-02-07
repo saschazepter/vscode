@@ -29,14 +29,14 @@ import { IWorkbenchLayoutService } from '../../../services/layout/browser/layout
 import { mainWindow } from '../../../../base/browser/window.js';
 import { localize } from '../../../../nls.js';
 
-const defaultModalEditorAllowableCommands = [
+const defaultModalEditorAllowableCommands = new Set([
 	'workbench.action.quit',
 	'workbench.action.reloadWindow',
 	'workbench.action.closeActiveEditor',
 	'workbench.action.closeAllEditors',
 	'workbench.action.files.save',
 	'workbench.action.files.saveAll',
-];
+]);
 
 export interface ICreateModalEditorPartResult {
 	readonly part: ModalEditorPartImpl;
@@ -128,11 +128,11 @@ export class ModalEditorPart {
 		// Block certain workbench commands from being dispatched while the modal is open
 		disposables.add(addDisposableListener(modalElement, EventType.KEY_DOWN, e => {
 			const event = new StandardKeyboardEvent(e);
-			const resolved = this.keybindingService.softDispatch(event, modalElement);
+			const resolved = this.keybindingService.softDispatch(event, this.layoutService.mainContainer);
 			if (resolved.kind === ResultKind.KbFound && resolved.commandId) {
 				if (
 					resolved.commandId.startsWith('workbench.') &&
-					!defaultModalEditorAllowableCommands.includes(resolved.commandId)
+					!defaultModalEditorAllowableCommands.has(resolved.commandId)
 				) {
 					EventHelper.stop(event, true);
 				}
