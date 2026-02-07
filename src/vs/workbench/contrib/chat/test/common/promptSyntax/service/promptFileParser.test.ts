@@ -391,6 +391,20 @@ suite('PromptFileParser', () => {
 			]);
 		});
 
+		test('entire input wrapped in double quotes', () => {
+			// When the entire input is wrapped in quotes, it should be treated as a single quoted value
+			assertCommaSeparatedList('"a, b, c"', [
+				{ type: 'string', value: 'a, b, c', range: new Range(1, 1, 1, 10) }
+			]);
+		});
+
+		test('entire input wrapped in single quotes', () => {
+			// When the entire input is wrapped in single quotes, it should be treated as a single quoted value
+			assertCommaSeparatedList(`'a, b, c'`, [
+				{ type: 'string', value: 'a, b, c', range: new Range(1, 1, 1, 10) }
+			]);
+		});
+
 	});
 
 });
