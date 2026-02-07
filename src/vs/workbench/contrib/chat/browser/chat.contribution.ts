@@ -1380,7 +1380,7 @@ class ChatSlashStaticSlashCommandsContribution extends Disposable {
 			silent: true,
 			locations: [ChatAgentLocation.Chat]
 		}, async () => {
-			instantiationService.invokeFunction(showConfigureHooksQuickPick);
+			await instantiationService.invokeFunction(showConfigureHooksQuickPick);
 		}));
 		this._store.add(slashCommandService.registerSlashCommand({
 			command: 'help',
