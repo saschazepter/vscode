@@ -200,12 +200,14 @@ export function isToolInvocationContext(obj: any): obj is IToolInvocationContext
 export interface IToolInvocationPreparationContext {
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	parameters: any;
+	toolCallId: string;
 	chatRequestId?: string;
 	/** @deprecated Use {@link chatSessionResource} instead */
 	chatSessionId?: string;
 	chatSessionResource: URI | undefined;
 	chatInteractionId?: string;
-	/** If set, tells the tool that it should include confirmmation messages. */
+	modelId?: string;
+	/** If set, tells the tool that it should include confirmation messages. */
 	forceConfirmationReason?: string;
 }
 
