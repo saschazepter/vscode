@@ -491,6 +491,23 @@ class ManageHooksAction extends Action2 {
 					});
 					editor.revealLineInCenter(selection.startLineNumber);
 				}
+			} else {
+				// Fallback: active editor/model check failed, apply via bulk edit service
+				await bulkEditService.apply([
+					new ResourceTextEdit(hookFileUri, { range: new Range(1, 1, Number.MAX_SAFE_INTEGER, 1), text: jsonContent })
+				], { label: localize('addHook', "Add Hook") });
+
+				// Find the selection for the new hook's command field
+				const selection = findHookCommandSelection(jsonContent, keyToUse, newHookIndex, 'command');
+
+				// Re-open editor with selection
+				await editorService.openEditor({
+					resource: hookFileUri,
+					options: {
+						selection,
+						pinned: false
+					}
+				});
 			}
 		} else {
 			// File is not currently open in an editor

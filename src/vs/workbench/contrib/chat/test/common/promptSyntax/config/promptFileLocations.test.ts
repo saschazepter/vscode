@@ -108,21 +108,6 @@ suite('promptFileLocations', function () {
 			assert.strictEqual(getPromptFileType(uri), PromptsType.hook);
 		});
 
-		test('.json file in subfolder of .github/hooks should NOT be recognized as hook', () => {
-			const uri = URI.file('/workspace/.github/hooks/subfolder/hooks.json');
-			// Will be recognized via the legacy hooks.json pattern, but not via the folder check
-			// This test ensures the folder check is for direct children only
-			// hooks.json is still recognized due to legacy pattern
-			assert.strictEqual(getPromptFileType(uri), PromptsType.hook);
-		});
-
-		test('custom .json file in subfolder of .github/hooks should NOT be recognized as hook', () => {
-			const uri = URI.file('/workspace/.github/hooks/subfolder/custom.json');
-			// This should NOT be recognized since it's not in direct .github/hooks folder
-			// and not named hooks.json
-			assert.strictEqual(getPromptFileType(uri), undefined);
-		});
-
 		test('non-json file in .github/hooks folder should NOT be recognized as hook', () => {
 			const uri = URI.file('/workspace/.github/hooks/readme.md');
 			assert.strictEqual(getPromptFileType(uri), undefined);

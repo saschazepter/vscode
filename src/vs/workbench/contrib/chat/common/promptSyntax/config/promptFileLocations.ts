@@ -203,14 +203,6 @@ function isInAgentsFolder(fileUri: URI): boolean {
 }
 
 /**
- * Helper function to check if a file is directly in the .github/hooks/ folder (not in subfolders).
- */
-function isInHooksFolder(fileUri: URI): boolean {
-	const dir = dirname(fileUri.path);
-	return dir.endsWith('/' + HOOKS_SOURCE_FOLDER) || dir === HOOKS_SOURCE_FOLDER;
-}
-
-/**
  * Gets the prompt file type from the provided path.
  */
 export function getPromptFileType(fileUri: URI): PromptsType | undefined {
@@ -243,17 +235,9 @@ export function getPromptFileType(fileUri: URI): PromptsType | undefined {
 		return PromptsType.hook;
 	}
 
-	// Check if it's any .json file in the .github/hooks/ folder
-	if (filename.endsWith('.json') && isInHooksFolder(fileUri)) {
+	// Check if it's any .json file (case insensitive)
+	if (filename.toLowerCase().endsWith('.json')) {
 		return PromptsType.hook;
-	}
-
-	// Check if it's a settings.local.json or settings.json file in a .claude folder
-	if (filename.toLowerCase() === 'settings.local.json' || filename.toLowerCase() === 'settings.json') {
-		const dir = dirname(fileUri.path);
-		if (dir.endsWith('/.claude') || dir === '.claude') {
-			return PromptsType.hook;
-		}
 	}
 
 	return undefined;
