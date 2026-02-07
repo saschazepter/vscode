@@ -504,11 +504,19 @@ export class SetupAgent extends Disposable implements IChatAgentImplementation {
 			};
 			updateDescriptorKeys();
 
+			const onDidChangeRegistry = Event.map(chatViewsWelcomeRegistry.onDidChange, () => 'registry' as const);
+			const onDidChangeRelevantContext = Event.map(
+				Event.filter(this.contextKeyService.onDidChangeContext, e => e.affectsSome(descriptorKeys)),
+				() => 'context' as const
+			);
+
 			disposables.add(Event.any(
-				chatViewsWelcomeRegistry.onDidChange,
-				Event.map(Event.filter(this.contextKeyService.onDidChangeContext, e => e.affectsSome(descriptorKeys)), () => { })
-			)(() => {
-				updateDescriptorKeys();
+				onDidChangeRegistry,
+				onDidChangeRelevantContext
+			)(source => {
+				if (source === 'registry') {
+					updateDescriptorKeys();
+				}
 				if (panelAgentHasGuidance()) {
 					resolve();
 				}
