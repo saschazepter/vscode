@@ -141,8 +141,7 @@ export async function parseAllHookFiles(
 	os: OperatingSystem,
 	token: CancellationToken
 ): Promise<IParsedHook[]> {
-	// Only parse local storage files (not User Data / promptsHome)
-	const hookFiles = await promptsService.listPromptFilesForStorage(PromptsType.hook, PromptsStorage.local, token);
+	const hookFiles = await promptsService.listPromptFiles(PromptsType.hook, token);
 	const parsedHooks: IParsedHook[] = [];
 
 	for (const hookFile of hookFiles) {

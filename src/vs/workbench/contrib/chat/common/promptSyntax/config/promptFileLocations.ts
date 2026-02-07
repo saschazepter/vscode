@@ -108,12 +108,6 @@ export interface IPromptSourceFolder {
 	readonly path: string;
 	readonly source: PromptFileSource;
 	readonly storage: PromptsStorage;
-	/**
-	 * Optional file pattern for directories. If provided, the path is treated as a directory
-	 * and files matching this pattern are searched. If not provided, the path is treated as
-	 * a specific file path.
-	 */
-	readonly filePattern?: string;
 }
 
 /**
@@ -132,11 +126,6 @@ export interface IResolvedPromptSourceFolder {
 	 * Whether this is a default location (vs user-configured).
 	 */
 	readonly isDefault?: boolean;
-	/**
-	 * Optional file pattern for directories. If provided, the uri is a directory
-	 * and files matching this pattern should be searched.
-	 */
-	readonly filePattern?: string;
 }
 
 /**
@@ -183,12 +172,10 @@ export const DEFAULT_AGENT_SOURCE_FOLDERS: readonly IPromptSourceFolder[] = [
 
 /**
  * Default hook file paths.
- * Entries can be either:
- * - A directory path with filePattern (e.g., '.github/hooks' with '*.json')
- * - A specific file path without filePattern (e.g., '.claude/settings.json')
+ * Entries can be either a directory or a specific file path (.json)
  */
 export const DEFAULT_HOOK_FILE_PATHS: readonly IPromptSourceFolder[] = [
-	{ path: '.github/hooks', source: PromptFileSource.GitHubWorkspace, storage: PromptsStorage.local, filePattern: '*.json' },
+	{ path: '.github/hooks', source: PromptFileSource.GitHubWorkspace, storage: PromptsStorage.local },
 	{ path: '.claude/settings.local.json', source: PromptFileSource.ClaudeWorkspaceLocal, storage: PromptsStorage.local },
 	{ path: '.claude/settings.json', source: PromptFileSource.ClaudeWorkspace, storage: PromptsStorage.local },
 	{ path: '~/.claude/settings.json', source: PromptFileSource.ClaudePersonal, storage: PromptsStorage.user },
@@ -230,19 +217,9 @@ export function getPromptFileType(fileUri: URI): PromptsType | undefined {
 		return PromptsType.agent;
 	}
 
-	// Check for .json files as hooks
+	// Any .json files we detect right now are hooks, we can revisit this later as needed
 	if (filename.toLowerCase().endsWith('.json')) {
-		const lowerFilename = filename.toLowerCase();
-		// settings.json and settings.local.json are only hooks when in a .claude folder
-		if (lowerFilename === 'settings.json' || lowerFilename === 'settings.local.json') {
-			const dir = dirname(fileUri.path);
-			if (dir.endsWith('/.claude') || dir === '.claude') {
-				return PromptsType.hook;
-			}
-		} else {
-			// Any other .json file is a hook
-			return PromptsType.hook;
-		}
+		return PromptsType.hook;
 	}
 
 	return undefined;
