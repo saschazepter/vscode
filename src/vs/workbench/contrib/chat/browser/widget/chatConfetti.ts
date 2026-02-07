@@ -12,10 +12,16 @@ const confettiColors = [
 	'#ffc107', '#ff9800', '#ff5722'
 ];
 
+let activeOverlay: HTMLElement | undefined;
+
 /**
  * Triggers a confetti animation inside the given container element.
  */
 export function triggerConfetti(container: HTMLElement) {
+	if (activeOverlay) {
+		return;
+	}
+
 	const overlay = dom.$('.chat-confetti-overlay');
 	overlay.style.position = 'absolute';
 	overlay.style.inset = '0';
@@ -23,9 +29,10 @@ export function triggerConfetti(container: HTMLElement) {
 	overlay.style.overflow = 'hidden';
 	overlay.style.zIndex = '1000';
 	container.appendChild(overlay);
+	activeOverlay = overlay;
 
 	const { width, height } = container.getBoundingClientRect();
-	for (let i = 0; i < 120; i++) {
+	for (let i = 0; i < 250; i++) {
 		const part = dom.$('.chat-confetti-particle');
 		part.style.position = 'absolute';
 		part.style.width = `${Math.random() * 8 + 4}px`;
@@ -71,5 +78,8 @@ export function triggerConfetti(container: HTMLElement) {
 		});
 	}
 
-	setTimeout(() => overlay.remove(), 3000);
+	setTimeout(() => {
+		overlay.remove();
+		activeOverlay = undefined;
+	}, 3000);
 }
