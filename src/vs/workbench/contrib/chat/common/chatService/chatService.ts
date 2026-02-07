@@ -14,6 +14,7 @@ import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { hasKey } from '../../../../../base/common/types.js';
 import { URI, UriComponents } from '../../../../../base/common/uri.js';
 import { IRange, Range } from '../../../../../editor/common/core/range.js';
+import { HookTypeValue } from '../promptSyntax/hookSchema.js';
 import { ISelection } from '../../../../../editor/common/core/selection.js';
 import { Command, Location, TextEdit } from '../../../../../editor/common/languages.js';
 import { FileType } from '../../../../../platform/files/common/files.js';
@@ -405,6 +406,22 @@ export interface IChatThinkingPart {
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	metadata?: { readonly [key: string]: any };
 	generatedTitle?: string;
+}
+
+/**
+ * A progress part representing the execution result of a hook.
+ * Aligned with the hook output JSON structure: { stopReason, systemMessage, hookSpecificOutput }.
+ * If {@link stopReason} is set, the hook blocked/denied the operation.
+ */
+export interface IChatHookPart {
+	kind: 'hook';
+	/** The type of hook that was executed */
+	hookType: HookTypeValue;
+	/** If set, the hook blocked processing. This message is shown to the user. */
+	stopReason?: string;
+	/** Warning/system message from the hook, shown to the user */
+	systemMessage?: string;
+	metadata?: { readonly [key: string]: unknown };
 }
 
 export interface IChatTerminalToolInvocationData {
@@ -904,7 +921,8 @@ export type IChatProgress =
 	| IChatElicitationRequest
 	| IChatElicitationRequestSerialized
 	| IChatMcpServersStarting
-	| IChatMcpServersStartingSerialized;
+	| IChatMcpServersStartingSerialized
+	| IChatHookPart;
 
 export interface IChatFollowup {
 	kind: 'reply';
