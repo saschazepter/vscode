@@ -363,4 +363,58 @@ suite('Sticky Scroll Tests', () => {
 			});
 		});
 	});
+
+	test('issue #287632: Line 1 should not show in sticky scroll when still mostly visible to prevent blocking interaction', () => {
+		return runWithFakedTimers({ useFakeTimers: true }, async () => {
+			const model = createTextModel(text);
+			await withAsyncTestCodeEditor(model, {
+				stickyScroll: {
+					enabled: true,
+					maxLineCount: 5,
+					defaultModel: 'outlineModel'
+				},
+				envConfig: {
+					outerHeight: 500
+				},
+				serviceCollection
+			}, async (editor, _viewModel, instantiationService) => {
+
+				const stickyScrollController: StickyScrollController = editor.registerAndInstantiateContribution(StickyScrollController.ID, StickyScrollController);
+				const lineHeight: number = editor.getOption(EditorOption.lineHeight);
+				const languageService: ILanguageFeaturesService = instantiationService.get(ILanguageFeaturesService);
+				disposables.add(languageService.documentSymbolProvider.register('*', documentSymbolProviderForTestModel()));
+				await stickyScrollController.stickyScrollCandidateProvider.update();
+				let state;
+
+				// When at the top of the file (scrollTop = 0), line 1 should NOT show in sticky scroll
+				editor.setScrollTop(0);
+				state = stickyScrollController.findScrollWidgetState();
+				assert.deepStrictEqual(state.startLineNumbers, [], 'Line 1 should not show when scroll is at 0');
+
+				// When minimally scrolled (1px), line 1 should still NOT show to prevent blocking interaction
+				editor.setScrollTop(1);
+				state = stickyScrollController.findScrollWidgetState();
+				assert.deepStrictEqual(state.startLineNumbers, [], 'Line 1 should not show when barely scrolled');
+
+				// When scrolled less than half a line, line 1 should still NOT show
+				editor.setScrollTop(lineHeight / 3);
+				state = stickyScrollController.findScrollWidgetState();
+				assert.deepStrictEqual(state.startLineNumbers, [], 'Line 1 should not show when less than half scrolled');
+
+				// When scrolled past half the line height, line 1 SHOULD show in sticky scroll
+				editor.setScrollTop(lineHeight / 2 + 1);
+				state = stickyScrollController.findScrollWidgetState();
+				assert.deepStrictEqual(state.startLineNumbers, [1], 'Line 1 should show when more than half scrolled');
+
+				// When scrolled past the entire line, line 1 should definitely show
+				editor.setScrollTop(lineHeight + 1);
+				state = stickyScrollController.findScrollWidgetState();
+				assert.deepStrictEqual(state.startLineNumbers, [1], 'Line 1 should show when fully scrolled past');
+
+				stickyScrollController.dispose();
+				stickyScrollController.stickyScrollCandidateProvider.dispose();
+				model.dispose();
+			});
+		});
+	});
 });
