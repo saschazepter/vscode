@@ -120,15 +120,25 @@ export class PromptFilesLocator {
 			if (sourceFolder.storage === PromptsStorage.local) {
 				for (const workspaceFolder of folders) {
 					folderPath = joinPath(workspaceFolder.uri, sourceFolder.path);
-					// For hooks, the paths are file paths, so get the parent directory
-					result.push(type === PromptsType.hook ? dirname(folderPath) : folderPath);
+					// For hooks without filePattern, the paths are file paths, so get the parent directory
+					// For hooks with filePattern, the path is already a directory
+					if (type === PromptsType.hook && !sourceFolder.filePattern) {
+						result.push(dirname(folderPath));
+					} else {
+						result.push(folderPath);
+					}
 				}
 			} else if (sourceFolder.storage === PromptsStorage.user) {
 				// For tilde paths, strip the ~/ prefix before joining with userHome
 				const relativePath = isTildePath(sourceFolder.path) ? sourceFolder.path.substring(2) : sourceFolder.path;
 				folderPath = joinPath(userHome, relativePath);
-				// For hooks, the paths are file paths, so get the parent directory
-				result.push(type === PromptsType.hook ? dirname(folderPath) : folderPath);
+				// For hooks without filePattern, the paths are file paths, so get the parent directory
+				// For hooks with filePattern, the path is already a directory
+				if (type === PromptsType.hook && !sourceFolder.filePattern) {
+					result.push(dirname(folderPath));
+				} else {
+					result.push(folderPath);
+				}
 			}
 		}
 
@@ -350,10 +360,17 @@ export class PromptFilesLocator {
 
 		const absoluteLocations = this.toAbsoluteLocations(type, configuredLocations, undefined);
 
-		// For hooks, the paths are file paths (e.g., '.github/hooks/hooks.json'), not folder paths.
-		// We need to watch the parent directories of these files.
+		// For hooks, handle both directory patterns and specific file paths
 		if (type === PromptsType.hook) {
-			return absoluteLocations.map((location) => ({ parent: dirname(location.uri) }));
+			return absoluteLocations.map((location) => {
+				if (location.filePattern) {
+					// Directory with pattern - use the directory as parent with the pattern
+					return { parent: location.uri, filePattern: location.filePattern };
+				} else {
+					// Specific file path - use dirname as parent
+					return { parent: dirname(location.uri) };
+				}
+			});
 		}
 
 		return absoluteLocations.map((location) => firstNonGlobParentAndPattern(location.uri));
@@ -407,7 +424,7 @@ export class PromptFilesLocator {
 						const uri = joinPath(userHome, configuredLocation.substring(2));
 						if (!seen.has(uri)) {
 							seen.add(uri);
-							result.push({ uri, source: sourceFolder.source, storage: sourceFolder.storage, displayPath: configuredLocation, isDefault });
+							result.push({ uri, source: sourceFolder.source, storage: sourceFolder.storage, displayPath: configuredLocation, isDefault, filePattern: sourceFolder.filePattern });
 						}
 					}
 					continue;
@@ -423,14 +440,14 @@ export class PromptFilesLocator {
 					}
 					if (!seen.has(uri)) {
 						seen.add(uri);
-						result.push({ uri, source: sourceFolder.source, storage: sourceFolder.storage, displayPath: configuredLocation, isDefault });
+						result.push({ uri, source: sourceFolder.source, storage: sourceFolder.storage, displayPath: configuredLocation, isDefault, filePattern: sourceFolder.filePattern });
 					}
 				} else {
 					for (const workspaceFolder of folders) {
 						const absolutePath = joinPath(workspaceFolder.uri, configuredLocation);
 						if (!seen.has(absolutePath)) {
 							seen.add(absolutePath);
-							result.push({ uri: absolutePath, source: sourceFolder.source, storage: sourceFolder.storage, displayPath: configuredLocation, isDefault });
+							result.push({ uri: absolutePath, source: sourceFolder.source, storage: sourceFolder.storage, displayPath: configuredLocation, isDefault, filePattern: sourceFolder.filePattern });
 						}
 					}
 				}

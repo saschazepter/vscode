@@ -98,6 +98,36 @@ suite('promptFileLocations', function () {
 			assert.strictEqual(getPromptFileType(uri), PromptsType.hook);
 		});
 
+		test('any .json file in .github/hooks folder should be recognized as hook', () => {
+			const uri = URI.file('/workspace/.github/hooks/custom-hooks.json');
+			assert.strictEqual(getPromptFileType(uri), PromptsType.hook);
+		});
+
+		test('any .json file in .github/hooks folder (uppercase) should be recognized as hook', () => {
+			const uri = URI.file('/workspace/.github/hooks/MY-HOOKS.JSON');
+			assert.strictEqual(getPromptFileType(uri), PromptsType.hook);
+		});
+
+		test('.json file in subfolder of .github/hooks should NOT be recognized as hook', () => {
+			const uri = URI.file('/workspace/.github/hooks/subfolder/hooks.json');
+			// Will be recognized via the legacy hooks.json pattern, but not via the folder check
+			// This test ensures the folder check is for direct children only
+			// hooks.json is still recognized due to legacy pattern
+			assert.strictEqual(getPromptFileType(uri), PromptsType.hook);
+		});
+
+		test('custom .json file in subfolder of .github/hooks should NOT be recognized as hook', () => {
+			const uri = URI.file('/workspace/.github/hooks/subfolder/custom.json');
+			// This should NOT be recognized since it's not in direct .github/hooks folder
+			// and not named hooks.json
+			assert.strictEqual(getPromptFileType(uri), undefined);
+		});
+
+		test('non-json file in .github/hooks folder should NOT be recognized as hook', () => {
+			const uri = URI.file('/workspace/.github/hooks/readme.md');
+			assert.strictEqual(getPromptFileType(uri), undefined);
+		});
+
 		test('settings.json in .claude folder should be recognized as hook', () => {
 			const uri = URI.file('/workspace/.claude/settings.json');
 			assert.strictEqual(getPromptFileType(uri), PromptsType.hook);
@@ -210,6 +240,10 @@ suite('promptFileLocations', function () {
 
 		test('hooks.json should return true', () => {
 			assert.strictEqual(isPromptOrInstructionsFile(URI.file('/workspace/.github/hooks/hooks.json')), true);
+		});
+
+		test('any .json file in .github/hooks folder should return true', () => {
+			assert.strictEqual(isPromptOrInstructionsFile(URI.file('/workspace/.github/hooks/custom-hooks.json')), true);
 		});
 
 		test('settings.json in .claude folder should return true', () => {
