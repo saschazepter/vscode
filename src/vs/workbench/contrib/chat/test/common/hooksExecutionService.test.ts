@@ -258,6 +258,44 @@ suite('HooksExecutionService', () => {
 			assert.strictEqual(results[0].stopReason, undefined);
 		});
 
+		test('handles non-blocking error results from command', async () => {
+			const proxy = createMockProxy(() => ({
+				kind: HookCommandResultKind.NonBlockingError,
+				result: 'non-blocking warning message'
+			}));
+			service.setProxy(proxy);
+
+			const hooks = { [HookType.PreToolUse]: [cmd('echo test')] };
+			store.add(service.registerHooks(sessionUri, hooks));
+
+			const results = await service.executeHook(HookType.PreToolUse, sessionUri);
+
+			assert.strictEqual(results.length, 1);
+			assert.strictEqual(results[0].resultKind, 'warning');
+			assert.strictEqual(results[0].output, undefined);
+			assert.strictEqual(results[0].warningMessage, 'non-blocking warning message');
+			assert.strictEqual(results[0].stopReason, undefined);
+		});
+
+		test('handles non-blocking error with object result', async () => {
+			const proxy = createMockProxy(() => ({
+				kind: HookCommandResultKind.NonBlockingError,
+				result: { code: 'WARN_001', message: 'Something went wrong' }
+			}));
+			service.setProxy(proxy);
+
+			const hooks = { [HookType.PreToolUse]: [cmd('echo test')] };
+			store.add(service.registerHooks(sessionUri, hooks));
+
+			const results = await service.executeHook(HookType.PreToolUse, sessionUri);
+
+			assert.strictEqual(results.length, 1);
+			assert.strictEqual(results[0].resultKind, 'warning');
+			assert.strictEqual(results[0].output, undefined);
+			assert.strictEqual(results[0].warningMessage, '{"code":"WARN_001","message":"Something went wrong"}');
+			assert.strictEqual(results[0].stopReason, undefined);
+		});
+
 		test('passes through hook-specific output fields for non-preToolUse hooks', async () => {
 			// Stop hooks return different fields (decision, reason) than preToolUse hooks
 			const proxy = createMockProxy(() => ({

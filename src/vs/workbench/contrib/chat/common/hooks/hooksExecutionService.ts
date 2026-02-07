@@ -190,45 +190,51 @@ export class HooksExecutionService implements IHooksExecutionService {
 	}
 
 	private _toInternalResult(commandResult: IHookCommandResult): IHookResult {
-		if (commandResult.kind === HookCommandResultKind.Error) {
-			// Blocking error - shown to model
-			return this._createErrorResult(
-				typeof commandResult.result === 'string' ? commandResult.result : JSON.stringify(commandResult.result)
-			);
+		switch (commandResult.kind) {
+			case HookCommandResultKind.Error: {
+				// Blocking error - shown to model
+				return this._createErrorResult(
+					typeof commandResult.result === 'string' ? commandResult.result : JSON.stringify(commandResult.result)
+				);
+			}
+			case HookCommandResultKind.NonBlockingError: {
+				// Non-blocking error - shown to user only as warning
+				const errorMessage = typeof commandResult.result === 'string' ? commandResult.result : JSON.stringify(commandResult.result);
+				return {
+					resultKind: 'warning',
+					output: undefined,
+					warningMessage: errorMessage,
+				};
+			}
+			case HookCommandResultKind.Success: {
+				// For string results, no common fields to extract
+				if (typeof commandResult.result !== 'object') {
+					return {
+						resultKind: 'success',
+						output: commandResult.result,
+					};
+				}
+
+				// Extract and validate common fields
+				const validationResult = commonHookOutputValidator.validate(commandResult.result);
+				const commonFields = validationResult.error ? {} : validationResult.content;
+
+				// Extract only known hook-specific fields for output
+				const resultObj = commandResult.result as Record<string, unknown>;
+				const hookOutput = this._extractHookSpecificOutput(resultObj);
+
+				return {
+					resultKind: 'success',
+					stopReason: commonFields.stopReason,
+					warningMessage: commonFields.systemMessage,
+					output: Object.keys(hookOutput).length > 0 ? hookOutput : undefined,
+				};
+			}
+			default: {
+				// Unexpected result kind - treat as blocking error
+				return this._createErrorResult(`Unexpected hook command result kind: ${commandResult.kind}`);
+			}
 		}
-
-		if (commandResult.kind === HookCommandResultKind.NonBlockingError) {
-			// Non-blocking error - shown to user only as warning
-			const errorMessage = typeof commandResult.result === 'string' ? commandResult.result : JSON.stringify(commandResult.result);
-			return {
-				resultKind: 'warning',
-				output: undefined,
-				warningMessage: errorMessage,
-			};
-		}
-
-		// For string results, no common fields to extract
-		if (typeof commandResult.result !== 'object') {
-			return {
-				resultKind: 'success',
-				output: commandResult.result,
-			};
-		}
-
-		// Extract and validate common fields
-		const validationResult = commonHookOutputValidator.validate(commandResult.result);
-		const commonFields = validationResult.error ? {} : validationResult.content;
-
-		// Extract only known hook-specific fields for output
-		const resultObj = commandResult.result as Record<string, unknown>;
-		const hookOutput = this._extractHookSpecificOutput(resultObj);
-
-		return {
-			resultKind: 'success',
-			stopReason: commonFields.stopReason,
-			warningMessage: commonFields.systemMessage,
-			output: Object.keys(hookOutput).length > 0 ? hookOutput : undefined,
-		};
 	}
 
 	/**
