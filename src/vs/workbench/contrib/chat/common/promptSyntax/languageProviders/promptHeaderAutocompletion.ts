@@ -15,9 +15,11 @@ import { IChatModeService } from '../../chatModes.js';
 import { getPromptsTypeForLanguageId, PromptsType } from '../promptTypes.js';
 import { IPromptsService } from '../service/promptsService.js';
 import { Iterable } from '../../../../../../base/common/iterator.js';
-import { ClaudeHeaderAttributes, IArrayValue, parseCommaSeparatedList, PromptHeader, PromptHeaderAttributes, Target } from '../promptFileParser.js';
+import { ClaudeHeaderAttributes, IArrayValue, IValue, parseCommaSeparatedList, PromptHeader, PromptHeaderAttributes, Target } from '../promptFileParser.js';
 import { getAttributeDescription, getTarget, getValidAttributeNames, claudeAgentAttributes, knownClaudeTools, knownGithubCopilotTools, IValueEntry } from './promptValidator.js';
 import { localize } from '../../../../../../nls.js';
+import { formatArrayValue, getQuotePreference } from '../utils/promptEditHelper.js';
+
 
 export class PromptHeaderAutocompletion implements CompletionItemProvider {
 	/**
@@ -147,10 +149,8 @@ export class PromptHeaderAutocompletion implements CompletionItemProvider {
 		promptType: PromptsType,
 	): Promise<CompletionList | undefined> {
 		const suggestions: CompletionItem[] = [];
-		const attribute = header.attributes.find(attr => {
-			const extendedRange = attr.range.setEndPosition(attr.range.endLineNumber, attr.range.endColumn + 100);
-			return extendedRange.containsPosition(position);
-		});
+		const posLineNumber = position.lineNumber;
+		const attribute = header.attributes.find(({ range }) => range.startLineNumber <= posLineNumber && posLineNumber <= range.endLineNumber);
 		if (!attribute) {
 			return undefined;
 		}
@@ -322,21 +322,26 @@ export class PromptHeaderAutocompletion implements CompletionItemProvider {
 	}
 
 	private async provideArrayCompletions(model: ITextModel, position: Position, arrayValue: IArrayValue, getValues: () => Promise<ReadonlyArray<IValueEntry>>): Promise<CompletionList | undefined> {
-		const getSuggestions = async (toolRange: Range) => {
+		const getSuggestions = async (toolRange: Range, currentItem?: IValue) => {
 			const suggestions: CompletionItem[] = [];
-			const toolEntries = await getValues();
-			for (const toolEntry of toolEntries) {
-				const toolName = toolEntry.name;
+			const entries = await getValues();
+			const quotePreference = getQuotePreference(arrayValue, model);
+			const existingValues = new Set<string>(arrayValue.items.filter(item => item !== currentItem).filter(item => item.type === 'string').map(item => item.value));
+			for (const entry of entries) {
+				const entryName = entry.name;
+				if (existingValues.has(entryName)) {
+					continue;
+				}
 				let insertText: string;
 				if (!toolRange.isEmpty()) {
 					const firstChar = model.getValueInRange(toolRange).charCodeAt(0);
-					insertText = firstChar === CharCode.SingleQuote ? `'${toolName}'` : firstChar === CharCode.DoubleQuote ? `"${toolName}"` : toolName;
+					insertText = firstChar === CharCode.SingleQuote ? `'${entryName}'` : firstChar === CharCode.DoubleQuote ? `"${entryName}"` : entryName;
 				} else {
-					insertText = `'${toolName}'`;
+					insertText = formatArrayValue(entryName, quotePreference);
 				}
 				suggestions.push({
-					label: toolName,
-					documentation: toolEntry.description,
+					label: entryName,
+					documentation: entry.description,
 					kind: CompletionItemKind.Value,
 					filterText: insertText,
 					insertText: insertText,
@@ -346,11 +351,10 @@ export class PromptHeaderAutocompletion implements CompletionItemProvider {
 			return { suggestions };
 		};
 
-		for (const item of arrayValue.
-			items) {
+		for (const item of arrayValue.items) {
 			if (item.range.containsPosition(position)) {
 				// if the position is inside a item range, we provide item completions
-				return await getSuggestions(item.range);
+				return await getSuggestions(item.range, item);
 			}
 		}
 		const prefix = model.getValueInRange(new Range(position.lineNumber, 1, position.lineNumber, position.column));

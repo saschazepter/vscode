@@ -88,9 +88,11 @@ suite('PromptHoverProvider', () => {
 		hoverProvider = instaService.createInstance(PromptHoverProvider);
 	});
 
-	async function getHover(content: string, line: number, column: number, promptType: PromptsType): Promise<string | undefined> {
+	async function getHover(content: string, line: number, column: number, promptType: PromptsType, options?: { claudeAgent?: boolean }): Promise<string | undefined> {
 		const languageId = getLanguageIdForPromptsType(promptType);
-		const uri = URI.parse('test:///test' + getPromptFileExtension(promptType));
+		const ext = getPromptFileExtension(promptType);
+		const path = options?.claudeAgent ? `/.claude/agents/test${ext}` : `/test${ext}`;
+		const uri = URI.parse('test://' + path);
 		const model = disposables.add(createTextModel(content, languageId, undefined, uri));
 		const position = new Position(line, column);
 		const hover = await hoverProvider.provideHover(model, position, CancellationToken.None);
@@ -493,6 +495,242 @@ suite('PromptHoverProvider', () => {
 			].join('\n');
 			const hover = await getHover(content, 4, 1, PromptsType.skill);
 			assert.strictEqual(hover, undefined);
+		});
+	});
+
+	suite('claude agent hovers', () => {
+		// Helper that creates a hover in a Claude agent file (URI under .claude/agents/)
+		async function getClaudeHover(content: string, line: number, column: number): Promise<string | undefined> {
+			return getHover(content, line, column, PromptsType.agent, { claudeAgent: true });
+		}
+
+		test('hover on name attribute shows Claude description', async () => {
+			const content = [
+				'---',
+				'name: security-reviewer',
+				'description: Reviews code for security vulnerabilities',
+				'---',
+			].join('\n');
+			const hover = await getClaudeHover(content, 2, 1);
+			assert.strictEqual(hover, 'Unique identifier using lowercase letters and hyphens (required)');
+		});
+
+		test('hover on description attribute shows Claude description', async () => {
+			const content = [
+				'---',
+				'name: security-reviewer',
+				'description: Reviews code for security vulnerabilities',
+				'---',
+			].join('\n');
+			const hover = await getClaudeHover(content, 3, 1);
+			assert.strictEqual(hover, 'When to delegate to this subagent (required)');
+		});
+
+		test('hover on tools attribute shows Claude description', async () => {
+			const content = [
+				'---',
+				'name: security-reviewer',
+				'description: Reviews code for security vulnerabilities',
+				'tools: Edit, Grep, AskUserQuestion, WebFetch',
+				'---',
+			].join('\n');
+			const hover = await getClaudeHover(content, 4, 1);
+			assert.strictEqual(hover, 'Array of tools the subagent can use. Inherits all tools if omitted');
+		});
+
+		test('hover on individual Claude tool shows tool description', async () => {
+			const content = [
+				'---',
+				'name: security-reviewer',
+				'description: Reviews code',
+				`tools: ['Edit', 'Grep', 'WebFetch']`,
+				'---',
+			].join('\n');
+			// Hover on 'Edit' tool
+			const hoverEdit = await getClaudeHover(content, 4, 10);
+			assert.strictEqual(hoverEdit, 'Make targeted file edits');
+
+			// Hover on 'Grep' tool
+			const hoverGrep = await getClaudeHover(content, 4, 17);
+			assert.strictEqual(hoverGrep, 'Search file contents with regex');
+
+			// Hover on 'WebFetch' tool
+			const hoverFetch = await getClaudeHover(content, 4, 27);
+			assert.strictEqual(hoverFetch, 'Fetch URL content');
+		});
+
+		test('hover on model attribute shows Claude description', async () => {
+			const content = [
+				'---',
+				'name: security-reviewer',
+				'description: Reviews code',
+				'model: opus',
+				'---',
+			].join('\n');
+			const hover = await getClaudeHover(content, 4, 1);
+			assert.strictEqual(hover, 'Latest Claude Opus');
+		});
+
+		test('hover on model attribute with sonnet value', async () => {
+			const content = [
+				'---',
+				'name: test-agent',
+				'description: Test',
+				'model: sonnet',
+				'---',
+			].join('\n');
+			const hover = await getClaudeHover(content, 4, 1);
+			assert.strictEqual(hover, 'Latest Claude Sonnet');
+		});
+
+		test('hover on model attribute with haiku value', async () => {
+			const content = [
+				'---',
+				'name: test-agent',
+				'description: Test',
+				'model: haiku',
+				'---',
+			].join('\n');
+			const hover = await getClaudeHover(content, 4, 1);
+			assert.strictEqual(hover, 'Latest Claude Haiku, fast for simple tasks');
+		});
+
+		test('hover on model attribute with inherit value', async () => {
+			const content = [
+				'---',
+				'name: test-agent',
+				'description: Test',
+				'model: inherit',
+				'---',
+			].join('\n');
+			const hover = await getClaudeHover(content, 4, 1);
+			assert.strictEqual(hover, 'Inherit model from parent agent or prompt');
+		});
+
+		test('hover on disallowedTools attribute shows Claude description', async () => {
+			const content = [
+				'---',
+				'name: read-only-agent',
+				'description: Read-only analysis agent',
+				`disallowedTools: ['Write', 'Edit', 'Bash']`,
+				'---',
+			].join('\n');
+			const hover = await getClaudeHover(content, 4, 1);
+			assert.strictEqual(hover, 'Tools to deny, removed from inherited or specified list');
+		});
+
+		test('hover on individual disallowedTools value shows tool description', async () => {
+			const content = [
+				'---',
+				'name: read-only-agent',
+				'description: Read-only',
+				`disallowedTools: ['Bash', 'Write']`,
+				'---',
+			].join('\n');
+			// Hover on 'Bash' tool value
+			const hoverBash = await getClaudeHover(content, 4, 20);
+			assert.strictEqual(hoverBash, 'Execute shell commands');
+
+			// Hover on 'Write' tool value
+			const hoverWrite = await getClaudeHover(content, 4, 28);
+			assert.strictEqual(hoverWrite, 'Create/overwrite files');
+		});
+
+		test('hover on permissionMode attribute shows Claude description', async () => {
+			const content = [
+				'---',
+				'name: test-agent',
+				'description: Test',
+				'permissionMode: acceptEdits',
+				'---',
+			].join('\n');
+			const hover = await getClaudeHover(content, 4, 1);
+			assert.strictEqual(hover, 'Permission mode: default, acceptEdits, dontAsk, bypassPermissions, or plan.');
+		});
+
+		test('hover on memory attribute shows Claude description', async () => {
+			const content = [
+				'---',
+				'name: test-agent',
+				'description: Test',
+				'memory: project',
+				'---',
+			].join('\n');
+			const hover = await getClaudeHover(content, 4, 1);
+			assert.strictEqual(hover, 'Persistent memory scope: user, project, or local. Enables cross-session learning.');
+		});
+
+		test('hover on skills attribute shows Claude description', async () => {
+			const content = [
+				'---',
+				'name: test-agent',
+				'description: Test',
+				'skills: ["code-review"]',
+				'---',
+			].join('\n');
+			const hover = await getClaudeHover(content, 4, 1);
+			assert.strictEqual(hover, 'Skills to load into the subagent\'s context at startup.');
+		});
+
+		test('hover on hooks attribute shows Claude description', async () => {
+			const content = [
+				'---',
+				'name: test-agent',
+				'description: Test',
+				'hooks: {}',
+				'---',
+			].join('\n');
+			const hover = await getClaudeHover(content, 4, 1);
+			assert.strictEqual(hover, 'Lifecycle hooks scoped to this subagent.');
+		});
+
+		test('hover on handoffs attribute in Claude agent shows not-used note', async () => {
+			const content = [
+				'---',
+				'name: test-agent',
+				'description: Test',
+				'handoffs:',
+				'  - label: Test',
+				'    agent: Default',
+				'    prompt: Test',
+				'---',
+			].join('\n');
+			const hover = await getClaudeHover(content, 4, 1);
+			// handoffs is not a Claude attribute, so no hover should appear
+			assert.strictEqual(hover, undefined);
+		});
+
+		test('full example: hover on each attribute of a Claude agent', async () => {
+			// Realistic Claude agent file as user provided
+			const content = [
+				'---',
+				'name: security-reviewer',
+				'description: Reviews code for security vulnerabilities',
+				`tools: ['Edit', 'Grep', 'AskUserQuestion', 'WebFetch']`,
+				'model: opus',
+				'---',
+				'You are a senior security engineer.',
+			].join('\n');
+
+			// Hover on name (line 2)
+			const nameHover = await getClaudeHover(content, 2, 1);
+			assert.strictEqual(nameHover, 'Unique identifier using lowercase letters and hyphens (required)');
+
+			// Hover on description (line 3)
+			const descHover = await getClaudeHover(content, 3, 1);
+			assert.strictEqual(descHover, 'When to delegate to this subagent (required)');
+
+			// Hover on tools attribute key (line 4, column 1)
+			const toolsHover = await getClaudeHover(content, 4, 1);
+			assert.strictEqual(toolsHover, 'Array of tools the subagent can use. Inherits all tools if omitted');
+
+			// Hover on 'AskUserQuestion' tool value (line 4)
+			const askHover = await getClaudeHover(content, 4, 28);
+			assert.strictEqual(askHover, 'Ask multiple-choice questions');
+
+			// Hover on model value 'opus' (line 5)
+			const modelHover = await getClaudeHover(content, 5, 1);
+			assert.strictEqual(modelHover, 'Latest Claude Opus');
 		});
 	});
 });

@@ -12,6 +12,7 @@ import { ITextModel } from '../../../../../editor/common/model.js';
 import { ILanguageModelToolsService, IToolAndToolSetEnablementMap } from '../../common/tools/languageModelToolsService.js';
 import { PromptHeaderAttributes } from '../../common/promptSyntax/promptFileParser.js';
 import { IPromptsService } from '../../common/promptSyntax/service/promptsService.js';
+import { formatArrayValue } from '../../common/promptSyntax/utils/promptEditHelper.js';
 
 export class PromptFileRewriter {
 	constructor(
@@ -49,7 +50,7 @@ export class PromptFileRewriter {
 
 	public rewriteTools(model: ITextModel, newTools: IToolAndToolSetEnablementMap, range: Range, isString: boolean): void {
 		const newToolNames = this._languageModelToolsService.toFullReferenceNames(newTools);
-		const newEntries = newToolNames.map(name => /^[\w\/\.-]+$/.test(name) ? name : `'${name}'`).join(', ');
+		const newEntries = newToolNames.map(toolName => formatArrayValue(toolName)).join(', ');
 		const newValue = isString ? newEntries : `[${newEntries}]`;
 		this.rewriteAttribute(model, newValue, range);
 	}
@@ -84,3 +85,4 @@ export class PromptFileRewriter {
 		this.rewriteAttribute(model, newName, nameAttr.value.range);
 	}
 }
+

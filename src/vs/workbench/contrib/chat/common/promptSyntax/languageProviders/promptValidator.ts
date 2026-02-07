@@ -189,7 +189,7 @@ export class PromptValidator {
 					this.validateHandoffs(attributes, report);
 					await this.validateAgentsAttribute(attributes, header, report);
 				} else if (target === Target.Claude) {
-					this.validateClaudeModel(attributes, report);
+					this.validateClaudeAttributes(attributes, report);
 				}
 				break;
 			}
@@ -335,18 +335,26 @@ export class PromptValidator {
 		}
 	}
 
-	private validateClaudeModel(attributes: IHeaderAttribute[], report: (markers: IMarkerData) => void): void {
-		const attribute = attributes.find(attr => attr.key === PromptHeaderAttributes.model);
-		if (!attribute) {
-			return;
-		}
-		if (attribute.value.type !== 'string') {
-			report(toMarker(localize('promptValidator.modelMustBeString', "The 'model' attribute must be a string."), attribute.value.range, MarkerSeverity.Error));
-			return;
-		} else {
-			const modelName = attribute.value.value.trim();
-			if (knownClaudeModels.every(model => model.name !== modelName)) {
-				report(toMarker(localize('promptValidator.modelNotFound', "Unknown model '{0}'.", modelName), attribute.value.range, MarkerSeverity.Warning));
+	private validateClaudeAttributes(attributes: IHeaderAttribute[], report: (markers: IMarkerData) => void): void {
+		// vaidate all claude-specific attributes that have enum values
+		for (const claudeAttributeName in claudeAgentAttributes) {
+			const claudeAttribute = claudeAgentAttributes[claudeAttributeName];
+			const enumValues = claudeAttribute.enums;
+			if (enumValues) {
+				const attribute = attributes.find(attr => attr.key === claudeAttributeName);
+				if (!attribute) {
+					continue;
+				}
+				if (attribute.value.type !== 'string') {
+					report(toMarker(localize('promptValidator.claude.attributeMustBeString', "The '{0}' attribute must be a string.", claudeAttributeName), attribute.value.range, MarkerSeverity.Error));
+					continue;
+				} else {
+					const modelName = attribute.value.value.trim();
+					if (enumValues.every(model => model.name !== modelName)) {
+						const validValues = enumValues.map(model => model.name).join(', ');
+						report(toMarker(localize('promptValidator.claude.attributeNotFound', "Unknown value '{0}', valid: {1}.", modelName, validValues), attribute.value.range, MarkerSeverity.Warning));
+					}
+				}
 			}
 		}
 	}
@@ -785,53 +793,66 @@ export const knownClaudeModels = [
 	{ name: 'inherit', description: localize('claude.inherit', 'Inherit model from parent agent or prompt') },
 ];
 
-export const claudeAgentAttributes: Record<string, { description: string; defaults?: string[]; items?: IValueEntry[]; enums?: IValueEntry[] }> = {
+export const claudeAgentAttributes: Record<string, { type: string; description: string; defaults?: string[]; items?: IValueEntry[]; enums?: IValueEntry[] }> = {
 	'name': {
+		type: 'string',
 		description: localize('attribute.name', "Unique identifier using lowercase letters and hyphens (required)"),
 	},
 	'description': {
-		description: localize('attribute.description', "When Claude should delegate to this subagent (required)"),
+		type: 'string',
+		description: localize('attribute.description', "When to delegate to this subagent (required)"),
 	},
 	'tools': {
+		type: 'array',
 		description: localize('attribute.tools', "Array of tools the subagent can use. Inherits all tools if omitted"),
 		defaults: ['Read, Edit, Bash'],
 		items: knownClaudeTools
 	},
 	'disallowedTools': {
+		type: 'array',
 		description: localize('attribute.disallowedTools', "Tools to deny, removed from inherited or specified list"),
 		defaults: ['Write, Edit, Bash'],
 		items: knownClaudeTools
 	},
 	'model': {
-		description: localize('attribute.model', "Model to use: sonnet, opus, haiku, or inherit. Defaults to inherit"),
+		type: 'string',
+		description: localize('attribute.model', "Model to use: sonnet, opus, haiku, or inherit. Defaults to inherit."),
 		defaults: ['sonnet', 'opus', 'haiku', 'inherit'],
 		enums: knownClaudeModels
 	},
 	'permissionMode': {
-		description: localize('attribute.permissionMode', "Permission mode: default, acceptEdits, dontAsk, bypassPermissions, or plan"),
+		type: 'string',
+		description: localize('attribute.permissionMode', "Permission mode: default, acceptEdits, dontAsk, bypassPermissions, or plan."),
 		defaults: ['default', 'acceptEdits', 'dontAsk', 'bypassPermissions', 'plan'],
 		enums: [
-			{ name: 'default', description: localize('claude.permissionMode.default', 'Standard behavior: prompts for permission on first use of each tool') },
-			{ name: 'acceptEdits', description: localize('claude.permissionMode.acceptEdits', 'Automatically accepts file edit permissions for the session') },
-			{ name: 'plan', description: localize('claude.permissionMode.plan', 'Plan Mode: Claude can analyze but not modify files or execute commands') },
-			{ name: 'delegate', description: localize('claude.permissionMode.delegate', 'Coordination-only mode for agent team leads. Only available when an agent team is active') },
-			{ name: 'dontAsk', description: localize('claude.permissionMode.dontAsk', 'Auto-denies tools unless pre-approved via /permissions or permissions.allow rules') },
-			{ name: 'bypassPermissions', description: localize('claude.permissionMode.bypassPermissions', 'Skips all permission prompts (requires safe environment like containers)') }
+			{ name: 'default', description: localize('claude.permissionMode.default', 'Standard behavior: prompts for permission on first use of each tool.') },
+			{ name: 'acceptEdits', description: localize('claude.permissionMode.acceptEdits', 'Automatically accepts file edit permissions for the session.') },
+			{ name: 'plan', description: localize('claude.permissionMode.plan', 'Plan Mode: Claude can analyze but not modify files or execute commands.') },
+			{ name: 'delegate', description: localize('claude.permissionMode.delegate', 'Coordination-only mode for agent team leads. Only available when an agent team is active.') },
+			{ name: 'dontAsk', description: localize('claude.permissionMode.dontAsk', 'Auto-denies tools unless pre-approved via /permissions or permissions.allow rules.') },
+			{ name: 'bypassPermissions', description: localize('claude.permissionMode.bypassPermissions', 'Skips all permission prompts (requires safe environment like containers).') }
 		]
 	},
 	'skills': {
-		description: localize('attribute.skills', "Skills to load into the subagent's context at startup"),
+		type: 'array',
+		description: localize('attribute.skills', "Skills to load into the subagent's context at startup."),
+	},
+	'mcpServers': {
+		type: 'array',
+		description: localize('attribute.mcpServers', "MCP servers available to this subagent."),
 	},
 	'hooks': {
-		description: localize('attribute.hooks', "Lifecycle hooks scoped to this subagent"),
+		type: 'object',
+		description: localize('attribute.hooks', "Lifecycle hooks scoped to this subagent."),
 	},
 	'memory': {
-		description: localize('attribute.memory', "Persistent memory scope: user, project, or local. Enables cross-session learning"),
+		type: 'string',
+		description: localize('attribute.memory', "Persistent memory scope: user, project, or local. Enables cross-session learning."),
 		defaults: ['user', 'project', 'local'],
 		enums: [
-			{ name: 'user', description: localize('claude.memory.user', "Remember learnings across all projects") },
-			{ name: 'project', description: localize('claude.memory.project', "The subagent's knowledge is project-specific and shareable via version control") },
-			{ name: 'local', description: localize('claude.memory.local', "The subagent's knowledge is project-specific but should not be checked into version control") }
+			{ name: 'user', description: localize('claude.memory.user', "Remember learnings across all projects.") },
+			{ name: 'project', description: localize('claude.memory.project', "The subagent's knowledge is project-specific and shareable via version control.") },
+			{ name: 'local', description: localize('claude.memory.local', "The subagent's knowledge is project-specific but should not be checked into version control.") }
 		]
 	}
 };

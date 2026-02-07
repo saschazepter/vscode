@@ -15,7 +15,7 @@ import { ILanguageModelToolsService, isToolSet, IToolSet } from '../../tools/lan
 import { IChatModeService, isBuiltinChatMode } from '../../chatModes.js';
 import { getPromptsTypeForLanguageId, PromptsType } from '../promptTypes.js';
 import { IPromptsService } from '../service/promptsService.js';
-import { IHeaderAttribute, parseCommaSeparatedList, PromptBody, PromptHeader, PromptHeaderAttributes, Target } from '../promptFileParser.js';
+import { ClaudeHeaderAttributes, IHeaderAttribute, parseCommaSeparatedList, PromptBody, PromptHeader, PromptHeaderAttributes, Target } from '../promptFileParser.js';
 import { getAttributeDescription, getTarget, isVSCodeOrDefaultTarget, knownClaudeModels, knownClaudeTools } from './promptValidator.js';
 
 export class PromptHoverProvider implements HoverProvider {
@@ -79,6 +79,7 @@ export class PromptHoverProvider implements HoverProvider {
 						case PromptHeaderAttributes.model:
 							return this.getModelHover(attribute, position, description, target);
 						case PromptHeaderAttributes.tools:
+						case ClaudeHeaderAttributes.disallowedTools:
 							return this.getToolHover(attribute, position, description, target);
 						case PromptHeaderAttributes.agent:
 						case PromptHeaderAttributes.mode:
