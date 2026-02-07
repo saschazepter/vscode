@@ -25,6 +25,7 @@ import { ChatAgentVoteDirection, ChatAgentVoteDownReason, IChatService } from '.
 import { isResponseVM } from '../../common/model/chatViewModel.js';
 import { ChatModeKind } from '../../common/constants.js';
 import { IChatAccessibilityService, IChatWidgetService } from '../chat.js';
+import { triggerConfetti } from '../widget/chatConfetti.js';
 import { CHAT_CATEGORY } from './chatActions.js';
 
 export const MarkUnhelpfulActionId = 'workbench.action.chat.markUnhelpful';
@@ -75,6 +76,15 @@ export function registerChatTitleActions() {
 			});
 			item.setVote(ChatAgentVoteDirection.Up);
 			item.setVoteDownReason(undefined);
+
+			const configurationService = accessor.get(IConfigurationService);
+			if (configurationService.getValue<boolean>('chat.confettiOnThumbsUp')) {
+				const chatWidgetService = accessor.get(IChatWidgetService);
+				const widget = chatWidgetService.getWidgetBySessionResource(item.session.sessionResource);
+				if (widget) {
+					triggerConfetti(widget.domNode);
+				}
+			}
 		}
 	});
 
