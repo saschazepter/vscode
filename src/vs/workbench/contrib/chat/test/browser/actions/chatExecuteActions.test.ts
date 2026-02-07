@@ -13,6 +13,7 @@ import { TestInstantiationService } from '../../../../../../platform/instantiati
 import { IChatWidgetService, IChatWidget } from '../../../browser/chat.js';
 import { IChatService } from '../../../common/chatService/chatService.js';
 import { CommandsRegistry } from '../../../../../../platform/commands/common/commands.js';
+import { registerChatExecuteActions } from '../../../browser/actions/chatExecuteActions.js';
 import { MockChatWidgetService } from '../widget/mockChatWidget.js';
 import { MockChatService } from '../../common/chatService/mockChatService.js';
 import { IChatModel } from '../../../common/model/chatModel.js';
@@ -25,8 +26,7 @@ suite('SendToNewChatAction', () => {
 	let actionsRegistered = false;
 	function ensureActionsRegistered(): void {
 		if (!actionsRegistered) {
-			// Actions are registered when the module is loaded, so we just import it
-			require('../../../browser/actions/chatExecuteActions.js');
+			registerChatExecuteActions();
 			actionsRegistered = true;
 		}
 	}
