@@ -153,17 +153,6 @@ export interface IChatInputPartOptions {
 	supportsChangingModes?: boolean;
 	dndContainer?: HTMLElement;
 	widgetViewKindTag: string;
-	/**
-	 * Optional delegate for the session target picker.
-	 * When provided, allows the input part to maintain independent state for the selected session type.
-	 */
-	sessionTypePickerDelegate?: ISessionTypePickerDelegate;
-	/**
-	 * Optional delegate for the workspace picker.
-	 * When provided, shows a workspace picker allowing users to select a target workspace
-	 * for their chat request. This is useful for empty window contexts.
-	 */
-	workspacePickerDelegate?: IWorkspacePickerDelegate;
 }
 
 export interface IWorkingSetEntry {
@@ -529,16 +518,6 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 			}
 		}));
 
-		// Listen for session type changes from the welcome page delegate
-		if (this.options.sessionTypePickerDelegate?.onDidChangeActiveSessionProvider) {
-			this._register(this.options.sessionTypePickerDelegate.onDidChangeActiveSessionProvider(async (newSessionType) => {
-				this.computeVisibleOptionGroups();
-				this.agentSessionTypeKey.set(newSessionType);
-				this.updateWidgetLockStateFromSessionType(newSessionType);
-				this.refreshChatSessionPickers();
-			}));
-		}
-
 		this._attachmentModel = this._register(this.instantiationService.createInstance(ChatAttachmentModel));
 		this._register(this._attachmentModel.onDidChange(() => this._syncInputStateToModel()));
 		this.selectedToolsModel = this._register(this.instantiationService.createInstance(ChatSelectedTools, this.currentModeObs, this._currentLanguageModel));
@@ -557,13 +536,6 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		this.chatSessionOptionsValid = ChatContextKeys.chatSessionOptionsValid.bindTo(contextKeyService);
 		this.agentSessionTypeKey = ChatContextKeys.agentSessionType.bindTo(contextKeyService);
 
-		// Initialize agentSessionType from delegate if available
-		if (this.options.sessionTypePickerDelegate?.getActiveSessionProvider) {
-			const initialSessionType = this.options.sessionTypePickerDelegate.getActiveSessionProvider();
-			if (initialSessionType) {
-				this.agentSessionTypeKey.set(initialSessionType);
-			}
-		}
 		this.chatSessionHasCustomAgentTarget = ChatContextKeys.chatSessionHasCustomAgentTarget.bindTo(contextKeyService);
 
 		this.history = this._register(this.instantiationService.createInstance(ChatHistoryNavigator, this.location));
@@ -1445,11 +1417,8 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 			}
 		}
 
-		// Step 1: Determine the session type
-		// - Panel/Editor: Use actual session's type (ctx available)
-		// - Welcome view: Use delegate's type (ctx may not exist yet)
-		const delegateSessionType = this.options.sessionTypePickerDelegate?.getActiveSessionProvider?.();
-		const effectiveSessionType = delegateSessionType ?? ctx?.chatSessionType;
+		// Step 1: Determine the session type from the actual session
+		const effectiveSessionType = ctx?.chatSessionType;
 
 		if (!effectiveSessionType) {
 			setNoOptions();
@@ -1610,7 +1579,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 			return;
 		}
 
-		const effectiveSessionType = this.getEffectiveSessionType(ctx, this.options.sessionTypePickerDelegate);
+		const effectiveSessionType = this.getEffectiveSessionType(ctx);
 		const optionGroups = this.chatSessionsService.getOptionGroupsForSessionType(effectiveSessionType);
 		const optionGroup = optionGroups?.find(g => g.id === optionGroupId);
 		if (!optionGroup || optionGroup.items.length === 0) {
@@ -1632,22 +1601,16 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 
 	}
 
-	private getEffectiveSessionType(ctx: IChatSessionContext | undefined, delegate: ISessionTypePickerDelegate | undefined): string {
-		return this.options.sessionTypePickerDelegate?.getActiveSessionProvider?.() || ctx?.chatSessionType || '';
+	private getEffectiveSessionType(ctx: IChatSessionContext | undefined): string {
+		return ctx?.chatSessionType || '';
 	}
 
 	/**
-	 * Updates the agentSessionType context key based on delegate or actual session.
+	 * Updates the agentSessionType context key based on actual session.
 	 */
 	private updateAgentSessionTypeContextKey(): void {
 		const sessionResource = this._widget?.viewModel?.model.sessionResource;
-
-		// Determine effective session type:
-		// - If we have a delegate with a setter (e.g., welcome page), use the delegate's session type
-		// - Otherwise, use the actual session's type
-		const delegate = this.options.sessionTypePickerDelegate;
-		const delegateSessionType = delegate?.setActiveSessionProvider && delegate?.getActiveSessionProvider?.();
-		const sessionType = delegateSessionType || (sessionResource ? getChatSessionType(sessionResource) : '');
+		const sessionType = sessionResource ? getChatSessionType(sessionResource) : '';
 
 		this.agentSessionTypeKey.set(sessionType);
 	}
@@ -1679,12 +1642,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 			return;
 		}
 
-		// Determine effective session type:
-		// - If we have a delegate with a setter (e.g., welcome page), use the delegate's session type
-		// - Otherwise, use the actual session's type
-		const delegate = this.options.sessionTypePickerDelegate;
-		const delegateSessionType = delegate?.setActiveSessionProvider && delegate?.getActiveSessionProvider?.();
-		const sessionType = delegateSessionType || this._pendingDelegationTarget || getChatSessionType(sessionResource);
+		const sessionType = this._pendingDelegationTarget || getChatSessionType(sessionResource);
 		const isLocalSession = sessionType === localChatSessionType;
 
 		if (!isLocalSession) {
@@ -1724,15 +1682,6 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 	render(container: HTMLElement, initialValue: string, widget: IChatWidget) {
 		this._widget = widget;
 		this.computeVisibleOptionGroups();
-
-		// Initialize lock state when rendering with a pre-selected session provider (e.g., welcome view restore)
-		const delegate = this.options.sessionTypePickerDelegate;
-		if (delegate?.setActiveSessionProvider && delegate?.getActiveSessionProvider) {
-			const initialSessionType = delegate.getActiveSessionProvider();
-			if (initialSessionType) {
-				this.updateWidgetLockStateFromSessionType(initialSessionType);
-			}
-		}
 
 		this._register(widget.onDidChangeViewModel(() => {
 			this._pendingDelegationTarget = undefined;
@@ -2005,18 +1954,14 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 					};
 					return this.modeWidget = this.instantiationService.createInstance(ModePickerActionItem, action, delegate, pickerOptions);
 				} else if ((action.id === OpenSessionTargetPickerAction.ID || action.id === OpenDelegationPickerAction.ID) && action instanceof MenuItemAction) {
-					// Use provided delegate if available, otherwise create default delegate
+					// Create standard delegate without custom options
 					const getActiveSessionType = () => {
 						const sessionResource = this._widget?.viewModel?.sessionResource;
 						return sessionResource ? getAgentSessionProvider(sessionResource) : undefined;
 					};
-					const delegate: ISessionTypePickerDelegate = this.options.sessionTypePickerDelegate ?? {
-						getActiveSessionProvider: () => {
-							return getActiveSessionType();
-						},
-						getPendingDelegationTarget: () => {
-							return this._pendingDelegationTarget;
-						},
+					const delegate = {
+						getActiveSessionProvider: () => getActiveSessionType(),
+						getPendingDelegationTarget: () => this._pendingDelegationTarget,
 						setPendingDelegationTarget: (provider: AgentSessionProviders) => {
 							const isActive = getActiveSessionType() === provider;
 							this._pendingDelegationTarget = isActive ? undefined : provider;
@@ -2025,19 +1970,16 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 							this.refreshChatSessionPickers();
 						},
 					};
-					const isWelcomeViewMode = !!this.options.sessionTypePickerDelegate?.setActiveSessionProvider;
-					const Picker = (action.id === OpenSessionTargetPickerAction.ID || isWelcomeViewMode) ? SessionTypePickerActionItem : DelegationSessionPickerActionItem;
+					// Use delegation picker for session switching in non-empty sessions
+					const Picker = action.id === OpenSessionTargetPickerAction.ID ? SessionTypePickerActionItem : DelegationSessionPickerActionItem;
 					return this.sessionTargetWidget = this.instantiationService.createInstance(Picker, action, location === ChatWidgetLocation.Editor ? 'editor' : 'sidebar', delegate, pickerOptions);
 				} else if (action.id === OpenWorkspacePickerAction.ID && action instanceof MenuItemAction) {
-					if (this.workspaceContextService.getWorkbenchState() === WorkbenchState.EMPTY && this.options.workspacePickerDelegate) {
-						return this.instantiationService.createInstance(WorkspacePickerActionItem, action, this.options.workspacePickerDelegate, pickerOptions);
-					} else {
-						const empty = new BaseActionViewItem(undefined, action);
-						if (empty.element) {
-							empty.element.style.display = 'none';
-						}
-						return empty;
+					// Workspace picker not supported - hide the action
+					const empty = new BaseActionViewItem(undefined, action);
+					if (empty.element) {
+						empty.element.style.display = 'none';
 					}
+					return empty;
 				} else if (action.id === ChatSessionPrimaryPickerAction.ID && action instanceof MenuItemAction) {
 					// Create all pickers and return a container action view item
 					const widgets = this.createChatSessionPickerWidgets(action);

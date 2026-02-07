@@ -38,66 +38,9 @@ export interface IWorkspacePickerItem {
 	readonly isFolder: boolean;
 }
 
-/**
- * Delegate interface for the workspace picker.
- * Allows consumers to get and set the target workspace for chat submissions in empty window contexts.
- */
-export interface IWorkspacePickerDelegate {
-	/**
-	 * Returns the list of available workspaces to select from.
-	 */
-	getWorkspaces(): IWorkspacePickerItem[];
-	/**
-	 * Returns the currently selected workspace, if any.
-	 */
-	getSelectedWorkspace(): IWorkspacePickerItem | undefined;
-	/**
-	 * Sets the currently selected workspace.
-	 */
-	setSelectedWorkspace(workspace: IWorkspacePickerItem | undefined): void;
-	/**
-	 * Event that fires when the selected workspace changes.
-	 */
-	onDidChangeSelectedWorkspace: Event<IWorkspacePickerItem | undefined>;
-	/**
-	 * Event that fires when the available workspaces change.
-	 */
-	onDidChangeWorkspaces: Event<void>;
-	/**
-	 * Command ID to execute when user wants to open a new folder.
-	 */
-	openFolderCommand: string;
-}
-
-/**
- * Delegate interface for the session target picker.
- * Allows consumers to get and optionally set the active session provider.
- */
-export interface ISessionTypePickerDelegate {
-	getActiveSessionProvider(): AgentSessionProviders | undefined;
-	/**
-	 * Optional setter for the active session provider.
-	 * When provided, the picker will call this instead of executing the openNewChatSessionInPlace command.
-	 * This allows the welcome view to maintain independent state from the main chat panel.
-	 */
-	setActiveSessionProvider?(provider: AgentSessionProviders): void;
-	/**
-	 * Optional getter for the pending delegation target - the target that will be used when submit is pressed.
-	 */
-	getPendingDelegationTarget?(): AgentSessionProviders | undefined;
-	/**
-	 * Optional setter for the pending delegation target.
-	 * When a user selects a different session provider in a non-empty chat,
-	 * this stores the target for delegation on the next submit instead of immediately creating a new session.
-	 */
-	setPendingDelegationTarget?(provider: AgentSessionProviders): void;
-	/**
-	 * Optional event that fires when the active session provider changes.
-	 * When provided, listeners (like chatInputPart) can react to session type changes
-	 * and update pickers accordingly.
-	 */
-	onDidChangeActiveSessionProvider?: Event<AgentSessionProviders>;
-}
+// NOTE: Delegate interfaces removed - see WELCOME_PATTERN.md for recommended approach.
+// For welcome-specific behaviors, create specialized widget subclasses rather than
+// using optional callback delegates in options.
 
 export const IChatWidgetService = createDecorator<IChatWidgetService>('chatWidgetService');
 
@@ -253,30 +196,6 @@ export interface IChatWidgetViewOptions {
 	supportsChangingModes?: boolean;
 	dndContainer?: HTMLElement;
 	defaultMode?: IChatMode;
-	/**
-	 * Optional delegate for the session target picker.
-	 * When provided, allows the widget to maintain independent state for the selected session type.
-	 * This is useful for contexts like the welcome view where target selection should not
-	 * immediately open a new session.
-	 */
-	sessionTypePickerDelegate?: ISessionTypePickerDelegate;
-
-	/**
-	 * Optional delegate for the workspace picker.
-	 * When provided, shows a workspace picker in the chat input allowing users to select
-	 * a target workspace for their request. This is useful for empty window contexts where
-	 * the user wants to send a request to a specific workspace.
-	 */
-	workspacePickerDelegate?: IWorkspacePickerDelegate;
-
-	/**
-	 * Optional handler for chat submission.
-	 * When provided, this handler is called before the normal input acceptance flow.
-	 * If it returns true (handled), the normal submission is skipped.
-	 * This is useful for contexts like the welcome view where submission should
-	 * redirect to a different workspace rather than executing locally.
-	 */
-	submitHandler?: (query: string, mode: ChatModeKind) => Promise<boolean>;
 }
 
 export interface IChatViewViewContext {
