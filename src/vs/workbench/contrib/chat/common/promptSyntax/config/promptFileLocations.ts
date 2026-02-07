@@ -230,14 +230,19 @@ export function getPromptFileType(fileUri: URI): PromptsType | undefined {
 		return PromptsType.agent;
 	}
 
-	// Check if it's a hooks.json file (case insensitive) - legacy single file support
-	if (filename.toLowerCase() === HOOKS_FILENAME.toLowerCase()) {
-		return PromptsType.hook;
-	}
-
-	// Check if it's any .json file (case insensitive)
+	// Check for .json files as hooks
 	if (filename.toLowerCase().endsWith('.json')) {
-		return PromptsType.hook;
+		const lowerFilename = filename.toLowerCase();
+		// settings.json and settings.local.json are only hooks when in a .claude folder
+		if (lowerFilename === 'settings.json' || lowerFilename === 'settings.local.json') {
+			const dir = dirname(fileUri.path);
+			if (dir.endsWith('/.claude') || dir === '.claude') {
+				return PromptsType.hook;
+			}
+		} else {
+			// Any other .json file is a hook
+			return PromptsType.hook;
+		}
 	}
 
 	return undefined;
