@@ -317,7 +317,6 @@ declare module 'vscode' {
 
 		/**
 		 * If this flag is set, this will be treated as an update to any previous tool call with the same id.
-		 * TODO@roblourens remove this and make it the default
 		 */
 		enablePartialUpdate?: boolean;
 
