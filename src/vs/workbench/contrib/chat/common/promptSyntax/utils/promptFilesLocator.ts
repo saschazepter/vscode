@@ -215,7 +215,10 @@ export class PromptFilesLocator {
 		const configuredLocations = PromptsConfig.promptSourceFolders(this.configService, PromptsType.hook);
 
 		// Ignore claude folders since they aren't first-class supported, so we don't want to create invalid formats
-		const allowedHookFolders = configuredLocations.filter(loc => !loc.path.includes('/.claude/'));
+		// Check for .claude as an actual path segment (starts with ".claude/" or contains "/.claude/")
+		const allowedHookFolders = configuredLocations.filter(loc =>
+			!loc.path.startsWith('.claude/') && !loc.path.includes('/.claude/')
+		);
 
 		// Convert to absolute URIs
 		const result = new ResourceSet();
