@@ -7,7 +7,7 @@
 @keyframes panelEnterFromBottom {
 	from {
 		opacity: 0;
-		transform: translateY(16px);
+		transform: translateY(12px);
 	}
 	to {
 		opacity: 1;
@@ -18,7 +18,7 @@
 @keyframes panelEnterFromRight {
 	from {
 		opacity: 0;
-		transform: translateX(16px);
+		transform: translateX(12px);
 	}
 	to {
 		opacity: 1;
@@ -29,7 +29,7 @@
 @keyframes panelEnterFromLeft {
 	from {
 		opacity: 0;
-		transform: translateX(-16px);
+		transform: translateX(-12px);
 	}
 	to {
 		opacity: 1;
@@ -40,7 +40,7 @@
 @keyframes panelEnterFromTop {
 	from {
 		opacity: 0;
-		transform: translateY(-16px);
+		transform: translateY(-12px);
 	}
 	to {
 		opacity: 1;
@@ -56,7 +56,7 @@
 	}
 	to {
 		opacity: 0;
-		transform: translateY(12px);
+		transform: translateY(6px);
 	}
 }
 
@@ -67,7 +67,7 @@
 	}
 	to {
 		opacity: 0;
-		transform: translateX(12px);
+		transform: translateX(6px);
 	}
 }
 
@@ -78,7 +78,7 @@
 	}
 	to {
 		opacity: 0;
-		transform: translateX(-12px);
+		transform: translateX(-6px);
 	}
 }
 
@@ -89,7 +89,7 @@
 	}
 	to {
 		opacity: 0;
-		transform: translateY(-12px);
+		transform: translateY(-6px);
 	}
 }
 
@@ -100,22 +100,22 @@
 
 /* Fluent 2 Motion: Apply entrance animation when panel becomes visible */
 .monaco-workbench.panel-animating .part.panel.bottom {
-	animation: panelEnterFromBottom 250ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+	animation: panelEnterFromBottom 200ms cubic-bezier(0.0, 0.0, 0.2, 1.0) forwards;
 	will-change: transform, opacity;
 }
 
 .monaco-workbench.panel-animating .part.panel.right {
-	animation: panelEnterFromRight 250ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+	animation: panelEnterFromRight 200ms cubic-bezier(0.0, 0.0, 0.2, 1.0) forwards;
 	will-change: transform, opacity;
 }
 
 .monaco-workbench.panel-animating .part.panel.left {
-	animation: panelEnterFromLeft 250ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+	animation: panelEnterFromLeft 200ms cubic-bezier(0.0, 0.0, 0.2, 1.0) forwards;
 	will-change: transform, opacity;
 }
 
 .monaco-workbench.panel-animating .part.panel.top {
-	animation: panelEnterFromTop 250ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+	animation: panelEnterFromTop 200ms cubic-bezier(0.0, 0.0, 0.2, 1.0) forwards;
 	will-change: transform, opacity;
 }
 
@@ -135,22 +135,22 @@
 
 /* Fluent 2 Motion: Exit animations when panel is closing */
 .monaco-workbench.panel-exiting .part.panel.bottom {
-	animation: panelExitToBottom 80ms cubic-bezier(0.4, 0, 1, 1) forwards;
+	animation: panelExitToBottom 100ms cubic-bezier(0.4, 0.0, 1.0, 1.0) forwards;
 	will-change: transform, opacity;
 }
 
 .monaco-workbench.panel-exiting .part.panel.right {
-	animation: panelExitToRight 80ms cubic-bezier(0.4, 0, 1, 1) forwards;
+	animation: panelExitToRight 100ms cubic-bezier(0.4, 0.0, 1.0, 1.0) forwards;
 	will-change: transform, opacity;
 }
 
 .monaco-workbench.panel-exiting .part.panel.left {
-	animation: panelExitToLeft 80ms cubic-bezier(0.4, 0, 1, 1) forwards;
+	animation: panelExitToLeft 100ms cubic-bezier(0.4, 0.0, 1.0, 1.0) forwards;
 	will-change: transform, opacity;
 }
 
 .monaco-workbench.panel-exiting .part.panel.top {
-	animation: panelExitToTop 80ms cubic-bezier(0.4, 0, 1, 1) forwards;
+	animation: panelExitToTop 100ms cubic-bezier(0.4, 0.0, 1.0, 1.0) forwards;
 	will-change: transform, opacity;
 }
 

@@ -1897,12 +1897,9 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 
 			this.stateModel.setRuntimeValue(LayoutStateKeys.SIDEBAR_HIDDEN, hidden);
 
-			// Start exit animation before actually hiding
-			this.mainContainer.classList.remove(LayoutClasses.SIDEBAR_ANIMATING);
-			this.mainContainer.classList.add(LayoutClasses.SIDEBAR_EXITING);
-
-			// Delay the actual hiding to allow exit animation to play
-			setTimeout(performHide, 80);
+			// Hide immediately -- no exit animation for side panels
+			// (workbench background shows through during opacity fade)
+			performHide();
 		} else {
 			// Don't proceed if already visible
 			if (!wasHidden) {
@@ -1921,7 +1918,7 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 			this.mainContainer.classList.add(LayoutClasses.SIDEBAR_ANIMATING);
 			setTimeout(() => {
 				this.mainContainer.classList.remove(LayoutClasses.SIDEBAR_ANIMATING);
-			}, 250);
+			}, 200);
 
 			// Show last active Viewlet or default viewlet
 			if (!this.paneCompositeService.getActivePaneComposite(ViewContainerLocation.Sidebar)) {
@@ -2094,7 +2091,7 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 			this.mainContainer.classList.add(LayoutClasses.PANEL_EXITING);
 
 			// Delay the actual hiding to allow exit animation to play
-			setTimeout(performHide, 80);
+			setTimeout(performHide, 100);
 		} else {
 			// Don't proceed if we have already done this before
 			if (!wasHidden) {
@@ -2116,7 +2113,7 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 			// Remove animation class after animation completes to allow re-triggering
 			setTimeout(() => {
 				this.mainContainer.classList.remove(LayoutClasses.PANEL_ANIMATING);
-			}, 250);
+			}, 200);
 
 			// Show last active panel or default panel
 			if (!this.paneCompositeService.getActivePaneComposite(ViewContainerLocation.Panel)) {
@@ -2294,12 +2291,9 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 
 			this.stateModel.setRuntimeValue(LayoutStateKeys.AUXILIARYBAR_HIDDEN, hidden);
 
-			// Start exit animation before actually hiding
-			this.mainContainer.classList.remove(LayoutClasses.AUXILIARYBAR_ANIMATING);
-			this.mainContainer.classList.add(LayoutClasses.AUXILIARYBAR_EXITING);
-
-			// Delay the actual hiding to allow exit animation to play
-			setTimeout(performHide, 80);
+			// Hide immediately -- no exit animation for side panels
+			// (workbench background shows through during opacity fade)
+			performHide();
 		} else {
 			// Don't proceed if already visible
 			if (!wasHidden) {
@@ -2318,7 +2312,7 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 			this.mainContainer.classList.add(LayoutClasses.AUXILIARYBAR_ANIMATING);
 			setTimeout(() => {
 				this.mainContainer.classList.remove(LayoutClasses.AUXILIARYBAR_ANIMATING);
-			}, 250);
+			}, 200);
 
 			// Show last active pane composite or default pane composite
 			if (!this.paneCompositeService.getActivePaneComposite(ViewContainerLocation.AuxiliaryBar)) {

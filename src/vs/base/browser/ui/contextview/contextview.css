@@ -3,8 +3,21 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+/* Fluent 2 Motion: Subtle entrance animation for context views (menus, dropdowns, pickers) */
+@keyframes contextViewEnter {
+	from {
+		opacity: 0;
+		transform: translateY(-2px) scale(0.98);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0) scale(1);
+	}
+}
+
 .context-view {
 	position: absolute;
+	animation: contextViewEnter 150ms cubic-bezier(0.0, 0.0, 0.2, 1.0) forwards;
 }
 
 .context-view.fixed {
@@ -13,4 +26,13 @@
 	font-size: 13px;
 	position: fixed;
 	color: inherit;
+	animation: contextViewEnter 150ms cubic-bezier(0.0, 0.0, 0.2, 1.0) forwards;
+}
+
+/* Respect reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+	.context-view,
+	.context-view.fixed {
+		animation: none;
+	}
 }
