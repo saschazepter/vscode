@@ -45,6 +45,7 @@ import './browser/parts/editor/editor.contribution.js';
 import './browser/parts/editor/editorParts.js';
 import './browser/parts/paneCompositePartService.js';
 import './browser/parts/banner/bannerPart.js';
+import './browser/parts/chatSessions/chatSessionsPart.js';
 import './browser/parts/statusbar/statusbarPart.js';
 
 //#endregion

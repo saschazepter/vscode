@@ -3,25 +3,25 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-/* Overall styles */
-.chat-viewpane {
+.part.chatsessions {
 	display: flex;
 	flex-direction: column;
+}
 
-	.chat-controls-container {
-		display: flex;
-		flex-direction: column;
-		flex: 1;
-		height: 100%;
-		min-height: 0;
-		min-width: 0;
+.chat-sessions-content {
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+}
 
-		.interactive-session {
+.chat-sessions-new-button-container {
+	padding: 8px;
+	flex-shrink: 0;
+}
 
-			/* needed so that the chat input does not overflow and input grows over content above */
-			width: 100%;
-			min-height: 0;
-			min-width: 0;
-		}
-	}
+.chat-sessions-control-container {
+	flex: 1;
+	min-height: 0;
+	overflow: hidden;
+	position: relative;
 }

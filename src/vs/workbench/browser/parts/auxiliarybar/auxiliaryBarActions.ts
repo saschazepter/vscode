@@ -230,10 +230,10 @@ class MaximizeAuxiliaryBar extends Action2 {
 			precondition: AuxiliaryBarMaximizedContext.negate(),
 			icon: maximizeIcon,
 			menu: {
-				id: MenuId.AuxiliaryBarTitle,
-				group: 'navigation',
+				id: MenuId.ViewTitle,
+				group: '2_maximize',
 				order: 1,
-				when: AuxiliaryBarMaximizedContext.negate()
+				when: ContextKeyExpr.and(ContextKeyExpr.equals('view', 'workbench.panel.chat.view.copilot'), AuxiliaryBarMaximizedContext.negate())
 			}
 		});
 	}
@@ -260,10 +260,10 @@ class RestoreAuxiliaryBar extends Action2 {
 			precondition: AuxiliaryBarMaximizedContext,
 			icon: restoreIcon,
 			menu: {
-				id: MenuId.AuxiliaryBarTitle,
-				group: 'navigation',
+				id: MenuId.ViewTitle,
+				group: '2_maximize',
 				order: 1,
-				when: AuxiliaryBarMaximizedContext
+				when: ContextKeyExpr.and(ContextKeyExpr.equals('view', 'workbench.panel.chat.view.copilot'), AuxiliaryBarMaximizedContext)
 			}
 		});
 	}

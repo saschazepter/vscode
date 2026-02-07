@@ -100,7 +100,7 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 			Parts.AUXILIARYBAR_PART,
 			{
 				hasTitle: true,
-				trailingSeparator: true,
+				trailingSeparator: false,
 				borderWidth: () => (this.getColor(SIDE_BAR_BORDER) || this.getColor(contrastBorder)) ? 1 : 0,
 			},
 			AuxiliaryBarPart.activeViewSettingsKey,
@@ -256,23 +256,7 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 	}
 
 	protected shouldShowCompositeBar(): boolean {
-		if (this.configuration.position === ActivityBarPosition.HIDDEN) {
-			return false;
-		}
-
-		// Check if auto-hide is enabled and there's only one visible view container
-		const autoHide = this.configurationService.getValue<boolean>(LayoutSettings.ACTIVITY_BAR_AUTO_HIDE);
-		if (autoHide) {
-			// Use visible composite count from the composite bar if available (considers pinned state),
-			// otherwise fall back to the tracker's count (based on active view descriptors).
-			// Note: We access paneCompositeBar directly to avoid circular calls with getVisiblePaneCompositeIds()
-			const visibleCount = this.visibleViewContainersTracker.visibleCount;
-			if (visibleCount <= 1) {
-				return false;
-			}
-		}
-
-		return true;
+		return false;
 	}
 
 	protected getCompositeBarPosition(): CompositeBarPosition {

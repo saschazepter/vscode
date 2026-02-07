@@ -217,7 +217,7 @@
 
 .monaco-workbench .interactive-session .interactive-input-part .chat-editor-container .interactive-input-editor .monaco-editor,
 .monaco-workbench .interactive-session .chat-editing-session .chat-editing-session-container {
-	border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+	border-radius: var(--radius-md) var(--radius-md) 0 0;
 }
 
 .monaco-workbench .interactive-input-part:has(.chat-editing-session > .chat-editing-session-container) .chat-input-container {

@@ -29,7 +29,7 @@ import { ChatEditorInput } from '../widgetHosts/editor/chatEditorInput.js';
 import { ChatViewPane } from '../widgetHosts/viewPane/chatViewPane.js';
 import { ACTION_ID_NEW_CHAT, ACTION_ID_NEW_EDIT_SESSION, CHAT_CATEGORY, handleCurrentEditingSession } from './chatActions.js';
 import { clearChatEditor } from './chatClear.js';
-import { AgentSessionProviders, AgentSessionsViewerOrientation } from '../agentSessions/agentSessions.js';
+import { AgentSessionProviders } from '../agentSessions/agentSessions.js';
 import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
 
 export interface INewEditSessionActionContext {
@@ -71,15 +71,16 @@ function isNewEditSessionActionContext(arg: unknown): arg is INewEditSessionActi
 
 export function registerNewChatActions() {
 
-	// Add "New Chat" submenu to Chat view menu
+	// Add "New Chat" button to Chat view menu
 	MenuRegistry.appendMenuItem(MenuId.ViewTitle, {
-		submenu: MenuId.ChatNewMenu,
-		title: localize2('chat.newEdits.label', "New Chat"),
-		icon: Codicon.plus,
+		command: {
+			id: ACTION_ID_NEW_CHAT,
+			title: localize2('chat.newEdits.label', "New Chat"),
+			icon: Codicon.plus,
+		},
 		when: ContextKeyExpr.equals('view', ChatViewId),
 		group: 'navigation',
 		order: -1,
-		isSplitButton: true
 	});
 
 	registerAction2(class NewChatEditorAction extends Action2 {
@@ -168,16 +169,7 @@ export function registerNewChatActions() {
 		}
 	});
 
-	MenuRegistry.appendMenuItem(MenuId.ChatViewSessionTitleNavigationToolbar, {
-		command: {
-			id: ACTION_ID_NEW_CHAT,
-			title: localize2('chat.goBack', "Go Back"),
-			icon: Codicon.arrowLeft,
-		},
-		when: ChatContextKeys.agentSessionsViewerOrientation.notEqualsTo(AgentSessionsViewerOrientation.SideBySide), // when sessions show side by side, no need for a back button
-		group: 'navigation',
-		order: 1
-	});
+	// Back button removed — sessions are now in their own Part
 
 	registerAction2(class UndoChatEditInteractionAction extends EditingSessionAction {
 		constructor() {
