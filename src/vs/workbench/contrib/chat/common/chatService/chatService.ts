@@ -869,6 +869,7 @@ export interface IChatExternalToolInvocationUpdate {
 	invocationMessage?: string | IMarkdownString;
 	pastTenseMessage?: string | IMarkdownString;
 	toolSpecificData?: IChatTerminalToolInvocationData | IChatToolInputInvocationData | IChatExtensionsContent | IChatTodoListContent | IChatSubagentToolInvocationData;
+	subagentInvocationId?: string;
 }
 
 export interface IChatTodoListContent {

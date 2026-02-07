@@ -3176,6 +3176,19 @@ export class McpToolInvocationContentData {
 	}
 }
 
+export class ChatSubagentToolInvocationData {
+	description?: string;
+	agentName?: string;
+	prompt?: string;
+	result?: string;
+	constructor(description?: string, agentName?: string, prompt?: string, result?: string) {
+		this.description = description;
+		this.agentName = agentName;
+		this.prompt = prompt;
+		this.result = result;
+	}
+}
+
 export class ChatResponseExternalEditPart {
 	applied: Thenable<string>;
 	didGetApplied!: (value: string) => void;

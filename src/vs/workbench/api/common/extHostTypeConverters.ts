@@ -41,7 +41,7 @@ import { DEFAULT_EDITOR_ASSOCIATION, SaveReason } from '../../common/editor.js';
 import { IViewBadge } from '../../common/views.js';
 import { IChatAgentRequest, IChatAgentResult } from '../../contrib/chat/common/participants/chatAgents.js';
 import { IChatRequestModeInstructions } from '../../contrib/chat/common/model/chatModel.js';
-import { IChatAgentMarkdownContentWithVulnerability, IChatCodeCitation, IChatCommandButton, IChatConfirmation, IChatContentInlineReference, IChatContentReference, IChatExtensionsContent, IChatFollowup, IChatHookPart, IChatMarkdownContent, IChatMoveMessage, IChatMultiDiffDataSerialized, IChatProgressMessage, IChatPullRequestContent, IChatQuestionCarousel, IChatResponseCodeblockUriPart, IChatTaskDto, IChatTaskResult, IChatTerminalToolInvocationData, IChatTextEdit, IChatThinkingPart, IChatToolInvocationSerialized, IChatTreeData, IChatUserActionEvent, IChatWarningMessage, IChatWorkspaceEdit } from '../../contrib/chat/common/chatService/chatService.js';
+import { IChatAgentMarkdownContentWithVulnerability, IChatCodeCitation, IChatCommandButton, IChatConfirmation, IChatContentInlineReference, IChatContentReference, IChatExtensionsContent, IChatExternalToolInvocationUpdate, IChatFollowup, IChatHookPart, IChatMarkdownContent, IChatMoveMessage, IChatMultiDiffDataSerialized, IChatProgressMessage, IChatPullRequestContent, IChatQuestionCarousel, IChatResponseCodeblockUriPart, IChatTaskDto, IChatTaskResult, IChatTerminalToolInvocationData, IChatTextEdit, IChatThinkingPart, IChatToolInvocationSerialized, IChatTreeData, IChatUserActionEvent, IChatWarningMessage, IChatWorkspaceEdit } from '../../contrib/chat/common/chatService/chatService.js';
 import { LocalChatSessionUri } from '../../contrib/chat/common/model/chatUri.js';
 import { ChatRequestToolReferenceEntry, IChatRequestVariableEntry, isImageVariableEntry, isPromptFileVariableEntry, isPromptTextVariableEntry } from '../../contrib/chat/common/attachments/chatVariableEntries.js';
 import { ChatAgentLocation } from '../../contrib/chat/common/constants.js';
@@ -2899,7 +2899,7 @@ export namespace ChatResponseMovePart {
 }
 
 export namespace ChatToolInvocationPart {
-	export function from(part: vscode.ChatToolInvocationPart): IChatToolInvocationSerialized | extHostProtocol.IChatExternalToolInvocationUpdateDto {
+	export function from(part: vscode.ChatToolInvocationPart): IChatToolInvocationSerialized | IChatExternalToolInvocationUpdate {
 		// Check if toolSpecificData is ChatMcpToolInvocationData (has input and output)
 		// If so, convert to resultDetails for rendering via ChatInputOutputMarkdownProgressPart
 		let resultDetails: IToolResultInputOutputDetails | undefined;
@@ -2931,6 +2931,7 @@ export namespace ChatToolInvocationPart {
 				invocationMessage: part.invocationMessage ? MarkdownString.from(part.invocationMessage) : undefined,
 				pastTenseMessage: part.pastTenseMessage ? MarkdownString.from(part.pastTenseMessage) : undefined,
 				toolSpecificData,
+				subagentInvocationId: part.subAgentInvocationId,
 			};
 		}
 
@@ -3026,6 +3027,15 @@ export namespace ChatToolInvocationPart {
 						return URI.revive(v);
 					}
 				})
+			};
+		} else if (data instanceof types.ChatSubagentToolInvocationData) {
+			// Convert extension API subagent tool data to internal format
+			return {
+				kind: 'subagent',
+				description: data.description,
+				agentName: data.agentName,
+				prompt: data.prompt,
+				result: data.result,
 			};
 		}
 		return data;

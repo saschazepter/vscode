@@ -867,9 +867,9 @@ export class Response extends AbstractResponse implements IDisposable {
 			},
 			toolData,
 			progress.toolCallId,
-			undefined, // subAgentInvocationId
+			progress.subagentInvocationId,
 			undefined, // parameters
-			{}, // isStreaming
+			{},
 			undefined // chatRequestId
 		);
 
