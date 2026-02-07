@@ -24,6 +24,8 @@ import { ITextEditorSelection } from '../../../../../platform/editor/common/edit
 import { findHookCommandSelection, parseAllHookFiles, IParsedHook } from './hookUtils.js';
 import { IWorkspaceContextService } from '../../../../../platform/workspace/common/workspace.js';
 import { IPathService } from '../../../../services/path/common/pathService.js';
+import { IRemoteAgentService } from '../../../../services/remote/common/remoteAgentService.js';
+import { OS } from '../../../../../base/common/platform.js';
 
 /**
  * Action ID for the `Configure Hooks` action.
@@ -65,6 +67,11 @@ class ManageHooksAction extends Action2 {
 		const editorService = accessor.get(IEditorService);
 		const workspaceService = accessor.get(IWorkspaceContextService);
 		const pathService = accessor.get(IPathService);
+		const remoteAgentService = accessor.get(IRemoteAgentService);
+
+		// Get the remote OS (or fall back to local OS)
+		const remoteEnv = await remoteAgentService.getEnvironment();
+		const targetOS = remoteEnv?.os ?? OS;
 
 		// Get workspace root and user home for path resolution
 		const workspaceFolder = workspaceService.getWorkspace().folders[0];
@@ -77,6 +84,7 @@ class ManageHooksAction extends Action2 {
 			labelService,
 			workspaceRootUri,
 			userHome,
+			targetOS,
 			CancellationToken.None
 		);
 
@@ -147,8 +155,8 @@ class ManageHooksAction extends Action2 {
 				const entry = selected.hookEntry;
 				let selection: ITextEditorSelection | undefined;
 
-				// Determine the command field name to highlight based on current platform
-				const commandFieldName = getEffectiveCommandFieldKey(entry.command);
+				// Determine the command field name to highlight based on target platform
+				const commandFieldName = getEffectiveCommandFieldKey(entry.command, targetOS);
 
 				// Try to find the command field to highlight
 				if (commandFieldName) {
