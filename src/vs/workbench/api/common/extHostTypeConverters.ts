@@ -41,10 +41,11 @@ import { DEFAULT_EDITOR_ASSOCIATION, SaveReason } from '../../common/editor.js';
 import { IViewBadge } from '../../common/views.js';
 import { IChatAgentRequest, IChatAgentResult } from '../../contrib/chat/common/participants/chatAgents.js';
 import { IChatRequestModeInstructions } from '../../contrib/chat/common/model/chatModel.js';
-import { IChatAgentMarkdownContentWithVulnerability, IChatCodeCitation, IChatCommandButton, IChatConfirmation, IChatContentInlineReference, IChatContentReference, IChatExtensionsContent, IChatFollowup, IChatMarkdownContent, IChatMoveMessage, IChatMultiDiffDataSerialized, IChatProgressMessage, IChatPullRequestContent, IChatQuestionCarousel, IChatResponseCodeblockUriPart, IChatTaskDto, IChatTaskResult, IChatTerminalToolInvocationData, IChatTextEdit, IChatThinkingPart, IChatToolInvocationSerialized, IChatTreeData, IChatUserActionEvent, IChatWarningMessage, IChatWorkspaceEdit } from '../../contrib/chat/common/chatService/chatService.js';
+import { IChatAgentMarkdownContentWithVulnerability, IChatCodeCitation, IChatCommandButton, IChatConfirmation, IChatContentInlineReference, IChatContentReference, IChatExtensionsContent, IChatFollowup, IChatHookPart, IChatMarkdownContent, IChatMoveMessage, IChatMultiDiffDataSerialized, IChatProgressMessage, IChatPullRequestContent, IChatQuestionCarousel, IChatResponseCodeblockUriPart, IChatTaskDto, IChatTaskResult, IChatTerminalToolInvocationData, IChatTextEdit, IChatThinkingPart, IChatToolInvocationSerialized, IChatTreeData, IChatUserActionEvent, IChatWarningMessage, IChatWorkspaceEdit } from '../../contrib/chat/common/chatService/chatService.js';
 import { LocalChatSessionUri } from '../../contrib/chat/common/model/chatUri.js';
 import { ChatRequestToolReferenceEntry, IChatRequestVariableEntry, isImageVariableEntry, isPromptFileVariableEntry, isPromptTextVariableEntry } from '../../contrib/chat/common/attachments/chatVariableEntries.js';
 import { ChatAgentLocation } from '../../contrib/chat/common/constants.js';
+import { IHookResult } from '../../contrib/chat/common/hooks/hooksTypes.js';
 import { IToolInvocationContext, IToolResult, IToolResultInputOutputDetails, IToolResultOutputDetails, ToolDataSource, ToolInvocationPresentation } from '../../contrib/chat/common/tools/languageModelToolsService.js';
 import * as chatProvider from '../../contrib/chat/common/languageModels.js';
 import { IChatMessageDataPart, IChatResponseDataPart, IChatResponsePromptTsxPart, IChatResponseTextPart } from '../../contrib/chat/common/languageModels.js';
@@ -2820,6 +2821,21 @@ export namespace ChatResponseThinkingProgressPart {
 	}
 }
 
+export namespace ChatResponseHookPart {
+	export function from(part: vscode.ChatResponseHookPart): Dto<IChatHookPart> {
+		return {
+			kind: 'hook',
+			hookType: part.hookType,
+			stopReason: part.stopReason,
+			systemMessage: part.systemMessage,
+			metadata: part.metadata
+		};
+	}
+	export function to(part: Dto<IChatHookPart>): vscode.ChatResponseHookPart {
+		return new types.ChatResponseHookPart(part.hookType, part.stopReason, part.systemMessage, part.metadata);
+	}
+}
+
 export namespace ChatResponseWarningPart {
 	export function from(part: vscode.ChatResponseWarningPart): Dto<IChatWarningMessage> {
 		return {
@@ -2842,14 +2858,29 @@ export namespace ChatResponseExtensionsPart {
 }
 
 export namespace ChatResponsePullRequestPart {
-	export function from(part: vscode.ChatResponsePullRequestPart): Dto<IChatPullRequestContent> {
+	export function from(part: Omit<vscode.ChatResponsePullRequestPart, 'command'> & { command?: vscode.Command }, commandsConverter: CommandsConverter, commandDisposables: DisposableStore): Dto<IChatPullRequestContent> {
+		// If the command isn't in the converter, then this session may have been restored, and the command args don't exist anymore
+		let command: extHostProtocol.ICommandDto;
+		if (!part.command) {
+			if (!part.uri) {
+				throw new Error('Pull request part must have a command if URI is provided');
+			}
+			command = {
+				title: 'Open Pull Request',
+				id: 'vscode.open',
+				arguments: [part.uri]
+			};
+		} else {
+			command = commandsConverter.toInternal(part.command, commandDisposables);
+		}
 		return {
 			kind: 'pullRequest',
 			author: part.author,
 			title: part.title,
 			description: part.description,
 			uri: part.uri,
-			linkTag: part.linkTag
+			linkTag: part.linkTag,
+			command
 		};
 	}
 }
@@ -2967,8 +2998,64 @@ export namespace ChatToolInvocationPart {
 			};
 
 			return result;
+		} else if ('todoList' in data && Array.isArray(data.todoList)) {
+			// Convert extension API todo tool data to internal format
+			return {
+				kind: 'todoList',
+				todoList: data.todoList.map((todo: any) => ({
+					id: String(todo.id),
+					title: todo.title,
+					status: todoStatusEnumToString(todo.status)
+				}))
+			};
+		} else if ('input' in data && 'output' in data && !Array.isArray(data.output)) {
+			// Convert extension API simple tool invocation data to internal format
+			return {
+				kind: 'simpleToolInvocation',
+				input: typeof data.input === 'string' ? data.input : '',
+				output: typeof data.output === 'string' ? data.output : ''
+			};
+		} else if (data && 'values' in data && Array.isArray(data.values)) {
+			// Convert extension API resources tool data to internal format
+			return {
+				kind: 'resources',
+				values: data.values.map((v: any) => {
+					if (v instanceof types.Location) {
+						return Location.from(v);
+					} else {
+						return URI.revive(v);
+					}
+				})
+			};
 		}
 		return data;
+	}
+
+	function todoStatusEnumToString(status: types.ChatTodoStatus | string): string {
+		// Handle enum values
+		switch (status) {
+			case types.ChatTodoStatus.NotStarted:
+				return 'not-started';
+			case types.ChatTodoStatus.InProgress:
+				return 'in-progress';
+			case types.ChatTodoStatus.Completed:
+				return 'completed';
+			default:
+				return 'not-started';
+		}
+	}
+
+	function todoStatusStringToEnum(status: string): types.ChatTodoStatus {
+		switch (status) {
+			case 'not-started':
+				return types.ChatTodoStatus.NotStarted;
+			case 'in-progress':
+				return types.ChatTodoStatus.InProgress;
+			case 'completed':
+				return types.ChatTodoStatus.Completed;
+			default:
+				return types.ChatTodoStatus.NotStarted;
+		}
 	}
 
 	export function to(part: any): vscode.ChatToolInvocationPart {
@@ -3041,6 +3128,19 @@ export namespace ChatToolInvocationPart {
 			return {
 				commandLine: data.commandLine,
 				language: data.language
+			};
+		} else if (data.kind === 'todoList') {
+			// Convert internal todo tool data to extension API format
+			return {
+				todoList: data.todoList.map((todo: any, index: number) => {
+					const parsed = Number(todo.id);
+					const id = Number.isFinite(parsed) ? parsed : index;
+					return {
+						id,
+						title: todo.title,
+						status: todoStatusStringToEnum(todo.status)
+					};
+				})
 			};
 		}
 		return data;
@@ -3216,6 +3316,8 @@ export namespace ChatResponsePart {
 			return ChatResponseProgressPart.from(part);
 		} else if (part instanceof types.ChatResponseThinkingProgressPart) {
 			return ChatResponseThinkingProgressPart.from(part);
+		} else if (part instanceof types.ChatResponseHookPart) {
+			return ChatResponseHookPart.from(part);
 		} else if (part instanceof types.ChatResponseFileTreePart) {
 			return ChatResponseFilesPart.from(part);
 		} else if (part instanceof types.ChatResponseMultiDiffPart) {
@@ -3243,7 +3345,7 @@ export namespace ChatResponsePart {
 		} else if (part instanceof types.ChatResponseExtensionsPart) {
 			return ChatResponseExtensionsPart.from(part);
 		} else if (part instanceof types.ChatResponsePullRequestPart) {
-			return ChatResponsePullRequestPart.from(part);
+			return ChatResponsePullRequestPart.from(part, commandsConverter, commandDisposables);
 		} else if (part instanceof types.ChatToolInvocationPart) {
 			return ChatToolInvocationPart.from(part);
 		} else if (part instanceof types.ChatResponseWorkspaceEditPart) {
@@ -3323,6 +3425,8 @@ export namespace ChatAgentRequest {
 			modeInstructions2: ChatRequestModeInstructions.to(request.modeInstructions),
 			subAgentInvocationId: request.subAgentInvocationId,
 			subAgentName: request.subAgentName,
+			parentRequestId: request.parentRequestId,
+			hasHooksEnabled: request.hasHooksEnabled ?? false,
 		};
 
 		if (!isProposedApiEnabled(extension, 'chatParticipantPrivate')) {
@@ -3346,6 +3450,10 @@ export namespace ChatAgentRequest {
 			delete (requestWithAllProps as any).subAgentInvocationId;
 			// eslint-disable-next-line local/code-no-any-casts
 			delete (requestWithAllProps as any).subAgentName;
+			// eslint-disable-next-line local/code-no-any-casts
+			delete (requestWithAllProps as any).parentRequestId;
+			// eslint-disable-next-line local/code-no-any-casts
+			delete (requestWithAllProps as any).hasHooksEnabled;
 		}
 
 		if (!isProposedApiEnabled(extension, 'chatParticipantAdditions')) {
@@ -3511,7 +3619,6 @@ export namespace ChatAgentResult {
 			metadata: reviveMetadata(result.metadata),
 			nextQuestion: result.nextQuestion,
 			details: result.details,
-			usage: result.usage,
 		};
 	}
 	export function from(result: vscode.ChatResult): Dto<IChatAgentResult> {
@@ -3520,7 +3627,6 @@ export namespace ChatAgentResult {
 			metadata: result.metadata,
 			nextQuestion: result.nextQuestion,
 			details: result.details,
-			usage: result.usage,
 		};
 	}
 
@@ -3963,5 +4069,16 @@ export namespace SourceControlInputBoxValidationType {
 			default:
 				throw new Error('Unknown SourceControlInputBoxValidationType');
 		}
+	}
+}
+
+export namespace ChatHookResult {
+	export function to(result: IHookResult): vscode.ChatHookResult {
+		return {
+			resultKind: result.resultKind,
+			stopReason: result.stopReason,
+			warningMessage: result.warningMessage,
+			output: result.output,
+		};
 	}
 }
