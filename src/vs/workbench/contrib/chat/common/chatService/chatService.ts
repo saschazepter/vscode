@@ -855,6 +855,22 @@ export interface IChatSubagentToolInvocationData {
 	modelName?: string;
 }
 
+/**
+ * Progress type for external tool invocation updates from extensions.
+ * When isComplete is false, creates or updates a tool invocation.
+ * When isComplete is true, completes an existing tool invocation.
+ */
+export interface IChatExternalToolInvocationUpdate {
+	kind: 'externalToolInvocationUpdate';
+	toolCallId: string;
+	toolName: string;
+	isComplete: boolean;
+	errorMessage?: string;
+	invocationMessage?: string | IMarkdownString;
+	pastTenseMessage?: string | IMarkdownString;
+	toolSpecificData?: IChatTerminalToolInvocationData | IChatToolInputInvocationData | IChatExtensionsContent | IChatTodoListContent | IChatSubagentToolInvocationData;
+}
+
 export interface IChatTodoListContent {
 	kind: 'todoList';
 	todoList: Array<{
@@ -951,7 +967,8 @@ export type IChatProgress =
 	| IChatElicitationRequestSerialized
 	| IChatMcpServersStarting
 	| IChatMcpServersStartingSerialized
-	| IChatHookPart;
+	| IChatHookPart
+	| IChatExternalToolInvocationUpdate;
 
 export interface IChatFollowup {
 	kind: 'reply';

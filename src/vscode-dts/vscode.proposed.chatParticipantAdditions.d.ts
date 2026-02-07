@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-// version: 1
+// version: 2
 
 declare module 'vscode' {
 
@@ -315,7 +315,12 @@ declare module 'vscode' {
 		subAgentInvocationId?: string;
 		presentation?: 'hidden' | 'hiddenAfterComplete' | undefined;
 
-		constructor(toolName: string, toolCallId: string, isError?: boolean);
+		/**
+		 * If this flag is set, this will be treated as an update to any previous tool call with the same id.
+		 */
+		enablePartialUpdate?: boolean;
+
+		constructor(toolName: string, toolCallId: string, errorMessage?: string);
 	}
 
 	/**

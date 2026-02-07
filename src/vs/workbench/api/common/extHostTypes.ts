@@ -3477,7 +3477,7 @@ export enum ChatTodoStatus {
 export class ChatToolInvocationPart {
 	toolName: string;
 	toolCallId: string;
-	isError?: boolean;
+	errorMessage?: string;
 	invocationMessage?: string | vscode.MarkdownString;
 	originMessage?: string | vscode.MarkdownString;
 	pastTenseMessage?: string | vscode.MarkdownString;
@@ -3490,10 +3490,10 @@ export class ChatToolInvocationPart {
 
 	constructor(toolName: string,
 		toolCallId: string,
-		isError?: boolean) {
+		errorMessage?: string) {
 		this.toolName = toolName;
 		this.toolCallId = toolCallId;
-		this.isError = isError;
+		this.errorMessage = errorMessage;
 	}
 }
 

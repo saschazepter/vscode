@@ -19,7 +19,6 @@ import { IChatContentPart, IChatContentPartRenderContext } from './chatContentPa
 import { ChatCollapsibleContentPart } from './chatCollapsibleContentPart.js';
 import { ChatCollapsibleMarkdownContentPart } from './chatCollapsibleMarkdownContentPart.js';
 import { IChatMarkdownContent, IChatToolInvocation, IChatToolInvocationSerialized } from '../../../common/chatService/chatService.js';
-import { IRunSubagentToolInputParams, RunSubagentTool } from '../../../common/tools/builtinTools/runSubagentTool.js';
 import { autorun } from '../../../../../../base/common/observable.js';
 import { Lazy } from '../../../../../../base/common/lazy.js';
 import { createThinkingIcon, getToolInvocationIcon } from './chatThinkingContentPart.js';
@@ -30,6 +29,7 @@ import { ChatToolInvocationPart } from './toolInvocationParts/chatToolInvocation
 import { IChatMarkdownAnchorService } from './chatMarkdownAnchorService.js';
 import { MarkdownString } from '../../../../../../base/common/htmlContent.js';
 import './media/chatSubagentContent.css';
+import { IRunSubagentToolInputParams, RunSubagentTool } from '../../../common/tools/builtinTools/runSubagentTool.js';
 
 const MAX_TITLE_LENGTH = 100;
 

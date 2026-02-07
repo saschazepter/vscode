@@ -2899,7 +2899,7 @@ export namespace ChatResponseMovePart {
 }
 
 export namespace ChatToolInvocationPart {
-	export function from(part: vscode.ChatToolInvocationPart): IChatToolInvocationSerialized {
+	export function from(part: vscode.ChatToolInvocationPart): IChatToolInvocationSerialized | extHostProtocol.IChatExternalToolInvocationUpdateDto {
 		// Check if toolSpecificData is ChatMcpToolInvocationData (has input and output)
 		// If so, convert to resultDetails for rendering via ChatInputOutputMarkdownProgressPart
 		let resultDetails: IToolResultInputOutputDetails | undefined;
@@ -2913,7 +2913,28 @@ export namespace ChatToolInvocationPart {
 			toolSpecificData = part.toolSpecificData ? convertToolSpecificData(part.toolSpecificData) : undefined;
 		}
 
-		// Convert extension API ChatToolInvocationPart to internal serialized format
+		const presentation = part.presentation === 'hidden'
+			? ToolInvocationPresentation.Hidden
+			: part.presentation === 'hiddenAfterComplete'
+				? ToolInvocationPresentation.HiddenAfterComplete
+				: undefined;
+
+		// When isComplete is explicitly set (not undefined), use the update DTO to enable
+		// live tool invocation updates. Extensions can push with isComplete: false to start
+		// an in-progress invocation, then push again with isComplete: true to complete it.
+		if (part.enablePartialUpdate) {
+			return {
+				kind: 'externalToolInvocationUpdate',
+				toolCallId: part.toolCallId,
+				toolName: part.toolName,
+				isComplete: !!part.isComplete,
+				invocationMessage: part.invocationMessage ? MarkdownString.from(part.invocationMessage) : undefined,
+				pastTenseMessage: part.pastTenseMessage ? MarkdownString.from(part.pastTenseMessage) : undefined,
+				toolSpecificData,
+			};
+		}
+
+		// Convert extension API ChatToolInvocationPart to internal serialized format (legacy path)
 		return {
 			kind: 'toolInvocationSerialized',
 			toolCallId: part.toolCallId,
@@ -2922,16 +2943,12 @@ export namespace ChatToolInvocationPart {
 			originMessage: part.originMessage ? MarkdownString.from(part.originMessage) : undefined,
 			pastTenseMessage: part.pastTenseMessage ? MarkdownString.from(part.pastTenseMessage) : undefined,
 			isConfirmed: part.isConfirmed,
-			isComplete: part.isComplete ?? true,
+			isComplete: true,
 			source: ToolDataSource.External,
 			// isError: part.isError ?? false,
 			toolSpecificData,
 			resultDetails,
-			presentation: part.presentation === 'hidden'
-				? ToolInvocationPresentation.Hidden
-				: part.presentation === 'hiddenAfterComplete'
-					? ToolInvocationPresentation.HiddenAfterComplete
-					: undefined,
+			presentation,
 			subAgentInvocationId: part.subAgentInvocationId
 		};
 	}
@@ -3045,7 +3062,7 @@ export namespace ChatToolInvocationPart {
 		const toolInvocation = new types.ChatToolInvocationPart(
 			part.toolId || part.toolName,
 			part.toolCallId,
-			part.isError
+			part.errorMessage
 		);
 
 		if (part.invocationMessage) {
