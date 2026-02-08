@@ -280,11 +280,6 @@
 	margin-bottom: 10px;
 }
 
-/* Tighten spacing between consecutive tool invocation parts */
-.interactive-item-container > .value .chat-tool-invocation-part + .chat-tool-invocation-part .chat-used-context {
-	margin-bottom: 4px;
-}
-
 .interactive-item-container .value .rendered-markdown:not(:has(.chat-extensions-content-part)) {
 	.codicon {
 		font-size: inherit;
@@ -313,14 +308,27 @@
 	width: 100%;
 	text-align: left;
 	margin-bottom: 16px;
+	border-radius: var(--vscode-cornerRadius-medium);
+	overflow: hidden;
+	border-spacing: 0;
+	border: 1px solid var(--vscode-chat-requestBorder);
 }
 
-.interactive-item-container .value .rendered-markdown table,
 .interactive-item-container .value .rendered-markdown table td,
 .interactive-item-container .value .rendered-markdown table th {
 	border: 1px solid var(--vscode-chat-requestBorder);
-	border-collapse: collapse;
+	border-top: none;
+	border-left: none;
 	padding: 4px 6px;
+}
+
+.interactive-item-container .value .rendered-markdown table td:last-child,
+.interactive-item-container .value .rendered-markdown table th:last-child {
+	border-right: none;
+}
+
+.interactive-item-container .value .rendered-markdown table tr:last-child td {
+	border-bottom: none;
 }
 
 .interactive-item-container .value .rendered-markdown a,
@@ -470,13 +478,6 @@
 .interactive-item-container .value > .rendered-markdown p {
 	/* Targetting normal text paras. `p` can also appear in other elements/widgets */
 	margin: 0 0 16px 0;
-}
-
-/* Reduce spacing between consecutive tool invocation parts */
-.interactive-item-container .value > .chat-tool-invocation-part + .chat-tool-invocation-part {
-	.progress-container {
-		margin-top: -4px;
-	}
 }
 
 .interactive-item-container .value > .chat-tool-invocation-part {
@@ -2081,6 +2082,7 @@ Total indent per level = padding-inline-start (1.625em) + li padding-left (0.375
 .interactive-response-progress-tree,
 .chat-notification-widget,
 .chat-summary-list,
+.chat-used-context-list,
 .chat-quota-error-widget,
 .chat-rate-limited-widget {
 	border: 1px solid var(--vscode-chat-requestBorder);
@@ -2088,14 +2090,9 @@ Total indent per level = padding-inline-start (1.625em) + li padding-left (0.375
 	margin-bottom: 8px;
 }
 
-.interactive-session .chat-used-context-list {
-	border: none !important;
-	padding: 0;
-	margin-bottom: 0;
-}
-
 .interactive-response-progress-tree,
-.interactive-session .chat-summary-list {
+.interactive-session .chat-summary-list,
+.interactive-session .chat-used-context-list {
 	padding: 4px 3px;
 
 	.monaco-icon-label {
@@ -2106,16 +2103,6 @@ Total indent per level = padding-inline-start (1.625em) + li padding-left (0.375
 			width: var(--vscode-chat-font-size-body-s);
 			padding-right: 0;
 		}
-	}
-}
-
-.interactive-session .chat-used-context-list .monaco-icon-label {
-	padding: 0px 3px;
-	gap: 2px;
-
-	&::before {
-		width: var(--vscode-chat-font-size-body-s);
-		padding-right: 0;
 	}
 }
 
@@ -2192,6 +2179,7 @@ Total indent per level = padding-inline-start (1.625em) + li padding-left (0.375
 
 .interactive-session .chat-used-context-label .monaco-button {
 	padding: 2px 6px 2px 2px;
+	margin-left: -2px;
 	font-size: var(--vscode-chat-font-size-body-s);
 	line-height: unset;
 }

@@ -299,7 +299,7 @@ export class AgentSessionRenderer extends Disposable implements ICompressibleTre
 		// Fallback to state label
 		else {
 			if (session.element.status === AgentSessionStatus.InProgress) {
-				template.description.textContent = localize('chat.session.status.inProgress', "Working...");
+				template.description.textContent = localize('chat.session.status.inProgress', "Working");
 			} else if (session.element.status === AgentSessionStatus.NeedsInput) {
 				template.description.textContent = localize('chat.session.status.needsInput', "Input needed.");
 			} else if (hasBadge && session.element.status === AgentSessionStatus.Completed) {

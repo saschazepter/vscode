@@ -17,7 +17,7 @@ import { IChatSessionsService } from '../../common/chatSessionsService.js';
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
 import { ACTION_ID_NEW_CHAT } from '../actions/chatActions.js';
 import { Event } from '../../../../../base/common/event.js';
-import { Disposable } from '../../../../../base/common/lifecycle.js';
+import { Disposable, DisposableMap } from '../../../../../base/common/lifecycle.js';
 import { Throttler } from '../../../../../base/common/async.js';
 import { ITreeContextMenuEvent } from '../../../../../base/browser/ui/tree/tree.js';
 import { MarshalledId } from '../../../../../base/common/marshallingIds.js';
@@ -34,7 +34,7 @@ import { ISessionOpenOptions, openSession } from './agentSessionsOpener.js';
 import { IEditorService } from '../../../../services/editor/common/editorService.js';
 import { ChatEditorInput } from '../widgetHosts/editor/chatEditorInput.js';
 import { IMouseEvent } from '../../../../../base/browser/mouseEvent.js';
-import { IChatWidget } from '../chat.js';
+import { IChatWidget, IChatWidgetService, isIChatViewViewContext } from '../chat.js';
 
 export interface IAgentSessionsControlOptions extends IAgentSessionsSorterOptions {
 	readonly overrideStyles: IStyleOverride<IListStyles>;
@@ -70,6 +70,8 @@ export class AgentSessionsControl extends Disposable implements IAgentSessionsCo
 
 	private readonly updateSessionsListThrottler = this._register(new Throttler());
 
+	private readonly widgetViewModelListeners = this._register(new DisposableMap<IChatWidget>());
+
 	private visible: boolean = true;
 
 	private focusedAgentSessionArchivedContextKey: IContextKey<boolean>;
@@ -89,6 +91,7 @@ export class AgentSessionsControl extends Disposable implements IAgentSessionsCo
 		@IAgentSessionsService private readonly agentSessionsService: IAgentSessionsService,
 		@ITelemetryService private readonly telemetryService: ITelemetryService,
 		@IEditorService private readonly editorService: IEditorService,
+		@IChatWidgetService private readonly chatWidgetService: IChatWidgetService,
 	) {
 		super();
 
@@ -104,6 +107,29 @@ export class AgentSessionsControl extends Disposable implements IAgentSessionsCo
 
 	private registerListeners(): void {
 		this._register(this.editorService.onDidActiveEditorChange(() => this.revealAndFocusActiveEditorSession()));
+
+		// Track chat view widgets to sync selection when their model changes (e.g. on reload)
+		this._register(this.chatWidgetService.onDidAddWidget(widget => this.trackChatViewWidget(widget)));
+		for (const widget of this.chatWidgetService.getAllWidgets()) {
+			this.trackChatViewWidget(widget);
+		}
+	}
+
+	private trackChatViewWidget(widget: IChatWidget): void {
+		if (!isIChatViewViewContext(widget.viewContext)) {
+			return; // only track chat view widgets, not editor widgets
+		}
+
+		this.widgetViewModelListeners.set(widget, widget.onDidChangeViewModel(e => {
+			if (e.currentSessionResource) {
+				this.revealSession(e.currentSessionResource);
+			}
+		}));
+
+		// Sync immediately if the widget already has a session
+		if (widget.viewModel?.sessionResource) {
+			this.revealSession(widget.viewModel.sessionResource);
+		}
 	}
 
 	private revealAndFocusActiveEditorSession(): void {
@@ -117,6 +143,17 @@ export class AgentSessionsControl extends Disposable implements IAgentSessionsCo
 		const input = this.editorService.activeEditor;
 		const resource = (input instanceof ChatEditorInput) ? input.sessionResource : input?.resource;
 		if (!resource) {
+			return;
+		}
+
+		this.revealSession(resource);
+	}
+
+	private revealSession(resource: URI): void {
+		if (
+			!this.options.trackActiveEditorSession() ||
+			!this.visible
+		) {
 			return;
 		}
 
