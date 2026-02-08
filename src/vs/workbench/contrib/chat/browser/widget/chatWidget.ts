@@ -42,6 +42,7 @@ import product from '../../../../../platform/product/common/product.js';
 import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry.js';
 import { IThemeService } from '../../../../../platform/theme/common/themeService.js';
 import { IWorkspaceContextService, WorkbenchState } from '../../../../../platform/workspace/common/workspace.js';
+import { ICommandService } from '../../../../../platform/commands/common/commands.js';
 import { EditorResourceAccessor } from '../../../../common/editor.js';
 import { IEditorService } from '../../../../services/editor/common/editorService.js';
 import { IChatEntitlementService } from '../../../../services/chat/common/chatEntitlementService.js';
@@ -78,6 +79,7 @@ import { ChatListWidget } from './chatListWidget.js';
 import { ChatEditorOptions } from './chatOptions.js';
 import { ChatViewWelcomePart, IChatSuggestedPrompts, IChatViewWelcomeContent } from '../viewsWelcome/chatViewWelcomeController.js';
 import { IAgentSessionsService } from '../agentSessions/agentSessionsService.js';
+import { AgentSessionProviders } from '../agentSessions/agentSessions.js';
 
 const $ = dom.$;
 
@@ -365,7 +367,8 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		@IAgentSessionsService private readonly agentSessionsService: IAgentSessionsService,
 		@IChatTodoListService private readonly chatTodoListService: IChatTodoListService,
 		@IWorkspaceContextService private readonly contextService: IWorkspaceContextService,
-		@ILifecycleService private readonly lifecycleService: ILifecycleService
+		@ILifecycleService private readonly lifecycleService: ILifecycleService,
+		@ICommandService private readonly commandService: ICommandService
 	) {
 		super();
 
@@ -2109,6 +2112,13 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			}
 		}
 
+		// Check if there's a pending initial target and create the session if needed
+		const pendingInitialTarget = this.input.pendingInitialTarget;
+		if (pendingInitialTarget && !this._viewModel) {
+			// We need to create a session with the selected target type
+			await this._createSessionForPendingTarget(pendingInitialTarget);
+		}
+
 		while (!this._viewModel && !this._store.isDisposed) {
 			await Event.toPromise(this.onDidChangeViewModel, this._store);
 		}
@@ -2250,6 +2260,35 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		});
 
 		return sent.data.responseCreatedPromise;
+	}
+
+	/**
+	 * Creates a new session with the pending target type.
+	 * This is called when send is clicked and there's a pending initial target but no session yet.
+	 */
+	private async _createSessionForPendingTarget(targetType: AgentSessionProviders): Promise<void> {
+		// Determine the position (sidebar or editor)
+		const viewContext = this.viewContext;
+		let position: 'sidebar' | 'editor';
+		
+		if (isIChatViewViewContext(viewContext)) {
+			// We're in a view pane (sidebar)
+			position = 'sidebar';
+		} else {
+			// We're in an editor or other context - default to editor
+			position = 'editor';
+		}
+
+		// Execute the command to create the session with the selected type
+		const commandId = `workbench.action.chat.openNewChatSessionInPlace.${targetType}`;
+		this.logService.debug(`ChatWidget: Creating session for pending target ${targetType} at position ${position}`);
+		
+		try {
+			await this.commandService.executeCommand(commandId, position);
+		} catch (error) {
+			this.logService.error(`ChatWidget: Failed to create session for pending target ${targetType}`, error);
+			throw error;
+		}
 	}
 
 	private async confirmPendingRequestsBeforeSend(model: IChatModel, options: IChatAcceptInputOptions): Promise<boolean> {

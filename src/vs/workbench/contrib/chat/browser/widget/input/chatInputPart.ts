@@ -444,6 +444,25 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 	}
 
 	/**
+	 * Gets the pending initial target for a new session.
+	 * This is used when the user selects a target before a session is created,
+	 * deferring the actual session creation until send is clicked.
+	 */
+	public get pendingInitialTarget(): AgentSessionProviders | undefined {
+		return this._pendingInitialTarget;
+	}
+
+	/**
+	 * Sets the pending initial target for a new session.
+	 * This allows target selection without immediately creating a session resource.
+	 */
+	public setPendingInitialTarget(target: AgentSessionProviders | undefined): void {
+		this._pendingInitialTarget = target;
+		this.updateAgentSessionTypeContextKey();
+		this.refreshChatSessionPickers();
+	}
+
+	/**
 	 * Number consumers holding the 'generating' lock.
 	 */
 	private _generating?: { rc: number; defer: DeferredPromise<void> };
@@ -451,6 +470,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 	private _emptyInputState: ObservableMemento<IChatModelInputState | undefined>;
 	private _chatSessionIsEmpty = false;
 	private _pendingDelegationTarget: AgentSessionProviders | undefined = undefined;
+	private _pendingInitialTarget: AgentSessionProviders | undefined = undefined;
 
 	constructor(
 		// private readonly editorOptions: ChatEditorOptions, // TODO this should be used
@@ -1606,11 +1626,20 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 	}
 
 	/**
-	 * Updates the agentSessionType context key based on actual session.
+	 * Updates the agentSessionType context key based on actual session or pending target.
 	 */
 	private updateAgentSessionTypeContextKey(): void {
 		const sessionResource = this._widget?.viewModel?.model.sessionResource;
-		const sessionType = sessionResource ? getChatSessionType(sessionResource) : '';
+		
+		// Priority order: pending initial target > pending delegation target > actual session type
+		let sessionType: string;
+		if (this._pendingInitialTarget) {
+			sessionType = this._pendingInitialTarget;
+		} else if (this._pendingDelegationTarget) {
+			sessionType = this._pendingDelegationTarget;
+		} else {
+			sessionType = sessionResource ? getChatSessionType(sessionResource) : '';
+		}
 
 		this.agentSessionTypeKey.set(sessionType);
 	}
@@ -1685,6 +1714,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 
 		this._register(widget.onDidChangeViewModel(() => {
 			this._pendingDelegationTarget = undefined;
+			this._pendingInitialTarget = undefined; // Clear pending initial target when session is created
 			// Update agentSessionType when view model changes
 			this.updateAgentSessionTypeContextKey();
 			this.refreshChatSessionPickers();
@@ -1968,6 +1998,10 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 							this.updateWidgetLockStateFromSessionType(provider);
 							this.updateAgentSessionTypeContextKey();
 							this.refreshChatSessionPickers();
+						},
+						getPendingInitialTarget: () => this._pendingInitialTarget,
+						setPendingInitialTarget: (provider: AgentSessionProviders | undefined) => {
+							this.setPendingInitialTarget(provider);
 						},
 					};
 					// Use delegation picker for session switching in non-empty sessions

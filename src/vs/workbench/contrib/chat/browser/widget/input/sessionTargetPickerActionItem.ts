@@ -107,19 +107,32 @@ export class SessionTypePickerActionItem extends ChatInputPickerActionViewItem {
 	}
 
 	protected _run(sessionTypeItem: ISessionTypeItem): void {
+		const activeSessionProvider = this.delegate.getActiveSessionProvider();
+		
 		if (this.delegate.setActiveSessionProvider) {
 			// Use provided setter (for welcome view)
 			this.delegate.setActiveSessionProvider(sessionTypeItem.type);
+		} else if (!activeSessionProvider && this.delegate.setPendingInitialTarget) {
+			// No session exists yet - defer creation until send by setting pending initial target
+			this.delegate.setPendingInitialTarget(sessionTypeItem.type);
 		} else {
-			// Execute command to create new session
+			// Session exists - execute command to create new session and switch to it
 			this.commandService.executeCommand(sessionTypeItem.commandId, this.chatSessionPosition);
 		}
+		
 		if (this.element) {
 			this.renderLabel(this.element);
 		}
 	}
 
 	protected _getSelectedSessionType(): AgentSessionProviders | undefined {
+		// Priority: pending initial target > active session provider
+		if (this.delegate.getPendingInitialTarget) {
+			const pendingInitial = this.delegate.getPendingInitialTarget();
+			if (pendingInitial) {
+				return pendingInitial;
+			}
+		}
 		return this.delegate.getActiveSessionProvider();
 	}
 
