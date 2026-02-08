@@ -3,22 +3,17 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { CancellationToken } from '../../../../../base/common/cancellation.js';
 import { Emitter, Event } from '../../../../../base/common/event.js';
 import { Disposable, IDisposable, toDisposable } from '../../../../../base/common/lifecycle.js';
 import { StopWatch } from '../../../../../base/common/stopwatch.js';
 import { URI, isUriComponents } from '../../../../../base/common/uri.js';
 import { localize } from '../../../../../nls.js';
 import { createDecorator } from '../../../../../platform/instantiation/common/instantiation.js';
-import { URI } from '../../../../../base/common/uri.js';
 import { HookType, HookTypeValue, IChatRequestHooks, IHookCommand } from '../promptSyntax/hookSchema.js';
-import { IDisposable, toDisposable } from '../../../../../base/common/lifecycle.js';
 import { ILogService } from '../../../../../platform/log/common/log.js';
 import { CancellationToken } from '../../../../../base/common/cancellation.js';
-import { StopWatch } from '../../../../../base/common/stopwatch.js';
 import { Extensions, IOutputChannelRegistry, IOutputService } from '../../../../services/output/common/output.js';
 import { Registry } from '../../../../../platform/registry/common/platform.js';
-import { localize } from '../../../../../nls.js';
 import {
 	HookCommandResultKind,
 	IHookCommandInput,
