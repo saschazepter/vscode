@@ -1111,8 +1111,13 @@ configurationRegistry.registerConfiguration({
 				version: {
 					type: 'string',
 					description: nls.localize('chat.experimental.modelSelector.version', "The version of the language model.")
+				},
+				tokens: {
+					type: 'number',
+					description: nls.localize('chat.experimental.modelSelector.tokens', "The number of tokens for the language model.")
 				}
 			},
+			additionalProperties: false,
 			tags: ['experimental']
 		}
 	}

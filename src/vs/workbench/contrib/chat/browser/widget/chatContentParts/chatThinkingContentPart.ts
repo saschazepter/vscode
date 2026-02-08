@@ -29,7 +29,7 @@ import { DisposableMap, DisposableStore, IDisposable } from '../../../../../../b
 import { autorun } from '../../../../../../base/common/observable.js';
 import { CancellationTokenSource } from '../../../../../../base/common/cancellation.js';
 import { IChatMarkdownAnchorService } from './chatMarkdownAnchorService.js';
-import { ChatMessageRole, ILanguageModelsService } from '../../../common/languageModels.js';
+import { ChatMessageRole, ILanguageModelChatSelector, ILanguageModelsService } from '../../../common/languageModels.js';
 import { ExtensionIdentifier } from '../../../../../../platform/extensions/common/extensions.js';
 import { isObject } from '../../../../../../base/common/types.js';
 import './media/chatThinkingContent.css';
@@ -722,7 +722,7 @@ export class ChatThinkingContentPart extends ChatCollapsibleContentPart implemen
 			let models: string[] = [];
 
 			// Check if a custom model selector is configured
-			const customSelector = this.configurationService.getValue<object | null>(ChatConfiguration.ExperimentalModelSelector);
+			const customSelector = this.configurationService.getValue<ILanguageModelChatSelector | null>(ChatConfiguration.ExperimentalModelSelector);
 			if (customSelector && isObject(customSelector)) {
 				models = await this.languageModelsService.selectLanguageModels(customSelector);
 				if (models.length === 0) {

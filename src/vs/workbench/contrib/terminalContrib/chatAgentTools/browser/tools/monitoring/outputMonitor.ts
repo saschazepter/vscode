@@ -19,7 +19,7 @@ import { ChatElicitationRequestPart } from '../../../../../chat/common/model/cha
 import { ChatModel } from '../../../../../chat/common/model/chatModel.js';
 import { ElicitationState, IChatService } from '../../../../../chat/common/chatService/chatService.js';
 import { ChatAgentLocation, ChatConfiguration } from '../../../../../chat/common/constants.js';
-import { ChatMessageRole, ILanguageModelsService } from '../../../../../chat/common/languageModels.js';
+import { ChatMessageRole, ILanguageModelChatSelector, ILanguageModelsService } from '../../../../../chat/common/languageModels.js';
 import { IToolInvocationContext } from '../../../../../chat/common/tools/languageModelToolsService.js';
 import { ITaskService } from '../../../../../tasks/common/taskService.js';
 import { ILinkLocation } from '../../taskHelpers.js';
@@ -878,7 +878,7 @@ export class OutputMonitor extends Disposable implements IOutputMonitor {
 
 	private async _getLanguageModel(): Promise<string | undefined> {
 		// Check if a custom model selector is configured
-		const customSelector = this._configurationService.getValue<object | null>(ChatConfiguration.ExperimentalModelSelector);
+		const customSelector = this._configurationService.getValue<ILanguageModelChatSelector | null>(ChatConfiguration.ExperimentalModelSelector);
 		if (customSelector && isObject(customSelector)) {
 			const models = await this._languageModelsService.selectLanguageModels(customSelector);
 			if (models.length === 0) {
