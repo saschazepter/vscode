@@ -319,6 +319,7 @@
 
 	.chat-confirmation-widget-container .chat-confirmation-widget .chat-confirmation-widget-title {
 		padding: 2px 6px 2px 2px;
+		margin-left: -2px;
 
 		&.monaco-button {
 

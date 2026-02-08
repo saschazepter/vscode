@@ -203,8 +203,10 @@ export class SessionTypePickerActionItem extends ChatInputPickerActionViewItem {
 		if (currentType !== AgentSessionProviders.Local || !this.pickerOptions.onlyShowIconsForDefaultActions.get()) {
 			labelElements.push(dom.$('span.chat-input-picker-label', undefined, label));
 			if (currentType === AgentSessionProviders.Background) {
-				const suffix = dom.$('span.chat-input-picker-label', undefined, ' · Copilot CLI');
+				const suffix = dom.$('span.chat-input-picker-label', undefined, 'Copilot CLI');
 				suffix.style.color = asCssVariable(disabledForeground);
+				suffix.style.marginLeft = '4px';
+				suffix.style.marginRight = '2px';
 				labelElements.push(suffix);
 			}
 		}

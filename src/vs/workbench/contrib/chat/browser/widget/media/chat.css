@@ -785,7 +785,7 @@ Total indent per level = padding-inline-start (1.625em) + li padding-left (0.375
 	cursor: text;
 	background-color: var(--vscode-input-background);
 	border: 1px solid var(--vscode-input-border, transparent);
-	border-radius: var(--vscode-cornerRadius-medium);
+	border-radius: var(--vscode-cornerRadius-large);
 	padding: 0 6px 6px 6px;
 	/* top padding is inside the editor widget */
 	width: 100%;
@@ -827,7 +827,7 @@ Total indent per level = padding-inline-start (1.625em) + li padding-left (0.375
 	background-color: var(--vscode-editor-background);
 	border: 1px solid var(--vscode-input-border, transparent);
 	border-bottom: none;
-	border-radius: var(--vscode-cornerRadius-medium) var(--vscode-cornerRadius-medium) 0 0;
+	border-radius: var(--vscode-cornerRadius-large) var(--vscode-cornerRadius-large) 0 0;
 	display: flex;
 	flex-direction: column;
 	gap: 2px;
@@ -1353,6 +1353,10 @@ Total indent per level = padding-inline-start (1.625em) + li padding-left (0.375
 
 			.codicon {
 				font-size: 12px;
+			}
+
+			.codicon-chevron-down {
+				color: var(--vscode-disabledForeground);
 			}
 		}
 

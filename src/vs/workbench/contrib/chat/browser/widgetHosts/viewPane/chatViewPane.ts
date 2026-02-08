@@ -368,10 +368,6 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 		if (agentSession) {
 			const diff = getAgentChangesSummary(agentSession.changes);
 			if (diff && hasValidDiff(agentSession.changes)) {
-				if (diff.files > 0) {
-					parts.push('·');
-					parts.push(diff.files === 1 ? localize('description.file', "1 file") : localize('description.files', "{0} files", diff.files));
-				}
 				// Insertions/deletions are rendered as colored elements in renderSingleViewPaneContainerDescription
 				if (diff.insertions > 0 || diff.deletions > 0) {
 					parts.push(`+${diff.insertions} -${diff.deletions}`);
@@ -407,9 +403,6 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 			if (diff && hasValidDiff(agentSession.changes)) {
 				container.append($('span.separator', undefined, '\u2022'));
 				const diffContainer = append(container, $('.diff'));
-				if (diff.files > 0) {
-					diffContainer.append($('span', undefined, diff.files === 1 ? localize('description.file', "1 file") : localize('description.files', "{0} files", diff.files)));
-				}
 				if (diff.insertions > 0) {
 					diffContainer.append($('span.insertions', undefined, `+${diff.insertions}`));
 				}
