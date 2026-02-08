@@ -883,6 +883,8 @@ export class SCMRepositoriesViewPane extends ViewPane {
 
 	override dispose(): void {
 		this.visibilityDisposables.dispose();
+		this.repositoryDisposables.dispose();
+		this.updateChildrenThrottler.dispose();
 		super.dispose();
 	}
 }
