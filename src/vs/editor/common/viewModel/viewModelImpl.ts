@@ -333,7 +333,7 @@ export class ViewModel extends Disposable implements IViewModel {
 				switch (change.changeType) {
 					case textModelEvents.RawContentChangedType.LinesInserted: {
 						for (let i = 0; i < change.count; i++) {
-							lineBreaksComputer.addRequest(change.newFromLineNumber + i, null);
+							lineBreaksComputer.addRequest(change.fromLineNumberPostEdit + i, null);
 						}
 						break;
 					}

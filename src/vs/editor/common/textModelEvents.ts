@@ -316,9 +316,9 @@ export class ModelRawLineChanged {
 	 */
 	public readonly newLineNumber: number;
 
-	constructor(lineNumber: number, newLineNumber: number) {
+	constructor(lineNumber: number, lineNumberPostEdit: number) {
 		this.lineNumber = lineNumber;
-		this.newLineNumber = newLineNumber;
+		this.newLineNumber = lineNumberPostEdit;
 	}
 }
 
@@ -412,9 +412,9 @@ export class ModelRawLinesInserted {
 	 */
 	public readonly fromLineNumber: number;
 	/**
-	 * The new from line number of the inserted lines (after the change was applied).
+	 * The actual line number in the updated buffer where the newly inserted content can be found.
 	 */
-	public readonly newFromLineNumber: number;
+	public readonly fromLineNumberPostEdit: number;
 	/**
 	 * The count of inserted lines.
 	 */
@@ -427,9 +427,9 @@ export class ModelRawLinesInserted {
 		return this.fromLineNumber + this.count - 1;
 	}
 
-	constructor(oldFromLineNumber: number, newFromLineNumber: number, count: number) {
-		this.fromLineNumber = oldFromLineNumber;
-		this.newFromLineNumber = newFromLineNumber;
+	constructor(fromLineNumber: number, fromLineNumberPostEdit: number, count: number) {
+		this.fromLineNumber = fromLineNumber;
+		this.fromLineNumberPostEdit = fromLineNumberPostEdit;
 		this.count = count;
 	}
 }
