@@ -13,9 +13,9 @@ import { ILanguageModelChatMetadata, ILanguageModelsService } from '../../langua
 import { ILanguageModelToolsService } from '../../tools/languageModelToolsService.js';
 import { IChatModeService } from '../../chatModes.js';
 import { getPromptsTypeForLanguageId, PromptsType } from '../promptTypes.js';
-import { IPromptsService } from '../service/promptsService.js';
+import { IPromptsService, Target } from '../service/promptsService.js';
 import { Iterable } from '../../../../../../base/common/iterator.js';
-import { ClaudeHeaderAttributes, IArrayValue, IValue, parseCommaSeparatedList, PromptHeader, PromptHeaderAttributes, Target } from '../promptFileParser.js';
+import { ClaudeHeaderAttributes, IArrayValue, IValue, parseCommaSeparatedList, PromptHeader, PromptHeaderAttributes } from '../promptFileParser.js';
 import { getAttributeDescription, getTarget, getValidAttributeNames, claudeAgentAttributes, knownClaudeTools, knownGithubCopilotTools, IValueEntry } from './promptValidator.js';
 import { localize } from '../../../../../../nls.js';
 import { formatArrayValue, getQuotePreference } from '../utils/promptEditHelper.js';

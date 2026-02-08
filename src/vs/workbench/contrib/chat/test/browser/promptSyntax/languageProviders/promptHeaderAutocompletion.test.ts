@@ -19,7 +19,7 @@ import { ILanguageModelToolsService, IToolData, ToolDataSource } from '../../../
 import { ILanguageModelChatMetadata, ILanguageModelsService } from '../../../../common/languageModels.js';
 import { IChatModeService } from '../../../../common/chatModes.js';
 import { PromptHeaderAutocompletion } from '../../../../common/promptSyntax/languageProviders/promptHeaderAutocompletion.js';
-import { ICustomAgent, IPromptsService, PromptsStorage } from '../../../../common/promptSyntax/service/promptsService.js';
+import { ICustomAgent, IPromptsService, PromptsStorage, Target } from '../../../../common/promptSyntax/service/promptsService.js';
 import { createTextModel } from '../../../../../../../editor/test/common/testTextModel.js';
 import { URI } from '../../../../../../../base/common/uri.js';
 import { PromptFileParser } from '../../../../common/promptSyntax/promptFileParser.js';
@@ -75,6 +75,7 @@ suite('PromptHeaderAutocompletion', () => {
 			},
 			uri: URI.parse('myFs://.github/agents/agent1.agent.md'),
 			source: { storage: PromptsStorage.local },
+			target: Target.Undefined,
 			visibility: { userInvokable: true, agentInvokable: true }
 		};
 

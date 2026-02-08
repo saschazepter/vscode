@@ -18,7 +18,7 @@ import { ChatAgentLocation, ChatConfiguration } from '../../../../common/constan
 import { ILanguageModelToolsService, IToolData, ToolDataSource } from '../../../../common/tools/languageModelToolsService.js';
 import { ILanguageModelChatMetadata, ILanguageModelsService } from '../../../../common/languageModels.js';
 import { PromptHoverProvider } from '../../../../common/promptSyntax/languageProviders/promptHovers.js';
-import { IPromptsService, PromptsStorage } from '../../../../common/promptSyntax/service/promptsService.js';
+import { IPromptsService, PromptsStorage, Target } from '../../../../common/promptSyntax/service/promptsService.js';
 import { MockChatModeService } from '../../../common/mockChatModeService.js';
 import { createTextModel } from '../../../../../../../editor/test/common/testTextModel.js';
 import { URI } from '../../../../../../../base/common/uri.js';
@@ -74,6 +74,7 @@ suite('PromptHoverProvider', () => {
 			name: 'BeastMode',
 			agentInstructions: { content: 'Beast mode instructions', toolReferences: [] },
 			source: { storage: PromptsStorage.local },
+			target: Target.Undefined,
 			visibility: { userInvokable: true, agentInvokable: true }
 		});
 		instaService.stub(IChatModeService, new MockChatModeService({ builtin: [ChatMode.Agent, ChatMode.Ask, ChatMode.Edit], custom: [customChatMode] }));

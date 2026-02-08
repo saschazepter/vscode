@@ -15,12 +15,12 @@ import { IInstantiationService } from '../../../../../platform/instantiation/com
 import { showToolsPicker } from '../actions/chatToolPicker.js';
 import { ILanguageModelToolsService } from '../../common/tools/languageModelToolsService.js';
 import { ALL_PROMPTS_LANGUAGE_SELECTOR, getPromptsTypeForLanguageId, PromptsType } from '../../common/promptSyntax/promptTypes.js';
-import { IPromptsService } from '../../common/promptSyntax/service/promptsService.js';
+import { IPromptsService, Target } from '../../common/promptSyntax/service/promptsService.js';
 import { registerEditorFeature } from '../../../../../editor/common/editorFeatures.js';
 import { PromptFileRewriter } from './promptFileRewriter.js';
 import { Range } from '../../../../../editor/common/core/range.js';
 import { IEditorModel } from '../../../../../editor/common/editorCommon.js';
-import { isTarget, parseCommaSeparatedList, PromptHeaderAttributes, Target } from '../../common/promptSyntax/promptFileParser.js';
+import { isTarget, parseCommaSeparatedList, PromptHeaderAttributes } from '../../common/promptSyntax/promptFileParser.js';
 import { getTarget, isVSCodeOrDefaultTarget } from '../../common/promptSyntax/languageProviders/promptValidator.js';
 import { isBoolean } from '../../../../../base/common/types.js';
 

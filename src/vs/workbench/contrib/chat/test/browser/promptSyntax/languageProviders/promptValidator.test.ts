@@ -25,7 +25,7 @@ import { getPromptFileExtension } from '../../../../common/promptSyntax/config/p
 import { PromptValidator } from '../../../../common/promptSyntax/languageProviders/promptValidator.js';
 import { PromptsType } from '../../../../common/promptSyntax/promptTypes.js';
 import { PromptFileParser } from '../../../../common/promptSyntax/promptFileParser.js';
-import { ICustomAgent, IPromptsService, PromptsStorage } from '../../../../common/promptSyntax/service/promptsService.js';
+import { ICustomAgent, IPromptsService, PromptsStorage, Target } from '../../../../common/promptSyntax/service/promptsService.js';
 import { MockChatModeService } from '../../../common/mockChatModeService.js';
 import { MockPromptsService } from '../../../common/promptSyntax/service/mockPromptsService.js';
 
@@ -135,6 +135,7 @@ suite('PromptValidator', () => {
 			name: 'BeastMode',
 			agentInstructions: { content: 'Beast mode instructions', toolReferences: [] },
 			source: { storage: PromptsStorage.local },
+			target: Target.Undefined,
 			visibility: { userInvokable: true, agentInvokable: true }
 		});
 		instaService.stub(IChatModeService, new MockChatModeService({ builtin: [ChatMode.Agent, ChatMode.Ask, ChatMode.Edit], custom: [customChatMode] }));
@@ -154,6 +155,7 @@ suite('PromptValidator', () => {
 			tools: ['tool1', 'tool2'],
 			agentInstructions: { content: 'Custom mode body', toolReferences: [] },
 			source: { storage: PromptsStorage.local },
+			target: Target.Undefined,
 			visibility: { userInvokable: true, agentInvokable: true }
 		};
 		promptsService.setCustomModes([customMode]);

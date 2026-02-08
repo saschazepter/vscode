@@ -9,6 +9,7 @@ import { splitLinesIncludeSeparators } from '../../../../../base/common/strings.
 import { URI } from '../../../../../base/common/uri.js';
 import { parse, YamlNode, YamlParseError, Position as YamlPosition } from '../../../../../base/common/yaml.js';
 import { Range } from '../../../../../editor/common/core/range.js';
+import { Target } from './service/promptsService.js';
 
 export class PromptFileParser {
 	constructor() {
@@ -89,13 +90,6 @@ export namespace GithubPromptHeaderAttributes {
 
 export namespace ClaudeHeaderAttributes {
 	export const disallowedTools = 'disallowedTools';
-}
-
-export enum Target {
-	VSCode = 'vscode',
-	GitHubCopilot = 'github-copilot',
-	Claude = 'claude',
-	Undefined = 'undefined',
 }
 
 export function isTarget(value: unknown): value is Target {

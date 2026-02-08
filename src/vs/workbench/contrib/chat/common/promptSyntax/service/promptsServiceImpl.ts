@@ -38,6 +38,7 @@ import { IChatRequestHooks, IHookCommand, HookType } from '../hookSchema.js';
 import { parseHooksFromFile } from '../hookCompatibility.js';
 import { IWorkspaceContextService } from '../../../../../../platform/workspace/common/workspace.js';
 import { IPathService } from '../../../../../services/path/common/pathService.js';
+import { getTarget } from '../languageProviders/promptValidator.js';
 
 /**
  * Error thrown when a skill file is missing the required name attribute.
@@ -566,17 +567,18 @@ export class PromptsService extends Disposable implements IPromptsService {
 				} satisfies IAgentInstructions;
 
 				const name = ast.header?.name ?? promptPath.name ?? getCleanPromptName(uri);
+				const target = getTarget(PromptsType.agent, ast.header);
 
 				const source: IAgentSource = IAgentSource.fromPromptPath(promptPath);
 				if (!ast.header) {
-					return { uri, name, agentInstructions, source, visibility: { userInvokable: true, agentInvokable: true } };
+					return { uri, name, agentInstructions, source, target, visibility: { userInvokable: true, agentInvokable: true } };
 				}
 				const visibility = {
 					userInvokable: ast.header.userInvokable !== false,
 					agentInvokable: ast.header.infer === true || ast.header.disableModelInvocation !== true,
 				} satisfies ICustomAgentVisibility;
 
-				const { description, model, tools, handOffs, argumentHint, target, agents } = ast.header;
+				const { description, model, tools, handOffs, argumentHint, agents } = ast.header;
 				return { uri, name, description, model, tools, handOffs, argumentHint, target, visibility, agents, agentInstructions, source };
 			})
 		);

@@ -40,7 +40,7 @@ import { ComputeAutomaticInstructions, newInstructionsCollectionEvent } from '..
 import { PromptsConfig } from '../../../../common/promptSyntax/config/config.js';
 import { CLAUDE_CONFIG_FOLDER, INSTRUCTION_FILE_EXTENSION, INSTRUCTIONS_DEFAULT_SOURCE_FOLDER, LEGACY_MODE_DEFAULT_SOURCE_FOLDER, PROMPT_DEFAULT_SOURCE_FOLDER, PROMPT_FILE_EXTENSION } from '../../../../common/promptSyntax/config/promptFileLocations.js';
 import { INSTRUCTIONS_LANGUAGE_ID, PROMPT_LANGUAGE_ID, PromptsType } from '../../../../common/promptSyntax/promptTypes.js';
-import { ExtensionAgentSourceType, ICustomAgent, IPromptFileContext, IPromptsService, PromptsStorage } from '../../../../common/promptSyntax/service/promptsService.js';
+import { ExtensionAgentSourceType, ICustomAgent, IPromptFileContext, IPromptsService, PromptsStorage, Target } from '../../../../common/promptSyntax/service/promptsService.js';
 import { PromptsService } from '../../../../common/promptSyntax/service/promptsServiceImpl.js';
 import { mockFiles } from '../testUtils/mockFilesystem.js';
 import { InMemoryStorageService, IStorageService } from '../../../../../../../platform/storage/common/storage.js';
@@ -767,7 +767,7 @@ suite('PromptsService', () => {
 					model: undefined,
 					argumentHint: undefined,
 					tools: undefined,
-					target: undefined,
+					target: Target.Undefined,
 					visibility: { userInvokable: true, agentInvokable: true },
 					agents: undefined,
 					uri: URI.joinPath(rootFolderUri, '.github/agents/agent1.agent.md'),
@@ -823,7 +823,7 @@ suite('PromptsService', () => {
 					handOffs: undefined,
 					model: undefined,
 					argumentHint: undefined,
-					target: undefined,
+					target: Target.Undefined,
 					visibility: { userInvokable: true, agentInvokable: true },
 					agents: undefined,
 					uri: URI.joinPath(rootFolderUri, '.github/agents/agent1.agent.md'),
@@ -841,6 +841,7 @@ suite('PromptsService', () => {
 					},
 					uri: URI.joinPath(rootFolderUri, '.github/agents/agent2.agent.md'),
 					source: { storage: PromptsStorage.local },
+					target: Target.Undefined,
 					visibility: { userInvokable: true, agentInvokable: true }
 				}
 			];
@@ -897,7 +898,7 @@ suite('PromptsService', () => {
 					},
 					handOffs: undefined,
 					model: undefined,
-					target: undefined,
+					target: Target.Undefined,
 					visibility: { userInvokable: true, agentInvokable: true },
 					agents: undefined,
 					uri: URI.joinPath(rootFolderUri, '.github/agents/agent1.agent.md'),
@@ -915,7 +916,7 @@ suite('PromptsService', () => {
 					handOffs: undefined,
 					model: undefined,
 					tools: undefined,
-					target: undefined,
+					target: Target.Undefined,
 					visibility: { userInvokable: true, agentInvokable: true },
 					agents: undefined,
 					uri: URI.joinPath(rootFolderUri, '.github/agents/agent2.agent.md'),
@@ -976,7 +977,7 @@ suite('PromptsService', () => {
 				{
 					name: 'github-agent',
 					description: 'GitHub Copilot specialized agent.',
-					target: 'github-copilot',
+					target: Target.GitHubCopilot,
 					tools: ['github-api', 'code-search'],
 					agentInstructions: {
 						content: 'I am optimized for GitHub Copilot workflows.',
@@ -994,7 +995,7 @@ suite('PromptsService', () => {
 				{
 					name: 'vscode-agent',
 					description: 'VS Code specialized agent.',
-					target: 'vscode',
+					target: Target.VSCode,
 					model: ['gpt-4'],
 					agentInstructions: {
 						content: 'I am specialized for VS Code editor tasks.',
@@ -1021,7 +1022,7 @@ suite('PromptsService', () => {
 					model: undefined,
 					argumentHint: undefined,
 					tools: undefined,
-					target: undefined,
+					target: Target.Undefined,
 					visibility: { userInvokable: true, agentInvokable: true },
 					agents: undefined,
 					uri: URI.joinPath(rootFolderUri, '.github/agents/generic-agent.agent.md'),
@@ -1076,7 +1077,7 @@ suite('PromptsService', () => {
 					handOffs: undefined,
 					model: undefined,
 					argumentHint: undefined,
-					target: undefined,
+					target: Target.Undefined,
 					visibility: { userInvokable: true, agentInvokable: true },
 					agents: undefined,
 					uri: URI.joinPath(rootFolderUri, '.github/agents/demonstrate.md'),
@@ -1147,7 +1148,7 @@ suite('PromptsService', () => {
 					handOffs: undefined,
 					model: undefined,
 					argumentHint: undefined,
-					target: undefined,
+					target: Target.Undefined,
 					visibility: { userInvokable: true, agentInvokable: true },
 					uri: URI.joinPath(rootFolderUri, '.github/agents/restricted-agent.agent.md'),
 					source: { storage: PromptsStorage.local }
@@ -1165,7 +1166,7 @@ suite('PromptsService', () => {
 					model: undefined,
 					argumentHint: undefined,
 					tools: undefined,
-					target: undefined,
+					target: Target.Undefined,
 					visibility: { userInvokable: true, agentInvokable: true },
 					uri: URI.joinPath(rootFolderUri, '.github/agents/no-access-agent.agent.md'),
 					source: { storage: PromptsStorage.local }
@@ -1183,7 +1184,7 @@ suite('PromptsService', () => {
 					model: undefined,
 					argumentHint: undefined,
 					tools: undefined,
-					target: undefined,
+					target: Target.Undefined,
 					visibility: { userInvokable: true, agentInvokable: true },
 					uri: URI.joinPath(rootFolderUri, '.github/agents/full-access-agent.agent.md'),
 					source: { storage: PromptsStorage.local }
