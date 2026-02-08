@@ -27,6 +27,7 @@ import { IVariableReference } from '../chatModes.js';
 import { IChatExtensionsContent, IChatSimpleToolInvocationData, IChatSubagentToolInvocationData, IChatTodoListContent, IChatToolInputInvocationData, IChatToolInvocation, type IChatTerminalToolInvocationData } from '../chatService/chatService.js';
 import { ILanguageModelChatMetadata, LanguageModelPartAudience } from '../languageModels.js';
 import { UserSelectedTools } from '../participants/chatAgents.js';
+import { Target } from '../promptSyntax/service/promptsService.js';
 import { PromptElementJSON, stringifyPromptElementJSON } from './promptTsxTypes.js';
 
 /**
@@ -577,7 +578,7 @@ export interface ILanguageModelToolsService {
 	 * @param model Optional language model metadata to filter tools by.
 	 * If undefined is passed, all tools will be returned, even if normally disabled.
 	 */
-	toToolAndToolSetEnablementMap(fullReferenceNames: readonly string[], model: ILanguageModelChatMetadata | undefined): IToolAndToolSetEnablementMap;
+	toToolAndToolSetEnablementMap(fullReferenceNames: readonly string[], target: Target, model: ILanguageModelChatMetadata | undefined): IToolAndToolSetEnablementMap;
 
 	toFullReferenceNames(map: IToolAndToolSetEnablementMap): string[];
 	toToolReferences(variableReferences: readonly IVariableReference[]): ChatRequestToolReferenceEntry[];

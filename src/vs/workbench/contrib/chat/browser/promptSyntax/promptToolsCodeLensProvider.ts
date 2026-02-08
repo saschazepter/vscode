@@ -93,7 +93,7 @@ class PromptToolsCodeLensProvider extends Disposable implements CodeLensProvider
 	}
 
 	private async updateTools(model: ITextModel, range: Range, isString: boolean, selectedTools: readonly string[], target: Target): Promise<void> {
-		const selectedToolsNow = () => this.languageModelToolsService.toToolAndToolSetEnablementMap(selectedTools, undefined);
+		const selectedToolsNow = () => this.languageModelToolsService.toToolAndToolSetEnablementMap(selectedTools, target, undefined);
 		const newSelectedAfter = await this.instantiationService.invokeFunction(showToolsPicker, localize('placeholder', "Select tools"), 'codeLens', undefined, selectedToolsNow);
 		if (!newSelectedAfter) {
 			return;

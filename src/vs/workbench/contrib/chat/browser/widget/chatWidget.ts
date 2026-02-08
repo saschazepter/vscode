@@ -67,7 +67,7 @@ import { ILanguageModelToolsService, isToolSet } from '../../common/tools/langua
 import { ComputeAutomaticInstructions } from '../../common/promptSyntax/computeAutomaticInstructions.js';
 import { PromptsConfig } from '../../common/promptSyntax/config/config.js';
 import { IHandOff, PromptHeader } from '../../common/promptSyntax/promptFileParser.js';
-import { IPromptsService } from '../../common/promptSyntax/service/promptsService.js';
+import { IPromptsService, Target } from '../../common/promptSyntax/service/promptsService.js';
 import { handleModeSwitch } from '../actions/chatActions.js';
 import { ChatTreeItem, IChatAcceptInputOptions, IChatAccessibilityService, IChatCodeBlockInfo, IChatFileTreeInfo, IChatListItemRendererOptions, IChatWidget, IChatWidgetService, IChatWidgetViewContext, IChatWidgetViewModelChangeEvent, IChatWidgetViewOptions, isIChatResourceViewContext, isIChatViewViewContext } from '../chat.js';
 import { ChatAttachmentModel } from '../attachments/chatAttachmentModel.js';
@@ -2509,7 +2509,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 
 		// if not tools to enable are present, we are done
 		if (tools !== undefined && this.input.currentModeKind === ChatModeKind.Agent) {
-			const enablementMap = this.toolsService.toToolAndToolSetEnablementMap(tools, this.input.selectedLanguageModel.get()?.metadata);
+			const enablementMap = this.toolsService.toToolAndToolSetEnablementMap(tools, Target.Undefined, this.input.selectedLanguageModel.get()?.metadata);
 			this.input.selectedToolsModel.set(enablementMap, true);
 		}
 

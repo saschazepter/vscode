@@ -123,7 +123,7 @@ export class PromptValidator {
 		// Validate variable references (tool or toolset names)
 		if (body.variableReferences.length && isVSCodeOrDefaultTarget(target)) {
 			const headerTools = promptAST.header?.tools;
-			const headerToolsMap = headerTools ? this.languageModelToolsService.toToolAndToolSetEnablementMap(headerTools, undefined) : undefined;
+			const headerToolsMap = headerTools ? this.languageModelToolsService.toToolAndToolSetEnablementMap(headerTools, target, undefined) : undefined;
 
 			const available = new Set<string>(this.languageModelToolsService.getFullReferenceNames());
 			const deprecatedNames = this.languageModelToolsService.getDeprecatedFullReferenceNames();
@@ -770,20 +770,20 @@ export interface IValueEntry {
 }
 
 export const knownClaudeTools = [
-	{ name: 'Bash', description: localize('claude.bash', 'Execute shell commands') },
-	{ name: 'Edit', description: localize('claude.edit', 'Make targeted file edits') },
-	{ name: 'Glob', description: localize('claude.glob', 'Find files by pattern') },
-	{ name: 'Grep', description: localize('claude.grep', 'Search file contents with regex') },
-	{ name: 'Read', description: localize('claude.read', 'Read file contents') },
-	{ name: 'Write', description: localize('claude.write', 'Create/overwrite files') },
-	{ name: 'WebFetch', description: localize('claude.webFetch', 'Fetch URL content') },
-	{ name: 'WebSearch', description: localize('claude.webSearch', 'Perform web searches') },
-	{ name: 'Task', description: localize('claude.task', 'Run subagents for complex tasks') },
-	{ name: 'Skill', description: localize('claude.skill', 'Execute skills') },
-	{ name: 'LSP', description: localize('claude.lsp', 'Code intelligence (requires plugin)') },
-	{ name: 'NotebookEdit', description: localize('claude.notebookEdit', 'Modify Jupyter notebooks') },
-	{ name: 'AskUserQuestion', description: localize('claude.askUserQuestion', 'Ask multiple-choice questions') },
-	{ name: 'MCPSearch', description: localize('claude.mcpSearch', 'Searches for MCP tools when tool search is enabled') }
+	{ name: 'Bash', description: localize('claude.bash', 'Execute shell commands'), toolEquivalent: [SpecedToolAliases.execute] },
+	{ name: 'Edit', description: localize('claude.edit', 'Make targeted file edits'), toolEquivalent: ['edit/editNotebook', 'edit/editFiles'] },
+	{ name: 'Glob', description: localize('claude.glob', 'Find files by pattern'), toolEquivalent: ['search/fileSearch'] },
+	{ name: 'Grep', description: localize('claude.grep', 'Search file contents with regex'), toolEquivalent: ['search/textSearch'] },
+	{ name: 'Read', description: localize('claude.read', 'Read file contents'), toolEquivalent: ['read/readFile', 'read/getNotebookSummary'] },
+	{ name: 'Write', description: localize('claude.write', 'Create/overwrite files'), toolEquivalent: ['edit/createDirectory', 'edit/createFile', 'edit/createJupyterNotebook'] },
+	{ name: 'WebFetch', description: localize('claude.webFetch', 'Fetch URL content'), toolEquivalent: [SpecedToolAliases.web] },
+	{ name: 'WebSearch', description: localize('claude.webSearch', 'Perform web searches'), toolEquivalent: [SpecedToolAliases.web] },
+	{ name: 'Task', description: localize('claude.task', 'Run subagents for complex tasks'), toolEquivalent: [SpecedToolAliases.agent] },
+	{ name: 'Skill', description: localize('claude.skill', 'Execute skills'), toolEquivalent: [] },
+	{ name: 'LSP', description: localize('claude.lsp', 'Code intelligence (requires plugin)'), toolEquivalent: [] },
+	{ name: 'NotebookEdit', description: localize('claude.notebookEdit', 'Modify Jupyter notebooks'), toolEquivalent: ['edit/editNotebook'] },
+	{ name: 'AskUserQuestion', description: localize('claude.askUserQuestion', 'Ask multiple-choice questions'), toolEquivalent: ['vscode/askQuestions'] },
+	{ name: 'MCPSearch', description: localize('claude.mcpSearch', 'Searches for MCP tools when tool search is enabled'), toolEquivalent: [] }
 ];
 
 export const knownClaudeModels = [

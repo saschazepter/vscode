@@ -51,6 +51,8 @@ import { getToolConfirmationAlert } from '../accessibility/chatAccessibilityProv
 import { URI } from '../../../../../base/common/uri.js';
 import { chatSessionResourceToId } from '../../common/model/chatUri.js';
 import { HookType } from '../../common/promptSyntax/hookSchema.js';
+import { Target } from '../../common/promptSyntax/service/promptsService.js';
+import { knownClaudeTools } from '../../common/promptSyntax/languageProviders/promptValidator.js';
 
 const jsonSchemaRegistry = Registry.as<JSONContributionRegistry.IJSONContributionRegistry>(JSONContributionRegistry.Extensions.JSONContribution);
 
@@ -1242,7 +1244,17 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 	 * @param fullReferenceNames A list of tool or toolset by their full reference names that are enabled.
 	 * @returns A map of tool or toolset instances to their enablement state.
 	 */
-	toToolAndToolSetEnablementMap(fullReferenceNames: readonly string[], model: ILanguageModelChatMetadata | undefined): IToolAndToolSetEnablementMap {
+	toToolAndToolSetEnablementMap(fullReferenceNames: readonly string[], target: Target, model: ILanguageModelChatMetadata | undefined): IToolAndToolSetEnablementMap {
+		if (target === Target.Claude) {
+			const mappedTools = [];
+			for (const refName of fullReferenceNames) {
+				const tool = knownClaudeTools.find(tool => tool.name === refName);
+				if (tool) {
+					mappedTools.push(...tool.toolEquivalent);
+				}
+			}
+			fullReferenceNames = mappedTools;
+		}
 		const toolOrToolSetNames = new Set(fullReferenceNames);
 		const result = new Map<IToolSet | IToolData, boolean>();
 		for (const [tool, fullReferenceName] of this.toolsWithFullReferenceName.get()) {
