@@ -722,7 +722,7 @@ export class ChatThinkingContentPart extends ChatCollapsibleContentPart implemen
 			let models: string[] = [];
 
 			// Check if a custom model selector is configured
-			const customSelector = this.configurationService.getValue<object | null>('chat.experimental.modelSelector');
+			const customSelector = this.configurationService.getValue<object | null>(ChatConfiguration.ExperimentalModelSelector);
 			if (customSelector && isObject(customSelector)) {
 				models = await this.languageModelsService.selectLanguageModels(customSelector);
 				if (models.length === 0) {
