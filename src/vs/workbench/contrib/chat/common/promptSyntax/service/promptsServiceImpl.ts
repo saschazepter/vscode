@@ -1012,6 +1012,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 			[HookType.UserPromptSubmit]: [],
 			[HookType.PreToolUse]: [],
 			[HookType.PostToolUse]: [],
+			[HookType.PreCompact]: [],
 			[HookType.SubagentStart]: [],
 			[HookType.SubagentStop]: [],
 			[HookType.Stop]: [],
@@ -1314,23 +1315,6 @@ export class PromptsService extends Disposable implements IPromptsService {
 						status: 'skipped',
 						skipReason: 'parse-error',
 						errorMessage: 'Invalid hooks file: must be a JSON object',
-						name,
-						extensionId
-					});
-					continue;
-				}
-
-				// Validate version field for Copilot hooks.json format
-				const filename = basename(uri).toLowerCase();
-				if (filename === 'hooks.json' && json.version !== 1) {
-					files.push({
-						uri,
-						storage,
-						status: 'skipped',
-						skipReason: 'parse-error',
-						errorMessage: json.version === undefined
-							? 'Missing version field (expected: 1)'
-							: `Invalid version: ${json.version} (expected: 1)`,
 						name,
 						extensionId
 					});
