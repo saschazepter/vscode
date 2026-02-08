@@ -280,6 +280,11 @@
 	margin-bottom: 10px;
 }
 
+/* Tighten spacing between consecutive tool invocation parts */
+.interactive-item-container > .value .chat-tool-invocation-part + .chat-tool-invocation-part .chat-used-context {
+	margin-bottom: 4px;
+}
+
 .interactive-item-container .value .rendered-markdown:not(:has(.chat-extensions-content-part)) {
 	.codicon {
 		font-size: inherit;
@@ -465,6 +470,13 @@
 .interactive-item-container .value > .rendered-markdown p {
 	/* Targetting normal text paras. `p` can also appear in other elements/widgets */
 	margin: 0 0 16px 0;
+}
+
+/* Reduce spacing between consecutive tool invocation parts */
+.interactive-item-container .value > .chat-tool-invocation-part + .chat-tool-invocation-part {
+	.progress-container {
+		margin-top: -4px;
+	}
 }
 
 .interactive-item-container .value > .chat-tool-invocation-part {
@@ -909,7 +921,7 @@ Total indent per level = padding-inline-start (1.625em) + li padding-left (0.375
 		border-radius: 2px;
 		border: none;
 		background-color: unset;
-		color: var(--vscode-foreground)
+		color: var(--vscode-descriptionForeground)
 	}
 
 	.monaco-button:focus-visible {
@@ -1289,6 +1301,10 @@ Total indent per level = padding-inline-start (1.625em) + li padding-left (0.375
 	padding-left: 4px;
 }
 
+.interactive-session .chat-editor-container .monaco-editor .view-lines {
+	padding-left: 4px;
+}
+
 .interactive-session .chat-input-toolbars {
 	display: flex;
 }
@@ -1360,6 +1376,7 @@ Total indent per level = padding-inline-start (1.625em) + li padding-left (0.375
 	padding: 3px 0px 3px 6px;
 	display: flex;
 	align-items: center;
+	color: var(--vscode-descriptionForeground);
 }
 
 
@@ -2060,7 +2077,6 @@ Total indent per level = padding-inline-start (1.625em) + li padding-left (0.375
 .interactive-response-progress-tree,
 .chat-notification-widget,
 .chat-summary-list,
-.chat-used-context-list,
 .chat-quota-error-widget,
 .chat-rate-limited-widget {
 	border: 1px solid var(--vscode-chat-requestBorder);
@@ -2068,9 +2084,14 @@ Total indent per level = padding-inline-start (1.625em) + li padding-left (0.375
 	margin-bottom: 8px;
 }
 
-.interactive-response-progress-tree,
-.interactive-session .chat-summary-list,
 .interactive-session .chat-used-context-list {
+	border: none !important;
+	padding: 0;
+	margin-bottom: 0;
+}
+
+.interactive-response-progress-tree,
+.interactive-session .chat-summary-list {
 	padding: 4px 3px;
 
 	.monaco-icon-label {
@@ -2081,6 +2102,16 @@ Total indent per level = padding-inline-start (1.625em) + li padding-left (0.375
 			width: var(--vscode-chat-font-size-body-s);
 			padding-right: 0;
 		}
+	}
+}
+
+.interactive-session .chat-used-context-list .monaco-icon-label {
+	padding: 0px 3px;
+	gap: 2px;
+
+	&::before {
+		width: var(--vscode-chat-font-size-body-s);
+		padding-right: 0;
 	}
 }
 
@@ -2141,7 +2172,7 @@ Total indent per level = padding-inline-start (1.625em) + li padding-left (0.375
 	width: fit-content;
 	border: none;
 	border-radius: 4px;
-	gap: 4px;
+	gap: 0;
 	text-align: initial;
 	justify-content: initial;
 }
@@ -2166,9 +2197,7 @@ Total indent per level = padding-inline-start (1.625em) + li padding-left (0.375
 }
 
 .interactive-session .chat-used-context-label .monaco-button:hover {
-	background-color: var(--vscode-list-hoverBackground);
 	color: var(--vscode-foreground);
-
 }
 
 .interactive-session .chat-file-changes-label .monaco-text-button:focus,
@@ -2185,6 +2214,22 @@ Total indent per level = padding-inline-start (1.625em) + li padding-left (0.375
 .interactive-session .chat-used-context-label .monaco-button .codicon {
 	font-size: 12px;
 	color: var(--vscode-icon-foreground) !important;
+}
+
+/* Hover chevron indicator for collapsible parts */
+.chat-collapsible-hover-chevron {
+	font-size: 12px;
+	opacity: 0;
+	transition: opacity 0.1s ease-in-out;
+	color: var(--vscode-descriptionForeground);
+}
+
+.chat-collapsible-hover-chevron.codicon-chevron-down {
+	opacity: 1;
+}
+
+.interactive-session .chat-used-context-label .monaco-button:hover .chat-collapsible-hover-chevron {
+	opacity: 1;
 }
 
 .interactive-item-container .progress-container {

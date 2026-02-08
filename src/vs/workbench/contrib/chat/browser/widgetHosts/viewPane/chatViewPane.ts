@@ -29,7 +29,8 @@ import { ILogService } from '../../../../../../platform/log/common/log.js';
 import { IOpenerService } from '../../../../../../platform/opener/common/opener.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../../../platform/storage/common/storage.js';
 import { ITelemetryService } from '../../../../../../platform/telemetry/common/telemetry.js';
-import { editorBackground } from '../../../../../../platform/theme/common/colorRegistry.js';
+import { asCssVariable, editorBackground } from '../../../../../../platform/theme/common/colorRegistry.js';
+import { disabledForeground } from '../../../../../../platform/theme/common/colors/baseColors.js';
 import { IThemeService } from '../../../../../../platform/theme/common/themeService.js';
 import { IViewPaneOptions, ViewPane } from '../../../../../browser/parts/views/viewPane.js';
 import { Memento } from '../../../../../common/memento.js';
@@ -355,7 +356,12 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 		const providerType = getAgentSessionProvider(model.sessionResource);
 		const provider = providerType ?? AgentSessionProviders.Local;
 		const providerIcon = getAgentSessionProviderIcon(provider);
-		parts.push(`$(${providerIcon.id}) ${getAgentSessionProviderName(provider)}`);
+		const providerName = getAgentSessionProviderName(provider);
+		if (provider === AgentSessionProviders.Background) {
+			parts.push(`$(${providerIcon.id}) ${providerName} · Copilot CLI`);
+		} else {
+			parts.push(`$(${providerIcon.id}) ${providerName}`);
+		}
 
 		// File count
 		const agentSession = this.agentSessionsService.getSession(model.sessionResource);
@@ -388,6 +394,11 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 		const providerIcon = getAgentSessionProviderIcon(provider);
 		container.append(renderIcon(providerIcon));
 		container.append($('span', undefined, getAgentSessionProviderName(provider)));
+		if (provider === AgentSessionProviders.Background) {
+			const suffix = $('span', undefined, ` · Copilot CLI`);
+			suffix.style.color = asCssVariable(disabledForeground);
+			container.append(suffix);
+		}
 
 		// Diff info
 		const agentSession = this.agentSessionsService.getSession(model.sessionResource);

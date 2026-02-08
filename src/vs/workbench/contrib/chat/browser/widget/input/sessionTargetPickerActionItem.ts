@@ -18,6 +18,8 @@ import { IKeybindingService } from '../../../../../../platform/keybinding/common
 import { IOpenerService } from '../../../../../../platform/opener/common/opener.js';
 import { ITelemetryService } from '../../../../../../platform/telemetry/common/telemetry.js';
 import { IChatSessionsService } from '../../../common/chatSessionsService.js';
+import { asCssVariable } from '../../../../../../platform/theme/common/colorRegistry.js';
+import { disabledForeground } from '../../../../../../platform/theme/common/colors/baseColors.js';
 import { AgentSessionProviders, getAgentSessionProvider, getAgentSessionProviderDescription, getAgentSessionProviderIcon, getAgentSessionProviderName, isFirstPartyAgentSessionProvider } from '../../agentSessions/agentSessions.js';
 import { ChatInputPickerActionViewItem, IChatInputPickerOptions } from './chatInputPickerActionItem.js';
 import { ISessionTypePickerDelegate } from '../../chat.js';
@@ -183,6 +185,9 @@ export class SessionTypePickerActionItem extends ChatInputPickerActionViewItem {
 	}
 
 	protected _getSessionDescription(sessionTypeItem: ISessionTypeItem): string | undefined {
+		if (sessionTypeItem.type === AgentSessionProviders.Background) {
+			return 'Copilot CLI';
+		}
 		return undefined;
 	}
 
@@ -197,6 +202,11 @@ export class SessionTypePickerActionItem extends ChatInputPickerActionViewItem {
 		labelElements.push(...renderLabelWithIcons(`$(${icon.id})`));
 		if (currentType !== AgentSessionProviders.Local || !this.pickerOptions.onlyShowIconsForDefaultActions.get()) {
 			labelElements.push(dom.$('span.chat-input-picker-label', undefined, label));
+			if (currentType === AgentSessionProviders.Background) {
+				const suffix = dom.$('span.chat-input-picker-label', undefined, ' · Copilot CLI');
+				suffix.style.color = asCssVariable(disabledForeground);
+				labelElements.push(suffix);
+			}
 		}
 		labelElements.push(...renderLabelWithIcons(`$(chevron-down)`));
 
