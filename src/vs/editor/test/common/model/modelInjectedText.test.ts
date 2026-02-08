@@ -8,7 +8,7 @@ import { mock } from '../../../../base/test/common/mock.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/common/utils.js';
 import { EditOperation } from '../../../common/core/editOperation.js';
 import { Range } from '../../../common/core/range.js';
-import { InternalModelContentChangeEvent, LineInjectedText, ModelInjectedTextChangedEvent, ModelRawChange, RawContentChangedType } from '../../../common/textModelEvents.js';
+import { InternalModelContentChangeEvent, ModelInjectedTextChangedEvent, ModelRawChange, RawContentChangedType } from '../../../common/textModelEvents.js';
 import { IViewModel } from '../../../common/viewModel.js';
 import { createTextModel } from '../testTextModel.js';
 
@@ -43,8 +43,8 @@ suite('Editor Model - Injected Text Events', () => {
 		assert.deepStrictEqual(recordedChanges.splice(0), [
 			{
 				kind: 'lineChanged',
-				line: '[injected1]First Line',
 				lineNumber: 1,
+				newLineNumber: 1,
 			}
 		]);
 
@@ -67,13 +67,13 @@ suite('Editor Model - Injected Text Events', () => {
 		assert.deepStrictEqual(recordedChanges.splice(0), [
 			{
 				kind: 'lineChanged',
-				line: 'First Line',
 				lineNumber: 1,
+				newLineNumber: 1,
 			},
 			{
 				kind: 'lineChanged',
-				line: '[injected1]S[injected2]econd Line',
 				lineNumber: 2,
+				newLineNumber: 2,
 			}
 		]);
 
@@ -82,8 +82,8 @@ suite('Editor Model - Injected Text Events', () => {
 		assert.deepStrictEqual(recordedChanges.splice(0), [
 			{
 				kind: 'lineChanged',
-				line: '[injected1]SHello[injected2]econd Line',
 				lineNumber: 2,
+				newLineNumber: 2,
 			}
 		]);
 
@@ -100,17 +100,13 @@ suite('Editor Model - Injected Text Events', () => {
 		assert.deepStrictEqual(recordedChanges.splice(0), [
 			{
 				kind: 'lineChanged',
-				line: '[injected1]S',
 				lineNumber: 2,
+				newLineNumber: 2,
 			},
 			{
-				fromLineNumber: 3,
 				kind: 'linesInserted',
-				lines: [
-					'',
-					'',
-					'Hello[injected2]econd Line',
-				]
+				fromLineNumber: 3,
+				count: 3,
 			}
 		]);
 
@@ -119,36 +115,24 @@ suite('Editor Model - Injected Text Events', () => {
 		thisModel.pushEditOperations(null, [EditOperation.replace(new Range(3, 1, 5, 1), '\n\n\n\n\n\n\n\n\n\n\n\n\n')], null);
 		assert.deepStrictEqual(recordedChanges.splice(0), [
 			{
-				'kind': 'lineChanged',
-				'line': '',
-				'lineNumber': 5,
+				kind: 'lineChanged',
+				lineNumber: 5,
+				newLineNumber: 5,
 			},
 			{
-				'kind': 'lineChanged',
-				'line': '',
-				'lineNumber': 4,
+				kind: 'lineChanged',
+				lineNumber: 4,
+				newLineNumber: 4,
 			},
 			{
-				'kind': 'lineChanged',
-				'line': '',
-				'lineNumber': 3,
+				kind: 'lineChanged',
+				lineNumber: 3,
+				newLineNumber: 3,
 			},
 			{
-				'fromLineNumber': 6,
-				'kind': 'linesInserted',
-				'lines': [
-					'',
-					'',
-					'',
-					'',
-					'',
-					'',
-					'',
-					'',
-					'',
-					'',
-					'Hello[injected2]econd Line',
-				]
+				kind: 'linesInserted',
+				fromLineNumber: 6,
+				count: 11,
 			}
 		]);
 
@@ -157,11 +141,13 @@ suite('Editor Model - Injected Text Events', () => {
 		assert.deepStrictEqual(recordedChanges.splice(0), [
 			{
 				kind: 'lineChanged',
-				line: '[injected1]SHello[injected2]econd Line',
 				lineNumber: 2,
+				newLineNumber: 2,
 			},
 			{
 				kind: 'linesDeleted',
+				fromLineNumber: 3,
+				count: 14,
 			}
 		]);
 
@@ -171,24 +157,22 @@ suite('Editor Model - Injected Text Events', () => {
 
 function mapChange(change: ModelRawChange): unknown {
 	if (change.changeType === RawContentChangedType.LineChanged) {
-		(change.injectedText || []).every(e => {
-			assert.deepStrictEqual(e.lineNumber, change.lineNumber);
-		});
-
 		return {
 			kind: 'lineChanged',
-			line: getDetail(change.detail, change.injectedText),
 			lineNumber: change.lineNumber,
+			newLineNumber: change.newLineNumber,
 		};
 	} else if (change.changeType === RawContentChangedType.LinesInserted) {
 		return {
 			kind: 'linesInserted',
-			lines: change.detail.map((e, idx) => getDetail(e, change.injectedTexts[idx])),
-			fromLineNumber: change.fromLineNumber
+			fromLineNumber: change.fromLineNumber,
+			count: change.count,
 		};
 	} else if (change.changeType === RawContentChangedType.LinesDeleted) {
 		return {
 			kind: 'linesDeleted',
+			fromLineNumber: change.fromLineNumber,
+			count: change.count,
 		};
 	} else if (change.changeType === RawContentChangedType.EOLChanged) {
 		return {
@@ -200,8 +184,4 @@ function mapChange(change: ModelRawChange): unknown {
 		};
 	}
 	return { kind: 'unknown' };
-}
-
-function getDetail(line: string, injectedTexts: LineInjectedText[] | null): string {
-	return LineInjectedText.applyInjectedText(line, (injectedTexts || []).map(t => t.withText(`[${t.options.content}]`)));
 }

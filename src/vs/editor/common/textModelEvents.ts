@@ -308,22 +308,17 @@ export class LineInjectedText {
 export class ModelRawLineChanged {
 	public readonly changeType = RawContentChangedType.LineChanged;
 	/**
-	 * The line that has changed.
+	 * The line number that has changed (before the change was applied).
 	 */
 	public readonly lineNumber: number;
 	/**
-	 * The new value of the line.
+	 * The new line number the old one is mapped to (after the change was applied).
 	 */
-	public readonly detail: string;
-	/**
-	 * The injected text on the line.
-	 */
-	public readonly injectedText: LineInjectedText[] | null;
+	public readonly newLineNumber: number;
 
-	constructor(lineNumber: number, detail: string, injectedText: LineInjectedText[] | null) {
+	constructor(lineNumber: number, newLineNumber: number) {
 		this.lineNumber = lineNumber;
-		this.detail = detail;
-		this.injectedText = injectedText;
+		this.newLineNumber = newLineNumber;
 	}
 }
 
@@ -389,13 +384,20 @@ export class ModelRawLinesDeleted {
 	 */
 	public readonly fromLineNumber: number;
 	/**
+	 * The count of deleted lines.
+	 */
+	public readonly count: number;
+
+	/**
 	 * At what line the deletion stopped (inclusive).
 	 */
-	public readonly toLineNumber: number;
+	public get toLineNumber(): number {
+		return this.fromLineNumber + this.count - 1;
+	}
 
-	constructor(fromLineNumber: number, toLineNumber: number) {
+	constructor(fromLineNumber: number, count: number) {
 		this.fromLineNumber = fromLineNumber;
-		this.toLineNumber = toLineNumber;
+		this.count = count;
 	}
 }
 
@@ -410,23 +412,25 @@ export class ModelRawLinesInserted {
 	 */
 	public readonly fromLineNumber: number;
 	/**
+	 * The new from line number of the inserted lines (after the change was applied).
+	 */
+	public readonly newFromLineNumber: number;
+	/**
+	 * The count of inserted lines.
+	 */
+	public readonly count: number;
+
+	/**
 	 * `toLineNumber` - `fromLineNumber` + 1 denotes the number of lines that were inserted
 	 */
-	public readonly toLineNumber: number;
-	/**
-	 * The text that was inserted
-	 */
-	public readonly detail: string[];
-	/**
-	 * The injected texts for every inserted line.
-	 */
-	public readonly injectedTexts: (LineInjectedText[] | null)[];
+	public get toLineNumber(): number {
+		return this.fromLineNumber + this.count - 1;
+	}
 
-	constructor(fromLineNumber: number, toLineNumber: number, detail: string[], injectedTexts: (LineInjectedText[] | null)[]) {
-		this.injectedTexts = injectedTexts;
-		this.fromLineNumber = fromLineNumber;
-		this.toLineNumber = toLineNumber;
-		this.detail = detail;
+	constructor(oldFromLineNumber: number, newFromLineNumber: number, count: number) {
+		this.fromLineNumber = oldFromLineNumber;
+		this.newFromLineNumber = newFromLineNumber;
+		this.count = count;
 	}
 }
 
