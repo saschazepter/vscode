@@ -213,6 +213,7 @@ class DocumentSymbolsOutline implements IOutline<DocumentSymbolItem> {
 	dispose(): void {
 		this._disposables.dispose();
 		this._outlineDisposables.dispose();
+		this._onDidChange.dispose();
 	}
 
 	get isEmpty(): boolean {

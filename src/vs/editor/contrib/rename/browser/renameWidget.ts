@@ -1003,6 +1003,7 @@ class InputWithButton implements IDisposable {
 
 	dispose(): void {
 		this._disposables.dispose();
+		this._onDidInputChange.dispose();
 	}
 }
 

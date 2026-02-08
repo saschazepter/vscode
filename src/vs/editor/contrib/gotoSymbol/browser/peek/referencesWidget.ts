@@ -295,6 +295,7 @@ export class ReferenceWidget extends peekView.PeekViewWidget {
 		dispose(this._tree);
 		dispose(this._previewModelReference);
 		this._splitView.dispose();
+		this._onDidSelectReference.dispose();
 		super.dispose();
 	}
 

@@ -247,7 +247,10 @@ export class TerminalProfileQuickpick {
 					run: () => r(false)
 				}]
 			);
-			handle.onDidClose(() => r(false));
+			const onCloseDisposable = handle.onDidClose(() => {
+				r(false);
+				onCloseDisposable.dispose();
+			});
 		});
 	}
 

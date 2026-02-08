@@ -229,6 +229,7 @@ export class FoldingModel {
 
 	public dispose() {
 		this._decorationProvider.removeDecorations(this._editorDecorationIds);
+		this._updateEventEmitter.dispose();
 	}
 
 	getAllRegionsAtLine(lineNumber: number, filter?: (r: FoldingRegion, level: number) => boolean): FoldingRegion[] {

@@ -134,6 +134,7 @@ export class HiddenRangeModel {
 			this._foldingModelListener.dispose();
 			this._foldingModelListener = null;
 		}
+		this._updateEventEmitter.dispose();
 	}
 }
 
