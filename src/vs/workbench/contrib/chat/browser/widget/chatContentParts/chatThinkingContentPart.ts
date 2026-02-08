@@ -718,10 +718,26 @@ export class ChatThinkingContentPart extends ChatCollapsibleContentPart implemen
 		const timeout = setTimeout(() => cts.cancel(), 5000);
 
 		try {
-			let models = await this.languageModelsService.selectLanguageModels({ vendor: 'copilot', id: 'copilot-fast' });
-			if (!models.length) {
-				models = await this.languageModelsService.selectLanguageModels({ vendor: 'copilot', family: 'gpt-4o-mini' });
+			let models: string[] = [];
+
+			// Check if a custom model selector is configured
+			const customSelector = this.configurationService.getValue<object | null>('chat.experimental.modelSelector');
+			if (customSelector && typeof customSelector === 'object' && customSelector !== null) {
+				models = await this.languageModelsService.selectLanguageModels(customSelector);
+				if (models.length === 0) {
+					throw new Error(`No models found matching the configured selector: ${JSON.stringify(customSelector)}`);
+				}
+				if (models.length > 1) {
+					throw new Error(`Multiple models (${models.length}) found matching the configured selector: ${JSON.stringify(customSelector)}. Expected exactly one model.`);
+				}
+			} else {
+				// Default behavior: try copilot-fast first
+				models = await this.languageModelsService.selectLanguageModels({ vendor: 'copilot', id: 'copilot-fast' });
+				if (!models.length) {
+					models = await this.languageModelsService.selectLanguageModels({ vendor: 'copilot', family: 'gpt-4o-mini' });
+				}
 			}
+
 			if (!models.length) {
 				this.setFallbackTitle();
 				return;

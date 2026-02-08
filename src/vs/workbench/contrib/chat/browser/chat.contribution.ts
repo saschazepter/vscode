@@ -1086,6 +1086,34 @@ configurationRegistry.registerConfiguration({
 			experiment: {
 				mode: 'auto'
 			}
+		},
+		[ChatConfiguration.ExperimentalModelSelector]: {
+			type: ['object', 'null'],
+			default: null,
+			markdownDescription: nls.localize('chat.experimental.modelSelector', "Specifies the model selector to use for certain features (e.g., terminal output monitoring, thinking titling). If specified, it must resolve to exactly one model. Accepts an object with properties like `vendor`, `id`, `family`, `name`, etc. This is an experimental feature for testing specific models."),
+			properties: {
+				vendor: {
+					type: 'string',
+					description: nls.localize('chat.experimental.modelSelector.vendor', "The vendor of the language model (e.g., 'copilot').")
+				},
+				id: {
+					type: 'string',
+					description: nls.localize('chat.experimental.modelSelector.id', "The id of the language model (e.g., 'copilot-fast').")
+				},
+				family: {
+					type: 'string',
+					description: nls.localize('chat.experimental.modelSelector.family', "The family of the language model (e.g., 'gpt-4o-mini').")
+				},
+				name: {
+					type: 'string',
+					description: nls.localize('chat.experimental.modelSelector.name', "The name of the language model.")
+				},
+				version: {
+					type: 'string',
+					description: nls.localize('chat.experimental.modelSelector.version', "The version of the language model.")
+				}
+			},
+			tags: ['experimental']
 		}
 	}
 });

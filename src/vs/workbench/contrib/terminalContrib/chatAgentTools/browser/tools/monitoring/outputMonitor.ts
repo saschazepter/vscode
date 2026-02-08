@@ -877,6 +877,20 @@ export class OutputMonitor extends Disposable implements IOutputMonitor {
 	}
 
 	private async _getLanguageModel(): Promise<string | undefined> {
+		// Check if a custom model selector is configured
+		const customSelector = this._configurationService.getValue<object | null>('chat.experimental.modelSelector');
+		if (customSelector && isObject(customSelector)) {
+			const models = await this._languageModelsService.selectLanguageModels(customSelector);
+			if (models.length === 0) {
+				throw new Error(`No models found matching the configured selector: ${JSON.stringify(customSelector)}`);
+			}
+			if (models.length > 1) {
+				throw new Error(`Multiple models (${models.length}) found matching the configured selector: ${JSON.stringify(customSelector)}. Expected exactly one model.`);
+			}
+			return models[0];
+		}
+
+		// Default behavior: try copilot-fast first
 		let models = await this._languageModelsService.selectLanguageModels({ vendor: 'copilot', id: 'copilot-fast' });
 
 		// Fallback to gpt-4o-mini if copilot-fast is not available for backwards compatibility
