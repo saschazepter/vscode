@@ -57,6 +57,10 @@ export class AttachedViews {
 		this._onDidChangeVisibleRanges.fire({ view, state: undefined });
 		this._viewsChanged.trigger(undefined);
 	}
+
+	public dispose(): void {
+		this._onDidChangeVisibleRanges.dispose();
+	}
 }
 
 /**
