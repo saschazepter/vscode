@@ -6,17 +6,20 @@
 import type * as vscode from 'vscode';
 import { spawn } from 'child_process';
 import { homedir } from 'os';
+import * as nls from '../../../nls.js';
 import { disposableTimeout } from '../../../base/common/async.js';
 import { CancellationToken } from '../../../base/common/cancellation.js';
 import { DisposableStore, MutableDisposable } from '../../../base/common/lifecycle.js';
-import { URI } from '../../../base/common/uri.js';
+import { OS } from '../../../base/common/platform.js';
+import { URI, isUriComponents } from '../../../base/common/uri.js';
 import { ILogService } from '../../../platform/log/common/log.js';
-import { HookTypeValue } from '../../contrib/chat/common/promptSyntax/hookSchema.js';
+import { HookTypeValue, getEffectiveCommandSource, resolveEffectiveCommand } from '../../contrib/chat/common/promptSyntax/hookSchema.js';
 import { isToolInvocationContext, IToolInvocationContext } from '../../contrib/chat/common/tools/languageModelToolsService.js';
 import { IHookCommandDto, MainContext, MainThreadHooksShape } from '../common/extHost.protocol.js';
 import { IChatHookExecutionOptions, IExtHostHooks } from '../common/extHostHooks.js';
 import { IExtHostRpcService } from '../common/extHostRpcService.js';
-import { HookResultKind, IHookResult } from '../../contrib/chat/common/hooksExecutionService.js';
+import { HookCommandResultKind, IHookCommandResult } from '../../contrib/chat/common/hooks/hooksCommandTypes.js';
+import { IHookResult } from '../../contrib/chat/common/hooks/hooksTypes.js';
 import * as typeConverters from '../common/extHostTypeConverters.js';
 
 const SIGKILL_DELAY_MS = 5000;
@@ -40,56 +43,65 @@ export class NodeExtHostHooks implements IExtHostHooks {
 		const context = options.toolInvocationToken as IToolInvocationContext;
 
 		const results = await this._mainThreadProxy.$executeHook(hookType, context.sessionResource, options.input, token ?? CancellationToken.None);
-		return results.map(r => typeConverters.ChatHookResult.to({
-			kind: r.kind as HookResultKind,
-			result: r.result
-		}));
+		return results.map(r => typeConverters.ChatHookResult.to(r as IHookResult));
 	}
 
-	async $runHookCommand(hookCommand: IHookCommandDto, input: unknown, token: CancellationToken): Promise<IHookResult> {
+	async $runHookCommand(hookCommand: IHookCommandDto, input: unknown, token: CancellationToken): Promise<IHookCommandResult> {
 		this._logService.debug(`[ExtHostHooks] Running hook command: ${JSON.stringify(hookCommand)}`);
 
 		try {
 			return await this._executeCommand(hookCommand, input, token);
 		} catch (err) {
 			return {
-				kind: HookResultKind.Error,
+				kind: HookCommandResultKind.Error,
 				result: err instanceof Error ? err.message : String(err)
 			};
 		}
 	}
 
-	private _executeCommand(hook: IHookCommandDto, input: unknown, token?: CancellationToken): Promise<IHookResult> {
+	private _executeCommand(hook: IHookCommandDto, input: unknown, token?: CancellationToken): Promise<IHookCommandResult> {
 		const home = homedir();
 		const cwdUri = hook.cwd ? URI.revive(hook.cwd) : undefined;
 		const cwd = cwdUri ? cwdUri.fsPath : home;
 
-		// Determine command and args based on which property is specified
-		// For bash/powershell: spawn the shell directly with explicit args to avoid double shell wrapping
-		// For generic command: use shell=true to let the system shell handle it
-		let command: string;
-		let args: string[];
-		let shell: boolean;
-		if (hook.bash) {
-			command = 'bash';
-			args = ['-c', hook.bash];
-			shell = false;
-		} else if (hook.powershell) {
-			command = 'powershell';
-			args = ['-Command', hook.powershell];
-			shell = false;
-		} else {
-			command = hook.command!;
-			args = [];
-			shell = true;
+		// Resolve the effective command for the current platform
+		// This applies windows/linux/osx overrides and falls back to command
+		const effectiveCommand = resolveEffectiveCommand(hook as Parameters<typeof resolveEffectiveCommand>[0], OS);
+		if (!effectiveCommand) {
+			return Promise.resolve({
+				kind: HookCommandResultKind.NonBlockingError,
+				result: nls.localize('noCommandForPlatform', "No command specified for the current platform")
+			});
 		}
 
-		const child = spawn(command, args, {
-			stdio: 'pipe',
-			cwd,
-			env: { ...process.env, ...hook.env },
-			shell,
-		});
+		// Execute the command, preserving legacy behavior for explicit shell types:
+		// - powershell source: run through PowerShell so PowerShell-specific commands work
+		// - bash source: run through bash so bash-specific commands work
+		// - otherwise: use default shell via spawn with shell: true
+		const commandSource = getEffectiveCommandSource(hook as Parameters<typeof getEffectiveCommandSource>[0], OS);
+		let shellExecutable: string | undefined;
+		let shellArgs: string[] | undefined;
+
+		if (commandSource === 'powershell') {
+			shellExecutable = 'powershell.exe';
+			shellArgs = ['-Command', effectiveCommand];
+		} else if (commandSource === 'bash') {
+			shellExecutable = 'bash';
+			shellArgs = ['-c', effectiveCommand];
+		}
+
+		const child = shellExecutable && shellArgs
+			? spawn(shellExecutable, shellArgs, {
+				stdio: 'pipe',
+				cwd,
+				env: { ...process.env, ...hook.env },
+			})
+			: spawn(effectiveCommand, [], {
+				stdio: 'pipe',
+				cwd,
+				env: { ...process.env, ...hook.env },
+				shell: true,
+			});
 
 		return new Promise((resolve, reject) => {
 			const stdout: string[] = [];
@@ -132,7 +144,14 @@ export class NodeExtHostHooks implements IExtHostHooks {
 			// Write input to stdin
 			if (input !== undefined && input !== null) {
 				try {
-					child.stdin.write(JSON.stringify(input));
+					// Use a replacer to convert URI values to filesystem paths.
+					// URIs arrive as UriComponents objects via the RPC boundary.
+					child.stdin.write(JSON.stringify(input, (_key, value) => {
+						if (isUriComponents(value)) {
+							return URI.revive(value).fsPath;
+						}
+						return value;
+					}));
 				} catch {
 					// Ignore stdin write errors
 				}
@@ -157,10 +176,13 @@ export class NodeExtHostHooks implements IExtHostHooks {
 					} catch {
 						// Keep as string if not valid JSON
 					}
-					resolve({ kind: HookResultKind.Success, result });
+					resolve({ kind: HookCommandResultKind.Success, result });
+				} else if (code === 2) {
+					// Blocking error - show stderr to model and stop processing
+					resolve({ kind: HookCommandResultKind.Error, result: stderrStr });
 				} else {
-					// Error
-					resolve({ kind: HookResultKind.Error, result: stderrStr });
+					// Non-blocking error - show stderr to user only
+					resolve({ kind: HookCommandResultKind.NonBlockingError, result: stderrStr });
 				}
 			});
 

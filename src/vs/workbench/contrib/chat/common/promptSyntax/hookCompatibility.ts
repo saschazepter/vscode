@@ -5,8 +5,9 @@
 
 import { URI } from '../../../../../base/common/uri.js';
 import { basename, dirname } from '../../../../../base/common/path.js';
-import { HookType, IHookCommand, normalizeHookTypeId, resolveHookCommand } from './hookSchema.js';
+import { HookType, IHookCommand, toHookType, resolveHookCommand } from './hookSchema.js';
 import { parseClaudeHooks } from './hookClaudeCompat.js';
+import { resolveCopilotCliHookType } from './hookCopilotCliCompat.js';
 
 /**
  * Represents a hook source with its original and normalized properties.
@@ -80,11 +81,6 @@ export function parseCopilotHooks(
 
 	const root = json as Record<string, unknown>;
 
-	// Check version
-	if (root.version !== 1) {
-		return result;
-	}
-
 	const hooks = root.hooks;
 	if (!hooks || typeof hooks !== 'object') {
 		return result;
@@ -93,7 +89,7 @@ export function parseCopilotHooks(
 	const hooksObj = hooks as Record<string, unknown>;
 
 	for (const originalId of Object.keys(hooksObj)) {
-		const hookType = normalizeHookTypeId(originalId);
+		const hookType = resolveCopilotCliHookType(originalId) ?? toHookType(originalId);
 		if (!hookType) {
 			continue;
 		}
