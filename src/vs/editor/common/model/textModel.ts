@@ -415,6 +415,7 @@ export class TextModel extends Disposable implements model.ITextModel, IDecorati
 		this.__isDisposing = true;
 		this._onWillDispose.fire();
 		this._tokenizationTextModelPart.dispose();
+		this._attachedViews.dispose();
 		this._isDisposed = true;
 		super.dispose();
 		this._bufferDisposable.dispose();
