@@ -338,7 +338,7 @@ export class ViewModel extends Disposable implements IViewModel {
 						break;
 					}
 					case textModelEvents.RawContentChangedType.LineChanged: {
-						lineBreaksComputer.addRequest(change.newLineNumber, null);
+						lineBreaksComputer.addRequest(change.lineNumberPostEdit, null);
 						break;
 					}
 				}

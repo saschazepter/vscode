@@ -160,7 +160,7 @@ function mapChange(change: ModelRawChange): unknown {
 		return {
 			kind: 'lineChanged',
 			lineNumber: change.lineNumber,
-			newLineNumber: change.newLineNumber,
+			newLineNumber: change.lineNumberPostEdit,
 		};
 	} else if (change.changeType === RawContentChangedType.LinesInserted) {
 		return {

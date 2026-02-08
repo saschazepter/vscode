@@ -314,11 +314,11 @@ export class ModelRawLineChanged {
 	/**
 	 * The new line number the old one is mapped to (after the change was applied).
 	 */
-	public readonly newLineNumber: number;
+	public readonly lineNumberPostEdit: number;
 
 	constructor(lineNumber: number, lineNumberPostEdit: number) {
 		this.lineNumber = lineNumber;
-		this.newLineNumber = lineNumberPostEdit;
+		this.lineNumberPostEdit = lineNumberPostEdit;
 	}
 }
 
