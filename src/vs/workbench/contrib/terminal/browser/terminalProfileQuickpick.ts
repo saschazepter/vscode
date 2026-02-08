@@ -19,6 +19,7 @@ import { getIconRegistry } from '../../../../platform/theme/common/iconRegistry.
 import { basename } from '../../../../base/common/path.js';
 import { INotificationService, Severity } from '../../../../platform/notification/common/notification.js';
 import { hasKey, isString } from '../../../../base/common/types.js';
+import { Event } from '../../../../base/common/event.js';
 
 
 type DefaultProfileName = string;
@@ -247,9 +248,8 @@ export class TerminalProfileQuickpick {
 					run: () => r(false)
 				}]
 			);
-			const onCloseDisposable = handle.onDidClose(() => {
+			Event.once(handle.onDidClose)(() => {
 				r(false);
-				onCloseDisposable.dispose();
 			});
 		});
 	}
