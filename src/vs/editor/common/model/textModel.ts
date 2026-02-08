@@ -1563,6 +1563,7 @@ export class TextModel extends Disposable implements model.ITextModel, IDecorati
 					rawContentChanges.push(
 						new ModelRawLineChanged(
 							editLineNumber,
+							currentEditLineNumber,
 							this.getLineContent(currentEditLineNumber),
 							decorationsInCurrentLine
 						));
@@ -1593,7 +1594,9 @@ export class TextModel extends Disposable implements model.ITextModel, IDecorati
 					rawContentChanges.push(
 						new ModelRawLinesInserted(
 							spliceLineNumber + 1,
+							fromLineNumber,
 							startLineNumber + insertingLinesCnt,
+							fromLineNumber + cnt - 1,
 							newLines,
 							injectedTexts
 						)
@@ -1653,7 +1656,7 @@ export class TextModel extends Disposable implements model.ITextModel, IDecorati
 
 		if (affectedInjectedTextLines && affectedInjectedTextLines.size > 0) {
 			const affectedLines = Array.from(affectedInjectedTextLines);
-			const lineChangeEvents = affectedLines.map(lineNumber => new ModelRawLineChanged(lineNumber, this.getLineContent(lineNumber), this._getInjectedTextInLine(lineNumber)));
+			const lineChangeEvents = affectedLines.map(lineNumber => new ModelRawLineChanged(lineNumber, lineNumber, this.getLineContent(lineNumber), this._getInjectedTextInLine(lineNumber)));
 			this._onDidChangeContentOrInjectedText(new ModelInjectedTextChangedEvent(lineChangeEvents));
 		}
 		this._fireOnDidChangeLineHeight(affectedLineHeights);

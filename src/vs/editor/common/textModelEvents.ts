@@ -308,9 +308,13 @@ export class LineInjectedText {
 export class ModelRawLineChanged {
 	public readonly changeType = RawContentChangedType.LineChanged;
 	/**
-	 * The line that has changed.
+	 * The line number that has changed (before the change was applied).
 	 */
 	public readonly lineNumber: number;
+	/**
+	 * The actual line number changed in the updated buffer.
+	 */
+	public readonly lineNumberPostEdit: number;
 	/**
 	 * The new value of the line.
 	 */
@@ -320,8 +324,9 @@ export class ModelRawLineChanged {
 	 */
 	public readonly injectedText: LineInjectedText[] | null;
 
-	constructor(lineNumber: number, detail: string, injectedText: LineInjectedText[] | null) {
+	constructor(lineNumber: number, lineNumberPostEdit: number, detail: string, injectedText: LineInjectedText[] | null) {
 		this.lineNumber = lineNumber;
+		this.lineNumberPostEdit = lineNumberPostEdit;
 		this.detail = detail;
 		this.injectedText = injectedText;
 	}
@@ -410,9 +415,17 @@ export class ModelRawLinesInserted {
 	 */
 	public readonly fromLineNumber: number;
 	/**
+	 * The actual start line number of the insertion in the updated buffer.
+	 */
+	public readonly fromLineNumberPostEdit: number;
+	/**
 	 * `toLineNumber` - `fromLineNumber` + 1 denotes the number of lines that were inserted
 	 */
 	public readonly toLineNumber: number;
+	/**
+	 * The actual end line number of the insertion in the updated buffer.
+	 */
+	public readonly toLineNumberPostEdit: number;
 	/**
 	 * The text that was inserted
 	 */
@@ -422,10 +435,12 @@ export class ModelRawLinesInserted {
 	 */
 	public readonly injectedTexts: (LineInjectedText[] | null)[];
 
-	constructor(fromLineNumber: number, toLineNumber: number, detail: string[], injectedTexts: (LineInjectedText[] | null)[]) {
+	constructor(fromLineNumber: number, fromLineNumberPostEdit: number, toLineNumber: number, toLineNumberPostEdit: number, detail: string[], injectedTexts: (LineInjectedText[] | null)[]) {
 		this.injectedTexts = injectedTexts;
 		this.fromLineNumber = fromLineNumber;
+		this.fromLineNumberPostEdit = fromLineNumberPostEdit;
 		this.toLineNumber = toLineNumber;
+		this.toLineNumberPostEdit = toLineNumberPostEdit;
 		this.detail = detail;
 	}
 }
