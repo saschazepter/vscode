@@ -35,6 +35,7 @@
 	span.codicon.codicon-chevron-down {
 		font-size: 12px;
 		margin-left: 2px;
+		color: var(--vscode-disabledForeground);
 	}
 }
 

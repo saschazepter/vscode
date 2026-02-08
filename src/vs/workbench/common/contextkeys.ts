@@ -158,6 +158,13 @@ export const AuxiliaryBarMaximizedContext = new RawContextKey<boolean>('auxiliar
 //#endregion
 
 
+//#region < --- Chat Sessions Part --- >
+
+export const ChatSessionsPartVisibleContext = new RawContextKey<boolean>('chatSessionsPartVisible', false, localize('chatSessionsPartVisible', "Whether the chat sessions part is visible"));
+
+//#endregion
+
+
 //#region < --- Panel --- >
 
 export const ActivePanelContext = new RawContextKey<string>('activePanel', '', localize('activePanel', "The identifier of the active panel"));

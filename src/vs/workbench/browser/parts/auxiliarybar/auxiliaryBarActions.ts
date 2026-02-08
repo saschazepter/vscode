@@ -155,7 +155,8 @@ MenuRegistry.appendMenuItems([
 				ContextKeyExpr.or(
 					ContextKeyExpr.equals('config.workbench.layoutControl.type', 'toggles'),
 					ContextKeyExpr.equals('config.workbench.layoutControl.type', 'both')),
-				ContextKeyExpr.equals('config.workbench.sideBar.location', 'right')
+				ContextKeyExpr.equals('config.workbench.sideBar.location', 'right'),
+				ContextKeyExpr.has('chatIsEnabled').negate()
 			),
 			order: 0
 		}

@@ -16,6 +16,9 @@ import { registerWorkbenchContribution2, WorkbenchPhase } from '../../../../comm
 import { ISubmenuItem, MenuId, MenuRegistry, registerAction2 } from '../../../../../platform/actions/common/actions.js';
 import { ArchiveAgentSessionAction, ArchiveAgentSessionSectionAction, UnarchiveAgentSessionAction, OpenAgentSessionInEditorGroupAction, OpenAgentSessionInNewEditorGroupAction, OpenAgentSessionInNewWindowAction, ShowAgentSessionsSidebar, HideAgentSessionsSidebar, ToggleAgentSessionsSidebar, RefreshAgentSessionsViewerAction, FindAgentSessionInViewerAction, MarkAgentSessionUnreadAction, MarkAgentSessionReadAction, FocusAgentSessionsAction, SetAgentSessionsOrientationStackedAction, SetAgentSessionsOrientationSideBySideAction, PickAgentSessionAction, ArchiveAllAgentSessionsAction, MarkAllAgentSessionsReadAction, RenameAgentSessionAction, DeleteAgentSessionAction, DeleteAllLocalSessionsAction, MarkAgentSessionSectionReadAction, ToggleShowAgentSessionsAction, UnarchiveAgentSessionSectionAction } from './agentSessionsActions.js';
 import { AgentSessionsQuickAccessProvider, AGENT_SESSIONS_QUICK_ACCESS_PREFIX } from './agentSessionsQuickAccess.js';
+import { ContextKeyExpr } from '../../../../../platform/contextkey/common/contextkey.js';
+import { ChatSessionsPartVisibleContext, IsAuxiliaryWindowContext } from '../../../../common/contextkeys.js';
+import { registerIcon } from '../../../../../platform/theme/common/iconRegistry.js';
 
 //#region Actions and Menus
 
@@ -54,6 +57,30 @@ MenuRegistry.appendMenuItem(MenuId.AgentSessionsToolbar, {
 	order: 3,
 	icon: Codicon.treeFilterOnTypeOn,
 } satisfies ISubmenuItem);
+
+// --- Layout Control Menu: Toggle Agent Sessions (replaces auxiliary bar toggle on the left)
+
+const chatSessionsLeftIcon = registerIcon('chatsessions-left-layout-icon', Codicon.layoutSidebarLeft, localize('toggleChatSessionsIconLeft', 'Icon to toggle the agent sessions list in its left position.'));
+const chatSessionsLeftOffIcon = registerIcon('chatsessions-left-off-layout-icon', Codicon.layoutSidebarLeftOff, localize('toggleChatSessionsIconLeftOff', 'Icon to toggle the agent sessions list off in its left position.'));
+
+MenuRegistry.appendMenuItem(MenuId.LayoutControlMenu, {
+	group: '2_pane_toggles',
+	command: {
+		id: ToggleAgentSessionsSidebar.ID,
+		title: localize('toggleAgentSessionsList', "Toggle Agent Sessions"),
+		toggled: { condition: ChatSessionsPartVisibleContext, icon: chatSessionsLeftIcon },
+		icon: chatSessionsLeftOffIcon,
+	},
+	when: ContextKeyExpr.and(
+		IsAuxiliaryWindowContext.negate(),
+		ChatContextKeys.enabled,
+		ContextKeyExpr.or(
+			ContextKeyExpr.equals('config.workbench.layoutControl.type', 'toggles'),
+			ContextKeyExpr.equals('config.workbench.layoutControl.type', 'both')),
+		ContextKeyExpr.equals('config.workbench.sideBar.location', 'right')
+	),
+	order: 0
+});
 
 //#endregion
 

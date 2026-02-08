@@ -125,7 +125,7 @@ export class DiffEditorItemTemplate extends Disposable implements IPooledObject<
 			? this._register(this._workbenchUIElementFactory.createResourceLabel(this._elements.secondaryPath))
 			: undefined;
 		this._dataStore = this._register(new DisposableStore());
-		this._headerHeight = 40;
+		this._headerHeight = 38;
 		this._lastScrollTop = -1;
 		this._isSettingScrollTop = false;
 
@@ -303,7 +303,7 @@ export class DiffEditorItemTemplate extends Disposable implements IPooledObject<
 
 		globalTransaction(tx => {
 			this.editor.layout({
-				width: width - 2 * 8 - 2 * 1,
+				width: width - 2 * 12 - 2 * 1,
 				height: verticalRange.length - this._outerEditorHeight,
 			});
 		});

@@ -43,15 +43,13 @@
 		width: auto;
 	}
 
-	.active {
-		--vscode-multiDiffEditor-border: var(--vscode-focusBorder);
-	}
-
 	.multiDiffEntry {
 		display: flex;
 		flex-direction: column;
 		flex: 1;
 		overflow: hidden;
+		padding: 0 12px;
+		box-sizing: border-box;
 
 
 		.collapse-button {
@@ -73,15 +71,19 @@
 
 			.header-content {
 				margin: 8px 0px 0px 0px;
-				padding: 4px 5px;
+				padding: 0 8px 0 5px;
+				height: 30px;
+				box-sizing: border-box;
 
 				border-top: 1px solid var(--vscode-multiDiffEditor-border);
+				border-left: 1px solid var(--vscode-multiDiffEditor-border);
+				border-right: 1px solid var(--vscode-multiDiffEditor-border);
+				border-radius: var(--vscode-cornerRadius-large) var(--vscode-cornerRadius-large) 0 0;
 
 				display: flex;
 				align-items: center;
 
 				color: var(--vscode-foreground);
-				background: var(--vscode-multiDiffEditor-headerBackground);
 
 				&.shadow {
 					box-shadow: var(--vscode-scrollbar-shadow) 0px 6px 6px -6px;
@@ -93,7 +95,7 @@
 					min-width: 0;
 
 					.title {
-						font-size: 14px;
+						font-size: 12px;
 						line-height: 22px;
 
 						&.original {
@@ -127,7 +129,11 @@
 				}
 
 				.actions {
-					padding: 0 8px;
+					padding: 0;
+
+					.actions-container {
+						gap: 4px;
+					}
 				}
 			}
 
@@ -139,7 +145,9 @@
 			display: flex;
 			flex-direction: column;
 
-			border-bottom: 1px solid var(--vscode-multiDiffEditor-border);
+			border: 1px solid var(--vscode-multiDiffEditor-border);
+			border-top: none;
+			border-radius: 0 0 var(--vscode-cornerRadius-large) var(--vscode-cornerRadius-large);
 			overflow: hidden;
 		}
 
