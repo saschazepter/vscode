@@ -123,7 +123,7 @@ export class PromptValidator {
 		// Validate variable references (tool or toolset names)
 		if (body.variableReferences.length && isVSCodeOrDefaultTarget(target)) {
 			const headerTools = promptAST.header?.tools;
-			const headerToolsMap = headerTools ? this.languageModelToolsService.toToolAndToolSetEnablementMap(headerTools, target, undefined) : undefined;
+			const headerToolsMap = headerTools ? this.languageModelToolsService.toToolAndToolSetEnablementMap(headerTools, undefined) : undefined;
 
 			const available = new Set<string>(this.languageModelToolsService.getFullReferenceNames());
 			const deprecatedNames = this.languageModelToolsService.getDeprecatedFullReferenceNames();
@@ -799,6 +799,20 @@ export function mapClaudeModels(claudeModelNames: readonly string[]): readonly s
 		const claudeModel = knownClaudeModels.find(model => model.name === name);
 		if (claudeModel && claudeModel.modelEquivalent) {
 			result.push(claudeModel.modelEquivalent);
+		}
+	}
+	return result;
+}
+
+/**
+ * Maps Claude tool names to their VS Code tool equivalents.
+ */
+export function mapClaudeTools(claudeToolNames: readonly string[]): string[] {
+	const result: string[] = [];
+	for (const name of claudeToolNames) {
+		const claudeTool = knownClaudeTools.find(tool => tool.name === name);
+		if (claudeTool) {
+			result.push(...claudeTool.toolEquivalent);
 		}
 	}
 	return result;

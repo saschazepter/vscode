@@ -38,7 +38,6 @@ import { IHookResult, IPostToolUseCallerInput, IPostToolUseHookResult, IPreToolU
 import { IHooksExecutionService, IHooksExecutionOptions, IHooksExecutionProxy } from '../../../common/hooks/hooksExecutionService.js';
 import { HookTypeValue, IChatRequestHooks } from '../../../common/promptSyntax/hookSchema.js';
 import { IDisposable } from '../../../../../../base/common/lifecycle.js';
-import { Target } from '../../../common/promptSyntax/service/promptsService.js';
 
 // --- Test helpers to reduce repetition and improve readability ---
 
@@ -745,7 +744,7 @@ suite('LanguageModelToolsService', () => {
 		// Test with enabled tool
 		{
 			const fullReferenceNames = ['tool1RefName'];
-			const result1 = service.toToolAndToolSetEnablementMap(fullReferenceNames, Target.Undefined, undefined);
+			const result1 = service.toToolAndToolSetEnablementMap(fullReferenceNames, undefined);
 			assert.strictEqual(result1.size, numOfTools, `Expected ${numOfTools} tools and tool sets`);
 			assert.strictEqual([...result1.entries()].filter(([_, enabled]) => enabled).length, 1, 'Expected 1 tool to be enabled');
 			assert.strictEqual(result1.get(tool1), true, 'tool1 should be enabled');
@@ -757,7 +756,7 @@ suite('LanguageModelToolsService', () => {
 		// Test with multiple enabled tools
 		{
 			const fullReferenceNames = ['my.extension/extTool1RefName', 'mcpToolSetRefName/*', 'internalToolSetRefName/internalToolSetTool1RefName'];
-			const result1 = service.toToolAndToolSetEnablementMap(fullReferenceNames, Target.Undefined, undefined);
+			const result1 = service.toToolAndToolSetEnablementMap(fullReferenceNames, undefined);
 			assert.strictEqual(result1.size, numOfTools, `Expected ${numOfTools} tools and tool sets`);
 			assert.strictEqual([...result1.entries()].filter(([_, enabled]) => enabled).length, 4, 'Expected 4 tools to be enabled');
 			assert.strictEqual(result1.get(extTool1), true, 'extTool1 should be enabled');
@@ -770,7 +769,7 @@ suite('LanguageModelToolsService', () => {
 		}
 		// Test with all enabled tools, redundant names
 		{
-			const result1 = service.toToolAndToolSetEnablementMap(allFullReferenceNames, Target.Undefined, undefined);
+			const result1 = service.toToolAndToolSetEnablementMap(allFullReferenceNames, undefined);
 			assert.strictEqual(result1.size, numOfTools, `Expected ${numOfTools} tools and tool sets`);
 			assert.strictEqual([...result1.entries()].filter(([_, enabled]) => enabled).length, 12, 'Expected 12 tools to be enabled'); // +4 including the vscode, execute, read, agent toolsets
 
@@ -781,7 +780,7 @@ suite('LanguageModelToolsService', () => {
 		// Test with no enabled tools
 		{
 			const fullReferenceNames: string[] = [];
-			const result1 = service.toToolAndToolSetEnablementMap(fullReferenceNames, Target.Undefined, undefined);
+			const result1 = service.toToolAndToolSetEnablementMap(fullReferenceNames, undefined);
 			assert.strictEqual(result1.size, numOfTools, `Expected ${numOfTools} tools and tool sets`);
 			assert.strictEqual([...result1.entries()].filter(([_, enabled]) => enabled).length, 0, 'Expected 0 tools to be enabled');
 
@@ -791,7 +790,7 @@ suite('LanguageModelToolsService', () => {
 		// Test with unknown tool
 		{
 			const fullReferenceNames: string[] = ['unknownToolRefName'];
-			const result1 = service.toToolAndToolSetEnablementMap(fullReferenceNames, Target.Undefined, undefined);
+			const result1 = service.toToolAndToolSetEnablementMap(fullReferenceNames, undefined);
 			assert.strictEqual(result1.size, numOfTools, `Expected ${numOfTools} tools and tool sets`);
 			assert.strictEqual([...result1.entries()].filter(([_, enabled]) => enabled).length, 0, 'Expected 0 tools to be enabled');
 
@@ -801,7 +800,7 @@ suite('LanguageModelToolsService', () => {
 		// Test with legacy tool names
 		{
 			const fullReferenceNames: string[] = ['extTool1RefName', 'mcpToolSetRefName', 'internalToolSetTool1RefName'];
-			const result1 = service.toToolAndToolSetEnablementMap(fullReferenceNames, Target.Undefined, undefined);
+			const result1 = service.toToolAndToolSetEnablementMap(fullReferenceNames, undefined);
 			assert.strictEqual(result1.size, numOfTools, `Expected ${numOfTools} tools and tool sets`);
 			assert.strictEqual([...result1.entries()].filter(([_, enabled]) => enabled).length, 4, 'Expected 4 tools to be enabled');
 			assert.strictEqual(result1.get(extTool1), true, 'extTool1 should be enabled');
@@ -816,7 +815,7 @@ suite('LanguageModelToolsService', () => {
 		// Test with tool in user tool set
 		{
 			const fullReferenceNames = ['Tool2 Display Name'];
-			const result1 = service.toToolAndToolSetEnablementMap(fullReferenceNames, Target.Undefined, undefined);
+			const result1 = service.toToolAndToolSetEnablementMap(fullReferenceNames, undefined);
 			assert.strictEqual(result1.size, numOfTools, `Expected ${numOfTools} tools and tool sets`);
 			assert.strictEqual([...result1.entries()].filter(([_, enabled]) => enabled).length, 2, 'Expected 1 tool and user tool set to be enabled');
 			assert.strictEqual(result1.get(tool2), true, 'tool2 should be enabled');
@@ -843,7 +842,7 @@ suite('LanguageModelToolsService', () => {
 
 		// Test enabling the tool set
 		const enabledNames = [toolData1].map(t => service.getFullReferenceName(t));
-		const result = service.toToolAndToolSetEnablementMap(enabledNames, Target.Undefined, undefined);
+		const result = service.toToolAndToolSetEnablementMap(enabledNames, undefined);
 
 		assert.strictEqual(result.get(toolData1), true, 'individual tool should be enabled');
 
@@ -903,7 +902,7 @@ suite('LanguageModelToolsService', () => {
 
 		// Test enabling the tool set
 		const enabledNames = [toolSet, toolData1].map(t => service.getFullReferenceName(t));
-		const result = service.toToolAndToolSetEnablementMap(enabledNames, Target.Undefined, undefined);
+		const result = service.toToolAndToolSetEnablementMap(enabledNames, undefined);
 
 		assert.strictEqual(result.get(toolData1), true, 'individual tool should be enabled');
 		assert.strictEqual(result.get(toolData2), false);
@@ -938,7 +937,7 @@ suite('LanguageModelToolsService', () => {
 
 		// Test with non-existent tool names
 		const enabledNames = [toolData, unregisteredToolData].map(t => service.getFullReferenceName(t));
-		const result = service.toToolAndToolSetEnablementMap(enabledNames, Target.Undefined, undefined);
+		const result = service.toToolAndToolSetEnablementMap(enabledNames, undefined);
 
 		assert.strictEqual(result.get(toolData), true, 'existing tool should be enabled');
 		// Non-existent tools should not appear in the result map
@@ -987,7 +986,7 @@ suite('LanguageModelToolsService', () => {
 
 		// Test 1: Using legacy tool reference name should enable the tool
 		{
-			const result = service.toToolAndToolSetEnablementMap(['oldToolName'], Target.Undefined, undefined);
+			const result = service.toToolAndToolSetEnablementMap(['oldToolName'], undefined);
 			assert.strictEqual(result.get(toolWithLegacy), true, 'tool should be enabled via legacy name');
 
 			const fullReferenceNames = service.toFullReferenceNames(result);
@@ -996,7 +995,7 @@ suite('LanguageModelToolsService', () => {
 
 		// Test 2: Using another legacy tool reference name should also work
 		{
-			const result = service.toToolAndToolSetEnablementMap(['deprecatedToolName'], Target.Undefined, undefined);
+			const result = service.toToolAndToolSetEnablementMap(['deprecatedToolName'], undefined);
 			assert.strictEqual(result.get(toolWithLegacy), true, 'tool should be enabled via another legacy name');
 
 			const fullReferenceNames = service.toFullReferenceNames(result);
@@ -1005,7 +1004,7 @@ suite('LanguageModelToolsService', () => {
 
 		// Test 3: Using legacy toolset name should enable the entire toolset
 		{
-			const result = service.toToolAndToolSetEnablementMap(['oldToolSet'], Target.Undefined, undefined);
+			const result = service.toToolAndToolSetEnablementMap(['oldToolSet'], undefined);
 			assert.strictEqual(result.get(toolSetWithLegacy), true, 'toolset should be enabled via legacy name');
 			assert.strictEqual(result.get(toolInSet), true, 'tool in set should be enabled when set is enabled via legacy name');
 
@@ -1015,7 +1014,7 @@ suite('LanguageModelToolsService', () => {
 
 		// Test 4: Using deprecated toolset name should also work
 		{
-			const result = service.toToolAndToolSetEnablementMap(['deprecatedToolSet'], Target.Undefined, undefined);
+			const result = service.toToolAndToolSetEnablementMap(['deprecatedToolSet'], undefined);
 			assert.strictEqual(result.get(toolSetWithLegacy), true, 'toolset should be enabled via another legacy name');
 			assert.strictEqual(result.get(toolInSet), true, 'tool in set should be enabled when set is enabled via legacy name');
 
@@ -1025,7 +1024,7 @@ suite('LanguageModelToolsService', () => {
 
 		// Test 5: Mix of current and legacy names
 		{
-			const result = service.toToolAndToolSetEnablementMap(['newToolRef', 'oldToolSet'], Target.Undefined, undefined);
+			const result = service.toToolAndToolSetEnablementMap(['newToolRef', 'oldToolSet'], undefined);
 			assert.strictEqual(result.get(toolWithLegacy), true, 'tool should be enabled via current name');
 			assert.strictEqual(result.get(toolSetWithLegacy), true, 'toolset should be enabled via legacy name');
 			assert.strictEqual(result.get(toolInSet), true, 'tool in set should be enabled');
@@ -1036,7 +1035,7 @@ suite('LanguageModelToolsService', () => {
 
 		// Test 6: Using legacy names and current names together (redundant but should work)
 		{
-			const result = service.toToolAndToolSetEnablementMap(['newToolRef', 'oldToolName', 'deprecatedToolName'], Target.Undefined, undefined);
+			const result = service.toToolAndToolSetEnablementMap(['newToolRef', 'oldToolName', 'deprecatedToolName'], undefined);
 			assert.strictEqual(result.get(toolWithLegacy), true, 'tool should be enabled (redundant legacy names should not cause issues)');
 
 			const fullReferenceNames = service.toFullReferenceNames(result);
@@ -1062,7 +1061,7 @@ suite('LanguageModelToolsService', () => {
 
 		// Test 1: Using the full legacy name should enable the tool
 		{
-			const result = service.toToolAndToolSetEnablementMap(['oldToolSet/oldToolName'], Target.Undefined, undefined);
+			const result = service.toToolAndToolSetEnablementMap(['oldToolSet/oldToolName'], undefined);
 			assert.strictEqual(result.get(toolWithOrphanedToolSet), true, 'tool should be enabled via full legacy name');
 
 			const fullReferenceNames = service.toFullReferenceNames(result);
@@ -1071,7 +1070,7 @@ suite('LanguageModelToolsService', () => {
 
 		// Test 2: Using just the orphaned toolset name should also enable the tool
 		{
-			const result = service.toToolAndToolSetEnablementMap(['oldToolSet'], Target.Undefined, undefined);
+			const result = service.toToolAndToolSetEnablementMap(['oldToolSet'], undefined);
 			assert.strictEqual(result.get(toolWithOrphanedToolSet), true, 'tool should be enabled via orphaned toolset name');
 
 			const fullReferenceNames = service.toFullReferenceNames(result);
@@ -1091,7 +1090,7 @@ suite('LanguageModelToolsService', () => {
 		store.add(service.registerToolData(anotherToolFromOrphanedSet));
 
 		{
-			const result = service.toToolAndToolSetEnablementMap(['oldToolSet'], Target.Undefined, undefined);
+			const result = service.toToolAndToolSetEnablementMap(['oldToolSet'], undefined);
 			assert.strictEqual(result.get(toolWithOrphanedToolSet), true, 'first tool should be enabled via orphaned toolset name');
 			assert.strictEqual(result.get(anotherToolFromOrphanedSet), true, 'second tool should also be enabled via orphaned toolset name');
 
@@ -1112,7 +1111,7 @@ suite('LanguageModelToolsService', () => {
 		store.add(service.registerToolData(unrelatedTool));
 
 		{
-			const result = service.toToolAndToolSetEnablementMap(['oldToolSet'], Target.Undefined, undefined);
+			const result = service.toToolAndToolSetEnablementMap(['oldToolSet'], undefined);
 			assert.strictEqual(result.get(toolWithOrphanedToolSet), true, 'tool from oldToolSet should be enabled');
 			assert.strictEqual(result.get(anotherToolFromOrphanedSet), true, 'another tool from oldToolSet should be enabled');
 			assert.strictEqual(result.get(unrelatedTool), false, 'tool from different toolset should NOT be enabled');
@@ -1140,7 +1139,7 @@ suite('LanguageModelToolsService', () => {
 		store.add(newToolSetWithSameName.addTool(toolInRecreatedSet));
 
 		{
-			const result = service.toToolAndToolSetEnablementMap(['oldToolSet'], Target.Undefined, undefined);
+			const result = service.toToolAndToolSetEnablementMap(['oldToolSet'], undefined);
 			// Now 'oldToolSet' should enable BOTH the recreated toolset AND the tools with legacy names pointing to oldToolSet
 			assert.strictEqual(result.get(newToolSetWithSameName), true, 'recreated toolset should be enabled');
 			assert.strictEqual(result.get(toolInRecreatedSet), true, 'tool in recreated set should be enabled');
@@ -1230,7 +1229,7 @@ suite('LanguageModelToolsService', () => {
 
 		{
 			const toolNames = ['custom-agent', 'shell'];
-			const result = service.toToolAndToolSetEnablementMap(toolNames, Target.Undefined, undefined);
+			const result = service.toToolAndToolSetEnablementMap(toolNames, undefined);
 
 			assert.strictEqual(result.get(service.executeToolSet), true, 'execute should be enabled');
 			assert.strictEqual(result.get(service.agentToolSet), true, 'agent should be enabled');
@@ -1245,7 +1244,7 @@ suite('LanguageModelToolsService', () => {
 		}
 		{
 			const toolNames = ['github/*', 'playwright/*'];
-			const result = service.toToolAndToolSetEnablementMap(toolNames, Target.Undefined, undefined);
+			const result = service.toToolAndToolSetEnablementMap(toolNames, undefined);
 
 			assert.strictEqual(result.get(githubMcpToolSet), true, 'githubMcpToolSet should be enabled');
 			assert.strictEqual(result.get(playwrightMcpToolSet), true, 'playwrightMcpToolSet should be enabled');
@@ -1261,7 +1260,7 @@ suite('LanguageModelToolsService', () => {
 		{
 			// the speced names should work and not be altered
 			const toolNames = ['github/create_branch', 'playwright/browser_click'];
-			const result = service.toToolAndToolSetEnablementMap(toolNames, Target.Undefined, undefined);
+			const result = service.toToolAndToolSetEnablementMap(toolNames, undefined);
 
 			assert.strictEqual(result.get(githubMcpTool1), true, 'githubMcpTool1 should be enabled');
 			assert.strictEqual(result.get(playwrightMcpTool1), true, 'playwrightMcpTool1 should be enabled');
@@ -1277,7 +1276,7 @@ suite('LanguageModelToolsService', () => {
 		{
 			// using the old MCP full names should also work
 			const toolNames = ['github/github-mcp-server/*', 'microsoft/playwright-mcp/*'];
-			const result = service.toToolAndToolSetEnablementMap(toolNames, Target.Undefined, undefined);
+			const result = service.toToolAndToolSetEnablementMap(toolNames, undefined);
 
 			assert.strictEqual(result.get(githubMcpToolSet), true, 'githubMcpToolSet should be enabled');
 			assert.strictEqual(result.get(playwrightMcpToolSet), true, 'playwrightMcpToolSet should be enabled');
@@ -1292,7 +1291,7 @@ suite('LanguageModelToolsService', () => {
 		{
 			// using the old MCP full names should also work
 			const toolNames = ['github/github-mcp-server/create_branch', 'microsoft/playwright-mcp/browser_click'];
-			const result = service.toToolAndToolSetEnablementMap(toolNames, Target.Undefined, undefined);
+			const result = service.toToolAndToolSetEnablementMap(toolNames, undefined);
 
 			assert.strictEqual(result.get(githubMcpTool1), true, 'githubMcpTool1 should be enabled');
 			assert.strictEqual(result.get(playwrightMcpTool1), true, 'playwrightMcpTool1 should be enabled');
@@ -1308,7 +1307,7 @@ suite('LanguageModelToolsService', () => {
 		{
 			// using the latest MCP full names should also work
 			const toolNames = ['io.github.github/github-mcp-server/*', 'com.microsoft/playwright-mcp/*'];
-			const result = service.toToolAndToolSetEnablementMap(toolNames, Target.Undefined, undefined);
+			const result = service.toToolAndToolSetEnablementMap(toolNames, undefined);
 
 			assert.strictEqual(result.get(githubMcpToolSet), true, 'githubMcpToolSet should be enabled');
 			assert.strictEqual(result.get(playwrightMcpToolSet), true, 'playwrightMcpToolSet should be enabled');
@@ -1324,7 +1323,7 @@ suite('LanguageModelToolsService', () => {
 		{
 			// using the latest MCP full names should also work
 			const toolNames = ['io.github.github/github-mcp-server/create_branch', 'com.microsoft/playwright-mcp/browser_click'];
-			const result = service.toToolAndToolSetEnablementMap(toolNames, Target.Undefined, undefined);
+			const result = service.toToolAndToolSetEnablementMap(toolNames, undefined);
 
 			assert.strictEqual(result.get(githubMcpTool1), true, 'githubMcpTool1 should be enabled');
 			assert.strictEqual(result.get(playwrightMcpTool1), true, 'playwrightMcpTool1 should be enabled');
@@ -1340,7 +1339,7 @@ suite('LanguageModelToolsService', () => {
 		{
 			// using the old MCP full names should also work
 			const toolNames = ['github-mcp-server/create_branch'];
-			const result = service.toToolAndToolSetEnablementMap(toolNames, Target.Undefined, undefined);
+			const result = service.toToolAndToolSetEnablementMap(toolNames, undefined);
 
 			assert.strictEqual(result.get(githubMcpTool1), true, 'githubMcpTool1 should be enabled');
 			const fullReferenceNames = service.toFullReferenceNames(result).sort();
@@ -1351,303 +1350,6 @@ suite('LanguageModelToolsService', () => {
 			assert.deepStrictEqual(deprecatesTo('github-mcp-server/create_branch'), ['github/create_branch']);
 		}
 
-	});
-
-	test('toToolAndToolSetEnablementMap with Target.Claude maps Claude tool names to VS Code equivalents', () => {
-		// Register tools and toolsets that match the Claude toolEquivalent mappings
-
-		// Tools for the 'execute' toolset (Claude: Bash -> execute)
-		const runInTerminalToolData: IToolData = {
-			id: 'runInTerminalId',
-			toolReferenceName: 'runInTerminal',
-			modelDescription: 'runInTerminal Description',
-			displayName: 'runInTerminal displayName',
-			source: ToolDataSource.Internal,
-			canBeReferencedInPrompt: false,
-		};
-		store.add(service.registerToolData(runInTerminalToolData));
-		store.add(service.executeToolSet.addTool(runInTerminalToolData));
-
-		// Tools for the 'agent' toolset (Claude: Task -> agent)
-		const runSubagentToolData: IToolData = {
-			id: 'runSubagentId',
-			toolReferenceName: 'runSubagent',
-			modelDescription: 'runSubagent Description',
-			displayName: 'runSubagent displayName',
-			source: ToolDataSource.Internal,
-			canBeReferencedInPrompt: false,
-		};
-		store.add(service.registerToolData(runSubagentToolData));
-		store.add(service.agentToolSet.addTool(runSubagentToolData));
-
-		// Create 'edit' toolset with tools (Claude: Edit -> edit/editNotebook, edit/editFiles; Write -> edit/createDirectory, edit/createFile, edit/createJupyterNotebook)
-		const editToolSet = store.add(service.createToolSet(
-			ToolDataSource.Internal,
-			'edit',
-			SpecedToolAliases.edit,
-			{ description: 'Edit files' }
-		));
-
-		const editNotebookTool: IToolData = {
-			id: 'editNotebookId',
-			toolReferenceName: 'editNotebook',
-			modelDescription: 'Edit Notebook',
-			displayName: 'Edit Notebook',
-			source: ToolDataSource.Internal,
-		};
-		store.add(service.registerToolData(editNotebookTool));
-		store.add(editToolSet.addTool(editNotebookTool));
-
-		const editFilesTool: IToolData = {
-			id: 'editFilesId',
-			toolReferenceName: 'editFiles',
-			modelDescription: 'Edit Files',
-			displayName: 'Edit Files',
-			source: ToolDataSource.Internal,
-		};
-		store.add(service.registerToolData(editFilesTool));
-		store.add(editToolSet.addTool(editFilesTool));
-
-		const createDirectoryTool: IToolData = {
-			id: 'createDirectoryId',
-			toolReferenceName: 'createDirectory',
-			modelDescription: 'Create Directory',
-			displayName: 'Create Directory',
-			source: ToolDataSource.Internal,
-		};
-		store.add(service.registerToolData(createDirectoryTool));
-		store.add(editToolSet.addTool(createDirectoryTool));
-
-		const createFileTool: IToolData = {
-			id: 'createFileId',
-			toolReferenceName: 'createFile',
-			modelDescription: 'Create File',
-			displayName: 'Create File',
-			source: ToolDataSource.Internal,
-		};
-		store.add(service.registerToolData(createFileTool));
-		store.add(editToolSet.addTool(createFileTool));
-
-		const createJupyterNotebookTool: IToolData = {
-			id: 'createJupyterNotebookId',
-			toolReferenceName: 'createJupyterNotebook',
-			modelDescription: 'Create Jupyter Notebook',
-			displayName: 'Create Jupyter Notebook',
-			source: ToolDataSource.Internal,
-		};
-		store.add(service.registerToolData(createJupyterNotebookTool));
-		store.add(editToolSet.addTool(createJupyterNotebookTool));
-
-		// Create 'search' toolset with tools (Claude: Glob -> search/fileSearch, Grep -> search/textSearch)
-		const searchToolSet = store.add(service.createToolSet(
-			ToolDataSource.Internal,
-			'search',
-			SpecedToolAliases.search,
-			{ description: 'Search files' }
-		));
-
-		const fileSearchTool: IToolData = {
-			id: 'fileSearchId',
-			toolReferenceName: 'fileSearch',
-			modelDescription: 'File Search',
-			displayName: 'File Search',
-			source: ToolDataSource.Internal,
-		};
-		store.add(service.registerToolData(fileSearchTool));
-		store.add(searchToolSet.addTool(fileSearchTool));
-
-		const textSearchTool: IToolData = {
-			id: 'textSearchId',
-			toolReferenceName: 'textSearch',
-			modelDescription: 'Text Search',
-			displayName: 'Text Search',
-			source: ToolDataSource.Internal,
-		};
-		store.add(service.registerToolData(textSearchTool));
-		store.add(searchToolSet.addTool(textSearchTool));
-
-		// Create 'web' toolset (Claude: WebFetch, WebSearch -> web)
-		const webToolSet = store.add(service.createToolSet(
-			ToolDataSource.Internal,
-			'web',
-			SpecedToolAliases.web,
-			{ description: 'Web tools' }
-		));
-
-		// Create read tools (Claude: Read -> read/readFile, read/getNotebookSummary)
-		const readFileTool: IToolData = {
-			id: 'readFileId',
-			toolReferenceName: 'readFile',
-			modelDescription: 'Read File',
-			displayName: 'Read File',
-			source: ToolDataSource.Internal,
-		};
-		store.add(service.registerToolData(readFileTool));
-		store.add(service.readToolSet.addTool(readFileTool));
-
-		const getNotebookSummaryTool: IToolData = {
-			id: 'getNotebookSummaryId',
-			toolReferenceName: 'getNotebookSummary',
-			modelDescription: 'Get Notebook Summary',
-			displayName: 'Get Notebook Summary',
-			source: ToolDataSource.Internal,
-		};
-		store.add(service.registerToolData(getNotebookSummaryTool));
-		store.add(service.readToolSet.addTool(getNotebookSummaryTool));
-
-		// Create vscode tool for AskUserQuestion (Claude: AskUserQuestion -> vscode/askQuestions)
-		const askQuestionsTool: IToolData = {
-			id: 'askQuestionsId',
-			toolReferenceName: 'askQuestions',
-			modelDescription: 'Ask Questions',
-			displayName: 'Ask Questions',
-			source: ToolDataSource.Internal,
-		};
-		store.add(service.registerToolData(askQuestionsTool));
-		store.add(service.vscodeToolSet.addTool(askQuestionsTool));
-
-		// Test 1: Claude 'Bash' maps to 'execute' toolset
-		{
-			const result = service.toToolAndToolSetEnablementMap(['Bash'], Target.Claude, undefined);
-			assert.strictEqual(result.get(service.executeToolSet), true, 'execute toolset should be enabled via Bash');
-			assert.strictEqual(result.get(runInTerminalToolData), true, 'runInTerminal should be enabled via Bash');
-		}
-
-		// Test 2: Claude 'Edit' maps to edit/editNotebook, edit/editFiles
-		{
-			const result = service.toToolAndToolSetEnablementMap(['Edit'], Target.Claude, undefined);
-			assert.strictEqual(result.get(editNotebookTool), true, 'editNotebook should be enabled via Edit');
-			assert.strictEqual(result.get(editFilesTool), true, 'editFiles should be enabled via Edit');
-			// createFile/createDirectory not enabled because Edit only maps to editNotebook and editFiles
-			assert.strictEqual(result.get(createFileTool), false, 'createFile should not be enabled via Edit');
-		}
-
-		// Test 3: Claude 'Write' maps to edit/createDirectory, edit/createFile, edit/createJupyterNotebook
-		{
-			const result = service.toToolAndToolSetEnablementMap(['Write'], Target.Claude, undefined);
-			assert.strictEqual(result.get(createDirectoryTool), true, 'createDirectory should be enabled via Write');
-			assert.strictEqual(result.get(createFileTool), true, 'createFile should be enabled via Write');
-			assert.strictEqual(result.get(createJupyterNotebookTool), true, 'createJupyterNotebook should be enabled via Write');
-			// editFiles not enabled because Write doesn't map to it
-			assert.strictEqual(result.get(editFilesTool), false, 'editFiles should not be enabled via Write');
-		}
-
-		// Test 4: Claude 'Read' maps to read/readFile, read/getNotebookSummary
-		{
-			const result = service.toToolAndToolSetEnablementMap(['Read'], Target.Claude, undefined);
-			assert.strictEqual(result.get(readFileTool), true, 'readFile should be enabled via Read');
-			assert.strictEqual(result.get(getNotebookSummaryTool), true, 'getNotebookSummary should be enabled via Read');
-		}
-
-		// Test 5: Claude 'Glob' maps to search/fileSearch
-		{
-			const result = service.toToolAndToolSetEnablementMap(['Glob'], Target.Claude, undefined);
-			assert.strictEqual(result.get(fileSearchTool), true, 'fileSearch should be enabled via Glob');
-			assert.strictEqual(result.get(textSearchTool), false, 'textSearch should not be enabled via Glob');
-		}
-
-		// Test 6: Claude 'Grep' maps to search/textSearch
-		{
-			const result = service.toToolAndToolSetEnablementMap(['Grep'], Target.Claude, undefined);
-			assert.strictEqual(result.get(textSearchTool), true, 'textSearch should be enabled via Grep');
-			assert.strictEqual(result.get(fileSearchTool), false, 'fileSearch should not be enabled via Grep');
-		}
-
-		// Test 7: Claude 'WebFetch' and 'WebSearch' both map to web
-		{
-			const result = service.toToolAndToolSetEnablementMap(['WebFetch'], Target.Claude, undefined);
-			assert.strictEqual(result.get(webToolSet), true, 'web toolset should be enabled via WebFetch');
-		}
-		{
-			const result = service.toToolAndToolSetEnablementMap(['WebSearch'], Target.Claude, undefined);
-			assert.strictEqual(result.get(webToolSet), true, 'web toolset should be enabled via WebSearch');
-		}
-
-		// Test 8: Claude 'Task' maps to agent toolset
-		{
-			const result = service.toToolAndToolSetEnablementMap(['Task'], Target.Claude, undefined);
-			assert.strictEqual(result.get(service.agentToolSet), true, 'agent toolset should be enabled via Task');
-			assert.strictEqual(result.get(runSubagentToolData), true, 'runSubagent should be enabled via Task');
-		}
-
-		// Test 9: Claude 'AskUserQuestion' maps to vscode/askQuestions
-		{
-			const result = service.toToolAndToolSetEnablementMap(['AskUserQuestion'], Target.Claude, undefined);
-			assert.strictEqual(result.get(askQuestionsTool), true, 'askQuestions should be enabled via AskUserQuestion');
-		}
-
-		// Test 10: Claude 'NotebookEdit' maps to edit/editNotebook
-		{
-			const result = service.toToolAndToolSetEnablementMap(['NotebookEdit'], Target.Claude, undefined);
-			assert.strictEqual(result.get(editNotebookTool), true, 'editNotebook should be enabled via NotebookEdit');
-			assert.strictEqual(result.get(editFilesTool), false, 'editFiles should not be enabled via NotebookEdit');
-		}
-
-		// Test 11: Claude tools with no VS Code equivalent (e.g., Skill, LSP, MCPSearch) enable nothing
-		{
-			const result = service.toToolAndToolSetEnablementMap(['Skill'], Target.Claude, undefined);
-			assert.strictEqual([...result.entries()].filter(([_, enabled]) => enabled).length, 0, 'Skill should enable nothing');
-		}
-		{
-			const result = service.toToolAndToolSetEnablementMap(['LSP'], Target.Claude, undefined);
-			assert.strictEqual([...result.entries()].filter(([_, enabled]) => enabled).length, 0, 'LSP should enable nothing');
-		}
-		{
-			const result = service.toToolAndToolSetEnablementMap(['MCPSearch'], Target.Claude, undefined);
-			assert.strictEqual([...result.entries()].filter(([_, enabled]) => enabled).length, 0, 'MCPSearch should enable nothing');
-		}
-
-		// Test 12: Multiple Claude tool names at once
-		{
-			const result = service.toToolAndToolSetEnablementMap(['Bash', 'Read', 'Edit', 'Task'], Target.Claude, undefined);
-			assert.strictEqual(result.get(service.executeToolSet), true, 'execute toolset should be enabled');
-			assert.strictEqual(result.get(runInTerminalToolData), true, 'runInTerminal should be enabled');
-			assert.strictEqual(result.get(readFileTool), true, 'readFile should be enabled');
-			assert.strictEqual(result.get(getNotebookSummaryTool), true, 'getNotebookSummary should be enabled');
-			assert.strictEqual(result.get(editNotebookTool), true, 'editNotebook should be enabled');
-			assert.strictEqual(result.get(editFilesTool), true, 'editFiles should be enabled');
-			assert.strictEqual(result.get(service.agentToolSet), true, 'agent toolset should be enabled');
-			assert.strictEqual(result.get(runSubagentToolData), true, 'runSubagent should be enabled');
-			// Write tools not enabled since 'Write' was not specified
-			assert.strictEqual(result.get(createFileTool), false, 'createFile should not be enabled without Write');
-		}
-
-		// Test 13: Unknown Claude tool names are ignored
-		{
-			const result = service.toToolAndToolSetEnablementMap(['UnknownClaudeTool', 'Bash'], Target.Claude, undefined);
-			assert.strictEqual(result.get(service.executeToolSet), true, 'execute toolset should still be enabled');
-			assert.strictEqual(result.get(runInTerminalToolData), true, 'runInTerminal should still be enabled');
-		}
-
-		// Test 14: Empty Claude tools list enables nothing
-		{
-			const result = service.toToolAndToolSetEnablementMap([], Target.Claude, undefined);
-			assert.strictEqual([...result.entries()].filter(([_, enabled]) => enabled).length, 0, 'empty list should enable nothing');
-		}
-
-		// Test 15: Claude 'Edit' and 'Write' together enable all edit tools
-		{
-			const result = service.toToolAndToolSetEnablementMap(['Edit', 'Write'], Target.Claude, undefined);
-			assert.strictEqual(result.get(editNotebookTool), true, 'editNotebook should be enabled');
-			assert.strictEqual(result.get(editFilesTool), true, 'editFiles should be enabled');
-			assert.strictEqual(result.get(createDirectoryTool), true, 'createDirectory should be enabled');
-			assert.strictEqual(result.get(createFileTool), true, 'createFile should be enabled');
-			assert.strictEqual(result.get(createJupyterNotebookTool), true, 'createJupyterNotebook should be enabled');
-		}
-
-		// Test 16: Non-Claude target does not perform Claude mapping
-		{
-			// Passing Claude tool names with Target.Undefined should not map them
-			const result = service.toToolAndToolSetEnablementMap(['Bash', 'Read'], Target.Undefined, undefined);
-			assert.strictEqual(result.get(service.executeToolSet), false, 'execute should not be enabled with Undefined target');
-			assert.strictEqual(result.get(readFileTool), false, 'readFile should not be enabled with Undefined target');
-		}
-
-		// Test 17: Deduplication - WebFetch and WebSearch both map to 'web', should not cause issues
-		{
-			const result = service.toToolAndToolSetEnablementMap(['WebFetch', 'WebSearch'], Target.Claude, undefined);
-			assert.strictEqual(result.get(webToolSet), true, 'web toolset should be enabled when both WebFetch and WebSearch are specified');
-		}
 	});
 
 	test('accessibility signal for tool confirmation', async () => {
@@ -2453,7 +2155,7 @@ suite('LanguageModelToolsService', () => {
 		// Enable the MCP toolset
 		{
 			const enabledNames = [mcpToolSet].map(t => service.getFullReferenceName(t));
-			const result = service.toToolAndToolSetEnablementMap(enabledNames, Target.Undefined, undefined);
+			const result = service.toToolAndToolSetEnablementMap(enabledNames, undefined);
 
 			assert.strictEqual(result.get(mcpToolSet), true, 'MCP toolset should be enabled'); // Ensure the toolset is in the map
 			assert.strictEqual(result.get(mcpTool), true, 'MCP tool should be enabled when its toolset is enabled'); // Ensure the tool is in the map
@@ -2464,7 +2166,7 @@ suite('LanguageModelToolsService', () => {
 		// Enable a tool from the MCP toolset
 		{
 			const enabledNames = [mcpTool].map(t => service.getFullReferenceName(t, mcpToolSet));
-			const result = service.toToolAndToolSetEnablementMap(enabledNames, Target.Undefined, undefined);
+			const result = service.toToolAndToolSetEnablementMap(enabledNames, undefined);
 
 			assert.strictEqual(result.get(mcpToolSet), false, 'MCP toolset should be disabled'); // Ensure the toolset is in the map
 			assert.strictEqual(result.get(mcpTool), true, 'MCP tool should be enabled'); // Ensure the tool is in the map
@@ -3167,7 +2869,7 @@ suite('LanguageModelToolsService', () => {
 		// Provide model metadata for gpt-4 family
 		const modelMetadata = { id: 'gpt-4-turbo', vendor: 'openai', family: 'gpt-4', version: '1.0' } as ILanguageModelChatMetadata;
 		const enabledNames = ['gpt4ToolRef', 'anyModelToolRef', 'claudeToolRef'];
-		const result = service.toToolAndToolSetEnablementMap(enabledNames, Target.Undefined, modelMetadata);
+		const result = service.toToolAndToolSetEnablementMap(enabledNames, modelMetadata);
 
 		// gpt4Tool should be enabled (model matches)
 		assert.strictEqual(result.get(gpt4Tool), true, 'gpt4Tool should be enabled');

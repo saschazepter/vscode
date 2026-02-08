@@ -1037,6 +1037,122 @@ suite('PromptsService', () => {
 			);
 		});
 
+		test('claude agent maps tools and model to vscode equivalents', async () => {
+			const rootFolderName = 'claude-agent-mapping';
+			const rootFolder = `/${rootFolderName}`;
+			const rootFolderUri = URI.file(rootFolder);
+
+			workspaceContextService.setWorkspace(testWorkspace(rootFolderUri));
+
+			await mockFiles(fileService, [
+				{
+					// Claude agent with tools and model that should be mapped
+					path: `${rootFolder}/.claude/agents/claude-agent.md`,
+					contents: [
+						'---',
+						'description: \'Claude agent with tools and model.\'',
+						'tools: [ Read, Edit, Bash ]',
+						'model: opus',
+						'---',
+						'I am a Claude agent.',
+					]
+				},
+				{
+					// Claude agent with more tools, some with empty equivalents
+					path: `${rootFolder}/.claude/agents/claude-agent2.md`,
+					contents: [
+						'---',
+						'description: \'Claude agent with various tools.\'',
+						'tools: [ Glob, Grep, Write, Task, Skill ]',
+						'model: sonnet',
+						'---',
+						'I am another Claude agent.',
+					]
+				},
+				{
+					// Non-Claude agent should NOT have tools/model mapped
+					path: `${rootFolder}/.github/agents/copilot-agent.agent.md`,
+					contents: [
+						'---',
+						'description: \'Copilot agent with same tool names.\'',
+						'target: \'github-copilot\'',
+						'tools: [ Read, Edit ]',
+						'model: gpt-4',
+						'---',
+						'I am a Copilot agent.',
+					]
+				},
+			]);
+
+			const result = (await service.getCustomAgents(CancellationToken.None)).map(agent => ({ ...agent, uri: URI.from(agent.uri) }));
+			const expected: ICustomAgent[] = [
+				{
+					name: 'copilot-agent',
+					description: 'Copilot agent with same tool names.',
+					target: Target.GitHubCopilot,
+					// Non-Claude agent: tools and model stay as-is
+					tools: ['Read', 'Edit'],
+					model: ['gpt-4'],
+					agentInstructions: {
+						content: 'I am a Copilot agent.',
+						toolReferences: [],
+						metadata: undefined
+					},
+					handOffs: undefined,
+					argumentHint: undefined,
+					visibility: { userInvokable: true, agentInvokable: true },
+					agents: undefined,
+					uri: URI.joinPath(rootFolderUri, '.github/agents/copilot-agent.agent.md'),
+					source: { storage: PromptsStorage.local }
+				},
+				{
+					name: 'claude-agent',
+					description: 'Claude agent with tools and model.',
+					target: Target.Claude,
+					// Claude tools mapped to vscode equivalents
+					tools: ['read/readFile', 'read/getNotebookSummary', 'edit/editNotebook', 'edit/editFiles', 'execute'],
+					// Claude model mapped to vscode equivalent
+					model: ['Claude Opus 4.6 (copilot)'],
+					agentInstructions: {
+						content: 'I am a Claude agent.',
+						toolReferences: [],
+						metadata: undefined
+					},
+					handOffs: undefined,
+					argumentHint: undefined,
+					visibility: { userInvokable: true, agentInvokable: true },
+					agents: undefined,
+					uri: URI.joinPath(rootFolderUri, '.claude/agents/claude-agent.md'),
+					source: { storage: PromptsStorage.local }
+				},
+				{
+					name: 'claude-agent2',
+					description: 'Claude agent with various tools.',
+					target: Target.Claude,
+					// Tools mapped: Glob->search/fileSearch, Grep->search/textSearch, Write->edit/create*, Task->agent, Skill->[] (empty)
+					tools: ['search/fileSearch', 'search/textSearch', 'edit/createDirectory', 'edit/createFile', 'edit/createJupyterNotebook', 'agent'],
+					model: ['Claude Sonnet 4.5 (copilot)'],
+					agentInstructions: {
+						content: 'I am another Claude agent.',
+						toolReferences: [],
+						metadata: undefined
+					},
+					handOffs: undefined,
+					argumentHint: undefined,
+					visibility: { userInvokable: true, agentInvokable: true },
+					agents: undefined,
+					uri: URI.joinPath(rootFolderUri, '.claude/agents/claude-agent2.md'),
+					source: { storage: PromptsStorage.local }
+				},
+			];
+
+			assert.deepEqual(
+				result,
+				expected,
+				'Claude tools and models must be mapped to VS Code equivalents; non-Claude agents must remain unchanged.',
+			);
+		});
+
 		test('agents with .md extension should be recognized, except README.md', async () => {
 			const rootFolderName = 'custom-agents-md-extension';
 			const rootFolder = `/${rootFolderName}`;

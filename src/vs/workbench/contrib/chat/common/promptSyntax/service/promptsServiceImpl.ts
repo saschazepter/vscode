@@ -38,7 +38,7 @@ import { IChatRequestHooks, IHookCommand, HookType } from '../hookSchema.js';
 import { parseHooksFromFile } from '../hookCompatibility.js';
 import { IWorkspaceContextService } from '../../../../../../platform/workspace/common/workspace.js';
 import { IPathService } from '../../../../../services/path/common/pathService.js';
-import { getTarget, mapClaudeModels } from '../languageProviders/promptValidator.js';
+import { getTarget, mapClaudeModels, mapClaudeTools } from '../languageProviders/promptValidator.js';
 
 /**
  * Error thrown when a skill file is missing the required name attribute.
@@ -582,7 +582,10 @@ export class PromptsService extends Disposable implements IPromptsService {
 				if (target === Target.Claude && model) {
 					model = mapClaudeModels(model);
 				}
-				const { description, tools, handOffs, argumentHint, agents } = ast.header;
+				let { description, tools, handOffs, argumentHint, agents } = ast.header;
+				if (target === Target.Claude && tools) {
+					tools = mapClaudeTools(tools);
+				}
 				return { uri, name, description, model, tools, handOffs, argumentHint, target, visibility, agents, agentInstructions, source };
 			})
 		);
