@@ -23,6 +23,7 @@ import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { localize, localize2 } from '../../../../../nls.js';
 import { IAccessibilityService } from '../../../../../platform/accessibility/common/accessibility.js';
 import { AccessibilitySignal, IAccessibilitySignalService } from '../../../../../platform/accessibilitySignal/browser/accessibilitySignalService.js';
+import { ICommandService } from '../../../../../platform/commands/common/commands.js';
 import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
 import { IContextKey, IContextKeyService } from '../../../../../platform/contextkey/common/contextkey.js';
 import { IDialogService } from '../../../../../platform/dialogs/common/dialogs.js';
@@ -34,7 +35,7 @@ import { Registry } from '../../../../../platform/registry/common/platform.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
 import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry.js';
 import { IExtensionService } from '../../../../services/extensions/common/extensions.js';
-import { IPreToolUseCallerInput } from '../../common/hooks/hooksTypes.js';
+import { IPostToolUseCallerInput, IPreToolUseCallerInput, IPreToolUseHookResult } from '../../common/hooks/hooksTypes.js';
 import { IHooksExecutionService } from '../../common/hooks/hooksExecutionService.js';
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
 import { ChatRequestToolReferenceEntry, toToolSetVariableEntry, toToolVariableEntry } from '../../common/attachments/chatVariableEntries.js';
@@ -45,7 +46,7 @@ import { ILanguageModelChatMetadata } from '../../common/languageModels.js';
 import { IChatModel, IChatRequestModel } from '../../common/model/chatModel.js';
 import { ChatToolInvocation } from '../../common/model/chatProgressTypes/chatToolInvocation.js';
 import { ILanguageModelToolsConfirmationService } from '../../common/tools/languageModelToolsConfirmationService.js';
-import { CountTokensCallback, createToolSchemaUri, IBeginToolCallOptions, ILanguageModelToolsService, IPreparedToolInvocation, IToolAndToolSetEnablementMap, IToolData, IToolImpl, IToolInvocation, IToolResult, IToolResultInputOutputDetails, SpecedToolAliases, stringifyPromptTsxPart, isToolSet, ToolDataSource, toolMatchesModel, ToolSet, VSCodeToolReference, IToolSet, ToolSetForModel, IToolInvokedEvent } from '../../common/tools/languageModelToolsService.js';
+import { CountTokensCallback, createToolSchemaUri, IBeginToolCallOptions, ILanguageModelToolsService, IPreparedToolInvocation, IToolAndToolSetEnablementMap, IToolData, IToolImpl, IToolInvocation, IToolResult, IToolResultInputOutputDetails, SpecedToolAliases, stringifyPromptTsxPart, isToolSet, ToolDataSource, toolContentToA11yString, toolMatchesModel, ToolSet, VSCodeToolReference, IToolSet, ToolSetForModel, IToolInvokedEvent } from '../../common/tools/languageModelToolsService.js';
 import { getToolConfirmationAlert } from '../accessibility/chatAccessibilityProvider.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { chatSessionResourceToId } from '../../common/model/chatUri.js';
@@ -122,6 +123,7 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 		@IStorageService private readonly _storageService: IStorageService,
 		@ILanguageModelToolsConfirmationService private readonly _confirmationService: ILanguageModelToolsConfirmationService,
 		@IHooksExecutionService private readonly _hooksExecutionService: IHooksExecutionService,
+		@ICommandService private readonly _commandService: ICommandService,
 	) {
 		super();
 
@@ -409,12 +411,85 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 
 			const denialMessage = localize('toolExecutionDenied', "Tool execution denied: {0}", hookReason);
 			return {
-				content: [{ kind: 'text', value: denialMessage }],
-				toolResultError: hookReason,
+				denialResult: {
+					content: [{ kind: 'text', value: denialMessage }],
+					toolResultError: hookReason,
+				},
+				hookResult,
 			};
 		}
 
+		return { hookResult };
+	}
+
+	/**
+	 * Validate updatedInput from a preToolUse hook against the tool's input schema
+	 * using the json.validate command from the JSON extension.
+	 * @returns An error message string if validation fails, or undefined if valid.
+	 */
+	private async _validateUpdatedInput(toolId: string, toolData: IToolData | undefined, updatedInput: object): Promise<string | undefined> {
+		if (!toolData?.inputSchema) {
+			return undefined;
+		}
+
+		type JsonDiagnostic = {
+			message: string;
+			range: { line: number; character: number }[];
+			severity: string;
+			code?: string | number;
+		};
+
+		try {
+			const schemaUri = createToolSchemaUri(toolId);
+			const inputJson = JSON.stringify(updatedInput);
+			const diagnostics = await this._commandService.executeCommand<JsonDiagnostic[]>('json.validate', schemaUri, inputJson) || [];
+			if (diagnostics.length > 0) {
+				return diagnostics.map(d => d.message).join('; ');
+			}
+		} catch (e) {
+			// json extension may not be available; skip validation
+			this._logService.debug(`[LanguageModelToolsService#_validateUpdatedInput] json.validate command failed, skipping validation: ${toErrorMessage(e)}`);
+		}
+
 		return undefined;
+	}
+
+	/**
+	 * Execute the postToolUse hook after tool completion.
+	 * If the hook returns a "block" decision, additional context is appended to the tool result
+	 * as feedback for the agent indicating the block and reason. The tool has already run,
+	 * so blocking only provides feedback.
+	 */
+	private async _executePostToolUseHook(
+		dto: IToolInvocation,
+		toolResult: IToolResult,
+		token: CancellationToken
+	): Promise<void> {
+		if (!dto.context?.sessionResource) {
+			return;
+		}
+
+		const hookInput: IPostToolUseCallerInput = {
+			toolName: dto.toolId,
+			toolInput: dto.parameters,
+			getToolResponseText: () => toolContentToA11yString(toolResult.content),
+			toolCallId: dto.callId,
+		};
+		const hookResult = await this._hooksExecutionService.executePostToolUseHook(dto.context.sessionResource, hookInput, token);
+
+		if (hookResult?.decision === 'block') {
+			const hookReason = hookResult.reason ?? localize('postToolUseHookBlockedNoReason', "Hook blocked tool result");
+			this._logService.debug(`[LanguageModelToolsService#invokeTool] PostToolUse hook blocked for tool ${dto.toolId}: ${hookReason}`);
+			const blockMessage = localize('postToolUseHookBlockedContext', "The PostToolUse hook blocked this tool result. Reason: {0}", hookReason);
+			toolResult.content.push({ kind: 'text', value: '\n<PostToolUse-context>\n' + blockMessage + '\n</PostToolUse-context>' });
+		}
+
+		if (hookResult?.additionalContext) {
+			// Append additional context from all hooks to the tool result content
+			for (const context of hookResult.additionalContext) {
+				toolResult.content.push({ kind: 'text', value: '\n<PostToolUse-context>\n' + context + '\n</PostToolUse-context>' });
+			}
+		}
 	}
 
 	async invokeTool(dto: IToolInvocation, countTokens: CountTokensCallback, token: CancellationToken): Promise<IToolResult> {
@@ -472,6 +547,17 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 				this._pendingToolCalls.delete(pendingToolCallKey);
 			}
 			return hookDenialResult;
+		}
+
+		// Apply updatedInput from preToolUse hook if provided, after validating against the tool's input schema
+		if (preToolUseHookResult?.updatedInput) {
+			const validationError = await this._validateUpdatedInput(dto.toolId, toolData, preToolUseHookResult.updatedInput);
+			if (validationError) {
+				this._logService.warn(`[LanguageModelToolsService#invokeTool] Tool ${dto.toolId} updatedInput from preToolUse hook failed schema validation: ${validationError}`);
+			} else {
+				this._logService.debug(`[LanguageModelToolsService#invokeTool] Tool ${dto.toolId} input modified by preToolUse hook`);
+				dto.parameters = preToolUseHookResult.updatedInput;
+			}
 		}
 
 		// Fire the event to notify listeners that a tool is being invoked
@@ -563,6 +649,10 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 						return toolResult;
 					}
 
+					if (userConfirmed.type === ToolConfirmKind.UserAction && userConfirmed.selectedButton) {
+						dto.selectedCustomButton = userConfirmed.selectedButton;
+					}
+
 					if (dto.toolSpecificData?.kind === 'input') {
 						dto.parameters = dto.toolSpecificData.rawInput;
 						dto.toolSpecificData = undefined;
@@ -611,6 +701,9 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 					};
 				}
 			}
+
+			// Execute postToolUse hook after successful tool execution
+			await this._executePostToolUseHook(dto, toolResult, token);
 
 			this._telemetryService.publicLog2<LanguageModelToolInvokedEvent, LanguageModelToolInvokedClassification>(
 				'languageModelToolInvoked',
@@ -661,10 +754,13 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 		if (tool.impl!.prepareToolInvocation) {
 			const preparePromise = tool.impl!.prepareToolInvocation({
 				parameters: dto.parameters,
+				toolCallId: dto.callId,
 				chatRequestId: dto.chatRequestId,
 				chatSessionId: dto.context?.sessionId,
 				chatSessionResource: dto.context?.sessionResource,
-				chatInteractionId: dto.chatInteractionId
+				chatInteractionId: dto.chatInteractionId,
+				modelId: dto.modelId,
+				forceConfirmationReason: forceConfirmationReason
 			}, token);
 
 			const raceResult = await Promise.race([

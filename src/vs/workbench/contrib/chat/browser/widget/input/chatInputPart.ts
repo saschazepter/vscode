@@ -327,6 +327,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 	private chatCursorAtTop: IContextKey<boolean>;
 	private inputEditorHasFocus: IContextKey<boolean>;
 	private currentlyEditingInputKey!: IContextKey<boolean>;
+	private editingSentRequestKey!: IContextKey<ChatContextKeys.EditingRequestType | undefined>;
 	private chatModeKindKey: IContextKey<ChatModeKind>;
 	private chatModeNameKey: IContextKey<string>;
 	private withinEditSessionKey: IContextKey<boolean>;
@@ -711,8 +712,9 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		}));
 	}
 
-	public setEditing(enabled: boolean) {
+	public setEditing(enabled: boolean, editingSentRequest: ChatContextKeys.EditingRequestType | undefined) {
 		this.currentlyEditingInputKey?.set(enabled);
+		this.editingSentRequestKey?.set(editingSentRequest);
 	}
 
 	public switchModel(modelMetadata: Pick<ILanguageModelChatMetadata, 'vendor' | 'id' | 'family'>) {
@@ -1833,6 +1835,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		const inputScopedContextKeyService = this._register(this.contextKeyService.createScoped(inputContainer));
 		ChatContextKeys.inChatInput.bindTo(inputScopedContextKeyService).set(true);
 		this.currentlyEditingInputKey = ChatContextKeys.currentlyEditingInput.bindTo(inputScopedContextKeyService);
+		this.editingSentRequestKey = ChatContextKeys.editingRequestType.bindTo(this.contextKeyService);
 		const scopedInstantiationService = this._register(this.instantiationService.createChild(new ServiceCollection([IContextKeyService, inputScopedContextKeyService])));
 
 		const { historyNavigationBackwardsEnablement, historyNavigationForwardsEnablement } = this._register(registerAndCreateHistoryNavigationContext(inputScopedContextKeyService, this));
@@ -2398,6 +2401,62 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 
 	clearTodoListWidget(sessionResource: URI | undefined, force: boolean): void {
 		this._chatInputTodoListWidget.value?.clear(sessionResource, force);
+	}
+
+	renderQuestionCarousel(carousel: IChatQuestionCarousel, context: IChatContentPartRenderContext, options: IChatQuestionCarouselOptions): ChatQuestionCarouselPart {
+
+		if (this._chatQuestionCarouselWidget.value) {
+			const existingCarousel = this._chatQuestionCarouselWidget.value;
+			const existingResolveId = existingCarousel.carousel.resolveId;
+			if (existingResolveId && carousel.resolveId && existingResolveId === carousel.resolveId) {
+				return existingCarousel;
+			}
+			this.clearQuestionCarousel();
+		}
+
+		// track the response id and session
+		this._currentQuestionCarouselResponseId = isResponseVM(context.element) ? context.element.requestId : undefined;
+
+		const part = this._chatQuestionCarouselDisposables.add(
+			this.instantiationService.createInstance(ChatQuestionCarouselPart, carousel, context, options)
+		);
+		this._chatQuestionCarouselWidget.value = part;
+
+		dom.clearNode(this.chatQuestionCarouselContainer);
+		dom.append(this.chatQuestionCarouselContainer, part.domNode);
+
+		return part;
+	}
+
+	clearQuestionCarousel(responseId?: string): void {
+		if (responseId && this._currentQuestionCarouselResponseId !== responseId) {
+			return;
+		}
+		this._chatQuestionCarouselDisposables.clear();
+		this._chatQuestionCarouselWidget.clear();
+		this._currentQuestionCarouselResponseId = undefined;
+		dom.clearNode(this.chatQuestionCarouselContainer);
+	}
+	get questionCarouselResponseId(): string | undefined {
+		return this._currentQuestionCarouselResponseId;
+	}
+
+	get questionCarousel(): ChatQuestionCarouselPart | undefined {
+		return this._chatQuestionCarouselWidget.value;
+	}
+
+	focusQuestionCarousel(): boolean {
+		const carousel = this._chatQuestionCarouselWidget.value;
+		if (carousel) {
+			carousel.focus();
+			return true;
+		}
+		return false;
+	}
+
+	isQuestionCarouselFocused(): boolean {
+		const carousel = this._chatQuestionCarouselWidget.value;
+		return carousel?.hasFocus() ?? false;
 	}
 
 	setWorkingSetCollapsed(collapsed: boolean): void {

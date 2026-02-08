@@ -157,6 +157,10 @@ export interface IChatAgentRequest {
 	 */
 	hooks?: IChatRequestHooks;
 	/**
+	 * Whether any hooks are enabled for this request.
+	 */
+	hasHooksEnabled?: boolean;
+	/**
 	 * Unique ID for the subagent invocation, used to group tool calls from the same subagent run together.
 	 */
 	subAgentInvocationId?: string;
@@ -267,7 +271,7 @@ export class ChatAgentService extends Disposable implements IChatAgentService {
 
 	private _agents = new Map<string, IChatAgentEntry>();
 
-	private readonly _onDidChangeAgents = new Emitter<IChatAgent | undefined>();
+	private readonly _onDidChangeAgents = this._register(new Emitter<IChatAgent | undefined>());
 	readonly onDidChangeAgents: Event<IChatAgent | undefined> = this._onDidChangeAgents.event;
 
 	private readonly _agentsContextKeys = new Set<string>();
