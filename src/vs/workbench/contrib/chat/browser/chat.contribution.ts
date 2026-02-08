@@ -1114,7 +1114,7 @@ configurationRegistry.registerConfiguration({
 				},
 				tokens: {
 					type: 'number',
-					description: nls.localize('chat.experimental.modelSelector.tokens', "The number of tokens for the language model.")
+					description: nls.localize('chat.experimental.modelSelector.tokens', "The number of tokens for the language model selector.")
 				}
 			},
 			additionalProperties: false,
