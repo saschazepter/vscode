@@ -55,6 +55,10 @@ suite('PromptHoverProvider', () => {
 		const testModels: ILanguageModelChatMetadata[] = [
 			{ id: 'mae-4', name: 'MAE 4', vendor: 'olama', version: '1.0', family: 'mae', modelPickerCategory: undefined, extension: new ExtensionIdentifier('a.b'), isUserSelectable: true, maxInputTokens: 8192, maxOutputTokens: 1024, capabilities: { agentMode: true, toolCalling: true }, isDefaultForLocation: { [ChatAgentLocation.Chat]: true } } satisfies ILanguageModelChatMetadata,
 			{ id: 'mae-4.1', name: 'MAE 4.1', vendor: 'copilot', version: '1.0', family: 'mae', modelPickerCategory: undefined, extension: new ExtensionIdentifier('a.b'), isUserSelectable: true, maxInputTokens: 8192, maxOutputTokens: 1024, capabilities: { agentMode: true, toolCalling: true }, isDefaultForLocation: { [ChatAgentLocation.Chat]: true } } satisfies ILanguageModelChatMetadata,
+			// Claude model equivalents
+			{ id: 'claude-sonnet-4.5', name: 'Claude Sonnet 4.5', vendor: 'copilot', version: '1.0', family: 'claude', modelPickerCategory: undefined, extension: new ExtensionIdentifier('a.b'), isUserSelectable: true, maxInputTokens: 200000, maxOutputTokens: 8192, capabilities: { agentMode: true, toolCalling: true }, isDefaultForLocation: {} } satisfies ILanguageModelChatMetadata,
+			{ id: 'claude-opus-4.6', name: 'Claude Opus 4.6', vendor: 'copilot', version: '1.0', family: 'claude', modelPickerCategory: undefined, extension: new ExtensionIdentifier('a.b'), isUserSelectable: true, maxInputTokens: 200000, maxOutputTokens: 8192, capabilities: { agentMode: true, toolCalling: true }, isDefaultForLocation: {} } satisfies ILanguageModelChatMetadata,
+			{ id: 'claude-haiku-4.5', name: 'Claude Haiku 4.5', vendor: 'copilot', version: '1.0', family: 'claude', modelPickerCategory: undefined, extension: new ExtensionIdentifier('a.b'), isUserSelectable: true, maxInputTokens: 200000, maxOutputTokens: 8192, capabilities: { agentMode: true, toolCalling: true }, isDefaultForLocation: {} } satisfies ILanguageModelChatMetadata,
 		];
 
 		instaService.stub(ILanguageModelsService, {
@@ -569,7 +573,16 @@ suite('PromptHoverProvider', () => {
 				'---',
 			].join('\n');
 			const hover = await getClaudeHover(content, 4, 1);
-			assert.strictEqual(hover, 'Latest Claude Opus');
+			const expected = [
+				'Model to use: sonnet, opus, haiku, or inherit. Defaults to inherit.',
+				'',
+				'Claude model `opus` maps to the following model:',
+				'',
+				'- Name: Claude Opus 4.6',
+				'- Family: claude',
+				'- Vendor: copilot'
+			].join('\n');
+			assert.strictEqual(hover, expected);
 		});
 
 		test('hover on model attribute with sonnet value', async () => {
@@ -581,7 +594,16 @@ suite('PromptHoverProvider', () => {
 				'---',
 			].join('\n');
 			const hover = await getClaudeHover(content, 4, 1);
-			assert.strictEqual(hover, 'Latest Claude Sonnet');
+			const expected = [
+				'Model to use: sonnet, opus, haiku, or inherit. Defaults to inherit.',
+				'',
+				'Claude model `sonnet` maps to the following model:',
+				'',
+				'- Name: Claude Sonnet 4.5',
+				'- Family: claude',
+				'- Vendor: copilot'
+			].join('\n');
+			assert.strictEqual(hover, expected);
 		});
 
 		test('hover on model attribute with haiku value', async () => {
@@ -593,7 +615,16 @@ suite('PromptHoverProvider', () => {
 				'---',
 			].join('\n');
 			const hover = await getClaudeHover(content, 4, 1);
-			assert.strictEqual(hover, 'Latest Claude Haiku, fast for simple tasks');
+			const expected = [
+				'Model to use: sonnet, opus, haiku, or inherit. Defaults to inherit.',
+				'',
+				'Claude model `haiku` maps to the following model:',
+				'',
+				'- Name: Claude Haiku 4.5',
+				'- Family: claude',
+				'- Vendor: copilot'
+			].join('\n');
+			assert.strictEqual(hover, expected);
 		});
 
 		test('hover on model attribute with inherit value', async () => {
@@ -605,7 +636,12 @@ suite('PromptHoverProvider', () => {
 				'---',
 			].join('\n');
 			const hover = await getClaudeHover(content, 4, 1);
-			assert.strictEqual(hover, 'Inherit model from parent agent or prompt');
+			const expected = [
+				'Model to use: sonnet, opus, haiku, or inherit. Defaults to inherit.',
+				'',
+				'Inherit model from parent agent or prompt'
+			].join('\n');
+			assert.strictEqual(hover, expected);
 		});
 
 		test('hover on disallowedTools attribute shows Claude description', async () => {
@@ -731,7 +767,16 @@ suite('PromptHoverProvider', () => {
 
 			// Hover on model value 'opus' (line 5)
 			const modelHover = await getClaudeHover(content, 5, 1);
-			assert.strictEqual(modelHover, 'Latest Claude Opus');
+			const expectedModelHover = [
+				'Model to use: sonnet, opus, haiku, or inherit. Defaults to inherit.',
+				'',
+				'Claude model `opus` maps to the following model:',
+				'',
+				'- Name: Claude Opus 4.6',
+				'- Family: claude',
+				'- Vendor: copilot'
+			].join('\n');
+			assert.strictEqual(modelHover, expectedModelHover);
 		});
 	});
 });

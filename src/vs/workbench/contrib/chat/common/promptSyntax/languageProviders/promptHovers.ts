@@ -151,16 +151,26 @@ export class PromptHoverProvider implements HoverProvider {
 			return this.createHover(baseMessage + '\n\n' + localize('promptHeader.agent.model.githubCopilot', 'Note: This attribute is not used when target is github-copilot.'), node.range);
 		}
 		const modelHoverContent = (modelName: string): Hover | undefined => {
+			const lines: string[] = [];
+			lines.push(baseMessage + '\n');
+
 			if (target === Target.Claude) {
-				const description = knownClaudeModels.find(model => model.name === modelName)?.description;
-				return description ? this.createHover(description, node.range) : undefined;
+				const claudeModel = knownClaudeModels.find(model => model.name === modelName);
+				if (!claudeModel) {
+					return this.createHover(lines.join('\n'), node.range);
+				}
+				if (claudeModel.modelEquivalent) {
+					lines.push(localize('claudeModelEquivalent', 'Claude model `{0}` maps to the following model:\n', modelName));
+					modelName = claudeModel.modelEquivalent;
+				} else {
+					lines.push(claudeModel.description);
+					return this.createHover(lines.join('\n'), node.range);
+				}
 			}
 
 			const result = this.languageModelsService.lookupLanguageModelByQualifiedName(modelName);
 			if (result) {
 				const meta = result.metadata;
-				const lines: string[] = [];
-				lines.push(baseMessage + '\n');
 				lines.push(localize('modelName', '- Name: {0}', meta.name));
 				lines.push(localize('modelFamily', '- Family: {0}', meta.family));
 				lines.push(localize('modelVendor', '- Vendor: {0}', meta.vendor));

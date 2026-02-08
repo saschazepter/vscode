@@ -787,11 +787,22 @@ export const knownClaudeTools = [
 ];
 
 export const knownClaudeModels = [
-	{ name: 'sonnet', description: localize('claude.sonnet', 'Latest Claude Sonnet') },
-	{ name: 'opus', description: localize('claude.opus', 'Latest Claude Opus') },
-	{ name: 'haiku', description: localize('claude.haiku', 'Latest Claude Haiku, fast for simple tasks') },
-	{ name: 'inherit', description: localize('claude.inherit', 'Inherit model from parent agent or prompt') },
+	{ name: 'sonnet', description: localize('claude.sonnet', 'Latest Claude Sonnet'), modelEquivalent: 'Claude Sonnet 4.5 (copilot)' },
+	{ name: 'opus', description: localize('claude.opus', 'Latest Claude Opus'), modelEquivalent: 'Claude Opus 4.6 (copilot)' },
+	{ name: 'haiku', description: localize('claude.haiku', 'Latest Claude Haiku, fast for simple tasks'), modelEquivalent: 'Claude Haiku 4.5 (copilot)' },
+	{ name: 'inherit', description: localize('claude.inherit', 'Inherit model from parent agent or prompt'), modelEquivalent: undefined },
 ];
+
+export function mapClaudeModels(claudeModelNames: readonly string[]): readonly string[] {
+	const result = [];
+	for (const name of claudeModelNames) {
+		const claudeModel = knownClaudeModels.find(model => model.name === name);
+		if (claudeModel && claudeModel.modelEquivalent) {
+			result.push(claudeModel.modelEquivalent);
+		}
+	}
+	return result;
+}
 
 export const claudeAgentAttributes: Record<string, { type: string; description: string; defaults?: string[]; items?: IValueEntry[]; enums?: IValueEntry[] }> = {
 	'name': {
