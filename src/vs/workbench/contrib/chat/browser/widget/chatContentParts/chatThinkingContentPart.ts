@@ -31,6 +31,7 @@ import { CancellationTokenSource } from '../../../../../../base/common/cancellat
 import { IChatMarkdownAnchorService } from './chatMarkdownAnchorService.js';
 import { ChatMessageRole, ILanguageModelsService } from '../../../common/languageModels.js';
 import { ExtensionIdentifier } from '../../../../../../platform/extensions/common/extensions.js';
+import { isObject } from '../../../../../../base/common/types.js';
 import './media/chatThinkingContent.css';
 import { IHoverService } from '../../../../../../platform/hover/browser/hover.js';
 
@@ -722,7 +723,7 @@ export class ChatThinkingContentPart extends ChatCollapsibleContentPart implemen
 
 			// Check if a custom model selector is configured
 			const customSelector = this.configurationService.getValue<object | null>('chat.experimental.modelSelector');
-			if (customSelector && typeof customSelector === 'object' && customSelector !== null) {
+			if (customSelector && isObject(customSelector)) {
 				models = await this.languageModelsService.selectLanguageModels(customSelector);
 				if (models.length === 0) {
 					throw new Error(`No models found matching the configured selector: ${JSON.stringify(customSelector)}`);
