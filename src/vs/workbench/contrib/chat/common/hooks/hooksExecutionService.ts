@@ -507,13 +507,6 @@ export class HooksExecutionService extends Disposable implements IHooksExecution
 			}
 		}
 
-		// Check if any result has stopReason or warningMessage set (from continue=false or exit code 2)
-		const hasStopOrWarning = results.some(r => r.stopReason !== undefined || r.warningMessage !== undefined);
-
-		if (!mostRestrictiveDecision && !lastUpdatedInput && allAdditionalContext.length === 0 && !hasStopOrWarning) {
-			return undefined;
-		}
-
 		const baseResult = winningResult ?? results[0];
 
 		// Emit hook progress for warning messages after all hooks have completed
@@ -601,14 +594,6 @@ export class HooksExecutionService extends Disposable implements IHooksExecution
 					this._logService.warn(`[HooksExecutionService] postToolUse hook output validation failed: ${validationResult.error.message}`);
 				}
 			}
-		}
-
-		// Check if any result has stopReason or warningMessage set (from continue=false or exit code 2)
-		const hasStopOrWarning = results.some(r => r.stopReason !== undefined || r.warningMessage !== undefined);
-
-		// Return combined result if there's a block decision, additional context, or stop/warning
-		if (!hasBlock && allAdditionalContext.length === 0 && !hasStopOrWarning) {
-			return undefined;
 		}
 
 		const baseResult = blockResult ?? results[0];
