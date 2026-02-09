@@ -959,15 +959,9 @@ export class DebugEditorContribution implements IDebugEditorContribution {
 	}
 
 	dispose(): void {
-		if (this.hoverWidget) {
-			this.hoverWidget.dispose();
-		}
-		if (this.configurationWidget) {
-			this.configurationWidget.dispose();
-		}
-		if (this.exceptionWidget) {
-			this.exceptionWidget.dispose();
-		}
+		this.hoverWidget?.dispose();
+		this.configurationWidget?.dispose();
+		this.exceptionWidget?.dispose();
 		this.toDispose = dispose(this.toDispose);
 	}
 }
