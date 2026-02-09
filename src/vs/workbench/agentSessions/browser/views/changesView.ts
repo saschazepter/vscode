@@ -5,22 +5,30 @@
 
 import './media/changesView.css';
 import * as dom from '../../../../base/browser/dom.js';
+import { IListRenderer, IListVirtualDelegate } from '../../../../base/browser/ui/list/list.js';
 import { Codicon } from '../../../../base/common/codicons.js';
-import { ThemeIcon } from '../../../../base/common/themables.js';
+import { MarkdownString } from '../../../../base/common/htmlContent.js';
+import { Iterable } from '../../../../base/common/iterator.js';
 import { DisposableStore, MutableDisposable } from '../../../../base/common/lifecycle.js';
 import { autorun, derived, observableFromEvent, observableValue } from '../../../../base/common/observable.js';
-import { IActivityService, NumberBadge } from '../../../services/activity/common/activity.js';
+import { basename } from '../../../../base/common/path.js';
+import { isEqual } from '../../../../base/common/resources.js';
 import { ScrollbarVisibility } from '../../../../base/common/scrollable.js';
-import { Iterable } from '../../../../base/common/iterator.js';
+import { ThemeIcon } from '../../../../base/common/themables.js';
+import { URI } from '../../../../base/common/uri.js';
 import { localize } from '../../../../nls.js';
 import { MenuWorkbenchButtonBar } from '../../../../platform/actions/browser/buttonbar.js';
+import { MenuWorkbenchToolBar } from '../../../../platform/actions/browser/toolbar.js';
 import { MenuId } from '../../../../platform/actions/common/actions.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { IContextMenuService } from '../../../../platform/contextview/browser/contextView.js';
+import { FileKind } from '../../../../platform/files/common/files.js';
 import { IHoverService } from '../../../../platform/hover/browser/hover.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { IKeybindingService } from '../../../../platform/keybinding/common/keybinding.js';
+import { ILabelService } from '../../../../platform/label/common/label.js';
+import { WorkbenchList } from '../../../../platform/list/browser/listService.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { bindContextKey } from '../../../../platform/observable/common/platformObservableUtils.js';
 import { IOpenerService } from '../../../../platform/opener/common/opener.js';
@@ -29,24 +37,23 @@ import { IStorageService } from '../../../../platform/storage/common/storage.js'
 import { ITelemetryService } from '../../../../platform/telemetry/common/telemetry.js';
 import { IThemeService } from '../../../../platform/theme/common/themeService.js';
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
+import { fillEditorsDragData } from '../../../browser/dnd.js';
+import { IResourceLabel, ResourceLabels } from '../../../browser/labels.js';
 import { ViewPane, IViewPaneOptions } from '../../../browser/parts/views/viewPane.js';
 import { ViewPaneContainer } from '../../../browser/parts/views/viewPaneContainer.js';
 import { IViewDescriptorService } from '../../../common/views.js';
+import { IChatWidgetService } from '../../../contrib/chat/browser/chat.js';
+import { IAgentSessionsService } from '../../../contrib/chat/browser/agentSessions/agentSessionsService.js';
+import { AgentSessionProviders } from '../../../contrib/chat/browser/agentSessions/agentSessions.js';
 import { ChatContextKeys } from '../../../contrib/chat/common/actions/chatContextKeys.js';
-import { hasAppliedChatEditsContextKey, hasUndecidedChatEditingResourceContextKey, IChatEditingService, ModifiedFileEntryState } from '../../../contrib/chat/common/editing/chatEditingService.js';
-import { CollapsibleListPool, IChatCollapsibleListItem } from '../../../contrib/chat/browser/widget/chatContentParts/chatReferencesContentPart.js';
+import { isIChatSessionFileChange2 } from '../../../contrib/chat/common/chatSessionsService.js';
+import { chatEditingWidgetFileStateContextKey, hasAppliedChatEditsContextKey, hasUndecidedChatEditingResourceContextKey, IChatEditingService, ModifiedFileEntryState } from '../../../contrib/chat/common/editing/chatEditingService.js';
+import { getChatSessionType } from '../../../contrib/chat/common/model/chatUri.js';
 import { createFileIconThemableTreeContainerScope } from '../../../contrib/files/browser/views/explorerView.js';
+import { IActivityService, NumberBadge } from '../../../services/activity/common/activity.js';
 import { ACTIVE_GROUP, IEditorService, SIDE_GROUP } from '../../../services/editor/common/editorService.js';
 import { IExtensionService } from '../../../services/extensions/common/extensions.js';
 import { IWorkbenchLayoutService } from '../../../services/layout/browser/layoutService.js';
-import { URI } from '../../../../base/common/uri.js';
-import { IChatWidgetService } from '../../../contrib/chat/browser/chat.js';
-import { isEqual } from '../../../../base/common/resources.js';
-import { IAgentSessionsService } from '../../../contrib/chat/browser/agentSessions/agentSessionsService.js';
-import { isIChatSessionFileChange2 } from '../../../contrib/chat/common/chatSessionsService.js';
-import { getChatSessionType } from '../../../contrib/chat/common/model/chatUri.js';
-import { AgentSessionProviders } from '../../../contrib/chat/browser/agentSessions/agentSessions.js';
-import { MarkdownString } from '../../../../base/common/htmlContent.js';
 
 const $ = dom.$;
 
@@ -54,6 +61,20 @@ const $ = dom.$;
 
 export const CHANGES_VIEW_CONTAINER_ID = 'workbench.view.agentSessions.changesContainer';
 export const CHANGES_VIEW_ID = 'workbench.view.agentSessions.changes';
+
+// --- List Item
+
+type ChangeType = 'added' | 'modified' | 'deleted';
+
+interface IChangesListItem {
+	readonly uri: URI;
+	readonly originalUri?: URI;
+	readonly state: ModifiedFileEntryState;
+	readonly isDeletion: boolean;
+	readonly changeType: ChangeType;
+	readonly linesAdded: number;
+	readonly linesRemoved: number;
+}
 
 // --- View Pane
 
@@ -68,8 +89,7 @@ export class ChangesViewPane extends ViewPane {
 	// Actions container is positioned outside the card for this layout experiment
 	private actionsContainer: HTMLElement | undefined;
 
-	private readonly listPool: CollapsibleListPool;
-	private listRef: { object: import('../../../../platform/list/browser/listService.js').WorkbenchList<IChatCollapsibleListItem>; dispose(): void } | undefined;
+	private list: WorkbenchList<IChangesListItem> | undefined;
 
 	private readonly renderDisposables = this._register(new DisposableStore());
 
@@ -95,19 +115,12 @@ export class ChangesViewPane extends ViewPane {
 		@IChatWidgetService private readonly chatWidgetService: IChatWidgetService,
 		@IActivityService private readonly activityService: IActivityService,
 		@IAgentSessionsService private readonly agentSessionsService: IAgentSessionsService,
+		@ILabelService private readonly labelService: ILabelService,
 	) {
 		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
 
 		// Setup badge tracking
 		this.registerBadgeTracking();
-
-		// Create the list pool
-		this.listPool = this._register(this.instantiationService.createInstance(
-			CollapsibleListPool,
-			this.onDidChangeBodyVisibility,
-			MenuId.ChatEditingWidgetModifiedFilesToolbar,
-			{ verticalScrollMode: ScrollbarVisibility.Visible }
-		));
 
 		// Track active session from focused chat widgets
 		this.registerActiveSessionTracking();
@@ -282,24 +295,21 @@ export class ChangesViewPane extends ViewPane {
 			}
 
 			const entries = session.entries.read(reader);
-			const items: IChatCollapsibleListItem[] = [];
+			const items: IChangesListItem[] = [];
 
 			for (const entry of entries) {
-				const state = entry.state.read(reader);
-
+				const isDeletion = entry.isDeletion ?? false;
 				const linesAdded = entry.linesAdded?.read(reader) ?? 0;
 				const linesRemoved = entry.linesRemoved?.read(reader) ?? 0;
 
 				items.push({
-					reference: entry.modifiedURI,
-					state: state,
-					kind: 'reference',
-					options: {
-						diffMeta: { added: linesAdded, removed: linesRemoved },
-						isDeletion: entry.isDeletion,
-						originalUri: entry.originalURI,
-						status: undefined
-					}
+					uri: entry.modifiedURI,
+					originalUri: entry.originalURI,
+					state: entry.state.read(reader),
+					isDeletion,
+					changeType: isDeletion ? 'deleted' : 'modified',
+					linesAdded,
+					linesRemoved,
 				});
 			}
 
@@ -322,19 +332,21 @@ export class ChangesViewPane extends ViewPane {
 
 		// Convert session file changes to list items (cloud/background sessions)
 		const sessionFilesObs = derived(reader =>
-			[...sessionFileChangesObs.read(reader)].map((entry): IChatCollapsibleListItem => ({
-				reference: isIChatSessionFileChange2(entry)
-					? entry.modifiedUri ?? entry.uri
-					: entry.modifiedUri,
-				state: ModifiedFileEntryState.Accepted,
-				kind: 'reference',
-				options: {
-					diffMeta: { added: entry.insertions, removed: entry.deletions },
-					isDeletion: entry.modifiedUri === undefined,
+			[...sessionFileChangesObs.read(reader)].map((entry): IChangesListItem => {
+				const isDeletion = entry.modifiedUri === undefined;
+				const isAddition = entry.originalUri === undefined;
+				return {
+					uri: isIChatSessionFileChange2(entry)
+						? entry.modifiedUri ?? entry.uri
+						: entry.modifiedUri,
 					originalUri: entry.originalUri,
-					status: undefined
-				}
-			}))
+					state: ModifiedFileEntryState.Accepted,
+					isDeletion,
+					changeType: isDeletion ? 'deleted' : isAddition ? 'added' : 'modified',
+					linesAdded: entry.insertions,
+					linesRemoved: entry.deletions,
+				};
+			})
 		);
 
 		// Combine both entry sources for display
@@ -353,10 +365,8 @@ export class ChangesViewPane extends ViewPane {
 			let added = 0, removed = 0;
 
 			for (const entry of entries) {
-				if (entry.kind === 'reference' && entry.options?.diffMeta) {
-					added += entry.options.diffMeta.added;
-					removed += entry.options.diffMeta.removed;
-				}
+				added += entry.linesAdded;
+				removed += entry.linesRemoved;
 			}
 
 			const files = entries.length;
@@ -454,43 +464,80 @@ export class ChangesViewPane extends ViewPane {
 			}));
 		}
 
-		// Create or reuse list
-		if (!this.listRef && this.listContainer) {
-			this.listRef = this.listPool.get();
-			dom.append(this.listContainer, this.listRef.object.getHTMLElement());
+		// Create the list
+		if (!this.list && this.listContainer) {
+			const resourceLabels = this._register(this.instantiationService.createInstance(ResourceLabels, { onDidChangeVisibility: this.onDidChangeBodyVisibility }));
+			this.list = this.instantiationService.createInstance(
+				WorkbenchList<IChangesListItem>,
+				'ChangesViewList',
+				this.listContainer,
+				new ChangesListDelegate(),
+				[this.instantiationService.createInstance(ChangesListRenderer, resourceLabels, MenuId.ChatEditingWidgetModifiedFilesToolbar)],
+				{
+					verticalScrollMode: ScrollbarVisibility.Visible,
+					alwaysConsumeMouseWheel: false,
+					accessibilityProvider: {
+						getAriaLabel: (element: IChangesListItem) => basename(element.uri.path),
+						getWidgetAriaLabel: () => localize('changesViewList', "Changes List")
+					},
+					dnd: {
+						getDragURI: (element: IChangesListItem) => element.uri.toString(),
+						getDragLabel: (elements) => {
+							const uris = elements.map(e => e.uri);
+							if (uris.length === 1) {
+								return this.labelService.getUriLabel(uris[0], { relative: true });
+							}
+							return `${uris.length}`;
+						},
+						dispose: () => { },
+						onDragOver: () => false,
+						drop: () => { },
+						onDragStart: (data, originalEvent) => {
+							try {
+								const elements = data.getData() as IChangesListItem[];
+								const uris = elements.map(e => e.uri);
+								this.instantiationService.invokeFunction(accessor => fillEditorsDragData(accessor, uris, originalEvent));
+							} catch {
+								// noop
+							}
+						},
+					},
+				}
+			);
 		}
 
 		// Register list event handlers
-		if (this.listRef) {
-			const list = this.listRef.object;
+		if (this.list) {
+			const list = this.list;
 
 			this.renderDisposables.add(list.onDidOpen(async (e) => {
-				if (e.element?.kind === 'reference' && URI.isUri(e.element.reference)) {
-					const modifiedFileUri = e.element.reference;
-					const originalUri = e.element.options?.originalUri;
+				if (!e.element) {
+					return;
+				}
 
-					if (e.element.options?.isDeletion && originalUri) {
-						await this.editorService.openEditor({
-							resource: originalUri,
-							options: e.editorOptions
-						}, e.sideBySide ? SIDE_GROUP : ACTIVE_GROUP);
-						return;
-					}
+				const { uri: modifiedFileUri, originalUri, isDeletion } = e.element;
 
-					if (originalUri) {
-						await this.editorService.openEditor({
-							original: { resource: originalUri },
-							modified: { resource: modifiedFileUri },
-							options: e.editorOptions
-						}, e.sideBySide ? SIDE_GROUP : ACTIVE_GROUP);
-						return;
-					}
-
+				if (isDeletion && originalUri) {
 					await this.editorService.openEditor({
-						resource: modifiedFileUri,
+						resource: originalUri,
 						options: e.editorOptions
 					}, e.sideBySide ? SIDE_GROUP : ACTIVE_GROUP);
+					return;
 				}
+
+				if (originalUri) {
+					await this.editorService.openEditor({
+						original: { resource: originalUri },
+						modified: { resource: modifiedFileUri },
+						options: e.editorOptions
+					}, e.sideBySide ? SIDE_GROUP : ACTIVE_GROUP);
+					return;
+				}
+
+				await this.editorService.openEditor({
+					resource: modifiedFileUri,
+					options: e.editorOptions
+				}, e.sideBySide ? SIDE_GROUP : ACTIVE_GROUP);
 			}));
 		}
 
@@ -498,17 +545,16 @@ export class ChangesViewPane extends ViewPane {
 		this.renderDisposables.add(autorun(reader => {
 			const entries = combinedEntriesObs.read(reader);
 
-			if (!this.listRef) {
+			if (!this.list) {
 				return;
 			}
 
 			const maxItemsShown = 6;
 			const itemsShown = Math.min(entries.length, maxItemsShown);
 			const height = itemsShown * 22;
-			const list = this.listRef.object;
-			list.layout(height);
-			list.getHTMLElement().style.height = `${height}px`;
-			list.splice(0, list.length, entries);
+			this.list.layout(height);
+			this.list.getHTMLElement().style.height = `${height}px`;
+			this.list.splice(0, this.list.length, entries);
 		}));
 	}
 
@@ -518,12 +564,12 @@ export class ChangesViewPane extends ViewPane {
 
 	override focus(): void {
 		super.focus();
-		this.listRef?.object.domFocus();
+		this.list?.domFocus();
 	}
 
 	override dispose(): void {
-		this.listRef?.dispose();
-		this.listRef = undefined;
+		this.list?.dispose();
+		this.list = undefined;
 		super.dispose();
 	}
 }
@@ -548,5 +594,112 @@ export class ChangesViewPaneContainer extends ViewPaneContainer {
 	override create(parent: HTMLElement): void {
 		super.create(parent);
 		parent.classList.add('changes-viewlet');
+	}
+}
+
+// --- List Delegate & Renderer
+
+class ChangesListDelegate implements IListVirtualDelegate<IChangesListItem> {
+	getHeight(_element: IChangesListItem): number {
+		return 22;
+	}
+
+	getTemplateId(_element: IChangesListItem): string {
+		return ChangesListRenderer.TEMPLATE_ID;
+	}
+}
+
+interface IChangesListTemplate {
+	readonly label: IResourceLabel;
+	readonly templateDisposables: DisposableStore;
+	readonly toolbar: MenuWorkbenchToolBar | undefined;
+	readonly contextKeyService: IContextKeyService | undefined;
+	readonly decorationBadge: HTMLElement;
+	readonly addedSpan: HTMLElement;
+	readonly removedSpan: HTMLElement;
+}
+
+class ChangesListRenderer implements IListRenderer<IChangesListItem, IChangesListTemplate> {
+	static TEMPLATE_ID = 'changesListRenderer';
+	readonly templateId: string = ChangesListRenderer.TEMPLATE_ID;
+
+	constructor(
+		private labels: ResourceLabels,
+		private menuId: MenuId | undefined,
+		@IInstantiationService private readonly instantiationService: IInstantiationService,
+		@IContextKeyService private readonly contextKeyService: IContextKeyService,
+	) { }
+
+	renderTemplate(container: HTMLElement): IChangesListTemplate {
+		const templateDisposables = new DisposableStore();
+		const label = templateDisposables.add(this.labels.create(container, { supportHighlights: true, supportIcons: true }));
+
+		const fileDiffsContainer = $('.working-set-line-counts');
+		const addedSpan = dom.$('.working-set-lines-added');
+		const removedSpan = dom.$('.working-set-lines-removed');
+		fileDiffsContainer.appendChild(addedSpan);
+		fileDiffsContainer.appendChild(removedSpan);
+		label.element.appendChild(fileDiffsContainer);
+
+		const decorationBadge = dom.$('.changes-decoration-badge');
+		label.element.appendChild(decorationBadge);
+
+		let toolbar: MenuWorkbenchToolBar | undefined;
+		let contextKeyService: IContextKeyService | undefined;
+		if (this.menuId) {
+			const actionBarContainer = $('.chat-collapsible-list-action-bar');
+			contextKeyService = templateDisposables.add(this.contextKeyService.createScoped(actionBarContainer));
+			const scopedInstantiationService = templateDisposables.add(this.instantiationService.createChild(new ServiceCollection([IContextKeyService, contextKeyService])));
+			toolbar = templateDisposables.add(scopedInstantiationService.createInstance(MenuWorkbenchToolBar, actionBarContainer, this.menuId, { menuOptions: { shouldForwardArgs: true, arg: undefined } }));
+			label.element.appendChild(actionBarContainer);
+		}
+
+		return { templateDisposables, label, toolbar, contextKeyService, decorationBadge, addedSpan, removedSpan };
+	}
+
+	renderElement(data: IChangesListItem, _index: number, templateData: IChangesListTemplate): void {
+		templateData.label.element.style.display = 'flex';
+
+		templateData.label.setFile(data.uri, {
+			fileKind: FileKind.FILE,
+			fileDecorations: undefined,
+			strikethrough: data.changeType === 'deleted',
+		});
+
+		// Update decoration badge (A/M/D)
+		const badge = templateData.decorationBadge;
+		badge.className = 'changes-decoration-badge';
+		switch (data.changeType) {
+			case 'added':
+				badge.textContent = 'A';
+				badge.classList.add('added');
+				break;
+			case 'deleted':
+				badge.textContent = 'D';
+				badge.classList.add('deleted');
+				break;
+			case 'modified':
+			default:
+				badge.textContent = 'M';
+				badge.classList.add('modified');
+				break;
+		}
+
+		templateData.addedSpan.textContent = `+${data.linesAdded}`;
+		templateData.removedSpan.textContent = `-${data.linesRemoved}`;
+
+		// eslint-disable-next-line no-restricted-syntax
+		templateData.label.element.querySelector('.monaco-icon-name-container')?.classList.add('modified');
+
+		if (templateData.toolbar) {
+			templateData.toolbar.context = data.uri;
+		}
+		if (templateData.contextKeyService) {
+			chatEditingWidgetFileStateContextKey.bindTo(templateData.contextKeyService).set(data.state);
+		}
+	}
+
+	disposeTemplate(templateData: IChangesListTemplate): void {
+		templateData.templateDisposables.dispose();
 	}
 }

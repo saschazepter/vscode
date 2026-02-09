@@ -163,6 +163,31 @@
 	display: inherit;
 }
 
+/* Decoration badges (A/M/D) */
+.changes-view-body .chat-editing-session-list .changes-decoration-badge {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 16px;
+	min-width: 16px;
+	font-size: 11px;
+	font-weight: 600;
+	line-height: 1;
+	margin-right: 2px;
+	opacity: 0.9;
+}
+
+.changes-view-body .chat-editing-session-list .changes-decoration-badge.added {
+	color: var(--vscode-gitDecoration-addedResourceForeground);
+}
+
+.changes-view-body .chat-editing-session-list .changes-decoration-badge.modified {
+	color: var(--vscode-gitDecoration-modifiedResourceForeground);
+}
+
+.changes-view-body .chat-editing-session-list .changes-decoration-badge.deleted {
+	color: var(--vscode-gitDecoration-deletedResourceForeground);
+}
 /* Line counts in list items */
 .changes-view-body .chat-editing-session-list .working-set-line-counts {
 	margin: 0 6px;
