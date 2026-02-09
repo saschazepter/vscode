@@ -4,28 +4,29 @@
  *--------------------------------------------------------------------------------------------*/
 
 import './media/unifiedQuickAccess.css';
-import { $, addDisposableListener, EventType } from '../../../../../../base/browser/dom.js';
-import { Disposable, DisposableStore, isDisposable } from '../../../../../../base/common/lifecycle.js';
+import { $ } from '../../../../../../base/browser/dom.js';
+import { Disposable, DisposableStore, MutableDisposable, isDisposable } from '../../../../../../base/common/lifecycle.js';
 import { IQuickInputService, IQuickPick, IQuickPickItem } from '../../../../../../platform/quickinput/common/quickInput.js';
 import { IInstantiationService } from '../../../../../../platform/instantiation/common/instantiation.js';
 import { localize } from '../../../../../../nls.js';
 import { Radio, IRadioOptionItem } from '../../../../../../base/browser/ui/radio/radio.js';
 import { CancellationTokenSource } from '../../../../../../base/common/cancellation.js';
+import { disposableTimeout } from '../../../../../../base/common/async.js';
 import { Extensions, IQuickAccessProvider, IQuickAccessProviderDescriptor, IQuickAccessRegistry } from '../../../../../../platform/quickinput/common/quickAccess.js';
 import { Registry } from '../../../../../../platform/registry/common/platform.js';
 import { IContextKeyService } from '../../../../../../platform/contextkey/common/contextkey.js';
-import { createInstantHoverDelegate, getDefaultHoverDelegate } from '../../../../../../base/browser/ui/hover/hoverDelegateFactory.js';
-import { IHoverService } from '../../../../../../platform/hover/browser/hover.js';
-import { Codicon } from '../../../../../../base/common/codicons.js';
-import { renderIcon } from '../../../../../../base/browser/ui/iconLabel/iconLabels.js';
-import { Event } from '../../../../../../base/common/event.js';
-import { ILayoutService } from '../../../../../../platform/layout/browser/layoutService.js';
+import { createInstantHoverDelegate } from '../../../../../../base/browser/ui/hover/hoverDelegateFactory.js';
 import { ICommandService } from '../../../../../../platform/commands/common/commands.js';
 import { IKeybindingService } from '../../../../../../platform/keybinding/common/keybinding.js';
 import { ACTION_ID_NEW_CHAT, CHAT_OPEN_ACTION_ID, IChatViewOpenOptions } from '../../actions/chatActions.js';
 
 /** Marker ID for the "send to agent" quick pick item */
 const SEND_TO_AGENT_ID = 'unified-quick-access-send-to-agent';
+
+/** Extended quick pick item with optional id used for send-to-agent detection. */
+interface IUnifiedQuickPickItem extends IQuickPickItem {
+	id?: string;
+}
 
 /**
  * Tab configuration for the unified quick access widget.
@@ -74,7 +75,10 @@ export const DEFAULT_UNIFIED_QUICK_ACCESS_TABS: IUnifiedQuickAccessTab[] = [
 
 /**
  * Service for showing a unified quick access widget with multiple tabs.
- * Combines multiple QuickAccessProviders into a single tabbed interface.
+ * Combines multiple QuickAccessProviders into a single tabbed interface,
+ * using the picker's built-in {@link IQuickPick.headerWidget headerWidget}
+ * slot for the tab bar and {@link IQuickPick.customButton customButton} for
+ * the send/open-chat action.
  */
 export class UnifiedQuickAccess extends Disposable {
 
@@ -86,15 +90,11 @@ export class UnifiedQuickAccess extends Disposable {
 	private _providerDisposables = this._register(new DisposableStore());
 	private _currentTab: IUnifiedQuickAccessTab | undefined;
 	private _providerCts: CancellationTokenSource | undefined;
-	private _tabBarContainer: HTMLElement | undefined;
-	private _isInternalValueChange = false; // Flag to prevent recursive tab detection
-	private _isUpdatingSendToAgent = false; // Guard to prevent infinite loop
-	private _arrivedViaShortcut: '<' | '>' | undefined; // Track if we arrived at current tab via shortcut key
-	private _sendToAgentTimeout: ReturnType<typeof setTimeout> | undefined;
-	private _sendButton: HTMLButtonElement | undefined;
-	private _sendButtonLabel: HTMLSpanElement | undefined;
-	private _sendButtonIcon: HTMLElement | undefined;
-	private _sendButtonHover: { update: (content: string) => void } | undefined;
+	private _radio: Radio | undefined;
+	private _isInternalValueChange = false;
+	private _isUpdatingSendToAgent = false;
+	private _arrivedViaShortcut: '<' | '>' | undefined;
+	private readonly _sendToAgentDebounce = this._register(new MutableDisposable());
 
 	private readonly _tabs: IUnifiedQuickAccessTab[];
 
@@ -103,10 +103,8 @@ export class UnifiedQuickAccess extends Disposable {
 		@IQuickInputService private readonly quickInputService: IQuickInputService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@IContextKeyService private readonly contextKeyService: IContextKeyService,
-		@ILayoutService private readonly layoutService: ILayoutService,
 		@ICommandService private readonly commandService: ICommandService,
 		@IKeybindingService private readonly keybindingService: IKeybindingService,
-		@IHoverService private readonly hoverService: IHoverService,
 	) {
 		super();
 		this._tabs = tabs ?? DEFAULT_UNIFIED_QUICK_ACCESS_TABS;
@@ -118,15 +116,15 @@ export class UnifiedQuickAccess extends Disposable {
 	 * @param initialValue Optional initial filter value.
 	 */
 	show(initialTabId?: string, initialValue?: string): void {
-		// If already showing, just focus
 		if (this._currentPicker) {
 			return;
 		}
 
 		this._currentDisposables.clear();
 
-		// Create picker
-		const picker: IQuickPick<IQuickPickItem, { useSeparators: true }> = this._currentDisposables.add(this.quickInputService.createQuickPick<IQuickPickItem>({ useSeparators: true }));
+		const picker = this._currentDisposables.add(
+			this.quickInputService.createQuickPick<IQuickPickItem>({ useSeparators: true })
+		);
 		this._currentPicker = picker;
 
 		// Configure picker
@@ -141,11 +139,13 @@ export class UnifiedQuickAccess extends Disposable {
 			: this._tabs[0];
 		this._currentTab = initialTab;
 
-		// Create and inject tab bar into the picker
-		this._injectTabBar(picker);
+		// --- Tab bar via picker.headerWidget ---
+		this._setupTabBar(picker);
 
-		// Set initial value and activate tab
-		// Start with empty value (don't prefill prefix) so user can type naturally
+		// --- Send / Open Chat button via picker.customButton ---
+		this._setupCustomButton(picker);
+
+		// Set initial value
 		this._isInternalValueChange = true;
 		picker.value = initialValue ?? '';
 		picker.placeholder = initialTab.placeholder;
@@ -160,7 +160,7 @@ export class UnifiedQuickAccess extends Disposable {
 				return;
 			}
 
-			// Check if user removed the shortcut character (including when input is emptied) - switch back to Files
+			// Check if user removed the shortcut character - switch back to Files
 			if (this._arrivedViaShortcut) {
 				const shortcut = this._arrivedViaShortcut;
 				if (!value.startsWith(shortcut)) {
@@ -173,17 +173,16 @@ export class UnifiedQuickAccess extends Disposable {
 				}
 			}
 
-			const matchingTab = this._detectTabFromValue(value);
+			const matchingTab = this._resolveTabFromValue(value);
 			if (matchingTab && matchingTab !== this._currentTab) {
 				this._switchTab(matchingTab, picker, true);
 			}
-			// Update send button state based on input
-			this._updateSendButtonState(value);
+
+			// Update custom button label
+			this._updateCustomButtonLabel(picker);
+
 			// Debounce send-to-agent check to let provider finish
-			if (this._sendToAgentTimeout) {
-				clearTimeout(this._sendToAgentTimeout);
-			}
-			this._sendToAgentTimeout = setTimeout(() => this._maybeShowSendToAgent(picker), 150);
+			this._sendToAgentDebounce.value = disposableTimeout(() => this._maybeShowSendToAgent(picker), 150);
 		}));
 
 		// Handle accept - send to agent if no real items or send-to-agent is selected
@@ -191,30 +190,27 @@ export class UnifiedQuickAccess extends Disposable {
 			const selectedItems = picker.selectedItems;
 			const activeItems = picker.activeItems;
 
-			// Check if send-to-agent item is selected
 			const sendToAgentSelected = selectedItems.length > 0 &&
-				(selectedItems[0] as IQuickPickItem & { id?: string }).id === SEND_TO_AGENT_ID;
+				(selectedItems[0] as IUnifiedQuickPickItem).id === SEND_TO_AGENT_ID;
 
-			// Check if there are any real items active (not send-to-agent)
 			const hasRealActiveItem = activeItems.some(item =>
-				(item as IQuickPickItem & { id?: string }).id !== SEND_TO_AGENT_ID
+				(item as IUnifiedQuickPickItem).id !== SEND_TO_AGENT_ID
 			);
 
-			// Get the filter text (without prefix or shortcut character)
-			let filterText: string;
-			if (this._arrivedViaShortcut && picker.value.startsWith(this._arrivedViaShortcut)) {
-				filterText = picker.value.substring(1).trim();
-			} else if (this._currentTab) {
-				filterText = picker.value.substring(this._currentTab.prefix.length).trim();
-			} else {
-				filterText = picker.value.trim();
-			}
+			const filterText = this._getFilterText(picker);
 
-			// Send to agent if:
-			// 1. Send-to-agent item is explicitly selected, OR
-			// 2. No real items are active AND user has typed something
 			if (sendToAgentSelected || (!hasRealActiveItem && filterText)) {
 				this._sendMessage(picker.value);
+			}
+		}));
+
+		// Handle custom button click (Send / Open Chat)
+		this._currentDisposables.add(picker.onDidCustom(() => {
+			const hasInput = picker.value.trim().length > 0;
+			if (hasInput) {
+				this._sendMessageRaw(picker.value);
+			} else {
+				this._openChat();
 			}
 		}));
 
@@ -226,23 +222,10 @@ export class UnifiedQuickAccess extends Disposable {
 			this._currentPicker = undefined;
 			this._currentTab = undefined;
 			this._arrivedViaShortcut = undefined;
-			// Clear any pending timeout
-			if (this._sendToAgentTimeout) {
-				clearTimeout(this._sendToAgentTimeout);
-				this._sendToAgentTimeout = undefined;
-			}
-			// Remove the injected tab bar from DOM
-			this._tabBarContainer?.remove();
-			this._tabBarContainer = undefined;
-			// Clear button references
-			this._sendButton = undefined;
-			this._sendButtonLabel = undefined;
-			this._sendButtonIcon = undefined;
-			this._sendButtonHover = undefined;
+			this._radio = undefined;
 			this._currentDisposables.clear();
 		}));
 
-		// Show picker
 		picker.show();
 	}
 
@@ -261,138 +244,61 @@ export class UnifiedQuickAccess extends Disposable {
 	}
 
 	/**
-	 * Inject the custom tab bar into the picker's header area.
+	 * Set up the Radio tab bar using the picker's {@link IQuickPick.headerWidget} slot.
 	 */
-	private _injectTabBar(picker: IQuickPick<IQuickPickItem, { useSeparators: true }>): void {
-		// Wait for picker to be shown to access DOM
-		const showDisposable = this._currentDisposables.add(Event.once(this.quickInputService.onShow)(() => {
-			this._currentDisposables.delete(showDisposable);
+	private _setupTabBar(picker: IQuickPick<IQuickPickItem, { useSeparators: true }>): void {
+		const tabBarContainer = $('div.unified-quick-access-tabs');
 
-			// Find the quick input widget container via layout service
-			// eslint-disable-next-line no-restricted-syntax
-			const quickInputWidget = this.layoutService.activeContainer.querySelector('.quick-input-widget');
-			if (!quickInputWidget) {
-				return;
-			}
-
-			// Find the header element (contains input box) and list element
-			// eslint-disable-next-line no-restricted-syntax
-			const header = quickInputWidget.querySelector('.quick-input-header');
-			// eslint-disable-next-line no-restricted-syntax
-			const list = quickInputWidget.querySelector('.quick-input-list');
-			if (!header || !list) {
-				return;
-			}
-
-			// Create tab bar container
-			const tabBarContainer = $('div.unified-quick-access-tabs');
-			this._tabBarContainer = tabBarContainer;
-
-			// Create Radio widget for tabs
-			const hoverDelegate = this._currentDisposables.add(createInstantHoverDelegate());
-			const radioItems: IRadioOptionItem[] = this._tabs.map(tab => ({
-				text: tab.label,
-				tooltip: tab.tooltip,
-				isActive: tab === this._currentTab,
-			}));
-
-			const radio = this._currentDisposables.add(new Radio({
-				items: radioItems,
-				hoverDelegate,
-			}));
-
-			tabBarContainer.appendChild(radio.domNode);
-
-			// Handle tab selection
-			this._currentDisposables.add(radio.onDidSelect(index => {
-				const selectedTab = this._tabs[index];
-				if (selectedTab && selectedTab !== this._currentTab) {
-					this._switchTab(selectedTab, picker, false);
-				}
-			}));
-
-			// Create send button (far right)
-			const sendButton = this._createSendButton(picker);
-			tabBarContainer.appendChild(sendButton);
-
-			// Insert tab bar between the header (input box) and the list (results)
-			list.parentElement?.insertBefore(tabBarContainer, list);
-
-			// Store reference to radio for updates
-			(picker as unknown as { _unifiedRadio?: Radio })._unifiedRadio = radio;
+		const hoverDelegate = this._currentDisposables.add(createInstantHoverDelegate());
+		const radioItems: IRadioOptionItem[] = this._tabs.map(tab => ({
+			text: tab.label,
+			tooltip: tab.tooltip,
+			isActive: tab === this._currentTab,
 		}));
-	}
 
-	/**
-	 * Create the send button.
-	 */
-	private _createSendButton(picker: IQuickPick<IQuickPickItem, { useSeparators: true }>): HTMLElement {
-		const container = $('div.unified-quick-access-send-container');
+		const radio = this._currentDisposables.add(new Radio({
+			items: radioItems,
+			hoverDelegate,
+		}));
+		this._radio = radio;
 
-		// Create send button
-		const button = $('button.unified-send-button') as HTMLButtonElement;
-		button.setAttribute('type', 'button');
-		this._sendButton = button;
+		tabBarContainer.appendChild(radio.domNode);
 
-		const icon = renderIcon(Codicon.send);
-		icon.classList.add('unified-send-icon');
-		this._sendButtonIcon = icon;
-		button.appendChild(icon);
-
-		const labelSpan = $('span.unified-send-label');
-		this._sendButtonLabel = labelSpan;
-		button.appendChild(labelSpan);
-
-		container.appendChild(button);
-
-		// Set up managed hover for the button
-		this._sendButtonHover = this._currentDisposables.add(
-			this.hoverService.setupManagedHover(getDefaultHoverDelegate('mouse'), button, '')
-		);
-
-		// Initialize button state
-		this._updateSendButtonState(picker.value);
-
-		// Click handler - behavior depends on input state
-		this._currentDisposables.add(addDisposableListener(button, EventType.CLICK, (e) => {
-			e.preventDefault();
-			e.stopPropagation();
-			const hasInput = picker.value.trim().length > 0;
-			if (hasInput) {
-				this._sendMessageRaw(picker.value);
-			} else {
-				this._openChat();
+		this._currentDisposables.add(radio.onDidSelect(index => {
+			const selectedTab = this._tabs[index];
+			if (selectedTab && selectedTab !== this._currentTab) {
+				this._switchTab(selectedTab, picker, false);
 			}
 		}));
 
-		return container;
+		// Use the picker's headerWidget slot - no DOM injection needed
+		picker.headerWidget = tabBarContainer;
 	}
 
 	/**
-	 * Update the send button label and tooltip based on input state.
+	 * Configure the picker's built-in custom button for Send / Open Chat.
 	 */
-	private _updateSendButtonState(value: string): void {
-		if (!this._sendButton || !this._sendButtonLabel || !this._sendButtonIcon) {
-			return;
-		}
+	private _setupCustomButton(picker: IQuickPick<IQuickPickItem, { useSeparators: true }>): void {
+		picker.customButton = true;
+		this._updateCustomButtonLabel(picker);
+	}
 
-		const hasInput = value.trim().length > 0;
+	/**
+	 * Update the custom button label and tooltip based on the current input value.
+	 */
+	private _updateCustomButtonLabel(picker: IQuickPick<IQuickPickItem, { useSeparators: true }>): void {
+		const hasInput = picker.value.trim().length > 0;
 
 		if (hasInput) {
-			// Show "Send" with no keybinding in tooltip (Enter is implied by quick pick)
-			this._sendButtonLabel.textContent = localize('send', "Send");
-			this._sendButtonHover?.update(localize('sendTooltipNoKeybinding', "Send message to new agent session"));
-			this._sendButtonIcon.style.display = '';
+			picker.customLabel = `$(send) ${localize('send', "Send")}`;
+			picker.customHover = localize('sendTooltipNoKeybinding', "Send message to new agent session");
 		} else {
-			// Show "Open Chat" with open chat keybinding and hide icon
 			const openChatKeybinding = this.keybindingService.lookupKeybinding(CHAT_OPEN_ACTION_ID);
 			const openChatLabel = openChatKeybinding?.getLabel() ?? '';
-			this._sendButtonLabel.textContent = localize('openChat', "Open Chat");
-			const tooltip = openChatLabel
+			picker.customLabel = localize('openChat', "Open Chat");
+			picker.customHover = openChatLabel
 				? localize('openChatTooltipWithKeybinding', "Open chat ({0})", openChatLabel)
 				: localize('openChatTooltipNoKeybinding', "Open chat");
-			this._sendButtonHover?.update(tooltip);
-			this._sendButtonIcon.style.display = 'none';
 		}
 	}
 
@@ -405,21 +311,14 @@ export class UnifiedQuickAccess extends Disposable {
 	}
 
 	/**
-	 * Send the exact message to a new agent session (no prefix stripping).
+	 * Create a new agent session and send the given message.
 	 */
-	private async _sendMessageRaw(value: string): Promise<void> {
-		const message = value.trim();
+	private async _sendToAgent(message: string): Promise<void> {
 		if (!message) {
 			return;
 		}
-
-		// Hide the picker first
 		this.hide();
-
-		// Always create a new chat first
 		await this.commandService.executeCommand(ACTION_ID_NEW_CHAT);
-
-		// Then send the message to the new chat
 		const options: IChatViewOpenOptions = {
 			query: message,
 			isPartialQuery: false,
@@ -428,62 +327,49 @@ export class UnifiedQuickAccess extends Disposable {
 	}
 
 	/**
-	 * Send the current message to a new agent session (strips prefix or shortcut character).
+	 * Send the raw picker value (no prefix stripping).
 	 */
-	private async _sendMessage(value: string): Promise<void> {
-		// Strip any prefix or shortcut character from the value
-		let message = value;
+	private _sendMessageRaw(value: string): void {
+		this._sendToAgent(value.trim());
+	}
 
-		// First, strip shortcut character if we arrived via shortcut
+	/**
+	 * Send the picker value with prefix or shortcut character stripped.
+	 */
+	private _sendMessage(value: string): void {
+		let message = value;
 		if (this._arrivedViaShortcut && message.startsWith(this._arrivedViaShortcut)) {
 			message = message.substring(1).trim();
-		} else if (this._currentTab) {
-			// Otherwise strip the normal prefix
-			if (value.startsWith(this._currentTab.prefix)) {
-				message = value.substring(this._currentTab.prefix.length).trim();
-			}
+		} else if (this._currentTab && value.startsWith(this._currentTab.prefix)) {
+			message = value.substring(this._currentTab.prefix.length).trim();
 		}
+		this._sendToAgent(message.trim());
+	}
 
-		if (!message) {
-			return;
+	/**
+	 * Get the user's typed text with prefix/shortcut stripped.
+	 */
+	private _getFilterText(picker: IQuickPick<IQuickPickItem, { useSeparators: true }>): string {
+		if (this._arrivedViaShortcut && picker.value.startsWith(this._arrivedViaShortcut)) {
+			return picker.value.substring(1).trim();
 		}
-
-		// Hide the picker first
-		this.hide();
-
-		// Always create a new chat first
-		await this.commandService.executeCommand(ACTION_ID_NEW_CHAT);
-
-		// Then send the message to the new chat
-		const options: IChatViewOpenOptions = {
-			query: message,
-			isPartialQuery: false,
-		};
-		this.commandService.executeCommand(CHAT_OPEN_ACTION_ID, options);
+		if (this._currentTab) {
+			return picker.value.substring(this._currentTab.prefix.length).trim();
+		}
+		return picker.value.trim();
 	}
 
 	/**
 	 * Check if we should show the "send to agent" item.
-	 * Always shows it as the first item when user has typed something.
+	 * Shows it as the first item when user has typed something on the Sessions tab,
+	 * or when no other items exist on other tabs.
 	 */
 	private _maybeShowSendToAgent(picker: IQuickPick<IQuickPickItem, { useSeparators: true }>): void {
-		// Guard against recursive calls
 		if (this._isUpdatingSendToAgent) {
 			return;
 		}
 
-		// Get the filter text (without prefix or shortcut character)
-		let filterText: string;
-		if (this._arrivedViaShortcut && picker.value.startsWith(this._arrivedViaShortcut)) {
-			// Strip shortcut character
-			filterText = picker.value.substring(1).trim();
-		} else if (this._currentTab) {
-			filterText = picker.value.substring(this._currentTab.prefix.length).trim();
-		} else {
-			filterText = picker.value.trim();
-		}
-
-		// Use full input if filter text is empty but there's input (user typed without prefix)
+		const filterText = this._getFilterText(picker);
 		const fullInput = picker.value.trim();
 		const messageToSend = filterText || fullInput;
 
@@ -498,13 +384,13 @@ export class UnifiedQuickAccess extends Disposable {
 		}
 
 		// Check if send-to-agent is already the first item with same description
-		const firstItem = picker.items[0] as IQuickPickItem & { id?: string };
+		const firstItem = picker.items[0] as IUnifiedQuickPickItem;
 		if (firstItem?.id === SEND_TO_AGENT_ID && firstItem.description === fullInput) {
 			return; // Already showing correct send-to-agent item
 		}
 
 		// Create the send-to-agent item
-		const sendItem: IQuickPickItem & { id: string } = {
+		const sendItem: IUnifiedQuickPickItem & { id: string } = {
 			id: SEND_TO_AGENT_ID,
 			label: `$(send) ${localize('sendToAgentLabel', "Send to agent")}`,
 			description: fullInput,
@@ -514,7 +400,7 @@ export class UnifiedQuickAccess extends Disposable {
 
 		// Get current items, excluding any existing send-to-agent item
 		const currentItems = picker.items.filter(item =>
-			(item as IQuickPickItem & { id?: string }).id !== SEND_TO_AGENT_ID
+			(item as IUnifiedQuickPickItem).id !== SEND_TO_AGENT_ID
 		);
 
 		// Determine if we should show send-to-agent as first item:
@@ -549,12 +435,11 @@ export class UnifiedQuickAccess extends Disposable {
 		const previousTab = this._currentTab;
 		this._currentTab = tab;
 
-		// Update Radio selection
-		const radio = (picker as unknown as { _unifiedRadio?: Radio })._unifiedRadio;
-		if (radio) {
+		// Update Radio selection via stored reference (no monkey-patching)
+		if (this._radio) {
 			const index = this._tabs.indexOf(tab);
 			if (index >= 0) {
-				radio.setActiveItem(index);
+				this._radio.setActiveItem(index);
 			}
 		}
 
@@ -606,11 +491,11 @@ export class UnifiedQuickAccess extends Disposable {
 	}
 
 	/**
-	 * Detect which tab matches the current value based on prefix.
-	 * Only switches away from current tab if user explicitly typed a different prefix.
+	 * Resolve which tab matches the current value based on prefix.
+	 * Sets {@link _arrivedViaShortcut} as a side effect when a shortcut character is detected.
 	 * Supports shortcut keys: ">" for Commands, "<" for Sessions.
 	 */
-	private _detectTabFromValue(value: string): IUnifiedQuickAccessTab | undefined {
+	private _resolveTabFromValue(value: string): IUnifiedQuickAccessTab | undefined {
 		// Check for "<" shortcut to switch to Sessions (from Files or Commands)
 		if (value === '<' || value.startsWith('<')) {
 			const sessionsTab = this._tabs.find(t => t.id === 'agentSessions');
