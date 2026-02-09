@@ -312,7 +312,12 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 
 		const cachePath = await this.cachePath;
 		const sessionEndFlagPath = path.join(cachePath, 'session-ending.flag');
-		const progressFilePath = path.join(cachePath, `${this.productService.win32MutexName}.progress`);
+		const progressFilePath = path.join(cachePath, `update-progress`);
+		try {
+			await unlink(sessionEndFlagPath);
+		} catch {
+			// ignore
+		}
 
 		this.availableUpdate.updateFilePath = path.join(cachePath, `CodeSetup-${this.productService.quality}-${update.version}.flag`);
 
