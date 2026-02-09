@@ -17,6 +17,7 @@ export enum AgentSessionProviders {
 	Cloud = 'copilot-cloud-agent',
 	Claude = 'claude-code',
 	Codex = 'openai-codex',
+	Growth = 'copilot-growth',
 }
 
 export function isBuiltInAgentSessionProvider(provider: string): boolean {
@@ -34,6 +35,7 @@ export function getAgentSessionProvider(sessionResource: URI | string): AgentSes
 		case AgentSessionProviders.Cloud:
 		case AgentSessionProviders.Claude:
 		case AgentSessionProviders.Codex:
+		case AgentSessionProviders.Growth:
 			return type;
 		default:
 			return undefined;
@@ -52,6 +54,8 @@ export function getAgentSessionProviderName(provider: AgentSessionProviders): st
 			return 'Claude';
 		case AgentSessionProviders.Codex:
 			return 'Codex';
+		case AgentSessionProviders.Growth:
+			return 'Growth';
 	}
 }
 
@@ -67,6 +71,8 @@ export function getAgentSessionProviderIcon(provider: AgentSessionProviders): Th
 			return Codicon.openai;
 		case AgentSessionProviders.Claude:
 			return Codicon.claude;
+		case AgentSessionProviders.Growth:
+			return Codicon.lightbulb;
 	}
 }
 
@@ -78,6 +84,7 @@ export function isFirstPartyAgentSessionProvider(provider: AgentSessionProviders
 			return true;
 		case AgentSessionProviders.Claude:
 		case AgentSessionProviders.Codex:
+		case AgentSessionProviders.Growth:
 			return false;
 	}
 }
@@ -90,6 +97,7 @@ export function getAgentCanContinueIn(provider: AgentSessionProviders): boolean 
 			return true;
 		case AgentSessionProviders.Claude:
 		case AgentSessionProviders.Codex:
+		case AgentSessionProviders.Growth:
 			return false;
 	}
 }
@@ -106,6 +114,8 @@ export function getAgentSessionProviderDescription(provider: AgentSessionProvide
 			return localize('chat.session.providerDescription.claude', "Delegate tasks to the Claude Agent SDK using the Claude models included in your GitHub Copilot subscription. The agent iterates via chat and works interactively to implement changes on your main workspace.");
 		case AgentSessionProviders.Codex:
 			return localize('chat.session.providerDescription.codex', "Opens a new Codex session in the editor. Codex sessions can be managed from the chat sessions view.");
+		case AgentSessionProviders.Growth:
+			return localize('chat.session.providerDescription.growth', "Educational messages to help you learn Copilot features.");
 	}
 }
 

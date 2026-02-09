@@ -365,6 +365,8 @@ export class ChatSessionsService extends Disposable implements IChatSessionsServ
 			displayName = localize('chat.session.inProgress.background', "Background Agent");
 		} else if (chatSessionType === AgentSessionProviders.Cloud) {
 			displayName = localize('chat.session.inProgress.cloud', "Cloud Agent");
+		} else if (chatSessionType === AgentSessionProviders.Growth) {
+			displayName = localize('chat.session.inProgress.growth', "Growth");
 		} else {
 			displayName = this._contributions.get(chatSessionType)?.contribution.displayName;
 		}
