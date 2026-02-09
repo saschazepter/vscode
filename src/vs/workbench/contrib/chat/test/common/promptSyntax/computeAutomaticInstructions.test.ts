@@ -582,9 +582,8 @@ suite('ComputeAutomaticInstructions', () => {
 				.filter(v => isPromptFileVariableEntry(v))
 				.map(v => isPromptFileVariableEntry(v) ? v.value.path : undefined);
 
-			// Claude rules without paths or applyTo should NOT be auto-attached
-			// (they are loaded unconditionally as agent instructions, not via applyTo matching)
-			assert.ok(!paths.includes(`${rootFolder}/.claude/rules/code-style.md`), 'Should not include rules without paths/applyTo as applying instructions');
+			// Claude rules without paths default to '**', so they are always auto-attached
+			assert.ok(paths.includes(`${rootFolder}/.claude/rules/code-style.md`), 'Should include rules without paths as they default to **');
 		});
 
 		test('should match claude rules with paths attribute', async () => {

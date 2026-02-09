@@ -133,12 +133,13 @@ export class ComputeAutomaticInstructions {
 			const applyTo = parsedFile.header?.applyTo;
 			const paths = parsedFile.header?.paths;
 
-			// Claude rules files use `paths`, regular instruction files use `applyTo`
+			// Claude rules files use `paths` (defaulting to '**' when omitted),
+			// regular instruction files use `applyTo` (skipped when omitted)
 			const isClaudeRules = isInClaudeRulesFolder(uri);
-			const pattern = isClaudeRules ? paths?.join(', ') : applyTo;
+			const pattern = isClaudeRules ? (paths?.join(', ') ?? '**') : applyTo;
 
 			if (!pattern) {
-				this._logService.trace(`[InstructionsContextComputer] No '${isClaudeRules ? 'paths' : 'applyTo'}' found: ${uri}`);
+				this._logService.trace(`[InstructionsContextComputer] No 'applyTo' found: ${uri}`);
 				continue;
 			}
 

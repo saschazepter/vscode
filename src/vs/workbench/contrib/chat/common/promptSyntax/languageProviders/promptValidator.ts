@@ -174,7 +174,11 @@ export class PromptValidator {
 				break;
 			}
 			case PromptsType.instructions:
-				this.validateApplyTo(attributes, report);
+				if (target === Target.Claude) {
+					this.validatePaths(attributes, report);
+				} else {
+					this.validateApplyTo(attributes, report);
+				}
 				this.validateExcludeAgent(attributes, report);
 				break;
 
@@ -490,6 +494,36 @@ export class PromptValidator {
 			}
 		} catch (_error) {
 			report(toMarker(localize('promptValidator.applyToMustBeValidGlob', "The 'applyTo' attribute must be a valid glob pattern."), attribute.value.range, MarkerSeverity.Error));
+		}
+	}
+
+	private validatePaths(attributes: IHeaderAttribute[], report: (markers: IMarkerData) => void): undefined {
+		const attribute = attributes.find(attr => attr.key === PromptHeaderAttributes.paths);
+		if (!attribute) {
+			return;
+		}
+		if (attribute.value.type !== 'array') {
+			report(toMarker(localize('promptValidator.pathsMustBeArray', "The 'paths' attribute must be an array of glob patterns."), attribute.value.range, MarkerSeverity.Error));
+			return;
+		}
+		for (const item of attribute.value.items) {
+			if (item.type !== 'string') {
+				report(toMarker(localize('promptValidator.eachPathMustBeString', "Each entry in the 'paths' attribute must be a string."), item.range, MarkerSeverity.Error));
+				continue;
+			}
+			const pattern = item.value.trim();
+			if (pattern.length === 0) {
+				report(toMarker(localize('promptValidator.pathMustBeNonEmpty', "Path entries must be non-empty glob patterns."), item.range, MarkerSeverity.Error));
+				continue;
+			}
+			try {
+				const globPattern = parse(pattern);
+				if (isEmptyPattern(globPattern)) {
+					report(toMarker(localize('promptValidator.pathMustBeValidGlob', "'{0}' is not a valid glob pattern.", pattern), item.range, MarkerSeverity.Error));
+				}
+			} catch (_error) {
+				report(toMarker(localize('promptValidator.pathMustBeValidGlob', "'{0}' is not a valid glob pattern.", pattern), item.range, MarkerSeverity.Error));
+			}
 		}
 	}
 
