@@ -3,7 +3,6 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 import { VSBuffer } from '../../../../../base/common/buffer.js';
-import { URI } from '../../../../../base/common/uri.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { ServicesAccessor } from '../../../../../editor/browser/editorExtensions.js';
 import { localize2 } from '../../../../../nls.js';
@@ -17,9 +16,12 @@ import { IWorkbenchModeService } from '../../../../services/layout/common/workbe
 import { IsAgentSessionsWorkspaceContext, WorkbenchModeContext } from '../../../../common/contextkeys.js';
 import { CHAT_CATEGORY } from '../../browser/actions/chatActions.js';
 import { ProductQualityContext } from '../../../../../platform/contextkey/common/contextkeys.js';
-import { IAgentSessionsService } from '../../browser/agentSessions/agentSessionsService.js';
-import { IChatWidgetService } from '../../browser/chat.js';
+import { IActiveAgentSessionService } from '../../browser/agentSessions/agentSessionsService.js';
 import { ITerminalGroupService, ITerminalService } from '../../../terminal/browser/terminal.js';
+// eslint-disable-next-line local/code-import-patterns
+import { AgentSessionsWorkbenchMenus } from '../../../../agentSessions/browser/agentSessionsWorkbenchMenus.js';
+import { isAgentSession } from '../../browser/agentSessions/agentSessionsModel.js';
+import { AgentSessionProviders } from '../../browser/agentSessions/agentSessions.js';
 
 export class OpenAgentSessionsWindowAction extends Action2 {
 	constructor() {
@@ -105,36 +107,30 @@ export class OpenSessionWorktreeInVSCodeAction extends Action2 {
 			id: OpenSessionWorktreeInVSCodeAction.ID,
 			title: localize2('openInVSCode', 'Open in VS Code'),
 			icon: Codicon.vscodeInsiders,
-			category: CHAT_CATEGORY,
-			menu: [
-				{
-					id: MenuId.AgentSessionsOpenSubMenu,
-					group: 'navigation',
-					order: 2,
-					when: IsAgentSessionsWorkspaceContext
-				}
-			],
+			menu: [{
+				id: AgentSessionsWorkbenchMenus.TitleBarRight,
+				group: 'navigation',
+				order: 10,
+			}]
 		});
 	}
 
 	override async run(accessor: ServicesAccessor,): Promise<void> {
 		const nativeHostService = accessor.get(INativeHostService);
-		const agentSessionsService = accessor.get(IAgentSessionsService);
-		const chatWidgetService = accessor.get(IChatWidgetService);
+		const agentSessionsService = accessor.get(IActiveAgentSessionService);
 
-		const sessionResource = chatWidgetService.lastFocusedWidget?.viewModel?.sessionResource;
-		if (!sessionResource) {
+		const activeSession = agentSessionsService.activeSession.get();
+		if (!activeSession) {
 			return;
 		}
 
-		const session = agentSessionsService.getSession(sessionResource);
-		const folderPath = session?.metadata?.worktreePath as string | undefined;
+		const folderUri = isAgentSession(activeSession) && activeSession.providerType !== AgentSessionProviders.Cloud ? activeSession.repository : undefined;
 
-		if (!folderPath) {
+		if (!folderUri) {
 			return;
 		}
 
-		await nativeHostService.openWindow([{ folderUri: URI.file(folderPath) }], { forceNewWindow: true });
+		await nativeHostService.openWindow([{ folderUri }], { forceNewWindow: true });
 	}
 }
 registerAction2(OpenSessionWorktreeInVSCodeAction);
@@ -144,13 +140,12 @@ export class OpenSessionInTerminalAction extends Action2 {
 	constructor() {
 		super({
 			id: 'agentSession.openInTerminal',
-			title: localize2('openInTerminal', "Open in Integrated Terminal"),
+			title: localize2('openInTerminal', "Open Terminal"),
 			icon: Codicon.terminal,
 			menu: [{
-				id: MenuId.AgentSessionsOpenSubMenu,
+				id: AgentSessionsWorkbenchMenus.TitleBarRight,
 				group: 'navigation',
-				order: 1,
-				when: IsAgentSessionsWorkspaceContext,
+				order: 9,
 			}]
 		});
 	}
@@ -158,26 +153,19 @@ export class OpenSessionInTerminalAction extends Action2 {
 	override async run(accessor: ServicesAccessor,): Promise<void> {
 		const terminalService = accessor.get(ITerminalService);
 		const terminalGroupService = accessor.get(ITerminalGroupService);
-		const agentSessionsService = accessor.get(IAgentSessionsService);
-		const chatWidgetService = accessor.get(IChatWidgetService);
+		const agentSessionsService = accessor.get(IActiveAgentSessionService);
 
-		const sessionResource = chatWidgetService.lastFocusedWidget?.viewModel?.sessionResource;
-		if (!sessionResource) {
-			return;
+		const activeSession = agentSessionsService.activeSession.get();
+		const repository = isAgentSession(activeSession) && activeSession.providerType !== AgentSessionProviders.Cloud
+			? activeSession.repository
+			: undefined;
+		if (repository) {
+			const instance = await terminalService.createTerminal({ config: { cwd: repository } });
+			if (instance) {
+				terminalService.setActiveInstance(instance);
+			}
 		}
-
-		const session = agentSessionsService.getSession(sessionResource);
-		const folderPath = session?.metadata?.worktreePath as string | undefined;
-
-		if (!folderPath) {
-			return;
-		}
-
-		const instance = await terminalService.createTerminal({ config: { cwd: URI.file(folderPath) } });
-		if (instance) {
-			terminalService.setActiveInstance(instance);
-			terminalGroupService.showPanel(true);
-		}
+		terminalGroupService.showPanel(true);
 	}
 }
 

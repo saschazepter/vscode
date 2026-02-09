@@ -62,12 +62,12 @@ const repositoryOptionId = 'repository';
  * - For agent session items: repository is the workingDirectory from metadata
  * - For new sessions: repository comes from the session option with id 'repository'
  */
-export interface IActiveAgentSessionItem extends IChatSessionItem {
+export type IActiveAgentSessionItem = (IChatSessionItem | IAgentSession) & {
 	/**
 	 * The repository URI for this session.
 	 */
 	readonly repository: URI | undefined;
-}
+};
 
 export interface IActiveAgentSessionService {
 	readonly _serviceBrand: undefined;

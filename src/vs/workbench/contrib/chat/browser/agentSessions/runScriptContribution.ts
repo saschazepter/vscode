@@ -10,12 +10,13 @@ import { URI } from '../../../../../base/common/uri.js';
 import { ServicesAccessor } from '../../../../../editor/browser/editorExtensions.js';
 import { localize, localize2 } from '../../../../../nls.js';
 import { MenuId, registerAction2, Action2 } from '../../../../../platform/actions/common/actions.js';
-import { ContextKeyExpr } from '../../../../../platform/contextkey/common/contextkey.js';
 import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
 import { IQuickInputService, IQuickPickItem, IQuickPickSeparator } from '../../../../../platform/quickinput/common/quickInput.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
 import { TerminalLocation } from '../../../../../platform/terminal/common/terminal.js';
 import { IWorkspaceContextService } from '../../../../../platform/workspace/common/workspace.js';
+// eslint-disable-next-line local/code-import-patterns
+import { AgentSessionsWorkbenchMenus } from '../../../../agentSessions/browser/agentSessionsWorkbenchMenus.js';
 import { IWorkbenchContribution } from '../../../../common/contributions.js';
 import { IDebugService, ILaunch } from '../../../debug/common/debug.js';
 import { ITerminalService } from '../../../terminal/browser/terminal.js';
@@ -135,10 +136,9 @@ export class RunScriptContribution extends Disposable implements IWorkbenchContr
 					icon: Codicon.play,
 					category: localize2('agentSessions', 'Agent Sessions'),
 					menu: [{
-						id: MenuId.AuxiliaryBarTitle,
+						id: AgentSessionsWorkbenchMenus.TitleBarRight,
 						group: 'navigation',
-						order: 0,
-						when: ContextKeyExpr.true()
+						order: 8,
 					}]
 				});
 			}
