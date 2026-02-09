@@ -60,7 +60,7 @@ const enum DefaultAccountStatus {
 
 const CONTEXT_DEFAULT_ACCOUNT_STATE = new RawContextKey<string>('defaultAccountStatus', DefaultAccountStatus.Uninitialized);
 const CACHED_POLICY_DATA_KEY = 'defaultAccount.cachedPolicyData';
-const ACCOUNT_DATA_POLL_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
+const ACCOUNT_DATA_POLL_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 
 interface ITokenEntitlementsResponse {
 	token: string;
@@ -228,7 +228,7 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 	private initialized = false;
 	private readonly initPromise: Promise<void>;
 	private readonly updateThrottler = this._register(new ThrottledDelayer(100));
-	private readonly accountDataPollScheduler = this._register(new RunOnceScheduler(() => this.updateDefaultAccount(), ACCOUNT_DATA_POLL_INTERVAL_MS));
+	private readonly accountDataPollScheduler = this._register(new RunOnceScheduler(() => this.refetchPolicyData(), ACCOUNT_DATA_POLL_INTERVAL_MS));
 
 	constructor(
 		private readonly defaultAccountConfig: IDefaultAccountConfig,
@@ -284,7 +284,7 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 		}
 
 		this.logService.debug('[DefaultAccount] Starting initialization');
-		await this.doUpdateDefaultAccount();
+		await this.doUpdateDefaultAccount(false);
 		this.logService.debug('[DefaultAccount] Initialization complete');
 
 		this._register(this.onDidChangeDefaultAccount(account => {
@@ -352,13 +352,25 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 		return this.defaultAccount;
 	}
 
-	private async updateDefaultAccount(): Promise<void> {
-		await this.updateThrottler.trigger(() => this.doUpdateDefaultAccount());
+	private async refetchPolicyData(): Promise<void> {
+		if (!this._defaultAccount) {
+			return;
+		}
+		if (!this.hostService.hasFocus) {
+			this.logService.debug('[DefaultAccount] Skipping refetching policy data because window is not focused');
+			return;
+		}
+		this.logService.debug('[DefaultAccount] Refetching policy data for current default account');
+		await this.updateDefaultAccount(true);
 	}
 
-	private async doUpdateDefaultAccount(): Promise<void> {
+	private async updateDefaultAccount(donotUseCache: boolean = false): Promise<void> {
+		await this.updateThrottler.trigger(() => this.doUpdateDefaultAccount(donotUseCache));
+	}
+
+	private async doUpdateDefaultAccount(donotUseCache: boolean): Promise<void> {
 		try {
-			const defaultAccount = await this.fetchDefaultAccount();
+			const defaultAccount = await this.fetchDefaultAccount(donotUseCache);
 			this.setDefaultAccount(defaultAccount);
 			this.scheduleAccountDataPoll();
 		} catch (error) {
@@ -366,7 +378,7 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 		}
 	}
 
-	private async fetchDefaultAccount(): Promise<IDefaultAccountData | null> {
+	private async fetchDefaultAccount(donotUseCache: boolean): Promise<IDefaultAccountData | null> {
 		const defaultAccountProvider = this.getDefaultAccountAuthenticationProvider();
 		this.logService.debug('[DefaultAccount] Default account provider ID:', defaultAccountProvider.id);
 
@@ -376,7 +388,7 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 			return null;
 		}
 
-		return await this.getDefaultAccountForAuthenticationProvider(defaultAccountProvider);
+		return await this.getDefaultAccountForAuthenticationProvider(defaultAccountProvider, donotUseCache);
 	}
 
 	private setDefaultAccount(account: IDefaultAccountData | null): void {
@@ -439,7 +451,7 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 		return result;
 	}
 
-	private async getDefaultAccountForAuthenticationProvider(authenticationProvider: IDefaultAccountAuthenticationProvider): Promise<IDefaultAccountData | null> {
+	private async getDefaultAccountForAuthenticationProvider(authenticationProvider: IDefaultAccountAuthenticationProvider, donotUseCache: boolean): Promise<IDefaultAccountData | null> {
 		try {
 			this.logService.debug('[DefaultAccount] Getting Default Account from authenticated sessions for provider:', authenticationProvider.id);
 			const sessions = await this.findMatchingProviderSession(authenticationProvider.id, this.defaultAccountConfig.authenticationProvider.scopes);
@@ -449,17 +461,17 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 				return null;
 			}
 
-			return this.getDefaultAccountFromAuthenticatedSessions(authenticationProvider, sessions);
+			return this.getDefaultAccountFromAuthenticatedSessions(authenticationProvider, sessions, donotUseCache);
 		} catch (error) {
 			this.logService.error('[DefaultAccount] Failed to get default account for provider:', authenticationProvider.id, getErrorMessage(error));
 			return null;
 		}
 	}
 
-	private async getDefaultAccountFromAuthenticatedSessions(authenticationProvider: IDefaultAccountAuthenticationProvider, sessions: AuthenticationSession[]): Promise<IDefaultAccountData | null> {
+	private async getDefaultAccountFromAuthenticatedSessions(authenticationProvider: IDefaultAccountAuthenticationProvider, sessions: AuthenticationSession[], donotUseCache: boolean): Promise<IDefaultAccountData | null> {
 		try {
 			const accountId = sessions[0].account.id;
-			const accountPolicyData = this._policyData?.accountId === accountId ? this._policyData : undefined;
+			const accountPolicyData = !donotUseCache && this._policyData?.accountId === accountId ? this._policyData : undefined;
 
 			const [entitlementsData, tokenEntitlementsData] = await Promise.all([
 				this.getEntitlements(sessions),
@@ -477,11 +489,14 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 				policyData.mcp = tokenEntitlementsData.mcp;
 				if (policyData.mcp) {
 					const mcpRegistryProvider = await this.getMcpRegistryProvider(sessions, accountPolicyData);
-					isMcpRegistryDataFetched = !isUndefined(mcpRegistryProvider);
-					if (mcpRegistryProvider) {
-						policyData.mcpRegistryUrl = mcpRegistryProvider.url;
-						policyData.mcpAccess = mcpRegistryProvider.registry_access;
+					if (!isUndefined(mcpRegistryProvider)) {
+						isMcpRegistryDataFetched = true;
+						policyData.mcpRegistryUrl = mcpRegistryProvider?.url;
+						policyData.mcpAccess = mcpRegistryProvider?.registry_access;
 					}
+				} else {
+					policyData.mcpRegistryUrl = undefined;
+					policyData.mcpAccess = undefined;
 				}
 			}
 
