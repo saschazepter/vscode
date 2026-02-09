@@ -51,7 +51,7 @@ export interface ITipDefinition {
 	 */
 	readonly enabledCommands?: string[];
 	/**
-	 * Command IDs that, if executed during this session, make this tip ineligible.
+	 * Command IDs that, if ever executed in this workspace, make this tip ineligible.
 	 * The tip won't be shown if the user has already performed the action it suggests.
 	 */
 	readonly excludeWhenCommandsExecuted?: string[];
