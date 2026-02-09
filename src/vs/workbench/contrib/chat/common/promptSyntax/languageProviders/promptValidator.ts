@@ -23,7 +23,7 @@ import { ResourceMap } from '../../../../../../base/common/map.js';
 import { IFileService } from '../../../../../../platform/files/common/files.js';
 import { IPromptsService, Target } from '../service/promptsService.js';
 import { ILabelService } from '../../../../../../platform/label/common/label.js';
-import { AGENTS_SOURCE_FOLDER, CLAUDE_AGENTS_SOURCE_FOLDER, LEGACY_MODE_FILE_EXTENSION } from '../config/promptFileLocations.js';
+import { AGENTS_SOURCE_FOLDER, CLAUDE_AGENTS_SOURCE_FOLDER, isInClaudeRulesFolder, LEGACY_MODE_FILE_EXTENSION } from '../config/promptFileLocations.js';
 import { Lazy } from '../../../../../../base/common/lazy.js';
 import { CancellationToken } from '../../../../../../base/common/cancellation.js';
 import { dirname } from '../../../../../../base/common/resources.js';
@@ -225,7 +225,11 @@ export class PromptValidator {
 						}
 						break;
 					case PromptsType.instructions:
-						report(toMarker(localize('promptValidator.unknownAttribute.instructions', "Attribute '{0}' is not supported in instructions files. Supported: {1}.", attribute.key, supportedNames.value), attribute.range, MarkerSeverity.Warning));
+						if (target === Target.Claude) {
+							report(toMarker(localize('promptValidator.unknownAttribute.rules', "Attribute '{0}' is not supported in rules files. Supported: {1}.", attribute.key, supportedNames.value), attribute.range, MarkerSeverity.Warning));
+						} else {
+							report(toMarker(localize('promptValidator.unknownAttribute.instructions', "Attribute '{0}' is not supported in instructions files. Supported: {1}.", attribute.key, supportedNames.value), attribute.range, MarkerSeverity.Warning));
+						}
 						break;
 					case PromptsType.skill:
 						report(toMarker(localize('promptValidator.unknownAttribute.skill', "Attribute '{0}' is not supported in skill files. Supported: {1}.", attribute.key, supportedNames.value), attribute.range, MarkerSeverity.Warning));
@@ -666,6 +670,9 @@ const recommendedAttributeNames: Record<PromptsType, string[]> = {
 
 export function getValidAttributeNames(promptType: PromptsType, includeNonRecommended: boolean, target: Target): string[] {
 	if (target === Target.Claude) {
+		if (promptType === PromptsType.instructions) {
+			return Object.keys(claudeRulesAttributes);
+		}
 		return Object.keys(claudeAgentAttributes);
 	} else if (target === Target.GitHubCopilot) {
 		if (promptType === PromptsType.agent) {
@@ -681,7 +688,12 @@ export function isNonRecommendedAttribute(attributeName: string): boolean {
 
 export function getAttributeDescription(attributeName: string, promptType: PromptsType, target: Target): string | undefined {
 	if (target === Target.Claude) {
-		return claudeAgentAttributes[attributeName]?.description;
+		if (promptType === PromptsType.agent) {
+			return claudeAgentAttributes[attributeName]?.description;
+		}
+		if (promptType === PromptsType.instructions) {
+			return claudeRulesAttributes[attributeName]?.description;
+		}
 	}
 	switch (promptType) {
 		case PromptsType.instructions:
@@ -882,6 +894,21 @@ export const claudeAgentAttributes: Record<string, { type: string; description: 
 	}
 };
 
+/**
+ * Attributes supported in Claude rules files (`.claude/rules/*.md`).
+ * Claude rules use `paths` instead of `applyTo` for glob patterns.
+ */
+export const claudeRulesAttributes: Record<string, { type: string; description: string; defaults?: string[]; items?: IValueEntry[]; enums?: IValueEntry[] }> = {
+	'description': {
+		type: 'string',
+		description: localize('attribute.rules.description', "A description of what this rule covers, used to provide context about when it applies."),
+	},
+	'paths': {
+		type: 'array',
+		description: localize('attribute.rules.paths', "Array of glob patterns that describe for which files the rule applies. Based on these patterns, the file is automatically included in the prompt when the context contains a file that matches.\nExample: `['src/**/*.ts', 'test/**']`"),
+	},
+};
+
 export function isVSCodeOrDefaultTarget(target: Target): boolean {
 	return target === Target.VSCode || target === Target.Undefined;
 }
@@ -895,6 +922,11 @@ export function getTarget(promptType: PromptsType, header: PromptHeader | undefi
 		const target = header.target;
 		if (target === Target.GitHubCopilot || target === Target.VSCode) {
 			return target;
+		}
+	}
+	if (header && promptType === PromptsType.instructions) {
+		if (isInClaudeRulesFolder(header.uri)) {
+			return Target.Claude;
 		}
 	}
 	return Target.Undefined;
