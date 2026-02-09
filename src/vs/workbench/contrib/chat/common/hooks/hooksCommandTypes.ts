@@ -49,7 +49,10 @@ export interface IHookCommandOutput {
 
 export const enum HookCommandResultKind {
 	Success = 1,
-	Error = 2
+	/** Blocking error - shown to model */
+	Error = 2,
+	/** Non-blocking error - shown to user only */
+	NonBlockingError = 3
 }
 
 /**

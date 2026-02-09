@@ -6,9 +6,11 @@
 import type * as vscode from 'vscode';
 import { spawn } from 'child_process';
 import { homedir } from 'os';
+import * as nls from '../../../nls.js';
 import { disposableTimeout } from '../../../base/common/async.js';
 import { CancellationToken } from '../../../base/common/cancellation.js';
 import { DisposableStore, MutableDisposable } from '../../../base/common/lifecycle.js';
+import { OS } from '../../../base/common/platform.js';
 import { URI, isUriComponents } from '../../../base/common/uri.js';
 import { ILogService } from '../../../platform/log/common/log.js';
 import { HookTypeValue, getEffectiveCommandSource, resolveEffectiveCommand } from '../../contrib/chat/common/promptSyntax/hookSchema.js';
@@ -64,11 +66,11 @@ export class NodeExtHostHooks implements IExtHostHooks {
 
 		// Resolve the effective command for the current platform
 		// This applies windows/linux/osx overrides and falls back to command
-		const effectiveCommand = resolveEffectiveCommand(hook as Parameters<typeof resolveEffectiveCommand>[0]);
+		const effectiveCommand = resolveEffectiveCommand(hook as Parameters<typeof resolveEffectiveCommand>[0], OS);
 		if (!effectiveCommand) {
 			return Promise.resolve({
-				kind: HookCommandResultKind.Error,
-				result: 'No command specified for the current platform'
+				kind: HookCommandResultKind.NonBlockingError,
+				result: nls.localize('noCommandForPlatform', "No command specified for the current platform")
 			});
 		}
 
@@ -76,7 +78,7 @@ export class NodeExtHostHooks implements IExtHostHooks {
 		// - powershell source: run through PowerShell so PowerShell-specific commands work
 		// - bash source: run through bash so bash-specific commands work
 		// - otherwise: use default shell via spawn with shell: true
-		const commandSource = getEffectiveCommandSource(hook as Parameters<typeof getEffectiveCommandSource>[0]);
+		const commandSource = getEffectiveCommandSource(hook as Parameters<typeof getEffectiveCommandSource>[0], OS);
 		let shellExecutable: string | undefined;
 		let shellArgs: string[] | undefined;
 
@@ -175,9 +177,12 @@ export class NodeExtHostHooks implements IExtHostHooks {
 						// Keep as string if not valid JSON
 					}
 					resolve({ kind: HookCommandResultKind.Success, result });
-				} else {
-					// Error
+				} else if (code === 2) {
+					// Blocking error - show stderr to model and stop processing
 					resolve({ kind: HookCommandResultKind.Error, result: stderrStr });
+				} else {
+					// Non-blocking error - show stderr to user only
+					resolve({ kind: HookCommandResultKind.NonBlockingError, result: stderrStr });
 				}
 			});
 
