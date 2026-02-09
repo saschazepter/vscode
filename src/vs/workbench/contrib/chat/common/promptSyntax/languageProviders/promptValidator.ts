@@ -27,6 +27,7 @@ import { AGENTS_SOURCE_FOLDER, CLAUDE_AGENTS_SOURCE_FOLDER, isInClaudeRulesFolde
 import { Lazy } from '../../../../../../base/common/lazy.js';
 import { CancellationToken } from '../../../../../../base/common/cancellation.js';
 import { dirname } from '../../../../../../base/common/resources.js';
+import { URI } from '../../../../../../base/common/uri.js';
 
 export const MARKERS_OWNER_ID = 'prompts-diagnostics-provider';
 
@@ -42,7 +43,7 @@ export class PromptValidator {
 
 	public async validate(promptAST: ParsedPromptFile, promptType: PromptsType, report: (markers: IMarkerData) => void): Promise<void> {
 		promptAST.header?.errors.forEach(error => report(toMarker(error.message, error.range, MarkerSeverity.Error)));
-		const target = getTarget(promptType, promptAST.header);
+		const target = getTarget(promptType, promptAST.header ?? promptAST.uri);
 		await this.validateHeader(promptAST, promptType, target, report);
 		await this.validateBody(promptAST, target, report);
 		await this.validateFileName(promptAST, promptType, report);
@@ -947,19 +948,22 @@ export function isVSCodeOrDefaultTarget(target: Target): boolean {
 	return target === Target.VSCode || target === Target.Undefined;
 }
 
-export function getTarget(promptType: PromptsType, header: PromptHeader | undefined): Target {
-	if (header && promptType === PromptsType.agent) {
-		const parentDir = dirname(header.uri);
+export function getTarget(promptType: PromptsType, header: PromptHeader | URI): Target {
+	const uri = header instanceof URI ? header : header.uri;
+	if (promptType === PromptsType.agent) {
+		const parentDir = dirname(uri);
 		if (parentDir.path.endsWith(`/${CLAUDE_AGENTS_SOURCE_FOLDER}`)) {
 			return Target.Claude;
 		}
-		const target = header.target;
-		if (target === Target.GitHubCopilot || target === Target.VSCode) {
-			return target;
+		if (!(header instanceof URI)) {
+			const target = header.target;
+			if (target === Target.GitHubCopilot || target === Target.VSCode) {
+				return target;
+			}
 		}
-	}
-	if (header && promptType === PromptsType.instructions) {
-		if (isInClaudeRulesFolder(header.uri)) {
+		return Target.Undefined;
+	} else if (promptType === PromptsType.instructions) {
+		if (isInClaudeRulesFolder(uri)) {
 			return Target.Claude;
 		}
 	}
