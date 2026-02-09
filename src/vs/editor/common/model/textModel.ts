@@ -1571,7 +1571,8 @@ export class TextModel extends Disposable implements model.ITextModel, IDecorati
 				if (editingLinesCnt < deletingLinesCnt) {
 					// Must delete some lines
 					const spliceStartLineNumber = startLineNumber + editingLinesCnt;
-					rawContentChanges.push(new ModelRawLinesDeleted(spliceStartLineNumber + 1, endLineNumber));
+					const lastUntouchedLinePostEdit = spliceStartLineNumber + (newLineCount - lineCount - (insertingLinesCnt - deletingLinesCnt));
+					rawContentChanges.push(new ModelRawLinesDeleted(spliceStartLineNumber + 1, endLineNumber, lastUntouchedLinePostEdit));
 				}
 
 				if (editingLinesCnt < insertingLinesCnt) {
