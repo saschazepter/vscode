@@ -1322,26 +1322,31 @@ begin
 end;
 
 function GetProgressFilePath(): String;
-var
-  UpdateFilePath: String;
 begin
-  UpdateFilePath := ExpandConstant('{param:update}');
-  if UpdateFilePath <> '' then
-    Result := UpdateFilePath + '.progress'
-  else
-    Result := '';
+  Result := ExpandConstant('{param:progress}');
 end;
+
+var
+  LastReportedProgressPct: Integer;
 
 procedure CurInstallProgressChanged(CurProgress, MaxProgress: Integer);
 var
   ProgressFilePath: String;
   ProgressContent: String;
+  CurrentPct: Integer;
 begin
   if IsBackgroundUpdate() then begin
     ProgressFilePath := GetProgressFilePath();
     if ProgressFilePath <> '' then begin
-      ProgressContent := IntToStr(CurProgress) + ',' + IntToStr(MaxProgress);
-      SaveStringToFile(ProgressFilePath, ProgressContent, False);
+      if MaxProgress > 0 then
+        CurrentPct := (CurProgress * 100) div MaxProgress
+      else
+        CurrentPct := 0;
+      if (CurrentPct <> LastReportedProgressPct) or (CurProgress = MaxProgress) then begin
+        LastReportedProgressPct := CurrentPct;
+        ProgressContent := IntToStr(CurProgress) + ',' + IntToStr(MaxProgress);
+        SaveStringToFile(ProgressFilePath, ProgressContent, False);
+      end;
     end;
   end;
 end;
@@ -1658,10 +1663,9 @@ begin
 
     if IsBackgroundUpdate() then
     begin
-      // Clean up the progress file used for install progress reporting
-      DeleteFile(GetProgressFilePath());
       SaveStringToFile(ExpandConstant('{app}\updating_version'), '{#Commit}', False);
       CreateMutex('{#AppMutex}-ready');
+      DeleteFile(GetProgressFilePath());
 
       Log('Checking whether application is still running...');
       while (CheckForMutexes('{#AppMutex}')) do

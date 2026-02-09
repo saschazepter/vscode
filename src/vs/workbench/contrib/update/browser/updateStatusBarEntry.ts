@@ -178,8 +178,8 @@ export class UpdateStatusBarEntryContribution extends Disposable implements IWor
 				this.appendHeader(container, nls.localize('updateStatus.checkingForUpdatesTitle', "Checking for Updates"), store);
 				this.appendProductInfo(container);
 
-				const waitMessage = dom.append(container, dom.$('.progress-details'));
-				waitMessage.textContent = nls.localize('updateStatus.checkingPleaseWait', "Checking for updates, please wait...");
+				const message = dom.append(container, dom.$('.progress-details'));
+				message.textContent = nls.localize('updateStatus.checkingPleaseWait', "Checking for updates, please wait...");
 
 				return container;
 			}
@@ -206,7 +206,7 @@ export class UpdateStatusBarEntryContribution extends Disposable implements IWor
 			return nls.localize('updateStatus.downloadUpdateProgressStatus', "$(sync~spin) Downloading update: {0} / {1} • {2}%",
 				formatBytes(downloadedBytes),
 				formatBytes(totalBytes),
-				Math.round((downloadedBytes / totalBytes) * 100));
+				getProgressPercent(downloadedBytes, totalBytes) ?? 0);
 		} else {
 			return nls.localize('updateStatus.downloadUpdateStatus', "$(sync~spin) Downloading update...");
 		}
@@ -223,7 +223,7 @@ export class UpdateStatusBarEntryContribution extends Disposable implements IWor
 
 				const { downloadedBytes, totalBytes } = state;
 				if (downloadedBytes !== undefined && totalBytes !== undefined && totalBytes > 0) {
-					const percentage = Math.round((downloadedBytes / totalBytes) * 100);
+					const percentage = getProgressPercent(downloadedBytes, totalBytes) ?? 0;
 
 					const progressContainer = dom.append(container, dom.$('.progress-container'));
 					const progressBar = dom.append(progressContainer, dom.$('.progress-bar'));
@@ -249,8 +249,8 @@ export class UpdateStatusBarEntryContribution extends Disposable implements IWor
 						timeRemainingNode.textContent = `~${formatTimeRemaining(timeRemaining)} ${nls.localize('updateStatus.timeRemaining', "remaining")}`;
 					}
 				} else {
-					const waitMessage = dom.append(container, dom.$('.progress-details'));
-					waitMessage.textContent = nls.localize('updateStatus.downloadingPleaseWait', "Downloading, please wait...");
+					const message = dom.append(container, dom.$('.progress-details'));
+					message.textContent = nls.localize('updateStatus.downloadingPleaseWait', "Downloading, please wait...");
 				}
 
 				return container;
@@ -289,9 +289,9 @@ export class UpdateStatusBarEntryContribution extends Disposable implements IWor
 	}
 
 	private getUpdatingText({ currentProgress, maxProgress }: Updating): string {
-		if (currentProgress !== undefined && maxProgress !== undefined && maxProgress > 0) {
-			return nls.localize('updateStatus.installingUpdateProgressStatus', "$(sync~spin) Installing update: {0}%",
-				Math.round((currentProgress / maxProgress) * 100));
+		const percentage = getProgressPercent(currentProgress, maxProgress);
+		if (percentage !== undefined) {
+			return nls.localize('updateStatus.installingUpdateProgressStatus', "$(sync~spin) Installing update: {0}%", percentage);
 		} else {
 			return nls.localize('updateStatus.installingUpdateStatus', "$(sync~spin) Installing update...");
 		}
@@ -307,9 +307,8 @@ export class UpdateStatusBarEntryContribution extends Disposable implements IWor
 				this.appendProductInfo(container, state.update);
 
 				const { currentProgress, maxProgress } = state;
-				if (currentProgress !== undefined && maxProgress !== undefined && maxProgress > 0) {
-					const percentage = Math.round((currentProgress / maxProgress) * 100);
-
+				const percentage = getProgressPercent(currentProgress, maxProgress);
+				if (percentage !== undefined) {
 					const progressContainer = dom.append(container, dom.$('.progress-container'));
 					const progressBar = dom.append(progressContainer, dom.$('.progress-bar'));
 					const progressFill = dom.append(progressBar, dom.$('.progress-fill'));
@@ -438,6 +437,17 @@ export class UpdateStatusBarEntryContribution extends Disposable implements IWor
 			li.textContent = item;
 		}
 		*/
+	}
+}
+
+/**
+ * Returns the progress percentage based on the current and maximum progress values.
+ */
+export function getProgressPercent(current: number | undefined, max: number | undefined): number | undefined {
+	if (current === undefined || max === undefined || max <= 0) {
+		return undefined;
+	} else {
+		return Math.max(Math.min(Math.round((current / max) * 100), 100), 0);
 	}
 }
 
