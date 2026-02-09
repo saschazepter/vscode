@@ -244,6 +244,13 @@ export class ChangesViewPane extends ViewPane {
 		this.contentContainer = dom.append(this.bodyContainer, $('.chat-editing-session-container.show-file-icons'));
 		this._register(createFileIconThemableTreeContainerScope(this.contentContainer, this.themeService));
 
+		// Toggle class based on whether the file icon theme has file icons
+		const updateHasFileIcons = () => {
+			this.contentContainer!.classList.toggle('has-file-icons', this.themeService.getFileIconTheme().hasFileIcons);
+		};
+		updateHasFileIcons();
+		this._register(this.themeService.onDidFileIconThemeChange(updateHasFileIcons));
+
 		// Overview section (header with summary only - actions moved outside card)
 		this.overviewContainer = dom.append(this.contentContainer, $('.chat-editing-session-overview'));
 		this.summaryContainer = dom.append(this.overviewContainer, $('.changes-summary'));
