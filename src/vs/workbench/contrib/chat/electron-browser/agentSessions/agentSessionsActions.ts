@@ -6,7 +6,7 @@ import { VSBuffer } from '../../../../../base/common/buffer.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { ServicesAccessor } from '../../../../../editor/browser/editorExtensions.js';
 import { localize2 } from '../../../../../nls.js';
-import { Action2, MenuId, MenuRegistry, registerAction2 } from '../../../../../platform/actions/common/actions.js';
+import { Action2, MenuRegistry, registerAction2 } from '../../../../../platform/actions/common/actions.js';
 import { ContextKeyExpr } from '../../../../../platform/contextkey/common/contextkey.js';
 import { INativeEnvironmentService } from '../../../../../platform/environment/common/environment.js';
 import { IFileService } from '../../../../../platform/files/common/files.js';
@@ -108,9 +108,9 @@ export class OpenSessionWorktreeInVSCodeAction extends Action2 {
 			title: localize2('openInVSCode', 'Open in VS Code'),
 			icon: Codicon.vscodeInsiders,
 			menu: [{
-				id: AgentSessionsWorkbenchMenus.TitleBarRight,
+				id: AgentSessionsWorkbenchMenus.AgentSessionsOpenSubMenu,
 				group: 'navigation',
-				order: 10,
+				order: 2,
 			}]
 		});
 	}
@@ -143,9 +143,9 @@ export class OpenSessionInTerminalAction extends Action2 {
 			title: localize2('openInTerminal', "Open Terminal"),
 			icon: Codicon.terminal,
 			menu: [{
-				id: AgentSessionsWorkbenchMenus.TitleBarRight,
+				id: AgentSessionsWorkbenchMenus.AgentSessionsOpenSubMenu,
 				group: 'navigation',
-				order: 9,
+				order: 1,
 			}]
 		});
 	}
@@ -172,12 +172,12 @@ export class OpenSessionInTerminalAction extends Action2 {
 registerAction2(OpenSessionInTerminalAction);
 
 // Register the split button menu item that combines Open in VS Code and Open in Terminal
-MenuRegistry.appendMenuItem(MenuId.AuxiliaryBarTitle, {
-	submenu: MenuId.AgentSessionsOpenSubMenu,
+MenuRegistry.appendMenuItem(AgentSessionsWorkbenchMenus.TitleBarRight, {
+	submenu: AgentSessionsWorkbenchMenus.AgentSessionsOpenSubMenu,
 	isSplitButton: { togglePrimaryAction: true },
 	title: localize2('open', "Open..."),
 	icon: Codicon.folderOpened,
 	group: 'navigation',
-	order: 1,
+	order: 9,
 	when: IsAgentSessionsWorkspaceContext,
 });
