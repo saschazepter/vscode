@@ -20,6 +20,18 @@ export class HookAbortError extends Error {
 		this.name = 'HookAbortError';
 	}
 }
+
+/**
+ * Formats a localized error message for a failed hook.
+ * @param errorMessage The error message from the hook
+ * @returns A localized error message string
+ */
+export function formatHookErrorMessage(errorMessage: string): string {
+	if (errorMessage) {
+		return localize('hookFatalErrorWithMessage', 'A hook prevented chat from continuing. Please check the Hooks output channel for more details. Error message: {0}', errorMessage);
+	}
+	return localize('hookFatalError', 'A hook prevented chat from continuing. Please check the Hooks output channel for more details.');
+}
 import { StopWatch } from '../../../../../base/common/stopwatch.js';
 import { URI, isUriComponents } from '../../../../../base/common/uri.js';
 import { localize } from '../../../../../nls.js';
@@ -536,7 +548,7 @@ export class HooksExecutionService extends Disposable implements IHooksExecution
 		// If any hook set stopReason, throw HookAbortError after processing
 		const stoppedResult = results.find(r => r.stopReason !== undefined);
 		if (stoppedResult?.stopReason !== undefined) {
-			this._emitHookProgress(HookType.PreToolUse, sessionResource, stoppedResult.stopReason);
+			this._emitHookProgress(HookType.PreToolUse, sessionResource, formatHookErrorMessage(stoppedResult.stopReason));
 			throw new HookAbortError(HookType.PreToolUse, stoppedResult.stopReason);
 		}
 
@@ -633,7 +645,7 @@ export class HooksExecutionService extends Disposable implements IHooksExecution
 		// If any hook set stopReason, throw HookAbortError after processing
 		const stoppedResult = results.find(r => r.stopReason !== undefined);
 		if (stoppedResult?.stopReason !== undefined) {
-			this._emitHookProgress(HookType.PostToolUse, sessionResource, stoppedResult.stopReason);
+			this._emitHookProgress(HookType.PostToolUse, sessionResource, formatHookErrorMessage(stoppedResult.stopReason));
 			throw new HookAbortError(HookType.PostToolUse, stoppedResult.stopReason);
 		}
 
