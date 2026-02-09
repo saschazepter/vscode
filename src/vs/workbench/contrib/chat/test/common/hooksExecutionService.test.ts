@@ -116,7 +116,7 @@ suite('HooksExecutionService', () => {
 			const results = await service.executeHook(HookType.PreToolUse, sessionUri, { input: 'test-input' });
 
 			assert.strictEqual(results.length, 1);
-			assert.strictEqual(results[0].success, true);
+			assert.strictEqual(results[0].resultKind, 'success');
 			assert.strictEqual(results[0].stopReason, undefined);
 			assert.strictEqual(results[0].output, 'executed: echo test');
 		});
@@ -152,7 +152,7 @@ suite('HooksExecutionService', () => {
 			const results = await service.executeHook(HookType.PreToolUse, sessionUri);
 
 			assert.strictEqual(results.length, 1);
-			assert.strictEqual(results[0].success, false);
+			assert.strictEqual(results[0].resultKind, 'error');
 			assert.strictEqual(results[0].output, 'proxy failed');
 			// Error results still have default common fields
 			assert.strictEqual(results[0].stopReason, undefined);
@@ -210,9 +210,9 @@ suite('HooksExecutionService', () => {
 			const results = await service.executeHook(HookType.PreToolUse, sessionUri);
 
 			assert.strictEqual(results.length, 1);
-			assert.strictEqual(results[0].success, true);
+			assert.strictEqual(results[0].resultKind, 'success');
 			assert.strictEqual(results[0].stopReason, 'User requested stop');
-			assert.strictEqual(results[0].messageForUser, 'Warning: hook triggered');
+			assert.strictEqual(results[0].warningMessage, 'Warning: hook triggered');
 			// Hook-specific fields are in output with wrapper
 			assert.deepStrictEqual(results[0].output, { hookSpecificOutput: { permissionDecision: 'allow' } });
 		});
@@ -235,7 +235,7 @@ suite('HooksExecutionService', () => {
 
 			assert.strictEqual(results.length, 1);
 			assert.strictEqual(results[0].stopReason, undefined);
-			assert.strictEqual(results[0].messageForUser, undefined);
+			assert.strictEqual(results[0].warningMessage, undefined);
 			assert.deepStrictEqual(results[0].output, { hookSpecificOutput: { permissionDecision: 'allow' } });
 		});
 
@@ -252,9 +252,47 @@ suite('HooksExecutionService', () => {
 			const results = await service.executeHook(HookType.PreToolUse, sessionUri);
 
 			assert.strictEqual(results.length, 1);
-			assert.strictEqual(results[0].success, false);
+			assert.strictEqual(results[0].resultKind, 'error');
 			assert.strictEqual(results[0].output, 'command failed with error');
 			// Defaults are still applied
+			assert.strictEqual(results[0].stopReason, undefined);
+		});
+
+		test('handles non-blocking error results from command', async () => {
+			const proxy = createMockProxy(() => ({
+				kind: HookCommandResultKind.NonBlockingError,
+				result: 'non-blocking warning message'
+			}));
+			service.setProxy(proxy);
+
+			const hooks = { [HookType.PreToolUse]: [cmd('echo test')] };
+			store.add(service.registerHooks(sessionUri, hooks));
+
+			const results = await service.executeHook(HookType.PreToolUse, sessionUri);
+
+			assert.strictEqual(results.length, 1);
+			assert.strictEqual(results[0].resultKind, 'warning');
+			assert.strictEqual(results[0].output, undefined);
+			assert.strictEqual(results[0].warningMessage, 'non-blocking warning message');
+			assert.strictEqual(results[0].stopReason, undefined);
+		});
+
+		test('handles non-blocking error with object result', async () => {
+			const proxy = createMockProxy(() => ({
+				kind: HookCommandResultKind.NonBlockingError,
+				result: { code: 'WARN_001', message: 'Something went wrong' }
+			}));
+			service.setProxy(proxy);
+
+			const hooks = { [HookType.PreToolUse]: [cmd('echo test')] };
+			store.add(service.registerHooks(sessionUri, hooks));
+
+			const results = await service.executeHook(HookType.PreToolUse, sessionUri);
+
+			assert.strictEqual(results.length, 1);
+			assert.strictEqual(results[0].resultKind, 'warning');
+			assert.strictEqual(results[0].output, undefined);
+			assert.strictEqual(results[0].warningMessage, '{"code":"WARN_001","message":"Something went wrong"}');
 			assert.strictEqual(results[0].stopReason, undefined);
 		});
 
@@ -275,7 +313,7 @@ suite('HooksExecutionService', () => {
 			const results = await service.executeHook(HookType.Stop, sessionUri);
 
 			assert.strictEqual(results.length, 1);
-			assert.strictEqual(results[0].success, true);
+			assert.strictEqual(results[0].resultKind, 'success');
 			// Hook-specific fields should be in output, not undefined
 			assert.deepStrictEqual(results[0].output, {
 				decision: 'block',
