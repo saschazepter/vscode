@@ -233,7 +233,7 @@ export class PromptHeaderAutocompletion implements CompletionItemProvider {
 		return { suggestions };
 	}
 
-	private getValueSuggestions(promptType: string, attribute: string, target: Target): IValueEntry[] {
+	private getValueSuggestions(promptType: PromptsType, attribute: string, target: Target): IValueEntry[] {
 		if (target === Target.Claude) {
 			const attributeDesc = promptType === PromptsType.instructions ? claudeRulesAttributes[attribute] : claudeAgentAttributes[attribute];
 			if (attributeDesc) {
