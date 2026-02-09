@@ -6,32 +6,6 @@
 import { CancellationToken } from '../../../../../base/common/cancellation.js';
 import { Emitter, Event } from '../../../../../base/common/event.js';
 import { Disposable, IDisposable, toDisposable } from '../../../../../base/common/lifecycle.js';
-
-/**
- * Error thrown when a hook requests the agent to abort processing.
- * The message should be shown to the user.
- */
-export class HookAbortError extends Error {
-	constructor(
-		public readonly hookType: string,
-		public readonly stopReason: string
-	) {
-		super(`Hook ${hookType} aborted: ${stopReason}`);
-		this.name = 'HookAbortError';
-	}
-}
-
-/**
- * Formats a localized error message for a failed hook.
- * @param errorMessage The error message from the hook
- * @returns A localized error message string
- */
-export function formatHookErrorMessage(errorMessage: string): string {
-	if (errorMessage) {
-		return localize('hookFatalErrorWithMessage', 'A hook prevented chat from continuing. Please check the Hooks output channel for more details. Error message: {0}', errorMessage);
-	}
-	return localize('hookFatalError', 'A hook prevented chat from continuing. Please check the Hooks output channel for more details.');
-}
 import { StopWatch } from '../../../../../base/common/stopwatch.js';
 import { URI, isUriComponents } from '../../../../../base/common/uri.js';
 import { localize } from '../../../../../nls.js';
@@ -549,7 +523,7 @@ export class HooksExecutionService extends Disposable implements IHooksExecution
 		const stoppedResult = results.find(r => r.stopReason !== undefined);
 		if (stoppedResult?.stopReason !== undefined) {
 			this._emitHookProgress(HookType.PreToolUse, sessionResource, formatHookErrorMessage(stoppedResult.stopReason));
-			throw new HookAbortError(HookType.PreToolUse, stoppedResult.stopReason);
+			throw new HookAbortError(HookType.PreToolUse, stoppedResult.stopReason ?? 'Unknown error');
 		}
 
 		return {
@@ -646,7 +620,7 @@ export class HooksExecutionService extends Disposable implements IHooksExecution
 		const stoppedResult = results.find(r => r.stopReason !== undefined);
 		if (stoppedResult?.stopReason !== undefined) {
 			this._emitHookProgress(HookType.PostToolUse, sessionResource, formatHookErrorMessage(stoppedResult.stopReason));
-			throw new HookAbortError(HookType.PostToolUse, stoppedResult.stopReason);
+			throw new HookAbortError(HookType.PostToolUse, stoppedResult.stopReason ?? 'Unknown error');
 		}
 
 		return {
@@ -656,4 +630,30 @@ export class HooksExecutionService extends Disposable implements IHooksExecution
 			additionalContext: allAdditionalContext.length > 0 ? allAdditionalContext : undefined,
 		};
 	}
+}
+
+/**
+ * Error thrown when a hook requests the agent to abort processing.
+ * The message should be shown to the user.
+ */
+export class HookAbortError extends Error {
+	constructor(
+		public readonly hookType: string,
+		public readonly stopReason: string
+	) {
+		super(`Hook ${hookType} aborted: ${stopReason}`);
+		this.name = 'HookAbortError';
+	}
+}
+
+/**
+ * Formats a localized error message for a failed hook.
+ * @param errorMessage The error message from the hook
+ * @returns A localized error message string
+ */
+export function formatHookErrorMessage(errorMessage: string): string {
+	if (errorMessage) {
+		return localize('hookFatalErrorWithMessage', 'A hook prevented chat from continuing. Please check the Hooks output channel for more details. Error message: {0}', errorMessage);
+	}
+	return localize('hookFatalError', 'A hook prevented chat from continuing. Please check the Hooks output channel for more details.');
 }

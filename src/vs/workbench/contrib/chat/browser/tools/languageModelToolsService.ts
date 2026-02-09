@@ -402,30 +402,6 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 			throw e;
 		}
 
-		// Check if hook wants to stop processing entirely (stopReason set)
-		if (hookResult?.stopReason !== undefined) {
-			const reason = hookResult.stopReason || localize('hookStoppedNoReason', "Hook stopped processing");
-			this._logService.debug(`[LanguageModelToolsService#invokeTool] Tool ${dto.toolId} stopped by preToolUse hook: ${reason}`);
-
-			// Handle the tool invocation in cancelled state
-			if (toolData) {
-				if (pendingInvocation) {
-					pendingInvocation.cancelFromStreaming(ToolConfirmKind.Denied, reason);
-				} else if (request) {
-					const toolInvocation = ChatToolInvocation.createCancelled(
-						{ toolCallId: dto.callId, toolId: dto.toolId, toolData, subagentInvocationId: dto.subAgentInvocationId, chatRequestId: dto.chatRequestId },
-						dto.parameters,
-						ToolConfirmKind.Denied,
-						reason
-					);
-					this._chatService.appendProgress(request, toolInvocation);
-				}
-			}
-
-			// Throw a CancellationError to stop the agent loop entirely
-			throw new CancellationError();
-		}
-
 		if (hookResult?.permissionDecision === 'deny') {
 			const hookReason = hookResult.permissionDecisionReason ?? localize('hookDeniedNoReason', "Hook denied tool execution");
 			const reason = localize('deniedByPreToolUseHook', "Denied by {0} hook: {1}", HookType.PreToolUse, hookReason);
@@ -523,13 +499,6 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 				throw new CancellationError();
 			}
 			throw e;
-		}
-
-		// Check if hook wants to stop processing entirely (stopReason set)
-		if (hookResult?.stopReason !== undefined) {
-			this._logService.debug(`[LanguageModelToolsService#invokeTool] PostToolUse hook stopped processing for tool ${dto.toolId}: ${hookResult.stopReason}`);
-			// Throw a CancellationError to stop the agent loop entirely
-			throw new CancellationError();
 		}
 
 		if (hookResult?.decision === 'block') {
