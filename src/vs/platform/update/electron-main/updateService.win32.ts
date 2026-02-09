@@ -411,7 +411,7 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 			}
 		}
 
-		// Delete the flag file to clean up
+		// Clean up the flag file
 		if (updateFilePath) {
 			try {
 				await unlink(updateFilePath);
@@ -420,7 +420,7 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 			}
 		}
 
-		// Delete the cancel file to clean up
+		// Clean up the cancel file
 		if (cancelFilePath) {
 			try {
 				await unlink(cancelFilePath);
