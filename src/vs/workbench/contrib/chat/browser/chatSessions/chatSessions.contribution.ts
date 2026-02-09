@@ -654,11 +654,7 @@ export class ChatSessionsService extends Disposable implements IChatSessionsServ
 	private _enableContribution(contribution: IChatSessionsExtensionPoint, ext: IRelaxedExtensionDescription): void {
 		const disposableStore = new DisposableStore();
 		this._contributionDisposables.set(contribution.type, disposableStore);
-		if (contribution.isReadOnly) {
-			// Read-only sessions register commands (needed for openSessionWithPrompt)
-			// but do not register as agents or appear in delegation/session pickers
-			disposableStore.add(this._registerCommands(contribution));
-		} else if (contribution.canDelegate) {
+		if (contribution.isReadOnly || contribution.canDelegate) {
 			disposableStore.add(this._registerAgent(contribution, ext));
 			disposableStore.add(this._registerCommands(contribution));
 		}
