@@ -240,7 +240,7 @@ export class LineHeightsManager {
 		this.commit();
 	}
 
-	public onLinesInserted(fromLineNumber: number, toLineNumber: number, lineHeightsAdded: CustomLineHeightData[]): void {
+	public onLinesInserted(fromLineNumber: number, toLineNumber: number): void {
 		const insertCount = toLineNumber - fromLineNumber + 1;
 		const candidateStartIndexOfInsertion = this._binarySearchOverOrderedCustomLinesArray(fromLineNumber);
 		let startIndexOfInsertion: number;
@@ -256,21 +256,6 @@ export class LineHeightsManager {
 		} else {
 			startIndexOfInsertion = -(candidateStartIndexOfInsertion + 1);
 		}
-		const maxLineHeightPerLine = new Map<number, number>();
-		for (const lineHeightAdded of lineHeightsAdded) {
-			for (let lineNumber = lineHeightAdded.startLineNumber; lineNumber <= lineHeightAdded.endLineNumber; lineNumber++) {
-				if (lineNumber >= fromLineNumber && lineNumber <= toLineNumber) {
-					const currentMax = maxLineHeightPerLine.get(lineNumber) ?? this._defaultLineHeight;
-					maxLineHeightPerLine.set(lineNumber, Math.max(currentMax, lineHeightAdded.lineHeight));
-				}
-			}
-			this.insertOrChangeCustomLineHeight(
-				lineHeightAdded.decorationId,
-				lineHeightAdded.startLineNumber,
-				lineHeightAdded.endLineNumber,
-				lineHeightAdded.lineHeight
-			);
-		}
 		const toReAdd: CustomLineHeightData[] = [];
 		const decorationsImmediatelyAfter = new Set<string>();
 		for (let i = startIndexOfInsertion; i < this._orderedCustomLines.length; i++) {
@@ -285,12 +270,9 @@ export class LineHeightsManager {
 			}
 		}
 		const decorationsWithGaps = intersection(decorationsImmediatelyBefore, decorationsImmediatelyAfter);
-		const specialHeightToAdd = Array.from(maxLineHeightPerLine.values()).reduce((acc, height) => acc + height, 0);
-		const defaultHeightToAdd = (insertCount - maxLineHeightPerLine.size) * this._defaultLineHeight;
-		const prefixSumToAdd = specialHeightToAdd + defaultHeightToAdd;
 		for (let i = startIndexOfInsertion; i < this._orderedCustomLines.length; i++) {
 			this._orderedCustomLines[i].lineNumber += insertCount;
-			this._orderedCustomLines[i].prefixSum += prefixSumToAdd;
+			this._orderedCustomLines[i].prefixSum += this._defaultLineHeight * insertCount;
 		}
 
 		if (decorationsWithGaps.size > 0) {
@@ -312,8 +294,8 @@ export class LineHeightsManager {
 			for (const dec of toReAdd) {
 				this.insertOrChangeCustomLineHeight(dec.decorationId, dec.startLineNumber, dec.endLineNumber, dec.lineHeight);
 			}
+			this.commit();
 		}
-		this.commit();
 	}
 
 	public commit(): void {

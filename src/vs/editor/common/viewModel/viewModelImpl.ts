@@ -208,9 +208,6 @@ export class ViewModel extends Disposable implements IViewModel {
 		if (!allowVariableLineHeights) {
 			return [];
 		}
-		if (fromLineNumber < 1 || toLineNumber < 1 || fromLineNumber > this.model.getLineCount() || toLineNumber > this.model.getLineCount()) {
-			return [];
-		}
 		const modelRange = new Range(fromLineNumber, 1, toLineNumber, this.model.getLineMaxColumn(toLineNumber));
 		const decorations = this.model.getCustomLineHeightsDecorationsInRange(modelRange, this._editorId);
 		return CustomLineHeightData.fromDecorations(decorations, this.coordinatesConverter, this._configuration);
@@ -378,7 +375,7 @@ export class ViewModel extends Disposable implements IViewModel {
 							const linesInsertedEvent = this._lines.onModelLinesInserted(versionId, change.fromLineNumber, change.toLineNumber, insertedLineBreaks);
 							if (linesInsertedEvent !== null) {
 								eventsCollector.emitViewEvent(linesInsertedEvent);
-								this.viewLayout.onLinesInserted(linesInsertedEvent.fromLineNumber, linesInsertedEvent.toLineNumber, this._getCustomLineHeightsForLines(change.fromLineNumber, change.toLineNumber));
+								this.viewLayout.onLinesInserted(linesInsertedEvent.fromLineNumber, linesInsertedEvent.toLineNumber);
 							}
 							hadOtherModelChange = true;
 							break;
@@ -393,7 +390,7 @@ export class ViewModel extends Disposable implements IViewModel {
 							}
 							if (linesInsertedEvent) {
 								eventsCollector.emitViewEvent(linesInsertedEvent);
-								this.viewLayout.onLinesInserted(linesInsertedEvent.fromLineNumber, linesInsertedEvent.toLineNumber, this._getCustomLineHeightsForLines(change.lineNumber, change.lineNumber));
+								this.viewLayout.onLinesInserted(linesInsertedEvent.fromLineNumber, linesInsertedEvent.toLineNumber);
 							}
 							if (linesDeletedEvent) {
 								eventsCollector.emitViewEvent(linesDeletedEvent);
