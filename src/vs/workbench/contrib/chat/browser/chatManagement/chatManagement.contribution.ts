@@ -196,7 +196,7 @@ class ChatManagementActionsContribution extends Disposable implements IWorkbench
 			LANGUAGE_MODELS_ENTITLEMENT_PRECONDITION
 		);
 
-		this._register(MenuRegistry.appendMenuItem(MenuId.EditorTitle, {
+		MenuRegistry.appendMenuItem(MenuId.EditorTitle, {
 			command: {
 				id: MANAGE_CHAT_COMMAND_ID,
 				title: localize2('openAiManagement', "Manage Language Models"),
@@ -205,14 +205,14 @@ class ChatManagementActionsContribution extends Disposable implements IWorkbench
 			when: openModelsManagementEditorWhen,
 			group: 'navigation',
 			order: 1
-		}));
+		});
 
 		const openLanguageModelsJsonWhen = ContextKeyExpr.and(
 			CONTEXT_MODELS_EDITOR,
 			LANGUAGE_MODELS_ENTITLEMENT_PRECONDITION
 		);
 
-		this._register(MenuRegistry.appendMenuItem(MenuId.EditorTitle, {
+		MenuRegistry.appendMenuItem(MenuId.EditorTitle, {
 			command: {
 				id: 'workbench.action.openLanguageModelsJson',
 				title: localize2('openLanguageModelsJson', "Open Language Models (JSON)"),
@@ -221,7 +221,7 @@ class ChatManagementActionsContribution extends Disposable implements IWorkbench
 			when: openLanguageModelsJsonWhen,
 			group: 'navigation',
 			order: 1
-		}));
+		});
 	}
 }
 
