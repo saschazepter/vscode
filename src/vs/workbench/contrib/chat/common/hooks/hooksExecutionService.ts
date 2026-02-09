@@ -536,6 +536,7 @@ export class HooksExecutionService extends Disposable implements IHooksExecution
 		// If any hook set stopReason, throw HookAbortError after processing
 		const stoppedResult = results.find(r => r.stopReason !== undefined);
 		if (stoppedResult?.stopReason !== undefined) {
+			this._emitHookProgress(HookType.PreToolUse, sessionResource, stoppedResult.stopReason);
 			throw new HookAbortError(HookType.PreToolUse, stoppedResult.stopReason);
 		}
 
@@ -632,6 +633,7 @@ export class HooksExecutionService extends Disposable implements IHooksExecution
 		// If any hook set stopReason, throw HookAbortError after processing
 		const stoppedResult = results.find(r => r.stopReason !== undefined);
 		if (stoppedResult?.stopReason !== undefined) {
+			this._emitHookProgress(HookType.PostToolUse, sessionResource, stoppedResult.stopReason);
 			throw new HookAbortError(HookType.PostToolUse, stoppedResult.stopReason);
 		}
 
