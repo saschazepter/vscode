@@ -170,6 +170,13 @@ export class AgentSessionProjectionService extends Disposable implements IAgentS
 			return;
 		}
 
+		// Update the title if the session label has changed
+		if (updatedSession.label !== this._activeSession.label) {
+			this.logService.trace('[AgentSessionProjection] Active session label changed, updating title');
+			this._activeSession = updatedSession;
+			this.agentTitleBarStatusService.updateSessionTitle(updatedSession.label);
+		}
+
 		// If the session is now in progress, exit projection mode
 		if (isSessionInProgressStatus(updatedSession.status)) {
 			this.logService.trace('[AgentSessionProjection] Active session transitioned to in-progress, exiting projection mode');

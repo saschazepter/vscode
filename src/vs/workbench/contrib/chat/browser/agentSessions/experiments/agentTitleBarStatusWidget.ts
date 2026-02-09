@@ -46,6 +46,7 @@ import { LayoutSettings } from '../../../../../services/layout/browser/layoutSer
 import { ChatConfiguration } from '../../../common/constants.js';
 import { ChatEntitlement, IChatEntitlementService } from '../../../../../services/chat/common/chatEntitlementService.js';
 import { IChatWidgetService } from '../../chat.js';
+import { IAgentSessionProjectionService } from './agentSessionProjectionService.js';
 
 // Action IDs
 const TOGGLE_CHAT_ACTION_ID = 'workbench.action.chat.toggle';
@@ -117,6 +118,7 @@ export class AgentTitleBarStatusWidget extends BaseActionViewItem {
 		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@IChatEntitlementService private readonly chatEntitlementService: IChatEntitlementService,
 		@IChatWidgetService private readonly chatWidgetService: IChatWidgetService,
+		@IAgentSessionProjectionService private readonly agentSessionProjectionService: IAgentSessionProjectionService,
 	) {
 		super(undefined, action, options);
 
@@ -138,6 +140,14 @@ export class AgentTitleBarStatusWidget extends BaseActionViewItem {
 		// Re-render when sessions change to update statistics
 		this._register(this.agentSessionsService.model.onDidChangeSessions(() => {
 			this._render();
+		}));
+
+		// Update session title when active session changes
+		this._register(this.agentSessionProjectionService.onDidChangeActiveSession((session) => {
+			if (session) {
+				// Update title to reflect the new active session
+				this.agentTitleBarStatusService.updateSessionTitle(session.label);
+			}
 		}));
 
 		// Re-render when active editor changes (for file name display when tabs are hidden)
