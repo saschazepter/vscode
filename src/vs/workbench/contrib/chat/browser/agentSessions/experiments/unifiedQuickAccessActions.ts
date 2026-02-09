@@ -9,9 +9,11 @@ import { localize2 } from '../../../../../../nls.js';
 import { ChatContextKeys } from '../../../common/actions/chatContextKeys.js';
 import { ChatConfiguration } from '../../../common/constants.js';
 import { ContextKeyExpr } from '../../../../../../platform/contextkey/common/contextkey.js';
+import { KeyCode, KeyMod } from '../../../../../../base/common/keyCodes.js';
+import { KeybindingWeight, KeybindingsRegistry } from '../../../../../../platform/keybinding/common/keybindingsRegistry.js';
 import { Disposable } from '../../../../../../base/common/lifecycle.js';
 import { IWorkbenchContribution } from '../../../../../common/contributions.js';
-import { UnifiedQuickAccess, DEFAULT_UNIFIED_QUICK_ACCESS_TABS } from './unifiedQuickAccess.js';
+import { UnifiedQuickAccess, DEFAULT_UNIFIED_QUICK_ACCESS_TABS, InUnifiedQuickAccessContext, SEND_TO_AGENT_COMMAND_ID } from './unifiedQuickAccess.js';
 
 /**
  * Action ID for showing the unified quick access widget.
@@ -101,3 +103,15 @@ registerShowTabAction(
 	localize2('showFilesQuickAccess', "Show Files (Unified)"),
 	'files',
 );
+
+// Register Shift+Enter keybinding to send message to agent from the unified quick access
+KeybindingsRegistry.registerCommandAndKeybindingRule({
+	id: SEND_TO_AGENT_COMMAND_ID,
+	weight: KeybindingWeight.WorkbenchContrib,
+	when: InUnifiedQuickAccessContext,
+	primary: KeyMod.Shift | KeyCode.Enter,
+	handler: (accessor) => {
+		const instantiationService = accessor.get(IInstantiationService);
+		getUnifiedQuickAccess(instantiationService).sendCurrentMessage();
+	},
+});

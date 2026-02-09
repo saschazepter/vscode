@@ -5,28 +5,30 @@
 
 import './media/unifiedQuickAccess.css';
 import { $ } from '../../../../../../base/browser/dom.js';
-import { Disposable, DisposableStore, MutableDisposable, isDisposable } from '../../../../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore, isDisposable } from '../../../../../../base/common/lifecycle.js';
 import { IQuickInputService, IQuickPick, IQuickPickItem } from '../../../../../../platform/quickinput/common/quickInput.js';
 import { IInstantiationService } from '../../../../../../platform/instantiation/common/instantiation.js';
 import { localize } from '../../../../../../nls.js';
 import { Radio, IRadioOptionItem } from '../../../../../../base/browser/ui/radio/radio.js';
 import { CancellationTokenSource } from '../../../../../../base/common/cancellation.js';
-import { disposableTimeout } from '../../../../../../base/common/async.js';
 import { Extensions, IQuickAccessProvider, IQuickAccessProviderDescriptor, IQuickAccessRegistry } from '../../../../../../platform/quickinput/common/quickAccess.js';
 import { Registry } from '../../../../../../platform/registry/common/platform.js';
-import { IContextKeyService } from '../../../../../../platform/contextkey/common/contextkey.js';
+import { IContextKeyService, RawContextKey } from '../../../../../../platform/contextkey/common/contextkey.js';
 import { createInstantHoverDelegate } from '../../../../../../base/browser/ui/hover/hoverDelegateFactory.js';
 import { ICommandService } from '../../../../../../platform/commands/common/commands.js';
 import { IKeybindingService } from '../../../../../../platform/keybinding/common/keybinding.js';
 import { ACTION_ID_NEW_CHAT, CHAT_OPEN_ACTION_ID, IChatViewOpenOptions } from '../../actions/chatActions.js';
 
-/** Marker ID for the "send to agent" quick pick item */
-const SEND_TO_AGENT_ID = 'unified-quick-access-send-to-agent';
+/**
+ * Context key set when the unified quick access widget is visible.
+ * Used to scope keybindings (e.g., Shift+Enter to send) to this picker only.
+ */
+export const InUnifiedQuickAccessContext = new RawContextKey<boolean>('inUnifiedQuickAccess', false);
 
-/** Extended quick pick item with optional id used for send-to-agent detection. */
-interface IUnifiedQuickPickItem extends IQuickPickItem {
-	id?: string;
-}
+/**
+ * Command ID for sending the current input to an agent via Shift+Enter.
+ */
+export const SEND_TO_AGENT_COMMAND_ID = 'workbench.action.unifiedQuickAccess.sendToAgent';
 
 /**
  * Tab configuration for the unified quick access widget.
@@ -92,9 +94,8 @@ export class UnifiedQuickAccess extends Disposable {
 	private _providerCts: CancellationTokenSource | undefined;
 	private _radio: Radio | undefined;
 	private _isInternalValueChange = false;
-	private _isUpdatingSendToAgent = false;
 	private _arrivedViaShortcut: '<' | '>' | undefined;
-	private readonly _sendToAgentDebounce = this._register(new MutableDisposable());
+	private _inUnifiedQuickAccessContext = InUnifiedQuickAccessContext.bindTo(this.contextKeyService);
 
 	private readonly _tabs: IUnifiedQuickAccessTab[];
 
@@ -154,6 +155,9 @@ export class UnifiedQuickAccess extends Disposable {
 		// Start providing items for initial tab
 		this._activateProvider(initialTab, picker);
 
+		// Set the context key so Shift+Enter keybinding is active
+		this._inUnifiedQuickAccessContext.set(true);
+
 		// Handle value changes - detect prefix changes to switch tabs
 		this._currentDisposables.add(picker.onDidChangeValue(value => {
 			if (this._isInternalValueChange) {
@@ -180,28 +184,6 @@ export class UnifiedQuickAccess extends Disposable {
 
 			// Update custom button label
 			this._updateCustomButtonLabel(picker);
-
-			// Debounce send-to-agent check to let provider finish
-			this._sendToAgentDebounce.value = disposableTimeout(() => this._maybeShowSendToAgent(picker), 150);
-		}));
-
-		// Handle accept - send to agent if no real items or send-to-agent is selected
-		this._currentDisposables.add(picker.onDidAccept(() => {
-			const selectedItems = picker.selectedItems;
-			const activeItems = picker.activeItems;
-
-			const sendToAgentSelected = selectedItems.length > 0 &&
-				(selectedItems[0] as IUnifiedQuickPickItem).id === SEND_TO_AGENT_ID;
-
-			const hasRealActiveItem = activeItems.some(item =>
-				(item as IUnifiedQuickPickItem).id !== SEND_TO_AGENT_ID
-			);
-
-			const filterText = this._getFilterText(picker);
-
-			if (sendToAgentSelected || (!hasRealActiveItem && filterText)) {
-				this._sendMessage(picker.value);
-			}
 		}));
 
 		// Handle custom button click (Send / Open Chat)
@@ -216,6 +198,7 @@ export class UnifiedQuickAccess extends Disposable {
 
 		// Handle hide
 		this._currentDisposables.add(picker.onDidHide(() => {
+			this._inUnifiedQuickAccessContext.set(false);
 			this._providerDisposables.clear();
 			this._providerCts?.cancel();
 			this._providerCts = undefined;
@@ -285,13 +268,19 @@ export class UnifiedQuickAccess extends Disposable {
 
 	/**
 	 * Update the custom button label and tooltip based on the current input value.
+	 * When input is present, shows "Send" with Shift+Enter hint.
+	 * When empty, shows "Open Chat" with keybinding.
 	 */
 	private _updateCustomButtonLabel(picker: IQuickPick<IQuickPickItem, { useSeparators: true }>): void {
 		const hasInput = picker.value.trim().length > 0;
 
 		if (hasInput) {
+			const sendKeybinding = this.keybindingService.lookupKeybinding(SEND_TO_AGENT_COMMAND_ID);
+			const sendLabel = sendKeybinding?.getLabel();
 			picker.customLabel = `$(send) ${localize('send', "Send")}`;
-			picker.customHover = localize('sendTooltipNoKeybinding', "Send message to new agent session");
+			picker.customHover = sendLabel
+				? localize('sendTooltipWithKeybinding', "Send to agent ({0})", sendLabel)
+				: localize('sendTooltipNoKeybinding', "Send message to new agent session");
 		} else {
 			const openChatKeybinding = this.keybindingService.lookupKeybinding(CHAT_OPEN_ACTION_ID);
 			const openChatLabel = openChatKeybinding?.getLabel() ?? '';
@@ -335,8 +324,13 @@ export class UnifiedQuickAccess extends Disposable {
 
 	/**
 	 * Send the picker value with prefix or shortcut character stripped.
+	 * Called by the Shift+Enter keybinding command.
 	 */
-	private _sendMessage(value: string): void {
+	sendCurrentMessage(): void {
+		if (!this._currentPicker) {
+			return;
+		}
+		const value = this._currentPicker.value;
 		let message = value;
 		if (this._arrivedViaShortcut && message.startsWith(this._arrivedViaShortcut)) {
 			message = message.substring(1).trim();
@@ -344,84 +338,6 @@ export class UnifiedQuickAccess extends Disposable {
 			message = value.substring(this._currentTab.prefix.length).trim();
 		}
 		this._sendToAgent(message.trim());
-	}
-
-	/**
-	 * Get the user's typed text with prefix/shortcut stripped.
-	 */
-	private _getFilterText(picker: IQuickPick<IQuickPickItem, { useSeparators: true }>): string {
-		if (this._arrivedViaShortcut && picker.value.startsWith(this._arrivedViaShortcut)) {
-			return picker.value.substring(1).trim();
-		}
-		if (this._currentTab) {
-			return picker.value.substring(this._currentTab.prefix.length).trim();
-		}
-		return picker.value.trim();
-	}
-
-	/**
-	 * Check if we should show the "send to agent" item.
-	 * Shows it as the first item when user has typed something on the Sessions tab,
-	 * or when no other items exist on other tabs.
-	 */
-	private _maybeShowSendToAgent(picker: IQuickPick<IQuickPickItem, { useSeparators: true }>): void {
-		if (this._isUpdatingSendToAgent) {
-			return;
-		}
-
-		const filterText = this._getFilterText(picker);
-		const fullInput = picker.value.trim();
-		const messageToSend = filterText || fullInput;
-
-		// Only show if user has typed something
-		if (!messageToSend) {
-			return;
-		}
-
-		// Don't show if picker is still loading
-		if (picker.busy) {
-			return;
-		}
-
-		// Check if send-to-agent is already the first item with same description
-		const firstItem = picker.items[0] as IUnifiedQuickPickItem;
-		if (firstItem?.id === SEND_TO_AGENT_ID && firstItem.description === fullInput) {
-			return; // Already showing correct send-to-agent item
-		}
-
-		// Create the send-to-agent item
-		const sendItem: IUnifiedQuickPickItem & { id: string } = {
-			id: SEND_TO_AGENT_ID,
-			label: `$(send) ${localize('sendToAgentLabel', "Send to agent")}`,
-			description: fullInput,
-			alwaysShow: true,
-			ariaLabel: localize('sendToAgentAria', "Send message to agent: {0}", fullInput),
-		};
-
-		// Get current items, excluding any existing send-to-agent item
-		const currentItems = picker.items.filter(item =>
-			(item as IUnifiedQuickPickItem).id !== SEND_TO_AGENT_ID
-		);
-
-		// Determine if we should show send-to-agent as first item:
-		// - Always on Sessions tab (agent sessions)
-		// - Only if no other items exist on Commands/Files tabs
-		const isSessionsTab = this._currentTab?.id === 'agentSessions';
-		const hasOtherItems = currentItems.length > 0;
-		const showFirst = isSessionsTab || !hasOtherItems;
-
-		// Set guard and update items
-		this._isUpdatingSendToAgent = true;
-		try {
-			if (showFirst) {
-				picker.items = [sendItem, ...currentItems];
-			} else {
-				// Don't show send-to-agent on Commands/Files when there are matches
-				picker.items = currentItems;
-			}
-		} finally {
-			this._isUpdatingSendToAgent = false;
-		}
 	}
 
 	/**
