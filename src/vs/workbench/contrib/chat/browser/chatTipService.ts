@@ -3,14 +3,17 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import { Emitter, Event } from '../../../../base/common/event.js';
+import { MarkdownString } from '../../../../base/common/htmlContent.js';
+import { Disposable } from '../../../../base/common/lifecycle.js';
+import { localize } from '../../../../nls.js';
+import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
+import { ContextKeyExpr, ContextKeyExpression, IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
 import { IProductService } from '../../../../platform/product/common/productService.js';
-import { MarkdownString } from '../../../../base/common/htmlContent.js';
-import { localize } from '../../../../nls.js';
-import { ContextKeyExpr, ContextKeyExpression, IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
+import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
 import { ChatContextKeys } from '../common/actions/chatContextKeys.js';
 import { ChatModeKind } from '../common/constants.js';
-import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 
 export const IChatTipService = createDecorator<IChatTipService>('chatTipService');
 
@@ -23,6 +26,16 @@ export interface IChatTipService {
 	readonly _serviceBrand: undefined;
 
 	/**
+	 * Fired when the current tip is dismissed.
+	 */
+	readonly onDidDismissTip: Event<void>;
+
+	/**
+	 * Fired when tips are disabled.
+	 */
+	readonly onDidDisableTips: Event<void>;
+
+	/**
 	 * Gets a tip to show for a request, or undefined if a tip has already been shown this session.
 	 * Only one tip is shown per VS Code session (resets on reload).
 	 * Tips are only shown for requests created after the service was instantiated.
@@ -31,6 +44,17 @@ export interface IChatTipService {
 	 * @param contextKeyService The context key service to evaluate tip eligibility.
 	 */
 	getNextTip(requestId: string, requestTimestamp: number, contextKeyService: IContextKeyService): IChatTip | undefined;
+
+	/**
+	 * Dismisses the current tip and allows a new one to be picked for the same request.
+	 * The dismissed tip will not be shown again in this workspace.
+	 */
+	dismissTip(): void;
+
+	/**
+	 * Disables tips permanently by setting the `chat.tips.enabled` configuration to false.
+	 */
+	disableTips(): void;
 }
 
 interface ITipDefinition {
@@ -86,8 +110,14 @@ const TIP_CATALOG: ITipDefinition[] = [
 	}
 ];
 
-export class ChatTipService implements IChatTipService {
+export class ChatTipService extends Disposable implements IChatTipService {
 	readonly _serviceBrand: undefined;
+
+	private readonly _onDidDismissTip = this._register(new Emitter<void>());
+	readonly onDidDismissTip = this._onDidDismissTip.event;
+
+	private readonly _onDidDisableTips = this._register(new Emitter<void>());
+	readonly onDidDisableTips = this._onDidDisableTips.event;
 
 	/**
 	 * Timestamp when this service was instantiated.
@@ -111,10 +141,48 @@ export class ChatTipService implements IChatTipService {
 	 */
 	private _shownTip: ITipDefinition | undefined;
 
+	private static readonly _DISMISSED_TIP_KEY = 'chat.tip.dismissed';
+
 	constructor(
 		@IProductService private readonly _productService: IProductService,
-		@IConfigurationService private readonly _configurationService: IConfigurationService
-	) { }
+		@IConfigurationService private readonly _configurationService: IConfigurationService,
+		@IStorageService private readonly _storageService: IStorageService
+	) {
+		super();
+	}
+
+	dismissTip(): void {
+		if (this._shownTip) {
+			const dismissed = this._getDismissedTipIds();
+			dismissed.push(this._shownTip.id);
+			this._storageService.store(ChatTipService._DISMISSED_TIP_KEY, JSON.stringify(dismissed), StorageScope.WORKSPACE, StorageTarget.MACHINE);
+		}
+		this._hasShownTip = false;
+		this._shownTip = undefined;
+		this._tipRequestId = undefined;
+		this._onDidDismissTip.fire();
+	}
+
+	private _getDismissedTipIds(): string[] {
+		const raw = this._storageService.get(ChatTipService._DISMISSED_TIP_KEY, StorageScope.WORKSPACE);
+		if (!raw) {
+			return [];
+		}
+		try {
+			const parsed = JSON.parse(raw);
+			return Array.isArray(parsed) ? parsed : [];
+		} catch {
+			return [];
+		}
+	}
+
+	disableTips(): void {
+		this._hasShownTip = false;
+		this._shownTip = undefined;
+		this._tipRequestId = undefined;
+		this._configurationService.updateValue('chat.tips.enabled', false);
+		this._onDidDisableTips.fire();
+	}
 
 	getNextTip(requestId: string, requestTimestamp: number, contextKeyService: IContextKeyService): IChatTip | undefined {
 		// Check if tips are enabled
@@ -143,8 +211,9 @@ export class ChatTipService implements IChatTipService {
 			return undefined;
 		}
 
-		// Find eligible tips
-		const eligibleTips = TIP_CATALOG.filter(tip => this._isEligible(tip, contextKeyService));
+		// Find eligible tips (excluding dismissed ones)
+		const dismissedIds = new Set(this._getDismissedTipIds());
+		const eligibleTips = TIP_CATALOG.filter(tip => !dismissedIds.has(tip.id) && this._isEligible(tip, contextKeyService));
 
 		if (eligibleTips.length === 0) {
 			return undefined;
