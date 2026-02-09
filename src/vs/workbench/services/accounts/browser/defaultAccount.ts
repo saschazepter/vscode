@@ -353,9 +353,6 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 	}
 
 	private async refetchPolicyData(): Promise<void> {
-		if (!this._defaultAccount) {
-			return;
-		}
 		if (!this.hostService.hasFocus) {
 			this.logService.debug('[DefaultAccount] Skipping refetching policy data because window is not focused');
 			return;
