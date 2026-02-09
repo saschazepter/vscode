@@ -38,7 +38,7 @@ import { ITelemetryService } from '../../../../../platform/telemetry/common/tele
 import { ActiveEditorContext } from '../../../../common/contextkeys.js';
 import { IViewDescriptorService, ViewContainerLocation } from '../../../../common/views.js';
 import { ChatEntitlement, IChatEntitlementService } from '../../../../services/chat/common/chatEntitlementService.js';
-import { AUX_WINDOW_GROUP } from '../../../../services/editor/common/editorService.js';
+import { ACTIVE_GROUP, AUX_WINDOW_GROUP } from '../../../../services/editor/common/editorService.js';
 import { IHostService } from '../../../../services/host/browser/host.js';
 import { IWorkbenchLayoutService, Parts } from '../../../../services/layout/browser/layoutService.js';
 import { IPreferencesService } from '../../../../services/preferences/common/preferences.js';
@@ -64,6 +64,7 @@ import { ChatViewId, IChatWidget, IChatWidgetService } from '../chat.js';
 import { IChatEditorOptions } from '../widgetHosts/editor/chatEditor.js';
 import { ChatEditorInput, showClearEditingSessionConfirmation } from '../widgetHosts/editor/chatEditorInput.js';
 import { convertBufferToScreenshotVariable } from '../attachments/chatScreenshotContext.js';
+import { LocalChatSessionUri } from '../../common/model/chatUri.js';
 
 export const CHAT_CATEGORY = localize2('chat.category', 'Chat');
 
@@ -601,7 +602,7 @@ export function registerChatActions() {
 
 		async run(accessor: ServicesAccessor) {
 			const widgetService = accessor.get(IChatWidgetService);
-			await widgetService.openSession(ChatEditorInput.getNewEditorUri(), undefined, { pinned: true } satisfies IChatEditorOptions);
+			await widgetService.openSession(LocalChatSessionUri.getNewSessionUri(), ACTIVE_GROUP, { pinned: true } satisfies IChatEditorOptions);
 		}
 	});
 
@@ -627,7 +628,7 @@ export function registerChatActions() {
 
 		async run(accessor: ServicesAccessor) {
 			const widgetService = accessor.get(IChatWidgetService);
-			await widgetService.openSession(ChatEditorInput.getNewEditorUri(), AUX_WINDOW_GROUP, { pinned: true, auxiliary: { compact: true, bounds: { width: 640, height: 640 } } } satisfies IChatEditorOptions);
+			await widgetService.openSession(LocalChatSessionUri.getNewSessionUri(), AUX_WINDOW_GROUP, { pinned: true, auxiliary: { compact: true, bounds: { width: 640, height: 640 } } } satisfies IChatEditorOptions);
 		}
 	});
 
@@ -776,6 +777,34 @@ export function registerChatActions() {
 
 			if (!widget || !widget.toggleTodosViewFocus()) {
 				alert(localize('chat.todoList.focusUnavailable', "No agent todos to focus right now."));
+			}
+		}
+	});
+
+	registerAction2(class FocusQuestionCarouselAction extends Action2 {
+		static readonly ID = 'workbench.action.chat.focusQuestionCarousel';
+
+		constructor() {
+			super({
+				id: FocusQuestionCarouselAction.ID,
+				title: localize2('interactiveSession.focusQuestionCarousel.label', "Chat: Toggle Focus Between Question and Input"),
+				category: CHAT_CATEGORY,
+				f1: true,
+				precondition: ChatContextKeys.inChatSession,
+				keybinding: [{
+					weight: KeybindingWeight.WorkbenchContrib,
+					primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyA,
+					when: ChatContextKeys.inChatSession,
+				}]
+			});
+		}
+
+		run(accessor: ServicesAccessor): void {
+			const widgetService = accessor.get(IChatWidgetService);
+			const widget = widgetService.lastFocusedWidget;
+
+			if (!widget || !widget.toggleQuestionCarouselFocus()) {
+				alert(localize('chat.questionCarousel.focusUnavailable', "No chat question to focus right now."));
 			}
 		}
 	});
