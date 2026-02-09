@@ -219,6 +219,7 @@ function createMockChatModel(options: {
 	lastResponseComplete?: boolean;
 	lastResponseCanceled?: boolean;
 	lastResponseHasError?: boolean;
+	lastResponseState?: ResponseModelState;
 	lastResponseTimestamp?: number;
 	lastResponseCompletedAt?: number;
 	customTitle?: string;
@@ -237,6 +238,7 @@ function createMockChatModel(options: {
 		const mockResponse: Partial<IChatResponseModel> = {
 			isComplete: options.lastResponseComplete ?? true,
 			isCanceled: options.lastResponseCanceled ?? false,
+			state: options.lastResponseState ?? ResponseModelState.Complete,
 			result: options.lastResponseHasError ? { errorDetails: { message: 'error' } } : undefined,
 			timestamp: options.lastResponseTimestamp ?? Date.now(),
 			completedAt: options.lastResponseCompletedAt,
@@ -438,6 +440,34 @@ suite('LocalAgentsSessionsProvider', () => {
 				const sessions = await provider.provideChatSessionItems(CancellationToken.None);
 				assert.strictEqual(sessions.length, 1);
 				assert.strictEqual(sessions[0].status, ChatSessionStatus.InProgress);
+			});
+		});
+
+		test('should return NeedsInput status when response needs input even if request in progress', async () => {
+			return runWithFakedTimers({}, async () => {
+				const provider = createProvider();
+
+				const sessionResource = LocalChatSessionUri.forSession('needs-input-session');
+				const mockModel = createMockChatModel({
+					sessionResource,
+					hasRequests: true,
+					requestInProgress: true,
+					lastResponseState: ResponseModelState.NeedsInput
+				});
+
+				mockChatService.addSession(sessionResource, mockModel);
+				mockChatService.setLiveSessionItems([{
+					sessionResource,
+					title: 'Needs Input Session',
+					lastMessageDate: Date.now(),
+					isActive: true,
+					lastResponseState: ResponseModelState.NeedsInput,
+					timing: createTestTiming()
+				}]);
+
+				const sessions = await provider.provideChatSessionItems(CancellationToken.None);
+				assert.strictEqual(sessions.length, 1);
+				assert.strictEqual(sessions[0].status, ChatSessionStatus.NeedsInput);
 			});
 		});
 

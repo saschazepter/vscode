@@ -127,12 +127,17 @@ export class LocalAgentsSessionsProvider extends Disposable implements IChatSess
 	}
 
 	private modelToStatus(model: IChatModel): ChatSessionStatus | undefined {
+		const lastRequest = model.getRequests().at(-1);
+
 		if (model.requestInProgress.get()) {
+			if (lastRequest?.response?.state === ResponseModelState.NeedsInput) {
+				return ChatSessionStatus.NeedsInput;
+			}
+
 			this.logService.trace(`[agent sessions] Session ${model.sessionResource.toString()} request is in progress.`);
 			return ChatSessionStatus.InProgress;
 		}
 
-		const lastRequest = model.getRequests().at(-1);
 		this.logService.trace(`[agent sessions] Session ${model.sessionResource.toString()} last request response: state ${lastRequest?.response?.state}, isComplete ${lastRequest?.response?.isComplete}, isCanceled ${lastRequest?.response?.isCanceled}, error: ${lastRequest?.response?.result?.errorDetails?.message}.`);
 		if (lastRequest?.response) {
 			if (lastRequest.response.state === ResponseModelState.NeedsInput) {
