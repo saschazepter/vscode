@@ -369,7 +369,7 @@ export class ViewModel extends Disposable implements IViewModel {
 						const linesDeletedEvent = this._lines.onModelLinesDeleted(versionId, change.fromLineNumber, change.toLineNumber);
 						if (linesDeletedEvent !== null) {
 							eventsCollector.emitViewEvent(linesDeletedEvent);
-							this.viewLayout.onLinesDeleted(linesDeletedEvent.fromLineNumber, linesDeletedEvent.toLineNumber, this._getCustomLineHeightsForLines(change.lastUntouchedLinePostEdit > 1 ? change.lastUntouchedLinePostEdit - 1 : 1, change.lastUntouchedLinePostEdit));
+							this.viewLayout.onLinesDeleted(linesDeletedEvent.fromLineNumber, linesDeletedEvent.toLineNumber, this._getCustomLineHeightsForLines(change.lastUntouchedLinePostEdit, change.lastUntouchedLinePostEdit));
 						}
 						hadOtherModelChange = true;
 						break;
