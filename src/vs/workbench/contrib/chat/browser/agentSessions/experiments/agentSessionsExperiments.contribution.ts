@@ -26,7 +26,7 @@ import { isSessionInProgressStatus } from '../agentSessionsModel.js';
 import { URI } from '../../../../../../base/common/uri.js';
 import { autorun } from '../../../../../../base/common/observable.js';
 
-import './unifiedQuickAccessActions.js'; // Register unified quick access actions
+import { UnifiedQuickAccessContribution, _setUnifiedQuickAccessContribution } from './unifiedQuickAccessActions.js';
 
 /**
  * Contribution that watches for projection-capable sessions and shows
@@ -243,6 +243,14 @@ registerSingleton(IAgentTitleBarStatusService, AgentTitleBarStatusService, Insta
 
 registerWorkbenchContribution2(AgentTitleBarStatusRendering.ID, AgentTitleBarStatusRendering, WorkbenchPhase.AfterRestored);
 registerWorkbenchContribution2(AgentSessionReadyContribution.ID, AgentSessionReadyContribution, WorkbenchPhase.AfterRestored);
+
+// Register and expose the UnifiedQuickAccess contribution so actions can access it
+registerWorkbenchContribution2(UnifiedQuickAccessContribution.ID, class extends UnifiedQuickAccessContribution {
+	constructor(...args: ConstructorParameters<typeof UnifiedQuickAccessContribution>) {
+		super(...args);
+		_setUnifiedQuickAccessContribution(this);
+	}
+}, WorkbenchPhase.AfterRestored);
 
 // Register Agent Status as a menu item in the command center (alongside the search box, not replacing it)
 MenuRegistry.appendMenuItem(MenuId.CommandCenter, {
