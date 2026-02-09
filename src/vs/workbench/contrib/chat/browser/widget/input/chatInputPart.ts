@@ -87,7 +87,7 @@ import { ChatContextKeys } from '../../../common/actions/chatContextKeys.js';
 import { ChatRequestVariableSet, IChatRequestVariableEntry, isElementVariableEntry, isImageVariableEntry, isNotebookOutputVariableEntry, isPasteVariableEntry, isPromptFileVariableEntry, isPromptTextVariableEntry, isSCMHistoryItemChangeRangeVariableEntry, isSCMHistoryItemChangeVariableEntry, isSCMHistoryItemVariableEntry, isStringVariableEntry } from '../../../common/attachments/chatVariableEntries.js';
 import { ChatMode, IChatMode, IChatModeService } from '../../../common/chatModes.js';
 import { IChatFollowup, IChatQuestionCarousel, IChatService, IChatSessionContext } from '../../../common/chatService/chatService.js';
-import { agentOptionId, IChatSessionProviderOptionGroup, IChatSessionProviderOptionItem, IChatSessionsService, isIChatSessionFileChange2, localChatSessionType } from '../../../common/chatSessionsService.js';
+import { agentOptionId, IChatSessionProviderOptionGroup, IChatSessionProviderOptionItem, IChatSessionsService, isIChatSessionFileChange2, isModelOptionGroup, localChatSessionType } from '../../../common/chatSessionsService.js';
 import { ChatAgentLocation, ChatConfiguration, ChatModeKind, validateChatMode } from '../../../common/constants.js';
 import { IChatEditingSession, IModifiedFileEntry, ModifiedFileEntryState } from '../../../common/editing/chatEditingService.js';
 import { ILanguageModelChatMetadata, ILanguageModelChatMetadataAndIdentifier, ILanguageModelsService } from '../../../common/languageModels.js';
@@ -805,6 +805,12 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		const widgets: (ChatSessionPickerActionItem | SearchableOptionPickerActionItem)[] = [];
 		for (const optionGroup of optionGroups) {
 			if (!visibleGroupIds.has(optionGroup.id)) {
+				continue;
+			}
+
+			// In full welcome mode, only show the models picker in the toolbar;
+			// other option groups are rendered by ChatFullWelcomePart above the input.
+			if (this._widget?.showFullWelcome && !isModelOptionGroup(optionGroup)) {
 				continue;
 			}
 
@@ -2219,18 +2225,20 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 						return empty;
 					}
 				} else if (action.id === ChatSessionPrimaryPickerAction.ID && action instanceof MenuItemAction) {
-					// In full welcome mode, hide option group pickers from the toolbar
-					// since they are rendered above the input by ChatFullWelcomePart
-					if (this._widget?.showFullWelcome) {
-						const empty = new BaseActionViewItem(undefined, action);
-						if (empty.element) {
-							empty.element.style.display = 'none';
-						}
-						return empty;
-					}
-					// Create all pickers and return a container action view item
+					// Create pickers and return a container action view item.
+					// In full welcome mode only the models picker is shown here;
+					// other option groups are rendered by ChatFullWelcomePart.
 					const widgets = this.createChatSessionPickerWidgets(action);
 					if (widgets.length === 0) {
+						// In full welcome mode, return a hidden element so the action doesn't
+						// render as a text label (e.g. "Open Model Picker").
+						if (this._widget?.showFullWelcome) {
+							const empty = new BaseActionViewItem(undefined, action);
+							if (empty.element) {
+								empty.element.style.display = 'none';
+							}
+							return empty;
+						}
 						return undefined;
 					}
 					// Create a container to hold all picker widgets

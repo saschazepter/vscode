@@ -150,6 +150,19 @@ export const localChatSessionType = 'local';
  */
 export const agentOptionId = 'agent';
 
+/**
+ * Check whether an option group represents the model picker.
+ * The convention is `id: 'models'` but extensions may use different IDs
+ * per session type, so we also fall back to name matching.
+ */
+export function isModelOptionGroup(group: IChatSessionProviderOptionGroup): boolean {
+	if (group.id === 'models') {
+		return true;
+	}
+	const nameLower = group.name.toLowerCase();
+	return nameLower === 'model' || nameLower === 'models';
+}
+
 export interface IChatSession extends IDisposable {
 	readonly onWillDispose: Event<void>;
 

@@ -635,6 +635,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 				{
 					fullWelcomeOptions: this.viewOptions.fullWelcomeOptions,
 					sessionTypePickerDelegate: this.viewOptions.sessionTypePickerDelegate,
+					getSessionResource: () => this.viewModel?.model.sessionResource,
 				}
 			);
 			dom.append(this.fullWelcomeContainer, this.fullWelcomePart.value.element);
@@ -1930,6 +1931,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 				this.finishedEditing();
 			}
 			this.viewModel = undefined;
+			this.fullWelcomePart.value?.resetSelectedOptions();
 			this.onDidChangeItems();
 			this._hasPendingRequestsContextKey.set(false);
 			return;
@@ -1942,6 +1944,12 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		if (this.viewModel?.editing) {
 			this.finishedEditing();
 		}
+
+		// Reset welcome part selections when switching to a new empty session
+		if (model.getRequests().length === 0) {
+			this.fullWelcomePart.value?.resetSelectedOptions();
+		}
+
 		this.inputPart.clearTodoListWidget(model.sessionResource, false);
 		this.chatSuggestNextWidget.hide();
 

@@ -9,6 +9,8 @@ import { Emitter } from '../../../../../base/common/event.js';
 import { toAction } from '../../../../../base/common/actions.js';
 import { Disposable, DisposableStore } from '../../../../../base/common/lifecycle.js';
 import { observableValue } from '../../../../../base/common/observable.js';
+import { URI } from '../../../../../base/common/uri.js';
+import { isEqual } from '../../../../../base/common/resources.js';
 import { IContextKeyService, ContextKeyExpr } from '../../../../../platform/contextkey/common/contextkey.js';
 import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
 
@@ -18,7 +20,9 @@ import { AgentSessionsControl } from '../agentSessions/agentSessionsControl.js';
 import { IChatFullWelcomeOptions, ISessionTypePickerDelegate } from '../chat.js';
 import { ChatSessionPickerActionItem, IChatSessionPickerDelegate } from '../chatSessions/chatSessionPickerActionItem.js';
 import { SearchableOptionPickerActionItem } from '../chatSessions/searchableOptionPickerActionItem.js';
-import { IChatSessionProviderOptionGroup, IChatSessionProviderOptionItem, IChatSessionsService } from '../../common/chatSessionsService.js';
+import { IChatSessionProviderOptionGroup, IChatSessionProviderOptionItem, IChatSessionsService, isModelOptionGroup } from '../../common/chatSessionsService.js';
+import { IChatService } from '../../common/chatService/chatService.js';
+import { ILogService } from '../../../../../platform/log/common/log.js';
 import { ILanguageModelChatMetadataAndIdentifier } from '../../common/languageModels.js';
 import { asCSSUrl } from '../../../../../base/browser/cssValue.js';
 import { FileAccess } from '../../../../../base/common/network.js';
@@ -40,6 +44,11 @@ export interface IChatFullWelcomePartOptions {
 	 * Provides the active session provider so we know which option groups to show.
 	 */
 	readonly sessionTypePickerDelegate?: ISessionTypePickerDelegate;
+
+	/**
+	 * Returns the current session resource, if a session has been created.
+	 */
+	readonly getSessionResource?: () => URI | undefined;
 }
 
 /**
@@ -83,6 +92,8 @@ export class ChatFullWelcomePart extends Disposable {
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@IContextKeyService private readonly contextKeyService: IContextKeyService,
 		@IProductService private readonly productService: IProductService,
+		@IChatService private readonly chatService: IChatService,
+		@ILogService private readonly logService: ILogService,
 	) {
 		super();
 
@@ -95,6 +106,17 @@ export class ChatFullWelcomePart extends Disposable {
 		this._register(this.chatSessionsService.onDidChangeOptionGroups(() => {
 			this.renderExtensionPickers();
 			this.tryReveal();
+		}));
+
+		// React to chat session option changes for the active session
+		this._register(this.chatSessionsService.onDidChangeSessionOptions(e => {
+			const sessionResource = this.options.getSessionResource?.();
+			if (sessionResource && isEqual(sessionResource, e)) {
+				// Sync selected options from the session service so pickers reflect
+				// extension-provided values, then refresh pickers.
+				this.syncOptionsFromSession(sessionResource);
+				this.renderExtensionPickers();
+			}
 		}));
 
 		const workspaceFolderCountKey = new Set([WorkspaceFolderCountContext.key]);
@@ -252,6 +274,10 @@ export class ChatFullWelcomePart extends Disposable {
 		// Filter to visible option groups
 		const visibleGroups: IChatSessionProviderOptionGroup[] = [];
 		for (const group of optionGroups) {
+			// Skip the models option group, it is shown in the chat input box instead.
+			if (isModelOptionGroup(group)) {
+				continue;
+			}
 			const hasItems = group.items.length > 0 || (group.commands || []).length > 0;
 			const passesWhenClause = this.evaluateOptionGroupVisibility(group);
 			if (hasItems && passesWhenClause) {
@@ -292,6 +318,17 @@ export class ChatFullWelcomePart extends Disposable {
 				setOption: (option: IChatSessionProviderOptionItem) => {
 					this._selectedOptions.set(optionGroup.id, option);
 					emitter.fire(option);
+
+					// Notify extension of the option change if we have a session
+					const sessionResource = this.options.getSessionResource?.();
+					const currentCtx = sessionResource ? this.chatService.getChatSessionFromInternalUri(sessionResource) : undefined;
+					if (currentCtx) {
+						this.chatSessionsService.notifySessionOptionsChange(
+							currentCtx.chatSessionResource,
+							[{ optionId: optionGroup.id, value: option }]
+						).catch(err => this.logService.error(`Failed to notify extension of ${optionGroup.id} change:`, err));
+					}
+
 					// Re-render extension pickers in case `when` clauses depend on this option
 					this.renderExtensionPickers();
 				},
@@ -299,7 +336,7 @@ export class ChatFullWelcomePart extends Disposable {
 					const groups = this.chatSessionsService.getOptionGroupsForSessionType(activeSessionType);
 					return groups?.find(g => g.id === optionGroup.id);
 				},
-				getSessionResource: () => undefined,
+				getSessionResource: () => this.options.getSessionResource?.(),
 			};
 
 			// Use toAction (plain object) instead of new Action() because
@@ -312,6 +349,8 @@ export class ChatFullWelcomePart extends Disposable {
 				optionGroup.searchable ? SearchableOptionPickerActionItem : ChatSessionPickerActionItem,
 				action, initialState, itemDelegate
 			);
+
+
 			this.pickerWidgetDisposables.add(widget);
 			this.pickerWidgets.set(optionGroup.id, widget);
 
@@ -428,6 +467,54 @@ export class ChatFullWelcomePart extends Disposable {
 	}
 
 	/**
+	 * Sync selected options from the session service into `_selectedOptions`
+	 * and fire emitters so existing picker widgets update their labels.
+	 */
+	private syncOptionsFromSession(sessionResource: URI): void {
+		const ctx = this.chatService.getChatSessionFromInternalUri(sessionResource);
+		if (!ctx) {
+			return;
+		}
+
+		const activeSessionType = this.options.sessionTypePickerDelegate?.getActiveSessionProvider?.();
+		if (!activeSessionType) {
+			return;
+		}
+
+		const optionGroups = this.chatSessionsService.getOptionGroupsForSessionType(activeSessionType);
+		if (!optionGroups) {
+			return;
+		}
+
+		for (const optionGroup of optionGroups) {
+			if (isModelOptionGroup(optionGroup)) {
+				continue;
+			}
+
+			const currentOption = this.chatSessionsService.getSessionOption(ctx.chatSessionResource, optionGroup.id);
+			if (!currentOption) {
+				continue;
+			}
+
+			let item: IChatSessionProviderOptionItem | undefined;
+			if (typeof currentOption === 'string') {
+				item = optionGroup.items.find(m => m.id === currentOption.trim());
+			} else {
+				item = currentOption;
+			}
+
+			if (item) {
+				this._selectedOptions.set(optionGroup.id, item);
+				// Fire emitter so existing widgets update their label
+				const emitter = this.optionEmitters.get(optionGroup.id);
+				if (emitter) {
+					emitter.fire(item);
+				}
+			}
+		}
+	}
+
+	/**
 	 * Get or create an event emitter for an option group.
 	 */
 	private getOrCreateOptionEmitter(optionGroupId: string): Emitter<IChatSessionProviderOptionItem> {
@@ -471,6 +558,16 @@ export class ChatFullWelcomePart extends Disposable {
 	 */
 	public getSelectedSessionOptions(): Map<string, IChatSessionProviderOptionItem> {
 		return new Map(this._selectedOptions);
+	}
+
+	/**
+	 * Clear cached selected options and re-render pickers.
+	 * Called when switching to a new session so stale selections
+	 * from the previous session are not carried over.
+	 */
+	public resetSelectedOptions(): void {
+		this._selectedOptions.clear();
+		this.renderExtensionPickers();
 	}
 
 	/**
