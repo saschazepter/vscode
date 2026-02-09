@@ -44,7 +44,6 @@ function compareByMostRecentRequest(a: IAgentSession, b: IAgentSession): number 
 	return timeB - timeA;
 }
 import { EnterAgentSessionProjectionAction, ExitAgentSessionProjectionAction } from './agentSessionProjectionActions.js';
-import { UNIFIED_QUICK_ACCESS_ACTION_ID } from './unifiedQuickAccessActions.js';
 import { IAgentSessionsService } from '../agentSessionsService.js';
 import { AgentSessionStatus, IAgentSession, isSessionInProgressStatus } from '../agentSessionsModel.js';
 import { BaseActionViewItem, IBaseActionViewItemOptions } from '../../../../../../base/browser/ui/actionbar/actionViewItems.js';
@@ -197,7 +196,7 @@ export class AgentTitleBarStatusWidget extends BaseActionViewItem {
 
 		// Re-render when settings change
 		this._register(this.configurationService.onDidChangeConfiguration(e => {
-			if (e.affectsConfiguration(ChatConfiguration.UnifiedAgentsBar) || e.affectsConfiguration(ChatConfiguration.AgentStatusEnabled) || e.affectsConfiguration(ChatConfiguration.ChatViewSessionsEnabled)) {
+			if (e.affectsConfiguration(ChatConfiguration.AgentsControlFullWidth) || e.affectsConfiguration(ChatConfiguration.AgentStatusEnabled) || e.affectsConfiguration(ChatConfiguration.ChatViewSessionsEnabled)) {
 				this._lastRenderState = undefined; // Force re-render
 				this._render();
 			}
@@ -289,7 +288,7 @@ export class AgentTitleBarStatusWidget extends BaseActionViewItem {
 			const { isFilteredToUnread, isFilteredToInProgress } = this._getCurrentFilterState();
 
 			// Check which settings are enabled (these are independent settings)
-			const unifiedAgentsBarEnabled = this.configurationService.getValue<boolean>(ChatConfiguration.UnifiedAgentsBar) === true;
+			const fullWidthEnabled = this.configurationService.getValue<boolean>(ChatConfiguration.AgentsControlFullWidth) === true;
 			const agentStatusEnabled = this.configurationService.getValue<boolean>(ChatConfiguration.AgentStatusEnabled) === true;
 			const viewSessionsEnabled = this.configurationService.getValue<boolean>(ChatConfiguration.ChatViewSessionsEnabled) !== false;
 
@@ -304,7 +303,7 @@ export class AgentTitleBarStatusWidget extends BaseActionViewItem {
 				label,
 				isFilteredToUnread,
 				isFilteredToInProgress,
-				unifiedAgentsBarEnabled,
+				fullWidthEnabled,
 				agentStatusEnabled,
 				viewSessionsEnabled,
 			});
@@ -328,7 +327,7 @@ export class AgentTitleBarStatusWidget extends BaseActionViewItem {
 			} else if (this.agentTitleBarStatusService.mode === AgentStatusMode.SessionReady) {
 				// Session ready mode - show session title + enter projection button
 				this._renderSessionReadyMode(this._dynamicDisposables);
-			} else if (unifiedAgentsBarEnabled) {
+			} else if (fullWidthEnabled) {
 				// Unified Agents Bar - show full pill with label + status badge
 				this._renderChatInputMode(this._dynamicDisposables);
 			} else if (agentStatusEnabled) {
@@ -407,7 +406,8 @@ export class AgentTitleBarStatusWidget extends BaseActionViewItem {
 		this._firstFocusableElement = pill;
 		this._container.appendChild(pill);
 
-		// Left icon container (sparkle by default, report+count when attention needed, search on hover)
+		// Left icon - always use standard search icon (matching CommandCenterQuickPickItem).
+		// When sessions need attention, overlay a report badge.
 		const leftIcon = $('span.agent-status-left-icon');
 		if (hasAttentionNeeded) {
 			// Show report icon + count when sessions need attention
@@ -417,7 +417,7 @@ export class AgentTitleBarStatusWidget extends BaseActionViewItem {
 			reset(leftIcon, reportIcon, countSpan);
 			leftIcon.classList.add('has-attention');
 		} else {
-			reset(leftIcon, renderIcon(Codicon.searchSparkle));
+			reset(leftIcon, renderIcon(Codicon.search));
 		}
 		pill.appendChild(leftIcon);
 
@@ -433,33 +433,11 @@ export class AgentTitleBarStatusWidget extends BaseActionViewItem {
 			label.classList.add('has-progress');
 		}
 
-		const hoverLabel = localize('askAnythingPlaceholder', "Ask anything or describe what to build next");
-
 		label.textContent = defaultLabel;
 		pill.appendChild(label);
 
-		// Send icon (hidden by default, shown on hover - only when not showing attention message)
-		const sendIcon = $('span.agent-status-send');
-		reset(sendIcon, renderIcon(Codicon.send));
-		sendIcon.classList.add('hidden');
-		pill.appendChild(sendIcon);
-
-		// Hover behavior - swap label text and show send icon (only when showing default state).
-		// When progressText is defined (e.g. sessions need attention), keep the attention/progress
-		// message visible and do not replace it with the generic placeholder on hover.
-		if (!progressText) {
-			disposables.add(addDisposableListener(pill, EventType.MOUSE_ENTER, () => {
-				leftIcon.classList.remove('has-attention');
-				label.textContent = hoverLabel;
-				label.classList.remove('has-progress');
-				sendIcon.classList.remove('hidden');
-			}));
-
-			disposables.add(addDisposableListener(pill, EventType.MOUSE_LEAVE, () => {
-				label.textContent = defaultLabel;
-				sendIcon.classList.add('hidden');
-			}));
-		}
+		// No hover swap behavior - the pill should look like standard Quick Open when idle.
+		// When attention is needed, the label already shows progress text.
 
 		// Setup hover tooltip
 		const hoverDelegate = getDefaultHoverDelegate('mouse');
@@ -467,10 +445,10 @@ export class AgentTitleBarStatusWidget extends BaseActionViewItem {
 			if (this._displayedSession) {
 				return localize('openSessionTooltip', "Open session: {0}", this._displayedSession.label);
 			}
-			const kbForTooltip = this.keybindingService.lookupKeybinding(UNIFIED_QUICK_ACCESS_ACTION_ID)?.getLabel();
+			const kbForTooltip = this.keybindingService.lookupKeybinding(QUICK_OPEN_ACTION_ID)?.getLabel();
 			return kbForTooltip
-				? localize('askTooltip', "Open Quick Access ({0})", kbForTooltip)
-				: localize('askTooltip2', "Open Quick Access");
+				? localize('askTooltip', "Search ({0})", kbForTooltip)
+				: localize('askTooltip2', "Search");
 		}));
 
 		// Click handler - open displayed session if showing progress, otherwise open unified quick access
@@ -1091,13 +1069,14 @@ export class AgentTitleBarStatusWidget extends BaseActionViewItem {
 	// #region Click Handlers
 
 	/**
-	 * Handle pill click - opens the displayed session if showing progress, otherwise opens unified quick access
+	 * Handle pill click - opens the displayed session if showing progress,
+	 * otherwise opens quick open (which respects the `workbench.quickOpen.alternative` setting).
 	 */
 	private _handlePillClick(): void {
 		if (this._displayedSession) {
 			this.instantiationService.invokeFunction(openSession, this._displayedSession);
 		} else {
-			this.commandService.executeCommand(UNIFIED_QUICK_ACCESS_ACTION_ID);
+			this.commandService.executeCommand(QUICK_OPEN_ACTION_ID);
 		}
 	}
 
@@ -1222,14 +1201,14 @@ export class AgentTitleBarStatusRendering extends Disposable implements IWorkben
 		const updateClass = () => {
 			const commandCenterEnabled = configurationService.getValue<boolean>(LayoutSettings.COMMAND_CENTER) === true;
 			const enabled = configurationService.getValue<boolean>(ChatConfiguration.AgentStatusEnabled) === true && commandCenterEnabled;
-			const enhanced = configurationService.getValue<boolean>(ChatConfiguration.UnifiedAgentsBar) === true && commandCenterEnabled;
+			const fullWidth = configurationService.getValue<boolean>(ChatConfiguration.AgentsControlFullWidth) === true && commandCenterEnabled;
 
 			mainWindow.document.body.classList.toggle('agent-status-enabled', enabled);
-			mainWindow.document.body.classList.toggle('unified-agents-bar', enhanced);
+			mainWindow.document.body.classList.toggle('agents-control-full-width', fullWidth);
 		};
 		updateClass();
 		this._register(configurationService.onDidChangeConfiguration(e => {
-			if (e.affectsConfiguration(ChatConfiguration.AgentStatusEnabled) || e.affectsConfiguration(ChatConfiguration.UnifiedAgentsBar) || e.affectsConfiguration(LayoutSettings.COMMAND_CENTER)) {
+			if (e.affectsConfiguration(ChatConfiguration.AgentStatusEnabled) || e.affectsConfiguration(ChatConfiguration.AgentsControlFullWidth) || e.affectsConfiguration(LayoutSettings.COMMAND_CENTER)) {
 				updateClass();
 			}
 		}));

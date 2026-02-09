@@ -117,7 +117,7 @@ interface IInitialEditorsState {
 
 const COMMAND_CENTER_SETTINGS = [
 	'chat.agentsControl.enabled',
-	'chat.unifiedAgentsBar.enabled',
+	'chat.agentsControl.fullWidth',
 	'workbench.navigationControl.enabled',
 	'workbench.experimental.share.enabled',
 ];

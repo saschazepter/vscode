@@ -4,17 +4,14 @@
  *--------------------------------------------------------------------------------------------*/
 
 /* Command Center Integration */
-.unified-agents-bar .command-center .action-item.command-center-center {
-	display: none !important;
-}
-
+/* When full-width mode is active, the Quick Open item is hidden via menu 'when' clause. The pill takes its place inside CommandCenterCenter. */
 .agent-status-enabled .command-center,
-.unified-agents-bar .command-center {
-	overflow: visible !important;
+.agents-control-full-width .command-center {
+	overflow: visible;
 }
 
 /* Container layouts */
-.unified-agents-bar .command-center .action-item.agent-status-container {
+.agents-control-full-width .command-center .action-item.agent-status-container {
 	width: 38vw;
 	max-width: 600px;
 	display: flex;
@@ -25,7 +22,7 @@
 }
 
 /* Badge-only mode - compact layout next to command center */
-.agent-status-enabled:not(.unified-agents-bar) .command-center .action-item.agent-status-container {
+.agent-status-enabled:not(.agents-control-full-width) .command-center .action-item.agent-status-container {
 	display: flex;
 	flex-direction: row;
 	flex-wrap: nowrap;
