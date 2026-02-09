@@ -11,6 +11,11 @@ import { ContextKeyExpr, ContextKeyExpression, IContextKeyService } from '../../
 import { ChatContextKeys } from '../common/actions/chatContextKeys.js';
 import { ChatModeKind } from '../common/constants.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
+import { Disposable, MutableDisposable } from '../../../../base/common/lifecycle.js';
+import { ICommandService } from '../../../../platform/commands/common/commands.js';
+import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
+import { IPromptsService } from '../common/promptSyntax/service/promptsService.js';
+import { CancellationToken } from '../../../../base/common/cancellation.js';
 
 export const IChatTipService = createDecorator<IChatTipService>('chatTipService');
 
@@ -45,6 +50,17 @@ interface ITipDefinition {
 	 * Command IDs that are allowed to be executed from this tip's markdown.
 	 */
 	readonly enabledCommands?: string[];
+	/**
+	 * Command IDs that, if executed during this session, make this tip ineligible.
+	 * The tip won't be shown if the user has already performed the action it suggests.
+	 */
+	readonly excludeWhenCommandsExecuted?: string[];
+	/**
+	 * Chat mode names that, if ever used in this workspace, make this tip ineligible.
+	 * The tip won't be shown if the user has already used the mode it suggests.
+	 * Matches against both mode kind (e.g. 'agent') and mode name (e.g. 'Plan').
+	 */
+	readonly excludeWhenModesUsed?: string[];
 }
 
 /**
@@ -56,12 +72,14 @@ const TIP_CATALOG: ITipDefinition[] = [
 		message: localize('tip.agentMode', "Tip: Try [Agent mode](command:workbench.action.chat.openEditSession) for multi-file edits and running commands."),
 		when: ChatContextKeys.chatModeKind.notEqualsTo(ChatModeKind.Agent),
 		enabledCommands: ['workbench.action.chat.openEditSession'],
+		excludeWhenModesUsed: [ChatModeKind.Agent],
 	},
 	{
 		id: 'tip.planMode',
 		message: localize('tip.planMode', "Tip: Try [Plan mode](command:workbench.action.chat.openPlan) to let the agent perform deep analysis and planning before implementing changes."),
 		when: ChatContextKeys.chatModeName.notEqualsTo('Plan'),
 		enabledCommands: ['workbench.action.chat.openPlan'],
+		excludeWhenModesUsed: ['Plan'],
 	},
 	{
 		id: 'tip.attachFiles',
@@ -78,6 +96,7 @@ const TIP_CATALOG: ITipDefinition[] = [
 			ChatContextKeys.chatModeKind.isEqualTo(ChatModeKind.Agent),
 			ChatContextKeys.chatModeKind.isEqualTo(ChatModeKind.Edit),
 		),
+		excludeWhenCommandsExecuted: ['workbench.action.chat.restoreCheckpoint', 'workbench.action.chat.restoreLastCheckpoint'],
 	},
 	{
 		id: 'tip.customInstructions',
@@ -86,7 +105,154 @@ const TIP_CATALOG: ITipDefinition[] = [
 	}
 ];
 
-export class ChatTipService implements IChatTipService {
+/**
+ * Tracks workspace-level signals that determine whether certain tips should be
+ * excluded. Persists state to workspace storage and disposes listeners once all
+ * signals of interest have been observed.
+ */
+class TipEligibilityTracker extends Disposable {
+
+	private static readonly _COMMANDS_STORAGE_KEY = 'chat.tips.executedCommands';
+	private static readonly _MODES_STORAGE_KEY = 'chat.tips.usedModes';
+
+	private readonly _executedCommands: Set<string>;
+	private readonly _usedModes: Set<string>;
+
+	private readonly _pendingCommands: Set<string>;
+	private readonly _pendingModes: Set<string>;
+
+	private readonly _commandListener = this._register(new MutableDisposable());
+
+	/**
+	 * Whether agent instruction files exist in the workspace.
+	 * Defaults to `true` (hide the tip) until the async check completes.
+	 */
+	private _hasInstructionFiles = true;
+
+	constructor(
+		tips: readonly ITipDefinition[],
+		commandService: ICommandService,
+		private readonly _storageService: IStorageService,
+		promptsService: IPromptsService,
+	) {
+		super();
+
+		// --- Restore persisted state -------------------------------------------
+
+		const storedCmds = this._storageService.get(TipEligibilityTracker._COMMANDS_STORAGE_KEY, StorageScope.WORKSPACE);
+		this._executedCommands = new Set<string>(storedCmds ? JSON.parse(storedCmds) : []);
+
+		const storedModes = this._storageService.get(TipEligibilityTracker._MODES_STORAGE_KEY, StorageScope.WORKSPACE);
+		this._usedModes = new Set<string>(storedModes ? JSON.parse(storedModes) : []);
+
+		// --- Derive what still needs tracking ----------------------------------
+
+		this._pendingCommands = new Set<string>();
+		for (const tip of tips) {
+			for (const cmd of tip.excludeWhenCommandsExecuted ?? []) {
+				if (!this._executedCommands.has(cmd)) {
+					this._pendingCommands.add(cmd);
+				}
+			}
+		}
+
+		this._pendingModes = new Set<string>();
+		for (const tip of tips) {
+			for (const mode of tip.excludeWhenModesUsed ?? []) {
+				if (!this._usedModes.has(mode)) {
+					this._pendingModes.add(mode);
+				}
+			}
+		}
+
+		// --- Set up command listener (auto-disposes when all seen) --------------
+
+		if (this._pendingCommands.size > 0) {
+			this._commandListener.value = commandService.onDidExecuteCommand(e => {
+				if (this._pendingCommands.has(e.commandId)) {
+					this._executedCommands.add(e.commandId);
+					this._persistSet(TipEligibilityTracker._COMMANDS_STORAGE_KEY, this._executedCommands);
+					this._pendingCommands.delete(e.commandId);
+
+					if (this._pendingCommands.size === 0) {
+						this._commandListener.clear();
+					}
+				}
+			});
+		}
+
+		// --- Async file check --------------------------------------------------
+
+		this._checkForInstructionFiles(promptsService);
+	}
+
+	/**
+	 * Records the current chat mode (kind + name) so future tip eligibility
+	 * checks can exclude mode-related tips. No-ops once all tracked modes
+	 * have been observed.
+	 */
+	recordCurrentMode(contextKeyService: IContextKeyService): void {
+		if (this._pendingModes.size === 0) {
+			return;
+		}
+
+		let changed = false;
+		const kind = contextKeyService.getContextKeyValue<string>(ChatContextKeys.chatModeKind.key);
+		if (kind && !this._usedModes.has(kind)) {
+			this._usedModes.add(kind);
+			this._pendingModes.delete(kind);
+			changed = true;
+		}
+		const name = contextKeyService.getContextKeyValue<string>(ChatContextKeys.chatModeName.key);
+		if (name && !this._usedModes.has(name)) {
+			this._usedModes.add(name);
+			this._pendingModes.delete(name);
+			changed = true;
+		}
+		if (changed) {
+			this._persistSet(TipEligibilityTracker._MODES_STORAGE_KEY, this._usedModes);
+		}
+	}
+
+	/**
+	 * Returns `true` when the tip should be **excluded** from the eligible set.
+	 */
+	isExcluded(tip: ITipDefinition): boolean {
+		if (tip.excludeWhenCommandsExecuted) {
+			for (const cmd of tip.excludeWhenCommandsExecuted) {
+				if (this._executedCommands.has(cmd)) {
+					return true;
+				}
+			}
+		}
+		if (tip.excludeWhenModesUsed) {
+			for (const mode of tip.excludeWhenModesUsed) {
+				if (this._usedModes.has(mode)) {
+					return true;
+				}
+			}
+		}
+		if (tip.id === 'tip.customInstructions' && this._hasInstructionFiles) {
+			return true;
+		}
+		return false;
+	}
+
+	private async _checkForInstructionFiles(promptsService: IPromptsService): Promise<void> {
+		try {
+			const files = await promptsService.listAgentInstructions(CancellationToken.None);
+			this._hasInstructionFiles = files.length > 0;
+		} catch {
+			this._hasInstructionFiles = true;
+		}
+	}
+
+	private _persistSet(key: string, set: Set<string>): void {
+		this._storageService.store(key, JSON.stringify([...set]), StorageScope.WORKSPACE, StorageTarget.MACHINE);
+	}
+}
+
+export class ChatTipService extends Disposable implements IChatTipService {
 	readonly _serviceBrand: undefined;
 
 	/**
@@ -111,10 +277,20 @@ export class ChatTipService implements IChatTipService {
 	 */
 	private _shownTip: ITipDefinition | undefined;
 
+	private readonly _tracker: TipEligibilityTracker;
+
 	constructor(
 		@IProductService private readonly _productService: IProductService,
-		@IConfigurationService private readonly _configurationService: IConfigurationService
-	) { }
+		@IConfigurationService private readonly _configurationService: IConfigurationService,
+		@ICommandService commandService: ICommandService,
+		@IStorageService storageService: IStorageService,
+		@IPromptsService promptsService: IPromptsService,
+	) {
+		super();
+		this._tracker = this._register(new TipEligibilityTracker(
+			TIP_CATALOG, commandService, storageService, promptsService,
+		));
+	}
 
 	getNextTip(requestId: string, requestTimestamp: number, contextKeyService: IContextKeyService): IChatTip | undefined {
 		// Check if tips are enabled
@@ -143,6 +319,9 @@ export class ChatTipService implements IChatTipService {
 			return undefined;
 		}
 
+		// Record the current mode for future eligibility decisions
+		this._tracker.recordCurrentMode(contextKeyService);
+
 		// Find eligible tips
 		const eligibleTips = TIP_CATALOG.filter(tip => this._isEligible(tip, contextKeyService));
 
@@ -163,10 +342,10 @@ export class ChatTipService implements IChatTipService {
 	}
 
 	private _isEligible(tip: ITipDefinition, contextKeyService: IContextKeyService): boolean {
-		if (!tip.when) {
-			return true;
+		if (tip.when && !contextKeyService.contextMatchesRules(tip.when)) {
+			return false;
 		}
-		return contextKeyService.contextMatchesRules(tip.when);
+		return !this._tracker.isExcluded(tip);
 	}
 
 	private _isCopilotEnabled(): boolean {
