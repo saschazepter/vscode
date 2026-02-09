@@ -127,6 +127,7 @@ import { SessionTypePickerActionItem } from './sessionTargetPickerActionItem.js'
 import { WorkspacePickerActionItem } from './workspacePickerActionItem.js';
 import { ChatContextUsageWidget } from '../../widgetHosts/viewPane/chatContextUsageWidget.js';
 import { WorkspaceFolderCountContext } from '../../../../../common/contextkeys.js';
+import { Target } from '../../../common/promptSyntax/service/promptsService.js';
 
 const $ = dom.$;
 
@@ -1441,7 +1442,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 
 		// Check if this session type has a customAgentTarget
 		const customAgentTarget = ctx && this.chatSessionsService.getCustomAgentTargetForSessionType(ctx.chatSessionType);
-		this.chatSessionHasCustomAgentTarget.set(!!customAgentTarget);
+		this.chatSessionHasCustomAgentTarget.set(customAgentTarget !== Target.Undefined);
 
 		// Handle agent option from session - set initial mode
 		if (customAgentTarget) {
@@ -2168,7 +2169,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 						customAgentTarget: () => {
 							const sessionResource = this._widget?.viewModel?.model.sessionResource;
 							const ctx = sessionResource && this.chatService.getChatSessionFromInternalUri(sessionResource);
-							return ctx && this.chatSessionsService.getCustomAgentTargetForSessionType(ctx.chatSessionType);
+							return (ctx && this.chatSessionsService.getCustomAgentTargetForSessionType(ctx.chatSessionType)) ?? Target.Undefined;
 						},
 					};
 					return this.modeWidget = this.instantiationService.createInstance(ModePickerActionItem, action, delegate, pickerOptions);
