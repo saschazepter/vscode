@@ -38,7 +38,7 @@ export interface IChatTipService {
 	getNextTip(requestId: string, requestTimestamp: number, contextKeyService: IContextKeyService): IChatTip | undefined;
 }
 
-interface ITipDefinition {
+export interface ITipDefinition {
 	readonly id: string;
 	readonly message: string;
 	/**
@@ -110,7 +110,7 @@ const TIP_CATALOG: ITipDefinition[] = [
  * excluded. Persists state to workspace storage and disposes listeners once all
  * signals of interest have been observed.
  */
-class TipEligibilityTracker extends Disposable {
+export class TipEligibilityTracker extends Disposable {
 
 	private static readonly _COMMANDS_STORAGE_KEY = 'chat.tips.executedCommands';
 	private static readonly _MODES_STORAGE_KEY = 'chat.tips.usedModes';
