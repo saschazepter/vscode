@@ -31,7 +31,6 @@ import { CancellationTokenSource } from '../../../../../../base/common/cancellat
 import { IChatMarkdownAnchorService } from './chatMarkdownAnchorService.js';
 import { ChatMessageRole, ILanguageModelChatSelector, ILanguageModelsService } from '../../../common/languageModels.js';
 import { ExtensionIdentifier } from '../../../../../../platform/extensions/common/extensions.js';
-import { isObject } from '../../../../../../base/common/types.js';
 import { resolveLanguageModelWithFallback } from '../../../common/modelSelectorUtil.js';
 import './media/chatThinkingContent.css';
 import { IHoverService } from '../../../../../../platform/hover/browser/hover.js';

@@ -3,10 +3,10 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
-import { ILanguageModelChatSelector, ILanguageModelsService } from './languageModels.js';
-import { ChatConfiguration } from './constants.js';
 import { isObject } from '../../../../base/common/types.js';
+import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
+import { ChatConfiguration } from './constants.js';
+import { ILanguageModelChatSelector, ILanguageModelsService } from './languageModels.js';
 
 /**
  * Resolves a language model using a hierarchy of selectors with fallback logic.
