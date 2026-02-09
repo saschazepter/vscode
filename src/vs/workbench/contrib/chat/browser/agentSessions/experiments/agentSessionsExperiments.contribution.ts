@@ -6,7 +6,7 @@
 import { registerSingleton, InstantiationType } from '../../../../../../platform/instantiation/common/extensions.js';
 import { MenuId, MenuRegistry, registerAction2 } from '../../../../../../platform/actions/common/actions.js';
 import { IAgentSessionProjectionService, AgentSessionProjectionService, AGENT_SESSION_PROJECTION_ENABLED_PROVIDERS } from './agentSessionProjectionService.js';
-import { EnterAgentSessionProjectionAction, ExitAgentSessionProjectionAction, ToggleAgentStatusAction, ToggleUnifiedAgentsBarAction } from './agentSessionProjectionActions.js';
+import { EnterAgentSessionProjectionAction, ExitAgentSessionProjectionAction, ToggleAgentStatusAction, ToggleAgentsControlFullWidthAction } from './agentSessionProjectionActions.js';
 import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../../../common/contributions.js';
 import { AgentTitleBarStatusRendering } from './agentTitleBarStatusWidget.js';
 import { AgentTitleBarStatusService, IAgentTitleBarStatusService } from './agentTitleBarStatusService.js';
@@ -236,7 +236,7 @@ class AgentSessionReadyContribution extends Disposable implements IWorkbenchCont
 registerAction2(EnterAgentSessionProjectionAction);
 registerAction2(ExitAgentSessionProjectionAction);
 registerAction2(ToggleAgentStatusAction);
-registerAction2(ToggleUnifiedAgentsBarAction);
+registerAction2(ToggleAgentsControlFullWidthAction);
 
 registerSingleton(IAgentSessionProjectionService, AgentSessionProjectionService, InstantiationType.Delayed);
 registerSingleton(IAgentTitleBarStatusService, AgentTitleBarStatusService, InstantiationType.Delayed);
@@ -261,7 +261,7 @@ MenuRegistry.appendMenuItem(MenuId.CommandCenter, {
 		ChatContextKeys.enabled,
 		ContextKeyExpr.or(
 			ContextKeyExpr.has(`config.${ChatConfiguration.AgentStatusEnabled}`),
-			ContextKeyExpr.has(`config.${ChatConfiguration.UnifiedAgentsBar}`)
+			ContextKeyExpr.has(`config.${ChatConfiguration.AgentsControlFullWidth}`)
 		)
 	),
 	order: 10002 // to the right of the chat button
@@ -295,19 +295,19 @@ MenuRegistry.appendMenuItem(MenuId.AgentsTitleBarControlMenu, {
 		ChatContextKeys.enabled,
 		ContextKeyExpr.or(
 			ContextKeyExpr.has(`config.${ChatConfiguration.AgentStatusEnabled}`),
-			ContextKeyExpr.has(`config.${ChatConfiguration.UnifiedAgentsBar}`)
+			ContextKeyExpr.has(`config.${ChatConfiguration.AgentsControlFullWidth}`)
 		)
 	),
 	group: 'a_open',
 	order: 1
 });
 
-// Toggle for Agent Quick Input (Insiders only)
+// Toggle for Full-Width Agent Control (Insiders only)
 MenuRegistry.appendMenuItem(MenuId.AgentsTitleBarControlMenu, {
 	command: {
-		id: `toggle.${ChatConfiguration.UnifiedAgentsBar}`,
-		title: localize('toggleAgentQuickInput', "Agent Quick Input (Experimental)"),
-		toggled: ContextKeyExpr.has(`config.${ChatConfiguration.UnifiedAgentsBar}`),
+		id: `toggle.${ChatConfiguration.AgentsControlFullWidth}`,
+		title: localize('toggleAgentsControlFullWidth', "Full-Width Agent Control (Experimental)"),
+		toggled: ContextKeyExpr.has(`config.${ChatConfiguration.AgentsControlFullWidth}`),
 	},
 	when: ContextKeyExpr.and(
 		ChatContextKeys.enabled,
