@@ -332,8 +332,8 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 		}));
 
 		this._register(this.hostService.onDidChangeFocus(focused => {
-			// Refresh default account when window gets focused and we have cached policy data, which likely means we haven't successfully fetched data since the last time the window was focused (e.g. due to network issues), so we should try again to fetch the data.
-			if (focused && this._defaultAccount && this._policyData && (!this._policyData.isMcpRegistryDataFetched || !this._policyData.isTokenEntitlementsDataFetched)) {
+			// Refresh default account when window gets focused and policy data is not fully fetched, to ensure we have the latest policy data.
+			if (focused && this._policyData && (!this._policyData.isMcpRegistryDataFetched || !this._policyData.isTokenEntitlementsDataFetched)) {
 				this.accountDataPollScheduler.cancel();
 				this.logService.debug('[DefaultAccount] Window focused, updating default account');
 				this.refresh();
