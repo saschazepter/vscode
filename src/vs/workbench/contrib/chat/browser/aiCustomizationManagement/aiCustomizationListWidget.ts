@@ -37,6 +37,8 @@ import { IWorkspaceContextService } from '../../../../../platform/workspace/comm
 import { IPathService } from '../../../../services/path/common/pathService.js';
 import { ILabelService } from '../../../../../platform/label/common/label.js';
 import { parseAllHookFiles } from '../promptSyntax/hookUtils.js';
+import { OS } from '../../../../../base/common/platform.js';
+import { IRemoteAgentService } from '../../../../services/remote/common/remoteAgentService.js';
 
 const $ = DOM.$;
 
@@ -248,6 +250,7 @@ export class AICustomizationListWidget extends Disposable {
 		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
 		@IPathService private readonly pathService: IPathService,
 		@ILabelService private readonly labelService: ILabelService,
+		@IRemoteAgentService private readonly remoteAgentService: IRemoteAgentService,
 	) {
 		super();
 		this.element = $('.ai-customization-list-widget');
@@ -518,6 +521,8 @@ export class AICustomizationListWidget extends Disposable {
 			const workspaceRootUri = workspaceFolder?.uri;
 			const userHomeUri = await this.pathService.userHome();
 			const userHome = userHomeUri.fsPath ?? userHomeUri.path;
+			const remoteEnv = await this.remoteAgentService.getEnvironment();
+			const targetOS = remoteEnv?.os ?? OS;
 
 			const parsedHooks = await parseAllHookFiles(
 				this.promptsService,
@@ -525,6 +530,7 @@ export class AICustomizationListWidget extends Disposable {
 				this.labelService,
 				workspaceRootUri,
 				userHome,
+				targetOS,
 				CancellationToken.None
 			);
 
