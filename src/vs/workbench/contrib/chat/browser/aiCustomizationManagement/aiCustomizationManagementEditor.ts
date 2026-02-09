@@ -122,8 +122,6 @@ export class AICustomizationManagementEditor extends EditorPane {
 	static readonly ID = AI_CUSTOMIZATION_MANAGEMENT_EDITOR_ID;
 
 	private container!: HTMLElement;
-	private headerContainer!: HTMLElement;
-	private titleElement!: HTMLElement;
 	private splitViewContainer!: HTMLElement;
 	private splitView!: SplitView<number>;
 	private sidebarContainer!: HTMLElement;
@@ -135,7 +133,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 	private promptsContentContainer!: HTMLElement;
 	private mcpContentContainer!: HTMLElement;
 	private modelsContentContainer!: HTMLElement;
-	private modelsHeaderElement!: HTMLElement;
+	private modelsFooterElement!: HTMLElement;
 
 	// Embedded editor state
 	private editorContentContainer!: HTMLElement;
@@ -202,43 +200,8 @@ export class AICustomizationManagementEditor extends EditorPane {
 		this.editorDisposables.clear();
 		this.container = DOM.append(parent, $('.ai-customization-management-editor'));
 
-		this.createHeader();
 		this.createSplitView();
 		this.updateStyles();
-	}
-
-	private createHeader(): void {
-		this.headerContainer = DOM.append(this.container, $('.management-header'));
-
-		// Title - dynamically shows selected section
-		const titleContainer = DOM.append(this.headerContainer, $('.header-title-container'));
-		this.titleElement = DOM.append(titleContainer, $('.header-title'));
-
-		// Initialize header with current section
-		this.updateHeader();
-	}
-
-	private updateHeader(): void {
-		this.titleElement.textContent = this.getSectionTitle(this.selectedSection);
-	}
-
-	private getSectionTitle(section: AICustomizationManagementSection): string {
-		switch (section) {
-			case AICustomizationManagementSection.Agents:
-				return localize('agentsTitle', "Agents");
-			case AICustomizationManagementSection.Skills:
-				return localize('skillsTitle', "Skills");
-			case AICustomizationManagementSection.Instructions:
-				return localize('instructionsTitle', "Instructions");
-			case AICustomizationManagementSection.Prompts:
-				return localize('promptsTitle', "Prompts");
-			case AICustomizationManagementSection.Hooks:
-				return localize('hooksTitle', "Hooks");
-			case AICustomizationManagementSection.Models:
-				return localize('modelsTitle', "Models");
-			case AICustomizationManagementSection.McpServers:
-				return localize('mcpServersTitle', "MCP Servers");
-		}
 	}
 
 	private createSplitView(): void {
@@ -283,9 +246,9 @@ export class AICustomizationManagementEditor extends EditorPane {
 				if (height !== undefined) {
 					this.listWidget.layout(height - 16, width - 24); // Account for padding
 					this.mcpListWidget.layout(height - 16, width - 24); // Account for padding
-					// Models widget has header, subtract header height
-					const modelsHeaderHeight = this.modelsHeaderElement?.offsetHeight || 80;
-					this.modelsWidget.layout(height - 16 - modelsHeaderHeight, width);
+					// Models widget has footer, subtract footer height
+					const modelsFooterHeight = this.modelsFooterElement?.offsetHeight || 80;
+					this.modelsWidget.layout(height - 16 - modelsFooterHeight, width);
 
 					// Layout embedded editor when in editor mode
 					if (this.viewMode === 'editor' && this.embeddedEditor) {
@@ -376,20 +339,20 @@ export class AICustomizationManagementEditor extends EditorPane {
 		// Container for Models content
 		this.modelsContentContainer = DOM.append(contentInner, $('.models-content-container'));
 
-		// Models description header
-		this.modelsHeaderElement = DOM.append(this.modelsContentContainer, $('.section-header'));
-		const modelsDescription = DOM.append(this.modelsHeaderElement, $('p.section-header-description'));
+		this.modelsWidget = this.editorDisposables.add(this.instantiationService.createInstance(ChatModelsWidget));
+		this.modelsContentContainer.appendChild(this.modelsWidget.element);
+
+		// Models description footer
+		this.modelsFooterElement = DOM.append(this.modelsContentContainer, $('.section-footer'));
+		const modelsDescription = DOM.append(this.modelsFooterElement, $('p.section-footer-description'));
 		modelsDescription.textContent = localize('modelsDescription', "Browse and manage language models from different providers. Select models for use in chat, code completion, and other AI features.");
-		const modelsLink = DOM.append(this.modelsHeaderElement, $('a.section-header-link')) as HTMLAnchorElement;
+		const modelsLink = DOM.append(this.modelsFooterElement, $('a.section-footer-link')) as HTMLAnchorElement;
 		modelsLink.textContent = localize('learnMoreModels', "Learn more about language models");
 		modelsLink.href = 'https://code.visualstudio.com/docs/copilot/customization/language-models';
 		this.editorDisposables.add(DOM.addDisposableListener(modelsLink, 'click', (e) => {
 			e.preventDefault();
 			this.openerService.open(URI.parse(modelsLink.href));
 		}));
-
-		this.modelsWidget = this.editorDisposables.add(this.instantiationService.createInstance(ChatModelsWidget));
-		this.modelsContentContainer.appendChild(this.modelsWidget.element);
 
 		// Container for MCP content
 		this.mcpContentContainer = DOM.append(contentInner, $('.mcp-content-container'));
@@ -433,8 +396,8 @@ export class AICustomizationManagementEditor extends EditorPane {
 		// Persist selection
 		this.storageService.store(AI_CUSTOMIZATION_MANAGEMENT_SELECTED_SECTION_KEY, section, StorageScope.PROFILE, StorageTarget.USER);
 
-		// Update header to reflect new section
-		this.updateHeader();
+		// Update editor tab title
+		this.updateEditorTitle();
 
 		// Update content visibility
 		this.updateContentVisibility();
@@ -442,6 +405,13 @@ export class AICustomizationManagementEditor extends EditorPane {
 		// Load items for the new section (only for prompts-based sections)
 		if (this.isPromptsSection(section)) {
 			void this.listWidget.setSection(section);
+		}
+	}
+
+	private updateEditorTitle(): void {
+		const sectionItem = this.sections.find(s => s.id === this.selectedSection);
+		if (sectionItem && this.input instanceof AICustomizationManagementEditorInput) {
+			this.input.setSectionLabel(sectionItem.label);
 		}
 	}
 
@@ -686,6 +656,9 @@ export class AICustomizationManagementEditor extends EditorPane {
 
 		await super.setInput(input, options, context, token);
 
+		// Set initial editor tab title
+		this.updateEditorTitle();
+
 		if (this.dimension) {
 			this.layout(this.dimension);
 		}
@@ -707,11 +680,8 @@ export class AICustomizationManagementEditor extends EditorPane {
 		this.dimension = dimension;
 
 		if (this.container && this.splitView) {
-			const headerHeight = this.headerContainer?.offsetHeight || 48;
-			const splitViewHeight = dimension.height - headerHeight;
-
-			this.splitViewContainer.style.height = `${splitViewHeight}px`;
-			this.splitView.layout(dimension.width, splitViewHeight);
+			this.splitViewContainer.style.height = `${dimension.height}px`;
+			this.splitView.layout(dimension.width, dimension.height);
 		}
 	}
 

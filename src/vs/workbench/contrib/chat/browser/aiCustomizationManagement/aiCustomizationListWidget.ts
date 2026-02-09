@@ -16,7 +16,6 @@ import { localize } from '../../../../../nls.js';
 import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
 import { WorkbenchList } from '../../../../../platform/list/browser/listService.js';
 import { IListVirtualDelegate, IListRenderer, IListContextMenuEvent } from '../../../../../base/browser/ui/list/list.js';
-import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
 import { IPromptsService, PromptsStorage, IPromptPath } from '../../common/promptSyntax/service/promptsService.js';
 import { PromptsType } from '../../common/promptSyntax/promptTypes.js';
 import { agentIcon, instructionsIcon, promptIcon, skillIcon, hookIcon, userIcon, workspaceIcon, extensionIcon } from '../aiCustomizationTreeView/aiCustomizationTreeViewIcons.js';
@@ -172,10 +171,6 @@ class GroupHeaderRenderer implements IListRenderer<IGroupHeaderEntry, IGroupHead
 class AICustomizationItemRenderer implements IListRenderer<IFileItemEntry, IAICustomizationItemTemplateData> {
 	readonly templateId = 'aiCustomizationItem';
 
-	constructor(
-		@IHoverService private readonly hoverService: IHoverService,
-	) { }
-
 	renderTemplate(container: HTMLElement): IAICustomizationItemTemplateData {
 		const disposables = new DisposableStore();
 		const elementDisposables = new DisposableStore();
@@ -243,22 +238,6 @@ class AICustomizationItemRenderer implements IListRenderer<IFileItemEntry, IAICu
 		templateData.storageBadge.className = 'storage-badge';
 		templateData.storageBadge.classList.add(...ThemeIcon.asClassNameArray(storageBadgeIcon));
 		templateData.storageBadge.title = storageBadgeLabel;
-
-		// Build rich tooltip content
-		const tooltipLines: string[] = [element.name];
-		if (element.description) {
-			tooltipLines.push(element.description);
-		}
-		tooltipLines.push('');
-		tooltipLines.push(`${storageBadgeLabel} \u2022 ${element.filename}`);
-
-		templateData.elementDisposables.add(this.hoverService.setupDelayedHoverAtMouse(templateData.container, () => ({
-			content: tooltipLines.join('\n'),
-			appearance: {
-				compact: true,
-				skipFadeInAnimation: true,
-			}
-		})));
 	}
 
 	disposeTemplate(templateData: IAICustomizationItemTemplateData): void {
@@ -362,19 +341,6 @@ export class AICustomizationListWidget extends Disposable {
 	}
 
 	private create(): void {
-		// Section header at top with description and link
-		this.sectionHeader = DOM.append(this.element, $('.section-header'));
-		this.sectionDescription = DOM.append(this.sectionHeader, $('p.section-header-description'));
-		this.sectionLink = DOM.append(this.sectionHeader, $('a.section-header-link')) as HTMLAnchorElement;
-		this._register(DOM.addDisposableListener(this.sectionLink, 'click', (e) => {
-			e.preventDefault();
-			const href = this.sectionLink.href;
-			if (href) {
-				this.openerService.open(URI.parse(href));
-			}
-		}));
-		this.updateSectionHeader();
-
 		// Search and button container
 		this.searchAndButtonContainer = DOM.append(this.element, $('.list-search-and-button-container'));
 
@@ -457,6 +423,19 @@ export class AICustomizationListWidget extends Disposable {
 		// Subscribe to prompt service changes
 		this._register(this.promptsService.onDidChangeCustomAgents(() => this.refresh()));
 		this._register(this.promptsService.onDidChangeSlashCommands(() => this.refresh()));
+
+		// Section footer at bottom with description and link
+		this.sectionHeader = DOM.append(this.element, $('.section-footer'));
+		this.sectionDescription = DOM.append(this.sectionHeader, $('p.section-footer-description'));
+		this.sectionLink = DOM.append(this.sectionHeader, $('a.section-footer-link')) as HTMLAnchorElement;
+		this._register(DOM.addDisposableListener(this.sectionLink, 'click', (e) => {
+			e.preventDefault();
+			const href = this.sectionLink.href;
+			if (href) {
+				this.openerService.open(URI.parse(href));
+			}
+		}));
+		this.updateSectionHeader();
 	}
 
 	/**
@@ -1024,13 +1003,14 @@ export class AICustomizationListWidget extends Disposable {
 	 * Layouts the widget.
 	 */
 	layout(height: number, width: number): void {
-		const sectionHeaderHeight = this.sectionHeader.offsetHeight || 100;
+		const sectionFooterHeight = this.sectionHeader.offsetHeight || 100;
 		const searchBarHeight = this.searchAndButtonContainer.offsetHeight || 40;
-		const listHeight = height - sectionHeaderHeight - searchBarHeight - 24; // Extra padding
+		const margins = 12; // search margin (6+6), not included in offsetHeight
+		const listHeight = height - sectionFooterHeight - searchBarHeight - margins;
 
 		this.searchInput.layout();
-		this.listContainer.style.height = `${listHeight}px`;
-		this.list.layout(listHeight, width);
+		this.listContainer.style.height = `${Math.max(0, listHeight)}px`;
+		this.list.layout(Math.max(0, listHeight), width);
 	}
 
 	/**

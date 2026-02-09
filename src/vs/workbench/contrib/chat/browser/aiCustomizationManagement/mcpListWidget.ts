@@ -158,21 +158,6 @@ export class McpListWidget extends Disposable {
 	}
 
 	private create(): void {
-		// Section header at top with description and link
-		this.sectionHeader = DOM.append(this.element, $('.section-header'));
-		this.sectionDescription = DOM.append(this.sectionHeader, $('p.section-header-description'));
-		this.sectionDescription.textContent = localize('mcpServersDescription', "An open standard that lets AI use external tools and services. MCP servers provide tools for file operations, databases, APIs, and more.");
-		this.sectionLink = DOM.append(this.sectionHeader, $('a.section-header-link')) as HTMLAnchorElement;
-		this.sectionLink.textContent = localize('learnMoreMcp', "Learn more about MCP servers");
-		this.sectionLink.href = 'https://code.visualstudio.com/docs/copilot/chat/mcp-servers';
-		this._register(DOM.addDisposableListener(this.sectionLink, 'click', (e) => {
-			e.preventDefault();
-			const href = this.sectionLink.href;
-			if (href) {
-				this.openerService.open(URI.parse(href));
-			}
-		}));
-
 		// Search and button container
 		this.searchAndButtonContainer = DOM.append(this.element, $('.list-search-and-button-container'));
 
@@ -206,6 +191,21 @@ export class McpListWidget extends Disposable {
 
 		// List container
 		this.listContainer = DOM.append(this.element, $('.mcp-list-container'));
+
+		// Section footer at bottom with description and link
+		this.sectionHeader = DOM.append(this.element, $('.section-footer'));
+		this.sectionDescription = DOM.append(this.sectionHeader, $('p.section-footer-description'));
+		this.sectionDescription.textContent = localize('mcpServersDescription', "An open standard that lets AI use external tools and services. MCP servers provide tools for file operations, databases, APIs, and more.");
+		this.sectionLink = DOM.append(this.sectionHeader, $('a.section-footer-link')) as HTMLAnchorElement;
+		this.sectionLink.textContent = localize('learnMoreMcp', "Learn more about MCP servers");
+		this.sectionLink.href = 'https://code.visualstudio.com/docs/copilot/chat/mcp-servers';
+		this._register(DOM.addDisposableListener(this.sectionLink, 'click', (e) => {
+			e.preventDefault();
+			const href = this.sectionLink.href;
+			if (href) {
+				this.openerService.open(URI.parse(href));
+			}
+		}));
 
 		// Create list
 		const delegate = new McpServerItemDelegate();
@@ -301,12 +301,13 @@ export class McpListWidget extends Disposable {
 	 * Layouts the widget.
 	 */
 	layout(height: number, width: number): void {
-		const sectionHeaderHeight = this.sectionHeader.offsetHeight || 100;
+		const sectionFooterHeight = this.sectionHeader.offsetHeight || 100;
 		const searchBarHeight = this.searchAndButtonContainer.offsetHeight || 40;
-		const listHeight = height - sectionHeaderHeight - searchBarHeight - 24; // Extra padding
+		const margins = 12; // search margin (6+6), not included in offsetHeight
+		const listHeight = height - sectionFooterHeight - searchBarHeight - margins;
 
-		this.listContainer.style.height = `${listHeight}px`;
-		this.list.layout(listHeight, width);
+		this.listContainer.style.height = `${Math.max(0, listHeight)}px`;
+		this.list.layout(Math.max(0, listHeight), width);
 	}
 
 	/**

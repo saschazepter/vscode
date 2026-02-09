@@ -9,35 +9,7 @@
 	flex-direction: column;
 	height: 100%;
 	overflow: hidden;
-}
-
-/* Header */
-.ai-customization-management-editor .management-header {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	padding: 16px 20px;
-	border-bottom: 1px solid var(--vscode-panel-border);
-	flex-shrink: 0;
-	background-color: var(--vscode-editor-background);
-}
-
-.ai-customization-management-editor .header-title-container {
-	display: flex;
-	align-items: center;
-	gap: 8px;
-}
-
-.ai-customization-management-editor .header-title {
-	font-size: 18px;
-	font-weight: 500;
-	color: var(--vscode-foreground);
-	letter-spacing: -0.02em;
-}
-/* Split View Container */.ai-customization-management-editor .header-title {
-	font-size: 18px;
-	flex: 1;
-	overflow: hidden;
+	border-top: 1px solid var(--vscode-panel-border);
 }
 
 /* Sidebar */
@@ -121,6 +93,7 @@
 .ai-customization-management-editor .content-inner {
 	height: 100%;
 	padding: 8px 12px;
+	box-sizing: border-box;
 }
 
 /* List Widget */
@@ -137,7 +110,7 @@
 	align-items: center;
 	gap: 8px;
 	flex-shrink: 0;
-	margin-bottom: 12px;
+	margin: 6px 0px;
 }
 
 .ai-customization-list-widget .list-search-container,
@@ -370,22 +343,21 @@
 	color: var(--vscode-list-highlightForeground);
 }
 
-/* Section header at top of list widget */
-.ai-customization-list-widget .section-header {
+/* Section footer at bottom of list widget */
+.ai-customization-list-widget .section-footer {
 	flex-shrink: 0;
-	padding: 8px 4px 16px 4px;
-	border-bottom: 1px solid var(--vscode-widget-border);
-	margin-bottom: 12px;
+	padding: 12px 4px 6px 4px;
+	border-top: 1px solid var(--vscode-widget-border);
 }
 
-.ai-customization-list-widget .section-header .section-header-description {
+.ai-customization-list-widget .section-footer .section-footer-description {
 	font-size: 13px;
 	color: var(--vscode-descriptionForeground);
 	line-height: 1.5;
 	margin: 0 0 8px 0;
 }
 
-.ai-customization-list-widget .section-header .section-header-link {
+.ai-customization-list-widget .section-footer .section-footer-link {
 	font-size: 13px;
 	color: var(--vscode-textLink-foreground);
 	text-decoration: none;
@@ -395,7 +367,7 @@
 	gap: 4px;
 }
 
-.ai-customization-list-widget .section-header .section-header-link:hover {
+.ai-customization-list-widget .section-footer .section-footer-link:hover {
 	text-decoration: underline;
 	color: var(--vscode-textLink-activeForeground);
 }
@@ -484,22 +456,21 @@
 	flex-direction: column;
 }
 
-/* Models section header */
-.ai-customization-management-editor .models-content-container .section-header {
+/* Models section footer */
+.ai-customization-management-editor .models-content-container .section-footer {
 	flex-shrink: 0;
-	padding: 8px 4px 16px 4px;
-	border-bottom: 1px solid var(--vscode-widget-border);
-	margin-bottom: 12px;
+	padding: 12px 4px 6px 4px;
+	border-top: 1px solid var(--vscode-widget-border);
 }
 
-.ai-customization-management-editor .models-content-container .section-header-description {
+.ai-customization-management-editor .models-content-container .section-footer-description {
 	font-size: 13px;
 	color: var(--vscode-descriptionForeground);
 	line-height: 1.5;
 	margin: 0 0 8px 0;
 }
 
-.ai-customization-management-editor .models-content-container .section-header-link {
+.ai-customization-management-editor .models-content-container .section-footer-link {
 	font-size: 13px;
 	color: var(--vscode-textLink-foreground);
 	text-decoration: none;
@@ -509,7 +480,7 @@
 	gap: 4px;
 }
 
-.ai-customization-management-editor .models-content-container .section-header-link:hover {
+.ai-customization-management-editor .models-content-container .section-footer-link:hover {
 	text-decoration: underline;
 	color: var(--vscode-textLink-activeForeground);
 }
@@ -528,21 +499,20 @@
 	height: 100%;
 }
 
-.mcp-list-widget .section-header {
+.mcp-list-widget .section-footer {
 	flex-shrink: 0;
-	padding: 8px 4px 16px 4px;
-	border-bottom: 1px solid var(--vscode-widget-border);
-	margin-bottom: 12px;
+	padding: 12px 4px 6px 4px;
+	border-top: 1px solid var(--vscode-widget-border);
 }
 
-.mcp-list-widget .section-header .section-header-description {
+.mcp-list-widget .section-footer .section-footer-description {
 	font-size: 13px;
 	color: var(--vscode-descriptionForeground);
 	line-height: 1.5;
 	margin: 0 0 8px 0;
 }
 
-.mcp-list-widget .section-header .section-header-link {
+.mcp-list-widget .section-footer .section-footer-link {
 	font-size: 13px;
 	color: var(--vscode-textLink-foreground);
 	text-decoration: none;
@@ -552,7 +522,7 @@
 	gap: 4px;
 }
 
-.mcp-list-widget .section-header .section-header-link:hover {
+.mcp-list-widget .section-footer .section-footer-link:hover {
 	text-decoration: underline;
 	color: var(--vscode-textLink-activeForeground);
 }
