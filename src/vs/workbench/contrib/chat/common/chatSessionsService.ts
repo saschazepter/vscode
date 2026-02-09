@@ -86,6 +86,13 @@ export interface IChatSessionsExtensionPoint {
 	readonly commands?: IChatSessionCommandContribution[];
 	readonly canDelegate?: boolean;
 	/**
+	 * When true, this session type is passive/informational and does not support interactive chat.
+	 * Read-only sessions will not be registered as agents, will not appear in session target pickers,
+	 * and cannot be delegation targets. Commands are still registered to support features like
+	 * `openSessionWithPrompt`.
+	 */
+	readonly isReadOnly?: boolean;
+	/**
 	 * When set, the chat session will show a filtered mode picker with custom agents
 	 * that have a matching `target` property. This enables contributed chat sessions
 	 * to reuse the standard agent/mode dropdown with filtered custom agents.
