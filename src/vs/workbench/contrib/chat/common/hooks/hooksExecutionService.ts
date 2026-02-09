@@ -220,40 +220,57 @@ export class HooksExecutionService extends Disposable implements IHooksExecution
 
 	private _createErrorResult(errorMessage: string): IHookResult {
 		return {
+			resultKind: 'error',
 			output: errorMessage,
-			success: false,
 		};
 	}
 
 	private _toInternalResult(commandResult: IHookCommandResult): IHookResult {
-		if (commandResult.kind !== HookCommandResultKind.Success) {
-			return this._createErrorResult(
-				typeof commandResult.result === 'string' ? commandResult.result : JSON.stringify(commandResult.result)
-			);
+		switch (commandResult.kind) {
+			case HookCommandResultKind.Error: {
+				// Blocking error - shown to model
+				return this._createErrorResult(
+					typeof commandResult.result === 'string' ? commandResult.result : JSON.stringify(commandResult.result)
+				);
+			}
+			case HookCommandResultKind.NonBlockingError: {
+				// Non-blocking error - shown to user only as warning
+				const errorMessage = typeof commandResult.result === 'string' ? commandResult.result : JSON.stringify(commandResult.result);
+				return {
+					resultKind: 'warning',
+					output: undefined,
+					warningMessage: errorMessage,
+				};
+			}
+			case HookCommandResultKind.Success: {
+				// For string results, no common fields to extract
+				if (typeof commandResult.result !== 'object') {
+					return {
+						resultKind: 'success',
+						output: commandResult.result,
+					};
+				}
+
+				// Extract and validate common fields
+				const validationResult = commonHookOutputValidator.validate(commandResult.result);
+				const commonFields = validationResult.error ? {} : validationResult.content;
+
+				// Extract only known hook-specific fields for output
+				const resultObj = commandResult.result as Record<string, unknown>;
+				const hookOutput = this._extractHookSpecificOutput(resultObj);
+
+				return {
+					resultKind: 'success',
+					stopReason: commonFields.stopReason,
+					warningMessage: commonFields.systemMessage,
+					output: Object.keys(hookOutput).length > 0 ? hookOutput : undefined,
+				};
+			}
+			default: {
+				// Unexpected result kind - treat as blocking error
+				return this._createErrorResult(`Unexpected hook command result kind: ${commandResult.kind}`);
+			}
 		}
-
-		// For string results, no common fields to extract
-		if (typeof commandResult.result !== 'object') {
-			return {
-				output: commandResult.result,
-				success: true,
-			};
-		}
-
-		// Extract and validate common fields
-		const validationResult = commonHookOutputValidator.validate(commandResult.result);
-		const commonFields = validationResult.error ? {} : validationResult.content;
-
-		// Extract only known hook-specific fields for output
-		const resultObj = commandResult.result as Record<string, unknown>;
-		const hookOutput = this._extractHookSpecificOutput(resultObj);
-
-		return {
-			stopReason: commonFields.stopReason,
-			messageForUser: commonFields.systemMessage,
-			output: Object.keys(hookOutput).length > 0 ? hookOutput : undefined,
-			success: true,
-		};
 	}
 
 	/**
@@ -272,7 +289,9 @@ export class HooksExecutionService extends Disposable implements IHooksExecution
 	}
 
 	private _logCommandResult(requestId: number, hookType: HookTypeValue, result: IHookCommandResult, elapsed: number): void {
-		const resultKindStr = result.kind === HookCommandResultKind.Success ? 'Success' : 'Error';
+		const resultKindStr = result.kind === HookCommandResultKind.Success ? 'Success'
+			: result.kind === HookCommandResultKind.NonBlockingError ? 'NonBlockingError'
+				: 'Error';
 		const resultStr = typeof result.result === 'string' ? result.result : JSON.stringify(result.result);
 		const hasOutput = resultStr.length > 0 && resultStr !== '{}' && resultStr !== '[]';
 		if (hasOutput) {
@@ -393,7 +412,7 @@ export class HooksExecutionService extends Disposable implements IHooksExecution
 		let lastUpdatedInput: object | undefined;
 
 		for (const result of results) {
-			if (result.success && typeof result.output === 'object' && result.output !== null) {
+			if (result.resultKind === 'success' && typeof result.output === 'object' && result.output !== null) {
 				const validationResult = preToolUseOutputValidator.validate(result.output);
 				if (!validationResult.error) {
 					const hookSpecificOutput = validationResult.content.hookSpecificOutput;
@@ -482,7 +501,7 @@ export class HooksExecutionService extends Disposable implements IHooksExecution
 		let blockResult: IHookResult | undefined;
 
 		for (const result of results) {
-			if (result.success && typeof result.output === 'object' && result.output !== null) {
+			if (result.resultKind === 'success' && typeof result.output === 'object' && result.output !== null) {
 				const validationResult = postToolUseOutputValidator.validate(result.output);
 				if (!validationResult.error) {
 					const validated = validationResult.content;
