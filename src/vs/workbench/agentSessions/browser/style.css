@@ -8,6 +8,48 @@
 	position: relative;
 }
 
+/* ---- Sidebar & Auxiliary Bar Card Appearance ---- */
+
+/**
+ * The sidebar and auxiliary bar use a card-like appearance with margins and border-radius
+ * applied directly on the .part element. The grid allocates full space; CSS margin shrinks
+ * the part within its split-view-view wrapper. Layout dimensions are reduced in code
+ * (AgentSessionSidebarPart / AgentSessionAuxiliaryBarPart) to keep internal layout correct.
+ *
+ * No z-index or stacking-context changes - sashes render naturally on top.
+ *
+ * Margin values (must match the constants in the Part classes):
+ *   Sidebar:       top=8, bottom=8, left=8
+ *   Auxiliary bar:  top=8, bottom=8, right=8
+ *   Panel:          bottom=8, left=8, right=8
+ */
+
+.agent-sessions-workbench .part.sidebar {
+	margin: 8px 0 8px 8px;
+	background: var(--part-background);
+	border: 1px solid var(--part-border-color, transparent);
+	border-radius: 8px;
+}
+
+.agent-sessions-workbench .part.auxiliarybar {
+	margin: 8px 8px 8px 0;
+	background: var(--part-background);
+	border: 1px solid var(--part-border-color, transparent);
+	border-radius: 8px;
+}
+
+.agent-sessions-workbench .part.panel {
+	margin: 0 8px 8px 8px;
+	background: var(--part-background);
+	border: 1px solid var(--part-border-color, transparent);
+	border-radius: 8px;
+}
+
+/* Grid background matches the chat bar / sidebar background */
+.agent-sessions-workbench > .monaco-grid-view {
+	background-color: var(--vscode-sideBar-background);
+}
+
 /* Editor Modal Overlay */
 .agent-sessions-workbench .editor-modal-overlay {
 	position: absolute;

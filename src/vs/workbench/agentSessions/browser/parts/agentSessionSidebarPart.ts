@@ -11,8 +11,8 @@ import { IContextMenuService } from '../../../../platform/contextview/browser/co
 import { IKeybindingService } from '../../../../platform/keybinding/common/keybinding.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { IThemeService } from '../../../../platform/theme/common/themeService.js';
-import { contrastBorder } from '../../../../platform/theme/common/colorRegistry.js';
 import { SIDE_BAR_TITLE_FOREGROUND, SIDE_BAR_TITLE_BORDER, SIDE_BAR_BACKGROUND, SIDE_BAR_FOREGROUND, SIDE_BAR_BORDER, SIDE_BAR_DRAG_AND_DROP_BACKGROUND, ACTIVITY_BAR_BADGE_BACKGROUND, ACTIVITY_BAR_BADGE_FOREGROUND, ACTIVITY_BAR_TOP_FOREGROUND, ACTIVITY_BAR_TOP_ACTIVE_BORDER, ACTIVITY_BAR_TOP_INACTIVE_FOREGROUND, ACTIVITY_BAR_TOP_DRAG_AND_DROP_BORDER } from '../../../common/theme.js';
+import { contrastBorder } from '../../../../platform/theme/common/colorRegistry.js';
 import { INotificationService } from '../../../../platform/notification/common/notification.js';
 import { IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { AnchorAlignment } from '../../../../base/browser/ui/contextview/contextview.js';
@@ -21,6 +21,7 @@ import { LayoutPriority } from '../../../../base/browser/ui/grid/grid.js';
 import { assertReturnsDefined } from '../../../../base/common/types.js';
 import { IViewDescriptorService } from '../../../common/views.js';
 import { AbstractPaneCompositePart, CompositeBarPosition } from '../../../browser/parts/paneCompositePart.js';
+import { Part } from '../../../browser/part.js';
 import { ActionsOrientation } from '../../../../base/browser/ui/actionbar/actionbar.js';
 import { HoverPosition } from '../../../../base/browser/ui/hover/hoverWidget.js';
 import { IPaneCompositeBarOptions } from '../../../browser/parts/paneCompositeBar.js';
@@ -38,6 +39,11 @@ export class AgentSessionSidebarPart extends AbstractPaneCompositePart {
 	static readonly pinnedViewContainersKey = 'workbench.agentsession.pinnedViewlets2';
 	static readonly placeholderViewContainersKey = 'workbench.agentsession.placeholderViewlets';
 	static readonly viewContainersWorkspaceStateKey = 'workbench.agentsession.viewletsWorkspaceState';
+
+	/** Visual margin values for the card-like appearance */
+	static readonly MARGIN_TOP = 8;
+	static readonly MARGIN_BOTTOM = 8;
+	static readonly MARGIN_LEFT = 8;
 
 
 	//#region IView
@@ -83,7 +89,7 @@ export class AgentSessionSidebarPart extends AbstractPaneCompositePart {
 	) {
 		super(
 			Parts.SIDEBAR_PART,
-			{ hasTitle: false, trailingSeparator: false, borderWidth: () => (this.getColor(SIDE_BAR_BORDER) || this.getColor(contrastBorder)) ? 1 : 0 },
+			{ hasTitle: false, trailingSeparator: false, borderWidth: () => 0 },
 			AgentSessionSidebarPart.activeViewletSettingsKey,
 			ActiveViewletContext.bindTo(contextKeyService),
 			SidebarFocusContext.bindTo(contextKeyService),
@@ -111,17 +117,19 @@ export class AgentSessionSidebarPart extends AbstractPaneCompositePart {
 
 		const container = assertReturnsDefined(this.getContainer());
 
-		container.style.backgroundColor = this.getColor(SIDE_BAR_BACKGROUND) || '';
+		// Store background and border as CSS variables for the card styling on .part
+		container.style.setProperty('--part-background', this.getColor(SIDE_BAR_BACKGROUND) || '');
+		container.style.setProperty('--part-border-color', this.getColor(SIDE_BAR_BORDER) || this.getColor(contrastBorder) || 'transparent');
+		container.style.backgroundColor = 'transparent';
 		container.style.color = this.getColor(SIDE_BAR_FOREGROUND) || '';
 
-		const borderColor = this.getColor(SIDE_BAR_BORDER) || this.getColor(contrastBorder);
-		const isPositionLeft = this.layoutService.getSideBarPosition() === SideBarPosition.LEFT;
-		container.style.borderRightWidth = borderColor && isPositionLeft ? '1px' : '';
-		container.style.borderRightStyle = borderColor && isPositionLeft ? 'solid' : '';
-		container.style.borderRightColor = isPositionLeft ? borderColor || '' : '';
-		container.style.borderLeftWidth = borderColor && !isPositionLeft ? '1px' : '';
-		container.style.borderLeftStyle = borderColor && !isPositionLeft ? 'solid' : '';
-		container.style.borderLeftColor = !isPositionLeft ? borderColor || '' : '';
+		// Clear borders - the card appearance uses border-radius instead
+		container.style.borderRightWidth = '';
+		container.style.borderRightStyle = '';
+		container.style.borderRightColor = '';
+		container.style.borderLeftWidth = '';
+		container.style.borderLeftStyle = '';
+		container.style.borderLeftColor = '';
 		container.style.outlineColor = this.getColor(SIDE_BAR_DRAG_AND_DROP_BACKGROUND) ?? '';
 	}
 
@@ -130,7 +138,16 @@ export class AgentSessionSidebarPart extends AbstractPaneCompositePart {
 			return;
 		}
 
-		super.layout(width, height, top, left);
+		// Layout content with reduced dimensions to account for visual margins
+		super.layout(
+			width - AgentSessionSidebarPart.MARGIN_LEFT,
+			height - AgentSessionSidebarPart.MARGIN_TOP - AgentSessionSidebarPart.MARGIN_BOTTOM,
+			top, left
+		);
+
+		// Restore the full grid-allocated dimensions so that Part.relayout() works correctly.
+		// Part.layout() only stores _dimension and _contentPosition - no other side effects.
+		Part.prototype.layout.call(this, width, height, top, left);
 	}
 
 	protected override getTitleAreaDropDownAnchorAlignment(): AnchorAlignment {

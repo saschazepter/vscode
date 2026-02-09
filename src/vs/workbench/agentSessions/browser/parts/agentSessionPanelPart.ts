@@ -16,7 +16,6 @@ import { IThemeService } from '../../../../platform/theme/common/themeService.js
 import { PANEL_BACKGROUND, PANEL_BORDER, PANEL_TITLE_BORDER, PANEL_ACTIVE_TITLE_FOREGROUND, PANEL_INACTIVE_TITLE_FOREGROUND, PANEL_ACTIVE_TITLE_BORDER, PANEL_DRAG_AND_DROP_BORDER, PANEL_TITLE_BADGE_BACKGROUND, PANEL_TITLE_BADGE_FOREGROUND } from '../../../common/theme.js';
 import { contrastBorder } from '../../../../platform/theme/common/colorRegistry.js';
 import { INotificationService } from '../../../../platform/notification/common/notification.js';
-import { Dimension } from '../../../../base/browser/dom.js';
 import { IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { assertReturnsDefined } from '../../../../base/common/types.js';
 import { IExtensionService } from '../../../services/extensions/common/extensions.js';
@@ -24,6 +23,7 @@ import { IViewDescriptorService } from '../../../common/views.js';
 import { HoverPosition } from '../../../../base/browser/ui/hover/hoverWidget.js';
 import { IMenuService } from '../../../../platform/actions/common/actions.js';
 import { AbstractPaneCompositePart, CompositeBarPosition } from '../../../browser/parts/paneCompositePart.js';
+import { Part } from '../../../browser/part.js';
 import { IPaneCompositeBarOptions } from '../../../browser/parts/paneCompositeBar.js';
 import { IHoverService } from '../../../../platform/hover/browser/hover.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
@@ -63,6 +63,11 @@ export class AgentSessionPanelPart extends AbstractPaneCompositePart {
 	//#endregion
 
 	static readonly activePanelSettingsKey = 'workbench.agentsession.panelpart.activepanelid';
+
+	/** Visual margin values for the card-like appearance */
+	static readonly MARGIN_BOTTOM = 8;
+	static readonly MARGIN_LEFT = 8;
+	static readonly MARGIN_RIGHT = 8;
 
 	constructor(
 		@INotificationService notificationService: INotificationService,
@@ -114,11 +119,16 @@ export class AgentSessionPanelPart extends AbstractPaneCompositePart {
 		super.updateStyles();
 
 		const container = assertReturnsDefined(this.getContainer());
-		container.style.backgroundColor = this.getColor(PANEL_BACKGROUND) || '';
-		const borderColor = this.getColor(PANEL_BORDER) || this.getColor(contrastBorder) || '';
-		container.style.borderTopColor = borderColor;
-		container.style.borderTopStyle = borderColor ? 'solid' : '';
-		container.style.borderTopWidth = borderColor ? '1px' : '';
+
+		// Store background and border as CSS variables for the card styling on .part
+		container.style.setProperty('--part-background', this.getColor(PANEL_BACKGROUND) || '');
+		container.style.setProperty('--part-border-color', this.getColor(PANEL_BORDER) || this.getColor(contrastBorder) || 'transparent');
+		container.style.backgroundColor = 'transparent';
+
+		// Clear inline borders - the card appearance uses CSS border-radius instead
+		container.style.borderTopColor = '';
+		container.style.borderTopStyle = '';
+		container.style.borderTopWidth = '';
 	}
 
 	protected getCompositeBarOptions(): IPaneCompositeBarOptions {
@@ -154,20 +164,19 @@ export class AgentSessionPanelPart extends AbstractPaneCompositePart {
 	private fillExtraContextMenuActions(_actions: IAction[]): void { }
 
 	override layout(width: number, height: number, top: number, left: number): void {
-		let dimensions: Dimension;
-		switch (this.layoutService.getPanelPosition()) {
-			case Position.RIGHT:
-				dimensions = new Dimension(width - 1, height);
-				break;
-			case Position.TOP:
-				dimensions = new Dimension(width, height - 1);
-				break;
-			default:
-				dimensions = new Dimension(width, height);
-				break;
+		if (!this.layoutService.isVisible(Parts.PANEL_PART)) {
+			return;
 		}
 
-		super.layout(dimensions.width, dimensions.height, top, left);
+		// Layout content with reduced dimensions to account for visual margins
+		super.layout(
+			width - AgentSessionPanelPart.MARGIN_LEFT - AgentSessionPanelPart.MARGIN_RIGHT,
+			height - AgentSessionPanelPart.MARGIN_BOTTOM,
+			top, left
+		);
+
+		// Restore the full grid-allocated dimensions so that Part.relayout() works correctly.
+		Part.prototype.layout.call(this, width, height, top, left);
 	}
 
 	protected override shouldShowCompositeBar(): boolean {
