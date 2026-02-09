@@ -1130,14 +1130,14 @@ export class UserDataSyncWorkbenchContribution extends Disposable implements IWo
 			}
 			run(): unknown { return that.openerService.open(URI.parse('https://aka.ms/vscode-settings-sync-help')); }
 		}));
-		this._register(MenuRegistry.appendMenuItem(MenuId.ViewContainerTitle, {
+		MenuRegistry.appendMenuItem(MenuId.ViewContainerTitle, {
 			command: {
 				id: 'workbench.userDataSync.actions.help',
 				title: Categories.Help.value
 			},
 			when: ContextKeyExpr.equals('viewContainer', SYNC_VIEW_CONTAINER_ID),
 			group: '1_help',
-		}));
+		});
 	}
 
 	private registerAcceptMergesAction(): void {

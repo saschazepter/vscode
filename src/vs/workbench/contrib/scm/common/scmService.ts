@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Disposable, DisposableStore, toDisposable } from '../../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore, IDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { Event, Emitter } from '../../../../base/common/event.js';
 import { ISCMService, ISCMProvider, ISCMInput, ISCMRepository, IInputValidator, ISCMInputChangeEvent, SCMInputChangeReason, InputValidationType, IInputValidation } from './scm.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
@@ -191,7 +191,7 @@ class SCMRepository implements ISCMRepository {
 	private readonly _onDidChangeSelection = new Emitter<boolean>();
 	readonly onDidChangeSelection: Event<boolean> = this._onDidChangeSelection.event;
 
-	readonly input: ISCMInput;
+	readonly input: ISCMInput & IDisposable;
 
 	constructor(
 		public readonly id: string,
@@ -199,7 +199,7 @@ class SCMRepository implements ISCMRepository {
 		private readonly disposables: DisposableStore,
 		inputHistory: SCMInputHistory
 	) {
-		this.input = disposables.add(new SCMInput(this, inputHistory));
+		this.input = new SCMInput(this, inputHistory);
 	}
 
 	setSelected(selected: boolean): void {
@@ -214,6 +214,7 @@ class SCMRepository implements ISCMRepository {
 	dispose(): void {
 		this.disposables.dispose();
 		this._onDidChangeSelection.dispose();
+		this.input.dispose();
 		this.provider.dispose();
 	}
 }

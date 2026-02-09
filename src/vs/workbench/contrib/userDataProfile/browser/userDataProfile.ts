@@ -181,7 +181,7 @@ export class UserDataProfilesWorkbenchContribution extends Disposable implements
 		const getProfilesTitle = () => {
 			return localize('profiles', "Profile ({0})", this.userDataProfileService.currentProfile.name);
 		};
-		this._register(MenuRegistry.appendMenuItem(MenuId.GlobalActivity, {
+		MenuRegistry.appendMenuItem(MenuId.GlobalActivity, {
 			get title() {
 				return getProfilesTitle();
 			},
@@ -189,8 +189,8 @@ export class UserDataProfilesWorkbenchContribution extends Disposable implements
 			group: '2_configuration',
 			order: 1,
 			when: HAS_PROFILES_CONTEXT
-		}));
-		this._register(MenuRegistry.appendMenuItem(MenuId.MenubarPreferencesMenu, {
+		});
+		MenuRegistry.appendMenuItem(MenuId.MenubarPreferencesMenu, {
 			get title() {
 				return getProfilesTitle();
 			},
@@ -198,16 +198,16 @@ export class UserDataProfilesWorkbenchContribution extends Disposable implements
 			group: '2_configuration',
 			order: 1,
 			when: HAS_PROFILES_CONTEXT
-		}));
+		});
 	}
 
 	private registerOpenProfileSubMenu(): void {
-		this._register(MenuRegistry.appendMenuItem(MenuId.MenubarFileMenu, {
+		MenuRegistry.appendMenuItem(MenuId.MenubarFileMenu, {
 			title: localize('New Profile Window', "New Window with Profile"),
 			submenu: OpenProfileMenu,
 			group: '1_new',
 			order: 4,
-		}));
+		});
 	}
 
 	private readonly profilesDisposable = this._register(new MutableDisposable<DisposableStore>());
