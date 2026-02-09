@@ -421,6 +421,7 @@ The Agent Sessions workbench uses specialized part implementations that extend t
 | Panel | `AgentSessionPanelPart` | `AbstractPaneCompositePart` | `agentSessions/browser/parts/agentSessionPanelPart.ts` |
 | Chat Bar | `ChatBarPart` | `AbstractPaneCompositePart` | `agentSessions/browser/parts/chatbar/chatBarPart.ts` |
 | Editor Modal | `EditorModal` | `Disposable` | `agentSessions/browser/parts/editorModal.ts` |
+| Sidebar Reveal Button | `SidebarRevealButton` | `Disposable` | `agentSessions/browser/parts/sidebarRevealButton.ts` |
 
 ### 9.2 Key Differences from Standard Parts
 
@@ -545,6 +546,7 @@ src/vs/workbench/agentSessions/
 │   │   ├── agentSessionAuxiliaryBarPart.ts # Agent session auxiliary bar (with run script dropdown)
 │   │   ├── agentSessionPanelPart.ts        # Agent session panel
 │   │   ├── editorModal.ts                  # Editor modal overlay implementation
+│   │   ├── sidebarRevealButton.ts          # Edge hover reveal buttons for hidden sidebars
 │   │   └── chatbar/
 │   │       ├── chatBarPart.ts              # Chat Bar part implementation
 │   │       └── media/
@@ -631,6 +633,54 @@ interface IPartVisibilityState {
 
 ---
 
+## 14. Sidebar Reveal Buttons
+
+When the primary sidebar or auxiliary bar is hidden, a round reveal button appears at the corresponding edge of the workbench when the user hovers near it. Clicking the button reveals the sidebar.
+
+### 14.1 Behavior
+
+| Aspect | Detail |
+|--------|--------|
+| Trigger zone | 36px from the workbench edge |
+| Button size | 32px diameter |
+| Show animation | Slides in from the edge (0.15s ease-out) |
+| Hide animation | Slides out (0.15s ease-out) when mouse moves away from edge |
+| Click behavior | Button disappears **instantly** (no slide-out transition), then reveals the sidebar |
+| Mouse leave | Button hides when mouse leaves the workbench container entirely (prevents showing when mouse exits to another screen) |
+| Left sidebar button | Appears at left edge with chevron-right icon (pointing toward center) |
+| Auxiliary bar button | Appears at right edge with chevron-left icon (pointing toward center) |
+| Click action | Calls `setPartHidden(false, ...)` to reveal the sidebar |
+| Enabled state | Only active when the corresponding sidebar is hidden |
+
+### 14.2 CSS Classes
+
+| Class | Applied To | Notes |
+|-------|------------|-------|
+| `sidebar-reveal-button` | Button container | Positioned absolute at edge, 50% vertical |
+| `sidebar-reveal-button.left` | Left sidebar button | Slides in from left edge |
+| `sidebar-reveal-button.right` | Auxiliary bar button | Slides in from right edge |
+| `sidebar-reveal-button.visible` | When mouse is in trigger zone | Enables pointer events, slides button in |
+| `sidebar-reveal-button.no-transition` | Briefly applied during click | Disables CSS transition for instant hide |
+| `sidebar-reveal-button-icon` | Icon span | Contains the codicon chevron |
+
+### 14.3 Constants
+
+| Constant | Value | Description |
+|----------|-------|-------------|
+| `EDGE_TRIGGER_ZONE_PX` | 36 | Mouse proximity threshold in pixels |
+| `BUTTON_SIZE_PX` | 32 | Button diameter in pixels |
+
+### 14.4 Implementation
+
+The `SidebarRevealButton` class (`parts/sidebarRevealButton.ts`) creates one button per side. Two instances are created in `createWorkbenchLayout()` and registered as disposables:
+
+```typescript
+this._register(new SidebarRevealButton(this.mainContainer, 'left', this));
+this._register(new SidebarRevealButton(this.mainContainer, 'right', this));
+```
+
+---
+
 ## Revision History
 
 | Date | Change |
@@ -643,6 +693,7 @@ interface IPartVisibilityState {
 | 2026-02-06 | `AgentSessionsTitleBarStatusWidget` now shows active chat session title instead of workspace label; Clicking opens sessions view via `FocusAgentSessionsAction`; Removed folder picker and recent folders |
 | 2026-02-06 | Replaced command center folder picker with `AgentSessionsTitleBarStatusWidget` (custom `BaseActionViewItem`); Uses `IActionViewItemService` to intercept `AgentSessionsTitleBarControlMenu` submenu; Shows workspace label pill with quick pick for recent folders |
 | 2026-02-06 | Added Command Center with custom `AgentSessionsCommandCenter` menu IDs; Dropdown shows recent folders and Open Folder action; Added `AgentSessionsCommandCenterContribution` |
+| 2026-02-06 | Added sidebar reveal buttons (`SidebarRevealButton`) — round edge-hover buttons that appear when sidebars are hidden; implemented in `parts/sidebarRevealButton.ts` |
 | 2026-02-06 | Auxiliary Bar now visible by default; Removed `AuxiliaryBarVisibilityContribution` (no longer auto-shows/hides based on chat state) |
 | 2026-02-06 | Removed Command Center and Project Bar completely; Layout is now: Sidebar \| Chat Bar \| Auxiliary Bar; Global activities (Accounts, Settings) in titlebar via `supportsActivityActions` |
 | 2026-02-06 | ~~Removed Project Bar; Added Command Center to titlebar~~ (superseded) |

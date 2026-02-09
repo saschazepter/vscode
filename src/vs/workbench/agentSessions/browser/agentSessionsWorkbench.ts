@@ -70,6 +70,7 @@ import { BrowserTitleService, ITitlebarPartConfiguration } from '../../browser/p
 import { AgentSessionsWorkbenchMenus } from './agentSessionsWorkbenchMenus.js';
 import { registerAgentSessionsLayoutActions } from './agentSessionsLayoutActions.js';
 import { registerAgentWorkbenchContributions } from './agentSessions.contributions.js';
+import { SidebarRevealButton } from './parts/sidebarRevealButton.js';
 
 //#region Workbench Options
 
@@ -811,6 +812,10 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 			this._onDidChangePartVisibility.fire({ partId: editorPart.getId(), visible });
 			this.handleContainerDidLayout(this.mainContainer, this._mainContainerDimension);
 		}));
+
+		// Create sidebar reveal buttons (shown when sidebars are hidden)
+		this._register(new SidebarRevealButton(this.mainContainer, 'left', this));
+		this._register(new SidebarRevealButton(this.mainContainer, 'right', this));
 	}
 
 	/**

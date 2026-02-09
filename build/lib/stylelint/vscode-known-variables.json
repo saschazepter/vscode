@@ -938,6 +938,7 @@
 		"--testMessageDecorationFontSize",
 		"--title-border-bottom-color",
 		"--title-wco-width",
+		"--reveal-button-size",
 		"--vscode-chat-list-background",
 		"--vscode-editorCodeLens-fontFamily",
 		"--vscode-editorCodeLens-fontFamilyDefault",
