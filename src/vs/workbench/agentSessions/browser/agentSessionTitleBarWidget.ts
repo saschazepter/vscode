@@ -6,7 +6,7 @@
 import './media/agentSessionTitleBarWidget.css';
 import { $, addDisposableListener, EventType, reset } from '../../../base/browser/dom.js';
 
-import { Disposable, DisposableStore } from '../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore, MutableDisposable } from '../../../base/common/lifecycle.js';
 import { localize } from '../../../nls.js';
 import { IHoverService } from '../../../platform/hover/browser/hover.js';
 import { getDefaultHoverDelegate } from '../../../base/browser/ui/hover/hoverDelegateFactory.js';
@@ -16,10 +16,12 @@ import { MenuRegistry, SubmenuItemAction } from '../../../platform/actions/commo
 import { AgentSessionsWorkbenchMenus } from './agentSessionsWorkbenchMenus.js';
 import { IWorkbenchContribution } from '../../common/contributions.js';
 import { IActionViewItemService } from '../../../platform/actions/browser/actionViewItemService.js';
+import { URI } from '../../../base/common/uri.js';
 import { IActiveAgentSessionService } from '../../contrib/chat/browser/agentSessions/agentSessionsService.js';
 import { FocusAgentSessionsAction } from '../../contrib/chat/browser/agentSessions/agentSessionsActions.js';
 import { AgentSessionsPicker } from '../../contrib/chat/browser/agentSessions/agentSessionsPicker.js';
 import { autorun } from '../../../base/common/observable.js';
+import { IChatService } from '../../contrib/chat/common/chatService/chatService.js';
 
 /**
  * Agent Sessions Title Bar Status Widget - renders the active chat session title
@@ -32,6 +34,7 @@ export class AgentSessionsTitleBarWidget extends BaseActionViewItem {
 
 	private _container: HTMLElement | undefined;
 	private readonly _dynamicDisposables = this._register(new DisposableStore());
+	private readonly _modelChangeListener = this._register(new MutableDisposable());
 
 	/** Cached render state to avoid unnecessary DOM rebuilds */
 	private _lastRenderState: string | undefined;
@@ -45,12 +48,14 @@ export class AgentSessionsTitleBarWidget extends BaseActionViewItem {
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@IHoverService private readonly hoverService: IHoverService,
 		@IActiveAgentSessionService private readonly activeAgentSessionService: IActiveAgentSessionService,
+		@IChatService private readonly chatService: IChatService,
 	) {
 		super(undefined, action, options);
 
 		// Re-render when the active session changes
 		this._register(autorun(reader => {
-			this.activeAgentSessionService.activeSession.read(reader);
+			const activeSession = this.activeAgentSessionService.activeSession.read(reader);
+			this._trackModelTitleChanges(activeSession?.resource);
 			this._lastRenderState = undefined;
 			this._render();
 		}));
@@ -141,11 +146,43 @@ export class AgentSessionsTitleBarWidget extends BaseActionViewItem {
 	}
 
 	/**
-	 * Get the label of the active chat session from IActiveAgentSessionService.
+	 * Track title changes on the chat model for the given session resource.
+	 * When the model title changes, re-render the widget.
+	 */
+	private _trackModelTitleChanges(sessionResource: URI | undefined): void {
+		this._modelChangeListener.clear();
+
+		if (!sessionResource) {
+			return;
+		}
+
+		const model = this.chatService.getSession(sessionResource);
+		if (!model) {
+			return;
+		}
+
+		this._modelChangeListener.value = model.onDidChange(e => {
+			if (e.kind === 'setCustomTitle' || e.kind === 'addRequest') {
+				this._lastRenderState = undefined;
+				this._render();
+			}
+		});
+	}
+
+	/**
+	 * Get the label of the active chat session.
+	 * Prefers the live model title over the snapshot label from the active session service.
 	 * Falls back to a generic label if no active session is found.
 	 */
 	private _getActiveSessionLabel(): string {
 		const activeSession = this.activeAgentSessionService.getActiveSession();
+		if (activeSession?.resource) {
+			const model = this.chatService.getSession(activeSession.resource);
+			if (model?.title) {
+				return model.title;
+			}
+		}
+
 		if (activeSession?.label) {
 			return activeSession.label;
 		}
