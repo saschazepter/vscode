@@ -177,6 +177,14 @@
 	-webkit-backdrop-filter: var(--backdrop-blur-lg);
 }
 
+/* Remove backdrop-filter when quick chat is active, because it creates a new
+   containing block that shifts position:fixed suggest widgets to the right. */
+.monaco-workbench .quick-input-widget:has(.interactive-session) {
+	backdrop-filter: none;
+	-webkit-backdrop-filter: none;
+	background-color: var(--vscode-quickInput-background) !important;
+}
+
 .monaco-workbench.vs-dark .quick-input-widget {
 	border: 1px solid var(--vscode-menu-border) !important;
 }
