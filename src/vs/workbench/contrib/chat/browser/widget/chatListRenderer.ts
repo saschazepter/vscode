@@ -1977,8 +1977,8 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 						? localize('hook.thinking.blocked', "Blocked {0}", hookPart.toolDisplayName)
 						: localize('hook.thinking.blockedGeneric', "Blocked by hook"))
 					: (hookPart.toolDisplayName
-						? localize('hook.thinking.warning', "Warning for {0}", hookPart.toolDisplayName)
-						: localize('hook.thinking.warningGeneric', "Warning from hook"));
+						? localize('hook.thinking.warning', "Used {0}, but received a warning", hookPart.toolDisplayName)
+						: localize('hook.thinking.warningGeneric', "Tool call received a warning"));
 				lastThinking.appendItem(() => ({ domNode: part.domNode, disposable: part }), hookTitle);
 				return this.renderNoContent(other => other.kind === 'hook' && other.hookType === hookPart.hookType);
 			}
