@@ -16,7 +16,7 @@ import { ILabelService } from '../../../../../platform/label/common/label.js';
 import { ILogService } from '../../../../../platform/log/common/log.js';
 import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry.js';
 import { IWorkspaceContextService } from '../../../../../platform/workspace/common/workspace.js';
-import { ChatRequestVariableSet, IChatRequestVariableEntry, isPromptFileVariableEntry, toPromptFileVariableEntry, toPromptTextVariableEntry, PromptFileVariableKind } from '../chatVariableEntries.js';
+import { ChatRequestVariableSet, IChatRequestVariableEntry, isPromptFileVariableEntry, toPromptFileVariableEntry, toPromptInstructionsTextVariableEntry, PromptFileVariableKind, toPromptsTextVariableEntry } from '../chatVariableEntries.js';
 import { IToolData } from '../languageModelToolsService.js';
 import { PromptsConfig } from './config/config.js';
 import { COPILOT_CUSTOM_INSTRUCTIONS_FILENAME, isPromptOrInstructionsFile } from './config/promptFileLocations.js';
@@ -35,12 +35,22 @@ export function newInstructionsCollectionEvent(): InstructionsCollectionEvent {
 	return { applyingInstructionsCount: 0, referencedInstructionsCount: 0, agentInstructionsCount: 0, listedInstructionsCount: 0, totalInstructionsCount: 0 };
 }
 
+// export type PromptsCollectionEvent = {
+// 	listedPromptsCount: number;
+// 	totalPromptsCount: number;
+// };
+// export function newPromptsCollectionEvent(): PromptsCollectionEvent {
+// 	return { listedPromptsCount: 0, totalPromptsCount: 0 };
+// }
+
 type InstructionsCollectionClassification = {
 	applyingInstructionsCount: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; isMeasurement: true; comment: 'Number of instructions added via pattern matching.' };
 	referencedInstructionsCount: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; isMeasurement: true; comment: 'Number of instructions added via references from other instruction files.' };
 	agentInstructionsCount: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; isMeasurement: true; comment: 'Number of agent instructions added (copilot-instructions.md and agents.md).' };
 	listedInstructionsCount: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; isMeasurement: true; comment: 'Number of instruction patterns added.' };
 	totalInstructionsCount: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; isMeasurement: true; comment: 'Total number of instruction entries added to variables.' };
+	// listedPromptsCount: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; isMeasurement: true; comment: 'Number of prompt patterns added.' };
+	// totalPromptsCount: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; isMeasurement: true; comment: 'Total number of prompt entries added to variables.' };
 	owner: 'digitarald';
 	comment: 'Tracks automatic instruction collection usage in chat prompt system.';
 };
@@ -51,6 +61,7 @@ export class ComputeAutomaticInstructions {
 
 	constructor(
 		private readonly _readFileTool: IToolData | undefined,
+		private readonly _executePromptTool: IToolData | undefined,
 		@IPromptsService private readonly _promptsService: IPromptsService,
 		@ILogService public readonly _logService: ILogService,
 		@ILabelService private readonly _labelService: ILabelService,
@@ -79,29 +90,38 @@ export class ComputeAutomaticInstructions {
 	public async collect(variables: ChatRequestVariableSet, token: CancellationToken): Promise<void> {
 
 		const instructionFiles = await this._promptsService.listPromptFiles(PromptsType.instructions, token);
+		const promptFiles = await this._promptsService.listPromptFiles(PromptsType.prompt, token);
 
 		this._logService.trace(`[InstructionsContextComputer] ${instructionFiles.length} instruction files available.`);
 
-		const telemetryEvent: InstructionsCollectionEvent = newInstructionsCollectionEvent();
+		const instructionsTelemetryEvent: InstructionsCollectionEvent = newInstructionsCollectionEvent();
 		const context = this._getContext(variables);
 
 		// find instructions where the `applyTo` matches the attached context
-		await this.addApplyingInstructions(instructionFiles, context, variables, telemetryEvent, token);
+		await this.addApplyingInstructions(instructionFiles, context, variables, instructionsTelemetryEvent, token);
 
 		// add all instructions referenced by all instruction files that are in the context
-		await this._addReferencedInstructions(variables, telemetryEvent, token);
+		await this._addReferencedInstructions(variables, instructionsTelemetryEvent, token);
 
 		// get copilot instructions
-		await this._addAgentInstructions(variables, telemetryEvent, token);
+		await this._addAgentInstructions(variables, instructionsTelemetryEvent, token);
 
 		const instructionsWithPatternsList = await this._getInstructionsWithPatternsList(instructionFiles, variables, token);
 		if (instructionsWithPatternsList.length > 0) {
 			const text = instructionsWithPatternsList.join('\n');
-			variables.add(toPromptTextVariableEntry(text, true));
-			telemetryEvent.listedInstructionsCount++;
+			variables.add(toPromptInstructionsTextVariableEntry(text, true));
+			instructionsTelemetryEvent.listedInstructionsCount++;
 		}
 
-		this.sendTelemetry(telemetryEvent);
+		const promptsList = await this._getPromptsList(promptFiles, variables, token);
+		if (promptsList.length > 0) {
+			const text = promptsList.join('\n');
+			variables.add(toPromptsTextVariableEntry(text, true));
+			// promptsTelemetryEvent.listedPromptsCount++;
+		}
+
+		this.sendTelemetry(instructionsTelemetryEvent);
+		// this.sendTelemetry(promptsTelemetryEvent);
 	}
 
 	public async collectAgentInstructionsOnly(variables: ChatRequestVariableSet, token: CancellationToken): Promise<void> {
@@ -110,12 +130,6 @@ export class ComputeAutomaticInstructions {
 		this.sendTelemetry(telemetryEvent);
 	}
 
-	/**
-	 * Checks if any agent instruction files (.github/copilot-instructions.md or agents.md) exist in the workspace.
-	 * Used to determine whether to show the "Generate Agent Instructions" hint.
-	 *
-	 * @returns true if instruction files exist OR if instruction features are disabled (to hide the hint)
-	 */
 	public async hasAgentInstructions(token: CancellationToken): Promise<boolean> {
 		const useCopilotInstructionsFiles = this._configurationService.getValue(PromptsConfig.USE_COPILOT_INSTRUCTION_FILES);
 		const useAgentMd = this._configurationService.getValue(PromptsConfig.USE_AGENT_MD);
@@ -124,32 +138,8 @@ export class ComputeAutomaticInstructions {
 		if (!useCopilotInstructionsFiles && !useAgentMd) {
 			return true;
 		}
-		const { folders } = this._workspaceService.getWorkspace();
 
-		// Check for copilot-instructions.md files
-		if (useCopilotInstructionsFiles) {
-			for (const folder of folders) {
-				const file = joinPath(folder.uri, `.github/` + COPILOT_CUSTOM_INSTRUCTIONS_FILENAME);
-				if (await this._fileService.exists(file)) {
-					return true;
-				}
-			}
-		}
-
-		// Check for agents.md files
-		if (useAgentMd) {
-			const resolvedRoots = await this._fileService.resolveAll(folders.map(f => ({ resource: f.uri })));
-			for (const root of resolvedRoots) {
-				if (root.success && root.stat?.children) {
-					const agentMd = root.stat.children.find(c => c.isFile && c.name.toLowerCase() === 'agents.md');
-					if (agentMd) {
-						return true;
-					}
-				}
-			}
-		}
-
-		return false;
+		return this._promptsService.hasAgentInstructionsFiles(token);
 	}
 
 	private sendTelemetry(telemetryEvent: InstructionsCollectionEvent): void {
@@ -333,6 +323,39 @@ export class ComputeAutomaticInstructions {
 			'Make sure to acquire the instructions before making any changes to the code.',
 			'| File | Applies To | Description |',
 			'| ------- | --------- | ----------- |',
+		].concat(entries);
+	}
+
+	private async _getPromptsList(promptFiles: readonly IPromptPath[], _existingVariables: ChatRequestVariableSet, token: CancellationToken): Promise<string[]> {
+		if (!this._readFileTool) {
+			this._logService.trace('[InstructionsContextComputer] No readFile tool available, skipping prompts list.');
+			return [];
+		}
+		if (!this._executePromptTool) {
+			this._logService.trace('[InstructionsContextComputer] No executePrompt tool available, skipping prompts list.');
+			return [];
+		}
+
+		const entries: string[] = [];
+		for (const { uri } of promptFiles) {
+			const parsedFile = await this._parseInstructionsFile(uri, token);
+			if (parsedFile) {
+				const description = parsedFile.header?.description ?? '';
+				entries.push(`| '${getFilePath(uri)}' | ${description} |`);
+			}
+		}
+
+		if (entries.length === 0) {
+			return entries;
+		}
+
+		const readFileToolName = 'read_file'; // workaround https://github.com/microsoft/vscode/issues/252167
+		const executePromptToolName = 'execute_prompt'; // workaround https://github.com/microsoft/vscode/issues/252167
+		return [
+			'Here is a list of prompt files, which define slash commands. A file like blah.prompt.md defines a slash command `/blah`.',
+			`To call a slash command, first use the \`${readFileToolName}\` tool to read the prompt file contents, and then pass those contents exactly as-is into the \`${executePromptToolName}\` tool, which will execute the slash command and return the result.`,
+			'| File | Description |',
+			'| ------- | ----------- |',
 		].concat(entries);
 	}
 

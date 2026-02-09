@@ -338,13 +338,25 @@ export function toPromptFileVariableEntry(uri: URI, kind: PromptFileVariableKind
 	};
 }
 
-export function toPromptTextVariableEntry(content: string, automaticallyAdded = false, toolReferences?: ChatRequestToolReferenceEntry[]): IPromptTextVariableEntry {
+export function toPromptInstructionsTextVariableEntry(content: string, automaticallyAdded = false, toolReferences?: ChatRequestToolReferenceEntry[]): IPromptTextVariableEntry {
 	return {
 		id: `vscode.prompt.instructions.text`,
 		name: `prompt:instructionsList`,
 		value: content,
 		kind: 'promptText',
 		modelDescription: 'Prompt instructions list',
+		automaticallyAdded,
+		toolReferences
+	};
+}
+
+export function toPromptsTextVariableEntry(content: string, automaticallyAdded = false, toolReferences?: ChatRequestToolReferenceEntry[]): IPromptTextVariableEntry {
+	return {
+		id: `vscode.prompt.prompts.text`,
+		name: `prompt:promptsList`,
+		value: content,
+		kind: 'promptText',
+		modelDescription: 'Prompts list',
 		automaticallyAdded,
 		toolReferences
 	};
