@@ -478,7 +478,8 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 				return ChatSessionStatus.Completed;
 			case 2: // vscode.ChatSessionStatus.InProgress
 				return ChatSessionStatus.InProgress;
-			// Need to support NeedsInput status if we ever export it to the extension API
+			case 3: // vscode.ChatSessionStatus.NeedsInput
+				return ChatSessionStatus.NeedsInput;
 			default:
 				return undefined;
 		}
