@@ -74,6 +74,7 @@ export class ChatHookContentPart extends ChatCollapsibleContentPart implements I
 		}
 		return other.hookType === this.hookPart.hookType &&
 			other.stopReason === this.hookPart.stopReason &&
-			other.systemMessage === this.hookPart.systemMessage;
+			other.systemMessage === this.hookPart.systemMessage &&
+			other.toolDisplayName === this.hookPart.toolDisplayName;
 	}
 }

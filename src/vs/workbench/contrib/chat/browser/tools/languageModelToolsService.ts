@@ -395,10 +395,21 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 
 			// Cancel the tool invocation silently - the IChatHookPart below handles the user-facing display.
 			if (toolData) {
+				const reasonMessage = localize('hookDeniedReasonMessage', "Denied by {0} hook: {1}", HookType.PreToolUse, hookReason);
 				if (pendingInvocation) {
 					pendingInvocation.presentation = ToolInvocationPresentation.Hidden;
 					// If there's an existing streaming invocation, cancel it
-					pendingInvocation.cancelFromStreaming(ToolConfirmKind.Denied);
+					pendingInvocation.cancelFromStreaming(ToolConfirmKind.Denied, reasonMessage);
+				} else if (request) {
+					// Create a hidden cancelled invocation for non-streamed tool calls so the tool-call record is preserved
+					const cancelledInvocation = ChatToolInvocation.createCancelled(
+						{ toolData, toolCallId: dto.callId, toolId: dto.toolId, subagentInvocationId: dto.subAgentInvocationId },
+						dto.parameters,
+						ToolConfirmKind.Denied,
+						reasonMessage,
+					);
+					cancelledInvocation.presentation = ToolInvocationPresentation.Hidden;
+					this._chatService.appendProgress(request, cancelledInvocation);
 				}
 			}
 
@@ -839,9 +850,12 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 				const existing = preparedInvocation.confirmationMessages!;
 				if (preparedInvocation.toolSpecificData?.kind === 'terminal') {
 					// Terminal tools render message as hover only; use disclaimer for visible text
+					const combinedDisclaimer = existing.disclaimer
+						? `${hookNote}\n\n${existing.disclaimer}`
+						: hookNote;
 					preparedInvocation.confirmationMessages = {
 						...existing,
-						disclaimer: hookNote,
+						disclaimer: combinedDisclaimer,
 						allowAutoConfirm: false,
 					};
 				} else {

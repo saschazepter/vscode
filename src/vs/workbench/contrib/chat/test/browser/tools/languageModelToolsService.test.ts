@@ -3835,8 +3835,16 @@ suite('LanguageModelToolsService', () => {
 				invoke: async () => ({ content: [{ kind: 'text', value: 'should not run' }] })
 			});
 
-			const capture: { invocation?: ChatToolInvocation } = {};
-			stubGetSession(hookChatService, 'hook-test', { requestId: 'req1', capture });
+			const progressItems: any[] = [];
+			const fakeModel = {
+				sessionId: 'hook-test',
+				sessionResource: LocalChatSessionUri.forSession('hook-test'),
+				getRequests: () => [{ id: 'req1', modelId: 'test-model' }],
+			} as ChatModel;
+			hookChatService.addSession(fakeModel);
+			hookChatService.appendProgress = (_request, progress) => {
+				progressItems.push(progress);
+			};
 
 			const result = await hookService.invokeTool(
 				tool.makeDto({ test: 1 }, { sessionId: 'hook-test' }),
@@ -3851,7 +3859,7 @@ suite('LanguageModelToolsService', () => {
 			assert.ok((result.content[0] as IToolResultTextPart).value.includes('Tool execution denied'));
 
 			// Verify a cancelled invocation was created
-			const invocation = await waitForPublishedInvocation(capture);
+			const invocation = progressItems.find(p => p.kind === 'toolInvocation') as ChatToolInvocation;
 			assert.ok(invocation);
 			const state = invocation.state.get();
 			assert.strictEqual(state.type, IChatToolInvocation.StateKind.Cancelled);
@@ -3859,6 +3867,11 @@ suite('LanguageModelToolsService', () => {
 				assert.strictEqual(state.reason, ToolConfirmKind.Denied);
 				assert.strictEqual(state.reasonMessage, 'Denied by PreToolUse hook: Destructive operations require approval');
 			}
+
+			// Verify a hook part was also emitted
+			const hookPart = progressItems.find(p => p.kind === 'hook');
+			assert.ok(hookPart);
+			assert.strictEqual(hookPart.stopReason, 'Destructive operations require approval');
 		});
 
 		test('when hook allows, tool executes normally', async () => {
