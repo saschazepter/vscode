@@ -1321,36 +1321,6 @@ begin
   Result := '{#VersionedResourcesFolder}' <> '';
 end;
 
-function GetProgressFilePath(): String;
-begin
-  Result := ExpandConstant('{param:progress}');
-end;
-
-var
-  LastReportedProgressPct: Integer;
-
-procedure CurInstallProgressChanged(CurProgress, MaxProgress: Integer);
-var
-  ProgressFilePath: String;
-  ProgressContent: String;
-  CurrentPct: Integer;
-begin
-  if IsBackgroundUpdate() then begin
-    ProgressFilePath := GetProgressFilePath();
-    if ProgressFilePath <> '' then begin
-      if MaxProgress > 0 then
-        CurrentPct := (CurProgress * 100) div MaxProgress
-      else
-        CurrentPct := 0;
-      if (CurrentPct <> LastReportedProgressPct) or (CurProgress = MaxProgress) then begin
-        LastReportedProgressPct := CurrentPct;
-        ProgressContent := IntToStr(CurProgress) + ',' + IntToStr(MaxProgress);
-        SaveStringToFile(ProgressFilePath, ProgressContent, False);
-      end;
-    end;
-  end;
-end;
-
 // Don't allow installing conflicting architectures
 function InitializeSetup(): Boolean;
 var
@@ -1394,6 +1364,36 @@ begin
 end;
 
 // Updates
+
+function GetUpdateProgressFilePath(): String;
+begin
+  Result := ExpandConstant('{param:progress}');
+end;
+
+var
+  LastReportedProgressPct: Integer;
+
+procedure CurInstallProgressChanged(CurProgress, MaxProgress: Integer);
+var
+  ProgressFilePath: String;
+  ProgressContent: String;
+  CurrentPct: Integer;
+begin
+  if IsBackgroundUpdate() then begin
+    ProgressFilePath := GetUpdateProgressFilePath();
+    if ProgressFilePath <> '' then begin
+      if MaxProgress > 0 then
+        CurrentPct := (CurProgress * 100) div MaxProgress
+      else
+        CurrentPct := 0;
+      if CurrentPct <> LastReportedProgressPct then begin
+        LastReportedProgressPct := CurrentPct;
+        ProgressContent := IntToStr(CurProgress) + ',' + IntToStr(MaxProgress);
+        SaveStringToFile(ProgressFilePath, ProgressContent, False);
+      end;
+    end;
+  end;
+end;
 
 var
 	ShouldRestartTunnelService: Boolean;
@@ -1665,7 +1665,7 @@ begin
     begin
       SaveStringToFile(ExpandConstant('{app}\updating_version'), '{#Commit}', False);
       CreateMutex('{#AppMutex}-ready');
-      DeleteFile(GetProgressFilePath());
+      DeleteFile(GetUpdateProgressFilePath());
 
       Log('Checking whether application is still running...');
       while (CheckForMutexes('{#AppMutex}')) do
