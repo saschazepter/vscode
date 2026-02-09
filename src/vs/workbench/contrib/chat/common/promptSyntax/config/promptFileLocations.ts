@@ -49,11 +49,6 @@ export const CLAUDE_MD_FILENAME = 'CLAUDE.md';
 export const CLAUDE_LOCAL_MD_FILENAME = 'CLAUDE.local.md';
 
 /**
- * Default hook file name (case insensitive).
- */
-export const HOOKS_FILENAME = 'hooks.json';
-
-/**
  * Copilot custom instructions file name.
  */
 export const COPILOT_CUSTOM_INSTRUCTIONS_FILENAME = 'copilot-instructions.md';
@@ -191,6 +186,11 @@ function isInAgentsFolder(fileUri: URI): boolean {
 
 /**
  * Gets the prompt file type from the provided path.
+ *
+ * Note: This function assumes the URI is already known to be a prompt file
+ * (e.g., from a configured prompt source folder). It does not validate that
+ * arbitrary URIs are prompt files - for example, any .json file will return
+ * PromptsType.hook regardless of its location.
  */
 export function getPromptFileType(fileUri: URI): PromptsType | undefined {
 	const filename = basename(fileUri.path);
@@ -217,7 +217,8 @@ export function getPromptFileType(fileUri: URI): PromptsType | undefined {
 		return PromptsType.agent;
 	}
 
-	// Any .json files we detect right now are hooks, we can revisit this later as needed
+	// Any .json file is treated as a hook file.
+	// The caller is responsible for only passing URIs from valid prompt source folders.
 	if (filename.toLowerCase().endsWith('.json')) {
 		return PromptsType.hook;
 	}
@@ -243,7 +244,7 @@ export function getPromptFileExtension(type: PromptsType): string {
 		case PromptsType.skill:
 			return SKILL_FILENAME;
 		case PromptsType.hook:
-			return HOOKS_FILENAME;
+			return '.json';
 		default:
 			throw new Error('Unknown prompt type');
 	}

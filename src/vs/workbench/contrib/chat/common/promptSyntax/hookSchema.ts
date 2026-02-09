@@ -12,7 +12,7 @@ import { untildify } from '../../../../../base/common/labels.js';
 import { OperatingSystem } from '../../../../../base/common/platform.js';
 
 /**
- * Enum of available hook types that can be configured in hooks.json
+ * Enum of available hook types that can be configured in hooks .json
  */
 export enum HookType {
 	SessionStart = 'SessionStart',
