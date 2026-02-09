@@ -7,7 +7,7 @@ import './media/aiCustomizationTreeView.css';
 import * as dom from '../../../../../base/browser/dom.js';
 import { CancellationToken } from '../../../../../base/common/cancellation.js';
 import { DisposableStore } from '../../../../../base/common/lifecycle.js';
-import { basename, dirname } from '../../../../../base/common/resources.js';
+import { basename, dirname, isEqualOrParent } from '../../../../../base/common/resources.js';
 import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { localize } from '../../../../../nls.js';
@@ -33,6 +33,9 @@ import { FuzzyScore } from '../../../../../base/common/filters.js';
 import { IListVirtualDelegate } from '../../../../../base/browser/ui/list/list.js';
 import { IEditorService } from '../../../../services/editor/common/editorService.js';
 import { ILogService } from '../../../../../platform/log/common/log.js';
+import { IWorkspaceContextService } from '../../../../../platform/workspace/common/workspace.js';
+import { autorun } from '../../../../../base/common/observable.js';
+import { IActiveAgentSessionService } from '../agentSessions/agentSessionsService.js';
 import { AI_CUSTOMIZATION_EDITOR_ID } from '../aiCustomizationEditor/aiCustomizationEditor.js';
 
 //#region Context Keys
@@ -232,6 +235,7 @@ class UnifiedAICustomizationDataSource implements IAsyncDataSource<RootElement, 
 		private readonly promptsService: IPromptsService,
 		private readonly logService: ILogService,
 		private readonly onItemCountChanged: (count: number) => void,
+		private readonly getActiveRepository: () => URI | undefined,
 	) { }
 
 	/**
@@ -325,12 +329,16 @@ class UnifiedAICustomizationDataSource implements IAsyncDataSource<RootElement, 
 				this.onItemCountChanged(this.totalItemCount);
 			}
 
+			const activeRepo = this.getActiveRepository();
 			const workspaceSkills = cached.skills.filter(s => s.storage === PromptsStorage.local);
+			const filteredWorkspaceSkills = activeRepo
+				? workspaceSkills.filter(s => isEqualOrParent(s.uri, activeRepo))
+				: workspaceSkills;
 			const userSkills = cached.skills.filter(s => s.storage === PromptsStorage.user);
 			const extensionSkills = cached.skills.filter(s => s.storage === PromptsStorage.extension);
 
-			if (workspaceSkills.length > 0) {
-				groups.push(this.createGroupItem(promptType, PromptsStorage.local, workspaceSkills.length));
+			if (filteredWorkspaceSkills.length > 0) {
+				groups.push(this.createGroupItem(promptType, PromptsStorage.local, filteredWorkspaceSkills.length));
 			}
 			if (userSkills.length > 0) {
 				groups.push(this.createGroupItem(promptType, PromptsStorage.user, userSkills.length));
@@ -365,8 +373,14 @@ class UnifiedAICustomizationDataSource implements IAsyncDataSource<RootElement, 
 		const userItems = cached.files!.get(PromptsStorage.user) || [];
 		const extensionItems = cached.files!.get(PromptsStorage.extension) || [];
 
-		if (workspaceItems.length > 0) {
-			groups.push(this.createGroupItem(promptType, PromptsStorage.local, workspaceItems.length));
+		// Filter workspace items by active repository
+		const activeRepo = this.getActiveRepository();
+		const filteredWorkspaceItems = activeRepo
+			? workspaceItems.filter(item => isEqualOrParent(item.uri, activeRepo))
+			: workspaceItems;
+
+		if (filteredWorkspaceItems.length > 0) {
+			groups.push(this.createGroupItem(promptType, PromptsStorage.local, filteredWorkspaceItems.length));
 		}
 		if (userItems.length > 0) {
 			groups.push(this.createGroupItem(promptType, PromptsStorage.user, userItems.length));
@@ -416,12 +430,16 @@ class UnifiedAICustomizationDataSource implements IAsyncDataSource<RootElement, 
 	 */
 	private async getFilesForStorageAndType(storage: PromptsStorage, promptType: PromptsType): Promise<IAICustomizationFileItem[]> {
 		const cached = this.cache.get(promptType);
+		const activeRepo = storage === PromptsStorage.local ? this.getActiveRepository() : undefined;
 
 		// For skills, use the cached skills data
 		if (promptType === PromptsType.skill) {
 			const skills = cached?.skills || [];
-			return skills
-				.filter(skill => skill.storage === storage)
+			let filtered = skills.filter(skill => skill.storage === storage);
+			if (activeRepo) {
+				filtered = filtered.filter(skill => isEqualOrParent(skill.uri, activeRepo));
+			}
+			return filtered
 				.map(skill => {
 					// Use skill name from frontmatter, or fallback to parent folder name
 					const skillName = skill.name || basename(dirname(skill.uri)) || basename(skill.uri);
@@ -438,7 +456,10 @@ class UnifiedAICustomizationDataSource implements IAsyncDataSource<RootElement, 
 		}
 
 		// Use cached files data (already fetched in getStorageGroups)
-		const items = cached?.files?.get(storage) || [];
+		let items = [...(cached?.files?.get(storage) || [])];
+		if (activeRepo) {
+			items = items.filter(item => isEqualOrParent(item.uri, activeRepo));
+		}
 		return items.map(item => ({
 			type: 'file' as const,
 			id: item.uri.toString(),
@@ -485,6 +506,8 @@ export class AICustomizationViewPane extends ViewPane {
 		@IEditorService private readonly editorService: IEditorService,
 		@IMenuService private readonly menuService: IMenuService,
 		@ILogService private readonly logService: ILogService,
+		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
+		@IActiveAgentSessionService private readonly activeSessionService: IActiveAgentSessionService,
 	) {
 		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
 
@@ -495,6 +518,15 @@ export class AICustomizationViewPane extends ViewPane {
 		// Subscribe to prompt service events to refresh tree
 		this._register(this.promptsService.onDidChangeCustomAgents(() => this.refresh()));
 		this._register(this.promptsService.onDidChangeSlashCommands(() => this.refresh()));
+
+		// Listen to workspace folder changes to refresh tree
+		this._register(this.workspaceContextService.onDidChangeWorkspaceFolders(() => this.refresh()));
+
+		// Refresh when active agent session changes (repository scope may change)
+		this._register(autorun(reader => {
+			this.activeSessionService.activeSession.read(reader);
+			void this.refresh();
+		}));
 	}
 
 	protected override renderBody(container: HTMLElement): void {
@@ -515,7 +547,8 @@ export class AICustomizationViewPane extends ViewPane {
 		this.dataSource = new UnifiedAICustomizationDataSource(
 			this.promptsService,
 			this.logService,
-			(count) => this.isEmptyContextKey.set(count === 0)
+			(count) => this.isEmptyContextKey.set(count === 0),
+			() => this.activeSessionService.getActiveSession()?.repository,
 		);
 
 		this.tree = this.treeDisposables.add(this.instantiationService.createInstance(

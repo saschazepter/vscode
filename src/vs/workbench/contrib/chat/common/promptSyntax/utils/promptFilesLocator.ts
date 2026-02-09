@@ -182,6 +182,14 @@ export class PromptFilesLocator {
 				eventEmitter.fire();
 			}
 		}));
+		disposables.add(this.workspaceService.onDidChangeWorkspaceFolders(() => {
+			parentFolders = this.getLocalParentFolders(type);
+			this.pathService.userHome().then(userHome => {
+				allSourceFolders = [...this.getSourceFoldersSync(type, userHome)];
+				updateExternalFolderWatchers();
+			});
+			eventEmitter.fire();
+		}));
 		disposables.add(this.fileService.onDidFilesChange(e => {
 			if (e.affects(userDataFolder)) {
 				eventEmitter.fire();

@@ -114,15 +114,33 @@
 		flex: 1;
 	}
 
-	.ai-customization-shortcuts .ai-customization-link .link-count {
+	.ai-customization-shortcuts .ai-customization-link .link-counts {
 		flex-shrink: 0;
-		font-size: 11px;
-		color: var(--vscode-descriptionForeground);
-		opacity: 0.7;
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		margin-left: auto;
 	}
 
-	.ai-customization-shortcuts .ai-customization-link .link-count.hidden {
+	.ai-customization-shortcuts .ai-customization-link .link-counts.hidden {
 		display: none;
+	}
+
+	.ai-customization-shortcuts .ai-customization-link .source-count-badge {
+		display: flex;
+		align-items: center;
+		gap: 2px;
+	}
+
+	.ai-customization-shortcuts .ai-customization-link .source-count-icon {
+		font-size: 12px;
+		opacity: 0.6;
+	}
+
+	.ai-customization-shortcuts .ai-customization-link .source-count-num {
+		font-size: 11px;
+		color: var(--vscode-descriptionForeground);
+		opacity: 0.8;
 	}
 
 	/* Sessions section - fills remaining space above customizations */

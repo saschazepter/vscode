@@ -7,6 +7,7 @@ import { Disposable, DisposableStore } from '../../../../../base/common/lifecycl
 import { IObservable, observableValue } from '../../../../../base/common/observable.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { createDecorator, IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
+import { ILogService } from '../../../../../platform/log/common/log.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
 import { IViewsService } from '../../../../services/views/common/viewsService.js';
 import { ChatViewId } from '../chat.js';
@@ -100,6 +101,7 @@ export class ActiveAgentSessionService extends Disposable implements IActiveAgen
 		@IStorageService private readonly storageService: IStorageService,
 		@IAgentSessionsService private readonly agentSessionsService: IAgentSessionsService,
 		@IChatSessionsService private readonly chatSessionsService: IChatSessionsService,
+		@ILogService private readonly logService: ILogService,
 	) {
 		super();
 
@@ -181,6 +183,7 @@ export class ActiveAgentSessionService extends Disposable implements IActiveAgen
 				...agentSession,
 				repository,
 			};
+			this.logService.info(`[ActiveAgentSessionService] Active session changed: ${sessionResource.toString()}, repository: ${repository?.toString() ?? 'none'}`);
 			this._activeSession.set(activeSessionItem, undefined);
 		} else {
 			// For new/empty sessions not yet in the model, get repository from session option
@@ -191,6 +194,7 @@ export class ActiveAgentSessionService extends Disposable implements IActiveAgen
 				timing: viewModel.model.timing,
 				repository,
 			};
+			this.logService.info(`[ActiveAgentSessionService] Active session changed (new): ${sessionResource.toString()}, repository: ${repository?.toString() ?? 'none'}`);
 			this._activeSession.set(activeSessionItem, undefined);
 		}
 	}

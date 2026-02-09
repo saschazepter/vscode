@@ -8,7 +8,7 @@ import * as DOM from '../../../../../base/browser/dom.js';
 import { Disposable, DisposableStore } from '../../../../../base/common/lifecycle.js';
 import { Emitter, Event } from '../../../../../base/common/event.js';
 import { CancellationToken } from '../../../../../base/common/cancellation.js';
-import { basename, dirname } from '../../../../../base/common/resources.js';
+import { basename, dirname, isEqualOrParent } from '../../../../../base/common/resources.js';
 import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
@@ -39,10 +39,16 @@ import { ILabelService } from '../../../../../platform/label/common/label.js';
 import { parseAllHookFiles } from '../promptSyntax/hookUtils.js';
 import { OS } from '../../../../../base/common/platform.js';
 import { IRemoteAgentService } from '../../../../services/remote/common/remoteAgentService.js';
+import { autorun } from '../../../../../base/common/observable.js';
+import { IActiveAgentSessionService } from '../agentSessions/agentSessionsService.js';
+import { ILogService } from '../../../../../platform/log/common/log.js';
+import { getPromptFileDefaultLocations, getPromptFileType } from '../../common/promptSyntax/config/promptFileLocations.js';
 
 const $ = DOM.$;
 
 const ITEM_HEIGHT = 44;
+const GROUP_HEADER_HEIGHT = 32;
+const GROUP_HEADER_HEIGHT_WITH_SEPARATOR = 40;
 
 /**
  * Represents an AI customization item in the list.
@@ -60,15 +66,42 @@ export interface IAICustomizationListItem {
 }
 
 /**
+ * Represents a collapsible group header in the list.
+ */
+interface IGroupHeaderEntry {
+	readonly type: 'group-header';
+	readonly id: string;
+	readonly storage: PromptsStorage;
+	readonly label: string;
+	readonly icon: ThemeIcon;
+	readonly count: number;
+	readonly isFirst: boolean;
+	collapsed: boolean;
+}
+
+/**
+ * Represents an individual file item in the list.
+ */
+interface IFileItemEntry {
+	readonly type: 'file-item';
+	readonly item: IAICustomizationListItem;
+}
+
+type IListEntry = IGroupHeaderEntry | IFileItemEntry;
+
+/**
  * Delegate for the AI Customization list.
  */
-class AICustomizationListDelegate implements IListVirtualDelegate<IAICustomizationListItem> {
-	getHeight(): number {
+class AICustomizationListDelegate implements IListVirtualDelegate<IListEntry> {
+	getHeight(element: IListEntry): number {
+		if (element.type === 'group-header') {
+			return element.isFirst ? GROUP_HEADER_HEIGHT : GROUP_HEADER_HEIGHT_WITH_SEPARATOR;
+		}
 		return ITEM_HEIGHT;
 	}
 
-	getTemplateId(): string {
-		return 'aiCustomizationItem';
+	getTemplateId(element: IListEntry): string {
+		return element.type === 'group-header' ? 'groupHeader' : 'aiCustomizationItem';
 	}
 }
 
@@ -82,10 +115,61 @@ interface IAICustomizationItemTemplateData {
 	readonly elementDisposables: DisposableStore;
 }
 
+interface IGroupHeaderTemplateData {
+	readonly container: HTMLElement;
+	readonly chevron: HTMLElement;
+	readonly icon: HTMLElement;
+	readonly label: HTMLElement;
+	readonly count: HTMLElement;
+	readonly disposables: DisposableStore;
+}
+
+/**
+ * Renderer for collapsible group headers (Workspace, User, Extensions).
+ * Note: Click handling is done via the list's onDidOpen event, not here.
+ */
+class GroupHeaderRenderer implements IListRenderer<IGroupHeaderEntry, IGroupHeaderTemplateData> {
+	readonly templateId = 'groupHeader';
+
+	renderTemplate(container: HTMLElement): IGroupHeaderTemplateData {
+		const disposables = new DisposableStore();
+		container.classList.add('ai-customization-group-header');
+
+		const chevron = DOM.append(container, $('.group-chevron'));
+		const icon = DOM.append(container, $('.group-icon'));
+		const label = DOM.append(container, $('.group-label'));
+		const count = DOM.append(container, $('.group-count'));
+
+		return { container, chevron, icon, label, count, disposables };
+	}
+
+	renderElement(element: IGroupHeaderEntry, _index: number, templateData: IGroupHeaderTemplateData): void {
+		// Chevron
+		templateData.chevron.className = 'group-chevron';
+		templateData.chevron.classList.add(...ThemeIcon.asClassNameArray(element.collapsed ? Codicon.chevronRight : Codicon.chevronDown));
+
+		// Icon
+		templateData.icon.className = 'group-icon';
+		templateData.icon.classList.add(...ThemeIcon.asClassNameArray(element.icon));
+
+		// Label + count
+		templateData.label.textContent = element.label;
+		templateData.count.textContent = `${element.count}`;
+
+		// Collapsed state and separator for non-first groups
+		templateData.container.classList.toggle('collapsed', element.collapsed);
+		templateData.container.classList.toggle('has-previous-group', !element.isFirst);
+	}
+
+	disposeTemplate(templateData: IGroupHeaderTemplateData): void {
+		templateData.disposables.dispose();
+	}
+}
+
 /**
  * Renderer for AI customization list items.
  */
-class AICustomizationItemRenderer implements IListRenderer<IAICustomizationListItem, IAICustomizationItemTemplateData> {
+class AICustomizationItemRenderer implements IListRenderer<IFileItemEntry, IAICustomizationItemTemplateData> {
 	readonly templateId = 'aiCustomizationItem';
 
 	constructor(
@@ -119,8 +203,9 @@ class AICustomizationItemRenderer implements IListRenderer<IAICustomizationListI
 		};
 	}
 
-	renderElement(element: IAICustomizationListItem, index: number, templateData: IAICustomizationItemTemplateData): void {
+	renderElement(entry: IFileItemEntry, index: number, templateData: IAICustomizationItemTemplateData): void {
 		templateData.elementDisposables.clear();
+		const element = entry.item;
 
 		// Name with highlights
 		templateData.nameLabel.set(element.name, element.nameMatches);
@@ -216,7 +301,7 @@ export class AICustomizationListWidget extends Disposable {
 	private searchInput!: InputBox;
 	private addButton!: Button;
 	private listContainer!: HTMLElement;
-	private list!: WorkbenchList<IAICustomizationListItem>;
+	private list!: WorkbenchList<IListEntry>;
 	private emptyStateContainer!: HTMLElement;
 	private emptyStateIcon!: HTMLElement;
 	private emptyStateText!: HTMLElement;
@@ -224,8 +309,9 @@ export class AICustomizationListWidget extends Disposable {
 
 	private currentSection: AICustomizationManagementSection = AICustomizationManagementSection.Agents;
 	private allItems: IAICustomizationListItem[] = [];
-	private filteredItems: IAICustomizationListItem[] = [];
+	private displayEntries: IListEntry[] = [];
 	private searchQuery: string = '';
+	private readonly collapsedGroups = new Set<PromptsStorage>();
 
 	private readonly delayedFilter = new Delayer<void>(200);
 
@@ -251,12 +337,28 @@ export class AICustomizationListWidget extends Disposable {
 		@IPathService private readonly pathService: IPathService,
 		@ILabelService private readonly labelService: ILabelService,
 		@IRemoteAgentService private readonly remoteAgentService: IRemoteAgentService,
+		@IActiveAgentSessionService private readonly activeSessionService: IActiveAgentSessionService,
+		@ILogService private readonly logService: ILogService,
 	) {
 		super();
 		this.element = $('.ai-customization-list-widget');
 		this.create();
 
 		this._register(this.workspaceContextService.onDidChangeWorkspaceFolders(() => this.refresh()));
+
+		// React immediately when the active agent session changes.
+		// filterItems() is synchronous and re-groups/filters existing allItems instantly.
+		// Also kick off an async refresh to pick up items from the new repo.
+		this._register(autorun(reader => {
+			const activeSession = this.activeSessionService.activeSession.read(reader);
+			this.logService.info(`[AICustomizationListWidget] Active session changed, repository: ${activeSession?.repository?.toString() ?? 'none'}, allItems=${this.allItems.length}`);
+			// Immediate synchronous re-filter for instant UI update
+			if (this.allItems.length > 0) {
+				this.filterItems();
+			}
+			// Also do a full async reload to pick up new workspace items
+			void this.refresh();
+		}));
 	}
 
 	private create(): void {
@@ -307,35 +409,45 @@ export class AICustomizationListWidget extends Disposable {
 
 		// Create list
 		this.list = this._register(this.instantiationService.createInstance(
-			WorkbenchList<IAICustomizationListItem>,
+			WorkbenchList<IListEntry>,
 			'AICustomizationManagementList',
 			this.listContainer,
 			new AICustomizationListDelegate(),
-			[this.instantiationService.createInstance(AICustomizationItemRenderer)],
+			[
+				new GroupHeaderRenderer(),
+				this.instantiationService.createInstance(AICustomizationItemRenderer),
+			],
 			{
 				identityProvider: {
-					getId: (item: IAICustomizationListItem) => item.id,
+					getId: (entry: IListEntry) => entry.type === 'group-header' ? entry.id : entry.item.id,
 				},
 				accessibilityProvider: {
-					getAriaLabel: (item: IAICustomizationListItem) => {
-						return item.description
-							? localize('itemAriaLabel', "{0}, {1}", item.name, item.description)
-							: item.name;
+					getAriaLabel: (entry: IListEntry) => {
+						if (entry.type === 'group-header') {
+							return localize('groupAriaLabel', "{0}, {1} items, {2}", entry.label, entry.count, entry.collapsed ? localize('collapsed', "collapsed") : localize('expanded', "expanded"));
+						}
+						return entry.item.description
+							? localize('itemAriaLabel', "{0}, {1}", entry.item.name, entry.item.description)
+							: entry.item.name;
 					},
 					getWidgetAriaLabel: () => localize('listAriaLabel', "AI Customizations"),
 				},
 				keyboardNavigationLabelProvider: {
-					getKeyboardNavigationLabel: (item: IAICustomizationListItem) => item.name,
+					getKeyboardNavigationLabel: (entry: IListEntry) => entry.type === 'group-header' ? entry.label : entry.item.name,
 				},
 				multipleSelectionSupport: false,
 				openOnSingleClick: true,
 			}
 		));
 
-		// Handle item selection (single click opens item)
+		// Handle item selection (single click opens item, group header toggles)
 		this._register(this.list.onDidOpen(e => {
 			if (e.element) {
-				this._onDidSelectItem.fire(e.element);
+				if (e.element.type === 'group-header') {
+					this.toggleGroup(e.element);
+				} else {
+					this._onDidSelectItem.fire(e.element.item);
+				}
 			}
 		}));
 
@@ -350,12 +462,12 @@ export class AICustomizationListWidget extends Disposable {
 	/**
 	 * Handles context menu for list items.
 	 */
-	private onContextMenu(e: IListContextMenuEvent<IAICustomizationListItem>): void {
-		if (!e.element) {
+	private onContextMenu(e: IListContextMenuEvent<IListEntry>): void {
+		if (!e.element || e.element.type !== 'file-item') {
 			return;
 		}
 
-		const item = e.element;
+		const item = e.element.item;
 
 		// Create context for the menu actions
 		const context = {
@@ -469,6 +581,15 @@ export class AICustomizationListWidget extends Disposable {
 		const promptType = sectionToPromptType(this.currentSection);
 		const items: IAICustomizationListItem[] = [];
 
+		const folders = this.workspaceContextService.getWorkspace().folders;
+		const activeRepo = this.activeSessionService.getActiveSession()?.repository;
+		this.logService.info(`[AICustomizationListWidget] loadItems: section=${this.currentSection}, promptType=${promptType}, workspaceFolders=[${folders.map(f => f.uri.toString()).join(', ')}], activeRepo=${activeRepo?.toString() ?? 'none'}`);
+
+		// Scan the active session's repository for local customization files
+		// when there are no workspace folders (agent sessions workspace).
+		const hasLocalWorkspaceFolders = folders.length > 0;
+		const repoToScan = !hasLocalWorkspaceFolders ? activeRepo : undefined;
+
 		if (promptType === PromptsType.agent) {
 			// Use getCustomAgents which has parsed name/description from frontmatter
 			const agents = await this.promptsService.getCustomAgents(CancellationToken.None);
@@ -576,8 +697,23 @@ export class AICustomizationListWidget extends Disposable {
 			items.push(...extensionItems.map(mapToListItem));
 		}
 
+		// When there are no workspace folders but we have an active session repo,
+		// scan that repo directly for local customization files.
+		if (repoToScan) {
+			const localItems = await this.scanRepositoryForLocalItems(repoToScan, promptType);
+			// Only add items not already present (dedupe by URI)
+			const existingIds = new Set(items.map(i => i.id));
+			for (const item of localItems) {
+				if (!existingIds.has(item.id)) {
+					items.push(item);
+				}
+			}
+		}
+
 		// Sort items by name
 		items.sort((a, b) => a.name.localeCompare(b.name));
+
+		this.logService.info(`[AICustomizationListWidget] loadItems complete: ${items.length} items loaded [${items.map(i => `${i.name}(${i.storage}:${i.uri.toString()})`).join(', ')}]`);
 
 		this.allItems = items;
 		this.filterItems();
@@ -604,14 +740,77 @@ export class AICustomizationListWidget extends Disposable {
 	}
 
 	/**
-	 * Filters items based on the current search query.
+	 * Scans a repository folder directly for local customization files.
+	 * Used when workspace folders are empty (agent sessions workspace) but
+	 * the active session has a known repository.
+	 */
+	private async scanRepositoryForLocalItems(repoUri: URI, promptType: PromptsType): Promise<IAICustomizationListItem[]> {
+		const items: IAICustomizationListItem[] = [];
+		const defaultLocations = getPromptFileDefaultLocations(promptType);
+		const localLocations = defaultLocations.filter(loc => loc.storage === PromptsStorage.local);
+
+		for (const location of localLocations) {
+			const folderUri = URI.joinPath(repoUri, location.path);
+			try {
+				const stat = await this.fileService.resolve(folderUri);
+				if (stat.isDirectory && stat.children) {
+					if (promptType === PromptsType.skill) {
+						// Skills: look for SKILL.md in subdirectories
+						for (const child of stat.children) {
+							if (child.isDirectory && child.name) {
+								const skillFileUri = URI.joinPath(folderUri, child.name, 'SKILL.md');
+								try {
+									await this.fileService.resolve(skillFileUri);
+									items.push({
+										id: skillFileUri.toString(),
+										uri: skillFileUri,
+										name: child.name,
+										filename: 'SKILL.md',
+										storage: PromptsStorage.local,
+										promptType,
+									});
+								} catch {
+									// No SKILL.md in this subfolder
+								}
+							}
+						}
+					} else {
+						// For other types, enumerate files and filter by type
+						for (const child of stat.children) {
+							if (!child.isDirectory && getPromptFileType(child.resource) === promptType) {
+								const filename = basename(child.resource);
+								items.push({
+									id: child.resource.toString(),
+									uri: child.resource,
+									name: this.getFriendlyName(filename),
+									filename,
+									storage: PromptsStorage.local,
+									promptType,
+								});
+							}
+						}
+					}
+				}
+			} catch {
+				// Folder doesn't exist - that's fine
+			}
+		}
+
+		this.logService.info(`[AICustomizationListWidget] scanRepositoryForLocalItems: repo=${repoUri.toString()}, type=${promptType}, found=${items.length} items`);
+		return items;
+	}
+
+	/**
+	 * Filters items based on the current search query and builds grouped display entries.
 	 */
 	private filterItems(): void {
+		let matchedItems: IAICustomizationListItem[];
+
 		if (!this.searchQuery.trim()) {
-			this.filteredItems = this.allItems.map(item => ({ ...item, nameMatches: undefined, descriptionMatches: undefined }));
+			matchedItems = this.allItems.map(item => ({ ...item, nameMatches: undefined, descriptionMatches: undefined }));
 		} else {
 			const query = this.searchQuery.toLowerCase();
-			this.filteredItems = [];
+			matchedItems = [];
 
 			for (const item of this.allItems) {
 				const nameMatches = matchesFuzzy(query, item.name, true);
@@ -619,7 +818,7 @@ export class AICustomizationListWidget extends Disposable {
 				const filenameMatches = matchesFuzzy(query, item.filename, true);
 
 				if (nameMatches || descriptionMatches || filenameMatches) {
-					this.filteredItems.push({
+					matchedItems.push({
 						...item,
 						nameMatches: nameMatches || undefined,
 						descriptionMatches: descriptionMatches || undefined,
@@ -628,12 +827,93 @@ export class AICustomizationListWidget extends Disposable {
 			}
 		}
 
-		this.list.splice(0, this.list.length, this.filteredItems);
+		// Filter local items by active session's repository when available
+		const activeRepo = this.activeSessionService.getActiveSession()?.repository;
+		const totalBeforeFilter = matchedItems.length;
+		const localBeforeFilter = matchedItems.filter(i => i.storage === PromptsStorage.local).length;
+		if (activeRepo) {
+			matchedItems = matchedItems.filter(item => {
+				if (item.storage !== PromptsStorage.local) {
+					return true;
+				}
+				const keep = isEqualOrParent(item.uri, activeRepo);
+				if (!keep) {
+					this.logService.info(`[AICustomizationListWidget] Filtering out local item: ${item.uri.toString()} (not under ${activeRepo.toString()})`);
+				}
+				return keep;
+			});
+		}
+		const localAfterFilter = matchedItems.filter(i => i.storage === PromptsStorage.local).length;
+		this.logService.info(`[AICustomizationListWidget] filterItems: allItems=${this.allItems.length}, matched=${totalBeforeFilter}, localBefore=${localBeforeFilter}, localAfter=${localAfterFilter}, activeRepo=${activeRepo?.toString() ?? 'none'}`);
+
+		// Group items by storage
+		const groups: { storage: PromptsStorage; label: string; icon: ThemeIcon; items: IAICustomizationListItem[] }[] = [
+			{ storage: PromptsStorage.local, label: localize('workspaceGroup', "Workspace"), icon: workspaceIcon, items: [] },
+			{ storage: PromptsStorage.user, label: localize('userGroup', "User"), icon: userIcon, items: [] },
+			{ storage: PromptsStorage.extension, label: localize('extensionGroup', "Extensions"), icon: extensionIcon, items: [] },
+		];
+
+		for (const item of matchedItems) {
+			const group = groups.find(g => g.storage === item.storage);
+			if (group) {
+				group.items.push(item);
+			}
+		}
+
+		// Sort items within each group
+		for (const group of groups) {
+			group.items.sort((a, b) => a.name.localeCompare(b.name));
+		}
+
+		// Build display entries: group header + items (hidden if collapsed)
+		this.displayEntries = [];
+		let isFirstGroup = true;
+		for (const group of groups) {
+			if (group.items.length === 0) {
+				continue;
+			}
+
+			const collapsed = this.collapsedGroups.has(group.storage);
+
+			this.displayEntries.push({
+				type: 'group-header',
+				id: `group-${group.storage}`,
+				storage: group.storage,
+				label: group.label,
+				icon: group.icon,
+				count: group.items.length,
+				isFirst: isFirstGroup,
+				collapsed,
+			});
+			isFirstGroup = false;
+
+			if (!collapsed) {
+				for (const item of group.items) {
+					this.displayEntries.push({ type: 'file-item', item });
+				}
+			}
+		}
+
+		this.list.splice(0, this.list.length, this.displayEntries);
+		this.logService.info(`[AICustomizationListWidget] filterItems complete: ${this.displayEntries.length} display entries spliced into list`);
 		this.updateEmptyState();
 	}
 
+	/**
+	 * Toggles the collapsed state of a group.
+	 */
+	private toggleGroup(entry: IGroupHeaderEntry): void {
+		if (this.collapsedGroups.has(entry.storage)) {
+			this.collapsedGroups.delete(entry.storage);
+		} else {
+			this.collapsedGroups.add(entry.storage);
+		}
+		this.filterItems();
+	}
+
 	private updateEmptyState(): void {
-		if (this.filteredItems.length === 0) {
+		const hasItems = this.displayEntries.length > 0;
+		if (!hasItems) {
 			this.emptyStateContainer.style.display = 'flex';
 			this.listContainer.style.display = 'none';
 
@@ -735,7 +1015,7 @@ export class AICustomizationListWidget extends Disposable {
 	 */
 	focusList(): void {
 		this.list.domFocus();
-		if (this.filteredItems.length > 0) {
+		if (this.displayEntries.length > 0) {
 			this.list.setFocus([0]);
 		}
 	}

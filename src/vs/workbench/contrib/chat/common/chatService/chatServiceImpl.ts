@@ -436,10 +436,8 @@ export class ChatService extends Disposable implements IChatService {
 		if (folders.length === 0) {
 			return true;
 		}
-		if (folders.length === 1) {
-			return this.uriIdentityService.extUri.isEqual(folders[0].uri, URI.parse(workingFolder));
-		}
-		return false;
+		const workingFolderUri = URI.parse(workingFolder);
+		return folders.some(folder => this.uriIdentityService.extUri.isEqual(folder.uri, workingFolderUri));
 	}
 
 	private shouldBeInHistory(entry: ChatModel): boolean {

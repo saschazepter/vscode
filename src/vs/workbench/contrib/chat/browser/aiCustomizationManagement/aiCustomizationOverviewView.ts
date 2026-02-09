@@ -25,6 +25,10 @@ import { AICustomizationManagementSection } from './aiCustomizationManagement.js
 import { AICustomizationManagementEditorInput } from './aiCustomizationManagementEditorInput.js';
 import { AICustomizationManagementEditor } from './aiCustomizationManagementEditor.js';
 import { agentIcon, instructionsIcon, promptIcon, skillIcon } from '../aiCustomizationTreeView/aiCustomizationTreeViewIcons.js';
+import { IWorkspaceContextService } from '../../../../../platform/workspace/common/workspace.js';
+import { autorun } from '../../../../../base/common/observable.js';
+import { IActiveAgentSessionService } from '../agentSessions/agentSessionsService.js';
+import { isEqualOrParent } from '../../../../../base/common/resources.js';
 
 const $ = DOM.$;
 
@@ -62,6 +66,8 @@ export class AICustomizationOverviewView extends ViewPane {
 		@IHoverService hoverService: IHoverService,
 		@IEditorGroupsService private readonly editorGroupsService: IEditorGroupsService,
 		@IPromptsService private readonly promptsService: IPromptsService,
+		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
+		@IActiveAgentSessionService private readonly activeSessionService: IActiveAgentSessionService,
 	) {
 		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
 
@@ -76,6 +82,15 @@ export class AICustomizationOverviewView extends ViewPane {
 		// Listen to changes
 		this._register(this.promptsService.onDidChangeCustomAgents(() => this.loadCounts()));
 		this._register(this.promptsService.onDidChangeSlashCommands(() => this.loadCounts()));
+
+		// Listen to workspace folder changes to update counts
+		this._register(this.workspaceContextService.onDidChangeWorkspaceFolders(() => this.loadCounts()));
+
+		// Refresh when active agent session changes (repository scope may change)
+		this._register(autorun(reader => {
+			this.activeSessionService.activeSession.read(reader);
+			void this.loadCounts();
+		}));
 	}
 
 	protected override renderBody(container: HTMLElement): void {
@@ -143,17 +158,26 @@ export class AICustomizationOverviewView extends ViewPane {
 		];
 
 		await Promise.all(sectionPromptTypes.map(async ({ section, type }) => {
+			const activeRepo = this.activeSessionService.getActiveSession()?.repository;
 			let count = 0;
 			if (type === PromptsType.skill) {
 				const skills = await this.promptsService.findAgentSkills(CancellationToken.None);
-				count = skills?.length || 0;
+				if (skills) {
+					const filtered = activeRepo
+						? skills.filter(s => s.storage !== PromptsStorage.local || isEqualOrParent(s.uri, activeRepo))
+						: skills;
+					count = filtered.length;
+				}
 			} else {
 				const [workspaceItems, userItems, extensionItems] = await Promise.all([
 					this.promptsService.listPromptFilesForStorage(type, PromptsStorage.local, CancellationToken.None),
 					this.promptsService.listPromptFilesForStorage(type, PromptsStorage.user, CancellationToken.None),
 					this.promptsService.listPromptFilesForStorage(type, PromptsStorage.extension, CancellationToken.None),
 				]);
-				count = workspaceItems.length + userItems.length + extensionItems.length;
+				const filteredWorkspace = activeRepo
+					? workspaceItems.filter(item => isEqualOrParent(item.uri, activeRepo))
+					: workspaceItems;
+				count = filteredWorkspace.length + userItems.length + extensionItems.length;
 			}
 
 			const sectionData = this.sections.find(s => s.id === section);
