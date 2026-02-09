@@ -87,6 +87,11 @@ export const AGENTS_SOURCE_FOLDER = '.github/agents';
 export const CLAUDE_AGENTS_SOURCE_FOLDER = '.claude/agents';
 
 /**
+ * Claude rules folder.
+ */
+export const CLAUDE_RULES_SOURCE_FOLDER = '.claude/rules';
+
+/**
  * Tracks where prompt files originate from.
  */
 export enum PromptFileSource {
@@ -155,6 +160,8 @@ export const DEFAULT_SKILL_SOURCE_FOLDERS: readonly IPromptSourceFolder[] = [
  */
 export const DEFAULT_INSTRUCTIONS_SOURCE_FOLDERS: readonly IPromptSourceFolder[] = [
 	{ path: INSTRUCTIONS_DEFAULT_SOURCE_FOLDER, source: PromptFileSource.GitHubWorkspace, storage: PromptsStorage.local },
+	{ path: CLAUDE_RULES_SOURCE_FOLDER, source: PromptFileSource.ClaudeWorkspace, storage: PromptsStorage.local },
+	{ path: '~/' + CLAUDE_RULES_SOURCE_FOLDER, source: PromptFileSource.ClaudePersonal, storage: PromptsStorage.user },
 ];
 
 /**
@@ -178,6 +185,15 @@ export const DEFAULT_AGENT_SOURCE_FOLDERS: readonly IPromptSourceFolder[] = [
 function isInAgentsFolder(fileUri: URI): boolean {
 	const dir = dirname(fileUri.path);
 	return dir.endsWith('/' + AGENTS_SOURCE_FOLDER) || dir.endsWith('/' + CLAUDE_AGENTS_SOURCE_FOLDER);
+}
+
+/**
+ * Helper function to check if a file is inside the .claude/rules/ folder (including subfolders).
+ * Claude rules files (.md) in this folder are treated as instruction files.
+ */
+export function isInClaudeRulesFolder(fileUri: URI): boolean {
+	const path = fileUri.path;
+	return path.includes('/' + CLAUDE_RULES_SOURCE_FOLDER + '/');
 }
 
 /**
@@ -206,6 +222,12 @@ export function getPromptFileType(fileUri: URI): PromptsType | undefined {
 	// Exclude README.md to allow documentation files
 	if (filename.endsWith('.md') && filename !== 'README.md' && isInAgentsFolder(fileUri)) {
 		return PromptsType.agent;
+	}
+
+	// Check if it's a .md file inside the .claude/rules/ folder (including subfolders)
+	// These are treated as instruction files
+	if (filename.endsWith('.md') && filename !== 'README.md' && isInClaudeRulesFolder(fileUri)) {
+		return PromptsType.instructions;
 	}
 
 	return undefined;
@@ -280,6 +302,11 @@ export function getCleanPromptName(fileUri: URI): string {
 	// For .md files in .github/agents/ folder, treat them as agent files
 	// Exclude README.md to allow documentation files
 	if (fileName.endsWith('.md') && fileName !== 'README.md' && isInAgentsFolder(fileUri)) {
+		return basename(fileUri.path, '.md');
+	}
+
+	// For .md files in .claude/rules/ folder, treat them as instruction files
+	if (fileName.endsWith('.md') && fileName !== 'README.md' && isInClaudeRulesFolder(fileUri)) {
 		return basename(fileUri.path, '.md');
 	}
 
