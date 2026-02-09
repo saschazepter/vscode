@@ -5,10 +5,21 @@
 
 import { Event } from '../../../base/common/event.js';
 import { ResourceMap } from '../../../base/common/map.js';
-import { URI } from '../../../base/common/uri.js';
+import { URI, UriComponents } from '../../../base/common/uri.js';
 import { IServerChannel } from '../../../base/parts/ipc/common/ipc.js';
 import { ILogger, ILoggerOptions, isLogLevel, log, LogLevel } from '../common/log.js';
 import { ILoggerMainService } from './loggerService.js';
+
+function reviveUri(data: UriComponents | URI | undefined | null, context: string): URI {
+	if (data && typeof data !== 'object') {
+		throw new Error(`[LoggerChannel] Invalid URI data for '${context}': type=${typeof data}, value=${String(data).substring(0, 100)}`);
+	}
+	const result = URI.revive(data);
+	if (!result) {
+		throw new Error(`[LoggerChannel] Missing URI data for '${context}'`);
+	}
+	return result;
+}
 
 export class LoggerChannel implements IServerChannel {
 
@@ -27,13 +38,13 @@ export class LoggerChannel implements IServerChannel {
 
 	async call(_: unknown, command: string, arg?: any): Promise<any> {
 		switch (command) {
-			case 'createLogger': this.createLogger(URI.revive(arg[0]), arg[1], arg[2]); return;
-			case 'log': return this.log(URI.revive(arg[0]), arg[1]);
+			case 'createLogger': this.createLogger(reviveUri(arg[0], command), arg[1], arg[2]); return;
+			case 'log': return this.log(reviveUri(arg[0], command), arg[1]);
 			case 'consoleLog': return this.consoleLog(arg[0], arg[1]);
-			case 'setLogLevel': return isLogLevel(arg[0]) ? this.loggerService.setLogLevel(arg[0]) : this.loggerService.setLogLevel(URI.revive(arg[0]), arg[1]);
-			case 'setVisibility': return this.loggerService.setVisibility(URI.revive(arg[0]), arg[1]);
-			case 'registerLogger': return this.loggerService.registerLogger({ ...arg[0], resource: URI.revive(arg[0].resource) }, arg[1]);
-			case 'deregisterLogger': return this.loggerService.deregisterLogger(URI.revive(arg[0]));
+			case 'setLogLevel': return isLogLevel(arg[0]) ? this.loggerService.setLogLevel(arg[0]) : this.loggerService.setLogLevel(reviveUri(arg[0], command), arg[1]);
+			case 'setVisibility': return this.loggerService.setVisibility(reviveUri(arg[0], command), arg[1]);
+			case 'registerLogger': return this.loggerService.registerLogger({ ...arg[0], resource: reviveUri(arg[0].resource, command) }, arg[1]);
+			case 'deregisterLogger': return this.loggerService.deregisterLogger(reviveUri(arg[0], command));
 		}
 
 		throw new Error(`Call not found: ${command}`);

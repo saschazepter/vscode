@@ -22,7 +22,7 @@ function _validateUri(ret: URI, _strict?: boolean): void {
 	// scheme, https://tools.ietf.org/html/rfc3986#section-3.1
 	// ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )
 	if (ret.scheme && !_schemePattern.test(ret.scheme)) {
-		throw new Error('[UriError]: Scheme contains illegal characters.');
+		throw new Error(`[UriError]: Scheme contains illegal characters. scheme:"${ret.scheme.substring(0, 50)}" (len:${ret.scheme.length})`);
 	}
 
 	// path, http://tools.ietf.org/html/rfc3986#section-3.3
