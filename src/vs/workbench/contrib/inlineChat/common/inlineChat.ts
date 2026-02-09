@@ -19,7 +19,7 @@ export const enum InlineChatConfigKeys {
 	/** @deprecated do not read on client */
 	EnableV2 = 'inlineChat.enableV2',
 	notebookAgent = 'inlineChat.notebookAgent',
-	PersistModelChoice = 'inlineChat.persistModelChoice',
+	DefaultModel = 'inlineChat.defaultModel',
 	Affordance = 'inlineChat.affordance',
 	RenderMode = 'inlineChat.renderMode',
 }
@@ -53,14 +53,6 @@ Registry.as<IConfigurationRegistry>(Extensions.Configuration).registerConfigurat
 			tags: ['experimental'],
 			experiment: {
 				mode: 'startup'
-			}
-		},
-		[InlineChatConfigKeys.PersistModelChoice]: {
-			description: localize('persistModelChoice', "Whether to persist the selected language model choice across inline chat sessions. The default is not to persist and to use the vendor's default model for inline chat because that yields the best experience."),
-			default: false,
-			type: 'boolean',
-			experiment: {
-				mode: 'auto'
 			}
 		},
 		[InlineChatConfigKeys.Affordance]: {
@@ -118,7 +110,6 @@ export const CTX_INLINE_CHAT_CHANGE_HAS_DIFF = new RawContextKey<boolean>('inlin
 export const CTX_INLINE_CHAT_CHANGE_SHOWS_DIFF = new RawContextKey<boolean>('inlineChatChangeShowsDiff', false, localize('inlineChatChangeShowsDiff', "Whether the current change showing a diff"));
 export const CTX_INLINE_CHAT_REQUEST_IN_PROGRESS = new RawContextKey<boolean>('inlineChatRequestInProgress', false, localize('inlineChatRequestInProgress', "Whether an inline chat request is currently in progress"));
 export const CTX_INLINE_CHAT_RESPONSE_TYPE = new RawContextKey<InlineChatResponseType>('inlineChatResponseType', InlineChatResponseType.None, localize('inlineChatResponseTypes', "What type was the responses have been receieved, nothing yet, just messages, or messaged and local edits"));
-export const CTX_INLINE_CHAT_GUTTER_VISIBLE = new RawContextKey<boolean>('inlineChatGutterVisible', false, localize('inlineChatGutterVisible', "Whether the inline chat gutter indicator is visible"));
 
 export const CTX_INLINE_CHAT_V1_ENABLED = ContextKeyExpr.or(
 	ContextKeyExpr.and(NOTEBOOK_IS_ACTIVE_EDITOR, CTX_INLINE_CHAT_HAS_NOTEBOOK_INLINE)
@@ -128,6 +119,8 @@ export const CTX_INLINE_CHAT_V2_ENABLED = ContextKeyExpr.or(
 	CTX_INLINE_CHAT_HAS_AGENT2,
 	ContextKeyExpr.and(NOTEBOOK_IS_ACTIVE_EDITOR, CTX_INLINE_CHAT_HAS_NOTEBOOK_AGENT)
 );
+
+export const CTX_HOVER_MODE = ContextKeyExpr.equals('config.inlineChat.renderMode', 'hover');
 
 // --- (selected) action identifier
 

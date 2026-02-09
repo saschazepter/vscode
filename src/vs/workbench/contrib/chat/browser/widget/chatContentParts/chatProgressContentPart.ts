@@ -36,7 +36,7 @@ export class ChatProgressContentPart extends Disposable implements IChatContentP
 	private currentContent: IMarkdownString;
 
 	constructor(
-		progress: IChatProgressMessage | IChatTask | IChatTaskSerialized,
+		progress: IChatProgressMessage | IChatTask | IChatTaskSerialized | { content: IMarkdownString },
 		private readonly chatContentMarkdownRenderer: IMarkdownRenderer,
 		context: IChatContentPartRenderContext,
 		forceShowSpinner: boolean | undefined,
@@ -165,6 +165,7 @@ export class ChatWorkingProgressContentPart extends ChatProgressContentPart impl
 			content: new MarkdownString().appendText(localize('workingMessage', "Working..."))
 		};
 		super(progressMessage, chatContentMarkdownRenderer, context, undefined, undefined, undefined, undefined, instantiationService, chatMarkdownAnchorService, configurationService);
+		this.domNode.classList.add('working-progress');
 		this._register(languageModelToolsService.onDidPrepareToolCallBecomeUnresponsive(e => {
 			if (isEqual(context.element.sessionResource, e.sessionResource)) {
 				this.updateMessage(new MarkdownString(localize('toolCallUnresponsive', "Waiting for tool '{0}' to respond...", e.toolData.displayName)));

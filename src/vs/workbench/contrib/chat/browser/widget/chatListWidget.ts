@@ -30,7 +30,7 @@ import { IChatRequestModeInfo } from '../../common/model/chatModel.js';
 import { IChatRequestViewModel, IChatResponseViewModel, IChatViewModel, isRequestVM, isResponseVM } from '../../common/model/chatViewModel.js';
 import { CodeBlockModelCollection } from '../../common/widget/codeBlockModelCollection.js';
 import { ChatAccessibilityProvider } from '../accessibility/chatAccessibilityProvider.js';
-import { ChatTreeItem, IChatCodeBlockInfo, IChatFileTreeInfo, IChatListItemRendererOptions } from '../chat.js';
+import { ChatTreeItem, IChatAccessibilityService, IChatCodeBlockInfo, IChatFileTreeInfo, IChatListItemRendererOptions } from '../chat.js';
 import { CodeBlockPart } from './chatContentParts/codeBlockPart.js';
 import { ChatListDelegate, ChatListItemRenderer, IChatListItemTemplate, IChatRendererDelegate } from './chatListRenderer.js';
 import { ChatEditorOptions } from './chatOptions.js';
@@ -257,6 +257,7 @@ export class ChatListWidget extends Disposable {
 		@IContextMenuService private readonly contextMenuService: IContextMenuService,
 		@ILogService private readonly logService: ILogService,
 		@IConfigurationService private readonly configurationService: IConfigurationService,
+		@IChatAccessibilityService private readonly chatAccessibilityService: IChatAccessibilityService,
 	) {
 		super();
 
@@ -343,6 +344,7 @@ export class ChatListWidget extends Disposable {
 					userSelectedModelId: this._getCurrentLanguageModelId?.(),
 					modeInfo: this._getCurrentModeInfo?.(),
 				};
+				this.chatAccessibilityService.acceptRequest(e.sessionResource);
 				this.chatService.resendRequest(request, sendOptions).catch(e => this.logService.error('FAILED to rerun request', e));
 			}
 		}));
@@ -529,14 +531,17 @@ export class ChatListWidget extends Disposable {
 			this._tree.setChildren(null, treeItems, {
 				diffIdentityProvider: {
 					getId: (element) => {
-						return element.dataId +
+						// Pending types only have 'id', request/response have 'dataId'
+						const baseId = (isRequestVM(element) || isResponseVM(element)) ? element.dataId : element.id;
+						const disablement = (isRequestVM(element) || isResponseVM(element)) ? element.shouldBeRemovedOnSend : undefined;
+						return baseId +
 							// If a response is in the process of progressive rendering, we need to ensure that it will
 							// be re-rendered so progressive rendering is restarted, even if the model wasn't updated.
 							`${isResponseVM(element) && element.renderData ? `_${this._visibleChangeCount}` : ''}` +
 							// Re-render once content references are loaded
 							(isResponseVM(element) ? `_${element.contentReferences.length}` : '') +
 							// Re-render if element becomes hidden due to undo/redo
-							`_${element.shouldBeRemovedOnSend ? `${element.shouldBeRemovedOnSend.afterUndoStop || '1'}` : '0'}` +
+							`_${disablement ? `${disablement.afterUndoStop || '1'}` : '0'}` +
 							// Re-render if we have an element currently being edited
 							`_${editing ? '1' : '0'}` +
 							// Re-render if we have an element currently being checkpointed
@@ -810,7 +815,7 @@ export class ChatListWidget extends Disposable {
 			this._container.style.removeProperty('--chat-current-response-min-height');
 		} else {
 			const secondToLastItem = this._viewModel?.getItems().at(-2);
-			const secondToLastItemHeight = Math.min(secondToLastItem?.currentRenderedHeight ?? 150, 150);
+			const secondToLastItemHeight = Math.min((isRequestVM(secondToLastItem) || isResponseVM(secondToLastItem)) ? secondToLastItem.currentRenderedHeight ?? 150 : 150, 150);
 			const lastItemMinHeight = Math.max(contentHeight - (secondToLastItemHeight + 10), 0);
 			this._container.style.setProperty('--chat-current-response-min-height', lastItemMinHeight + 'px');
 			if (lastItemMinHeight !== this._previousLastItemMinHeight) {
