@@ -228,7 +228,7 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 	private initialized = false;
 	private readonly initPromise: Promise<void>;
 	private readonly updateThrottler = this._register(new ThrottledDelayer(100));
-	private readonly accountDataPollScheduler = this._register(new RunOnceScheduler(() => this.refetchPolicyData(), ACCOUNT_DATA_POLL_INTERVAL_MS));
+	private readonly accountDataPollScheduler = this._register(new RunOnceScheduler(() => this.refetchDefaultAccount(), ACCOUNT_DATA_POLL_INTERVAL_MS));
 
 	constructor(
 		private readonly defaultAccountConfig: IDefaultAccountConfig,
@@ -352,23 +352,23 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 		return this.defaultAccount;
 	}
 
-	private async refetchPolicyData(): Promise<void> {
+	private async refetchDefaultAccount(): Promise<void> {
 		if (!this.hostService.hasFocus) {
 			this.scheduleAccountDataPoll();
-			this.logService.debug('[DefaultAccount] Skipping refetching policy data because window is not focused');
+			this.logService.debug('[DefaultAccount] Skipping refetching default account because window is not focused');
 			return;
 		}
-		this.logService.debug('[DefaultAccount] Refetching policy data for current default account');
+		this.logService.debug('[DefaultAccount] Refetching default account');
 		await this.updateDefaultAccount(true);
 	}
 
-	private async updateDefaultAccount(donotUseCache: boolean = false): Promise<void> {
-		await this.updateThrottler.trigger(() => this.doUpdateDefaultAccount(donotUseCache));
+	private async updateDefaultAccount(donotUseLastFetchedData: boolean = false): Promise<void> {
+		await this.updateThrottler.trigger(() => this.doUpdateDefaultAccount(donotUseLastFetchedData));
 	}
 
-	private async doUpdateDefaultAccount(donotUseCache: boolean): Promise<void> {
+	private async doUpdateDefaultAccount(donotUseLastFetchedData: boolean): Promise<void> {
 		try {
-			const defaultAccount = await this.fetchDefaultAccount(donotUseCache);
+			const defaultAccount = await this.fetchDefaultAccount(donotUseLastFetchedData);
 			this.setDefaultAccount(defaultAccount);
 			this.scheduleAccountDataPoll();
 		} catch (error) {
@@ -376,7 +376,7 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 		}
 	}
 
-	private async fetchDefaultAccount(donotUseCache: boolean): Promise<IDefaultAccountData | null> {
+	private async fetchDefaultAccount(donotUseLastFetchedData: boolean): Promise<IDefaultAccountData | null> {
 		const defaultAccountProvider = this.getDefaultAccountAuthenticationProvider();
 		this.logService.debug('[DefaultAccount] Default account provider ID:', defaultAccountProvider.id);
 
@@ -386,7 +386,7 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 			return null;
 		}
 
-		return await this.getDefaultAccountForAuthenticationProvider(defaultAccountProvider, donotUseCache);
+		return await this.getDefaultAccountForAuthenticationProvider(defaultAccountProvider, donotUseLastFetchedData);
 	}
 
 	private setDefaultAccount(account: IDefaultAccountData | null): void {
@@ -449,7 +449,7 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 		return result;
 	}
 
-	private async getDefaultAccountForAuthenticationProvider(authenticationProvider: IDefaultAccountAuthenticationProvider, donotUseCache: boolean): Promise<IDefaultAccountData | null> {
+	private async getDefaultAccountForAuthenticationProvider(authenticationProvider: IDefaultAccountAuthenticationProvider, donotUseLastFetchedData: boolean): Promise<IDefaultAccountData | null> {
 		try {
 			this.logService.debug('[DefaultAccount] Getting Default Account from authenticated sessions for provider:', authenticationProvider.id);
 			const sessions = await this.findMatchingProviderSession(authenticationProvider.id, this.defaultAccountConfig.authenticationProvider.scopes);
@@ -459,17 +459,17 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 				return null;
 			}
 
-			return this.getDefaultAccountFromAuthenticatedSessions(authenticationProvider, sessions, donotUseCache);
+			return this.getDefaultAccountFromAuthenticatedSessions(authenticationProvider, sessions, donotUseLastFetchedData);
 		} catch (error) {
 			this.logService.error('[DefaultAccount] Failed to get default account for provider:', authenticationProvider.id, getErrorMessage(error));
 			return null;
 		}
 	}
 
-	private async getDefaultAccountFromAuthenticatedSessions(authenticationProvider: IDefaultAccountAuthenticationProvider, sessions: AuthenticationSession[], donotUseCache: boolean): Promise<IDefaultAccountData | null> {
+	private async getDefaultAccountFromAuthenticatedSessions(authenticationProvider: IDefaultAccountAuthenticationProvider, sessions: AuthenticationSession[], donotUseLastFetchedData: boolean): Promise<IDefaultAccountData | null> {
 		try {
 			const accountId = sessions[0].account.id;
-			const accountPolicyData = !donotUseCache && this._policyData?.accountId === accountId ? this._policyData : undefined;
+			const accountPolicyData = !donotUseLastFetchedData && this._policyData?.accountId === accountId ? this._policyData : undefined;
 
 			const [entitlementsData, tokenEntitlementsData] = await Promise.all([
 				this.getEntitlements(sessions),
