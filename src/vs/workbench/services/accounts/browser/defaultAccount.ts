@@ -18,7 +18,7 @@ import { IHostService } from '../../host/browser/host.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { getErrorMessage } from '../../../../base/common/errors.js';
 import { IDefaultAccount, IDefaultAccountAuthenticationProvider, IEntitlementsData, IPolicyData } from '../../../../base/common/defaultAccount.js';
-import { isString, Mutable } from '../../../../base/common/types.js';
+import { isString, isUndefined, Mutable } from '../../../../base/common/types.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
 import { IWorkbenchEnvironmentService } from '../../environment/common/environmentService.js';
 import { isWeb } from '../../../../base/common/platform.js';
@@ -69,7 +69,7 @@ interface ITokenEntitlementsResponse {
 interface IMcpRegistryProvider {
 	readonly url: string;
 	readonly registry_access: 'allow_all' | 'registry_only';
-	readonly owner: {
+	readonly owner?: {
 		readonly login: string;
 		readonly id: number;
 		readonly type: string;
@@ -189,6 +189,8 @@ export class DefaultAccountService extends Disposable implements IDefaultAccount
 interface IAccountPolicyData {
 	readonly accountId: string;
 	readonly policyData: IPolicyData;
+	readonly isTokenEntitlementsDataFetched: boolean;
+	readonly isMcpRegistryDataFetched: boolean;
 }
 
 interface IDefaultAccountData {
@@ -259,7 +261,7 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 				const { accountId, policyData } = JSON.parse(cached);
 				if (accountId && policyData) {
 					this.logService.debug('[DefaultAccount] Initializing with cached policy data');
-					return { accountId, policyData };
+					return { accountId, policyData, isTokenEntitlementsDataFetched: false, isMcpRegistryDataFetched: false };
 				}
 			} catch (error) {
 				this.logService.error('[DefaultAccount] Failed to parse cached policy data', getErrorMessage(error));
@@ -330,11 +332,11 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 		}));
 
 		this._register(this.hostService.onDidChangeFocus(focused => {
-			if (focused && this._defaultAccount) {
-				// Update default account when window gets focused
+			// Refresh default account when window gets focused and we have cached policy data, which likely means we haven't successfully fetched data since the last time the window was focused (e.g. due to network issues), so we should try again to fetch the data.
+			if (focused && this._defaultAccount && this._policyData && (!this._policyData.isMcpRegistryDataFetched || !this._policyData.isTokenEntitlementsDataFetched)) {
 				this.accountDataPollScheduler.cancel();
 				this.logService.debug('[DefaultAccount] Window focused, updating default account');
-				this.updateDefaultAccount();
+				this.refresh();
 			}
 		}));
 	}
@@ -457,19 +459,25 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 	private async getDefaultAccountFromAuthenticatedSessions(authenticationProvider: IDefaultAccountAuthenticationProvider, sessions: AuthenticationSession[]): Promise<IDefaultAccountData | null> {
 		try {
 			const accountId = sessions[0].account.id;
+			const accountPolicyData = this._policyData?.accountId === accountId ? this._policyData : undefined;
+
 			const [entitlementsData, tokenEntitlementsData] = await Promise.all([
 				this.getEntitlements(sessions),
-				this.getTokenEntitlements(sessions),
+				this.getTokenEntitlements(sessions, accountPolicyData),
 			]);
 
-			let policyData: Mutable<IPolicyData> | undefined = this._policyData?.accountId === accountId ? { ...this._policyData.policyData } : undefined;
+			let isTokenEntitlementsDataFetched = false;
+			let isMcpRegistryDataFetched = false;
+			let policyData: Mutable<IPolicyData> | undefined = accountPolicyData?.policyData ? { ...accountPolicyData.policyData } : undefined;
 			if (tokenEntitlementsData) {
+				isTokenEntitlementsDataFetched = true;
 				policyData = policyData ?? {};
 				policyData.chat_agent_enabled = tokenEntitlementsData.chat_agent_enabled;
 				policyData.chat_preview_features_enabled = tokenEntitlementsData.chat_preview_features_enabled;
 				policyData.mcp = tokenEntitlementsData.mcp;
 				if (policyData.mcp) {
-					const mcpRegistryProvider = await this.getMcpRegistryProvider(sessions);
+					const mcpRegistryProvider = await this.getMcpRegistryProvider(sessions, accountPolicyData);
+					isMcpRegistryDataFetched = !isUndefined(mcpRegistryProvider);
 					if (mcpRegistryProvider) {
 						policyData.mcpRegistryUrl = mcpRegistryProvider.url;
 						policyData.mcpAccess = mcpRegistryProvider.registry_access;
@@ -484,7 +492,7 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 				entitlementsData,
 			};
 			this.logService.debug('[DefaultAccount] Successfully created default account for provider:', authenticationProvider.id);
-			return { defaultAccount, policyData: policyData ? { accountId, policyData } : null };
+			return { defaultAccount, policyData: policyData ? { accountId, policyData, isTokenEntitlementsDataFetched, isMcpRegistryDataFetched } : null };
 		} catch (error) {
 			this.logService.error('[DefaultAccount] Failed to create default account for provider:', authenticationProvider.id, getErrorMessage(error));
 			return null;
@@ -539,7 +547,15 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 		return expectedScopes.every(scope => scopes.includes(scope));
 	}
 
-	private async getTokenEntitlements(sessions: AuthenticationSession[]): Promise<Partial<IPolicyData> | undefined> {
+	private async getTokenEntitlements(sessions: AuthenticationSession[], accountPolicyData: IAccountPolicyData | undefined): Promise<Partial<IPolicyData> | undefined> {
+		if (accountPolicyData?.isTokenEntitlementsDataFetched) {
+			this.logService.debug('[DefaultAccount] Using last fetched token entitlements data');
+			return accountPolicyData.policyData;
+		}
+		return await this.requestTokenEntitlements(sessions);
+	}
+
+	private async requestTokenEntitlements(sessions: AuthenticationSession[]): Promise<Partial<IPolicyData> | undefined> {
 		const tokenEntitlementsUrl = this.getTokenEntitlementUrl();
 		if (!tokenEntitlementsUrl) {
 			this.logService.debug('[DefaultAccount] No token entitlements URL found');
@@ -610,11 +626,19 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 		return undefined;
 	}
 
-	private async getMcpRegistryProvider(sessions: AuthenticationSession[]): Promise<IMcpRegistryProvider | undefined> {
+	private async getMcpRegistryProvider(sessions: AuthenticationSession[], accountPolicyData: IAccountPolicyData | undefined): Promise<IMcpRegistryProvider | null | undefined> {
+		if (accountPolicyData?.isMcpRegistryDataFetched) {
+			this.logService.debug('[DefaultAccount] Using last fetched MCP registry data');
+			return accountPolicyData.policyData.mcpRegistryUrl && accountPolicyData.policyData.mcpAccess ? { url: accountPolicyData.policyData.mcpRegistryUrl, registry_access: accountPolicyData.policyData.mcpAccess } : null;
+		}
+		return await this.requestMcpRegistryProvider(sessions);
+	}
+
+	private async requestMcpRegistryProvider(sessions: AuthenticationSession[]): Promise<IMcpRegistryProvider | null | undefined> {
 		const mcpRegistryDataUrl = this.getMcpRegistryDataUrl();
 		if (!mcpRegistryDataUrl) {
 			this.logService.debug('[DefaultAccount] No MCP registry data URL found');
-			return undefined;
+			return null;
 		}
 
 		this.logService.debug('[DefaultAccount] Fetching MCP registry data from:', mcpRegistryDataUrl);
@@ -625,20 +649,23 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 
 		if (response.res.statusCode && response.res.statusCode !== 200) {
 			this.logService.trace(`[DefaultAccount] unexpected status code ${response.res.statusCode} while fetching MCP registry data`);
-			return undefined;
+			return response.res.statusCode === 404 /* mcp not configured */
+				? null
+				: undefined;
 		}
 
 		try {
 			const data = await asJson<IMcpRegistryResponse>(response);
 			if (data) {
 				this.logService.debug('Fetched MCP registry providers', data.mcp_registries);
-				return data.mcp_registries[0];
+				return data.mcp_registries[0] ?? null;
 			}
-			this.logService.debug('Failed to fetch MCP registry providers', 'No data returned');
+			this.logService.debug('No MCP registry providers content found in response');
+			return null;
 		} catch (error) {
 			this.logService.error('Failed to fetch MCP registry providers', getErrorMessage(error));
+			return undefined;
 		}
-		return undefined;
 	}
 
 	private async request(url: string, type: 'GET', body: undefined, sessions: AuthenticationSession[], token: CancellationToken): Promise<IRequestContext | undefined>;
@@ -678,11 +705,6 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 
 		if (!lastResponse) {
 			this.logService.trace('[DefaultAccount]: No response received for request', url);
-			return undefined;
-		}
-
-		if (lastResponse.res.statusCode && lastResponse.res.statusCode !== 200) {
-			this.logService.trace(`[DefaultAccount]: unexpected status code ${lastResponse.res.statusCode} for request`, url);
 			return undefined;
 		}
 
