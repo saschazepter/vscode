@@ -40,13 +40,13 @@ import { IHooksExecutionService } from '../../common/hooks/hooksExecutionService
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
 import { ChatRequestToolReferenceEntry, toToolSetVariableEntry, toToolVariableEntry } from '../../common/attachments/chatVariableEntries.js';
 import { IVariableReference } from '../../common/chatModes.js';
-import { ConfirmedReason, IChatService, IChatToolInvocation, ToolConfirmKind } from '../../common/chatService/chatService.js';
+import { ConfirmedReason, IChatHookPart, IChatService, IChatToolInvocation, ToolConfirmKind } from '../../common/chatService/chatService.js';
 import { ChatConfiguration } from '../../common/constants.js';
 import { ILanguageModelChatMetadata } from '../../common/languageModels.js';
 import { IChatModel, IChatRequestModel } from '../../common/model/chatModel.js';
 import { ChatToolInvocation } from '../../common/model/chatProgressTypes/chatToolInvocation.js';
 import { ILanguageModelToolsConfirmationService } from '../../common/tools/languageModelToolsConfirmationService.js';
-import { CountTokensCallback, createToolSchemaUri, IBeginToolCallOptions, ILanguageModelToolsService, IPreparedToolInvocation, IToolAndToolSetEnablementMap, IToolData, IToolImpl, IToolInvocation, IToolResult, IToolResultInputOutputDetails, SpecedToolAliases, stringifyPromptTsxPart, isToolSet, ToolDataSource, toolContentToA11yString, toolMatchesModel, ToolSet, VSCodeToolReference, IToolSet, ToolSetForModel, IToolInvokedEvent } from '../../common/tools/languageModelToolsService.js';
+import { CountTokensCallback, createToolSchemaUri, IBeginToolCallOptions, ILanguageModelToolsService, IPreparedToolInvocation, IToolAndToolSetEnablementMap, IToolData, IToolImpl, IToolInvocation, IToolResult, IToolResultInputOutputDetails, SpecedToolAliases, stringifyPromptTsxPart, isToolSet, ToolDataSource, toolContentToA11yString, toolMatchesModel, ToolSet, VSCodeToolReference, IToolSet, ToolSetForModel, IToolInvokedEvent, ToolInvocationPresentation } from '../../common/tools/languageModelToolsService.js';
 import { getToolConfirmationAlert } from '../accessibility/chatAccessibilityProvider.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { chatSessionResourceToId } from '../../common/model/chatUri.js';
@@ -391,24 +391,27 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 
 		if (hookResult?.permissionDecision === 'deny') {
 			const hookReason = hookResult.permissionDecisionReason ?? localize('hookDeniedNoReason', "Hook denied tool execution");
-			const reason = localize('deniedByPreToolUseHook', "Denied by {0} hook: {1}", HookType.PreToolUse, hookReason);
 			this._logService.debug(`[LanguageModelToolsService#invokeTool] Tool ${dto.toolId} denied by preToolUse hook: ${hookReason}`);
 
-			// Handle the tool invocation in cancelled state
+			// Cancel the tool invocation silently - the IChatHookPart below handles the user-facing display.
 			if (toolData) {
 				if (pendingInvocation) {
+					pendingInvocation.presentation = ToolInvocationPresentation.Hidden;
 					// If there's an existing streaming invocation, cancel it
-					pendingInvocation.cancelFromStreaming(ToolConfirmKind.Denied, reason);
-				} else if (request) {
-					// Otherwise create a new cancelled invocation and add it to the chat model
-					const toolInvocation = ChatToolInvocation.createCancelled(
-						{ toolCallId: dto.callId, toolId: dto.toolId, toolData, subagentInvocationId: dto.subAgentInvocationId, chatRequestId: dto.chatRequestId },
-						dto.parameters,
-						ToolConfirmKind.Denied,
-						reason
-					);
-					this._chatService.appendProgress(request, toolInvocation);
+					pendingInvocation.cancelFromStreaming(ToolConfirmKind.Denied);
 				}
+			}
+
+			// Emit a hook part for the UI to render the denial details
+			if (request) {
+				const hookPart: IChatHookPart = {
+					kind: 'hook',
+					hookType: HookType.PreToolUse,
+					stopReason: hookReason,
+					systemMessage: hookResult.messageForUser,
+					toolDisplayName: toolData?.displayName,
+				};
+				this._chatService.appendProgress(request, hookPart);
 			}
 
 			const denialMessage = localize('toolExecutionDenied', "Tool execution denied: {0}", hookReason);
@@ -484,6 +487,23 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 			this._logService.debug(`[LanguageModelToolsService#invokeTool] PostToolUse hook blocked for tool ${dto.toolId}: ${hookReason}`);
 			const blockMessage = localize('postToolUseHookBlockedContext', "The PostToolUse hook blocked this tool result. Reason: {0}", hookReason);
 			toolResult.content.push({ kind: 'text', value: '\n<PostToolUse-context>\n' + blockMessage + '\n</PostToolUse-context>' });
+
+			// Emit a hook part for the UI to render the block details
+			if (dto.context?.sessionResource) {
+				const model = this._chatService.getSession(dto.context.sessionResource);
+				const request = model?.getRequests().at(-1);
+				if (request) {
+					const toolData = this._tools.get(dto.toolId)?.data;
+					const hookPart: IChatHookPart = {
+						kind: 'hook',
+						hookType: HookType.PostToolUse,
+						stopReason: hookReason,
+						systemMessage: hookResult.messageForUser,
+						toolDisplayName: toolData?.displayName,
+					};
+					this._chatService.appendProgress(request, hookPart);
+				}
+			}
 		}
 
 		if (hookResult?.additionalContext) {
@@ -796,17 +816,43 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 				}
 				const fullReferenceName = getToolFullReferenceName(tool.data);
 				const hookReason = hookResult.permissionDecisionReason;
-				const baseMessage = localize('hookRequiresConfirmation.message', "{0} hook confirmation required", HookType.PreToolUse);
+				const hookNote = hookReason
+					? localize('hookRequiresConfirmation.messageWithReason', "{0} hook required confirmation: {1}", HookType.PreToolUse, hookReason)
+					: localize('hookRequiresConfirmation.message', "{0} hook required confirmation", HookType.PreToolUse);
 				preparedInvocation.confirmationMessages = {
 					...preparedInvocation.confirmationMessages,
 					title: localize('hookRequiresConfirmation.title', "Use the '{0}' tool?", fullReferenceName),
-					message: new MarkdownString(hookReason ? `${baseMessage}\n\n${hookReason}` : baseMessage),
+					message: new MarkdownString(`_${hookNote}_`),
 					allowAutoConfirm: false,
 				};
 				preparedInvocation.toolSpecificData = {
 					kind: 'input',
 					rawInput: dto.parameters,
 				};
+			} else {
+				// Tool already has its own confirmation - prepend hook note
+				const hookReason = hookResult.permissionDecisionReason;
+				const hookNote = hookReason
+					? localize('hookRequiresConfirmation.note', "{0} hook required confirmation: {1}", HookType.PreToolUse, hookReason)
+					: localize('hookRequiresConfirmation.noteNoReason', "{0} hook required confirmation", HookType.PreToolUse);
+
+				const existing = preparedInvocation.confirmationMessages!;
+				if (preparedInvocation.toolSpecificData?.kind === 'terminal') {
+					// Terminal tools render message as hover only; use disclaimer for visible text
+					preparedInvocation.confirmationMessages = {
+						...existing,
+						disclaimer: hookNote,
+						allowAutoConfirm: false,
+					};
+				} else {
+					// Edit/other tools: prepend hook note to the message body
+					const msgText = typeof existing.message === 'string' ? existing.message : existing.message?.value ?? '';
+					preparedInvocation.confirmationMessages = {
+						...existing,
+						message: new MarkdownString(`_${hookNote}_\n\n${msgText}`),
+						allowAutoConfirm: false,
+					};
+				}
 			}
 			return { autoConfirmed: undefined, preparedInvocation };
 		}

@@ -1671,7 +1671,7 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 			} else if (content.kind === 'warning') {
 				return this.instantiationService.createInstance(ChatErrorContentPart, ChatErrorLevel.Warning, content.content, content, this.chatContentMarkdownRenderer);
 			} else if (content.kind === 'hook') {
-				return this.renderHookPart(content, context);
+				return this.renderHookPart(content, context, templateData);
 			} else if (content.kind === 'markdownContent') {
 				return this.renderMarkdown(content, templateData, context);
 			} else if (content.kind === 'references') {
@@ -1962,9 +1962,24 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		return part;
 	}
 
-	private renderHookPart(hookPart: IChatHookPart, context: IChatContentPartRenderContext): IChatContentPart {
+	private renderHookPart(hookPart: IChatHookPart, context: IChatContentPartRenderContext, templateData: IChatListItemTemplate): IChatContentPart {
 		if (hookPart.stopReason || hookPart.systemMessage) {
-			return this.instantiationService.createInstance(ChatHookContentPart, hookPart, context);
+			const part = this.instantiationService.createInstance(ChatHookContentPart, hookPart, context);
+
+			const lastThinking = this.getLastThinkingPart(templateData.renderedParts);
+			if (lastThinking) {
+				const hookTitle = hookPart.stopReason
+					? (hookPart.toolDisplayName
+						? localize('hook.thinking.blocked', "Blocked {0}", hookPart.toolDisplayName)
+						: localize('hook.thinking.blockedGeneric', "Blocked by hook"))
+					: (hookPart.toolDisplayName
+						? localize('hook.thinking.warning', "Warning for {0}", hookPart.toolDisplayName)
+						: localize('hook.thinking.warningGeneric', "Warning from hook"));
+				lastThinking.appendItem(() => ({ domNode: part.domNode, disposable: part }), hookTitle);
+				return this.renderNoContent(other => other.kind === 'hook' && other.hookType === hookPart.hookType);
+			}
+
+			return part;
 		}
 		return this.renderNoContent(other => other.kind === 'hook' && other.hookType === hookPart.hookType);
 	}

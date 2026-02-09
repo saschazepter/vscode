@@ -1160,7 +1160,7 @@ export class ChatThinkingContentPart extends ChatCollapsibleContentPart implemen
 				toolCallLabel = localize('chat.thinking.editingFile', 'Edited file');
 			}
 		} else {
-			toolCallLabel = `Invoked \`${toolInvocationId}\``;
+			toolCallLabel = toolInvocationId;
 		}
 
 		// Add tool call to extracted titles for LLM title generation
@@ -1207,6 +1207,10 @@ export class ChatThinkingContentPart extends ChatCollapsibleContentPart implemen
 			const terminalData = (toolInvocationOrMarkdown as IChatToolInvocation | IChatToolInvocationSerialized).toolSpecificData as { kind: 'terminal'; terminalCommandState?: { exitCode?: number } };
 			const exitCode = terminalData?.terminalCommandState?.exitCode;
 			icon = exitCode !== undefined && exitCode !== 0 ? Codicon.error : Codicon.terminal;
+		} else if (content.classList.contains('chat-hook-outcome-blocked')) {
+			icon = Codicon.error;
+		} else if (content.classList.contains('chat-hook-outcome-warning')) {
+			icon = Codicon.warning;
 		} else {
 			icon = toolInvocationId ? getToolInvocationIcon(toolInvocationId) : Codicon.tools;
 		}

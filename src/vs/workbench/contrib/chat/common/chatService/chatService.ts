@@ -434,6 +434,8 @@ export interface IChatHookPart {
 	stopReason?: string;
 	/** Warning/system message from the hook, shown to the user */
 	systemMessage?: string;
+	/** Display name of the tool that was affected by the hook */
+	toolDisplayName?: string;
 	metadata?: { readonly [key: string]: unknown };
 }
 
