@@ -397,23 +397,23 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 			const hookReason = hookResult.permissionDecisionReason ?? localize('hookDeniedNoReason', "Hook denied tool execution");
 			this._logService.debug(`[LanguageModelToolsService#invokeTool] Tool ${dto.toolId} denied by preToolUse hook: ${hookReason}`);
 
-			// Cancel the tool invocation silently - the IChatHookPart below handles the user-facing display.
+			// Handle the tool invocation in cancelled state
 			if (toolData) {
-				const reasonMessage = localize('hookDeniedReasonMessage', "Denied by {0} hook: {1}", HookType.PreToolUse, hookReason);
+				const reason = localize('deniedByPreToolUseHook', "Denied by {0} hook: {1}", HookType.PreToolUse, hookReason);
 				if (pendingInvocation) {
 					pendingInvocation.presentation = ToolInvocationPresentation.Hidden;
 					// If there's an existing streaming invocation, cancel it
-					pendingInvocation.cancelFromStreaming(ToolConfirmKind.Denied, reasonMessage);
+					pendingInvocation.cancelFromStreaming(ToolConfirmKind.Denied, reason);
 				} else if (request) {
-					// Create a hidden cancelled invocation for non-streamed tool calls so the tool-call record is preserved
-					const cancelledInvocation = ChatToolInvocation.createCancelled(
-						{ toolData, toolCallId: dto.callId, toolId: dto.toolId, subagentInvocationId: dto.subAgentInvocationId },
+					// Otherwise create a new cancelled invocation and add it to the chat model
+					const toolInvocation = ChatToolInvocation.createCancelled(
+						{ toolCallId: dto.callId, toolId: dto.toolId, toolData, subagentInvocationId: dto.subAgentInvocationId, chatRequestId: dto.chatRequestId },
 						dto.parameters,
 						ToolConfirmKind.Denied,
-						reasonMessage,
+						reason
 					);
-					cancelledInvocation.presentation = ToolInvocationPresentation.Hidden;
-					this._chatService.appendProgress(request, cancelledInvocation);
+					toolInvocation.presentation = ToolInvocationPresentation.Hidden;
+					this._chatService.appendProgress(request, toolInvocation);
 				}
 			}
 
