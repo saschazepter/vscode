@@ -4,9 +4,11 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { URI } from '../../../../../../base/common/uri.js';
-import { basename, dirname } from '../../../../../../base/common/path.js';
+import { posix } from '../../../../../../base/common/path.js';
 import { PromptsType } from '../promptTypes.js';
 import { PromptsStorage } from '../service/promptsService.js';
+
+const { basename, dirname } = posix;
 
 /**
  * File extension for the reusable prompt files.
@@ -34,8 +36,6 @@ export const AGENT_FILE_EXTENSION = '.agent.md';
 export const SKILL_FILENAME = 'SKILL.md';
 
 /**
-<<<<<<< HEAD
-=======
  * AGENT file name
  */
 export const AGENT_MD_FILENAME = 'AGENTS.md';
@@ -51,12 +51,11 @@ export const CLAUDE_MD_FILENAME = 'CLAUDE.md';
 export const CLAUDE_LOCAL_MD_FILENAME = 'CLAUDE.local.md';
 
 /**
- * Default hook file name (case insensitive).
+ * Claude configuration folder name.
  */
-export const HOOKS_FILENAME = 'hooks.json';
+export const CLAUDE_CONFIG_FOLDER = '.claude';
 
 /**
->>>>>>> 6a7cce3c3f9 (add claude.md support (#292898))
  * Copilot custom instructions file name.
  */
 export const COPILOT_CUSTOM_INSTRUCTIONS_FILENAME = 'copilot-instructions.md';
@@ -81,6 +80,11 @@ export const LEGACY_MODE_DEFAULT_SOURCE_FOLDER = '.github/chatmodes';
  * Agents folder.
  */
 export const AGENTS_SOURCE_FOLDER = '.github/agents';
+
+/**
+ * Claude agents folder.
+ */
+export const CLAUDE_AGENTS_SOURCE_FOLDER = '.claude/agents';
 
 /**
  * Tracks where prompt files originate from.
@@ -165,6 +169,7 @@ export const DEFAULT_PROMPT_SOURCE_FOLDERS: readonly IPromptSourceFolder[] = [
  */
 export const DEFAULT_AGENT_SOURCE_FOLDERS: readonly IPromptSourceFolder[] = [
 	{ path: AGENTS_SOURCE_FOLDER, source: PromptFileSource.GitHubWorkspace, storage: PromptsStorage.local },
+	{ path: CLAUDE_AGENTS_SOURCE_FOLDER, source: PromptFileSource.ClaudeWorkspace, storage: PromptsStorage.local },
 ];
 
 /**
@@ -172,7 +177,7 @@ export const DEFAULT_AGENT_SOURCE_FOLDERS: readonly IPromptSourceFolder[] = [
  */
 function isInAgentsFolder(fileUri: URI): boolean {
 	const dir = dirname(fileUri.path);
-	return dir.endsWith('/' + AGENTS_SOURCE_FOLDER) || dir === AGENTS_SOURCE_FOLDER;
+	return dir.endsWith('/' + AGENTS_SOURCE_FOLDER) || dir.endsWith('/' + CLAUDE_AGENTS_SOURCE_FOLDER);
 }
 
 /**
