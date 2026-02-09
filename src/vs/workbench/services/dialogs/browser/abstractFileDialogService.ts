@@ -65,8 +65,8 @@ export abstract class AbstractFileDialogService implements IFileDialogService {
 		let candidate = this.historyService.getLastActiveFile(schemeFilter, authorityFilter);
 
 		// Skip user data files (e.g. Machine/settings.json) as default path candidates
-		if (candidate && await this.isInternalFile(candidate)) {
-			this.logService.debug(`[FileDialogService] Skipping last active file as it is an internal resource: ${candidate}`);
+		if (candidate && await this.isRemoteUserData(candidate)) {
+			this.logService.debug(`[FileDialogService] Skipping last active file as it is a remote user data resource: ${candidate}`);
 			candidate = undefined;
 		}
 
@@ -99,8 +99,8 @@ export abstract class AbstractFileDialogService implements IFileDialogService {
 			candidate = this.historyService.getLastActiveFile(schemeFilter, authorityFilter);
 
 			// Skip user data files (e.g. Machine/settings.json) as default path candidates
-			if (candidate && await this.isInternalFile(candidate)) {
-				this.logService.debug(`[FileDialogService] Skipping last active file as it is an internal resource: ${candidate}`);
+			if (candidate && await this.isRemoteUserData(candidate)) {
+				this.logService.debug(`[FileDialogService] Skipping last active file as it is a remote user data resource: ${candidate}`);
 				candidate = undefined;
 			}
 
@@ -334,30 +334,21 @@ export abstract class AbstractFileDialogService implements IFileDialogService {
 	}
 
 	/**
-	 * Checks whether the given resource is an internal VS Code file that
-	 * should not be used as a default file dialog path candidate.
-	 * This covers user data files such as settings.json, keybindings.json, etc.
+	 * Checks whether the given resource is a remote user data file
+	 * that should not be used as a default file dialog path candidate.
+	 * This covers remote user data files such as settings.json, keybindings.json, etc.
 	 */
-	private async isInternalFile(resource: URI): Promise<boolean> {
-		// Check local user data directory
-		const userDataHome = this.environmentService.userRoamingDataHome;
-		const userDataParent = resources.dirname(userDataHome);
-		const candidateWithUserDataScheme = resource.with({ scheme: userDataHome.scheme });
-		if (resources.isEqualOrParent(candidateWithUserDataScheme, userDataParent)) {
-			return true;
+	private async isRemoteUserData(resource: URI): Promise<boolean> {
+		if (!this.environmentService.remoteAuthority) {
+			return false;
 		}
 
-		// Check remote user data directory
-		if (this.environmentService.remoteAuthority) {
-			const remoteEnv = await this.remoteAgentService.getEnvironment();
-			if (remoteEnv) {
-				// settingsPath points to the machine settings file
-				// (e.g. .vscode-server/data/Machine/settings.json).
-				// Its grandparent covers the entire data directory.
-				const remoteDataHome = resources.dirname(resources.dirname(remoteEnv.settingsPath));
-				if (resources.isEqualOrParent(resource, remoteDataHome)) {
-					return true;
-				}
+		const remoteEnv = await this.remoteAgentService.getEnvironment();
+		if (remoteEnv) {
+
+			const remoteDataHome = resources.dirname(resources.dirname(remoteEnv.settingsPath));
+			if (!resources.isEqual(remoteDataHome, remoteDataHome.with({ path: '/' })) && resources.isEqualOrParent(resource, remoteDataHome)) {
+				return true;
 			}
 		}
 
