@@ -142,9 +142,9 @@ export class SuggestModel implements IDisposable {
 
 	private _completionModel: CompletionModel | undefined;
 	private readonly _completionDisposables = new DisposableStore();
-	private readonly _onDidCancel = this._toDispose.add(new Emitter<ICancelEvent>());
-	private readonly _onDidTrigger = this._toDispose.add(new Emitter<ITriggerEvent>());
-	private readonly _onDidSuggest = this._toDispose.add(new Emitter<ISuggestEvent>());
+	private readonly _onDidCancel = new Emitter<ICancelEvent>();
+	private readonly _onDidTrigger = new Emitter<ITriggerEvent>();
+	private readonly _onDidSuggest = new Emitter<ISuggestEvent>();
 
 	readonly onDidCancel: Event<ICancelEvent> = this._onDidCancel.event;
 	readonly onDidTrigger: Event<ITriggerEvent> = this._onDidTrigger.event;
