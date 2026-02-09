@@ -1,0 +1,91 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+.diff-comments-hover {
+	max-width: 400px;
+	padding: 4px 0;
+}
+
+.diff-comments-hover-title {
+	font-weight: bold;
+	font-size: 12px;
+	padding: 2px 8px 6px;
+	border-bottom: 1px solid var(--vscode-editorWidget-border);
+	margin-bottom: 4px;
+}
+
+.diff-comments-hover-list {
+	max-height: 300px;
+	overflow-y: auto;
+}
+
+.diff-comments-hover-file-header {
+	font-size: 11px;
+	font-weight: bold;
+	color: var(--vscode-foreground);
+	padding: 6px 8px 2px;
+	font-family: var(--monaco-monospace-font);
+}
+
+.diff-comments-hover-file-header:not(:first-child) {
+	border-top: 1px solid var(--vscode-editorWidget-border);
+	margin-top: 4px;
+	padding-top: 8px;
+}
+
+.diff-comments-hover-row {
+	padding: 4px 8px;
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	border-radius: 4px;
+	cursor: pointer;
+	position: relative;
+}
+
+.diff-comments-hover-row:hover {
+	background-color: var(--vscode-list-hoverBackground);
+}
+
+.diff-comments-hover-line {
+	font-size: 11px;
+	color: var(--vscode-descriptionForeground);
+}
+
+.diff-comments-hover-text {
+	font-size: 12px;
+	white-space: pre-wrap;
+	word-break: break-word;
+	flex: 1;
+}
+
+.diff-comments-hover-remove {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	cursor: pointer;
+	color: var(--vscode-descriptionForeground);
+	opacity: 0;
+	flex-shrink: 0;
+	width: 20px;
+	height: 20px;
+	border-radius: 4px;
+}
+
+.diff-comments-hover-row:hover .diff-comments-hover-remove {
+	opacity: 1;
+}
+
+.diff-comments-hover-remove:hover {
+	color: var(--vscode-foreground);
+	background-color: var(--vscode-toolbar-hoverBackground);
+}
+
+/* Attachment widget pill styling */
+.diff-comments-attachment .chat-attached-context-pill {
+	display: flex;
+	align-items: center;
+	padding: 0 4px;
+}

@@ -145,6 +145,8 @@ import { ChatWindowNotifier } from './chatWindowNotifier.js';
 import { ChatRepoInfoContribution } from './chatRepoInfo.js';
 import { VALID_PROMPT_FOLDER_PATTERN } from '../common/promptSyntax/utils/promptFilesLocator.js';
 import { ChatTipService, IChatTipService } from './chatTipService.js';
+import { DiffCommentsService, IDiffCommentsService } from './diffComments/diffCommentsService.js';
+import { DiffCommentsAttachmentContribution } from './diffComments/diffCommentsAttachment.js';
 import { ChatQueuePickerRendering } from './widget/input/chatQueuePickerActionItem.js';
 
 const toolReferenceNameEnumValues: string[] = [];
@@ -1544,5 +1546,8 @@ registerSingleton(IChatTodoListService, ChatTodoListService, InstantiationType.D
 registerSingleton(IChatOutputRendererService, ChatOutputRendererService, InstantiationType.Delayed);
 registerSingleton(IChatLayoutService, ChatLayoutService, InstantiationType.Delayed);
 registerSingleton(IChatTipService, ChatTipService, InstantiationType.Delayed);
+registerSingleton(IDiffCommentsService, DiffCommentsService, InstantiationType.Delayed);
+
+registerWorkbenchContribution2(DiffCommentsAttachmentContribution.ID, DiffCommentsAttachmentContribution, WorkbenchPhase.AfterRestored);
 
 ChatWidget.CONTRIBS.push(ChatDynamicVariableModel);

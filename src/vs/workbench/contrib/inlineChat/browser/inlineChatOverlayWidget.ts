@@ -37,6 +37,7 @@ import { PlaceholderTextContribution } from '../../../../editor/contrib/placehol
 import { InlineChatRunOptions } from './inlineChatController.js';
 import { IInlineChatSession2 } from './inlineChatSessionService.js';
 import { Position } from '../../../../editor/common/core/position.js';
+import { Range } from '../../../../editor/common/core/range.js';
 import { CancelChatActionId } from '../../chat/browser/actions/chatExecuteActions.js';
 import { assertType } from '../../../../base/common/types.js';
 
@@ -56,6 +57,7 @@ export class InlineChatInputWidget extends Disposable {
 	private readonly _showStore = this._store.add(new DisposableStore());
 	private readonly _stickyScrollHeight: IObservable<number>;
 	private _inlineStartAction: IAction | undefined;
+	private _customSubmitHandler: ((text: string) => void) | undefined;
 	private _anchorLineNumber: number = 0;
 	private _anchorLeft: number = 0;
 	private _anchorAbove: boolean = false;
@@ -115,9 +117,15 @@ export class InlineChatInputWidget extends Disposable {
 		this._store.add(autorun(r => {
 			const selection = this._editorObs.cursorSelection.read(r);
 			const hasSelection = selection && !selection.isEmpty();
-			const placeholderText = hasSelection
-				? localize('placeholderWithSelection', "Modify selected code")
-				: localize('placeholderNoSelection', "Generate code");
+
+			let placeholderText: string;
+			if (this._customSubmitHandler) {
+				placeholderText = localize('placeholderDiffFeedback', "Describe changes...");
+			} else if (hasSelection) {
+				placeholderText = localize('placeholderWithSelection', "Modify selected code");
+			} else {
+				placeholderText = localize('placeholderNoSelection', "Generate code");
+			}
 
 			this._input.updateOptions({ placeholder: this._keybindingService.appendKeybinding(placeholderText, ACTION_START) });
 		}));
@@ -133,8 +141,12 @@ export class InlineChatInputWidget extends Disposable {
 		this._store.add(this._input.onKeyDown(e => {
 			if (e.keyCode === KeyCode.Enter && !e.shiftKey) {
 				const value = this._input.getModel().getValue() ?? '';
-				// TODO@jrieken this isn't nice
-				if (this._inlineStartAction && value) {
+				if (this._customSubmitHandler && value) {
+					e.preventDefault();
+					e.stopPropagation();
+					this._customSubmitHandler(value);
+					this._hide();
+				} else if (this._inlineStartAction && value) {
 					e.preventDefault();
 					e.stopPropagation();
 					this._actionBar.actionRunner.run(
@@ -143,9 +155,9 @@ export class InlineChatInputWidget extends Disposable {
 					);
 				}
 			} else if (e.keyCode === KeyCode.Escape) {
-				// Hide overlay if input is empty
+				// In custom submit mode, always hide on Escape; otherwise only when empty
 				const value = this._input.getModel().getValue() ?? '';
-				if (!value) {
+				if (this._customSubmitHandler || !value) {
 					e.preventDefault();
 					e.stopPropagation();
 					this._hide();
@@ -190,12 +202,44 @@ export class InlineChatInputWidget extends Disposable {
 	}
 
 	/**
+	 * Set a custom submit handler. When set, Enter submits via this handler
+	 * instead of the default inline chat action.
+	 */
+	setCustomSubmitHandler(handler: ((text: string) => void) | undefined): void {
+		this._customSubmitHandler = handler;
+	}
+
+	/**
+	 * Hide the widget programmatically.
+	 */
+	hideWidget(): void {
+		this._hide();
+	}
+
+	get isFocused(): boolean {
+		return this._input.hasWidgetFocus();
+	}
+
+	/**
+	 * Focus the input editor, optionally inserting initial text.
+	 */
+	focusInput(initialText?: string): void {
+		this._input.focus();
+		if (initialText) {
+			const inputModel = this._input.getModel();
+			const endPos = inputModel.getFullModelRange().getEndPosition();
+			inputModel.applyEdits([{ range: Range.fromPositions(endPos), text: initialText }]);
+			this._input.setPosition(inputModel.getFullModelRange().getEndPosition());
+		}
+	}
+
+	/**
 	 * Show the widget at the specified line.
 	 * @param lineNumber The line number to anchor the widget to
 	 * @param left Left offset relative to editor
 	 * @param anchorAbove Whether to anchor above the position (widget grows upward)
 	 */
-	show(lineNumber: number, left: number, anchorAbove: boolean): void {
+	show(lineNumber: number, left: number, anchorAbove: boolean, options?: { focusInput?: boolean }): void {
 		this._showStore.clear();
 
 		// Clear input state
@@ -218,7 +262,7 @@ export class InlineChatInputWidget extends Disposable {
 			domNode: this._domNode,
 			position: this._position,
 			minContentWidthInPx: constObservable(0),
-			allowEditorOverflow: true,
+			allowEditorOverflow: false,
 		}));
 
 		// If anchoring above, adjust position after render to account for widget height
@@ -241,7 +285,9 @@ export class InlineChatInputWidget extends Disposable {
 		}));
 
 		// Focus the input editor
-		setTimeout(() => this._input.focus(), 0);
+		if (options?.focusInput !== false) {
+			setTimeout(() => this._input.focus(), 0);
+		}
 	}
 
 	private _updatePosition(): void {
@@ -291,6 +337,13 @@ export class InlineChatInputWidget extends Disposable {
 		// Clear existing actions
 		this._actionBar.clear();
 		this._inlineStartAction = undefined;
+
+		// When using a custom submit handler, hide the action bar entirely
+		if (this._customSubmitHandler) {
+			this._actionBar.domNode.style.display = 'none';
+			return;
+		}
+		this._actionBar.domNode.style.display = '';
 
 		// Get fresh actions from menu
 		const actions = getFlatActionBarActions(this._menuService.getMenuActions(MenuId.ChatEditorInlineGutter, this._contextKeyService, { shouldForwardArgs: true }));
