@@ -905,10 +905,10 @@ class InputWithButton implements IDisposable {
 	private _sparkleIcon: HTMLElement | undefined;
 	private _stopIcon: HTMLElement | undefined;
 
-	private readonly _onDidInputChange = new Emitter<void>();
-	public readonly onDidInputChange = this._onDidInputChange.event;
-
 	private readonly _disposables = new DisposableStore();
+
+	private readonly _onDidInputChange = this._disposables.add(new Emitter<void>());
+	public readonly onDidInputChange = this._onDidInputChange.event;
 
 	get domNode() {
 		if (!this._domNode) {
@@ -1003,7 +1003,6 @@ class InputWithButton implements IDisposable {
 
 	dispose(): void {
 		this._disposables.dispose();
-		this._onDidInputChange.dispose();
 	}
 }
 
