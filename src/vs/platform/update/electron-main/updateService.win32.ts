@@ -336,7 +336,7 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 		const sessionEndFlagPath = path.join(cachePath, 'session-ending.flag');
 		const cancelFilePath = path.join(cachePath, `cancel.flag`);
 		try {
-			await unlink(sessionEndFlagPath);
+			await unlink(cancelFilePath);
 		} catch {
 			// ignore
 		}
