@@ -32,6 +32,7 @@ import { IChatMarkdownAnchorService } from './chatMarkdownAnchorService.js';
 import { ChatMessageRole, ILanguageModelChatSelector, ILanguageModelsService } from '../../../common/languageModels.js';
 import { ExtensionIdentifier } from '../../../../../../platform/extensions/common/extensions.js';
 import { isObject } from '../../../../../../base/common/types.js';
+import { resolveLanguageModelWithFallback } from '../../../common/modelSelectorUtil.js';
 import './media/chatThinkingContent.css';
 import { IHoverService } from '../../../../../../platform/hover/browser/hover.js';
 
@@ -719,27 +720,20 @@ export class ChatThinkingContentPart extends ChatCollapsibleContentPart implemen
 		const timeout = setTimeout(() => cts.cancel(), 5000);
 
 		try {
-			let models: string[] = [];
+			// Use the new fallback chain logic with feature-specific configuration
+			const defaultFallback: ILanguageModelChatSelector[] = [
+				{ vendor: 'copilot', id: 'copilot-fast' },
+				{ vendor: 'copilot', family: 'gpt-4o-mini' }
+			];
 
-			// Check if a custom model selector is configured
-			const customSelector = this.configurationService.getValue<ILanguageModelChatSelector | null>(ChatConfiguration.ExperimentalModelSelector);
-			if (customSelector && isObject(customSelector)) {
-				models = await this.languageModelsService.selectLanguageModels(customSelector);
-				if (models.length === 0) {
-					throw new Error(`No models found matching the configured selector: ${JSON.stringify(customSelector)}`);
-				}
-				if (models.length > 1) {
-					throw new Error(`Multiple models (${models.length}) found matching the configured selector: ${JSON.stringify(customSelector)}. Expected exactly one model.`);
-				}
-			} else {
-				// Default behavior: try copilot-fast first
-				models = await this.languageModelsService.selectLanguageModels({ vendor: 'copilot', id: 'copilot-fast' });
-				if (!models.length) {
-					models = await this.languageModelsService.selectLanguageModels({ vendor: 'copilot', family: 'gpt-4o-mini' });
-				}
-			}
+			const modelId = await resolveLanguageModelWithFallback(
+				this.languageModelsService,
+				this.configurationService,
+				ChatConfiguration.ExperimentalModelSelectorTitling,
+				defaultFallback
+			);
 
-			if (!models.length) {
+			if (!modelId) {
 				this.setFallbackTitle();
 				return;
 			}
@@ -837,7 +831,7 @@ export class ChatThinkingContentPart extends ChatCollapsibleContentPart implemen
 			Content: ${context}`;
 
 			const response = await this.languageModelsService.sendChatRequest(
-				models[0],
+				modelId,
 				new ExtensionIdentifier('core'),
 				[{ role: ChatMessageRole.User, content: [{ type: 'text', value: prompt }] }],
 				{},

@@ -21,6 +21,7 @@ import { ElicitationState, IChatService } from '../../../../../chat/common/chatS
 import { ChatAgentLocation, ChatConfiguration } from '../../../../../chat/common/constants.js';
 import { ChatMessageRole, ILanguageModelChatSelector, ILanguageModelsService } from '../../../../../chat/common/languageModels.js';
 import { IToolInvocationContext } from '../../../../../chat/common/tools/languageModelToolsService.js';
+import { resolveLanguageModelWithFallback } from '../../../../../chat/common/modelSelectorUtil.js';
 import { ITaskService } from '../../../../../tasks/common/taskService.js';
 import { ILinkLocation } from '../../taskHelpers.js';
 import { IConfirmationPrompt, IExecution, IPollingResult, OutputMonitorState, PollingConsts } from './types.js';
@@ -877,28 +878,18 @@ export class OutputMonitor extends Disposable implements IOutputMonitor {
 	}
 
 	private async _getLanguageModel(): Promise<string | undefined> {
-		// Check if a custom model selector is configured
-		const customSelector = this._configurationService.getValue<ILanguageModelChatSelector | null>(ChatConfiguration.ExperimentalModelSelector);
-		if (customSelector && isObject(customSelector)) {
-			const models = await this._languageModelsService.selectLanguageModels(customSelector);
-			if (models.length === 0) {
-				throw new Error(`No models found matching the configured selector: ${JSON.stringify(customSelector)}`);
-			}
-			if (models.length > 1) {
-				throw new Error(`Multiple models (${models.length}) found matching the configured selector: ${JSON.stringify(customSelector)}. Expected exactly one model.`);
-			}
-			return models[0];
-		}
+		// Use the new fallback chain logic with feature-specific configuration
+		const defaultFallback: ILanguageModelChatSelector[] = [
+			{ vendor: 'copilot', id: 'copilot-fast' },
+			{ vendor: 'copilot', family: 'gpt-4o-mini' }
+		];
 
-		// Default behavior: try copilot-fast first
-		let models = await this._languageModelsService.selectLanguageModels({ vendor: 'copilot', id: 'copilot-fast' });
-
-		// Fallback to gpt-4o-mini if copilot-fast is not available for backwards compatibility
-		if (!models.length) {
-			models = await this._languageModelsService.selectLanguageModels({ vendor: 'copilot', family: 'gpt-4o-mini' });
-		}
-
-		return models.length ? models[0] : undefined;
+		return await resolveLanguageModelWithFallback(
+			this._languageModelsService,
+			this._configurationService,
+			ChatConfiguration.ExperimentalModelSelectorTerminalOutputMonitoring,
+			defaultFallback
+		);
 	}
 }
 

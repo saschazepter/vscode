@@ -46,7 +46,9 @@ export enum ChatConfiguration {
 	ExitAfterDelegation = 'chat.exitAfterDelegation',
 	AgentsControlClickBehavior = 'chat.agentsControl.clickBehavior',
 	ExplainChangesEnabled = 'chat.editing.explainChanges.enabled',
-	ExperimentalModelSelector = 'chat.experimental.modelSelector',
+	ExperimentalModelSelectorDefault = 'chat.experimental.modelSelector.default',
+	ExperimentalModelSelectorTitling = 'chat.experimental.modelSelector.titling',
+	ExperimentalModelSelectorTerminalOutputMonitoring = 'chat.experimental.modelSelector.terminalOutputMonitoring',
 }
 
 /**

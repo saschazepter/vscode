@@ -1087,37 +1087,76 @@ configurationRegistry.registerConfiguration({
 				mode: 'auto'
 			}
 		},
-		[ChatConfiguration.ExperimentalModelSelector]: {
-			type: ['object', 'null'],
+		[ChatConfiguration.ExperimentalModelSelectorDefault]: {
+			type: ['array', 'null'],
 			default: null,
-			markdownDescription: nls.localize('chat.experimental.modelSelector', "Specifies the model selector to use for certain features (e.g., terminal output monitoring, thinking titling). If specified, it must resolve to exactly one model. Accepts an object with properties like `vendor`, `id`, `family`, `name`, etc. This is an experimental feature for testing specific models."),
-			properties: {
-				vendor: {
-					type: 'string',
-					description: nls.localize('chat.experimental.modelSelector.vendor', "The vendor of the language model (e.g., 'copilot').")
+			markdownDescription: nls.localize('chat.experimental.modelSelector.default', "Default hierarchy of model selectors to try in order for internal features. Each selector is tried until one resolves to exactly one model. If null or empty, uses hardcoded defaults."),
+			items: {
+				type: 'object',
+				properties: {
+					vendor: {
+						type: 'string',
+						description: nls.localize('chat.experimental.modelSelector.vendor', "The vendor of the language model (e.g., 'copilot').")
+					},
+					id: {
+						type: 'string',
+						description: nls.localize('chat.experimental.modelSelector.id', "The id of the language model (e.g., 'copilot-fast').")
+					},
+					family: {
+						type: 'string',
+						description: nls.localize('chat.experimental.modelSelector.family', "The family of the language model (e.g., 'gpt-4o-mini').")
+					},
+					name: {
+						type: 'string',
+						description: nls.localize('chat.experimental.modelSelector.name', "The name of the language model.")
+					},
+					version: {
+						type: 'string',
+						description: nls.localize('chat.experimental.modelSelector.version', "The version of the language model.")
+					},
+					tokens: {
+						type: 'number',
+						description: nls.localize('chat.experimental.modelSelector.tokens', "The number of tokens for the language model selector.")
+					}
 				},
-				id: {
-					type: 'string',
-					description: nls.localize('chat.experimental.modelSelector.id', "The id of the language model (e.g., 'copilot-fast').")
-				},
-				family: {
-					type: 'string',
-					description: nls.localize('chat.experimental.modelSelector.family', "The family of the language model (e.g., 'gpt-4o-mini').")
-				},
-				name: {
-					type: 'string',
-					description: nls.localize('chat.experimental.modelSelector.name', "The name of the language model.")
-				},
-				version: {
-					type: 'string',
-					description: nls.localize('chat.experimental.modelSelector.version', "The version of the language model.")
-				},
-				tokens: {
-					type: 'number',
-					description: nls.localize('chat.experimental.modelSelector.tokens', "The number of tokens for the language model selector.")
-				}
+				additionalProperties: false
 			},
-			additionalProperties: false,
+			tags: ['experimental']
+		},
+		[ChatConfiguration.ExperimentalModelSelectorTitling]: {
+			type: ['array', 'null'],
+			default: null,
+			markdownDescription: nls.localize('chat.experimental.modelSelector.titling', "Model selector hierarchy for thinking title generation. Overrides the default hierarchy. If null, uses the default hierarchy."),
+			items: {
+				type: 'object',
+				properties: {
+					vendor: { type: 'string' },
+					id: { type: 'string' },
+					family: { type: 'string' },
+					name: { type: 'string' },
+					version: { type: 'string' },
+					tokens: { type: 'number' }
+				},
+				additionalProperties: false
+			},
+			tags: ['experimental']
+		},
+		[ChatConfiguration.ExperimentalModelSelectorTerminalOutputMonitoring]: {
+			type: ['array', 'null'],
+			default: null,
+			markdownDescription: nls.localize('chat.experimental.modelSelector.terminalOutputMonitoring', "Model selector hierarchy for terminal output monitoring. Overrides the default hierarchy. If null, uses the default hierarchy."),
+			items: {
+				type: 'object',
+				properties: {
+					vendor: { type: 'string' },
+					id: { type: 'string' },
+					family: { type: 'string' },
+					name: { type: 'string' },
+					version: { type: 'string' },
+					tokens: { type: 'number' }
+				},
+				additionalProperties: false
+			},
 			tags: ['experimental']
 		}
 	}
