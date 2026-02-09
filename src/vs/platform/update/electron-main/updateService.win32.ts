@@ -409,7 +409,6 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 					await killTree(pid, true);
 				}
 			}
-			this.availableUpdate.updateProcess = undefined;
 		}
 
 		// Delete the flag file to clean up
@@ -419,7 +418,6 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 			} catch (err) {
 				// ignore
 			}
-			this.availableUpdate.updateFilePath = undefined;
 		}
 
 		// Delete the cancel file to clean up
@@ -429,7 +427,6 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 			} catch (err) {
 				// ignore
 			}
-			this.availableUpdate.cancelFilePath = undefined;
 		}
 
 		this.availableUpdate = undefined;
