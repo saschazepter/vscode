@@ -2243,8 +2243,6 @@ export class SCMHistoryViewPane extends ViewPane {
 	override dispose(): void {
 		this._contextMenuDisposables.dispose();
 		this._visibilityDisposables.dispose();
-		this._refreshThrottler.dispose();
-		this._updateChildrenThrottler.dispose();
 		super.dispose();
 	}
 }

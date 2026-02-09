@@ -25,7 +25,7 @@ export class NotebookCellOutlineDataSource implements INotebookCellOutlineDataSo
 
 	private readonly _disposables = new DisposableStore();
 
-	private readonly _onDidChange = this._disposables.add(new Emitter<OutlineChangeEvent>());
+	private readonly _onDidChange = new Emitter<OutlineChangeEvent>();
 	readonly onDidChange: Event<OutlineChangeEvent> = this._onDidChange.event;
 
 	private _uri: URI | undefined;
@@ -218,5 +218,6 @@ export class NotebookCellOutlineDataSource implements INotebookCellOutlineDataSo
 		this._entries.length = 0;
 		this._activeEntry = undefined;
 		this._disposables.dispose();
+		this._onDidChange.dispose();
 	}
 }
