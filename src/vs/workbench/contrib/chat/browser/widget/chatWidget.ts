@@ -78,6 +78,15 @@ import { ChatListWidget } from './chatListWidget.js';
 import { ChatEditorOptions } from './chatOptions.js';
 import { ChatViewWelcomePart, IChatSuggestedPrompts, IChatViewWelcomeContent } from '../viewsWelcome/chatViewWelcomeController.js';
 import { IAgentSessionsService } from '../agentSessions/agentSessionsService.js';
+import { IEditorDecorationsCollection } from '../../../../../editor/common/editorCommon.js';
+import { ILanguageFeaturesService } from '../../../../../editor/common/services/languageFeatures.js';
+import { ILanguageConfigurationService } from '../../../../../editor/common/languages/languageConfigurationRegistry.js';
+import { KeyCode } from '../../../../../base/common/keyCodes.js';
+import { InlineCompletionEditorType, InlineSuggestRequestInfo, provideInlineCompletions } from '../../../../../editor/contrib/inlineCompletions/browser/model/provideInlineCompletions.js';
+import { InlineCompletionContext, InlineCompletionTriggerKind } from '../../../../../editor/common/languages.js';
+import { IModelDeltaDecoration } from '../../../../../editor/common/model.js';
+import { Position } from '../../../../../editor/common/core/position.js';
+import { Range } from '../../../../../editor/common/core/range.js';
 
 const $ = dom.$;
 
@@ -164,6 +173,11 @@ const supportsAllAttachments: Required<IChatAgentAttachmentCapabilities> = {
 
 const DISCLAIMER = localize('chatDisclaimer', "AI responses may be inaccurate.");
 
+interface PromptCompletionState {
+	collection: IEditorDecorationsCollection;
+	insertText: string | undefined;
+}
+
 export class ChatWidget extends Disposable implements IChatWidget {
 
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -233,6 +247,10 @@ export class ChatWidget extends Disposable implements IChatWidget {
 	private readonly welcomePart: MutableDisposable<ChatViewWelcomePart> = this._register(new MutableDisposable());
 
 	private readonly chatSuggestNextWidget: ChatSuggestNextWidget;
+
+	private promptCompletionState: PromptCompletionState | undefined;
+	private promptCompletionTimeout: Timeout | undefined;
+	private ignorePromptCompletions: boolean = false;
 
 	private bodyDimension: dom.Dimension | undefined;
 	private visibleChangeCount = 0;
@@ -365,7 +383,9 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		@IAgentSessionsService private readonly agentSessionsService: IAgentSessionsService,
 		@IChatTodoListService private readonly chatTodoListService: IChatTodoListService,
 		@IWorkspaceContextService private readonly contextService: IWorkspaceContextService,
-		@ILifecycleService private readonly lifecycleService: ILifecycleService
+		@ILifecycleService private readonly lifecycleService: ILifecycleService,
+		@ILanguageFeaturesService private readonly languageFeaturesService: ILanguageFeaturesService,
+		@ILanguageConfigurationService private readonly languageConfigurationService: ILanguageConfigurationService,
 	) {
 		super();
 
@@ -1740,11 +1760,16 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		if (this.bodyDimension?.width) {
 			this.input.layout(this.bodyDimension.width);
 		}
+		this.promptCompletionState = {
+			collection: this.inputEditor.createDecorationsCollection(),
+			insertText: undefined
+		};
 
 		this._register(this.input.onDidLoadInputState(() => {
 			this.refreshParsedInput();
 		}));
 		this._register(this.input.onDidFocus(() => this._onDidFocus.fire()));
+		this._register(this.input.onDidBlur(() => this.clearPromptCompletions()));
 		this._register(this.input.onDidAcceptFollowup(e => {
 			if (!this.viewModel) {
 				return;
@@ -1790,6 +1815,22 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		this._register(this.inputEditor.onDidChangeModelContent(() => {
 			this.parsedChatRequest = undefined;
 			this.updateChatInputContext();
+			this.updateInlineCompletions();
+		}));
+		this._register(this.inputEditor.onDidChangeCursorPosition(() => {
+			this.updateInlineCompletions();
+		}));
+		this._register(this.inputEditor.onKeyDown((e) => {
+			if (e.keyCode === KeyCode.Tab) {
+				const accepted = this.acceptPromptCompletion();
+				if (accepted) {
+					e.stopPropagation();
+					e.preventDefault();
+				}
+			}
+			if (e.keyCode === KeyCode.Escape) {
+				this.clearPromptCompletions();
+			}
 		}));
 		this._register(this.chatAgentService.onDidChangeAgents(() => {
 			this.parsedChatRequest = undefined;
@@ -2472,6 +2513,117 @@ export class ChatWidget extends Disposable implements IChatWidget {
 	private updateChatInputContext() {
 		const currentAgent = this.parsedInput.parts.find(part => part instanceof ChatRequestAgentPart);
 		this.agentInInput.set(!!currentAgent);
+	}
+
+	private async updateInlineCompletions(): Promise<void> {
+		if (this.ignorePromptCompletions) {
+			return;
+		}
+		this.clearPromptCompletions();
+		if (this.promptCompletionTimeout) {
+			clearTimeout(this.promptCompletionTimeout);
+		}
+		this.promptCompletionTimeout = setTimeout(async () => {
+			if (!this.promptCompletionState) {
+				return;
+			}
+			const model = this.inputEditor.getModel();
+			const position = this.inputEditor.getPosition();
+			if (!model || !position) {
+				return;
+			}
+			const requestInfo: InlineSuggestRequestInfo = {
+				editorType: InlineCompletionEditorType.TextEditor,
+				startTime: Date.now(),
+				languageId: model.getLanguageId(),
+				reason: '',
+				availableProviders: [],
+				typingInterval: 0,
+				typingIntervalCharacterCount: 0,
+				sku: undefined
+			};
+			const context: InlineCompletionContext = {
+				triggerKind: InlineCompletionTriggerKind.Automatic,
+				includeInlineEdits: false,
+				includeInlineCompletions: false,
+				selectedSuggestionInfo: undefined,
+				requestUuid: '',
+				requestIssuedDateTime: Date.now(),
+				earliestShownDateTime: Date.now(),
+			};
+			const updatedCompletions = provideInlineCompletions(
+				this.languageFeaturesService.inlineCompletionsProvider.all(model),
+				position,
+				model,
+				context,
+				requestInfo,
+				this.languageConfigurationService
+			);
+			const completions = updatedCompletions.lists;
+			if (!completions) {
+				return;
+			}
+			for await (const completion of completions) {
+				const inlineSuggestions = completion.inlineSuggestions;
+				const items = inlineSuggestions.items;
+				for (const item of items) {
+					const insertText = typeof item.insertText === 'string' ? item.insertText : (item.insertText ? item.insertText.snippet : undefined);
+					if (!!insertText) {
+						this.setPromptCompletionState({ position, insertText });
+						return;
+					}
+				}
+			}
+		}, 500);
+	}
+
+	private setPromptCompletionState(opts: { position: Position; insertText: string } | null): void {
+		if (!this.promptCompletionState) {
+			return;
+		}
+		if (opts !== null) {
+			const position = opts.position;
+			const insertText = opts.insertText;
+			const decorations: readonly IModelDeltaDecoration[] = [{
+				range: Range.fromPositions(position),
+				options: {
+					description: 'Prompt Completions',
+					after: {
+						content: insertText,
+						inlineClassName: 'chat-inline-completion'
+					},
+					showIfCollapsed: true,
+				}
+			}];
+			this.promptCompletionState.insertText = insertText;
+			this.promptCompletionState.collection.set(decorations);
+		} else {
+			this.promptCompletionState.insertText = undefined;
+			this.promptCompletionState.collection.set([]);
+		}
+	}
+
+	private clearPromptCompletions(): void {
+		this.setPromptCompletionState(null);
+	}
+
+	private acceptPromptCompletion(): boolean {
+		if (!this.promptCompletionState) {
+			return false;
+		}
+		const model = this.inputEditor.getModel();
+		if (!model) {
+			return false;
+		}
+		const newValue = model.getValue() + this.promptCompletionState.insertText;
+		this.ignorePromptCompletions = true;
+		this.inputEditor.setValue(newValue);
+		const lineCount = model.getLineCount();
+		const lineMaxColumn = model.getLineMaxColumn(lineCount);
+		this.inputEditor.setPosition({ lineNumber: lineCount, column: lineMaxColumn });
+		this.ignorePromptCompletions = false;
+		this.clearPromptCompletions();
+		return true;
 	}
 
 	private async _switchToAgentByName(agentName: string): Promise<void> {
