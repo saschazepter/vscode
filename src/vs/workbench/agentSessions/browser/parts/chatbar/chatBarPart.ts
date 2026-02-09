@@ -57,7 +57,7 @@ export class ChatBarPart extends AbstractPaneCompositePart {
 		return Math.max(width, 300);
 	}
 
-	readonly priority = LayoutPriority.Low;
+	readonly priority = LayoutPriority.High;
 
 	constructor(
 		@INotificationService notificationService: INotificationService,
