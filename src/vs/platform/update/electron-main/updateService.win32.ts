@@ -345,11 +345,22 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 		this.availableUpdate.cancelFilePath = cancelFilePath;
 
 		await pfs.Promises.writeFile(this.availableUpdate.updateFilePath, 'flag');
-		const child = spawn(this.availableUpdate.packagePath, ['/verysilent', '/log', `/update="${this.availableUpdate.updateFilePath}"`, `/sessionend="${sessionEndFlagPath}"`, `/cancel="${cancelFilePath}"`, '/nocloseapplications', '/mergetasks=runcode,!desktopicon,!quicklaunchicon'], {
-			detached: true,
-			stdio: ['ignore', 'ignore', 'ignore'],
-			windowsVerbatimArguments: true
-		});
+		const child = spawn(this.availableUpdate.packagePath,
+			[
+				'/verysilent',
+				'/log',
+				`/update="${this.availableUpdate.updateFilePath}"`,
+				`/sessionend="${sessionEndFlagPath}"`,
+				`/cancel="${cancelFilePath}"`,
+				'/nocloseapplications',
+				'/mergetasks=runcode,!desktopicon,!quicklaunchicon'
+			],
+			{
+				detached: true,
+				stdio: ['ignore', 'ignore', 'ignore'],
+				windowsVerbatimArguments: true
+			}
+		);
 
 		// Track the process so we can cancel it if needed
 		this.availableUpdate.updateProcess = child;
