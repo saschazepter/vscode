@@ -8,6 +8,7 @@ import { Codicon } from '../../../../../base/common/codicons.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { IChatSessionTiming } from '../../common/chatService/chatService.js';
+import { IChatSessionsExtensionPoint } from '../../common/chatSessionsService.js';
 import { foreground, listActiveSelectionForeground, registerColor, transparent } from '../../../../../platform/theme/common/colorRegistry.js';
 import { getChatSessionType } from '../../common/model/chatUri.js';
 
@@ -89,7 +90,11 @@ export function isFirstPartyAgentSessionProvider(provider: AgentSessionProviders
 	}
 }
 
-export function getAgentCanContinueIn(provider: AgentSessionProviders): boolean {
+export function getAgentCanContinueIn(provider: AgentSessionProviders, contribution?: IChatSessionsExtensionPoint): boolean {
+	// Read-only sessions (e.g., Growth) are passive/informational and cannot be delegation targets
+	if (contribution?.isReadOnly) {
+		return false;
+	}
 	switch (provider) {
 		case AgentSessionProviders.Local:
 		case AgentSessionProviders.Background:
