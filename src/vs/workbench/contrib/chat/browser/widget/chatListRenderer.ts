@@ -108,6 +108,7 @@ import { IChatTipService } from '../chatTipService.js';
 import { IAccessibilityService } from '../../../../../platform/accessibility/common/accessibility.js';
 import { ChatHookContentPart } from './chatContentParts/chatHookContentPart.js';
 import { ChatPendingDragController } from './chatPendingDragAndDrop.js';
+import { HookType } from '../../common/promptSyntax/hookSchema.js';
 
 const $ = dom.$;
 
@@ -1423,8 +1424,9 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		}
 
 		// hooks that are displayed (denied or warnings) are basically replacing the tool call, so it's basically a tool call
+		// but stop/subAgentStop hooks should not be pinned into thinking parts
 		if (part.kind === 'hook') {
-			return true;
+			return part.hookType !== HookType.Stop && part.hookType !== HookType.SubagentStop;
 		}
 
 		if (collapsedToolsMode === CollapsedToolsDisplayMode.Off) {
@@ -1970,7 +1972,8 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		if (hookPart.stopReason || hookPart.systemMessage) {
 			const part = this.instantiationService.createInstance(ChatHookContentPart, hookPart, context);
 
-			const lastThinking = this.getLastThinkingPart(templateData.renderedParts);
+			const shouldPinToThinking = hookPart.hookType !== HookType.Stop && hookPart.hookType !== HookType.SubagentStop;
+			const lastThinking = shouldPinToThinking ? this.getLastThinkingPart(templateData.renderedParts) : undefined;
 			if (lastThinking) {
 				const hookTitle = hookPart.stopReason
 					? (hookPart.toolDisplayName
