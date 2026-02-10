@@ -278,7 +278,7 @@ async function buildWebExtensions(isWatch: boolean): Promise<void> {
 
 	// Find all esbuild-browser.mjs files
 	const esbuildConfigLocations = await nodeUtil.promisify(glob)(
-		path.join(extensionsPath, '**', 'esbuild-browser.mjs'),
+		path.join(extensionsPath, '**', 'esbuild-browser.ts'),
 		{ ignore: ['**/node_modules'] }
 	);
 
