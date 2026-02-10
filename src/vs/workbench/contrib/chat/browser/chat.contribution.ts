@@ -46,7 +46,7 @@ import { ChatTodoListService, IChatTodoListService } from '../common/tools/chatT
 import { ChatTransferService, IChatTransferService } from '../common/model/chatTransferService.js';
 import { IChatVariablesService } from '../common/attachments/chatVariables.js';
 import { ChatWidgetHistoryService, IChatWidgetHistoryService } from '../common/widget/chatWidgetHistoryService.js';
-import { AgentsControlClickBehavior, ChatAgentLocation, ChatConfiguration, ChatModeKind, QuickOpenAlternative } from '../common/constants.js';
+import { AgentsControlClickBehavior, ChatAgentLocation, ChatConfiguration, ChatModeKind } from '../common/constants.js';
 import { ILanguageModelIgnoredFilesService, LanguageModelIgnoredFilesService } from '../common/ignoredFiles.js';
 import { ILanguageModelsService, LanguageModelsService } from '../common/languageModels.js';
 import { ILanguageModelStatsService, LanguageModelStatsService } from '../common/languageModelStats.js';
@@ -215,21 +215,10 @@ configurationRegistry.registerConfiguration({
 			default: true,
 			tags: ['experimental']
 		},
-		[ChatConfiguration.AgentsControlFullWidth]: {
+		[ChatConfiguration.CommandCenterShowStatus]: {
 			type: 'boolean',
-			markdownDescription: nls.localize('chat.agentsControl.fullWidth', "Shows the agent status pill as a full-width element in the command center, replacing the default search box. The pill displays workspace name and agent session attention messages."),
+			markdownDescription: nls.localize('chat.commandCenter.showStatus', "Shows agent session attention indicators in the command center when sessions need user input."),
 			default: false,
-			tags: ['experimental']
-		},
-		[ChatConfiguration.QuickOpenAlternative]: {
-			type: 'string',
-			enum: [QuickOpenAlternative.Default, QuickOpenAlternative.Agents],
-			enumDescriptions: [
-				nls.localize('workbench.quickOpen.alternative.default', "Uses the standard Quick Open file picker."),
-				nls.localize('workbench.quickOpen.alternative.agents', "Uses the agents quick access picker with tabbed files, commands, and sessions.")
-			],
-			markdownDescription: nls.localize('workbench.quickOpen.alternative', "Controls which quick open implementation is used when opening Quick Open from the command center."),
-			default: QuickOpenAlternative.Default,
 			tags: ['experimental']
 		},
 		[ChatConfiguration.AgentSessionProjectionEnabled]: {

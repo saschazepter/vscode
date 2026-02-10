@@ -109,23 +109,3 @@ export class ToggleAgentStatusAction extends ToggleTitleBarConfigAction {
 }
 
 //#endregion
-
-//#region Toggle Full-Width Agent Control
-
-export class ToggleAgentsControlFullWidthAction extends ToggleTitleBarConfigAction {
-	constructor() {
-		super(
-			ChatConfiguration.AgentsControlFullWidth,
-			localize('toggle.agentsControlFullWidth', 'Full-Width Agent Control'),
-			localize('toggle.agentsControlFullWidthDescription', "Toggle the full-width agent status pill in the command center."), 7,
-			ContextKeyExpr.and(
-				ChatContextKeys.enabled,
-				IsCompactTitleBarContext.negate(),
-				ChatContextKeys.supported,
-				ContextKeyExpr.has('config.window.commandCenter'),
-			)
-		);
-	}
-}
-
-//#endregion

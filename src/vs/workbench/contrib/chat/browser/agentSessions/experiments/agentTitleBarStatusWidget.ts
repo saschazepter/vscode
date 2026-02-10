@@ -35,28 +35,14 @@ function registerActivationHandler(disposables: DisposableStore, element: HTMLEl
 	}));
 }
 
-/**
- * Sort sessions by most recently started request (descending).
- */
-function compareByMostRecentRequest(a: IAgentSession, b: IAgentSession): number {
-	const timeA = a.timing.lastRequestStarted ?? a.timing.created;
-	const timeB = b.timing.lastRequestStarted ?? b.timing.created;
-	return timeB - timeA;
-}
 import { EnterAgentSessionProjectionAction, ExitAgentSessionProjectionAction } from './agentSessionProjectionActions.js';
 import { IAgentSessionsService } from '../agentSessionsService.js';
 import { AgentSessionStatus, IAgentSession, isSessionInProgressStatus } from '../agentSessionsModel.js';
 import { BaseActionViewItem, IBaseActionViewItemOptions } from '../../../../../../base/browser/ui/actionbar/actionViewItems.js';
 import { IAction, Separator, SubmenuAction, toAction } from '../../../../../../base/common/actions.js';
-import { ILabelService } from '../../../../../../platform/label/common/label.js';
 import { IWorkspaceContextService, WorkbenchState } from '../../../../../../platform/workspace/common/workspace.js';
-import { IBrowserWorkbenchEnvironmentService } from '../../../../../services/environment/browser/environmentService.js';
 import { IEditorGroupsService } from '../../../../../services/editor/common/editorGroupsService.js';
 import { IEditorService } from '../../../../../services/editor/common/editorService.js';
-import { Verbosity } from '../../../../../common/editor.js';
-import { Schemas } from '../../../../../../base/common/network.js';
-import { renderAsPlaintext } from '../../../../../../base/browser/markdownRenderer.js';
-import { openSession } from '../agentSessionsOpener.js';
 import { IInstantiationService } from '../../../../../../platform/instantiation/common/instantiation.js';
 import { IMenuService, MenuId, MenuItemAction, SubmenuItemAction } from '../../../../../../platform/actions/common/actions.js';
 import { IContextKeyService } from '../../../../../../platform/contextkey/common/contextkey.js';
@@ -89,8 +75,6 @@ const FILTER_STORAGE_KEY = 'agentSessions.filterExcludes.agentsessionsviewerfilt
 // Storage key for saving user's filter state before we override it
 const PREVIOUS_FILTER_STORAGE_KEY = 'agentSessions.filterExcludes.previousUserFilter';
 
-const NLS_EXTENSION_HOST = localize('devExtensionWindowTitlePrefix', "[Extension Development Host]");
-const TITLE_DIRTY = '\u25cf ';
 
 /**
  * Agent Status Widget - renders agent status in the command center.
@@ -105,9 +89,6 @@ export class AgentTitleBarStatusWidget extends BaseActionViewItem {
 
 	private _container: HTMLElement | undefined;
 	private readonly _dynamicDisposables = this._register(new DisposableStore());
-
-	/** The currently displayed in-progress session (if any) - clicking pill opens this */
-	private _displayedSession: IAgentSession | undefined;
 
 	/** Cached render state to avoid unnecessary DOM rebuilds */
 	private _lastRenderState: string | undefined;
@@ -137,9 +118,7 @@ export class AgentTitleBarStatusWidget extends BaseActionViewItem {
 		@ICommandService private readonly commandService: ICommandService,
 		@IKeybindingService private readonly keybindingService: IKeybindingService,
 		@IAgentSessionsService private readonly agentSessionsService: IAgentSessionsService,
-		@ILabelService private readonly labelService: ILabelService,
 		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
-		@IBrowserWorkbenchEnvironmentService private readonly environmentService: IBrowserWorkbenchEnvironmentService,
 		@IEditorGroupsService private readonly editorGroupsService: IEditorGroupsService,
 		@IEditorService private readonly editorService: IEditorService,
 		@IMenuService private readonly menuService: IMenuService,
@@ -196,7 +175,7 @@ export class AgentTitleBarStatusWidget extends BaseActionViewItem {
 
 		// Re-render when settings change
 		this._register(this.configurationService.onDidChangeConfiguration(e => {
-			if (e.affectsConfiguration(ChatConfiguration.AgentsControlFullWidth) || e.affectsConfiguration(ChatConfiguration.AgentStatusEnabled) || e.affectsConfiguration(ChatConfiguration.ChatViewSessionsEnabled)) {
+			if (e.affectsConfiguration(ChatConfiguration.AgentStatusEnabled) || e.affectsConfiguration(ChatConfiguration.ChatViewSessionsEnabled)) {
 				this._lastRenderState = undefined; // Force re-render
 				this._render();
 			}
@@ -271,24 +250,10 @@ export class AgentTitleBarStatusWidget extends BaseActionViewItem {
 			const sessionInfo = this.agentTitleBarStatusService.sessionInfo;
 			const { activeSessions, unreadSessions, attentionNeededSessions } = this._getSessionStats();
 
-			// Get attention session info for state computation
-			const attentionSession = attentionNeededSessions.length > 0
-				? [...attentionNeededSessions].sort(compareByMostRecentRequest)[0]
-				: undefined;
-
-			const attentionText = attentionSession?.description
-				? (typeof attentionSession.description === 'string'
-					? attentionSession.description
-					: renderAsPlaintext(attentionSession.description))
-				: attentionSession?.label;
-
-			const label = this._getLabel();
-
 			// Get current filter state for state key
 			const { isFilteredToUnread, isFilteredToInProgress } = this._getCurrentFilterState();
 
-			// Check which settings are enabled (these are independent settings)
-			const fullWidthEnabled = this.configurationService.getValue<boolean>(ChatConfiguration.AgentsControlFullWidth) === true;
+			// Check which settings are enabled
 			const agentStatusEnabled = this.configurationService.getValue<boolean>(ChatConfiguration.AgentStatusEnabled) === true;
 			const viewSessionsEnabled = this.configurationService.getValue<boolean>(ChatConfiguration.ChatViewSessionsEnabled) !== false;
 
@@ -299,11 +264,8 @@ export class AgentTitleBarStatusWidget extends BaseActionViewItem {
 				activeCount: activeSessions.length,
 				unreadCount: unreadSessions.length,
 				attentionCount: attentionNeededSessions.length,
-				attentionText,
-				label,
 				isFilteredToUnread,
 				isFilteredToInProgress,
-				fullWidthEnabled,
 				agentStatusEnabled,
 				viewSessionsEnabled,
 			});
@@ -327,9 +289,6 @@ export class AgentTitleBarStatusWidget extends BaseActionViewItem {
 			} else if (this.agentTitleBarStatusService.mode === AgentStatusMode.SessionReady) {
 				// Session ready mode - show session title + enter projection button
 				this._renderSessionReadyMode(this._dynamicDisposables);
-			} else if (fullWidthEnabled) {
-				// Unified Agents Bar - show full pill with label + status badge
-				this._renderChatInputMode(this._dynamicDisposables);
 			} else if (agentStatusEnabled) {
 				// Agent Status - show only the status badge (sparkle + unread/active counts)
 				this._renderBadgeOnlyMode(this._dynamicDisposables);
@@ -384,81 +343,6 @@ export class AgentTitleBarStatusWidget extends BaseActionViewItem {
 	// #endregion
 
 	// #region Mode Renderers
-
-	private _renderChatInputMode(disposables: DisposableStore): void {
-		if (!this._container) {
-			return;
-		}
-
-		const { activeSessions, unreadSessions, attentionNeededSessions, hasAttentionNeeded } = this._getSessionStats();
-
-		// Render command center items (like debug toolbar) FIRST - to the left
-		this._renderCommandCenterToolbar(disposables);
-
-		// Create pill
-		const pill = $('div.agent-status-pill.chat-input-mode');
-		if (hasAttentionNeeded) {
-			pill.classList.add('needs-attention');
-		}
-		pill.setAttribute('role', 'button');
-		pill.setAttribute('aria-label', localize('openQuickAccess', "Open Quick Access"));
-		pill.tabIndex = 0;
-		this._firstFocusableElement = pill;
-		this._container.appendChild(pill);
-
-		// Left icon - always use standard search icon (matching CommandCenterQuickPickItem).
-		// When sessions need attention, overlay a report badge.
-		const leftIcon = $('span.agent-status-left-icon');
-		if (hasAttentionNeeded) {
-			// Show report icon + count when sessions need attention
-			const reportIcon = renderIcon(Codicon.report);
-			const countSpan = $('span.agent-status-attention-count');
-			countSpan.textContent = String(attentionNeededSessions.length);
-			reset(leftIcon, reportIcon, countSpan);
-			leftIcon.classList.add('has-attention');
-		} else {
-			reset(leftIcon, renderIcon(Codicon.search));
-		}
-		pill.appendChild(leftIcon);
-
-		// Label (workspace name by default, placeholder on hover)
-		// Show attention progress or default label
-		const label = $('span.agent-status-label');
-		const { session: attentionSession, progress: progressText } = this._getSessionNeedingAttention(attentionNeededSessions);
-		this._displayedSession = attentionSession;
-
-		const defaultLabel = progressText ?? this._getLabel();
-
-		if (progressText) {
-			label.classList.add('has-progress');
-		}
-
-		label.textContent = defaultLabel;
-		pill.appendChild(label);
-
-		// No hover swap behavior - the pill should look like standard Quick Open when idle.
-		// When attention is needed, the label already shows progress text.
-
-		// Setup hover tooltip
-		const hoverDelegate = getDefaultHoverDelegate('mouse');
-		disposables.add(this.hoverService.setupManagedHover(hoverDelegate, pill, () => {
-			if (this._displayedSession) {
-				return localize('openSessionTooltip', "Open session: {0}", this._displayedSession.label);
-			}
-			const kbForTooltip = this.keybindingService.lookupKeybinding(QUICK_OPEN_ACTION_ID)?.getLabel();
-			return kbForTooltip
-				? localize('askTooltip', "Search ({0})", kbForTooltip)
-				: localize('askTooltip2', "Search");
-		}));
-
-		// Click handler - open displayed session if showing progress, otherwise open unified quick access
-		registerActivationHandler(disposables, pill, () => this._handlePillClick());
-
-		// Status badge (separate rectangle on right) - only when Agent Status is enabled
-		if (this.configurationService.getValue<boolean>(ChatConfiguration.AgentStatusEnabled) === true) {
-			this._renderStatusBadge(disposables, activeSessions, unreadSessions, attentionNeededSessions);
-		}
-	}
 
 	private _renderSessionMode(disposables: DisposableStore): void {
 		if (!this._container) {
@@ -1066,107 +950,6 @@ export class AgentTitleBarStatusWidget extends BaseActionViewItem {
 
 	// #endregion
 
-	// #region Click Handlers
-
-	/**
-	 * Handle pill click - opens the displayed session if showing progress,
-	 * otherwise opens quick open (which respects the `workbench.quickOpen.alternative` setting).
-	 */
-	private _handlePillClick(): void {
-		if (this._displayedSession) {
-			this.instantiationService.invokeFunction(openSession, this._displayedSession);
-		} else {
-			this.commandService.executeCommand(QUICK_OPEN_ACTION_ID);
-		}
-	}
-
-	// #endregion
-
-	// #region Session Helpers
-
-	/**
-	 * Get the session most urgently needing user attention (approval/confirmation/input).
-	 * Returns undefined if no sessions need attention.
-	 */
-	private _getSessionNeedingAttention(attentionNeededSessions: IAgentSession[]): { session: IAgentSession | undefined; progress: string | undefined } {
-		if (attentionNeededSessions.length === 0) {
-			return { session: undefined, progress: undefined };
-		}
-
-		// Sort by most recently started request
-		const sorted = [...attentionNeededSessions].sort(compareByMostRecentRequest);
-
-		const mostRecent = sorted[0];
-		if (!mostRecent.description) {
-			return { session: mostRecent, progress: mostRecent.label };
-		}
-
-		// Convert markdown to plain text if needed
-		const progress = typeof mostRecent.description === 'string'
-			? mostRecent.description
-			: renderAsPlaintext(mostRecent.description);
-
-		return { session: mostRecent, progress };
-	}
-
-	// #endregion
-
-	// #region Label Helpers
-
-	/**
-	 * Compute the label to display, matching the command center behavior.
-	 * Includes prefix and suffix decorations (remote host, extension dev host, etc.)
-	 */
-	private _getLabel(): string {
-		const { prefix, suffix } = this._getTitleDecorations();
-
-		// Base label: workspace name or file name (when tabs are hidden)
-		let label = this.labelService.getWorkspaceLabel(this.workspaceContextService.getWorkspace());
-		if (this.editorGroupsService.partOptions.showTabs === 'none') {
-			const activeEditor = this.editorService.activeEditor;
-			if (activeEditor) {
-				const dirty = activeEditor.isDirty() && !activeEditor.isSaving() ? TITLE_DIRTY : '';
-				label = `${dirty}${activeEditor.getTitle(Verbosity.SHORT)}`;
-			}
-		}
-
-		if (!label) {
-			label = localize('agentStatusWidget.askAnything', "Ask anything...");
-		}
-
-		// Apply prefix and suffix decorations
-		if (prefix) {
-			label = localize('label1', "{0} {1}", prefix, label);
-		}
-		if (suffix) {
-			label = localize('label2', "{0} {1}", label, suffix);
-		}
-
-		return label.replaceAll(/\r\n|\r|\n/g, '\u23CE');
-	}
-
-	/**
-	 * Get prefix and suffix decorations for the title (matching WindowTitle behavior)
-	 */
-	private _getTitleDecorations(): { prefix: string | undefined; suffix: string | undefined } {
-		let prefix: string | undefined;
-		const suffix: string | undefined = undefined;
-
-		// Add remote host label if connected to a remote
-		if (this.environmentService.remoteAuthority) {
-			prefix = this.labelService.getHostLabel(Schemas.vscodeRemote, this.environmentService.remoteAuthority);
-		}
-
-		// Add extension development host prefix
-		if (this.environmentService.isExtensionDevelopment) {
-			prefix = !prefix
-				? NLS_EXTENSION_HOST
-				: `${NLS_EXTENSION_HOST} - ${prefix}`;
-		}
-
-		return { prefix, suffix };
-	}
-
 	// #endregion
 }
 
@@ -1195,20 +978,17 @@ export class AgentTitleBarStatusRendering extends Disposable implements IWorkben
 		}, undefined));
 
 		// Add/remove CSS classes on workbench based on settings
-		// Force enable command center and disable chat controls when agent status or unified agents bar is enabled
 		// TODO: This only targets mainWindow - should use layoutService or a multi-window approach
 		// to apply classes per-window for proper auxiliary window support.
 		const updateClass = () => {
 			const commandCenterEnabled = configurationService.getValue<boolean>(LayoutSettings.COMMAND_CENTER) === true;
 			const enabled = configurationService.getValue<boolean>(ChatConfiguration.AgentStatusEnabled) === true && commandCenterEnabled;
-			const fullWidth = configurationService.getValue<boolean>(ChatConfiguration.AgentsControlFullWidth) === true && commandCenterEnabled;
 
 			mainWindow.document.body.classList.toggle('agent-status-enabled', enabled);
-			mainWindow.document.body.classList.toggle('agents-control-full-width', fullWidth);
 		};
 		updateClass();
 		this._register(configurationService.onDidChangeConfiguration(e => {
-			if (e.affectsConfiguration(ChatConfiguration.AgentStatusEnabled) || e.affectsConfiguration(ChatConfiguration.AgentsControlFullWidth) || e.affectsConfiguration(LayoutSettings.COMMAND_CENTER)) {
+			if (e.affectsConfiguration(ChatConfiguration.AgentStatusEnabled) || e.affectsConfiguration(LayoutSettings.COMMAND_CENTER)) {
 				updateClass();
 			}
 		}));

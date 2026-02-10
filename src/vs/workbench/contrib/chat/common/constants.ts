@@ -15,8 +15,7 @@ export enum ChatConfiguration {
 	RequestQueueingDefaultAction = 'chat.requestQueuing.defaultAction',
 	AgentStatusEnabled = 'chat.agentsControl.enabled',
 	EditorAssociations = 'chat.editorAssociations',
-	AgentsControlFullWidth = 'chat.agentsControl.fullWidth',
-	QuickOpenAlternative = 'workbench.quickOpen.alternative',
+	CommandCenterShowStatus = 'chat.commandCenter.showStatus',
 	AgentSessionProjectionEnabled = 'chat.agentSessionProjection.enabled',
 	EditModeHidden = 'chat.editMode.hidden',
 	AlternativeToolAction = 'chat.alternativeToolAction.enabled',
@@ -90,11 +89,6 @@ export enum AgentsControlClickBehavior {
 	Default = 'default',
 	Cycle = 'cycle',
 	Focus = 'focus',
-}
-
-export enum QuickOpenAlternative {
-	Default = 'default',
-	Agents = 'agents',
 }
 
 export type RawChatParticipantLocation = 'panel' | 'terminal' | 'notebook' | 'editing-session';
