@@ -9,14 +9,12 @@ import { KeyMod, KeyCode } from '../../../base/common/keyCodes.js';
 import { KeybindingsRegistry, KeybindingWeight, IKeybindingRule } from '../../../platform/keybinding/common/keybindingsRegistry.js';
 import { IQuickInputService, ItemActivation, QuickInputHideReason } from '../../../platform/quickinput/common/quickInput.js';
 import { IKeybindingService } from '../../../platform/keybinding/common/keybinding.js';
-import { CommandsRegistry, ICommandService } from '../../../platform/commands/common/commands.js';
-import { IConfigurationService } from '../../../platform/configuration/common/configuration.js';
+import { CommandsRegistry } from '../../../platform/commands/common/commands.js';
 import { ServicesAccessor } from '../../../platform/instantiation/common/instantiation.js';
 import { inQuickPickContext, defaultQuickAccessContext, getQuickNavigateHandler } from '../quickaccess.js';
 import { ILocalizedString } from '../../../platform/action/common/action.js';
 import { AnythingQuickAccessProviderRunOptions } from '../../../platform/quickinput/common/quickAccess.js';
 import { Codicon } from '../../../base/common/codicons.js';
-import { ContextKeyExpr } from '../../../platform/contextkey/common/contextkey.js';
 
 //#region Quick access management commands and keys
 
@@ -159,19 +157,11 @@ registerAction2(class QuickAccessAction extends Action2 {
 			menu: {
 				id: MenuId.CommandCenterCenter,
 				order: 100,
-				when: ContextKeyExpr.notEquals('config.chat.agentsControl.fullWidth', true)
 			}
 		});
 	}
 
 	run(accessor: ServicesAccessor): void {
-		const configurationService = accessor.get(IConfigurationService);
-		const alternative = configurationService.getValue<string>('workbench.quickOpen.alternative');
-		if (alternative === 'agents') {
-			const commandService = accessor.get(ICommandService);
-			commandService.executeCommand('workbench.action.unifiedQuickAccess');
-			return;
-		}
 		const quickInputService = accessor.get(IQuickInputService);
 		const providerOptions: AnythingQuickAccessProviderRunOptions = {
 			includeHelp: true,

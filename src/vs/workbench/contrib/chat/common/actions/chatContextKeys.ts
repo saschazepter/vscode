@@ -120,6 +120,8 @@ export namespace ChatContextKeys {
 	export const hasAgentSessionChanges = new RawContextKey<boolean>('agentSessionHasChanges', false, { type: 'boolean', description: localize('agentSessionHasChanges', "True when the current agent session item has changes.") });
 
 	export const isKatexMathElement = new RawContextKey<boolean>('chatIsKatexMathElement', false, { type: 'boolean', description: localize('chatIsKatexMathElement', "True when focusing a KaTeX math element.") });
+
+	export const sessionNeedsAttention = new RawContextKey<boolean>('chat.sessionNeedsAttention', false, { type: 'boolean', description: localize('chatSessionNeedsAttention', "True when any agent session needs user input and is not visible in a chat widget.") });
 }
 
 export namespace ChatContextKeyExprs {

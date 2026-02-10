@@ -7,7 +7,6 @@ import { Action2, registerAction2 } from '../../../../../../platform/actions/com
 import { ServicesAccessor, IInstantiationService } from '../../../../../../platform/instantiation/common/instantiation.js';
 import { localize2 } from '../../../../../../nls.js';
 import { ChatContextKeys } from '../../../common/actions/chatContextKeys.js';
-import { ChatConfiguration, QuickOpenAlternative } from '../../../common/constants.js';
 import { ContextKeyExpr } from '../../../../../../platform/contextkey/common/contextkey.js';
 import { KeyCode, KeyMod } from '../../../../../../base/common/keyCodes.js';
 import { KeybindingWeight, KeybindingsRegistry } from '../../../../../../platform/keybinding/common/keybindingsRegistry.js';
@@ -22,7 +21,6 @@ export const UNIFIED_QUICK_ACCESS_ACTION_ID = 'workbench.action.unifiedQuickAcce
 
 const PRECONDITION = ContextKeyExpr.and(
 	ChatContextKeys.enabled,
-	ContextKeyExpr.equals(`config.${ChatConfiguration.QuickOpenAlternative}`, QuickOpenAlternative.Agents)
 );
 
 /**
