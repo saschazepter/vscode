@@ -131,6 +131,7 @@ import { McpGatewayChannel } from '../../platform/mcp/node/mcpGatewayChannel.js'
 import { IWebContentExtractorService } from '../../platform/webContentExtractor/common/webContentExtractor.js';
 import { NativeWebContentExtractorService } from '../../platform/webContentExtractor/electron-main/webContentExtractorService.js';
 import ErrorTelemetry from '../../platform/telemetry/electron-main/errorTelemetry.js';
+import { PolicyTelemetryReporter } from '../../platform/policy/common/policyTelemetry.js';
 
 /**
  * The main VS Code application. There will only ever be one instance,
@@ -592,6 +593,12 @@ export class CodeApplication extends Disposable {
 
 		// Error telemetry
 		appInstantiationService.invokeFunction(accessor => this._register(new ErrorTelemetry(accessor.get(ILogService), accessor.get(ITelemetryService))));
+
+		// Policy telemetry
+		appInstantiationService.invokeFunction(accessor => {
+			const reporter = this._register(new PolicyTelemetryReporter(accessor.get(IPolicyService), accessor.get(ITelemetryService)));
+			reporter.reportInitialPolicies();
+		});
 
 		// Metered connection telemetry
 		appInstantiationService.invokeFunction(accessor => {
