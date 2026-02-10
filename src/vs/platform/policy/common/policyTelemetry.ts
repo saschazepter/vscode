@@ -37,8 +37,8 @@ type PolicyConfigurationSnapshotClassification = {
 export class PolicyTelemetryReporter extends Disposable {
 
 	constructor(
-		@IPolicyService private readonly policyService: IPolicyService,
-		@ITelemetryService private readonly telemetryService: ITelemetryService
+		private readonly policyService: IPolicyService,
+		private readonly telemetryService: ITelemetryService
 	) {
 		super();
 		this._register(this.policyService.onDidChange(names => this.reportPolicyChanges(names)));
