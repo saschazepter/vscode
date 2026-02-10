@@ -155,8 +155,8 @@
 	width: 100% !important;
 }
 
-/* Remove tree indentation padding in list mode */
-.changes-view-body .chat-editing-session-list.list-mode .monaco-tl-twistie {
+/* Remove tree indentation padding for hidden twisties (both list and tree mode) */
+.changes-view-body .chat-editing-session-list .monaco-tl-twistie.force-no-twistie {
 	padding-left: 0 !important;
 }
 /* List rows */
