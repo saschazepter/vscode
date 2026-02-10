@@ -21,6 +21,12 @@ super();
 }
 
 async setPolicyValue(name: PolicyName, value: PolicyValue): Promise<void> {
+// Add policy definition if not present so serialize() works
+if (!this.policyDefinitions[name]) {
+this.policyDefinitions[name] = {
+type: typeof value === 'string' ? 'string' : typeof value === 'number' ? 'number' : 'boolean'
+};
+}
 this.policies.set(name, value);
 this._testOnDidChange.fire([name]);
 }
