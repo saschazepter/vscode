@@ -65,7 +65,8 @@ export class EmbeddedCodeEditorWidget extends CodeEditorWidget {
 }
 
 export function getOuterEditor(accessor: ServicesAccessor): ICodeEditor | null {
-	const editor = accessor.get(ICodeEditorService).getFocusedCodeEditor();
+	const codeEditorService = accessor.get(ICodeEditorService);
+	const editor = codeEditorService.getFocusedCodeEditor() ?? codeEditorService.getActiveCodeEditor();
 	if (editor instanceof EmbeddedCodeEditorWidget) {
 		return editor.getParentEditor();
 	}
