@@ -176,11 +176,15 @@ export class BrowserViewMainService extends Disposable implements IBrowserViewMa
 	}
 
 	async createBrowserContext(): Promise<string> {
-		const browserSession = BrowserSession.createBrowserContext();
+		const browserSession = BrowserSession.getOrCreateEphemeral(generateUuid(), 'cdp-created');
 		return browserSession.id;
 	}
 
 	async disposeBrowserContext(browserContextId: string): Promise<void> {
+		if (!browserContextId.startsWith('cdp-created:')) {
+			throw new Error('Can only dispose browser contexts created via CDP');
+		}
+
 		const browserSession = BrowserSession.get(browserContextId);
 		if (!browserSession) {
 			throw new Error(`Browser context ${browserContextId} not found`);

@@ -6,7 +6,7 @@
 import { Disposable, DisposableMap } from '../../../../base/common/lifecycle.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { generateUuid } from '../../../../base/common/uuid.js';
-import { ICDPTarget, CDPEvent, CDPError, CDPServerError, CDPMethodNotFoundError, ICDPConnection, CDPTargetInfo, ICDPBrowserTarget } from './types.js';
+import { ICDPTarget, CDPEvent, CDPError, CDPServerError, CDPMethodNotFoundError, CDPInvalidParamsError, ICDPConnection, CDPTargetInfo, ICDPBrowserTarget } from './types.js';
 
 /**
  * CDP protocol handler for browser-level connections.
@@ -145,7 +145,7 @@ export class CDPBrowserProxy extends Disposable implements ICDPConnection {
 
 	private async handleTargetSetAutoAttach({ autoAttach, flatten }: { autoAttach?: boolean; flatten?: boolean }) {
 		if (!flatten) {
-			throw new Error('This implementation only supports auto-attach with flatten=true');
+			throw new CDPInvalidParamsError('This implementation only supports auto-attach with flatten=true');
 		}
 
 		this._autoAttach = autoAttach ?? false;
@@ -193,7 +193,7 @@ export class CDPBrowserProxy extends Disposable implements ICDPConnection {
 
 	private async handleTargetAttachToTarget({ targetId, flatten }: { targetId: string; flatten?: boolean }) {
 		if (!flatten) {
-			throw new Error('This implementation only supports attachToTarget with flatten=true');
+			throw new CDPInvalidParamsError('This implementation only supports attachToTarget with flatten=true');
 		}
 
 		const sessionId = await this.attachToTarget(targetId);
@@ -261,7 +261,7 @@ export class CDPBrowserProxy extends Disposable implements ICDPConnection {
 			}
 		}
 
-		throw new Error(`Target ${targetId} not found`);
+		throw new CDPServerError(`Target ${targetId} not found`);
 	}
 
 	/** Find the targetId for a given sessionId */

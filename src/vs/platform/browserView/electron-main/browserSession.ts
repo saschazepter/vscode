@@ -4,8 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { session } from 'electron';
-import { Disposable } from '../../../base/common/lifecycle.js';
-import { generateUuid } from '../../../base/common/uuid.js';
+import { Disposable, IDisposable, toDisposable } from '../../../base/common/lifecycle.js';
 import { joinPath } from '../../../base/common/resources.js';
 import { URI } from '../../../base/common/uri.js';
 import { BrowserViewStorageScope } from '../common/browserView.js';
@@ -36,9 +35,9 @@ export class BrowserSession extends Disposable {
 	 * All live sessions keyed by their unique id.
 	 *
 	 * ID derivation rules (one-to-one with Electron sessions):
-	 *  - Global scope           -> `"global"`
-	 *  - Workspace scope        -> `"workspace:${workspaceId}"`
-	 *  - Ephemeral scope        -> `"ephemeral:${viewId}"`
+	 *  - Global scope         -> `"global"`
+	 *  - Workspace scope      -> `"workspace:${workspaceId}"`
+	 *  - Ephemeral scope      -> `"ephemeral:${viewId}"` or `"${type}:${viewId}"` for custom types
 	 */
 	private static readonly _sessions = new Map<string, BrowserSession>();
 
@@ -98,13 +97,13 @@ export class BrowserSession extends Disposable {
 	/**
 	 * Get or create an ephemeral session for the given view / target id.
 	 */
-	static getOrCreateEphemeral(viewId: string): BrowserSession {
-		const sessionId = `ephemeral:${viewId}`;
+	static getOrCreateEphemeral(viewId: string, type?: string): BrowserSession {
+		const sessionId = `${type ?? 'ephemeral'}:${viewId}`;
 		const existing = BrowserSession._sessions.get(sessionId);
 		if (existing) {
 			return existing;
 		}
-		return new BrowserSession(sessionId, session.fromPartition(`vscode-browser-${viewId}`), BrowserViewStorageScope.Ephemeral);
+		return new BrowserSession(sessionId, session.fromPartition(`vscode-browser-${type}${viewId}`), BrowserViewStorageScope.Ephemeral);
 	}
 
 	/**
@@ -141,19 +140,11 @@ export class BrowserSession extends Disposable {
 		}
 	}
 
-	/**
-	 * Create a new isolated browser context.  Returns the
-	 * {@link BrowserSession} representing that context.  The {@link id}
-	 * doubles as the CDP `browserContextId`.
-	 */
-	static createBrowserContext(): BrowserSession {
-		const contextId = generateUuid();
-		const partition = `vscode-browser-context-${contextId}`;
-		const electronSession = session.fromPartition(partition);
-		return new BrowserSession(contextId, electronSession, BrowserViewStorageScope.Ephemeral);
-	}
-
 	// ---- Instance ----------------------------------------------------
+
+	// Reference count how many browser views are currently using this session.
+	// When the count drops to zero, the session is removed from the registry.
+	private refs = 0;
 
 	private constructor(
 		/**
@@ -190,7 +181,21 @@ export class BrowserSession extends Disposable {
 		});
 	}
 
+	public acquire(): IDisposable {
+		this.refs++;
+		return toDisposable(() => {
+			this.refs--;
+			if (this.refs === 0) {
+				this.dispose();
+			}
+		});
+	}
+
 	override dispose(): void {
+		if (this.refs > 0) {
+			throw new Error(`Cannot dispose BrowserSession because it is still in use`);
+		}
+
 		BrowserSession._sessions.delete(this.id);
 		super.dispose();
 	}

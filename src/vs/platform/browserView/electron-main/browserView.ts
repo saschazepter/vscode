@@ -155,6 +155,8 @@ export class BrowserView extends Disposable implements ICDPTarget {
 
 		this._debugger = new BrowserViewDebugger(this, this.logService);
 
+		this._register(session.acquire());
+
 		this.setupEventListeners();
 	}
 
