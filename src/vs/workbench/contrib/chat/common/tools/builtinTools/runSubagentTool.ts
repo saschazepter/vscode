@@ -36,6 +36,7 @@ import {
 	VSCodeToolReference,
 } from '../languageModelToolsService.js';
 import { ComputeAutomaticInstructions } from '../../promptSyntax/computeAutomaticInstructions.js';
+import { AskQuestionsToolId } from './askQuestionsTool.js';
 import { ManageTodoListToolToolId } from './manageTodoListTool.js';
 import { createToolSimpleTextResult } from './toolHelpers.js';
 import { ICustomAgent, IPromptsService } from '../../promptSyntax/service/promptsService.js';
@@ -223,7 +224,7 @@ export class RunSubagentTool extends Disposable implements IToolImpl {
 			if (modeTools) {
 				modeTools[RunSubagentTool.Id] = false;
 				modeTools[ManageTodoListToolToolId] = false;
-				modeTools['copilot_askQuestions'] = false;
+				modeTools[AskQuestionsToolId] = false;
 			}
 
 			const variableSet = new ChatRequestVariableSet();
