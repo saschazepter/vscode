@@ -437,6 +437,8 @@ export interface IChatHookPart {
 	/** Display name of the tool that was affected by the hook */
 	toolDisplayName?: string;
 	metadata?: { readonly [key: string]: unknown };
+	/** If set, this hook was executed within a subagent invocation and should be grouped with it. */
+	subAgentInvocationId?: string;
 }
 
 export interface IChatTerminalToolInvocationData {

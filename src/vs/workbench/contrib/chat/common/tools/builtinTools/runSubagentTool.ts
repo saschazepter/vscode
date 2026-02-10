@@ -222,6 +222,8 @@ export class RunSubagentTool extends Disposable implements IToolImpl {
 						} else {
 							model.acceptResponseProgress(request, part);
 						}
+					} else if (part.kind === 'hook') {
+						model.acceptResponseProgress(request, { ...part, subAgentInvocationId });
 					} else if (part.kind === 'markdownContent') {
 						if (inEdit) {
 							model.acceptResponseProgress(request, { kind: 'markdownContent', content: new MarkdownString('\n```\n\n') });

@@ -424,6 +424,7 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 					hookType: HookType.PreToolUse,
 					stopReason: hookReason,
 					toolDisplayName: toolData?.displayName,
+					subAgentInvocationId: dto.subAgentInvocationId,
 				};
 				this._chatService.appendProgress(request, hookPart);
 			}
@@ -513,6 +514,7 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 						hookType: HookType.PostToolUse,
 						stopReason: hookReason,
 						toolDisplayName: toolData?.displayName,
+						subAgentInvocationId: dto.subAgentInvocationId,
 					};
 					this._chatService.appendProgress(request, hookPart);
 				}

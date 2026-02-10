@@ -28,7 +28,6 @@
 .chat-hook-reason {
 	font-size: var(--vscode-chat-font-size-body-s);
 	padding: 4px 10px;
-	font-weight: 600;
 }
 
 .chat-hook-message {

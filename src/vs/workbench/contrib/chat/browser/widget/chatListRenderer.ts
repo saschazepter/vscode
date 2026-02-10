@@ -1423,10 +1423,12 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 			return true;
 		}
 
-		// hooks that are displayed (denied or warnings) are basically replacing the tool call, so it's basically a tool call
-		// but stop/subAgentStop hooks should not be pinned into thinking parts
+		// only tool related hooks will be inside thinking containers.
 		if (part.kind === 'hook') {
-			return part.hookType !== HookType.Stop && part.hookType !== HookType.SubagentStop;
+			if (part.subAgentInvocationId) {
+				return false;
+			}
+			return part.hookType === HookType.PreToolUse || part.hookType === HookType.PostToolUse;
 		}
 
 		if (collapsedToolsMode === CollapsedToolsDisplayMode.Off) {
@@ -1972,7 +1974,16 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		if (hookPart.stopReason || hookPart.systemMessage) {
 			const part = this.instantiationService.createInstance(ChatHookContentPart, hookPart, context);
 
-			const shouldPinToThinking = hookPart.hookType !== HookType.Stop && hookPart.hookType !== HookType.SubagentStop;
+			if (hookPart.subAgentInvocationId) {
+				const subagentPart = this.getSubagentPart(templateData.renderedParts, hookPart.subAgentInvocationId);
+				if (subagentPart) {
+					subagentPart.appendHookItem(() => ({ domNode: part.domNode, disposable: part }), hookPart);
+					return this.renderNoContent(other => other.kind === 'hook' && other.hookType === hookPart.hookType && other.subAgentInvocationId === hookPart.subAgentInvocationId);
+				}
+			}
+
+			// Only pin preTool/postTool hooks into the thinking part
+			const shouldPinToThinking = hookPart.hookType === HookType.PreToolUse || hookPart.hookType === HookType.PostToolUse;
 			const lastThinking = shouldPinToThinking ? this.getLastThinkingPart(templateData.renderedParts) : undefined;
 			if (lastThinking) {
 				const hookTitle = hookPart.stopReason
