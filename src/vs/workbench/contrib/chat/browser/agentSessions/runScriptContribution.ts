@@ -20,6 +20,7 @@ import { AgentSessionsWorkbenchMenus } from '../../../../agentSessions/browser/a
 import { IWorkbenchContribution } from '../../../../common/contributions.js';
 import { IDebugService, ILaunch } from '../../../debug/common/debug.js';
 import { ITerminalService } from '../../../terminal/browser/terminal.js';
+import { IActiveAgentSessionService } from './agentSessionsService.js';
 
 // Storage keys
 const STORAGE_KEY_DEFAULT_RUN_ACTION = 'workbench.agentSessions.defaultRunAction';
@@ -65,6 +66,7 @@ export class RunScriptContribution extends Disposable implements IWorkbenchContr
 		@IDebugService private readonly _debugService: IDebugService,
 		@IInstantiationService _instantiationService: IInstantiationService,
 		@IWorkspaceContextService private readonly _workspaceContextService: IWorkspaceContextService,
+		@IActiveAgentSessionService private readonly _activeAgentSessionService: IActiveAgentSessionService,
 	) {
 		super();
 
@@ -177,11 +179,8 @@ export class RunScriptContribution extends Disposable implements IWorkbenchContr
 	}
 
 	private getActiveWorkspaceFolderUri(): URI | undefined {
-		const folders = this._workspaceContextService.getWorkspace().folders;
-		if (folders.length === 1) {
-			return folders[0].uri;
-		}
-		return undefined;
+		const activeSession = this._activeAgentSessionService.activeSession.get();
+		return activeSession?.worktree;
 	}
 
 	private _registerDropdownMenuItems(): void {
@@ -334,6 +333,9 @@ export class RunScriptContribution extends Disposable implements IWorkbenchContr
 
 		// Get the active workspace folder as cwd
 		const cwd = this.getActiveWorkspaceFolderUri();
+		if (!cwd) {
+			return;
+		}
 
 		// Create a new terminal and run the command
 		const terminal = await terminalService.createTerminal({
