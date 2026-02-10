@@ -253,7 +253,7 @@ function awaitPick<T extends IQuickPickItem>(
 		};
 		const disposables = new DisposableStore();
 		disposables.add(picker.onDidAccept(() => {
-			done(picker.selectedItems[0] as T | undefined);
+			done(picker.activeItems[0] as T | undefined);
 		}));
 		disposables.add(picker.onDidTriggerButton(button => {
 			if (button === backButton) {
@@ -337,6 +337,11 @@ export async function showConfigureHooksQuickPick(
 	let selectedFile: IHookFileQuickPickItem | undefined;
 	let selectedFolder: { uri: URI } | undefined;
 
+	// Track steps that were actually shown to the user, so Back
+	// skips over auto-executed steps and returns to the last visible one.
+	const stepHistory: Step[] = [];
+	const goBack = (): Step | undefined => stepHistory.pop();
+
 	while (true) {
 		switch (step) {
 			case Step.SelectHookType: {
@@ -365,6 +370,7 @@ export async function showConfigureHooksQuickPick(
 				}
 
 				selectedHookType = result;
+				stepHistory.push(Step.SelectHookType);
 				step = Step.SelectHook;
 				break;
 			}
@@ -413,7 +419,7 @@ export async function showConfigureHooksQuickPick(
 					const result = await awaitPick<IHookQuickPickItem>(picker, backButton);
 
 					if (result === 'back') {
-						step = Step.SelectHookType;
+						step = goBack() ?? Step.SelectHookType;
 						break;
 					}
 					if (!result) {
@@ -421,6 +427,7 @@ export async function showConfigureHooksQuickPick(
 						return;
 					}
 					selectedHook = result;
+					stepHistory.push(Step.SelectHook);
 				}
 
 				// Handle clicking on existing hook (focus into command)
@@ -505,7 +512,7 @@ export async function showConfigureHooksQuickPick(
 					const result = await awaitPick<IHookFileQuickPickItem>(picker, backButton);
 
 					if (result === 'back') {
-						step = Step.SelectHook;
+						step = goBack() ?? Step.SelectHook;
 						break;
 					}
 					if (!result) {
@@ -513,6 +520,7 @@ export async function showConfigureHooksQuickPick(
 						return;
 					}
 					selectedFile = result;
+					stepHistory.push(Step.SelectFile);
 				}
 
 				// Handle adding hook to existing file
@@ -535,13 +543,13 @@ export async function showConfigureHooksQuickPick(
 			}
 
 			case Step.SelectFolder: {
-				// Get source folders for hooks, filter to local storage only (no User Data)
+				// Get source folders for hooks
 				const allFolders = await promptsService.getSourceFolders(PromptsType.hook);
 				const localFolders = allFolders.filter(f => f.storage === PromptsStorage.local);
 
 				if (localFolders.length === 0) {
 					picker.hide();
-					notificationService.error(localize('commands.hook.noLocalFolders', "No local hook folder found. Please configure a hooks folder in your workspace."));
+					notificationService.error(localize('commands.hook.noLocalFolders', "Please open a workspace folder to configure hooks."));
 					return;
 				}
 
@@ -562,7 +570,7 @@ export async function showConfigureHooksQuickPick(
 					const result = await awaitPick<typeof folderItems[0]>(picker, backButton);
 
 					if (result === 'back') {
-						step = Step.SelectFile;
+						step = goBack() ?? Step.SelectFile;
 						break;
 					}
 					if (!result) {
@@ -570,6 +578,7 @@ export async function showConfigureHooksQuickPick(
 						return;
 					}
 					selectedFolder = result.folder;
+					stepHistory.push(Step.SelectFolder);
 				}
 
 				step = Step.EnterFilename;
@@ -629,10 +638,11 @@ export async function showConfigureHooksQuickPick(
 				if (fileNameResult === 'back') {
 					// Re-show the picker for the previous step
 					picker.show();
-					step = Step.SelectFolder;
+					step = goBack() ?? Step.SelectFolder;
 					break;
 				}
 				if (!fileNameResult) {
+					store.dispose();
 					return;
 				}
 
@@ -646,6 +656,7 @@ export async function showConfigureHooksQuickPick(
 				// Check if file already exists
 				if (await fileService.exists(hookFileUri)) {
 					// File exists - add hook to it instead of creating new
+					store.dispose();
 					await addHookToFile(
 						hookFileUri,
 						selectedHookType!.hookType.id as HookType,
@@ -676,6 +687,7 @@ export async function showConfigureHooksQuickPick(
 				const selection = findHookCommandSelection(jsonContent, selectedHookType!.hookType.id, 0, 'command');
 
 				// Open editor with selection
+				store.dispose();
 				await editorService.openEditor({
 					resource: hookFileUri,
 					options: {
