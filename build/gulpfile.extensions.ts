@@ -293,7 +293,7 @@ async function buildWebExtensions(isWatch: boolean): Promise<void> {
 
 	// Run esbuild for extensions with esbuild-browser.mjs
 	if (esbuildConfigLocations.length > 0) {
-		promises.push(util.streamToPromise(ext.esbuildExtensions('packaging web extension (esbuild)', isWatch, esbuildConfigLocations.map(script => ({ script }))) as NodeJS.ReadWriteStream));
+		promises.push(ext.esbuildExtensions('packaging web extension (esbuild)', isWatch, esbuildConfigLocations.map(script => ({ script }))));
 	}
 
 	// Run webpack for remaining extensions

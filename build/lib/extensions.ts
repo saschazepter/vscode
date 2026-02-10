@@ -707,7 +707,7 @@ export async function webpackExtensions(taskName: string, isWatch: boolean, webp
 	});
 }
 
-export function esbuildExtensions(taskName: string, isWatch: boolean, scripts: { script: string; outputRoot?: string }[]): Stream {
+export async function esbuildExtensions(taskName: string, isWatch: boolean, scripts: { script: string; outputRoot?: string }[]): Promise<void> {
 	function reporter(stdError: string, script: string) {
 		const matches = (stdError || '').match(/\> (.+): error: (.+)?/g);
 		fancyLog(`Finished ${ansiColors.green(taskName)} ${script} with ${matches ? matches.length : 0} errors.`);
@@ -715,8 +715,6 @@ export function esbuildExtensions(taskName: string, isWatch: boolean, scripts: {
 			fancyLog.error(match);
 		}
 	}
-
-	const result = es.through();
 
 	const tasks = scripts.map(({ script, outputRoot }) => {
 		return new Promise<void>((resolve, reject) => {
@@ -741,16 +739,10 @@ export function esbuildExtensions(taskName: string, isWatch: boolean, scripts: {
 		});
 	});
 
-	Promise.all(tasks).then(() => {
-		result.emit('end');
-	}).catch(err => {
-		result.emit('error', err);
-	});
-
-	return result;
+	await Promise.all(tasks);
 }
 
-export function buildExtensionMedia(isWatch: boolean, outputRoot?: string): Stream {
+export function buildExtensionMedia(isWatch: boolean, outputRoot?: string): Promise<void> {
 	return esbuildExtensions('esbuilding extension media', isWatch, esbuildMediaScripts.map(p => ({
 		script: path.join(extensionsPath, p),
 		outputRoot: outputRoot ? path.join(root, outputRoot, path.dirname(p)) : undefined
