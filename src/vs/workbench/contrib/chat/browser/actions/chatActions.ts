@@ -763,9 +763,9 @@ export function registerChatActions() {
 				keybinding: [{
 					weight: KeybindingWeight.WorkbenchContrib,
 					primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyT,
-					when: ContextKeyExpr.or(
-						ContextKeyExpr.and(ChatContextKeys.inChatSession, ChatContextKeys.chatModeKind.isEqualTo(ChatModeKind.Agent)),
-						ChatContextKeys.inChatTodoList
+					when: ContextKeyExpr.and(
+						ChatContextKeys.chatModeKind.isEqualTo(ChatModeKind.Agent),
+						ContextKeyExpr.or(ChatContextKeys.inChatInput, ChatContextKeys.inChatTodoList)
 					),
 				}]
 			});
