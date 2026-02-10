@@ -201,7 +201,7 @@ const extensionPoint = ExtensionsRegistry.registerExtensionPoint<IChatSessionsEx
 					default: false
 				},
 				isReadOnly: {
-					description: localize('chatSessionsExtPoint.isReadOnly', 'Whether this session type is passive/informational and does not support interactive chat. Read-only sessions will not be registered as agents or appear in session target pickers. Default is false.'),
+					description: localize('chatSessionsExtPoint.isReadOnly', 'Whether this session type is for read-only agents that do not support interactive chat. This flag is incompatible with \'canDelegate\'.'),
 					type: 'boolean',
 					default: false
 				},
