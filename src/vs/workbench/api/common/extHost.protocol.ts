@@ -2602,6 +2602,14 @@ export interface ExtHostTelemetryShape {
 	$onDidChangeTelemetryLevel(level: TelemetryLevel): void;
 }
 
+export interface MainThreadMeteredConnectionShape extends IDisposable {
+}
+
+export interface ExtHostMeteredConnectionShape {
+	$initializeIsConnectionMetered(isMetered: boolean): void;
+	$onDidChangeIsConnectionMetered(isMetered: boolean): void;
+}
+
 export interface ITerminalLinkDto {
 	/** The ID of the link to enable activation and disposal. */
 	id: number;
@@ -3420,8 +3428,9 @@ export interface IChatSessionProviderOptions {
 }
 
 export interface MainThreadChatSessionsShape extends IDisposable {
-	$registerChatSessionItemProvider(handle: number, chatSessionType: string): void;
-	$unregisterChatSessionItemProvider(handle: number): void;
+	$registerChatSessionItemController(handle: number, chatSessionType: string): void;
+	$unregisterChatSessionItemController(handle: number): void;
+	$setChatSessionItems(handle: number, items: Dto<IChatSessionItem>[]): Promise<void>;
 	$onDidChangeChatSessionItems(handle: number): void;
 	$onDidCommitChatSessionItem(handle: number, original: UriComponents, modified: UriComponents): void;
 	$registerChatSessionContentProvider(handle: number, chatSessionScheme: string): void;
@@ -3435,7 +3444,7 @@ export interface MainThreadChatSessionsShape extends IDisposable {
 }
 
 export interface ExtHostChatSessionsShape {
-	$provideChatSessionItems(providerHandle: number, token: CancellationToken): Promise<Dto<IChatSessionItem>[]>;
+	$refreshChatSessionItems(providerHandle: number, token: CancellationToken): Promise<void>;
 	$onDidChangeChatSessionItemState(providerHandle: number, sessionResource: UriComponents, archived: boolean): void;
 
 	$provideChatSessionContent(providerHandle: number, sessionResource: UriComponents, token: CancellationToken): Promise<ChatSessionDto>;
@@ -3487,6 +3496,7 @@ export const MainContext = {
 	MainThreadStorage: createProxyIdentifier<MainThreadStorageShape>('MainThreadStorage'),
 	MainThreadSpeech: createProxyIdentifier<MainThreadSpeechShape>('MainThreadSpeechProvider'),
 	MainThreadTelemetry: createProxyIdentifier<MainThreadTelemetryShape>('MainThreadTelemetry'),
+	MainThreadMeteredConnection: createProxyIdentifier<MainThreadMeteredConnectionShape>('MainThreadMeteredConnection'),
 	MainThreadTerminalService: createProxyIdentifier<MainThreadTerminalServiceShape>('MainThreadTerminalService'),
 	MainThreadTerminalShellIntegration: createProxyIdentifier<MainThreadTerminalShellIntegrationShape>('MainThreadTerminalShellIntegration'),
 	MainThreadWebviews: createProxyIdentifier<MainThreadWebviewsShape>('MainThreadWebviews'),
@@ -3602,6 +3612,7 @@ export const ExtHostContext = {
 	ExtHostTimeline: createProxyIdentifier<ExtHostTimelineShape>('ExtHostTimeline'),
 	ExtHostTesting: createProxyIdentifier<ExtHostTestingShape>('ExtHostTesting'),
 	ExtHostTelemetry: createProxyIdentifier<ExtHostTelemetryShape>('ExtHostTelemetry'),
+	ExtHostMeteredConnection: createProxyIdentifier<ExtHostMeteredConnectionShape>('ExtHostMeteredConnection'),
 	ExtHostLocalization: createProxyIdentifier<ExtHostLocalizationShape>('ExtHostLocalization'),
 	ExtHostMcp: createProxyIdentifier<ExtHostMcpShape>('ExtHostMcp'),
 	ExtHostHooks: createProxyIdentifier<ExtHostHooksShape>('ExtHostHooks'),

@@ -4,7 +4,8 @@
  *--------------------------------------------------------------------------------------------*/
 
 import './media/modalEditorPart.css';
-import { $, addDisposableListener, append, EventType } from '../../../../base/browser/dom.js';
+import { $, addDisposableListener, append, EventHelper, EventType } from '../../../../base/browser/dom.js';
+import { StandardKeyboardEvent } from '../../../../base/browser/keyboardEvent.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { DisposableStore, MutableDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { MenuId } from '../../../../platform/actions/common/actions.js';
@@ -13,6 +14,8 @@ import { IConfigurationService } from '../../../../platform/configuration/common
 import { IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { ServiceCollection } from '../../../../platform/instantiation/common/serviceCollection.js';
+import { IKeybindingService } from '../../../../platform/keybinding/common/keybinding.js';
+import { ResultKind } from '../../../../platform/keybinding/common/keybindingResolver.js';
 import { IStorageService } from '../../../../platform/storage/common/storage.js';
 import { IThemeService } from '../../../../platform/theme/common/themeService.js';
 import { IEditorGroupView, IEditorPartsView } from './editor.js';
@@ -25,6 +28,15 @@ import { IHostService } from '../../../services/host/browser/host.js';
 import { IWorkbenchLayoutService } from '../../../services/layout/browser/layoutService.js';
 import { mainWindow } from '../../../../base/browser/window.js';
 import { localize } from '../../../../nls.js';
+
+const defaultModalEditorAllowableCommands = new Set([
+	'workbench.action.quit',
+	'workbench.action.reloadWindow',
+	'workbench.action.closeActiveEditor',
+	'workbench.action.closeAllEditors',
+	'workbench.action.files.save',
+	'workbench.action.files.saveAll',
+]);
 
 export interface ICreateModalEditorPartResult {
 	readonly part: ModalEditorPartImpl;
@@ -39,6 +51,7 @@ export class ModalEditorPart {
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@IEditorService private readonly editorService: IEditorService,
 		@IWorkbenchLayoutService private readonly layoutService: IWorkbenchLayoutService,
+		@IKeybindingService private readonly keybindingService: IKeybindingService,
 	) {
 	}
 
@@ -95,16 +108,34 @@ export class ModalEditorPart {
 			menuOptions: { shouldForwardArgs: true }
 		}));
 
-		// Update title when active editor changes
 		disposables.add(Event.runAndSubscribe(modalEditorService.onDidActiveEditorChange, (() => {
+
+			// Update title when active editor changes
 			const activeEditor = editorPart.activeGroup.activeEditor;
 			titleElement.textContent = activeEditor?.getTitle(Verbosity.MEDIUM) ?? '';
+
+			// Notify editor part that active editor changed
+			editorPart.notifyActiveEditorChanged();
 		})));
 
 		// Handle close on click outside (on the dimmed background)
 		disposables.add(addDisposableListener(modalElement, EventType.MOUSE_DOWN, e => {
 			if (e.target === modalElement) {
 				editorPart.close();
+			}
+		}));
+
+		// Block certain workbench commands from being dispatched while the modal is open
+		disposables.add(addDisposableListener(modalElement, EventType.KEY_DOWN, e => {
+			const event = new StandardKeyboardEvent(e);
+			const resolved = this.keybindingService.softDispatch(event, this.layoutService.mainContainer);
+			if (resolved.kind === ResultKind.KbFound && resolved.commandId) {
+				if (
+					resolved.commandId.startsWith('workbench.') &&
+					!defaultModalEditorAllowableCommands.has(resolved.commandId)
+				) {
+					EventHelper.stop(event, true);
+				}
 			}
 		}));
 
@@ -123,7 +154,7 @@ export class ModalEditorPart {
 			editorPartContainer.style.height = `${height}px`;
 
 			const borderSize = 2; // Account for 1px border on all sides and modal header height
-			const headerHeight = 24 + 1 /* border bottom */;
+			const headerHeight = 32 + 1 /* border bottom */;
 			editorPart.layout(width - borderSize, height - borderSize - headerHeight, 0, 0);
 		}));
 
@@ -157,20 +188,28 @@ class ModalEditorPartImpl extends EditorPart implements IModalEditorPart {
 		@IStorageService storageService: IStorageService,
 		@IWorkbenchLayoutService layoutService: IWorkbenchLayoutService,
 		@IHostService hostService: IHostService,
-		@IContextKeyService contextKeyService: IContextKeyService
+		@IContextKeyService contextKeyService: IContextKeyService,
 	) {
 		const id = ModalEditorPartImpl.COUNTER++;
 		super(editorPartsView, `workbench.parts.modalEditor.${id}`, groupsLabel, windowId, instantiationService, themeService, configurationService, storageService, layoutService, hostService, contextKeyService);
 
-		// Enforce some editor part options for modal editors
+		this.enforceModalPartOptions();
+	}
+
+	private enforceModalPartOptions(): void {
+		const editorCount = this.groups.reduce((count, group) => count + group.count, 0);
 		this.optionsDisposable.value = this.enforcePartOptions({
-			showTabs: 'none',
+			showTabs: editorCount > 1 ? 'multiple' : 'none',
 			closeEmptyGroups: true,
-			tabActionCloseVisibility: false,
+			tabActionCloseVisibility: editorCount > 1,
 			editorActionsLocation: 'default',
 			tabHeight: 'default',
 			wrapTabs: false
 		});
+	}
+
+	notifyActiveEditorChanged(): void {
+		this.enforceModalPartOptions();
 	}
 
 	protected override handleContextKeys(): void {

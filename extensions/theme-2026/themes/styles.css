@@ -26,13 +26,23 @@
 	--backdrop-blur-lg: blur(40px) saturate(180%);
 }
 
+/* Dark theme: add brightness reduction for contrast-safe luminosity blending over bright backgrounds */
+.monaco-workbench.vs-dark {
+	--backdrop-blur-sm: blur(12px) brightness(0.55);
+	--backdrop-blur-md: blur(20px) saturate(180%) brightness(0.55);
+	--backdrop-blur-lg: blur(40px) saturate(180%) brightness(0.55);
+}
+
 /* Stealth Shadows - shadow-based depth for UI elements, controlled by workbench.stealthShadows.enabled */
 
 /* Activity Bar */
 .monaco-workbench .part.activitybar {
-	box-shadow: var(--shadow-md);
 	z-index: 50;
 	position: relative;
+}
+
+.monaco-workbench.nosidebar .part.activitybar {
+	box-shadow: var(--shadow-md);
 }
 
 .monaco-workbench.activitybar-right .part.activitybar {
@@ -52,7 +62,7 @@
 
 .monaco-workbench .part.auxiliarybar {
 	box-shadow: var(--shadow-md);
-	z-index: 40;
+	z-index: 35;
 	position: relative;
 }
 
@@ -75,7 +85,7 @@
 /* Panel */
 .monaco-workbench .part.panel {
 	box-shadow: var(--shadow-md);
-	z-index: 35;
+	/* z-index: 35; */
 	position: relative;
 }
 
@@ -93,15 +103,19 @@
 
 /* Sashes - ensure they extend full height and are above other panels */
 .monaco-workbench .monaco-sash {
-	z-index: 45;
+	z-index: 35;
 }
 
 .monaco-workbench .monaco-sash.vertical {
+	z-index: 40;
+}
+
+.monaco-workbench .monaco-sash.vertical:nth-child(2) {
 	z-index: 45;
 }
 
 .monaco-workbench .monaco-sash.horizontal {
-	z-index: 45;
+	z-index: 35;
 }
 
 /* Editor */
@@ -146,30 +160,12 @@
 	box-shadow: var(--shadow-md);
 }
 
-.monaco-workbench .part.titlebar {
-	position: relative;
-	background: linear-gradient(
-		to bottom,
-		color-mix(in srgb, var(--vscode-focusBorder) 10%, transparent) 0%,
-		transparent 100%
-	), var(--vscode-titleBar-activeBackground) !important;
-}
-
 .monaco-workbench .part.titlebar.inactive {
 	background: var(--vscode-titleBar-inactiveBackground) !important;
 
-	.command-center .monaco-action-bar,
-	.command-center .actions-container,
-	.agent-status-pill, .agent-status-badge {
-		background-color: transparent !important;
+	& > * {
+		opacity: 0.3;
 	}
-}
-
-/* Status Bar */
-.monaco-workbench .part.statusbar {
-	box-shadow: var(--shadow-md);
-	z-index: 55;
-	position: relative;
 }
 
 /* Quick Input (Command Palette) */
@@ -179,7 +175,14 @@
 	background-color: color-mix(in srgb, var(--vscode-quickInput-background) 60%, transparent) !important;
 	backdrop-filter: var(--backdrop-blur-lg);
 	-webkit-backdrop-filter: var(--backdrop-blur-lg);
-	-webkit-backdrop-filter: blur(40px) saturate(180%);
+}
+
+/* Remove backdrop-filter when quick chat is active, because it creates a new
+   containing block that shifts position:fixed suggest widgets to the right. */
+.monaco-workbench .quick-input-widget:has(.interactive-session) {
+	backdrop-filter: none;
+	-webkit-backdrop-filter: none;
+	background-color: var(--vscode-quickInput-background) !important;
 }
 
 .monaco-workbench.vs-dark .quick-input-widget {
@@ -613,9 +616,9 @@
 
 /* Notebook */
 
-.monaco-workbench .notebookOverlay.notebook-editor {
+/* .monaco-workbench .notebookOverlay.notebook-editor {
 	z-index: 35 !important;
-}
+} */
 
 .monaco-workbench .notebookOverlay .monaco-list-row .cell-editor-part:before {
 	box-shadow: inset var(--shadow-sm);
@@ -657,6 +660,21 @@
 
 .monaco-workbench .part.titlebar .command-center .agent-status-pill {
 	box-shadow: inset var(--shadow-sm);
+	border-color: var(--vscode-input-border);
+}
+
+.monaco-workbench .part.titlebar .command-center .agent-status-badge {
+	border-color: var(--vscode-input-border);
+}
+
+.monaco-workbench.vs-dark .monaco-action-bar:not(.vertical) .agent-status-badge-section.sparkle .action-container:hover,
+.monaco-workbench.vs-dark .monaco-action-bar:not(.vertical) .agent-status-badge-section.sparkle .dropdown-action-container:hover
+ {
+	background-color: var(--vscode-toolbar-hoverBackground);
+}
+
+.monaco-workbench.vs-dark .monaco-action-bar:not(.vertical) .agent-status-badge .monaco-dropdown-with-primary:not(.disabled):hover {
+	background-color: var(--vscode-commandCenter-activeBackground);
 }
 
 .monaco-dialog-modal-block .dialog-shadow {
