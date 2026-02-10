@@ -5,102 +5,110 @@
 
 import assert from 'assert';
 import { Emitter } from '../../../../base/common/event.js';
+import { IStringDictionary } from '../../../../base/common/collections.js';
+import { Disposable } from '../../../../base/common/lifecycle.js';
 import { PolicyName } from '../../../../base/common/policy.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/common/utils.js';
 import { NullTelemetryService } from '../../../../platform/telemetry/common/telemetryUtils.js';
-import { AbstractPolicyService, PolicyDefinition, PolicyValue } from '../../common/policy.js';
+import { IPolicyService, PolicyDefinition, PolicyValue } from '../../common/policy.js';
 import { PolicyTelemetryReporter } from '../../common/policyTelemetry.js';
 
-class TestPolicyService extends AbstractPolicyService {
-private readonly _testOnDidChange = this._register(new Emitter<readonly PolicyName[]>());
-override readonly onDidChange = this._testOnDidChange.event;
+/**
+ * Lightweight stub implementing IPolicyService directly to avoid
+ * extending AbstractPolicyService and exposing its protected members.
+ */
+class StubPolicyService extends Disposable implements IPolicyService {
+readonly _serviceBrand: undefined;
 
-async setPolicyValue(name: PolicyName, value: PolicyValue): Promise<void> {
-if (!this.policyDefinitions[name]) {
-this.policyDefinitions[name] = {
-type: typeof value === 'string' ? 'string' : typeof value === 'number' ? 'number' : 'boolean'
-};
-}
-this.policies.set(name, value);
-this._testOnDidChange.fire([name]);
+private readonly _emitter = this._register(new Emitter<readonly PolicyName[]>());
+readonly onDidChange = this._emitter.event;
+
+policyDefinitions: IStringDictionary<PolicyDefinition> = {};
+private readonly _values = new Map<PolicyName, PolicyValue>();
+
+async updatePolicyDefinitions() { return {}; }
+
+getPolicyValue(name: PolicyName): PolicyValue | undefined {
+return this._values.get(name);
 }
 
-async _updatePolicyDefinitions(_policyDefinitions: { [name: string]: PolicyDefinition }): Promise<void> {
-// No-op for test
+serialize(): IStringDictionary<{ definition: PolicyDefinition; value: PolicyValue }> {
+const result: IStringDictionary<{ definition: PolicyDefinition; value: PolicyValue }> = {};
+for (const [name, def] of Object.entries(this.policyDefinitions)) {
+result[name] = { definition: def, value: this._values.get(name)! };
+}
+return result;
+}
+
+/** Helper for tests: sets a value + definition and fires the change event. */
+setValueAndNotify(name: PolicyName, value: PolicyValue): void {
+const typeStr = typeof value === 'number' ? 'number' : typeof value === 'boolean' ? 'boolean' : 'string';
+this.policyDefinitions[name] = { type: typeStr };
+this._values.set(name, value);
+this._emitter.fire([name]);
 }
 }
 
 suite('Policy Telemetry', () => {
-const disposables = ensureNoDisposablesAreLeakedInTestSuite();
+const ds = ensureNoDisposablesAreLeakedInTestSuite();
 
-test('reports initial snapshot of policies', async () => {
-const policyService = disposables.add(new TestPolicyService());
-const telemetryEvents: Array<{ name: string; data: any }> = [];
+test('reports initial snapshot of policies', () => {
+const svc = ds.add(new StubPolicyService());
 
-const telemetryService = {
-...NullTelemetryService,
-publicLog2(name: string, data: any) {
-telemetryEvents.push({ name, data });
-}
-};
+const logged: Array<{ event: string; payload: any }> = [];
+const tel = { ...NullTelemetryService, publicLog2(ev: string, data: any) { logged.push({ event: ev, payload: data }); } };
 
-await policyService.setPolicyValue('TestPolicy1', 'value1');
-await policyService.setPolicyValue('TestPolicy2', true);
-await policyService.setPolicyValue('TestPolicy3', 42);
+// Populate three policies *before* creating the reporter
+svc.setValueAndNotify('A', 'hello');
+svc.setValueAndNotify('B', true);
+svc.setValueAndNotify('C', 7);
 
-const reporter = disposables.add(new PolicyTelemetryReporter(policyService, telemetryService));
+// Clear events produced by setValueAndNotify (the reporter wasn't listening yet)
+logged.length = 0;
+
+const reporter = ds.add(new PolicyTelemetryReporter(svc, tel));
 reporter.reportInitialSnapshot();
 
-const policyValueSetEvents = telemetryEvents.filter(e => e.name === 'policyValueSet');
-assert.strictEqual(policyValueSetEvents.length, 3, 'Should report 3 policy value set events');
+const perPolicy = logged.filter(l => l.event === 'policyValueSet');
+assert.strictEqual(perPolicy.length, 3, 'one event per active policy');
 
-const snapshotEvents = telemetryEvents.filter(e => e.name === 'policyConfigurationSnapshot');
-assert.strictEqual(snapshotEvents.length, 1, 'Should report 1 snapshot event');
-assert.strictEqual(snapshotEvents[0].data.count, 3, 'Snapshot should show 3 active policies');
+const snapshots = logged.filter(l => l.event === 'policyConfigurationSnapshot');
+assert.strictEqual(snapshots.length, 1);
+assert.strictEqual(snapshots[0].payload.count, 3);
 });
 
-test('reports policy changes', async () => {
-const policyService = disposables.add(new TestPolicyService());
-const telemetryEvents: Array<{ name: string; data: any }> = [];
+test('reports policy changes', () => {
+const svc = ds.add(new StubPolicyService());
 
-const telemetryService = {
-...NullTelemetryService,
-publicLog2(name: string, data: any) {
-telemetryEvents.push({ name, data });
-}
-};
+const logged: Array<{ event: string; payload: any }> = [];
+const tel = { ...NullTelemetryService, publicLog2(ev: string, data: any) { logged.push({ event: ev, payload: data }); } };
 
-const reporter = disposables.add(new PolicyTelemetryReporter(policyService, telemetryService));
+const reporter = ds.add(new PolicyTelemetryReporter(svc, tel));
 
-await policyService.setPolicyValue('NewPolicy', 'newValue');
+svc.setValueAndNotify('X', 'val');
 
-const policyValueSetEvents = telemetryEvents.filter(e => e.name === 'policyValueSet');
-assert.strictEqual(policyValueSetEvents.length, 1, 'Should report 1 policy change event');
-assert.strictEqual(policyValueSetEvents[0].data.name, 'NewPolicy');
-assert.strictEqual(policyValueSetEvents[0].data.hasValue, true);
-assert.strictEqual(policyValueSetEvents[0].data.dataType, 'string');
+const events = logged.filter(l => l.event === 'policyValueSet');
+assert.strictEqual(events.length, 1);
+assert.strictEqual(events[0].payload.name, 'X');
+assert.strictEqual(events[0].payload.hasValue, true);
+assert.strictEqual(events[0].payload.dataType, 'string');
 });
 
-test('reports correct data types', async () => {
-const policyService = disposables.add(new TestPolicyService());
-const telemetryEvents: Array<{ name: string; data: any }> = [];
+test('reports correct data types', () => {
+const svc = ds.add(new StubPolicyService());
 
-const telemetryService = {
-...NullTelemetryService,
-publicLog2(name: string, data: any) {
-telemetryEvents.push({ name, data });
-}
-};
+const logged: Array<{ event: string; payload: any }> = [];
+const tel = { ...NullTelemetryService, publicLog2(ev: string, data: any) { logged.push({ event: ev, payload: data }); } };
 
-const reporter = disposables.add(new PolicyTelemetryReporter(policyService, telemetryService));
+ds.add(new PolicyTelemetryReporter(svc, tel));
 
-await policyService.setPolicyValue('StringPolicy', 'test');
-await policyService.setPolicyValue('NumberPolicy', 123);
-await policyService.setPolicyValue('BooleanPolicy', false);
+svc.setValueAndNotify('S', 'abc');
+svc.setValueAndNotify('N', 42);
+svc.setValueAndNotify('F', false);
 
-const events = telemetryEvents.filter(e => e.name === 'policyValueSet');
-assert.strictEqual(events[0].data.dataType, 'string');
-assert.strictEqual(events[1].data.dataType, 'number');
-assert.strictEqual(events[2].data.dataType, 'boolean');
+const events = logged.filter(l => l.event === 'policyValueSet');
+assert.strictEqual(events[0].payload.dataType, 'string');
+assert.strictEqual(events[1].payload.dataType, 'number');
+assert.strictEqual(events[2].payload.dataType, 'boolean');
 });
 });
