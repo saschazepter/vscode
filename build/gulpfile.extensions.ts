@@ -276,13 +276,13 @@ gulp.task(watchWebExtensionsTask);
 async function buildWebExtensions(isWatch: boolean): Promise<void> {
 	const extensionsPath = path.join(root, 'extensions');
 
-	// Find all esbuild-browser.mjs files
+	// Find all esbuild-browser.ts files
 	const esbuildConfigLocations = await nodeUtil.promisify(glob)(
 		path.join(extensionsPath, '**', 'esbuild-browser.ts'),
 		{ ignore: ['**/node_modules'] }
 	);
 
-	// Find all webpack configs, excluding those that have an esbuild-browser.mjs
+	// Find all webpack configs, excluding those that will be esbuilt
 	const esbuildExtensionDirs = new Set(esbuildConfigLocations.map(p => path.dirname(p)));
 	const webpackConfigLocations = (await nodeUtil.promisify(glob)(
 		path.join(extensionsPath, '**', 'extension-browser.webpack.config.js'),
