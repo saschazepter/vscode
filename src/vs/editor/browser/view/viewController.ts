@@ -200,7 +200,8 @@ export class ViewController {
 		}
 
 		// Skip if string contains RTL characters.
-		if (containsRTL(lineContent)) {
+		const content = lineContent.substring(tokenStart + 1, tokenEnd - 1);
+		if (containsRTL(content)) {
 			return undefined;
 		}
 
