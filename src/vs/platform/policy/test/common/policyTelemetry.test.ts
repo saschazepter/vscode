@@ -19,7 +19,8 @@ suite('Policy Telemetry Reporter', () => {
 
 	class MockPolicyService implements IPolicyService {
 		readonly _serviceBrand: undefined;
-		readonly onDidChange = new Emitter<readonly PolicyName[]>().event;
+		private readonly changeEmitter = new Emitter<readonly PolicyName[]>();
+		readonly onDidChange = this.changeEmitter.event;
 		policyDefinitions: IStringDictionary<PolicyDefinition> = {};
 		private values = new Map<PolicyName, PolicyValue>();
 
@@ -49,7 +50,11 @@ suite('Policy Telemetry Reporter', () => {
 		}
 
 		triggerChange(names: readonly PolicyName[]) {
-			(this.onDidChange as any as Emitter<readonly PolicyName[]>).fire(names);
+			this.changeEmitter.fire(names);
+		}
+
+		dispose() {
+			this.changeEmitter.dispose();
 		}
 	}
 
@@ -87,7 +92,7 @@ suite('Policy Telemetry Reporter', () => {
 	});
 
 	test('should report initial policies on startup', () => {
-		const mockPolicy = new MockPolicyService();
+		const mockPolicy = disposables.add(new MockPolicyService());
 		mockPolicy.policyDefinitions = {
 			'TestPolicy1': { type: 'string' },
 			'TestPolicy2': { type: 'boolean' }
@@ -107,7 +112,7 @@ suite('Policy Telemetry Reporter', () => {
 	});
 
 	test('should report when policy changes', () => {
-		const mockPolicy = new MockPolicyService();
+		const mockPolicy = disposables.add(new MockPolicyService());
 		mockPolicy.policyDefinitions = {
 			'ChangingPolicy': { type: 'number' }
 		};
@@ -124,7 +129,7 @@ suite('Policy Telemetry Reporter', () => {
 	});
 
 	test('should report when policy is cleared', () => {
-		const mockPolicy = new MockPolicyService();
+		const mockPolicy = disposables.add(new MockPolicyService());
 		mockPolicy.policyDefinitions = {
 			'ClearedPolicy': { type: 'string' }
 		};
@@ -139,7 +144,7 @@ suite('Policy Telemetry Reporter', () => {
 	});
 
 	test('should not report undefined policies', () => {
-		const mockPolicy = new MockPolicyService();
+		const mockPolicy = disposables.add(new MockPolicyService());
 		const mockTelemetry = new MockTelemetryService();
 		disposables.add(new PolicyTelemetryReporter(mockPolicy, mockTelemetry));
 

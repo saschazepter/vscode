@@ -18,7 +18,7 @@ type PolicyValueTelemetryClassification = {
 	policyName: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The name of the policy that was set or changed.' };
 	valueType: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The type of value for this policy (string, number, or boolean).' };
 	isSet: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; isMeasurement: true; comment: 'Whether the policy has a value set (true) or was cleared (false).' };
-	owner: 'hediet';
+	owner: 'sandy081';
 	comment: 'Reports when policy values are configured or changed to understand which policies are used most frequently.';
 };
 
