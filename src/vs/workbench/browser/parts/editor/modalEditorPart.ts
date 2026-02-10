@@ -155,7 +155,7 @@ export class ModalEditorPart {
 
 			if (editorPart.maximized) {
 				const padding = 16; // Keep a small margin around all edges
-				width = containerDimension.width - padding;
+				width = Math.max(containerDimension.width - padding, 0);
 				height = Math.max(availableHeight - padding, 0);
 			} else {
 				const maxWidth = 1200;
