@@ -5,7 +5,7 @@
 
 import { raceCancellationError } from '../../../base/common/async.js';
 import { CancellationToken } from '../../../base/common/cancellation.js';
-import { Emitter, Event } from '../../../base/common/event.js';
+import { Emitter } from '../../../base/common/event.js';
 import { IMarkdownString, MarkdownString } from '../../../base/common/htmlContent.js';
 import { Disposable, DisposableMap, DisposableStore, IDisposable } from '../../../base/common/lifecycle.js';
 import { ResourceMap } from '../../../base/common/map.js';
@@ -326,7 +326,7 @@ class MainThreadChatSessionItemController extends Disposable implements IChatSes
 	private readonly _handle: number;
 
 	private readonly _onDidChangeChatSessionItems = this._register(new Emitter<void>());
-	readonly onDidChangeChatSessionItems: Event<void> = this._onDidChangeChatSessionItems.event;
+	public readonly onDidChangeChatSessionItems = this._onDidChangeChatSessionItems.event;
 
 	constructor(
 		proxy: ExtHostChatSessionsShape,
@@ -410,17 +410,15 @@ export class MainThreadChatSessions extends Disposable implements MainThreadChat
 	}
 
 	$registerChatSessionItemController(handle: number, chatSessionType: string): void {
-		// Register the controller handle - items will be pushed via $setChatSessionItems
 		const disposables = new DisposableStore();
 
-		const controller = new MainThreadChatSessionItemController(this._proxy, handle);
-		disposables.add(controller);
+		const controller = disposables.add(new MainThreadChatSessionItemController(this._proxy, handle));
 		disposables.add(this._chatSessionsService.registerChatSessionItemController(chatSessionType, controller));
 
 		this._itemControllerRegistrations.set(handle, {
-			dispose: () => disposables.dispose(),
 			chatSessionType,
 			controller,
+			dispose: () => disposables.dispose(),
 		});
 
 		disposables.add(this._chatSessionsService.registerChatModelChangeListeners(
@@ -437,7 +435,7 @@ export class MainThreadChatSessions extends Disposable implements MainThreadChat
 	async $setChatSessionItems(handle: number, items: Dto<IChatSessionItem>[]): Promise<void> {
 		const registration = this._itemControllerRegistrations.get(handle);
 		if (!registration) {
-			this._logService.warn(`No controller registered for handle ${handle}`);
+			this._logService.warn(`No chat session controller registered for handle ${handle}`);
 			return;
 		}
 
