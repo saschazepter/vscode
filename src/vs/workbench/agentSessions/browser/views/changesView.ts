@@ -18,10 +18,10 @@ import { basename, dirname } from '../../../../base/common/path.js';
 import { isEqual } from '../../../../base/common/resources.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { URI } from '../../../../base/common/uri.js';
-import { localize } from '../../../../nls.js';
+import { localize, localize2 } from '../../../../nls.js';
 import { MenuWorkbenchButtonBar } from '../../../../platform/actions/browser/buttonbar.js';
 import { MenuWorkbenchToolBar } from '../../../../platform/actions/browser/toolbar.js';
-import { MenuId, registerAction2 } from '../../../../platform/actions/common/actions.js';
+import { MenuId, MenuRegistry, registerAction2 } from '../../../../platform/actions/common/actions.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { ContextKeyExpr, IContextKey, IContextKeyService, RawContextKey } from '../../../../platform/contextkey/common/contextkey.js';
 import { IContextMenuService } from '../../../../platform/contextview/browser/contextView.js';
@@ -47,6 +47,8 @@ import { IViewDescriptorService } from '../../../common/views.js';
 import { IChatWidgetService } from '../../../contrib/chat/browser/chat.js';
 import { IAgentSessionsService } from '../../../contrib/chat/browser/agentSessions/agentSessionsService.js';
 import { AgentSessionProviders } from '../../../contrib/chat/browser/agentSessions/agentSessions.js';
+import { AgentSessionsWorkbenchMenus } from '../agentSessionsWorkbenchMenus.js';
+import { IsAgentSessionsWorkspaceContext } from '../../../common/contextkeys.js';
 import { ChatContextKeys } from '../../../contrib/chat/common/actions/chatContextKeys.js';
 import { isIChatSessionFileChange2 } from '../../../contrib/chat/common/chatSessionsService.js';
 import { chatEditingWidgetFileStateContextKey, hasAppliedChatEditsContextKey, hasUndecidedChatEditingResourceContextKey, IChatEditingService, ModifiedFileEntryState } from '../../../contrib/chat/common/editing/chatEditingService.js';
@@ -240,6 +242,15 @@ export class ChangesViewPane extends ViewPane {
 
 		// Track active session from focused chat widgets
 		this.registerActiveSessionTracking();
+
+		// Set chatSessionType on the view's context key service so ViewTitle
+		// menu items can use it in their `when` clauses. Update reactively
+		// when the active session changes.
+		const viewSessionTypeKey = this.scopedContextKeyService.createKey<string>(ChatContextKeys.agentSessionType.key, '');
+		this._register(autorun(reader => {
+			const sessionResource = this.activeSessionResource.read(reader);
+			viewSessionTypeKey.set(sessionResource ? getChatSessionType(sessionResource) : '');
+		}));
 	}
 
 	private registerActiveSessionTracking(): void {
@@ -483,6 +494,8 @@ export class ChangesViewPane extends ViewPane {
 
 		// Calculate stats from combined entries
 		const topLevelStats = derived(reader => {
+			const editEntries = editSessionEntriesObs.read(reader);
+			const sessionFiles = sessionFilesObs.read(reader);
 			const entries = combinedEntriesObs.read(reader);
 
 			let added = 0, removed = 0;
@@ -493,7 +506,7 @@ export class ChangesViewPane extends ViewPane {
 			}
 
 			const files = entries.length;
-			const isSessionMenu = false;
+			const isSessionMenu = editEntries.length === 0 && sessionFiles.length > 0;
 
 			return { files, added, removed, isSessionMenu };
 		});
@@ -504,6 +517,14 @@ export class ChangesViewPane extends ViewPane {
 
 			const scopedContextKeyService = this.renderDisposables.add(this.contextKeyService.createScoped(this.actionsContainer));
 			const scopedInstantiationService = this.renderDisposables.add(this.instantiationService.createChild(new ServiceCollection([IContextKeyService, scopedContextKeyService])));
+
+			// Set the chat session type context key reactively so that menu items with
+			// `chatSessionType == copilotcli` (e.g. Create Pull Request) are shown
+			const chatSessionTypeKey = scopedContextKeyService.createKey<string>(ChatContextKeys.agentSessionType.key, '');
+			this.renderDisposables.add(autorun(reader => {
+				const sessionResource = this.activeSessionResource.read(reader);
+				chatSessionTypeKey.set(sessionResource ? getChatSessionType(sessionResource) : '');
+			}));
 
 			// Bind required context keys for the menu buttons
 			this.renderDisposables.add(bindContextKey(hasUndecidedChatEditingResourceContextKey, scopedContextKeyService, r => {
@@ -996,3 +1017,26 @@ class SetChangesTreeViewModeAction extends ViewAction<ChangesViewPane> {
 
 registerAction2(SetChangesListViewModeAction);
 registerAction2(SetChangesTreeViewModeAction);
+
+// Register the split button menu item that combines Open in VS Code and Open in Terminal
+MenuRegistry.appendMenuItem(MenuId.ViewTitle, {
+	submenu: AgentSessionsWorkbenchMenus.AgentSessionsOpenSubMenu,
+	isSplitButton: { togglePrimaryAction: true },
+	title: localize2('open', "Open..."),
+	icon: Codicon.folderOpened,
+	group: 'navigation',
+	order: 9,
+	when: ContextKeyExpr.and(ContextKeyExpr.equals('view', CHANGES_VIEW_ID), IsAgentSessionsWorkspaceContext, ChatContextKeys.agentSessionType.isEqualTo(AgentSessionProviders.Background)),
+});
+
+// Register the Run action in the changes view title bar
+MenuRegistry.appendMenuItem(MenuId.ViewTitle, {
+	command: {
+		id: 'workbench.action.agentSessions.runScript',
+		title: localize2('run', "Run"),
+		icon: Codicon.play,
+	},
+	group: 'navigation',
+	order: 8,
+	when: ContextKeyExpr.and(ContextKeyExpr.equals('view', CHANGES_VIEW_ID), IsAgentSessionsWorkspaceContext, ChatContextKeys.agentSessionType.isEqualTo(AgentSessionProviders.Background)),
+});

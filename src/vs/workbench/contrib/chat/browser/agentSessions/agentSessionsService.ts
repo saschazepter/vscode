@@ -68,6 +68,11 @@ export type IActiveAgentSessionItem = (IChatSessionItem | IAgentSession) & {
 	 * The repository URI for this session.
 	 */
 	readonly repository: URI | undefined;
+
+	/**
+	 * The worktree URI for this session.
+	 */
+	readonly worktree: URI | undefined;
 };
 
 export interface IActiveAgentSessionService {
@@ -178,10 +183,11 @@ export class ActiveAgentSessionService extends Disposable implements IActiveAgen
 		const agentSession = this.agentSessionsService.model.getSession(sessionResource);
 		if (agentSession) {
 			// For agent sessions, get repository from metadata.workingDirectory
-			const repository = this.getRepositoryFromMetadata(agentSession.metadata);
+			const [repository, worktree] = this.getRepositoryFromMetadata(agentSession.metadata);
 			const activeSessionItem: IActiveAgentSessionItem = {
 				...agentSession,
 				repository,
+				worktree,
 			};
 			this.logService.info(`[ActiveAgentSessionService] Active session changed: ${sessionResource.toString()}, repository: ${repository?.toString() ?? 'none'}`);
 			this._activeSession.set(activeSessionItem, undefined);
@@ -193,26 +199,27 @@ export class ActiveAgentSessionService extends Disposable implements IActiveAgen
 				label: viewModel.model.title || '',
 				timing: viewModel.model.timing,
 				repository,
+				worktree: undefined
 			};
 			this.logService.info(`[ActiveAgentSessionService] Active session changed (new): ${sessionResource.toString()}, repository: ${repository?.toString() ?? 'none'}`);
 			this._activeSession.set(activeSessionItem, undefined);
 		}
 	}
 
-	private getRepositoryFromMetadata(metadata: { readonly [key: string]: unknown } | undefined): URI | undefined {
+	private getRepositoryFromMetadata(metadata: { readonly [key: string]: unknown } | undefined): [URI | undefined, URI | undefined] {
 		if (!metadata) {
-			return undefined;
+			return [undefined, undefined];
 		}
 
-		const folderPath = metadata?.repositoryPath as string | undefined;
-		if (typeof folderPath === 'string') {
-			return URI.parse(folderPath);
-		}
-		if (URI.isUri(folderPath)) {
-			return folderPath;
-		}
+		const repositoryPath = metadata?.repositoryPath as string | undefined;
+		const repositoryPathUri = typeof repositoryPath === 'string' ? URI.file(repositoryPath) : undefined;
 
-		return undefined;
+		const worktreePath = metadata?.worktreePath as string | undefined;
+		const worktreePathUri = typeof worktreePath === 'string' ? URI.file(worktreePath) : undefined;
+
+		return [
+			URI.isUri(repositoryPathUri) ? repositoryPathUri : undefined,
+			URI.isUri(worktreePathUri) ? worktreePathUri : undefined];
 	}
 
 	private getRepositoryFromSessionOption(sessionResource: URI): URI | undefined {

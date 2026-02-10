@@ -124,7 +124,7 @@ export class OpenSessionWorktreeInVSCodeAction extends Action2 {
 			return;
 		}
 
-		const folderUri = isAgentSession(activeSession) && activeSession.providerType !== AgentSessionProviders.Cloud ? activeSession.repository : undefined;
+		const folderUri = isAgentSession(activeSession) && activeSession.providerType !== AgentSessionProviders.Cloud ? activeSession.worktree : undefined;
 
 		if (!folderUri) {
 			return;
@@ -157,7 +157,7 @@ export class OpenSessionInTerminalAction extends Action2 {
 
 		const activeSession = agentSessionsService.activeSession.get();
 		const repository = isAgentSession(activeSession) && activeSession.providerType !== AgentSessionProviders.Cloud
-			? activeSession.repository
+			? activeSession.worktree
 			: undefined;
 		if (repository) {
 			const instance = await terminalService.createTerminal({ config: { cwd: repository } });
