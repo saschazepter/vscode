@@ -19,18 +19,13 @@ import {
 	IHookCommandInput,
 	IHookCommandResult,
 	IPostToolUseCommandInput,
-	IPreToolUseCommandInput
 } from './hooksCommandTypes.js';
 import {
 	commonHookOutputValidator,
 	IHookResult,
 	IPostToolUseCallerInput,
 	IPostToolUseHookResult,
-	IPreToolUseCallerInput,
-	IPreToolUseHookResult,
 	postToolUseOutputValidator,
-	PreToolUsePermissionDecision,
-	preToolUseOutputValidator
 } from './hooksTypes.js';
 
 export const hooksOutputChannelId = 'hooksExecution';
@@ -86,13 +81,6 @@ export interface IHooksExecutionService {
 	 * Execute hooks of the given type for the given session
 	 */
 	executeHook(hookType: HookTypeValue, sessionResource: URI, options?: IHooksExecutionOptions): Promise<IHookResult[]>;
-
-	/**
-	 * Execute preToolUse hooks with typed input and validated output.
-	 * The execution service builds the full hook input from the caller input plus session context.
-	 * Returns a combined result with common fields and permission decision.
-	 */
-	executePreToolUseHook(sessionResource: URI, input: IPreToolUseCallerInput, token?: CancellationToken): Promise<IPreToolUseHookResult | undefined>;
 
 	/**
 	 * Execute postToolUse hooks with typed input and validated output.
@@ -389,85 +377,6 @@ export class HooksExecutionService extends Disposable implements IHooksExecution
 				durationMs: Math.round(sw.elapsed()),
 			});
 		}
-	}
-
-	async executePreToolUseHook(sessionResource: URI, input: IPreToolUseCallerInput, token?: CancellationToken): Promise<IPreToolUseHookResult | undefined> {
-		const toolSpecificInput: IPreToolUseCommandInput = {
-			tool_name: input.toolName,
-			tool_input: input.toolInput,
-			tool_use_id: input.toolCallId,
-		};
-
-		const results = await this.executeHook(HookType.PreToolUse, sessionResource, {
-			input: toolSpecificInput,
-			token: token ?? CancellationToken.None,
-		});
-
-		// Run all hooks and collapse results. Most restrictive decision wins: deny > ask > allow.
-		// Collect all additionalContext strings from every hook.
-		const allAdditionalContext: string[] = [];
-		let mostRestrictiveDecision: PreToolUsePermissionDecision | undefined;
-		let winningResult: IHookResult | undefined;
-		let winningReason: string | undefined;
-		let lastUpdatedInput: object | undefined;
-
-		for (const result of results) {
-			if (result.resultKind === 'success' && typeof result.output === 'object' && result.output !== null) {
-				const validationResult = preToolUseOutputValidator.validate(result.output);
-				if (!validationResult.error) {
-					const hookSpecificOutput = validationResult.content.hookSpecificOutput;
-					if (hookSpecificOutput) {
-						// Validate hookEventName if present - must match the hook type
-						if (hookSpecificOutput.hookEventName !== undefined && hookSpecificOutput.hookEventName !== HookType.PreToolUse) {
-							this._logService.warn(`[HooksExecutionService] preToolUse hook returned invalid hookEventName '${hookSpecificOutput.hookEventName}', expected '${HookType.PreToolUse}'`);
-							continue;
-						}
-
-						// Collect additionalContext from every hook
-						if (hookSpecificOutput.additionalContext) {
-							allAdditionalContext.push(hookSpecificOutput.additionalContext);
-						}
-
-						// Track the last updatedInput (later hooks override earlier ones)
-						if (hookSpecificOutput.updatedInput) {
-							lastUpdatedInput = hookSpecificOutput.updatedInput;
-						}
-
-						// Track the most restrictive decision: deny > ask > allow
-						const decision = hookSpecificOutput.permissionDecision;
-						if (decision && this._isMoreRestrictive(decision, mostRestrictiveDecision)) {
-							mostRestrictiveDecision = decision;
-							winningResult = result;
-							winningReason = hookSpecificOutput.permissionDecisionReason;
-						}
-					}
-				} else {
-					this._logService.warn(`[HooksExecutionService] preToolUse hook output validation failed: ${validationResult.error.message}`);
-				}
-			}
-		}
-
-		if (!mostRestrictiveDecision && !lastUpdatedInput && allAdditionalContext.length === 0) {
-			return undefined;
-		}
-
-		const baseResult = winningResult ?? results[0];
-		return {
-			...baseResult,
-			permissionDecision: mostRestrictiveDecision,
-			permissionDecisionReason: winningReason,
-			updatedInput: lastUpdatedInput,
-			additionalContext: allAdditionalContext.length > 0 ? allAdditionalContext : undefined,
-		};
-	}
-
-	/**
-	 * Returns true if `candidate` is more restrictive than `current`.
-	 * Restriction order: deny > ask > allow.
-	 */
-	private _isMoreRestrictive(candidate: PreToolUsePermissionDecision, current: PreToolUsePermissionDecision | undefined): boolean {
-		const order: Record<PreToolUsePermissionDecision, number> = { 'deny': 2, 'ask': 1, 'allow': 0 };
-		return current === undefined || order[candidate] > order[current];
 	}
 
 	async executePostToolUseHook(sessionResource: URI, input: IPostToolUseCallerInput, token?: CancellationToken): Promise<IPostToolUseHookResult | undefined> {
