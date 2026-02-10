@@ -40,13 +40,15 @@ suite('ChatAttachmentResolveService', () => {
 		imageFileUris = new Set();
 
 		// Stub IFileService with resolve() that uses the directoryTree map
-		instantiationService.stub(IFileService, 'resolve', async (resource: URI): Promise<IFileStatWithMetadata> => {
-			const children = directoryTree.get(resource.toString());
-			if (children !== undefined) {
-				return createFileStat(resource, false, false, true, false, children);
+		instantiationService.stub(IFileService, {
+			resolve: async (resource: URI): Promise<IFileStatWithMetadata> => {
+				const children = directoryTree.get(resource.toString());
+				if (children !== undefined) {
+					return createFileStat(resource, false, false, true, false, children);
+				}
+				// Treat as a file
+				return createFileStat(resource, false, true, false);
 			}
-			// Treat as a file
-			return createFileStat(resource, false, true, false);
 		});
 
 		instantiationService.stub(IEditorService, {});
@@ -151,11 +153,13 @@ suite('ChatAttachmentResolveService', () => {
 	test('handles unreadable directory gracefully', async () => {
 		const dirUri = URI.file('/test/unreadable');
 		// Override resolve to throw for this URI
-		instantiationService.stub(IFileService, 'resolve', async (resource: URI): Promise<IFileStatWithMetadata> => {
-			if (resource.toString() === dirUri.toString()) {
-				throw new Error('Permission denied');
+		instantiationService.stub(IFileService, {
+			resolve: async (resource: URI): Promise<IFileStatWithMetadata> => {
+				if (resource.toString() === dirUri.toString()) {
+					throw new Error('Permission denied');
+				}
+				return createFileStat(resource, false, true, false);
 			}
-			return createFileStat(resource, false, true, false);
 		});
 		// Re-create service with the new stub
 		service = instantiationService.createInstance(ChatAttachmentResolveService);
