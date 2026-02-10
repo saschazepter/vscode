@@ -1,0 +1,21 @@
+{
+	"version": 1,
+	"hooks": {
+		"sessionStart": [
+			{
+				"type": "command",
+				"bash": "npm install",
+				"powershell": "npm install",
+				"timeoutSec": 120
+			}
+		],
+		"sessionEnd": [
+			{
+				"type": "command",
+				"bash": "npm run compile",
+				"powershell": "npm run compile",
+				"timeoutSec": 120
+			}
+		]
+	}
+}
