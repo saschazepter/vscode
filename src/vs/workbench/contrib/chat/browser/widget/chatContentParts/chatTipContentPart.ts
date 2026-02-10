@@ -6,6 +6,7 @@
 import './media/chatTipContent.css';
 import * as dom from '../../../../../../base/browser/dom.js';
 import { StandardMouseEvent } from '../../../../../../base/browser/mouseEvent.js';
+import { status } from '../../../../../../base/browser/ui/aria/aria.js';
 import { renderIcon } from '../../../../../../base/browser/ui/iconLabel/iconLabels.js';
 import { Codicon } from '../../../../../../base/common/codicons.js';
 import { Emitter } from '../../../../../../base/common/event.js';
@@ -45,7 +46,8 @@ export class ChatTipContentPart extends Disposable {
 
 		this.domNode = $('.chat-tip-widget');
 		this.domNode.tabIndex = 0;
-		this.domNode.setAttribute('role', 'note');
+		this.domNode.setAttribute('role', 'region');
+		this.domNode.setAttribute('aria-roledescription', localize('chatTipRoleDescription', "tip"));
 
 		this._inChatTipContextKey = ChatContextKeys.inChatTip.bindTo(this._contextKeyService);
 		const focusTracker = this._register(dom.trackFocus(this.domNode));
@@ -95,8 +97,13 @@ export class ChatTipContentPart extends Disposable {
 		const markdownContent = this._renderer.render(tip.content);
 		this._renderedContent.value = markdownContent;
 		this.domNode.appendChild(markdownContent.element);
-		const labelText = markdownContent.element.textContent?.trim() || localize('chatTip', "Chat tip");
-		this.domNode.setAttribute('aria-label', labelText);
+		const textContent = markdownContent.element.textContent ?? localize('chatTip', "Chat tip");
+		const hasLink = /\[.*?\]\(.*?\)/.test(tip.content.value);
+		const ariaLabel = hasLink
+			? localize('chatTipWithAction', "{0} Tab to the action.", textContent)
+			: textContent;
+		this.domNode.setAttribute('aria-label', ariaLabel);
+		status(ariaLabel);
 	}
 }
 
