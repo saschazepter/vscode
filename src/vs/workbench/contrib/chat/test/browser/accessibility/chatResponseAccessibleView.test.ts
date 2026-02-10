@@ -431,6 +431,7 @@ suite('ChatResponseAccessibleView', () => {
 			const accessibleView = new ChatResponseAccessibleView();
 			const provider = instantiationService.invokeFunction(accessor => accessibleView.getProvider(accessor));
 			assert.ok(provider);
+			store.add(provider);
 			assert.ok(provider.provideContent().includes('Response content'));
 		});
 	});
