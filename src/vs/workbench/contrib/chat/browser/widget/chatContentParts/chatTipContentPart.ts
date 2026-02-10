@@ -95,7 +95,8 @@ export class ChatTipContentPart extends Disposable {
 		const markdownContent = this._renderer.render(tip.content);
 		this._renderedContent.value = markdownContent;
 		this.domNode.appendChild(markdownContent.element);
-		this.domNode.setAttribute('aria-label', markdownContent.element.textContent ?? localize('chatTip', "Chat tip"));
+		const labelText = markdownContent.element.textContent?.trim() || localize('chatTip', "Chat tip");
+		this.domNode.setAttribute('aria-label', labelText);
 	}
 }
 
