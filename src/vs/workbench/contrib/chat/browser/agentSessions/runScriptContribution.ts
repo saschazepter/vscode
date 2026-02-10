@@ -9,7 +9,7 @@ import { isEqualOrParent } from '../../../../../base/common/resources.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { ServicesAccessor } from '../../../../../editor/browser/editorExtensions.js';
 import { localize, localize2 } from '../../../../../nls.js';
-import { MenuId, registerAction2, Action2 } from '../../../../../platform/actions/common/actions.js';
+import { MenuId, MenuRegistry, registerAction2, Action2 } from '../../../../../platform/actions/common/actions.js';
 import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
 import { IQuickInputService, IQuickPickItem, IQuickPickSeparator } from '../../../../../platform/quickinput/common/quickInput.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
@@ -136,9 +136,9 @@ export class RunScriptContribution extends Disposable implements IWorkbenchContr
 					icon: Codicon.play,
 					category: localize2('agentSessions', 'Agent Sessions'),
 					menu: [{
-						id: AgentSessionsWorkbenchMenus.TitleBarRight,
+						id: RunScriptDropdownMenuId,
 						group: 'navigation',
-						order: 8,
+						order: 0,
 					}]
 				});
 			}
@@ -161,6 +161,7 @@ export class RunScriptContribution extends Disposable implements IWorkbenchContr
 					id: CONFIGURE_DEFAULT_RUN_ACTION_ID,
 					title: localize2('configureDefaultRunAction', "Configure Default Run Action..."),
 					category: localize2('agentSessions', 'Agent Sessions'),
+					icon: Codicon.play,
 					menu: [{
 						id: RunScriptDropdownMenuId,
 						group: '0_configure',
@@ -353,3 +354,13 @@ export class RunScriptContribution extends Disposable implements IWorkbenchContr
 		return isEqualOrParent(launch.uri, workspaceUri);
 	}
 }
+
+// Register the Run split button submenu on the workbench title bar
+MenuRegistry.appendMenuItem(AgentSessionsWorkbenchMenus.TitleBarRight, {
+	submenu: RunScriptDropdownMenuId,
+	isSplitButton: { togglePrimaryAction: true },
+	title: localize2('run', "Run"),
+	icon: Codicon.play,
+	group: 'navigation',
+	order: 8,
+});

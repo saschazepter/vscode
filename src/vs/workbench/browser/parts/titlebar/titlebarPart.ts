@@ -873,7 +873,7 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 			this.globalToolbarMenuDisposables.clear();
 
 			if (this.globalActionsEnabled) {
-				this.globalToolbarMenu = this.menuService.createMenu(this.titlebarOptions.titleBarMenuId ?? MenuId.TitleBar, this.contextKeyService);
+				this.globalToolbarMenu = this.menuService.createMenu(this.titlebarOptions.titleBarMenuId ?? MenuId.TitleBar, this.contextKeyService, { emitEventsForSubmenuChanges: true });
 
 				this.globalToolbarMenuDisposables.add(this.globalToolbarMenu);
 				this.globalToolbarMenuDisposables.add(this.globalToolbarMenu.onDidChange(() => updateToolBarActions()));

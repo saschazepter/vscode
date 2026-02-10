@@ -18,10 +18,10 @@ import { basename, dirname } from '../../../../base/common/path.js';
 import { isEqual } from '../../../../base/common/resources.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { URI } from '../../../../base/common/uri.js';
-import { localize, localize2 } from '../../../../nls.js';
+import { localize } from '../../../../nls.js';
 import { MenuWorkbenchButtonBar } from '../../../../platform/actions/browser/buttonbar.js';
 import { MenuWorkbenchToolBar } from '../../../../platform/actions/browser/toolbar.js';
-import { MenuId, MenuRegistry, registerAction2 } from '../../../../platform/actions/common/actions.js';
+import { MenuId, registerAction2 } from '../../../../platform/actions/common/actions.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { ContextKeyExpr, IContextKey, IContextKeyService, RawContextKey } from '../../../../platform/contextkey/common/contextkey.js';
 import { IContextMenuService } from '../../../../platform/contextview/browser/contextView.js';
@@ -47,7 +47,6 @@ import { IViewDescriptorService } from '../../../common/views.js';
 import { IChatWidgetService } from '../../../contrib/chat/browser/chat.js';
 import { IAgentSessionsService } from '../../../contrib/chat/browser/agentSessions/agentSessionsService.js';
 import { AgentSessionProviders } from '../../../contrib/chat/browser/agentSessions/agentSessions.js';
-import { IsAgentSessionsWorkspaceContext } from '../../../common/contextkeys.js';
 import { ChatContextKeys } from '../../../contrib/chat/common/actions/chatContextKeys.js';
 import { isIChatSessionFileChange2 } from '../../../contrib/chat/common/chatSessionsService.js';
 import { chatEditingWidgetFileStateContextKey, hasAppliedChatEditsContextKey, hasUndecidedChatEditingResourceContextKey, IChatEditingService, ModifiedFileEntryState } from '../../../contrib/chat/common/editing/chatEditingService.js';
@@ -1016,15 +1015,3 @@ class SetChangesTreeViewModeAction extends ViewAction<ChangesViewPane> {
 
 registerAction2(SetChangesListViewModeAction);
 registerAction2(SetChangesTreeViewModeAction);
-
-// Register the Run action in the changes view title bar
-MenuRegistry.appendMenuItem(MenuId.ViewTitle, {
-	command: {
-		id: 'workbench.action.agentSessions.runScript',
-		title: localize2('run', "Run"),
-		icon: Codicon.play,
-	},
-	group: 'navigation',
-	order: 8,
-	when: ContextKeyExpr.and(ContextKeyExpr.equals('view', CHANGES_VIEW_ID), IsAgentSessionsWorkspaceContext, ChatContextKeys.agentSessionType.isEqualTo(AgentSessionProviders.Background)),
-});
