@@ -388,7 +388,7 @@ export interface IChatWidget {
 	toggleQuestionCarouselFocus(): boolean;
 	/**
 	 * Toggles focus between the tip widget and the chat input.
-	 * If no tip is visible, alerts the user.
+	 * Returns false if no tip is visible.
 	 * @returns Whether the operation succeeded (i.e., the focus was toggled).
 	 */
 	toggleTipFocus(): boolean;
