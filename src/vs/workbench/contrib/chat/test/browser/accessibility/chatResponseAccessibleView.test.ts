@@ -411,7 +411,7 @@ suite('ChatResponseAccessibleView', () => {
 				getFocus: () => focusedItem,
 				focus: (item: unknown) => { focusedItem = item; },
 				viewModel: { getItems: () => items }
-			} as IChatWidget;
+			} as unknown as IChatWidget;
 
 			const widgetService = {
 				_serviceBrand: undefined,
@@ -424,7 +424,7 @@ suite('ChatResponseAccessibleView', () => {
 				getWidgetByInputUri: () => widget,
 				openSession: async () => widget,
 				getWidgetBySessionResource: () => widget
-			} as IChatWidgetService;
+			} as unknown as IChatWidgetService;
 
 			instantiationService.stub(IChatWidgetService, widgetService);
 
