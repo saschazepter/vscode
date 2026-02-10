@@ -174,7 +174,6 @@ export const tocData: ITOCEntry<string> = {
 		{
 			id: 'chat',
 			label: localize('chat', "Chat"),
-			settings: [],
 			children: [
 				{
 					id: 'chat/agent',
@@ -246,6 +245,7 @@ export const tocData: ITOCEntry<string> = {
 					label: localize('chatContext', "Context"),
 					settings: [
 						'chat.detectParticipant.*',
+						'chat.experimental.detectParticipant.*',
 						'chat.implicitContext.*',
 						'chat.promptFilesLocations',
 						'chat.instructionsFilesLocations',
