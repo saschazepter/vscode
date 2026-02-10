@@ -16,5 +16,8 @@ export const AgentSessionsWorkbenchMenus = {
 	TitleBarLeft: new MenuId('AgentSessionsTitleBarLeft'),
 	TitleBarCenter: new MenuId('AgentSessionsTitleBarCenter'),
 	TitleBarRight: new MenuId('AgentSessionsTitleBarRight'),
-	AgentSessionsOpenSubMenu: new MenuId('AgentSessionsOpenSubMenu')
+	AgentSessionsOpenSubMenu: new MenuId('AgentSessionsOpenSubMenu'),
+	FloatingToolbar: new MenuId('AgentSessionsFloatingToolbar'),
+	FloatingToolbarRight: new MenuId('AgentSessionsFloatingToolbarRight'),
+	AuxiliaryBarTitleLeft: new MenuId('AgentSessionsAuxiliaryBarTitleLeft')
 } as const;

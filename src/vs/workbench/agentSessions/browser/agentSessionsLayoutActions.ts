@@ -10,6 +10,7 @@ import { localize, localize2 } from '../../../nls.js';
 import { Categories } from '../../../platform/action/common/actionCommonCategories.js';
 import { Action2, MenuId, registerAction2 } from '../../../platform/actions/common/actions.js';
 import { AgentSessionsWorkbenchMenus } from './agentSessionsWorkbenchMenus.js';
+import { ContextKeyExpr } from '../../../platform/contextkey/common/contextkey.js';
 import { ServicesAccessor } from '../../../platform/instantiation/common/instantiation.js';
 import { KeybindingWeight } from '../../../platform/keybinding/common/keybindingsRegistry.js';
 import { registerIcon } from '../../../platform/theme/common/iconRegistry.js';
@@ -52,9 +53,15 @@ class ToggleSidebarVisibilityAction extends Action2 {
 			},
 			menu: [
 				{
-					id: AgentSessionsWorkbenchMenus.TitleBarLeft,
+					id: MenuId.AgentSessionsToolbar,
 					group: 'navigation',
-					order: 0
+					order: 1000
+				},
+				{
+					id: AgentSessionsWorkbenchMenus.FloatingToolbar,
+					group: 'navigation',
+					order: 0,
+					when: ContextKeyExpr.not('sideBarVisible')
 				}
 			]
 		});
@@ -97,9 +104,15 @@ class ToggleSecondarySidebarVisibilityAction extends Action2 {
 			f1: true,
 			menu: [
 				{
-					id: AgentSessionsWorkbenchMenus.TitleBarRight,
+					id: AgentSessionsWorkbenchMenus.AuxiliaryBarTitleLeft,
 					group: 'navigation',
-					order: 10
+					order: 0
+				},
+				{
+					id: AgentSessionsWorkbenchMenus.FloatingToolbarRight,
+					group: 'navigation',
+					order: 0,
+					when: ContextKeyExpr.not('auxiliaryBarVisible')
 				}
 			]
 		});

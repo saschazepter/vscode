@@ -156,70 +156,24 @@
 	height: 100%;
 }
 
-/* ---- Sidebar Reveal Buttons ---- */
+/* ---- Floating Toolbar ---- */
 
-.agent-sessions-workbench .sidebar-reveal-button {
+.agent-sessions-workbench .floating-toolbar {
 	position: absolute;
-	top: 50%;
+	/* top is set dynamically in code based on titlebar height + sidebar margins */
 	z-index: 100;
-	width: var(--reveal-button-size, 32px);
-	height: var(--reveal-button-size, 32px);
-	border-radius: 50%;
 	display: flex;
 	align-items: center;
-	justify-content: center;
-	cursor: pointer;
-	background-color: var(--vscode-button-secondaryBackground, var(--vscode-sideBar-background));
-	color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
-	border: 1px solid var(--vscode-contrastBorder, var(--vscode-widget-border, transparent));
-	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+	background-color: var(--vscode-sideBar-background);
+	border-radius: 6px;
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 	pointer-events: none;
 	opacity: 0;
-	transition: transform 0.15s ease-out, opacity 0.15s ease-out;
+	visibility: hidden;
 }
 
-.agent-sessions-workbench .sidebar-reveal-button.no-transition {
-	transition: none !important;
-}
-
-.agent-sessions-workbench .sidebar-reveal-button:hover {
-	background-color: var(--vscode-button-secondaryHoverBackground, var(--vscode-list-hoverBackground));
-}
-
-.agent-sessions-workbench .sidebar-reveal-button:active {
-	background-color: var(--vscode-toolbar-activeBackground);
-}
-
-.agent-sessions-workbench .sidebar-reveal-button:focus-visible {
-	outline: 1px solid var(--vscode-focusBorder);
-	outline-offset: 2px;
-}
-
-/* Left sidebar reveal button */
-.agent-sessions-workbench .sidebar-reveal-button.left {
-	left: 0;
-	transform: translate(-100%, -50%);
-}
-
-.agent-sessions-workbench .sidebar-reveal-button.left.visible {
+.agent-sessions-workbench .floating-toolbar.visible {
 	pointer-events: auto;
 	opacity: 1;
-	transform: translate(4px, -50%);
-}
-
-/* Right auxiliary bar reveal button */
-.agent-sessions-workbench .sidebar-reveal-button.right {
-	right: 0;
-	transform: translate(100%, -50%);
-}
-
-.agent-sessions-workbench .sidebar-reveal-button.right.visible {
-	pointer-events: auto;
-	opacity: 1;
-	transform: translate(-4px, -50%);
-}
-
-.agent-sessions-workbench .sidebar-reveal-button-icon {
-	font-size: 16px;
-	line-height: 1;
+	visibility: visible;
 }

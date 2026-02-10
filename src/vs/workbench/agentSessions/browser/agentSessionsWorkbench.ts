@@ -70,7 +70,7 @@ import { BrowserTitleService, ITitlebarPartConfiguration } from '../../browser/p
 import { AgentSessionsWorkbenchMenus } from './agentSessionsWorkbenchMenus.js';
 import { registerAgentSessionsLayoutActions } from './agentSessionsLayoutActions.js';
 import { registerAgentWorkbenchContributions } from './agentSessions.contributions.js';
-import { SidebarRevealButton } from './parts/sidebarRevealButton.js';
+import { FloatingToolbar } from './parts/floatingToolbar.js';
 
 //#region Workbench Options
 
@@ -377,6 +377,9 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 
 				// Workbench Layout
 				this.createWorkbenchLayout();
+
+				// Workbench Management
+				this.createWorkbenchManagement(instantiationService);
 
 				// Layout
 				this.layout();
@@ -812,10 +815,12 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 			this._onDidChangePartVisibility.fire({ partId: editorPart.getId(), visible });
 			this.handleContainerDidLayout(this.mainContainer, this._mainContainerDimension);
 		}));
+	}
 
-		// Create sidebar reveal buttons (shown when sidebars are hidden)
-		this._register(new SidebarRevealButton(this.mainContainer, 'left', this));
-		this._register(new SidebarRevealButton(this.mainContainer, 'right', this));
+	createWorkbenchManagement(instantiationService: IInstantiationService): void {
+		// Create floating toolbars (shown when there are menu items)
+		this._register(instantiationService.createInstance(FloatingToolbar, this.mainContainer, 'left'));
+		this._register(instantiationService.createInstance(FloatingToolbar, this.mainContainer, 'right'));
 	}
 
 	/**

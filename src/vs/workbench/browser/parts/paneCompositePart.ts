@@ -128,6 +128,7 @@ export abstract class AbstractPaneCompositePart extends CompositePart<PaneCompos
 
 	private readonly globalActionsMenuId: MenuId;
 	private globalToolBar: MenuWorkbenchToolBar | undefined;
+	private globalLeftToolBar: MenuWorkbenchToolBar | undefined;
 
 	private blockOpening: DeferredPromise<PaneComposite | undefined> | undefined = undefined;
 	protected contentDimension: Dimension | undefined;
@@ -357,6 +358,26 @@ export abstract class AbstractPaneCompositePart extends CompositePart<PaneCompos
 		this._register(addDisposableListener(titleArea, GestureEventType.Contextmenu, e => {
 			this.onTitleAreaContextMenu(new StandardMouseEvent(getWindow(titleArea), e));
 		}));
+
+		// Global Left Actions Toolbar (optional, subclasses provide a menu ID)
+		const globalLeftActionsMenuId = this.getGlobalLeftActionsMenuId();
+		if (globalLeftActionsMenuId) {
+			const globalLeftTitleActionsContainer = titleArea.appendChild($('.global-actions-left'));
+			this.globalLeftToolBar = this._register(this.instantiationService.createInstance(MenuWorkbenchToolBar,
+				globalLeftTitleActionsContainer,
+				globalLeftActionsMenuId,
+				{
+					actionViewItemProvider: (action, options) => this.actionViewItemProvider(action, options),
+					orientation: ActionsOrientation.HORIZONTAL,
+					getKeyBinding: action => this.keybindingService.lookupKeybinding(action.id),
+					anchorAlignmentProvider: () => this.getTitleAreaDropDownAnchorAlignment(),
+					hoverDelegate: this.toolbarHoverDelegate,
+					hiddenItemStrategy: HiddenItemStrategy.NoHide,
+					highlightToggledItems: false,
+					telemetrySource: this.nameForTelemetry
+				}
+			));
+		}
 
 		const globalTitleActionsContainer = titleArea.appendChild($('.global-actions'));
 
@@ -651,7 +672,8 @@ export abstract class AbstractPaneCompositePart extends CompositePart<PaneCompos
 		// Each toolbar item has 4px margin
 		const toolBarWidth = this.toolBar.getItemsWidth() + this.toolBar.getItemsLength() * 4;
 		const globalToolBarWidth = this.globalToolBar ? this.globalToolBar.getItemsWidth() + this.globalToolBar.getItemsLength() * 4 : 0;
-		return toolBarWidth + globalToolBarWidth + 8; // 8px padding left
+		const globalLeftToolBarWidth = this.globalLeftToolBar ? this.globalLeftToolBar.getItemsWidth() + this.globalLeftToolBar.getItemsLength() * 4 : 0;
+		return toolBarWidth + globalToolBarWidth + globalLeftToolBarWidth + 8; // 8px padding left
 	}
 
 	private onTitleAreaContextMenu(event: StandardMouseEvent): void {
@@ -700,6 +722,14 @@ export abstract class AbstractPaneCompositePart extends CompositePart<PaneCompos
 			disposables.dispose();
 			return viewsActions.length > 1 && viewsActions.some(a => a.enabled) ? new SubmenuAction('views', localize('views', "Views"), viewsActions) : undefined;
 		}
+		return undefined;
+	}
+
+	/**
+	 * Override in subclasses to provide a menu ID for a global toolbar on the left side
+	 * of the composite bar / title area. Returns `undefined` by default (no left toolbar).
+	 */
+	protected getGlobalLeftActionsMenuId(): MenuId | undefined {
 		return undefined;
 	}
 

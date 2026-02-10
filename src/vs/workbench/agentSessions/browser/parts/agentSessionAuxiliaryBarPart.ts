@@ -26,6 +26,7 @@ import { Part } from '../../../browser/part.js';
 import { ActionsOrientation, IActionViewItem } from '../../../../base/browser/ui/actionbar/actionbar.js';
 import { IPaneCompositeBarOptions } from '../../../browser/parts/paneCompositeBar.js';
 import { IMenuService, IMenu, MenuId, MenuItemAction } from '../../../../platform/actions/common/actions.js';
+import { AgentSessionsWorkbenchMenus } from '../agentSessionsWorkbenchMenus.js';
 import { IHoverService } from '../../../../platform/hover/browser/hover.js';
 import { DropdownWithPrimaryActionViewItem } from '../../../../platform/actions/browser/dropdownWithPrimaryActionViewItem.js';
 import { IBaseActionViewItemOptions } from '../../../../base/browser/ui/actionbar/actionViewItems.js';
@@ -247,6 +248,10 @@ export class AgentSessionAuxiliaryBarPart extends AbstractPaneCompositePart {
 
 	protected getCompositeBarPosition(): CompositeBarPosition {
 		return CompositeBarPosition.TITLE;
+	}
+
+	protected override getGlobalLeftActionsMenuId(): MenuId {
+		return AgentSessionsWorkbenchMenus.AuxiliaryBarTitleLeft;
 	}
 
 	override layout(width: number, height: number, top: number, left: number): void {

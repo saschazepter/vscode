@@ -165,10 +165,6 @@
 		margin-left: auto;
 	}
 
-	.agent-sessions-header:hover {
-		background-color: var(--vscode-list-hoverBackground);
-	}
-
 	.agent-sessions-header:focus {
 		outline: 1px solid var(--vscode-focusBorder);
 		outline-offset: -1px;
