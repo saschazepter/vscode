@@ -10,13 +10,14 @@ import { renderIcon } from '../../../../../../base/browser/ui/iconLabel/iconLabe
 import { Codicon } from '../../../../../../base/common/codicons.js';
 import { Emitter } from '../../../../../../base/common/event.js';
 import { Disposable, MutableDisposable } from '../../../../../../base/common/lifecycle.js';
-import { localize2 } from '../../../../../../nls.js';
+import { localize, localize2 } from '../../../../../../nls.js';
 import { getFlatContextMenuActions } from '../../../../../../platform/actions/browser/menuEntryActionViewItem.js';
 import { Action2, IMenuService, MenuId, registerAction2 } from '../../../../../../platform/actions/common/actions.js';
-import { IContextKeyService } from '../../../../../../platform/contextkey/common/contextkey.js';
+import { IContextKey, IContextKeyService } from '../../../../../../platform/contextkey/common/contextkey.js';
 import { IContextMenuService } from '../../../../../../platform/contextview/browser/contextView.js';
 import { ServicesAccessor } from '../../../../../../platform/instantiation/common/instantiation.js';
 import { IMarkdownRenderer } from '../../../../../../platform/markdown/browser/markdownRenderer.js';
+import { ChatContextKeys } from '../../../common/actions/chatContextKeys.js';
 import { IChatTip, IChatTipService } from '../../chatTipService.js';
 
 const $ = dom.$;
@@ -28,6 +29,8 @@ export class ChatTipContentPart extends Disposable {
 	public readonly onDidHide = this._onDidHide.event;
 
 	private readonly _renderedContent = this._register(new MutableDisposable());
+
+	private readonly _inChatTipContextKey: IContextKey<boolean>;
 
 	constructor(
 		tip: IChatTip,
@@ -41,6 +44,15 @@ export class ChatTipContentPart extends Disposable {
 		super();
 
 		this.domNode = $('.chat-tip-widget');
+		this.domNode.tabIndex = 0;
+		this.domNode.setAttribute('role', 'note');
+
+		this._inChatTipContextKey = ChatContextKeys.inChatTip.bindTo(this._contextKeyService);
+		const focusTracker = this._register(dom.trackFocus(this.domNode));
+		this._register(focusTracker.onDidFocus(() => this._inChatTipContextKey.set(true)));
+		this._register(focusTracker.onDidBlur(() => this._inChatTipContextKey.set(false)));
+		this._register({ dispose: () => this._inChatTipContextKey.reset() });
+
 		this._renderTip(tip);
 
 		this._register(this._chatTipService.onDidDismissTip(() => {
@@ -69,12 +81,21 @@ export class ChatTipContentPart extends Disposable {
 		}));
 	}
 
+	hasFocus(): boolean {
+		return dom.isAncestorOfActiveElement(this.domNode);
+	}
+
+	focus(): void {
+		this.domNode.focus();
+	}
+
 	private _renderTip(tip: IChatTip): void {
 		dom.clearNode(this.domNode);
 		this.domNode.appendChild(renderIcon(Codicon.lightbulb));
 		const markdownContent = this._renderer.render(tip.content);
 		this._renderedContent.value = markdownContent;
 		this.domNode.appendChild(markdownContent.element);
+		this.domNode.setAttribute('aria-label', markdownContent.element.textContent ?? localize('chatTip', "Chat tip"));
 	}
 }
 
