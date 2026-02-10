@@ -15,9 +15,10 @@ import { MockContextKeyService } from '../../../../../platform/keybinding/test/c
 import { IProductService } from '../../../../../platform/product/common/productService.js';
 import { IStorageService, InMemoryStorageService } from '../../../../../platform/storage/common/storage.js';
 import { ChatTipService, ITipDefinition, TipEligibilityTracker } from '../../browser/chatTipService.js';
-import { IPromptsService, IResolvedAgentFile } from '../../common/promptSyntax/service/promptsService.js';
+import { AgentFileType, IPromptPath, IPromptsService, IResolvedAgentFile } from '../../common/promptSyntax/service/promptsService.js';
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
 import { ChatModeKind } from '../../common/constants.js';
+import { PromptsType } from '../../common/promptSyntax/promptTypes.js';
 
 class MockContextKeyServiceWithRulesMatching extends MockContextKeyService {
 	override contextMatchesRules(): boolean {
@@ -34,6 +35,7 @@ suite('ChatTipService', () => {
 	let commandExecutedEmitter: Emitter<ICommandEvent>;
 	let storageService: InMemoryStorageService;
 	let mockInstructionFiles: IResolvedAgentFile[];
+	let mockPromptInstructionFiles: IPromptPath[];
 
 	function createProductService(hasCopilot: boolean): IProductService {
 		return {
@@ -55,6 +57,7 @@ suite('ChatTipService', () => {
 		commandExecutedEmitter = testDisposables.add(new Emitter<ICommandEvent>());
 		storageService = testDisposables.add(new InMemoryStorageService());
 		mockInstructionFiles = [];
+		mockPromptInstructionFiles = [];
 		instantiationService.stub(IContextKeyService, contextKeyService);
 		instantiationService.stub(IConfigurationService, configurationService);
 		instantiationService.stub(IStorageService, storageService);
@@ -64,6 +67,7 @@ suite('ChatTipService', () => {
 		} as Partial<ICommandService> as ICommandService);
 		instantiationService.stub(IPromptsService, {
 			listAgentInstructions: async () => mockInstructionFiles,
+			listPromptFiles: async () => mockPromptInstructionFiles,
 		} as Partial<IPromptsService> as IPromptsService);
 	});
 
@@ -190,7 +194,7 @@ suite('ChatTipService', () => {
 		assert.ok(fired, 'onDidDismissTip should fire');
 	});
 
-	test('disableTips fires onDidDisableTips event', () => {
+	test('disableTips fires onDidDisableTips event', async () => {
 		const service = createService();
 		const now = Date.now();
 
@@ -198,7 +202,7 @@ suite('ChatTipService', () => {
 
 		let fired = false;
 		testDisposables.add(service.onDidDisableTips(() => { fired = true; }));
-		service.disableTips();
+		await service.disableTips();
 
 		assert.ok(fired, 'onDidDisableTips should fire');
 	});
@@ -222,6 +226,13 @@ suite('ChatTipService', () => {
 		assert.ok(tip2, 'Should return a tip after disabling and re-enabling');
 	});
 
+	function createMockPromptsService(agentInstructions: IResolvedAgentFile[] = [], promptInstructions: IPromptPath[] = []): Partial<IPromptsService> {
+		return {
+			listAgentInstructions: async () => agentInstructions,
+			listPromptFiles: async (_type: PromptsType) => promptInstructions,
+		};
+	}
+
 	test('excludes tip.undoChanges when restore checkpoint command has been executed', () => {
 		const tip: ITipDefinition = {
 			id: 'tip.undoChanges',
@@ -233,7 +244,7 @@ suite('ChatTipService', () => {
 			[tip],
 			{ onDidExecuteCommand: commandExecutedEmitter.event, onWillExecuteCommand: Event.None } as Partial<ICommandService> as ICommandService,
 			storageService,
-			{ listAgentInstructions: async () => [] } as Partial<IPromptsService> as IPromptsService,
+			createMockPromptsService() as IPromptsService,
 		));
 
 		assert.strictEqual(tracker.isExcluded(tip), false, 'Should not be excluded before command is executed');
@@ -243,7 +254,7 @@ suite('ChatTipService', () => {
 		assert.strictEqual(tracker.isExcluded(tip), true, 'Should be excluded after command is executed');
 	});
 
-	test('excludes tip.customInstructions when instruction files exist in workspace', async () => {
+	test('excludes tip.customInstructions when copilot-instructions.md exists in workspace', async () => {
 		const tip: ITipDefinition = {
 			id: 'tip.customInstructions',
 			message: 'test',
@@ -253,13 +264,51 @@ suite('ChatTipService', () => {
 			[tip],
 			{ onDidExecuteCommand: Event.None, onWillExecuteCommand: Event.None } as Partial<ICommandService> as ICommandService,
 			storageService,
-			{ listAgentInstructions: async () => [{ uri: { path: '/.github/copilot-instructions.md' } } as IResolvedAgentFile] } as Partial<IPromptsService> as IPromptsService,
+			createMockPromptsService([{ uri: { path: '/.github/copilot-instructions.md' }, realPath: undefined, type: AgentFileType.copilotInstructionsMd } as IResolvedAgentFile]) as IPromptsService,
 		));
 
 		// Wait for the async file check to complete
 		await new Promise(r => setTimeout(r, 0));
 
-		assert.strictEqual(tracker.isExcluded(tip), true, 'Should be excluded when instruction files exist');
+		assert.strictEqual(tracker.isExcluded(tip), true, 'Should be excluded when copilot-instructions.md exists');
+	});
+
+	test('does not exclude tip.customInstructions when only AGENTS.md exists', async () => {
+		const tip: ITipDefinition = {
+			id: 'tip.customInstructions',
+			message: 'test',
+		};
+
+		const tracker = testDisposables.add(new TipEligibilityTracker(
+			[tip],
+			{ onDidExecuteCommand: Event.None, onWillExecuteCommand: Event.None } as Partial<ICommandService> as ICommandService,
+			storageService,
+			createMockPromptsService([{ uri: { path: '/AGENTS.md' }, realPath: undefined, type: AgentFileType.agentsMd } as IResolvedAgentFile]) as IPromptsService,
+		));
+
+		// Wait for the async file check to complete
+		await new Promise(r => setTimeout(r, 0));
+
+		assert.strictEqual(tracker.isExcluded(tip), false, 'Should not be excluded when only AGENTS.md exists');
+	});
+
+	test('excludes tip.customInstructions when .instructions.md files exist in workspace', async () => {
+		const tip: ITipDefinition = {
+			id: 'tip.customInstructions',
+			message: 'test',
+		};
+
+		const tracker = testDisposables.add(new TipEligibilityTracker(
+			[tip],
+			{ onDidExecuteCommand: Event.None, onWillExecuteCommand: Event.None } as Partial<ICommandService> as ICommandService,
+			storageService,
+			createMockPromptsService([], [{ uri: { path: '/.github/instructions/coding.instructions.md' } } as unknown as IPromptPath]) as IPromptsService,
+		));
+
+		// Wait for the async file check to complete
+		await new Promise(r => setTimeout(r, 0));
+
+		assert.strictEqual(tracker.isExcluded(tip), true, 'Should be excluded when .instructions.md files exist');
 	});
 
 	test('does not exclude tip.customInstructions when no instruction files exist', async () => {
@@ -272,7 +321,7 @@ suite('ChatTipService', () => {
 			[tip],
 			{ onDidExecuteCommand: Event.None, onWillExecuteCommand: Event.None } as Partial<ICommandService> as ICommandService,
 			storageService,
-			{ listAgentInstructions: async () => [] } as Partial<IPromptsService> as IPromptsService,
+			createMockPromptsService() as IPromptsService,
 		));
 
 		// Wait for the async file check to complete
@@ -295,7 +344,7 @@ suite('ChatTipService', () => {
 			[tip],
 			{ onDidExecuteCommand: Event.None, onWillExecuteCommand: Event.None } as Partial<ICommandService> as ICommandService,
 			storageService,
-			{ listAgentInstructions: async () => [] } as Partial<IPromptsService> as IPromptsService,
+			createMockPromptsService() as IPromptsService,
 		));
 
 		assert.strictEqual(tracker.isExcluded(tip), false, 'Should not be excluded before mode is recorded');
@@ -319,7 +368,7 @@ suite('ChatTipService', () => {
 			[tip],
 			{ onDidExecuteCommand: Event.None, onWillExecuteCommand: Event.None } as Partial<ICommandService> as ICommandService,
 			storageService,
-			{ listAgentInstructions: async () => [] } as Partial<IPromptsService> as IPromptsService,
+			createMockPromptsService() as IPromptsService,
 		));
 
 		assert.strictEqual(tracker.isExcluded(tip), false, 'Should not be excluded before mode is recorded');
@@ -340,7 +389,7 @@ suite('ChatTipService', () => {
 			[tip],
 			{ onDidExecuteCommand: commandExecutedEmitter.event, onWillExecuteCommand: Event.None } as Partial<ICommandService> as ICommandService,
 			storageService,
-			{ listAgentInstructions: async () => [] } as Partial<IPromptsService> as IPromptsService,
+			createMockPromptsService() as IPromptsService,
 		));
 
 		commandExecutedEmitter.fire({ commandId: 'workbench.action.chat.restoreCheckpoint', args: [] });
@@ -351,7 +400,7 @@ suite('ChatTipService', () => {
 			[tip],
 			{ onDidExecuteCommand: Event.None, onWillExecuteCommand: Event.None } as Partial<ICommandService> as ICommandService,
 			storageService,
-			{ listAgentInstructions: async () => [] } as Partial<IPromptsService> as IPromptsService,
+			createMockPromptsService() as IPromptsService,
 		));
 
 		assert.strictEqual(tracker2.isExcluded(tip), true, 'New tracker should read persisted exclusion from workspace storage');
@@ -371,7 +420,7 @@ suite('ChatTipService', () => {
 			[tip],
 			{ onDidExecuteCommand: Event.None, onWillExecuteCommand: Event.None } as Partial<ICommandService> as ICommandService,
 			storageService,
-			{ listAgentInstructions: async () => [] } as Partial<IPromptsService> as IPromptsService,
+			createMockPromptsService() as IPromptsService,
 		));
 
 		tracker1.recordCurrentMode(contextKeyService);
@@ -382,7 +431,7 @@ suite('ChatTipService', () => {
 			[tip],
 			{ onDidExecuteCommand: Event.None, onWillExecuteCommand: Event.None } as Partial<ICommandService> as ICommandService,
 			storageService,
-			{ listAgentInstructions: async () => [] } as Partial<IPromptsService> as IPromptsService,
+			createMockPromptsService() as IPromptsService,
 		));
 
 		assert.strictEqual(tracker2.isExcluded(tip), true, 'New tracker should read persisted mode exclusion from workspace storage');
