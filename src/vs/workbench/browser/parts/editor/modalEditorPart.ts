@@ -22,7 +22,7 @@ import { IEditorGroupView, IEditorPartsView } from './editor.js';
 import { EditorPart } from './editorPart.js';
 import { GroupDirection, GroupsOrder, IModalEditorPart } from '../../../services/editor/common/editorGroupsService.js';
 import { IEditorService } from '../../../services/editor/common/editorService.js';
-import { EditorPartModalContext } from '../../../common/contextkeys.js';
+import { EditorPartModalContext, EditorPartModalMaximizedContext } from '../../../common/contextkeys.js';
 import { Verbosity } from '../../../common/editor.js';
 import { IHostService } from '../../../services/host/browser/host.js';
 import { IWorkbenchLayoutService } from '../../../services/layout/browser/layoutService.js';
@@ -145,10 +145,24 @@ export class ModalEditorPart {
 		}));
 
 		// Layout the modal editor part
-		disposables.add(Event.runAndSubscribe(this.layoutService.onDidLayoutMainContainer, () => {
+		const layoutModal = () => {
 			const containerDimension = this.layoutService.mainContainerDimension;
-			const width = Math.min(containerDimension.width * 0.8, 1200);
-			const height = Math.min(containerDimension.height * 0.8, 800);
+			const titleBarOffset = this.layoutService.mainContainerOffset.top;
+			let width: number;
+			let height: number;
+
+			if (editorPart.maximized) {
+				const padding = 16; // Keep a small margin around all edges
+				width = containerDimension.width - padding;
+				height = containerDimension.height - padding - titleBarOffset;
+			} else {
+				width = Math.min(containerDimension.width * 0.8, 1200);
+				height = Math.min(containerDimension.height * 0.8, 800);
+			}
+
+			// Shift the modal block below the title bar
+			modalElement.style.top = `${titleBarOffset}px`;
+			modalElement.style.height = `calc(100% - ${titleBarOffset}px)`;
 
 			editorPartContainer.style.width = `${width}px`;
 			editorPartContainer.style.height = `${height}px`;
@@ -156,7 +170,9 @@ export class ModalEditorPart {
 			const borderSize = 2; // Account for 1px border on all sides and modal header height
 			const headerHeight = 32 + 1 /* border bottom */;
 			editorPart.layout(width - borderSize, height - borderSize - headerHeight, 0, 0);
-		}));
+		};
+		disposables.add(Event.runAndSubscribe(this.layoutService.onDidLayoutMainContainer, layoutModal));
+		disposables.add(editorPart.onDidChangeMaximized(() => layoutModal()));
 
 		// Focus the modal
 		editorPartContainer.focus();
@@ -175,6 +191,12 @@ class ModalEditorPartImpl extends EditorPart implements IModalEditorPart {
 
 	private readonly _onWillClose = this._register(new Emitter<void>());
 	readonly onWillClose = this._onWillClose.event;
+
+	private readonly _onDidChangeMaximized = this._register(new Emitter<boolean>());
+	readonly onDidChangeMaximized = this._onDidChangeMaximized.event;
+
+	private _maximized = false;
+	get maximized(): boolean { return this._maximized; }
 
 	private readonly optionsDisposable = this._register(new MutableDisposable());
 
@@ -212,9 +234,19 @@ class ModalEditorPartImpl extends EditorPart implements IModalEditorPart {
 		this.enforceModalPartOptions();
 	}
 
+	toggleMaximized(): void {
+		this._maximized = !this._maximized;
+
+		this._onDidChangeMaximized.fire(this._maximized);
+	}
+
 	protected override handleContextKeys(): void {
 		const isModalEditorPartContext = EditorPartModalContext.bindTo(this.scopedContextKeyService);
 		isModalEditorPartContext.set(true);
+
+		const isMaximizedContext = EditorPartModalMaximizedContext.bindTo(this.scopedContextKeyService);
+		isMaximizedContext.set(this._maximized);
+		this._register(this.onDidChangeMaximized(maximized => isMaximizedContext.set(maximized)));
 
 		super.handleContextKeys();
 	}

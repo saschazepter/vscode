@@ -372,5 +372,56 @@ suite('Modal Editor Group', () => {
 		assert.strictEqual(removedGroupId, modalGroupId);
 	});
 
+	test('modal editor part starts not maximized', async () => {
+		const instantiationService = workbenchInstantiationService({ contextKeyService: instantiationService => instantiationService.createInstance(MockScopableContextKeyService) }, disposables);
+		instantiationService.invokeFunction(accessor => Registry.as<IEditorFactoryRegistry>(EditorExtensions.EditorFactory).start(accessor));
+		const parts = await createEditorParts(instantiationService, disposables);
+		instantiationService.stub(IEditorGroupsService, parts);
+
+		const modalPart = await parts.createModalEditorPart();
+
+		assert.strictEqual(modalPart.maximized, false);
+
+		modalPart.close();
+	});
+
+	test('modal editor part toggleMaximized toggles state', async () => {
+		const instantiationService = workbenchInstantiationService({ contextKeyService: instantiationService => instantiationService.createInstance(MockScopableContextKeyService) }, disposables);
+		instantiationService.invokeFunction(accessor => Registry.as<IEditorFactoryRegistry>(EditorExtensions.EditorFactory).start(accessor));
+		const parts = await createEditorParts(instantiationService, disposables);
+		instantiationService.stub(IEditorGroupsService, parts);
+
+		const modalPart = await parts.createModalEditorPart();
+
+		assert.strictEqual(modalPart.maximized, false);
+
+		modalPart.toggleMaximized();
+		assert.strictEqual(modalPart.maximized, true);
+
+		modalPart.toggleMaximized();
+		assert.strictEqual(modalPart.maximized, false);
+
+		modalPart.close();
+	});
+
+	test('modal editor part fires onDidChangeMaximized', async () => {
+		const instantiationService = workbenchInstantiationService({ contextKeyService: instantiationService => instantiationService.createInstance(MockScopableContextKeyService) }, disposables);
+		instantiationService.invokeFunction(accessor => Registry.as<IEditorFactoryRegistry>(EditorExtensions.EditorFactory).start(accessor));
+		const parts = await createEditorParts(instantiationService, disposables);
+		instantiationService.stub(IEditorGroupsService, parts);
+
+		const modalPart = await parts.createModalEditorPart();
+
+		const events: boolean[] = [];
+		disposables.add(modalPart.onDidChangeMaximized(maximized => events.push(maximized)));
+
+		modalPart.toggleMaximized();
+		modalPart.toggleMaximized();
+
+		assert.deepStrictEqual(events, [true, false]);
+
+		modalPart.close();
+	});
+
 	ensureNoDisposablesAreLeakedInTestSuite();
 });
