@@ -13,19 +13,15 @@ import { createDecorator } from '../../../../../platform/instantiation/common/in
 import { ILogService } from '../../../../../platform/log/common/log.js';
 import { Registry } from '../../../../../platform/registry/common/platform.js';
 import { Extensions, IOutputChannelRegistry, IOutputService } from '../../../../services/output/common/output.js';
-import { HookType, HookTypeValue, IChatRequestHooks, IHookCommand } from '../promptSyntax/hookSchema.js';
+import { HookTypeValue, IChatRequestHooks, IHookCommand } from '../promptSyntax/hookSchema.js';
 import {
 	HookCommandResultKind,
 	IHookCommandInput,
 	IHookCommandResult,
-	IPostToolUseCommandInput,
 } from './hooksCommandTypes.js';
 import {
 	commonHookOutputValidator,
 	IHookResult,
-	IPostToolUseCallerInput,
-	IPostToolUseHookResult,
-	postToolUseOutputValidator,
 } from './hooksTypes.js';
 
 export const hooksOutputChannelId = 'hooksExecution';
@@ -81,14 +77,6 @@ export interface IHooksExecutionService {
 	 * Execute hooks of the given type for the given session
 	 */
 	executeHook(hookType: HookTypeValue, sessionResource: URI, options?: IHooksExecutionOptions): Promise<IHookResult[]>;
-
-	/**
-	 * Execute postToolUse hooks with typed input and validated output.
-	 * Called after a tool completes successfully. The execution service builds the full hook input
-	 * from the caller input plus session context.
-	 * Returns a combined result with decision and additional context.
-	 */
-	executePostToolUseHook(sessionResource: URI, input: IPostToolUseCallerInput, token?: CancellationToken): Promise<IPostToolUseHookResult | undefined>;
 }
 
 /**
@@ -377,78 +365,5 @@ export class HooksExecutionService extends Disposable implements IHooksExecution
 				durationMs: Math.round(sw.elapsed()),
 			});
 		}
-	}
-
-	async executePostToolUseHook(sessionResource: URI, input: IPostToolUseCallerInput, token?: CancellationToken): Promise<IPostToolUseHookResult | undefined> {
-		// Check if there are PostToolUse hooks registered before doing any work stringifying tool results
-		const hooks = this.getHooksForSession(sessionResource);
-		const hookCommands = hooks?.[HookType.PostToolUse];
-		if (!hookCommands || hookCommands.length === 0) {
-			return undefined;
-		}
-
-		// Lazily render tool response text only when hooks are registered
-		const toolResponseText = input.getToolResponseText();
-
-		const toolSpecificInput: IPostToolUseCommandInput = {
-			tool_name: input.toolName,
-			tool_input: input.toolInput,
-			tool_response: toolResponseText,
-			tool_use_id: input.toolCallId,
-		};
-
-		const results = await this.executeHook(HookType.PostToolUse, sessionResource, {
-			input: toolSpecificInput,
-			token: token ?? CancellationToken.None,
-		});
-
-		// Run all hooks and collapse results. Block is the most restrictive decision.
-		// Collect all additionalContext strings from every hook.
-		const allAdditionalContext: string[] = [];
-		let hasBlock = false;
-		let blockReason: string | undefined;
-		let blockResult: IHookResult | undefined;
-
-		for (const result of results) {
-			if (result.resultKind === 'success' && typeof result.output === 'object' && result.output !== null) {
-				const validationResult = postToolUseOutputValidator.validate(result.output);
-				if (!validationResult.error) {
-					const validated = validationResult.content;
-
-					// Validate hookEventName if present
-					if (validated.hookSpecificOutput?.hookEventName !== undefined && validated.hookSpecificOutput.hookEventName !== HookType.PostToolUse) {
-						this._logService.warn(`[HooksExecutionService] postToolUse hook returned invalid hookEventName '${validated.hookSpecificOutput.hookEventName}', expected '${HookType.PostToolUse}'`);
-						continue;
-					}
-
-					// Collect additionalContext from every hook
-					if (validated.hookSpecificOutput?.additionalContext) {
-						allAdditionalContext.push(validated.hookSpecificOutput.additionalContext);
-					}
-
-					// Track the first block decision (most restrictive)
-					if (validated.decision === 'block' && !hasBlock) {
-						hasBlock = true;
-						blockReason = validated.reason;
-						blockResult = result;
-					}
-				} else {
-					this._logService.warn(`[HooksExecutionService] postToolUse hook output validation failed: ${validationResult.error.message}`);
-				}
-			}
-		}
-
-		// Return combined result if there's a block decision or any additional context
-		if (!hasBlock && allAdditionalContext.length === 0) {
-			return undefined;
-		}
-
-		const baseResult = blockResult ?? results[0];
-		return {
-			...baseResult,
-			decision: hasBlock ? 'block' : undefined,
-			reason: blockReason,
-			additionalContext: allAdditionalContext.length > 0 ? allAdditionalContext : undefined,
-		};
 	}
 }

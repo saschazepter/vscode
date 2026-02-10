@@ -280,7 +280,6 @@ declare module 'vscode' {
 			permissionDecision?: PreToolUsePermissionDecision;
 			permissionDecisionReason?: string;
 			updatedInput?: object;
-			additionalContext?: string[];
 		};
 	}
 

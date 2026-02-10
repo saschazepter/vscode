@@ -170,7 +170,6 @@ export interface IExternalPreToolUseHookResult {
 	permissionDecisionReason?: string;
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	updatedInput?: Record<string, any>;
-	additionalContext?: string[];
 }
 
 export interface IToolInvocation {
