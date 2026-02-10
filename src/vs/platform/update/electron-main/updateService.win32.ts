@@ -32,12 +32,6 @@ import { AvailableForDownload, DisablementReason, IUpdate, State, StateType, Upd
 import { AbstractUpdateService, createUpdateURL, IUpdateURLOptions, UpdateErrorClassification } from './abstractUpdateService.js';
 import { IMeteredConnectionService } from '../../meteredConnection/common/meteredConnection.js';
 
-async function pollUntil(fn: () => boolean, millis = 1000): Promise<void> {
-	while (!fn()) {
-		await timeout(millis);
-	}
-}
-
 interface IAvailableUpdate {
 	packagePath: string;
 	updateFilePath?: string;
@@ -344,7 +338,7 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 
 		const progressFilePath = path.join(cachePath, `update-progress`);
 		try {
-			await unlink(sessionEndFlagPath);
+			await unlink(progressFilePath);
 		} catch {
 			// ignore
 		}
@@ -382,9 +376,22 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 		const readyMutexName = `${this.productService.win32MutexName}-ready`;
 		const mutex = await import('@vscode/windows-mutex');
 
-		// Poll for progress and ready mutex
-		const pollProgress = async () => {
-			while (this.state.type === StateType.Updating && !mutex.isActive(readyMutexName)) {
+		// Poll for progress and ready mutex (timeout after 30 minutes)
+		const pollTimeoutMs = 30 * 60 * 1000;
+		const pollStartTime = Date.now();
+
+		const poll = async () => {
+			while (this.state.type === StateType.Updating) {
+				if (mutex.isActive(readyMutexName)) {
+					this.setState(State.Ready(update, explicit, this._overwrite));
+					return;
+				}
+
+				if (Date.now() - pollStartTime > pollTimeoutMs) {
+					this.logService.warn('update#doApplyUpdate: polling timed out waiting for update to be ready');
+					return;
+				}
+
 				try {
 					const progressContent = await readFile(progressFilePath, 'utf8');
 					const [currentStr, maxStr] = progressContent.split(',');
@@ -396,16 +403,12 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 				} catch {
 					// Progress file may not exist yet or be locked, ignore
 				}
+
 				await timeout(500);
 			}
 		};
 
-		// Start polling for progress
-		pollProgress();
-
-		// poll for mutex-ready
-		pollUntil(() => mutex.isActive(readyMutexName))
-			.then(() => this.setState(State.Ready(update, explicit, this._overwrite)));
+		poll();
 	}
 
 	protected override async cancelPendingUpdate(): Promise<void> {
