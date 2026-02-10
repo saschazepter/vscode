@@ -68,6 +68,7 @@ class TestTelemetryService implements Partial<ITelemetryService> {
 class MockHooksExecutionService implements IHooksExecutionService {
 	readonly _serviceBrand: undefined;
 	readonly onDidExecuteHook = Event.None;
+	readonly onDidHookProgress = Event.None;
 
 	setProxy(_proxy: IHooksExecutionProxy): void { }
 	registerHooks(_sessionResource: URI, _hooks: IChatRequestHooks): IDisposable { return { dispose: () => { } }; }

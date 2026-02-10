@@ -12,7 +12,7 @@
  * External types (in hooksCommandTypes.ts) define the contract with spawned commands.
  */
 
-import { vObj, vOptionalProp, vString } from '../../../../../base/common/validation.js';
+import { vBoolean, vObj, vOptionalProp, vString } from '../../../../../base/common/validation.js';
 
 //#region Common Hook Types
 
@@ -48,6 +48,7 @@ export interface IHookResult {
 }
 
 export const commonHookOutputValidator = vObj({
+	continue: vOptionalProp(vBoolean()),
 	stopReason: vOptionalProp(vString()),
 	systemMessage: vOptionalProp(vString()),
 });
