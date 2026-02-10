@@ -291,7 +291,7 @@ async function buildWebExtensions(isWatch: boolean): Promise<void> {
 
 	const promises: Promise<unknown>[] = [];
 
-	// Run esbuild for extensions with esbuild-browser.mjs
+	// Esbuild for extensions
 	if (esbuildConfigLocations.length > 0) {
 		promises.push(ext.esbuildExtensions('packaging web extension (esbuild)', isWatch, esbuildConfigLocations.map(script => ({ script }))));
 	}
