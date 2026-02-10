@@ -137,7 +137,7 @@ export interface IParseHooksFromFileResult {
 	readonly format: HookSourceFormat;
 	readonly hooks: Map<HookType, { hooks: IHookCommand[]; originalId: string }>;
 	/**
-	 * Whether all hooks from this file were disabled via `disableAllHooks: true` (Claude format only).
+	 * Whether all hooks from this file were disabled via `disableAllHooks: true`.
 	 */
 	readonly disabledAllHooks: boolean;
 }
