@@ -101,12 +101,12 @@ export class SessionTypePickerActionItem extends ChatInputPickerActionViewItem {
 
 		super(action, sessionTargetPickerOptions, pickerOptions, actionWidgetService, keybindingService, contextKeyService, telemetryService);
 
-		this._updateAgentSessionItems();
 		this._register(this.chatSessionsService.onDidChangeAvailability(() => {
 			this._updateAgentSessionItems();
 		}));
 
 		// Re-render when the background agent display name changes via experiment
+		// Note: autorun runs immediately, so this also handles initial population
 		this._register(autorun(reader => {
 			backgroundAgentDisplayName.read(reader);
 			this._updateAgentSessionItems();
