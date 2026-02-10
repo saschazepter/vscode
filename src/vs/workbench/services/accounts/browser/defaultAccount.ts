@@ -284,7 +284,7 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 		}
 
 		this.logService.debug('[DefaultAccount] Starting initialization');
-		await this.doUpdateDefaultAccount(false);
+		await this.doUpdateDefaultAccount(false, false);
 		this.logService.debug('[DefaultAccount] Initialization complete');
 
 		this._register(this.onDidChangeDefaultAccount(account => {
@@ -336,19 +336,19 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 			if (focused && this._defaultAccount && this._policyData && (!this._policyData.isMcpRegistryDataFetched || !this._policyData.isTokenEntitlementsDataFetched)) {
 				this.accountDataPollScheduler.cancel();
 				this.logService.debug('[DefaultAccount] Window focused, updating default account');
-				this.refresh();
+				this.refresh(true);
 			}
 		}));
 	}
 
-	async refresh(): Promise<IDefaultAccount | null> {
+	async refresh(donotFetchEntitlements: boolean = false): Promise<IDefaultAccount | null> {
 		if (!this.initialized) {
 			await this.initPromise;
 			return this.defaultAccount;
 		}
 
 		this.logService.debug('[DefaultAccount] Refreshing default account');
-		await this.updateDefaultAccount();
+		await this.updateDefaultAccount(false, donotFetchEntitlements);
 		return this.defaultAccount;
 	}
 
@@ -362,13 +362,13 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 		await this.updateDefaultAccount(true);
 	}
 
-	private async updateDefaultAccount(donotUseCache: boolean = false): Promise<void> {
-		await this.updateThrottler.trigger(() => this.doUpdateDefaultAccount(donotUseCache));
+	private async updateDefaultAccount(donotUseCache: boolean = false, donotFetchEntitlements: boolean = false): Promise<void> {
+		await this.updateThrottler.trigger(() => this.doUpdateDefaultAccount(donotUseCache, donotFetchEntitlements));
 	}
 
-	private async doUpdateDefaultAccount(donotUseCache: boolean): Promise<void> {
+	private async doUpdateDefaultAccount(donotUseCache: boolean, donotFetchEntitlements: boolean): Promise<void> {
 		try {
-			const defaultAccount = await this.fetchDefaultAccount(donotUseCache);
+			const defaultAccount = await this.fetchDefaultAccount(donotUseCache, donotFetchEntitlements);
 			this.setDefaultAccount(defaultAccount);
 			this.scheduleAccountDataPoll();
 		} catch (error) {
@@ -376,7 +376,7 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 		}
 	}
 
-	private async fetchDefaultAccount(donotUseCache: boolean): Promise<IDefaultAccountData | null> {
+	private async fetchDefaultAccount(donotUseCache: boolean, donotFetchEntitlements: boolean): Promise<IDefaultAccountData | null> {
 		const defaultAccountProvider = this.getDefaultAccountAuthenticationProvider();
 		this.logService.debug('[DefaultAccount] Default account provider ID:', defaultAccountProvider.id);
 
@@ -386,7 +386,7 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 			return null;
 		}
 
-		return await this.getDefaultAccountForAuthenticationProvider(defaultAccountProvider, donotUseCache);
+		return await this.getDefaultAccountForAuthenticationProvider(defaultAccountProvider, donotUseCache, donotFetchEntitlements);
 	}
 
 	private setDefaultAccount(account: IDefaultAccountData | null): void {
@@ -449,7 +449,7 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 		return result;
 	}
 
-	private async getDefaultAccountForAuthenticationProvider(authenticationProvider: IDefaultAccountAuthenticationProvider, donotUseCache: boolean): Promise<IDefaultAccountData | null> {
+	private async getDefaultAccountForAuthenticationProvider(authenticationProvider: IDefaultAccountAuthenticationProvider, donotUseCache: boolean, donotFetchEntitlements: boolean): Promise<IDefaultAccountData | null> {
 		try {
 			this.logService.debug('[DefaultAccount] Getting Default Account from authenticated sessions for provider:', authenticationProvider.id);
 			const sessions = await this.findMatchingProviderSession(authenticationProvider.id, this.defaultAccountConfig.authenticationProvider.scopes);
@@ -459,20 +459,20 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 				return null;
 			}
 
-			return this.getDefaultAccountFromAuthenticatedSessions(authenticationProvider, sessions, donotUseCache);
+			return this.getDefaultAccountFromAuthenticatedSessions(authenticationProvider, sessions, donotUseCache, donotFetchEntitlements);
 		} catch (error) {
 			this.logService.error('[DefaultAccount] Failed to get default account for provider:', authenticationProvider.id, getErrorMessage(error));
 			return null;
 		}
 	}
 
-	private async getDefaultAccountFromAuthenticatedSessions(authenticationProvider: IDefaultAccountAuthenticationProvider, sessions: AuthenticationSession[], donotUseCache: boolean): Promise<IDefaultAccountData | null> {
+	private async getDefaultAccountFromAuthenticatedSessions(authenticationProvider: IDefaultAccountAuthenticationProvider, sessions: AuthenticationSession[], donotUseCache: boolean, donotFetchEntitlements: boolean): Promise<IDefaultAccountData | null> {
 		try {
 			const accountId = sessions[0].account.id;
 			const accountPolicyData = this._policyData?.accountId === accountId ? this._policyData : undefined;
 
 			const [entitlementsData, tokenEntitlementsData] = await Promise.all([
-				this.getEntitlements(sessions),
+				donotFetchEntitlements && accountPolicyData && this._defaultAccount ? this._defaultAccount.defaultAccount.entitlementsData : this.getEntitlements(sessions),
 				this.getTokenEntitlements(sessions, donotUseCache ? undefined : accountPolicyData),
 			]);
 
@@ -661,10 +661,20 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 		}
 
 		if (response.res.statusCode && response.res.statusCode !== 200) {
-			this.logService.trace(`[DefaultAccount] unexpected status code ${response.res.statusCode} while fetching MCP registry data`);
-			return response.res.statusCode === 404 /* mcp not configured */
-				? null
-				: undefined;
+			if (response.res.statusCode === 401) {
+				this.logService.debug('[DefaultAccount] Unauthorized (401) when fetching MCP registry data, treating as no registry available');
+				return null;
+			}
+			if (response.res.statusCode === 404) {
+				this.logService.debug('[DefaultAccount] MCP registry endpoint not found (404), treating as no registry available');
+				return null;
+			}
+			if (response.res.statusCode === 429) {
+				this.logService.debug(`[DefaultAccount] Received 429 Too Many Requests for MCP registry data, treating as no registry available and not retrying immediately.`);
+				return null;
+			}
+			this.logService.debug(`[DefaultAccount] unexpected status code ${response.res.statusCode} while fetching MCP registry data`);
+			return undefined;
 		}
 
 		try {
@@ -704,6 +714,10 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 
 				const status = response.res.statusCode;
 				if (status && status !== 200) {
+					if (status === 429) {
+						this.logService.warn(`[DefaultAccount] Received 429 Too Many Requests for ${url}.`);
+						return response;
+					}
 					lastResponse = response;
 					continue; // try next session
 				}
@@ -711,7 +725,7 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 				return response;
 			} catch (error) {
 				if (!token.isCancellationRequested) {
-					this.logService.error(`[chat entitlement] request: error ${error}`);
+					this.logService.error(`[DefaultAccount] request: error ${error}`, url);
 				}
 			}
 		}
