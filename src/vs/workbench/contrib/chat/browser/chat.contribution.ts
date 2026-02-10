@@ -90,6 +90,7 @@ import { registerChatToolActions } from './actions/chatToolActions.js';
 import { ChatTransferContribution } from './actions/chatTransfer.js';
 import { registerChatCustomizationDiagnosticsAction } from './actions/chatCustomizationDiagnosticsAction.js';
 import './agentSessions/agentSessions.contribution.js';
+import { backgroundAgentDisplayName } from './agentSessions/agentSessions.js';
 import { IAgentSessionsService } from './agentSessions/agentSessionsService.js';
 import { IChatAccessibilityService, IChatCodeBlockContextProviderService, IChatWidgetService, IQuickChatService } from './chat.js';
 import { ChatAccessibilityService } from './accessibility/chatAccessibilityService.js';
@@ -1232,6 +1233,7 @@ class ChatAgentSettingContribution extends Disposable implements IWorkbenchContr
 	) {
 		super();
 		this.registerMaxRequestsSetting();
+		this.registerBackgroundAgentDisplayName();
 	}
 
 
@@ -1261,6 +1263,14 @@ class ChatAgentSettingContribution extends Disposable implements IWorkbenchContr
 			});
 		};
 		this._register(Event.runAndSubscribe(Event.debounce(this.entitlementService.onDidChangeEntitlement, () => { }, 1000), () => registerMaxRequestsSetting()));
+	}
+
+	private registerBackgroundAgentDisplayName(): void {
+		this.experimentService.getTreatment<string>('backgroundAgentDisplayName').then((value) => {
+			if (value) {
+				backgroundAgentDisplayName.set(value, undefined);
+			}
+		});
 	}
 }
 

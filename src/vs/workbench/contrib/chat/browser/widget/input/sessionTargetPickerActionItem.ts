@@ -18,10 +18,11 @@ import { IKeybindingService } from '../../../../../../platform/keybinding/common
 import { IOpenerService } from '../../../../../../platform/opener/common/opener.js';
 import { ITelemetryService } from '../../../../../../platform/telemetry/common/telemetry.js';
 import { IChatSessionsService } from '../../../common/chatSessionsService.js';
-import { AgentSessionProviders, getAgentSessionProvider, getAgentSessionProviderDescription, getAgentSessionProviderIcon, getAgentSessionProviderName, isFirstPartyAgentSessionProvider } from '../../agentSessions/agentSessions.js';
+import { AgentSessionProviders, backgroundAgentDisplayName, getAgentSessionProvider, getAgentSessionProviderDescription, getAgentSessionProviderIcon, getAgentSessionProviderName, isFirstPartyAgentSessionProvider } from '../../agentSessions/agentSessions.js';
 import { ChatInputPickerActionViewItem, IChatInputPickerOptions } from './chatInputPickerActionItem.js';
 import { ISessionTypePickerDelegate } from '../../chat.js';
 import { IActionProvider } from '../../../../../../base/browser/ui/dropdown/dropdown.js';
+import { autorun } from '../../../../../../base/common/observable.js';
 
 export interface ISessionTypeItem {
 	type: AgentSessionProviders;
@@ -103,6 +104,15 @@ export class SessionTypePickerActionItem extends ChatInputPickerActionViewItem {
 		this._updateAgentSessionItems();
 		this._register(this.chatSessionsService.onDidChangeAvailability(() => {
 			this._updateAgentSessionItems();
+		}));
+
+		// Re-render when the background agent display name changes via experiment
+		this._register(autorun(reader => {
+			backgroundAgentDisplayName.read(reader);
+			this._updateAgentSessionItems();
+			if (this.element) {
+				this.renderLabel(this.element);
+			}
 		}));
 	}
 
