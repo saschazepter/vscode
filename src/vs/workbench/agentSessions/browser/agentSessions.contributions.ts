@@ -8,12 +8,20 @@ import { localize2 } from '../../../nls.js';
 import { SyncDescriptor } from '../../../platform/instantiation/common/descriptors.js';
 import { Registry } from '../../../platform/registry/common/platform.js';
 import { registerIcon } from '../../../platform/theme/common/iconRegistry.js';
-import { IViewContainersRegistry, ViewContainerLocation, IViewsRegistry, Extensions as ViewContainerExtensions, LayoutVisibility } from '../../common/views.js';
+import { IViewContainersRegistry, IViewDescriptor, ViewContainerLocation, IViewsRegistry, Extensions as ViewContainerExtensions, LayoutVisibility } from '../../common/views.js';
 import { registerChatBranchActions } from './actions/chatBranchSessionAction.js';
 import { CHANGES_VIEW_CONTAINER_ID, CHANGES_VIEW_ID, ChangesViewPane, ChangesViewPaneContainer } from './views/changesView.js';
 import { registerWorkbenchContribution2, WorkbenchPhase } from '../../common/contributions.js';
 import { RunScriptContribution } from '../../contrib/chat/browser/agentSessions/runScriptContribution.js';
 import { AgentSessionsTitleBarContribution } from './agentSessionTitleBarWidget.js';
+import './aiCustomizationTreeView/aiCustomizationTreeView.contribution.js';
+import './aiCustomizationEditor/aiCustomizationEditor.contribution.js';
+import './aiCustomizationManagement/aiCustomizationManagement.contribution.js';
+import { ContextKeyExpr } from '../../../platform/contextkey/common/contextkey.js';
+import { ChatContextKeys } from '../../contrib/chat/common/actions/chatContextKeys.js';
+import { AgentSessionsViewId } from '../../contrib/chat/browser/agentSessions/agentSessions.js';
+import { agentSessionsViewContainer, agentSessionsViewIcon, AGENT_SESSIONS_VIEW_TITLE } from '../../contrib/chat/browser/agentSessions/agentSessions.contribution.js';
+import { AgentSessionsViewPane } from './views/agentSessionsViewPane.js';
 
 // --- Changes
 
@@ -44,6 +52,30 @@ viewsRegistry.registerViews([{
 	order: 1,
 	layoutVisibility: LayoutVisibility.AgentSessions
 }], changesViewContainer);
+
+// --- Agent Sessions View Pane Registration
+
+const agentSessionsViewDescriptor: IViewDescriptor = {
+	id: AgentSessionsViewId,
+	containerIcon: agentSessionsViewIcon,
+	containerTitle: AGENT_SESSIONS_VIEW_TITLE.value,
+	singleViewPaneContainerTitle: AGENT_SESSIONS_VIEW_TITLE.value,
+	name: AGENT_SESSIONS_VIEW_TITLE,
+	canToggleVisibility: false,
+	canMoveView: true,
+	openCommandActionDescriptor: {
+		id: AgentSessionsViewId,
+		title: AGENT_SESSIONS_VIEW_TITLE
+	},
+	ctorDescriptor: new SyncDescriptor(AgentSessionsViewPane),
+	when: ContextKeyExpr.and(
+		ChatContextKeys.Setup.hidden.negate(),
+		ChatContextKeys.Setup.disabled.negate(),
+		ChatContextKeys.agentSessionsViewerDedicated
+	),
+	layoutVisibility: LayoutVisibility.Both
+};
+Registry.as<IViewsRegistry>(ViewContainerExtensions.ViewsRegistry).registerViews([agentSessionsViewDescriptor], agentSessionsViewContainer);
 
 export function registerAgentWorkbenchContributions() {
 	registerChatBranchActions();

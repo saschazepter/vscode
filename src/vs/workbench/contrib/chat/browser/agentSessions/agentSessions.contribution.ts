@@ -21,17 +21,16 @@ import { ArchiveAgentSessionAction, ArchiveAgentSessionSectionAction, UnarchiveA
 import { AgentSessionsQuickAccessProvider, AGENT_SESSIONS_QUICK_ACCESS_PREFIX } from './agentSessionsQuickAccess.js';
 import { SyncDescriptor } from '../../../../../platform/instantiation/common/descriptors.js';
 import { ViewPaneContainer } from '../../../../browser/parts/views/viewPaneContainer.js';
-import { IViewContainersRegistry, IViewDescriptor, IViewsRegistry, LayoutVisibility, ViewContainer, ViewContainerLocation, Extensions as ViewExtensions } from '../../../../common/views.js';
+import { IViewContainersRegistry, LayoutVisibility, ViewContainer, ViewContainerLocation, Extensions as ViewExtensions } from '../../../../common/views.js';
 import { registerIcon } from '../../../../../platform/theme/common/iconRegistry.js';
-import { AgentSessionsViewPane } from './experiments/agentSessionsViewPane.js';
 
 //#region View Registration
 
-const agentSessionsViewIcon = registerIcon('chat-sessions-icon', Codicon.commentDiscussionSparkle, localize('agentSessionsViewIcon', 'Icon for Agent Sessions View'));
+export const agentSessionsViewIcon = registerIcon('chat-sessions-icon', Codicon.commentDiscussionSparkle, localize('agentSessionsViewIcon', 'Icon for Agent Sessions View'));
 
-const AGENT_SESSIONS_VIEW_TITLE = localize2('agentSessions.view.label', "Sessions");
+export const AGENT_SESSIONS_VIEW_TITLE = localize2('agentSessions.view.label', "Sessions");
 
-const agentSessionsViewContainer: ViewContainer = Registry.as<IViewContainersRegistry>(ViewExtensions.ViewContainersRegistry).registerViewContainer({
+export const agentSessionsViewContainer: ViewContainer = Registry.as<IViewContainersRegistry>(ViewExtensions.ViewContainersRegistry).registerViewContainer({
 	id: AgentSessionsViewContainerId,
 	title: AGENT_SESSIONS_VIEW_TITLE,
 	icon: agentSessionsViewIcon,
@@ -41,28 +40,6 @@ const agentSessionsViewContainer: ViewContainer = Registry.as<IViewContainersReg
 	order: 6,
 	layoutVisibility: LayoutVisibility.Both
 }, ViewContainerLocation.Sidebar, { isDefault: true });
-
-const agentSessionsViewDescriptor: IViewDescriptor = {
-	id: AgentSessionsViewId,
-	containerIcon: agentSessionsViewIcon,
-	containerTitle: AGENT_SESSIONS_VIEW_TITLE.value,
-	singleViewPaneContainerTitle: AGENT_SESSIONS_VIEW_TITLE.value,
-	name: AGENT_SESSIONS_VIEW_TITLE,
-	canToggleVisibility: false,
-	canMoveView: true,
-	openCommandActionDescriptor: {
-		id: AgentSessionsViewId,
-		title: AGENT_SESSIONS_VIEW_TITLE
-	},
-	ctorDescriptor: new SyncDescriptor(AgentSessionsViewPane),
-	when: ContextKeyExpr.and(
-		ChatContextKeys.Setup.hidden.negate(),
-		ChatContextKeys.Setup.disabled.negate(),
-		ChatContextKeys.agentSessionsViewerDedicated
-	),
-	layoutVisibility: LayoutVisibility.Both
-};
-Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry).registerViews([agentSessionsViewDescriptor], agentSessionsViewContainer);
 
 // --- Agent Sessions View Toolbar
 

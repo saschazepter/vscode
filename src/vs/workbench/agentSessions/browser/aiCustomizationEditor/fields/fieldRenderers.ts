@@ -3,18 +3,18 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import * as DOM from '../../../../../../base/browser/dom.js';
-import { Button } from '../../../../../../base/browser/ui/button/button.js';
-import { InputBox } from '../../../../../../base/browser/ui/inputbox/inputBox.js';
-import { Toggle } from '../../../../../../base/browser/ui/toggle/toggle.js';
-import { Codicon } from '../../../../../../base/common/codicons.js';
-import { Emitter, Event } from '../../../../../../base/common/event.js';
-import { Disposable, DisposableStore } from '../../../../../../base/common/lifecycle.js';
-import { ThemeIcon } from '../../../../../../base/common/themables.js';
-import { localize } from '../../../../../../nls.js';
-import { IContextViewService } from '../../../../../../platform/contextview/browser/contextView.js';
-import { defaultButtonStyles, defaultInputBoxStyles, defaultToggleStyles } from '../../../../../../platform/theme/browser/defaultStyles.js';
-import { IHoverService } from '../../../../../../platform/hover/browser/hover.js';
+import * as DOM from '../../../../../base/browser/dom.js';
+import { Button } from '../../../../../base/browser/ui/button/button.js';
+import { InputBox } from '../../../../../base/browser/ui/inputbox/inputBox.js';
+import { Toggle } from '../../../../../base/browser/ui/toggle/toggle.js';
+import { Codicon } from '../../../../../base/common/codicons.js';
+import { Emitter, Event } from '../../../../../base/common/event.js';
+import { Disposable, DisposableStore } from '../../../../../base/common/lifecycle.js';
+import { ThemeIcon } from '../../../../../base/common/themables.js';
+import { localize } from '../../../../../nls.js';
+import { IContextViewService } from '../../../../../platform/contextview/browser/contextView.js';
+import { defaultButtonStyles, defaultInputBoxStyles, defaultToggleStyles } from '../../../../../platform/theme/browser/defaultStyles.js';
+import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
 
 const $ = DOM.$;
 

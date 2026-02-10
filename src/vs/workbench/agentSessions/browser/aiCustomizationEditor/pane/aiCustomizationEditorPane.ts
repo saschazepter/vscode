@@ -4,23 +4,23 @@
  *--------------------------------------------------------------------------------------------*/
 
 import '../media/aiCustomizationEditor.css';
-import * as DOM from '../../../../../../base/browser/dom.js';
-import { Button } from '../../../../../../base/browser/ui/button/button.js';
-import { CancellationToken } from '../../../../../../base/common/cancellation.js';
-import { Codicon } from '../../../../../../base/common/codicons.js';
-import { Emitter, Event } from '../../../../../../base/common/event.js';
-import { DisposableStore, MutableDisposable } from '../../../../../../base/common/lifecycle.js';
-import { Orientation, Sizing, SplitView } from '../../../../../../base/browser/ui/splitview/splitview.js';
-import { DomScrollableElement } from '../../../../../../base/browser/ui/scrollbar/scrollableElement.js';
-import { ScrollbarVisibility } from '../../../../../../base/common/scrollable.js';
-import { localize } from '../../../../../../nls.js';
-import { IStorageService, StorageScope, StorageTarget } from '../../../../../../platform/storage/common/storage.js';
-import { ITelemetryService } from '../../../../../../platform/telemetry/common/telemetry.js';
-import { IThemeService } from '../../../../../../platform/theme/common/themeService.js';
-import { IEditorOptions } from '../../../../../../platform/editor/common/editor.js';
-import { EditorPane } from '../../../../../browser/parts/editor/editorPane.js';
-import { IEditorOpenContext } from '../../../../../common/editor.js';
-import { IEditorGroup } from '../../../../../services/editor/common/editorGroupsService.js';
+import * as DOM from '../../../../../base/browser/dom.js';
+import { Button } from '../../../../../base/browser/ui/button/button.js';
+import { CancellationToken } from '../../../../../base/common/cancellation.js';
+import { Codicon } from '../../../../../base/common/codicons.js';
+import { Emitter, Event } from '../../../../../base/common/event.js';
+import { DisposableStore, MutableDisposable } from '../../../../../base/common/lifecycle.js';
+import { Orientation, Sizing, SplitView } from '../../../../../base/browser/ui/splitview/splitview.js';
+import { DomScrollableElement } from '../../../../../base/browser/ui/scrollbar/scrollableElement.js';
+import { ScrollbarVisibility } from '../../../../../base/common/scrollable.js';
+import { localize } from '../../../../../nls.js';
+import { IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
+import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry.js';
+import { IThemeService } from '../../../../../platform/theme/common/themeService.js';
+import { IEditorOptions } from '../../../../../platform/editor/common/editor.js';
+import { EditorPane } from '../../../../browser/parts/editor/editorPane.js';
+import { IEditorOpenContext } from '../../../../common/editor.js';
+import { IEditorGroup } from '../../../../services/editor/common/editorGroupsService.js';
 import { AICustomizationEditorInput, AICustomizationEditorModel } from '../input/aiCustomizationEditorInput.js';
 import {
 	AI_CUSTOMIZATION_EDITOR_ID,
@@ -30,20 +30,20 @@ import {
 	TOC_DEFAULT_WIDTH,
 	TOC_MIN_WIDTH,
 } from '../aiCustomizationEditor.js';
-import { IInstantiationService } from '../../../../../../platform/instantiation/common/instantiation.js';
-import { IContextViewService } from '../../../../../../platform/contextview/browser/contextView.js';
-import { IHoverService } from '../../../../../../platform/hover/browser/hover.js';
-import { settingsSashBorder } from '../../../../preferences/common/settingsEditorColorRegistry.js';
-import { WorkbenchAsyncDataTree } from '../../../../../../platform/list/browser/listService.js';
-import { IAsyncDataSource, ITreeNode, ITreeRenderer } from '../../../../../../base/browser/ui/tree/tree.js';
-import { FuzzyScore } from '../../../../../../base/common/filters.js';
-import { IListVirtualDelegate } from '../../../../../../base/browser/ui/list/list.js';
-import { ThemeIcon } from '../../../../../../base/common/themables.js';
-import { PromptsType } from '../../../common/promptSyntax/promptTypes.js';
+import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
+import { IContextViewService } from '../../../../../platform/contextview/browser/contextView.js';
+import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
+import { settingsSashBorder } from '../../../../contrib/preferences/common/settingsEditorColorRegistry.js';
+import { WorkbenchAsyncDataTree } from '../../../../../platform/list/browser/listService.js';
+import { IAsyncDataSource, ITreeNode, ITreeRenderer } from '../../../../../base/browser/ui/tree/tree.js';
+import { FuzzyScore } from '../../../../../base/common/filters.js';
+import { IListVirtualDelegate } from '../../../../../base/browser/ui/list/list.js';
+import { ThemeIcon } from '../../../../../base/common/themables.js';
+import { PromptsType } from '../../../../contrib/chat/common/promptSyntax/promptTypes.js';
 import { agentIcon, instructionsIcon, promptIcon, skillIcon } from '../../aiCustomizationTreeView/aiCustomizationTreeViewIcons.js';
-import { PromptHeaderAttributes } from '../../../common/promptSyntax/promptFileParser.js';
+import { PromptHeaderAttributes } from '../../../../contrib/chat/common/promptSyntax/promptFileParser.js';
 import { FieldValue, IFieldDefinition, ISectionDefinition, SectionRenderer } from '../fields/fieldRenderers.js';
-import { defaultButtonStyles } from '../../../../../../platform/theme/browser/defaultStyles.js';
+import { defaultButtonStyles } from '../../../../../platform/theme/browser/defaultStyles.js';
 
 const $ = DOM.$;
 

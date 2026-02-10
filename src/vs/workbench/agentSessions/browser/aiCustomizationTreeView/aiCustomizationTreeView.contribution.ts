@@ -3,20 +3,20 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { localize, localize2, ILocalizedString } from '../../../../../nls.js';
-import { Action2, MenuId, MenuRegistry, registerAction2 } from '../../../../../platform/actions/common/actions.js';
-import { ContextKeyExpr } from '../../../../../platform/contextkey/common/contextkey.js';
-import { IInstantiationService, ServicesAccessor } from '../../../../../platform/instantiation/common/instantiation.js';
-import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
+import { localize, localize2, ILocalizedString } from '../../../../nls.js';
+import { Action2, MenuId, MenuRegistry, registerAction2 } from '../../../../platform/actions/common/actions.js';
+import { ContextKeyExpr } from '../../../../platform/contextkey/common/contextkey.js';
+import { IInstantiationService, ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
+import { ChatContextKeys } from '../../../contrib/chat/common/actions/chatContextKeys.js';
 import { AICustomizationItemMenuId, AICustomizationNewMenuId, AI_CUSTOMIZATION_CATEGORY, AI_CUSTOMIZATION_VIEW_ID } from './aiCustomizationTreeView.js';
 import { AICustomizationItemTypeContextKey } from './aiCustomizationTreeViewViews.js';
-import { IOpenerService } from '../../../../../platform/opener/common/opener.js';
-import { PromptFilePickers } from '../promptSyntax/pickers/promptFilePickers.js';
-import { PromptsType } from '../../common/promptSyntax/promptTypes.js';
-import { Codicon } from '../../../../../base/common/codicons.js';
-import { ICommandService } from '../../../../../platform/commands/common/commands.js';
-import { URI } from '../../../../../base/common/uri.js';
-import { IEditorService } from '../../../../services/editor/common/editorService.js';
+import { IOpenerService } from '../../../../platform/opener/common/opener.js';
+import { PromptFilePickers } from '../../../contrib/chat/browser/promptSyntax/pickers/promptFilePickers.js';
+import { PromptsType } from '../../../contrib/chat/common/promptSyntax/promptTypes.js';
+import { Codicon } from '../../../../base/common/codicons.js';
+import { ICommandService } from '../../../../platform/commands/common/commands.js';
+import { URI } from '../../../../base/common/uri.js';
+import { IEditorService } from '../../../services/editor/common/editorService.js';
 import { AI_CUSTOMIZATION_EDITOR_ID } from '../aiCustomizationEditor/aiCustomizationEditor.js';
 
 //#region Utilities

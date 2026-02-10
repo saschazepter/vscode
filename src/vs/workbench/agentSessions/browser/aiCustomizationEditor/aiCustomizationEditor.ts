@@ -3,8 +3,8 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { localize2 } from '../../../../../nls.js';
-import { MenuId } from '../../../../../platform/actions/common/actions.js';
+import { localize2 } from '../../../../nls.js';
+import { MenuId } from '../../../../platform/actions/common/actions.js';
 
 /**
  * Editor ID for the AI Customization Editor.

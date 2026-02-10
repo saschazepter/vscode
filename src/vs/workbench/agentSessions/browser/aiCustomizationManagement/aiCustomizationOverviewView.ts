@@ -4,31 +4,31 @@
  *--------------------------------------------------------------------------------------------*/
 
 import './media/aiCustomizationManagement.css';
-import * as DOM from '../../../../../base/browser/dom.js';
-import { CancellationToken } from '../../../../../base/common/cancellation.js';
-import { ThemeIcon } from '../../../../../base/common/themables.js';
-import { localize } from '../../../../../nls.js';
-import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
-import { IViewPaneOptions, ViewPane } from '../../../../browser/parts/views/viewPane.js';
-import { IViewDescriptorService } from '../../../../common/views.js';
-import { IKeybindingService } from '../../../../../platform/keybinding/common/keybinding.js';
-import { IContextMenuService } from '../../../../../platform/contextview/browser/contextView.js';
-import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
-import { IContextKeyService } from '../../../../../platform/contextkey/common/contextkey.js';
-import { IOpenerService } from '../../../../../platform/opener/common/opener.js';
-import { IThemeService } from '../../../../../platform/theme/common/themeService.js';
-import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
-import { IEditorGroupsService } from '../../../../services/editor/common/editorGroupsService.js';
-import { IPromptsService, PromptsStorage } from '../../common/promptSyntax/service/promptsService.js';
-import { PromptsType } from '../../common/promptSyntax/promptTypes.js';
+import * as DOM from '../../../../base/browser/dom.js';
+import { CancellationToken } from '../../../../base/common/cancellation.js';
+import { ThemeIcon } from '../../../../base/common/themables.js';
+import { localize } from '../../../../nls.js';
+import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
+import { IViewPaneOptions, ViewPane } from '../../../browser/parts/views/viewPane.js';
+import { IViewDescriptorService } from '../../../common/views.js';
+import { IKeybindingService } from '../../../../platform/keybinding/common/keybinding.js';
+import { IContextMenuService } from '../../../../platform/contextview/browser/contextView.js';
+import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
+import { IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
+import { IOpenerService } from '../../../../platform/opener/common/opener.js';
+import { IThemeService } from '../../../../platform/theme/common/themeService.js';
+import { IHoverService } from '../../../../platform/hover/browser/hover.js';
+import { IEditorGroupsService } from '../../../services/editor/common/editorGroupsService.js';
+import { IPromptsService, PromptsStorage } from '../../../contrib/chat/common/promptSyntax/service/promptsService.js';
+import { PromptsType } from '../../../contrib/chat/common/promptSyntax/promptTypes.js';
 import { AICustomizationManagementSection } from './aiCustomizationManagement.js';
 import { AICustomizationManagementEditorInput } from './aiCustomizationManagementEditorInput.js';
 import { AICustomizationManagementEditor } from './aiCustomizationManagementEditor.js';
 import { agentIcon, instructionsIcon, promptIcon, skillIcon } from '../aiCustomizationTreeView/aiCustomizationTreeViewIcons.js';
-import { IWorkspaceContextService } from '../../../../../platform/workspace/common/workspace.js';
-import { autorun } from '../../../../../base/common/observable.js';
-import { IActiveAgentSessionService } from '../agentSessions/agentSessionsService.js';
-import { isEqualOrParent } from '../../../../../base/common/resources.js';
+import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
+import { autorun } from '../../../../base/common/observable.js';
+import { IActiveAgentSessionService } from '../../../contrib/chat/browser/agentSessions/agentSessionsService.js';
+import { isEqualOrParent } from '../../../../base/common/resources.js';
 
 const $ = DOM.$;
 

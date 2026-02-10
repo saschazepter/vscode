@@ -3,19 +3,19 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { VSBuffer } from '../../../../../../base/common/buffer.js';
-import { Emitter, Event } from '../../../../../../base/common/event.js';
-import { Disposable } from '../../../../../../base/common/lifecycle.js';
-import { basename } from '../../../../../../base/common/resources.js';
-import { ThemeIcon } from '../../../../../../base/common/themables.js';
-import { URI } from '../../../../../../base/common/uri.js';
-import { localize } from '../../../../../../nls.js';
-import { IFileService } from '../../../../../../platform/files/common/files.js';
-import { EditorInputCapabilities, IUntypedEditorInput } from '../../../../../common/editor.js';
-import { EditorInput } from '../../../../../common/editor/editorInput.js';
-import { IPromptsService } from '../../../common/promptSyntax/service/promptsService.js';
-import { PromptsType } from '../../../common/promptSyntax/promptTypes.js';
-import { ParsedPromptFile, PromptFileParser } from '../../../common/promptSyntax/promptFileParser.js';
+import { VSBuffer } from '../../../../../base/common/buffer.js';
+import { Emitter, Event } from '../../../../../base/common/event.js';
+import { Disposable } from '../../../../../base/common/lifecycle.js';
+import { basename } from '../../../../../base/common/resources.js';
+import { ThemeIcon } from '../../../../../base/common/themables.js';
+import { URI } from '../../../../../base/common/uri.js';
+import { localize } from '../../../../../nls.js';
+import { IFileService } from '../../../../../platform/files/common/files.js';
+import { EditorInputCapabilities, IUntypedEditorInput } from '../../../../common/editor.js';
+import { EditorInput } from '../../../../common/editor/editorInput.js';
+import { IPromptsService } from '../../../../contrib/chat/common/promptSyntax/service/promptsService.js';
+import { PromptsType } from '../../../../contrib/chat/common/promptSyntax/promptTypes.js';
+import { ParsedPromptFile, PromptFileParser } from '../../../../contrib/chat/common/promptSyntax/promptFileParser.js';
 import { AI_CUSTOMIZATION_EDITOR_ID, AI_CUSTOMIZATION_EDITOR_VIEW_TYPE } from '../aiCustomizationEditor.js';
 import { agentIcon, instructionsIcon, promptIcon, skillIcon } from '../../aiCustomizationTreeView/aiCustomizationTreeViewIcons.js';
 

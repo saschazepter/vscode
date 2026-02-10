@@ -3,19 +3,19 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Disposable } from '../../../../../base/common/lifecycle.js';
-import { localize, localize2 } from '../../../../../nls.js';
-import { Action2, MenuRegistry, registerAction2 } from '../../../../../platform/actions/common/actions.js';
-import { SyncDescriptor } from '../../../../../platform/instantiation/common/descriptors.js';
-import { IInstantiationService, ServicesAccessor } from '../../../../../platform/instantiation/common/instantiation.js';
-import { Registry } from '../../../../../platform/registry/common/platform.js';
-import { IEditorPaneRegistry, EditorPaneDescriptor } from '../../../../browser/editor.js';
-import { EditorExtensions, IEditorFactoryRegistry, IEditorSerializer } from '../../../../common/editor.js';
-import { EditorInput } from '../../../../common/editor/editorInput.js';
-import { IEditorGroupsService } from '../../../../services/editor/common/editorGroupsService.js';
-import { IEditorService } from '../../../../services/editor/common/editorService.js';
-import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
-import { CHAT_CATEGORY } from '../actions/chatActions.js';
+import { Disposable } from '../../../../base/common/lifecycle.js';
+import { localize, localize2 } from '../../../../nls.js';
+import { Action2, MenuRegistry, registerAction2 } from '../../../../platform/actions/common/actions.js';
+import { SyncDescriptor } from '../../../../platform/instantiation/common/descriptors.js';
+import { IInstantiationService, ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
+import { Registry } from '../../../../platform/registry/common/platform.js';
+import { IEditorPaneRegistry, EditorPaneDescriptor } from '../../../browser/editor.js';
+import { EditorExtensions, IEditorFactoryRegistry, IEditorSerializer } from '../../../common/editor.js';
+import { EditorInput } from '../../../common/editor/editorInput.js';
+import { IEditorGroupsService } from '../../../services/editor/common/editorGroupsService.js';
+import { IEditorService } from '../../../services/editor/common/editorService.js';
+import { ChatContextKeys } from '../../../contrib/chat/common/actions/chatContextKeys.js';
+import { CHAT_CATEGORY } from '../../../contrib/chat/browser/actions/chatActions.js';
 import { AICustomizationManagementEditor } from './aiCustomizationManagementEditor.js';
 import { AICustomizationManagementEditorInput } from './aiCustomizationManagementEditorInput.js';
 import {
@@ -24,19 +24,19 @@ import {
 	AICustomizationManagementCommands,
 	AICustomizationManagementItemMenuId,
 } from './aiCustomizationManagement.js';
-import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../../common/contributions.js';
-import { Codicon } from '../../../../../base/common/codicons.js';
-import { URI } from '../../../../../base/common/uri.js';
+import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../common/contributions.js';
+import { Codicon } from '../../../../base/common/codicons.js';
+import { URI } from '../../../../base/common/uri.js';
 import { AI_CUSTOMIZATION_EDITOR_ID } from '../aiCustomizationEditor/aiCustomizationEditor.js';
-import { ICommandService } from '../../../../../platform/commands/common/commands.js';
-import { PromptsType } from '../../common/promptSyntax/promptTypes.js';
-import { PromptsStorage } from '../../common/promptSyntax/service/promptsService.js';
-import { ContextKeyExpr } from '../../../../../platform/contextkey/common/contextkey.js';
-import { IFileService } from '../../../../../platform/files/common/files.js';
-import { IDialogService } from '../../../../../platform/dialogs/common/dialogs.js';
-import { basename } from '../../../../../base/common/resources.js';
-import { Schemas } from '../../../../../base/common/network.js';
-import { isWindows, isMacintosh } from '../../../../../base/common/platform.js';
+import { ICommandService } from '../../../../platform/commands/common/commands.js';
+import { PromptsType } from '../../../contrib/chat/common/promptSyntax/promptTypes.js';
+import { PromptsStorage } from '../../../contrib/chat/common/promptSyntax/service/promptsService.js';
+import { ContextKeyExpr } from '../../../../platform/contextkey/common/contextkey.js';
+import { IFileService } from '../../../../platform/files/common/files.js';
+import { IDialogService } from '../../../../platform/dialogs/common/dialogs.js';
+import { basename } from '../../../../base/common/resources.js';
+import { Schemas } from '../../../../base/common/network.js';
+import { isWindows, isMacintosh } from '../../../../base/common/platform.js';
 
 //#region Editor Registration
 
