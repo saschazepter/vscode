@@ -199,10 +199,8 @@ export class ViewController {
 			return undefined;
 		}
 
-		// Bail out for RTL content - visual positions don't correspond
-		// to logical offsets so the selection would be wrong.
-		const content = lineContent.substring(tokenStart + 1, tokenEnd - 1);
-		if (containsRTL(content)) {
+		// Skip if string contains RTL characters.
+		if (containsRTL(lineContent)) {
 			return undefined;
 		}
 
