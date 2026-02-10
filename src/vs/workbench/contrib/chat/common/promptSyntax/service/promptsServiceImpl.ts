@@ -1032,7 +1032,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 				const content = await this.fileService.readFile(hookFile.uri);
 				const json = JSON.parse(content.value.toString());
 
-				// Use format-aware parsing that handles Copilot, Claude, and Cursor formats
+				// Use format-aware parsing that handles Copilot and Claude formats
 				const { format, hooks, disabledAllHooks } = parseHooksFromFile(hookFile.uri, json, workspaceRootUri, userHome);
 
 				// Skip files that have all hooks disabled
