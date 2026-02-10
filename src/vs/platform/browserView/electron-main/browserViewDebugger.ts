@@ -3,7 +3,6 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { webContents } from 'electron';
 import { Emitter } from '../../../base/common/event.js';
 import { Disposable, DisposableMap, DisposableStore } from '../../../base/common/lifecycle.js';
 import { ILogService } from '../../log/common/log.js';
@@ -141,22 +140,8 @@ export class BrowserViewDebugger extends Disposable implements ICDPTarget {
 	 */
 	private async discoverRealTargetId(): Promise<void> {
 		try {
-			const result = await this._electronDebugger.sendCommand('Target.getTargets') as { targetInfos: CDPTargetInfo[] };
-			const targetInfos = result.targetInfos;
-
-			// Find the target that matches this WebContents
-			for (const targetInfo of targetInfos) {
-				if (targetInfo.type !== 'page') {
-					continue;
-				}
-				// Use Electron's API to match targetId to WebContents
-				const targetWebContents = webContents.fromDevToolsTargetId(targetInfo.targetId);
-				if (targetWebContents === this.view.webContents) {
-					this._realTargetId = targetInfo.targetId;
-					return;
-				}
-			}
-
+			const result = await this._electronDebugger.sendCommand('Target.getTargetInfo') as { targetInfo: CDPTargetInfo };
+			this._realTargetId = result.targetInfo.targetId;
 			this.logService.warn(`[BrowserViewDebugger] Could not find real targetId for WebContents ${this.view.webContents.id}`);
 		} catch (error) {
 			this.logService.error(`[BrowserViewDebugger] Error discovering real targetId:`, error);
