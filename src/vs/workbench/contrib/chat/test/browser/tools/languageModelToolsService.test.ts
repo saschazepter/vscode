@@ -34,7 +34,7 @@ import { ILanguageModelToolsConfirmationService } from '../../../common/tools/la
 import { MockLanguageModelToolsConfirmationService } from '../../common/tools/mockLanguageModelToolsConfirmationService.js';
 import { runWithFakedTimers } from '../../../../../../base/test/common/timeTravelScheduler.js';
 import { ILanguageModelChatMetadata } from '../../../common/languageModels.js';
-import { IHooksExecutionService, IHooksExecutionProxy } from '../../../common/hooks/hooksExecutionService.js';
+import { IHooksExecutionService } from '../../../common/hooks/hooksExecutionService.js';
 import { IChatRequestHooks } from '../../../common/promptSyntax/hookSchema.js';
 import { IDisposable } from '../../../../../../base/common/lifecycle.js';
 
@@ -66,9 +66,7 @@ class TestTelemetryService implements Partial<ITelemetryService> {
 
 class MockHooksExecutionService implements IHooksExecutionService {
 	readonly _serviceBrand: undefined;
-	readonly onDidHookProgress = Event.None;
 
-	setProxy(_proxy: IHooksExecutionProxy): void { }
 	registerHooks(_sessionResource: URI, _hooks: IChatRequestHooks): IDisposable { return { dispose: () => { } }; }
 	getHooksForSession(_sessionResource: URI): IChatRequestHooks | undefined { return undefined; }
 }

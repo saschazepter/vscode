@@ -4,9 +4,8 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { createDecorator } from '../../../platform/instantiation/common/instantiation.js';
-import { ExtHostHooksShape } from './extHost.protocol.js';
 
 export const IExtHostHooks = createDecorator<IExtHostHooks>('IExtHostHooks');
 
-export interface IExtHostHooks extends ExtHostHooksShape {
+export interface IExtHostHooks {
 }
