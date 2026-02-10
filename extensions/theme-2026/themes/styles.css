@@ -660,6 +660,21 @@
 
 .monaco-workbench .part.titlebar .command-center .agent-status-pill {
 	box-shadow: inset var(--shadow-sm);
+	border-color: var(--vscode-input-border);
+}
+
+.monaco-workbench .part.titlebar .command-center .agent-status-badge {
+	border-color: var(--vscode-input-border);
+}
+
+.monaco-workbench.vs-dark .monaco-action-bar:not(.vertical) .agent-status-badge-section.sparkle .action-container:hover,
+.monaco-workbench.vs-dark .monaco-action-bar:not(.vertical) .agent-status-badge-section.sparkle .dropdown-action-container:hover
+ {
+	background-color: var(--vscode-toolbar-hoverBackground);
+}
+
+.monaco-workbench.vs-dark .monaco-action-bar:not(.vertical) .agent-status-badge .monaco-dropdown-with-primary:not(.disabled):hover {
+	background-color: var(--vscode-commandCenter-activeBackground);
 }
 
 .monaco-dialog-modal-block .dialog-shadow {
