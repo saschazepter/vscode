@@ -93,6 +93,10 @@ export class ChangesViewPane extends ViewPane {
 
 	private readonly renderDisposables = this._register(new DisposableStore());
 
+	// Track current body dimensions for list layout
+	private currentBodyHeight = 0;
+	private currentBodyWidth = 0;
+
 	// Track the active session's editing session resource
 	private readonly activeSessionResource = observableValue<URI | undefined>(this, undefined);
 
@@ -556,17 +560,48 @@ export class ChangesViewPane extends ViewPane {
 				return;
 			}
 
-			const maxItemsShown = 6;
-			const itemsShown = Math.min(entries.length, maxItemsShown);
-			const height = itemsShown * 22;
-			this.list.layout(height);
-			this.list.getHTMLElement().style.height = `${height}px`;
 			this.list.splice(0, this.list.length, entries);
+			this.layoutList();
 		}));
+	}
+
+	private layoutList(): void {
+		if (!this.list || !this.listContainer) {
+			return;
+		}
+
+		// Calculate remaining height for the list by subtracting other elements
+		const bodyHeight = this.currentBodyHeight;
+		if (bodyHeight <= 0) {
+			return;
+		}
+
+		// Measure non-list elements height (padding, actions, overview)
+		const bodyPadding = 16; // 8px top + 8px bottom from .changes-view-body
+		const actionsHeight = this.actionsContainer?.offsetHeight ?? 0;
+		const actionsMargin = actionsHeight > 0 ? 8 : 0; // margin-bottom on actions container
+		const overviewHeight = this.overviewContainer?.offsetHeight ?? 0;
+		const containerPadding = 8; // 4px top + 4px bottom from .chat-editing-session-container
+		const containerBorder = 2; // 1px top + 1px bottom border
+
+		const usedHeight = bodyPadding + actionsHeight + actionsMargin + overviewHeight + containerPadding + containerBorder;
+		const availableHeight = Math.max(0, bodyHeight - usedHeight);
+
+		// Limit height to the number of items so the list doesn't exceed its content
+		const rowHeight = 22;
+		const contentHeight = this.list.length * rowHeight;
+		// Snap to a multiple of the row height to avoid clipping the last visible row
+		const listHeight = Math.min(Math.floor(availableHeight / rowHeight) * rowHeight, contentHeight);
+
+		this.list.layout(listHeight, this.currentBodyWidth);
+		this.list.getHTMLElement().style.height = `${listHeight}px`;
 	}
 
 	protected override layoutBody(height: number, width: number): void {
 		super.layoutBody(height, width);
+		this.currentBodyHeight = height;
+		this.currentBodyWidth = width;
+		this.layoutList();
 	}
 
 	override focus(): void {
