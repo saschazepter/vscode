@@ -13,6 +13,8 @@
 	display: flex;
 	justify-content: center;
 	align-items: center;
+	/* Never allow content to escape above the title bar */
+	overflow: hidden;
 }
 
 .monaco-modal-editor-block.dimmed {

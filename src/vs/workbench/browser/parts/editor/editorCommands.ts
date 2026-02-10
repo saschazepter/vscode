@@ -1509,6 +1509,8 @@ function isModalEditorPart(obj: unknown): obj is IModalEditorPart {
 	return !!part
 		&& typeof part.close === 'function'
 		&& typeof part.onWillClose === 'function'
+		&& typeof part.toggleMaximized === 'function'
+		&& typeof part.maximized === 'boolean'
 		&& part.windowId === mainWindow.vscodeWindowId;
 }
 

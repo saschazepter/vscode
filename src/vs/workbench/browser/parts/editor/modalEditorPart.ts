@@ -148,17 +148,25 @@ export class ModalEditorPart {
 		const layoutModal = () => {
 			const containerDimension = this.layoutService.mainContainerDimension;
 			const titleBarOffset = this.layoutService.mainContainerOffset.top;
+			const availableHeight = Math.max(containerDimension.height - titleBarOffset, 0);
+
 			let width: number;
 			let height: number;
 
 			if (editorPart.maximized) {
 				const padding = 16; // Keep a small margin around all edges
 				width = containerDimension.width - padding;
-				height = containerDimension.height - padding - titleBarOffset;
+				height = Math.max(availableHeight - padding, 0);
 			} else {
-				width = Math.min(containerDimension.width * 0.8, 1200);
-				height = Math.min(containerDimension.height * 0.8, 800);
+				const maxWidth = 1200;
+				const maxHeight = 800;
+				const targetWidth = containerDimension.width * 0.8;
+				const targetHeight = availableHeight * 0.8;
+				width = Math.min(targetWidth, maxWidth, containerDimension.width);
+				height = Math.min(targetHeight, maxHeight, availableHeight);
 			}
+
+			height = Math.min(height, availableHeight); // Ensure the modal never exceeds available height (below the title bar)
 
 			// Shift the modal block below the title bar
 			modalElement.style.top = `${titleBarOffset}px`;
