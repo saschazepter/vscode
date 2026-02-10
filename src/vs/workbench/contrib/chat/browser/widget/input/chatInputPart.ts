@@ -1699,6 +1699,14 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 	}
 
 	/**
+	 * Shows the context usage details popup and focuses it.
+	 * @returns Whether the details were successfully shown.
+	 */
+	showContextUsageDetails(): boolean {
+		return this.contextUsageWidget?.showDetails() ?? false;
+	}
+
+	/**
 	 * Updates the context usage widget based on the current model.
 	 */
 	private updateContextUsageWidget(): void {
