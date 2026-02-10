@@ -26,11 +26,11 @@ declare module 'vscode' {
 		 */
 		readonly cwd?: Uri;
 		/**
-		 * Additional environment variables merged with `process.env`.
+		 * Additional environment variables for the command.
 		 */
 		readonly env?: Record<string, string>;
 		/**
-		 * Maximum execution time in seconds. Defaults to 30.
+		 * Maximum execution time in seconds.
 		 */
 		readonly timeoutSec?: number;
 	}
@@ -83,10 +83,6 @@ declare module 'vscode' {
 		 */
 		readonly hooks?: ChatRequestHooks;
 	}
-
-	export namespace chat {
-	}
-
 
 	/**
 	 * A progress part representing the execution result of a hook.
