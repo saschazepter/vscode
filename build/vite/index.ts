@@ -10,8 +10,6 @@ export * from '../../src/vs/editor/editor.main';
 import './style.css';
 import * as monaco from '../../src/vs/editor/editor.main';
 
-console.log(c);
-
 globalThis.monaco = monaco;
 const root = document.getElementById('sampleContent');
 if (root) {
