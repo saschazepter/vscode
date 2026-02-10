@@ -8,7 +8,6 @@ import { Barrier } from '../../../../../../base/common/async.js';
 import { VSBuffer } from '../../../../../../base/common/buffer.js';
 import { CancellationToken } from '../../../../../../base/common/cancellation.js';
 import { CancellationError, isCancellationError } from '../../../../../../base/common/errors.js';
-import { Event } from '../../../../../../base/common/event.js';
 import { URI } from '../../../../../../base/common/uri.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/test/common/utils.js';
 import { IAccessibilityService } from '../../../../../../platform/accessibility/common/accessibility.js';
@@ -34,10 +33,6 @@ import { ILanguageModelToolsConfirmationService } from '../../../common/tools/la
 import { MockLanguageModelToolsConfirmationService } from '../../common/tools/mockLanguageModelToolsConfirmationService.js';
 import { runWithFakedTimers } from '../../../../../../base/test/common/timeTravelScheduler.js';
 import { ILanguageModelChatMetadata } from '../../../common/languageModels.js';
-import { IHookResult } from '../../../common/hooks/hooksTypes.js';
-import { IHooksExecutionService, IHooksExecutionOptions, IHooksExecutionProxy } from '../../../common/hooks/hooksExecutionService.js';
-import { HookTypeValue, IChatRequestHooks } from '../../../common/promptSyntax/hookSchema.js';
-import { IDisposable } from '../../../../../../base/common/lifecycle.js';
 
 // --- Test helpers to reduce repetition and improve readability ---
 
@@ -62,19 +57,6 @@ class TestTelemetryService implements Partial<ITelemetryService> {
 
 	reset() {
 		this.events = [];
-	}
-}
-
-class MockHooksExecutionService implements IHooksExecutionService {
-	readonly _serviceBrand: undefined;
-	readonly onDidExecuteHook = Event.None;
-	readonly onDidHookProgress = Event.None;
-
-	setProxy(_proxy: IHooksExecutionProxy): void { }
-	registerHooks(_sessionResource: URI, _hooks: IChatRequestHooks): IDisposable { return { dispose: () => { } }; }
-	getHooksForSession(_sessionResource: URI): IChatRequestHooks | undefined { return undefined; }
-	executeHook(_hookType: HookTypeValue, _sessionResource: URI, _options?: IHooksExecutionOptions): Promise<IHookResult[]> {
-		return Promise.resolve([]);
 	}
 }
 
@@ -136,7 +118,6 @@ interface TestToolsServiceOptions {
 	accessibilityService?: IAccessibilityService;
 	accessibilitySignalService?: Partial<IAccessibilitySignalService>;
 	telemetryService?: Partial<ITelemetryService>;
-	hooksExecutionService?: MockHooksExecutionService;
 	commandService?: Partial<ICommandService>;
 	/** Called after configurationService is created but before the service is instantiated */
 	configureServices?: (config: TestConfigurationService) => void;
@@ -161,7 +142,6 @@ function createTestToolsService(store: ReturnType<typeof ensureNoDisposablesAreL
 	const chatService = new MockChatService();
 	instaService.stub(IChatService, chatService);
 	instaService.stub(ILanguageModelToolsConfirmationService, new MockLanguageModelToolsConfirmationService());
-	instaService.stub(IHooksExecutionService, options?.hooksExecutionService ?? new MockHooksExecutionService());
 
 	if (options?.accessibilityService) {
 		instaService.stub(IAccessibilityService, options.accessibilityService);
@@ -1643,7 +1623,6 @@ suite('LanguageModelToolsService', () => {
 		instaService1.stub(IAccessibilityService, testAccessibilityService1);
 		instaService1.stub(IAccessibilitySignalService, testAccessibilitySignalService as unknown as IAccessibilitySignalService);
 		instaService1.stub(ILanguageModelToolsConfirmationService, new MockLanguageModelToolsConfirmationService());
-		instaService1.stub(IHooksExecutionService, new MockHooksExecutionService());
 		const testService1 = store.add(instaService1.createInstance(LanguageModelToolsService));
 
 		const tool1 = registerToolForTest(testService1, store, 'soundOnlyTool', {
@@ -1685,7 +1664,6 @@ suite('LanguageModelToolsService', () => {
 		instaService2.stub(IAccessibilityService, testAccessibilityService2);
 		instaService2.stub(IAccessibilitySignalService, testAccessibilitySignalService as unknown as IAccessibilitySignalService);
 		instaService2.stub(ILanguageModelToolsConfirmationService, new MockLanguageModelToolsConfirmationService());
-		instaService2.stub(IHooksExecutionService, new MockHooksExecutionService());
 		const testService2 = store.add(instaService2.createInstance(LanguageModelToolsService));
 
 		const tool2 = registerToolForTest(testService2, store, 'autoScreenReaderTool', {
@@ -1728,7 +1706,6 @@ suite('LanguageModelToolsService', () => {
 		instaService3.stub(IAccessibilityService, testAccessibilityService3);
 		instaService3.stub(IAccessibilitySignalService, testAccessibilitySignalService as unknown as IAccessibilitySignalService);
 		instaService3.stub(ILanguageModelToolsConfirmationService, new MockLanguageModelToolsConfirmationService());
-		instaService3.stub(IHooksExecutionService, new MockHooksExecutionService());
 		const testService3 = store.add(instaService3.createInstance(LanguageModelToolsService));
 
 		const tool3 = registerToolForTest(testService3, store, 'offTool', {
@@ -2498,7 +2475,6 @@ suite('LanguageModelToolsService', () => {
 		}, store);
 		instaService.stub(IChatService, chatService);
 		instaService.stub(ILanguageModelToolsConfirmationService, new MockLanguageModelToolsConfirmationService());
-		instaService.stub(IHooksExecutionService, new MockHooksExecutionService());
 		const testService = store.add(instaService.createInstance(LanguageModelToolsService));
 
 		const tool = registerToolForTest(testService, store, 'gitCommitTool', {
@@ -2537,7 +2513,6 @@ suite('LanguageModelToolsService', () => {
 		}, store);
 		instaService.stub(IChatService, chatService);
 		instaService.stub(ILanguageModelToolsConfirmationService, new MockLanguageModelToolsConfirmationService());
-		instaService.stub(IHooksExecutionService, new MockHooksExecutionService());
 		const testService = store.add(instaService.createInstance(LanguageModelToolsService));
 
 		// Tool that was previously namespaced under extension but is now internal
@@ -2577,7 +2552,6 @@ suite('LanguageModelToolsService', () => {
 		}, store);
 		instaService.stub(IChatService, chatService);
 		instaService.stub(ILanguageModelToolsConfirmationService, new MockLanguageModelToolsConfirmationService());
-		instaService.stub(IHooksExecutionService, new MockHooksExecutionService());
 		const testService = store.add(instaService.createInstance(LanguageModelToolsService));
 
 		// Tool that was previously namespaced under extension but is now internal
@@ -2620,7 +2594,6 @@ suite('LanguageModelToolsService', () => {
 		}, store);
 		instaService.stub(IChatService, chatService);
 		instaService.stub(ILanguageModelToolsConfirmationService, new MockLanguageModelToolsConfirmationService());
-		instaService.stub(IHooksExecutionService, new MockHooksExecutionService());
 		const testService = store.add(instaService.createInstance(LanguageModelToolsService));
 
 		// Tool that was previously namespaced under extension but is now internal
@@ -3710,15 +3683,11 @@ suite('LanguageModelToolsService', () => {
 	});
 
 	suite('preToolUse hooks', () => {
-		let mockHooksService: MockHooksExecutionService;
 		let hookService: LanguageModelToolsService;
 		let hookChatService: MockChatService;
 
 		setup(() => {
-			mockHooksService = new MockHooksExecutionService();
-			const setup = createTestToolsService(store, {
-				hooksExecutionService: mockHooksService
-			});
+			const setup = createTestToolsService(store);
 			hookService = setup.service;
 			hookChatService = setup.chatService;
 		});
@@ -3956,9 +3925,7 @@ suite('LanguageModelToolsService', () => {
 				}
 			};
 
-			const mockHooks = new MockHooksExecutionService();
 			const setup = createTestToolsService(store, {
-				hooksExecutionService: mockHooks,
 				commandService: mockCommandService as ICommandService,
 			});
 
@@ -4012,9 +3979,7 @@ suite('LanguageModelToolsService', () => {
 				}
 			};
 
-			const mockHooks = new MockHooksExecutionService();
 			const setup = createTestToolsService(store, {
-				hooksExecutionService: mockHooks,
 				commandService: mockCommandService as ICommandService,
 			});
 
