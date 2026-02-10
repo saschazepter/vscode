@@ -142,6 +142,19 @@
 	overflow: hidden;
 }
 
+/* Make the vertical scrollbar overlay on top of content instead of shifting it */
+.changes-view-body .chat-editing-session-list .monaco-scrollable-element > .scrollbar.vertical {
+	z-index: 1;
+}
+
+.changes-view-body .chat-editing-session-list .monaco-scrollable-element > .monaco-list-rows {
+	width: 100% !important;
+}
+
+/* Remove tree indentation padding in list mode */
+.changes-view-body .chat-editing-session-list.list-mode .monaco-tl-twistie {
+	padding-left: 0 !important;
+}
 /* List rows */
 .changes-view-body .chat-editing-session-container:not(.has-file-icons) .monaco-list-row .monaco-icon-label {
 	margin-left: 6px;
@@ -149,10 +162,6 @@
 
 .changes-view-body .chat-editing-session-container.show-file-icons .monaco-scrollable-element .monaco-list-rows .monaco-list-row {
 	border-radius: 2px;
-}
-
-.changes-view-body .chat-editing-session-container.show-file-icons .chat-editing-session-list .monaco-scrollable-element:has(.visible.scrollbar.vertical) .monaco-list-row .monaco-icon-label {
-	padding-right: 12px;
 }
 
 /* Action bar in list rows */

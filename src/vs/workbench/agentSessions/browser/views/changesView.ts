@@ -5,41 +5,43 @@
 
 import './media/changesView.css';
 import * as dom from '../../../../base/browser/dom.js';
-import { IListRenderer, IListVirtualDelegate } from '../../../../base/browser/ui/list/list.js';
+import { IListVirtualDelegate } from '../../../../base/browser/ui/list/list.js';
+import { ICompressedTreeNode } from '../../../../base/browser/ui/tree/compressedObjectTreeModel.js';
+import { ICompressibleTreeRenderer } from '../../../../base/browser/ui/tree/objectTree.js';
+import { IObjectTreeElement, ITreeNode } from '../../../../base/browser/ui/tree/tree.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { MarkdownString } from '../../../../base/common/htmlContent.js';
 import { Iterable } from '../../../../base/common/iterator.js';
 import { DisposableStore, MutableDisposable } from '../../../../base/common/lifecycle.js';
 import { autorun, derived, observableFromEvent, observableValue } from '../../../../base/common/observable.js';
-import { basename } from '../../../../base/common/path.js';
+import { basename, dirname } from '../../../../base/common/path.js';
 import { isEqual } from '../../../../base/common/resources.js';
-import { ScrollbarVisibility } from '../../../../base/common/scrollable.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { URI } from '../../../../base/common/uri.js';
 import { localize } from '../../../../nls.js';
 import { MenuWorkbenchButtonBar } from '../../../../platform/actions/browser/buttonbar.js';
 import { MenuWorkbenchToolBar } from '../../../../platform/actions/browser/toolbar.js';
-import { MenuId } from '../../../../platform/actions/common/actions.js';
+import { MenuId, registerAction2 } from '../../../../platform/actions/common/actions.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
-import { IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
+import { ContextKeyExpr, IContextKey, IContextKeyService, RawContextKey } from '../../../../platform/contextkey/common/contextkey.js';
 import { IContextMenuService } from '../../../../platform/contextview/browser/contextView.js';
 import { FileKind } from '../../../../platform/files/common/files.js';
 import { IHoverService } from '../../../../platform/hover/browser/hover.js';
-import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
+import { IInstantiationService, ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
 import { IKeybindingService } from '../../../../platform/keybinding/common/keybinding.js';
 import { ILabelService } from '../../../../platform/label/common/label.js';
-import { WorkbenchList } from '../../../../platform/list/browser/listService.js';
+import { WorkbenchCompressibleObjectTree } from '../../../../platform/list/browser/listService.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { bindContextKey } from '../../../../platform/observable/common/platformObservableUtils.js';
 import { IOpenerService } from '../../../../platform/opener/common/opener.js';
 import { ServiceCollection } from '../../../../platform/instantiation/common/serviceCollection.js';
-import { IStorageService } from '../../../../platform/storage/common/storage.js';
+import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
 import { ITelemetryService } from '../../../../platform/telemetry/common/telemetry.js';
 import { IThemeService } from '../../../../platform/theme/common/themeService.js';
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
 import { fillEditorsDragData } from '../../../browser/dnd.js';
 import { IResourceLabel, ResourceLabels } from '../../../browser/labels.js';
-import { ViewPane, IViewPaneOptions } from '../../../browser/parts/views/viewPane.js';
+import { ViewPane, IViewPaneOptions, ViewAction } from '../../../browser/parts/views/viewPane.js';
 import { ViewPaneContainer } from '../../../browser/parts/views/viewPaneContainer.js';
 import { IViewDescriptorService } from '../../../common/views.js';
 import { IChatWidgetService } from '../../../contrib/chat/browser/chat.js';
@@ -62,11 +64,21 @@ const $ = dom.$;
 export const CHANGES_VIEW_CONTAINER_ID = 'workbench.view.agentSessions.changesContainer';
 export const CHANGES_VIEW_ID = 'workbench.view.agentSessions.changes';
 
+// --- View Mode
+
+export const enum ChangesViewMode {
+	List = 'list',
+	Tree = 'tree'
+}
+
+const changesViewModeContextKey = new RawContextKey<ChangesViewMode>('changesViewMode', ChangesViewMode.List);
+
 // --- List Item
 
 type ChangeType = 'added' | 'modified' | 'deleted';
 
-interface IChangesListItem {
+interface IChangesFileItem {
+	readonly type: 'file';
 	readonly uri: URI;
 	readonly originalUri?: URI;
 	readonly state: ModifiedFileEntryState;
@@ -74,6 +86,84 @@ interface IChangesListItem {
 	readonly changeType: ChangeType;
 	readonly linesAdded: number;
 	readonly linesRemoved: number;
+}
+
+interface IChangesFolderItem {
+	readonly type: 'folder';
+	readonly uri: URI;
+	readonly name: string;
+}
+
+type ChangesTreeElement = IChangesFileItem | IChangesFolderItem;
+
+function isChangesFileItem(element: ChangesTreeElement): element is IChangesFileItem {
+	return element.type === 'file';
+}
+
+/**
+ * Builds a tree of `IObjectTreeElement<ChangesTreeElement>` from a flat list of file items.
+ * Groups files by their directory path segments to create a hierarchical tree structure.
+ */
+function buildTreeChildren(items: IChangesFileItem[]): IObjectTreeElement<ChangesTreeElement>[] {
+	if (items.length === 0) {
+		return [];
+	}
+
+	interface FolderNode {
+		name: string;
+		uri: URI;
+		children: Map<string, FolderNode>;
+		files: IChangesFileItem[];
+	}
+
+	const root: FolderNode = { name: '', uri: URI.file('/'), children: new Map(), files: [] };
+
+	for (const item of items) {
+		const dirPath = dirname(item.uri.path);
+		const segments = dirPath.split('/').filter(Boolean);
+
+		let current = root;
+		let currentPath = '';
+		for (const segment of segments) {
+			currentPath += '/' + segment;
+			if (!current.children.has(segment)) {
+				current.children.set(segment, {
+					name: segment,
+					uri: item.uri.with({ path: currentPath }),
+					children: new Map(),
+					files: []
+				});
+			}
+			current = current.children.get(segment)!;
+		}
+		current.files.push(item);
+	}
+
+	function convert(node: FolderNode): IObjectTreeElement<ChangesTreeElement>[] {
+		const result: IObjectTreeElement<ChangesTreeElement>[] = [];
+
+		for (const [, child] of node.children) {
+			const folderElement: IChangesFolderItem = { type: 'folder', uri: child.uri, name: child.name };
+			const folderChildren = convert(child);
+			result.push({
+				element: folderElement,
+				children: folderChildren,
+				collapsible: true,
+				collapsed: false,
+			});
+		}
+
+		for (const file of node.files) {
+			result.push({
+				element: file,
+				collapsible: false,
+			});
+		}
+
+		return result;
+	}
+
+	return convert(root);
 }
 
 // --- View Pane
@@ -89,13 +179,27 @@ export class ChangesViewPane extends ViewPane {
 	// Actions container is positioned outside the card for this layout experiment
 	private actionsContainer: HTMLElement | undefined;
 
-	private list: WorkbenchList<IChangesListItem> | undefined;
+	private tree: WorkbenchCompressibleObjectTree<ChangesTreeElement> | undefined;
 
 	private readonly renderDisposables = this._register(new DisposableStore());
 
 	// Track current body dimensions for list layout
 	private currentBodyHeight = 0;
 	private currentBodyWidth = 0;
+
+	// View mode (list vs tree)
+	private readonly viewModeObs: ReturnType<typeof observableValue<ChangesViewMode>>;
+	private readonly viewModeContextKey: IContextKey<ChangesViewMode>;
+
+	get viewMode(): ChangesViewMode { return this.viewModeObs.get(); }
+	set viewMode(mode: ChangesViewMode) {
+		if (this.viewModeObs.get() === mode) {
+			return;
+		}
+		this.viewModeObs.set(mode, undefined);
+		this.viewModeContextKey.set(mode);
+		this.storageService.store('changesView.viewMode', mode, StorageScope.WORKSPACE, StorageTarget.USER);
+	}
 
 	// Track the active session's editing session resource
 	private readonly activeSessionResource = observableValue<URI | undefined>(this, undefined);
@@ -120,8 +224,16 @@ export class ChangesViewPane extends ViewPane {
 		@IActivityService private readonly activityService: IActivityService,
 		@IAgentSessionsService private readonly agentSessionsService: IAgentSessionsService,
 		@ILabelService private readonly labelService: ILabelService,
+		@IStorageService private readonly storageService: IStorageService,
 	) {
 		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
+
+		// View mode
+		const storedMode = this.storageService.get('changesView.viewMode', StorageScope.WORKSPACE);
+		const initialMode = storedMode === ChangesViewMode.Tree ? ChangesViewMode.Tree : ChangesViewMode.List;
+		this.viewModeObs = observableValue<ChangesViewMode>(this, initialMode);
+		this.viewModeContextKey = changesViewModeContextKey.bindTo(contextKeyService);
+		this.viewModeContextKey.set(initialMode);
 
 		// Setup badge tracking
 		this.registerBadgeTracking();
@@ -306,7 +418,7 @@ export class ChangesViewPane extends ViewPane {
 			}
 
 			const entries = session.entries.read(reader);
-			const items: IChangesListItem[] = [];
+			const items: IChangesFileItem[] = [];
 
 			for (const entry of entries) {
 				const isDeletion = entry.isDeletion ?? false;
@@ -314,6 +426,7 @@ export class ChangesViewPane extends ViewPane {
 				const linesRemoved = entry.linesRemoved?.read(reader) ?? 0;
 
 				items.push({
+					type: 'file',
 					uri: entry.modifiedURI,
 					originalUri: entry.originalURI,
 					state: entry.state.read(reader),
@@ -343,10 +456,11 @@ export class ChangesViewPane extends ViewPane {
 
 		// Convert session file changes to list items (cloud/background sessions)
 		const sessionFilesObs = derived(reader =>
-			[...sessionFileChangesObs.read(reader)].map((entry): IChangesListItem => {
+			[...sessionFileChangesObs.read(reader)].map((entry): IChangesFileItem => {
 				const isDeletion = entry.modifiedUri === undefined;
 				const isAddition = entry.originalUri === undefined;
 				return {
+					type: 'file',
 					uri: isIChatSessionFileChange2(entry)
 						? entry.modifiedUri ?? entry.uri
 						: entry.modifiedUri,
@@ -369,9 +483,7 @@ export class ChangesViewPane extends ViewPane {
 
 		// Calculate stats from combined entries
 		const topLevelStats = derived(reader => {
-			const editEntries = editSessionEntriesObs.read(reader);
-			const sessionFiles = sessionFilesObs.read(reader);
-			const entries = [...editEntries, ...sessionFiles];
+			const entries = combinedEntriesObs.read(reader);
 
 			let added = 0, removed = 0;
 
@@ -381,7 +493,7 @@ export class ChangesViewPane extends ViewPane {
 			}
 
 			const files = entries.length;
-			const isSessionMenu = editEntries.length === 0 && sessionFiles.length > 0;
+			const isSessionMenu = false;
 
 			return { files, added, removed, isSessionMenu };
 		});
@@ -475,24 +587,23 @@ export class ChangesViewPane extends ViewPane {
 			}));
 		}
 
-		// Create the list
-		if (!this.list && this.listContainer) {
+		// Create the tree
+		if (!this.tree && this.listContainer) {
 			const resourceLabels = this._register(this.instantiationService.createInstance(ResourceLabels, { onDidChangeVisibility: this.onDidChangeBodyVisibility }));
-			this.list = this.instantiationService.createInstance(
-				WorkbenchList<IChangesListItem>,
-				'ChangesViewList',
+			this.tree = this.instantiationService.createInstance(
+				WorkbenchCompressibleObjectTree<ChangesTreeElement>,
+				'ChangesViewTree',
 				this.listContainer,
-				new ChangesListDelegate(),
-				[this.instantiationService.createInstance(ChangesListRenderer, resourceLabels, MenuId.ChatEditingWidgetModifiedFilesToolbar)],
+				new ChangesTreeDelegate(),
+				[this.instantiationService.createInstance(ChangesTreeRenderer, resourceLabels, MenuId.ChatEditingWidgetModifiedFilesToolbar)],
 				{
-					verticalScrollMode: ScrollbarVisibility.Visible,
 					alwaysConsumeMouseWheel: false,
 					accessibilityProvider: {
-						getAriaLabel: (element: IChangesListItem) => basename(element.uri.path),
-						getWidgetAriaLabel: () => localize('changesViewList', "Changes List")
+						getAriaLabel: (element: ChangesTreeElement) => isChangesFileItem(element) ? basename(element.uri.path) : element.name,
+						getWidgetAriaLabel: () => localize('changesViewTree', "Changes Tree")
 					},
 					dnd: {
-						getDragURI: (element: IChangesListItem) => element.uri.toString(),
+						getDragURI: (element: ChangesTreeElement) => element.uri.toString(),
 						getDragLabel: (elements) => {
 							const uris = elements.map(e => e.uri);
 							if (uris.length === 1) {
@@ -505,24 +616,36 @@ export class ChangesViewPane extends ViewPane {
 						drop: () => { },
 						onDragStart: (data, originalEvent) => {
 							try {
-								const elements = data.getData() as IChangesListItem[];
-								const uris = elements.map(e => e.uri);
+								const elements = data.getData() as ChangesTreeElement[];
+								const uris = elements.filter(isChangesFileItem).map(e => e.uri);
 								this.instantiationService.invokeFunction(accessor => fillEditorsDragData(accessor, uris, originalEvent));
 							} catch {
 								// noop
 							}
 						},
 					},
+					identityProvider: {
+						getId: (element: ChangesTreeElement) => element.uri.toString()
+					},
+					compressionEnabled: true,
+					twistieAdditionalCssClass: (e: unknown) => {
+						return this.viewMode === ChangesViewMode.List ? 'force-no-twistie' : undefined;
+					},
 				}
 			);
 		}
 
-		// Register list event handlers
-		if (this.list) {
-			const list = this.list;
+		// Register tree event handlers
+		if (this.tree) {
+			const tree = this.tree;
 
-			this.renderDisposables.add(list.onDidOpen(async (e) => {
+			this.renderDisposables.add(tree.onDidOpen(async (e) => {
 				if (!e.element) {
+					return;
+				}
+
+				// Ignore folder elements - only open files
+				if (!isChangesFileItem(e.element)) {
 					return;
 				}
 
@@ -552,25 +675,41 @@ export class ChangesViewPane extends ViewPane {
 			}));
 		}
 
-		// Update list data with combined entries
+		// Update tree data with combined entries
 		this.renderDisposables.add(autorun(reader => {
 			const entries = combinedEntriesObs.read(reader);
+			const viewMode = this.viewModeObs.read(reader);
 
-			if (!this.list) {
+			if (!this.tree) {
 				return;
 			}
 
-			this.list.splice(0, this.list.length, entries);
-			this.layoutList();
+			// Toggle list-mode class to remove tree indentation in list mode
+			this.listContainer?.classList.toggle('list-mode', viewMode === ChangesViewMode.List);
+
+			if (viewMode === ChangesViewMode.Tree) {
+				// Tree mode: build hierarchical tree from file entries
+				const treeChildren = buildTreeChildren(entries);
+				this.tree.setChildren(null, treeChildren);
+			} else {
+				// List mode: flat list of file items
+				const listChildren: IObjectTreeElement<ChangesTreeElement>[] = entries.map(item => ({
+					element: item,
+					collapsible: false,
+				}));
+				this.tree.setChildren(null, listChildren);
+			}
+
+			this.layoutTree();
 		}));
 	}
 
-	private layoutList(): void {
-		if (!this.list || !this.listContainer) {
+	private layoutTree(): void {
+		if (!this.tree || !this.listContainer) {
 			return;
 		}
 
-		// Calculate remaining height for the list by subtracting other elements
+		// Calculate remaining height for the tree by subtracting other elements
 		const bodyHeight = this.currentBodyHeight;
 		if (bodyHeight <= 0) {
 			return;
@@ -587,31 +726,29 @@ export class ChangesViewPane extends ViewPane {
 		const usedHeight = bodyPadding + actionsHeight + actionsMargin + overviewHeight + containerPadding + containerBorder;
 		const availableHeight = Math.max(0, bodyHeight - usedHeight);
 
-		// Limit height to the number of items so the list doesn't exceed its content
-		const rowHeight = 22;
-		const contentHeight = this.list.length * rowHeight;
-		// Snap to a multiple of the row height to avoid clipping the last visible row
-		const listHeight = Math.min(Math.floor(availableHeight / rowHeight) * rowHeight, contentHeight);
+		// Limit height to the content so the tree doesn't exceed its items
+		const contentHeight = this.tree.contentHeight;
+		const treeHeight = Math.min(availableHeight, contentHeight);
 
-		this.list.layout(listHeight, this.currentBodyWidth);
-		this.list.getHTMLElement().style.height = `${listHeight}px`;
+		this.tree.layout(treeHeight, this.currentBodyWidth);
+		this.tree.getHTMLElement().style.height = `${treeHeight}px`;
 	}
 
 	protected override layoutBody(height: number, width: number): void {
 		super.layoutBody(height, width);
 		this.currentBodyHeight = height;
 		this.currentBodyWidth = width;
-		this.layoutList();
+		this.layoutTree();
 	}
 
 	override focus(): void {
 		super.focus();
-		this.list?.domFocus();
+		this.tree?.domFocus();
 	}
 
 	override dispose(): void {
-		this.list?.dispose();
-		this.list = undefined;
+		this.tree?.dispose();
+		this.tree = undefined;
 		super.dispose();
 	}
 }
@@ -639,19 +776,19 @@ export class ChangesViewPaneContainer extends ViewPaneContainer {
 	}
 }
 
-// --- List Delegate & Renderer
+// --- Tree Delegate & Renderer
 
-class ChangesListDelegate implements IListVirtualDelegate<IChangesListItem> {
-	getHeight(_element: IChangesListItem): number {
+class ChangesTreeDelegate implements IListVirtualDelegate<ChangesTreeElement> {
+	getHeight(_element: ChangesTreeElement): number {
 		return 22;
 	}
 
-	getTemplateId(_element: IChangesListItem): string {
-		return ChangesListRenderer.TEMPLATE_ID;
+	getTemplateId(_element: ChangesTreeElement): string {
+		return ChangesTreeRenderer.TEMPLATE_ID;
 	}
 }
 
-interface IChangesListTemplate {
+interface IChangesTreeTemplate {
 	readonly label: IResourceLabel;
 	readonly templateDisposables: DisposableStore;
 	readonly toolbar: MenuWorkbenchToolBar | undefined;
@@ -659,29 +796,31 @@ interface IChangesListTemplate {
 	readonly decorationBadge: HTMLElement;
 	readonly addedSpan: HTMLElement;
 	readonly removedSpan: HTMLElement;
+	readonly lineCountsContainer: HTMLElement;
 }
 
-class ChangesListRenderer implements IListRenderer<IChangesListItem, IChangesListTemplate> {
-	static TEMPLATE_ID = 'changesListRenderer';
-	readonly templateId: string = ChangesListRenderer.TEMPLATE_ID;
+class ChangesTreeRenderer implements ICompressibleTreeRenderer<ChangesTreeElement, void, IChangesTreeTemplate> {
+	static TEMPLATE_ID = 'changesTreeRenderer';
+	readonly templateId: string = ChangesTreeRenderer.TEMPLATE_ID;
 
 	constructor(
 		private labels: ResourceLabels,
 		private menuId: MenuId | undefined,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@IContextKeyService private readonly contextKeyService: IContextKeyService,
+		@ILabelService private readonly labelService: ILabelService,
 	) { }
 
-	renderTemplate(container: HTMLElement): IChangesListTemplate {
+	renderTemplate(container: HTMLElement): IChangesTreeTemplate {
 		const templateDisposables = new DisposableStore();
 		const label = templateDisposables.add(this.labels.create(container, { supportHighlights: true, supportIcons: true }));
 
-		const fileDiffsContainer = $('.working-set-line-counts');
+		const lineCountsContainer = $('.working-set-line-counts');
 		const addedSpan = dom.$('.working-set-lines-added');
 		const removedSpan = dom.$('.working-set-lines-removed');
-		fileDiffsContainer.appendChild(addedSpan);
-		fileDiffsContainer.appendChild(removedSpan);
-		label.element.appendChild(fileDiffsContainer);
+		lineCountsContainer.appendChild(addedSpan);
+		lineCountsContainer.appendChild(removedSpan);
+		label.element.appendChild(lineCountsContainer);
 
 		const decorationBadge = dom.$('.changes-decoration-badge');
 		label.element.appendChild(decorationBadge);
@@ -696,17 +835,61 @@ class ChangesListRenderer implements IListRenderer<IChangesListItem, IChangesLis
 			label.element.appendChild(actionBarContainer);
 		}
 
-		return { templateDisposables, label, toolbar, contextKeyService, decorationBadge, addedSpan, removedSpan };
+		return { templateDisposables, label, toolbar, contextKeyService, decorationBadge, addedSpan, removedSpan, lineCountsContainer };
 	}
 
-	renderElement(data: IChangesListItem, _index: number, templateData: IChangesListTemplate): void {
+	renderElement(node: ITreeNode<ChangesTreeElement, void>, _index: number, templateData: IChangesTreeTemplate): void {
+		const element = node.element;
 		templateData.label.element.style.display = 'flex';
 
+		if (isChangesFileItem(element)) {
+			this.renderFileElement(element, templateData);
+		} else {
+			this.renderFolderElement(element, templateData);
+		}
+	}
+
+	renderCompressedElements(node: ITreeNode<ICompressedTreeNode<ChangesTreeElement>, void>, _index: number, templateData: IChangesTreeTemplate): void {
+		const compressed = node.element;
+		const lastElement = compressed.elements[compressed.elements.length - 1];
+
+		templateData.label.element.style.display = 'flex';
+
+		if (isChangesFileItem(lastElement)) {
+			// Shouldn't happen in practice - files don't get compressed
+			this.renderFileElement(lastElement, templateData);
+		} else {
+			// Compressed folder chain - show joined folder names
+			const label = compressed.elements.map(e => isChangesFileItem(e) ? basename(e.uri.path) : e.name);
+			templateData.label.setResource({ resource: lastElement.uri, name: label }, {
+				fileKind: FileKind.FOLDER,
+				separator: this.labelService.getSeparator(lastElement.uri.scheme),
+			});
+
+			// Hide file-specific decorations for folders
+			templateData.decorationBadge.style.display = 'none';
+			templateData.lineCountsContainer.style.display = 'none';
+
+			if (templateData.toolbar) {
+				templateData.toolbar.context = undefined;
+			}
+			if (templateData.contextKeyService) {
+				chatEditingWidgetFileStateContextKey.bindTo(templateData.contextKeyService).set(undefined!);
+			}
+		}
+	}
+
+	private renderFileElement(data: IChangesFileItem, templateData: IChangesTreeTemplate): void {
 		templateData.label.setFile(data.uri, {
 			fileKind: FileKind.FILE,
 			fileDecorations: undefined,
 			strikethrough: data.changeType === 'deleted',
+			hidePath: true,
 		});
+
+		// Show file-specific decorations
+		templateData.lineCountsContainer.style.display = '';
+		templateData.decorationBadge.style.display = '';
 
 		// Update decoration badge (A/M/D)
 		const badge = templateData.decorationBadge;
@@ -741,7 +924,75 @@ class ChangesListRenderer implements IListRenderer<IChangesListItem, IChangesLis
 		}
 	}
 
-	disposeTemplate(templateData: IChangesListTemplate): void {
+	private renderFolderElement(data: IChangesFolderItem, templateData: IChangesTreeTemplate): void {
+		templateData.label.setFile(data.uri, {
+			fileKind: FileKind.FOLDER,
+		});
+
+		// Hide file-specific decorations for folders
+		templateData.decorationBadge.style.display = 'none';
+		templateData.lineCountsContainer.style.display = 'none';
+
+		if (templateData.toolbar) {
+			templateData.toolbar.context = undefined;
+		}
+		if (templateData.contextKeyService) {
+			chatEditingWidgetFileStateContextKey.bindTo(templateData.contextKeyService).set(undefined!);
+		}
+	}
+
+	disposeTemplate(templateData: IChangesTreeTemplate): void {
 		templateData.templateDisposables.dispose();
 	}
 }
+
+// --- View Mode Actions
+
+class SetChangesListViewModeAction extends ViewAction<ChangesViewPane> {
+	constructor() {
+		super({
+			id: 'workbench.changesView.action.setListViewMode',
+			title: localize('setListViewMode', "View as List"),
+			viewId: CHANGES_VIEW_ID,
+			f1: false,
+			icon: Codicon.listTree,
+			toggled: changesViewModeContextKey.isEqualTo(ChangesViewMode.List),
+			menu: {
+				id: MenuId.ViewTitle,
+				when: ContextKeyExpr.equals('view', CHANGES_VIEW_ID),
+				group: '1_viewmode',
+				order: 1
+			}
+		});
+	}
+
+	async runInView(_: ServicesAccessor, view: ChangesViewPane): Promise<void> {
+		view.viewMode = ChangesViewMode.List;
+	}
+}
+
+class SetChangesTreeViewModeAction extends ViewAction<ChangesViewPane> {
+	constructor() {
+		super({
+			id: 'workbench.changesView.action.setTreeViewMode',
+			title: localize('setTreeViewMode', "View as Tree"),
+			viewId: CHANGES_VIEW_ID,
+			f1: false,
+			icon: Codicon.listFlat,
+			toggled: changesViewModeContextKey.isEqualTo(ChangesViewMode.Tree),
+			menu: {
+				id: MenuId.ViewTitle,
+				when: ContextKeyExpr.equals('view', CHANGES_VIEW_ID),
+				group: '1_viewmode',
+				order: 2
+			}
+		});
+	}
+
+	async runInView(_: ServicesAccessor, view: ChangesViewPane): Promise<void> {
+		view.viewMode = ChangesViewMode.Tree;
+	}
+}
+
+registerAction2(SetChangesListViewModeAction);
+registerAction2(SetChangesTreeViewModeAction);
