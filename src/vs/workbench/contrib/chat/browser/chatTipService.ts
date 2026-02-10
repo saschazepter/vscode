@@ -6,7 +6,7 @@
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { MarkdownString } from '../../../../base/common/htmlContent.js';
 import { ContextKeyExpr, ContextKeyExpression, IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
-import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
+import { createDecorator, IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { IProductService } from '../../../../platform/product/common/productService.js';
 import { ChatContextKeys } from '../common/actions/chatContextKeys.js';
 import { ChatModeKind } from '../common/constants.js';
@@ -14,9 +14,11 @@ import { IConfigurationService } from '../../../../platform/configuration/common
 import { Disposable, MutableDisposable } from '../../../../base/common/lifecycle.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
-import { IPromptsService } from '../common/promptSyntax/service/promptsService.js';
+import { AgentFileType, IPromptsService } from '../common/promptSyntax/service/promptsService.js';
+import { PromptsType } from '../common/promptSyntax/promptTypes.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { localize } from '../../../../nls.js';
+import { ILogService } from '../../../../platform/log/common/log.js';
 
 export const IChatTipService = createDecorator<IChatTipService>('chatTipService');
 
@@ -57,7 +59,7 @@ export interface IChatTipService {
 	/**
 	 * Disables tips permanently by setting the `chat.tips.enabled` configuration to false.
 	 */
-	disableTips(): void;
+	disableTips(): Promise<void>;
 }
 
 export interface ITipDefinition {
@@ -153,9 +155,9 @@ export class TipEligibilityTracker extends Disposable {
 
 	constructor(
 		tips: readonly ITipDefinition[],
-		commandService: ICommandService,
-		private readonly _storageService: IStorageService,
-		promptsService: IPromptsService,
+		@ICommandService commandService: ICommandService,
+		@IStorageService private readonly _storageService: IStorageService,
+		@IPromptsService promptsService: IPromptsService,
 	) {
 		super();
 
@@ -262,8 +264,12 @@ export class TipEligibilityTracker extends Disposable {
 
 	private async _checkForInstructionFiles(promptsService: IPromptsService): Promise<void> {
 		try {
-			const files = await promptsService.listAgentInstructions(CancellationToken.None);
-			this._hasInstructionFiles = files.length > 0;
+			const [agentInstructions, instructionFiles] = await Promise.all([
+				promptsService.listAgentInstructions(CancellationToken.None),
+				promptsService.listPromptFiles(PromptsType.instructions, CancellationToken.None),
+			]);
+			const hasCopilotInstructions = agentInstructions.some(f => f.type === AgentFileType.copilotInstructionsMd);
+			this._hasInstructionFiles = hasCopilotInstructions || instructionFiles.length > 0;
 		} catch {
 			this._hasInstructionFiles = true;
 		}
@@ -312,14 +318,11 @@ export class ChatTipService extends Disposable implements IChatTipService {
 		@IProductService private readonly _productService: IProductService,
 		@IConfigurationService private readonly _configurationService: IConfigurationService,
 		@IStorageService private readonly _storageService: IStorageService,
-		@ICommandService commandService: ICommandService,
-		@IStorageService storageService: IStorageService,
-		@IPromptsService promptsService: IPromptsService,
+		@IInstantiationService instantiationService: IInstantiationService,
+		@ILogService private readonly _logService: ILogService,
 	) {
 		super();
-		this._tracker = this._register(new TipEligibilityTracker(
-			TIP_CATALOG, commandService, storageService, promptsService,
-		));
+		this._tracker = this._register(instantiationService.createInstance(TipEligibilityTracker, TIP_CATALOG));
 	}
 
 	dismissTip(): void {
@@ -341,17 +344,18 @@ export class ChatTipService extends Disposable implements IChatTipService {
 		}
 		try {
 			const parsed = JSON.parse(raw);
+			this._logService.debug('#ChatTips dismissed:', parsed);
 			return Array.isArray(parsed) ? parsed : [];
 		} catch {
 			return [];
 		}
 	}
 
-	disableTips(): void {
+	async disableTips(): Promise<void> {
 		this._hasShownTip = false;
 		this._shownTip = undefined;
 		this._tipRequestId = undefined;
-		this._configurationService.updateValue('chat.tips.enabled', false);
+		await this._configurationService.updateValue('chat.tips.enabled', false);
 		this._onDidDisableTips.fire();
 	}
 
@@ -406,6 +410,7 @@ export class ChatTipService extends Disposable implements IChatTipService {
 
 	private _isEligible(tip: ITipDefinition, contextKeyService: IContextKeyService): boolean {
 		if (tip.when && !contextKeyService.contextMatchesRules(tip.when)) {
+			this._logService.debug('#ChatTips: tip is not eligible due to when clause', tip.id, tip.when.serialize());
 			return false;
 		}
 		return !this._tracker.isExcluded(tip);

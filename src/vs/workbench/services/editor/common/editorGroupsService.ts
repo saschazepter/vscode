@@ -511,6 +511,21 @@ export interface IModalEditorPart extends IEditorPart {
 	readonly onWillClose: Event<void>;
 
 	/**
+	 * Whether the modal editor part is currently maximized.
+	 */
+	readonly maximized: boolean;
+
+	/**
+	 * Fired when the maximized state changes.
+	 */
+	readonly onDidChangeMaximized: Event<boolean>;
+
+	/**
+	 * Toggle between default and maximized size.
+	 */
+	toggleMaximized(): void;
+
+	/**
 	 * Close this modal editor part after moving all
 	 * editors of all groups back to the main editor part
 	 * if the related option is set. Dirty editors are

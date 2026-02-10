@@ -32,11 +32,11 @@ export class ChatTipContentPart extends Disposable {
 	constructor(
 		tip: IChatTip,
 		private readonly _renderer: IMarkdownRenderer,
-		private readonly _chatTipService: IChatTipService,
-		private readonly _contextMenuService: IContextMenuService,
-		private readonly _menuService: IMenuService,
-		private readonly _contextKeyService: IContextKeyService,
 		private readonly _getNextTip: () => IChatTip | undefined,
+		@IChatTipService private readonly _chatTipService: IChatTipService,
+		@IContextMenuService private readonly _contextMenuService: IContextMenuService,
+		@IMenuService private readonly _menuService: IMenuService,
+		@IContextKeyService private readonly _contextKeyService: IContextKeyService,
 	) {
 		super();
 
@@ -114,7 +114,7 @@ registerAction2(class DisableTipsAction extends Action2 {
 	}
 
 	override async run(accessor: ServicesAccessor): Promise<void> {
-		accessor.get(IChatTipService).disableTips();
+		await accessor.get(IChatTipService).disableTips();
 	}
 });
 
