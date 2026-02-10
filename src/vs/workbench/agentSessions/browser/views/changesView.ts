@@ -47,7 +47,6 @@ import { IViewDescriptorService } from '../../../common/views.js';
 import { IChatWidgetService } from '../../../contrib/chat/browser/chat.js';
 import { IAgentSessionsService } from '../../../contrib/chat/browser/agentSessions/agentSessionsService.js';
 import { AgentSessionProviders } from '../../../contrib/chat/browser/agentSessions/agentSessions.js';
-import { AgentSessionsWorkbenchMenus } from '../agentSessionsWorkbenchMenus.js';
 import { IsAgentSessionsWorkspaceContext } from '../../../common/contextkeys.js';
 import { ChatContextKeys } from '../../../contrib/chat/common/actions/chatContextKeys.js';
 import { isIChatSessionFileChange2 } from '../../../contrib/chat/common/chatSessionsService.js';
@@ -1017,17 +1016,6 @@ class SetChangesTreeViewModeAction extends ViewAction<ChangesViewPane> {
 
 registerAction2(SetChangesListViewModeAction);
 registerAction2(SetChangesTreeViewModeAction);
-
-// Register the split button menu item that combines Open in VS Code and Open in Terminal
-MenuRegistry.appendMenuItem(MenuId.ViewTitle, {
-	submenu: AgentSessionsWorkbenchMenus.AgentSessionsOpenSubMenu,
-	isSplitButton: { togglePrimaryAction: true },
-	title: localize2('open', "Open..."),
-	icon: Codicon.folderOpened,
-	group: 'navigation',
-	order: 9,
-	when: ContextKeyExpr.and(ContextKeyExpr.equals('view', CHANGES_VIEW_ID), IsAgentSessionsWorkspaceContext, ChatContextKeys.agentSessionType.isEqualTo(AgentSessionProviders.Background)),
-});
 
 // Register the Run action in the changes view title bar
 MenuRegistry.appendMenuItem(MenuId.ViewTitle, {

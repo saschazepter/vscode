@@ -177,3 +177,9 @@
 	opacity: 1;
 	visibility: visible;
 }
+
+/* ---- Chat Input ---- */
+
+.agent-sessions-workbench .interactive-session .chat-input-container {
+	border-radius: 8px !important;
+}
