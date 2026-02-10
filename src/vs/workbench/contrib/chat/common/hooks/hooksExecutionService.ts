@@ -36,19 +36,6 @@ import {
 export const hooksOutputChannelId = 'hooksExecution';
 const hooksOutputChannelLabel = localize('hooksExecutionChannel', "Hooks");
 
-export interface IHooksExecutionOptions {
-	readonly input?: unknown;
-	readonly token?: CancellationToken;
-}
-
-export interface IHookExecutedEvent {
-	readonly hookType: HookTypeValue;
-	readonly sessionResource: URI;
-	readonly input: unknown;
-	readonly results: readonly IHookResult[];
-	readonly durationMs: number;
-}
-
 /**
  * Event fired when a hook produces progress that should be shown to the user.
  */
@@ -73,11 +60,6 @@ export interface IHooksExecutionService {
 	_serviceBrand: undefined;
 
 	/**
-	 * Fires when a hook has finished executing.
-	 */
-	readonly onDidExecuteHook: Event<IHookExecutedEvent>;
-
-	/**
 	 * Fires when a hook produces progress (warning or stop) that should be shown to the user.
 	 */
 	readonly onDidHookProgress: Event<IHookProgressEvent>;
@@ -96,11 +78,6 @@ export interface IHooksExecutionService {
 	 * Get hooks registered for a session.
 	 */
 	getHooksForSession(sessionResource: URI): IChatRequestHooks | undefined;
-
-	/**
-	 * Execute hooks of the given type for the given session
-	 */
-	executeHook(hookType: HookTypeValue, sessionResource: URI, options?: IHooksExecutionOptions): Promise<IHookResult[]>;
 
 	/**
 	 * Execute preToolUse hooks with typed input and validated output.
@@ -126,16 +103,11 @@ const redactedInputKeys = ['toolArgs'];
 export class HooksExecutionService extends Disposable implements IHooksExecutionService {
 	declare readonly _serviceBrand: undefined;
 
-	private readonly _onDidExecuteHook = this._register(new Emitter<IHookExecutedEvent>());
-	readonly onDidExecuteHook: Event<IHookExecutedEvent> = this._onDidExecuteHook.event;
-
 	private readonly _onDidHookProgress = this._register(new Emitter<IHookProgressEvent>());
 	readonly onDidHookProgress: Event<IHookProgressEvent> = this._onDidHookProgress.event;
 
 	private _proxy: IHooksExecutionProxy | undefined;
 	private readonly _sessionHooks = new Map<string, IChatRequestHooks>();
-	/** Stored transcript path per session (keyed by session URI string). */
-	private readonly _sessionTranscriptPaths = new Map<string, URI>();
 	private _channelRegistered = false;
 	private _requestCounter = 0;
 
@@ -334,24 +306,6 @@ export class HooksExecutionService extends Disposable implements IHooksExecution
 	}
 
 	/**
-	 * Extract `transcript_path` from hook input if present.
-	 * The caller (e.g. SessionStart) may include it as a URI in the input object.
-	 */
-	private _extractTranscriptPath(input: unknown): URI | undefined {
-		if (typeof input !== 'object' || input === null) {
-			return undefined;
-		}
-		const transcriptPath = (input as Record<string, unknown>)['transcriptPath'];
-		if (URI.isUri(transcriptPath)) {
-			return transcriptPath;
-		}
-		if (isUriComponents(transcriptPath)) {
-			return URI.revive(transcriptPath);
-		}
-		return undefined;
-	}
-
-	/**
 	 * Emit a hook progress event to show warnings or stop reasons to the user.
 	 */
 	private _emitHookProgress(hookType: HookTypeValue, sessionResource: URI, stopReason?: string, systemMessage?: string): void {
@@ -385,7 +339,6 @@ export class HooksExecutionService extends Disposable implements IHooksExecution
 		this._sessionHooks.set(key, hooks);
 		return toDisposable(() => {
 			this._sessionHooks.delete(key);
-			this._sessionTranscriptPaths.delete(key);
 		});
 	}
 
@@ -393,62 +346,40 @@ export class HooksExecutionService extends Disposable implements IHooksExecution
 		return this._sessionHooks.get(sessionResource.toString());
 	}
 
-	async executeHook(hookType: HookTypeValue, sessionResource: URI, options?: IHooksExecutionOptions): Promise<IHookResult[]> {
-		const sw = StopWatch.create();
+	async executeHook(hookType: HookTypeValue, sessionResource: URI, input?: unknown, token?: CancellationToken): Promise<IHookResult[]> {
 		const results: IHookResult[] = [];
 
-		try {
-			if (!this._proxy) {
-				return results;
-			}
-
-			const sessionKey = sessionResource.toString();
-
-			// Extract and store transcript_path from input when present (e.g. SessionStart)
-			const inputTranscriptPath = this._extractTranscriptPath(options?.input);
-			if (inputTranscriptPath) {
-				this._sessionTranscriptPaths.set(sessionKey, inputTranscriptPath);
-			}
-
-			const hooks = this.getHooksForSession(sessionResource);
-			if (!hooks) {
-				return results;
-			}
-
-			const hookCommands = hooks[hookType];
-			if (!hookCommands || hookCommands.length === 0) {
-				return results;
-			}
-
-			const transcriptPath = this._sessionTranscriptPaths.get(sessionKey);
-
-			const requestId = this._requestCounter++;
-			const token = options?.token ?? CancellationToken.None;
-
-			this._logService.debug(`[HooksExecutionService] Executing ${hookCommands.length} hook(s) for type '${hookType}'`);
-			this._log(requestId, hookType, `Executing ${hookCommands.length} hook(s)`);
-
-			for (const hookCommand of hookCommands) {
-				const result = await this._runSingleHook(requestId, hookType, hookCommand, sessionResource, options?.input, transcriptPath, token);
-				results.push(result);
-
-				// If stopReason is set, stop processing remaining hooks
-				if (result.stopReason) {
-					this._log(requestId, hookType, `Stopping: ${result.stopReason}`);
-					break;
-				}
-			}
-
+		if (!this._proxy) {
 			return results;
-		} finally {
-			this._onDidExecuteHook.fire({
-				hookType,
-				sessionResource,
-				input: options?.input,
-				results,
-				durationMs: Math.round(sw.elapsed()),
-			});
 		}
+
+		const hooks = this.getHooksForSession(sessionResource);
+		if (!hooks) {
+			return results;
+		}
+
+		const hookCommands = hooks[hookType];
+		if (!hookCommands || hookCommands.length === 0) {
+			return results;
+		}
+
+		const requestId = this._requestCounter++;
+
+		this._logService.debug(`[HooksExecutionService] Executing ${hookCommands.length} hook(s) for type '${hookType}'`);
+		this._log(requestId, hookType, `Executing ${hookCommands.length} hook(s)`);
+
+		for (const hookCommand of hookCommands) {
+			const result = await this._runSingleHook(requestId, hookType, hookCommand, sessionResource, input, undefined, token ?? CancellationToken.None);
+			results.push(result);
+
+			// If stopReason is set, stop processing remaining hooks
+			if (result.stopReason !== undefined) {
+				this._log(requestId, hookType, `Stopping: ${result.stopReason}`);
+				break;
+			}
+		}
+
+		return results;
 	}
 
 	async executePreToolUseHook(sessionResource: URI, input: IPreToolUseCallerInput, token?: CancellationToken): Promise<IPreToolUseHookResult | undefined> {
@@ -458,10 +389,7 @@ export class HooksExecutionService extends Disposable implements IHooksExecution
 			tool_use_id: input.toolCallId,
 		};
 
-		const results = await this.executeHook(HookType.PreToolUse, sessionResource, {
-			input: toolSpecificInput,
-			token: token ?? CancellationToken.None,
-		});
+		const results = await this.executeHook(HookType.PreToolUse, sessionResource, toolSpecificInput, token ?? CancellationToken.None);
 
 		// Run all hooks and collapse results. Most restrictive decision wins: deny > ask > allow.
 		// Collect all additionalContext strings from every hook.
@@ -555,10 +483,7 @@ export class HooksExecutionService extends Disposable implements IHooksExecution
 			tool_use_id: input.toolCallId,
 		};
 
-		const results = await this.executeHook(HookType.PostToolUse, sessionResource, {
-			input: toolSpecificInput,
-			token: token ?? CancellationToken.None,
-		});
+		const results = await this.executeHook(HookType.PostToolUse, sessionResource, toolSpecificInput, token ?? CancellationToken.None);
 
 		// Run all hooks and collapse results. Block is the most restrictive decision.
 		// Collect all additionalContext strings from every hook.

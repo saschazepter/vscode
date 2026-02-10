@@ -8,7 +8,7 @@ import { $, AnimationFrameScheduler, DisposableResizeObserver } from '../../../.
 import { Codicon } from '../../../../../../base/common/codicons.js';
 import { MarkdownString } from '../../../../../../base/common/htmlContent.js';
 import { Lazy } from '../../../../../../base/common/lazy.js';
-import { IDisposable, MutableDisposable } from '../../../../../../base/common/lifecycle.js';
+import { IDisposable } from '../../../../../../base/common/lifecycle.js';
 import { autorun } from '../../../../../../base/common/observable.js';
 import { rcut } from '../../../../../../base/common/strings.js';
 import { ThemeIcon } from '../../../../../../base/common/themables.js';
@@ -79,10 +79,6 @@ export class ChatSubagentContentPart extends ChatCollapsibleContentPart implemen
 	// Current tool message for collapsed title (persists even after tool completes)
 	private currentRunningToolMessage: string | undefined;
 
-	// Model name used by this subagent for hover tooltip
-	private modelName: string | undefined;
-	private readonly _hoverDisposable = this._register(new MutableDisposable());
-
 	// Confirmation auto-expand tracking
 	private toolsWaitingForConfirmation: number = 0;
 	private userManuallyExpanded: boolean = false;
@@ -99,12 +95,12 @@ export class ChatSubagentContentPart extends ChatCollapsibleContentPart implemen
 	/**
 	 * Extracts subagent info (description, agentName, prompt) from a tool invocation.
 	 */
-	private static extractSubagentInfo(toolInvocation: IChatToolInvocation | IChatToolInvocationSerialized): { description: string; agentName: string | undefined; prompt: string | undefined; modelName: string | undefined } {
+	private static extractSubagentInfo(toolInvocation: IChatToolInvocation | IChatToolInvocationSerialized): { description: string; agentName: string | undefined; prompt: string | undefined } {
 		const defaultDescription = localize('chat.subagent.defaultDescription', 'Running subagent...');
 
 		// Only parent subagent tools contain the full subagent info
 		if (!ChatSubagentContentPart.isParentSubagentTool(toolInvocation)) {
-			return { description: defaultDescription, agentName: undefined, prompt: undefined, modelName: undefined };
+			return { description: defaultDescription, agentName: undefined, prompt: undefined };
 		}
 
 		// Check toolSpecificData first (works for both live and serialized)
@@ -113,7 +109,6 @@ export class ChatSubagentContentPart extends ChatCollapsibleContentPart implemen
 				description: toolInvocation.toolSpecificData.description ?? defaultDescription,
 				agentName: toolInvocation.toolSpecificData.agentName,
 				prompt: toolInvocation.toolSpecificData.prompt,
-				modelName: toolInvocation.toolSpecificData.modelName,
 			};
 		}
 
@@ -127,11 +122,10 @@ export class ChatSubagentContentPart extends ChatCollapsibleContentPart implemen
 				description: params?.description ?? defaultDescription,
 				agentName: params?.agentName,
 				prompt: params?.prompt,
-				modelName: undefined,
 			};
 		}
 
-		return { description: defaultDescription, agentName: undefined, prompt: undefined, modelName: undefined };
+		return { description: defaultDescription, agentName: undefined, prompt: undefined };
 	}
 
 	constructor(
@@ -149,7 +143,7 @@ export class ChatSubagentContentPart extends ChatCollapsibleContentPart implemen
 		@IHoverService hoverService: IHoverService,
 	) {
 		// Extract description, agentName, and prompt from toolInvocation
-		const { description, agentName, prompt, modelName } = ChatSubagentContentPart.extractSubagentInfo(toolInvocation);
+		const { description, agentName, prompt } = ChatSubagentContentPart.extractSubagentInfo(toolInvocation);
 
 		// Build title: "AgentName: description" or "Subagent: description"
 		const prefix = agentName || localize('chat.subagent.prefix', 'Subagent');
@@ -159,11 +153,11 @@ export class ChatSubagentContentPart extends ChatCollapsibleContentPart implemen
 		this.description = description;
 		this.agentName = agentName;
 		this.prompt = prompt;
-		this.modelName = modelName;
 		this.isInitiallyComplete = this.element.isComplete;
 
 		const node = this.domNode;
 		node.classList.add('chat-thinking-box', 'chat-thinking-fixed-mode', 'chat-subagent-part');
+		node.tabIndex = 0;
 
 		// Note: wrapper is created lazily in initContent(), so we can't set its style here
 
@@ -216,9 +210,6 @@ export class ChatSubagentContentPart extends ChatCollapsibleContentPart implemen
 
 		// Scheduler for coalescing layout operations
 		this.layoutScheduler = this._register(new AnimationFrameScheduler(this.domNode, () => this.performLayout()));
-
-		// Set up hover tooltip with model name if available
-		this.updateHover();
 
 		// Render the prompt section at the start if available (must be after wrapper is initialized)
 		this.renderPromptSection();
@@ -346,16 +337,6 @@ export class ChatSubagentContentPart extends ChatCollapsibleContentPart implemen
 		this.setTitleWithWidgets(new MarkdownString(finalLabel), this.instantiationService, this.chatMarkdownAnchorService, this.chatContentMarkdownRenderer);
 	}
 
-	private updateHover(): void {
-		if (!this.modelName || !this._collapseButton) {
-			return;
-		}
-
-		this._hoverDisposable.value = this.hoverService.setupDelayedHover(this._collapseButton.element, {
-			content: localize('chat.subagent.modelTooltip', 'Model: {0}', this.modelName),
-		});
-	}
-
 	/**
 	 * Tracks a tool invocation's state for:
 	 * 1. Updating the title with the current tool message (persists even after completion)
@@ -430,25 +411,15 @@ export class ChatSubagentContentPart extends ChatCollapsibleContentPart implemen
 						this.renderResultText(textParts.join('\n'));
 					}
 
-					// Update model name from toolSpecificData (set during invoke())
-					if (toolInvocation.toolSpecificData?.kind === 'subagent' && toolInvocation.toolSpecificData.modelName) {
-						this.modelName = toolInvocation.toolSpecificData.modelName;
-						this.updateHover();
-					}
-
 					// Mark as inactive when the tool completes
 					this.markAsInactive();
 				} else if (wasStreaming && state.type !== IChatToolInvocation.StateKind.Streaming) {
 					wasStreaming = false;
 					// Update things that change when tool is done streaming
-					const { description, agentName, prompt, modelName } = ChatSubagentContentPart.extractSubagentInfo(toolInvocation);
+					const { description, agentName, prompt } = ChatSubagentContentPart.extractSubagentInfo(toolInvocation);
 					this.description = description;
 					this.agentName = agentName;
 					this.prompt = prompt;
-					if (modelName) {
-						this.modelName = modelName;
-						this.updateHover();
-					}
 					this.renderPromptSection();
 					this.updateTitle();
 				}

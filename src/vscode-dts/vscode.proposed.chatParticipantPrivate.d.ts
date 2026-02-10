@@ -120,6 +120,13 @@ declare module 'vscode' {
 		 * Whether any hooks are enabled for this request.
 		 */
 		readonly hasHooksEnabled: boolean;
+
+		/**
+		 * Resolved hook commands for this request, organized by hook type.
+		 * The commands have already been resolved for the current platform.
+		 * Only present when hooks are enabled.
+		 */
+		readonly hooks?: ChatRequestHooks;
 	}
 
 	export enum ChatRequestEditedFileEventKind {

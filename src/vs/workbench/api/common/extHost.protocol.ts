@@ -3296,7 +3296,6 @@ export interface MainThreadDataChannelsShape extends IDisposable {
 }
 
 export interface MainThreadHooksShape extends IDisposable {
-	$executeHook(hookType: string, sessionResource: UriComponents, input: unknown, token: CancellationToken): Promise<IHookResult[]>;
 }
 
 export interface ExtHostDataChannelsShape {

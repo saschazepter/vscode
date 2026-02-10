@@ -8,10 +8,8 @@ import { URI } from '../../../../base/common/uri.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/common/utils.js';
 import { NullLogService } from '../../../../platform/log/common/log.js';
 import { NodeExtHostHooks } from '../../node/extHostHooksNode.js';
-import { IHookCommandDto, MainThreadHooksShape } from '../../common/extHost.protocol.js';
+import { IHookCommandDto } from '../../common/extHost.protocol.js';
 import { HookCommandResultKind } from '../../../contrib/chat/common/hooks/hooksCommandTypes.js';
-import { IHookResult } from '../../../contrib/chat/common/hooks/hooksTypes.js';
-import { IExtHostRpcService } from '../../common/extHostRpcService.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
 
 function createHookCommandDto(command: string, options?: Partial<Omit<IHookCommandDto, 'type' | 'command'>>): IHookCommandDto {
@@ -22,36 +20,13 @@ function createHookCommandDto(command: string, options?: Partial<Omit<IHookComma
 	};
 }
 
-function createMockExtHostRpcService(mainThreadProxy: MainThreadHooksShape): IExtHostRpcService {
-	return {
-		_serviceBrand: undefined,
-		getProxy<T>(): T {
-			return mainThreadProxy as unknown as T;
-		},
-		set<T, R extends T>(_identifier: unknown, instance: R): R {
-			return instance;
-		},
-		dispose(): void { },
-		assertRegistered(): void { },
-		drain(): Promise<void> { return Promise.resolve(); },
-	} as IExtHostRpcService;
-}
-
 suite.skip('ExtHostHooks', () => {
 	ensureNoDisposablesAreLeakedInTestSuite();
 
 	let hooksService: NodeExtHostHooks;
 
 	setup(() => {
-		const mockMainThreadProxy: MainThreadHooksShape = {
-			$executeHook: async (): Promise<IHookResult[]> => {
-				return [];
-			},
-			dispose: () => { }
-		};
-
-		const mockRpcService = createMockExtHostRpcService(mockMainThreadProxy);
-		hooksService = new NodeExtHostHooks(mockRpcService, new NullLogService());
+		hooksService = new NodeExtHostHooks(new NullLogService());
 	});
 
 	test('$runHookCommand runs command and returns success result', async () => {
