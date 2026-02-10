@@ -571,7 +571,7 @@ export class ChangesViewPane extends ViewPane {
 								return { showIcon: true, showLabel: true, isSecondary: true, customClass: 'working-set-diff-stats', customLabel: diffStatsLabel };
 							}
 							if (action.id === 'github.createPullRequest') {
-								return { showIcon: true, showLabel: true };
+								return { showIcon: true, showLabel: true, isSecondary: true, customClass: 'flex-grow' };
 							}
 							return undefined;
 						}
