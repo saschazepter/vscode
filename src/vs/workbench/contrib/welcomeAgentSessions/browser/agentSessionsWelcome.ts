@@ -59,6 +59,7 @@ import { IWorkspaceTrustManagementService } from '../../../../platform/workspace
 import { IViewDescriptorService, ViewContainerLocation } from '../../../common/views.js';
 import { toErrorMessage } from '../../../../base/common/errorMessage.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
+import { AgentSessionsListDelegate } from '../../chat/browser/agentSessions/agentSessionsViewer.js';
 
 const configurationKey = 'workbench.startupEditor';
 const MAX_SESSIONS = 6;
@@ -812,23 +813,29 @@ export class AgentSessionsWelcomePage extends EditorPane {
 			return;
 		}
 
-		// TODO: @osortega this is a weird way of doing this, maybe we handle the 2-colum layout in the control itself?
 		const sessionsWidth = Math.min(800, this.lastDimension.width - 80);
-		// Calculate height based on actual visible sessions (capped at MAX_SESSIONS)
-		// Use 54px per item from AgentSessionsListDelegate.ITEM_HEIGHT
-		// Give the list FULL height so virtualization renders all items
-		// CSS transforms handle the 2-column visual layout
 		const visibleSessions = Math.min(
 			this.agentSessionsService.model.sessions.filter(s => !s.isArchived()).length,
 			MAX_SESSIONS
 		);
-		const sessionsHeight = visibleSessions * 56;
+
+		if (visibleSessions === 0) {
+			return;
+		}
+
+		// Give the list enough height to render all items in a single column
+		// so virtualization doesn't cull any rows
+		const itemHeight = AgentSessionsListDelegate.ITEM_HEIGHT;
+		const sessionsHeight = visibleSessions * itemHeight;
 		this.sessionsControl.layout(sessionsHeight, sessionsWidth);
 
-		// Set margin offset for 2-column layout: actual height - visual height
-		// Visual height = ceil(n/2) * 52, so offset = floor(n/2) * 52
-		const marginOffset = Math.floor(visibleSessions / 2) * 52;
-		this.sessionsControl.element!.style.marginBottom = `-${marginOffset}px`;
+		// Measure the actual rendered height and collapse it to the visual
+		// 2-column height using a negative margin. This is robust against
+		// internal list elements or padding that we don't control.
+		const actualHeight = this.sessionsControl.element!.offsetHeight;
+		const visualHeight = Math.ceil(visibleSessions / 2) * itemHeight;
+		const marginOffset = Math.max(0, actualHeight - visualHeight);
+		this.sessionsControlContainer.style.marginBottom = `-${marginOffset}px`;
 	}
 
 	override focus(): void {
