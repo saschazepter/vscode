@@ -9,7 +9,7 @@ import { ITelemetryService } from '../../../../platform/telemetry/common/telemet
 import { PolicyTelemetryReporter } from '../../../../platform/policy/common/policyTelemetry.js';
 
 export class PolicyTelemetryContribution extends Disposable {
-static readonly ID = 'workbench.contrib.policyTelemetry';
+static readonly ID = 'workbench.contributions.policyTelemetry';
 
 constructor(
 @IPolicyService policyService: IPolicyService,
