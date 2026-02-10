@@ -10,7 +10,7 @@ import { tmpdir } from 'os';
 import { app } from 'electron';
 import { Delayer, timeout } from '../../../base/common/async.js';
 import { VSBuffer } from '../../../base/common/buffer.js';
-import { CancellationToken } from '../../../base/common/cancellation.js';
+import { CancellationToken, CancellationTokenSource } from '../../../base/common/cancellation.js';
 import { memoize } from '../../../base/common/decorators.js';
 import { hash } from '../../../base/common/hash.js';
 import * as path from '../../../base/common/path.js';
@@ -55,6 +55,7 @@ function getUpdateType(): UpdateType {
 export class Win32UpdateService extends AbstractUpdateService implements IRelaunchHandler {
 
 	private availableUpdate: IAvailableUpdate | undefined;
+	private updateCancellationTokenSource: CancellationTokenSource | undefined;
 
 	@memoize
 	get cachePath(): Promise<string> {
@@ -380,8 +381,12 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 		const pollTimeoutMs = 30 * 60 * 1000;
 		const pollStartTime = Date.now();
 
+		this.updateCancellationTokenSource?.dispose(true);
+		const cts = this.updateCancellationTokenSource = new CancellationTokenSource();
+		const token = cts.token;
+
 		const poll = async () => {
-			while (this.state.type === StateType.Updating) {
+			while (this.state.type === StateType.Updating && !token.isCancellationRequested) {
 				if (mutex.isActive(readyMutexName)) {
 					this.setState(State.Ready(update, explicit, this._overwrite));
 					return;
@@ -408,13 +413,17 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 			}
 		};
 
-		poll();
+		poll().finally(() => cts.dispose());
 	}
 
 	protected override async cancelPendingUpdate(): Promise<void> {
 		if (!this.availableUpdate) {
 			return;
 		}
+
+		// Cancel the polling loop
+		this.updateCancellationTokenSource?.dispose(true);
+		this.updateCancellationTokenSource = undefined;
 
 		this.logService.trace('update#cancelPendingUpdate: cancelling pending update');
 		const { updateProcess, updateFilePath, cancelFilePath } = this.availableUpdate;
