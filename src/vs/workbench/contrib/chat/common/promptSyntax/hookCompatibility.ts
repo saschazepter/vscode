@@ -61,43 +61,24 @@ export function isReadOnlyHookSource(format: HookSourceFormat): boolean {
 }
 
 /**
- * Result of parsing Copilot hooks file.
- */
-export interface IParseCopilotHooksResult {
-	/**
-	 * The parsed hooks by type.
-	 */
-	readonly hooks: Map<HookType, { hooks: IHookCommand[]; originalId: string }>;
-	/**
-	 * Whether all hooks from this file were disabled via `disableAllHooks: true`.
-	 */
-	readonly disabledAllHooks: boolean;
-}
-
-/**
  * Parses hooks from a Copilot hooks .json file (our native format).
  */
 export function parseCopilotHooks(
 	json: unknown,
 	workspaceRootUri: URI | undefined,
 	userHome: string
-): IParseCopilotHooksResult {
+): Map<HookType, { hooks: IHookCommand[]; originalId: string }> {
 	const result = new Map<HookType, { hooks: IHookCommand[]; originalId: string }>();
 
 	if (!json || typeof json !== 'object') {
-		return { hooks: result, disabledAllHooks: false };
+		return result;
 	}
 
 	const root = json as Record<string, unknown>;
 
-	// Check for disableAllHooks property at the top level
-	if (root.disableAllHooks === true) {
-		return { hooks: result, disabledAllHooks: true };
-	}
-
 	const hooks = root.hooks;
 	if (!hooks || typeof hooks !== 'object') {
-		return { hooks: result, disabledAllHooks: false };
+		return result;
 	}
 
 	const hooksObj = hooks as Record<string, unknown>;
@@ -127,7 +108,7 @@ export function parseCopilotHooks(
 		}
 	}
 
-	return { hooks: result, disabledAllHooks: false };
+	return result;
 }
 
 /**
@@ -164,12 +145,9 @@ export function parseHooksFromFile(
 			break;
 		}
 		case HookSourceFormat.Copilot:
-		default: {
-			const result = parseCopilotHooks(json, workspaceRootUri, userHome);
-			hooks = result.hooks;
-			disabledAllHooks = result.disabledAllHooks;
+		default:
+			hooks = parseCopilotHooks(json, workspaceRootUri, userHome);
 			break;
-		}
 	}
 
 	return { format, hooks, disabledAllHooks };

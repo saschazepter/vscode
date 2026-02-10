@@ -6,6 +6,7 @@
 import { CancellationToken } from '../../../../../../base/common/cancellation.js';
 import { CancellationError } from '../../../../../../base/common/errors.js';
 import { Emitter, Event } from '../../../../../../base/common/event.js';
+import { parse as parseJSONC } from '../../../../../../base/common/json.js';
 import { Disposable, DisposableStore, IDisposable } from '../../../../../../base/common/lifecycle.js';
 import { ResourceMap, ResourceSet } from '../../../../../../base/common/map.js';
 import { basename, dirname, isEqual, joinPath } from '../../../../../../base/common/resources.js';
@@ -1030,7 +1031,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 		for (const hookFile of hookFiles) {
 			try {
 				const content = await this.fileService.readFile(hookFile.uri);
-				const json = JSON.parse(content.value.toString());
+				const json = parseJSONC(content.value.toString());
 
 				// Use format-aware parsing that handles Copilot and Claude formats
 				const { format, hooks, disabledAllHooks } = parseHooksFromFile(hookFile.uri, json, workspaceRootUri, userHome);
@@ -1326,9 +1327,9 @@ export class PromptsService extends Disposable implements IPromptsService {
 			const name = basename(uri);
 
 			try {
-				// Try to parse the JSON to validate it
+				// Try to parse the JSON to validate it (supports JSONC with comments)
 				const content = await this.fileService.readFile(uri);
-				const json = JSON.parse(content.value.toString());
+				const json = parseJSONC(content.value.toString());
 
 				// Validate it's an object
 				if (!json || typeof json !== 'object') {

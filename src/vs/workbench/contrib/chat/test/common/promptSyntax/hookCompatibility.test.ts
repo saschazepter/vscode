@@ -28,81 +28,28 @@ suite('HookCompatibility', () => {
 
 				const result = parseCopilotHooks(json, workspaceRoot, userHome);
 
-				assert.strictEqual(result.disabledAllHooks, false);
-				assert.strictEqual(result.hooks.size, 1);
-				assert.ok(result.hooks.has(HookType.PreToolUse));
-				const entry = result.hooks.get(HookType.PreToolUse)!;
+				assert.strictEqual(result.size, 1);
+				assert.ok(result.has(HookType.PreToolUse));
+				const entry = result.get(HookType.PreToolUse)!;
 				assert.strictEqual(entry.hooks.length, 1);
 				assert.strictEqual(entry.hooks[0].command, 'echo "pre-tool"');
-			});
-		});
-
-		suite('disableAllHooks', () => {
-			test('returns empty hooks and disabledAllHooks=true when disableAllHooks is true', () => {
-				const json = {
-					disableAllHooks: true,
-					hooks: {
-						PreToolUse: [
-							{ type: 'command', command: 'echo "should be ignored"' }
-						]
-					}
-				};
-
-				const result = parseCopilotHooks(json, workspaceRoot, userHome);
-
-				assert.strictEqual(result.disabledAllHooks, true);
-				assert.strictEqual(result.hooks.size, 0);
-			});
-
-			test('parses hooks normally when disableAllHooks is false', () => {
-				const json = {
-					disableAllHooks: false,
-					hooks: {
-						PreToolUse: [
-							{ type: 'command', command: 'echo "should be parsed"' }
-						]
-					}
-				};
-
-				const result = parseCopilotHooks(json, workspaceRoot, userHome);
-
-				assert.strictEqual(result.disabledAllHooks, false);
-				assert.strictEqual(result.hooks.size, 1);
-			});
-
-			test('parses hooks normally when disableAllHooks is not present', () => {
-				const json = {
-					hooks: {
-						PreToolUse: [
-							{ type: 'command', command: 'echo "should be parsed"' }
-						]
-					}
-				};
-
-				const result = parseCopilotHooks(json, workspaceRoot, userHome);
-
-				assert.strictEqual(result.disabledAllHooks, false);
-				assert.strictEqual(result.hooks.size, 1);
 			});
 		});
 
 		suite('invalid inputs', () => {
 			test('returns empty result for null json', () => {
 				const result = parseCopilotHooks(null, workspaceRoot, userHome);
-				assert.strictEqual(result.hooks.size, 0);
-				assert.strictEqual(result.disabledAllHooks, false);
+				assert.strictEqual(result.size, 0);
 			});
 
 			test('returns empty result for undefined json', () => {
 				const result = parseCopilotHooks(undefined, workspaceRoot, userHome);
-				assert.strictEqual(result.hooks.size, 0);
-				assert.strictEqual(result.disabledAllHooks, false);
+				assert.strictEqual(result.size, 0);
 			});
 
 			test('returns empty result for missing hooks property', () => {
 				const result = parseCopilotHooks({}, workspaceRoot, userHome);
-				assert.strictEqual(result.hooks.size, 0);
-				assert.strictEqual(result.disabledAllHooks, false);
+				assert.strictEqual(result.size, 0);
 			});
 		});
 	});
@@ -114,7 +61,6 @@ suite('HookCompatibility', () => {
 		test('uses Copilot format for .github/hooks/*.json files', () => {
 			const fileUri = URI.file('/workspace/.github/hooks/my-hooks.json');
 			const json = {
-				disableAllHooks: true,
 				hooks: {
 					PreToolUse: [
 						{ type: 'command', command: 'echo "test"' }
@@ -125,8 +71,8 @@ suite('HookCompatibility', () => {
 			const result = parseHooksFromFile(fileUri, json, workspaceRoot, userHome);
 
 			assert.strictEqual(result.format, HookSourceFormat.Copilot);
-			assert.strictEqual(result.disabledAllHooks, true);
-			assert.strictEqual(result.hooks.size, 0);
+			assert.strictEqual(result.disabledAllHooks, false);
+			assert.strictEqual(result.hooks.size, 1);
 		});
 
 		test('uses Claude format for .claude/settings.json files', () => {
@@ -147,7 +93,7 @@ suite('HookCompatibility', () => {
 			assert.strictEqual(result.hooks.size, 0);
 		});
 
-		test('propagates disabledAllHooks from Copilot format', () => {
+		test('disableAllHooks is ignored for Copilot format', () => {
 			const fileUri = URI.file('/workspace/.github/hooks/hooks.json');
 			const json = {
 				disableAllHooks: true,
@@ -160,11 +106,12 @@ suite('HookCompatibility', () => {
 
 			const result = parseHooksFromFile(fileUri, json, workspaceRoot, userHome);
 
-			assert.strictEqual(result.disabledAllHooks, true);
-			assert.strictEqual(result.hooks.size, 0);
+			// Copilot format does not support disableAllHooks
+			assert.strictEqual(result.disabledAllHooks, false);
+			assert.strictEqual(result.hooks.size, 1);
 		});
 
-		test('propagates disabledAllHooks from Claude format', () => {
+		test('disabledAllHooks works for Claude format', () => {
 			const fileUri = URI.file('/workspace/.claude/settings.local.json');
 			const json = {
 				disableAllHooks: true,

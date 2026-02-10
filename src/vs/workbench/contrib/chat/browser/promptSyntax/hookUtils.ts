@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { findNodeAtLocation, Node, parseTree } from '../../../../../base/common/json.js';
+import { findNodeAtLocation, Node, parse as parseJSONC, parseTree } from '../../../../../base/common/json.js';
 import { ITextEditorSelection } from '../../../../../platform/editor/common/editor.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { IPromptsService } from '../../common/promptSyntax/service/promptsService.js';
@@ -147,7 +147,7 @@ export async function parseAllHookFiles(
 	for (const hookFile of hookFiles) {
 		try {
 			const content = await fileService.readFile(hookFile.uri);
-			const json = JSON.parse(content.value.toString());
+			const json = parseJSONC(content.value.toString());
 
 			// Use format-aware parsing
 			const { hooks } = parseHooksFromFile(hookFile.uri, json, workspaceRootUri, userHome);
