@@ -301,9 +301,9 @@ export class ChatAttachmentResolveService implements IChatAttachmentResolveServi
 		const childPromises: Promise<void>[] = [];
 
 		for (const child of stat.children) {
-			if (child.isDirectory) {
+			if (child.isDirectory && !child.isSymbolicLink) {
 				childPromises.push(this._collectDirectoryImages(child.resource, results));
-			} else if (child.isFile && SUPPORTED_IMAGE_EXTENSIONS_REGEX.test(child.resource.path)) {
+			} else if (child.isFile && !child.isSymbolicLink && SUPPORTED_IMAGE_EXTENSIONS_REGEX.test(child.resource.path)) {
 				childPromises.push(
 					this.resolveImageEditorAttachContext(child.resource).then(entry => {
 						if (entry) {
