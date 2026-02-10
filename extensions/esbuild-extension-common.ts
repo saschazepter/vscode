@@ -2,27 +2,20 @@
  *  Copyright (c) Microsoft Corporation. All rights reserved.
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
-// @ts-check
 /**
  * @fileoverview Common build script for extensions.
  */
 import path from 'node:path';
 import esbuild from 'esbuild';
 
-/**
- * @typedef {Partial<import('esbuild').BuildOptions> & {
- * 	entryPoints: string[] | Record<string, string> | { in: string, out: string }[];
- * 	outdir: string;
- * }} BuildOptions
- */
+type BuildOptions = Partial<esbuild.BuildOptions> & {
+	outdir: string;
+};
 
 /**
  * Build the source code once using esbuild.
- *
- * @param {BuildOptions} options
- * @param {(outDir: string) => unknown} [didBuild]
  */
-async function build(options, didBuild) {
+async function build(options: BuildOptions, didBuild?: (outDir: string) => unknown): Promise<void> {
 	await esbuild.build({
 		bundle: true,
 		minify: true,
@@ -39,11 +32,8 @@ async function build(options, didBuild) {
 
 /**
  * Build the source code once using esbuild, logging errors instead of throwing.
- *
- * @param {BuildOptions} options
- * @param {(outDir: string) => unknown} [didBuild]
  */
-async function tryBuild(options, didBuild) {
+async function tryBuild(options: BuildOptions, didBuild?: (outDir: string) => unknown): Promise<void> {
 	try {
 		await build(options, didBuild);
 	} catch (err) {
@@ -51,17 +41,14 @@ async function tryBuild(options, didBuild) {
 	}
 }
 
-/**
- * @param {{
- * 	srcDir: string;
- *  outdir: string;
- *  entryPoints: string[] | Record<string, string> | { in: string, out: string }[];
- * 	additionalOptions?: Partial<import('esbuild').BuildOptions>
- * }} config
- * @param {string[]} args
- * @param {(outDir: string) => unknown} [didBuild]
- */
-export async function run(config, args, didBuild) {
+interface RunConfig {
+	srcDir: string;
+	outdir: string;
+	entryPoints: string[] | Record<string, string> | { in: string; out: string }[];
+	additionalOptions?: Partial<esbuild.BuildOptions>;
+}
+
+export async function run(config: RunConfig, args: string[], didBuild?: (outDir: string) => unknown): Promise<void> {
 	let outdir = config.outdir;
 	const outputRootIndex = args.indexOf('--outputRoot');
 	if (outputRootIndex >= 0) {
@@ -70,8 +57,7 @@ export async function run(config, args, didBuild) {
 		outdir = path.join(outputRoot, outputDirName);
 	}
 
-	/** @type {BuildOptions} */
-	const resolvedOptions = {
+	const resolvedOptions: BuildOptions = {
 		entryPoints: config.entryPoints,
 		outdir,
 		logOverride: {
