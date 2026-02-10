@@ -191,8 +191,9 @@ suite('ChatAttachmentResolveService', () => {
 			{ resource: bmpUri, isFile: true, isDirectory: false },
 		]);
 		imageFileUris.add(gifUri.toString());
+		imageFileUris.add(bmpUri.toString());
 		// bmp is NOT in CHAT_ATTACHABLE_IMAGE_MIME_TYPES (only png, jpg, jpeg, gif, webp)
-		// so it should be skipped by the regex
+		// so it should be skipped by the regex even though it would resolve successfully
 
 		const result = await service.resolveDirectoryImages(dirUri);
 		assert.strictEqual(result.length, 1);
