@@ -532,6 +532,9 @@ suite('AgentSessions', () => {
 				};
 
 				mockChatSessionsService.registerChatSessionItemController('test-type', controller);
+				// Registering calls a refresh initially
+				assert.strictEqual(controllerCallCount, 1);
+
 				viewModel = createViewModel();
 
 				// Make multiple rapid resolve calls
@@ -543,8 +546,8 @@ suite('AgentSessions', () => {
 
 				await Promise.all(resolvePromises);
 
-				// Should only call controller once due to throttling
-				assert.strictEqual(controllerCallCount, 1);
+				// Should only call controller once more due to throttling
+				assert.strictEqual(controllerCallCount, 2);
 				assert.strictEqual(viewModel.sessions.length, 1);
 			});
 		});
@@ -590,8 +593,8 @@ suite('AgentSessions', () => {
 				// First resolve all
 				await viewModel.resolve(undefined);
 				assert.strictEqual(viewModel.sessions.length, 2);
-				assert.strictEqual(controller1CallCount, 1);
-				assert.strictEqual(controller2CallCount, 1);
+				assert.strictEqual(controller1CallCount, 2); // One from registration and one from resolve
+				assert.strictEqual(controller2CallCount, 2); // One from registration and one from resolve
 
 				// Now resolve only type-2
 				await viewModel.resolve('type-2');
@@ -599,9 +602,9 @@ suite('AgentSessions', () => {
 				// Should still have only one session
 				assert.strictEqual(viewModel.sessions.length, 1);
 				// Controller 1 should not be called again
-				assert.strictEqual(controller1CallCount, 1);
+				assert.strictEqual(controller1CallCount, 2);
 				// Controller 2 should be called again
-				assert.strictEqual(controller2CallCount, 2);
+				assert.strictEqual(controller2CallCount, 3);
 			});
 		});
 

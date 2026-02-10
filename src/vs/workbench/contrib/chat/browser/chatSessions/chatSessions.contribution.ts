@@ -5,7 +5,7 @@
 
 import { sep } from '../../../../../base/common/path.js';
 import { raceCancellationError } from '../../../../../base/common/async.js';
-import { CancellationToken } from '../../../../../base/common/cancellation.js';
+import { CancellationToken, CancellationTokenSource } from '../../../../../base/common/cancellation.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { AsyncEmitter, Emitter, Event } from '../../../../../base/common/event.js';
 import { combinedDisposable, Disposable, DisposableMap, DisposableStore, IDisposable, toDisposable } from '../../../../../base/common/lifecycle.js';
@@ -45,7 +45,7 @@ import { IViewsService } from '../../../../services/views/common/viewsService.js
 import { ChatViewId } from '../chat.js';
 import { ChatViewPane } from '../widgetHosts/viewPane/chatViewPane.js';
 import { AgentSessionProviders, getAgentSessionProviderName } from '../agentSessions/agentSessions.js';
-import { BugIndicatingError } from '../../../../../base/common/errors.js';
+import { BugIndicatingError, isCancellationError } from '../../../../../base/common/errors.js';
 import { IEditorGroupsService } from '../../../../services/editor/common/editorGroupsService.js';
 import { LocalChatSessionUri } from '../../common/model/chatUri.js';
 import { assertNever } from '../../../../../base/common/assert.js';
@@ -251,7 +251,7 @@ class ContributedChatSessionData extends Disposable {
 export class ChatSessionsService extends Disposable implements IChatSessionsService {
 	readonly _serviceBrand: undefined;
 
-	private readonly _itemControllers = new Map</* type */ string, IChatSessionItemController>();
+	private readonly _itemControllers = new Map</* type */ string, { readonly controller: IChatSessionItemController; readonly initialRefresh: Promise<void> }>();
 
 	private readonly _contributions: Map</* type */ string, { readonly contribution: IChatSessionsExtensionPoint; readonly extension: IRelaxedExtensionDescription }> = new Map();
 	private readonly _contributionDisposables = this._register(new DisposableMap</* type */ string>());
@@ -735,7 +735,7 @@ export class ChatSessionsService extends Disposable implements IChatSessionsServ
 		await this.doActivateChatSessionItemController(chatViewType);
 	}
 
-	private async doActivateChatSessionItemController(chatViewType: string): Promise<{ resolvedType: string; controller: IChatSessionItemController } | undefined> {
+	private async doActivateChatSessionItemController(chatViewType: string): Promise<boolean> {
 		await this._extensionService.whenInstalledExtensionsRegistered();
 		const resolvedType = this._resolveToPrimaryType(chatViewType);
 		if (resolvedType) {
@@ -744,17 +744,17 @@ export class ChatSessionsService extends Disposable implements IChatSessionsServ
 
 		const contribution = this._contributions.get(chatViewType)?.contribution;
 		if (contribution && !this._isContributionAvailable(contribution)) {
-			return undefined;
+			return false;
 		}
 
 		if (this._itemControllers.has(chatViewType)) {
-			return { resolvedType: chatViewType, controller: this._itemControllers.get(chatViewType)! };
+			return true;
 		}
 
 		await this._extensionService.activateByEvent(`onChatSession:${chatViewType}`);
 
 		const controller = this._itemControllers.get(chatViewType)!;
-		return controller && { resolvedType: chatViewType, controller };
+		return !!controller;
 	}
 
 	async canResolveChatSession(chatSessionResource: URI) {
@@ -773,67 +773,74 @@ export class ChatSessionsService extends Disposable implements IChatSessionsServ
 		return this._contentProviders.has(chatSessionResource.scheme);
 	}
 
-	public async getChatSessionItems(providersToResolve: readonly string[] | undefined, token: CancellationToken): Promise<Array<{ readonly chatSessionType: string; readonly items: readonly IChatSessionItem[] }>> {
-		const results: Array<{ readonly chatSessionType: string; readonly items: readonly IChatSessionItem[] }> = [];
-		const resolvedProviderTypes = new Set<string>();
-
-		// First, iterate over extension point contributions
-		for (const contrib of this.getAllChatSessionContributions()) {
+	private async tryActivateControllers(providersToResolve: readonly string[] | undefined): Promise<void> {
+		await Promise.all(this.getAllChatSessionContributions().map(async (contrib) => {
 			if (providersToResolve && !providersToResolve.includes(contrib.type)) {
-				continue; // skip: not considered for resolving
+				return; // skip: not considered for resolving
 			}
 
-			const controllerEntry = await this.doActivateChatSessionItemController(contrib.type);
-			if (!controllerEntry) {
+			if (!await this.doActivateChatSessionItemController(contrib.type)) {
 				// We requested this provider but it is not available
 				if (providersToResolve?.includes(contrib.type)) {
 					this._logService.trace(`[ChatSessionsService] No enabled provider found for chat session type ${contrib.type}`);
 				}
-				continue;
+			}
+		}));
+	}
+
+	public async getChatSessionItems(providersToResolve: readonly string[] | undefined, token: CancellationToken): Promise<Array<{ readonly chatSessionType: string; readonly items: readonly IChatSessionItem[] }>> {
+		// First, make sure contributed controller are active
+		await this.tryActivateControllers(providersToResolve);
+
+		// Then actually resolve items for all active controllers
+		const results: Array<{ readonly chatSessionType: string; readonly items: readonly IChatSessionItem[] }> = [];
+		await Promise.all(Array.from(this._itemControllers).map(async ([chatSessionType, controllerEntry]) => {
+			const resolvedType = this._resolveToPrimaryType(chatSessionType) ?? chatSessionType;
+			if (providersToResolve && !providersToResolve.includes(resolvedType)) {
+				return; // skip: not considered for resolving
 			}
 
 			try {
-				await raceCancellationError(controllerEntry.controller.refresh(token), token);
+				await controllerEntry.initialRefresh; // Ensure initial refresh is complete before accessing items
+
 				const providerSessions = controllerEntry.controller.items;
-				this._logService.trace(`[ChatSessionsService] Resolved ${providerSessions.length} sessions for provider ${controllerEntry.resolvedType}`);
-				results.push({ chatSessionType: controllerEntry.resolvedType, items: providerSessions });
-				resolvedProviderTypes.add(controllerEntry.resolvedType);
-			} catch (error) {
-				// Log error but continue with other providers
-				this._logService.error(`[ChatSessionsService] Failed to resolve sessions for provider ${controllerEntry.resolvedType}`, error);
-				continue;
+				this._logService.trace(`[ChatSessionsService] Resolved ${providerSessions.length} sessions for provider ${resolvedType}`);
+				results.push({ chatSessionType: resolvedType, items: providerSessions });
+			} catch (err) {
+				if (!isCancellationError(err)) {
+					// Log error but continue with other providers
+					this._logService.error(`[ChatSessionsService] Failed to resolve sessions for provider ${resolvedType}`, err);
+				}
 			}
-		}
-
-		// Also include registered items providers that don't have corresponding contributions
-		// (e.g., the local session provider which is built-in and not an extension contribution)
-		for (const [chatSessionType, controller] of this._itemControllers) {
-			if (resolvedProviderTypes.has(chatSessionType)) {
-				continue; // already resolved via contribution
-			}
-			if (providersToResolve && !providersToResolve.includes(chatSessionType)) {
-				continue; // skip: not considered for resolving
-			}
-
-			try {
-				await raceCancellationError(controller.refresh(token), token);
-				const providerSessions = controller.items;
-				this._logService.trace(`[ChatSessionsService] Resolved ${providerSessions.length} sessions for built-in provider ${chatSessionType}`);
-				results.push({ chatSessionType, items: providerSessions });
-			} catch (error) {
-				this._logService.error(`[ChatSessionsService] Failed to resolve sessions for built-in provider ${chatSessionType}`, error);
-				continue;
-			}
-		}
+		}));
 
 		return results;
 	}
 
+	public async refreshChatSessionItems(providersToResolve: readonly string[] | undefined, token: CancellationToken): Promise<void> {
+		await this.tryActivateControllers(providersToResolve);
+
+		await Promise.all(Array.from(this._itemControllers).map(async ([chatSessionType, controllerEntry]) => {
+			try {
+				await controllerEntry.controller.refresh(token);
+			} catch (err) {
+				if (!isCancellationError(err)) {
+					// Log error but continue with other providers
+					this._logService.error(`[ChatSessionsService] Failed to resolve sessions for provider ${chatSessionType}`, err);
+				}
+			}
+		}));
+	}
+
 	registerChatSessionItemController(chatSessionType: string, controller: IChatSessionItemController): IDisposable {
-		this._itemControllers.set(chatSessionType, controller);
+		const disposables = new DisposableStore();
+
+
+		// Register and trigger an initial refresh to populate the provider's items
+		const initialRefreshCts = disposables.add(new CancellationTokenSource());
+		this._itemControllers.set(chatSessionType, { controller, initialRefresh: controller.refresh(initialRefreshCts.token) });
 		this._onDidChangeItemsProviders.fire({ chatSessionType });
 
-		const disposables = new DisposableStore();
 		disposables.add(controller.onDidChangeChatSessionItems(() => {
 			this._onDidChangeSessionItems.fire({ chatSessionType });
 		}));
@@ -844,6 +851,7 @@ export class ChatSessionsService extends Disposable implements IChatSessionsServ
 
 		return {
 			dispose: () => {
+				initialRefreshCts.cancel();
 				disposables.dispose();
 
 				const controller = this._itemControllers.get(chatSessionType);

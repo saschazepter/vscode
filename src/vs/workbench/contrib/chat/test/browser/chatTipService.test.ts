@@ -158,6 +158,70 @@ suite('ChatTipService', () => {
 		assert.ok(tip, 'New request should get a tip after multiple old requests');
 	});
 
+	test('dismissTip excludes the dismissed tip and allows a new one', () => {
+		const service = createService();
+		const now = Date.now();
+
+		// Get a tip
+		const tip1 = service.getNextTip('request-1', now + 1000, contextKeyService);
+		assert.ok(tip1);
+
+		// Dismiss it
+		service.dismissTip();
+
+		// Next call should return a different tip (since the dismissed one is excluded)
+		const tip2 = service.getNextTip('request-1', now + 1000, contextKeyService);
+		if (tip2) {
+			assert.notStrictEqual(tip1.id, tip2.id, 'Dismissed tip should not be shown again');
+		}
+		// tip2 may be undefined if it was the only eligible tip — that's also valid
+	});
+
+	test('dismissTip fires onDidDismissTip event', () => {
+		const service = createService();
+		const now = Date.now();
+
+		service.getNextTip('request-1', now + 1000, contextKeyService);
+
+		let fired = false;
+		testDisposables.add(service.onDidDismissTip(() => { fired = true; }));
+		service.dismissTip();
+
+		assert.ok(fired, 'onDidDismissTip should fire');
+	});
+
+	test('disableTips fires onDidDisableTips event', () => {
+		const service = createService();
+		const now = Date.now();
+
+		service.getNextTip('request-1', now + 1000, contextKeyService);
+
+		let fired = false;
+		testDisposables.add(service.onDidDisableTips(() => { fired = true; }));
+		service.disableTips();
+
+		assert.ok(fired, 'onDidDisableTips should fire');
+	});
+
+	test('disableTips resets state so re-enabling works', () => {
+		const service = createService();
+		const now = Date.now();
+
+		// Show a tip
+		const tip1 = service.getNextTip('request-1', now + 1000, contextKeyService);
+		assert.ok(tip1);
+
+		// Disable tips
+		service.disableTips();
+
+		// Re-enable tips
+		configurationService.setUserConfiguration('chat.tips.enabled', true);
+
+		// Should be able to get a tip again on a new request
+		const tip2 = service.getNextTip('request-2', now + 2000, contextKeyService);
+		assert.ok(tip2, 'Should return a tip after disabling and re-enabling');
+	});
+
 	test('excludes tip.undoChanges when restore checkpoint command has been executed', () => {
 		const tip: ITipDefinition = {
 			id: 'tip.undoChanges',

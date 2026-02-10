@@ -41,7 +41,7 @@ export class MockChatSessionsService implements IChatSessionsService {
 	private readonly _onRequestNotifyExtension = new AsyncEmitter<IChatSessionOptionsWillNotifyExtensionEvent>();
 	readonly onRequestNotifyExtension = this._onRequestNotifyExtension.event;
 
-	private sessionItemControllers = new Map<string, IChatSessionItemController>();
+	private sessionItemControllers = new Map<string, { readonly controller: IChatSessionItemController; readonly initialRefresh: Promise<void> }>();
 	private contentProviders = new Map<string, IChatSessionContentProvider>();
 	private contributions: IChatSessionsExtensionPoint[] = [];
 	private optionGroups = new Map<string, IChatSessionProviderOptionGroup[]>();
@@ -67,7 +67,7 @@ export class MockChatSessionsService implements IChatSessionsService {
 	}
 
 	registerChatSessionItemController(chatSessionType: string, controller: IChatSessionItemController): IDisposable {
-		this.sessionItemControllers.set(chatSessionType, controller);
+		this.sessionItemControllers.set(chatSessionType, { controller, initialRefresh: controller.refresh(CancellationToken.None) });
 		return {
 			dispose: () => {
 				this.sessionItemControllers.delete(chatSessionType);
@@ -108,16 +108,25 @@ export class MockChatSessionsService implements IChatSessionsService {
 		return this.contributions.find(c => c.type === chatSessionType)?.inputPlaceholder;
 	}
 
-	getChatSessionItems(providersToResolve: readonly string[] | undefined, token: CancellationToken): Promise<Array<{ readonly chatSessionType: string; readonly items: readonly IChatSessionItem[] }>> {
+	getChatSessionItems(providerTypeFilter: readonly string[] | undefined, token: CancellationToken): Promise<Array<{ readonly chatSessionType: string; readonly items: readonly IChatSessionItem[] }>> {
 		return Promise.all(
 			Array.from(this.sessionItemControllers.entries())
-				.filter(([chatSessionType]) => !providersToResolve || providersToResolve.includes(chatSessionType))
-				.map(async ([chatSessionType, controller]) => {
-					await controller.refresh(token);
+				.filter(([chatSessionType]) => !providerTypeFilter || providerTypeFilter.includes(chatSessionType))
+				.map(async ([chatSessionType, controllerEntry]) => {
+					await controllerEntry.initialRefresh; // ensure initial refresh is done
 					return ({
 						chatSessionType: chatSessionType,
-						items: controller.items
+						items: controllerEntry.controller.items
 					});
+				}));
+	}
+
+	async refreshChatSessionItems(providerTypeFilter: readonly string[] | undefined, token: CancellationToken): Promise<void> {
+		await Promise.all(
+			Array.from(this.sessionItemControllers.entries())
+				.filter(([chatSessionType]) => !providerTypeFilter || providerTypeFilter.includes(chatSessionType))
+				.map(async ([_chatSessionType, controllerEntry]) => {
+					await controllerEntry.controller.refresh(token);
 				}));
 	}
 
