@@ -36,12 +36,9 @@ export function findGroup(accessor: ServicesAccessor, editor: EditorInputWithOpt
 }
 
 function handleGroupResult(group: IEditorGroup, editor: EditorInputWithOptions | IUntypedEditorInput, preferredGroup: PreferredGroup | undefined, editorGroupService: IEditorGroupsService): [IEditorGroup, EditorActivation | undefined] {
-
-	// When a modal editor part is active and the editor is not targeted
-	// at the modal, close the modal and open in the main part unless
-	// `preserveFocus` is set.
 	const modalEditorPart = editorGroupService.activeModalEditorPart;
 	if (modalEditorPart && preferredGroup !== MODAL_GROUP) {
+		// Only allow to open in modal group if MODAL_GROUP is explicitly requested
 		group = handleModalEditorPart(group, editor, modalEditorPart, editorGroupService);
 	}
 
@@ -57,7 +54,7 @@ function handleModalEditorPart(group: IEditorGroup, editor: EditorInputWithOptio
 		group = editorGroupService.mainPart.activeGroup;
 	}
 
-	// Close the modal editor part unless preserveFocus is set
+	// Try to close the modal editor part unless preserveFocus is set
 	if (!options?.preserveFocus) {
 		modalEditorPart.close();
 	}
