@@ -61,24 +61,43 @@ export function isReadOnlyHookSource(format: HookSourceFormat): boolean {
 }
 
 /**
+ * Result of parsing Copilot hooks file.
+ */
+export interface IParseCopilotHooksResult {
+	/**
+	 * The parsed hooks by type.
+	 */
+	readonly hooks: Map<HookType, { hooks: IHookCommand[]; originalId: string }>;
+	/**
+	 * Whether all hooks from this file were disabled via `disableAllHooks: true`.
+	 */
+	readonly disabledAllHooks: boolean;
+}
+
+/**
  * Parses hooks from a Copilot hooks .json file (our native format).
  */
 export function parseCopilotHooks(
 	json: unknown,
 	workspaceRootUri: URI | undefined,
 	userHome: string
-): Map<HookType, { hooks: IHookCommand[]; originalId: string }> {
+): IParseCopilotHooksResult {
 	const result = new Map<HookType, { hooks: IHookCommand[]; originalId: string }>();
 
 	if (!json || typeof json !== 'object') {
-		return result;
+		return { hooks: result, disabledAllHooks: false };
 	}
 
 	const root = json as Record<string, unknown>;
 
+	// Check for disableAllHooks property at the top level
+	if (root.disableAllHooks === true) {
+		return { hooks: result, disabledAllHooks: true };
+	}
+
 	const hooks = root.hooks;
 	if (!hooks || typeof hooks !== 'object') {
-		return result;
+		return { hooks: result, disabledAllHooks: false };
 	}
 
 	const hooksObj = hooks as Record<string, unknown>;
@@ -108,7 +127,19 @@ export function parseCopilotHooks(
 		}
 	}
 
-	return result;
+	return { hooks: result, disabledAllHooks: false };
+}
+
+/**
+ * Result of parsing hooks from a file.
+ */
+export interface IParseHooksFromFileResult {
+	readonly format: HookSourceFormat;
+	readonly hooks: Map<HookType, { hooks: IHookCommand[]; originalId: string }>;
+	/**
+	 * Whether all hooks from this file were disabled via `disableAllHooks: true` (Claude format only).
+	 */
+	readonly disabledAllHooks: boolean;
 }
 
 /**
@@ -119,22 +150,29 @@ export function parseHooksFromFile(
 	json: unknown,
 	workspaceRootUri: URI | undefined,
 	userHome: string
-): { format: HookSourceFormat; hooks: Map<HookType, { hooks: IHookCommand[]; originalId: string }> } {
+): IParseHooksFromFileResult {
 	const format = getHookSourceFormat(fileUri);
 
 	let hooks: Map<HookType, { hooks: IHookCommand[]; originalId: string }>;
+	let disabledAllHooks = false;
 
 	switch (format) {
-		case HookSourceFormat.Claude:
-			hooks = parseClaudeHooks(json, workspaceRootUri, userHome);
+		case HookSourceFormat.Claude: {
+			const result = parseClaudeHooks(json, workspaceRootUri, userHome);
+			hooks = result.hooks;
+			disabledAllHooks = result.disabledAllHooks;
 			break;
+		}
 		case HookSourceFormat.Copilot:
-		default:
-			hooks = parseCopilotHooks(json, workspaceRootUri, userHome);
+		default: {
+			const result = parseCopilotHooks(json, workspaceRootUri, userHome);
+			hooks = result.hooks;
+			disabledAllHooks = result.disabledAllHooks;
 			break;
+		}
 	}
 
-	return { format, hooks };
+	return { format, hooks, disabledAllHooks };
 }
 
 /**

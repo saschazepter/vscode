@@ -184,6 +184,11 @@ export const hookFileSchema: IJSONSchema = {
 	additionalProperties: true,
 	required: ['hooks'],
 	properties: {
+		disableAllHooks: {
+			type: 'boolean',
+			default: false,
+			description: nls.localize('hookFile.disableAllHooks', 'When set to true, all hooks defined in this file are disabled.')
+		},
 		hooks: {
 			type: 'object',
 			description: nls.localize('hookFile.hooks', 'Hook definitions organized by type.'),

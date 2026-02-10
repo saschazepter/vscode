@@ -56,9 +56,10 @@ suite('HookClaudeCompat', () => {
 
 				const result = parseClaudeHooks(json, workspaceRoot, userHome);
 
-				assert.strictEqual(result.size, 1);
-				assert.ok(result.has(HookType.PreToolUse));
-				const entry = result.get(HookType.PreToolUse)!;
+				assert.strictEqual(result.disabledAllHooks, false);
+				assert.strictEqual(result.hooks.size, 1);
+				assert.ok(result.hooks.has(HookType.PreToolUse));
+				const entry = result.hooks.get(HookType.PreToolUse)!;
 				assert.strictEqual(entry.originalId, 'PreToolUse');
 				assert.strictEqual(entry.hooks.length, 1);
 				assert.strictEqual(entry.hooks[0].command, 'echo "pre-tool"');
@@ -74,9 +75,9 @@ suite('HookClaudeCompat', () => {
 
 				const result = parseClaudeHooks(json, workspaceRoot, userHome);
 
-				assert.strictEqual(result.size, 2);
-				assert.ok(result.has(HookType.SessionStart));
-				assert.ok(result.has(HookType.Stop));
+				assert.strictEqual(result.hooks.size, 2);
+				assert.ok(result.hooks.has(HookType.SessionStart));
+				assert.ok(result.hooks.has(HookType.Stop));
 			});
 
 			test('parses multiple commands for same hook type', () => {
@@ -91,10 +92,59 @@ suite('HookClaudeCompat', () => {
 
 				const result = parseClaudeHooks(json, workspaceRoot, userHome);
 
-				const entry = result.get(HookType.PreToolUse)!;
+				const entry = result.hooks.get(HookType.PreToolUse)!;
 				assert.strictEqual(entry.hooks.length, 2);
 				assert.strictEqual(entry.hooks[0].command, 'echo "first"');
 				assert.strictEqual(entry.hooks[1].command, 'echo "second"');
+			});
+		});
+
+		suite('disableAllHooks', () => {
+			test('returns empty hooks and disabledAllHooks=true when disableAllHooks is true', () => {
+				const json = {
+					disableAllHooks: true,
+					hooks: {
+						PreToolUse: [
+							{ type: 'command', command: 'echo "should be ignored"' }
+						]
+					}
+				};
+
+				const result = parseClaudeHooks(json, workspaceRoot, userHome);
+
+				assert.strictEqual(result.disabledAllHooks, true);
+				assert.strictEqual(result.hooks.size, 0);
+			});
+
+			test('parses hooks normally when disableAllHooks is false', () => {
+				const json = {
+					disableAllHooks: false,
+					hooks: {
+						PreToolUse: [
+							{ type: 'command', command: 'echo "should be parsed"' }
+						]
+					}
+				};
+
+				const result = parseClaudeHooks(json, workspaceRoot, userHome);
+
+				assert.strictEqual(result.disabledAllHooks, false);
+				assert.strictEqual(result.hooks.size, 1);
+			});
+
+			test('parses hooks normally when disableAllHooks is not present', () => {
+				const json = {
+					hooks: {
+						PreToolUse: [
+							{ type: 'command', command: 'echo "should be parsed"' }
+						]
+					}
+				};
+
+				const result = parseClaudeHooks(json, workspaceRoot, userHome);
+
+				assert.strictEqual(result.disabledAllHooks, false);
+				assert.strictEqual(result.hooks.size, 1);
 			});
 		});
 
@@ -115,7 +165,7 @@ suite('HookClaudeCompat', () => {
 
 				const result = parseClaudeHooks(json, workspaceRoot, userHome);
 
-				const entry = result.get(HookType.PreToolUse)!;
+				const entry = result.hooks.get(HookType.PreToolUse)!;
 				assert.strictEqual(entry.hooks.length, 1);
 				assert.strictEqual(entry.hooks[0].command, 'echo "bash hook"');
 			});
@@ -137,7 +187,7 @@ suite('HookClaudeCompat', () => {
 
 				const result = parseClaudeHooks(json, workspaceRoot, userHome);
 
-				const entry = result.get(HookType.PreToolUse)!;
+				const entry = result.hooks.get(HookType.PreToolUse)!;
 				assert.strictEqual(entry.hooks.length, 2);
 			});
 
@@ -159,7 +209,7 @@ suite('HookClaudeCompat', () => {
 
 				const result = parseClaudeHooks(json, workspaceRoot, userHome);
 
-				const entry = result.get(HookType.PreToolUse)!;
+				const entry = result.hooks.get(HookType.PreToolUse)!;
 				assert.strictEqual(entry.hooks.length, 2);
 				assert.strictEqual(entry.hooks[0].command, 'echo "bash"');
 				assert.strictEqual(entry.hooks[1].command, 'echo "write"');
@@ -180,7 +230,7 @@ suite('HookClaudeCompat', () => {
 
 				const result = parseClaudeHooks(json, workspaceRoot, userHome);
 
-				const entry = result.get(HookType.PreToolUse)!;
+				const entry = result.hooks.get(HookType.PreToolUse)!;
 				assert.strictEqual(entry.hooks.length, 2);
 				assert.strictEqual(entry.hooks[0].command, 'echo "direct"');
 				assert.strictEqual(entry.hooks[1].command, 'echo "nested"');
@@ -199,7 +249,7 @@ suite('HookClaudeCompat', () => {
 
 				const result = parseClaudeHooks(json, workspaceRoot, userHome);
 
-				const entry = result.get(HookType.PreToolUse)!;
+				const entry = result.hooks.get(HookType.PreToolUse)!;
 				assert.strictEqual(entry.hooks.length, 1);
 				assert.strictEqual(entry.hooks[0].command, 'echo "no type"');
 			});
@@ -208,27 +258,32 @@ suite('HookClaudeCompat', () => {
 		suite('invalid inputs', () => {
 			test('returns empty map for null json', () => {
 				const result = parseClaudeHooks(null, workspaceRoot, userHome);
-				assert.strictEqual(result.size, 0);
+				assert.strictEqual(result.hooks.size, 0);
+				assert.strictEqual(result.disabledAllHooks, false);
 			});
 
 			test('returns empty map for undefined json', () => {
 				const result = parseClaudeHooks(undefined, workspaceRoot, userHome);
-				assert.strictEqual(result.size, 0);
+				assert.strictEqual(result.hooks.size, 0);
+				assert.strictEqual(result.disabledAllHooks, false);
 			});
 
 			test('returns empty map for non-object json', () => {
 				const result = parseClaudeHooks('string', workspaceRoot, userHome);
-				assert.strictEqual(result.size, 0);
+				assert.strictEqual(result.hooks.size, 0);
+				assert.strictEqual(result.disabledAllHooks, false);
 			});
 
 			test('returns empty map for missing hooks property', () => {
 				const result = parseClaudeHooks({}, workspaceRoot, userHome);
-				assert.strictEqual(result.size, 0);
+				assert.strictEqual(result.hooks.size, 0);
+				assert.strictEqual(result.disabledAllHooks, false);
 			});
 
 			test('returns empty map for non-object hooks property', () => {
 				const result = parseClaudeHooks({ hooks: 'invalid' }, workspaceRoot, userHome);
-				assert.strictEqual(result.size, 0);
+				assert.strictEqual(result.hooks.size, 0);
+				assert.strictEqual(result.disabledAllHooks, false);
 			});
 
 			test('skips unknown hook types', () => {
@@ -241,8 +296,8 @@ suite('HookClaudeCompat', () => {
 
 				const result = parseClaudeHooks(json, workspaceRoot, userHome);
 
-				assert.strictEqual(result.size, 1);
-				assert.ok(result.has(HookType.PreToolUse));
+				assert.strictEqual(result.hooks.size, 1);
+				assert.ok(result.hooks.has(HookType.PreToolUse));
 			});
 
 			test('skips non-array hook entries', () => {
@@ -254,7 +309,7 @@ suite('HookClaudeCompat', () => {
 
 				const result = parseClaudeHooks(json, workspaceRoot, userHome);
 
-				assert.strictEqual(result.size, 0);
+				assert.strictEqual(result.hooks.size, 0);
 			});
 
 			test('skips invalid command entries', () => {
@@ -270,7 +325,7 @@ suite('HookClaudeCompat', () => {
 
 				const result = parseClaudeHooks(json, workspaceRoot, userHome);
 
-				const entry = result.get(HookType.PreToolUse)!;
+				const entry = result.hooks.get(HookType.PreToolUse)!;
 				assert.strictEqual(entry.hooks.length, 1);
 				assert.strictEqual(entry.hooks[0].command, 'valid');
 			});
@@ -287,7 +342,7 @@ suite('HookClaudeCompat', () => {
 
 				const result = parseClaudeHooks(json, workspaceRoot, userHome);
 
-				const entry = result.get(HookType.PreToolUse)!;
+				const entry = result.hooks.get(HookType.PreToolUse)!;
 				assert.strictEqual(entry.hooks.length, 1);
 				assert.strictEqual(entry.hooks[0].command, 'valid');
 			});
@@ -305,7 +360,7 @@ suite('HookClaudeCompat', () => {
 
 				const result = parseClaudeHooks(json, workspaceRoot, userHome);
 
-				const entry = result.get(HookType.PreToolUse)!;
+				const entry = result.hooks.get(HookType.PreToolUse)!;
 				assert.deepStrictEqual(entry.hooks[0].cwd, URI.file('/workspace/src'));
 			});
 
@@ -320,7 +375,7 @@ suite('HookClaudeCompat', () => {
 
 				const result = parseClaudeHooks(json, workspaceRoot, userHome);
 
-				const entry = result.get(HookType.PreToolUse)!;
+				const entry = result.hooks.get(HookType.PreToolUse)!;
 				assert.deepStrictEqual(entry.hooks[0].env, { NODE_ENV: 'production' });
 			});
 
@@ -335,7 +390,7 @@ suite('HookClaudeCompat', () => {
 
 				const result = parseClaudeHooks(json, workspaceRoot, userHome);
 
-				const entry = result.get(HookType.PreToolUse)!;
+				const entry = result.hooks.get(HookType.PreToolUse)!;
 				assert.strictEqual(entry.hooks[0].timeoutSec, 60);
 			});
 		});

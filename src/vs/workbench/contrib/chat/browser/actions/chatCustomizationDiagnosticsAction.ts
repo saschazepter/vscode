@@ -442,6 +442,8 @@ function getSkipReasonMessage(skipReason: PromptFileSkipReason | undefined, erro
 			return errorMessage ?? nls.localize('status.parseError', 'Parse error');
 		case 'disabled':
 			return nls.localize('status.typeDisabled', 'Disabled');
+		case 'all-hooks-disabled':
+			return nls.localize('status.allHooksDisabled', 'All hooks disabled via disableAllHooks');
 		default:
 			return errorMessage ?? nls.localize('status.unknownError', 'Unknown error');
 	}

@@ -1033,7 +1033,13 @@ export class PromptsService extends Disposable implements IPromptsService {
 				const json = JSON.parse(content.value.toString());
 
 				// Use format-aware parsing that handles Copilot, Claude, and Cursor formats
-				const { format, hooks } = parseHooksFromFile(hookFile.uri, json, workspaceRootUri, userHome);
+				const { format, hooks, disabledAllHooks } = parseHooksFromFile(hookFile.uri, json, workspaceRootUri, userHome);
+
+				// Skip files that have all hooks disabled
+				if (disabledAllHooks) {
+					this.logger.trace(`[PromptsService] Skipping hook file with disableAllHooks: ${hookFile.uri}`);
+					continue;
+				}
 
 				for (const [hookType, { hooks: commands }] of hooks) {
 					for (const command of commands) {
@@ -1304,6 +1310,14 @@ export class PromptsService extends Disposable implements IPromptsService {
 	private async getHookDiscoveryInfo(token: CancellationToken): Promise<IPromptDiscoveryInfo> {
 		const files: IPromptFileDiscoveryResult[] = [];
 
+		// Get user home for tilde expansion
+		const userHomeUri = await this.pathService.userHome();
+		const userHome = userHomeUri.scheme === Schemas.file ? userHomeUri.fsPath : userHomeUri.path;
+
+		// Get workspace root for resolving relative cwd paths
+		const workspaceFolder = this.workspaceService.getWorkspace().folders[0];
+		const workspaceRootUri = workspaceFolder?.uri;
+
 		const hookFiles = await this.listPromptFiles(PromptsType.hook, token);
 		for (const promptPath of hookFiles) {
 			const uri = promptPath.uri;
@@ -1324,6 +1338,21 @@ export class PromptsService extends Disposable implements IPromptsService {
 						status: 'skipped',
 						skipReason: 'parse-error',
 						errorMessage: 'Invalid hooks file: must be a JSON object',
+						name,
+						extensionId
+					});
+					continue;
+				}
+
+				// Use format-aware parsing to check for disabledAllHooks
+				const { disabledAllHooks } = parseHooksFromFile(uri, json, workspaceRootUri, userHome);
+
+				if (disabledAllHooks) {
+					files.push({
+						uri,
+						storage,
+						status: 'skipped',
+						skipReason: 'all-hooks-disabled',
 						name,
 						extensionId
 					});
