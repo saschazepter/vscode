@@ -479,6 +479,39 @@ suite('ChatTipService', () => {
 		assert.strictEqual(tracker2.isExcluded(tip), true, 'New tracker should read persisted mode exclusion from workspace storage');
 	});
 
+	test('resetSession allows tips in a new conversation', () => {
+		const service = createService();
+		const now = Date.now();
+
+		// Show a tip in the first conversation
+		const tip1 = service.getNextTip('request-1', now + 1000, contextKeyService);
+		assert.ok(tip1, 'First request should get a tip');
+
+		// Second request — no tip (one per session)
+		const tip2 = service.getNextTip('request-2', now + 2000, contextKeyService);
+		assert.strictEqual(tip2, undefined, 'Second request should not get a tip');
+
+		// Start a new conversation
+		service.resetSession();
+
+		// New request after reset should get a tip
+		const tip3 = service.getNextTip('request-3', Date.now() + 1000, contextKeyService);
+		assert.ok(tip3, 'First request after resetSession should get a tip');
+	});
+
+	test('chatResponse tip shows regardless of welcome tip', () => {
+		const service = createService();
+		const now = Date.now();
+
+		// Show a welcome tip (simulating the getting-started view)
+		const welcomeTip = service.getWelcomeTip(contextKeyService);
+		assert.ok(welcomeTip, 'Welcome tip should be shown');
+
+		// First new request should still get a chatResponse tip
+		const tip = service.getNextTip('request-1', now + 1000, contextKeyService);
+		assert.ok(tip, 'ChatResponse tip should show even when welcome tip was shown');
+	});
+
 	test('excludes tip when tracked tool has been invoked', () => {
 		const mockToolsService = createMockToolsService();
 		const tip: ITipDefinition = {

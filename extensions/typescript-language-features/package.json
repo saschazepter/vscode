@@ -209,7 +209,7 @@
           "js/ts.referencesCodeLens.showOnAllFunctions": {
             "type": "boolean",
             "default": false,
-            "description": "%configuration.referencesCodeLens.showOnAllFunctions%",
+            "markdownDescription": "%configuration.referencesCodeLens.showOnAllFunctions%",
             "scope": "language-overridable",
             "tags": [
               "JavaScript",
@@ -219,14 +219,14 @@
           "javascript.referencesCodeLens.showOnAllFunctions": {
             "type": "boolean",
             "default": false,
-            "description": "%configuration.referencesCodeLens.showOnAllFunctions%",
+            "markdownDescription": "%configuration.referencesCodeLens.showOnAllFunctions%",
             "markdownDeprecationMessage": "%configuration.referencesCodeLens.showOnAllFunctions.unifiedDeprecationMessage%",
             "scope": "window"
           },
           "typescript.referencesCodeLens.showOnAllFunctions": {
             "type": "boolean",
             "default": false,
-            "description": "%configuration.referencesCodeLens.showOnAllFunctions%",
+            "markdownDescription": "%configuration.referencesCodeLens.showOnAllFunctions%",
             "markdownDeprecationMessage": "%configuration.referencesCodeLens.showOnAllFunctions.unifiedDeprecationMessage%",
             "scope": "window"
           },
@@ -236,7 +236,6 @@
             "description": "%configuration.implementationsCodeLens.enabled%",
             "scope": "language-overridable",
             "tags": [
-              "JavaScript",
               "TypeScript"
             ]
           },
@@ -250,34 +249,32 @@
           "js/ts.implementationsCodeLens.showOnInterfaceMethods": {
             "type": "boolean",
             "default": false,
-            "description": "%configuration.implementationsCodeLens.showOnInterfaceMethods%",
+            "markdownDescription": "%configuration.implementationsCodeLens.showOnInterfaceMethods%",
             "scope": "language-overridable",
             "tags": [
-              "JavaScript",
               "TypeScript"
             ]
           },
           "typescript.implementationsCodeLens.showOnInterfaceMethods": {
             "type": "boolean",
             "default": false,
-            "description": "%configuration.implementationsCodeLens.showOnInterfaceMethods%",
+            "markdownDescription": "%configuration.implementationsCodeLens.showOnInterfaceMethods%",
             "markdownDeprecationMessage": "%configuration.implementationsCodeLens.showOnInterfaceMethods.unifiedDeprecationMessage%",
             "scope": "window"
           },
           "js/ts.implementationsCodeLens.showOnAllClassMethods": {
             "type": "boolean",
             "default": false,
-            "description": "%configuration.implementationsCodeLens.showOnAllClassMethods%",
+            "markdownDescription": "%configuration.implementationsCodeLens.showOnAllClassMethods%",
             "scope": "language-overridable",
             "tags": [
-              "JavaScript",
               "TypeScript"
             ]
           },
           "typescript.implementationsCodeLens.showOnAllClassMethods": {
             "type": "boolean",
             "default": false,
-            "description": "%configuration.implementationsCodeLens.showOnAllClassMethods%",
+            "markdownDescription": "%configuration.implementationsCodeLens.showOnAllClassMethods%",
             "markdownDeprecationMessage": "%configuration.implementationsCodeLens.showOnAllClassMethods.unifiedDeprecationMessage%",
             "scope": "window"
           },

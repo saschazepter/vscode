@@ -43,13 +43,27 @@ export interface IChatTipService {
 
 	/**
 	 * Gets a tip to show for a request, or undefined if a tip has already been shown this session.
-	 * Only one tip is shown per VS Code session (resets on reload).
-	 * Tips are only shown for requests created after the service was instantiated.
+	 * Only one tip is shown per conversation session (resets when switching conversations).
+	 * Tips are suppressed if a welcome tip was already shown in this session.
+	 * Tips are only shown for requests created after the current session started.
 	 * @param requestId The unique ID of the request (used for stable rerenders).
 	 * @param requestTimestamp The timestamp when the request was created.
 	 * @param contextKeyService The context key service to evaluate tip eligibility.
 	 */
 	getNextTip(requestId: string, requestTimestamp: number, contextKeyService: IContextKeyService): IChatTip | undefined;
+
+	/**
+	 * Gets a tip to show on the welcome/getting-started view.
+	 * Unlike {@link getNextTip}, this does not require a request and skips request-timestamp checks.
+	 * Returns the same tip on repeated calls for stable rerenders.
+	 */
+	getWelcomeTip(contextKeyService: IContextKeyService): IChatTip | undefined;
+
+	/**
+	 * Resets tip state for a new conversation.
+	 * Call this when the chat widget binds to a new model.
+	 */
+	resetSession(): void;
 
 	/**
 	 * Dismisses the current tip and allows a new one to be picked for the same request.
@@ -133,7 +147,7 @@ const TIP_CATALOG: ITipDefinition[] = [
 	},
 	{
 		id: 'tip.undoChanges',
-		message: localize('tip.undoChanges', "Tip: You can undo Copilot's changes to any point by clicking Restore Checkpoint."),
+		message: localize('tip.undoChanges', "Tip: You can undo chat's changes to any point by clicking Restore Checkpoint."),
 		when: ContextKeyExpr.or(
 			ChatContextKeys.chatModeKind.isEqualTo(ChatModeKind.Agent),
 			ChatContextKeys.chatModeKind.isEqualTo(ChatModeKind.Edit),
@@ -142,7 +156,7 @@ const TIP_CATALOG: ITipDefinition[] = [
 	},
 	{
 		id: 'tip.customInstructions',
-		message: localize('tip.customInstructions', "Tip: [Generate workspace instructions](command:workbench.action.chat.generateInstructions) so Copilot always has the context it needs when starting a task."),
+		message: localize('tip.customInstructions', "Tip: [Generate workspace instructions](command:workbench.action.chat.generateInstructions) so chat always has the context it needs when starting a task."),
 		enabledCommands: ['workbench.action.chat.generateInstructions'],
 		excludeWhenPromptFilesExist: { promptType: PromptsType.instructions, agentFileType: AgentFileType.copilotInstructionsMd, excludeUntilChecked: true },
 	},
@@ -468,16 +482,17 @@ export class ChatTipService extends Disposable implements IChatTipService {
 	readonly onDidDisableTips = this._onDidDisableTips.event;
 
 	/**
-	 * Timestamp when this service was instantiated.
+	 * Timestamp when the current session started.
 	 * Used to only show tips for requests created after this time.
+	 * Resets on each {@link resetSession} call.
 	 */
-	private readonly _createdAt = Date.now();
+	private _sessionStartedAt = Date.now();
 
 	/**
-	 * Whether a tip has already been shown in this window session.
-	 * Only one tip is shown per session.
+	 * Whether a chatResponse tip has already been shown in this conversation
+	 * session. Only one response tip is shown per session.
 	 */
-	private _hasShownTip = false;
+	private _hasShownRequestTip = false;
 
 	/**
 	 * The request ID that was assigned a tip (for stable rerenders).
@@ -490,6 +505,7 @@ export class ChatTipService extends Disposable implements IChatTipService {
 	private _shownTip: ITipDefinition | undefined;
 
 	private static readonly _DISMISSED_TIP_KEY = 'chat.tip.dismissed';
+	private static readonly _LAST_TIP_ID_KEY = 'chat.tip.lastTipId';
 	private readonly _tracker: TipEligibilityTracker;
 
 	constructor(
@@ -503,13 +519,20 @@ export class ChatTipService extends Disposable implements IChatTipService {
 		this._tracker = this._register(instantiationService.createInstance(TipEligibilityTracker, TIP_CATALOG));
 	}
 
+	resetSession(): void {
+		this._hasShownRequestTip = false;
+		this._shownTip = undefined;
+		this._tipRequestId = undefined;
+		this._sessionStartedAt = Date.now();
+	}
+
 	dismissTip(): void {
 		if (this._shownTip) {
 			const dismissed = this._getDismissedTipIds();
 			dismissed.push(this._shownTip.id);
 			this._storageService.store(ChatTipService._DISMISSED_TIP_KEY, JSON.stringify(dismissed), StorageScope.WORKSPACE, StorageTarget.MACHINE);
 		}
-		this._hasShownTip = false;
+		this._hasShownRequestTip = false;
 		this._shownTip = undefined;
 		this._tipRequestId = undefined;
 		this._onDidDismissTip.fire();
@@ -523,14 +546,25 @@ export class ChatTipService extends Disposable implements IChatTipService {
 		try {
 			const parsed = JSON.parse(raw);
 			this._logService.debug('#ChatTips dismissed:', parsed);
-			return Array.isArray(parsed) ? parsed : [];
+			if (!Array.isArray(parsed)) {
+				return [];
+			}
+
+			// Safety valve: if every known tip has been dismissed (for example, due to a
+			// past bug that dismissed the current tip on every new session), treat this
+			// as "no tips dismissed" so the feature can recover.
+			if (parsed.length >= TIP_CATALOG.length) {
+				return [];
+			}
+
+			return parsed;
 		} catch {
 			return [];
 		}
 	}
 
 	async disableTips(): Promise<void> {
-		this._hasShownTip = false;
+		this._hasShownRequestTip = false;
 		this._shownTip = undefined;
 		this._tipRequestId = undefined;
 		await this._configurationService.updateValue('chat.tips.enabled', false);
@@ -554,33 +588,89 @@ export class ChatTipService extends Disposable implements IChatTipService {
 		}
 
 		// Only show one tip per session
-		if (this._hasShownTip) {
+		if (this._hasShownRequestTip) {
 			return undefined;
 		}
 
-		// Only show tips for requests created after the service was instantiated
-		// This prevents showing tips for old requests being re-rendered after reload
-		if (requestTimestamp < this._createdAt) {
+		// Only show tips for requests created after the current session started.
+		// This prevents showing tips for old requests being re-rendered.
+		if (requestTimestamp < this._sessionStartedAt) {
 			return undefined;
 		}
 
-		// Find eligible tips (excluding dismissed ones)
-		const dismissedIds = new Set(this._getDismissedTipIds());
-		const eligibleTips = TIP_CATALOG.filter(tip => !dismissedIds.has(tip.id) && this._isEligible(tip, contextKeyService));
-		// Record the current mode for future eligibility decisions
+		return this._pickTip(requestId, contextKeyService);
+	}
+
+	getWelcomeTip(contextKeyService: IContextKeyService): IChatTip | undefined {
+		// Check if tips are enabled
+		if (!this._configurationService.getValue<boolean>('chat.tips.enabled')) {
+			return undefined;
+		}
+
+		// Only show tips for Copilot
+		if (!this._isCopilotEnabled()) {
+			return undefined;
+		}
+
+		// Return the already-shown tip for stable rerenders
+		if (this._tipRequestId === 'welcome' && this._shownTip) {
+			return this._createTip(this._shownTip);
+		}
+
+		const tip = this._pickTip('welcome', contextKeyService);
+
+		return tip;
+	}
+
+	private _pickTip(sourceId: string, contextKeyService: IContextKeyService): IChatTip | undefined {
+		// Record the current mode for future eligibility decisions.
 		this._tracker.recordCurrentMode(contextKeyService);
 
-		if (eligibleTips.length === 0) {
-			return undefined;
+		const dismissedIds = new Set(this._getDismissedTipIds());
+		let selectedTip: ITipDefinition | undefined;
+
+		// Determine where to start in the catalog based on the last-shown tip.
+		const lastTipId = this._storageService.get(ChatTipService._LAST_TIP_ID_KEY, StorageScope.WORKSPACE);
+		const lastCatalogIndex = lastTipId ? TIP_CATALOG.findIndex(tip => tip.id === lastTipId) : -1;
+		const startIndex = lastCatalogIndex === -1 ? 0 : (lastCatalogIndex + 1) % TIP_CATALOG.length;
+
+		// Pass 1: walk TIP_CATALOG in a ring, picking the first tip that is both
+		// not dismissed and eligible for the current context.
+		for (let i = 0; i < TIP_CATALOG.length; i++) {
+			const idx = (startIndex + i) % TIP_CATALOG.length;
+			const candidate = TIP_CATALOG[idx];
+			if (!dismissedIds.has(candidate.id) && this._isEligible(candidate, contextKeyService)) {
+				selectedTip = candidate;
+				break;
+			}
 		}
 
-		// Pick a random tip from eligible tips
-		const randomIndex = Math.floor(Math.random() * eligibleTips.length);
-		const selectedTip = eligibleTips[randomIndex];
+		// Pass 2: if everything was ineligible (e.g., user has already done all
+		// the suggested actions), still advance through the catalog but only skip
+		// tips that were explicitly dismissed.
+		if (!selectedTip) {
+			for (let i = 0; i < TIP_CATALOG.length; i++) {
+				const idx = (startIndex + i) % TIP_CATALOG.length;
+				const candidate = TIP_CATALOG[idx];
+				if (!dismissedIds.has(candidate.id)) {
+					selectedTip = candidate;
+					break;
+				}
+			}
+		}
+
+		// Final fallback: if even that fails (all tips dismissed), stick with the
+		// catalog order so rotation still progresses.
+		if (!selectedTip) {
+			selectedTip = TIP_CATALOG[startIndex];
+		}
+
+		// Persist the selected tip id so the next use advances to the following one.
+		this._storageService.store(ChatTipService._LAST_TIP_ID_KEY, selectedTip.id, StorageScope.WORKSPACE, StorageTarget.MACHINE);
 
 		// Record that we've shown a tip this session
-		this._hasShownTip = true;
-		this._tipRequestId = requestId;
+		this._hasShownRequestTip = sourceId !== 'welcome';
+		this._tipRequestId = sourceId;
 		this._shownTip = selectedTip;
 
 		return this._createTip(selectedTip);
