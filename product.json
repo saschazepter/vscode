@@ -153,5 +153,10 @@
 		"github-enterprise": [
 			"GitHub.copilot-chat"
 		]
+	},
+	"configurationDefaults": {
+		"workbench.colorTheme": "Experimental Dark",
+		"workbench.preferredDarkColorTheme": "Experimental Dark",
+		"workbench.preferredLightColorTheme": "Experimental Light"
 	}
 }

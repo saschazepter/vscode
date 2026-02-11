@@ -59,6 +59,9 @@ import { BrowserSocketFactory } from '../../platform/remote/browser/browserSocke
 import { RemoteSocketFactoryService, IRemoteSocketFactoryService } from '../../platform/remote/common/remoteSocketFactoryService.js';
 import { ElectronRemoteResourceLoader } from '../../platform/remote/electron-browser/electronRemoteResourceLoader.js';
 import { IConfigurationService } from '../../platform/configuration/common/configuration.js';
+import { Extensions as ConfigurationExtensions, IConfigurationRegistry } from '../../platform/configuration/common/configurationRegistry.js';
+import { Registry } from '../../platform/registry/common/platform.js';
+import { IStringDictionary } from '../../base/common/collections.js';
 import { applyZoom } from '../../platform/window/electron-browser/window.js';
 import { mainWindow } from '../../base/browser/window.js';
 import { IDefaultAccountService } from '../../platform/defaultAccount/common/defaultAccount.js';
@@ -191,6 +194,12 @@ export class DesktopMain extends Disposable {
 		// Product
 		const productService: IProductService = { _serviceBrand: undefined, ...product };
 		serviceCollection.set(IProductService, productService);
+
+		// Product Configuration Defaults
+		if (productService.configurationDefaults) {
+			const configurationRegistry = Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration);
+			configurationRegistry.registerDefaultConfigurations([{ overrides: productService.configurationDefaults as IStringDictionary<IStringDictionary<unknown>> }]);
+		}
 
 		// Environment
 		const environmentService = new NativeWorkbenchEnvironmentService(this.configuration, productService);
