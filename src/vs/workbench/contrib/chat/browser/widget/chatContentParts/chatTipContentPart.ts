@@ -113,16 +113,35 @@ export class ChatTipContentPart extends Disposable {
 		this.domNode.setAttribute('aria-label', ariaLabel);
 		status(ariaLabel);
 
-		// Listen for the tip's command being executed to trigger confetti
+		// Listen for clicks on the tip's command links to trigger confetti
+		this._commandListener.clear();
 		if (tip.enabledCommands && tip.enabledCommands.length > 0) {
 			const commandSet = new Set(tip.enabledCommands);
-			this._commandListener.value = this._commandService.onDidExecuteCommand(e => {
-				if (commandSet.has(e.commandId) && this._configurationService.getValue<boolean>('chat.confettiOnThumbsUp') && !this._accessibilityService.isMotionReduced()) {
-					triggerConfetti(this.domNode);
+			this._commandListener.value = dom.addDisposableListener(markdownContent.element, dom.EventType.CLICK, e => {
+				const mouseEvent = new StandardMouseEvent(e);
+				if (!mouseEvent.leftButton) {
+					return;
+				}
+
+				let target = e.target as HTMLElement | null;
+				while (target && target !== markdownContent.element) {
+					if (target.tagName === 'A') {
+						const anchor = target as HTMLAnchorElement;
+						const href = anchor.getAttribute('href') ?? anchor.href;
+						if (!href || !href.startsWith('command:')) {
+							return;
+						}
+
+						const commandUri = href.slice('command:'.length);
+						const commandId = commandUri.split('?')[0];
+						if (commandSet.has(commandId) && this._configurationService.getValue<boolean>('chat.confettiOnThumbsUp') && !this._accessibilityService.isMotionReduced()) {
+							triggerConfetti(this.domNode);
+						}
+						return;
+					}
+					target = target.parentElement;
 				}
 			});
-		} else {
-			this._commandListener.clear();
 		}
 	}
 }
