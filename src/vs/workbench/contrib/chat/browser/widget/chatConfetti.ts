@@ -4,82 +4,442 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as dom from '../../../../../base/browser/dom.js';
+import { ThemeIcon } from '../../../../../base/common/themables.js';
+import { Codicon } from '../../../../../base/common/codicons.js';
+
+export type ThumbsUpAnimationStyle = 'confetti' | 'floatingThumbs' | 'pulseWave' | 'radiantLines';
 
 const confettiColors = [
-	'#f44336', '#e91e63', '#9c27b0', '#673ab7',
-	'#3f51b5', '#2196f3', '#03a9f4', '#00bcd4',
-	'#009688', '#4caf50', '#8bc34a', '#ffeb3b',
-	'#ffc107', '#ff9800', '#ff5722'
+	'#007acc',
+	'#005a9e',
+	'#0098ff',
+	'#4fc3f7',
+	'#64b5f6',
+	'#42a5f5',
 ];
 
 let activeOverlay: HTMLElement | undefined;
 
 /**
- * Triggers a confetti animation inside the given container element.
+ * Creates a fixed-positioned overlay centered on the given button element,
+ * appended to the document body to avoid clipping by overflow:hidden ancestors.
  */
-export function triggerConfetti(container: HTMLElement) {
+function createButtonOverlay(button: HTMLElement): { overlay: HTMLElement; cx: number; cy: number } | undefined {
 	if (activeOverlay) {
-		return;
+		return undefined;
 	}
+
+	const rect = button.getBoundingClientRect();
+	const ownerDocument = dom.getWindow(button).document;
 
 	const overlay = dom.$('.chat-confetti-overlay');
-	overlay.style.position = 'absolute';
-	overlay.style.inset = '0';
+	overlay.style.position = 'fixed';
+	overlay.style.left = `${rect.left}px`;
+	overlay.style.top = `${rect.top}px`;
+	overlay.style.width = `${rect.width}px`;
+	overlay.style.height = `${rect.height}px`;
 	overlay.style.pointerEvents = 'none';
-	overlay.style.overflow = 'hidden';
-	overlay.style.zIndex = '1000';
-	container.appendChild(overlay);
+	overlay.style.overflow = 'visible';
+	overlay.style.zIndex = '10000';
+
+	ownerDocument.body.appendChild(overlay);
 	activeOverlay = overlay;
 
-	const { width, height } = container.getBoundingClientRect();
-	for (let i = 0; i < 250; i++) {
-		const part = dom.$('.chat-confetti-particle');
-		part.style.position = 'absolute';
-		part.style.width = `${Math.random() * 8 + 4}px`;
-		part.style.height = `${Math.random() * 8 + 4}px`;
-		part.style.backgroundColor = confettiColors[Math.floor(Math.random() * confettiColors.length)];
-		part.style.borderRadius = Math.random() > 0.5 ? '50%' : '0';
-		part.style.left = `${Math.random() * width}px`;
-		part.style.top = '-10px';
-		part.style.opacity = '1';
+	return { overlay, cx: rect.width / 2, cy: rect.height / 2 };
+}
 
-		overlay.appendChild(part);
-
-		const targetX = (Math.random() - 0.5) * width * 0.8;
-		const targetY = Math.random() * height * 0.8 + height * 0.1;
-		const rotation = Math.random() * 720 - 360;
-		const duration = Math.random() * 1000 + 1500;
-		const delay = Math.random() * 400;
-
-		part.animate([
-			{
-				transform: 'translate(0, 0) rotate(0deg)',
-				opacity: 1
-			},
-			{
-				transform: `translate(${targetX * 0.5}px, ${targetY * 0.5}px) rotate(${rotation * 0.5}deg)`,
-				opacity: 1,
-				offset: 0.3
-			},
-			{
-				transform: `translate(${targetX}px, ${targetY}px) rotate(${rotation}deg)`,
-				opacity: 1,
-				offset: 0.75
-			},
-			{
-				transform: `translate(${targetX * 1.1}px, ${targetY + 40}px) rotate(${rotation + 30}deg)`,
-				opacity: 0
-			}
-		], {
-			duration,
-			delay,
-			easing: 'linear',
-			fill: 'forwards'
-		});
-	}
-
+function cleanupOverlay(overlay: HTMLElement, duration: number): void {
 	setTimeout(() => {
 		overlay.remove();
 		activeOverlay = undefined;
-	}, 3000);
+	}, duration);
+}
+
+/**
+ * Bounce the button element with a given scale and optional rotation.
+ */
+function bounceButton(button: HTMLElement, opts: { scale?: number[]; rotate?: number[]; translateY?: number[]; duration?: number }): void {
+	const keyframes: Keyframe[] = [];
+	const steps = opts.scale?.length ?? opts.rotate?.length ?? opts.translateY?.length ?? 0;
+	for (let i = 0; i < steps; i++) {
+		const frame: Keyframe = { offset: i / (steps - 1) };
+		if (opts.scale) {
+			frame.transform = `scale(${opts.scale[i]})`;
+		}
+		if (opts.rotate) {
+			frame.transform = `${frame.transform ?? ''} rotate(${opts.rotate[i]}deg)`.trim();
+		}
+		if (opts.translateY) {
+			frame.transform = `${frame.transform ?? ''} translateY(${opts.translateY[i]}px)`.trim();
+		}
+		keyframes.push(frame);
+	}
+	button.animate(keyframes, {
+		duration: opts.duration ?? 350,
+		easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
+		fill: 'forwards',
+	});
+}
+
+/**
+ * Confetti: small particles burst outward in a circle from the button center,
+ * with an expanding ring.
+ */
+function triggerConfettiAnimation(button: HTMLElement): void {
+	const result = createButtonOverlay(button);
+	if (!result) {
+		return;
+	}
+
+	const { overlay, cx, cy } = result;
+	const rect = button.getBoundingClientRect();
+
+	// Button bounce
+	bounceButton(button, {
+		scale: [1, 1.3, 1],
+		rotate: [0, -10, 10, 0],
+		duration: 350,
+	});
+
+	// Confetti particles
+	const particleCount = 10;
+	for (let i = 0; i < particleCount; i++) {
+		const size = 3 + (i % 3) * 1.5;
+		const angle = (i * 36 * Math.PI) / 180;
+		const distance = 35;
+		const particleOpacity = 0.6 + (i % 4) * 0.1;
+
+		const part = dom.$('.chat-confetti-particle');
+		part.style.position = 'absolute';
+		part.style.width = `${size}px`;
+		part.style.height = `${size}px`;
+		part.style.borderRadius = '50%';
+		part.style.backgroundColor = confettiColors[i % confettiColors.length];
+		part.style.left = `${cx - size / 2}px`;
+		part.style.top = `${cy - size / 2}px`;
+		overlay.appendChild(part);
+
+		const tx = Math.cos(angle) * distance;
+		const ty = Math.sin(angle) * distance;
+
+		part.animate([
+			{ opacity: 0, transform: 'scale(0) translate(0, 0)' },
+			{ opacity: particleOpacity, transform: `scale(1) translate(${tx * 0.5}px, ${ty * 0.5}px)`, offset: 0.3 },
+			{ opacity: particleOpacity, transform: `scale(1) translate(${tx}px, ${ty}px)`, offset: 0.7 },
+			{ opacity: 0, transform: `scale(0) translate(${tx}px, ${ty}px)` },
+		], {
+			duration: 1100,
+			easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
+			fill: 'forwards',
+		});
+	}
+
+	// Expanding ring
+	const ring = dom.$('.chat-confetti-particle');
+	ring.style.position = 'absolute';
+	ring.style.left = '0';
+	ring.style.top = '0';
+	ring.style.width = `${rect.width}px`;
+	ring.style.height = `${rect.height}px`;
+	ring.style.borderRadius = '50%';
+	ring.style.border = '2px solid var(--vscode-focusBorder, #007acc)';
+	ring.style.boxSizing = 'border-box';
+	overlay.appendChild(ring);
+
+	ring.animate([
+		{ transform: 'scale(1)', opacity: 1 },
+		{ transform: 'scale(2)', opacity: 0 },
+	], {
+		duration: 800,
+		easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
+		fill: 'forwards',
+	});
+
+	cleanupOverlay(overlay, 2000);
+}
+
+/**
+ * Floating Thumbs: small thumbs up icons float upward from the button.
+ */
+function triggerFloatingThumbsAnimation(button: HTMLElement): void {
+	const result = createButtonOverlay(button);
+	if (!result) {
+		return;
+	}
+
+	const { overlay, cx, cy } = result;
+	const rect = button.getBoundingClientRect();
+
+	// Button bounce upward
+	bounceButton(button, {
+		translateY: [0, -6, 0],
+		duration: 350,
+	});
+
+	// Floating thumbs up icons
+	const thumbCount = 6;
+	for (let i = 0; i < thumbCount; i++) {
+		const size = 12 + (i % 3) * 2;
+		const thumb = dom.$('.chat-confetti-particle');
+		thumb.style.position = 'absolute';
+		thumb.style.left = `${cx}px`;
+		thumb.style.top = `${cy}px`;
+		thumb.style.fontSize = `${size}px`;
+		thumb.style.lineHeight = '1';
+		thumb.style.color = 'var(--vscode-focusBorder, #007acc)';
+		thumb.classList.add(...ThemeIcon.asClassNameArray(Codicon.thumbsup));
+		overlay.appendChild(thumb);
+
+		const driftX = (Math.random() - 0.5) * 50;
+		const floatY = -50 - (i % 3) * 10;
+		const rotate1 = (Math.random() - 0.5) * 20;
+		const rotate2 = (Math.random() - 0.5) * 40;
+
+		thumb.animate([
+			{ opacity: 0, transform: `translate(-50%, -50%) scale(0) rotate(${rotate1}deg)` },
+			{ opacity: 1, transform: `translate(calc(-50% + ${driftX * 0.3}px), calc(-50% + ${floatY * 0.3}px)) scale(1) rotate(${(rotate1 + rotate2) * 0.3}deg)`, offset: 0.3 },
+			{ opacity: 1, transform: `translate(calc(-50% + ${driftX * 0.7}px), calc(-50% + ${floatY * 0.7}px)) scale(1) rotate(${(rotate1 + rotate2) * 0.7}deg)`, offset: 0.7 },
+			{ opacity: 0, transform: `translate(calc(-50% + ${driftX}px), calc(-50% + ${floatY}px)) scale(0.8) rotate(${rotate2}deg)` },
+		], {
+			duration: 800 + (i % 3) * 200,
+			delay: i * 80,
+			easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
+			fill: 'forwards',
+		});
+	}
+
+	// Expanding ring
+	const ring = dom.$('.chat-confetti-particle');
+	ring.style.position = 'absolute';
+	ring.style.left = '0';
+	ring.style.top = '0';
+	ring.style.width = `${rect.width}px`;
+	ring.style.height = `${rect.height}px`;
+	ring.style.borderRadius = '50%';
+	ring.style.border = '2px solid var(--vscode-focusBorder, #007acc)';
+	ring.style.boxSizing = 'border-box';
+	overlay.appendChild(ring);
+
+	ring.animate([
+		{ transform: 'scale(1)', opacity: 1 },
+		{ transform: 'scale(2)', opacity: 0 },
+	], {
+		duration: 500,
+		easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
+		fill: 'forwards',
+	});
+
+	cleanupOverlay(overlay, 2000);
+}
+
+/**
+ * Pulse Wave: expanding rings and sparkle dots radiate from the button center.
+ */
+function triggerPulseWaveAnimation(button: HTMLElement): void {
+	const result = createButtonOverlay(button);
+	if (!result) {
+		return;
+	}
+
+	const { overlay, cx, cy } = result;
+	const rect = button.getBoundingClientRect();
+
+	// Button bounce with slight rotation
+	bounceButton(button, {
+		scale: [1, 1.1, 1],
+		rotate: [0, -12, 0],
+		duration: 400,
+	});
+
+	// Expanding rings
+	for (let i = 0; i < 2; i++) {
+		const ring = dom.$('.chat-confetti-particle');
+		ring.style.position = 'absolute';
+		ring.style.left = '0';
+		ring.style.top = '0';
+		ring.style.width = `${rect.width}px`;
+		ring.style.height = `${rect.height}px`;
+		ring.style.borderRadius = '50%';
+		ring.style.border = '2px solid var(--vscode-focusBorder, #007acc)';
+		ring.style.boxSizing = 'border-box';
+		overlay.appendChild(ring);
+
+		ring.animate([
+			{ transform: 'scale(0.8)', opacity: 0 },
+			{ transform: 'scale(0.8)', opacity: 0.6, offset: 0.01 },
+			{ transform: 'scale(2.5)', opacity: 0 },
+		], {
+			duration: 800,
+			delay: i * 150,
+			easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
+			fill: 'forwards',
+		});
+	}
+
+	// Sparkle dots
+	for (let i = 0; i < 6; i++) {
+		const angle = (i * 60 * Math.PI) / 180;
+		const distance = 30 + (i % 2) * 10;
+		const size = 3.5;
+
+		const dot = dom.$('.chat-confetti-particle');
+		dot.style.position = 'absolute';
+		dot.style.width = `${size}px`;
+		dot.style.height = `${size}px`;
+		dot.style.borderRadius = '50%';
+		dot.style.backgroundColor = '#0098ff';
+		dot.style.left = `${cx - size / 2}px`;
+		dot.style.top = `${cy - size / 2}px`;
+		overlay.appendChild(dot);
+
+		const tx = Math.cos(angle) * distance;
+		const ty = Math.sin(angle) * distance;
+
+		dot.animate([
+			{ opacity: 0, transform: 'scale(0) translate(0, 0)' },
+			{ opacity: 1, transform: `scale(1) translate(${tx}px, ${ty}px)`, offset: 0.5 },
+			{ opacity: 0, transform: `scale(0) translate(${tx}px, ${ty}px)` },
+		], {
+			duration: 600,
+			delay: 100 + i * 50,
+			easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
+			fill: 'forwards',
+		});
+	}
+
+	// Background glow
+	const glow = dom.$('.chat-confetti-particle');
+	glow.style.position = 'absolute';
+	glow.style.left = '0';
+	glow.style.top = '0';
+	glow.style.width = `${rect.width}px`;
+	glow.style.height = `${rect.height}px`;
+	glow.style.borderRadius = '50%';
+	glow.style.backgroundColor = 'var(--vscode-focusBorder, #007acc)';
+	overlay.appendChild(glow);
+
+	glow.animate([
+		{ transform: 'scale(0.9)', opacity: 0 },
+		{ transform: 'scale(0.9)', opacity: 0.5, offset: 0.01 },
+		{ transform: 'scale(1.5)', opacity: 0 },
+	], {
+		duration: 500,
+		easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
+		fill: 'forwards',
+	});
+
+	cleanupOverlay(overlay, 2000);
+}
+
+/**
+ * Radiant Lines: lines and dots emanate outward from the button center.
+ */
+function triggerRadiantLinesAnimation(button: HTMLElement): void {
+	const result = createButtonOverlay(button);
+	if (!result) {
+		return;
+	}
+
+	const { overlay, cx, cy } = result;
+
+	// Button scale bounce
+	bounceButton(button, {
+		scale: [1, 1.15, 1],
+		duration: 350,
+	});
+
+	// Dots at offset angles
+	for (let i = 0; i < 8; i++) {
+		const size = 3;
+		const dotOpacity = 0.7;
+		const angle = ((i * 45 + 22.5) * Math.PI) / 180;
+		const startDistance = 14;
+		const endDistance = 30;
+
+		const dot = dom.$('.chat-confetti-particle');
+		dot.style.position = 'absolute';
+		dot.style.width = `${size}px`;
+		dot.style.height = `${size}px`;
+		dot.style.borderRadius = '50%';
+		dot.style.backgroundColor = 'var(--vscode-editor-foreground, #ffffff)';
+		dot.style.left = `${cx - size / 2}px`;
+		dot.style.top = `${cy - size / 2}px`;
+		overlay.appendChild(dot);
+
+		const startX = Math.cos(angle) * startDistance;
+		const startY = Math.sin(angle) * startDistance;
+		const endX = Math.cos(angle) * endDistance;
+		const endY = Math.sin(angle) * endDistance;
+
+		dot.animate([
+			{ opacity: 0, transform: `scale(0) translate(${startX}px, ${startY}px)` },
+			{ opacity: dotOpacity, transform: `scale(1.2) translate(${(startX + endX) / 2}px, ${(startY + endY) / 2}px)`, offset: 0.25 },
+			{ opacity: dotOpacity, transform: `scale(1) translate(${endX * 0.8}px, ${endY * 0.8}px)`, offset: 0.5 },
+			{ opacity: dotOpacity * 0.5, transform: `scale(1) translate(${endX}px, ${endY}px)`, offset: 0.75 },
+			{ opacity: 0, transform: `scale(0.5) translate(${endX}px, ${endY}px)` },
+		], {
+			duration: 1100,
+			easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
+			fill: 'forwards',
+		});
+	}
+
+	// Radiant lines
+	for (let i = 0; i < 8; i++) {
+		const angleDeg = i * 45;
+
+		const lineWrapper = dom.$('.chat-confetti-particle');
+		lineWrapper.style.position = 'absolute';
+		lineWrapper.style.left = `${cx}px`;
+		lineWrapper.style.top = `${cy}px`;
+		lineWrapper.style.width = '0';
+		lineWrapper.style.height = '0';
+		lineWrapper.style.transform = `rotate(${angleDeg}deg)`;
+		overlay.appendChild(lineWrapper);
+
+		const line = dom.$('.chat-confetti-particle');
+		line.style.position = 'absolute';
+		line.style.width = '2px';
+		line.style.height = '10px';
+		line.style.backgroundColor = 'var(--vscode-focusBorder, #007acc)';
+		line.style.left = '-1px';
+		line.style.top = '-22px';
+		line.style.transformOrigin = 'bottom center';
+		lineWrapper.appendChild(line);
+
+		line.animate([
+			{ scaleX: 1, scaleY: 0, opacity: 0.6 },
+			{ scaleX: 1, scaleY: 1, opacity: 0.6, offset: 0.2 },
+			{ scaleX: 1, scaleY: 1, opacity: 0.6, offset: 0.6 },
+			{ scaleX: 1, scaleY: 1, opacity: 0.6, offset: 0.8 },
+			{ scaleX: 0, scaleY: 0.3, opacity: 0 },
+		], {
+			duration: 1200,
+			delay: 150,
+			easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
+			fill: 'forwards',
+		});
+	}
+
+	cleanupOverlay(overlay, 2000);
+}
+
+/**
+ * Triggers a thumbs-up celebration animation on the given button element.
+ */
+export function triggerThumbsUpAnimation(button: HTMLElement, style: ThumbsUpAnimationStyle): void {
+	switch (style) {
+		case 'confetti':
+			triggerConfettiAnimation(button);
+			break;
+		case 'floatingThumbs':
+			triggerFloatingThumbsAnimation(button);
+			break;
+		case 'pulseWave':
+			triggerPulseWaveAnimation(button);
+			break;
+		case 'radiantLines':
+			triggerRadiantLinesAnimation(button);
+			break;
+	}
 }

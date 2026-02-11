@@ -9,11 +9,12 @@ import { basename } from '../../../../../base/common/resources.js';
 import { ServicesAccessor } from '../../../../../editor/browser/editorExtensions.js';
 import { IBulkEditService } from '../../../../../editor/browser/services/bulkEditService.js';
 import { localize, localize2 } from '../../../../../nls.js';
-import { Action2, MenuId, registerAction2 } from '../../../../../platform/actions/common/actions.js';
+import { Action2, MenuId, MenuItemAction, registerAction2 } from '../../../../../platform/actions/common/actions.js';
 import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
-import { ContextKeyExpr } from '../../../../../platform/contextkey/common/contextkey.js';
+import { ContextKeyExpr, IContextKeyService } from '../../../../../platform/contextkey/common/contextkey.js';
 import { IDialogService } from '../../../../../platform/dialogs/common/dialogs.js';
 import { IEditorService } from '../../../../services/editor/common/editorService.js';
+import { IMenuEntryActionViewItemOptions, MenuEntryActionViewItem } from '../../../../../platform/actions/browser/menuEntryActionViewItem.js';
 import { ResourceNotebookCellEdit } from '../../../bulkEdit/browser/bulkCellEdits.js';
 import { MENU_INLINE_CHAT_WIDGET_SECONDARY } from '../../../inlineChat/common/inlineChat.js';
 import { INotebookEditor } from '../../../notebook/browser/notebookBrowser.js';
@@ -25,10 +26,15 @@ import { ChatAgentVoteDirection, ChatAgentVoteDownReason, IChatService } from '.
 import { isResponseVM } from '../../common/model/chatViewModel.js';
 import { ChatModeKind } from '../../common/constants.js';
 import { IChatAccessibilityService, IChatWidgetService } from '../chat.js';
-import { triggerConfetti } from '../widget/chatConfetti.js';
+import { ThumbsUpAnimationStyle, triggerThumbsUpAnimation } from '../widget/chatConfetti.js';
 import { CHAT_CATEGORY } from './chatActions.js';
 import { IAccessibilityService } from '../../../../../platform/accessibility/common/accessibility.js';
+import { IKeybindingService } from '../../../../../platform/keybinding/common/keybinding.js';
+import { INotificationService } from '../../../../../platform/notification/common/notification.js';
+import { IThemeService } from '../../../../../platform/theme/common/themeService.js';
+import { IContextMenuService } from '../../../../../platform/contextview/browser/contextView.js';
 
+export const MarkHelpfulActionId = 'workbench.action.chat.markHelpful';
 export const MarkUnhelpfulActionId = 'workbench.action.chat.markUnhelpful';
 const enableFeedbackConfig = 'config.telemetry.feedback.enabled';
 
@@ -80,11 +86,11 @@ export function registerChatTitleActions() {
 
 			const configurationService = accessor.get(IConfigurationService);
 			const accessibilityService = accessor.get(IAccessibilityService);
-			if (configurationService.getValue<boolean>('chat.confettiOnThumbsUp') && !accessibilityService.isMotionReduced()) {
-				const chatWidgetService = accessor.get(IChatWidgetService);
-				const widget = chatWidgetService.getWidgetBySessionResource(item.session.sessionResource);
-				if (widget) {
-					triggerConfetti(widget.domNode);
+			const animationStyle = configurationService.getValue<string>('chat.confettiOnThumbsUp');
+			if (animationStyle && animationStyle !== 'off' && !accessibilityService.isMotionReduced()) {
+				const button = ChatThumbsUpButton.getButtonElement(item);
+				if (button) {
+					triggerThumbsUpAnimation(button, animationStyle as ThumbsUpAnimationStyle);
 				}
 			}
 		}
@@ -353,6 +359,46 @@ export function registerChatTitleActions() {
 			}
 		}
 	});
+}
+
+/**
+ * Custom action view item for the thumbs-up button that tracks rendered button
+ * DOM elements for animation targeting.
+ */
+export class ChatThumbsUpButton extends MenuEntryActionViewItem {
+
+	private static readonly _elementsByContext = new WeakMap<object, HTMLElement>();
+
+	static getButtonElement(context: object): HTMLElement | undefined {
+		return ChatThumbsUpButton._elementsByContext.get(context);
+	}
+
+	constructor(
+		action: MenuItemAction,
+		options: IMenuEntryActionViewItemOptions | undefined,
+		@IKeybindingService keybindingService: IKeybindingService,
+		@INotificationService notificationService: INotificationService,
+		@IContextKeyService contextKeyService: IContextKeyService,
+		@IThemeService themeService: IThemeService,
+		@IContextMenuService contextMenuService: IContextMenuService,
+		@IAccessibilityService accessibilityService: IAccessibilityService,
+	) {
+		super(action, options, keybindingService, notificationService, contextKeyService, themeService, contextMenuService, accessibilityService);
+	}
+
+	override render(container: HTMLElement): void {
+		super.render(container);
+		if (this._context) {
+			ChatThumbsUpButton._elementsByContext.set(this._context as object, container);
+		}
+	}
+
+	override setActionContext(context: unknown): void {
+		super.setActionContext(context);
+		if (context && this.element) {
+			ChatThumbsUpButton._elementsByContext.set(context as object, this.element);
+		}
+	}
 }
 
 interface MarkdownContent {
