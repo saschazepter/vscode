@@ -7,7 +7,7 @@ import { Codicon } from '../../../../base/common/codicons.js';
 import { ServicesAccessor } from '../../../../editor/browser/editorExtensions.js';
 import { localize2 } from '../../../../nls.js';
 import { Action2, MenuRegistry, registerAction2 } from '../../../../platform/actions/common/actions.js';
-import { INativeHostService } from '../../../../platform/native/common/native.js';
+import { IHostService } from '../../../../workbench/services/host/browser/host.js';
 import { IsAgentSessionsWorkspaceContext } from '../../../../workbench/common/contextkeys.js';
 import { registerWorkbenchContribution2, WorkbenchPhase } from '../../../../workbench/common/contributions.js';
 import { AgentSessionProviders } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessions.js';
@@ -35,7 +35,7 @@ export class OpenSessionWorktreeInVSCodeAction extends Action2 {
 	}
 
 	override async run(accessor: ServicesAccessor,): Promise<void> {
-		const nativeHostService = accessor.get(INativeHostService);
+		const hostService = accessor.get(IHostService);
 		const agentSessionsService = accessor.get(IActiveAgentSessionService);
 
 		const activeSession = agentSessionsService.activeSession.get();
@@ -49,7 +49,7 @@ export class OpenSessionWorktreeInVSCodeAction extends Action2 {
 			return;
 		}
 
-		await nativeHostService.openWindow([{ folderUri }], { forceNewWindow: true });
+		await hostService.openWindow([{ folderUri }], { forceNewWindow: true });
 	}
 }
 registerAction2(OpenSessionWorktreeInVSCodeAction);
