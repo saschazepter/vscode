@@ -117,6 +117,7 @@ The Agent Sessions titlebar includes a custom left toolbar that appears after th
 | Toggle Sidebar | `workbench.action.agentToggleSidebarVisibility` | Left toolbar (`TitleBarLeft`) | Toggles primary sidebar visibility |
 | Toggle Terminal | `workbench.action.terminal.toggleTerminal` | Right toolbar (`TitleBarRight`) | Toggles terminal (standard command, added via `MenuRegistry.appendMenuItem`) |
 | Toggle Secondary Sidebar | `workbench.action.agentToggleSecondarySidebarVisibility` | Right toolbar (`TitleBarRight`) | Toggles auxiliary bar visibility |
+| Account | — | Right toolbar (`TitleBarRight`) | Opens `AgenticAccount` submenu with signed-in user (or Sign In), Settings, Check for Updates |
 | Show Sessions | — | Title bar widget click | Opens the `AgentSessionsPicker` quick pick |
 
 The toggle sidebar action:
@@ -690,6 +691,7 @@ this._register(new SidebarRevealButton(this.mainContainer, 'right', this));
 
 | Date | Change |
 |------|--------|
+| 2026-02-11 | Removed activity actions (Accounts, Manage) from titlebar; Added `AgenticAccount` submenu to `TitleBarRight` with account icon; Menu shows signed-in user label from `IDefaultAccountService` (or Sign In action if no account), Settings, and Check for Updates; Added `AgenticAccountContribution` workbench contribution for dynamic account state; Added `AgenticAccount` menu ID to `Menus` |
 | 2026-02-10 | Titlebar customization now uses class inheritance with protected getter overrides on `BrowserTitlebarPart`; Base class retains original API — no `ITitlebarPartOptions`/`ITitlebarPartConfiguration` removed; `AgenticTitlebarPart` and `AgenticTitleService` in `parts/agenticTitlebarPart.ts` override `isCommandCenterVisible`, `editorActionsEnabled`, `installMenubar()`, and menu ID getters |
 | 2026-02-07 | Comprehensive spec update: fixed widget class names (`AgenticTitleBarWidget`/`AgenticTitleBarContribution`), corrected click behavior (uses `AgentSessionsPicker` not `FocusAgentSessionsAction`), corrected session label source (`IActiveAgentSessionService`), fixed toggle terminal details (uses standard `toggleTerminal` command via `MenuRegistry.appendMenuItem` on right toolbar), added sidebar/chatbar storage keys, added chatbar to part classes table, documented contributions section with `RunScriptContribution`/`AgenticTitleBarContribution`/Changes view, added `agent-sessions-workbench` platform class, documented auxiliary bar run script dropdown, updated file structure with `actions/`, `views/`, `media/` directories, fixed lifecycle section numbering, corrected `focus()` target to ChatBar |
 | 2026-02-07 | Moved `ToggleTerminalAction` to `contrib/terminal/browser/terminalAgentSessionActions.ts`; Menu item registered via `MenuRegistry.appendMenuItem` from `agenticLayoutActions.ts` to avoid layering violation |\n| 2026-02-07 | Added `TitleBarLeft`, `TitleBarCenter`, `TitleBarRight` menu IDs to `AgenticWorkbenchMenus`; Added `titleBarMenuId` option to `ITitlebarPartOptions` for overriding the global toolbar menu; Actions now use agent-session-specific menu IDs instead of shared `MenuId.TitleBarLeft` / `MenuId.TitleBar` |

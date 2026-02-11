@@ -19,5 +19,7 @@ export const Menus = {
 	OpenSubMenu: new MenuId('AgenticWorkbenchOpenSubMenu'),
 	FloatingToolbar: new MenuId('AgenticWorkbenchFloatingToolbar'),
 	FloatingToolbarRight: new MenuId('AgenticWorkbenchFloatingToolbarRight'),
-	AuxiliaryBarTitleLeft: new MenuId('AgenticWorkbenchAuxiliaryBarTitleLeft')
+	AuxiliaryBarTitleLeft: new MenuId('AgenticWorkbenchAuxiliaryBarTitleLeft'),
+	AgenticAccount: new MenuId('AgenticAccount'),
+	AgenticAccountSignedIn: new MenuId('AgenticAccountSignedIn')
 } as const;

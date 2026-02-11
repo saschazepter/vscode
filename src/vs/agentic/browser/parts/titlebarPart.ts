@@ -20,8 +20,8 @@ import { Color } from '../../../base/common/color.js';
 import { EventType, EventHelper, Dimension, append, $, addDisposableListener, prepend, reset, getWindow, getWindowId } from '../../../base/browser/dom.js';
 import { IInstantiationService } from '../../../platform/instantiation/common/instantiation.js';
 import { Emitter, Event } from '../../../base/common/event.js';
-import { IStorageService, StorageScope } from '../../../platform/storage/common/storage.js';
-import { Parts, IWorkbenchLayoutService, ActivityBarPosition, LayoutSettings } from '../../../workbench/services/layout/browser/layoutService.js';
+import { IStorageService } from '../../../platform/storage/common/storage.js';
+import { Parts, IWorkbenchLayoutService, LayoutSettings } from '../../../workbench/services/layout/browser/layoutService.js';
 import { createActionViewItem, fillInActionBarActions } from '../../../platform/actions/browser/menuEntryActionViewItem.js';
 import { IMenu, IMenuService, MenuId } from '../../../platform/actions/common/actions.js';
 import { IContextKeyService } from '../../../platform/contextkey/common/contextkey.js';
@@ -29,9 +29,6 @@ import { IHostService } from '../../../workbench/services/host/browser/host.js';
 import { WindowTitle } from '../../../workbench/browser/parts/titlebar/windowTitle.js';
 import { CommandCenterControl } from './commandCenterControl.js';
 import { WorkbenchToolBar } from '../../../platform/actions/browser/toolbar.js';
-import { ACCOUNTS_ACTIVITY_ID, GLOBAL_ACTIVITY_ID } from '../../../workbench/common/activity.js';
-import { AccountsActivityActionViewItem, isAccountsActionVisible, SimpleAccountActivityActionViewItem, SimpleGlobalActivityActionViewItem } from '../../../workbench/browser/parts/globalCompositeBar.js';
-import { HoverPosition } from '../../../base/browser/ui/hover/hoverWidget.js';
 import { IEditorGroupsContainer, IEditorGroupsService } from '../../../workbench/services/editor/common/editorGroupsService.js';
 import { IAction } from '../../../base/common/actions.js';
 import { IEditorService } from '../../../workbench/services/editor/common/editorService.js';
@@ -41,7 +38,6 @@ import { IKeybindingService } from '../../../platform/keybinding/common/keybindi
 import { ResolvedKeybinding } from '../../../base/common/keybindings.js';
 import { IToolbarActions } from '../../../workbench/common/editor.js';
 import { CodeWindow, mainWindow } from '../../../base/browser/window.js';
-import { ACCOUNTS_ACTIVITY_TILE_ACTION, GLOBAL_ACTIVITY_TITLE_ACTION } from '../../../workbench/browser/parts/titlebar/titlebarActions.js';
 import { createInstantHoverDelegate } from '../../../base/browser/ui/hover/hoverDelegateFactory.js';
 import { IBaseActionViewItemOptions } from '../../../base/browser/ui/actionbar/actionViewItems.js';
 import { IHoverDelegate } from '../../../base/browser/ui/hover/hoverDelegate.js';
@@ -110,7 +106,7 @@ export class TitlebarPart extends Part implements ITitlebarPart {
 
 	private readonly globalToolbarMenuDisposables = this._register(new DisposableStore());
 	private readonly layoutToolbarMenuDisposables = this._register(new DisposableStore());
-	private readonly activityToolbarDisposables = this._register(new DisposableStore());
+
 
 	private readonly hoverDelegate: IHoverDelegate;
 
@@ -132,7 +128,7 @@ export class TitlebarPart extends Part implements ITitlebarPart {
 		@IBrowserWorkbenchEnvironmentService protected readonly environmentService: IBrowserWorkbenchEnvironmentService,
 		@IInstantiationService protected readonly instantiationService: IInstantiationService,
 		@IThemeService themeService: IThemeService,
-		@IStorageService private readonly storageService: IStorageService,
+		@IStorageService storageService: IStorageService,
 		@IWorkbenchLayoutService layoutService: IWorkbenchLayoutService,
 		@IContextKeyService private readonly contextKeyService: IContextKeyService,
 		@IHostService private readonly hostService: IHostService,
@@ -172,10 +168,9 @@ export class TitlebarPart extends Part implements ITitlebarPart {
 	private onConfigurationChanged(event: IConfigurationChangeEvent): void {
 		if (hasCustomTitlebar(this.configurationService, this.titleBarStyle) && this.actionToolBar) {
 			const affectsLayoutControl = event.affectsConfiguration(LayoutSettings.LAYOUT_ACTIONS);
-			const affectsActivityControl = event.affectsConfiguration(LayoutSettings.ACTIVITY_BAR_LOCATION);
 
-			if (affectsLayoutControl || affectsActivityControl) {
-				this.createActionToolBarMenus({ layoutActions: affectsLayoutControl, activityActions: affectsActivityControl });
+			if (affectsLayoutControl) {
+				this.createActionToolBarMenus({ layoutActions: affectsLayoutControl });
 				this._onDidChange.fire(undefined);
 			}
 		}
@@ -271,15 +266,6 @@ export class TitlebarPart extends Part implements ITitlebarPart {
 	}
 
 	private actionViewItemProvider(action: IAction, options: IBaseActionViewItemOptions): IActionViewItem | undefined {
-		if (!this.isAuxiliary) {
-			if (action.id === GLOBAL_ACTIVITY_ID) {
-				return this.instantiationService.createInstance(SimpleGlobalActivityActionViewItem, { position: () => HoverPosition.BELOW }, options);
-			}
-			if (action.id === ACCOUNTS_ACTIVITY_ID) {
-				return this.instantiationService.createInstance(SimpleAccountActivityActionViewItem, { position: () => HoverPosition.BELOW }, options);
-			}
-		}
-
 		return createActionViewItem(this.instantiationService, action, { ...options, menuAsChild: false });
 	}
 
@@ -295,18 +281,18 @@ export class TitlebarPart extends Part implements ITitlebarPart {
 			orientation: ActionsOrientation.HORIZONTAL,
 			ariaLabel: localize('ariaLabelTitleActions', "Title actions"),
 			getKeyBinding: action => this.getKeybinding(action),
-			overflowBehavior: { maxItems: 9, exempted: [ACCOUNTS_ACTIVITY_ID, GLOBAL_ACTIVITY_ID] },
+			overflowBehavior: { maxItems: 9 },
 			anchorAlignmentProvider: () => AnchorAlignment.RIGHT,
 			telemetrySource: 'titlePart',
 			highlightToggledItems: this.isAuxiliary,
 			actionViewItemProvider: (action, options) => this.actionViewItemProvider(action, options),
-			hoverDelegate: this.hoverDelegate
+			hoverDelegate: this.hoverDelegate,
 		}));
 	}
 
-	private createActionToolBarMenus(update: true | { layoutActions?: boolean; globalActions?: boolean; activityActions?: boolean } = true): void {
+	private createActionToolBarMenus(update: true | { layoutActions?: boolean; globalActions?: boolean } = true): void {
 		if (update === true) {
-			update = { layoutActions: true, globalActions: true, activityActions: true };
+			update = { layoutActions: true, globalActions: true };
 		}
 
 		const updateToolBarActions = () => {
@@ -327,15 +313,6 @@ export class TitlebarPart extends Part implements ITitlebarPart {
 					actions,
 					() => true // always in overflow
 				);
-			}
-
-			// --- Activity Actions (always at the end)
-			if (this.activityActionsEnabled) {
-				if (isAccountsActionVisible(this.storageService)) {
-					actions.primary.push(ACCOUNTS_ACTIVITY_TILE_ACTION);
-				}
-
-				actions.primary.push(GLOBAL_ACTIVITY_TITLE_ACTION);
 			}
 
 			this.actionToolBar.setActions(prepareActions(actions.primary), prepareActions(actions.secondary));
@@ -361,13 +338,6 @@ export class TitlebarPart extends Part implements ITitlebarPart {
 
 			this.globalToolbarMenuDisposables.add(this.globalToolbarMenu);
 			this.globalToolbarMenuDisposables.add(this.globalToolbarMenu.onDidChange(() => updateToolBarActions()));
-		}
-
-		if (update.activityActions) {
-			this.activityToolbarDisposables.clear();
-			if (this.activityActionsEnabled) {
-				this.activityToolbarDisposables.add(this.storageService.onDidChangeValue(StorageScope.PROFILE, AccountsActivityActionViewItem.ACCOUNTS_VISIBILITY_PREFERENCE_KEY, this._store)(() => updateToolBarActions()));
-			}
 		}
 
 		updateToolBarActions();
@@ -417,10 +387,7 @@ export class TitlebarPart extends Part implements ITitlebarPart {
 		return this.configurationService.getValue<boolean>(LayoutSettings.LAYOUT_ACTIONS) !== false;
 	}
 
-	private get activityActionsEnabled(): boolean {
-		const activityBarPosition = this.configurationService.getValue<ActivityBarPosition>(LayoutSettings.ACTIVITY_BAR_LOCATION);
-		return !this.isAuxiliary && (activityBarPosition === ActivityBarPosition.TOP || activityBarPosition === ActivityBarPosition.BOTTOM);
-	}
+
 
 	get hasZoomableElements(): boolean {
 		return true; // always has command center
