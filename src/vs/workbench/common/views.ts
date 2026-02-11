@@ -201,9 +201,9 @@ export interface IViewContainersRegistry {
 	getViewContainerLocation(container: ViewContainer): ViewContainerLocation;
 
 	/**
-	 * Return the default view container from the given location
+	 * Return the default view containers from the given location
 	 */
-	getDefaultViewContainer(location: ViewContainerLocation): ViewContainer | undefined;
+	getDefaultViewContainers(location: ViewContainerLocation): ViewContainer[];
 }
 
 interface ViewOrderDelegate {
@@ -276,8 +276,8 @@ class ViewContainersRegistryImpl extends Disposable implements IViewContainersRe
 		return [...this.viewContainers.keys()].filter(location => this.getViewContainers(location).filter(viewContainer => viewContainer?.id === container.id).length > 0)[0];
 	}
 
-	getDefaultViewContainer(location: ViewContainerLocation): ViewContainer | undefined {
-		return this.defaultViewContainers.find(viewContainer => this.getViewContainerLocation(viewContainer) === location);
+	getDefaultViewContainers(location: ViewContainerLocation): ViewContainer[] {
+		return this.defaultViewContainers.filter(viewContainer => this.getViewContainerLocation(viewContainer) === location);
 	}
 }
 

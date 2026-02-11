@@ -1627,32 +1627,11 @@ export default tseslint.config(
 						'vs/editor/contrib/*/~',
 						'vs/workbench/~',
 						'vs/workbench/services/*/~',
-						'vs/workbench/agentSessions/~',
 						'assert',
 						{
 							'when': 'test',
 							'pattern': 'vs/workbench/contrib/*/~'
 						} // TODO@layers
-					]
-				},
-				{
-					'target': 'src/vs/workbench/agentSessions/~',
-					'restrictions': [
-						'vs/base/~',
-						'vs/base/parts/*/~',
-						'vs/platform/*/~',
-						'vs/editor/~',
-						'vs/editor/contrib/*/~',
-						'vs/workbench/~',
-						'vs/workbench/browser/**',
-						'vs/workbench/services/*/~',
-						'vs/workbench/agentSessions/~',
-						'vs/workbench/contrib/chat/~',
-						'vs/workbench/contrib/codeEditor/~',
-						'vs/workbench/contrib/files/~',
-						'vs/workbench/contrib/mcp/~',
-						'vs/workbench/contrib/preferences/~',
-						'vs/workbench/contrib/scm/~'
 					]
 				},
 				{
@@ -1706,7 +1685,7 @@ export default tseslint.config(
 						'vs/workbench/~',
 						'vs/workbench/services/*/~',
 						'vs/workbench/contrib/*/~',
-						'vs/workbench/agentSessions/~',
+						'vs/agentic/~',
 						'vs/workbench/contrib/terminal/terminalContribChatExports*',
 						'vs/workbench/contrib/terminal/terminalContribExports*',
 						'vscode-notebook-renderer', // Type only import
@@ -1915,7 +1894,57 @@ export default tseslint.config(
 						'src/*.js',
 						'*' // node.js
 					]
-				}
+				},
+				{
+					'target': 'src/vs/agentic/browser/agentic.workbench.desktop.main.ts',
+					'layer': 'electron-browser',
+					'restrictions': [
+						'vs/base/*/~',
+						'vs/base/parts/*/~',
+						'vs/platform/*/~',
+						'vs/editor/~',
+						'vs/editor/contrib/*/~',
+						'vs/editor/editor.all.js',
+						'vs/agentic/~',
+						'vs/agentic/contrib/*/~',
+						'vs/workbench/~',
+						'vs/workbench/api/~',
+						'vs/workbench/services/*/~',
+						'vs/workbench/contrib/*/~',
+						'vs/workbench/workbench.common.main.js'
+					]
+				},
+				{
+					'target': 'src/vs/agentic/~',
+					'restrictions': [
+						'vs/base/~',
+						'vs/base/parts/*/~',
+						'vs/platform/*/~',
+						'vs/editor/~',
+						'vs/editor/contrib/*/~',
+						'vs/workbench/~',
+						'vs/workbench/browser/**',
+						'vs/workbench/contrib/**',
+						'vs/workbench/services/*/~',
+						'vs/agentic/~'
+					]
+				},
+				{
+					'target': 'src/vs/agentic/contrib/*/~',
+					'restrictions': [
+						'vs/base/~',
+						'vs/base/parts/*/~',
+						'vs/platform/*/~',
+						'vs/editor/~',
+						'vs/editor/contrib/*/~',
+						'vs/workbench/~',
+						'vs/workbench/browser/**',
+						'vs/workbench/services/*/~',
+						'vs/workbench/contrib/*/~',
+						'vs/agentic/~',
+						'vs/agentic/contrib/*/~'
+					]
+				},
 			]
 		}
 	},

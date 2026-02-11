@@ -12,16 +12,13 @@ import { registerSingleton, InstantiationType } from '../../../../../platform/in
 import { Registry } from '../../../../../platform/registry/common/platform.js';
 import { Extensions as QuickAccessExtensions, IQuickAccessRegistry } from '../../../../../platform/quickinput/common/quickAccess.js';
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
-import { AgentSessionsViewContainerId, AgentSessionsViewerOrientation, AgentSessionsViewerPosition, AgentSessionsViewId } from './agentSessions.js';
+import { AgentSessionsViewerOrientation, AgentSessionsViewerPosition, AgentSessionsViewId } from './agentSessions.js';
 import { IAgentSessionsService, AgentSessionsService, IActiveAgentSessionService, ActiveAgentSessionService } from './agentSessionsService.js';
 import { LocalAgentsSessionsController } from './localAgentSessionsController.js';
 import { registerWorkbenchContribution2, WorkbenchPhase } from '../../../../common/contributions.js';
 import { ISubmenuItem, MenuId, MenuRegistry, registerAction2 } from '../../../../../platform/actions/common/actions.js';
 import { ArchiveAgentSessionAction, ArchiveAgentSessionSectionAction, UnarchiveAgentSessionAction, OpenAgentSessionInEditorGroupAction, OpenAgentSessionInNewEditorGroupAction, OpenAgentSessionInNewWindowAction, ShowAgentSessionsSidebar, HideAgentSessionsSidebar, ToggleAgentSessionsSidebar, RefreshAgentSessionsViewerAction, FindAgentSessionInViewerAction, MarkAgentSessionUnreadAction, MarkAgentSessionReadAction, FocusAgentSessionsAction, SetAgentSessionsOrientationStackedAction, SetAgentSessionsOrientationSideBySideAction, PickAgentSessionAction, ArchiveAllAgentSessionsAction, MarkAllAgentSessionsReadAction, RenameAgentSessionAction, DeleteAgentSessionAction, DeleteAllLocalSessionsAction, MarkAgentSessionSectionReadAction, ToggleShowAgentSessionsAction, UnarchiveAgentSessionSectionAction } from './agentSessionsActions.js';
 import { AgentSessionsQuickAccessProvider, AGENT_SESSIONS_QUICK_ACCESS_PREFIX } from './agentSessionsQuickAccess.js';
-import { SyncDescriptor } from '../../../../../platform/instantiation/common/descriptors.js';
-import { ViewPaneContainer } from '../../../../browser/parts/views/viewPaneContainer.js';
-import { IViewContainersRegistry, LayoutVisibility, ViewContainer, ViewContainerLocation, Extensions as ViewExtensions } from '../../../../common/views.js';
 import { registerIcon } from '../../../../../platform/theme/common/iconRegistry.js';
 
 //#region View Registration
@@ -29,17 +26,6 @@ import { registerIcon } from '../../../../../platform/theme/common/iconRegistry.
 export const agentSessionsViewIcon = registerIcon('chat-sessions-icon', Codicon.commentDiscussionSparkle, localize('agentSessionsViewIcon', 'Icon for Agent Sessions View'));
 
 export const AGENT_SESSIONS_VIEW_TITLE = localize2('agentSessions.view.label', "Sessions");
-
-export const agentSessionsViewContainer: ViewContainer = Registry.as<IViewContainersRegistry>(ViewExtensions.ViewContainersRegistry).registerViewContainer({
-	id: AgentSessionsViewContainerId,
-	title: AGENT_SESSIONS_VIEW_TITLE,
-	icon: agentSessionsViewIcon,
-	ctorDescriptor: new SyncDescriptor(ViewPaneContainer, [AgentSessionsViewContainerId, { mergeViewWithContainerWhenSingleView: true, }]),
-	storageId: AgentSessionsViewContainerId,
-	hideIfEmpty: true,
-	order: 6,
-	layoutVisibility: LayoutVisibility.Both
-}, ViewContainerLocation.Sidebar, { isDefault: true });
 
 // --- Agent Sessions View Toolbar
 

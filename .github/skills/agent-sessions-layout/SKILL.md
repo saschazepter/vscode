@@ -9,7 +9,7 @@ When working on the Agent Sessions workbench layout, always follow these guideli
 
 The authoritative specification for the Agent Sessions layout lives at:
 
-**`src/vs/workbench/agentSessions/LAYOUT.md`**
+**`src/vs/agentic/LAYOUT.md`**
 
 Before making any changes to the layout code, read and understand the current spec. It defines:
 
@@ -46,25 +46,25 @@ When proposing or implementing changes, follow these rules from the spec:
 4. **New parts go in the right section** — Any new parts should be added to the horizontal branch alongside Chat Bar and Auxiliary Bar
 5. **Preserve no-op methods** — Unsupported features (zen mode, centered layout, etc.) should remain as no-ops, not throw errors
 6. **Handle pane composite lifecycle** — When hiding/showing parts, manage the associated pane composites
-7. **Use agent session parts** — New part functionality goes in the agent session part classes (`AgentSessionSidebarPart`, `AgentSessionAuxiliaryBarPart`, `AgentSessionPanelPart`, `ChatBarPart`), not the standard workbench parts
+7. **Use agent session parts** — New part functionality goes in the agent session part classes (`AgenticSidebarPart`, `AgenticAuxiliaryBarPart`, `AgenticPanelPart`, `ChatBarPart`), not the standard workbench parts
 8. **Use separate storage keys** — Agent session parts use their own storage keys (prefixed with `workbench.agentsession.`) to avoid conflicts with regular workbench state
-9. **Use agent session menu IDs** — Actions should use `AgentSessionsWorkbenchMenus.*` menu IDs, not shared `MenuId.*` constants
+9. **Use agent session menu IDs** — Actions should use `AgenticWorkbenchMenus.*` menu IDs, not shared `MenuId.*` constants
 
 ## 4. Key Files
 
 | File | Purpose |
 |------|---------|
-| `agentSessions/LAYOUT.md` | Authoritative specification |
-| `agentSessions/browser/agentSessionsWorkbench.ts` | Main layout implementation |
-| `agentSessions/browser/agentSessionsWorkbenchMenus.ts` | Agent sessions workbench menu IDs |
-| `agentSessions/browser/agentSessionsLayoutActions.ts` | Layout actions (toggle sidebar, panel, terminal) |
-| `agentSessions/browser/agentSessions.contributions.ts` | Workbench contributions and view registrations |
-| `agentSessions/browser/agentSessionTitleBarWidget.ts` | Title bar widget and session picker |
-| `agentSessions/browser/style.css` | Layout-specific styles |
-| `agentSessions/browser/parts/` | Agent session part implementations |
-| `agentSessions/browser/parts/editorModal.ts` | Editor modal overlay |
-| `agentSessions/browser/parts/sidebarRevealButton.ts` | Edge hover reveal buttons |
-| `agentSessions/browser/parts/chatbar/chatBarPart.ts` | Chat Bar part |
+| `agentic/LAYOUT.md` | Authoritative specification |
+| `agentic/browser/agenticWorkbench.ts` | Main layout implementation |
+| `agentic/browser/agenticWorkbenchMenus.ts` | Agent sessions workbench menu IDs |
+| `agentic/browser/agenticLayoutActions.ts` | Layout actions (toggle sidebar, panel, terminal) |
+| `agentic/browser/agentic.contributions.ts` | Workbench contributions and view registrations |
+| `agentic/browser/agenticTitleBarWidget.ts` | Title bar widget and session picker |
+| `agentic/browser/style.css` | Layout-specific styles |
+| `agentic/browser/parts/` | Agent session part implementations |
+| `agentic/browser/parts/editorModal.ts` | Editor modal overlay |
+| `agentic/browser/parts/sidebarRevealButton.ts` | Edge hover reveal buttons |
+| `agentic/browser/parts/chatbar/chatBarPart.ts` | Chat Bar part |
 
 ## 5. Testing Changes
 

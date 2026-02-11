@@ -18,7 +18,6 @@ import { ChatConfiguration } from '../../common/constants.js';
 import { ChatViewId } from '../chat.js';
 
 export const AgentSessionsViewId = 'workbench.view.agentSessions';
-export const AgentSessionsViewContainerId = 'workbench.view.agentSessionsContainer';
 
 export enum AgentSessionProviders {
 	Local = 'local',

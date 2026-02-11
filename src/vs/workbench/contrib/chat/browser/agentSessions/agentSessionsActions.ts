@@ -13,7 +13,6 @@ import { IChatService } from '../../common/chatService/chatService.js';
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
 import { IChatEditorOptions } from '../widgetHosts/editor/chatEditor.js';
 import { ChatViewId, IChatWidgetService } from '../chat.js';
-import { AgentSessionsViewPane } from '../../../../agentSessions/browser/views/agentSessionsViewPane.js';
 import { ACTIVE_GROUP, AUX_WINDOW_GROUP, PreferredGroup, SIDE_GROUP } from '../../../../services/editor/common/editorService.js';
 import { IViewDescriptorService, ViewContainerLocation } from '../../../../common/views.js';
 import { getPartByLocation } from '../../../../services/views/browser/viewsService.js';
@@ -814,15 +813,8 @@ export class RefreshAgentSessionsViewerAction extends Action2 {
 		});
 	}
 
-	override run(accessor: ServicesAccessor, agentSessionsControl?: IAgentSessionsControl) {
-		const viewsService = accessor.get(IViewsService);
-
-		let viewer: IAgentSessionsControl | AgentSessionsViewPane | undefined | null = agentSessionsControl;
-		if (!viewer) {
-			viewer = viewsService.getActiveViewWithId<AgentSessionsViewPane>(AgentSessionsViewId);
-		}
-
-		return viewer?.refresh();
+	override run(accessor: ServicesAccessor, agentSessionsControl: IAgentSessionsControl) {
+		agentSessionsControl.refresh();
 	}
 }
 
@@ -846,15 +838,8 @@ export class FindAgentSessionInViewerAction extends Action2 {
 		});
 	}
 
-	override run(accessor: ServicesAccessor, agentSessionsControl?: IAgentSessionsControl) {
-		const viewsService = accessor.get(IViewsService);
-
-		let viewer: IAgentSessionsControl | AgentSessionsViewPane | undefined | null = agentSessionsControl;
-		if (!viewer) {
-			viewer = viewsService.getActiveViewWithId<AgentSessionsViewPane>(AgentSessionsViewId);
-		}
-
-		return viewer?.openFind();
+	override run(accessor: ServicesAccessor, agentSessionsControl: IAgentSessionsControl) {
+		return agentSessionsControl.openFind();
 	}
 }
 

@@ -67,7 +67,8 @@ import { AccountPolicyService } from '../services/policies/common/accountPolicyS
 import { MultiplexPolicyService } from '../services/policies/common/multiplexPolicyService.js';
 import { WorkbenchModeService } from '../services/layout/browser/workbenchModeService.js';
 import { IWorkbenchModeService } from '../services/layout/common/workbenchModeService.js';
-import { AgentSessionsWorkbench } from '../agentSessions/browser/agentSessionsWorkbench.js';
+// eslint-disable-next-line local/code-import-patterns
+import { Workbench as AgenticWorkbench } from '../../agentic/browser/workbench.js';
 import { PaneCompositePartService } from '../browser/parts/paneCompositePartService.js';
 import { IPaneCompositePartService } from '../services/panecomposite/browser/panecomposite.js';
 import { InstantiationType, registerSingleton } from '../../platform/instantiation/common/extensions.js';
@@ -133,11 +134,11 @@ export class DesktopMain extends Disposable {
 		// (fixes https://github.com/microsoft/vscode/issues/187982)
 		this.applyWindowZoomLevel(services.configurationService);
 
-		// Create Workbench - use AgentSessionsWorkbench for agent sessions workspace
+		// Create Workbench - use Workbench for agent sessions workspace
 		const isAgentSessionsWorkspace = services.configurationService.getWorkspace().isAgentSessionsWorkspace;
-		let workbench: Workbench | AgentSessionsWorkbench;
+		let workbench: Workbench | AgenticWorkbench;
 		if (isAgentSessionsWorkspace) {
-			workbench = new AgentSessionsWorkbench(mainWindow.document.body, {
+			workbench = new AgenticWorkbench(mainWindow.document.body, {
 				extraClasses: this.getExtraClasses(),
 			}, services.serviceCollection, services.logService);
 		} else {
@@ -178,7 +179,7 @@ export class DesktopMain extends Disposable {
 		return [];
 	}
 
-	private registerListeners(workbench: Workbench | AgentSessionsWorkbench, storageService: NativeWorkbenchStorageService): void {
+	private registerListeners(workbench: Workbench | AgenticWorkbench, storageService: NativeWorkbenchStorageService): void {
 
 		// Workbench Lifecycle
 		this._register(workbench.onWillShutdown(event => event.join(storageService.close(), { id: 'join.closeStorage', label: localize('join.closeStorage', "Saving UI state") })));

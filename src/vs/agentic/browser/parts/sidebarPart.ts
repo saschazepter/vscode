@@ -1,0 +1,214 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+import '../../../workbench/browser/parts/sidebar/media/sidebarpart.css';
+import { IWorkbenchLayoutService, Parts, Position as SideBarPosition } from '../../../workbench/services/layout/browser/layoutService.js';
+import { SidebarFocusContext, ActiveViewletContext } from '../../../workbench/common/contextkeys.js';
+import { IStorageService } from '../../../platform/storage/common/storage.js';
+import { IContextMenuService } from '../../../platform/contextview/browser/contextView.js';
+import { IKeybindingService } from '../../../platform/keybinding/common/keybinding.js';
+import { IInstantiationService } from '../../../platform/instantiation/common/instantiation.js';
+import { IThemeService } from '../../../platform/theme/common/themeService.js';
+import { SIDE_BAR_TITLE_FOREGROUND, SIDE_BAR_TITLE_BORDER, SIDE_BAR_BACKGROUND, SIDE_BAR_FOREGROUND, SIDE_BAR_BORDER, SIDE_BAR_DRAG_AND_DROP_BACKGROUND, ACTIVITY_BAR_BADGE_BACKGROUND, ACTIVITY_BAR_BADGE_FOREGROUND, ACTIVITY_BAR_TOP_FOREGROUND, ACTIVITY_BAR_TOP_ACTIVE_BORDER, ACTIVITY_BAR_TOP_INACTIVE_FOREGROUND, ACTIVITY_BAR_TOP_DRAG_AND_DROP_BORDER } from '../../../workbench/common/theme.js';
+import { contrastBorder } from '../../../platform/theme/common/colorRegistry.js';
+import { INotificationService } from '../../../platform/notification/common/notification.js';
+import { IContextKeyService } from '../../../platform/contextkey/common/contextkey.js';
+import { AnchorAlignment } from '../../../base/browser/ui/contextview/contextview.js';
+import { IExtensionService } from '../../../workbench/services/extensions/common/extensions.js';
+import { LayoutPriority } from '../../../base/browser/ui/grid/grid.js';
+import { assertReturnsDefined } from '../../../base/common/types.js';
+import { IViewDescriptorService } from '../../../workbench/common/views.js';
+import { AbstractPaneCompositePart, CompositeBarPosition } from '../../../workbench/browser/parts/paneCompositePart.js';
+import { Part } from '../../../workbench/browser/part.js';
+import { ActionsOrientation } from '../../../base/browser/ui/actionbar/actionbar.js';
+import { HoverPosition } from '../../../base/browser/ui/hover/hoverWidget.js';
+import { IPaneCompositeBarOptions } from '../../../workbench/browser/parts/paneCompositeBar.js';
+import { IMenuService } from '../../../platform/actions/common/actions.js';
+import { Separator } from '../../../base/common/actions.js';
+import { IHoverService } from '../../../platform/hover/browser/hover.js';
+
+/**
+ * Sidebar part specifically for agent sessions workbench.
+ * This is a simplified version of the SidebarPart for agent session contexts.
+ */
+export class SidebarPart extends AbstractPaneCompositePart {
+
+	static readonly activeViewletSettingsKey = 'workbench.agentsession.sidebar.activeviewletid';
+	static readonly pinnedViewContainersKey = 'workbench.agentsession.pinnedViewlets2';
+	static readonly placeholderViewContainersKey = 'workbench.agentsession.placeholderViewlets';
+	static readonly viewContainersWorkspaceStateKey = 'workbench.agentsession.viewletsWorkspaceState';
+
+	/** Visual margin values for the card-like appearance */
+	static readonly MARGIN_TOP = 8;
+	static readonly MARGIN_BOTTOM = 8;
+	static readonly MARGIN_LEFT = 8;
+
+
+	//#region IView
+
+	readonly minimumWidth: number = 170;
+	readonly maximumWidth: number = Number.POSITIVE_INFINITY;
+	readonly minimumHeight: number = 0;
+	readonly maximumHeight: number = Number.POSITIVE_INFINITY;
+	override get snap(): boolean { return true; }
+
+	readonly priority: LayoutPriority = LayoutPriority.Low;
+
+	get preferredWidth(): number | undefined {
+		const viewlet = this.getActivePaneComposite();
+
+		if (!viewlet) {
+			return undefined;
+		}
+
+		const width = viewlet.getOptimalWidth();
+		if (typeof width !== 'number') {
+			return undefined;
+		}
+
+		return Math.max(width, 300);
+	}
+
+	//#endregion
+
+	constructor(
+		@INotificationService notificationService: INotificationService,
+		@IStorageService storageService: IStorageService,
+		@IContextMenuService contextMenuService: IContextMenuService,
+		@IWorkbenchLayoutService layoutService: IWorkbenchLayoutService,
+		@IKeybindingService keybindingService: IKeybindingService,
+		@IHoverService hoverService: IHoverService,
+		@IInstantiationService instantiationService: IInstantiationService,
+		@IThemeService themeService: IThemeService,
+		@IViewDescriptorService viewDescriptorService: IViewDescriptorService,
+		@IContextKeyService contextKeyService: IContextKeyService,
+		@IExtensionService extensionService: IExtensionService,
+		@IMenuService menuService: IMenuService,
+	) {
+		super(
+			Parts.SIDEBAR_PART,
+			{ hasTitle: false, trailingSeparator: false, borderWidth: () => 0 },
+			SidebarPart.activeViewletSettingsKey,
+			ActiveViewletContext.bindTo(contextKeyService),
+			SidebarFocusContext.bindTo(contextKeyService),
+			'sideBar',
+			'viewlet',
+			SIDE_BAR_TITLE_FOREGROUND,
+			SIDE_BAR_TITLE_BORDER,
+			notificationService,
+			storageService,
+			contextMenuService,
+			layoutService,
+			keybindingService,
+			hoverService,
+			instantiationService,
+			themeService,
+			viewDescriptorService,
+			contextKeyService,
+			extensionService,
+			menuService,
+		);
+	}
+
+	override updateStyles(): void {
+		super.updateStyles();
+
+		const container = assertReturnsDefined(this.getContainer());
+
+		// Store background and border as CSS variables for the card styling on .part
+		container.style.setProperty('--part-background', this.getColor(SIDE_BAR_BACKGROUND) || '');
+		container.style.setProperty('--part-border-color', this.getColor(SIDE_BAR_BORDER) || this.getColor(contrastBorder) || 'transparent');
+		container.style.backgroundColor = 'transparent';
+		container.style.color = this.getColor(SIDE_BAR_FOREGROUND) || '';
+
+		// Clear borders - the card appearance uses border-radius instead
+		container.style.borderRightWidth = '';
+		container.style.borderRightStyle = '';
+		container.style.borderRightColor = '';
+		container.style.borderLeftWidth = '';
+		container.style.borderLeftStyle = '';
+		container.style.borderLeftColor = '';
+		container.style.outlineColor = this.getColor(SIDE_BAR_DRAG_AND_DROP_BACKGROUND) ?? '';
+	}
+
+	override layout(width: number, height: number, top: number, left: number): void {
+		if (!this.layoutService.isVisible(Parts.SIDEBAR_PART)) {
+			return;
+		}
+
+		// Layout content with reduced dimensions to account for visual margins
+		super.layout(
+			width - SidebarPart.MARGIN_LEFT,
+			height - SidebarPart.MARGIN_TOP - SidebarPart.MARGIN_BOTTOM,
+			top, left
+		);
+
+		// Restore the full grid-allocated dimensions so that Part.relayout() works correctly.
+		// Part.layout() only stores _dimension and _contentPosition - no other side effects.
+		Part.prototype.layout.call(this, width, height, top, left);
+	}
+
+	protected override getTitleAreaDropDownAnchorAlignment(): AnchorAlignment {
+		return this.layoutService.getSideBarPosition() === SideBarPosition.LEFT ? AnchorAlignment.LEFT : AnchorAlignment.RIGHT;
+	}
+
+	protected getCompositeBarOptions(): IPaneCompositeBarOptions {
+		return {
+			partContainerClass: 'sidebar',
+			pinnedViewContainersKey: SidebarPart.pinnedViewContainersKey,
+			placeholderViewContainersKey: SidebarPart.placeholderViewContainersKey,
+			viewContainersWorkspaceStateKey: SidebarPart.viewContainersWorkspaceStateKey,
+			icon: false,
+			orientation: ActionsOrientation.HORIZONTAL,
+			recomputeSizes: true,
+			activityHoverOptions: {
+				position: () => this.getCompositeBarPosition() === CompositeBarPosition.BOTTOM ? HoverPosition.ABOVE : HoverPosition.BELOW,
+			},
+			fillExtraContextMenuActions: actions => {
+				if (this.getCompositeBarPosition() === CompositeBarPosition.TITLE) {
+					const viewsSubmenuAction = this.getViewsSubmenuAction();
+					if (viewsSubmenuAction) {
+						actions.push(new Separator());
+						actions.push(viewsSubmenuAction);
+					}
+				}
+			},
+			compositeSize: 0,
+			iconSize: 16,
+			overflowActionSize: 30,
+			colors: theme => ({
+				activeBackgroundColor: theme.getColor(SIDE_BAR_BACKGROUND),
+				inactiveBackgroundColor: theme.getColor(SIDE_BAR_BACKGROUND),
+				activeBorderBottomColor: theme.getColor(ACTIVITY_BAR_TOP_ACTIVE_BORDER),
+				activeForegroundColor: theme.getColor(ACTIVITY_BAR_TOP_FOREGROUND),
+				inactiveForegroundColor: theme.getColor(ACTIVITY_BAR_TOP_INACTIVE_FOREGROUND),
+				badgeBackground: theme.getColor(ACTIVITY_BAR_BADGE_BACKGROUND),
+				badgeForeground: theme.getColor(ACTIVITY_BAR_BADGE_FOREGROUND),
+				dragAndDropBorder: theme.getColor(ACTIVITY_BAR_TOP_DRAG_AND_DROP_BORDER)
+			}),
+			compact: true
+		};
+	}
+
+	protected shouldShowCompositeBar(): boolean {
+		return false;
+	}
+
+	protected getCompositeBarPosition(): CompositeBarPosition {
+		return CompositeBarPosition.TITLE;
+	}
+
+	async focusActivityBar(): Promise<void> {
+		if (this.shouldShowCompositeBar()) {
+			this.focusCompositeBar();
+		}
+	}
+
+	toJSON(): object {
+		return {
+			type: Parts.SIDEBAR_PART
+		};
+	}
+}

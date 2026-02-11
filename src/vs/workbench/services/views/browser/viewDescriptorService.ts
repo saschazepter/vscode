@@ -352,7 +352,8 @@ export class ViewDescriptorService extends Disposable implements IViewDescriptor
 	}
 
 	getDefaultViewContainer(location: ViewContainerLocation): ViewContainer | undefined {
-		return this.viewContainersRegistry.getDefaultViewContainer(location);
+		const viewContainers = this.viewContainersRegistry.getDefaultViewContainers(location);
+		return viewContainers.find(viewContainer => this.isViewContainerVisible(viewContainer));
 	}
 
 	canMoveViews(): boolean {
