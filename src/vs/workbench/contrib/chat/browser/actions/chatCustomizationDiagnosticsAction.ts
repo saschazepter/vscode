@@ -10,7 +10,7 @@ import { localize2 } from '../../../../../nls.js';
 import { Action2, MenuId, registerAction2 } from '../../../../../platform/actions/common/actions.js';
 import { ContextKeyExpr } from '../../../../../platform/contextkey/common/contextkey.js';
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
-import { IPromptsService, PromptsStorage, IPromptFileDiscoveryResult, PromptFileSkipReason } from '../../common/promptSyntax/service/promptsService.js';
+import { IPromptsService, PromptsStorage, IPromptFileDiscoveryResult, PromptFileSkipReason, AgentFileType } from '../../common/promptSyntax/service/promptsService.js';
 import { PromptsConfig } from '../../common/promptSyntax/config/config.js';
 import { PromptsType } from '../../common/promptSyntax/promptTypes.js';
 import { basename, dirname, relativePath } from '../../../../../base/common/resources.js';
@@ -296,6 +296,12 @@ async function collectSkillsStatus(
 	return { type, paths, files, enabled };
 }
 
+export interface ISpecialFilesStatus {
+	agentsMd: { enabled: boolean; files: URI[] };
+	copilotInstructions: { enabled: boolean; files: URI[] };
+	claudeMd: { enabled: boolean; files: URI[] };
+}
+
 /**
  * Collects status for hook files.
  */
@@ -364,24 +370,26 @@ async function collectSpecialFilesStatus(
 	promptsService: IPromptsService,
 	configurationService: IConfigurationService,
 	token: CancellationToken
-): Promise<{ agentsMd: { enabled: boolean; files: URI[] }; copilotInstructions: { enabled: boolean; files: URI[] } }> {
-	// AGENTS.md
+): Promise<ISpecialFilesStatus> {
 	const useAgentMd = configurationService.getValue<boolean>(PromptsConfig.USE_AGENT_MD) ?? false;
-	let agentMdFiles: URI[] = [];
-	if (useAgentMd) {
-		agentMdFiles = await promptsService.listAgentMDs(token, false);
-	}
-
-	// copilot-instructions.md
+	const useClaudeMd = configurationService.getValue<boolean>(PromptsConfig.USE_CLAUDE_MD) ?? false;
 	const useCopilotInstructions = configurationService.getValue<boolean>(PromptsConfig.USE_COPILOT_INSTRUCTION_FILES) ?? false;
-	let copilotInstructionsFiles: URI[] = [];
-	if (useCopilotInstructions) {
-		copilotInstructionsFiles = await promptsService.listCopilotInstructionsMDs(token);
-	}
+
+	const allFiles = await promptsService.listAgentInstructions(token);
 
 	return {
-		agentsMd: { enabled: useAgentMd, files: agentMdFiles },
-		copilotInstructions: { enabled: useCopilotInstructions, files: copilotInstructionsFiles }
+		agentsMd: {
+			enabled: useAgentMd,
+			files: allFiles.filter(f => f.type === AgentFileType.agentsMd).map(f => f.uri)
+		},
+		claudeMd: {
+			enabled: useClaudeMd,
+			files: allFiles.filter(f => f.type === AgentFileType.claudeMd).map(f => f.uri)
+		},
+		copilotInstructions: {
+			enabled: useCopilotInstructions,
+			files: allFiles.filter(f => f.type === AgentFileType.copilotInstructionsMd).map(f => f.uri)
+		}
 	};
 }
 
@@ -494,7 +502,7 @@ function convertDiscoveryResultToFileStatus(result: IPromptFileDiscoveryResult):
  */
 export function formatStatusOutput(
 	statusInfos: ITypeStatusInfo[],
-	specialFiles: { agentsMd: { enabled: boolean; files: URI[] }; copilotInstructions: { enabled: boolean; files: URI[] } },
+	specialFiles: ISpecialFilesStatus,
 	workspaceFolders: readonly IWorkspaceFolder[]
 ): string {
 	const lines: string[] = [];
@@ -528,6 +536,9 @@ export function formatStatusOutput(
 			}
 			if (specialFiles.copilotInstructions.enabled) {
 				loadedCount += specialFiles.copilotInstructions.files.length;
+			}
+			if (specialFiles.claudeMd.enabled) {
+				loadedCount += specialFiles.claudeMd.files.length;
 			}
 		}
 

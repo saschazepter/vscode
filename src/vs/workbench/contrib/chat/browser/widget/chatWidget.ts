@@ -65,7 +65,7 @@ import { ChatAgentLocation, ChatConfiguration, ChatModeKind } from '../../common
 import { ILanguageModelToolsService, isToolSet } from '../../common/tools/languageModelToolsService.js';
 import { ComputeAutomaticInstructions } from '../../common/promptSyntax/computeAutomaticInstructions.js';
 import { PromptsConfig } from '../../common/promptSyntax/config/config.js';
-import { IHandOff, PromptHeader, Target } from '../../common/promptSyntax/promptFileParser.js';
+import { IHandOff, PromptHeader } from '../../common/promptSyntax/promptFileParser.js';
 import { IPromptsService } from '../../common/promptSyntax/service/promptsService.js';
 import { handleModeSwitch } from '../actions/chatActions.js';
 import { ChatTreeItem, IChatAcceptInputOptions, IChatAccessibilityService, IChatCodeBlockInfo, IChatFileTreeInfo, IChatListItemRendererOptions, IChatWidget, IChatWidgetService, IChatWidgetViewContext, IChatWidgetViewModelChangeEvent, IChatWidgetViewOptions, isIChatResourceViewContext, isIChatViewViewContext } from '../chat.js';
@@ -887,17 +887,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 	 */
 	private async _checkForAgentInstructionFiles(): Promise<boolean> {
 		try {
-			const useCopilotInstructionsFiles = this.configurationService.getValue(PromptsConfig.USE_COPILOT_INSTRUCTION_FILES);
-			const useAgentMd = this.configurationService.getValue(PromptsConfig.USE_AGENT_MD);
-			if (!useCopilotInstructionsFiles && !useAgentMd) {
-				// If both settings are disabled, return true to hide the hint (since the features aren't enabled)
-				return true;
-			}
-			return (
-				(await this.promptsService.listCopilotInstructionsMDs(CancellationToken.None)).length > 0 ||
-				// Note: only checking for AGENTS.md files at the root folder, not ones in subfolders.
-				(await this.promptsService.listAgentMDs(CancellationToken.None, false)).length > 0
-			);
+			return (await this.promptsService.listAgentInstructions(CancellationToken.None)).length > 0;
 		} catch (error) {
 			// On error, assume no instruction files exist to be safe
 			this.logService.warn('[ChatWidget] Error checking for instruction files:', error);
@@ -2382,7 +2372,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 
 		// if not tools to enable are present, we are done
 		if (tools !== undefined && this.input.currentModeKind === ChatModeKind.Agent) {
-			const enablementMap = this.toolsService.toToolAndToolSetEnablementMap(tools, Target.VSCode, this.input.selectedLanguageModel.get()?.metadata);
+			const enablementMap = this.toolsService.toToolAndToolSetEnablementMap(tools, this.input.selectedLanguageModel.get()?.metadata);
 			this.input.selectedToolsModel.set(enablementMap, true);
 		}
 
