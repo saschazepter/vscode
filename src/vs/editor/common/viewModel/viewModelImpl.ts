@@ -379,7 +379,7 @@ export class ViewModel extends Disposable implements IViewModel {
 						const linesInsertedEvent = this._lines.onModelLinesInserted(versionId, change.fromLineNumber, change.toLineNumber, insertedLineBreaks);
 						if (linesInsertedEvent !== null) {
 							eventsCollector.emitViewEvent(linesInsertedEvent);
-							this.viewLayout.onLinesInserted(linesInsertedEvent.fromLineNumber, linesInsertedEvent.toLineNumber);
+							this.viewLayout.onLinesInserted(linesInsertedEvent.fromLineNumber, linesInsertedEvent.toLineNumber, this._getCustomLineHeightsForLines(change.fromLineNumberPostEdit, change.toLineNumberPostEdit));
 						}
 						hadOtherModelChange = true;
 						break;
@@ -394,7 +394,7 @@ export class ViewModel extends Disposable implements IViewModel {
 						}
 						if (linesInsertedEvent) {
 							eventsCollector.emitViewEvent(linesInsertedEvent);
-							this.viewLayout.onLinesInserted(linesInsertedEvent.fromLineNumber, linesInsertedEvent.toLineNumber);
+							this.viewLayout.onLinesInserted(linesInsertedEvent.fromLineNumber, linesInsertedEvent.toLineNumber, this._getCustomLineHeightsForLines(change.lineNumberPostEdit, change.lineNumberPostEdit));
 						}
 						if (linesDeletedEvent) {
 							eventsCollector.emitViewEvent(linesDeletedEvent);

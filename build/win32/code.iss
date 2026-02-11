@@ -19,7 +19,7 @@ OutputBaseFilename=VSCodeSetup
 Compression=lzma
 SolidCompression=yes
 AppMutex={code:GetAppMutex}
-SetupMutex={#AppMutex}setup
+SetupMutex={code:GetSetupMutex}
 WizardImageFile="{#RepoDir}\resources\win32\inno-big-100.bmp,{#RepoDir}\resources\win32\inno-big-125.bmp,{#RepoDir}\resources\win32\inno-big-150.bmp,{#RepoDir}\resources\win32\inno-big-175.bmp,{#RepoDir}\resources\win32\inno-big-200.bmp,{#RepoDir}\resources\win32\inno-big-225.bmp,{#RepoDir}\resources\win32\inno-big-250.bmp"
 WizardSmallImageFile="{#RepoDir}\resources\win32\inno-small-100.bmp,{#RepoDir}\resources\win32\inno-small-125.bmp,{#RepoDir}\resources\win32\inno-small-150.bmp,{#RepoDir}\resources\win32\inno-small-175.bmp,{#RepoDir}\resources\win32\inno-small-200.bmp,{#RepoDir}\resources\win32\inno-small-225.bmp,{#RepoDir}\resources\win32\inno-small-250.bmp"
 SetupIconFile={#RepoDir}\resources\win32\code.ico
@@ -110,9 +110,9 @@ Source: "appx\{#AppxPackageDll}"; DestDir: "{code:GetDestDir}\{#VersionedResourc
 #endif
 
 [Icons]
-Name: "{group}\{#NameLong}"; Filename: "{app}\{#ExeBasename}.exe"; AppUserModelID: "{#AppUserId}"
-Name: "{autodesktop}\{#NameLong}"; Filename: "{app}\{#ExeBasename}.exe"; Tasks: desktopicon; AppUserModelID: "{#AppUserId}"
-Name: "{userappdata}\Microsoft\Internet Explorer\Quick Launch\{#NameLong}"; Filename: "{app}\{#ExeBasename}.exe"; Tasks: quicklaunchicon; AppUserModelID: "{#AppUserId}"
+Name: "{group}\{#NameLong}"; Filename: "{app}\{#ExeBasename}.exe"; AppUserModelID: "{#AppUserId}"; Check: ShouldUpdateShortcut(ExpandConstant('{group}\{#NameLong}.lnk'))
+Name: "{autodesktop}\{#NameLong}"; Filename: "{app}\{#ExeBasename}.exe"; Tasks: desktopicon; AppUserModelID: "{#AppUserId}"; Check: ShouldUpdateShortcut(ExpandConstant('{autodesktop}\{#NameLong}.lnk'))
+Name: "{userappdata}\Microsoft\Internet Explorer\Quick Launch\{#NameLong}"; Filename: "{app}\{#ExeBasename}.exe"; Tasks: quicklaunchicon; AppUserModelID: "{#AppUserId}"; Check: ShouldUpdateShortcut(ExpandConstant('{userappdata}\Microsoft\Internet Explorer\Quick Launch\{#NameLong}.lnk'))
 
 [Run]
 Filename: "{app}\{#ExeBasename}.exe"; Description: "{cm:LaunchProgram,{#NameLong}}"; Tasks: runcode; Flags: nowait postinstall; Check: ShouldRunAfterUpdate
@@ -1448,6 +1448,17 @@ begin
   Result := FileExists(ExpandConstant('{param:sessionend}'))
 end;
 
+function ShouldUpdateShortcut(Path: String): Boolean;
+begin
+  Result := not (IsBackgroundUpdate() and FileExists(Path));
+end;
+
+// Check if VS Code created a cancel file to signal that the update should be aborted
+function CancelFileExists(): Boolean;
+begin
+  Result := FileExists(ExpandConstant('{param:cancel}'))
+end;
+
 function ShouldRunAfterUpdate(): Boolean;
 begin
   if IsBackgroundUpdate() then
@@ -1467,6 +1478,17 @@ begin
     Result := ''
   else
     Result := '{#AppMutex}';
+end;
+
+function GetSetupMutex(Value: string): string;
+begin
+  // Always create the base setup mutex to prevent multiple installers running.
+  // During background updates, also create a -updating mutex that VS Code checks
+  // to avoid launching while an update is in progress.
+  if IsBackgroundUpdate() then
+    Result := '{#AppMutex}setup,{#AppMutex}-updating'
+  else
+    Result := '{#AppMutex}setup';
 end;
 
 function GetDestDir(Value: string): string;
@@ -1623,11 +1645,17 @@ begin
       Log('Checking whether application is still running...');
       while (CheckForMutexes('{#AppMutex}')) do
       begin
+        if CancelFileExists() then
+        begin
+          Log('Cancel file detected, aborting background update.');
+          DeleteFile(ExpandConstant('{app}\updating_version'));
+          Abort;
+        end;
         Sleep(1000)
       end;
       Log('Application appears not to be running.');
 
-      if not SessionEndFileExists() then begin
+      if not SessionEndFileExists() and not CancelFileExists() then begin
         StopTunnelServiceIfNeeded();
         Log('Invoking inno_updater for background update');
         Exec(ExpandConstant('{app}\{#VersionedResourcesFolder}\tools\inno_updater.exe'), ExpandConstant('"{app}\{#ExeBasename}.exe" ' + BoolToStr(LockFileExists()) + ' "{cm:UpdatingVisualStudioCode}"'), '', SW_SHOW, ewWaitUntilTerminated, UpdateResultCode);
@@ -1641,7 +1669,7 @@ begin
           end;
         #endif
       end else begin
-        Log('Skipping inno_updater.exe call because OS session is ending');
+        Log('Skipping inno_updater.exe call because OS session is ending or cancel was requested');
       end;
     end else begin
       if IsVersionedUpdate() then begin
