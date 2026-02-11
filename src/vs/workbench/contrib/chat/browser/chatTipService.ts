@@ -121,15 +121,15 @@ const TIP_CATALOG: ITipDefinition[] = [
 	},
 	{
 		id: 'tip.attachFiles',
-		message: localize('tip.attachFiles', "Tip: Attach files or folders with # to give Copilot more context."),
+		message: localize('tip.attachFiles', "Tip: Attach files or folders with # to give chat more context."),
 	},
 	{
 		id: 'tip.codeActions',
-		message: localize('tip.codeActions', "Tip: Select code and right-click for Copilot actions in the context menu."),
+		message: localize('tip.codeActions', "Tip: Select code and right-click for chat actions in the context menu."),
 	},
 	{
 		id: 'tip.undoChanges',
-		message: localize('tip.undoChanges', "Tip: You can undo Copilot's changes to any point by clicking Restore Checkpoint."),
+		message: localize('tip.undoChanges', "Tip: You can undo chat's changes to any point by clicking Restore Checkpoint."),
 		when: ContextKeyExpr.or(
 			ChatContextKeys.chatModeKind.isEqualTo(ChatModeKind.Agent),
 			ChatContextKeys.chatModeKind.isEqualTo(ChatModeKind.Edit),
@@ -138,7 +138,7 @@ const TIP_CATALOG: ITipDefinition[] = [
 	},
 	{
 		id: 'tip.customInstructions',
-		message: localize('tip.customInstructions', "Tip: [Generate workspace instructions](command:workbench.action.chat.generateInstructions) so Copilot always has the context it needs when starting a task."),
+		message: localize('tip.customInstructions', "Tip: [Generate workspace instructions](command:workbench.action.chat.generateInstructions) so chat always has the context it needs when starting a task."),
 		enabledCommands: ['workbench.action.chat.generateInstructions'],
 	}
 ];
