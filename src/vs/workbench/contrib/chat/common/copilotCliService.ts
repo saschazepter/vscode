@@ -19,6 +19,10 @@ export interface ICopilotCliService {
 	 * Returns the absolute filesystem path to the Copilot CLI
 	 * executable, downloading the correct native build for the
 	 * current OS/architecture when it is not already present.
+	 *
+	 * **POSIX note**: the downloaded file may not have its executable
+	 * bit set. Callers should ensure the file is executable (e.g.
+	 * `chmod +x`) before attempting to spawn it.
 	 */
 	ensureInstalled(token: CancellationToken): Promise<string>;
 }

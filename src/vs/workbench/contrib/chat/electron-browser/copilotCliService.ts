@@ -61,6 +61,9 @@ export class NativeCopilotCliService implements ICopilotCliService {
 
 	private async acquireBinary(token: CancellationToken): Promise<string> {
 		const currentArch = arch ?? 'x64';
+		if (currentArch !== 'x64' && currentArch !== 'arm64') {
+			this.logger.warn(LOG_PREFIX, `Unrecognised architecture "${currentArch}" – falling back to amd64`);
+		}
 		const asset = copilotCliAssetName(platform, currentArch);
 		const dest = join(this.binaryDir, asset);
 		const destUri = URI.file(dest);
@@ -86,9 +89,17 @@ export class NativeCopilotCliService implements ICopilotCliService {
 		}
 
 		// Download the platform-appropriate native binary.
+		// Note: on POSIX systems the caller is responsible for
+		// ensuring the downloaded file has the executable bit set
+		// (e.g. via `chmod +x`) because the sandbox layer does not
+		// expose a direct chmod API.
 		const sourceUrl = `${this.releasesBaseUrl}/${asset}`;
 		this.logger.info(LOG_PREFIX, 'Fetching native binary:', sourceUrl);
-		await this.dl.download(URI.parse(sourceUrl), destUri, token);
+		try {
+			await this.dl.download(URI.parse(sourceUrl), destUri, token);
+		} catch (err) {
+			throw new Error(`Failed to download Copilot CLI binary from ${sourceUrl}: ${err}`);
+		}
 
 		this.logger.info(LOG_PREFIX, 'Binary ready at', dest);
 		return dest;
