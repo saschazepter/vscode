@@ -44,12 +44,13 @@ import { IMarkdownString } from '../../../../../base/common/htmlContent.js';
 import { IViewsService } from '../../../../services/views/common/viewsService.js';
 import { ChatViewId } from '../chat.js';
 import { ChatViewPane } from '../widgetHosts/viewPane/chatViewPane.js';
-import { AgentSessionProviders, getAgentSessionProviderName } from '../agentSessions/agentSessions.js';
+import { AgentSessionProviders, backgroundAgentDisplayName, getAgentSessionProviderName } from '../agentSessions/agentSessions.js';
 import { BugIndicatingError } from '../../../../../base/common/errors.js';
 import { IEditorGroupsService } from '../../../../services/editor/common/editorGroupsService.js';
 import { LocalChatSessionUri } from '../../common/model/chatUri.js';
 import { assertNever } from '../../../../../base/common/assert.js';
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
+import { Target } from '../../common/promptSyntax/service/promptsService.js';
 
 const extensionPoint = ExtensionsRegistry.registerExtensionPoint<IChatSessionsExtensionPoint[]>({
 	extensionPoint: 'chatSessions',
@@ -331,6 +332,7 @@ export class ChatSessionsService extends Disposable implements IChatSessionsServ
 		).recomputeInitiallyAndOnChange(this._store);
 
 		this._register(autorun(reader => {
+			backgroundAgentDisplayName.read(reader);
 			const activatedProviders = [...builtinSessionProviders, ...contributedSessionProviders.read(reader)];
 			for (const provider of Object.values(AgentSessionProviders)) {
 				if (activatedProviders.includes(provider)) {
@@ -1101,9 +1103,9 @@ export class ChatSessionsService extends Disposable implements IChatSessionsServ
 	 * Get the customAgentTarget for a specific session type.
 	 * When set, the mode picker should show filtered custom agents matching this target.
 	 */
-	public getCustomAgentTargetForSessionType(chatSessionType: string): string | undefined {
+	public getCustomAgentTargetForSessionType(chatSessionType: string): Target {
 		const contribution = this._contributions.get(chatSessionType)?.contribution;
-		return contribution?.customAgentTarget;
+		return contribution?.customAgentTarget ?? Target.Undefined;
 	}
 
 	public getContentProviderSchemes(): string[] {

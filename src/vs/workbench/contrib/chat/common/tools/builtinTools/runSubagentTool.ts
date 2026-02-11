@@ -7,38 +7,39 @@ import { CancellationToken } from '../../../../../../base/common/cancellation.js
 import { Codicon } from '../../../../../../base/common/codicons.js';
 import { Event } from '../../../../../../base/common/event.js';
 import { MarkdownString } from '../../../../../../base/common/htmlContent.js';
-import { generateUuid } from '../../../../../../base/common/uuid.js';
 import { IJSONSchema, IJSONSchemaMap } from '../../../../../../base/common/jsonSchema.js';
 import { Disposable, DisposableStore } from '../../../../../../base/common/lifecycle.js';
 import { ThemeIcon } from '../../../../../../base/common/themables.js';
+import { generateUuid } from '../../../../../../base/common/uuid.js';
 import { localize } from '../../../../../../nls.js';
 import { IConfigurationChangeEvent, IConfigurationService } from '../../../../../../platform/configuration/common/configuration.js';
 import { IInstantiationService } from '../../../../../../platform/instantiation/common/instantiation.js';
 import { ILogService } from '../../../../../../platform/log/common/log.js';
-import { IChatAgentRequest, IChatAgentService } from '../../participants/chatAgents.js';
-import { ChatModel, IChatRequestModeInstructions } from '../../model/chatModel.js';
-import { IChatProgress, IChatService } from '../../chatService/chatService.js';
 import { ChatRequestVariableSet } from '../../attachments/chatVariableEntries.js';
+import { IChatProgress, IChatService } from '../../chatService/chatService.js';
 import { ChatAgentLocation, ChatConfiguration, ChatModeKind } from '../../constants.js';
 import { ILanguageModelsService } from '../../languageModels.js';
+import { ChatModel, IChatRequestModeInstructions } from '../../model/chatModel.js';
+import { IChatAgentRequest, IChatAgentService } from '../../participants/chatAgents.js';
+import { ComputeAutomaticInstructions } from '../../promptSyntax/computeAutomaticInstructions.js';
+import { IChatRequestHooks } from '../../promptSyntax/hookSchema.js';
+import { ICustomAgent, IPromptsService } from '../../promptSyntax/service/promptsService.js';
 import {
 	CountTokensCallback,
 	ILanguageModelToolsService,
 	IPreparedToolInvocation,
+	isToolSet,
 	IToolData,
 	IToolImpl,
 	IToolInvocation,
 	IToolInvocationPreparationContext,
 	IToolResult,
-	isToolSet,
 	ToolDataSource,
 	ToolProgress,
 	VSCodeToolReference,
 } from '../languageModelToolsService.js';
-import { ComputeAutomaticInstructions } from '../../promptSyntax/computeAutomaticInstructions.js';
 import { ManageTodoListToolToolId } from './manageTodoListTool.js';
 import { createToolSimpleTextResult } from './toolHelpers.js';
-import { ICustomAgent, IPromptsService } from '../../promptSyntax/service/promptsService.js';
 
 /**
  * Parses a multiplier string like "2X" or "0.5X" to a number.
@@ -187,7 +188,7 @@ export class RunSubagentTool extends Disposable implements IToolImpl {
 					const modeCustomTools = subagent.tools;
 					if (modeCustomTools) {
 						// Convert the mode's custom tools (array of qualified names) to UserSelectedTools format
-						const enablementMap = this.languageModelToolsService.toToolAndToolSetEnablementMap(modeCustomTools, subagent.target, undefined);
+						const enablementMap = this.languageModelToolsService.toToolAndToolSetEnablementMap(modeCustomTools, undefined);
 						// Convert enablement map to UserSelectedTools (Record<string, boolean>)
 						modeTools = {};
 						for (const [tool, enabled] of enablementMap) {
@@ -240,6 +241,8 @@ export class RunSubagentTool extends Disposable implements IToolImpl {
 						} else {
 							model.acceptResponseProgress(request, part);
 						}
+					} else if (part.kind === 'hook') {
+						model.acceptResponseProgress(request, { ...part, subAgentInvocationId });
 					} else if (part.kind === 'markdownContent') {
 						if (inEdit) {
 							model.acceptResponseProgress(request, { kind: 'markdownContent', content: new MarkdownString('\n```\n\n') });
@@ -262,6 +265,14 @@ export class RunSubagentTool extends Disposable implements IToolImpl {
 			const computer = this.instantiationService.createInstance(ComputeAutomaticInstructions, ChatModeKind.Agent, modeTools, undefined); // agents can not call subagents
 			await computer.collect(variableSet, token);
 
+			// Collect hooks from hook .json files
+			let collectedHooks: IChatRequestHooks | undefined;
+			try {
+				collectedHooks = await this.promptsService.getHooks(token);
+			} catch (error) {
+				this.logService.warn('[ChatService] Failed to collect hooks:', error);
+			}
+
 			// Build the agent request
 			const agentRequest: IChatAgentRequest = {
 				sessionResource: invocation.context.sessionResource,
@@ -275,6 +286,8 @@ export class RunSubagentTool extends Disposable implements IToolImpl {
 				userSelectedModelId: modeModelId,
 				userSelectedTools: modeTools,
 				modeInstructions,
+				hooks: collectedHooks,
+				hasHooksEnabled: !!collectedHooks && Object.values(collectedHooks).some(arr => arr.length > 0),
 			};
 
 			// Subscribe to tool invocations to clear markdown parts when a tool is invoked

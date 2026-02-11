@@ -162,6 +162,16 @@ export namespace ToolDataSource {
 	}
 }
 
+/**
+ * Pre-tool-use hook result passed from the extension when the hook was executed externally.
+ */
+export interface IExternalPreToolUseHookResult {
+	permissionDecision?: 'allow' | 'deny' | 'ask';
+	permissionDecisionReason?: string;
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	updatedInput?: Record<string, any>;
+}
+
 export interface IToolInvocation {
 	callId: string;
 	toolId: string;
@@ -182,6 +192,8 @@ export interface IToolInvocation {
 	toolSpecificData?: IChatTerminalToolInvocationData | IChatToolInputInvocationData | IChatExtensionsContent | IChatTodoListContent | IChatSubagentToolInvocationData;
 	modelId?: string;
 	userSelectedTools?: UserSelectedTools;
+	/** Pre-tool-use hook result passed from the extension, if the hook was already executed externally. */
+	preToolUseResult?: IExternalPreToolUseHookResult;
 }
 
 export interface IToolInvocationContext {
@@ -205,6 +217,8 @@ export interface IToolInvocationPreparationContext {
 	chatSessionResource: URI | undefined;
 	chatInteractionId?: string;
 	modelId?: string;
+	/** If set, tells the tool that it should include confirmmation messages. */
+	forceConfirmationReason?: string;
 }
 
 export type ToolInputOutputBase = {
@@ -567,15 +581,10 @@ export interface ILanguageModelToolsService {
 	/**
 	 * Gets the enablement maps based on the given set of references.
 	 * @param fullReferenceNames The full reference names of the tools and tool sets to enable.
-	 * @param target Optional target to filter tools by.
 	 * @param model Optional language model metadata to filter tools by.
 	 * If undefined is passed, all tools will be returned, even if normally disabled.
 	 */
-	toToolAndToolSetEnablementMap(
-		fullReferenceNames: readonly string[],
-		target: string | undefined,
-		model: ILanguageModelChatMetadata | undefined,
-	): IToolAndToolSetEnablementMap;
+	toToolAndToolSetEnablementMap(fullReferenceNames: readonly string[], model: ILanguageModelChatMetadata | undefined): IToolAndToolSetEnablementMap;
 
 	toFullReferenceNames(map: IToolAndToolSetEnablementMap): string[];
 	toToolReferences(variableReferences: readonly IVariableReference[]): ChatRequestToolReferenceEntry[];
