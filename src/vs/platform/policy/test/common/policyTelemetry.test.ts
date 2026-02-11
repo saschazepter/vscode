@@ -9,6 +9,7 @@ import { IStringDictionary } from '../../../../base/common/collections.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { PolicyName } from '../../../../base/common/policy.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/common/utils.js';
+import { ITelemetryService } from '../../../../platform/telemetry/common/telemetry.js';
 import { NullTelemetryService } from '../../../../platform/telemetry/common/telemetryUtils.js';
 import { IPolicyService, PolicyDefinition, PolicyValue } from '../../common/policy.js';
 import { PolicyTelemetryReporter } from '../../common/policyTelemetry.js';
@@ -49,22 +50,30 @@ this._emitter.fire([name]);
 }
 }
 
+function createCapturingTelemetryService(): { service: ITelemetryService; logged: Array<{ event: string; payload: any }> } {
+const logged: Array<{ event: string; payload: any }> = [];
+const service: ITelemetryService = {
+...NullTelemetryService,
+publicLog() { },
+publicLog2(ev: string, data: any) { logged.push({ event: ev, payload: data }); },
+publicLogError() { },
+publicLogError2() { },
+setExperimentProperty() { },
+};
+return { service, logged };
+}
+
 suite('Policy Telemetry', () => {
 const ds = ensureNoDisposablesAreLeakedInTestSuite();
 
 test('reports initial snapshot of policies', () => {
 const svc = ds.add(new StubPolicyService());
-
-const logged: Array<{ event: string; payload: any }> = [];
-const tel = { ...NullTelemetryService, publicLog2(ev: string, data: any) { logged.push({ event: ev, payload: data }); } };
+const { service: tel, logged } = createCapturingTelemetryService();
 
 // Populate three policies *before* creating the reporter
 svc.setValueAndNotify('A', 'hello');
 svc.setValueAndNotify('B', true);
 svc.setValueAndNotify('C', 7);
-
-// Clear events produced by setValueAndNotify (the reporter wasn't listening yet)
-logged.length = 0;
 
 const reporter = ds.add(new PolicyTelemetryReporter(svc, tel));
 reporter.reportInitialSnapshot();
@@ -79,11 +88,9 @@ assert.strictEqual(snapshots[0].payload.count, 3);
 
 test('reports policy changes', () => {
 const svc = ds.add(new StubPolicyService());
+const { service: tel, logged } = createCapturingTelemetryService();
 
-const logged: Array<{ event: string; payload: any }> = [];
-const tel = { ...NullTelemetryService, publicLog2(ev: string, data: any) { logged.push({ event: ev, payload: data }); } };
-
-const reporter = ds.add(new PolicyTelemetryReporter(svc, tel));
+ds.add(new PolicyTelemetryReporter(svc, tel));
 
 svc.setValueAndNotify('X', 'val');
 
@@ -96,9 +103,7 @@ assert.strictEqual(events[0].payload.dataType, 'string');
 
 test('reports correct data types', () => {
 const svc = ds.add(new StubPolicyService());
-
-const logged: Array<{ event: string; payload: any }> = [];
-const tel = { ...NullTelemetryService, publicLog2(ev: string, data: any) { logged.push({ event: ev, payload: data }); } };
+const { service: tel, logged } = createCapturingTelemetryService();
 
 ds.add(new PolicyTelemetryReporter(svc, tel));
 
