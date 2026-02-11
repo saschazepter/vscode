@@ -18,8 +18,6 @@ import { IKeybindingService } from '../../../../../../platform/keybinding/common
 import { IOpenerService } from '../../../../../../platform/opener/common/opener.js';
 import { ITelemetryService } from '../../../../../../platform/telemetry/common/telemetry.js';
 import { IChatSessionsService } from '../../../common/chatSessionsService.js';
-import { asCssVariable } from '../../../../../../platform/theme/common/colorRegistry.js';
-import { disabledForeground } from '../../../../../../platform/theme/common/colors/baseColors.js';
 import { AgentSessionProviders, backgroundAgentDisplayName, getAgentSessionProvider, getAgentSessionProviderDescription, getAgentSessionProviderIcon, getAgentSessionProviderName, isFirstPartyAgentSessionProvider } from '../../agentSessions/agentSessions.js';
 import { ChatInputPickerActionViewItem, IChatInputPickerOptions } from './chatInputPickerActionItem.js';
 import { ISessionTypePickerDelegate } from '../../chat.js';
@@ -217,10 +215,7 @@ export class SessionTypePickerActionItem extends ChatInputPickerActionViewItem {
 		if (currentType !== AgentSessionProviders.Local || !this.pickerOptions.onlyShowIconsForDefaultActions.get()) {
 			labelElements.push(dom.$('span.chat-input-picker-label', undefined, label));
 			if (currentType === AgentSessionProviders.Background) {
-				const suffix = dom.$('span.chat-input-picker-label', undefined, 'Copilot CLI');
-				suffix.style.color = asCssVariable(disabledForeground);
-				suffix.style.marginLeft = '4px';
-				suffix.style.marginRight = '2px';
+				const suffix = dom.$('span.chat-input-picker-label.chat-input-picker-suffix', undefined, 'Copilot CLI');
 				labelElements.push(suffix);
 			}
 		}
