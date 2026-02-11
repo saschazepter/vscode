@@ -200,6 +200,11 @@ const extensionPoint = ExtensionsRegistry.registerExtensionPoint<IChatSessionsEx
 					type: 'boolean',
 					default: false
 				},
+				isReadOnly: {
+					description: localize('chatSessionsExtPoint.isReadOnly', 'Whether this session type is for read-only agents that do not support interactive chat. This flag is incompatible with \'canDelegate\'.'),
+					type: 'boolean',
+					default: false
+				},
 				customAgentTarget: {
 					description: localize('chatSessionsExtPoint.customAgentTarget', 'When set, the chat session will show a filtered mode picker that prefers custom agents whose target property matches this value. Custom agents without a target property are still shown in all session types. This enables the use of standard agent/mode with contributed sessions.'),
 					type: 'string'
@@ -328,7 +333,7 @@ export class ChatSessionsService extends Disposable implements IChatSessionsServ
 		const builtinSessionProviders = [AgentSessionProviders.Local];
 		const contributedSessionProviders = observableFromEvent(
 			this.onDidChangeAvailability,
-			() => Array.from(this._contributions.keys()).filter(isAgentSessionProviderType) as AgentSessionProviders[],
+			() => Array.from(this._contributions.keys()).filter(key => this._contributionDisposables.has(key) && isAgentSessionProviderType(key)) as AgentSessionProviders[],
 		).recomputeInitiallyAndOnChange(this._store);
 
 		this._register(autorun(reader => {
@@ -648,7 +653,7 @@ export class ChatSessionsService extends Disposable implements IChatSessionsServ
 	private _enableContribution(contribution: IChatSessionsExtensionPoint, ext: IRelaxedExtensionDescription): void {
 		const disposableStore = new DisposableStore();
 		this._contributionDisposables.set(contribution.type, disposableStore);
-		if (contribution.canDelegate) {
+		if (contribution.isReadOnly || contribution.canDelegate) {
 			disposableStore.add(this._registerAgent(contribution, ext));
 			disposableStore.add(this._registerCommands(contribution));
 		}

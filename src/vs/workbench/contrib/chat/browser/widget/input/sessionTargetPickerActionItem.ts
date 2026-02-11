@@ -163,6 +163,10 @@ export class SessionTypePickerActionItem extends ChatInputPickerActionViewItem {
 
 		const contributions = this.chatSessionsService.getAllChatSessionContributions();
 		for (const contribution of contributions) {
+			if (contribution.isReadOnly) {
+				continue; // Read-only sessions are not interactive and should not appear in session target picker
+			}
+
 			const agentSessionType = getAgentSessionProvider(contribution.type);
 			if (!agentSessionType) {
 				continue;
