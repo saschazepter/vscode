@@ -49,6 +49,7 @@ import { DropIntoEditorController } from '../../../../../../editor/contrib/dropO
 import { ContentHoverController } from '../../../../../../editor/contrib/hover/browser/contentHoverController.js';
 import { GlyphHoverController } from '../../../../../../editor/contrib/hover/browser/glyphHoverController.js';
 import { LinkDetector } from '../../../../../../editor/contrib/links/browser/links.js';
+import { PlaceholderTextContribution } from '../../../../../../editor/contrib/placeholderText/browser/placeholderTextContribution.js';
 import { SuggestController } from '../../../../../../editor/contrib/suggest/browser/suggestController.js';
 import { localize } from '../../../../../../nls.js';
 import { IAccessibilityService } from '../../../../../../platform/accessibility/common/accessibility.js';
@@ -166,6 +167,20 @@ export interface IChatInputPartOptions {
 	 * for their chat request. This is useful for empty window contexts.
 	 */
 	workspacePickerDelegate?: IWorkspacePickerDelegate;
+
+	/**
+	 * Set of picker action IDs that should be hidden from the input toolbar.
+	 * Used when pickers are rendered externally (e.g. in a welcome view above the input).
+	 */
+	hiddenPickerIds?: ReadonlySet<string>;
+
+	/**
+	 * Optional filter for session option groups rendered by `ChatSessionPrimaryPickerAction`.
+	 * When provided, option groups for which this function returns `true` are excluded
+	 * from the input toolbar pickers. This allows external UI (e.g. a welcome view)
+	 * to render specific option groups while the input toolbar renders the rest.
+	 */
+	excludeOptionGroup?: (group: IChatSessionProviderOptionGroup) => boolean;
 }
 
 export interface IWorkingSetEntry {
@@ -456,6 +471,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 	private _emptyInputState: ObservableMemento<IChatModelInputState | undefined>;
 	private _chatSessionIsEmpty = false;
 	private _pendingDelegationTarget: AgentSessionProviders | undefined = undefined;
+	private _pendingOptionSelections: Map<string, IChatSessionProviderOptionItem> | undefined;
 
 	constructor(
 		// private readonly editorOptions: ChatEditorOptions, // TODO this should be used
@@ -515,18 +531,26 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 
 		this._register(this.chatSessionsService.onDidChangeOptionGroups(chatSessionType => {
 			const sessionResource = this._widget?.viewModel?.model.sessionResource;
-			if (sessionResource) {
-				const ctx = this.chatService.getChatSessionFromInternalUri(sessionResource);
-				const delegateSessionType = this.options.sessionTypePickerDelegate?.getActiveSessionProvider?.();
-				if (ctx?.chatSessionType === chatSessionType || delegateSessionType === chatSessionType) {
-					this.refreshChatSessionPickers();
-				}
+			const ctx = sessionResource ? this.chatService.getChatSessionFromInternalUri(sessionResource) : undefined;
+			const delegateSessionType = this.options.sessionTypePickerDelegate?.getActiveSessionProvider?.();
+			if (ctx?.chatSessionType === chatSessionType || delegateSessionType === chatSessionType) {
+				this.refreshChatSessionPickers();
 			}
 		}));
 
 		// Re-render spread target buttons when session contributions become available
 		this._register(this.chatSessionsService.onDidChangeAvailability(() => {
 			this.renderSpreadTargetButtons();
+			// Re-evaluate lock state now that contributions may be available.
+			// On initial render, updateWidgetLockStateFromSessionType may have failed
+			// because the contribution wasn't available yet (extension not activated).
+			const delegate = this.options.sessionTypePickerDelegate;
+			if (delegate?.getActiveSessionProvider) {
+				const currentSessionType = delegate.getActiveSessionProvider();
+				if (currentSessionType) {
+					this.updateWidgetLockStateFromSessionType(currentSessionType);
+				}
+			}
 		}));
 
 		// Listen for session type changes from the welcome page delegate
@@ -768,6 +792,22 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		this.delegationWidget?.show();
 	}
 
+	/**
+	 * Returns all current option selections (explicit user picks + defaults),
+	 * then clears the pending cache. Used by `AgentSessionsChatWidget` to include
+	 * in the session context so the extension receives them with the first request.
+	 */
+	public takePendingOptionSelections(): ReadonlyArray<{ optionId: string; value: string | IChatSessionProviderOptionItem }> | undefined {
+		if (!this._pendingOptionSelections || this._pendingOptionSelections.size === 0) {
+			return undefined;
+		}
+		const result = [...this._pendingOptionSelections.entries()].map(
+			([optionId, value]) => ({ optionId, value })
+		);
+		this._pendingOptionSelections.clear();
+		return result;
+	}
+
 	public openChatSessionPicker(): void {
 		// Open the first available picker widget
 		const firstWidget = this.chatSessionPickerWidgets?.values()?.next().value;
@@ -801,6 +841,11 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 				continue;
 			}
 
+			// Exclude option groups that the consumer handles externally
+			if (this.options.excludeOptionGroup?.(optionGroup)) {
+				continue;
+			}
+
 			const initialItem = this.getCurrentOptionForGroup(optionGroup.id);
 			const initialState = { group: optionGroup, item: initialItem };
 
@@ -813,8 +858,14 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 					this.updateOptionContextKey(optionGroup.id, option.id);
 					this.getOrCreateOptionEmitter(optionGroup.id).fire(option);
 
+					// Cache selection locally for when no session exists yet
+					if (!this._pendingOptionSelections) {
+						this._pendingOptionSelections = new Map();
+					}
+					this._pendingOptionSelections.set(optionGroup.id, option);
+
 					// Notify session if we have one (not in welcome view before session creation)
-					const sessionResource = this._widget?.viewModel?.model.sessionResource;
+					const sessionResource = this._widget?.viewModel?.model?.sessionResource;
 					const currentCtx = sessionResource ? this.chatService.getChatSessionFromInternalUri(sessionResource) : undefined;
 					if (currentCtx) {
 						this.chatSessionsService.notifySessionOptionsChange(
@@ -1703,8 +1754,20 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 	 * Returns undefined if the session doesn't have this option configured.
 	 */
 	private getCurrentOptionForGroup(optionGroupId: string): IChatSessionProviderOptionItem | undefined {
-		const sessionResource = this._widget?.viewModel?.model.sessionResource;
+		const sessionResource = this._widget?.viewModel?.model?.sessionResource;
 		if (!sessionResource) {
+			// No session yet (e.g., deferred creation in agent sessions workspace).
+			// Return the locally cached pending selection, or the default item.
+			const pending = this._pendingOptionSelections?.get(optionGroupId);
+			if (pending) {
+				return pending;
+			}
+			const delegateSessionType = this.options.sessionTypePickerDelegate?.getActiveSessionProvider?.();
+			if (delegateSessionType) {
+				const groups = this.chatSessionsService.getOptionGroupsForSessionType(delegateSessionType);
+				const group = groups?.find(g => g.id === optionGroupId);
+				return group?.items.find(item => item.default);
+			}
 			return;
 		}
 		const ctx = this.chatService.getChatSessionFromInternalUri(sessionResource);
@@ -2034,7 +2097,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 
 		this._inputEditorElement = dom.append(editorContainer, $(chatInputEditorContainerSelector));
 		const editorOptions = getSimpleCodeEditorWidgetOptions();
-		editorOptions.contributions?.push(...EditorExtensionsRegistry.getSomeEditorContributions([ContentHoverController.ID, GlyphHoverController.ID, DropIntoEditorController.ID, CopyPasteController.ID, LinkDetector.ID]));
+		editorOptions.contributions?.push(...EditorExtensionsRegistry.getSomeEditorContributions([ContentHoverController.ID, GlyphHoverController.ID, DropIntoEditorController.ID, CopyPasteController.ID, LinkDetector.ID, PlaceholderTextContribution.ID]));
 		this._inputEditor = this._register(scopedInstantiationService.createInstance(CodeEditorWidget, this._inputEditorElement, options, editorOptions));
 
 		SuggestController.get(this._inputEditor)?.forceRenderingAbove();
@@ -2139,6 +2202,14 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 				actionMinWidth: 40
 			},
 			actionViewItemProvider: (action, options) => {
+				// Hide pickers that are managed externally (e.g. by a welcome view)
+				if (this.options.hiddenPickerIds?.has(action.id)) {
+					const empty = new BaseActionViewItem(undefined, action);
+					if (empty.element) {
+						empty.element.style.display = 'none';
+					}
+					return empty;
+				}
 				if (action.id === OpenModelPickerAction.ID && action instanceof MenuItemAction) {
 					if (!this._currentLanguageModel) {
 						this.setCurrentLanguageModelToDefault();

@@ -3,71 +3,85 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import './media/chatFullWelcomePart.css';
-import * as dom from '../../../../../base/browser/dom.js';
-import { Emitter } from '../../../../../base/common/event.js';
-import { toAction } from '../../../../../base/common/actions.js';
-import { Disposable, DisposableStore } from '../../../../../base/common/lifecycle.js';
-import { observableValue } from '../../../../../base/common/observable.js';
-import { URI } from '../../../../../base/common/uri.js';
-import { isEqual } from '../../../../../base/common/resources.js';
-import { IContextKeyService, ContextKeyExpr } from '../../../../../platform/contextkey/common/contextkey.js';
-import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
-
-
-import { IAgentSessionsService } from '../agentSessions/agentSessionsService.js';
-import { AgentSessionsControl } from '../agentSessions/agentSessionsControl.js';
-import { IChatFullWelcomeOptions, ISessionTypePickerDelegate } from '../chat.js';
-import { ChatSessionPickerActionItem, IChatSessionPickerDelegate } from '../chatSessions/chatSessionPickerActionItem.js';
-import { SearchableOptionPickerActionItem } from '../chatSessions/searchableOptionPickerActionItem.js';
-import { IChatSessionProviderOptionGroup, IChatSessionProviderOptionItem, IChatSessionsService, isModelOptionGroup } from '../../common/chatSessionsService.js';
-import { IChatService } from '../../common/chatService/chatService.js';
-import { ILogService } from '../../../../../platform/log/common/log.js';
-import { ILanguageModelChatMetadataAndIdentifier } from '../../common/languageModels.js';
-import { asCSSUrl } from '../../../../../base/browser/cssValue.js';
-import { FileAccess } from '../../../../../base/common/network.js';
-import { AgentSessionProviders, getAgentSessionProviderName } from '../agentSessions/agentSessions.js';
-import { IProductService } from '../../../../../platform/product/common/productService.js';
-import { WorkspaceFolderCountContext } from '../../../../common/contextkeys.js';
-import { localize } from '../../../../../nls.js';
+import './media/agentSessionsChatWelcomePart.css';
+import * as dom from '../../../base/browser/dom.js';
+import { Emitter } from '../../../base/common/event.js';
+import { toAction } from '../../../base/common/actions.js';
+import { Disposable, DisposableStore } from '../../../base/common/lifecycle.js';
+import { URI } from '../../../base/common/uri.js';
+import { isEqual } from '../../../base/common/resources.js';
+import { IContextKeyService, ContextKeyExpr } from '../../../platform/contextkey/common/contextkey.js';
+import { IInstantiationService } from '../../../platform/instantiation/common/instantiation.js';
+import { IProductService } from '../../../platform/product/common/productService.js';
+import { ILogService } from '../../../platform/log/common/log.js';
+import { localize } from '../../../nls.js';
+import { asCSSUrl } from '../../../base/browser/cssValue.js';
+import { FileAccess } from '../../../base/common/network.js';
+import { IChatSessionProviderOptionGroup, IChatSessionProviderOptionItem, IChatSessionsService } from '../../../workbench/contrib/chat/common/chatSessionsService.js';
+import { IAgentChatTargetConfig } from '../widget/agentSessionsChatTargetConfig.js';
+import { AgentSessionsControl } from '../../../workbench/contrib/chat/browser/agentSessions/agentSessionsControl.js';
+import { AgentSessionProviders, getAgentSessionProviderName } from '../../../workbench/contrib/chat/browser/agentSessions/agentSessions.js';
+import { ChatSessionPickerActionItem, IChatSessionPickerDelegate } from '../../../workbench/contrib/chat/browser/chatSessions/chatSessionPickerActionItem.js';
+import { SearchableOptionPickerActionItem } from '../../../workbench/contrib/chat/browser/chatSessions/searchableOptionPickerActionItem.js';
+import { IAgentSessionsService } from '../../../workbench/contrib/chat/browser/agentSessions/agentSessionsService.js';
+import { IChatService } from '../../../workbench/contrib/chat/common/chatService/chatService.js';
+import { WorkspaceFolderCountContext } from '../../../workbench/common/contextkeys.js';
 
 const MAX_SESSIONS = 6;
 
-export interface IChatFullWelcomePartOptions {
-	/**
-	 * Configuration options from the widget.
-	 */
-	readonly fullWelcomeOptions?: IChatFullWelcomeOptions;
+function isModelOptionGroup(group: IChatSessionProviderOptionGroup): boolean {
+	if (group.id === 'models') {
+		return true;
+	}
+	const nameLower = group.name.toLowerCase();
+	return nameLower === 'model' || nameLower === 'models';
+}
 
+
+export interface IAgentSessionsWelcomePartOptions {
 	/**
-	 * Delegate for the session type picker.
-	 * Provides the active session provider so we know which option groups to show.
+	 * Target configuration that manages allowed targets and selection.
+	 * Replaces the `ISessionTypePickerDelegate` - no session is created on target change.
 	 */
-	readonly sessionTypePickerDelegate?: ISessionTypePickerDelegate;
+	readonly targetConfig: IAgentChatTargetConfig;
 
 	/**
 	 * Returns the current session resource, if a session has been created.
+	 * Since sessions are deferred, this may return `undefined` until the first send.
 	 */
 	readonly getSessionResource?: () => URI | undefined;
+
+	/**
+	 * Maximum number of sessions to display in the sessions grid.
+	 */
+	readonly maxSessions?: number;
 }
 
 /**
- * A self-contained full welcome part that renders provider buttons with
- * an expandable configuration area that slides open when a provider is selected.
+ * A self-contained full welcome part that renders target buttons with
+ * an expandable configuration area that slides open when a target is selected.
+ *
+	 * Unlike the original `ChatFullWelcomePart` on `sandy081/layout-exploration`,
+ * this version uses `IAgentChatTargetConfig` for target management, which means:
+	 * - Target selection is purely UI state (no session creation on change)
+	 * - Allowed targets can be restricted at creation and modified at runtime
+	 * - Option groups are derived from the selected target type
  */
-export class ChatFullWelcomePart extends Disposable {
+export class AgentSessionsChatWelcomePart extends Disposable {
 
 	public readonly element: HTMLElement;
 
 	/**
-	 * Container where the chat input should be inserted by ChatWidget.
+	 * Container where the chat input should be inserted by the parent widget.
 	 */
 	public readonly inputSlot: HTMLElement;
 
+	private readonly _targetConfig: IAgentChatTargetConfig;
 	private sessionsControl: AgentSessionsControl | undefined;
 	private sessionsControlContainer: HTMLElement | undefined;
 	private readonly sessionsControlDisposables = this._register(new DisposableStore());
 	private readonly contentDisposables = this._register(new DisposableStore());
+
 	// Option group pickers
 	private pickersContainer: HTMLElement | undefined;
 	private targetButtonsContainer: HTMLElement | undefined;
@@ -79,14 +93,11 @@ export class ChatFullWelcomePart extends Disposable {
 	private readonly pickerWidgetDisposables = this._register(new DisposableStore());
 	private readonly optionEmitters = new Map<string, Emitter<IChatSessionProviderOptionItem>>();
 
-	// Picker widgets
-	private readonly _currentLanguageModel = observableValue<ILanguageModelChatMetadataAndIdentifier | undefined>('currentLanguageModel', undefined);
 	private readonly _selectedOptions = new Map<string, IChatSessionProviderOptionItem>();
 	private _revealed = false;
-	// For welcome view, always show full labels (not compact mode)
 
 	constructor(
-		private readonly options: IChatFullWelcomePartOptions,
+		private readonly options: IAgentSessionsWelcomePartOptions,
 		@IAgentSessionsService private readonly agentSessionsService: IAgentSessionsService,
 		@IChatSessionsService private readonly chatSessionsService: IChatSessionsService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
@@ -97,23 +108,21 @@ export class ChatFullWelcomePart extends Disposable {
 	) {
 		super();
 
+		this._targetConfig = options.targetConfig;
+
 		this.element = dom.$('.chat-full-welcome');
 		this.inputSlot = dom.$('.chat-full-welcome-inputSlot');
 
 		// Listen for option group changes to re-render pickers
-		// Registered BEFORE buildContent so we don't miss events that fire
-		// while the initial UI is being constructed.
 		this._register(this.chatSessionsService.onDidChangeOptionGroups(() => {
 			this.renderExtensionPickers();
 			this.tryReveal();
 		}));
 
 		// React to chat session option changes for the active session
-		this._register(this.chatSessionsService.onDidChangeSessionOptions(e => {
+		this._register(this.chatSessionsService.onDidChangeSessionOptions((e: URI | undefined) => {
 			const sessionResource = this.options.getSessionResource?.();
 			if (sessionResource && isEqual(sessionResource, e)) {
-				// Sync selected options from the session service so pickers reflect
-				// extension-provided values, then refresh pickers.
 				this.syncOptionsFromSession(sessionResource);
 				this.renderExtensionPickers();
 			}
@@ -127,13 +136,21 @@ export class ChatFullWelcomePart extends Disposable {
 			}
 		}));
 
-		// Listen for session type changes from the delegate
-		if (this.options.sessionTypePickerDelegate?.onDidChangeActiveSessionProvider) {
-			this._register(this.options.sessionTypePickerDelegate.onDidChangeActiveSessionProvider(() => {
-				this.updateTargetButtonStates();
-				this.renderExtensionPickers();
-			}));
-		}
+		// Listen for target changes from the target config
+		this._register(this._targetConfig.onDidChangeSelectedTarget(() => {
+			this.updateTargetButtonStates();
+			this.renderExtensionPickers();
+		}));
+
+		// Listen for allowed targets changes (runtime additions/removals)
+		this._register(this._targetConfig.onDidChangeAllowedTargets(() => {
+			// Rebuild target buttons since the available set changed
+			if (this.targetButtonsContainer) {
+				dom.clearNode(this.targetButtonsContainer);
+				this.renderTargetButtons(this.targetButtonsContainer);
+			}
+			this.renderExtensionPickers();
+		}));
 
 		this.buildContent();
 	}
@@ -144,7 +161,7 @@ export class ChatFullWelcomePart extends Disposable {
 		this.sessionsControl = undefined;
 		dom.clearNode(this.element);
 
-		// Header with product name
+		// Header with product mascot
 		const header = dom.append(this.element, dom.$('.chat-full-welcome-header'));
 
 		// Mascot
@@ -153,12 +170,10 @@ export class ChatFullWelcomePart extends Disposable {
 		const mascotUrl = asCSSUrl(FileAccess.asBrowserUri(`vs/workbench/contrib/chat/browser/viewsWelcome/media/code-icon-agent-sessions-${quality}.svg`));
 		mascot.style.backgroundImage = mascotUrl;
 
-
-
 		// Option group pickers container (between header and input)
 		this.pickersContainer = dom.append(this.element, dom.$('.chat-full-welcome-pickers-container'));
 
-		// Input slot - ChatWidget will insert the input part here
+		// Input slot - the parent widget inserts the input part here
 		dom.append(this.element, this.inputSlot);
 
 		// Render option group pickers initially
@@ -178,15 +193,10 @@ export class ChatFullWelcomePart extends Disposable {
 			return;
 		}
 
-		// Check for option groups on the active session type (default: Background)
-		const activeType = this.options.sessionTypePickerDelegate?.getActiveSessionProvider?.() ?? AgentSessionProviders.Background;
-		const optionGroups = this.chatSessionsService.getOptionGroupsForSessionType(activeType);
-		const hasGroups = optionGroups && optionGroups.length > 0;
-
-		if (hasGroups) {
-			this.doReveal();
-		}
-		// again when groups become available.
+		// Always reveal immediately - the input must be visible so the user
+		// can type right away. Option group pickers will appear dynamically
+		// when extensions register them via onDidChangeOptionGroups.
+		this.doReveal();
 	}
 
 	private doReveal(): void {
@@ -196,20 +206,17 @@ export class ChatFullWelcomePart extends Disposable {
 		this._revealed = true;
 		this.element.classList.add('revealed');
 
-		// Position the indicator now that the element is visible and has layout
 		dom.getWindow(this.element).requestAnimationFrame(() => this.updateTargetIndicatorPosition());
 	}
 
 	/**
 	 * Render option group picker widgets above the input.
-	 * Queries the session service for available option groups and creates picker widgets.
 	 */
 	private renderOptionGroupPickers(): void {
 		if (!this.pickersContainer) {
 			return;
 		}
 
-		// Clean up existing picker widgets
 		this.disposePickerWidgets();
 		dom.clearNode(this.pickersContainer);
 
@@ -225,7 +232,6 @@ export class ChatFullWelcomePart extends Disposable {
 		// Extension pickers container (dynamic)
 		this.extensionPickersContainer = dom.append(pickersRow, dom.$('.chat-full-welcome-extension-pickers'));
 
-		// Render the extension pickers
 		this.renderExtensionPickers();
 	}
 
@@ -233,7 +239,7 @@ export class ChatFullWelcomePart extends Disposable {
 	 * Update active states of existing target buttons without recreating them.
 	 */
 	private updateTargetButtonStates(): void {
-		const activeType = this.options.sessionTypePickerDelegate?.getActiveSessionProvider?.() ?? AgentSessionProviders.Background;
+		const activeType = this._targetConfig.selectedTarget.get() ?? AgentSessionProviders.Background;
 		let hasActive = false;
 		for (const { element, sessionType } of this.targetButtons) {
 			const isActive = sessionType === activeType;
@@ -254,27 +260,21 @@ export class ChatFullWelcomePart extends Disposable {
 			return;
 		}
 
-		// Determine the active session type
-		const activeSessionType = this.options.sessionTypePickerDelegate?.getActiveSessionProvider?.();
+		const activeSessionType = this._targetConfig.selectedTarget.get();
 		if (!activeSessionType) {
 			this.clearExtensionPickers();
 			this.separatorElement.classList.add('hidden');
 			return;
 		}
 
-		// Get option groups for the active session type
 		const optionGroups = this.chatSessionsService.getOptionGroupsForSessionType(activeSessionType);
 		if (!optionGroups || optionGroups.length === 0) {
-			// Don't clear existing pickers, extensions may not have registered
-			// option groups yet for this session type. Keep showing the previous
-			// pickers until onDidChangeOptionGroups fires with new data.
 			return;
 		}
 
 		// Filter to visible option groups
 		const visibleGroups: IChatSessionProviderOptionGroup[] = [];
 		for (const group of optionGroups) {
-			// Skip the models option group, it is shown in the chat input box instead.
 			if (isModelOptionGroup(group)) {
 				continue;
 			}
@@ -291,26 +291,20 @@ export class ChatFullWelcomePart extends Disposable {
 			return;
 		}
 
-		// Groups are available,clear old pickers and render new ones
 		this.clearExtensionPickers();
-
-		// Show separator
 		this.separatorElement.classList.remove('hidden');
 
-		// Trigger fade-in animation on the extension pickers container
+		// Trigger fade-in animation
 		if (this.extensionPickersContainer) {
 			this.extensionPickersContainer.classList.remove('fade-in');
-			// Force reflow to restart animation
 			void this.extensionPickersContainer.offsetWidth;
 			this.extensionPickersContainer.classList.add('fade-in');
 		}
 
-		// Create a picker widget for each visible option group
 		for (const optionGroup of visibleGroups) {
 			const initialItem = this.getDefaultOptionForGroup(optionGroup);
 			const initialState = { group: optionGroup, item: initialItem };
 
-			// Create delegate for this option group
 			const emitter = this.getOrCreateOptionEmitter(optionGroup.id);
 			const itemDelegate: IChatSessionPickerDelegate = {
 				getCurrentOption: () => this._selectedOptions.get(optionGroup.id) ?? this.getDefaultOptionForGroup(optionGroup),
@@ -326,23 +320,18 @@ export class ChatFullWelcomePart extends Disposable {
 						this.chatSessionsService.notifySessionOptionsChange(
 							currentCtx.chatSessionResource,
 							[{ optionId: optionGroup.id, value: option }]
-						).catch(err => this.logService.error(`Failed to notify extension of ${optionGroup.id} change:`, err));
+						).catch((err) => this.logService.error(`Failed to notify extension of ${optionGroup.id} change:`, err));
 					}
 
-					// Re-render extension pickers in case `when` clauses depend on this option
 					this.renderExtensionPickers();
 				},
 				getOptionGroup: () => {
 					const groups = this.chatSessionsService.getOptionGroupsForSessionType(activeSessionType);
-					return groups?.find(g => g.id === optionGroup.id);
+					return groups?.find((g: { id: string }) => g.id === optionGroup.id);
 				},
 				getSessionResource: () => this.options.getSessionResource?.(),
 			};
 
-			// Use toAction (plain object) instead of new Action() because
-			// ChatSessionPickerActionItem spreads the action, and prototype
-			// getters (like Action.enabled) are lost during spread. MenuItemAction
-			// works in the toolbar path because its enabled is an own property.
 			const action = toAction({ id: optionGroup.id, label: optionGroup.name, run: () => { } });
 
 			const widget = this.instantiationService.createInstance(
@@ -350,11 +339,9 @@ export class ChatFullWelcomePart extends Disposable {
 				action, initialState, itemDelegate
 			);
 
-
 			this.pickerWidgetDisposables.add(widget);
 			this.pickerWidgets.set(optionGroup.id, widget);
 
-			// Render the picker into a row with label + slot
 			const row = dom.append(this.extensionPickersContainer!, dom.$('.chat-full-welcome-picker-row'));
 			dom.append(row, dom.$('.chat-full-welcome-picker-label', undefined, optionGroup.name));
 			const slot = dom.append(row, dom.$('.chat-full-welcome-picker-slot'));
@@ -363,20 +350,25 @@ export class ChatFullWelcomePart extends Disposable {
 	}
 
 	/**
-	 * Render target session type buttons (Background and Cloud only).
-	 * These are stable and only update active state on session type change.
+	 * Render target session type buttons.
+	 * Only shows targets from the allowed set in the target config.
 	 */
 	private renderTargetButtons(container: HTMLElement): void {
-		const targetTypes = [AgentSessionProviders.Background, AgentSessionProviders.Cloud];
-		const activeType = this.options.sessionTypePickerDelegate?.getActiveSessionProvider?.() ?? AgentSessionProviders.Background;
+		const allowed = this._targetConfig.allowedTargets.get();
+		const activeType = this._targetConfig.selectedTarget.get() ?? AgentSessionProviders.Background;
 
 		// Sliding indicator behind the active button
 		this.targetIndicator = dom.append(container, dom.$('.chat-full-welcome-target-indicator'));
 
 		this.targetButtons = [];
-		for (const sessionType of targetTypes) {
+		for (const sessionType of allowed) {
+			// Skip Local - it maps to the same UI as "Background" in the welcome view
+			if (sessionType === AgentSessionProviders.Local) {
+				continue;
+			}
+
 			const name = sessionType === AgentSessionProviders.Background
-				? localize('chat.session.chatFullWelcome.local', "Local")
+				? localize('agentChat.fullWelcome.local', "Local")
 				: getAgentSessionProviderName(sessionType);
 			const button = dom.$('.chat-full-welcome-target-button');
 			const labelEl = dom.$('span.chat-full-welcome-target-label', undefined, name);
@@ -385,20 +377,16 @@ export class ChatFullWelcomePart extends Disposable {
 			button.classList.toggle('active', sessionType === activeType);
 
 			this.contentDisposables.add(dom.addDisposableListener(button, dom.EventType.CLICK, () => {
-				if (this.options.sessionTypePickerDelegate?.setActiveSessionProvider) {
-					this.options.sessionTypePickerDelegate.setActiveSessionProvider(sessionType);
-				}
+				this._targetConfig.setSelectedTarget(sessionType);
 			}));
 
 			container.appendChild(button);
 			this.targetButtons.push({ element: button, sessionType });
 		}
 
-		// Mark has-selection if there's already an active target
-		const hasActive = targetTypes.includes(activeType);
+		const hasActive = [...allowed].includes(activeType);
 		this.targetButtonsContainer?.classList.toggle('has-selection', hasActive);
 
-		// Position indicator after layout settles
 		dom.getWindow(container).requestAnimationFrame(() => this.updateTargetIndicatorPosition());
 	}
 
@@ -419,8 +407,6 @@ export class ChatFullWelcomePart extends Disposable {
 		const containerRect = this.targetButtonsContainer.getBoundingClientRect();
 		const buttonRect = activeButton.element.getBoundingClientRect();
 
-		// If the indicator is not yet visible, suppress the slide transition
-		// so it appears instantly at the correct position on first load.
 		const isFirstPosition = !this.targetIndicator.classList.contains('visible');
 		if (isFirstPosition) {
 			this.targetIndicator.style.transition = 'none';
@@ -431,15 +417,11 @@ export class ChatFullWelcomePart extends Disposable {
 		this.targetIndicator.classList.add('visible');
 
 		if (isFirstPosition) {
-			// Force a reflow then restore the transition for future slides
 			void this.targetIndicator.offsetWidth;
 			this.targetIndicator.style.transition = '';
 		}
 	}
 
-	/**
-	 * Evaluate whether an option group should be visible based on its `when` expression.
-	 */
 	private evaluateOptionGroupVisibility(optionGroup: { id: string; when?: string }): boolean {
 		if (!optionGroup.when) {
 			return true;
@@ -453,30 +435,21 @@ export class ChatFullWelcomePart extends Disposable {
 		return this.contextKeyService.contextMatchesRules(expr);
 	}
 
-	/**
-	 * Get the default option for an option group.
-	 */
 	private getDefaultOptionForGroup(optionGroup: IChatSessionProviderOptionGroup): IChatSessionProviderOptionItem | undefined {
-		// Check if user has previously selected an option
 		const selected = this._selectedOptions.get(optionGroup.id);
 		if (selected) {
 			return selected;
 		}
-		// Fall back to the default item
-		return optionGroup.items.find(item => item.default);
+		return optionGroup.items.find((item) => item.default === true);
 	}
 
-	/**
-	 * Sync selected options from the session service into `_selectedOptions`
-	 * and fire emitters so existing picker widgets update their labels.
-	 */
 	private syncOptionsFromSession(sessionResource: URI): void {
 		const ctx = this.chatService.getChatSessionFromInternalUri(sessionResource);
 		if (!ctx) {
 			return;
 		}
 
-		const activeSessionType = this.options.sessionTypePickerDelegate?.getActiveSessionProvider?.();
+		const activeSessionType = this._targetConfig.selectedTarget.get();
 		if (!activeSessionType) {
 			return;
 		}
@@ -498,14 +471,16 @@ export class ChatFullWelcomePart extends Disposable {
 
 			let item: IChatSessionProviderOptionItem | undefined;
 			if (typeof currentOption === 'string') {
-				item = optionGroup.items.find(m => m.id === currentOption.trim());
+				item = optionGroup.items.find((m: { id: string }) => m.id === currentOption.trim());
 			} else {
 				item = currentOption;
 			}
 
 			if (item) {
-				this._selectedOptions.set(optionGroup.id, item);
-				// Fire emitter so existing widgets update their label
+				// Strip the locked flag - locking is a session-specific concern
+				// and the welcome view always shows unlocked pickers.
+				const { locked: _locked, ...unlocked } = item;
+				this._selectedOptions.set(optionGroup.id, unlocked as IChatSessionProviderOptionItem);
 				const emitter = this.optionEmitters.get(optionGroup.id);
 				if (emitter) {
 					emitter.fire(item);
@@ -514,9 +489,6 @@ export class ChatFullWelcomePart extends Disposable {
 		}
 	}
 
-	/**
-	 * Get or create an event emitter for an option group.
-	 */
 	private getOrCreateOptionEmitter(optionGroupId: string): Emitter<IChatSessionProviderOptionItem> {
 		let emitter = this.optionEmitters.get(optionGroupId);
 		if (!emitter) {
@@ -534,9 +506,6 @@ export class ChatFullWelcomePart extends Disposable {
 		this.targetButtons = [];
 	}
 
-	/**
-	 * Clear only the extension picker widgets and their container.
-	 */
 	private clearExtensionPickers(): void {
 		this.pickerWidgetDisposables.clear();
 		this.pickerWidgets.clear();
@@ -544,13 +513,6 @@ export class ChatFullWelcomePart extends Disposable {
 		if (this.extensionPickersContainer) {
 			dom.clearNode(this.extensionPickersContainer);
 		}
-	}
-
-	/**
-	 * Gets the currently selected language model.
-	 */
-	public getSelectedModel(): ILanguageModelChatMetadataAndIdentifier | undefined {
-		return this._currentLanguageModel.get();
 	}
 
 	/**
@@ -582,7 +544,7 @@ export class ChatFullWelcomePart extends Disposable {
 			return;
 		}
 
-		const maxSessions = this.options.fullWelcomeOptions?.maxSessions ?? MAX_SESSIONS;
+		const maxSessions = this.options.maxSessions ?? MAX_SESSIONS;
 		const sessionsWidth = Math.min(800, width - 80);
 		const visibleSessions = Math.min(
 			this.agentSessionsService.model.sessions.filter(s => !s.isArchived()).length,

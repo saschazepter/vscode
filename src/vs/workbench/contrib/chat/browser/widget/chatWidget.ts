@@ -78,7 +78,6 @@ import { IChatListItemTemplate } from './chatListRenderer.js';
 import { ChatListWidget } from './chatListWidget.js';
 import { ChatEditorOptions } from './chatOptions.js';
 import { ChatViewWelcomePart, IChatSuggestedPrompts, IChatViewWelcomeContent } from '../viewsWelcome/chatViewWelcomeController.js';
-import { ChatFullWelcomePart } from '../viewsWelcome/chatFullWelcomePart.js';
 import { IAgentSessionsService } from '../agentSessions/agentSessionsService.js';
 
 const $ = dom.$;
@@ -233,9 +232,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 
 	private welcomeMessageContainer!: HTMLElement;
 	private readonly welcomePart: MutableDisposable<ChatViewWelcomePart> = this._register(new MutableDisposable());
-	private readonly fullWelcomePart: MutableDisposable<ChatFullWelcomePart> = this._register(new MutableDisposable());
 	private fullWelcomeContainer: HTMLElement | undefined;
-	private mainInputContainer: HTMLElement | undefined; // Container for input when not in welcome view (full welcome mode)
 
 	private readonly chatSuggestNextWidget: ChatSuggestNextWidget;
 
@@ -630,20 +627,6 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		// Create immediately so the input can be placed inside it
 		if (this.viewOptions.showFullWelcome) {
 			this.fullWelcomeContainer = dom.append(this.container, $('.chat-full-welcome-container', { style: 'display: none' }));
-
-			// Create the full welcome part immediately so we can use its inputSlot
-			this.fullWelcomePart.value = this.instantiationService.createInstance(
-				ChatFullWelcomePart,
-				{
-					fullWelcomeOptions: this.viewOptions.fullWelcomeOptions,
-					sessionTypePickerDelegate: this.viewOptions.sessionTypePickerDelegate,
-					getSessionResource: () => this.viewModel?.model.sessionResource,
-				}
-			);
-			dom.append(this.fullWelcomeContainer, this.fullWelcomePart.value.element);
-
-			// Create input inside the full welcome's input slot
-			this.createInput(this.fullWelcomePart.value.inputSlot, { renderFollowups: false, renderStyle, renderInputToolbarBelowInput });
 		}
 
 		this.welcomeMessageContainer = dom.append(this.container, $('.chat-welcome-view-container', { style: 'display: none' }));
@@ -672,8 +655,6 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			// In full welcome mode, still create list container for when conversation starts
 			this.listContainer = dom.append(this.container, $(`.interactive-list`));
 			dom.append(this.container, this.chatSuggestNextWidget.domNode);
-			// Create a main input container for when conversation starts (input will be moved here from welcome slot)
-			this.mainInputContainer = dom.append(this.container, $('.chat-main-input-container'));
 		}
 
 		this.renderWelcomeViewContentIfNeeded();
@@ -889,24 +870,6 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			dom.setVisibility(showWelcome, this.fullWelcomeContainer);
 			if (this.welcomeMessageContainer) {
 				dom.setVisibility(false, this.welcomeMessageContainer); // Hide standard welcome when using full welcome
-			}
-
-			// Move input between welcome inputSlot and main container
-			if (this.fullWelcomePart.value && this.mainInputContainer) {
-				const inputElement = this.input.element;
-				if (showWelcome) {
-					// Move input back to welcome inputSlot
-					if (inputElement.parentElement !== this.fullWelcomePart.value.inputSlot) {
-						this.fullWelcomePart.value.inputSlot.appendChild(inputElement);
-					}
-					dom.setVisibility(false, this.mainInputContainer);
-				} else {
-					// Move input to main container for conversation view
-					if (inputElement.parentElement !== this.mainInputContainer) {
-						this.mainInputContainer.appendChild(inputElement);
-					}
-					dom.setVisibility(true, this.mainInputContainer);
-				}
 			}
 		} else if (this.viewModel && this.welcomeMessageContainer) {
 			dom.setVisibility(showWelcome, this.welcomeMessageContainer);
@@ -1795,6 +1758,8 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			defaultMode: this.viewOptions.defaultMode,
 			sessionTypePickerDelegate: this.viewOptions.sessionTypePickerDelegate,
 			workspacePickerDelegate: this.viewOptions.workspacePickerDelegate,
+			hiddenPickerIds: this.viewOptions.hiddenPickerIds,
+			excludeOptionGroup: this.viewOptions.excludeOptionGroup,
 		};
 
 		if (this.viewModel?.editing) {
@@ -1933,7 +1898,6 @@ export class ChatWidget extends Disposable implements IChatWidget {
 				this.finishedEditing();
 			}
 			this.viewModel = undefined;
-			this.fullWelcomePart.value?.resetSelectedOptions();
 			this.onDidChangeItems();
 			this._hasPendingRequestsContextKey.set(false);
 			return;
@@ -1945,11 +1909,6 @@ export class ChatWidget extends Disposable implements IChatWidget {
 
 		if (this.viewModel?.editing) {
 			this.finishedEditing();
-		}
-
-		// Reset welcome part selections when switching to a new empty session
-		if (model.getRequests().length === 0) {
-			this.fullWelcomePart.value?.resetSelectedOptions();
 		}
 
 		this.inputPart.clearTodoListWidget(model.sessionResource, false);
@@ -2109,6 +2068,17 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		this.listWidget?.updateRendererOptions({ restorable: false, editable: false, noFooter: true, progressMessageAtBottomOfResponse: true });
 		if (this.visible) {
 			this.listWidget?.rerender();
+		}
+
+		// Set placeholder on the editor when no viewModel exists yet
+		// (e.g., deferred session creation in agent sessions workspace).
+		// When a viewModel exists, setModel() handles the placeholder.
+		if (!this.viewModel) {
+			let placeholder = this.chatSessionsService.getInputPlaceholderForSessionType(agentId);
+			if (!placeholder) {
+				placeholder = ChatMode.Agent.description.get();
+			}
+			this.inputEditor?.updateOptions({ placeholder });
 		}
 	}
 
@@ -2478,12 +2448,6 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		this.listWidget.layout(contentHeight, width);
 
 		this.welcomeMessageContainer.style.height = `${contentHeight}px`;
-
-		// Layout full welcome part if active
-		if (this.fullWelcomePart.value && this.fullWelcomeContainer) {
-			this.fullWelcomeContainer.style.height = `${contentHeight}px`;
-			this.fullWelcomePart.value.layout(width);
-		}
 
 		const lastResponseIsRendering = isResponseVM(lastItem) && lastItem.renderData;
 		if (lastElementVisible && (!lastResponseIsRendering || checkModeOption(this.input.currentModeKind, this.viewOptions.autoScroll))) {

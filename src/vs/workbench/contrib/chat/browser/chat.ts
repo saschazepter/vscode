@@ -299,6 +299,20 @@ export interface IChatWidgetViewOptions {
 	workspacePickerDelegate?: IWorkspacePickerDelegate;
 
 	/**
+	 * Set of picker action IDs to hide from the input toolbar.
+	 * Used when pickers are rendered externally (e.g. by a welcome view above the input).
+	 */
+	hiddenPickerIds?: ReadonlySet<string>;
+
+	/**
+	 * Optional filter for session option groups in the `ChatSessionPrimaryPicker`.
+	 * When provided, option groups for which this returns `true` are excluded from
+	 * the input toolbar. Use this when specific option groups are rendered externally
+	 * (e.g. repository/folder pickers in a welcome view above the input).
+	 */
+	excludeOptionGroup?: (group: { id: string; name: string }) => boolean;
+
+	/**
 	 * Optional handler for chat submission.
 	 * When provided, this handler is called before the normal input acceptance flow.
 	 * If it returns true (handled), the normal submission is skipped.
