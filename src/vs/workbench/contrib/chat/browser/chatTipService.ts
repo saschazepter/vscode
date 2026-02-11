@@ -126,6 +126,16 @@ const TIP_CATALOG: ITipDefinition[] = [
 	{
 		id: 'tip.codeActions',
 		message: localize('tip.codeActions', "Tip: Select code and right-click for chat actions in the context menu."),
+		excludeWhenCommandsExecuted: [
+			'workbench.action.chat.attachSelection',
+			'workbench.action.chat.attachFile',
+			'inlineChat.start',
+			'chat.internal.explain',
+			'chat.internal.fix',
+			'chat.internal.review',
+			'chat.internal.generateDocs',
+			'chat.internal.generateTests',
+		],
 	},
 	{
 		id: 'tip.undoChanges',
