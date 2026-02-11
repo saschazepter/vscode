@@ -4,7 +4,8 @@
  *--------------------------------------------------------------------------------------------*/
 
 import './media/modalEditorPart.css';
-import { $, addDisposableListener, append, EventType } from '../../../../base/browser/dom.js';
+import { $, addDisposableListener, append, EventHelper, EventType } from '../../../../base/browser/dom.js';
+import { StandardKeyboardEvent } from '../../../../base/browser/keyboardEvent.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { DisposableStore, MutableDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { MenuId } from '../../../../platform/actions/common/actions.js';
@@ -13,18 +14,29 @@ import { IConfigurationService } from '../../../../platform/configuration/common
 import { IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { ServiceCollection } from '../../../../platform/instantiation/common/serviceCollection.js';
+import { IKeybindingService } from '../../../../platform/keybinding/common/keybinding.js';
+import { ResultKind } from '../../../../platform/keybinding/common/keybindingResolver.js';
 import { IStorageService } from '../../../../platform/storage/common/storage.js';
 import { IThemeService } from '../../../../platform/theme/common/themeService.js';
 import { IEditorGroupView, IEditorPartsView } from './editor.js';
 import { EditorPart } from './editorPart.js';
 import { GroupDirection, GroupsOrder, IModalEditorPart } from '../../../services/editor/common/editorGroupsService.js';
 import { IEditorService } from '../../../services/editor/common/editorService.js';
-import { EditorPartModalContext } from '../../../common/contextkeys.js';
+import { EditorPartModalContext, EditorPartModalMaximizedContext } from '../../../common/contextkeys.js';
 import { Verbosity } from '../../../common/editor.js';
 import { IHostService } from '../../../services/host/browser/host.js';
 import { IWorkbenchLayoutService } from '../../../services/layout/browser/layoutService.js';
 import { mainWindow } from '../../../../base/browser/window.js';
 import { localize } from '../../../../nls.js';
+
+const defaultModalEditorAllowableCommands = new Set([
+	'workbench.action.quit',
+	'workbench.action.reloadWindow',
+	'workbench.action.closeActiveEditor',
+	'workbench.action.closeAllEditors',
+	'workbench.action.files.save',
+	'workbench.action.files.saveAll',
+]);
 
 export interface ICreateModalEditorPartResult {
 	readonly part: ModalEditorPartImpl;
@@ -39,6 +51,7 @@ export class ModalEditorPart {
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@IEditorService private readonly editorService: IEditorService,
 		@IWorkbenchLayoutService private readonly layoutService: IWorkbenchLayoutService,
+		@IKeybindingService private readonly keybindingService: IKeybindingService,
 	) {
 	}
 
@@ -112,16 +125,52 @@ export class ModalEditorPart {
 			}
 		}));
 
+		// Block certain workbench commands from being dispatched while the modal is open
+		disposables.add(addDisposableListener(modalElement, EventType.KEY_DOWN, e => {
+			const event = new StandardKeyboardEvent(e);
+			const resolved = this.keybindingService.softDispatch(event, this.layoutService.mainContainer);
+			if (resolved.kind === ResultKind.KbFound && resolved.commandId) {
+				if (
+					resolved.commandId.startsWith('workbench.') &&
+					!defaultModalEditorAllowableCommands.has(resolved.commandId)
+				) {
+					EventHelper.stop(event, true);
+				}
+			}
+		}));
+
 		// Handle close event from editor part
 		disposables.add(Event.once(editorPart.onWillClose)(() => {
 			disposables.dispose();
 		}));
 
 		// Layout the modal editor part
-		disposables.add(Event.runAndSubscribe(this.layoutService.onDidLayoutMainContainer, () => {
+		const layoutModal = () => {
 			const containerDimension = this.layoutService.mainContainerDimension;
-			const width = Math.min(containerDimension.width * 0.8, 1200);
-			const height = Math.min(containerDimension.height * 0.8, 800);
+			const titleBarOffset = this.layoutService.mainContainerOffset.top;
+			const availableHeight = Math.max(containerDimension.height - titleBarOffset, 0);
+
+			let width: number;
+			let height: number;
+
+			if (editorPart.maximized) {
+				const padding = 16; // Keep a small margin around all edges
+				width = Math.max(containerDimension.width - padding, 0);
+				height = Math.max(availableHeight - padding, 0);
+			} else {
+				const maxWidth = 1200;
+				const maxHeight = 800;
+				const targetWidth = containerDimension.width * 0.8;
+				const targetHeight = availableHeight * 0.8;
+				width = Math.min(targetWidth, maxWidth, containerDimension.width);
+				height = Math.min(targetHeight, maxHeight, availableHeight);
+			}
+
+			height = Math.min(height, availableHeight); // Ensure the modal never exceeds available height (below the title bar)
+
+			// Shift the modal block below the title bar
+			modalElement.style.top = `${titleBarOffset}px`;
+			modalElement.style.height = `calc(100% - ${titleBarOffset}px)`;
 
 			editorPartContainer.style.width = `${width}px`;
 			editorPartContainer.style.height = `${height}px`;
@@ -129,7 +178,9 @@ export class ModalEditorPart {
 			const borderSize = 2; // Account for 1px border on all sides and modal header height
 			const headerHeight = 32 + 1 /* border bottom */;
 			editorPart.layout(width - borderSize, height - borderSize - headerHeight, 0, 0);
-		}));
+		};
+		disposables.add(Event.runAndSubscribe(this.layoutService.onDidLayoutMainContainer, layoutModal));
+		disposables.add(editorPart.onDidChangeMaximized(() => layoutModal()));
 
 		// Focus the modal
 		editorPartContainer.focus();
@@ -148,6 +199,12 @@ class ModalEditorPartImpl extends EditorPart implements IModalEditorPart {
 
 	private readonly _onWillClose = this._register(new Emitter<void>());
 	readonly onWillClose = this._onWillClose.event;
+
+	private readonly _onDidChangeMaximized = this._register(new Emitter<boolean>());
+	readonly onDidChangeMaximized = this._onDidChangeMaximized.event;
+
+	private _maximized = false;
+	get maximized(): boolean { return this._maximized; }
 
 	private readonly optionsDisposable = this._register(new MutableDisposable());
 
@@ -185,9 +242,19 @@ class ModalEditorPartImpl extends EditorPart implements IModalEditorPart {
 		this.enforceModalPartOptions();
 	}
 
+	toggleMaximized(): void {
+		this._maximized = !this._maximized;
+
+		this._onDidChangeMaximized.fire(this._maximized);
+	}
+
 	protected override handleContextKeys(): void {
 		const isModalEditorPartContext = EditorPartModalContext.bindTo(this.scopedContextKeyService);
 		isModalEditorPartContext.set(true);
+
+		const isMaximizedContext = EditorPartModalMaximizedContext.bindTo(this.scopedContextKeyService);
+		isMaximizedContext.set(this._maximized);
+		this._register(this.onDidChangeMaximized(maximized => isMaximizedContext.set(maximized)));
 
 		super.handleContextKeys();
 	}

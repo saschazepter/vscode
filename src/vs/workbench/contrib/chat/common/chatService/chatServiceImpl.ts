@@ -51,7 +51,6 @@ import { ILanguageModelToolsService } from '../tools/languageModelToolsService.j
 import { ChatSessionOperationLog } from '../model/chatSessionOperationLog.js';
 import { IPromptsService } from '../promptSyntax/service/promptsService.js';
 import { IChatRequestHooks } from '../promptSyntax/hookSchema.js';
-import { IHooksExecutionService } from '../hooks/hooksExecutionService.js';
 
 const serializedChatKey = 'interactive.sessions';
 
@@ -156,7 +155,6 @@ export class ChatService extends Disposable implements IChatService {
 		@IChatSessionsService private readonly chatSessionService: IChatSessionsService,
 		@IMcpService private readonly mcpService: IMcpService,
 		@IPromptsService private readonly promptsService: IPromptsService,
-		@IHooksExecutionService private readonly hooksExecutionService: IHooksExecutionService,
 	) {
 		super();
 
@@ -737,7 +735,7 @@ export class ChatService extends Disposable implements IChatService {
 		const requestModel = new ChatRequestModel({
 			session: model,
 			message: parsedRequest,
-			variableData: { variables: [] },
+			variableData: { variables: options.attachedContext ?? [] },
 			timestamp: Date.now(),
 			modeInfo: options.modeInfo,
 			locationData: options.locationData,
@@ -776,12 +774,9 @@ export class ChatService extends Disposable implements IChatService {
 		const hasPendingRequest = this._pendingRequests.has(sessionResource);
 		const hasPendingQueue = model.getPendingRequests().length > 0;
 
-		if (hasPendingRequest) {
-			// A request is already in progress
-			if (options?.queue) {
-				// Queue this message to be sent after the current request completes
-				return this.queuePendingRequest(model, sessionResource, request, options);
-			}
+		if (options?.queue) {
+			return this.queuePendingRequest(model, sessionResource, request, options);
+		} else if (hasPendingRequest) {
 			this.trace('sendRequest', `Session ${sessionResource} already has a pending request`);
 			return { kind: 'rejected', reason: 'Request already in progress' };
 		}
@@ -906,16 +901,12 @@ export class ChatService extends Disposable implements IChatService {
 			let detectedAgent: IChatAgentData | undefined;
 			let detectedCommand: IChatAgentCommand | undefined;
 
-			// Collect hooks from hooks.json files
+			// Collect hooks from hook .json files
 			let collectedHooks: IChatRequestHooks | undefined;
 			try {
 				collectedHooks = await this.promptsService.getHooks(token);
 			} catch (error) {
 				this.logService.warn('[ChatService] Failed to collect hooks:', error);
-			}
-
-			if (collectedHooks) {
-				store.add(this.hooksExecutionService.registerHooks(model.sessionResource, collectedHooks));
 			}
 
 			const stopWatch = new StopWatch(false);
@@ -955,6 +946,12 @@ export class ChatService extends Disposable implements IChatService {
 							variableData = { variables: this.prepareContext(request.attachedContext) };
 							model.updateRequest(request, variableData);
 
+							// Merge resolved variables (e.g. images from directories) for the
+							// agent request only - they are not stored on the request model.
+							if (options?.resolvedVariables?.length) {
+								variableData = { variables: [...variableData.variables, ...options.resolvedVariables] };
+							}
+
 							const promptTextResult = getPromptText(request.message);
 							variableData = updateRanges(variableData, promptTextResult.diff); // TODO bit of a hack
 							message = promptTextResult.message;
@@ -979,6 +976,7 @@ export class ChatService extends Disposable implements IChatService {
 							modeInstructions: options?.modeInfo?.modeInstructions,
 							editedFileEvents: request.editedFileEvents,
 							hooks: collectedHooks,
+							hasHooksEnabled: !!collectedHooks && Object.values(collectedHooks).some(arr => arr.length > 0),
 						};
 
 						let isInitialTools = true;
@@ -1181,7 +1179,12 @@ export class ChatService extends Disposable implements IChatService {
 		const deferred = this._queuedRequestDeferreds.get(pendingRequest.request.id);
 		this._queuedRequestDeferreds.delete(pendingRequest.request.id);
 
-		const sendOptions = pendingRequest.sendOptions;
+		const sendOptions: IChatSendRequestOptions = {
+			...pendingRequest.sendOptions,
+			// Ensure attachedContext is preserved after deserialization, where sendOptions
+			// loses attachedContext but the request model retains it in variableData.
+			attachedContext: pendingRequest.request.variableData.variables.slice(),
+		};
 		const location = sendOptions.location ?? sendOptions.locationData?.type ?? model.initialLocation;
 		const defaultAgent = this.chatAgentService.getDefaultAgent(location, sendOptions.modeInfo?.kind);
 		if (!defaultAgent) {

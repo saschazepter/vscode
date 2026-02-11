@@ -444,6 +444,7 @@ export default tseslint.config(
 			'src/vs/platform/log/common/log.ts',
 			'src/vs/platform/log/common/logIpc.ts',
 			'src/vs/platform/log/electron-main/logIpc.ts',
+			'src/vs/platform/meteredConnection/electron-main/meteredConnectionChannel.ts',
 			'src/vs/platform/observable/common/wrapInHotClass.ts',
 			'src/vs/platform/observable/common/wrapInReloadableClass.ts',
 			'src/vs/platform/policy/common/policyIpc.ts',
@@ -2063,7 +2064,9 @@ export default tseslint.config(
 	// Additional extension strictness rules
 	{
 		files: [
-			'extensions/markdown-language-features/**/*.ts',
+			'extensions/markdown-language-features/src/**/*.ts',
+			'extensions/markdown-language-features/notebook/**/*.ts',
+			'extensions/markdown-language-features/preview-src/**/*.ts',
 			'extensions/mermaid-chat-features/**/*.ts',
 			'extensions/media-preview/**/*.ts',
 			'extensions/simple-browser/**/*.ts',
