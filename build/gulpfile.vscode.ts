@@ -15,7 +15,7 @@ import electron from '@vscode/gulp-electron';
 import jsonEditor from 'gulp-json-editor';
 import * as util from './lib/util.ts';
 import { getVersion } from './lib/getVersion.ts';
-import { readISODate } from './lib/date.ts';
+import { readISODate, writeISODate } from './lib/date.ts';
 import * as task from './lib/task.ts';
 import buildfile from './buildfile.ts';
 import * as optimize from './lib/optimize.ts';
@@ -253,6 +253,7 @@ const coreCIEsbuild = task.define('core-ci-esbuild', task.series(
 	cleanExtensionsBuildTask,
 	compileNonNativeExtensionsBuildTask,
 	compileExtensionMediaBuildTask,
+	writeISODate('out-build'),
 	// Type-check with tsgo (no emit)
 	task.define('tsgo-typecheck', () => runTsGoTypeCheck()),
 	// Transpile individual files to out-build first (for unit tests)
@@ -638,6 +639,7 @@ BUILD_TARGETS.forEach(buildTarget => {
 				cleanExtensionsBuildTask,
 				compileNonNativeExtensionsBuildTask,
 				compileExtensionMediaBuildTask,
+				writeISODate('out-build'),
 				esbuildBundleTask,
 				vscodeTaskCI
 			));
