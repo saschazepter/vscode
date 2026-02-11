@@ -164,13 +164,13 @@ const TIP_CATALOG: ITipDefinition[] = [
 	},
 	{
 		id: 'tip.messageQueueing',
-		message: localize('tip.messageQueueing', "Tip: You can send follow-up messages and steering while the agent is working. They'll be queued and processed in order."),
+		message: localize('tip.messageQueueing', "Tip: You can send follow-up and steering messages while the agent is working. They'll be queued and processed in order."),
 		when: ChatContextKeys.chatModeKind.isEqualTo(ChatModeKind.Agent),
 		excludeWhenCommandsExecuted: ['workbench.action.chat.queueMessage', 'workbench.action.chat.steerWithMessage'],
 	},
 	{
 		id: 'tip.yoloMode',
-		message: localize('tip.yoloMode', "Tip: Enable [auto approval](command:workbench.action.openSettings?%5B%22chat.tools.global.autoApprove%22%5D) to let the agent run tools without manual confirmation."),
+		message: localize('tip.yoloMode', "Tip: Enable [auto approve](command:workbench.action.openSettings?%5B%22chat.tools.global.autoApprove%22%5D) to let the agent run tools without manual confirmation."),
 		when: ContextKeyExpr.and(
 			ChatContextKeys.chatModeKind.isEqualTo(ChatModeKind.Agent),
 			ContextKeyExpr.notEquals('config.chat.tools.global.autoApprove', true),
