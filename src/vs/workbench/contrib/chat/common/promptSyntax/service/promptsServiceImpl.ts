@@ -36,7 +36,7 @@ import { IAgentInstructions, type IAgentSource, IChatPromptSlashCommand, ICustom
 import { Delayer } from '../../../../../../base/common/async.js';
 import { Schemas } from '../../../../../../base/common/network.js';
 import { IChatRequestHooks, IHookCommand, HookType } from '../hookSchema.js';
-import { parseHooksFromFile } from '../hookCompatibility.js';
+import { HookSourceFormat, getHookSourceFormat, parseHooksFromFile } from '../hookCompatibility.js';
 import { IWorkspaceContextService } from '../../../../../../platform/workspace/common/workspace.js';
 import { IPathService } from '../../../../../services/path/common/pathService.js';
 import { getTarget, mapClaudeModels, mapClaudeTools } from '../languageProviders/promptValidator.js';
@@ -1000,6 +1000,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 	}
 
 	private async computeHooks(token: CancellationToken): Promise<IChatRequestHooks | undefined> {
+		const useClaudeHooks = this.configurationService.getValue<boolean>(PromptsConfig.USE_CLAUDE_HOOKS);
 		const hookFiles = await this.listPromptFiles(PromptsType.hook, token);
 
 		if (hookFiles.length === 0) {
@@ -1035,6 +1036,12 @@ export class PromptsService extends Disposable implements IPromptsService {
 
 				// Use format-aware parsing that handles Copilot and Claude formats
 				const { format, hooks, disabledAllHooks } = parseHooksFromFile(hookFile.uri, json, workspaceRootUri, userHome);
+
+				// Skip Claude hooks when the setting is disabled
+				if (format === HookSourceFormat.Claude && useClaudeHooks === false) {
+					this.logger.trace(`[PromptsService] Skipping Claude hook file (disabled via setting): ${hookFile.uri}`);
+					continue;
+				}
 
 				// Skip files that have all hooks disabled
 				if (disabledAllHooks) {
@@ -1319,12 +1326,26 @@ export class PromptsService extends Disposable implements IPromptsService {
 		const workspaceFolder = this.workspaceService.getWorkspace().folders[0];
 		const workspaceRootUri = workspaceFolder?.uri;
 
+		const useClaudeHooks = this.configurationService.getValue<boolean>(PromptsConfig.USE_CLAUDE_HOOKS);
 		const hookFiles = await this.listPromptFiles(PromptsType.hook, token);
 		for (const promptPath of hookFiles) {
 			const uri = promptPath.uri;
 			const storage = promptPath.storage;
 			const extensionId = promptPath.extension?.identifier?.value;
 			const name = basename(uri);
+
+			// Skip Claude hooks when the setting is disabled
+			if (getHookSourceFormat(uri) === HookSourceFormat.Claude && useClaudeHooks === false) {
+				files.push({
+					uri,
+					storage,
+					status: 'skipped',
+					skipReason: 'claude-hooks-disabled',
+					name,
+					extensionId
+				});
+				continue;
+			}
 
 			try {
 				// Try to parse the JSON to validate it (supports JSONC with comments)

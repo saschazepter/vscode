@@ -274,7 +274,8 @@ export type PromptFileSkipReason =
 	| 'duplicate-name'
 	| 'parse-error'
 	| 'disabled'
-	| 'all-hooks-disabled';
+	| 'all-hooks-disabled'
+	| 'claude-hooks-disabled';
 
 /**
  * Result of discovering a single prompt file.

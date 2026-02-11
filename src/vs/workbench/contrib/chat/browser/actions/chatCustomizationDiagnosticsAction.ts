@@ -450,6 +450,8 @@ function getSkipReasonMessage(skipReason: PromptFileSkipReason | undefined, erro
 			return nls.localize('status.typeDisabled', 'Disabled');
 		case 'all-hooks-disabled':
 			return nls.localize('status.allHooksDisabled', 'All hooks disabled via disableAllHooks');
+		case 'claude-hooks-disabled':
+			return nls.localize('status.claudeHooksDisabled', 'Claude hooks disabled via chat.useClaudeHooks setting');
 		default:
 			return errorMessage ?? nls.localize('status.unknownError', 'Unknown error');
 	}

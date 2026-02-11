@@ -259,6 +259,7 @@ export const tocData: ITOCEntry<string> = {
 						'chat.useAgentSkills',
 						'chat.experimental.useSkillAdherencePrompt',
 						'chat.useChatHooks',
+						'chat.useClaudeHooks',
 						'chat.includeApplyingInstructions',
 						'chat.includeReferencedInstructions',
 						'chat.sendElementsToChat.*',
