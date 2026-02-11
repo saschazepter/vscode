@@ -72,6 +72,8 @@ export class McpSandboxService extends Disposable implements IMcpSandboxService 
 		if (this._os === OperatingSystem.Windows) {
 			return false;
 		}
+		//debug: add logs for debugging sandbox enablement issues.
+		this._logService.debug(`McpSandboxService: Checking sandbox enablement for server ${serverDef.label}. Enabled servers: ${[...this._sandboxEnabledMcpServers].join(', ')}`);
 		return this._sandboxEnabledMcpServers.has(serverDef.label);
 	}
 
@@ -115,6 +117,7 @@ export class McpSandboxService extends Disposable implements IMcpSandboxService 
 				};
 			}
 		}
+		this._logService.debug(`McpSandboxService: launch details for server ${serverDef.label} - command: ${launch.command}, args: ${launch.args.join(' ')}, env: ${JSON.stringify(launch.env)}`);
 		return launch;
 	}
 
@@ -126,6 +129,7 @@ export class McpSandboxService extends Disposable implements IMcpSandboxService 
 			await this._initTempDir();
 		}
 		this._sandboxConfigPath = await this._updateSandboxConfig(sandboxConfig ?? this._sandboxConfig);
+		this._logService.debug(`McpSandboxService: Updated sandbox config path: ${this._sandboxConfigPath}`);
 		return this._sandboxConfigPath;
 	}
 
