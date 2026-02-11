@@ -138,7 +138,6 @@ export class McpListWidget extends Disposable {
 	private emptyText!: HTMLElement;
 	private emptySubtext!: HTMLElement;
 
-	private allServers: IWorkbenchMcpServer[] = [];
 	private filteredServers: IWorkbenchMcpServer[] = [];
 	private searchQuery: string = '';
 	private readonly delayedFilter = new Delayer<void>(200);
@@ -259,7 +258,6 @@ export class McpListWidget extends Disposable {
 	}
 
 	private async refresh(): Promise<void> {
-		this.allServers = await this.mcpWorkbenchService.queryLocal();
 		this.filterServers();
 	}
 
@@ -267,12 +265,12 @@ export class McpListWidget extends Disposable {
 		const query = this.searchQuery.toLowerCase().trim();
 
 		if (query) {
-			this.filteredServers = this.allServers.filter(server =>
+			this.filteredServers = this.mcpWorkbenchService.local.filter(server =>
 				server.label.toLowerCase().includes(query) ||
 				(server.description?.toLowerCase().includes(query))
 			);
 		} else {
-			this.filteredServers = [...this.allServers];
+			this.filteredServers = [...this.mcpWorkbenchService.local];
 		}
 
 		// Show empty state only when there are no servers at all (not when filtered to empty)
