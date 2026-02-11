@@ -238,7 +238,6 @@ export class OutputMonitor extends Disposable implements IOutputMonitor {
 		}
 
 		// Check for generic "press any key" prompts from scripts.
-		// When auto-reply is enabled, send Enter automatically; otherwise prompt the user.
 		if ((!isTask || !isTaskInactive) && detectsGenericPressAnyKeyPattern(output)) {
 			this._logService.trace('OutputMonitor: Idle -> generic "press any key" detected, requesting free-form input');
 			// Register a marker to track this prompt position so we don't re-detect it
@@ -247,12 +246,6 @@ export class OutputMonitor extends Disposable implements IOutputMonitor {
 				this._lastPromptMarker = currentMarker;
 			}
 			this._cleanupIdleInputListener();
-			if (this._configurationService.getValue(TerminalChatAgentToolsSettingId.AutoReplyToPrompts)) {
-				this._logService.trace('OutputMonitor: Auto-reply enabled for "press any key", sending Enter');
-				await this._execution.instance.sendText('', true);
-				this._outputMonitorTelemetryCounters.inputToolAutoAcceptCount++;
-				return { shouldContinuePollling: true };
-			}
 			this._outputMonitorTelemetryCounters.inputToolFreeFormInputShownCount++;
 			const lastLine = output.trimEnd().split(/\r?\n/).pop() || '';
 			const receivedTerminalInput = await this._requestFreeFormTerminalInput(token, this._execution, {
