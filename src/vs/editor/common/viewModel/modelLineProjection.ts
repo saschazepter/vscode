@@ -182,11 +182,11 @@ class ModelLineProjection implements IModelLineProjection {
 				result[globalIndex] = null;
 				continue;
 			}
-			result[globalIndex] = this._getViewLineData(lineWithInjections, lineInlineDecorations ? lineInlineDecorations[outputLineIndex] : [], outputLineIndex);
+			result[globalIndex] = this._getViewLineData(lineWithInjections, lineInlineDecorations ? lineInlineDecorations[outputLineIndex] : null, outputLineIndex);
 		}
 	}
 
-	private _getViewLineData(lineWithInjections: LineTokens, inlineDecorations: InlineDecoration[], outputLineIndex: number): ViewLineData {
+	private _getViewLineData(lineWithInjections: LineTokens, inlineDecorations: null | InlineDecoration[], outputLineIndex: number): ViewLineData {
 		this._assertVisible();
 		const lineBreakData = this._projectionData;
 		const deltaStartIndex = (outputLineIndex > 0 ? lineBreakData.wrappedTextIndentLength : 0);
@@ -304,7 +304,7 @@ class IdentityModelLineProjection implements IModelLineProjection {
 			lineContent.length + 1,
 			0,
 			lineTokens.inflate(),
-			[]
+			null
 		);
 	}
 

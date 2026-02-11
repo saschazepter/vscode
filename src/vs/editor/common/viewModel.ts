@@ -278,7 +278,7 @@ export class ViewLineData {
 	/**
 	 * Additional inline decorations for this line.
 	*/
-	public readonly inlineDecorations: readonly InlineDecoration[];
+	public readonly inlineDecorations: readonly InlineDecoration[] | null;
 
 	constructor(
 		content: string,
@@ -287,7 +287,7 @@ export class ViewLineData {
 		maxColumn: number,
 		startVisibleColumn: number,
 		tokens: IViewLineTokens,
-		inlineDecorations: readonly InlineDecoration[]
+		inlineDecorations: readonly InlineDecoration[] | null
 	) {
 		this.content = content;
 		this.continuesWithWrappedLine = continuesWithWrappedLine;

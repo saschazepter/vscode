@@ -1653,7 +1653,7 @@ export class TextModel extends Disposable implements model.ITextModel, IDecorati
 
 		if (affectedInjectedTextLines && affectedInjectedTextLines.size > 0) {
 			const affectedLines = Array.from(affectedInjectedTextLines);
-			const lineChangeEvents = affectedLines.map(lineNumber => new ModelRawLineChanged(lineNumber, this.getLineContent(lineNumber), this.getLineInjectedText(lineNumber)));
+			const lineChangeEvents = affectedLines.map(lineNumber => new ModelRawLineChanged(lineNumber, this.getLineContent(lineNumber), this._getInjectedTextInLine(lineNumber)));
 			this._onDidChangeContentOrInjectedText(new ModelInjectedTextChangedEvent(lineChangeEvents));
 		}
 		this._fireOnDidChangeLineHeight(affectedLineHeights);
@@ -1865,7 +1865,7 @@ export class TextModel extends Disposable implements model.ITextModel, IDecorati
 		return decs;
 	}
 
-	public getLineInjectedText(lineNumber: number): LineInjectedText[] {
+	private _getInjectedTextInLine(lineNumber: number): LineInjectedText[] {
 		const startOffset = this._buffer.getOffsetAt(lineNumber, 1);
 		const endOffset = startOffset + this._buffer.getLineLength(lineNumber);
 
@@ -2147,23 +2147,24 @@ export class TextModel extends Disposable implements model.ITextModel, IDecorati
 
 export function getLineTokensWithInjections(tokens: LineTokens, injectionOptions: model.InjectedTextOptions[] | null, injectionOffsets: number[] | null): LineTokens {
 	let lineTokens: LineTokens;
-	if (injectionOptions && injectionOffsets) {
+	if (injectionOffsets) {
 		const tokensToInsert: { offset: number; text: string; tokenMetadata: number }[] = [];
+
 		for (let idx = 0; idx < injectionOffsets.length; idx++) {
 			const offset = injectionOffsets[idx];
-			const tokens = injectionOptions[idx].tokens;
+			const tokens = injectionOptions![idx].tokens;
 			if (tokens) {
 				tokens.forEach((range, info) => {
 					tokensToInsert.push({
 						offset,
-						text: range.substring(injectionOptions[idx].content),
+						text: range.substring(injectionOptions![idx].content),
 						tokenMetadata: info.metadata,
 					});
 				});
 			} else {
 				tokensToInsert.push({
 					offset,
-					text: injectionOptions[idx].content,
+					text: injectionOptions![idx].content,
 					tokenMetadata: LineTokens.defaultTokenMetadata,
 				});
 			}

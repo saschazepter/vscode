@@ -24,33 +24,36 @@ export class InlineDecoration {
 	) { }
 }
 
-export interface IDecorationsViewportData {
+/**
+ * A collection of decorations in a range of lines.
+ */
+export interface IViewDecorationsCollection {
 	/**
-	 * Decorations in the viewport
+	 * decorations in the range of lines (ungrouped).
 	 */
 	readonly decorations: ViewModelDecoration[];
 	/**
-	 * Inline decorations grouped by each line in the range
+	 * inline decorations (grouped by each line in the range of lines).
 	 */
 	readonly inlineDecorations: InlineDecoration[][];
 	/**
-	 * Whether the decorations affect the font
+	 * Whether the decorations affect the fonts.
 	 */
-	readonly hasVariableFonts: boolean;
+	readonly hasVariableFonts: boolean[];
 }
 
 export interface IInlineDecorationsComputer {
 	/**
-	 * Method to get the inline decorations for a specific line number
+	 * Get the inline decorations for a specific model line number, split by view line number
 	 */
-	getInlineDecorations(lineNumber: number): InlineDecoration[][] | null;
+	getInlineDecorations(modelLineNumber: number): InlineDecoration[][];
 }
 
 export interface IInlineModelDecorationsComputerContext {
 	/**
-	 * get the model decorations from which to calculate the inline decorations
+	 * Get model decorations for a view range
 	 */
-	getModelDecorations(range: Range, onlyMinimapDecorations: boolean, onlyMarginDecorations: boolean): IModelDecoration[];
+	getModelDecorations(viewRange: Range, onlyMinimapDecorations: boolean, onlyMarginDecorations: boolean): IModelDecoration[];
 }
 
 export class InlineModelDecorationsComputer implements IInlineDecorationsComputer {
@@ -65,26 +68,27 @@ export class InlineModelDecorationsComputer implements IInlineDecorationsCompute
 		this._decorationsCache = Object.create(null);
 	}
 
-	public getInlineDecorations(lineNumber: number): InlineDecoration[][] {
-		const modelRange = new Range(lineNumber, 1, lineNumber, this.model.getLineMaxColumn(lineNumber));
-		const decorationData = this.getDecorations(modelRange, false, false);
-		return decorationData.inlineDecorations;
+	public getInlineDecorations(modelLineNumber: number): InlineDecoration[][] {
+		const modelRange = new Range(modelLineNumber, 1, modelLineNumber, this.model.getLineMaxColumn(modelLineNumber));
+		const viewRange = this.coordinatesConverter.convertModelRangeToViewRange(modelRange);
+		const decorationsViewportData = this.getDecorations(viewRange, false, false);
+		return decorationsViewportData.inlineDecorations;
 	}
 
-	public getDecorations(range: Range, onlyMinimapDecorations: boolean, onlyMarginDecorations: boolean): IDecorationsViewportData {
-		const modelDecorations = this.context.getModelDecorations(range, onlyMinimapDecorations, onlyMarginDecorations);
-		const startLineNumber = range.startLineNumber;
-		const endLineNumber = range.endLineNumber;
+	public getDecorations(viewRange: Range, onlyMinimapDecorations: boolean, onlyMarginDecorations: boolean): IViewDecorationsCollection {
+		const modelDecorations = this.context.getModelDecorations(viewRange, onlyMinimapDecorations, onlyMarginDecorations);
+		const startLineNumber = viewRange.startLineNumber;
+		const endLineNumber = viewRange.endLineNumber;
 
-		let decorationsInViewportLen = 0;
 		const decorationsInViewport: ViewModelDecoration[] = [];
-
+		let decorationsInViewportLen = 0;
 		const inlineDecorations: InlineDecoration[][] = [];
+		const hasVariableFonts: boolean[] = [];
 		for (let j = startLineNumber; j <= endLineNumber; j++) {
 			inlineDecorations[j - startLineNumber] = [];
+			hasVariableFonts[j - startLineNumber] = false;
 		}
 
-		let hasVariableFonts: boolean = false;
 		for (let i = 0, len = modelDecorations.length; i < len; i++) {
 			const modelDecoration = modelDecorations[i];
 			const decorationOptions = modelDecoration.options;
@@ -95,6 +99,7 @@ export class InlineModelDecorationsComputer implements IInlineDecorationsCompute
 
 			const viewModelDecoration = this._getOrCreateViewModelDecoration(modelDecoration);
 			const viewRange = viewModelDecoration.range;
+
 			decorationsInViewport[decorationsInViewportLen++] = viewModelDecoration;
 
 			if (decorationOptions.inlineClassName) {
@@ -103,6 +108,9 @@ export class InlineModelDecorationsComputer implements IInlineDecorationsCompute
 				const intersectedEndLineNumber = Math.min(endLineNumber, viewRange.endLineNumber);
 				for (let j = intersectedStartLineNumber; j <= intersectedEndLineNumber; j++) {
 					inlineDecorations[j - startLineNumber].push(inlineDecoration);
+					if (decorationOptions.affectsFont) {
+						hasVariableFonts[j - startLineNumber] = true;
+					}
 				}
 			}
 			if (decorationOptions.beforeContentClassName) {
@@ -113,6 +121,9 @@ export class InlineModelDecorationsComputer implements IInlineDecorationsCompute
 						InlineDecorationType.Before
 					);
 					inlineDecorations[viewRange.startLineNumber - startLineNumber].push(inlineDecoration);
+					if (decorationOptions.affectsFont) {
+						hasVariableFonts[viewRange.startLineNumber - startLineNumber] = true;
+					}
 				}
 			}
 			if (decorationOptions.afterContentClassName) {
@@ -123,12 +134,13 @@ export class InlineModelDecorationsComputer implements IInlineDecorationsCompute
 						InlineDecorationType.After
 					);
 					inlineDecorations[viewRange.endLineNumber - startLineNumber].push(inlineDecoration);
+					if (decorationOptions.affectsFont) {
+						hasVariableFonts[viewRange.endLineNumber - startLineNumber] = true;
+					}
 				}
 			}
-			if (decorationOptions.affectsFont) {
-				hasVariableFonts = true;
-			}
 		}
+
 		return {
 			decorations: decorationsInViewport,
 			inlineDecorations: inlineDecorations,
@@ -141,11 +153,11 @@ export class InlineModelDecorationsComputer implements IInlineDecorationsCompute
 	}
 
 	public onModelDecorationsChanged(): void {
-		this._decorationsCache = Object.create(null);
+		this.reset();
 	}
 
 	public onLineMappingChanged(): void {
-		this._decorationsCache = Object.create(null);
+		this.reset();
 	}
 
 	private _getOrCreateViewModelDecoration(modelDecoration: IModelDecoration): ViewModelDecoration {
@@ -173,46 +185,45 @@ export class InlineModelDecorationsComputer implements IInlineDecorationsCompute
 
 export interface IInjectedTextInlineDecorationsComputerContext {
 	/**
-	 * Get the injections options for a line number
+	 * Get the injections options for a model line number
 	 */
-	getInjectionOptions(lineNumber: number): InjectedTextOptions[] | null;
+	getInjectionOptions(modelLineNumber: number): InjectedTextOptions[] | null;
 	/**
-	 * Get the injection offsets for a line number
+	 * Get the injection offsets for a model line number
 	 */
-	getInjectionOffsets(lineNumber: number): number[] | null;
+	getInjectionOffsets(modelLineNumber: number): number[] | null;
 	/**
-	 * Get the break offets for a line number
+	 * Get the break offets for a model line number
 	 */
-	getBreakOffsets(lineNumber: number): number[] | null;
+	getBreakOffsets(modelLineNumber: number): number[];
 	/**
-	 * Get the wrapped text indent length for a line number
+	 * Get the wrapped text indent length for a model line number
 	 */
-	getWrappedTextIndentLength(lineNumber: number): number | null;
+	getWrappedTextIndentLength(modelLineNumber: number): number;
 }
 
 export class InjectedTextInlineDecorationsComputer implements IInlineDecorationsComputer {
 
 	constructor(private readonly context: IInjectedTextInlineDecorationsComputerContext) { }
 
-	public getInlineDecorations(lineNumber: number): InlineDecoration[][] | null {
-		const injectionOffsets = this.context.getInjectionOffsets(lineNumber);
+	public getInlineDecorations(modelLineNumber: number): InlineDecoration[][] {
+		const injectionOffsets = this.context.getInjectionOffsets(modelLineNumber);
 		if (!injectionOffsets) {
-			return null;
+			return [];
 		}
 		const lineInlineDecorations = [];
 		let totalInjectedTextLengthBefore = 0;
 		let currentInjectedOffset = 0;
 
-		const injectionOptions = this.context.getInjectionOptions(lineNumber);
-		const breakOffsets = this.context.getBreakOffsets(lineNumber);
-		const numberOfViewLines = breakOffsets ? breakOffsets.length : 1;
+		const injectionOptions = this.context.getInjectionOptions(modelLineNumber);
+		const breakOffsets = this.context.getBreakOffsets(modelLineNumber);
 
-		for (let outputLineIndex = 0; outputLineIndex < numberOfViewLines; outputLineIndex++) {
+		for (let outputLineIndex = 0; outputLineIndex < breakOffsets.length; outputLineIndex++) {
 			const inlineDecorations = new Array<InlineDecoration>();
 			lineInlineDecorations[outputLineIndex] = inlineDecorations;
 
-			const lineStartOffsetInInputWithInjections = outputLineIndex > 0 && breakOffsets ? breakOffsets[outputLineIndex - 1] : 0;
-			const lineEndOffsetInInputWithInjections = breakOffsets ? breakOffsets[outputLineIndex] : 0;
+			const lineStartOffsetInInputWithInjections = outputLineIndex > 0 ? breakOffsets[outputLineIndex - 1] : 0;
+			const lineEndOffsetInInputWithInjections = breakOffsets[outputLineIndex];
 
 			while (currentInjectedOffset < injectionOffsets.length) {
 				const length = injectionOptions![currentInjectedOffset].content.length;
@@ -228,12 +239,12 @@ export class InjectedTextInlineDecorationsComputer implements IInlineDecorations
 					// Injected text ends after or in this line (but also starts in or before this line).
 					const options = injectionOptions![currentInjectedOffset];
 					if (options.inlineClassName) {
-						const wrappedTextIndentLength = this.context.getWrappedTextIndentLength(lineNumber);
-						const offset = (outputLineIndex > 0 && wrappedTextIndentLength ? wrappedTextIndentLength : 0);
+						const wrappedTextIndentLength = this.context.getWrappedTextIndentLength(modelLineNumber);
+						const offset = (outputLineIndex > 0 ? wrappedTextIndentLength : 0);
 						const start = offset + Math.max(injectedTextStartOffsetInInputWithInjections - lineStartOffsetInInputWithInjections, 0);
 						const end = offset + Math.min(injectedTextEndOffsetInInputWithInjections - lineStartOffsetInInputWithInjections, lineEndOffsetInInputWithInjections - lineStartOffsetInInputWithInjections);
 						if (start !== end) {
-							const range = new Range(lineNumber, start + 1, lineNumber, end + 1);
+							const range = new Range(modelLineNumber, start + 1, modelLineNumber, end + 1);
 							const type: InlineDecorationType = options.inlineClassNameAffectsLetterSpacing ? InlineDecorationType.RegularAffectingLetterSpacing : InlineDecorationType.Regular;
 							inlineDecorations.push(new InlineDecoration(range, options.inlineClassName, type));
 						}
