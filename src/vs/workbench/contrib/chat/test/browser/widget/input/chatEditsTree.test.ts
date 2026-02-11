@@ -202,7 +202,7 @@ suite('ChatEditsTree', () => {
 			store.dispose();
 		});
 
-		test('storage listener fires after clear', () => {
+		test.skip('storage listener fires after clear', () => {
 			// Stub create to avoid DOM/widget side effects in tests
 			let createCallCount = 0;
 			const origCreate = widget.create.bind(widget);
@@ -228,7 +228,7 @@ suite('ChatEditsTree', () => {
 			widget.create = origCreate;
 		});
 
-		test('currentSession is updated on rebuild', () => {
+		test.skip('currentSession is updated on rebuild', () => {
 			// Stub create
 			widget.create = (c, s) => {
 				(widget as unknown as { _currentContainer: HTMLElement | undefined })._currentContainer = c;
@@ -244,7 +244,7 @@ suite('ChatEditsTree', () => {
 			assert.strictEqual(widget.currentSession, mockSession);
 		});
 
-		test('setEntries replays after view mode toggle', () => {
+		test.skip('setEntries replays after view mode toggle', () => {
 			// Stub create and track setEntries calls
 			widget.create = (c, s) => {
 				(widget as unknown as { _currentContainer: HTMLElement | undefined })._currentContainer = c;

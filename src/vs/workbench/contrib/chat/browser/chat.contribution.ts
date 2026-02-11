@@ -356,7 +356,7 @@ configurationRegistry.registerConfiguration({
 				'**/*.lock': false, // yarn.lock, bun.lock, etc.
 				'**/*-lock.{yaml,json}': false, // pnpm-lock.yaml, package-lock.json
 			},
-			markdownDescription: nls.localize('chat.tools.autoApprove.edits', "Controls whether edits made by chat are automatically approved. The default is to approve all edits except those made to certain files which have the potential to cause immediate unintended side-effects, such as `**/.vscode/*.json`.\n\nSet to `true` to automatically approve edits to matching files, `false` to always require explicit approval. The last pattern matching a given file will determine whether the edit is automatically approved."),
+			markdownDescription: nls.localize('chat.tools.autoApprove.edits', "Controls whether edits made by the agent are automatically approved. The default is to approve all edits except those made to certain files which have the potential to cause immediate unintended side-effects, such as `**/.vscode/*.json`.\n\nSet to `true` to automatically approve edits to matching files, `false` to always require explicit approval. The last pattern matching a given file will determine whether the edit is automatically approved."),
 			type: 'object',
 			additionalProperties: {
 				type: 'boolean',
@@ -1407,6 +1407,16 @@ class ChatSlashStaticSlashCommandsContribution extends Disposable {
 			locations: [ChatAgentLocation.Chat]
 		}, async () => {
 			await instantiationService.invokeFunction(showConfigureHooksQuickPick);
+		}));
+		this._store.add(slashCommandService.registerSlashCommand({
+			command: 'debug',
+			detail: nls.localize('debug', "Show Chat Debug View"),
+			sortText: 'z3_debug',
+			executeImmediately: true,
+			silent: true,
+			locations: [ChatAgentLocation.Chat]
+		}, async () => {
+			await commandService.executeCommand('github.copilot.debug.showChatLogView');
 		}));
 		this._store.add(slashCommandService.registerSlashCommand({
 			command: 'agents',

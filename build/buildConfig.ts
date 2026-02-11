@@ -3,13 +3,10 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-#sampleContent {
-	height: 400px;
-	border: 1px solid black;
-}
-
-@font-face {
-	font-family: "codicon";
-	font-display: block;
-	src: url("~@vscode/codicons/dist/codicon.ttf") format("truetype");
-}
+/**
+ * When `true`, self-hosting uses esbuild for fast transpilation (build/next)
+ * and gulp-tsb only for type-checking (`noEmit`).
+ *
+ * When `false`, gulp-tsb does both transpilation and type-checking (old behavior).
+ */
+export const useEsbuildTranspile = true;
