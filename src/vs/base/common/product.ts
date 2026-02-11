@@ -380,4 +380,10 @@ export interface IDefaultChatAgent {
 	readonly completionsAdvancedSetting: string;
 	readonly completionsEnablementSetting: string;
 	readonly nextEditSuggestionsSetting: string;
+
+	/**
+	 * Base URL for downloading pre-built Copilot CLI binaries.
+	 * The platform-specific asset filename is appended at runtime.
+	 */
+	readonly cliReleasesUrl?: string;
 }
