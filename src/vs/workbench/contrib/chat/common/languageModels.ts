@@ -244,7 +244,10 @@ export async function getTextResponseFromStream(response: ILanguageModelChatResp
 		await Promise.all([response.result, streaming]);
 		return responseText;
 	} catch (err) {
-		return 'Error occurred ' + err;
+		if (responseText) {
+			return responseText;
+		}
+		throw err;
 	}
 }
 
