@@ -135,6 +135,7 @@ registry.registerConfiguration({
 			],
 			'description': nls.localize('settingsScrollBehavior', "Controls whether the Settings editor shows one category at a time (paginated) or allows continuous scrolling through all settings."),
 			'default': 'paginated',
+			'tags': ['experimental'],
 			'scope': ConfigurationScope.WINDOW
 		}
 	}
