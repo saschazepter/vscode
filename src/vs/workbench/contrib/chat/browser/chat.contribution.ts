@@ -604,24 +604,7 @@ configurationRegistry.registerConfiguration({
 				},
 			}
 		},
-		[ChatConfiguration.AgentEnabled]: {
-			type: 'boolean',
-			description: nls.localize('chat.agent.enabled.description', "When enabled, agent mode can be activated from chat and tools in agentic contexts with side effects can be used."),
-			default: true,
-			order: 1,
-			policy: {
-				name: 'ChatAgentMode',
-				category: PolicyCategory.InteractiveSession,
-				minimumVersion: '1.99',
-				value: (policyData) => policyData.chat_agent_enabled === false ? false : undefined,
-				localization: {
-					description: {
-						key: 'chat.agent.enabled.description',
-						value: nls.localize('chat.agent.enabled.description', "When enabled, agent mode can be activated from chat and tools in agentic contexts with side effects can be used."),
-					}
-				}
-			}
-		},
+
 		[ChatConfiguration.RequestQueueingEnabled]: {
 			type: 'boolean',
 			description: nls.localize('chat.requestQueuing.enabled.description', "When enabled, allows queuing additional messages while a request is in progress and steering the current request with a new message."),
