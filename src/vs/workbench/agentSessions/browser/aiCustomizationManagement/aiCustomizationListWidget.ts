@@ -595,9 +595,9 @@ export class AICustomizationListWidget extends Disposable {
 		const typeLabel = this.getTypeLabel();
 		const hasWorktree = this.hasActiveWorktree();
 		if (hasWorktree) {
-			this.addButton.label = `$(${Codicon.add.id}) New Worktree ${typeLabel}`;
+			this.addButton.label = `$(${Codicon.add.id}) New ${typeLabel} (Worktree)`;
 		} else {
-			this.addButton.label = `$(${Codicon.add.id}) New User ${typeLabel}`;
+			this.addButton.label = `$(${Codicon.add.id}) New ${typeLabel} (User)`;
 		}
 	}
 
@@ -612,7 +612,7 @@ export class AICustomizationListWidget extends Disposable {
 
 		if (hasWorktree) {
 			// Primary is worktree - dropdown shows user + generate
-			actions.push(new Action('createUser', `$(${Codicon.account.id}) New User ${typeLabel}`, undefined, true, () => {
+			actions.push(new Action('createUser', `$(${Codicon.account.id}) New ${typeLabel} (User)`, undefined, true, () => {
 				this._onDidRequestCreateManual.fire({ type: promptType, target: 'user' });
 			}));
 		}
