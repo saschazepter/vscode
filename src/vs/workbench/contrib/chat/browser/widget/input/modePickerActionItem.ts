@@ -197,7 +197,7 @@ export class ModePickerActionItem extends ChatInputPickerActionViewItem {
 				const currentMode = delegate.currentMode.get();
 				const agentMode = modes.builtin.find(mode => mode.id === ChatMode.Agent.id);
 
-				const shouldHideEditMode = configurationService.getValue<boolean>(ChatConfiguration.EditModeHidden) && chatAgentService.hasToolsAgent && currentMode.id !== ChatMode.Edit.id;
+				const shouldHideEditMode = configurationService.getValue<boolean>(ChatConfiguration.EditModeHidden) && currentMode.id !== ChatMode.Edit.id;
 
 				const otherBuiltinModes = modes.builtin.filter(mode => {
 					if (mode.id === ChatMode.Agent.id) {

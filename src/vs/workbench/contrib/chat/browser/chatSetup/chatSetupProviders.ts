@@ -61,9 +61,7 @@ const defaultChat = {
 	outputChannelId: product.defaultChatAgent?.chatExtensionOutputId ?? '',
 };
 
-const ToolsAgentContextKey = ContextKeyExpr.and(
-	ContextKeyExpr.not(`previewFeaturesDisabled`) // Set by extension
-);
+const ToolsAgentContextKey = ContextKeyExpr.not(`previewFeaturesDisabled`); // Set by extension
 
 export class SetupAgent extends Disposable implements IChatAgentImplementation {
 

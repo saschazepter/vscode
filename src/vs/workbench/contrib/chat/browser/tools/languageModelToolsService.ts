@@ -194,15 +194,7 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 		));
 	}
 
-	/**
-	 * Returns if the given tool or toolset is permitted in the current context.
-	 * All tools are always permitted since agent mode is always enabled.
-	 */
-	private isPermitted(_toolOrToolSet: IToolData | ToolSet, _reader?: IReader): boolean {
-		return true;
-	}
-
-	override dispose(): void {
+	overridedispose(): void {
 		super.dispose();
 
 		this._callsByRequestId.forEach(calls => calls.forEach(call => call.store.dispose()));
@@ -284,9 +276,8 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 			toolData => {
 				const satisfiesWhenClause = !toolData.when || this._contextKeyService.contextMatchesRules(toolData.when);
 				const satisfiesExternalToolCheck = toolData.source.type !== 'extension' || !!extensionToolsEnabled;
-				const satisfiesPermittedCheck = this.isPermitted(toolData);
 				const satisfiesModelFilter = toolMatchesModel(toolData, model);
-				return satisfiesWhenClause && satisfiesExternalToolCheck && satisfiesPermittedCheck && satisfiesModelFilter;
+				return satisfiesWhenClause && satisfiesExternalToolCheck && satisfiesModelFilter;
 			});
 	}
 
@@ -311,8 +302,7 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 			toolDatas,
 			toolData => {
 				const satisfiesExternalToolCheck = toolData.source.type !== 'extension' || !!extensionToolsEnabled;
-				const satisfiesPermittedCheck = this.isPermitted(toolData);
-				return satisfiesExternalToolCheck && satisfiesPermittedCheck;
+				return satisfiesExternalToolCheck;
 			});
 	}
 
@@ -1261,8 +1251,7 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 	private readonly _toolSets = new ObservableSet<ToolSet>();
 
 	readonly toolSets: IObservable<Iterable<ToolSet>> = derived(this, reader => {
-		const allToolSets = Array.from(this._toolSets.observable.read(reader));
-		return allToolSets.filter(toolSet => this.isPermitted(toolSet, reader));
+		return Array.from(this._toolSets.observable.read(reader));
 	});
 
 	getToolSetsForModel(model: ILanguageModelChatMetadata | undefined, reader?: IReader): Iterable<IToolSet> {
@@ -1346,7 +1335,7 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 				continue;
 			}
 
-			if (tool.canBeReferencedInPrompt && !coveredByToolSets.has(tool) && this.isPermitted(tool, reader)) {
+			if (tool.canBeReferencedInPrompt && !coveredByToolSets.has(tool)) {
 				result.push([tool, getToolFullReferenceName(tool)]);
 			}
 		}
