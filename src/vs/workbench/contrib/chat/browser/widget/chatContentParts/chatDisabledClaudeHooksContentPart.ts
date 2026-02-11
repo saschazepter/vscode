@@ -33,11 +33,11 @@ export class ChatDisabledClaudeHooksContentPart extends Disposable implements IC
 		icon.classList.add(...ThemeIcon.asClassNameArray(Codicon.info));
 
 		const enableLink = createMarkdownCommandLink({
-			title: localize('chat.disabledClaudeHooks.enableLink', "Enable hooks"),
+			title: localize('chat.disabledClaudeHooks.enableLink', "Enable"),
 			id: 'workbench.action.openSettings',
 			arguments: [PromptsConfig.USE_CLAUDE_HOOKS],
 		});
-		const message = localize('chat.disabledClaudeHooks.message', "Claude Code hooks were detected but are not enabled. {0}", enableLink);
+		const message = localize('chat.disabledClaudeHooks.message', "Claude Code hooks are available for this workspace. {0}", enableLink);
 		const content = new MarkdownString(message, { isTrusted: true });
 
 		const rendered = this._register(this._markdownRendererService.render(content, {
