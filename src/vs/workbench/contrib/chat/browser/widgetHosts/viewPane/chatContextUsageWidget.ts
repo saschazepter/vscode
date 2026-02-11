@@ -117,6 +117,7 @@ export class ChatContextUsageWidget extends Disposable {
 	private currentData: IChatContextUsageData | undefined;
 
 	private static readonly _OPENED_STORAGE_KEY = 'chat.contextUsage.hasBeenOpened';
+	private static readonly _HOVER_ID = 'chat.contextUsage';
 
 	private readonly _contextUsageOpenedKey: IContextKey<boolean>;
 
@@ -170,6 +171,7 @@ export class ChatContextUsageWidget extends Disposable {
 	}
 
 	private readonly _hoverOptions: Omit<IDelayedHoverOptions, 'content'> = {
+		id: ChatContextUsageWidget._HOVER_ID,
 		appearance: { showPointer: true, compact: true },
 		persistence: { hideOnHover: false },
 		trapFocus: true
@@ -179,7 +181,9 @@ export class ChatContextUsageWidget extends Disposable {
 		if (!this._isVisible.get() || !this.currentData) {
 			return undefined;
 		}
-		this._contextUsageDetails.value = this.instantiationService.createInstance(ChatContextUsageDetails);
+		if (!this._contextUsageDetails.value) {
+			this._contextUsageDetails.value = this.instantiationService.createInstance(ChatContextUsageDetails);
+		}
 		this._contextUsageDetails.value.update(this.currentData);
 		return this._contextUsageDetails.value;
 	}
