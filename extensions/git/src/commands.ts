@@ -5,7 +5,7 @@
 
 import * as os from 'os';
 import * as path from 'path';
-import { Command, commands, Disposable, MessageOptions, Position, QuickPickItem, Range, SourceControlResourceState, TextDocumentShowOptions, TextEditor, Uri, ViewColumn, window, workspace, WorkspaceEdit, WorkspaceFolder, TimelineItem, env, Selection, TextDocumentContentProvider, InputBoxValidationSeverity, TabInputText, TabInputTextMerge, QuickPickItemKind, TextDocument, LogOutputChannel, l10n, Memento, UIKind, QuickInputButton, ThemeIcon, SourceControlHistoryItem, SourceControl, InputBoxValidationMessage, Tab, TabInputNotebook, QuickInputButtonLocation, languages, SourceControlArtifact, lm, LanguageModelChatMessage, CancellationTokenSource } from 'vscode';
+import { Command, commands, Disposable, MessageOptions, Position, QuickPickItem, Range, SourceControlResourceState, TextDocumentShowOptions, TextEditor, Uri, ViewColumn, window, workspace, WorkspaceEdit, WorkspaceFolder, TimelineItem, env, Selection, TextDocumentContentProvider, InputBoxValidationSeverity, TabInputText, TabInputTextMerge, QuickPickItemKind, TextDocument, LogOutputChannel, l10n, Memento, UIKind, QuickInputButton, ThemeIcon, SourceControlHistoryItem, SourceControl, InputBoxValidationMessage, Tab, TabInputNotebook, QuickInputButtonLocation, languages, SourceControlArtifact, lm, LanguageModelChatMessage, CancellationTokenSource, CancellationToken } from 'vscode';
 import TelemetryReporter from '@vscode/extension-telemetry';
 import { uniqueNamesGenerator, adjectives, animals, colors, NumberDictionary } from '@joaomoreno/unique-names-generator';
 import { ForcePushMode, GitErrorCodes, RefType, Status, CommitOptions, RemoteSourcePublisher, Remote, Branch, Ref, Change } from './api/git';
@@ -20,6 +20,7 @@ import { ApiRepository } from './api/api1';
 import { getRemoteSourceActions, pickRemoteSource } from './remoteSource';
 import { RemoteSourceAction } from './typings/git-base';
 import { CloneManager } from './cloneManager';
+import { buildChangeSummary, buildBranchNamePrompt, cleanBranchNameResponse, truncateDiff, deduplicateChanges } from './branchNameGenerator';
 
 abstract class CheckoutCommandItem implements QuickPickItem {
 	abstract get label(): string;
@@ -2961,7 +2962,7 @@ export class CommandCenter {
 		return '';
 	}
 
-	private async generateAIBranchName(repository: Repository, branchWhitespaceChar: string, branchPrefix: string): Promise<string> {
+	private async generateAIBranchName(repository: Repository, branchWhitespaceChar: string, branchPrefix: string, token?: CancellationToken): Promise<string> {
 		const models = await lm.selectChatModels({ family: 'gpt-4o' });
 		if (models.length === 0) {
 			// Fallback: try any available model
@@ -2981,7 +2982,7 @@ export class CommandCenter {
 			repository.diffWithHEAD() as Promise<Change[]>
 		]);
 
-		const allChanges = [...stagedChanges, ...workingTreeChanges];
+		const allChanges = deduplicateChanges([...stagedChanges, ...workingTreeChanges]);
 
 		if (allChanges.length === 0) {
 			window.showInformationMessage(l10n.t('No file changes detected to generate a branch name from.'));
@@ -2989,29 +2990,13 @@ export class CommandCenter {
 		}
 
 		// Build a summary of changes
-		const changeSummary = allChanges.map(change => {
-			const fileName = workspace.asRelativePath(change.uri);
-			switch (change.status) {
-				case Status.INDEX_ADDED:
-				case Status.UNTRACKED:
-				case Status.INTENT_TO_ADD:
-					return `Added: ${fileName}`;
-				case Status.INDEX_DELETED:
-				case Status.DELETED:
-					return `Deleted: ${fileName}`;
-				case Status.INDEX_RENAMED:
-				case Status.INTENT_TO_RENAME:
-					return `Renamed: ${change.originalUri.path} -> ${fileName}`;
-				case Status.INDEX_MODIFIED:
-				case Status.MODIFIED:
-				case Status.TYPE_CHANGED:
-					return `Modified: ${fileName}`;
-				case Status.INDEX_COPIED:
-					return `Copied: ${fileName}`;
-				default:
-					return `Changed: ${fileName}`;
-			}
-		}).join('\n');
+		const changeSummary = buildChangeSummary(
+			allChanges.map(change => ({
+				status: change.status,
+				fileName: workspace.asRelativePath(change.uri),
+				originalPath: change.originalUri.path
+			}))
+		);
 
 		// Get a short diff for additional context (limited to avoid token overflow)
 		let diffSnippet = '';
@@ -3019,45 +3004,28 @@ export class CommandCenter {
 			const rawDiff = await repository.diff(true); // staged diff
 			const workingDiff = await repository.diff(false); // unstaged diff
 			const combinedDiff = [rawDiff, workingDiff].filter(Boolean).join('\n');
-			// Limit diff to ~2000 chars to stay within token limits
-			diffSnippet = combinedDiff.length > 2000
-				? combinedDiff.substring(0, 2000) + '\n... (truncated)'
-				: combinedDiff;
+			diffSnippet = truncateDiff(combinedDiff);
 		} catch {
 			// Diff retrieval is best-effort
 		}
-
-		const prefixRule = branchPrefix
-			? `- The branch name will be automatically prefixed with "${branchPrefix}", so do NOT include it in your output. Do NOT add conventional prefixes like feature/, fix/, etc. since the user already has a configured prefix.`
-			: `- Use conventional prefixes when appropriate: feature/, fix/, refactor/, docs/, chore/, test/`;
 
 		const previousNames: string[] = [];
 
 		// 3 attempts to generate a unique branch name
 		for (let attempt = 0; attempt < 3; attempt++) {
-			const avoidRule = previousNames.length > 0
-				? `\n- Do NOT suggest any of these names, they already exist: ${previousNames.join(', ')}`
-				: '';
-
-			const prompt = `You are a helpful assistant that generates descriptive git branch names. Based on the following file changes and diff, suggest a single branch name that clearly communicates the purpose and scope of the changes.
-
-Rules:
-- Use lowercase letters, numbers, and hyphens only
-- Be descriptive: include what is being changed and why (3-7 words separated by "${branchWhitespaceChar}")
-${prefixRule}
-- Focus on the semantic intent of the changes, not just file names (e.g. "add-ai-branch-name-generation" not "update-commands-ts")
-- Do not include any explanation, just output the branch name
-- Do not wrap in quotes or backticks${avoidRule}
-
-File changes:
-${changeSummary}${diffSnippet ? `\n\nDiff snippet:\n${diffSnippet}` : ''}`;
+			const prompt = buildBranchNamePrompt({
+				changeSummary,
+				diffSnippet,
+				branchWhitespaceChar,
+				branchPrefix,
+				previousNames
+			});
 
 			try {
-				const cts = new CancellationTokenSource();
 				const response = await model.sendRequest(
 					[LanguageModelChatMessage.User(prompt)],
 					{},
-					cts.token
+					token
 				);
 
 				let branchName = '';
@@ -3065,9 +3033,13 @@ ${changeSummary}${diffSnippet ? `\n\nDiff snippet:\n${diffSnippet}` : ''}`;
 					branchName += chunk;
 				}
 
-				// Clean up the response
-				branchName = branchName.trim().replace(/[`'"]/g, '').replace(/\n.*/s, '');
+				branchName = cleanBranchNameResponse(branchName);
 				const sanitized = sanitizeBranchName(branchName, branchWhitespaceChar);
+
+				if (!sanitized) {
+					continue;
+				}
+
 				const fullName = `${branchPrefix}${sanitized}`;
 
 				// Check for existing branch conflict
@@ -3078,6 +3050,9 @@ ${changeSummary}${diffSnippet ? `\n\nDiff snippet:\n${diffSnippet}` : ''}`;
 
 				previousNames.push(branchName);
 			} catch (err) {
+				if (token?.isCancellationRequested) {
+					return '';
+				}
 				window.showWarningMessage(l10n.t('Failed to generate AI branch name: {0}', String(err)));
 				return '';
 			}
@@ -3165,8 +3140,14 @@ ${changeSummary}${diffSnippet ? `\n\nDiff snippet:\n${diffSnippet}` : ''}`;
 
 		inputBox.show();
 
+		const aiCts = new CancellationTokenSource();
+		disposables.push(aiCts);
+
 		const branchName = await new Promise<string | undefined>((resolve) => {
-			disposables.push(inputBox.onDidHide(() => resolve(undefined)));
+			disposables.push(inputBox.onDidHide(() => {
+				aiCts.cancel();
+				resolve(undefined);
+			}));
 			disposables.push(inputBox.onDidAccept(() => resolve(inputBox.value)));
 			disposables.push(inputBox.onDidChangeValue(value => {
 				inputBox.validationMessage = getValidationMessage(value);
@@ -3176,7 +3157,7 @@ ${changeSummary}${diffSnippet ? `\n\nDiff snippet:\n${diffSnippet}` : ''}`;
 					inputBox.busy = true;
 					inputBox.enabled = false;
 					try {
-						const aiName = await this.generateAIBranchName(repository, branchWhitespaceChar, branchPrefix);
+						const aiName = await this.generateAIBranchName(repository, branchWhitespaceChar, branchPrefix, aiCts.token);
 						if (aiName) {
 							inputBox.value = `${branchPrefix}${aiName}`;
 							inputBox.valueSelection = getValueSelection(inputBox.value);
