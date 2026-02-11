@@ -274,7 +274,8 @@ export type PromptFileSkipReason =
 	| 'duplicate-name'
 	| 'parse-error'
 	| 'disabled'
-	| 'all-hooks-disabled';
+	| 'all-hooks-disabled'
+	| 'claude-hooks-disabled';
 
 /**
  * Result of discovering a single prompt file.
@@ -303,6 +304,11 @@ export interface IPromptFileDiscoveryResult {
 export interface IPromptDiscoveryInfo {
 	readonly type: PromptsType;
 	readonly files: readonly IPromptFileDiscoveryResult[];
+}
+
+export interface IConfiguredHooksInfo {
+	readonly hooks: IChatRequestHooks;
+	readonly hasDisabledClaudeHooks: boolean;
 }
 
 /**
@@ -445,5 +451,5 @@ export interface IPromptsService extends IDisposable {
 	 * Gets all hooks collected from hooks.json files.
 	 * The result is cached and invalidated when hook files change.
 	 */
-	getHooks(token: CancellationToken): Promise<IChatRequestHooks | undefined>;
+	getHooks(token: CancellationToken): Promise<IConfiguredHooksInfo | undefined>;
 }
