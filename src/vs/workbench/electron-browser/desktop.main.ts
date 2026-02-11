@@ -68,6 +68,11 @@ import { MultiplexPolicyService } from '../services/policies/common/multiplexPol
 import { WorkbenchModeService } from '../services/layout/browser/workbenchModeService.js';
 import { IWorkbenchModeService } from '../services/layout/common/workbenchModeService.js';
 import { AgentSessionsWorkbench } from '../agentSessions/browser/agentSessionsWorkbench.js';
+import { PaneCompositePartService } from '../browser/parts/paneCompositePartService.js';
+import { IPaneCompositePartService } from '../services/panecomposite/browser/panecomposite.js';
+import { InstantiationType, registerSingleton } from '../../platform/instantiation/common/extensions.js';
+import { ITitleService } from '../services/title/browser/titleService.js';
+import { NativeTitleService } from './parts/titlebar/titlebarPart.js';
 
 export class DesktopMain extends Disposable {
 
@@ -129,14 +134,19 @@ export class DesktopMain extends Disposable {
 		this.applyWindowZoomLevel(services.configurationService);
 
 		// Create Workbench - use AgentSessionsWorkbench for agent sessions workspace
-		const workbench = services.configurationService.getWorkspace().isAgentSessionsWorkspace
-			? new AgentSessionsWorkbench(mainWindow.document.body, {
+		const isAgentSessionsWorkspace = services.configurationService.getWorkspace().isAgentSessionsWorkspace;
+		let workbench: Workbench | AgentSessionsWorkbench;
+		if (isAgentSessionsWorkspace) {
+			workbench = new AgentSessionsWorkbench(mainWindow.document.body, {
 				extraClasses: this.getExtraClasses(),
-			}, services.serviceCollection, services.logService)
-			: new Workbench(mainWindow.document.body, {
+			}, services.serviceCollection, services.logService);
+		} else {
+			registerDefaultWorkbenchServices();
+			workbench = new Workbench(mainWindow.document.body, {
 				extraClasses: this.getExtraClasses(),
 				resetLayout: this.configuration['disable-layout-restore'] === true
 			}, services.serviceCollection, services.logService);
+		}
 
 		// Listeners
 		this.registerListeners(workbench, services.storageService);
@@ -175,7 +185,7 @@ export class DesktopMain extends Disposable {
 		this._register(workbench.onDidShutdown(() => this.dispose()));
 	}
 
-	private async initServices(): Promise<{ serviceCollection: ServiceCollection; logService: ILogService; storageService: NativeWorkbenchStorageService; configurationService: WorkspaceService; isAgentSessionsWorkspace: boolean }> {
+	private async initServices(): Promise<{ serviceCollection: ServiceCollection; logService: ILogService; storageService: NativeWorkbenchStorageService; configurationService: WorkspaceService }> {
 		const serviceCollection = new ServiceCollection();
 
 
@@ -361,10 +371,7 @@ export class DesktopMain extends Disposable {
 		// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 
-		// Check if this is an agent sessions workspace
-		const isAgentSessionsWorkspace = !!configurationService.getWorkspace().isAgentSessionsWorkspace;
-
-		return { serviceCollection, logService, storageService, configurationService, isAgentSessionsWorkspace };
+		return { serviceCollection, logService, storageService, configurationService };
 	}
 
 	private resolveWorkspaceIdentifier(environmentService: INativeWorkbenchEnvironmentService): IAnyWorkspaceIdentifier {
@@ -440,4 +447,9 @@ export function main(configuration: INativeWindowConfiguration): Promise<void> {
 	const workbench = new DesktopMain(configuration);
 
 	return workbench.open();
+}
+
+function registerDefaultWorkbenchServices() {
+	registerSingleton(IPaneCompositePartService, PaneCompositePartService, InstantiationType.Delayed);
+	registerSingleton(ITitleService, NativeTitleService, InstantiationType.Eager);
 }

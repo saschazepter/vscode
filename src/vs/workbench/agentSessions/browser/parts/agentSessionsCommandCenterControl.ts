@@ -15,15 +15,20 @@ import { DisposableStore } from '../../../../base/common/lifecycle.js';
 import { localize } from '../../../../nls.js';
 import { createActionViewItem } from '../../../../platform/actions/browser/menuEntryActionViewItem.js';
 import { HiddenItemStrategy, MenuWorkbenchToolBar, WorkbenchToolBar } from '../../../../platform/actions/browser/toolbar.js';
-import { MenuId, MenuRegistry, SubmenuItemAction } from '../../../../platform/actions/common/actions.js';
+import { SubmenuItemAction } from '../../../../platform/actions/common/actions.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { IKeybindingService } from '../../../../platform/keybinding/common/keybinding.js';
 import { IQuickInputService } from '../../../../platform/quickinput/common/quickInput.js';
-import { WindowTitle } from './windowTitle.js';
+import { WindowTitle } from '../../../browser/parts/titlebar/windowTitle.js';
 import { IEditorGroupsService } from '../../../services/editor/common/editorGroupsService.js';
 import { IHoverService } from '../../../../platform/hover/browser/hover.js';
+import { AgentSessionsWorkbenchMenus } from '../agentSessionsWorkbenchMenus.js';
 
-export class CommandCenterControl {
+/**
+ * Agent Sessions command center control - a duplicate of `CommandCenterControl`
+ * that uses agent-session-specific menu IDs.
+ */
+export class AgentSessionsCommandCenterControl {
 
 	private readonly _disposables = new DisposableStore();
 
@@ -40,16 +45,16 @@ export class CommandCenterControl {
 	) {
 		this.element.classList.add('command-center');
 
-		const titleToolbar = instantiationService.createInstance(MenuWorkbenchToolBar, this.element, MenuId.CommandCenter, {
-			contextMenu: MenuId.TitleBarContext,
+		const titleToolbar = instantiationService.createInstance(MenuWorkbenchToolBar, this.element, AgentSessionsWorkbenchMenus.CommandCenter, {
+			contextMenu: AgentSessionsWorkbenchMenus.TitleBarContext,
 			hiddenItemStrategy: HiddenItemStrategy.NoHide,
 			toolbarOptions: {
 				primaryGroup: () => true,
 			},
 			telemetrySource: 'commandCenter',
 			actionViewItemProvider: (action, options) => {
-				if (action instanceof SubmenuItemAction && action.item.submenu === MenuId.CommandCenterCenter) {
-					return instantiationService.createInstance(CommandCenterCenterViewItem, action, windowTitle, { ...options, hoverDelegate });
+				if (action instanceof SubmenuItemAction && action.item.submenu === AgentSessionsWorkbenchMenus.CommandCenterCenter) {
+					return instantiationService.createInstance(AgentSessionsCommandCenterCenterViewItem, action, windowTitle, { ...options, hoverDelegate });
 				} else {
 					return createActionViewItem(instantiationService, action, { ...options, hoverDelegate });
 				}
@@ -72,7 +77,7 @@ export class CommandCenterControl {
 }
 
 
-class CommandCenterCenterViewItem extends BaseActionViewItem {
+class AgentSessionsCommandCenterCenterViewItem extends BaseActionViewItem {
 
 	private static readonly _quickOpenCommandId = 'workbench.action.quickOpenWithModes';
 
@@ -112,7 +117,6 @@ class CommandCenterCenterViewItem extends BaseActionViewItem {
 			}
 		}
 
-
 		for (let i = 0; i < groups.length; i++) {
 			const group = groups[i];
 
@@ -126,13 +130,13 @@ class CommandCenterCenterViewItem extends BaseActionViewItem {
 						hoverDelegate: this._hoverDelegate,
 					};
 
-					if (action.id !== CommandCenterCenterViewItem._quickOpenCommandId) {
+					if (action.id !== AgentSessionsCommandCenterCenterViewItem._quickOpenCommandId) {
 						return createActionViewItem(this._instaService, action, options);
 					}
 
 					const that = this;
 
-					return this._instaService.createInstance(class CommandCenterQuickPickItem extends BaseActionViewItem {
+					return this._instaService.createInstance(class AgentSessionsCommandCenterQuickPickItem extends BaseActionViewItem {
 
 						constructor() {
 							super(undefined, action, options);
@@ -205,7 +209,6 @@ class CommandCenterCenterViewItem extends BaseActionViewItem {
 			toolbar.setActions(group);
 			this._store.add(toolbar);
 
-
 			// spacer
 			if (i < groups.length - 1) {
 				const icon = renderIcon(Codicon.circleSmallFilled);
@@ -218,8 +221,6 @@ class CommandCenterCenterViewItem extends BaseActionViewItem {
 	}
 
 	protected override getTooltip() {
-
-		// tooltip: full windowTitle
 		const kb = this._keybindingService.lookupKeybinding(this.action.id)?.getLabel();
 		const title = kb
 			? localize('title', "Search {0} ({1}) \u2014 {2}", this._windowTitle.workspaceName, kb, this._windowTitle.value)
@@ -228,10 +229,3 @@ class CommandCenterCenterViewItem extends BaseActionViewItem {
 		return title;
 	}
 }
-
-MenuRegistry.appendMenuItem(MenuId.CommandCenter, {
-	submenu: MenuId.CommandCenterCenter,
-	title: localize('title3', "Command Center"),
-	icon: Codicon.shield,
-	order: 101,
-});

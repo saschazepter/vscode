@@ -16,6 +16,7 @@ import { IStorageService, StorageScope, StorageTarget } from '../../../../../pla
 import { TerminalLocation } from '../../../../../platform/terminal/common/terminal.js';
 import { IWorkspaceContextService } from '../../../../../platform/workspace/common/workspace.js';
 import { AgentSessionsWorkbenchMenus } from '../../../../agentSessions/browser/agentSessionsWorkbenchMenus.js';
+import { IsAgentSessionsWorkspaceContext } from '../../../../common/contextkeys.js';
 import { IWorkbenchContribution } from '../../../../common/contributions.js';
 import { IDebugService, ILaunch } from '../../../debug/common/debug.js';
 import { ITerminalService } from '../../../terminal/browser/terminal.js';
@@ -364,4 +365,5 @@ MenuRegistry.appendMenuItem(AgentSessionsWorkbenchMenus.TitleBarRight, {
 	icon: Codicon.play,
 	group: 'navigation',
 	order: 8,
+	when: IsAgentSessionsWorkspaceContext,
 });

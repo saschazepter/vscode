@@ -60,14 +60,13 @@ import { NotificationsToasts } from '../../browser/parts/notifications/notificat
 import { IMarkdownRendererService } from '../../../platform/markdown/browser/markdownRenderer.js';
 import { EditorMarkdownCodeBlockRenderer } from '../../../editor/browser/widget/markdownRenderer/browser/editorMarkdownCodeBlockRenderer.js';
 import { EditorModal } from './parts/editorModal.js';
-import { IPaneCompositePartsConfiguration, PaneCompositePartService } from '../../browser/parts/paneCompositePartService.js';
+import { IPaneCompositePartsConfiguration, AgentSessionsPaneCompositePartService } from './paneCompositePartService.js';
 import { AgentSessionAuxiliaryBarPart } from './parts/agentSessionAuxiliaryBarPart.js';
 import { AgentSessionPanelPart } from './parts/agentSessionPanelPart.js';
 import { AgentSessionSidebarPart } from './parts/agentSessionSidebarPart.js';
 import { ChatBarPart } from './parts/chatbar/chatBarPart.js';
 import { SyncDescriptor } from '../../../platform/instantiation/common/descriptors.js';
-import { BrowserTitleService, ITitlebarPartConfiguration } from '../../browser/parts/titlebar/titlebarPart.js';
-import { AgentSessionsWorkbenchMenus } from './agentSessionsWorkbenchMenus.js';
+import { AgentSessionsTitleService } from './parts/agentSessionTitlebarPart.js';
 import { registerAgentSessionsLayoutActions } from './agentSessionsLayoutActions.js';
 import { registerAgentWorkbenchContributions } from './agentSessions.contributions.js';
 import { FloatingToolbar } from './parts/floatingToolbar.js';
@@ -407,38 +406,10 @@ export class AgentSessionsWorkbench extends Disposable implements IWorkbenchLayo
 			auxiliaryBarPart: new SyncDescriptor(AgentSessionAuxiliaryBarPart),
 			chatBarPart: new SyncDescriptor(ChatBarPart),
 		};
-		serviceCollection.set(IPaneCompositePartService, new SyncDescriptor(PaneCompositePartService, [paneCompositePartsConfiguration]));
+		serviceCollection.set(IPaneCompositePartService, new SyncDescriptor(AgentSessionsPaneCompositePartService, [paneCompositePartsConfiguration]));
 
-		// Title Service - pass configuration for titlebar parts with limited feature support
-		const titlebarConfiguration: ITitlebarPartConfiguration = {
-			mainOptions: {
-				supportsCommandCenter: true,
-				supportsMenubar: false,
-				supportsEditorActions: false,
-				supportsActivityActions: true,
-				supportsGlobalActions: true,
-				supportsLayoutActions: true,
-				contextMenuId: AgentSessionsWorkbenchMenus.TitleBarContext,
-				leftToolbarMenuId: AgentSessionsWorkbenchMenus.TitleBarLeft,
-				commandCenterMenuId: AgentSessionsWorkbenchMenus.CommandCenter,
-				commandCenterCenterMenuId: AgentSessionsWorkbenchMenus.CommandCenterCenter,
-				titleBarMenuId: AgentSessionsWorkbenchMenus.TitleBarRight,
-			},
-			auxiliaryOptions: {
-				supportsCommandCenter: true,
-				supportsMenubar: false,
-				supportsEditorActions: false,
-				supportsActivityActions: true,
-				supportsGlobalActions: true,
-				supportsLayoutActions: true,
-				contextMenuId: AgentSessionsWorkbenchMenus.TitleBarContext,
-				leftToolbarMenuId: AgentSessionsWorkbenchMenus.TitleBarLeft,
-				commandCenterMenuId: AgentSessionsWorkbenchMenus.CommandCenter,
-				commandCenterCenterMenuId: AgentSessionsWorkbenchMenus.CommandCenterCenter,
-				titleBarMenuId: AgentSessionsWorkbenchMenus.TitleBarRight,
-			}
-		};
-		serviceCollection.set(ITitleService, new SyncDescriptor(BrowserTitleService, [titlebarConfiguration]));
+		// Title Service - agent sessions titlebar with dedicated part overrides
+		serviceCollection.set(ITitleService, new SyncDescriptor(AgentSessionsTitleService, []));
 
 		// All Contributed Services
 		const contributedServices = getSingletonServiceDescriptors();

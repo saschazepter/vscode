@@ -70,25 +70,23 @@ The following parts from the default workbench are **not included**:
 
 ## 3. Titlebar Configuration
 
-The Agent Sessions workbench uses a customized titlebar with reduced functionality compared to the default workbench.
+The Agent Sessions workbench uses a dedicated titlebar part (`AgentSessionsTitlebarPart`) with its own title service (`AgentSessionsTitleService`), both implemented in `agentSessions/browser/parts/agentSessionTitlebarPart.ts`. This approach uses class inheritance — overriding protected getters on `BrowserTitlebarPart` — to customize behavior without modifying the base class's API.
 
-### 3.1 Titlebar Options
+### 3.1 Titlebar Part Architecture
 
-The titlebar is configured via `ITitlebarPartConfiguration` passed to the title service:
+The `AgentSessionsTitlebarPart` extends `BrowserTitlebarPart` and overrides protected getters to customize behavior:
 
-| Option | Default Workbench | Agent Sessions | Notes |
+| Getter | Default (`BrowserTitlebarPart`) | Override (`AgentSessionsTitlebarPart`) | Notes |
 |--------|-------------------|----------------|-------|
-| `supportsCommandCenter` | `true` | `true` | Uses custom `AgentSessionsCommandCenter` menu IDs |
-| `supportsMenubar` | `true` | `false` | No menubar in titlebar |
-| `supportsEditorActions` | `true` | `false` | No editor actions in titlebar |
-| `supportsActivityActions` | `true` | `true` | Activity actions supported (Accounts, Settings) |
-| `supportsGlobalActions` | `true` | `true` | Global actions supported |
-| `supportsLayoutActions` | `true` | `true` | Layout actions supported |
-| `contextMenuId` | `MenuId.TitleBarContext` | `AgentSessionsWorkbenchMenus.TitleBarContext` | Custom context menu for agent sessions titlebar |
-| `leftToolbarMenuId` | `undefined` | `AgentSessionsWorkbenchMenus.TitleBarLeft` | Custom left toolbar |
-| `commandCenterMenuId` | `MenuId.CommandCenter` | `AgentSessionsWorkbenchMenus.CommandCenter` | Custom command center menu |
-| `commandCenterCenterMenuId` | `MenuId.CommandCenterCenter` | `AgentSessionsWorkbenchMenus.CommandCenterCenter` | Custom command center center submenu |
+| `isCommandCenterVisible` | Settings-driven | `true` (always) | Uses custom `AgentSessionsCommandCenter` menu IDs |
+| `installMenubar()` | Installs menubar | No-op | No menubar in titlebar |
+| `editorActionsEnabled` | Settings-driven | `false` | No editor actions in titlebar |
+| `contextMenuId` | `MenuId.TitleBarContext` | `AgentSessionsWorkbenchMenus.TitleBarContext` | Custom context menu |
+| `commandCenterMenuId` | `undefined` (defaults to `MenuId.CommandCenter`) | `AgentSessionsWorkbenchMenus.CommandCenter` | Custom command center menu |
+| `commandCenterCenterMenuId` | `undefined` (defaults to `MenuId.CommandCenterCenter`) | `AgentSessionsWorkbenchMenus.CommandCenterCenter` | Custom command center center submenu |
 | `titleBarMenuId` | `MenuId.TitleBar` | `AgentSessionsWorkbenchMenus.TitleBarRight` | Custom global (right-side) toolbar |
+
+The `AgentSessionsTitleService` extends `BrowserTitleService` and overrides `createMainTitlebarPart()` and `doCreateAuxiliaryTitlebarPart()` to create `MainAgentSessionsTitlebarPart` and `AuxiliaryAgentSessionsTitlebarPart` respectively.
 
 ### 3.2 Command Center
 
@@ -542,6 +540,7 @@ src/vs/workbench/agentSessions/
 │   │   └── media/
 │   │       └── changesView.css             # Changes view styles
 │   ├── parts/
+│   │   ├── agentSessionTitlebarPart.ts     # Agent sessions titlebar part and title service
 │   │   ├── agentSessionSidebarPart.ts      # Agent session sidebar
 │   │   ├── agentSessionAuxiliaryBarPart.ts # Agent session auxiliary bar (with run script dropdown)
 │   │   ├── agentSessionPanelPart.ts        # Agent session panel
@@ -685,6 +684,7 @@ this._register(new SidebarRevealButton(this.mainContainer, 'right', this));
 
 | Date | Change |
 |------|--------|
+| 2026-02-10 | Titlebar customization now uses class inheritance with protected getter overrides on `BrowserTitlebarPart`; Base class retains original API — no `ITitlebarPartOptions`/`ITitlebarPartConfiguration` removed; `AgentSessionsTitlebarPart` and `AgentSessionsTitleService` in `parts/agentSessionTitlebarPart.ts` override `isCommandCenterVisible`, `editorActionsEnabled`, `installMenubar()`, and menu ID getters |
 | 2026-02-07 | Comprehensive spec update: fixed widget class names (`AgentSessionsTitleBarWidget`/`AgentSessionsTitleBarContribution`), corrected click behavior (uses `AgentSessionsPicker` not `FocusAgentSessionsAction`), corrected session label source (`IActiveAgentSessionService`), fixed toggle terminal details (uses standard `toggleTerminal` command via `MenuRegistry.appendMenuItem` on right toolbar), added sidebar/chatbar storage keys, added chatbar to part classes table, documented contributions section with `RunScriptContribution`/`AgentSessionsTitleBarContribution`/Changes view, added `agent-sessions-workbench` platform class, documented auxiliary bar run script dropdown, updated file structure with `actions/`, `views/`, `media/` directories, fixed lifecycle section numbering, corrected `focus()` target to ChatBar |
 | 2026-02-07 | Moved `ToggleTerminalAction` to `contrib/terminal/browser/terminalAgentSessionActions.ts`; Menu item registered via `MenuRegistry.appendMenuItem` from `agentSessionsLayoutActions.ts` to avoid layering violation |\n| 2026-02-07 | Added `TitleBarLeft`, `TitleBarCenter`, `TitleBarRight` menu IDs to `AgentSessionsWorkbenchMenus`; Added `titleBarMenuId` option to `ITitlebarPartOptions` for overriding the global toolbar menu; Actions now use agent-session-specific menu IDs instead of shared `MenuId.TitleBarLeft` / `MenuId.TitleBar` |
 | 2026-02-07 | Moved agent sessions workbench menu IDs to `agentSessionsWorkbenchMenus.ts`; Renamed `AgentSessionMenus` to `AgentSessionsWorkbenchMenus` |

@@ -3,48 +3,54 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Event } from '../../../base/common/event.js';
+import { Emitter } from '../../../base/common/event.js';
 import { assertReturnsDefined } from '../../../base/common/types.js';
+import { SyncDescriptor0 } from '../../../platform/instantiation/common/descriptors.js';
 import { IInstantiationService } from '../../../platform/instantiation/common/instantiation.js';
 import { IProgressIndicator } from '../../../platform/progress/common/progress.js';
-import { PaneCompositeDescriptor } from '../panecomposite.js';
-import { AuxiliaryBarPart } from './auxiliarybar/auxiliaryBarPart.js';
-import { PanelPart } from './panel/panelPart.js';
-import { SidebarPart } from './sidebar/sidebarPart.js';
 import { IPaneComposite } from '../../common/panecomposite.js';
-import { ViewContainerLocation, ViewContainerLocations } from '../../common/views.js';
+import { ViewContainerLocation } from '../../common/views.js';
 import { IPaneCompositePartService } from '../../services/panecomposite/browser/panecomposite.js';
-import { Disposable, DisposableStore } from '../../../base/common/lifecycle.js';
-import { IPaneCompositePart } from './paneCompositePart.js';
-import { ChatBarPart } from '../../agentSessions/browser/parts/chatbar/chatBarPart.js';
+import { Disposable } from '../../../base/common/lifecycle.js';
+import { PaneCompositeDescriptor } from '../../browser/panecomposite.js';
+import { IPaneCompositePart } from '../../browser/parts/paneCompositePart.js';
 
-export class PaneCompositePartService extends Disposable implements IPaneCompositePartService {
+export interface IPaneCompositePartsConfiguration {
+	readonly panelPart: SyncDescriptor0<IPaneCompositePart>;
+	readonly sideBarPart: SyncDescriptor0<IPaneCompositePart>;
+	readonly auxiliaryBarPart: SyncDescriptor0<IPaneCompositePart>;
+	readonly chatBarPart: SyncDescriptor0<IPaneCompositePart>;
+}
+
+export class AgentSessionsPaneCompositePartService extends Disposable implements IPaneCompositePartService {
 
 	declare readonly _serviceBrand: undefined;
 
-	readonly onDidPaneCompositeOpen: Event<{ composite: IPaneComposite; viewContainerLocation: ViewContainerLocation }>;
-	readonly onDidPaneCompositeClose: Event<{ composite: IPaneComposite; viewContainerLocation: ViewContainerLocation }>;
+	private readonly _onDidPaneCompositeOpen = this._register(new Emitter<{ composite: IPaneComposite; viewContainerLocation: ViewContainerLocation }>());
+	readonly onDidPaneCompositeOpen = this._onDidPaneCompositeOpen.event;
+
+	private readonly _onDidPaneCompositeClose = this._register(new Emitter<{ composite: IPaneComposite; viewContainerLocation: ViewContainerLocation }>());
+	readonly onDidPaneCompositeClose = this._onDidPaneCompositeClose.event;
 
 	private readonly paneCompositeParts = new Map<ViewContainerLocation, IPaneCompositePart>();
 
 	constructor(
-		@IInstantiationService instantiationService: IInstantiationService,
+		partsConfiguration: IPaneCompositePartsConfiguration,
+		@IInstantiationService instantiationService: IInstantiationService
 	) {
 		super();
 
-		const panelPart = instantiationService.createInstance(PanelPart);
-		const sideBarPart = instantiationService.createInstance(SidebarPart);
-		const auxiliaryBarPart = instantiationService.createInstance(AuxiliaryBarPart);
-		const chatBarPart = instantiationService.createInstance(ChatBarPart);
+		// Create all parts eagerly - the layout needs them registered before renderWorkbench
+		this.registerPart(ViewContainerLocation.Panel, instantiationService.createInstance(partsConfiguration.panelPart));
+		this.registerPart(ViewContainerLocation.Sidebar, instantiationService.createInstance(partsConfiguration.sideBarPart));
+		this.registerPart(ViewContainerLocation.AuxiliaryBar, instantiationService.createInstance(partsConfiguration.auxiliaryBarPart));
+		this.registerPart(ViewContainerLocation.ChatBar, instantiationService.createInstance(partsConfiguration.chatBarPart));
+	}
 
-		this.paneCompositeParts.set(ViewContainerLocation.Panel, panelPart);
-		this.paneCompositeParts.set(ViewContainerLocation.Sidebar, sideBarPart);
-		this.paneCompositeParts.set(ViewContainerLocation.AuxiliaryBar, auxiliaryBarPart);
-		this.paneCompositeParts.set(ViewContainerLocation.ChatBar, chatBarPart);
-
-		const eventDisposables = this._register(new DisposableStore());
-		this.onDidPaneCompositeOpen = Event.any(...ViewContainerLocations.map(loc => Event.map(this.paneCompositeParts.get(loc)!.onDidPaneCompositeOpen, composite => { return { composite, viewContainerLocation: loc }; }, eventDisposables)));
-		this.onDidPaneCompositeClose = Event.any(...ViewContainerLocations.map(loc => Event.map(this.paneCompositeParts.get(loc)!.onDidPaneCompositeClose, composite => { return { composite, viewContainerLocation: loc }; }, eventDisposables)));
+	private registerPart(location: ViewContainerLocation, part: IPaneCompositePart): void {
+		this.paneCompositeParts.set(location, part);
+		this._register(part.onDidPaneCompositeOpen(composite => this._onDidPaneCompositeOpen.fire({ composite, viewContainerLocation: location })));
+		this._register(part.onDidPaneCompositeClose(composite => this._onDidPaneCompositeClose.fire({ composite, viewContainerLocation: location })));
 	}
 
 	openPaneComposite(id: string | undefined, viewContainerLocation: ViewContainerLocation, focus?: boolean): Promise<IPaneComposite | undefined> {
