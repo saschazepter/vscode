@@ -73,8 +73,6 @@ const ICON_WARN = '⚠️';
 const ICON_MANUAL = '🔧';
 // allow-any-unicode-next-line
 const ICON_HIDDEN = '👁️‍🗨️';
-// allow-any-unicode-next-line
-const ICON_DISABLED = '🚫';
 
 /**
  * Information about a file that was loaded or skipped.
@@ -747,9 +745,9 @@ export function formatStatusOutput(
 				const filePath = getRelativePath(firstHook.fileUri, workspaceFolders);
 				const fileDisabled = fileHooks[0].disabled;
 
-				// File as clickable link, with disabled indicator if all hooks in this file are disabled
+				// File as clickable link, with note if hooks are disabled via flag
 				if (fileDisabled) {
-					lines.push(`${ICON_DISABLED} [${firstHook.filePath}](${filePath}) - *${nls.localize('status.allHooksDisabledLabel', 'all hooks disabled via disableAllHooks')}*<br>`);
+					lines.push(`[${firstHook.filePath}](${filePath}) - *${nls.localize('status.allHooksDisabledLabel', 'all hooks disabled via disableAllHooks')}*<br>`);
 				} else {
 					lines.push(`[${firstHook.filePath}](${filePath})<br>`);
 				}
@@ -759,11 +757,8 @@ export function formatStatusOutput(
 					const hook = fileHooks[i];
 					const isLast = i === fileHooks.length - 1;
 					const prefix = isLast ? TREE_END : TREE_BRANCH;
-					if (hook.disabled) {
-						lines.push(`${prefix} ~~${hook.hookTypeLabel}: \`${hook.commandLabel}\`~~<br>`);
-					} else {
-						lines.push(`${prefix} ${hook.hookTypeLabel}: \`${hook.commandLabel}\`<br>`);
-					}
+					const disabledPrefix = hook.disabled ? `${ICON_ERROR} ` : '';
+					lines.push(`${prefix} ${disabledPrefix}${hook.hookTypeLabel}: \`${hook.commandLabel}\`<br>`);
 				}
 			}
 			hasContent = true;
