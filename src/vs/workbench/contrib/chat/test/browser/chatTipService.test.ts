@@ -510,6 +510,8 @@ suite('ChatTipService', () => {
 		// First new request should still get a chatResponse tip
 		const tip = service.getNextTip('request-1', now + 1000, contextKeyService);
 		assert.ok(tip, 'ChatResponse tip should show even when welcome tip was shown');
+	});
+
 	test('excludes tip when tracked tool has been invoked', () => {
 		const mockToolsService = createMockToolsService();
 		const tip: ITipDefinition = {
