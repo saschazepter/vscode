@@ -5,10 +5,10 @@
 
 import * as os from 'os';
 import * as path from 'path';
-import { Command, commands, Disposable, MessageOptions, Position, QuickPickItem, Range, SourceControlResourceState, TextDocumentShowOptions, TextEditor, Uri, ViewColumn, window, workspace, WorkspaceEdit, WorkspaceFolder, TimelineItem, env, Selection, TextDocumentContentProvider, InputBoxValidationSeverity, TabInputText, TabInputTextMerge, QuickPickItemKind, TextDocument, LogOutputChannel, l10n, Memento, UIKind, QuickInputButton, ThemeIcon, SourceControlHistoryItem, SourceControl, InputBoxValidationMessage, Tab, TabInputNotebook, QuickInputButtonLocation, languages, SourceControlArtifact } from 'vscode';
+import { Command, commands, Disposable, MessageOptions, Position, QuickPickItem, Range, SourceControlResourceState, TextDocumentShowOptions, TextEditor, Uri, ViewColumn, window, workspace, WorkspaceEdit, WorkspaceFolder, TimelineItem, env, Selection, TextDocumentContentProvider, InputBoxValidationSeverity, TabInputText, TabInputTextMerge, QuickPickItemKind, TextDocument, LogOutputChannel, l10n, Memento, UIKind, QuickInputButton, ThemeIcon, SourceControlHistoryItem, SourceControl, InputBoxValidationMessage, Tab, TabInputNotebook, QuickInputButtonLocation, languages, SourceControlArtifact, lm, LanguageModelChatMessage, CancellationTokenSource } from 'vscode';
 import TelemetryReporter from '@vscode/extension-telemetry';
 import { uniqueNamesGenerator, adjectives, animals, colors, NumberDictionary } from '@joaomoreno/unique-names-generator';
-import { ForcePushMode, GitErrorCodes, RefType, Status, CommitOptions, RemoteSourcePublisher, Remote, Branch, Ref } from './api/git';
+import { ForcePushMode, GitErrorCodes, RefType, Status, CommitOptions, RemoteSourcePublisher, Remote, Branch, Ref, Change } from './api/git';
 import { Git, GitError, Stash, Worktree } from './git';
 import { Model } from './model';
 import { GitResourceGroup, Repository, Resource, ResourceGroupType } from './repository';
@@ -2961,12 +2961,143 @@ export class CommandCenter {
 		return '';
 	}
 
+	private async generateAIBranchName(repository: Repository, branchWhitespaceChar: string, branchPrefix: string): Promise<string> {
+		const models = await lm.selectChatModels({ family: 'gpt-4o' });
+		if (models.length === 0) {
+			// Fallback: try any available model
+			const allModels = await lm.selectChatModels();
+			if (allModels.length === 0) {
+				window.showWarningMessage(l10n.t('No language models available. Please ensure a language model extension is installed.'));
+				return '';
+			}
+			models.push(allModels[0]);
+		}
+
+		const model = models[0];
+
+		// Gather file changes (both staged and working tree)
+		const [stagedChanges, workingTreeChanges] = await Promise.all([
+			repository.diffIndexWithHEAD() as Promise<Change[]>,
+			repository.diffWithHEAD() as Promise<Change[]>
+		]);
+
+		const allChanges = [...stagedChanges, ...workingTreeChanges];
+
+		if (allChanges.length === 0) {
+			window.showInformationMessage(l10n.t('No file changes detected to generate a branch name from.'));
+			return '';
+		}
+
+		// Build a summary of changes
+		const changeSummary = allChanges.map(change => {
+			const fileName = workspace.asRelativePath(change.uri);
+			switch (change.status) {
+				case Status.INDEX_ADDED:
+				case Status.UNTRACKED:
+				case Status.INTENT_TO_ADD:
+					return `Added: ${fileName}`;
+				case Status.INDEX_DELETED:
+				case Status.DELETED:
+					return `Deleted: ${fileName}`;
+				case Status.INDEX_RENAMED:
+				case Status.INTENT_TO_RENAME:
+					return `Renamed: ${change.originalUri.path} -> ${fileName}`;
+				case Status.INDEX_MODIFIED:
+				case Status.MODIFIED:
+				case Status.TYPE_CHANGED:
+					return `Modified: ${fileName}`;
+				case Status.INDEX_COPIED:
+					return `Copied: ${fileName}`;
+				default:
+					return `Changed: ${fileName}`;
+			}
+		}).join('\n');
+
+		// Get a short diff for additional context (limited to avoid token overflow)
+		let diffSnippet = '';
+		try {
+			const rawDiff = await repository.diff(true); // staged diff
+			const workingDiff = await repository.diff(false); // unstaged diff
+			const combinedDiff = [rawDiff, workingDiff].filter(Boolean).join('\n');
+			// Limit diff to ~2000 chars to stay within token limits
+			diffSnippet = combinedDiff.length > 2000
+				? combinedDiff.substring(0, 2000) + '\n... (truncated)'
+				: combinedDiff;
+		} catch {
+			// Diff retrieval is best-effort
+		}
+
+		const prefixRule = branchPrefix
+			? `- The branch name will be automatically prefixed with "${branchPrefix}", so do NOT include it in your output. Do NOT add conventional prefixes like feature/, fix/, etc. since the user already has a configured prefix.`
+			: `- Use conventional prefixes when appropriate: feature/, fix/, refactor/, docs/, chore/, test/`;
+
+		const previousNames: string[] = [];
+
+		// 3 attempts to generate a unique branch name
+		for (let attempt = 0; attempt < 3; attempt++) {
+			const avoidRule = previousNames.length > 0
+				? `\n- Do NOT suggest any of these names, they already exist: ${previousNames.join(', ')}`
+				: '';
+
+			const prompt = `You are a helpful assistant that generates descriptive git branch names. Based on the following file changes and diff, suggest a single branch name that clearly communicates the purpose and scope of the changes.
+
+Rules:
+- Use lowercase letters, numbers, and hyphens only
+- Be descriptive: include what is being changed and why (3-7 words separated by "${branchWhitespaceChar}")
+${prefixRule}
+- Focus on the semantic intent of the changes, not just file names (e.g. "add-ai-branch-name-generation" not "update-commands-ts")
+- Do not include any explanation, just output the branch name
+- Do not wrap in quotes or backticks${avoidRule}
+
+File changes:
+${changeSummary}${diffSnippet ? `\n\nDiff snippet:\n${diffSnippet}` : ''}`;
+
+			try {
+				const cts = new CancellationTokenSource();
+				const response = await model.sendRequest(
+					[LanguageModelChatMessage.User(prompt)],
+					{},
+					cts.token
+				);
+
+				let branchName = '';
+				for await (const chunk of response.text) {
+					branchName += chunk;
+				}
+
+				// Clean up the response
+				branchName = branchName.trim().replace(/[`'"]/g, '').replace(/\n.*/s, '');
+				const sanitized = sanitizeBranchName(branchName, branchWhitespaceChar);
+				const fullName = `${branchPrefix}${sanitized}`;
+
+				// Check for existing branch conflict
+				const conflictRefs = await repository.getRefs({ pattern: `refs/heads/${fullName}` });
+				if (conflictRefs.length === 0) {
+					return sanitized;
+				}
+
+				previousNames.push(branchName);
+			} catch (err) {
+				window.showWarningMessage(l10n.t('Failed to generate AI branch name: {0}', String(err)));
+				return '';
+			}
+		}
+
+		// All attempts conflicted - return the last generated name anyway
+		if (previousNames.length > 0) {
+			return sanitizeBranchName(previousNames[previousNames.length - 1], branchWhitespaceChar);
+		}
+
+		return '';
+	}
+
 	private async promptForBranchName(repository: Repository, defaultName?: string, initialValue?: string): Promise<string> {
 		const config = workspace.getConfiguration('git');
 		const branchPrefix = config.get<string>('branchPrefix')!;
 		const branchWhitespaceChar = config.get<string>('branchWhitespaceChar')!;
 		const branchValidationRegex = config.get<string>('branchValidationRegex')!;
 		const branchRandomNameEnabled = config.get<boolean>('branchRandomName.enable', false);
+		const branchAINameEnabled = config.get<boolean>('branchAIName.enable', false);
 		const refs = await repository.getRefs({ pattern: 'refs/heads' });
 
 		if (defaultName) {
@@ -2993,15 +3124,7 @@ export class CommandCenter {
 			}
 
 			if (validateName.test(sanitizedName)) {
-				// If the sanitized name that we will use is different than what is
-				// in the input box, show an info message to the user informing them
-				// the branch name that will be used.
-				return name === sanitizedName
-					? undefined
-					: {
-						message: l10n.t('The new branch will be "{0}"', sanitizedName),
-						severity: InputBoxValidationSeverity.Info
-					};
+				return undefined;
 			}
 
 			return l10n.t('Branch name needs to match regex: {0}', branchValidationRegex);
@@ -3013,13 +3136,27 @@ export class CommandCenter {
 		inputBox.placeholder = l10n.t('Branch name');
 		inputBox.prompt = l10n.t('Please provide a new branch name');
 
-		inputBox.buttons = branchRandomNameEnabled ? [
-			{
-				iconPath: new ThemeIcon('refresh'),
-				tooltip: l10n.t('Regenerate Branch Name'),
-				location: QuickInputButtonLocation.Inline
-			}
-		] : [];
+		const regenerateButton: QuickInputButton & { location: QuickInputButtonLocation } = {
+			iconPath: new ThemeIcon('refresh'),
+			tooltip: l10n.t('Regenerate Branch Name'),
+			location: QuickInputButtonLocation.Inline
+		};
+
+		const aiGenerateButton: QuickInputButton & { location: QuickInputButtonLocation } = {
+			iconPath: new ThemeIcon('sparkle'),
+			tooltip: l10n.t('Generate Branch Name'),
+			location: QuickInputButtonLocation.Inline
+		};
+
+		const buttons: QuickInputButton[] = [];
+		if (branchRandomNameEnabled) {
+			buttons.push(regenerateButton);
+		}
+		if (branchAINameEnabled) {
+			buttons.push(aiGenerateButton);
+		}
+
+		inputBox.buttons = buttons;
 
 		inputBox.value = initialValue ?? await getBranchName();
 		inputBox.valueSelection = getValueSelection(inputBox.value);
@@ -3034,9 +3171,24 @@ export class CommandCenter {
 			disposables.push(inputBox.onDidChangeValue(value => {
 				inputBox.validationMessage = getValidationMessage(value);
 			}));
-			disposables.push(inputBox.onDidTriggerButton(async () => {
-				inputBox.value = await getBranchName();
-				inputBox.valueSelection = getValueSelection(inputBox.value);
+			disposables.push(inputBox.onDidTriggerButton(async (button) => {
+				if (button === aiGenerateButton) {
+					inputBox.busy = true;
+					inputBox.enabled = false;
+					try {
+						const aiName = await this.generateAIBranchName(repository, branchWhitespaceChar, branchPrefix);
+						if (aiName) {
+							inputBox.value = `${branchPrefix}${aiName}`;
+							inputBox.valueSelection = getValueSelection(inputBox.value);
+						}
+					} finally {
+						inputBox.busy = false;
+						inputBox.enabled = true;
+					}
+				} else {
+					inputBox.value = await getBranchName();
+					inputBox.valueSelection = getValueSelection(inputBox.value);
+				}
 			}));
 		});
 
