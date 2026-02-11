@@ -297,6 +297,10 @@ export class CreateRemoteAgentJobAction {
 			});
 
 			if (ChatSendResult.isSent(sendResult)) {
+				// Wait for the response to be created in the model before checking
+				// whether to exit. Otherwise _handleDelegationExit may see a previous
+				// completed response and clear the chat before the handler can show prompts.
+				await sendResult.data.responseCreatedPromise;
 				await widget.handleDelegationExitIfNeeded(defaultAgent, sendResult.data.agent);
 			}
 		} catch (e) {
