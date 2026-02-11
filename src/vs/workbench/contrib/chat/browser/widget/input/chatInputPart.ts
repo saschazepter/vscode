@@ -379,10 +379,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 	private readonly _currentModeObservable: ISettableObservable<IChatMode>;
 
 	public get currentModeKind(): ChatModeKind {
-		const mode = this._currentModeObservable.get();
-		return mode.kind === ChatModeKind.Agent && !this.agentService.hasToolsAgent ?
-			ChatModeKind.Edit :
-			mode.kind;
+		return this._currentModeObservable.get().kind;
 	}
 
 	public get currentModeObs(): IObservable<IChatMode> {
@@ -1102,13 +1099,8 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 	private validateCurrentChatMode() {
 		const currentMode = this._currentModeObservable.get();
 		const validMode = this.chatModeService.findModeById(currentMode.id);
-		const isAgentModeEnabled = this.configurationService.getValue<boolean>(ChatConfiguration.AgentEnabled);
 		if (!validMode) {
-			this.setChatMode(isAgentModeEnabled ? ChatModeKind.Agent : ChatModeKind.Ask);
-			return;
-		}
-		if (currentMode.kind === ChatModeKind.Agent && !isAgentModeEnabled) {
-			this.setChatMode(ChatModeKind.Ask);
+			this.setChatMode(ChatModeKind.Agent);
 			return;
 		}
 	}
@@ -1287,9 +1279,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 	}
 
 	validateAgentMode(): void {
-		if (!this.agentService.hasToolsAgent && this._currentModeObservable.get().kind === ChatModeKind.Agent) {
-			this.setChatMode(ChatModeKind.Edit);
-		}
+		// Agent mode is always enabled
 	}
 
 	// A function that filters out specifically the `value` property of the attachment.

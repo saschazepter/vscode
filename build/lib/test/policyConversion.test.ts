@@ -209,20 +209,6 @@ const policies: ExportedPolicyDataDto = {
 			default: true
 		},
 		{
-			key: 'chat.agent.enabled',
-			name: 'ChatAgentMode',
-			category: 'InteractiveSession',
-			minimumVersion: '1.99',
-			localization: {
-				description: {
-					key: 'chat.agent.enabled.description',
-					value: 'Enable agent mode for chat. When this is enabled, agent mode can be activated via the dropdown in the view.'
-				}
-			},
-			type: 'boolean',
-			default: true
-		},
-		{
 			key: 'chat.promptFiles',
 			name: 'ChatPromptFiles',
 			category: 'InteractiveSession',
@@ -362,7 +348,6 @@ const frenchTranslations = [
 				'telemetryConfigurationTitle': 'Télémétrie',
 				'updateConfigurationTitle': 'Mettre à jour',
 				'chat.extensionToolsEnabled': 'Autorisez l’utilisation d’outils fournis par des extensions tierces.',
-				'chat.agent.enabled.description': 'Activez le mode Assistant pour la conversation. Lorsque cette option est activée, le mode Assistant peut être activé via la liste déroulante de la vue.',
 				'chat.mcp.access': 'Contrôle l’accès aux serveurs de protocole de contexte du modèle.',
 				'chat.mcp.access.none': 'Aucun accès aux serveurs MCP.',
 				'chat.mcp.access.registry': `Autorise l’accès aux serveurs MCP installés à partir du registre auquel VS Code est connecté.`,
