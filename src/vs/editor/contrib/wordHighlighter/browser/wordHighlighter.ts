@@ -223,6 +223,7 @@ class WordHighlighter {
 	private workerRequest: IOccurenceAtPositionRequest | null;
 	private workerRequestCompleted: boolean = false;
 	private workerRequestValue: ResourceMap<DocumentHighlight[]> = new ResourceMap();
+	private lastQueryWordRange: Range | null = null;
 
 	private lastCursorPositionChangeTime: number = 0;
 	private renderDecorationsTimer: Timeout | undefined = undefined;
@@ -482,6 +483,7 @@ class WordHighlighter {
 	private _stopSingular(): void {
 		// Remove any existing decorations + a possible query, and re - run to update decorations
 		this._removeSingleDecorations();
+		this.lastQueryWordRange = null;
 
 		if (this.editor.hasTextFocus()) {
 			if (this.editor.getModel()?.uri.scheme !== Schemas.vscodeNotebookCell && WordHighlighter.query?.modelInfo?.modelURI.scheme !== Schemas.vscodeNotebookCell) { // clear query if focused non-nb editor
@@ -518,6 +520,7 @@ class WordHighlighter {
 		// TODO: @Yoyokrazy -- this triggers as notebooks scroll, causing highlights to disappear momentarily.
 		// maybe a nb type check?
 		this._removeAllDecorations(preservedModel);
+		this.lastQueryWordRange = null;
 
 		// Cancel any renderDecorationsTimer
 		if (this.renderDecorationsTimer !== undefined) {
@@ -676,19 +679,27 @@ class WordHighlighter {
 		if (isEqual(this.editor.getModel().uri, WordHighlighter.query.modelInfo?.modelURI)) { // only trigger new worker requests from the primary model that initiated the query
 			// case d)
 
-			// check if the new queried word is contained in the range of a stored decoration for this model
+			// check if the cursor is still within the original word range that triggered the current highlights
+			// only skip refetching if we remain in the same word range, not if we move to another highlighted range
+			// this is necessary because document highlights can be asymmetric (different results depending on which symbol is queried)
 			if (!multiFileConfigChange) {
-				const currentModelDecorationRanges = this.decorations.getRanges();
-				for (const storedRange of currentModelDecorationRanges) {
-					if (storedRange.containsPosition(this.editor.getPosition())) {
-						return;
-					}
+				if (this.lastQueryWordRange?.containsPosition(this.editor.getPosition())) {
+					return;
 				}
 			}
 
 			// stop all previous actions if new word is highlighted
 			// if we trigger the run off a setting change -> multifile highlighting, we do not want to remove decorations from this model
 			this._stopAll(multiFileConfigChange ? this.model.uri : undefined);
+
+			// track the word range that triggered this query, for the optimization check on future cursor movements
+			const pos = this.editor.getPosition();
+			const queryWord = this.model.getWordAtPosition(pos);
+			if (queryWord) {
+				this.lastQueryWordRange = new Range(pos.lineNumber, queryWord.startColumn, pos.lineNumber, queryWord.endColumn);
+			} else {
+				this.lastQueryWordRange = null;
+			}
 
 			const myRequestId = ++this.workerRequestTokenId;
 			this.workerRequestCompleted = false;
