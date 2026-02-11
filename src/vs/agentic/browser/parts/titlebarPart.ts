@@ -357,7 +357,7 @@ export class TitlebarPart extends Part implements ITitlebarPart {
 		if (update.globalActions) {
 			this.globalToolbarMenuDisposables.clear();
 
-			this.globalToolbarMenu = this.menuService.createMenu(Menus.TitleBarRight, this.contextKeyService);
+			this.globalToolbarMenu = this.menuService.createMenu(Menus.TitleBarRight, this.contextKeyService, { emitEventsForSubmenuChanges: true });
 
 			this.globalToolbarMenuDisposables.add(this.globalToolbarMenu);
 			this.globalToolbarMenuDisposables.add(this.globalToolbarMenu.onDidChange(() => updateToolBarActions()));
