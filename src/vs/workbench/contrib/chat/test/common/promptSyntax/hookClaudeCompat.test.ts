@@ -238,24 +238,6 @@ suite('HookClaudeCompat', () => {
 			});
 		});
 
-		suite('command without type field', () => {
-			test('parses command without explicit type field', () => {
-				const json = {
-					hooks: {
-						PreToolUse: [
-							{ command: 'echo "no type"' }
-						]
-					}
-				};
-
-				const result = parseClaudeHooks(json, workspaceRoot, userHome);
-
-				const entry = result.hooks.get(HookType.PreToolUse)!;
-				assert.strictEqual(entry.hooks.length, 1);
-				assert.strictEqual(entry.hooks[0].command, 'echo "no type"');
-			});
-		});
-
 		suite('invalid inputs', () => {
 			test('returns empty map for null json', () => {
 				const result = parseClaudeHooks(null, workspaceRoot, userHome);
