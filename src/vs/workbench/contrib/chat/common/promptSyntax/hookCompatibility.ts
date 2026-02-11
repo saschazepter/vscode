@@ -154,6 +154,41 @@ export function parseHooksFromFile(
 }
 
 /**
+ * Parses hooks from a file, ignoring the `disableAllHooks` flag.
+ * Used by diagnostics to show which hooks are hidden when `disableAllHooks: true` is set.
+ */
+export function parseHooksIgnoringDisableAll(
+	fileUri: URI,
+	json: unknown,
+	workspaceRootUri: URI | undefined,
+	userHome: string
+): IParseHooksFromFileResult {
+	const format = getHookSourceFormat(fileUri);
+
+	let hooks: Map<HookType, { hooks: IHookCommand[]; originalId: string }>;
+
+	switch (format) {
+		case HookSourceFormat.Claude: {
+			// Strip `disableAllHooks` before parsing so the hooks are still extracted
+			if (json && typeof json === 'object') {
+				const { disableAllHooks: _, ...rest } = json as Record<string, unknown>;
+				const result = parseClaudeHooks(rest, workspaceRootUri, userHome);
+				hooks = result.hooks;
+			} else {
+				hooks = new Map();
+			}
+			break;
+		}
+		case HookSourceFormat.Copilot:
+		default:
+			hooks = parseCopilotHooks(json, workspaceRootUri, userHome);
+			break;
+	}
+
+	return { format, hooks, disabledAllHooks: true };
+}
+
+/**
  * Gets a human-readable label for a hook source format.
  */
 export function getHookSourceFormatLabel(format: HookSourceFormat): string {
