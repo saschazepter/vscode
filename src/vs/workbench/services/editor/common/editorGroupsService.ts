@@ -611,6 +611,11 @@ export interface IEditorGroupsService extends IEditorGroupsContainer {
 	createModalEditorPart(): Promise<IModalEditorPart>;
 
 	/**
+	 * The currently active modal editor part, if any.
+	 */
+	readonly activeModalEditorPart: IModalEditorPart | undefined;
+
+	/**
 	 * Returns the instantiation service that is scoped to the
 	 * provided editor part. Use this method when building UI
 	 * that contributes to auxiliary editor parts to ensure the

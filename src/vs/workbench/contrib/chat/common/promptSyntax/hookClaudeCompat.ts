@@ -180,11 +180,5 @@ function resolveClaudeCommand(
 		return undefined;
 	}
 
-	// Add type if missing for resolveHookCommand.
-	// Claude also uses `timeout` (seconds) whereas our canonical field is `timeoutSec`.
-	const normalized: Record<string, unknown> = { ...raw, type: 'command' };
-	if (normalized.timeoutSec === undefined && typeof raw.timeout === 'number') {
-		normalized.timeoutSec = raw.timeout;
-	}
-	return resolveHookCommand(normalized, workspaceRootUri, userHome);
+	return resolveHookCommand(raw, workspaceRootUri, userHome);
 }
