@@ -64,6 +64,7 @@ import { defaultButtonStyles } from '../../../../platform/theme/browser/defaultS
 import { getActiveWorkingDirectory } from '../agentSessionUtils.js';
 import { ISCMService } from '../../../contrib/scm/common/scm.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
+import { IActiveAgentSessionService } from '../../../contrib/chat/browser/agentSessions/agentSessionsService.js';
 
 const $ = DOM.$;
 
@@ -178,6 +179,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 		@IQuickInputService private readonly quickInputService: IQuickInputService,
 		@ISCMService private readonly scmService: ISCMService,
 		@ICommandService private readonly commandService: ICommandService,
+		@IActiveAgentSessionService private readonly activeAgentSessionService: IActiveAgentSessionService,
 	) {
 		super(AICustomizationManagementEditor.ID, group, telemetryService, themeService, storageService);
 
@@ -616,7 +618,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 			return;
 		}
 
-		const worktreeDir = getActiveWorkingDirectory(this.customizationCreator['activeAgentSessionService']);
+		const worktreeDir = getActiveWorkingDirectory(this.activeAgentSessionService);
 		if (!worktreeDir) {
 			return;
 		}
@@ -671,7 +673,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 	 * is ready by the time the user clicks "Commit to Worktree".
 	 */
 	private async ensureWorktreeRepository(): Promise<void> {
-		const worktreeDir = getActiveWorkingDirectory(this.customizationCreator['activeAgentSessionService']);
+		const worktreeDir = getActiveWorkingDirectory(this.activeAgentSessionService);
 		if (!worktreeDir) {
 			return;
 		}
