@@ -298,7 +298,7 @@ configurationRegistry.registerConfiguration({
 				nls.localize('chat.confettiOnThumbsUp.radiantLines', "Shows radiant lines emanating from the button."),
 			],
 			description: nls.localize('chat.confettiOnThumbsUp', "Controls whether a confetti animation is shown when clicking the thumbs up button on a chat response."),
-			default: 'off',
+			default: 'floatingThumbs',
 		},
 		'chat.experimental.detectParticipant.enabled': {
 			type: 'boolean',
