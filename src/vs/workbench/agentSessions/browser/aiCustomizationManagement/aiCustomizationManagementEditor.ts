@@ -54,7 +54,7 @@ import {
 import { agentIcon, instructionsIcon, promptIcon, skillIcon, hookIcon } from '../aiCustomizationTreeView/aiCustomizationTreeViewIcons.js';
 import { ChatModelsWidget } from '../../../contrib/chat/browser/chatManagement/chatModelsWidget.js';
 import { PromptsType } from '../../../contrib/chat/common/promptSyntax/promptTypes.js';
-import { PromptsStorage } from '../../../contrib/chat/common/promptSyntax/service/promptsService.js';
+import { PromptsStorage, Target } from '../../../contrib/chat/common/promptSyntax/service/promptsService.js';
 import { getCleanPromptName, SKILL_FILENAME, getPromptFileExtension } from '../../../contrib/chat/common/promptSyntax/config/promptFileLocations.js';
 import { getDefaultContentSnippet } from '../../../contrib/chat/browser/promptSyntax/newPromptFileActions.js';
 import { askForPromptSourceFolder } from '../../../contrib/chat/browser/promptSyntax/pickers/askForPromptSourceFolder.js';
@@ -811,7 +811,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 		if (this.embeddedEditor.hasModel()) {
 			SnippetController2.get(this.embeddedEditor)?.apply([{
 				range: this.embeddedEditor.getModel()!.getFullModelRange(),
-				template: getDefaultContentSnippet(type, cleanName),
+				template: getDefaultContentSnippet(type, cleanName, Target.Undefined),
 			}]);
 		}
 

@@ -67,7 +67,9 @@ import { IChatEntitlementService } from '../../../../../services/chat/common/cha
 import { IWorkspaceContextService } from '../../../../../../platform/workspace/common/workspace.js';
 
 interface IChatViewPaneState extends Partial<IChatModelInputState> {
+	/** @deprecated */
 	sessionId?: string;
+	sessionResource?: URI;
 
 	sessionsSidebarWidth?: number;
 }
@@ -140,7 +142,9 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 			lifecycleService.startupKind !== StartupKind.ReloadedWindow &&
 			this.configurationService.getValue<boolean>(ChatConfiguration.RestoreLastPanelSession) === false
 		) {
-			this.viewState.sessionId = undefined; // clear persisted session on fresh start
+			// clear persisted session on fresh start
+			this.viewState.sessionId = undefined;
+			this.viewState.sessionResource = undefined;
 		}
 		this.sessionsViewerVisible = false; // will be updated from layout code
 		this.sessionsViewerSidebarWidth = Math.max(ChatViewPane.SESSIONS_SIDEBAR_MIN_WIDTH, this.viewState.sessionsSidebarWidth ?? ChatViewPane.SESSIONS_SIDEBAR_DEFAULT_WIDTH);
@@ -309,6 +313,10 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 	private getTransferredOrPersistedSessionInfo(): URI | undefined {
 		if (this.chatService.transferredSessionResource) {
 			return this.chatService.transferredSessionResource;
+		}
+
+		if (this.viewState.sessionResource) {
+			return this.viewState.sessionResource;
 		}
 
 		return this.viewState.sessionId ? LocalChatSessionUri.forSession(this.viewState.sessionId) : undefined;
@@ -839,7 +847,9 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 		if (model) {
 			await this.updateWidgetLockState(model.sessionResource); // Update widget lock state based on session type
 
-			this.viewState.sessionId = model.sessionId; // remember as model to restore in view state
+			// remember as model to restore in view state
+			this.viewState.sessionId = model.sessionId;
+			this.viewState.sessionResource = model.sessionResource;
 		}
 
 		this._widget.setModel(model);

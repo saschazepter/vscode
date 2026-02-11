@@ -51,7 +51,6 @@ import { ILanguageModelToolsService } from '../tools/languageModelToolsService.j
 import { ChatSessionOperationLog } from '../model/chatSessionOperationLog.js';
 import { IPromptsService } from '../promptSyntax/service/promptsService.js';
 import { IChatRequestHooks } from '../promptSyntax/hookSchema.js';
-import { IHooksExecutionService } from '../hooks/hooksExecutionService.js';
 import { IUriIdentityService } from '../../../../../platform/uriIdentity/common/uriIdentity.js';
 
 const serializedChatKey = 'interactive.sessions';
@@ -161,7 +160,6 @@ export class ChatService extends Disposable implements IChatService {
 		@IChatSessionsService private readonly chatSessionService: IChatSessionsService,
 		@IMcpService private readonly mcpService: IMcpService,
 		@IPromptsService private readonly promptsService: IPromptsService,
-		@IHooksExecutionService private readonly hooksExecutionService: IHooksExecutionService,
 	) {
 		super();
 
@@ -940,10 +938,6 @@ export class ChatService extends Disposable implements IChatService {
 				this.logService.warn('[ChatService] Failed to collect hooks:', error);
 			}
 
-			if (collectedHooks) {
-				store.add(this.hooksExecutionService.registerHooks(model.sessionResource, collectedHooks));
-			}
-
 			const stopWatch = new StopWatch(false);
 			store.add(token.onCancellationRequested(() => {
 				this.trace('sendRequest', `Request for session ${model.sessionResource} was cancelled`);
@@ -980,6 +974,12 @@ export class ChatService extends Disposable implements IChatService {
 						} else {
 							variableData = { variables: this.prepareContext(request.attachedContext) };
 							model.updateRequest(request, variableData);
+
+							// Merge resolved variables (e.g. images from directories) for the
+							// agent request only - they are not stored on the request model.
+							if (options?.resolvedVariables?.length) {
+								variableData = { variables: [...variableData.variables, ...options.resolvedVariables] };
+							}
 
 							const promptTextResult = getPromptText(request.message);
 							variableData = updateRanges(variableData, promptTextResult.diff); // TODO bit of a hack

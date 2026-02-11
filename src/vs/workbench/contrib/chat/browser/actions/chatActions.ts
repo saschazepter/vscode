@@ -801,7 +801,7 @@ export function registerChatActions() {
 				precondition: ChatContextKeys.inChatSession,
 				keybinding: [{
 					weight: KeybindingWeight.WorkbenchContrib,
-					primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyA,
+					primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyH,
 					when: ChatContextKeys.inChatSession,
 				}]
 			});
@@ -814,6 +814,24 @@ export function registerChatActions() {
 			if (!widget || !widget.toggleQuestionCarouselFocus()) {
 				alert(localize('chat.questionCarousel.focusUnavailable', "No chat question to focus right now."));
 			}
+		}
+	});
+
+	registerAction2(class ShowContextUsageAction extends Action2 {
+		constructor() {
+			super({
+				id: 'workbench.action.chat.showContextUsage',
+				title: localize2('interactiveSession.showContextUsage.label', "Show Context Window Usage"),
+				category: CHAT_CATEGORY,
+				f1: true,
+				precondition: ChatContextKeys.enabled,
+			});
+		}
+
+		async run(accessor: ServicesAccessor): Promise<void> {
+			const widgetService = accessor.get(IChatWidgetService);
+			const widget = widgetService.lastFocusedWidget ?? (await widgetService.revealWidget());
+			widget?.input.showContextUsageDetails();
 		}
 	});
 
@@ -979,13 +997,7 @@ export function registerChatActions() {
 				category: CHAT_CATEGORY,
 				icon: Codicon.sparkle,
 				f1: true,
-				precondition: ChatContextKeys.enabled,
-				menu: {
-					id: CHAT_CONFIG_MENU_ID,
-					when: ContextKeyExpr.and(ChatContextKeys.enabled, ContextKeyExpr.equals('view', ChatViewId)),
-					order: 11,
-					group: '1_level'
-				}
+				precondition: ChatContextKeys.enabled
 			});
 		}
 
