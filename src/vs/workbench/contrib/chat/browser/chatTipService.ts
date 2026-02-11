@@ -106,6 +106,11 @@ export interface ITipDefinition {
 	 */
 	readonly excludeWhenToolsInvoked?: string[];
 	/**
+	 * Tool set reference names where at least one must be registered for the tip to be eligible.
+	 * If none of the listed tool sets are registered, the tip is not shown.
+	 */
+	readonly requiresAnyToolSetRegistered?: string[];
+	/**
 	 * If set, exclude this tip when prompt files of the specified type exist in the workspace.
 	 */
 	readonly excludeWhenPromptFilesExist?: {
@@ -205,6 +210,7 @@ const TIP_CATALOG: ITipDefinition[] = [
 			ContextKeyExpr.notEquals('gitOpenRepositoryCount', '0'),
 		),
 		excludeWhenToolsInvoked: ['github-pull-request_doSearch', 'github-pull-request_issue_fetch', 'github-pull-request_formSearchQuery'],
+		requiresAnyToolSetRegistered: ['github', 'github-pull-request'],
 	},
 	{
 		id: 'tip.subagents',
@@ -271,7 +277,7 @@ export class TipEligibilityTracker extends Disposable {
 		@ICommandService commandService: ICommandService,
 		@IStorageService private readonly _storageService: IStorageService,
 		@IPromptsService private readonly _promptsService: IPromptsService,
-		@ILanguageModelToolsService languageModelToolsService: ILanguageModelToolsService,
+		@ILanguageModelToolsService private readonly _languageModelToolsService: ILanguageModelToolsService,
 		@ILogService private readonly _logService: ILogService,
 	) {
 		super();
@@ -335,7 +341,7 @@ export class TipEligibilityTracker extends Disposable {
 		// --- Set up tool listener (auto-disposes when all seen) -----------------
 
 		if (this._pendingTools.size > 0) {
-			this._toolListener.value = languageModelToolsService.onDidInvokeTool(e => {
+			this._toolListener.value = this._languageModelToolsService.onDidInvokeTool(e => {
 				if (this._pendingTools.has(e.toolId)) {
 					this._invokedTools.add(e.toolId);
 					this._persistSet(TipEligibilityTracker._TOOLS_STORAGE_KEY, this._invokedTools);
@@ -427,6 +433,13 @@ export class TipEligibilityTracker extends Disposable {
 		if (tip.excludeWhenPromptFilesExist && this._excludedByFiles.has(tip.id)) {
 			this._logService.debug('#ChatTips: tip excluded because prompt files exist', tip.id);
 			return true;
+		}
+		if (tip.requiresAnyToolSetRegistered) {
+			const hasAny = tip.requiresAnyToolSetRegistered.some(name => this._languageModelToolsService.getToolSetByName(name));
+			if (!hasAny) {
+				this._logService.debug('#ChatTips: tip excluded because no required tool sets are registered', tip.id);
+				return true;
+			}
 		}
 		return false;
 	}

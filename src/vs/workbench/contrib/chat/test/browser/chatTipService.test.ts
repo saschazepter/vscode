@@ -613,6 +613,47 @@ suite('ChatTipService', () => {
 		assert.strictEqual(tracker.isExcluded(tip), false, 'Should not be excluded when no skill files exist');
 	});
 
+	test('excludes tip when requiresAnyToolSetRegistered tool sets are not registered', () => {
+		const tip: ITipDefinition = {
+			id: 'tip.githubRepo',
+			message: 'test',
+			requiresAnyToolSetRegistered: ['github', 'github-pull-request'],
+		};
+
+		const tracker = testDisposables.add(new TipEligibilityTracker(
+			[tip],
+			{ onDidExecuteCommand: Event.None, onWillExecuteCommand: Event.None } as Partial<ICommandService> as ICommandService,
+			storageService,
+			createMockPromptsService() as IPromptsService,
+			createMockToolsService(),
+			new NullLogService(),
+		));
+
+		assert.strictEqual(tracker.isExcluded(tip), true, 'Should be excluded when no required tool sets are registered');
+	});
+
+	test('does not exclude tip when at least one requiresAnyToolSetRegistered tool set is registered', () => {
+		const mockToolsService = createMockToolsService();
+		mockToolsService.addRegisteredToolSetName('github');
+
+		const tip: ITipDefinition = {
+			id: 'tip.githubRepo',
+			message: 'test',
+			requiresAnyToolSetRegistered: ['github', 'github-pull-request'],
+		};
+
+		const tracker = testDisposables.add(new TipEligibilityTracker(
+			[tip],
+			{ onDidExecuteCommand: Event.None, onWillExecuteCommand: Event.None } as Partial<ICommandService> as ICommandService,
+			storageService,
+			createMockPromptsService() as IPromptsService,
+			mockToolsService,
+			new NullLogService(),
+		));
+
+		assert.strictEqual(tracker.isExcluded(tip), false, 'Should not be excluded when at least one required tool set is registered');
+	});
+
 	test('re-checks agent file exclusion when onDidChangeCustomAgents fires', async () => {
 		const agentChangeEmitter = testDisposables.add(new Emitter<void>());
 		let agentFiles: IPromptPath[] = [];
