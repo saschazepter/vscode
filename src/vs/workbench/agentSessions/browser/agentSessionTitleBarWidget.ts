@@ -191,7 +191,7 @@ export class AgentSessionsTitleBarWidget extends BaseActionViewItem {
 	}
 
 	private _showSessionsPicker(): void {
-		const picker = this.instantiationService.createInstance(AgentSessionsPicker);
+		const picker = this.instantiationService.createInstance(AgentSessionsPicker, undefined);
 		picker.pickAgentSession();
 	}
 }
