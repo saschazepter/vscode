@@ -238,7 +238,7 @@ export class OutputMonitor extends Disposable implements IOutputMonitor {
 		}
 
 		// Check for generic "press any key" prompts from scripts.
-		// These should be treated as free-form input to let the user press a key.
+		// When auto-reply is enabled, send Enter automatically; otherwise prompt the user.
 		if ((!isTask || !isTaskInactive) && detectsGenericPressAnyKeyPattern(output)) {
 			this._logService.trace('OutputMonitor: Idle -> generic "press any key" detected, requesting free-form input');
 			// Register a marker to track this prompt position so we don't re-detect it
