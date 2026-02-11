@@ -679,12 +679,24 @@ class WordHighlighter {
 		if (isEqual(this.editor.getModel().uri, WordHighlighter.query.modelInfo?.modelURI)) { // only trigger new worker requests from the primary model that initiated the query
 			// case d)
 
-			// check if the cursor is still within the original word range that triggered the current highlights
-			// only skip refetching if we remain in the same word range, not if we move to another highlighted range
-			// this is necessary because document highlights can be asymmetric (different results depending on which symbol is queried)
+			// check if the cursor position is already contained in a highlighted range,
+			// and skip re-querying if so. When asymmetric highlights are enabled, only
+			// skip when the cursor remains within the original query word range.
 			if (!multiFileConfigChange) {
-				if (this.lastQueryWordRange?.containsPosition(this.editor.getPosition())) {
-					return;
+				if (this.editor.getOption(EditorOption.occurrencesHighlightAsymmetric)) {
+					// when asymmetric highlights are enabled, only skip refetching if the cursor remains
+					// within the original word range that triggered the current highlights, since different
+					// highlighted ranges may produce different results when queried
+					if (this.lastQueryWordRange?.containsPosition(this.editor.getPosition())) {
+						return;
+					}
+				} else {
+					const currentModelDecorationRanges = this.decorations.getRanges();
+					for (const storedRange of currentModelDecorationRanges) {
+						if (storedRange.containsPosition(this.editor.getPosition())) {
+							return;
+						}
+					}
 				}
 			}
 
