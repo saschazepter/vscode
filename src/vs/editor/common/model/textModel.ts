@@ -40,7 +40,7 @@ import { EditSources, TextModelEditSource } from '../textModelEditSource.js';
 import { IModelContentChangedEvent, IModelDecorationsChangedEvent, IModelOptionsChangedEvent, InternalModelContentChangeEvent, LineInjectedText, ModelFontChanged, ModelFontChangedEvent, ModelInjectedTextChangedEvent, ModelLineHeightChanged, ModelLineHeightChangedEvent, ModelRawChange, ModelRawContentChangedEvent, ModelRawEOLChanged, ModelRawFlush, ModelRawLineChanged, ModelRawLinesDeleted, ModelRawLinesInserted } from '../textModelEvents.js';
 import { IGuidesTextModelPart } from '../textModelGuides.js';
 import { ITokenizationTextModelPart } from '../tokenizationTextModelPart.js';
-import { TokenArray } from '../tokens/lineTokens.js';
+import { LineTokens, TokenArray } from '../tokens/lineTokens.js';
 import { BracketPairsTextModelPart } from './bracketPairsTextModelPart/bracketPairsImpl.js';
 import { ColorizedBracketPairsDecorationProvider } from './bracketPairsTextModelPart/colorizedBracketPairsDecorationProvider.js';
 import { EditStack } from './editStack.js';
@@ -1633,7 +1633,7 @@ export class TextModel extends Disposable implements model.ITextModel, IDecorati
 
 		if (affectedInjectedTextLines && affectedInjectedTextLines.size > 0) {
 			const affectedLines = Array.from(affectedInjectedTextLines);
-			const lineChangeEvents = affectedLines.map(lineNumber => new ModelRawLineChanged(lineNumber, this.getLineContent(lineNumber), this._getInjectedTextInLine(lineNumber)));
+			const lineChangeEvents = affectedLines.map(lineNumber => new ModelRawLineChanged(lineNumber, lineNumber));
 			this._onDidChangeContentOrInjectedText(new ModelInjectedTextChangedEvent(lineChangeEvents));
 		}
 		this._fireOnDidChangeLineHeight(affectedLineHeights);
@@ -1661,15 +1661,6 @@ export class TextModel extends Disposable implements model.ITextModel, IDecorati
 	private onFontChanged(e: ModelFontChangedEvent): void {
 		for (const viewModel of this._viewModels) {
 			viewModel.onFontChanged(e);
-		}
-	}
-
-	private _onDidChangeContentOrInjectedText(e: InternalModelContentChangeEvent | ModelInjectedTextChangedEvent): void {
-		for (const viewModel of this._viewModels) {
-			viewModel.onDidChangeContentOrInjectedText(e);
-		}
-		for (const viewModel of this._viewModels) {
-			viewModel.emitContentChangeEvent(e);
 		}
 	}
 
@@ -2142,7 +2133,7 @@ export class TextModel extends Disposable implements model.ITextModel, IDecorati
 	}
 }
 
-export function getLineTokensWithInjections(tokens: LineTokens, injectionOptions: InjectedTextOptions[] | null, injectionOffsets: number[] | null): LineTokens {
+export function getLineTokensWithInjections(tokens: LineTokens, injectionOptions: model.InjectedTextOptions[] | null, injectionOffsets: number[] | null): LineTokens {
 	let lineTokens: LineTokens;
 	if (injectionOptions && injectionOffsets) {
 		const tokensToInsert: { offset: number; text: string; tokenMetadata: number }[] = [];

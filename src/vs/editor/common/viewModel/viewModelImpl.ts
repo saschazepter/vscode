@@ -341,22 +341,13 @@ export class ViewModel extends Disposable implements IViewModel {
 			for (const change of changes) {
 				switch (change.changeType) {
 					case textModelEvents.RawContentChangedType.LinesInserted: {
-						for (let lineIdx = 0; lineIdx < change.detail.length; lineIdx++) {
-							const line = change.detail[lineIdx];
-							let injectedText = change.injectedTexts[lineIdx];
-							if (injectedText) {
-								injectedText = injectedText.filter(element => (!element.ownerId || element.ownerId === this._editorId));
-							}
-							lineBreaksComputer.addRequest(line, injectedText, null);
+						for (let lineIdx = 0; lineIdx < change.newToLineNumber - change.newFromLineNumber; lineIdx++) {
+							lineBreaksComputer.addRequest(change.newFromLineNumber, null);
 						}
 						break;
 					}
 					case textModelEvents.RawContentChangedType.LineChanged: {
-						let injectedText: textModelEvents.LineInjectedText[] | null = null;
-						if (change.injectedText) {
-							injectedText = change.injectedText.filter(element => (!element.ownerId || element.ownerId === this._editorId));
-						}
-						lineBreaksComputer.addRequest(change.detail, injectedText, null);
+						lineBreaksComputer.addRequest(change.newLineNumber, null);
 						break;
 					}
 				}
@@ -384,8 +375,8 @@ export class ViewModel extends Disposable implements IViewModel {
 						break;
 					}
 					case textModelEvents.RawContentChangedType.LinesInserted: {
-						const insertedLineBreaks = lineBreakQueue.takeCount(change.detail.length);
-						const linesInsertedEvent = this._lines.onModelLinesInserted(versionId, change.fromLineNumber, change.toLineNumber, insertedLineBreaks);
+						const insertedLineBreaks = lineBreakQueue.takeCount(change.oldToLineNumber - change.oldFromLineNumber);
+						const linesInsertedEvent = this._lines.onModelLinesInserted(versionId, change.newFromLineNumber, change.newToLineNumber, insertedLineBreaks);
 						if (linesInsertedEvent !== null) {
 							eventsCollector.emitViewEvent(linesInsertedEvent);
 							this.viewLayout.onLinesInserted(linesInsertedEvent.fromLineNumber, linesInsertedEvent.toLineNumber);
@@ -396,7 +387,7 @@ export class ViewModel extends Disposable implements IViewModel {
 					case textModelEvents.RawContentChangedType.LineChanged: {
 						const changedLineBreakData = lineBreakQueue.dequeue()!;
 						const [lineMappingChanged, linesChangedEvent, linesInsertedEvent, linesDeletedEvent] =
-							this._lines.onModelLineChanged(versionId, change.lineNumber, changedLineBreakData);
+							this._lines.onModelLineChanged(versionId, change.newLineNumber, changedLineBreakData);
 						hadModelLineChangeThatChangedLineMapping = lineMappingChanged;
 						if (linesChangedEvent) {
 							eventsCollector.emitViewEvent(linesChangedEvent);

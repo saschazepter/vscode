@@ -46,9 +46,8 @@ export class MonospaceLineBreaksComputerFactory implements ILineBreaksComputerFa
 				for (let i = 0, len = lineNumbers.length; i < len; i++) {
 					const lineNumber = lineNumbers[i];
 					const injectedText = context.getLineInjectedText(lineNumber);
-					const lineContent = context.getLineContent(lineNumber);
+					const lineText = context.getLineContent(lineNumber);
 					const previousLineBreakData = previousBreakingData[i];
-					const lineText = requests[i];
 					const isLineFeedWrappingEnabled = wrapOnEscapedLineFeeds && lineText.includes('"') && lineText.includes('\\n');
 					if (previousLineBreakData && !previousLineBreakData.injectionOptions && !injectedText && !isLineFeedWrappingEnabled) {
 						result[i] = createLineBreaksFromPreviousLineBreaks(this.classifier, previousLineBreakData, lineText, tabSize, wrappingColumn, columnsForFullWidthChar, wrappingIndent, wordBreak);

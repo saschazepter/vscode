@@ -8,12 +8,9 @@ import { Range } from '../core/range.js';
 import { IEditorConfiguration } from '../config/editorConfiguration.js';
 import { ITextModel } from '../model.js';
 import { IViewModelLines } from './viewModelLines.js';
-import { ViewModelDecoration } from './viewModelDecoration.js';
-import { IDecorationsViewportData, IInlineDecorationsComputerContext, InlineDecorationsComputer } from './inlineDecorations.js';
-import { ICoordinatesConverter } from '../coordinatesConverter.js';
+import { InlineDecoration, IDecorationsViewportData, IInlineDecorationsComputerContext, InlineDecorationsComputer } from './inlineDecorations.js';
 import { filterFontDecorations, filterValidationDecorations } from '../config/editorOptions.js';
-import { isModelDecorationVisible, ViewModelDecoration } from './viewModelDecoration.js';
-import { InlineDecoration, InlineDecorationType } from './inlineDecorations.js';
+import { ViewModelDecoration } from './viewModelDecoration.js';
 import { ICoordinatesConverter } from '../coordinatesConverter.js';
 
 /**
