@@ -407,7 +407,7 @@ suite('HookClaudeCompat', () => {
 				const result = parseClaudeHooks(json, workspaceRoot, userHome);
 
 				const entry = result.hooks.get(HookType.PreToolUse)!;
-				assert.strictEqual(entry.hooks[0].timeoutSec, 1);
+				assert.strictEqual(entry.hooks[0].timeout, 1);
 			});
 		});
 	});
@@ -502,9 +502,9 @@ suite('HookSourceFormat', () => {
 			};
 
 			const result = parseClaudeHooks(hooksContent, URI.file('/workspace'), '/home/user');
-			assert.strictEqual(result.size, 1);
-			assert.ok(result.has(HookType.PreToolUse));
-			const hooks = result.get(HookType.PreToolUse)!;
+			assert.strictEqual(result.hooks.size, 1);
+			assert.ok(result.hooks.has(HookType.PreToolUse));
+			const hooks = result.hooks.get(HookType.PreToolUse)!;
 			assert.strictEqual(hooks.hooks.length, 1);
 			// Empty command string is falsy and gets omitted by resolveHookCommand
 			assert.strictEqual(hooks.hooks[0].command, undefined);
