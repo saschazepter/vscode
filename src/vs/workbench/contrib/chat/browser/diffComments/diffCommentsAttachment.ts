@@ -5,9 +5,12 @@
 
 import { Disposable, DisposableMap } from '../../../../../base/common/lifecycle.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
+import { basename } from '../../../../../base/common/resources.js';
 import { URI } from '../../../../../base/common/uri.js';
+import { IRange } from '../../../../../editor/common/core/range.js';
+import { ITextModelService } from '../../../../../editor/common/services/resolverService.js';
 import { localize } from '../../../../../nls.js';
-import { IDiffCommentsService } from './diffCommentsService.js';
+import { IDiffCommentsService, IDiffComment } from './diffCommentsService.js';
 import { IChatWidgetService } from '../chat.js';
 import { IDiffCommentsVariableEntry } from '../../common/attachments/chatVariableEntries.js';
 
@@ -25,9 +28,13 @@ export class DiffCommentsAttachmentContribution extends Disposable {
 	/** Track onDidAcceptInput subscriptions per widget session */
 	private readonly _widgetListeners = this._store.add(new DisposableMap<string>());
 
+	/** Cache of resolved code snippets keyed by comment ID */
+	private readonly _snippetCache = new Map<string, string | undefined>();
+
 	constructor(
 		@IDiffCommentsService private readonly _diffCommentsService: IDiffCommentsService,
 		@IChatWidgetService private readonly _chatWidgetService: IChatWidgetService,
+		@ITextModelService private readonly _textModelService: ITextModelService,
 	) {
 		super();
 
@@ -37,7 +44,7 @@ export class DiffCommentsAttachmentContribution extends Disposable {
 		}));
 	}
 
-	private _updateAttachment(sessionResource: URI): void {
+	private async _updateAttachment(sessionResource: URI): Promise<void> {
 		const widget = this._chatWidgetService.getWidgetBySessionResource(sessionResource);
 		if (!widget) {
 			return;
@@ -48,8 +55,11 @@ export class DiffCommentsAttachmentContribution extends Disposable {
 
 		if (comments.length === 0) {
 			widget.attachmentModel.delete(attachmentId);
+			this._snippetCache.clear();
 			return;
 		}
+
+		const value = await this._buildCommentsValue(comments);
 
 		const entry: IDiffCommentsVariableEntry = {
 			kind: 'diffComments',
@@ -65,12 +75,73 @@ export class DiffCommentsAttachmentContribution extends Disposable {
 				resourceUri: c.resourceUri,
 				range: c.range,
 			})),
-			value: comments.map(c => `[${c.resourceUri.path}:${c.range.startLineNumber}] ${c.text}`).join('\n'),
+			value,
 		};
 
 		// Upsert
 		widget.attachmentModel.delete(attachmentId);
 		widget.attachmentModel.addContext(entry);
+	}
+
+	/**
+	 * Builds a rich string value for the diff comments attachment that includes
+	 * the code snippet at each comment's location alongside the comment text.
+	 * Uses a cache keyed by comment ID to avoid re-resolving snippets for
+	 * comments that haven't changed.
+	 */
+	private async _buildCommentsValue(comments: readonly IDiffComment[]): Promise<string> {
+		// Prune stale cache entries for comments that no longer exist
+		const currentIds = new Set(comments.map(c => c.id));
+		for (const cachedId of this._snippetCache.keys()) {
+			if (!currentIds.has(cachedId)) {
+				this._snippetCache.delete(cachedId);
+			}
+		}
+
+		// Resolve only new (uncached) snippets
+		const uncachedComments = comments.filter(c => !this._snippetCache.has(c.id));
+		if (uncachedComments.length > 0) {
+			await Promise.all(uncachedComments.map(async c => {
+				const snippet = await this._getCodeSnippet(c.resourceUri, c.range);
+				this._snippetCache.set(c.id, snippet);
+			}));
+		}
+
+		// Build the final string from cache
+		const parts: string[] = ['The following comments were made on the code changes:'];
+		for (const comment of comments) {
+			const codeSnippet = this._snippetCache.get(comment.id);
+			const fileName = basename(comment.resourceUri);
+			const lineRef = comment.range.startLineNumber === comment.range.endLineNumber
+				? `${comment.range.startLineNumber}`
+				: `${comment.range.startLineNumber}-${comment.range.endLineNumber}`;
+
+			let part = `[${fileName}:${lineRef}]`;
+			if (codeSnippet) {
+				part += `\n\`\`\`\n${codeSnippet}\n\`\`\``;
+			}
+			part += `\nComment: ${comment.text}`;
+			parts.push(part);
+		}
+
+		return parts.join('\n\n');
+	}
+
+	/**
+	 * Resolves the text model for a resource and extracts the code in the given range.
+	 * Returns undefined if the model cannot be resolved.
+	 */
+	private async _getCodeSnippet(resourceUri: URI, range: IRange): Promise<string | undefined> {
+		try {
+			const ref = await this._textModelService.createModelReference(resourceUri);
+			try {
+				return ref.object.textEditorModel.getValueInRange(range);
+			} finally {
+				ref.dispose();
+			}
+		} catch {
+			return undefined;
+		}
 	}
 
 	/**
