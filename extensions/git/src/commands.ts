@@ -2994,7 +2994,7 @@ export class CommandCenter {
 			allChanges.map(change => ({
 				status: change.status,
 				fileName: workspace.asRelativePath(change.uri),
-				originalPath: change.originalUri.path
+				originalPath: workspace.asRelativePath(change.originalUri)
 			}))
 		);
 
