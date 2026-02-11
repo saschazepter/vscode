@@ -15,7 +15,6 @@ import { IQuickInputService, IQuickPickItem, IQuickPickSeparator } from '../../.
 import { IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
 import { TerminalLocation } from '../../../../../platform/terminal/common/terminal.js';
 import { IWorkspaceContextService } from '../../../../../platform/workspace/common/workspace.js';
-// eslint-disable-next-line local/code-import-patterns
 import { AgentSessionsWorkbenchMenus } from '../../../../agentSessions/browser/agentSessionsWorkbenchMenus.js';
 import { IWorkbenchContribution } from '../../../../common/contributions.js';
 import { IDebugService, ILaunch } from '../../../debug/common/debug.js';

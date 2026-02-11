@@ -18,7 +18,6 @@ import { CHAT_CATEGORY } from '../../browser/actions/chatActions.js';
 import { ProductQualityContext } from '../../../../../platform/contextkey/common/contextkeys.js';
 import { IActiveAgentSessionService } from '../../browser/agentSessions/agentSessionsService.js';
 import { ITerminalGroupService, ITerminalService } from '../../../terminal/browser/terminal.js';
-// eslint-disable-next-line local/code-import-patterns
 import { AgentSessionsWorkbenchMenus } from '../../../../agentSessions/browser/agentSessionsWorkbenchMenus.js';
 import { isAgentSession } from '../../browser/agentSessions/agentSessionsModel.js';
 import { AgentSessionProviders } from '../../browser/agentSessions/agentSessions.js';
