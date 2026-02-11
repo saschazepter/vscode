@@ -46,6 +46,7 @@ import { IStorageService, StorageScope, StorageTarget } from '../../../../platfo
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
 import { IFileService } from '../../../../platform/files/common/files.js';
 import { getPromptFileDefaultLocations, getPromptFileType } from '../../../contrib/chat/common/promptSyntax/config/promptFileLocations.js';
+import { getActiveWorkingDirectory } from '../agentSessionUtils.js';
 
 const $ = DOM.$;
 
@@ -372,7 +373,7 @@ export class AgentSessionsViewPane extends ViewPane {
 			this.promptsService.listPromptFilesForStorage(promptType, PromptsStorage.extension, CancellationToken.None),
 		]);
 
-		const activeRepo = this.activeSessionService.getActiveSession()?.repository;
+		const activeRepo = getActiveWorkingDirectory(this.activeSessionService);
 		let workspaceCount: number;
 
 		if (workspaceItems.length > 0) {
@@ -397,7 +398,7 @@ export class AgentSessionsViewPane extends ViewPane {
 
 	private async getSkillSourceCounts(): Promise<ISourceCounts> {
 		const skills = await this.promptsService.findAgentSkills(CancellationToken.None);
-		const activeRepo = this.activeSessionService.getActiveSession()?.repository;
+		const activeRepo = getActiveWorkingDirectory(this.activeSessionService);
 		if (!skills || skills.length === 0) {
 			if (activeRepo) {
 				const count = await this.countFilesInRepo(activeRepo, PromptsType.skill);

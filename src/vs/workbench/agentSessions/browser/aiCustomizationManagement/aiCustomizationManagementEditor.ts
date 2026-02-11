@@ -56,8 +56,7 @@ import { ChatModelsWidget } from '../../../contrib/chat/browser/chatManagement/c
 import { PromptsType } from '../../../contrib/chat/common/promptSyntax/promptTypes.js';
 import { getCleanPromptName, SKILL_FILENAME } from '../../../contrib/chat/common/promptSyntax/config/promptFileLocations.js';
 import { getDefaultContentSnippet } from '../../../contrib/chat/browser/promptSyntax/newPromptFileActions.js';
-import { askForPromptSourceFolder } from '../../../contrib/chat/browser/promptSyntax/pickers/askForPromptSourceFolder.js';
-import { askForPromptFileName } from '../../../contrib/chat/browser/promptSyntax/pickers/askForPromptName.js';
+import { CustomizationCreatorService } from './customizationCreatorService.js';
 
 const $ = DOM.$;
 
@@ -150,6 +149,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 
 	private readonly editorDisposables = this._register(new DisposableStore());
 	private readonly inputDisposables = this._register(new MutableDisposable());
+	private readonly customizationCreator: CustomizationCreatorService;
 
 	private readonly inEditorContextKey: IContextKey<boolean>;
 	private readonly sectionContextKey: IContextKey<string>;
@@ -172,6 +172,8 @@ export class AICustomizationManagementEditor extends EditorPane {
 
 		this.inEditorContextKey = CONTEXT_AI_CUSTOMIZATION_MANAGEMENT_EDITOR.bindTo(contextKeyService);
 		this.sectionContextKey = CONTEXT_AI_CUSTOMIZATION_MANAGEMENT_SECTION.bindTo(contextKeyService);
+
+		this.customizationCreator = this.instantiationService.createInstance(CustomizationCreatorService);
 
 		// Safety disposal for the embedded editor model reference
 		this._register(toDisposable(() => {
@@ -331,9 +333,14 @@ export class AICustomizationManagementEditor extends EditorPane {
 			this.openItem(item);
 		}));
 
-		// Handle create actions - create file directly and open in embedded editor
+		// Handle create actions - AI-guided creation
 		this.editorDisposables.add(this.listWidget.onDidRequestCreate(promptType => {
-			this.createNewItem(promptType);
+			this.createNewItemWithAI(promptType);
+		}));
+
+		// Handle manual create actions - open editor directly
+		this.editorDisposables.add(this.listWidget.onDidRequestCreateManual(({ type, target }) => {
+			this.createNewItemManual(type, target);
 		}));
 
 		// Container for Models content
@@ -562,13 +569,34 @@ export class AICustomizationManagementEditor extends EditorPane {
 	}
 
 	/**
-	 * Creates a new prompt file directly (folder picker, name input, file creation)
-	 * and opens it in the embedded editor with the default snippet template.
+	 * Creates a new customization using the AI-guided flow.
+	 * Closes the management editor and opens a chat session with a hidden
+	 * custom agent that guides the user through creating the customization.
 	 */
-	private async createNewItem(type: PromptsType): Promise<void> {
-		// Step 1: Ask for source folder
-		const selectedFolder = await this.instantiationService.invokeFunction(askForPromptSourceFolder, type);
-		if (!selectedFolder) {
+	private async createNewItemWithAI(type: PromptsType): Promise<void> {
+		// Close the management editor first so the chat is focused
+		if (this.input) {
+			await this.group.closeEditor(this.input);
+		}
+
+		await this.customizationCreator.createWithAI(type);
+	}
+
+	/**
+	 * Creates a new prompt file. If there's an active worktree, asks the user
+	 * whether to save in the worktree or user directory first.
+	 */
+	private async createNewItemManual(type: PromptsType, target: 'worktree' | 'user'): Promise<void> {
+		// TODO: When creating a workspace customization file via 'New Workspace X',
+		// the file is written directly to the worktree but there is currently no way
+		// to commit it so it shows up in the Changes diff view for the worktree.
+		// We need integration with the git worktree to stage/commit these new files.
+
+		const targetDir = target === 'worktree'
+			? this.customizationCreator.resolveTargetDirectory(type)
+			: this.customizationCreator.resolveUserDirectory(type);
+
+		if (!targetDir) {
 			return;
 		}
 
@@ -604,34 +632,45 @@ export class AICustomizationManagementEditor extends EditorPane {
 				return;
 			}
 			const trimmedName = skillName.trim();
-			const skillFolder = URI.joinPath(selectedFolder.uri, trimmedName);
+			const skillFolder = URI.joinPath(targetDir, trimmedName);
 			await this.fileService.createFolder(skillFolder);
 			fileUri = URI.joinPath(skillFolder, SKILL_FILENAME);
 			cleanName = trimmedName;
 		} else {
-			// Standard flow: ask for file name
-			const fileName = await this.instantiationService.invokeFunction(askForPromptFileName, type, selectedFolder.uri);
+			// Standard flow: ask for file name via quick input
+			const fileExtension = this.getFileExtension(type);
+			const fileName = await this.quickInputService.input({
+				prompt: localize('newFileName', "Enter a name"),
+				placeHolder: localize('newFileNamePlaceholder', "e.g., my-{0}", fileExtension),
+				validateInput: async (value) => {
+					if (!value || !value.trim()) {
+						return localize('fileNameRequired', "Name is required");
+					}
+					return undefined;
+				}
+			});
 			if (!fileName) {
 				return;
 			}
-			await this.fileService.createFolder(selectedFolder.uri);
-			fileUri = URI.joinPath(selectedFolder.uri, fileName);
+			const trimmedName = fileName.trim();
+			const fullFileName = trimmedName.endsWith(fileExtension) ? trimmedName : trimmedName + fileExtension;
+			await this.fileService.createFolder(targetDir);
+			fileUri = URI.joinPath(targetDir, fullFileName);
 			cleanName = getCleanPromptName(fileUri);
 		}
 
-		// Step 2: Create the file and open in embedded editor
+		// Create the file and open in embedded editor
 		try {
 			await this.fileService.createFile(fileUri);
 		} catch (error) {
-			// File creation failed (e.g., already exists, permissions)
 			console.error('Failed to create file:', error);
 			return;
 		}
 
-		// Step 3: Open in embedded editor
+		// Open in embedded editor
 		await this.showEmbeddedEditor(fileUri, cleanName);
 
-		// Step 4: Apply the default snippet template
+		// Apply the default snippet template
 		if (this.embeddedEditor.hasModel()) {
 			SnippetController2.get(this.embeddedEditor)?.apply([{
 				range: this.embeddedEditor.getModel()!.getFullModelRange(),
@@ -639,8 +678,17 @@ export class AICustomizationManagementEditor extends EditorPane {
 			}]);
 		}
 
-		// Step 5: Refresh the list so the new item appears
+		// Refresh the list so the new item appears
 		void this.listWidget.refresh();
+	}
+
+	private getFileExtension(type: PromptsType): string {
+		switch (type) {
+			case PromptsType.agent: return '.agent.md';
+			case PromptsType.instructions: return '.instructions.md';
+			case PromptsType.prompt: return '.prompt.md';
+			default: return '.md';
+		}
 	}
 
 	override updateStyles(): void {

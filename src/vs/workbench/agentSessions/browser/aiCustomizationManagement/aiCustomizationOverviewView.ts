@@ -29,6 +29,7 @@ import { IWorkspaceContextService } from '../../../../platform/workspace/common/
 import { autorun } from '../../../../base/common/observable.js';
 import { IActiveAgentSessionService } from '../../../contrib/chat/browser/agentSessions/agentSessionsService.js';
 import { isEqualOrParent } from '../../../../base/common/resources.js';
+import { getActiveWorkingDirectory } from '../agentSessionUtils.js';
 
 const $ = DOM.$;
 
@@ -158,7 +159,7 @@ export class AICustomizationOverviewView extends ViewPane {
 		];
 
 		await Promise.all(sectionPromptTypes.map(async ({ section, type }) => {
-			const activeRepo = this.activeSessionService.getActiveSession()?.repository;
+			const activeRepo = getActiveWorkingDirectory(this.activeSessionService);
 			let count = 0;
 			if (type === PromptsType.skill) {
 				const skills = await this.promptsService.findAgentSkills(CancellationToken.None);

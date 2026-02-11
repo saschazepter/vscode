@@ -27,7 +27,7 @@ import { IContextMenuService, IContextViewService } from '../../../../platform/c
 import { HighlightedLabel } from '../../../../base/browser/ui/highlightedlabel/highlightedLabel.js';
 import { matchesFuzzy, IMatch } from '../../../../base/common/filters.js';
 import { IOpenerService } from '../../../../platform/opener/common/opener.js';
-import { Button } from '../../../../base/browser/ui/button/button.js';
+import { ButtonWithDropdown } from '../../../../base/browser/ui/button/button.js';
 import { IMenuService } from '../../../../platform/actions/common/actions.js';
 import { IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { getFlatContextMenuActions } from '../../../../platform/actions/browser/menuEntryActionViewItem.js';
@@ -42,6 +42,9 @@ import { autorun } from '../../../../base/common/observable.js';
 import { IActiveAgentSessionService } from '../../../contrib/chat/browser/agentSessions/agentSessionsService.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { getPromptFileDefaultLocations, getPromptFileType } from '../../../contrib/chat/common/promptSyntax/config/promptFileLocations.js';
+import { Action, Separator } from '../../../../base/common/actions.js';
+import { IClipboardService } from '../../../../platform/clipboard/common/clipboardService.js';
+import { getActiveWorkingDirectory } from '../agentSessionUtils.js';
 
 const $ = DOM.$;
 
@@ -278,7 +281,7 @@ export class AICustomizationListWidget extends Disposable {
 	private searchAndButtonContainer!: HTMLElement;
 	private searchContainer!: HTMLElement;
 	private searchInput!: InputBox;
-	private addButton!: Button;
+	private addButton!: ButtonWithDropdown;
 	private listContainer!: HTMLElement;
 	private list!: WorkbenchList<IListEntry>;
 	private emptyStateContainer!: HTMLElement;
@@ -303,6 +306,9 @@ export class AICustomizationListWidget extends Disposable {
 	private readonly _onDidRequestCreate = this._register(new Emitter<PromptsType>());
 	readonly onDidRequestCreate: Event<PromptsType> = this._onDidRequestCreate.event;
 
+	private readonly _onDidRequestCreateManual = this._register(new Emitter<{ type: PromptsType; target: 'worktree' | 'user' }>());
+	readonly onDidRequestCreateManual: Event<{ type: PromptsType; target: 'worktree' | 'user' }> = this._onDidRequestCreateManual.event;
+
 	constructor(
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@IPromptsService private readonly promptsService: IPromptsService,
@@ -318,6 +324,7 @@ export class AICustomizationListWidget extends Disposable {
 		@IRemoteAgentService private readonly remoteAgentService: IRemoteAgentService,
 		@IActiveAgentSessionService private readonly activeSessionService: IActiveAgentSessionService,
 		@ILogService private readonly logService: ILogService,
+		@IClipboardService private readonly clipboardService: IClipboardService,
 	) {
 		super();
 		this.element = $('.ai-customization-list-widget');
@@ -329,8 +336,9 @@ export class AICustomizationListWidget extends Disposable {
 		// filterItems() is synchronous and re-groups/filters existing allItems instantly.
 		// Also kick off an async refresh to pick up items from the new repo.
 		this._register(autorun(reader => {
-			const activeSession = this.activeSessionService.activeSession.read(reader);
-			this.logService.info(`[AICustomizationListWidget] Active session changed, repository: ${activeSession?.repository?.toString() ?? 'none'}, allItems=${this.allItems.length}`);
+			this.activeSessionService.activeSession.read(reader);
+			const activePath = getActiveWorkingDirectory(this.activeSessionService);
+			this.logService.info(`[AICustomizationListWidget] Active session changed, worktree/repo: ${activePath?.toString() ?? 'none'}, allItems=${this.allItems.length}`);
 			// Immediate synchronous re-filter for instant UI update
 			if (this.allItems.length > 0) {
 				this.filterItems();
@@ -356,11 +364,17 @@ export class AICustomizationListWidget extends Disposable {
 			this.delayedFilter.trigger(() => this.filterItems());
 		}));
 
-		// Add button next to search
+		// Add button with dropdown next to search
 		const addButtonContainer = DOM.append(this.searchAndButtonContainer, $('.list-add-button-container'));
-		this.addButton = this._register(new Button(addButtonContainer, { ...defaultButtonStyles, supportIcons: true }));
+		this.addButton = this._register(new ButtonWithDropdown(addButtonContainer, {
+			...defaultButtonStyles,
+			supportIcons: true,
+			contextMenuProvider: this.contextMenuService,
+			addPrimaryActionToDropdown: false,
+			actions: this.getDropdownActions(),
+		}));
 		this.addButton.element.classList.add('list-add-button');
-		this._register(this.addButton.onDidClick(() => this.executeCreateAction()));
+		this._register(this.addButton.onDidClick(() => this.executePrimaryCreateAction()));
 		this.updateAddButton();
 
 		// List container
@@ -464,9 +478,28 @@ export class AICustomizationListWidget extends Disposable {
 
 		const flatActions = getFlatContextMenuActions(actions);
 
+		// Add copy path actions
+		const copyActions = [
+			new Separator(),
+			new Action('copyFullPath', localize('copyFullPath', "Copy Full Path"), undefined, true, async () => {
+				await this.clipboardService.writeText(item.uri.fsPath);
+			}),
+			new Action('copyRelativePath', localize('copyRelativePath', "Copy Relative Path"), undefined, true, async () => {
+				const basePath = getActiveWorkingDirectory(this.activeSessionService);
+				if (basePath && item.uri.fsPath.startsWith(basePath.fsPath)) {
+					const relative = item.uri.fsPath.substring(basePath.fsPath.length + 1);
+					await this.clipboardService.writeText(relative);
+				} else {
+					// Fallback to workspace-relative via label service
+					const relativePath = this.labelService.getUriLabel(item.uri, { relative: true });
+					await this.clipboardService.writeText(relativePath);
+				}
+			}),
+		];
+
 		this.contextMenuService.showContextMenu({
 			getAnchor: () => e.anchor,
-			getActions: () => flatActions,
+			getActions: () => [...flatActions, ...copyActions],
 		});
 	}
 
@@ -524,26 +557,72 @@ export class AICustomizationListWidget extends Disposable {
 	 * Updates the add button label based on the current section.
 	 */
 	private updateAddButton(): void {
-		let buttonLabel: string;
+		const typeLabel = this.getTypeLabel();
+		const hasWorktree = this.hasActiveWorktree();
+		if (hasWorktree) {
+			this.addButton.label = `$(${Codicon.add.id}) New Workspace ${typeLabel}`;
+		} else {
+			this.addButton.label = `$(${Codicon.add.id}) New User ${typeLabel}`;
+		}
+	}
+
+	/**
+	 * Gets the dropdown actions for the add button.
+	 */
+	private getDropdownActions(): Action[] {
+		const typeLabel = this.getTypeLabel();
+		const actions: Action[] = [];
+
+		const hasWorktree = this.hasActiveWorktree();
+		if (hasWorktree) {
+			// Primary is worktree, dropdown has user + AI
+			actions.push(new Action('createUser', `$(${Codicon.account.id}) New User ${typeLabel}`, undefined, true, () => {
+				this._onDidRequestCreateManual.fire({ type: sectionToPromptType(this.currentSection), target: 'user' });
+			}));
+		} else {
+			// Primary is user, dropdown has worktree (disabled) + AI
+			actions.push(new Action('createWorktree', `$(${Codicon.folder.id}) New Workspace ${typeLabel}`, undefined, false));
+		}
+
+		actions.push(new Action('createWithAI', `$(${Codicon.sparkle.id}) Generate ${typeLabel}`, undefined, true, () => {
+			this._onDidRequestCreate.fire(sectionToPromptType(this.currentSection));
+		}));
+
+		return actions;
+	}
+
+	/**
+	 * Checks if there's an active worktree/repository.
+	 */
+	private hasActiveWorktree(): boolean {
+		return !!getActiveWorkingDirectory(this.activeSessionService);
+	}
+
+	/**
+	 * Executes the primary create action (worktree if available, else user).
+	 */
+	private executePrimaryCreateAction(): void {
+		const target = this.hasActiveWorktree() ? 'worktree' : 'user';
+		this._onDidRequestCreateManual.fire({ type: sectionToPromptType(this.currentSection), target });
+	}
+
+	/**
+	 * Gets the type label for the current section.
+	 */
+	private getTypeLabel(): string {
 		switch (this.currentSection) {
 			case AICustomizationManagementSection.Agents:
-				buttonLabel = localize('newAgent', "New Agent");
-				break;
+				return localize('agent', "Agent");
 			case AICustomizationManagementSection.Skills:
-				buttonLabel = localize('newSkill', "New Skill");
-				break;
+				return localize('skill', "Skill");
 			case AICustomizationManagementSection.Instructions:
-				buttonLabel = localize('newInstructions', "New Instructions");
-				break;
+				return localize('instructions', "Instructions");
 			case AICustomizationManagementSection.Hooks:
-				buttonLabel = localize('newHook', "New Hook");
-				break;
+				return localize('hook', "Hook");
 			case AICustomizationManagementSection.Prompts:
 			default:
-				buttonLabel = localize('newPrompt', "New Prompt");
-				break;
+				return localize('prompt', "Prompt");
 		}
-		this.addButton.label = `$(${Codicon.add.id}) ${buttonLabel}`;
 	}
 
 	/**
@@ -561,7 +640,7 @@ export class AICustomizationListWidget extends Disposable {
 		const items: IAICustomizationListItem[] = [];
 
 		const folders = this.workspaceContextService.getWorkspace().folders;
-		const activeRepo = this.activeSessionService.getActiveSession()?.repository;
+		const activeRepo = getActiveWorkingDirectory(this.activeSessionService);
 		this.logService.info(`[AICustomizationListWidget] loadItems: section=${this.currentSection}, promptType=${promptType}, workspaceFolders=[${folders.map(f => f.uri.toString()).join(', ')}], activeRepo=${activeRepo?.toString() ?? 'none'}`);
 
 		// Scan the active session's repository for local customization files
@@ -806,8 +885,8 @@ export class AICustomizationListWidget extends Disposable {
 			}
 		}
 
-		// Filter local items by active session's repository when available
-		const activeRepo = this.activeSessionService.getActiveSession()?.repository;
+		// Filter local items by active session's worktree/repository when available
+		const activeRepo = getActiveWorkingDirectory(this.activeSessionService);
 		const totalBeforeFilter = matchedItems.length;
 		const localBeforeFilter = matchedItems.filter(i => i.storage === PromptsStorage.local).length;
 		if (activeRepo) {
@@ -962,10 +1041,6 @@ export class AICustomizationListWidget extends Disposable {
 					description: localize('createFirstPrompt', "Create reusable prompts for common tasks"),
 				};
 		}
-	}
-
-	private executeCreateAction(): void {
-		this._onDidRequestCreate.fire(sectionToPromptType(this.currentSection));
 	}
 
 	/**

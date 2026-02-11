@@ -37,6 +37,7 @@ import { IWorkspaceContextService } from '../../../../platform/workspace/common/
 import { autorun } from '../../../../base/common/observable.js';
 import { IActiveAgentSessionService } from '../../../contrib/chat/browser/agentSessions/agentSessionsService.js';
 import { AI_CUSTOMIZATION_EDITOR_ID } from '../aiCustomizationEditor/aiCustomizationEditor.js';
+import { getActiveWorkingDirectory } from '../agentSessionUtils.js';
 
 //#region Context Keys
 
@@ -548,7 +549,7 @@ export class AICustomizationViewPane extends ViewPane {
 			this.promptsService,
 			this.logService,
 			(count) => this.isEmptyContextKey.set(count === 0),
-			() => this.activeSessionService.getActiveSession()?.repository,
+			() => getActiveWorkingDirectory(this.activeSessionService),
 		);
 
 		this.tree = this.treeDisposables.add(this.instantiationService.createInstance(
