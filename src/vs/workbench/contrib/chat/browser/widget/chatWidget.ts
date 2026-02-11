@@ -750,6 +750,15 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		return this.input.focusQuestionCarousel();
 	}
 
+	toggleTipFocus(): boolean {
+		if (this.listWidget.hasTipFocus()) {
+			this.focusInput();
+			return true;
+		}
+
+		return this.listWidget.focusTip();
+	}
+
 	hasInputFocus(): boolean {
 		return this.input.hasFocus();
 	}

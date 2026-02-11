@@ -112,6 +112,18 @@ export function parseCopilotHooks(
 }
 
 /**
+ * Result of parsing hooks from a file.
+ */
+export interface IParseHooksFromFileResult {
+	readonly format: HookSourceFormat;
+	readonly hooks: Map<HookType, { hooks: IHookCommand[]; originalId: string }>;
+	/**
+	 * Whether all hooks from this file were disabled via `disableAllHooks: true`.
+	 */
+	readonly disabledAllHooks: boolean;
+}
+
+/**
  * Parses hooks from any supported format, auto-detecting the format from the file URI.
  */
 export function parseHooksFromFile(
@@ -119,22 +131,61 @@ export function parseHooksFromFile(
 	json: unknown,
 	workspaceRootUri: URI | undefined,
 	userHome: string
-): { format: HookSourceFormat; hooks: Map<HookType, { hooks: IHookCommand[]; originalId: string }> } {
+): IParseHooksFromFileResult {
 	const format = getHookSourceFormat(fileUri);
 
 	let hooks: Map<HookType, { hooks: IHookCommand[]; originalId: string }>;
+	let disabledAllHooks = false;
 
 	switch (format) {
-		case HookSourceFormat.Claude:
-			hooks = parseClaudeHooks(json, workspaceRootUri, userHome);
+		case HookSourceFormat.Claude: {
+			const result = parseClaudeHooks(json, workspaceRootUri, userHome);
+			hooks = result.hooks;
+			disabledAllHooks = result.disabledAllHooks;
 			break;
+		}
 		case HookSourceFormat.Copilot:
 		default:
 			hooks = parseCopilotHooks(json, workspaceRootUri, userHome);
 			break;
 	}
 
-	return { format, hooks };
+	return { format, hooks, disabledAllHooks };
+}
+
+/**
+ * Parses hooks from a file, ignoring the `disableAllHooks` flag.
+ * Used by diagnostics to show which hooks are hidden when `disableAllHooks: true` is set.
+ */
+export function parseHooksIgnoringDisableAll(
+	fileUri: URI,
+	json: unknown,
+	workspaceRootUri: URI | undefined,
+	userHome: string
+): IParseHooksFromFileResult {
+	const format = getHookSourceFormat(fileUri);
+
+	let hooks: Map<HookType, { hooks: IHookCommand[]; originalId: string }>;
+
+	switch (format) {
+		case HookSourceFormat.Claude: {
+			// Strip `disableAllHooks` before parsing so the hooks are still extracted
+			if (json && typeof json === 'object') {
+				const { disableAllHooks: _, ...rest } = json as Record<string, unknown>;
+				const result = parseClaudeHooks(rest, workspaceRootUri, userHome);
+				hooks = result.hooks;
+			} else {
+				hooks = new Map();
+			}
+			break;
+		}
+		case HookSourceFormat.Copilot:
+		default:
+			hooks = parseCopilotHooks(json, workspaceRootUri, userHome);
+			break;
+	}
+
+	return { format, hooks, disabledAllHooks: true };
 }
 
 /**
