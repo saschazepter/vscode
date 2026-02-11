@@ -751,8 +751,11 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 				const existing = preparedInvocation.confirmationMessages!;
 				if (preparedInvocation.toolSpecificData?.kind === 'terminal') {
 					// Terminal tools render message as hover only; use disclaimer for visible text
-					const combinedDisclaimer = existing.disclaimer
-						? `${hookNote}\n\n${existing.disclaimer}`
+					const existingDisclaimerText = existing.disclaimer
+						? (typeof existing.disclaimer === 'string' ? existing.disclaimer : existing.disclaimer.value)
+						: undefined;
+					const combinedDisclaimer = existingDisclaimerText
+						? `${hookNote}\n\n${existingDisclaimerText}`
 						: hookNote;
 					preparedInvocation.confirmationMessages = {
 						...existing,

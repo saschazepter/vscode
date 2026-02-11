@@ -629,6 +629,14 @@ export class ChatSubagentContentPart extends ChatCollapsibleContentPart implemen
 		itemWrapper.appendChild(iconElement);
 		itemWrapper.appendChild(domNode);
 
+		// Treat hook items as tool items for visibility purposes
+		if (!this.hasToolItems) {
+			this.hasToolItems = true;
+			if (this.wrapper) {
+				this.wrapper.style.display = '';
+			}
+		}
+
 		if (this.wrapper) {
 			if (this.resultContainer) {
 				this.wrapper.insertBefore(itemWrapper, this.resultContainer);

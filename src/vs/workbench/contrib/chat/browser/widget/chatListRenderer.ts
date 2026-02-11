@@ -1978,46 +1978,52 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 	}
 
 	private renderHookPart(hookPart: IChatHookPart, context: IChatContentPartRenderContext, templateData: IChatListItemTemplate): IChatContentPart {
-		if (hookPart.stopReason || hookPart.systemMessage) {
-			const part = this.instantiationService.createInstance(ChatHookContentPart, hookPart, context);
-
-			if (hookPart.subAgentInvocationId) {
-				const subagentPart = this.getSubagentPart(templateData.renderedParts, hookPart.subAgentInvocationId);
-				if (subagentPart) {
-					subagentPart.appendHookItem(() => ({ domNode: part.domNode, disposable: part }), hookPart);
-					return this.renderNoContent(other => other.kind === 'hook' && other.hookType === hookPart.hookType && other.subAgentInvocationId === hookPart.subAgentInvocationId);
-				}
-			}
-
-			// Only pin preTool/postTool hooks into the thinking part
-			const shouldPinToThinking = hookPart.hookType === HookType.PreToolUse || hookPart.hookType === HookType.PostToolUse;
-			if (shouldPinToThinking) {
-				const hookTitle = hookPart.stopReason
-					? (hookPart.toolDisplayName
-						? localize('hook.thinking.blocked', "Blocked {0}", hookPart.toolDisplayName)
-						: localize('hook.thinking.blockedGeneric', "Blocked by hook"))
-					: (hookPart.toolDisplayName
-						? localize('hook.thinking.warning', "Used {0}, but received a warning", hookPart.toolDisplayName)
-						: localize('hook.thinking.warningGeneric', "Tool call received a warning"));
-
-				let thinkingPart = this.getLastThinkingPart(templateData.renderedParts);
-				if (!thinkingPart) {
-					// Create a thinking part if one doesn't exist yet (e.g. hook arrives before/with its tool in the same turn)
-					const newThinking = this.renderThinkingPart({ kind: 'thinking' }, context, templateData);
-					if (newThinking instanceof ChatThinkingContentPart) {
-						thinkingPart = newThinking;
-					}
-				}
-
-				if (thinkingPart) {
-					thinkingPart.appendItem(() => ({ domNode: part.domNode, disposable: part }), hookTitle, undefined, templateData.value);
-					return thinkingPart;
-				}
-			}
-
-			return part;
+		if (!(hookPart.stopReason || hookPart.systemMessage)) {
+			return this.renderNoContent(other => other.kind === 'hook' && other.hookType === hookPart.hookType);
 		}
-		return this.renderNoContent(other => other.kind === 'hook' && other.hookType === hookPart.hookType);
+
+		if (hookPart.subAgentInvocationId) {
+			const subagentPart = this.getSubagentPart(templateData.renderedParts, hookPart.subAgentInvocationId);
+			if (subagentPart) {
+				subagentPart.appendHookItem(() => {
+					const part = this.instantiationService.createInstance(ChatHookContentPart, hookPart, context);
+					return { domNode: part.domNode, disposable: part };
+				}, hookPart);
+				return this.renderNoContent(other => other.kind === 'hook' && other.hookType === hookPart.hookType && other.subAgentInvocationId === hookPart.subAgentInvocationId);
+			}
+		}
+
+		// Only pin preTool/postTool hooks into the thinking part
+		const shouldPinToThinking = hookPart.hookType === HookType.PreToolUse || hookPart.hookType === HookType.PostToolUse;
+		if (shouldPinToThinking) {
+			const hookTitle = hookPart.stopReason
+				? (hookPart.toolDisplayName
+					? localize('hook.thinking.blocked', "Blocked {0}", hookPart.toolDisplayName)
+					: localize('hook.thinking.blockedGeneric', "Blocked by hook"))
+				: (hookPart.toolDisplayName
+					? localize('hook.thinking.warning', "Used {0}, but received a warning", hookPart.toolDisplayName)
+					: localize('hook.thinking.warningGeneric', "Tool call received a warning"));
+
+			let thinkingPart = this.getLastThinkingPart(templateData.renderedParts);
+			if (!thinkingPart) {
+				// Create a thinking part if one doesn't exist yet (e.g. hook arrives before/with its tool in the same turn)
+				const newThinking = this.renderThinkingPart({ kind: 'thinking' }, context, templateData);
+				if (newThinking instanceof ChatThinkingContentPart) {
+					thinkingPart = newThinking;
+				}
+			}
+
+			if (thinkingPart) {
+				thinkingPart.appendItem(() => {
+					const part = this.instantiationService.createInstance(ChatHookContentPart, hookPart, context);
+					return { domNode: part.domNode, disposable: part };
+				}, hookTitle, undefined, templateData.value);
+				return thinkingPart;
+			}
+		}
+
+		const part = this.instantiationService.createInstance(ChatHookContentPart, hookPart, context);
+		return part;
 	}
 
 	private renderPullRequestContent(pullRequestContent: IChatPullRequestContent, context: IChatContentPartRenderContext, templateData: IChatListItemTemplate): IChatContentPart | undefined {
