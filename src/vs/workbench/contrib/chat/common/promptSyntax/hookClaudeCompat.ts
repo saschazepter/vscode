@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { URI } from '../../../../../base/common/uri.js';
-import { HookType, IHookCommand, normalizeHookTypeId, resolveHookCommand } from './hookSchema.js';
+import { HookType, IHookCommand, toHookType, resolveHookCommand } from './hookSchema.js';
 
 /**
  * Maps Claude hook type names to our abstract HookType.
@@ -13,9 +13,10 @@ import { HookType, IHookCommand, normalizeHookTypeId, resolveHookCommand } from 
  */
 export const CLAUDE_HOOK_TYPE_MAP: Record<string, HookType> = {
 	'SessionStart': HookType.SessionStart,
-	'UserPromptSubmit': HookType.UserPromptSubmitted,
+	'UserPromptSubmit': HookType.UserPromptSubmit,
 	'PreToolUse': HookType.PreToolUse,
 	'PostToolUse': HookType.PostToolUse,
+	'PreCompact': HookType.PreCompact,
 	'SubagentStart': HookType.SubagentStart,
 	'SubagentStop': HookType.SubagentStop,
 	'Stop': HookType.Stop,
@@ -53,6 +54,20 @@ export function getClaudeHookTypeName(hookType: HookType): string | undefined {
 }
 
 /**
+ * Result of parsing Claude hooks file.
+ */
+export interface IParseClaudeHooksResult {
+	/**
+	 * The parsed hooks by type.
+	 */
+	readonly hooks: Map<HookType, { hooks: IHookCommand[]; originalId: string }>;
+	/**
+	 * Whether all hooks from this file were disabled via `disableAllHooks: true`.
+	 */
+	readonly disabledAllHooks: boolean;
+}
+
+/**
  * Parses hooks from a Claude settings.json file.
  * Claude format:
  * {
@@ -69,30 +84,38 @@ export function getClaudeHookTypeName(hookType: HookType): string | undefined {
  *     "PreToolUse": [{ "type": "command", "command": "..." }]
  *   }
  * }
+ *
+ * If the file has `disableAllHooks: true` at the top level, all hooks are filtered out.
  */
 export function parseClaudeHooks(
 	json: unknown,
 	workspaceRootUri: URI | undefined,
 	userHome: string
-): Map<HookType, { hooks: IHookCommand[]; originalId: string }> {
+): IParseClaudeHooksResult {
 	const result = new Map<HookType, { hooks: IHookCommand[]; originalId: string }>();
 
 	if (!json || typeof json !== 'object') {
-		return result;
+		return { hooks: result, disabledAllHooks: false };
 	}
 
 	const root = json as Record<string, unknown>;
+
+	// Check for disableAllHooks property at the top level
+	if (root.disableAllHooks === true) {
+		return { hooks: result, disabledAllHooks: true };
+	}
+
 	const hooks = root.hooks;
 
 	if (!hooks || typeof hooks !== 'object') {
-		return result;
+		return { hooks: result, disabledAllHooks: false };
 	}
 
 	const hooksObj = hooks as Record<string, unknown>;
 
 	for (const originalId of Object.keys(hooksObj)) {
 		// Resolve Claude hook type name to our canonical HookType
-		const hookType = resolveClaudeHookType(originalId) ?? normalizeHookTypeId(originalId);
+		const hookType = resolveClaudeHookType(originalId) ?? toHookType(originalId);
 		if (!hookType) {
 			continue;
 		}
@@ -139,7 +162,7 @@ export function parseClaudeHooks(
 		}
 	}
 
-	return result;
+	return { hooks: result, disabledAllHooks: false };
 }
 
 /**
@@ -157,7 +180,5 @@ function resolveClaudeCommand(
 		return undefined;
 	}
 
-	// Add type if missing for resolveHookCommand
-	const normalized = { ...raw, type: 'command' };
-	return resolveHookCommand(normalized, workspaceRootUri, userHome);
+	return resolveHookCommand(raw, workspaceRootUri, userHome);
 }
