@@ -44,8 +44,6 @@ export interface IUnifiedQuickAccessTab {
 	readonly placeholder: string;
 	/** Tooltip for the tab */
 	readonly tooltip?: string;
-	/** Whether this is the special Send tab (no provider, just sends query) */
-	readonly isSendTab?: boolean;
 }
 
 /**
@@ -177,9 +175,14 @@ export class UnifiedQuickAccess extends Disposable {
 				}
 			}
 
-			const matchingTab = this._resolveTabFromValue(value);
-			if (matchingTab && matchingTab !== this._currentTab) {
-				this._switchTab(matchingTab, picker, true);
+			const resolved = this._resolveTabFromValue(value);
+			if (resolved) {
+				if (resolved.shortcut) {
+					this._arrivedViaShortcut = resolved.shortcut;
+				}
+				if (resolved.tab !== this._currentTab) {
+					this._switchTab(resolved.tab, picker, true);
+				}
 			}
 
 			// Update custom button label
@@ -190,7 +193,7 @@ export class UnifiedQuickAccess extends Disposable {
 		this._currentDisposables.add(picker.onDidCustom(() => {
 			const hasInput = picker.value.trim().length > 0;
 			if (hasInput) {
-				this._sendMessageRaw(picker.value);
+				this._sendToAgent(picker.value.trim());
 			} else {
 				this._openChat();
 			}
@@ -217,13 +220,6 @@ export class UnifiedQuickAccess extends Disposable {
 	 */
 	hide(): void {
 		this._currentPicker?.hide();
-	}
-
-	/**
-	 * Check if the widget is currently visible.
-	 */
-	get isVisible(): boolean {
-		return !!this._currentPicker;
 	}
 
 	/**
@@ -316,13 +312,6 @@ export class UnifiedQuickAccess extends Disposable {
 	}
 
 	/**
-	 * Send the raw picker value (no prefix stripping).
-	 */
-	private _sendMessageRaw(value: string): void {
-		this._sendToAgent(value.trim());
-	}
-
-	/**
 	 * Send the picker value with prefix or shortcut character stripped.
 	 * Called by the Shift+Enter keybinding command.
 	 */
@@ -408,16 +397,15 @@ export class UnifiedQuickAccess extends Disposable {
 
 	/**
 	 * Resolve which tab matches the current value based on prefix.
-	 * Sets {@link _arrivedViaShortcut} as a side effect when a shortcut character is detected.
+	 * Returns the matched tab and an optional shortcut character that triggered the match.
 	 * Supports shortcut keys: ">" for Commands, "<" for Sessions.
 	 */
-	private _resolveTabFromValue(value: string): IUnifiedQuickAccessTab | undefined {
+	private _resolveTabFromValue(value: string): { tab: IUnifiedQuickAccessTab; shortcut?: '<' | '>' } | undefined {
 		// Check for "<" shortcut to switch to Sessions (from Files or Commands)
 		if (value === '<' || value.startsWith('<')) {
 			const sessionsTab = this._tabs.find(t => t.id === 'agentSessions');
 			if (sessionsTab && this._currentTab?.id !== 'agentSessions') {
-				this._arrivedViaShortcut = '<';
-				return sessionsTab;
+				return { tab: sessionsTab, shortcut: '<' };
 			}
 		}
 
@@ -425,14 +413,13 @@ export class UnifiedQuickAccess extends Disposable {
 		if (value === '>' || value.startsWith('>')) {
 			const commandsTab = this._tabs.find(t => t.id === 'commands');
 			if (commandsTab && this._currentTab?.id !== 'commands') {
-				this._arrivedViaShortcut = '>';
-				return commandsTab;
+				return { tab: commandsTab, shortcut: '>' };
 			}
 		}
 
 		// Don't auto-switch if current tab matches (user is just typing)
 		if (this._currentTab && value.startsWith(this._currentTab.prefix)) {
-			return this._currentTab;
+			return { tab: this._currentTab };
 		}
 
 		// Sort by prefix length descending to match most specific first
@@ -441,7 +428,8 @@ export class UnifiedQuickAccess extends Disposable {
 			.filter(tab => tab.prefix.length > 0)
 			.sort((a, b) => b.prefix.length - a.prefix.length);
 
-		return sortedTabs.find(tab => value.startsWith(tab.prefix));
+		const matched = sortedTabs.find(tab => value.startsWith(tab.prefix));
+		return matched ? { tab: matched } : undefined;
 	}
 
 	/**
@@ -453,16 +441,6 @@ export class UnifiedQuickAccess extends Disposable {
 		this._providerCts?.cancel();
 		this._providerCts = new CancellationTokenSource();
 		this._providerDisposables.add(this._providerCts);
-
-		// Special handling for Send tab - no provider needed
-		if (tab.isSendTab) {
-			picker.busy = false;
-			picker.items = [{
-				label: localize('pressSendOrEnter', "Press Enter or click Send to create a new agent session"),
-				alwaysShow: true,
-			}];
-			return;
-		}
 
 		// Clear items while loading
 		picker.items = [];

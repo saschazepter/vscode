@@ -316,6 +316,25 @@ function compareByMostRecentRequest(a: IAgentSession, b: IAgentSession): number 
 }
 
 /**
+ * Get background agent sessions that need user attention (NeedsInput, not archived,
+ * not currently displayed in a chat widget).
+ */
+function getAttentionSessions(agentSessionsService: IAgentSessionsService, chatWidgetService: IChatWidgetService): IAgentSession[] {
+	return agentSessionsService.model.sessions.filter(
+		s => s.status === AgentSessionStatus.NeedsInput
+			&& !s.isArchived()
+			&& !chatWidgetService.getWidgetBySessionResource(s.resource)
+	);
+}
+
+/** Events that can change the set of attention sessions. */
+function onAttentionSessionsChanged(agentSessionsService: IAgentSessionsService, chatWidgetService: IChatWidgetService, callback: () => void, store: DisposableStore): void {
+	store.add(agentSessionsService.model.onDidChangeSessions(callback));
+	store.add(chatWidgetService.onDidAddWidget(callback));
+	store.add(chatWidgetService.onDidBackgroundSession(callback));
+}
+
+/**
  * Contribution that watches agent sessions for NeedsInput status and
  * sets the `chat.sessionNeedsAttention` context key accordingly.
  */
@@ -332,18 +351,11 @@ class ChatAttentionContextKeyContribution extends Disposable implements IWorkben
 		const sessionNeedsAttention = ChatContextKeys.sessionNeedsAttention.bindTo(contextKeyService);
 
 		const update = () => {
-			const hasAttention = this.agentSessionsService.model.sessions.some(
-				s => s.status === AgentSessionStatus.NeedsInput
-					&& !s.isArchived()
-					&& !this.chatWidgetService.getWidgetBySessionResource(s.resource)
-			);
-			sessionNeedsAttention.set(hasAttention);
+			sessionNeedsAttention.set(getAttentionSessions(this.agentSessionsService, this.chatWidgetService).length > 0);
 		};
 
 		update();
-		this._register(this.agentSessionsService.model.onDidChangeSessions(() => update()));
-		this._register(this.chatWidgetService.onDidAddWidget(() => update()));
-		this._register(this.chatWidgetService.onDidBackgroundSession(() => update()));
+		onAttentionSessionsChanged(this.agentSessionsService, this.chatWidgetService, update, this._store);
 	}
 }
 
@@ -411,11 +423,7 @@ class ChatAttentionViewItem extends BaseActionViewItem {
 		const hover = this._store.add(this.hoverService.setupManagedHover(hoverDelegate, container, ''));
 
 		const update = () => {
-			const attentionSessions = this.agentSessionsService.model.sessions.filter(
-				s => s.status === AgentSessionStatus.NeedsInput
-					&& !s.isArchived()
-					&& !this.chatWidgetService.getWidgetBySessionResource(s.resource)
-			);
+			const attentionSessions = getAttentionSessions(this.agentSessionsService, this.chatWidgetService);
 
 			const sorted = [...attentionSessions].sort(compareByMostRecentRequest);
 			this._displayedSession = sorted[0];
@@ -437,9 +445,7 @@ class ChatAttentionViewItem extends BaseActionViewItem {
 		};
 
 		update();
-		this._store.add(this.agentSessionsService.model.onDidChangeSessions(() => update()));
-		this._store.add(this.chatWidgetService.onDidAddWidget(() => update()));
-		this._store.add(this.chatWidgetService.onDidBackgroundSession(() => update()));
+		onAttentionSessionsChanged(this.agentSessionsService, this.chatWidgetService, update, this._store);
 	}
 
 	override onClick(event: Event): void {

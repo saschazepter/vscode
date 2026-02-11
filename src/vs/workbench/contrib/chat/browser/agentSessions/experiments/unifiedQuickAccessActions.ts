@@ -17,7 +17,7 @@ import { UnifiedQuickAccess, DEFAULT_UNIFIED_QUICK_ACCESS_TABS, InUnifiedQuickAc
 /**
  * Action ID for showing the unified quick access widget.
  */
-export const UNIFIED_QUICK_ACCESS_ACTION_ID = 'workbench.action.unifiedQuickAccess';
+const UNIFIED_QUICK_ACCESS_ACTION_ID = 'workbench.action.unifiedQuickAccess';
 
 const PRECONDITION = ContextKeyExpr.and(
 	ChatContextKeys.enabled,
