@@ -91,6 +91,8 @@ export class NodeExtHostMpcService extends ExtHostMcpService {
 				env
 			);
 
+			delete env.VSCODE_INSPECTOR_OPTIONS;
+
 			this._proxy.$onDidPublishLog(id, LogLevel.Debug, `Server command line: ${executable} ${args.join(' ')}`);
 			child = spawn(executable, args, {
 				stdio: 'pipe',
