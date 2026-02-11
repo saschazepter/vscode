@@ -68,7 +68,7 @@ export interface IChatTipService {
 
 	/**
 	 * Dismisses the current tip and allows a new one to be picked for the same request.
-	 * The dismissed tip will not be shown again in this workspace.
+	 * The dismissed tip will not be shown again in this profile.
 	 */
 	dismissTip(): void;
 
