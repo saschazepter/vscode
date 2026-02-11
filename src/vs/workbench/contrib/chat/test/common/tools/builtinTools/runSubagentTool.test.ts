@@ -9,7 +9,7 @@ import { URI } from '../../../../../../../base/common/uri.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../../base/test/common/utils.js';
 import { NullLogService } from '../../../../../../../platform/log/common/log.js';
 import { TestConfigurationService } from '../../../../../../../platform/configuration/test/common/testConfigurationService.js';
-import { RunSubagentTool } from '../../../../common/tools/builtinTools/runSubagentTool.js';
+import { RunSubagentTool, parseMultiplier } from '../../../../common/tools/builtinTools/runSubagentTool.js';
 import { MockLanguageModelToolsService } from '../mockLanguageModelToolsService.js';
 import { IChatAgentService } from '../../../../common/participants/chatAgents.js';
 import { IChatService } from '../../../../common/chatService/chatService.js';
@@ -20,6 +20,58 @@ import { MockPromptsService } from '../../promptSyntax/service/mockPromptsServic
 
 suite('RunSubagentTool', () => {
 	const testDisposables = ensureNoDisposablesAreLeakedInTestSuite();
+
+	suite('parseMultiplier', () => {
+		test('parses standard multiplier strings', () => {
+			assert.deepStrictEqual(
+				[
+					{ input: '1X', expected: 1 },
+					{ input: '2X', expected: 2 },
+					{ input: '0.5X', expected: 0.5 },
+					{ input: '1.5x', expected: 1.5 },
+					{ input: '10X', expected: 10 },
+					{ input: '0.25x', expected: 0.25 },
+				].map(({ input, expected }) => ({ input, result: parseMultiplier(input), expected })),
+				[
+					{ input: '1X', result: 1, expected: 1 },
+					{ input: '2X', result: 2, expected: 2 },
+					{ input: '0.5X', result: 0.5, expected: 0.5 },
+					{ input: '1.5x', result: 1.5, expected: 1.5 },
+					{ input: '10X', result: 10, expected: 10 },
+					{ input: '0.25x', result: 0.25, expected: 0.25 },
+				]
+			);
+		});
+
+		test('handles whitespace in multiplier strings', () => {
+			assert.strictEqual(parseMultiplier('  2X  '), 2);
+			assert.strictEqual(parseMultiplier('1.5 X'), 1.5);
+		});
+
+		test('returns 1000 for undefined and 1 for empty input', () => {
+			assert.strictEqual(parseMultiplier(undefined), 1000);
+			assert.strictEqual(parseMultiplier(''), 1000);
+		});
+
+		test('returns 1 for invalid formats', () => {
+			assert.deepStrictEqual(
+				[
+					{ input: 'abc', expected: 1 },
+					{ input: 'X', expected: 1 },
+					{ input: '2', expected: 1 },
+					{ input: 'fast', expected: 1 },
+					{ input: '2Y', expected: 1 },
+				].map(({ input, expected }) => ({ input, result: parseMultiplier(input), expected })),
+				[
+					{ input: 'abc', result: 1, expected: 1 },
+					{ input: 'X', result: 1, expected: 1 },
+					{ input: '2', result: 1, expected: 1 },
+					{ input: 'fast', result: 1, expected: 1 },
+					{ input: '2Y', result: 1, expected: 1 },
+				]
+			);
+		});
+	});
 
 	suite('resultText trimming', () => {
 		test('trims leading empty codeblocks (```\\n```) from result', () => {
@@ -78,6 +130,7 @@ suite('RunSubagentTool', () => {
 						description: 'Test task',
 						agentName: 'CustomAgent',
 					},
+					toolCallId: 'test-call-1',
 					chatSessionResource: URI.parse('test://session'),
 				},
 				CancellationToken.None
@@ -90,6 +143,7 @@ suite('RunSubagentTool', () => {
 				description: 'Test task',
 				agentName: 'CustomAgent',
 				prompt: 'Test prompt',
+				modelName: undefined,
 			});
 		});
 	});
