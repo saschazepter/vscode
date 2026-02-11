@@ -94,6 +94,11 @@ export class PromptsService extends Disposable implements IPromptsService {
 	private readonly cachedSlashCommands: CachedPromise<readonly IChatPromptSlashCommand[]>;
 
 	/**
+	 * Cached skills. Caching only happens if the `onDidChangeSkills` event is used.
+	 */
+	private readonly cachedSkills: CachedPromise<IAgentSkill[]>;
+
+	/**
 	 * Cached hooks. Invalidated when hook files change.
 	 */
 	private readonly cachedHooks: CachedPromise<IChatRequestHooks | undefined>;
@@ -158,7 +163,16 @@ export class PromptsService extends Disposable implements IPromptsService {
 
 		this.cachedSlashCommands = this._register(new CachedPromise(
 			(token) => this.computePromptSlashCommands(token),
-			() => Event.any(this.getFileLocatorEvent(PromptsType.prompt), Event.filter(modelChangeEvent, e => e.promptType === PromptsType.prompt))
+			() => Event.any(
+				this.getFileLocatorEvent(PromptsType.prompt),
+				this.getFileLocatorEvent(PromptsType.skill),
+				Event.filter(modelChangeEvent, e => e.promptType === PromptsType.prompt),
+				Event.filter(modelChangeEvent, e => e.promptType === PromptsType.skill)),
+		));
+
+		this.cachedSkills = this._register(new CachedPromise(
+			(token) => this.computeAgentSkills(token),
+			() => Event.any(this.getFileLocatorEvent(PromptsType.skill), Event.filter(modelChangeEvent, e => e.promptType === PromptsType.skill))
 		));
 
 		this.cachedHooks = this._register(new CachedPromise(
@@ -168,6 +182,9 @@ export class PromptsService extends Disposable implements IPromptsService {
 
 		// Hack: Subscribe to activate caching (CachedPromise only caches when onDidChange has listeners)
 		this._register(this.cachedHooks.onDidChange(() => { }));
+
+		// Hack: Subscribe to activate caching (CachedPromise only caches when onDidChange has listeners)
+		this._register(this.cachedSkills.onDidChange(() => { }));
 	}
 
 	private getFileLocatorEvent(type: PromptsType): Event<void> {
@@ -255,6 +272,8 @@ export class PromptsService extends Disposable implements IPromptsService {
 					this.cachedSlashCommands.refresh();
 				} else if (type === PromptsType.skill) {
 					this.cachedFileLocations[PromptsType.skill] = undefined;
+					this.cachedSkills.refresh();
+					this.cachedSlashCommands.refresh();
 				}
 			}));
 		}
@@ -270,6 +289,8 @@ export class PromptsService extends Disposable implements IPromptsService {
 			this.cachedSlashCommands.refresh();
 		} else if (type === PromptsType.skill) {
 			this.cachedFileLocations[PromptsType.skill] = undefined;
+			this.cachedSkills.refresh();
+			this.cachedSlashCommands.refresh();
 		}
 
 		disposables.add({
@@ -287,6 +308,8 @@ export class PromptsService extends Disposable implements IPromptsService {
 						this.cachedSlashCommands.refresh();
 					} else if (type === PromptsType.skill) {
 						this.cachedFileLocations[PromptsType.skill] = undefined;
+						this.cachedSkills.refresh();
+						this.cachedSlashCommands.refresh();
 					}
 				}
 			}
@@ -435,7 +458,10 @@ export class PromptsService extends Disposable implements IPromptsService {
 
 	private async computePromptSlashCommands(token: CancellationToken): Promise<readonly IChatPromptSlashCommand[]> {
 		const promptFiles = await this.listPromptFiles(PromptsType.prompt, token);
-		const details = await Promise.all(promptFiles.map(async promptPath => {
+		const useAgentSkills = this.configurationService.getValue(PromptsConfig.USE_AGENT_SKILLS);
+		const skills = useAgentSkills ? await this.listPromptFiles(PromptsType.skill, token) : [];
+		const slashCommandFiles = [...promptFiles, ...skills];
+		const details = await Promise.all(slashCommandFiles.map(async promptPath => {
 			try {
 				const parsedPromptFile = await this.parseNew(promptPath.uri, token);
 				return this.asChatPromptSlashCommand(parsedPromptFile, promptPath);
@@ -637,6 +663,10 @@ export class PromptsService extends Disposable implements IPromptsService {
 					this.cachedCustomAgents.refresh();
 					break;
 				case PromptsType.prompt:
+					this.cachedSlashCommands.refresh();
+					break;
+				case PromptsType.skill:
+					this.cachedSkills.refresh();
 					this.cachedSlashCommands.refresh();
 					break;
 			}
@@ -854,12 +884,20 @@ export class PromptsService extends Disposable implements IPromptsService {
 		return sanitized;
 	}
 
+	public get onDidChangeSkills(): Event<void> {
+		return this.cachedSkills.onDidChange;
+	}
+
 	public async findAgentSkills(token: CancellationToken): Promise<IAgentSkill[] | undefined> {
 		const useAgentSkills = this.configurationService.getValue(PromptsConfig.USE_AGENT_SKILLS);
 		if (!useAgentSkills) {
 			return undefined;
 		}
 
+		return this.cachedSkills.get(token);
+	}
+
+	private async computeAgentSkills(token: CancellationToken): Promise<IAgentSkill[]> {
 		const { files, skillsBySource } = await this.computeSkillDiscoveryInfo(token);
 
 		// Extract loaded skills
@@ -867,7 +905,14 @@ export class PromptsService extends Disposable implements IPromptsService {
 		for (const file of files) {
 			if (file.status === 'loaded' && file.name) {
 				const sanitizedDescription = this.truncateAgentSkillDescription(file.description, file.uri);
-				result.push({ uri: file.uri, storage: file.storage, name: file.name, description: sanitizedDescription });
+				result.push({
+					uri: file.uri,
+					storage: file.storage,
+					name: file.name,
+					description: sanitizedDescription,
+					disableModelInvocation: file.disableModelInvocation ?? false,
+					userInvokable: file.userInvokable ?? true
+				});
 			}
 		}
 
@@ -1069,10 +1114,10 @@ export class PromptsService extends Disposable implements IPromptsService {
 	 * Returns the discovery results and a map of skill counts by source type for telemetry.
 	 */
 	private async computeSkillDiscoveryInfo(token: CancellationToken): Promise<{
-		files: (IPromptFileDiscoveryResult & { description?: string; source?: PromptFileSource })[];
+		files: (IPromptFileDiscoveryResult & { description?: string; source?: PromptFileSource; disableModelInvocation?: boolean; userInvokable?: boolean })[];
 		skillsBySource: Map<PromptFileSource, number>;
 	}> {
-		const files: (IPromptFileDiscoveryResult & { description?: string; source?: PromptFileSource })[] = [];
+		const files: (IPromptFileDiscoveryResult & { description?: string; source?: PromptFileSource; disableModelInvocation?: boolean; userInvokable?: boolean })[] = [];
 		const skillsBySource = new Map<PromptFileSource, number>();
 		const seenNames = new Set<string>();
 		const nameToUri = new Map<string, URI>();
@@ -1150,7 +1195,9 @@ export class PromptsService extends Disposable implements IPromptsService {
 
 				seenNames.add(sanitizedName);
 				nameToUri.set(sanitizedName, uri);
-				files.push({ uri, storage, status: 'loaded', name: sanitizedName, description, extensionId, source });
+				const disableModelInvocation = parsedFile.header?.disableModelInvocation === true;
+				const userInvokable = parsedFile.header?.userInvokable !== false;
+				files.push({ uri, storage, status: 'loaded', name: sanitizedName, description, extensionId, source, disableModelInvocation, userInvokable });
 
 				// Track skill type
 				skillsBySource.set(source, (skillsBySource.get(source) || 0) + 1);
