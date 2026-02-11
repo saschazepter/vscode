@@ -1595,8 +1595,7 @@ export class TextModel extends Disposable implements model.ITextModel, IDecorati
 						new ModelRawLinesInserted(
 							spliceLineNumber + 1,
 							fromLineNumber,
-							startLineNumber + insertingLinesCnt,
-							fromLineNumber + cnt - 1,
+							cnt,
 							newLines,
 							injectedTexts
 						)
