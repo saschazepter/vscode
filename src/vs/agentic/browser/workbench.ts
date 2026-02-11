@@ -69,8 +69,6 @@ import { SyncDescriptor } from '../../platform/instantiation/common/descriptors.
 import { TitleService } from './parts/titlebarPart.js';
 import { FloatingToolbar } from './parts/floatingToolbar.js';
 
-import './agentic.workbench.desktop.main.js';
-
 //#region Workbench Options
 
 export interface IWorkbenchOptions {

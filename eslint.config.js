@@ -1763,6 +1763,17 @@ export default tseslint.config(
 					]
 				},
 				{
+					'target': 'src/vs/code/agentic/electron-browser/workbench/workbench.ts',
+					'layer': 'electron-browser',
+					'restrictions': [
+						'vs/base/~',
+						'vs/base/parts/*/~',
+						'vs/platform/*/~',
+						'vs/agentic/~',
+						'vs/agentic/workbench.desktop.main.js'
+					]
+				},
+				{
 					'target': 'src/vs/server/~',
 					'restrictions': [
 						'vs/base/~',
@@ -1896,7 +1907,7 @@ export default tseslint.config(
 					]
 				},
 				{
-					'target': 'src/vs/agentic/browser/agentic.workbench.desktop.main.ts',
+					'target': 'src/vs/agentic/workbench.desktop.main.ts',
 					'layer': 'electron-browser',
 					'restrictions': [
 						'vs/base/*/~',

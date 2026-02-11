@@ -39,7 +39,7 @@ import { getRemoteAuthority } from '../../remote/common/remoteHosts.js';
 import { IStateService } from '../../state/node/state.js';
 import { IAddRemoveFoldersRequest, INativeOpenFileRequest, INativeWindowConfiguration, IOpenEmptyWindowOptions, IPath, IPathsToWaitFor, isFileToOpen, isFolderToOpen, isWorkspaceToOpen, IWindowOpenable, IWindowSettings } from '../../window/common/window.js';
 import { CodeWindow } from './windowImpl.js';
-import { IOpenConfiguration, IOpenEmptyConfiguration, IWindowsCountChangedEvent, IWindowsMainService, OpenContext, getLastFocused } from './windows.js';
+import { IBaseOpenConfiguration, IOpenConfiguration, IOpenEmptyConfiguration, IWindowsCountChangedEvent, IWindowsMainService, OpenContext, getLastFocused } from './windows.js';
 import { findWindowOnExtensionDevelopmentPath, findWindowOnFile, findWindowOnWorkspaceOrFolder } from './windowsFinder.js';
 import { IWindowState, WindowsStateHandler } from './windowsStateHandler.js';
 import { IRecent } from '../../workspaces/common/workspaces.js';
@@ -58,6 +58,7 @@ import { IAuxiliaryWindowsMainService } from '../../auxiliaryWindow/electron-mai
 import { IAuxiliaryWindow } from '../../auxiliaryWindow/electron-main/auxiliaryWindow.js';
 import { ICSSDevelopmentService } from '../../cssDev/node/cssDevService.js';
 import { ResourceSet } from '../../../base/common/map.js';
+import { VSBuffer } from '../../../base/common/buffer.js';
 
 //#region Helper Interfaces
 
@@ -289,6 +290,34 @@ export class WindowsMainService extends Disposable implements IWindowsMainServic
 
 		// Handle `<app> chat`
 		this.handleChatRequest(openConfig, [window]);
+	}
+
+	async openAgenticWindow(openConfig: IBaseOpenConfiguration): Promise<ICodeWindow[]> {
+		this.logService.trace('windowsManager#openAgenticWindow');
+
+		const agentSessionsWorkspaceUri = this.environmentMainService.agentSessionsWorkspace;
+		if (!agentSessionsWorkspaceUri) {
+			throw new Error('Agent Sessions workspace is not configured');
+		}
+
+		// Ensure the workspace file exists
+		const workspaceExists = await this.fileService.exists(agentSessionsWorkspaceUri);
+		if (!workspaceExists) {
+			const emptyWorkspaceContent = JSON.stringify({ folders: [] }, null, '\t');
+			await this.fileService.writeFile(agentSessionsWorkspaceUri, VSBuffer.fromString(emptyWorkspaceContent));
+		}
+
+		// Resolve the workspace identifier
+		const workspace = getWorkspaceIdentifier(agentSessionsWorkspaceUri);
+
+		// Open in a new browser window with the agent sessions workspace
+		const window = await this.openInBrowserWindow({
+			workspace,
+			cli: this.environmentMainService.args,
+			forceNewWindow: true,
+		});
+
+		return [window];
 	}
 
 	async open(openConfig: IOpenConfiguration): Promise<ICodeWindow[]> {
