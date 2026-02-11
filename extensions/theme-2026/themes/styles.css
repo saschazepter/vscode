@@ -180,7 +180,7 @@
 }
 
 /* Context Menus */
-.monaco-workbench .monaco-menu .monaco-action-bar.vertical { box-shadow: var(--shadow-lg); border: none; border-radius: var(--radius-xl);  backdrop-filter: var(--backdrop-blur-md); -webkit-backdrop-filter: var(--backdrop-blur-md); }
+.monaco-workbench .monaco-menu .monaco-action-bar.vertical { box-shadow: var(--shadow-lg); border: none; border-radius: var(--radius-xl); }
 .monaco-workbench .context-view .monaco-menu { box-shadow: var(--shadow-lg); border: none; border-radius: var(--radius-xl); }
 
 .monaco-workbench .action-widget {
@@ -300,7 +300,7 @@
     color: var(--vscode-foreground) !important;
 }
 
-/* Buttons */
+/* Buttons */over
 .monaco-workbench .monaco-button { box-shadow: var(--shadow-xs); }
 .monaco-workbench .monaco-button:hover { box-shadow: var(--shadow-sm);  }
 .monaco-workbench .monaco-button:active { box-shadow: var(--shadow-button-active); }
