@@ -12,14 +12,18 @@ import { Codicon } from '../../../../../../base/common/codicons.js';
 import { Emitter } from '../../../../../../base/common/event.js';
 import { Disposable, MutableDisposable } from '../../../../../../base/common/lifecycle.js';
 import { localize, localize2 } from '../../../../../../nls.js';
+import { IAccessibilityService } from '../../../../../../platform/accessibility/common/accessibility.js';
 import { getFlatContextMenuActions } from '../../../../../../platform/actions/browser/menuEntryActionViewItem.js';
 import { Action2, IMenuService, MenuId, registerAction2 } from '../../../../../../platform/actions/common/actions.js';
+import { ICommandService } from '../../../../../../platform/commands/common/commands.js';
+import { IConfigurationService } from '../../../../../../platform/configuration/common/configuration.js';
 import { IContextKey, IContextKeyService } from '../../../../../../platform/contextkey/common/contextkey.js';
 import { IContextMenuService } from '../../../../../../platform/contextview/browser/contextView.js';
 import { ServicesAccessor } from '../../../../../../platform/instantiation/common/instantiation.js';
 import { IMarkdownRenderer } from '../../../../../../platform/markdown/browser/markdownRenderer.js';
 import { ChatContextKeys } from '../../../common/actions/chatContextKeys.js';
 import { IChatTip, IChatTipService } from '../../chatTipService.js';
+import { triggerConfetti } from '../chatConfetti.js';
 
 const $ = dom.$;
 
@@ -30,6 +34,7 @@ export class ChatTipContentPart extends Disposable {
 	public readonly onDidHide = this._onDidHide.event;
 
 	private readonly _renderedContent = this._register(new MutableDisposable());
+	private readonly _commandListener = this._register(new MutableDisposable());
 
 	private readonly _inChatTipContextKey: IContextKey<boolean>;
 
@@ -41,6 +46,9 @@ export class ChatTipContentPart extends Disposable {
 		@IContextMenuService private readonly _contextMenuService: IContextMenuService,
 		@IMenuService private readonly _menuService: IMenuService,
 		@IContextKeyService private readonly _contextKeyService: IContextKeyService,
+		@ICommandService private readonly _commandService: ICommandService,
+		@IAccessibilityService private readonly _accessibilityService: IAccessibilityService,
+		@IConfigurationService private readonly _configurationService: IConfigurationService,
 	) {
 		super();
 
@@ -104,6 +112,18 @@ export class ChatTipContentPart extends Disposable {
 			: textContent;
 		this.domNode.setAttribute('aria-label', ariaLabel);
 		status(ariaLabel);
+
+		// Listen for the tip's command being executed to trigger confetti
+		if (tip.enabledCommands && tip.enabledCommands.length > 0) {
+			const commandSet = new Set(tip.enabledCommands);
+			this._commandListener.value = this._commandService.onDidExecuteCommand(e => {
+				if (commandSet.has(e.commandId) && this._configurationService.getValue<boolean>('chat.confettiOnThumbsUp') && !this._accessibilityService.isMotionReduced()) {
+					triggerConfetti(this.domNode);
+				}
+			});
+		} else {
+			this._commandListener.clear();
+		}
 	}
 }
 
