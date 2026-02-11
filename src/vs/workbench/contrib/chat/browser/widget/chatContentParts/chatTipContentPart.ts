@@ -118,7 +118,8 @@ export class ChatTipContentPart extends Disposable {
 		if (tip.enabledCommands && tip.enabledCommands.length > 0) {
 			const commandSet = new Set(tip.enabledCommands);
 			this._commandListener.value = dom.addDisposableListener(markdownContent.element, dom.EventType.CLICK, e => {
-				const mouseEvent = new StandardMouseEvent(e);
+				const window = dom.getWindow(this.domNode);
+				const mouseEvent = new StandardMouseEvent(window, e);
 				if (!mouseEvent.leftButton) {
 					return;
 				}
