@@ -916,13 +916,13 @@ registerAction2(class ChatEditsViewAsTreeAction extends Action2 {
 					id: MenuId.ChatEditingWidgetToolbar,
 					group: 'navigation',
 					order: 5,
-					when: ContextKeyExpr.and(hasAppliedChatEditsContextKey, ChatContextKeys.chatEditsInTreeView.negate()),
+					when: ContextKeyExpr.and(hasAppliedChatEditsContextKey, ChatContextKeys.chatEditsInTreeView.negate(), IsAgentSessionsWorkspaceContext.negate()),
 				},
 				{
 					id: MenuId.ChatEditingSessionChangesToolbar,
 					group: 'navigation',
 					order: 5,
-					when: ContextKeyExpr.and(ChatContextKeys.hasAgentSessionChanges, ChatContextKeys.chatEditsInTreeView.negate()),
+					when: ContextKeyExpr.and(ChatContextKeys.hasAgentSessionChanges, ChatContextKeys.chatEditsInTreeView.negate(), IsAgentSessionsWorkspaceContext.negate()),
 				},
 			],
 		});
