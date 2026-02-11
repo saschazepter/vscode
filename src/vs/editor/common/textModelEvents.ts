@@ -432,7 +432,7 @@ export class ModelRawLinesInserted {
 	 * The actual end line number of the insertion in the updated buffer.
 	 */
 	public get toLineNumberPostEdit(): number {
-		return this.fromLineNumber + this.count - 1;
+		return this.fromLineNumberPostEdit + this.count - 1;
 	}
 	/**
 	 * The text that was inserted
