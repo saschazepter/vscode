@@ -104,11 +104,6 @@ class ToggleSecondarySidebarVisibilityAction extends Action2 {
 			f1: true,
 			menu: [
 				{
-					id: AgentSessionsWorkbenchMenus.AuxiliaryBarTitleLeft,
-					group: 'navigation',
-					order: 0
-				},
-				{
 					id: AgentSessionsWorkbenchMenus.FloatingToolbarRight,
 					group: 'navigation',
 					order: 0,
@@ -129,6 +124,33 @@ class ToggleSecondarySidebarVisibilityAction extends Action2 {
 			? localize('secondarySidebarHidden', "Secondary Side Bar hidden")
 			: localize('secondarySidebarVisible', "Secondary Side Bar shown");
 		alert(alertMessage);
+	}
+}
+
+class CloseSecondarySidebarAction extends Action2 {
+
+	static readonly ID = 'workbench.action.agentCloseSecondarySidebar';
+
+	constructor() {
+		super({
+			id: CloseSecondarySidebarAction.ID,
+			title: localize2('closeSecondarySidebar', 'Hide Secondary Side Bar'),
+			icon: panelRightIcon,
+			category: Categories.View,
+			menu: [
+				{
+					id: MenuId.AuxiliaryBarTitle,
+					group: 'navigation',
+					order: 3
+				}
+			]
+		});
+	}
+
+	run(accessor: ServicesAccessor): void {
+		const layoutService = accessor.get(IWorkbenchLayoutService);
+		layoutService.setPartHidden(true, Parts.AUXILIARYBAR_PART);
+		alert(localize('secondarySidebarHidden', "Secondary Side Bar hidden"));
 	}
 }
 
@@ -211,6 +233,7 @@ class TogglePanelMaximizedAction extends Action2 {
 export function registerAgentSessionsLayoutActions() {
 	registerAction2(ToggleSidebarVisibilityAction);
 	registerAction2(ToggleSecondarySidebarVisibilityAction);
+	registerAction2(CloseSecondarySidebarAction);
 	registerAction2(TogglePanelVisibilityAction);
 	registerAction2(TogglePanelMaximizedAction);
 }

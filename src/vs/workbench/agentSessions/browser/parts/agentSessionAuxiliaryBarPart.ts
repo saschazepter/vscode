@@ -103,7 +103,7 @@ export class AgentSessionAuxiliaryBarPart extends AbstractPaneCompositePart {
 			Parts.AUXILIARYBAR_PART,
 			{
 				hasTitle: true,
-				trailingSeparator: true,
+				trailingSeparator: false,
 				borderWidth: () => 0,
 			},
 			AgentSessionAuxiliaryBarPart.activeViewSettingsKey,
