@@ -1000,6 +1000,11 @@ export class PromptsService extends Disposable implements IPromptsService {
 	}
 
 	private async computeHooks(token: CancellationToken): Promise<IChatRequestHooks | undefined> {
+		const useChatHooks = this.configurationService.getValue<boolean>(PromptsConfig.USE_CHAT_HOOKS);
+		if (!useChatHooks) {
+			this.logger.trace('[PromptsService] Chat hooks are disabled via configuration.');
+			return undefined;
+		}
 		const useClaudeHooks = this.configurationService.getValue<boolean>(PromptsConfig.USE_CLAUDE_HOOKS);
 		const hookFiles = await this.listPromptFiles(PromptsType.hook, token);
 
