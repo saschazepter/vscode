@@ -29,6 +29,8 @@
 		align-items: center;
 		cursor: pointer;
 		user-select: none;
+		margin: 0 6px;
+		border-radius: 6px;
 	}
 
 	.ai-customization-header:hover {
@@ -87,8 +89,10 @@
 		color: var(--vscode-foreground);
 		cursor: pointer;
 		text-decoration: none;
-		padding: 6px 20px;
+		padding: 6px 14px;
+		margin: 0 6px;
 		line-height: 22px;
+		border-radius: 6px;
 	}
 
 	.ai-customization-shortcuts .ai-customization-link:hover {

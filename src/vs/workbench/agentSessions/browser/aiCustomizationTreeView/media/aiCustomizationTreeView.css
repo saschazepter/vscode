@@ -11,12 +11,6 @@
 	height: 100%;
 }
 
-/* Ensure tree row content takes full width */
-.ai-customization-view .monaco-list-row .monaco-tl-row,
-.ai-customization-view .monaco-list-row .monaco-tl-contents {
-	overflow: visible;
-}
-
 /* Tree item styling */
 .ai-customization-view .ai-customization-tree-item {
 	display: flex;
