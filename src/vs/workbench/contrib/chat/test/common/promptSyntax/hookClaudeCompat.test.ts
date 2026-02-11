@@ -393,6 +393,21 @@ suite('HookClaudeCompat', () => {
 				const entry = result.hooks.get(HookType.PreToolUse)!;
 				assert.strictEqual(entry.hooks[0].timeoutSec, 60);
 			});
+
+			test('supports Claude timeout alias', () => {
+				const json = {
+					hooks: {
+						PreToolUse: [
+							{ type: 'command', command: 'echo "test"', timeout: 1 }
+						]
+					}
+				};
+
+				const result = parseClaudeHooks(json, workspaceRoot, userHome);
+
+				const entry = result.hooks.get(HookType.PreToolUse)!;
+				assert.strictEqual(entry.hooks[0].timeoutSec, 1);
+			});
 		});
 	});
 });
