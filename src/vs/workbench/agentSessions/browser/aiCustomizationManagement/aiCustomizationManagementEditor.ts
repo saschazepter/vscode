@@ -54,9 +54,16 @@ import {
 import { agentIcon, instructionsIcon, promptIcon, skillIcon, hookIcon } from '../aiCustomizationTreeView/aiCustomizationTreeViewIcons.js';
 import { ChatModelsWidget } from '../../../contrib/chat/browser/chatManagement/chatModelsWidget.js';
 import { PromptsType } from '../../../contrib/chat/common/promptSyntax/promptTypes.js';
-import { getCleanPromptName, SKILL_FILENAME } from '../../../contrib/chat/common/promptSyntax/config/promptFileLocations.js';
+import { PromptsStorage } from '../../../contrib/chat/common/promptSyntax/service/promptsService.js';
+import { getCleanPromptName, SKILL_FILENAME, getPromptFileExtension } from '../../../contrib/chat/common/promptSyntax/config/promptFileLocations.js';
 import { getDefaultContentSnippet } from '../../../contrib/chat/browser/promptSyntax/newPromptFileActions.js';
+import { askForPromptSourceFolder } from '../../../contrib/chat/browser/promptSyntax/pickers/askForPromptSourceFolder.js';
 import { CustomizationCreatorService } from './customizationCreatorService.js';
+import { Button } from '../../../../base/browser/ui/button/button.js';
+import { defaultButtonStyles } from '../../../../platform/theme/browser/defaultStyles.js';
+import { getActiveWorkingDirectory } from '../agentSessionUtils.js';
+import { ISCMService } from '../../../contrib/scm/common/scm.js';
+import { ICommandService } from '../../../../platform/commands/common/commands.js';
 
 const $ = DOM.$;
 
@@ -140,6 +147,8 @@ export class AICustomizationManagementEditor extends EditorPane {
 	private embeddedEditor!: CodeEditorWidget;
 	private editorItemNameElement!: HTMLElement;
 	private editorItemPathElement!: HTMLElement;
+	private commitButton!: Button;
+	private currentEditingUri: URI | undefined;
 	private currentModelRef: IReference<IResolvedTextEditorModel> | undefined;
 	private viewMode: 'list' | 'editor' = 'list';
 
@@ -167,6 +176,8 @@ export class AICustomizationManagementEditor extends EditorPane {
 		@IFileService private readonly fileService: IFileService,
 		@ILayoutService private readonly layoutService: ILayoutService,
 		@IQuickInputService private readonly quickInputService: IQuickInputService,
+		@ISCMService private readonly scmService: ISCMService,
+		@ICommandService private readonly commandService: ICommandService,
 	) {
 		super(AICustomizationManagementEditor.ID, group, telemetryService, themeService, storageService);
 
@@ -196,6 +207,9 @@ export class AICustomizationManagementEditor extends EditorPane {
 		if (savedSection && Object.values(AICustomizationManagementSection).includes(savedSection as AICustomizationManagementSection)) {
 			this.selectedSection = savedSection as AICustomizationManagementSection;
 		}
+
+		// Eagerly open the worktree as a git repository so it's ready for commits
+		this.ensureWorktreeRepository();
 	}
 
 	protected override createEditor(parent: HTMLElement): void {
@@ -444,7 +458,9 @@ export class AICustomizationManagementEditor extends EditorPane {
 	}
 
 	private openItem(item: IAICustomizationListItem): void {
-		this.showEmbeddedEditor(item.uri, item.name);
+		const isWorktreeFile = item.storage === PromptsStorage.local;
+		const isReadOnly = item.storage === PromptsStorage.extension;
+		this.showEmbeddedEditor(item.uri, item.name, isWorktreeFile, isReadOnly);
 	}
 
 	/**
@@ -468,6 +484,13 @@ export class AICustomizationManagementEditor extends EditorPane {
 		const itemInfo = DOM.append(editorHeader, $('.editor-item-info'));
 		this.editorItemNameElement = DOM.append(itemInfo, $('.editor-item-name'));
 		this.editorItemPathElement = DOM.append(itemInfo, $('.editor-item-path'));
+
+		// Commit to Worktree button
+		const commitButtonContainer = DOM.append(editorHeader, $('.editor-commit-button-container'));
+		this.commitButton = this.editorDisposables.add(new Button(commitButtonContainer, { ...defaultButtonStyles, supportIcons: true }));
+		this.commitButton.label = `$(${Codicon.gitCommit.id}) Commit to Worktree`;
+		this.commitButton.element.classList.add('editor-commit-button');
+		this.editorDisposables.add(this.commitButton.onDidClick(() => this.commitCurrentFileToWorktree()));
 
 		// Editor container
 		this.embeddedEditorContainer = DOM.append(this.editorContentContainer, $('.embedded-editor-container'));
@@ -509,16 +532,25 @@ export class AICustomizationManagementEditor extends EditorPane {
 	/**
 	 * Shows the embedded editor with the content of the given item.
 	 */
-	private async showEmbeddedEditor(uri: URI, displayName: string): Promise<void> {
+	private async showEmbeddedEditor(uri: URI, displayName: string, isWorktreeFile = false, isReadOnly = false): Promise<void> {
 		// Dispose previous model reference if any
 		this.currentModelRef?.dispose();
 		this.currentModelRef = undefined;
+		this.currentEditingUri = uri;
 
 		this.viewMode = 'editor';
 
 		// Update header info
 		this.editorItemNameElement.textContent = displayName;
 		this.editorItemPathElement.textContent = basename(uri);
+
+		// Show commit button only for worktree files, disabled when nothing to commit
+		if (isWorktreeFile) {
+			this.commitButton.element.parentElement!.style.display = '';
+			this.updateCommitButtonState();
+		} else {
+			this.commitButton.element.parentElement!.style.display = 'none';
+		}
 
 		// Update visibility
 		this.updateContentVisibility();
@@ -528,6 +560,12 @@ export class AICustomizationManagementEditor extends EditorPane {
 			const ref = await this.textModelService.createModelReference(uri);
 			this.currentModelRef = ref;
 			this.embeddedEditor.setModel(ref.object.textEditorModel);
+			this.embeddedEditor.updateOptions({ readOnly: isReadOnly });
+
+			// Listen for content changes to update commit button state
+			this.editorDisposables.add(ref.object.textEditorModel.onDidChangeContent(() => {
+				this.updateCommitButtonState();
+			}));
 
 			// Layout the editor
 			if (this.dimension) {
@@ -550,6 +588,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 		// Dispose model reference
 		this.currentModelRef?.dispose();
 		this.currentModelRef = undefined;
+		this.currentEditingUri = undefined;
 
 		// Clear editor model
 		this.embeddedEditor.setModel(null);
@@ -566,6 +605,97 @@ export class AICustomizationManagementEditor extends EditorPane {
 
 		// Focus the list
 		this.listWidget?.focusSearch();
+	}
+
+	/**
+	 * Commits the currently edited file to the worktree via git.
+	 * This makes the file show up in the Changes view for the background session.
+	 */
+	private async commitCurrentFileToWorktree(): Promise<void> {
+		if (!this.currentEditingUri) {
+			return;
+		}
+
+		const worktreeDir = getActiveWorkingDirectory(this.customizationCreator['activeAgentSessionService']);
+		if (!worktreeDir) {
+			return;
+		}
+
+		const fileName = basename(this.currentEditingUri);
+
+		// Show loading state on the button
+		this.commitButton.enabled = false;
+		const originalLabel = this.commitButton.label;
+		this.commitButton.label = `$(${Codicon.loading.id}~spin) Committing...`;
+
+		// Brief animation before committing
+		await new Promise(resolve => setTimeout(resolve, 2000));
+
+		// Find the SCM repository - it should already be registered via ensureWorktreeRepository()
+		const repository = this.findRepository(this.currentEditingUri);
+		if (!repository) {
+			console.warn('[CommitToWorktree] No SCM repository found. Call ensureWorktreeRepository() first.');
+			this.commitButton.label = originalLabel;
+			this.commitButton.enabled = true;
+			return;
+		}
+
+		// Set commit message, then use git.commitAll which stages + commits in one step
+		repository.input.setValue(`Add customization: ${fileName}`, false);
+		await this.commandService.executeCommand('git.commitAll', worktreeDir);
+
+		// Restore button and update state
+		this.commitButton.label = originalLabel;
+		this.updateCommitButtonState();
+		void this.listWidget.refresh();
+	}
+
+	/**
+	 * Updates the commit button's enabled state.
+	 * Enabled when the embedded editor has content to commit.
+	 */
+	private updateCommitButtonState(): void {
+		if (!this.currentEditingUri || !this.embeddedEditor.hasModel()) {
+			this.commitButton.enabled = false;
+			return;
+		}
+
+		// Enable if the model has any content (newly created or modified)
+		const model = this.embeddedEditor.getModel();
+		this.commitButton.enabled = model !== null && model.getValueLength() > 0;
+	}
+
+	/**
+	 * Ensures the git extension has opened the worktree repository.
+	 * Should be called early (e.g., when the editor opens) so the repo
+	 * is ready by the time the user clicks "Commit to Worktree".
+	 */
+	private async ensureWorktreeRepository(): Promise<void> {
+		const worktreeDir = getActiveWorkingDirectory(this.customizationCreator['activeAgentSessionService']);
+		if (!worktreeDir) {
+			return;
+		}
+
+		if (!this.findRepository(worktreeDir)) {
+			await this.commandService.executeCommand('git.openRepository', worktreeDir.fsPath);
+		}
+	}
+
+	/**
+	 * Finds an SCM repository that contains the given URI.
+	 */
+	private findRepository(uri: URI) {
+		let repository = this.scmService.getRepository(uri);
+		if (!repository) {
+			for (const repo of [...this.scmService.repositories]) {
+				const rootUri = repo.provider.rootUri;
+				if (rootUri && uri.fsPath.startsWith(rootUri.fsPath)) {
+					repository = repo;
+					break;
+				}
+			}
+		}
+		return repository;
 	}
 
 	/**
@@ -592,12 +722,17 @@ export class AICustomizationManagementEditor extends EditorPane {
 		// to commit it so it shows up in the Changes diff view for the worktree.
 		// We need integration with the git worktree to stage/commit these new files.
 
-		const targetDir = target === 'worktree'
+		let targetDir = target === 'worktree'
 			? this.customizationCreator.resolveTargetDirectory(type)
-			: this.customizationCreator.resolveUserDirectory(type);
+			: await this.customizationCreator.resolveUserDirectory(type);
 
+		// Fallback to the source folder picker if we couldn't resolve the directory
 		if (!targetDir) {
-			return;
+			const selectedFolder = await this.instantiationService.invokeFunction(askForPromptSourceFolder, type);
+			if (!selectedFolder) {
+				return;
+			}
+			targetDir = selectedFolder.uri;
 		}
 
 		let fileUri: URI;
@@ -638,7 +773,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 			cleanName = trimmedName;
 		} else {
 			// Standard flow: ask for file name via quick input
-			const fileExtension = this.getFileExtension(type);
+			const fileExtension = getPromptFileExtension(type);
 			const fileName = await this.quickInputService.input({
 				prompt: localize('newFileName', "Enter a name"),
 				placeHolder: localize('newFileNamePlaceholder', "e.g., my-{0}", fileExtension),
@@ -668,7 +803,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 		}
 
 		// Open in embedded editor
-		await this.showEmbeddedEditor(fileUri, cleanName);
+		await this.showEmbeddedEditor(fileUri, cleanName, target === 'worktree');
 
 		// Apply the default snippet template
 		if (this.embeddedEditor.hasModel()) {
@@ -680,15 +815,6 @@ export class AICustomizationManagementEditor extends EditorPane {
 
 		// Refresh the list so the new item appears
 		void this.listWidget.refresh();
-	}
-
-	private getFileExtension(type: PromptsType): string {
-		switch (type) {
-			case PromptsType.agent: return '.agent.md';
-			case PromptsType.instructions: return '.instructions.md';
-			case PromptsType.prompt: return '.prompt.md';
-			default: return '.md';
-		}
 	}
 
 	override updateStyles(): void {

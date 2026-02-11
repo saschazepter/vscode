@@ -9,10 +9,11 @@ import { IChatService } from '../../../contrib/chat/common/chatService/chatServi
 import { ChatModeKind } from '../../../contrib/chat/common/constants.js';
 import { PromptsType } from '../../../contrib/chat/common/promptSyntax/promptTypes.js';
 import { getPromptFileDefaultLocations } from '../../../contrib/chat/common/promptSyntax/config/promptFileLocations.js';
-import { PromptsStorage } from '../../../contrib/chat/common/promptSyntax/service/promptsService.js';
+import { IPromptsService, PromptsStorage } from '../../../contrib/chat/common/promptSyntax/service/promptsService.js';
 import { URI } from '../../../../base/common/uri.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
-import { ILogService } from '../../../../platform/log/common/log.js';
+import { IQuickInputService } from '../../../../platform/quickinput/common/quickInput.js';
+import { localize } from '../../../../nls.js';
 import { getActiveWorkingDirectory } from '../agentSessionUtils.js';
 
 /**
@@ -30,23 +31,37 @@ export class CustomizationCreatorService {
 		@IChatService private readonly chatService: IChatService,
 		@IChatWidgetService private readonly chatWidgetService: IChatWidgetService,
 		@IActiveAgentSessionService private readonly activeAgentSessionService: IActiveAgentSessionService,
-		@ILogService private readonly logService: ILogService,
+		@IPromptsService private readonly promptsService: IPromptsService,
+		@IQuickInputService private readonly quickInputService: IQuickInputService,
 	) { }
 
 	async createWithAI(type: PromptsType): Promise<void> {
+		// Ask for the name before entering chat
+		const typeLabel = getTypeLabel(type);
+		const name = await this.quickInputService.input({
+			prompt: localize('generateName', "Name for the new {0}", typeLabel),
+			placeHolder: localize('generateNamePlaceholder', "e.g., my-{0}", typeLabel),
+			validateInput: async (value) => {
+				if (!value || !value.trim()) {
+					return localize('nameRequired', "Name is required");
+				}
+				return undefined;
+			}
+		});
+		if (!name) {
+			return;
+		}
+		const trimmedName = name.trim();
+
 		// TODO: The 'Generate X' flow currently opens a new chat that is not connected
 		// to the active worktree. For this to fully work, the background agent needs to
 		// accept a worktree parameter so the new session can write files into the correct
 		// worktree directory and have those changes tracked in the session's diff view.
 
 		// Capture worktree BEFORE opening new chat (which changes active session)
-		const activeSession = this.activeAgentSessionService.getActiveSession();
-		this.logService.info(`[CustomizationCreator] Active session: repo=${activeSession?.repository?.toString() ?? 'none'}, worktree=${activeSession?.worktree?.toString() ?? 'none'}`);
-
 		const targetDir = this.resolveTargetDirectory(type);
-		this.logService.info(`[CustomizationCreator] Target dir: ${targetDir?.toString() ?? 'none'}`);
-		const systemInstructions = buildAgentInstructions(type, targetDir);
-		const userMessage = buildUserMessage(type, targetDir);
+		const systemInstructions = buildAgentInstructions(type, targetDir, trimmedName);
+		const userMessage = buildUserMessage(type, targetDir, trimmedName);
 
 		// Start a new chat, then send the request with hidden instructions
 		await this.commandService.executeCommand('workbench.action.chat.newChat');
@@ -76,17 +91,11 @@ export class CustomizationCreatorService {
 	/**
 	 * Returns the worktree and repository URIs from the active session.
 	 */
-	getActiveSessionPaths(): { worktree: URI | undefined; repository: URI | undefined } {
-		const activeSession = this.activeAgentSessionService.getActiveSession();
-		return {
-			worktree: activeSession?.worktree,
-			repository: activeSession?.repository,
-		};
-	}
-
 	/**
-	 * Resolves the target directory for a new customization file based on the
+	 * Resolves the worktree directory for a new customization file based on the
 	 * active session's worktree (preferred) or repository path.
+	 * Falls back to the first local source folder from promptsService.getSourceFolders()
+	 * if there's no active worktree.
 	 */
 	resolveTargetDirectory(type: PromptsType): URI | undefined {
 		const basePath = getActiveWorkingDirectory(this.activeAgentSessionService);
@@ -94,7 +103,7 @@ export class CustomizationCreatorService {
 			return undefined;
 		}
 
-		// Find the first local (workspace) source folder for this type
+		// Compute the path within the worktree using default locations
 		const defaultLocations = getPromptFileDefaultLocations(type);
 		const localLocation = defaultLocations.find(loc => loc.storage === PromptsStorage.local);
 		if (!localLocation) {
@@ -106,23 +115,13 @@ export class CustomizationCreatorService {
 
 	/**
 	 * Resolves the user-level directory for a new customization file.
-	 * Returns undefined if there's no user-level location for this type.
+	 * Delegates to IPromptsService.getSourceFolders() which knows the correct
+	 * user data profile path.
 	 */
-	resolveUserDirectory(type: PromptsType): URI | undefined {
-		const defaultLocations = getPromptFileDefaultLocations(type);
-		const userLocation = defaultLocations.find(loc => loc.storage === PromptsStorage.user);
-		if (!userLocation) {
-			return undefined;
-		}
-
-		// User paths start with ~ - resolve to home directory
-		const path = userLocation.path;
-		if (path.startsWith('~')) {
-			const homedir = URI.file(process.env.HOME || process.env.USERPROFILE || '');
-			return URI.joinPath(homedir, path.slice(1));
-		}
-
-		return URI.file(path);
+	async resolveUserDirectory(type: PromptsType): Promise<URI | undefined> {
+		const folders = await this.promptsService.getSourceFolders(type);
+		const userFolder = folders.find(f => f.storage === PromptsStorage.user);
+		return userFolder?.uri;
 	}
 }
 
@@ -132,10 +131,10 @@ export class CustomizationCreatorService {
  * Builds the hidden system instructions for the customization creator agent.
  * Sent as modeInstructions - invisible to the user.
  */
-function buildAgentInstructions(type: PromptsType, targetDir: URI | undefined): string {
+function buildAgentInstructions(type: PromptsType, targetDir: URI | undefined, name: string): string {
 	const targetHint = targetDir
-		? `\nIMPORTANT: Save the file to this directory: ${targetDir.fsPath}`
-		: '';
+		? `\nIMPORTANT: Save the file to this directory: ${targetDir.fsPath}. The name is "${name}".`
+		: `\nThe name is "${name}".`;
 
 	const writePolicy = `
 
@@ -148,22 +147,22 @@ CRITICAL WORKFLOW:
 		case PromptsType.agent:
 			return `You are a helpful assistant that guides users through creating a new custom AI agent.${writePolicy}
 
-Ask the user what the agent should do, what tools it needs, then write a .agent.md file with YAML frontmatter (name, description, tools) and system instructions.`;
+Create a file named "${name}.agent.md" with YAML frontmatter (name, description, tools) and system instructions. Ask the user what it should do.`;
 
 		case PromptsType.skill:
 			return `You are a helpful assistant that guides users through creating a new skill.${writePolicy}
 
-Ask the user for a skill name (lowercase, hyphens, e.g. "pdf-processing") and what it does. Create a <name>/SKILL.md file with YAML frontmatter (name, description) and instructions.`;
+Create a directory named "${name}" with a SKILL.md file inside it. The file should have YAML frontmatter (name, description) and instructions. Ask the user what it does.`;
 
 		case PromptsType.instructions:
 			return `You are a helpful assistant that guides users through creating a new instructions file.${writePolicy}
 
-Ask the user what the instructions cover and if they apply to specific files (applyTo glob). Write a .instructions.md file with YAML frontmatter (description, optional applyTo) and actionable content.`;
+Create a file named "${name}.instructions.md" with YAML frontmatter (description, optional applyTo) and actionable content. Ask the user what it should cover.`;
 
 		case PromptsType.prompt:
 			return `You are a helpful assistant that guides users through creating a new reusable prompt.${writePolicy}
 
-Ask the user what the prompt should do. Write a .prompt.md file with YAML frontmatter (name, description) and prompt content.`;
+Create a file named "${name}.prompt.md" with YAML frontmatter (name, description) and prompt content. Ask the user what it should do.`;
 
 		case PromptsType.hook:
 			return `You are a helpful assistant that guides users through creating a new hook.${writePolicy}
@@ -185,22 +184,33 @@ Ask the user what they want to create, then guide them step by step.`;
  * Builds the user-visible message that opens the chat.
  * Includes the target path so the agent knows where to write the file.
  */
-function buildUserMessage(type: PromptsType, targetDir: URI | undefined): string {
+function buildUserMessage(type: PromptsType, targetDir: URI | undefined, name: string): string {
 	const pathHint = targetDir ? ` Write it to \`${targetDir.fsPath}\`.` : '';
 
 	switch (type) {
 		case PromptsType.agent:
-			return `Help me create a new custom agent (.agent.md file).${pathHint} Ask me what it should do, then write the file.`;
+			return `Help me create a new custom agent called "${name}".${pathHint}`;
 		case PromptsType.skill:
-			return `Help me create a new skill (SKILL.md in a named subdirectory).${pathHint} Ask me what it should do, then write the file.`;
+			return `Help me create a new skill called "${name}".${pathHint}`;
 		case PromptsType.instructions:
-			return `Help me create a new instructions file (.instructions.md).${pathHint} Ask me what it should cover, then write the file.`;
+			return `Help me create new instructions called "${name}".${pathHint}`;
 		case PromptsType.prompt:
-			return `Help me create a new prompt (.prompt.md file).${pathHint} Ask me what it should do, then write the file.`;
+			return `Help me create a new prompt called "${name}".${pathHint}`;
 		case PromptsType.hook:
-			return `Help me create a new hook.${pathHint} Ask me when it should trigger and what it should do, then write the file.`;
+			return `Help me create a new hook called "${name}".${pathHint}`;
 		default:
-			return `Help me create a new customization.${pathHint}`;
+			return `Help me create a new customization called "${name}".${pathHint}`;
+	}
+}
+
+function getTypeLabel(type: PromptsType): string {
+	switch (type) {
+		case PromptsType.agent: return 'agent';
+		case PromptsType.skill: return 'skill';
+		case PromptsType.instructions: return 'instructions';
+		case PromptsType.prompt: return 'prompt';
+		case PromptsType.hook: return 'hook';
+		default: return 'customization';
 	}
 }
 

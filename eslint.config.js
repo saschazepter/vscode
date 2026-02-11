@@ -1651,7 +1651,8 @@ export default tseslint.config(
 						'vs/workbench/contrib/codeEditor/~',
 						'vs/workbench/contrib/files/~',
 						'vs/workbench/contrib/mcp/~',
-						'vs/workbench/contrib/preferences/~'
+						'vs/workbench/contrib/preferences/~',
+						'vs/workbench/contrib/scm/~'
 					]
 				},
 				{
@@ -1705,6 +1706,7 @@ export default tseslint.config(
 						'vs/workbench/~',
 						'vs/workbench/services/*/~',
 						'vs/workbench/contrib/*/~',
+						'vs/workbench/agentSessions/~',
 						'vs/workbench/contrib/terminal/terminalContribChatExports*',
 						'vs/workbench/contrib/terminal/terminalContribExports*',
 						'vscode-notebook-renderer', // Type only import

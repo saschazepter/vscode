@@ -45,6 +45,7 @@ import { getPromptFileDefaultLocations, getPromptFileType } from '../../../contr
 import { Action, Separator } from '../../../../base/common/actions.js';
 import { IClipboardService } from '../../../../platform/clipboard/common/clipboardService.js';
 import { getActiveWorkingDirectory } from '../agentSessionUtils.js';
+import { ISCMService } from '../../../contrib/scm/common/scm.js';
 
 const $ = DOM.$;
 
@@ -63,6 +64,7 @@ export interface IAICustomizationListItem {
 	readonly description?: string;
 	readonly storage: PromptsStorage;
 	readonly promptType: PromptsType;
+	gitStatus?: 'uncommitted' | 'committed';
 	nameMatches?: IMatch[];
 	descriptionMatches?: IMatch[];
 }
@@ -113,6 +115,7 @@ interface IAICustomizationItemTemplateData {
 	readonly nameLabel: HighlightedLabel;
 	readonly description: HighlightedLabel;
 	readonly storageBadge: HTMLElement;
+	readonly gitStatusBadge: HTMLElement;
 	readonly disposables: DisposableStore;
 	readonly elementDisposables: DisposableStore;
 }
@@ -187,6 +190,9 @@ class AICustomizationItemRenderer implements IListRenderer<IFileItemEntry, IAICu
 		const nameLabel = disposables.add(new HighlightedLabel(DOM.append(textContainer, $('.item-name'))));
 		const description = disposables.add(new HighlightedLabel(DOM.append(textContainer, $('.item-description'))));
 
+		// Git status badge (always visible, outside item-right hover container)
+		const gitStatusBadge = DOM.append(container, $('.git-status-badge'));
+
 		// Right section for actions (hover-visible)
 		const actionsContainer = DOM.append(container, $('.item-right'));
 
@@ -196,6 +202,7 @@ class AICustomizationItemRenderer implements IListRenderer<IFileItemEntry, IAICu
 			nameLabel,
 			description,
 			storageBadge,
+			gitStatusBadge,
 			disposables,
 			elementDisposables,
 		};
@@ -226,7 +233,7 @@ class AICustomizationItemRenderer implements IListRenderer<IFileItemEntry, IAICu
 		switch (element.storage) {
 			case PromptsStorage.local:
 				storageBadgeIcon = workspaceIcon;
-				storageBadgeLabel = localize('workspace', "Workspace");
+				storageBadgeLabel = localize('worktree', "Worktree");
 				break;
 			case PromptsStorage.user:
 				storageBadgeIcon = userIcon;
@@ -241,6 +248,19 @@ class AICustomizationItemRenderer implements IListRenderer<IFileItemEntry, IAICu
 		templateData.storageBadge.className = 'storage-badge';
 		templateData.storageBadge.classList.add(...ThemeIcon.asClassNameArray(storageBadgeIcon));
 		templateData.storageBadge.title = storageBadgeLabel;
+
+		// Git status badge
+		const gitBadge = templateData.gitStatusBadge;
+		gitBadge.className = 'git-status-badge';
+		if (element.gitStatus === 'committed') {
+			gitBadge.classList.add(...ThemeIcon.asClassNameArray(Codicon.check));
+			gitBadge.classList.add('committed');
+			gitBadge.textContent = '';
+			gitBadge.title = localize('committedStatus', "Committed");
+			gitBadge.style.display = '';
+		} else {
+			gitBadge.style.display = 'none';
+		}
 	}
 
 	disposeTemplate(templateData: IAICustomizationItemTemplateData): void {
@@ -325,12 +345,25 @@ export class AICustomizationListWidget extends Disposable {
 		@IActiveAgentSessionService private readonly activeSessionService: IActiveAgentSessionService,
 		@ILogService private readonly logService: ILogService,
 		@IClipboardService private readonly clipboardService: IClipboardService,
+		@ISCMService private readonly scmService: ISCMService,
 	) {
 		super();
 		this.element = $('.ai-customization-list-widget');
 		this.create();
 
 		this._register(this.workspaceContextService.onDidChangeWorkspaceFolders(() => this.refresh()));
+
+		// Re-filter when SCM repositories change (updates git status badges after commits)
+		const trackRepoChanges = (repo: { provider: { onDidChangeResources: Event<void> } }) => {
+			this._register(repo.provider.onDidChangeResources(() => {
+				this.updateGitStatus(this.allItems);
+				this.filterItems();
+			}));
+		};
+		for (const repo of [...this.scmService.repositories]) {
+			trackRepoChanges(repo);
+		}
+		this._register(this.scmService.onDidAddRepository(repo => trackRepoChanges(repo)));
 
 		// React immediately when the active agent session changes.
 		// filterItems() is synchronous and re-groups/filters existing allItems instantly.
@@ -339,6 +372,8 @@ export class AICustomizationListWidget extends Disposable {
 			this.activeSessionService.activeSession.read(reader);
 			const activePath = getActiveWorkingDirectory(this.activeSessionService);
 			this.logService.info(`[AICustomizationListWidget] Active session changed, worktree/repo: ${activePath?.toString() ?? 'none'}, allItems=${this.allItems.length}`);
+			// Update the add button since worktree availability may have changed
+			this.updateAddButton();
 			// Immediate synchronous re-filter for instant UI update
 			if (this.allItems.length > 0) {
 				this.filterItems();
@@ -371,7 +406,7 @@ export class AICustomizationListWidget extends Disposable {
 			supportIcons: true,
 			contextMenuProvider: this.contextMenuService,
 			addPrimaryActionToDropdown: false,
-			actions: this.getDropdownActions(),
+			actions: { getActions: () => this.getDropdownActions() },
 		}));
 		this.addButton.element.classList.add('list-add-button');
 		this._register(this.addButton.onDidClick(() => this.executePrimaryCreateAction()));
@@ -560,7 +595,7 @@ export class AICustomizationListWidget extends Disposable {
 		const typeLabel = this.getTypeLabel();
 		const hasWorktree = this.hasActiveWorktree();
 		if (hasWorktree) {
-			this.addButton.label = `$(${Codicon.add.id}) New Workspace ${typeLabel}`;
+			this.addButton.label = `$(${Codicon.add.id}) New Worktree ${typeLabel}`;
 		} else {
 			this.addButton.label = `$(${Codicon.add.id}) New User ${typeLabel}`;
 		}
@@ -572,38 +607,40 @@ export class AICustomizationListWidget extends Disposable {
 	private getDropdownActions(): Action[] {
 		const typeLabel = this.getTypeLabel();
 		const actions: Action[] = [];
-
+		const promptType = sectionToPromptType(this.currentSection);
 		const hasWorktree = this.hasActiveWorktree();
+
 		if (hasWorktree) {
-			// Primary is worktree, dropdown has user + AI
+			// Primary is worktree - dropdown shows user + generate
 			actions.push(new Action('createUser', `$(${Codicon.account.id}) New User ${typeLabel}`, undefined, true, () => {
-				this._onDidRequestCreateManual.fire({ type: sectionToPromptType(this.currentSection), target: 'user' });
+				this._onDidRequestCreateManual.fire({ type: promptType, target: 'user' });
 			}));
-		} else {
-			// Primary is user, dropdown has worktree (disabled) + AI
-			actions.push(new Action('createWorktree', `$(${Codicon.folder.id}) New Workspace ${typeLabel}`, undefined, false));
 		}
 
 		actions.push(new Action('createWithAI', `$(${Codicon.sparkle.id}) Generate ${typeLabel}`, undefined, true, () => {
-			this._onDidRequestCreate.fire(sectionToPromptType(this.currentSection));
+			this._onDidRequestCreate.fire(promptType);
 		}));
 
 		return actions;
 	}
 
 	/**
-	 * Checks if there's an active worktree/repository.
+	 * Checks if there's an active worktree from a background agent session.
+	 * Only returns true for sessions that have an actual git worktree
+	 * (not just a repository option from the workspace).
 	 */
 	private hasActiveWorktree(): boolean {
-		return !!getActiveWorkingDirectory(this.activeSessionService);
+		const session = this.activeSessionService.getActiveSession();
+		return !!(session?.worktree);
 	}
 
 	/**
-	 * Executes the primary create action (worktree if available, else user).
+	 * Executes the primary create action based on context.
 	 */
 	private executePrimaryCreateAction(): void {
+		const promptType = sectionToPromptType(this.currentSection);
 		const target = this.hasActiveWorktree() ? 'worktree' : 'user';
-		this._onDidRequestCreateManual.fire({ type: sectionToPromptType(this.currentSection), target });
+		this._onDidRequestCreateManual.fire({ type: promptType, target });
 	}
 
 	/**
@@ -771,11 +808,36 @@ export class AICustomizationListWidget extends Disposable {
 		// Sort items by name
 		items.sort((a, b) => a.name.localeCompare(b.name));
 
+		// Set git status for worktree (local) items
+		this.updateGitStatus(items);
+
 		this.logService.info(`[AICustomizationListWidget] loadItems complete: ${items.length} items loaded [${items.map(i => `${i.name}(${i.storage}:${i.uri.toString()})`).join(', ')}]`);
 
 		this.allItems = items;
 		this.filterItems();
 		this._onDidChangeItemCount.fire(items.length);
+	}
+
+	/**
+	 * Updates git status on worktree items by checking SCM resource groups.
+	 * Files found in resource groups have uncommitted changes; others are committed.
+	 */
+	private updateGitStatus(items: IAICustomizationListItem[]): void {
+		// Build a set of URIs that have uncommitted changes in SCM
+		const uncommittedUris = new Set<string>();
+		for (const repo of [...this.scmService.repositories]) {
+			for (const group of repo.provider.groups) {
+				for (const resource of group.resources) {
+					uncommittedUris.add(resource.sourceUri.toString());
+				}
+			}
+		}
+
+		for (const item of items) {
+			if (item.storage === PromptsStorage.local) {
+				item.gitStatus = uncommittedUris.has(item.uri.toString()) ? 'uncommitted' : 'committed';
+			}
+		}
 	}
 
 	/**
@@ -906,7 +968,7 @@ export class AICustomizationListWidget extends Disposable {
 
 		// Group items by storage
 		const groups: { storage: PromptsStorage; label: string; icon: ThemeIcon; items: IAICustomizationListItem[] }[] = [
-			{ storage: PromptsStorage.local, label: localize('workspaceGroup', "Workspace"), icon: workspaceIcon, items: [] },
+			{ storage: PromptsStorage.local, label: localize('worktreeGroup', "Worktree"), icon: workspaceIcon, items: [] },
 			{ storage: PromptsStorage.user, label: localize('userGroup', "User"), icon: userIcon, items: [] },
 			{ storage: PromptsStorage.extension, label: localize('extensionGroup', "Extensions"), icon: extensionIcon, items: [] },
 		];
