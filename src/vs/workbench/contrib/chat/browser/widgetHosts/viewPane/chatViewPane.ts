@@ -51,6 +51,7 @@ import { AgentSessionsControl } from '../../agentSessions/agentSessionsControl.j
 import { ACTION_ID_NEW_CHAT } from '../../actions/chatActions.js';
 import { ChatWidget } from '../../widget/chatWidget.js';
 import { ChatViewWelcomeController, IViewWelcomeDelegate } from '../../viewsWelcome/chatViewWelcomeController.js';
+import { IChatViewsWelcomeDescriptor } from '../../viewsWelcome/chatViewsWelcome.js';
 import { IWorkbenchLayoutService, LayoutSettings, Position } from '../../../../../services/layout/browser/layoutService.js';
 import { AgentSessionsViewerOrientation, AgentSessionsViewerPosition } from '../../agentSessions/agentSessions.js';
 import { IProgressService } from '../../../../../../platform/progress/common/progress.js';
@@ -64,7 +65,9 @@ import { IAgentSession } from '../../agentSessions/agentSessionsModel.js';
 import { IChatEntitlementService } from '../../../../../services/chat/common/chatEntitlementService.js';
 
 interface IChatViewPaneState extends Partial<IChatModelInputState> {
+	/** @deprecated */
 	sessionId?: string;
+	sessionResource?: URI;
 
 	sessionsSidebarWidth?: number;
 }
@@ -127,7 +130,9 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 			lifecycleService.startupKind !== StartupKind.ReloadedWindow &&
 			this.configurationService.getValue<boolean>(ChatConfiguration.RestoreLastPanelSession) === false
 		) {
-			this.viewState.sessionId = undefined; // clear persisted session on fresh start
+			// clear persisted session on fresh start
+			this.viewState.sessionId = undefined;
+			this.viewState.sessionResource = undefined;
 		}
 		this.sessionsViewerVisible = false; // will be updated from layout code
 		this.sessionsViewerSidebarWidth = Math.max(ChatViewPane.SESSIONS_SIDEBAR_MIN_WIDTH, this.viewState.sessionsSidebarWidth ?? ChatViewPane.SESSIONS_SIDEBAR_DEFAULT_WIDTH);
@@ -264,6 +269,10 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 	private getTransferredOrPersistedSessionInfo(): URI | undefined {
 		if (this.chatService.transferredSessionResource) {
 			return this.chatService.transferredSessionResource;
+		}
+
+		if (this.viewState.sessionResource) {
+			return this.viewState.sessionResource;
 		}
 
 		return this.viewState.sessionId ? LocalChatSessionUri.forSession(this.viewState.sessionId) : undefined;
@@ -674,7 +683,9 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 		if (model) {
 			await this.updateWidgetLockState(model.sessionResource); // Update widget lock state based on session type
 
-			this.viewState.sessionId = model.sessionId; // remember as model to restore in view state
+			// remember as model to restore in view state
+			this.viewState.sessionId = model.sessionId;
+			this.viewState.sessionResource = model.sessionResource;
 		}
 
 		this._widget.setModel(model);
@@ -841,16 +852,6 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 				newSessionsViewerOrientation = width >= ChatViewPane.SESSIONS_SIDEBAR_VIEW_MIN_WIDTH ? AgentSessionsViewerOrientation.SideBySide : AgentSessionsViewerOrientation.Stacked;
 		}
 
-		if (
-			newSessionsViewerOrientation === AgentSessionsViewerOrientation.Stacked &&
-			width >= ChatViewPane.SESSIONS_SIDEBAR_VIEW_MIN_WIDTH &&
-			this.getViewPositionAndLocation().location === ViewContainerLocation.AuxiliaryBar &&
-			this.layoutService.isAuxiliaryBarMaximized()
-		) {
-			// Always side-by-side in maximized auxiliary bar if space allows
-			newSessionsViewerOrientation = AgentSessionsViewerOrientation.SideBySide;
-		}
-
 		this.sessionsViewerOrientation = newSessionsViewerOrientation;
 
 		if (newSessionsViewerOrientation === AgentSessionsViewerOrientation.SideBySide) {
@@ -916,11 +917,9 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 
 		// Show stacked
 		else {
-			const sessionsHeight = availableSessionsHeight - 1 /* border bottom */;
-
-			this.sessionsControlContainer.style.height = `${sessionsHeight}px`;
+			this.sessionsControlContainer.style.height = `${availableSessionsHeight}px`;
 			this.sessionsControlContainer.style.width = ``;
-			this.sessionsControl.layout(sessionsHeight, width);
+			this.sessionsControl.layout(availableSessionsHeight, width);
 
 			heightReduction = this.sessionsContainer.offsetHeight;
 			widthReduction = 0; // stacked on top of the chat widget
@@ -1025,6 +1024,10 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 		this.logService.trace(`ChatViewPane#shouldShowWelcome() = ${shouldShow}: hasCoreAgent=${hasCoreAgent} hasDefaultAgent=${hasDefaultAgent} || noViewModel=${!this._widget?.viewModel} && noPersistedSessions=${noPersistedSessions}`);
 
 		return !!shouldShow;
+	}
+
+	getMatchingWelcomeView(): IChatViewsWelcomeDescriptor | undefined {
+		return this.welcomeController?.getMatchingWelcomeView();
 	}
 
 	override getActionsContext(): IChatViewTitleActionContext | undefined {
