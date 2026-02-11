@@ -688,7 +688,7 @@ export class ChatTipService extends Disposable implements IChatTipService {
 		}
 
 		// Persist the selected tip id so the next use advances to the following one.
-		this._storageService.store(ChatTipService._LAST_TIP_ID_KEY, selectedTip.id, StorageScope.PROFILE, StorageTarget.MACHINE);
+		this._storageService.store(ChatTipService._LAST_TIP_ID_KEY, selectedTip.id, StorageScope.PROFILE, StorageTarget.USER);
 
 		// Record that we've shown a tip this session
 		this._hasShownRequestTip = sourceId !== 'welcome';
