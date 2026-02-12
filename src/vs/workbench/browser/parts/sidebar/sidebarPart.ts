@@ -64,7 +64,7 @@ export class SidebarPart extends AbstractPaneCompositePart {
 		return Math.max(width, 300);
 	}
 
-	private readonly activityBarPart = this._register(this.instantiationService.createInstance(ActivitybarPart, this));
+	private readonly activityBarPart = this._register(this.instantiationService.createInstance(ActivitybarPart, this.location, this));
 	private readonly visibleViewContainersTracker: VisibleViewContainersTracker;
 
 	//#endregion
@@ -190,7 +190,7 @@ export class SidebarPart extends AbstractPaneCompositePart {
 	}
 
 	protected override createCompositeBar(): ActivityBarCompositeBar {
-		return this.instantiationService.createInstance(ActivityBarCompositeBar, this.getCompositeBarOptions(), this.partId, this, false);
+		return this.instantiationService.createInstance(ActivityBarCompositeBar, ViewContainerLocation.Sidebar, this.getCompositeBarOptions(), this.partId, this, false);
 	}
 
 	protected getCompositeBarOptions(): IPaneCompositeBarOptions {
