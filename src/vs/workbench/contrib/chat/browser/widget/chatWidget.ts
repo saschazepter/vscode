@@ -959,6 +959,84 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		}
 	}
 
+	private renderGettingStartedTipIfNeeded(): void {
+		const tipContainer = this.gettingStartedTipContainer;
+		if (!tipContainer) {
+			return;
+		}
+
+		// Already showing a tip
+		if (this._gettingStartedTipPart.value) {
+			dom.setVisibility(true, tipContainer);
+			return;
+		}
+
+		const tip = this.chatTipService.getWelcomeTip(this.contextKeyService);
+		if (!tip) {
+			dom.setVisibility(false, tipContainer);
+			return;
+		}
+
+		const store = new DisposableStore();
+		const renderer = this.instantiationService.createInstance(ChatContentMarkdownRenderer);
+		const tipPart = store.add(this.instantiationService.createInstance(ChatTipContentPart,
+			tip,
+			renderer,
+			() => this.chatTipService.getWelcomeTip(this.contextKeyService),
+		));
+		tipContainer.appendChild(tipPart.domNode);
+
+		store.add(tipPart.onDidHide(() => {
+			tipPart.domNode.remove();
+			this._gettingStartedTipPart.clear();
+			dom.setVisibility(false, tipContainer);
+			this.container.classList.toggle('chat-has-getting-started-tip', false);
+		}));
+
+		this._gettingStartedTipPart.value = store;
+		dom.setVisibility(true, tipContainer);
+
+		// Best-effort synchronous position (works when layout is already settled,
+		// e.g. the very first render after page load).
+		this.layoutGettingStartedTipPosition();
+
+		// Also schedule a deferred correction for cases where the browser
+		// hasn't finished layout yet (e.g. returning to the welcome view
+		// after a conversation).
+		store.add(dom.scheduleAtNextAnimationFrame(dom.getWindow(tipContainer), () => {
+			this.layoutGettingStartedTipPosition();
+		}));
+	}
+
+	private layoutGettingStartedTipPosition(): void {
+		if (!this.container || !this.gettingStartedTipContainer || !this.inputPart) {
+			return;
+		}
+
+		const inputContainer = this.inputPart.inputContainerElement;
+		if (!inputContainer) {
+			return;
+		}
+
+		const containerRect = this.container.getBoundingClientRect();
+		const inputRect = inputContainer.getBoundingClientRect();
+		const tipRect = this.gettingStartedTipContainer.getBoundingClientRect();
+
+		// Align the tip horizontally with the input container.
+		const left = inputRect.left - containerRect.left;
+		this.gettingStartedTipContainer.style.left = `${left}px`;
+		this.gettingStartedTipContainer.style.right = 'auto';
+		this.gettingStartedTipContainer.style.width = `${inputRect.width}px`;
+
+		// Position the tip so its bottom edge sits flush against the input's
+		// top edge for a seamless visual connection.
+		const topOffset = inputRect.top - containerRect.top - tipRect.height;
+		if (topOffset > 0) {
+			this.gettingStartedTipContainer.style.top = `${topOffset}px`;
+			this.gettingStartedTipContainer.style.bottom = 'auto';
+		}
+	}
+
 	/**
 	 * Renders the standard welcome view with icon, title, message, and optional prompts.
 	 */
