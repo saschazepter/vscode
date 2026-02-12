@@ -333,17 +333,19 @@ declare module 'vscode' {
 		export function registerChatParticipantDetectionProvider(participantDetectionProvider: ChatParticipantDetectionProvider): Disposable;
 
 		export const onDidDisposeChatSession: Event<string>;
+	}
+
+	export namespace window {
+		/**
+		 * The resource URI of the currently active chat panel session,
+		 * or `undefined` if there is no active chat panel session.
+		 */
+		export const activeChatPanelSessionResource: Uri | undefined;
 
 		/**
-		 * The resource URI of the currently active (focused or last focused) chat session,
-		 * or `undefined` if there is no active chat session.
+		 * An event that fires when the active chat panel session resource changes.
 		 */
-		export const activeChatSessionResource: Uri | undefined;
-
-		/**
-		 * An event that fires when the active chat session resource changes.
-		 */
-		export const onDidChangeActiveChatSessionResource: Event<Uri | undefined>;
+		export const onDidChangeActiveChatPanelSessionResource: Event<Uri | undefined>;
 	}
 
 	// #endregion
