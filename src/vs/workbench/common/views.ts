@@ -43,8 +43,6 @@ export const enum ViewContainerLocation {
 	ChatBar,
 }
 
-export const ViewContainerLocations = [ViewContainerLocation.Sidebar, ViewContainerLocation.Panel, ViewContainerLocation.AuxiliaryBar, ViewContainerLocation.ChatBar];
-
 /**
  * Specifies in which layout a view or view container should be visible.
  */
