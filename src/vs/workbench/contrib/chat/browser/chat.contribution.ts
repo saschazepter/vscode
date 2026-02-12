@@ -629,7 +629,7 @@ configurationRegistry.registerConfiguration({
 		},
 		[ChatConfiguration.ExploreAgentDefaultModel]: {
 			type: 'string',
-			description: nls.localize('chat.exploreAgent.defaultModel.description', "Select the default language model to use for the Explore (Code Research) subagent from the available providers."),
+			description: nls.localize('chat.exploreAgent.defaultModel.description', "Select the default language model to use for the Explore subagent from the available providers."),
 			default: '',
 			enum: ExploreAgentDefaultModel.modelIds,
 			enumItemLabels: ExploreAgentDefaultModel.modelLabels,
