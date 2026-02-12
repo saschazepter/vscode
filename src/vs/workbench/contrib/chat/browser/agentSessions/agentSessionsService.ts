@@ -132,6 +132,11 @@ export class ActiveAgentSessionService extends Disposable implements IActiveAgen
 				}
 			}
 		}));
+
+		// Update active session when the agent sessions model changes (e.g., metadata updates with worktree/repository info)
+		this._register(this.agentSessionsService.model.onDidChangeSessions(() => {
+			this.refreshActiveSessionFromModel();
+		}));
 	}
 
 	private registerChatBarWidgetTracking(): void {
@@ -202,6 +207,29 @@ export class ActiveAgentSessionService extends Disposable implements IActiveAgen
 				worktree: undefined
 			};
 			this.logService.info(`[ActiveAgentSessionService] Active session changed (new): ${sessionResource.toString()}, repository: ${repository?.toString() ?? 'none'}`);
+			this._activeSession.set(activeSessionItem, undefined);
+		}
+	}
+
+	private refreshActiveSessionFromModel(): void {
+		const currentActive = this._activeSession.get();
+		if (!currentActive) {
+			return;
+		}
+
+		const agentSession = this.agentSessionsService.model.getSession(currentActive.resource);
+		if (!agentSession) {
+			return;
+		}
+
+		const [repository, worktree] = this.getRepositoryFromMetadata(agentSession.metadata);
+		if (currentActive.repository?.toString() !== repository?.toString() || currentActive.worktree?.toString() !== worktree?.toString()) {
+			const activeSessionItem: IActiveAgentSessionItem = {
+				...agentSession,
+				repository,
+				worktree,
+			};
+			this.logService.info(`[ActiveAgentSessionService] Active session updated from model: ${currentActive.resource.toString()}, repository: ${repository?.toString() ?? 'none'}, worktree: ${worktree?.toString() ?? 'none'}`);
 			this._activeSession.set(activeSessionItem, undefined);
 		}
 	}
