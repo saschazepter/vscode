@@ -1334,6 +1334,11 @@ export class CodeApplication extends Disposable {
 			}
 		}
 
+		// Open agentic window if requested
+		if (args['agentic']) {
+			return windowsMainService.openAgenticWindow({ context, contextWindowId: undefined });
+		}
+
 		const macOpenFiles: string[] = (global as { macOpenFiles?: string[] }).macOpenFiles ?? [];
 		const hasCliArgs = args._.length;
 		const hasFolderURIs = !!args['folder-uri'];
