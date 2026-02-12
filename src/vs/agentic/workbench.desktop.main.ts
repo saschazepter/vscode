@@ -194,14 +194,13 @@ import '../workbench/contrib/policyExport/electron-browser/policyExport.contribu
 
 //#region --- agentic contributions
 
-import './browser/titleBarWidget.js';
 import './browser/layoutActions.js';
 
 import './contrib/accountMenu/browser/accountMenu.contribution.js';
 import './contrib/aiCustomizationTreeView/browser/aiCustomizationTreeView.contribution.js';
 import './contrib/aiCustomizationManagement/browser/aiCustomizationManagement.contribution.js';
 import './contrib/chat/browser/chat.contribution.js';
-import './contrib/sessionsView/browser/sessionsView.contribution.js';
+import './contrib/sessions/browser/sessions.contribution.js';
 import './contrib/changesView/browser/changesView.contributions.js';
 
 
