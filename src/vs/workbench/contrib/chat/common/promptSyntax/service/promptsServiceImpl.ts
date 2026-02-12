@@ -179,6 +179,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 			(token) => this.computeHooks(token),
 			() => Event.any(
 				this.getFileLocatorEvent(PromptsType.hook),
+				Event.filter(this.configurationService.onDidChangeConfiguration, e => e.affectsConfiguration(PromptsConfig.USE_CHAT_HOOKS)),
 				Event.filter(this.configurationService.onDidChangeConfiguration, e => e.affectsConfiguration(PromptsConfig.USE_CLAUDE_HOOKS)),
 			)
 		));
@@ -1005,6 +1006,11 @@ export class PromptsService extends Disposable implements IPromptsService {
 	}
 
 	private async computeHooks(token: CancellationToken): Promise<IConfiguredHooksInfo | undefined> {
+		const useChatHooks = this.configurationService.getValue(PromptsConfig.USE_CHAT_HOOKS);
+		if (!useChatHooks) {
+			return undefined;
+		}
+
 		const useClaudeHooks = this.configurationService.getValue<boolean>(PromptsConfig.USE_CLAUDE_HOOKS);
 		const hookFiles = await this.listPromptFiles(PromptsType.hook, token);
 
