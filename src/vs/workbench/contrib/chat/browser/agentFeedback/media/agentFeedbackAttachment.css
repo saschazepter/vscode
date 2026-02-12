@@ -3,12 +3,12 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-.diff-comments-hover {
+.agent-feedback-hover {
 	max-width: 400px;
 	padding: 4px 0;
 }
 
-.diff-comments-hover-title {
+.agent-feedback-hover-title {
 	font-weight: bold;
 	font-size: 12px;
 	padding: 2px 8px 6px;
@@ -16,12 +16,12 @@
 	margin-bottom: 4px;
 }
 
-.diff-comments-hover-list {
+.agent-feedback-hover-list {
 	max-height: 300px;
 	overflow-y: auto;
 }
 
-.diff-comments-hover-file-header {
+.agent-feedback-hover-file-header {
 	font-size: 11px;
 	font-weight: bold;
 	color: var(--vscode-foreground);
@@ -29,13 +29,13 @@
 	font-family: var(--monaco-monospace-font);
 }
 
-.diff-comments-hover-file-header:not(:first-child) {
+.agent-feedback-hover-file-header:not(:first-child) {
 	border-top: 1px solid var(--vscode-editorWidget-border);
 	margin-top: 4px;
 	padding-top: 8px;
 }
 
-.diff-comments-hover-row {
+.agent-feedback-hover-row {
 	padding: 4px 8px;
 	display: flex;
 	align-items: center;
@@ -45,23 +45,23 @@
 	position: relative;
 }
 
-.diff-comments-hover-row:hover {
+.agent-feedback-hover-row:hover {
 	background-color: var(--vscode-list-hoverBackground);
 }
 
-.diff-comments-hover-line {
+.agent-feedback-hover-line {
 	font-size: 11px;
 	color: var(--vscode-descriptionForeground);
 }
 
-.diff-comments-hover-text {
+.agent-feedback-hover-text {
 	font-size: 12px;
 	white-space: pre-wrap;
 	word-break: break-word;
 	flex: 1;
 }
 
-.diff-comments-hover-remove {
+.agent-feedback-hover-remove {
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -74,17 +74,17 @@
 	border-radius: 4px;
 }
 
-.diff-comments-hover-row:hover .diff-comments-hover-remove {
+.agent-feedback-hover-row:hover .agent-feedback-hover-remove {
 	opacity: 1;
 }
 
-.diff-comments-hover-remove:hover {
+.agent-feedback-hover-remove:hover {
 	color: var(--vscode-foreground);
 	background-color: var(--vscode-toolbar-hoverBackground);
 }
 
 /* Attachment widget pill styling */
-.diff-comments-attachment .chat-attached-context-pill {
+.agent-feedback-attachment .chat-attached-context-pill {
 	display: flex;
 	align-items: center;
 	padding: 0 4px;

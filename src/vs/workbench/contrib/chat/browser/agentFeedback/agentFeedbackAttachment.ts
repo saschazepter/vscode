@@ -10,35 +10,35 @@ import { URI } from '../../../../../base/common/uri.js';
 import { IRange } from '../../../../../editor/common/core/range.js';
 import { ITextModelService } from '../../../../../editor/common/services/resolverService.js';
 import { localize } from '../../../../../nls.js';
-import { IDiffCommentsService, IDiffComment } from './diffCommentsService.js';
+import { IAgentFeedbackService, IAgentFeedback } from './agentFeedbackService.js';
 import { IChatWidgetService } from '../chat.js';
-import { IDiffCommentsVariableEntry } from '../../common/attachments/chatVariableEntries.js';
+import { IAgentFeedbackVariableEntry } from '../../common/attachments/chatVariableEntries.js';
 
-const ATTACHMENT_ID_PREFIX = 'diffComments:';
+const ATTACHMENT_ID_PREFIX = 'agentFeedback:';
 
 /**
- * Keeps the "N comments" attachment in the chat input in sync with the
- * DiffCommentsService. One attachment per session resource, updated reactively.
- * Clears comments after the chat prompt is sent.
+ * Keeps the "N feedback items" attachment in the chat input in sync with the
+ * AgentFeedbackService. One attachment per session resource, updated reactively.
+ * Clears feedback after the chat prompt is sent.
  */
-export class DiffCommentsAttachmentContribution extends Disposable {
+export class AgentFeedbackAttachmentContribution extends Disposable {
 
-	static readonly ID = 'workbench.contrib.diffCommentsAttachment';
+	static readonly ID = 'workbench.contrib.agentFeedbackAttachment';
 
 	/** Track onDidAcceptInput subscriptions per widget session */
 	private readonly _widgetListeners = this._store.add(new DisposableMap<string>());
 
-	/** Cache of resolved code snippets keyed by comment ID */
+	/** Cache of resolved code snippets keyed by feedback ID */
 	private readonly _snippetCache = new Map<string, string | undefined>();
 
 	constructor(
-		@IDiffCommentsService private readonly _diffCommentsService: IDiffCommentsService,
+		@IAgentFeedbackService private readonly _agentFeedbackService: IAgentFeedbackService,
 		@IChatWidgetService private readonly _chatWidgetService: IChatWidgetService,
 		@ITextModelService private readonly _textModelService: ITextModelService,
 	) {
 		super();
 
-		this._store.add(this._diffCommentsService.onDidChangeComments(e => {
+		this._store.add(this._agentFeedbackService.onDidChangeFeedback(e => {
 			this._updateAttachment(e.sessionResource);
 			this._ensureAcceptListener(e.sessionResource);
 		}));
@@ -50,30 +50,30 @@ export class DiffCommentsAttachmentContribution extends Disposable {
 			return;
 		}
 
-		const comments = this._diffCommentsService.getComments(sessionResource);
+		const feedbackItems = this._agentFeedbackService.getFeedback(sessionResource);
 		const attachmentId = ATTACHMENT_ID_PREFIX + sessionResource.toString();
 
-		if (comments.length === 0) {
+		if (feedbackItems.length === 0) {
 			widget.attachmentModel.delete(attachmentId);
 			this._snippetCache.clear();
 			return;
 		}
 
-		const value = await this._buildCommentsValue(comments);
+		const value = await this._buildFeedbackValue(feedbackItems);
 
-		const entry: IDiffCommentsVariableEntry = {
-			kind: 'diffComments',
+		const entry: IAgentFeedbackVariableEntry = {
+			kind: 'agentFeedback',
 			id: attachmentId,
-			name: comments.length === 1
-				? localize('diffComments.one', "1 comment")
-				: localize('diffComments.many', "{0} comments", comments.length),
+			name: feedbackItems.length === 1
+				? localize('agentFeedback.one', "1 comment")
+				: localize('agentFeedback.many', "{0} comments", feedbackItems.length),
 			icon: Codicon.comment,
 			sessionResource,
-			comments: comments.map(c => ({
-				id: c.id,
-				text: c.text,
-				resourceUri: c.resourceUri,
-				range: c.range,
+			feedbackItems: feedbackItems.map(f => ({
+				id: f.id,
+				text: f.text,
+				resourceUri: f.resourceUri,
+				range: f.range,
 			})),
 			value,
 		};
@@ -84,14 +84,14 @@ export class DiffCommentsAttachmentContribution extends Disposable {
 	}
 
 	/**
-	 * Builds a rich string value for the diff comments attachment that includes
-	 * the code snippet at each comment's location alongside the comment text.
-	 * Uses a cache keyed by comment ID to avoid re-resolving snippets for
-	 * comments that haven't changed.
+	 * Builds a rich string value for the agent feedback attachment that includes
+	 * the code snippet at each feedback item's location alongside the feedback text.
+	 * Uses a cache keyed by feedback ID to avoid re-resolving snippets for
+	 * items that haven't changed.
 	 */
-	private async _buildCommentsValue(comments: readonly IDiffComment[]): Promise<string> {
-		// Prune stale cache entries for comments that no longer exist
-		const currentIds = new Set(comments.map(c => c.id));
+	private async _buildFeedbackValue(feedbackItems: readonly IAgentFeedback[]): Promise<string> {
+		// Prune stale cache entries for items that no longer exist
+		const currentIds = new Set(feedbackItems.map(f => f.id));
 		for (const cachedId of this._snippetCache.keys()) {
 			if (!currentIds.has(cachedId)) {
 				this._snippetCache.delete(cachedId);
@@ -99,28 +99,28 @@ export class DiffCommentsAttachmentContribution extends Disposable {
 		}
 
 		// Resolve only new (uncached) snippets
-		const uncachedComments = comments.filter(c => !this._snippetCache.has(c.id));
-		if (uncachedComments.length > 0) {
-			await Promise.all(uncachedComments.map(async c => {
-				const snippet = await this._getCodeSnippet(c.resourceUri, c.range);
-				this._snippetCache.set(c.id, snippet);
+		const uncachedItems = feedbackItems.filter(f => !this._snippetCache.has(f.id));
+		if (uncachedItems.length > 0) {
+			await Promise.all(uncachedItems.map(async f => {
+				const snippet = await this._getCodeSnippet(f.resourceUri, f.range);
+				this._snippetCache.set(f.id, snippet);
 			}));
 		}
 
 		// Build the final string from cache
 		const parts: string[] = ['The following comments were made on the code changes:'];
-		for (const comment of comments) {
-			const codeSnippet = this._snippetCache.get(comment.id);
-			const fileName = basename(comment.resourceUri);
-			const lineRef = comment.range.startLineNumber === comment.range.endLineNumber
-				? `${comment.range.startLineNumber}`
-				: `${comment.range.startLineNumber}-${comment.range.endLineNumber}`;
+		for (const item of feedbackItems) {
+			const codeSnippet = this._snippetCache.get(item.id);
+			const fileName = basename(item.resourceUri);
+			const lineRef = item.range.startLineNumber === item.range.endLineNumber
+				? `${item.range.startLineNumber}`
+				: `${item.range.startLineNumber}-${item.range.endLineNumber}`;
 
 			let part = `[${fileName}:${lineRef}]`;
 			if (codeSnippet) {
 				part += `\n\`\`\`\n${codeSnippet}\n\`\`\``;
 			}
-			part += `\nComment: ${comment.text}`;
+			part += `\nComment: ${item.text}`;
 			parts.push(part);
 		}
 
@@ -145,7 +145,7 @@ export class DiffCommentsAttachmentContribution extends Disposable {
 	}
 
 	/**
-	 * Ensure we listen for the chat widget's accept event so we can clear comments after send.
+	 * Ensure we listen for the chat widget's accept event so we can clear feedback after send.
 	 */
 	private _ensureAcceptListener(sessionResource: URI): void {
 		const key = sessionResource.toString();
@@ -159,7 +159,7 @@ export class DiffCommentsAttachmentContribution extends Disposable {
 		}
 
 		this._widgetListeners.set(key, widget.onDidAcceptInput(() => {
-			this._diffCommentsService.clearComments(sessionResource);
+			this._agentFeedbackService.clearFeedback(sessionResource);
 			this._widgetListeners.deleteAndDispose(key);
 		}));
 	}

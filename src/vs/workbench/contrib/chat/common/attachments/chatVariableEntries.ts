@@ -286,10 +286,10 @@ export interface IDebugVariableEntry extends IBaseChatRequestVariableEntry {
 	readonly type?: string;
 }
 
-export interface IDiffCommentsVariableEntry extends IBaseChatRequestVariableEntry {
-	readonly kind: 'diffComments';
+export interface IAgentFeedbackVariableEntry extends IBaseChatRequestVariableEntry {
+	readonly kind: 'agentFeedback';
 	readonly sessionResource: URI;
-	readonly comments: ReadonlyArray<{
+	readonly feedbackItems: ReadonlyArray<{
 		readonly id: string;
 		readonly text: string;
 		readonly resourceUri: URI;
@@ -303,7 +303,7 @@ export type IChatRequestVariableEntry = IGenericChatRequestVariableEntry | IChat
 	| IChatRequestDirectoryEntry | IChatRequestFileEntry | INotebookOutputVariableEntry | IElementVariableEntry
 	| IPromptFileVariableEntry | IPromptTextVariableEntry
 	| ISCMHistoryItemVariableEntry | ISCMHistoryItemChangeVariableEntry | ISCMHistoryItemChangeRangeVariableEntry | ITerminalVariableEntry
-	| IChatRequestStringVariableEntry | IChatRequestWorkspaceVariableEntry | IDebugVariableEntry | IDiffCommentsVariableEntry;
+	| IChatRequestStringVariableEntry | IChatRequestWorkspaceVariableEntry | IDebugVariableEntry | IAgentFeedbackVariableEntry;
 
 export namespace IChatRequestVariableEntry {
 
@@ -372,8 +372,8 @@ export function isDebugVariableEntry(obj: IChatRequestVariableEntry): obj is IDe
 	return obj.kind === 'debugVariable';
 }
 
-export function isDiffCommentsVariableEntry(obj: IChatRequestVariableEntry): obj is IDiffCommentsVariableEntry {
-	return obj.kind === 'diffComments';
+export function isAgentFeedbackVariableEntry(obj: IChatRequestVariableEntry): obj is IAgentFeedbackVariableEntry {
+	return obj.kind === 'agentFeedback';
 }
 
 export function isPasteVariableEntry(obj: IChatRequestVariableEntry): obj is IChatRequestPasteVariableEntry {

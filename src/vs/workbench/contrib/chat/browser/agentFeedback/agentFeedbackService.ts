@@ -19,7 +19,7 @@ import { localize } from '../../../../../nls.js';
 
 // --- Types --------------------------------------------------------------------
 
-export interface IDiffComment {
+export interface IAgentFeedback {
 	readonly id: string;
 	readonly text: string;
 	readonly resourceUri: URI;
@@ -27,55 +27,55 @@ export interface IDiffComment {
 	readonly sessionResource: URI;
 }
 
-export interface IDiffCommentsChangeEvent {
+export interface IAgentFeedbackChangeEvent {
 	readonly sessionResource: URI;
-	readonly comments: readonly IDiffComment[];
+	readonly feedbackItems: readonly IAgentFeedback[];
 }
 
 // --- Service Interface --------------------------------------------------------
 
-export const IDiffCommentsService = createDecorator<IDiffCommentsService>('diffCommentsService');
+export const IAgentFeedbackService = createDecorator<IAgentFeedbackService>('agentFeedbackService');
 
-export interface IDiffCommentsService {
+export interface IAgentFeedbackService {
 	readonly _serviceBrand: undefined;
 
-	readonly onDidChangeComments: Event<IDiffCommentsChangeEvent>;
+	readonly onDidChangeFeedback: Event<IAgentFeedbackChangeEvent>;
 
 	/**
-	 * Add a comment for the given session.
+	 * Add a feedback item for the given session.
 	 */
-	addComment(sessionResource: URI, resourceUri: URI, range: IRange, text: string): IDiffComment;
+	addFeedback(sessionResource: URI, resourceUri: URI, range: IRange, text: string): IAgentFeedback;
 
 	/**
-	 * Remove a single comment.
+	 * Remove a single feedback item.
 	 */
-	removeComment(sessionResource: URI, commentId: string): void;
+	removeFeedback(sessionResource: URI, feedbackId: string): void;
 
 	/**
-	 * Get all comments for a session.
+	 * Get all feedback items for a session.
 	 */
-	getComments(sessionResource: URI): readonly IDiffComment[];
+	getFeedback(sessionResource: URI): readonly IAgentFeedback[];
 
 	/**
-	 * Clear all comments for a session (e.g., after sending).
+	 * Clear all feedback items for a session (e.g., after sending).
 	 */
-	clearComments(sessionResource: URI): void;
+	clearFeedback(sessionResource: URI): void;
 }
 
 // --- Implementation -----------------------------------------------------------
 
-const DIFF_COMMENTS_OWNER = 'diffCommentsController';
-const DIFF_COMMENTS_CONTEXT_VALUE = 'diffComments';
+const AGENT_FEEDBACK_OWNER = 'agentFeedbackController';
+const AGENT_FEEDBACK_CONTEXT_VALUE = 'agentFeedback';
 
-export class DiffCommentsService extends Disposable implements IDiffCommentsService {
+export class AgentFeedbackService extends Disposable implements IAgentFeedbackService {
 
 	declare readonly _serviceBrand: undefined;
 
-	private readonly _onDidChangeComments = this._store.add(new Emitter<IDiffCommentsChangeEvent>());
-	readonly onDidChangeComments = this._onDidChangeComments.event;
+	private readonly _onDidChangeFeedback = this._store.add(new Emitter<IAgentFeedbackChangeEvent>());
+	readonly onDidChangeFeedback = this._onDidChangeFeedback.event;
 
-	/** sessionResource → comments */
-	private readonly _commentsBySession = new Map<string, IDiffComment[]>();
+	/** sessionResource → feedback items */
+	private readonly _feedbackBySession = new Map<string, IAgentFeedback[]>();
 
 	private _controllerRegistered = false;
 	private _nextThreadHandle = 1;
@@ -95,11 +95,11 @@ export class DiffCommentsService extends Disposable implements IDiffCommentsServ
 		const self = this;
 
 		const controller: ICommentController = {
-			id: DIFF_COMMENTS_OWNER,
-			label: 'Diff Comments',
+			id: AGENT_FEEDBACK_OWNER,
+			label: 'Agent Feedback',
 			features: {},
-			contextValue: DIFF_COMMENTS_CONTEXT_VALUE,
-			owner: DIFF_COMMENTS_OWNER,
+			contextValue: AGENT_FEEDBACK_CONTEXT_VALUE,
+			owner: AGENT_FEEDBACK_OWNER,
 			activeComment: undefined,
 			createCommentThreadTemplate: async () => { },
 			updateCommentThreadTemplate: async () => { },
@@ -108,163 +108,163 @@ export class DiffCommentsService extends Disposable implements IDiffCommentsServ
 			getDocumentComments: async (resource: URI, _token: CancellationToken): Promise<ICommentInfo<IRange>> => {
 				// Return threads for this resource from all sessions
 				const threads: CommentThread<IRange>[] = [];
-				for (const [, sessionComments] of self._commentsBySession) {
-					for (const c of sessionComments) {
-						if (c.resourceUri.toString() === resource.toString()) {
-							threads.push(self._createThread(c));
+				for (const [, sessionFeedback] of self._feedbackBySession) {
+					for (const f of sessionFeedback) {
+						if (f.resourceUri.toString() === resource.toString()) {
+							threads.push(self._createThread(f));
 						}
 					}
 				}
 				return {
 					threads,
 					commentingRanges: { ranges: [], resource, fileComments: false },
-					uniqueOwner: DIFF_COMMENTS_OWNER,
+					uniqueOwner: AGENT_FEEDBACK_OWNER,
 				};
 			},
 			getNotebookComments: async (_resource: URI, _token: CancellationToken): Promise<INotebookCommentInfo> => {
-				return { threads: [], uniqueOwner: DIFF_COMMENTS_OWNER };
+				return { threads: [], uniqueOwner: AGENT_FEEDBACK_OWNER };
 			},
 			setActiveCommentAndThread: async () => { },
 		};
 
-		this._commentService.registerCommentController(DIFF_COMMENTS_OWNER, controller);
-		this._store.add({ dispose: () => this._commentService.unregisterCommentController(DIFF_COMMENTS_OWNER) });
+		this._commentService.registerCommentController(AGENT_FEEDBACK_OWNER, controller);
+		this._store.add({ dispose: () => this._commentService.unregisterCommentController(AGENT_FEEDBACK_OWNER) });
 
-		// Register delete action for our comment threads
+		// Register delete action for our feedback threads
 		this._store.add(registerAction2(class extends Action2 {
 			constructor() {
 				super({
-					id: 'diffComments.deleteThread',
-					title: localize('diffComments.delete', "Delete Comment"),
+					id: 'agentFeedback.deleteThread',
+					title: localize('agentFeedback.delete', "Delete Feedback"),
 					icon: Codicon.trash,
 					menu: {
 						id: MenuId.CommentThreadTitle,
-						when: ContextKeyExpr.equals('commentController', DIFF_COMMENTS_CONTEXT_VALUE),
+						when: ContextKeyExpr.equals('commentController', AGENT_FEEDBACK_CONTEXT_VALUE),
 						group: 'navigation',
 					}
 				});
 			}
 			run(accessor: ServicesAccessor, ...args: unknown[]): void {
-				const diffCommentsService = accessor.get(IDiffCommentsService);
+				const agentFeedbackService = accessor.get(IAgentFeedbackService);
 				const arg = args[0] as { thread?: { threadId?: string }; threadId?: string } | undefined;
 				const thread = arg?.thread ?? arg;
 				if (thread?.threadId) {
-					const sessionResource = self._findSessionForComment(thread.threadId);
+					const sessionResource = self._findSessionForFeedback(thread.threadId);
 					if (sessionResource) {
-						diffCommentsService.removeComment(sessionResource, thread.threadId);
+						agentFeedbackService.removeFeedback(sessionResource, thread.threadId);
 					}
 				}
 			}
 		}));
 	}
 
-	addComment(sessionResource: URI, resourceUri: URI, range: IRange, text: string): IDiffComment {
+	addFeedback(sessionResource: URI, resourceUri: URI, range: IRange, text: string): IAgentFeedback {
 		this._ensureController();
 
 		const key = sessionResource.toString();
-		let comments = this._commentsBySession.get(key);
-		if (!comments) {
-			comments = [];
-			this._commentsBySession.set(key, comments);
+		let feedbackItems = this._feedbackBySession.get(key);
+		if (!feedbackItems) {
+			feedbackItems = [];
+			this._feedbackBySession.set(key, feedbackItems);
 		}
 
-		const comment: IDiffComment = {
+		const feedback: IAgentFeedback = {
 			id: generateUuid(),
 			text,
 			resourceUri,
 			range,
 			sessionResource,
 		};
-		comments.push(comment);
+		feedbackItems.push(feedback);
 
 		this._syncThreads(sessionResource);
-		this._onDidChangeComments.fire({ sessionResource, comments });
+		this._onDidChangeFeedback.fire({ sessionResource, feedbackItems });
 
-		return comment;
+		return feedback;
 	}
 
-	removeComment(sessionResource: URI, commentId: string): void {
+	removeFeedback(sessionResource: URI, feedbackId: string): void {
 		const key = sessionResource.toString();
-		const comments = this._commentsBySession.get(key);
-		if (!comments) {
+		const feedbackItems = this._feedbackBySession.get(key);
+		if (!feedbackItems) {
 			return;
 		}
 
-		const idx = comments.findIndex(c => c.id === commentId);
+		const idx = feedbackItems.findIndex(f => f.id === feedbackId);
 		if (idx >= 0) {
-			const removed = comments[idx];
-			comments.splice(idx, 1);
-			this._activeThreadIds.delete(commentId);
+			const removed = feedbackItems[idx];
+			feedbackItems.splice(idx, 1);
+			this._activeThreadIds.delete(feedbackId);
 
 			// Fire updateComments with the thread in removed[] so the editor
 			// controller's onDidUpdateCommentThreads handler removes the zone widget
 			const thread = this._createThread(removed);
 			thread.isDisposed = true;
-			this._commentService.updateComments(DIFF_COMMENTS_OWNER, {
+			this._commentService.updateComments(AGENT_FEEDBACK_OWNER, {
 				added: [],
 				removed: [thread],
 				changed: [],
 				pending: [],
 			});
 
-			this._onDidChangeComments.fire({ sessionResource, comments });
+			this._onDidChangeFeedback.fire({ sessionResource, feedbackItems });
 		}
 	}
 
 	/**
-	 * Find which session a comment belongs to by its ID.
+	 * Find which session a feedback item belongs to by its ID.
 	 */
-	_findSessionForComment(commentId: string): URI | undefined {
-		for (const [, comments] of this._commentsBySession) {
-			const comment = comments.find(c => c.id === commentId);
-			if (comment) {
-				return comment.sessionResource;
+	_findSessionForFeedback(feedbackId: string): URI | undefined {
+		for (const [, feedbackItems] of this._feedbackBySession) {
+			const item = feedbackItems.find(f => f.id === feedbackId);
+			if (item) {
+				return item.sessionResource;
 			}
 		}
 		return undefined;
 	}
 
-	getComments(sessionResource: URI): readonly IDiffComment[] {
-		return this._commentsBySession.get(sessionResource.toString()) ?? [];
+	getFeedback(sessionResource: URI): readonly IAgentFeedback[] {
+		return this._feedbackBySession.get(sessionResource.toString()) ?? [];
 	}
 
-	clearComments(sessionResource: URI): void {
+	clearFeedback(sessionResource: URI): void {
 		const key = sessionResource.toString();
-		const comments = this._commentsBySession.get(key);
-		if (comments && comments.length > 0) {
-			const removedThreads = comments.map(c => {
-				this._activeThreadIds.delete(c.id);
-				const thread = this._createThread(c);
+		const feedbackItems = this._feedbackBySession.get(key);
+		if (feedbackItems && feedbackItems.length > 0) {
+			const removedThreads = feedbackItems.map(f => {
+				this._activeThreadIds.delete(f.id);
+				const thread = this._createThread(f);
 				thread.isDisposed = true;
 				return thread;
 			});
 
-			this._commentService.updateComments(DIFF_COMMENTS_OWNER, {
+			this._commentService.updateComments(AGENT_FEEDBACK_OWNER, {
 				added: [],
 				removed: removedThreads,
 				changed: [],
 				pending: [],
 			});
 		}
-		this._commentsBySession.delete(key);
-		this._onDidChangeComments.fire({ sessionResource, comments: [] });
+		this._feedbackBySession.delete(key);
+		this._onDidChangeFeedback.fire({ sessionResource, feedbackItems: [] });
 	}
 
-	/** Threads currently known to the comment service, keyed by comment id */
+	/** Threads currently known to the comment service, keyed by feedback id */
 	private readonly _activeThreadIds = new Set<string>();
 
 	/**
-	 * Sync comment threads to the ICommentService using updateComments for
+	 * Sync feedback threads to the ICommentService using updateComments for
 	 * incremental add/remove, which the editor controller listens to.
 	 */
 	private _syncThreads(_sessionResource: URI): void {
-		// Collect all current comment IDs
+		// Collect all current feedback IDs
 		const currentIds = new Set<string>();
-		const allComments: IDiffComment[] = [];
-		for (const [, sessionComments] of this._commentsBySession) {
-			for (const c of sessionComments) {
-				currentIds.add(c.id);
-				allComments.push(c);
+		const allFeedback: IAgentFeedback[] = [];
+		for (const [, sessionFeedback] of this._feedbackBySession) {
+			for (const f of sessionFeedback) {
+				currentIds.add(f.id);
+				allFeedback.push(f);
 			}
 		}
 
@@ -272,9 +272,9 @@ export class DiffCommentsService extends Disposable implements IDiffCommentsServ
 		const added: CommentThread<IRange>[] = [];
 		const removed: CommentThread<IRange>[] = [];
 
-		for (const c of allComments) {
-			if (!this._activeThreadIds.has(c.id)) {
-				added.push(this._createThread(c));
+		for (const f of allFeedback) {
+			if (!this._activeThreadIds.has(f.id)) {
+				added.push(this._createThread(f));
 			}
 		}
 
@@ -292,7 +292,7 @@ export class DiffCommentsService extends Disposable implements IDiffCommentsServ
 		}
 
 		if (added.length || removed.length) {
-			this._commentService.updateComments(DIFF_COMMENTS_OWNER, {
+			this._commentService.updateComments(AGENT_FEEDBACK_OWNER, {
 				added,
 				removed,
 				changed: [],
@@ -301,13 +301,13 @@ export class DiffCommentsService extends Disposable implements IDiffCommentsServ
 		}
 	}
 
-	private _createRemovedThread(commentId: string): CommentThread<IRange> {
+	private _createRemovedThread(feedbackId: string): CommentThread<IRange> {
 		const noopEvent = Event.None;
 		return {
 			isDocumentCommentThread(): this is CommentThread<IRange> { return true; },
 			commentThreadHandle: -1,
 			controllerHandle: 0,
-			threadId: commentId,
+			threadId: feedbackId,
 			resource: null,
 			range: undefined,
 			label: undefined,
@@ -331,16 +331,16 @@ export class DiffCommentsService extends Disposable implements IDiffCommentsServ
 		};
 	}
 
-	private _createThread(comment: IDiffComment): CommentThread<IRange> {
+	private _createThread(feedback: IAgentFeedback): CommentThread<IRange> {
 		const handle = this._nextThreadHandle++;
 
 		const threadComment: Comment = {
 			uniqueIdInThread: 1,
-			body: comment.text,
+			body: feedback.text,
 			userName: 'You',
 		};
 
-		return new DiffCommentThread(handle, comment.id, comment.resourceUri.toString(), comment.range, [threadComment]);
+		return new AgentFeedbackThread(handle, feedback.id, feedback.resourceUri.toString(), feedback.range, [threadComment]);
 	}
 }
 
@@ -348,7 +348,7 @@ export class DiffCommentsService extends Disposable implements IDiffCommentsServ
  * A CommentThread implementation with proper emitters so the editor
  * comment controller can react to state changes (collapse/expand).
  */
-class DiffCommentThread implements CommentThread<IRange> {
+class AgentFeedbackThread implements CommentThread<IRange> {
 
 	private readonly _onDidChangeComments = new Emitter<readonly Comment[] | undefined>();
 	readonly onDidChangeComments = this._onDidChangeComments.event;

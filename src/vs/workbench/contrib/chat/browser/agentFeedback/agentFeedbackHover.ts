@@ -16,22 +16,22 @@ import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
 import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
 import { IEditorService } from '../../../../services/editor/common/editorService.js';
 import { DEFAULT_LABELS_CONTAINER, ResourceLabels } from '../../../../browser/labels.js';
-import { IDiffCommentsService } from './diffCommentsService.js';
-import { IDiffCommentsVariableEntry } from '../../common/attachments/chatVariableEntries.js';
+import { IAgentFeedbackService } from './agentFeedbackService.js';
+import { IAgentFeedbackVariableEntry } from '../../common/attachments/chatVariableEntries.js';
 
 /**
  * Creates the custom hover content for the "N comments" attachment.
- * Shows each comment with its file, range, text, and actions (remove / go to).
+ * Shows each feedback item with its file, range, text, and actions (remove / go to).
  */
-export class DiffCommentsHover extends Disposable {
+export class AgentFeedbackHover extends Disposable {
 
 	constructor(
 		private readonly _element: HTMLElement,
-		private readonly _attachment: IDiffCommentsVariableEntry,
+		private readonly _attachment: IAgentFeedbackVariableEntry,
 		@IHoverService private readonly _hoverService: IHoverService,
 		@IInstantiationService private readonly _instantiationService: IInstantiationService,
 		@IEditorService private readonly _editorService: IEditorService,
-		@IDiffCommentsService private readonly _diffCommentsService: IDiffCommentsService,
+		@IAgentFeedbackService private readonly _agentFeedbackService: IAgentFeedbackService,
 	) {
 		super();
 
@@ -63,57 +63,57 @@ export class DiffCommentsHover extends Disposable {
 
 	private _buildHoverContent(): { content: HTMLElement; style: HoverStyle; position: { hoverPosition: HoverPosition }; trapFocus: boolean; dispose: () => void } {
 		const disposables = new DisposableStore();
-		const hoverElement = dom.$('div.diff-comments-hover');
+		const hoverElement = dom.$('div.agent-feedback-hover');
 
-		const title = dom.$('div.diff-comments-hover-title');
-		title.textContent = this._attachment.comments.length === 1
-			? localize('diffCommentsHover.titleOne', "1 diff comment")
-			: localize('diffCommentsHover.titleMany', "{0} diff comments", this._attachment.comments.length);
+		const title = dom.$('div.agent-feedback-hover-title');
+		title.textContent = this._attachment.feedbackItems.length === 1
+			? localize('agentFeedbackHover.titleOne', "1 feedback comment")
+			: localize('agentFeedbackHover.titleMany', "{0} feedback comments", this._attachment.feedbackItems.length);
 		hoverElement.appendChild(title);
 
-		const list = dom.$('div.diff-comments-hover-list');
+		const list = dom.$('div.agent-feedback-hover-list');
 		hoverElement.appendChild(list);
 
 		// Create ResourceLabels for file icons
 		const resourceLabels = disposables.add(this._instantiationService.createInstance(ResourceLabels, DEFAULT_LABELS_CONTAINER));
 
-		// Group comments by file
-		const byFile = new Map<string, typeof this._attachment.comments[number][]>();
-		for (const comment of this._attachment.comments) {
-			const key = comment.resourceUri.toString();
+		// Group feedback items by file
+		const byFile = new Map<string, typeof this._attachment.feedbackItems[number][]>();
+		for (const item of this._attachment.feedbackItems) {
+			const key = item.resourceUri.toString();
 			let group = byFile.get(key);
 			if (!group) {
 				group = [];
 				byFile.set(key, group);
 			}
-			group.push(comment);
+			group.push(item);
 		}
 
-		for (const [, comments] of byFile) {
+		for (const [, items] of byFile) {
 			// File header with icon via ResourceLabels
-			const fileHeader = dom.$('div.diff-comments-hover-file-header');
+			const fileHeader = dom.$('div.agent-feedback-hover-file-header');
 			list.appendChild(fileHeader);
 			const label = resourceLabels.create(fileHeader);
-			label.setFile(comments[0].resourceUri, { hidePath: false });
+			label.setFile(items[0].resourceUri, { hidePath: false });
 
-			for (const comment of comments) {
-				const row = dom.$('div.diff-comments-hover-row');
+			for (const item of items) {
+				const row = dom.$('div.agent-feedback-hover-row');
 				list.appendChild(row);
 
-				// Comment text - clicking goes to location
-				const text = dom.$('div.diff-comments-hover-text');
-				text.textContent = comment.text;
+				// Feedback text - clicking goes to location
+				const text = dom.$('div.agent-feedback-hover-text');
+				text.textContent = item.text;
 				row.appendChild(text);
 
 				row.addEventListener('click', (e) => {
 					e.preventDefault();
 					e.stopPropagation();
-					this._goToComment(comment.resourceUri, comment.range);
+					this._goToFeedback(item.resourceUri, item.range);
 				});
 
 				// Remove button
-				const removeBtn = dom.$('a.diff-comments-hover-remove');
-				removeBtn.title = localize('diffCommentsHover.remove', "Remove comment");
+				const removeBtn = dom.$('a.agent-feedback-hover-remove');
+				removeBtn.title = localize('agentFeedbackHover.remove', "Remove feedback");
 				const removeIcon = dom.$('span');
 				removeIcon.classList.add(...ThemeIcon.asClassNameArray(Codicon.close));
 				removeBtn.appendChild(removeIcon);
@@ -122,7 +122,7 @@ export class DiffCommentsHover extends Disposable {
 				removeBtn.addEventListener('click', (e) => {
 					e.preventDefault();
 					e.stopPropagation();
-					this._diffCommentsService.removeComment(this._attachment.sessionResource, comment.id);
+					this._agentFeedbackService.removeFeedback(this._attachment.sessionResource, item.id);
 				});
 			}
 		}
@@ -136,7 +136,7 @@ export class DiffCommentsHover extends Disposable {
 		};
 	}
 
-	private _goToComment(resourceUri: URI, range: IRange): void {
+	private _goToFeedback(resourceUri: URI, range: IRange): void {
 		this._editorService.openEditor({
 			resource: resourceUri,
 			options: {

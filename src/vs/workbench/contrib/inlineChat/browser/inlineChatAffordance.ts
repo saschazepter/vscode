@@ -14,7 +14,7 @@ import { IConfigurationService } from '../../../../platform/configuration/common
 import { observableConfigValue } from '../../../../platform/observable/common/platformObservableUtils.js';
 import { IChatEntitlementService } from '../../../services/chat/common/chatEntitlementService.js';
 import { InlineChatEditorAffordance } from './inlineChatEditorAffordance.js';
-import { InlineChatInputWidget } from './inlineChatOverlayWidget.js';
+import { IInlineChatInputHandler, InlineChatInputWidget } from './inlineChatOverlayWidget.js';
 import { InlineChatGutterAffordance } from './inlineChatGutterAffordance.js';
 import { Selection, SelectionDirection } from '../../../../editor/common/core/selection.js';
 import { assertType } from '../../../../base/common/types.js';
@@ -27,7 +27,8 @@ import { IRange, Range } from '../../../../editor/common/core/range.js';
 import { KeyCode } from '../../../../base/common/keyCodes.js';
 import { IChatWidgetService } from '../../chat/browser/chat.js';
 import { Event } from '../../../../base/common/event.js';
-import { IDiffCommentsService } from '../../chat/browser/diffComments/diffCommentsService.js';
+import { IAgentFeedbackService } from '../../chat/browser/agentFeedback/agentFeedbackService.js';
+import { localize } from '../../../../nls.js';
 
 export class InlineChatAffordance extends Disposable {
 
@@ -37,12 +38,7 @@ export class InlineChatAffordance extends Disposable {
 		private readonly _editor: ICodeEditor,
 		private readonly _inputWidget: InlineChatInputWidget,
 		@IInstantiationService private readonly _instantiationService: IInstantiationService,
-		@IConfigurationService configurationService: IConfigurationService,
-		@IChatEntitlementService chatEntitlementService: IChatEntitlementService,
-		@IInlineChatSessionService inlineChatSessionService: IInlineChatSessionService,
 		@ICodeEditorService codeEditorService: ICodeEditorService,
-		@IChatWidgetService chatWidgetService: IChatWidgetService,
-		@IDiffCommentsService diffCommentsService: IDiffCommentsService,
 	) {
 		super();
 
@@ -76,17 +72,18 @@ export class InlineChatAffordance extends Disposable {
 		const isDiffModifiedEditorObs = derived(r => !!diffInfoObs.read(r));
 
 		// --- Shared selection tracking ---
-		const selectionData = this._store.add(new SelectionTracker(editorObs, this._editor, diffMappings, chatEntitlementService, inlineChatSessionService)).selectionData;
+		const selectionData = this._store.add(this._instantiationService.createInstance(SelectionTracker, editorObs, this._editor, diffMappings)).selectionData;
 
 		// --- Mode-specific delegates ---
-		this._store.add(new NormalEditorAffordance(
-			this._instantiationService, editorObs, this._editor,
-			configurationService, selectionData, isDiffModifiedEditorObs, this._menuData
+		this._store.add(this._instantiationService.createInstance(
+			NormalEditorAffordance, editorObs, this._editor,
+			selectionData, isDiffModifiedEditorObs, this._menuData
 		));
 
-		this._store.add(new DiffEditorAffordance(
+		this._store.add(this._instantiationService.createInstance(
+			AgentFeedbackAffordance,
 			this._editor, this._inputWidget, selectionData, diffInfoObs,
-			diffMappings, isDiffModifiedEditorObs, this._menuData, chatWidgetService, diffCommentsService
+			diffMappings, isDiffModifiedEditorObs, this._menuData
 		));
 
 		// --- Shared: bridge _menuData → input widget show/hide ---
@@ -150,8 +147,8 @@ class SelectionTracker extends Disposable {
 		editorObs: ObservableCodeEditor,
 		editor: ICodeEditor,
 		diffMappings: IObservable<readonly DetailedLineRangeMapping[] | undefined>,
-		chatEntitlementService: IChatEntitlementService,
-		inlineChatSessionService: IInlineChatSessionService,
+		@IChatEntitlementService chatEntitlementService: IChatEntitlementService,
+		@IInlineChatSessionService inlineChatSessionService: IInlineChatSessionService,
 	) {
 		super();
 
@@ -219,13 +216,13 @@ class SelectionTracker extends Disposable {
 class NormalEditorAffordance extends Disposable {
 
 	constructor(
-		instantiationService: IInstantiationService,
 		editorObs: ObservableCodeEditor,
 		editor: ICodeEditor,
-		configurationService: IConfigurationService,
 		selectionData: IObservable<Selection | undefined>,
 		isDiffModifiedEditorObs: IObservable<boolean>,
 		menuData: ISettableObservable<{ rect: DOMRect; above: boolean; lineNumber: number } | undefined>,
+		@IInstantiationService instantiationService: IInstantiationService,
+		@IConfigurationService configurationService: IConfigurationService,
 	) {
 		super();
 
@@ -251,14 +248,14 @@ class NormalEditorAffordance extends Disposable {
 type MenuData = { rect: DOMRect; above: boolean; lineNumber: number };
 
 /**
- * Manages the diff-editor-specific affordance:
+ * Manages the agent feedback affordance:
  * - Auto-shows the input widget on selections/cursor on diff lines
  * - Intercepts keyboard input to redirect typing into the input widget
- * - Submits prompts to the chat widget with the diff hunk as attachment
+ * - Submits feedback to the agent feedback service
  */
-class DiffEditorAffordance extends Disposable {
+class AgentFeedbackAffordance extends Disposable {
 
-	private readonly _diffDisposables = this._store.add(new DisposableStore());
+	private readonly _feedbackDisposables = this._store.add(new DisposableStore());
 
 	constructor(
 		private readonly _editor: ICodeEditor,
@@ -268,16 +265,15 @@ class DiffEditorAffordance extends Disposable {
 		private readonly _diffMappings: IObservable<readonly DetailedLineRangeMapping[] | undefined>,
 		isDiffModifiedEditorObs: IObservable<boolean>,
 		private readonly _menuData: ISettableObservable<MenuData | undefined>,
-		private readonly _chatWidgetService: IChatWidgetService,
-		private readonly _diffCommentsService: IDiffCommentsService,
+		@IInstantiationService private readonly _instantiationService: IInstantiationService,
 	) {
 		super();
 
 		// React to diff editor appearing/disappearing
 		this._store.add(autorun(r => {
 			const info = diffInfoObs.read(r);
-			this._diffDisposables.clear();
-			this._inputWidget.setCustomSubmitHandler(undefined);
+			this._feedbackDisposables.clear();
+			this._inputWidget.setCustomHandler(undefined);
 
 			if (!info) {
 				return;
@@ -304,44 +300,16 @@ class DiffEditorAffordance extends Disposable {
 	}
 
 	private _setupSubmitHandler(): void {
-		this._inputWidget.setCustomSubmitHandler(async (text) => {
-			const model = this._editor.getModel();
-			if (!model) {
-				return;
-			}
-
-			// Determine the session resource from the last focused chat widget
-			const widget = this._chatWidgetService.lastFocusedWidget;
-			const sessionResource = widget?.viewModel?.sessionResource;
-			if (!sessionResource) {
-				return;
-			}
-
-			// Determine the range for this comment
-			let range: IRange | undefined;
-			const sel = this._selectionData.read(undefined);
-			if (sel && !sel.isEmpty()) {
-				range = Range.lift(sel);
-			} else if (sel) {
-				const cursorLine = sel.getPosition().lineNumber;
-				const mappings = this._diffMappings.read(undefined);
-				const mapping = mappings?.find(m => m.modified.contains(cursorLine));
-				if (mapping) {
-					range = mapping.modified.toInclusiveRange() ?? undefined;
-				}
-			}
-
-			if (!range) {
-				return;
-			}
-
-			// Create a comment via the service (this also updates the chat attachment)
-			this._diffCommentsService.addComment(sessionResource, model.uri, range, text);
-		});
+		this._inputWidget.setCustomHandler(this._instantiationService.createInstance(
+			AgentFeedbackInputHandler,
+			this._editor,
+			this._selectionData,
+			this._diffMappings,
+		));
 	}
 
 	private _setupKeyboardInterception(): void {
-		this._diffDisposables.add(this._editor.onKeyDown(e => {
+		this._feedbackDisposables.add(this._editor.onKeyDown(e => {
 			if (this._inputWidget.position.read(undefined) === null || this._inputWidget.isFocused) {
 				return;
 			}
@@ -391,6 +359,59 @@ class DiffEditorAffordance extends Disposable {
 			above,
 			lineNumber,
 		}, undefined);
+	}
+}
+
+class AgentFeedbackInputHandler implements IInlineChatInputHandler {
+
+	readonly menuId = undefined;
+	readonly dismissOnEscape = true;
+
+	constructor(
+		private readonly _editor: ICodeEditor,
+		private readonly _selectionData: IObservable<Selection | undefined>,
+		private readonly _diffMappings: IObservable<readonly DetailedLineRangeMapping[] | undefined>,
+		@IChatWidgetService private readonly _chatWidgetService: IChatWidgetService,
+		@IAgentFeedbackService private readonly _agentFeedbackService: IAgentFeedbackService,
+	) { }
+
+	getPlaceholder(_hasSelection: boolean): string {
+		return localize('placeholderAgentFeedback', "Add feedback");
+	}
+
+	submit(text: string): void {
+		const model = this._editor.getModel();
+		if (!model) {
+			return;
+		}
+
+		// Determine the session resource from the last focused chat widget
+		const widget = this._chatWidgetService.lastFocusedWidget;
+		const sessionResource = widget?.viewModel?.sessionResource;
+		if (!sessionResource) {
+			return;
+		}
+
+		// Determine the range for this comment
+		let range: IRange | undefined;
+		const sel = this._selectionData.read(undefined);
+		if (sel && !sel.isEmpty()) {
+			range = Range.lift(sel);
+		} else if (sel) {
+			const cursorLine = sel.getPosition().lineNumber;
+			const mappings = this._diffMappings.read(undefined);
+			const mapping = mappings?.find(m => m.modified.contains(cursorLine));
+			if (mapping) {
+				range = mapping.modified.toInclusiveRange() ?? undefined;
+			}
+		}
+
+		if (!range) {
+			return;
+		}
+
+		// Submit feedback via the agent feedback service
+		this._agentFeedbackService.addFeedback(sessionResource, model.uri, range, text);
 	}
 }
 

@@ -41,6 +41,13 @@ import { Range } from '../../../../editor/common/core/range.js';
 import { CancelChatActionId } from '../../chat/browser/actions/chatExecuteActions.js';
 import { assertType } from '../../../../base/common/types.js';
 
+export interface IInlineChatInputHandler {
+	readonly menuId: MenuId | undefined;
+	readonly dismissOnEscape: boolean;
+	getPlaceholder(hasSelection: boolean): string;
+	submit(text: string): void;
+}
+
 /**
  * Overlay widget that displays a vertical action bar menu.
  */
@@ -57,7 +64,7 @@ export class InlineChatInputWidget extends Disposable {
 	private readonly _showStore = this._store.add(new DisposableStore());
 	private readonly _stickyScrollHeight: IObservable<number>;
 	private _inlineStartAction: IAction | undefined;
-	private _customSubmitHandler: ((text: string) => void) | undefined;
+	private _handler: IInlineChatInputHandler | undefined;
 	private _anchorLineNumber: number = 0;
 	private _anchorLeft: number = 0;
 	private _anchorAbove: boolean = false;
@@ -119,8 +126,8 @@ export class InlineChatInputWidget extends Disposable {
 			const hasSelection = selection && !selection.isEmpty();
 
 			let placeholderText: string;
-			if (this._customSubmitHandler) {
-				placeholderText = localize('placeholderDiffFeedback', "Describe changes...");
+			if (this._handler) {
+				placeholderText = this._handler.getPlaceholder(!!hasSelection);
 			} else if (hasSelection) {
 				placeholderText = localize('placeholderWithSelection', "Modify selected code");
 			} else {
@@ -141,10 +148,10 @@ export class InlineChatInputWidget extends Disposable {
 		this._store.add(this._input.onKeyDown(e => {
 			if (e.keyCode === KeyCode.Enter && !e.shiftKey) {
 				const value = this._input.getModel().getValue() ?? '';
-				if (this._customSubmitHandler && value) {
+				if (this._handler && value) {
 					e.preventDefault();
 					e.stopPropagation();
-					this._customSubmitHandler(value);
+					this._handler.submit(value);
 					this._hide();
 				} else if (this._inlineStartAction && value) {
 					e.preventDefault();
@@ -155,9 +162,9 @@ export class InlineChatInputWidget extends Disposable {
 					);
 				}
 			} else if (e.keyCode === KeyCode.Escape) {
-				// In custom submit mode, always hide on Escape; otherwise only when empty
 				const value = this._input.getModel().getValue() ?? '';
-				if (this._customSubmitHandler || !value) {
+				const alwaysDismiss = this._handler?.dismissOnEscape ?? false;
+				if (alwaysDismiss || !value) {
 					e.preventDefault();
 					e.stopPropagation();
 					this._hide();
@@ -202,11 +209,11 @@ export class InlineChatInputWidget extends Disposable {
 	}
 
 	/**
-	 * Set a custom submit handler. When set, Enter submits via this handler
-	 * instead of the default inline chat action.
+	 * Set a handler that provides custom placeholder text and submit behavior.
+	 * When set, the action bar is hidden and Enter submits via the handler.
 	 */
-	setCustomSubmitHandler(handler: ((text: string) => void) | undefined): void {
-		this._customSubmitHandler = handler;
+	setCustomHandler(handler: IInlineChatInputHandler | undefined): void {
+		this._handler = handler;
 	}
 
 	/**
@@ -338,15 +345,15 @@ export class InlineChatInputWidget extends Disposable {
 		this._actionBar.clear();
 		this._inlineStartAction = undefined;
 
-		// When using a custom submit handler, hide the action bar entirely
-		if (this._customSubmitHandler) {
+		if (this._handler && !this._handler.menuId) {
 			this._actionBar.domNode.style.display = 'none';
 			return;
 		}
 		this._actionBar.domNode.style.display = '';
 
 		// Get fresh actions from menu
-		const actions = getFlatActionBarActions(this._menuService.getMenuActions(MenuId.ChatEditorInlineGutter, this._contextKeyService, { shouldForwardArgs: true }));
+		const menuId = this._handler?.menuId ?? MenuId.ChatEditorInlineGutter;
+		const actions = getFlatActionBarActions(this._menuService.getMenuActions(menuId, this._contextKeyService, { shouldForwardArgs: true }));
 
 		// Set actions with keybindings (skip ACTION_START since we have the input editor)
 		for (const action of actions) {

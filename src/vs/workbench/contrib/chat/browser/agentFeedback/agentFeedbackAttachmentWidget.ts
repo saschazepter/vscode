@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import './media/diffCommentsAttachment.css';
+import './media/agentFeedbackAttachment.css';
 import * as dom from '../../../../../base/browser/dom.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { ThemeIcon } from '../../../../../base/common/themables.js';
@@ -11,14 +11,14 @@ import { Disposable } from '../../../../../base/common/lifecycle.js';
 import * as event from '../../../../../base/common/event.js';
 import { localize } from '../../../../../nls.js';
 import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
-import { IDiffCommentsVariableEntry } from '../../common/attachments/chatVariableEntries.js';
-import { DiffCommentsHover } from './diffCommentsHover.js';
+import { IAgentFeedbackVariableEntry } from '../../common/attachments/chatVariableEntries.js';
+import { AgentFeedbackHover } from './agentFeedbackHover.js';
 
 /**
  * Attachment widget that renders "N comments" with a comment icon
- * and a custom hover showing all comments with actions.
+ * and a custom hover showing all feedback items with actions.
  */
-export class DiffCommentsAttachmentWidget extends Disposable {
+export class AgentFeedbackAttachmentWidget extends Disposable {
 
 	readonly element: HTMLElement;
 
@@ -29,14 +29,14 @@ export class DiffCommentsAttachmentWidget extends Disposable {
 	readonly onDidOpen = this._onDidOpen.event;
 
 	constructor(
-		private readonly _attachment: IDiffCommentsVariableEntry,
+		private readonly _attachment: IAgentFeedbackVariableEntry,
 		options: { shouldFocusClearButton: boolean; supportsDeletion: boolean },
 		container: HTMLElement,
 		@IInstantiationService private readonly _instantiationService: IInstantiationService,
 	) {
 		super();
 
-		this.element = dom.append(container, dom.$('.chat-attached-context-attachment.diff-comments-attachment'));
+		this.element = dom.append(container, dom.$('.chat-attached-context-attachment.agent-feedback-attachment'));
 		this.element.tabIndex = 0;
 		this.element.role = 'button';
 
@@ -68,9 +68,9 @@ export class DiffCommentsAttachmentWidget extends Disposable {
 		}
 
 		// Aria label
-		this.element.ariaLabel = localize('chat.diffComments', "Attached diff comments, {0}", this._attachment.name);
+		this.element.ariaLabel = localize('chat.agentFeedback', "Attached agent feedback, {0}", this._attachment.name);
 
 		// Custom interactive hover
-		this._store.add(this._instantiationService.createInstance(DiffCommentsHover, this.element, this._attachment));
+		this._store.add(this._instantiationService.createInstance(AgentFeedbackHover, this.element, this._attachment));
 	}
 }
