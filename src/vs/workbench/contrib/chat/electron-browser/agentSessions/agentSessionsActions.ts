@@ -11,7 +11,7 @@ import { ChatEntitlementContextKeys } from '../../../../services/chat/common/cha
 import { CHAT_CATEGORY } from '../../browser/actions/chatActions.js';
 import { ProductQualityContext } from '../../../../../platform/contextkey/common/contextkeys.js';
 
-export class SessionsWindowAction extends Action2 {
+export class OpenSessionsWindowAction extends Action2 {
 	constructor() {
 		super({
 			id: 'workbench.action.openSessionsWindow',
