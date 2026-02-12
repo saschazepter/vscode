@@ -26,6 +26,7 @@ export const IChatTipService = createDecorator<IChatTipService>('chatTipService'
 export interface IChatTip {
 	readonly id: string;
 	readonly content: MarkdownString;
+	readonly enabledCommands?: readonly string[];
 }
 
 export interface IChatTipService {
@@ -67,7 +68,7 @@ export interface IChatTipService {
 
 	/**
 	 * Dismisses the current tip and allows a new one to be picked for the same request.
-	 * The dismissed tip will not be shown again in this workspace.
+	 * The dismissed tip will not be shown again in this profile.
 	 */
 	dismissTip(): void;
 
@@ -543,7 +544,7 @@ export class ChatTipService extends Disposable implements IChatTipService {
 		if (this._shownTip) {
 			const dismissed = this._getDismissedTipIds();
 			dismissed.push(this._shownTip.id);
-			this._storageService.store(ChatTipService._DISMISSED_TIP_KEY, JSON.stringify(dismissed), StorageScope.WORKSPACE, StorageTarget.MACHINE);
+			this._storageService.store(ChatTipService._DISMISSED_TIP_KEY, JSON.stringify(dismissed), StorageScope.PROFILE, StorageTarget.MACHINE);
 		}
 		this._hasShownRequestTip = false;
 		this._shownTip = undefined;
@@ -552,7 +553,7 @@ export class ChatTipService extends Disposable implements IChatTipService {
 	}
 
 	private _getDismissedTipIds(): string[] {
-		const raw = this._storageService.get(ChatTipService._DISMISSED_TIP_KEY, StorageScope.WORKSPACE);
+		const raw = this._storageService.get(ChatTipService._DISMISSED_TIP_KEY, StorageScope.PROFILE);
 		if (!raw) {
 			return [];
 		}
@@ -600,6 +601,14 @@ export class ChatTipService extends Disposable implements IChatTipService {
 			return this._createTip(this._shownTip);
 		}
 
+		// A new request arrived while we already showed a tip, hide the old one
+		if (this._hasShownRequestTip && this._tipRequestId && this._tipRequestId !== requestId) {
+			this._shownTip = undefined;
+			this._tipRequestId = undefined;
+			this._onDidDismissTip.fire();
+			return undefined;
+		}
+
 		// Only show one tip per session
 		if (this._hasShownRequestTip) {
 			return undefined;
@@ -643,7 +652,7 @@ export class ChatTipService extends Disposable implements IChatTipService {
 		let selectedTip: ITipDefinition | undefined;
 
 		// Determine where to start in the catalog based on the last-shown tip.
-		const lastTipId = this._storageService.get(ChatTipService._LAST_TIP_ID_KEY, StorageScope.WORKSPACE);
+		const lastTipId = this._storageService.get(ChatTipService._LAST_TIP_ID_KEY, StorageScope.PROFILE);
 		const lastCatalogIndex = lastTipId ? TIP_CATALOG.findIndex(tip => tip.id === lastTipId) : -1;
 		const startIndex = lastCatalogIndex === -1 ? 0 : (lastCatalogIndex + 1) % TIP_CATALOG.length;
 
@@ -679,7 +688,7 @@ export class ChatTipService extends Disposable implements IChatTipService {
 		}
 
 		// Persist the selected tip id so the next use advances to the following one.
-		this._storageService.store(ChatTipService._LAST_TIP_ID_KEY, selectedTip.id, StorageScope.WORKSPACE, StorageTarget.MACHINE);
+		this._storageService.store(ChatTipService._LAST_TIP_ID_KEY, selectedTip.id, StorageScope.PROFILE, StorageTarget.USER);
 
 		// Record that we've shown a tip this session
 		this._hasShownRequestTip = sourceId !== 'welcome';
@@ -713,6 +722,7 @@ export class ChatTipService extends Disposable implements IChatTipService {
 		return {
 			id: tipDef.id,
 			content: markdown,
+			enabledCommands: tipDef.enabledCommands,
 		};
 	}
 }
