@@ -12,7 +12,7 @@ import { registerSingleton, InstantiationType } from '../../../../../platform/in
 import { Registry } from '../../../../../platform/registry/common/platform.js';
 import { Extensions as QuickAccessExtensions, IQuickAccessRegistry } from '../../../../../platform/quickinput/common/quickAccess.js';
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
-import { AgentSessionsViewerOrientation, AgentSessionsViewerPosition, AgentSessionsViewId } from './agentSessions.js';
+import { AgentSessionsViewerOrientation, AgentSessionsViewerPosition } from './agentSessions.js';
 import { IAgentSessionsService, AgentSessionsService } from './agentSessionsService.js';
 import { LocalAgentsSessionsController } from './localAgentSessionsController.js';
 import { registerWorkbenchContribution2, WorkbenchPhase } from '../../../../common/contributions.js';
@@ -26,17 +26,6 @@ import { registerIcon } from '../../../../../platform/theme/common/iconRegistry.
 export const agentSessionsViewIcon = registerIcon('chat-sessions-icon', Codicon.commentDiscussionSparkle, localize('agentSessionsViewIcon', 'Icon for Agent Sessions View'));
 
 export const AGENT_SESSIONS_VIEW_TITLE = localize2('agentSessions.view.label', "Sessions");
-
-// --- Agent Sessions View Toolbar
-
-MenuRegistry.appendMenuItem(MenuId.ViewTitle, {
-	submenu: MenuId.AgentSessionsViewFilterSubMenu,
-	title: localize2('filterAgentSessions', "Filter Agent Sessions"),
-	group: 'navigation',
-	order: 3,
-	icon: Codicon.filter,
-	when: ContextKeyExpr.equals('view', AgentSessionsViewId)
-} satisfies ISubmenuItem);
 
 //#endregion
 

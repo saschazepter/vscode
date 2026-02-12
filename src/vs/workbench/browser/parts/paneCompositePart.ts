@@ -7,7 +7,7 @@ import './media/paneCompositePart.css';
 import { Event } from '../../../base/common/event.js';
 import { IInstantiationService } from '../../../platform/instantiation/common/instantiation.js';
 import { IProgressIndicator } from '../../../platform/progress/common/progress.js';
-import { Extensions, PaneComposite, PaneCompositeDescriptor, PaneCompositeRegistry } from '../panecomposite.js';
+import { PaneComposite, PaneCompositeDescriptor, PaneCompositeRegistry } from '../panecomposite.js';
 import { IPaneComposite } from '../../common/panecomposite.js';
 import { IViewDescriptorService, ViewContainerLocation } from '../../common/views.js';
 import { DisposableStore, MutableDisposable } from '../../../base/common/lifecycle.js';
@@ -117,7 +117,6 @@ export abstract class AbstractPaneCompositePart extends CompositePart<PaneCompos
 	get onDidPaneCompositeOpen(): Event<IPaneComposite> { return Event.map(this.onDidCompositeOpen.event, compositeEvent => <IPaneComposite>compositeEvent.composite); }
 	readonly onDidPaneCompositeClose = this.onDidCompositeClose.event as Event<IPaneComposite>;
 
-	private readonly location: ViewContainerLocation;
 	private titleContainer: HTMLElement | undefined;
 	private headerFooterCompositeBarContainer: HTMLElement | undefined;
 	protected readonly headerFooterCompositeBarDispoables = this._register(new DisposableStore());
@@ -126,7 +125,6 @@ export abstract class AbstractPaneCompositePart extends CompositePart<PaneCompos
 	private compositeBarPosition: CompositeBarPosition | undefined = undefined;
 	private emptyPaneMessageElement: HTMLElement | undefined;
 
-	private readonly globalActionsMenuId: MenuId;
 	private globalToolBar: MenuWorkbenchToolBar | undefined;
 	private globalLeftToolBar: MenuWorkbenchToolBar | undefined;
 
@@ -143,6 +141,9 @@ export abstract class AbstractPaneCompositePart extends CompositePart<PaneCompos
 		compositeCSSClass: string,
 		titleForegroundColor: string | undefined,
 		titleBorderColor: string | undefined,
+		private readonly location: ViewContainerLocation,
+		registryId: string,
+		private readonly globalActionsMenuId: MenuId,
 		@INotificationService notificationService: INotificationService,
 		@IStorageService storageService: IStorageService,
 		@IContextMenuService contextMenuService: IContextMenuService,
@@ -156,22 +157,6 @@ export abstract class AbstractPaneCompositePart extends CompositePart<PaneCompos
 		@IExtensionService private readonly extensionService: IExtensionService,
 		@IMenuService protected readonly menuService: IMenuService,
 	) {
-		let location = ViewContainerLocation.Sidebar;
-		let registryId = Extensions.Viewlets;
-		let globalActionsMenuId = MenuId.SidebarTitle;
-		if (partId === Parts.PANEL_PART) {
-			location = ViewContainerLocation.Panel;
-			registryId = Extensions.Panels;
-			globalActionsMenuId = MenuId.PanelTitle;
-		} else if (partId === Parts.AUXILIARYBAR_PART) {
-			location = ViewContainerLocation.AuxiliaryBar;
-			registryId = Extensions.Auxiliary;
-			globalActionsMenuId = MenuId.AuxiliaryBarTitle;
-		} else if (partId === Parts.CHATBAR_PART) {
-			location = ViewContainerLocation.ChatBar;
-			registryId = Extensions.ChatBar;
-			globalActionsMenuId = MenuId.ChatBarTitle;
-		}
 		super(
 			notificationService,
 			storageService,
@@ -191,9 +176,6 @@ export abstract class AbstractPaneCompositePart extends CompositePart<PaneCompos
 			partId,
 			partOptions
 		);
-
-		this.location = location;
-		this.globalActionsMenuId = globalActionsMenuId;
 		this.registerListeners();
 	}
 

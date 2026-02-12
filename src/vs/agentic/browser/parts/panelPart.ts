@@ -19,14 +19,15 @@ import { INotificationService } from '../../../platform/notification/common/noti
 import { IContextKeyService } from '../../../platform/contextkey/common/contextkey.js';
 import { assertReturnsDefined } from '../../../base/common/types.js';
 import { IExtensionService } from '../../../workbench/services/extensions/common/extensions.js';
-import { IViewDescriptorService } from '../../../workbench/common/views.js';
+import { IViewDescriptorService, ViewContainerLocation } from '../../../workbench/common/views.js';
 import { HoverPosition } from '../../../base/browser/ui/hover/hoverWidget.js';
-import { IMenuService } from '../../../platform/actions/common/actions.js';
+import { IMenuService, MenuId } from '../../../platform/actions/common/actions.js';
 import { AbstractPaneCompositePart, CompositeBarPosition } from '../../../workbench/browser/parts/paneCompositePart.js';
 import { Part } from '../../../workbench/browser/part.js';
 import { IPaneCompositeBarOptions } from '../../../workbench/browser/parts/paneCompositeBar.js';
 import { IHoverService } from '../../../platform/hover/browser/hover.js';
 import { IConfigurationService } from '../../../platform/configuration/common/configuration.js';
+import { Extensions } from '../../../workbench/browser/panecomposite.js';
 
 /**
  * Panel part specifically for agent sessions workbench.
@@ -94,6 +95,9 @@ export class PanelPart extends AbstractPaneCompositePart {
 			'panel',
 			undefined,
 			PANEL_TITLE_BORDER,
+			ViewContainerLocation.Panel,
+			Extensions.Panels,
+			MenuId.PanelTitle,
 			notificationService,
 			storageService,
 			contextMenuService,

@@ -10,7 +10,7 @@ import { Codicon } from '../../../../base/common/codicons.js';
 import { autorun } from '../../../../base/common/observable.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { URI } from '../../../../base/common/uri.js';
-import { IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
+import { ContextKeyExpr, IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { IContextMenuService } from '../../../../platform/contextview/browser/contextView.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { IKeybindingService } from '../../../../platform/keybinding/common/keybinding.js';
@@ -20,11 +20,11 @@ import { IViewPaneOptions, ViewPane } from '../../../../workbench/browser/parts/
 import { IViewDescriptorService, ViewContainerLocation } from '../../../../workbench/common/views.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { IHoverService } from '../../../../platform/hover/browser/hover.js';
-import { localize } from '../../../../nls.js';
+import { localize, localize2 } from '../../../../nls.js';
 import { AgentSessionsControl } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsControl.js';
 import { AgentSessionsFilter, AgentSessionsGrouping } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsFilter.js';
 import { IActiveSessionService } from './activeSessionService.js';
-import { MenuId } from '../../../../platform/actions/common/actions.js';
+import { ISubmenuItem, MenuId, MenuRegistry } from '../../../../platform/actions/common/actions.js';
 import { MenuWorkbenchToolBar } from '../../../../platform/actions/browser/toolbar.js';
 import { HoverPosition } from '../../../../base/browser/ui/hover/hoverWidget.js';
 import { IWorkbenchLayoutService } from '../../../../workbench/services/layout/browser/layoutService.js';
@@ -45,6 +45,8 @@ import { IStorageService, StorageScope, StorageTarget } from '../../../../platfo
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
 
 const $ = DOM.$;
+export const SessionsViewId = 'agentic.workbench.view.sessionsView';
+const SessionsViewFilterSubMenu = new MenuId('AgentSessionsViewFilterSubMenu');
 
 /**
  * Per-source breakdown of item counts.
@@ -142,7 +144,7 @@ export class AgenticSessionsViewPane extends ViewPane {
 
 		// Sessions Filter (actions go to view title bar via menu registration)
 		const sessionsFilter = this._register(this.instantiationService.createInstance(AgentSessionsFilter, {
-			filterMenuId: MenuId.AgentSessionsViewFilterSubMenu,
+			filterMenuId: SessionsViewFilterSubMenu,
 			groupResults: () => AgentSessionsGrouping.Date
 		}));
 
@@ -437,3 +439,12 @@ export class AgenticSessionsViewPane extends ViewPane {
 		this.sessionsControl?.openFind();
 	}
 }
+
+MenuRegistry.appendMenuItem(MenuId.ViewTitle, {
+	submenu: SessionsViewFilterSubMenu,
+	title: localize2('filterAgentSessions', "Filter Agent Sessions"),
+	group: 'navigation',
+	order: 3,
+	icon: Codicon.filter,
+	when: ContextKeyExpr.equals('view', SessionsViewId)
+} satisfies ISubmenuItem);

@@ -14,7 +14,7 @@ import { IThemeService } from '../../../platform/theme/common/themeService.js';
 import { ActiveAuxiliaryContext, AuxiliaryBarFocusContext } from '../../../workbench/common/contextkeys.js';
 import { ACTIVITY_BAR_BADGE_BACKGROUND, ACTIVITY_BAR_BADGE_FOREGROUND, ACTIVITY_BAR_TOP_ACTIVE_BORDER, ACTIVITY_BAR_TOP_DRAG_AND_DROP_BORDER, ACTIVITY_BAR_TOP_FOREGROUND, ACTIVITY_BAR_TOP_INACTIVE_FOREGROUND, PANEL_ACTIVE_TITLE_BORDER, PANEL_ACTIVE_TITLE_FOREGROUND, PANEL_DRAG_AND_DROP_BORDER, PANEL_INACTIVE_TITLE_FOREGROUND, SIDE_BAR_BACKGROUND, SIDE_BAR_BORDER, SIDE_BAR_TITLE_BORDER, SIDE_BAR_FOREGROUND } from '../../../workbench/common/theme.js';
 import { contrastBorder } from '../../../platform/theme/common/colorRegistry.js';
-import { IViewDescriptorService } from '../../../workbench/common/views.js';
+import { IViewDescriptorService, ViewContainerLocation } from '../../../workbench/common/views.js';
 import { IExtensionService } from '../../../workbench/services/extensions/common/extensions.js';
 import { IWorkbenchLayoutService, Parts } from '../../../workbench/services/layout/browser/layoutService.js';
 import { HoverPosition } from '../../../base/browser/ui/hover/hoverWidget.js';
@@ -32,6 +32,7 @@ import { DropdownWithPrimaryActionViewItem } from '../../../platform/actions/bro
 import { IBaseActionViewItemOptions } from '../../../base/browser/ui/actionbar/actionViewItems.js';
 import { getFlatContextMenuActions } from '../../../platform/actions/browser/menuEntryActionViewItem.js';
 import { IDisposable, MutableDisposable } from '../../../base/common/lifecycle.js';
+import { Extensions } from '../../../workbench/browser/panecomposite.js';
 
 /**
  * Auxiliary bar part specifically for agent sessions workbench.
@@ -113,6 +114,9 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 			'auxiliarybar',
 			undefined,
 			SIDE_BAR_TITLE_BORDER,
+			ViewContainerLocation.AuxiliaryBar,
+			Extensions.Auxiliary,
+			MenuId.AuxiliaryBarTitle,
 			notificationService,
 			storageService,
 			contextMenuService,

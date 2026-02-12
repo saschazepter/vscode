@@ -19,15 +19,16 @@ import { AnchorAlignment } from '../../../base/browser/ui/contextview/contextvie
 import { IExtensionService } from '../../../workbench/services/extensions/common/extensions.js';
 import { LayoutPriority } from '../../../base/browser/ui/grid/grid.js';
 import { assertReturnsDefined } from '../../../base/common/types.js';
-import { IViewDescriptorService } from '../../../workbench/common/views.js';
+import { IViewDescriptorService, ViewContainerLocation } from '../../../workbench/common/views.js';
 import { AbstractPaneCompositePart, CompositeBarPosition } from '../../../workbench/browser/parts/paneCompositePart.js';
 import { Part } from '../../../workbench/browser/part.js';
 import { ActionsOrientation } from '../../../base/browser/ui/actionbar/actionbar.js';
 import { HoverPosition } from '../../../base/browser/ui/hover/hoverWidget.js';
 import { IPaneCompositeBarOptions } from '../../../workbench/browser/parts/paneCompositeBar.js';
-import { IMenuService } from '../../../platform/actions/common/actions.js';
+import { IMenuService, MenuId } from '../../../platform/actions/common/actions.js';
 import { Separator } from '../../../base/common/actions.js';
 import { IHoverService } from '../../../platform/hover/browser/hover.js';
+import { Extensions } from '../../../workbench/browser/panecomposite.js';
 
 /**
  * Sidebar part specifically for agent sessions workbench.
@@ -97,6 +98,9 @@ export class SidebarPart extends AbstractPaneCompositePart {
 			'viewlet',
 			SIDE_BAR_TITLE_FOREGROUND,
 			SIDE_BAR_TITLE_BORDER,
+			ViewContainerLocation.Sidebar,
+			Extensions.Viewlets,
+			MenuId.SidebarTitle,
 			notificationService,
 			storageService,
 			contextMenuService,

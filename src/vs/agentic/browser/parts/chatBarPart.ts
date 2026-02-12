@@ -13,7 +13,7 @@ import { IStorageService } from '../../../platform/storage/common/storage.js';
 import { IThemeService } from '../../../platform/theme/common/themeService.js';
 import { ActiveChatBarContext, ChatBarFocusContext } from '../../../workbench/common/contextkeys.js';
 import { ACTIVITY_BAR_BADGE_BACKGROUND, ACTIVITY_BAR_BADGE_FOREGROUND, PANEL_ACTIVE_TITLE_BORDER, PANEL_ACTIVE_TITLE_FOREGROUND, PANEL_DRAG_AND_DROP_BORDER, PANEL_INACTIVE_TITLE_FOREGROUND, SIDE_BAR_BACKGROUND, SIDE_BAR_TITLE_BORDER, SIDE_BAR_FOREGROUND } from '../../../workbench/common/theme.js';
-import { IViewDescriptorService } from '../../../workbench/common/views.js';
+import { IViewDescriptorService, ViewContainerLocation } from '../../../workbench/common/views.js';
 import { IExtensionService } from '../../../workbench/services/extensions/common/extensions.js';
 import { IWorkbenchLayoutService, Parts } from '../../../workbench/services/layout/browser/layoutService.js';
 import { HoverPosition } from '../../../base/browser/ui/hover/hoverWidget.js';
@@ -24,6 +24,8 @@ import { ActionsOrientation } from '../../../base/browser/ui/actionbar/actionbar
 import { IPaneCompositeBarOptions } from '../../../workbench/browser/parts/paneCompositeBar.js';
 import { IMenuService } from '../../../platform/actions/common/actions.js';
 import { IHoverService } from '../../../platform/hover/browser/hover.js';
+import { Extensions } from '../../../workbench/browser/panecomposite.js';
+import { Menus } from '../menus.js';
 
 export class ChatBarPart extends AbstractPaneCompositePart {
 
@@ -87,6 +89,9 @@ export class ChatBarPart extends AbstractPaneCompositePart {
 			'chatbar',
 			undefined,
 			SIDE_BAR_TITLE_BORDER,
+			ViewContainerLocation.ChatBar,
+			Extensions.ChatBar,
+			Menus.ChatBarTitle,
 			notificationService,
 			storageService,
 			contextMenuService,

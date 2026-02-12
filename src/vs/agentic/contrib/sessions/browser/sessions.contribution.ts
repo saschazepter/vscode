@@ -13,13 +13,12 @@ import { ViewPaneContainer } from '../../../../workbench/browser/parts/views/vie
 import { registerWorkbenchContribution2, WorkbenchPhase } from '../../../../workbench/common/contributions.js';
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
 import { SessionsTitleBarContribution } from './sessionsTitleBarWidget.js';
-import { AgenticSessionsViewPane } from './sessionsViewPane.js';
+import { AgenticSessionsViewPane, SessionsViewId } from './sessionsViewPane.js';
 import { ActiveSessionService, IActiveSessionService } from './activeSessionService.js';
 
 const agentSessionsViewIcon = registerIcon('chat-sessions-icon', Codicon.commentDiscussionSparkle, localize('agentSessionsViewIcon', 'Icon for Agent Sessions View'));
 const AGENT_SESSIONS_VIEW_TITLE = localize2('agentSessions.view.label', "Sessions");
 const SessionsContainerId = 'agentic.workbench.view.sessionsContainer';
-const SessionsViewId = 'agentic.workbench.view.sessionsView';
 
 const agentSessionsViewContainer: ViewContainer = Registry.as<IViewContainersRegistry>(ViewContainerExtensions.ViewContainersRegistry).registerViewContainer({
 	id: SessionsContainerId,
