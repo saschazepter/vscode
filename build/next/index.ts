@@ -185,8 +185,8 @@ function getCssBundleEntryPointsForTarget(target: BuildTarget): Set<string> {
 		case 'desktop':
 			return new Set([
 				'vs/workbench/workbench.desktop.main',
-				'vs/agentic/sessions.desktop.main',
 				'vs/code/electron-browser/workbench/workbench',
+				'vs/agentic/sessions.desktop.main',
 				'vs/agentic/electron-browser/sessions',
 			]);
 		case 'server':
