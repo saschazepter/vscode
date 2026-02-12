@@ -2510,8 +2510,11 @@ export class ChatWidget extends Disposable implements IChatWidget {
 
 		this.welcomeMessageContainer.style.height = `${contentHeight}px`;
 
-		// Keep getting-started tip aligned with the input after resize
-		this.layoutGettingStartedTipPosition();
+		// Keep getting-started tip aligned with the input after resize,
+		// but only when the tip is actually present to avoid unnecessary layout work.
+		if (this.container.classList.contains('chat-has-getting-started-tip')) {
+			this.layoutGettingStartedTipPosition();
+		}
 
 		const lastResponseIsRendering = isResponseVM(lastItem) && lastItem.renderData;
 		if (lastElementVisible && (!lastResponseIsRendering || checkModeOption(this.input.currentModeKind, this.viewOptions.autoScroll))) {
