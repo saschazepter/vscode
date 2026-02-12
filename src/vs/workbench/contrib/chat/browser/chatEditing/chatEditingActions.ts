@@ -33,6 +33,7 @@ import { isChatViewTitleActionContext } from '../../common/actions/chatActions.j
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
 import { applyingChatEditsFailedContextKey, CHAT_EDITING_MULTI_DIFF_SOURCE_RESOLVER_SCHEME, chatEditingResourceContextKey, chatEditingWidgetFileStateContextKey, decidedChatEditingResourceContextKey, hasAppliedChatEditsContextKey, hasUndecidedChatEditingResourceContextKey, IChatEditingService, IChatEditingSession, ModifiedFileEntryState } from '../../common/editing/chatEditingService.js';
 import { IChatService } from '../../common/chatService/chatService.js';
+import { IChatSessionsService } from '../../common/chatSessionsService.js';
 import { isChatTreeItem, isRequestVM, isResponseVM } from '../../common/model/chatViewModel.js';
 import { ChatAgentLocation, ChatConfiguration, ChatModeKind } from '../../common/constants.js';
 import { CHAT_CATEGORY } from '../actions/chatActions.js';
@@ -486,9 +487,26 @@ async function restoreSnapshotWithConfirmationByRequestId(accessor: ServicesAcce
 		await configurationService.updateValue('chat.editing.confirmEditRequestRemoval', false);
 	}
 
-	// Restore the snapshot to what it was before the request(s) that we deleted
-	const snapshotRequestId = chatRequests[itemIndex].id;
-	await session.restoreSnapshot(snapshotRequestId, undefined);
+	// Check if the content provider has a custom checkpoint handler
+	const chatSessionsService = accessor.get(IChatSessionsService);
+	const contentProvider = chatSessionsService.getContentProvider(sessionResource);
+	
+	if (contentProvider?.handleRestoreCheckpoint) {
+		// Let the content provider handle the checkpoint restoration
+		try {
+			await contentProvider.handleRestoreCheckpoint(sessionResource, requestId, CancellationToken.None);
+		} catch (error) {
+			// If the provider fails, fall back to default behavior
+			console.error('Content provider handleRestoreCheckpoint failed, falling back to default behavior:', error);
+			// Restore the snapshot to what it was before the request(s) that we deleted
+			const snapshotRequestId = chatRequests[itemIndex].id;
+			await session.restoreSnapshot(snapshotRequestId, undefined);
+		}
+	} else {
+		// Default behavior: restore the snapshot to what it was before the request(s) that we deleted
+		const snapshotRequestId = chatRequests[itemIndex].id;
+		await session.restoreSnapshot(snapshotRequestId, undefined);
+	}
 }
 
 async function restoreSnapshotWithConfirmation(accessor: ServicesAccessor, item: ChatTreeItem): Promise<void> {
