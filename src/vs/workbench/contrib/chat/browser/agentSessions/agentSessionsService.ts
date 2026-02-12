@@ -8,8 +8,6 @@ import { URI } from '../../../../../base/common/uri.js';
 import { createDecorator, IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
 import { AgentSessionsModel, IAgentSession, IAgentSessionsModel } from './agentSessionsModel.js';
 
-//#region Agent Sessions Service
-
 export interface IAgentSessionsService {
 
 	readonly _serviceBrand: undefined;
@@ -18,8 +16,6 @@ export interface IAgentSessionsService {
 
 	getSession(resource: URI): IAgentSession | undefined;
 }
-
-export const IAgentSessionsService = createDecorator<IAgentSessionsService>('agentSessions');
 
 export class AgentSessionsService extends Disposable implements IAgentSessionsService {
 
@@ -44,4 +40,4 @@ export class AgentSessionsService extends Disposable implements IAgentSessionsSe
 	}
 }
 
-//#endregion
+export const IAgentSessionsService = createDecorator<IAgentSessionsService>('agentSessions');
