@@ -170,7 +170,8 @@ export class AgentSessionsChatWidget extends Disposable {
 				const nameLower = group.name.toLowerCase();
 				return idLower === 'repositories' || idLower === 'folders' ||
 					nameLower === 'repository' || nameLower === 'repositories' ||
-					nameLower === 'folder' || nameLower === 'folders';
+					nameLower === 'folder' || nameLower === 'folders' ||
+					idLower === 'branch' || nameLower === 'branch';
 			}
 			: viewOptions.excludeOptionGroup;
 
