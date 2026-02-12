@@ -667,7 +667,7 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 					},
 					editorOverflowWidgetsDomNode: this.editorOverflowWidgetsDomNode,
 					enableImplicitContext: true,
-					enableWorkingSet: 'explicit',
+					enableWorkingSet: 'implicit',
 					supportsChangingModes: true,
 					dndContainer: parent,
 				},
