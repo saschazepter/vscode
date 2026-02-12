@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { IActiveAgentSessionService } from '../../sessions/browser/activeAgentSessionService.js';
+import { IActiveSessionService } from '../../sessions/browser/activeSessionService.js';
 import { IChatWidgetService } from '../../../../workbench/contrib/chat/browser/chat.js';
 import { IChatService } from '../../../../workbench/contrib/chat/common/chatService/chatService.js';
 import { ChatModeKind } from '../../../../workbench/contrib/chat/common/constants.js';
@@ -30,7 +30,7 @@ export class CustomizationCreatorService {
 		@ICommandService private readonly commandService: ICommandService,
 		@IChatService private readonly chatService: IChatService,
 		@IChatWidgetService private readonly chatWidgetService: IChatWidgetService,
-		@IActiveAgentSessionService private readonly activeAgentSessionService: IActiveAgentSessionService,
+		@IActiveSessionService private readonly activeSessionService: IActiveSessionService,
 		@IPromptsService private readonly promptsService: IPromptsService,
 		@IQuickInputService private readonly quickInputService: IQuickInputService,
 	) { }
@@ -98,7 +98,7 @@ export class CustomizationCreatorService {
 	 * if there's no active worktree.
 	 */
 	resolveTargetDirectory(type: PromptsType): URI | undefined {
-		const basePath = getActiveSessionRoot(this.activeAgentSessionService);
+		const basePath = getActiveSessionRoot(this.activeSessionService);
 		if (!basePath) {
 			return undefined;
 		}

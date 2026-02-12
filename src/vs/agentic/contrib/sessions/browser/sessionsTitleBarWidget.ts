@@ -18,7 +18,7 @@ import { IWorkbenchContribution } from '../../../../workbench/common/contributio
 import { IActionViewItemService } from '../../../../platform/actions/browser/actionViewItemService.js';
 import { URI } from '../../../../base/common/uri.js';
 import { IAgentSessionsService } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsService.js';
-import { IActiveAgentSessionService } from './activeAgentSessionService.js';
+import { IActiveSessionService } from './activeSessionService.js';
 import { FocusAgentSessionsAction } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsActions.js';
 import { AgentSessionsPicker } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsPicker.js';
 import { autorun } from '../../../../base/common/observable.js';
@@ -57,7 +57,7 @@ export class SessionsTitleBarWidget extends BaseActionViewItem {
 		options: IBaseActionViewItemOptions | undefined,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@IHoverService private readonly hoverService: IHoverService,
-		@IActiveAgentSessionService private readonly activeAgentSessionService: IActiveAgentSessionService,
+		@IActiveSessionService private readonly activeSessionService: IActiveSessionService,
 		@IChatService private readonly chatService: IChatService,
 		@IAgentSessionsService private readonly agentSessionsService: IAgentSessionsService,
 	) {
@@ -65,7 +65,7 @@ export class SessionsTitleBarWidget extends BaseActionViewItem {
 
 		// Re-render when the active session changes
 		this._register(autorun(reader => {
-			const activeSession = this.activeAgentSessionService.activeSession.read(reader);
+			const activeSession = this.activeSessionService.activeSession.read(reader);
 			this._trackModelTitleChanges(activeSession?.resource);
 			this._lastRenderState = undefined;
 			this._render();
@@ -240,7 +240,7 @@ export class SessionsTitleBarWidget extends BaseActionViewItem {
 	 * Falls back to a generic label if no active session is found.
 	 */
 	private _getActiveSessionLabel(): string {
-		const activeSession = this.activeAgentSessionService.getActiveSession();
+		const activeSession = this.activeSessionService.getActiveSession();
 		if (activeSession?.resource) {
 			const model = this.chatService.getSession(activeSession.resource);
 			if (model?.title) {
@@ -259,7 +259,7 @@ export class SessionsTitleBarWidget extends BaseActionViewItem {
 	 * Get the icon for the active session's kind/provider.
 	 */
 	private _getActiveSessionIcon(): ThemeIcon | undefined {
-		const activeSession = this.activeAgentSessionService.getActiveSession();
+		const activeSession = this.activeSessionService.getActiveSession();
 		if (!activeSession) {
 			return undefined;
 		}
@@ -283,7 +283,7 @@ export class SessionsTitleBarWidget extends BaseActionViewItem {
 	 * Get the repository label for the active session.
 	 */
 	private _getRepositoryLabel(): string | undefined {
-		const activeSession = this.activeAgentSessionService.getActiveSession();
+		const activeSession = this.activeSessionService.getActiveSession();
 		if (!activeSession) {
 			return undefined;
 		}
@@ -300,7 +300,7 @@ export class SessionsTitleBarWidget extends BaseActionViewItem {
 	 * Get the changes summary (insertions/deletions) for the active session.
 	 */
 	private _getChanges(): { insertions: number; deletions: number } | undefined {
-		const activeSession = this.activeAgentSessionService.getActiveSession();
+		const activeSession = this.activeSessionService.getActiveSession();
 		if (!activeSession) {
 			return undefined;
 		}

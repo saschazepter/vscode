@@ -14,7 +14,7 @@ import { IStorageService, StorageScope, StorageTarget } from '../../../../platfo
 import { TerminalLocation } from '../../../../platform/terminal/common/terminal.js';
 import { IsAgentSessionsWorkspaceContext } from '../../../../workbench/common/contextkeys.js';
 import { IWorkbenchContribution } from '../../../../workbench/common/contributions.js';
-import { IActiveAgentSessionService } from '../../sessions/browser/activeAgentSessionService.js';
+import { IActiveSessionService } from '../../sessions/browser/activeSessionService.js';
 import { ITerminalService } from '../../../../workbench/contrib/terminal/browser/terminal.js';
 import { Menus } from '../../../browser/menus.js';
 
@@ -55,13 +55,13 @@ export class RunScriptContribution extends Disposable implements IWorkbenchContr
 	constructor(
 		@IStorageService private readonly _storageService: IStorageService,
 		@ITerminalService private readonly _terminalService: ITerminalService,
-		@IActiveAgentSessionService activeAgentSessionService: IActiveAgentSessionService,
+		@IActiveSessionService activeSessionService: IActiveSessionService,
 		@IQuickInputService private readonly _quickInputService: IQuickInputService,
 	) {
 		super();
 
 		this._activeRunState = derived(this, reader => {
-			const activeSession = activeAgentSessionService.activeSession.read(reader);
+			const activeSession = activeSessionService.activeSession.read(reader);
 			if (!activeSession || !activeSession.repository) {
 				return undefined;
 			}

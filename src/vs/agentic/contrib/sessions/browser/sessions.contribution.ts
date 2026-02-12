@@ -14,7 +14,7 @@ import { registerWorkbenchContribution2, WorkbenchPhase } from '../../../../work
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
 import { SessionsTitleBarContribution } from './sessionsTitleBarWidget.js';
 import { AgenticSessionsViewPane } from './sessionsViewPane.js';
-import { ActiveAgentSessionService, IActiveAgentSessionService } from './activeAgentSessionService.js';
+import { ActiveSessionService, IActiveSessionService } from './activeSessionService.js';
 
 const agentSessionsViewIcon = registerIcon('chat-sessions-icon', Codicon.commentDiscussionSparkle, localize('agentSessionsViewIcon', 'Icon for Agent Sessions View'));
 const AGENT_SESSIONS_VIEW_TITLE = localize2('agentSessions.view.label', "Sessions");
@@ -48,4 +48,4 @@ Registry.as<IViewsRegistry>(ViewContainerExtensions.ViewsRegistry).registerViews
 
 registerWorkbenchContribution2(SessionsTitleBarContribution.ID, SessionsTitleBarContribution, WorkbenchPhase.AfterRestored);
 
-registerSingleton(IActiveAgentSessionService, ActiveAgentSessionService, InstantiationType.Delayed);
+registerSingleton(IActiveSessionService, ActiveSessionService, InstantiationType.Delayed);

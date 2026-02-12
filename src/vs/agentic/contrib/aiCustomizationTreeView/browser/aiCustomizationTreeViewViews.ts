@@ -35,7 +35,7 @@ import { IListVirtualDelegate } from '../../../../base/browser/ui/list/list.js';
 import { IEditorService } from '../../../../workbench/services/editor/common/editorService.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
-import { IActiveAgentSessionService } from '../../sessions/browser/activeAgentSessionService.js';
+import { IActiveSessionService } from '../../sessions/browser/activeSessionService.js';
 
 //#region Context Keys
 
@@ -487,7 +487,7 @@ export class AICustomizationViewPane extends ViewPane {
 		@IMenuService private readonly menuService: IMenuService,
 		@ILogService private readonly logService: ILogService,
 		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
-		@IActiveAgentSessionService private readonly activeSessionService: IActiveAgentSessionService,
+		@IActiveSessionService private readonly activeSessionService: IActiveSessionService,
 	) {
 		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
 

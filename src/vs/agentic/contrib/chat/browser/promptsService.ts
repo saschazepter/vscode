@@ -18,7 +18,7 @@ import { IWorkbenchEnvironmentService } from '../../../../workbench/services/env
 import { IPathService } from '../../../../workbench/services/path/common/pathService.js';
 import { ISearchService } from '../../../../workbench/services/search/common/search.js';
 import { IUserDataProfileService } from '../../../../workbench/services/userDataProfile/common/userDataProfile.js';
-import { IActiveAgentSessionService } from '../../sessions/browser/activeAgentSessionService.js';
+import { IActiveSessionService } from '../../sessions/browser/activeSessionService.js';
 
 export class AgenticPromptsService extends PromptsService {
 	protected override createPromptFilesLocator(): PromptFilesLocator {
@@ -28,10 +28,10 @@ export class AgenticPromptsService extends PromptsService {
 
 class AgenticPromptFilesLocator extends PromptFilesLocator {
 
-	private _activeSessionService: IActiveAgentSessionService | undefined;
-	private get activeSessionService(): IActiveAgentSessionService {
+	private _activeSessionService: IActiveSessionService | undefined;
+	private get activeSessionService(): IActiveSessionService {
 		if (!this._activeSessionService) {
-			this._activeSessionService = this.accessor.invokeFunction(accessor => accessor.get(IActiveAgentSessionService));
+			this._activeSessionService = this.accessor.invokeFunction(accessor => accessor.get(IActiveSessionService));
 		}
 		return this._activeSessionService;
 	}

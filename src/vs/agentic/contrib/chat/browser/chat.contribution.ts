@@ -12,7 +12,7 @@ import { IsAgentSessionsWorkspaceContext } from '../../../../workbench/common/co
 import { registerWorkbenchContribution2, WorkbenchPhase } from '../../../../workbench/common/contributions.js';
 import { AgentSessionProviders } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessions.js';
 import { isAgentSession } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsModel.js';
-import { IActiveAgentSessionService } from '../../sessions/browser/activeAgentSessionService.js';
+import { IActiveSessionService } from '../../sessions/browser/activeSessionService.js';
 import { ITerminalService, ITerminalGroupService } from '../../../../workbench/contrib/terminal/browser/terminal.js';
 import { Menus } from '../../../browser/menus.js';
 import { BranchChatSessionAction } from './branchChatSessionAction.js';
@@ -39,7 +39,7 @@ export class OpenSessionWorktreeInVSCodeAction extends Action2 {
 
 	override async run(accessor: ServicesAccessor,): Promise<void> {
 		const hostService = accessor.get(IHostService);
-		const agentSessionsService = accessor.get(IActiveAgentSessionService);
+		const agentSessionsService = accessor.get(IActiveSessionService);
 
 		const activeSession = agentSessionsService.activeSession.get();
 		if (!activeSession) {
@@ -75,7 +75,7 @@ export class OpenSessionInTerminalAction extends Action2 {
 	override async run(accessor: ServicesAccessor,): Promise<void> {
 		const terminalService = accessor.get(ITerminalService);
 		const terminalGroupService = accessor.get(ITerminalGroupService);
-		const agentSessionsService = accessor.get(IActiveAgentSessionService);
+		const agentSessionsService = accessor.get(IActiveSessionService);
 
 		const activeSession = agentSessionsService.activeSession.get();
 		const repository = isAgentSession(activeSession) && activeSession.providerType !== AgentSessionProviders.Cloud

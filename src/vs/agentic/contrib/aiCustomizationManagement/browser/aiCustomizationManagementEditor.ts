@@ -59,7 +59,7 @@ import { showConfigureHooksQuickPick } from '../../../../workbench/contrib/chat/
 import { CustomizationCreatorService } from './customizationCreatorService.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { IAgentSessionsService } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsService.js';
-import { IActiveAgentSessionService } from '../../sessions/browser/activeAgentSessionService.js';
+import { IActiveSessionService } from '../../sessions/browser/activeSessionService.js';
 import { AgentSessionProviders } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessions.js';
 
 const $ = DOM.$;
@@ -173,7 +173,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@ILayoutService private readonly layoutService: ILayoutService,
 		@ICommandService private readonly commandService: ICommandService,
-		@IActiveAgentSessionService private readonly activeAgentSessionService: IActiveAgentSessionService,
+		@IActiveSessionService private readonly activeSessionService: IActiveSessionService,
 		@IAgentSessionsService private readonly agentSessionsService: IAgentSessionsService,
 	) {
 		super(AICustomizationManagementEditor.ID, group, telemetryService, themeService, storageService);
@@ -184,11 +184,11 @@ export class AICustomizationManagementEditor extends EditorPane {
 		this.customizationCreator = this.instantiationService.createInstance(CustomizationCreatorService);
 
 		this._register(autorun(reader => {
-			this.activeAgentSessionService.activeSession.read(reader);
+			this.activeSessionService.activeSession.read(reader);
 			if (this.viewMode !== 'editor' || !this.currentEditingIsWorktree) {
 				return;
 			}
-			this.currentWorktreeUri = getActiveSessionRoot(this.activeAgentSessionService);
+			this.currentWorktreeUri = getActiveSessionRoot(this.activeSessionService);
 		}));
 
 		// Safety disposal for the embedded editor model reference
@@ -540,7 +540,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 		this.editorItemPathElement.textContent = basename(uri);
 
 		// Track worktree URI for auto-commit on close
-		const worktreeDir = getActiveSessionRoot(this.activeAgentSessionService);
+		const worktreeDir = getActiveSessionRoot(this.activeSessionService);
 		this.currentWorktreeUri = isWorktreeFile ? worktreeDir : undefined;
 		this.currentEditingIsWorktree = isWorktreeFile;
 

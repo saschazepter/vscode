@@ -81,7 +81,7 @@ aiCustomizationManagement/browser/
 - Debounced (200ms) filtering.
 
 **Active session scoping:**
-- The active worktree comes from `IActiveAgentSessionService` and is the source of truth for scoping.
+- The active worktree comes from `IActiveSessionService` and is the source of truth for scoping.
 - Prompt discovery is scoped by the agentic prompt service override using the active session root.
 - Views refresh counts/filters when the active session changes.
 
@@ -149,7 +149,7 @@ This is the only UI surface for creating new customizations.
 
 - `IPromptsService` for agent/skill/prompt/instructions discovery.
 - `parseAllHookFiles` for hooks.
-- `IActiveAgentSessionService` for worktree filtering.
+- `IActiveSessionService` for worktree filtering.
 - `ISCMService` for git status badges.
 - `ITextModelService` and `IFileService` for embedded editor I/O.
 - `IDialogService` for delete confirmation and extension-file guardrails.

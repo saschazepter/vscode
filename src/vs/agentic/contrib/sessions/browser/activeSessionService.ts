@@ -22,11 +22,11 @@ const LAST_SELECTED_SESSION_KEY = 'agentSessions.lastSelectedSession';
 const repositoryOptionId = 'repository';
 
 /**
- * An active agent session item extends IChatSessionItem with repository information.
+ * An active session item extends IChatSessionItem with repository information.
  * - For agent session items: repository is the workingDirectory from metadata
  * - For new sessions: repository comes from the session option with id 'repository'
  */
-export type IActiveAgentSessionItem = (IChatSessionItem | IAgentSession) & {
+export type IActiveSessionItem = (IChatSessionItem | IAgentSession) & {
 	/**
 	 * The repository URI for this session.
 	 */
@@ -38,28 +38,28 @@ export type IActiveAgentSessionItem = (IChatSessionItem | IAgentSession) & {
 	readonly worktree: URI | undefined;
 };
 
-export interface IActiveAgentSessionService {
+export interface IActiveSessionService {
 	readonly _serviceBrand: undefined;
 
 	/**
 	 * Observable for the currently active session.
 	 */
-	readonly activeSession: IObservable<IActiveAgentSessionItem | undefined>;
+	readonly activeSession: IObservable<IActiveSessionItem | undefined>;
 
 	/**
 	 * Returns the currently active session, if any.
 	 */
-	getActiveSession(): IActiveAgentSessionItem | undefined;
+	getActiveSession(): IActiveSessionItem | undefined;
 }
 
-export const IActiveAgentSessionService = createDecorator<IActiveAgentSessionService>('activeAgentSessionService');
+export const IActiveSessionService = createDecorator<IActiveSessionService>('activeSessionService');
 
-export class ActiveAgentSessionService extends Disposable implements IActiveAgentSessionService {
+export class ActiveSessionService extends Disposable implements IActiveSessionService {
 
 	declare readonly _serviceBrand: undefined;
 
-	private readonly _activeSession = observableValue<IActiveAgentSessionItem | undefined>(this, undefined);
-	readonly activeSession: IObservable<IActiveAgentSessionItem | undefined> = this._activeSession;
+	private readonly _activeSession = observableValue<IActiveSessionItem | undefined>(this, undefined);
+	readonly activeSession: IObservable<IActiveSessionItem | undefined> = this._activeSession;
 
 	private lastSelectedSession: URI | undefined;
 	private readonly widgetTrackingStore = this._register(new DisposableStore());
@@ -152,24 +152,24 @@ export class ActiveAgentSessionService extends Disposable implements IActiveAgen
 		if (agentSession) {
 			// For agent sessions, get repository from metadata.workingDirectory
 			const [repository, worktree] = this.getRepositoryFromMetadata(agentSession.metadata);
-			const activeSessionItem: IActiveAgentSessionItem = {
+			const activeSessionItem: IActiveSessionItem = {
 				...agentSession,
 				repository,
 				worktree,
 			};
-			this.logService.info(`[ActiveAgentSessionService] Active session changed: ${sessionResource.toString()}, repository: ${repository?.toString() ?? 'none'}`);
+			this.logService.info(`[ActiveSessionService] Active session changed: ${sessionResource.toString()}, repository: ${repository?.toString() ?? 'none'}`);
 			this._activeSession.set(activeSessionItem, undefined);
 		} else {
 			// For new/empty sessions not yet in the model, get repository from session option
 			const repository = this.getRepositoryFromSessionOption(sessionResource);
-			const activeSessionItem: IActiveAgentSessionItem = {
+			const activeSessionItem: IActiveSessionItem = {
 				resource: sessionResource,
 				label: viewModel.model.title || '',
 				timing: viewModel.model.timing,
 				repository,
 				worktree: undefined
 			};
-			this.logService.info(`[ActiveAgentSessionService] Active session changed (new): ${sessionResource.toString()}, repository: ${repository?.toString() ?? 'none'}`);
+			this.logService.info(`[ActiveSessionService] Active session changed (new): ${sessionResource.toString()}, repository: ${repository?.toString() ?? 'none'}`);
 			this._activeSession.set(activeSessionItem, undefined);
 		}
 	}
@@ -187,12 +187,12 @@ export class ActiveAgentSessionService extends Disposable implements IActiveAgen
 
 		const [repository, worktree] = this.getRepositoryFromMetadata(agentSession.metadata);
 		if (currentActive.repository?.toString() !== repository?.toString() || currentActive.worktree?.toString() !== worktree?.toString()) {
-			const activeSessionItem: IActiveAgentSessionItem = {
+			const activeSessionItem: IActiveSessionItem = {
 				...agentSession,
 				repository,
 				worktree,
 			};
-			this.logService.info(`[ActiveAgentSessionService] Active session updated from model: ${currentActive.resource.toString()}, repository: ${repository?.toString() ?? 'none'}, worktree: ${worktree?.toString() ?? 'none'}`);
+			this.logService.info(`[ActiveSessionService] Active session updated from model: ${currentActive.resource.toString()}, repository: ${repository?.toString() ?? 'none'}, worktree: ${worktree?.toString() ?? 'none'}`);
 			this._activeSession.set(activeSessionItem, undefined);
 		}
 	}
@@ -232,7 +232,7 @@ export class ActiveAgentSessionService extends Disposable implements IActiveAgen
 		}
 	}
 
-	getActiveSession(): IActiveAgentSessionItem | undefined {
+	getActiveSession(): IActiveSessionItem | undefined {
 		return this._activeSession.get();
 	}
 
