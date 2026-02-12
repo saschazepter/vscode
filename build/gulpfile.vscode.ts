@@ -67,7 +67,7 @@ const vscodeResourceIncludes = [
 
 	// Workbench
 	'out-build/vs/code/electron-browser/workbench/workbench.html',
-	'out-buildvs/agentic/electron-browser/sessions.html',
+	'out-build/vs/agentic/electron-browser/sessions.html',
 
 	// Electron Preload
 	'out-build/vs/base/parts/sandbox/electron-browser/preload.js',
@@ -328,11 +328,11 @@ function packageTask(platform: string, arch: string, sourceFolderName: string, d
 			'vs/base/parts/sandbox/electron-browser/preload.js',
 			'vs/workbench/workbench.desktop.main.js',
 			'vs/workbench/workbench.desktop.main.css',
-			'vs/agentic/sessions.desktop.main.js',
-			'vs/agentic/sessions.desktop.main.css',
 			'vs/workbench/api/node/extensionHostProcess.js',
 			'vs/code/electron-browser/workbench/workbench.html',
 			'vs/code/electron-browser/workbench/workbench.js',
+			'vs/agentic/sessions.desktop.main.js',
+			'vs/agentic/sessions.desktop.main.css',
 			'vs/agentic/electron-browser/sessions.html',
 			'vs/agentic/electron-browser/sessions.js'
 		]);
