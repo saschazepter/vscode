@@ -793,7 +793,7 @@ export class SettingsEditor2 extends EditorPane {
 
 		// Add "Edit as JSON" button to the right controls container
 		const openSettingsJsonButton = this._register(new Button(headerRightControlsContainer, { secondary: true, title: true, ...defaultButtonStyles }));
-		openSettingsJsonButton.label = localize('openSettingsJson', "Edit as JSON");
+		openSettingsJsonButton.label = localize('editAsJson', "Edit as JSON");
 		this._register(openSettingsJsonButton.onDidClick(() => this.openSettingsJsonFile()));
 
 		if (this.userDataSyncWorkbenchService.enabled && this.userDataSyncEnablementService.canToggleEnablement()) {
