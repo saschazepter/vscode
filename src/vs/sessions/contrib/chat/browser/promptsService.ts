@@ -10,7 +10,6 @@ import { basename, isEqualOrParent, joinPath } from '../../../../base/common/res
 import { URI } from '../../../../base/common/uri.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { IFileService } from '../../../../platform/files/common/files.js';
-import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { IWorkspaceContextService, IWorkspaceFolder } from '../../../../platform/workspace/common/workspace.js';
 import { HOOKS_SOURCE_FOLDER } from '../../../../workbench/contrib/chat/common/promptSyntax/config/promptFileLocations.js';
@@ -28,14 +27,6 @@ export class AgenticPromptsService extends PromptsService {
 
 class AgenticPromptFilesLocator extends PromptFilesLocator {
 
-	private _activeSessionService: IActiveSessionService | undefined;
-	private get activeSessionService(): IActiveSessionService {
-		if (!this._activeSessionService) {
-			this._activeSessionService = this.accessor.invokeFunction(accessor => accessor.get(IActiveSessionService));
-		}
-		return this._activeSessionService;
-	}
-
 	constructor(
 		@IFileService fileService: IFileService,
 		@IConfigurationService configService: IConfigurationService,
@@ -45,7 +36,7 @@ class AgenticPromptFilesLocator extends PromptFilesLocator {
 		@IUserDataProfileService userDataService: IUserDataProfileService,
 		@ILogService logService: ILogService,
 		@IPathService pathService: IPathService,
-		@IInstantiationService private readonly accessor: IInstantiationService,
+		@IActiveSessionService private readonly activeSessionService: IActiveSessionService,
 	) {
 		super(
 			fileService,
