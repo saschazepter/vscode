@@ -90,7 +90,7 @@ export class RunSubagentTool extends Disposable implements IToolImpl {
 				},
 				description: {
 					type: 'string',
-					description: 'A short (3-5 word) description of the task, shown to the user. Should not repeat the agent name.'
+					description: 'A short (3-5 word) description of the task'
 				}
 			},
 			required: ['prompt', 'description']
