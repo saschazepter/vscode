@@ -307,7 +307,7 @@ export class LineHeightsManager {
 		for (const decorationID of decorationsToRemove) {
 			const customLines = this._decorationIDToCustomLine.get(decorationID);
 			if (!customLines) {
-				return;
+				continue;
 			}
 			this._decorationIDToCustomLine.delete(decorationID);
 			for (const customLine of customLines) {
