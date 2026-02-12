@@ -41,7 +41,7 @@
 	margin-bottom: 12px;
 	animation: chat-full-welcome-mascot-bounce 1s ease-in-out infinite;
 	transition: animation-duration 0.3s ease;
-	background-image: url('../../../../../browser/media/code-icon.svg');
+	background-image: url('../../../../../vs/workbench/browser/media/code-icon.svg');
 }
 
 /* Slow down bounce once revealed */
