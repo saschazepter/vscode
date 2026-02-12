@@ -15,7 +15,7 @@ import { getPathLabel } from '../../base/common/labels.js';
 import { Disposable, DisposableStore } from '../../base/common/lifecycle.js';
 import { Schemas, VSCODE_AUTHORITY } from '../../base/common/network.js';
 import { join, posix } from '../../base/common/path.js';
-import { IProcessEnvironment, isLinux, isLinuxSnap, isMacintosh, isWindows, OS } from '../../base/common/platform.js';
+import { INodeProcess, IProcessEnvironment, isLinux, isLinuxSnap, isMacintosh, isWindows, OS } from '../../base/common/platform.js';
 import { assertType } from '../../base/common/types.js';
 import { URI } from '../../base/common/uri.js';
 import { generateUuid } from '../../base/common/uuid.js';
@@ -1335,7 +1335,7 @@ export class CodeApplication extends Disposable {
 		}
 
 		// Open sessions window if requested
-		if (args['sessions']) {
+		if ((process as INodeProcess).isEmbeddedApp) {
 			return windowsMainService.openSessionsWindow({ context, contextWindowId: undefined });
 		}
 
