@@ -187,6 +187,7 @@ export class PromptValidator {
 				this.validateTarget(attributes, report);
 				this.validateInfer(attributes, report);
 				this.validateUserInvocable(attributes, report);
+				this.validateUserInvokable(attributes, report);
 				this.validateDisableModelInvocation(attributes, report);
 				this.validateTools(attributes, ChatModeKind.Agent, target, report);
 				if (isVSCodeOrDefaultTarget(target)) {
@@ -201,6 +202,7 @@ export class PromptValidator {
 
 			case PromptsType.skill:
 				this.validateUserInvocable(attributes, report);
+				this.validateUserInvokable(attributes, report);
 				this.validateDisableModelInvocation(attributes, report);
 				break;
 		}
@@ -638,6 +640,14 @@ export class PromptValidator {
 		}
 	}
 
+	private validateUserInvokable(attributes: IHeaderAttribute[], report: (markers: IMarkerData) => void): undefined {
+		const attribute = attributes.find(attr => attr.key === PromptHeaderAttributes.userInvokable);
+		if (!attribute) {
+			return;
+		}
+		report(toMarker(localize('promptValidator.userInvokableDeprecated', "The 'user-invokable' attribute is deprecated. Use 'user-invocable' instead."), attribute.range, MarkerSeverity.Warning));
+	}
+
 	private validateDisableModelInvocation(attributes: IHeaderAttribute[], report: (markers: IMarkerData) => void): undefined {
 		const attribute = attributes.find(attr => attr.key === PromptHeaderAttributes.disableModelInvocation);
 		if (!attribute) {
@@ -690,8 +700,8 @@ export class PromptValidator {
 const allAttributeNames: Record<PromptsType, string[]> = {
 	[PromptsType.prompt]: [PromptHeaderAttributes.name, PromptHeaderAttributes.description, PromptHeaderAttributes.model, PromptHeaderAttributes.tools, PromptHeaderAttributes.mode, PromptHeaderAttributes.agent, PromptHeaderAttributes.argumentHint],
 	[PromptsType.instructions]: [PromptHeaderAttributes.name, PromptHeaderAttributes.description, PromptHeaderAttributes.applyTo, PromptHeaderAttributes.excludeAgent],
-	[PromptsType.agent]: [PromptHeaderAttributes.name, PromptHeaderAttributes.description, PromptHeaderAttributes.model, PromptHeaderAttributes.tools, PromptHeaderAttributes.advancedOptions, PromptHeaderAttributes.handOffs, PromptHeaderAttributes.argumentHint, PromptHeaderAttributes.target, PromptHeaderAttributes.infer, PromptHeaderAttributes.agents, PromptHeaderAttributes.userInvocable, PromptHeaderAttributes.disableModelInvocation],
-	[PromptsType.skill]: [PromptHeaderAttributes.name, PromptHeaderAttributes.description, PromptHeaderAttributes.license, PromptHeaderAttributes.compatibility, PromptHeaderAttributes.metadata, PromptHeaderAttributes.argumentHint, PromptHeaderAttributes.userInvocable, PromptHeaderAttributes.disableModelInvocation],
+	[PromptsType.agent]: [PromptHeaderAttributes.name, PromptHeaderAttributes.description, PromptHeaderAttributes.model, PromptHeaderAttributes.tools, PromptHeaderAttributes.advancedOptions, PromptHeaderAttributes.handOffs, PromptHeaderAttributes.argumentHint, PromptHeaderAttributes.target, PromptHeaderAttributes.infer, PromptHeaderAttributes.agents, PromptHeaderAttributes.userInvocable, PromptHeaderAttributes.userInvokable, PromptHeaderAttributes.disableModelInvocation],
+	[PromptsType.skill]: [PromptHeaderAttributes.name, PromptHeaderAttributes.description, PromptHeaderAttributes.license, PromptHeaderAttributes.compatibility, PromptHeaderAttributes.metadata, PromptHeaderAttributes.argumentHint, PromptHeaderAttributes.userInvocable, PromptHeaderAttributes.userInvokable, PromptHeaderAttributes.disableModelInvocation],
 	[PromptsType.hook]: [], // hooks are JSON files, not markdown with YAML frontmatter
 };
 const githubCopilotAgentAttributeNames = [PromptHeaderAttributes.name, PromptHeaderAttributes.description, PromptHeaderAttributes.tools, PromptHeaderAttributes.target, GithubPromptHeaderAttributes.mcpServers, PromptHeaderAttributes.infer];
@@ -718,7 +728,7 @@ export function getValidAttributeNames(promptType: PromptsType, includeNonRecomm
 }
 
 export function isNonRecommendedAttribute(attributeName: string): boolean {
-	return attributeName === PromptHeaderAttributes.advancedOptions || attributeName === PromptHeaderAttributes.excludeAgent || attributeName === PromptHeaderAttributes.mode || attributeName === PromptHeaderAttributes.infer;
+	return attributeName === PromptHeaderAttributes.advancedOptions || attributeName === PromptHeaderAttributes.excludeAgent || attributeName === PromptHeaderAttributes.mode || attributeName === PromptHeaderAttributes.infer || attributeName === PromptHeaderAttributes.userInvokable;
 }
 
 export function getAttributeDescription(attributeName: string, promptType: PromptsType, target: Target): string | undefined {

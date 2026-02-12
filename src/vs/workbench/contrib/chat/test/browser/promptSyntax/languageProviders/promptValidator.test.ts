@@ -1147,6 +1147,21 @@ suite('PromptValidator', () => {
 			}
 		});
 
+		test('deprecated user-invokable attribute shows warning', async () => {
+			const content = [
+				'---',
+				'name: "TestAgent"',
+				'description: "Test agent"',
+				'user-invokable: true',
+				'---',
+				'Body',
+			].join('\n');
+			const markers = await validate(content, PromptsType.agent);
+			assert.strictEqual(markers.length, 1);
+			assert.strictEqual(markers[0].severity, MarkerSeverity.Warning);
+			assert.strictEqual(markers[0].message, `The 'user-invokable' attribute is deprecated. Use 'user-invocable' instead.`);
+		});
+
 		test('disable-model-invocation attribute validation', async () => {
 			// Valid disable-model-invocation: true
 			{
