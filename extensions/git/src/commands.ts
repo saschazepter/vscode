@@ -3099,7 +3099,15 @@ export class CommandCenter {
 			}
 
 			if (validateName.test(sanitizedName)) {
-				return undefined;
+				// If the sanitized name that we will use is different than what is
+				// in the input box, show an info message to the user informing them
+				// the branch name that will be used.
+				return name === sanitizedName
+					? undefined
+					: {
+						message: l10n.t('The new branch will be "{0}"', sanitizedName),
+						severity: InputBoxValidationSeverity.Info
+					};
 			}
 
 			return l10n.t('Branch name needs to match regex: {0}', branchValidationRegex);
