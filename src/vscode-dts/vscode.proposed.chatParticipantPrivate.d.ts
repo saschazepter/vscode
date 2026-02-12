@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-// version: 13
+// version: 14
 
 declare module 'vscode' {
 
@@ -333,6 +333,17 @@ declare module 'vscode' {
 		export function registerChatParticipantDetectionProvider(participantDetectionProvider: ChatParticipantDetectionProvider): Disposable;
 
 		export const onDidDisposeChatSession: Event<string>;
+
+		/**
+		 * The resource URI of the currently active (focused or last focused) chat session,
+		 * or `undefined` if there is no active chat session.
+		 */
+		export const activeChatSessionResource: Uri | undefined;
+
+		/**
+		 * An event that fires when the active chat session resource changes.
+		 */
+		export const onDidChangeActiveChatSessionResource: Event<Uri | undefined>;
 	}
 
 	// #endregion

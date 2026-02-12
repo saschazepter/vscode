@@ -487,6 +487,15 @@ export class ExtHostChatAgents2 extends Disposable implements ExtHostChatAgentsS
 	private readonly _onDidDisposeChatSession = this._register(new Emitter<string>());
 	readonly onDidDisposeChatSession = this._onDidDisposeChatSession.event;
 
+	private _activeChatSessionResource: URI | undefined;
+
+	private readonly _onDidChangeActiveChatSessionResource = this._register(new Emitter<URI | undefined>());
+	readonly onDidChangeActiveChatSessionResource = this._onDidChangeActiveChatSessionResource.event;
+
+	get activeChatSessionResource(): URI | undefined {
+		return this._activeChatSessionResource;
+	}
+
 	constructor(
 		mainContext: IMainContext,
 		private readonly _logService: ILogService,
@@ -875,6 +884,16 @@ export class ExtHostChatAgents2 extends Disposable implements ExtHostChatAgentsS
 		if (sessionId) {
 			this._onDidDisposeChatSession.fire(sessionId);
 		}
+	}
+
+	$acceptActiveChatSession(sessionResourceDto: UriComponents | undefined): void {
+		const sessionResource = sessionResourceDto ? URI.revive(sessionResourceDto) : undefined;
+		if (this._activeChatSessionResource?.toString() === sessionResource?.toString()) {
+			return;
+		}
+
+		this._activeChatSessionResource = sessionResource;
+		this._onDidChangeActiveChatSessionResource.fire(sessionResource);
 	}
 
 	async $provideFollowups(requestDto: Dto<IChatAgentRequest>, handle: number, result: IChatAgentResult, context: { history: IChatAgentHistoryEntryDto[] }, token: CancellationToken): Promise<IChatFollowup[]> {
