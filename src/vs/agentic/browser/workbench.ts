@@ -71,8 +71,6 @@ import { FloatingToolbar } from './parts/floatingToolbar.js';
 import { IPromptsService } from '../../workbench/contrib/chat/common/promptSyntax/service/promptsService.js';
 import { AgenticPromptsService } from './agenticPromptsService.js';
 
-import './agentic.workbench.desktop.main.js';
-
 //#region Workbench Options
 
 export interface IWorkbenchOptions {

@@ -24,38 +24,8 @@
 
 	function showSplash(configuration: INativeWindowConfiguration) {
 		performance.mark('code/willShowPartsSplash');
-		if (configuration.isAgentSessionsWindow) {
-			showAgentSessionsSplash(configuration);
-		} else {
-			showEditorSplash(configuration);
-		}
+		showEditorSplash(configuration);
 		performance.mark('code/didShowPartsSplash');
-	}
-
-	function showAgentSessionsSplash(configuration: INativeWindowConfiguration) {
-
-		// TODO@bpasero support full agent sessions window splash when the layout is final
-
-		const baseTheme = 'vs-dark';
-		const shellBackground = '#191A1B'; // VS Code dark background
-		const shellForeground = '#CCCCCC';
-
-		// Apply base colors
-		const style = document.createElement('style');
-		style.className = 'initialShellColors';
-		window.document.head.appendChild(style);
-		style.textContent = `body { background-color: ${shellBackground}; color: ${shellForeground}; margin: 0; padding: 0; }`;
-
-		// Set zoom level from splash data if available
-		if (typeof configuration.partsSplash?.zoomLevel === 'number' && typeof preloadGlobals?.webFrame?.setZoomLevel === 'function') {
-			preloadGlobals.webFrame.setZoomLevel(configuration.partsSplash.zoomLevel);
-		}
-
-		const splash = document.createElement('div');
-		splash.id = 'monaco-parts-splash';
-		splash.className = baseTheme;
-
-		window.document.body.appendChild(splash);
 	}
 
 	function showEditorSplash(configuration: INativeWindowConfiguration) {

@@ -6,55 +6,54 @@
 import { localize } from '../../nls.js';
 import product from '../../platform/product/common/product.js';
 import { INativeWindowConfiguration, IWindowsConfiguration } from '../../platform/window/common/window.js';
-import { Workbench } from '../browser/workbench.js';
-import { NativeWindow } from './window.js';
+import { NativeWindow } from '../../workbench/electron-browser/window.js';
 import { setFullscreen } from '../../base/browser/browser.js';
 import { domContentLoaded } from '../../base/browser/dom.js';
 import { onUnexpectedError } from '../../base/common/errors.js';
 import { URI } from '../../base/common/uri.js';
-import { WorkspaceService } from '../services/configuration/browser/configurationService.js';
-import { INativeWorkbenchEnvironmentService, NativeWorkbenchEnvironmentService } from '../services/environment/electron-browser/environmentService.js';
+import { WorkspaceService } from '../../workbench/services/configuration/browser/configurationService.js';
+import { INativeWorkbenchEnvironmentService, NativeWorkbenchEnvironmentService } from '../../workbench/services/environment/electron-browser/environmentService.js';
 import { ServiceCollection } from '../../platform/instantiation/common/serviceCollection.js';
 import { ILoggerService, ILogService, LogLevel } from '../../platform/log/common/log.js';
-import { NativeWorkbenchStorageService } from '../services/storage/electron-browser/storageService.js';
+import { NativeWorkbenchStorageService } from '../../workbench/services/storage/electron-browser/storageService.js';
 import { IWorkspaceContextService, isSingleFolderWorkspaceIdentifier, isWorkspaceIdentifier, IAnyWorkspaceIdentifier, reviveIdentifier, toWorkspaceIdentifier } from '../../platform/workspace/common/workspace.js';
-import { IWorkbenchConfigurationService } from '../services/configuration/common/configuration.js';
+import { IWorkbenchConfigurationService } from '../../workbench/services/configuration/common/configuration.js';
 import { IStorageService } from '../../platform/storage/common/storage.js';
 import { Disposable } from '../../base/common/lifecycle.js';
 import { ISharedProcessService } from '../../platform/ipc/electron-browser/services.js';
 import { IMainProcessService } from '../../platform/ipc/common/mainProcessService.js';
-import { SharedProcessService } from '../services/sharedProcess/electron-browser/sharedProcessService.js';
+import { SharedProcessService } from '../../workbench/services/sharedProcess/electron-browser/sharedProcessService.js';
 import { RemoteAuthorityResolverService } from '../../platform/remote/electron-browser/remoteAuthorityResolverService.js';
 import { IRemoteAuthorityResolverService, RemoteConnectionType } from '../../platform/remote/common/remoteAuthorityResolver.js';
-import { RemoteAgentService } from '../services/remote/electron-browser/remoteAgentService.js';
-import { IRemoteAgentService } from '../services/remote/common/remoteAgentService.js';
+import { RemoteAgentService } from '../../workbench/services/remote/electron-browser/remoteAgentService.js';
+import { IRemoteAgentService } from '../../workbench/services/remote/common/remoteAgentService.js';
 import { FileService } from '../../platform/files/common/fileService.js';
 import { IFileService } from '../../platform/files/common/files.js';
-import { RemoteFileSystemProviderClient } from '../services/remote/common/remoteFileSystemProviderClient.js';
-import { ConfigurationCache } from '../services/configuration/common/configurationCache.js';
+import { RemoteFileSystemProviderClient } from '../../workbench/services/remote/common/remoteFileSystemProviderClient.js';
+import { ConfigurationCache } from '../../workbench/services/configuration/common/configurationCache.js';
 import { ISignService } from '../../platform/sign/common/sign.js';
 import { IProductService } from '../../platform/product/common/productService.js';
 import { IUriIdentityService } from '../../platform/uriIdentity/common/uriIdentity.js';
 import { UriIdentityService } from '../../platform/uriIdentity/common/uriIdentityService.js';
-import { INativeKeyboardLayoutService, NativeKeyboardLayoutService } from '../services/keybinding/electron-browser/nativeKeyboardLayoutService.js';
+import { INativeKeyboardLayoutService, NativeKeyboardLayoutService } from '../../workbench/services/keybinding/electron-browser/nativeKeyboardLayoutService.js';
 import { ElectronIPCMainProcessService } from '../../platform/ipc/electron-browser/mainProcessService.js';
 import { LoggerChannelClient } from '../../platform/log/common/logIpc.js';
 import { ProxyChannel } from '../../base/parts/ipc/common/ipc.js';
-import { NativeLogService } from '../services/log/electron-browser/logService.js';
-import { WorkspaceTrustEnablementService, WorkspaceTrustManagementService } from '../services/workspaces/common/workspaceTrust.js';
+import { NativeLogService } from '../../workbench/services/log/electron-browser/logService.js';
+import { WorkspaceTrustEnablementService, WorkspaceTrustManagementService } from '../../workbench/services/workspaces/common/workspaceTrust.js';
 import { IWorkspaceTrustEnablementService, IWorkspaceTrustManagementService } from '../../platform/workspace/common/workspaceTrust.js';
 import { safeStringify } from '../../base/common/objects.js';
-import { IUtilityProcessWorkerWorkbenchService, UtilityProcessWorkerWorkbenchService } from '../services/utilityProcess/electron-browser/utilityProcessWorkerWorkbenchService.js';
+import { IUtilityProcessWorkerWorkbenchService, UtilityProcessWorkerWorkbenchService } from '../../workbench/services/utilityProcess/electron-browser/utilityProcessWorkerWorkbenchService.js';
 import { isCI, isMacintosh, isTahoeOrNewer } from '../../base/common/platform.js';
 import { Schemas } from '../../base/common/network.js';
-import { DiskFileSystemProvider } from '../services/files/electron-browser/diskFileSystemProvider.js';
+import { DiskFileSystemProvider } from '../../workbench/services/files/electron-browser/diskFileSystemProvider.js';
 import { FileUserDataProvider } from '../../platform/userData/common/fileUserDataProvider.js';
 import { IUserDataProfilesService, reviveProfile } from '../../platform/userDataProfile/common/userDataProfile.js';
 import { UserDataProfilesService } from '../../platform/userDataProfile/common/userDataProfileIpc.js';
 import { PolicyChannelClient } from '../../platform/policy/common/policyIpc.js';
 import { IPolicyService } from '../../platform/policy/common/policy.js';
-import { UserDataProfileService } from '../services/userDataProfile/common/userDataProfileService.js';
-import { IUserDataProfileService } from '../services/userDataProfile/common/userDataProfile.js';
+import { UserDataProfileService } from '../../workbench/services/userDataProfile/common/userDataProfileService.js';
+import { IUserDataProfileService } from '../../workbench/services/userDataProfile/common/userDataProfile.js';
 import { BrowserSocketFactory } from '../../platform/remote/browser/browserSocketFactory.js';
 import { RemoteSocketFactoryService, IRemoteSocketFactoryService } from '../../platform/remote/common/remoteSocketFactoryService.js';
 import { ElectronRemoteResourceLoader } from '../../platform/remote/electron-browser/electronRemoteResourceLoader.js';
@@ -62,18 +61,14 @@ import { IConfigurationService } from '../../platform/configuration/common/confi
 import { applyZoom } from '../../platform/window/electron-browser/window.js';
 import { mainWindow } from '../../base/browser/window.js';
 import { IDefaultAccountService } from '../../platform/defaultAccount/common/defaultAccount.js';
-import { DefaultAccountService } from '../services/accounts/browser/defaultAccount.js';
-import { AccountPolicyService } from '../services/policies/common/accountPolicyService.js';
-import { MultiplexPolicyService } from '../services/policies/common/multiplexPolicyService.js';
-import { WorkbenchModeService } from '../services/layout/browser/workbenchModeService.js';
-import { IWorkbenchModeService } from '../services/layout/common/workbenchModeService.js';
-import { PaneCompositePartService } from '../browser/parts/paneCompositePartService.js';
-import { IPaneCompositePartService } from '../services/panecomposite/browser/panecomposite.js';
-import { InstantiationType, registerSingleton } from '../../platform/instantiation/common/extensions.js';
-import { ITitleService } from '../services/title/browser/titleService.js';
-import { NativeTitleService } from './parts/titlebar/titlebarPart.js';
+import { DefaultAccountService } from '../../workbench/services/accounts/browser/defaultAccount.js';
+import { AccountPolicyService } from '../../workbench/services/policies/common/accountPolicyService.js';
+import { MultiplexPolicyService } from '../../workbench/services/policies/common/multiplexPolicyService.js';
+import { WorkbenchModeService } from '../../workbench/services/layout/browser/workbenchModeService.js';
+import { IWorkbenchModeService } from '../../workbench/services/layout/common/workbenchModeService.js';
+import { Workbench as AgenticWorkbench } from '../browser/workbench.js';
 
-export class DesktopMain extends Disposable {
+export class AgenticMain extends Disposable {
 
 	constructor(
 		private readonly configuration: INativeWindowConfiguration
@@ -123,20 +118,12 @@ export class DesktopMain extends Disposable {
 		// Init services and wait for DOM to be ready in parallel
 		const [services] = await Promise.all([this.initServices(), domContentLoaded(mainWindow)]);
 
-		// Apply zoom level early once we have a configuration service
-		// and before the workbench is created to prevent flickering.
-		// We also need to respect that zoom level can be configured per
-		// workspace, so we need the resolved configuration service.
-		// Finally, it is possible for the window to have a custom
-		// zoom level that is not derived from settings.
-		// (fixes https://github.com/microsoft/vscode/issues/187982)
+		// Apply zoom level early
 		this.applyWindowZoomLevel(services.configurationService);
 
-		// Create Workbench
-		registerDefaultWorkbenchServices();
-		const workbench = new Workbench(mainWindow.document.body, {
+		// Create Agentic Workbench
+		const workbench = new AgenticWorkbench(mainWindow.document.body, {
 			extraClasses: this.getExtraClasses(),
-			resetLayout: this.configuration['disable-layout-restore'] === true
 		}, services.serviceCollection, services.logService);
 
 		// Listeners
@@ -169,7 +156,7 @@ export class DesktopMain extends Disposable {
 		return [];
 	}
 
-	private registerListeners(workbench: Workbench, storageService: NativeWorkbenchStorageService): void {
+	private registerListeners(workbench: AgenticWorkbench, storageService: NativeWorkbenchStorageService): void {
 
 		// Workbench Lifecycle
 		this._register(workbench.onWillShutdown(event => event.join(storageService.close(), { id: 'join.closeStorage', label: localize('join.closeStorage', "Saving UI state") })));
@@ -184,8 +171,8 @@ export class DesktopMain extends Disposable {
 		//
 		// NOTE: Please do NOT register services here. Use `registerSingleton()`
 		//       from `workbench.common.main.ts` if the service is shared between
-		//       desktop and web or `workbench.desktop.main.ts` if the service
-		//       is desktop only.
+		//       desktop and web or `agentic/workbench.desktop.main.ts` if the service
+		//       is agentic desktop only.
 		//
 		// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
@@ -244,8 +231,8 @@ export class DesktopMain extends Disposable {
 		//
 		// NOTE: Please do NOT register services here. Use `registerSingleton()`
 		//       from `workbench.common.main.ts` if the service is shared between
-		//       desktop and web or `workbench.desktop.main.ts` if the service
-		//       is desktop only.
+		//       desktop and web or `agentic/workbench.desktop.main.ts` if the service
+		//       is agentic desktop only.
 		//
 		// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
@@ -294,8 +281,8 @@ export class DesktopMain extends Disposable {
 		//
 		// NOTE: Please do NOT register services here. Use `registerSingleton()`
 		//       from `workbench.common.main.ts` if the service is shared between
-		//       desktop and web or `workbench.desktop.main.ts` if the service
-		//       is desktop only.
+		//       desktop and web or `agentic/workbench.desktop.main.ts` if the service
+		//       is agentic desktop only.
 		//
 		// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
@@ -356,8 +343,8 @@ export class DesktopMain extends Disposable {
 		//
 		// NOTE: Please do NOT register services here. Use `registerSingleton()`
 		//       from `workbench.common.main.ts` if the service is shared between
-		//       desktop and web or `workbench.desktop.main.ts` if the service
-		//       is desktop only.
+		//       desktop and web or `agentic/workbench.desktop.main.ts` if the service
+		//       is agentic desktop only.
 		//
 		// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
@@ -435,12 +422,7 @@ export interface IDesktopMain {
 }
 
 export function main(configuration: INativeWindowConfiguration): Promise<void> {
-	const workbench = new DesktopMain(configuration);
+	const workbench = new AgenticMain(configuration);
 
 	return workbench.open();
-}
-
-function registerDefaultWorkbenchServices() {
-	registerSingleton(IPaneCompositePartService, PaneCompositePartService, InstantiationType.Delayed);
-	registerSingleton(ITitleService, NativeTitleService, InstantiationType.Eager);
 }

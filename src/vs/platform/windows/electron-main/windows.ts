@@ -39,6 +39,7 @@ export interface IWindowsMainService {
 	open(openConfig: IOpenConfiguration): Promise<ICodeWindow[]>;
 	openEmptyWindow(openConfig: IOpenEmptyConfiguration, options?: IOpenEmptyWindowOptions): Promise<ICodeWindow[]>;
 	openExtensionDevelopmentHostWindow(extensionDevelopmentPath: string[], openConfig: IOpenConfiguration): Promise<ICodeWindow[]>;
+	openAgenticWindow(openConfig: IBaseOpenConfiguration): Promise<ICodeWindow[]>;
 
 	openExistingWindow(window: ICodeWindow, openConfig: IOpenConfiguration): void;
 

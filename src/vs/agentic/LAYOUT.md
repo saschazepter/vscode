@@ -70,30 +70,26 @@ The following parts from the default workbench are **not included**:
 
 ## 3. Titlebar Configuration
 
-The Agent Sessions workbench uses a dedicated titlebar part (`AgenticTitlebarPart`) with its own title service (`AgenticTitleService`), both implemented in `agentic/browser/parts/agenticTitlebarPart.ts`. This approach uses class inheritance — overriding protected getters on `BrowserTitlebarPart` — to customize behavior without modifying the base class's API.
+The Agent Sessions workbench uses a fully independent titlebar part (`TitlebarPart`) with its own title service (`TitleService`), implemented in `agentic/browser/parts/titlebarPart.ts`. This is a standalone implementation (not extending `BrowserTitlebarPart`) with a simple three-section layout driven entirely by menus.
 
 ### 3.1 Titlebar Part Architecture
 
-The `AgenticTitlebarPart` extends `BrowserTitlebarPart` and overrides protected getters to customize behavior:
+The titlebar is divided into three sections, each rendered by a `MenuWorkbenchToolBar`:
 
-| Getter | Default (`BrowserTitlebarPart`) | Override (`AgenticTitlebarPart`) | Notes |
-|--------|-------------------|----------------|-------|
-| `isCommandCenterVisible` | Settings-driven | `true` (always) | Uses custom `AgenticCommandCenter` menu IDs |
-| `installMenubar()` | Installs menubar | No-op | No menubar in titlebar |
-| `editorActionsEnabled` | Settings-driven | `false` | No editor actions in titlebar |
-| `contextMenuId` | `MenuId.TitleBarContext` | `AgenticWorkbenchMenus.TitleBarContext` | Custom context menu |
-| `commandCenterMenuId` | `undefined` (defaults to `MenuId.CommandCenter`) | `AgenticWorkbenchMenus.CommandCenter` | Custom command center menu |
-| `commandCenterCenterMenuId` | `undefined` (defaults to `MenuId.CommandCenterCenter`) | `AgenticWorkbenchMenus.CommandCenterCenter` | Custom command center center submenu |
-| `titleBarMenuId` | `MenuId.TitleBar` | `AgenticWorkbenchMenus.TitleBarRight` | Custom global (right-side) toolbar |
+| Section | Menu ID | Purpose |
+|---------|---------|--------|
+| Left | `Menus.TitleBarLeft` | Toggle sidebar and other left-aligned actions |
+| Center | `Menus.CommandCenter` | Session picker widget (rendered via `IActionViewItemService`) |
+| Right | `Menus.TitleBarRight` | Toggle terminal, toggle secondary sidebar, account menu |
 
-The `AgenticTitleService` extends `BrowserTitleService` and overrides `createMainTitlebarPart()` and `doCreateAuxiliaryTitlebarPart()` to create `MainAgenticTitlebarPart` and `AuxiliaryAgenticTitlebarPart` respectively.
+No menubar, no editor actions, no layout controls, no `WindowTitle` dependency.
 
 ### 3.2 Command Center
 
 The Agent Sessions titlebar includes a command center with a custom title bar widget (`AgenticTitleBarWidget`). It uses custom menu IDs separate from the default workbench command center to avoid conflicts:
 
-- **`AgenticWorkbenchMenus.CommandCenter`** — The outer command center toolbar menu (replaces `MenuId.CommandCenter`)
-- **`AgenticWorkbenchMenus.TitleBarControlMenu`** — A submenu registered in the command center whose rendering is intercepted by `IActionViewItemService` to display the custom widget
+- **`Menus.CommandCenter`** — The center toolbar menu (replaces `MenuId.CommandCenter`)
+- **`Menus.TitleBarControlMenu`** — A submenu registered in the command center whose rendering is intercepted by `IActionViewItemService` to display the custom widget
 
 The widget:
 - Extends `BaseActionViewItem` and renders a clickable label showing the active session title
@@ -537,13 +533,12 @@ src/vs/agentic/
 │   ├── media/
 │   │   └── agenticTitleBarWidget.css   # Title bar widget styles
 │   └── parts/
-│       ├── agenticTitlebarPart.ts     # Agent sessions titlebar part and title service
+│       ├── titlebarPart.ts            # Simplified titlebar part and title service
 │       ├── agenticSidebarPart.ts      # Agent session sidebar
 │       ├── agenticAuxiliaryBarPart.ts # Agent session auxiliary bar (with run script dropdown)
 │       ├── agenticPanelPart.ts        # Agent session panel
 │       ├── editorModal.ts                  # Editor modal overlay implementation
 │       ├── floatingToolbar.ts              # Floating toolbar
-│       ├── agenticCommandCenterControl.ts  # Command center control
 │       └── chatbar/
 │           ├── chatBarPart.ts              # Chat Bar part implementation
 │           └── media/
@@ -690,6 +685,7 @@ this._register(new SidebarRevealButton(this.mainContainer, 'right', this));
 
 | Date | Change |
 |------|--------|
+| 2026-02-11 | Simplified titlebar: replaced `BrowserTitlebarPart`-derived implementation with standalone `TitlebarPart` using three `MenuWorkbenchToolBar` sections (left/center/right); Removed `CommandCenterControl`, `WindowTitle`, layout toolbar, and manual toolbar management; Center section uses `Menus.CommandCenter` which renders session picker via `IActionViewItemService`; Right section uses `Menus.TitleBarRight` which includes account submenu; Removed `commandCenterControl.ts` file |
 | 2026-02-11 | Removed activity actions (Accounts, Manage) from titlebar; Added `AgenticAccount` submenu to `TitleBarRight` with account icon; Menu shows signed-in user label from `IDefaultAccountService` (or Sign In action if no account), Settings, and Check for Updates; Added `AgenticAccountContribution` workbench contribution for dynamic account state; Added `AgenticAccount` menu ID to `Menus` |
 | 2026-02-10 | Titlebar customization now uses class inheritance with protected getter overrides on `BrowserTitlebarPart`; Base class retains original API — no `ITitlebarPartOptions`/`ITitlebarPartConfiguration` removed; `AgenticTitlebarPart` and `AgenticTitleService` in `parts/agenticTitlebarPart.ts` override `isCommandCenterVisible`, `editorActionsEnabled`, `installMenubar()`, and menu ID getters |
 | 2026-02-07 | Comprehensive spec update: fixed widget class names (`AgenticTitleBarWidget`/`AgenticTitleBarContribution`), corrected click behavior (uses `AgentSessionsPicker` not `FocusAgentSessionsAction`), corrected session label source (`IActiveAgentSessionService`), fixed toggle terminal details (uses standard `toggleTerminal` command via `MenuRegistry.appendMenuItem` on right toolbar), added sidebar/chatbar storage keys, added chatbar to part classes table, documented contributions section with `RunScriptContribution`/`AgenticTitleBarContribution`/Changes view, added `agent-sessions-workbench` platform class, documented auxiliary bar run script dropdown, updated file structure with `actions/`, `views/`, `media/` directories, fixed lifecycle section numbering, corrected `focus()` target to ChatBar |
