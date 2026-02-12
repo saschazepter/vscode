@@ -664,6 +664,76 @@ suite('Grid', function () {
 		assert.deepStrictEqual(grid.isViewVisible(view3), true);
 		assert.deepStrictEqual(grid.isViewVisible(view4), true);
 	});
+
+	test('excludeViews keeps views visible when maximizing', function () {
+		const firstView = store.add(new TestView(50, Number.MAX_VALUE, 50, Number.MAX_VALUE));
+		const testGrid = store.add(new Grid(firstView));
+		container.appendChild(testGrid.element);
+		testGrid.layout(800, 600);
+
+		const secondView = store.add(new TestView(50, Number.MAX_VALUE, 50, Number.MAX_VALUE));
+		testGrid.addView(secondView, Sizing.Distribute, firstView, Direction.Right);
+
+		const thirdView = store.add(new TestView(50, Number.MAX_VALUE, 50, Number.MAX_VALUE));
+		testGrid.addView(thirdView, Sizing.Distribute, secondView, Direction.Down);
+
+		const fourthView = store.add(new TestView(50, Number.MAX_VALUE, 50, Number.MAX_VALUE));
+		testGrid.addView(fourthView, Sizing.Distribute, secondView, Direction.Right);
+
+		// Maximize firstView, but exclude thirdView from being hidden
+		testGrid.maximizeView(firstView, [thirdView]);
+
+		assert.strictEqual(testGrid.hasMaximizedView(), true);
+		
+		// ThirdView should stay visible and have dimensions greater than zero
+		assert.strictEqual(testGrid.isViewVisible(thirdView), true);
+		const excludedViewSize = thirdView.size;
+		assert.ok(excludedViewSize[0] > 0);
+		assert.ok(excludedViewSize[1] > 0);
+
+		// SecondView and fourthView should have zero size (hidden)
+		const hiddenSize1 = secondView.size;
+		const hiddenSize2 = fourthView.size;
+		assert.strictEqual(hiddenSize1[0], 0);
+		assert.strictEqual(hiddenSize1[1], 0);
+		assert.strictEqual(hiddenSize2[0], 0);
+		assert.strictEqual(hiddenSize2[1], 0);
+
+		testGrid.exitMaximizedView();
+		assert.strictEqual(testGrid.hasMaximizedView(), false);
+	});
+
+	test('multiple views can be excluded from hiding', function () {
+		const v1 = store.add(new TestView(50, Number.MAX_VALUE, 50, Number.MAX_VALUE));
+		const myGrid = store.add(new Grid(v1));
+		container.appendChild(myGrid.element);
+		myGrid.layout(800, 600);
+
+		const v2 = store.add(new TestView(50, Number.MAX_VALUE, 50, Number.MAX_VALUE));
+		myGrid.addView(v2, Sizing.Distribute, v1, Direction.Right);
+
+		const v3 = store.add(new TestView(50, Number.MAX_VALUE, 50, Number.MAX_VALUE));
+		myGrid.addView(v3, Sizing.Distribute, v2, Direction.Down);
+
+		const v4 = store.add(new TestView(50, Number.MAX_VALUE, 50, Number.MAX_VALUE));
+		myGrid.addView(v4, Sizing.Distribute, v2, Direction.Right);
+
+		// Maximize v1 with two excluded views: v2 and v4
+		myGrid.maximizeView(v1, [v2, v4]);
+
+		// Both excluded views keep their dimensions
+		const sz2 = v2.size;
+		const sz4 = v4.size;
+		assert.ok(sz2[0] !== 0 || sz2[1] !== 0);
+		assert.ok(sz4[0] !== 0 || sz4[1] !== 0);
+
+		// Non-excluded view v3 is hidden with zero dimensions
+		const sz3 = v3.size;
+		assert.strictEqual(sz3[0], 0);
+		assert.strictEqual(sz3[1], 0);
+
+		myGrid.exitMaximizedView();
+	});
 });
 
 class TestSerializableView extends TestView implements ISerializableView {
