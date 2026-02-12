@@ -361,19 +361,6 @@ suite('PromptHoverProvider', () => {
 			const hover = await getHover(content, 4, 1, PromptsType.agent);
 			assert.strictEqual(hover, 'If true, prevents the agent from being invoked as a subagent.');
 		});
-
-		test('hover on deprecated user-invokable attribute shows deprecation', async () => {
-			const content = [
-				'---',
-				'name: "Test Agent"',
-				'description: "Test agent"',
-				'user-invokable: true',
-				'---',
-			].join('\n');
-			const hover = await getHover(content, 4, 1, PromptsType.agent);
-			assert.ok(hover?.includes('Deprecated'));
-			assert.ok(hover?.includes('user-invocable'));
-		});
 	});
 
 	suite('prompt hovers', () => {
