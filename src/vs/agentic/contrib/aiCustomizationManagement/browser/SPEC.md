@@ -130,6 +130,8 @@ aiCustomizationManagement/browser/
 2. Choose worktree or user location (if available).
 3. Optionally use "Generate" to start AI-guided creation.
 
+This is the only UI surface for creating new customizations.
+
 ### Edit Items
 
 1. Click an item to open the embedded editor.

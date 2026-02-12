@@ -148,6 +148,7 @@ Key services to rely on:
 - Unified sidebar tree with Type -> Storage -> File hierarchy.
 - Auto-expands categories to reveal storage groups.
 - Context menus provide Open, Open as Text, and Run Prompt.
+- Creation actions are centralized in the management editor.
 
 ### Additional Surfaces (Current)
 

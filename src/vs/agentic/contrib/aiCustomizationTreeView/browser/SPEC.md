@@ -71,7 +71,6 @@ aiCustomizationTreeView/browser/
 
 ### View Title
 
-- **New...** submenu (Agent/Skill/Instructions/Prompt) via `PromptFilePickers`.
 - **Refresh** reloads data and re-expands categories.
 - **Collapse All** collapses the tree.
 
@@ -110,6 +109,7 @@ Required services to prefer:
 
 - Storage groups are labeled with counts; icons are not shown for group rows.
 - Skills display the frontmatter name when available, falling back to the folder name.
+- Creation actions are intentionally centralized in the Management Editor.
 - Refresh clears cached data before rebuilding the tree.
 
 ---

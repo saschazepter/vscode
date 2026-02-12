@@ -3,15 +3,12 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { localize, localize2, ILocalizedString } from '../../../../nls.js';
-import { Action2, MenuId, MenuRegistry, registerAction2 } from '../../../../platform/actions/common/actions.js';
+import { localize, localize2 } from '../../../../nls.js';
+import { Action2, MenuRegistry, registerAction2 } from '../../../../platform/actions/common/actions.js';
 import { ContextKeyExpr } from '../../../../platform/contextkey/common/contextkey.js';
-import { IInstantiationService, ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
-import { ChatContextKeys } from '../../../../workbench/contrib/chat/common/actions/chatContextKeys.js';
-import { AICustomizationItemMenuId, AICustomizationNewMenuId, AI_CUSTOMIZATION_CATEGORY, AI_CUSTOMIZATION_VIEW_ID } from './aiCustomizationTreeView.js';
+import { ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
+import { AICustomizationItemMenuId } from './aiCustomizationTreeView.js';
 import { AICustomizationItemTypeContextKey } from './aiCustomizationTreeViewViews.js';
-import { IOpenerService } from '../../../../platform/opener/common/opener.js';
-import { PromptFilePickers } from '../../../../workbench/contrib/chat/browser/promptSyntax/pickers/promptFilePickers.js';
 import { PromptsType } from '../../../../workbench/contrib/chat/common/promptSyntax/promptTypes.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
@@ -43,45 +40,6 @@ function extractURI(context: URIContext): URI {
 	}
 	return URI.parse(context.uri as string);
 }
-
-//#endregion
-
-//#region View Title Menu Actions
-
-// Add dropdown menu for creating new items
-MenuRegistry.appendMenuItem(MenuId.ViewTitle, {
-	submenu: AICustomizationNewMenuId,
-	title: localize('new', "New..."),
-	icon: Codicon.add,
-	when: ContextKeyExpr.equals('view', AI_CUSTOMIZATION_VIEW_ID),
-	group: 'navigation',
-	order: 1,
-});
-
-// Register the submenu
-MenuRegistry.appendMenuItem(AICustomizationNewMenuId, {
-	command: { id: 'workbench.action.aiCustomization.newAgent', title: localize('newAgent', "New Agent") },
-	group: '1_create',
-	order: 1,
-});
-
-MenuRegistry.appendMenuItem(AICustomizationNewMenuId, {
-	command: { id: 'workbench.action.aiCustomization.newSkill', title: localize('newSkill', "New Skill") },
-	group: '1_create',
-	order: 2,
-});
-
-MenuRegistry.appendMenuItem(AICustomizationNewMenuId, {
-	command: { id: 'workbench.action.aiCustomization.newInstructions', title: localize('newInstructions', "New Instructions") },
-	group: '1_create',
-	order: 3,
-});
-
-MenuRegistry.appendMenuItem(AICustomizationNewMenuId, {
-	command: { id: 'workbench.action.aiCustomization.newPrompt', title: localize('newPrompt', "New Prompt") },
-	group: '1_create',
-	order: 4,
-});
 
 //#endregion
 
@@ -162,78 +120,5 @@ MenuRegistry.appendMenuItem(AICustomizationItemMenuId, {
 });
 
 //#endregion
-
-//#region Actions
-
-
-
-/**
- * Factory function to create and register "New [Type]" actions for AI customization files.
- * Reduces code duplication across the four prompt type actions.
- */
-function registerNewPromptAction(
-	id: string,
-	title: ILocalizedString,
-	placeholder: string,
-	type: PromptsType,
-): void {
-	registerAction2(class extends Action2 {
-		constructor() {
-			super({
-				id,
-				title,
-				category: AI_CUSTOMIZATION_CATEGORY,
-				icon: Codicon.add,
-				f1: true,
-				precondition: ChatContextKeys.enabled,
-			});
-		}
-
-		async run(accessor: ServicesAccessor): Promise<void> {
-			const openerService = accessor.get(IOpenerService);
-			const instantiationService = accessor.get(IInstantiationService);
-
-			const pickers = instantiationService.createInstance(PromptFilePickers);
-			const result = await pickers.selectPromptFile({
-				placeholder,
-				type,
-				optionEdit: true,
-			});
-
-			if (result !== undefined) {
-				await openerService.open(result.promptFile);
-			}
-		}
-	});
-}
-
-// Register all New actions using the factory
-registerNewPromptAction(
-	'workbench.action.aiCustomization.newAgent',
-	localize2('newCustomAgent', 'New Custom Agent...'),
-	localize('selectAgent', 'Select agent to open or create new'),
-	PromptsType.agent,
-);
-
-registerNewPromptAction(
-	'workbench.action.aiCustomization.newSkill',
-	localize2('newSkillAction', 'New Skill...'),
-	localize('selectSkill', 'Select skill to open or create new'),
-	PromptsType.skill,
-);
-
-registerNewPromptAction(
-	'workbench.action.aiCustomization.newInstructions',
-	localize2('newInstructionsAction', 'New Instructions...'),
-	localize('selectInstructions', 'Select instructions to open or create new'),
-	PromptsType.instructions,
-);
-
-registerNewPromptAction(
-	'workbench.action.aiCustomization.newPrompt',
-	localize2('newPromptAction', 'New Prompt...'),
-	localize('selectPrompt', 'Select prompt to open or create new'),
-	PromptsType.prompt,
-);
 
 //#endregion
