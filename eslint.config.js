@@ -1907,6 +1907,23 @@ export default tseslint.config(
 					]
 				},
 				{
+					'target': 'src/vs/agentic/workbench.common.main.ts',
+					'layer': 'browser',
+					'restrictions': [
+						'vs/base/~',
+						'vs/base/parts/*/~',
+						'vs/platform/*/~',
+						'vs/editor/~',
+						'vs/editor/contrib/*/~',
+						'vs/editor/editor.all.js',
+						'vs/workbench/~',
+						'vs/workbench/api/~',
+						'vs/workbench/services/*/~',
+						'vs/workbench/contrib/*/~',
+						'vs/workbench/contrib/terminal/terminal.all.js'
+					]
+				},
+				{
 					'target': 'src/vs/agentic/workbench.desktop.main.ts',
 					'layer': 'electron-browser',
 					'restrictions': [
@@ -1922,7 +1939,7 @@ export default tseslint.config(
 						'vs/workbench/api/~',
 						'vs/workbench/services/*/~',
 						'vs/workbench/contrib/*/~',
-						'vs/workbench/workbench.common.main.js'
+						'vs/agentic/workbench.common.main.js'
 					]
 				},
 				{

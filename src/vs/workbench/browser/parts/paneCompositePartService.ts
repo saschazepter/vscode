@@ -5,6 +5,7 @@
 
 import { Event } from '../../../base/common/event.js';
 import { assertReturnsDefined } from '../../../base/common/types.js';
+import { InstantiationType, registerSingleton } from '../../../platform/instantiation/common/extensions.js';
 import { IInstantiationService } from '../../../platform/instantiation/common/instantiation.js';
 import { IProgressIndicator } from '../../../platform/progress/common/progress.js';
 import { PaneCompositeDescriptor } from '../panecomposite.js';
@@ -91,3 +92,5 @@ export class PaneCompositePartService extends Disposable implements IPaneComposi
 	}
 
 }
+
+registerSingleton(IPaneCompositePartService, PaneCompositePartService, InstantiationType.Delayed);

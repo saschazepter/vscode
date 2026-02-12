@@ -12,7 +12,7 @@
 
 //#region --- workbench common
 
-import '../workbench/workbench.common.main.js';
+import './workbench.common.main.js';
 
 //#endregion
 

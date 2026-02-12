@@ -4,7 +4,6 @@
  *--------------------------------------------------------------------------------------------*/
 
 import './style.js';
-import { registerLayoutActions } from './actions/layoutActions.js';
 import { runWhenWindowIdle } from '../../base/browser/dom.js';
 import { Event, Emitter, setGlobalLeakWarningThreshold } from '../../base/common/event.js';
 import { RunOnceScheduler, timeout } from '../../base/common/async.js';
@@ -51,10 +50,6 @@ import { AccessibleViewRegistry } from '../../platform/accessibility/browser/acc
 import { NotificationAccessibleView } from './parts/notifications/notificationAccessibleView.js';
 import { IMarkdownRendererService } from '../../platform/markdown/browser/markdownRenderer.js';
 import { EditorMarkdownCodeBlockRenderer } from '../../editor/browser/widget/markdownRenderer/browser/editorMarkdownCodeBlockRenderer.js';
-import { registerTitleBarActions } from './parts/titlebar/titlebarActions.js';
-import { IPaneCompositePartService } from '../services/panecomposite/browser/panecomposite.js';
-import { PaneCompositePartService } from './parts/paneCompositePartService.js';
-import { SyncDescriptor } from '../../platform/instantiation/common/descriptors.js';
 
 export interface IWorkbenchOptions {
 
@@ -89,10 +84,6 @@ export class Workbench extends Layout {
 		mark('code/willStartWorkbench');
 
 		this.registerErrorHandler(logService);
-
-		// Register layout actions specific to the default workbench
-		registerLayoutActions();
-		registerTitleBarActions();
 	}
 
 	private registerErrorHandler(logService: ILogService): void {
@@ -202,7 +193,6 @@ export class Workbench extends Layout {
 
 		// Layout Service
 		serviceCollection.set(IWorkbenchLayoutService, this);
-		serviceCollection.set(IPaneCompositePartService, new SyncDescriptor(PaneCompositePartService, undefined, true));
 
 		// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 		//
@@ -212,7 +202,6 @@ export class Workbench extends Layout {
 		//       is desktop only.
 		//
 		// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
 
 		// All Contributed Services
 		const contributedServices = getSingletonServiceDescriptors();

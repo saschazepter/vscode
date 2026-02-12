@@ -67,11 +67,6 @@ import { AccountPolicyService } from '../services/policies/common/accountPolicyS
 import { MultiplexPolicyService } from '../services/policies/common/multiplexPolicyService.js';
 import { WorkbenchModeService } from '../services/layout/browser/workbenchModeService.js';
 import { IWorkbenchModeService } from '../services/layout/common/workbenchModeService.js';
-import { PaneCompositePartService } from '../browser/parts/paneCompositePartService.js';
-import { IPaneCompositePartService } from '../services/panecomposite/browser/panecomposite.js';
-import { InstantiationType, registerSingleton } from '../../platform/instantiation/common/extensions.js';
-import { ITitleService } from '../services/title/browser/titleService.js';
-import { NativeTitleService } from './parts/titlebar/titlebarPart.js';
 
 export class DesktopMain extends Disposable {
 
@@ -133,7 +128,6 @@ export class DesktopMain extends Disposable {
 		this.applyWindowZoomLevel(services.configurationService);
 
 		// Create Workbench
-		registerDefaultWorkbenchServices();
 		const workbench = new Workbench(mainWindow.document.body, {
 			extraClasses: this.getExtraClasses(),
 			resetLayout: this.configuration['disable-layout-restore'] === true
@@ -176,7 +170,7 @@ export class DesktopMain extends Disposable {
 		this._register(workbench.onDidShutdown(() => this.dispose()));
 	}
 
-	private async initServices(): Promise<{ serviceCollection: ServiceCollection; logService: ILogService; storageService: NativeWorkbenchStorageService; configurationService: WorkspaceService }> {
+	private async initServices(): Promise<{ serviceCollection: ServiceCollection; logService: ILogService; storageService: NativeWorkbenchStorageService; configurationService: IConfigurationService }> {
 		const serviceCollection = new ServiceCollection();
 
 
@@ -438,9 +432,4 @@ export function main(configuration: INativeWindowConfiguration): Promise<void> {
 	const workbench = new DesktopMain(configuration);
 
 	return workbench.open();
-}
-
-function registerDefaultWorkbenchServices() {
-	registerSingleton(IPaneCompositePartService, PaneCompositePartService, InstantiationType.Delayed);
-	registerSingleton(ITitleService, NativeTitleService, InstantiationType.Eager);
 }

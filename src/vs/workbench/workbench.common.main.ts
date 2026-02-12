@@ -18,6 +18,7 @@ import './browser/workbench.contribution.js';
 import './browser/actions/textInputActions.js';
 import './browser/actions/developerActions.js';
 import './browser/actions/helpActions.js';
+import './browser/actions/layoutActions.js';
 import './browser/actions/listCommands.js';
 import './browser/actions/navigationActions.js';
 import './browser/actions/windowActions.js';
@@ -42,6 +43,7 @@ import './api/browser/viewsExtensionPoint.js';
 
 import './browser/parts/editor/editor.contribution.js';
 import './browser/parts/editor/editorParts.js';
+import './browser/parts/paneCompositePartService.js';
 import './browser/parts/banner/bannerPart.js';
 import './browser/parts/statusbar/statusbarPart.js';
 
