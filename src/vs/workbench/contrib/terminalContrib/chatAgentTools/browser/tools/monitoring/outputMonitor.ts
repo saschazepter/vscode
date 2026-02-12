@@ -19,12 +19,11 @@ import { ChatElicitationRequestPart } from '../../../../../chat/common/model/cha
 import { ChatModel } from '../../../../../chat/common/model/chatModel.js';
 import { ElicitationState, IChatService } from '../../../../../chat/common/chatService/chatService.js';
 import { ChatAgentLocation } from '../../../../../chat/common/constants.js';
-import { ChatMessageRole, ILanguageModelsService } from '../../../../../chat/common/languageModels.js';
+import { ChatMessageRole, getTextResponseFromStream, ILanguageModelsService } from '../../../../../chat/common/languageModels.js';
 import { IToolInvocationContext } from '../../../../../chat/common/tools/languageModelToolsService.js';
 import { ITaskService } from '../../../../../tasks/common/taskService.js';
 import { ILinkLocation } from '../../taskHelpers.js';
 import { IConfirmationPrompt, IExecution, IPollingResult, OutputMonitorState, PollingConsts } from './types.js';
-import { getTextResponseFromStream } from './utils.js';
 import { IConfigurationService } from '../../../../../../../platform/configuration/common/configuration.js';
 import { TerminalChatAgentToolsSettingId } from '../../../common/terminalChatAgentToolsConfiguration.js';
 import { ITerminalService } from '../../../../../terminal/browser/terminal.js';
@@ -470,9 +469,7 @@ export class OutputMonitor extends Disposable implements IOutputMonitor {
 		);
 
 		try {
-			const responseFromStream = getTextResponseFromStream(response);
-			await Promise.all([response.result, responseFromStream]);
-			return await responseFromStream;
+			return await getTextResponseFromStream(response);
 		} catch (err) {
 			return 'Error occurred ' + err;
 		}

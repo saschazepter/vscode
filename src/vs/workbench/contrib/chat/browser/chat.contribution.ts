@@ -323,6 +323,13 @@ configurationRegistry.registerConfiguration({
 			description: nls.localize('chat.notifyWindowOnConfirmation', "Controls whether a chat session should present the user with an OS notification when a confirmation is needed while the window is not in focus. This includes a window badge as well as notification toast."),
 			default: true,
 		},
+		[ChatConfiguration.AutoReply]: {
+			default: false,
+			markdownDescription: nls.localize('chat.autoReply.description', "Automatically answer chat question carousels using the current model. This is an advanced setting and can lead to unintended choices or actions based on incomplete context."),
+			type: 'boolean',
+			scope: ConfigurationScope.APPLICATION_MACHINE,
+			tags: ['experimental', 'advanced'],
+		},
 		[ChatConfiguration.GlobalAutoApprove]: {
 			default: false,
 			markdownDescription: globalAutoApproveDescription.value,

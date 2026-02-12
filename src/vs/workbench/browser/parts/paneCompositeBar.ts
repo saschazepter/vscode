@@ -403,9 +403,9 @@ export class PaneCompositeBar extends Disposable {
 				classNames = [iconId, 'uri-icon'];
 				createCSSRule(iconClass, `
 				mask: ${cssUrl} no-repeat 50% 50%;
-				mask-size: ${this.options.iconSize}px;
+				mask-size: var(--activity-bar-icon-size, ${this.options.iconSize}px);
 				-webkit-mask: ${cssUrl} no-repeat 50% 50%;
-				-webkit-mask-size: ${this.options.iconSize}px;
+				-webkit-mask-size: var(--activity-bar-icon-size, ${this.options.iconSize}px);
 				mask-origin: padding;
 				-webkit-mask-origin: padding;
 			`);
