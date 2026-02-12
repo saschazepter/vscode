@@ -19,7 +19,7 @@ This skill involves many sequential git commands. Delegate it to a subagent with
 git log --format="%an <%ae>" <upstream>..<branch> | sort -u
 ```
 
-Match the requested person to their exact `--author=` string. Do not guess — names like "jospicer" won't match "Josh Spicer".
+Match the requested person to their exact `--author=` string. Do not guess — short usernames won't match full display names (resolve via `git log` or the GitHub MCP `get_me` tool).
 
 ### 2. Collect all files the author directly committed to
 
@@ -33,7 +33,7 @@ For each commit hash, extract touched files:
 git diff-tree --no-commit-id --name-only -r <hash>
 ```
 
-Union all results into a set (`josh_files`).
+Union all results into a set (`author_files`).
 
 ### 3. Build rename map across the entire branch
 
@@ -56,8 +56,8 @@ These are the files that will actually land when the branch merges.
 ### 5. Classify each file in the merge diff
 
 For each file in step 4:
-- If it's in `josh_files` → **DIRECT**
-- Else, walk the rename map transitively (follow chains: current → old → older) and check if any ancestor is in `josh_files` → **VIA_RENAME**
+- If it's in `author_files` → **DIRECT**
+- Else, walk the rename map transitively (follow chains: current → old → older) and check if any ancestor is in `author_files` → **VIA_RENAME**
 - Otherwise → not this author's contribution
 
 ### 6. Get diff stats
@@ -83,7 +83,7 @@ Format the result as a markdown table:
 ## Important Notes
 
 - **Use Python for the heavy lifting.** Shell loops with inline comments break in zsh. Write a temp `.py` script, run it, then delete it.
-- **Author matching is exact.** Always run step 1 first. `--author` does substring matching but you must verify the right person is matched (e.g., don't match "Joshua Smith" when looking for "Josh Spicer").
+- **Author matching is exact.** Always run step 1 first. `--author` does substring matching but you must verify the right person is matched (e.g., don't match "Joshua Smith" when looking for "Josh S."). Use the GitHub MCP `get_me` tool or `git log` output to resolve the correct full name.
 - **Renames can be multi-hop.** A file may have moved `contrib/chat/` → `agentSessions/` → `agentic/`. The rename map must be walked transitively.
 - **Only report files in the merge diff** (step 4). Files the author touched that were later deleted entirely should not appear — they won't land in the upstream.
 - **The rename map must include all authors' commits**, not just the target author's. Other people often do the rename commits (e.g., bulk refactors/moves).
@@ -95,7 +95,7 @@ import subprocess, os
 
 os.chdir('<repo_root>')
 UPSTREAM = 'main'
-AUTHOR = 'Josh Spicer'
+AUTHOR = '<Author Name>'  # Resolve via `git log` or GitHub MCP `get_me`
 
 # Step 2: author's files
 commits = subprocess.check_output(
