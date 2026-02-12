@@ -24,7 +24,7 @@ import { ILogger, ILoggerService } from '../../../../platform/log/common/log.js'
 import { Lazy } from '../../../../base/common/lazy.js';
 import { IViewsService } from '../common/viewsService.js';
 import { windowLogGroup } from '../../log/common/logConstants.js';
-import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
+import { IWorkbenchEnvironmentService } from '../../environment/common/environmentService.js';
 
 interface IViewsCustomizations {
 	viewContainerLocations: IStringDictionary<ViewContainerLocation>;
@@ -70,7 +70,7 @@ export class ViewDescriptorService extends Disposable implements IViewDescriptor
 	get viewContainers(): ReadonlyArray<ViewContainer> { return this.viewContainersRegistry.all; }
 
 	private readonly logger: Lazy<ILogger>;
-	private readonly isAgentSessionsWorkspace: boolean;
+	private readonly isSessionsWindow: boolean;
 
 	constructor(
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
@@ -79,12 +79,12 @@ export class ViewDescriptorService extends Disposable implements IViewDescriptor
 		@IExtensionService private readonly extensionService: IExtensionService,
 		@ITelemetryService private readonly telemetryService: ITelemetryService,
 		@ILoggerService loggerService: ILoggerService,
-		@IWorkspaceContextService workspaceContextService: IWorkspaceContextService,
+		@IWorkbenchEnvironmentService environmentService: IWorkbenchEnvironmentService,
 	) {
 		super();
 
 		this.logger = new Lazy(() => loggerService.createLogger(VIEWS_LOG_ID, { name: VIEWS_LOG_NAME, group: windowLogGroup }));
-		this.isAgentSessionsWorkspace = !!workspaceContextService.getWorkspace().isAgentSessionsWorkspace;
+		this.isSessionsWindow = environmentService.isSessionsWindow;
 
 		this.activeViewContextKeys = new Map<string, IContextKey<boolean>>();
 		this.movableViewContextKeys = new Map<string, IContextKey<boolean>>();
@@ -309,7 +309,7 @@ export class ViewDescriptorService extends Disposable implements IViewDescriptor
 	private getEffectiveViewContainerLocation(location: ViewContainerLocation): ViewContainerLocation {
 		// When not in agent sessions workspace, view containers contributed to ChatBar
 		// should be registered at the AuxiliaryBar location instead
-		if (!this.isAgentSessionsWorkspace && location === ViewContainerLocation.ChatBar) {
+		if (!this.isSessionsWindow && location === ViewContainerLocation.ChatBar) {
 			return ViewContainerLocation.AuxiliaryBar;
 		}
 		return location;
@@ -337,7 +337,7 @@ export class ViewDescriptorService extends Disposable implements IViewDescriptor
 
 	private isViewContainerVisible(viewContainer: ViewContainer): boolean {
 		const layoutVisibility = viewContainer.windowVisibility;
-		if (this.isAgentSessionsWorkspace) {
+		if (this.isSessionsWindow) {
 			return layoutVisibility === WindowVisibility.Sessions || layoutVisibility === WindowVisibility.Both;
 		}
 		return !layoutVisibility || layoutVisibility === WindowVisibility.Editor || layoutVisibility === WindowVisibility.Both;
@@ -345,7 +345,7 @@ export class ViewDescriptorService extends Disposable implements IViewDescriptor
 
 	private isViewVisible(view: IViewDescriptor): boolean {
 		const layoutVisibility = view.windowVisibility;
-		if (this.isAgentSessionsWorkspace) {
+		if (this.isSessionsWindow) {
 			return layoutVisibility === WindowVisibility.Sessions || layoutVisibility === WindowVisibility.Both;
 		}
 		return !layoutVisibility || layoutVisibility === WindowVisibility.Editor || layoutVisibility === WindowVisibility.Both;
@@ -357,7 +357,7 @@ export class ViewDescriptorService extends Disposable implements IViewDescriptor
 	}
 
 	canMoveViews(): boolean {
-		return !this.isAgentSessionsWorkspace;
+		return !this.isSessionsWindow;
 	}
 
 	moveViewContainerToLocation(viewContainer: ViewContainer, location: ViewContainerLocation, requestedIndex?: number, reason?: string): void {
@@ -718,14 +718,14 @@ export class ViewDescriptorService extends Disposable implements IViewDescriptor
 	}
 
 	private getStoredViewCustomizationsValue(): string {
-		if (this.isAgentSessionsWorkspace) {
+		if (this.isSessionsWindow) {
 			return '{}';
 		}
 		return this.storageService.get(ViewDescriptorService.VIEWS_CUSTOMIZATIONS, StorageScope.PROFILE, '{}');
 	}
 
 	private setStoredViewCustomizationsValue(value: string): void {
-		if (this.isAgentSessionsWorkspace) {
+		if (this.isSessionsWindow) {
 			return;
 		}
 		this.storageService.store(ViewDescriptorService.VIEWS_CUSTOMIZATIONS, value, StorageScope.PROFILE, StorageTarget.USER);

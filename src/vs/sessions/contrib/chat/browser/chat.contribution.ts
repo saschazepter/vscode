@@ -8,7 +8,6 @@ import { ServicesAccessor } from '../../../../editor/browser/editorExtensions.js
 import { localize2 } from '../../../../nls.js';
 import { Action2, MenuRegistry, registerAction2 } from '../../../../platform/actions/common/actions.js';
 import { IHostService } from '../../../../workbench/services/host/browser/host.js';
-import { IsAgentSessionsWorkspaceContext } from '../../../../workbench/common/contextkeys.js';
 import { registerWorkbenchContribution2, WorkbenchPhase } from '../../../../workbench/common/contributions.js';
 import { AgentSessionProviders } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessions.js';
 import { isAgentSession } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsModel.js';
@@ -101,7 +100,6 @@ MenuRegistry.appendMenuItem(Menus.TitleBarRight, {
 	icon: Codicon.folderOpened,
 	group: 'navigation',
 	order: 9,
-	when: IsAgentSessionsWorkspaceContext,
 });
 
 // register actions

@@ -12,7 +12,6 @@ import { MenuId, registerAction2, Action2, MenuRegistry } from '../../../../plat
 import { IQuickInputService } from '../../../../platform/quickinput/common/quickInput.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
 import { TerminalLocation } from '../../../../platform/terminal/common/terminal.js';
-import { IsAgentSessionsWorkspaceContext } from '../../../../workbench/common/contextkeys.js';
 import { IWorkbenchContribution } from '../../../../workbench/common/contributions.js';
 import { IActiveSessionService } from '../../sessions/browser/activeSessionService.js';
 import { ITerminalService } from '../../../../workbench/contrib/terminal/browser/terminal.js';
@@ -205,5 +204,4 @@ MenuRegistry.appendMenuItem(Menus.TitleBarRight, {
 	icon: Codicon.play,
 	group: 'navigation',
 	order: 8,
-	when: IsAgentSessionsWorkspaceContext,
 });

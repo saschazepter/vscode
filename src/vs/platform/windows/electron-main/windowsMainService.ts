@@ -1538,7 +1538,7 @@ export class WindowsMainService extends Disposable implements IWindowsMainServic
 
 			remoteAuthority: options.remoteAuthority,
 			workspace: options.workspace,
-			isAgentSessionsWindow: isWorkspaceIdentifier(options.workspace) && isEqual(options.workspace.configPath, this.environmentMainService.agentSessionsWorkspace),
+			isSessionsWindow: isWorkspaceIdentifier(options.workspace) && isEqual(options.workspace.configPath, this.environmentMainService.agentSessionsWorkspace),
 
 			userEnv: { ...this.initialUserEnv, ...options.userEnv },
 

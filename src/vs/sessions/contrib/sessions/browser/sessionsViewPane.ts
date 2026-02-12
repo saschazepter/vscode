@@ -34,7 +34,6 @@ import { defaultButtonStyles } from '../../../../platform/theme/browser/defaultS
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { KeybindingsRegistry, KeybindingWeight } from '../../../../platform/keybinding/common/keybindingsRegistry.js';
 import { ACTION_ID_NEW_CHAT } from '../../../../workbench/contrib/chat/browser/actions/chatActions.js';
-import { IsAgentSessionsWorkspaceContext } from '../../../../workbench/common/contextkeys.js';
 import { IEditorGroupsService } from '../../../../workbench/services/editor/common/editorGroupsService.js';
 import { AICustomizationManagementSection } from '../../aiCustomizationManagement/browser/aiCustomizationManagement.js';
 import { AICustomizationManagementEditorInput } from '../../aiCustomizationManagement/browser/aiCustomizationManagementEditorInput.js';
@@ -455,7 +454,6 @@ KeybindingsRegistry.registerKeybindingRule({
 	id: ACTION_ID_NEW_CHAT,
 	weight: KeybindingWeight.WorkbenchContrib + 1,
 	primary: KeyMod.CtrlCmd | KeyCode.KeyN,
-	when: IsAgentSessionsWorkspaceContext,
 });
 
 MenuRegistry.appendMenuItem(MenuId.ViewTitle, {

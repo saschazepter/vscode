@@ -32,7 +32,7 @@ import { IRawChatParticipantContribution } from '../common/participants/chatPart
 import { ChatAgentLocation, ChatModeKind } from '../common/constants.js';
 import { ChatViewId, ChatViewContainerId } from './chat.js';
 import { ChatViewPane } from './widgetHosts/viewPane/chatViewPane.js';
-import { IsAgentSessionsWorkspaceContext } from '../../../common/contextkeys.js';
+import { IsSessionsWindowContext } from '../../../common/contextkeys.js';
 
 // --- Chat Container &  View Registration
 
@@ -71,7 +71,7 @@ const chatViewDescriptor: IViewDescriptor = {
 	},
 	ctorDescriptor: new SyncDescriptor(ChatViewPane),
 	when: ContextKeyExpr.or(
-		IsAgentSessionsWorkspaceContext,
+		IsSessionsWindowContext,
 		ContextKeyExpr.or(
 			ChatContextKeys.Setup.hidden,
 			ChatContextKeys.Setup.disabled

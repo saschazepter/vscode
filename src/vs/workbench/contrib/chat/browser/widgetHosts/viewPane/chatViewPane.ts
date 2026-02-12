@@ -64,7 +64,7 @@ import { IAgentSessionsService } from '../../agentSessions/agentSessionsService.
 import { HoverPosition } from '../../../../../../base/browser/ui/hover/hoverWidget.js';
 import { IAgentSession } from '../../agentSessions/agentSessionsModel.js';
 import { IChatEntitlementService } from '../../../../../services/chat/common/chatEntitlementService.js';
-import { IWorkspaceContextService } from '../../../../../../platform/workspace/common/workspace.js';
+import { IWorkbenchEnvironmentService } from '../../../../../services/environment/common/environmentService.js';
 import { AgentSessionsChatWidget } from '../../../../../../sessions/browser/widget/agentSessionsChatWidget.js';
 
 interface IChatViewPaneState extends Partial<IChatModelInputState> {
@@ -131,7 +131,7 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 		@IChatEntitlementService private readonly chatEntitlementService: IChatEntitlementService,
 		@ICommandService private readonly commandService: ICommandService,
 		@IActivityService private readonly activityService: IActivityService,
-		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
+		@IWorkbenchEnvironmentService private readonly environmentService: IWorkbenchEnvironmentService,
 	) {
 		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
 
@@ -200,8 +200,8 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 	 * - Panel/Auxiliary bar is maximized
 	 */
 	private shouldShowFullWelcome(): boolean {
-		// Always show full welcome in agent sessions workspace mode
-		if (this.workspaceContextService.getWorkspace().isAgentSessionsWorkspace) {
+		// Always show full welcome in sessions window mode
+		if (this.environmentService.isSessionsWindow) {
 			return true;
 		}
 
@@ -283,9 +283,9 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 
 	private onDidChangeAgents(): void {
 		if (this.chatAgentService.getDefaultAgent(ChatAgentLocation.Chat)) {
-			// In agent sessions workspace, session creation is deferred to
+			// In sessions window, session creation is deferred to
 			// the widget's submit handler - don't eagerly create a session here.
-			if (!this.workspaceContextService.getWorkspace().isAgentSessionsWorkspace) {
+			if (!this.environmentService.isSessionsWindow) {
 				if (!this._widget?.viewModel && !this.restoringSession) {
 					const sessionResource = this.getTransferredOrPersistedSessionInfo();
 					this.restoringSession =
@@ -608,7 +608,7 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 		// Track the current showFullWelcome state
 		this._currentShowFullWelcome = this.shouldShowFullWelcome();
 
-		const isAgentSessionsWorkspace = this.workspaceContextService.getWorkspace().isAgentSessionsWorkspace;
+		const isSessionsWindow = this.environmentService.isSessionsWindow;
 
 		// Default to Background session provider in full welcome mode
 		if (this._currentShowFullWelcome) {
@@ -637,7 +637,7 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 			setActiveSessionProvider: (provider: AgentSessionProviders) => {
 				this._selectedSessionProvider = provider;
 				this._onDidChangeActiveSessionProvider.fire(provider);
-				if (!isAgentSessionsWorkspace) {
+				if (!isSessionsWindow) {
 					this.recreateSessionForProvider(provider);
 				}
 			},
@@ -646,7 +646,7 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 
 		// Chat Widget - use _chatWidgetDisposables so it can be recreated
 		const scopedInstantiationService = this._chatWidgetDisposables.add(this.instantiationService.createChild(new ServiceCollection([IContextKeyService, this.scopedContextKeyService])));
-		if (isAgentSessionsWorkspace) {
+		if (isSessionsWindow) {
 			this._widget = this._chatWidgetDisposables.add(scopedInstantiationService.createInstance(
 				AgentSessionsChatWidget,
 				ChatAgentLocation.Chat,
@@ -855,7 +855,7 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 				return;
 			}
 
-			if (this.workspaceContextService.getWorkspace().isAgentSessionsWorkspace) {
+			if (this.environmentService.isSessionsWindow) {
 				return; // session creation deferred to widget
 			}
 
@@ -889,7 +889,7 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 	private async applyModel(): Promise<void> {
 		// In agent sessions workspace, defer session creation to the widget's
 		// submit handler - the session is created lazily on the first send.
-		if (this._currentShowFullWelcome && this.workspaceContextService.getWorkspace().isAgentSessionsWorkspace) {
+		if (this._currentShowFullWelcome && this.environmentService.isSessionsWindow) {
 			return;
 		}
 
@@ -978,7 +978,7 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 		// In agent sessions workspace, reset the widget to its initial state
 		// (no session, welcome view visible). The next send will lazily create
 		// a new session through AgentSessionsChatWidget's submit handler.
-		if (this.workspaceContextService.getWorkspace().isAgentSessionsWorkspace) {
+		if (this.environmentService.isSessionsWindow) {
 			if (this._widget instanceof AgentSessionsChatWidget) {
 				this._widget.resetSession();
 				this.modelRef.value = undefined;
@@ -1296,10 +1296,10 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 	}
 
 	override shouldShowWelcome(): boolean {
-		// In agent sessions workspace, never show the external welcome controller.
+		// In sessions window, never show the external welcome controller.
 		// The ChatWidget's own full welcome (showFullWelcome: true) handles the
 		// empty state with target buttons, option pickers, and the input slot.
-		if (this.workspaceContextService.getWorkspace().isAgentSessionsWorkspace) {
+		if (this.environmentService.isSessionsWindow) {
 			return false;
 		}
 

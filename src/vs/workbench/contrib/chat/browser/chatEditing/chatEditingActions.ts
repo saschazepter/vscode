@@ -39,7 +39,7 @@ import { CHAT_CATEGORY } from '../actions/chatActions.js';
 import { ChatTreeItem, IChatWidget, IChatWidgetService } from '../chat.js';
 import { IAgentSession, isAgentSession } from '../agentSessions/agentSessionsModel.js';
 import { AgentSessionProviders } from '../agentSessions/agentSessions.js';
-import { IsAgentSessionsWorkspaceContext } from '../../../../common/contextkeys.js';
+import { IsSessionsWindowContext } from '../../../../common/contextkeys.js';
 
 export abstract class EditingSessionAction extends Action2 {
 
@@ -364,7 +364,7 @@ export class ViewAllSessionChangesAction extends Action2 {
 					id: MenuId.AgentSessionItemToolbar,
 					group: 'navigation',
 					order: 0,
-					when: ContextKeyExpr.and(ChatContextKeys.hasAgentSessionChanges, IsAgentSessionsWorkspaceContext.toNegated())
+					when: ContextKeyExpr.and(ChatContextKeys.hasAgentSessionChanges, IsSessionsWindowContext.toNegated())
 				}
 			],
 		});
@@ -916,13 +916,13 @@ registerAction2(class ChatEditsViewAsTreeAction extends Action2 {
 					id: MenuId.ChatEditingWidgetToolbar,
 					group: 'navigation',
 					order: 5,
-					when: ContextKeyExpr.and(hasAppliedChatEditsContextKey, ChatContextKeys.chatEditsInTreeView.negate(), IsAgentSessionsWorkspaceContext.negate()),
+					when: ContextKeyExpr.and(hasAppliedChatEditsContextKey, ChatContextKeys.chatEditsInTreeView.negate(), IsSessionsWindowContext.negate()),
 				},
 				{
 					id: MenuId.ChatEditingSessionChangesToolbar,
 					group: 'navigation',
 					order: 5,
-					when: ContextKeyExpr.and(ChatContextKeys.hasAgentSessionChanges, ChatContextKeys.chatEditsInTreeView.negate(), IsAgentSessionsWorkspaceContext.negate()),
+					when: ContextKeyExpr.and(ChatContextKeys.hasAgentSessionChanges, ChatContextKeys.chatEditsInTreeView.negate(), IsSessionsWindowContext.negate()),
 				},
 			],
 		});
