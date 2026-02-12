@@ -348,7 +348,7 @@ class AskVSCodeCopilot extends Action2 {
 	async run(accessor: ServicesAccessor): Promise<void> {
 		const commandService = accessor.get(ICommandService);
 		commandService.executeCommand('workbench.action.chat.open', { mode: 'agent', query: '@vscode ', isPartialQuery: true });
-	
+
 	}
 }
 
