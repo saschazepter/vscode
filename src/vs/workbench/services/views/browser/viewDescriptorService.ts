@@ -360,6 +360,10 @@ export class ViewDescriptorService extends Disposable implements IViewDescriptor
 		return !this.isAgentSessionsWorkspace;
 	}
 
+	canMoveViews(): boolean {
+		return true;
+	}
+
 	moveViewContainerToLocation(viewContainer: ViewContainer, location: ViewContainerLocation, requestedIndex?: number, reason?: string): void {
 		if (!this.canMoveViews()) {
 			return;
