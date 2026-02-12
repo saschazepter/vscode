@@ -11,8 +11,8 @@ Registry.as<IConfigurationRegistry>(Extensions.Configuration).registerDefaultCon
 		'chat.agentsControl.clickBehavior': 'focus',
 		'chat.agentsControl.enabled': true,
 		'chat.agent.maxRequests': 1000,
-		'chat.sessions.dedicatedView.enabled': true,
 		'chat.restoreLastPanelSession': true,
+		'chat.sessions.dedicatedView.enabled': true,
 		'chat.unifiedAgentsBar.enabled': true,
 
 		'diffEditor.renderSideBySide': false,
