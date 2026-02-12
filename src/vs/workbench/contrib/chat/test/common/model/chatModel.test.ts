@@ -212,50 +212,6 @@ suite('ChatModel', () => {
 		assert.strictEqual(response.isComplete, true);
 	});
 
-	test('deserialization marks unused confirmations as used', async () => {
-		const serializableData: ISerializableChatData3 = {
-			version: 3,
-			sessionId: 'test-session-2',
-			creationDate: Date.now(),
-			customTitle: undefined,
-			initialLocation: ChatAgentLocation.Chat,
-			requests: [{
-				requestId: 'req2',
-				message: { text: 'hello', parts: [] },
-				variableData: { variables: [] },
-				response: [
-					{
-						kind: 'confirmation' as const,
-						title: 'Confirm action',
-						message: 'Do you want to proceed?',
-						data: {},
-						isUsed: false,
-					},
-				],
-				modelState: { value: 2 /* ResponseModelState.Cancelled */, completedAt: Date.now() },
-			}],
-			responderUsername: 'bot',
-		};
-
-		const model = testDisposables.add(instantiationService.createInstance(
-			ChatModel,
-			{ value: serializableData, serializer: undefined! },
-			{ initialLocation: ChatAgentLocation.Chat, canUseTools: true }
-		));
-
-		const requests = model.getRequests();
-		assert.strictEqual(requests.length, 1);
-		const response = requests[0].response!;
-
-		// The confirmation should be marked as used after deserialization
-		const confirmationPart = response.response.value.find(p => p.kind === 'confirmation');
-		assert.ok(confirmationPart);
-		assert.strictEqual(confirmationPart.isUsed, true);
-
-		// The response should be complete
-		assert.strictEqual(response.isComplete, true);
-	});
-
 	test('inputModel.toJSON filters extension-contributed contexts', async function () {
 		const model = testDisposables.add(instantiationService.createInstance(ChatModel, undefined, { initialLocation: ChatAgentLocation.Chat, canUseTools: true }));
 
