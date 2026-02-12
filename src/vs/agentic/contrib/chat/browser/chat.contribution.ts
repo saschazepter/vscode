@@ -12,11 +12,14 @@ import { IsAgentSessionsWorkspaceContext } from '../../../../workbench/common/co
 import { registerWorkbenchContribution2, WorkbenchPhase } from '../../../../workbench/common/contributions.js';
 import { AgentSessionProviders } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessions.js';
 import { isAgentSession } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsModel.js';
-import { IActiveAgentSessionService } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsService.js';
+import { IActiveAgentSessionService } from '../../sessions/browser/activeAgentSessionService.js';
 import { ITerminalService, ITerminalGroupService } from '../../../../workbench/contrib/terminal/browser/terminal.js';
 import { Menus } from '../../../browser/menus.js';
 import { BranchChatSessionAction } from './branchChatSessionAction.js';
 import { RunScriptContribution } from './runScriptAction.js';
+import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
+import { AgenticPromptsService } from './promptsService.js';
+import { IPromptsService } from '../../../../workbench/contrib/chat/common/promptSyntax/service/promptsService.js';
 
 export class OpenSessionWorktreeInVSCodeAction extends Action2 {
 	static readonly ID = 'chat.openSessionWorktreeInVSCode';
@@ -101,5 +104,11 @@ MenuRegistry.appendMenuItem(Menus.TitleBarRight, {
 	when: IsAgentSessionsWorkspaceContext,
 });
 
+// register actions
 registerAction2(BranchChatSessionAction);
+
+// register workbench contributions
 registerWorkbenchContribution2(RunScriptContribution.ID, RunScriptContribution, WorkbenchPhase.AfterRestored);
+
+// register services
+registerSingleton(IPromptsService, AgenticPromptsService, InstantiationType.Delayed);

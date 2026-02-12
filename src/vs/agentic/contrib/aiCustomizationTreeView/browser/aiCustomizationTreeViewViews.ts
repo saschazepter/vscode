@@ -35,7 +35,7 @@ import { IListVirtualDelegate } from '../../../../base/browser/ui/list/list.js';
 import { IEditorService } from '../../../../workbench/services/editor/common/editorService.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
-import { IActiveAgentSessionService } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsService.js';
+import { IActiveAgentSessionService } from '../../sessions/browser/activeAgentSessionService.js';
 
 //#region Context Keys
 

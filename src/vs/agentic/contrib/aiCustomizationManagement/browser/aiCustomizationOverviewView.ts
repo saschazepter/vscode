@@ -27,7 +27,7 @@ import { AICustomizationManagementEditorInput } from './aiCustomizationManagemen
 import { AICustomizationManagementEditor } from './aiCustomizationManagementEditor.js';
 import { agentIcon, instructionsIcon, promptIcon, skillIcon } from '../../aiCustomizationTreeView/browser/aiCustomizationTreeViewIcons.js';
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
-import { IActiveAgentSessionService } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsService.js';
+import { IActiveAgentSessionService } from '../../sessions/browser/activeAgentSessionService.js';
 
 const $ = DOM.$;
 

@@ -58,7 +58,8 @@ import { INewPromptOptions, NEW_PROMPT_COMMAND_ID, NEW_INSTRUCTIONS_COMMAND_ID, 
 import { showConfigureHooksQuickPick } from '../../../../workbench/contrib/chat/browser/promptSyntax/hookActions.js';
 import { CustomizationCreatorService } from './customizationCreatorService.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
-import { IActiveAgentSessionService, IAgentSessionsService } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsService.js';
+import { IAgentSessionsService } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsService.js';
+import { IActiveAgentSessionService } from '../../sessions/browser/activeAgentSessionService.js';
 import { AgentSessionProviders } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessions.js';
 
 const $ = DOM.$;

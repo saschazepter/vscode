@@ -14,7 +14,7 @@ import { IStorageService, StorageScope, StorageTarget } from '../../../../platfo
 import { TerminalLocation } from '../../../../platform/terminal/common/terminal.js';
 import { IsAgentSessionsWorkspaceContext } from '../../../../workbench/common/contextkeys.js';
 import { IWorkbenchContribution } from '../../../../workbench/common/contributions.js';
-import { IActiveAgentSessionService } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsService.js';
+import { IActiveAgentSessionService } from '../../sessions/browser/activeAgentSessionService.js';
 import { ITerminalService } from '../../../../workbench/contrib/terminal/browser/terminal.js';
 import { Menus } from '../../../browser/menus.js';
 

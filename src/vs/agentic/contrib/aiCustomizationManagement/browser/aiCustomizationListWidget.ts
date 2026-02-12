@@ -39,7 +39,7 @@ import { ILabelService } from '../../../../platform/label/common/label.js';
 import { parseAllHookFiles } from '../../../../workbench/contrib/chat/browser/promptSyntax/hookUtils.js';
 import { OS } from '../../../../base/common/platform.js';
 import { IRemoteAgentService } from '../../../../workbench/services/remote/common/remoteAgentService.js';
-import { IActiveAgentSessionService } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsService.js';
+import { IActiveAgentSessionService } from '../../sessions/browser/activeAgentSessionService.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { Action, Separator } from '../../../../base/common/actions.js';
 import { IClipboardService } from '../../../../platform/clipboard/common/clipboardService.js';
