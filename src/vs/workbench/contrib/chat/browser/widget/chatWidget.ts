@@ -1008,10 +1008,8 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		// Position the tip so its bottom edge sits flush against the input's
 		// top edge for a seamless visual connection.
 		const topOffset = inputRect.top - containerRect.top - tipRect.height;
-		if (topOffset > 0) {
-			this.gettingStartedTipContainer.style.top = `${topOffset}px`;
-			this.gettingStartedTipContainer.style.bottom = 'auto';
-		}
+		this.gettingStartedTipContainer.style.top = `${Math.max(0, topOffset)}px`;
+		this.gettingStartedTipContainer.style.bottom = 'auto';
 	}
 
 	private _getGenerateInstructionsMessage(): IMarkdownString {
@@ -2510,6 +2508,10 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			this.listWidget.scrollToEnd();
 		}
 		this.listContainer.style.height = `${contentHeight}px`;
+
+		if (this.gettingStartedTipContainer && this._gettingStartedTipPart.value) {
+			this.layoutGettingStartedTipPosition();
+		}
 
 		this._onDidChangeHeight.fire(height);
 	}
