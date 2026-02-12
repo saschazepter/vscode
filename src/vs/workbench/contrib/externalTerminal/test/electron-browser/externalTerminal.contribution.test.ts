@@ -77,13 +77,13 @@ suite('ExternalTerminal contribution', () => {
 			}
 		});
 
-		instantiationService.stub(ICommandService, new class extends mock<ICommandService>() {
-			override async executeCommand<T = unknown>(id: string): Promise<T | undefined> {
+		instantiationService.stub(ICommandService, {
+			executeCommand<R = unknown>(id: string): Promise<R | undefined> {
 				executeCommandCalls.push(id);
 				if (id === PICK_WORKSPACE_FOLDER_COMMAND_ID) {
-					return options.pickedFolder as T | undefined;
+					return Promise.resolve(options.pickedFolder as R | undefined);
 				}
-				return undefined;
+				return Promise.resolve(undefined);
 			}
 		});
 	}
