@@ -1686,7 +1686,7 @@ export default tseslint.config(
 						'vs/workbench/~',
 						'vs/workbench/services/*/~',
 						'vs/workbench/contrib/*/~',
-						'vs/agentic/~',
+						'vs/sessions/~',
 						'vs/workbench/contrib/terminal/terminalContribChatExports*',
 						'vs/workbench/contrib/terminal/terminalContribExports*',
 						'vscode-notebook-renderer', // Type only import
@@ -1764,14 +1764,14 @@ export default tseslint.config(
 					]
 				},
 				{
-					'target': 'src/vs/agentic/electron-browser/sessions.ts',
+					'target': 'src/vs/sessions/electron-browser/sessions.ts',
 					'layer': 'electron-browser',
 					'restrictions': [
 						'vs/base/~',
 						'vs/base/parts/*/~',
 						'vs/platform/*/~',
-						'vs/agentic/~',
-						'vs/agentic/sessions.desktop.main.js'
+						'vs/sessions/~',
+						'vs/sessions/sessions.desktop.main.js'
 					]
 				},
 				{
@@ -1908,7 +1908,7 @@ export default tseslint.config(
 					]
 				},
 				{
-					'target': 'src/vs/agentic/sessions.common.main.ts',
+					'target': 'src/vs/sessions/sessions.common.main.ts',
 					'layer': 'browser',
 					'restrictions': [
 						'vs/base/~',
@@ -1925,7 +1925,7 @@ export default tseslint.config(
 					]
 				},
 				{
-					'target': 'src/vs/agentic/sessions.desktop.main.ts',
+					'target': 'src/vs/sessions/sessions.desktop.main.ts',
 					'layer': 'electron-browser',
 					'restrictions': [
 						'vs/base/*/~',
@@ -1934,17 +1934,17 @@ export default tseslint.config(
 						'vs/editor/~',
 						'vs/editor/contrib/*/~',
 						'vs/editor/editor.all.js',
-						'vs/agentic/~',
-						'vs/agentic/contrib/*/~',
+						'vs/sessions/~',
+						'vs/sessions/contrib/*/~',
 						'vs/workbench/~',
 						'vs/workbench/api/~',
 						'vs/workbench/services/*/~',
 						'vs/workbench/contrib/*/~',
-						'vs/agentic/sessions.common.main.js'
+						'vs/sessions/sessions.common.main.js'
 					]
 				},
 				{
-					'target': 'src/vs/agentic/~',
+					'target': 'src/vs/sessions/~',
 					'restrictions': [
 						'vs/base/~',
 						'vs/base/parts/*/~',
@@ -1955,11 +1955,11 @@ export default tseslint.config(
 						'vs/workbench/browser/**',
 						'vs/workbench/contrib/**',
 						'vs/workbench/services/*/~',
-						'vs/agentic/~'
+						'vs/sessions/~'
 					]
 				},
 				{
-					'target': 'src/vs/agentic/contrib/*/~',
+					'target': 'src/vs/sessions/contrib/*/~',
 					'restrictions': [
 						'vs/base/~',
 						'vs/base/parts/*/~',
@@ -1970,8 +1970,8 @@ export default tseslint.config(
 						'vs/workbench/browser/**',
 						'vs/workbench/services/*/~',
 						'vs/workbench/contrib/*/~',
-						'vs/agentic/~',
-						'vs/agentic/contrib/*/~'
+						'vs/sessions/~',
+						'vs/sessions/contrib/*/~'
 					]
 				},
 			]

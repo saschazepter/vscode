@@ -70,7 +70,7 @@ The following parts from the default workbench are **not included**:
 
 ## 3. Titlebar Configuration
 
-The Agent Sessions workbench uses a fully independent titlebar part (`TitlebarPart`) with its own title service (`TitleService`), implemented in `agentic/browser/parts/titlebarPart.ts`. This is a standalone implementation (not extending `BrowserTitlebarPart`) with a simple three-section layout driven entirely by menus.
+The Agent Sessions workbench uses a fully independent titlebar part (`TitlebarPart`) with its own title service (`TitleService`), implemented in `sessions/browser/parts/titlebarPart.ts`. This is a standalone implementation (not extending `BrowserTitlebarPart`) with a simple three-section layout driven entirely by menus.
 
 ### 3.1 Titlebar Part Architecture
 
@@ -411,12 +411,12 @@ The Agent Sessions workbench uses specialized part implementations that extend t
 
 | Part | Class | Extends | Location |
 |------|-------|---------|----------|
-| Sidebar | `AgenticSidebarPart` | `AbstractPaneCompositePart` | `agentic/browser/parts/agenticSidebarPart.ts` |
-| Auxiliary Bar | `AgenticAuxiliaryBarPart` | `AbstractPaneCompositePart` | `agentic/browser/parts/agenticAuxiliaryBarPart.ts` |
-| Panel | `AgenticPanelPart` | `AbstractPaneCompositePart` | `agentic/browser/parts/agenticPanelPart.ts` |
-| Chat Bar | `ChatBarPart` | `AbstractPaneCompositePart` | `agentic/browser/parts/chatbar/chatBarPart.ts` |
-| Editor Modal | `EditorModal` | `Disposable` | `agentic/browser/parts/editorModal.ts` |
-| Sidebar Reveal Button | `SidebarRevealButton` | `Disposable` | `agentic/browser/parts/sidebarRevealButton.ts` |
+| Sidebar | `AgenticSidebarPart` | `AbstractPaneCompositePart` | `sessions/browser/parts/agenticSidebarPart.ts` |
+| Auxiliary Bar | `AgenticAuxiliaryBarPart` | `AbstractPaneCompositePart` | `sessions/browser/parts/agenticAuxiliaryBarPart.ts` |
+| Panel | `AgenticPanelPart` | `AbstractPaneCompositePart` | `sessions/browser/parts/agenticPanelPart.ts` |
+| Chat Bar | `ChatBarPart` | `AbstractPaneCompositePart` | `sessions/browser/parts/chatbar/chatBarPart.ts` |
+| Editor Modal | `EditorModal` | `Disposable` | `sessions/browser/parts/editorModal.ts` |
+| Sidebar Reveal Button | `SidebarRevealButton` | `Disposable` | `sessions/browser/parts/sidebarRevealButton.ts` |
 
 ### 9.2 Key Differences from Standard Parts
 
@@ -519,7 +519,7 @@ The contributions file also registers the Changes view:
 ## 11. File Structure
 
 ```
-src/vs/agentic/
+src/vs/sessions/
 ├── README.md                               # Layer specification
 ├── LAYOUT.md                               # This specification
 ├── browser/                                # Core workbench implementation
@@ -713,7 +713,7 @@ this._register(new SidebarRevealButton(this.mainContainer, 'right', this));
 | 2026-02-04 | Added `restoreParts()` to automatically open default view containers for visible parts during startup |
 | 2026-02-04 | Restored Editor part; Layout order is now Sidebar \| Chat Bar \| Editor \| Auxiliary Bar |
 | 2026-02-04 | Removed Editor part; Chat Bar now takes max width; Layout order changed to Sidebar \| Auxiliary Bar \| Chat Bar |
-| 2026-02-04 | Added agent session specific parts (AgenticSidebarPart, AgenticAuxiliaryBarPart, AgenticPanelPart) in `agentic/browser/parts/`; PaneCompositePartService now selects parts based on isAgentSessionsWorkspace |
+| 2026-02-04 | Added agent session specific parts (AgenticSidebarPart, AgenticAuxiliaryBarPart, AgenticPanelPart) in `sessions/browser/parts/`; PaneCompositePartService now selects parts based on isAgentSessionsWorkspace |
 | 2026-02-04 | Editor and Panel hidden by default; Editor auto-shows on editor open, auto-hides when last editor closes |
 | 2026-02-04 | Added Chat Bar part with `ViewContainerLocation.ChatBar` |
 | Initial | Document created with base layout specification |

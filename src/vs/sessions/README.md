@@ -1,8 +1,8 @@
-# vs/agentic — Agentic Window Layer
+# vs/sessions — Agentic Sessions Window Layer
 
 ## Overview
 
-The `vs/agentic` layer hosts the implementation of the **Agentic Window**, a dedicated workbench experience optimized for agent session workflows. This is a distinct top-level layer within the VS Code architecture, sitting alongside `vs/workbench`.
+The `vs/sessions` layer hosts the implementation of the **Agentic Window**, a dedicated workbench experience optimized for agent session workflows. This is a distinct top-level layer within the VS Code architecture, sitting alongside `vs/workbench`.
 
 ## Architecture
 
@@ -13,31 +13,31 @@ vs/base          ← Foundation utilities
 vs/platform      ← Platform services
 vs/editor        ← Text editor core
 vs/workbench     ← Standard workbench
-vs/agentic       ← Agentic window (this layer)
+vs/sessions      ← Agentic window (this layer)
 ```
 
-**Key constraint:** `vs/agentic` may import from `vs/workbench` (and all layers below it), but `vs/workbench` must **never** import from `vs/agentic`. This ensures the standard workbench remains independent of the agentic window implementation.
+**Key constraint:** `vs/sessions` may import from `vs/workbench` (and all layers below it), but `vs/workbench` must **never** import from `vs/sessions`. This ensures the standard workbench remains independent of the agentic window implementation.
 
 ### Allowed Dependencies
 
-| From `vs/agentic` | Can Import |
+| From `vs/sessions` | Can Import |
 |--------------------|------------|
 | `vs/base/**` | ✅ |
 | `vs/platform/**` | ✅ |
 | `vs/editor/**` | ✅ |
 | `vs/workbench/**` | ✅ |
-| `vs/agentic/**` | ✅ (internal) |
+| `vs/sessions/**` | ✅ (internal) |
 
 | From `vs/workbench` | Can Import |
 |----------------------|------------|
-| `vs/agentic/**` | ❌ **Forbidden** |
+| `vs/sessions/**` | ❌ **Forbidden** |
 
 ### Folder Structure
 
-The `vs/agentic` layer follows the same layering conventions as `vs/workbench`:
+The `vs/sessions` layer follows the same layering conventions as `vs/workbench`:
 
 ```
-src/vs/agentic/
+src/vs/sessions/
 ├── README.md                           ← This specification
 ├── LAYOUT.md                           ← Layout specification for the agentic workbench
 ├── browser/                            ← Core workbench implementation
@@ -89,6 +89,6 @@ When adding features to the agentic window:
 1. **Core workbench code** (layout, parts, services) goes under `browser/`
 2. **Feature contributions** (views, actions, editors) go under `contrib/<featureName>/browser/`
 3. Register contributions via `browser/agentic.contributions.ts`
-4. Do **not** add imports from `vs/workbench` back to `vs/agentic`
-5. Contributions can import from `vs/agentic/browser/` (core) and other `vs/agentic/contrib/*/` modules
+4. Do **not** add imports from `vs/workbench` back to `vs/sessions`
+5. Contributions can import from `vs/sessions/browser/` (core) and other `vs/sessions/contrib/*/` modules
 6. Update the layout spec (`LAYOUT.md`) for any layout changes

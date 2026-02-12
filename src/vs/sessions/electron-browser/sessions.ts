@@ -15,7 +15,7 @@
 	type ILoadOptions<T extends ISandboxConfiguration> = import('../../platform/window/electron-browser/window.js').ILoadOptions<T>;
 	type INativeWindowConfiguration = import('../../platform/window/common/window.js').INativeWindowConfiguration;
 	type IMainWindowSandboxGlobals = import('../../base/parts/sandbox/electron-browser/globals.js').IMainWindowSandboxGlobals;
-	type IDesktopMain = import('../../agentic/electron-browser/sessions.main.js').IDesktopMain;
+	type IDesktopMain = import('./sessions.main.js').IDesktopMain;
 
 	const preloadGlobals = (window as unknown as { vscode: IMainWindowSandboxGlobals }).vscode; // defined by preload.ts
 	const safeProcess = preloadGlobals.process;
@@ -74,13 +74,13 @@
 		// Dev only: CSS import map tricks
 		setupCSSImportMaps<T>(configuration, baseUrl);
 
-		// ESM Import - load the agentic workbench main module
+		// ESM Import - load the sessions workbench main module
 		try {
 			let workbenchUrl: string;
 			if (!!safeProcess.env['VSCODE_DEV'] && globalThis._VSCODE_USE_RELATIVE_IMPORTS) {
 				workbenchUrl = './workbench.desktop.main.js'; // for dev purposes only
 			} else {
-				workbenchUrl = new URL(`vs/agentic/sessions.desktop.main.js`, baseUrl).href;
+				workbenchUrl = new URL(`vs/sessions/sessions.desktop.main.js`, baseUrl).href;
 			}
 
 			const result = await import(workbenchUrl);

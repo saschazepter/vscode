@@ -4,7 +4,7 @@
 
 The AI Customization Tree View is a sidebar tree that groups AI customization files by type and storage. It is optimized for agent sessions and filters worktree items to the active session repository.
 
-**Location:** `src/vs/agentic/contrib/aiCustomizationTreeView/browser/`
+**Location:** `src/vs/sessions/contrib/aiCustomizationTreeView/browser/`
 
 ## Architecture
 
@@ -113,4 +113,4 @@ Required services to prefer:
 
 ---
 
-*This specification documents the AI Customization Tree View in `src/vs/agentic/contrib/aiCustomizationTreeView/browser/`.*
+*This specification documents the AI Customization Tree View in `src/vs/sessions/contrib/aiCustomizationTreeView/browser/`.*

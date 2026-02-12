@@ -4,7 +4,7 @@
 
 The AI Customization Management Editor is a global management surface for AI customizations. It provides sectioned navigation and a content area that switches between prompt lists, MCP servers, models, and an embedded editor.
 
-**Location:** `src/vs/agentic/contrib/aiCustomizationManagement/browser/`
+**Location:** `src/vs/sessions/contrib/aiCustomizationManagement/browser/`
 
 **Purpose:** Centralized discovery and management across worktree, user, and extension sources, optimized for agent sessions.
 
@@ -176,4 +176,4 @@ Required services to prefer:
 
 ---
 
-*This specification documents the AI Customization Management Editor in `src/vs/agentic/contrib/aiCustomizationManagement/browser/`.*
+*This specification documents the AI Customization Management Editor in `src/vs/sessions/contrib/aiCustomizationManagement/browser/`.*

@@ -65,7 +65,7 @@ import { HoverPosition } from '../../../../../../base/browser/ui/hover/hoverWidg
 import { IAgentSession } from '../../agentSessions/agentSessionsModel.js';
 import { IChatEntitlementService } from '../../../../../services/chat/common/chatEntitlementService.js';
 import { IWorkspaceContextService } from '../../../../../../platform/workspace/common/workspace.js';
-import { AgentSessionsChatWidget } from '../../../../../../agentic/browser/widget/agentSessionsChatWidget.js';
+import { AgentSessionsChatWidget } from '../../../../../../sessions/browser/widget/agentSessionsChatWidget.js';
 
 interface IChatViewPaneState extends Partial<IChatModelInputState> {
 	/** @deprecated */

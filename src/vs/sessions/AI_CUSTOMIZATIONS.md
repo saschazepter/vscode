@@ -7,7 +7,7 @@ This document describes the current AI customization experience in this branch: 
 ### File Structure (Agentic)
 
 ```
-src/vs/agentic/contrib/aiCustomizationManagement/browser/
+src/vs/sessions/contrib/aiCustomizationManagement/browser/
 ├── aiCustomizationManagement.contribution.ts   # Commands + context menus
 ├── aiCustomizationManagement.ts                # IDs + context keys
 ├── aiCustomizationManagementEditor.ts          # SplitView list/editor
@@ -18,7 +18,7 @@ src/vs/agentic/contrib/aiCustomizationManagement/browser/
 └── media/
     └── aiCustomizationManagement.css
 
-src/vs/agentic/contrib/aiCustomizationTreeView/browser/
+src/vs/sessions/contrib/aiCustomizationTreeView/browser/
 ├── aiCustomizationTreeView.contribution.ts     # View + actions
 ├── aiCustomizationTreeView.ts                  # IDs + menu IDs
 ├── aiCustomizationTreeViewViews.ts             # Tree data source + view
@@ -45,7 +45,7 @@ Key services to rely on:
 
 The active worktree comes from `IActiveSessionService` and is the source of truth for any workspace/worktree scoping.
 
-In the agentic workbench, prompt discovery is scoped by an agentic prompt service override that uses the active session root for workspace folders. See [src/vs/agentic/browser/agenticPromptsService.ts](../agentic/browser/agenticPromptsService.ts) and [src/vs/agentic/browser/agenticPromptFilesLocator.ts](../agentic/browser/agenticPromptFilesLocator.ts).
+In the agentic workbench, prompt discovery is scoped by an agentic prompt service override that uses the active session root for workspace folders. See [src/vs/sessions/browser/agenticPromptsService.ts](../sessions/browser/agenticPromptsService.ts) and [src/vs/sessions/browser/agenticPromptFilesLocator.ts](../sessions/browser/agenticPromptFilesLocator.ts).
 
 ## Implemented Experience
 
@@ -85,7 +85,7 @@ All entry points (view contributions, commands) respect `ChatContextKeys.enabled
 - [Settings Editor](../src/vs/workbench/contrib/preferences/browser/settingsEditor2.ts)
 - [Keybindings Editor](../src/vs/workbench/contrib/preferences/browser/keybindingsEditor.ts)
 - [Webview Editor](../src/vs/workbench/contrib/webviewPanel/browser/webviewEditorInput.ts)
-- [AI Customization Management (agentic)](../src/vs/agentic/contrib/aiCustomizationManagement/browser/)
-- [AI Customization Overview View](../src/vs/agentic/contrib/aiCustomizationManagement/browser/aiCustomizationOverviewView.ts)
-- [AI Customization Tree View (agentic)](../src/vs/agentic/contrib/aiCustomizationTreeView/browser/)
+- [AI Customization Management (agentic)](../src/vs/sessions/contrib/aiCustomizationManagement/browser/)
+- [AI Customization Overview View](../src/vs/sessions/contrib/aiCustomizationManagement/browser/aiCustomizationOverviewView.ts)
+- [AI Customization Tree View (agentic)](../src/vs/sessions/contrib/aiCustomizationTreeView/browser/)
 - [IPromptsService](../src/vs/workbench/contrib/chat/common/promptSyntax/service/promptsService.ts)

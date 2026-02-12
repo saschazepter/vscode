@@ -9,7 +9,7 @@ When working on the Agent Sessions workbench layout, always follow these guideli
 
 The authoritative specification for the Agent Sessions layout lives at:
 
-**`src/vs/agentic/LAYOUT.md`**
+**`src/vs/sessions/LAYOUT.md`**
 
 Before making any changes to the layout code, read and understand the current spec. It defines:
 
@@ -54,17 +54,17 @@ When proposing or implementing changes, follow these rules from the spec:
 
 | File | Purpose |
 |------|---------|
-| `agentic/LAYOUT.md` | Authoritative specification |
-| `agentic/browser/agenticWorkbench.ts` | Main layout implementation |
-| `agentic/browser/agenticWorkbenchMenus.ts` | Agent sessions workbench menu IDs |
-| `agentic/browser/agenticLayoutActions.ts` | Layout actions (toggle sidebar, panel, terminal) |
-| `agentic/browser/agentic.contributions.ts` | Workbench contributions and view registrations |
-| `agentic/browser/agenticTitleBarWidget.ts` | Title bar widget and session picker |
-| `agentic/browser/style.css` | Layout-specific styles |
-| `agentic/browser/parts/` | Agent session part implementations |
-| `agentic/browser/parts/editorModal.ts` | Editor modal overlay |
-| `agentic/browser/parts/sidebarRevealButton.ts` | Edge hover reveal buttons |
-| `agentic/browser/parts/chatbar/chatBarPart.ts` | Chat Bar part |
+| `sessions/LAYOUT.md` | Authoritative specification |
+| `sessions/browser/agenticWorkbench.ts` | Main layout implementation |
+| `sessions/browser/agenticWorkbenchMenus.ts` | Agent sessions workbench menu IDs |
+| `sessions/browser/agenticLayoutActions.ts` | Layout actions (toggle sidebar, panel, terminal) |
+| `sessions/browser/agentic.contributions.ts` | Workbench contributions and view registrations |
+| `sessions/browser/agenticTitleBarWidget.ts` | Title bar widget and session picker |
+| `sessions/browser/style.css` | Layout-specific styles |
+| `sessions/browser/parts/` | Agent session part implementations |
+| `sessions/browser/parts/editorModal.ts` | Editor modal overlay |
+| `sessions/browser/parts/sidebarRevealButton.ts` | Edge hover reveal buttons |
+| `sessions/browser/parts/chatbar/chatBarPart.ts` | Chat Bar part |
 
 ## 5. Testing Changes
 
