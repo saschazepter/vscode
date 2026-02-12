@@ -913,11 +913,17 @@ suite('ComputeAutomaticInstructions', () => {
 				referencedInstructionsCount: number;
 				agentInstructionsCount: number;
 				totalInstructionsCount: number;
+				claudeRulesCount: number;
+				claudeMdCount: number;
+				claudeAgentsCount: number;
 			};
 			assert.ok(data.applyingInstructionsCount >= 0, 'Should have applying count');
 			assert.ok(data.referencedInstructionsCount >= 0, 'Should have referenced count');
 			assert.ok(data.agentInstructionsCount >= 0, 'Should have agent count');
 			assert.ok(data.totalInstructionsCount >= 0, 'Should have total count');
+			assert.ok(data.claudeRulesCount >= 0, 'Should have Claude rules count');
+			assert.ok(data.claudeMdCount >= 0, 'Should have CLAUDE.md count');
+			assert.ok(data.claudeAgentsCount >= 0, 'Should have Claude agents count');
 		});
 	});
 
