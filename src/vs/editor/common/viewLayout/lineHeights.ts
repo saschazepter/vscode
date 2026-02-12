@@ -19,6 +19,7 @@ export class CustomLine {
 	public maximumSpecialHeight: number;
 	public decorationId: string;
 	public deleted: boolean;
+	public deletedOnEdit: boolean;
 
 	constructor(decorationId: string, index: number, lineNumber: number, specialHeight: number, prefixSum: number) {
 		this.decorationId = decorationId;
@@ -28,6 +29,7 @@ export class CustomLine {
 		this.prefixSum = prefixSum;
 		this.maximumSpecialHeight = specialHeight;
 		this.deleted = false;
+		this.deletedOnEdit = false;
 	}
 }
 
@@ -61,13 +63,15 @@ export class LineHeightsManager {
 
 	private _decorationIDToCustomLine: ArrayMap<string, CustomLine> = new ArrayMap<string, CustomLine>();
 	private _orderedCustomLines: CustomLine[] = [];
-	private _pendingSpecialLinesToInsert: CustomLine[] = [];
-	private _invalidIndex: number = 0;
 	private _defaultLineHeight: number;
-	private _hasPending: boolean = false;
+
+	private _generalLineHeightsEditHelper: LineHeightsEditChanges;
+	private _lineHeightsEditChanges: LineHeightsEditChanges;
 
 	constructor(defaultLineHeight: number, customLineHeightData: CustomLineHeightData[]) {
 		this._defaultLineHeight = defaultLineHeight;
+		this._generalLineHeightsEditHelper = new LineHeightsEditChanges(this._decorationIDToCustomLine);
+		this._lineHeightsEditChanges = new LineHeightsEditChanges(this._decorationIDToCustomLine);
 		if (customLineHeightData.length > 0) {
 			for (const data of customLineHeightData) {
 				this.insertOrChangeCustomLineHeight(data.decorationId, data.startLineNumber, data.endLineNumber, data.lineHeight);
@@ -85,25 +89,11 @@ export class LineHeightsManager {
 	}
 
 	public removeCustomLineHeight(decorationID: string): void {
-		const customLines = this._decorationIDToCustomLine.get(decorationID);
-		if (!customLines) {
-			return;
-		}
-		this._decorationIDToCustomLine.delete(decorationID);
-		for (const customLine of customLines) {
-			customLine.deleted = true;
-			this._invalidIndex = Math.min(this._invalidIndex, customLine.index);
-		}
-		this._hasPending = true;
+		this._generalLineHeightsEditHelper.removeCustomLineHeight(decorationID);
 	}
 
 	public insertOrChangeCustomLineHeight(decorationId: string, startLineNumber: number, endLineNumber: number, lineHeight: number): void {
-		this.removeCustomLineHeight(decorationId);
-		for (let lineNumber = startLineNumber; lineNumber <= endLineNumber; lineNumber++) {
-			const customLine = new CustomLine(decorationId, -1, lineNumber, lineHeight, 0);
-			this._pendingSpecialLinesToInsert.push(customLine);
-		}
-		this._hasPending = true;
+		this._generalLineHeightsEditHelper.insertOrChangeCustomLineHeight(decorationId, startLineNumber, endLineNumber, lineHeight);
 	}
 
 	public heightForLineNumber(lineNumber: number): number {
@@ -255,7 +245,7 @@ export class LineHeightsManager {
 					maxLineHeightPerLine.set(lineNumber, Math.max(currentMax, lineHeightAdded.lineHeight));
 				}
 			}
-			this.insertOrChangeCustomLineHeight(
+			this._lineHeightsEditChanges.insertOrChangeCustomLineHeight(
 				lineHeightAdded.decorationId,
 				lineHeightAdded.startLineNumber,
 				lineHeightAdded.endLineNumber,
@@ -301,35 +291,41 @@ export class LineHeightsManager {
 			}
 
 			for (const dec of toReAdd) {
-				this.insertOrChangeCustomLineHeight(dec.decorationId, dec.startLineNumber, dec.endLineNumber, dec.lineHeight);
+				this._lineHeightsEditChanges.insertOrChangeCustomLineHeight(dec.decorationId, dec.startLineNumber, dec.endLineNumber, dec.lineHeight);
 			}
 		}
-		this.commit();
+		this._commit(this._lineHeightsEditChanges);
 	}
 
 	public commit(): void {
-		if (!this._hasPending) {
+		this._commit(this._generalLineHeightsEditHelper);
+	}
+
+	public _commit(changes: LineHeightsEditChanges): void {
+		const hasPendingChanges = changes.hasPending;
+		if (!hasPendingChanges) {
 			return;
 		}
-		for (const pendingChange of this._pendingSpecialLinesToInsert) {
+		let invalidIndex = changes.invalidIndex;
+		const pendingSpecialLinesToInsert = changes.pendingSpecialLinesToInsert;
+		for (const pendingChange of pendingSpecialLinesToInsert) {
 			const candidateInsertionIndex = this._binarySearchOverOrderedCustomLinesArray(pendingChange.lineNumber);
 			const insertionIndex = candidateInsertionIndex >= 0 ? candidateInsertionIndex : -(candidateInsertionIndex + 1);
 			this._orderedCustomLines.splice(insertionIndex, 0, pendingChange);
-			this._invalidIndex = Math.min(this._invalidIndex, insertionIndex);
+			invalidIndex = Math.min(invalidIndex, insertionIndex);
 		}
-		this._pendingSpecialLinesToInsert = [];
 		const newDecorationIDToSpecialLine = new ArrayMap<string, CustomLine>();
 		const newOrderedSpecialLines: CustomLine[] = [];
 
-		for (let i = 0; i < this._invalidIndex; i++) {
+		for (let i = 0; i < invalidIndex; i++) {
 			const customLine = this._orderedCustomLines[i];
 			newOrderedSpecialLines.push(customLine);
 			newDecorationIDToSpecialLine.add(customLine.decorationId, customLine);
 		}
 
 		let numberOfDeletions = 0;
-		let previousSpecialLine: CustomLine | undefined = (this._invalidIndex > 0) ? newOrderedSpecialLines[this._invalidIndex - 1] : undefined;
-		for (let i = this._invalidIndex; i < this._orderedCustomLines.length; i++) {
+		let previousSpecialLine: CustomLine | undefined = (invalidIndex > 0) ? newOrderedSpecialLines[invalidIndex - 1] : undefined;
+		for (let i = invalidIndex; i < this._orderedCustomLines.length; i++) {
 			const customLine = this._orderedCustomLines[i];
 			if (customLine.deleted) {
 				numberOfDeletions++;
@@ -367,8 +363,7 @@ export class LineHeightsManager {
 		}
 		this._orderedCustomLines = newOrderedSpecialLines;
 		this._decorationIDToCustomLine = newDecorationIDToSpecialLine;
-		this._invalidIndex = Infinity;
-		this._hasPending = false;
+		changes.reset();
 	}
 
 	private _binarySearchOverOrderedCustomLinesArray(lineNumber: number): number {
@@ -382,6 +377,43 @@ export class LineHeightsManager {
 				return 1;
 			}
 		});
+	}
+}
+
+class LineHeightsEditChanges {
+
+	public pendingSpecialLinesToInsert: CustomLine[] = [];
+	public invalidIndex: number = 0;
+	public hasPending: boolean = false;
+
+	constructor(private readonly _decorationIDToCustomLine: ArrayMap<string, CustomLine>) { }
+
+	public removeCustomLineHeight(decorationID: string): void {
+		const customLines = this._decorationIDToCustomLine.get(decorationID);
+		if (!customLines) {
+			return;
+		}
+		this._decorationIDToCustomLine.delete(decorationID);
+		for (const customLine of customLines) {
+			customLine.deleted = true;
+			this.invalidIndex = Math.min(this.invalidIndex, customLine.index);
+		}
+		this.hasPending = true;
+	}
+
+	public insertOrChangeCustomLineHeight(decorationId: string, startLineNumber: number, endLineNumber: number, lineHeight: number): void {
+		this.removeCustomLineHeight(decorationId);
+		for (let lineNumber = startLineNumber; lineNumber <= endLineNumber; lineNumber++) {
+			const customLine = new CustomLine(decorationId, -1, lineNumber, lineHeight, 0);
+			this.pendingSpecialLinesToInsert.push(customLine);
+		}
+		this.hasPending = true;
+	}
+
+	public reset(): void {
+		this.pendingSpecialLinesToInsert = [];
+		this.invalidIndex = Infinity;
+		this.hasPending = false;
 	}
 }
 
