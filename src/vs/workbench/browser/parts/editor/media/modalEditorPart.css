@@ -21,6 +21,10 @@
 	background: rgba(0, 0, 0, 0.3);
 }
 
+.monaco-modal-editor-block:focus {
+	outline: none;
+}
+
 /** Modal Editor Part: Shadow Container */
 .monaco-modal-editor-block .modal-editor-shadow {
 	box-shadow: 0 4px 32px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.2));

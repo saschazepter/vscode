@@ -118,6 +118,12 @@ export class ModalEditorPart {
 			editorPart.notifyActiveEditorChanged();
 		})));
 
+		// Handle double-click on header to toggle maximize
+		disposables.add(addDisposableListener(headerElement, EventType.DBLCLICK, e => {
+			EventHelper.stop(e);
+			editorPart.toggleMaximized();
+		}));
+
 		// Handle close on click outside (on the dimmed background)
 		disposables.add(addDisposableListener(modalElement, EventType.MOUSE_DOWN, e => {
 			if (e.target === modalElement) {
