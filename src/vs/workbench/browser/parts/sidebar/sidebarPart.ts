@@ -27,12 +27,13 @@ import { ActionsOrientation } from '../../../../base/browser/ui/actionbar/action
 import { HoverPosition } from '../../../../base/browser/ui/hover/hoverWidget.js';
 import { IPaneCompositeBarOptions } from '../paneCompositeBar.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
-import { Action2, IMenuService, registerAction2 } from '../../../../platform/actions/common/actions.js';
+import { Action2, IMenuService, MenuId, registerAction2 } from '../../../../platform/actions/common/actions.js';
 import { Separator } from '../../../../base/common/actions.js';
 import { ToggleActivityBarVisibilityActionId } from '../../actions/layoutActions.js';
 import { localize2 } from '../../../../nls.js';
 import { IHoverService } from '../../../../platform/hover/browser/hover.js';
 import { VisibleViewContainersTracker } from '../visibleViewContainersTracker.js';
+import { Extensions } from '../../panecomposite.js';
 
 export class SidebarPart extends AbstractPaneCompositePart {
 
@@ -93,6 +94,9 @@ export class SidebarPart extends AbstractPaneCompositePart {
 			'viewlet',
 			SIDE_BAR_TITLE_FOREGROUND,
 			SIDE_BAR_TITLE_BORDER,
+			ViewContainerLocation.Sidebar,
+			Extensions.Viewlets,
+			MenuId.SidebarTitle,
 			notificationService,
 			storageService,
 			contextMenuService,
