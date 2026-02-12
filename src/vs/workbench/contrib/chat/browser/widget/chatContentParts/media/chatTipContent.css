@@ -64,7 +64,7 @@
 	box-shadow: none;
 	font-size: var(--vscode-chat-font-size-body-s);
 	font-family: var(--vscode-chat-font-family, inherit);
-	color: var(--vscode-foreground);
+	color: var(--vscode-descriptionForeground);
 	position: relative;
 	overflow: hidden;
 }
