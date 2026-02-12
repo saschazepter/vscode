@@ -575,11 +575,11 @@ export class PromptsService extends Disposable implements IPromptsService {
 
 				const source: IAgentSource = IAgentSource.fromPromptPath(promptPath);
 				if (!ast.header) {
-					return { uri, name, agentInstructions, source, target, visibility: { userInvokable: true, agentInvokable: true } };
+					return { uri, name, agentInstructions, source, target, visibility: { userInvocable: true, agentInvocable: true } };
 				}
 				const visibility = {
-					userInvokable: ast.header.userInvokable !== false,
-					agentInvokable: ast.header.infer === true || ast.header.disableModelInvocation !== true,
+					userInvocable: ast.header.userInvocable !== false,
+					agentInvocable: ast.header.infer === true || ast.header.disableModelInvocation !== true,
 				} satisfies ICustomAgentVisibility;
 
 				let model = ast.header.model;
@@ -912,7 +912,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 					name: file.name,
 					description: sanitizedDescription,
 					disableModelInvocation: file.disableModelInvocation ?? false,
-					userInvokable: file.userInvokable ?? true
+					userInvocable: file.userInvocable ?? true
 				});
 			}
 		}
@@ -1120,10 +1120,10 @@ export class PromptsService extends Disposable implements IPromptsService {
 	 * Returns the discovery results and a map of skill counts by source type for telemetry.
 	 */
 	private async computeSkillDiscoveryInfo(token: CancellationToken): Promise<{
-		files: (IPromptFileDiscoveryResult & { description?: string; source?: PromptFileSource; disableModelInvocation?: boolean; userInvokable?: boolean })[];
+		files: (IPromptFileDiscoveryResult & { description?: string; source?: PromptFileSource; disableModelInvocation?: boolean; userInvocable?: boolean })[];
 		skillsBySource: Map<PromptFileSource, number>;
 	}> {
-		const files: (IPromptFileDiscoveryResult & { description?: string; source?: PromptFileSource; disableModelInvocation?: boolean; userInvokable?: boolean })[] = [];
+		const files: (IPromptFileDiscoveryResult & { description?: string; source?: PromptFileSource; disableModelInvocation?: boolean; userInvocable?: boolean })[] = [];
 		const skillsBySource = new Map<PromptFileSource, number>();
 		const seenNames = new Set<string>();
 		const nameToUri = new Map<string, URI>();
@@ -1202,8 +1202,8 @@ export class PromptsService extends Disposable implements IPromptsService {
 				seenNames.add(sanitizedName);
 				nameToUri.set(sanitizedName, uri);
 				const disableModelInvocation = parsedFile.header?.disableModelInvocation === true;
-				const userInvokable = parsedFile.header?.userInvokable !== false;
-				files.push({ uri, storage, status: 'loaded', name: sanitizedName, description, extensionId, source, disableModelInvocation, userInvokable });
+				const userInvocable = parsedFile.header?.userInvocable !== false;
+				files.push({ uri, storage, status: 'loaded', name: sanitizedName, description, extensionId, source, disableModelInvocation, userInvocable });
 
 				// Track skill type
 				skillsBySource.set(source, (skillsBySource.get(source) || 0) + 1);

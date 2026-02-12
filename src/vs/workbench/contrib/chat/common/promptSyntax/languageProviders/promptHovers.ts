@@ -86,8 +86,10 @@ export class PromptHoverProvider implements HoverProvider {
 							return this.getAgentHover(attribute, position, description);
 						case PromptHeaderAttributes.handOffs:
 							return this.getHandsOffHover(attribute, position, target);
+						case PromptHeaderAttributes.userInvokable:
+							return this.createHover(description + '\n\n' + localize('promptHeader.attribute.userInvokable.hover', 'Deprecated: Use `user-invocable` instead.'), attribute.range);
 						case PromptHeaderAttributes.infer:
-							return this.createHover(description + '\n\n' + localize('promptHeader.attribute.infer.hover', 'Deprecated: Use `user-invokable` and `disable-model-invocation` instead.'), attribute.range);
+							return this.createHover(description + '\n\n' + localize('promptHeader.attribute.infer.hover', 'Deprecated: Use `user-invocable` and `disable-model-invocation` instead.'), attribute.range);
 						default:
 							return this.createHover(description, attribute.range);
 					}
