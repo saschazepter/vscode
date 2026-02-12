@@ -394,6 +394,34 @@ suite('WebPageLoader', () => {
 		assert.strictEqual(result.status, 'ok');
 	}));
 
+	test('post-load navigation to different domain is blocked silently and content is extracted', () => runWithFakedTimers({ useFakeTimers: true }, async () => {
+		const uri = URI.parse('https://example.com/page');
+		const adRedirectUrl = 'https://eus.rubiconproject.com/usync.html?p=12776';
+
+		const loader = createWebPageLoader(uri, { followRedirects: false });
+		setupDebuggerMock();
+
+		const loadPromise = loader.load();
+
+		// Simulate successful page load
+		window.webContents.emit('did-start-loading');
+		window.webContents.emit('did-finish-load');
+
+		// Simulate ad/tracker script redirecting after page load
+		const mockEvent: MockElectronEvent = {
+			preventDefault: sinon.stub()
+		};
+		window.webContents.emit('will-navigate', mockEvent, adRedirectUrl);
+
+		const result = await loadPromise;
+
+		// Navigation should be prevented
+		assert.ok((mockEvent.preventDefault!).called);
+		// But result should be ok (content extracted), NOT redirect
+		assert.strictEqual(result.status, 'ok');
+		assert.ok(result.result.includes('Test content from page'));
+	}));
+
 	test('redirect to non-trusted domain is blocked', async () => {
 		const uri = URI.parse('https://example.com/page');
 		const redirectUrl = 'https://untrusted-domain.com/redirected';
