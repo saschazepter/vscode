@@ -70,17 +70,6 @@ editorResolverService.registerEditor(
 
 ---
 
-## External UX Inspirations
-
-| Reference | Key Ideas | Link |
-|-----------|-----------|------|
-| **OpenAI GPT Builder** | Left configure form + right live preview; capability toggles; iterative edit→apply→preview loop | [help.openai.com](https://help.openai.com/en/articles/8770868-gpt-builder-guide) |
-| **LangGraph Studio** | Visual node canvas for agent steps; per-node probe/run; thread timeline | [github.com/langchain-ai/langgraph-studio](https://github.com/langchain-ai/langgraph-studio) |
-| **Flowise** | Drag-and-drop block builder; property drawer per node; rapid preview | [github.com/FlowiseAI/Flowise](https://github.com/FlowiseAI/Flowise) |
-| **Notion Prompt Gallery** | Searchable template cards; one-click duplicate; lightweight inline edit | [notion.com/templates](https://www.notion.com/templates/ai-prompt-library) |
-
----
-
 ## Current Architecture
 
 ### File Structure (Agentic)
@@ -120,39 +109,24 @@ src/vs/agentic/contrib/aiCustomizationTreeView/browser/
 
 ---
 
+## Service Alignment (Required)
+
+AI customizations must lean on existing VS Code services with well-defined interfaces. This avoids duplicated parsing logic, keeps discovery consistent across the workbench, and ensures prompt/hook behavior stays authoritative.
+
+Browser compatibility is required. Do not use Node.js APIs; rely on VS Code services that work in browser contexts.
+
+Key services to rely on:
+- Prompt discovery, parsing, and lifecycle: [src/vs/workbench/contrib/chat/common/promptSyntax/service/promptsService.ts](../workbench/contrib/chat/common/promptSyntax/service/promptsService.ts)
+- Active session scoping for worktree filtering: [src/vs/workbench/contrib/chat/browser/agentSessions/agentSessionsService.ts](../workbench/contrib/chat/browser/agentSessions/agentSessionsService.ts)
+- MCP servers and tool access: [src/vs/workbench/contrib/mcp/common/mcpService.ts](../workbench/contrib/mcp/common/mcpService.ts)
+- MCP management and gallery: [src/vs/platform/mcp/common/mcpManagement.ts](../platform/mcp/common/mcpManagement.ts)
+- Chat models and session state: [src/vs/workbench/contrib/chat/common/chatService/chatService.ts](../workbench/contrib/chat/common/chatService/chatService.ts)
+- File and model plumbing: [src/vs/platform/files/common/files.ts](../platform/files/common/files.ts), [src/vs/editor/common/services/resolverService.ts](../editor/common/services/resolverService.ts)
+
 ## Implemented Experience
 
 ### Form-Based Editor (Current)
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  [Icon] My Agent.agent.md          [Workspace ▾] [Run ▶] [⋯]   │
-├─────────────────────────────┬───────────────────────────────────┤
-│                             │                                   │
-│  ┌─ Overview ─────────────┐ │  ┌─ Preview ────────────────────┐ │
-│  │ Name: [My Agent      ] │ │  │                              │ │
-│  │ Description:           │ │  │  User: How do I build X?    │ │
-│  │ [Multi-line input    ] │ │  │                              │ │
-│  └────────────────────────┘ │  │  Agent: Here's how...        │ │
-│                             │  │                              │ │
-│  ┌─ Behavior ─────────────┐ │  │                              │ │
-│  │ Instructions:          │ │  │                              │ │
-│  │ [Monaco editor       ] │ │  │  [Send test message...]      │ │
-│  │                        │ │  │                              │ │
-│  └────────────────────────┘ │  └──────────────────────────────┘ │
-│                             │                                   │
-│  ┌─ Model ────────────────┐ │  ┌─ Source ─────────────────────┐ │
-│  │ Model(s): [gpt-4o ▾ +] │ │  │  [Show raw markdown]         │ │
-│  └────────────────────────┘ │  └──────────────────────────────┘ │
-│                             │                                   │
-│  ┌─ Tools ────────────────┐ │                                   │
-│  │ ☑ Web Search           │ │                                   │
-│  │ ☑ File Operations      │ │                                   │
-│  │ ☐ Terminal             │ │                                   │
-│  └────────────────────────┘ │                                   │
-│                             │                                   │
-└─────────────────────────────┴───────────────────────────────────┘
-```
 
 **Implementation notes**:
 - `EditorPane` renders a header + `SplitView` with TOC on the left and fields on the right.
@@ -174,6 +148,11 @@ src/vs/agentic/contrib/aiCustomizationTreeView/browser/
 - Unified sidebar tree with Type -> Storage -> File hierarchy.
 - Auto-expands categories to reveal storage groups.
 - Context menus provide Open, Open as Text, and Run Prompt.
+
+### Additional Surfaces (Current)
+
+- Overview view provides counts and deep-links into the management editor.
+- Management list groups by storage with empty states, git status, and path copy actions.
 
 ---
 
@@ -243,5 +222,6 @@ All entry points (editor resolver, view contributions, commands) respect `ChatCo
 - [Custom Editor Registration](../src/vs/workbench/services/editor/browser/editorResolverService.ts)
 - [AI Customization Editor (agentic)](../src/vs/agentic/contrib/aiCustomizationEditor/browser/)
 - [AI Customization Management (agentic)](../src/vs/agentic/contrib/aiCustomizationManagement/browser/)
+- [AI Customization Overview View](../src/vs/agentic/contrib/aiCustomizationManagement/browser/aiCustomizationOverviewView.ts)
 - [AI Customization Tree View (agentic)](../src/vs/agentic/contrib/aiCustomizationTreeView/browser/)
 - [IPromptsService](../src/vs/workbench/contrib/chat/common/promptSyntax/service/promptsService.ts)
