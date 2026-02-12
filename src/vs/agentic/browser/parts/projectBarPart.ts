@@ -5,7 +5,7 @@
 
 import './projectBarPart.css';
 import { Part } from '../../../workbench/browser/part.js';
-import { IWorkbenchLayoutService, Parts, Position } from '../../../workbench/services/layout/browser/layoutService.js';
+import { IWorkbenchLayoutService, Position } from '../../../workbench/services/layout/browser/layoutService.js';
 import { IColorTheme, IThemeService } from '../../../platform/theme/common/themeService.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../platform/storage/common/storage.js';
 import { IWorkspaceContextService } from '../../../platform/workspace/common/workspace.js';
@@ -37,6 +37,7 @@ import { getIconRegistry, IconContribution } from '../../../platform/theme/commo
 import { defaultInputBoxStyles } from '../../../platform/theme/browser/defaultStyles.js';
 import { WorkbenchIconSelectBox } from '../../../workbench/services/userDataProfile/browser/iconSelectBox.js';
 import { localize } from '../../../nls.js';
+import { AgenticParts } from './parts.js';
 
 const HOVER_GROUP_ID = 'projectbar';
 const PROJECT_BAR_FOLDERS_KEY = 'workbench.agentsession.projectbar.folders';
@@ -120,7 +121,7 @@ export class ProjectBarPart extends Part {
 		@IQuickInputService private readonly quickInputService: IQuickInputService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
 	) {
-		super(Parts.PROJECTBAR_PART, { hasTitle: false }, themeService, storageService, layoutService);
+		super(AgenticParts.PROJECTBAR_PART, { hasTitle: false }, themeService, storageService, layoutService);
 
 		// Create the global composite bar for accounts and settings at the bottom
 		this.globalCompositeBar = this._register(instantiationService.createInstance(
@@ -577,7 +578,7 @@ export class ProjectBarPart extends Part {
 
 	toJSON(): object {
 		return {
-			type: Parts.PROJECTBAR_PART
+			type: AgenticParts.PROJECTBAR_PART
 		};
 	}
 }

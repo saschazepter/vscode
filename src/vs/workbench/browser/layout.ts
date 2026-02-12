@@ -2263,10 +2263,6 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 		}
 	}
 
-	isActivityBarHidden(): boolean {
-		return this.stateModel.getRuntimeValue(LayoutStateKeys.ACTIVITYBAR_HIDDEN);
-	}
-
 	setPartHidden(hidden: boolean, part: Parts): void {
 		switch (part) {
 			case Parts.ACTIVITYBAR_PART:
