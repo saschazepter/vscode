@@ -189,7 +189,7 @@ export class WebPageLoader extends Disposable {
 				if (this.isTextMimeType(contentType)) {
 					this.trace(`Replacing Content-Disposition: attachment with inline for ${details.url} (content-type: ${contentType})`);
 					headers[attachmentHeaderName] = ['inline'];
-					callback({ responseHeaders: headers });
+					callback({ responseHeaders: headers, cancel: false });
 				} else {
 					this.trace(`Blocked binary download (Content-Disposition: attachment, content-type: ${contentType}) for ${details.url}`);
 					callback({ cancel: true });
@@ -197,7 +197,7 @@ export class WebPageLoader extends Disposable {
 				return;
 			}
 		}
-		callback({});
+		callback({ cancel: false });
 	}
 
 	/**

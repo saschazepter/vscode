@@ -914,7 +914,7 @@ suite('WebPageLoader', () => {
 
 			assert.ok(response, `Expected response for ${contentType}`);
 			assert.deepStrictEqual(response!.responseHeaders!['Content-Disposition'], ['inline'], `Expected inline for ${contentType}`);
-			assert.strictEqual(response!.cancel, undefined, `Should not cancel for ${contentType}`);
+			assert.strictEqual(response!.cancel, false, `Should not cancel for ${contentType}`);
 		}
 	});
 
