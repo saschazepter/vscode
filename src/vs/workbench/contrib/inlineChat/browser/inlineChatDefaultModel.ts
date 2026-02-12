@@ -27,7 +27,7 @@ export class InlineChatDefaultModel extends DefaultModelContribution {
 	) {
 		super(arrays, {
 			configKey: InlineChatConfigKeys.DefaultModel,
-			configSectionId: undefined,
+			configSectionId: 'inlineChat',
 			logPrefix: '[InlineChatDefaultModel]',
 			filter: metadata => !!metadata.capabilities?.toolCalling,
 		}, languageModelsService, logService);

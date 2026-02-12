@@ -113,7 +113,7 @@ export abstract class DefaultModelContribution extends Disposable {
 
 			for (const model of supportedModels) {
 				try {
-					const qualifiedName = `${model.metadata.name} (${model.metadata.vendor})`;
+					const qualifiedName = ILanguageModelChatMetadata.asQualifiedName(model.metadata);
 					modelIds.push(qualifiedName);
 					modelLabels.push(model.metadata.name);
 					modelDescriptions.push(model.metadata.tooltip ?? model.metadata.detail ?? '');
