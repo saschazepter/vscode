@@ -25,6 +25,11 @@
 }
 
 .interactive-item-container .chat-tip-widget a {
+	color: var(--vscode-textLink-foreground);
+}
+
+.interactive-item-container .chat-tip-widget a:hover,
+.interactive-item-container .chat-tip-widget a:active {
 	color: var(--vscode-textLink-activeForeground);
 }
 
@@ -70,6 +75,11 @@
 }
 
 .chat-getting-started-tip-container .chat-tip-widget a {
+	color: var(--vscode-textLink-foreground);
+}
+
+.chat-getting-started-tip-container .chat-tip-widget a:hover,
+.chat-getting-started-tip-container .chat-tip-widget a:active {
 	color: var(--vscode-textLink-activeForeground);
 }
 
