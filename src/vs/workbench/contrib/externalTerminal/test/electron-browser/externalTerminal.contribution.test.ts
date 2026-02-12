@@ -78,10 +78,10 @@ suite('ExternalTerminal contribution', () => {
 		});
 
 		instantiationService.stub(ICommandService, {
-			executeCommand<R = unknown>(id: string): Promise<R | undefined> {
+			executeCommand(id: string): Promise<any> {
 				executeCommandCalls.push(id);
 				if (id === PICK_WORKSPACE_FOLDER_COMMAND_ID) {
-					return Promise.resolve(options.pickedFolder as R | undefined);
+					return Promise.resolve(options.pickedFolder);
 				}
 				return Promise.resolve(undefined);
 			}
