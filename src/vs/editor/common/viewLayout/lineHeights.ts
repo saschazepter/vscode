@@ -297,7 +297,7 @@ export class LineHeightsManager {
 		this._commit(this._lineHeightChanges);
 	}
 
-	public _commit(lineHeightChanges: LineHeightChanges): void {
+	private _commit(lineHeightChanges: LineHeightChanges): void {
 		const hasPendingChanges = lineHeightChanges.hasPending;
 		if (!hasPendingChanges) {
 			return;
