@@ -11,8 +11,8 @@ import { createDefaultModelArrays, DefaultModelContribution } from './defaultMod
 
 const arrays = createDefaultModelArrays();
 
-export class PlanAgentDefaultModel extends DefaultModelContribution {
-	static readonly ID = 'workbench.contrib.planAgentDefaultModel';
+export class ExploreAgentDefaultModel extends DefaultModelContribution {
+	static readonly ID = 'workbench.contrib.exploreAgentDefaultModel';
 
 	static readonly modelIds = arrays.modelIds;
 	static readonly modelLabels = arrays.modelLabels;
@@ -23,12 +23,12 @@ export class PlanAgentDefaultModel extends DefaultModelContribution {
 		@ILogService logService: ILogService,
 	) {
 		super(arrays, {
-			configKey: ChatConfiguration.PlanAgentDefaultModel,
+			configKey: ChatConfiguration.ExploreAgentDefaultModel,
 			configSectionId: 'chatSidebar',
-			logPrefix: '[PlanAgentDefaultModel]',
+			logPrefix: '[ExploreAgentDefaultModel]',
 			filter: metadata => !!metadata.capabilities?.toolCalling,
 		}, languageModelsService, logService);
 	}
 }
 
-registerWorkbenchContribution2(PlanAgentDefaultModel.ID, PlanAgentDefaultModel, WorkbenchPhase.BlockRestore);
+registerWorkbenchContribution2(ExploreAgentDefaultModel.ID, ExploreAgentDefaultModel, WorkbenchPhase.BlockRestore);
