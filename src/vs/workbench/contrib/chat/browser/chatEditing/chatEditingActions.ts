@@ -26,6 +26,7 @@ import { IDialogService } from '../../../../../platform/dialogs/common/dialogs.j
 import { EditorActivation } from '../../../../../platform/editor/common/editor.js';
 import { KeybindingWeight } from '../../../../../platform/keybinding/common/keybindingsRegistry.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
+import { ILogService } from '../../../../../platform/log/common/log.js';
 import { IEditorPane } from '../../../../common/editor.js';
 import { IEditorService } from '../../../../services/editor/common/editorService.js';
 import { IAgentSessionsService } from '../agentSessions/agentSessionsService.js';
@@ -487,6 +488,9 @@ async function restoreSnapshotWithConfirmationByRequestId(accessor: ServicesAcce
 		await configurationService.updateValue('chat.editing.confirmEditRequestRemoval', false);
 	}
 
+	// Restore the snapshot to what it was before the request(s) that we deleted
+	const snapshotRequestId = chatRequests[itemIndex].id;
+
 	// Check if the content provider has a custom checkpoint handler
 	const chatSessionsService = accessor.get(IChatSessionsService);
 	const contentProvider = chatSessionsService.getContentProvider(sessionResource);
@@ -494,17 +498,15 @@ async function restoreSnapshotWithConfirmationByRequestId(accessor: ServicesAcce
 	if (contentProvider?.handleRestoreCheckpoint) {
 		// Let the content provider handle the checkpoint restoration
 		try {
-			await contentProvider.handleRestoreCheckpoint(sessionResource, requestId, CancellationToken.None);
+			await contentProvider.handleRestoreCheckpoint(sessionResource, snapshotRequestId, CancellationToken.None);
 		} catch (error) {
 			// If the provider fails, fall back to default behavior
-			console.error('Content provider handleRestoreCheckpoint failed, falling back to default behavior:', error);
-			// Restore the snapshot to what it was before the request(s) that we deleted
-			const snapshotRequestId = chatRequests[itemIndex].id;
+			const logService = accessor.get(ILogService);
+			logService.error('Content provider handleRestoreCheckpoint failed, falling back to default behavior:', error);
 			await session.restoreSnapshot(snapshotRequestId, undefined);
 		}
 	} else {
-		// Default behavior: restore the snapshot to what it was before the request(s) that we deleted
-		const snapshotRequestId = chatRequests[itemIndex].id;
+		// Default behavior: restore the snapshot
 		await session.restoreSnapshot(snapshotRequestId, undefined);
 	}
 }
