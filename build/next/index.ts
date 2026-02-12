@@ -91,6 +91,7 @@ const codeEntryPoints = [
 	'vs/code/node/cliProcessMain',
 	'vs/code/electron-utility/sharedProcess/sharedProcessMain',
 	'vs/code/electron-browser/workbench/workbench',
+	'vs/code/agentic/electron-browser/workbench/workbench',
 ];
 
 // Web entry points (used in server-web and vscode-web)
@@ -184,7 +185,9 @@ function getCssBundleEntryPointsForTarget(target: BuildTarget): Set<string> {
 		case 'desktop':
 			return new Set([
 				'vs/workbench/workbench.desktop.main',
+				'vs/agentic/workbench.desktop.main',
 				'vs/code/electron-browser/workbench/workbench',
+				'vs/code/agentic/electron-browser/workbench/workbench',
 			]);
 		case 'server':
 			return new Set(); // Server has no UI
@@ -232,6 +235,8 @@ const desktopResourcePatterns = [
 	// HTML
 	'vs/code/electron-browser/workbench/workbench.html',
 	'vs/code/electron-browser/workbench/workbench-dev.html',
+	'vs/code/agentic/electron-browser/workbench/workbench.html',
+	'vs/code/agentic/electron-browser/workbench/workbench-dev.html',
 	'vs/workbench/services/extensions/worker/webWorkerExtensionHostIframe.html',
 	'vs/workbench/contrib/webview/browser/pre/*.html',
 
