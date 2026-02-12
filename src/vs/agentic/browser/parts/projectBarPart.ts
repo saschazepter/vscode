@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import './projectBarPart.css';
+import './media/projectBarPart.css';
 import { Part } from '../../../workbench/browser/part.js';
 import { IWorkbenchLayoutService, Position } from '../../../workbench/services/layout/browser/layoutService.js';
 import { IColorTheme, IThemeService } from '../../../platform/theme/common/themeService.js';

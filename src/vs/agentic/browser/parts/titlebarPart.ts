@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import '../../../workbench/browser/parts/titlebar/media/titlebarpart.css';
+import './media/titlebarpart.css';
 import { MultiWindowParts, Part } from '../../../workbench/browser/part.js';
 import { ITitleService } from '../../../workbench/services/title/browser/titleService.js';
 import { getZoomFactor, isWCOEnabled, getWCOTitlebarAreaRect } from '../../../base/browser/browser.js';
