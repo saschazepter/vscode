@@ -138,7 +138,7 @@ class CodeMain {
 				// (https://github.com/microsoft/vscode/issues/250334)
 				const logsHomePath = environmentMainService.logsHome.with({ scheme: Schemas.file }).fsPath;
 				await promises.mkdir(logsHomePath, { recursive: true }).catch(err => {
-					logService.error(`app#startup(): Error creating logs folder '${logsHomePath}': ${err.stack}`);
+					logService.error(`app.startup(): Error creating logs folder '${logsHomePath}': ${err.stack}`);
 				});
 
 				// Delay creation of spdlog for perf reasons (https://github.com/microsoft/vscode/issues/72906)
