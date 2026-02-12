@@ -87,7 +87,7 @@ export interface IFileStatusInfo {
 	overwrittenBy?: string;
 	/** Extension ID if this file comes from an extension */
 	extensionId?: string;
-	/** If true, hidden from / menu (user-invocable: false) */
+	/** If false, hidden from / menu (user-invocable: false) */
 	userInvocable?: boolean;
 	/** If true, won't be auto-loaded by agent (disable-model-invocation: true) */
 	disableModelInvocation?: boolean;
