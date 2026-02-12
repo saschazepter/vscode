@@ -107,6 +107,13 @@ export interface ITipDefinition {
 	 */
 	readonly excludeWhenToolsInvoked?: string[];
 	/**
+	 * Tool set reference names. If any tool belonging to one of these tool sets
+	 * has ever been invoked in this workspace, the tip becomes ineligible.
+	 * Unlike {@link excludeWhenToolsInvoked}, this does not require listing
+	 * individual tool IDs, it checks all tools that belong to the named sets.
+	 */
+	readonly excludeWhenAnyToolSetToolInvoked?: string[];
+	/**
 	 * Tool set reference names where at least one must be registered for the tip to be eligible.
 	 * If none of the listed tool sets are registered, the tip is not shown.
 	 */
@@ -129,31 +136,31 @@ export interface ITipDefinition {
 const TIP_CATALOG: ITipDefinition[] = [
 	{
 		id: 'tip.agentMode',
-		message: localize('tip.agentMode', "Tip: Try [Agent mode](command:workbench.action.chat.openEditSession) for multi-file edits and running commands."),
+		message: localize('tip.agentMode', "Tip: Try [Agents](command:workbench.action.chat.openEditSession) to make edits across your project and run commands."),
 		when: ChatContextKeys.chatModeKind.notEqualsTo(ChatModeKind.Agent),
 		enabledCommands: ['workbench.action.chat.openEditSession'],
 		excludeWhenModesUsed: [ChatModeKind.Agent],
 	},
 	{
 		id: 'tip.planMode',
-		message: localize('tip.planMode', "Tip: Try [Plan mode](command:workbench.action.chat.openPlan) to let the agent perform deep analysis and planning before implementing changes."),
+		message: localize('tip.planMode', "Tip: Try the [Plan agent](command:workbench.action.chat.openPlan) to research and plan before implementing changes."),
 		when: ChatContextKeys.chatModeName.notEqualsTo('Plan'),
 		enabledCommands: ['workbench.action.chat.openPlan'],
 		excludeWhenModesUsed: ['Plan'],
 	},
 	{
 		id: 'tip.attachFiles',
-		message: localize('tip.attachFiles', "Tip: Attach files or folders with # to give Copilot more context."),
+		message: localize('tip.attachFiles', "Tip: Reference files or folders with # to give the agent more context about the task."),
 		excludeWhenCommandsExecuted: ['workbench.action.chat.attachContext', 'workbench.action.chat.attachFile', 'workbench.action.chat.attachFolder', 'workbench.action.chat.attachSelection'],
 	},
 	{
 		id: 'tip.codeActions',
-		message: localize('tip.codeActions', "Tip: Select code and right-click for Copilot actions in the context menu."),
+		message: localize('tip.codeActions', "Tip: Select a code block in the editor and right-click to access more AI actions."),
 		excludeWhenCommandsExecuted: ['inlineChat.start'],
 	},
 	{
 		id: 'tip.undoChanges',
-		message: localize('tip.undoChanges', "Tip: You can undo chat's changes to any point by clicking Restore Checkpoint."),
+		message: localize('tip.undoChanges', "Tip: Select Restore Checkpoint to undo changes until that point in the chat conversation."),
 		when: ContextKeyExpr.or(
 			ChatContextKeys.chatModeKind.isEqualTo(ChatModeKind.Agent),
 			ChatContextKeys.chatModeKind.isEqualTo(ChatModeKind.Edit),
@@ -162,7 +169,7 @@ const TIP_CATALOG: ITipDefinition[] = [
 	},
 	{
 		id: 'tip.customInstructions',
-		message: localize('tip.customInstructions', "Tip: [Generate workspace instructions](command:workbench.action.chat.generateInstructions) so chat always has the context it needs when starting a task."),
+		message: localize('tip.customInstructions', "Tip: [Generate workspace instructions](command:workbench.action.chat.generateInstructions) to give the agent relevant project-specific context when starting a task."),
 		enabledCommands: ['workbench.action.chat.generateInstructions'],
 		excludeWhenPromptFilesExist: { promptType: PromptsType.instructions, agentFileType: AgentFileType.copilotInstructionsMd, excludeUntilChecked: true },
 	},
@@ -176,7 +183,7 @@ const TIP_CATALOG: ITipDefinition[] = [
 	},
 	{
 		id: 'tip.skill',
-		message: localize('tip.skill', "Tip: [Create a skill](command:workbench.command.new.skill) so agents can perform domain-specific tasks with reusable prompts and tools."),
+		message: localize('tip.skill', "Tip: [Create a skill](command:workbench.command.new.skill) to apply domain-specific workflows and instructions, only when needed."),
 		when: ChatContextKeys.chatModeKind.isEqualTo(ChatModeKind.Agent),
 		enabledCommands: ['workbench.command.new.skill'],
 		excludeWhenCommandsExecuted: ['workbench.command.new.skill'],
@@ -184,13 +191,13 @@ const TIP_CATALOG: ITipDefinition[] = [
 	},
 	{
 		id: 'tip.messageQueueing',
-		message: localize('tip.messageQueueing', "Tip: You can send follow-up and steering messages while the agent is working. They'll be queued and processed in order."),
+		message: localize('tip.messageQueueing', "Tip: Send follow-up and steering messages while the agent is working. They'll be queued and processed in order."),
 		when: ChatContextKeys.chatModeKind.isEqualTo(ChatModeKind.Agent),
 		excludeWhenCommandsExecuted: ['workbench.action.chat.queueMessage', 'workbench.action.chat.steerWithMessage'],
 	},
 	{
 		id: 'tip.yoloMode',
-		message: localize('tip.yoloMode', "Tip: Enable [auto approve](command:workbench.action.openSettings?%5B%22chat.tools.global.autoApprove%22%5D) to let the agent run tools without manual confirmation."),
+		message: localize('tip.yoloMode', "Tip: Enable [auto approve](command:workbench.action.openSettings?%5B%22chat.tools.global.autoApprove%22%5D) to give the agent full control without manual confirmation."),
 		when: ContextKeyExpr.and(
 			ChatContextKeys.chatModeKind.isEqualTo(ChatModeKind.Agent),
 			ContextKeyExpr.notEquals('config.chat.tools.global.autoApprove', true),
@@ -205,23 +212,23 @@ const TIP_CATALOG: ITipDefinition[] = [
 	},
 	{
 		id: 'tip.githubRepo',
-		message: localize('tip.githubRepo', "Tip: Mention a GitHub repository (e.g. @owner/repo) in your prompt to let the agent search code, browse issues, and explore pull requests from that repo."),
+		message: localize('tip.githubRepo', "Tip: Mention a GitHub repository (@owner/repo) in your prompt to let the agent search code, browse issues, and explore pull requests from that repo."),
 		when: ContextKeyExpr.and(
 			ChatContextKeys.chatModeKind.isEqualTo(ChatModeKind.Agent),
 			ContextKeyExpr.notEquals('gitOpenRepositoryCount', '0'),
 		),
-		excludeWhenToolsInvoked: ['github-pull-request_doSearch', 'github-pull-request_issue_fetch', 'github-pull-request_formSearchQuery'],
+		excludeWhenAnyToolSetToolInvoked: ['github', 'github-pull-request'],
 		requiresAnyToolSetRegistered: ['github', 'github-pull-request'],
 	},
 	{
 		id: 'tip.subagents',
-		message: localize('tip.subagents', "Tip: For large tasks, ask the agent to work in parallel. It can split the work across subagents to finish faster."),
+		message: localize('tip.subagents', "Tip: Ask the agent to work in parallel to complete large tasks faster."),
 		when: ChatContextKeys.chatModeKind.isEqualTo(ChatModeKind.Agent),
 		excludeWhenToolsInvoked: ['runSubagent'],
 	},
 	{
 		id: 'tip.contextUsage',
-		message: localize('tip.contextUsage', "Tip: [View your context window usage](command:workbench.action.chat.showContextUsage) to see how many tokens are being used and what's consuming them."),
+		message: localize('tip.contextUsage', "Tip: [View your context window usage](command:workbench.action.chat.showContextUsage) to see how many tokens are used and what's consuming them."),
 		when: ContextKeyExpr.and(
 			ChatContextKeys.chatModeKind.isEqualTo(ChatModeKind.Agent),
 			ChatContextKeys.contextUsageHasBeenOpened.negate(),
@@ -232,7 +239,7 @@ const TIP_CATALOG: ITipDefinition[] = [
 	},
 	{
 		id: 'tip.sendToNewChat',
-		message: localize('tip.sendToNewChat', "Tip: Use [Send to New Chat](command:workbench.action.chat.sendToNewChat) to start a fresh conversation with a clean context window."),
+		message: localize('tip.sendToNewChat', "Tip: Use [Send to New Chat](command:workbench.action.chat.sendToNewChat) to start a new conversation with a clean context window."),
 		when: ChatContextKeys.chatSessionIsEmpty.negate(),
 		enabledCommands: ['workbench.action.chat.sendToNewChat'],
 		excludeWhenCommandsExecuted: ['workbench.action.chat.sendToNewChat'],
@@ -257,6 +264,9 @@ export class TipEligibilityTracker extends Disposable {
 	private readonly _pendingCommands: Set<string>;
 	private readonly _pendingModes: Set<string>;
 	private readonly _pendingTools: Set<string>;
+
+	/** Tool set reference names monitored via {@link ITipDefinition.excludeWhenAnyToolSetToolInvoked}. */
+	private readonly _monitoredToolSets: Set<string>;
 
 	private readonly _commandListener = this._register(new MutableDisposable());
 	private readonly _toolListener = this._register(new MutableDisposable());
@@ -323,6 +333,13 @@ export class TipEligibilityTracker extends Disposable {
 			}
 		}
 
+		this._monitoredToolSets = new Set<string>();
+		for (const tip of tips) {
+			for (const name of tip.excludeWhenAnyToolSetToolInvoked ?? []) {
+				this._monitoredToolSets.add(name);
+			}
+		}
+
 		// --- Set up command listener (auto-disposes when all seen) --------------
 
 		if (this._pendingCommands.size > 0) {
@@ -341,16 +358,45 @@ export class TipEligibilityTracker extends Disposable {
 
 		// --- Set up tool listener (auto-disposes when all seen) -----------------
 
-		if (this._pendingTools.size > 0) {
+		if (this._pendingTools.size > 0 || this._monitoredToolSets.size > 0) {
 			this._toolListener.value = this._languageModelToolsService.onDidInvokeTool(e => {
+				let changed = false;
+
+				// Track explicit tool IDs
 				if (this._pendingTools.has(e.toolId)) {
 					this._invokedTools.add(e.toolId);
-					this._persistSet(TipEligibilityTracker._TOOLS_STORAGE_KEY, this._invokedTools);
 					this._pendingTools.delete(e.toolId);
+					changed = true;
+				}
 
-					if (this._pendingTools.size === 0) {
-						this._toolListener.clear();
+				// Track tools belonging to monitored tool sets
+				if (this._monitoredToolSets.size > 0 && !this._invokedTools.has(e.toolId)) {
+					for (const setName of this._monitoredToolSets) {
+						const toolSet = this._languageModelToolsService.getToolSetByName(setName);
+						if (toolSet) {
+							for (const tool of toolSet.getTools()) {
+								if (tool.id === e.toolId) {
+									this._invokedTools.add(e.toolId);
+									// Remove set name from monitoring since ANY tool from the set excludes the tip.
+									// The tip remains excluded via _invokedTools even after we stop monitoring.
+									this._monitoredToolSets.delete(setName);
+									changed = true;
+									break;
+								}
+							}
+						}
+						if (changed) {
+							break;
+						}
 					}
+				}
+
+				if (changed) {
+					this._persistSet(TipEligibilityTracker._TOOLS_STORAGE_KEY, this._invokedTools);
+				}
+
+				if (this._pendingTools.size === 0 && this._monitoredToolSets.size === 0) {
+					this._toolListener.clear();
 				}
 			});
 		}
@@ -428,6 +474,19 @@ export class TipEligibilityTracker extends Disposable {
 				if (this._invokedTools.has(toolId)) {
 					this._logService.debug('#ChatTips: tip excluded because tool was invoked', tip.id, toolId);
 					return true;
+				}
+			}
+		}
+		if (tip.excludeWhenAnyToolSetToolInvoked) {
+			for (const setName of tip.excludeWhenAnyToolSetToolInvoked) {
+				const toolSet = this._languageModelToolsService.getToolSetByName(setName);
+				if (toolSet) {
+					for (const tool of toolSet.getTools()) {
+						if (this._invokedTools.has(tool.id)) {
+							this._logService.debug('#ChatTips: tip excluded because tool set tool was invoked', tip.id, setName, tool.id);
+							return true;
+						}
+					}
 				}
 			}
 		}
