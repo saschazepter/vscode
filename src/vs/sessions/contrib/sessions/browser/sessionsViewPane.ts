@@ -7,6 +7,7 @@ import './media/sessionsViewPane.css';
 import * as DOM from '../../../../base/browser/dom.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { Codicon } from '../../../../base/common/codicons.js';
+import { KeyCode, KeyMod } from '../../../../base/common/keyCodes.js';
 import { autorun } from '../../../../base/common/observable.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { URI } from '../../../../base/common/uri.js';
@@ -31,7 +32,9 @@ import { IWorkbenchLayoutService } from '../../../../workbench/services/layout/b
 import { Button } from '../../../../base/browser/ui/button/button.js';
 import { defaultButtonStyles } from '../../../../platform/theme/browser/defaultStyles.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
+import { KeybindingsRegistry, KeybindingWeight } from '../../../../platform/keybinding/common/keybindingsRegistry.js';
 import { ACTION_ID_NEW_CHAT } from '../../../../workbench/contrib/chat/browser/actions/chatActions.js';
+import { IsAgentSessionsWorkspaceContext } from '../../../../workbench/common/contextkeys.js';
 import { IEditorGroupsService } from '../../../../workbench/services/editor/common/editorGroupsService.js';
 import { AICustomizationManagementSection } from '../../aiCustomizationManagement/browser/aiCustomizationManagement.js';
 import { AICustomizationManagementEditorInput } from '../../aiCustomizationManagement/browser/aiCustomizationManagementEditorInput.js';
@@ -172,6 +175,13 @@ export class AgenticSessionsViewPane extends ViewPane {
 		const newSessionButton = this._register(new Button(newSessionButtonContainer, { ...defaultButtonStyles, secondary: true }));
 		newSessionButton.label = localize('newSession', "New Session");
 		this._register(newSessionButton.onDidClick(() => this.commandService.executeCommand(ACTION_ID_NEW_CHAT)));
+
+		// Keybinding hint inside the button
+		const keybinding = this.keybindingService.lookupKeybinding(ACTION_ID_NEW_CHAT);
+		if (keybinding) {
+			const keybindingHint = DOM.append(newSessionButton.element, $('span.new-session-keybinding-hint'));
+			keybindingHint.textContent = keybinding.getLabel() ?? '';
+		}
 
 		// Sessions Control
 		this.sessionsControlContainer = DOM.append(sessionsContent, $('.agent-sessions-control-container'));
@@ -439,6 +449,14 @@ export class AgenticSessionsViewPane extends ViewPane {
 		this.sessionsControl?.openFind();
 	}
 }
+
+// Register Cmd+N / Ctrl+N keybinding for new session in the agent sessions window
+KeybindingsRegistry.registerKeybindingRule({
+	id: ACTION_ID_NEW_CHAT,
+	weight: KeybindingWeight.WorkbenchContrib + 1,
+	primary: KeyMod.CtrlCmd | KeyCode.KeyN,
+	when: IsAgentSessionsWorkspaceContext,
+});
 
 MenuRegistry.appendMenuItem(MenuId.ViewTitle, {
 	submenu: SessionsViewFilterSubMenu,

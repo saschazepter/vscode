@@ -189,6 +189,20 @@
 		padding: 6px 12px 8px 12px;
 	}
 
+	.agent-sessions-new-button-container .monaco-button {
+		position: relative;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.agent-sessions-new-button-container .monaco-button .new-session-keybinding-hint {
+		position: absolute;
+		right: 10px;
+		font-size: 11px;
+		opacity: 0.5;
+	}
+
 	.agent-sessions-control-container {
 		flex: 1;
 		overflow: hidden;
