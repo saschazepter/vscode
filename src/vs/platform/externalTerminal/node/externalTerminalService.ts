@@ -239,11 +239,24 @@ export class LinuxExternalTerminalService extends ExternalTerminalService implem
 		const execPromise = settings.linuxExec ? Promise.resolve(settings.linuxExec) : LinuxExternalTerminalService.getDefaultTerminalLinuxReady();
 
 		return new Promise<number | undefined>((resolve, reject) => {
-
-			const termArgs: string[] = [];
-			//termArgs.push('--title');
-			//termArgs.push(`"${TERMINAL_TITLE}"`);
 			execPromise.then(exec => {
+				const basename = path.basename(exec).toLowerCase();
+				if (basename === 'ghostty') {
+					const ghosttyArgs: string[] = [];
+					if (dir) {
+						ghosttyArgs.push(`--working-directory=${dir}`);
+					}
+					ghosttyArgs.push('--wait-after-command=true');
+					if (args.length) {
+						ghosttyArgs.push('-e', ...args);
+					}
+					LinuxExternalTerminalService.spawnTerminalWithEnv(exec, ghosttyArgs, dir, envVars, resolve, reject);
+					return;
+				}
+
+				const termArgs: string[] = [];
+				//termArgs.push('--title');
+				//termArgs.push(`"${TERMINAL_TITLE}"`);
 				if (exec.indexOf('gnome-terminal') >= 0) {
 					termArgs.push('-x');
 				} else {
@@ -256,38 +269,48 @@ export class LinuxExternalTerminalService extends ExternalTerminalService implem
 				termArgs.push(`''${bashCommand}''`);	// wrapping argument in two sets of ' because node is so "friendly" that it removes one set...
 
 
-				// merge environment variables into a copy of the process.env
-				const env = Object.assign({}, getSanitizedEnvironment(process), envVars);
-
-				// delete environment variables that have a null value
-				Object.keys(env).filter(v => env[v] === null).forEach(key => delete env[key]);
-
-				const options = {
-					cwd: dir,
-					env: env
-				};
-
-				let stderr = '';
-				const cmd = cp.spawn(exec, termArgs, options);
-				cmd.on('error', err => {
-					reject(improveError(err));
-				});
-				cmd.stderr.on('data', (data) => {
-					stderr += data.toString();
-				});
-				cmd.on('exit', (code: number) => {
-					if (code === 0) {	// OK
-						resolve(undefined);
-					} else {
-						if (stderr) {
-							const lines = stderr.split('\n', 1);
-							reject(new Error(lines[0]));
-						} else {
-							reject(new Error(nls.localize('linux.term.failed', "'{0}' failed with exit code {1}", exec, code)));
-						}
-					}
-				});
+				LinuxExternalTerminalService.spawnTerminalWithEnv(exec, termArgs, dir, envVars, resolve, reject);
 			});
+		});
+	}
+
+	private static spawnTerminalWithEnv(
+		exec: string,
+		args: string[],
+		dir: string,
+		envVars: ITerminalEnvironment,
+		resolve: (value: number | PromiseLike<number | undefined> | undefined) => void,
+		reject: (reason?: unknown) => void
+	): void {
+		const env = Object.assign({}, getSanitizedEnvironment(process), envVars);
+
+		// delete environment variables that have a null value
+		Object.keys(env).filter(v => env[v] === null).forEach(key => delete env[key]);
+
+		const options = {
+			cwd: dir,
+			env: env
+		};
+
+		let stderr = '';
+		const cmd = cp.spawn(exec, args, options);
+		cmd.on('error', err => {
+			reject(improveError(err));
+		});
+		cmd.stderr.on('data', (data) => {
+			stderr += data.toString();
+		});
+		cmd.on('exit', (code: number) => {
+			if (code === 0) {
+				resolve(undefined);
+			} else {
+				if (stderr) {
+					const lines = stderr.split('\n', 1);
+					reject(new Error(lines[0]));
+				} else {
+					reject(new Error(nls.localize('linux.term.failed', "'{0}' failed with exit code {1}", exec, code)));
+				}
+			}
 		});
 	}
 
@@ -325,7 +348,9 @@ export class LinuxExternalTerminalService extends ExternalTerminalService implem
 		return new Promise<void>((c, e) => {
 			execPromise.then(exec => {
 				const env = getSanitizedEnvironment(process);
-				const child = spawner.spawn(exec, [], { cwd, env });
+				const basename = path.basename(exec).toLowerCase();
+				const args = basename === 'ghostty' && cwd ? [`--working-directory=${cwd}`] : [];
+				const child = spawner.spawn(exec, args, { cwd, env });
 				child.on('error', e);
 				child.on('exit', () => c());
 			});

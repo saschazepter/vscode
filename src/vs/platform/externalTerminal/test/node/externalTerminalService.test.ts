@@ -208,6 +208,27 @@ suite('ExternalTerminalService', () => {
 		);
 	});
 
+	test(`LinuxTerminalService - Ghostty should be spawned with working directory`, done => {
+		const testCwd = 'path/to/workspace';
+		const mockSpawner: any = {
+			spawn: (command: any, args: any, opts: any) => {
+				strictEqual(command, 'ghostty');
+				deepStrictEqual(args, [`--working-directory=${testCwd}`]);
+				strictEqual(opts.cwd, testCwd);
+				done();
+				return {
+					on: (evt: any) => evt
+				};
+			}
+		};
+		const testService = new LinuxExternalTerminalService();
+		testService.spawnTerminal(
+			mockSpawner,
+			{ linuxExec: 'ghostty' },
+			testCwd
+		);
+	});
+
 	test(`LinuxTerminalService - uses default terminal when configuration.terminal.external.linuxExec is undefined`, done => {
 		LinuxExternalTerminalService.getDefaultTerminalLinuxReady().then(defaultTerminalLinux => {
 			const testCwd = 'path/to/workspace';
