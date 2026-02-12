@@ -502,7 +502,7 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 
 			const defaultAccount: IDefaultAccount = {
 				authenticationProvider,
-				accountName: 'testuser',
+				accountName: sessions[0].account.label,
 				sessionId: sessions[0].id,
 				enterprise: authenticationProvider.enterprise || sessions[0].account.label.includes('_'),
 				entitlementsData,
