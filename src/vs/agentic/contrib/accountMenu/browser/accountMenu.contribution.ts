@@ -81,7 +81,7 @@ MenuRegistry.appendMenuItem(Menus.AgenticAccount, {
 });
 
 // Check for Updates (reuses the update commands registered by the update contribution)
-registerUpdateMenuItems(Menus.AgenticAccount, '2_settings');
+registerUpdateMenuItems(Menus.AgenticAccount, '3_updates');
 
 // --- Signed-in Account Label Contribution --- //
 // The account submenu title (e.g. "sandy081 (GitHub)") is dynamic,
