@@ -656,7 +656,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			} else {
 				this.listContainer = dom.append(this.container, $(`.interactive-list`));
 				dom.append(this.container, this.chatSuggestNextWidget.domNode);
-				this.gettingStartedTipContainer = dom.append(this.container, $('.chat-getting-started-tip-container', { style: 'display: none' }));
+				// this.gettingStartedTipContainer = dom.append(this.container, $('.chat-getting-started-tip-container', { style: 'display: none' }));
 				this.createInput(this.container, { renderFollowups, renderStyle, renderInputToolbarBelowInput });
 			}
 		} else {
