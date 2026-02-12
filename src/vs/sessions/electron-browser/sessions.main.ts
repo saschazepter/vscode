@@ -64,8 +64,6 @@ import { IDefaultAccountService } from '../../platform/defaultAccount/common/def
 import { DefaultAccountService } from '../../workbench/services/accounts/browser/defaultAccount.js';
 import { AccountPolicyService } from '../../workbench/services/policies/common/accountPolicyService.js';
 import { MultiplexPolicyService } from '../../workbench/services/policies/common/multiplexPolicyService.js';
-import { WorkbenchModeService } from '../../workbench/services/layout/browser/workbenchModeService.js';
-import { IWorkbenchModeService } from '../../workbench/services/layout/common/workbenchModeService.js';
 import { Workbench as AgenticWorkbench } from '../browser/workbench.js';
 
 export class AgenticMain extends Disposable {
@@ -316,16 +314,6 @@ export class AgenticMain extends Disposable {
 				return service;
 			})
 		]);
-
-		// Workbench Mode
-		const workbenchModeService: WorkbenchModeService = this._register(new WorkbenchModeService(configurationService, fileService, environmentService, uriIdentityService, logService, storageService));
-		serviceCollection.set(IWorkbenchModeService, workbenchModeService);
-
-		try {
-			await workbenchModeService.initialize();
-		} catch (error) {
-			logService.error('Error while initializing workbench mode service', error);
-		}
 
 		// Workspace Trust Service
 		const workspaceTrustEnablementService = new WorkspaceTrustEnablementService(configurationService, environmentService);

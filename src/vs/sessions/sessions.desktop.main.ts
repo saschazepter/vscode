@@ -4,18 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 
-// #######################################################################
-// ###                                                                 ###
-// ### !!! PLEASE ADD COMMON IMPORTS INTO WORKBENCH.COMMON.MAIN.TS !!! ###
-// ###                                                                 ###
-// #######################################################################
-
-//#region --- workbench common
-
 import './sessions.common.main.js';
-
-//#endregion
-
 
 //#region --- workbench (agentic desktop main)
 
@@ -23,7 +12,6 @@ import './electron-browser/sessions.main.js';
 import '../workbench/electron-browser/desktop.contribution.js';
 
 //#endregion
-
 
 //#region --- workbench parts
 
@@ -192,7 +180,7 @@ import '../workbench/contrib/policyExport/electron-browser/policyExport.contribu
 //#endregion
 
 
-//#region --- agentic contributions
+//#region --- sessions contributions
 
 import './browser/layoutActions.js';
 
@@ -201,10 +189,9 @@ import './contrib/aiCustomizationTreeView/browser/aiCustomizationTreeView.contri
 import './contrib/aiCustomizationManagement/browser/aiCustomizationManagement.contribution.js';
 import './contrib/chat/browser/chat.contribution.js';
 import './contrib/sessions/browser/sessions.contribution.js';
-import './contrib/changesView/browser/changesView.contributions.js';
-
+import './contrib/changesView/browser/changesView.contribution.js';
+import './contrib/configuration/browser/configuration.contribution.js';
 
 //#endregion
-
 
 export { main } from './electron-browser/sessions.main.js';
