@@ -26,10 +26,15 @@ const allowedPermissions = new Set([
  *
  * The class centralises the permission configuration.  The {@link id}
  * doubles as the CDP `browserContextId`.
+ *
+ * This class uses a private constructor with static factory methods
+ * ({@link getOrCreate}, {@link getOrCreateGlobal}, etc.) and maintains
+ * an internal registry of live sessions. Use the static methods to
+ * obtain instances.
  */
 export class BrowserSession extends Disposable {
 
-	// ---- Static registry ------------------------------------------------
+	// #region Static registry
 
 	/**
 	 * All live sessions keyed by their unique id.
@@ -98,6 +103,10 @@ export class BrowserSession extends Disposable {
 	 * Get or create an ephemeral session for the given view / target id.
 	 */
 	static getOrCreateEphemeral(viewId: string, type?: string): BrowserSession {
+		if (type === 'workspace' || type === 'ephemeral') {
+			throw new Error(`Cannot create session with reserved type '${type}'`);
+		}
+
 		const sessionId = `${type ?? 'ephemeral'}:${viewId}`;
 		const existing = BrowserSession._sessions.get(sessionId);
 		if (existing) {
@@ -140,7 +149,9 @@ export class BrowserSession extends Disposable {
 		}
 	}
 
-	// ---- Instance ----------------------------------------------------
+	// #endregion
+
+	// #region Instance
 
 	// Reference count how many browser views are currently using this session.
 	// When the count drops to zero, the session is removed from the registry.
@@ -199,4 +210,6 @@ export class BrowserSession extends Disposable {
 		BrowserSession._sessions.delete(this.id);
 		super.dispose();
 	}
+
+	// #endregion
 }

@@ -37,7 +37,7 @@ export class BrowserViewMainService extends Disposable implements IBrowserViewMa
 
 	private readonly browserViews = this._register(new DisposableMap<string, BrowserView>());
 
-	// ICDPTargetService events
+	// ICDPBrowserTarget events
 	private readonly _onTargetCreated = this._register(new Emitter<BrowserView>());
 	readonly onTargetCreated: Event<BrowserView> = this._onTargetCreated.event;
 
@@ -70,7 +70,12 @@ export class BrowserViewMainService extends Disposable implements IBrowserViewMa
 			options
 		);
 		this.browserViews.set(id, view);
+
 		this._onTargetCreated.fire(view);
+		Event.once(view.onDidClose)(() => {
+			this._onTargetDestroyed.fire(view);
+			this.browserViews.deleteAndDispose(id);
+		});
 
 		return view;
 	}
@@ -98,7 +103,7 @@ export class BrowserViewMainService extends Disposable implements IBrowserViewMa
 		return this.browserViews.get(id);
 	}
 
-	// ICDPTargetService implementation
+	// ICDPBrowserTarget implementation
 
 	getVersion(): CDPBrowserVersion {
 		return {
@@ -127,6 +132,10 @@ export class BrowserViewMainService extends Disposable implements IBrowserViewMa
 				windowState: 'normal'
 			}
 		};
+	}
+
+	async attach(): Promise<ICDPConnection> {
+		return new CDPBrowserProxy(this);
 	}
 
 	async getTargetInfo(): Promise<CDPTargetInfo> {
@@ -158,6 +167,13 @@ export class BrowserViewMainService extends Disposable implements IBrowserViewMa
 		});
 
 		return view;
+	}
+
+	async activateTarget(target: ICDPTarget): Promise<void> {
+		if (!(target instanceof BrowserView)) {
+			throw new Error('Can only activate targets created by this service');
+		}
+		// TODO@kycutler
 	}
 
 	async closeTarget(target: ICDPTarget): Promise<boolean> {
@@ -198,10 +214,6 @@ export class BrowserViewMainService extends Disposable implements IBrowserViewMa
 		}
 
 		browserSession.dispose();
-	}
-
-	async attach(): Promise<ICDPConnection> {
-		return new CDPBrowserProxy(this);
 	}
 
 	/**
@@ -260,12 +272,7 @@ export class BrowserViewMainService extends Disposable implements IBrowserViewMa
 	}
 
 	async destroyBrowserView(id: string): Promise<void> {
-		const view = this.browserViews.get(id);
-		if (view) {
-			// Fire the destroyed event BEFORE disposing
-			this._onTargetDestroyed.fire(view);
-			this.browserViews.deleteAndDispose(id);
-		}
+		return this.browserViews.deleteAndDispose(id);
 	}
 
 	async layout(id: string, bounds: IBrowserViewBounds): Promise<void> {

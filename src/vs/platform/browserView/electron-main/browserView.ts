@@ -49,6 +49,7 @@ export class BrowserView extends Disposable implements ICDPTarget {
 	private _debugger: BrowserViewDebugger;
 	private _window: IBaseWindow | undefined;
 	private _isSendingKeyEvent = false;
+	private _isDisposed = false;
 
 	private readonly _onDidNavigate = this._register(new Emitter<IBrowserViewNavigationEvent>());
 	readonly onDidNavigate: Event<IBrowserViewNavigationEvent> = this._onDidNavigate.event;
@@ -150,7 +151,7 @@ export class BrowserView extends Disposable implements ICDPTarget {
 		});
 
 		this._view.webContents.on('destroyed', () => {
-			this._onDidClose.fire();
+			this.dispose();
 		});
 
 		this._debugger = new BrowserViewDebugger(this, this.logService);
@@ -595,19 +596,21 @@ export class BrowserView extends Disposable implements ICDPTarget {
 	}
 
 	override dispose(): void {
-		// Fire close event BEFORE disposing emitters
-		if (!this._view.webContents.isDestroyed()) {
-			this._onDidClose.fire();
+		if (this._isDisposed) {
+			return;
 		}
+		this._isDisposed = true;
 
-		// Dispose debugger if created
-		this._debugger?.dispose();
+		// Dispose debugger. This detaches debug sessions first.
+		this._debugger.dispose();
 
 		// Remove from parent window
 		this._window?.win?.contentView.removeChildView(this._view);
 
+		// Fire close event BEFORE disposing emitters. This signals the view has been destroyed.
+		this._onDidClose.fire();
+
 		// Clean up the view and all its event listeners
-		// Note: webContents.close() automatically removes all event listeners
 		this._view.webContents.close({ waitForBeforeUnload: false });
 
 		super.dispose();

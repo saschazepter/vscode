@@ -152,6 +152,8 @@ export interface ICDPBrowserTarget extends ICDPTarget {
 	getTargets(): IterableIterator<ICDPTarget>;
 	/** Create a new target in the specified browser context */
 	createTarget(url: string, browserContextId?: string): Promise<ICDPTarget>;
+	/** Activate a target (bring to foreground) */
+	activateTarget(target: ICDPTarget): Promise<void>;
 	/** Close a target */
 	closeTarget(target: ICDPTarget): Promise<boolean>;
 
