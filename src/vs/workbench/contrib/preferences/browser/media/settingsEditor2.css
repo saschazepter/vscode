@@ -32,25 +32,12 @@
 
 .settings-editor > .settings-header > .search-row {
 	display: flex;
-	align-items: flex-start;
+	align-items: stretch;
 	gap: 8px;
 }
 
 .settings-editor > .settings-header > .search-row > .search-container {
 	position: relative;
-	flex: 1;
-	min-width: 0;
-}
-
-.settings-editor > .settings-header > .search-row > .open-settings-json {
-	flex-shrink: 0;
-	margin-left: auto;
-	display: flex;
-	align-items: flex-start;
-}
-
-.settings-editor > .settings-header > .search-row > .open-settings-json .monaco-button {
-	white-space: nowrap;
 }
 
 .monaco-workbench.vs .settings-editor > .settings-header > .search-row > .search-container > .suggest-input-container {
@@ -80,6 +67,7 @@
 
 .settings-editor > .settings-header > .settings-header-controls {
 	display: flex;
+	flex-wrap: wrap;
 	align-items: center;
 	box-sizing: border-box;
 	margin-top: 4px;

@@ -776,11 +776,6 @@ export class SettingsEditor2 extends EditorPane {
 			this.searchInputDelayer.trigger(() => this.onSearchInputChanged(true));
 		}));
 
-		const openSettingsJsonContainer = DOM.append(searchRowContainer, $('.open-settings-json'));
-		const openSettingsJsonButton = this._register(new Button(openSettingsJsonContainer, { secondary: true, title: true, ...defaultButtonStyles }));
-		openSettingsJsonButton.label = localize('openSettingsJson', "Edit in settings.json");
-		this._register(openSettingsJsonButton.onDidClick(() => this.openSettingsJsonFile()));
-
 		this.headerControlsContainer = $('.settings-header-controls');
 
 		const targetWidgetContainer = DOM.append(this.headerControlsContainer, $('.settings-target-container'));
@@ -795,6 +790,11 @@ export class SettingsEditor2 extends EditorPane {
 		}));
 
 		const headerRightControlsContainer = DOM.append(this.headerControlsContainer, $('.settings-right-controls'));
+
+		// Add "Edit as JSON" button to the right controls container
+		const openSettingsJsonButton = this._register(new Button(headerRightControlsContainer, { secondary: true, title: true, ...defaultButtonStyles }));
+		openSettingsJsonButton.label = localize('openSettingsJson', "Edit as JSON");
+		this._register(openSettingsJsonButton.onDidClick(() => this.openSettingsJsonFile()));
 
 		if (this.userDataSyncWorkbenchService.enabled && this.userDataSyncEnablementService.canToggleEnablement()) {
 			const syncControls = this._register(this.instantiationService.createInstance(SyncControls, this.window, headerRightControlsContainer));
