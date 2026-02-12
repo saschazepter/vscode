@@ -4,10 +4,10 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { ChildProcess, spawn } from 'child_process';
+import { app } from 'electron';
 import { existsSync, unlinkSync } from 'fs';
 import { mkdir, readFile, unlink } from 'fs/promises';
 import { tmpdir } from 'os';
-import { app } from 'electron';
 import { Delayer, timeout } from '../../../base/common/async.js';
 import { VSBuffer } from '../../../base/common/buffer.js';
 import { CancellationToken, CancellationTokenSource } from '../../../base/common/cancellation.js';
@@ -24,13 +24,13 @@ import { IEnvironmentMainService } from '../../environment/electron-main/environ
 import { IFileService } from '../../files/common/files.js';
 import { ILifecycleMainService, IRelaunchHandler, IRelaunchOptions } from '../../lifecycle/electron-main/lifecycleMainService.js';
 import { ILogService } from '../../log/common/log.js';
+import { IMeteredConnectionService } from '../../meteredConnection/common/meteredConnection.js';
 import { INativeHostMainService } from '../../native/electron-main/nativeHostMainService.js';
 import { IProductService } from '../../product/common/productService.js';
 import { asJson, IRequestService } from '../../request/common/request.js';
 import { ITelemetryService } from '../../telemetry/common/telemetry.js';
 import { AvailableForDownload, DisablementReason, IUpdate, State, StateType, UpdateType } from '../common/update.js';
 import { AbstractUpdateService, createUpdateURL, IUpdateURLOptions, UpdateErrorClassification } from './abstractUpdateService.js';
-import { IMeteredConnectionService } from '../../meteredConnection/common/meteredConnection.js';
 
 interface IAvailableUpdate {
 	packagePath: string;
@@ -400,12 +400,14 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 
 				try {
 					const progressContent = await readFile(progressFilePath, 'utf8');
-					const [currentStr, maxStr] = progressContent.split(',');
-					const currentProgress = parseInt(currentStr, 10);
-					const maxProgress = parseInt(maxStr, 10);
-					if (!isNaN(currentProgress) && !isNaN(maxProgress) && this.state.type === StateType.Updating) {
-						if (this.state.currentProgress !== currentProgress || this.state.maxProgress !== maxProgress) {
-							this.setState(State.Updating(update, currentProgress, maxProgress));
+					if (!token.isCancellationRequested) {
+						const [currentStr, maxStr] = progressContent.split(',');
+						const currentProgress = parseInt(currentStr, 10);
+						const maxProgress = parseInt(maxStr, 10);
+						if (!isNaN(currentProgress) && !isNaN(maxProgress) && this.state.type === StateType.Updating) {
+							if (this.state.currentProgress !== currentProgress || this.state.maxProgress !== maxProgress) {
+								this.setState(State.Updating(update, currentProgress, maxProgress));
+							}
 						}
 					}
 				} catch {
