@@ -27,7 +27,7 @@ import { ILifecycleService } from '../../../../services/lifecycle/common/lifecyc
 import { Extensions, IOutputChannelRegistry, IOutputService } from '../../../../services/output/common/output.js';
 import { ChatSessionStatus as AgentSessionStatus, IChatSessionFileChange, IChatSessionFileChange2, IChatSessionItem, IChatSessionsExtensionPoint, IChatSessionsService } from '../../common/chatSessionsService.js';
 import { IChatWidgetService } from '../chat.js';
-import { AgentSessionProviders, getAgentSessionProvider, getAgentSessionProviderIcon, getAgentSessionProviderName, isBuiltInAgentSessionProvider } from './agentSessions.js';
+import { AgentSessionProviders, getAgentSessionProvider, getAgentSessionProviderIcon, resolveAgentSessionProviderName, isBuiltInAgentSessionProvider } from './agentSessions.js';
 
 //#region Interfaces, Types
 
@@ -502,7 +502,7 @@ export class AgentSessionsModel extends Disposable implements IAgentSessionsMode
 				let providerLabel: string;
 				const agentSessionProvider = getAgentSessionProvider(chatSessionType);
 				if (agentSessionProvider !== undefined) {
-					providerLabel = getAgentSessionProviderName(agentSessionProvider);
+					providerLabel = resolveAgentSessionProviderName(this.chatSessionsService, agentSessionProvider);
 					icon = getAgentSessionProviderIcon(agentSessionProvider);
 				} else {
 					providerLabel = mapSessionContributionToType.get(chatSessionType)?.name ?? chatSessionType;

@@ -672,9 +672,13 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 					dndContainer: parent,
 				},
 				{
-					targetConfig: isAgentSessionsWorkspace
-						? { allowedTargets: [AgentSessionProviders.Background, AgentSessionProviders.Cloud], defaultTarget: AgentSessionProviders.Background }
-						: { allowedTargets: [AgentSessionProviders.Local] },
+					targetConfig: {
+						allowedTargets: [AgentSessionProviders.Background, AgentSessionProviders.Cloud],
+						defaultTarget: AgentSessionProviders.Background,
+						providerNameOverrides: {
+							[AgentSessionProviders.Background]: localize('agentSessionsDedicatedWindow.background.name.override', "Local"),
+						}
+					},
 					onSessionCreated: () => {
 						const model = this.widget.viewModel?.model;
 						if (model) {
@@ -682,7 +686,7 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 						}
 						this.updateActions();
 					},
-					showFullWelcome: this._currentShowFullWelcome,
+					showFullWelcome: this._currentShowFullWelcome
 				},
 				{
 					listForeground: SIDE_BAR_FOREGROUND,

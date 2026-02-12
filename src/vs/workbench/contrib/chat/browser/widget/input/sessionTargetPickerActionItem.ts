@@ -18,7 +18,7 @@ import { IKeybindingService } from '../../../../../../platform/keybinding/common
 import { IOpenerService } from '../../../../../../platform/opener/common/opener.js';
 import { ITelemetryService } from '../../../../../../platform/telemetry/common/telemetry.js';
 import { IChatSessionsService } from '../../../common/chatSessionsService.js';
-import { AgentSessionProviders, backgroundAgentDisplayName, getAgentSessionProvider, getAgentSessionProviderDescription, getAgentSessionProviderIcon, getAgentSessionProviderName, isFirstPartyAgentSessionProvider } from '../../agentSessions/agentSessions.js';
+import { AgentSessionProviders, backgroundAgentDisplayName, getAgentSessionProvider, getAgentSessionProviderDescription, getAgentSessionProviderIcon, resolveAgentSessionProviderName, isFirstPartyAgentSessionProvider } from '../../agentSessions/agentSessions.js';
 import { ChatInputPickerActionViewItem, IChatInputPickerOptions } from './chatInputPickerActionItem.js';
 import { ISessionTypePickerDelegate } from '../../chat.js';
 import { IActionProvider } from '../../../../../../base/browser/ui/dropdown/dropdown.js';
@@ -151,10 +151,14 @@ export class SessionTypePickerActionItem extends ChatInputPickerActionViewItem {
 		};
 	}
 
+	private _resolveProviderName(provider: AgentSessionProviders): string {
+		return resolveAgentSessionProviderName(this.chatSessionsService, provider);
+	}
+
 	private _updateAgentSessionItems(): void {
 		const localSessionItem: ISessionTypeItem = {
 			type: AgentSessionProviders.Local,
-			label: getAgentSessionProviderName(AgentSessionProviders.Local),
+			label: this._resolveProviderName(AgentSessionProviders.Local),
 			hoverDescription: getAgentSessionProviderDescription(AgentSessionProviders.Local),
 			commandId: `workbench.action.chat.openNewChatSessionInPlace.${AgentSessionProviders.Local}`,
 		};
@@ -174,7 +178,7 @@ export class SessionTypePickerActionItem extends ChatInputPickerActionViewItem {
 
 			agentSessionItems.push({
 				type: agentSessionType,
-				label: getAgentSessionProviderName(agentSessionType),
+				label: this._resolveProviderName(agentSessionType),
 				hoverDescription: getAgentSessionProviderDescription(agentSessionType),
 				commandId: contribution.canDelegate ?
 					`workbench.action.chat.openNewChatSessionInPlace.${contribution.type}` :
@@ -204,7 +208,7 @@ export class SessionTypePickerActionItem extends ChatInputPickerActionViewItem {
 		this.setAriaLabelAttributes(element);
 		const currentType = this._getSelectedSessionType();
 
-		const label = getAgentSessionProviderName(currentType ?? AgentSessionProviders.Local);
+		const label = this._resolveProviderName(currentType ?? AgentSessionProviders.Local);
 		const icon = getAgentSessionProviderIcon(currentType ?? AgentSessionProviders.Local);
 
 		const labelElements = [];

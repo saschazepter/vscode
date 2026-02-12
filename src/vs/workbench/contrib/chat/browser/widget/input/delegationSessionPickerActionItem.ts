@@ -54,6 +54,11 @@ export class DelegationSessionPickerActionItem extends SessionTypePickerActionIt
 			return true; // Always show active session type
 		}
 
+		// If the delegate specifies allowed targets, hide targets not in the set
+		if (this.delegate.allowedTargets && !this.delegate.allowedTargets.has(type)) {
+			return false;
+		}
+
 		const contribution = this.chatSessionsService.getChatSessionContribution(type);
 		return getAgentCanContinueIn(type, contribution);
 	}

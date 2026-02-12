@@ -97,7 +97,7 @@ import { IChatAgentService } from '../../../common/participants/chatAgents.js';
 import { ILanguageModelToolsService } from '../../../common/tools/languageModelToolsService.js';
 import { ChatHistoryNavigator } from '../../../common/widget/chatWidgetHistoryService.js';
 import { ChatSessionPrimaryPickerAction, ChatSubmitAction, IChatExecuteActionContext, OpenDelegationPickerAction, OpenModelPickerAction, OpenModePickerAction, OpenSessionTargetPickerAction, OpenWorkspacePickerAction } from '../../actions/chatExecuteActions.js';
-import { AgentSessionProviders, getAgentSessionProvider, getAgentSessionProviderName } from '../../agentSessions/agentSessions.js';
+import { AgentSessionProviders, getAgentSessionProvider, resolveAgentSessionProviderName } from '../../agentSessions/agentSessions.js';
 import { IAgentSessionsService } from '../../agentSessions/agentSessionsService.js';
 import { ChatAttachmentModel } from '../../attachments/chatAttachmentModel.js';
 import { DefaultChatAttachmentWidget, ElementChatAttachmentWidget, FileAttachmentWidget, ImageAttachmentWidget, NotebookCellOutputChatAttachmentWidget, PasteAttachmentWidget, PromptFileAttachmentWidget, PromptTextAttachmentWidget, SCMHistoryItemAttachmentWidget, SCMHistoryItemChangeAttachmentWidget, SCMHistoryItemChangeRangeAttachmentWidget, TerminalCommandAttachmentWidget, ToolSetOrToolItemAttachmentWidget } from '../../attachments/chatAttachmentWidgets.js';
@@ -1720,7 +1720,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		// Create buttons for each session type
 		for (const sessionType of sessionTypes) {
 			const button = dom.$('.chat-target-button');
-			const name = getAgentSessionProviderName(sessionType);
+			const name = resolveAgentSessionProviderName(this.chatSessionsService, sessionType);
 
 			// Create button content with label only (no icon)
 			const labelEl = dom.$('span.chat-target-button-label', undefined, name);

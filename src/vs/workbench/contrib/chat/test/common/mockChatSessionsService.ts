@@ -16,7 +16,16 @@ import { IChatSession, IChatSessionContentProvider, IChatSessionItemController, 
 import { Target } from '../../common/promptSyntax/service/promptsService.js';
 
 export class MockChatSessionsService implements IChatSessionsService {
+	getProviderNameOverride(providerType: string): string | undefined {
+		throw new Error('Method not implemented.');
+	}
+	setProviderNameOverride(providerType: string, name: string | undefined): void {
+		throw new Error('Method not implemented.');
+	}
 	_serviceBrand: undefined;
+
+	private readonly _onDidChangeProviderNameOverride = new Emitter<string>();
+	readonly onDidChangeProviderNameOverride = this._onDidChangeProviderNameOverride.event;
 
 	private readonly _onDidChangeSessionOptions = new Emitter<URI>();
 	readonly onDidChangeSessionOptions = this._onDidChangeSessionOptions.event;

@@ -13,7 +13,7 @@ import { IContextMenuService } from '../../../../../../platform/contextview/brow
 import { IChatMode } from '../../../common/chatModes.js';
 import { IChatSessionsService } from '../../../common/chatSessionsService.js';
 import { IHandOff } from '../../../common/promptSyntax/promptFileParser.js';
-import { getAgentCanContinueIn, getAgentSessionProvider, getAgentSessionProviderIcon, getAgentSessionProviderName } from '../../agentSessions/agentSessions.js';
+import { getAgentCanContinueIn, getAgentSessionProvider, getAgentSessionProviderIcon, resolveAgentSessionProviderName } from '../../agentSessions/agentSessions.js';
 
 export interface INextPromptSelection {
 	readonly handoff: IHandOff;
@@ -156,7 +156,7 @@ export class ChatSuggestNextWidget extends Disposable {
 				const actions = availableContributions.map(contrib => {
 					const provider = getAgentSessionProvider(contrib.type)!;
 					const icon = getAgentSessionProviderIcon(provider);
-					const name = getAgentSessionProviderName(provider);
+					const name = resolveAgentSessionProviderName(this.chatSessionsService, provider);
 					return new Action(
 						contrib.type,
 						localize('continueIn', "Continue in {0}", name),

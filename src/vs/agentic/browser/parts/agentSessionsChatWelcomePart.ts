@@ -14,13 +14,12 @@ import { IContextKeyService, ContextKeyExpr } from '../../../platform/contextkey
 import { IInstantiationService } from '../../../platform/instantiation/common/instantiation.js';
 import { IProductService } from '../../../platform/product/common/productService.js';
 import { ILogService } from '../../../platform/log/common/log.js';
-import { localize } from '../../../nls.js';
 import { asCSSUrl } from '../../../base/browser/cssValue.js';
 import { FileAccess } from '../../../base/common/network.js';
 import { IChatSessionProviderOptionGroup, IChatSessionProviderOptionItem, IChatSessionsService } from '../../../workbench/contrib/chat/common/chatSessionsService.js';
 import { IAgentChatTargetConfig } from '../widget/agentSessionsChatTargetConfig.js';
 import { AgentSessionsControl } from '../../../workbench/contrib/chat/browser/agentSessions/agentSessionsControl.js';
-import { AgentSessionProviders, getAgentSessionProviderName } from '../../../workbench/contrib/chat/browser/agentSessions/agentSessions.js';
+import { AgentSessionProviders, resolveAgentSessionProviderName } from '../../../workbench/contrib/chat/browser/agentSessions/agentSessions.js';
 import { ChatSessionPickerActionItem, IChatSessionPickerDelegate } from '../../../workbench/contrib/chat/browser/chatSessions/chatSessionPickerActionItem.js';
 import { SearchableOptionPickerActionItem } from '../../../workbench/contrib/chat/browser/chatSessions/searchableOptionPickerActionItem.js';
 import { IAgentSessionsService } from '../../../workbench/contrib/chat/browser/agentSessions/agentSessionsService.js';
@@ -367,9 +366,7 @@ export class AgentSessionsChatWelcomePart extends Disposable {
 				continue;
 			}
 
-			const name = sessionType === AgentSessionProviders.Background
-				? localize('agentChat.fullWelcome.local', "Local")
-				: getAgentSessionProviderName(sessionType);
+			const name = resolveAgentSessionProviderName(this.chatSessionsService, sessionType, true);
 			const button = dom.$('.chat-full-welcome-target-button');
 			const labelEl = dom.$('span.chat-full-welcome-target-label', undefined, name);
 			button.appendChild(labelEl);

@@ -71,6 +71,7 @@ function createTargetConfigDelegate(targetConfig: IAgentChatTargetConfig, dispos
 			targetConfig.setSelectedTarget(provider);
 		},
 		onDidChangeActiveSessionProvider: onDidChangeEmitter.event,
+		allowedTargets: targetConfig.allowedTargets.get(),
 	};
 }
 

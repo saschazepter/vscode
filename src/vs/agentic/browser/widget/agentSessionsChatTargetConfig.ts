@@ -4,7 +4,8 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { IObservable, observableValue, transaction } from '../../../base/common/observable.js';
-import { AgentSessionProviders } from '../../../workbench/contrib/chat/browser/agentSessions/agentSessions.js';
+import { AgentSessionProviders, resolveAgentSessionProviderName } from '../../../workbench/contrib/chat/browser/agentSessions/agentSessions.js';
+import { IChatSessionsService } from '../../../workbench/contrib/chat/common/chatSessionsService.js';
 import { Emitter, Event } from '../../../base/common/event.js';
 import { Disposable } from '../../../base/common/lifecycle.js';
 
@@ -60,6 +61,12 @@ export interface IAgentChatTargetConfig {
 	 * If the current selected target is not in the new set, it resets to the first allowed target.
 	 */
 	setAllowedTargets(targets: AgentSessionProviders[]): void;
+
+	/**
+	 * Get the display name for a provider, respecting any name overrides.
+	 * Falls back to `getAgentSessionProviderName` when no override is set.
+	 */
+	getProviderName(provider: AgentSessionProviders, agentSessionsDedicatedWindow?: boolean): string;
 }
 
 export interface IAgentChatTargetConfigOptions {
@@ -72,9 +79,17 @@ export interface IAgentChatTargetConfigOptions {
 	 * Default selected target. If not provided, defaults to the first allowed target.
 	 */
 	defaultTarget?: AgentSessionProviders;
+
+	/**
+	 * Optional display name overrides for specific providers.
+	 * Keys are provider types, values are the custom display names.
+	 */
+	providerNameOverrides?: Partial<Record<AgentSessionProviders, string>>;
 }
 
 export class AgentSessionsChatTargetConfig extends Disposable implements IAgentChatTargetConfig {
+
+	private readonly _providerNameOverrides: Map<AgentSessionProviders, string>;
 
 	private readonly _allowedTargets = observableValue<ReadonlySet<AgentSessionProviders>>('allowedTargets', new Set());
 	readonly allowedTargets: IObservable<ReadonlySet<AgentSessionProviders>> = this._allowedTargets;
@@ -88,8 +103,21 @@ export class AgentSessionsChatTargetConfig extends Disposable implements IAgentC
 	private readonly _onDidChangeAllowedTargets = this._register(new Emitter<ReadonlySet<AgentSessionProviders>>());
 	readonly onDidChangeAllowedTargets: Event<ReadonlySet<AgentSessionProviders>> = this._onDidChangeAllowedTargets.event;
 
-	constructor(options: IAgentChatTargetConfigOptions) {
+	constructor(
+		options: IAgentChatTargetConfigOptions,
+		private readonly _chatSessionsService: IChatSessionsService,
+	) {
 		super();
+
+		this._providerNameOverrides = new Map(
+			Object.entries(options.providerNameOverrides ?? {}) as [AgentSessionProviders, string][]
+		);
+
+		// Propagate local overrides to the service so that all consumers
+		// (e.g. ChatInputPart) see the same names via resolveAgentSessionProviderName.
+		for (const [provider, name] of this._providerNameOverrides) {
+			this._chatSessionsService.setProviderNameOverride(provider, name);
+		}
 
 		const initialSet = new Set(options.allowedTargets);
 		this._allowedTargets.set(initialSet, undefined);
@@ -173,6 +201,18 @@ export class AgentSessionsChatTargetConfig extends Disposable implements IAgentC
 		});
 
 		this._onDidChangeAllowedTargets.fire(updated);
+	}
+
+	getProviderName(provider: AgentSessionProviders, agentSessionsDedicatedWindow?: boolean): string {
+		return this._providerNameOverrides.get(provider) ?? resolveAgentSessionProviderName(this._chatSessionsService, provider, agentSessionsDedicatedWindow);
+	}
+
+	override dispose(): void {
+		// Clear service-level overrides that were set by this instance
+		for (const [provider] of this._providerNameOverrides) {
+			this._chatSessionsService.setProviderNameOverride(provider, undefined);
+		}
+		super.dispose();
 	}
 
 	private _firstAllowed(set: ReadonlySet<AgentSessionProviders>): AgentSessionProviders | undefined {

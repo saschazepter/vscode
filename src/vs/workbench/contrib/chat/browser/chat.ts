@@ -98,6 +98,11 @@ export interface ISessionTypePickerDelegate {
 	 * and update pickers accordingly.
 	 */
 	onDidChangeActiveSessionProvider?: Event<AgentSessionProviders>;
+	/**
+	 * Optional set of allowed targets. When provided, pickers should only
+	 * show targets that are in this set.
+	 */
+	allowedTargets?: ReadonlySet<AgentSessionProviders>;
 }
 
 export const IChatWidgetService = createDecorator<IChatWidgetService>('chatWidgetService');

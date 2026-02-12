@@ -17,9 +17,10 @@ import { IKeybindingService } from '../../../platform/keybinding/common/keybindi
 import { IOpenerService } from '../../../platform/opener/common/opener.js';
 import { ITelemetryService } from '../../../platform/telemetry/common/telemetry.js';
 import { IActionProvider } from '../../../base/browser/ui/dropdown/dropdown.js';
-import { AgentSessionProviders, getAgentSessionProviderDescription, getAgentSessionProviderIcon, getAgentSessionProviderName, isFirstPartyAgentSessionProvider } from '../../../workbench/contrib/chat/browser/agentSessions/agentSessions.js';
+import { AgentSessionProviders, getAgentSessionProviderDescription, getAgentSessionProviderIcon, resolveAgentSessionProviderName, isFirstPartyAgentSessionProvider } from '../../../workbench/contrib/chat/browser/agentSessions/agentSessions.js';
 import { ChatInputPickerActionViewItem, IChatInputPickerOptions } from '../../../workbench/contrib/chat/browser/widget/input/chatInputPickerActionItem.js';
 import { IAgentChatTargetConfig } from './agentSessionsChatTargetConfig.js';
+import { IChatSessionsService } from '../../../workbench/contrib/chat/common/chatSessionsService.js';
 
 interface IAgentTargetItem {
 	type: AgentSessionProviders;
@@ -45,6 +46,7 @@ export class AgentSessionsTargetPickerActionItem extends ChatInputPickerActionVi
 		@IKeybindingService keybindingService: IKeybindingService,
 		@IContextKeyService contextKeyService: IContextKeyService,
 		@IOpenerService private readonly openerService: IOpenerService,
+		@IChatSessionsService private readonly chatSessionsService: IChatSessionsService,
 		@ITelemetryService telemetryService: ITelemetryService,
 	) {
 		const actionProvider: IActionWidgetDropdownActionProvider = {
@@ -56,7 +58,7 @@ export class AgentSessionsTargetPickerActionItem extends ChatInputPickerActionVi
 				for (const type of allowed) {
 					const item: IAgentTargetItem = {
 						type,
-						label: getAgentSessionProviderName(type),
+						label: resolveAgentSessionProviderName(chatSessionsService, type),
 						hoverDescription: getAgentSessionProviderDescription(type),
 					};
 
@@ -130,7 +132,7 @@ export class AgentSessionsTargetPickerActionItem extends ChatInputPickerActionVi
 		this.setAriaLabelAttributes(element);
 		const currentType = this.targetConfig.selectedTarget.get() ?? AgentSessionProviders.Local;
 
-		const label = getAgentSessionProviderName(currentType);
+		const label = resolveAgentSessionProviderName(this.chatSessionsService, currentType);
 		const icon = getAgentSessionProviderIcon(currentType);
 
 		const labelElements = [];

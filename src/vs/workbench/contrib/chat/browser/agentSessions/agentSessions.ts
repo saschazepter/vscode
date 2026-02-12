@@ -9,7 +9,7 @@ import { URI } from '../../../../../base/common/uri.js';
 import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { observableValue } from '../../../../../base/common/observable.js';
 import { IChatSessionTiming } from '../../common/chatService/chatService.js';
-import { IChatSessionsExtensionPoint } from '../../common/chatSessionsService.js';
+import { IChatSessionsExtensionPoint, IChatSessionsService } from '../../common/chatSessionsService.js';
 import { foreground, listActiveSelectionForeground, registerColor, transparent } from '../../../../../platform/theme/common/colorRegistry.js';
 import { getChatSessionType } from '../../common/model/chatUri.js';
 import { IViewsService } from '../../../../services/views/common/viewsService.js';
@@ -56,11 +56,14 @@ export function getAgentSessionProvider(sessionResource: URI | string): AgentSes
  */
 export const backgroundAgentDisplayName = observableValue<string>('backgroundAgentDisplayName', localize('chat.session.providerLabel.background', "Background"));
 
-export function getAgentSessionProviderName(provider: AgentSessionProviders): string {
+export function getAgentSessionProviderName(provider: AgentSessionProviders, agentSessionsDedicatedWindow = false): string {
 	switch (provider) {
 		case AgentSessionProviders.Local:
 			return localize('chat.session.providerLabel.local', "Local");
 		case AgentSessionProviders.Background:
+			if (agentSessionsDedicatedWindow) {
+				return localize('chat.session.providerLabel.background.dedicatedWindow', "Local");
+			}
 			return backgroundAgentDisplayName.get();
 		case AgentSessionProviders.Cloud:
 			return localize('chat.session.providerLabel.cloud', "Cloud");
@@ -135,6 +138,14 @@ export function getAgentSessionProviderDescription(provider: AgentSessionProvide
 		case AgentSessionProviders.Growth:
 			return localize('chat.session.providerDescription.growth', "Educational messages to help you learn Copilot features.");
 	}
+}
+
+/**
+ * Resolve the display name for a provider, checking for overrides in the service first.
+ * This is the preferred entry point for all UI code that needs provider names.
+ */
+export function resolveAgentSessionProviderName(chatSessionsService: IChatSessionsService, provider: AgentSessionProviders, agentSessionsDedicatedWindow = false): string {
+	return chatSessionsService.getProviderNameOverride(provider) ?? getAgentSessionProviderName(provider, agentSessionsDedicatedWindow);
 }
 
 export enum AgentSessionsViewerOrientation {

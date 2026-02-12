@@ -44,7 +44,7 @@ import { IMarkdownString } from '../../../../../base/common/htmlContent.js';
 import { IViewsService } from '../../../../services/views/common/viewsService.js';
 import { ChatViewId } from '../chat.js';
 import { ChatViewPane } from '../widgetHosts/viewPane/chatViewPane.js';
-import { AgentSessionProviders, backgroundAgentDisplayName, getAgentSessionProviderName } from '../agentSessions/agentSessions.js';
+import { AgentSessionProviders, backgroundAgentDisplayName, resolveAgentSessionProviderName } from '../agentSessions/agentSessions.js';
 import { BugIndicatingError, isCancellationError } from '../../../../../base/common/errors.js';
 import { IEditorGroupsService } from '../../../../services/editor/common/editorGroupsService.js';
 import { LocalChatSessionUri } from '../../common/model/chatUri.js';
@@ -296,6 +296,10 @@ export class ChatSessionsService extends Disposable implements IChatSessionsServ
 
 	private readonly _sessions = new ResourceMap<ContributedChatSessionData>();
 
+	private readonly _providerNameOverrides = new Map<string, string>();
+	private readonly _onDidChangeProviderNameOverride = this._register(new Emitter<string>());
+	readonly onDidChangeProviderNameOverride = this._onDidChangeProviderNameOverride.event;
+
 	private readonly _hasCanDelegateProvidersKey: IContextKey<boolean>;
 
 	constructor(
@@ -341,7 +345,7 @@ export class ChatSessionsService extends Disposable implements IChatSessionsServ
 			const activatedProviders = [...builtinSessionProviders, ...contributedSessionProviders.read(reader)];
 			for (const provider of Object.values(AgentSessionProviders)) {
 				if (activatedProviders.includes(provider)) {
-					reader.store.add(registerNewSessionInPlaceAction(provider, getAgentSessionProviderName(provider)));
+					reader.store.add(registerNewSessionInPlaceAction(provider, resolveAgentSessionProviderName(this, provider)));
 				}
 			}
 		}));
@@ -1125,6 +1129,24 @@ export class ChatSessionsService extends Disposable implements IChatSessionsServ
 
 	public getContentProviderSchemes(): string[] {
 		return Array.from(this._contentProviders.keys());
+	}
+
+	public getProviderNameOverride(providerType: string): string | undefined {
+		return this._providerNameOverrides.get(providerType);
+	}
+
+	public setProviderNameOverride(providerType: string, name: string | undefined): void {
+		if (name === undefined) {
+			if (this._providerNameOverrides.delete(providerType)) {
+				this._onDidChangeProviderNameOverride.fire(providerType);
+			}
+		} else {
+			const previous = this._providerNameOverrides.get(providerType);
+			if (previous !== name) {
+				this._providerNameOverrides.set(providerType, name);
+				this._onDidChangeProviderNameOverride.fire(providerType);
+			}
+		}
 	}
 }
 

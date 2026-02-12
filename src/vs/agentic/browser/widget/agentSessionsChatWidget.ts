@@ -123,7 +123,7 @@ export class AgentSessionsChatWidget extends Disposable {
 		super();
 
 		// Create and own the target config from the provided options
-		this._targetConfig = this._register(new AgentSessionsChatTargetConfig(agentOptions.targetConfig));
+		this._targetConfig = this._register(new AgentSessionsChatTargetConfig(agentOptions.targetConfig, this.chatSessionsService));
 		this._agentOptions = agentOptions;
 
 		// Seed the service with cached option groups so pickers render
@@ -174,10 +174,21 @@ export class AgentSessionsChatWidget extends Disposable {
 			}
 			: viewOptions.excludeOptionGroup;
 
+		// Wrap the session type picker delegate to include allowed targets
+		// from the target config, so the delegation picker (Continue In)
+		// only shows targets that are in the allowed set.
+		const wrappedSessionTypePickerDelegate = viewOptions.sessionTypePickerDelegate
+			? {
+				...viewOptions.sessionTypePickerDelegate,
+				allowedTargets: this._targetConfig.allowedTargets.get(),
+			}
+			: undefined;
+
 		const wrappedViewOptions: IChatWidgetViewOptions = {
 			...viewOptions,
 			hiddenPickerIds,
 			excludeOptionGroup,
+			sessionTypePickerDelegate: wrappedSessionTypePickerDelegate,
 			submitHandler: async (query: string, mode: ChatModeKind) => {
 				if (originalSubmitHandler) {
 					const handled = await originalSubmitHandler(query, mode);
