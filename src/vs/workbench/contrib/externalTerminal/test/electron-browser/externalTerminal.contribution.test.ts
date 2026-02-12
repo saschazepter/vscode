@@ -10,6 +10,7 @@ import { TestInstantiationService } from '../../../../../platform/instantiation/
 import { mock } from '../../../../../base/test/common/mock.js';
 import { IHistoryService } from '../../../../services/history/common/history.js';
 import { IExternalTerminalService } from '../../../../../platform/externalTerminal/electron-browser/externalTerminalService.js';
+import { IExternalTerminalSettings } from '../../../../../platform/externalTerminal/common/externalTerminal.js';
 import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
 import { TestConfigurationService } from '../../../../../platform/configuration/test/common/testConfigurationService.js';
 import { IRemoteAuthorityResolverService } from '../../../../../platform/remote/common/remoteAuthorityResolver.js';
@@ -55,7 +56,7 @@ suite('ExternalTerminal contribution', () => {
 		});
 
 		instantiationService.stub(IExternalTerminalService, new class extends mock<IExternalTerminalService>() {
-			override async openTerminal(_config: any, cwd: string | undefined) {
+			override async openTerminal(_config: IExternalTerminalSettings, cwd: string | undefined) {
 				openTerminalCalls.push({ cwd });
 			}
 		});
