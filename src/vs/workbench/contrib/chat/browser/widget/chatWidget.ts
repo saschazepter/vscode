@@ -78,6 +78,9 @@ import { IChatListItemTemplate } from './chatListRenderer.js';
 import { ChatListWidget } from './chatListWidget.js';
 import { ChatEditorOptions } from './chatOptions.js';
 import { ChatViewWelcomePart, IChatSuggestedPrompts, IChatViewWelcomeContent } from '../viewsWelcome/chatViewWelcomeController.js';
+import { IChatTipService } from '../chatTipService.js';
+import { ChatTipContentPart } from './chatContentParts/chatTipContentPart.js';
+import { ChatContentMarkdownRenderer } from './chatContentMarkdownRenderer.js';
 import { IAgentSessionsService } from '../agentSessions/agentSessionsService.js';
 
 const $ = dom.$;
@@ -232,6 +235,10 @@ export class ChatWidget extends Disposable implements IChatWidget {
 
 	private welcomeMessageContainer!: HTMLElement;
 	private readonly welcomePart: MutableDisposable<ChatViewWelcomePart> = this._register(new MutableDisposable());
+
+	private gettingStartedTipContainer: HTMLElement | undefined;
+	private readonly _gettingStartedTipPart = this._register(new MutableDisposable<DisposableStore>());
+
 	private fullWelcomeContainer: HTMLElement | undefined;
 
 	private readonly chatSuggestNextWidget: ChatSuggestNextWidget;
@@ -384,6 +391,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		@IWorkspaceContextService private readonly contextService: IWorkspaceContextService,
 		@ILifecycleService private readonly lifecycleService: ILifecycleService,
 		@IChatAttachmentResolveService private readonly chatAttachmentResolveService: IChatAttachmentResolveService,
+		@IChatTipService private readonly chatTipService: IChatTipService,
 	) {
 		super();
 
@@ -649,6 +657,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			} else {
 				this.listContainer = dom.append(this.container, $(`.interactive-list`));
 				dom.append(this.container, this.chatSuggestNextWidget.domNode);
+				this.gettingStartedTipContainer = dom.append(this.container, $('.chat-getting-started-tip-container', { style: 'display: none' }));
 				this.createInput(this.container, { renderFollowups, renderStyle, renderInputToolbarBelowInput });
 			}
 		} else {
@@ -774,6 +783,15 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		return this.input.focusQuestionCarousel();
 	}
 
+	toggleTipFocus(): boolean {
+		if (this.listWidget.hasTipFocus()) {
+			this.focusInput();
+			return true;
+		}
+
+		return this.listWidget.focusTip();
+	}
+
 	hasInputFocus(): boolean {
 		return this.input.hasFocus();
 	}
@@ -877,6 +895,30 @@ export class ChatWidget extends Disposable implements IChatWidget {
 
 		if (this.viewModel && this.listContainer) {
 			dom.setVisibility(numItems !== 0, this.listContainer);
+			const isStandardLayout = this.viewOptions.renderStyle !== 'compact' && this.viewOptions.renderStyle !== 'minimal';
+
+			// Show/hide the getting-started tip container based on empty state.
+			// Only use this in the standard chat layout where the welcome view is shown.
+			if (isStandardLayout && this.gettingStartedTipContainer) {
+				if (numItems === 0) {
+					this.renderGettingStartedTipIfNeeded();
+					this.container.classList.toggle('chat-has-getting-started-tip', !!this._gettingStartedTipPart.value);
+				} else {
+					// Dispose the cached tip part so the next empty state picks a
+					// fresh (rotated) tip instead of re-showing the stale one.
+					this._gettingStartedTipPart.clear();
+					dom.clearNode(this.gettingStartedTipContainer);
+					// Reset inline positioning from layoutGettingStartedTipPosition
+					// so the next render starts from the CSS defaults.
+					this.gettingStartedTipContainer.style.top = '';
+					this.gettingStartedTipContainer.style.bottom = '';
+					this.gettingStartedTipContainer.style.left = '';
+					this.gettingStartedTipContainer.style.right = '';
+					this.gettingStartedTipContainer.style.width = '';
+					dom.setVisibility(false, this.gettingStartedTipContainer);
+					this.container.classList.toggle('chat-has-getting-started-tip', false);
+				}
+			}
 		}
 
 		// Only show welcome getting started until extension is installed
@@ -1034,7 +1076,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			message: new MarkdownString(DISCLAIMER),
 			icon: Codicon.chatSparkle,
 			additionalMessage,
-			suggestedPrompts: this.getPromptFileSuggestions()
+			suggestedPrompts: this.getPromptFileSuggestions(),
 		};
 	}
 
@@ -1789,6 +1831,9 @@ export class ChatWidget extends Disposable implements IChatWidget {
 					this.layout(this.bodyDimension.height, this.bodyDimension.width);
 				}
 
+				// Keep getting-started tip aligned with the top of the input
+				this.layoutGettingStartedTipPosition();
+
 				this._onDidChangeContentHeight.fire();
 			}));
 		}
@@ -1913,6 +1958,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 
 		this.inputPart.clearTodoListWidget(model.sessionResource, false);
 		this.chatSuggestNextWidget.hide();
+		this.chatTipService.resetSession();
 
 		this._codeBlockModelCollection.clear();
 
