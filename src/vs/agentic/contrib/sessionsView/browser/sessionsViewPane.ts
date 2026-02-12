@@ -121,12 +121,11 @@ export class AgenticSessionsViewPane extends ViewPane {
 
 		// Listen to workspace folder changes to update counts
 		this._register(this.workspaceContextService.onDidChangeWorkspaceFolders(() => this.updateCounts()));
-
-		// Listen to active session changes to update counts (repository scope may change)
 		this._register(autorun(reader => {
 			this.activeSessionService.activeSession.read(reader);
-			void this.updateCounts();
+			this.updateCounts();
 		}));
+
 	}
 
 	protected override renderBody(parent: HTMLElement): void {

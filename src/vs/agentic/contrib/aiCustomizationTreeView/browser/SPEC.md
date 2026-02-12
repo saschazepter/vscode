@@ -55,9 +55,8 @@ aiCustomizationTreeView/browser/
 - Creates the tree and renderers.
 - Auto-expands categories on load/refresh.
 - Refreshes on prompt service changes, workspace changes, and active session changes.
-- Filters worktree items to the active session repository.
- - Updates `aiCustomization.isEmpty` based on total item count.
- - The active worktree comes from `IActiveAgentSessionService` and is the source of truth for scoping.
+- Updates `aiCustomization.isEmpty` based on total item count.
+- Worktree scoping comes from the agentic prompt service override.
 
 ### UnifiedAICustomizationDataSource
 

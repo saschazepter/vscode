@@ -80,10 +80,10 @@ aiCustomizationManagement/browser/
 - Fuzzy matches across name, description, and filename.
 - Debounced (200ms) filtering.
 
-**Active session filtering:**
-- Filters worktree items to the active session repository/worktree.
- - The active worktree comes from `IActiveAgentSessionService` and is the source of truth for scoping.
+**Active session scoping:**
+- The active worktree comes from `IActiveAgentSessionService` and is the source of truth for scoping.
 - Prompt discovery is scoped by the agentic prompt service override using the active session root.
+- Views refresh counts/filters when the active session changes.
 
 **Context menu actions:**
 - Open, Run Prompt (prompts), Reveal in OS, Delete.

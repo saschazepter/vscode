@@ -7,6 +7,7 @@ import './media/aiCustomizationTreeView.css';
 import * as dom from '../../../../base/browser/dom.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { DisposableStore } from '../../../../base/common/lifecycle.js';
+import { autorun } from '../../../../base/common/observable.js';
 import { basename, dirname } from '../../../../base/common/resources.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { URI } from '../../../../base/common/uri.js';
@@ -34,7 +35,6 @@ import { IListVirtualDelegate } from '../../../../base/browser/ui/list/list.js';
 import { IEditorService } from '../../../../workbench/services/editor/common/editorService.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
-import { autorun } from '../../../../base/common/observable.js';
 import { IActiveAgentSessionService } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsService.js';
 
 //#region Context Keys
@@ -501,12 +501,11 @@ export class AICustomizationViewPane extends ViewPane {
 
 		// Listen to workspace folder changes to refresh tree
 		this._register(this.workspaceContextService.onDidChangeWorkspaceFolders(() => this.refresh()));
-
-		// Refresh when active agent session changes (repository scope may change)
 		this._register(autorun(reader => {
 			this.activeSessionService.activeSession.read(reader);
-			void this.refresh();
+			this.refresh();
 		}));
+
 	}
 
 	protected override renderBody(container: HTMLElement): void {

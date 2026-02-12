@@ -8,6 +8,7 @@ import * as DOM from '../../../../base/browser/dom.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { DisposableStore, IReference, MutableDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { Event } from '../../../../base/common/event.js';
+import { autorun } from '../../../../base/common/observable.js';
 import { Orientation, Sizing, SplitView } from '../../../../base/browser/ui/splitview/splitview.js';
 import { CodeEditorWidget } from '../../../../editor/browser/widget/codeEditor/codeEditorWidget.js';
 import { IResolvedTextEditorModel, ITextModelService } from '../../../../editor/common/services/resolverService.js';
@@ -148,6 +149,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 	private editorItemPathElement!: HTMLElement;
 	private currentEditingUri: URI | undefined;
 	private currentWorktreeUri: URI | undefined;
+	private currentEditingIsWorktree = false;
 	private currentModelRef: IReference<IResolvedTextEditorModel> | undefined;
 	private viewMode: 'list' | 'editor' = 'list';
 
@@ -185,6 +187,14 @@ export class AICustomizationManagementEditor extends EditorPane {
 		this.sectionContextKey = CONTEXT_AI_CUSTOMIZATION_MANAGEMENT_SECTION.bindTo(contextKeyService);
 
 		this.customizationCreator = this.instantiationService.createInstance(CustomizationCreatorService);
+
+		this._register(autorun(reader => {
+			this.activeAgentSessionService.activeSession.read(reader);
+			if (this.viewMode !== 'editor' || !this.currentEditingIsWorktree) {
+				return;
+			}
+			this.currentWorktreeUri = getActiveSessionRoot(this.activeAgentSessionService);
+		}));
 
 		// Safety disposal for the embedded editor model reference
 		this._register(toDisposable(() => {
@@ -537,6 +547,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 		// Track worktree URI for auto-commit on close
 		const worktreeDir = getActiveSessionRoot(this.activeAgentSessionService);
 		this.currentWorktreeUri = isWorktreeFile ? worktreeDir : undefined;
+		this.currentEditingIsWorktree = isWorktreeFile;
 
 		// Update visibility
 		this.updateContentVisibility();
@@ -578,6 +589,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 		this.currentModelRef = undefined;
 		this.currentEditingUri = undefined;
 		this.currentWorktreeUri = undefined;
+		this.currentEditingIsWorktree = false;
 
 		// Clear editor model
 		this.embeddedEditor.setModel(null);

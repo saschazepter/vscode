@@ -6,6 +6,7 @@
 import './media/aiCustomizationManagement.css';
 import * as DOM from '../../../../base/browser/dom.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
+import { autorun } from '../../../../base/common/observable.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { localize } from '../../../../nls.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
@@ -26,7 +27,6 @@ import { AICustomizationManagementEditorInput } from './aiCustomizationManagemen
 import { AICustomizationManagementEditor } from './aiCustomizationManagementEditor.js';
 import { agentIcon, instructionsIcon, promptIcon, skillIcon } from '../../aiCustomizationTreeView/browser/aiCustomizationTreeViewIcons.js';
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
-import { autorun } from '../../../../base/common/observable.js';
 import { IActiveAgentSessionService } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsService.js';
 
 const $ = DOM.$;
@@ -84,12 +84,11 @@ export class AICustomizationOverviewView extends ViewPane {
 
 		// Listen to workspace folder changes to update counts
 		this._register(this.workspaceContextService.onDidChangeWorkspaceFolders(() => this.loadCounts()));
-
-		// Refresh when active agent session changes (repository scope may change)
 		this._register(autorun(reader => {
 			this.activeSessionService.activeSession.read(reader);
-			void this.loadCounts();
+			this.loadCounts();
 		}));
+
 	}
 
 	protected override renderBody(container: HTMLElement): void {

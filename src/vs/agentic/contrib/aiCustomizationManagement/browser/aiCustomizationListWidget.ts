@@ -8,6 +8,7 @@ import * as DOM from '../../../../base/browser/dom.js';
 import { Disposable, DisposableStore } from '../../../../base/common/lifecycle.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
+import { autorun } from '../../../../base/common/observable.js';
 import { basename, dirname } from '../../../../base/common/resources.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { URI } from '../../../../base/common/uri.js';
@@ -38,7 +39,6 @@ import { ILabelService } from '../../../../platform/label/common/label.js';
 import { parseAllHookFiles } from '../../../../workbench/contrib/chat/browser/promptSyntax/hookUtils.js';
 import { OS } from '../../../../base/common/platform.js';
 import { IRemoteAgentService } from '../../../../workbench/services/remote/common/remoteAgentService.js';
-import { autorun } from '../../../../base/common/observable.js';
 import { IActiveAgentSessionService } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsService.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { Action, Separator } from '../../../../base/common/actions.js';
@@ -350,6 +350,11 @@ export class AICustomizationListWidget extends Disposable {
 		this.create();
 
 		this._register(this.workspaceContextService.onDidChangeWorkspaceFolders(() => this.refresh()));
+		this._register(autorun(reader => {
+			this.activeSessionService.activeSession.read(reader);
+			this.updateAddButton();
+			this.refresh();
+		}));
 
 		// Re-filter when SCM repositories change (updates git status badges after commits)
 		const trackRepoChanges = (repo: { provider: { onDidChangeResources: Event<void> } }) => {
@@ -363,22 +368,6 @@ export class AICustomizationListWidget extends Disposable {
 		}
 		this._register(this.scmService.onDidAddRepository(repo => trackRepoChanges(repo)));
 
-		// React immediately when the active agent session changes.
-		// filterItems() is synchronous and re-groups/filters existing allItems instantly.
-		// Also kick off an async refresh to pick up items from the new repo.
-		this._register(autorun(reader => {
-			this.activeSessionService.activeSession.read(reader);
-			const activePath = getActiveSessionRoot(this.activeSessionService);
-			this.logService.info(`[AICustomizationListWidget] Active session changed, worktree/repo: ${activePath?.toString() ?? 'none'}, allItems=${this.allItems.length}`);
-			// Update the add button since worktree availability may have changed
-			this.updateAddButton();
-			// Immediate synchronous re-filter for instant UI update
-			if (this.allItems.length > 0) {
-				this.filterItems();
-			}
-			// Also do a full async reload to pick up new workspace items
-			void this.refresh();
-		}));
 	}
 
 	private create(): void {
@@ -623,13 +612,10 @@ export class AICustomizationListWidget extends Disposable {
 	}
 
 	/**
-	 * Checks if there's an active worktree from a background agent session.
-	 * Only returns true for sessions that have an actual git worktree
-	 * (not just a repository option from the workspace).
+	 * Checks if there's an active session root (worktree or repository).
 	 */
 	private hasActiveWorktree(): boolean {
-		const session = this.activeSessionService.getActiveSession();
-		return !!(session?.worktree);
+		return !!getActiveSessionRoot(this.activeSessionService);
 	}
 
 	/**
