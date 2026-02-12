@@ -5,7 +5,7 @@
 
 import { SyncDescriptor } from '../../../../platform/instantiation/common/descriptors.js';
 import { Registry } from '../../../../platform/registry/common/platform.js';
-import { IViewDescriptor, IViewsRegistry, Extensions as ViewContainerExtensions, LayoutVisibility, ViewContainer, IViewContainersRegistry, ViewContainerLocation } from '../../../../workbench/common/views.js';
+import { IViewDescriptor, IViewsRegistry, Extensions as ViewContainerExtensions, WindowVisibility, ViewContainer, IViewContainersRegistry, ViewContainerLocation } from '../../../../workbench/common/views.js';
 import { localize, localize2 } from '../../../../nls.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { registerIcon } from '../../../../platform/theme/common/iconRegistry.js';
@@ -28,7 +28,7 @@ const agentSessionsViewContainer: ViewContainer = Registry.as<IViewContainersReg
 	storageId: SessionsContainerId,
 	hideIfEmpty: true,
 	order: 6,
-	layoutVisibility: LayoutVisibility.AgentSessions
+	windowVisibility: WindowVisibility.Sessions
 }, ViewContainerLocation.Sidebar, { isDefault: true });
 
 const agentSessionsViewDescriptor: IViewDescriptor = {
@@ -40,7 +40,7 @@ const agentSessionsViewDescriptor: IViewDescriptor = {
 	canToggleVisibility: false,
 	canMoveView: false,
 	ctorDescriptor: new SyncDescriptor(AgenticSessionsViewPane),
-	layoutVisibility: LayoutVisibility.AgentSessions
+	windowVisibility: WindowVisibility.Sessions
 };
 
 Registry.as<IViewsRegistry>(ViewContainerExtensions.ViewsRegistry).registerViews([agentSessionsViewDescriptor], agentSessionsViewContainer);

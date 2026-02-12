@@ -43,24 +43,6 @@ export const enum ViewContainerLocation {
 	ChatBar,
 }
 
-/**
- * Specifies in which layout a view or view container should be visible.
- */
-export const enum LayoutVisibility {
-	/**
-	 * Visible only in the main workbench (default).
-	 */
-	Workbench = 1,
-	/**
-	 * Visible only in agent sessions workbench.
-	 */
-	AgentSessions = 2,
-	/**
-	 * Visible in both main workbench and agent sessions workbench.
-	 */
-	Both = 3,
-}
-
 export function ViewContainerLocationToString(viewContainerLocation: ViewContainerLocation) {
 	switch (viewContainerLocation) {
 		case ViewContainerLocation.Sidebar: return 'sidebar';
@@ -77,6 +59,24 @@ type OpenCommandActionDescriptor = {
 	readonly order?: number;
 	readonly keybindings?: IKeybindings & { when?: ContextKeyExpression };
 };
+
+/**
+ * Specifies in which window a view or view container should be visible.
+ */
+export const enum WindowVisibility {
+	/**
+	 * Visible only in the editor window
+	 */
+	Editor = 1,
+	/**
+	 * Visible only in sessions window
+	 */
+	Sessions = 2,
+	/**
+	 * Visible in both editor and sessions windows
+	 */
+	Both = 3,
+}
 
 /**
  * View Container Contexts
@@ -140,10 +140,10 @@ export interface IViewContainerDescriptor {
 	readonly rejectAddedViews?: boolean;
 
 	/**
-	 * Specifies in which layout this view container should be visible.
-	 * Defaults to LayoutVisibility.Workbench (main workbench only).
+	 * Specifies in which window this view container should be visible.
+	 * Defaults to WindowVisibility.Editor
 	 */
-	readonly layoutVisibility?: LayoutVisibility;
+	readonly windowVisibility?: WindowVisibility;
 
 	requestedIndex?: number;
 }
@@ -327,10 +327,10 @@ export interface IViewDescriptor {
 	readonly accessibilityHelpContent?: MarkdownString;
 
 	/**
-	 * Specifies in which layout this view should be visible.
-	 * Defaults to LayoutVisibility.Workbench (main workbench only).
+	 * Specifies in which window this view should be visible.
+	 * Defaults to WindowVisibility.Workbench (main workbench only).
 	 */
-	readonly layoutVisibility?: LayoutVisibility;
+	readonly windowVisibility?: WindowVisibility;
 }
 
 export interface ICustomViewDescriptor extends IViewDescriptor {

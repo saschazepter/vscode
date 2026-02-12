@@ -8,7 +8,7 @@ import { localize2 } from '../../../../nls.js';
 import { SyncDescriptor } from '../../../../platform/instantiation/common/descriptors.js';
 import { Registry } from '../../../../platform/registry/common/platform.js';
 import { registerIcon } from '../../../../platform/theme/common/iconRegistry.js';
-import { IViewContainersRegistry, ViewContainerLocation, IViewsRegistry, Extensions as ViewContainerExtensions, LayoutVisibility } from '../../../../workbench/common/views.js';
+import { IViewContainersRegistry, ViewContainerLocation, IViewsRegistry, Extensions as ViewContainerExtensions, WindowVisibility } from '../../../../workbench/common/views.js';
 import { CHANGES_VIEW_CONTAINER_ID, CHANGES_VIEW_ID, ChangesViewPane, ChangesViewPaneContainer } from './changesView.js';
 
 const changesViewIcon = registerIcon('changes-view-icon', Codicon.gitCompare, localize2('changesViewIcon', 'View icon for the Changes view.').value);
@@ -22,7 +22,7 @@ const changesViewContainer = viewContainersRegistry.registerViewContainer({
 	icon: changesViewIcon,
 	order: 10,
 	hideIfEmpty: true,
-	layoutVisibility: LayoutVisibility.AgentSessions
+	windowVisibility: WindowVisibility.Sessions
 }, ViewContainerLocation.AuxiliaryBar, { doNotRegisterOpenCommand: true, isDefault: true });
 
 const viewsRegistry = Registry.as<IViewsRegistry>(ViewContainerExtensions.ViewsRegistry);
@@ -36,5 +36,5 @@ viewsRegistry.registerViews([{
 	canMoveView: true,
 	weight: 100,
 	order: 1,
-	layoutVisibility: LayoutVisibility.AgentSessions
+	windowVisibility: WindowVisibility.Sessions
 }], changesViewContainer);

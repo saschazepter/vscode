@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { ViewContainerLocation, IViewDescriptorService, ViewContainer, IViewsRegistry, IViewContainersRegistry, IViewDescriptor, Extensions as ViewExtensions, ViewVisibilityState, defaultViewIcon, ViewContainerLocationToString, VIEWS_LOG_ID, VIEWS_LOG_NAME, LayoutVisibility } from '../../../common/views.js';
+import { ViewContainerLocation, IViewDescriptorService, ViewContainer, IViewsRegistry, IViewContainersRegistry, IViewDescriptor, Extensions as ViewExtensions, ViewVisibilityState, defaultViewIcon, ViewContainerLocationToString, VIEWS_LOG_ID, VIEWS_LOG_NAME, WindowVisibility } from '../../../common/views.js';
 import { IContextKey, RawContextKey, IContextKeyService, ContextKeyExpr } from '../../../../platform/contextkey/common/contextkey.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
 import { IExtensionService } from '../../extensions/common/extensions.js';
@@ -336,19 +336,19 @@ export class ViewDescriptorService extends Disposable implements IViewDescriptor
 	}
 
 	private isViewContainerVisible(viewContainer: ViewContainer): boolean {
-		const layoutVisibility = viewContainer.layoutVisibility;
+		const layoutVisibility = viewContainer.windowVisibility;
 		if (this.isAgentSessionsWorkspace) {
-			return layoutVisibility === LayoutVisibility.AgentSessions || layoutVisibility === LayoutVisibility.Both;
+			return layoutVisibility === WindowVisibility.Sessions || layoutVisibility === WindowVisibility.Both;
 		}
-		return !layoutVisibility || layoutVisibility === LayoutVisibility.Workbench || layoutVisibility === LayoutVisibility.Both;
+		return !layoutVisibility || layoutVisibility === WindowVisibility.Editor || layoutVisibility === WindowVisibility.Both;
 	}
 
 	private isViewVisible(view: IViewDescriptor): boolean {
-		const layoutVisibility = view.layoutVisibility;
+		const layoutVisibility = view.windowVisibility;
 		if (this.isAgentSessionsWorkspace) {
-			return layoutVisibility === LayoutVisibility.AgentSessions || layoutVisibility === LayoutVisibility.Both;
+			return layoutVisibility === WindowVisibility.Sessions || layoutVisibility === WindowVisibility.Both;
 		}
-		return !layoutVisibility || layoutVisibility === LayoutVisibility.Workbench || layoutVisibility === LayoutVisibility.Both;
+		return !layoutVisibility || layoutVisibility === WindowVisibility.Editor || layoutVisibility === WindowVisibility.Both;
 	}
 
 	getDefaultViewContainer(location: ViewContainerLocation): ViewContainer | undefined {
