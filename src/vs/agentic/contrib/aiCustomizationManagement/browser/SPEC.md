@@ -85,7 +85,7 @@ aiCustomizationManagement/browser/
 - Scans active repo directly when no workspace folders exist.
 
 **Context menu actions:**
-- Open, Open as Text, Run Prompt (prompts), Reveal in OS, Delete.
+- Open, Run Prompt (prompts), Reveal in OS, Delete.
 - Copy full path / relative path actions.
 
 **Add button behavior:**
@@ -140,7 +140,7 @@ This is the only UI surface for creating new customizations.
 ### Context Menu Actions
 
 1. Right-click a list item.
-2. Choose Open, Open as Text, Run Prompt (prompts only), Reveal in OS, or Delete.
+2. Choose Open, Run Prompt (prompts only), Reveal in OS, or Delete.
 3. Use Copy Full Path / Copy Relative Path for quick path access.
 
 ## Integration Points

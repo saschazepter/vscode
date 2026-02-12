@@ -555,7 +555,6 @@ src/vs/agentic/
 │   │   └── changesView.ts
 │   ├── chatBranchSession/browser/          # Chat branch session action
 │   │   └── chatBranchSessionAction.ts
-│   ├── aiCustomizationEditor/browser/      # AI customization single-item editor
 │   ├── aiCustomizationManagement/browser/  # AI customization management editor
 │   └── aiCustomizationTreeView/browser/    # AI customization tree view sidebar
 ```

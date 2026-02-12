@@ -27,7 +27,6 @@ import {
 import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../../workbench/common/contributions.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { URI } from '../../../../base/common/uri.js';
-import { AI_CUSTOMIZATION_EDITOR_ID } from '../../aiCustomizationEditor/browser/aiCustomizationEditor.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { PromptsType } from '../../../../workbench/contrib/chat/common/promptSyntax/promptTypes.js';
 import { PromptsStorage } from '../../../../workbench/contrib/chat/common/promptSyntax/service/promptsService.js';
@@ -118,7 +117,7 @@ function extractStorage(context: AICustomizationContext): PromptsStorage | undef
 	return context.storage;
 }
 
-// Open file action (in AI Customization Editor)
+// Open file action
 const OPEN_AI_CUSTOMIZATION_MGMT_FILE_ID = 'aiCustomizationManagement.openFile';
 registerAction2(class extends Action2 {
 	constructor() {
@@ -131,30 +130,11 @@ registerAction2(class extends Action2 {
 	async run(accessor: ServicesAccessor, context: AICustomizationContext): Promise<void> {
 		const editorService = accessor.get(IEditorService);
 		await editorService.openEditor({
-			resource: extractURI(context),
-			options: { override: AI_CUSTOMIZATION_EDITOR_ID }
+			resource: extractURI(context)
 		});
 	}
 });
 
-// Open as text action (in standard text editor)
-const OPEN_AI_CUSTOMIZATION_MGMT_AS_TEXT_ID = 'aiCustomizationManagement.openAsText';
-registerAction2(class extends Action2 {
-	constructor() {
-		super({
-			id: OPEN_AI_CUSTOMIZATION_MGMT_AS_TEXT_ID,
-			title: localize2('openAsText', "Open as Text"),
-			icon: Codicon.file,
-		});
-	}
-	async run(accessor: ServicesAccessor, context: AICustomizationContext): Promise<void> {
-		const editorService = accessor.get(IEditorService);
-		await editorService.openEditor({
-			resource: extractURI(context),
-			options: { override: 'default' }
-		});
-	}
-});
 
 // Run prompt action
 const RUN_PROMPT_MGMT_ID = 'aiCustomizationManagement.runPrompt';
@@ -245,12 +225,6 @@ MenuRegistry.appendMenuItem(AICustomizationManagementItemMenuId, {
 	command: { id: OPEN_AI_CUSTOMIZATION_MGMT_FILE_ID, title: localize('open', "Open") },
 	group: '1_open',
 	order: 1,
-});
-
-MenuRegistry.appendMenuItem(AICustomizationManagementItemMenuId, {
-	command: { id: OPEN_AI_CUSTOMIZATION_MGMT_AS_TEXT_ID, title: localize('openAsText', "Open as Text") },
-	group: '1_open',
-	order: 2,
 });
 
 MenuRegistry.appendMenuItem(AICustomizationManagementItemMenuId, {

@@ -64,8 +64,6 @@ src/vs/agentic/
 │   │   └── browser/
 │   ├── chatBranchSession/              ← Chat branch session action
 │   │   └── browser/
-│   ├── aiCustomizationEditor/          ← AI customization single-item editor
-│   │   └── browser/
 │   ├── aiCustomizationManagement/      ← AI customization management editor
 │   │   └── browser/
 │   └── aiCustomizationTreeView/        ← AI customization tree view sidebar

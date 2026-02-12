@@ -36,7 +36,6 @@ import { ILogService } from '../../../../platform/log/common/log.js';
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
 import { autorun } from '../../../../base/common/observable.js';
 import { IActiveAgentSessionService } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsService.js';
-import { AI_CUSTOMIZATION_EDITOR_ID } from '../../aiCustomizationEditor/browser/aiCustomizationEditor.js';
 
 //#region Context Keys
 
@@ -592,12 +591,11 @@ export class AICustomizationViewPane extends ViewPane {
 			}
 		));
 
-		// Handle double-click to open file in AI Customization Editor
+		// Handle double-click to open file
 		this.treeDisposables.add(this.tree.onDidOpen(e => {
 			if (e.element && e.element.type === 'file') {
 				this.editorService.openEditor({
-					resource: e.element.uri,
-					options: { override: AI_CUSTOMIZATION_EDITOR_ID }
+					resource: e.element.uri
 				});
 			}
 		}));

@@ -8,7 +8,6 @@ import './layoutActions.js';
 
 import '../contrib/accountMenu/browser/accountMenu.contribution.js';
 import '../contrib/aiCustomizationTreeView/browser/aiCustomizationTreeView.contribution.js';
-import '../contrib/aiCustomizationEditor/browser/aiCustomizationEditor.contribution.js';
 import '../contrib/aiCustomizationManagement/browser/aiCustomizationManagement.contribution.js';
 import '../contrib/chat/browser/chat.contribution.js';
 import '../contrib/sessionsView/browser/sessionsView.contribution.js';

@@ -76,8 +76,7 @@ aiCustomizationTreeView/browser/
 
 ### Context Menu (file items)
 
-- Open (AI Customization Editor)
-- Open as Text
+- Open
 - Run Prompt (prompts only)
 
 ## Context Keys

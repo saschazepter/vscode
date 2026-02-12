@@ -1,6 +1,6 @@
-# AI Customization Editor – Design Document
+# AI Customizations – Design Document
 
-This document describes the current AI customization experience in this branch: a form-based editor for AI customization files plus management and tree views that surface items across worktree, user, and extension storage.
+This document describes the current AI customization experience in this branch: a management editor and tree view that surface items across worktree, user, and extension storage.
 
 ---
 
@@ -48,45 +48,11 @@ This document describes the current AI customization experience in this branch: 
 
 ---
 
-### Custom Editor Registration
-**Files**: [editorResolverService.ts](../src/vs/workbench/services/editor/browser/editorResolverService.ts), [customEditors.ts](../src/vs/workbench/contrib/customEditor/browser/customEditors.ts)
-
-```typescript
-editorResolverService.registerEditor(
-    '*.prompt.md',  // glob pattern
-    {
-        id: 'aiCustomization.editor',
-        label: 'AI Customization Editor',
-        priority: RegisteredEditorPriority.default,
-    },
-    { singlePerResource: true },
-    {
-        createEditorInput: ({ resource }, group) => ({
-            editor: instantiationService.createInstance(AICustomizationEditorInput, resource),
-        }),
-    }
-);
-```
-
----
-
 ## Current Architecture
 
 ### File Structure (Agentic)
 
 ```
-src/vs/agentic/contrib/aiCustomizationEditor/browser/
-├── aiCustomizationEditor.contribution.ts   # Editor registration and serializer
-├── aiCustomizationEditor.ts                # IDs + layout constants
-├── fields/
-│   └── fieldRenderers.ts                   # Field renderers + section renderer
-├── input/
-│   └── aiCustomizationEditorInput.ts       # EditorInput + model
-├── pane/
-│   └── aiCustomizationEditorPane.ts        # SplitView editor + TOC
-└── media/
-    └── aiCustomizationEditor.css
-
 src/vs/agentic/contrib/aiCustomizationManagement/browser/
 ├── aiCustomizationManagement.contribution.ts   # Commands + context menus
 ├── aiCustomizationManagement.ts                # IDs + context keys
@@ -125,17 +91,6 @@ Key services to rely on:
 
 ## Implemented Experience
 
-### Form-Based Editor (Current)
-
-
-**Implementation notes**:
-- `EditorPane` renders a header + `SplitView` with TOC on the left and fields on the right.
-- Field renderers cover text, multiline, array, checkbox, and readonly values.
-- TOC sections and field definitions are driven by `PromptsType` (agents/skills/instructions/prompts).
-- Save/Revert buttons are wired to the editor model, with dirty state tracked in the input/model.
-
----
-
 ### Management Editor (Current)
 
 - A singleton editor surfaces Agents, Skills, Instructions, Prompts, Hooks, MCP Servers, and Models.
@@ -147,7 +102,7 @@ Key services to rely on:
 
 - Unified sidebar tree with Type -> Storage -> File hierarchy.
 - Auto-expands categories to reveal storage groups.
-- Context menus provide Open, Open as Text, and Run Prompt.
+- Context menus provide Open and Run Prompt.
 - Creation actions are centralized in the management editor.
 
 ### Additional Surfaces (Current)
@@ -157,61 +112,13 @@ Key services to rely on:
 
 ---
 
-## Editor Infrastructure (Current)
-
-### AICustomizationEditorInput
-
-```typescript
-The editor model reads file content via `IFileService`, parses with `PromptFileParser`, and exposes helper getters for name, description, model, tools, applyTo, and body.
-```
-
-### AICustomizationEditorPane
-
-```typescript
-The editor pane renders a header with Save/Revert buttons, then a `SplitView` with TOC and fields. TOC entries and section layout vary by prompt type.
-```
-
-### Registration (Current)
-
-```typescript
-// aiCustomizationEditor.contribution.ts
-The AI Customization Editor is registered as an optional editor for AI customization files (`.prompt.md`, `.agent.md`, `.instructions.md`, `SKILL.md`) and is only available when `ChatContextKeys.enabled` is true.
-```
-
----
-
 ## AI Feature Gating
 
 All commands and UI must respect `ChatContextKeys.enabled`:
 
 ```typescript
-All entry points (editor resolver, view contributions, commands) respect `ChatContextKeys.enabled`.
+All entry points (view contributions, commands) respect `ChatContextKeys.enabled`.
 ```
-
----
-
-## Data Flow (Editor)
-
-```
-┌──────────────┐    parse     ┌───────────────┐    render    ┌────────────┐
-│ .agent.md    │ ──────────▶  │ Parsed Model  │ ──────────▶  │ Form UI    │
-│ (file)       │              │ (frontmatter  │              │            │
-└──────────────┘              │  + body AST)  │              └────────────┘
-    ▲                      └───────────────┘                    │
-    │                             │                             │
-    │    serialize                │ onDidChangeDirty            │ user edit
-    │                             ▼                             │
-    │                      ┌───────────────┐                    │
-    └───────────────────── │ Editor Input  │ ◀──────────────────┘
-                  └───────────────┘
-```
-
----
-
-## Validation and Gaps
-
-- The editor currently updates only body content on field changes; full frontmatter serialization is still a gap.
-- Inline validation and schema-based constraints are not implemented yet.
 
 ---
 
@@ -220,8 +127,6 @@ All entry points (editor resolver, view contributions, commands) respect `ChatCo
 - [Settings Editor](../src/vs/workbench/contrib/preferences/browser/settingsEditor2.ts)
 - [Keybindings Editor](../src/vs/workbench/contrib/preferences/browser/keybindingsEditor.ts)
 - [Webview Editor](../src/vs/workbench/contrib/webviewPanel/browser/webviewEditorInput.ts)
-- [Custom Editor Registration](../src/vs/workbench/services/editor/browser/editorResolverService.ts)
-- [AI Customization Editor (agentic)](../src/vs/agentic/contrib/aiCustomizationEditor/browser/)
 - [AI Customization Management (agentic)](../src/vs/agentic/contrib/aiCustomizationManagement/browser/)
 - [AI Customization Overview View](../src/vs/agentic/contrib/aiCustomizationManagement/browser/aiCustomizationOverviewView.ts)
 - [AI Customization Tree View (agentic)](../src/vs/agentic/contrib/aiCustomizationTreeView/browser/)
