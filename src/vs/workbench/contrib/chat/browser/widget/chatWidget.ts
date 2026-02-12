@@ -2200,16 +2200,8 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			return;
 		}
 
-		if (!carouselPart.ignore()) {
-			const carousel = carouselPart.carousel;
-			if (!carousel.isUsed) {
-				carousel.isUsed = true;
-				if (carousel.resolveId) {
-					this.chatService.notifyQuestionCarouselAnswer(responseId, carousel.resolveId, undefined);
-				}
-			}
-			this.input.clearQuestionCarousel(responseId);
-		}
+		carouselPart.ignore();
+		this.input.clearQuestionCarousel(responseId);
 	}
 
 	private async _acceptInput(query: { query: string } | undefined, options: IChatAcceptInputOptions = {}): Promise<IChatResponseModel | undefined> {
