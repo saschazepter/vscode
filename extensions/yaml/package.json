@@ -1,5 +1,5 @@
 {
-  "name": "yaml",
+  "name": "yaml-language-basics",
   "displayName": "%displayName%",
   "description": "%description%",
   "version": "1.0.0",
@@ -96,7 +96,7 @@
         "editor.autoIndent": "advanced",
         "diffEditor.ignoreTrimWhitespace": false,
         "editor.defaultColorDecorators": "never",
-        "editor.quickSuggestions": { 
+        "editor.quickSuggestions": {
           "strings": "on"
         }
       },
