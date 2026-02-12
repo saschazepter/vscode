@@ -876,11 +876,12 @@ export class ViewPaneContainer<MementoType extends object = object> extends Comp
 
 		let overlay: ViewPaneDropOverlay | undefined;
 
-		if (pane.draggableElement) {
-			store.add(CompositeDragAndDropObserver.INSTANCE.registerDraggable(pane.draggableElement, () => { return { type: 'view', id: pane.id }; }, {}));
-		}
-
 		if (this.viewDescriptorService.canMoveViews()) {
+
+			if (pane.draggableElement) {
+				store.add(CompositeDragAndDropObserver.INSTANCE.registerDraggable(pane.draggableElement, () => { return { type: 'view', id: pane.id }; }, {}));
+			}
+
 			store.add(CompositeDragAndDropObserver.INSTANCE.registerTarget(pane.dropTargetElement, {
 				onDragEnter: (e) => {
 					if (!overlay) {
