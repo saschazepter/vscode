@@ -307,17 +307,13 @@ export class WindowsMainService extends Disposable implements IWindowsMainServic
 			await this.fileService.writeFile(agentSessionsWorkspaceUri, VSBuffer.fromString(emptyWorkspaceContent));
 		}
 
-		// Resolve the workspace identifier
-		const workspace = getWorkspaceIdentifier(agentSessionsWorkspaceUri);
-
 		// Open in a new browser window with the agent sessions workspace
-		const window = await this.openInBrowserWindow({
-			workspace,
+		return this.open({
+			...openConfig,
+			urisToOpen: [{ workspaceUri: agentSessionsWorkspaceUri }],
 			cli: this.environmentMainService.args,
 			forceNewWindow: true,
 		});
-
-		return [window];
 	}
 
 	async open(openConfig: IOpenConfiguration): Promise<ICodeWindow[]> {

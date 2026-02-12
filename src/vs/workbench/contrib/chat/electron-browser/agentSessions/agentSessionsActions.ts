@@ -10,6 +10,7 @@ import { INativeHostService } from '../../../../../platform/native/common/native
 import { ChatEntitlementContextKeys } from '../../../../services/chat/common/chatEntitlementService.js';
 import { CHAT_CATEGORY } from '../../browser/actions/chatActions.js';
 import { ProductQualityContext } from '../../../../../platform/contextkey/common/contextkeys.js';
+import { IsAgentSessionsWorkspaceContext } from '../../../../common/contextkeys.js';
 
 export class OpenSessionsWindowAction extends Action2 {
 	constructor() {
@@ -17,7 +18,7 @@ export class OpenSessionsWindowAction extends Action2 {
 			id: 'workbench.action.openSessionsWindow',
 			title: localize2('openSessionsWindow', "Open Sessions Window"),
 			category: CHAT_CATEGORY,
-			precondition: ContextKeyExpr.and(ProductQualityContext.notEqualsTo('stable'), ChatEntitlementContextKeys.Setup.hidden.negate()),
+			precondition: ContextKeyExpr.and(ProductQualityContext.notEqualsTo('stable'), ChatEntitlementContextKeys.Setup.hidden.negate(), IsAgentSessionsWorkspaceContext.negate()),
 			f1: true,
 		});
 	}
