@@ -26,10 +26,9 @@ import { DetailedLineRangeMapping } from '../../../../editor/common/diff/rangeMa
 import { Event } from '../../../../base/common/event.js';
 import { IChatEditingService } from '../../chat/common/editing/chatEditingService.js';
 import { IAgentSessionsService } from '../../chat/browser/agentSessions/agentSessionsService.js';
-import { isIChatSessionFileChange2 } from '../../chat/common/chatSessionsService.js';
-import { isEqual } from '../../../../base/common/resources.js';
 import { URI } from '../../../../base/common/uri.js';
 import { AgentFeedbackAffordance } from './inlineChatAgentFeedbackAffordance.js';
+import { agentSessionContainsResource, editingEntriesContainResource } from '../../chat/browser/sessionResourceMatching.js';
 
 type AgentSessionResourceContext = {
 	readonly sessionResource: URI;
@@ -91,27 +90,15 @@ class InlineChatEditorContext extends Disposable {
 			const editingSessions = chatEditingService.editingSessionsObs.read(r);
 			for (const editingSession of editingSessions) {
 				const entries = editingSession.entries.read(r);
-				for (const entry of entries) {
-					if (isEqual(entry.modifiedURI, resourceUri) || isEqual(entry.originalURI, resourceUri)) {
-						return { sessionResource: editingSession.chatSessionResource, resourceUri };
-					}
+				if (editingEntriesContainResource(entries, resourceUri)) {
+					return { sessionResource: editingSession.chatSessionResource, resourceUri };
 				}
 			}
 
 			observableSignalFromEvent(this, agentSessionsService.model.onDidChangeSessions).read(r);
 			for (const session of agentSessionsService.model.sessions) {
-				if (!(session.changes instanceof Array)) {
-					continue;
-				}
-
-				for (const change of session.changes) {
-					if (isIChatSessionFileChange2(change)) {
-						if (isEqual(change.uri, resourceUri) || (change.originalUri && isEqual(change.originalUri, resourceUri)) || (change.modifiedUri && isEqual(change.modifiedUri, resourceUri))) {
-							return { sessionResource: session.resource, resourceUri };
-						}
-					} else if (isEqual(change.modifiedUri, resourceUri) || (change.originalUri && isEqual(change.originalUri, resourceUri))) {
-						return { sessionResource: session.resource, resourceUri };
-					}
+				if (agentSessionContainsResource(session, resourceUri)) {
+					return { sessionResource: session.resource, resourceUri };
 				}
 			}
 

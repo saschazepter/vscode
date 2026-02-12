@@ -16,6 +16,10 @@ import { registerAction2, Action2, MenuId } from '../../../../../platform/action
 import { ContextKeyExpr } from '../../../../../platform/contextkey/common/contextkey.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { localize } from '../../../../../nls.js';
+import { isEqual } from '../../../../../base/common/resources.js';
+import { IChatEditingService } from '../../common/editing/chatEditingService.js';
+import { IAgentSessionsService } from '../agentSessions/agentSessionsService.js';
+import { agentSessionContainsResource, editingEntriesContainResource } from '../sessionResourceMatching.js';
 
 // --- Types --------------------------------------------------------------------
 
@@ -32,6 +36,11 @@ export interface IAgentFeedbackChangeEvent {
 	readonly feedbackItems: readonly IAgentFeedback[];
 }
 
+export interface IAgentFeedbackNavigationBearing {
+	readonly activeIdx: number;
+	readonly totalCount: number;
+}
+
 // --- Service Interface --------------------------------------------------------
 
 export const IAgentFeedbackService = createDecorator<IAgentFeedbackService>('agentFeedbackService');
@@ -40,6 +49,7 @@ export interface IAgentFeedbackService {
 	readonly _serviceBrand: undefined;
 
 	readonly onDidChangeFeedback: Event<IAgentFeedbackChangeEvent>;
+	readonly onDidChangeNavigation: Event<URI>;
 
 	/**
 	 * Add a feedback item for the given session.
@@ -55,6 +65,26 @@ export interface IAgentFeedbackService {
 	 * Get all feedback items for a session.
 	 */
 	getFeedback(sessionResource: URI): readonly IAgentFeedback[];
+
+	/**
+	 * Resolve the most recently updated session that has feedback for a given resource.
+	 */
+	getMostRecentSessionForResource(resourceUri: URI): URI | undefined;
+
+	/**
+	 * Navigate to next/previous feedback item in a session.
+	 */
+	getNextFeedback(sessionResource: URI, next: boolean): IAgentFeedback | undefined;
+
+	/**
+	 * Set the current navigation anchor for a session.
+	 */
+	setNavigationAnchor(sessionResource: URI, feedbackId: string | undefined): void;
+
+	/**
+	 * Get the current navigation bearings for a session.
+	 */
+	getNavigationBearing(sessionResource: URI): IAgentFeedbackNavigationBearing;
 
 	/**
 	 * Clear all feedback items for a session (e.g., after sending).
@@ -73,15 +103,22 @@ export class AgentFeedbackService extends Disposable implements IAgentFeedbackSe
 
 	private readonly _onDidChangeFeedback = this._store.add(new Emitter<IAgentFeedbackChangeEvent>());
 	readonly onDidChangeFeedback = this._onDidChangeFeedback.event;
+	private readonly _onDidChangeNavigation = this._store.add(new Emitter<URI>());
+	readonly onDidChangeNavigation = this._onDidChangeNavigation.event;
 
 	/** sessionResource → feedback items */
 	private readonly _feedbackBySession = new Map<string, IAgentFeedback[]>();
+	private readonly _sessionUpdatedOrder = new Map<string, number>();
+	private _sessionUpdatedSequence = 0;
+	private readonly _navigationAnchorBySession = new Map<string, string>();
 
 	private _controllerRegistered = false;
 	private _nextThreadHandle = 1;
 
 	constructor(
 		@ICommentService private readonly _commentService: ICommentService,
+		@IChatEditingService private readonly _chatEditingService: IChatEditingService,
+		@IAgentSessionsService private readonly _agentSessionsService: IAgentSessionsService,
 	) {
 		super();
 	}
@@ -176,6 +213,8 @@ export class AgentFeedbackService extends Disposable implements IAgentFeedbackSe
 			sessionResource,
 		};
 		feedbackItems.push(feedback);
+		this._sessionUpdatedOrder.set(key, ++this._sessionUpdatedSequence);
+		this._onDidChangeNavigation.fire(sessionResource);
 
 		this._syncThreads(sessionResource);
 		this._onDidChangeFeedback.fire({ sessionResource, feedbackItems });
@@ -195,6 +234,15 @@ export class AgentFeedbackService extends Disposable implements IAgentFeedbackSe
 			const removed = feedbackItems[idx];
 			feedbackItems.splice(idx, 1);
 			this._activeThreadIds.delete(feedbackId);
+			if (this._navigationAnchorBySession.get(key) === feedbackId) {
+				this._navigationAnchorBySession.delete(key);
+				this._onDidChangeNavigation.fire(sessionResource);
+			}
+			if (feedbackItems.length > 0) {
+				this._sessionUpdatedOrder.set(key, ++this._sessionUpdatedSequence);
+			} else {
+				this._sessionUpdatedOrder.delete(key);
+			}
 
 			// Fire updateComments with the thread in removed[] so the editor
 			// controller's onDidUpdateCommentThreads handler removes the zone widget
@@ -228,6 +276,106 @@ export class AgentFeedbackService extends Disposable implements IAgentFeedbackSe
 		return this._feedbackBySession.get(sessionResource.toString()) ?? [];
 	}
 
+	getMostRecentSessionForResource(resourceUri: URI): URI | undefined {
+		let bestSession: URI | undefined;
+		let bestSequence = -1;
+
+		for (const [, feedbackItems] of this._feedbackBySession) {
+			if (!feedbackItems.length) {
+				continue;
+			}
+
+			const candidate = feedbackItems[0].sessionResource;
+			if (!this._sessionContainsResource(candidate, resourceUri, feedbackItems)) {
+				continue;
+			}
+
+			const sequence = this._sessionUpdatedOrder.get(candidate.toString()) ?? 0;
+			if (sequence > bestSequence) {
+				bestSession = candidate;
+				bestSequence = sequence;
+			}
+		}
+
+		return bestSession;
+	}
+
+	private _sessionContainsResource(sessionResource: URI, resourceUri: URI, feedbackItems: readonly IAgentFeedback[]): boolean {
+		if (feedbackItems.some(item => isEqual(item.resourceUri, resourceUri))) {
+			return true;
+		}
+
+		for (const editingSession of this._chatEditingService.editingSessionsObs.get()) {
+			if (!isEqual(editingSession.chatSessionResource, sessionResource)) {
+				continue;
+			}
+
+			if (editingEntriesContainResource(editingSession.entries.get(), resourceUri)) {
+				return true;
+			}
+		}
+
+		for (const session of this._agentSessionsService.model.sessions) {
+			if (!isEqual(session.resource, sessionResource)) {
+				continue;
+			}
+
+			if (agentSessionContainsResource(session, resourceUri)) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	getNextFeedback(sessionResource: URI, next: boolean): IAgentFeedback | undefined {
+		const key = sessionResource.toString();
+		const feedbackItems = this._feedbackBySession.get(key);
+		if (!feedbackItems?.length) {
+			this._navigationAnchorBySession.delete(key);
+			return undefined;
+		}
+
+		const anchorId = this._navigationAnchorBySession.get(key);
+		let anchorIndex = anchorId ? feedbackItems.findIndex(item => item.id === anchorId) : -1;
+
+		if (anchorIndex < 0 && !next) {
+			anchorIndex = 0;
+		}
+
+		const nextIndex = next
+			? (anchorIndex + 1) % feedbackItems.length
+			: (anchorIndex - 1 + feedbackItems.length) % feedbackItems.length;
+
+		const feedback = feedbackItems[nextIndex];
+		this._navigationAnchorBySession.set(key, feedback.id);
+		this._onDidChangeNavigation.fire(sessionResource);
+		return feedback;
+	}
+
+	setNavigationAnchor(sessionResource: URI, feedbackId: string | undefined): void {
+		const key = sessionResource.toString();
+		if (!feedbackId) {
+			this._navigationAnchorBySession.delete(key);
+			this._onDidChangeNavigation.fire(sessionResource);
+			return;
+		}
+
+		const feedbackItems = this._feedbackBySession.get(key);
+		if (feedbackItems?.some(item => item.id === feedbackId)) {
+			this._navigationAnchorBySession.set(key, feedbackId);
+			this._onDidChangeNavigation.fire(sessionResource);
+		}
+	}
+
+	getNavigationBearing(sessionResource: URI): IAgentFeedbackNavigationBearing {
+		const key = sessionResource.toString();
+		const feedbackItems = this._feedbackBySession.get(key) ?? [];
+		const anchorId = this._navigationAnchorBySession.get(key);
+		const activeIdx = anchorId ? feedbackItems.findIndex(item => item.id === anchorId) : -1;
+		return { activeIdx, totalCount: feedbackItems.length };
+	}
+
 	clearFeedback(sessionResource: URI): void {
 		const key = sessionResource.toString();
 		const feedbackItems = this._feedbackBySession.get(key);
@@ -247,6 +395,9 @@ export class AgentFeedbackService extends Disposable implements IAgentFeedbackSe
 			});
 		}
 		this._feedbackBySession.delete(key);
+		this._sessionUpdatedOrder.delete(key);
+		this._navigationAnchorBySession.delete(key);
+		this._onDidChangeNavigation.fire(sessionResource);
 		this._onDidChangeFeedback.fire({ sessionResource, feedbackItems: [] });
 	}
 
