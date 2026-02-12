@@ -295,6 +295,7 @@ export class LineHeightsManager {
 
 	public commit(): void {
 		this._commit(this._lineHeightChanges);
+		this._lineHeightChanges.reset();
 	}
 
 	private _commit(lineHeightChanges: LineHeightChanges): void {
@@ -371,7 +372,6 @@ export class LineHeightsManager {
 		}
 		this._orderedCustomLines = newOrderedSpecialLines;
 		this._decorationIDToCustomLine = newDecorationIDToSpecialLine;
-		lineHeightChanges.reset();
 	}
 
 	private _binarySearchOverOrderedCustomLinesArray(lineNumber: number): number {
