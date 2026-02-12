@@ -92,6 +92,7 @@ aiCustomizationManagement/browser/
 **Add button behavior:**
 - Primary action targets worktree when available, otherwise user.
 - Dropdown offers User creation and AI-generated creation.
+- Hooks use the built-in Configure Hooks flow and do not offer user-scoped creation.
 
 ### McpListWidget
 

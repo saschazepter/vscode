@@ -632,6 +632,11 @@ export class AICustomizationManagementEditor extends EditorPane {
 		// to commit it so it shows up in the Changes diff view for the worktree.
 		// We need integration with the git worktree to stage/commit these new files.
 
+		if (type === PromptsType.hook) {
+			await this.commandService.executeCommand('workbench.action.chat.configure.hooks');
+			return;
+		}
+
 		let targetDir = target === 'worktree'
 			? this.customizationCreator.resolveTargetDirectory(type)
 			: await this.customizationCreator.resolveUserDirectory(type);

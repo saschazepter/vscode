@@ -560,7 +560,7 @@ export class AICustomizationListWidget extends Disposable {
 				break;
 			case AICustomizationManagementSection.Hooks:
 				description = localize('hooksDescription', "Prompts executed at specific points during an agentic lifecycle.");
-				docsUrl = 'https://code.visualstudio.com/docs/copilot#hooks-docs-do-not-exist-yet';
+				docsUrl = 'https://code.visualstudio.com/docs/copilot/customization/hooks';
 				learnMoreLabel = localize('learnMoreHooks', "Learn more about hooks");
 				break;
 			case AICustomizationManagementSection.Prompts:
@@ -580,6 +580,20 @@ export class AICustomizationListWidget extends Disposable {
 	 */
 	private updateAddButton(): void {
 		const typeLabel = this.getTypeLabel();
+		if (this.currentSection === AICustomizationManagementSection.Hooks) {
+			this.addButton.label = `$(${Codicon.add.id}) New ${typeLabel}`;
+			const hasWorktree = !!this.activeSessionService.getActiveSession()?.worktree;
+			this.addButton.enabled = hasWorktree;
+			const disabledTitle = hasWorktree
+				? ''
+				: localize('hooksCreateDisabled', "Open a session with a worktree to configure hooks.");
+			this.addButton.primaryButton.setTitle(disabledTitle);
+			this.addButton.dropdownButton.setTitle(disabledTitle);
+			return;
+		}
+		this.addButton.primaryButton.setTitle('');
+		this.addButton.dropdownButton.setTitle('');
+		this.addButton.enabled = true;
 		const hasWorktree = this.hasActiveWorktree();
 		if (hasWorktree) {
 			this.addButton.label = `$(${Codicon.add.id}) New ${typeLabel} (Worktree)`;
@@ -597,7 +611,7 @@ export class AICustomizationListWidget extends Disposable {
 		const promptType = sectionToPromptType(this.currentSection);
 		const hasWorktree = this.hasActiveWorktree();
 
-		if (hasWorktree) {
+		if (hasWorktree && promptType !== PromptsType.hook) {
 			// Primary is worktree - dropdown shows user + generate
 			actions.push(new Action('createUser', `$(${Codicon.account.id}) New ${typeLabel} (User)`, undefined, true, () => {
 				this._onDidRequestCreateManual.fire({ type: promptType, target: 'user' });
@@ -623,7 +637,10 @@ export class AICustomizationListWidget extends Disposable {
 	 */
 	private executePrimaryCreateAction(): void {
 		const promptType = sectionToPromptType(this.currentSection);
-		const target = this.hasActiveWorktree() ? 'worktree' : 'user';
+		if (promptType === PromptsType.hook && !this.activeSessionService.getActiveSession()?.worktree) {
+			return;
+		}
+		const target = this.hasActiveWorktree() || promptType === PromptsType.hook ? 'worktree' : 'user';
 		this._onDidRequestCreateManual.fire({ type: promptType, target });
 	}
 
@@ -650,6 +667,7 @@ export class AICustomizationListWidget extends Disposable {
 	 * Refreshes the current section's items.
 	 */
 	async refresh(): Promise<void> {
+		this.updateAddButton();
 		await this.loadItems();
 	}
 

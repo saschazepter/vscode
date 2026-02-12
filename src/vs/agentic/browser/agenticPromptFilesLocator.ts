@@ -15,6 +15,7 @@ import { IUserDataProfileService } from '../../workbench/services/userDataProfil
 import { ISearchService } from '../../workbench/services/search/common/search.js';
 import { IPathService } from '../../workbench/services/path/common/pathService.js';
 import { IActiveAgentSessionService } from '../../workbench/contrib/chat/browser/agentSessions/agentSessionsService.js';
+import { HOOKS_SOURCE_FOLDER } from '../../workbench/contrib/chat/common/promptSyntax/config/promptFileLocations.js';
 import { PromptFilesLocator } from '../../workbench/contrib/chat/common/promptSyntax/utils/promptFilesLocator.js';
 
 export class AgenticPromptFilesLocator extends PromptFilesLocator {
@@ -56,6 +57,15 @@ export class AgenticPromptFilesLocator extends PromptFilesLocator {
 
 	protected override onDidChangeWorkspaceFolders(): Event<void> {
 		return Event.fromObservableLight(this.activeSessionService.activeSession);
+	}
+
+	public override async getHookSourceFolders(): Promise<readonly URI[]> {
+		const configured = await super.getHookSourceFolders();
+		if (configured.length > 0) {
+			return configured;
+		}
+		const folder = this.getActiveWorkspaceFolder();
+		return folder ? [joinPath(folder.uri, HOOKS_SOURCE_FOLDER)] : [];
 	}
 
 	private getActiveWorkspaceFolder(): IWorkspaceFolder | undefined {
