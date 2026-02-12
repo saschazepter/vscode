@@ -13,7 +13,7 @@ import { IPaneCompositePartService } from '../../workbench/services/panecomposit
 import { Disposable } from '../../base/common/lifecycle.js';
 import { PaneCompositeDescriptor } from '../../workbench/browser/panecomposite.js';
 import { IPaneCompositePart } from '../../workbench/browser/parts/paneCompositePart.js';
-import { Parts } from '../../workbench/services/layout/browser/layoutService.js';
+import { SINGLE_WINDOW_PARTS } from '../../workbench/services/layout/browser/layoutService.js';
 import { PanelPart } from './parts/panelPart.js';
 import { SidebarPart } from './parts/sidebarPart.js';
 import { AuxiliaryBarPart } from './parts/auxiliaryBarPart.js';
@@ -53,7 +53,7 @@ export class AgenticPaneCompositePartService extends Disposable implements IPane
 		return this.getPartByLocation(viewContainerLocation).registryId;
 	}
 
-	getPartId(viewContainerLocation: ViewContainerLocation): Parts {
+	getPartId(viewContainerLocation: ViewContainerLocation): SINGLE_WINDOW_PARTS {
 		return this.getPartByLocation(viewContainerLocation).partId;
 	}
 
