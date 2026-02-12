@@ -24,11 +24,11 @@
 
 	function showSplash(configuration: INativeWindowConfiguration) {
 		performance.mark('code/willShowPartsSplash');
-		showEditorSplash(configuration);
+		showDefaultSplash(configuration);
 		performance.mark('code/didShowPartsSplash');
 	}
 
-	function showEditorSplash(configuration: INativeWindowConfiguration) {
+	function showDefaultSplash(configuration: INativeWindowConfiguration) {
 		let data = configuration.partsSplash;
 		if (data) {
 			if (configuration.autoDetectHighContrast && configuration.colorScheme.highContrast) {
