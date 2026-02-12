@@ -182,6 +182,7 @@ import '../workbench/contrib/policyExport/electron-browser/policyExport.contribu
 
 //#region --- sessions contributions
 
+import './browser/paneCompositePartService.js';
 import './browser/layoutActions.js';
 
 import './contrib/accountMenu/browser/accountMenu.contribution.js';

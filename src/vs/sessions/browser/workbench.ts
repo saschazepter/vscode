@@ -60,11 +60,6 @@ import { NotificationsToasts } from '../../workbench/browser/parts/notifications
 import { IMarkdownRendererService } from '../../platform/markdown/browser/markdownRenderer.js';
 import { EditorMarkdownCodeBlockRenderer } from '../../editor/browser/widget/markdownRenderer/browser/editorMarkdownCodeBlockRenderer.js';
 import { EditorModal } from './parts/editorModal.js';
-import { IPaneCompositePartsConfiguration, AgenticPaneCompositePartService } from './paneCompositePartService.js';
-import { AuxiliaryBarPart } from './parts/auxiliaryBarPart.js';
-import { PanelPart } from './parts/panelPart.js';
-import { SidebarPart } from './parts/sidebarPart.js';
-import { ChatBarPart } from './parts/chatBarPart.js';
 import { SyncDescriptor } from '../../platform/instantiation/common/descriptors.js';
 import { TitleService } from './parts/titlebarPart.js';
 import { FloatingToolbar } from './parts/floatingToolbar.js';
@@ -393,15 +388,6 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 	private initServices(serviceCollection: ServiceCollection): IInstantiationService {
 		// Layout Service
 		serviceCollection.set(IWorkbenchLayoutService, this);
-
-		// Pane Composite Parts Service - pass descriptors for parts specific to agent sessions workbench
-		const paneCompositePartsConfiguration: IPaneCompositePartsConfiguration = {
-			panelPart: new SyncDescriptor(PanelPart),
-			sideBarPart: new SyncDescriptor(SidebarPart),
-			auxiliaryBarPart: new SyncDescriptor(AuxiliaryBarPart),
-			chatBarPart: new SyncDescriptor(ChatBarPart),
-		};
-		serviceCollection.set(IPaneCompositePartService, new SyncDescriptor(AgenticPaneCompositePartService, [paneCompositePartsConfiguration]));
 
 		// Title Service - agent sessions titlebar with dedicated part overrides
 		serviceCollection.set(ITitleService, new SyncDescriptor(TitleService, []));

@@ -5,7 +5,6 @@
 
 import { Emitter } from '../../base/common/event.js';
 import { assertReturnsDefined } from '../../base/common/types.js';
-import { SyncDescriptor0 } from '../../platform/instantiation/common/descriptors.js';
 import { IInstantiationService } from '../../platform/instantiation/common/instantiation.js';
 import { IProgressIndicator } from '../../platform/progress/common/progress.js';
 import { IPaneComposite } from '../../workbench/common/panecomposite.js';
@@ -14,13 +13,12 @@ import { IPaneCompositePartService } from '../../workbench/services/panecomposit
 import { Disposable } from '../../base/common/lifecycle.js';
 import { PaneCompositeDescriptor } from '../../workbench/browser/panecomposite.js';
 import { IPaneCompositePart } from '../../workbench/browser/parts/paneCompositePart.js';
-
-export interface IPaneCompositePartsConfiguration {
-	readonly panelPart: SyncDescriptor0<IPaneCompositePart>;
-	readonly sideBarPart: SyncDescriptor0<IPaneCompositePart>;
-	readonly auxiliaryBarPart: SyncDescriptor0<IPaneCompositePart>;
-	readonly chatBarPart: SyncDescriptor0<IPaneCompositePart>;
-}
+import { Parts } from '../../workbench/services/layout/browser/layoutService.js';
+import { PanelPart } from './parts/panelPart.js';
+import { SidebarPart } from './parts/sidebarPart.js';
+import { AuxiliaryBarPart } from './parts/auxiliaryBarPart.js';
+import { ChatBarPart } from './parts/chatBarPart.js';
+import { InstantiationType, registerSingleton } from '../../platform/instantiation/common/extensions.js';
 
 export class AgenticPaneCompositePartService extends Disposable implements IPaneCompositePartService {
 
@@ -35,22 +33,28 @@ export class AgenticPaneCompositePartService extends Disposable implements IPane
 	private readonly paneCompositeParts = new Map<ViewContainerLocation, IPaneCompositePart>();
 
 	constructor(
-		partsConfiguration: IPaneCompositePartsConfiguration,
 		@IInstantiationService instantiationService: IInstantiationService
 	) {
 		super();
 
-		// Create all parts eagerly - the layout needs them registered before renderWorkbench
-		this.registerPart(ViewContainerLocation.Panel, instantiationService.createInstance(partsConfiguration.panelPart));
-		this.registerPart(ViewContainerLocation.Sidebar, instantiationService.createInstance(partsConfiguration.sideBarPart));
-		this.registerPart(ViewContainerLocation.AuxiliaryBar, instantiationService.createInstance(partsConfiguration.auxiliaryBarPart));
-		this.registerPart(ViewContainerLocation.ChatBar, instantiationService.createInstance(partsConfiguration.chatBarPart));
+		this.registerPart(ViewContainerLocation.Panel, instantiationService.createInstance(PanelPart));
+		this.registerPart(ViewContainerLocation.Sidebar, instantiationService.createInstance(SidebarPart));
+		this.registerPart(ViewContainerLocation.AuxiliaryBar, instantiationService.createInstance(AuxiliaryBarPart));
+		this.registerPart(ViewContainerLocation.ChatBar, instantiationService.createInstance(ChatBarPart));
 	}
 
 	private registerPart(location: ViewContainerLocation, part: IPaneCompositePart): void {
 		this.paneCompositeParts.set(location, part);
 		this._register(part.onDidPaneCompositeOpen(composite => this._onDidPaneCompositeOpen.fire({ composite, viewContainerLocation: location })));
 		this._register(part.onDidPaneCompositeClose(composite => this._onDidPaneCompositeClose.fire({ composite, viewContainerLocation: location })));
+	}
+
+	getRegistryId(viewContainerLocation: ViewContainerLocation): string {
+		return this.getPartByLocation(viewContainerLocation).registryId;
+	}
+
+	getPartId(viewContainerLocation: ViewContainerLocation): Parts {
+		return this.getPartByLocation(viewContainerLocation).partId;
 	}
 
 	openPaneComposite(id: string | undefined, viewContainerLocation: ViewContainerLocation, focus?: boolean): Promise<IPaneComposite | undefined> {
@@ -98,3 +102,5 @@ export class AgenticPaneCompositePartService extends Disposable implements IPane
 	}
 
 }
+
+registerSingleton(IPaneCompositePartService, AgenticPaneCompositePartService, InstantiationType.Delayed);
