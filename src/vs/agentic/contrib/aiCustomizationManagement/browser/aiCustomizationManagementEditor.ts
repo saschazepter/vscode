@@ -12,11 +12,8 @@ import { autorun } from '../../../../base/common/observable.js';
 import { Orientation, Sizing, SplitView } from '../../../../base/browser/ui/splitview/splitview.js';
 import { CodeEditorWidget } from '../../../../editor/browser/widget/codeEditor/codeEditorWidget.js';
 import { IResolvedTextEditorModel, ITextModelService } from '../../../../editor/common/services/resolverService.js';
-import { SnippetController2 } from '../../../../editor/contrib/snippet/browser/snippetController2.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
-import { IFileService } from '../../../../platform/files/common/files.js';
 import { ILayoutService } from '../../../../platform/layout/browser/layoutService.js';
-import { IQuickInputService } from '../../../../platform/quickinput/common/quickInput.js';
 import { getSimpleEditorOptions } from '../../../../workbench/contrib/codeEditor/browser/simpleEditorOptions.js';
 import { localize } from '../../../../nls.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
@@ -56,10 +53,9 @@ import {
 import { agentIcon, instructionsIcon, promptIcon, skillIcon, hookIcon } from '../../aiCustomizationTreeView/browser/aiCustomizationTreeViewIcons.js';
 import { ChatModelsWidget } from '../../../../workbench/contrib/chat/browser/chatManagement/chatModelsWidget.js';
 import { PromptsType } from '../../../../workbench/contrib/chat/common/promptSyntax/promptTypes.js';
-import { PromptsStorage, Target } from '../../../../workbench/contrib/chat/common/promptSyntax/service/promptsService.js';
-import { getCleanPromptName, SKILL_FILENAME, getPromptFileExtension } from '../../../../workbench/contrib/chat/common/promptSyntax/config/promptFileLocations.js';
-import { getDefaultContentSnippet } from '../../../../workbench/contrib/chat/browser/promptSyntax/newPromptFileActions.js';
-import { askForPromptSourceFolder } from '../../../../workbench/contrib/chat/browser/promptSyntax/pickers/askForPromptSourceFolder.js';
+import { PromptsStorage } from '../../../../workbench/contrib/chat/common/promptSyntax/service/promptsService.js';
+import { INewPromptOptions, NEW_PROMPT_COMMAND_ID, NEW_INSTRUCTIONS_COMMAND_ID, NEW_AGENT_COMMAND_ID, NEW_SKILL_COMMAND_ID } from '../../../../workbench/contrib/chat/browser/promptSyntax/newPromptFileActions.js';
+import { showConfigureHooksQuickPick } from '../../../../workbench/contrib/chat/browser/promptSyntax/hookActions.js';
 import { CustomizationCreatorService } from './customizationCreatorService.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { IActiveAgentSessionService, IAgentSessionsService } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsService.js';
@@ -174,9 +170,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 		@IOpenerService private readonly openerService: IOpenerService,
 		@ITextModelService private readonly textModelService: ITextModelService,
 		@IConfigurationService private readonly configurationService: IConfigurationService,
-		@IFileService private readonly fileService: IFileService,
 		@ILayoutService private readonly layoutService: ILayoutService,
-		@IQuickInputService private readonly quickInputService: IQuickInputService,
 		@ICommandService private readonly commandService: ICommandService,
 		@IActiveAgentSessionService private readonly activeAgentSessionService: IActiveAgentSessionService,
 		@IAgentSessionsService private readonly agentSessionsService: IAgentSessionsService,
@@ -633,100 +627,43 @@ export class AICustomizationManagementEditor extends EditorPane {
 		// We need integration with the git worktree to stage/commit these new files.
 
 		if (type === PromptsType.hook) {
-			await this.commandService.executeCommand('workbench.action.chat.configure.hooks');
+			const isWorktree = target === 'worktree';
+			await this.instantiationService.invokeFunction(showConfigureHooksQuickPick, {
+				openEditor: async (resource, options) => {
+					await this.showEmbeddedEditor(resource, basename(resource), isWorktree);
+					return;
+				},
+				onHookFileCreated: isWorktree ? (_uri) => {
+					// Worktree tracking is handled via showEmbeddedEditor's isWorktreeFile param
+				} : undefined,
+			});
 			return;
 		}
 
-		let targetDir = target === 'worktree'
+		const targetDir = target === 'worktree'
 			? this.customizationCreator.resolveTargetDirectory(type)
 			: await this.customizationCreator.resolveUserDirectory(type);
 
-		// Fallback to the source folder picker if we couldn't resolve the directory
-		if (!targetDir) {
-			const selectedFolder = await this.instantiationService.invokeFunction(askForPromptSourceFolder, type);
-			if (!selectedFolder) {
-				return;
-			}
-			targetDir = selectedFolder.uri;
+		const isWorktree = target === 'worktree';
+		const options: INewPromptOptions = {
+			targetFolder: targetDir,
+			targetStorage: target === 'user' ? PromptsStorage.user : PromptsStorage.local,
+			openFile: async (uri) => {
+				await this.showEmbeddedEditor(uri, basename(uri), isWorktree);
+				return this.embeddedEditor;
+			},
+		};
+
+		let commandId: string;
+		switch (type) {
+			case PromptsType.prompt: commandId = NEW_PROMPT_COMMAND_ID; break;
+			case PromptsType.instructions: commandId = NEW_INSTRUCTIONS_COMMAND_ID; break;
+			case PromptsType.agent: commandId = NEW_AGENT_COMMAND_ID; break;
+			case PromptsType.skill: commandId = NEW_SKILL_COMMAND_ID; break;
+			default: return;
 		}
 
-		let fileUri: URI;
-		let cleanName: string;
-
-		if (type === PromptsType.skill) {
-			// Skills have a special flow: subfolder + SKILL.md
-			const skillName = await this.quickInputService.input({
-				prompt: localize('newSkillNamePrompt', "Enter a name for the skill (lowercase letters, numbers, and hyphens only)"),
-				placeHolder: localize('newSkillNamePlaceholder', "e.g., pdf-processing, data-analysis"),
-				validateInput: async (value) => {
-					if (!value || !value.trim()) {
-						return localize('skillNameRequired', "Skill name is required");
-					}
-					const name = value.trim();
-					if (name.length > 64) {
-						return localize('skillNameTooLong', "Skill name must be 64 characters or less");
-					}
-					if (!/^[a-z0-9-]+$/.test(name)) {
-						return localize('skillNameInvalidChars', "Skill name may only contain lowercase letters, numbers, and hyphens");
-					}
-					if (name.startsWith('-') || name.endsWith('-')) {
-						return localize('skillNameHyphenEdge', "Skill name must not start or end with a hyphen");
-					}
-					if (name.includes('--')) {
-						return localize('skillNameConsecutiveHyphens', "Skill name must not contain consecutive hyphens");
-					}
-					return undefined;
-				}
-			});
-			if (!skillName) {
-				return;
-			}
-			const trimmedName = skillName.trim();
-			const skillFolder = URI.joinPath(targetDir, trimmedName);
-			await this.fileService.createFolder(skillFolder);
-			fileUri = URI.joinPath(skillFolder, SKILL_FILENAME);
-			cleanName = trimmedName;
-		} else {
-			// Standard flow: ask for file name via quick input
-			const fileExtension = getPromptFileExtension(type);
-			const fileName = await this.quickInputService.input({
-				prompt: localize('newFileName', "Enter a name"),
-				placeHolder: localize('newFileNamePlaceholder', "e.g., my-{0}", fileExtension),
-				validateInput: async (value) => {
-					if (!value || !value.trim()) {
-						return localize('fileNameRequired', "Name is required");
-					}
-					return undefined;
-				}
-			});
-			if (!fileName) {
-				return;
-			}
-			const trimmedName = fileName.trim();
-			const fullFileName = trimmedName.endsWith(fileExtension) ? trimmedName : trimmedName + fileExtension;
-			await this.fileService.createFolder(targetDir);
-			fileUri = URI.joinPath(targetDir, fullFileName);
-			cleanName = getCleanPromptName(fileUri);
-		}
-
-		// Create the file and open in embedded editor
-		try {
-			await this.fileService.createFile(fileUri);
-		} catch (error) {
-			console.error('Failed to create file:', error);
-			return;
-		}
-
-		// Open in embedded editor
-		await this.showEmbeddedEditor(fileUri, cleanName, target === 'worktree');
-
-		// Apply the default snippet template
-		if (this.embeddedEditor.hasModel()) {
-			SnippetController2.get(this.embeddedEditor)?.apply([{
-				range: this.embeddedEditor.getModel()!.getFullModelRange(),
-				template: getDefaultContentSnippet(type, cleanName, Target.Undefined),
-			}]);
-		}
+		await this.commandService.executeCommand(commandId, options);
 
 		// Refresh the list so the new item appears
 		void this.listWidget.refresh();
