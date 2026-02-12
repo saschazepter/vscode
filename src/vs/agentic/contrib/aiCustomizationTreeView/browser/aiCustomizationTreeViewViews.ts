@@ -7,7 +7,7 @@ import './media/aiCustomizationTreeView.css';
 import * as dom from '../../../../base/browser/dom.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { DisposableStore } from '../../../../base/common/lifecycle.js';
-import { basename, dirname, isEqualOrParent } from '../../../../base/common/resources.js';
+import { basename, dirname } from '../../../../base/common/resources.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { URI } from '../../../../base/common/uri.js';
 import { localize } from '../../../../nls.js';
@@ -234,7 +234,6 @@ class UnifiedAICustomizationDataSource implements IAsyncDataSource<RootElement, 
 		private readonly promptsService: IPromptsService,
 		private readonly logService: ILogService,
 		private readonly onItemCountChanged: (count: number) => void,
-		private readonly getActiveRepository: () => URI | undefined,
 	) { }
 
 	/**
@@ -328,16 +327,12 @@ class UnifiedAICustomizationDataSource implements IAsyncDataSource<RootElement, 
 				this.onItemCountChanged(this.totalItemCount);
 			}
 
-			const activeRepo = this.getActiveRepository();
 			const workspaceSkills = cached.skills.filter(s => s.storage === PromptsStorage.local);
-			const filteredWorkspaceSkills = activeRepo
-				? workspaceSkills.filter(s => isEqualOrParent(s.uri, activeRepo))
-				: workspaceSkills;
 			const userSkills = cached.skills.filter(s => s.storage === PromptsStorage.user);
 			const extensionSkills = cached.skills.filter(s => s.storage === PromptsStorage.extension);
 
-			if (filteredWorkspaceSkills.length > 0) {
-				groups.push(this.createGroupItem(promptType, PromptsStorage.local, filteredWorkspaceSkills.length));
+			if (workspaceSkills.length > 0) {
+				groups.push(this.createGroupItem(promptType, PromptsStorage.local, workspaceSkills.length));
 			}
 			if (userSkills.length > 0) {
 				groups.push(this.createGroupItem(promptType, PromptsStorage.user, userSkills.length));
@@ -371,14 +366,8 @@ class UnifiedAICustomizationDataSource implements IAsyncDataSource<RootElement, 
 		const userItems = cached.files!.get(PromptsStorage.user) || [];
 		const extensionItems = cached.files!.get(PromptsStorage.extension) || [];
 
-		// Filter workspace items by active repository
-		const activeRepo = this.getActiveRepository();
-		const filteredWorkspaceItems = activeRepo
-			? workspaceItems.filter(item => isEqualOrParent(item.uri, activeRepo))
-			: workspaceItems;
-
-		if (filteredWorkspaceItems.length > 0) {
-			groups.push(this.createGroupItem(promptType, PromptsStorage.local, filteredWorkspaceItems.length));
+		if (workspaceItems.length > 0) {
+			groups.push(this.createGroupItem(promptType, PromptsStorage.local, workspaceItems.length));
 		}
 		if (userItems.length > 0) {
 			groups.push(this.createGroupItem(promptType, PromptsStorage.user, userItems.length));
@@ -428,15 +417,11 @@ class UnifiedAICustomizationDataSource implements IAsyncDataSource<RootElement, 
 	 */
 	private async getFilesForStorageAndType(storage: PromptsStorage, promptType: PromptsType): Promise<IAICustomizationFileItem[]> {
 		const cached = this.cache.get(promptType);
-		const activeRepo = storage === PromptsStorage.local ? this.getActiveRepository() : undefined;
 
 		// For skills, use the cached skills data
 		if (promptType === PromptsType.skill) {
 			const skills = cached?.skills || [];
-			let filtered = skills.filter(skill => skill.storage === storage);
-			if (activeRepo) {
-				filtered = filtered.filter(skill => isEqualOrParent(skill.uri, activeRepo));
-			}
+			const filtered = skills.filter(skill => skill.storage === storage);
 			return filtered
 				.map(skill => {
 					// Use skill name from frontmatter, or fallback to parent folder name
@@ -454,10 +439,7 @@ class UnifiedAICustomizationDataSource implements IAsyncDataSource<RootElement, 
 		}
 
 		// Use cached files data (already fetched in getStorageGroups)
-		let items = [...(cached?.files?.get(storage) || [])];
-		if (activeRepo) {
-			items = items.filter(item => isEqualOrParent(item.uri, activeRepo));
-		}
+		const items = [...(cached?.files?.get(storage) || [])];
 		return items.map(item => ({
 			type: 'file' as const,
 			id: item.uri.toString(),
@@ -546,7 +528,6 @@ export class AICustomizationViewPane extends ViewPane {
 			this.promptsService,
 			this.logService,
 			(count) => this.isEmptyContextKey.set(count === 0),
-			() => { const s = this.activeSessionService.getActiveSession(); return s?.worktree ?? s?.repository; },
 		);
 
 		this.tree = this.treeDisposables.add(this.instantiationService.createInstance(

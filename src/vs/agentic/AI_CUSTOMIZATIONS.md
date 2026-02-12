@@ -45,6 +45,8 @@ Key services to rely on:
 
 The active worktree comes from `IActiveAgentSessionService` and is the source of truth for any workspace/worktree scoping.
 
+In the agentic workbench, prompt discovery is scoped by an agentic prompt service override that uses the active session root for workspace folders. See [src/vs/agentic/browser/agenticPromptsService.ts](../agentic/browser/agenticPromptsService.ts) and [src/vs/agentic/browser/agenticPromptFilesLocator.ts](../agentic/browser/agenticPromptFilesLocator.ts).
+
 ## Implemented Experience
 
 ### Management Editor (Current)

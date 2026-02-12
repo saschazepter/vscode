@@ -19,16 +19,15 @@ import { IOpenerService } from '../../../../platform/opener/common/opener.js';
 import { IThemeService } from '../../../../platform/theme/common/themeService.js';
 import { IHoverService } from '../../../../platform/hover/browser/hover.js';
 import { IEditorGroupsService } from '../../../../workbench/services/editor/common/editorGroupsService.js';
-import { IPromptsService, PromptsStorage } from '../../../../workbench/contrib/chat/common/promptSyntax/service/promptsService.js';
+import { IPromptsService } from '../../../../workbench/contrib/chat/common/promptSyntax/service/promptsService.js';
 import { PromptsType } from '../../../../workbench/contrib/chat/common/promptSyntax/promptTypes.js';
-import { AICustomizationManagementSection, getActiveSessionRoot } from './aiCustomizationManagement.js';
+import { AICustomizationManagementSection } from './aiCustomizationManagement.js';
 import { AICustomizationManagementEditorInput } from './aiCustomizationManagementEditorInput.js';
 import { AICustomizationManagementEditor } from './aiCustomizationManagementEditor.js';
 import { agentIcon, instructionsIcon, promptIcon, skillIcon } from '../../aiCustomizationTreeView/browser/aiCustomizationTreeViewIcons.js';
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
 import { autorun } from '../../../../base/common/observable.js';
 import { IActiveAgentSessionService } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsService.js';
-import { isEqualOrParent } from '../../../../base/common/resources.js';
 
 const $ = DOM.$;
 
@@ -157,24 +156,16 @@ export class AICustomizationOverviewView extends ViewPane {
 			{ section: AICustomizationManagementSection.Prompts, type: PromptsType.prompt },
 		];
 
-		const activeRepo = getActiveSessionRoot(this.activeSessionService);
-
 		await Promise.all(sectionPromptTypes.map(async ({ section, type }) => {
 			let count = 0;
 			if (type === PromptsType.skill) {
 				const skills = await this.promptsService.findAgentSkills(CancellationToken.None);
 				if (skills) {
-					const filtered = activeRepo
-						? skills.filter(s => s.storage !== PromptsStorage.local || isEqualOrParent(s.uri, activeRepo))
-						: skills;
-					count = filtered.length;
+					count = skills.length;
 				}
 			} else {
 				const allItems = await this.promptsService.listPromptFiles(type, CancellationToken.None);
-				const filtered = activeRepo
-					? allItems.filter(item => item.storage !== PromptsStorage.local || isEqualOrParent(item.uri, activeRepo))
-					: allItems;
-				count = filtered.length;
+				count = allItems.length;
 			}
 
 			const sectionData = this.sections.find(s => s.id === section);

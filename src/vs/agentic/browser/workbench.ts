@@ -68,6 +68,8 @@ import { ChatBarPart } from './parts/chatBarPart.js';
 import { SyncDescriptor } from '../../platform/instantiation/common/descriptors.js';
 import { TitleService } from './parts/titlebarPart.js';
 import { FloatingToolbar } from './parts/floatingToolbar.js';
+import { IPromptsService } from '../../workbench/contrib/chat/common/promptSyntax/service/promptsService.js';
+import { AgenticPromptsService } from './agenticPromptsService.js';
 
 import './agentic.workbench.desktop.main.js';
 
@@ -413,6 +415,9 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 		for (const [id, descriptor] of contributedServices) {
 			serviceCollection.set(id, descriptor);
 		}
+
+		// Agentic override: scope prompt discovery to the active session worktree.
+		serviceCollection.set(IPromptsService, new SyncDescriptor(AgenticPromptsService));
 
 		const instantiationService = new InstantiationService(serviceCollection, true);
 

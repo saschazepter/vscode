@@ -10,7 +10,6 @@ import { Codicon } from '../../../../base/common/codicons.js';
 import { autorun } from '../../../../base/common/observable.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { URI } from '../../../../base/common/uri.js';
-import { isEqualOrParent } from '../../../../base/common/resources.js';
 import { IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { IContextMenuService } from '../../../../platform/contextview/browser/contextView.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
@@ -44,8 +43,6 @@ import { ILanguageModelsService } from '../../../../workbench/contrib/chat/commo
 import { IMcpService } from '../../../../workbench/contrib/mcp/common/mcpTypes.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
-import { IFileService } from '../../../../platform/files/common/files.js';
-import { getPromptFileDefaultLocations, getPromptFileType } from '../../../../workbench/contrib/chat/common/promptSyntax/config/promptFileLocations.js';
 
 const $ = DOM.$;
 
@@ -98,7 +95,6 @@ export class AgenticSessionsViewPane extends ViewPane {
 		@IMcpService private readonly mcpService: IMcpService,
 		@IStorageService private readonly storageService: IStorageService,
 		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
-		@IFileService private readonly fileService: IFileService,
 		@IActiveAgentSessionService private readonly activeSessionService: IActiveAgentSessionService,
 	) {
 		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
@@ -372,24 +368,8 @@ export class AgenticSessionsViewPane extends ViewPane {
 			this.promptsService.listPromptFilesForStorage(promptType, PromptsStorage.extension, CancellationToken.None),
 		]);
 
-		const activeRepo = (() => { const s = this.activeSessionService.getActiveSession(); return s?.worktree ?? s?.repository; })();
-		let workspaceCount: number;
-
-		if (workspaceItems.length > 0) {
-			// Have workspace items from prompts service - filter by active repo
-			const filtered = activeRepo
-				? workspaceItems.filter(item => isEqualOrParent(item.uri, activeRepo))
-				: workspaceItems;
-			workspaceCount = filtered.length;
-		} else if (activeRepo) {
-			// No workspace folders - scan active repo directly
-			workspaceCount = await this.countFilesInRepo(activeRepo, promptType);
-		} else {
-			workspaceCount = 0;
-		}
-
 		return {
-			workspace: workspaceCount,
+			workspace: workspaceItems.length,
 			user: userItems.length,
 			extension: extensionItems.length,
 		};
@@ -397,71 +377,17 @@ export class AgenticSessionsViewPane extends ViewPane {
 
 	private async getSkillSourceCounts(): Promise<ISourceCounts> {
 		const skills = await this.promptsService.findAgentSkills(CancellationToken.None);
-		const activeRepo = (() => { const s = this.activeSessionService.getActiveSession(); return s?.worktree ?? s?.repository; })();
 		if (!skills || skills.length === 0) {
-			if (activeRepo) {
-				const count = await this.countFilesInRepo(activeRepo, PromptsType.skill);
-				return { workspace: count, user: 0, extension: 0 };
-			}
 			return { workspace: 0, user: 0, extension: 0 };
 		}
 
 		const workspaceSkills = skills.filter(s => s.storage === PromptsStorage.local);
-		let workspaceCount: number;
-
-		if (workspaceSkills.length > 0) {
-			const filtered = activeRepo
-				? workspaceSkills.filter(s => isEqualOrParent(s.uri, activeRepo))
-				: workspaceSkills;
-			workspaceCount = filtered.length;
-		} else if (activeRepo) {
-			workspaceCount = await this.countFilesInRepo(activeRepo, PromptsType.skill);
-		} else {
-			workspaceCount = 0;
-		}
 
 		return {
-			workspace: workspaceCount,
+			workspace: workspaceSkills.length,
 			user: skills.filter(s => s.storage === PromptsStorage.user).length,
 			extension: skills.filter(s => s.storage === PromptsStorage.extension).length,
 		};
-	}
-
-	/**
-	 * Counts customization files in a repository folder by scanning its default locations.
-	 */
-	private async countFilesInRepo(repoUri: URI, promptType: PromptsType): Promise<number> {
-		const defaultLocations = getPromptFileDefaultLocations(promptType);
-		const localLocations = defaultLocations.filter(loc => loc.storage === PromptsStorage.local);
-		let count = 0;
-
-		for (const location of localLocations) {
-			const folderUri = URI.joinPath(repoUri, location.path);
-			try {
-				const stat = await this.fileService.resolve(folderUri);
-				if (stat.isDirectory && stat.children) {
-					if (promptType === PromptsType.skill) {
-						// Skills: count subdirectories with SKILL.md
-						for (const child of stat.children) {
-							if (child.isDirectory && child.name) {
-								try {
-									await this.fileService.resolve(URI.joinPath(folderUri, child.name, 'SKILL.md'));
-									count++;
-								} catch { /* no SKILL.md */ }
-							}
-						}
-					} else {
-						for (const child of stat.children) {
-							if (!child.isDirectory && getPromptFileType(child.resource) === promptType) {
-								count++;
-							}
-						}
-					}
-				}
-			} catch { /* folder doesn't exist */ }
-		}
-
-		return count;
 	}
 
 	private async openAICustomizationSection(sectionId: AICustomizationManagementSection): Promise<void> {

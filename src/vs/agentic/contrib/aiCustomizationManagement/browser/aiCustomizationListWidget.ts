@@ -8,7 +8,7 @@ import * as DOM from '../../../../base/browser/dom.js';
 import { Disposable, DisposableStore } from '../../../../base/common/lifecycle.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
-import { basename, dirname, isEqualOrParent } from '../../../../base/common/resources.js';
+import { basename, dirname } from '../../../../base/common/resources.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { URI } from '../../../../base/common/uri.js';
 import { Codicon } from '../../../../base/common/codicons.js';
@@ -41,7 +41,6 @@ import { IRemoteAgentService } from '../../../../workbench/services/remote/commo
 import { autorun } from '../../../../base/common/observable.js';
 import { IActiveAgentSessionService } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsService.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
-import { getPromptFileDefaultLocations, getPromptFileType } from '../../../../workbench/contrib/chat/common/promptSyntax/config/promptFileLocations.js';
 import { Action, Separator } from '../../../../base/common/actions.js';
 import { IClipboardService } from '../../../../platform/clipboard/common/clipboardService.js';
 import { ISCMService } from '../../../../workbench/contrib/scm/common/scm.js';
@@ -679,10 +678,6 @@ export class AICustomizationListWidget extends Disposable {
 		const activeRepo = getActiveSessionRoot(this.activeSessionService);
 		this.logService.info(`[AICustomizationListWidget] loadItems: section=${this.currentSection}, promptType=${promptType}, workspaceFolders=[${folders.map(f => f.uri.toString()).join(', ')}], activeRepo=${activeRepo?.toString() ?? 'none'}`);
 
-		// Scan the active session's repository for local customization files
-		// when there are no workspace folders (agent sessions workspace).
-		const hasLocalWorkspaceFolders = folders.length > 0;
-		const repoToScan = !hasLocalWorkspaceFolders ? activeRepo : undefined;
 
 		if (promptType === PromptsType.agent) {
 			// Use getCustomAgents which has parsed name/description from frontmatter
@@ -790,19 +785,6 @@ export class AICustomizationListWidget extends Disposable {
 			items.push(...extensionItems.map(mapToListItem));
 		}
 
-		// When there are no workspace folders but we have an active session repo,
-		// scan that repo directly for local customization files.
-		if (repoToScan) {
-			const localItems = await this.scanRepositoryForLocalItems(repoToScan, promptType);
-			// Only add items not already present (dedupe by URI)
-			const existingIds = new Set(items.map(i => i.id));
-			for (const item of localItems) {
-				if (!existingIds.has(item.id)) {
-					items.push(item);
-				}
-			}
-		}
-
 		// Sort items by name
 		items.sort((a, b) => a.name.localeCompare(b.name));
 
@@ -858,67 +840,6 @@ export class AICustomizationListWidget extends Disposable {
 	}
 
 	/**
-	 * Scans a repository folder directly for local customization files.
-	 * Used when workspace folders are empty (agent sessions workspace) but
-	 * the active session has a known repository.
-	 */
-	private async scanRepositoryForLocalItems(repoUri: URI, promptType: PromptsType): Promise<IAICustomizationListItem[]> {
-		const items: IAICustomizationListItem[] = [];
-		const defaultLocations = getPromptFileDefaultLocations(promptType);
-		const localLocations = defaultLocations.filter(loc => loc.storage === PromptsStorage.local);
-
-		for (const location of localLocations) {
-			const folderUri = URI.joinPath(repoUri, location.path);
-			try {
-				const stat = await this.fileService.resolve(folderUri);
-				if (stat.isDirectory && stat.children) {
-					if (promptType === PromptsType.skill) {
-						// Skills: look for SKILL.md in subdirectories
-						for (const child of stat.children) {
-							if (child.isDirectory && child.name) {
-								const skillFileUri = URI.joinPath(folderUri, child.name, 'SKILL.md');
-								try {
-									await this.fileService.resolve(skillFileUri);
-									items.push({
-										id: skillFileUri.toString(),
-										uri: skillFileUri,
-										name: child.name,
-										filename: 'SKILL.md',
-										storage: PromptsStorage.local,
-										promptType,
-									});
-								} catch {
-									// No SKILL.md in this subfolder
-								}
-							}
-						}
-					} else {
-						// For other types, enumerate files and filter by type
-						for (const child of stat.children) {
-							if (!child.isDirectory && getPromptFileType(child.resource) === promptType) {
-								const filename = basename(child.resource);
-								items.push({
-									id: child.resource.toString(),
-									uri: child.resource,
-									name: this.getFriendlyName(filename),
-									filename,
-									storage: PromptsStorage.local,
-									promptType,
-								});
-							}
-						}
-					}
-				}
-			} catch {
-				// Folder doesn't exist - that's fine
-			}
-		}
-
-		this.logService.info(`[AICustomizationListWidget] scanRepositoryForLocalItems: repo=${repoUri.toString()}, type=${promptType}, found=${items.length} items`);
-		return items;
-	}
-
-	/**
 	 * Filters items based on the current search query and builds grouped display entries.
 	 */
 	private filterItems(): void {
@@ -945,24 +866,8 @@ export class AICustomizationListWidget extends Disposable {
 			}
 		}
 
-		// Filter local items by active session's worktree/repository when available
-		const activeRepo = getActiveSessionRoot(this.activeSessionService);
 		const totalBeforeFilter = matchedItems.length;
-		const localBeforeFilter = matchedItems.filter(i => i.storage === PromptsStorage.local).length;
-		if (activeRepo) {
-			matchedItems = matchedItems.filter(item => {
-				if (item.storage !== PromptsStorage.local) {
-					return true;
-				}
-				const keep = isEqualOrParent(item.uri, activeRepo);
-				if (!keep) {
-					this.logService.info(`[AICustomizationListWidget] Filtering out local item: ${item.uri.toString()} (not under ${activeRepo.toString()})`);
-				}
-				return keep;
-			});
-		}
-		const localAfterFilter = matchedItems.filter(i => i.storage === PromptsStorage.local).length;
-		this.logService.info(`[AICustomizationListWidget] filterItems: allItems=${this.allItems.length}, matched=${totalBeforeFilter}, localBefore=${localBeforeFilter}, localAfter=${localAfterFilter}, activeRepo=${activeRepo?.toString() ?? 'none'}`);
+		this.logService.info(`[AICustomizationListWidget] filterItems: allItems=${this.allItems.length}, matched=${totalBeforeFilter}`);
 
 		// Group items by storage
 		const groups: { storage: PromptsStorage; label: string; icon: ThemeIcon; items: IAICustomizationListItem[] }[] = [
