@@ -19,7 +19,7 @@ import { IListVirtualDelegate, IListRenderer, IListContextMenuEvent } from '../.
 import { IPromptsService, PromptsStorage, IPromptPath } from '../../../../workbench/contrib/chat/common/promptSyntax/service/promptsService.js';
 import { PromptsType } from '../../../../workbench/contrib/chat/common/promptSyntax/promptTypes.js';
 import { agentIcon, instructionsIcon, promptIcon, skillIcon, hookIcon, userIcon, workspaceIcon, extensionIcon } from '../../aiCustomizationTreeView/browser/aiCustomizationTreeViewIcons.js';
-import { AICustomizationManagementItemMenuId, AICustomizationManagementSection } from './aiCustomizationManagement.js';
+import { AICustomizationManagementItemMenuId, AICustomizationManagementSection, getActiveSessionRoot } from './aiCustomizationManagement.js';
 import { InputBox } from '../../../../base/browser/ui/inputbox/inputBox.js';
 import { defaultButtonStyles, defaultInputBoxStyles } from '../../../../platform/theme/browser/defaultStyles.js';
 import { Delayer } from '../../../../base/common/async.js';
@@ -369,7 +369,7 @@ export class AICustomizationListWidget extends Disposable {
 		// Also kick off an async refresh to pick up items from the new repo.
 		this._register(autorun(reader => {
 			this.activeSessionService.activeSession.read(reader);
-			const activePath = (() => { const s = this.activeSessionService.getActiveSession(); return s?.worktree ?? s?.repository; })();
+			const activePath = getActiveSessionRoot(this.activeSessionService);
 			this.logService.info(`[AICustomizationListWidget] Active session changed, worktree/repo: ${activePath?.toString() ?? 'none'}, allItems=${this.allItems.length}`);
 			// Update the add button since worktree availability may have changed
 			this.updateAddButton();
@@ -519,7 +519,7 @@ export class AICustomizationListWidget extends Disposable {
 				await this.clipboardService.writeText(item.uri.fsPath);
 			}),
 			new Action('copyRelativePath', localize('copyRelativePath', "Copy Relative Path"), undefined, true, async () => {
-				const basePath = (() => { const s = this.activeSessionService.getActiveSession(); return s?.worktree ?? s?.repository; })();
+				const basePath = getActiveSessionRoot(this.activeSessionService);
 				if (basePath && item.uri.fsPath.startsWith(basePath.fsPath)) {
 					const relative = item.uri.fsPath.substring(basePath.fsPath.length + 1);
 					await this.clipboardService.writeText(relative);
@@ -676,7 +676,7 @@ export class AICustomizationListWidget extends Disposable {
 		const items: IAICustomizationListItem[] = [];
 
 		const folders = this.workspaceContextService.getWorkspace().folders;
-		const activeRepo = (() => { const s = this.activeSessionService.getActiveSession(); return s?.worktree ?? s?.repository; })();
+		const activeRepo = getActiveSessionRoot(this.activeSessionService);
 		this.logService.info(`[AICustomizationListWidget] loadItems: section=${this.currentSection}, promptType=${promptType}, workspaceFolders=[${folders.map(f => f.uri.toString()).join(', ')}], activeRepo=${activeRepo?.toString() ?? 'none'}`);
 
 		// Scan the active session's repository for local customization files
@@ -764,12 +764,11 @@ export class AICustomizationListWidget extends Disposable {
 				});
 			}
 		} else {
-			// For instructions, fetch all storage locations
-			const [workspaceItems, userItems, extensionItems] = await Promise.all([
-				this.promptsService.listPromptFilesForStorage(promptType, PromptsStorage.local, CancellationToken.None),
-				this.promptsService.listPromptFilesForStorage(promptType, PromptsStorage.user, CancellationToken.None),
-				this.promptsService.listPromptFilesForStorage(promptType, PromptsStorage.extension, CancellationToken.None),
-			]);
+			// For instructions, fetch once and group by storage
+			const allItems = await this.promptsService.listPromptFiles(promptType, CancellationToken.None);
+			const workspaceItems = allItems.filter(item => item.storage === PromptsStorage.local);
+			const userItems = allItems.filter(item => item.storage === PromptsStorage.user);
+			const extensionItems = allItems.filter(item => item.storage === PromptsStorage.extension);
 
 			const mapToListItem = (item: IPromptPath): IAICustomizationListItem => {
 				const filename = basename(item.uri);
@@ -947,7 +946,7 @@ export class AICustomizationListWidget extends Disposable {
 		}
 
 		// Filter local items by active session's worktree/repository when available
-		const activeRepo = (() => { const s = this.activeSessionService.getActiveSession(); return s?.worktree ?? s?.repository; })();
+		const activeRepo = getActiveSessionRoot(this.activeSessionService);
 		const totalBeforeFilter = matchedItems.length;
 		const localBeforeFilter = matchedItems.filter(i => i.storage === PromptsStorage.local).length;
 		if (activeRepo) {

@@ -4,6 +4,8 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { RawContextKey } from '../../../../platform/contextkey/common/contextkey.js';
+import { URI } from '../../../../base/common/uri.js';
+import { IActiveAgentSessionService } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsService.js';
 import { localize } from '../../../../nls.js';
 import { MenuId } from '../../../../platform/actions/common/actions.js';
 
@@ -93,3 +95,8 @@ export const SIDEBAR_DEFAULT_WIDTH = 200;
 export const SIDEBAR_MIN_WIDTH = 150;
 export const SIDEBAR_MAX_WIDTH = 350;
 export const CONTENT_MIN_WIDTH = 400;
+
+export function getActiveSessionRoot(activeSessionService: IActiveAgentSessionService): URI | undefined {
+	const session = activeSessionService.getActiveSession();
+	return session?.worktree ?? session?.repository;
+}

@@ -83,6 +83,7 @@ aiCustomizationManagement/browser/
 **Active session filtering:**
 - Filters worktree items to the active session repository/worktree.
 - Scans active repo directly when no workspace folders exist.
+ - The active worktree comes from `IActiveAgentSessionService` and is the source of truth for scoping.
 
 **Context menu actions:**
 - Open, Run Prompt (prompts), Reveal in OS, Delete.

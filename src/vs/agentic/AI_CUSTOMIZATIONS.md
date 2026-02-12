@@ -2,52 +2,6 @@
 
 This document describes the current AI customization experience in this branch: a management editor and tree view that surface items across worktree, user, and extension storage.
 
----
-
-## Existing Editor Patterns in VS Code
-
-### Settings Editor (Form-based, schema-driven)
-**Files**: [settingsEditor2.ts](../src/vs/workbench/contrib/preferences/browser/settingsEditor2.ts), [settingsTree.ts](../src/vs/workbench/contrib/preferences/browser/settingsTree.ts)
-
-| Aspect | Pattern |
-|--------|---------|
-| Layout | `SplitView` with TOC tree (left) + settings list (right) |
-| Renderers | Template-based: `SettingBoolRenderer`, `SettingEnumRenderer`, `SettingTextRenderer`, etc. |
-| Data Flow | User edits → `onDidChangeSetting` → debounced `configurationService.updateValue()` |
-| Validation | Schema-driven type checking + per-setting `validator` function |
-| State | Memento persists search query, scope, scroll position |
-
-**Key takeaway**: Use `SplitView`, tree-based navigation, and typed renderers per field type.
-
----
-
-### Keybindings Editor (Table + capture overlay)
-**File**: [keybindingsEditor.ts](../src/vs/workbench/contrib/preferences/browser/keybindingsEditor.ts)
-
-| Aspect | Pattern |
-|--------|---------|
-| Layout | Search header + table body + capture overlay |
-| Capture Mode | Full-screen overlay intercepts keystrokes without losing context |
-| Data Flow | Edits write to `keybindings.json` via `IKeybindingEditingService` |
-
-**Key takeaway**: Overlay capture pattern useful for defining agent triggers or tool shortcuts.
-
----
-
-### Webview-based Editors (Release Notes, Extension Editor)
-**Files**: [webviewEditorInput.ts](../src/vs/workbench/contrib/webviewPanel/browser/webviewEditorInput.ts), [releaseNotesEditor.ts](../src/vs/workbench/contrib/update/browser/releaseNotesEditor.ts)
-
-| Aspect | Pattern |
-|--------|---------|
-| Input | `WebviewInput` or `LazilyResolvedWebviewEditorInput` |
-| Communication | `webview.postMessage()` ↔ `webview.onMessage` |
-| Dirty State | Implement `ICustomEditorModel` with `onDidChangeDirty` |
-| State | `acquireVsCodeApi().setState/getState()` inside webview |
-
-**Key takeaway**: Webviews enable rich HTML/CSS UI and can communicate bidirectionally with the host.
-
----
-
 ## Current Architecture
 
 ### File Structure (Agentic)
@@ -88,6 +42,8 @@ Key services to rely on:
 - MCP management and gallery: [src/vs/platform/mcp/common/mcpManagement.ts](../platform/mcp/common/mcpManagement.ts)
 - Chat models and session state: [src/vs/workbench/contrib/chat/common/chatService/chatService.ts](../workbench/contrib/chat/common/chatService/chatService.ts)
 - File and model plumbing: [src/vs/platform/files/common/files.ts](../platform/files/common/files.ts), [src/vs/editor/common/services/resolverService.ts](../editor/common/services/resolverService.ts)
+
+The active worktree comes from `IActiveAgentSessionService` and is the source of truth for any workspace/worktree scoping.
 
 ## Implemented Experience
 

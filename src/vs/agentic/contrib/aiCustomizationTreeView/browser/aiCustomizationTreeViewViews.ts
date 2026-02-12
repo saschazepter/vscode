@@ -349,21 +349,20 @@ class UnifiedAICustomizationDataSource implements IAsyncDataSource<RootElement, 
 			return groups;
 		}
 
-		// For other types, fetch all storage locations and cache results
+		// For other types, fetch once and cache grouped by storage
 		if (!cached.files) {
-			const [workspaceItems, userItems, extensionItems] = await Promise.all([
-				this.promptsService.listPromptFilesForStorage(promptType, PromptsStorage.local, CancellationToken.None),
-				this.promptsService.listPromptFilesForStorage(promptType, PromptsStorage.user, CancellationToken.None),
-				this.promptsService.listPromptFilesForStorage(promptType, PromptsStorage.extension, CancellationToken.None),
-			]);
+			const allItems = await this.promptsService.listPromptFiles(promptType, CancellationToken.None);
+			const workspaceItems = allItems.filter(item => item.storage === PromptsStorage.local);
+			const userItems = allItems.filter(item => item.storage === PromptsStorage.user);
+			const extensionItems = allItems.filter(item => item.storage === PromptsStorage.extension);
 
-			cached.files = new Map([
+			cached.files = new Map<PromptsStorage, readonly IPromptPath[]>([
 				[PromptsStorage.local, workspaceItems],
 				[PromptsStorage.user, userItems],
 				[PromptsStorage.extension, extensionItems],
 			]);
 
-			const itemCount = workspaceItems.length + userItems.length + extensionItems.length;
+			const itemCount = allItems.length;
 			this.totalItemCount += itemCount;
 			this.onItemCountChanged(this.totalItemCount);
 		}

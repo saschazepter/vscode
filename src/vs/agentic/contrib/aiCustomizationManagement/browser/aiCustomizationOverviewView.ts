@@ -21,7 +21,7 @@ import { IHoverService } from '../../../../platform/hover/browser/hover.js';
 import { IEditorGroupsService } from '../../../../workbench/services/editor/common/editorGroupsService.js';
 import { IPromptsService, PromptsStorage } from '../../../../workbench/contrib/chat/common/promptSyntax/service/promptsService.js';
 import { PromptsType } from '../../../../workbench/contrib/chat/common/promptSyntax/promptTypes.js';
-import { AICustomizationManagementSection } from './aiCustomizationManagement.js';
+import { AICustomizationManagementSection, getActiveSessionRoot } from './aiCustomizationManagement.js';
 import { AICustomizationManagementEditorInput } from './aiCustomizationManagementEditorInput.js';
 import { AICustomizationManagementEditor } from './aiCustomizationManagementEditor.js';
 import { agentIcon, instructionsIcon, promptIcon, skillIcon } from '../../aiCustomizationTreeView/browser/aiCustomizationTreeViewIcons.js';
@@ -157,8 +157,9 @@ export class AICustomizationOverviewView extends ViewPane {
 			{ section: AICustomizationManagementSection.Prompts, type: PromptsType.prompt },
 		];
 
+		const activeRepo = getActiveSessionRoot(this.activeSessionService);
+
 		await Promise.all(sectionPromptTypes.map(async ({ section, type }) => {
-			const activeRepo = (() => { const s = this.activeSessionService.getActiveSession(); return s?.worktree ?? s?.repository; })();
 			let count = 0;
 			if (type === PromptsType.skill) {
 				const skills = await this.promptsService.findAgentSkills(CancellationToken.None);
@@ -169,15 +170,11 @@ export class AICustomizationOverviewView extends ViewPane {
 					count = filtered.length;
 				}
 			} else {
-				const [workspaceItems, userItems, extensionItems] = await Promise.all([
-					this.promptsService.listPromptFilesForStorage(type, PromptsStorage.local, CancellationToken.None),
-					this.promptsService.listPromptFilesForStorage(type, PromptsStorage.user, CancellationToken.None),
-					this.promptsService.listPromptFilesForStorage(type, PromptsStorage.extension, CancellationToken.None),
-				]);
-				const filteredWorkspace = activeRepo
-					? workspaceItems.filter(item => isEqualOrParent(item.uri, activeRepo))
-					: workspaceItems;
-				count = filteredWorkspace.length + userItems.length + extensionItems.length;
+				const allItems = await this.promptsService.listPromptFiles(type, CancellationToken.None);
+				const filtered = activeRepo
+					? allItems.filter(item => item.storage !== PromptsStorage.local || isEqualOrParent(item.uri, activeRepo))
+					: allItems;
+				count = filtered.length;
 			}
 
 			const sectionData = this.sections.find(s => s.id === section);

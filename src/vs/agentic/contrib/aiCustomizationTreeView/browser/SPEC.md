@@ -57,6 +57,7 @@ aiCustomizationTreeView/browser/
 - Refreshes on prompt service changes, workspace changes, and active session changes.
 - Filters worktree items to the active session repository.
  - Updates `aiCustomization.isEmpty` based on total item count.
+ - The active worktree comes from `IActiveAgentSessionService` and is the source of truth for scoping.
 
 ### UnifiedAICustomizationDataSource
 

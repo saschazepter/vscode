@@ -50,6 +50,7 @@ import {
 	SIDEBAR_MIN_WIDTH,
 	SIDEBAR_MAX_WIDTH,
 	CONTENT_MIN_WIDTH,
+	getActiveSessionRoot,
 } from './aiCustomizationManagement.js';
 import { agentIcon, instructionsIcon, promptIcon, skillIcon, hookIcon } from '../../aiCustomizationTreeView/browser/aiCustomizationTreeViewIcons.js';
 import { ChatModelsWidget } from '../../../../workbench/contrib/chat/browser/chatManagement/chatModelsWidget.js';
@@ -534,7 +535,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 		this.editorItemPathElement.textContent = basename(uri);
 
 		// Track worktree URI for auto-commit on close
-		const worktreeDir = (() => { const s = this.activeAgentSessionService.getActiveSession(); return s?.worktree ?? s?.repository; })();
+		const worktreeDir = getActiveSessionRoot(this.activeAgentSessionService);
 		this.currentWorktreeUri = isWorktreeFile ? worktreeDir : undefined;
 
 		// Update visibility

@@ -14,6 +14,7 @@ import { URI } from '../../../../base/common/uri.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { IQuickInputService } from '../../../../platform/quickinput/common/quickInput.js';
 import { localize } from '../../../../nls.js';
+import { getActiveSessionRoot } from './aiCustomizationManagement.js';
 
 /**
  * Service that opens an AI-guided chat session to help the user create
@@ -97,7 +98,7 @@ export class CustomizationCreatorService {
 	 * if there's no active worktree.
 	 */
 	resolveTargetDirectory(type: PromptsType): URI | undefined {
-		const basePath = (() => { const s = this.activeAgentSessionService.getActiveSession(); return s?.worktree ?? s?.repository; })();
+		const basePath = getActiveSessionRoot(this.activeAgentSessionService);
 		if (!basePath) {
 			return undefined;
 		}
