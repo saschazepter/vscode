@@ -2313,7 +2313,7 @@ export class ChatModel extends Disposable implements IChatModel {
 			// their responses, so they cannot be interacted with.
 			if (raw.response) {
 				for (const part of raw.response) {
-					if (hasKey(part, { kind: true }) && (part.kind === 'questionCarousel' || part.kind === 'confirmation') && !part.isUsed) {
+					if (hasKey(part, { kind: true }) && (part.kind === 'questionCarousel' || part.kind === 'confirmation')) {
 						part.isUsed = true;
 					}
 				}
