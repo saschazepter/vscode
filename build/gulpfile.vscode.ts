@@ -67,7 +67,7 @@ const vscodeResourceIncludes = [
 
 	// Workbench
 	'out-build/vs/code/electron-browser/workbench/workbench.html',
-	'out-build/vs/code/agentic/electron-browser/workbench/workbench.html',
+	'out-buildvs/agentic/electron-browser/sessions.html',
 
 	// Electron Preload
 	'out-build/vs/base/parts/sandbox/electron-browser/preload.js',
@@ -152,7 +152,7 @@ const bundleVSCodeTask = task.define('bundle-vscode', task.series(
 					...bootstrapEntryPoints
 				],
 				resources: vscodeResources,
-				skipTSBoilerplateRemoval: entryPoint => entryPoint === 'vs/code/electron-browser/workbench/workbench' || entryPoint === 'vs/code/agentic/electron-browser/workbench/workbench'
+				skipTSBoilerplateRemoval: entryPoint => entryPoint === 'vs/code/electron-browser/workbench/workbench' || entryPoint === 'vs/agentic/electron-browser/sessions'
 			}
 		}
 	)
@@ -328,13 +328,13 @@ function packageTask(platform: string, arch: string, sourceFolderName: string, d
 			'vs/base/parts/sandbox/electron-browser/preload.js',
 			'vs/workbench/workbench.desktop.main.js',
 			'vs/workbench/workbench.desktop.main.css',
-			'vs/agentic/workbench.desktop.main.js',
-			'vs/agentic/workbench.desktop.main.css',
+			'vs/agentic/sessions.desktop.main.js',
+			'vs/agentic/sessions.desktop.main.css',
 			'vs/workbench/api/node/extensionHostProcess.js',
 			'vs/code/electron-browser/workbench/workbench.html',
 			'vs/code/electron-browser/workbench/workbench.js',
-			'vs/code/agentic/electron-browser/workbench/workbench.html',
-			'vs/code/agentic/electron-browser/workbench/workbench.js'
+			'vs/agentic/electron-browser/sessions.html',
+			'vs/agentic/electron-browser/sessions.js'
 		]);
 
 		const src = gulp.src(out + '/**', { base: '.' })

@@ -12,14 +12,14 @@
 
 //#region --- workbench common
 
-import './workbench.common.main.js';
+import './sessions.common.main.js';
 
 //#endregion
 
 
 //#region --- workbench (agentic desktop main)
 
-import './electron-browser/desktop.main.js';
+import './electron-browser/sessions.main.js';
 import '../workbench/electron-browser/desktop.contribution.js';
 
 //#endregion
@@ -207,4 +207,4 @@ import './contrib/changesView/browser/changesView.contributions.js';
 //#endregion
 
 
-export { main } from './electron-browser/desktop.main.js';
+export { main } from './electron-browser/sessions.main.js';

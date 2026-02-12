@@ -13,7 +13,7 @@
 	],
 	"ban-trustedtypes-createpolicy": [
 		"vs/code/electron-browser/workbench/workbench.ts",
-		"vs/code/agentic/electron-browser/workbench/workbench.ts",
+		"vs/agentic/electron-browser/sessions.ts",
 		"vs/amdX.ts",
 		"vs/base/browser/trustedTypes.ts",
 		"vs/workbench/contrib/notebook/browser/view/renderers/webviewPreloads.ts"
@@ -39,6 +39,6 @@
 	],
 	"ban-script-content-assignments": [
 		"vs/code/electron-browser/workbench/workbench.ts",
-		"vs/code/agentic/electron-browser/workbench/workbench.ts"
+		"vs/agentic/electron-browser/sessions.ts"
 	]
 }

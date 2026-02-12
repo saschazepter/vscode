@@ -171,7 +171,7 @@ export class AgenticMain extends Disposable {
 		//
 		// NOTE: Please do NOT register services here. Use `registerSingleton()`
 		//       from `workbench.common.main.ts` if the service is shared between
-		//       desktop and web or `agentic/workbench.desktop.main.ts` if the service
+		//       desktop and web or `agentic/sessions.desktop.main.ts` if the service
 		//       is agentic desktop only.
 		//
 		// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -231,7 +231,7 @@ export class AgenticMain extends Disposable {
 		//
 		// NOTE: Please do NOT register services here. Use `registerSingleton()`
 		//       from `workbench.common.main.ts` if the service is shared between
-		//       desktop and web or `agentic/workbench.desktop.main.ts` if the service
+		//       desktop and web or `agentic/sessions.desktop.main.ts` if the service
 		//       is agentic desktop only.
 		//
 		// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -281,7 +281,7 @@ export class AgenticMain extends Disposable {
 		//
 		// NOTE: Please do NOT register services here. Use `registerSingleton()`
 		//       from `workbench.common.main.ts` if the service is shared between
-		//       desktop and web or `agentic/workbench.desktop.main.ts` if the service
+		//       desktop and web or `agentic/sessions.desktop.main.ts` if the service
 		//       is agentic desktop only.
 		//
 		// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -343,7 +343,7 @@ export class AgenticMain extends Disposable {
 		//
 		// NOTE: Please do NOT register services here. Use `registerSingleton()`
 		//       from `workbench.common.main.ts` if the service is shared between
-		//       desktop and web or `agentic/workbench.desktop.main.ts` if the service
+		//       desktop and web or `agentic/sessions.desktop.main.ts` if the service
 		//       is agentic desktop only.
 		//
 		// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!

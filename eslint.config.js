@@ -1763,14 +1763,14 @@ export default tseslint.config(
 					]
 				},
 				{
-					'target': 'src/vs/code/agentic/electron-browser/workbench/workbench.ts',
+					'target': 'src/vs/agentic/electron-browser/sessions.ts',
 					'layer': 'electron-browser',
 					'restrictions': [
 						'vs/base/~',
 						'vs/base/parts/*/~',
 						'vs/platform/*/~',
 						'vs/agentic/~',
-						'vs/agentic/workbench.desktop.main.js'
+						'vs/agentic/sessions.desktop.main.js'
 					]
 				},
 				{
@@ -1907,7 +1907,7 @@ export default tseslint.config(
 					]
 				},
 				{
-					'target': 'src/vs/agentic/workbench.common.main.ts',
+					'target': 'src/vs/agentic/sessions.common.main.ts',
 					'layer': 'browser',
 					'restrictions': [
 						'vs/base/~',
@@ -1924,7 +1924,7 @@ export default tseslint.config(
 					]
 				},
 				{
-					'target': 'src/vs/agentic/workbench.desktop.main.ts',
+					'target': 'src/vs/agentic/sessions.desktop.main.ts',
 					'layer': 'electron-browser',
 					'restrictions': [
 						'vs/base/*/~',
@@ -1939,7 +1939,7 @@ export default tseslint.config(
 						'vs/workbench/api/~',
 						'vs/workbench/services/*/~',
 						'vs/workbench/contrib/*/~',
-						'vs/agentic/workbench.common.main.js'
+						'vs/agentic/sessions.common.main.js'
 					]
 				},
 				{

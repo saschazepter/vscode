@@ -10,12 +10,12 @@
 	// Add a perf entry right from the top
 	performance.mark('code/didStartRenderer');
 
-	type ISandboxConfiguration = import('../../../../base/parts/sandbox/common/sandboxTypes.js').ISandboxConfiguration;
-	type ILoadResult<M, T extends ISandboxConfiguration> = import('../../../../platform/window/electron-browser/window.js').ILoadResult<M, T>;
-	type ILoadOptions<T extends ISandboxConfiguration> = import('../../../../platform/window/electron-browser/window.js').ILoadOptions<T>;
-	type INativeWindowConfiguration = import('../../../../platform/window/common/window.ts').INativeWindowConfiguration;
-	type IMainWindowSandboxGlobals = import('../../../../base/parts/sandbox/electron-browser/globals.js').IMainWindowSandboxGlobals;
-	type IDesktopMain = import('../../../../agentic/electron-browser/desktop.main.js').IDesktopMain;
+	type ISandboxConfiguration = import('../../base/parts/sandbox/common/sandboxTypes.js').ISandboxConfiguration;
+	type ILoadResult<M, T extends ISandboxConfiguration> = import('../../platform/window/electron-browser/window.js').ILoadResult<M, T>;
+	type ILoadOptions<T extends ISandboxConfiguration> = import('../../platform/window/electron-browser/window.js').ILoadOptions<T>;
+	type INativeWindowConfiguration = import('../../platform/window/common/window.js').INativeWindowConfiguration;
+	type IMainWindowSandboxGlobals = import('../../base/parts/sandbox/electron-browser/globals.js').IMainWindowSandboxGlobals;
+	type IDesktopMain = import('../../agentic/electron-browser/sessions.main.js').IDesktopMain;
 
 	const preloadGlobals = (window as unknown as { vscode: IMainWindowSandboxGlobals }).vscode; // defined by preload.ts
 	const safeProcess = preloadGlobals.process;
@@ -78,9 +78,9 @@
 		try {
 			let workbenchUrl: string;
 			if (!!safeProcess.env['VSCODE_DEV'] && globalThis._VSCODE_USE_RELATIVE_IMPORTS) {
-				workbenchUrl = '../../../../agentic/workbench.desktop.main.js'; // for dev purposes only
+				workbenchUrl = './workbench.desktop.main.js'; // for dev purposes only
 			} else {
-				workbenchUrl = new URL(`vs/agentic/workbench.desktop.main.js`, baseUrl).href;
+				workbenchUrl = new URL(`vs/agentic/sessions.desktop.main.js`, baseUrl).href;
 			}
 
 			const result = await import(workbenchUrl);
