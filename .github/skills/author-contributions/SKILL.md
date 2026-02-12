@@ -159,3 +159,28 @@ for kind, f in sorted(results, key=lambda x: x[1]):
     print(f'| {kind:12s} | {f} |')
 print(f'\nTotal: {len(results)} files')
 ```
+
+### Alternative Script
+
+After following the process above, run this script to cross-check files touched by an author against the branch diff.   You can do this both with an without src/vs/agentic.
+
+```
+AUTHOR=""
+
+# 1. Find commits by author on this branch (not on main)
+git log main...HEAD --author="$AUTHOR" --format="%H"
+
+# 2. Get unique files touched across all those commits, excluding src/vs/agentic/
+git log main...HEAD --author="$AUTHOR" --format="%H" \
+  | xargs -I{} git diff-tree --no-commit-id -r --name-only {} \
+  | sort -u \
+  | grep -v '^src/vs/agentic/'
+
+# 3. Cross-reference with branch diff to keep only files still changed vs main
+git log main...HEAD --author="$AUTHOR" --format="%H" \
+  | xargs -I{} git diff-tree --no-commit-id -r --name-only {} \
+  | sort -u \
+  | grep -v '^src/vs/agentic/' \
+  | while read f; do git diff main...HEAD --name-only -- "$f" 2>/dev/null; done \
+  | sort -u
+```
