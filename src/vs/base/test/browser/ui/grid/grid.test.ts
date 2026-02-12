@@ -685,13 +685,13 @@ suite('Grid', function () {
 
 		assert.strictEqual(testGrid.hasMaximizedView(), true);
 
-		// ThirdView should stay visible and have dimensions greater than zero
+		// thirdView should stay visible and have dimensions greater than zero
 		assert.strictEqual(testGrid.isViewVisible(thirdView), true);
 		const excludedViewSize = thirdView.size;
 		assert.ok(excludedViewSize[0] > 0);
 		assert.ok(excludedViewSize[1] > 0);
 
-		// SecondView and fourthView should have zero size (hidden)
+		// secondView and fourthView should have zero size (hidden)
 		const hiddenSize1 = secondView.size;
 		const hiddenSize2 = fourthView.size;
 		assert.strictEqual(hiddenSize1[0], 0);
