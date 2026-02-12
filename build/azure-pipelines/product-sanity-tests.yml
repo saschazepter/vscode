@@ -55,6 +55,8 @@ resources:
       # allow-any-unicode-next-line
       source: '⭐️ VS Code'
       trigger:
+        stages:
+          - Publish
         branches:
           include:
             - main
