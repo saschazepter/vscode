@@ -128,7 +128,7 @@ export class UpdateStatusBarEntryContribution extends Disposable implements IWor
 				this.updateStatusBarEntry({
 					name: UpdateStatusBarEntryContribution.NAME,
 					text: this.getUpdatingText(state),
-					ariaLabel: nls.localize('updateStatus.installingUpdateAria', "Installing update"),
+					ariaLabel: this.getUpdatingText(state),
 					tooltip: this.getUpdatingTooltip(state),
 					command: ShowTooltipCommand
 				});

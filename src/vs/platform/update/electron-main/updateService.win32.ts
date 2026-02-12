@@ -394,6 +394,7 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 
 				if (Date.now() - pollStartTime > pollTimeoutMs) {
 					this.logService.warn('update#doApplyUpdate: polling timed out waiting for update to be ready');
+					this.setState(State.Idle(getUpdateType(), 'Update did not complete within expected time'));
 					return;
 				}
 
@@ -403,7 +404,9 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 					const currentProgress = parseInt(currentStr, 10);
 					const maxProgress = parseInt(maxStr, 10);
 					if (!isNaN(currentProgress) && !isNaN(maxProgress) && this.state.type === StateType.Updating) {
-						this.setState(State.Updating(update, currentProgress, maxProgress));
+						if (this.state.currentProgress !== currentProgress || this.state.maxProgress !== maxProgress) {
+							this.setState(State.Updating(update, currentProgress, maxProgress));
+						}
 					}
 				} catch {
 					// Progress file may not exist yet or be locked, ignore
@@ -413,7 +416,12 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 			}
 		};
 
-		poll().finally(() => cts.dispose());
+		poll().finally(() => {
+			if (this.updateCancellationTokenSource === cts) {
+				this.updateCancellationTokenSource = undefined;
+			}
+			cts.dispose();
+		});
 	}
 
 	protected override async cancelPendingUpdate(): Promise<void> {
