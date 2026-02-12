@@ -231,7 +231,7 @@ class ChatResponseAccessibleProvider extends Disposable implements IAccessibleVi
 		private readonly _storageService: IStorageService
 	) {
 		super();
-		this._register(this._storageService.onDidChangeValue(StorageScope.PROFILE, CHAT_ACCESSIBLE_VIEW_INCLUDE_THINKING_STORAGE_KEY, this._storageDisposables)(() => {
+		this._storageDisposables.add(this._storageService.onDidChangeValue(StorageScope.PROFILE, CHAT_ACCESSIBLE_VIEW_INCLUDE_THINKING_STORAGE_KEY, this._storageDisposables)(() => {
 			this._onDidChangeContent.fire();
 		}));
 		this._setFocusedItem(item);
