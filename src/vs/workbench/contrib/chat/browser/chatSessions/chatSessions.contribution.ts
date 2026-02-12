@@ -31,7 +31,7 @@ import { ExtensionsRegistry } from '../../../../services/extensions/common/exten
 import { ChatEditorInput } from '../widgetHosts/editor/chatEditorInput.js';
 import { IChatAgentAttachmentCapabilities, IChatAgentData, IChatAgentService } from '../../common/participants/chatAgents.js';
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
-import { IChatSession, IChatSessionContentProvider, IChatSessionItem, IChatSessionItemController, IChatSessionOptionsWillNotifyExtensionEvent, IChatSessionProviderOptionGroup, IChatSessionProviderOptionItem, IChatSessionsExtensionPoint, IChatSessionsService, isSessionInProgressStatus } from '../../common/chatSessionsService.js';
+import { IChatSession, IChatSessionContentProvider, IChatSessionContentProviderCapabilities, IChatSessionItem, IChatSessionItemController, IChatSessionOptionsWillNotifyExtensionEvent, IChatSessionProviderOptionGroup, IChatSessionProviderOptionItem, IChatSessionsExtensionPoint, IChatSessionsService, isSessionInProgressStatus } from '../../common/chatSessionsService.js';
 import { ChatAgentLocation, ChatModeKind } from '../../common/constants.js';
 import { CHAT_CATEGORY } from '../actions/chatActions.js';
 import { IChatEditorOptions } from '../widgetHosts/editor/chatEditor.js';
@@ -262,6 +262,7 @@ export class ChatSessionsService extends Disposable implements IChatSessionsServ
 	private readonly _contributionDisposables = this._register(new DisposableMap</* type */ string>());
 
 	private readonly _contentProviders: Map</* scheme */ string, IChatSessionContentProvider> = new Map();
+	private readonly _contentProviderCapabilities: Map</* scheme */ string, IChatSessionContentProviderCapabilities> = new Map();
 	private readonly _alternativeIdMap: Map</* alternativeId */ string, /* primaryType */ string> = new Map();
 	private readonly _contextKeys = new Set<string>();
 
@@ -869,17 +870,21 @@ export class ChatSessionsService extends Disposable implements IChatSessionsServ
 		};
 	}
 
-	registerChatSessionContentProvider(chatSessionType: string, provider: IChatSessionContentProvider): IDisposable {
+	registerChatSessionContentProvider(chatSessionType: string, provider: IChatSessionContentProvider, capabilities?: IChatSessionContentProviderCapabilities): IDisposable {
 		if (this._contentProviders.has(chatSessionType)) {
 			throw new Error(`Content provider for ${chatSessionType} is already registered.`);
 		}
 
 		this._contentProviders.set(chatSessionType, provider);
+		if (capabilities) {
+			this._contentProviderCapabilities.set(chatSessionType, capabilities);
+		}
 		this._onDidChangeContentProviderSchemes.fire({ added: [chatSessionType], removed: [] });
 
 		return {
 			dispose: () => {
 				this._contentProviders.delete(chatSessionType);
+				this._contentProviderCapabilities.delete(chatSessionType);
 
 				this._onDidChangeContentProviderSchemes.fire({ added: [], removed: [chatSessionType] });
 
@@ -1130,6 +1135,11 @@ export class ChatSessionsService extends Disposable implements IChatSessionsServ
 
 	public getContentProviderSchemes(): string[] {
 		return Array.from(this._contentProviders.keys());
+	}
+
+	public supportsCheckpointsForSessionType(chatSessionType: string): boolean {
+		const resolvedType = this._resolveToPrimaryType(chatSessionType) || chatSessionType;
+		return !!this._contentProviderCapabilities.get(resolvedType)?.supportsCheckpoints;
 	}
 }
 

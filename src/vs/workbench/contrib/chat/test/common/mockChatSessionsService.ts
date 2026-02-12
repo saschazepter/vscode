@@ -169,6 +169,10 @@ export class MockChatSessionsService implements IChatSessionsService {
 		return this.contentProviders.get(sessionResource.scheme);
 	}
 
+	supportsCheckpointsForSessionType(_chatSessionType: string): boolean {
+		return false;
+	}
+
 	getOptionGroupsForSessionType(chatSessionType: string): IChatSessionProviderOptionGroup[] | undefined {
 		return this.optionGroups.get(chatSessionType);
 	}

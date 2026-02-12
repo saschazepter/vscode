@@ -54,6 +54,10 @@ export namespace ChatContextKeys {
 	 */
 	export const lockedToCodingAgent = new RawContextKey<boolean>('lockedToCodingAgent', false, { type: 'boolean', description: localize('lockedToCodingAgent', "True when the chat widget is locked to the coding agent session.") });
 	/**
+	 * True when the chat session supports checkpoint restoration.
+	 */
+	export const sessionSupportsCheckpoints = new RawContextKey<boolean>('chatSessionSupportsCheckpoints', false, { type: 'boolean', description: localize('chatSessionSupportsCheckpoints', "True when the chat session supports checkpoint restoration.") });
+	/**
 	 * True when the chat session has a customAgentTarget defined in its contribution,
 	 * which means the mode picker should be shown with filtered custom agents.
 	 */

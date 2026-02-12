@@ -195,6 +195,10 @@ export interface IChatSessionContentProvider {
 	handleRestoreCheckpoint?(sessionResource: URI, requestId: string, token: CancellationToken): Promise<void>;
 }
 
+export interface IChatSessionContentProviderCapabilities {
+	supportsCheckpoints?: boolean;
+}
+
 export interface IChatSessionItemController {
 
 	readonly onDidChangeChatSessionItems: Event<void>;
@@ -255,7 +259,7 @@ export interface IChatSessionsService {
 
 	getContentProviderSchemes(): string[];
 
-	registerChatSessionContentProvider(scheme: string, provider: IChatSessionContentProvider): IDisposable;
+	registerChatSessionContentProvider(scheme: string, provider: IChatSessionContentProvider, capabilities?: IChatSessionContentProviderCapabilities): IDisposable;
 	canResolveChatSession(sessionResource: URI): Promise<boolean>;
 	getOrCreateChatSession(sessionResource: URI, token: CancellationToken): Promise<IChatSession>;
 
@@ -263,6 +267,11 @@ export interface IChatSessionsService {
 	 * Get the content provider for a specific session resource
 	 */
 	getContentProvider(sessionResource: URI): IChatSessionContentProvider | undefined;
+
+	/**
+	 * Check if a session type supports checkpoints.
+	 */
+	supportsCheckpointsForSessionType(chatSessionType: string): boolean;
 
 	hasAnySessionOptions(sessionResource: URI): boolean;
 	getSessionOption(sessionResource: URI, optionId: string): string | IChatSessionProviderOptionItem | undefined;

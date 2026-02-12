@@ -26,7 +26,6 @@ import { IDialogService } from '../../../../../platform/dialogs/common/dialogs.j
 import { EditorActivation } from '../../../../../platform/editor/common/editor.js';
 import { KeybindingWeight } from '../../../../../platform/keybinding/common/keybindingsRegistry.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
-import { ILogService } from '../../../../../platform/log/common/log.js';
 import { IEditorPane } from '../../../../common/editor.js';
 import { IEditorService } from '../../../../services/editor/common/editorService.js';
 import { IAgentSessionsService } from '../agentSessions/agentSessionsService.js';
@@ -435,13 +434,26 @@ async function restoreSnapshotWithConfirmationByRequestId(accessor: ServicesAcce
 	}
 
 	const session = chatModel.editingSession;
-	if (!session) {
-		return;
-	}
 
 	const chatRequests = chatModel.getRequests();
 	const itemIndex = chatRequests.findIndex(request => request.id === requestId);
 	if (itemIndex === -1) {
+		return;
+	}
+
+	// Check if the content provider has a custom checkpoint handler
+	const chatSessionsService = accessor.get(IChatSessionsService);
+	const contentProvider = chatSessionsService.getContentProvider(sessionResource);
+
+	if (contentProvider?.handleRestoreCheckpoint) {
+		// Let the content provider handle the checkpoint restoration
+		const snapshotRequestId = chatRequests[itemIndex].id;
+		await contentProvider.handleRestoreCheckpoint(sessionResource, snapshotRequestId, CancellationToken.None);
+		return;
+	}
+
+	// Default behavior requires an editing session
+	if (!session) {
 		return;
 	}
 
@@ -490,25 +502,7 @@ async function restoreSnapshotWithConfirmationByRequestId(accessor: ServicesAcce
 
 	// Restore the snapshot to what it was before the request(s) that we deleted
 	const snapshotRequestId = chatRequests[itemIndex].id;
-
-	// Check if the content provider has a custom checkpoint handler
-	const chatSessionsService = accessor.get(IChatSessionsService);
-	const contentProvider = chatSessionsService.getContentProvider(sessionResource);
-	
-	if (contentProvider?.handleRestoreCheckpoint) {
-		// Let the content provider handle the checkpoint restoration
-		try {
-			await contentProvider.handleRestoreCheckpoint(sessionResource, snapshotRequestId, CancellationToken.None);
-		} catch (error) {
-			// If the provider fails, fall back to default behavior
-			const logService = accessor.get(ILogService);
-			logService.error('Content provider handleRestoreCheckpoint failed, falling back to default behavior:', error);
-			await session.restoreSnapshot(snapshotRequestId, undefined);
-		}
-	} else {
-		// Default behavior: restore the snapshot
-		await session.restoreSnapshot(snapshotRequestId, undefined);
-	}
+	await session.restoreSnapshot(snapshotRequestId, undefined);
 }
 
 async function restoreSnapshotWithConfirmation(accessor: ServicesAccessor, item: ChatTreeItem): Promise<void> {
@@ -543,7 +537,7 @@ registerAction2(class RemoveAction extends Action2 {
 					id: MenuId.ChatMessageTitle,
 					group: 'navigation',
 					order: 2,
-					when: ContextKeyExpr.and(ContextKeyExpr.equals(`config.${ChatConfiguration.EditRequests}`, 'input').negate(), ContextKeyExpr.equals(`config.${ChatConfiguration.CheckpointsEnabled}`, false), ChatContextKeys.lockedToCodingAgent.negate()),
+					when: ContextKeyExpr.and(ContextKeyExpr.equals(`config.${ChatConfiguration.EditRequests}`, 'input').negate(), ContextKeyExpr.equals(`config.${ChatConfiguration.CheckpointsEnabled}`, false), ContextKeyExpr.or(ChatContextKeys.lockedToCodingAgent.negate(), ChatContextKeys.sessionSupportsCheckpoints)),
 				}
 			]
 		});
@@ -592,7 +586,7 @@ registerAction2(class RestoreCheckpointAction extends Action2 {
 					id: MenuId.ChatMessageCheckpoint,
 					group: 'navigation',
 					order: 2,
-					when: ContextKeyExpr.and(ChatContextKeys.isRequest, ChatContextKeys.lockedToCodingAgent.negate())
+					when: ContextKeyExpr.and(ChatContextKeys.isRequest, ContextKeyExpr.or(ChatContextKeys.lockedToCodingAgent.negate(), ChatContextKeys.sessionSupportsCheckpoints))
 				}
 			]
 		});
@@ -631,14 +625,14 @@ registerAction2(class RestoreLastCheckpoint extends Action2 {
 			precondition: ContextKeyExpr.and(
 				ChatContextKeys.inChatSession,
 				ContextKeyExpr.equals(`config.${ChatConfiguration.CheckpointsEnabled}`, true),
-				ChatContextKeys.lockedToCodingAgent.negate()
+				ContextKeyExpr.or(ChatContextKeys.lockedToCodingAgent.negate(), ChatContextKeys.sessionSupportsCheckpoints)
 			),
 			menu: [
 				{
 					id: MenuId.ChatMessageFooter,
 					group: 'navigation',
 					order: 1,
-					when: ContextKeyExpr.and(ContextKeyExpr.in(ChatContextKeys.itemId.key, ChatContextKeys.lastItemId.key), ContextKeyExpr.equals(`config.${ChatConfiguration.CheckpointsEnabled}`, true), ChatContextKeys.lockedToCodingAgent.negate()),
+					when: ContextKeyExpr.and(ContextKeyExpr.in(ChatContextKeys.itemId.key, ChatContextKeys.lastItemId.key), ContextKeyExpr.equals(`config.${ChatConfiguration.CheckpointsEnabled}`, true), ContextKeyExpr.or(ChatContextKeys.lockedToCodingAgent.negate(), ChatContextKeys.sessionSupportsCheckpoints)),
 				}
 			]
 		});

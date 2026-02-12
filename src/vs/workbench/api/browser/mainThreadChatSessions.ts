@@ -649,7 +649,7 @@ export class MainThreadChatSessions extends Disposable implements MainThreadChat
 		this._itemControllerRegistrations.deleteAndDispose(handle);
 	}
 
-	$registerChatSessionContentProvider(handle: number, chatSessionScheme: string): void {
+	$registerChatSessionContentProvider(handle: number, chatSessionScheme: string, supportsCheckpoints: boolean): void {
 		const provider: IChatSessionContentProvider = {
 			provideChatSessionContent: (resource, token) => this._provideChatSessionContent(handle, resource, token),
 			handleRestoreCheckpoint: async (resource, requestId, token) => {
@@ -658,7 +658,7 @@ export class MainThreadChatSessions extends Disposable implements MainThreadChat
 		};
 
 		this._sessionTypeToHandle.set(chatSessionScheme, handle);
-		this._contentProvidersRegistrations.set(handle, this._chatSessionsService.registerChatSessionContentProvider(chatSessionScheme, provider));
+		this._contentProvidersRegistrations.set(handle, this._chatSessionsService.registerChatSessionContentProvider(chatSessionScheme, provider, { supportsCheckpoints }));
 		this._refreshProviderOptions(handle, chatSessionScheme);
 	}
 

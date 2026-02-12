@@ -262,6 +262,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		displayName: string;
 	};
 	private readonly _lockedToCodingAgentContextKey: IContextKey<boolean>;
+	private readonly _sessionSupportsCheckpointsContextKey: IContextKey<boolean>;
 	private readonly _agentSupportsAttachmentsContextKey: IContextKey<boolean>;
 	private readonly _sessionIsEmptyContextKey: IContextKey<boolean>;
 	private readonly _hasPendingRequestsContextKey: IContextKey<boolean>;
@@ -379,6 +380,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		super();
 
 		this._lockedToCodingAgentContextKey = ChatContextKeys.lockedToCodingAgent.bindTo(this.contextKeyService);
+		this._sessionSupportsCheckpointsContextKey = ChatContextKeys.sessionSupportsCheckpoints.bindTo(this.contextKeyService);
 		this._agentSupportsAttachmentsContextKey = ChatContextKeys.agentSupportsAttachments.bindTo(this.contextKeyService);
 		this._sessionIsEmptyContextKey = ChatContextKeys.chatSessionIsEmpty.bindTo(this.contextKeyService);
 		this._hasPendingRequestsContextKey = ChatContextKeys.hasPendingRequests.bindTo(this.contextKeyService);
@@ -2120,7 +2122,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 	}
 
 	// Coding agent locking methods
-	lockToCodingAgent(name: string, displayName: string, agentId: string): void {
+	lockToCodingAgent(name: string, displayName: string, agentId: string, options?: { restorable?: boolean }): void {
 		this._lockedAgent = {
 			id: agentId,
 			name,
@@ -2128,11 +2130,12 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			displayName
 		};
 		this._lockedToCodingAgentContextKey.set(true);
+		this._sessionSupportsCheckpointsContextKey.set(!!options?.restorable);
 		this.renderWelcomeViewContentIfNeeded();
 		// Update capabilities for the locked agent
 		const agent = this.chatAgentService.getAgent(agentId);
 		this._updateAgentCapabilitiesContextKeys(agent);
-		this.listWidget?.updateRendererOptions({ restorable: false, editable: false, noFooter: true, progressMessageAtBottomOfResponse: true });
+		this.listWidget?.updateRendererOptions({ restorable: options?.restorable ?? false, editable: false, noFooter: true, progressMessageAtBottomOfResponse: true });
 		if (this.visible) {
 			this.listWidget?.rerender();
 		}
@@ -2142,6 +2145,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		// Clear all state related to locking
 		this._lockedAgent = undefined;
 		this._lockedToCodingAgentContextKey.set(false);
+		this._sessionSupportsCheckpointsContextKey.set(false);
 		this._updateAgentCapabilitiesContextKeys(undefined);
 
 		// Explicitly update the DOM to reflect unlocked state

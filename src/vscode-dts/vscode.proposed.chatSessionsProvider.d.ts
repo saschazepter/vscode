@@ -457,6 +457,14 @@ declare module 'vscode' {
 		 * Whether sessions can be interrupted and resumed without side-effects.
 		 */
 		supportsInterruptions?: boolean;
+
+		/**
+		 * Whether sessions support checkpoint restoration.
+		 * When true, the checkpoint restore UI will be shown for sessions of this type,
+		 * and the {@link ChatSessionContentProvider.handleRestoreCheckpoint} callback
+		 * will be invoked when the user restores a checkpoint.
+		 */
+		supportsCheckpoints?: boolean;
 	}
 
 	/**

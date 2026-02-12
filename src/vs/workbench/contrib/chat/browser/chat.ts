@@ -400,7 +400,7 @@ export interface IChatWidget {
 	getLastFocusedFileTreeForResponse(response: IChatResponseViewModel): IChatFileTreeInfo | undefined;
 	clear(): Promise<void>;
 	getViewState(): IChatModelInputState | undefined;
-	lockToCodingAgent(name: string, displayName: string, agentId?: string): void;
+	lockToCodingAgent(name: string, displayName: string, agentId?: string, options?: { restorable?: boolean }): void;
 	unlockFromCodingAgent(): void;
 	handleDelegationExitIfNeeded(sourceAgent: Pick<IChatAgentData, 'id' | 'name'> | undefined, targetAgent: IChatAgentData | undefined): Promise<void>;
 

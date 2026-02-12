@@ -211,7 +211,8 @@ export class ChatEditor extends EditorPane {
 				const contributions = this.chatSessionsService.getAllChatSessionContributions();
 				const contribution = contributions.find(c => c.type === chatSessionType);
 				if (contribution) {
-					this.widget.lockToCodingAgent(contribution.name, contribution.displayName, contribution.type);
+					const supportsCheckpoints = this.chatSessionsService.supportsCheckpointsForSessionType(chatSessionType);
+					this.widget.lockToCodingAgent(contribution.name, contribution.displayName, contribution.type, { restorable: supportsCheckpoints });
 					isContributedChatSession = true;
 				} else {
 					this.widget.unlockFromCodingAgent();

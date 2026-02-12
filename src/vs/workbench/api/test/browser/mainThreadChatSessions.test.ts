@@ -418,7 +418,7 @@ suite('MainThreadChatSessions', function () {
 
 	test('provideChatSessionContent creates and initializes session', async function () {
 		const sessionScheme = 'test-session-type';
-		mainThread.$registerChatSessionContentProvider(1, sessionScheme);
+		mainThread.$registerChatSessionContentProvider(1, sessionScheme, false);
 
 		const sessionContent = {
 			id: 'test-session',
@@ -444,7 +444,7 @@ suite('MainThreadChatSessions', function () {
 	test('$handleProgressChunk routes to correct session', async function () {
 		const sessionScheme = 'test-session-type';
 
-		mainThread.$registerChatSessionContentProvider(1, sessionScheme);
+		mainThread.$registerChatSessionContentProvider(1, sessionScheme, false);
 
 		const sessionContent = {
 			id: 'test-session',
@@ -469,7 +469,7 @@ suite('MainThreadChatSessions', function () {
 
 	test('$handleProgressComplete marks session complete', async function () {
 		const sessionScheme = 'test-session-type';
-		mainThread.$registerChatSessionContentProvider(1, sessionScheme);
+		mainThread.$registerChatSessionContentProvider(1, sessionScheme, false);
 
 		const sessionContent = {
 			id: 'test-session',
@@ -494,7 +494,7 @@ suite('MainThreadChatSessions', function () {
 
 	test('integration with multiple request/response pairs', async function () {
 		const sessionScheme = 'test-session-type';
-		mainThread.$registerChatSessionContentProvider(1, sessionScheme);
+		mainThread.$registerChatSessionContentProvider(1, sessionScheme, false);
 
 		const sessionContent = {
 			id: 'multi-turn-session',
@@ -550,7 +550,7 @@ suite('MainThreadChatSessions', function () {
 		provideOptionsStub.onFirstCall().resolves({ optionGroups: optionGroups1 } as IChatSessionProviderOptions);
 		provideOptionsStub.onSecondCall().resolves({ optionGroups: optionGroups2 } as IChatSessionProviderOptions);
 
-		mainThread.$registerChatSessionContentProvider(handle, sessionScheme);
+		mainThread.$registerChatSessionContentProvider(handle, sessionScheme, false);
 
 		// Wait for initial options fetch triggered on registration
 		await new Promise(resolve => setTimeout(resolve, 0));
@@ -572,7 +572,7 @@ suite('MainThreadChatSessions', function () {
 
 	test('getSessionOption returns undefined for unset options', async function () {
 		const sessionScheme = 'test-session-type';
-		mainThread.$registerChatSessionContentProvider(1, sessionScheme);
+		mainThread.$registerChatSessionContentProvider(1, sessionScheme, false);
 
 		const sessionContent = {
 			id: 'test-session',
@@ -596,7 +596,7 @@ suite('MainThreadChatSessions', function () {
 
 	test('getSessionOption returns value for explicitly set options', async function () {
 		const sessionScheme = 'test-session-type';
-		mainThread.$registerChatSessionContentProvider(1, sessionScheme);
+		mainThread.$registerChatSessionContentProvider(1, sessionScheme, false);
 
 		const sessionContent = {
 			id: 'test-session',
@@ -628,7 +628,7 @@ suite('MainThreadChatSessions', function () {
 		const sessionScheme = 'test-session-type';
 		const handle = 1;
 
-		mainThread.$registerChatSessionContentProvider(handle, sessionScheme);
+		mainThread.$registerChatSessionContentProvider(handle, sessionScheme, false);
 
 		const sessionContent = {
 			id: 'test-session',
@@ -685,7 +685,7 @@ suite('MainThreadChatSessions', function () {
 
 	test('setSessionOption updates option and getSessionOption reflects change', async function () {
 		const sessionScheme = 'test-session-type';
-		mainThread.$registerChatSessionContentProvider(1, sessionScheme);
+		mainThread.$registerChatSessionContentProvider(1, sessionScheme, false);
 
 		const sessionContent = {
 			id: 'test-session',
@@ -714,7 +714,7 @@ suite('MainThreadChatSessions', function () {
 
 	test('hasAnySessionOptions returns correct values', async function () {
 		const sessionScheme = 'test-session-type';
-		mainThread.$registerChatSessionContentProvider(1, sessionScheme);
+		mainThread.$registerChatSessionContentProvider(1, sessionScheme, false);
 
 		// Session with options
 		const sessionContentWithOptions = {
