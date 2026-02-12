@@ -141,7 +141,7 @@ export abstract class AbstractPaneCompositePart extends CompositePart<PaneCompos
 		compositeCSSClass: string,
 		titleForegroundColor: string | undefined,
 		titleBorderColor: string | undefined,
-		private readonly location: ViewContainerLocation,
+		protected readonly location: ViewContainerLocation,
 		registryId: string,
 		private readonly globalActionsMenuId: MenuId,
 		@INotificationService notificationService: INotificationService,
@@ -501,7 +501,7 @@ export abstract class AbstractPaneCompositePart extends CompositePart<PaneCompos
 	}
 
 	protected createCompositeBar(): PaneCompositeBar {
-		return this.instantiationService.createInstance(PaneCompositeBar, this.getCompositeBarOptions(), this.partId, this);
+		return this.instantiationService.createInstance(PaneCompositeBar, this.location, this.getCompositeBarOptions(), this.partId, this);
 	}
 
 	protected override onTitleAreaUpdate(compositeId: string): void {
