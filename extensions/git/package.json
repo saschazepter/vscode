@@ -1,5 +1,5 @@
 {
-  "name": "git",
+  "name": "git-integration",
   "displayName": "%displayName%",
   "description": "%description%",
   "publisher": "vscode",

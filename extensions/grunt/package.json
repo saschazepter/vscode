@@ -1,5 +1,5 @@
 {
-  "name": "grunt",
+  "name": "grunt-support",
   "publisher": "vscode",
   "description": "Extension to add Grunt capabilities to VS Code.",
   "displayName": "Grunt support for VS Code",
