@@ -28,22 +28,13 @@
 	margin: 0;
 }
 
-.chat-getting-started-tip-container {
-	position: absolute;
-	left: 12px;
-	right: 12px;
-	/* Initial vertical position; updated dynamically to align with input top */
-	bottom: 96px;
-	display: flex;
-	justify-content: center;
-	/* No horizontal padding so width exactly matches input */
-	padding: 0;
-	pointer-events: none;
-	z-index: 2;
+.interactive-session .interactive-input-part > .chat-getting-started-tip-container {
+	margin-bottom: -4px;
+	width: 100%;
+	position: relative;
 }
 
-.chat-getting-started-tip-container .chat-tip-widget {
-	pointer-events: auto;
+.interactive-session .interactive-input-part > .chat-getting-started-tip-container .chat-tip-widget {
 	display: flex;
 	align-items: center;
 	gap: 4px;
