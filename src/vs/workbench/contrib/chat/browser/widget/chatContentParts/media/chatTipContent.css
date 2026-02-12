@@ -24,6 +24,10 @@
 	color: var(--vscode-notificationsWarningIcon-foreground);
 }
 
+.interactive-item-container .chat-tip-widget a {
+	color: var(--vscode-textLink-activeForeground);
+}
+
 .interactive-item-container .chat-tip-widget .rendered-markdown p {
 	margin: 0;
 }
@@ -60,9 +64,13 @@
 	box-shadow: none;
 	font-size: var(--vscode-chat-font-size-body-s);
 	font-family: var(--vscode-chat-font-family, inherit);
-	color: var(--vscode-descriptionForeground);
+	color: var(--vscode-foreground);
 	position: relative;
 	overflow: hidden;
+}
+
+.chat-getting-started-tip-container .chat-tip-widget a {
+	color: var(--vscode-textLink-activeForeground);
 }
 
 .chat-getting-started-tip-container .chat-tip-widget .codicon-lightbulb {
