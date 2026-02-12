@@ -52,7 +52,8 @@ resources:
       ref: refs/tags/release
   pipelines:
     - pipeline: vscode
-      source: 'VS Code'
+      # allow-any-unicode-next-line
+      source: '⭐️ VS Code'
       trigger:
         branches:
           include:
