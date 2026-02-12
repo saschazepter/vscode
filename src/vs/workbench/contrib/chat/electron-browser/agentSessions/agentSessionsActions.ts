@@ -27,7 +27,7 @@ export class OpenAgentSessionsWindowAction extends Action2 {
 	async run(accessor: ServicesAccessor) {
 		const nativeHostService = accessor.get(INativeHostService);
 
-		await nativeHostService.openAgenticWindow();
+		await nativeHostService.openSessionsWindow();
 	}
 }
 

@@ -292,12 +292,12 @@ export class WindowsMainService extends Disposable implements IWindowsMainServic
 		this.handleChatRequest(openConfig, [window]);
 	}
 
-	async openAgenticWindow(openConfig: IBaseOpenConfiguration): Promise<ICodeWindow[]> {
-		this.logService.trace('windowsManager#openAgenticWindow');
+	async openSessionsWindow(openConfig: IBaseOpenConfiguration): Promise<ICodeWindow[]> {
+		this.logService.trace('windowsManager#openSessionsWindow');
 
 		const agentSessionsWorkspaceUri = this.environmentMainService.agentSessionsWorkspace;
 		if (!agentSessionsWorkspaceUri) {
-			throw new Error('Agent Sessions workspace is not configured');
+			throw new Error('Sessions workspace is not configured');
 		}
 
 		// Ensure the workspace file exists
