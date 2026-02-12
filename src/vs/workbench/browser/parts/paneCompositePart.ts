@@ -48,7 +48,8 @@ export enum CompositeBarPosition {
 
 export interface IPaneCompositePart extends IView {
 
-	readonly partId: Parts.PANEL_PART | Parts.AUXILIARYBAR_PART | Parts.SIDEBAR_PART;
+	readonly partId: Parts;
+	readonly registryId: string;
 
 	readonly onDidPaneCompositeOpen: Event<IPaneComposite>;
 	readonly onDidPaneCompositeClose: Event<IPaneComposite>;
@@ -142,7 +143,7 @@ export abstract class AbstractPaneCompositePart extends CompositePart<PaneCompos
 		titleForegroundColor: string | undefined,
 		titleBorderColor: string | undefined,
 		protected readonly location: ViewContainerLocation,
-		registryId: string,
+		readonly registryId: string,
 		private readonly globalActionsMenuId: MenuId,
 		@INotificationService notificationService: INotificationService,
 		@IStorageService storageService: IStorageService,
