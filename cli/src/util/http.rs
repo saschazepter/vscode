@@ -176,7 +176,7 @@ impl SimpleHttp for ReqwestSimpleHttp {
 			url: Some(res.url().clone()),
 			read: Box::pin(
 				res.bytes_stream()
-					.map_err(|e| futures::io::Error::other(e))
+					.map_err(futures::io::Error::other)
 					.into_async_read()
 					.compat(),
 			),
