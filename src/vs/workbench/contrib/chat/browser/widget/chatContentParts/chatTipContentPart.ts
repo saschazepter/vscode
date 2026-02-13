@@ -200,7 +200,7 @@ registerAction2(class CloseTipToolbarAction extends Action2 {
 	constructor() {
 		super({
 			id: 'workbench.action.chat.closeTip',
-			title: localize2('chatTip.close', "Close Tip"),
+			title: localize2('chatTip.close', "Close Tips"),
 			icon: Codicon.close,
 			f1: false,
 			menu: [{
