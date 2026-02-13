@@ -264,6 +264,11 @@ class RestoreAuxiliaryBar extends Action2 {
 				group: 'navigation',
 				order: 1,
 				when: AuxiliaryBarMaximizedContext
+			},
+			keybinding: {
+				weight: KeybindingWeight.WorkbenchContrib,
+				primary: KeyMod.CtrlCmd | KeyCode.KeyW,
+				win: { primary: KeyMod.CtrlCmd | KeyCode.F4, secondary: [KeyMod.CtrlCmd | KeyCode.KeyW] },
 			}
 		});
 	}
