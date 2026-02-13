@@ -9,8 +9,11 @@ import { Emitter } from '../../../base/common/event.js';
 import { toAction } from '../../../base/common/actions.js';
 import { Disposable, DisposableStore } from '../../../base/common/lifecycle.js';
 import { URI } from '../../../base/common/uri.js';
+import { localize } from '../../../nls.js';
+import { getDefaultHoverDelegate } from '../../../base/browser/ui/hover/hoverDelegateFactory.js';
 import { isEqual } from '../../../base/common/resources.js';
 import { IContextKeyService, ContextKeyExpr } from '../../../platform/contextkey/common/contextkey.js';
+import { IHoverService } from '../../../platform/hover/browser/hover.js';
 import { IInstantiationService } from '../../../platform/instantiation/common/instantiation.js';
 import { IProductService } from '../../../platform/product/common/productService.js';
 import { ILogService } from '../../../platform/log/common/log.js';
@@ -104,6 +107,7 @@ export class AgentSessionsChatWelcomePart extends Disposable {
 		@IProductService private readonly productService: IProductService,
 		@IChatService private readonly chatService: IChatService,
 		@ILogService private readonly logService: ILogService,
+		@IHoverService private readonly hoverService: IHoverService,
 	) {
 		super();
 
@@ -389,6 +393,12 @@ export class AgentSessionsChatWelcomePart extends Disposable {
 			const labelEl = dom.$('span.chat-full-welcome-target-label', undefined, name);
 			button.appendChild(labelEl);
 
+			// Tooltip explaining what each target does
+			const tooltip = this.getTargetTooltip(sessionType);
+			if (tooltip) {
+				this.contentDisposables.add(this.hoverService.setupManagedHover(getDefaultHoverDelegate('mouse'), button, tooltip));
+			}
+
 			button.classList.toggle('active', sessionType === activeType);
 
 			this.contentDisposables.add(dom.addDisposableListener(button, dom.EventType.CLICK, () => {
@@ -403,6 +413,17 @@ export class AgentSessionsChatWelcomePart extends Disposable {
 		this.targetButtonsContainer?.classList.toggle('has-selection', hasActive);
 
 		dom.getWindow(container).requestAnimationFrame(() => this.updateTargetIndicatorPosition());
+	}
+
+	private getTargetTooltip(sessionType: AgentSessionProviders): string | undefined {
+		switch (sessionType) {
+			case AgentSessionProviders.Background:
+				return localize('target.worktree.tooltip', "Run the agent locally using a git worktree. Changes are made in an isolated branch and can be reviewed before merging.");
+			case AgentSessionProviders.Cloud:
+				return localize('target.cloud.tooltip', "Run the agent in the cloud. The session runs remotely and results are synced back when complete.");
+			default:
+				return undefined;
+		}
 	}
 
 	/**
