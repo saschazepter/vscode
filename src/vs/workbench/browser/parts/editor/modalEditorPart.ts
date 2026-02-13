@@ -29,6 +29,7 @@ import { IHostService } from '../../../services/host/browser/host.js';
 import { IWorkbenchLayoutService, Parts } from '../../../services/layout/browser/layoutService.js';
 import { mainWindow } from '../../../../base/browser/window.js';
 import { localize } from '../../../../nls.js';
+import { CLOSE_MODAL_EDITOR_COMMAND_ID, MOVE_MODAL_EDITOR_TO_MAIN_COMMAND_ID, TOGGLE_MODAL_EDITOR_MAXIMIZED_COMMAND_ID } from './editorCommands.js';
 
 const defaultModalEditorAllowableCommands = new Set([
 	'workbench.action.quit',
@@ -37,6 +38,9 @@ const defaultModalEditorAllowableCommands = new Set([
 	'workbench.action.closeAllEditors',
 	'workbench.action.files.save',
 	'workbench.action.files.saveAll',
+	CLOSE_MODAL_EDITOR_COMMAND_ID,
+	MOVE_MODAL_EDITOR_TO_MAIN_COMMAND_ID,
+	TOGGLE_MODAL_EDITOR_MAXIMIZED_COMMAND_ID
 ]);
 
 export interface ICreateModalEditorPartResult {
