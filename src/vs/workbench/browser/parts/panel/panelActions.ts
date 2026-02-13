@@ -272,6 +272,8 @@ registerAction2(class extends SwitchCompositeViewAction {
 	}
 });
 
+const panelMaximizationSupportedWhen = ContextKeyExpr.or(PanelAlignmentContext.isEqualTo('center'), ContextKeyExpr.and(PanelPositionContext.notEqualsTo('bottom'), PanelPositionContext.notEqualsTo('top')));
+
 registerAction2(class extends Action2 {
 	constructor() {
 		super({
@@ -281,8 +283,7 @@ registerAction2(class extends Action2 {
 			category: Categories.View,
 			f1: true,
 			icon: maximizeIcon,
-			// the workbench grid currently prevents us from supporting panel maximization with non-center panel alignment
-			precondition: ContextKeyExpr.or(PanelAlignmentContext.isEqualTo('center'), ContextKeyExpr.and(PanelPositionContext.notEqualsTo('bottom'), PanelPositionContext.notEqualsTo('top'))),
+			precondition: panelMaximizationSupportedWhen,
 			toggled: {
 				condition: PanelMaximizedContext,
 				icon: maximizeIcon,
@@ -292,8 +293,7 @@ registerAction2(class extends Action2 {
 				id: MenuId.PanelTitle,
 				group: 'navigation',
 				order: 1,
-				// the workbench grid currently prevents us from supporting panel maximization with non-center panel alignment
-				when: ContextKeyExpr.or(PanelAlignmentContext.isEqualTo('center'), ContextKeyExpr.and(PanelPositionContext.notEqualsTo('bottom'), PanelPositionContext.notEqualsTo('top')))
+				when: panelMaximizationSupportedWhen
 			}]
 		});
 	}
