@@ -96,7 +96,6 @@ import { ChatTaskContentPart } from './chatContentParts/chatTaskContentPart.js';
 import { ChatTextEditContentPart } from './chatContentParts/chatTextEditContentPart.js';
 import { ChatThinkingContentPart } from './chatContentParts/chatThinkingContentPart.js';
 import { ChatSubagentContentPart } from './chatContentParts/chatSubagentContentPart.js';
-import { ChatTipContentPart } from './chatContentParts/chatTipContentPart.js';
 import { ChatTreeContentPart, TreePool } from './chatContentParts/chatTreeContentPart.js';
 import { ChatWorkspaceEditContentPart } from './chatContentParts/chatWorkspaceEditContentPart.js';
 import { ChatToolInvocationPart } from './chatContentParts/toolInvocationParts/chatToolInvocationPart.js';
@@ -186,8 +185,6 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 	private readonly pendingQuestionCarousels = new ResourceMap<Set<ChatQuestionCarouselPart>>();
 	private readonly _autoRepliedQuestionCarousels = new Set<string>();
 	private readonly _autoReply: ChatQuestionCarouselAutoReply;
-
-	private _activeTipPart: ChatTipContentPart | undefined;
 
 	private readonly _notifiedQuestionCarousels = new Set<string>();
 	private readonly _questionCarouselToast = this._register(new DisposableStore());
@@ -306,17 +303,7 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		return Iterable.concat(this._editorPool.inUse(), this._toolEditorPool.inUse());
 	}
 
-	hasTipFocus(): boolean {
-		return this._activeTipPart?.hasFocus() ?? false;
-	}
 
-	focusTip(): boolean {
-		if (!this._activeTipPart) {
-			return false;
-		}
-		this._activeTipPart.focus();
-		return true;
-	}
 
 	private traceLayout(method: string, message: string) {
 		if (forceVerboseLayoutTracing) {
