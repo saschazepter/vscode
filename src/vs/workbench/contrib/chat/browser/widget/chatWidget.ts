@@ -164,6 +164,7 @@ const supportsAllAttachments: Required<IChatAgentAttachmentCapabilities> = {
 	supportsProblemAttachments: true,
 	supportsSymbolAttachments: true,
 	supportsTerminalAttachments: true,
+	supportsPromptAttachments: true,
 };
 
 const DISCLAIMER = localize('chatDisclaimer', "AI responses may be inaccurate.");
@@ -315,6 +316,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 				.parseChatRequest(this.viewModel.sessionResource, this.getInput(), this.location, {
 					selectedAgent: this._lastSelectedAgent,
 					mode: this.input.currentModeKind,
+					attachmentCapabilities: this.attachmentCapabilities,
 					forcedAgent: this._lockedAgent?.id ? this.chatAgentService.getAgent(this._lockedAgent.id) : undefined
 				});
 			this._onDidChangeParsedInput.fire();
@@ -767,7 +769,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		}
 
 		const previous = this.parsedChatRequest;
-		this.parsedChatRequest = this.instantiationService.createInstance(ChatRequestParser).parseChatRequest(this.viewModel.sessionResource, this.getInput(), this.location, { selectedAgent: this._lastSelectedAgent, mode: this.input.currentModeKind });
+		this.parsedChatRequest = this.instantiationService.createInstance(ChatRequestParser).parseChatRequest(this.viewModel.sessionResource, this.getInput(), this.location, { selectedAgent: this._lastSelectedAgent, mode: this.input.currentModeKind, attachmentCapabilities: this.attachmentCapabilities });
 		if (!previous || !IParsedChatRequest.equals(previous, this.parsedChatRequest)) {
 			this._onDidChangeParsedInput.fire();
 		}
