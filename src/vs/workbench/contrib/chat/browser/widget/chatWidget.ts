@@ -403,6 +403,23 @@ export class ChatWidget extends Disposable implements IChatWidget {
 
 		this._register(this.chatEntitlementService.onDidChangeAnonymous(() => this.renderWelcomeViewContentIfNeeded()));
 
+		this._register(this.configurationService.onDidChangeConfiguration(e => {
+			if (e.affectsConfiguration('chat.tips.enabled')) {
+				if (!this.configurationService.getValue<boolean>('chat.tips.enabled')) {
+					// Clear the existing tip so it doesn't linger
+					if (this.inputPart) {
+						this._gettingStartedTipPartRef = undefined;
+						this._gettingStartedTipPart.clear();
+						const tipContainer = this.inputPart.gettingStartedTipContainerElement;
+						dom.clearNode(tipContainer);
+						dom.setVisibility(false, tipContainer);
+					}
+				} else {
+					this.updateChatViewVisibility();
+				}
+			}
+		}));
+
 		this._register(bindContextKey(decidedChatEditingResourceContextKey, contextKeyService, (reader) => {
 			const currentSession = this._editingSession.read(reader);
 			if (!currentSession) {
