@@ -246,7 +246,7 @@ class RestoreAuxiliaryBar extends Action2 {
 		super({
 			id: RestoreAuxiliaryBar.ID,
 			title: localize2('restoreAuxiliaryBar', 'Restore Secondary Side Bar'),
-			tooltip: localize2('restoreAuxiliaryBar', 'Restore Secondary Side Bar'),
+			tooltip: localize('restoreAuxiliaryBar', 'Restore Secondary Side Bar'),
 			category: Categories.View,
 			f1: true,
 			precondition: AuxiliaryBarMaximizedContext,
