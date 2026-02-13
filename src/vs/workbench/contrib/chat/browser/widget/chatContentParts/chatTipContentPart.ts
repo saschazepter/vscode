@@ -33,8 +33,6 @@ export class ChatTipContentPart extends Disposable {
 	private readonly _renderedContent = this._register(new MutableDisposable());
 	private readonly _toolbar = this._register(new MutableDisposable<MenuWorkbenchToolBar>());
 
-	private _suppressNextDismissHandler = false;
-
 	private readonly _inChatTipContextKey: IContextKey<boolean>;
 
 	constructor(
@@ -63,16 +61,16 @@ export class ChatTipContentPart extends Disposable {
 		this._renderTip(tip);
 
 		this._register(this._chatTipService.onDidDismissTip(() => {
-			if (this._suppressNextDismissHandler) {
-				this._suppressNextDismissHandler = false;
-				return;
-			}
 			const nextTip = this._getNextTip();
 			if (nextTip) {
 				this._renderTip(nextTip);
 			} else {
 				this._onDidHide.fire();
 			}
+		}));
+
+		this._register(this._chatTipService.onDidNavigateTip(tip => {
+			this._renderTip(tip);
 		}));
 
 		this._register(this._chatTipService.onDidDisableTips(() => {
