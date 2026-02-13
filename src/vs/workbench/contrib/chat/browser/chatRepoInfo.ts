@@ -14,6 +14,7 @@ import { ILogService } from '../../../../platform/log/common/log.js';
 import { Registry } from '../../../../platform/registry/common/platform.js';
 import { IWorkbenchContribution } from '../../../common/contributions.js';
 import { IChatEntitlementService } from '../../../services/chat/common/chatEntitlementService.js';
+import { detectEncodingFromBuffer } from '../../../services/textfile/common/encoding.js';
 import { ISCMService, ISCMResource } from '../../scm/common/scm.js';
 import { IChatService } from '../common/chatService/chatService.js';
 import { ChatConfiguration } from '../common/constants.js';
@@ -23,6 +24,11 @@ import * as nls from '../../../../nls.js';
 const MAX_CHANGES = 100;
 const MAX_DIFFS_SIZE_BYTES = 900 * 1024;
 const MAX_SESSIONS_WITH_FULL_DIFFS = 5;
+/**
+ * Maximum size (in bytes) for a single file to be read for diffing.
+ * Files larger than this are skipped to avoid excessive memory usage.
+ */
+const MAX_DIFF_FILE_SIZE = 1024 * 1024; // 1 MB
 /**
  * Regex to match `url = <remote-url>` lines in git config.
  */
@@ -102,6 +108,19 @@ function determineChangeType(resource: ISCMResource, groupId: string): 'added' |
 }
 
 /**
+ * Reads a file for diffing purposes. Returns the text content, or
+ * `undefined` if the file is binary or exceeds the size limit.
+ */
+async function readFileForDiff(fileService: IFileService, uri: URI): Promise<string | undefined> {
+	const file = await fileService.readFile(uri, { limits: { size: MAX_DIFF_FILE_SIZE } });
+	const detected = detectEncodingFromBuffer({ buffer: file.value, bytesRead: file.value.byteLength });
+	if (detected.seemsBinary) {
+		return undefined;
+	}
+	return file.value.toString();
+}
+
+/**
  * Generates a unified diff string compatible with `git apply`.
  *
  * Note: This implementation has a known limitation - if the only change between
@@ -121,8 +140,11 @@ async function generateUnifiedDiff(
 
 		if (originalUri && changeType !== 'added') {
 			try {
-				const originalFile = await fileService.readFile(originalUri);
-				originalContent = originalFile.value.toString();
+				const content = await readFileForDiff(fileService, originalUri);
+				if (content === undefined) {
+					return undefined;
+				}
+				originalContent = content;
 			} catch {
 				if (changeType === 'modified') {
 					return undefined;
@@ -132,8 +154,11 @@ async function generateUnifiedDiff(
 
 		if (changeType !== 'deleted') {
 			try {
-				const modifiedFile = await fileService.readFile(modifiedUri);
-				modifiedContent = modifiedFile.value.toString();
+				const content = await readFileForDiff(fileService, modifiedUri);
+				if (content === undefined) {
+					return undefined;
+				}
+				modifiedContent = content;
 			} catch {
 				return undefined;
 			}
@@ -597,7 +622,7 @@ export class ChatRepoInfoContribution extends Disposable implements IWorkbenchCo
 				[ChatConfiguration.RepoInfoEnabled]: {
 					type: 'boolean',
 					description: nls.localize('chat.repoInfo.enabled', "Controls whether repository information (branch, commit, working tree diffs) is captured at the start of chat sessions for internal diagnostics."),
-					default: true,
+					default: false,
 				}
 			}
 		});
