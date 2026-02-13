@@ -209,7 +209,7 @@ extends:
             - template: build/azure-pipelines/product-validation-checks.yml@self
 
       - ${{ if or(eq(parameters.VSCODE_BUILD_WIN32, true),eq(parameters.VSCODE_BUILD_WIN32_ARM64, true)) }}:
-        - stage: CompileCLI
+        - stage: CompileCLIWindows
           displayName: Windows CLI
           dependsOn: []
           jobs:
@@ -313,7 +313,7 @@ extends:
           dependsOn:
             - Compile
             - ${{ if or(eq(parameters.VSCODE_BUILD_WIN32, true),eq(parameters.VSCODE_BUILD_WIN32_ARM64, true)) }}:
-              - CompileCLI
+              - CompileCLIWindows
           pool:
             name: 1es-windows-2022-x64
             os: windows
