@@ -60,7 +60,6 @@ export class ModalEditorPart {
 
 		// Create modal container
 		const modalElement = $('.monaco-modal-editor-block.dimmed');
-		modalElement.tabIndex = -1;
 		this.layoutService.mainContainer.appendChild(modalElement);
 		disposables.add(toDisposable(() => modalElement.remove()));
 
@@ -71,7 +70,8 @@ export class ModalEditorPart {
 		const editorPartContainer = $('.part.editor.modal-editor-part', {
 			role: 'dialog',
 			'aria-modal': 'true',
-			'aria-labelledby': titleId
+			'aria-labelledby': titleId,
+			tabIndex: 0
 		});
 		shadowElement.appendChild(editorPartContainer);
 
@@ -121,6 +121,7 @@ export class ModalEditorPart {
 		// Handle double-click on header to toggle maximize
 		disposables.add(addDisposableListener(headerElement, EventType.DBLCLICK, e => {
 			EventHelper.stop(e);
+
 			editorPart.toggleMaximized();
 		}));
 
