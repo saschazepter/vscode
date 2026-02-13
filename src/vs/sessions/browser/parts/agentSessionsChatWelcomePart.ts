@@ -138,7 +138,7 @@ export class AgentSessionsChatWelcomePart extends Disposable {
 		// Listen for target changes from the target config
 		this._register(this._targetConfig.onDidChangeSelectedTarget(() => {
 			this.updateTargetButtonStates();
-			this.renderExtensionPickers();
+			this.renderExtensionPickers(true);
 		}));
 
 		// Listen for allowed targets changes (runtime additions/removals)
@@ -148,7 +148,7 @@ export class AgentSessionsChatWelcomePart extends Disposable {
 				dom.clearNode(this.targetButtonsContainer);
 				this.renderTargetButtons(this.targetButtonsContainer);
 			}
-			this.renderExtensionPickers();
+			this.renderExtensionPickers(true);
 		}));
 
 		this.buildContent();
@@ -253,8 +253,12 @@ export class AgentSessionsChatWelcomePart extends Disposable {
 
 	/**
 	 * Render only the extension-contributed pickers (not the target buttons).
+	 *
+	 * Skips the full teardown + rebuild when the set of visible group IDs
+	 * hasn't changed. Value-only changes are already handled by the
+	 * per-group emitters (via `syncOptionsFromSession` or `setOption`).
 	 */
-	private renderExtensionPickers(): void {
+	private renderExtensionPickers(force?: boolean): void {
 		if (!this.extensionPickersContainer || !this.separatorElement) {
 			return;
 		}
@@ -288,6 +292,16 @@ export class AgentSessionsChatWelcomePart extends Disposable {
 			this.clearExtensionPickers();
 			this.separatorElement.classList.add('hidden');
 			return;
+		}
+
+		// Skip teardown + rebuild if the same groups are already rendered.
+		// Value updates flow through per-group emitters without needing
+		// to destroy and recreate full picker widgets.
+		if (!force && this.pickerWidgets.size === visibleGroups.length) {
+			const allMatch = visibleGroups.every(g => this.pickerWidgets.has(g.id));
+			if (allMatch) {
+				return;
+			}
 		}
 
 		this.clearExtensionPickers();
@@ -541,7 +555,7 @@ export class AgentSessionsChatWelcomePart extends Disposable {
 	 */
 	public resetSelectedOptions(): void {
 		this._selectedOptions.clear();
-		this.renderExtensionPickers();
+		this.renderExtensionPickers(true);
 	}
 
 	/**
