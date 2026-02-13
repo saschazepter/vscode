@@ -15,6 +15,7 @@ import { generateUuid } from '../../../base/common/uuid.js';
 import { BrowserViewUri } from '../common/browserViewUri.js';
 import { IWindowsMainService } from '../../windows/electron-main/windows.js';
 import { BrowserSession } from './browserSession.js';
+import { BrowserViewCDPProxyServer } from './browserViewCDPProxyServer.js';
 import { IProductService } from '../../product/common/productService.js';
 import { CDPBrowserProxy } from '../common/cdp/proxy.js';
 
@@ -44,6 +45,8 @@ export class BrowserViewMainService extends Disposable implements IBrowserViewMa
 	private readonly _onTargetDestroyed = this._register(new Emitter<BrowserView>());
 	readonly onTargetDestroyed: Event<BrowserView> = this._onTargetDestroyed.event;
 
+	private readonly cdpProxyServer: BrowserViewCDPProxyServer;
+
 	constructor(
 		@IEnvironmentMainService private readonly environmentMainService: IEnvironmentMainService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
@@ -51,6 +54,8 @@ export class BrowserViewMainService extends Disposable implements IBrowserViewMa
 		@IProductService private readonly productService: IProductService
 	) {
 		super();
+
+		this.cdpProxyServer = this._register(instantiationService.createInstance(BrowserViewCDPProxyServer, this));
 	}
 
 	/**
@@ -358,5 +363,9 @@ export class BrowserViewMainService extends Disposable implements IBrowserViewMa
 			this.environmentMainService.workspaceStorageHome
 		);
 		await browserSession.electronSession.clearData();
+	}
+
+	async getDebugWebSocketEndpoint(): Promise<string> {
+		return this.cdpProxyServer.getWebSocketEndpoint();
 	}
 }
