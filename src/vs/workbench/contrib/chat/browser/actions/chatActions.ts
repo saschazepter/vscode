@@ -941,6 +941,29 @@ export function registerChatActions() {
 		}
 	});
 
+	registerAction2(class ToggleShowContextUsageAction extends Action2 {
+		constructor() {
+			super({
+				id: 'workbench.action.chat.toggleShowContextUsage',
+				title: localize2('chat.showContextUsage', "Show Context Usage"),
+				category: CHAT_CATEGORY,
+				toggled: ContextKeyExpr.equals(`config.${ChatConfiguration.ChatContextUsageEnabled}`, true),
+				menu: {
+					id: MenuId.ChatWelcomeContext,
+					group: '1_display',
+					order: 1,
+					when: ChatContextKeys.inChatEditor.negate()
+				}
+			});
+		}
+
+		async run(accessor: ServicesAccessor): Promise<void> {
+			const configurationService = accessor.get(IConfigurationService);
+			const currentValue = configurationService.getValue<boolean>(ChatConfiguration.ChatContextUsageEnabled);
+			await configurationService.updateValue(ChatConfiguration.ChatContextUsageEnabled, !currentValue);
+		}
+	});
+
 	const nonEnterpriseCopilotUsers = ContextKeyExpr.and(ChatContextKeys.enabled, ContextKeyExpr.notEquals(`config.${defaultChat.completionsAdvancedSetting}.authProvider`, defaultChat.provider.enterprise.id));
 	registerAction2(class extends Action2 {
 		constructor() {

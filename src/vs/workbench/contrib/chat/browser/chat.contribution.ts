@@ -459,6 +459,11 @@ configurationRegistry.registerConfiguration({
 			default: false,
 			description: nls.localize('chat.viewProgressBadge.enabled', "Show a progress badge on the chat view when an agent session is in progress that is opened in that view."),
 		},
+		[ChatConfiguration.ChatContextUsageEnabled]: {
+			type: 'boolean',
+			default: true,
+			description: nls.localize('chat.contextUsage.enabled', "Show the context window usage indicator in the chat input."),
+		},
 		[ChatConfiguration.NotifyWindowOnResponseReceived]: {
 			type: 'boolean',
 			default: true,
