@@ -50,36 +50,6 @@ import { IViewsService } from '../../../../workbench/services/views/common/views
 const $ = DOM.$;
 export const SessionsViewId = 'agentic.workbench.view.sessionsView';
 const SessionsViewFilterSubMenu = new MenuId('AgentSessionsViewFilterSubMenu');
-const SessionsViewToolbar = new MenuId('SessionsViewToolbar');
-
-// Register actions on the sessions-specific toolbar
-MenuRegistry.appendMenuItem(SessionsViewToolbar, {
-	command: {
-		id: 'agentSessionsViewer.refresh',
-		title: localize2('refresh', "Refresh"),
-		icon: Codicon.refresh,
-	},
-	group: 'navigation',
-	order: 1,
-});
-
-MenuRegistry.appendMenuItem(SessionsViewToolbar, {
-	command: {
-		id: 'agentSessionsViewer.find',
-		title: localize2('find', "Find"),
-		icon: Codicon.search,
-	},
-	group: 'navigation',
-	order: 2,
-});
-
-MenuRegistry.appendMenuItem(SessionsViewToolbar, {
-	submenu: SessionsViewFilterSubMenu,
-	title: localize2('filterSessions', "Filter Sessions"),
-	group: 'navigation',
-	order: 3,
-	icon: Codicon.filter,
-} satisfies ISubmenuItem);
 
 /**
  * Per-source breakdown of item counts.
@@ -184,19 +154,6 @@ export class AgenticSessionsViewPane extends ViewPane {
 
 		// Sessions section (top, fills available space)
 		const sessionsSection = DOM.append(sessionsContainer, $('.agent-sessions-section'));
-
-		// Sessions header with toolbar
-		const sessionsHeader = DOM.append(sessionsSection, $('.agent-sessions-header'));
-
-		// Header text
-		const sessionsHeaderText = DOM.append(sessionsHeader, $('span.agent-sessions-header-text'));
-		sessionsHeaderText.textContent = localize('sessions', "SESSIONS");
-
-		// Toolbar with filter, refresh, etc.
-		const sessionsToolbarContainer = DOM.append(sessionsHeader, $('.agent-sessions-header-toolbar'));
-		const sessionsToolbar = this._register(this.instantiationService.createInstance(MenuWorkbenchToolBar, sessionsToolbarContainer, SessionsViewToolbar, {
-			menuOptions: { shouldForwardArgs: true }
-		}));
 
 		// Sessions content container
 		const sessionsContent = DOM.append(sessionsSection, $('.agent-sessions-content'));
