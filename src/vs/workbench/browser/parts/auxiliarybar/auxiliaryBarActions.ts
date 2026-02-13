@@ -280,7 +280,6 @@ class ToggleMaximizedAuxiliaryBar extends Action2 {
 			icon: maximizeIcon,
 			toggled: {
 				condition: AuxiliaryBarMaximizedContext,
-				icon: maximizeIcon,
 				tooltip: localize('restoreAuxiliaryBar', 'Restore Secondary Side Bar'),
 			},
 			menu: {

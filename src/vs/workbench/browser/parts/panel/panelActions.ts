@@ -286,7 +286,6 @@ registerAction2(class extends Action2 {
 			precondition: panelMaximizationSupportedWhen,
 			toggled: {
 				condition: PanelMaximizedContext,
-				icon: maximizeIcon,
 				tooltip: localize('minimizePanel', "Restore Panel")
 			},
 			menu: [{
