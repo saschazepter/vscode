@@ -656,8 +656,7 @@ export class ChatTipService extends Disposable implements IChatTipService {
 		}
 
 		// Only show tips in the main chat panel, not in terminal/editor inline chat
-		const location = contextKeyService.getContextKeyValue<ChatAgentLocation>(ChatContextKeys.location.key);
-		if (location && location !== ChatAgentLocation.Chat) {
+		if (!this._isChatLocation(contextKeyService)) {
 			return undefined;
 		}
 
@@ -700,8 +699,7 @@ export class ChatTipService extends Disposable implements IChatTipService {
 		}
 
 		// Only show tips in the main chat panel, not in terminal/editor inline chat
-		const location = contextKeyService.getContextKeyValue<ChatAgentLocation>(ChatContextKeys.location.key);
-		if (location && location !== ChatAgentLocation.Chat) {
+		if (!this._isChatLocation(contextKeyService)) {
 			return undefined;
 		}
 
@@ -779,6 +777,11 @@ export class ChatTipService extends Disposable implements IChatTipService {
 		}
 		this._logService.debug('#ChatTips: tip is eligible', tip.id);
 		return true;
+	}
+
+	private _isChatLocation(contextKeyService: IContextKeyService): boolean {
+		const location = contextKeyService.getContextKeyValue<ChatAgentLocation>(ChatContextKeys.location.key);
+		return !location || location === ChatAgentLocation.Chat;
 	}
 
 	private _isCopilotEnabled(): boolean {
