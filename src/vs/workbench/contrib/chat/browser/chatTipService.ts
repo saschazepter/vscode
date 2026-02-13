@@ -53,19 +53,7 @@ export interface IChatTipService {
 	readonly onDidDisableTips: Event<void>;
 
 	/**
-	 * Gets a tip to show for a request, or undefined if a tip has already been shown this session.
-	 * Only one tip is shown per conversation session (resets when switching conversations).
-	 * Tips are suppressed if a welcome tip was already shown in this session.
-	 * Tips are only shown for requests created after the current session started.
-	 * @param requestId The unique ID of the request (used for stable rerenders).
-	 * @param requestTimestamp The timestamp when the request was created.
-	 * @param contextKeyService The context key service to evaluate tip eligibility.
-	 */
-	getNextTip(requestId: string, requestTimestamp: number, contextKeyService: IContextKeyService): IChatTip | undefined;
-
-	/**
 	 * Gets a tip to show on the welcome/getting-started view.
-	 * Unlike {@link getNextTip}, this does not require a request and skips request-timestamp checks.
 	 * Returns the same tip on repeated calls for stable rerenders.
 	 */
 	getWelcomeTip(contextKeyService: IContextKeyService): IChatTip | undefined;
@@ -510,19 +498,6 @@ export class ChatTipService extends Disposable implements IChatTipService {
 	readonly onDidDisableTips = this._onDidDisableTips.event;
 
 	/**
-	 * Timestamp when the current session started.
-	 * Used to only show tips for requests created after this time.
-	 * Resets on each {@link resetSession} call.
-	 */
-	private _sessionStartedAt = Date.now();
-
-	/**
-	 * Whether a chatResponse tip has already been shown in this conversation
-	 * session. Only one response tip is shown per session.
-	 */
-	private _hasShownRequestTip = false;
-
-	/**
 	 * The request ID that was assigned a tip (for stable rerenders).
 	 */
 	private _tipRequestId: string | undefined;
@@ -548,10 +523,8 @@ export class ChatTipService extends Disposable implements IChatTipService {
 	}
 
 	resetSession(): void {
-		this._hasShownRequestTip = false;
 		this._shownTip = undefined;
 		this._tipRequestId = undefined;
-		this._sessionStartedAt = Date.now();
 	}
 
 	dismissTip(): void {
@@ -560,7 +533,6 @@ export class ChatTipService extends Disposable implements IChatTipService {
 			dismissed.push(this._shownTip.id);
 			this._storageService.store(ChatTipService._DISMISSED_TIP_KEY, JSON.stringify(dismissed), StorageScope.PROFILE, StorageTarget.MACHINE);
 		}
-		this._hasShownRequestTip = false;
 		this._shownTip = undefined;
 		this._tipRequestId = undefined;
 		this._onDidDismissTip.fire();
@@ -592,61 +564,16 @@ export class ChatTipService extends Disposable implements IChatTipService {
 	}
 
 	hideTip(): void {
-		this._hasShownRequestTip = false;
 		this._shownTip = undefined;
 		this._tipRequestId = undefined;
 		this._onDidHideTip.fire();
 	}
 
 	async disableTips(): Promise<void> {
-		this._hasShownRequestTip = false;
 		this._shownTip = undefined;
 		this._tipRequestId = undefined;
 		await this._configurationService.updateValue('chat.tips.enabled', false);
 		this._onDidDisableTips.fire();
-	}
-
-	getNextTip(requestId: string, requestTimestamp: number, contextKeyService: IContextKeyService): IChatTip | undefined {
-		// Check if tips are enabled
-		if (!this._configurationService.getValue<boolean>('chat.tips.enabled')) {
-			return undefined;
-		}
-
-		// Only show tips for Copilot
-		if (!this._isCopilotEnabled()) {
-			return undefined;
-		}
-
-		// Only show tips in the main chat panel, not in terminal/editor inline chat
-		if (!this._isChatLocation(contextKeyService)) {
-			return undefined;
-		}
-
-		// Check if this is the request that was assigned a tip (for stable rerenders)
-		if (this._tipRequestId === requestId && this._shownTip) {
-			return this._createTip(this._shownTip);
-		}
-
-		// A new request arrived while we already showed a tip, hide the old one
-		if (this._hasShownRequestTip && this._tipRequestId && this._tipRequestId !== requestId) {
-			this._shownTip = undefined;
-			this._tipRequestId = undefined;
-			this._onDidDismissTip.fire();
-			return undefined;
-		}
-
-		// Only show one tip per session
-		if (this._hasShownRequestTip) {
-			return undefined;
-		}
-
-		// Only show tips for requests created after the current session started.
-		// This prevents showing tips for old requests being re-rendered.
-		if (requestTimestamp < this._sessionStartedAt) {
-			return undefined;
-		}
-
-		return this._pickTip(requestId, contextKeyService);
 	}
 
 	getWelcomeTip(contextKeyService: IContextKeyService): IChatTip | undefined {
@@ -722,7 +649,6 @@ export class ChatTipService extends Disposable implements IChatTipService {
 		this._storageService.store(ChatTipService._LAST_TIP_ID_KEY, selectedTip.id, StorageScope.PROFILE, StorageTarget.USER);
 
 		// Record that we've shown a tip this session
-		this._hasShownRequestTip = sourceId !== 'welcome';
 		this._tipRequestId = sourceId;
 		this._shownTip = selectedTip;
 

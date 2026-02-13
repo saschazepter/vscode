@@ -105,7 +105,6 @@ import { ChatEditorOptions } from './chatOptions.js';
 import { ChatCodeBlockContentProvider, CodeBlockPart } from './chatContentParts/codeBlockPart.js';
 import { autorun, observableValue } from '../../../../../base/common/observable.js';
 import { isEqual } from '../../../../../base/common/resources.js';
-import { IChatTipService } from '../chatTipService.js';
 import { IAccessibilityService } from '../../../../../platform/accessibility/common/accessibility.js';
 import { ChatHookContentPart } from './chatContentParts/chatHookContentPart.js';
 import { ChatPendingDragController } from './chatPendingDragAndDrop.js';
@@ -259,7 +258,6 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		@IChatWidgetService private readonly chatWidgetService: IChatWidgetService,
 		@IChatEntitlementService private readonly chatEntitlementService: IChatEntitlementService,
 		@IChatService private readonly chatService: IChatService,
-		@IChatTipService private readonly chatTipService: IChatTipService,
 		@IHostService private readonly hostService: IHostService,
 		@IAccessibilitySignalService private readonly accessibilitySignalService: IAccessibilitySignalService,
 		@IAccessibilityService private readonly accessibilityService: IAccessibilityService,
@@ -1075,32 +1073,6 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 
 		dom.clearNode(templateData.value);
 		const parts: IChatContentPart[] = [];
-
-		// Render tip above the request message (if available)
-		const tip = this.chatTipService.getNextTip(element.id, element.timestamp, this.contextKeyService);
-		if (tip) {
-			const tipPart = this.instantiationService.createInstance(ChatTipContentPart,
-				tip,
-				this.chatContentMarkdownRenderer,
-				() => this.chatTipService.getNextTip(element.id, element.timestamp, this.contextKeyService),
-			);
-			templateData.value.appendChild(tipPart.domNode);
-			this._activeTipPart = tipPart;
-			templateData.elementDisposables.add(tipPart);
-			templateData.elementDisposables.add(tipPart.onDidHide(() => {
-				tipPart.domNode.remove();
-				if (this._activeTipPart === tipPart) {
-					this._activeTipPart = undefined;
-				}
-			}));
-			templateData.elementDisposables.add({
-				dispose: () => {
-					if (this._activeTipPart === tipPart) {
-						this._activeTipPart = undefined;
-					}
-				}
-			});
-		}
 
 		let inlineSlashCommandRendered = false;
 		content.forEach((data, contentIndex) => {
