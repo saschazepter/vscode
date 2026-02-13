@@ -19,7 +19,7 @@ import { ChatTipService, ITipDefinition, TipEligibilityTracker } from '../../bro
 import { AgentFileType, IPromptPath, IPromptsService, IResolvedAgentFile, PromptsStorage } from '../../common/promptSyntax/service/promptsService.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
-import { ChatModeKind } from '../../common/constants.js';
+import { ChatAgentLocation, ChatModeKind } from '../../common/constants.js';
 import { PromptsType } from '../../common/promptSyntax/promptTypes.js';
 import { ILanguageModelToolsService, IToolData, ToolDataSource } from '../../common/tools/languageModelToolsService.js';
 import { MockLanguageModelToolsService } from '../common/tools/mockLanguageModelToolsService.js';
@@ -140,6 +140,28 @@ suite('ChatTipService', () => {
 
 		const tip = service.getNextTip('request-1', now + 1000, contextKeyService);
 		assert.strictEqual(tip, undefined, 'Should not return a tip when tips setting is disabled');
+	});
+
+	test('returns undefined when location is terminal', () => {
+		const service = createService();
+		const now = Date.now();
+
+		const terminalContextKeyService = new MockContextKeyServiceWithRulesMatching();
+		terminalContextKeyService.createKey(ChatContextKeys.location.key, ChatAgentLocation.Terminal);
+
+		const tip = service.getNextTip('request-1', now + 1000, terminalContextKeyService);
+		assert.strictEqual(tip, undefined, 'Should not return a tip in terminal inline chat');
+	});
+
+	test('returns undefined when location is editor inline', () => {
+		const service = createService();
+		const now = Date.now();
+
+		const editorContextKeyService = new MockContextKeyServiceWithRulesMatching();
+		editorContextKeyService.createKey(ChatContextKeys.location.key, ChatAgentLocation.EditorInline);
+
+		const tip = service.getNextTip('request-1', now + 1000, editorContextKeyService);
+		assert.strictEqual(tip, undefined, 'Should not return a tip in editor inline chat');
 	});
 
 	test('old requests do not consume the session tip allowance', () => {

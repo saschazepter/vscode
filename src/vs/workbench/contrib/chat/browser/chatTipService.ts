@@ -9,7 +9,7 @@ import { ContextKeyExpr, ContextKeyExpression, IContextKeyService } from '../../
 import { createDecorator, IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { IProductService } from '../../../../platform/product/common/productService.js';
 import { ChatContextKeys } from '../common/actions/chatContextKeys.js';
-import { ChatModeKind } from '../common/constants.js';
+import { ChatAgentLocation, ChatModeKind } from '../common/constants.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { Disposable, MutableDisposable } from '../../../../base/common/lifecycle.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
@@ -655,6 +655,11 @@ export class ChatTipService extends Disposable implements IChatTipService {
 			return undefined;
 		}
 
+		// Only show tips in the main chat panel, not in terminal/editor inline chat
+		if (!this._isChatLocation(contextKeyService)) {
+			return undefined;
+		}
+
 		// Check if this is the request that was assigned a tip (for stable rerenders)
 		if (this._tipRequestId === requestId && this._shownTip) {
 			return this._createTip(this._shownTip);
@@ -690,6 +695,11 @@ export class ChatTipService extends Disposable implements IChatTipService {
 
 		// Only show tips for Copilot
 		if (!this._isCopilotEnabled()) {
+			return undefined;
+		}
+
+		// Only show tips in the main chat panel, not in terminal/editor inline chat
+		if (!this._isChatLocation(contextKeyService)) {
 			return undefined;
 		}
 
@@ -767,6 +777,11 @@ export class ChatTipService extends Disposable implements IChatTipService {
 		}
 		this._logService.debug('#ChatTips: tip is eligible', tip.id);
 		return true;
+	}
+
+	private _isChatLocation(contextKeyService: IContextKeyService): boolean {
+		const location = contextKeyService.getContextKeyValue<ChatAgentLocation>(ChatContextKeys.location.key);
+		return !location || location === ChatAgentLocation.Chat;
 	}
 
 	private _isCopilotEnabled(): boolean {
