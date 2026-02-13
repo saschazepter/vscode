@@ -5,7 +5,7 @@
 
 import { localize } from '../../nls.js';
 import product from '../../platform/product/common/product.js';
-import { INativeWindowConfiguration, IWindowsConfiguration } from '../../platform/window/common/window.js';
+import { INativeWindowConfiguration, IWindowsConfiguration, hasNativeMenu } from '../../platform/window/common/window.js';
 import { NativeWindow } from '../../workbench/electron-browser/window.js';
 import { setFullscreen } from '../../base/browser/browser.js';
 import { domContentLoaded } from '../../base/browser/dom.js';
@@ -65,6 +65,7 @@ import { DefaultAccountService } from '../../workbench/services/accounts/browser
 import { AccountPolicyService } from '../../workbench/services/policies/common/accountPolicyService.js';
 import { MultiplexPolicyService } from '../../workbench/services/policies/common/multiplexPolicyService.js';
 import { Workbench as AgenticWorkbench } from '../browser/workbench.js';
+import { NativeMenubarControl } from '../../workbench/electron-browser/parts/titlebar/menubarControl.js';
 
 export class AgenticMain extends Disposable {
 
@@ -132,6 +133,11 @@ export class AgenticMain extends Disposable {
 
 		// Window
 		this._register(instantiationService.createInstance(NativeWindow));
+
+		// Native menu controller
+		if (isMacintosh || hasNativeMenu(services.configurationService)) {
+			this._register(instantiationService.createInstance(NativeMenubarControl));
+		}
 	}
 
 	private applyWindowZoomLevel(configurationService: IConfigurationService) {
