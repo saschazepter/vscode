@@ -28,7 +28,7 @@ steps:
 
   - ${{ if contains(parameters.VSCODE_CLI_TARGET, '-windows-') }}:
     - pwsh: |
-        $version = "0.8.2"
+        $version = "0.14.0"
         $url = "https://github.com/mozilla/sccache/releases/download/v$version/sccache-v$version-x86_64-pc-windows-msvc.zip"
         Invoke-WebRequest -Uri $url -OutFile "$env:TEMP\sccache.zip"
         Expand-Archive -Path "$env:TEMP\sccache.zip" -DestinationPath "$env:TEMP\sccache" -Force
@@ -39,15 +39,11 @@ steps:
   - ${{ else }}:
     - script: |
         set -e
-        SCCACHE_VERSION="0.8.2"
+        SCCACHE_VERSION="0.14.0"
         ARCH=$(uname -m)
         OS=$(uname -s)
         if [ "$OS" = "Darwin" ]; then
-          if [ "$ARCH" = "arm64" ]; then
-            TARGET="aarch64-apple-darwin"
-          else
-            TARGET="x86_64-apple-darwin"
-          fi
+          TARGET="aarch64-apple-darwin"
         elif [ "$OS" = "Linux" ]; then
           if [ "$ARCH" = "aarch64" ]; then
             TARGET="aarch64-unknown-linux-musl"
@@ -57,10 +53,11 @@ steps:
         fi
         FILENAME="sccache-v${SCCACHE_VERSION}-${TARGET}"
         URL="https://github.com/mozilla/sccache/releases/download/v${SCCACHE_VERSION}/${FILENAME}.tar.gz"
+        echo "Downloading sccache from $URL"
         curl -fsSL "$URL" -o /tmp/sccache.tar.gz
         tar -xzf /tmp/sccache.tar.gz -C /tmp
-        cp "/tmp/${FILENAME}/sccache" "$HOME/.cargo/bin/sccache"
-        chmod +x "$HOME/.cargo/bin/sccache"
+        sudo cp "/tmp/${FILENAME}/sccache" /usr/local/bin/sccache
+        sudo chmod +x /usr/local/bin/sccache
         sccache --version
       displayName: Install sccache
 
