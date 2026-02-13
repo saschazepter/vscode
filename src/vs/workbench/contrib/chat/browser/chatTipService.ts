@@ -622,6 +622,11 @@ export class ChatTipService extends Disposable implements IChatTipService {
 			return undefined;
 		}
 
+		// Don't show tips when chat quota is exceeded — the upgrade widget is more relevant
+		if (this._isChatQuotaExceeded(contextKeyService)) {
+			return undefined;
+		}
+
 		// Check if this is the request that was assigned a tip (for stable rerenders)
 		if (this._tipRequestId === requestId && this._shownTip) {
 			return this._createTip(this._shownTip);
@@ -662,6 +667,11 @@ export class ChatTipService extends Disposable implements IChatTipService {
 
 		// Only show tips in the main chat panel, not in terminal/editor inline chat
 		if (!this._isChatLocation(contextKeyService)) {
+			return undefined;
+		}
+
+		// Don't show tips when chat quota is exceeded — the upgrade widget is more relevant
+		if (this._isChatQuotaExceeded(contextKeyService)) {
 			return undefined;
 		}
 
@@ -778,6 +788,10 @@ export class ChatTipService extends Disposable implements IChatTipService {
 	private _isChatLocation(contextKeyService: IContextKeyService): boolean {
 		const location = contextKeyService.getContextKeyValue<ChatAgentLocation>(ChatContextKeys.location.key);
 		return !location || location === ChatAgentLocation.Chat;
+	}
+
+	private _isChatQuotaExceeded(contextKeyService: IContextKeyService): boolean {
+		return contextKeyService.getContextKeyValue<boolean>(ChatContextKeys.chatQuotaExceeded.key) === true;
 	}
 
 	private _isCopilotEnabled(): boolean {

@@ -164,6 +164,27 @@ suite('ChatTipService', () => {
 		assert.strictEqual(tip, undefined, 'Should not return a tip in editor inline chat');
 	});
 
+	test('returns undefined for getNextTip when chat quota is exceeded', () => {
+		const service = createService();
+		const now = Date.now();
+
+		const quotaExceededContextKeyService = new MockContextKeyServiceWithRulesMatching();
+		quotaExceededContextKeyService.createKey(ChatContextKeys.chatQuotaExceeded.key, true);
+
+		const tip = service.getNextTip('request-1', now + 1000, quotaExceededContextKeyService);
+		assert.strictEqual(tip, undefined, 'Should not return a tip when chat quota is exceeded');
+	});
+
+	test('returns undefined for getWelcomeTip when chat quota is exceeded', () => {
+		const service = createService();
+
+		const quotaExceededContextKeyService = new MockContextKeyServiceWithRulesMatching();
+		quotaExceededContextKeyService.createKey(ChatContextKeys.chatQuotaExceeded.key, true);
+
+		const tip = service.getWelcomeTip(quotaExceededContextKeyService);
+		assert.strictEqual(tip, undefined, 'Should not return a welcome tip when chat quota is exceeded');
+	});
+
 	test('old requests do not consume the session tip allowance', () => {
 		const service = createService();
 		const now = Date.now();
