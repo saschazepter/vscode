@@ -6,7 +6,6 @@
 import './media/chatTipContent.css';
 import * as dom from '../../../../../../base/browser/dom.js';
 import { StandardMouseEvent } from '../../../../../../base/browser/mouseEvent.js';
-import { status } from '../../../../../../base/browser/ui/aria/aria.js';
 import { renderIcon } from '../../../../../../base/browser/ui/iconLabel/iconLabels.js';
 import { Codicon } from '../../../../../../base/common/codicons.js';
 import { Emitter } from '../../../../../../base/common/event.js';
@@ -126,7 +125,6 @@ export class ChatTipContentPart extends Disposable {
 			? localize('chatTipWithAction', "{0} Tab to the action.", textContent)
 			: textContent;
 		this.domNode.setAttribute('aria-label', ariaLabel);
-		status(ariaLabel);
 	}
 }
 
