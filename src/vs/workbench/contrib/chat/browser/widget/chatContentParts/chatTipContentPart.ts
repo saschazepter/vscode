@@ -16,6 +16,7 @@ import { MenuWorkbenchToolBar } from '../../../../../../platform/actions/browser
 import { Action2, IMenuService, MenuId, registerAction2 } from '../../../../../../platform/actions/common/actions.js';
 import { IContextKey, IContextKeyService } from '../../../../../../platform/contextkey/common/contextkey.js';
 import { IContextMenuService } from '../../../../../../platform/contextview/browser/contextView.js';
+import { IDialogService } from '../../../../../../platform/dialogs/common/dialogs.js';
 import { IInstantiationService, ServicesAccessor } from '../../../../../../platform/instantiation/common/instantiation.js';
 import { IMarkdownRenderer } from '../../../../../../platform/markdown/browser/markdownRenderer.js';
 import { ChatContextKeys } from '../../../common/actions/chatContextKeys.js';
@@ -244,17 +245,33 @@ registerAction2(class DisableTipsAction extends Action2 {
 		super({
 			id: 'workbench.action.chat.disableTips',
 			title: localize2('chatTip.disableTips', "Disable tips"),
+			icon: Codicon.bellSlash,
 			f1: false,
 			menu: [{
 				id: MenuId.ChatTipContext,
 				group: 'chatTip',
 				order: 2,
+			}, {
+				id: MenuId.ChatTipToolbar,
+				group: 'navigation',
+				order: 5,
 			}]
 		});
 	}
 
 	override async run(accessor: ServicesAccessor): Promise<void> {
-		await accessor.get(IChatTipService).disableTips();
+		const dialogService = accessor.get(IDialogService);
+		const chatTipService = accessor.get(IChatTipService);
+
+		const { confirmed } = await dialogService.confirm({
+			message: localize('chatTip.disableConfirmTitle', "Disable Tips?"),
+			detail: localize('chatTip.disableConfirmDetail', "New tips are added frequently to help you get the most out of chat. You can re-enable tips anytime from the {0} setting.", 'chat.tips.enabled'),
+			primaryButton: localize('chatTip.disableConfirmButton', "Disable Tips"),
+		});
+
+		if (confirmed) {
+			await chatTipService.disableTips();
+		}
 	}
 });
 
