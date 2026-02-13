@@ -18,8 +18,6 @@ export const Menus = {
 	TitleBarCenter: new MenuId('SessionsTitleBarCenter'),
 	TitleBarRight: new MenuId('SessionsTitleBarRight'),
 	OpenSubMenu: new MenuId('SessionsOpenSubMenu'),
-	FloatingToolbar: new MenuId('SessionsFloatingToolbar'),
-	FloatingToolbarRight: new MenuId('SessionsFloatingToolbarRight'),
 	PanelTitle: new MenuId('SessionsPanelTitle'),
 	SidebarTitle: new MenuId('SessionsSidebarTitle'),
 	AuxiliaryBarTitle: new MenuId('SessionsAuxiliaryBarTitle'),

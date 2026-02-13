@@ -117,6 +117,7 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 			ViewContainerLocation.AuxiliaryBar,
 			Extensions.Auxiliary,
 			Menus.AuxiliaryBarTitle,
+			Menus.AuxiliaryBarTitleLeft,
 			notificationService,
 			storageService,
 			contextMenuService,
@@ -252,10 +253,6 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 
 	protected getCompositeBarPosition(): CompositeBarPosition {
 		return CompositeBarPosition.TITLE;
-	}
-
-	protected override getGlobalLeftActionsMenuId(): MenuId {
-		return Menus.AuxiliaryBarTitleLeft;
 	}
 
 	override layout(width: number, height: number, top: number, left: number): void {

@@ -13,7 +13,7 @@ import { ThemeIcon } from '../../../../base/common/themables.js';
 import { URI } from '../../../../base/common/uri.js';
 import { ContextKeyExpr, IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { IContextMenuService } from '../../../../platform/contextview/browser/contextView.js';
-import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
+import { IInstantiationService, ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
 import { IKeybindingService } from '../../../../platform/keybinding/common/keybinding.js';
 import { IOpenerService } from '../../../../platform/opener/common/opener.js';
 import { IThemeService } from '../../../../platform/theme/common/themeService.js';
@@ -25,8 +25,7 @@ import { localize, localize2 } from '../../../../nls.js';
 import { AgentSessionsControl } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsControl.js';
 import { AgentSessionsFilter, AgentSessionsGrouping } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsFilter.js';
 import { IActiveSessionService } from './activeSessionService.js';
-import { ISubmenuItem, MenuId, MenuRegistry } from '../../../../platform/actions/common/actions.js';
-import { MenuWorkbenchToolBar } from '../../../../platform/actions/browser/toolbar.js';
+import { Action2, ISubmenuItem, MenuId, MenuRegistry, registerAction2 } from '../../../../platform/actions/common/actions.js';
 import { HoverPosition } from '../../../../base/browser/ui/hover/hoverWidget.js';
 import { IWorkbenchLayoutService } from '../../../../workbench/services/layout/browser/layoutService.js';
 import { Button } from '../../../../base/browser/ui/button/button.js';
@@ -45,6 +44,7 @@ import { ILanguageModelsService } from '../../../../workbench/contrib/chat/commo
 import { IMcpService } from '../../../../workbench/contrib/mcp/common/mcpTypes.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
+import { IViewsService } from '../../../../workbench/services/views/common/viewsService.js';
 
 const $ = DOM.$;
 export const SessionsViewId = 'agentic.workbench.view.sessionsView';
@@ -76,7 +76,7 @@ export class AgenticSessionsViewPane extends ViewPane {
 	private viewPaneContainer: HTMLElement | undefined;
 	private newSessionButtonContainer: HTMLElement | undefined;
 	private sessionsControlContainer: HTMLElement | undefined;
-	private sessionsControl: AgentSessionsControl | undefined;
+	sessionsControl: AgentSessionsControl | undefined;
 	private aiCustomizationContainer: HTMLElement | undefined;
 	private readonly shortcuts: IShortcutItem[] = [];
 
@@ -153,19 +153,6 @@ export class AgenticSessionsViewPane extends ViewPane {
 		// Sessions section (top, fills available space)
 		const sessionsSection = DOM.append(sessionsContainer, $('.agent-sessions-section'));
 
-		// Sessions header with toolbar
-		const sessionsHeader = DOM.append(sessionsSection, $('.agent-sessions-header'));
-
-		// Header text
-		const sessionsHeaderText = DOM.append(sessionsHeader, $('span.agent-sessions-header-text'));
-		sessionsHeaderText.textContent = localize('sessions', "SESSIONS");
-
-		// Toolbar with filter, refresh, etc.
-		const sessionsToolbarContainer = DOM.append(sessionsHeader, $('.agent-sessions-header-toolbar'));
-		const sessionsToolbar = this._register(this.instantiationService.createInstance(MenuWorkbenchToolBar, sessionsToolbarContainer, MenuId.AgentSessionsToolbar, {
-			menuOptions: { shouldForwardArgs: true }
-		}));
-
 		// Sessions content container
 		const sessionsContent = DOM.append(sessionsSection, $('.agent-sessions-content'));
 
@@ -211,9 +198,6 @@ export class AgenticSessionsViewPane extends ViewPane {
 				}
 			}
 		}));
-
-		// Set toolbar context to sessions control for actions to work
-		sessionsToolbar.context = sessionsControl;
 
 		// AI Customization shortcuts (bottom, fixed height)
 		this.aiCustomizationContainer = DOM.append(sessionsContainer, $('.ai-customization-shortcuts'));
@@ -464,3 +448,47 @@ MenuRegistry.appendMenuItem(MenuId.ViewTitle, {
 	icon: Codicon.filter,
 	when: ContextKeyExpr.equals('view', SessionsViewId)
 } satisfies ISubmenuItem);
+
+registerAction2(class RefreshAgentSessionsViewerAction extends Action2 {
+	constructor() {
+		super({
+			id: 'sessionsView.refresh',
+			title: localize2('refresh', "Refresh Agent Sessions"),
+			icon: Codicon.refresh,
+			menu: [{
+				id: MenuId.ViewTitle,
+				group: 'navigation',
+				order: 1,
+				when: ContextKeyExpr.equals('view', SessionsViewId),
+			}],
+		});
+	}
+	override run(accessor: ServicesAccessor) {
+		const viewsService = accessor.get(IViewsService);
+		const view = viewsService.getViewWithId<AgenticSessionsViewPane>(SessionsViewId);
+		return view?.sessionsControl?.refresh();
+	}
+});
+
+registerAction2(class FindAgentSessionInViewerAction extends Action2 {
+
+	constructor() {
+		super({
+			id: 'sessionsView.find',
+			title: localize2('find', "Find Agent Session"),
+			icon: Codicon.search,
+			menu: [{
+				id: MenuId.ViewTitle,
+				group: 'navigation',
+				order: 2,
+				when: ContextKeyExpr.equals('view', SessionsViewId),
+			}]
+		});
+	}
+
+	override run(accessor: ServicesAccessor) {
+		const viewsService = accessor.get(IViewsService);
+		const view = viewsService.getViewWithId<AgenticSessionsViewPane>(SessionsViewId);
+		return view?.sessionsControl?.openFind();
+	}
+});

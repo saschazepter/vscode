@@ -19,11 +19,11 @@ The Agent Sessions Workbench (`AgenticWorkbench`) provides a simplified, fixed l
 ### 2.1 Visual Representation
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Titlebar               │
-├─────────┬────────────────────────────────────┬──────────────────┤
-│         │              Chat Bar              │  Auxiliary Bar   │
-│ Sidebar ├────────────────────────────────────┴──────────────────┤
+┌─────────┬───────────────────────────────────────────────────────┐
+│         │                    Titlebar                           │
+│         ├────────────────────────────────────┬──────────────────┤
+│ Sidebar │              Chat Bar              │  Auxiliary Bar   │
+│         ├────────────────────────────────────┴──────────────────┤
 │         │                      Panel                            │
 └─────────┴───────────────────────────────────────────────────────┘
 
@@ -49,8 +49,8 @@ The Agent Sessions Workbench (`AgenticWorkbench`) provides a simplified, fixed l
 
 | Part | ID Constant | Position | Default Visibility | ViewContainerLocation |
 |------|-------------|----------|------------|----------------------|
-| Titlebar | `Parts.TITLEBAR_PART` | Top, full width | Always visible | — |
-| Sidebar | `Parts.SIDEBAR_PART` | Left of right section, in main content | Visible | `ViewContainerLocation.Sidebar` |
+| Titlebar | `Parts.TITLEBAR_PART` | Top of right section | Always visible | — |
+| Sidebar | `Parts.SIDEBAR_PART` | Left, spans full height from top to bottom | Visible | `ViewContainerLocation.Sidebar` |
 | Chat Bar | `Parts.CHATBAR_PART` | Top-right section, takes remaining width | Visible | `ViewContainerLocation.ChatBar` |
 | Editor | `Parts.EDITOR_PART` | **Modal overlay** (not in grid) | Hidden | — |
 | Auxiliary Bar | `Parts.AUXILIARYBAR_PART` | Top-right section, right side | Visible | `ViewContainerLocation.AuxiliaryBar` |
@@ -153,18 +153,17 @@ The layout uses `SerializableGrid` from `vs/base/browser/ui/grid/grid.js`.
 The Editor part is **not** in the grid — it is rendered as a modal overlay (see Section 4.3).
 
 ```
-Orientation: VERTICAL (root)
-├── Titlebar (leaf, size: titleBarHeight)
-└── Main Content (branch, HORIZONTAL, size: remaining height)
-    ├── Sidebar (leaf, size: 300px default)
-    └── Right Section (branch, VERTICAL, size: remaining width)
-        ├── Top Right (branch, HORIZONTAL, size: remaining height - panel)
-        │   ├── Chat Bar (leaf, size: remaining width)
-        │   └── Auxiliary Bar (leaf, size: 300px default)
-        └── Panel (leaf, size: 300px default, hidden by default)
+Orientation: HORIZONTAL (root)
+├── Sidebar (leaf, size: 300px default)
+└── Right Section (branch, VERTICAL, size: remaining width)
+    ├── Titlebar (leaf, size: titleBarHeight)
+    ├── Top Right (branch, HORIZONTAL, size: remaining height - panel)
+    │   ├── Chat Bar (leaf, size: remaining width)
+    │   └── Auxiliary Bar (leaf, size: 300px default)
+    └── Panel (leaf, size: 300px default, hidden by default)
 ```
 
-This structure places the panel below only the Chat Bar and Auxiliary Bar, leaving the Sidebar to span the full height of the main content area.
+This structure places the sidebar at the root level spanning the full window height. The titlebar, chat bar, auxiliary bar, and panel are all within the right section.
 
 ### 4.2 Default Sizes
 
@@ -561,9 +560,10 @@ src/vs/sessions/
 When modifying the Agent Sessions layout:
 
 1. **Maintain fixed positions** — Do not add settings-based position customization
-2. **Panel must span full width** — The grid structure requires panel at root level
-3. **New parts go in middle section** — Any new parts should be added to the horizontal branch
-4. **Update this spec** — All changes must be documented here
+2. **Panel must span the right section width** — The grid structure places the panel below Chat Bar and Auxiliary Bar only
+3. **Sidebar spans full window height** — Sidebar is at the root grid level, spanning from top to bottom independently of the titlebar
+4. **New parts go in right section** — Any new parts should be added to the right section alongside Titlebar, Chat Bar, and Auxiliary Bar
+5. **Update this spec** — All changes must be documented here
 5. **Preserve no-op methods** — Unsupported features should remain as no-ops, not throw errors
 6. **Handle pane composite lifecycle** — When hiding/showing parts, manage the associated pane composites
 7. **Use agent session parts** — New functionality for parts should be added to the agent session part classes, not the standard parts
@@ -685,6 +685,7 @@ this._register(new SidebarRevealButton(this.mainContainer, 'right', this));
 
 | Date | Change |
 |------|--------|
+| 2026-02-13 | Changed grid structure: sidebar now spans full window height at root level (HORIZONTAL root orientation); Titlebar moved inside right section; Grid is now `Sidebar \| [Titlebar / TopRight / Panel]` instead of `Titlebar / [Sidebar \| RightSection]`; Panel maximize now excludes both titlebar and sidebar; Floating toolbar positioning no longer depends on titlebar height |
 | 2026-02-11 | Simplified titlebar: replaced `BrowserTitlebarPart`-derived implementation with standalone `TitlebarPart` using three `MenuWorkbenchToolBar` sections (left/center/right); Removed `CommandCenterControl`, `WindowTitle`, layout toolbar, and manual toolbar management; Center section uses `Menus.CommandCenter` which renders session picker via `IActionViewItemService`; Right section uses `Menus.TitleBarRight` which includes account submenu; Removed `commandCenterControl.ts` file |
 | 2026-02-11 | Removed activity actions (Accounts, Manage) from titlebar; Added `AgenticAccount` submenu to `TitleBarRight` with account icon; Menu shows signed-in user label from `IDefaultAccountService` (or Sign In action if no account), Settings, and Check for Updates; Added `AgenticAccountContribution` workbench contribution for dynamic account state; Added `AgenticAccount` menu ID to `Menus` |
 | 2026-02-10 | Titlebar customization now uses class inheritance with protected getter overrides on `BrowserTitlebarPart`; Base class retains original API — no `ITitlebarPartOptions`/`ITitlebarPartConfiguration` removed; `AgenticTitlebarPart` and `AgenticTitleService` in `parts/agenticTitlebarPart.ts` override `isCommandCenterVisible`, `editorActionsEnabled`, `installMenubar()`, and menu ID getters |

@@ -3,6 +3,11 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+/* Hide traffic light spacer in fullscreen (traffic lights are not shown) */
+.monaco-workbench.fullscreen .part.sidebar .window-controls-container {
+	display: none;
+}
+
 /* Sidebar Footer Container */
 .monaco-workbench .part.sidebar > .sidebar-footer {
 	display: flex;

@@ -7,7 +7,7 @@ import '../../../workbench/browser/parts/titlebar/media/titlebarpart.css';
 import './media/titlebarpart.css';
 import { MultiWindowParts, Part } from '../../../workbench/browser/part.js';
 import { ITitleService } from '../../../workbench/services/title/browser/titleService.js';
-import { getZoomFactor, isWCOEnabled, getWCOTitlebarAreaRect } from '../../../base/browser/browser.js';
+import { getZoomFactor, isWCOEnabled, getWCOTitlebarAreaRect, isFullscreen, onDidChangeFullscreen } from '../../../base/browser/browser.js';
 import { hasCustomTitlebar, hasNativeTitlebar, DEFAULT_CUSTOM_TITLEBAR_HEIGHT, TitlebarStyle, getTitleBarStyle, getWindowControlsStyle, WindowControlsStyle } from '../../../platform/window/common/window.js';
 import { IContextMenuService } from '../../../platform/contextview/browser/contextView.js';
 import { StandardMouseEvent } from '../../../base/browser/mouseEvent.js';
@@ -140,7 +140,49 @@ export class TitlebarPart extends Part implements ITitlebarPart {
 		this.centerContent = append(this.rootContainer, $('.titlebar-center'));
 		this.rightContent = append(this.rootContainer, $('.titlebar-right'));
 
-		// Left toolbar (driven by Menus.TitleBarLeft)
+		// Window Controls Container (must be before left toolbar for correct ordering)
+		if (!hasNativeTitlebar(this.configurationService, this.titleBarStyle)) {
+			let primaryWindowControlsLocation = isMacintosh ? 'left' : 'right';
+			if (isMacintosh && isNative) {
+				const localeInfo = safeIntl.Locale(platformLocale).value;
+				const textInfo = (localeInfo as { textInfo?: { direction?: string } }).textInfo;
+				if (textInfo?.direction === 'rtl') {
+					primaryWindowControlsLocation = 'right';
+				}
+			}
+
+			if (isMacintosh && isNative && primaryWindowControlsLocation === 'left') {
+				// macOS native: traffic lights are rendered by the OS at the top-left corner.
+				// Add a fixed-width spacer to push content past the traffic lights.
+				const spacer = append(this.leftContent, $('div.window-controls-container'));
+				spacer.style.width = '70px';
+				spacer.style.flexShrink = '0';
+
+				// Hide spacer in fullscreen (traffic lights are not shown)
+				const updateSpacerVisibility = () => {
+					spacer.style.display = isFullscreen(mainWindow) ? 'none' : '';
+				};
+				updateSpacerVisibility();
+				this._register(onDidChangeFullscreen(windowId => {
+					if (windowId === getWindowId(mainWindow)) {
+						updateSpacerVisibility();
+					}
+				}));
+			} else if (getWindowControlsStyle(this.configurationService) === WindowControlsStyle.HIDDEN) {
+				// controls explicitly disabled
+			} else {
+				this.windowControlsContainer = append(primaryWindowControlsLocation === 'left' ? this.leftContent : this.rightContent, $('div.window-controls-container'));
+				if (isWeb) {
+					append(primaryWindowControlsLocation === 'left' ? this.rightContent : this.leftContent, $('div.window-controls-container'));
+				}
+
+				if (isWCOEnabled()) {
+					this.windowControlsContainer.classList.add('wco-enabled');
+				}
+			}
+		}
+
+		// Left toolbar (driven by Menus.TitleBarLeft, rendered after window controls via CSS order)
 		const leftToolbarContainer = append(this.leftContent, $('div.left-toolbar-container'));
 		this._register(this.instantiationService.createInstance(MenuWorkbenchToolBar, leftToolbarContainer, Menus.TitleBarLeft, {
 			contextMenu: Menus.TitleBarContext,
@@ -167,33 +209,6 @@ export class TitlebarPart extends Part implements ITitlebarPart {
 			telemetrySource: 'titlePart.right',
 			toolbarOptions: { primaryGroup: () => true },
 		}));
-
-		// Window Controls Container
-		if (!hasNativeTitlebar(this.configurationService, this.titleBarStyle)) {
-			let primaryWindowControlsLocation = isMacintosh ? 'left' : 'right';
-			if (isMacintosh && isNative) {
-				const localeInfo = safeIntl.Locale(platformLocale).value;
-				const textInfo = (localeInfo as { textInfo?: { direction?: string } }).textInfo;
-				if (textInfo?.direction === 'rtl') {
-					primaryWindowControlsLocation = 'right';
-				}
-			}
-
-			if (isMacintosh && isNative && primaryWindowControlsLocation === 'left') {
-				// macOS native: controls on the left, no container needed
-			} else if (getWindowControlsStyle(this.configurationService) === WindowControlsStyle.HIDDEN) {
-				// controls explicitly disabled
-			} else {
-				this.windowControlsContainer = append(primaryWindowControlsLocation === 'left' ? this.leftContent : this.rightContent, $('div.window-controls-container'));
-				if (isWeb) {
-					append(primaryWindowControlsLocation === 'left' ? this.rightContent : this.leftContent, $('div.window-controls-container'));
-				}
-
-				if (isWCOEnabled()) {
-					this.windowControlsContainer.classList.add('wco-enabled');
-				}
-			}
-		}
 
 		// Context menu on the titlebar
 		this._register(addDisposableListener(this.rootContainer, EventType.CONTEXT_MENU, e => {
@@ -241,16 +256,19 @@ export class TitlebarPart extends Part implements ITitlebarPart {
 		});
 	}
 
+	private lastLayoutDimension: Dimension | undefined;
+
 	get preventZoom(): boolean {
 		return getZoomFactor(getWindow(this.element)) < 1;
 	}
 
 	override layout(width: number, height: number): void {
-		this.updateLayout(new Dimension(width, height));
+		this.lastLayoutDimension = new Dimension(width, height);
+		this.updateLayout();
 		super.layoutContents(width, height);
 	}
 
-	private updateLayout(_dimension: Dimension): void {
+	private updateLayout(): void {
 		if (!hasCustomTitlebar(this.configurationService, this.titleBarStyle)) {
 			return;
 		}
@@ -258,6 +276,24 @@ export class TitlebarPart extends Part implements ITitlebarPart {
 		const zoomFactor = getZoomFactor(getWindow(this.element));
 		this.element.style.setProperty('--zoom-factor', zoomFactor.toString());
 		this.rootContainer.classList.toggle('counter-zoom', this.preventZoom);
+
+		this.updateCenterOffset();
+	}
+
+	private updateCenterOffset(): void {
+		if (!this.centerContent || !this.lastLayoutDimension) {
+			return;
+		}
+
+		// Center the command center relative to the viewport.
+		// The titlebar only covers the right section (sidebar is to the left),
+		// so we shift the center content left by half the sidebar width
+		// using a negative margin.
+		const windowWidth = this.layoutService.mainContainerDimension.width;
+		const titlebarWidth = this.lastLayoutDimension.width;
+		const leftOffset = windowWidth - titlebarWidth;
+		this.centerContent.style.marginLeft = leftOffset > 0 ? `${-leftOffset / 2}px` : '';
+		this.centerContent.style.marginRight = leftOffset > 0 ? `${leftOffset / 2}px` : '';
 	}
 
 	focus(): void {

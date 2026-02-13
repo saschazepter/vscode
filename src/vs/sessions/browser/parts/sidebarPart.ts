@@ -22,6 +22,7 @@ import { LayoutPriority } from '../../../base/browser/ui/grid/grid.js';
 import { assertReturnsDefined } from '../../../base/common/types.js';
 import { IViewDescriptorService, ViewContainerLocation } from '../../../workbench/common/views.js';
 import { AbstractPaneCompositePart, CompositeBarPosition } from '../../../workbench/browser/parts/paneCompositePart.js';
+import { ICompositeTitleLabel } from '../../../workbench/browser/parts/compositePart.js';
 import { Part } from '../../../workbench/browser/part.js';
 import { ActionsOrientation } from '../../../base/browser/ui/actionbar/actionbar.js';
 import { HoverPosition } from '../../../base/browser/ui/hover/hoverWidget.js';
@@ -31,8 +32,11 @@ import { Separator } from '../../../base/common/actions.js';
 import { IHoverService } from '../../../platform/hover/browser/hover.js';
 import { Extensions } from '../../../workbench/browser/panecomposite.js';
 import { Menus } from '../menus.js';
-import { $, append } from '../../../base/browser/dom.js';
+import { $, append, getWindowId, prepend } from '../../../base/browser/dom.js';
 import { HiddenItemStrategy, MenuWorkbenchToolBar } from '../../../platform/actions/browser/toolbar.js';
+import { isMacintosh, isNative } from '../../../base/common/platform.js';
+import { isFullscreen, onDidChangeFullscreen } from '../../../base/browser/browser.js';
+import { mainWindow } from '../../../base/browser/window.js';
 
 /**
  * Sidebar part specifically for agent sessions workbench.
@@ -45,10 +49,10 @@ export class SidebarPart extends AbstractPaneCompositePart {
 	static readonly placeholderViewContainersKey = 'workbench.agentsession.placeholderViewlets';
 	static readonly viewContainersWorkspaceStateKey = 'workbench.agentsession.viewletsWorkspaceState';
 
-	/** Visual margin values for the card-like appearance */
-	static readonly MARGIN_TOP = 8;
-	static readonly MARGIN_BOTTOM = 8;
-	static readonly MARGIN_LEFT = 8;
+	/** Visual margin values - sidebar is flush (no card appearance) */
+	static readonly MARGIN_TOP = 0;
+	static readonly MARGIN_BOTTOM = 0;
+	static readonly MARGIN_LEFT = 0;
 	static readonly FOOTER_HEIGHT = 35;
 
 
@@ -95,7 +99,7 @@ export class SidebarPart extends AbstractPaneCompositePart {
 	) {
 		super(
 			Parts.SIDEBAR_PART,
-			{ hasTitle: false, trailingSeparator: false, borderWidth: () => 0 },
+			{ hasTitle: true, trailingSeparator: false, borderWidth: () => 0 },
 			SidebarPart.activeViewletSettingsKey,
 			ActiveViewletContext.bindTo(contextKeyService),
 			SidebarFocusContext.bindTo(contextKeyService),
@@ -106,6 +110,7 @@ export class SidebarPart extends AbstractPaneCompositePart {
 			ViewContainerLocation.Sidebar,
 			Extensions.Viewlets,
 			Menus.SidebarTitle,
+			Menus.TitleBarLeft,
 			notificationService,
 			storageService,
 			contextMenuService,
@@ -126,6 +131,35 @@ export class SidebarPart extends AbstractPaneCompositePart {
 		this.createFooter(parent);
 	}
 
+	protected override createTitleArea(parent: HTMLElement): HTMLElement | undefined {
+		const titleArea = super.createTitleArea(parent);
+
+		// macOS native: the sidebar spans full height and the traffic lights
+		// overlay the top-left corner. Add a fixed-width spacer inside the
+		// title area to push content horizontally past the traffic lights.
+		if (titleArea && isMacintosh && isNative) {
+			const spacer = $('div.window-controls-container');
+			spacer.style.width = '70px';
+			spacer.style.height = '100%';
+			spacer.style.flexShrink = '0';
+			spacer.style.order = '-1'; // match global-actions-left order so DOM order is respected
+			prepend(titleArea, spacer);
+
+			// Hide spacer in fullscreen (traffic lights are not shown)
+			const updateSpacerVisibility = () => {
+				spacer.style.display = isFullscreen(mainWindow) ? 'none' : '';
+			};
+			updateSpacerVisibility();
+			this._register(onDidChangeFullscreen(windowId => {
+				if (windowId === getWindowId(mainWindow)) {
+					updateSpacerVisibility();
+				}
+			}));
+		}
+
+		return titleArea;
+	}
+
 	private createFooter(parent: HTMLElement): void {
 		const footer = append(parent, $('.sidebar-footer'));
 
@@ -141,20 +175,15 @@ export class SidebarPart extends AbstractPaneCompositePart {
 
 		const container = assertReturnsDefined(this.getContainer());
 
-		// Store background and border as CSS variables for the card styling on .part
-		container.style.setProperty('--part-background', this.getColor(SIDE_BAR_BACKGROUND) || '');
-		container.style.setProperty('--part-border-color', this.getColor(SIDE_BAR_BORDER) || this.getColor(contrastBorder) || 'transparent');
-		container.style.backgroundColor = 'transparent';
+		container.style.backgroundColor = this.getColor(SIDE_BAR_BACKGROUND) || '';
 		container.style.color = this.getColor(SIDE_BAR_FOREGROUND) || '';
-
-		// Clear borders - the card appearance uses border-radius instead
-		container.style.borderRightWidth = '';
-		container.style.borderRightStyle = '';
-		container.style.borderRightColor = '';
-		container.style.borderLeftWidth = '';
-		container.style.borderLeftStyle = '';
-		container.style.borderLeftColor = '';
 		container.style.outlineColor = this.getColor(SIDE_BAR_DRAG_AND_DROP_BACKGROUND) ?? '';
+
+		// Right border to separate from the right section
+		const borderColor = this.getColor(SIDE_BAR_BORDER) || this.getColor(contrastBorder) || '';
+		container.style.borderRightWidth = borderColor ? '1px' : '';
+		container.style.borderRightStyle = borderColor ? 'solid' : '';
+		container.style.borderRightColor = borderColor;
 	}
 
 	override layout(width: number, height: number, top: number, left: number): void {
@@ -162,20 +191,27 @@ export class SidebarPart extends AbstractPaneCompositePart {
 			return;
 		}
 
-		// Layout content with reduced dimensions to account for visual margins and footer
+		// Layout content with reduced height to account for footer
 		super.layout(
-			width - SidebarPart.MARGIN_LEFT,
-			height - SidebarPart.MARGIN_TOP - SidebarPart.MARGIN_BOTTOM - SidebarPart.FOOTER_HEIGHT,
+			width,
+			height - SidebarPart.FOOTER_HEIGHT,
 			top, left
 		);
 
 		// Restore the full grid-allocated dimensions so that Part.relayout() works correctly.
-		// Part.layout() only stores _dimension and _contentPosition - no other side effects.
 		Part.prototype.layout.call(this, width, height, top, left);
 	}
 
 	protected override getTitleAreaDropDownAnchorAlignment(): AnchorAlignment {
 		return this.layoutService.getSideBarPosition() === SideBarPosition.LEFT ? AnchorAlignment.LEFT : AnchorAlignment.RIGHT;
+	}
+
+	protected override createTitleLabel(_parent: HTMLElement): ICompositeTitleLabel {
+		// No title label in agent sessions sidebar
+		return {
+			updateTitle: () => { },
+			updateStyles: () => { }
+		};
 	}
 
 	protected getCompositeBarOptions(): IPaneCompositeBarOptions {

@@ -8,9 +8,8 @@ import { Codicon } from '../../base/common/codicons.js';
 import { KeyCode, KeyMod } from '../../base/common/keyCodes.js';
 import { localize, localize2 } from '../../nls.js';
 import { Categories } from '../../platform/action/common/actionCommonCategories.js';
-import { Action2, MenuId, registerAction2 } from '../../platform/actions/common/actions.js';
+import { Action2, registerAction2 } from '../../platform/actions/common/actions.js';
 import { Menus } from './menus.js';
-import { ContextKeyExpr } from '../../platform/contextkey/common/contextkey.js';
 import { ServicesAccessor } from '../../platform/instantiation/common/instantiation.js';
 import { KeybindingWeight } from '../../platform/keybinding/common/keybindingsRegistry.js';
 import { registerIcon } from '../../platform/theme/common/iconRegistry.js';
@@ -51,15 +50,9 @@ class ToggleSidebarVisibilityAction extends Action2 {
 			},
 			menu: [
 				{
-					id: MenuId.AgentSessionsToolbar,
+					id: Menus.TitleBarLeft,
 					group: 'navigation',
-					order: 1000
-				},
-				{
-					id: Menus.FloatingToolbar,
-					group: 'navigation',
-					order: 0,
-					when: ContextKeyExpr.not('sideBarVisible')
+					order: 0
 				}
 			]
 		});
@@ -102,10 +95,9 @@ class ToggleSecondarySidebarVisibilityAction extends Action2 {
 			f1: true,
 			menu: [
 				{
-					id: Menus.FloatingToolbarRight,
+					id: Menus.TitleBarRight,
 					group: 'navigation',
-					order: 0,
-					when: ContextKeyExpr.not('auxiliaryBarVisible')
+					order: 10
 				}
 			]
 		});
@@ -122,33 +114,6 @@ class ToggleSecondarySidebarVisibilityAction extends Action2 {
 			? localize('secondarySidebarHidden', "Secondary Side Bar hidden")
 			: localize('secondarySidebarVisible', "Secondary Side Bar shown");
 		alert(alertMessage);
-	}
-}
-
-class CloseSecondarySidebarAction extends Action2 {
-
-	static readonly ID = 'workbench.action.agentCloseSecondarySidebar';
-
-	constructor() {
-		super({
-			id: CloseSecondarySidebarAction.ID,
-			title: localize2('closeSecondarySidebar', 'Hide Secondary Side Bar'),
-			icon: panelRightIcon,
-			category: Categories.View,
-			menu: [
-				{
-					id: Menus.AuxiliaryBarTitle,
-					group: 'navigation',
-					order: 3
-				}
-			]
-		});
-	}
-
-	run(accessor: ServicesAccessor): void {
-		const layoutService = accessor.get(IWorkbenchLayoutService);
-		layoutService.setPartHidden(true, Parts.AUXILIARYBAR_PART);
-		alert(localize('secondarySidebarHidden', "Secondary Side Bar hidden"));
 	}
 }
 
@@ -181,5 +146,4 @@ class TogglePanelVisibilityAction extends Action2 {
 
 registerAction2(ToggleSidebarVisibilityAction);
 registerAction2(ToggleSecondarySidebarVisibilityAction);
-registerAction2(CloseSecondarySidebarAction);
 registerAction2(TogglePanelVisibilityAction);

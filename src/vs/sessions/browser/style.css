@@ -11,24 +11,22 @@
 /* ---- Sidebar & Auxiliary Bar Card Appearance ---- */
 
 /**
- * The sidebar and auxiliary bar use a card-like appearance with margins and border-radius
+ * The auxiliary bar and panel use a card-like appearance with margins and border-radius
  * applied directly on the .part element. The grid allocates full space; CSS margin shrinks
  * the part within its split-view-view wrapper. Layout dimensions are reduced in code
- * (AgenticSidebarPart / AgenticAuxiliaryBarPart) to keep internal layout correct.
+ * (AgenticAuxiliaryBarPart) to keep internal layout correct.
  *
  * No z-index or stacking-context changes - sashes render naturally on top.
  *
  * Margin values (must match the constants in the Part classes):
- *   Sidebar:       top=8, bottom=8, left=8
+ *   Sidebar:       no card (flush, spans full height)
  *   Auxiliary bar:  top=8, bottom=8, right=8
  *   Panel:          bottom=8, left=8, right=8
  */
 
 .agent-sessions-workbench .part.sidebar {
-	margin: 8px 0 8px 8px;
-	background: var(--part-background);
-	border: 1px solid var(--part-border-color, transparent);
-	border-radius: 8px;
+	background: var(--vscode-sideBar-background);
+	border-right: 1px solid var(--vscode-sideBar-border, transparent);
 }
 
 .agent-sessions-workbench .part.auxiliarybar {
@@ -154,28 +152,6 @@
 	left: 0;
 	width: 100%;
 	height: 100%;
-}
-
-/* ---- Floating Toolbar ---- */
-
-.agent-sessions-workbench .floating-toolbar {
-	position: absolute;
-	/* top is set dynamically in code based on titlebar height + sidebar margins */
-	z-index: 100;
-	display: flex;
-	align-items: center;
-	background-color: var(--vscode-sideBar-background);
-	border-radius: 6px;
-	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-	pointer-events: none;
-	opacity: 0;
-	visibility: hidden;
-}
-
-.agent-sessions-workbench .floating-toolbar.visible {
-	pointer-events: auto;
-	opacity: 1;
-	visibility: visible;
 }
 
 /* ---- Chat Input ---- */

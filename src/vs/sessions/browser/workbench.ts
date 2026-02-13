@@ -62,7 +62,6 @@ import { EditorMarkdownCodeBlockRenderer } from '../../editor/browser/widget/mar
 import { EditorModal } from './parts/editorModal.js';
 import { SyncDescriptor } from '../../platform/instantiation/common/descriptors.js';
 import { TitleService } from './parts/titlebarPart.js';
-import { FloatingToolbar } from './parts/floatingToolbar.js';
 
 //#region Workbench Options
 
@@ -769,23 +768,20 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 		}));
 	}
 
-	createWorkbenchManagement(instantiationService: IInstantiationService): void {
-		// Create floating toolbars (shown when there are menu items)
-		this._register(instantiationService.createInstance(FloatingToolbar, this.mainContainer, 'left'));
-		this._register(instantiationService.createInstance(FloatingToolbar, this.mainContainer, 'right'));
+	createWorkbenchManagement(_instantiationService: IInstantiationService): void {
+		// No floating toolbars in this layout
 	}
 
 	/**
 	 * Creates the grid descriptor for the Agent Sessions layout.
 	 * Editor is NOT included - it's rendered as a modal overlay.
 	 *
-	 * Structure (vertical orientation):
-	 * - Titlebar (top)
-	 * - Main content (horizontal):
-	 *   - Sidebar
-	 *   - Right section (vertical):
-	 *     - Top right (horizontal): Chat Bar | Auxiliary Bar
-	 *     - Panel (below chat and auxiliary bar only)
+	 * Structure (horizontal orientation):
+	 * - Sidebar (left, spans full height from top to bottom)
+	 * - Right section (vertical):
+	 *   - Titlebar (top of right section)
+	 *   - Top right (horizontal): Chat Bar | Auxiliary Bar
+	 *   - Panel (below chat and auxiliary bar only)
 	 */
 	private createGridDescriptor(): ISerializedGrid {
 		const { width, height } = this._mainContainerDimension;
@@ -796,12 +792,12 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 		const panelSize = 300;
 		const titleBarHeight = this.titleBarPartView?.minimumHeight ?? 30;
 
-		const mainContentHeight = height - titleBarHeight;
-		const topRightHeight = mainContentHeight - panelSize;
-
 		// Calculate right section width and chat bar width
 		const rightSectionWidth = Math.max(0, width - sideBarSize);
 		const chatBarWidth = Math.max(0, rightSectionWidth - auxiliaryBarSize);
+
+		const contentHeight = height - titleBarHeight;
+		const topRightHeight = contentHeight - panelSize;
 
 		const titleBarNode: ISerializedLeafNode = {
 			type: 'leaf',
@@ -845,30 +841,23 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 			size: topRightHeight
 		};
 
-		// Right section: Top Right | Panel (vertical)
+		// Right section: Titlebar | Top Right | Panel (vertical)
 		const rightSection: ISerializedNode = {
 			type: 'branch',
-			data: [topRightSection, panelNode],
+			data: [titleBarNode, topRightSection, panelNode],
 			size: rightSectionWidth
-		};
-
-		// Main content: Sidebar | Right Section (horizontal)
-		const mainContent: ISerializedNode = {
-			type: 'branch',
-			data: [sideBarNode, rightSection],
-			size: mainContentHeight
 		};
 
 		const result: ISerializedGrid = {
 			root: {
 				type: 'branch',
-				size: width,
+				size: height,
 				data: [
-					titleBarNode,
-					mainContent
+					sideBarNode,
+					rightSection
 				]
 			},
-			orientation: Orientation.VERTICAL,
+			orientation: Orientation.HORIZONTAL,
 			width,
 			height
 		};
@@ -1318,7 +1307,7 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 		if (this.isPanelMaximized()) {
 			this.workbenchGrid.exitMaximizedView();
 		} else {
-			this.workbenchGrid.maximizeView(this.panelPartView, [this.titleBarPartView]);
+			this.workbenchGrid.maximizeView(this.panelPartView, [this.titleBarPartView, this.sideBarPartView]);
 		}
 	}
 
