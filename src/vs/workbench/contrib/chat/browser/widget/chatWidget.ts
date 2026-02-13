@@ -13,6 +13,7 @@ import { CancellationToken } from '../../../../../base/common/cancellation.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { toErrorMessage } from '../../../../../base/common/errorMessage.js';
 import { Emitter, Event } from '../../../../../base/common/event.js';
+import { hash } from '../../../../../base/common/hash.js';
 import { IMarkdownString, MarkdownString } from '../../../../../base/common/htmlContent.js';
 import { Iterable } from '../../../../../base/common/iterator.js';
 import { Disposable, DisposableStore, IDisposable, MutableDisposable, thenIfNotDisposed } from '../../../../../base/common/lifecycle.js';
@@ -67,7 +68,7 @@ import { ILanguageModelToolsService, isToolSet } from '../../common/tools/langua
 import { ComputeAutomaticInstructions } from '../../common/promptSyntax/computeAutomaticInstructions.js';
 import { PromptsConfig } from '../../common/promptSyntax/config/config.js';
 import { IHandOff, PromptHeader } from '../../common/promptSyntax/promptFileParser.js';
-import { IPromptsService } from '../../common/promptSyntax/service/promptsService.js';
+import { IPromptsService, PromptsStorage } from '../../common/promptSyntax/service/promptsService.js';
 import { handleModeSwitch } from '../actions/chatActions.js';
 import { ChatTreeItem, IChatAcceptInputOptions, IChatAccessibilityService, IChatCodeBlockInfo, IChatFileTreeInfo, IChatListItemRendererOptions, IChatWidget, IChatWidgetService, IChatWidgetViewContext, IChatWidgetViewModelChangeEvent, IChatWidgetViewOptions, isIChatResourceViewContext, isIChatViewViewContext } from '../chat.js';
 import { ChatAttachmentModel } from '../attachments/chatAttachmentModel.js';
@@ -151,6 +152,22 @@ type ChatHandoffWidgetShownClassification = {
 	comment: 'Event fired when the suggest-next widget is shown with handoff prompts';
 	agent: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The current agent/mode that has handoffs defined' };
 	handoffCount: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; isMeasurement: true; comment: 'Number of handoff options shown to the user' };
+};
+
+type ChatPromptRunEvent = {
+	storage: PromptsStorage;
+	extensionId?: string;
+	promptName?: string;
+	promptNameHash?: string;
+};
+
+type ChatPromptRunClassification = {
+	owner: 'digitarald';
+	comment: 'Event fired when a prompt slash command is resolved into a follow instructions request';
+	storage: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'Where the prompt is stored (local, user, extension).' };
+	extensionId?: { classification: 'PublicNonPersonalData'; purpose: 'FeatureInsight'; comment: 'Identifier of the extension that contributed the prompt, when applicable.' };
+	promptName?: { classification: 'PublicNonPersonalData'; purpose: 'FeatureInsight'; comment: 'Name of the core or extension-contributed prompt.' };
+	promptNameHash?: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'Hashed name of local or user prompt for privacy.' };
 };
 
 const supportsAllAttachments: Required<IChatAgentAttachmentCapabilities> = {
@@ -2162,6 +2179,18 @@ export class ChatWidget extends Disposable implements IChatWidget {
 
 		// remove the slash command from the input
 		requestInput.input = this.parsedInput.parts.filter(part => !(part instanceof ChatRequestSlashPromptPart)).map(part => part.text).join('').trim();
+
+		const promptPath = slashCommand.promptPath;
+		const promptRunEvent: ChatPromptRunEvent = {
+			storage: promptPath.storage,
+		};
+		if (promptPath.storage === PromptsStorage.extension) {
+			promptRunEvent.extensionId = promptPath.extension.identifier.value;
+			promptRunEvent.promptName = slashCommand.name;
+		} else {
+			promptRunEvent.promptNameHash = hash(slashCommand.name).toString(16);
+		}
+		this.telemetryService.publicLog2<ChatPromptRunEvent, ChatPromptRunClassification>('chat.promptRun', promptRunEvent);
 
 		const input = requestInput.input.trim();
 		requestInput.input = `Follow instructions in [${basename(parseResult.uri)}](${parseResult.uri.toString()}).`;
