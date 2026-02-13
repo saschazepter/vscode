@@ -13,7 +13,10 @@ import { IStorageService, StorageScope, StorageTarget } from '../../../../../pla
 import { IChatWidgetService } from '../chat.js';
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
 import { isResponseVM } from '../../common/model/chatViewModel.js';
+import { AccessibleViewProviderId } from '../../../../../platform/accessibility/browser/accessibleView.js';
 import { CONTEXT_ACCESSIBILITY_MODE_ENABLED } from '../../../../../platform/accessibility/common/accessibility.js';
+import { ContextKeyExpr } from '../../../../../platform/contextkey/common/contextkey.js';
+import { accessibleViewCurrentProviderId, accessibleViewIsShown } from '../../../../contrib/accessibility/browser/accessibilityConfiguration.js';
 import { CHAT_ACCESSIBLE_VIEW_INCLUDE_THINKING_STORAGE_KEY, isThinkingContentIncludedInAccessibleView } from '../accessibility/chatResponseAccessibleView.js';
 
 export const ACTION_ID_FOCUS_CHAT_CONFIRMATION = 'workbench.action.chat.focusConfirmation';
@@ -77,7 +80,12 @@ class ToggleThinkingContentAccessibleViewAction extends Action2 {
 			title: { value: localize('toggleThinkingContentAccessibleView', 'Toggle Thinking Content in Accessible View'), original: 'Toggle Thinking Content in Accessible View' },
 			category: { value: localize('chat.category', 'Chat'), original: 'Chat' },
 			precondition: ChatContextKeys.enabled,
-			f1: true
+			f1: true,
+			keybinding: {
+				primary: KeyMod.Alt | KeyCode.KeyT,
+				weight: KeybindingWeight.WorkbenchContrib,
+				when: ContextKeyExpr.and(accessibleViewIsShown, ContextKeyExpr.equals(accessibleViewCurrentProviderId.key, AccessibleViewProviderId.PanelChat))
+			}
 		});
 	}
 
