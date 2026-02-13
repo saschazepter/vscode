@@ -16,7 +16,7 @@ import { ServicesAccessor } from '../../../../../platform/instantiation/common/i
 import { AccessibilityVerbositySettingId } from '../../../accessibility/browser/accessibilityConfiguration.js';
 import { migrateLegacyTerminalToolSpecificData } from '../../common/chat.js';
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
-import { IChatExtensionsContent, IChatPullRequestContent, IChatSubagentToolInvocationData, IChatTerminalToolInvocationData, IChatTodoListContent, IChatToolInputInvocationData, IChatToolInvocation, IChatToolResourcesInvocationData, ILegacyChatTerminalToolInvocationData, IToolResultOutputDetailsSerialized, isLegacyChatTerminalToolInvocationData } from '../../common/chatService/chatService.js';
+import { IChatExtensionsContent, IChatPullRequestContent, IChatSimpleToolInvocationData, IChatSubagentToolInvocationData, IChatTerminalToolInvocationData, IChatTodoListContent, IChatToolInputInvocationData, IChatToolInvocation, IChatToolResourcesInvocationData, ILegacyChatTerminalToolInvocationData, IToolResultOutputDetailsSerialized, isLegacyChatTerminalToolInvocationData } from '../../common/chatService/chatService.js';
 import { isResponseVM } from '../../common/model/chatViewModel.js';
 import { IToolResultInputOutputDetails, IToolResultOutputDetails, isToolResultInputOutputDetails, isToolResultOutputDetails, toolContentToA11yString } from '../../common/tools/languageModelToolsService.js';
 import { ChatTreeItem, IChatWidget, IChatWidgetService } from '../chat.js';
@@ -39,8 +39,17 @@ export class ChatResponseAccessibleView implements IAccessibleViewImplementation
 		}
 
 		const verifiedWidget: IChatWidget = widget;
-		const focusedItem = verifiedWidget.getFocus();
-		if (!focusedItem) {
+		let focusedItem = verifiedWidget.getFocus();
+		if (!focusedItem || !isResponseVM(focusedItem)) {
+			const responseItems = verifiedWidget.viewModel?.getItems().filter(isResponseVM);
+			const lastResponse = responseItems?.at(-1);
+			if (lastResponse) {
+				focusedItem = lastResponse;
+				verifiedWidget.focus(lastResponse);
+			}
+		}
+
+		if (!focusedItem || !isResponseVM(focusedItem)) {
 			return;
 		}
 
@@ -48,7 +57,7 @@ export class ChatResponseAccessibleView implements IAccessibleViewImplementation
 	}
 }
 
-type ToolSpecificData = IChatTerminalToolInvocationData | ILegacyChatTerminalToolInvocationData | IChatToolInputInvocationData | IChatExtensionsContent | IChatPullRequestContent | IChatTodoListContent | IChatSubagentToolInvocationData | IChatToolResourcesInvocationData;
+type ToolSpecificData = IChatTerminalToolInvocationData | ILegacyChatTerminalToolInvocationData | IChatToolInputInvocationData | IChatExtensionsContent | IChatPullRequestContent | IChatTodoListContent | IChatSubagentToolInvocationData | IChatSimpleToolInvocationData | IChatToolResourcesInvocationData;
 type ResultDetails = Array<URI | Location> | IToolResultInputOutputDetails | IToolResultOutputDetails | IToolResultOutputDetailsSerialized;
 
 function isOutputDetailsSerialized(obj: unknown): obj is IToolResultOutputDetailsSerialized {
@@ -117,6 +126,11 @@ export function getToolSpecificDataDescription(toolSpecificData: ToolSpecificDat
 				}
 			}).join(', ');
 			return localize('resourcesList', "Resources: {0}", paths);
+		}
+		case 'simpleToolInvocation': {
+			const inputText = toolSpecificData.input;
+			const outputText = toolSpecificData.output;
+			return localize('simpleToolInvocation', "Input: {0}, Output: {1}", inputText, outputText);
 		}
 		default:
 			return '';

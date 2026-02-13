@@ -14,6 +14,7 @@ import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { hasKey } from '../../../../../base/common/types.js';
 import { URI, UriComponents } from '../../../../../base/common/uri.js';
 import { IRange, Range } from '../../../../../editor/common/core/range.js';
+import { HookTypeValue } from '../promptSyntax/hookSchema.js';
 import { ISelection } from '../../../../../editor/common/core/selection.js';
 import { Command, Location, TextEdit } from '../../../../../editor/common/languages.js';
 import { FileType } from '../../../../../platform/files/common/files.js';
@@ -420,6 +421,26 @@ export interface IChatThinkingPart {
 	generatedTitle?: string;
 }
 
+/**
+ * A progress part representing the execution result of a hook.
+ * Aligned with the hook output JSON structure: { stopReason, systemMessage, hookSpecificOutput }.
+ * If {@link stopReason} is set, the hook blocked/denied the operation.
+ */
+export interface IChatHookPart {
+	kind: 'hook';
+	/** The type of hook that was executed */
+	hookType: HookTypeValue;
+	/** If set, the hook blocked processing. This message is shown to the user. */
+	stopReason?: string;
+	/** Warning/system message from the hook, shown to the user */
+	systemMessage?: string;
+	/** Display name of the tool that was affected by the hook */
+	toolDisplayName?: string;
+	metadata?: { readonly [key: string]: unknown };
+	/** If set, this hook was executed within a subagent invocation and should be grouped with it. */
+	subAgentInvocationId?: string;
+}
+
 export interface IChatTerminalToolInvocationData {
 	kind: 'terminal';
 	commandLine: {
@@ -498,7 +519,7 @@ export interface ILegacyChatTerminalToolInvocationData {
 }
 
 export function isLegacyChatTerminalToolInvocationData(data: unknown): data is ILegacyChatTerminalToolInvocationData {
-	return !!data && typeof data === 'object' && 'command' in data;
+	return !!data && typeof data === 'object' && 'command' in data && 'language' in data;
 }
 
 export interface IChatToolInputInvocationData {
@@ -530,12 +551,12 @@ export type ConfirmedReason =
 	| { type: ToolConfirmKind.ConfirmationNotNeeded; reason?: string | IMarkdownString }
 	| { type: ToolConfirmKind.Setting; id: string }
 	| { type: ToolConfirmKind.LmServicePerTool; scope: 'session' | 'workspace' | 'profile' }
-	| { type: ToolConfirmKind.UserAction }
+	| { type: ToolConfirmKind.UserAction; selectedButton?: string }
 	| { type: ToolConfirmKind.Skipped };
 
 export interface IChatToolInvocation {
 	readonly presentation: IPreparedToolInvocation['presentation'];
-	readonly toolSpecificData?: IChatTerminalToolInvocationData | ILegacyChatTerminalToolInvocationData | IChatToolInputInvocationData | IChatExtensionsContent | IChatPullRequestContent | IChatTodoListContent | IChatSubagentToolInvocationData | IChatToolResourcesInvocationData;
+	readonly toolSpecificData?: IChatTerminalToolInvocationData | ILegacyChatTerminalToolInvocationData | IChatToolInputInvocationData | IChatExtensionsContent | IChatPullRequestContent | IChatTodoListContent | IChatSubagentToolInvocationData | IChatSimpleToolInvocationData | IChatToolResourcesInvocationData;
 	readonly originMessage: string | IMarkdownString | undefined;
 	readonly invocationMessage: string | IMarkdownString;
 	readonly pastTenseMessage: string | IMarkdownString | undefined;
@@ -795,7 +816,7 @@ export interface IToolResultOutputDetailsSerialized {
  */
 export interface IChatToolInvocationSerialized {
 	presentation: IPreparedToolInvocation['presentation'];
-	toolSpecificData?: IChatTerminalToolInvocationData | IChatToolInputInvocationData | IChatExtensionsContent | IChatPullRequestContent | IChatTodoListContent | IChatSubagentToolInvocationData | IChatToolResourcesInvocationData;
+	toolSpecificData?: IChatTerminalToolInvocationData | IChatToolInputInvocationData | IChatExtensionsContent | IChatPullRequestContent | IChatTodoListContent | IChatSubagentToolInvocationData | IChatSimpleToolInvocationData | IChatToolResourcesInvocationData;
 	invocationMessage: string | IMarkdownString;
 	originMessage: string | IMarkdownString | undefined;
 	pastTenseMessage: string | IMarkdownString | undefined;
@@ -817,7 +838,11 @@ export interface IChatExtensionsContent {
 }
 
 export interface IChatPullRequestContent {
-	uri: URI;
+	/**
+	 * @deprecated use `command` instead
+	 */
+	uri?: URI;
+	command: Command;
 	title: string;
 	description: string;
 	author: string;
@@ -831,6 +856,24 @@ export interface IChatSubagentToolInvocationData {
 	agentName?: string;
 	prompt?: string;
 	result?: string;
+	modelName?: string;
+}
+
+/**
+ * Progress type for external tool invocation updates from extensions.
+ * When isComplete is false, creates or updates a tool invocation.
+ * When isComplete is true, completes an existing tool invocation.
+ */
+export interface IChatExternalToolInvocationUpdate {
+	kind: 'externalToolInvocationUpdate';
+	toolCallId: string;
+	toolName: string;
+	isComplete: boolean;
+	errorMessage?: string;
+	invocationMessage?: string | IMarkdownString;
+	pastTenseMessage?: string | IMarkdownString;
+	toolSpecificData?: IChatTerminalToolInvocationData | IChatToolInputInvocationData | IChatExtensionsContent | IChatTodoListContent | IChatSubagentToolInvocationData;
+	subagentInvocationId?: string;
 }
 
 export interface IChatTodoListContent {
@@ -840,6 +883,12 @@ export interface IChatTodoListContent {
 		title: string;
 		status: 'not-started' | 'in-progress' | 'completed';
 	}>;
+}
+
+export interface IChatSimpleToolInvocationData {
+	kind: 'simpleToolInvocation';
+	input: string;
+	output: string;
 }
 
 export interface IChatToolResourcesInvocationData {
@@ -858,6 +907,10 @@ export interface IChatMcpServersStartingSerialized {
 	readonly kind: 'mcpServersStarting';
 	readonly state?: undefined;
 	didStartServerIds?: string[];
+}
+
+export interface IChatDisabledClaudeHooksPart {
+	readonly kind: 'disabledClaudeHooks';
 }
 
 export class ChatMcpServersStarting implements IChatMcpServersStarting {
@@ -922,7 +975,10 @@ export type IChatProgress =
 	| IChatElicitationRequest
 	| IChatElicitationRequestSerialized
 	| IChatMcpServersStarting
-	| IChatMcpServersStartingSerialized;
+	| IChatMcpServersStartingSerialized
+	| IChatHookPart
+	| IChatExternalToolInvocationUpdate
+	| IChatDisabledClaudeHooksPart;
 
 export interface IChatFollowup {
 	kind: 'reply';
@@ -1253,6 +1309,7 @@ export interface IChatSendRequestOptions {
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	rejectedConfirmationData?: any[];
 	attachedContext?: IChatRequestVariableEntry[];
+	resolvedVariables?: IChatRequestVariableEntry[];
 
 	/** The target agent ID can be specified with this property instead of using @ in 'message' */
 	agentId?: string;
