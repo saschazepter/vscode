@@ -443,14 +443,6 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			const lastResponse = observableFromEvent(this, chatModel.onDidChange, () => chatModel.getRequests().at(-1)?.response).read(r);
 			return lastResponse?.result?.errorDetails && !lastResponse?.result?.errorDetails.responseIsIncomplete;
 		}));
-		this._register(bindContextKey(ChatContextKeys.hasPendingQuestionCarousel, contextKeyService, (r) => {
-			const chatModel = viewModelObs.read(r)?.model;
-			if (!chatModel) {
-				return false;
-			}
-			const lastResponse = observableFromEvent(this, chatModel.onDidChange, () => chatModel.getRequests().at(-1)?.response).read(r);
-			return this.hasPendingQuestionCarousel(lastResponse);
-		}));
 
 		this._codeBlockModelCollection = this._register(instantiationService.createInstance(CodeBlockModelCollection, undefined));
 		this.chatSuggestNextWidget = this._register(this.instantiationService.createInstance(ChatSuggestNextWidget));

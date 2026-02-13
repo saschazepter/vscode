@@ -181,7 +181,6 @@ abstract class SubmitAction extends Action2 {
 
 const requestInProgressOrPendingToolCall = ContextKeyExpr.or(ChatContextKeys.requestInProgress, ChatContextKeys.Editing.hasToolConfirmation);
 const whenNotInProgress = ContextKeyExpr.and(ChatContextKeys.requestInProgress.negate(), ChatContextKeys.Editing.hasToolConfirmation.negate());
-const whenNotInProgressOrPendingQuestionCarousel = ContextKeyExpr.or(whenNotInProgress, ChatContextKeys.hasPendingQuestionCarousel);
 
 export class ChatSubmitAction extends SubmitAction {
 	static readonly ID = 'workbench.action.chat.submit';
@@ -190,7 +189,7 @@ export class ChatSubmitAction extends SubmitAction {
 		const menuCondition = ChatContextKeys.chatModeKind.isEqualTo(ChatModeKind.Ask);
 		const precondition = ContextKeyExpr.and(
 			ChatContextKeys.inputHasText,
-			whenNotInProgressOrPendingQuestionCarousel,
+			whenNotInProgress,
 			ChatContextKeys.chatSessionOptionsValid,
 		);
 
@@ -219,7 +218,7 @@ export class ChatSubmitAction extends SubmitAction {
 					id: MenuId.ChatExecute,
 					order: 4,
 					when: ContextKeyExpr.and(
-						whenNotInProgressOrPendingQuestionCarousel,
+						whenNotInProgress,
 						menuCondition,
 						ChatContextKeys.withinEditSessionDiff.negate(),
 					),
@@ -235,7 +234,7 @@ export class ChatSubmitAction extends SubmitAction {
 					order: 4,
 					when: ContextKeyExpr.and(
 						ContextKeyExpr.or(ctxHasEditorModification.negate(), ChatContextKeys.inputHasText),
-						whenNotInProgressOrPendingQuestionCarousel,
+						whenNotInProgress,
 						ChatContextKeys.requestInProgress.negate(),
 						menuCondition
 					),
@@ -658,7 +657,7 @@ export class ChatEditingSessionSubmitAction extends SubmitAction {
 
 	constructor() {
 		const notInProgressOrEditing = ContextKeyExpr.and(
-			ContextKeyExpr.or(whenNotInProgressOrPendingQuestionCarousel, ChatContextKeys.editingRequestType.isEqualTo(ChatContextKeys.EditingRequestType.Sent)),
+			ContextKeyExpr.or(whenNotInProgress, ChatContextKeys.editingRequestType.isEqualTo(ChatContextKeys.EditingRequestType.Sent)),
 			ChatContextKeys.editingRequestType.notEqualsTo(ChatContextKeys.EditingRequestType.QueueOrSteer)
 		);
 
@@ -700,7 +699,7 @@ class SubmitWithoutDispatchingAction extends Action2 {
 	constructor() {
 		const precondition = ContextKeyExpr.and(
 			ChatContextKeys.inputHasText,
-			whenNotInProgressOrPendingQuestionCarousel,
+			whenNotInProgress,
 			ChatContextKeys.chatModeKind.isEqualTo(ChatModeKind.Ask),
 		);
 
@@ -733,7 +732,7 @@ export class ChatSubmitWithCodebaseAction extends Action2 {
 	constructor() {
 		const precondition = ContextKeyExpr.and(
 			ChatContextKeys.inputHasText,
-			whenNotInProgressOrPendingQuestionCarousel,
+			whenNotInProgress,
 		);
 
 		super({
