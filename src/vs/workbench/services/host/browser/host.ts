@@ -106,6 +106,12 @@ export interface IHostService {
 	moveTop(targetWindow: Window): Promise<void>;
 
 	/**
+	 * Toggle dimming of window control overlays (e.g. when showing
+	 * a modal dialog or modal editor part).
+	 */
+	setWindowDimmed(targetWindow: Window, dimmed: boolean): Promise<void>;
+
+	/**
 	 * Get the location of the mouse cursor and its display bounds or `undefined` if unavailable.
 	 */
 	getCursorScreenPoint(): Promise<{ readonly point: IPoint; readonly display: IRectangle } | undefined>;
@@ -158,16 +164,6 @@ export interface IHostService {
 	 * Get the native handle of the window.
 	 */
 	getNativeWindowHandle(windowId: number): Promise<VSBuffer | undefined>;
-
-	//#endregion
-
-	//#region Window Controls
-
-	/**
-	 * Toggle dimming of window control overlays (e.g. when showing
-	 * a modal dialog or modal editor part).
-	 */
-	setWindowDimmed(targetWindow: Window, dimmed: boolean): void;
 
 	//#endregion
 

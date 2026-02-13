@@ -69,10 +69,6 @@ export class ModalEditorPart {
 		this.layoutService.mainContainer.appendChild(modalElement);
 		disposables.add(toDisposable(() => modalElement.remove()));
 
-		// Dim window controls to match the modal overlay
-		this.hostService.setWindowDimmed(mainWindow, true);
-		disposables.add(toDisposable(() => this.hostService.setWindowDimmed(mainWindow, false)));
-
 		const shadowElement = modalElement.appendChild($('.modal-editor-shadow'));
 
 		// Create editor part container
@@ -207,6 +203,10 @@ export class ModalEditorPart {
 		};
 		disposables.add(Event.runAndSubscribe(this.layoutService.onDidLayoutMainContainer, layoutModal));
 		disposables.add(editorPart.onDidChangeMaximized(() => layoutModal()));
+
+		// Dim window controls to match the modal overlay
+		this.hostService.setWindowDimmed(mainWindow, true);
+		disposables.add(toDisposable(() => this.hostService.setWindowDimmed(mainWindow, false)));
 
 		// Focus the modal
 		editorPartContainer.focus();
