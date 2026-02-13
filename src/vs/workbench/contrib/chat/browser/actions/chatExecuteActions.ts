@@ -10,6 +10,7 @@ import { basename } from '../../../../../base/common/resources.js';
 import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { assertType } from '../../../../../base/common/types.js';
 import { URI } from '../../../../../base/common/uri.js';
+import { generateUuid } from '../../../../../base/common/uuid.js';
 import { ServicesAccessor } from '../../../../../editor/browser/editorExtensions.js';
 import { EditorContextKeys } from '../../../../../editor/common/editorContextKeys.js';
 import { localize, localize2 } from '../../../../../nls.js';
@@ -21,6 +22,7 @@ import { IDialogService } from '../../../../../platform/dialogs/common/dialogs.j
 import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
 import { KeybindingWeight } from '../../../../../platform/keybinding/common/keybindingsRegistry.js';
 import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry.js';
+import { IViewsService } from '../../../../services/views/common/viewsService.js';
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
 import { IChatMode, IChatModeService } from '../../common/chatModes.js';
 import { chatVariableLeader } from '../../common/requestParser/chatParserTypes.js';
@@ -30,13 +32,15 @@ import { ILanguageModelChatMetadata } from '../../common/languageModels.js';
 import { ILanguageModelToolsService } from '../../common/tools/languageModelToolsService.js';
 import { PromptsStorage } from '../../common/promptSyntax/service/promptsService.js';
 import { isInClaudeAgentsFolder } from '../../common/promptSyntax/config/promptFileLocations.js';
-import { IChatSessionsService } from '../../common/chatSessionsService.js';
-import { IChatWidget, IChatWidgetService } from '../chat.js';
+import { IChatSessionsService, localChatSessionType } from '../../common/chatSessionsService.js';
+import { ChatViewId, IChatWidget, IChatWidgetService, isIChatViewViewContext } from '../chat.js';
 import { getAgentSessionProvider, AgentSessionProviders } from '../agentSessions/agentSessions.js';
 import { getEditingSessionContext } from '../chatEditing/chatEditingActions.js';
 import { ctxHasEditorModification, ctxHasRequestInProgress, ctxIsGlobalEditingSession } from '../chatEditing/chatEditingEditorContextKeys.js';
 import { ACTION_ID_NEW_CHAT, CHAT_CATEGORY, handleCurrentEditingSession, handleModeSwitch } from './chatActions.js';
 import { CreateRemoteAgentJobAction } from './chatContinueInAction.js';
+import { getChatSessionType } from '../../common/model/chatUri.js';
+import { ChatViewPane } from '../widgetHosts/viewPane/chatViewPane.js';
 
 export interface IVoiceChatExecuteActionContext {
 	readonly disableTimeout?: boolean;
@@ -796,6 +800,7 @@ class SendToNewChatAction extends Action2 {
 		const context = args[0] as IChatExecuteActionContext | undefined;
 
 		const widgetService = accessor.get(IChatWidgetService);
+		const viewsService = accessor.get(IViewsService);
 		const dialogService = accessor.get(IDialogService);
 		const chatService = accessor.get(IChatService);
 		const widget = context?.widget ?? widgetService.lastFocusedWidget;
@@ -819,7 +824,17 @@ class SendToNewChatAction extends Action2 {
 		// Clear the input from the current session before creating a new one
 		widget.setInput('');
 
-		await widget.clear();
+		// Preserve the session type when creating a new session
+		const currentResource = widget.viewModel?.model.sessionResource;
+		const currentSessionType = currentResource ? getChatSessionType(currentResource) : localChatSessionType;
+		if (isIChatViewViewContext(widget.viewContext) && currentSessionType !== localChatSessionType) {
+			const newResource = URI.from({ scheme: currentSessionType, path: `/untitled-${generateUuid()}` });
+			const view = await viewsService.openView(ChatViewId) as ChatViewPane;
+			await view.loadSession(newResource);
+		} else {
+			await widget.clear();
+		}
+
 		widget.acceptInput(inputBeforeClear, { storeToHistory: true });
 	}
 }
