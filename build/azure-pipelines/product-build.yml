@@ -208,8 +208,9 @@ extends:
           jobs:
             - template: build/azure-pipelines/product-validation-checks.yml@self
 
-      - ${{ if or(eq(parameters.VSCODE_BUILD_LINUX, true),eq(parameters.VSCODE_BUILD_LINUX_ARMHF, true),eq(parameters.VSCODE_BUILD_LINUX_ARM64, true),eq(parameters.VSCODE_BUILD_WIN32, true),eq(parameters.VSCODE_BUILD_WIN32_ARM64, true)) }}:
+      - ${{ if or(eq(parameters.VSCODE_BUILD_WIN32, true),eq(parameters.VSCODE_BUILD_WIN32_ARM64, true)) }}:
         - stage: CompileCLI
+          displayName: Windows CLI
           dependsOn: []
           jobs:
             - ${{ if eq(parameters.VSCODE_BUILD_WIN32, true) }}:
@@ -225,6 +226,11 @@ extends:
                   VSCODE_ARCH: arm64
                   VSCODE_QUALITY: ${{ variables.VSCODE_QUALITY }}
 
+      - ${{ if or(eq(parameters.VSCODE_BUILD_LINUX, true),eq(parameters.VSCODE_BUILD_LINUX_ARMHF, true),eq(parameters.VSCODE_BUILD_LINUX_ARM64, true)) }}:
+        - stage: CompileCLILinux
+          displayName: Linux CLI
+          dependsOn: []
+          jobs:
             - ${{ if eq(parameters.VSCODE_BUILD_LINUX, true) }}:
               - template: build/azure-pipelines/linux/product-build-linux-cli.yml@self
                 parameters:
@@ -306,7 +312,7 @@ extends:
         - stage: Windows
           dependsOn:
             - Compile
-            - ${{ if or(eq(parameters.VSCODE_BUILD_LINUX, true),eq(parameters.VSCODE_BUILD_LINUX_ARMHF, true),eq(parameters.VSCODE_BUILD_LINUX_ARM64, true),eq(parameters.VSCODE_BUILD_WIN32, true),eq(parameters.VSCODE_BUILD_WIN32_ARM64, true)) }}:
+            - ${{ if or(eq(parameters.VSCODE_BUILD_WIN32, true),eq(parameters.VSCODE_BUILD_WIN32_ARM64, true)) }}:
               - CompileCLI
           pool:
             name: 1es-windows-2022-x64
@@ -356,8 +362,8 @@ extends:
         - stage: Linux
           dependsOn:
             - Compile
-            - ${{ if or(eq(parameters.VSCODE_BUILD_LINUX, true),eq(parameters.VSCODE_BUILD_LINUX_ARMHF, true),eq(parameters.VSCODE_BUILD_LINUX_ARM64, true),eq(parameters.VSCODE_BUILD_WIN32, true),eq(parameters.VSCODE_BUILD_WIN32_ARM64, true)) }}:
-              - CompileCLI
+            - ${{ if or(eq(parameters.VSCODE_BUILD_LINUX, true),eq(parameters.VSCODE_BUILD_LINUX_ARMHF, true),eq(parameters.VSCODE_BUILD_LINUX_ARM64, true)) }}:
+              - CompileCLILinux
           pool:
             name: 1es-ubuntu-22.04-x64
             os: linux
