@@ -43,6 +43,11 @@ export interface IChatTipService {
 	readonly onDidNavigateTip: Event<IChatTip>;
 
 	/**
+	 * Fired when the tip widget is hidden without dismissing the tip.
+	 */
+	readonly onDidHideTip: Event<void>;
+
+	/**
 	 * Fired when tips are disabled.
 	 */
 	readonly onDidDisableTips: Event<void>;
@@ -76,6 +81,12 @@ export interface IChatTipService {
 	 * The dismissed tip will not be shown again in this profile.
 	 */
 	dismissTip(): void;
+
+	/**
+	 * Hides the tip widget without permanently dismissing the tip.
+	 * The tip may be shown again in a future session.
+	 */
+	hideTip(): void;
 
 	/**
 	 * Disables tips permanently by setting the `chat.tips.enabled` configuration to false.
@@ -571,6 +582,9 @@ export class ChatTipService extends Disposable implements IChatTipService {
 	private readonly _onDidNavigateTip = this._register(new Emitter<IChatTip>());
 	readonly onDidNavigateTip = this._onDidNavigateTip.event;
 
+	private readonly _onDidHideTip = this._register(new Emitter<void>());
+	readonly onDidHideTip = this._onDidHideTip.event;
+
 	private readonly _onDidDisableTips = this._register(new Emitter<void>());
 	readonly onDidDisableTips = this._onDidDisableTips.event;
 
@@ -654,6 +668,13 @@ export class ChatTipService extends Disposable implements IChatTipService {
 		} catch {
 			return [];
 		}
+	}
+
+	hideTip(): void {
+		this._hasShownRequestTip = false;
+		this._shownTip = undefined;
+		this._tipRequestId = undefined;
+		this._onDidHideTip.fire();
 	}
 
 	async disableTips(): Promise<void> {

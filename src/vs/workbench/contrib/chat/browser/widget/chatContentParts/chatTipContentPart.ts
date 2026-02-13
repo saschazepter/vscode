@@ -73,6 +73,10 @@ export class ChatTipContentPart extends Disposable {
 			this._renderTip(tip);
 		}));
 
+		this._register(this._chatTipService.onDidHideTip(() => {
+			this._onDidHide.fire();
+		}));
+
 		this._register(this._chatTipService.onDidDisableTips(() => {
 			this._onDidHide.fire();
 		}));
@@ -189,6 +193,26 @@ registerAction2(class DismissTipToolbarAction extends Action2 {
 
 	override async run(accessor: ServicesAccessor): Promise<void> {
 		accessor.get(IChatTipService).dismissTip();
+	}
+});
+
+registerAction2(class CloseTipToolbarAction extends Action2 {
+	constructor() {
+		super({
+			id: 'workbench.action.chat.closeTip',
+			title: localize2('chatTip.close', "Close Tip"),
+			icon: Codicon.close,
+			f1: false,
+			menu: [{
+				id: MenuId.ChatTipToolbar,
+				group: 'navigation',
+				order: 4,
+			}]
+		});
+	}
+
+	override async run(accessor: ServicesAccessor): Promise<void> {
+		accessor.get(IChatTipService).hideTip();
 	}
 });
 
