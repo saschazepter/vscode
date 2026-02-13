@@ -76,6 +76,18 @@ export interface IChatTipService {
 	 * Disables tips permanently by setting the `chat.tips.enabled` configuration to false.
 	 */
 	disableTips(): Promise<void>;
+
+	/**
+	 * Navigates to the next tip in the catalog without permanently dismissing the current one.
+	 * @param contextKeyService The context key service to evaluate tip eligibility.
+	 */
+	navigateToNextTip(contextKeyService: IContextKeyService): IChatTip | undefined;
+
+	/**
+	 * Navigates to the previous tip in the catalog without permanently dismissing the current one.
+	 * @param contextKeyService The context key service to evaluate tip eligibility.
+	 */
+	navigateToPreviousTip(contextKeyService: IContextKeyService): IChatTip | undefined;
 }
 
 export interface ITipDefinition {
@@ -755,6 +767,38 @@ export class ChatTipService extends Disposable implements IChatTipService {
 		this._shownTip = selectedTip;
 
 		return this._createTip(selectedTip);
+	}
+
+	navigateToNextTip(contextKeyService: IContextKeyService): IChatTip | undefined {
+		return this._navigateTip(1, contextKeyService);
+	}
+
+	navigateToPreviousTip(contextKeyService: IContextKeyService): IChatTip | undefined {
+		return this._navigateTip(-1, contextKeyService);
+	}
+
+	private _navigateTip(direction: 1 | -1, _contextKeyService: IContextKeyService): IChatTip | undefined {
+		if (!this._shownTip) {
+			return undefined;
+		}
+
+		const currentIndex = TIP_CATALOG.findIndex(t => t.id === this._shownTip!.id);
+		if (currentIndex === -1) {
+			return undefined;
+		}
+
+		const dismissedIds = new Set(this._getDismissedTipIds());
+		for (let i = 1; i < TIP_CATALOG.length; i++) {
+			const idx = ((currentIndex + direction * i) % TIP_CATALOG.length + TIP_CATALOG.length) % TIP_CATALOG.length;
+			const candidate = TIP_CATALOG[idx];
+			if (!dismissedIds.has(candidate.id)) {
+				this._shownTip = candidate;
+				this._storageService.store(ChatTipService._LAST_TIP_ID_KEY, candidate.id, StorageScope.PROFILE, StorageTarget.USER);
+				return this._createTip(candidate);
+			}
+		}
+
+		return undefined;
 	}
 
 	private _isEligible(tip: ITipDefinition, contextKeyService: IContextKeyService): boolean {
