@@ -796,20 +796,10 @@ export class ChatTipService extends Disposable implements IChatTipService {
 		}
 
 		const dismissedIds = new Set(this._getDismissedTipIds());
-		const totalTips = TIP_CATALOG.length;
-
-		// Pass 1: consider only non-dismissed and eligible tips
-		// Pass 2: consider any non-dismissed tips, regardless of eligibility
-		for (let pass = 0; pass < 2; pass++) {
-			for (let i = 1; i < totalTips; i++) {
-				const idx = ((currentIndex + direction * i) % totalTips + totalTips) % totalTips;
-				const candidate = TIP_CATALOG[idx];
-				if (dismissedIds.has(candidate.id)) {
-					continue;
-				}
-				if (pass === 0 && !this._isEligible(candidate, contextKeyService)) {
-					continue;
-				}
+		for (let i = 1; i < TIP_CATALOG.length; i++) {
+			const idx = ((currentIndex + direction * i) % TIP_CATALOG.length + TIP_CATALOG.length) % TIP_CATALOG.length;
+			const candidate = TIP_CATALOG[idx];
+			if (!dismissedIds.has(candidate.id) && this._isEligible(candidate, contextKeyService)) {
 				this._shownTip = candidate;
 				this._storageService.store(ChatTipService._LAST_TIP_ID_KEY, candidate.id, StorageScope.PROFILE, StorageTarget.USER);
 				const tip = this._createTip(candidate);
