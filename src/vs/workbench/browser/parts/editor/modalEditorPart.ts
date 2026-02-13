@@ -128,6 +128,8 @@ export class ModalEditorPart {
 		// Guide focus back into the modal when clicking outside modal
 		disposables.add(addDisposableListener(modalElement, EventType.MOUSE_DOWN, e => {
 			if (e.target === modalElement) {
+				EventHelper.stop(e, true);
+
 				editorPartContainer.focus();
 			}
 		}));
