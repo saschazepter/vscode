@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { deepStrictEqual } from 'assert';
+import assert from 'assert';
 import { URI } from '../../../../../base/common/uri.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
 import { TestInstantiationService } from '../../../../../platform/instantiation/test/common/instantiationServiceMock.js';
@@ -50,7 +50,7 @@ suite('ExternalTerminal contribution', () => {
 			override getLastActiveWorkspaceRoot() {
 				return options.lastActiveRoot;
 			}
-			override getLastActiveFile() {
+			override getLastActiveFile(_schemeFilter: string) {
 				return options.lastActiveFile;
 			}
 		});
@@ -77,8 +77,8 @@ suite('ExternalTerminal contribution', () => {
 			}
 		});
 
-		instantiationService.stub(ICommandService, {
-			executeCommand(id: string): Promise<any> {
+		instantiationService.stub(ICommandService, new class extends mock<ICommandService>() {
+			override executeCommand(id: string): Promise<any> {
 				executeCommandCalls.push(id);
 				if (id === PICK_WORKSPACE_FOLDER_COMMAND_ID) {
 					return Promise.resolve(options.pickedFolder);
@@ -100,8 +100,8 @@ suite('ExternalTerminal contribution', () => {
 		const handler = CommandsRegistry.getCommand('workbench.action.terminal.openNativeConsole')!.handler;
 		await instantiationService.invokeFunction(handler);
 
-		deepStrictEqual(openTerminalCalls, [{ cwd: '/workspace/project' }]);
-		deepStrictEqual(executeCommandCalls, []);
+		assert.deepStrictEqual(openTerminalCalls, [{ cwd: '/workspace/project' }]);
+		assert.deepStrictEqual(executeCommandCalls, []);
 	});
 
 	test('multiple folders - shows picker and opens selected folder', async () => {
@@ -118,8 +118,8 @@ suite('ExternalTerminal contribution', () => {
 		const handler = CommandsRegistry.getCommand('workbench.action.terminal.openNativeConsole')!.handler;
 		await instantiationService.invokeFunction(handler);
 
-		deepStrictEqual(executeCommandCalls, [PICK_WORKSPACE_FOLDER_COMMAND_ID]);
-		deepStrictEqual(openTerminalCalls, [{ cwd: '/workspace/project2' }]);
+		assert.deepStrictEqual(executeCommandCalls, [PICK_WORKSPACE_FOLDER_COMMAND_ID]);
+		assert.deepStrictEqual(openTerminalCalls, [{ cwd: '/workspace/project2' }]);
 	});
 
 	test('multiple folders - picker cancelled does not open terminal', async () => {
@@ -136,8 +136,8 @@ suite('ExternalTerminal contribution', () => {
 		const handler = CommandsRegistry.getCommand('workbench.action.terminal.openNativeConsole')!.handler;
 		await instantiationService.invokeFunction(handler);
 
-		deepStrictEqual(executeCommandCalls, [PICK_WORKSPACE_FOLDER_COMMAND_ID]);
-		deepStrictEqual(openTerminalCalls, []);
+		assert.deepStrictEqual(executeCommandCalls, [PICK_WORKSPACE_FOLDER_COMMAND_ID]);
+		assert.deepStrictEqual(openTerminalCalls, []);
 	});
 
 	test('no workspace root - falls back to active file directory', async () => {
@@ -152,7 +152,7 @@ suite('ExternalTerminal contribution', () => {
 		const handler = CommandsRegistry.getCommand('workbench.action.terminal.openNativeConsole')!.handler;
 		await instantiationService.invokeFunction(handler);
 
-		deepStrictEqual(openTerminalCalls, [{ cwd: '/workspace/project/src' }]);
+		assert.deepStrictEqual(openTerminalCalls, [{ cwd: '/workspace/project/src' }]);
 	});
 
 	test('no workspace, no file - opens terminal without cwd', async () => {
@@ -165,6 +165,6 @@ suite('ExternalTerminal contribution', () => {
 		const handler = CommandsRegistry.getCommand('workbench.action.terminal.openNativeConsole')!.handler;
 		await instantiationService.invokeFunction(handler);
 
-		deepStrictEqual(openTerminalCalls, [{ cwd: undefined }]);
+		assert.deepStrictEqual(openTerminalCalls, [{ cwd: undefined }]);
 	});
 });
