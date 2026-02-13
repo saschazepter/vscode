@@ -27,7 +27,7 @@ import { ITelemetryService } from '../../../../platform/telemetry/common/telemet
 import { ActiveGroupEditorsByMostRecentlyUsedQuickAccess } from './editorQuickAccess.js';
 import { SideBySideEditor } from './sideBySideEditor.js';
 import { TextDiffEditor } from './textDiffEditor.js';
-import { ActiveEditorCanSplitInGroupContext, ActiveEditorGroupEmptyContext, ActiveEditorGroupLockedContext, ActiveEditorStickyContext, EditorPartModalContext, EditorPartModalMaximizedContext, MultipleEditorGroupsContext, SideBySideEditorActiveContext, TextCompareEditorActiveContext } from '../../../common/contextkeys.js';
+import { ActiveEditorCanSplitInGroupContext, ActiveEditorGroupEmptyContext, ActiveEditorGroupLockedContext, ActiveEditorStickyContext, AuxiliaryBarMaximizedContext, EditorPartModalContext, EditorPartModalMaximizedContext, MultipleEditorGroupsContext, SideBySideEditorActiveContext, TextCompareEditorActiveContext } from '../../../common/contextkeys.js';
 import { CloseDirection, EditorInputCapabilities, EditorsOrder, IResourceDiffEditorInput, IUntitledTextResourceEditorInput, isEditorInputWithOptionsAndGroup } from '../../../common/editor.js';
 import { EditorInput } from '../../../common/editor/editorInput.js';
 import { SideBySideEditorInput } from '../../../common/editor/sideBySideEditorInput.js';
@@ -36,6 +36,7 @@ import { EditorGroupLayout, GroupDirection, GroupLocation, GroupsOrder, IEditorG
 import { mainWindow } from '../../../../base/browser/window.js';
 import { IEditorResolverService } from '../../../services/editor/common/editorResolverService.js';
 import { IEditorService, SIDE_GROUP } from '../../../services/editor/common/editorService.js';
+import { IWorkbenchLayoutService } from '../../../services/layout/browser/layoutService.js';
 import { IPathService } from '../../../services/path/common/pathService.js';
 import { IUntitledTextEditorService } from '../../../services/untitled/common/untitledTextEditorService.js';
 import { DIFF_FOCUS_OTHER_SIDE, DIFF_FOCUS_PRIMARY_SIDE, DIFF_FOCUS_SECONDARY_SIDE, registerDiffEditorCommands } from './diffEditorCommands.js';
@@ -865,6 +866,20 @@ function registerCloseEditorCommands() {
 			if (commandsContext.groupedEditors.length) {
 				editorGroupsService.removeGroup(commandsContext.groupedEditors[0].group);
 			}
+		}
+	});
+
+	// When the auxiliary bar (secondary side bar) is maximized, pressing the close editor
+	// shortcut should restore the auxiliary bar instead of closing the window
+	KeybindingsRegistry.registerCommandAndKeybindingRule({
+		id: 'workbench.action.restoreMaximizedAuxiliaryBar',
+		weight: KeybindingWeight.WorkbenchContrib,
+		when: AuxiliaryBarMaximizedContext,
+		primary: KeyMod.CtrlCmd | KeyCode.KeyW,
+		win: { primary: KeyMod.CtrlCmd | KeyCode.F4, secondary: [KeyMod.CtrlCmd | KeyCode.KeyW] },
+		handler: (accessor) => {
+			const layoutService = accessor.get(IWorkbenchLayoutService);
+			layoutService.setAuxiliaryBarMaximized(false);
 		}
 	});
 
