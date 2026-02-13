@@ -111,6 +111,7 @@ export class ModalEditorPart {
 		// Create toolbar
 		disposables.add(scopedInstantiationService.createInstance(MenuWorkbenchToolBar, actionBarContainer, MenuId.ModalEditorTitle, {
 			hiddenItemStrategy: HiddenItemStrategy.NoHide,
+			highlightToggledItems: true,
 			menuOptions: { shouldForwardArgs: true }
 		}));
 
