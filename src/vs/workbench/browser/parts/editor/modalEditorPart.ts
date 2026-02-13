@@ -144,18 +144,18 @@ export class ModalEditorPart {
 				EventHelper.stop(event, true);
 
 				editorPart.close();
-
-				return;
 			}
 
 			// Prevent unsupported commands
-			const resolved = this.keybindingService.softDispatch(event, this.layoutService.mainContainer);
-			if (resolved.kind === ResultKind.KbFound && resolved.commandId) {
-				if (
-					resolved.commandId.startsWith('workbench.') &&
-					!defaultModalEditorAllowableCommands.has(resolved.commandId)
-				) {
-					EventHelper.stop(event, true);
+			else {
+				const resolved = this.keybindingService.softDispatch(event, this.layoutService.mainContainer);
+				if (resolved.kind === ResultKind.KbFound && resolved.commandId) {
+					if (
+						resolved.commandId.startsWith('workbench.') &&
+						!defaultModalEditorAllowableCommands.has(resolved.commandId)
+					) {
+						EventHelper.stop(event, true);
+					}
 				}
 			}
 		}));
