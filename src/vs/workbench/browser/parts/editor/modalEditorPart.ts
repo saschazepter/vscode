@@ -6,6 +6,7 @@
 import './media/modalEditorPart.css';
 import { $, addDisposableListener, append, EventHelper, EventType, isAncestor, isHTMLElement } from '../../../../base/browser/dom.js';
 import { StandardKeyboardEvent } from '../../../../base/browser/keyboardEvent.js';
+import { KeyCode } from '../../../../base/common/keyCodes.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { DisposableStore, MutableDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { MenuId } from '../../../../platform/actions/common/actions.js';
@@ -152,6 +153,17 @@ export class ModalEditorPart {
 		// Block certain workbench commands from being dispatched while the modal is open
 		disposables.add(addDisposableListener(modalElement, EventType.KEY_DOWN, e => {
 			const event = new StandardKeyboardEvent(e);
+
+			// Close on Escape
+			if (event.equals(KeyCode.Escape)) {
+				EventHelper.stop(event, true);
+
+				editorPart.close();
+
+				return;
+			}
+
+			// Prevent unsupported commands
 			const resolved = this.keybindingService.softDispatch(event, this.layoutService.mainContainer);
 			if (resolved.kind === ResultKind.KbFound && resolved.commandId) {
 				if (
