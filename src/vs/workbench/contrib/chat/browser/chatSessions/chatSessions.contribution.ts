@@ -44,7 +44,7 @@ import { IMarkdownString } from '../../../../../base/common/htmlContent.js';
 import { IViewsService } from '../../../../services/views/common/viewsService.js';
 import { ChatViewId } from '../chat.js';
 import { ChatViewPane } from '../widgetHosts/viewPane/chatViewPane.js';
-import { AgentSessionProviders, getAgentSessionProviderName } from '../agentSessions/agentSessions.js';
+import { AgentSessionProviders, backgroundAgentDisplayName, getAgentSessionProviderName } from '../agentSessions/agentSessions.js';
 import { BugIndicatingError, isCancellationError } from '../../../../../base/common/errors.js';
 import { IEditorGroupsService } from '../../../../services/editor/common/editorGroupsService.js';
 import { LocalChatSessionUri } from '../../common/model/chatUri.js';
@@ -167,6 +167,10 @@ const extensionPoint = ExtensionsRegistry.registerExtensionPoint<IChatSessionsEx
 						},
 						supportsSymbolAttachments: {
 							description: localize('chatSessionsExtPoint.supportsSymbolAttachments', 'Whether this chat session supports attaching symbols.'),
+							type: 'boolean'
+						},
+						supportsPromptAttachments: {
+							description: localize('chatSessionsExtPoint.supportsPromptAttachments', 'Whether this chat session supports attaching prompts.'),
 							type: 'boolean'
 						}
 					}
@@ -328,10 +332,11 @@ export class ChatSessionsService extends Disposable implements IChatSessionsServ
 		const builtinSessionProviders = [AgentSessionProviders.Local];
 		const contributedSessionProviders = observableFromEvent(
 			this.onDidChangeAvailability,
-			() => Array.from(this._contributions.keys()).filter(isAgentSessionProviderType) as AgentSessionProviders[],
+			() => Array.from(this._contributions.keys()).filter(key => this._contributionDisposables.has(key) && isAgentSessionProviderType(key)) as AgentSessionProviders[],
 		).recomputeInitiallyAndOnChange(this._store);
 
 		this._register(autorun(reader => {
+			backgroundAgentDisplayName.read(reader);
 			const activatedProviders = [...builtinSessionProviders, ...contributedSessionProviders.read(reader)];
 			for (const provider of Object.values(AgentSessionProviders)) {
 				if (activatedProviders.includes(provider)) {

@@ -4,8 +4,9 @@
  *--------------------------------------------------------------------------------------------*/
 
 import './media/modalEditorPart.css';
-import { $, addDisposableListener, append, EventHelper, EventType } from '../../../../base/browser/dom.js';
+import { $, addDisposableListener, append, EventHelper, EventType, isHTMLElement } from '../../../../base/browser/dom.js';
 import { StandardKeyboardEvent } from '../../../../base/browser/keyboardEvent.js';
+import { KeyCode } from '../../../../base/common/keyCodes.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { DisposableStore, MutableDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { MenuId } from '../../../../platform/actions/common/actions.js';
@@ -20,14 +21,15 @@ import { IStorageService } from '../../../../platform/storage/common/storage.js'
 import { IThemeService } from '../../../../platform/theme/common/themeService.js';
 import { IEditorGroupView, IEditorPartsView } from './editor.js';
 import { EditorPart } from './editorPart.js';
-import { GroupDirection, GroupsOrder, IModalEditorPart } from '../../../services/editor/common/editorGroupsService.js';
+import { GroupDirection, GroupsOrder, IModalEditorPart, GroupActivationReason } from '../../../services/editor/common/editorGroupsService.js';
 import { IEditorService } from '../../../services/editor/common/editorService.js';
-import { EditorPartModalContext } from '../../../common/contextkeys.js';
+import { EditorPartModalContext, EditorPartModalMaximizedContext } from '../../../common/contextkeys.js';
 import { Verbosity } from '../../../common/editor.js';
 import { IHostService } from '../../../services/host/browser/host.js';
-import { IWorkbenchLayoutService } from '../../../services/layout/browser/layoutService.js';
+import { IWorkbenchLayoutService, Parts } from '../../../services/layout/browser/layoutService.js';
 import { mainWindow } from '../../../../base/browser/window.js';
 import { localize } from '../../../../nls.js';
+import { CLOSE_MODAL_EDITOR_COMMAND_ID, MOVE_MODAL_EDITOR_TO_MAIN_COMMAND_ID, TOGGLE_MODAL_EDITOR_MAXIMIZED_COMMAND_ID } from './editorCommands.js';
 
 const defaultModalEditorAllowableCommands = new Set([
 	'workbench.action.quit',
@@ -36,6 +38,9 @@ const defaultModalEditorAllowableCommands = new Set([
 	'workbench.action.closeAllEditors',
 	'workbench.action.files.save',
 	'workbench.action.files.saveAll',
+	CLOSE_MODAL_EDITOR_COMMAND_ID,
+	MOVE_MODAL_EDITOR_TO_MAIN_COMMAND_ID,
+	TOGGLE_MODAL_EDITOR_MAXIMIZED_COMMAND_ID
 ]);
 
 export interface ICreateModalEditorPartResult {
@@ -52,6 +57,7 @@ export class ModalEditorPart {
 		@IEditorService private readonly editorService: IEditorService,
 		@IWorkbenchLayoutService private readonly layoutService: IWorkbenchLayoutService,
 		@IKeybindingService private readonly keybindingService: IKeybindingService,
+		@IHostService private readonly hostService: IHostService,
 	) {
 	}
 
@@ -60,7 +66,6 @@ export class ModalEditorPart {
 
 		// Create modal container
 		const modalElement = $('.monaco-modal-editor-block.dimmed');
-		modalElement.tabIndex = -1;
 		this.layoutService.mainContainer.appendChild(modalElement);
 		disposables.add(toDisposable(() => modalElement.remove()));
 
@@ -71,14 +76,15 @@ export class ModalEditorPart {
 		const editorPartContainer = $('.part.editor.modal-editor-part', {
 			role: 'dialog',
 			'aria-modal': 'true',
-			'aria-labelledby': titleId
+			'aria-labelledby': titleId,
+			tabIndex: -1
 		});
 		shadowElement.appendChild(editorPartContainer);
 
 		// Create header with title and close button
 		const headerElement = editorPartContainer.appendChild($('.modal-editor-header'));
 
-		// Title element (centered)
+		// Title element
 		const titleElement = append(headerElement, $('div.modal-editor-title'));
 		titleElement.id = titleId;
 		titleElement.textContent = '';
@@ -102,9 +108,10 @@ export class ModalEditorPart {
 			[IEditorService, modalEditorService]
 		)));
 
-		// Create toolbar driven by MenuId.ModalEditorTitle
+		// Create toolbar
 		disposables.add(scopedInstantiationService.createInstance(MenuWorkbenchToolBar, actionBarContainer, MenuId.ModalEditorTitle, {
 			hiddenItemStrategy: HiddenItemStrategy.NoHide,
+			highlightToggledItems: true,
 			menuOptions: { shouldForwardArgs: true }
 		}));
 
@@ -118,23 +125,43 @@ export class ModalEditorPart {
 			editorPart.notifyActiveEditorChanged();
 		})));
 
-		// Handle close on click outside (on the dimmed background)
+		// Handle double-click on header to toggle maximize
+		disposables.add(addDisposableListener(headerElement, EventType.DBLCLICK, e => {
+			EventHelper.stop(e);
+
+			editorPart.toggleMaximized();
+		}));
+
+		// Guide focus back into the modal when clicking outside modal
 		disposables.add(addDisposableListener(modalElement, EventType.MOUSE_DOWN, e => {
 			if (e.target === modalElement) {
-				editorPart.close();
+				EventHelper.stop(e, true);
+
+				editorPartContainer.focus();
 			}
 		}));
 
 		// Block certain workbench commands from being dispatched while the modal is open
 		disposables.add(addDisposableListener(modalElement, EventType.KEY_DOWN, e => {
 			const event = new StandardKeyboardEvent(e);
-			const resolved = this.keybindingService.softDispatch(event, this.layoutService.mainContainer);
-			if (resolved.kind === ResultKind.KbFound && resolved.commandId) {
-				if (
-					resolved.commandId.startsWith('workbench.') &&
-					!defaultModalEditorAllowableCommands.has(resolved.commandId)
-				) {
-					EventHelper.stop(event, true);
+
+			// Close on Escape
+			if (event.equals(KeyCode.Escape)) {
+				EventHelper.stop(event, true);
+
+				editorPart.close();
+			}
+
+			// Prevent unsupported commands
+			else {
+				const resolved = this.keybindingService.softDispatch(event, this.layoutService.mainContainer);
+				if (resolved.kind === ResultKind.KbFound && resolved.commandId) {
+					if (
+						resolved.commandId.startsWith('workbench.') &&
+						!defaultModalEditorAllowableCommands.has(resolved.commandId)
+					) {
+						EventHelper.stop(event, true);
+					}
 				}
 			}
 		}));
@@ -145,10 +172,28 @@ export class ModalEditorPart {
 		}));
 
 		// Layout the modal editor part
-		disposables.add(Event.runAndSubscribe(this.layoutService.onDidLayoutMainContainer, () => {
+		const layoutModal = () => {
 			const containerDimension = this.layoutService.mainContainerDimension;
-			const width = Math.min(containerDimension.width * 0.8, 1200);
-			const height = Math.min(containerDimension.height * 0.8, 800);
+			const titleBarOffset = this.layoutService.mainContainerOffset.top;
+			const availableHeight = Math.max(containerDimension.height - titleBarOffset, 0);
+
+			let width: number;
+			let height: number;
+
+			if (editorPart.maximized) {
+				const padding = 16; // Keep a small margin around all edges
+				width = Math.max(containerDimension.width - padding, 0);
+				height = Math.max(availableHeight - padding, 0);
+			} else {
+				const maxWidth = 1200;
+				const maxHeight = 800;
+				const targetWidth = containerDimension.width * 0.8;
+				const targetHeight = availableHeight * 0.8;
+				width = Math.min(targetWidth, maxWidth, containerDimension.width);
+				height = Math.min(targetHeight, maxHeight, availableHeight);
+			}
+
+			height = Math.min(height, availableHeight); // Ensure the modal never exceeds available height (below the title bar)
 
 			editorPartContainer.style.width = `${width}px`;
 			editorPartContainer.style.height = `${height}px`;
@@ -156,7 +201,13 @@ export class ModalEditorPart {
 			const borderSize = 2; // Account for 1px border on all sides and modal header height
 			const headerHeight = 32 + 1 /* border bottom */;
 			editorPart.layout(width - borderSize, height - borderSize - headerHeight, 0, 0);
-		}));
+		};
+		disposables.add(Event.runAndSubscribe(this.layoutService.onDidLayoutMainContainer, layoutModal));
+		disposables.add(editorPart.onDidChangeMaximized(() => layoutModal()));
+
+		// Dim window controls to match the modal overlay
+		this.hostService.setWindowDimmed(mainWindow, true);
+		disposables.add(toDisposable(() => this.hostService.setWindowDimmed(mainWindow, false)));
 
 		// Focus the modal
 		editorPartContainer.focus();
@@ -176,7 +227,15 @@ class ModalEditorPartImpl extends EditorPart implements IModalEditorPart {
 	private readonly _onWillClose = this._register(new Emitter<void>());
 	readonly onWillClose = this._onWillClose.event;
 
+	private readonly _onDidChangeMaximized = this._register(new Emitter<boolean>());
+	readonly onDidChangeMaximized = this._onDidChangeMaximized.event;
+
+	private _maximized = false;
+	get maximized(): boolean { return this._maximized; }
+
 	private readonly optionsDisposable = this._register(new MutableDisposable());
+
+	private previousMainWindowActiveElement: Element | null = null;
 
 	constructor(
 		windowId: number,
@@ -196,6 +255,12 @@ class ModalEditorPartImpl extends EditorPart implements IModalEditorPart {
 		this.enforceModalPartOptions();
 	}
 
+	override create(parent: HTMLElement, options?: object): void {
+		this.previousMainWindowActiveElement = mainWindow.document.activeElement;
+
+		super.create(parent, options);
+	}
+
 	private enforceModalPartOptions(): void {
 		const editorCount = this.groups.reduce((count, group) => count + group.count, 0);
 		this.optionsDisposable.value = this.enforcePartOptions({
@@ -212,9 +277,19 @@ class ModalEditorPartImpl extends EditorPart implements IModalEditorPart {
 		this.enforceModalPartOptions();
 	}
 
+	toggleMaximized(): void {
+		this._maximized = !this._maximized;
+
+		this._onDidChangeMaximized.fire(this._maximized);
+	}
+
 	protected override handleContextKeys(): void {
 		const isModalEditorPartContext = EditorPartModalContext.bindTo(this.scopedContextKeyService);
 		isModalEditorPartContext.set(true);
+
+		const isMaximizedContext = EditorPartModalMaximizedContext.bindTo(this.scopedContextKeyService);
+		isMaximizedContext.set(this._maximized);
+		this._register(this.onDidChangeMaximized(maximized => isMaximizedContext.set(maximized)));
 
 		super.handleContextKeys();
 	}
@@ -224,7 +299,7 @@ class ModalEditorPartImpl extends EditorPart implements IModalEditorPart {
 		// Close modal when last group removed
 		const groupView = this.assertGroupView(group);
 		if (this.count === 1 && this.activeGroup === groupView) {
-			this.doRemoveLastGroup(preserveFocus);
+			this.doRemoveLastGroup();
 		}
 
 		// Otherwise delegate to parent implementation
@@ -233,18 +308,26 @@ class ModalEditorPartImpl extends EditorPart implements IModalEditorPart {
 		}
 	}
 
-	private doRemoveLastGroup(preserveFocus?: boolean): void {
-		const restoreFocus = !preserveFocus && this.shouldRestoreFocus(this.container);
+	private doRemoveLastGroup(): void {
 
-		// Activate next group
-		const mostRecentlyActiveGroups = this.editorPartsView.getGroups(GroupsOrder.MOST_RECENTLY_ACTIVE);
-		const nextActiveGroup = mostRecentlyActiveGroups[1]; // [0] will be the current group we are about to dispose
-		if (nextActiveGroup) {
-			nextActiveGroup.groupsView.activateGroup(nextActiveGroup);
+		// Activate main editor group when closing
+		const activeMainGroup = this.editorPartsView.mainPart.activeGroup;
+		this.editorPartsView.mainPart.activateGroup(activeMainGroup, undefined, GroupActivationReason.PART_CLOSE);
 
-			if (restoreFocus) {
-				nextActiveGroup.focus();
-			}
+		// Deal with focus: removing the last modal group
+		// means we return back to the main editor part.
+		// But we only want to focus that if it was focused
+		// before to prevent revealing the editor part if
+		// it was maybe hidden before.
+		const mainEditorPartContainer = this.layoutService.getContainer(mainWindow, Parts.EDITOR_PART);
+		if (
+			!isHTMLElement(this.previousMainWindowActiveElement) ||					// invalid previous element
+			!this.previousMainWindowActiveElement.isConnected ||					// previous element no longer in the DOM
+			mainEditorPartContainer?.contains(this.previousMainWindowActiveElement)	// previous element is inside main editor part
+		) {
+			activeMainGroup.focus();
+		} else {
+			this.previousMainWindowActiveElement.focus();
 		}
 
 		this.doClose({ mergeConfirmingEditorsToMainPart: false });

@@ -78,6 +78,7 @@ export default tseslint.config(
 			'semi': 'warn',
 			'local/code-translation-remind': 'warn',
 			'local/code-no-native-private': 'warn',
+			'local/code-no-declare-const-enum': 'warn',
 			'local/code-parameter-properties-must-have-explicit-accessibility': 'warn',
 			'local/code-no-nls-in-standalone-editor': 'warn',
 			'local/code-no-potentially-unsafe-disposables': 'warn',
@@ -92,6 +93,7 @@ export default tseslint.config(
 			'local/code-no-localized-model-description': 'warn',
 			'local/code-policy-localization-key-match': 'warn',
 			'local/code-no-localization-template-literals': 'error',
+			'local/code-no-http-import': ['warn', { target: 'src/vs/**' }],
 			'local/code-no-deep-import-of-internal': ['error', { '.*Internal': true, 'searchExtTypesInternal': false }],
 			'local/code-layering': [
 				'warn',
@@ -2064,9 +2066,12 @@ export default tseslint.config(
 	// Additional extension strictness rules
 	{
 		files: [
-			'extensions/markdown-language-features/**/*.ts',
-			'extensions/mermaid-chat-features/**/*.ts',
-			'extensions/media-preview/**/*.ts',
+			'extensions/markdown-language-features/src/**/*.ts',
+			'extensions/markdown-language-features/notebook/**/*.ts',
+			'extensions/markdown-language-features/preview-src/**/*.ts',
+			'extensions/mermaid-chat-features/chat-webview-src/**/*.ts',
+			'extensions/mermaid-chat-features/src/**/*.ts',
+			'extensions/media-preview/src/**/*.ts',
 			'extensions/simple-browser/**/*.ts',
 			'extensions/typescript-language-features/**/*.ts',
 		],
