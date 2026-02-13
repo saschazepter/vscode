@@ -137,7 +137,7 @@ registerAction2(class PreviousTipAction extends Action2 {
 	constructor() {
 		super({
 			id: 'workbench.action.chat.previousTip',
-			title: localize2('chatTip.previous', "Previous Tip"),
+			title: localize2('chatTip.previous', "Previous tip"),
 			icon: Codicon.chevronLeft,
 			f1: false,
 			menu: [{
@@ -159,7 +159,7 @@ registerAction2(class NextTipAction extends Action2 {
 	constructor() {
 		super({
 			id: 'workbench.action.chat.nextTip',
-			title: localize2('chatTip.next', "Next Tip"),
+			title: localize2('chatTip.next', "Next tip"),
 			icon: Codicon.chevronRight,
 			f1: false,
 			menu: [{
@@ -181,7 +181,7 @@ registerAction2(class DismissTipToolbarAction extends Action2 {
 	constructor() {
 		super({
 			id: 'workbench.action.chat.dismissTipToolbar',
-			title: localize2('chatTip.dismissButton', "Dismiss Tip"),
+			title: localize2('chatTip.dismissButton', "Dismiss tip"),
 			icon: Codicon.check,
 			f1: false,
 			menu: [{
@@ -194,26 +194,6 @@ registerAction2(class DismissTipToolbarAction extends Action2 {
 
 	override async run(accessor: ServicesAccessor): Promise<void> {
 		accessor.get(IChatTipService).dismissTip();
-	}
-});
-
-registerAction2(class CloseTipToolbarAction extends Action2 {
-	constructor() {
-		super({
-			id: 'workbench.action.chat.closeTip',
-			title: localize2('chatTip.close', "Close Tips"),
-			icon: Codicon.close,
-			f1: false,
-			menu: [{
-				id: MenuId.ChatTipToolbar,
-				group: 'navigation',
-				order: 4,
-			}]
-		});
-	}
-
-	override async run(accessor: ServicesAccessor): Promise<void> {
-		accessor.get(IChatTipService).hideTip();
 	}
 });
 
@@ -264,9 +244,9 @@ registerAction2(class DisableTipsAction extends Action2 {
 		const chatTipService = accessor.get(IChatTipService);
 
 		const { confirmed } = await dialogService.confirm({
-			message: localize('chatTip.disableConfirmTitle', "Disable Tips?"),
+			message: localize('chatTip.disableConfirmTitle', "Disable tips?"),
 			detail: localize('chatTip.disableConfirmDetail', "New tips are added frequently to help you get the most out of chat. You can re-enable tips anytime from the {0} setting.", 'chat.tips.enabled'),
-			primaryButton: localize('chatTip.disableConfirmButton', "Disable Tips"),
+			primaryButton: localize('chatTip.disableConfirmButton', "Disable tips"),
 		});
 
 		if (confirmed) {
