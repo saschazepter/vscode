@@ -137,7 +137,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 		@ILogService public readonly logger: ILogService,
 		@ILabelService private readonly labelService: ILabelService,
 		@IModelService private readonly modelService: IModelService,
-		@IInstantiationService private readonly instantiationService: IInstantiationService,
+		@IInstantiationService protected readonly instantiationService: IInstantiationService,
 		@IUserDataProfileService private readonly userDataService: IUserDataProfileService,
 		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@IFileService private readonly fileService: IFileService,
@@ -150,7 +150,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 	) {
 		super();
 
-		this.fileLocator = this.instantiationService.createInstance(PromptFilesLocator);
+		this.fileLocator = this.createPromptFilesLocator();
 		this._register(this.modelService.onModelRemoved((model) => {
 			this.cachedParsedPromptFromModels.delete(model.uri);
 		}));
@@ -179,13 +179,17 @@ export class PromptsService extends Disposable implements IPromptsService {
 			(token) => this.computeHooks(token),
 			() => Event.any(
 				this.getFileLocatorEvent(PromptsType.hook),
-				Event.filter(this.configurationService.onDidChangeConfiguration, e => e.affectsConfiguration(PromptsConfig.USE_CLAUDE_HOOKS)),
+				Event.filter(this.configurationService.onDidChangeConfiguration, e => e.affectsConfiguration(PromptsConfig.USE_CHAT_HOOKS) || e.affectsConfiguration(PromptsConfig.USE_CLAUDE_HOOKS)),
 			)
 		));
 
 		// Hack: Subscribe to activate caching (CachedPromise only caches when onDidChange has listeners)
 		this._register(this.cachedSkills.onDidChange(() => { }));
 		this._register(this.cachedHooks.onDidChange(() => { }));
+	}
+
+	protected createPromptFilesLocator(): PromptFilesLocator {
+		return this.instantiationService.createInstance(PromptFilesLocator);
 	}
 
 	private getFileLocatorEvent(type: PromptsType): Event<void> {
@@ -575,11 +579,11 @@ export class PromptsService extends Disposable implements IPromptsService {
 
 				const source: IAgentSource = IAgentSource.fromPromptPath(promptPath);
 				if (!ast.header) {
-					return { uri, name, agentInstructions, source, target, visibility: { userInvokable: true, agentInvokable: true } };
+					return { uri, name, agentInstructions, source, target, visibility: { userInvocable: true, agentInvocable: true } };
 				}
 				const visibility = {
-					userInvokable: ast.header.userInvokable !== false,
-					agentInvokable: ast.header.infer === true || ast.header.disableModelInvocation !== true,
+					userInvocable: ast.header.userInvocable !== false,
+					agentInvocable: ast.header.infer === true || ast.header.disableModelInvocation !== true,
 				} satisfies ICustomAgentVisibility;
 
 				let model = ast.header.model;
@@ -912,7 +916,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 					name: file.name,
 					description: sanitizedDescription,
 					disableModelInvocation: file.disableModelInvocation ?? false,
-					userInvokable: file.userInvokable ?? true
+					userInvocable: file.userInvocable ?? true
 				});
 			}
 		}
@@ -1003,6 +1007,11 @@ export class PromptsService extends Disposable implements IPromptsService {
 	}
 
 	private async computeHooks(token: CancellationToken): Promise<IConfiguredHooksInfo | undefined> {
+		const useChatHooks = this.configurationService.getValue(PromptsConfig.USE_CHAT_HOOKS);
+		if (!useChatHooks) {
+			return undefined;
+		}
+
 		const useClaudeHooks = this.configurationService.getValue<boolean>(PromptsConfig.USE_CLAUDE_HOOKS);
 		const hookFiles = await this.listPromptFiles(PromptsType.hook, token);
 
@@ -1127,10 +1136,10 @@ export class PromptsService extends Disposable implements IPromptsService {
 	 * Returns the discovery results and a map of skill counts by source type for telemetry.
 	 */
 	private async computeSkillDiscoveryInfo(token: CancellationToken): Promise<{
-		files: (IPromptFileDiscoveryResult & { description?: string; source?: PromptFileSource; disableModelInvocation?: boolean; userInvokable?: boolean })[];
+		files: (IPromptFileDiscoveryResult & { description?: string; source?: PromptFileSource; disableModelInvocation?: boolean; userInvocable?: boolean })[];
 		skillsBySource: Map<PromptFileSource, number>;
 	}> {
-		const files: (IPromptFileDiscoveryResult & { description?: string; source?: PromptFileSource; disableModelInvocation?: boolean; userInvokable?: boolean })[] = [];
+		const files: (IPromptFileDiscoveryResult & { description?: string; source?: PromptFileSource; disableModelInvocation?: boolean; userInvocable?: boolean })[] = [];
 		const skillsBySource = new Map<PromptFileSource, number>();
 		const seenNames = new Set<string>();
 		const nameToUri = new Map<string, URI>();
@@ -1209,8 +1218,8 @@ export class PromptsService extends Disposable implements IPromptsService {
 				seenNames.add(sanitizedName);
 				nameToUri.set(sanitizedName, uri);
 				const disableModelInvocation = parsedFile.header?.disableModelInvocation === true;
-				const userInvokable = parsedFile.header?.userInvokable !== false;
-				files.push({ uri, storage, status: 'loaded', name: sanitizedName, description, extensionId, source, disableModelInvocation, userInvokable });
+				const userInvocable = parsedFile.header?.userInvocable !== false;
+				files.push({ uri, storage, status: 'loaded', name: sanitizedName, description, extensionId, source, disableModelInvocation, userInvocable });
 
 				// Track skill type
 				skillsBySource.set(source, (skillsBySource.get(source) || 0) + 1);

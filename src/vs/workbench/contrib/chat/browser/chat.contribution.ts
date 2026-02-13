@@ -143,6 +143,7 @@ import { ChatRepoInfoContribution } from './chatRepoInfo.js';
 import { VALID_PROMPT_FOLDER_PATTERN } from '../common/promptSyntax/utils/promptFilesLocator.js';
 import { ChatTipService, IChatTipService } from './chatTipService.js';
 import { ChatQueuePickerRendering } from './widget/input/chatQueuePickerActionItem.js';
+import { ExploreAgentDefaultModel } from './exploreAgentDefaultModel.js';
 import { PlanAgentDefaultModel } from './planAgentDefaultModel.js';
 
 const toolReferenceNameEnumValues: string[] = [];
@@ -287,11 +288,7 @@ configurationRegistry.registerConfiguration({
 				mode: 'auto'
 			}
 		},
-		'chat.confettiOnThumbsUp': {
-			type: 'boolean',
-			description: nls.localize('chat.confettiOnThumbsUp', "Controls whether a confetti animation is shown when clicking the thumbs up button on a chat response."),
-			default: false,
-		},
+
 		'chat.experimental.detectParticipant.enabled': {
 			type: 'boolean',
 			deprecationMessage: nls.localize('chat.experimental.detectParticipant.enabled.deprecated', "This setting is deprecated. Please use `chat.detectParticipant.enabled` instead."),
@@ -326,6 +323,13 @@ configurationRegistry.registerConfiguration({
 			type: 'boolean',
 			description: nls.localize('chat.notifyWindowOnConfirmation', "Controls whether a chat session should present the user with an OS notification when a confirmation is needed while the window is not in focus. This includes a window badge as well as notification toast."),
 			default: true,
+		},
+		[ChatConfiguration.AutoReply]: {
+			default: false,
+			markdownDescription: nls.localize('chat.autoReply.description', "Automatically answer chat question carousels using the current model. This is an advanced setting and can lead to unintended choices or actions based on incomplete context."),
+			type: 'boolean',
+			scope: ConfigurationScope.APPLICATION_MACHINE,
+			tags: ['experimental', 'advanced'],
 		},
 		[ChatConfiguration.GlobalAutoApprove]: {
 			default: false,
@@ -622,6 +626,14 @@ configurationRegistry.registerConfiguration({
 			enum: PlanAgentDefaultModel.modelIds,
 			enumItemLabels: PlanAgentDefaultModel.modelLabels,
 			markdownEnumDescriptions: PlanAgentDefaultModel.modelDescriptions
+		},
+		[ChatConfiguration.ExploreAgentDefaultModel]: {
+			type: 'string',
+			description: nls.localize('chat.exploreAgent.defaultModel.description', "Select the default language model to use for the Explore subagent from the available providers."),
+			default: '',
+			enum: ExploreAgentDefaultModel.modelIds,
+			enumItemLabels: ExploreAgentDefaultModel.modelLabels,
+			markdownEnumDescriptions: ExploreAgentDefaultModel.modelDescriptions
 		},
 		[ChatConfiguration.RequestQueueingEnabled]: {
 			type: 'boolean',
@@ -962,7 +974,7 @@ configurationRegistry.registerConfiguration({
 				patternErrorMessage: nls.localize('chat.hookFilesLocations.invalidPath', "Paths must be relative or start with '~/'. Absolute paths and '\\' separators are not supported."),
 			},
 			restricted: true,
-			tags: ['prompts', 'hooks', 'agent'],
+			tags: ['preview', 'prompts', 'hooks', 'agent'],
 			examples: [
 				{
 					[DEFAULT_HOOK_FILE_PATHS[0].path]: true,
@@ -975,12 +987,24 @@ configurationRegistry.registerConfiguration({
 		},
 		[PromptsConfig.USE_CHAT_HOOKS]: {
 			type: 'boolean',
-			title: nls.localize('chat.useChatHooks.title', "Use Chat Hooks",),
-			markdownDescription: nls.localize('chat.useChatHooks.description', "Controls whether chat hooks are executed at strategic points during an agent's workflow. Hooks are loaded from the files configured in `#chat.hookFilesLocations#`.",),
+			title: nls.localize('chat.useHooks.title', "Use Chat Hooks",),
+			markdownDescription: nls.localize('chat.useHooks.description', "Controls whether chat hooks are executed at strategic points during an agent's workflow. Hooks are loaded from the files configured in `#chat.hookFilesLocations#`.",),
 			default: true,
 			restricted: true,
 			disallowConfigurationDefault: true,
-			tags: ['preview', 'prompts', 'hooks', 'agent']
+			tags: ['preview', 'prompts', 'hooks', 'agent'],
+			policy: {
+				name: 'ChatHooks',
+				category: PolicyCategory.InteractiveSession,
+				minimumVersion: '1.109',
+				value: (policyData) => policyData.chat_preview_features_enabled === false ? false : undefined,
+				localization: {
+					description: {
+						key: 'chat.useHooks.description',
+						value: nls.localize('chat.useHooks.description', "Controls whether chat hooks are executed at strategic points during an agent's workflow. Hooks are loaded from the files configured in `#chat.hookFilesLocations#`.",)
+					}
+				},
+			}
 		},
 		[PromptsConfig.USE_CLAUDE_HOOKS]: {
 			type: 'boolean',
