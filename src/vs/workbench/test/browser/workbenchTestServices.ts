@@ -1379,6 +1379,8 @@ export class TestHostService implements IHostService {
 
 	async showToast(_options: IToastOptions, token: CancellationToken): Promise<IToastResult> { return { supported: false, clicked: false }; }
 
+	async setWindowDimmed(_targetWindow: Window, _dimmed: boolean): Promise<void> { }
+
 	readonly colorScheme = ColorScheme.DARK;
 	onDidChangeColorScheme = Event.None;
 }
