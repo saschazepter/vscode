@@ -1285,7 +1285,12 @@ export class CodeApplication extends Disposable {
 		const context = isLaunchedFromCli(process.env) ? OpenContext.CLI : OpenContext.DESKTOP;
 		const args = this.environmentMainService.args;
 
-		// First check for windows from protocol links to open
+		// Open sessions window if requested
+		if (args['sessions']) {
+			return windowsMainService.openSessionsWindow({ context, contextWindowId: undefined });
+		}
+
+		// Then check for windows from protocol links to open
 		if (initialProtocolUrls) {
 
 			// Openables can open as windows directly
@@ -1332,11 +1337,6 @@ export class CodeApplication extends Disposable {
 					}
 				}
 			}
-		}
-
-		// Open sessions window if requested
-		if (args['sessions']) {
-			return windowsMainService.openSessionsWindow({ context, contextWindowId: undefined });
 		}
 
 		const macOpenFiles: string[] = (global as { macOpenFiles?: string[] }).macOpenFiles ?? [];

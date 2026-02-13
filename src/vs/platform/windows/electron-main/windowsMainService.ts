@@ -1538,8 +1538,6 @@ export class WindowsMainService extends Disposable implements IWindowsMainServic
 
 			remoteAuthority: options.remoteAuthority,
 			workspace: options.workspace,
-			isSessionsWindow: isWorkspaceIdentifier(options.workspace) && isEqual(options.workspace.configPath, this.environmentMainService.agentSessionsWorkspace),
-
 			userEnv: { ...this.initialUserEnv, ...options.userEnv },
 
 			nls: {
@@ -1568,7 +1566,9 @@ export class WindowsMainService extends Disposable implements IWindowsMainServic
 			policiesData: this.policyService.serialize(),
 			continueOn: this.environmentMainService.continueOn,
 
-			cssModules: this.cssDevelopmentService.isEnabled ? await this.cssDevelopmentService.getCssModules() : undefined
+			cssModules: this.cssDevelopmentService.isEnabled ? await this.cssDevelopmentService.getCssModules() : undefined,
+
+			isSessionsWindow: isWorkspaceIdentifier(options.workspace) && isEqual(options.workspace.configPath, this.environmentMainService.agentSessionsWorkspace),
 		};
 
 		// New window

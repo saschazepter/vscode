@@ -446,7 +446,6 @@ export interface INativeWindowConfiguration extends IWindowConfiguration, Native
 	partsSplash?: IPartsSplash;
 
 	workspace?: IWorkspaceIdentifier | ISingleFolderWorkspaceIdentifier;
-	isSessionsWindow?: boolean;
 
 	isInitialStartup?: boolean;
 	logLevel: LogLevel;
@@ -466,6 +465,8 @@ export interface INativeWindowConfiguration extends IWindowConfiguration, Native
 
 	os: IOSConfiguration;
 	policiesData?: IStringDictionary<{ definition: PolicyDefinition; value: PolicyValue }>;
+
+	isSessionsWindow?: boolean;
 }
 
 /**
