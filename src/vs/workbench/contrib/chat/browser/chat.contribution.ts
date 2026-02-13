@@ -143,6 +143,7 @@ import { ChatRepoInfoContribution } from './chatRepoInfo.js';
 import { VALID_PROMPT_FOLDER_PATTERN } from '../common/promptSyntax/utils/promptFilesLocator.js';
 import { ChatTipService, IChatTipService } from './chatTipService.js';
 import { ChatQueuePickerRendering } from './widget/input/chatQueuePickerActionItem.js';
+import { ExploreAgentDefaultModel } from './exploreAgentDefaultModel.js';
 import { PlanAgentDefaultModel } from './planAgentDefaultModel.js';
 
 const toolReferenceNameEnumValues: string[] = [];
@@ -625,6 +626,14 @@ configurationRegistry.registerConfiguration({
 			enum: PlanAgentDefaultModel.modelIds,
 			enumItemLabels: PlanAgentDefaultModel.modelLabels,
 			markdownEnumDescriptions: PlanAgentDefaultModel.modelDescriptions
+		},
+		[ChatConfiguration.ExploreAgentDefaultModel]: {
+			type: 'string',
+			description: nls.localize('chat.exploreAgent.defaultModel.description', "Select the default language model to use for the Explore subagent from the available providers."),
+			default: '',
+			enum: ExploreAgentDefaultModel.modelIds,
+			enumItemLabels: ExploreAgentDefaultModel.modelLabels,
+			markdownEnumDescriptions: ExploreAgentDefaultModel.modelDescriptions
 		},
 		[ChatConfiguration.RequestQueueingEnabled]: {
 			type: 'boolean',

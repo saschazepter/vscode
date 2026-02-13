@@ -87,8 +87,8 @@ export interface IFileStatusInfo {
 	overwrittenBy?: string;
 	/** Extension ID if this file comes from an extension */
 	extensionId?: string;
-	/** If true, hidden from / menu (user-invokable: false) */
-	userInvokable?: boolean;
+	/** If false, hidden from / menu (user-invocable: false) */
+	userInvocable?: boolean;
 	/** If true, won't be auto-loaded by agent (disable-model-invocation: true) */
 	disableModelInvocation?: boolean;
 }
@@ -466,7 +466,7 @@ function convertDiscoveryResultToFileStatus(result: IPromptFileDiscoveryResult):
 			name: result.name,
 			storage: result.storage,
 			extensionId: result.extensionId,
-			userInvokable: result.userInvokable,
+			userInvocable: result.userInvocable,
 			disableModelInvocation: result.disableModelInvocation
 		};
 	}
@@ -789,8 +789,8 @@ function getSkillFlags(file: IFileStatusInfo, type: PromptsType): string {
 		flags.push(`${ICON_MANUAL} *${nls.localize('status.skill.manualOnly', 'manual only')}*`);
 	}
 
-	// userInvokable: false means hidden from / menu
-	if (file.userInvokable === false) {
+	// userInvocable: false means hidden from / menu
+	if (file.userInvocable === false) {
 		flags.push(`${ICON_HIDDEN} *${nls.localize('status.skill.hiddenFromMenu', 'hidden from menu')}*`);
 	}
 
