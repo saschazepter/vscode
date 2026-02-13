@@ -57,6 +57,7 @@ export class ModalEditorPart {
 		@IEditorService private readonly editorService: IEditorService,
 		@IWorkbenchLayoutService private readonly layoutService: IWorkbenchLayoutService,
 		@IKeybindingService private readonly keybindingService: IKeybindingService,
+		@IHostService private readonly hostService: IHostService,
 	) {
 	}
 
@@ -67,6 +68,10 @@ export class ModalEditorPart {
 		const modalElement = $('.monaco-modal-editor-block.dimmed');
 		this.layoutService.mainContainer.appendChild(modalElement);
 		disposables.add(toDisposable(() => modalElement.remove()));
+
+		// Dim window controls to match the modal overlay
+		this.hostService.setWindowControlsDimmed(mainWindow, true);
+		disposables.add(toDisposable(() => this.hostService.setWindowControlsDimmed(mainWindow, false)));
 
 		const shadowElement = modalElement.appendChild($('.modal-editor-shadow'));
 

@@ -236,6 +236,14 @@ class WorkbenchHostService extends Disposable implements IHostService {
 
 	//#endregion
 
+	//#region Window Controls
+
+	setWindowControlsDimmed(targetWindow: Window, dimmed: boolean): void {
+		this.nativeHostService.updateWindowControls({ dimmed, targetWindowId: getWindowId(targetWindow) });
+	}
+
+	//#endregion
+
 	//#region Toast Notifications
 
 	private readonly activeBrowserToasts = this._register(new DisposableSet());

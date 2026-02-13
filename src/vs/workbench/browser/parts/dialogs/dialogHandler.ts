@@ -16,6 +16,8 @@ import { IInstantiationService } from '../../../../platform/instantiation/common
 import { IMarkdownRendererService, openLinkFromMarkdown } from '../../../../platform/markdown/browser/markdownRenderer.js';
 import { IOpenerService } from '../../../../platform/opener/common/opener.js';
 import { createWorkbenchDialogOptions } from '../../../../platform/dialogs/browser/dialog.js';
+import { IHostService } from '../../../services/host/browser/host.js';
+import { getWindow } from '../../../../base/browser/dom.js';
 
 export class BrowserDialogHandler extends AbstractDialogHandler {
 
@@ -36,6 +38,7 @@ export class BrowserDialogHandler extends AbstractDialogHandler {
 		@IClipboardService private readonly clipboardService: IClipboardService,
 		@IOpenerService private readonly openerService: IOpenerService,
 		@IMarkdownRendererService private readonly markdownRendererService: IMarkdownRendererService,
+		@IHostService private readonly hostService: IHostService,
 	) {
 		super();
 	}
@@ -124,7 +127,10 @@ export class BrowserDialogHandler extends AbstractDialogHandler {
 
 		dialogDisposables.add(dialog);
 
+		const targetWindow = getWindow(this.layoutService.activeContainer);
+		this.hostService.setWindowControlsDimmed(targetWindow, true);
 		const result = await dialog.show();
+		this.hostService.setWindowControlsDimmed(targetWindow, false);
 		dialogDisposables.dispose();
 
 		return result;

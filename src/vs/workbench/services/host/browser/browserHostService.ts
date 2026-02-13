@@ -733,6 +733,14 @@ export class BrowserHostService extends Disposable implements IHostService {
 
 	//#endregion
 
+	//#region Window Controls
+
+	setWindowControlsDimmed(_targetWindow: Window, _dimmed: boolean): void {
+		// not supported in browser
+	}
+
+	//#endregion
+
 	//#region Toast Notifications
 
 	private readonly activeToasts = this._register(new DisposableSet());

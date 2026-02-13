@@ -32,7 +32,7 @@ import { IApplicationStorageMainService, IStorageMainService } from '../../stora
 import { ITelemetryService } from '../../telemetry/common/telemetry.js';
 import { ThemeIcon } from '../../../base/common/themables.js';
 import { IThemeMainService } from '../../theme/electron-main/themeMainService.js';
-import { getMenuBarVisibility, IFolderToOpen, INativeWindowConfiguration, IWindowSettings, IWorkspaceToOpen, MenuBarVisibility, hasNativeTitlebar, useNativeFullScreen, useWindowControlsOverlay, DEFAULT_CUSTOM_TITLEBAR_HEIGHT, TitlebarStyle, MenuSettings } from '../../window/common/window.js';
+import { getMenuBarVisibility, IFolderToOpen, INativeWindowConfiguration, IWindowSettings, IWorkspaceToOpen, MenuBarVisibility, hasNativeTitlebar, useNativeFullScreen, useWindowControlsOverlay, DEFAULT_CUSTOM_TITLEBAR_HEIGHT, TitlebarStyle, MenuSettings, dimColor } from '../../window/common/window.js';
 import { defaultBrowserWindowOptions, getAllWindowsExcludingOffscreen, IWindowsMainService, OpenContext, WindowStateValidator } from './windows.js';
 import { ISingleFolderWorkspaceIdentifier, IWorkspaceIdentifier, isSingleFolderWorkspaceIdentifier, isWorkspaceIdentifier, toWorkspaceIdentifier } from '../../workspace/common/workspace.js';
 import { IWorkspacesManagementMainService } from '../../workspaces/electron-main/workspacesManagementMainService.js';
@@ -404,7 +404,10 @@ export abstract class BaseWindow extends Disposable implements IBaseWindow {
 
 	private static readonly windowControlHeightStateStorageKey = 'windowControlHeight';
 
-	updateWindowControls(options: { height?: number; backgroundColor?: string; foregroundColor?: string }): void {
+	private windowControlsDimmed = false;
+	private lastWindowControlColors: { backgroundColor?: string; foregroundColor?: string } | undefined;
+
+	updateWindowControls(options: { height?: number; backgroundColor?: string; foregroundColor?: string; dimmed?: boolean }): void {
 		const win = this.win;
 		if (!win) {
 			return;
@@ -415,11 +418,36 @@ export abstract class BaseWindow extends Disposable implements IBaseWindow {
 			this.stateService.setItem((CodeWindow.windowControlHeightStateStorageKey), options.height);
 		}
 
+		// Update dimmed state if explicitly provided
+		if (options.dimmed !== undefined) {
+			this.windowControlsDimmed = options.dimmed;
+		}
+
+		// Remember the last colors for dimming/undimming
+		if (options.backgroundColor !== undefined || options.foregroundColor !== undefined) {
+			this.lastWindowControlColors = {
+				backgroundColor: options.backgroundColor ?? this.lastWindowControlColors?.backgroundColor,
+				foregroundColor: options.foregroundColor ?? this.lastWindowControlColors?.foregroundColor
+			};
+		}
+
+		// Resolve colors: use provided colors or fall back to last
+		// known colors when just toggling the dimmed state
+		const resolvedColors = {
+			backgroundColor: options.backgroundColor ?? this.lastWindowControlColors?.backgroundColor,
+			foregroundColor: options.foregroundColor ?? this.lastWindowControlColors?.foregroundColor
+		};
+
+		// Apply dimming if active
+		const effectiveColors = this.windowControlsDimmed
+			? this.applyDimming(resolvedColors)
+			: resolvedColors;
+
 		// Windows/Linux: update window controls via setTitleBarOverlay()
 		if (!isMacintosh && useWindowControlsOverlay(this.configurationService)) {
 			win.setTitleBarOverlay({
-				color: options.backgroundColor?.trim() === '' ? undefined : options.backgroundColor,
-				symbolColor: options.foregroundColor?.trim() === '' ? undefined : options.foregroundColor,
+				color: effectiveColors.backgroundColor?.trim() === '' ? undefined : effectiveColors.backgroundColor,
+				symbolColor: effectiveColors.foregroundColor?.trim() === '' ? undefined : effectiveColors.foregroundColor,
 				height: options.height ? options.height - 1 : undefined // account for window border
 			});
 		}
@@ -437,6 +465,20 @@ export abstract class BaseWindow extends Disposable implements IBaseWindow {
 				win.setWindowButtonPosition({ x: offset + 1, y: offset });
 			}
 		}
+	}
+
+	private applyDimming(options: { backgroundColor?: string; foregroundColor?: string }): { backgroundColor?: string; foregroundColor?: string } {
+		const result: { backgroundColor?: string; foregroundColor?: string } = {};
+
+		if (options.backgroundColor) {
+			result.backgroundColor = dimColor(options.backgroundColor);
+		}
+
+		if (options.foregroundColor) {
+			result.foregroundColor = dimColor(options.foregroundColor);
+		}
+
+		return result;
 	}
 
 	//#endregion

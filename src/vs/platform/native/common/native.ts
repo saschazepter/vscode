@@ -150,7 +150,7 @@ export interface ICommonNativeHostService {
 	 *
 	 * @param options `backgroundColor` and `foregroundColor` are only supported on Windows
 	 */
-	updateWindowControls(options: INativeHostOptions & { height?: number; backgroundColor?: string; foregroundColor?: string }): Promise<void>;
+	updateWindowControls(options: INativeHostOptions & { height?: number; backgroundColor?: string; foregroundColor?: string; dimmed?: boolean }): Promise<void>;
 
 	updateWindowAccentColor(color: 'default' | 'off' | string, inactiveColor: string | undefined): Promise<void>;
 
