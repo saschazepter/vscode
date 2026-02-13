@@ -30,7 +30,7 @@ import { IListVirtualDelegate, IListRenderer } from '../../../../base/browser/ui
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { IOpenerService } from '../../../../platform/opener/common/opener.js';
-import { basename } from '../../../../base/common/resources.js';
+import { basename, isEqual } from '../../../../base/common/resources.js';
 import { URI } from '../../../../base/common/uri.js';
 import { registerColor } from '../../../../platform/theme/common/colorRegistry.js';
 import { PANEL_BORDER } from '../../../../workbench/common/theme.js';
@@ -61,6 +61,7 @@ import { ICommandService } from '../../../../platform/commands/common/commands.j
 import { IAgentSessionsService } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsService.js';
 import { IActiveSessionService } from '../../sessions/browser/activeSessionService.js';
 import { AgentSessionProviders } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessions.js';
+import { IWorkingCopyService } from '../../../../workbench/services/workingCopy/common/workingCopyService.js';
 
 const $ = DOM.$;
 
@@ -144,6 +145,8 @@ export class AICustomizationManagementEditor extends EditorPane {
 	private embeddedEditor!: CodeEditorWidget;
 	private editorItemNameElement!: HTMLElement;
 	private editorItemPathElement!: HTMLElement;
+	private editorSaveIndicator!: HTMLElement;
+	private readonly editorModelChangeDisposables = this._register(new DisposableStore());
 	private currentEditingUri: URI | undefined;
 	private currentWorktreeUri: URI | undefined;
 	private currentEditingIsWorktree = false;
@@ -175,6 +178,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 		@ICommandService private readonly commandService: ICommandService,
 		@IActiveSessionService private readonly activeSessionService: IActiveSessionService,
 		@IAgentSessionsService private readonly agentSessionsService: IAgentSessionsService,
+		@IWorkingCopyService private readonly workingCopyService: IWorkingCopyService,
 	) {
 		super(AICustomizationManagementEditor.ID, group, telemetryService, themeService, storageService);
 
@@ -487,6 +491,9 @@ export class AICustomizationManagementEditor extends EditorPane {
 		this.editorItemNameElement = DOM.append(itemInfo, $('.editor-item-name'));
 		this.editorItemPathElement = DOM.append(itemInfo, $('.editor-item-path'));
 
+		// Save indicator (right-aligned in header)
+		this.editorSaveIndicator = DOM.append(editorHeader, $('.editor-save-indicator'));
+
 		// Editor container
 		this.embeddedEditorContainer = DOM.append(this.editorContentContainer, $('.embedded-editor-container'));
 
@@ -561,6 +568,18 @@ export class AICustomizationManagementEditor extends EditorPane {
 
 			// Focus the editor
 			this.embeddedEditor.focus();
+
+			// Listen for content changes to show saving spinner
+			this.editorModelChangeDisposables.clear();
+			this.editorModelChangeDisposables.add(ref.object.textEditorModel.onDidChangeContent(() => {
+				this.showSavingSpinner();
+			}));
+			// Listen for actual save events to show checkmark
+			this.editorModelChangeDisposables.add(this.workingCopyService.onDidSave(e => {
+				if (isEqual(e.workingCopy.resource, uri)) {
+					this.showSavedCheckmark();
+				}
+			}));
 		} catch (error) {
 			// If we can't load the model, go back to the list
 			console.error('Failed to load model for embedded editor:', error);
@@ -585,6 +604,8 @@ export class AICustomizationManagementEditor extends EditorPane {
 		this.currentEditingUri = undefined;
 		this.currentWorktreeUri = undefined;
 		this.currentEditingIsWorktree = false;
+		this.editorModelChangeDisposables.clear();
+		this.clearSaveIndicator();
 
 		// Clear editor model
 		this.embeddedEditor.setModel(null);
@@ -737,6 +758,29 @@ export class AICustomizationManagementEditor extends EditorPane {
 			this.sectionsList.setFocus([index]);
 			this.sectionsList.setSelection([index]);
 		}
+	}
+
+	/**
+	 * Shows the spinning loader to indicate unsaved changes.
+	 */
+	private showSavingSpinner(): void {
+		this.editorSaveIndicator.className = 'editor-save-indicator visible';
+		this.editorSaveIndicator.classList.add(...ThemeIcon.asClassNameArray(Codicon.loading), 'codicon-modifier-spin');
+		this.editorSaveIndicator.title = localize('saving', "Saving...");
+	}
+
+	/**
+	 * Shows the checkmark after the file has been saved to disk.
+	 */
+	private showSavedCheckmark(): void {
+		this.editorSaveIndicator.className = 'editor-save-indicator visible saved';
+		this.editorSaveIndicator.classList.add(...ThemeIcon.asClassNameArray(Codicon.check));
+		this.editorSaveIndicator.title = localize('saved', "Saved");
+	}
+
+	private clearSaveIndicator(): void {
+		this.editorSaveIndicator.className = 'editor-save-indicator';
+		this.editorSaveIndicator.title = '';
 	}
 
 	/**

@@ -131,7 +131,6 @@
 .ai-customization-list-widget .list-add-button,
 .mcp-list-widget .list-add-button {
 	white-space: nowrap;
-	padding: 5px 10px;
 }
 
 .ai-customization-list-widget .list-container {
@@ -727,6 +726,28 @@
 	text-overflow: ellipsis;
 	white-space: nowrap;
 	font-family: var(--monaco-monospace-font);
+}
+
+.ai-customization-management-editor .editor-save-indicator {
+	flex-shrink: 0;
+	width: 16px;
+	height: 16px;
+	font-size: 16px;
+	line-height: 16px;
+	text-align: center;
+	color: var(--vscode-descriptionForeground);
+	opacity: 0;
+	transition: opacity 0.2s ease;
+	margin-right: 4px;
+}
+
+.ai-customization-management-editor .editor-save-indicator.visible {
+	opacity: 0.7;
+}
+
+.ai-customization-management-editor .editor-save-indicator.saved {
+	color: var(--vscode-testing-iconPassed, #73c991);
+	opacity: 1;
 }
 
 .ai-customization-management-editor .embedded-editor-container {
