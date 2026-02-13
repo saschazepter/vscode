@@ -35,6 +35,7 @@
 
 .chat-getting-started-tip-container .chat-tip-widget .chat-tip-toolbar .action-item .action-label {
 	color: var(--vscode-descriptionForeground);
+	padding: 4px;
 }
 
 .chat-getting-started-tip-container .chat-tip-widget .chat-tip-toolbar .action-item .action-label:hover {
