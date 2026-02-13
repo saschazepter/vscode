@@ -4,6 +4,11 @@ parameters:
     default: []
 
 steps:
+  - pwsh: node -- build/azure-pipelines/common/waitForArtifacts.ts ${{ join(' ', parameters.VSCODE_CLI_ARTIFACTS) }}
+    env:
+      SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+    displayName: Wait for unsigned CLI artifacts
+
   - task: UseDotNet@2
     inputs:
       version: 6.x

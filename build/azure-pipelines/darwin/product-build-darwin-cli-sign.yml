@@ -7,6 +7,8 @@ parameters:
 jobs:
   - job: macOSCLISign
     timeoutInMinutes: 90
+    variables:
+      BUILDS_API_URL: $(System.CollectionUri)$(System.TeamProject)/_apis/build/builds/$(Build.BuildId)/
     templateContext:
       outputParentDirectory: $(Build.ArtifactStagingDirectory)/out
       outputs:
