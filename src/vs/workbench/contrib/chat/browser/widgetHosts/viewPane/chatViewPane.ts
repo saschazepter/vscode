@@ -676,7 +676,7 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 						allowedTargets: [AgentSessionProviders.Background, AgentSessionProviders.Cloud],
 						defaultTarget: AgentSessionProviders.Background,
 						providerNameOverrides: {
-							[AgentSessionProviders.Background]: localize('agentSessionsDedicatedWindow.background.name.override', "Local"),
+							[AgentSessionProviders.Background]: localize('agentSessionsDedicatedWindow.background.name.override', "Worktree"),
 						}
 					},
 					onSessionCreated: () => {

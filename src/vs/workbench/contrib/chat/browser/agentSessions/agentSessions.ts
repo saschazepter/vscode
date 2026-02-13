@@ -62,7 +62,7 @@ export function getAgentSessionProviderName(provider: AgentSessionProviders, age
 			return localize('chat.session.providerLabel.local', "Local");
 		case AgentSessionProviders.Background:
 			if (agentSessionsDedicatedWindow) {
-				return localize('chat.session.providerLabel.background.dedicatedWindow', "Local");
+				return localize('chat.session.providerLabel.background.dedicatedWindow', "Worktree");
 			}
 			return backgroundAgentDisplayName.get();
 		case AgentSessionProviders.Cloud:
