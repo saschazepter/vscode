@@ -335,6 +335,13 @@ export interface IChatWidgetViewOptions {
 	submitHandler?: (query: string, mode: ChatModeKind) => Promise<boolean>;
 
 	/**
+	 * When true, the getting-started tip that appears above the input in the
+	 * empty-state is not rendered.  Use this when the host provides its own
+	 * welcome experience (e.g. AgentSessionsChatWidget).
+	 */
+	disableGettingStartedTip?: boolean;
+
+	/**
 	 * When true, renders a full welcome view similar to AgentSessionsWelcomePage
 	 * with header, sessions grid, and footer when the session is empty.
 	 */

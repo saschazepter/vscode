@@ -202,6 +202,7 @@ export class AgentSessionsChatWidget extends Disposable {
 
 		const wrappedViewOptions: IChatWidgetViewOptions = {
 			...viewOptions,
+			disableGettingStartedTip: agentOptions.showFullWelcome,
 			hiddenPickerIds,
 			excludeOptionGroup,
 			sessionTypePickerDelegate: wrappedSessionTypePickerDelegate,
