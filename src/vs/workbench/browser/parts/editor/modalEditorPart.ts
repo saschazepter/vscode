@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import './media/modalEditorPart.css';
-import { $, addDisposableListener, append, EventHelper, EventType, isAncestor, isHTMLElement } from '../../../../base/browser/dom.js';
+import { $, addDisposableListener, append, EventHelper, EventType, isHTMLElement } from '../../../../base/browser/dom.js';
 import { StandardKeyboardEvent } from '../../../../base/browser/keyboardEvent.js';
 import { KeyCode } from '../../../../base/common/keyCodes.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
@@ -29,7 +29,6 @@ import { IHostService } from '../../../services/host/browser/host.js';
 import { IWorkbenchLayoutService, Parts } from '../../../services/layout/browser/layoutService.js';
 import { mainWindow } from '../../../../base/browser/window.js';
 import { localize } from '../../../../nls.js';
-import { IContextViewService } from '../../../../platform/contextview/browser/contextView.js';
 
 const defaultModalEditorAllowableCommands = new Set([
 	'workbench.action.quit',
@@ -54,7 +53,6 @@ export class ModalEditorPart {
 		@IEditorService private readonly editorService: IEditorService,
 		@IWorkbenchLayoutService private readonly layoutService: IWorkbenchLayoutService,
 		@IKeybindingService private readonly keybindingService: IKeybindingService,
-		@IContextViewService private readonly contextViewService: IContextViewService
 	) {
 	}
 
@@ -134,19 +132,6 @@ export class ModalEditorPart {
 				EventHelper.stop(e, true);
 
 				editorPartContainer.focus();
-			}
-		}));
-
-		// Detect focus out and move back to the modal
-		disposables.add(addDisposableListener(modalElement, EventType.FOCUS_OUT, e => {
-			if (
-				isHTMLElement(e.relatedTarget) &&																// we have a related target
-				!isAncestor(e.relatedTarget as HTMLElement, modalElement) &&									// that is not within the modal
-				!isAncestor(e.relatedTarget as HTMLElement, this.contextViewService.getContextViewElement())	// and also not a context view (e.g. used for custom dropdowns)
-			) {
-				EventHelper.stop(e, true);
-
-				modalElement.focus();
 			}
 		}));
 
