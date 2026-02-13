@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import './media/modalEditorPart.css';
-import { $, addDisposableListener, append, EventHelper, EventType, isHTMLElement } from '../../../../base/browser/dom.js';
+import { $, addDisposableListener, append, EventHelper, EventType, isAncestor, isHTMLElement } from '../../../../base/browser/dom.js';
 import { StandardKeyboardEvent } from '../../../../base/browser/keyboardEvent.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { DisposableStore, MutableDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
@@ -28,6 +28,7 @@ import { IHostService } from '../../../services/host/browser/host.js';
 import { IWorkbenchLayoutService, Parts } from '../../../services/layout/browser/layoutService.js';
 import { mainWindow } from '../../../../base/browser/window.js';
 import { localize } from '../../../../nls.js';
+import { IContextViewService } from '../../../../platform/contextview/browser/contextView.js';
 
 const defaultModalEditorAllowableCommands = new Set([
 	'workbench.action.quit',
@@ -52,6 +53,7 @@ export class ModalEditorPart {
 		@IEditorService private readonly editorService: IEditorService,
 		@IWorkbenchLayoutService private readonly layoutService: IWorkbenchLayoutService,
 		@IKeybindingService private readonly keybindingService: IKeybindingService,
+		@IContextViewService private readonly contextViewService: IContextViewService
 	) {
 	}
 
@@ -78,7 +80,7 @@ export class ModalEditorPart {
 		// Create header with title and close button
 		const headerElement = editorPartContainer.appendChild($('.modal-editor-header'));
 
-		// Title element (centered)
+		// Title element
 		const titleElement = append(headerElement, $('div.modal-editor-title'));
 		titleElement.id = titleId;
 		titleElement.textContent = '';
@@ -102,7 +104,7 @@ export class ModalEditorPart {
 			[IEditorService, modalEditorService]
 		)));
 
-		// Create toolbar driven by MenuId.ModalEditorTitle
+		// Create toolbar
 		disposables.add(scopedInstantiationService.createInstance(MenuWorkbenchToolBar, actionBarContainer, MenuId.ModalEditorTitle, {
 			hiddenItemStrategy: HiddenItemStrategy.NoHide,
 			menuOptions: { shouldForwardArgs: true }
@@ -134,12 +136,18 @@ export class ModalEditorPart {
 			}
 		}));
 
-		// Detect focus moving to the dimmed area and bring it back into the modal
-		disposables.add(addDisposableListener(modalElement, EventType.FOCUS, e => {
-			if (e.target === modalElement) {
-				editorPartContainer.focus();
+		// Detect focus out and move back to the modal
+		disposables.add(addDisposableListener(modalElement, EventType.FOCUS_OUT, e => {
+			if (
+				isHTMLElement(e.relatedTarget) &&																// we have a related target
+				!isAncestor(e.relatedTarget as HTMLElement, modalElement) &&									// that is not within the modal
+				!isAncestor(e.relatedTarget as HTMLElement, this.contextViewService.getContextViewElement())	// and also not a context view (e.g. used for custom dropdowns)
+			) {
+				EventHelper.stop(e, true);
+
+				modalElement.focus();
 			}
-		}, true));
+		}));
 
 		// Block certain workbench commands from being dispatched while the modal is open
 		disposables.add(addDisposableListener(modalElement, EventType.KEY_DOWN, e => {
