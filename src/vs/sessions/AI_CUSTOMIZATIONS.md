@@ -13,8 +13,10 @@ src/vs/sessions/contrib/aiCustomizationManagement/browser/
 ├── aiCustomizationManagementEditor.ts          # SplitView list/editor
 ├── aiCustomizationManagementEditorInput.ts     # Singleton input
 ├── aiCustomizationListWidget.ts                # Search + grouped list
+├── aiCustomizationOverviewView.ts              # Overview view (counts + deep links)
 ├── customizationCreatorService.ts              # AI-guided creation flow
 ├── mcpListWidget.ts                            # MCP servers section
+├── SPEC.md                                     # Feature specification
 └── media/
     └── aiCustomizationManagement.css
 
@@ -23,6 +25,7 @@ src/vs/sessions/contrib/aiCustomizationTreeView/browser/
 ├── aiCustomizationTreeView.ts                  # IDs + menu IDs
 ├── aiCustomizationTreeViewViews.ts             # Tree data source + view
 ├── aiCustomizationTreeViewIcons.ts             # Icons
+├── SPEC.md                                     # Feature specification
 └── media/
     └── aiCustomizationTreeView.css
 ```
@@ -45,7 +48,7 @@ Key services to rely on:
 
 The active worktree comes from `IActiveSessionService` and is the source of truth for any workspace/worktree scoping.
 
-In the agentic workbench, prompt discovery is scoped by an agentic prompt service override that uses the active session root for workspace folders. See [src/vs/sessions/browser/agenticPromptsService.ts](../sessions/browser/agenticPromptsService.ts) and [src/vs/sessions/browser/agenticPromptFilesLocator.ts](../sessions/browser/agenticPromptFilesLocator.ts).
+In the agentic workbench, prompt discovery is scoped by an agentic prompt service override that uses the active session root for workspace folders. See [src/vs/sessions/contrib/chat/browser/promptsService.ts](contrib/chat/browser/promptsService.ts).
 
 ## Implemented Experience
 

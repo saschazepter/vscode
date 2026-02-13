@@ -67,7 +67,7 @@ graph TD
 
 ### 3.1 `AgentSessionsChatWidget`
 
-**Location:** `src/vs/workbench/agentSessions/widget/agentSessionsChatWidget.ts`
+**Location:** `src/vs/sessions/browser/widget/agentSessionsChatWidget.ts`
 
 The main wrapper around `ChatWidget`. It:
 
@@ -121,7 +121,7 @@ sequenceDiagram
 
 ### 3.2 `AgentSessionsChatTargetConfig`
 
-**Location:** `src/vs/workbench/agentSessions/widget/agentSessionsChatTargetConfig.ts`
+**Location:** `src/vs/sessions/browser/widget/agentSessionsChatTargetConfig.ts`
 
 A reactive configuration object that tracks:
 
@@ -146,7 +146,7 @@ The target config is **purely UI state** — changing targets does NOT create se
 
 ### 3.3 `AgentSessionsChatWelcomePart`
 
-**Location:** `src/vs/workbench/agentSessions/widget/chatContentPart/agentSessionsChatWelcomePart.ts`
+**Location:** `src/vs/sessions/browser/parts/agentSessionsChatWelcomePart.ts`
 
 Renders the welcome view when the chat is empty:
 
@@ -159,7 +159,7 @@ The welcome part reads from `IAgentChatTargetConfig` and the `IChatSessionsServi
 
 ### 3.4 `AgentSessionsChatInputPart`
 
-**Location:** `src/vs/workbench/agentSessions/widget/chatContentPart/agentSessionsChatInputPart.ts`
+**Location:** `src/vs/sessions/browser/parts/agentSessionsChatInputPart.ts`
 
 A standalone adapter around `ChatInputPart` that bridges `IAgentChatTargetConfig` to the existing `ISessionTypePickerDelegate` interface. It creates a `createTargetConfigDelegate()` bridge so the standard `ChatInputPart` can work with the new target config system without modifications.
 
@@ -167,7 +167,7 @@ A standalone adapter around `ChatInputPart` that bridges `IAgentChatTargetConfig
 
 ### 3.5 `AgentSessionsTargetPickerActionItem`
 
-**Location:** `src/vs/workbench/agentSessions/widget/agentSessionsTargetPickerActionItem.ts`
+**Location:** `src/vs/sessions/browser/widget/agentSessionsTargetPickerActionItem.ts`
 
 A dropdown picker action item for the input toolbar that reads available targets from `IAgentChatTargetConfig` (rather than `chatSessionsService`). Selection calls `targetConfig.setSelectedTarget()` with no session creation side effects. It renders the current target's icon and name, with a chevron to open the dropdown of allowed targets. The picker automatically re-renders when the selected target or allowed targets change.
 
@@ -425,16 +425,17 @@ graph TB
 ## 8. File Structure
 
 ```
-src/vs/workbench/agentSessions/widget/
+src/vs/sessions/browser/widget/
 ├── AGENTS_CHAT_WIDGET.md                    # This document
 ├── agentSessionsChatWidget.ts               # Main widget wrapper
 ├── agentSessionsChatTargetConfig.ts         # Target configuration (observable)
 ├── agentSessionsTargetPickerActionItem.ts   # Target picker for input toolbar
-├── media/
-│   └── agentSessionsChatWidget.css          # Widget-specific styles
-└── chatContentPart/
-    ├── agentSessionsChatInputPart.ts        # Input part adapter
-    └── agentSessionsChatWelcomePart.ts      # Welcome view (mascot + pickers)
+└── media/
+    └── agentSessionsChatWidget.css          # Widget-specific styles
+
+src/vs/sessions/browser/parts/
+├── agentSessionsChatInputPart.ts            # Input part adapter
+└── agentSessionsChatWelcomePart.ts          # Welcome view (mascot + pickers)
 ```
 
 ---
