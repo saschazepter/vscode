@@ -2308,18 +2308,8 @@ export class ChatModel extends Disposable implements IChatModel {
 				modelState = { value: ResponseModelState.Cancelled, completedAt: Date.now() };
 			}
 
-			// Mark any question carousels as used/skipped on reload since they can no longer be interacted with
-			const responseContent = raw.response ?? [new MarkdownString(raw.response)];
-			if (Array.isArray(responseContent)) {
-				for (const part of responseContent) {
-					if (part && 'kind' in part && part.kind === 'questionCarousel' && !part.isUsed) {
-						part.isUsed = true;
-					}
-				}
-			}
-
 			request.response = new ChatResponseModel({
-				responseContent,
+				responseContent: raw.response ?? [new MarkdownString(raw.response)],
 				session: this,
 				agent,
 				slashCommand: raw.slashCommand,
