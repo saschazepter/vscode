@@ -20,6 +20,7 @@ import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { localize } from '../../../../nls.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { ILanguageModelToolsService } from '../common/tools/languageModelToolsService.js';
+import { localChatSessionType } from '../common/chatSessionsService.js';
 
 export const IChatTipService = createDecorator<IChatTipService>('chatTipService');
 
@@ -161,9 +162,12 @@ const TIP_CATALOG: ITipDefinition[] = [
 	{
 		id: 'tip.undoChanges',
 		message: localize('tip.undoChanges', "Tip: Select Restore Checkpoint to undo changes until that point in the chat conversation."),
-		when: ContextKeyExpr.or(
-			ChatContextKeys.chatModeKind.isEqualTo(ChatModeKind.Agent),
-			ChatContextKeys.chatModeKind.isEqualTo(ChatModeKind.Edit),
+		when: ContextKeyExpr.and(
+			ChatContextKeys.chatSessionType.isEqualTo(localChatSessionType),
+			ContextKeyExpr.or(
+				ChatContextKeys.chatModeKind.isEqualTo(ChatModeKind.Agent),
+				ChatContextKeys.chatModeKind.isEqualTo(ChatModeKind.Edit),
+			),
 		),
 		excludeWhenCommandsExecuted: ['workbench.action.chat.restoreCheckpoint', 'workbench.action.chat.restoreLastCheckpoint'],
 	},
