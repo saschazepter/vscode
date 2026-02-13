@@ -185,7 +185,7 @@ import '../workbench/contrib/policyExport/electron-browser/policyExport.contribu
 import './browser/paneCompositePartService.js';
 import './browser/layoutActions.js';
 
-import './contrib/accountMenu/browser/accountMenu.contribution.js';
+import './contrib/accountMenu/browser/account.contribution.js';
 import './contrib/aiCustomizationTreeView/browser/aiCustomizationTreeView.contribution.js';
 import './contrib/aiCustomizationManagement/browser/aiCustomizationManagement.contribution.js';
 import './contrib/chat/browser/chat.contribution.js';

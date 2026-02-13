@@ -24,7 +24,5 @@ export const Menus = {
 	SidebarTitle: new MenuId('SessionsSidebarTitle'),
 	AuxiliaryBarTitle: new MenuId('SessionsAuxiliaryBarTitle'),
 	AuxiliaryBarTitleLeft: new MenuId('SessionsAuxiliaryBarTitleLeft'),
-	SessionsAccount: new MenuId('SessionsAccount'),
-	SessionsAccountSignedIn: new MenuId('SessionsAccountSignedIn'),
-	SidebarFooterGear: new MenuId('SessionsSidebarFooterGear'),
+	SidebarFooter: new MenuId('SessionsSidebarFooter'),
 } as const;

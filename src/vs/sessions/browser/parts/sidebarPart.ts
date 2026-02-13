@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import '../../../workbench/browser/parts/sidebar/media/sidebarpart.css';
+import './media/sidebarPart.css';
 import { IWorkbenchLayoutService, Parts, Position as SideBarPosition } from '../../../workbench/services/layout/browser/layoutService.js';
 import { SidebarFocusContext, ActiveViewletContext } from '../../../workbench/common/contextkeys.js';
 import { IStorageService } from '../../../platform/storage/common/storage.js';
@@ -30,6 +31,8 @@ import { Separator } from '../../../base/common/actions.js';
 import { IHoverService } from '../../../platform/hover/browser/hover.js';
 import { Extensions } from '../../../workbench/browser/panecomposite.js';
 import { Menus } from '../menus.js';
+import { $, append } from '../../../base/browser/dom.js';
+import { HiddenItemStrategy, MenuWorkbenchToolBar } from '../../../platform/actions/browser/toolbar.js';
 
 /**
  * Sidebar part specifically for agent sessions workbench.
@@ -46,6 +49,7 @@ export class SidebarPart extends AbstractPaneCompositePart {
 	static readonly MARGIN_TOP = 8;
 	static readonly MARGIN_BOTTOM = 8;
 	static readonly MARGIN_LEFT = 8;
+	static readonly FOOTER_HEIGHT = 35;
 
 
 	//#region IView
@@ -117,6 +121,21 @@ export class SidebarPart extends AbstractPaneCompositePart {
 		);
 	}
 
+	override create(parent: HTMLElement): void {
+		super.create(parent);
+		this.createFooter(parent);
+	}
+
+	private createFooter(parent: HTMLElement): void {
+		const footer = append(parent, $('.sidebar-footer'));
+
+		this._register(this.instantiationService.createInstance(MenuWorkbenchToolBar, footer, Menus.SidebarFooter, {
+			hiddenItemStrategy: HiddenItemStrategy.NoHide,
+			toolbarOptions: { primaryGroup: () => true },
+			telemetrySource: 'sidebarFooter',
+		}));
+	}
+
 	override updateStyles(): void {
 		super.updateStyles();
 
@@ -143,10 +162,10 @@ export class SidebarPart extends AbstractPaneCompositePart {
 			return;
 		}
 
-		// Layout content with reduced dimensions to account for visual margins
+		// Layout content with reduced dimensions to account for visual margins and footer
 		super.layout(
 			width - SidebarPart.MARGIN_LEFT,
-			height - SidebarPart.MARGIN_TOP - SidebarPart.MARGIN_BOTTOM,
+			height - SidebarPart.MARGIN_TOP - SidebarPart.MARGIN_BOTTOM - SidebarPart.FOOTER_HEIGHT,
 			top, left
 		);
 
