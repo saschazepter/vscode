@@ -116,7 +116,7 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 			SIDE_BAR_TITLE_BORDER,
 			ViewContainerLocation.AuxiliaryBar,
 			Extensions.Auxiliary,
-			MenuId.AuxiliaryBarTitle,
+			Menus.AuxiliaryBarTitle,
 			notificationService,
 			storageService,
 			contextMenuService,

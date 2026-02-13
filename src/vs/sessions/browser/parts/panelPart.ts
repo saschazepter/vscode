@@ -21,7 +21,8 @@ import { assertReturnsDefined } from '../../../base/common/types.js';
 import { IExtensionService } from '../../../workbench/services/extensions/common/extensions.js';
 import { IViewDescriptorService, ViewContainerLocation } from '../../../workbench/common/views.js';
 import { HoverPosition } from '../../../base/browser/ui/hover/hoverWidget.js';
-import { IMenuService, MenuId } from '../../../platform/actions/common/actions.js';
+import { IMenuService } from '../../../platform/actions/common/actions.js';
+import { Menus } from '../menus.js';
 import { AbstractPaneCompositePart, CompositeBarPosition } from '../../../workbench/browser/parts/paneCompositePart.js';
 import { Part } from '../../../workbench/browser/part.js';
 import { IPaneCompositeBarOptions } from '../../../workbench/browser/parts/paneCompositeBar.js';
@@ -97,7 +98,7 @@ export class PanelPart extends AbstractPaneCompositePart {
 			PANEL_TITLE_BORDER,
 			ViewContainerLocation.Panel,
 			Extensions.Panels,
-			MenuId.PanelTitle,
+			Menus.PanelTitle,
 			notificationService,
 			storageService,
 			contextMenuService,

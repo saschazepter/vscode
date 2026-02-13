@@ -19,7 +19,7 @@ import { Menus } from '../../../browser/menus.js';
 
 // Register the AgenticAccount submenu in the TitleBarRight toolbar
 MenuRegistry.appendMenuItem(Menus.TitleBarRight, {
-	submenu: Menus.AgenticAccount,
+	submenu: Menus.SessionsAccount,
 	title: localize('account', "Account"),
 	icon: Codicon.account,
 	group: 'navigation',
@@ -33,7 +33,7 @@ registerAction2(class extends Action2 {
 			id: 'workbench.action.agenticSignIn',
 			title: localize2('signIn', 'Sign In'),
 			menu: {
-				id: Menus.AgenticAccount,
+				id: Menus.SessionsAccount,
 				when: ContextKeyExpr.notEquals('defaultAccountStatus', 'available'),
 				group: '1_account',
 				order: 1,
@@ -53,7 +53,7 @@ registerAction2(class extends Action2 {
 			id: 'workbench.action.agenticSignOut',
 			title: localize2('signOut', 'Sign Out'),
 			menu: {
-				id: Menus.AgenticAccountSignedIn,
+				id: Menus.SessionsAccountSignedIn,
 			}
 		});
 	}
@@ -71,7 +71,7 @@ registerAction2(class extends Action2 {
 });
 
 // Settings
-MenuRegistry.appendMenuItem(Menus.AgenticAccount, {
+MenuRegistry.appendMenuItem(Menus.SessionsAccount, {
 	command: {
 		id: 'workbench.action.openSettings',
 		title: localize('settings', "Settings"),
@@ -81,7 +81,7 @@ MenuRegistry.appendMenuItem(Menus.AgenticAccount, {
 });
 
 // Check for Updates (reuses the update commands registered by the update contribution)
-registerUpdateMenuItems(Menus.AgenticAccount, '3_updates');
+registerUpdateMenuItems(Menus.SessionsAccount, '3_updates');
 
 // --- Signed-in Account Label Contribution --- //
 // The account submenu title (e.g. "sandy081 (GitHub)") is dynamic,
@@ -103,8 +103,8 @@ class AgenticAccountContribution extends Disposable implements IWorkbenchContrib
 
 	private async update(): Promise<void> {
 		const account = await this.defaultAccountService.getDefaultAccount();
-		this.signedAccountSubMenuItem.value = account ? MenuRegistry.appendMenuItem(Menus.AgenticAccount, {
-			submenu: Menus.AgenticAccountSignedIn,
+		this.signedAccountSubMenuItem.value = account ? MenuRegistry.appendMenuItem(Menus.SessionsAccount, {
+			submenu: Menus.SessionsAccountSignedIn,
 			title: `${account.accountName} (${account.authenticationProvider.name})`,
 			group: '1_account',
 			order: 1,

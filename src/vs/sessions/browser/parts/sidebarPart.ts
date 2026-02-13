@@ -25,10 +25,11 @@ import { Part } from '../../../workbench/browser/part.js';
 import { ActionsOrientation } from '../../../base/browser/ui/actionbar/actionbar.js';
 import { HoverPosition } from '../../../base/browser/ui/hover/hoverWidget.js';
 import { IPaneCompositeBarOptions } from '../../../workbench/browser/parts/paneCompositeBar.js';
-import { IMenuService, MenuId } from '../../../platform/actions/common/actions.js';
+import { IMenuService } from '../../../platform/actions/common/actions.js';
 import { Separator } from '../../../base/common/actions.js';
 import { IHoverService } from '../../../platform/hover/browser/hover.js';
 import { Extensions } from '../../../workbench/browser/panecomposite.js';
+import { Menus } from '../menus.js';
 
 /**
  * Sidebar part specifically for agent sessions workbench.
@@ -100,7 +101,7 @@ export class SidebarPart extends AbstractPaneCompositePart {
 			SIDE_BAR_TITLE_BORDER,
 			ViewContainerLocation.Sidebar,
 			Extensions.Viewlets,
-			MenuId.SidebarTitle,
+			Menus.SidebarTitle,
 			notificationService,
 			storageService,
 			contextMenuService,
