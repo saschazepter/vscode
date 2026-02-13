@@ -16,7 +16,6 @@
 	font-family: var(--vscode-chat-font-family, inherit);
 	color: var(--vscode-descriptionForeground);
 	position: relative;
-	overflow: hidden;
 }
 
 .interactive-item-container .chat-tip-widget .codicon-lightbulb {
@@ -46,8 +45,8 @@
 .interactive-item-container .chat-tip-widget .chat-tip-toolbar > .monaco-toolbar,
 .chat-getting-started-tip-container .chat-tip-widget .chat-tip-toolbar > .monaco-toolbar {
 	position: absolute;
-	top: 2px;
-	right: 4px;
+	top: -15px;
+	right: 10px;
 	height: 26px;
 	line-height: 26px;
 	background-color: var(--vscode-editorWidget-background);
@@ -104,7 +103,6 @@
 	font-family: var(--vscode-chat-font-family, inherit);
 	color: var(--vscode-descriptionForeground);
 	position: relative;
-	overflow: hidden;
 }
 
 .chat-getting-started-tip-container .chat-tip-widget a {
