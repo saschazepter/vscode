@@ -283,7 +283,11 @@ registerAction2(class extends Action2 {
 			icon: maximizeIcon,
 			// the workbench grid currently prevents us from supporting panel maximization with non-center panel alignment
 			precondition: ContextKeyExpr.or(PanelAlignmentContext.isEqualTo('center'), ContextKeyExpr.and(PanelPositionContext.notEqualsTo('bottom'), PanelPositionContext.notEqualsTo('top'))),
-			toggled: { condition: PanelMaximizedContext, icon: maximizeIcon, tooltip: localize('minimizePanel', "Restore Panel") },
+			toggled: {
+				condition: PanelMaximizedContext,
+				icon: maximizeIcon,
+				tooltip: localize('minimizePanel', "Restore Panel")
+			},
 			menu: [{
 				id: MenuId.PanelTitle,
 				group: 'navigation',

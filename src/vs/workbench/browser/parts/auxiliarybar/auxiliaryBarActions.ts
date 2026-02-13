@@ -246,7 +246,7 @@ class RestoreAuxiliaryBar extends Action2 {
 		super({
 			id: RestoreAuxiliaryBar.ID,
 			title: localize2('restoreAuxiliaryBar', 'Restore Secondary Side Bar'),
-			tooltip: localize('restoreAuxiliaryBarTooltip', "Restore Secondary Side Bar Size"),
+			tooltip: localize2('restoreAuxiliaryBar', 'Restore Secondary Side Bar'),
 			category: Categories.View,
 			f1: true,
 			precondition: AuxiliaryBarMaximizedContext,
@@ -281,7 +281,7 @@ class ToggleMaximizedAuxiliaryBar extends Action2 {
 			toggled: {
 				condition: AuxiliaryBarMaximizedContext,
 				icon: maximizeIcon,
-				tooltip: localize('restoreAuxiliaryBarTooltip2', "Restore Secondary Side Bar"),
+				tooltip: localize('restoreAuxiliaryBar', 'Restore Secondary Side Bar'),
 			},
 			menu: {
 				id: MenuId.AuxiliaryBarTitle,
