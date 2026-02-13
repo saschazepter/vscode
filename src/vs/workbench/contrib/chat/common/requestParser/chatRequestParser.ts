@@ -9,7 +9,7 @@ import { Range } from '../../../../../editor/common/core/range.js';
 import { OffsetRange } from '../../../../../editor/common/core/ranges/offsetRange.js';
 import { IChatVariablesService, IDynamicVariable } from '../attachments/chatVariables.js';
 import { ChatAgentLocation, ChatModeKind } from '../constants.js';
-import { IChatAgentData, IChatAgentService } from '../participants/chatAgents.js';
+import { IChatAgentAttachmentCapabilities, IChatAgentData, IChatAgentService } from '../participants/chatAgents.js';
 import { IChatSlashCommandService } from '../participants/chatSlashCommands.js';
 import { IPromptsService } from '../promptSyntax/service/promptsService.js';
 import { IToolData, IToolSet, isToolSet } from '../tools/languageModelToolsService.js';
@@ -25,6 +25,7 @@ export interface IChatParserContext {
 	mode?: ChatModeKind;
 	/** Parse as this agent, even when it does not appear in the query text */
 	forcedAgent?: IChatAgentData;
+	attachmentCapabilities?: IChatAgentAttachmentCapabilities;
 }
 
 export class ChatRequestParser {
@@ -215,7 +216,9 @@ export class ChatRequestParser {
 				// Valid agent subcommand
 				return new ChatRequestAgentSubcommandPart(slashRange, slashEditorRange, subCommand);
 			}
-		} else {
+		}
+
+		if (!usedAgent || context?.attachmentCapabilities?.supportsPromptAttachments) {
 			const slashCommands = this.slashCommandService.getCommands(location, context?.mode ?? ChatModeKind.Ask);
 			const slashCommand = slashCommands.find(c => c.command === command);
 			if (slashCommand) {
