@@ -185,14 +185,18 @@ export class ChatSetupContribution extends Disposable implements IWorkbenchContr
 			// Additional conditions (e.g., anonymous, entitlement) can be layered here.
 			const shouldShow = experimentEnabled && !chatEntitlementService.sentiment.installed;
 			if (shouldShow && !growthSessionDisposables.value) {
-				const controller = this._register(this.instantiationService.createInstance(GrowthSessionController));
+				const disposables = new DisposableStore();
+				const controller = disposables.add(this.instantiationService.createInstance(GrowthSessionController));
 				if (!controller.isDismissed) {
-					growthSessionDisposables.value = registerGrowthSession(this.chatSessionsService, controller);
+					disposables.add(registerGrowthSession(this.chatSessionsService, controller));
 					// Fully unregister when dismissed to prevent cached session from
 					// appearing during filtered model updates from other providers.
-					this._register(controller.onDidDismiss(() => {
+					disposables.add(controller.onDidDismiss(() => {
 						growthSessionDisposables.clear();
 					}));
+					growthSessionDisposables.value = disposables;
+				} else {
+					disposables.dispose();
 				}
 			} else if (!shouldShow) {
 				growthSessionDisposables.clear();

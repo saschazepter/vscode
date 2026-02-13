@@ -1949,6 +1949,16 @@ suite('AgentSessions', () => {
 			assert.strictEqual(icon.id, Codicon.cloud.id);
 		});
 
+		test('should return correct name for Growth provider', () => {
+			const name = getAgentSessionProviderName(AgentSessionProviders.Growth);
+			assert.strictEqual(name, 'Growth');
+		});
+
+		test('should return correct icon for Growth provider', () => {
+			const icon = getAgentSessionProviderIcon(AgentSessionProviders.Growth);
+			assert.strictEqual(icon.id, Codicon.lightbulb.id);
+		});
+
 		test('should handle Local provider type in model', async () => {
 			return runWithFakedTimers({}, async () => {
 				const instantiationService = disposables.add(workbenchInstantiationService(undefined, disposables));

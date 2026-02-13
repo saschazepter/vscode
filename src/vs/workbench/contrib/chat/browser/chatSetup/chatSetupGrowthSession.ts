@@ -42,6 +42,8 @@ export class GrowthSessionController extends Disposable implements IChatSessionI
 	private readonly _onDidDismiss = this._register(new Emitter<void>());
 	readonly onDidDismiss: Event<void> = this._onDidDismiss.event;
 
+	private readonly _created = Date.now();
+
 	private _dismissed: boolean;
 	get isDismissed(): boolean { return this._dismissed; }
 
@@ -80,7 +82,7 @@ export class GrowthSessionController extends Disposable implements IChatSessionI
 			status: ChatSessionStatus.NeedsInput,
 			iconPath: Codicon.lightbulb,
 			timing: {
-				created: Date.now(),
+				created: this._created,
 				lastRequestStarted: undefined,
 				lastRequestEnded: undefined,
 			},
