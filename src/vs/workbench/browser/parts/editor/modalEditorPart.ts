@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import './media/modalEditorPart.css';
-import { $, addDisposableListener, append, EventHelper, EventType, isAncestor, isHTMLElement } from '../../../../base/browser/dom.js';
+import { $, addDisposableListener, append, EventHelper, EventType, isHTMLElement } from '../../../../base/browser/dom.js';
 import { StandardKeyboardEvent } from '../../../../base/browser/keyboardEvent.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { DisposableStore, MutableDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
@@ -134,18 +134,12 @@ export class ModalEditorPart {
 			}
 		}));
 
-		// Detect focus out and bring focus back into the modal
-		disposables.add(addDisposableListener(editorPartContainer, EventType.FOCUS_OUT, e => {
-			if (e.relatedTarget && editorPartContainer) {
-				if (!isAncestor(e.relatedTarget as HTMLElement, editorPartContainer)) {
-					if (isHTMLElement(e.target)) {
-						EventHelper.stop(e, true);
-
-						e.target.focus();
-					}
-				}
+		// Detect focus moving to the dimmed area and bring it back into the modal
+		disposables.add(addDisposableListener(modalElement, EventType.FOCUS, e => {
+			if (e.target === modalElement) {
+				editorPartContainer.focus();
 			}
-		}));
+		}, true));
 
 		// Block certain workbench commands from being dispatched while the modal is open
 		disposables.add(addDisposableListener(modalElement, EventType.KEY_DOWN, e => {
