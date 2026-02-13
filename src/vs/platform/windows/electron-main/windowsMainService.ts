@@ -313,6 +313,7 @@ export class WindowsMainService extends Disposable implements IWindowsMainServic
 			urisToOpen: [{ workspaceUri: agentSessionsWorkspaceUri }],
 			cli: this.environmentMainService.args,
 			forceNewWindow: true,
+			noRecentEntry: true,
 		});
 	}
 
