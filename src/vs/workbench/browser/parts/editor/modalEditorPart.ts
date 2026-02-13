@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import './media/modalEditorPart.css';
-import { $, addDisposableListener, append, EventHelper, EventType, isHTMLElement } from '../../../../base/browser/dom.js';
+import { $, addDisposableListener, append, EventHelper, EventType, isAncestor, isHTMLElement } from '../../../../base/browser/dom.js';
 import { StandardKeyboardEvent } from '../../../../base/browser/keyboardEvent.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { DisposableStore, MutableDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
@@ -71,7 +71,7 @@ export class ModalEditorPart {
 			role: 'dialog',
 			'aria-modal': 'true',
 			'aria-labelledby': titleId,
-			tabIndex: 0
+			tabIndex: -1
 		});
 		shadowElement.appendChild(editorPartContainer);
 
@@ -125,10 +125,23 @@ export class ModalEditorPart {
 			editorPart.toggleMaximized();
 		}));
 
-		// Handle close on click outside (on the dimmed background)
+		// Guide focus back into the modal when clicking outside modal
 		disposables.add(addDisposableListener(modalElement, EventType.MOUSE_DOWN, e => {
 			if (e.target === modalElement) {
-				editorPart.close();
+				editorPartContainer.focus();
+			}
+		}));
+
+		// Detect focus out and bring focus back into the modal
+		disposables.add(addDisposableListener(editorPartContainer, EventType.FOCUS_OUT, e => {
+			if (e.relatedTarget && editorPartContainer) {
+				if (!isAncestor(e.relatedTarget as HTMLElement, editorPartContainer)) {
+					if (isHTMLElement(e.target)) {
+						EventHelper.stop(e, true);
+
+						e.target.focus();
+					}
+				}
 			}
 		}));
 
