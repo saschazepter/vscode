@@ -238,7 +238,7 @@ class WorkbenchHostService extends Disposable implements IHostService {
 
 	//#region Window Controls
 
-	setWindowControlsDimmed(targetWindow: Window, dimmed: boolean): void {
+	setWindowDimmed(targetWindow: Window, dimmed: boolean): void {
 		this.nativeHostService.updateWindowControls({ dimmed, targetWindowId: getWindowId(targetWindow) });
 	}
 

@@ -167,7 +167,7 @@ export interface IHostService {
 	 * Toggle dimming of window control overlays (e.g. when showing
 	 * a modal dialog or modal editor part).
 	 */
-	setWindowControlsDimmed(targetWindow: Window, dimmed: boolean): void;
+	setWindowDimmed(targetWindow: Window, dimmed: boolean): void;
 
 	//#endregion
 

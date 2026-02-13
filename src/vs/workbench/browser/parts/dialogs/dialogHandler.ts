@@ -128,9 +128,9 @@ export class BrowserDialogHandler extends AbstractDialogHandler {
 		dialogDisposables.add(dialog);
 
 		const targetWindow = getWindow(this.layoutService.activeContainer);
-		this.hostService.setWindowControlsDimmed(targetWindow, true);
+		this.hostService.setWindowDimmed(targetWindow, true);
 		const result = await dialog.show();
-		this.hostService.setWindowControlsDimmed(targetWindow, false);
+		this.hostService.setWindowDimmed(targetWindow, false);
 		dialogDisposables.dispose();
 
 		return result;

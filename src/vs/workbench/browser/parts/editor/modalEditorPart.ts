@@ -70,8 +70,8 @@ export class ModalEditorPart {
 		disposables.add(toDisposable(() => modalElement.remove()));
 
 		// Dim window controls to match the modal overlay
-		this.hostService.setWindowControlsDimmed(mainWindow, true);
-		disposables.add(toDisposable(() => this.hostService.setWindowControlsDimmed(mainWindow, false)));
+		this.hostService.setWindowDimmed(mainWindow, true);
+		disposables.add(toDisposable(() => this.hostService.setWindowDimmed(mainWindow, false)));
 
 		const shadowElement = modalElement.appendChild($('.modal-editor-shadow'));
 

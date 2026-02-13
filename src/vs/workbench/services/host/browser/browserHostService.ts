@@ -735,7 +735,7 @@ export class BrowserHostService extends Disposable implements IHostService {
 
 	//#region Window Controls
 
-	setWindowControlsDimmed(_targetWindow: Window, _dimmed: boolean): void {
+	setWindowDimmed(_targetWindow: Window, _dimmed: boolean): void {
 		// not supported in browser
 	}
 
