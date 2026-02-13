@@ -426,6 +426,13 @@ export class ActivityBarCompositeBar extends PaneCompositeBar {
 			toAction({ id: ToggleSidebarPositionAction.ID, label: ToggleSidebarPositionAction.getLabel(this.layoutService), run: () => this.instantiationService.invokeFunction(accessor => new ToggleSidebarPositionAction().run(accessor)) }),
 		];
 
+		// Show compact toggle only when activity bar is in default position
+		const activityBarPosition = this.configurationService.getValue<string>(LayoutSettings.ACTIVITY_BAR_LOCATION);
+		if (activityBarPosition === ActivityBarPosition.DEFAULT) {
+			const isCompact = this.configurationService.getValue<boolean>(LayoutSettings.ACTIVITY_BAR_COMPACT);
+			actions.push(toAction({ id: 'workbench.action.activityBar.toggleCompact', label: localize('compactActivityBar', "Compact"), checked: isCompact, run: () => this.configurationService.updateValue(LayoutSettings.ACTIVITY_BAR_COMPACT, !isCompact) }));
+		}
+
 		if (this.part === Parts.SIDEBAR_PART) {
 			actions.push(toAction({ id: ToggleSidebarVisibilityAction.ID, label: ToggleSidebarVisibilityAction.LABEL, run: () => this.instantiationService.invokeFunction(accessor => new ToggleSidebarVisibilityAction().run(accessor)) }));
 		}
