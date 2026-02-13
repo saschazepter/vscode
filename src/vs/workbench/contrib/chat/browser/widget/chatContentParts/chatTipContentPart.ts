@@ -14,6 +14,7 @@ import { localize, localize2 } from '../../../../../../nls.js';
 import { getFlatContextMenuActions } from '../../../../../../platform/actions/browser/menuEntryActionViewItem.js';
 import { MenuWorkbenchToolBar } from '../../../../../../platform/actions/browser/toolbar.js';
 import { Action2, IMenuService, MenuId, registerAction2 } from '../../../../../../platform/actions/common/actions.js';
+import { Categories } from '../../../../../../platform/action/common/actionCommonCategories.js';
 import { IContextKey, IContextKeyService } from '../../../../../../platform/contextkey/common/contextkey.js';
 import { IContextMenuService } from '../../../../../../platform/contextview/browser/contextView.js';
 import { IInstantiationService, ServicesAccessor } from '../../../../../../platform/instantiation/common/instantiation.js';
@@ -120,10 +121,7 @@ export class ChatTipContentPart extends Disposable {
 		this.domNode.appendChild(toolbarContainer);
 
 		const textContent = markdownContent.element.textContent ?? localize('chatTip', "Chat tip");
-		const hasLink = /\[.*?\]\(.*?\)/.test(tip.content.value);
-		const ariaLabel = hasLink
-			? localize('chatTipWithAction', "{0} Tab to the action.", textContent)
-			: textContent;
+		const ariaLabel = textContent;
 		this.domNode.setAttribute('aria-label', ariaLabel);
 	}
 }
@@ -253,6 +251,21 @@ registerAction2(class DisableTipsAction extends Action2 {
 
 	override async run(accessor: ServicesAccessor): Promise<void> {
 		await accessor.get(IChatTipService).disableTips();
+	}
+});
+
+registerAction2(class ClearDismissedTipsAction extends Action2 {
+	constructor() {
+		super({
+			id: 'workbench.action.chat.clearDismissedTips',
+			title: localize2('chatTip.clearDismissed', "Clear Dismissed Chat Tips"),
+			category: Categories.Developer,
+			f1: true,
+		});
+	}
+
+	override async run(accessor: ServicesAccessor): Promise<void> {
+		accessor.get(IChatTipService).clearDismissedTips();
 	}
 });
 

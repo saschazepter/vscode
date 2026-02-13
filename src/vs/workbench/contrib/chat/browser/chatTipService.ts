@@ -92,6 +92,11 @@ export interface IChatTipService {
 	 * @param contextKeyService The context key service to evaluate tip eligibility.
 	 */
 	navigateToPreviousTip(contextKeyService: IContextKeyService): IChatTip | undefined;
+
+	/**
+	 * Clears all dismissed tips so they can be shown again.
+	 */
+	clearDismissedTips(): void;
 }
 
 export interface ITipDefinition {
@@ -536,6 +541,12 @@ export class ChatTipService extends Disposable implements IChatTipService {
 		this._shownTip = undefined;
 		this._tipRequestId = undefined;
 		this._onDidDismissTip.fire();
+	}
+
+	clearDismissedTips(): void {
+		this._storageService.remove(ChatTipService._DISMISSED_TIP_KEY, StorageScope.PROFILE);
+		this._shownTip = undefined;
+		this._tipRequestId = undefined;
 	}
 
 	private _getDismissedTipIds(): string[] {
