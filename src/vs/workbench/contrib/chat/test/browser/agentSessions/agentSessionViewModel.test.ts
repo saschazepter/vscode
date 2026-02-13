@@ -1949,16 +1949,6 @@ suite('AgentSessions', () => {
 			assert.strictEqual(icon.id, Codicon.cloud.id);
 		});
 
-		test('should return correct name for Growth provider', () => {
-			const name = getAgentSessionProviderName(AgentSessionProviders.Growth);
-			assert.strictEqual(name, 'Growth');
-		});
-
-		test('should return correct icon for Growth provider', () => {
-			const icon = getAgentSessionProviderIcon(AgentSessionProviders.Growth);
-			assert.strictEqual(icon.id, Codicon.lightbulb.id);
-		});
-
 		test('should handle Local provider type in model', async () => {
 			return runWithFakedTimers({}, async () => {
 				const instantiationService = disposables.add(workbenchInstantiationService(undefined, disposables));
@@ -2100,13 +2090,8 @@ suite('AgentSessions', () => {
 	suite('AgentSessionsViewModel - getAgentCanContinueIn', () => {
 		ensureNoDisposablesAreLeakedInTestSuite();
 
-		test('should return false when contribution.isReadOnly is true', () => {
-			const result = getAgentCanContinueIn(AgentSessionProviders.Cloud, { type: 'test', name: 'test', displayName: 'Test', description: 'test', isReadOnly: true });
-			assert.strictEqual(result, false);
-		});
-
-		test('should return true for Cloud when contribution is not read-only', () => {
-			const result = getAgentCanContinueIn(AgentSessionProviders.Cloud, { type: 'test', name: 'test', displayName: 'Test', description: 'test', isReadOnly: false });
+		test('should return true for Cloud provider', () => {
+			const result = getAgentCanContinueIn(AgentSessionProviders.Cloud);
 			assert.strictEqual(result, true);
 		});
 
