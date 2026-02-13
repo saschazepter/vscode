@@ -845,16 +845,16 @@ export function registerChatActions() {
 		constructor() {
 			super({
 				id: FocusTodosViewAction.ID,
-				title: localize2('interactiveSession.focusTodosView.label', "Agent TODOs: Toggle Focus Between TODOs and Input"),
+				title: localize2('interactiveSession.focusTodosView.label', "Toggle Focus Between TODOs and Input"),
 				category: CHAT_CATEGORY,
 				f1: true,
-				precondition: ContextKeyExpr.and(ChatContextKeys.inChatSession, ChatContextKeys.chatModeKind.isEqualTo(ChatModeKind.Agent)),
+				precondition: ChatContextKeys.chatModeKind.isEqualTo(ChatModeKind.Agent),
 				keybinding: [{
-					weight: KeybindingWeight.WorkbenchContrib,
+					weight: KeybindingWeight.WorkbenchContrib + 1,
 					primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyT,
 					when: ContextKeyExpr.or(
-						ContextKeyExpr.and(ChatContextKeys.inChatSession, ChatContextKeys.chatModeKind.isEqualTo(ChatModeKind.Agent)),
-						ChatContextKeys.inChatTodoList
+						ContextKeyExpr.and(ChatContextKeys.inChatInput, ChatContextKeys.chatModeKind.isEqualTo(ChatModeKind.Agent)),
+						ContextKeyExpr.and(ChatContextKeys.inChatTodoList, ChatContextKeys.chatModeKind.isEqualTo(ChatModeKind.Agent))
 					),
 				}]
 			});

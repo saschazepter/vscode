@@ -255,6 +255,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 	private readonly welcomePart: MutableDisposable<ChatViewWelcomePart> = this._register(new MutableDisposable());
 
 	private readonly _gettingStartedTipPart = this._register(new MutableDisposable<DisposableStore>());
+	private _gettingStartedTipPartRef: ChatTipContentPart | undefined;
 
 	private readonly chatSuggestNextWidget: ChatSuggestNextWidget;
 
@@ -418,6 +419,23 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		this.requestInProgress = ChatContextKeys.requestInProgress.bindTo(contextKeyService);
 
 		this._register(this.chatEntitlementService.onDidChangeAnonymous(() => this.renderWelcomeViewContentIfNeeded()));
+
+		this._register(this.configurationService.onDidChangeConfiguration(e => {
+			if (e.affectsConfiguration('chat.tips.enabled')) {
+				if (!this.configurationService.getValue<boolean>('chat.tips.enabled')) {
+					// Clear the existing tip so it doesn't linger
+					if (this.inputPart) {
+						this._gettingStartedTipPartRef = undefined;
+						this._gettingStartedTipPart.clear();
+						const tipContainer = this.inputPart.gettingStartedTipContainerElement;
+						dom.clearNode(tipContainer);
+						dom.setVisibility(false, tipContainer);
+					}
+				} else {
+					this.updateChatViewVisibility();
+				}
+			}
+		}));
 
 		this._register(bindContextKey(decidedChatEditingResourceContextKey, contextKeyService, (reader) => {
 			const currentSession = this._editingSession.read(reader);
@@ -768,12 +786,16 @@ export class ChatWidget extends Disposable implements IChatWidget {
 	}
 
 	toggleTipFocus(): boolean {
-		if (this.listWidget.hasTipFocus()) {
+		if (this._gettingStartedTipPartRef?.hasFocus()) {
 			this.focusInput();
 			return true;
 		}
 
-		return this.listWidget.focusTip();
+		if (!this._gettingStartedTipPartRef) {
+			return false;
+		}
+		this._gettingStartedTipPartRef.focus();
+		return true;
 	}
 
 	hasInputFocus(): boolean {
@@ -879,6 +901,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 				} else {
 					// Dispose the cached tip part so the next empty state picks a
 					// fresh (rotated) tip instead of re-showing the stale one.
+					this._gettingStartedTipPartRef = undefined;
 					this._gettingStartedTipPart.clear();
 					dom.clearNode(tipContainer);
 					dom.setVisibility(false, tipContainer);
@@ -972,11 +995,14 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			() => this.chatTipService.getWelcomeTip(this.contextKeyService),
 		));
 		tipContainer.appendChild(tipPart.domNode);
+		this._gettingStartedTipPartRef = tipPart;
 
 		store.add(tipPart.onDidHide(() => {
 			tipPart.domNode.remove();
+			this._gettingStartedTipPartRef = undefined;
 			this._gettingStartedTipPart.clear();
 			dom.setVisibility(false, tipContainer);
+			this.focusInput();
 		}));
 
 		this._gettingStartedTipPart.value = store;
