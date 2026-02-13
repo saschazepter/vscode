@@ -24,6 +24,7 @@ import { IInstantiationService } from '../../../platform/instantiation/common/in
 import { ILogService } from '../../../platform/log/common/log.js';
 import { IUriIdentityService } from '../../../platform/uriIdentity/common/uriIdentity.js';
 import { IChatWidgetService } from '../../contrib/chat/browser/chat.js';
+import { AgentSessionProviders, getAgentSessionProvider } from '../../contrib/chat/browser/agentSessions/agentSessions.js';
 import { AddDynamicVariableAction, IAddDynamicVariableContext } from '../../contrib/chat/browser/attachments/chatDynamicVariables.js';
 import { IChatAgentHistoryEntry, IChatAgentImplementation, IChatAgentRequest, IChatAgentService } from '../../contrib/chat/common/participants/chatAgents.js';
 import { IPromptFileContext, IPromptsService } from '../../contrib/chat/common/promptSyntax/service/promptsService.js';
@@ -146,7 +147,9 @@ export class MainThreadChatAgents2 extends Disposable implements MainThreadChatA
 			this._proxy.$handleQuestionCarouselAnswer(e.requestId, e.resolveId, e.answers);
 		}));
 		this._register(this._chatWidgetService.onDidChangeFocusedWidget(widget => {
-			this._proxy.$acceptActiveChatSession(widget?.viewModel?.sessionResource);
+			const sessionResource = widget?.viewModel?.sessionResource;
+			const isLocal = sessionResource && getAgentSessionProvider(sessionResource) === AgentSessionProviders.Local;
+			this._proxy.$acceptActiveChatSession(isLocal ? sessionResource : undefined);
 		}));
 	}
 
