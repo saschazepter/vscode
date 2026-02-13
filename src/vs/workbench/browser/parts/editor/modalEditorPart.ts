@@ -190,10 +190,6 @@ export class ModalEditorPart {
 
 			height = Math.min(height, availableHeight); // Ensure the modal never exceeds available height (below the title bar)
 
-			// Shift the modal block below the title bar
-			modalElement.style.top = `${titleBarOffset}px`;
-			modalElement.style.height = `calc(100% - ${titleBarOffset}px)`;
-
 			editorPartContainer.style.width = `${width}px`;
 			editorPartContainer.style.height = `${height}px`;
 
