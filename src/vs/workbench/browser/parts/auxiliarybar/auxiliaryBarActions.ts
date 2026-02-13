@@ -20,7 +20,6 @@ import { KeyCode, KeyMod } from '../../../../base/common/keyCodes.js';
 import { SwitchCompositeViewAction } from '../compositeBarActions.js';
 
 const maximizeIcon = registerIcon('auxiliarybar-maximize', Codicon.screenFull, localize('maximizeIcon', 'Icon to maximize the secondary side bar.'));
-const restoreIcon = registerIcon('auxiliarybar-restore', Codicon.screenNormal, localize('restoreIcon', 'Icon to restore the secondary side bar.'));
 const closeIcon = registerIcon('auxiliarybar-close', Codicon.close, localize('closeIcon', 'Icon to close the secondary side bar.'));
 
 const auxiliaryBarRightIcon = registerIcon('auxiliarybar-right-layout-icon', Codicon.layoutSidebarRight, localize('toggleAuxiliaryIconRight', 'Icon to toggle the secondary side bar off in its right position.'));
@@ -224,17 +223,10 @@ class MaximizeAuxiliaryBar extends Action2 {
 		super({
 			id: MaximizeAuxiliaryBar.ID,
 			title: localize2('maximizeAuxiliaryBar', 'Maximize Secondary Side Bar'),
-			tooltip: localize('maximizeAuxiliaryBarTooltip', "Maximize Secondary Side Bar Size"),
+			tooltip: localize('maximizeAuxiliaryBarTooltip', "Maximize Secondary Side Bar"),
 			category: Categories.View,
 			f1: true,
 			precondition: AuxiliaryBarMaximizedContext.negate(),
-			icon: maximizeIcon,
-			menu: {
-				id: MenuId.AuxiliaryBarTitle,
-				group: 'navigation',
-				order: 1,
-				when: AuxiliaryBarMaximizedContext.negate()
-			}
 		});
 	}
 
@@ -258,13 +250,6 @@ class RestoreAuxiliaryBar extends Action2 {
 			category: Categories.View,
 			f1: true,
 			precondition: AuxiliaryBarMaximizedContext,
-			icon: restoreIcon,
-			menu: {
-				id: MenuId.AuxiliaryBarTitle,
-				group: 'navigation',
-				order: 1,
-				when: AuxiliaryBarMaximizedContext
-			},
 			keybinding: {
 				weight: KeybindingWeight.WorkbenchContrib,
 				primary: KeyMod.CtrlCmd | KeyCode.KeyW,
@@ -289,8 +274,20 @@ class ToggleMaximizedAuxiliaryBar extends Action2 {
 		super({
 			id: ToggleMaximizedAuxiliaryBar.ID,
 			title: localize2('toggleMaximizedAuxiliaryBar', 'Toggle Maximized Secondary Side Bar'),
+			tooltip: localize('maximizeAuxiliaryBarTooltip2', "Maximize Secondary Side Bar"),
 			f1: true,
-			category: Categories.View
+			category: Categories.View,
+			icon: maximizeIcon,
+			toggled: {
+				condition: AuxiliaryBarMaximizedContext,
+				icon: maximizeIcon,
+				tooltip: localize('restoreAuxiliaryBarTooltip2', "Restore Secondary Side Bar"),
+			},
+			menu: {
+				id: MenuId.AuxiliaryBarTitle,
+				group: 'navigation',
+				order: 1,
+			}
 		});
 	}
 
