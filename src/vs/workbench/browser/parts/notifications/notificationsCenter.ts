@@ -8,7 +8,7 @@ import './media/notificationsActions.css';
 import { NOTIFICATIONS_CENTER_HEADER_FOREGROUND, NOTIFICATIONS_CENTER_HEADER_BACKGROUND, NOTIFICATIONS_CENTER_BORDER } from '../../../common/theme.js';
 import { IThemeService, Themable } from '../../../../platform/theme/common/themeService.js';
 import { INotificationsModel, INotificationChangeEvent, NotificationChangeType, NotificationViewItemContentChangeKind } from '../../../common/notifications.js';
-import { IWorkbenchLayoutService, Parts } from '../../../services/layout/browser/layoutService.js';
+import { IWorkbenchLayoutService, LayoutSettings, NotificationsPosition, Parts } from '../../../services/layout/browser/layoutService.js';
 import { Emitter } from '../../../../base/common/event.js';
 import { IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { INotificationsCenterController, NotificationActionRunner } from './notificationsCommands.js';
@@ -29,6 +29,7 @@ import { mainWindow } from '../../../../base/browser/window.js';
 import { IContextMenuService } from '../../../../platform/contextview/browser/contextView.js';
 import { DropdownMenuActionViewItem } from '../../../../base/browser/ui/dropdown/dropdownActionViewItem.js';
 import { AccessibilitySignal, IAccessibilitySignalService } from '../../../../platform/accessibilitySignal/browser/accessibilitySignalService.js';
+import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 
 export class NotificationsCenter extends Themable implements INotificationsCenterController {
 
@@ -60,7 +61,8 @@ export class NotificationsCenter extends Themable implements INotificationsCente
 		@IKeybindingService private readonly keybindingService: IKeybindingService,
 		@INotificationService private readonly notificationService: INotificationService,
 		@IAccessibilitySignalService private readonly accessibilitySignalService: IAccessibilitySignalService,
-		@IContextMenuService private readonly contextMenuService: IContextMenuService
+		@IContextMenuService private readonly contextMenuService: IContextMenuService,
+		@IConfigurationService private readonly configurationService: IConfigurationService
 	) {
 		super(themeService);
 
@@ -73,6 +75,36 @@ export class NotificationsCenter extends Themable implements INotificationsCente
 		this._register(this.model.onDidChangeNotification(e => this.onDidChangeNotification(e)));
 		this._register(this.layoutService.onDidLayoutMainContainer(dimension => this.layout(Dimension.lift(dimension))));
 		this._register(this.notificationService.onDidChangeFilter(() => this.onDidChangeFilter()));
+		this._register(this.configurationService.onDidChangeConfiguration(e => {
+			if (e.affectsConfiguration(LayoutSettings.NOTIFICATIONS_POSITION)) {
+				this.updatePositionClass();
+			}
+		}));
+	}
+
+	private getNotificationsPosition(): NotificationsPosition {
+		return this.configurationService.getValue<NotificationsPosition>(LayoutSettings.NOTIFICATIONS_POSITION) ?? NotificationsPosition.BOTTOM_RIGHT;
+	}
+
+	private updatePositionClass(): void {
+		if (!this.notificationsCenterContainer) {
+			return;
+		}
+
+		const position = this.getNotificationsPosition();
+		this.notificationsCenterContainer.classList.remove('bottom-right', 'bottom-left', 'top-right');
+		this.notificationsCenterContainer.classList.add(position);
+
+		// Set initial top offset for top-right to avoid jump on first render
+		if (position === NotificationsPosition.TOP_RIGHT) {
+			let topOffset = 7;
+			if (this.layoutService.isVisible(Parts.TITLEBAR_PART, mainWindow)) {
+				topOffset += 35; // adjust for title bar (DEFAULT_CUSTOM_TITLEBAR_HEIGHT)
+			}
+			this.notificationsCenterContainer.style.top = `${topOffset}px`;
+		} else {
+			this.notificationsCenterContainer.style.top = '';
+		}
 	}
 
 	private onDidChangeFilter(): void {
@@ -150,6 +182,9 @@ export class NotificationsCenter extends Themable implements INotificationsCente
 
 		// Container
 		this.notificationsCenterContainer = $('.notifications-center');
+
+		// Apply position class
+		this.updatePositionClass();
 
 		// Header
 		this.notificationsCenterHeader = $('.notifications-center-header');
@@ -363,6 +398,9 @@ export class NotificationsCenter extends Themable implements INotificationsCente
 
 				availableHeight -= (2 * 12); // adjust for paddings top and bottom
 			}
+
+			// Update top offset for top-right position
+			this.updatePositionClass();
 
 			// Apply to list
 			const notificationsList = assertReturnsDefined(this.notificationsList);
