@@ -968,6 +968,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			this._gettingStartedTipPartRef = undefined;
 			this._gettingStartedTipPart.clear();
 			dom.setVisibility(false, tipContainer);
+			this.focusInput();
 		}));
 
 		this._gettingStartedTipPart.value = store;
