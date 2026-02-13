@@ -634,6 +634,14 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		return this.input.height.get() + this.listWidget.contentHeight + this.chatSuggestNextWidget.height;
 	}
 
+	get scrollTop(): number {
+		return this.listWidget.scrollTop;
+	}
+
+	set scrollTop(value: number) {
+		this.listWidget.scrollTop = value;
+	}
+
 	get attachmentModel(): ChatAttachmentModel {
 		return this.input.attachmentModel;
 	}
