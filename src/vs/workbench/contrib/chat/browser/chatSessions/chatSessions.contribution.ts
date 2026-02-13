@@ -296,6 +296,15 @@ export class ChatSessionsService extends Disposable implements IChatSessionsServ
 
 	private readonly _sessions = new ResourceMap<ContributedChatSessionData>();
 
+	/**
+	 * Lightweight options store for session resources that don't have full
+	 * `ContributedChatSessionData` yet (deferred session creation). Options
+	 * stored here are consumed by picker widgets and the welcome part. Once
+	 * a real session is created via `getOrCreateChatSession`, options are
+	 * migrated to the `ContributedChatSessionData`.
+	 */
+	private readonly _pendingSessionOptions = new ResourceMap<Map<string, string | IChatSessionProviderOptionItem>>();
+
 	private readonly _providerNameOverrides = new Map<string, string>();
 	private readonly _onDidChangeProviderNameOverride = this._register(new Emitter<string>());
 	readonly onDidChangeProviderNameOverride = this._onDidChangeProviderNameOverride.event;
@@ -1026,12 +1035,29 @@ export class ChatSessionsService extends Disposable implements IChatSessionsServ
 
 	public getSessionOption(sessionResource: URI, optionId: string): string | IChatSessionProviderOptionItem | undefined {
 		const session = this._sessions.get(sessionResource);
-		return session?.getOption(optionId);
+		if (session) {
+			return session.getOption(optionId);
+		}
+		// Fall back to the pending options store for resources that don't
+		// have full session data yet (deferred session creation).
+		return this._pendingSessionOptions.get(sessionResource)?.get(optionId);
 	}
 
 	public setSessionOption(sessionResource: URI, optionId: string, value: string | IChatSessionProviderOptionItem): boolean {
 		const session = this._sessions.get(sessionResource);
-		return !!session?.setOption(optionId, value);
+		if (session) {
+			session.setOption(optionId, value);
+			return true;
+		}
+		// Store in the pending options map for deferred session creation.
+		// These are consumed by the welcome part and input toolbar pickers.
+		let pending = this._pendingSessionOptions.get(sessionResource);
+		if (!pending) {
+			pending = new Map();
+			this._pendingSessionOptions.set(sessionResource, pending);
+		}
+		pending.set(optionId, value);
+		return true;
 	}
 
 	/**

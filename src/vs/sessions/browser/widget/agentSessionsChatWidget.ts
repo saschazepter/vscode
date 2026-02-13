@@ -95,6 +95,16 @@ export class AgentSessionsChatWidget extends Disposable {
 	private _chatModelRef: IReference<IChatModel> | undefined;
 	private _sessionCreated = false;
 
+	/**
+	 * A lightweight session resource generated before the chat model exists.
+	 * This is just a URI identifier - no async session initialization is needed.
+	 * The {@link IChatSessionsService} stores option values for this resource
+	 * in a pending options map, so the extension can fire
+	 * {@link IChatSessionsService.notifySessionOptionsChange} and the UI picks
+	 * up the changes via the existing event flow.
+	 */
+	private _pendingSessionResource: URI | undefined;
+
 	private readonly _onDidCreateSession = this._register(new Emitter<{ sessionResource: URI; target: AgentSessionProviders }>());
 	readonly onDidCreateSession = this._onDidCreateSession.event;
 
@@ -144,6 +154,10 @@ export class AgentSessionsChatWidget extends Disposable {
 				if (target !== undefined && originalDelegate.setActiveSessionProvider) {
 					originalDelegate.setActiveSessionProvider(target);
 				}
+				// Regenerate pending resource for the new target
+				if (!this._sessionCreated) {
+					this._generatePendingSessionResource();
+				}
 			}));
 		}
 
@@ -182,6 +196,7 @@ export class AgentSessionsChatWidget extends Disposable {
 			? {
 				...viewOptions.sessionTypePickerDelegate,
 				allowedTargets: this._targetConfig.allowedTargets.get(),
+				getPendingSessionResource: () => this._pendingSessionResource,
 			}
 			: undefined;
 
@@ -301,11 +316,15 @@ export class AgentSessionsChatWidget extends Disposable {
 		const position = this._agentOptions.sessionPosition ?? ChatSessionPosition.Sidebar;
 
 		try {
-			const resource = getResourceForNewChatSession({
-				type: target,
-				position,
-				displayName: '',
-			});
+			// Reuse the pending resource if the target hasn't changed,
+			// otherwise generate a fresh one.
+			const resource = this._pendingSessionResource && target !== AgentSessionProviders.Local
+				? this._pendingSessionResource
+				: getResourceForNewChatSession({
+					type: target,
+					position,
+					displayName: '',
+				});
 
 			if (target === AgentSessionProviders.Local) {
 				this._chatModelRef = this.chatService.startSession(this.location);
@@ -319,6 +338,7 @@ export class AgentSessionsChatWidget extends Disposable {
 			if (this._chatModelRef.object) {
 				this._chatWidget.setModel(this._chatModelRef.object);
 				this._sessionCreated = true;
+				this._pendingSessionResource = undefined;
 
 				const sessionResource = this._chatModelRef.object.sessionResource;
 				this._onDidCreateSession.fire({ sessionResource, target });
@@ -329,6 +349,28 @@ export class AgentSessionsChatWidget extends Disposable {
 		}
 	}
 
+	// --- Pending session resource ---
+
+	/**
+	 * Generates a lightweight pending session resource for the current target.
+	 * This is just a URI - no async work or extension activation is involved.
+	 * The resource allows picker commands and `notifySessionOptionsChange`
+	 * to flow through the existing event pipeline before a chat model exists.
+	 */
+	private _generatePendingSessionResource(): void {
+		const target = this._targetConfig.selectedTarget.get();
+		if (!target || target === AgentSessionProviders.Local) {
+			this._pendingSessionResource = undefined;
+			return;
+		}
+
+		this._pendingSessionResource = getResourceForNewChatSession({
+			type: target,
+			position: this._agentOptions.sessionPosition ?? ChatSessionPosition.Sidebar,
+			displayName: '',
+		});
+	}
+
 	// --- Rendering ---
 
 	render(container: HTMLElement): void {
@@ -337,6 +379,9 @@ export class AgentSessionsChatWidget extends Disposable {
 		if (this._agentOptions.showFullWelcome) {
 			this._createWelcomeView();
 			this._updateWelcomeVisibility();
+			// Generate a pending resource so picker commands and extension
+			// option changes can flow through the event pipeline.
+			this._generatePendingSessionResource();
 		}
 	}
 
@@ -358,7 +403,7 @@ export class AgentSessionsChatWidget extends Disposable {
 		// Create the welcome part (mascot + pickers + inputSlot)
 		const welcomePartOptions: IAgentSessionsWelcomePartOptions = {
 			targetConfig: this._targetConfig,
-			getSessionResource: () => this._chatWidget.viewModel?.sessionResource,
+			getSessionResource: () => this._chatWidget.viewModel?.sessionResource ?? this._pendingSessionResource,
 			maxSessions: this._agentOptions.maxSessions,
 		};
 		this._welcomePart.value = this.instantiationService.createInstance(
@@ -468,6 +513,7 @@ export class AgentSessionsChatWidget extends Disposable {
 		this._chatModelRef?.dispose();
 		this._chatModelRef = undefined;
 		this._sessionCreated = false;
+		this._pendingSessionResource = undefined;
 
 		// Clear pending option selections from the previous session
 		this._chatWidget.input.takePendingOptionSelections();
@@ -476,6 +522,9 @@ export class AgentSessionsChatWidget extends Disposable {
 		// pickers are re-rendered after the container is visible
 		this._updateWelcomeVisibility();
 		this._welcomePart.value?.resetSelectedOptions();
+
+		// Generate a fresh pending resource for the next session
+		this._generatePendingSessionResource();
 	}
 
 	// --- Option groups caching ---

@@ -312,12 +312,16 @@ export class AgentSessionsChatWelcomePart extends Disposable {
 					this._selectedOptions.set(optionGroup.id, option);
 					emitter.fire(option);
 
-					// Notify extension of the option change if we have a session
+					// Notify extension of the option change.
+					// In the deferred case there is no chat model yet, but the
+					// pending session resource is available and can be used
+					// directly since it's the same URI used for session data.
 					const sessionResource = this.options.getSessionResource?.();
-					const currentCtx = sessionResource ? this.chatService.getChatSessionFromInternalUri(sessionResource) : undefined;
-					if (currentCtx) {
+					if (sessionResource) {
+						const currentCtx = this.chatService.getChatSessionFromInternalUri(sessionResource);
+						const chatSessionResource = currentCtx?.chatSessionResource ?? sessionResource;
 						this.chatSessionsService.notifySessionOptionsChange(
-							currentCtx.chatSessionResource,
+							chatSessionResource,
 							[{ optionId: optionGroup.id, value: option }]
 						).catch((err) => this.logService.error(`Failed to notify extension of ${optionGroup.id} change:`, err));
 					}
@@ -440,11 +444,22 @@ export class AgentSessionsChatWelcomePart extends Disposable {
 		return optionGroup.items.find((item) => item.default === true);
 	}
 
+	/**
+	 * Sync option values from the chat sessions service into the welcome part's
+	 * local `_selectedOptions` cache. Called when the extension notifies of
+	 * option changes or after the pending session is initialized.
+	 *
+	 * In the deferred session creation case there is no chat model yet, so
+	 * `getChatSessionFromInternalUri` will return `undefined`. The method
+	 * falls back to using `sessionResource` directly as the chat session
+	 * resource - this works because `loadSessionForResource` uses the same
+	 * URI for both the model key and the chat session resource.
+	 */
 	private syncOptionsFromSession(sessionResource: URI): void {
 		const ctx = this.chatService.getChatSessionFromInternalUri(sessionResource);
-		if (!ctx) {
-			return;
-		}
+		// In the deferred case there is no chat model yet.
+		// The session resource IS the chat session resource.
+		const chatSessionResource = ctx?.chatSessionResource ?? sessionResource;
 
 		const activeSessionType = this._targetConfig.selectedTarget.get();
 		if (!activeSessionType) {
@@ -461,7 +476,7 @@ export class AgentSessionsChatWelcomePart extends Disposable {
 				continue;
 			}
 
-			const currentOption = this.chatSessionsService.getSessionOption(ctx.chatSessionResource, optionGroup.id);
+			const currentOption = this.chatSessionsService.getSessionOption(chatSessionResource, optionGroup.id);
 			if (!currentOption) {
 				continue;
 			}

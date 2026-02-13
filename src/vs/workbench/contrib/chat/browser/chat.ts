@@ -103,6 +103,14 @@ export interface ISessionTypePickerDelegate {
 	 * show targets that are in this set.
 	 */
 	allowedTargets?: ReadonlySet<AgentSessionProviders>;
+
+	/**
+	 * Returns the pending session resource during deferred session creation.
+	 * Before a chat model is created, this resource can be used to match
+	 * `onDidChangeSessionOptions` events and read session option values
+	 * from `IChatSessionsService`.
+	 */
+	getPendingSessionResource?(): URI | undefined;
 }
 
 export const IChatWidgetService = createDecorator<IChatWidgetService>('chatWidgetService');

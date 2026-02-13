@@ -531,6 +531,17 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 			if (sessionResource && isEqual(sessionResource, e)) {
 				// Options changed for our current session - refresh pickers
 				this.refreshChatSessionPickers();
+				return;
+			}
+
+			// In the deferred session creation case there is no view model yet,
+			// but a pending session resource exists. Match against it so that
+			// extension-fired option changes are picked up by _pendingOptionSelections
+			// and the pickers stay in sync.
+			const pendingResource = this.options.sessionTypePickerDelegate?.getPendingSessionResource?.();
+			if (pendingResource && isEqual(pendingResource, e)) {
+				this.syncPendingOptionsFromResource(pendingResource);
+				this.refreshChatSessionPickers();
 			}
 		}));
 
@@ -811,6 +822,45 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		);
 		this._pendingOptionSelections.clear();
 		return result;
+	}
+
+	/**
+	 * Sync option values from the pending session resource into
+	 * `_pendingOptionSelections`. Called when the extension fires
+	 * `notifySessionOptionsChange` before a chat model exists.
+	 */
+	private syncPendingOptionsFromResource(pendingResource: URI): void {
+		const delegateSessionType = this.options.sessionTypePickerDelegate?.getActiveSessionProvider?.();
+		if (!delegateSessionType) {
+			return;
+		}
+
+		const optionGroups = this.chatSessionsService.getOptionGroupsForSessionType(delegateSessionType);
+		if (!optionGroups) {
+			return;
+		}
+
+		if (!this._pendingOptionSelections) {
+			this._pendingOptionSelections = new Map();
+		}
+
+		for (const optionGroup of optionGroups) {
+			const currentOption = this.chatSessionsService.getSessionOption(pendingResource, optionGroup.id);
+			if (!currentOption) {
+				continue;
+			}
+
+			let item: IChatSessionProviderOptionItem | undefined;
+			if (typeof currentOption === 'string') {
+				item = optionGroup.items.find(m => m.id === currentOption.trim());
+			} else {
+				item = currentOption;
+			}
+
+			if (item) {
+				this._pendingOptionSelections.set(optionGroup.id, item);
+			}
+		}
 	}
 
 	public openChatSessionPicker(): void {
@@ -1530,9 +1580,12 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 
 		// Update context keys with current option values before evaluating `when` clauses.
 		// This ensures interdependent `when` expressions work correctly.
-		if (ctx) {
+		// In the deferred case (no ctx), fall back to the pending session resource.
+		const contextKeySource = ctx?.chatSessionResource
+			?? this.options.sessionTypePickerDelegate?.getPendingSessionResource?.();
+		if (contextKeySource) {
 			for (const optionGroup of optionGroups) {
-				const currentOption = this.chatSessionsService.getSessionOption(ctx.chatSessionResource, optionGroup.id);
+				const currentOption = this.chatSessionsService.getSessionOption(contextKeySource, optionGroup.id);
 				if (currentOption) {
 					const optionId = typeof currentOption === 'string' ? currentOption : currentOption.id;
 					this.updateOptionContextKey(optionGroup.id, optionId);
@@ -1622,11 +1675,15 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 			this.chatSessionPickerContainer.style.display = '';
 		}
 
-		// Fire option change events for existing widgets to sync their state
-		// (only if we have a session context - in welcome view, options aren't persisted yet)
-		if (ctx) {
+		// Fire option change events for existing widgets to sync their state.
+		// Use session context when available, otherwise fall back to the pending
+		// session resource so that extension-fired updates are reflected in the
+		// deferred session creation case.
+		const optionSource = ctx?.chatSessionResource
+			?? this.options.sessionTypePickerDelegate?.getPendingSessionResource?.();
+		if (optionSource) {
 			for (const [optionGroupId] of this.chatSessionPickerWidgets.entries()) {
-				const currentOption = this.chatSessionsService.getSessionOption(ctx.chatSessionResource, optionGroupId);
+				const currentOption = this.chatSessionsService.getSessionOption(optionSource, optionGroupId);
 				if (currentOption) {
 					const optionGroup = optionGroups.find(g => g.id === optionGroupId);
 					if (optionGroup) {

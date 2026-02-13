@@ -188,17 +188,20 @@ When the agent sessions window opens for the first time:
    - `lockedToCodingAgent` is `false` (contribution not available yet)
    - The `ChatSessionPrimaryPickerAction` menu item is **hidden** (its `when` clause requires both)
 4. **Cached option groups** (from a previous run) are loaded from storage and seeded into the service, allowing pickers to render immediately with stale-but-useful data
-5. When the extension activates:
+5. **Pending session resource** — `_generatePendingSessionResource()` generates a lightweight URI (e.g., `copilotcli:/untitled-<uuid>`) synchronously. No async work or extension activation needed. This resource allows picker commands and `notifySessionOptionsChange` events to flow through the existing pipeline.
+6. When the extension activates:
    - `onDidChangeAvailability` fires → `updateWidgetLockStateFromSessionType` sets `lockedToCodingAgent = true`
    - `onDidChangeOptionGroups` fires with fresh data → `chatSessionHasModels = true`
    - The `when` clause is now satisfied → toolbar re-renders with the picker action
    - The welcome part re-renders pickers with live data from the extension
+7. **Extension can now fire `notifySessionOptionsChange`** with the pending resource — the service stores values in `_pendingSessionOptions`, fires `onDidChangeSessionOptions`, and the welcome part and `ChatInputPart` match the resource and sync picker state.
 
 ```
-State: No viewModel, no sessionResource
+State: No viewModel, _pendingSessionResource is set immediately (sync)
 ChatInputPart: Uses delegate.getActiveSessionProvider() for session type
 Pickers: Initially hidden, appear when extension activates
 Option groups: Cached from storage → overwritten by extension
+Session options: Stored in lightweight _pendingSessionOptions map (no ContributedChatSessionData)
 ```
 
 ### 4.2 New Session (Extension Already Active)
@@ -208,17 +211,20 @@ When the user clicks "New Session" after completing a request:
 1. `resetSession()` is called
 2. The old model is cleared via `setModel(undefined)` and the model ref is disposed
 3. `_sessionCreated` is reset to `false`
-4. Pending option selections from `ChatInputPart` are cleared via `takePendingOptionSelections()`
-5. The welcome view becomes visible and pickers are re-rendered via `resetSelectedOptions()`
-6. The `ChatWidget` again has **no model** — same as first load from the input's perspective
-7. BUT the extension is already active, so:
+4. `_pendingSessionResource` is cleared
+5. Pending option selections from `ChatInputPart` are cleared via `takePendingOptionSelections()`
+6. The welcome view becomes visible and pickers are re-rendered via `resetSelectedOptions()`
+7. `_generatePendingSessionResource()` generates a fresh pending resource (synchronous)
+8. The `ChatWidget` again has **no model** — same as first load from the input's perspective
+9. BUT the extension is already active, so:
    - `lockedToCodingAgent` is already `true` (contribution is available)
    - `chatSessionHasModels` is already `true` (option groups are registered)
    - Pickers render **immediately** with live data — no waiting for extension activation
    - Option groups are fresh (not stale cached data)
+   - `getOrCreateChatSession` resolves quickly since the content provider is already registered
 
 ```
-State: No viewModel, no sessionResource (same as first load)
+State: No viewModel, _pendingSessionResource set after init
 ChatInputPart: Uses delegate.getActiveSessionProvider() for session type
 Pickers: Render immediately (extension already active, context keys already set)
 Option groups: Live data from extension (already registered)
@@ -233,8 +239,10 @@ Option groups: Live data from extension (already registered)
 | `chatSessionHasModels` | `false` → `true` (async) | Already `true` |
 | Input toolbar pickers | Hidden → appear on activation | Visible immediately |
 | Welcome part pickers | Cached → replaced with live data | Live data from start |
-| Session resource | Never existed | Existed, then cleared |
+| Session resource | Generated as pending, session data created eagerly | Old cleared, new pending generated |
+| `_pendingSessionResource` | Set after `getOrCreateChatSession` completes | Cleared and re-initialized |
 | `_pendingOptionSelections` | Empty | Cleared via `takePendingOptionSelections()` |
+| Extension option changes | Received after pending init completes | Received immediately |
 
 ### 4.4 The `locked` Flag and Session Reset
 
@@ -258,29 +266,33 @@ Traditional chat sessions require a session resource (URI) to exist before the u
 
 ### The Solution
 
-The Agent Sessions Chat Widget defers session creation to the **moment of first submit**:
+The Agent Sessions Chat Widget defers **chat model creation** to the **moment of first submit**, but eagerly initializes **session data** so extensions can interact with options before the user sends a message:
 
 ```mermaid
 stateDiagram-v2
-    [*] --> NoSession: Widget renders
-    NoSession --> NoSession: User selects target
-    NoSession --> NoSession: User picks options
-    NoSession --> NoSession: User types message
-    NoSession --> SessionCreated: User clicks Send
-    SessionCreated --> Active: Session loaded + model set
+    [*] --> PendingSession: Widget renders
+    PendingSession --> PendingSession: getOrCreateChatSession (session data only)
+    PendingSession --> PendingSession: Extension fires notifySessionOptionsChange
+    PendingSession --> PendingSession: User selects target
+    PendingSession --> PendingSession: User picks options
+    PendingSession --> PendingSession: User types message
+    PendingSession --> SessionCreated: User clicks Send
+    SessionCreated --> Active: Chat model created + model set
     Active --> Active: Subsequent sends go through normally
-    Active --> NoSession: User clears/resets
+    Active --> PendingSession: User clears/resets
 ```
 
-**Before session creation:**
+**Before chat model creation (pending session state):**
+- A **pending session resource** is generated via `getResourceForNewChatSession()` and `chatSessionsService.getOrCreateChatSession()` is called eagerly. This creates session data (options store) and invokes `provideChatSessionContent` so the extension knows the resource.
+- The extension can fire `notifySessionOptionsChange(pendingResource, updates)` at any time — the welcome part matches the pending resource and syncs option values.
 - Target selection is tracked in `AgentSessionsChatTargetConfig`
-- Option selections are cached in `_pendingOptionSelections` (ChatInputPart) and `_selectedOptions` (welcome part)
+- User option selections are cached in `_pendingOptionSelections` (ChatInputPart) and `_selectedOptions` (welcome part), AND forwarded to the extension via `notifySessionOptionsChange` using the pending resource.
 - The chat input works normally — user can type, attach context, change mode
 
-**At session creation (triggered by either `submitHandler` or the patched `acceptInput`):**
+**At chat model creation (triggered by either `submitHandler` or the patched `acceptInput`):**
 1. `_createSessionForCurrentTarget()` reads the current target from the config
-2. Creates a session resource for that target type via `getResourceForNewChatSession()`
-3. For non-local targets, calls `loadSessionForResource(resource, location, CancellationToken.None)` which invokes the extension's `provideChatSessionContent`; for local targets, calls `startSession(location)` directly
+2. **Reuses the pending session resource** (the same URI used for session data) — no new resource is generated
+3. For non-local targets, calls `loadSessionForResource(resource, location, CancellationToken.None)` which reuses the existing session data from `getOrCreateChatSession()`; for local targets, calls `startSession(location)` directly
 4. Sets the model on the `ChatWidget` via `setModel()` (this clears the input editor, so the input text is captured and restored)
 5. `_gatherAllOptionSelections()` collects options from welcome part + input toolbar
 6. Options are attached to `contributedChatSession.initialSessionOptions` via `model.setContributedChatSession()`
