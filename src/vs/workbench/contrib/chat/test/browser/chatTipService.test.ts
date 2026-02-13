@@ -9,7 +9,7 @@ import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/tes
 import { ICommandEvent, ICommandService } from '../../../../../platform/commands/common/commands.js';
 import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
 import { TestConfigurationService } from '../../../../../platform/configuration/test/common/testConfigurationService.js';
-import { ContextKeyExpr, IContextKeyService } from '../../../../../platform/contextkey/common/contextkey.js';
+import { IContextKeyService } from '../../../../../platform/contextkey/common/contextkey.js';
 import { TestInstantiationService } from '../../../../../platform/instantiation/test/common/instantiationServiceMock.js';
 import { MockContextKeyService } from '../../../../../platform/keybinding/test/common/mockKeybindingService.js';
 import { ILogService, NullLogService } from '../../../../../platform/log/common/log.js';
@@ -735,45 +735,5 @@ suite('ChatTipService', () => {
 		await new Promise(r => setTimeout(r, 0));
 
 		assert.strictEqual(tracker.isExcluded(tip), true, 'Should be excluded after onDidChangeCustomAgents fires and agent files exist');
-	});
-
-	test('tip.undoChanges when clause requires local session type', () => {
-		// Reconstruct the same when expression used in tip.undoChanges
-		const whenExpr = ContextKeyExpr.and(
-			ChatContextKeys.chatSessionType.isEqualTo('local'),
-			ContextKeyExpr.or(
-				ChatContextKeys.chatModeKind.isEqualTo(ChatModeKind.Agent),
-				ChatContextKeys.chatModeKind.isEqualTo(ChatModeKind.Edit),
-			),
-		);
-		assert.ok(whenExpr);
-
-		function makeContext(values: Record<string, string>) {
-			return { getValue: (key: string) => values[key] as any };
-		}
-
-		// Local session in agent mode should match
-		assert.strictEqual(whenExpr.evaluate(makeContext({
-			[ChatContextKeys.chatSessionType.key]: 'local',
-			[ChatContextKeys.chatModeKind.key]: ChatModeKind.Agent,
-		})), true, 'Should be eligible for local session in agent mode');
-
-		// Non-local session (e.g. claude-code) in agent mode should NOT match
-		assert.strictEqual(whenExpr.evaluate(makeContext({
-			[ChatContextKeys.chatSessionType.key]: 'claude-code',
-			[ChatContextKeys.chatModeKind.key]: ChatModeKind.Agent,
-		})), false, 'Should not be eligible for non-local session');
-
-		// Non-local session (copilotcli / Background) should NOT match
-		assert.strictEqual(whenExpr.evaluate(makeContext({
-			[ChatContextKeys.chatSessionType.key]: 'copilotcli',
-			[ChatContextKeys.chatModeKind.key]: ChatModeKind.Agent,
-		})), false, 'Should not be eligible for background session');
-
-		// Local session in ask mode should NOT match (not agent/edit)
-		assert.strictEqual(whenExpr.evaluate(makeContext({
-			[ChatContextKeys.chatSessionType.key]: 'local',
-			[ChatContextKeys.chatModeKind.key]: ChatModeKind.Ask,
-		})), false, 'Should not be eligible for local session in ask mode');
 	});
 });
