@@ -185,9 +185,15 @@ class CopilotSdkHost extends Disposable implements ICopilotSdkService {
 	async listSessions(): Promise<ICopilotSessionMetadata[]> {
 		const client = await this._ensureClient();
 		const sessions = await client.listSessions();
-		return sessions.map((s: { sessionId: string; workspacePath?: string }) => ({
+		return sessions.map((s: { sessionId: string; summary?: string; startTime?: Date; modifiedTime?: Date; isRemote?: boolean; context?: { cwd?: string; repository?: string; branch?: string } }) => ({
 			sessionId: s.sessionId,
-			workspacePath: s.workspacePath,
+			summary: s.summary,
+			startTime: s.startTime?.toISOString(),
+			modifiedTime: s.modifiedTime?.toISOString(),
+			isRemote: s.isRemote,
+			workspacePath: s.context?.cwd,
+			repository: s.context?.repository,
+			branch: s.context?.branch,
 		}));
 	}
 

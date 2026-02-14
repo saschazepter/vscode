@@ -57,7 +57,13 @@ export interface ICopilotAttachment {
 
 export interface ICopilotSessionMetadata {
 	readonly sessionId: string;
+	readonly summary?: string;
+	readonly startTime?: string;
+	readonly modifiedTime?: string;
+	readonly isRemote?: boolean;
 	readonly workspacePath?: string;
+	readonly repository?: string;
+	readonly branch?: string;
 }
 
 // #endregion

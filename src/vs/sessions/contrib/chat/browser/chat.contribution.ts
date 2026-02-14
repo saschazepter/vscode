@@ -12,7 +12,14 @@ import { IHostService } from '../../../../workbench/services/host/browser/host.j
 import { registerWorkbenchContribution2, WorkbenchPhase } from '../../../../workbench/common/contributions.js';
 import { IWorkbenchLayoutService } from '../../../../workbench/services/layout/browser/layoutService.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
+import { SyncDescriptor } from '../../../../platform/instantiation/common/descriptors.js';
+import { Registry } from '../../../../platform/registry/common/platform.js';
 import { CopilotSdkDebugPanel } from '../../../browser/copilotSdkDebugPanel.js';
+import { CopilotSdkDebugLog } from '../../../browser/copilotSdkDebugLog.js';
+import { IViewContainersRegistry, IViewDescriptor, IViewsRegistry, Extensions as ViewExtensions, WindowVisibility } from '../../../../workbench/common/views.js';
+import { IsSessionsWindowContext } from '../../../../workbench/common/contextkeys.js';
+import { ChatViewContainerId } from '../../../../workbench/contrib/chat/browser/chat.js';
+import { SdkChatViewPane, SdkChatViewId } from '../../../browser/widget/sdkChatViewPane.js';
 import { AgentSessionProviders } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessions.js';
 import { isAgentSession } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsModel.js';
 import { IActiveSessionService } from '../../sessions/browser/activeSessionService.js';
@@ -115,6 +122,29 @@ registerWorkbenchContribution2(RunScriptContribution.ID, RunScriptContribution, 
 // register services
 registerSingleton(IPromptsService, AgenticPromptsService, InstantiationType.Delayed);
 
+// --- SDK Chat View Registration (sessions window only) ---
+// Replaces the default ChatViewPane (which uses ChatInputPart + copilot-chat extension)
+// with SdkChatViewPane (which uses ChatListWidget renderer + our own input + Copilot SDK)
+const sdkChatViewContainer = Registry.as<IViewContainersRegistry>(ViewExtensions.ViewContainersRegistry).get(ChatViewContainerId);
+if (sdkChatViewContainer) {
+	const sdkChatViewDescriptor: IViewDescriptor = {
+		id: SdkChatViewId,
+		containerIcon: sdkChatViewContainer.icon,
+		containerTitle: sdkChatViewContainer.title.value,
+		singleViewPaneContainerTitle: sdkChatViewContainer.title.value,
+		name: localize2('sdkChat.viewContainer.label', "Chat"),
+		canToggleVisibility: false,
+		canMoveView: false,
+		ctorDescriptor: new SyncDescriptor(SdkChatViewPane),
+		when: IsSessionsWindowContext,
+		windowVisibility: WindowVisibility.Both,
+	};
+	Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry).registerViews([sdkChatViewDescriptor], sdkChatViewContainer);
+}
+
+// Register the debug log contribution so it captures all SDK events from startup
+registerWorkbenchContribution2(CopilotSdkDebugLog.ID, CopilotSdkDebugLog, WorkbenchPhase.AfterRestored);
+
 // --- Temporary debug panel for Copilot SDK (delete this block + copilotSdkDebugPanel.ts to remove) ---
 let activeDebugBackdrop: HTMLElement | undefined;
 registerAction2(class CopilotSdkDebugPanelAction extends Action2 {
@@ -150,7 +180,7 @@ registerAction2(class CopilotSdkDebugPanelAction extends Action2 {
 		modal.style.cssText = 'width:560px;height:80%;max-height:700px;border-radius:8px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,0.4);';
 		backdrop.appendChild(modal);
 
-		const panel = instantiationService.createInstance(CopilotSdkDebugPanel, modal);
+		const panel = instantiationService.createInstance(CopilotSdkDebugPanel, modal, CopilotSdkDebugLog.instance!);
 
 		const close = () => {
 			panel.dispose();

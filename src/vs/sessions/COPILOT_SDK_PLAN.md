@@ -465,66 +465,70 @@ npm install @github/copilot-sdk
 
 ## 6. Open Questions
 
-1. **CLI binary packaging:** Does the `@github/copilot-sdk` npm package bundle the CLI, or do we need a separate `@github/copilot-cli` package? Need to check if the SDK can auto-download the CLI.
+1. ~~**CLI binary packaging:** Does the `@github/copilot-sdk` npm package bundle the CLI?~~ **RESOLVED:** The SDK depends on `@github/copilot` which includes platform-specific native binaries via optional deps (`@github/copilot-darwin-arm64`, etc.). We resolve the native binary at runtime via `import.meta.resolve()`. The SDK's default `index.js` entry spawns an Electron-based JS loader that crashes in our utility process context.
 
-2. **SDK in utility process:** The SDK is designed for Node.js. Running in an Electron utility process should work, but needs validation — particularly around process lifecycle and cleanup.
+2. ~~**SDK in utility process:**~~ **RESOLVED:** Works. The utility process is an Electron Chromium process with Node.js integration. It spawns GPU/network sub-processes (normal Electron behavior, causes noisy but harmless stderr). The SDK runs fine inside it.
 
-3. **Event streaming over IPC:** Session events (especially `assistant.message_delta` at high frequency) need efficient IPC. MessagePort should handle this, but may need batching for performance.
+3. ~~**Event streaming over IPC:**~~ **RESOLVED:** `ProxyChannel` auto-forwards events. Works correctly.
 
-4. **Authentication:** The SDK accepts `githubToken`. VS Code has `IAuthenticationService` with Copilot-specific token flows. Need to bridge these — get the token from the auth service and pass it to the SDK.
+4. **Authentication:** The SDK accepts `githubToken`. VS Code has `IAuthenticationService`. Need to bridge these -- get the token from the auth service and call `sdk.setGitHubToken()`. Not yet implemented.
 
-5. **MCP servers:** The sessions window currently has MCP server support via the extension. The SDK also supports MCP servers natively (`mcpServers` config). Need to decide if we use the SDK's MCP support or keep the existing VS Code MCP infrastructure.
+5. **MCP servers:** Need to decide if we use the SDK's native MCP support (`mcpServers` config) or keep the existing VS Code MCP infrastructure.
 
-6. **Existing tool infrastructure:** Copilot CLI has built-in tools (file I/O, bash, etc.) that operate directly on the filesystem. We may not need to re-register these as SDK tools. Need to understand which tools are built-in vs need to be provided by the host.
+6. **Existing tool infrastructure:** The CLI has built-in tools (file I/O, bash, etc.) that operate directly on the filesystem. We may not need to re-register these as SDK tools. Need to understand which are built-in vs need to be provided by the host.
 
-7. **SDK maturity:** The SDK is in Technical Preview (v0.1.23). API may change. Need to pin a version and track updates carefully.
+7. **SDK maturity:** The SDK is in Technical Preview (v0.1.23). API may change.
 
-8. **File changes / diff support:** The sessions view currently shows file insertions/deletions per session. The SDK doesn't directly provide this. We'd need to compute it from git or rely on the CLI's workspace state.
+8. **File changes / diff support:** The sessions view currently shows file insertions/deletions per session. The SDK doesn't directly provide this. Compute from git or the CLI's workspace state.
+
+9. **`CopilotSdkChannel` formatters:** TypeScript formatters/organizers repeatedly merge the `CopilotSdkChannel` value import into `import type {}` blocks, which strips it at compile time and causes a runtime `ReferenceError`. Use inline `type` keywords on individual type imports to prevent this: `import { CopilotSdkChannel, type ICopilotSdkService, ... }`.
 
 ---
 
-## 7. File Structure (New)
+## 7. File Structure (Implemented)
 
 ```
-src/vs/sessions/
+src/vs/platform/copilotSdk/                    ← Platform layer (not vs/sessions/)
 ├── common/
-│   ├── contextkeys.ts                     (existing)
-│   └── copilotSdkService.ts              ← NEW: ICopilotSdkService interface + types
+│   └── copilotSdkService.ts                   ICopilotSdkService + ICopilotSdkMainService interfaces
 ├── node/
-│   └── copilotSdkHost.ts                 ← NEW: Utility process entry point (SDK host)
+│   └── copilotSdkHost.ts                      Utility process entry point (SDK host)
 ├── electron-main/
-│   ├── sessions.main.ts                   (existing)
-│   └── copilotSdkMainService.ts           ← NEW: Main process proxy + utility process spawner
+│   └── copilotSdkStarter.ts                   Main process service (spawns utility process)
+
+src/vs/sessions/                               ← Sessions window layer (consumers)
 ├── electron-browser/
-│   ├── sessions.ts                        (existing)
-│   └── copilotSdkService.ts              ← NEW: One-liner registerMainProcessRemoteService
+│   └── copilotSdkService.ts                   One-liner: registerMainProcessRemoteService
 ├── browser/
-│   ├── workbench.ts                       (existing)
-│   ├── menus.ts                           (existing)
-│   ├── layoutActions.ts                   (existing)
-│   ├── style.css                          (existing)
-│   ├── chatRenderer.ts                    ← NEW: Streaming chat renderer
+│   ├── copilotSdkDebugPanel.ts                RPC debug panel (temporary)
+│   ├── media/copilotSdkDebugPanel.css         Debug panel styles
 │   ├── parts/
 │   │   ├── chatbar/
-│   │   │   ├── chatBarPart.ts             (existing, will be modified)
-│   │   │   ├── chatInputEditor.ts         ← NEW: Input editor widget
-│   │   │   ├── chatToolCallView.ts        ← NEW: Tool call visualization
-│   │   │   └── chatConfirmationView.ts    ← NEW: User input / tool approval
-│   │   ├── titlebarPart.ts               (existing)
-│   │   ├── editorModal.ts                (existing)
-│   │   └── ...                            (existing)
-│   └── widget/                            (TO BE REMOVED eventually)
-│       ├── agentSessionsChatWidget.ts     ← REMOVE: replaced by SDK integration
-│       ├── agentSessionsChatTargetConfig.ts ← REMOVE: target concept simplified
+│   │   │   ├── chatBarPart.ts                 (existing, will be modified for Milestone 2)
+│   │   │   ├── chatInputEditor.ts             ← TODO: New input editor widget
+│   │   │   ├── chatToolCallView.ts            ← TODO: Tool call visualization
+│   │   │   └── chatConfirmationView.ts        ← TODO: User input / tool approval
+│   │   └── ...                                (existing)
+│   └── widget/                                (TO BE REMOVED once SDK UI replaces it)
+│       ├── agentSessionsChatWidget.ts         ← REMOVE: replaced by SDK integration
 │       └── ...
 ├── contrib/
 │   ├── sessions/browser/
-│   │   ├── sessionsViewPane.ts            (existing, will consume ICopilotSdkService)
-│   │   └── activeSessionService.ts        (existing, will track SDK sessions)
-│   ├── chat/browser/                      (TO BE REMOVED eventually)
-│   └── ...                                (existing)
-└── sessions.desktop.main.ts               (existing, will import copilotSdkService.ts)
+│   │   ├── sessionsViewPane.ts                (will consume ICopilotSdkService)
+│   │   └── activeSessionService.ts            (will track SDK sessions)
+│   └── chat/browser/
+│       └── chat.contribution.ts               (has debug panel command + existing actions)
+└── sessions.desktop.main.ts                   (imports copilotSdkService.ts registration)
+
+src/vs/code/electron-main/app.ts               Registers ICopilotSdkMainService + channel
 ```
+
+### Key: Platform vs Sessions Layer
+
+| Layer | Location | Contains |
+|-------|----------|----------|
+| `vs/platform/copilotSdk/` | Service interface, utility process host, main process starter | Imported by `vs/code/electron-main/app.ts` -- must be in `vs/platform/` for layering |
+| `vs/sessions/` | Renderer registration, debug panel, chat UI, session views | Consumes `ICopilotSdkService` via DI |
 
 ---
 
@@ -568,7 +572,84 @@ The sessions window **keeps its own extension host** — it already has one for 
 
 ---
 
-## 8. Concrete Implementation Plan
+## 8. Current UI Architecture (Research Findings)
+
+### How the Chat Bar Works Today
+
+The chat flows through 7 layers:
+
+```
+ChatBarPart (AbstractPaneCompositePart)
+  -> ViewPaneContainer ('workbench.panel.chat')
+    -> ChatViewPane (ViewPane)
+      -> AgentSessionsChatWidget (sessions window only)
+        -> ChatWidget (core chat rendering)
+          -> ChatService -> Extension Host -> copilot-chat extension
+```
+
+Key findings:
+
+1. **ChatBarPart** is a standard `AbstractPaneCompositePart` -- it has NO direct chat imports. It delegates entirely to the pane composite framework.
+
+2. **The chat view container** is registered at `ViewContainerLocation.ChatBar` with `isDefault: true` in `chatParticipant.contribution.ts`. On startup, `restoreParts()` opens the default container, which instantiates `ChatViewPane`.
+
+3. **ChatViewPane** has an `if (isSessionsWindow)` branch that creates either `AgentSessionsChatWidget` (sessions) or plain `ChatWidget` (regular VS Code).
+
+4. **AgentSessionsChatWidget** wraps `ChatWidget` and adds deferred session creation. On first send, it creates a session via `chatService.loadSessionForResource()` and then delegates to `ChatWidget.acceptInput()`.
+
+### Dependency Map: sessions/ -> workbench/contrib/chat/
+
+| Category | Count | Examples |
+|----------|-------|---------|
+| **UI** (must replace) | 12+ symbols | `ChatWidget`, `ChatInputPart`, `AgentSessionsControl`, `AgentSessionsPicker`, `ChatViewPane`, `IChatWidgetService` |
+| **Data** (must replace) | 20+ symbols | `IChatService`, `IChatSessionsService`, `IAgentSessionsService`, `IChatModel`, `IAgentSession`, `AgentSessionProviders`, `getChatSessionType` |
+| **Can keep** (shared utilities) | 15+ symbols | `ChatAgentLocation`, `ChatModeKind`, `IPromptsService`, `PromptsType`, `ChatContextKeys`, `ILanguageModelsService` |
+
+### Heaviest Files (by chat dependency count)
+
+1. `agentSessionsChatWidget.ts` -- 10 imports (heart of chat UI, TO BE REPLACED)
+2. `agentSessionsChatWelcomePart.ts` -- 7 imports (welcome UI, TO BE REPLACED)
+3. `changesView.ts` -- 7 imports (file changes, KEEP for now)
+4. `sessionsTitleBarWidget.ts` -- 6 imports (title bar, MODIFY later)
+5. `activeSessionService.ts` -- 5 imports (session tracking, MODIFY later)
+6. `aiCustomizationManagementEditor.ts` -- 7 imports (customizations, KEEP for now)
+
+### Adoption Strategy: Replace from the Inside Out
+
+Rather than rewriting everything at once, we replace the **widget layer** inside `ChatViewPane`:
+
+**Option C (recommended):** Create a NEW `SdkChatViewPane` class in `vs/sessions/` that hosts `SdkChatWidget` directly. Register it as an alternative view in the ChatBar container. Zero changes to `ChatViewPane` or `ChatWidget`. The existing UI keeps working as fallback.
+
+```
+ChatBarPart (UNCHANGED)
+  -> ViewPaneContainer (UNCHANGED)
+    -> SdkChatViewPane (NEW, in vs/sessions/)
+      -> SdkChatWidget (NEW, in vs/sessions/)
+        -> ICopilotSdkService -> Utility Process -> SDK -> CLI
+```
+
+### Phase 2 File Plan
+
+| File | Action | Phase |
+|------|--------|-------|
+| `src/vs/sessions/browser/widget/sdkChatWidget.ts` | **NEW** -- Core SDK chat widget | 2A |
+| `src/vs/sessions/browser/widget/sdkChatWidget.css` | **NEW** -- Styles | 2A |
+| `src/vs/sessions/browser/widget/sdkChatViewPane.ts` | **NEW** -- View pane hosting the SDK widget | 2B |
+| `src/vs/sessions/contrib/chat/browser/chat.contribution.ts` | **MODIFY** -- Register `SdkChatViewPane` | 2B |
+| `src/vs/sessions/contrib/sessions/browser/activeSessionService.ts` | **MODIFY** -- Add SDK data source | 2D |
+| `src/vs/sessions/contrib/sessions/browser/sessionsTitleBarWidget.ts` | **MODIFY** -- Show SDK session info | 2D |
+
+### What We Don't Touch (Yet)
+
+- `ChatBarPart` -- pane composite infrastructure, no changes needed
+- `ChatViewPane` -- no changes, stays for fallback
+- `changesView.ts` -- keeps existing data flow
+- `aiCustomization*` -- keeps existing flow
+- `sessions.desktop.main.ts` -- SDK service already registered
+
+---
+
+## 9. Concrete Implementation Plan
 
 This section is the **actionable build order**. Each step produces a compilable, testable checkpoint. Steps within a milestone can be developed in parallel; milestones are sequential.
 
@@ -830,3 +911,5 @@ Each milestone produces a working, demoable checkpoint. M1+M2 gets us to "type a
 | 2026-02-13 | Initial plan created. Covers SDK adoption, CLI bundling, utility process hosting, new chat UI, session list migration, and copilot-chat dependency removal. Based on Copilot SDK official documentation. |
 | 2026-02-13 | Added concrete implementation plan (Section 9) with 5 milestones and detailed step-by-step build order. |
 | 2026-02-13 | Refined architecture to terminal (pty host) pattern: `registerMainProcessRemoteService` + main process proxy + utility process. Renderer-side code is one line DI. Added worktree strategy (Section 8): CLI creates worktrees, git extension handles post-creation operations. Extension host is kept for git, not removed. |
+| 2026-02-13 | **Milestone 1 complete.** Moved service to `vs/platform/copilotSdk/` (fixes layering violation). Created `ICopilotSdkMainService` for proper DI registration in `app.ts`. Native CLI binary resolved via `import.meta.resolve('@github/copilot-{platform}-{arch}')`. Stripped `ELECTRON_*`/`VSCODE_*` env vars from CLI child process env. Added RPC debug panel with event stream logging. |
+| 2026-02-13 | Added Section 8: Current UI Architecture research findings. Mapped all `vs/sessions/` -> `vs/workbench/contrib/chat/` dependencies (12+ UI symbols, 20+ data symbols, 15+ keepable utilities). Designed Phase 2 adoption strategy: new `SdkChatViewPane` + `SdkChatWidget` registered as alternative view in ChatBar, zero changes to existing ChatViewPane/ChatWidget. |

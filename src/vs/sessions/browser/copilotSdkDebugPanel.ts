@@ -14,6 +14,7 @@ import * as dom from '../../base/browser/dom.js';
 import { Disposable, DisposableStore } from '../../base/common/lifecycle.js';
 import { ICopilotSdkService } from '../../platform/copilotSdk/common/copilotSdkService.js';
 import { IClipboardService } from '../../platform/clipboard/common/clipboardService.js';
+import { CopilotSdkDebugLog, IDebugLogEntry } from './copilotSdkDebugLog.js';
 
 const $ = dom.$;
 
@@ -28,15 +29,13 @@ export class CopilotSdkDebugPanel extends Disposable {
 	private readonly _cwdInput: HTMLInputElement;
 	private readonly _modelSelect: HTMLSelectElement;
 	private _sessionId: string | undefined;
-	private _logCount = 0;
-	private readonly _logLines: string[] = [];
-	private readonly _processLines: string[] = [];
 	private _activeTab: 'rpc' | 'process' = 'rpc';
 
 	private readonly _eventDisposables = this._register(new DisposableStore());
 
 	constructor(
 		container: HTMLElement,
+		private readonly _debugLog: CopilotSdkDebugLog,
 		@ICopilotSdkService private readonly _sdk: ICopilotSdkService,
 		@IClipboardService private readonly _clipboardService: IClipboardService,
 	) {
@@ -52,9 +51,11 @@ export class CopilotSdkDebugPanel extends Disposable {
 		clearBtn.style.cssText = 'margin-left:auto;font-size:11px;padding:2px 8px;background:var(--vscode-button-secondaryBackground);color:var(--vscode-button-secondaryForeground);border:none;border-radius:3px;cursor:pointer;';
 		this._register(dom.addDisposableListener(clearBtn, 'click', () => {
 			if (this._activeTab === 'rpc') {
-				dom.clearNode(this._rpcLogContainer); this._logCount = 0; this._logLines.length = 0;
+				dom.clearNode(this._rpcLogContainer);
+				this._debugLog.clear('rpc');
 			} else {
-				dom.clearNode(this._processLogContainer); this._processLines.length = 0;
+				dom.clearNode(this._processLogContainer);
+				this._debugLog.clear('process');
 			}
 		}));
 
@@ -62,7 +63,10 @@ export class CopilotSdkDebugPanel extends Disposable {
 		copyBtn.textContent = 'Copy All';
 		copyBtn.style.cssText = 'margin-left:4px;font-size:11px;padding:2px 8px;background:var(--vscode-button-secondaryBackground);color:var(--vscode-button-secondaryForeground);border:none;border-radius:3px;cursor:pointer;';
 		this._register(dom.addDisposableListener(copyBtn, 'click', () => {
-			const lines = this._activeTab === 'rpc' ? this._logLines : this._processLines;
+			const stream = this._activeTab === 'rpc' ? 'rpc' : 'process';
+			const lines = this._debugLog.entries
+				.filter(e => e.stream === stream)
+				.map(e => `${String(e.id).padStart(3, '0')} ${e.direction} ${e.tag ? `[${e.tag}] ` : ''}${e.method} ${e.detail} ${e.timestamp}`);
 			this._clipboardService.writeText(lines.join('\n'));
 			copyBtn.textContent = 'Copied!';
 			setTimeout(() => { copyBtn.textContent = 'Copy All'; }, 1500);
@@ -84,18 +88,28 @@ export class CopilotSdkDebugPanel extends Disposable {
 		this._cwdInput.placeholder = '/path/to/project';
 		this._cwdInput.value = '/tmp';
 
-		// Helper buttons
+		// Helper buttons - organized in rows
 		const helpers = dom.append(this.element, $('.debug-panel-helpers'));
 		// allow-any-unicode-next-line
 		const btns: Array<{ label: string; fn: () => void }> = [
+			// Lifecycle
 			{ label: '> Start', fn: () => this._rpc('start') },
+			{ label: 'Stop', fn: () => this._rpc('stop') },
+			// Discovery
 			{ label: 'List Models', fn: () => this._rpc('listModels') },
 			{ label: 'List Sessions', fn: () => this._rpc('listSessions') },
+			// Session management
 			{ label: '+ Create Session', fn: () => this._rpc('createSession') },
-			{ label: 'Send Message', fn: () => this._rpc('send') },
-			{ label: 'Abort', fn: () => this._rpc('abort') },
+			{ label: 'Resume Session', fn: () => this._rpc('resumeSession') },
+			{ label: 'Get Messages', fn: () => this._rpc('getMessages') },
 			{ label: 'Destroy Session', fn: () => this._rpc('destroySession') },
-			{ label: 'Stop', fn: () => this._rpc('stop') },
+			{ label: 'Delete Session', fn: () => this._rpc('deleteSession') },
+			// Messaging
+			{ label: 'Send', fn: () => this._rpc('send') },
+			{ label: 'Send + Wait', fn: () => this._rpc('sendAndWait') },
+			{ label: 'Abort', fn: () => this._rpc('abort') },
+			// Auth
+			{ label: 'Set Token', fn: () => this._rpc('setGitHubToken') },
 		];
 		for (const { label, fn } of btns) {
 			const btn = dom.append(helpers, $('button.debug-helper-btn')) as HTMLButtonElement;
@@ -132,21 +146,79 @@ export class CopilotSdkDebugPanel extends Disposable {
 		this._inputArea.placeholder = 'Message prompt (used by Send Message)...';
 		this._inputArea.rows = 2;
 
-		// Initialize: subscribe to events immediately
-		this._subscribeToEvents();
-		this._initialize();
+		// Replay buffered log entries, then subscribe for new ones
+		this._replayAndSubscribe();
+		this._initializeModels();
 	}
 
-	private async _initialize(): Promise<void> {
-		try {
-			this._setStatus('Starting...');
-			this._logRpc('→', 'start', '');
-			await this._sdk.start();
-			this._logRpc('←', 'start', 'OK');
+	/**
+	 * Render all buffered log entries then subscribe for new ones.
+	 */
+	private _replayAndSubscribe(): void {
+		for (const entry of this._debugLog.entries) {
+			this._renderEntry(entry);
+		}
 
-			this._logRpc('→', 'listModels', '');
+		this._eventDisposables.clear();
+		this._eventDisposables.add(this._debugLog.onDidAddEntry(entry => {
+			this._renderEntry(entry);
+		}));
+	}
+
+	private _renderEntry(entry: IDebugLogEntry): void {
+		if (entry.stream === 'process') {
+			this._renderProcessEntry(entry);
+		} else {
+			this._renderRpcEntry(entry);
+		}
+	}
+
+	private _renderRpcEntry(entry: IDebugLogEntry): void {
+		const el = dom.append(this._rpcLogContainer, $('.debug-rpc-entry'));
+
+		const num = dom.append(el, $('span.debug-rpc-num'));
+		num.textContent = String(entry.id).padStart(3, '0');
+
+		const dir = dom.append(el, $('span.debug-rpc-dir'));
+		dir.textContent = entry.direction;
+
+		if (entry.tag) {
+			const tagEl = dom.append(el, $('span.debug-rpc-tag'));
+			tagEl.textContent = entry.tag;
+		}
+
+		const meth = dom.append(el, $('span.debug-rpc-method'));
+		meth.textContent = entry.method;
+
+		if (entry.detail) {
+			const det = dom.append(el, $('span.debug-rpc-detail'));
+			det.textContent = entry.detail;
+		}
+
+		const time = dom.append(el, $('span.debug-rpc-time'));
+		time.textContent = entry.timestamp;
+
+		this._rpcLogContainer.scrollTop = this._rpcLogContainer.scrollHeight;
+	}
+
+	private _renderProcessEntry(entry: IDebugLogEntry): void {
+		const el = dom.append(this._processLogContainer, $('.debug-rpc-entry'));
+		const time = dom.append(el, $('span.debug-rpc-time'));
+		time.textContent = entry.timestamp;
+		const streamTag = dom.append(el, $('span.debug-rpc-tag'));
+		streamTag.textContent = entry.method; // method holds the stream name for process entries
+		const content = dom.append(el, $('span.debug-rpc-detail'));
+		content.textContent = entry.detail;
+		content.style.whiteSpace = 'pre-wrap';
+		content.style.flex = '1';
+
+		this._processLogContainer.scrollTop = this._processLogContainer.scrollHeight;
+	}
+
+	private async _initializeModels(): Promise<void> {
+		try {
+			this._setStatus('Loading models...');
 			const models = await this._sdk.listModels();
-			this._logRpc('←', 'listModels', `${models.length} models`);
 
 			dom.clearNode(this._modelSelect);
 			for (const m of models) {
@@ -160,145 +232,122 @@ export class CopilotSdkDebugPanel extends Disposable {
 
 			this._setStatus('Ready');
 		} catch (err) {
-			this._logRpc('X', 'init', String(err));
+			this._debugLog.addEntry('X', 'init', String(err));
 			this._setStatus('Error');
 		}
-	}
-
-	private _subscribeToEvents(): void {
-		this._eventDisposables.clear();
-		this._eventDisposables.add(this._sdk.onSessionEvent(event => {
-			const data = JSON.stringify(event.data ?? {});
-			const truncated = data.length > 300 ? data.substring(0, 300) + '…' : data;
-			this._logRpc('!', `event:${event.type}`, truncated, event.sessionId.substring(0, 8));
-		}));
-		this._eventDisposables.add(this._sdk.onSessionLifecycle(event => {
-			this._logRpc('!', `lifecycle:${event.type}`, '', event.sessionId.substring(0, 8));
-		}));
-		this._eventDisposables.add(this._sdk.onProcessOutput(output => {
-			this._logProcess(output.stream, output.data);
-		}));
 	}
 
 	private async _rpc(method: string): Promise<void> {
 		try {
 			switch (method) {
 				case 'start': {
-					this._logRpc('→', 'start', '');
+					this._debugLog.addEntry('\u2192', 'start', '');
 					await this._sdk.start();
-					this._logRpc('←', 'start', 'OK');
+					this._debugLog.addEntry('\u2190', 'start', 'OK');
 					break;
 				}
 				case 'stop': {
-					this._logRpc('→', 'stop', '');
+					this._debugLog.addEntry('\u2192', 'stop', '');
 					await this._sdk.stop();
 					this._sessionId = undefined;
-					this._logRpc('←', 'stop', 'OK');
+					this._debugLog.addEntry('\u2190', 'stop', 'OK');
 					break;
 				}
 				case 'listModels': {
-					this._logRpc('→', 'listModels', '');
+					this._debugLog.addEntry('\u2192', 'listModels', '');
 					const models = await this._sdk.listModels();
-					this._logRpc('←', 'listModels', JSON.stringify(models.map(m => m.id)));
+					this._debugLog.addEntry('\u2190', 'listModels', JSON.stringify(models.map(m => m.id)));
 					break;
 				}
 				case 'listSessions': {
-					this._logRpc('→', 'listSessions', '');
+					this._debugLog.addEntry('\u2192', 'listSessions', '');
 					const sessions = await this._sdk.listSessions();
-					this._logRpc('←', 'listSessions', JSON.stringify(sessions));
+					this._debugLog.addEntry('\u2190', 'listSessions', JSON.stringify(sessions));
 					break;
 				}
 				case 'createSession': {
 					const model = this._modelSelect.value;
 					const cwd = this._cwdInput.value.trim() || undefined;
-					this._logRpc('→', 'createSession', JSON.stringify({ model, streaming: true, workingDirectory: cwd }));
+					this._debugLog.addEntry('\u2192', 'createSession', JSON.stringify({ model, streaming: true, workingDirectory: cwd }));
 					this._sessionId = await this._sdk.createSession({ model, streaming: true, workingDirectory: cwd });
-					this._logRpc('←', 'createSession', this._sessionId);
+					this._debugLog.addEntry('\u2190', 'createSession', this._sessionId);
 					this._setStatus(`Session: ${this._sessionId.substring(0, 8)}...`);
 					break;
 				}
 				case 'send': {
 					if (!this._sessionId) {
-						this._logRpc('X', 'send', 'No session -- create one first');
+						this._debugLog.addEntry('X', 'send', 'No session -- create one first');
 						return;
 					}
 					const prompt = this._inputArea.value.trim() || 'What is 2+2? Answer in one word.';
-					this._logRpc('→', 'send', JSON.stringify({ sessionId: this._sessionId.substring(0, 8), prompt: prompt.substring(0, 100) }));
+					this._debugLog.addEntry('\u2192', 'send', JSON.stringify({ sessionId: this._sessionId.substring(0, 8), prompt: prompt.substring(0, 100) }));
 					this._setStatus('Sending...');
 					await this._sdk.send(this._sessionId, prompt);
-					this._logRpc('←', 'send', 'queued');
+					this._debugLog.addEntry('\u2190', 'send', 'queued');
 					break;
 				}
 				case 'abort': {
-					if (!this._sessionId) { this._logRpc('X', 'abort', 'No session'); return; }
-					this._logRpc('→', 'abort', this._sessionId.substring(0, 8));
+					if (!this._sessionId) { this._debugLog.addEntry('X', 'abort', 'No session'); return; }
+					this._debugLog.addEntry('\u2192', 'abort', this._sessionId.substring(0, 8));
 					await this._sdk.abort(this._sessionId);
-					this._logRpc('←', 'abort', 'OK');
+					this._debugLog.addEntry('\u2190', 'abort', 'OK');
 					break;
 				}
 				case 'destroySession': {
-					if (!this._sessionId) { this._logRpc('X', 'destroySession', 'No session'); return; }
-					this._logRpc('→', 'destroySession', this._sessionId.substring(0, 8));
+					if (!this._sessionId) { this._debugLog.addEntry('X', 'destroySession', 'No session'); return; }
+					this._debugLog.addEntry('\u2192', 'destroySession', this._sessionId.substring(0, 8));
 					await this._sdk.destroySession(this._sessionId);
-					this._logRpc('←', 'destroySession', 'OK');
+					this._debugLog.addEntry('\u2190', 'destroySession', 'OK');
 					this._sessionId = undefined;
 					this._setStatus('Ready');
 					break;
 				}
+				case 'deleteSession': {
+					if (!this._sessionId) { this._debugLog.addEntry('X', 'deleteSession', 'No session'); return; }
+					this._debugLog.addEntry('\u2192', 'deleteSession', this._sessionId.substring(0, 8));
+					await this._sdk.deleteSession(this._sessionId);
+					this._debugLog.addEntry('\u2190', 'deleteSession', 'OK');
+					this._sessionId = undefined;
+					this._setStatus('Ready');
+					break;
+				}
+				case 'resumeSession': {
+					if (!this._sessionId) { this._debugLog.addEntry('X', 'resumeSession', 'No session'); return; }
+					this._debugLog.addEntry('\u2192', 'resumeSession', this._sessionId.substring(0, 8));
+					await this._sdk.resumeSession(this._sessionId, { streaming: true });
+					this._debugLog.addEntry('\u2190', 'resumeSession', 'OK');
+					break;
+				}
+				case 'getMessages': {
+					if (!this._sessionId) { this._debugLog.addEntry('X', 'getMessages', 'No session'); return; }
+					this._debugLog.addEntry('\u2192', 'getMessages', this._sessionId.substring(0, 8));
+					const messages = await this._sdk.getMessages(this._sessionId);
+					const summary = messages.map(m => `${m.type}${m.data.deltaContent ? ':' + (m.data.deltaContent as string).substring(0, 30) : ''}`).join(', ');
+					this._debugLog.addEntry('\u2190', 'getMessages', `${messages.length} events: ${summary.substring(0, 200)}`);
+					break;
+				}
+				case 'sendAndWait': {
+					if (!this._sessionId) { this._debugLog.addEntry('X', 'sendAndWait', 'No session'); return; }
+					const swPrompt = this._inputArea.value.trim() || 'What is 2+2? Answer in one word.';
+					this._debugLog.addEntry('\u2192', 'sendAndWait', JSON.stringify({ sessionId: this._sessionId.substring(0, 8), prompt: swPrompt.substring(0, 100) }));
+					this._setStatus('Sending (wait)...');
+					const result = await this._sdk.sendAndWait(this._sessionId, swPrompt);
+					this._debugLog.addEntry('\u2190', 'sendAndWait', result ? result.content.substring(0, 200) : 'undefined');
+					this._setStatus(`Session: ${this._sessionId.substring(0, 8)}...`);
+					break;
+				}
+				case 'setGitHubToken': {
+					const token = this._inputArea.value.trim();
+					if (!token) { this._debugLog.addEntry('X', 'setGitHubToken', 'Enter token in the text area'); return; }
+					this._debugLog.addEntry('\u2192', 'setGitHubToken', `${token.substring(0, 4)}...`);
+					await this._sdk.setGitHubToken(token);
+					this._debugLog.addEntry('\u2190', 'setGitHubToken', 'OK');
+					break;
+				}
 			}
 		} catch (err) {
-			this._logRpc('X', method, String(err instanceof Error ? err.message : err));
+			this._debugLog.addEntry('X', method, String(err instanceof Error ? err.message : err));
 		}
-	}
-
-	private _logRpc(direction: string, method: string, detail: string, tag?: string): void {
-		this._logCount++;
-		const timestamp = new Date().toLocaleTimeString();
-		const line = `${String(this._logCount).padStart(3, '0')} ${direction} ${tag ? `[${tag}] ` : ''}${method} ${detail} ${timestamp}`;
-		this._logLines.push(line);
-
-		const el = dom.append(this._rpcLogContainer, $('.debug-rpc-entry'));
-
-		const num = dom.append(el, $('span.debug-rpc-num'));
-		num.textContent = String(this._logCount).padStart(3, '0');
-
-		const dir = dom.append(el, $('span.debug-rpc-dir'));
-		dir.textContent = direction;
-
-		if (tag) {
-			const tagEl = dom.append(el, $('span.debug-rpc-tag'));
-			tagEl.textContent = tag;
-		}
-
-		const meth = dom.append(el, $('span.debug-rpc-method'));
-		meth.textContent = method;
-
-		if (detail) {
-			const det = dom.append(el, $('span.debug-rpc-detail'));
-			det.textContent = detail;
-		}
-
-		const time = dom.append(el, $('span.debug-rpc-time'));
-		time.textContent = new Date().toLocaleTimeString();
-
-		this._rpcLogContainer.scrollTop = this._rpcLogContainer.scrollHeight;
-	}
-
-	private _logProcess(stream: string, data: string): void {
-		const timestamp = new Date().toLocaleTimeString();
-		this._processLines.push(`[${timestamp}] [${stream}] ${data}`);
-
-		const el = dom.append(this._processLogContainer, $('.debug-rpc-entry'));
-		const time = dom.append(el, $('span.debug-rpc-time'));
-		time.textContent = timestamp;
-		const streamTag = dom.append(el, $('span.debug-rpc-tag'));
-		streamTag.textContent = stream;
-		const content = dom.append(el, $('span.debug-rpc-detail'));
-		content.textContent = data;
-		content.style.whiteSpace = 'pre-wrap';
-		content.style.flex = '1';
-
-		this._processLogContainer.scrollTop = this._processLogContainer.scrollHeight;
 	}
 
 	private _setStatus(text: string): void {

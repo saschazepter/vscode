@@ -10,7 +10,7 @@ import { Codicon } from '../../../../base/common/codicons.js';
 import { KeyCode, KeyMod } from '../../../../base/common/keyCodes.js';
 import { autorun } from '../../../../base/common/observable.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
-import { URI } from '../../../../base/common/uri.js';
+import { DisposableStore } from '../../../../base/common/lifecycle.js';
 import { ContextKeyExpr, IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { IContextMenuService } from '../../../../platform/contextview/browser/contextView.js';
 import { IInstantiationService, ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
@@ -18,22 +18,15 @@ import { IKeybindingService } from '../../../../platform/keybinding/common/keybi
 import { IOpenerService } from '../../../../platform/opener/common/opener.js';
 import { IThemeService } from '../../../../platform/theme/common/themeService.js';
 import { IViewPaneOptions, ViewPane } from '../../../../workbench/browser/parts/views/viewPane.js';
-import { IViewDescriptorService, ViewContainerLocation } from '../../../../workbench/common/views.js';
+import { IViewDescriptorService } from '../../../../workbench/common/views.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { IHoverService } from '../../../../platform/hover/browser/hover.js';
 import { localize, localize2 } from '../../../../nls.js';
-import { AgentSessionsControl } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsControl.js';
-import { AgentSessionsFilter, AgentSessionsGrouping } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsFilter.js';
-import { AgentSessionProviders } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessions.js';
 import { IActiveSessionService } from './activeSessionService.js';
-import { Action2, ISubmenuItem, MenuId, MenuRegistry, registerAction2 } from '../../../../platform/actions/common/actions.js';
-import { HoverPosition } from '../../../../base/browser/ui/hover/hoverWidget.js';
-import { IWorkbenchLayoutService } from '../../../../workbench/services/layout/browser/layoutService.js';
+import { Action2, MenuId, registerAction2 } from '../../../../platform/actions/common/actions.js';
 import { Button } from '../../../../base/browser/ui/button/button.js';
 import { defaultButtonStyles } from '../../../../platform/theme/browser/defaultStyles.js';
-import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { KeybindingsRegistry, KeybindingWeight } from '../../../../platform/keybinding/common/keybindingsRegistry.js';
-import { ACTION_ID_NEW_CHAT } from '../../../../workbench/contrib/chat/browser/actions/chatActions.js';
 import { IEditorGroupsService } from '../../../../workbench/services/editor/common/editorGroupsService.js';
 import { AICustomizationManagementSection } from '../../aiCustomizationManagement/browser/aiCustomizationManagement.js';
 import { AICustomizationManagementEditorInput } from '../../aiCustomizationManagement/browser/aiCustomizationManagementEditorInput.js';
@@ -46,14 +39,13 @@ import { IMcpService } from '../../../../workbench/contrib/mcp/common/mcpTypes.j
 import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
 import { IViewsService } from '../../../../workbench/services/views/common/viewsService.js';
+import { ICopilotSdkService, type ICopilotSessionMetadata } from '../../../../platform/copilotSdk/common/copilotSdkService.js';
+import { ILogService } from '../../../../platform/log/common/log.js';
+import { SdkChatViewPane, SdkChatViewId } from '../../../browser/widget/sdkChatViewPane.js';
 
 const $ = DOM.$;
 export const SessionsViewId = 'agentic.workbench.view.sessionsView';
-const SessionsViewFilterSubMenu = new MenuId('AgentSessionsViewFilterSubMenu');
 
-/**
- * Per-source breakdown of item counts.
- */
 interface ISourceCounts {
 	readonly workspace: number;
 	readonly user: number;
@@ -65,21 +57,23 @@ interface IShortcutItem {
 	readonly icon: ThemeIcon;
 	readonly action: () => Promise<void>;
 	readonly getSourceCounts?: () => Promise<ISourceCounts>;
-	/** For items without per-source breakdown (MCP, Models). */
 	readonly getCount?: () => Promise<number>;
 	countContainer?: HTMLElement;
 }
 
 const CUSTOMIZATIONS_COLLAPSED_KEY = 'agentSessions.customizationsCollapsed';
+const NEW_SDK_SESSION_ID = 'sdkSessions.newSession';
 
 export class AgenticSessionsViewPane extends ViewPane {
 
 	private viewPaneContainer: HTMLElement | undefined;
-	private newSessionButtonContainer: HTMLElement | undefined;
-	private sessionsControlContainer: HTMLElement | undefined;
-	sessionsControl: AgentSessionsControl | undefined;
+	private sessionsListContainer: HTMLElement | undefined;
 	private aiCustomizationContainer: HTMLElement | undefined;
 	private readonly shortcuts: IShortcutItem[] = [];
+
+	private _sdkSessions: ICopilotSessionMetadata[] = [];
+	private _selectedSessionId: string | undefined;
+	private readonly _sessionListDisposables = new DisposableStore();
 
 	constructor(
 		options: IViewPaneOptions,
@@ -92,8 +86,6 @@ export class AgenticSessionsViewPane extends ViewPane {
 		@IOpenerService openerService: IOpenerService,
 		@IThemeService themeService: IThemeService,
 		@IHoverService hoverService: IHoverService,
-		@IWorkbenchLayoutService private readonly layoutService: IWorkbenchLayoutService,
-		@ICommandService private readonly commandService: ICommandService,
 		@IEditorGroupsService private readonly editorGroupsService: IEditorGroupsService,
 		@IPromptsService private readonly promptsService: IPromptsService,
 		@ILanguageModelsService private readonly languageModelsService: ILanguageModelsService,
@@ -101,10 +93,12 @@ export class AgenticSessionsViewPane extends ViewPane {
 		@IStorageService private readonly storageService: IStorageService,
 		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
 		@IActiveSessionService private readonly activeSessionService: IActiveSessionService,
+		@ICopilotSdkService private readonly copilotSdkService: ICopilotSdkService,
+		@ILogService private readonly logService: ILogService,
+		@IViewsService private readonly viewsService: IViewsService,
 	) {
 		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
 
-		// Initialize shortcuts
 		this.shortcuts = [
 			{ label: localize('agents', "Agents"), icon: agentIcon, action: () => this.openAICustomizationSection(AICustomizationManagementSection.Agents), getSourceCounts: () => this.getPromptSourceCounts(PromptsType.agent) },
 			{ label: localize('skills', "Skills"), icon: skillIcon, action: () => this.openAICustomizationSection(AICustomizationManagementSection.Skills), getSourceCounts: () => this.getSkillSourceCounts() },
@@ -115,134 +109,176 @@ export class AgenticSessionsViewPane extends ViewPane {
 			{ label: localize('models', "Models"), icon: Codicon.vm, action: () => this.openAICustomizationSection(AICustomizationManagementSection.Models), getCount: () => Promise.resolve(this.languageModelsService.getLanguageModelIds().length) },
 		];
 
-		// Listen to changes to update counts
 		this._register(this.promptsService.onDidChangeCustomAgents(() => this.updateCounts()));
 		this._register(this.promptsService.onDidChangeSlashCommands(() => this.updateCounts()));
 		this._register(this.languageModelsService.onDidChangeLanguageModels(() => this.updateCounts()));
-		this._register(autorun(reader => {
-			this.mcpService.servers.read(reader);
-			this.updateCounts();
-		}));
-
-		// Listen to workspace folder changes to update counts
+		this._register(autorun(reader => { this.mcpService.servers.read(reader); this.updateCounts(); }));
 		this._register(this.workspaceContextService.onDidChangeWorkspaceFolders(() => this.updateCounts()));
-		this._register(autorun(reader => {
-			this.activeSessionService.activeSession.read(reader);
-			this.updateCounts();
-		}));
-
+		this._register(autorun(reader => { this.activeSessionService.activeSession.read(reader); this.updateCounts(); }));
+		this._register(this.copilotSdkService.onSessionLifecycle(() => { this.refreshSessionList(); }));
+		this._register(this._sessionListDisposables);
 	}
 
 	protected override renderBody(parent: HTMLElement): void {
 		super.renderBody(parent);
-
 		this.viewPaneContainer = parent;
 		this.viewPaneContainer.classList.add('agent-sessions-viewpane');
-
 		this.createControls(parent);
 	}
 
 	private createControls(parent: HTMLElement): void {
 		const sessionsContainer = DOM.append(parent, $('.agent-sessions-container'));
-
-		// Sessions Filter (actions go to view title bar via menu registration)
-		const sessionsFilter = this._register(this.instantiationService.createInstance(AgentSessionsFilter, {
-			filterMenuId: SessionsViewFilterSubMenu,
-			groupResults: () => AgentSessionsGrouping.Date,
-			showProviders: [AgentSessionProviders.Background, AgentSessionProviders.Cloud],
-		}));
-
-		// Sessions section (top, fills available space)
 		const sessionsSection = DOM.append(sessionsContainer, $('.agent-sessions-section'));
-
-		// Sessions content container
 		const sessionsContent = DOM.append(sessionsSection, $('.agent-sessions-content'));
 
 		// New Session Button
-		const newSessionButtonContainer = this.newSessionButtonContainer = DOM.append(sessionsContent, $('.agent-sessions-new-button-container'));
+		const newSessionButtonContainer = DOM.append(sessionsContent, $('.agent-sessions-new-button-container'));
 		const newSessionButton = this._register(new Button(newSessionButtonContainer, { ...defaultButtonStyles, secondary: true }));
 		newSessionButton.label = localize('newSession', "New Session");
-		this._register(newSessionButton.onDidClick(() => this.commandService.executeCommand(ACTION_ID_NEW_CHAT)));
+		this._register(newSessionButton.onDidClick(() => this.createNewSdkSession()));
 
-		// Keybinding hint inside the button
-		const keybinding = this.keybindingService.lookupKeybinding(ACTION_ID_NEW_CHAT);
+		const keybinding = this.keybindingService.lookupKeybinding(NEW_SDK_SESSION_ID);
 		if (keybinding) {
 			const keybindingHint = DOM.append(newSessionButton.element, $('span.new-session-keybinding-hint'));
 			keybindingHint.textContent = keybinding.getLabel() ?? '';
 		}
 
-		// Sessions Control
-		this.sessionsControlContainer = DOM.append(sessionsContent, $('.agent-sessions-control-container'));
-		const sessionsControl = this.sessionsControl = this._register(this.instantiationService.createInstance(AgentSessionsControl, this.sessionsControlContainer, {
-			source: 'agentSessionsViewPane',
-			filter: sessionsFilter,
-			overrideStyles: this.getLocationBasedColors().listOverrideStyles,
-			getHoverPosition: () => this.getSessionHoverPosition(),
-			trackActiveEditorSession: () => true,
-			collapseOlderSections: () => true,
-			notifySessionOpened: (resource) => this.onSessionOpened(resource),
-		}));
-		this._register(this.onDidChangeBodyVisibility(visible => sessionsControl.setVisible(visible)));
+		// Sessions list (SDK-powered)
+		this.sessionsListContainer = DOM.append(sessionsContent, $('.agent-sessions-control-container'));
+		this.renderSessionList();
 
-		// Listen to tree updates and restore selection if nothing is selected
-		this._register(sessionsControl.onDidUpdate(() => {
-			if (!sessionsControl.hasFocusOrSelection()) {
-				this.restoreLastSelectedSession();
-			}
-		}));
-
-		// When the active session changes, select it in the tree
-		this._register(autorun(reader => {
-			const activeSession = this.activeSessionService.activeSession.read(reader);
-			if (activeSession) {
-				if (!sessionsControl.reveal(activeSession.resource)) {
-					sessionsControl.clearFocus();
-				}
-			}
-		}));
-
-		// AI Customization shortcuts (bottom, fixed height)
+		// AI Customization shortcuts
 		this.aiCustomizationContainer = DOM.append(sessionsContainer, $('.ai-customization-shortcuts'));
 		this.createAICustomizationShortcuts(this.aiCustomizationContainer);
+
+		this.refreshSessionList();
 	}
 
-	private onSessionOpened(_sessionResource: URI): void {
-		// The active session is now tracked by the ActiveSessionService
-		// This callback is still needed for the AgentSessionsControl
+	private async refreshSessionList(): Promise<void> {
+		try {
+			this._sdkSessions = await this.copilotSdkService.listSessions();
+		} catch (err) {
+			this.logService.error('[SessionsViewPane] Failed to list SDK sessions:', err);
+			this._sdkSessions = [];
+		}
+		this.renderSessionList();
 	}
 
-	private restoreLastSelectedSession(): void {
-		const activeSession = this.activeSessionService.getActiveSession();
-		if (activeSession && this.sessionsControl) {
-			this.sessionsControl.reveal(activeSession.resource);
+	private renderSessionList(): void {
+		if (!this.sessionsListContainer) {
+			return;
+		}
+
+		this._sessionListDisposables.clear();
+		DOM.clearNode(this.sessionsListContainer);
+
+		if (this._sdkSessions.length === 0) {
+			const empty = DOM.append(this.sessionsListContainer, $('.sdk-session-list-empty'));
+			empty.textContent = localize('noSessions', "No sessions yet");
+			return;
+		}
+
+		for (const session of this._sdkSessions) {
+			const item = DOM.append(this.sessionsListContainer, $('.sdk-session-item'));
+			item.tabIndex = 0;
+			item.setAttribute('role', 'listitem');
+			item.setAttribute('data-session-id', session.sessionId);
+
+			if (session.sessionId === this._selectedSessionId) {
+				item.classList.add('selected');
+			}
+
+			const icon = DOM.append(item, $('span.sdk-session-icon'));
+			icon.classList.add(...ThemeIcon.asClassNameArray(Codicon.commentDiscussion));
+
+			const details = DOM.append(item, $('span.sdk-session-details'));
+			const label = DOM.append(details, $('span.sdk-session-label'));
+			label.textContent = session.summary || localize('untitledSession', "Untitled Session");
+
+			// Subtitle: repo/branch or workspace path or session ID
+			const subtitle = session.repository
+				? (session.branch ? `${session.repository} (${session.branch})` : session.repository)
+				: session.workspacePath ?? session.sessionId.substring(0, 8);
+			const pathEl = DOM.append(details, $('span.sdk-session-path'));
+			pathEl.textContent = subtitle;
+
+			// Relative time
+			if (session.modifiedTime || session.startTime) {
+				const timeStr = session.modifiedTime ?? session.startTime;
+				const timeEl = DOM.append(item, $('span.sdk-session-time'));
+				const date = new Date(timeStr!);
+				const ago = this._relativeTime(date);
+				timeEl.textContent = ago;
+			}
+
+			this._sessionListDisposables.add(DOM.addDisposableListener(item, 'click', () => {
+				this.selectSession(session.sessionId);
+			}));
+			this._sessionListDisposables.add(DOM.addDisposableListener(item, 'keydown', (e: KeyboardEvent) => {
+				if (e.key === 'Enter' || e.key === ' ') {
+					e.preventDefault();
+					this.selectSession(session.sessionId);
+				}
+			}));
 		}
 	}
 
+	private selectSession(sessionId: string): void {
+		this._selectedSessionId = sessionId;
+
+		if (this.sessionsListContainer) {
+			for (const child of this.sessionsListContainer.children) {
+				child.classList.toggle('selected', (child as HTMLElement).getAttribute('data-session-id') === sessionId);
+			}
+		}
+
+		const chatPane = this.viewsService.getViewWithId<SdkChatViewPane>(SdkChatViewId);
+		if (chatPane?.widget) {
+			chatPane.widget.loadSession(sessionId);
+		}
+	}
+
+	private async createNewSdkSession(): Promise<void> {
+		const chatPane = this.viewsService.getViewWithId<SdkChatViewPane>(SdkChatViewId);
+		if (chatPane?.widget) {
+			await chatPane.widget.newSession();
+			this._selectedSessionId = undefined;
+			this.renderSessionList();
+		}
+	}
+
+	private _relativeTime(date: Date): string {
+		const now = Date.now();
+		const diffMs = now - date.getTime();
+		const diffMins = Math.floor(diffMs / 60000);
+		if (diffMins < 1) { return localize('justNow', "just now"); }
+		if (diffMins < 60) { return localize('minutesAgo', "{0}m ago", diffMins); }
+		const diffHours = Math.floor(diffMins / 60);
+		if (diffHours < 24) { return localize('hoursAgo', "{0}h ago", diffHours); }
+		const diffDays = Math.floor(diffHours / 24);
+		if (diffDays < 7) { return localize('daysAgo', "{0}d ago", diffDays); }
+		return date.toLocaleDateString();
+	}
+
 	private createAICustomizationShortcuts(container: HTMLElement): void {
-		// Get initial collapsed state
 		const isCollapsed = this.storageService.getBoolean(CUSTOMIZATIONS_COLLAPSED_KEY, StorageScope.PROFILE, false);
 
-		// Header (clickable to toggle)
 		const header = DOM.append(container, $('.ai-customization-header'));
 		header.tabIndex = 0;
 		header.setAttribute('role', 'button');
 		header.setAttribute('aria-expanded', String(!isCollapsed));
 
-		// Header text
 		const headerText = DOM.append(header, $('span'));
 		headerText.textContent = localize('customizations', "CUSTOMIZATIONS");
 
-		// Chevron icon (right-aligned, shown on hover)
 		const chevron = DOM.append(header, $('.ai-customization-chevron'));
 		chevron.classList.add(...ThemeIcon.asClassNameArray(isCollapsed ? Codicon.chevronRight : Codicon.chevronDown));
 
-		// Links container
 		const linksContainer = DOM.append(container, $('.ai-customization-links'));
 		if (isCollapsed) {
 			linksContainer.classList.add('collapsed');
 		}
 
-		// Toggle collapse on header click
 		const toggleCollapse = () => {
 			const collapsed = linksContainer.classList.toggle('collapsed');
 			this.storageService.store(CUSTOMIZATIONS_COLLAPSED_KEY, collapsed, StorageScope.PROFILE, StorageTarget.USER);
@@ -250,7 +286,6 @@ export class AgenticSessionsViewPane extends ViewPane {
 			chevron.classList.remove(...ThemeIcon.asClassNameArray(Codicon.chevronRight), ...ThemeIcon.asClassNameArray(Codicon.chevronDown));
 			chevron.classList.add(...ThemeIcon.asClassNameArray(collapsed ? Codicon.chevronRight : Codicon.chevronDown));
 
-			// Re-layout after the transition so sessions control gets the right height
 			const onTransitionEnd = () => {
 				linksContainer.removeEventListener('transitionend', onTransitionEnd);
 				if (this.viewPaneContainer) {
@@ -275,15 +310,12 @@ export class AgenticSessionsViewPane extends ViewPane {
 			link.setAttribute('role', 'button');
 			link.setAttribute('aria-label', shortcut.label);
 
-			// Icon
 			const iconElement = DOM.append(link, $('.link-icon'));
 			iconElement.classList.add(...ThemeIcon.asClassNameArray(shortcut.icon));
 
-			// Label
 			const labelElement = DOM.append(link, $('.link-label'));
 			labelElement.textContent = shortcut.label;
 
-			// Count container (right-aligned, shows per-source badges)
 			const countContainer = DOM.append(link, $('.link-counts'));
 			shortcut.countContainer = countContainer;
 
@@ -300,16 +332,12 @@ export class AgenticSessionsViewPane extends ViewPane {
 			}));
 		}
 
-		// Load initial counts
 		this.updateCounts();
 	}
 
 	private async updateCounts(): Promise<void> {
 		for (const shortcut of this.shortcuts) {
-			if (!shortcut.countContainer) {
-				continue;
-			}
-
+			if (!shortcut.countContainer) { continue; }
 			if (shortcut.getSourceCounts) {
 				const counts = await shortcut.getSourceCounts();
 				this.renderSourceCounts(shortcut.countContainer, counts);
@@ -324,9 +352,7 @@ export class AgenticSessionsViewPane extends ViewPane {
 		DOM.clearNode(container);
 		const total = counts.workspace + counts.user + counts.extension;
 		container.classList.toggle('hidden', total === 0);
-		if (total === 0) {
-			return;
-		}
+		if (total === 0) { return; }
 
 		const sources: { count: number; icon: ThemeIcon; title: string }[] = [
 			{ count: counts.workspace, icon: workspaceIcon, title: localize('workspaceCount', "{0} from workspace", counts.workspace) },
@@ -335,13 +361,11 @@ export class AgenticSessionsViewPane extends ViewPane {
 		];
 
 		for (const source of sources) {
-			if (source.count === 0) {
-				continue;
-			}
+			if (source.count === 0) { continue; }
 			const badge = DOM.append(container, $('.source-count-badge'));
 			badge.title = source.title;
-			const icon = DOM.append(badge, $('.source-count-icon'));
-			icon.classList.add(...ThemeIcon.asClassNameArray(source.icon));
+			const badgeIcon = DOM.append(badge, $('.source-count-icon'));
+			badgeIcon.classList.add(...ThemeIcon.asClassNameArray(source.icon));
 			const num = DOM.append(badge, $('.source-count-num'));
 			num.textContent = `${source.count}`;
 		}
@@ -363,24 +387,14 @@ export class AgenticSessionsViewPane extends ViewPane {
 			this.promptsService.listPromptFilesForStorage(promptType, PromptsStorage.user, CancellationToken.None),
 			this.promptsService.listPromptFilesForStorage(promptType, PromptsStorage.extension, CancellationToken.None),
 		]);
-
-		return {
-			workspace: workspaceItems.length,
-			user: userItems.length,
-			extension: extensionItems.length,
-		};
+		return { workspace: workspaceItems.length, user: userItems.length, extension: extensionItems.length };
 	}
 
 	private async getSkillSourceCounts(): Promise<ISourceCounts> {
 		const skills = await this.promptsService.findAgentSkills(CancellationToken.None);
-		if (!skills || skills.length === 0) {
-			return { workspace: 0, user: 0, extension: 0 };
-		}
-
-		const workspaceSkills = skills.filter(s => s.storage === PromptsStorage.local);
-
+		if (!skills || skills.length === 0) { return { workspace: 0, user: 0, extension: 0 }; }
 		return {
-			workspace: workspaceSkills.length,
+			workspace: skills.filter(s => s.storage === PromptsStorage.local).length,
 			user: skills.filter(s => s.storage === PromptsStorage.user).length,
 			extension: skills.filter(s => s.storage === PromptsStorage.extension).length,
 		};
@@ -389,67 +403,41 @@ export class AgenticSessionsViewPane extends ViewPane {
 	private async openAICustomizationSection(sectionId: AICustomizationManagementSection): Promise<void> {
 		const input = AICustomizationManagementEditorInput.getOrCreate();
 		const editor = await this.editorGroupsService.activeGroup.openEditor(input, { pinned: true });
-
 		if (editor instanceof AICustomizationManagementEditor) {
 			editor.selectSectionById(sectionId);
 		}
 	}
 
-	private getSessionHoverPosition(): HoverPosition {
-		const viewLocation = this.viewDescriptorService.getViewLocationById(this.id);
-		const sideBarPosition = this.layoutService.getSideBarPosition();
-
-		return {
-			[ViewContainerLocation.Sidebar]: sideBarPosition === 0 ? HoverPosition.RIGHT : HoverPosition.LEFT,
-			[ViewContainerLocation.AuxiliaryBar]: sideBarPosition === 0 ? HoverPosition.LEFT : HoverPosition.RIGHT,
-			[ViewContainerLocation.ChatBar]: HoverPosition.RIGHT,
-			[ViewContainerLocation.Panel]: HoverPosition.ABOVE
-		}[viewLocation ?? ViewContainerLocation.AuxiliaryBar];
-	}
-
 	protected override layoutBody(height: number, width: number): void {
 		super.layoutBody(height, width);
-
-		if (!this.sessionsControl || !this.newSessionButtonContainer) {
-			return;
-		}
-
-		const buttonHeight = this.newSessionButtonContainer.offsetHeight;
-		const customizationHeight = this.aiCustomizationContainer?.offsetHeight || 0;
-		const availableSessionsHeight = height - buttonHeight - customizationHeight;
-		this.sessionsControl.layout(availableSessionsHeight, width);
 	}
 
 	override focus(): void {
 		super.focus();
-
-		this.sessionsControl?.focus();
 	}
 
 	refresh(): void {
-		this.sessionsControl?.refresh();
-	}
-
-	openFind(): void {
-		this.sessionsControl?.openFind();
+		this.refreshSessionList();
 	}
 }
 
-// Register Cmd+N / Ctrl+N keybinding for new session in the agent sessions window
+// Register Cmd+N / Ctrl+N keybinding for new session
 KeybindingsRegistry.registerKeybindingRule({
-	id: ACTION_ID_NEW_CHAT,
+	id: NEW_SDK_SESSION_ID,
 	weight: KeybindingWeight.WorkbenchContrib + 1,
 	primary: KeyMod.CtrlCmd | KeyCode.KeyN,
 });
 
-MenuRegistry.appendMenuItem(MenuId.ViewTitle, {
-	submenu: SessionsViewFilterSubMenu,
-	title: localize2('filterAgentSessions', "Filter Agent Sessions"),
-	group: 'navigation',
-	order: 3,
-	icon: Codicon.filter,
-	when: ContextKeyExpr.equals('view', SessionsViewId)
-} satisfies ISubmenuItem);
+registerAction2(class NewSdkSessionAction extends Action2 {
+	constructor() {
+		super({ id: NEW_SDK_SESSION_ID, title: localize2('newSdkSession', "New Session"), icon: Codicon.add, f1: true });
+	}
+	override async run(accessor: ServicesAccessor) {
+		const viewsService = accessor.get(IViewsService);
+		const chatPane = viewsService.getViewWithId<SdkChatViewPane>(SdkChatViewId);
+		if (chatPane?.widget) { await chatPane.widget.newSession(); }
+	}
+});
 
 registerAction2(class RefreshAgentSessionsViewerAction extends Action2 {
 	constructor() {
@@ -457,40 +445,12 @@ registerAction2(class RefreshAgentSessionsViewerAction extends Action2 {
 			id: 'sessionsView.refresh',
 			title: localize2('refresh', "Refresh Agent Sessions"),
 			icon: Codicon.refresh,
-			menu: [{
-				id: MenuId.ViewTitle,
-				group: 'navigation',
-				order: 1,
-				when: ContextKeyExpr.equals('view', SessionsViewId),
-			}],
+			menu: [{ id: MenuId.ViewTitle, group: 'navigation', order: 1, when: ContextKeyExpr.equals('view', SessionsViewId) }],
 		});
 	}
 	override run(accessor: ServicesAccessor) {
 		const viewsService = accessor.get(IViewsService);
 		const view = viewsService.getViewWithId<AgenticSessionsViewPane>(SessionsViewId);
-		return view?.sessionsControl?.refresh();
-	}
-});
-
-registerAction2(class FindAgentSessionInViewerAction extends Action2 {
-
-	constructor() {
-		super({
-			id: 'sessionsView.find',
-			title: localize2('find', "Find Agent Session"),
-			icon: Codicon.search,
-			menu: [{
-				id: MenuId.ViewTitle,
-				group: 'navigation',
-				order: 2,
-				when: ContextKeyExpr.equals('view', SessionsViewId),
-			}]
-		});
-	}
-
-	override run(accessor: ServicesAccessor) {
-		const viewsService = accessor.get(IViewsService);
-		const view = viewsService.getViewWithId<AgenticSessionsViewPane>(SessionsViewId);
-		return view?.sessionsControl?.openFind();
+		return view?.refresh();
 	}
 });

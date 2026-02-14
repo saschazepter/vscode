@@ -70,14 +70,16 @@ const chatViewDescriptor: IViewDescriptor = {
 		order: 1
 	},
 	ctorDescriptor: new SyncDescriptor(ChatViewPane),
-	when: ContextKeyExpr.or(
-		IsSessionsWindowContext,
+	when: ContextKeyExpr.and(
+		IsSessionsWindowContext.negate(),
 		ContextKeyExpr.or(
-			ChatContextKeys.Setup.hidden,
-			ChatContextKeys.Setup.disabled
-		)?.negate(),
-		ChatContextKeys.panelParticipantRegistered,
-		ChatContextKeys.extensionInvalid
+			ContextKeyExpr.or(
+				ChatContextKeys.Setup.hidden,
+				ChatContextKeys.Setup.disabled
+			)?.negate(),
+			ChatContextKeys.panelParticipantRegistered,
+			ChatContextKeys.extensionInvalid
+		)
 	),
 	windowVisibility: WindowVisibility.Both
 };
