@@ -4,11 +4,15 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Codicon } from '../../../../base/common/codicons.js';
+import * as dom from '../../../../base/browser/dom.js';
 import { ServicesAccessor } from '../../../../editor/browser/editorExtensions.js';
 import { localize2 } from '../../../../nls.js';
 import { Action2, MenuRegistry, registerAction2 } from '../../../../platform/actions/common/actions.js';
 import { IHostService } from '../../../../workbench/services/host/browser/host.js';
 import { registerWorkbenchContribution2, WorkbenchPhase } from '../../../../workbench/common/contributions.js';
+import { IWorkbenchLayoutService } from '../../../../workbench/services/layout/browser/layoutService.js';
+import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
+import { CopilotSdkDebugPanel } from '../../../browser/copilotSdkDebugPanel.js';
 import { AgentSessionProviders } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessions.js';
 import { isAgentSession } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsModel.js';
 import { IActiveSessionService } from '../../sessions/browser/activeSessionService.js';
@@ -110,3 +114,56 @@ registerWorkbenchContribution2(RunScriptContribution.ID, RunScriptContribution, 
 
 // register services
 registerSingleton(IPromptsService, AgenticPromptsService, InstantiationType.Delayed);
+
+// --- Temporary debug panel for Copilot SDK (delete this block + copilotSdkDebugPanel.ts to remove) ---
+let activeDebugBackdrop: HTMLElement | undefined;
+registerAction2(class CopilotSdkDebugPanelAction extends Action2 {
+	constructor() {
+		super({
+			id: 'copilotSdk.openDebugPanel',
+			title: localize2('copilotSdkDebugPanel', 'Copilot SDK: Open Debug Panel'),
+			f1: true,
+			icon: Codicon.beaker,
+		});
+	}
+	async run(accessor: ServicesAccessor): Promise<void> {
+		const layoutService = accessor.get(IWorkbenchLayoutService);
+		const instantiationService = accessor.get(IInstantiationService);
+
+		const container = layoutService.mainContainer;
+		const targetWindow = dom.getWindow(container);
+
+		// Toggle off if already open
+		if (activeDebugBackdrop) {
+			activeDebugBackdrop.remove();
+			activeDebugBackdrop = undefined;
+			return;
+		}
+
+		// Centered modal with backdrop
+		const backdrop = dom.$('.copilot-sdk-debug-backdrop');
+		activeDebugBackdrop = backdrop;
+		backdrop.style.cssText = 'position:absolute;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.5);';
+		container.appendChild(backdrop);
+
+		const modal = dom.$('div');
+		modal.style.cssText = 'width:560px;height:80%;max-height:700px;border-radius:8px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,0.4);';
+		backdrop.appendChild(modal);
+
+		const panel = instantiationService.createInstance(CopilotSdkDebugPanel, modal);
+
+		const close = () => {
+			panel.dispose();
+			backdrop.remove();
+			activeDebugBackdrop = undefined;
+			targetWindow.document.removeEventListener('keydown', onKeyDown);
+		};
+		const onKeyDown = (e: KeyboardEvent) => {
+			if (e.key === 'Escape') { close(); }
+		};
+		backdrop.addEventListener('click', (e) => {
+			if (e.target === backdrop) { close(); }
+		});
+		targetWindow.document.addEventListener('keydown', onKeyDown);
+	}
+});

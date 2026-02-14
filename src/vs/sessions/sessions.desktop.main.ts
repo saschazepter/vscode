@@ -193,6 +193,9 @@ import './contrib/sessions/browser/sessions.contribution.js';
 import './contrib/changesView/browser/changesView.contribution.js';
 import './contrib/configuration/browser/configuration.contribution.js';
 
+// Copilot SDK service (registers ICopilotSdkService as main process remote service)
+import './electron-browser/copilotSdkService.js';
+
 //#endregion
 
 export { main } from './electron-browser/sessions.main.js';
