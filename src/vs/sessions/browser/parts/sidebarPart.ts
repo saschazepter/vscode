@@ -53,7 +53,7 @@ export class SidebarPart extends AbstractPaneCompositePart {
 	static readonly MARGIN_TOP = 0;
 	static readonly MARGIN_BOTTOM = 0;
 	static readonly MARGIN_LEFT = 0;
-	static readonly FOOTER_HEIGHT = 35;
+	static readonly FOOTER_HEIGHT = 39;
 
 
 	//#region IView

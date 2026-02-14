@@ -12,7 +12,7 @@
 .monaco-workbench .part.sidebar > .sidebar-footer {
 	display: flex;
 	align-items: center;
-	padding: 8px 6px;
+	padding: 6px;
 	border-top: 1px solid var(--vscode-sideBarSectionHeader-border, transparent);
 	flex-shrink: 0;
 }
