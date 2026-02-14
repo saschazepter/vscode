@@ -185,7 +185,8 @@ export class AgentSessionsChatWidget extends Disposable {
 				return idLower === 'repositories' || idLower === 'folders' ||
 					nameLower === 'repository' || nameLower === 'repositories' ||
 					nameLower === 'folder' || nameLower === 'folders' ||
-					idLower === 'branch' || nameLower === 'branch';
+					idLower === 'branch' || nameLower === 'branch' ||
+					idLower === 'isolation' || nameLower === 'isolation';
 			}
 			: viewOptions.excludeOptionGroup;
 
