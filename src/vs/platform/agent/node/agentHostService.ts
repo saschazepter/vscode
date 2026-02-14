@@ -8,7 +8,7 @@ import { Disposable, toDisposable } from '../../../base/common/lifecycle.js';
 import { ProxyChannel } from '../../../base/parts/ipc/common/ipc.js';
 import { ILogService } from '../../log/common/log.js';
 import { IAgentHostConnection, IAgentHostStarter } from '../common/agent.js';
-import { AgentHostIpcChannels, IAgentHostService, IAgentService } from '../common/agentService.js';
+import { AgentHostIpcChannels, IAgentCreateSessionConfig, IAgentHostService, IAgentProgressEvent, IAgentService, IAgentSessionMetadata } from '../common/agentService.js';
 
 enum Constants {
 	MaxRestarts = 5,
@@ -33,8 +33,8 @@ export class AgentHostService extends Disposable implements IAgentHostService {
 	private readonly _onAgentHostStart = this._register(new Emitter<void>());
 	readonly onAgentHostStart = this._onAgentHostStart.event;
 
-	private readonly _onDidReceiveMessage = this._register(new Emitter<string>());
-	readonly onDidReceiveMessage = this._onDidReceiveMessage.event;
+	private readonly _onDidSessionProgress = this._register(new Emitter<IAgentProgressEvent>());
+	readonly onDidSessionProgress = this._onDidSessionProgress.event;
 
 	constructor(
 		private readonly _starter: IAgentHostStarter,
@@ -71,7 +71,7 @@ export class AgentHostService extends Disposable implements IAgentHostService {
 
 		// Build a proxy to the agent service running inside the utility process
 		const proxy = ProxyChannel.toService<IAgentService>(client.getChannel(AgentHostIpcChannels.AgentHost));
-		this._register(proxy.onDidReceiveMessage(msg => this._onDidReceiveMessage.fire(msg)));
+		this._register(proxy.onDidSessionProgress(e => this._onDidSessionProgress.fire(e)));
 
 		// Handle unexpected exit
 		this._register(connection.onDidProcessExit(e => {
@@ -104,6 +104,36 @@ export class AgentHostService extends Disposable implements IAgentHostService {
 	}
 
 	// ---- IAgentService forwarding -------------------------------------------
+
+	async setAuthToken(token: string): Promise<void> {
+		this._ensureAgentHost();
+		return this._proxy!.setAuthToken(token);
+	}
+
+	async listSessions(): Promise<IAgentSessionMetadata[]> {
+		this._ensureAgentHost();
+		return this._proxy!.listSessions();
+	}
+
+	async createSession(config?: IAgentCreateSessionConfig): Promise<string> {
+		this._ensureAgentHost();
+		return this._proxy!.createSession(config);
+	}
+
+	async sendMessage(sessionId: string, prompt: string): Promise<void> {
+		this._ensureAgentHost();
+		return this._proxy!.sendMessage(sessionId, prompt);
+	}
+
+	async getSessionMessages(sessionId: string): Promise<IAgentProgressEvent[]> {
+		this._ensureAgentHost();
+		return this._proxy!.getSessionMessages(sessionId);
+	}
+
+	async destroySession(sessionId: string): Promise<void> {
+		this._ensureAgentHost();
+		return this._proxy!.destroySession(sessionId);
+	}
 
 	async ping(msg: string): Promise<string> {
 		this._ensureAgentHost();

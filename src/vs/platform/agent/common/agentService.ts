@@ -11,6 +11,29 @@ export const enum AgentHostIpcChannels {
 	AgentHost = 'agentHost',
 }
 
+// ---- IPC data types (serializable across MessagePort) -----------------------
+
+export interface IAgentSessionMetadata {
+	readonly sessionId: string;
+	readonly startTime: number;
+	readonly modifiedTime: number;
+	readonly summary?: string;
+}
+
+export interface IAgentCreateSessionConfig {
+	readonly model?: string;
+	readonly sessionId?: string;
+}
+
+export interface IAgentProgressEvent {
+	readonly sessionId: string;
+	readonly type: 'delta' | 'message' | 'idle' | 'tool_start' | 'tool_complete';
+	readonly content?: string;
+	readonly role?: 'user' | 'assistant';
+}
+
+// ---- Service interfaces -----------------------------------------------------
+
 export const IAgentService = createDecorator<IAgentService>('agentService');
 
 /**
@@ -20,15 +43,28 @@ export const IAgentService = createDecorator<IAgentService>('agentService');
 export interface IAgentService {
 	readonly _serviceBrand: undefined;
 
-	/**
-	 * Fires when the agent host sends a message back.
-	 */
-	readonly onDidReceiveMessage: Event<string>;
+	/** Fires when the agent host streams progress for a session. */
+	readonly onDidSessionProgress: Event<IAgentProgressEvent>;
 
-	/**
-	 * Send a message to the agent. Returns the response (placeholder - will
-	 * become streaming later).
-	 */
+	/** Set the GitHub auth token used by the Copilot SDK. */
+	setAuthToken(token: string): Promise<void>;
+
+	/** List all available sessions from the Copilot CLI. */
+	listSessions(): Promise<IAgentSessionMetadata[]>;
+
+	/** Create a new Copilot SDK session. Returns the session ID. */
+	createSession(config?: IAgentCreateSessionConfig): Promise<string>;
+
+	/** Send a user message into an existing session. */
+	sendMessage(sessionId: string, prompt: string): Promise<void>;
+
+	/** Retrieve all session events/messages for reconstruction. */
+	getSessionMessages(sessionId: string): Promise<IAgentProgressEvent[]>;
+
+	/** Destroy a session and free its resources. */
+	destroySession(sessionId: string): Promise<void>;
+
+	/** Simple connectivity check. */
 	ping(msg: string): Promise<string>;
 }
 

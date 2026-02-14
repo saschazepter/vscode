@@ -19,6 +19,7 @@ export enum AgentSessionProviders {
 	Claude = 'claude-code',
 	Codex = 'openai-codex',
 	Growth = 'copilot-growth',
+	AgentHost = 'agent-host',
 }
 
 export function isBuiltInAgentSessionProvider(provider: string): boolean {
@@ -36,6 +37,7 @@ export function getAgentSessionProvider(sessionResource: URI | string): AgentSes
 		case AgentSessionProviders.Cloud:
 		case AgentSessionProviders.Claude:
 		case AgentSessionProviders.Codex:
+		case AgentSessionProviders.AgentHost:
 			return type;
 		default:
 			return undefined;
@@ -62,6 +64,8 @@ export function getAgentSessionProviderName(provider: AgentSessionProviders): st
 			return 'Codex';
 		case AgentSessionProviders.Growth:
 			return 'Growth';
+		case AgentSessionProviders.AgentHost:
+			return localize('chat.session.providerLabel.agentHost', "Agent Host");
 	}
 }
 
@@ -79,6 +83,8 @@ export function getAgentSessionProviderIcon(provider: AgentSessionProviders): Th
 			return Codicon.claude;
 		case AgentSessionProviders.Growth:
 			return Codicon.lightbulb;
+		case AgentSessionProviders.AgentHost:
+			return Codicon.copilot;
 	}
 }
 
@@ -87,6 +93,7 @@ export function isFirstPartyAgentSessionProvider(provider: AgentSessionProviders
 		case AgentSessionProviders.Local:
 		case AgentSessionProviders.Background:
 		case AgentSessionProviders.Cloud:
+		case AgentSessionProviders.AgentHost:
 			return true;
 		case AgentSessionProviders.Claude:
 		case AgentSessionProviders.Codex:
@@ -104,6 +111,7 @@ export function getAgentCanContinueIn(provider: AgentSessionProviders): boolean 
 		case AgentSessionProviders.Claude:
 		case AgentSessionProviders.Codex:
 		case AgentSessionProviders.Growth:
+		case AgentSessionProviders.AgentHost:
 			return false;
 	}
 }
@@ -122,6 +130,8 @@ export function getAgentSessionProviderDescription(provider: AgentSessionProvide
 			return localize('chat.session.providerDescription.codex', "Opens a new Codex session in the editor. Codex sessions can be managed from the chat sessions view.");
 		case AgentSessionProviders.Growth:
 			return localize('chat.session.providerDescription.growth', "Learn about Copilot features.");
+		case AgentSessionProviders.AgentHost:
+			return localize('chat.session.providerDescription.agentHost', "Run a Copilot SDK agent in a dedicated process.");
 	}
 }
 

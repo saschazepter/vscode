@@ -161,6 +161,14 @@ export class SessionTypePickerActionItem extends ChatInputPickerActionViewItem {
 
 		const agentSessionItems: ISessionTypeItem[] = [localSessionItem];
 
+		// Add built-in agent host session type (not contributed via extension point)
+		agentSessionItems.push({
+			type: AgentSessionProviders.AgentHost,
+			label: getAgentSessionProviderName(AgentSessionProviders.AgentHost),
+			hoverDescription: getAgentSessionProviderDescription(AgentSessionProviders.AgentHost),
+			commandId: `workbench.action.chat.openNewChatSessionInPlace.${AgentSessionProviders.AgentHost}`,
+		});
+
 		const contributions = this.chatSessionsService.getAllChatSessionContributions();
 		for (const contribution of contributions) {
 			const agentSessionType = getAgentSessionProvider(contribution.type);

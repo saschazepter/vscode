@@ -727,7 +727,13 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 		if (contribution) {
 			this._widget.lockToCodingAgent(contribution.name, contribution.displayName, contribution.type);
 		} else {
-			this._widget.unlockFromCodingAgent();
+			// Fall back: if a dynamic agent is registered with this session type ID, lock to it
+			const agent = this.chatAgentService.getAgent(sessionType);
+			if (agent) {
+				this._widget.lockToCodingAgent(agent.name, agent.fullName ?? agent.name, agent.id);
+			} else {
+				this._widget.unlockFromCodingAgent();
+			}
 		}
 	}
 
