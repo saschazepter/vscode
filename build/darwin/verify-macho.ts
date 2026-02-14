@@ -26,6 +26,12 @@ const FILES_TO_SKIP = [
 	// MSAL runtime files are only present in ARM64 builds
 	'**/extensions/microsoft-authentication/dist/libmsalruntime.dylib',
 	'**/extensions/microsoft-authentication/dist/msal-node-runtime.node',
+	// Copilot SDK: the universal app has both x64 and arm64 platform packages.
+	// Skip the binary from the other arch during per-arch verification.
+	'**/node_modules/@github/copilot-darwin-x64/**',
+	'**/node_modules/@github/copilot-darwin-arm64/**',
+	'**/node_modules.asar.unpacked/@github/copilot-darwin-x64/**',
+	'**/node_modules.asar.unpacked/@github/copilot-darwin-arm64/**',
 ];
 
 function isFileSkipped(file: string): boolean {
