@@ -67,12 +67,10 @@ class CopilotSdkHost extends Disposable implements ICopilotSdkService {
 			throw importErr;
 		}
 
-		// ┌──────────────────────────────────────────────────────────────┐
-		// │ IMPORTANT: The CLI binary MUST come from the bundled        │
-		// │ @github/copilot-{platform}-{arch} package. Do NOT use      │
-		// │ PATH discovery, execFileSync, or any external binary.      │
-		// │ This must work in a signed, ASAR-packed release build.     │
-		// └──────────────────────────────────────────────────────────────┘
+		// IMPORTANT: The CLI binary MUST come from the bundled
+		// @github/copilot-{platform}-{arch} package. Do NOT use
+		// PATH discovery, execFileSync, or any external binary.
+		// This must work in a signed, ASAR-packed release build.
 		let cliPath: string | undefined;
 		try {
 			const { fileURLToPath } = await import('node:url');
@@ -106,7 +104,7 @@ class CopilotSdkHost extends Disposable implements ICopilotSdkService {
 			}
 			cliEnv[key] = value;
 		}
-		// Tell the CLI to use stdio mode (no pty needed — avoids code signing issues)
+		// Tell the CLI to use stdio mode (no pty needed - avoids code signing issues)
 		cliEnv['COPILOT_AGENT_DISABLE_PTY'] = '1';
 		// Ensure the CLI doesn't inherit the Electron app's hardened runtime constraints
 		delete cliEnv['__CFBundleIdentifier'];
@@ -134,7 +132,7 @@ class CopilotSdkHost extends Disposable implements ICopilotSdkService {
 		// Log state transitions for debugging the "Connection is disposed" issue
 		process.stderr.write(`[SDK-DEBUG] Starting client with cliPath=${cliPath ?? 'default'}\n`);
 		try {
-			// Add a timeout — if start() hangs for more than 30s, something is wrong
+			// Add a timeout - if start() hangs for more than 30s, something is wrong
 			const startPromise = this._client.start();
 			const timeoutPromise = new Promise<never>((_, reject) =>
 				setTimeout(() => reject(new Error('SDK client.start() timed out after 30 seconds')), 30000)
