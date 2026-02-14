@@ -9,6 +9,8 @@ import { createDecorator } from '../../instantiation/common/instantiation.js';
 export const enum AgentHostIpcChannels {
 	/** Channel for the agent host service on the main-process side */
 	AgentHost = 'agentHost',
+	/** Channel for log forwarding from the agent host process */
+	Logger = 'agentHostLogger',
 }
 
 // ---- IPC data types (serializable across MessagePort) -----------------------
@@ -61,11 +63,14 @@ export interface IAgentService {
 	/** Retrieve all session events/messages for reconstruction. */
 	getSessionMessages(sessionId: string): Promise<IAgentProgressEvent[]>;
 
-	/** Destroy a session and free its resources. */
-	destroySession(sessionId: string): Promise<void>;
+	/** Dispose a session and free its resources. */
+	disposeSession(sessionId: string): Promise<void>;
 
 	/** Simple connectivity check. */
 	ping(msg: string): Promise<string>;
+
+	/** Gracefully shut down all sessions and the underlying client. */
+	shutdown(): Promise<void>;
 }
 
 export const IAgentHostService = createDecorator<IAgentHostService>('agentHostService');

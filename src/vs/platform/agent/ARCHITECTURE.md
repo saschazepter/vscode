@@ -73,7 +73,7 @@ Methods proxied across MessagePort via `ProxyChannel`:
 | `createSession(config?)` | Create a new SDK session (returns session ID) |
 | `sendMessage(sessionId, prompt)` | Send a user message into a session |
 | `getSessionMessages(sessionId)` | Get session history (user + assistant messages) |
-| `destroySession(sessionId)` | Destroy a session and free resources |
+| `disposeSession(sessionId)` | Dispose a session and free resources |
 | `ping(msg)` | Connectivity check |
 
 Events:

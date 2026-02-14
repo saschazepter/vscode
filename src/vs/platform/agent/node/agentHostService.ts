@@ -3,51 +3,41 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Emitter, Event } from '../../../base/common/event.js';
+import { Event } from '../../../base/common/event.js';
 import { Disposable, toDisposable } from '../../../base/common/lifecycle.js';
-import { ProxyChannel } from '../../../base/parts/ipc/common/ipc.js';
-import { ILogService } from '../../log/common/log.js';
-import { IAgentHostConnection, IAgentHostStarter } from '../common/agent.js';
-import { AgentHostIpcChannels, IAgentCreateSessionConfig, IAgentHostService, IAgentProgressEvent, IAgentService, IAgentSessionMetadata } from '../common/agentService.js';
+import { ILogService, ILoggerService } from '../../log/common/log.js';
+import { RemoteLoggerChannelClient } from '../../log/common/logIpc.js';
+import { IAgentHostStarter } from '../common/agent.js';
+import { AgentHostIpcChannels } from '../common/agentService.js';
 
 enum Constants {
 	MaxRestarts = 5,
 }
 
 /**
- * This service implements {@link IAgentHostService} by launching an agent host
- * utility process, forwarding messages via MessagePort, and managing the
- * connection lifecycle (lazy start, restart on crash).
+ * Main-process service that manages the agent host utility process lifecycle
+ * (lazy start, crash recovery, logger forwarding). The renderer communicates
+ * with the utility process directly via MessagePort - this class does not
+ * relay any agent service calls.
  */
-export class AgentHostService extends Disposable implements IAgentHostService {
-	declare readonly _serviceBrand: undefined;
+export class AgentHostProcessManager extends Disposable {
 
-	private _connection: IAgentHostConnection | undefined;
-	private _proxy: IAgentService | undefined;
-
+	private _started = false;
 	private _wasQuitRequested = false;
 	private _restartCount = 0;
-
-	private readonly _onAgentHostExit = this._register(new Emitter<number>());
-	readonly onAgentHostExit = this._onAgentHostExit.event;
-	private readonly _onAgentHostStart = this._register(new Emitter<void>());
-	readonly onAgentHostStart = this._onAgentHostStart.event;
-
-	private readonly _onDidSessionProgress = this._register(new Emitter<IAgentProgressEvent>());
-	readonly onDidSessionProgress = this._onDidSessionProgress.event;
 
 	constructor(
 		private readonly _starter: IAgentHostStarter,
 		@ILogService private readonly _logService: ILogService,
+		@ILoggerService private readonly _loggerService: ILoggerService,
 	) {
 		super();
 
 		this._register(this._starter);
-		this._register(toDisposable(() => this._disposeAgentHost()));
 
 		// Start lazily when the first window asks for a connection
 		if (this._starter.onRequestConnection) {
-			this._register(Event.once(this._starter.onRequestConnection)(() => this._ensureAgentHost()));
+			this._register(Event.once(this._starter.onRequestConnection)(() => this._ensureStarted()));
 		}
 
 		if (this._starter.onWillShutdown) {
@@ -55,88 +45,36 @@ export class AgentHostService extends Disposable implements IAgentHostService {
 		}
 	}
 
-	// ---- lifecycle ----------------------------------------------------------
-
-	private _ensureAgentHost(): void {
-		if (!this._connection) {
-			this._startAgentHost();
+	private _ensureStarted(): void {
+		if (!this._started) {
+			this._start();
 		}
 	}
 
-	private _startAgentHost(): void {
+	private _start(): void {
 		const connection = this._starter.start();
-		const client = connection.client;
 
-		this._logService.info('AgentHostService: agent host started');
+		this._logService.info('AgentHostProcessManager: agent host started');
 
-		// Build a proxy to the agent service running inside the utility process
-		const proxy = ProxyChannel.toService<IAgentService>(client.getChannel(AgentHostIpcChannels.AgentHost));
-		this._register(proxy.onDidSessionProgress(e => this._onDidSessionProgress.fire(e)));
+		// Connect logger channel so agent host logs appear in the output channel
+		this._register(new RemoteLoggerChannelClient(this._loggerService, connection.client.getChannel(AgentHostIpcChannels.Logger)));
 
 		// Handle unexpected exit
 		this._register(connection.onDidProcessExit(e => {
-			this._onAgentHostExit.fire(e.code);
 			if (!this._wasQuitRequested && !this._store.isDisposed) {
 				if (this._restartCount <= Constants.MaxRestarts) {
-					this._logService.error(`AgentHostService: agent host terminated unexpectedly with code ${e.code}`);
+					this._logService.error(`AgentHostProcessManager: agent host terminated unexpectedly with code ${e.code}`);
 					this._restartCount++;
-					this.restartAgentHost();
+					this._started = false;
+					connection.store.dispose();
+					this._start();
 				} else {
-					this._logService.error(`AgentHostService: agent host terminated with code ${e.code}, giving up after ${Constants.MaxRestarts} restarts`);
+					this._logService.error(`AgentHostProcessManager: agent host terminated with code ${e.code}, giving up after ${Constants.MaxRestarts} restarts`);
 				}
 			}
 		}));
 
-		this._connection = connection;
-		this._proxy = proxy;
-		this._onAgentHostStart.fire();
-	}
-
-	private _disposeAgentHost(): void {
-		this._connection?.store.dispose();
-		this._connection = undefined;
-		this._proxy = undefined;
-	}
-
-	async restartAgentHost(): Promise<void> {
-		this._disposeAgentHost();
-		this._startAgentHost();
-	}
-
-	// ---- IAgentService forwarding -------------------------------------------
-
-	async setAuthToken(token: string): Promise<void> {
-		this._ensureAgentHost();
-		return this._proxy!.setAuthToken(token);
-	}
-
-	async listSessions(): Promise<IAgentSessionMetadata[]> {
-		this._ensureAgentHost();
-		return this._proxy!.listSessions();
-	}
-
-	async createSession(config?: IAgentCreateSessionConfig): Promise<string> {
-		this._ensureAgentHost();
-		return this._proxy!.createSession(config);
-	}
-
-	async sendMessage(sessionId: string, prompt: string): Promise<void> {
-		this._ensureAgentHost();
-		return this._proxy!.sendMessage(sessionId, prompt);
-	}
-
-	async getSessionMessages(sessionId: string): Promise<IAgentProgressEvent[]> {
-		this._ensureAgentHost();
-		return this._proxy!.getSessionMessages(sessionId);
-	}
-
-	async destroySession(sessionId: string): Promise<void> {
-		this._ensureAgentHost();
-		return this._proxy!.destroySession(sessionId);
-	}
-
-	async ping(msg: string): Promise<string> {
-		this._ensureAgentHost();
-		return this._proxy!.ping(msg);
+		this._register(toDisposable(() => connection.store.dispose()));
+		this._started = true;
 	}
 }

@@ -5,12 +5,10 @@
 
 import { CopilotClient, CopilotSession } from '@github/copilot-sdk';
 import { Emitter } from '../../../base/common/event.js';
-import { Disposable } from '../../../base/common/lifecycle.js';
+import { Disposable, DisposableMap } from '../../../base/common/lifecycle.js';
+import { ILogService } from '../../log/common/log.js';
 import { IAgentCreateSessionConfig, IAgentProgressEvent, IAgentService, IAgentSessionMetadata } from '../common/agentService.js';
-
-function log(level: string, ...args: unknown[]): void {
-	console.log(`[AgentHost][${level}]`, ...args);
-}
+import { CopilotSessionWrapper } from './copilotSessionWrapper.js';
 
 /**
  * The actual agent service implementation that runs inside the agent host
@@ -24,18 +22,23 @@ export class AgentService extends Disposable implements IAgentService {
 
 	private _client: CopilotClient | undefined;
 	private _githubToken: string | undefined;
-	private readonly _sessions = new Map<string, CopilotSession>();
+	private readonly _sessions = this._register(new DisposableMap<string, CopilotSessionWrapper>());
+
+	constructor(
+		private readonly _logService: ILogService,
+	) {
+		super();
+		this._logService.info('AgentService initialized');
+	}
 
 	// ---- auth ---------------------------------------------------------------
 
 	async setAuthToken(token: string): Promise<void> {
 		const tokenChanged = this._githubToken !== token;
 		this._githubToken = token;
-		log('info', `Auth token ${tokenChanged ? 'updated' : 'unchanged'} (${token.substring(0, 4)}...)`);
-		// Only restart the client if no sessions are active. Otherwise the new
-		// token will be picked up on the next client restart.
+		this._logService.info(`Auth token ${tokenChanged ? 'updated' : 'unchanged'} (${token.substring(0, 4)}...)`);
 		if (tokenChanged && this._client && this._sessions.size === 0) {
-			log('info', 'Restarting CopilotClient with new token');
+			this._logService.info('Restarting CopilotClient with new token');
 			await this._client.stop();
 			this._client = undefined;
 		}
@@ -45,13 +48,13 @@ export class AgentService extends Disposable implements IAgentService {
 
 	private async _ensureClient(): Promise<CopilotClient> {
 		if (!this._client) {
-			log('info', 'Starting CopilotClient...', this._githubToken ? '(with token)' : '(using logged-in user)');
+			this._logService.info(`Starting CopilotClient... ${this._githubToken ? '(with token)' : '(using logged-in user)'}`);
 			this._client = new CopilotClient({
 				githubToken: this._githubToken,
 				useLoggedInUser: !this._githubToken,
 			});
 			await this._client.start();
-			log('info', 'CopilotClient started successfully');
+			this._logService.info('CopilotClient started successfully');
 		}
 		return this._client;
 	}
@@ -59,7 +62,7 @@ export class AgentService extends Disposable implements IAgentService {
 	// ---- session management -------------------------------------------------
 
 	async listSessions(): Promise<IAgentSessionMetadata[]> {
-		log('debug', 'Listing sessions...');
+		this._logService.info('Listing sessions...');
 		const client = await this._ensureClient();
 		const sessions = await client.listSessions();
 		const result = sessions.map(s => ({
@@ -68,58 +71,39 @@ export class AgentService extends Disposable implements IAgentService {
 			modifiedTime: s.modifiedTime.getTime(),
 			summary: s.summary,
 		}));
-		log('debug', `Found ${result.length} sessions`);
+		this._logService.info(`Found ${result.length} sessions`);
 		return result;
 	}
 
 	async createSession(config?: IAgentCreateSessionConfig): Promise<string> {
-		log('info', 'Creating session...', config?.model ? `model=${config.model}` : '');
+		this._logService.info(`Creating session... ${config?.model ? `model=${config.model}` : ''}`);
 		const client = await this._ensureClient();
-		const session = await client.createSession({
+		const raw = await client.createSession({
 			model: config?.model,
 			sessionId: config?.sessionId,
 			streaming: true,
 		});
 
-		this._sessions.set(session.sessionId, session);
-		this._attachSessionListeners(session);
-
-		log('info', `Session created: ${session.sessionId}`);
-		return session.sessionId;
+		const wrapper = this._trackSession(raw);
+		this._logService.info(`Session created: ${wrapper.sessionId}`);
+		return wrapper.sessionId;
 	}
 
 	async sendMessage(sessionId: string, prompt: string): Promise<void> {
-		log('info', `[${sessionId}] Sending message: "${prompt.substring(0, 100)}${prompt.length > 100 ? '...' : ''}"`);
-		let session = this._sessions.get(sessionId);
-		if (!session) {
-			// Session not in memory - try to resume it
-			log('info', `[${sessionId}] Session not in memory, resuming...`);
-			const client = await this._ensureClient();
-			session = await client.resumeSession(sessionId);
-			this._sessions.set(sessionId, session);
-			this._attachSessionListeners(session);
-		}
-		await session.send({ prompt });
-		log('info', `[${sessionId}] Message sent, awaiting response...`);
+		this._logService.info(`[${sessionId}] sendMessage called: "${prompt.substring(0, 100)}${prompt.length > 100 ? '...' : ''}"`);
+		const entry = this._sessions.get(sessionId) ?? await this._resumeSession(sessionId);
+		this._logService.info(`[${sessionId}] Found session wrapper, calling session.send()...`);
+		await entry.session.send({ prompt });
+		this._logService.info(`[${sessionId}] session.send() returned`);
 	}
 
 	async getSessionMessages(sessionId: string): Promise<IAgentProgressEvent[]> {
-		const session = this._sessions.get(sessionId);
-		if (!session) {
-			// Try to resume the session so we can get its messages
-			try {
-				const client = await this._ensureClient();
-				const resumed = await client.resumeSession(sessionId);
-				this._sessions.set(sessionId, resumed);
-				this._attachSessionListeners(resumed);
-				const events = await resumed.getMessages();
-				return this._mapSessionEvents(sessionId, events);
-			} catch {
-				return [];
-			}
+		const entry = this._sessions.get(sessionId) ?? await this._resumeSession(sessionId).catch(() => undefined);
+		if (!entry) {
+			return [];
 		}
 
-		const events = await session.getMessages();
+		const events = await entry.session.getMessages();
 		return this._mapSessionEvents(sessionId, events);
 	}
 
@@ -134,75 +118,64 @@ export class AgentService extends Disposable implements IAgentService {
 			}));
 	}
 
-	async destroySession(sessionId: string): Promise<void> {
-		const session = this._sessions.get(sessionId);
-		if (session) {
-			await session.destroy();
-			this._sessions.delete(sessionId);
-		}
+	async disposeSession(sessionId: string): Promise<void> {
+		this._sessions.deleteAndDispose(sessionId);
 	}
 
 	async ping(msg: string): Promise<string> {
 		return `pong: ${msg}`;
 	}
 
+	async shutdown(): Promise<void> {
+		this._logService.info('AgentService: shutting down...');
+		this._sessions.clearAndDisposeAll();
+		await this._client?.stop();
+		this._client = undefined;
+	}
+
 	// ---- helpers ------------------------------------------------------------
 
-	private _attachSessionListeners(session: CopilotSession): void {
-		const sessionId = session.sessionId;
-		log('debug', `[${sessionId}] Attaching event listeners`);
+	private _trackSession(raw: CopilotSession): CopilotSessionWrapper {
+		const wrapper = new CopilotSessionWrapper(raw);
+		const sessionId = wrapper.sessionId;
 
-		session.on('assistant.message_delta', (event) => {
-			log('trace', `[${sessionId}] delta: ${event.data.deltaContent.length} chars`);
-			this._onDidSessionProgress.fire({
-				sessionId,
-				type: 'delta',
-				content: event.data.deltaContent,
-			});
-		});
+		wrapper.addDisposable(wrapper.onMessageDelta(e => {
+			this._logService.trace(`[${sessionId}] delta: ${e.data.deltaContent.length} chars`);
+			this._onDidSessionProgress.fire({ sessionId, type: 'delta', content: e.data.deltaContent });
+		}));
 
-		session.on('assistant.message', (event) => {
-			log('info', `[${sessionId}] Full message received: ${event.data.content.length} chars`);
-			this._onDidSessionProgress.fire({
-				sessionId,
-				type: 'message',
-				content: event.data.content,
-			});
-		});
+		wrapper.addDisposable(wrapper.onMessage(e => {
+			this._logService.info(`[${sessionId}] Full message received: ${e.data.content.length} chars`);
+			this._onDidSessionProgress.fire({ sessionId, type: 'message', content: e.data.content });
+		}));
 
-		session.on('tool.execution_start', (event) => {
-			log('info', `[${sessionId}] Tool started: ${event.data.toolName}`);
-			this._onDidSessionProgress.fire({
-				sessionId,
-				type: 'tool_start',
-				content: event.data.toolName,
-			});
-		});
+		wrapper.addDisposable(wrapper.onToolStart(e => {
+			this._logService.info(`[${sessionId}] Tool started: ${e.data.toolName}`);
+			this._onDidSessionProgress.fire({ sessionId, type: 'tool_start', content: e.data.toolName });
+		}));
 
-		session.on('tool.execution_complete', (event) => {
-			log('info', `[${sessionId}] Tool completed: ${event.data.toolCallId}`);
-			this._onDidSessionProgress.fire({
-				sessionId,
-				type: 'tool_complete',
-				content: event.data.toolCallId,
-			});
-		});
+		wrapper.addDisposable(wrapper.onToolComplete(e => {
+			this._logService.info(`[${sessionId}] Tool completed: ${e.data.toolCallId}`);
+			this._onDidSessionProgress.fire({ sessionId, type: 'tool_complete', content: e.data.toolCallId });
+		}));
 
-		session.on('session.idle', () => {
-			log('info', `[${sessionId}] Session idle`);
-			this._onDidSessionProgress.fire({
-				sessionId,
-				type: 'idle',
-			});
-		});
+		wrapper.addDisposable(wrapper.onIdle(() => {
+			this._logService.info(`[${sessionId}] Session idle`);
+			this._onDidSessionProgress.fire({ sessionId, type: 'idle' });
+		}));
+
+		this._sessions.set(sessionId, wrapper);
+		return wrapper;
+	}
+
+	private async _resumeSession(sessionId: string): Promise<CopilotSessionWrapper> {
+		this._logService.info(`[${sessionId}] Session not in memory, resuming...`);
+		const client = await this._ensureClient();
+		const raw = await client.resumeSession(sessionId);
+		return this._trackSession(raw);
 	}
 
 	override dispose(): void {
-		// Clean up SDK resources
-		for (const session of this._sessions.values()) {
-			session.destroy().catch(() => { /* best-effort */ });
-		}
-		this._sessions.clear();
 		this._client?.stop().catch(() => { /* best-effort */ });
 		super.dispose();
 	}

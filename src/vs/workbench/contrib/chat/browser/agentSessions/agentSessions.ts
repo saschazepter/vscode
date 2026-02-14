@@ -11,6 +11,7 @@ import { observableValue } from '../../../../../base/common/observable.js';
 import { IChatSessionTiming } from '../../common/chatService/chatService.js';
 import { foreground, listActiveSelectionForeground, registerColor, transparent } from '../../../../../platform/theme/common/colorRegistry.js';
 import { getChatSessionType } from '../../common/model/chatUri.js';
+import { IProductService } from '../../../../../platform/product/common/productService.js';
 
 export enum AgentSessionProviders {
 	Local = 'local',
@@ -84,8 +85,15 @@ export function getAgentSessionProviderIcon(provider: AgentSessionProviders): Th
 		case AgentSessionProviders.Growth:
 			return Codicon.lightbulb;
 		case AgentSessionProviders.AgentHost:
-			return Codicon.copilot;
+			return Codicon.vscodeInsiders; // default; use getAgentHostIcon() for quality-aware icon
 	}
+}
+
+/**
+ * Returns the VS Code or VS Code Insiders icon depending on product quality.
+ */
+export function getAgentHostIcon(productService: IProductService): ThemeIcon {
+	return productService.quality === 'stable' ? Codicon.vscode : Codicon.vscodeInsiders;
 }
 
 export function isFirstPartyAgentSessionProvider(provider: AgentSessionProviders): boolean {

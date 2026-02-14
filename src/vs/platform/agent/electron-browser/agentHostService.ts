@@ -3,7 +3,93 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { registerMainProcessRemoteService } from '../../ipc/electron-browser/services.js';
-import { IAgentHostService, AgentHostIpcChannels } from '../common/agentService.js';
+import { DeferredPromise } from '../../../base/common/async.js';
+import { Emitter } from '../../../base/common/event.js';
+import { Disposable, DisposableStore } from '../../../base/common/lifecycle.js';
+import { getDelayedChannel, ProxyChannel } from '../../../base/parts/ipc/common/ipc.js';
+import { Client as MessagePortClient } from '../../../base/parts/ipc/common/ipc.mp.js';
+import { acquirePort } from '../../../base/parts/ipc/electron-browser/ipc.mp.js';
+import { InstantiationType, registerSingleton } from '../../instantiation/common/extensions.js';
+import { ILogService } from '../../log/common/log.js';
+import { AgentHostIpcChannels, IAgentCreateSessionConfig, IAgentHostService, IAgentProgressEvent, IAgentService, IAgentSessionMetadata } from '../common/agentService.js';
 
-registerMainProcessRemoteService(IAgentHostService, AgentHostIpcChannels.AgentHost);
+/**
+ * Renderer-side implementation of {@link IAgentHostService} that connects
+ * directly to the agent host utility process via MessagePort, bypassing
+ * the main process relay. Uses the same `getDelayedChannel` pattern as
+ * the pty host so the proxy is usable immediately while the port is acquired.
+ */
+class AgentHostServiceClient extends Disposable implements IAgentHostService {
+	declare readonly _serviceBrand: undefined;
+
+	private readonly _clientEventually = new DeferredPromise<MessagePortClient>();
+	private readonly _proxy: IAgentService;
+
+	private readonly _onAgentHostExit = this._register(new Emitter<number>());
+	readonly onAgentHostExit = this._onAgentHostExit.event;
+	private readonly _onAgentHostStart = this._register(new Emitter<void>());
+	readonly onAgentHostStart = this._onAgentHostStart.event;
+
+	private readonly _onDidSessionProgress = this._register(new Emitter<IAgentProgressEvent>());
+	readonly onDidSessionProgress = this._onDidSessionProgress.event;
+
+	constructor(
+		@ILogService private readonly _logService: ILogService,
+	) {
+		super();
+
+		// Create a proxy backed by a delayed channel - usable immediately,
+		// calls queue until the MessagePort connection is established.
+		this._proxy = ProxyChannel.toService<IAgentService>(
+			getDelayedChannel(this._clientEventually.p.then(client => client.getChannel(AgentHostIpcChannels.AgentHost)))
+		);
+
+		this._connect();
+	}
+
+	private async _connect(): Promise<void> {
+		this._logService.info('[AgentHost:renderer] Acquiring MessagePort to agent host...');
+		const port = await acquirePort('vscode:createAgentHostMessageChannel', 'vscode:createAgentHostMessageChannelResult');
+		this._logService.info('[AgentHost:renderer] MessagePort acquired, creating client...');
+
+		const store = this._register(new DisposableStore());
+		const client = store.add(new MessagePortClient(port, `agentHost:window`));
+		this._clientEventually.complete(client);
+
+		store.add(this._proxy.onDidSessionProgress(e => this._onDidSessionProgress.fire(e)));
+		this._logService.info('[AgentHost:renderer] Direct MessagePort connection established');
+		this._onAgentHostStart.fire();
+	}
+
+	// ---- IAgentService forwarding (no await needed, delayed channel handles queuing) ----
+
+	setAuthToken(token: string): Promise<void> {
+		return this._proxy.setAuthToken(token);
+	}
+	listSessions(): Promise<IAgentSessionMetadata[]> {
+		return this._proxy.listSessions();
+	}
+	createSession(config?: IAgentCreateSessionConfig): Promise<string> {
+		return this._proxy.createSession(config);
+	}
+	sendMessage(sessionId: string, prompt: string): Promise<void> {
+		return this._proxy.sendMessage(sessionId, prompt);
+	}
+	getSessionMessages(sessionId: string): Promise<IAgentProgressEvent[]> {
+		return this._proxy.getSessionMessages(sessionId);
+	}
+	disposeSession(sessionId: string): Promise<void> {
+		return this._proxy.disposeSession(sessionId);
+	}
+	ping(msg: string): Promise<string> {
+		return this._proxy.ping(msg);
+	}
+	shutdown(): Promise<void> {
+		return this._proxy.shutdown();
+	}
+	async restartAgentHost(): Promise<void> {
+		// Restart is handled by the main process side
+	}
+}
+
+registerSingleton(IAgentHostService, AgentHostServiceClient, InstantiationType.Delayed);

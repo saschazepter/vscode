@@ -4,14 +4,14 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { CancellationToken } from '../../../../../base/common/cancellation.js';
-import { Codicon } from '../../../../../base/common/codicons.js';
 import { Emitter } from '../../../../../base/common/event.js';
 import { MarkdownString } from '../../../../../base/common/htmlContent.js';
 import { Disposable, DisposableStore } from '../../../../../base/common/lifecycle.js';
 import { observableValue } from '../../../../../base/common/observable.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { ExtensionIdentifier } from '../../../../../platform/extensions/common/extensions.js';
-import { ILoggerService, LogLevel } from '../../../../../platform/log/common/log.js';
+import { ILogService } from '../../../../../platform/log/common/log.js';
+import { IProductService } from '../../../../../platform/product/common/productService.js';
 import { IAgentHostService, IAgentProgressEvent } from '../../../../../platform/agent/common/agentService.js';
 import { IDefaultAccountService } from '../../../../../platform/defaultAccount/common/defaultAccount.js';
 import { IAuthenticationService } from '../../../../services/authentication/common/authentication.js';
@@ -20,6 +20,7 @@ import { ChatAgentLocation, ChatModeKind } from '../../common/constants.js';
 import { IChatAgentData, IChatAgentImplementation, IChatAgentRequest, IChatAgentResult, IChatAgentService } from '../../common/participants/chatAgents.js';
 import { IChatProgress } from '../../common/chatService/chatService.js';
 import { ChatSessionStatus, IChatSession, IChatSessionContentProvider, IChatSessionHistoryItem, IChatSessionItem, IChatSessionItemController, IChatSessionsService } from '../../common/chatSessionsService.js';
+import { getAgentHostIcon } from '../agentSessions/agentSessions.js';
 
 const AGENT_HOST_SESSION_TYPE = 'agent-host';
 const AGENT_HOST_AGENT_ID = 'agent-host';
@@ -40,9 +41,7 @@ export class AgentHostChatContribution extends Disposable implements IChatSessio
 
 	private _items: IChatSessionItem[] = [];
 
-	private readonly _logger;
-
-	/** Map of session resource URI strings → SDK session IDs for multi-turn. */
+	/** Map of session resource URI strings to SDK session IDs for multi-turn. */
 	private readonly _resourceToSessionId = new Map<string, string>();
 
 	/** Map of session IDs to active session state for streaming. */
@@ -58,16 +57,12 @@ export class AgentHostChatContribution extends Disposable implements IChatSessio
 		@IChatAgentService private readonly _chatAgentService: IChatAgentService,
 		@IDefaultAccountService private readonly _defaultAccountService: IDefaultAccountService,
 		@IAuthenticationService private readonly _authenticationService: IAuthenticationService,
-		@ILoggerService loggerService: ILoggerService,
+		@ILogService private readonly _logService: ILogService,
+		@IProductService private readonly _productService: IProductService,
 	) {
 		super();
 
-		// Create a dedicated output channel logger for Agent Host
-		const logger = this._register(loggerService.createLogger('agentHost', { name: 'Agent Host' }));
-		logger.setLevel(LogLevel.Trace);
-		this._logger = logger;
-
-		this._logger.info('AgentHostChatContribution initialized');
+		this._logService.info('[AgentHost] AgentHostChatContribution initialized');
 
 		// 1. Register as session item controller
 		this._register(this._chatSessionsService.registerChatSessionItemController(AGENT_HOST_SESSION_TYPE, this));
@@ -97,10 +92,10 @@ export class AgentHostChatContribution extends Disposable implements IChatSessio
 			const session = sessions.find(s => s.id === account.sessionId);
 			if (session) {
 				await this._agentHostService.setAuthToken(session.accessToken);
-				this._logger.info('Pushed auth token to agent host');
+				this._logService.info('[AgentHost] Pushed auth token to agent host');
 			}
 		} catch (err) {
-			this._logger.warn('Failed to push auth token', err);
+			this._logService.warn('[AgentHost] Failed to push auth token', err);
 		}
 	}
 
@@ -111,13 +106,13 @@ export class AgentHostChatContribution extends Disposable implements IChatSessio
 	}
 
 	async refresh(token: CancellationToken): Promise<void> {
-		this._logger.debug('Refreshing session list...');
+		this._logService.debug('[AgentHost] Refreshing session list...');
 		try {
 			const sessions = await this._agentHostService.listSessions();
 			this._items = sessions.map(s => ({
 				resource: URI.from({ scheme: AGENT_HOST_SESSION_TYPE, path: `/${s.sessionId}` }),
 				label: s.summary ?? `Session ${s.sessionId.substring(0, 8)}`,
-				iconPath: Codicon.copilot,
+				iconPath: getAgentHostIcon(this._productService),
 				status: ChatSessionStatus.Completed,
 				timing: {
 					created: s.startTime,
@@ -125,7 +120,7 @@ export class AgentHostChatContribution extends Disposable implements IChatSessio
 					lastRequestEnded: s.modifiedTime,
 				},
 			}));
-			this._logger.info(`Found ${this._items.length} sessions`);
+			this._logService.info(`[AgentHost] Found ${this._items.length} sessions`);
 		} catch {
 			this._items = [];
 		}
@@ -136,24 +131,27 @@ export class AgentHostChatContribution extends Disposable implements IChatSessio
 
 	async provideChatSessionContent(sessionResource: URI, token: CancellationToken): Promise<IChatSession> {
 		const sessionId = sessionResource.path.substring(1); // strip leading /
-		this._logger.info(`Loading session content for ${sessionId}`);
+		this._logService.info(`[AgentHost] Loading session content for ${sessionId}`);
 
-		// Load history from the SDK
-		const messages = await this._agentHostService.getSessionMessages(sessionId);
-		const history: IChatSessionHistoryItem[] = messages.map(m => {
-			if (m.role === 'user') {
+		// Load history from the SDK (skip for untitled sessions - no history yet)
+		let history: IChatSessionHistoryItem[] = [];
+		if (!sessionId.startsWith('untitled-')) {
+			const messages = await this._agentHostService.getSessionMessages(sessionId);
+			history = messages.map(m => {
+				if (m.role === 'user') {
+					return {
+						type: 'request' as const,
+						prompt: m.content ?? '',
+						participant: AGENT_HOST_AGENT_ID,
+					};
+				}
 				return {
-					type: 'request' as const,
-					prompt: m.content ?? '',
+					type: 'response' as const,
+					parts: [{ kind: 'markdownContent' as const, content: new MarkdownString(m.content ?? '') }],
 					participant: AGENT_HOST_AGENT_ID,
 				};
-			}
-			return {
-				type: 'response' as const,
-				parts: [{ kind: 'markdownContent' as const, content: new MarkdownString(m.content ?? '') }],
-				participant: AGENT_HOST_AGENT_ID,
-			};
-		});
+			});
+		}
 
 		// Set up streaming observables
 		const progressObs = observableValue<IChatProgress[]>('agentHostProgress', []);
@@ -206,7 +204,7 @@ export class AgentHostChatContribution extends Disposable implements IChatSessio
 			isDynamic: true,
 			isCore: true,
 			metadata: {
-				themeIcon: Codicon.copilot,
+				themeIcon: getAgentHostIcon(this._productService),
 			},
 			slashCommands: [],
 			locations: [ChatAgentLocation.Chat],
@@ -230,42 +228,46 @@ export class AgentHostChatContribution extends Disposable implements IChatSessio
 	): Promise<IChatAgentResult> {
 		// Determine session ID from the request resource or create a new one
 		const sessionResource = request.sessionResource;
+		this._logService.info(`[AgentHost] _invokeAgent called with resource: ${sessionResource.toString()}`);
+		this._logService.info(`[AgentHost] _resourceToSessionId map: ${[...this._resourceToSessionId.entries()].map(([k, v]) => `${k}->${v}`).join(', ') || '(empty)'}`);
 		let sessionId: string;
 
 		if (sessionResource.scheme === AGENT_HOST_SESSION_TYPE && !sessionResource.path.startsWith('/untitled-')) {
 			sessionId = sessionResource.path.substring(1);
-			this._logger.debug(`Using existing agent-host session: ${sessionId}`);
+			this._logService.debug(`[AgentHost] Using existing agent-host session: ${sessionId}`);
 		} else {
 			// Reuse existing session for this resource, or create a new one
 			const key = sessionResource.toString();
 			const existing = this._resourceToSessionId.get(key);
 			if (existing) {
 				sessionId = existing;
-				this._logger.debug(`Reusing SDK session ${sessionId} for resource ${key}`);
+				this._logService.debug(`[AgentHost] Reusing SDK session ${sessionId} for resource ${key}`);
 			} else {
 				sessionId = await this._agentHostService.createSession();
 				this._resourceToSessionId.set(key, sessionId);
-				this._logger.info(`Created new SDK session ${sessionId} for resource ${key}`);
+				this._logService.info(`[AgentHost] Created new SDK session ${sessionId} for resource ${key}`);
 			}
 		}
 
 		// Listen for progress events filtered to this session
+		this._logService.info(`[AgentHost] [${sessionId}] Setting up progress listener and preparing to send...`);
 		let resolveDone: () => void;
 		const done = new Promise<void>((resolve) => { resolveDone = resolve; });
 
 		const listener = this._agentHostService.onDidSessionProgress((e: IAgentProgressEvent) => {
+			this._logService.info(`[AgentHost] [${sessionId}] Progress event received: type=${e.type}, sessionMatch=${e.sessionId === sessionId}`);
 			if (e.sessionId !== sessionId || cancellationToken.isCancellationRequested) {
 				return;
 			}
 
 			if (e.type === 'delta' && e.content) {
-				this._logger.trace(`[${sessionId}] delta: ${e.content.length} chars`);
+				this._logService.trace(`[AgentHost] [${sessionId}] delta: ${e.content.length} chars`);
 				progress([{ kind: 'markdownContent', content: new MarkdownString(e.content) }]);
 			} else if (e.type === 'tool_start' && e.content) {
-				this._logger.info(`[${sessionId}] tool start: ${e.content}`);
+				this._logService.info(`[AgentHost] [${sessionId}] tool start: ${e.content}`);
 				progress([{ kind: 'progressMessage', content: new MarkdownString(`Running tool: ${e.content}`) }]);
 			} else if (e.type === 'idle') {
-				this._logger.info(`[${sessionId}] session idle - response complete`);
+				this._logService.info(`[AgentHost] [${sessionId}] session idle - response complete`);
 				listener.dispose();
 				resolveDone!();
 			}
@@ -278,11 +280,12 @@ export class AgentHostChatContribution extends Disposable implements IChatSessio
 		});
 
 		// Send the message
-		this._logger.info(`[${sessionId}] Sending message: "${request.message.substring(0, 100)}${request.message.length > 100 ? '...' : ''}"`);
+		this._logService.info(`[AgentHost] [${sessionId}] Sending message: "${request.message.substring(0, 100)}${request.message.length > 100 ? '...' : ''}"`);
 		try {
 			await this._agentHostService.sendMessage(sessionId, request.message);
+			this._logService.info(`[AgentHost] [${sessionId}] sendMessage IPC returned, now waiting for idle...`);
 		} catch (err) {
-			this._logger.error(`[${sessionId}] sendMessage failed`, err);
+			this._logService.error(`[AgentHost] [${sessionId}] sendMessage failed`, err);
 			listener.dispose();
 			cancelListener.dispose();
 			resolveDone!();
@@ -341,7 +344,7 @@ export class AgentHostChatContribution extends Disposable implements IChatSessio
 		try {
 			await this._agentHostService.sendMessage(sessionId, request.message);
 		} catch (err) {
-			this._logger.error(`[${sessionId}] sendMessage failed in session handler`, err);
+			this._logService.error(`[AgentHost] [${sessionId}] sendMessage failed in session handler`, err);
 			listener.dispose();
 			cancelListener.dispose();
 			resolveDone!();

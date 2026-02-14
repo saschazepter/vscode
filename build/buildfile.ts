@@ -24,6 +24,7 @@ export const workbenchDesktop = [
 	createModuleDescription('vs/workbench/contrib/debug/node/telemetryApp'),
 	createModuleDescription('vs/platform/files/node/watcher/watcherMain'),
 	createModuleDescription('vs/platform/terminal/node/ptyHostMain'),
+	createModuleDescription('vs/platform/agent/node/agentHostMain'),
 	createModuleDescription('vs/workbench/api/node/extensionHostProcess'),
 	createModuleDescription('vs/workbench/workbench.desktop.main')
 ];
@@ -51,7 +52,8 @@ export const codeServer = [
 	// 'vs/server/node/server.cli' is not included here because it gets inlined via ./src/server-cli.js
 	createModuleDescription('vs/workbench/api/node/extensionHostProcess'),
 	createModuleDescription('vs/platform/files/node/watcher/watcherMain'),
-	createModuleDescription('vs/platform/terminal/node/ptyHostMain')
+	createModuleDescription('vs/platform/terminal/node/ptyHostMain'),
+	createModuleDescription('vs/platform/agent/node/agentHostMain')
 ];
 
 export const entrypoint = createModuleDescription;

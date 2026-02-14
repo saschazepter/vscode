@@ -5,11 +5,15 @@
 
 import { Disposable, DisposableStore, toDisposable } from '../../../base/common/lifecycle.js';
 import { Emitter } from '../../../base/common/event.js';
+import { deepClone } from '../../../base/common/objects.js';
 import { IpcMainEvent } from 'electron';
 import { validatedIpcMain } from '../../../base/parts/ipc/electron-main/ipcMain.js';
 import { Client as MessagePortClient } from '../../../base/parts/ipc/electron-main/ipc.mp.js';
+import { IEnvironmentMainService } from '../../environment/electron-main/environmentMainService.js';
+import { parseAgentHostDebugPort } from '../../environment/node/environmentService.js';
 import { ILifecycleMainService } from '../../lifecycle/electron-main/lifecycleMainService.js';
 import { ILogService } from '../../log/common/log.js';
+import { Schemas } from '../../../base/common/network.js';
 import { NullTelemetryService } from '../../telemetry/common/telemetryUtils.js';
 import { UtilityProcess } from '../../utilityProcess/electron-main/utilityProcess.js';
 import { IAgentHostConnection, IAgentHostStarter } from '../common/agent.js';
@@ -24,6 +28,7 @@ export class ElectronAgentHostStarter extends Disposable implements IAgentHostSt
 	readonly onWillShutdown = this._onWillShutdown.event;
 
 	constructor(
+		@IEnvironmentMainService private readonly _environmentMainService: IEnvironmentMainService,
 		@ILifecycleMainService private readonly _lifecycleMainService: ILifecycleMainService,
 		@ILogService private readonly _logService: ILogService,
 	) {
@@ -42,10 +47,24 @@ export class ElectronAgentHostStarter extends Disposable implements IAgentHostSt
 	start(): IAgentHostConnection {
 		this.utilityProcess = new UtilityProcess(this._logService, NullTelemetryService, this._lifecycleMainService);
 
+		const inspectParams = parseAgentHostDebugPort(this._environmentMainService.args, this._environmentMainService.isBuilt);
+		const execArgv = inspectParams.port ? [
+			'--nolazy',
+			`--inspect${inspectParams.break ? '-brk' : ''}=${inspectParams.port}`
+		] : undefined;
+
 		this.utilityProcess.start({
 			type: 'agentHost',
 			name: 'agent-host',
 			entryPoint: 'vs/platform/agent/node/agentHostMain',
+			execArgv,
+			args: ['--logsPath', this._environmentMainService.logsHome.with({ scheme: Schemas.file }).fsPath],
+			env: {
+				...deepClone(process.env),
+				VSCODE_ESM_ENTRYPOINT: 'vs/platform/agent/node/agentHostMain',
+				VSCODE_PIPE_LOGGING: 'true',
+				VSCODE_VERBOSE_LOGGING: 'true',
+			}
 		});
 
 		const port = this.utilityProcess.connect();
