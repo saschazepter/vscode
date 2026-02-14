@@ -45,15 +45,18 @@ export class CopilotSdkMainService extends Disposable implements ICopilotSdkMain
 
 	private _ensureChannel(): IChannel {
 		if (this._channel) {
+			this._logService.info('[CopilotSdkMainService] Reusing existing channel');
 			return this._channel;
 		}
 
-		this._logService.info('[CopilotSdkMainService] Starting Copilot SDK utility process');
+		this._logService.info('[CopilotSdkMainService] Starting Copilot SDK utility process...');
+		this._logService.info(`[CopilotSdkMainService] Logs path: ${this._environmentMainService.logsHome.with({ scheme: Schemas.file }).fsPath}`);
 
 		this._connectionStore = new DisposableStore();
 
 		this._utilityProcess = new UtilityProcess(this._logService, NullTelemetryService, this._lifecycleMainService);
 		this._connectionStore.add(toDisposable(() => {
+			this._logService.info('[CopilotSdkMainService] Utility process disposed');
 			this._utilityProcess?.kill();
 			this._utilityProcess?.dispose();
 			this._utilityProcess = undefined;
@@ -64,10 +67,13 @@ export class CopilotSdkMainService extends Disposable implements ICopilotSdkMain
 		this._connectionStore.add(this._utilityProcess.onExit(e => this._logService.error(`[CopilotSdkHost] Process exited with code ${e.code}`)));
 		this._connectionStore.add(this._utilityProcess.onCrash(e => this._logService.error(`[CopilotSdkHost] Process crashed with code ${e.code}`)));
 
+		const entryPoint = 'vs/platform/copilotSdk/node/copilotSdkHost';
+		this._logService.info(`[CopilotSdkMainService] Entry point: ${entryPoint}`);
+
 		this._utilityProcess.start({
 			type: 'copilotSdkHost',
 			name: 'copilot-sdk-host',
-			entryPoint: 'vs/platform/copilotSdk/node/copilotSdkHost',
+			entryPoint,
 			args: ['--logsPath', this._environmentMainService.logsHome.with({ scheme: Schemas.file }).fsPath, '--disable-gpu'],
 			env: {
 				...deepClone(process.env) as Record<string, string>,
@@ -78,12 +84,13 @@ export class CopilotSdkMainService extends Disposable implements ICopilotSdkMain
 		});
 
 		const port = this._utilityProcess.connect();
+		this._logService.info('[CopilotSdkMainService] MessagePort connected, creating client...');
 		const client = new MessagePortClient(port, 'copilotSdkHost');
 		this._connectionStore.add(client);
 
 		this._channel = client.getChannel(CopilotSdkChannel);
 
-		this._logService.info('[CopilotSdkMainService] Copilot SDK utility process started');
+		this._logService.info(`[CopilotSdkMainService] Channel '${CopilotSdkChannel}' acquired. Utility process ready.`);
 
 		return this._channel;
 	}

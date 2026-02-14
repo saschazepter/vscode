@@ -50,28 +50,47 @@ class CopilotSdkHost extends Disposable implements ICopilotSdkService {
 
 	async start(): Promise<void> {
 		if (this._client) {
+			this._onProcessOutput.fire({ stream: 'stderr', data: '[SDK] start() called but client already exists' });
 			return;
 		}
 
-		const sdk = await import('@github/copilot-sdk');
+		this._onProcessOutput.fire({ stream: 'stderr', data: '[SDK] start() called, importing @github/copilot-sdk...' });
 
-		// Resolve the native CLI binary path. The @github/copilot package includes
-		// platform-specific native binaries via optional deps (@github/copilot-${platform}-${arch}).
-		// Using the native binary avoids the Electron helper app crashes that occur
-		// when running the JS entry (index.js) inside a VS Code utility process.
+		let sdk;
+		try {
+			sdk = await import('@github/copilot-sdk');
+			this._onProcessOutput.fire({ stream: 'stderr', data: '[SDK] @github/copilot-sdk imported successfully' });
+		} catch (importErr) {
+			const msg = importErr instanceof Error ? `${importErr.message}\n${importErr.stack}` : String(importErr);
+			this._onProcessOutput.fire({ stream: 'stderr', data: `[SDK] FAILED to import @github/copilot-sdk: ${msg}` });
+			process.stderr.write(`[SDK-FATAL] Cannot import @github/copilot-sdk: ${msg}\n`);
+			throw importErr;
+		}
+
+		// ┌──────────────────────────────────────────────────────────────┐
+		// │ IMPORTANT: The CLI binary MUST come from the bundled        │
+		// │ @github/copilot-{platform}-{arch} package. Do NOT use      │
+		// │ PATH discovery, execFileSync, or any external binary.      │
+		// │ This must work in a signed, ASAR-packed release build.     │
+		// └──────────────────────────────────────────────────────────────┘
 		let cliPath: string | undefined;
 		try {
 			const { fileURLToPath } = await import('node:url');
 			const pkgName = `@github/copilot-${process.platform}-${process.arch}`;
+			this._onProcessOutput.fire({ stream: 'stderr', data: `[SDK] Resolving bundled CLI: ${pkgName}` });
 			cliPath = fileURLToPath(import.meta.resolve(pkgName));
-			process.stderr.write(`[SDK-DEBUG] Resolved native CLI: ${cliPath}\n`);
+			// In release builds, the ASAR packer puts native executables in
+			// node_modules.asar.unpacked/ so they can be spawned as processes.
+			cliPath = cliPath.replace(/\bnode_modules\.asar\b/, 'node_modules.asar.unpacked');
+			this._onProcessOutput.fire({ stream: 'stderr', data: `[SDK] Resolved bundled CLI: ${cliPath}` });
+			process.stderr.write(`[SDK-DEBUG] Resolved bundled CLI: ${cliPath}\n`);
 		} catch (e) {
-			process.stderr.write(`[SDK-DEBUG] Native CLI not found: ${e instanceof Error ? e.message : String(e)}\n`);
+			const msg = e instanceof Error ? e.message : String(e);
+			this._onProcessOutput.fire({ stream: 'stderr', data: `[SDK] FAILED to resolve bundled CLI: ${msg}` });
+			process.stderr.write(`[SDK-FATAL] Cannot resolve bundled CLI: ${msg}\n`);
 		}
 
-		// Build a clean environment for the CLI. The utility process inherits
-		// many VS Code/Electron-specific env vars that can interfere with the
-		// CLI (which is itself an Electron app). Strip problematic vars.
+		// Build a clean environment for the CLI. Strip vars that interfere.
 		const cliEnv: Record<string, string> = {};
 		for (const [key, value] of Object.entries(process.env)) {
 			if (value === undefined) {
@@ -87,19 +106,48 @@ class CopilotSdkHost extends Disposable implements ICopilotSdkService {
 			}
 			cliEnv[key] = value;
 		}
+		// Tell the CLI to use stdio mode (no pty needed — avoids code signing issues)
+		cliEnv['COPILOT_AGENT_DISABLE_PTY'] = '1';
+		// Ensure the CLI doesn't inherit the Electron app's hardened runtime constraints
+		delete cliEnv['__CFBundleIdentifier'];
+		delete cliEnv['APP_SANDBOX_CONTAINER_ID'];
 
-		this._client = new sdk.CopilotClient({
-			autoStart: true,
-			autoRestart: true,
-			useStdio: true,
-			...(cliPath ? { cliPath } : {}),
-			env: cliEnv,
-			...(this._githubToken ? { githubToken: this._githubToken } : {}),
-		});
+		this._onProcessOutput.fire({ stream: 'stderr', data: `[SDK] Creating CopilotClient with cliPath=${cliPath ?? 'default'}, useStdio=true` });
+
+		try {
+			this._client = new sdk.CopilotClient({
+				autoStart: true,
+				autoRestart: true,
+				useStdio: true,
+				...(cliPath ? { cliPath } : {}),
+				env: cliEnv,
+				...(this._githubToken ? { githubToken: this._githubToken } : {}),
+			});
+			this._onProcessOutput.fire({ stream: 'stderr', data: '[SDK] CopilotClient created, calling start()...' });
+		} catch (createErr) {
+			const msg = createErr instanceof Error ? `${createErr.message}\n${createErr.stack}` : String(createErr);
+			this._onProcessOutput.fire({ stream: 'stderr', data: `[SDK] FAILED to create CopilotClient: ${msg}` });
+			process.stderr.write(`[SDK-FATAL] Cannot create CopilotClient: ${msg}\n`);
+			throw createErr;
+		}
 
 		// Log state transitions for debugging the "Connection is disposed" issue
 		process.stderr.write(`[SDK-DEBUG] Starting client with cliPath=${cliPath ?? 'default'}\n`);
-		await this._client.start();
+		try {
+			// Add a timeout — if start() hangs for more than 30s, something is wrong
+			const startPromise = this._client.start();
+			const timeoutPromise = new Promise<never>((_, reject) =>
+				setTimeout(() => reject(new Error('SDK client.start() timed out after 30 seconds')), 30000)
+			);
+			await Promise.race([startPromise, timeoutPromise]);
+			this._onProcessOutput.fire({ stream: 'stderr', data: `[SDK] Client started, state=${this._client.getState()}` });
+		} catch (startErr) {
+			const msg = startErr instanceof Error ? `${startErr.message}\n${startErr.stack}` : String(startErr);
+			this._onProcessOutput.fire({ stream: 'stderr', data: `[SDK] FAILED to start client: ${msg}` });
+			process.stderr.write(`[SDK-FATAL] Cannot start client: ${msg}\n`);
+			this._client = undefined;
+			throw startErr;
+		}
 		process.stderr.write(`[SDK-DEBUG] Client started, state=${this._client.getState()}\n`);
 
 		// Log SDK client state changes
@@ -301,12 +349,14 @@ class CopilotSdkHost extends Disposable implements ICopilotSdkService {
 // Only start when running as an Electron utility process (not when imported by the main process).
 import { isUtilityProcess } from '../../../base/parts/sandbox/node/electronTypes.js';
 if (isUtilityProcess(process)) {
+	process.stderr.write('[CopilotSdkHost] Utility process entry point reached\n');
 	const disposables = new DisposableStore();
 	const host = new CopilotSdkHost();
 	disposables.add(host);
 	const channel = ProxyChannel.fromService(host, disposables);
 	const server = new UtilityProcessServer();
 	server.registerChannel(CopilotSdkChannel, channel);
+	process.stderr.write(`[CopilotSdkHost] Channel '${CopilotSdkChannel}' registered on server\n`);
 
 	process.once('exit', () => {
 		host.stop().catch(() => { /* best-effort cleanup */ });
