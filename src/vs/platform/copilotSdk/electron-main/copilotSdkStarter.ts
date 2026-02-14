@@ -68,7 +68,7 @@ export class CopilotSdkMainService extends Disposable implements ICopilotSdkMain
 			type: 'copilotSdkHost',
 			name: 'copilot-sdk-host',
 			entryPoint: 'vs/platform/copilotSdk/node/copilotSdkHost',
-			args: ['--logsPath', this._environmentMainService.logsHome.with({ scheme: Schemas.file }).fsPath],
+			args: ['--logsPath', this._environmentMainService.logsHome.with({ scheme: Schemas.file }).fsPath, '--disable-gpu'],
 			env: {
 				...deepClone(process.env) as Record<string, string>,
 				VSCODE_ESM_ENTRYPOINT: 'vs/platform/copilotSdk/node/copilotSdkHost',

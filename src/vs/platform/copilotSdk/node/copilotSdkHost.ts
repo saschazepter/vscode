@@ -54,13 +54,57 @@ class CopilotSdkHost extends Disposable implements ICopilotSdkService {
 		}
 
 		const sdk = await import('@github/copilot-sdk');
+
+		// Resolve the native CLI binary path. The @github/copilot package includes
+		// platform-specific native binaries via optional deps (@github/copilot-${platform}-${arch}).
+		// Using the native binary avoids the Electron helper app crashes that occur
+		// when running the JS entry (index.js) inside a VS Code utility process.
+		let cliPath: string | undefined;
+		try {
+			const { fileURLToPath } = await import('node:url');
+			const pkgName = `@github/copilot-${process.platform}-${process.arch}`;
+			cliPath = fileURLToPath(import.meta.resolve(pkgName));
+			process.stderr.write(`[SDK-DEBUG] Resolved native CLI: ${cliPath}\n`);
+		} catch (e) {
+			process.stderr.write(`[SDK-DEBUG] Native CLI not found: ${e instanceof Error ? e.message : String(e)}\n`);
+		}
+
+		// Build a clean environment for the CLI. The utility process inherits
+		// many VS Code/Electron-specific env vars that can interfere with the
+		// CLI (which is itself an Electron app). Strip problematic vars.
+		const cliEnv: Record<string, string> = {};
+		for (const [key, value] of Object.entries(process.env)) {
+			if (value === undefined) {
+				continue;
+			}
+			// Skip VS Code internal vars
+			if (key.startsWith('VSCODE_')) {
+				continue;
+			}
+			// Skip Electron vars that would confuse the CLI's own Electron
+			if (key.startsWith('ELECTRON_')) {
+				continue;
+			}
+			cliEnv[key] = value;
+		}
+
 		this._client = new sdk.CopilotClient({
 			autoStart: true,
 			autoRestart: true,
 			useStdio: true,
+			...(cliPath ? { cliPath } : {}),
+			env: cliEnv,
 			...(this._githubToken ? { githubToken: this._githubToken } : {}),
 		});
+
+		// Log state transitions for debugging the "Connection is disposed" issue
+		process.stderr.write(`[SDK-DEBUG] Starting client with cliPath=${cliPath ?? 'default'}\n`);
 		await this._client.start();
+		process.stderr.write(`[SDK-DEBUG] Client started, state=${this._client.getState()}\n`);
+
+		// Log SDK client state changes
+		const state = this._client.getState();
+		this._onProcessOutput.fire({ stream: 'stderr', data: `[SDK] Client started, state: ${state}` });
 
 		// Intercept stderr to capture CLI subprocess output and forward as events.
 		// The SDK writes CLI stderr lines to process.stderr via its internal
@@ -104,6 +148,7 @@ class CopilotSdkHost extends Disposable implements ICopilotSdkService {
 
 	async createSession(config: ICopilotSessionConfig): Promise<string> {
 		const client = await this._ensureClient();
+		this._onProcessOutput.fire({ stream: 'stderr', data: `[SDK] createSession called, client state: ${client.getState()}` });
 		const session = await client.createSession({
 			model: config.model,
 			reasoningEffort: config.reasoningEffort,
@@ -111,6 +156,7 @@ class CopilotSdkHost extends Disposable implements ICopilotSdkService {
 			systemMessage: config.systemMessage,
 			workingDirectory: config.workingDirectory,
 		});
+		this._onProcessOutput.fire({ stream: 'stderr', data: `[SDK] session created: ${session.sessionId}, client state: ${client.getState()}` });
 
 		this._sessions.set(session.sessionId, session);
 		this._attachSessionEvents(session);
@@ -155,11 +201,19 @@ class CopilotSdkHost extends Disposable implements ICopilotSdkService {
 
 	async send(sessionId: string, prompt: string, options?: ICopilotSendOptions): Promise<string> {
 		const session = this._getSession(sessionId);
-		return session.send({
-			prompt,
-			attachments: options?.attachments?.map(a => ({ type: a.type as 'file', path: a.path, displayName: a.displayName })),
-			mode: options?.mode,
-		});
+		process.stderr.write(`[SDK-DEBUG] send called, sessionId=${sessionId.substring(0, 8)}, clientState=${this._client?.getState()}\n`);
+		try {
+			const result = await session.send({
+				prompt,
+				attachments: options?.attachments?.map(a => ({ type: a.type as 'file', path: a.path, displayName: a.displayName })),
+				mode: options?.mode,
+			});
+			process.stderr.write(`[SDK-DEBUG] send completed, result=${result}\n`);
+			return result;
+		} catch (err) {
+			process.stderr.write(`[SDK-DEBUG] send FAILED: ${err instanceof Error ? `${err.message}\n${err.stack}` : String(err)}\n`);
+			throw err;
+		}
 	}
 
 	async sendAndWait(sessionId: string, prompt: string, options?: ICopilotSendOptions): Promise<ICopilotAssistantMessage | undefined> {
