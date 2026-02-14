@@ -44,6 +44,7 @@ export const code = [
 	createModuleDescription('vs/code/electron-utility/sharedProcess/sharedProcessMain'),
 	createModuleDescription('vs/code/electron-browser/workbench/workbench'),
 	createModuleDescription('vs/sessions/electron-browser/sessions'),
+	createModuleDescription('vs/platform/copilotSdk/node/copilotSdkHost'),
 ];
 
 export const codeWeb = createModuleDescription('vs/code/browser/workbench/workbench');
