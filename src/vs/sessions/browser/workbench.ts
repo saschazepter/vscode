@@ -16,7 +16,7 @@ import { isWindows, isLinux, isWeb, isNative, isMacintosh } from '../../base/com
 import { Parts, Position, PanelAlignment, IWorkbenchLayoutService, SINGLE_WINDOW_PARTS, MULTI_WINDOW_PARTS, IPartVisibilityChangeEvent, positionToString } from '../../workbench/services/layout/browser/layoutService.js';
 import { ILayoutOffsetInfo } from '../../platform/layout/browser/layoutService.js';
 import { Part } from '../../workbench/browser/part.js';
-import { Direction, ISerializableView, ISerializedGrid, ISerializedLeafNode, ISerializedNode, IViewSize, Orientation, SerializableGrid } from '../../base/browser/ui/grid/grid.js';
+import { Direction, ISerializableView, ISerializedGrid, ISerializedLeafNode, ISerializedNode, IViewSize, Orientation, SerializableGrid, IViewVisibilityAnimationOptions } from '../../base/browser/ui/grid/grid.js';
 import { IEditorGroupsService } from '../../workbench/services/editor/common/editorGroupsService.js';
 import { IEditorService } from '../../workbench/services/editor/common/editorService.js';
 import { IPaneCompositePartService } from '../../workbench/services/panecomposite/browser/panecomposite.js';
@@ -62,6 +62,8 @@ import { EditorMarkdownCodeBlockRenderer } from '../../editor/browser/widget/mar
 import { EditorModal } from './parts/editorModal.js';
 import { SyncDescriptor } from '../../platform/instantiation/common/descriptors.js';
 import { TitleService } from './parts/titlebarPart.js';
+import { EASE_IN, EASE_OUT } from '../../base/browser/ui/motion/motion.js';
+import { CancellationToken } from '../../base/common/cancellation.js';
 
 //#region Workbench Options
 
@@ -100,6 +102,21 @@ interface IPartVisibilityState {
 }
 
 //#endregion
+
+/** Duration (ms) for panel/sidebar open (entrance) animations. */
+const PANEL_OPEN_DURATION = 135;
+
+/** Duration (ms) for panel/sidebar close (exit) animations. */
+const PANEL_CLOSE_DURATION = 35;
+
+function createViewVisibilityAnimation(hidden: boolean, onComplete?: () => void, token: CancellationToken = CancellationToken.None): IViewVisibilityAnimationOptions {
+	return {
+		duration: hidden ? PANEL_CLOSE_DURATION : PANEL_OPEN_DURATION,
+		easing: hidden ? EASE_IN : EASE_OUT,
+		token,
+		onComplete,
+	};
+}
 
 export class Workbench extends Disposable implements IWorkbenchLayoutService {
 
@@ -1060,20 +1077,25 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 
 		this.partVisibility.sidebar = !hidden;
 
-		// Adjust CSS
-		if (hidden) {
-			this.mainContainer.classList.add(LayoutClasses.SIDEBAR_HIDDEN);
-		} else {
+		// Adjust CSS - for hiding, defer adding the class until animation
+		// completes so the part stays visible during the exit animation.
+		if (!hidden) {
 			this.mainContainer.classList.remove(LayoutClasses.SIDEBAR_HIDDEN);
 		}
 
 		// Propagate to grid
-		this.workbenchGrid.setViewVisible(this.sideBarPartView, !hidden);
-
-		// If sidebar becomes hidden, also hide the current active Viewlet if any
-		if (hidden && this.paneCompositeService.getActivePaneComposite(ViewContainerLocation.Sidebar)) {
-			this.paneCompositeService.hideActivePaneComposite(ViewContainerLocation.Sidebar);
-		}
+		this.workbenchGrid.setViewVisible(
+			this.sideBarPartView,
+			!hidden,
+			createViewVisibilityAnimation(hidden, () => {
+				if (!hidden) { return; }
+				// Deferred to after close animation
+				this.mainContainer.classList.add(LayoutClasses.SIDEBAR_HIDDEN);
+				if (this.paneCompositeService.getActivePaneComposite(ViewContainerLocation.Sidebar)) {
+					this.paneCompositeService.hideActivePaneComposite(ViewContainerLocation.Sidebar);
+				}
+			})
+		);
 
 		// If sidebar becomes visible, show last active Viewlet or default viewlet
 		if (!hidden && !this.paneCompositeService.getActivePaneComposite(ViewContainerLocation.Sidebar)) {
@@ -1091,20 +1113,25 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 
 		this.partVisibility.auxiliaryBar = !hidden;
 
-		// Adjust CSS
-		if (hidden) {
-			this.mainContainer.classList.add(LayoutClasses.AUXILIARYBAR_HIDDEN);
-		} else {
+		// Adjust CSS - for hiding, defer adding the class until animation
+		// completes so the part stays visible during the exit animation.
+		if (!hidden) {
 			this.mainContainer.classList.remove(LayoutClasses.AUXILIARYBAR_HIDDEN);
 		}
 
 		// Propagate to grid
-		this.workbenchGrid.setViewVisible(this.auxiliaryBarPartView, !hidden);
-
-		// If auxiliary bar becomes hidden, also hide the current active pane composite
-		if (hidden && this.paneCompositeService.getActivePaneComposite(ViewContainerLocation.AuxiliaryBar)) {
-			this.paneCompositeService.hideActivePaneComposite(ViewContainerLocation.AuxiliaryBar);
-		}
+		this.workbenchGrid.setViewVisible(
+			this.auxiliaryBarPartView,
+			!hidden,
+			createViewVisibilityAnimation(hidden, () => {
+				if (!hidden) { return; }
+				// Deferred to after close animation
+				this.mainContainer.classList.add(LayoutClasses.AUXILIARYBAR_HIDDEN);
+				if (this.paneCompositeService.getActivePaneComposite(ViewContainerLocation.AuxiliaryBar)) {
+					this.paneCompositeService.hideActivePaneComposite(ViewContainerLocation.AuxiliaryBar);
+				}
+			})
+		);
 
 		// If auxiliary bar becomes visible, show last active pane composite
 		if (!hidden && !this.paneCompositeService.getActivePaneComposite(ViewContainerLocation.AuxiliaryBar)) {
@@ -1151,20 +1178,26 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 
 		this.partVisibility.panel = !hidden;
 
-		// Adjust CSS
-		if (hidden) {
-			this.mainContainer.classList.add(LayoutClasses.PANEL_HIDDEN);
-		} else {
+		// Adjust CSS - for hiding, defer adding the class until animation
+		// completes because `.nopanel .part.panel { display: none !important }`
+		// would instantly hide the panel content mid-animation.
+		if (!hidden) {
 			this.mainContainer.classList.remove(LayoutClasses.PANEL_HIDDEN);
 		}
 
 		// Propagate to grid
-		this.workbenchGrid.setViewVisible(this.panelPartView, !hidden);
-
-		// If panel becomes hidden, also hide the current active panel
-		if (hidden && this.paneCompositeService.getActivePaneComposite(ViewContainerLocation.Panel)) {
-			this.paneCompositeService.hideActivePaneComposite(ViewContainerLocation.Panel);
-		}
+		this.workbenchGrid.setViewVisible(
+			this.panelPartView,
+			!hidden,
+			createViewVisibilityAnimation(hidden, () => {
+				if (!hidden) { return; }
+				// Deferred to after close animation
+				this.mainContainer.classList.add(LayoutClasses.PANEL_HIDDEN);
+				if (this.paneCompositeService.getActivePaneComposite(ViewContainerLocation.Panel)) {
+					this.paneCompositeService.hideActivePaneComposite(ViewContainerLocation.Panel);
+				}
+			})
+		);
 
 		// If panel becomes visible, show last active panel
 		if (!hidden && !this.paneCompositeService.getActivePaneComposite(ViewContainerLocation.Panel)) {
