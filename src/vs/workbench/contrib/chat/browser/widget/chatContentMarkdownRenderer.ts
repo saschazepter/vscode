@@ -82,19 +82,21 @@ export class ChatContentMarkdownRenderer implements IMarkdownRenderer {
 				},
 				...options?.sanitizerConfig,
 				allowedLinkSchemes: {
-					augment: [(href) => {
-						// Allow links to known prompt resources (skills, prompts, instructions, agents)
-						// regardless of their URI scheme
-						try {
-							const uri = URI.parse(href);
-							// Normalize URI by dropping query and fragment parameters
-							const normalizedUri = uri.with({ query: null, fragment: null });
-							const result = this.promptsService.isKnownResourceUri(normalizedUri);
-							return result;
-						} catch {
-							return false;
+					augment: [product.urlProtocol]
+				},
+				linkValidator: (href) => {
+					try {
+						const uri = URI.parse(href);
+						// Only validate URIs with the product's custom protocol
+						if (uri.scheme !== product.urlProtocol) {
+							return true;
 						}
-					}, product.urlProtocol]
+						// Allow links to known prompt resources (skills, prompts, instructions, agents)
+						const normalizedUri = uri.with({ query: null, fragment: null });
+						return this.promptsService.isKnownResourceUri(normalizedUri);
+					} catch {
+						return true;
+					}
 				},
 				remoteImageIsAllowed: (_uri) => false,
 			}
