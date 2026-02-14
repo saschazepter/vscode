@@ -133,7 +133,7 @@ export class SdkChatModel extends Disposable {
 				return this._handleReasoningDelta(event.data.deltaContent ?? '');
 
 			case 'assistant.reasoning':
-				return this._handleReasoningComplete();
+				return this._handleReasoningComplete(event.data.content);
 
 			case 'tool.execution_start':
 				return this._handleToolStart(event.data.toolName ?? 'unknown', event.data.toolCallId as string | undefined);
@@ -166,9 +166,9 @@ export class SdkChatModel extends Disposable {
 	// --- Private helpers ---
 
 	private _ensureUserTurn(content: string): ISdkChatTurn {
-		// If the last turn is already a user turn with matching content, skip
+		// If the last turn is already a user turn with the same content, skip
 		const last = this._turns[this._turns.length - 1];
-		if (last?.role === 'user') {
+		if (last?.role === 'user' && last.parts[0]?.kind === 'markdownContent' && last.parts[0].content.value === content) {
 			return last;
 		}
 		return this.addUserMessage(content);
@@ -217,11 +217,21 @@ export class SdkChatModel extends Disposable {
 		const lastPart = turn.parts[turn.parts.length - 1];
 
 		if (lastPart?.kind === 'markdownContent') {
+			// Update existing streaming part
 			lastPart.isStreaming = false;
 			if (content) {
 				lastPart.content = new MarkdownString(content, { supportThemeIcons: true });
 			}
 			this._onDidChange.fire({ type: 'partUpdated', turnId: turn.id, partIndex: turn.parts.length - 1 });
+		} else if (content) {
+			// No prior streaming part (e.g. history replay) - create a new one
+			const part: ISdkMarkdownPart = {
+				kind: 'markdownContent',
+				content: new MarkdownString(content, { supportThemeIcons: true }),
+				isStreaming: false,
+			};
+			turn.parts.push(part);
+			this._onDidChange.fire({ type: 'partAdded', turnId: turn.id, partIndex: turn.parts.length - 1 });
 		}
 		return turn;
 	}
@@ -245,22 +255,52 @@ export class SdkChatModel extends Disposable {
 		return turn;
 	}
 
-	private _handleReasoningComplete(): ISdkChatTurn | undefined {
+	private _handleReasoningComplete(content?: string): ISdkChatTurn | undefined {
 		const turn = this._turns[this._turns.length - 1];
 		if (!turn || turn.role !== 'assistant') {
+			// No existing assistant turn - create one if we have content (history replay)
+			if (content) {
+				const newTurn = this._getOrCreateAssistantTurn();
+				const part: ISdkThinkingPart = { kind: 'thinking', content, isStreaming: false };
+				newTurn.parts.push(part);
+				this._onDidChange.fire({ type: 'partAdded', turnId: newTurn.id, partIndex: newTurn.parts.length - 1 });
+				return newTurn;
+			}
 			return undefined;
 		}
 		const thinkingPart = turn.parts.findLast(p => p.kind === 'thinking' && p.isStreaming);
 		if (thinkingPart && thinkingPart.kind === 'thinking') {
 			thinkingPart.isStreaming = false;
+			if (content) {
+				thinkingPart.content = content;
+			}
 			const idx = turn.parts.indexOf(thinkingPart);
 			this._onDidChange.fire({ type: 'partUpdated', turnId: turn.id, partIndex: idx });
+		} else if (content) {
+			// No prior streaming thinking part (history replay) - create one
+			const part: ISdkThinkingPart = { kind: 'thinking', content, isStreaming: false };
+			turn.parts.push(part);
+			this._onDidChange.fire({ type: 'partAdded', turnId: turn.id, partIndex: turn.parts.length - 1 });
 		}
 		return turn;
 	}
 
 	private _handleToolStart(toolName: string, toolCallId?: string): ISdkChatTurn {
 		const turn = this._getOrCreateAssistantTurn();
+
+		// Deduplicate: if we already have a running tool with this callId or name, skip
+		if (toolCallId) {
+			const existing = turn.parts.find(p => p.kind === 'toolInvocation' && p.toolCallId === toolCallId);
+			if (existing) {
+				return turn;
+			}
+		} else {
+			const existing = turn.parts.find(p => p.kind === 'toolInvocation' && p.toolName === toolName && p.state === 'running');
+			if (existing) {
+				return turn;
+			}
+		}
+
 		const part: ISdkToolCallPart = {
 			kind: 'toolInvocation',
 			toolName,

@@ -195,12 +195,24 @@ export class AgenticSessionsViewPane extends ViewPane {
 			const label = DOM.append(details, $('span.sdk-session-label'));
 			label.textContent = session.summary || localize('untitledSession', "Untitled Session");
 
-			// Subtitle: repo/branch or workspace path or session ID
+			// Subtitle: repo/branch or workspace path (skip if just session ID)
 			const subtitle = session.repository
 				? (session.branch ? `${session.repository} (${session.branch})` : session.repository)
-				: session.workspacePath ?? session.sessionId.substring(0, 8);
-			const pathEl = DOM.append(details, $('span.sdk-session-path'));
-			pathEl.textContent = subtitle;
+				: session.workspacePath ?? undefined;
+			if (subtitle) {
+				const pathEl = DOM.append(details, $('span.sdk-session-path'));
+				pathEl.textContent = subtitle;
+			}
+
+			// CWD badge (folder name from workspacePath, or repo, or fallback)
+			const cwdSource = session.workspacePath ?? session.repository;
+			if (cwdSource) {
+				const cwdBadge = DOM.append(details, $('span.sdk-session-cwd-badge'));
+				const folderName = cwdSource.split('/').pop() ?? cwdSource;
+				const badgeIcon = DOM.append(cwdBadge, $('span'));
+				badgeIcon.classList.add(...ThemeIcon.asClassNameArray(Codicon.folder));
+				DOM.append(cwdBadge, $('span')).textContent = folderName;
+			}
 
 			// Relative time
 			if (session.modifiedTime || session.startTime) {
@@ -210,6 +222,17 @@ export class AgenticSessionsViewPane extends ViewPane {
 				const ago = this._relativeTime(date);
 				timeEl.textContent = ago;
 			}
+
+			// Delete action (visible on hover)
+			const actions = DOM.append(item, $('span.sdk-session-actions'));
+			const deleteBtn = DOM.append(actions, $('button.sdk-session-action-btn')) as HTMLButtonElement;
+			deleteBtn.title = localize('deleteSession', "Delete Session");
+			const deleteIcon = DOM.append(deleteBtn, $('span'));
+			deleteIcon.classList.add(...ThemeIcon.asClassNameArray(Codicon.trash));
+			this._sessionListDisposables.add(DOM.addDisposableListener(deleteBtn, 'click', (e) => {
+				DOM.EventHelper.stop(e);
+				this.deleteSession(session.sessionId);
+			}));
 
 			this._sessionListDisposables.add(DOM.addDisposableListener(item, 'click', () => {
 				this.selectSession(session.sessionId);
@@ -236,6 +259,22 @@ export class AgenticSessionsViewPane extends ViewPane {
 		if (chatPane?.widget) {
 			chatPane.widget.loadSession(sessionId);
 		}
+	}
+
+	private async deleteSession(sessionId: string): Promise<void> {
+		try {
+			await this.copilotSdkService.deleteSession(sessionId);
+		} catch (err) {
+			this.logService.error('[SessionsViewPane] Failed to delete session:', err);
+		}
+		if (this._selectedSessionId === sessionId) {
+			this._selectedSessionId = undefined;
+			const chatPane = this.viewsService.getViewWithId<SdkChatViewPane>(SdkChatViewId);
+			if (chatPane?.widget) {
+				await chatPane.widget.newSession();
+			}
+		}
+		this.refreshSessionList();
 	}
 
 	private async createNewSdkSession(): Promise<void> {

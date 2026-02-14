@@ -8,26 +8,30 @@ import * as dom from '../../../base/browser/dom.js';
 import { Codicon } from '../../../base/common/codicons.js';
 import { Emitter, Event } from '../../../base/common/event.js';
 import { Disposable, DisposableStore } from '../../../base/common/lifecycle.js';
-import { renderMarkdown } from '../../../base/browser/markdownRenderer.js';
 import { localize } from '../../../nls.js';
 import { ThemeIcon } from '../../../base/common/themables.js';
 import { type ICopilotModelInfo, ICopilotSdkService } from '../../../platform/copilotSdk/common/copilotSdkService.js';
+import { IInstantiationService } from '../../../platform/instantiation/common/instantiation.js';
 import { ILogService } from '../../../platform/log/common/log.js';
-import { SdkChatModel, type ISdkMarkdownPart, type ISdkThinkingPart, type ISdkToolCallPart, type ISdkChatModelChange, type SdkChatPart } from './sdkChatModel.js';
+import { IWorkspaceContextService } from '../../../platform/workspace/common/workspace.js';
+import { IFileDialogService } from '../../../platform/dialogs/common/dialogs.js';
+import { SdkChatModel, type ISdkChatModelChange } from './sdkChatModel.js';
+import { SdkContentPartRenderer, type IRenderedContentPart } from './sdkContentPartRenderer.js';
 import { CopilotSdkDebugLog } from '../copilotSdkDebugLog.js';
 
 const $ = dom.$;
 
 interface IRenderedTurn {
 	readonly turnId: string;
-	readonly element: HTMLElement;
-	readonly partElements: Map<number, HTMLElement>;
+	readonly valueContainer: HTMLElement;
+	readonly partSlots: Map<number, IRenderedContentPart>;
 }
 
 /**
- * Chat widget powered by the Copilot SDK. Uses `SdkChatModel` for data and
- * renders using VS Code's `renderMarkdown` for rich content. No dependency
- * on `ChatWidget`, `ChatInputPart`, `ChatService`, or the copilot-chat extension.
+ * Chat widget powered by the Copilot SDK. Renders using
+ * `SdkContentPartRenderer` which produces DOM matching VS Code's
+ * chat design language (using `ChatContentMarkdownRenderer`,
+ * chat CSS classes, etc.).
  */
 export class SdkChatWidget extends Disposable {
 
@@ -40,9 +44,14 @@ export class SdkChatWidget extends Disposable {
 	private readonly _sendBtn: HTMLButtonElement;
 	private readonly _abortBtn: HTMLButtonElement;
 	private readonly _modelSelect: HTMLSelectElement;
+	private readonly _modelLabel: HTMLElement;
+	private readonly _folderBtn: HTMLElement;
+	private readonly _folderLabel: HTMLElement;
+	private _folderPath: string | undefined;
 	private readonly _statusBar: HTMLElement;
 
 	private readonly _model: SdkChatModel;
+	private readonly _partRenderer: SdkContentPartRenderer;
 	private readonly _renderedTurns = new Map<string, IRenderedTurn>();
 
 	private _sessionId: string | undefined;
@@ -60,20 +69,65 @@ export class SdkChatWidget extends Disposable {
 	constructor(
 		container: HTMLElement,
 		@ICopilotSdkService private readonly _sdk: ICopilotSdkService,
+		@IInstantiationService private readonly _instantiationService: IInstantiationService,
 		@ILogService private readonly _logService: ILogService,
+		@IWorkspaceContextService private readonly _workspaceContextService: IWorkspaceContextService,
+		@IFileDialogService private readonly _fileDialogService: IFileDialogService,
 	) {
 		super();
 
 		this._model = this._register(new SdkChatModel());
+		this._partRenderer = this._instantiationService.createInstance(SdkContentPartRenderer);
 
 		this.element = dom.append(container, $('.sdk-chat-widget'));
 
-		// Welcome
+		// Welcome (centered hero - icon + greeting + INPUT lives here initially)
 		this._welcomeContainer = dom.append(this.element, $('.sdk-chat-welcome'));
-		dom.append(this._welcomeContainer, $('.sdk-chat-welcome-title')).textContent = localize('sdkChat.welcome.title', "Copilot Agent");
-		dom.append(this._welcomeContainer, $('.sdk-chat-welcome-subtitle')).textContent = localize('sdkChat.welcome.subtitle', "Ask me anything. Powered by the Copilot SDK.");
+		const welcomeHero = dom.append(this._welcomeContainer, $('.sdk-chat-welcome-hero'));
+		const heroIcon = dom.append(welcomeHero, $('.sdk-chat-welcome-icon'));
+		dom.append(heroIcon, $(`span${ThemeIcon.asCSSSelector(Codicon.sparkle)}`)).classList.add('codicon');
+		dom.append(welcomeHero, $('.sdk-chat-welcome-title')).textContent = localize('sdkChat.welcome.title', "What can I help with?");
+		dom.append(welcomeHero, $('.sdk-chat-welcome-subtitle')).textContent = localize('sdkChat.welcome.subtitle', "Ask anything or describe a task");
 
-		// Messages
+		// Input area - built once, lives in welcome initially, moves to bottom on first send
+		this._inputArea = dom.append(this._welcomeContainer, $('.sdk-chat-input-area'));
+		const inputBox = dom.append(this._inputArea, $('.sdk-chat-input-box'));
+		this._textarea = dom.append(inputBox, $('textarea.sdk-chat-textarea')) as HTMLTextAreaElement;
+		this._textarea.placeholder = localize('sdkChat.placeholder', "Message Copilot...");
+		this._textarea.rows = 1;
+		const inputToolbar = dom.append(inputBox, $('.sdk-chat-input-toolbar'));
+
+		// Left: pickers (folder + model)
+		const pickerGroup = dom.append(inputToolbar, $('.sdk-chat-picker-group'));
+
+		// Folder picker (clickable button that opens native dialog)
+		this._folderBtn = dom.append(pickerGroup, $('.sdk-chat-picker'));
+		dom.append(this._folderBtn, $(`span${ThemeIcon.asCSSSelector(Codicon.folder)}`)).classList.add('codicon');
+		this._folderLabel = dom.append(this._folderBtn, $('span.sdk-chat-picker-label'));
+		this._initDefaultFolder();
+		this._folderLabel.textContent = this._folderPath ? this._folderPath.split('/').pop() ?? 'Select folder' : localize('sdkChat.selectFolder', "Select folder");
+		this._register(dom.addDisposableListener(this._folderBtn, 'click', () => this._pickFolder()));
+
+		// Model picker
+		const modelPicker = dom.append(pickerGroup, $('.sdk-chat-picker.sdk-chat-model-picker'));
+		dom.append(modelPicker, $(`span${ThemeIcon.asCSSSelector(Codicon.vm)}`)).classList.add('codicon');
+		this._modelLabel = dom.append(modelPicker, $('span.sdk-chat-picker-label'));
+		this._modelLabel.textContent = localize('sdkChat.selectModel', "Select model");
+		this._modelSelect = dom.append(modelPicker, $('select.sdk-chat-picker-select')) as HTMLSelectElement;
+		this._register(dom.addDisposableListener(this._modelSelect, 'change', () => {
+			const opt = this._modelSelect.options[this._modelSelect.selectedIndex];
+			this._modelLabel.textContent = opt?.textContent ?? '';
+		}));
+
+		// Right: send/abort buttons
+		const buttonGroup = dom.append(inputToolbar, $('.sdk-chat-input-buttons'));
+		this._sendBtn = dom.append(buttonGroup, $('button.sdk-chat-send-btn')) as HTMLButtonElement;
+		dom.append(this._sendBtn, $(`span${ThemeIcon.asCSSSelector(Codicon.arrowUp)}`)).classList.add('codicon');
+		this._abortBtn = dom.append(buttonGroup, $('button.sdk-chat-abort-btn')) as HTMLButtonElement;
+		dom.append(this._abortBtn, $(`span${ThemeIcon.asCSSSelector(Codicon.debugStop)}`)).classList.add('codicon');
+		this._abortBtn.style.display = 'none';
+
+		// Messages (hidden until first send)
 		this._messagesContainer = dom.append(this.element, $('.sdk-chat-messages'));
 		this._messagesContainer.style.display = 'none';
 		this._register(dom.addDisposableListener(this._messagesContainer, 'scroll', () => {
@@ -85,27 +139,7 @@ export class SdkChatWidget extends Disposable {
 		this._statusBar = dom.append(this.element, $('.sdk-chat-status'));
 		this._setStatus(localize('sdkChat.status.initializing', "Initializing..."));
 
-		// Input area
-		this._inputArea = dom.append(this.element, $('.sdk-chat-input-area'));
-
-		const modelRow = dom.append(this._inputArea, $('.sdk-chat-model-row'));
-		dom.append(modelRow, $('.sdk-chat-model-label')).textContent = localize('sdkChat.model', "Model:");
-		this._modelSelect = dom.append(modelRow, $('select.sdk-chat-model-select')) as HTMLSelectElement;
-
-		const inputRow = dom.append(this._inputArea, $('.sdk-chat-input-row'));
-		const inputWrapper = dom.append(inputRow, $('.sdk-chat-input-wrapper'));
-		this._textarea = dom.append(inputWrapper, $('textarea.sdk-chat-textarea')) as HTMLTextAreaElement;
-		this._textarea.placeholder = localize('sdkChat.placeholder', "Ask Copilot...");
-		this._textarea.rows = 1;
-
-		this._sendBtn = dom.append(inputRow, $('button.sdk-chat-send-btn')) as HTMLButtonElement;
-		dom.append(this._sendBtn, $(`span${ThemeIcon.asCSSSelector(Codicon.send)}`)).classList.add('codicon');
-
-		this._abortBtn = dom.append(inputRow, $('button.sdk-chat-abort-btn')) as HTMLButtonElement;
-		dom.append(this._abortBtn, $(`span${ThemeIcon.asCSSSelector(Codicon.debugStop)}`)).classList.add('codicon');
-		this._abortBtn.style.display = 'none';
-
-		// Wire events
+		// Wire input events
 		this._register(dom.addDisposableListener(this._textarea, 'keydown', (e: KeyboardEvent) => {
 			if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); this._handleSend(); }
 		}));
@@ -126,24 +160,29 @@ export class SdkChatWidget extends Disposable {
 	focus(): void { this._textarea.focus(); }
 	get sessionId(): string | undefined { return this._sessionId; }
 	get isStreaming(): boolean { return this._isStreaming; }
-	get model(): SdkChatModel { return this._model; }
 
 	// --- Init ---
 
 	private async _initialize(): Promise<void> {
 		try {
+			this._logService.info('[SdkChatWidget] Initializing - calling sdk.start()...');
 			CopilotSdkDebugLog.instance?.addEntry('\u2192', 'widget.start', '');
 			await this._sdk.start();
+			this._logService.info('[SdkChatWidget] sdk.start() completed successfully');
 			CopilotSdkDebugLog.instance?.addEntry('\u2190', 'widget.start', 'OK');
+			this._logService.info('[SdkChatWidget] Calling sdk.listModels()...');
 			CopilotSdkDebugLog.instance?.addEntry('\u2192', 'widget.listModels', '');
 			const models = await this._sdk.listModels();
+			this._logService.info(`[SdkChatWidget] listModels returned ${models.length} models`);
 			CopilotSdkDebugLog.instance?.addEntry('\u2190', 'widget.listModels', `${models.length} models`);
 			this._populateModelSelect(models);
 			this._setStatus(localize('sdkChat.status.ready', "Ready"));
 			this._textarea.disabled = false;
 			this._sendBtn.disabled = false;
 		} catch (err) {
-			this._logService.error('[SdkChatWidget] Init failed:', err);
+			const msg = err instanceof Error ? `${err.message}\n${err.stack}` : String(err);
+			this._logService.error(`[SdkChatWidget] Init failed: ${msg}`);
+			CopilotSdkDebugLog.instance?.addEntry('X', 'widget.init', msg);
 			this._setStatus(localize('sdkChat.status.error', "Failed to connect to Copilot SDK"));
 		}
 	}
@@ -157,7 +196,30 @@ export class SdkChatWidget extends Disposable {
 			this._modelSelect.appendChild(opt);
 		}
 		const preferred = models.find(m => m.id === 'claude-sonnet-4') ?? models.find(m => m.id === 'gpt-4.1') ?? models[0];
-		if (preferred) { this._modelSelect.value = preferred.id; }
+		if (preferred) {
+			this._modelSelect.value = preferred.id;
+			this._modelLabel.textContent = preferred.name ?? preferred.id;
+		}
+	}
+
+	private _initDefaultFolder(): void {
+		const folders = this._workspaceContextService.getWorkspace().folders;
+		if (folders.length > 0) {
+			this._folderPath = folders[0].uri.fsPath;
+		}
+	}
+
+	private async _pickFolder(): Promise<void> {
+		const result = await this._fileDialogService.showOpenDialog({
+			canSelectFolders: true,
+			canSelectFiles: false,
+			canSelectMany: false,
+			title: localize('sdkChat.pickFolder', "Select Working Directory"),
+		});
+		if (result && result.length > 0) {
+			this._folderPath = result[0].fsPath;
+			this._folderLabel.textContent = result[0].fsPath.split('/').pop() ?? 'folder';
+		}
 	}
 
 	// --- SDK events -> model ---
@@ -170,13 +232,16 @@ export class SdkChatWidget extends Disposable {
 		}));
 	}
 
-	// --- Model -> DOM ---
+	// --- Model -> DOM (using SdkContentPartRenderer) ---
 
 	private _onModelChange(change: ISdkChatModelChange): void {
-		// Ensure messages visible
 		if (this._model.turns.length > 0) {
 			this._welcomeContainer.style.display = 'none';
 			this._messagesContainer.style.display = '';
+			// Move input from welcome to bottom of widget
+			if (this._inputArea.parentElement === this._welcomeContainer) {
+				this.element.appendChild(this._inputArea);
+			}
 		}
 
 		switch (change.type) {
@@ -192,20 +257,28 @@ export class SdkChatWidget extends Disposable {
 		const turn = this._model.turns.find(t => t.id === turnId);
 		if (!turn) { return; }
 
-		const turnEl = dom.append(this._messagesContainer, $(`.sdk-chat-message.${turn.role}`));
+		const roleClass = turn.role === 'user' ? 'sdk-chat-request' : 'sdk-chat-response';
+		const turnEl = dom.append(this._messagesContainer, $(`.sdk-chat-turn.${roleClass}`));
 
-		const header = dom.append(turnEl, $('.sdk-chat-message-header'));
+		// Header with avatar
+		const header = dom.append(turnEl, $('.sdk-chat-header'));
+		const headerUser = dom.append(header, $('.sdk-chat-header-user'));
+		const avatar = dom.append(headerUser, $('.sdk-chat-avatar'));
 		const headerIcon = turn.role === 'user' ? Codicon.account : Codicon.sparkle;
-		dom.append(header, $(`span${ThemeIcon.asCSSSelector(headerIcon)}`)).classList.add('codicon');
-		dom.append(header, $('span')).textContent = turn.role === 'user'
+		dom.append(avatar, $(`span${ThemeIcon.asCSSSelector(headerIcon)}`)).classList.add('codicon');
+		const username = dom.append(headerUser, $('h3.sdk-chat-username'));
+		username.textContent = turn.role === 'user'
 			? localize('sdkChat.you', "You")
 			: localize('sdkChat.copilot', "Copilot");
 
-		const rendered: IRenderedTurn = { turnId, element: turnEl, partElements: new Map() };
+		// Value container for content parts
+		const valueContainer = dom.append(turnEl, $('.sdk-chat-value'));
+
+		const rendered: IRenderedTurn = { turnId, valueContainer, partSlots: new Map() };
 		this._renderedTurns.set(turnId, rendered);
 
 		for (let i = 0; i < turn.parts.length; i++) {
-			this._appendPart(turn.parts[i], turnEl, rendered, i);
+			this._appendPart(turn, i, rendered);
 		}
 	}
 
@@ -213,55 +286,15 @@ export class SdkChatWidget extends Disposable {
 		const rendered = this._renderedTurns.get(turnId);
 		const turn = this._model.turns.find(t => t.id === turnId);
 		if (!rendered || !turn) { return; }
-		this._appendPart(turn.parts[partIndex], rendered.element, rendered, partIndex);
+		this._appendPart(turn, partIndex, rendered);
 	}
 
-	private _appendPart(part: SdkChatPart, container: HTMLElement, rendered: IRenderedTurn, index: number): void {
+	private _appendPart(turn: { parts: readonly import('./sdkChatModel.js').SdkChatPart[] }, partIndex: number, rendered: IRenderedTurn): void {
+		const part = turn.parts[partIndex];
 		if (!part) { return; }
-		const el = this._createPartElement(part);
-		container.appendChild(el);
-		rendered.partElements.set(index, el);
-	}
-
-	private _createPartElement(part: SdkChatPart): HTMLElement {
-		switch (part.kind) {
-			case 'markdownContent': return this._createMarkdownEl(part);
-			case 'thinking': return this._createThinkingEl(part);
-			case 'toolInvocation': return this._createToolCallEl(part);
-			case 'progress': return this._createProgressEl(part.message);
-		}
-	}
-
-	private _createMarkdownEl(part: ISdkMarkdownPart): HTMLElement {
-		const el = $('.sdk-chat-message-body');
-		if (part.isStreaming) { el.classList.add('sdk-chat-streaming-cursor'); }
-		el.appendChild(renderMarkdown(part.content).element);
-		return el;
-	}
-
-	private _createThinkingEl(part: ISdkThinkingPart): HTMLElement {
-		const el = $('.sdk-chat-reasoning');
-		el.textContent = part.content;
-		return el;
-	}
-
-	private _createToolCallEl(part: ISdkToolCallPart): HTMLElement {
-		const el = $(`.sdk-chat-tool-call.${part.state === 'running' ? 'running' : 'complete'}`);
-		const iconCodicon = part.state === 'running' ? Codicon.loading : Codicon.check;
-		const iconEl = dom.append(el, $(`span${ThemeIcon.asCSSSelector(iconCodicon)}`));
-		iconEl.classList.add('codicon');
-		if (part.state === 'running') { iconEl.classList.add('codicon-loading'); }
-		dom.append(el, $('span.sdk-chat-tool-name')).textContent = part.toolName;
-		dom.append(el, $('span.sdk-chat-tool-status')).textContent = part.state === 'running'
-			? localize('sdkChat.tool.running', "Running...")
-			: localize('sdkChat.tool.done', "Done");
-		return el;
-	}
-
-	private _createProgressEl(message: string): HTMLElement {
-		const el = $('.sdk-chat-progress');
-		el.textContent = message;
-		return el;
+		const renderedPart = this._partRenderer.render(part);
+		rendered.valueContainer.appendChild(renderedPart.domNode);
+		rendered.partSlots.set(partIndex, renderedPart);
 	}
 
 	private _updatePart(turnId: string, partIndex: number): void {
@@ -269,34 +302,62 @@ export class SdkChatWidget extends Disposable {
 		const turn = this._model.turns.find(t => t.id === turnId);
 		if (!rendered || !turn) { return; }
 		const part = turn.parts[partIndex];
-		const existingEl = rendered.partElements.get(partIndex);
-		if (!part || !existingEl) { return; }
+		const existing = rendered.partSlots.get(partIndex);
+		if (!part || !existing) { return; }
 
-		switch (part.kind) {
-			case 'markdownContent': {
-				dom.clearNode(existingEl);
-				existingEl.appendChild(renderMarkdown(part.content).element);
-				existingEl.classList.toggle('sdk-chat-streaming-cursor', part.isStreaming);
-				break;
-			}
-			case 'thinking': {
-				existingEl.textContent = part.content;
-				break;
-			}
-			case 'toolInvocation': {
-				const newEl = this._createToolCallEl(part);
-				existingEl.replaceWith(newEl);
-				rendered.partElements.set(partIndex, newEl);
-				break;
-			}
+		// Try in-place update; if not possible, re-render
+		if (!this._partRenderer.update(part, existing)) {
+			existing.dispose();
+			const newPart = this._partRenderer.render(part);
+			existing.domNode.replaceWith(newPart.domNode);
+			rendered.partSlots.set(partIndex, newPart);
 		}
 	}
 
 	private _finalizeTurn(turnId: string): void {
 		const rendered = this._renderedTurns.get(turnId);
+		const turn = this._model.turns.find(t => t.id === turnId);
 		if (rendered) {
-			for (const el of rendered.partElements.values()) {
-				el.classList.remove('sdk-chat-streaming-cursor');
+			// Remove streaming cursors
+			for (const slot of rendered.partSlots.values()) {
+				slot.domNode.classList.remove('sdk-chat-streaming-cursor');
+			}
+
+			// Collapse completed tool calls into a summary
+			if (turn) {
+				const toolParts = turn.parts
+					.map((p, i) => ({ part: p, index: i }))
+					.filter(({ part }) => part.kind === 'toolInvocation' && part.state === 'complete');
+
+				if (toolParts.length > 1) {
+					// Hide individual tool call nodes
+					for (const { index } of toolParts) {
+						const slot = rendered.partSlots.get(index);
+						if (slot) {
+							slot.domNode.style.display = 'none';
+						}
+					}
+
+					// Add a summary line
+					const summaryEl = dom.append(rendered.valueContainer, $('.sdk-chat-tool-summary'));
+					const iconEl = dom.append(summaryEl, $(`span${ThemeIcon.asCSSSelector(Codicon.check)}`));
+					iconEl.classList.add('codicon');
+					const textEl = dom.append(summaryEl, $('span.sdk-chat-tool-summary-text'));
+					textEl.textContent = localize('sdkChat.tool.summary', "Used {0} tools", toolParts.length);
+
+					// Click to expand/collapse
+					let expanded = false;
+					dom.addDisposableListener(summaryEl, 'click', () => {
+						expanded = !expanded;
+						for (const { index } of toolParts) {
+							const slot = rendered.partSlots.get(index);
+							if (slot) {
+								slot.domNode.style.display = expanded ? '' : 'none';
+							}
+						}
+						summaryEl.classList.toggle('expanded', expanded);
+					});
+				}
 			}
 		}
 		this._setStreaming(false);
@@ -317,9 +378,10 @@ export class SdkChatWidget extends Disposable {
 		try {
 			if (!this._sessionId) {
 				const model = this._modelSelect.value;
+				const workingDirectory = this._folderPath || undefined;
 				this._setStatus(localize('sdkChat.status.creating', "Creating session..."));
-				CopilotSdkDebugLog.instance?.addEntry('\u2192', 'widget.createSession', JSON.stringify({ model }));
-				this._sessionId = await this._sdk.createSession({ model, streaming: true });
+				CopilotSdkDebugLog.instance?.addEntry('\u2192', 'widget.createSession', JSON.stringify({ model, workingDirectory }));
+				this._sessionId = await this._sdk.createSession({ model, streaming: true, workingDirectory });
 				CopilotSdkDebugLog.instance?.addEntry('\u2190', 'widget.createSession', this._sessionId.substring(0, 8));
 				this._onDidChangeSessionId.fire(this._sessionId);
 			}
@@ -375,10 +437,12 @@ export class SdkChatWidget extends Disposable {
 		}
 		this._sessionId = undefined;
 		this._model.clear();
-		this._renderedTurns.clear();
+		this._disposeRenderedTurns();
 		dom.clearNode(this._messagesContainer);
 		this._messagesContainer.style.display = 'none';
 		this._welcomeContainer.style.display = '';
+		// Move input back into welcome center
+		this._welcomeContainer.appendChild(this._inputArea);
 		this._setStreaming(false);
 		this._setStatus(localize('sdkChat.status.ready', "Ready"));
 		this._onDidChangeSessionId.fire(undefined);
@@ -389,7 +453,7 @@ export class SdkChatWidget extends Disposable {
 		if (this._sessionId === sessionId) { return; }
 
 		this._model.clear();
-		this._renderedTurns.clear();
+		this._disposeRenderedTurns();
 		dom.clearNode(this._messagesContainer);
 
 		this._sessionId = sessionId;
@@ -398,13 +462,27 @@ export class SdkChatWidget extends Disposable {
 		try {
 			CopilotSdkDebugLog.instance?.addEntry('\u2192', 'widget.loadSession', sessionId.substring(0, 8));
 			await this._sdk.resumeSession(sessionId, { streaming: true });
+
+			// Update folder picker from session metadata
+			const sessions = await this._sdk.listSessions();
+			const meta = sessions.find(s => s.sessionId === sessionId);
+			if (meta?.workspacePath) {
+				this._folderPath = meta.workspacePath;
+				this._folderLabel.textContent = meta.workspacePath.split('/').pop() ?? 'folder';
+			}
+
 			const events = await this._sdk.getMessages(sessionId);
 			CopilotSdkDebugLog.instance?.addEntry('\u2190', 'widget.loadSession', `${events.length} events`);
 
 			this._welcomeContainer.style.display = 'none';
 			this._messagesContainer.style.display = '';
+			// Move input from welcome to bottom of widget
+			if (this._inputArea.parentElement === this._welcomeContainer) {
+				this.element.appendChild(this._inputArea);
+			}
 
 			for (const event of events) { this._model.handleEvent(event); }
+			this._setStreaming(false);
 			this._setStatus(localize('sdkChat.status.ready', "Ready"));
 		} catch (err) {
 			this._logService.error(`[SdkChatWidget] Load session failed:`, err);
@@ -413,7 +491,21 @@ export class SdkChatWidget extends Disposable {
 		this._scrollToBottom();
 	}
 
+	private _disposeRenderedTurns(): void {
+		for (const turn of this._renderedTurns.values()) {
+			for (const slot of turn.partSlots.values()) {
+				slot.dispose();
+			}
+		}
+		this._renderedTurns.clear();
+	}
+
 	layout(_width: number, _height: number): void {
 		// CSS flexbox handles layout
+	}
+
+	override dispose(): void {
+		this._disposeRenderedTurns();
+		super.dispose();
 	}
 }
