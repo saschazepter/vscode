@@ -1401,6 +1401,7 @@ class ChatSlashStaticSlashCommandsContribution extends Disposable {
 		@IChatWidgetService chatWidgetService: IChatWidgetService,
 		@IInstantiationService instantiationService: IInstantiationService,
 		@IAgentSessionsService agentSessionsService: IAgentSessionsService,
+		@IChatService chatService: IChatService,
 	) {
 		super();
 		this._store.add(slashCommandService.registerSlashCommand({
@@ -1472,6 +1473,19 @@ class ChatSlashStaticSlashCommandsContribution extends Disposable {
 			locations: [ChatAgentLocation.Chat]
 		}, async () => {
 			await commandService.executeCommand('workbench.action.chat.configure.prompts');
+		}));
+		this._store.add(slashCommandService.registerSlashCommand({
+			command: 'rename',
+			detail: nls.localize('rename', "Rename this chat"),
+			sortText: 'z2_rename',
+			executeImmediately: false,
+			silent: true,
+			locations: [ChatAgentLocation.Chat]
+		}, async (prompt, _progress, _history, _location, sessionResource) => {
+			const title = prompt.trim();
+			if (title) {
+				chatService.setChatSessionTitle(sessionResource, title);
+			}
 		}));
 		this._store.add(slashCommandService.registerSlashCommand({
 			command: 'help',
