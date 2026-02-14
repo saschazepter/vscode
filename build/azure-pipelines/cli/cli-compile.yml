@@ -109,6 +109,7 @@ steps:
             fi
           fi
 
+          sccache --start-server
           cargo build --release --target ${{ parameters.VSCODE_CLI_TARGET }} --bin=code
 
           # verify glibc requirement
@@ -137,12 +138,16 @@ steps:
           VSCODE_CLI_COMMIT: $(Build.SourceVersion)
           GITHUB_TOKEN: "$(github-distro-mixin-password)"
           RUSTC_WRAPPER: sccache
+          SCCACHE_ERROR_LOG: $(Pipeline.Workspace)/sccache_log.txt
+          SCCACHE_LOG: debug
           SCCACHE_DIR: $(Pipeline.Workspace)/sccache
           ${{ each pair in parameters.VSCODE_CLI_ENV }}:
             ${{ pair.key }}: ${{ pair.value }}
 
     - ${{ else }}:
-      - script: cargo build --release --target ${{ parameters.VSCODE_CLI_TARGET }} --bin=code
+      - script: |
+          sccache --start-server
+          cargo build --release --target ${{ parameters.VSCODE_CLI_TARGET }} --bin=code
         displayName: Compile ${{ parameters.VSCODE_CLI_TARGET }}
         workingDirectory: $(Build.SourcesDirectory)/cli
         env:
@@ -150,6 +155,8 @@ steps:
           VSCODE_CLI_COMMIT: $(Build.SourceVersion)
           RUSTC_WRAPPER: sccache
           SCCACHE_DIR: $(Pipeline.Workspace)/sccache
+          SCCACHE_ERROR_LOG: $(Pipeline.Workspace)/sccache_log.txt
+          SCCACHE_LOG: debug
           ${{ each pair in parameters.VSCODE_CLI_ENV }}:
             ${{ pair.key }}: ${{ pair.value }}
 
@@ -214,3 +221,18 @@ steps:
     condition: succeededOrFailed()
     env:
       SCCACHE_DIR: $(Pipeline.Workspace)/sccache
+
+  - script: sccache --stop-server
+    displayName: Stop sccache server
+    condition: succeededOrFailed()
+    env:
+      SCCACHE_DIR: $(Pipeline.Workspace)/sccache
+
+  - task: 1ES.PublishPipelineArtifact@1
+    displayName: Publish sccache log
+    condition: succeededOrFailed()
+    inputs:
+      targetPath: $(Pipeline.Workspace)/sccache_log.txt
+      artifactName: sccache_log_${{ parameters.VSCODE_CLI_TARGET }}
+      sbomEnabled: false
+      isProduction: false
