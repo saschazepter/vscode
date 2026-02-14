@@ -423,6 +423,20 @@ function packageTask(platform: string, arch: string, sourceFolderName: string, d
 			.pipe(filter(['**', `!**/${config.version}/**`, '!**/bin/darwin-arm64-87/**', '!**/package-lock.json', '!**/yarn.lock', '!**/*.{js,css}.map']))
 			.pipe(util.cleanNodeModules(path.join(import.meta.dirname, '.moduleignore')))
 			.pipe(util.cleanNodeModules(path.join(import.meta.dirname, `.moduleignore.${process.platform}`)))
+			.pipe(filter((() => {
+				// Strip @github/copilot platform packages for wrong architectures.
+				// Keep only the package matching the target platform-arch.
+				const copilotPlatforms = [
+					'darwin-arm64', 'darwin-x64',
+					'linux-arm64', 'linux-x64',
+					'win32-arm64', 'win32-x64',
+				];
+				const targetPlatformArch = `${platform}-${arch}`;
+				const excludes = copilotPlatforms
+					.filter(p => p !== targetPlatformArch)
+					.map(p => `!**/node_modules/@github/copilot-${p}/**`);
+				return ['**', ...excludes];
+			})()))
 			.pipe(jsFilter)
 			.pipe(util.rewriteSourceMappingURL(sourceMappingURLBase))
 			.pipe(jsFilter.restore)
