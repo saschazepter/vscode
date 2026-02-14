@@ -126,12 +126,17 @@ class AccountWidget extends ActionViewItem {
 			this.showAccountMenu(this.accountButton!.element);
 		}));
 
-		// Update button (shown only when restart to update is needed)
+		// Update button (shown for progress and restart-to-update states)
 		const updateContainer = append(container, $('.account-widget-update'));
 		this.updateButton = this.viewItemDisposables.add(new Button(updateContainer, {
 			...defaultButtonStyles,
-			title: localize('restartToUpdate', "Restart to Update"),
+			secondary: true,
+			title: false,
 			supportIcons: true,
+			buttonSecondaryBackground: 'transparent',
+			buttonSecondaryHoverBackground: undefined,
+			buttonSecondaryForeground: undefined,
+			buttonSecondaryBorder: undefined,
 		}));
 		this.updateButton.element.classList.add('account-widget-update-button');
 		this.updateButton.label = `$(${Codicon.debugRestart.id}) ${localize('update', "Update")}`;
@@ -143,6 +148,15 @@ class AccountWidget extends ActionViewItem {
 
 	private isUpdateAvailable(): boolean {
 		return this.updateService.state.type === StateType.Ready;
+	}
+
+	private isUpdateInProgress(): boolean {
+		const type = this.updateService.state.type;
+		return type === StateType.CheckingForUpdates
+			|| type === StateType.Downloading
+			|| type === StateType.Downloaded
+			|| type === StateType.Updating
+			|| type === StateType.Overwriting;
 	}
 
 	private showAccountMenu(anchor: HTMLElement): void {
@@ -185,7 +199,36 @@ class AccountWidget extends ActionViewItem {
 		if (!this.updateButton) {
 			return;
 		}
-		this.updateButton.element.parentElement!.style.display = this.isUpdateAvailable() ? '' : 'none';
+
+		const state = this.updateService.state;
+		if (this.isUpdateInProgress()) {
+			this.updateButton.element.parentElement!.style.display = '';
+			this.updateButton.enabled = false;
+			this.updateButton.label = `$(${Codicon.loading.id}~spin) ${this.getUpdateProgressMessage(state.type)}`;
+		} else if (this.isUpdateAvailable()) {
+			this.updateButton.element.parentElement!.style.display = '';
+			this.updateButton.enabled = true;
+			this.updateButton.label = `$(${Codicon.debugRestart.id}) ${localize('update', "Update")}`;
+		} else {
+			this.updateButton.element.parentElement!.style.display = 'none';
+		}
+	}
+
+	private getUpdateProgressMessage(type: StateType): string {
+		switch (type) {
+			case StateType.CheckingForUpdates:
+				return localize('checkingForUpdates', "Checking for Updates...");
+			case StateType.Downloading:
+				return localize('downloadingUpdate', "Downloading Update...");
+			case StateType.Downloaded:
+				return localize('installingUpdate', "Installing Update...");
+			case StateType.Updating:
+				return localize('updatingApp', "Updating...");
+			case StateType.Overwriting:
+				return localize('overwritingUpdate', "Downloading Update...");
+			default:
+				return localize('updating', "Updating...");
+		}
 	}
 
 	private async update(): Promise<void> {

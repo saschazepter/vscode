@@ -45,13 +45,27 @@
 
 /* Update Button */
 .monaco-workbench .part.sidebar > .sidebar-footer .account-widget-update {
-	flex-shrink: 0;
+	overflow: hidden;
+	min-width: 0;
+	flex-shrink: 1;
 }
 
 .monaco-workbench .part.sidebar > .sidebar-footer .account-widget-update-button {
+	border: none;
+	padding: 4px 8px;
 	font-size: 12px;
 	height: auto;
-	padding: 4px 8px;
 	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	background: transparent;
+	color: var(--vscode-sideBar-foreground);
+	width: 100%;
+	text-align: left;
+	justify-content: flex-start;
 	border-radius: 4px;
+}
+
+.monaco-workbench .part.sidebar > .sidebar-footer .account-widget-update-button:hover:not(:disabled) {
+	background-color: var(--vscode-toolbar-hoverBackground);
 }
