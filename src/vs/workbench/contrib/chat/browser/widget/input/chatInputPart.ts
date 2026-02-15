@@ -1134,6 +1134,68 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		}
 	}
 
+	/**
+	 * Pre-select the model in the model picker based on the `modelId` from the
+	 * last request in the current session's history. This ensures that when a
+	 * contributed chat session is reopened, the model picker shows the model
+	 * that was last used - providing continuity.
+	 *
+	 * Skips if the session's input state already has an explicit `selectedModel`
+	 * (e.g., from `transferredState.inputState`).
+	 */
+	private preselectModelFromSessionHistory(): void {
+		const sessionResource = this._widget?.viewModel?.model.sessionResource;
+		const ctx = sessionResource ? this.chatService.getChatSessionFromInternalUri(sessionResource) : undefined;
+		const requiresCustomModels = ctx && this.chatSessionsService.requiresCustomModelsForSessionType(ctx.chatSessionType);
+		if (!requiresCustomModels) {
+			return;
+		}
+
+		const requests = this._widget?.viewModel?.model.getRequests();
+		if (!requests || requests.length === 0) {
+			return;
+		}
+
+		// Find the modelId from the last request that has one
+		let lastModelId: string | undefined;
+		for (let i = requests.length - 1; i >= 0; i--) {
+			if (requests[i].modelId) {
+				lastModelId = requests[i].modelId;
+				break;
+			}
+		}
+
+		if (!lastModelId) {
+			return;
+		}
+
+		const tryMatch = () => {
+			const models = this.getModels();
+			// Try exact identifier match first (e.g. "copilot/gpt-4o")
+			let match = models.find(m => m.identifier === lastModelId);
+			if (!match) {
+				// Fallback: match on metadata.id (short model ID from the extension)
+				match = models.find(m => m.metadata.id === lastModelId);
+			}
+			return match;
+		};
+
+		const match = tryMatch();
+		if (match) {
+			this.setCurrentLanguageModel(match);
+			return;
+		}
+
+		// Models may not be loaded yet - wait for them
+		this._waitForPersistedLanguageModel.value = this.languageModelsService.onDidChangeLanguageModels(() => {
+			const found = tryMatch();
+			if (found) {
+				this._waitForPersistedLanguageModel.clear();
+				this.setCurrentLanguageModel(found);
+			}
+		});
+	}
+
 	private setCurrentLanguageModelToDefault() {
 		const allModels = this.getModels();
 		const defaultModel = allModels.find(m => m.metadata.isDefaultForLocation[this.location]) || allModels[0];
@@ -1859,6 +1921,10 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 
 			// Validate that the current model belongs to the new session's pool
 			this.checkModelInSessionPool();
+
+			// For contributed sessions with history, pre-select the model
+			// from the last request so the user resumes with the same model.
+			this.preselectModelFromSessionHistory();
 		}));
 
 		let elements;
