@@ -181,9 +181,10 @@ export class ModalEditorPart {
 			let height: number;
 
 			if (editorPart.maximized) {
-				const padding = Math.max(titleBarOffset /* keep away from title bar to prevent clipping issues with WCO */, 16);
-				width = Math.max(containerDimension.width - padding, 0);
-				height = Math.max(availableHeight - padding, 0);
+				const horizontalPadding = 16;
+				const verticalPadding = Math.max(titleBarOffset /* keep away from title bar to prevent clipping issues with WCO */, 16);
+				width = Math.max(containerDimension.width - horizontalPadding, 0);
+				height = Math.max(availableHeight - verticalPadding, 0);
 			} else {
 				const maxWidth = 1200;
 				const maxHeight = 800;
