@@ -250,7 +250,8 @@ export class SetupAgent extends Disposable implements IChatAgentImplementation {
 
 		progress({
 			kind: 'progressMessage',
-			content: new MarkdownString(localize('waitingChat', "Getting chat ready...")),
+			content: new MarkdownString(localize('waitingChat', "Getting chat ready")),
+			shimmer: true,
 		});
 
 		await this.forwardRequestToChat(requestModel, progress, chatService, languageModelsService, chatAgentService, chatWidgetService, languageModelToolsService);
@@ -317,7 +318,8 @@ export class SetupAgent extends Disposable implements IChatAgentImplementation {
 			const timeoutHandle = setTimeout(() => {
 				progress({
 					kind: 'progressMessage',
-					content: new MarkdownString(localize('waitingChat2', "Chat is almost ready...")),
+					content: new MarkdownString(localize('waitingChat2', "Chat is almost ready")),
+					shimmer: true,
 				});
 			}, 10000);
 
@@ -548,13 +550,15 @@ export class SetupAgent extends Disposable implements IChatAgentImplementation {
 				case ChatSetupStep.SigningIn:
 					progress({
 						kind: 'progressMessage',
-						content: new MarkdownString(localize('setupChatSignIn2', "Signing in to {0}...", defaultAccountService.getDefaultAccountAuthenticationProvider().name)),
+						content: new MarkdownString(localize('setupChatSignIn2', "Signing in to {0}", defaultAccountService.getDefaultAccountAuthenticationProvider().name)),
+						shimmer: true,
 					});
 					break;
 				case ChatSetupStep.Installing:
 					progress({
 						kind: 'progressMessage',
-						content: new MarkdownString(localize('installingChat', "Getting chat ready...")),
+						content: new MarkdownString(localize('installingChat', "Getting chat ready")),
+						shimmer: true,
 					});
 					break;
 			}
