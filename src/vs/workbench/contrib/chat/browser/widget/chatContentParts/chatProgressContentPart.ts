@@ -7,7 +7,7 @@ import { $, append } from '../../../../../../base/browser/dom.js';
 import { alert } from '../../../../../../base/browser/ui/aria/aria.js';
 import { Codicon } from '../../../../../../base/common/codicons.js';
 import { MarkdownString, type IMarkdownString } from '../../../../../../base/common/htmlContent.js';
-import { Disposable, MutableDisposable } from '../../../../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore, MutableDisposable } from '../../../../../../base/common/lifecycle.js';
 import { ThemeIcon } from '../../../../../../base/common/themables.js';
 import { IMarkdownRenderer } from '../../../../../../platform/markdown/browser/markdownRenderer.js';
 import { IRenderedMarkdown } from '../../../../../../base/browser/markdownRenderer.js';
@@ -33,6 +33,7 @@ export class ChatProgressContentPart extends Disposable implements IChatContentP
 	private readonly showSpinner: boolean;
 	private readonly isHidden: boolean;
 	private readonly renderedMessage = this._register(new MutableDisposable<IRenderedMarkdown>());
+	private readonly _fileWidgetStore = this._register(new DisposableStore());
 	private currentContent: IMarkdownString;
 
 	constructor(
@@ -67,7 +68,7 @@ export class ChatProgressContentPart extends Disposable implements IChatContentP
 		const codicon = icon ? icon : this.showSpinner ? ThemeIcon.modify(Codicon.loading, 'spin') : Codicon.check;
 		const result = this.chatContentMarkdownRenderer.render(progress.content);
 		result.element.classList.add('progress-step');
-		renderFileWidgets(result.element, this.instantiationService, this.chatMarkdownAnchorService, this._store);
+		renderFileWidgets(result.element, this.instantiationService, this.chatMarkdownAnchorService, this._fileWidgetStore);
 
 		const tooltip: IMarkdownString | undefined = this.createApprovalMessage();
 		const progressPart = this._register(instantiationService.createInstance(ChatProgressSubPart, result.element, codicon, tooltip));
@@ -83,7 +84,8 @@ export class ChatProgressContentPart extends Disposable implements IChatContentP
 		// Render the new message
 		const result = this._register(this.chatContentMarkdownRenderer.render(content));
 		result.element.classList.add('progress-step');
-		renderFileWidgets(result.element, this.instantiationService, this.chatMarkdownAnchorService, this._store);
+		this._fileWidgetStore.clear();
+		renderFileWidgets(result.element, this.instantiationService, this.chatMarkdownAnchorService, this._fileWidgetStore);
 
 		// Replace the old message container with the new one
 		if (this.renderedMessage.value) {
