@@ -1139,9 +1139,6 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 	 * last request in the current session's history. This ensures that when a
 	 * contributed chat session is reopened, the model picker shows the model
 	 * that was last used - providing continuity.
-	 *
-	 * Skips if the session's input state already has an explicit `selectedModel`
-	 * (e.g., from `transferredState.inputState`).
 	 */
 	private preselectModelFromSessionHistory(): void {
 		const sessionResource = this._widget?.viewModel?.model.sessionResource;
