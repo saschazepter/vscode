@@ -273,7 +273,8 @@ class ModalEditorPartImpl extends EditorPart implements IModalEditorPart {
 			tabActionCloseVisibility: editorCount > 1,
 			editorActionsLocation: 'default',
 			tabHeight: 'default',
-			wrapTabs: false
+			wrapTabs: false,
+			allowDropIntoGroup: false
 		});
 	}
 
