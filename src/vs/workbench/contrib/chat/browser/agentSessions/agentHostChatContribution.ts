@@ -12,13 +12,13 @@ import { URI } from '../../../../../base/common/uri.js';
 import { ExtensionIdentifier } from '../../../../../platform/extensions/common/extensions.js';
 import { ILogService } from '../../../../../platform/log/common/log.js';
 import { IProductService } from '../../../../../platform/product/common/productService.js';
-import { IAgentHostService } from '../../../../../platform/agent/common/agentService.js';
+import { IAgentHostService, IAgentToolCompleteEvent, IAgentToolStartEvent } from '../../../../../platform/agent/common/agentService.js';
 import { IDefaultAccountService } from '../../../../../platform/defaultAccount/common/defaultAccount.js';
 import { IAuthenticationService } from '../../../../services/authentication/common/authentication.js';
 import { IWorkbenchContribution } from '../../../../common/contributions.js';
 import { ChatAgentLocation, ChatModeKind } from '../../common/constants.js';
 import { IChatAgentData, IChatAgentImplementation, IChatAgentRequest, IChatAgentResult, IChatAgentService } from '../../common/participants/chatAgents.js';
-import { IChatProgress } from '../../common/chatService/chatService.js';
+import { IChatProgress, IChatTerminalToolInvocationData, IChatToolInvocationSerialized, ToolConfirmKind } from '../../common/chatService/chatService.js';
 import { ChatToolInvocation } from '../../common/model/chatProgressTypes/chatToolInvocation.js';
 import { IToolData, ToolDataSource } from '../../common/tools/languageModelToolsService.js';
 import { ChatSessionStatus, IChatSession, IChatSessionContentProvider, IChatSessionHistoryItem, IChatSessionItem, IChatSessionItemController, IChatSessionsService } from '../../common/chatSessionsService.js';
@@ -112,19 +112,97 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		const sessionId = sessionResource.path.substring(1); // strip leading /
 
 		// Load history (skip for brand-new untitled sessions)
-		let history: IChatSessionHistoryItem[] = [];
+		const history: IChatSessionHistoryItem[] = [];
 		if (!sessionId.startsWith('untitled-')) {
-			const messages = await this._agentHostService.getSessionMessages(sessionId);
-			history = messages.map(m => {
-				if (m.role === 'user') {
-					return { type: 'request' as const, prompt: m.content, participant: AGENT_HOST_AGENT_ID };
+			const events = await this._agentHostService.getSessionMessages(sessionId);
+
+			// Group events into request/response pairs. Tool events are interleaved
+			// into the preceding assistant response.
+			let currentResponseParts: IChatProgress[] | undefined;
+			const toolStartEvents = new Map<string, IAgentToolStartEvent>();
+
+			for (const e of events) {
+				if (e.type === 'message') {
+					if (e.role === 'user') {
+						// Flush any pending response
+						if (currentResponseParts) {
+							history.push({ type: 'response', parts: currentResponseParts, participant: AGENT_HOST_AGENT_ID });
+							currentResponseParts = undefined;
+						}
+						history.push({ type: 'request', prompt: e.content, participant: AGENT_HOST_AGENT_ID });
+					} else {
+						if (!currentResponseParts) {
+							currentResponseParts = [];
+						}
+						if (e.content) {
+							currentResponseParts.push({ kind: 'markdownContent', content: new MarkdownString(e.content) });
+						}
+					}
+				} else if (e.type === 'tool_start') {
+					toolStartEvents.set(e.toolCallId, e);
+					if (!currentResponseParts) {
+						currentResponseParts = [];
+					}
+					// Build a serialized tool invocation from the protocol event
+					const toolSpecificData = (e.toolKind === 'terminal' && e.toolInput)
+						? { kind: 'terminal' as const, commandLine: { original: e.toolInput }, language: e.language ?? 'shellscript' }
+						: undefined;
+					currentResponseParts.push({
+						kind: 'toolInvocationSerialized',
+						toolCallId: e.toolCallId,
+						toolId: e.toolName,
+						source: ToolDataSource.Internal,
+						invocationMessage: new MarkdownString(e.invocationMessage),
+						originMessage: undefined,
+						pastTenseMessage: undefined,
+						isConfirmed: { type: ToolConfirmKind.ConfirmationNotNeeded },
+						isComplete: false, // will be updated by tool_complete
+						presentation: undefined,
+						toolSpecificData,
+					} satisfies IChatToolInvocationSerialized);
+				} else if (e.type === 'tool_complete') {
+					const startEvent = toolStartEvents.get(e.toolCallId);
+					toolStartEvents.delete(e.toolCallId);
+					// Find and update the matching tool invocation in currentResponseParts
+					if (currentResponseParts) {
+						const idx = currentResponseParts.findIndex(
+							p => p.kind === 'toolInvocationSerialized' && p.toolCallId === e.toolCallId
+						);
+						if (idx >= 0) {
+							const existing = currentResponseParts[idx] as IChatToolInvocationSerialized;
+							const isTerminal = existing.toolSpecificData?.kind === 'terminal';
+							currentResponseParts[idx] = {
+								...existing,
+								isComplete: true,
+								pastTenseMessage: isTerminal ? undefined : new MarkdownString(e.pastTenseMessage),
+								toolSpecificData: isTerminal
+									? {
+										...existing.toolSpecificData as IChatTerminalToolInvocationData,
+										terminalCommandOutput: e.toolOutput !== undefined ? { text: e.toolOutput } : undefined,
+										terminalCommandState: { exitCode: e.success ? 0 : 1 },
+									}
+									: existing.toolSpecificData,
+							};
+						}
+					}
+					if (!startEvent) {
+						// Orphan tool_complete without matching tool_start -- skip
+					}
 				}
-				return {
-					type: 'response' as const,
-					parts: [{ kind: 'markdownContent' as const, content: new MarkdownString(m.content) }],
-					participant: AGENT_HOST_AGENT_ID,
-				};
-			});
+			}
+			// Mark any incomplete tool invocations as complete (orphaned tool_start without tool_complete)
+			if (currentResponseParts) {
+				for (let i = 0; i < currentResponseParts.length; i++) {
+					const part = currentResponseParts[i];
+					if (part.kind === 'toolInvocationSerialized' && !part.isComplete) {
+						currentResponseParts[i] = { ...part, isComplete: true };
+					}
+				}
+			}
+			// Flush trailing response
+			if (currentResponseParts) {
+				history.push({ type: 'response', parts: currentResponseParts, participant: AGENT_HOST_AGENT_ID });
+			}
 		}
 
 		// Set up streaming state
@@ -143,6 +221,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 			isCompleteObs,
 			onWillDispose: onWillDispose.event,
 			requestHandler: async (request, progress, _history, cancellationToken) => {
+				this._logService.info(`[AgentHost] requestHandler called for session ${sessionId}, message: "${request.message.substring(0, 50)}"`);
 				const resolvedId = await this._resolveSessionId(sessionResource);
 
 				const activeSession = this._activeSessions.get(sessionId);
@@ -156,7 +235,11 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 					activeSession.isCompleteObs.set(true, undefined);
 				}
 			},
-			interruptActiveResponseCallback: async () => {
+			// Only provide interruptActiveResponseCallback for sessions without
+			// existing history. When history exists and isCompleteObs starts true,
+			// the chat service creates a "pending request" that never gets cleaned
+			// up, blocking all future requests with "already has a pending request".
+			interruptActiveResponseCallback: history.length > 0 ? undefined : async () => {
 				// TODO: Hook up session.abort()
 				return true;
 			},
@@ -211,7 +294,9 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		progress: (parts: IChatProgress[]) => void,
 		cancellationToken: CancellationToken,
 	): Promise<IChatAgentResult> {
+		this._logService.info(`[AgentHost] _invokeAgent called for resource: ${request.sessionResource.toString()}`);
 		const sessionId = await this._resolveSessionId(request.sessionResource);
+		this._logService.info(`[AgentHost] resolved session ID: ${sessionId}`);
 
 		await this._sendAndStreamResponse(sessionId, request.message, progress, cancellationToken);
 
@@ -270,7 +355,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 					break;
 
 				case 'tool_start': {
-					const invocation = this._createToolInvocation(e.toolCallId, e.toolName, e.toolArguments);
+					const invocation = this._createToolInvocation(e);
 					activeToolInvocations.set(e.toolCallId, invocation);
 					progress([invocation]);
 					break;
@@ -280,7 +365,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 					const invocation = activeToolInvocations.get(e.toolCallId);
 					if (invocation) {
 						activeToolInvocations.delete(e.toolCallId);
-						invocation.didExecuteTool(!e.success ? { content: [], toolResultError: e.error?.message } : undefined);
+						this._finalizeToolInvocation(invocation, e);
 					}
 					break;
 				}
@@ -297,7 +382,9 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		});
 
 		try {
+			this._logService.info(`[AgentHost] Sending message to session ${sessionId}`);
 			await this._agentHostService.sendMessage(sessionId, message);
+			this._logService.info(`[AgentHost] sendMessage returned for session ${sessionId}`);
 		} catch (err) {
 			this._logService.error(`[AgentHost] [${sessionId}] sendMessage failed`, err);
 			finish();
@@ -332,22 +419,56 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		return sessionId;
 	}
 
-	private _createToolInvocation(toolCallId: string, toolName: string, toolArguments: string | undefined): ChatToolInvocation {
+	private _createToolInvocation(event: IAgentToolStartEvent): ChatToolInvocation {
 		const toolData: IToolData = {
-			id: toolName,
+			id: event.toolName,
 			source: ToolDataSource.Internal,
-			displayName: toolName,
-			modelDescription: toolName,
+			displayName: event.displayName,
+			modelDescription: event.toolName,
 		};
 		let parameters: unknown;
-		if (toolArguments) {
+		if (event.toolArguments) {
 			try {
-				parameters = JSON.parse(toolArguments);
+				parameters = JSON.parse(event.toolArguments);
 			} catch {
 				// malformed JSON - leave parameters undefined
 			}
 		}
-		return new ChatToolInvocation(undefined, toolData, toolCallId, undefined, parameters);
+
+		const invocation = new ChatToolInvocation(undefined, toolData, event.toolCallId, undefined, parameters);
+		invocation.invocationMessage = new MarkdownString(event.invocationMessage);
+
+		// For terminal-kind tools, render as a proper terminal command block
+		if (event.toolKind === 'terminal' && event.toolInput) {
+			invocation.toolSpecificData = {
+				kind: 'terminal',
+				commandLine: { original: event.toolInput },
+				language: event.language ?? 'shellscript',
+			} satisfies IChatTerminalToolInvocationData;
+		}
+
+		return invocation;
+	}
+
+	private _finalizeToolInvocation(invocation: ChatToolInvocation, event: IAgentToolCompleteEvent): void {
+		// Update terminal tool data with output and exit code.
+		// Don't set pastTenseMessage for terminal tools -- the terminal command block
+		// UI handles the display. Setting it would create a redundant markdown message
+		// beneath the command block.
+		if (invocation.toolSpecificData?.kind === 'terminal') {
+			const terminalData = invocation.toolSpecificData as IChatTerminalToolInvocationData;
+			invocation.toolSpecificData = {
+				...terminalData,
+				terminalCommandOutput: event.toolOutput !== undefined ? { text: event.toolOutput } : undefined,
+				terminalCommandState: {
+					exitCode: event.success ? 0 : 1,
+				},
+			};
+		} else {
+			invocation.pastTenseMessage = new MarkdownString(event.pastTenseMessage);
+		}
+
+		invocation.didExecuteTool(!event.success ? { content: [], toolResultError: event.error?.message } : undefined);
 	}
 
 	private _finalizeOutstandingTools(activeToolInvocations: Map<string, ChatToolInvocation>): void {

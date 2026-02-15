@@ -1,4 +1,6 @@
-## Chat Sessions / Background Agent Architecture
+## Chat sessions / background agent architecture
+
+> **Keep this document in sync with the code.** If you change how session types are registered, modify the extension point, or update the agent-host's registration pattern, update this document as part of the same change.
 
 There are **three layers** that connect to form a chat session type (like "Background Agent" / "Copilot CLI"):
 

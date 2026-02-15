@@ -16,7 +16,8 @@ import { IDefaultAccountService } from '../../../../../../platform/defaultAccoun
 import { IAuthenticationService } from '../../../../../services/authentication/common/authentication.js';
 import { IChatAgentData, IChatAgentImplementation, IChatAgentRequest, IChatAgentService } from '../../../common/participants/chatAgents.js';
 import { ChatAgentLocation } from '../../../common/constants.js';
-import { IChatMarkdownContent, IChatProgress, IChatToolInvocation } from '../../../common/chatService/chatService.js';
+import { IChatMarkdownContent, IChatProgress, IChatTerminalToolInvocationData, IChatToolInvocation } from '../../../common/chatService/chatService.js';
+import { IMarkdownString } from '../../../../../../base/common/htmlContent.js';
 import { IChatSessionsService, IChatSessionContentProvider, IChatSessionItemController } from '../../../common/chatSessionsService.js';
 import { IProductService } from '../../../../../../platform/product/common/productService.js';
 import { AgentHostChatContribution, AgentHostSessionListController, AgentHostSessionHandler } from '../../../browser/agentSessions/agentHostChatContribution.js';
@@ -173,6 +174,14 @@ function makeRequest(overrides: Partial<{ message: string; sessionResource: URI 
 		variables: { variables: [] },
 		location: ChatAgentLocation.Chat,
 	});
+}
+
+/** Extract the text value from a string or IMarkdownString. */
+function textOf(value: string | IMarkdownString | undefined): string | undefined {
+	if (value === undefined) {
+		return undefined;
+	}
+	return typeof value === 'string' ? value : value.value;
 }
 
 suite('AgentHostChatContribution', () => {
@@ -365,7 +374,7 @@ suite('AgentHostChatContribution', () => {
 
 			agentHostService.sendMessage = async (sessionId: string) => {
 				agentHostService.sendMessageCalls.push({ sessionId, prompt: '' });
-				agentHostService.fireProgress({ sessionId, type: 'tool_start', toolCallId: 'tc-1', toolName: 'read_file' });
+				agentHostService.fireProgress({ sessionId, type: 'tool_start', toolCallId: 'tc-1', toolName: 'read_file', displayName: 'Read File', invocationMessage: 'Reading file' });
 				agentHostService.fireProgress({ sessionId, type: 'idle' });
 			};
 
@@ -387,8 +396,8 @@ suite('AgentHostChatContribution', () => {
 
 			agentHostService.sendMessage = async (sessionId: string) => {
 				agentHostService.sendMessageCalls.push({ sessionId, prompt: '' });
-				agentHostService.fireProgress({ sessionId, type: 'tool_start', toolCallId: 'tc-2', toolName: 'shell' });
-				agentHostService.fireProgress({ sessionId, type: 'tool_complete', toolCallId: 'tc-2', success: true });
+				agentHostService.fireProgress({ sessionId, type: 'tool_start', toolCallId: 'tc-2', toolName: 'bash', displayName: 'Bash', invocationMessage: 'Running Bash command' });
+				agentHostService.fireProgress({ sessionId, type: 'tool_complete', toolCallId: 'tc-2', success: true, pastTenseMessage: 'Ran Bash command' });
 				agentHostService.fireProgress({ sessionId, type: 'idle' });
 			};
 
@@ -413,8 +422,8 @@ suite('AgentHostChatContribution', () => {
 
 			agentHostService.sendMessage = async (sessionId: string) => {
 				agentHostService.sendMessageCalls.push({ sessionId, prompt: '' });
-				agentHostService.fireProgress({ sessionId, type: 'tool_start', toolCallId: 'tc-3', toolName: 'shell' });
-				agentHostService.fireProgress({ sessionId, type: 'tool_complete', toolCallId: 'tc-3', success: false, error: { message: 'command not found' } });
+				agentHostService.fireProgress({ sessionId, type: 'tool_start', toolCallId: 'tc-3', toolName: 'bash', displayName: 'Bash', invocationMessage: 'Running Bash command' });
+				agentHostService.fireProgress({ sessionId, type: 'tool_complete', toolCallId: 'tc-3', success: false, pastTenseMessage: '"Bash" failed', toolOutput: 'command not found', error: { message: 'command not found' } });
 				agentHostService.fireProgress({ sessionId, type: 'idle' });
 			};
 
@@ -438,7 +447,7 @@ suite('AgentHostChatContribution', () => {
 
 			agentHostService.sendMessage = async (sessionId: string) => {
 				agentHostService.sendMessageCalls.push({ sessionId, prompt: '' });
-				agentHostService.fireProgress({ sessionId, type: 'tool_start', toolCallId: 'tc-bad', toolName: 'shell', toolArguments: '{not valid json' });
+				agentHostService.fireProgress({ sessionId, type: 'tool_start', toolCallId: 'tc-bad', toolName: 'bash', displayName: 'Bash', invocationMessage: 'Running Bash command', toolArguments: '{not valid json' });
 				agentHostService.fireProgress({ sessionId, type: 'idle' });
 			};
 
@@ -461,7 +470,7 @@ suite('AgentHostChatContribution', () => {
 			agentHostService.sendMessage = async (sessionId: string) => {
 				agentHostService.sendMessageCalls.push({ sessionId, prompt: '' });
 				// tool_start without tool_complete
-				agentHostService.fireProgress({ sessionId, type: 'tool_start', toolCallId: 'tc-orphan', toolName: 'shell' });
+				agentHostService.fireProgress({ sessionId, type: 'tool_start', toolCallId: 'tc-orphan', toolName: 'bash', displayName: 'Bash', invocationMessage: 'Running Bash command' });
 				agentHostService.fireProgress({ sessionId, type: 'idle' });
 			};
 
@@ -535,7 +544,7 @@ suite('AgentHostChatContribution', () => {
 
 			agentHostService.sendMessage = async (sessionId: string) => {
 				agentHostService.sendMessageCalls.push({ sessionId, prompt: '' });
-				agentHostService.fireProgress({ sessionId, type: 'tool_start', toolCallId: 'tc-cancel', toolName: 'shell' });
+				agentHostService.fireProgress({ sessionId, type: 'tool_start', toolCallId: 'tc-cancel', toolName: 'bash', displayName: 'Bash', invocationMessage: 'Running Bash command' });
 				cts.cancel();
 			};
 
@@ -591,6 +600,182 @@ suite('AgentHostChatContribution', () => {
 			disposables.add(toDisposable(() => session.dispose()));
 
 			assert.strictEqual(session.history.length, 0);
+		});
+	});
+
+	// ---- Tool invocation rendering -----------------------------------------
+
+	suite('tool invocation rendering', () => {
+
+		test('bash tool renders as terminal command block with output', async () => {
+			const { chatAgentService, agentHostService } = createContribution(disposables);
+
+			const agent = chatAgentService.registeredAgents.get('agent-host')!;
+			const collected: IChatProgress[][] = [];
+
+			agentHostService.sendMessage = async (sessionId: string) => {
+				agentHostService.sendMessageCalls.push({ sessionId, prompt: '' });
+				agentHostService.fireProgress({
+					sessionId, type: 'tool_start', toolCallId: 'tc-shell', toolName: 'bash',
+					displayName: 'Bash', invocationMessage: 'Running `echo hello`',
+					toolInput: 'echo hello', toolKind: 'terminal',
+					toolArguments: JSON.stringify({ command: 'echo hello' }),
+				});
+				agentHostService.fireProgress({ sessionId, type: 'tool_complete', toolCallId: 'tc-shell', success: true, pastTenseMessage: 'Ran `echo hello`', toolOutput: 'hello\n', result: { content: 'hello\n' } });
+				agentHostService.fireProgress({ sessionId, type: 'idle' });
+			};
+
+			await agent.impl.invoke(makeRequest(), (parts) => collected.push(parts), [], CancellationToken.None);
+
+			const invocation = collected[0][0] as IChatToolInvocation;
+			const termData = invocation.toolSpecificData as IChatTerminalToolInvocationData;
+			assert.deepStrictEqual({
+				kind: invocation.kind,
+				invocationMessage: textOf(invocation.invocationMessage),
+				pastTenseMessage: textOf(invocation.pastTenseMessage),
+				dataKind: termData.kind,
+				commandLine: termData.commandLine.original,
+				language: termData.language,
+				outputText: termData.terminalCommandOutput?.text,
+				exitCode: termData.terminalCommandState?.exitCode,
+			}, {
+				kind: 'toolInvocation',
+				invocationMessage: 'Running `echo hello`',
+				pastTenseMessage: undefined,
+				dataKind: 'terminal',
+				commandLine: 'echo hello',
+				language: 'shellscript',
+				outputText: 'hello\n',
+				exitCode: 0,
+			});
+		});
+
+		test('bash tool failure sets exit code 1 and error output', async () => {
+			const { chatAgentService, agentHostService } = createContribution(disposables);
+
+			const agent = chatAgentService.registeredAgents.get('agent-host')!;
+			const collected: IChatProgress[][] = [];
+
+			agentHostService.sendMessage = async (sessionId: string) => {
+				agentHostService.sendMessageCalls.push({ sessionId, prompt: '' });
+				agentHostService.fireProgress({
+					sessionId, type: 'tool_start', toolCallId: 'tc-fail', toolName: 'bash',
+					displayName: 'Bash', invocationMessage: 'Running `bad_cmd`',
+					toolInput: 'bad_cmd', toolKind: 'terminal',
+					toolArguments: JSON.stringify({ command: 'bad_cmd' }),
+				});
+				agentHostService.fireProgress({
+					sessionId, type: 'tool_complete', toolCallId: 'tc-fail', success: false,
+					pastTenseMessage: '"Bash" failed', toolOutput: 'command not found: bad_cmd',
+					error: { message: 'command not found: bad_cmd' },
+				});
+				agentHostService.fireProgress({ sessionId, type: 'idle' });
+			};
+
+			await agent.impl.invoke(makeRequest(), (parts) => collected.push(parts), [], CancellationToken.None);
+
+			const invocation = collected[0][0] as IChatToolInvocation;
+			const termData = invocation.toolSpecificData as IChatTerminalToolInvocationData;
+			assert.deepStrictEqual({
+				pastTenseMessage: invocation.pastTenseMessage,
+				outputText: termData.terminalCommandOutput?.text,
+				exitCode: termData.terminalCommandState?.exitCode,
+			}, {
+				pastTenseMessage: undefined,
+				outputText: 'command not found: bad_cmd',
+				exitCode: 1,
+			});
+		});
+
+		test('generic tool has invocation message and no toolSpecificData', async () => {
+			const { chatAgentService, agentHostService } = createContribution(disposables);
+
+			const agent = chatAgentService.registeredAgents.get('agent-host')!;
+			const collected: IChatProgress[][] = [];
+
+			agentHostService.sendMessage = async (sessionId: string) => {
+				agentHostService.sendMessageCalls.push({ sessionId, prompt: '' });
+				agentHostService.fireProgress({
+					sessionId, type: 'tool_start', toolCallId: 'tc-gen', toolName: 'custom_tool',
+					displayName: 'custom_tool', invocationMessage: 'Using "custom_tool"',
+					toolArguments: JSON.stringify({ input: 'data' }),
+				});
+				agentHostService.fireProgress({ sessionId, type: 'tool_complete', toolCallId: 'tc-gen', success: true, pastTenseMessage: 'Used "custom_tool"' });
+				agentHostService.fireProgress({ sessionId, type: 'idle' });
+			};
+
+			await agent.impl.invoke(makeRequest(), (parts) => collected.push(parts), [], CancellationToken.None);
+
+			const invocation = collected[0][0] as IChatToolInvocation;
+			assert.deepStrictEqual({
+				invocationMessage: textOf(invocation.invocationMessage),
+				pastTenseMessage: textOf(invocation.pastTenseMessage),
+				toolSpecificData: invocation.toolSpecificData,
+			}, {
+				invocationMessage: 'Using "custom_tool"',
+				pastTenseMessage: 'Used "custom_tool"',
+				toolSpecificData: undefined,
+			});
+		});
+
+		test('bash tool without arguments has no terminal data', async () => {
+			const { chatAgentService, agentHostService } = createContribution(disposables);
+
+			const agent = chatAgentService.registeredAgents.get('agent-host')!;
+			const collected: IChatProgress[][] = [];
+
+			agentHostService.sendMessage = async (sessionId: string) => {
+				agentHostService.sendMessageCalls.push({ sessionId, prompt: '' });
+				agentHostService.fireProgress({
+					sessionId, type: 'tool_start', toolCallId: 'tc-noargs', toolName: 'bash',
+					displayName: 'Bash', invocationMessage: 'Running Bash command',
+					toolKind: 'terminal',
+				});
+				agentHostService.fireProgress({ sessionId, type: 'tool_complete', toolCallId: 'tc-noargs', success: true, pastTenseMessage: 'Ran Bash command' });
+				agentHostService.fireProgress({ sessionId, type: 'idle' });
+			};
+
+			await agent.impl.invoke(makeRequest(), (parts) => collected.push(parts), [], CancellationToken.None);
+
+			const invocation = collected[0][0] as IChatToolInvocation;
+			assert.deepStrictEqual({
+				invocationMessage: textOf(invocation.invocationMessage),
+				pastTenseMessage: textOf(invocation.pastTenseMessage),
+				toolSpecificData: invocation.toolSpecificData,
+			}, {
+				invocationMessage: 'Running Bash command',
+				pastTenseMessage: 'Ran Bash command',
+				toolSpecificData: undefined,
+			});
+		});
+
+		test('view tool shows file path in messages', async () => {
+			const { chatAgentService, agentHostService } = createContribution(disposables);
+
+			const agent = chatAgentService.registeredAgents.get('agent-host')!;
+			const collected: IChatProgress[][] = [];
+
+			agentHostService.sendMessage = async (sessionId: string) => {
+				agentHostService.sendMessageCalls.push({ sessionId, prompt: '' });
+				agentHostService.fireProgress({
+					sessionId, type: 'tool_start', toolCallId: 'tc-view', toolName: 'view',
+					displayName: 'View File', invocationMessage: 'Reading /tmp/test.txt',
+					toolArguments: JSON.stringify({ file_path: '/tmp/test.txt' }),
+				});
+				agentHostService.fireProgress({ sessionId, type: 'tool_complete', toolCallId: 'tc-view', success: true, pastTenseMessage: 'Read /tmp/test.txt' });
+				agentHostService.fireProgress({ sessionId, type: 'idle' });
+			};
+
+			await agent.impl.invoke(makeRequest(), (parts) => collected.push(parts), [], CancellationToken.None);
+
+			const invocation = collected[0][0] as IChatToolInvocation;
+			assert.deepStrictEqual({
+				invocationMessage: textOf(invocation.invocationMessage),
+				pastTenseMessage: textOf(invocation.pastTenseMessage),
+			}, {
+				invocationMessage: 'Reading /tmp/test.txt',
+				pastTenseMessage: 'Read /tmp/test.txt',
+			});
 		});
 	});
 });

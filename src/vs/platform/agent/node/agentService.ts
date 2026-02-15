@@ -7,7 +7,8 @@ import { CopilotClient, CopilotSession, type SessionEvent, type SessionEventPayl
 import { Emitter } from '../../../base/common/event.js';
 import { Disposable, DisposableMap } from '../../../base/common/lifecycle.js';
 import { ILogService } from '../../log/common/log.js';
-import { IAgentCreateSessionConfig, IAgentProgressEvent, IAgentMessageEvent, IAgentService, IAgentSessionMetadata } from '../common/agentService.js';
+import { IAgentCreateSessionConfig, IAgentProgressEvent, IAgentMessageEvent, IAgentService, IAgentSessionMetadata, IAgentToolStartEvent, IAgentToolCompleteEvent } from '../common/agentService.js';
+import { getInvocationMessage, getPastTenseMessage, getShellLanguage, getToolDisplayName, getToolInputString, getToolKind, isHiddenTool } from './copilotToolDisplay.js';
 import { CopilotSessionWrapper } from './copilotSessionWrapper.js';
 
 function tryStringify(value: unknown): string | undefined {
@@ -31,6 +32,8 @@ export class AgentService extends Disposable implements IAgentService {
 	private _client: CopilotClient | undefined;
 	private _githubToken: string | undefined;
 	private readonly _sessions = this._register(new DisposableMap<string, CopilotSessionWrapper>());
+	/** Tracks active tool invocations so we can produce past-tense messages on completion. Keyed by `sessionId:toolCallId`. */
+	private readonly _activeToolCalls = new Map<string, { toolName: string; displayName: string; parameters: Record<string, unknown> | undefined }>();
 
 	constructor(
 		private readonly _logService: ILogService,
@@ -105,7 +108,7 @@ export class AgentService extends Disposable implements IAgentService {
 		this._logService.info(`[${sessionId}] session.send() returned`);
 	}
 
-	async getSessionMessages(sessionId: string): Promise<IAgentMessageEvent[]> {
+	async getSessionMessages(sessionId: string): Promise<(IAgentMessageEvent | IAgentToolStartEvent | IAgentToolCompleteEvent)[]> {
 		const entry = this._sessions.get(sessionId) ?? await this._resumeSession(sessionId).catch(() => undefined);
 		if (!entry) {
 			return [];
@@ -117,20 +120,31 @@ export class AgentService extends Disposable implements IAgentService {
 
 	async disposeSession(sessionId: string): Promise<void> {
 		this._sessions.deleteAndDispose(sessionId);
+		this._clearToolCallsForSession(sessionId);
 	}
 
 	async shutdown(): Promise<void> {
 		this._logService.info('AgentService: shutting down...');
 		this._sessions.clearAndDisposeAll();
+		this._activeToolCalls.clear();
 		await this._client?.stop();
 		this._client = undefined;
 	}
 
 	// ---- helpers ------------------------------------------------------------
 
-	private _trackSession(raw: CopilotSession): CopilotSessionWrapper {
+	private _clearToolCallsForSession(sessionId: string): void {
+		const prefix = `${sessionId}:`;
+		for (const key of this._activeToolCalls.keys()) {
+			if (key.startsWith(prefix)) {
+				this._activeToolCalls.delete(key);
+			}
+		}
+	}
+
+	private _trackSession(raw: CopilotSession, sessionIdOverride?: string): CopilotSessionWrapper {
 		const wrapper = new CopilotSessionWrapper(raw);
-		const sessionId = wrapper.sessionId;
+		const sessionId = sessionIdOverride ?? wrapper.sessionId;
 
 		// Event subscriptions below are automatically disposed when the wrapper
 		// is disposed - the wrapper's _sdkEvent() registers both the emitter and
@@ -170,13 +184,31 @@ export class AgentService extends Disposable implements IAgentService {
 		});
 
 		wrapper.onToolStart(e => {
+			if (isHiddenTool(e.data.toolName)) {
+				this._logService.trace(`[${sessionId}] Tool started (hidden): ${e.data.toolName}`);
+				return;
+			}
 			this._logService.info(`[${sessionId}] Tool started: ${e.data.toolName}`);
+			const toolArgs = e.data.arguments !== undefined ? tryStringify(e.data.arguments) : undefined;
+			let parameters: Record<string, unknown> | undefined;
+			if (toolArgs) {
+				try { parameters = JSON.parse(toolArgs) as Record<string, unknown>; } catch { /* ignore */ }
+			}
+			const displayName = getToolDisplayName(e.data.toolName);
+			const trackingKey = `${sessionId}:${e.data.toolCallId}`;
+			this._activeToolCalls.set(trackingKey, { toolName: e.data.toolName, displayName, parameters });
+			const toolKind = getToolKind(e.data.toolName);
 			this._onDidSessionProgress.fire({
 				sessionId,
 				type: 'tool_start',
 				toolCallId: e.data.toolCallId,
 				toolName: e.data.toolName,
-				toolArguments: e.data.arguments !== undefined ? tryStringify(e.data.arguments) : undefined,
+				displayName,
+				invocationMessage: getInvocationMessage(e.data.toolName, displayName, parameters),
+				toolInput: getToolInputString(e.data.toolName, parameters, toolArgs),
+				toolKind,
+				language: toolKind === 'terminal' ? getShellLanguage(e.data.toolName) : undefined,
+				toolArguments: toolArgs,
 				mcpServerName: e.data.mcpServerName,
 				mcpToolName: e.data.mcpToolName,
 				parentToolCallId: e.data.parentToolCallId,
@@ -184,12 +216,23 @@ export class AgentService extends Disposable implements IAgentService {
 		});
 
 		wrapper.onToolComplete(e => {
+			const trackingKey = `${sessionId}:${e.data.toolCallId}`;
+			const tracked = this._activeToolCalls.get(trackingKey);
+			if (!tracked) {
+				// Hidden tool or untracked tool call -- skip
+				return;
+			}
 			this._logService.info(`[${sessionId}] Tool completed: ${e.data.toolCallId}`);
+			this._activeToolCalls.delete(trackingKey);
+			const displayName = tracked.displayName;
+			const toolOutput = e.data.error?.message ?? e.data.result?.content;
 			this._onDidSessionProgress.fire({
 				sessionId,
 				type: 'tool_complete',
 				toolCallId: e.data.toolCallId,
 				success: e.data.success,
+				pastTenseMessage: getPastTenseMessage(tracked?.toolName ?? '', displayName, tracked?.parameters, e.data.success),
+				toolOutput,
 				isUserRequested: e.data.isUserRequested,
 				result: e.data.result,
 				error: e.data.error,
@@ -341,33 +384,85 @@ export class AgentService extends Disposable implements IAgentService {
 		this._logService.info(`[${sessionId}] Session not in memory, resuming...`);
 		const client = await this._ensureClient();
 		const raw = await client.resumeSession(sessionId);
-		return this._trackSession(raw);
+		// Pass the requested sessionId as override so events and lookups use it,
+		// even if the SDK uses a different canonical session ID internally.
+		return this._trackSession(raw, sessionId);
 	}
 
-	private _mapSessionEvents(sessionId: string, events: readonly SessionEvent[]): IAgentMessageEvent[] {
-		const result: IAgentMessageEvent[] = [];
+	private _mapSessionEvents(sessionId: string, events: readonly SessionEvent[]): (IAgentMessageEvent | IAgentToolStartEvent | IAgentToolCompleteEvent)[] {
+		const result: (IAgentMessageEvent | IAgentToolStartEvent | IAgentToolCompleteEvent)[] = [];
+		// Track tool metadata across events so we can resolve display info on tool_complete
+		const toolInfoByCallId = new Map<string, { toolName: string; parameters: Record<string, unknown> | undefined }>();
+
 		for (const e of events) {
-			if (e.type !== 'assistant.message' && e.type !== 'user.message') {
-				continue;
+			if (e.type === 'assistant.message' || e.type === 'user.message') {
+				const d = (e as SessionEventPayload<'assistant.message'>).data;
+				result.push({
+					sessionId,
+					type: 'message',
+					role: e.type === 'user.message' ? 'user' : 'assistant',
+					messageId: d?.messageId ?? '',
+					content: d?.content ?? '',
+					toolRequests: d?.toolRequests?.map(tr => ({
+						toolCallId: tr.toolCallId,
+						name: tr.name,
+						arguments: tr.arguments !== undefined ? tryStringify(tr.arguments) : undefined,
+						type: tr.type,
+					})),
+					reasoningOpaque: d?.reasoningOpaque,
+					reasoningText: d?.reasoningText,
+					encryptedContent: d?.encryptedContent,
+					parentToolCallId: d?.parentToolCallId,
+				});
+			} else if (e.type === 'tool.execution_start') {
+				const d = (e as SessionEventPayload<'tool.execution_start'>).data;
+				if (isHiddenTool(d.toolName)) {
+					continue;
+				}
+				const toolArgs = d.arguments !== undefined ? tryStringify(d.arguments) : undefined;
+				let parameters: Record<string, unknown> | undefined;
+				if (toolArgs) {
+					try { parameters = JSON.parse(toolArgs) as Record<string, unknown>; } catch { /* ignore */ }
+				}
+				toolInfoByCallId.set(d.toolCallId, { toolName: d.toolName, parameters });
+				const displayName = getToolDisplayName(d.toolName);
+				const toolKind = getToolKind(d.toolName);
+				result.push({
+					sessionId,
+					type: 'tool_start',
+					toolCallId: d.toolCallId,
+					toolName: d.toolName,
+					displayName,
+					invocationMessage: getInvocationMessage(d.toolName, displayName, parameters),
+					toolInput: getToolInputString(d.toolName, parameters, toolArgs),
+					toolKind,
+					language: toolKind === 'terminal' ? getShellLanguage(d.toolName) : undefined,
+					toolArguments: toolArgs,
+					mcpServerName: d.mcpServerName,
+					mcpToolName: d.mcpToolName,
+					parentToolCallId: d.parentToolCallId,
+				});
+			} else if (e.type === 'tool.execution_complete') {
+				const d = (e as SessionEventPayload<'tool.execution_complete'>).data;
+				const info = toolInfoByCallId.get(d.toolCallId);
+				if (!info) {
+					continue; // hidden or unknown tool
+				}
+				toolInfoByCallId.delete(d.toolCallId);
+				const displayName = getToolDisplayName(info.toolName);
+				result.push({
+					sessionId,
+					type: 'tool_complete',
+					toolCallId: d.toolCallId,
+					success: d.success,
+					pastTenseMessage: getPastTenseMessage(info.toolName, displayName, info.parameters, d.success),
+					toolOutput: d.error?.message ?? d.result?.content,
+					isUserRequested: d.isUserRequested,
+					result: d.result,
+					error: d.error,
+					toolTelemetry: d.toolTelemetry !== undefined ? tryStringify(d.toolTelemetry) : undefined,
+				});
 			}
-			const d = (e as SessionEventPayload<'assistant.message'>).data;
-			result.push({
-				sessionId,
-				type: 'message',
-				role: e.type === 'user.message' ? 'user' : 'assistant',
-				messageId: d?.messageId ?? '',
-				content: d?.content ?? '',
-				toolRequests: d?.toolRequests?.map(tr => ({
-					toolCallId: tr.toolCallId,
-					name: tr.name,
-					arguments: tr.arguments !== undefined ? tryStringify(tr.arguments) : undefined,
-					type: tr.type,
-				})),
-				reasoningOpaque: d?.reasoningOpaque,
-				reasoningText: d?.reasoningText,
-				encryptedContent: d?.encryptedContent,
-				parentToolCallId: d?.parentToolCallId,
-			});
 		}
 		return result;
 	}

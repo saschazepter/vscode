@@ -1,4 +1,8 @@
-# Agent Host Process Architecture
+# Agent host process architecture
+
+> **Keep this document in sync with the code.** If you change the IPC contract, add new event types, modify the process lifecycle, or restructure files, update this document as part of the same change.
+
+For design decisions, see [design.md](design.md). For the task backlog, see [backlog.md](backlog.md). For chat session wiring, see [sessions.md](sessions.md).
 
 ## Overview
 
@@ -150,13 +154,3 @@ For **existing sessions** (opened from session list): the SDK session is either 
 | **Pty Host** | Singleton utility process, MessagePort, lazy start, heartbeat | Pty host also has heartbeat monitoring and reconnect logic |
 | **Shared Process** | Singleton utility process, MessagePort | Much heavier, hosts many services, tightly coupled to app lifecycle |
 | **Extension Host** | Per-window utility process (`WindowUtilityProcess`), custom `RPCProtocol` | Uses custom RPC, not standard channels; tied to window lifecycle |
-
-## TODO
-
-- [ ] Add renderer-side `acquirePort()` for direct MessagePort connections (bypass main process relay)
-- [ ] Consider whether this should be singleton (current) or per-window
-- [ ] Add heartbeat monitoring if crash detection latency matters
-- [ ] Support non-Electron spawning (`NodeAgentHostStarter` via `child_process.fork`) for remote server scenarios
-- [ ] Hook up `session.abort()` for the interrupt callback
-- [ ] Wire up tool integration (file edits, MCP, etc.)
-- [ ] Add follow-up and title generation support

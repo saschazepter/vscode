@@ -71,6 +71,16 @@ export interface IAgentToolStartEvent extends IAgentProgressEventBase {
 	readonly type: 'tool_start';
 	readonly toolCallId: string;
 	readonly toolName: string;
+	/** Human-readable display name for this tool. */
+	readonly displayName: string;
+	/** Message describing the tool invocation in progress (e.g., "Running `echo hello`"). */
+	readonly invocationMessage: string;
+	/** A representative input string for display in the UI (e.g., the shell command). */
+	readonly toolInput?: string;
+	/** Hint for the renderer about how to display this tool (e.g., 'terminal' for shell commands). */
+	readonly toolKind?: 'terminal';
+	/** Language identifier for syntax highlighting (e.g., 'shellscript', 'powershell'). Used with toolKind 'terminal'. */
+	readonly language?: string;
 	/** Serialized JSON of the tool arguments, if available. */
 	readonly toolArguments?: string;
 	readonly mcpServerName?: string;
@@ -83,6 +93,10 @@ export interface IAgentToolCompleteEvent extends IAgentProgressEventBase {
 	readonly type: 'tool_complete';
 	readonly toolCallId: string;
 	readonly success: boolean;
+	/** Message describing the completed tool invocation (e.g., "Ran `echo hello`"). */
+	readonly pastTenseMessage: string;
+	/** Tool output content for display in the UI. */
+	readonly toolOutput?: string;
 	readonly isUserRequested?: boolean;
 	readonly result?: {
 		readonly content: string;
@@ -130,8 +144,8 @@ export interface IAgentService {
 	/** Send a user message into an existing session. */
 	sendMessage(sessionId: string, prompt: string): Promise<void>;
 
-	/** Retrieve all session events/messages for reconstruction. */
-	getSessionMessages(sessionId: string): Promise<IAgentMessageEvent[]>;
+	/** Retrieve all session events/messages for reconstruction, including tool invocations. */
+	getSessionMessages(sessionId: string): Promise<(IAgentMessageEvent | IAgentToolStartEvent | IAgentToolCompleteEvent)[]>;
 
 	/** Dispose a session in the agent host, freeing SDK resources. */
 	disposeSession(sessionId: string): Promise<void>;
