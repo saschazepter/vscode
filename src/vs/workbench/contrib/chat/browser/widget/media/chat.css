@@ -457,12 +457,14 @@
 	}
 
 	/* not ideal but I cannot query the last div with this class... */
-	.rendered-markdown:last-of-type > P > SPAN:empty {
+	.rendered-markdown:last-of-type > P > SPAN:empty,
+	.rendered-markdown:last-of-type > SPAN:empty {
 		display: inline-block;
 		width: 11px;
 	}
 
-	.rendered-markdown:last-of-type > P > SPAN:empty::after {
+	.rendered-markdown:last-of-type > P > SPAN:empty::after,
+	.rendered-markdown:last-of-type > SPAN:empty::after {
 		content: '';
 		white-space: nowrap;
 		overflow: hidden;
