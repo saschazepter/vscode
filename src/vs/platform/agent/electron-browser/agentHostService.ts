@@ -11,7 +11,7 @@ import { Client as MessagePortClient } from '../../../base/parts/ipc/common/ipc.
 import { acquirePort } from '../../../base/parts/ipc/electron-browser/ipc.mp.js';
 import { InstantiationType, registerSingleton } from '../../instantiation/common/extensions.js';
 import { ILogService } from '../../log/common/log.js';
-import { AgentHostIpcChannels, IAgentCreateSessionConfig, IAgentHostService, IAgentProgressEvent, IAgentService, IAgentSessionMetadata } from '../common/agentService.js';
+import { AgentHostIpcChannels, IAgentCreateSessionConfig, IAgentHostService, IAgentMessageEvent, IAgentProgressEvent, IAgentService, IAgentSessionMetadata } from '../common/agentService.js';
 
 /**
  * Renderer-side implementation of {@link IAgentHostService} that connects
@@ -75,14 +75,11 @@ class AgentHostServiceClient extends Disposable implements IAgentHostService {
 	sendMessage(sessionId: string, prompt: string): Promise<void> {
 		return this._proxy.sendMessage(sessionId, prompt);
 	}
-	getSessionMessages(sessionId: string): Promise<IAgentProgressEvent[]> {
+	getSessionMessages(sessionId: string): Promise<IAgentMessageEvent[]> {
 		return this._proxy.getSessionMessages(sessionId);
 	}
 	disposeSession(sessionId: string): Promise<void> {
 		return this._proxy.disposeSession(sessionId);
-	}
-	ping(msg: string): Promise<string> {
-		return this._proxy.ping(msg);
 	}
 	shutdown(): Promise<void> {
 		return this._proxy.shutdown();

@@ -27,12 +27,82 @@ export interface IAgentCreateSessionConfig {
 	readonly sessionId?: string;
 }
 
-export interface IAgentProgressEvent {
+// ---- Progress events (discriminated union by `type`) ------------------------
+
+interface IAgentProgressEventBase {
 	readonly sessionId: string;
-	readonly type: 'delta' | 'message' | 'idle' | 'tool_start' | 'tool_complete';
-	readonly content?: string;
-	readonly role?: 'user' | 'assistant';
 }
+
+/** Streaming text delta from the assistant (`assistant.message_delta`). */
+export interface IAgentDeltaEvent extends IAgentProgressEventBase {
+	readonly type: 'delta';
+	readonly messageId: string;
+	readonly content: string;
+	readonly totalResponseSizeBytes?: number;
+	readonly parentToolCallId?: string;
+}
+
+/** A complete assistant message (`assistant.message`), used for history reconstruction. */
+export interface IAgentMessageEvent extends IAgentProgressEventBase {
+	readonly type: 'message';
+	readonly role: 'user' | 'assistant';
+	readonly messageId: string;
+	readonly content: string;
+	readonly toolRequests?: readonly {
+		readonly toolCallId: string;
+		readonly name: string;
+		/** Serialized JSON of arguments, if available. */
+		readonly arguments?: string;
+		readonly type?: 'function' | 'custom';
+	}[];
+	readonly reasoningOpaque?: string;
+	readonly reasoningText?: string;
+	readonly encryptedContent?: string;
+	readonly parentToolCallId?: string;
+}
+
+/** The session has finished processing and is waiting for input (`session.idle`). */
+export interface IAgentIdleEvent extends IAgentProgressEventBase {
+	readonly type: 'idle';
+}
+
+/** A tool has started executing (`tool.execution_start`). */
+export interface IAgentToolStartEvent extends IAgentProgressEventBase {
+	readonly type: 'tool_start';
+	readonly toolCallId: string;
+	readonly toolName: string;
+	/** Serialized JSON of the tool arguments, if available. */
+	readonly toolArguments?: string;
+	readonly mcpServerName?: string;
+	readonly mcpToolName?: string;
+	readonly parentToolCallId?: string;
+}
+
+/** A tool has finished executing (`tool.execution_complete`). */
+export interface IAgentToolCompleteEvent extends IAgentProgressEventBase {
+	readonly type: 'tool_complete';
+	readonly toolCallId: string;
+	readonly success: boolean;
+	readonly isUserRequested?: boolean;
+	readonly result?: {
+		readonly content: string;
+		readonly detailedContent?: string;
+	};
+	readonly error?: {
+		readonly message: string;
+		readonly code?: string;
+	};
+	/** Serialized JSON of tool-specific telemetry data. */
+	readonly toolTelemetry?: string;
+	readonly parentToolCallId?: string;
+}
+
+export type IAgentProgressEvent =
+	| IAgentDeltaEvent
+	| IAgentMessageEvent
+	| IAgentIdleEvent
+	| IAgentToolStartEvent
+	| IAgentToolCompleteEvent;
 
 // ---- Service interfaces -----------------------------------------------------
 
@@ -61,13 +131,10 @@ export interface IAgentService {
 	sendMessage(sessionId: string, prompt: string): Promise<void>;
 
 	/** Retrieve all session events/messages for reconstruction. */
-	getSessionMessages(sessionId: string): Promise<IAgentProgressEvent[]>;
+	getSessionMessages(sessionId: string): Promise<IAgentMessageEvent[]>;
 
-	/** Dispose a session and free its resources. */
+	/** Dispose a session in the agent host, freeing SDK resources. */
 	disposeSession(sessionId: string): Promise<void>;
-
-	/** Simple connectivity check. */
-	ping(msg: string): Promise<string>;
 
 	/** Gracefully shut down all sessions and the underlying client. */
 	shutdown(): Promise<void>;

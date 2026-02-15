@@ -74,7 +74,6 @@ Methods proxied across MessagePort via `ProxyChannel`:
 | `sendMessage(sessionId, prompt)` | Send a user message into a session |
 | `getSessionMessages(sessionId)` | Get session history (user + assistant messages) |
 | `disposeSession(sessionId)` | Dispose a session and free resources |
-| `ping(msg)` | Connectivity check |
 
 Events:
 - `onDidSessionProgress` — streaming progress from the SDK (`delta`, `message`, `idle`, `tool_start`, `tool_complete`)
