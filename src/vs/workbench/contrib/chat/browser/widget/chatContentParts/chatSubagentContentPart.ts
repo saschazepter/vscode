@@ -6,13 +6,11 @@
 import * as dom from '../../../../../../base/browser/dom.js';
 import { $, AnimationFrameScheduler, DisposableResizeObserver } from '../../../../../../base/browser/dom.js';
 import { Codicon } from '../../../../../../base/common/codicons.js';
-import { IDisposable } from '../../../../../../base/common/lifecycle.js';
 import { MarkdownString } from '../../../../../../base/common/htmlContent.js';
 import { Lazy } from '../../../../../../base/common/lazy.js';
 import { IDisposable, MutableDisposable } from '../../../../../../base/common/lifecycle.js';
 import { autorun } from '../../../../../../base/common/observable.js';
 import { rcut } from '../../../../../../base/common/strings.js';
-import { ThemeIcon } from '../../../../../../base/common/themables.js';
 import { localize } from '../../../../../../nls.js';
 import { IHoverService } from '../../../../../../platform/hover/browser/hover.js';
 import { IInstantiationService } from '../../../../../../platform/instantiation/common/instantiation.js';
@@ -25,18 +23,13 @@ import { ChatTreeItem } from '../../chat.js';
 import { ChatCollapsibleContentPart } from './chatCollapsibleContentPart.js';
 import { ChatCollapsibleMarkdownContentPart } from './chatCollapsibleMarkdownContentPart.js';
 import { EditorPool } from './chatContentCodePools.js';
-import { CodeBlockModelCollection } from '../../../common/widget/codeBlockModelCollection.js';
-import { renderFileWidgets } from './chatInlineAnchorWidget.js';
-import './media/chatSubagentContent.css';
-import { ChatToolInvocationPart } from './toolInvocationParts/chatToolInvocationPart.js';
-import { IChatMarkdownAnchorService } from './chatMarkdownAnchorService.js';
-import { MarkdownString } from '../../../../../../base/common/htmlContent.js';
 import { IChatContentPart, IChatContentPartRenderContext } from './chatContentParts.js';
+import { renderFileWidgets } from './chatInlineAnchorWidget.js';
 import { IChatMarkdownAnchorService } from './chatMarkdownAnchorService.js';
 import { CollapsibleListPool } from './chatReferencesContentPart.js';
 import { createThinkingIcon, getToolInvocationIcon } from './chatThinkingContentPart.js';
-import './media/chatSubagentContent.css';
 import { ChatToolInvocationPart } from './toolInvocationParts/chatToolInvocationPart.js';
+import './media/chatSubagentContent.css';
 
 const MAX_TITLE_LENGTH = 100;
 
