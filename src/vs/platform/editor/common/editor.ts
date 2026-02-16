@@ -324,14 +324,16 @@ export interface IEditorOptions {
 	/**
 	 * Options that only apply when `MODAL_GROUP` is used for opening.
 	 */
-	modal?: {
+	modal?: IModalEditorPartOptions;
+}
 
-		/**
-		 * Navigation context for navigating between items
-		 * within the modal editor.
-		 */
-		navigation?: IModalEditorNavigation;
-	};
+export interface IModalEditorPartOptions {
+
+	/**
+	 * The navigation context for navigating between items
+	 * within this modal editor. Pass `undefined` to clear.
+	 */
+	readonly navigation?: IModalEditorNavigation;
 }
 
 /**

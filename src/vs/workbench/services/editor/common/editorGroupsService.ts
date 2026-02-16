@@ -7,7 +7,7 @@ import { Event } from '../../../../base/common/event.js';
 import { IInstantiationService, createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
 import { IEditorPane, GroupIdentifier, EditorInputWithOptions, CloseDirection, IEditorPartOptions, IEditorPartOptionsChangeEvent, EditorsOrder, IVisibleEditorPane, IEditorCloseEvent, IUntypedEditorInput, isEditorInput, IEditorWillMoveEvent, IMatchEditorOptions, IActiveEditorChangeEvent, IFindEditorOptions, IToolbarActions } from '../../../common/editor.js';
 import { EditorInput } from '../../../common/editor/editorInput.js';
-import { IEditorOptions, IModalEditorNavigation } from '../../../../platform/editor/common/editor.js';
+import { IEditorOptions, IModalEditorNavigation, IModalEditorPartOptions } from '../../../../platform/editor/common/editor.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { IDimension } from '../../../../editor/common/core/2d/dimension.js';
 import { DisposableStore, IDisposable } from '../../../../base/common/lifecycle.js';
@@ -519,15 +519,6 @@ export interface IAuxiliaryEditorPart extends IEditorPart {
 	 * @returns `false` if an editor could not be moved back.
 	 */
 	close(): boolean;
-}
-
-export interface IModalEditorPartOptions {
-
-	/**
-	 * The navigation context for navigating between items
-	 * within this modal editor. Pass `undefined` to clear.
-	 */
-	readonly navigation?: IModalEditorNavigation;
 }
 
 export interface IModalEditorPart extends IEditorPart {

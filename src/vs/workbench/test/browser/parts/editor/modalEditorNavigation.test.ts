@@ -7,8 +7,7 @@ import assert from 'assert';
 import { Emitter } from '../../../../../base/common/event.js';
 import { DisposableStore } from '../../../../../base/common/lifecycle.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
-import { IModalEditorPartOptions } from '../../../../services/editor/common/editorGroupsService.js';
-import { IModalEditorNavigation } from '../../../../../platform/editor/common/editor.js';
+import { IModalEditorNavigation, IModalEditorPartOptions } from '../../../../../platform/editor/common/editor.js';
 
 /**
  * Simple test harness that mimics the ModalEditorPartImpl navigation behavior
