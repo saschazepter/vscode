@@ -21,6 +21,20 @@ import { assertType } from '../../../../base/common/types.js';
 import { CursorChangeReason } from '../../../../editor/common/cursorEvents.js';
 import { IInlineChatSessionService } from './inlineChatSessionService.js';
 import { CodeActionController } from '../../../../editor/contrib/codeAction/browser/codeActionController.js';
+import { ITelemetryService } from '../../../../platform/telemetry/common/telemetry.js';
+import { generateUuid } from '../../../../base/common/uuid.js';
+
+type InlineChatAffordanceEvent = {
+	mode: string;
+	id: string;
+};
+
+type InlineChatAffordanceClassification = {
+	mode: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The affordance mode: gutter or editor.' };
+	id: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'UUID to correlate shown and selected events.' };
+	owner: 'jrieken';
+	comment: 'Tracks when the inline chat affordance is shown or selected.';
+};
 
 export class InlineChatAffordance extends Disposable {
 
@@ -36,6 +50,7 @@ export class InlineChatAffordance extends Disposable {
 		@IConfigurationService configurationService: IConfigurationService,
 		@IChatEntitlementService chatEntiteldService: IChatEntitlementService,
 		@IInlineChatSessionService inlineChatSessionService: IInlineChatSessionService,
+		@ITelemetryService telemetryService: ITelemetryService,
 	) {
 		super();
 		this.#editor = editor;
@@ -49,6 +64,7 @@ export class InlineChatAffordance extends Disposable {
 		const selectionData = observableValue<Selection | undefined>(this, undefined);
 
 		let explicitSelection = false;
+		let affordanceId: string | undefined;
 
 		this._store.add(runOnChange(editorObs.selections, (value, _prev, events) => {
 			explicitSelection = events.every(e => e.reason === CursorChangeReason.Explicit);
@@ -61,7 +77,13 @@ export class InlineChatAffordance extends Disposable {
 			const value = debouncedSelection.read(r);
 			if (!value || value.isEmpty() || !explicitSelection || this.#editor.getModel()?.getValueInRange(value).match(/^\s+$/)) {
 				selectionData.set(undefined, undefined);
+				affordanceId = undefined;
 				return;
+			}
+			affordanceId = generateUuid();
+			const mode = affordance.read(undefined);
+			if (mode === 'gutter' || mode === 'editor') {
+				telemetryService.publicLog2<InlineChatAffordanceEvent, InlineChatAffordanceClassification>('inlineChatAffordance/shown', { mode, id: affordanceId });
 			}
 			selectionData.set(value, undefined);
 		}));
@@ -84,18 +106,30 @@ export class InlineChatAffordance extends Disposable {
 			}
 		}));
 
-		this._store.add(this.#instantiationService.createInstance(
+		const gutterAffordance = this.#instantiationService.createInstance(
 			InlineChatGutterAffordance,
 			editorObs,
 			derived(r => affordance.read(r) === 'gutter' ? selectionData.read(r) : undefined),
 			this.#menuData
-		));
+		);
+		this._store.add(gutterAffordance);
+		this._store.add(gutterAffordance.onDidRunAction(() => {
+			if (affordanceId) {
+				telemetryService.publicLog2<InlineChatAffordanceEvent, InlineChatAffordanceClassification>('inlineChatAffordance/selected', { mode: 'gutter', id: affordanceId });
+			}
+		}));
 
-		this._store.add(this.#instantiationService.createInstance(
+		const editorAffordance = this.#instantiationService.createInstance(
 			InlineChatEditorAffordance,
 			this.#editor,
 			derived(r => affordance.read(r) === 'editor' ? selectionData.read(r) : undefined)
-		));
+		);
+		this._store.add(editorAffordance);
+		this._store.add(editorAffordance.onDidRunAction(() => {
+			if (affordanceId) {
+				telemetryService.publicLog2<InlineChatAffordanceEvent, InlineChatAffordanceClassification>('inlineChatAffordance/selected', { mode: 'editor', id: affordanceId });
+			}
+		}));
 
 		this._store.add(autorun(r => {
 			const isEditor = affordance.read(r) === 'editor';

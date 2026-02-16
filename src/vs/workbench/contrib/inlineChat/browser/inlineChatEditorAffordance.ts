@@ -7,6 +7,7 @@ import './media/inlineChatEditorAffordance.css';
 import { IDimension } from '../../../../base/browser/dom.js';
 import * as dom from '../../../../base/browser/dom.js';
 import { Disposable, DisposableStore, MutableDisposable } from '../../../../base/common/lifecycle.js';
+import { Emitter, Event } from '../../../../base/common/event.js';
 import { ContentWidgetPositionPreference, ICodeEditor, IContentWidget, IContentWidgetPosition } from '../../../../editor/browser/editorBrowser.js';
 import { EditorOption } from '../../../../editor/common/config/editorOptions.js';
 import { Selection, SelectionDirection } from '../../../../editor/common/core/selection.js';
@@ -137,6 +138,9 @@ export class InlineChatEditorAffordance extends Disposable implements IContentWi
 	private _position: IContentWidgetPosition | null = null;
 	private _isVisible = false;
 
+	private readonly _onDidRunAction = this._store.add(new Emitter<void>());
+	readonly onDidRunAction: Event<void> = this._onDidRunAction.event;
+
 	readonly allowEditorOverflow = false;
 	readonly suppressMouseDown = false;
 
@@ -151,7 +155,7 @@ export class InlineChatEditorAffordance extends Disposable implements IContentWi
 		this._domNode = dom.$('.inline-chat-content-widget');
 
 		// Create toolbar with the inline chat start action
-		this._store.add(instantiationService.createInstance(MenuWorkbenchToolBar, this._domNode, MenuId.InlineChatEditorAffordance, {
+		const toolbar = this._store.add(instantiationService.createInstance(MenuWorkbenchToolBar, this._domNode, MenuId.InlineChatEditorAffordance, {
 			telemetrySource: 'inlineChatEditorAffordance',
 			hiddenItemStrategy: HiddenItemStrategy.Ignore,
 			menuOptions: { renderShortTitle: true },
@@ -166,6 +170,7 @@ export class InlineChatEditorAffordance extends Disposable implements IContentWi
 				return undefined;
 			}
 		}));
+		this._store.add(toolbar.actionRunner.onDidRun(() => this._onDidRunAction.fire()));
 
 		this._store.add(autorun(r => {
 			const sel = selection.read(r);
