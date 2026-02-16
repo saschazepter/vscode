@@ -789,6 +789,8 @@ export class ChatListWidget extends Disposable {
 		return this._renderer.editorsInUse();
 	}
 
+
+
 	/**
 	 * Get template data for a request ID.
 	 */
