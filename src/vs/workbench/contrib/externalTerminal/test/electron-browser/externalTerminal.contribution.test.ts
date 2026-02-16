@@ -100,7 +100,7 @@ suite('ExternalTerminal contribution', () => {
 		const handler = CommandsRegistry.getCommand('workbench.action.terminal.openNativeConsole')!.handler;
 		await instantiationService.invokeFunction(handler);
 
-		assert.deepStrictEqual(openTerminalCalls, [{ cwd: '/workspace/project' }]);
+		assert.deepStrictEqual(openTerminalCalls, [{ cwd: folderUri.fsPath }]);
 		assert.deepStrictEqual(executeCommandCalls, []);
 	});
 
@@ -119,7 +119,7 @@ suite('ExternalTerminal contribution', () => {
 		await instantiationService.invokeFunction(handler);
 
 		assert.deepStrictEqual(executeCommandCalls, [PICK_WORKSPACE_FOLDER_COMMAND_ID]);
-		assert.deepStrictEqual(openTerminalCalls, [{ cwd: '/workspace/project2' }]);
+		assert.deepStrictEqual(openTerminalCalls, [{ cwd: folder2Uri.fsPath }]);
 	});
 
 	test('multiple folders - picker cancelled does not open terminal', async () => {
@@ -142,6 +142,7 @@ suite('ExternalTerminal contribution', () => {
 
 	test('no workspace root - falls back to active file directory', async () => {
 		const fileUri = URI.file('/workspace/project/src/file.ts');
+		const expectedDir = URI.file('/workspace/project/src').fsPath;
 
 		setupServices({
 			folders: [],
@@ -152,7 +153,7 @@ suite('ExternalTerminal contribution', () => {
 		const handler = CommandsRegistry.getCommand('workbench.action.terminal.openNativeConsole')!.handler;
 		await instantiationService.invokeFunction(handler);
 
-		assert.deepStrictEqual(openTerminalCalls, [{ cwd: '/workspace/project/src' }]);
+		assert.deepStrictEqual(openTerminalCalls, [{ cwd: expectedDir }]);
 	});
 
 	test('no workspace, no file - opens terminal without cwd', async () => {
