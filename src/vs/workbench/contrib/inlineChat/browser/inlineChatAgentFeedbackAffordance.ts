@@ -34,7 +34,6 @@ export class AgentFeedbackAffordance extends Disposable {
 		private readonly _selectionData: IObservable<Selection | undefined>,
 		private readonly _agentSessionResourceContextObs: IObservable<AgentSessionResourceContext | undefined>,
 		private readonly _diffMappings: IObservable<readonly DetailedLineRangeMapping[] | undefined>,
-		private readonly _isDiffModifiedEditorObs: IObservable<boolean>,
 		private readonly _menuData: ISettableObservable<MenuData | undefined>,
 		@IInstantiationService private readonly _instantiationService: IInstantiationService,
 	) {
@@ -76,7 +75,6 @@ export class AgentFeedbackAffordance extends Disposable {
 			this._editor,
 			this._selectionData,
 			this._agentSessionResourceContextObs,
-			this._isDiffModifiedEditorObs,
 			this._diffMappings,
 		));
 	}
@@ -144,7 +142,6 @@ class AgentFeedbackInputHandler implements IInlineChatInputHandler {
 		private readonly _editor: ICodeEditor,
 		private readonly _selectionData: IObservable<Selection | undefined>,
 		private readonly _agentSessionResourceContextObs: IObservable<AgentSessionResourceContext | undefined>,
-		private readonly _isDiffModifiedEditorObs: IObservable<boolean>,
 		private readonly _diffMappings: IObservable<readonly DetailedLineRangeMapping[] | undefined>,
 		@IAgentFeedbackService private readonly _agentFeedbackService: IAgentFeedbackService,
 	) { }
@@ -168,7 +165,7 @@ class AgentFeedbackInputHandler implements IInlineChatInputHandler {
 		const sel = this._selectionData.read(undefined);
 		if (sel && !sel.isEmpty()) {
 			range = Range.lift(sel);
-		} else if (sel && this._isDiffModifiedEditorObs.read(undefined)) {
+		} else if (sel && this._diffMappings.read(undefined) !== undefined) {
 			const cursorLine = sel.getPosition().lineNumber;
 			const mappings = this._diffMappings.read(undefined);
 			const mapping = mappings?.find(m => m.modified.contains(cursorLine));

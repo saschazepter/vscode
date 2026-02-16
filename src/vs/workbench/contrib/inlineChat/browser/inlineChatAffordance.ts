@@ -54,9 +54,8 @@ type InlineChatAffordanceClassification = {
 
 class InlineChatEditorContext extends Disposable {
 
-	readonly diffInfoObs: IObservable<{ diffEditor: IDiffEditor } | undefined>;
+	readonly #diffInfoObs: IObservable<{ diffEditor: IDiffEditor } | undefined>;
 	readonly diffMappings: IObservable<readonly DetailedLineRangeMapping[] | undefined>;
-	readonly isDiffModifiedEditorObs: IObservable<boolean>;
 	readonly agentSessionResourceContextObs: IObservable<AgentSessionResourceContext | undefined>;
 
 	constructor(
@@ -68,7 +67,7 @@ class InlineChatEditorContext extends Disposable {
 	) {
 		super();
 
-		this.diffInfoObs = observableFromEvent<{ diffEditor: IDiffEditor } | undefined>(
+		this.#diffInfoObs = observableFromEvent<{ diffEditor: IDiffEditor } | undefined>(
 			Event.any(codeEditorService.onDiffEditorAdd, codeEditorService.onDiffEditorRemove),
 			() => {
 				if (!this._editor.getOption(EditorOption.inDiffEditor)) {
@@ -84,15 +83,13 @@ class InlineChatEditorContext extends Disposable {
 		);
 
 		this.diffMappings = derived(r => {
-			const info = this.diffInfoObs.read(r);
+			const info = this.#diffInfoObs.read(r);
 			if (!info) {
 				return undefined;
 			}
 			observableSignalFromEvent(this, info.diffEditor.onDidUpdateDiff).read(r);
 			return info.diffEditor.getDiffComputationResult()?.changes2 ?? [];
 		});
-
-		this.isDiffModifiedEditorObs = derived(r => !!this.diffInfoObs.read(r));
 
 		this.agentSessionResourceContextObs = derived(r => {
 			const model = this._editorObs.model.read(r);
@@ -168,14 +165,14 @@ export class InlineChatAffordance extends Disposable {
 		this._store.add(this.#instantiationService.createInstance(
 			InlineChatGutterAffordance,
 			editorObs,
-			derived(r => !context.isDiffModifiedEditorObs.read(r) && affordanceModeObs.read(r) === 'gutter' ? selectionData.read(r) : undefined),
+			derived(r => affordanceModeObs.read(r) === 'gutter' ? selectionData.read(r) : undefined),
 			this.#menuData
 		));
 
 		const editorAffordance = this.#instantiationService.createInstance(
 			InlineChatEditorAffordance,
 			this.#editor,
-			derived(r => !context.isDiffModifiedEditorObs.read(r) && affordanceModeObs.read(r) === 'editor' ? selectionData.read(r) : undefined)
+			derived(r => affordanceModeObs.read(r) === 'editor' ? selectionData.read(r) : undefined)
 		);
 		this._store.add(editorAffordance);
 		this._store.add(editorAffordance.onDidRunAction(() => {
@@ -187,7 +184,7 @@ export class InlineChatAffordance extends Disposable {
 		this._store.add(this.#instantiationService.createInstance(
 			AgentFeedbackAffordance,
 			this.#editor, this.#inputWidget, selectionData, context.agentSessionResourceContextObs,
-			context.diffMappings, context.isDiffModifiedEditorObs, this.#menuData
+			context.diffMappings, this.#menuData
 		));
 
 		// --- Shared: bridge _menuData → input widget show/hide ---
@@ -217,8 +214,7 @@ export class InlineChatAffordance extends Disposable {
 			const editorRect = editorDomNode.getBoundingClientRect();
 			const left = data.rect.left - editorRect.left;
 
-			const isDiff = context.isDiffModifiedEditorObs.read(undefined);
-			this.#inputWidget.show(data.lineNumber, left, data.above, { focusInput: !isDiff });
+			this.#inputWidget.show(data.lineNumber, left, data.above, { focusInput: affordanceModeObs.read(r) !== 'feedback' });
 		}));
 
 		this._store.add(autorun(r => {
