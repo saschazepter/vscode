@@ -245,7 +245,6 @@ export class NotificationsToasts extends Themable implements INotificationsToast
 		// Container
 		const notificationToastContainer = $('.notification-toast-container');
 
-		const position = this.getNotificationsPosition();
 		const firstToast = notificationsToastsContainer.firstChild;
 		if (firstToast) {
 			// Always insert new toasts at the top
