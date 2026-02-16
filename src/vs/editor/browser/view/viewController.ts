@@ -265,7 +265,7 @@ export class ViewController {
 						this._wordSelectDrag(data.position, data.revealType);
 					} else {
 						let selection: Selection | undefined;
-						if (this.configuration.options.get(EditorOption.doubleClickSelectsBlock)) {
+						if (options.get(EditorOption.doubleClickSelectsBlock)) {
 							const model = this.viewModel.model;
 							const modelPos = this._convertViewToModelPosition(data.position);
 							selection = ViewController._trySelectBracketContent(model, modelPos) || ViewController._trySelectStringContent(model, modelPos);
