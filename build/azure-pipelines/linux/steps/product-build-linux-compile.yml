@@ -207,6 +207,7 @@ steps:
         npm run gulp "vscode-linux-$(VSCODE_ARCH)-check-deps"
       env:
         GITHUB_TOKEN: "$(github-distro-mixin-password)"
+        VSCODE_SYSROOT_DIR: "$(Build.SourcesDirectory)/.build/sysroots/glibc-2.28-gcc-10.5.0"
       displayName: Check package dependencies
 
   - script: |
