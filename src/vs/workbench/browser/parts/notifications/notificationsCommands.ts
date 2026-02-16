@@ -337,7 +337,7 @@ export function registerNotificationCommands(center: INotificationsCenterControl
 		order: 10000,
 		when: ContextKeyExpr.and(
 			ContextKeyExpr.equals(`config.${LayoutSettings.NOTIFICATIONS_POSITION}`, 'top-right'),
-			ContextKeyExpr.has(`config.${LayoutSettings.NOTIFICATIONS_BUTTON}`)
+			ContextKeyExpr.equals(`config.${LayoutSettings.NOTIFICATIONS_BUTTON}`, true)
 		)
 	});
 }
