@@ -4,7 +4,6 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { URI } from '../../../../base/common/uri.js';
-import { Disposable } from '../../../../base/common/lifecycle.js';
 import { ITextModel } from '../../../../editor/common/model.js';
 import { IModelService } from '../../../../editor/common/services/model.js';
 import { ILanguageService } from '../../../../editor/common/languages/language.js';
@@ -20,11 +19,11 @@ import { SEARCH_RESULT_LANGUAGE_ID } from '../../../services/search/common/searc
 
 export type SearchEditorData = { resultsModel: ITextModel; configurationModel: SearchConfigurationModel };
 
-export class SearchConfigurationModel extends Disposable {
-	private _onConfigDidUpdate = this._register(new Emitter<SearchConfiguration>());
+export class SearchConfigurationModel {
+	private _onConfigDidUpdate = new Emitter<SearchConfiguration>();
 	public readonly onConfigDidUpdate = this._onConfigDidUpdate.event;
 
-	constructor(public config: Readonly<SearchConfiguration>) { super(); }
+	constructor(public config: Readonly<SearchConfiguration>) { }
 	updateConfig(config: SearchConfiguration) { this.config = config; this._onConfigDidUpdate.fire(config); }
 }
 

@@ -4,11 +4,10 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Emitter } from '../../../../base/common/event.js';
-import { Disposable } from '../../../../base/common/lifecycle.js';
 
-export class DebugCompoundRoot extends Disposable {
+export class DebugCompoundRoot {
 	private stopped = false;
-	private stopEmitter = this._register(new Emitter<void>());
+	private stopEmitter = new Emitter<void>();
 
 	onDidSessionStop = this.stopEmitter.event;
 
