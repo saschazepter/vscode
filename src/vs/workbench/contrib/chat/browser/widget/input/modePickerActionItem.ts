@@ -48,6 +48,7 @@ export interface IModePickerDelegate {
 const builtinDefaultIcon = (mode: IChatMode) => {
 	switch (mode.name.get().toLowerCase()) {
 		case 'ask': return Codicon.ask;
+		case 'edit': return Codicon.edit;
 		case 'plan': return Codicon.tasklist;
 		default: return undefined;
 	}
@@ -208,13 +209,11 @@ export class ModePickerActionItem extends ChatInputPickerActionViewItem {
 				const currentMode = delegate.currentMode.get();
 				const agentMode = modes.builtin.find(mode => mode.id === ChatMode.Agent.id);
 
-				const shouldHideEditMode = configurationService.getValue<boolean>(ChatConfiguration.EditModeHidden) && chatAgentService.hasToolsAgent && currentMode.id !== ChatMode.Edit.id;
-
 				const otherBuiltinModes = modes.builtin.filter(mode => {
 					if (mode.id === ChatMode.Agent.id) {
 						return false;
 					}
-					if (shouldHideEditMode && mode.id === ChatMode.Edit.id) {
+					if (mode.id === ChatMode.Edit.id) {
 						return false;
 					}
 					if (mode.id === ChatMode.Ask.id) {

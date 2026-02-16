@@ -29,6 +29,9 @@ import { IAgentSessionsService } from '../../chat/browser/agentSessions/agentSes
 import { URI } from '../../../../base/common/uri.js';
 import { AgentFeedbackAffordance } from './inlineChatAgentFeedbackAffordance.js';
 import { agentSessionContainsResource, editingEntriesContainResource } from '../../chat/browser/sessionResourceMatching.js';
+import { CodeActionController } from '../../../../editor/contrib/codeAction/browser/codeActionController.js';
+import { ITelemetryService } from '../../../../platform/telemetry/common/telemetry.js';
+import { generateUuid } from '../../../../base/common/uuid.js';
 
 type AgentSessionResourceContext = {
 	readonly sessionResource: URI;
@@ -36,6 +39,18 @@ type AgentSessionResourceContext = {
 };
 
 type AffordanceMode = 'off' | 'gutter' | 'editor' | 'feedback';
+
+type InlineChatAffordanceEvent = {
+	mode: string;
+	id: string;
+};
+
+type InlineChatAffordanceClassification = {
+	mode: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The affordance mode: gutter or editor.' };
+	id: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'UUID to correlate shown and selected events.' };
+	owner: 'jrieken';
+	comment: 'Tracks when the inline chat affordance is shown or selected.';
+};
 
 class InlineChatEditorContext extends Disposable {
 
@@ -109,88 +124,129 @@ class InlineChatEditorContext extends Disposable {
 
 export class InlineChatAffordance extends Disposable {
 
-	private readonly _menuData = observableValue<{ rect: DOMRect; above: boolean; lineNumber: number } | undefined>(this, undefined);
+	readonly #editor: ICodeEditor;
+	readonly #inputWidget: InlineChatInputWidget;
+	readonly #instantiationService: IInstantiationService;
+	readonly #menuData = observableValue<{ rect: DOMRect; above: boolean; lineNumber: number } | undefined>(this, undefined);
 
 	constructor(
-		private readonly _editor: ICodeEditor,
-		private readonly _inputWidget: InlineChatInputWidget,
-		@IInstantiationService private readonly _instantiationService: IInstantiationService,
+		editor: ICodeEditor,
+		inputWidget: InlineChatInputWidget,
+		@IInstantiationService instantiationService: IInstantiationService,
 		@IConfigurationService configurationService: IConfigurationService,
+		@ITelemetryService telemetryService: ITelemetryService,
 	) {
 		super();
+		this.#editor = editor;
+		this.#inputWidget = inputWidget;
+		this.#instantiationService = instantiationService;
 
-		const editorObs = observableCodeEditor(this._editor);
-		const context = this._store.add(this._instantiationService.createInstance(InlineChatEditorContext, this._editor, editorObs));
+		const editorObs = observableCodeEditor(this.#editor);
+		const context = this._store.add(this.#instantiationService.createInstance(InlineChatEditorContext, this.#editor, editorObs));
 
 		const configuredAffordance = observableConfigValue<'off' | 'gutter' | 'editor'>(InlineChatConfigKeys.Affordance, 'off', configurationService);
 		const affordanceModeObs = derived<AffordanceMode>(r => context.agentSessionResourceContextObs.read(r) ? 'feedback' : configuredAffordance.read(r));
 
 		// --- Shared selection tracking ---
-		const selectionData = this._store.add(this._instantiationService.createInstance(SelectionTracker, editorObs, this._editor, context.diffMappings)).selectionData;
+		const selectionData = this._store.add(this.#instantiationService.createInstance(SelectionTracker, editorObs, this.#editor, context.diffMappings)).selectionData;
 
-		this._store.add(this._instantiationService.createInstance(
+		let affordanceId: string | undefined;
+
+		this._store.add(autorun(r => {
+			const value = selectionData.read(r);
+			if (!value) {
+				affordanceId = undefined;
+				return;
+			}
+			affordanceId = generateUuid();
+			const mode = configuredAffordance.read(undefined);
+			if (mode === 'gutter' || mode === 'editor') {
+				telemetryService.publicLog2<InlineChatAffordanceEvent, InlineChatAffordanceClassification>('inlineChatAffordance/shown', { mode, id: affordanceId });
+			}
+		}));
+
+		this._store.add(this.#instantiationService.createInstance(
 			InlineChatGutterAffordance,
 			editorObs,
 			derived(r => !context.isDiffModifiedEditorObs.read(r) && affordanceModeObs.read(r) === 'gutter' ? selectionData.read(r) : undefined),
-			this._menuData
+			this.#menuData
 		));
 
-		this._store.add(this._instantiationService.createInstance(
+		const editorAffordance = this.#instantiationService.createInstance(
 			InlineChatEditorAffordance,
-			this._editor,
+			this.#editor,
 			derived(r => !context.isDiffModifiedEditorObs.read(r) && affordanceModeObs.read(r) === 'editor' ? selectionData.read(r) : undefined)
-		));
+		);
+		this._store.add(editorAffordance);
+		this._store.add(editorAffordance.onDidRunAction(() => {
+			if (affordanceId) {
+				telemetryService.publicLog2<InlineChatAffordanceEvent, InlineChatAffordanceClassification>('inlineChatAffordance/selected', { mode: 'editor', id: affordanceId });
+			}
+		}));
 
-		this._store.add(this._instantiationService.createInstance(
+		this._store.add(this.#instantiationService.createInstance(
 			AgentFeedbackAffordance,
-			this._editor, this._inputWidget, selectionData, context.agentSessionResourceContextObs,
-			context.diffMappings, context.isDiffModifiedEditorObs, this._menuData
+			this.#editor, this.#inputWidget, selectionData, context.agentSessionResourceContextObs,
+			context.diffMappings, context.isDiffModifiedEditorObs, this.#menuData
 		));
 
 		// --- Shared: bridge _menuData → input widget show/hide ---
 		this._store.add(autorun(r => {
-			const data = this._menuData.read(r);
+			const isEditor = configuredAffordance.read(r) === 'editor';
+			const controller = CodeActionController.get(this.#editor);
+			if (controller) {
+				controller.onlyLightBulbWithEmptySelection = isEditor;
+			}
+		}));
+
+		this._store.add(autorun(r => {
+			const data = this.#menuData.read(r);
 			if (!data) {
-				this._inputWidget.hideWidget();
+				this.#inputWidget.hideWidget();
 				return;
 			}
 
-			this._editor.revealLineInCenterIfOutsideViewport(data.lineNumber, ScrollType.Immediate);
+			if (affordanceId) {
+				telemetryService.publicLog2<InlineChatAffordanceEvent, InlineChatAffordanceClassification>('inlineChatAffordance/selected', { mode: 'gutter', id: affordanceId });
+			}
 
-			const editorDomNode = this._editor.getDomNode()!;
+			// Reveal the line in case it's outside the viewport (e.g., when triggered from sticky scroll)
+			this.#editor.revealLineInCenterIfOutsideViewport(data.lineNumber, ScrollType.Immediate);
+
+			const editorDomNode = this.#editor.getDomNode()!;
 			const editorRect = editorDomNode.getBoundingClientRect();
 			const left = data.rect.left - editorRect.left;
 
 			const isDiff = context.isDiffModifiedEditorObs.read(undefined);
-			this._inputWidget.show(data.lineNumber, left, data.above, { focusInput: !isDiff });
+			this.#inputWidget.show(data.lineNumber, left, data.above, { focusInput: !isDiff });
 		}));
 
 		this._store.add(autorun(r => {
-			const pos = this._inputWidget.position.read(r);
+			const pos = this.#inputWidget.position.read(r);
 			if (pos === null) {
-				this._menuData.set(undefined, undefined);
+				this.#menuData.set(undefined, undefined);
 			}
 		}));
 	}
 
 	async showMenuAtSelection() {
-		assertType(this._editor.hasModel());
+		assertType(this.#editor.hasModel());
 
-		const direction = this._editor.getSelection().getDirection();
-		const position = this._editor.getPosition();
-		const editorDomNode = this._editor.getDomNode();
-		const scrolledPosition = this._editor.getScrolledVisiblePosition(position);
+		const direction = this.#editor.getSelection().getDirection();
+		const position = this.#editor.getPosition();
+		const editorDomNode = this.#editor.getDomNode();
+		const scrolledPosition = this.#editor.getScrolledVisiblePosition(position);
 		const editorRect = editorDomNode.getBoundingClientRect();
 		const x = editorRect.left + scrolledPosition.left;
 		const y = editorRect.top + scrolledPosition.top;
 
-		this._menuData.set({
+		this.#menuData.set({
 			rect: new DOMRect(x, y, 0, scrolledPosition.height),
 			above: direction === SelectionDirection.RTL,
 			lineNumber: position.lineNumber
 		}, undefined);
 
-		await waitForState(this._inputWidget.position, pos => pos === null);
+		await waitForState(this.#inputWidget.position, pos => pos === null);
 	}
 }
 
