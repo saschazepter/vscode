@@ -106,18 +106,12 @@ export class InlineChatAffordance extends Disposable {
 			}
 		}));
 
-		const gutterAffordance = this.#instantiationService.createInstance(
+		this._store.add(this.#instantiationService.createInstance(
 			InlineChatGutterAffordance,
 			editorObs,
 			derived(r => affordance.read(r) === 'gutter' ? selectionData.read(r) : undefined),
 			this.#menuData
-		);
-		this._store.add(gutterAffordance);
-		this._store.add(gutterAffordance.onDidRunAction(() => {
-			if (affordanceId) {
-				telemetryService.publicLog2<InlineChatAffordanceEvent, InlineChatAffordanceClassification>('inlineChatAffordance/selected', { mode: 'gutter', id: affordanceId });
-			}
-		}));
+		));
 
 		const editorAffordance = this.#instantiationService.createInstance(
 			InlineChatEditorAffordance,
@@ -143,6 +137,10 @@ export class InlineChatAffordance extends Disposable {
 			const data = this.#menuData.read(r);
 			if (!data) {
 				return;
+			}
+
+			if (affordanceId) {
+				telemetryService.publicLog2<InlineChatAffordanceEvent, InlineChatAffordanceClassification>('inlineChatAffordance/selected', { mode: 'gutter', id: affordanceId });
 			}
 
 			// Reveal the line in case it's outside the viewport (e.g., when triggered from sticky scroll)

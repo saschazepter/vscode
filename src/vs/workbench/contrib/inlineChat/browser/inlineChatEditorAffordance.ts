@@ -29,6 +29,7 @@ import { IContextMenuService } from '../../../../platform/contextview/browser/co
 import { IAccessibilityService } from '../../../../platform/accessibility/common/accessibility.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { ACTION_START } from '../common/inlineChat.js';
+import { ICommandService } from '../../../../platform/commands/common/commands.js';
 
 class QuickFixActionViewItem extends MenuEntryActionViewItem {
 
@@ -43,22 +44,30 @@ class QuickFixActionViewItem extends MenuEntryActionViewItem {
 		@IContextKeyService contextKeyService: IContextKeyService,
 		@IThemeService themeService: IThemeService,
 		@IContextMenuService contextMenuService: IContextMenuService,
-		@IAccessibilityService accessibilityService: IAccessibilityService
+		@IAccessibilityService accessibilityService: IAccessibilityService,
+		@ICommandService commandService: ICommandService
 	) {
-		super(action, { draggable: false }, keybindingService, notificationService, contextKeyService, themeService, contextMenuService, accessibilityService);
-	}
+		const wrappedAction = new class extends MenuItemAction {
+			constructor() {
+				super(action.item, action.alt?.item, {}, action.hideActions, action.menuKeybinding, contextKeyService, commandService);
+			}
 
-	override async onClick(event: MouseEvent): Promise<void> {
-		const controller = CodeActionController.get(this._editor);
-		const info = controller?.lightBulbState.get();
-		if (controller && info && this.element) {
-			event.preventDefault();
-			event.stopPropagation();
-			const { bottom, left } = this.element.getBoundingClientRect();
-			await controller.showCodeActions(info.trigger, info.actions, { x: left, y: bottom });
-		} else {
-			await super.onClick(event);
-		}
+			elementGetter: () => HTMLElement | undefined = () => undefined;
+
+			override async run(...args: unknown[]): Promise<void> {
+				const controller = CodeActionController.get(_editor);
+				const info = controller?.lightBulbState.get();
+				const element = this.elementGetter();
+				if (controller && info && element) {
+					const { bottom, left } = element.getBoundingClientRect();
+					await controller.showCodeActions(info.trigger, info.actions, { x: left, y: bottom });
+				}
+			}
+		};
+
+		super(wrappedAction, { draggable: false }, keybindingService, notificationService, contextKeyService, themeService, contextMenuService, accessibilityService);
+
+		wrappedAction.elementGetter = () => this.element;
 	}
 
 	override render(container: HTMLElement): void {

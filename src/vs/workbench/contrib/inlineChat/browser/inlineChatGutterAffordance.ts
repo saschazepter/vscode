@@ -4,7 +4,6 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Codicon } from '../../../../base/common/codicons.js';
-import { Emitter, Event } from '../../../../base/common/event.js';
 import { autorun, constObservable, derived, IObservable, ISettableObservable, observableValue } from '../../../../base/common/observable.js';
 import { ObservableCodeEditor } from '../../../../editor/browser/observableCodeEditor.js';
 import { LineRange } from '../../../../editor/common/core/ranges/lineRange.js';
@@ -22,9 +21,6 @@ import { IUserInteractionService } from '../../../../platform/userInteraction/br
 import { ACTION_START } from '../common/inlineChat.js';
 
 export class InlineChatGutterAffordance extends InlineEditsGutterIndicator {
-
-	private readonly _onDidRunAction = this._store.add(new Emitter<void>());
-	readonly onDidRunAction: Event<void> = this._onDidRunAction.event;
 
 	constructor(
 		private readonly _myEditorObs: ObservableCodeEditor,
@@ -93,8 +89,6 @@ export class InlineChatGutterAffordance extends InlineEditsGutterIndicator {
 		if (this._hoverVisible.get()) {
 			return;
 		}
-
-		this._onDidRunAction.fire();
 
 		// Use the icon element from the base class as anchor
 		const iconElement = this._iconRef.element;
