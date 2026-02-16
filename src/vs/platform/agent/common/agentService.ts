@@ -27,6 +27,19 @@ export interface IAgentCreateSessionConfig {
 	readonly sessionId?: string;
 }
 
+/** Serializable model information from the agent host. */
+export interface IAgentModelInfo {
+	readonly id: string;
+	readonly name: string;
+	readonly maxContextWindow: number;
+	readonly supportsVision: boolean;
+	readonly supportsReasoningEffort: boolean;
+	readonly supportedReasoningEfforts?: readonly string[];
+	readonly defaultReasoningEffort?: string;
+	readonly policyState?: 'enabled' | 'disabled' | 'unconfigured';
+	readonly billingMultiplier?: number;
+}
+
 // ---- Progress events (discriminated union by `type`) ------------------------
 
 interface IAgentProgressEventBase {
@@ -134,6 +147,9 @@ export interface IAgentService {
 
 	/** Set the GitHub auth token used by the Copilot SDK. */
 	setAuthToken(token: string): Promise<void>;
+
+	/** List available models from the agent. */
+	listModels(): Promise<IAgentModelInfo[]>;
 
 	/** List all available sessions from the Copilot CLI. */
 	listSessions(): Promise<IAgentSessionMetadata[]>;

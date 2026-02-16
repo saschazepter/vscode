@@ -7,7 +7,7 @@ import { CopilotClient, CopilotSession, type SessionEvent, type SessionEventPayl
 import { Emitter } from '../../../base/common/event.js';
 import { Disposable, DisposableMap } from '../../../base/common/lifecycle.js';
 import { ILogService } from '../../log/common/log.js';
-import { IAgentCreateSessionConfig, IAgentProgressEvent, IAgentMessageEvent, IAgentService, IAgentSessionMetadata, IAgentToolStartEvent, IAgentToolCompleteEvent } from '../common/agentService.js';
+import { IAgentCreateSessionConfig, IAgentModelInfo, IAgentProgressEvent, IAgentMessageEvent, IAgentService, IAgentSessionMetadata, IAgentToolStartEvent, IAgentToolCompleteEvent } from '../common/agentService.js';
 import { getInvocationMessage, getPastTenseMessage, getShellLanguage, getToolDisplayName, getToolInputString, getToolKind, isHiddenTool } from './copilotToolDisplay.js';
 import { CopilotSessionWrapper } from './copilotSessionWrapper.js';
 
@@ -83,6 +83,25 @@ export class AgentService extends Disposable implements IAgentService {
 			summary: s.summary,
 		}));
 		this._logService.info(`Found ${result.length} sessions`);
+		return result;
+	}
+
+	async listModels(): Promise<IAgentModelInfo[]> {
+		this._logService.info('Listing models...');
+		const client = await this._ensureClient();
+		const models = await client.listModels();
+		const result = models.map(m => ({
+			id: m.id,
+			name: m.name,
+			maxContextWindow: m.capabilities.limits.max_context_window_tokens,
+			supportsVision: m.capabilities.supports.vision,
+			supportsReasoningEffort: m.capabilities.supports.reasoningEffort,
+			supportedReasoningEfforts: m.supportedReasoningEfforts,
+			defaultReasoningEffort: m.defaultReasoningEffort,
+			policyState: m.policy?.state,
+			billingMultiplier: m.billing?.multiplier,
+		}));
+		this._logService.info(`Found ${result.length} models`);
 		return result;
 	}
 

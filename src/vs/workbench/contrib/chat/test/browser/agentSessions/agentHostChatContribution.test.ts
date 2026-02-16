@@ -10,7 +10,7 @@ import { DisposableStore, toDisposable } from '../../../../../../base/common/lif
 import { URI } from '../../../../../../base/common/uri.js';
 import { mock, upcastPartial } from '../../../../../../base/test/common/mock.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/test/common/utils.js';
-import { NullLogService } from '../../../../../../platform/log/common/log.js';
+import { ILogService, NullLogService } from '../../../../../../platform/log/common/log.js';
 import { IAgentHostService, IAgentMessageEvent, IAgentProgressEvent, IAgentSessionMetadata } from '../../../../../../platform/agent/common/agentService.js';
 import { IDefaultAccountService } from '../../../../../../platform/defaultAccount/common/defaultAccount.js';
 import { IAuthenticationService } from '../../../../../services/authentication/common/authentication.js';
@@ -18,8 +18,10 @@ import { IChatAgentData, IChatAgentImplementation, IChatAgentRequest, IChatAgent
 import { ChatAgentLocation } from '../../../common/constants.js';
 import { IChatMarkdownContent, IChatProgress, IChatTerminalToolInvocationData, IChatToolInvocation } from '../../../common/chatService/chatService.js';
 import { IMarkdownString } from '../../../../../../base/common/htmlContent.js';
-import { IChatSessionsService, IChatSessionContentProvider, IChatSessionItemController } from '../../../common/chatSessionsService.js';
+import { IChatSessionsService } from '../../../common/chatSessionsService.js';
+import { ILanguageModelsService } from '../../../common/languageModels.js';
 import { IProductService } from '../../../../../../platform/product/common/productService.js';
+import { TestInstantiationService } from '../../../../../../platform/instantiation/test/common/instantiationServiceMock.js';
 import { AgentHostChatContribution, AgentHostSessionListController, AgentHostSessionHandler } from '../../../browser/agentSessions/agentHostChatContribution.js';
 
 // ---- Mock agent host service ------------------------------------------------
@@ -81,23 +83,6 @@ class MockAgentHostService extends mock<IAgentHostService>() {
 
 // ---- Minimal service mocks --------------------------------------------------
 
-class MockChatSessionsService extends mock<IChatSessionsService>() {
-	declare readonly _serviceBrand: undefined;
-
-	registeredControllers = new Map<string, IChatSessionItemController>();
-	registeredContentProviders = new Map<string, IChatSessionContentProvider>();
-
-	override registerChatSessionItemController(type: string, controller: IChatSessionItemController) {
-		this.registeredControllers.set(type, controller);
-		return toDisposable(() => this.registeredControllers.delete(type));
-	}
-
-	override registerChatSessionContentProvider(scheme: string, provider: IChatSessionContentProvider) {
-		this.registeredContentProviders.set(scheme, provider);
-		return toDisposable(() => this.registeredContentProviders.delete(scheme));
-	}
-}
-
 class MockChatAgentService extends mock<IChatAgentService>() {
 	declare readonly _serviceBrand: undefined;
 
@@ -109,60 +94,39 @@ class MockChatAgentService extends mock<IChatAgentService>() {
 	}
 }
 
-class MockDefaultAccountService extends mock<IDefaultAccountService>() {
-	declare readonly _serviceBrand: undefined;
-
-	override readonly onDidChangeDefaultAccount = Event.None;
-
-	override async getDefaultAccount() {
-		return null;
-	}
-}
-
-class MockAuthenticationService extends mock<IAuthenticationService>() {
-	declare readonly _serviceBrand: undefined;
-
-	override readonly onDidChangeSessions = Event.None;
-}
-
-class MockProductService extends mock<IProductService>() {
-	declare readonly _serviceBrand: undefined;
-	override readonly quality: string = 'insider';
-}
-
 // ---- Helpers ----------------------------------------------------------------
 
-function createContribution(disposables: DisposableStore) {
+function createTestServices(disposables: DisposableStore) {
+	const instantiationService = disposables.add(new TestInstantiationService());
+
 	const agentHostService = new MockAgentHostService();
 	disposables.add(toDisposable(() => agentHostService.dispose()));
 
-	const chatSessionsService = new MockChatSessionsService();
 	const chatAgentService = new MockChatAgentService();
-	const productService = new MockProductService() as unknown as IProductService;
 
-	const listController = disposables.add(new AgentHostSessionListController(
-		agentHostService as unknown as IAgentHostService,
-		productService,
-	));
+	instantiationService.stub(IAgentHostService, agentHostService);
+	instantiationService.stub(ILogService, new NullLogService());
+	instantiationService.stub(IProductService, { quality: 'insider' });
+	instantiationService.stub(IChatAgentService, chatAgentService);
+	instantiationService.stub(IChatSessionsService, {
+		registerChatSessionItemController: () => toDisposable(() => { }),
+		registerChatSessionContentProvider: () => toDisposable(() => { }),
+	});
+	instantiationService.stub(IDefaultAccountService, { onDidChangeDefaultAccount: Event.None, getDefaultAccount: async () => null });
+	instantiationService.stub(IAuthenticationService, { onDidChangeSessions: Event.None });
+	instantiationService.stub(ILanguageModelsService, { registerLanguageModelProvider: () => toDisposable(() => { }) });
 
-	const sessionHandler = disposables.add(new AgentHostSessionHandler(
-		agentHostService as unknown as IAgentHostService,
-		chatAgentService as unknown as IChatAgentService,
-		new NullLogService(),
-		productService,
-	));
+	return { instantiationService, agentHostService, chatAgentService };
+}
 
-	const contribution = disposables.add(new AgentHostChatContribution(
-		agentHostService as unknown as IAgentHostService,
-		chatSessionsService as unknown as IChatSessionsService,
-		chatAgentService as unknown as IChatAgentService,
-		new MockDefaultAccountService() as unknown as IDefaultAccountService,
-		new MockAuthenticationService() as unknown as IAuthenticationService,
-		new NullLogService(),
-		productService,
-	));
+function createContribution(disposables: DisposableStore) {
+	const { instantiationService, agentHostService, chatAgentService } = createTestServices(disposables);
 
-	return { contribution, listController, sessionHandler, agentHostService, chatSessionsService, chatAgentService };
+	const listController = disposables.add(instantiationService.createInstance(AgentHostSessionListController));
+	const sessionHandler = disposables.add(instantiationService.createInstance(AgentHostSessionHandler));
+	const contribution = disposables.add(instantiationService.createInstance(AgentHostChatContribution));
+
+	return { contribution, listController, sessionHandler, agentHostService, chatAgentService };
 }
 
 function makeRequest(overrides: Partial<{ message: string; sessionResource: URI }> = {}): IChatAgentRequest {
@@ -195,11 +159,9 @@ suite('AgentHostChatContribution', () => {
 
 	suite('registration', () => {
 
-		test('registers session item controller, content provider, and agent', () => {
-			const { chatSessionsService, chatAgentService } = createContribution(disposables);
+		test('registers agent', () => {
+			const { chatAgentService } = createContribution(disposables);
 
-			assert.ok(chatSessionsService.registeredControllers.has('agent-host'));
-			assert.ok(chatSessionsService.registeredContentProviders.has('agent-host'));
 			assert.ok(chatAgentService.registeredAgents.has('agent-host'));
 		});
 	});

@@ -38,21 +38,21 @@ VS Code sometimes changes the available tool set during an active turn (e.g., in
 
 ## P0 -- Unblocks real usage
 
-### 1. Plugging in VS Code tools
+### Plugging in VS Code tools
 
 The SDK runs its own built-in tools. We have no way to plug in VS Code tools (from extensions or built-in) to be used instead of or alongside the SDK's tools.
 
 The SDK needs an API to register custom tools or intercept tool calls. The `tool.user_requested` event already fires when a tool needs user approval. Investigate `CopilotSession` for a tool override / custom tool handler API. Once found, implement the round-trip: SDK requests a tool call -> IPC to renderer -> renderer executes via `ILanguageModelToolsService` -> result sent back over IPC -> fed back to SDK.
 
-### 2. Tool confirmation
+### Tool confirmation
 
 Not plumbed. The SDK fires `tool.user_requested` with tool name, arguments, and a call ID. We need to implement confirmation on the renderer side: receive this event over IPC, show the VS Code confirmation UI, and send back an approve/deny response.
 
-### 3. Attachments / user-selected context
+### Attachments / user-selected context
 
 Only the plain text message is sent. File attachments, editor selections, directory references, and images are silently discarded. Expand `sendMessage()` to accept structured context alongside the prompt.
 
-### 4. Interrupt / abort
+### Interrupt / abort
 
 Stubbed -- the interrupt callback returns `true` but doesn't actually stop anything. Add an `abortSession(sessionId)` IPC method wired to `session.abort()`.
 
@@ -60,99 +60,103 @@ Stubbed -- the interrupt callback returns `true` but doesn't actually stop anyth
 
 ## P1 -- Core UX parity
 
-### 5. System prompt and instructions injection
+### System prompt and instructions injection
 
 The SDK uses its own system prompt. VS Code's `.instructions.md` files, `copilot-instructions.md`, skills, agent instructions, and per-model JIT instructions are all ignored. Assemble VS Code's full system prompt in the renderer and pass it to the agent-host.
 
-### 6. Streaming tool call arguments
+### Streaming tool call arguments
 
 The SDK fires `tool.execution_start` and `tool.execution_complete`, but we don't forward the partial argument stream in between. The wrapper already has `onToolProgress` and `onToolPartialResult` events -- forward these over IPC.
 
-### 7. Edit session integration (free with #1)
+### Edit session integration (free with plugging in VS Code tools)
 
-File edits proposed by the agent aren't plumbed through VS Code's editing service (diff view, accept/reject, etc.). Free once VS Code tools are plugged in (#1) -- the tool implementations already create edits through `IChatEditingService`.
+File edits proposed by the agent aren't plumbed through VS Code's editing service (diff view, accept/reject, etc.). Free once VS Code tools are plugged in -- the tool implementations already create edits through `IChatEditingService`.
 
-### 8. Model selection
+### Model selection
 
-The IPC infrastructure supports passing a model when creating a session, but the UI never sends it. Read the selected model from the chat widget's model picker and pass it through `createSession({ model })`.
+**Done.** The model picker is now visible for agent-host sessions. The selected model ID is passed through `createSession({ model })`. SDK models are exposed in the picker via a registered `ILanguageModelChatProvider`. Note: the SDK only accepts model at session creation time; changing models mid-session requires a new session.
 
-### 9. References and citations (free with #1)
+### References and citations (free with plugging in VS Code tools)
 
-Tool results arrive as plain text with no structured file references or code citations. Free once VS Code tools are plugged in (#1).
+Tool results arrive as plain text with no structured file references or code citations. Free once VS Code tools are plugged in.
 
-### 10. Tool picker
+### Tool picker
 
 The "Configure Tools..." action is hidden when locked to a coding agent. Either remove the `lockedToCodingAgent` guard or introduce a more granular context key.
 
-### 11. Agent / participant picker
+### Agent / participant picker
 
 When locked to an agent, input completions filter out all other agents/participants. Decide whether agent-host sessions should allow switching participants.
 
-### 12. Post-request toolbar (redo, continue, edit)
+### Post-request toolbar (redo, continue, edit)
 
-All gated on `lockedToCodingAgent.negate()` and hidden. Continue should work today (gate needs removing). Redo and edit request need checkpoint support (#14).
+All gated on `lockedToCodingAgent.negate()` and hidden. Continue should work today (gate needs removing). Redo and edit request need checkpoint support.
 
-### 13. Undo / redo edit actions
+### Undo / redo edit actions
 
-Same `lockedToCodingAgent` gate. Requires edit session integration (#7) to be working first.
+Same `lockedToCodingAgent` gate. Requires edit session integration to be working first.
 
-### 14. File and context attachment completions
+### File and context attachment completions
 
-Conditionally hidden when locked to an agent. The agent-host agent registration needs to declare `supportsPromptAttachments: true`. One-line fix once attachments (#3) are plumbed.
+Conditionally hidden when locked to an agent. The agent-host agent registration needs to declare `supportsPromptAttachments: true`. One-line fix once attachments are plumbed.
 
 ---
 
 ## P2 -- Important but not launch-blocking
 
-### 15. Checkpoints and request editing
+### Linkification of file paths in responses
+
+The native agent post-processes response text to detect file paths and turn them into clickable links in the chat UI. Agent-host responses arrive as raw markdown from the SDK and don't go through this linkification pipeline. File paths mentioned in the response (e.g., "I edited `src/foo.ts`") remain plain text. Need to either run the same linkification logic on agent-host responses, or have the SDK provide structured file references that VS Code can render as links.
+
+### Checkpoints and request editing
 
 Not exposed. The SDK has `session.snapshot_rewind` events suggesting checkpoint/rewind support. The "Restore Checkpoint" UI action is also gated on `lockedToCodingAgent.negate()`.
 
-### 16. Compaction
+### Compaction
 
 Not exposed, though the SDK fires `session.compaction_start` / `session.compaction_complete` events. Add a `compact(sessionId)` IPC method for `/compact`.
 
-### 17. Hooks (pre-tool-use)
+### Hooks (pre-tool-use)
 
-Not plumbed. The SDK has `hook.start` / `hook.end` events. Two paths: use the SDK's hook system, or run VS Code's own hook system on the renderer side. Path (b) is straightforward once tool execution round-trip (#1) works.
+Not plumbed. The SDK has `hook.start` / `hook.end` events. Two paths: use the SDK's hook system, or run VS Code's own hook system on the renderer side.
 
-### 18. Telemetry
+### Telemetry
 
 Basic logging only. No token usage, no per-request telemetry, no tool invocation telemetry. The SDK fires `assistant.usage` and `session.usage_info` events.
 
-### 19. MCP server integration
+### MCP server integration
 
-Not plumbed. If we plug in VS Code tools (#1), MCP tools come through the same round-trip. Alternatively, forward MCP server configs to the SDK and let it manage connections.
+Not plumbed. If we plug in VS Code tools, MCP tools come through the same round-trip. Alternatively, forward MCP server configs to the SDK and let it manage connections.
 
-### 20. Thinking / reasoning output
+### Thinking / reasoning output
 
 Not forwarded. The SDK fires `assistant.reasoning` and `assistant.reasoning_delta` events. Forward over IPC and render as thinking blocks.
 
-### 21. Follow-up suggestions
+### Follow-up suggestions
 
 Not implemented. Needs investigation: does the SDK generate follow-up suggestions?
 
-### 22. Continue chat in... (delegation)
+### Continue chat in... (delegation)
 
 Hidden when `lockedToCodingAgent` is true. The SDK fires `session.handoff` events suggesting some support.
 
-### 23. Steering messages (mid-turn user input)
+### Steering messages (mid-turn user input)
 
-VS Code supports "steering" -- sending a message while the agent is still processing a previous request (`ChatRequestQueueKind.Steering`). The SDK has native message queuing: calling `session.send()` while a turn is active enqueues the message, and the SDK fires `pending_messages.modified` when the queue changes. However, SDK queuing is "next turn" -- the queued message is processed after the current turn finishes, not injected mid-turn. This may or may not match VS Code's steering semantics depending on whether steering is supposed to influence the current tool execution or just queue for the next exchange. Needs investigation into how the native agent loop handles steering today and whether the SDK's queue-for-next-turn behavior is sufficient.
+VS Code supports "steering" -- sending a message while the agent is still processing a previous request (`ChatRequestQueueKind.Steering`). The SDK has native message queuing: calling `session.send()` while a turn is active enqueues the message, and the SDK fires `pending_messages.modified` when the queue changes. However, SDK queuing is "next turn" -- the queued message is processed after the current turn finishes, not injected mid-turn. Needs investigation.
 
 ---
 
 ## P3 -- Nice to have
 
-### 23. Server-side tools (web search)
+### Server-side tools (web search)
 
 The SDK handles web search internally. The renderer doesn't see or render these invocations. Probably fine to let the SDK handle this one.
 
-### 24. Large tool results to disk
+### Large tool results to disk
 
 The SDK saves large tool results to disk internally. If we plug in VS Code tools instead, we need our own strategy.
 
-### 25. Title generation
+### Title generation
 
 Sessions display the SDK's `summary` field, but there's no on-demand title generation. The SDK likely generates summaries automatically after the first exchange.
 
@@ -166,4 +170,4 @@ The SDK fires `subagent.started`, `subagent.completed`, `subagent.failed`, and `
 
 ### `lockedToCodingAgent` gates
 
-Many UI actions are hidden for agent-host sessions because they check `lockedToCodingAgent.negate()`. Items #10-14 above are all instances of this pattern. The fix is generally to relax the gate or replace it with a capability check.
+Many UI actions are hidden for agent-host sessions because they check `lockedToCodingAgent.negate()`. The tool picker, agent picker, post-request toolbar, undo/redo, and attachment completions are all instances of this pattern. The fix is generally to relax the gate or replace it with a capability check.

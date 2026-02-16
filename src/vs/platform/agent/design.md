@@ -62,6 +62,15 @@ The SDK has its own built-in tools (shell, file operations, etc.) and VS Code ha
 
 The same question applies to MCP: do we use VS Code's MCP server management, or the SDK's MCP implementation, or both?
 
+## Model ownership -- open question
+
+When using the agent-host, do we need VS Code's own Copilot model access at all, or does everything flow through the SDK? Currently the Copilot extension registers language models and the agent-host registers its own from `client.listModels()`. These may overlap or diverge. Key questions:
+
+- **Does VS Code need independent model access?** The SDK makes its own LM requests using the GitHub token. If all agent-host interactions go through the SDK, VS Code never directly calls a model. The model list from the SDK would be the only source of truth for which models are available in agent-host sessions.
+- **Can the model lists diverge?** The SDK's available models depend on the CLI version and server-side configuration. VS Code's Copilot extension has its own model list. These could differ, especially during rollouts or for BYOK users.
+- **What happens to BYOK?** The SDK doesn't support custom endpoints (see blocked items in backlog). If a user has BYOK configured, the agent-host can't use it. This means the model picker for agent-host sessions should only show SDK models, not BYOK models.
+- **Current approach (proof of concept):** The agent-host registers an `ILanguageModelChatProvider` that exposes SDK models in the picker. The selected model ID is passed to `createSession({ model })`. The SDK handles its own model resolution. The `sendChatRequest` method throws -- agent-host models aren't usable for direct LM calls, only for the agent loop.
+
 ## Internal registration (no extension point)
 
 The `agent-host` session type bypasses the `chatSessions` extension point entirely. `AgentHostChatContribution` directly registers a dynamic chat agent, session item controller, session content provider, and new session command from a desktop-only workbench contribution. See [sessions.md](sessions.md) for details on how this differs from extension-contributed session types.

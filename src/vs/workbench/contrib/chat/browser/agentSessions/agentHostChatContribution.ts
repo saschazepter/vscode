@@ -6,11 +6,12 @@
 import { CancellationToken } from '../../../../../base/common/cancellation.js';
 import { Emitter } from '../../../../../base/common/event.js';
 import { MarkdownString } from '../../../../../base/common/htmlContent.js';
-import { Disposable, DisposableStore } from '../../../../../base/common/lifecycle.js';
+import { Disposable, toDisposable } from '../../../../../base/common/lifecycle.js';
 import { observableValue } from '../../../../../base/common/observable.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { ExtensionIdentifier } from '../../../../../platform/extensions/common/extensions.js';
 import { ILogService } from '../../../../../platform/log/common/log.js';
+import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
 import { IProductService } from '../../../../../platform/product/common/productService.js';
 import { IAgentHostService, IAgentToolCompleteEvent, IAgentToolStartEvent } from '../../../../../platform/agent/common/agentService.js';
 import { IDefaultAccountService } from '../../../../../platform/defaultAccount/common/defaultAccount.js';
@@ -22,10 +23,67 @@ import { IChatProgress, IChatTerminalToolInvocationData, IChatToolInvocationSeri
 import { ChatToolInvocation } from '../../common/model/chatProgressTypes/chatToolInvocation.js';
 import { IToolData, ToolDataSource } from '../../common/tools/languageModelToolsService.js';
 import { ChatSessionStatus, IChatSession, IChatSessionContentProvider, IChatSessionHistoryItem, IChatSessionItem, IChatSessionItemController, IChatSessionsService } from '../../common/chatSessionsService.js';
+import { ILanguageModelChatProvider, ILanguageModelChatMetadataAndIdentifier, ILanguageModelsService } from '../../common/languageModels.js';
 import { getAgentHostIcon } from '../agentSessions/agentSessions.js';
 
 const AGENT_HOST_SESSION_TYPE = 'agent-host';
 const AGENT_HOST_AGENT_ID = 'agent-host';
+
+// =============================================================================
+// Agent host chat session - wraps streaming state and request handling
+// =============================================================================
+
+/**
+ * Represents an open agent-host chat session with its streaming state,
+ * request handler, and disposal logic.
+ */
+class AgentHostChatSession extends Disposable implements IChatSession {
+	readonly progressObs = observableValue<IChatProgress[]>('agentHostProgress', []);
+	readonly isCompleteObs = observableValue<boolean>('agentHostComplete', true);
+
+	private readonly _onWillDispose = this._register(new Emitter<void>());
+	readonly onWillDispose = this._onWillDispose.event;
+
+	readonly requestHandler: IChatSession['requestHandler'];
+	readonly interruptActiveResponseCallback: IChatSession['interruptActiveResponseCallback'];
+
+	constructor(
+		readonly sessionResource: URI,
+		readonly history: readonly IChatSessionHistoryItem[],
+		private readonly _sessionId: string,
+		private readonly _handler: AgentHostSessionHandler,
+		@IAgentHostService private readonly _agentHostService: IAgentHostService,
+		@ILogService private readonly _logService: ILogService,
+	) {
+		super();
+
+		// Register cleanup: fire onWillDispose, clean up session mapping, dispose SDK session
+		this._register(toDisposable(() => this._onWillDispose.fire()));
+		this._register(toDisposable(() => this._handler.clearSessionMapping(this.sessionResource)));
+		this._register(toDisposable(() => {
+			const resolvedId = this._handler.getResolvedSessionId(this.sessionResource) ?? this._sessionId;
+			this._agentHostService.disposeSession(resolvedId);
+		}));
+
+		this.requestHandler = async (request, progress, _history, cancellationToken) => {
+			this._logService.info(`[AgentHost] requestHandler called for session ${this._sessionId}`);
+			const resolvedId = await this._handler.resolveSessionId(sessionResource);
+
+			this.isCompleteObs.set(false, undefined);
+			await this._handler.sendAndStreamResponse(resolvedId, request.message, progress, cancellationToken);
+			this.isCompleteObs.set(true, undefined);
+		};
+
+		// Only provide interruptActiveResponseCallback for sessions without
+		// existing history. When history exists and isCompleteObs starts true,
+		// the chat service creates a "pending request" that never gets cleaned
+		// up, blocking all future requests with "already has a pending request".
+		this.interruptActiveResponseCallback = history.length > 0 ? undefined : async () => {
+			// TODO: Hook up session.abort()
+			return true;
+		};
+	}
+}
 
 // =============================================================================
 // Session list controller - lists SDK sessions in the chat sessions view
@@ -43,8 +101,8 @@ export class AgentHostSessionListController extends Disposable implements IChatS
 	private _items: IChatSessionItem[] = [];
 
 	constructor(
-		private readonly _agentHostService: IAgentHostService,
-		private readonly _productService: IProductService,
+		@IAgentHostService private readonly _agentHostService: IAgentHostService,
+		@IProductService private readonly _productService: IProductService,
 	) {
 		super();
 	}
@@ -89,18 +147,15 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 	/** Maps VS Code chat resource URIs → SDK session IDs for multi-turn reuse. */
 	private readonly _resourceToSessionId = new Map<string, string>();
 
-	/** Tracks active contributed-session state (progress observable, completion). */
-	private readonly _activeSessions = new Map<string, {
-		readonly progressObs: ReturnType<typeof observableValue<IChatProgress[]>>;
-		readonly isCompleteObs: ReturnType<typeof observableValue<boolean>>;
-		readonly disposables: DisposableStore;
-	}>();
+	/** Tracks active chat sessions. */
+	private readonly _activeSessions = new Map<string, AgentHostChatSession>();
 
 	constructor(
-		private readonly _agentHostService: IAgentHostService,
-		private readonly _chatAgentService: IChatAgentService,
-		private readonly _logService: ILogService,
-		private readonly _productService: IProductService,
+		@IAgentHostService private readonly _agentHostService: IAgentHostService,
+		@IChatAgentService private readonly _chatAgentService: IChatAgentService,
+		@ILogService private readonly _logService: ILogService,
+		@IProductService private readonly _productService: IProductService,
+		@IInstantiationService private readonly _instantiationService: IInstantiationService,
 	) {
 		super();
 		this._registerAgent();
@@ -205,57 +260,9 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 			}
 		}
 
-		// Set up streaming state
-		const progressObs = observableValue<IChatProgress[]>('agentHostProgress', []);
-		const isCompleteObs = observableValue<boolean>('agentHostComplete', true);
-		const disposables = new DisposableStore();
-		const onWillDispose = new Emitter<void>();
-		disposables.add(onWillDispose);
-
-		this._activeSessions.set(sessionId, { progressObs, isCompleteObs, disposables });
-
-		return {
-			sessionResource,
-			history,
-			progressObs,
-			isCompleteObs,
-			onWillDispose: onWillDispose.event,
-			requestHandler: async (request, progress, _history, cancellationToken) => {
-				this._logService.info(`[AgentHost] requestHandler called for session ${sessionId}, message: "${request.message.substring(0, 50)}"`);
-				const resolvedId = await this._resolveSessionId(sessionResource);
-
-				const activeSession = this._activeSessions.get(sessionId);
-				if (activeSession) {
-					activeSession.isCompleteObs.set(false, undefined);
-				}
-
-				await this._sendAndStreamResponse(resolvedId, request.message, progress, cancellationToken);
-
-				if (activeSession) {
-					activeSession.isCompleteObs.set(true, undefined);
-				}
-			},
-			// Only provide interruptActiveResponseCallback for sessions without
-			// existing history. When history exists and isCompleteObs starts true,
-			// the chat service creates a "pending request" that never gets cleaned
-			// up, blocking all future requests with "already has a pending request".
-			interruptActiveResponseCallback: history.length > 0 ? undefined : async () => {
-				// TODO: Hook up session.abort()
-				return true;
-			},
-			dispose: () => {
-				onWillDispose.fire();
-				this._activeSessions.delete(sessionId);
-
-				// Destroy the SDK session in the agent host process
-				const key = sessionResource.toString();
-				const resolvedId = this._resourceToSessionId.get(key) ?? sessionId;
-				this._resourceToSessionId.delete(key);
-				this._agentHostService.disposeSession(resolvedId);
-
-				disposables.dispose();
-			},
-		};
+		const session = this._instantiationService.createInstance(AgentHostChatSession, sessionResource, history, sessionId, this);
+		this._activeSessions.set(sessionId, session);
+		return session;
 	}
 
 	// ---- Chat agent ---------------------------------------------------------
@@ -295,10 +302,10 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		cancellationToken: CancellationToken,
 	): Promise<IChatAgentResult> {
 		this._logService.info(`[AgentHost] _invokeAgent called for resource: ${request.sessionResource.toString()}`);
-		const sessionId = await this._resolveSessionId(request.sessionResource);
+		const sessionId = await this.resolveSessionId(request.sessionResource, request.userSelectedModelId);
 		this._logService.info(`[AgentHost] resolved session ID: ${sessionId}`);
 
-		await this._sendAndStreamResponse(sessionId, request.message, progress, cancellationToken);
+		await this.sendAndStreamResponse(sessionId, request.message, progress, cancellationToken);
 
 		const activeSession = this._activeSessions.get(sessionId);
 		if (activeSession) {
@@ -323,7 +330,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 	 *   tool_complete  → completes the matching ChatToolInvocation
 	 *   idle           → resolves the promise, ends the response
 	 */
-	private async _sendAndStreamResponse(
+	async sendAndStreamResponse(
 		sessionId: string,
 		message: string,
 		progress: (parts: IChatProgress[]) => void,
@@ -403,7 +410,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 	 * - `agent-host:///untitled-*` → creates a new SDK session (mapped)
 	 * - Any other scheme → creates or reuses an SDK session keyed by URI
 	 */
-	private async _resolveSessionId(sessionResource: URI): Promise<string> {
+	async resolveSessionId(sessionResource: URI, model?: string): Promise<string> {
 		if (sessionResource.scheme === AGENT_HOST_SESSION_TYPE && !sessionResource.path.startsWith('/untitled-')) {
 			return sessionResource.path.substring(1);
 		}
@@ -414,9 +421,17 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 			return existing;
 		}
 
-		const sessionId = await this._agentHostService.createSession();
+		const sessionId = await this._agentHostService.createSession({ model });
 		this._resourceToSessionId.set(key, sessionId);
 		return sessionId;
+	}
+
+	getResolvedSessionId(sessionResource: URI): string | undefined {
+		return this._resourceToSessionId.get(sessionResource.toString());
+	}
+
+	clearSessionMapping(sessionResource: URI): void {
+		this._resourceToSessionId.delete(sessionResource.toString());
 	}
 
 	private _createToolInvocation(event: IAgentToolStartEvent): ChatToolInvocation {
@@ -479,12 +494,77 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 	}
 
 	override dispose(): void {
-		for (const [, state] of this._activeSessions) {
-			state.disposables.dispose();
+		for (const [, session] of this._activeSessions) {
+			session.dispose();
 		}
 		this._activeSessions.clear();
 		this._resourceToSessionId.clear();
 		super.dispose();
+	}
+}
+
+// =============================================================================
+// Language model provider - exposes SDK models in VS Code's model picker
+// =============================================================================
+
+const AGENT_HOST_MODEL_VENDOR = 'agent-host';
+
+class AgentHostLanguageModelProvider implements ILanguageModelChatProvider {
+	private readonly _onDidChange = new Emitter<void>();
+	readonly onDidChange = this._onDidChange.event;
+
+	constructor(
+		private readonly _agentHostService: IAgentHostService,
+		private readonly _logService: ILogService,
+	) {
+		// Fire when the agent host starts/restarts so the service re-queries us
+		this._agentHostService.onAgentHostStart(() => this._onDidChange.fire());
+		// Fire after a tick so the registration has time to attach a listener
+		setTimeout(() => this._onDidChange.fire(), 0);
+	}
+
+	async provideLanguageModelChatInfo(_options: unknown, _token: CancellationToken): Promise<ILanguageModelChatMetadataAndIdentifier[]> {
+		try {
+			const models = await this._agentHostService.listModels();
+			return models
+				.filter(m => m.policyState !== 'disabled')
+				.map(m => ({
+					identifier: `${AGENT_HOST_MODEL_VENDOR}:${m.id}`,
+					metadata: {
+						extension: new ExtensionIdentifier('vscode.agent-host'),
+						name: m.name,
+						id: m.id,
+						vendor: AGENT_HOST_MODEL_VENDOR,
+						version: '1.0',
+						family: m.id,
+						maxInputTokens: m.maxContextWindow,
+						maxOutputTokens: 0,
+						isDefaultForLocation: {},
+						isUserSelectable: true,
+						modelPickerCategory: undefined,
+						capabilities: {
+							vision: m.supportsVision,
+							toolCalling: true,
+							agentMode: true,
+						},
+					},
+				}));
+		} catch (err) {
+			this._logService.error('[AgentHost] Failed to list models', err);
+			return [];
+		}
+	}
+
+	async sendChatRequest(): Promise<never> {
+		throw new Error('Agent-host models do not support direct chat requests');
+	}
+
+	async provideTokenCount(): Promise<number> {
+		return 0;
+	}
+
+	dispose(): void {
+		this._onDidChange.dispose();
 	}
 }
 
@@ -508,16 +588,22 @@ export class AgentHostChatContribution extends Disposable implements IWorkbenchC
 		@IAuthenticationService private readonly _authenticationService: IAuthenticationService,
 		@ILogService logService: ILogService,
 		@IProductService productService: IProductService,
+		@ILanguageModelsService languageModelsService: ILanguageModelsService,
+		@IInstantiationService private readonly _instantiationService: IInstantiationService,
 	) {
 		super();
 
 		// Session list controller
-		const listController = this._register(new AgentHostSessionListController(this._agentHostService, productService));
+		const listController = this._register(this._instantiationService.createInstance(AgentHostSessionListController));
 		this._register(chatSessionsService.registerChatSessionItemController(AGENT_HOST_SESSION_TYPE, listController));
 
 		// Session handler + agent
-		const sessionHandler = this._register(new AgentHostSessionHandler(this._agentHostService, chatAgentService, logService, productService));
+		const sessionHandler = this._register(this._instantiationService.createInstance(AgentHostSessionHandler));
 		this._register(chatSessionsService.registerChatSessionContentProvider(AGENT_HOST_SESSION_TYPE, sessionHandler));
+
+		// Language model provider (exposes SDK models in the model picker)
+		const modelProvider = new AgentHostLanguageModelProvider(this._agentHostService, logService);
+		this._register(languageModelsService.registerLanguageModelProvider(AGENT_HOST_MODEL_VENDOR, modelProvider));
 
 		// Auth
 		this._pushAuthToken();

@@ -1040,6 +1040,13 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 	}
 
 	private getModels(): ILanguageModelChatMetadataAndIdentifier[] {
+		const sessionResource = this._widget?.viewModel?.model.sessionResource;
+		const sessionType = sessionResource ? getChatSessionType(sessionResource) : undefined;
+
+		// For agent-host sessions, only show models from the agent-host vendor
+		// (driven by the SDK's listModels). Other sessions show all models.
+		const agentHostOnly = sessionType === AgentSessionProviders.AgentHost;
+
 		const cachedModels = this.storageService.getObject<ILanguageModelChatMetadataAndIdentifier[]>(CachedLanguageModelsKey, StorageScope.APPLICATION, []);
 		let models = this.languageModelsService.getLanguageModelIds()
 			.map(modelId => ({ identifier: modelId, metadata: this.languageModelsService.lookupLanguageModel(modelId)! }));
@@ -1049,7 +1056,15 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 			this.storageService.store(CachedLanguageModelsKey, models, StorageScope.APPLICATION, StorageTarget.MACHINE);
 		}
 		models.sort((a, b) => a.metadata.name.localeCompare(b.metadata.name));
-		return models.filter(entry => entry.metadata?.isUserSelectable && this.modelSupportedForDefaultAgent(entry) && this.modelSupportedForInlineChat(entry));
+		return models.filter(entry => {
+			if (!entry.metadata?.isUserSelectable) {
+				return false;
+			}
+			if (agentHostOnly) {
+				return entry.metadata.vendor === 'agent-host';
+			}
+			return this.modelSupportedForDefaultAgent(entry) && this.modelSupportedForInlineChat(entry);
+		});
 	}
 
 	private setCurrentLanguageModelToDefault() {
