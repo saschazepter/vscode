@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { localize } from '../../../../nls.js';
-import { EditorGroupLayout, GroupDirection, GroupLocation, GroupOrientation, GroupsArrangement, GroupsOrder, IAuxiliaryEditorPart, IEditorGroupContextKeyProvider, IEditorDropTargetDelegate, IEditorGroupsService, IEditorSideGroup, IEditorWorkingSet, IFindGroupScope, IMergeGroupOptions, IEditorWorkingSetOptions, IEditorPart, IModalEditorPart, IEditorGroupActivationEvent } from '../../../services/editor/common/editorGroupsService.js';
+import { EditorGroupLayout, GroupDirection, GroupLocation, GroupOrientation, GroupsArrangement, GroupsOrder, IAuxiliaryEditorPart, IEditorGroupContextKeyProvider, IEditorDropTargetDelegate, IEditorGroupsService, IEditorSideGroup, IEditorWorkingSet, IFindGroupScope, IMergeGroupOptions, IEditorWorkingSetOptions, IEditorPart, IModalEditorPart, IEditorGroupActivationEvent, IModalEditorPartOptions } from '../../../services/editor/common/editorGroupsService.js';
 import { Emitter } from '../../../../base/common/event.js';
 import { DisposableMap, DisposableStore, IDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { GroupIdentifier, IEditorPartOptions } from '../../../common/editor.js';
@@ -157,14 +157,16 @@ export class EditorParts extends MultiWindowParts<EditorPart, IEditorPartsMement
 	private modalEditorPart: IModalEditorPart | undefined;
 	get activeModalEditorPart(): IModalEditorPart | undefined { return this.modalEditorPart; }
 
-	async createModalEditorPart(): Promise<IModalEditorPart> {
+	async createModalEditorPart(options?: IModalEditorPartOptions): Promise<IModalEditorPart> {
 
 		// Reuse existing modal editor part if it exists
 		if (this.modalEditorPart) {
+			this.modalEditorPart.updateOptions(options);
+
 			return this.modalEditorPart;
 		}
 
-		const { part, instantiationService, disposables } = await this.instantiationService.createInstance(ModalEditorPart, this).create();
+		const { part, instantiationService, disposables } = await this.instantiationService.createInstance(ModalEditorPart, this).create(options);
 
 		// Keep instantiation service and reference to reuse
 		this.modalEditorPart = part;
