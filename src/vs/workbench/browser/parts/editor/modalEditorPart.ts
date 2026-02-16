@@ -241,7 +241,7 @@ class ModalEditorPartImpl extends EditorPart implements IModalEditorPart {
 	constructor(
 		windowId: number,
 		editorPartsView: IEditorPartsView,
-		private readonly modalElement: HTMLElement,
+		public readonly modalElement: HTMLElement,
 		@IInstantiationService instantiationService: IInstantiationService,
 		@IThemeService themeService: IThemeService,
 		@IConfigurationService configurationService: IConfigurationService,
