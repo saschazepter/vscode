@@ -14,26 +14,36 @@ import { CDPBrowserProxy } from '../common/cdp/proxy.js';
 import { CDPEvent, CDPRequest, CDPError, CDPErrorCode, ICDPBrowserTarget, ICDPConnection } from '../common/cdp/types.js';
 import { disposableTimeout } from '../../../base/common/async.js';
 import { ISocket } from '../../../base/parts/ipc/common/ipc.net.js';
+import { createDecorator } from '../../instantiation/common/instantiation.js';
+
+export const IBrowserViewCDPProxyServer = createDecorator<IBrowserViewCDPProxyServer>('browserViewCDPProxyServer');
+
+export interface IBrowserViewCDPProxyServer {
+	readonly _serviceBrand: undefined;
+
+	/**
+	 * Returns a debug endpoint with a short-lived, single-use token.
+	 */
+	getWebSocketEndpoint(): Promise<string>;
+}
 
 /**
  * WebSocket server that provides CDP debugging for browser views.
  */
-export class BrowserViewCDPProxyServer extends Disposable {
+export class BrowserViewCDPProxyServer extends Disposable implements IBrowserViewCDPProxyServer {
+	declare readonly _serviceBrand: undefined;
+
 	private server: http.Server | undefined;
 	private port: number | undefined;
 	private readonly tokens: TokenManager;
 
 	constructor(
-		private readonly targetService: ICDPBrowserTarget,
+		private readonly browserTarget: ICDPBrowserTarget,
 		@ILogService private readonly logService: ILogService
 	) {
 		super();
 
 		this.tokens = this._register(new TokenManager());
-	}
-
-	private getWebSocketUrl(token: string): string {
-		return `ws://localhost:${this.port}/devtools/browser?token=${token}`;
 	}
 
 	/**
@@ -46,6 +56,10 @@ export class BrowserViewCDPProxyServer extends Disposable {
 
 		const token = await this.tokens.issueToken();
 		return this.getWebSocketUrl(token);
+	}
+
+	private getWebSocketUrl(token: string): string {
+		return `ws://localhost:${this.port}/devtools/browser?token=${token}`;
 	}
 
 	private async ensureServerStarted(): Promise<void> {
@@ -108,7 +122,7 @@ export class BrowserViewCDPProxyServer extends Disposable {
 			return;
 		}
 
-		const proxy = new CDPBrowserProxy(this.targetService);
+		const proxy = new CDPBrowserProxy(this.browserTarget);
 		const disposables = this.wireWebSocket(upgraded, proxy);
 		this._register(disposables);
 		this._register(upgraded);
@@ -149,6 +163,7 @@ export class BrowserViewCDPProxyServer extends Disposable {
 					});
 			} catch (error) {
 				this.logService.error('[BrowserViewDebugProxy] Error parsing message:', error);
+				upgraded.end();
 			}
 		}));
 

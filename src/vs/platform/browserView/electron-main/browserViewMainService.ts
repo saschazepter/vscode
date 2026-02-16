@@ -15,13 +15,15 @@ import { generateUuid } from '../../../base/common/uuid.js';
 import { BrowserViewUri } from '../common/browserViewUri.js';
 import { IWindowsMainService } from '../../windows/electron-main/windows.js';
 import { BrowserSession } from './browserSession.js';
-import { BrowserViewCDPProxyServer } from './browserViewCDPProxyServer.js';
+import { IBrowserViewCDPProxyServer } from './browserViewCDPProxyServer.js';
 import { IProductService } from '../../product/common/productService.js';
 import { CDPBrowserProxy } from '../common/cdp/proxy.js';
 
 export const IBrowserViewMainService = createDecorator<IBrowserViewMainService>('browserViewMainService');
 
 export interface IBrowserViewMainService extends IBrowserViewService, ICDPBrowserTarget {
+	readonly _serviceBrand: undefined;
+
 	tryGetBrowserView(id: string): BrowserView | undefined;
 }
 
@@ -45,17 +47,14 @@ export class BrowserViewMainService extends Disposable implements IBrowserViewMa
 	private readonly _onTargetDestroyed = this._register(new Emitter<BrowserView>());
 	readonly onTargetDestroyed: Event<BrowserView> = this._onTargetDestroyed.event;
 
-	private readonly cdpProxyServer: BrowserViewCDPProxyServer;
-
 	constructor(
 		@IEnvironmentMainService private readonly environmentMainService: IEnvironmentMainService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@IWindowsMainService private readonly windowsMainService: IWindowsMainService,
-		@IProductService private readonly productService: IProductService
+		@IProductService private readonly productService: IProductService,
+		@IBrowserViewCDPProxyServer private readonly cdpProxyServer: IBrowserViewCDPProxyServer,
 	) {
 		super();
-
-		this.cdpProxyServer = this._register(instantiationService.createInstance(BrowserViewCDPProxyServer, this));
 	}
 
 	/**

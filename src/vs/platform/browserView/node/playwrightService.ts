@@ -59,6 +59,12 @@ export class PlaywrightService extends Disposable implements IPlaywrightService 
 					}
 				});
 
+				// This can happen if the service was disposed while we were waiting for the connection. In that case, clean up immediately.
+				if (this._initPromise === undefined) {
+					browser.close().catch(() => { /* ignore */ });
+					throw new Error('PlaywrightService was disposed during initialization');
+				}
+
 				this._browser = browser;
 			} finally {
 				this._initPromise = undefined;
@@ -72,8 +78,8 @@ export class PlaywrightService extends Disposable implements IPlaywrightService 
 		if (this._browser) {
 			this._browser.close().catch(() => { /* ignore */ });
 			this._browser = undefined;
-			this._initPromise = undefined;
 		}
+		this._initPromise = undefined;
 		super.dispose();
 	}
 }
