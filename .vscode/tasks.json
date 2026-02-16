@@ -77,7 +77,7 @@
 					"${workspaceFolder}"
 				],
 				"pattern": {
-					"regexp": "\\] (.+)\\((\\d+,\\d+)\\): (.*)$",
+					"regexp": "\\] ([^(]+)\\((\\d+,\\d+)\\): (.*)$",
 					"file": 1,
 					"location": 2,
 					"message": 3
