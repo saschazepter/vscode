@@ -5,6 +5,7 @@
 
 import * as nls from '../../../../nls.js';
 import * as paths from '../../../../base/common/path.js';
+import { URI } from '../../../../base/common/uri.js';
 import { DEFAULT_TERMINAL_OSX, IExternalTerminalSettings } from '../../../../platform/externalTerminal/common/externalTerminal.js';
 import { MenuId, MenuRegistry } from '../../../../platform/actions/common/actions.js';
 import { KeyMod, KeyCode } from '../../../../base/common/keyCodes.js';
@@ -41,7 +42,7 @@ KeybindingsRegistry.registerCommandAndKeybindingRule({
 
 		// When there are multiple workspace folders, let the user pick one
 		const folders = workspaceContextService.getWorkspace().folders;
-		let root;
+		let root: URI | undefined;
 		if (folders.length > 1) {
 			const workspace = await commandService.executeCommand<IWorkspaceFolder>(PICK_WORKSPACE_FOLDER_COMMAND_ID);
 			if (!workspace) {
