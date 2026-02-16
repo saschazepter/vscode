@@ -28,6 +28,7 @@ import { NotificationsToastsVisibleContext } from '../../../common/contextkeys.j
 import { mainWindow } from '../../../../base/browser/window.js';
 import { IWorkbenchEnvironmentService } from '../../../services/environment/common/environmentService.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
+import { DEFAULT_CUSTOM_TITLEBAR_HEIGHT } from '../../../../platform/window/common/window.js';
 
 interface INotificationToast {
 	readonly item: INotificationViewItem;
@@ -151,7 +152,7 @@ export class NotificationsToasts extends Themable implements INotificationsToast
 		if (position === NotificationsPosition.TOP_RIGHT) {
 			let topOffset = 3;
 			if (this.layoutService.isVisible(Parts.TITLEBAR_PART, mainWindow)) {
-				topOffset += 35; // adjust for title bar (DEFAULT_CUSTOM_TITLEBAR_HEIGHT)
+				topOffset += DEFAULT_CUSTOM_TITLEBAR_HEIGHT;
 			}
 			this.notificationsToastsContainer.style.top = `${topOffset}px`;
 		} else {
