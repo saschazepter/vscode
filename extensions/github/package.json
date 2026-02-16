@@ -179,7 +179,7 @@
           "command": "github.createPullRequest",
           "group": "navigation",
           "order": 1,
-          "when": "agentSessionHasChanges"
+          "when": "isAgentSessionsWorkspace && agentSessionHasChanges && chatSessionType == copilotcli"
         }
       ]
     },
