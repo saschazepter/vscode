@@ -233,7 +233,10 @@ export class ModePickerActionItem extends ChatInputPickerActionViewItem {
 				}) ?? [];
 				customBuiltinModeActions.sort((a, b) => a.label.localeCompare(b.label));
 
-				const customModeActions = customModes.custom?.map(mode => makeActionFromCustomMode(mode, currentMode)) ?? [];
+				const customModeActions = customModes.custom?.filter(mode => {
+					const target = mode.target.get();
+					return target === Target.Undefined || target === Target.VSCode;
+				})?.map(mode => makeActionFromCustomMode(mode, currentMode)) ?? [];
 				customModeActions.sort((a, b) => a.label.localeCompare(b.label));
 
 				const orderedModes = coalesce([
