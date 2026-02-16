@@ -28,6 +28,7 @@ import { INotificationService, NotificationsFilter } from '../../../../platform/
 import { mainWindow } from '../../../../base/browser/window.js';
 import { IContextMenuService } from '../../../../platform/contextview/browser/contextView.js';
 import { DropdownMenuActionViewItem } from '../../../../base/browser/ui/dropdown/dropdownActionViewItem.js';
+import { DEFAULT_CUSTOM_TITLEBAR_HEIGHT } from '../../../../platform/window/common/window.js';
 import { AccessibilitySignal, IAccessibilitySignalService } from '../../../../platform/accessibilitySignal/browser/accessibilitySignalService.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 
@@ -99,7 +100,7 @@ export class NotificationsCenter extends Themable implements INotificationsCente
 		if (position === NotificationsPosition.TOP_RIGHT) {
 			let topOffset = 7;
 			if (this.layoutService.isVisible(Parts.TITLEBAR_PART, mainWindow)) {
-				topOffset += 35; // adjust for title bar (DEFAULT_CUSTOM_TITLEBAR_HEIGHT)
+				topOffset += DEFAULT_CUSTOM_TITLEBAR_HEIGHT; // adjust for title bar
 			}
 			this.notificationsCenterContainer.style.top = `${topOffset}px`;
 		} else {
