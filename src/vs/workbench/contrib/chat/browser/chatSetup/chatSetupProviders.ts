@@ -474,6 +474,17 @@ export class SetupAgent extends Disposable implements IChatAgentImplementation {
 						}
 					});
 
+					// Add a button to show the GitHub Copilot Chat output channel
+					if (defaultChat.outputChannelId) {
+						progress({
+							kind: 'command',
+							command: {
+								id: `workbench.action.output.show.${defaultChat.outputChannelId}`,
+								title: localize('showCopilotChatOutput', "Show Output")
+							}
+						});
+					}
+
 					// This means Chat is unhealthy and we cannot retry the
 					// request. Signal this to the outside via an event.
 					this._onUnresolvableError.fire();
