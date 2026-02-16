@@ -24,9 +24,12 @@ import { AgentSessionsPicker } from '../../../../workbench/contrib/chat/browser/
 import { autorun } from '../../../../base/common/observable.js';
 import { IChatService } from '../../../../workbench/contrib/chat/common/chatService/chatService.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
+import { Codicon } from '../../../../base/common/codicons.js';
 import { getAgentChangesSummary, hasValidDiff, IAgentSession, isAgentSession } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsModel.js';
 import { getAgentSessionProvider, getAgentSessionProviderIcon } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessions.js';
 import { basename } from '../../../../base/common/resources.js';
+import { ICommandService } from '../../../../platform/commands/common/commands.js';
+import { ViewAllSessionChangesAction } from '../../../../workbench/contrib/chat/browser/chatEditing/chatEditingActions.js';
 
 /**
  * Sessions Title Bar Widget - renders the active chat session title
@@ -60,6 +63,7 @@ export class SessionsTitleBarWidget extends BaseActionViewItem {
 		@IActiveSessionService private readonly activeSessionService: IActiveSessionService,
 		@IChatService private readonly chatService: IChatService,
 		@IAgentSessionsService private readonly agentSessionsService: IAgentSessionsService,
+		@ICommandService private readonly commandService: ICommandService,
 	) {
 		super(undefined, action, options);
 
@@ -165,6 +169,10 @@ export class SessionsTitleBarWidget extends BaseActionViewItem {
 
 					const changesEl = $('span.agent-sessions-titlebar-changes');
 
+					// Diff icon
+					const changesIconEl = $('span.agent-sessions-titlebar-changes-icon' + ThemeIcon.asCSSSelector(Codicon.diffMultiple));
+					changesEl.appendChild(changesIconEl);
+
 					const addedEl = $('span.agent-sessions-titlebar-added');
 					addedEl.textContent = `+${changes.insertions}`;
 					changesEl.appendChild(addedEl);
@@ -174,6 +182,20 @@ export class SessionsTitleBarWidget extends BaseActionViewItem {
 					changesEl.appendChild(removedEl);
 
 					centerGroup.appendChild(changesEl);
+
+					// Separate hover for changes
+					this._dynamicDisposables.add(this.hoverService.setupManagedHover(
+						getDefaultHoverDelegate('mouse'),
+						changesEl,
+						localize('agentSessions.viewChanges', "View All Changes")
+					));
+
+					// Click on changes opens multi-diff editor
+					this._dynamicDisposables.add(addDisposableListener(changesEl, EventType.CLICK, (e) => {
+						e.preventDefault();
+						e.stopPropagation();
+						this._openChanges();
+					}));
 				}
 			}
 
@@ -324,6 +346,15 @@ export class SessionsTitleBarWidget extends BaseActionViewItem {
 	private _showSessionsPicker(): void {
 		const picker = this.instantiationService.createInstance(AgentSessionsPicker, undefined);
 		picker.pickAgentSession();
+	}
+
+	private _openChanges(): void {
+		const activeSession = this.activeSessionService.getActiveSession();
+		if (!activeSession) {
+			return;
+		}
+
+		this.commandService.executeCommand(ViewAllSessionChangesAction.ID, activeSession.resource);
 	}
 }
 

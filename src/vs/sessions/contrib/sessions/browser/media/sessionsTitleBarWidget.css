@@ -75,6 +75,21 @@
 	display: flex;
 	align-items: center;
 	gap: 3px;
+	cursor: pointer;
+	padding: 0 4px;
+	border-radius: 3px;
+}
+
+.command-center .agent-sessions-titlebar-container .agent-sessions-titlebar-changes:hover {
+	background-color: var(--vscode-toolbar-hoverBackground);
+}
+
+/* Changes icon */
+.command-center .agent-sessions-titlebar-container .agent-sessions-titlebar-changes-icon {
+	display: flex;
+	align-items: center;
+	flex-shrink: 0;
+	font-size: 14px;
 }
 
 /* Insertions */
