@@ -8,12 +8,11 @@ import { Codicon } from '../../../../../base/common/codicons.js';
 import { Emitter, Event } from '../../../../../base/common/event.js';
 import { MarkdownString } from '../../../../../base/common/htmlContent.js';
 import { Disposable, IDisposable } from '../../../../../base/common/lifecycle.js';
-import { ResourceMap } from '../../../../../base/common/map.js';
+import { ResourceMap, ResourceSet } from '../../../../../base/common/map.js';
 import { ThemeIcon } from '../../../../../base/common/themables.js';
-import { URI } from '../../../../../base/common/uri.js';
 import { Position } from '../../../../../editor/common/core/position.js';
-import { IWorkspaceTextEdit, TextEdit } from '../../../../../editor/common/languages.js';
-import { IBulkEditService } from '../../../../../editor/browser/services/bulkEditService.js';
+import { TextEdit } from '../../../../../editor/common/languages.js';
+import { IBulkEditService, ResourceTextEdit } from '../../../../../editor/browser/services/bulkEditService.js';
 import { ILanguageFeaturesService } from '../../../../../editor/common/services/languageFeatures.js';
 import { ITextModelService } from '../../../../../editor/common/services/resolverService.js';
 import { rename } from '../../../../../editor/contrib/rename/browser/rename.js';
@@ -178,7 +177,7 @@ export class RenameTool extends Disposable implements IToolImpl {
 					// Group text edits by URI
 					const editsByUri = new ResourceMap<TextEdit[]>();
 					for (const edit of renameResult.edits) {
-						if (isWorkspaceTextEdit(edit)) {
+						if (ResourceTextEdit.is(edit)) {
 							let edits = editsByUri.get(edit.resource);
 							if (!edits) {
 								edits = [];
@@ -214,7 +213,8 @@ export class RenameTool extends Disposable implements IToolImpl {
 
 			// Fallback: apply via bulk edit service when no chat context is available
 			await this._bulkEditService.apply(renameResult);
-			return this._successResult(input, 0, renameResult.edits.length);
+			const fileCount = new ResourceSet(renameResult.edits.filter(ResourceTextEdit.is).map(e => e.resource)).size;
+			return this._successResult(input, fileCount, renameResult.edits.length);
 
 		} finally {
 			ref.dispose();
@@ -232,11 +232,7 @@ export class RenameTool extends Disposable implements IToolImpl {
 
 }
 
-function isWorkspaceTextEdit(edit: unknown): edit is IWorkspaceTextEdit {
-	return typeof edit === 'object' && edit !== null
-		&& 'resource' in edit && URI.isUri((edit as IWorkspaceTextEdit).resource)
-		&& 'textEdit' in edit && TextEdit.isTextEdit((edit as IWorkspaceTextEdit).textEdit);
-}
+
 
 export class RenameToolContribution extends Disposable implements IWorkbenchContribution {
 
