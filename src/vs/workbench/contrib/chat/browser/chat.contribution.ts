@@ -286,17 +286,17 @@ configurationRegistry.registerConfiguration({
 				mode: 'auto'
 			}
 		},
-		'chat.confettiOnThumbsUp': {
+		'chat.thumbsUpAnimation': {
 			type: 'string',
 			enum: ['off', 'confetti', 'floatingThumbs', 'pulseWave', 'radiantLines'],
 			enumDescriptions: [
-				nls.localize('chat.confettiOnThumbsUp.off', "No animation is shown."),
-				nls.localize('chat.confettiOnThumbsUp.confetti', "Shows a confetti burst animation around the thumbs up button."),
-				nls.localize('chat.confettiOnThumbsUp.floatingThumbs', "Shows floating thumbs up icons rising from the button."),
-				nls.localize('chat.confettiOnThumbsUp.pulseWave', "Shows expanding pulse rings from the button."),
-				nls.localize('chat.confettiOnThumbsUp.radiantLines', "Shows radiant lines emanating from the button."),
+				nls.localize('chat.thumbsUpAnimation.off', "No animation is shown."),
+				nls.localize('chat.thumbsUpAnimation.confetti', "Shows a confetti burst animation around the thumbs up button."),
+				nls.localize('chat.thumbsUpAnimation.floatingThumbs', "Shows floating thumbs up icons rising from the button."),
+				nls.localize('chat.thumbsUpAnimation.pulseWave', "Shows expanding pulse rings from the button."),
+				nls.localize('chat.thumbsUpAnimation.radiantLines', "Shows radiant lines emanating from the button."),
 			],
-			description: nls.localize('chat.confettiOnThumbsUp', "Controls whether a confetti animation is shown when clicking the thumbs up button on a chat response."),
+			description: nls.localize('chat.thumbsUpAnimation', "Controls whether an animation is shown when clicking the thumbs up button on a chat response."),
 			default: 'off',
 		},
 		'chat.experimental.detectParticipant.enabled': {
@@ -1181,6 +1181,13 @@ Registry.as<IConfigurationMigrationRegistry>(Extensions.ConfigurationMigration).
 		migrateFn: (value, _accessor) => ([
 			['chat.useClaudeSkills', { value: undefined }],
 			['chat.useAgentSkills', { value }]
+		])
+	},
+	{
+		key: 'chat.confettiOnThumbsUp',
+		migrateFn: (value, _accessor) => ([
+			['chat.confettiOnThumbsUp', { value: undefined }],
+			['chat.thumbsUpAnimation', { value }]
 		])
 	},
 	{

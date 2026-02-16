@@ -3,11 +3,8 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import * as dom from '../../../../../base/browser/dom.js';
-import { ThemeIcon } from '../../../../../base/common/themables.js';
-import { Codicon } from '../../../../../base/common/codicons.js';
-
-export type ThumbsUpAnimationStyle = 'confetti' | 'floatingThumbs' | 'pulseWave' | 'radiantLines';
+import { ThemeIcon } from '../../../common/themables.js';
+import * as dom from '../../dom.js';
 
 const confettiColors = [
 	'#007acc',
@@ -21,18 +18,17 @@ const confettiColors = [
 let activeOverlay: HTMLElement | undefined;
 
 /**
- * Creates a fixed-positioned overlay centered on the given button element,
- * appended to the document body to avoid clipping by overflow:hidden ancestors.
+ * Creates a fixed-positioned overlay centered on the given element.
  */
-function createButtonOverlay(button: HTMLElement): { overlay: HTMLElement; cx: number; cy: number } | undefined {
+function createOverlay(element: HTMLElement): { overlay: HTMLElement; cx: number; cy: number } | undefined {
 	if (activeOverlay) {
 		return undefined;
 	}
 
-	const rect = button.getBoundingClientRect();
-	const ownerDocument = dom.getWindow(button).document;
+	const rect = element.getBoundingClientRect();
+	const ownerDocument = dom.getWindow(element).document;
 
-	const overlay = dom.$('.chat-confetti-overlay');
+	const overlay = dom.$('.animation-overlay');
 	overlay.style.position = 'fixed';
 	overlay.style.left = `${rect.left}px`;
 	overlay.style.top = `${rect.top}px`;
@@ -48,18 +44,24 @@ function createButtonOverlay(button: HTMLElement): { overlay: HTMLElement; cx: n
 	return { overlay, cx: rect.width / 2, cy: rect.height / 2 };
 }
 
-function cleanupOverlay(overlay: HTMLElement, duration: number): void {
+/**
+ * Cleans up the overlay after specified period.
+ */
+function cleanupOverlay(duration: number) {
 	setTimeout(() => {
-		overlay.remove();
-		activeOverlay = undefined;
+		if (activeOverlay) {
+			activeOverlay.remove();
+			activeOverlay = undefined;
+		}
 	}, duration);
 }
 
 /**
- * Bounce the button element with a given scale and optional rotation.
+ * Bounce the element with a given scale and optional rotation.
  */
-function bounceButton(button: HTMLElement, opts: { scale?: number[]; rotate?: number[]; translateY?: number[]; duration?: number }): void {
-	const keyframes: Keyframe[] = [];
+export function bounceElement(element: HTMLElement, opts: { scale?: number[]; rotate?: number[]; translateY?: number[]; duration?: number }) {
+	const frames: Keyframe[] = [];
+
 	const steps = opts.scale?.length ?? opts.rotate?.length ?? opts.translateY?.length ?? 0;
 	for (let i = 0; i < steps; i++) {
 		const frame: Keyframe = { offset: i / (steps - 1) };
@@ -72,9 +74,10 @@ function bounceButton(button: HTMLElement, opts: { scale?: number[]; rotate?: nu
 		if (opts.translateY) {
 			frame.transform = `${frame.transform ?? ''} translateY(${opts.translateY[i]}px)`.trim();
 		}
-		keyframes.push(frame);
+		frames.push(frame);
 	}
-	button.animate(keyframes, {
+
+	element.animate(frames, {
 		duration: opts.duration ?? 350,
 		easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
 		fill: 'forwards',
@@ -82,20 +85,20 @@ function bounceButton(button: HTMLElement, opts: { scale?: number[]; rotate?: nu
 }
 
 /**
- * Confetti: small particles burst outward in a circle from the button center,
+ * Confetti: small particles burst outward in a circle from the element center,
  * with an expanding ring.
  */
-function triggerConfettiAnimation(button: HTMLElement): void {
-	const result = createButtonOverlay(button);
+export function triggerConfettiAnimation(element: HTMLElement) {
+	const result = createOverlay(element);
 	if (!result) {
 		return;
 	}
 
 	const { overlay, cx, cy } = result;
-	const rect = button.getBoundingClientRect();
+	const rect = element.getBoundingClientRect();
 
-	// Button bounce
-	bounceButton(button, {
+	// Element bounce
+	bounceElement(element, {
 		scale: [1, 1.3, 1],
 		rotate: [0, -10, 10, 0],
 		duration: 350,
@@ -109,7 +112,7 @@ function triggerConfettiAnimation(button: HTMLElement): void {
 		const distance = 35;
 		const particleOpacity = 0.6 + (i % 4) * 0.1;
 
-		const part = dom.$('.chat-confetti-particle');
+		const part = dom.$('.animation-particle');
 		part.style.position = 'absolute';
 		part.style.width = `${size}px`;
 		part.style.height = `${size}px`;
@@ -135,7 +138,7 @@ function triggerConfettiAnimation(button: HTMLElement): void {
 	}
 
 	// Expanding ring
-	const ring = dom.$('.chat-confetti-particle');
+	const ring = dom.$('.animation-particle');
 	ring.style.position = 'absolute';
 	ring.style.left = '0';
 	ring.style.top = '0';
@@ -155,47 +158,47 @@ function triggerConfettiAnimation(button: HTMLElement): void {
 		fill: 'forwards',
 	});
 
-	cleanupOverlay(overlay, 2000);
+	cleanupOverlay(2000);
 }
 
 /**
- * Floating Thumbs: small thumbs up icons float upward from the button.
+ * Floating Icons: small icons float upward from the element.
  */
-function triggerFloatingThumbsAnimation(button: HTMLElement): void {
-	const result = createButtonOverlay(button);
+export function triggerFloatingIconsAnimation(element: HTMLElement, icon: ThemeIcon) {
+	const result = createOverlay(element);
 	if (!result) {
 		return;
 	}
 
 	const { overlay, cx, cy } = result;
-	const rect = button.getBoundingClientRect();
+	const rect = element.getBoundingClientRect();
 
-	// Button bounce upward
-	bounceButton(button, {
+	// Element bounce upward
+	bounceElement(element, {
 		translateY: [0, -6, 0],
 		duration: 350,
 	});
 
-	// Floating thumbs up icons
-	const thumbCount = 6;
-	for (let i = 0; i < thumbCount; i++) {
+	// Floating icons
+	const iconCount = 6;
+	for (let i = 0; i < iconCount; i++) {
 		const size = 12 + (i % 3) * 2;
-		const thumb = dom.$('.chat-confetti-particle');
-		thumb.style.position = 'absolute';
-		thumb.style.left = `${cx}px`;
-		thumb.style.top = `${cy}px`;
-		thumb.style.fontSize = `${size}px`;
-		thumb.style.lineHeight = '1';
-		thumb.style.color = 'var(--vscode-focusBorder, #007acc)';
-		thumb.classList.add(...ThemeIcon.asClassNameArray(Codicon.thumbsup));
-		overlay.appendChild(thumb);
+		const iconEl = dom.$('.animation-particle');
+		iconEl.style.position = 'absolute';
+		iconEl.style.left = `${cx}px`;
+		iconEl.style.top = `${cy}px`;
+		iconEl.style.fontSize = `${size}px`;
+		iconEl.style.lineHeight = '1';
+		iconEl.style.color = 'var(--vscode-focusBorder, #007acc)';
+		iconEl.classList.add(...ThemeIcon.asClassNameArray(icon));
+		overlay.appendChild(iconEl);
 
 		const driftX = (Math.random() - 0.5) * 50;
 		const floatY = -50 - (i % 3) * 10;
 		const rotate1 = (Math.random() - 0.5) * 20;
 		const rotate2 = (Math.random() - 0.5) * 40;
 
-		thumb.animate([
+		iconEl.animate([
 			{ opacity: 0, transform: `translate(-50%, -50%) scale(0) rotate(${rotate1}deg)` },
 			{ opacity: 1, transform: `translate(calc(-50% + ${driftX * 0.3}px), calc(-50% + ${floatY * 0.3}px)) scale(1) rotate(${(rotate1 + rotate2) * 0.3}deg)`, offset: 0.3 },
 			{ opacity: 1, transform: `translate(calc(-50% + ${driftX * 0.7}px), calc(-50% + ${floatY * 0.7}px)) scale(1) rotate(${(rotate1 + rotate2) * 0.7}deg)`, offset: 0.7 },
@@ -209,7 +212,7 @@ function triggerFloatingThumbsAnimation(button: HTMLElement): void {
 	}
 
 	// Expanding ring
-	const ring = dom.$('.chat-confetti-particle');
+	const ring = dom.$('.animation-particle');
 	ring.style.position = 'absolute';
 	ring.style.left = '0';
 	ring.style.top = '0';
@@ -229,23 +232,23 @@ function triggerFloatingThumbsAnimation(button: HTMLElement): void {
 		fill: 'forwards',
 	});
 
-	cleanupOverlay(overlay, 2000);
+	cleanupOverlay(2000);
 }
 
 /**
- * Pulse Wave: expanding rings and sparkle dots radiate from the button center.
+ * Pulse Wave: expanding rings and sparkle dots radiate from the element center.
  */
-function triggerPulseWaveAnimation(button: HTMLElement): void {
-	const result = createButtonOverlay(button);
+export function triggerPulseWaveAnimation(element: HTMLElement) {
+	const result = createOverlay(element);
 	if (!result) {
 		return;
 	}
 
 	const { overlay, cx, cy } = result;
-	const rect = button.getBoundingClientRect();
+	const rect = element.getBoundingClientRect();
 
-	// Button bounce with slight rotation
-	bounceButton(button, {
+	// Element bounce with slight rotation
+	bounceElement(element, {
 		scale: [1, 1.1, 1],
 		rotate: [0, -12, 0],
 		duration: 400,
@@ -253,7 +256,7 @@ function triggerPulseWaveAnimation(button: HTMLElement): void {
 
 	// Expanding rings
 	for (let i = 0; i < 2; i++) {
-		const ring = dom.$('.chat-confetti-particle');
+		const ring = dom.$('.animation-particle');
 		ring.style.position = 'absolute';
 		ring.style.left = '0';
 		ring.style.top = '0';
@@ -282,7 +285,7 @@ function triggerPulseWaveAnimation(button: HTMLElement): void {
 		const distance = 30 + (i % 2) * 10;
 		const size = 3.5;
 
-		const dot = dom.$('.chat-confetti-particle');
+		const dot = dom.$('.animation-particle');
 		dot.style.position = 'absolute';
 		dot.style.width = `${size}px`;
 		dot.style.height = `${size}px`;
@@ -308,7 +311,7 @@ function triggerPulseWaveAnimation(button: HTMLElement): void {
 	}
 
 	// Background glow
-	const glow = dom.$('.chat-confetti-particle');
+	const glow = dom.$('.animation-particle');
 	glow.style.position = 'absolute';
 	glow.style.left = '0';
 	glow.style.top = '0';
@@ -328,22 +331,22 @@ function triggerPulseWaveAnimation(button: HTMLElement): void {
 		fill: 'forwards',
 	});
 
-	cleanupOverlay(overlay, 2000);
+	cleanupOverlay(2000);
 }
 
 /**
- * Radiant Lines: lines and dots emanate outward from the button center.
+ * Radiant Lines: lines and dots emanate outward from the element center.
  */
-function triggerRadiantLinesAnimation(button: HTMLElement): void {
-	const result = createButtonOverlay(button);
+export function triggerRadiantLinesAnimation(element: HTMLElement) {
+	const result = createOverlay(element);
 	if (!result) {
 		return;
 	}
 
 	const { overlay, cx, cy } = result;
 
-	// Button scale bounce
-	bounceButton(button, {
+	// Element scale bounce
+	bounceElement(element, {
 		scale: [1, 1.15, 1],
 		duration: 350,
 	});
@@ -356,7 +359,7 @@ function triggerRadiantLinesAnimation(button: HTMLElement): void {
 		const startDistance = 14;
 		const endDistance = 30;
 
-		const dot = dom.$('.chat-confetti-particle');
+		const dot = dom.$('.animation-particle');
 		dot.style.position = 'absolute';
 		dot.style.width = `${size}px`;
 		dot.style.height = `${size}px`;
@@ -388,7 +391,7 @@ function triggerRadiantLinesAnimation(button: HTMLElement): void {
 	for (let i = 0; i < 8; i++) {
 		const angleDeg = i * 45;
 
-		const lineWrapper = dom.$('.chat-confetti-particle');
+		const lineWrapper = dom.$('.animation-particle');
 		lineWrapper.style.position = 'absolute';
 		lineWrapper.style.left = `${cx}px`;
 		lineWrapper.style.top = `${cy}px`;
@@ -397,7 +400,7 @@ function triggerRadiantLinesAnimation(button: HTMLElement): void {
 		lineWrapper.style.transform = `rotate(${angleDeg}deg)`;
 		overlay.appendChild(lineWrapper);
 
-		const line = dom.$('.chat-confetti-particle');
+		const line = dom.$('.animation-particle');
 		line.style.position = 'absolute';
 		line.style.width = '2px';
 		line.style.height = '10px';
@@ -421,25 +424,5 @@ function triggerRadiantLinesAnimation(button: HTMLElement): void {
 		});
 	}
 
-	cleanupOverlay(overlay, 2000);
-}
-
-/**
- * Triggers a thumbs-up celebration animation on the given button element.
- */
-export function triggerThumbsUpAnimation(button: HTMLElement, style: ThumbsUpAnimationStyle): void {
-	switch (style) {
-		case 'confetti':
-			triggerConfettiAnimation(button);
-			break;
-		case 'floatingThumbs':
-			triggerFloatingThumbsAnimation(button);
-			break;
-		case 'pulseWave':
-			triggerPulseWaveAnimation(button);
-			break;
-		case 'radiantLines':
-			triggerRadiantLinesAnimation(button);
-			break;
-	}
+	cleanupOverlay(2000);
 }

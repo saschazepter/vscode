@@ -26,12 +26,13 @@ import { ChatAgentVoteDirection, ChatAgentVoteDownReason, IChatService } from '.
 import { isResponseVM } from '../../common/model/chatViewModel.js';
 import { ChatModeKind } from '../../common/constants.js';
 import { IChatAccessibilityService, IChatWidgetService } from '../chat.js';
-import { ThumbsUpAnimationStyle, triggerThumbsUpAnimation } from '../widget/chatConfetti.js';
+import { triggerConfettiAnimation, triggerFloatingIconsAnimation, triggerPulseWaveAnimation, triggerRadiantLinesAnimation } from '../../../../../base/browser/ui/animations/animations.js';
 import { CHAT_CATEGORY } from './chatActions.js';
 import { IKeybindingService } from '../../../../../platform/keybinding/common/keybinding.js';
 import { INotificationService } from '../../../../../platform/notification/common/notification.js';
 import { IThemeService } from '../../../../../platform/theme/common/themeService.js';
 import { IContextMenuService } from '../../../../../platform/contextview/browser/contextView.js';
+import { IAccessibilityService } from '../../../../../platform/accessibility/common/accessibility.js';
 
 export const MarkHelpfulActionId = 'workbench.action.chat.markHelpful';
 export const MarkUnhelpfulActionId = 'workbench.action.chat.markUnhelpful';
@@ -84,12 +85,27 @@ export function registerChatTitleActions() {
 			item.setVoteDownReason(undefined);
 
 			const configurationService = accessor.get(IConfigurationService);
-			const accessibilityService = accessor.get(IAccessibilityService);
-			const animationStyle = configurationService.getValue<string>('chat.confettiOnThumbsUp');
-			if (animationStyle && animationStyle !== 'off' && !accessibilityService.isMotionReduced()) {
-				const button = ChatThumbsUpButton.getButtonElement(item);
-				if (button) {
-					triggerThumbsUpAnimation(button, animationStyle as ThumbsUpAnimationStyle);
+			const animationStyle = configurationService.getValue<string>('chat.thumbsUpAnimation');
+			if (animationStyle && animationStyle !== 'off') {
+				const accessibilityService = accessor.get(IAccessibilityService);
+				if (!accessibilityService.isMotionReduced()) {
+					const button = ChatVoteUpButton.getButtonElement(item);
+					if (button) {
+						switch (animationStyle) {
+							case 'confetti':
+								triggerConfettiAnimation(button);
+								break;
+							case 'floatingThumbs':
+								triggerFloatingIconsAnimation(button, Codicon.thumbsup);
+								break;
+							case 'pulseWave':
+								triggerPulseWaveAnimation(button);
+								break;
+							case 'radiantLines':
+								triggerRadiantLinesAnimation(button);
+								break;
+						}
+					}
 				}
 			}
 		}
@@ -364,12 +380,12 @@ export function registerChatTitleActions() {
  * Custom action view item for the thumbs-up button that tracks rendered button
  * DOM elements for animation targeting.
  */
-export class ChatThumbsUpButton extends MenuEntryActionViewItem {
+export class ChatVoteUpButton extends MenuEntryActionViewItem {
 
 	private static readonly _elementsByContext = new WeakMap<object, HTMLElement>();
 
 	static getButtonElement(context: object): HTMLElement | undefined {
-		return ChatThumbsUpButton._elementsByContext.get(context);
+		return ChatVoteUpButton._elementsByContext.get(context);
 	}
 
 	constructor(
@@ -388,14 +404,14 @@ export class ChatThumbsUpButton extends MenuEntryActionViewItem {
 	override render(container: HTMLElement): void {
 		super.render(container);
 		if (this._context) {
-			ChatThumbsUpButton._elementsByContext.set(this._context as object, container);
+			ChatVoteUpButton._elementsByContext.set(this._context as object, container);
 		}
 	}
 
 	override setActionContext(context: unknown): void {
 		super.setActionContext(context);
 		if (context && this.element) {
-			ChatThumbsUpButton._elementsByContext.set(context as object, this.element);
+			ChatVoteUpButton._elementsByContext.set(context as object, this.element);
 		}
 	}
 }
