@@ -77,19 +77,6 @@ const SHELL_TOOL_NAMES: ReadonlySet<string> = new Set([
 	CopilotToolName.PowerShell,
 ]);
 
-/** Set of all shell-related tool names (including read/write/list/shutdown). */
-export const SHELL_RELATED_TOOL_NAMES: ReadonlySet<string> = new Set([
-	CopilotToolName.Bash,
-	CopilotToolName.ReadBash,
-	CopilotToolName.WriteBash,
-	CopilotToolName.BashShutdown,
-	CopilotToolName.ListBash,
-	CopilotToolName.PowerShell,
-	CopilotToolName.ReadPowerShell,
-	CopilotToolName.WritePowerShell,
-	CopilotToolName.ListPowerShell,
-]);
-
 /**
  * Tools that should not be shown to the user. These are internal tools
  * used by the CLI for its own purposes (e.g., reporting intent to the model).

@@ -22,7 +22,7 @@ import { IChatSessionsService } from '../../../common/chatSessionsService.js';
 import { ILanguageModelsService } from '../../../common/languageModels.js';
 import { IProductService } from '../../../../../../platform/product/common/productService.js';
 import { TestInstantiationService } from '../../../../../../platform/instantiation/test/common/instantiationServiceMock.js';
-import { AgentHostChatContribution, AgentHostSessionListController, AgentHostSessionHandler } from '../../../browser/agentSessions/agentHostChatContribution.js';
+import { AgentHostChatContribution, AgentHostSessionListController, AgentHostSessionHandler } from '../../../browser/agentSessions/agentHost/agentHostChatContribution.js';
 
 // ---- Mock agent host service ------------------------------------------------
 

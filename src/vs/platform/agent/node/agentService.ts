@@ -265,8 +265,18 @@ export class AgentService extends Disposable implements IAgentService {
 			this._onDidSessionProgress.fire({ sessionId, type: 'idle' });
 		});
 
-		// --- Just for logging ---
+		this._subscribeForLogging(wrapper, sessionId);
 
+		this._sessions.set(sessionId, wrapper);
+		return wrapper;
+	}
+
+	/**
+	 * Subscribes to all SDK events that are only used for logging.
+	 * Separated from {@link _trackSession} to keep the important event
+	 * handlers (delta, message, tool_start, tool_complete, idle) easy to find.
+	 */
+	private _subscribeForLogging(wrapper: CopilotSessionWrapper, sessionId: string): void {
 		wrapper.onSessionStart(e => {
 			this._logService.trace(`[${sessionId}] Session started: model=${e.data.selectedModel ?? 'default'}, producer=${e.data.producer}`);
 		});
@@ -394,9 +404,6 @@ export class AgentService extends Disposable implements IAgentService {
 		wrapper.onSystemMessage(e => {
 			this._logService.trace(`[${sessionId}] System message [${e.data.role}]: ${e.data.content.length} chars`);
 		});
-
-		this._sessions.set(sessionId, wrapper);
-		return wrapper;
 	}
 
 	private async _resumeSession(sessionId: string): Promise<CopilotSessionWrapper> {

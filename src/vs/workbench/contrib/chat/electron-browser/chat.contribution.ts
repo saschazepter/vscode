@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Disposable } from '../../../../base/common/lifecycle.js';
-import { AgentHostChatContribution } from '../browser/agentSessions/agentHostChatContribution.js';
+import { AgentHostChatContribution } from '../browser/agentSessions/agentHost/agentHostChatContribution.js';
 import { autorun } from '../../../../base/common/observable.js';
 import { resolve } from '../../../../base/common/path.js';
 import { isMacintosh } from '../../../../base/common/platform.js';

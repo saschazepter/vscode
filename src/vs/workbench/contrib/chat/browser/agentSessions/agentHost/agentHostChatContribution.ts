@@ -3,31 +3,118 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { CancellationToken } from '../../../../../base/common/cancellation.js';
-import { Emitter } from '../../../../../base/common/event.js';
-import { MarkdownString } from '../../../../../base/common/htmlContent.js';
-import { Disposable, toDisposable } from '../../../../../base/common/lifecycle.js';
-import { observableValue } from '../../../../../base/common/observable.js';
-import { URI } from '../../../../../base/common/uri.js';
-import { ExtensionIdentifier } from '../../../../../platform/extensions/common/extensions.js';
-import { ILogService } from '../../../../../platform/log/common/log.js';
-import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
-import { IProductService } from '../../../../../platform/product/common/productService.js';
-import { IAgentHostService, IAgentToolCompleteEvent, IAgentToolStartEvent } from '../../../../../platform/agent/common/agentService.js';
-import { IDefaultAccountService } from '../../../../../platform/defaultAccount/common/defaultAccount.js';
-import { IAuthenticationService } from '../../../../services/authentication/common/authentication.js';
-import { IWorkbenchContribution } from '../../../../common/contributions.js';
-import { ChatAgentLocation, ChatModeKind } from '../../common/constants.js';
-import { IChatAgentData, IChatAgentImplementation, IChatAgentRequest, IChatAgentResult, IChatAgentService } from '../../common/participants/chatAgents.js';
-import { IChatProgress, IChatTerminalToolInvocationData, IChatToolInvocationSerialized, ToolConfirmKind } from '../../common/chatService/chatService.js';
-import { ChatToolInvocation } from '../../common/model/chatProgressTypes/chatToolInvocation.js';
-import { IToolData, ToolDataSource } from '../../common/tools/languageModelToolsService.js';
-import { ChatSessionStatus, IChatSession, IChatSessionContentProvider, IChatSessionHistoryItem, IChatSessionItem, IChatSessionItemController, IChatSessionsService } from '../../common/chatSessionsService.js';
-import { ILanguageModelChatProvider, ILanguageModelChatMetadataAndIdentifier, ILanguageModelsService } from '../../common/languageModels.js';
-import { getAgentHostIcon } from '../agentSessions/agentSessions.js';
+import { CancellationToken } from '../../../../../../base/common/cancellation.js';
+import { Emitter } from '../../../../../../base/common/event.js';
+import { MarkdownString } from '../../../../../../base/common/htmlContent.js';
+import { Disposable, toDisposable } from '../../../../../../base/common/lifecycle.js';
+import { observableValue } from '../../../../../../base/common/observable.js';
+import { URI } from '../../../../../../base/common/uri.js';
+import { ExtensionIdentifier } from '../../../../../../platform/extensions/common/extensions.js';
+import { ILogService } from '../../../../../../platform/log/common/log.js';
+import { IInstantiationService } from '../../../../../../platform/instantiation/common/instantiation.js';
+import { IProductService } from '../../../../../../platform/product/common/productService.js';
+import { IAgentHostService, IAgentMessageEvent, IAgentToolCompleteEvent, IAgentToolStartEvent } from '../../../../../../platform/agent/common/agentService.js';
+import { IDefaultAccountService } from '../../../../../../platform/defaultAccount/common/defaultAccount.js';
+import { IAuthenticationService } from '../../../../../services/authentication/common/authentication.js';
+import { IWorkbenchContribution } from '../../../../../common/contributions.js';
+import { ChatAgentLocation, ChatModeKind } from '../../../common/constants.js';
+import { IChatAgentData, IChatAgentImplementation, IChatAgentRequest, IChatAgentResult, IChatAgentService } from '../../../common/participants/chatAgents.js';
+import { IChatProgress, IChatTerminalToolInvocationData, IChatToolInvocationSerialized, ToolConfirmKind } from '../../../common/chatService/chatService.js';
+import { ChatToolInvocation } from '../../../common/model/chatProgressTypes/chatToolInvocation.js';
+import { IToolData, ToolDataSource } from '../../../common/tools/languageModelToolsService.js';
+import { ChatSessionStatus, IChatSession, IChatSessionContentProvider, IChatSessionHistoryItem, IChatSessionItem, IChatSessionItemController, IChatSessionsService } from '../../../common/chatSessionsService.js';
+import { ILanguageModelChatProvider, ILanguageModelChatMetadataAndIdentifier, ILanguageModelsService } from '../../../common/languageModels.js';
+import { getAgentHostIcon } from '../agentSessions.js';
 
 const AGENT_HOST_SESSION_TYPE = 'agent-host';
 const AGENT_HOST_AGENT_ID = 'agent-host';
+
+// =============================================================================
+// History reconstruction from IPC events
+// =============================================================================
+
+/**
+ * Converts a flat array of IPC events (messages + tool events) into
+ * request/response history items for the chat model.
+ */
+function buildHistory(
+	events: readonly (IAgentMessageEvent | IAgentToolStartEvent | IAgentToolCompleteEvent)[],
+	history: IChatSessionHistoryItem[],
+): void {
+	let currentResponseParts: IChatProgress[] | undefined;
+
+	for (const e of events) {
+		if (e.type === 'message') {
+			if (e.role === 'user') {
+				if (currentResponseParts) {
+					history.push({ type: 'response', parts: currentResponseParts, participant: AGENT_HOST_AGENT_ID });
+					currentResponseParts = undefined;
+				}
+				history.push({ type: 'request', prompt: e.content, participant: AGENT_HOST_AGENT_ID });
+			} else {
+				if (!currentResponseParts) {
+					currentResponseParts = [];
+				}
+				if (e.content) {
+					currentResponseParts.push({ kind: 'markdownContent', content: new MarkdownString(e.content) });
+				}
+			}
+		} else if (e.type === 'tool_start') {
+			if (!currentResponseParts) {
+				currentResponseParts = [];
+			}
+			const toolSpecificData = (e.toolKind === 'terminal' && e.toolInput)
+				? { kind: 'terminal' as const, commandLine: { original: e.toolInput }, language: e.language ?? 'shellscript' }
+				: undefined;
+			currentResponseParts.push({
+				kind: 'toolInvocationSerialized',
+				toolCallId: e.toolCallId,
+				toolId: e.toolName,
+				source: ToolDataSource.Internal,
+				invocationMessage: new MarkdownString(e.invocationMessage),
+				originMessage: undefined,
+				pastTenseMessage: undefined,
+				isConfirmed: { type: ToolConfirmKind.ConfirmationNotNeeded },
+				isComplete: false,
+				presentation: undefined,
+				toolSpecificData,
+			} satisfies IChatToolInvocationSerialized);
+		} else if (e.type === 'tool_complete') {
+			if (currentResponseParts) {
+				const idx = currentResponseParts.findIndex(
+					p => p.kind === 'toolInvocationSerialized' && p.toolCallId === e.toolCallId
+				);
+				if (idx >= 0) {
+					const existing = currentResponseParts[idx] as IChatToolInvocationSerialized;
+					const isTerminal = existing.toolSpecificData?.kind === 'terminal';
+					currentResponseParts[idx] = {
+						...existing,
+						isComplete: true,
+						pastTenseMessage: isTerminal ? undefined : new MarkdownString(e.pastTenseMessage),
+						toolSpecificData: isTerminal
+							? {
+								...existing.toolSpecificData as IChatTerminalToolInvocationData,
+								terminalCommandOutput: e.toolOutput !== undefined ? { text: e.toolOutput } : undefined,
+								terminalCommandState: { exitCode: e.success ? 0 : 1 },
+							}
+							: existing.toolSpecificData,
+					};
+				}
+			}
+		}
+	}
+
+	// Mark incomplete tool invocations as complete (orphaned tool_start without tool_complete)
+	if (currentResponseParts) {
+		for (let i = 0; i < currentResponseParts.length; i++) {
+			const part = currentResponseParts[i];
+			if (part.kind === 'toolInvocationSerialized' && !part.isComplete) {
+				currentResponseParts[i] = { ...part, isComplete: true };
+			}
+		}
+		history.push({ type: 'response', parts: currentResponseParts, participant: AGENT_HOST_AGENT_ID });
+	}
+}
 
 // =============================================================================
 // Agent host chat session - wraps streaming state and request handling
@@ -50,27 +137,19 @@ class AgentHostChatSession extends Disposable implements IChatSession {
 	constructor(
 		readonly sessionResource: URI,
 		readonly history: readonly IChatSessionHistoryItem[],
-		private readonly _sessionId: string,
-		private readonly _handler: AgentHostSessionHandler,
-		@IAgentHostService private readonly _agentHostService: IAgentHostService,
+		private readonly _sendRequest: (message: string, progress: (parts: IChatProgress[]) => void, token: CancellationToken) => Promise<void>,
+		onDispose: () => void,
 		@ILogService private readonly _logService: ILogService,
 	) {
 		super();
 
-		// Register cleanup: fire onWillDispose, clean up session mapping, dispose SDK session
 		this._register(toDisposable(() => this._onWillDispose.fire()));
-		this._register(toDisposable(() => this._handler.clearSessionMapping(this.sessionResource)));
-		this._register(toDisposable(() => {
-			const resolvedId = this._handler.getResolvedSessionId(this.sessionResource) ?? this._sessionId;
-			this._agentHostService.disposeSession(resolvedId);
-		}));
+		this._register(toDisposable(onDispose));
 
 		this.requestHandler = async (request, progress, _history, cancellationToken) => {
-			this._logService.info(`[AgentHost] requestHandler called for session ${this._sessionId}`);
-			const resolvedId = await this._handler.resolveSessionId(sessionResource);
-
+			this._logService.info('[AgentHost] requestHandler called');
 			this.isCompleteObs.set(false, undefined);
-			await this._handler.sendAndStreamResponse(resolvedId, request.message, progress, cancellationToken);
+			await this._sendRequest(request.message, progress, cancellationToken);
 			this.isCompleteObs.set(true, undefined);
 		};
 
@@ -166,101 +245,25 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 	async provideChatSessionContent(sessionResource: URI, _token: CancellationToken): Promise<IChatSession> {
 		const sessionId = sessionResource.path.substring(1); // strip leading /
 
-		// Load history (skip for brand-new untitled sessions)
 		const history: IChatSessionHistoryItem[] = [];
 		if (!sessionId.startsWith('untitled-')) {
 			const events = await this._agentHostService.getSessionMessages(sessionId);
-
-			// Group events into request/response pairs. Tool events are interleaved
-			// into the preceding assistant response.
-			let currentResponseParts: IChatProgress[] | undefined;
-			const toolStartEvents = new Map<string, IAgentToolStartEvent>();
-
-			for (const e of events) {
-				if (e.type === 'message') {
-					if (e.role === 'user') {
-						// Flush any pending response
-						if (currentResponseParts) {
-							history.push({ type: 'response', parts: currentResponseParts, participant: AGENT_HOST_AGENT_ID });
-							currentResponseParts = undefined;
-						}
-						history.push({ type: 'request', prompt: e.content, participant: AGENT_HOST_AGENT_ID });
-					} else {
-						if (!currentResponseParts) {
-							currentResponseParts = [];
-						}
-						if (e.content) {
-							currentResponseParts.push({ kind: 'markdownContent', content: new MarkdownString(e.content) });
-						}
-					}
-				} else if (e.type === 'tool_start') {
-					toolStartEvents.set(e.toolCallId, e);
-					if (!currentResponseParts) {
-						currentResponseParts = [];
-					}
-					// Build a serialized tool invocation from the protocol event
-					const toolSpecificData = (e.toolKind === 'terminal' && e.toolInput)
-						? { kind: 'terminal' as const, commandLine: { original: e.toolInput }, language: e.language ?? 'shellscript' }
-						: undefined;
-					currentResponseParts.push({
-						kind: 'toolInvocationSerialized',
-						toolCallId: e.toolCallId,
-						toolId: e.toolName,
-						source: ToolDataSource.Internal,
-						invocationMessage: new MarkdownString(e.invocationMessage),
-						originMessage: undefined,
-						pastTenseMessage: undefined,
-						isConfirmed: { type: ToolConfirmKind.ConfirmationNotNeeded },
-						isComplete: false, // will be updated by tool_complete
-						presentation: undefined,
-						toolSpecificData,
-					} satisfies IChatToolInvocationSerialized);
-				} else if (e.type === 'tool_complete') {
-					const startEvent = toolStartEvents.get(e.toolCallId);
-					toolStartEvents.delete(e.toolCallId);
-					// Find and update the matching tool invocation in currentResponseParts
-					if (currentResponseParts) {
-						const idx = currentResponseParts.findIndex(
-							p => p.kind === 'toolInvocationSerialized' && p.toolCallId === e.toolCallId
-						);
-						if (idx >= 0) {
-							const existing = currentResponseParts[idx] as IChatToolInvocationSerialized;
-							const isTerminal = existing.toolSpecificData?.kind === 'terminal';
-							currentResponseParts[idx] = {
-								...existing,
-								isComplete: true,
-								pastTenseMessage: isTerminal ? undefined : new MarkdownString(e.pastTenseMessage),
-								toolSpecificData: isTerminal
-									? {
-										...existing.toolSpecificData as IChatTerminalToolInvocationData,
-										terminalCommandOutput: e.toolOutput !== undefined ? { text: e.toolOutput } : undefined,
-										terminalCommandState: { exitCode: e.success ? 0 : 1 },
-									}
-									: existing.toolSpecificData,
-							};
-						}
-					}
-					if (!startEvent) {
-						// Orphan tool_complete without matching tool_start -- skip
-					}
-				}
-			}
-			// Mark any incomplete tool invocations as complete (orphaned tool_start without tool_complete)
-			if (currentResponseParts) {
-				for (let i = 0; i < currentResponseParts.length; i++) {
-					const part = currentResponseParts[i];
-					if (part.kind === 'toolInvocationSerialized' && !part.isComplete) {
-						currentResponseParts[i] = { ...part, isComplete: true };
-					}
-				}
-			}
-			// Flush trailing response
-			if (currentResponseParts) {
-				history.push({ type: 'response', parts: currentResponseParts, participant: AGENT_HOST_AGENT_ID });
-			}
+			buildHistory(events, history);
 		}
 
-		const session = this._instantiationService.createInstance(AgentHostChatSession, sessionResource, history, sessionId, this);
+		const resolvedSessionId = await this._resolveSessionId(sessionResource);
+		const session = this._instantiationService.createInstance(
+			AgentHostChatSession,
+			sessionResource,
+			history,
+			(message: string, progress: (parts: IChatProgress[]) => void, token: CancellationToken) =>
+				this._sendAndStreamResponse(resolvedSessionId, message, progress, token),
+			() => {
+				this._activeSessions.delete(sessionId);
+				this._resourceToSessionId.delete(sessionResource.toString());
+				this._agentHostService.disposeSession(resolvedSessionId);
+			},
+		);
 		this._activeSessions.set(sessionId, session);
 		return session;
 	}
@@ -302,10 +305,10 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		cancellationToken: CancellationToken,
 	): Promise<IChatAgentResult> {
 		this._logService.info(`[AgentHost] _invokeAgent called for resource: ${request.sessionResource.toString()}`);
-		const sessionId = await this.resolveSessionId(request.sessionResource, request.userSelectedModelId);
+		const sessionId = await this._resolveSessionId(request.sessionResource, request.userSelectedModelId);
 		this._logService.info(`[AgentHost] resolved session ID: ${sessionId}`);
 
-		await this.sendAndStreamResponse(sessionId, request.message, progress, cancellationToken);
+		await this._sendAndStreamResponse(sessionId, request.message, progress, cancellationToken);
 
 		const activeSession = this._activeSessions.get(sessionId);
 		if (activeSession) {
@@ -330,7 +333,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 	 *   tool_complete  → completes the matching ChatToolInvocation
 	 *   idle           → resolves the promise, ends the response
 	 */
-	async sendAndStreamResponse(
+	private async _sendAndStreamResponse(
 		sessionId: string,
 		message: string,
 		progress: (parts: IChatProgress[]) => void,
@@ -410,7 +413,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 	 * - `agent-host:///untitled-*` → creates a new SDK session (mapped)
 	 * - Any other scheme → creates or reuses an SDK session keyed by URI
 	 */
-	async resolveSessionId(sessionResource: URI, model?: string): Promise<string> {
+	private async _resolveSessionId(sessionResource: URI, model?: string): Promise<string> {
 		if (sessionResource.scheme === AGENT_HOST_SESSION_TYPE && !sessionResource.path.startsWith('/untitled-')) {
 			return sessionResource.path.substring(1);
 		}
@@ -424,14 +427,6 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		const sessionId = await this._agentHostService.createSession({ model });
 		this._resourceToSessionId.set(key, sessionId);
 		return sessionId;
-	}
-
-	getResolvedSessionId(sessionResource: URI): string | undefined {
-		return this._resourceToSessionId.get(sessionResource.toString());
-	}
-
-	clearSessionMapping(sessionResource: URI): void {
-		this._resourceToSessionId.delete(sessionResource.toString());
 	}
 
 	private _createToolInvocation(event: IAgentToolStartEvent): ChatToolInvocation {
