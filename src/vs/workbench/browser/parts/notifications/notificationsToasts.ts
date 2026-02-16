@@ -245,16 +245,12 @@ export class NotificationsToasts extends Themable implements INotificationsToast
 		const notificationToastContainer = $('.notification-toast-container');
 
 		const position = this.getNotificationsPosition();
-		if (position === NotificationsPosition.TOP_RIGHT) {
-			// For top-right, append at the end so newest appears at top
-			notificationsToastsContainer.appendChild(notificationToastContainer);
+		const firstToast = notificationsToastsContainer.firstChild;
+		if (firstToast) {
+			// Always insert new toasts at the top
+			notificationsToastsContainer.insertBefore(notificationToastContainer, firstToast);
 		} else {
-			const firstToast = notificationsToastsContainer.firstChild;
-			if (firstToast) {
-				notificationsToastsContainer.insertBefore(notificationToastContainer, firstToast); // always first
-			} else {
-				notificationsToastsContainer.appendChild(notificationToastContainer);
-			}
+			notificationsToastsContainer.appendChild(notificationToastContainer);
 		}
 
 		// Toast
