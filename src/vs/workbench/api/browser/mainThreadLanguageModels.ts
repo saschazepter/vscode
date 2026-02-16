@@ -282,4 +282,8 @@ class LanguageModelAccessAuthProvider implements IAuthenticationProvider {
 			scopes,
 		};
 	}
+
+	dispose(): void {
+		this._onDidChangeSessions.dispose();
+	}
 }
