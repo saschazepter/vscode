@@ -292,19 +292,24 @@ export class ChangesViewPane extends ViewPane {
 	}
 
 	private registerBadgeTracking(): void {
-		// Observable for session file changes from agentSessionsService (cloud/background sessions)
-		const sessionFileChangesObs = observableFromEvent(
+		// Signal observable that triggers when sessions data changes
+		const sessionsChangedSignal = observableFromEvent(
 			this,
 			this.agentSessionsService.model.onDidChangeSessions,
-			() => {
-				const sessionResource = this.activeSessionResource.get();
-				if (!sessionResource) {
-					return Iterable.empty();
-				}
-				const model = this.agentSessionsService.getSession(sessionResource);
-				return model?.changes instanceof Array ? model.changes : Iterable.empty();
-			},
+			() => ({}),
 		);
+
+		// Observable for session file changes from agentSessionsService (cloud/background sessions)
+		// Reactive to both activeSessionResource changes AND session data changes
+		const sessionFileChangesObs = derived(reader => {
+			const sessionResource = this.activeSessionResource.read(reader);
+			sessionsChangedSignal.read(reader);
+			if (!sessionResource) {
+				return Iterable.empty();
+			}
+			const model = this.agentSessionsService.getSession(sessionResource);
+			return model?.changes instanceof Array ? model.changes : Iterable.empty();
+		});
 
 		// Create observable for the number of files changed in the active session
 		// Combines both editing session entries and session file changes (for cloud/background sessions)
@@ -449,19 +454,24 @@ export class ChangesViewPane extends ViewPane {
 			return items;
 		});
 
-		// Create observable for session file changes from agentSessionsService (cloud/background sessions)
-		const sessionFileChangesObs = observableFromEvent(
+		// Signal observable that triggers when sessions data changes
+		const sessionsChangedSignal = observableFromEvent(
 			this.renderDisposables,
 			this.agentSessionsService.model.onDidChangeSessions,
-			() => {
-				const sessionResource = this.activeSessionResource.get();
-				if (!sessionResource) {
-					return Iterable.empty();
-				}
-				const model = this.agentSessionsService.getSession(sessionResource);
-				return model?.changes instanceof Array ? model.changes : Iterable.empty();
-			},
+			() => ({}),
 		);
+
+		// Observable for session file changes from agentSessionsService (cloud/background sessions)
+		// Reactive to both activeSessionResource changes AND session data changes
+		const sessionFileChangesObs = derived(reader => {
+			const sessionResource = this.activeSessionResource.read(reader);
+			sessionsChangedSignal.read(reader);
+			if (!sessionResource) {
+				return Iterable.empty();
+			}
+			const model = this.agentSessionsService.getSession(sessionResource);
+			return model?.changes instanceof Array ? model.changes : Iterable.empty();
+		});
 
 		// Convert session file changes to list items (cloud/background sessions)
 		const sessionFilesObs = derived(reader =>
