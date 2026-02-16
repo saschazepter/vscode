@@ -2311,6 +2311,17 @@ export class ChatModel extends Disposable implements IChatModel {
 				modelState = { value: ResponseModelState.Cancelled, completedAt: Date.now() };
 			}
 
+			// Mark question carousels as used after
+			// deserialization. After a reload, the extension is no longer listening for
+			// their responses, so they cannot be interacted with.
+			if (raw.response) {
+				for (const part of raw.response) {
+					if (hasKey(part, { kind: true }) && (part.kind === 'questionCarousel')) {
+						part.isUsed = true;
+					}
+				}
+			}
+
 			request.response = new ChatResponseModel({
 				responseContent: raw.response ?? [new MarkdownString(raw.response)],
 				session: this,

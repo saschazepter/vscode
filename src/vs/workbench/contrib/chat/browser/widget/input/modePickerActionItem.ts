@@ -176,20 +176,13 @@ export class ModePickerActionItem extends ChatInputPickerActionViewItem {
 			};
 		};
 
-		const isUserDefinedCustomAgent = (mode: IChatMode): boolean => {
-			if (mode.isBuiltin || !mode.source) {
-				return false;
-			}
-			return mode.source.storage === PromptsStorage.local || mode.source.storage === PromptsStorage.user;
-		};
-
 		const actionProviderWithCustomAgentTarget: IActionWidgetDropdownActionProvider = {
 			getActions: () => {
 				const modes = chatModeService.getModes();
 				const currentMode = delegate.currentMode.get();
 				const filteredCustomModes = modes.custom.filter(mode => {
 					const target = mode.target.get();
-					return isUserDefinedCustomAgent(mode) && (target === customAgentTarget);
+					return target === customAgentTarget || target === Target.Undefined;
 				});
 				// Always include the default "Agent" option first
 				const checked = currentMode.id === ChatMode.Agent.id;
@@ -226,14 +219,19 @@ export class ModePickerActionItem extends ChatInputPickerActionViewItem {
 					modes.custom,
 					mode => isModeConsideredBuiltIn(mode, this._productService) ? 'builtin' : 'custom');
 
-				const customBuiltinModeActions = customModes.builtin?.map(mode => {
+				const modeSupportsVSCode = (mode: IChatMode) => {
+					const target = mode.target.get();
+					return target === Target.Undefined || target === Target.VSCode;
+				};
+
+				const customBuiltinModeActions = customModes.builtin?.filter(modeSupportsVSCode)?.map(mode => {
 					const action = makeActionFromCustomMode(mode, currentMode);
 					action.category = agentModeDisabledViaPolicy ? policyDisabledCategory : builtInCategory;
 					return action;
 				}) ?? [];
 				customBuiltinModeActions.sort((a, b) => a.label.localeCompare(b.label));
 
-				const customModeActions = customModes.custom?.map(mode => makeActionFromCustomMode(mode, currentMode)) ?? [];
+				const customModeActions = customModes.custom?.filter(modeSupportsVSCode)?.map(mode => makeActionFromCustomMode(mode, currentMode)) ?? [];
 				customModeActions.sort((a, b) => a.label.localeCompare(b.label));
 
 				const orderedModes = coalesce([
