@@ -229,7 +229,6 @@ extends:
               - template: build/azure-pipelines/linux/product-build-linux-cli.yml@self
                 parameters:
                   VSCODE_ARCH: x64
-                  VSCODE_CHECK_ONLY: ${{ variables.VSCODE_CIBUILD }}
                   VSCODE_QUALITY: ${{ variables.VSCODE_QUALITY }}
 
             - ${{ if and(eq(variables['VSCODE_CIBUILD'], false), eq(parameters.VSCODE_BUILD_LINUX_ARM64, true)) }}:
