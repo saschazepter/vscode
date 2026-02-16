@@ -463,6 +463,11 @@ configurationRegistry.registerConfiguration({
 			default: false,
 			description: nls.localize('chat.viewProgressBadge.enabled', "Show a progress badge on the chat view when an agent session is in progress that is opened in that view."),
 		},
+		[ChatConfiguration.ChatContextUsageEnabled]: {
+			type: 'boolean',
+			default: true,
+			description: nls.localize('chat.contextUsage.enabled', "Show the context window usage indicator in the chat input."),
+		},
 		[ChatConfiguration.NotifyWindowOnResponseReceived]: {
 			type: 'boolean',
 			default: true,
@@ -662,7 +667,7 @@ configurationRegistry.registerConfiguration({
 		[ChatConfiguration.EditModeHidden]: {
 			type: 'boolean',
 			description: nls.localize('chat.editMode.hidden', "When enabled, hides the Edit mode from the chat mode picker."),
-			default: false,
+			default: true,
 			tags: ['experimental'],
 			experiment: {
 				mode: 'auto'
@@ -1105,6 +1110,15 @@ configurationRegistry.registerConfiguration({
 		'chat.allowAnonymousAccess': { // TODO@bpasero remove me eventually
 			type: 'boolean',
 			description: nls.localize('chat.allowAnonymousAccess', "Controls whether anonymous access is allowed in chat."),
+			default: false,
+			tags: ['experimental'],
+			experiment: {
+				mode: 'auto'
+			}
+		},
+		[ChatConfiguration.GrowthNotificationEnabled]: {
+			type: 'boolean',
+			description: nls.localize('chat.growthNotification', "Controls whether to show a growth notification in the agent sessions view to encourage new users to try Copilot."),
 			default: false,
 			tags: ['experimental'],
 			experiment: {

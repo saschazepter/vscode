@@ -342,7 +342,7 @@ export class ChatEditorInputSerializer implements IEditorSerializer {
 		try {
 			// Old inputs have a session id for local session
 			// Use revive to properly restore URIs and other special objects in options.target.data
-			const parsed: ISerializedChatEditorInput & { readonly sessionId: string | undefined } = revive(JSON.parse(serializedEditor));
+			const parsed = revive(JSON.parse(serializedEditor));
 
 			// First if we have a modern session resource, use that
 			if (parsed.sessionResource) {

@@ -59,8 +59,7 @@ export class DelegationSessionPickerActionItem extends SessionTypePickerActionIt
 			return false;
 		}
 
-		const contribution = this.chatSessionsService.getChatSessionContribution(type);
-		return getAgentCanContinueIn(type, contribution);
+		return getAgentCanContinueIn(type);
 	}
 
 	protected override _getSessionCategory(sessionTypeItem: ISessionTypeItem) {

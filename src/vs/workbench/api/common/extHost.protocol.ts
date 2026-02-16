@@ -3386,6 +3386,7 @@ export type IChatSessionHistoryItemDto = {
 	participant: string;
 	command?: string;
 	variableData?: Dto<IChatRequestVariableData>;
+	modelId?: string;
 } | {
 	type: 'response';
 	parts: IChatProgressDto[];
