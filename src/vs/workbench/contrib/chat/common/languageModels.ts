@@ -363,6 +363,29 @@ export interface ILanguageModelsService {
 	configureLanguageModelsProviderGroup(vendorId: string, name?: string): Promise<void>;
 
 	migrateLanguageModelsProviderGroup(languageModelsProviderGroup: ILanguageModelsProviderGroup): Promise<void>;
+
+	/**
+	 * Returns the most recently used model identifiers, ordered by most-recent-first.
+	 * @param maxCount Maximum number of entries to return (default 7).
+	 */
+	getRecentlyUsedModelIds(maxCount?: number): string[];
+
+	/**
+	 * Records that a model was used, updating the recently used list.
+	 */
+	recordModelUsage(modelIdentifier: string): void;
+
+	/**
+	 * Returns the curated model identifiers from the models control manifest.
+	 * Only returns IDs of models that are actually registered.
+	 */
+	getCuratedModelIds(): string[];
+
+	/**
+	 * Sets the curated model IDs. This is called by the service that fetches
+	 * the models control manifest.
+	 */
+	setCuratedModelIds(modelIds: string[]): void;
 }
 
 const languageModelChatProviderType = {
@@ -451,6 +474,7 @@ export const languageModelChatProviderExtensionPoint = ExtensionsRegistry.regist
 });
 
 const CHAT_MODEL_PICKER_PREFERENCES_STORAGE_KEY = 'chatModelPickerPreferences';
+const CHAT_MODEL_RECENTLY_USED_STORAGE_KEY = 'chatModelRecentlyUsed';
 
 export class LanguageModelsService implements ILanguageModelsService {
 
@@ -476,6 +500,16 @@ export class LanguageModelsService implements ILanguageModelsService {
 	private readonly _onLanguageModelChange = this._store.add(new Emitter<string>());
 	readonly onDidChangeLanguageModels: Event<string> = this._onLanguageModelChange.event;
 
+	private _recentlyUsedModelIds: string[] = [];
+	private _curatedModelIds: string[] = [
+		// TODO: Remove hardcoded curated models - for testing only
+		'gpt-4.1',
+		'claude-sonnet-4.5',
+		'gpt-5',
+		'o3',
+		'gemini-3-flash',
+	];
+
 	constructor(
 		@IExtensionService private readonly _extensionService: IExtensionService,
 		@ILogService private readonly _logService: ILogService,
@@ -487,6 +521,7 @@ export class LanguageModelsService implements ILanguageModelsService {
 	) {
 		this._hasUserSelectableModels = ChatContextKeys.languageModelsAreUserSelectable.bindTo(_contextKeyService);
 		this._modelPickerUserPreferences = this._readModelPickerPreferences();
+		this._recentlyUsedModelIds = this._readRecentlyUsedModels();
 		this._store.add(this._storageService.onDidChangeValue(StorageScope.PROFILE, CHAT_MODEL_PICKER_PREFERENCES_STORAGE_KEY, this._store)(() => this._onDidChangeModelPickerPreferences()));
 
 		this._store.add(this.onDidChangeLanguageModels(() => this._hasUserSelectableModels.set(this._modelCache.size > 0 && Array.from(this._modelCache.values()).some(model => model.isUserSelectable))));
@@ -1292,6 +1327,52 @@ export class LanguageModelsService implements ILanguageModelsService {
 
 		await this.addLanguageModelsProviderGroup(name, vendor, configuration);
 	}
+
+	//#region Recently used models
+
+	private _readRecentlyUsedModels(): string[] {
+		return this._storageService.getObject<string[]>(CHAT_MODEL_RECENTLY_USED_STORAGE_KEY, StorageScope.PROFILE, []);
+	}
+
+	private _saveRecentlyUsedModels(): void {
+		this._storageService.store(CHAT_MODEL_RECENTLY_USED_STORAGE_KEY, this._recentlyUsedModelIds, StorageScope.PROFILE, StorageTarget.USER);
+	}
+
+	getRecentlyUsedModelIds(maxCount: number = 7): string[] {
+		// Filter to only include models that still exist in the cache
+		return this._recentlyUsedModelIds
+			.filter(id => this._modelCache.has(id))
+			.slice(0, maxCount);
+	}
+
+	recordModelUsage(modelIdentifier: string): void {
+		// Remove if already present (to move to front)
+		const index = this._recentlyUsedModelIds.indexOf(modelIdentifier);
+		if (index !== -1) {
+			this._recentlyUsedModelIds.splice(index, 1);
+		}
+		// Add to front
+		this._recentlyUsedModelIds.unshift(modelIdentifier);
+		// Cap at a reasonable max to avoid unbounded growth
+		if (this._recentlyUsedModelIds.length > 20) {
+			this._recentlyUsedModelIds.length = 20;
+		}
+		this._saveRecentlyUsedModels();
+	}
+
+	//#endregion
+
+	//#region Curated models
+
+	getCuratedModelIds(): string[] {
+		return this._curatedModelIds;
+	}
+
+	setCuratedModelIds(modelIds: string[]): void {
+		this._curatedModelIds = modelIds;
+	}
+
+	//#endregion
 
 	dispose() {
 		this._store.dispose();

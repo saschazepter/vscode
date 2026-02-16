@@ -6,7 +6,7 @@
 .action-widget {
 	font-size: 13px;
 	border-radius: 0;
-	min-width: 100px;
+	min-width: 220px;
 	max-width: 80vw;
 	z-index: 40;
 	display: block;
@@ -56,12 +56,13 @@
 
 /** Styles for each row in the list element **/
 .action-widget .monaco-list .monaco-list-row {
-	padding: 0 4px 0 4px;
+	padding: 0 10px 0 4px;
 	white-space: nowrap;
 	cursor: pointer;
 	touch-action: none;
 	width: 100%;
 	border-radius: 3px;
+	box-sizing: border-box;
 }
 
 .action-widget .monaco-list .monaco-list-row.action.focused:not(.option-disabled) {
@@ -122,6 +123,7 @@
 	display: flex;
 	gap: 4px;
 	align-items: center;
+	color: var(--vscode-foreground) !important;
 }
 
 .action-widget .monaco-list-row.action.option-disabled,
@@ -197,6 +199,7 @@
 .action-widget .monaco-list .monaco-list-row .description {
 	opacity: 0.7;
 	margin-left: 0.5em;
+	flex-shrink: 0;
 }
 
 /* Item toolbar - shows on hover/focus */
@@ -218,4 +221,61 @@
 	align-items: center;
 	gap: 4px;
 	font-size: 12px;
+}
+
+/* Filter input */
+.action-widget .action-list-filter {
+	border-top: 1px solid var(--vscode-editorHoverWidget-border);
+	padding: 4px;
+}
+
+.action-widget .action-list-filter-input {
+	width: 100%;
+	box-sizing: border-box;
+	padding: 4px 8px;
+	border: 1px solid var(--vscode-input-border, transparent);
+	border-radius: 3px;
+	background-color: var(--vscode-input-background);
+	color: var(--vscode-input-foreground);
+	font-size: 12px;
+	outline: none;
+}
+
+.action-widget .action-list-filter-input:focus {
+	border-color: var(--vscode-focusBorder);
+}
+
+.action-widget .action-list-filter-input::placeholder {
+	color: var(--vscode-input-placeholderForeground);
+}
+
+/* Collapsible group headers */
+.action-widget .monaco-list-row.group-header.collapsible {
+	cursor: pointer !important;
+	display: flex;
+	align-items: center;
+	gap: 4px;
+}
+
+.action-widget .monaco-list-row.group-header.collapsible:hover {
+	background-color: var(--vscode-list-hoverBackground) !important;
+}
+
+.action-widget .monaco-list-row.group-header .group-header-toggle {
+	font-size: 14px;
+	flex-shrink: 0;
+}
+
+/* Manage Models link style */
+.action-widget .monaco-list-row.action.manage-models-link {
+	color: var(--vscode-textLink-foreground) !important;
+}
+
+.action-widget .monaco-list-row.action.manage-models-link .codicon {
+	color: var(--vscode-textLink-foreground) !important;
+}
+
+.action-widget .monaco-list-row.action.manage-models-link:hover,
+.action-widget .monaco-list-row.action.manage-models-link.focused {
+	color: var(--vscode-textLink-activeForeground) !important;
 }

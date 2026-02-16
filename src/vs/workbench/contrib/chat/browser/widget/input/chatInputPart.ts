@@ -992,6 +992,9 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 	public setCurrentLanguageModel(model: ILanguageModelChatMetadataAndIdentifier) {
 		this._currentLanguageModel.set(model, undefined);
 
+		// Record usage for the recently used models list
+		this.languageModelsService.recordModelUsage(model.identifier);
+
 		if (this.cachedWidth) {
 			// For quick chat and editor chat, relayout because the input may need to shrink to accomodate the model name
 			this.layout(this.cachedWidth);
@@ -2174,7 +2177,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 						},
 						getModels: () => this.getModels()
 					};
-					return this.modelWidget = this.instantiationService.createInstance(ModelPickerActionItem, action, undefined, itemDelegate, pickerOptions);
+					return this.modelWidget = this.instantiationService.createInstance(ModelPickerActionItem, action, itemDelegate, pickerOptions);
 				} else if (action.id === OpenModePickerAction.ID && action instanceof MenuItemAction) {
 					const delegate: IModePickerDelegate = {
 						currentMode: this._currentModeObservable,

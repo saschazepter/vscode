@@ -666,6 +666,7 @@ type IChatParticipantRegistry = { [name: string]: string[] };
 interface IChatParticipantRegistryResponse {
 	readonly version: number;
 	readonly restrictedChatParticipants: IChatParticipantRegistry;
+	readonly curatedModels?: string[];
 }
 
 export interface IChatAgentNameService {
@@ -673,9 +674,12 @@ export interface IChatAgentNameService {
 	getAgentNameRestriction(chatAgentData: IChatAgentData): boolean;
 }
 
+import { ILanguageModelsService } from '../languageModels.js';
+
 export class ChatAgentNameService implements IChatAgentNameService {
 
 	private static readonly StorageKey = 'chat.participantNameRegistry';
+	private static readonly CuratedModelsStorageKey = 'chat.curatedModels';
 
 	declare _serviceBrand: undefined;
 
@@ -687,7 +691,8 @@ export class ChatAgentNameService implements IChatAgentNameService {
 		@IProductService productService: IProductService,
 		@IRequestService private readonly requestService: IRequestService,
 		@ILogService private readonly logService: ILogService,
-		@IStorageService private readonly storageService: IStorageService
+		@IStorageService private readonly storageService: IStorageService,
+		@ILanguageModelsService private readonly languageModelsService: ILanguageModelsService,
 	) {
 		if (!productService.chatParticipantRegistry) {
 			return;
@@ -701,6 +706,17 @@ export class ChatAgentNameService implements IChatAgentNameService {
 			this.registry.set(JSON.parse(raw ?? '{}'), undefined);
 		} catch (err) {
 			storageService.remove(ChatAgentNameService.StorageKey, StorageScope.APPLICATION);
+		}
+
+		// Restore curated models from storage
+		const rawCurated = storageService.get(ChatAgentNameService.CuratedModelsStorageKey, StorageScope.APPLICATION);
+		try {
+			const curated = JSON.parse(rawCurated ?? '[]');
+			if (Array.isArray(curated)) {
+				this.languageModelsService.setCuratedModelIds(curated);
+			}
+		} catch (err) {
+			storageService.remove(ChatAgentNameService.CuratedModelsStorageKey, StorageScope.APPLICATION);
 		}
 
 		this.refresh();
@@ -733,6 +749,12 @@ export class ChatAgentNameService implements IChatAgentNameService {
 		const registry = result.restrictedChatParticipants;
 		this.registry.set(registry, undefined);
 		this.storageService.store(ChatAgentNameService.StorageKey, JSON.stringify(registry), StorageScope.APPLICATION, StorageTarget.MACHINE);
+
+		// Update curated models
+		if (result.curatedModels && Array.isArray(result.curatedModels)) {
+			this.languageModelsService.setCuratedModelIds(result.curatedModels);
+			this.storageService.store(ChatAgentNameService.CuratedModelsStorageKey, JSON.stringify(result.curatedModels), StorageScope.APPLICATION, StorageTarget.MACHINE);
+		}
 	}
 
 	/**

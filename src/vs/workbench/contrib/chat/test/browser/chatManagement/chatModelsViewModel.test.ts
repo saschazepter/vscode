@@ -134,6 +134,11 @@ class MockLanguageModelsService implements ILanguageModelsService {
 	}
 
 	async migrateLanguageModelsProviderGroup(languageModelsProviderGroup: ILanguageModelsProviderGroup): Promise<void> { }
+
+	getRecentlyUsedModelIds(_maxCount?: number): string[] { return []; }
+	recordModelUsage(_modelIdentifier: string): void { }
+	getCuratedModelIds(): string[] { return []; }
+	setCuratedModelIds(_modelIds: string[]): void { }
 }
 
 suite('ChatModelsViewModel', () => {
