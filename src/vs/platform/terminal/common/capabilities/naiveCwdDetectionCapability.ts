@@ -4,16 +4,15 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Emitter } from '../../../../base/common/event.js';
-import { Disposable } from '../../../../base/common/lifecycle.js';
 import { ITerminalChildProcess } from '../terminal.js';
 import { TerminalCapability, INaiveCwdDetectionCapability } from './capabilities.js';
 
-export class NaiveCwdDetectionCapability extends Disposable implements INaiveCwdDetectionCapability {
-	constructor(private readonly _process: ITerminalChildProcess) { super(); }
+export class NaiveCwdDetectionCapability implements INaiveCwdDetectionCapability {
+	constructor(private readonly _process: ITerminalChildProcess) { }
 	readonly type = TerminalCapability.NaiveCwdDetection;
 	private _cwd = '';
 
-	private readonly _onDidChangeCwd = this._register(new Emitter<string>());
+	private readonly _onDidChangeCwd = new Emitter<string>();
 	readonly onDidChangeCwd = this._onDidChangeCwd.event;
 
 	async getCwd(): Promise<string> {
