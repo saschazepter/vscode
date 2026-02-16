@@ -276,4 +276,16 @@ suite('Editor ViewLayout - LineHeightsManager', () => {
 		assert.strictEqual(manager.heightForLineNumber(5), 40);
 		assert.strictEqual(manager.heightForLineNumber(6), 30);
 	});
+
+	test('deleting line 2 with lineHeightsRemoved re-adding at line 1 moves special line to line 1', () => {
+		const manager = new LineHeightsManager(10, []);
+		manager.insertOrChangeCustomLineHeight('dec1', 2, 2, 20);
+		manager.commit();
+
+		assert.strictEqual(manager.heightForLineNumber(2), 20);
+
+		manager.onLinesDeleted(2, 2, [{ decorationId: 'dec1', startLineNumber: 1, endLineNumber: 1, lineHeight: 20 }]);
+
+		assert.strictEqual(manager.heightForLineNumber(1), 20);
+	});
 });
