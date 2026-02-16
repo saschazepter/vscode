@@ -16,14 +16,14 @@ import '../../../../platform/meteredConnection/common/meteredConnection.config.c
 
 registerWorkbenchContribution2(MeteredConnectionStatusContribution.ID, MeteredConnectionStatusContribution, WorkbenchPhase.AfterRestored);
 
-registerAction2(class ToggleMeteredConnectionAction extends Action2 {
+registerAction2(class ConfigureMeteredConnectionAction extends Action2 {
 
-	static readonly ID = 'workbench.action.toggleMeteredConnection';
+	static readonly ID = 'workbench.action.configureMeteredConnection';
 
 	constructor() {
 		super({
-			id: ToggleMeteredConnectionAction.ID,
-			title: localize2('toggleMeteredConnection', 'Toggle Metered Connection'),
+			id: ConfigureMeteredConnectionAction.ID,
+			title: localize2('configureMeteredConnection', 'Configure Metered Connection'),
 			f1: true
 		});
 	}

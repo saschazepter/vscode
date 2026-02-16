@@ -47,10 +47,10 @@ export class MeteredConnectionStatusContribution extends Disposable implements I
 		return {
 			name: localize('status.meteredConnection', "Metered Connection"),
 			text: '$(radio-tower)',
-			ariaLabel: localize('status.meteredConnection.ariaLabel', "Metered Connection Detected"),
-			tooltip: localize('status.meteredConnection.tooltip', "Metered connection detected. Some automatic features like extension updates, Settings Sync, and automatic Git operations are paused to reduce data usage."),
+			ariaLabel: localize('status.meteredConnection.ariaLabel', "Metered Connection Enabled"),
+			tooltip: localize('status.meteredConnection.tooltip', "Metered connection enabled. Some automatic features like extension updates, Settings Sync, and automatic Git operations are paused to reduce data usage."),
 			command: {
-				id: 'workbench.action.toggleMeteredConnection',
+				id: 'workbench.action.configureMeteredConnection',
 				title: localize('status.meteredConnection.configure', "Configure")
 			},
 			showInAllWindows: true
