@@ -20,13 +20,61 @@
 				"id": "Experimental Light",
 				"label": "VS Code Light",
 				"uiTheme": "vs",
-				"path": "./themes/2026-light.json"
+				"path": "./themes/light/2026-light.json"
 			},
 			{
 				"id": "Experimental Dark",
 				"label": "VS Code Dark",
 				"uiTheme": "vs-dark",
-				"path": "./themes/2026-dark.json"
+				"path": "./themes/dark/2026-dark.json"
+			},
+			{
+				"id": "Experimental Light Higher Contrast",
+				"label": "VS Code Light (Higher Contrast)",
+				"uiTheme": "vs",
+				"path": "./themes/light/2026-light-higher-contrast.json"
+			},
+			{
+				"id": "Experimental Dark Higher Contrast",
+				"label": "VS Code Dark (Higher Contrast)",
+				"uiTheme": "vs-dark",
+				"path": "./themes/dark/2026-dark-higher-contrast.json"
+			},
+			{
+				"id": "Experimental Light Deuteranopia",
+				"label": "VS Code Light (Deuteranopia)",
+				"uiTheme": "vs",
+				"path": "./themes/light/2026-light-deuteranopia.json"
+			},
+			{
+				"id": "Experimental Dark Deuteranopia",
+				"label": "VS Code Dark (Deuteranopia)",
+				"uiTheme": "vs-dark",
+				"path": "./themes/dark/2026-dark-deuteranopia.json"
+			},
+			{
+				"id": "Experimental Light Tritanopia",
+				"label": "VS Code Light (Tritanopia)",
+				"uiTheme": "vs",
+				"path": "./themes/light/2026-light-tritanopia.json"
+			},
+			{
+				"id": "Experimental Dark Tritanopia",
+				"label": "VS Code Dark (Tritanopia)",
+				"uiTheme": "vs-dark",
+				"path": "./themes/dark/2026-dark-tritanopia.json"
+			},
+			{
+				"id": "Experimental Light Monochromacy",
+				"label": "VS Code Light (Monochromacy)",
+				"uiTheme": "vs",
+				"path": "./themes/light/2026-light-monochromacy.json"
+			},
+			{
+				"id": "Experimental Dark Monochromacy",
+				"label": "VS Code Dark (Monochromacy)",
+				"uiTheme": "vs-dark",
+				"path": "./themes/dark/2026-dark-monochromacy.json"
 			}
 		],
     "css": [

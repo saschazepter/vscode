@@ -2,5 +2,13 @@
 	"displayName": "2026 Themes",
 	"description": "Modern, minimal light and dark themes for 2026 with consistent neutral palette and accessible color contrast",
 	"2026-light-label": "2026 Light",
-	"2026-dark-label": "2026 Dark"
+	"2026-dark-label": "2026 Dark",
+	"2026-light-higher-contrast-label": "2026 Light Higher Contrast",
+	"2026-dark-higher-contrast-label": "2026 Dark Higher Contrast",
+	"2026-light-deuteranopia-label": "2026 Light Deuteranopia",
+	"2026-dark-deuteranopia-label": "2026 Dark Deuteranopia",
+	"2026-light-tritanopia-label": "2026 Light Tritanopia",
+	"2026-dark-tritanopia-label": "2026 Dark Tritanopia",
+	"2026-light-monochromacy-label": "2026 Light Monochromacy",
+	"2026-dark-monochromacy-label": "2026 Dark Monochromacy"
 }
