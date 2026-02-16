@@ -42,35 +42,6 @@ suite('Notifications Position', () => {
 		});
 	});
 
-	suite('Position CSS Classes', () => {
-
-		function getPositionClasses(position: NotificationsPosition): { added: string; removed: string[] } {
-			const allClasses = ['bottom-right', 'bottom-left', 'top-right'];
-			return {
-				added: position,
-				removed: allClasses.filter(c => c !== position)
-			};
-		}
-
-		test('bottom-right position adds correct class', () => {
-			const result = getPositionClasses(NotificationsPosition.BOTTOM_RIGHT);
-			assert.strictEqual(result.added, 'bottom-right');
-			assert.deepStrictEqual(result.removed, ['bottom-left', 'top-right']);
-		});
-
-		test('bottom-left position adds correct class', () => {
-			const result = getPositionClasses(NotificationsPosition.BOTTOM_LEFT);
-			assert.strictEqual(result.added, 'bottom-left');
-			assert.deepStrictEqual(result.removed, ['bottom-right', 'top-right']);
-		});
-
-		test('top-right position adds correct class', () => {
-			const result = getPositionClasses(NotificationsPosition.TOP_RIGHT);
-			assert.strictEqual(result.added, 'top-right');
-			assert.deepStrictEqual(result.removed, ['bottom-right', 'bottom-left']);
-		});
-	});
-
 	suite('Status Bar Alignment', () => {
 
 		function getDesiredAlignment(position: NotificationsPosition): 'left' | 'right' | 'hidden' {
