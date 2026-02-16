@@ -19,7 +19,7 @@ import { widgetShadow } from '../../../../platform/theme/common/colorRegistry.js
 import { IEditorGroupsService } from '../../../services/editor/common/editorGroupsService.js';
 import { localize } from '../../../../nls.js';
 import { ActionBar } from '../../../../base/browser/ui/actionbar/actionbar.js';
-import { ClearAllNotificationsAction, ConfigureDoNotDisturbAction, ToggleDoNotDisturbBySourceAction, HideNotificationsCenterAction, ToggleDoNotDisturbAction } from './notificationsActions.js';
+import { ClearAllNotificationsAction, ConfigureDoNotDisturbAction, ConfigureNotificationsPositionAction, ToggleDoNotDisturbBySourceAction, HideNotificationsCenterAction, ToggleDoNotDisturbAction } from './notificationsActions.js';
 import { IAction, Separator, toAction } from '../../../../base/common/actions.js';
 import { IKeybindingService } from '../../../../platform/keybinding/common/keybinding.js';
 import { assertReturnsAllDefined, assertReturnsDefined } from '../../../../base/common/types.js';
@@ -50,6 +50,7 @@ export class NotificationsCenter extends Themable implements INotificationsCente
 	private readonly notificationsCenterVisibleContextKey;
 	private clearAllAction: ClearAllNotificationsAction | undefined;
 	private configureDoNotDisturbAction: ConfigureDoNotDisturbAction | undefined;
+	private configurePositionAction: ConfigureNotificationsPositionAction | undefined;
 
 	constructor(
 		private readonly container: HTMLElement,
@@ -247,6 +248,38 @@ export class NotificationsCenter extends Themable implements INotificationsCente
 					}));
 				}
 
+				if (action.id === ConfigureNotificationsPositionAction.ID) {
+					return this._register(this.instantiationService.createInstance(DropdownMenuActionViewItem, action, {
+						getActions() {
+							const currentPosition = that.getNotificationsPosition();
+							return [
+								toAction({
+									id: 'workbench.action.setNotificationsPosition.bottomRight',
+									label: localize('positionBottomRight', "Bottom Right"),
+									checked: currentPosition === NotificationsPosition.BOTTOM_RIGHT,
+									run: () => that.configurationService.updateValue(LayoutSettings.NOTIFICATIONS_POSITION, NotificationsPosition.BOTTOM_RIGHT)
+								}),
+								toAction({
+									id: 'workbench.action.setNotificationsPosition.bottomLeft',
+									label: localize('positionBottomLeft', "Bottom Left"),
+									checked: currentPosition === NotificationsPosition.BOTTOM_LEFT,
+									run: () => that.configurationService.updateValue(LayoutSettings.NOTIFICATIONS_POSITION, NotificationsPosition.BOTTOM_LEFT)
+								}),
+								toAction({
+									id: 'workbench.action.setNotificationsPosition.topRight',
+									label: localize('positionTopRight', "Top Right"),
+									checked: currentPosition === NotificationsPosition.TOP_RIGHT,
+									run: () => that.configurationService.updateValue(LayoutSettings.NOTIFICATIONS_POSITION, NotificationsPosition.TOP_RIGHT)
+								})
+							];
+						},
+					}, this.contextMenuService, {
+						...options,
+						actionRunner,
+						classNames: action.class
+					}));
+				}
+
 				return undefined;
 			}
 		}));
@@ -256,6 +289,9 @@ export class NotificationsCenter extends Themable implements INotificationsCente
 
 		this.configureDoNotDisturbAction = this._register(this.instantiationService.createInstance(ConfigureDoNotDisturbAction, ConfigureDoNotDisturbAction.ID, ConfigureDoNotDisturbAction.LABEL));
 		notificationsToolBar.push(this.configureDoNotDisturbAction, { icon: true, label: false });
+
+		this.configurePositionAction = this._register(this.instantiationService.createInstance(ConfigureNotificationsPositionAction, ConfigureNotificationsPositionAction.ID, ConfigureNotificationsPositionAction.LABEL));
+		notificationsToolBar.push(this.configurePositionAction, { icon: true, label: false });
 
 		const hideAllAction = this._register(this.instantiationService.createInstance(HideNotificationsCenterAction, HideNotificationsCenterAction.ID, HideNotificationsCenterAction.LABEL));
 		notificationsToolBar.push(hideAllAction, { icon: true, label: false, keybinding: this.getKeybindingLabel(hideAllAction) });
