@@ -226,17 +226,19 @@ export class ModePickerActionItem extends ChatInputPickerActionViewItem {
 					modes.custom,
 					mode => isModeConsideredBuiltIn(mode, this._productService) ? 'builtin' : 'custom');
 
-				const customBuiltinModeActions = customModes.builtin?.map(mode => {
+				const modeSupportsVSCode = (mode: IChatMode) => {
+					const target = mode.target.get();
+					return target === Target.Undefined || target === Target.VSCode;
+				};
+
+				const customBuiltinModeActions = customModes.builtin?.filter(modeSupportsVSCode)?.map(mode => {
 					const action = makeActionFromCustomMode(mode, currentMode);
 					action.category = agentModeDisabledViaPolicy ? policyDisabledCategory : builtInCategory;
 					return action;
 				}) ?? [];
 				customBuiltinModeActions.sort((a, b) => a.label.localeCompare(b.label));
 
-				const customModeActions = customModes.custom?.filter(mode => {
-					const target = mode.target.get();
-					return target === Target.Undefined || target === Target.VSCode;
-				})?.map(mode => makeActionFromCustomMode(mode, currentMode)) ?? [];
+				const customModeActions = customModes.custom?.filter(modeSupportsVSCode)?.map(mode => makeActionFromCustomMode(mode, currentMode)) ?? [];
 				customModeActions.sort((a, b) => a.label.localeCompare(b.label));
 
 				const orderedModes = coalesce([
