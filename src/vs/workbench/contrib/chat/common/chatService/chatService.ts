@@ -229,6 +229,7 @@ export class ChatMultiDiffData implements IChatMultiDiffData {
 export interface IChatProgressMessage {
 	content: IMarkdownString;
 	kind: 'progressMessage';
+	shimmer?: boolean;
 }
 
 export interface IChatTask extends IChatTaskDto {
@@ -909,6 +910,10 @@ export interface IChatMcpServersStartingSerialized {
 	didStartServerIds?: string[];
 }
 
+export interface IChatDisabledClaudeHooksPart {
+	readonly kind: 'disabledClaudeHooks';
+}
+
 export class ChatMcpServersStarting implements IChatMcpServersStarting {
 	public readonly kind = 'mcpServersStarting';
 
@@ -973,7 +978,8 @@ export type IChatProgress =
 	| IChatMcpServersStarting
 	| IChatMcpServersStartingSerialized
 	| IChatHookPart
-	| IChatExternalToolInvocationUpdate;
+	| IChatExternalToolInvocationUpdate
+	| IChatDisabledClaudeHooksPart;
 
 export interface IChatFollowup {
 	kind: 'reply';

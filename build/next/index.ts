@@ -210,6 +210,10 @@ const commonResourcePatterns = [
 	// Tree-sitter queries
 	'vs/editor/common/languages/highlights/*.scm',
 	'vs/editor/common/languages/injections/*.scm',
+
+	// SVGs referenced from CSS (needed for transpile/dev builds where CSS is copied as-is)
+	'vs/workbench/browser/media/code-icon.svg',
+	'vs/workbench/browser/parts/editor/media/letterpress*.svg',
 ];
 
 // Resources only needed for dev/transpile builds (these get bundled into the main
@@ -699,11 +703,11 @@ const transformOptions: esbuild.TransformOptions = {
 	}),
 };
 
-async function transpileFile(srcPath: string, destPath: string, relativePath: string): Promise<void> {
+async function transpileFile(srcPath: string, destPath: string): Promise<void> {
 	const source = await fs.promises.readFile(srcPath, 'utf-8');
 	const result = await esbuild.transform(source, {
 		...transformOptions,
-		sourcefile: relativePath,
+		sourcefile: srcPath,
 	});
 
 	await fs.promises.mkdir(path.dirname(destPath), { recursive: true });
@@ -728,7 +732,7 @@ async function transpile(outDir: string, excludeTests: boolean): Promise<void> {
 	await Promise.all(files.map(file => {
 		const srcPath = path.join(REPO_ROOT, SRC_DIR, file);
 		const destPath = path.join(REPO_ROOT, outDir, file.replace(/\.ts$/, '.js'));
-		return transpileFile(srcPath, destPath, file);
+		return transpileFile(srcPath, destPath);
 	}));
 }
 
@@ -996,7 +1000,7 @@ async function watch(): Promise<void> {
 				await Promise.all(tsFiles.map(srcPath => {
 					const relativePath = path.relative(path.join(REPO_ROOT, SRC_DIR), srcPath);
 					const destPath = path.join(REPO_ROOT, outDir, relativePath.replace(/\.ts$/, '.js'));
-					return transpileFile(srcPath, destPath, relativePath);
+					return transpileFile(srcPath, destPath);
 				}));
 			}
 

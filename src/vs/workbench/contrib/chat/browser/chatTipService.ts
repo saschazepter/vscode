@@ -9,7 +9,7 @@ import { ContextKeyExpr, ContextKeyExpression, IContextKeyService } from '../../
 import { createDecorator, IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { IProductService } from '../../../../platform/product/common/productService.js';
 import { ChatContextKeys } from '../common/actions/chatContextKeys.js';
-import { ChatModeKind } from '../common/constants.js';
+import { ChatAgentLocation, ChatModeKind } from '../common/constants.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { Disposable, MutableDisposable } from '../../../../base/common/lifecycle.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
@@ -20,12 +20,14 @@ import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { localize } from '../../../../nls.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { ILanguageModelToolsService } from '../common/tools/languageModelToolsService.js';
+import { localChatSessionType } from '../common/chatSessionsService.js';
 
 export const IChatTipService = createDecorator<IChatTipService>('chatTipService');
 
 export interface IChatTip {
 	readonly id: string;
 	readonly content: MarkdownString;
+	readonly enabledCommands?: readonly string[];
 }
 
 export interface IChatTipService {
@@ -37,24 +39,22 @@ export interface IChatTipService {
 	readonly onDidDismissTip: Event<void>;
 
 	/**
+	 * Fired when the user navigates to a different tip (previous/next).
+	 */
+	readonly onDidNavigateTip: Event<IChatTip>;
+
+	/**
+	 * Fired when the tip widget is hidden without dismissing the tip.
+	 */
+	readonly onDidHideTip: Event<void>;
+
+	/**
 	 * Fired when tips are disabled.
 	 */
 	readonly onDidDisableTips: Event<void>;
 
 	/**
-	 * Gets a tip to show for a request, or undefined if a tip has already been shown this session.
-	 * Only one tip is shown per conversation session (resets when switching conversations).
-	 * Tips are suppressed if a welcome tip was already shown in this session.
-	 * Tips are only shown for requests created after the current session started.
-	 * @param requestId The unique ID of the request (used for stable rerenders).
-	 * @param requestTimestamp The timestamp when the request was created.
-	 * @param contextKeyService The context key service to evaluate tip eligibility.
-	 */
-	getNextTip(requestId: string, requestTimestamp: number, contextKeyService: IContextKeyService): IChatTip | undefined;
-
-	/**
 	 * Gets a tip to show on the welcome/getting-started view.
-	 * Unlike {@link getNextTip}, this does not require a request and skips request-timestamp checks.
 	 * Returns the same tip on repeated calls for stable rerenders.
 	 */
 	getWelcomeTip(contextKeyService: IContextKeyService): IChatTip | undefined;
@@ -67,14 +67,37 @@ export interface IChatTipService {
 
 	/**
 	 * Dismisses the current tip and allows a new one to be picked for the same request.
-	 * The dismissed tip will not be shown again in this workspace.
+	 * The dismissed tip will not be shown again in this profile.
 	 */
 	dismissTip(): void;
+
+	/**
+	 * Hides the tip widget without permanently dismissing the tip.
+	 * The tip may be shown again in a future session.
+	 */
+	hideTip(): void;
 
 	/**
 	 * Disables tips permanently by setting the `chat.tips.enabled` configuration to false.
 	 */
 	disableTips(): Promise<void>;
+
+	/**
+	 * Navigates to the next tip in the catalog without permanently dismissing the current one.
+	 * @param contextKeyService The context key service to evaluate tip eligibility.
+	 */
+	navigateToNextTip(contextKeyService: IContextKeyService): IChatTip | undefined;
+
+	/**
+	 * Navigates to the previous tip in the catalog without permanently dismissing the current one.
+	 * @param contextKeyService The context key service to evaluate tip eligibility.
+	 */
+	navigateToPreviousTip(contextKeyService: IContextKeyService): IChatTip | undefined;
+
+	/**
+	 * Clears all dismissed tips so they can be shown again.
+	 */
+	clearDismissedTips(): void;
 }
 
 export interface ITipDefinition {
@@ -123,40 +146,43 @@ export interface ITipDefinition {
 const TIP_CATALOG: ITipDefinition[] = [
 	{
 		id: 'tip.agentMode',
-		message: localize('tip.agentMode', "Tip: Try [Agent mode](command:workbench.action.chat.openEditSession) for multi-file edits and running commands."),
+		message: localize('tip.agentMode', "Tip: Try [Agents](command:workbench.action.chat.openEditSession) to make edits across your project and run commands."),
 		when: ChatContextKeys.chatModeKind.notEqualsTo(ChatModeKind.Agent),
 		enabledCommands: ['workbench.action.chat.openEditSession'],
 		excludeWhenModesUsed: [ChatModeKind.Agent],
 	},
 	{
 		id: 'tip.planMode',
-		message: localize('tip.planMode', "Tip: Try [Plan mode](command:workbench.action.chat.openPlan) to let the agent perform deep analysis and planning before implementing changes."),
+		message: localize('tip.planMode', "Tip: Try the [Plan agent](command:workbench.action.chat.openPlan) to research and plan before implementing changes."),
 		when: ChatContextKeys.chatModeName.notEqualsTo('Plan'),
 		enabledCommands: ['workbench.action.chat.openPlan'],
 		excludeWhenModesUsed: ['Plan'],
 	},
 	{
 		id: 'tip.attachFiles',
-		message: localize('tip.attachFiles', "Tip: Attach files or folders with # to give Copilot more context."),
+		message: localize('tip.attachFiles', "Tip: Reference files or folders with # to give the agent more context about the task."),
 		excludeWhenCommandsExecuted: ['workbench.action.chat.attachContext', 'workbench.action.chat.attachFile', 'workbench.action.chat.attachFolder', 'workbench.action.chat.attachSelection'],
 	},
 	{
 		id: 'tip.codeActions',
-		message: localize('tip.codeActions', "Tip: Select code and right-click for Copilot actions in the context menu."),
+		message: localize('tip.codeActions', "Tip: Select a code block in the editor and right-click to access more AI actions."),
 		excludeWhenCommandsExecuted: ['inlineChat.start'],
 	},
 	{
 		id: 'tip.undoChanges',
-		message: localize('tip.undoChanges', "Tip: You can undo chat's changes to any point by clicking Restore Checkpoint."),
-		when: ContextKeyExpr.or(
-			ChatContextKeys.chatModeKind.isEqualTo(ChatModeKind.Agent),
-			ChatContextKeys.chatModeKind.isEqualTo(ChatModeKind.Edit),
+		message: localize('tip.undoChanges', "Tip: Select Restore Checkpoint to undo changes until that point in the chat conversation."),
+		when: ContextKeyExpr.and(
+			ChatContextKeys.chatSessionType.isEqualTo(localChatSessionType),
+			ContextKeyExpr.or(
+				ChatContextKeys.chatModeKind.isEqualTo(ChatModeKind.Agent),
+				ChatContextKeys.chatModeKind.isEqualTo(ChatModeKind.Edit),
+			),
 		),
 		excludeWhenCommandsExecuted: ['workbench.action.chat.restoreCheckpoint', 'workbench.action.chat.restoreLastCheckpoint'],
 	},
 	{
 		id: 'tip.customInstructions',
-		message: localize('tip.customInstructions', "Tip: [Generate workspace instructions](command:workbench.action.chat.generateInstructions) so chat always has the context it needs when starting a task."),
+		message: localize('tip.customInstructions', "Tip: [Generate workspace instructions](command:workbench.action.chat.generateInstructions) to give the agent relevant project-specific context when starting a task."),
 		enabledCommands: ['workbench.action.chat.generateInstructions'],
 		excludeWhenPromptFilesExist: { promptType: PromptsType.instructions, agentFileType: AgentFileType.copilotInstructionsMd, excludeUntilChecked: true },
 	},
@@ -170,7 +196,7 @@ const TIP_CATALOG: ITipDefinition[] = [
 	},
 	{
 		id: 'tip.skill',
-		message: localize('tip.skill', "Tip: [Create a skill](command:workbench.command.new.skill) so agents can perform domain-specific tasks with reusable prompts and tools."),
+		message: localize('tip.skill', "Tip: [Create a skill](command:workbench.command.new.skill) to apply domain-specific workflows and instructions, only when needed."),
 		when: ChatContextKeys.chatModeKind.isEqualTo(ChatModeKind.Agent),
 		enabledCommands: ['workbench.command.new.skill'],
 		excludeWhenCommandsExecuted: ['workbench.command.new.skill'],
@@ -178,13 +204,13 @@ const TIP_CATALOG: ITipDefinition[] = [
 	},
 	{
 		id: 'tip.messageQueueing',
-		message: localize('tip.messageQueueing', "Tip: You can send follow-up and steering messages while the agent is working. They'll be queued and processed in order."),
+		message: localize('tip.messageQueueing', "Tip: Send follow-up and steering messages while the agent is working. They'll be queued and processed in order."),
 		when: ChatContextKeys.chatModeKind.isEqualTo(ChatModeKind.Agent),
 		excludeWhenCommandsExecuted: ['workbench.action.chat.queueMessage', 'workbench.action.chat.steerWithMessage'],
 	},
 	{
 		id: 'tip.yoloMode',
-		message: localize('tip.yoloMode', "Tip: Enable [auto approve](command:workbench.action.openSettings?%5B%22chat.tools.global.autoApprove%22%5D) to let the agent run tools without manual confirmation."),
+		message: localize('tip.yoloMode', "Tip: Enable [auto approve](command:workbench.action.openSettings?%5B%22chat.tools.global.autoApprove%22%5D) to give the agent full control without manual confirmation."),
 		when: ContextKeyExpr.and(
 			ChatContextKeys.chatModeKind.isEqualTo(ChatModeKind.Agent),
 			ContextKeyExpr.notEquals('config.chat.tools.global.autoApprove', true),
@@ -198,23 +224,14 @@ const TIP_CATALOG: ITipDefinition[] = [
 		excludeWhenToolsInvoked: ['renderMermaidDiagram'],
 	},
 	{
-		id: 'tip.githubRepo',
-		message: localize('tip.githubRepo', "Tip: Mention a GitHub repository (e.g. @owner/repo) in your prompt to let the agent search code, browse issues, and explore pull requests from that repo."),
-		when: ContextKeyExpr.and(
-			ChatContextKeys.chatModeKind.isEqualTo(ChatModeKind.Agent),
-			ContextKeyExpr.notEquals('gitOpenRepositoryCount', '0'),
-		),
-		excludeWhenToolsInvoked: ['github-pull-request_doSearch', 'github-pull-request_issue_fetch', 'github-pull-request_formSearchQuery'],
-	},
-	{
 		id: 'tip.subagents',
-		message: localize('tip.subagents', "Tip: For large tasks, ask the agent to work in parallel. It can split the work across subagents to finish faster."),
+		message: localize('tip.subagents', "Tip: Ask the agent to work in parallel to complete large tasks faster."),
 		when: ChatContextKeys.chatModeKind.isEqualTo(ChatModeKind.Agent),
 		excludeWhenToolsInvoked: ['runSubagent'],
 	},
 	{
 		id: 'tip.contextUsage',
-		message: localize('tip.contextUsage', "Tip: [View your context window usage](command:workbench.action.chat.showContextUsage) to see how many tokens are being used and what's consuming them."),
+		message: localize('tip.contextUsage', "Tip: [View your context window usage](command:workbench.action.chat.showContextUsage) to see how many tokens are used and what's consuming them."),
 		when: ContextKeyExpr.and(
 			ChatContextKeys.chatModeKind.isEqualTo(ChatModeKind.Agent),
 			ChatContextKeys.contextUsageHasBeenOpened.negate(),
@@ -225,7 +242,7 @@ const TIP_CATALOG: ITipDefinition[] = [
 	},
 	{
 		id: 'tip.sendToNewChat',
-		message: localize('tip.sendToNewChat', "Tip: Use [Send to New Chat](command:workbench.action.chat.sendToNewChat) to start a fresh conversation with a clean context window."),
+		message: localize('tip.sendToNewChat', "Tip: Use [Send to New Chat](command:workbench.action.chat.sendToNewChat) to start a new conversation with a clean context window."),
 		when: ChatContextKeys.chatSessionIsEmpty.negate(),
 		enabledCommands: ['workbench.action.chat.sendToNewChat'],
 		excludeWhenCommandsExecuted: ['workbench.action.chat.sendToNewChat'],
@@ -271,7 +288,7 @@ export class TipEligibilityTracker extends Disposable {
 		@ICommandService commandService: ICommandService,
 		@IStorageService private readonly _storageService: IStorageService,
 		@IPromptsService private readonly _promptsService: IPromptsService,
-		@ILanguageModelToolsService languageModelToolsService: ILanguageModelToolsService,
+		@ILanguageModelToolsService private readonly _languageModelToolsService: ILanguageModelToolsService,
 		@ILogService private readonly _logService: ILogService,
 	) {
 		super();
@@ -335,15 +352,17 @@ export class TipEligibilityTracker extends Disposable {
 		// --- Set up tool listener (auto-disposes when all seen) -----------------
 
 		if (this._pendingTools.size > 0) {
-			this._toolListener.value = languageModelToolsService.onDidInvokeTool(e => {
+			this._toolListener.value = this._languageModelToolsService.onDidInvokeTool(e => {
+				// Track explicit tool IDs
 				if (this._pendingTools.has(e.toolId)) {
 					this._invokedTools.add(e.toolId);
-					this._persistSet(TipEligibilityTracker._TOOLS_STORAGE_KEY, this._invokedTools);
 					this._pendingTools.delete(e.toolId);
 
-					if (this._pendingTools.size === 0) {
-						this._toolListener.clear();
-					}
+					this._persistSet(TipEligibilityTracker._TOOLS_STORAGE_KEY, this._invokedTools);
+				}
+
+				if (this._pendingTools.size === 0) {
+					this._toolListener.clear();
 				}
 			});
 		}
@@ -478,21 +497,14 @@ export class ChatTipService extends Disposable implements IChatTipService {
 	private readonly _onDidDismissTip = this._register(new Emitter<void>());
 	readonly onDidDismissTip = this._onDidDismissTip.event;
 
+	private readonly _onDidNavigateTip = this._register(new Emitter<IChatTip>());
+	readonly onDidNavigateTip = this._onDidNavigateTip.event;
+
+	private readonly _onDidHideTip = this._register(new Emitter<void>());
+	readonly onDidHideTip = this._onDidHideTip.event;
+
 	private readonly _onDidDisableTips = this._register(new Emitter<void>());
 	readonly onDidDisableTips = this._onDidDisableTips.event;
-
-	/**
-	 * Timestamp when the current session started.
-	 * Used to only show tips for requests created after this time.
-	 * Resets on each {@link resetSession} call.
-	 */
-	private _sessionStartedAt = Date.now();
-
-	/**
-	 * Whether a chatResponse tip has already been shown in this conversation
-	 * session. Only one response tip is shown per session.
-	 */
-	private _hasShownRequestTip = false;
 
 	/**
 	 * The request ID that was assigned a tip (for stable rerenders).
@@ -520,26 +532,30 @@ export class ChatTipService extends Disposable implements IChatTipService {
 	}
 
 	resetSession(): void {
-		this._hasShownRequestTip = false;
 		this._shownTip = undefined;
 		this._tipRequestId = undefined;
-		this._sessionStartedAt = Date.now();
 	}
 
 	dismissTip(): void {
 		if (this._shownTip) {
 			const dismissed = this._getDismissedTipIds();
 			dismissed.push(this._shownTip.id);
-			this._storageService.store(ChatTipService._DISMISSED_TIP_KEY, JSON.stringify(dismissed), StorageScope.WORKSPACE, StorageTarget.MACHINE);
+			this._storageService.store(ChatTipService._DISMISSED_TIP_KEY, JSON.stringify(dismissed), StorageScope.PROFILE, StorageTarget.MACHINE);
 		}
-		this._hasShownRequestTip = false;
+		this._shownTip = undefined;
+		this._tipRequestId = undefined;
+		this._onDidDismissTip.fire();
+	}
+
+	clearDismissedTips(): void {
+		this._storageService.remove(ChatTipService._DISMISSED_TIP_KEY, StorageScope.PROFILE);
 		this._shownTip = undefined;
 		this._tipRequestId = undefined;
 		this._onDidDismissTip.fire();
 	}
 
 	private _getDismissedTipIds(): string[] {
-		const raw = this._storageService.get(ChatTipService._DISMISSED_TIP_KEY, StorageScope.WORKSPACE);
+		const raw = this._storageService.get(ChatTipService._DISMISSED_TIP_KEY, StorageScope.PROFILE);
 		if (!raw) {
 			return [];
 		}
@@ -563,42 +579,17 @@ export class ChatTipService extends Disposable implements IChatTipService {
 		}
 	}
 
+	hideTip(): void {
+		this._shownTip = undefined;
+		this._tipRequestId = undefined;
+		this._onDidHideTip.fire();
+	}
+
 	async disableTips(): Promise<void> {
-		this._hasShownRequestTip = false;
 		this._shownTip = undefined;
 		this._tipRequestId = undefined;
 		await this._configurationService.updateValue('chat.tips.enabled', false);
 		this._onDidDisableTips.fire();
-	}
-
-	getNextTip(requestId: string, requestTimestamp: number, contextKeyService: IContextKeyService): IChatTip | undefined {
-		// Check if tips are enabled
-		if (!this._configurationService.getValue<boolean>('chat.tips.enabled')) {
-			return undefined;
-		}
-
-		// Only show tips for Copilot
-		if (!this._isCopilotEnabled()) {
-			return undefined;
-		}
-
-		// Check if this is the request that was assigned a tip (for stable rerenders)
-		if (this._tipRequestId === requestId && this._shownTip) {
-			return this._createTip(this._shownTip);
-		}
-
-		// Only show one tip per session
-		if (this._hasShownRequestTip) {
-			return undefined;
-		}
-
-		// Only show tips for requests created after the current session started.
-		// This prevents showing tips for old requests being re-rendered.
-		if (requestTimestamp < this._sessionStartedAt) {
-			return undefined;
-		}
-
-		return this._pickTip(requestId, contextKeyService);
 	}
 
 	getWelcomeTip(contextKeyService: IContextKeyService): IChatTip | undefined {
@@ -609,6 +600,16 @@ export class ChatTipService extends Disposable implements IChatTipService {
 
 		// Only show tips for Copilot
 		if (!this._isCopilotEnabled()) {
+			return undefined;
+		}
+
+		// Only show tips in the main chat panel, not in terminal/editor inline chat
+		if (!this._isChatLocation(contextKeyService)) {
+			return undefined;
+		}
+
+		// Don't show tips when chat quota is exceeded, the upgrade widget is more relevant
+		if (this._isChatQuotaExceeded(contextKeyService)) {
 			return undefined;
 		}
 
@@ -630,7 +631,7 @@ export class ChatTipService extends Disposable implements IChatTipService {
 		let selectedTip: ITipDefinition | undefined;
 
 		// Determine where to start in the catalog based on the last-shown tip.
-		const lastTipId = this._storageService.get(ChatTipService._LAST_TIP_ID_KEY, StorageScope.WORKSPACE);
+		const lastTipId = this._storageService.get(ChatTipService._LAST_TIP_ID_KEY, StorageScope.PROFILE);
 		const lastCatalogIndex = lastTipId ? TIP_CATALOG.findIndex(tip => tip.id === lastTipId) : -1;
 		const startIndex = lastCatalogIndex === -1 ? 0 : (lastCatalogIndex + 1) % TIP_CATALOG.length;
 
@@ -666,14 +667,47 @@ export class ChatTipService extends Disposable implements IChatTipService {
 		}
 
 		// Persist the selected tip id so the next use advances to the following one.
-		this._storageService.store(ChatTipService._LAST_TIP_ID_KEY, selectedTip.id, StorageScope.WORKSPACE, StorageTarget.MACHINE);
+		this._storageService.store(ChatTipService._LAST_TIP_ID_KEY, selectedTip.id, StorageScope.PROFILE, StorageTarget.USER);
 
 		// Record that we've shown a tip this session
-		this._hasShownRequestTip = sourceId !== 'welcome';
 		this._tipRequestId = sourceId;
 		this._shownTip = selectedTip;
 
 		return this._createTip(selectedTip);
+	}
+
+	navigateToNextTip(contextKeyService: IContextKeyService): IChatTip | undefined {
+		return this._navigateTip(1, contextKeyService);
+	}
+
+	navigateToPreviousTip(contextKeyService: IContextKeyService): IChatTip | undefined {
+		return this._navigateTip(-1, contextKeyService);
+	}
+
+	private _navigateTip(direction: 1 | -1, contextKeyService: IContextKeyService): IChatTip | undefined {
+		if (!this._shownTip) {
+			return undefined;
+		}
+
+		const currentIndex = TIP_CATALOG.findIndex(t => t.id === this._shownTip!.id);
+		if (currentIndex === -1) {
+			return undefined;
+		}
+
+		const dismissedIds = new Set(this._getDismissedTipIds());
+		for (let i = 1; i < TIP_CATALOG.length; i++) {
+			const idx = ((currentIndex + direction * i) % TIP_CATALOG.length + TIP_CATALOG.length) % TIP_CATALOG.length;
+			const candidate = TIP_CATALOG[idx];
+			if (!dismissedIds.has(candidate.id) && this._isEligible(candidate, contextKeyService)) {
+				this._shownTip = candidate;
+				this._storageService.store(ChatTipService._LAST_TIP_ID_KEY, candidate.id, StorageScope.PROFILE, StorageTarget.USER);
+				const tip = this._createTip(candidate);
+				this._onDidNavigateTip.fire(tip);
+				return tip;
+			}
+		}
+
+		return undefined;
 	}
 
 	private _isEligible(tip: ITipDefinition, contextKeyService: IContextKeyService): boolean {
@@ -688,6 +722,15 @@ export class ChatTipService extends Disposable implements IChatTipService {
 		return true;
 	}
 
+	private _isChatLocation(contextKeyService: IContextKeyService): boolean {
+		const location = contextKeyService.getContextKeyValue<ChatAgentLocation>(ChatContextKeys.location.key);
+		return !location || location === ChatAgentLocation.Chat;
+	}
+
+	private _isChatQuotaExceeded(contextKeyService: IContextKeyService): boolean {
+		return contextKeyService.getContextKeyValue<boolean>(ChatContextKeys.chatQuotaExceeded.key) === true;
+	}
+
 	private _isCopilotEnabled(): boolean {
 		const defaultChatAgent = this._productService.defaultChatAgent;
 		return !!defaultChatAgent?.chatExtensionId;
@@ -700,6 +743,7 @@ export class ChatTipService extends Disposable implements IChatTipService {
 		return {
 			id: tipDef.id,
 			content: markdown,
+			enabledCommands: tipDef.enabledCommands,
 		};
 	}
 }

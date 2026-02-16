@@ -28,7 +28,6 @@ import { ChatModeKind } from '../../common/constants.js';
 import { IChatAccessibilityService, IChatWidgetService } from '../chat.js';
 import { ThumbsUpAnimationStyle, triggerThumbsUpAnimation } from '../widget/chatConfetti.js';
 import { CHAT_CATEGORY } from './chatActions.js';
-import { IAccessibilityService } from '../../../../../platform/accessibility/common/accessibility.js';
 import { IKeybindingService } from '../../../../../platform/keybinding/common/keybinding.js';
 import { INotificationService } from '../../../../../platform/notification/common/notification.js';
 import { IThemeService } from '../../../../../platform/theme/common/themeService.js';

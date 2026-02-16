@@ -176,20 +176,13 @@ export class ModePickerActionItem extends ChatInputPickerActionViewItem {
 			};
 		};
 
-		const isUserDefinedCustomAgent = (mode: IChatMode): boolean => {
-			if (mode.isBuiltin || !mode.source) {
-				return false;
-			}
-			return mode.source.storage === PromptsStorage.local || mode.source.storage === PromptsStorage.user;
-		};
-
 		const actionProviderWithCustomAgentTarget: IActionWidgetDropdownActionProvider = {
 			getActions: () => {
 				const modes = chatModeService.getModes();
 				const currentMode = delegate.currentMode.get();
 				const filteredCustomModes = modes.custom.filter(mode => {
 					const target = mode.target.get();
-					return isUserDefinedCustomAgent(mode) && (target === customAgentTarget);
+					return target === customAgentTarget || target === Target.Undefined;
 				});
 				// Always include the default "Agent" option first
 				const checked = currentMode.id === ChatMode.Agent.id;
