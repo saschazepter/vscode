@@ -145,7 +145,7 @@ export class AgentFeedbackAttachmentContribution extends Disposable {
 	}
 
 	/**
-	 * Ensure we listen for the chat widget's accept event so we can clear feedback after send.
+	 * Ensure we listen for the chat widget's submit event so we can clear feedback after send.
 	 */
 	private _ensureAcceptListener(sessionResource: URI): void {
 		const key = sessionResource.toString();
@@ -158,7 +158,7 @@ export class AgentFeedbackAttachmentContribution extends Disposable {
 			return;
 		}
 
-		this._widgetListeners.set(key, widget.onDidAcceptInput(() => {
+		this._widgetListeners.set(key, widget.onDidSubmitAgent(() => {
 			this._agentFeedbackService.clearFeedback(sessionResource);
 			this._widgetListeners.deleteAndDispose(key);
 		}));

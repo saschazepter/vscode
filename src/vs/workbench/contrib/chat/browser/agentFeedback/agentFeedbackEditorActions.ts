@@ -9,6 +9,8 @@ import { Action2, MenuId, MenuRegistry, registerAction2 } from '../../../../../p
 import { ContextKeyExpr } from '../../../../../platform/contextkey/common/contextkey.js';
 import { ServicesAccessor } from '../../../../../platform/instantiation/common/instantiation.js';
 import { URI } from '../../../../../base/common/uri.js';
+import { isEqual } from '../../../../../base/common/resources.js';
+import { EditorsOrder, IEditorIdentifier } from '../../../../common/editor.js';
 import { IEditorService } from '../../../../services/editor/common/editorService.js';
 import { IChatWidgetService } from '../chat.js';
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
@@ -69,12 +71,30 @@ class SubmitFeedbackAction extends AgentFeedbackEditorAction {
 
 	override async runWithSession(accessor: ServicesAccessor, sessionResource: URI): Promise<void> {
 		const chatWidgetService = accessor.get(IChatWidgetService);
+		const agentFeedbackService = accessor.get(IAgentFeedbackService);
+		const editorService = accessor.get(IEditorService);
+
 		const widget = chatWidgetService.getWidgetBySessionResource(sessionResource);
 		if (!widget) {
 			return;
 		}
 
-		await widget.acceptInput();
+		// Close all editors belonging to the session resource
+		const editorsToClose: IEditorIdentifier[] = [];
+		for (const { editor, groupId } of editorService.getEditors(EditorsOrder.SEQUENTIAL)) {
+			const candidates = getActiveResourceCandidates(editor);
+			const belongsToSession = candidates.some(uri =>
+				isEqual(agentFeedbackService.getMostRecentSessionForResource(uri), sessionResource)
+			);
+			if (belongsToSession) {
+				editorsToClose.push({ editor, groupId });
+			}
+		}
+		if (editorsToClose.length) {
+			await editorService.closeEditors(editorsToClose);
+		}
+
+		await widget.acceptInput('Act on the provided feedback');
 	}
 }
 
