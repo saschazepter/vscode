@@ -366,11 +366,8 @@ export class ChatSubagentContentPart extends ChatCollapsibleContentPart implemen
 
 	private updateTitle(): void {
 		const prefix = this.agentName || localize('chat.subagent.prefix', 'Subagent');
-		const shimmerText = `${prefix}: `;
-		let detailText = this.description;
-		if (this.currentRunningToolMessage && this.isActive) {
-			detailText += ` \u2014 ${this.currentRunningToolMessage}`;
-		}
+		const shimmerText = `${prefix}: ${this.description}`;
+		const toolCallText = this.currentRunningToolMessage && this.isActive ? ` \u2014 ${this.currentRunningToolMessage}` : ``;
 
 		if (!this._collapseButton) {
 			return;
@@ -386,7 +383,7 @@ export class ChatSubagentContentPart extends ChatCollapsibleContentPart implemen
 		}
 		this.titleShimmerSpan.textContent = shimmerText;
 
-		const result = this.chatContentMarkdownRenderer.render(new MarkdownString(detailText));
+		const result = this.chatContentMarkdownRenderer.render(new MarkdownString(toolCallText));
 		result.element.classList.add('collapsible-title-content', 'chat-thinking-title-detail');
 		renderFileWidgets(result.element, this.instantiationService, this.chatMarkdownAnchorService, this._store);
 
@@ -397,7 +394,7 @@ export class ChatSubagentContentPart extends ChatCollapsibleContentPart implemen
 		}
 		this.titleDetailContainer = result.element;
 
-		const fullLabel = `${shimmerText}${detailText}`;
+		const fullLabel = `${shimmerText}${toolCallText}`;
 		this._collapseButton.element.ariaLabel = fullLabel;
 		this._collapseButton.element.ariaExpanded = String(this.isExpanded());
 	}
