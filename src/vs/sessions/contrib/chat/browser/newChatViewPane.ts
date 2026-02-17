@@ -30,7 +30,7 @@ import { IThemeService } from '../../../../platform/theme/common/themeService.js
 import { IHoverService } from '../../../../platform/hover/browser/hover.js';
 import { HoverPosition } from '../../../../base/browser/ui/hover/hoverWidget.js';
 import { renderIcon } from '../../../../base/browser/ui/iconLabel/iconLabels.js';
-import { isEqual } from '../../../../base/common/resources.js';
+import { basename, isEqual } from '../../../../base/common/resources.js';
 import { asCSSUrl } from '../../../../base/browser/cssValue.js';
 import { FileAccess } from '../../../../base/common/network.js';
 import { localize } from '../../../../nls.js';
@@ -48,6 +48,8 @@ import { IChatInputPickerOptions } from '../../../../workbench/contrib/chat/brow
 import { WorkspaceFolderCountContext } from '../../../../workbench/common/contextkeys.js';
 import { IViewDescriptorService } from '../../../../workbench/common/views.js';
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
+import { IFileDialogService } from '../../../../platform/dialogs/common/dialogs.js';
+import { IWorkspaceEditingService } from '../../../../workbench/services/workspaces/common/workspaceEditing.js';
 import { IViewPaneOptions, ViewPane } from '../../../../workbench/browser/parts/views/viewPane.js';
 import { ContextMenuController } from '../../../../editor/contrib/contextmenu/browser/contextmenu.js';
 import { getSimpleEditorOptions } from '../../../../workbench/contrib/codeEditor/browser/simpleEditorOptions.js';
@@ -189,6 +191,9 @@ class NewChatWidget extends Disposable {
 		@IProductService private readonly productService: IProductService,
 		@ILogService private readonly logService: ILogService,
 		@IHoverService _hoverService: IHoverService,
+		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
+		@IFileDialogService private readonly fileDialogService: IFileDialogService,
+		@IWorkspaceEditingService private readonly workspaceEditingService: IWorkspaceEditingService,
 	) {
 		super();
 		this._targetConfig = this._register(new TargetConfig(options.targetConfig));
@@ -486,8 +491,16 @@ class NewChatWidget extends Disposable {
 			return;
 		}
 
+		// For Local target, render a workspace folder picker instead of extension pickers
+		if (activeSessionType === AgentSessionProviders.Local) {
+			this._clearExtensionPickers();
+			this._renderLocalFolderPicker();
+			return;
+		}
+
 		const optionGroups = this.chatSessionsService.getOptionGroupsForSessionType(activeSessionType);
 		if (!optionGroups || optionGroups.length === 0) {
+			this._clearExtensionPickers();
 			return;
 		}
 
@@ -584,6 +597,40 @@ class NewChatWidget extends Disposable {
 			const slot = dom.append(targetContainer, dom.$('.sessions-chat-picker-slot'));
 			widget.render(slot);
 		}
+	}
+
+	private _renderLocalFolderPicker(): void {
+		if (!this._extensionPickersRightContainer) {
+			return;
+		}
+
+		const folders = this.workspaceContextService.getWorkspace().folders;
+		const currentFolder = folders[0];
+		const folderName = currentFolder ? basename(currentFolder.uri) : localize('noFolder', "No Folder");
+
+		const slot = dom.append(this._extensionPickersRightContainer, dom.$('.sessions-chat-picker-slot'));
+		const button = dom.append(slot, dom.$('.sessions-chat-dropdown-button'));
+		button.tabIndex = 0;
+		button.role = 'button';
+		button.ariaHasPopup = 'true';
+		dom.append(button, renderIcon(Codicon.folder));
+		dom.append(button, dom.$('span.sessions-chat-dropdown-label', undefined, folderName));
+		dom.append(button, renderIcon(Codicon.chevronDown));
+
+		this._pickerWidgetDisposables.add(dom.addDisposableListener(button, dom.EventType.CLICK, async () => {
+			const selectedFolder = await this.fileDialogService.showOpenDialog({
+				canSelectFiles: false,
+				canSelectFolders: true,
+				canSelectMany: false,
+				title: localize('selectFolder', "Select Folder"),
+			});
+
+			if (selectedFolder?.[0]) {
+				const foldersToDelete = folders.map(f => f.uri);
+				await this.workspaceEditingService.updateFolders(0, foldersToDelete.length, [{ uri: selectedFolder[0] }]);
+				this._renderExtensionPickers(true);
+			}
+		}));
 	}
 
 	private _evaluateOptionGroupVisibility(optionGroup: { id: string; when?: string }): boolean {
