@@ -421,7 +421,7 @@ class NewChatWidget extends Disposable {
 				continue;
 			}
 
-			const name = getAgentSessionProviderName(sessionType, true);
+			const name = getAgentSessionProviderName(sessionType);
 			const button = dom.$('.chat-full-welcome-target-button');
 			button.appendChild(dom.$('span.chat-full-welcome-target-label', undefined, name));
 

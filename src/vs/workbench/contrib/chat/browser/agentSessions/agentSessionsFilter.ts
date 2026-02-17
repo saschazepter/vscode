@@ -136,7 +136,7 @@ export class AgentSessionsFilter extends Disposable implements Required<IAgentSe
 		if (!showProviders || showProviders.has(AgentSessionProviders.Local)) {
 			providers.push({
 				id: AgentSessionProviders.Local,
-				label: getAgentSessionProviderName(AgentSessionProviders.Local, true)
+				label: getAgentSessionProviderName(AgentSessionProviders.Local)
 			});
 		}
 
@@ -151,7 +151,7 @@ export class AgentSessionsFilter extends Disposable implements Required<IAgentSe
 			const knownProvider = getAgentSessionProvider(contribution.type);
 			providers.push({
 				id: contribution.type,
-				label: knownProvider ? getAgentSessionProviderName(knownProvider, true) : contribution.displayName
+				label: knownProvider ? getAgentSessionProviderName(knownProvider) : contribution.displayName
 			});
 		}
 
