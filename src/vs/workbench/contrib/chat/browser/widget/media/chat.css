@@ -1093,8 +1093,7 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	border: 1px solid var(--vscode-input-border, transparent);
 	background-color: var(--vscode-editor-background);
 	border-bottom: none;
-	border-top-left-radius: 4px;
-	border-top-right-radius: 4px;
+	border-radius: var(--vscode-cornerRadius-large) var(--vscode-cornerRadius-large) 0 0;
 	flex-direction: column;
 	gap: 2px;
 	overflow: hidden;
