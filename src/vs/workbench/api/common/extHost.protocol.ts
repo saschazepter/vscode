@@ -1460,6 +1460,7 @@ export type IChatAgentHistoryEntryDto = {
 export interface IChatSessionContextDto {
 	readonly chatSessionResource: UriComponents;
 	readonly isUntitled: boolean;
+	readonly initialSessionOptions?: ReadonlyArray<{ optionId: string; value: string }>;
 }
 
 export interface ExtHostChatAgentsShape2 {
@@ -3385,6 +3386,7 @@ export type IChatSessionHistoryItemDto = {
 	participant: string;
 	command?: string;
 	variableData?: Dto<IChatRequestVariableData>;
+	modelId?: string;
 } | {
 	type: 'response';
 	parts: IChatProgressDto[];

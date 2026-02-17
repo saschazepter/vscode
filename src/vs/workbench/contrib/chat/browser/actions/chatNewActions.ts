@@ -13,7 +13,6 @@ import { CommandsRegistry } from '../../../../../platform/commands/common/comman
 import { ContextKeyExpr } from '../../../../../platform/contextkey/common/contextkey.js';
 import { IDialogService } from '../../../../../platform/dialogs/common/dialogs.js';
 import { KeybindingWeight } from '../../../../../platform/keybinding/common/keybindingsRegistry.js';
-import { ActiveEditorContext } from '../../../../common/contextkeys.js';
 import { IViewsService } from '../../../../services/views/common/viewsService.js';
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
 import { IChatEditingSession } from '../../common/editing/chatEditingService.js';
@@ -23,6 +22,8 @@ import { ChatViewId, IChatWidgetService } from '../chat.js';
 import { EditingSessionAction, EditingSessionActionContext, getEditingSessionContext } from '../chatEditing/chatEditingActions.js';
 import { ChatEditorInput } from '../widgetHosts/editor/chatEditorInput.js';
 import { ACTION_ID_NEW_CHAT, ACTION_ID_NEW_EDIT_SESSION, CHAT_CATEGORY, clearChatSessionPreservingType, handleCurrentEditingSession } from './chatActions.js';
+import { ChatViewPane } from '../widgetHosts/viewPane/chatViewPane.js';
+import { ACTION_ID_NEW_CHAT, ACTION_ID_NEW_EDIT_SESSION, CHAT_CATEGORY, handleCurrentEditingSession } from './chatActions.js';
 import { clearChatEditor } from './chatClear.js';
 import { AgentSessionProviders, AgentSessionsViewerOrientation } from '../agentSessions/agentSessions.js';
 import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
@@ -110,12 +111,6 @@ export function registerNewChatActions() {
 						id: MenuId.ChatNewMenu,
 						group: '1_open',
 						order: 1,
-					},
-					{
-						id: MenuId.CompactWindowEditorTitle,
-						group: 'navigation',
-						when: ActiveEditorContext.isEqualTo(ChatEditorInput.EditorID),
-						order: 1
 					}
 				],
 				keybinding: {
