@@ -150,8 +150,9 @@ export interface ITipDefinition {
  */
 const TIP_CATALOG: ITipDefinition[] = [
 	{
-		id: 'tip.switchToGpt5Mini',
-		message: localize('tip.switchToGpt5Mini', "Tip: Using gpt-4.1? Try switching to GPT-5-mini in the model picker for better coding performance."),
+		id: 'tip.switchToAuto',
+		message: localize('tip.switchToAuto', "Tip: Using gpt-4.1? Try switching to [Auto](command:workbench.action.chat.openModelPicker) in the model picker for better coding performance."),
+		enabledCommands: ['workbench.action.chat.openModelPicker'],
 		onlyWhenModelIds: ['gpt-4.1'],
 	},
 	{

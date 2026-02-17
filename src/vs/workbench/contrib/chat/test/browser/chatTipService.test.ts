@@ -100,37 +100,37 @@ suite('ChatTipService', () => {
 		assert.ok(tip.content.value.length > 0, 'Tip should have content');
 	});
 
-	test('returns GPT-5-mini switch tip when current model is gpt-4.1', () => {
+	test('returns Auto switch tip when current model is gpt-4.1', () => {
 		const service = createService();
 		contextKeyService.createKey(ChatContextKeys.chatModelId.key, 'gpt-4.1');
 
 		const tip = service.getWelcomeTip(contextKeyService);
 
 		assert.ok(tip);
-		assert.strictEqual(tip.id, 'tip.switchToGpt5Mini');
+		assert.strictEqual(tip.id, 'tip.switchToAuto');
 	});
 
-	test('does not return GPT-5-mini switch tip when current model is not gpt-4.1', () => {
+	test('does not return Auto switch tip when current model is not gpt-4.1', () => {
 		const service = createService();
-		contextKeyService.createKey(ChatContextKeys.chatModelId.key, 'gpt-5-mini');
+		contextKeyService.createKey(ChatContextKeys.chatModelId.key, 'auto');
 
 		const tip = service.getWelcomeTip(contextKeyService);
 
 		assert.ok(tip);
-		assert.notStrictEqual(tip.id, 'tip.switchToGpt5Mini');
+		assert.notStrictEqual(tip.id, 'tip.switchToAuto');
 	});
 
-	test('does not return GPT-5-mini switch tip when current model context key is empty and no fallback is available', () => {
+	test('does not return Auto switch tip when current model context key is empty and no fallback is available', () => {
 		const service = createService();
 		contextKeyService.createKey(ChatContextKeys.chatModelId.key, '');
 
 		const tip = service.getWelcomeTip(contextKeyService);
 
 		assert.ok(tip);
-		assert.notStrictEqual(tip.id, 'tip.switchToGpt5Mini');
+		assert.notStrictEqual(tip.id, 'tip.switchToAuto');
 	});
 
-	test('returns GPT-5-mini switch tip when current model is persisted and context key is empty', () => {
+	test('returns Auto switch tip when current model is persisted and context key is empty', () => {
 		storageService.store('chat.currentLanguageModel.panel', 'copilot/gpt-4.1-2025-04-14', StorageScope.APPLICATION, StorageTarget.USER);
 		const service = createService();
 		contextKeyService.createKey(ChatContextKeys.chatModelId.key, '');
@@ -138,17 +138,17 @@ suite('ChatTipService', () => {
 		const tip = service.getWelcomeTip(contextKeyService);
 
 		assert.ok(tip);
-		assert.strictEqual(tip.id, 'tip.switchToGpt5Mini');
+		assert.strictEqual(tip.id, 'tip.switchToAuto');
 	});
 
-	test('returns GPT-5-mini switch tip when current model is versioned gpt-4.1', () => {
+	test('returns Auto switch tip when current model is versioned gpt-4.1', () => {
 		const service = createService();
 		contextKeyService.createKey(ChatContextKeys.chatModelId.key, 'gpt-4.1-2025-04-14');
 
 		const tip = service.getWelcomeTip(contextKeyService);
 
 		assert.ok(tip);
-		assert.strictEqual(tip.id, 'tip.switchToGpt5Mini');
+		assert.strictEqual(tip.id, 'tip.switchToAuto');
 	});
 
 	test('switching models advances away from gpt-4.1 tip', () => {
@@ -157,14 +157,14 @@ suite('ChatTipService', () => {
 
 		const firstTip = service.getWelcomeTip(contextKeyService);
 		assert.ok(firstTip);
-		assert.strictEqual(firstTip.id, 'tip.switchToGpt5Mini');
+		assert.strictEqual(firstTip.id, 'tip.switchToAuto');
 
 		const switchedContextKeyService = new MockContextKeyServiceWithRulesMatching();
-		switchedContextKeyService.createKey(ChatContextKeys.chatModelId.key, 'gpt-5-mini');
+		switchedContextKeyService.createKey(ChatContextKeys.chatModelId.key, 'auto');
 		const nextTip = service.getWelcomeTip(switchedContextKeyService);
 
 		assert.ok(nextTip);
-		assert.notStrictEqual(nextTip.id, 'tip.switchToGpt5Mini');
+		assert.notStrictEqual(nextTip.id, 'tip.switchToAuto');
 	});
 
 	test('returns same welcome tip on rerender', () => {
