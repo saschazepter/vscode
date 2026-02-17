@@ -1082,7 +1082,9 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 	private renderSummary(): void {
 		// If no answers, show skipped message
 		if (this._answers.size === 0) {
-			this.renderSkippedMessage();
+			if (this.carousel.isUsed) {
+				this.renderSkippedMessage();
+			}
 			return;
 		}
 

@@ -1991,17 +1991,6 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		this.container.setAttribute('data-session-id', model.sessionId);
 		this.viewModel = this.instantiationService.createInstance(ChatViewModel, model, this._codeBlockModelCollection, undefined);
 
-		// mark any question carousels as used on reload
-		for (const request of model.getRequests()) {
-			if (request.response) {
-				for (const part of request.response.entireResponse.value) {
-					if (part.kind === 'questionCarousel' && !part.isUsed) {
-						part.isUsed = true;
-					}
-				}
-			}
-		}
-
 		// Pass input model reference to input part for state syncing
 		this.inputPart.setInputModel(model.inputModel, model.getRequests().length === 0);
 		this.listWidget.setViewModel(this.viewModel);
@@ -2263,18 +2252,23 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			return;
 		}
 
-		const responseId = this.input.questionCarouselResponseId;
+		const inputPart = this.inputPartDisposable.value;
+		if (!inputPart) {
+			return;
+		}
+
+		const responseId = inputPart.questionCarouselResponseId;
 		if (!responseId || this.viewModel.model.lastRequest?.id !== responseId) {
 			return;
 		}
 
-		const carouselPart = this.input.questionCarousel;
+		const carouselPart = inputPart.questionCarousel;
 		if (!carouselPart) {
 			return;
 		}
 
 		carouselPart.ignore();
-		this.input.clearQuestionCarousel(responseId);
+		inputPart.clearQuestionCarousel(responseId);
 	}
 
 	private async _acceptInput(query: { query: string } | undefined, options: IChatAcceptInputOptions = {}): Promise<IChatResponseModel | undefined> {
