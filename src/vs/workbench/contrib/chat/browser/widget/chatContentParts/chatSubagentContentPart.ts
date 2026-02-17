@@ -650,6 +650,17 @@ export class ChatSubagentContentPart extends ChatCollapsibleContentPart implemen
 		factory: () => { domNode: HTMLElement; disposable?: IDisposable },
 		hookPart: IChatHookPart
 	): void {
+		// update title with hook message
+		const hookMessage = hookPart.stopReason
+			? (hookPart.toolDisplayName
+				? localize('hook.subagent.blocked', 'Blocked {0}', hookPart.toolDisplayName)
+				: localize('hook.subagent.blockedGeneric', 'Blocked by hook'))
+			: (hookPart.toolDisplayName
+				? localize('hook.subagent.warning', 'Warning for {0}', hookPart.toolDisplayName)
+				: localize('hook.subagent.warningGeneric', 'Hook warning'));
+		this.currentRunningToolMessage = hookMessage;
+		this.updateTitle();
+
 		if (this.isExpanded() || this.hasExpandedOnce) {
 			const result = factory();
 			this.appendHookItemToDOM(result.domNode, hookPart);

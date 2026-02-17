@@ -160,6 +160,7 @@ export class ChatThinkingContentPart extends ChatCollapsibleContentPart implemen
 	private appendedItemCount: number = 0;
 	private isActive: boolean = true;
 	private toolInvocations: (IChatToolInvocation | IChatToolInvocationSerialized)[] = [];
+	private hookCount: number = 0;
 	private singleItemInfo: { element: HTMLElement; originalParent: HTMLElement; originalNextSibling: Node | null } | undefined;
 	private lazyItems: ILazyItem[] = [];
 	private hasExpandedOnce: boolean = false;
@@ -807,13 +808,13 @@ export class ChatThinkingContentPart extends ChatCollapsibleContentPart implemen
 			- For reasoning/thinking: "Considered", "Planned", "Analyzed", "Reviewed", "Evaluated"
 			- Choose the synonym that best fits the context
 
-			PRIORITY RULE - BLOCKED/DENIED CONTENT:
-			- If any item mentions being "blocked" (e.g. "Tried to use X, but was blocked"), it MUST be reflected in the title
-			- Blocked content takes priority over all other tool calls
-			- Use natural phrasing like "Tried to <action>, but was blocked" or "Attempted <tool> but was denied"
-			- If there are both blocked items AND normal tool calls, mention both: e.g. "Tried to run terminal but was blocked, edited file.ts"
+${this.hookCount > 0 ? `BLOCKED/DENIED CONTENT (hooks detected):
+			- Only mention "blocked" if the content explicitly includes hook results that blocked or warned about a tool (e.g. "Blocked terminal" or "Warning for read_file")
+			- If blocked items are present alongside normal tool calls, briefly note the block but do NOT let it dominate the summary: e.g. "Updated file.ts, blocked terminal"
 
-			RULES FOR TOOL CALLS:
+			` : `IMPORTANT: Do NOT use words like "blocked", "denied", or "tried" in the summary - there are no hooks or blocked items in this content. Just summarize normally.
+
+			`}RULES FOR TOOL CALLS:
 			1. If the SAME file was both edited AND read: Use a combined phrase like "Reviewed and updated <filename>"
 			2. If exactly ONE file was edited: Start with an edit synonym + "<filename>" (include actual filename)
 			3. If exactly ONE file was read: Start with a read synonym + "<filename>" (include actual filename)
@@ -852,13 +853,12 @@ export class ChatThinkingContentPart extends ChatCollapsibleContentPart implemen
 			- "Edited Button.tsx, Edited Button.css, Edited index.ts" → "Modified 3 files"
 			- "Searched codebase for error handling" → "Looked up error handling"
 
-			EXAMPLES WITH BLOCKED CONTENT:
-			- "Tried to use Run in Terminal, but was blocked" → "Tried to run command, but was blocked"
-			- "Tried to use Run in Terminal, but was blocked, Edited config.ts" → "Tried to run command but was blocked, edited config.ts"
-			- "Tried to use Edit File, but was blocked, Tried to use Run in Terminal, but was blocked" → "Tried to use 2 tools, but was blocked"
-			- "Used Read File, but received a warning, Edited utils.ts" → "Read file with a warning, edited utils.ts"
+${this.hookCount > 0 ? `EXAMPLES WITH BLOCKED CONTENT (from hooks):
+			- "Blocked terminal, Edited config.ts" → "Edited config.ts, terminal was blocked"
+			- "Blocked terminal, Blocked read_file" → "Two tools were blocked by hooks"
+			- "Warning for read_file, Edited utils.ts" → "Edited utils.ts with a hook warning"
 
-			EXAMPLES WITH REASONING HEADERS (no tools):
+			` : ''}EXAMPLES WITH REASONING HEADERS (no tools):
 			- "Analyzing component architecture" → "Considered component architecture"
 			- "Planning refactor strategy" → "Planned refactor strategy"
 			- "Reviewing error handling approach, Considering edge cases" → "Analyzed error handling approach"
@@ -871,7 +871,7 @@ export class ChatThinkingContentPart extends ChatCollapsibleContentPart implemen
 			- "The error seems to be coming from the database connection..." → "Investigated database connection issue"
 			- "Looking at the UserService class, I see it handles..." → "Reviewed UserService implementation"
 
-			Content: ${context}`;
+			Content: ${context}${this.hookCount > 0 ? `\n\t\t\tNote: ${this.hookCount} hook(s) fired during this thinking block.` : ''}`;
 
 			const response = await this.languageModelsService.sendChatRequest(
 				models[0],
@@ -1104,6 +1104,12 @@ export class ChatThinkingContentPart extends ChatCollapsibleContentPart implemen
 		}
 
 		this.toolInvocationCount++;
+
+		// Track hooks separately: if toolInvocationOrMarkdown is undefined, it's a hook item
+		if (!toolInvocationOrMarkdown) {
+			this.hookCount++;
+		}
+
 		let toolCallLabel: string;
 
 		const isToolInvocation = toolInvocationOrMarkdown && (toolInvocationOrMarkdown.kind === 'toolInvocation' || toolInvocationOrMarkdown.kind === 'toolInvocationSerialized');
@@ -1359,7 +1365,10 @@ export class ChatThinkingContentPart extends ChatCollapsibleContentPart implemen
 	}
 
 	protected override setTitle(title: string, omitPrefix?: boolean): void {
-		if (!title || this.element.isComplete) {
+		// Only block title updates if a generated title has already been set.
+		// This allows hook titles to update even after the response completes,
+		// while still preventing overwrites once an LLM-generated title is finalized.
+		if (!title || this.content.generatedTitle) {
 			return;
 		}
 
