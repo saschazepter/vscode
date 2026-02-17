@@ -2055,7 +2055,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			this._hasPendingRequestsContextKey.set(pendingCount > 0);
 			const steeringCount = pendingRequests.filter(pending => pending.kind === ChatRequestQueueKind.Steering).length;
 			if (announceSteering && steeringCount > lastSteeringCount) {
-				status(localize('chat.pendingRequests.steeringQueued', "Steering message queued. It will be sent after the next tool call happens."));
+				status(localize('chat.pendingRequests.steeringQueued', "Steering"));
 			}
 			lastSteeringCount = steeringCount;
 		};
