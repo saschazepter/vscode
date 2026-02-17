@@ -16,7 +16,7 @@ import { ChatViewPaneTarget, IChatWidgetService } from '../../../../workbench/co
 import { IChatSessionItem, IChatSessionProviderOptionItem, IChatSessionsService } from '../../../../workbench/contrib/chat/common/chatSessionsService.js';
 import { IChatService, IChatSendRequestOptions } from '../../../../workbench/contrib/chat/common/chatService/chatService.js';
 import { ChatAgentLocation } from '../../../../workbench/contrib/chat/common/constants.js';
-import { IAgentSession } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsModel.js';
+import { IAgentSession, isAgentSession } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsModel.js';
 import { IAgentSessionsService } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsService.js';
 
 export const IsNewChatSessionContext = new RawContextKey<boolean>('isNewChatSession', true);
@@ -137,8 +137,12 @@ export class SessionsWorkbenchService extends Disposable implements ISessionsWor
 
 		const agentSession = this.agentSessionsService.model.getSession(currentActive.resource);
 		if (!agentSession) {
-			// Active session was deleted — switch to the next available session
-			this.showNextSession();
+			// Only switch sessions if the active session was a known agent session
+			// that got deleted. New session resources that aren't yet in the model
+			// should not trigger a switch.
+			if (isAgentSession(currentActive)) {
+				this.showNextSession();
+			}
 			return;
 		}
 
