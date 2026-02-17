@@ -5,7 +5,7 @@
 
 import { homedir } from 'os';
 import { NativeParsedArgs } from '../common/argv.js';
-
+import { INodeProcess } from '../../../base/common/platform.js';
 // This file used to be a pure JS file and was always
 // importing `path` from node.js even though we ship
 // our own version of the library and prefer to use
@@ -16,7 +16,6 @@ import { NativeParsedArgs } from '../common/argv.js';
 // the built-in `path` lib for the time being.
 // eslint-disable-next-line local/code-import-patterns
 import { resolve, isAbsolute, join } from 'path';
-import { INodeProcess } from '../../../base/common/platform.js';
 
 const cwd = process.env['VSCODE_CWD'] || process.cwd();
 
