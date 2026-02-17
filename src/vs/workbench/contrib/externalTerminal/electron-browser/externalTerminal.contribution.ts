@@ -20,9 +20,9 @@ import { IConfigurationService } from '../../../../platform/configuration/common
 import { TerminalContextKeys } from '../../terminal/common/terminalContextKey.js';
 import { IRemoteAuthorityResolverService } from '../../../../platform/remote/common/remoteAuthorityResolver.js';
 import { LifecyclePhase } from '../../../services/lifecycle/common/lifecycle.js';
-import { IWorkspaceContextService, IWorkspaceFolder } from '../../../../platform/workspace/common/workspace.js';
-import { ICommandService } from '../../../../platform/commands/common/commands.js';
-import { PICK_WORKSPACE_FOLDER_COMMAND_ID } from '../../../browser/actions/workspaceCommands.js';
+import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
+import { IQuickInputService, IQuickPickItem } from '../../../../platform/quickinput/common/quickInput.js';
+import { ILabelService } from '../../../../platform/label/common/label.js';
 
 const OPEN_NATIVE_CONSOLE_COMMAND_ID = 'workbench.action.terminal.openNativeConsole';
 KeybindingsRegistry.registerCommandAndKeybindingRule({
@@ -37,18 +37,25 @@ KeybindingsRegistry.registerCommandAndKeybindingRule({
 		const configurationService = accessor.get(IConfigurationService);
 		const remoteAuthorityResolverService = accessor.get(IRemoteAuthorityResolverService);
 		const workspaceContextService = accessor.get(IWorkspaceContextService);
-		const commandService = accessor.get(ICommandService);
+		const quickInputService = accessor.get(IQuickInputService);
+		const labelService = accessor.get(ILabelService);
 		const config = configurationService.getValue<IExternalTerminalSettings>('terminal.external');
 
 		// When there are multiple workspace folders, let the user pick one
 		const folders = workspaceContextService.getWorkspace().folders;
 		let root: URI | undefined;
 		if (folders.length > 1) {
-			const workspace = await commandService.executeCommand<IWorkspaceFolder>(PICK_WORKSPACE_FOLDER_COMMAND_ID);
-			if (!workspace) {
+			const folderPicks: IQuickPickItem[] = folders.map(folder => ({
+				label: folder.name,
+				description: labelService.getUriLabel(folder.uri, { relative: true })
+			}));
+			const pick = await quickInputService.pick(folderPicks, {
+				placeHolder: nls.localize('selectWorkspace', "Select workspace folder")
+			});
+			if (!pick) {
 				return;
 			}
-			root = workspace.uri;
+			root = folders[folderPicks.indexOf(pick)].uri;
 		} else {
 			root = historyService.getLastActiveWorkspaceRoot();
 		}

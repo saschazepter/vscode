@@ -15,8 +15,9 @@ import { IConfigurationService } from '../../../../../platform/configuration/com
 import { TestConfigurationService } from '../../../../../platform/configuration/test/common/testConfigurationService.js';
 import { IRemoteAuthorityResolverService } from '../../../../../platform/remote/common/remoteAuthorityResolver.js';
 import { IWorkspace, IWorkspaceContextService, IWorkspaceFolder } from '../../../../../platform/workspace/common/workspace.js';
-import { CommandsRegistry, ICommandService } from '../../../../../platform/commands/common/commands.js';
-import { PICK_WORKSPACE_FOLDER_COMMAND_ID } from '../../../../browser/actions/workspaceCommands.js';
+import { CommandsRegistry } from '../../../../../platform/commands/common/commands.js';
+import { IQuickInputService, IQuickPickItem } from '../../../../../platform/quickinput/common/quickInput.js';
+import { ILabelService } from '../../../../../platform/label/common/label.js';
 import '../../electron-browser/externalTerminal.contribution.js';
 
 suite('ExternalTerminal contribution', () => {
@@ -24,7 +25,7 @@ suite('ExternalTerminal contribution', () => {
 
 	let instantiationService: TestInstantiationService;
 	let openTerminalCalls: { cwd: string | undefined }[];
-	let executeCommandCalls: string[];
+	let pickCalls: IQuickPickItem[][];
 
 	function createWorkspaceFolder(uri: URI, name: string, index: number): IWorkspaceFolder {
 		return {
@@ -44,7 +45,7 @@ suite('ExternalTerminal contribution', () => {
 		instantiationService = store.add(new TestInstantiationService());
 
 		openTerminalCalls = [];
-		executeCommandCalls = [];
+		pickCalls = [];
 
 		instantiationService.stub(IHistoryService, new class extends mock<IHistoryService>() {
 			override getLastActiveWorkspaceRoot() {
@@ -77,13 +78,20 @@ suite('ExternalTerminal contribution', () => {
 			}
 		});
 
-		instantiationService.stub(ICommandService, new class extends mock<ICommandService>() {
-			override executeCommand(id: string): Promise<any> {
-				executeCommandCalls.push(id);
-				if (id === PICK_WORKSPACE_FOLDER_COMMAND_ID) {
-					return Promise.resolve(options.pickedFolder);
+		instantiationService.stub(IQuickInputService, new class extends mock<IQuickInputService>() {
+			override async pick<T extends IQuickPickItem>(picks: T[]): Promise<T | undefined> {
+				pickCalls.push(picks);
+				if (options.pickedFolder) {
+					const index = options.folders.indexOf(options.pickedFolder);
+					return picks[index];
 				}
-				return Promise.resolve(undefined);
+				return undefined;
+			}
+		});
+
+		instantiationService.stub(ILabelService, new class extends mock<ILabelService>() {
+			override getUriLabel(uri: URI) {
+				return uri.fsPath;
 			}
 		});
 	}
@@ -101,7 +109,7 @@ suite('ExternalTerminal contribution', () => {
 		await instantiationService.invokeFunction(handler);
 
 		assert.deepStrictEqual(openTerminalCalls, [{ cwd: folderUri.fsPath }]);
-		assert.deepStrictEqual(executeCommandCalls, []);
+		assert.deepStrictEqual(pickCalls, []);
 	});
 
 	test('multiple folders - shows picker and opens selected folder', async () => {
@@ -118,7 +126,7 @@ suite('ExternalTerminal contribution', () => {
 		const handler = CommandsRegistry.getCommand('workbench.action.terminal.openNativeConsole')!.handler;
 		await instantiationService.invokeFunction(handler);
 
-		assert.deepStrictEqual(executeCommandCalls, [PICK_WORKSPACE_FOLDER_COMMAND_ID]);
+		assert.strictEqual(pickCalls.length, 1);
 		assert.deepStrictEqual(openTerminalCalls, [{ cwd: folder2Uri.fsPath }]);
 	});
 
@@ -136,7 +144,7 @@ suite('ExternalTerminal contribution', () => {
 		const handler = CommandsRegistry.getCommand('workbench.action.terminal.openNativeConsole')!.handler;
 		await instantiationService.invokeFunction(handler);
 
-		assert.deepStrictEqual(executeCommandCalls, [PICK_WORKSPACE_FOLDER_COMMAND_ID]);
+		assert.strictEqual(pickCalls.length, 1);
 		assert.deepStrictEqual(openTerminalCalls, []);
 	});
 
