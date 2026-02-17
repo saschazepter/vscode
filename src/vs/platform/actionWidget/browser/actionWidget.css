@@ -122,6 +122,7 @@
 	display: flex;
 	gap: 6px;
 	align-items: center;
+	color: var(--vscode-foreground) !important;
 }
 
 .action-widget .monaco-list-row.action .codicon {
