@@ -190,29 +190,30 @@ export class McpSandboxService extends Disposable implements IMcpSandboxService 
 	// this method merges the default allowWrite paths and allowedDomains with the ones provided in the sandbox config, to ensure that the default necessary paths and domains are always included in the sandbox config used for launching,
 	//  even if they are not explicitly specified in the config provided by the user or the MCP server config.
 	private _withDefaultSandboxConfig(sandboxConfig?: IMcpSandboxConfiguration): IMcpSandboxConfiguration {
-		const mergedAllowWrite = [...(sandboxConfig?.filesystem?.allowWrite ?? [])];
+		const mergedAllowWrite = new Set(sandboxConfig?.filesystem?.allowWrite ?? []);
 		for (const defaultAllowWrite of this._getDefaultAllowWrite()) {
 			if (defaultAllowWrite) {
-				mergedAllowWrite.push(defaultAllowWrite);
+				mergedAllowWrite.add(defaultAllowWrite);
 			}
 		}
 
-		const mergedAllowedDomains = [...(sandboxConfig?.network?.allowedDomains ?? [])];
+		const mergedAllowedDomains = new Set(sandboxConfig?.network?.allowedDomains ?? []);
 		for (const defaultAllowedDomain of this._defaultAllowedDomains) {
 			if (defaultAllowedDomain) {
-				mergedAllowedDomains.push(defaultAllowedDomain);
+				mergedAllowedDomains.add(defaultAllowedDomain);
 			}
 		}
 
 		return {
 			...sandboxConfig,
 			network: {
-				...sandboxConfig?.network,
-				allowedDomains: mergedAllowedDomains,
+				allowedDomains: [...mergedAllowedDomains],
+				deniedDomains: sandboxConfig?.network?.deniedDomains ?? [],
 			},
 			filesystem: {
-				...sandboxConfig?.filesystem,
-				allowWrite: mergedAllowWrite,
+				allowWrite: [...mergedAllowWrite],
+				denyRead: sandboxConfig?.filesystem?.denyRead ?? [],
+				denyWrite: sandboxConfig?.filesystem?.denyWrite ?? [],
 			},
 		};
 	}
