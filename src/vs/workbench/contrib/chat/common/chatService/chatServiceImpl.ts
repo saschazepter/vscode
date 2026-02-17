@@ -433,13 +433,12 @@ export class ChatService extends Disposable implements IChatService {
 		this.trace('startSession');
 		const sessionId = generateUuid();
 		const sessionResource = LocalChatSessionUri.forSession(sessionId);
-
 		return this._sessionModels.acquireOrCreate({
 			initialData: undefined,
 			location,
 			sessionResource,
 			canUseTools: options?.canUseTools ?? true,
-			disableBackgroundKeepAlive: options?.disableBackgroundKeepAlive,
+			disableBackgroundKeepAlive: options?.disableBackgroundKeepAlive
 		});
 	}
 
