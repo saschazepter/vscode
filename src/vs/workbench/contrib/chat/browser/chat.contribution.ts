@@ -284,6 +284,7 @@ configurationRegistry.registerConfiguration({
 		},
 		'chat.tips.enabled': {
 			type: 'boolean',
+			scope: ConfigurationScope.APPLICATION,
 			description: nls.localize('chat.tips.enabled', "Controls whether tips are shown above user messages in chat. This is an experimental feature."),
 			default: false,
 			tags: ['experimental'],
@@ -682,15 +683,10 @@ configurationRegistry.registerConfiguration({
 			default: true,
 			tags: ['experimental'],
 		},
-		['chat.statusWidget.sku']: {
-			type: 'string',
-			enum: ['free', 'anonymous'],
-			enumDescriptions: [
-				nls.localize('chat.statusWidget.sku.free', "Show status widget for free tier users."),
-				nls.localize('chat.statusWidget.sku.anonymous', "Show status widget for anonymous users.")
-			],
-			description: nls.localize('chat.statusWidget.enabled.description', "Controls which user type should see the status widget in new chat sessions when quota is exceeded."),
-			default: undefined,
+		['chat.statusWidget.anonymous']: {
+			type: 'boolean',
+			description: nls.localize('chat.statusWidget.anonymous.description', "Controls whether anonymous users see the status widget in new chat sessions when rate limited."),
+			default: false,
 			tags: ['experimental', 'advanced'],
 			experiment: {
 				mode: 'auto'
@@ -1084,6 +1080,24 @@ configurationRegistry.registerConfiguration({
 			default: true,
 			markdownDescription: nls.localize('chat.agent.thinking.terminalTools', "When enabled, terminal tool calls are displayed inside the thinking dropdown with a simplified view."),
 			tags: ['experimental'],
+		},
+		'chat.tools.usagesTool.enabled': {
+			type: 'boolean',
+			default: true,
+			markdownDescription: nls.localize('chat.tools.usagesTool.enabled', "Controls whether the usages tool is available for finding references, definitions, and implementations of code symbols."),
+			tags: ['preview'],
+			experiment: {
+				mode: 'auto'
+			}
+		},
+		'chat.tools.renameTool.enabled': {
+			type: 'boolean',
+			default: true,
+			markdownDescription: nls.localize('chat.tools.renameTool.enabled', "Controls whether the rename tool is available for renaming code symbols across the workspace."),
+			tags: ['preview'],
+			experiment: {
+				mode: 'auto'
+			}
 		},
 		[ChatConfiguration.AutoExpandToolFailures]: {
 			type: 'boolean',

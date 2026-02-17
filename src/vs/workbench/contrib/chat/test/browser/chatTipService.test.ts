@@ -7,14 +7,14 @@ import assert from 'assert';
 import { Emitter, Event } from '../../../../../base/common/event.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
 import { ICommandEvent, ICommandService } from '../../../../../platform/commands/common/commands.js';
-import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
+import { ConfigurationTarget, IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
 import { TestConfigurationService } from '../../../../../platform/configuration/test/common/testConfigurationService.js';
 import { IContextKeyService } from '../../../../../platform/contextkey/common/contextkey.js';
 import { TestInstantiationService } from '../../../../../platform/instantiation/test/common/instantiationServiceMock.js';
 import { MockContextKeyService } from '../../../../../platform/keybinding/test/common/mockKeybindingService.js';
 import { ILogService, NullLogService } from '../../../../../platform/log/common/log.js';
 import { IProductService } from '../../../../../platform/product/common/productService.js';
-import { IStorageService, InMemoryStorageService } from '../../../../../platform/storage/common/storage.js';
+import { IStorageService, InMemoryStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
 import { ChatTipService, ITipDefinition, TipEligibilityTracker } from '../../browser/chatTipService.js';
 import { AgentFileType, IPromptPath, IPromptsService, IResolvedAgentFile, PromptsStorage } from '../../common/promptSyntax/service/promptsService.js';
 import { URI } from '../../../../../base/common/uri.js';
@@ -27,6 +27,19 @@ import { MockLanguageModelToolsService } from '../common/tools/mockLanguageModel
 class MockContextKeyServiceWithRulesMatching extends MockContextKeyService {
 	override contextMatchesRules(): boolean {
 		return true;
+	}
+}
+
+class TrackingConfigurationService extends TestConfigurationService {
+	public lastUpdateTarget: ConfigurationTarget | undefined;
+	public lastUpdateKey: string | undefined;
+	public lastUpdateValue: unknown;
+
+	override updateValue(key: string, value: unknown, arg3?: unknown): Promise<void> {
+		this.lastUpdateKey = key;
+		this.lastUpdateValue = value;
+		this.lastUpdateTarget = arg3 as ConfigurationTarget | undefined;
+		return Promise.resolve(undefined);
 	}
 }
 
@@ -85,6 +98,73 @@ suite('ChatTipService', () => {
 		assert.ok(tip, 'Should return a welcome tip');
 		assert.ok(tip.id.startsWith('tip.'), 'Tip should have a valid ID');
 		assert.ok(tip.content.value.length > 0, 'Tip should have content');
+	});
+
+	test('returns Auto switch tip when current model is gpt-4.1', () => {
+		const service = createService();
+		contextKeyService.createKey(ChatContextKeys.chatModelId.key, 'gpt-4.1');
+
+		const tip = service.getWelcomeTip(contextKeyService);
+
+		assert.ok(tip);
+		assert.strictEqual(tip.id, 'tip.switchToAuto');
+	});
+
+	test('does not return Auto switch tip when current model is not gpt-4.1', () => {
+		const service = createService();
+		contextKeyService.createKey(ChatContextKeys.chatModelId.key, 'auto');
+
+		const tip = service.getWelcomeTip(contextKeyService);
+
+		assert.ok(tip);
+		assert.notStrictEqual(tip.id, 'tip.switchToAuto');
+	});
+
+	test('does not return Auto switch tip when current model context key is empty and no fallback is available', () => {
+		const service = createService();
+		contextKeyService.createKey(ChatContextKeys.chatModelId.key, '');
+
+		const tip = service.getWelcomeTip(contextKeyService);
+
+		assert.ok(tip);
+		assert.notStrictEqual(tip.id, 'tip.switchToAuto');
+	});
+
+	test('returns Auto switch tip when current model is persisted and context key is empty', () => {
+		storageService.store('chat.currentLanguageModel.panel', 'copilot/gpt-4.1-2025-04-14', StorageScope.APPLICATION, StorageTarget.USER);
+		const service = createService();
+		contextKeyService.createKey(ChatContextKeys.chatModelId.key, '');
+
+		const tip = service.getWelcomeTip(contextKeyService);
+
+		assert.ok(tip);
+		assert.strictEqual(tip.id, 'tip.switchToAuto');
+	});
+
+	test('returns Auto switch tip when current model is versioned gpt-4.1', () => {
+		const service = createService();
+		contextKeyService.createKey(ChatContextKeys.chatModelId.key, 'gpt-4.1-2025-04-14');
+
+		const tip = service.getWelcomeTip(contextKeyService);
+
+		assert.ok(tip);
+		assert.strictEqual(tip.id, 'tip.switchToAuto');
+	});
+
+	test('switching models advances away from gpt-4.1 tip', () => {
+		const service = createService();
+		contextKeyService.createKey(ChatContextKeys.chatModelId.key, 'gpt-4.1');
+
+		const firstTip = service.getWelcomeTip(contextKeyService);
+		assert.ok(firstTip);
+		assert.strictEqual(firstTip.id, 'tip.switchToAuto');
+
+		const switchedContextKeyService = new MockContextKeyServiceWithRulesMatching();
+		switchedContextKeyService.createKey(ChatContextKeys.chatModelId.key, 'auto');
+		const nextTip = service.getWelcomeTip(switchedContextKeyService);
+
+		assert.ok(nextTip);
+		assert.notStrictEqual(nextTip.id, 'tip.switchToAuto');
 	});
 
 	test('returns same welcome tip on rerender', () => {
@@ -169,6 +249,20 @@ suite('ChatTipService', () => {
 		await service.disableTips();
 
 		assert.ok(fired, 'onDidDisableTips should fire');
+	});
+
+	test('disableTips writes to application settings target', async () => {
+		const trackingConfigurationService = new TrackingConfigurationService();
+		configurationService = trackingConfigurationService;
+		instantiationService.stub(IConfigurationService, configurationService);
+
+		const service = createService();
+
+		await service.disableTips();
+
+		assert.strictEqual(trackingConfigurationService.lastUpdateKey, 'chat.tips.enabled');
+		assert.strictEqual(trackingConfigurationService.lastUpdateValue, false);
+		assert.strictEqual(trackingConfigurationService.lastUpdateTarget, ConfigurationTarget.APPLICATION);
 	});
 
 	test('disableTips resets state so re-enabling works', async () => {

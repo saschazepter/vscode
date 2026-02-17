@@ -55,7 +55,12 @@ class OpenIntegratedBrowserAction extends Action2 {
 
 		logBrowserOpen(telemetryService, options.url ? 'commandWithUrl' : 'commandWithoutUrl');
 
-		await editorService.openEditor({ resource }, group);
+		const editorPane = await editorService.openEditor({ resource }, group);
+
+		// Lock the group when opening to the side
+		if (options.openToSide && editorPane?.group) {
+			editorPane.group.lock(true);
+		}
 	}
 }
 

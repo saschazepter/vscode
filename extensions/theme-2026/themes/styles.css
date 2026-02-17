@@ -242,16 +242,16 @@
 /* Chat Widget */
 .monaco-workbench .interactive-session .chat-input-container {
 	box-shadow: inset var(--shadow-sm);
-	border-radius: var(--radius-md);
+	border-radius: var(--radius-lg);
 }
 
 .monaco-workbench .interactive-session .interactive-input-part .chat-editor-container .interactive-input-editor .monaco-editor,
 .monaco-workbench .interactive-session .chat-editing-session .chat-editing-session-container {
-	border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+	border-radius: var(--radius-lg) var(--radius-lg) 0 0;
 }
 
 .monaco-workbench .interactive-input-part:has(.chat-editing-session > .chat-editing-session-container) .chat-input-container {
-	border-radius: 0 0 var(--radius-md) var(--radius-md);
+	border-radius: 0 0 var(--radius-lg) var(--radius-lg);
 }
 
 .monaco-workbench .part.panel .interactive-session,
