@@ -114,15 +114,19 @@ export class PlaywrightService extends Disposable implements IPlaywrightService 
 class PlaywrightPageMap extends Disposable {
 
 	private readonly _viewIdToPage = new Map<string, Page>();
+	private readonly _pageToViewId = new WeakMap<Page, string>();
 
 	/** View IDs received from the group but not yet matched with a page. */
-	private readonly _viewIdQueue: string[] = [];
+	private _viewIdQueue: Array<{
+		viewId: string;
+		page: DeferredPromise<Page>;
+	}> = [];
 
 	/** Pages received from Playwright but not yet matched with a view ID. */
-	private readonly _pageQueue: Page[] = [];
-
-	/** Callers waiting for a specific view ID to be resolved to a page. */
-	private readonly _waiters = new Map<string, DeferredPromise<Page>>();
+	private _pageQueue: Array<{
+		page: Page;
+		viewId: DeferredPromise<string>;
+	}> = [];
 
 	private readonly _watchedContexts = new WeakSet<BrowserContext>();
 	private _scanTimer: ReturnType<typeof setInterval> | undefined;
@@ -134,9 +138,19 @@ class PlaywrightPageMap extends Disposable {
 	) {
 		super();
 
-		this._register(_group.onDidAddView(e => this.onViewAdded(e.viewId)));
-		this._register(_group.onDidRemoveView(e => this.onViewRemoved(e.viewId)));
+		this._register(_group.onDidAddView(e => this.getPage(e.viewId)));
+		this._register(_group.onDidRemoveView(e => this.removePage(e.viewId)));
 		this.scanForNewContexts();
+	}
+
+	/**
+	 * Create a new page in the browser and return its associated page and view ID.
+	 */
+	async newPage(): Promise<{ viewId: string; page: Page }> {
+		const page = await this._browser.newPage();
+		const viewId = await this.getViewId(page);
+
+		return { viewId, page };
 	}
 
 	/**
@@ -144,28 +158,29 @@ class PlaywrightPageMap extends Disposable {
 	 * If the view is not yet in the group, it is added automatically.
 	 */
 	async getPage(viewId: string, timeoutMs = 10000): Promise<Page> {
-		const existing = this._viewIdToPage.get(viewId);
-		if (existing) {
-			return existing;
+		const resolved = this._viewIdToPage.get(viewId);
+		if (resolved) {
+			return resolved;
 		}
-
-		const existingWaiter = this._waiters.get(viewId);
-		if (existingWaiter) {
-			return existingWaiter.p;
+		const queued = this._viewIdQueue.find(item => item.viewId === viewId);
+		if (queued) {
+			return queued.page.p;
 		}
 
 		const deferred = new DeferredPromise<Page>();
-		const timeout = setTimeout(() => deferred.error(new Error(`Timed out after waiting for page`)), timeoutMs);
+		const timeout = setTimeout(() => deferred.error(new Error(`Timed out waiting for page`)), timeoutMs);
 
 		deferred.p.finally(() => {
 			clearTimeout(timeout);
-			this._waiters.delete(viewId);
-			if (this._waiters.size === 0) {
+			this._viewIdQueue = this._viewIdQueue.filter(item => item.viewId !== viewId);
+			if (this._viewIdQueue.length === 0) {
 				this.stopScanning();
 			}
 		});
 
-		this._waiters.set(viewId, deferred);
+		this._viewIdQueue.push({ viewId, page: deferred });
+		this.tryMatch();
+
 		this.ensureScanning();
 
 		// Adding the view fires onDidAddView (pushes to viewIdQueue) and
@@ -181,23 +196,36 @@ class PlaywrightPageMap extends Disposable {
 		return deferred.p;
 	}
 
-	// --- Event handlers ---
-
-	private onViewAdded(viewId: string): void {
-		this._viewIdQueue.push(viewId);
-		this.tryMatch();
-	}
-
-	private onViewRemoved(viewId: string): void {
+	private removePage(viewId: string): void {
+		this._viewIdQueue = this._viewIdQueue.filter(item => item.viewId !== viewId);
+		const page = this._viewIdToPage.get(viewId);
+		if (page) {
+			this._pageToViewId.delete(page);
+		}
 		this._viewIdToPage.delete(viewId);
 	}
 
-	private onPage(page: Page): void {
-		if (this.isKnownPage(page)) {
-			return;
+	private getViewId(page: Page, timeoutMs = 10000): Promise<string> {
+		const resolved = this._pageToViewId.get(page);
+		if (resolved) {
+			return Promise.resolve(resolved);
 		}
-		this._pageQueue.push(page);
+		const queued = this._pageQueue.find(item => item.page === page);
+		if (queued) {
+			return queued.viewId.p;
+		}
+
+		const deferred = new DeferredPromise<string>();
+		const timeout = setTimeout(() => deferred.error(new Error(`Timed out waiting for browser view`)), timeoutMs);
+		deferred.p.finally(() => {
+			clearTimeout(timeout);
+			this._pageQueue = this._pageQueue.filter(item => item.page !== page);
+		});
+
+		this._pageQueue.push({ page, viewId: deferred });
 		this.tryMatch();
+
+		return deferred.p;
 	}
 
 	// --- Matching ---
@@ -208,19 +236,21 @@ class PlaywrightPageMap extends Disposable {
 	 */
 	private tryMatch(): void {
 		while (this._viewIdQueue.length > 0 && this._pageQueue.length > 0) {
-			const viewId = this._viewIdQueue.shift()!;
-			const page = this._pageQueue.shift()!;
+			const viewIdItem = this._viewIdQueue.shift()!;
+			const pageItem = this._pageQueue.shift()!;
 
-			this._viewIdToPage.set(viewId, page);
-			page.once('close', () => this._viewIdToPage.delete(viewId));
+			this._viewIdToPage.set(viewIdItem.viewId, pageItem.page);
+			this._pageToViewId.set(pageItem.page, viewIdItem.viewId);
+			pageItem.page.once('close', () => this._viewIdToPage.delete(viewIdItem.viewId));
 
-			this.logService.debug(`[PlaywrightPageMap] Matched view ${viewId} → page`);
+			this.logService.debug(`[PlaywrightPageMap] Matched view ${viewIdItem.viewId} → page`);
 
-			const waiter = this._waiters.get(viewId);
-			if (waiter) {
-				waiter.complete(page);
-				this._waiters.delete(viewId);
-			}
+			viewIdItem.page.complete(pageItem.page);
+			pageItem.viewId.complete(viewIdItem.viewId);
+		}
+
+		if (this._viewIdQueue.length === 0) {
+			this.stopScanning();
 		}
 	}
 
@@ -237,11 +267,11 @@ class PlaywrightPageMap extends Disposable {
 			}
 			this._watchedContexts.add(context);
 
-			context.on('page', (page: Page) => this.onPage(page));
+			context.on('page', (page: Page) => this.getViewId(page));
 			context.on('close', () => this._watchedContexts.delete(context));
 
 			for (const page of context.pages()) {
-				this.onPage(page);
+				this.getViewId(page);
 			}
 		}
 	}
@@ -259,24 +289,16 @@ class PlaywrightPageMap extends Disposable {
 		}
 	}
 
-	private isKnownPage(page: Page): boolean {
-		if (this._pageQueue.includes(page)) {
-			return true;
-		}
-		for (const p of this._viewIdToPage.values()) {
-			if (p === page) {
-				return true;
-			}
-		}
-		return false;
-	}
-
 	override dispose(): void {
 		this.stopScanning();
-		for (const waiter of this._waiters.values()) {
-			waiter.error(new Error('PlaywrightPageMap disposed'));
+		for (const { page } of this._viewIdQueue) {
+			page.error(new Error('PlaywrightPageMap disposed'));
 		}
-		this._waiters.clear();
+		for (const { viewId } of this._pageQueue) {
+			viewId.error(new Error('PlaywrightPageMap disposed'));
+		}
+		this._viewIdQueue = [];
+		this._pageQueue = [];
 		super.dispose();
 	}
 }
