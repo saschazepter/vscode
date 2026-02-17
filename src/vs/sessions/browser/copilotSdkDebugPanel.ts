@@ -24,12 +24,13 @@ export class CopilotSdkDebugPanel extends Disposable {
 
 	private readonly _rpcLogContainer: HTMLElement;
 	private readonly _processLogContainer: HTMLElement;
+	private readonly _sessionInfoContainer: HTMLElement;
 	private readonly _inputArea: HTMLTextAreaElement;
 	private readonly _statusBar: HTMLElement;
 	private readonly _cwdInput: HTMLInputElement;
 	private readonly _modelSelect: HTMLSelectElement;
 	private _sessionId: string | undefined;
-	private _activeTab: 'rpc' | 'process' = 'rpc';
+	private _activeTab: 'rpc' | 'process' | 'info' = 'rpc';
 
 	private readonly _eventDisposables = this._register(new DisposableStore());
 
@@ -110,6 +111,13 @@ export class CopilotSdkDebugPanel extends Disposable {
 			{ label: 'Abort', fn: () => this._rpc('abort') },
 			// Auth
 			{ label: 'Set Token', fn: () => this._rpc('setGitHubToken') },
+			// Status/Health
+			{ label: 'Ping', fn: () => this._rpc('ping') },
+			{ label: 'CLI Status', fn: () => this._rpc('getStatus') },
+			{ label: 'Auth Status', fn: () => this._rpc('getAuthStatus') },
+			// Debug
+			{ label: 'Dump Sessions (JSON)', fn: () => this._dumpSessionsJson() },
+			{ label: 'DELETE ALL SESSIONS', fn: () => this._deleteAllSessions() },
 		];
 		for (const { label, fn } of btns) {
 			const btn = dom.append(helpers, $('button.debug-helper-btn')) as HTMLButtonElement;
@@ -123,15 +131,21 @@ export class CopilotSdkDebugPanel extends Disposable {
 		rpcTab.textContent = 'RPC Log';
 		const processTab = dom.append(tabBar, $('button.debug-tab')) as HTMLButtonElement;
 		processTab.textContent = 'Process Output';
-		const switchTab = (tab: 'rpc' | 'process') => {
+		const infoTab = dom.append(tabBar, $('button.debug-tab')) as HTMLButtonElement;
+		infoTab.textContent = 'Session Info';
+		const switchTab = (tab: 'rpc' | 'process' | 'info') => {
 			this._activeTab = tab;
 			rpcTab.classList.toggle('debug-tab-active', tab === 'rpc');
 			processTab.classList.toggle('debug-tab-active', tab === 'process');
+			infoTab.classList.toggle('debug-tab-active', tab === 'info');
 			this._rpcLogContainer.style.display = tab === 'rpc' ? '' : 'none';
 			this._processLogContainer.style.display = tab === 'process' ? '' : 'none';
+			this._sessionInfoContainer.style.display = tab === 'info' ? '' : 'none';
+			if (tab === 'info') { this._refreshSessionInfo(); }
 		};
 		this._register(dom.addDisposableListener(rpcTab, 'click', () => switchTab('rpc')));
 		this._register(dom.addDisposableListener(processTab, 'click', () => switchTab('process')));
+		this._register(dom.addDisposableListener(infoTab, 'click', () => switchTab('info')));
 
 		// RPC log stream
 		this._rpcLogContainer = dom.append(this.element, $('.debug-panel-messages'));
@@ -139,6 +153,14 @@ export class CopilotSdkDebugPanel extends Disposable {
 		// Process output log
 		this._processLogContainer = dom.append(this.element, $('.debug-panel-messages'));
 		this._processLogContainer.style.display = 'none';
+
+		// Session info dump
+		this._sessionInfoContainer = dom.append(this.element, $('.debug-panel-messages'));
+		this._sessionInfoContainer.style.display = 'none';
+		this._sessionInfoContainer.style.whiteSpace = 'pre-wrap';
+		this._sessionInfoContainer.style.fontFamily = 'var(--monaco-monospace-font)';
+		this._sessionInfoContainer.style.fontSize = '11px';
+		this._sessionInfoContainer.style.padding = '8px';
 
 		// Free-form input for sending prompts
 		const inputRow = dom.append(this.element, $('.debug-panel-input-row'));
@@ -344,13 +366,244 @@ export class CopilotSdkDebugPanel extends Disposable {
 					this._debugLog.addEntry('\u2190', 'setGitHubToken', 'OK');
 					break;
 				}
+				case 'ping': {
+					this._debugLog.addEntry('\u2192', 'ping', 'ping');
+					const pong = await this._sdk.ping('ping');
+					this._debugLog.addEntry('\u2190', 'ping', String(pong));
+					break;
+				}
+				case 'getStatus': {
+					this._debugLog.addEntry('\u2192', 'getStatus', '');
+					const status = await this._sdk.getStatus();
+					this._debugLog.addEntry('\u2190', 'getStatus', JSON.stringify(status));
+					this._setStatus(`CLI v${status.version} (protocol ${status.protocolVersion})`);
+					break;
+				}
+				case 'getAuthStatus': {
+					this._debugLog.addEntry('\u2192', 'getAuthStatus', '');
+					const auth = await this._sdk.getAuthStatus();
+					this._debugLog.addEntry('\u2190', 'getAuthStatus', JSON.stringify(auth));
+					this._setStatus(auth.isAuthenticated ? `Authenticated as ${auth.login} (${auth.authType})` : 'Not authenticated');
+					break;
+				}
 			}
 		} catch (err) {
 			this._debugLog.addEntry('X', method, String(err instanceof Error ? err.message : err));
 		}
 	}
 
+	private async _deleteAllSessions(): Promise<void> {
+		const targetWindow = dom.getWindow(this.element);
+		const confirmed = targetWindow.confirm('Are you sure you want to DELETE ALL sessions? This cannot be undone.');
+		if (!confirmed) {
+			this._debugLog.addEntry('!', 'deleteAll', 'Cancelled by user');
+			return;
+		}
+		try {
+			const sessions = await this._sdk.listSessions();
+			this._debugLog.addEntry('\u2192', 'deleteAll', `Deleting ${sessions.length} sessions...`);
+			let deleted = 0;
+			let failed = 0;
+			for (const s of sessions) {
+				try {
+					await this._sdk.deleteSession(s.sessionId);
+					deleted++;
+				} catch {
+					failed++;
+				}
+			}
+			this._sessionId = undefined;
+			this._debugLog.addEntry('\u2190', 'deleteAll', `Done: ${deleted} deleted, ${failed} failed`);
+			this._setStatus(`Deleted ${deleted} sessions`);
+		} catch (err) {
+			this._debugLog.addEntry('X', 'deleteAll', String(err));
+		}
+	}
+
+	private async _dumpSessionsJson(): Promise<void> {
+		try {
+			this._debugLog.addEntry('\u2192', 'dumpSessions', 'Fetching all sessions + messages...');
+			const sessions = await this._sdk.listSessions();
+			const dump: Array<{ meta: typeof sessions[0]; eventCount: number; eventTypes: Record<string, number> }> = [];
+			for (const s of sessions) {
+				try {
+					const events = await this._sdk.getMessages(s.sessionId);
+					const types: Record<string, number> = {};
+					for (const ev of events) { types[ev.type] = (types[ev.type] ?? 0) + 1; }
+					dump.push({ meta: s, eventCount: events.length, eventTypes: types });
+				} catch {
+					dump.push({ meta: s, eventCount: -1, eventTypes: {} });
+				}
+			}
+			const json = JSON.stringify(dump, null, 2);
+			this._debugLog.addEntry('\u2190', 'dumpSessions', `${sessions.length} sessions dumped (${json.length} bytes)`);
+			await this._clipboardService.writeText(json);
+			this._setStatus('Session dump copied to clipboard');
+		} catch (err) {
+			this._debugLog.addEntry('X', 'dumpSessions', String(err));
+		}
+	}
+
 	private _setStatus(text: string): void {
 		this._statusBar.textContent = text;
+	}
+
+	/**
+	 * Refresh the Session Info tab with comprehensive debug information.
+	 */
+	private async _refreshSessionInfo(): Promise<void> {
+		dom.clearNode(this._sessionInfoContainer);
+
+		const add = (label: string, value: string, color?: string) => {
+			const line = dom.append(this._sessionInfoContainer, $('div'));
+			line.style.marginBottom = '2px';
+			const labelEl = dom.append(line, $('span'));
+			labelEl.textContent = label + ': ';
+			labelEl.style.color = 'var(--vscode-descriptionForeground)';
+			const valueEl = dom.append(line, $('span'));
+			valueEl.textContent = value;
+			if (color) { valueEl.style.color = color; }
+		};
+
+		const section = (title: string) => {
+			const h = dom.append(this._sessionInfoContainer, $('div'));
+			h.style.cssText = 'margin:8px 0 4px;font-weight:bold;color:var(--vscode-foreground);border-bottom:1px solid var(--vscode-widget-border);padding-bottom:2px;';
+			h.textContent = title;
+		};
+
+		// SDK State
+		section('SDK STATE');
+		add('Debug panel session ID', this._sessionId ?? '(none)');
+		add('Log entries (RPC)', String(this._debugLog.entries.filter(e => e.stream === 'rpc').length));
+		add('Log entries (process)', String(this._debugLog.entries.filter(e => e.stream === 'process').length));
+
+		// CLI Status
+		section('CLI STATUS');
+		try {
+			const status = await this._sdk.getStatus();
+			add('CLI version', status.version);
+			add('Protocol version', String(status.protocolVersion));
+		} catch (err) {
+			add('Error', String(err));
+		}
+
+		// Auth Status
+		section('AUTHENTICATION');
+		try {
+			const auth = await this._sdk.getAuthStatus();
+			add('Authenticated', auth.isAuthenticated ? 'Yes' : 'No', auth.isAuthenticated ? 'var(--vscode-terminal-ansiGreen)' : 'var(--vscode-errorForeground)');
+			if (auth.login) { add('Login', auth.login); }
+			if (auth.authType) { add('Auth type', auth.authType); }
+			if (auth.host) { add('Host', auth.host); }
+			if (auth.statusMessage) { add('Status', auth.statusMessage); }
+		} catch (err) {
+			add('Error', String(err));
+		}
+
+		// All sessions
+		section('ALL SESSIONS');
+		try {
+			const sessions = await this._sdk.listSessions();
+			add('Total sessions', String(sessions.length));
+			for (const s of sessions) {
+				const line = dom.append(this._sessionInfoContainer, $('div'));
+				line.style.cssText = 'margin:4px 0;padding:4px 6px;border-radius:3px;background:var(--vscode-editor-inactiveSelectionBackground);';
+				const idEl = dom.append(line, $('div'));
+				idEl.style.cssText = 'font-weight:bold;color:var(--vscode-textLink-foreground);';
+				idEl.textContent = `Session ${s.sessionId.substring(0, 12)}`;
+				if (s.summary) { add('  Summary', s.summary); }
+				if (s.workspacePath) { add('  Workspace path', s.workspacePath, 'var(--vscode-terminal-ansiGreen)'); }
+				if (s.repository) { add('  Repository', s.repository); }
+				if (s.branch) { add('  Branch', s.branch); }
+				if (s.startTime) { add('  Started', new Date(s.startTime).toLocaleString()); }
+				if (s.modifiedTime) { add('  Modified', new Date(s.modifiedTime).toLocaleString()); }
+				add('  Remote', s.isRemote ? 'Yes' : 'No');
+
+				// Get messages for this session to show event breakdown
+				try {
+					const events = await this._sdk.getMessages(s.sessionId);
+					const typeCounts: Record<string, number> = {};
+					for (const ev of events) {
+						typeCounts[ev.type] = (typeCounts[ev.type] ?? 0) + 1;
+					}
+					add('  Events', `${events.length} total`);
+					for (const [type, count] of Object.entries(typeCounts)) {
+						add(`    ${type}`, String(count));
+					}
+				} catch {
+					add('  Events', '(failed to load)');
+				}
+			}
+		} catch (err) {
+			add('Error loading sessions', String(err));
+		}
+
+		// Models
+		section('AVAILABLE MODELS');
+		try {
+			const models = await this._sdk.listModels();
+			add('Total models', String(models.length));
+			for (const m of models) {
+				const caps = m.capabilities?.supports;
+				const flags: string[] = [];
+				if (caps?.vision) { flags.push('vision'); }
+				if (caps?.reasoningEffort) { flags.push('reasoning'); }
+				if (m.billing?.multiplier && m.billing.multiplier > 1) { flags.push(`${m.billing.multiplier}x cost`); }
+				const ctx = m.capabilities?.limits?.max_context_window_tokens;
+				if (ctx) { flags.push(`${Math.round(ctx / 1000)}k ctx`); }
+				const policy = m.policy?.state;
+				if (policy && policy !== 'enabled') { flags.push(policy); }
+				const label = flags.length > 0 ? `${m.name ?? m.id} [${flags.join(', ')}]` : (m.name ?? m.id);
+				add(`  ${m.id}`, label);
+			}
+		} catch (err) {
+			add('Error loading models', String(err));
+		}
+
+		// Event stats from debug log
+		section('EVENT STATISTICS (from debug log)');
+		const eventTypeCounts: Record<string, number> = {};
+		const sessionEventCounts: Record<string, number> = {};
+		for (const entry of this._debugLog.entries) {
+			if (entry.stream === 'rpc' && entry.method.startsWith('event:')) {
+				const eventType = entry.method.replace('event:', '');
+				eventTypeCounts[eventType] = (eventTypeCounts[eventType] ?? 0) + 1;
+			}
+			if (entry.tag) {
+				sessionEventCounts[entry.tag] = (sessionEventCounts[entry.tag] ?? 0) + 1;
+			}
+		}
+		if (Object.keys(eventTypeCounts).length > 0) {
+			for (const [type, count] of Object.entries(eventTypeCounts).sort((a, b) => b[1] - a[1])) {
+				add(`  ${type}`, String(count));
+			}
+		} else {
+			add('  (no events yet)', '');
+		}
+
+		section('EVENTS PER SESSION (from debug log)');
+		if (Object.keys(sessionEventCounts).length > 0) {
+			for (const [sid, count] of Object.entries(sessionEventCounts).sort((a, b) => b[1] - a[1])) {
+				add(`  Session ${sid}`, `${count} events`);
+			}
+		} else {
+			add('  (no events yet)', '');
+		}
+
+		// Refresh button at the bottom
+		const refreshBtn = dom.append(this._sessionInfoContainer, $('button')) as HTMLButtonElement;
+		refreshBtn.textContent = 'Refresh';
+		refreshBtn.style.cssText = 'margin-top:12px;font-size:11px;padding:4px 12px;background:var(--vscode-button-secondaryBackground);color:var(--vscode-button-secondaryForeground);border:none;border-radius:3px;cursor:pointer;';
+		this._register(dom.addDisposableListener(refreshBtn, 'click', () => this._refreshSessionInfo()));
+
+		// Copy all info button
+		const copyInfoBtn = dom.append(this._sessionInfoContainer, $('button')) as HTMLButtonElement;
+		copyInfoBtn.textContent = 'Copy All Info';
+		copyInfoBtn.style.cssText = 'margin-top:4px;margin-left:4px;font-size:11px;padding:4px 12px;background:var(--vscode-button-secondaryBackground);color:var(--vscode-button-secondaryForeground);border:none;border-radius:3px;cursor:pointer;';
+		this._register(dom.addDisposableListener(copyInfoBtn, 'click', () => {
+			this._clipboardService.writeText(this._sessionInfoContainer.textContent ?? '');
+			copyInfoBtn.textContent = 'Copied!';
+			setTimeout(() => { copyInfoBtn.textContent = 'Copy All Info'; }, 1500);
+		}));
 	}
 }

@@ -56,6 +56,9 @@ import { IActivityService, NumberBadge } from '../../../../workbench/services/ac
 import { ACTIVE_GROUP, IEditorService, SIDE_GROUP } from '../../../../workbench/services/editor/common/editorService.js';
 import { IExtensionService } from '../../../../workbench/services/extensions/common/extensions.js';
 import { IWorkbenchLayoutService } from '../../../../workbench/services/layout/browser/layoutService.js';
+import { IViewsService } from '../../../../workbench/services/views/common/viewsService.js';
+import { SdkChatViewPane, SdkChatViewId } from '../../../browser/widget/sdkChatViewPane.js';
+import { ICopilotSdkService } from '../../../../platform/copilotSdk/common/copilotSdkService.js';
 
 const $ = dom.$;
 
@@ -225,6 +228,8 @@ export class ChangesViewPane extends ViewPane {
 		@IAgentSessionsService private readonly agentSessionsService: IAgentSessionsService,
 		@ILabelService private readonly labelService: ILabelService,
 		@IStorageService private readonly storageService: IStorageService,
+		@IViewsService private readonly viewsService: IViewsService,
+		@ICopilotSdkService private readonly copilotSdkService: ICopilotSdkService,
 	) {
 		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
 
@@ -483,11 +488,42 @@ export class ChangesViewPane extends ViewPane {
 			})
 		);
 
-		// Combine both entry sources for display
+		// SDK session file changes (tracked by SdkChatModel from tool call events)
+		// We listen to the SDK service's onSessionEvent directly since the model
+		// may not exist when this view initializes. We read the actual data from
+		// the SDK chat pane's model whenever the event fires.
+		const sdkChangesObs = observableFromEvent(
+			this.renderDisposables,
+			this.copilotSdkService.onSessionEvent,
+			() => {
+				const chatPane = this.viewsService.getViewWithId<SdkChatViewPane>(SdkChatViewId);
+				return chatPane?.widget?.model?.changedFiles ?? [];
+			}
+		);
+
+		const sdkFilesObs = derived(reader => {
+			const sdkChanges = [...sdkChangesObs.read(reader)];
+			return sdkChanges.map((change): IChangesFileItem => ({
+				type: 'file',
+				uri: URI.file(change.path),
+				originalUri: undefined,
+				state: ModifiedFileEntryState.Accepted,
+				isDeletion: change.changeType === 'deleted',
+				changeType: change.changeType === 'created' ? 'added' : change.changeType === 'deleted' ? 'deleted' : 'modified',
+				linesAdded: 0,
+				linesRemoved: 0,
+			}));
+		});
+
+		// Combine all entry sources for display
 		const combinedEntriesObs = derived(reader => {
 			const editEntries = editSessionEntriesObs.read(reader);
 			const sessionFiles = sessionFilesObs.read(reader);
-			return [...editEntries, ...sessionFiles];
+			const sdkFiles = sdkFilesObs.read(reader);
+			// Deduplicate by URI - SDK files are only shown if not already in edit/session entries
+			const existingUris = new Set([...editEntries, ...sessionFiles].map(e => e.uri.toString()));
+			const uniqueSdkFiles = sdkFiles.filter(f => !existingUris.has(f.uri.toString()));
+			return [...editEntries, ...sessionFiles, ...uniqueSdkFiles];
 		});
 
 		// Calculate stats from combined entries

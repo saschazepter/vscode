@@ -91,11 +91,15 @@ export type CopilotSessionEventType =
 	| 'assistant.message_delta'
 	| 'assistant.reasoning'
 	| 'assistant.reasoning_delta'
+	| 'assistant.turn_start'
+	| 'assistant.turn_end'
+	| 'assistant.usage'
 	| 'tool.execution_start'
 	| 'tool.execution_complete'
 	| 'session.idle'
 	| 'session.compaction_start'
-	| 'session.compaction_complete';
+	| 'session.compaction_complete'
+	| 'session.usage_info';
 
 export interface ICopilotSessionEvent {
 	readonly sessionId: string;
@@ -135,6 +139,27 @@ export interface ICopilotSessionLifecycleEvent {
 export interface ICopilotModelInfo {
 	readonly id: string;
 	readonly name?: string;
+	readonly capabilities?: {
+		readonly supports?: { readonly vision?: boolean; readonly reasoningEffort?: boolean };
+		readonly limits?: { readonly max_context_window_tokens?: number };
+	};
+	readonly policy?: { readonly state?: string };
+	readonly billing?: { readonly multiplier?: number };
+	readonly supportedReasoningEfforts?: string[];
+	readonly defaultReasoningEffort?: string;
+}
+
+export interface ICopilotStatusInfo {
+	readonly version: string;
+	readonly protocolVersion: number;
+}
+
+export interface ICopilotAuthStatus {
+	readonly isAuthenticated: boolean;
+	readonly authType?: string;
+	readonly host?: string;
+	readonly login?: string;
+	readonly statusMessage?: string;
 }
 
 // #endregion
@@ -224,6 +249,15 @@ export interface ICopilotSdkService {
 
 	/** List available models. */
 	listModels(): Promise<ICopilotModelInfo[]>;
+
+	/** Get CLI status (version, protocol). */
+	getStatus(): Promise<ICopilotStatusInfo>;
+
+	/** Get authentication status. */
+	getAuthStatus(): Promise<ICopilotAuthStatus>;
+
+	/** Ping the CLI to check connectivity. */
+	ping(message?: string): Promise<string>;
 
 	// --- Authentication ---
 

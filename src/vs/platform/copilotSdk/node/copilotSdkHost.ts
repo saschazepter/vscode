@@ -10,6 +10,7 @@ import { Server as UtilityProcessServer } from '../../../base/parts/ipc/node/ipc
 import {
 	CopilotSdkChannel,
 	type ICopilotAssistantMessage,
+	type ICopilotAuthStatus,
 	type ICopilotModelInfo,
 	type ICopilotResumeSessionConfig,
 	type ICopilotSdkService,
@@ -18,6 +19,7 @@ import {
 	type ICopilotSessionEvent,
 	type ICopilotSessionLifecycleEvent,
 	type ICopilotSessionMetadata,
+	type ICopilotStatusInfo,
 } from '../common/copilotSdkService.js';
 // eslint-disable-next-line local/code-import-patterns
 import type { CopilotClient, CopilotSession, SessionEvent, SessionLifecycleEvent } from '@github/copilot-sdk';
@@ -301,10 +303,46 @@ class CopilotSdkHost extends Disposable implements ICopilotSdkService {
 	async listModels(): Promise<ICopilotModelInfo[]> {
 		const client = await this._ensureClient();
 		const models = await client.listModels();
-		return models.map((m: { id: string; name?: string }) => ({
-			id: m.id,
-			name: m.name,
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		return models.map((m: any) => ({
+			id: m.id as string,
+			name: m.name as string | undefined,
+			capabilities: m.capabilities as ICopilotModelInfo['capabilities'],
+			policy: m.policy as ICopilotModelInfo['policy'],
+			billing: m.billing as ICopilotModelInfo['billing'],
+			supportedReasoningEfforts: m.supportedReasoningEfforts as string[] | undefined,
+			defaultReasoningEffort: m.defaultReasoningEffort as string | undefined,
 		}));
+	}
+
+	async getStatus(): Promise<ICopilotStatusInfo> {
+		const client = await this._ensureClient();
+		try {
+			return await client.getStatus() as ICopilotStatusInfo;
+		} catch {
+			// CLI may not support this method yet
+			return { version: 'unknown', protocolVersion: 0 };
+		}
+	}
+
+	async getAuthStatus(): Promise<ICopilotAuthStatus> {
+		const client = await this._ensureClient();
+		try {
+			return await client.getAuthStatus() as ICopilotAuthStatus;
+		} catch {
+			// CLI may not support this method yet
+			return { isAuthenticated: false, statusMessage: 'Auth status not available (CLI too old)' };
+		}
+	}
+
+	async ping(message?: string): Promise<string> {
+		const client = await this._ensureClient();
+		try {
+			const result = await client.ping(message ?? 'ping');
+			return JSON.stringify(result);
+		} catch {
+			return 'pong (fallback - CLI does not support ping)';
+		}
 	}
 
 	// --- Authentication ---

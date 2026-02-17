@@ -9,9 +9,12 @@ import { ServicesAccessor } from '../../../../editor/browser/editorExtensions.js
 import { localize2 } from '../../../../nls.js';
 import { Action2, MenuRegistry, registerAction2 } from '../../../../platform/actions/common/actions.js';
 import { IHostService } from '../../../../workbench/services/host/browser/host.js';
+import { IViewsService } from '../../../../workbench/services/views/common/viewsService.js';
 import { registerWorkbenchContribution2, WorkbenchPhase } from '../../../../workbench/common/contributions.js';
 import { IWorkbenchLayoutService } from '../../../../workbench/services/layout/browser/layoutService.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
+import { URI } from '../../../../base/common/uri.js';
+import { ICopilotSdkService } from '../../../../platform/copilotSdk/common/copilotSdkService.js';
 import { SyncDescriptor } from '../../../../platform/instantiation/common/descriptors.js';
 import { Registry } from '../../../../platform/registry/common/platform.js';
 import { CopilotSdkDebugPanel } from '../../../browser/copilotSdkDebugPanel.js';
@@ -144,6 +147,60 @@ if (sdkChatViewContainer) {
 
 // Register the debug log contribution so it captures all SDK events from startup
 registerWorkbenchContribution2(CopilotSdkDebugLog.ID, CopilotSdkDebugLog, WorkbenchPhase.AfterRestored);
+
+// --- SDK-based session actions (worktree / terminal / VS Code) ---
+registerAction2(class OpenSdkSessionInVSCodeAction extends Action2 {
+	constructor() {
+		super({
+			id: 'sdkSession.openInVSCode',
+			title: localize2('sdkOpenInVSCode', 'Open Session Folder in VS Code'),
+			icon: Codicon.vscodeInsiders,
+			f1: true,
+		});
+	}
+	override async run(accessor: ServicesAccessor): Promise<void> {
+		const hostService = accessor.get(IHostService);
+		const viewsService = accessor.get(IViewsService);
+		const sdk = accessor.get(ICopilotSdkService);
+		const chatPane = viewsService.getViewWithId<SdkChatViewPane>(SdkChatViewId);
+		const sessionId = chatPane?.widget?.sessionId;
+		if (!sessionId) { return; }
+		const sessions = await sdk.listSessions();
+		const meta = sessions.find(s => s.sessionId === sessionId);
+		if (meta?.workspacePath) {
+			await hostService.openWindow([{ folderUri: URI.file(meta.workspacePath) }], { forceNewWindow: true });
+		}
+	}
+});
+
+registerAction2(class OpenSdkSessionTerminalAction extends Action2 {
+	constructor() {
+		super({
+			id: 'sdkSession.openTerminal',
+			title: localize2('sdkOpenTerminal', 'Open Terminal in Session Folder'),
+			icon: Codicon.terminal,
+			f1: true,
+		});
+	}
+	override async run(accessor: ServicesAccessor): Promise<void> {
+		const terminalService = accessor.get(ITerminalService);
+		const terminalGroupService = accessor.get(ITerminalGroupService);
+		const viewsService = accessor.get(IViewsService);
+		const sdk = accessor.get(ICopilotSdkService);
+		const chatPane = viewsService.getViewWithId<SdkChatViewPane>(SdkChatViewId);
+		const sessionId = chatPane?.widget?.sessionId;
+		if (!sessionId) { return; }
+		const sessions = await sdk.listSessions();
+		const meta = sessions.find(s => s.sessionId === sessionId);
+		if (meta?.workspacePath) {
+			const instance = await terminalService.createTerminal({ config: { cwd: URI.file(meta.workspacePath) } });
+			if (instance) {
+				terminalService.setActiveInstance(instance);
+			}
+			terminalGroupService.showPanel(true);
+		}
+	}
+});
 
 // --- Temporary debug panel for Copilot SDK (delete this block + copilotSdkDebugPanel.ts to remove) ---
 let activeDebugBackdrop: HTMLElement | undefined;

@@ -15,7 +15,8 @@
 import { Emitter, Event } from '../../../base/common/event.js';
 import { IMarkdownString, MarkdownString } from '../../../base/common/htmlContent.js';
 import { Disposable } from '../../../base/common/lifecycle.js';
-import { ICopilotSessionEvent, type CopilotSessionEventType } from '../../../platform/copilotSdk/common/copilotSdkService.js';
+import { ICopilotSessionEvent, type ICopilotSessionEventData, type CopilotSessionEventType } from '../../../platform/copilotSdk/common/copilotSdkService.js';
+import { CopilotSdkDebugLog } from '../copilotSdkDebugLog.js';
 
 // #region Part Types
 
@@ -80,13 +81,27 @@ export interface ISdkChatModelChange {
 
 // #region Model
 
+export interface ISdkFileChange {
+	readonly path: string;
+	readonly toolName: string;
+	readonly changeType: 'created' | 'modified' | 'deleted';
+}
+
 export class SdkChatModel extends Disposable {
 
 	private readonly _turns: ISdkChatTurn[] = [];
 	private _turnCounter = 0;
+	private readonly _changedFiles = new Map<string, ISdkFileChange>();
 
 	private readonly _onDidChange = this._register(new Emitter<ISdkChatModelChange>());
 	readonly onDidChange: Event<ISdkChatModelChange> = this._onDidChange.event;
+
+	private readonly _onDidChangeFiles = this._register(new Emitter<void>());
+	readonly onDidChangeFiles: Event<void> = this._onDidChangeFiles.event;
+
+	get changedFiles(): readonly ISdkFileChange[] {
+		return [...this._changedFiles.values()];
+	}
 
 	get turns(): readonly ISdkChatTurn[] {
 		return this._turns;
@@ -136,6 +151,7 @@ export class SdkChatModel extends Disposable {
 				return this._handleReasoningComplete(event.data.content);
 
 			case 'tool.execution_start':
+				this._trackFileChange(event.data);
 				return this._handleToolStart(event.data.toolName ?? 'unknown', event.data.toolCallId as string | undefined);
 
 			case 'tool.execution_complete':
@@ -150,6 +166,9 @@ export class SdkChatModel extends Disposable {
 			case 'session.compaction_complete':
 				return this._addProgressToAssistantTurn('Context compacted');
 
+			case 'assistant.turn_end':
+				return this._handleSessionIdle();
+
 			default:
 				return undefined;
 		}
@@ -161,6 +180,59 @@ export class SdkChatModel extends Disposable {
 	clear(): void {
 		this._turns.length = 0;
 		this._turnCounter = 0;
+		this._changedFiles.clear();
+		this._onDidChangeFiles.fire();
+	}
+
+	// --- File change tracking ---
+
+	private static readonly FILE_WRITE_TOOLS = new Set([
+		'edit', 'edit_file', 'write', 'write_file', 'create', 'create_file',
+		'replace_string_in_file', 'multi_replace_string_in_file',
+		'insert_edit_into_file', 'patch_file', 'multi_edit',
+	]);
+
+	private static readonly FILE_DELETE_TOOLS = new Set([
+		'delete', 'delete_file',
+	]);
+
+	private _trackFileChange(data: ICopilotSessionEventData): void {
+		const toolName = data.toolName ?? '';
+
+		// Log ALL tool starts for debugging
+		const args = data['arguments'] as Record<string, unknown> | undefined;
+		const argsKeys = args ? Object.keys(args).join(',') : 'none';
+		CopilotSdkDebugLog.instance?.addEntry('F', `tool:${toolName}`, `args=[${argsKeys}]`);
+
+		// File-modifying tools we care about
+		if (!SdkChatModel.FILE_WRITE_TOOLS.has(toolName) && !SdkChatModel.FILE_DELETE_TOOLS.has(toolName)) {
+			return;
+		}
+
+		// Extract file path from 'arguments' field (present in tool.execution_start)
+		const filePath = (args?.['filePath'] as string)
+			?? (args?.['path'] as string)
+			?? (args?.['file'] as string)
+			?? (args?.['file_path'] as string)
+			?? (args?.['filename'] as string)
+			?? (data['filePath'] as string)
+			?? (data['path'] as string)
+			?? undefined;
+
+		CopilotSdkDebugLog.instance?.addEntry('F', `track:${toolName}`, filePath ?? '(no path found)');
+
+		if (!filePath) { return; }
+
+		let changeType: ISdkFileChange['changeType'] = 'modified';
+		if (SdkChatModel.FILE_DELETE_TOOLS.has(toolName)) {
+			changeType = 'deleted';
+		} else if (toolName === 'create_file' || toolName === 'create') {
+			changeType = 'created';
+		}
+
+		this._changedFiles.set(filePath, { path: filePath, toolName, changeType });
+		CopilotSdkDebugLog.instance?.addEntry('F', `changed:${changeType}`, `${filePath} (${this._changedFiles.size} total)`);
+		this._onDidChangeFiles.fire();
 	}
 
 	// --- Private helpers ---

@@ -15,6 +15,10 @@ import { IInstantiationService } from '../../../platform/instantiation/common/in
 import { ILogService } from '../../../platform/log/common/log.js';
 import { IWorkspaceContextService } from '../../../platform/workspace/common/workspace.js';
 import { IFileDialogService } from '../../../platform/dialogs/common/dialogs.js';
+import { IStorageService, StorageScope, StorageTarget } from '../../../platform/storage/common/storage.js';
+import { URI } from '../../../base/common/uri.js';
+import { ITerminalService, ITerminalGroupService } from '../../../workbench/contrib/terminal/browser/terminal.js';
+import { IHostService } from '../../../workbench/services/host/browser/host.js';
 import { SdkChatModel, type ISdkChatModelChange } from './sdkChatModel.js';
 import { SdkContentPartRenderer, type IRenderedContentPart } from './sdkContentPartRenderer.js';
 import { CopilotSdkDebugLog } from '../copilotSdkDebugLog.js';
@@ -49,6 +53,9 @@ export class SdkChatWidget extends Disposable {
 	private readonly _folderLabel: HTMLElement;
 	private _folderPath: string | undefined;
 	private readonly _statusBar: HTMLElement;
+	private readonly _worktreeBar: HTMLElement;
+	private readonly _worktreeLabel: HTMLElement;
+	private _worktreePath: string | undefined;
 
 	private readonly _model: SdkChatModel;
 	private readonly _partRenderer: SdkContentPartRenderer;
@@ -73,6 +80,7 @@ export class SdkChatWidget extends Disposable {
 		@ILogService private readonly _logService: ILogService,
 		@IWorkspaceContextService private readonly _workspaceContextService: IWorkspaceContextService,
 		@IFileDialogService private readonly _fileDialogService: IFileDialogService,
+		@IStorageService private readonly _storageService: IStorageService,
 	) {
 		super();
 
@@ -81,32 +89,42 @@ export class SdkChatWidget extends Disposable {
 
 		this.element = dom.append(container, $('.sdk-chat-widget'));
 
-		// Welcome (centered hero - icon + greeting + INPUT lives here initially)
+		// Welcome (centered hero - just a large VS Code Insiders icon + INPUT)
 		this._welcomeContainer = dom.append(this.element, $('.sdk-chat-welcome'));
 		const welcomeHero = dom.append(this._welcomeContainer, $('.sdk-chat-welcome-hero'));
 		const heroIcon = dom.append(welcomeHero, $('.sdk-chat-welcome-icon'));
-		dom.append(heroIcon, $(`span${ThemeIcon.asCSSSelector(Codicon.sparkle)}`)).classList.add('codicon');
-		dom.append(welcomeHero, $('.sdk-chat-welcome-title')).textContent = localize('sdkChat.welcome.title', "What can I help with?");
-		dom.append(welcomeHero, $('.sdk-chat-welcome-subtitle')).textContent = localize('sdkChat.welcome.subtitle', "Ask anything or describe a task");
+		dom.append(heroIcon, $(`span${ThemeIcon.asCSSSelector(Codicon.vscodeInsiders)}`)).classList.add('codicon');
 
 		// Input area - built once, lives in welcome initially, moves to bottom on first send
 		this._inputArea = dom.append(this._welcomeContainer, $('.sdk-chat-input-area'));
 		const inputBox = dom.append(this._inputArea, $('.sdk-chat-input-box'));
 		this._textarea = dom.append(inputBox, $('textarea.sdk-chat-textarea')) as HTMLTextAreaElement;
-		this._textarea.placeholder = localize('sdkChat.placeholder', "Message Copilot...");
+		this._textarea.placeholder = localize('sdkChat.placeholder', "Describe what to build next");
 		this._textarea.rows = 1;
 		const inputToolbar = dom.append(inputBox, $('.sdk-chat-input-toolbar'));
 
 		// Left: pickers (folder + model)
 		const pickerGroup = dom.append(inputToolbar, $('.sdk-chat-picker-group'));
 
-		// Folder picker (clickable button that opens native dialog)
-		this._folderBtn = dom.append(pickerGroup, $('.sdk-chat-picker'));
-		dom.append(this._folderBtn, $(`span${ThemeIcon.asCSSSelector(Codicon.folder)}`)).classList.add('codicon');
-		this._folderLabel = dom.append(this._folderBtn, $('span.sdk-chat-picker-label'));
+		// Folder picker with history dropdown
+		const folderPicker = dom.append(pickerGroup, $('.sdk-chat-picker.sdk-chat-model-picker'));
+		dom.append(folderPicker, $(`span${ThemeIcon.asCSSSelector(Codicon.folder)}`)).classList.add('codicon');
+		this._folderLabel = dom.append(folderPicker, $('span.sdk-chat-picker-label'));
+		this._folderBtn = dom.append(folderPicker, $('select.sdk-chat-picker-select')) as HTMLSelectElement;
 		this._initDefaultFolder();
-		this._folderLabel.textContent = this._folderPath ? this._folderPath.split('/').pop() ?? 'Select folder' : localize('sdkChat.selectFolder', "Select folder");
-		this._register(dom.addDisposableListener(this._folderBtn, 'click', () => this._pickFolder()));
+		this._populateFolderHistory();
+		this._register(dom.addDisposableListener(this._folderBtn as HTMLSelectElement, 'change', () => {
+			const val = (this._folderBtn as HTMLSelectElement).value;
+			if (val === '__browse__') {
+				this._pickFolder();
+				// Reset select to current folder
+				(this._folderBtn as HTMLSelectElement).value = this._folderPath ?? '';
+			} else {
+				this._folderPath = val || undefined;
+				this._folderLabel.textContent = val ? val.split('/').pop() ?? 'folder' : localize('sdkChat.selectFolder', "Select folder");
+				if (val) { this._addFolderToHistory(val); }
+			}
+		}));
 
 		// Model picker
 		const modelPicker = dom.append(pickerGroup, $('.sdk-chat-picker.sdk-chat-model-picker'));
@@ -135,6 +153,41 @@ export class SdkChatWidget extends Disposable {
 			this._autoScroll = scrollHeight - scrollTop - clientHeight < 50;
 		}));
 
+		// Worktree info bar (hidden until a session with a worktree is loaded)
+		this._worktreeBar = dom.append(this.element, $('.sdk-chat-worktree-bar'));
+		this._worktreeBar.style.display = 'none';
+		const worktreeIcon = dom.append(this._worktreeBar, $(`span${ThemeIcon.asCSSSelector(Codicon.gitBranch)}`));
+		worktreeIcon.classList.add('codicon');
+		this._worktreeLabel = dom.append(this._worktreeBar, $('span.sdk-chat-worktree-label'));
+		// Quick action: open in terminal
+		const wtTermBtn = dom.append(this._worktreeBar, $('button.sdk-chat-worktree-action'));
+		wtTermBtn.title = localize('sdkChat.worktree.openTerminal', "Open Terminal");
+		dom.append(wtTermBtn, $(`span${ThemeIcon.asCSSSelector(Codicon.terminal)}`)).classList.add('codicon');
+		this._register(dom.addDisposableListener(wtTermBtn, 'click', () => {
+			if (this._worktreePath) {
+				this._instantiationService.invokeFunction(accessor => {
+					const terminalService = accessor.get(ITerminalService);
+					const terminalGroupService = accessor.get(ITerminalGroupService);
+					terminalService.createTerminal({ config: { cwd: URI.file(this._worktreePath!) } }).then(instance => {
+						if (instance) { terminalService.setActiveInstance(instance); }
+						terminalGroupService.showPanel(true);
+					});
+				});
+			}
+		}));
+		// Quick action: open in VS Code
+		const wtVscBtn = dom.append(this._worktreeBar, $('button.sdk-chat-worktree-action'));
+		wtVscBtn.title = localize('sdkChat.worktree.openVSCode', "Open in VS Code");
+		dom.append(wtVscBtn, $(`span${ThemeIcon.asCSSSelector(Codicon.window)}`)).classList.add('codicon');
+		this._register(dom.addDisposableListener(wtVscBtn, 'click', () => {
+			if (this._worktreePath) {
+				this._instantiationService.invokeFunction(accessor => {
+					const hostService = accessor.get(IHostService);
+					hostService.openWindow([{ folderUri: URI.file(this._worktreePath!) }], { forceNewWindow: true });
+				});
+			}
+		}));
+
 		// Status
 		this._statusBar = dom.append(this.element, $('.sdk-chat-status'));
 		this._setStatus(localize('sdkChat.status.initializing', "Initializing..."));
@@ -160,6 +213,7 @@ export class SdkChatWidget extends Disposable {
 	focus(): void { this._textarea.focus(); }
 	get sessionId(): string | undefined { return this._sessionId; }
 	get isStreaming(): boolean { return this._isStreaming; }
+	get model(): SdkChatModel { return this._model; }
 
 	// --- Init ---
 
@@ -170,6 +224,14 @@ export class SdkChatWidget extends Disposable {
 			await this._sdk.start();
 			this._logService.info('[SdkChatWidget] sdk.start() completed successfully');
 			CopilotSdkDebugLog.instance?.addEntry('\u2190', 'widget.start', 'OK');
+
+			// Check auth status
+			try {
+				const auth = await this._sdk.getAuthStatus();
+				CopilotSdkDebugLog.instance?.addEntry('\u2190', 'widget.authStatus', auth.isAuthenticated ? `${auth.login} (${auth.authType})` : 'not authenticated');
+			} catch { /* non-critical */ }
+
+			// Load models
 			this._logService.info('[SdkChatWidget] Calling sdk.listModels()...');
 			CopilotSdkDebugLog.instance?.addEntry('\u2192', 'widget.listModels', '');
 			const models = await this._sdk.listModels();
@@ -219,6 +281,59 @@ export class SdkChatWidget extends Disposable {
 		if (result && result.length > 0) {
 			this._folderPath = result[0].fsPath;
 			this._folderLabel.textContent = result[0].fsPath.split('/').pop() ?? 'folder';
+			this._addFolderToHistory(result[0].fsPath);
+			this._populateFolderHistory();
+		}
+	}
+
+	private static readonly FOLDER_HISTORY_KEY = 'sdkChat.folderHistory';
+	private static readonly MAX_FOLDER_HISTORY = 10;
+
+	private _getFolderHistory(): string[] {
+		const raw = this._storageService.get(SdkChatWidget.FOLDER_HISTORY_KEY, StorageScope.PROFILE, '[]');
+		try { return JSON.parse(raw); } catch { return []; }
+	}
+
+	private _addFolderToHistory(path: string): void {
+		const history = this._getFolderHistory().filter(p => p !== path);
+		history.unshift(path);
+		if (history.length > SdkChatWidget.MAX_FOLDER_HISTORY) { history.length = SdkChatWidget.MAX_FOLDER_HISTORY; }
+		this._storageService.store(SdkChatWidget.FOLDER_HISTORY_KEY, JSON.stringify(history), StorageScope.PROFILE, StorageTarget.USER);
+	}
+
+	private _populateFolderHistory(): void {
+		const select = this._folderBtn as HTMLSelectElement;
+		dom.clearNode(select);
+		const history = this._getFolderHistory();
+
+		// Add current folder if not in history
+		if (this._folderPath && !history.includes(this._folderPath)) {
+			history.unshift(this._folderPath);
+		}
+
+		for (const p of history) {
+			const opt = document.createElement('option');
+			opt.value = p;
+			opt.textContent = p.split('/').pop() ?? p;
+			select.appendChild(opt);
+		}
+
+		if (history.length === 0) {
+			const opt = document.createElement('option');
+			opt.value = '';
+			opt.textContent = localize('sdkChat.selectFolder', "Select folder");
+			select.appendChild(opt);
+		}
+
+		// "Browse..." option at the end
+		const browseOpt = document.createElement('option');
+		browseOpt.value = '__browse__';
+		browseOpt.textContent = localize('sdkChat.browse', "Browse...");
+		select.appendChild(browseOpt);
+
+		if (this._folderPath) {
+			select.value = this._folderPath;
+			this._folderLabel.textContent = this._folderPath.split('/').pop() ?? 'folder';
 		}
 	}
 
@@ -229,7 +344,38 @@ export class SdkChatWidget extends Disposable {
 		this._eventDisposables.add(this._sdk.onSessionEvent(event => {
 			if (this._sessionId && event.sessionId !== this._sessionId) { return; }
 			this._model.handleEvent(event);
+
+			// Update status bar with usage info
+			if (event.type === 'assistant.usage' as string) {
+				const data = event.data;
+				const model = data['model'] as string ?? '';
+				const input = data['inputTokens'] as number ?? 0;
+				const output = data['outputTokens'] as number ?? 0;
+				this._setStatus(`${model} - ${input + output} tokens (${input} in, ${output} out)`);
+			}
+
+			// When session becomes idle, refresh worktree metadata
+			// (the CLI may have created a worktree during this turn)
+			if (event.type === 'session.idle' && this._sessionId) {
+				this._refreshWorktreeMetadata();
+			}
 		}));
+	}
+
+	private async _refreshWorktreeMetadata(): Promise<void> {
+		if (!this._sessionId) { return; }
+		try {
+			const sessions = await this._sdk.listSessions();
+			const meta = sessions.find(s => s.sessionId === this._sessionId);
+			if (meta) {
+				this._updateWorktreeBar(meta.workspacePath, meta.repository, meta.branch);
+				if (meta.workspacePath && meta.workspacePath !== this._folderPath) {
+					this._folderPath = meta.workspacePath;
+					this._folderLabel.textContent = meta.workspacePath.split('/').pop() ?? 'folder';
+					this._addFolderToHistory(meta.workspacePath);
+				}
+			}
+		} catch { /* non-critical */ }
 	}
 
 	// --- Model -> DOM (using SdkContentPartRenderer) ---
@@ -379,6 +525,7 @@ export class SdkChatWidget extends Disposable {
 			if (!this._sessionId) {
 				const model = this._modelSelect.value;
 				const workingDirectory = this._folderPath || undefined;
+				if (workingDirectory) { this._addFolderToHistory(workingDirectory); }
 				this._setStatus(localize('sdkChat.status.creating', "Creating session..."));
 				CopilotSdkDebugLog.instance?.addEntry('\u2192', 'widget.createSession', JSON.stringify({ model, workingDirectory }));
 				this._sessionId = await this._sdk.createSession({ model, streaming: true, workingDirectory });
@@ -420,6 +567,20 @@ export class SdkChatWidget extends Disposable {
 
 	private _setStatus(text: string): void { this._statusBar.textContent = text; }
 
+	private _updateWorktreeBar(workspacePath?: string, repository?: string, branch?: string): void {
+		this._worktreePath = workspacePath;
+		if (workspacePath || repository) {
+			this._worktreeBar.style.display = '';
+			const parts: string[] = [];
+			if (repository) { parts.push(repository); }
+			if (branch) { parts.push(branch); }
+			if (workspacePath) { parts.push(workspacePath); }
+			this._worktreeLabel.textContent = parts.join(' - ');
+		} else {
+			this._worktreeBar.style.display = 'none';
+		}
+	}
+
 	private _scrollToBottom(): void {
 		if (this._autoScroll) { this._messagesContainer.scrollTop = this._messagesContainer.scrollHeight; }
 	}
@@ -445,6 +606,8 @@ export class SdkChatWidget extends Disposable {
 		this._welcomeContainer.appendChild(this._inputArea);
 		this._setStreaming(false);
 		this._setStatus(localize('sdkChat.status.ready', "Ready"));
+		this._updateWorktreeBar();
+		this._worktreePath = undefined;
 		this._onDidChangeSessionId.fire(undefined);
 		this._textarea.focus();
 	}
@@ -469,6 +632,14 @@ export class SdkChatWidget extends Disposable {
 			if (meta?.workspacePath) {
 				this._folderPath = meta.workspacePath;
 				this._folderLabel.textContent = meta.workspacePath.split('/').pop() ?? 'folder';
+				this._addFolderToHistory(meta.workspacePath);
+				this._populateFolderHistory();
+			}
+			// Show worktree info bar
+			this._updateWorktreeBar(meta?.workspacePath, meta?.repository, meta?.branch);
+			if (meta?.repository) {
+				const repoInfo = meta.branch ? `${meta.repository}:${meta.branch}` : meta.repository;
+				this._setStatus(`${repoInfo} - ${meta.workspacePath ?? 'no worktree'}`);
 			}
 
 			const events = await this._sdk.getMessages(sessionId);
