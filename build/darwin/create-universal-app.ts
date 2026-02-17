@@ -7,7 +7,6 @@ import path from 'path';
 import fs from 'fs';
 import minimatch from 'minimatch';
 import { makeUniversalApp } from 'vscode-universal-bundler';
-import { execSync } from 'child_process';
 
 const root = path.dirname(path.dirname(import.meta.dirname));
 
@@ -35,20 +34,20 @@ async function main(buildDir?: string) {
 		const inArm64 = path.join(arm64AppPath, relPath);
 		if (fs.existsSync(inX64) && !fs.existsSync(inArm64)) {
 			console.log(`Copying missing copilot-${plat} to arm64 build`);
-			execSync(`cp -R ${JSON.stringify(inX64)} ${JSON.stringify(inArm64)}`);
+			fs.cpSync(inX64, inArm64, { recursive: true });
 		} else if (fs.existsSync(inArm64) && !fs.existsSync(inX64)) {
 			console.log(`Copying missing copilot-${plat} to x64 build`);
-			execSync(`cp -R ${JSON.stringify(inArm64)} ${JSON.stringify(inX64)}`);
+			fs.cpSync(inArm64, inX64, { recursive: true });
 		}
 		const relPathU = path.join('Contents', 'Resources', 'app', 'node_modules.asar.unpacked', '@github', `copilot-${plat}`);
 		const inX64U = path.join(x64AppPath, relPathU);
 		const inArm64U = path.join(arm64AppPath, relPathU);
 		if (fs.existsSync(inX64U) && !fs.existsSync(inArm64U)) {
 			fs.mkdirSync(path.dirname(inArm64U), { recursive: true });
-			execSync(`cp -R ${JSON.stringify(inX64U)} ${JSON.stringify(inArm64U)}`);
+			fs.cpSync(inX64U, inArm64U, { recursive: true });
 		} else if (fs.existsSync(inArm64U) && !fs.existsSync(inX64U)) {
 			fs.mkdirSync(path.dirname(inX64U), { recursive: true });
-			execSync(`cp -R ${JSON.stringify(inArm64U)} ${JSON.stringify(inX64U)}`);
+			fs.cpSync(inArm64U, inX64U, { recursive: true });
 		}
 	}
 
