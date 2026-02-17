@@ -10,7 +10,7 @@ import { append, $, Dimension, trackFocus } from '../../../../base/browser/dom.j
 import { InputValidationType, ISCMInput, IInputValidation, ISCMViewService, SCMInputChangeReason, ISCMInputValueProviderContext } from '../common/scm.js';
 import { IInstantiationService, ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
 import { IContextViewService, IContextMenuService, IOpenContextView } from '../../../../platform/contextview/browser/contextView.js';
-import { IContextKeyService, IContextKey, ContextKeyExpr } from '../../../../platform/contextkey/common/contextkey.js';
+import { IContextKeyService, IContextKey, ContextKeyExpr, RawContextKey } from '../../../../platform/contextkey/common/contextkey.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { IKeybindingService } from '../../../../platform/keybinding/common/keybinding.js';
 import { MenuItemAction, IMenuService, registerAction2, MenuId, Action2 } from '../../../../platform/actions/common/actions.js';
@@ -71,7 +71,10 @@ import { AccessibilityCommandId } from '../../accessibility/common/accessibility
 import { ChatContextKeys } from '../../chat/common/actions/chatContextKeys.js';
 import product from '../../../../platform/product/common/product.js';
 import { CHAT_SETUP_SUPPORT_ANONYMOUS_ACTION_ID } from '../../chat/browser/actions/chatActions.js';
-import { ContextKeys } from './scmViewPane.js';
+
+export const SCMInputContextKeys = {
+	SCMInputHasValidationMessage: new RawContextKey<boolean>('scmInputHasValidationMessage', false),
+};
 
 const enum SCMInputWidgetCommandId {
 	CancelAction = 'scm.input.cancelAction',
@@ -578,7 +581,7 @@ export class SCMInputWidget {
 
 		this.contextKeyService = this.disposables.add(contextKeyService.createScoped(this.element));
 		this.repositoryIdContextKey = this.contextKeyService.createKey('scmRepository', undefined);
-		this.validationMessageContextKey = ContextKeys.SCMInputHasValidationMessage.bindTo(this.contextKeyService);
+		this.validationMessageContextKey = SCMInputContextKeys.SCMInputHasValidationMessage.bindTo(this.contextKeyService);
 
 		this.inputEditorOptions = new SCMInputWidgetEditorOptions(overflowWidgetsDomNode, this.configurationService);
 		this.disposables.add(this.inputEditorOptions.onDidChange(this.onDidChangeEditorOptions, this));
