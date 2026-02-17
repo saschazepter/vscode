@@ -1931,6 +1931,25 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			this.renderFollowups();
 			this.renderChatSuggestNextWidget();
 		}));
+		let previousModelIdentifier: string | undefined;
+		this._register(autorun(reader => {
+			const modelIdentifier = this.inputPart.selectedLanguageModel.read(reader)?.identifier;
+			if (previousModelIdentifier === undefined) {
+				previousModelIdentifier = modelIdentifier;
+				return;
+			}
+
+			if (previousModelIdentifier === modelIdentifier) {
+				return;
+			}
+
+			previousModelIdentifier = modelIdentifier;
+			if (!this._gettingStartedTipPartRef) {
+				return;
+			}
+
+			this.chatTipService.getWelcomeTip(this.contextKeyService);
+		}));
 
 		this._register(autorun(r => {
 			const toolSetIds = new Set<string>();
