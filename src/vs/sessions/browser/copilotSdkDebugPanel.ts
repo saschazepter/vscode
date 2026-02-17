@@ -15,6 +15,8 @@ import { Disposable, DisposableStore } from '../../base/common/lifecycle.js';
 import { ICopilotSdkService } from '../../platform/copilotSdk/common/copilotSdkService.js';
 import { IClipboardService } from '../../platform/clipboard/common/clipboardService.js';
 import { CopilotSdkDebugLog, IDebugLogEntry } from './copilotSdkDebugLog.js';
+import { IDialogService } from '../../platform/dialogs/common/dialogs.js';
+import { localize } from '../../nls.js';
 
 const $ = dom.$;
 
@@ -39,6 +41,7 @@ export class CopilotSdkDebugPanel extends Disposable {
 		private readonly _debugLog: CopilotSdkDebugLog,
 		@ICopilotSdkService private readonly _sdk: ICopilotSdkService,
 		@IClipboardService private readonly _clipboardService: IClipboardService,
+		@IDialogService private readonly _dialogService: IDialogService,
 	) {
 		super();
 
@@ -393,9 +396,13 @@ export class CopilotSdkDebugPanel extends Disposable {
 	}
 
 	private async _deleteAllSessions(): Promise<void> {
-		const targetWindow = dom.getWindow(this.element);
-		const confirmed = targetWindow.confirm('Are you sure you want to DELETE ALL sessions? This cannot be undone.');
-		if (!confirmed) {
+		const confirmation = await this._dialogService.confirm({
+			message: localize('sdkDebug.deleteAll', "Delete all sessions?"),
+			detail: localize('sdkDebug.deleteAll.detail', "This cannot be undone."),
+			primaryButton: localize('delete', "Delete"),
+			cancelButton: localize('cancel', "Cancel"),
+		});
+		if (!confirmation.confirmed) {
 			this._debugLog.addEntry('!', 'deleteAll', 'Cancelled by user');
 			return;
 		}

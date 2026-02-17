@@ -49,6 +49,7 @@ import { ICopilotSdkService, type ICopilotSessionMetadata } from '../../../../pl
 import { SdkChatViewPane, SdkChatViewId } from '../../../browser/widget/sdkChatViewPane.js';
 import { DisposableStore } from '../../../../base/common/lifecycle.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
+import { IDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 
 const $ = DOM.$;
 export const SessionsViewId = 'agentic.workbench.view.sessionsView';
@@ -115,6 +116,7 @@ export class AgenticSessionsViewPane extends ViewPane {
 		@ICopilotSdkService private readonly copilotSdkService: ICopilotSdkService,
 		@IViewsService private readonly viewsService: IViewsService,
 		@ILogService private readonly logService: ILogService,
+		@IDialogService private readonly dialogService: IDialogService,
 	) {
 		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
 
@@ -150,7 +152,6 @@ export class AgenticSessionsViewPane extends ViewPane {
 		// SDK session lifecycle updates
 		if (this._useSdk) {
 			this._register(this.copilotSdkService.onSessionLifecycle(() => this._refreshSdkSessionList()));
-			this._register(this._sdkListDisposables);
 		}
 
 	}
@@ -283,6 +284,16 @@ export class AgenticSessionsViewPane extends ViewPane {
 	}
 
 	private async _deleteSdkSession(sessionId: string): Promise<void> {
+		const session = this._sdkSessions.find(s => s.sessionId === sessionId);
+		const confirmation = await this.dialogService.confirm({
+			message: localize('deleteSdkSession.confirm', "Delete this session?"),
+			detail: session?.summary ?? session?.workspacePath ?? sessionId,
+			primaryButton: localize('deleteSession.confirm.button', "Delete"),
+			cancelButton: localize('cancel', "Cancel")
+		});
+		if (!confirmation.confirmed) {
+			return;
+		}
 		try { await this.copilotSdkService.deleteSession(sessionId); } catch { /* best-effort */ }
 		if (this._sdkSelectedSessionId === sessionId) {
 			this._sdkSelectedSessionId = undefined;
@@ -294,6 +305,7 @@ export class AgenticSessionsViewPane extends ViewPane {
 
 	private _relativeTime(date: Date): string {
 		const diffMs = Date.now() - date.getTime();
+		if (diffMs <= 0) { return localize('justNow', "just now"); }
 		const diffMins = Math.floor(diffMs / 60000);
 		if (diffMins < 1) { return localize('justNow', "just now"); }
 		if (diffMins < 60) { return localize('minutesAgo', "{0}m ago", diffMins); }

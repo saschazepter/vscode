@@ -3,6 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import * as paths from '../../../base/common/path.js';
 import './media/sdkChatWidget.css';
 import * as dom from '../../../base/browser/dom.js';
 import { Codicon } from '../../../base/common/codicons.js';
@@ -125,7 +126,7 @@ export class SdkChatWidget extends Disposable {
 				(this._folderBtn as HTMLSelectElement).value = this._folderPath ?? '';
 			} else {
 				this._folderPath = val || undefined;
-				this._folderLabel.textContent = val ? val.split('/').pop() ?? 'folder' : localize('sdkChat.selectFolder', "Select folder");
+				this._folderLabel.textContent = val ? this._labelForPath(val) : localize('sdkChat.selectFolder', "Select folder");
 				if (val) { this._addFolderToHistory(val); }
 			}
 		}));
@@ -168,28 +169,28 @@ export class SdkChatWidget extends Disposable {
 		wtTermBtn.title = localize('sdkChat.worktree.openTerminal', "Open Terminal");
 		dom.append(wtTermBtn, $(`span${ThemeIcon.asCSSSelector(Codicon.terminal)}`)).classList.add('codicon');
 		this._register(dom.addDisposableListener(wtTermBtn, 'click', () => {
-			if (this._worktreePath) {
-				this._instantiationService.invokeFunction(accessor => {
-					const terminalService = accessor.get(ITerminalService);
-					const terminalGroupService = accessor.get(ITerminalGroupService);
-					terminalService.createTerminal({ config: { cwd: URI.file(this._worktreePath!) } }).then(instance => {
-						if (instance) { terminalService.setActiveInstance(instance); }
-						terminalGroupService.showPanel(true);
-					});
+			const worktreePath = this._worktreePath;
+			if (!worktreePath) { return; }
+			this._instantiationService.invokeFunction(accessor => {
+				const terminalService = accessor.get(ITerminalService);
+				const terminalGroupService = accessor.get(ITerminalGroupService);
+				terminalService.createTerminal({ config: { cwd: URI.file(worktreePath) } }).then(instance => {
+					if (instance) { terminalService.setActiveInstance(instance); }
+					terminalGroupService.showPanel(true);
 				});
-			}
+			});
 		}));
 		// Quick action: open in VS Code
 		const wtVscBtn = dom.append(this._worktreeBar, $('button.sdk-chat-worktree-action'));
 		wtVscBtn.title = localize('sdkChat.worktree.openVSCode', "Open in VS Code");
 		dom.append(wtVscBtn, $(`span${ThemeIcon.asCSSSelector(Codicon.window)}`)).classList.add('codicon');
 		this._register(dom.addDisposableListener(wtVscBtn, 'click', () => {
-			if (this._worktreePath) {
-				this._instantiationService.invokeFunction(accessor => {
-					const hostService = accessor.get(IHostService);
-					hostService.openWindow([{ folderUri: URI.file(this._worktreePath!) }], { forceNewWindow: true });
-				});
-			}
+			const worktreePath = this._worktreePath;
+			if (!worktreePath) { return; }
+			this._instantiationService.invokeFunction(accessor => {
+				const hostService = accessor.get(IHostService);
+				hostService.openWindow([{ folderUri: URI.file(worktreePath) }], { forceNewWindow: true });
+			});
 		}));
 
 		// Status
@@ -290,7 +291,7 @@ export class SdkChatWidget extends Disposable {
 		});
 		if (result && result.length > 0) {
 			this._folderPath = result[0].fsPath;
-			this._folderLabel.textContent = result[0].fsPath.split('/').pop() ?? 'folder';
+			this._folderLabel.textContent = this._labelForPath(result[0].fsPath);
 			this._addFolderToHistory(result[0].fsPath);
 			this._populateFolderHistory();
 		}
@@ -311,6 +312,10 @@ export class SdkChatWidget extends Disposable {
 		this._storageService.store(SdkChatWidget.FOLDER_HISTORY_KEY, JSON.stringify(history), StorageScope.PROFILE, StorageTarget.USER);
 	}
 
+	private _labelForPath(fsPath: string): string {
+		return paths.basename(fsPath) || fsPath;
+	}
+
 	private _populateFolderHistory(): void {
 		const select = this._folderBtn as HTMLSelectElement;
 		dom.clearNode(select);
@@ -324,7 +329,7 @@ export class SdkChatWidget extends Disposable {
 		for (const p of history) {
 			const opt = document.createElement('option');
 			opt.value = p;
-			opt.textContent = p.split('/').pop() ?? p;
+			opt.textContent = this._labelForPath(p);
 			select.appendChild(opt);
 		}
 
@@ -343,7 +348,7 @@ export class SdkChatWidget extends Disposable {
 
 		if (this._folderPath) {
 			select.value = this._folderPath;
-			this._folderLabel.textContent = this._folderPath.split('/').pop() ?? 'folder';
+			this._folderLabel.textContent = this._labelForPath(this._folderPath);
 		}
 	}
 
@@ -381,7 +386,7 @@ export class SdkChatWidget extends Disposable {
 				this._updateWorktreeBar(meta.workspacePath, meta.repository, meta.branch);
 				if (meta.workspacePath && meta.workspacePath !== this._folderPath) {
 					this._folderPath = meta.workspacePath;
-					this._folderLabel.textContent = meta.workspacePath.split('/').pop() ?? 'folder';
+					this._folderLabel.textContent = this._labelForPath(meta.workspacePath);
 					this._addFolderToHistory(meta.workspacePath);
 				}
 			}
@@ -674,7 +679,7 @@ export class SdkChatWidget extends Disposable {
 			const meta = sessions.find(s => s.sessionId === sessionId);
 			if (meta?.workspacePath) {
 				this._folderPath = meta.workspacePath;
-				this._folderLabel.textContent = meta.workspacePath.split('/').pop() ?? 'folder';
+				this._folderLabel.textContent = this._labelForPath(meta.workspacePath);
 				this._addFolderToHistory(meta.workspacePath);
 				this._populateFolderHistory();
 			}

@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Emitter, Event } from '../../../base/common/event.js';
-import { Disposable, DisposableStore } from '../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore, toDisposable } from '../../../base/common/lifecycle.js';
 import { ProxyChannel } from '../../../base/parts/ipc/common/ipc.js';
 import { Server as UtilityProcessServer } from '../../../base/parts/ipc/node/ipc.mp.js';
 import {
@@ -37,6 +37,8 @@ class CopilotSdkHost extends Disposable implements ICopilotSdkService {
 	private _client: CopilotClient | undefined;
 	private readonly _sessions = new Map<string, CopilotSession>();
 	private _githubToken: string | undefined;
+	private _originalStderrWrite: typeof process.stderr.write | undefined;
+	private readonly _sessionDisposables = new Map<string, DisposableStore>();
 
 	// --- Events ---
 	private readonly _onSessionEvent = this._register(new Emitter<ICopilotSessionEvent>());
@@ -88,6 +90,7 @@ class CopilotSdkHost extends Disposable implements ICopilotSdkService {
 			const msg = e instanceof Error ? e.message : String(e);
 			this._onProcessOutput.fire({ stream: 'stderr', data: `[SDK] FAILED to resolve bundled CLI: ${msg}` });
 			process.stderr.write(`[SDK-FATAL] Cannot resolve bundled CLI: ${msg}\n`);
+			throw new Error(`Cannot resolve bundled CLI: ${msg}`);
 		}
 
 		// Build a clean environment for the CLI. Strip vars that interfere.
@@ -157,13 +160,15 @@ class CopilotSdkHost extends Disposable implements ICopilotSdkService {
 		// Intercept stderr to capture CLI subprocess output and forward as events.
 		// The SDK writes CLI stderr lines to process.stderr via its internal
 		// `[CLI subprocess]` handler.
-		const originalStderrWrite = process.stderr.write.bind(process.stderr);
+		if (!this._originalStderrWrite) {
+			this._originalStderrWrite = process.stderr.write.bind(process.stderr);
+		}
 		process.stderr.write = (chunk: string | Uint8Array, ...args: unknown[]): boolean => {
 			const text = typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf-8');
 			if (text.trim()) {
 				this._onProcessOutput.fire({ stream: 'stderr', data: text.trimEnd() });
 			}
-			return originalStderrWrite(chunk, ...args as [BufferEncoding?, ((err?: Error | null) => void)?]);
+			return this._originalStderrWrite!(chunk, ...args as [BufferEncoding?, ((err?: Error | null) => void)?]);
 		};
 
 		// Forward client lifecycle events
@@ -187,9 +192,17 @@ class CopilotSdkHost extends Disposable implements ICopilotSdkService {
 			try { await session.destroy(); } catch { /* best-effort */ }
 		}
 		this._sessions.clear();
+		for (const store of this._sessionDisposables.values()) {
+			store.dispose();
+		}
+		this._sessionDisposables.clear();
 
 		await this._client.stop();
 		this._client = undefined;
+		if (this._originalStderrWrite) {
+			process.stderr.write = this._originalStderrWrite;
+			this._originalStderrWrite = undefined;
+		}
 	}
 
 	// --- Sessions ---
@@ -227,6 +240,8 @@ class CopilotSdkHost extends Disposable implements ICopilotSdkService {
 		if (session) {
 			await session.destroy();
 			this._sessions.delete(sessionId);
+			this._sessionDisposables.get(sessionId)?.dispose();
+			this._sessionDisposables.delete(sessionId);
 		}
 	}
 
@@ -370,14 +385,16 @@ class CopilotSdkHost extends Disposable implements ICopilotSdkService {
 
 	private _attachSessionEvents(session: CopilotSession): void {
 		const sessionId = session.sessionId;
-
-		session.on((event: SessionEvent) => {
+		const store = new DisposableStore();
+		const listener = session.on((event: SessionEvent) => {
 			this._onSessionEvent.fire({
 				sessionId,
 				type: event.type as ICopilotSessionEvent['type'],
 				data: (event as { data?: Record<string, unknown> }).data ?? {},
 			});
 		});
+		store.add(typeof listener === 'function' ? toDisposable(listener) : listener);
+		this._sessionDisposables.set(sessionId, store);
 	}
 }
 

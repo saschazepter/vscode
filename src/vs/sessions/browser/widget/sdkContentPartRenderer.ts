@@ -41,6 +41,7 @@ export interface IRenderedContentPart extends IDisposable {
 export class SdkContentPartRenderer {
 
 	private readonly _markdownRenderer: IMarkdownRenderer;
+	private readonly _renderDisposables = new WeakMap<HTMLElement, DisposableStore>();
 
 	constructor(
 		@IInstantiationService instantiationService: IInstantiationService,
@@ -89,13 +90,18 @@ export class SdkContentPartRenderer {
 		const result = this._markdownRenderer.render(part.content);
 		store.add(result);
 		el.appendChild(result.element);
+		this._renderDisposables.set(el, store);
 		return { domNode: el, dispose: () => store.dispose() };
 	}
 
 	private _updateMarkdown(part: ISdkMarkdownPart, el: HTMLElement): boolean {
+		this._renderDisposables.get(el)?.dispose();
 		dom.clearNode(el);
+		const store = new DisposableStore();
 		const result = this._markdownRenderer.render(part.content);
+		store.add(result);
 		el.appendChild(result.element);
+		this._renderDisposables.set(el, store);
 		el.classList.toggle('sdk-chat-streaming-cursor', part.isStreaming);
 		return true;
 	}
@@ -121,6 +127,7 @@ export class SdkContentPartRenderer {
 		const result = this._markdownRenderer.render(new MarkdownString(part.content));
 		store.add(result);
 		content.appendChild(result.element);
+		this._renderDisposables.set(el, store);
 
 		return { domNode: el, dispose: () => store.dispose() };
 	}
@@ -129,9 +136,13 @@ export class SdkContentPartRenderer {
 		// Update content only, keep label
 		const content = el.lastElementChild;
 		if (content) {
+			this._renderDisposables.get(el)?.dispose();
 			dom.clearNode(content as HTMLElement);
+			const store = new DisposableStore();
 			const result = this._markdownRenderer.render(new MarkdownString(part.content));
+			store.add(result);
 			content.appendChild(result.element);
+			this._renderDisposables.set(el, store);
 		}
 		// Update shimmer on label
 		const labelText = el.firstElementChild?.lastElementChild;
