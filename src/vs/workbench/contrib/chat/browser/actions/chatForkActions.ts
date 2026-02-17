@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Codicon } from '../../../../../base/common/codicons.js';
+import { onUnexpectedError } from '../../../../../base/common/errors.js';
 import { revive } from '../../../../../base/common/marshalling.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { generateUuid } from '../../../../../base/common/uuid.js';
@@ -85,12 +86,10 @@ export function registerChatForkActions() {
 
 				// Defer navigation until after the slash command flow completes.
 				const newSessionResource = modelRef.object.sessionResource;
-				setTimeout(async () => {
-					try {
-						await chatWidgetService.openSession(newSessionResource, ChatViewPaneTarget);
-					} finally {
-						modelRef.dispose();
-					}
+				setTimeout(() => {
+					chatWidgetService.openSession(newSessionResource, ChatViewPaneTarget)
+						.catch(onUnexpectedError)
+						.finally(() => modelRef.dispose());
 				}, 0);
 				return;
 			}
