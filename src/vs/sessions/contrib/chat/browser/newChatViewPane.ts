@@ -7,7 +7,7 @@ import './media/chatWidget.css';
 import './media/chatWelcomePart.css';
 import * as dom from '../../../../base/browser/dom.js';
 import { Codicon } from '../../../../base/common/codicons.js';
-import { toAction } from '../../../../base/common/actions.js';
+import { Separator, toAction } from '../../../../base/common/actions.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { KeyCode } from '../../../../base/common/keyCodes.js';
 import { Disposable, DisposableStore, MutableDisposable } from '../../../../base/common/lifecycle.js';
@@ -50,6 +50,7 @@ import { IViewDescriptorService } from '../../../../workbench/common/views.js';
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
 import { IFileDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 import { IWorkspaceEditingService } from '../../../../workbench/services/workspaces/common/workspaceEditing.js';
+import { IWorkspacesService, isRecentFolder } from '../../../../platform/workspaces/common/workspaces.js';
 import { IViewPaneOptions, ViewPane } from '../../../../workbench/browser/parts/views/viewPane.js';
 import { ContextMenuController } from '../../../../editor/contrib/contextmenu/browser/contextmenu.js';
 import { getSimpleEditorOptions } from '../../../../workbench/contrib/codeEditor/browser/simpleEditorOptions.js';
@@ -194,6 +195,7 @@ class NewChatWidget extends Disposable {
 		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
 		@IFileDialogService private readonly fileDialogService: IFileDialogService,
 		@IWorkspaceEditingService private readonly workspaceEditingService: IWorkspaceEditingService,
+		@IWorkspacesService private readonly workspacesService: IWorkspacesService,
 	) {
 		super();
 		this._targetConfig = this._register(new TargetConfig(options.targetConfig));
@@ -617,19 +619,46 @@ class NewChatWidget extends Disposable {
 		dom.append(button, dom.$('span.sessions-chat-dropdown-label', undefined, folderName));
 		dom.append(button, renderIcon(Codicon.chevronDown));
 
-		this._pickerWidgetDisposables.add(dom.addDisposableListener(button, dom.EventType.CLICK, async () => {
-			const selectedFolder = await this.fileDialogService.showOpenDialog({
-				canSelectFiles: false,
-				canSelectFolders: true,
-				canSelectMany: false,
-				title: localize('selectFolder', "Select Folder"),
-			});
+		const switchFolder = async (folderUri: URI) => {
+			const foldersToDelete = this.workspaceContextService.getWorkspace().folders.map(f => f.uri);
+			await this.workspaceEditingService.updateFolders(0, foldersToDelete.length, [{ uri: folderUri }]);
+			this._renderExtensionPickers(true);
+		};
 
-			if (selectedFolder?.[0]) {
-				const foldersToDelete = folders.map(f => f.uri);
-				await this.workspaceEditingService.updateFolders(0, foldersToDelete.length, [{ uri: selectedFolder[0] }]);
-				this._renderExtensionPickers(true);
-			}
+		this._pickerWidgetDisposables.add(dom.addDisposableListener(button, dom.EventType.CLICK, async () => {
+			const recentlyOpened = await this.workspacesService.getRecentlyOpened();
+			const recentFolders = recentlyOpened.workspaces
+				.filter(isRecentFolder)
+				.filter(r => !currentFolder || !isEqual(r.folderUri, currentFolder.uri))
+				.slice(0, 10);
+
+			const actions = recentFolders.map(recent => toAction({
+				id: recent.folderUri.toString(),
+				label: recent.label || basename(recent.folderUri),
+				run: () => switchFolder(recent.folderUri),
+			}));
+
+			actions.push(new Separator());
+			actions.push(toAction({
+				id: 'browse',
+				label: localize('browseFolder', "Browse..."),
+				run: async () => {
+					const selected = await this.fileDialogService.showOpenDialog({
+						canSelectFiles: false,
+						canSelectFolders: true,
+						canSelectMany: false,
+						title: localize('selectFolder', "Select Folder"),
+					});
+					if (selected?.[0]) {
+						await switchFolder(selected[0]);
+					}
+				},
+			}));
+
+			this.contextMenuService.showContextMenu({
+				getAnchor: () => button,
+				getActions: () => actions,
+			});
 		}));
 	}
 
