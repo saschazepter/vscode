@@ -129,7 +129,25 @@ steps:
       Write-Host "All required compilation folders checked."
     displayName: Validate compilation folders
 
-  - script: bash ./build/azure-pipelines/common/extract-telemetry.sh
+  - powershell: |
+      . build/azure-pipelines/win32/exec.ps1
+      $ErrorActionPreference = "Stop"
+      $extraction = "$env:BUILD_STAGINGDIRECTORY/extraction"
+      mkdir $extraction
+      Push-Location $extraction
+      exec { git clone --depth 1 https://github.com/microsoft/vscode-extension-telemetry.git }
+      exec { git clone --depth 1 https://github.com/microsoft/vscode-chrome-debug-core.git }
+      exec { git clone --depth 1 https://github.com/microsoft/vscode-node-debug2.git }
+      exec { git clone --depth 1 https://github.com/microsoft/vscode-node-debug.git }
+      exec { git clone --depth 1 https://github.com/microsoft/vscode-html-languageservice.git }
+      exec { git clone --depth 1 https://github.com/microsoft/vscode-json-languageservice.git }
+      exec { node "$env:BUILD_SOURCESDIRECTORY/node_modules/@vscode/telemetry-extractor/out/extractor.js" --sourceDir "$env:BUILD_SOURCESDIRECTORY" --excludedDir "$env:BUILD_SOURCESDIRECTORY/extensions" --outputDir . --applyEndpoints }
+      exec { node "$env:BUILD_SOURCESDIRECTORY/node_modules/@vscode/telemetry-extractor/out/extractor.js" --config "$env:BUILD_SOURCESDIRECTORY/build/azure-pipelines/common/telemetry-config.json" -o . }
+      mkdir -Force "$env:BUILD_SOURCESDIRECTORY/.build/telemetry"
+      Move-Item declarations-resolved.json "$env:BUILD_SOURCESDIRECTORY/.build/telemetry/telemetry-core.json"
+      Move-Item config-resolved.json "$env:BUILD_SOURCESDIRECTORY/.build/telemetry/telemetry-extensions.json"
+      Pop-Location
+      Remove-Item -Recurse -Force $extraction
     displayName: Generate lists of telemetry events
 
   - ${{ if or(eq(parameters.VSCODE_RUN_ELECTRON_TESTS, true), eq(parameters.VSCODE_RUN_BROWSER_TESTS, true), eq(parameters.VSCODE_RUN_REMOTE_TESTS, true)) }}:
