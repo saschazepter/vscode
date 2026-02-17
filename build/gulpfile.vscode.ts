@@ -387,14 +387,20 @@ function packageTask(platform: string, arch: string, sourceFolderName: string, d
 			}));
 
 
-		const packageSubJsonStream = gulp.src(['package.json'], { base: '.' })
-			.pipe(jsonEditor((json: Record<string, unknown>) => {
-				json.name = `sessions-${quality || 'oss-dev'}`;
-				return json;
-			}))
-			.pipe(rename('package.sub.json'));
+		const isInsiderOrExploration = quality === 'insider' || quality === 'exploration';
+		const embedded = isInsiderOrExploration
+			? (product as typeof product & { embedded?: { nameShort: string; nameLong: string; applicationName: string; dataFolderName: string; darwinBundleIdentifier: string } }).embedded
+			: undefined;
 
-		const embedded = (product as typeof product & { embedded?: { nameShort: string; nameLong: string; applicationName: string; dataFolderName: string; darwinBundleIdentifier: string } }).embedded;
+		const packageSubJsonStream = isInsiderOrExploration
+			? gulp.src(['package.json'], { base: '.' })
+				.pipe(jsonEditor((json: Record<string, unknown>) => {
+					json.name = `sessions-${quality || 'oss-dev'}`;
+					return json;
+				}))
+				.pipe(rename('package.sub.json'))
+			: undefined;
+
 		const productSubJsonStream = embedded
 			? gulp.src(['product.json'], { base: '.' })
 				.pipe(jsonEditor((json: Record<string, unknown>) => {
@@ -406,7 +412,7 @@ function packageTask(platform: string, arch: string, sourceFolderName: string, d
 					return json;
 				}))
 				.pipe(rename('product.sub.json'))
-			: gulp.src(['product.sub.json'], { base: '.', allowEmpty: true });
+			: undefined;
 
 		const license = gulp.src([product.licenseFileName, 'ThirdPartyNotices.txt', 'licenses/**'], { base: '.', allowEmpty: true });
 
@@ -443,17 +449,22 @@ function packageTask(platform: string, arch: string, sourceFolderName: string, d
 				'node_modules/vsda/**' // retain copy of `vsda` in node_modules for internal use
 			], 'node_modules.asar'));
 
-		let all = es.merge(
+		const mergeStreams = [
 			packageJsonStream,
 			productJsonStream,
-			packageSubJsonStream,
-			productSubJsonStream,
 			license,
 			api,
 			telemetry,
 			sources,
 			deps
-		);
+		];
+		if (packageSubJsonStream) {
+			mergeStreams.push(packageSubJsonStream);
+		}
+		if (productSubJsonStream) {
+			mergeStreams.push(productSubJsonStream);
+		}
+		let all = es.merge(...mergeStreams);
 
 		if (platform === 'win32') {
 			all = es.merge(all, gulp.src([
