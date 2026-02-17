@@ -43,7 +43,7 @@ export type IActiveSessionItem = (IChatSessionItem | IAgentSession) & {
 	readonly worktree: URI | undefined;
 };
 
-export interface ISessionsWorkbenchService {
+export interface ISessionsManagementService {
 	readonly _serviceBrand: undefined;
 
 	/**
@@ -75,9 +75,9 @@ export interface ISessionsWorkbenchService {
 	openNewSession(): void;
 }
 
-export const ISessionsWorkbenchService = createDecorator<ISessionsWorkbenchService>('sessionsWorkbenchService');
+export const ISessionsManagementService = createDecorator<ISessionsManagementService>('sessionsManagementService');
 
-export class SessionsWorkbenchService extends Disposable implements ISessionsWorkbenchService {
+export class SessionsManagementService extends Disposable implements ISessionsManagementService {
 
 	declare readonly _serviceBrand: undefined;
 

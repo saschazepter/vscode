@@ -35,7 +35,7 @@ import { asCSSUrl } from '../../../../base/browser/cssValue.js';
 import { FileAccess } from '../../../../base/common/network.js';
 import { localize } from '../../../../nls.js';
 import { AgentSessionProviders, getAgentSessionProviderIcon } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessions.js';
-import { ISessionsWorkbenchService } from '../../sessions/browser/sessionsWorkbenchService.js';
+import { ISessionsManagementService } from '../../sessions/browser/sessionsManagementService.js';
 import { ChatSessionPosition, getResourceForNewChatSession } from '../../../../workbench/contrib/chat/browser/chatSessions/chatSessions.contribution.js';
 import { ChatSessionPickerActionItem, IChatSessionPickerDelegate } from '../../../../workbench/contrib/chat/browser/chatSessions/chatSessionPickerActionItem.js';
 import { SearchableOptionPickerActionItem } from '../../../../workbench/contrib/chat/browser/chatSessions/searchableOptionPickerActionItem.js';
@@ -730,7 +730,7 @@ export class NewChatViewPane extends ViewPane {
 		@IOpenerService openerService: IOpenerService,
 		@IThemeService themeService: IThemeService,
 		@IHoverService hoverService: IHoverService,
-		@ISessionsWorkbenchService private readonly activeSessionService: ISessionsWorkbenchService,
+		@ISessionsManagementService private readonly activeSessionService: ISessionsManagementService,
 		@ILogService private readonly logService: ILogService,
 	) {
 		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
