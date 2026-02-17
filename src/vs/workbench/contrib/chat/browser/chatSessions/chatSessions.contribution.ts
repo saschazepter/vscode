@@ -44,7 +44,7 @@ import { IMarkdownString } from '../../../../../base/common/htmlContent.js';
 import { IViewsService } from '../../../../services/views/common/viewsService.js';
 import { ChatViewId } from '../chat.js';
 import { ChatViewPane } from '../widgetHosts/viewPane/chatViewPane.js';
-import { AgentSessionProviders, backgroundAgentDisplayName, resolveAgentSessionProviderName } from '../agentSessions/agentSessions.js';
+import { AgentSessionProviders, backgroundAgentDisplayName, getAgentSessionProviderName } from '../agentSessions/agentSessions.js';
 import { BugIndicatingError, isCancellationError } from '../../../../../base/common/errors.js';
 import { IEditorGroupsService } from '../../../../services/editor/common/editorGroupsService.js';
 import { LocalChatSessionUri } from '../../common/model/chatUri.js';
@@ -300,19 +300,6 @@ export class ChatSessionsService extends Disposable implements IChatSessionsServ
 
 	private readonly _sessions = new ResourceMap<ContributedChatSessionData>();
 
-	/**
-	 * Lightweight options store for session resources that don't have full
-	 * `ContributedChatSessionData` yet (deferred session creation). Options
-	 * stored here are consumed by picker widgets and the welcome part. Once
-	 * a real session is created via `getOrCreateChatSession`, options are
-	 * migrated to the `ContributedChatSessionData`.
-	 */
-	private readonly _pendingSessionOptions = new ResourceMap<Map<string, string | IChatSessionProviderOptionItem>>();
-
-	private readonly _providerNameOverrides = new Map<string, string>();
-	private readonly _onDidChangeProviderNameOverride = this._register(new Emitter<string>());
-	readonly onDidChangeProviderNameOverride = this._onDidChangeProviderNameOverride.event;
-
 	private readonly _hasCanDelegateProvidersKey: IContextKey<boolean>;
 
 	constructor(
@@ -358,7 +345,7 @@ export class ChatSessionsService extends Disposable implements IChatSessionsServ
 			const activatedProviders = [...builtinSessionProviders, ...contributedSessionProviders.read(reader)];
 			for (const provider of Object.values(AgentSessionProviders)) {
 				if (activatedProviders.includes(provider)) {
-					reader.store.add(registerNewSessionInPlaceAction(provider, resolveAgentSessionProviderName(this, provider)));
+					reader.store.add(registerNewSessionInPlaceAction(provider, getAgentSessionProviderName(provider)));
 				}
 			}
 		}));
@@ -1039,29 +1026,12 @@ export class ChatSessionsService extends Disposable implements IChatSessionsServ
 
 	public getSessionOption(sessionResource: URI, optionId: string): string | IChatSessionProviderOptionItem | undefined {
 		const session = this._sessions.get(sessionResource);
-		if (session) {
-			return session.getOption(optionId);
-		}
-		// Fall back to the pending options store for resources that don't
-		// have full session data yet (deferred session creation).
-		return this._pendingSessionOptions.get(sessionResource)?.get(optionId);
+		return session?.getOption(optionId);
 	}
 
 	public setSessionOption(sessionResource: URI, optionId: string, value: string | IChatSessionProviderOptionItem): boolean {
 		const session = this._sessions.get(sessionResource);
-		if (session) {
-			session.setOption(optionId, value);
-			return true;
-		}
-		// Store in the pending options map for deferred session creation.
-		// These are consumed by the welcome part and input toolbar pickers.
-		let pending = this._pendingSessionOptions.get(sessionResource);
-		if (!pending) {
-			pending = new Map();
-			this._pendingSessionOptions.set(sessionResource, pending);
-		}
-		pending.set(optionId, value);
-		return true;
+		return !!session?.setOption(optionId, value);
 	}
 
 	/**
@@ -1164,24 +1134,6 @@ export class ChatSessionsService extends Disposable implements IChatSessionsServ
 
 	public getContentProviderSchemes(): string[] {
 		return Array.from(this._contentProviders.keys());
-	}
-
-	public getProviderNameOverride(providerType: string): string | undefined {
-		return this._providerNameOverrides.get(providerType);
-	}
-
-	public setProviderNameOverride(providerType: string, name: string | undefined): void {
-		if (name === undefined) {
-			if (this._providerNameOverrides.delete(providerType)) {
-				this._onDidChangeProviderNameOverride.fire(providerType);
-			}
-		} else {
-			const previous = this._providerNameOverrides.get(providerType);
-			if (previous !== name) {
-				this._providerNameOverrides.set(providerType, name);
-				this._onDidChangeProviderNameOverride.fire(providerType);
-			}
-		}
 	}
 }
 

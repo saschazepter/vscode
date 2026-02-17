@@ -27,7 +27,7 @@ import { ILifecycleService } from '../../../../services/lifecycle/common/lifecyc
 import { Extensions, IOutputChannelRegistry, IOutputService } from '../../../../services/output/common/output.js';
 import { ChatSessionStatus as AgentSessionStatus, IChatSessionFileChange, IChatSessionFileChange2, IChatSessionItem, IChatSessionsExtensionPoint, IChatSessionsService } from '../../common/chatSessionsService.js';
 import { IChatWidgetService } from '../chat.js';
-import { AgentSessionProviders, getAgentSessionProvider, getAgentSessionProviderIcon, resolveAgentSessionProviderName, isBuiltInAgentSessionProvider } from './agentSessions.js';
+import { AgentSessionProviders, getAgentSessionProvider, getAgentSessionProviderIcon, getAgentSessionProviderName, isBuiltInAgentSessionProvider } from './agentSessions.js';
 
 //#region Interfaces, Types
 
@@ -426,11 +426,12 @@ export class AgentSessionsModel extends Disposable implements IAgentSessionsMode
 	}
 
 	private registerListeners(): void {
-		this._register(this.workspaceContextService.onDidChangeWorkspaceFolders(() => this.resolve(undefined)));
+
 		// Sessions changes
 		this._register(this.chatSessionsService.onDidChangeItemsProviders(({ chatSessionType }) => this.resolve(chatSessionType)));
 		this._register(this.chatSessionsService.onDidChangeAvailability(() => this.resolve(undefined)));
 		this._register(this.chatSessionsService.onDidChangeSessionItems(({ chatSessionType }) => this.updateItems([chatSessionType], CancellationToken.None)));
+		this._register(this.workspaceContextService.onDidChangeWorkspaceFolders(() => this.resolve(undefined)));
 
 		// State
 		this._register(this.storageService.onWillSaveState(() => {
@@ -502,7 +503,7 @@ export class AgentSessionsModel extends Disposable implements IAgentSessionsMode
 				let providerLabel: string;
 				const agentSessionProvider = getAgentSessionProvider(chatSessionType);
 				if (agentSessionProvider !== undefined) {
-					providerLabel = resolveAgentSessionProviderName(this.chatSessionsService, agentSessionProvider);
+					providerLabel = getAgentSessionProviderName(agentSessionProvider);
 					icon = getAgentSessionProviderIcon(agentSessionProvider);
 				} else {
 					providerLabel = mapSessionContributionToType.get(chatSessionType)?.name ?? chatSessionType;

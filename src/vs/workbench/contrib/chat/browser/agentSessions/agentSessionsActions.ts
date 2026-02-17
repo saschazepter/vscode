@@ -51,10 +51,7 @@ export class ToggleShowAgentSessionsAction extends Action2 {
 				id: MenuId.ChatWelcomeContext,
 				group: '0_sessions',
 				order: 2,
-				when: ContextKeyExpr.and(
-					ChatContextKeys.inChatEditor.negate(),
-					ChatContextKeys.agentSessionsViewerDedicated.negate()
-				)
+				when: ChatContextKeys.inChatEditor.negate()
 			}
 		});
 	}
@@ -72,10 +69,7 @@ MenuRegistry.appendMenuItem(MenuId.ChatWelcomeContext, {
 	title: localize2('chat.sessionsOrientation', "Sessions Orientation"),
 	group: '0_sessions',
 	order: 1,
-	when: ContextKeyExpr.and(
-		ChatContextKeys.inChatEditor.negate(),
-		ChatContextKeys.agentSessionsViewerDedicated.negate()
-	)
+	when: ChatContextKeys.inChatEditor.negate()
 });
 
 export class SetAgentSessionsOrientationStackedAction extends Action2 {

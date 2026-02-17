@@ -293,27 +293,6 @@ export interface IChatSessionsService {
 
 	registerChatModelChangeListeners(chatService: IChatService, chatSessionType: string, onChange: () => void): IDisposable;
 	getInProgressSessionDescription(chatModel: IChatModel): string | undefined;
-
-	// #region Provider name overrides
-
-	/**
-	 * Event that fires when a provider name override changes.
-	 */
-	readonly onDidChangeProviderNameOverride: Event<string>;
-
-	/**
-	 * Get the display name for a provider type. If an override has been set via
-	 * `setProviderNameOverride`, that value is returned. Otherwise returns `undefined`
-	 * and callers should fall back to `getAgentSessionProviderName`.
-	 */
-	getProviderNameOverride(providerType: string): string | undefined;
-
-	/**
-	 * Set a display name override for a provider type. Pass `undefined` to clear.
-	 */
-	setProviderNameOverride(providerType: string, name: string | undefined): void;
-
-	// #endregion
 }
 
 export function isSessionInProgressStatus(state: ChatSessionStatus): boolean {

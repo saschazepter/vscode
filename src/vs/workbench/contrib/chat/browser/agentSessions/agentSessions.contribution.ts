@@ -78,7 +78,6 @@ MenuRegistry.appendMenuItem(MenuId.AgentSessionsToolbar, {
 	when: ContextKeyExpr.and(
 		ChatContextKeys.agentSessionsViewerOrientation.isEqualTo(AgentSessionsViewerOrientation.Stacked),
 		ChatContextKeys.agentSessionsViewerPosition.isEqualTo(AgentSessionsViewerPosition.Right),
-		ChatContextKeys.agentSessionsViewerDedicated.negate()
 	)
 });
 
@@ -93,7 +92,6 @@ MenuRegistry.appendMenuItem(MenuId.AgentSessionsToolbar, {
 	when: ContextKeyExpr.and(
 		ChatContextKeys.agentSessionsViewerOrientation.isEqualTo(AgentSessionsViewerOrientation.Stacked),
 		ChatContextKeys.agentSessionsViewerPosition.isEqualTo(AgentSessionsViewerPosition.Left),
-		ChatContextKeys.agentSessionsViewerDedicated.negate()
 	)
 });
 
@@ -108,7 +106,6 @@ MenuRegistry.appendMenuItem(MenuId.AgentSessionsToolbar, {
 	when: ContextKeyExpr.and(
 		ChatContextKeys.agentSessionsViewerOrientation.isEqualTo(AgentSessionsViewerOrientation.SideBySide),
 		ChatContextKeys.agentSessionsViewerPosition.isEqualTo(AgentSessionsViewerPosition.Right),
-		ChatContextKeys.agentSessionsViewerDedicated.negate()
 	)
 });
 
@@ -123,7 +120,6 @@ MenuRegistry.appendMenuItem(MenuId.AgentSessionsToolbar, {
 	when: ContextKeyExpr.and(
 		ChatContextKeys.agentSessionsViewerOrientation.isEqualTo(AgentSessionsViewerOrientation.SideBySide),
 		ChatContextKeys.agentSessionsViewerPosition.isEqualTo(AgentSessionsViewerPosition.Left),
-		ChatContextKeys.agentSessionsViewerDedicated.negate()
 	)
 });
 
@@ -143,7 +139,6 @@ MenuRegistry.appendMenuItem(MenuId.ChatViewSessionTitleToolbar, {
 			ChatContextKeys.agentSessionsViewerOrientation.isEqualTo(AgentSessionsViewerOrientation.Stacked),
 		),
 		ChatContextKeys.agentSessionsViewerPosition.isEqualTo(AgentSessionsViewerPosition.Left),
-		ChatContextKeys.agentSessionsViewerDedicated.negate()
 	)
 });
 
@@ -161,7 +156,6 @@ MenuRegistry.appendMenuItem(MenuId.ChatViewSessionTitleToolbar, {
 			ChatContextKeys.agentSessionsViewerOrientation.isEqualTo(AgentSessionsViewerOrientation.Stacked),
 		),
 		ChatContextKeys.agentSessionsViewerPosition.isEqualTo(AgentSessionsViewerPosition.Right),
-		ChatContextKeys.agentSessionsViewerDedicated.negate()
 	)
 });
 

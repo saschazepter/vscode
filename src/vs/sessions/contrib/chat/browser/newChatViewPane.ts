@@ -35,7 +35,7 @@ import { isEqual } from '../../../../base/common/resources.js';
 import { asCSSUrl } from '../../../../base/browser/cssValue.js';
 import { FileAccess } from '../../../../base/common/network.js';
 import { localize } from '../../../../nls.js';
-import { AgentSessionProviders, resolveAgentSessionProviderName } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessions.js';
+import { AgentSessionProviders, getAgentSessionProviderName } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessions.js';
 import { ISessionsWorkbenchService } from '../../sessions/browser/sessionsWorkbenchService.js';
 import { ChatSessionPosition, getResourceForNewChatSession } from '../../../../workbench/contrib/chat/browser/chatSessions/chatSessions.contribution.js';
 import { ChatSessionPickerActionItem, IChatSessionPickerDelegate } from '../../../../workbench/contrib/chat/browser/chatSessions/chatSessionPickerActionItem.js';
@@ -421,7 +421,7 @@ class NewChatWidget extends Disposable {
 				continue;
 			}
 
-			const name = resolveAgentSessionProviderName(this.chatSessionsService, sessionType, true);
+			const name = getAgentSessionProviderName(sessionType, true);
 			const button = dom.$('.chat-full-welcome-target-button');
 			button.appendChild(dom.$('span.chat-full-welcome-target-label', undefined, name));
 

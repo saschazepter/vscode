@@ -1344,8 +1344,6 @@ export interface IChatService {
 
 	readonly onDidCreateModel: Event<IChatModel>;
 
-	readonly onDidChangeSessions: Event<void>;
-
 	/**
 	 * An observable containing all live chat models.
 	 */

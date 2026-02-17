@@ -11,7 +11,7 @@ import { registerAction2, Action2, MenuId } from '../../../../../platform/action
 import { ContextKeyExpr } from '../../../../../platform/contextkey/common/contextkey.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
 import { IChatSessionsService } from '../../common/chatSessionsService.js';
-import { AgentSessionProviders, getAgentSessionProvider, resolveAgentSessionProviderName } from './agentSessions.js';
+import { AgentSessionProviders, getAgentSessionProvider, getAgentSessionProviderName } from './agentSessions.js';
 import { AgentSessionStatus, IAgentSession } from './agentSessionsModel.js';
 import { IAgentSessionsFilter, IAgentSessionsFilterExcludes } from './agentSessionsViewer.js';
 
@@ -136,7 +136,7 @@ export class AgentSessionsFilter extends Disposable implements Required<IAgentSe
 		if (!showProviders || showProviders.has(AgentSessionProviders.Local)) {
 			providers.push({
 				id: AgentSessionProviders.Local,
-				label: resolveAgentSessionProviderName(this.chatSessionsService, AgentSessionProviders.Local)
+				label: getAgentSessionProviderName(AgentSessionProviders.Local, true)
 			});
 		}
 
@@ -151,7 +151,7 @@ export class AgentSessionsFilter extends Disposable implements Required<IAgentSe
 			const knownProvider = getAgentSessionProvider(contribution.type);
 			providers.push({
 				id: contribution.type,
-				label: knownProvider ? resolveAgentSessionProviderName(this.chatSessionsService, knownProvider) : contribution.displayName
+				label: knownProvider ? getAgentSessionProviderName(knownProvider, true) : contribution.displayName
 			});
 		}
 
