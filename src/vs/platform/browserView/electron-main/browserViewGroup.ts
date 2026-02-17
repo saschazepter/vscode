@@ -130,7 +130,7 @@ export class BrowserViewGroup extends Disposable implements ICDPBrowserTarget, I
 
 		const target = await this.browserViewMainService.createTarget(url, browserContextId);
 		if (target instanceof BrowserView) {
-			this.addView(target.id);
+			await this.addView(target.id);
 		}
 		return target;
 	}

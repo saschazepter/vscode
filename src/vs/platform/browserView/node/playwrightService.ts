@@ -54,21 +54,27 @@ export class PlaywrightService extends Disposable implements IPlaywrightService 
 
 				this.logService.debug('[PlaywrightService] Connected to browser');
 
-				browser.on('disconnected', () => {
-					this.logService.debug('[PlaywrightService] Browser disconnected');
-					this._browser = undefined;
-					this._pages = undefined;
-					this._initPromise = undefined;
-				});
-
 				// This can happen if the service was disposed while we were waiting for the connection. In that case, clean up immediately.
 				if (this._initPromise === undefined) {
 					browser.close().catch(() => { /* ignore */ });
 					throw new Error('PlaywrightService was disposed during initialization');
 				}
 
-				this._browser = browser;
 				const pageMap = this._register(new PlaywrightPageMap(group, browser, this.logService));
+
+				browser.on('disconnected', () => {
+					this.logService.debug('[PlaywrightService] Browser disconnected');
+					if (this._browser === browser) {
+						group.dispose();
+						pageMap.dispose();
+
+						this._browser = undefined;
+						this._pages = undefined;
+						this._initPromise = undefined;
+					}
+				});
+
+				this._browser = browser;
 				this._pages = pageMap;
 			} catch (e) {
 				this._initPromise = undefined;
