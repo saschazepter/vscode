@@ -663,7 +663,12 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 
 	//#region Model Management
 
-	private async applyModel(): Promise<void> {
+	private applyModel(): void {
+		this.restoringSession = this._applyModel();
+		this.restoringSession.finally(() => this.restoringSession = undefined);
+	}
+
+	private async _applyModel(): Promise<void> {
 		const sessionResource = this.getTransferredOrPersistedSessionInfo();
 		const modelRef = sessionResource ? await this.chatService.getOrRestoreSession(sessionResource) : undefined;
 		await this.showModel(modelRef);
@@ -748,6 +753,12 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 	}
 
 	async loadSession(sessionResource: URI): Promise<IChatModel | undefined> {
+		// Wait for any in-progress session restore (e.g. from onDidChangeAgents)
+		// to finish first, so our showModel call is guaranteed to be the last one.
+		if (this.restoringSession) {
+			await this.restoringSession;
+		}
+
 		return this.progressService.withProgress({ location: ChatViewId, delay: 200 }, async () => {
 			let queue: Promise<void> = Promise.resolve();
 
