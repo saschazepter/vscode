@@ -46,7 +46,7 @@ export interface IAgentSessionsControlOptions extends IAgentSessionsSorterOption
 	collapseOlderSections?(): boolean;
 
 	overrideSessionOpenOptions?(openEvent: IOpenEvent<AgentSessionListItem | undefined>): ISessionOpenOptions;
-	openSession?(resource: URI, openOptions?: ISessionOpenOptions): void;
+	overrideSessionOpen?(resource: URI, openOptions?: ISessionOpenOptions): Promise<void>;
 	notifySessionOpened?(resource: URI, widget: IChatWidget): void;
 }
 
@@ -147,15 +147,13 @@ export class AgentSessionsControl extends Disposable implements IAgentSessionsCo
 				if (element.section === AgentSessionSection.Archived && this.options.filter.getExcludes().archived) {
 					return true; // Archived section is collapsed when archived are excluded
 				}
-				// Collapse older time sections if option is enabled
 				if (this.options.collapseOlderSections?.()) {
 					const olderSections = [AgentSessionSection.Week, AgentSessionSection.Older, AgentSessionSection.Archived];
 					if (olderSections.includes(element.section)) {
-						return true;
+						return true; // Collapse older time sections if option is enabled
 					}
-					// Also collapse Yesterday when there are sessions from Today
 					if (element.section === AgentSessionSection.Yesterday && this.hasTodaySessions()) {
-						return true;
+						return true; // Also collapse Yesterday when there are sessions from Today
 					}
 				}
 			}
@@ -241,6 +239,17 @@ export class AgentSessionsControl extends Disposable implements IAgentSessionsCo
 		}));
 	}
 
+	private hasTodaySessions(): boolean {
+		const startOfToday = new Date().setHours(0, 0, 0, 0);
+
+		return this.agentSessionsService.model.sessions.some(session =>
+			!session.isArchived() && (
+				isSessionInProgressStatus(session.status) ||
+				getAgentSessionTime(session.timing) >= startOfToday
+			)
+		);
+	}
+
 	private async openAgentSession(e: IOpenEvent<AgentSessionListItem | undefined>): Promise<void> {
 		const element = e.element;
 		if (!element || isAgentSessionSection(element)) {
@@ -253,8 +262,8 @@ export class AgentSessionsControl extends Disposable implements IAgentSessionsCo
 		});
 
 		const options = this.options.overrideSessionOpenOptions?.(e) ?? e;
-		if (this.options.openSession) {
-			this.options.openSession(element.resource, options);
+		if (this.options.overrideSessionOpen) {
+			await this.options.overrideSessionOpen(element.resource, options);
 		} else {
 			const widget = await this.instantiationService.invokeFunction(openSession, element, options);
 			if (widget) {
@@ -360,23 +369,10 @@ export class AgentSessionsControl extends Disposable implements IAgentSessionsCo
 		return this.agentSessionsService.model.resolve(undefined);
 	}
 
-	/**
-	 * Returns whether there are any non-archived sessions from today
-	 * (either in-progress or with activity since midnight).
-	 */
-	private hasTodaySessions(): boolean {
-		const startOfToday = new Date().setHours(0, 0, 0, 0);
-		return this.agentSessionsService.model.sessions.some(session =>
-			!session.isArchived() && (
-				isSessionInProgressStatus(session.status) ||
-				getAgentSessionTime(session.timing) >= startOfToday
-			)
-		);
-	}
-
 	async update(): Promise<void> {
 		return this.updateSessionsListThrottler.queue(async () => {
 			await this.sessionsList?.updateChildren();
+
 			this._onDidUpdate.fire();
 		});
 	}
@@ -441,5 +437,4 @@ export class AgentSessionsControl extends Disposable implements IAgentSessionsCo
 
 		return true;
 	}
-
 }
