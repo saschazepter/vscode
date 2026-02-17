@@ -7,6 +7,7 @@ import assert from 'assert';
 import { LayoutSettings, NotificationsPosition } from '../../services/layout/browser/layoutService.js';
 import { TestConfigurationService } from '../../../platform/configuration/test/common/testConfigurationService.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../base/test/common/utils.js';
+import { DEFAULT_CUSTOM_TITLEBAR_HEIGHT } from '../../../platform/window/common/window.js';
 
 suite('Notifications Position', () => {
 
@@ -66,6 +67,36 @@ suite('Notifications Position', () => {
 
 		test('top-right position hides status bar bell', () => {
 			assert.strictEqual(getDesiredAlignment(NotificationsPosition.TOP_RIGHT), 'hidden');
+		});
+	});
+
+	suite('Top Offset for Top-Right', () => {
+
+		function computeTopOffset(position: NotificationsPosition, titleBarVisible: boolean): number | undefined {
+			if (position !== NotificationsPosition.TOP_RIGHT) {
+				return undefined;
+			}
+			let topOffset = 7;
+			if (titleBarVisible) {
+				topOffset += DEFAULT_CUSTOM_TITLEBAR_HEIGHT;
+			}
+			return topOffset;
+		}
+
+		test('bottom-right has no top offset', () => {
+			assert.strictEqual(computeTopOffset(NotificationsPosition.BOTTOM_RIGHT, true), undefined);
+		});
+
+		test('bottom-left has no top offset', () => {
+			assert.strictEqual(computeTopOffset(NotificationsPosition.BOTTOM_LEFT, true), undefined);
+		});
+
+		test('top-right without titlebar has 7px offset', () => {
+			assert.strictEqual(computeTopOffset(NotificationsPosition.TOP_RIGHT, false), 7);
+		});
+
+		test('top-right with titlebar has 42px offset', () => {
+			assert.strictEqual(computeTopOffset(NotificationsPosition.TOP_RIGHT, true), 42);
 		});
 	});
 
