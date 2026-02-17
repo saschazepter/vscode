@@ -71,13 +71,20 @@ const chatViewDescriptor: IViewDescriptor = {
 	},
 	ctorDescriptor: new SyncDescriptor(ChatViewPane),
 	when: ContextKeyExpr.or(
-		IsSessionsWindowContext,
-		ContextKeyExpr.or(
-			ChatContextKeys.Setup.hidden,
-			ChatContextKeys.Setup.disabled
-		)?.negate(),
-		ChatContextKeys.panelParticipantRegistered,
-		ChatContextKeys.extensionInvalid
+		// In sessions window: only show when there's an active session
+		ContextKeyExpr.and(IsSessionsWindowContext, ContextKeyExpr.has('isNewChatSession').negate()),
+		// In editor window: show based on standard conditions
+		ContextKeyExpr.and(
+			IsSessionsWindowContext.negate(),
+			ContextKeyExpr.or(
+				ContextKeyExpr.or(
+					ChatContextKeys.Setup.hidden,
+					ChatContextKeys.Setup.disabled
+				)?.negate(),
+				ChatContextKeys.panelParticipantRegistered,
+				ChatContextKeys.extensionInvalid
+			)
+		)
 	),
 	windowVisibility: WindowVisibility.Both
 };

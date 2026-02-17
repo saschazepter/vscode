@@ -213,14 +213,9 @@ export class ChatEditorInput extends EditorInput implements IEditorCloseHandler 
 		if (this._sessionResource) {
 			this.modelRef.value = await this.chatService.loadSessionForResource(this._sessionResource, ChatAgentLocation.Chat, CancellationToken.None);
 
-			// For local session only, if we find no existing session, try to load from options data or create a new one
+			// For local session only, if we find no existing session, create a new one
 			if (!this.model && LocalChatSessionUri.parseLocalSessionId(this._sessionResource)) {
-				if (this.options.target?.data) {
-					// Fall back to loading from data if session couldn't be loaded (e.g., branched session restored)
-					this.modelRef.value = this.chatService.loadSessionFromContent(this.options.target.data);
-				} else {
-					this.modelRef.value = this.chatService.startSession(ChatAgentLocation.Chat, { canUseTools: true });
-				}
+				this.modelRef.value = this.chatService.startSession(ChatAgentLocation.Chat, { canUseTools: true });
 			}
 		} else if (!this.options.target) {
 			this.modelRef.value = this.chatService.startSession(ChatAgentLocation.Chat, { canUseTools: !inputType });

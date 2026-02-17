@@ -18,7 +18,7 @@ import { IWorkbenchContribution } from '../../../../workbench/common/contributio
 import { IActionViewItemService } from '../../../../platform/actions/browser/actionViewItemService.js';
 import { URI } from '../../../../base/common/uri.js';
 import { IAgentSessionsService } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsService.js';
-import { IActiveSessionService } from './activeSessionService.js';
+import { ISessionsWorkbenchService } from './sessionsWorkbenchService.js';
 import { FocusAgentSessionsAction } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsActions.js';
 import { AgentSessionsPicker } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsPicker.js';
 import { autorun } from '../../../../base/common/observable.js';
@@ -60,7 +60,7 @@ export class SessionsTitleBarWidget extends BaseActionViewItem {
 		options: IBaseActionViewItemOptions | undefined,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@IHoverService private readonly hoverService: IHoverService,
-		@IActiveSessionService private readonly activeSessionService: IActiveSessionService,
+		@ISessionsWorkbenchService private readonly activeSessionService: ISessionsWorkbenchService,
 		@IChatService private readonly chatService: IChatService,
 		@IAgentSessionsService private readonly agentSessionsService: IAgentSessionsService,
 		@ICommandService private readonly commandService: ICommandService,

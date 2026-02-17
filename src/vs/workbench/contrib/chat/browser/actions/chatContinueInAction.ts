@@ -36,7 +36,7 @@ import { ChatSendResult, IChatService } from '../../common/chatService/chatServi
 import { IChatSessionsExtensionPoint, IChatSessionsService } from '../../common/chatSessionsService.js';
 import { ChatAgentLocation } from '../../common/constants.js';
 import { PROMPT_LANGUAGE_ID } from '../../common/promptSyntax/promptTypes.js';
-import { AgentSessionProviders, getAgentSessionProviderIcon, resolveAgentSessionProviderName } from '../agentSessions/agentSessions.js';
+import { AgentSessionProviders, getAgentSessionProviderIcon, getAgentSessionProviderName } from '../agentSessions/agentSessions.js';
 import { IChatWidget, IChatWidgetService } from '../chat.js';
 import { ctxHasEditorModification } from '../chatEditing/chatEditingEditorContextKeys.js';
 import { CHAT_SETUP_ACTION_ID } from './chatActions.js';
@@ -132,19 +132,19 @@ export class ChatContinueInSessionActionItem extends ActionWidgetDropdownActionV
 				// Continue in Background
 				const backgroundContrib = contributions.find(contrib => contrib.type === AgentSessionProviders.Background);
 				if (backgroundContrib && backgroundContrib.canDelegate) {
-					actions.push(this.toAction(AgentSessionProviders.Background, backgroundContrib, chatSessionsService, instantiationService, location));
+					actions.push(this.toAction(AgentSessionProviders.Background, backgroundContrib, instantiationService, location));
 				}
 
 				// Continue in Cloud
 				const cloudContrib = contributions.find(contrib => contrib.type === AgentSessionProviders.Cloud);
 				if (cloudContrib && cloudContrib.canDelegate) {
-					actions.push(this.toAction(AgentSessionProviders.Cloud, cloudContrib, chatSessionsService, instantiationService, location));
+					actions.push(this.toAction(AgentSessionProviders.Cloud, cloudContrib, instantiationService, location));
 				}
 
 				// Offer actions to enter setup if we have no contributions
 				if (actions.length === 0) {
-					actions.push(this.toSetupAction(AgentSessionProviders.Background, chatSessionsService, instantiationService));
-					actions.push(this.toSetupAction(AgentSessionProviders.Cloud, chatSessionsService, instantiationService));
+					actions.push(this.toSetupAction(AgentSessionProviders.Background, instantiationService));
+					actions.push(this.toSetupAction(AgentSessionProviders.Cloud, instantiationService));
 				}
 
 				return actions;
@@ -152,15 +152,15 @@ export class ChatContinueInSessionActionItem extends ActionWidgetDropdownActionV
 		};
 	}
 
-	private static toAction(provider: AgentSessionProviders, contrib: IChatSessionsExtensionPoint, chatSessionsService: IChatSessionsService, instantiationService: IInstantiationService, location: ActionLocation): IActionWidgetDropdownAction {
+	private static toAction(provider: AgentSessionProviders, contrib: IChatSessionsExtensionPoint, instantiationService: IInstantiationService, location: ActionLocation): IActionWidgetDropdownAction {
 		return {
 			id: contrib.type,
 			enabled: true,
 			icon: getAgentSessionProviderIcon(provider),
 			class: undefined,
 			description: `@${contrib.name}`,
-			label: resolveAgentSessionProviderName(chatSessionsService, provider),
-			tooltip: localize('continueSessionIn', "Continue in {0}", resolveAgentSessionProviderName(chatSessionsService, provider)),
+			label: getAgentSessionProviderName(provider),
+			tooltip: localize('continueSessionIn', "Continue in {0}", getAgentSessionProviderName(provider)),
 			category: { label: localize('continueIn', "Continue In"), order: 0, showHeader: true },
 			run: () => instantiationService.invokeFunction(accessor => {
 				if (location === ActionLocation.Editor) {
@@ -171,14 +171,14 @@ export class ChatContinueInSessionActionItem extends ActionWidgetDropdownActionV
 		};
 	}
 
-	private static toSetupAction(provider: AgentSessionProviders, chatSessionsService: IChatSessionsService, instantiationService: IInstantiationService): IActionWidgetDropdownAction {
+	private static toSetupAction(provider: AgentSessionProviders, instantiationService: IInstantiationService): IActionWidgetDropdownAction {
 		return {
 			id: provider,
 			enabled: true,
 			icon: getAgentSessionProviderIcon(provider),
 			class: undefined,
-			label: resolveAgentSessionProviderName(chatSessionsService, provider),
-			tooltip: localize('continueSessionIn', "Continue in {0}", resolveAgentSessionProviderName(chatSessionsService, provider)),
+			label: getAgentSessionProviderName(provider),
+			tooltip: localize('continueSessionIn', "Continue in {0}", getAgentSessionProviderName(provider)),
 			category: { label: localize('continueIn', "Continue In"), order: 0, showHeader: true },
 			run: () => instantiationService.invokeFunction(accessor => {
 				const commandService = accessor.get(ICommandService);

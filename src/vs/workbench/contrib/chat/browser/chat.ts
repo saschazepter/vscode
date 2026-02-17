@@ -6,7 +6,6 @@
 import { IMouseWheelEvent } from '../../../../base/browser/mouseEvent.js';
 import { Event } from '../../../../base/common/event.js';
 import { IDisposable } from '../../../../base/common/lifecycle.js';
-import { IObservable } from '../../../../base/common/observable.js';
 import { URI } from '../../../../base/common/uri.js';
 import { ICodeEditor } from '../../../../editor/browser/editorBrowser.js';
 import { Selection } from '../../../../editor/common/core/selection.js';
@@ -98,19 +97,6 @@ export interface ISessionTypePickerDelegate {
 	 * and update pickers accordingly.
 	 */
 	onDidChangeActiveSessionProvider?: Event<AgentSessionProviders>;
-	/**
-	 * Optional set of allowed targets. When provided, pickers should only
-	 * show targets that are in this set.
-	 */
-	allowedTargets?: ReadonlySet<AgentSessionProviders>;
-
-	/**
-	 * Returns the pending session resource during deferred session creation.
-	 * Before a chat model is created, this resource can be used to match
-	 * `onDidChangeSessionOptions` events and read session option values
-	 * from `IChatSessionsService`.
-	 */
-	getPendingSessionResource?(): URI | undefined;
 }
 
 export const IChatWidgetService = createDecorator<IChatWidgetService>('chatWidgetService');
@@ -246,34 +232,6 @@ export interface IChatListItemRendererOptions {
 	readonly progressMessageAtBottomOfResponse?: boolean | ((mode: ChatModeKind) => boolean);
 }
 
-/**
- * Configuration options for the full welcome view in ChatWidget.
- * When showFullWelcome is enabled, these options customize the welcome experience.
- */
-export interface IChatFullWelcomeOptions {
-	/**
-	 * Maximum number of sessions to display in the grid.
-	 */
-	readonly maxSessions?: number;
-
-	/**
-	 * Whether to show the "Show on startup" checkbox.
-	 */
-	readonly showStartupCheckbox?: boolean;
-
-
-
-	/**
-	 * Callback when a session is opened from the welcome view.
-	 */
-	readonly onSessionOpened?: () => void;
-
-	/**
-	 * Callback when "View All Sessions" is clicked.
-	 */
-	readonly onViewAllSessions?: () => void;
-}
-
 export interface IChatWidgetViewOptions {
 	autoScroll?: boolean | ((mode: ChatModeKind) => boolean);
 	renderInputOnTop?: boolean;
@@ -323,20 +281,6 @@ export interface IChatWidgetViewOptions {
 	workspacePickerDelegate?: IWorkspacePickerDelegate;
 
 	/**
-	 * Set of picker action IDs to hide from the input toolbar.
-	 * Used when pickers are rendered externally (e.g. by a welcome view above the input).
-	 */
-	hiddenPickerIds?: ReadonlySet<string>;
-
-	/**
-	 * Optional filter for session option groups in the `ChatSessionPrimaryPicker`.
-	 * When provided, option groups for which this returns `true` are excluded from
-	 * the input toolbar. Use this when specific option groups are rendered externally
-	 * (e.g. repository/folder pickers in a welcome view above the input).
-	 */
-	excludeOptionGroup?: (group: { id: string; name: string }) => boolean;
-
-	/**
 	 * Optional handler for chat submission.
 	 * When provided, this handler is called before the normal input acceptance flow.
 	 * If it returns true (handled), the normal submission is skipped.
@@ -344,25 +288,6 @@ export interface IChatWidgetViewOptions {
 	 * redirect to a different workspace rather than executing locally.
 	 */
 	submitHandler?: (query: string, mode: ChatModeKind) => Promise<boolean>;
-
-	/**
-	 * When true, the getting-started tip that appears above the input in the
-	 * empty-state is not rendered.  Use this when the host provides its own
-	 * welcome experience (e.g. AgentSessionsChatWidget).
-	 */
-	disableGettingStartedTip?: boolean;
-
-	/**
-	 * When true, renders a full welcome view similar to AgentSessionsWelcomePage
-	 * with header, sessions grid, and footer when the session is empty.
-	 */
-	showFullWelcome?: boolean;
-
-	/**
-	 * Configuration options for the full welcome view.
-	 * Only used when showFullWelcome is true.
-	 */
-	fullWelcomeOptions?: IChatFullWelcomeOptions;
 }
 
 export interface IChatViewViewContext {
@@ -430,19 +355,6 @@ export interface IChatWidget {
 	readonly contribs: readonly IChatWidgetContrib[];
 
 	readonly supportsChangingModes: boolean;
-	readonly showFullWelcome: boolean;
-
-	/**
-	 * Observable for the input prefix decoration content (e.g., '> ').
-	 * When set, this is shown as a non-editable prefix before any user input.
-	 */
-	readonly inputPrefixContentObs: IObservable<string | undefined>;
-
-	/**
-	 * Sets the input prefix decoration content.
-	 * Call with undefined to clear the prefix.
-	 */
-	setInputPrefixContent(content: string | undefined): void;
 
 	getContrib<T extends IChatWidgetContrib>(id: string): T | undefined;
 	reveal(item: ChatTreeItem): void;

@@ -130,11 +130,6 @@ export namespace ChatContextKeys {
 	export const isKatexMathElement = new RawContextKey<boolean>('chatIsKatexMathElement', false, { type: 'boolean', description: localize('chatIsKatexMathElement', "True when focusing a KaTeX math element.") });
 
 	export const contextUsageHasBeenOpened = new RawContextKey<boolean>('chatContextUsageHasBeenOpened', false, { type: 'boolean', description: localize('chatContextUsageHasBeenOpened', "True when the user has opened the context window usage details.") });
-
-	/**
-	 * True when the chat widget is rendering the full welcome view (with header, sessions grid, footer).
-	 */
-	export const showFullWelcome = new RawContextKey<boolean>('chatShowFullWelcome', false, { type: 'boolean', description: localize('chatShowFullWelcome', "True when the chat widget is showing the full welcome view with sessions grid.") });
 }
 
 export namespace ChatContextKeyExprs {

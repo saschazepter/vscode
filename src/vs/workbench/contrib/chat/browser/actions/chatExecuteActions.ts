@@ -220,7 +220,7 @@ export class ChatSubmitAction extends SubmitAction {
 					when: ContextKeyExpr.and(
 						whenNotInProgress,
 						menuCondition,
-						ChatContextKeys.withinEditSessionDiff.negate()
+						ChatContextKeys.withinEditSessionDiff.negate(),
 					),
 					group: 'navigation',
 					alt: {

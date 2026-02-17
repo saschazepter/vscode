@@ -3,18 +3,21 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Disposable, DisposableStore } from '../../../../base/common/lifecycle.js';
+import { Disposable } from '../../../../base/common/lifecycle.js';
 import { IObservable, observableValue } from '../../../../base/common/observable.js';
 import { URI } from '../../../../base/common/uri.js';
-import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
+import { createDecorator, IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
+import { IContextKey, IContextKeyService, RawContextKey } from '../../../../platform/contextkey/common/contextkey.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
-import { IViewsService } from '../../../../workbench/services/views/common/viewsService.js';
-import { ChatViewId } from '../../../../workbench/contrib/chat/browser/chat.js';
+import { ISessionOpenOptions, openSession as openSessionDefault } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsOpener.js';
+import { ChatViewPaneTarget, IChatWidgetService } from '../../../../workbench/contrib/chat/browser/chat.js';
 import { IChatSessionItem, IChatSessionProviderOptionItem, IChatSessionsService } from '../../../../workbench/contrib/chat/common/chatSessionsService.js';
-import { ChatViewPane } from '../../../../workbench/contrib/chat/browser/widgetHosts/viewPane/chatViewPane.js';
+import { IChatService, IChatSendRequestOptions } from '../../../../workbench/contrib/chat/common/chatService/chatService.js';
 import { IAgentSession } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsModel.js';
 import { IAgentSessionsService } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsService.js';
+
+export const IsNewChatSessionContext = new RawContextKey<boolean>('isNewChatSession', true);
 
 //#region Active Session Service
 
@@ -38,7 +41,7 @@ export type IActiveSessionItem = (IChatSessionItem | IAgentSession) & {
 	readonly worktree: URI | undefined;
 };
 
-export interface IActiveSessionService {
+export interface ISessionsWorkbenchService {
 	readonly _serviceBrand: undefined;
 
 	/**
@@ -50,11 +53,29 @@ export interface IActiveSessionService {
 	 * Returns the currently active session, if any.
 	 */
 	getActiveSession(): IActiveSessionItem | undefined;
+
+	/**
+	 * Select an existing session as the active session.
+	 * Sets `isNewChatSession` context to false and opens the session.
+	 */
+	openSession(sessionResource: URI, openOptions?: ISessionOpenOptions): Promise<void>;
+
+	/**
+	 * Open a new session, apply options, and send the initial request.
+	 * This is the main entry point for the new-chat welcome widget.
+	 */
+	openSessionAndSend(sessionResource: URI, query: string, sendOptions: IChatSendRequestOptions, selectedOptions?: ReadonlyMap<string, IChatSessionProviderOptionItem>): Promise<void>;
+
+	/**
+	 * Switch to the new-session view.
+	 * No-op if the current session is already a new session.
+	 */
+	openNewSession(): void;
 }
 
-export const IActiveSessionService = createDecorator<IActiveSessionService>('activeSessionService');
+export const ISessionsWorkbenchService = createDecorator<ISessionsWorkbenchService>('sessionsWorkbenchService');
 
-export class ActiveSessionService extends Disposable implements IActiveSessionService {
+export class SessionsWorkbenchService extends Disposable implements ISessionsWorkbenchService {
 
 	declare readonly _serviceBrand: undefined;
 
@@ -62,22 +83,26 @@ export class ActiveSessionService extends Disposable implements IActiveSessionSe
 	readonly activeSession: IObservable<IActiveSessionItem | undefined> = this._activeSession;
 
 	private lastSelectedSession: URI | undefined;
-	private readonly widgetTrackingStore = this._register(new DisposableStore());
+	private readonly isNewChatSessionContext: IContextKey<boolean>;
 
 	constructor(
-		@IViewsService private readonly viewsService: IViewsService,
 		@IStorageService private readonly storageService: IStorageService,
 		@IAgentSessionsService private readonly agentSessionsService: IAgentSessionsService,
 		@IChatSessionsService private readonly chatSessionsService: IChatSessionsService,
+		@IChatWidgetService private readonly chatWidgetService: IChatWidgetService,
+		@IChatService private readonly chatService: IChatService,
+		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@ILogService private readonly logService: ILogService,
+		@IContextKeyService contextKeyService: IContextKeyService,
 	) {
 		super();
 
+		// Bind context key to active session state.
+		// isNewSession is false when there are any established sessions in the model.
+		this.isNewChatSessionContext = IsNewChatSessionContext.bindTo(contextKeyService);
+
 		// Load last selected session
 		this.lastSelectedSession = this.loadLastSelectedSession();
-
-		// Track the active session from the ChatBar's ChatViewPane widget
-		this.registerChatBarWidgetTracking();
 
 		// Save on shutdown
 		this._register(this.storageService.onWillSaveState(() => {
@@ -102,78 +127,6 @@ export class ActiveSessionService extends Disposable implements IActiveSessionSe
 		}));
 	}
 
-	private registerChatBarWidgetTracking(): void {
-		// Try to get the ChatViewPane
-		const chatViewPane = this.viewsService.getViewWithId<ChatViewPane>(ChatViewId);
-		if (chatViewPane) {
-			this.trackChatViewPaneWidget(chatViewPane);
-		}
-
-		// Also listen for view visibility changes to catch when the view becomes available
-		this._register(this.viewsService.onDidChangeViewVisibility(e => {
-			if (e.id === ChatViewId && e.visible) {
-				const viewPane = this.viewsService.getViewWithId<ChatViewPane>(ChatViewId);
-				if (viewPane) {
-					this.trackChatViewPaneWidget(viewPane);
-				}
-			}
-		}));
-	}
-
-	private trackChatViewPaneWidget(chatViewPane: ChatViewPane): void {
-		// Clear previous tracking
-		this.widgetTrackingStore.clear();
-
-		const widget = chatViewPane.widget;
-		if (!widget) {
-			return;
-		}
-
-		// Set initial session from current widget state
-		this.updateActiveSessionFromWidget(widget);
-
-		// Listen to model changes on the widget
-		this.widgetTrackingStore.add(widget.onDidChangeViewModel(() => {
-			this.updateActiveSessionFromWidget(widget);
-		}));
-	}
-
-	private updateActiveSessionFromWidget(widget: ChatViewPane['widget']): void {
-		const viewModel = widget.viewModel;
-		if (!viewModel?.sessionResource) {
-			return;
-		}
-
-		const sessionResource = viewModel.sessionResource;
-		this.lastSelectedSession = sessionResource;
-
-		// Try to get the full session from the model first
-		const agentSession = this.agentSessionsService.model.getSession(sessionResource);
-		if (agentSession) {
-			// For agent sessions, get repository from metadata.workingDirectory
-			const [repository, worktree] = this.getRepositoryFromMetadata(agentSession.metadata);
-			const activeSessionItem: IActiveSessionItem = {
-				...agentSession,
-				repository,
-				worktree,
-			};
-			this.logService.info(`[ActiveSessionService] Active session changed: ${sessionResource.toString()}, repository: ${repository?.toString() ?? 'none'}`);
-			this._activeSession.set(activeSessionItem, undefined);
-		} else {
-			// For new/empty sessions not yet in the model, get repository from session option
-			const repository = this.getRepositoryFromSessionOption(sessionResource);
-			const activeSessionItem: IActiveSessionItem = {
-				resource: sessionResource,
-				label: viewModel.model.title || '',
-				timing: viewModel.model.timing,
-				repository,
-				worktree: undefined
-			};
-			this.logService.info(`[ActiveSessionService] Active session changed (new): ${sessionResource.toString()}, repository: ${repository?.toString() ?? 'none'}`);
-			this._activeSession.set(activeSessionItem, undefined);
-		}
-	}
-
 	private refreshActiveSessionFromModel(): void {
 		const currentActive = this._activeSession.get();
 		if (!currentActive) {
@@ -186,15 +139,12 @@ export class ActiveSessionService extends Disposable implements IActiveSessionSe
 		}
 
 		const [repository, worktree] = this.getRepositoryFromMetadata(agentSession.metadata);
-		if (currentActive.repository?.toString() !== repository?.toString() || currentActive.worktree?.toString() !== worktree?.toString()) {
-			const activeSessionItem: IActiveSessionItem = {
-				...agentSession,
-				repository,
-				worktree,
-			};
-			this.logService.info(`[ActiveSessionService] Active session updated from model: ${currentActive.resource.toString()}, repository: ${repository?.toString() ?? 'none'}, worktree: ${worktree?.toString() ?? 'none'}`);
-			this._activeSession.set(activeSessionItem, undefined);
-		}
+		const activeSessionItem: IActiveSessionItem = {
+			...agentSession,
+			repository,
+			worktree,
+		};
+		this._activeSession.set(activeSessionItem, undefined);
 	}
 
 	private getRepositoryFromMetadata(metadata: { readonly [key: string]: unknown } | undefined): [URI | undefined, URI | undefined] {
@@ -234,6 +184,85 @@ export class ActiveSessionService extends Disposable implements IActiveSessionSe
 
 	getActiveSession(): IActiveSessionItem | undefined {
 		return this._activeSession.get();
+	}
+
+	async openSession(sessionResource: URI, openOptions?: ISessionOpenOptions): Promise<void> {
+		this.isNewChatSessionContext.set(false);
+		const session = this.agentSessionsService.model.getSession(sessionResource);
+		if (session) {
+			this.setActiveSession(session);
+			await this.instantiationService.invokeFunction(openSessionDefault, session, openOptions);
+		} else {
+			const chatWidget = await this.chatWidgetService.openSession(sessionResource, ChatViewPaneTarget);
+			if (!chatWidget?.viewModel) {
+				this.logService.warn(`[ActiveSessionService] Failed to open session: ${sessionResource.toString()}`);
+				return;
+			}
+			const repository = this.getRepositoryFromSessionOption(sessionResource);
+			const activeSessionItem: IActiveSessionItem = {
+				resource: sessionResource,
+				label: chatWidget.viewModel.model.title || '',
+				timing: chatWidget.viewModel.model.timing,
+				repository,
+				worktree: undefined
+			};
+			this.logService.info(`[ActiveSessionService] Active session changed (new): ${sessionResource.toString()}, repository: ${repository?.toString() ?? 'none'}`);
+			this._activeSession.set(activeSessionItem, undefined);
+		}
+	}
+
+	async openSessionAndSend(sessionResource: URI, query: string, sendOptions: IChatSendRequestOptions, selectedOptions?: ReadonlyMap<string, IChatSessionProviderOptionItem>): Promise<void> {
+		// 1. Open the session in ChatViewPane - this transitions views,
+		//    loads the model, and connects it to the ChatWidget so
+		//    tool invocations work.
+		await this.openSession(sessionResource);
+
+		// 2. Apply selected options to the contributed session
+		if (selectedOptions && selectedOptions.size > 0) {
+			const modelRef = this.chatService.getActiveSessionReference(sessionResource);
+			if (modelRef) {
+				const model = modelRef.object;
+				const contributedSession = model.contributedChatSession;
+				if (contributedSession) {
+					const initialSessionOptions = [...selectedOptions.entries()].map(
+						([optionId, value]) => ({ optionId, value })
+					);
+					model.setContributedChatSession({
+						...contributedSession,
+						initialSessionOptions,
+					});
+				}
+				modelRef.dispose();
+			}
+		}
+
+		// 3. Send the request through the chat service - the model is now
+		//    connected to the ChatWidget, so tools and rendering work.
+		const result = await this.chatService.sendRequest(sessionResource, query, sendOptions);
+		if (result.kind === 'rejected') {
+			this.logService.error(`[ActiveSessionService] sendRequest rejected: ${result.reason}`);
+		}
+	}
+
+	openNewSession(): void {
+		// No-op if the current session is already a new session
+		if (this.isNewChatSessionContext.get()) {
+			return;
+		}
+		this.isNewChatSessionContext.set(true);
+		this._activeSession.set(undefined, undefined);
+	}
+
+	private setActiveSession(session: IAgentSession): void {
+		this.lastSelectedSession = session.resource;
+		const [repository, worktree] = this.getRepositoryFromMetadata(session.metadata);
+		const activeSessionItem: IActiveSessionItem = {
+			...session,
+			repository,
+			worktree,
+		};
+		this.logService.info(`[ActiveSessionService] Active session changed: ${session.resource.toString()}, repository: ${repository?.toString() ?? 'none'}`);
+		this._activeSession.set(activeSessionItem, undefined);
 	}
 
 	private loadLastSelectedSession(): URI | undefined {

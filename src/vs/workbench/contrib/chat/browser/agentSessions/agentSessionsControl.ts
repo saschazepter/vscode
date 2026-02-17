@@ -46,6 +46,7 @@ export interface IAgentSessionsControlOptions extends IAgentSessionsSorterOption
 	collapseOlderSections?(): boolean;
 
 	overrideSessionOpenOptions?(openEvent: IOpenEvent<AgentSessionListItem | undefined>): ISessionOpenOptions;
+	openSession?(resource: URI, openOptions?: ISessionOpenOptions): void;
 	notifySessionOpened?(resource: URI, widget: IChatWidget): void;
 }
 
@@ -252,9 +253,13 @@ export class AgentSessionsControl extends Disposable implements IAgentSessionsCo
 		});
 
 		const options = this.options.overrideSessionOpenOptions?.(e) ?? e;
-		const widget = await this.instantiationService.invokeFunction(openSession, element, options);
-		if (widget) {
-			this.options.notifySessionOpened?.(element.resource, widget);
+		if (this.options.openSession) {
+			this.options.openSession(element.resource, options);
+		} else {
+			const widget = await this.instantiationService.invokeFunction(openSession, element, options);
+			if (widget) {
+				this.options.notifySessionOpened?.(element.resource, widget);
+			}
 		}
 	}
 

@@ -7,11 +7,15 @@ import { Codicon } from '../../../../base/common/codicons.js';
 import { ServicesAccessor } from '../../../../editor/browser/editorExtensions.js';
 import { localize2 } from '../../../../nls.js';
 import { Action2, MenuRegistry, registerAction2 } from '../../../../platform/actions/common/actions.js';
+import { ContextKeyExpr } from '../../../../platform/contextkey/common/contextkey.js';
 import { IHostService } from '../../../../workbench/services/host/browser/host.js';
 import { registerWorkbenchContribution2, WorkbenchPhase } from '../../../../workbench/common/contributions.js';
+import { IViewContainersRegistry, IViewsRegistry, Extensions as ViewExtensions, WindowVisibility } from '../../../../workbench/common/views.js';
+import { Registry } from '../../../../platform/registry/common/platform.js';
+import { SyncDescriptor } from '../../../../platform/instantiation/common/descriptors.js';
 import { AgentSessionProviders } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessions.js';
 import { isAgentSession } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsModel.js';
-import { IActiveSessionService } from '../../sessions/browser/activeSessionService.js';
+import { ISessionsWorkbenchService, IsNewChatSessionContext } from '../../sessions/browser/sessionsWorkbenchService.js';
 import { ITerminalService, ITerminalGroupService } from '../../../../workbench/contrib/terminal/browser/terminal.js';
 import { Menus } from '../../../browser/menus.js';
 import { BranchChatSessionAction } from './branchChatSessionAction.js';
@@ -19,6 +23,9 @@ import { RunScriptContribution } from './runScriptAction.js';
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
 import { AgenticPromptsService } from './promptsService.js';
 import { IPromptsService } from '../../../../workbench/contrib/chat/common/promptSyntax/service/promptsService.js';
+import { ChatViewContainerId } from '../../../../workbench/contrib/chat/browser/chat.js';
+import { IsSessionsWindowContext } from '../../../../workbench/common/contextkeys.js';
+import { NewChatViewPane, SessionsViewId } from './newChatViewPane.js';
 
 export class OpenSessionWorktreeInVSCodeAction extends Action2 {
 	static readonly ID = 'chat.openSessionWorktreeInVSCode';
@@ -38,7 +45,7 @@ export class OpenSessionWorktreeInVSCodeAction extends Action2 {
 
 	override async run(accessor: ServicesAccessor,): Promise<void> {
 		const hostService = accessor.get(IHostService);
-		const agentSessionsService = accessor.get(IActiveSessionService);
+		const agentSessionsService = accessor.get(ISessionsWorkbenchService);
 
 		const activeSession = agentSessionsService.activeSession.get();
 		if (!activeSession) {
@@ -74,7 +81,7 @@ export class OpenSessionInTerminalAction extends Action2 {
 	override async run(accessor: ServicesAccessor,): Promise<void> {
 		const terminalService = accessor.get(ITerminalService);
 		const terminalGroupService = accessor.get(ITerminalGroupService);
-		const agentSessionsService = accessor.get(IActiveSessionService);
+		const agentSessionsService = accessor.get(ISessionsWorkbenchService);
 
 		const activeSession = agentSessionsService.activeSession.get();
 		const repository = isAgentSession(activeSession) && activeSession.providerType !== AgentSessionProviders.Cloud
@@ -110,3 +117,23 @@ registerWorkbenchContribution2(RunScriptContribution.ID, RunScriptContribution, 
 
 // register services
 registerSingleton(IPromptsService, AgenticPromptsService, InstantiationType.Delayed);
+
+// --- Sessions New Chat View Registration ---
+// Registers in the same ChatBar container as the existing ChatViewPane.
+// The `when` clause ensures only the new-session pane shows when no active session exists.
+
+const chatViewContainer = Registry.as<IViewContainersRegistry>(ViewExtensions.ViewContainersRegistry).get(ChatViewContainerId);
+if (chatViewContainer) {
+	Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry).registerViews([{
+		id: SessionsViewId,
+		containerIcon: chatViewContainer.icon,
+		containerTitle: chatViewContainer.title.value,
+		singleViewPaneContainerTitle: chatViewContainer.title.value,
+		name: localize2('sessions.newChat.view', "New Session"),
+		canToggleVisibility: false,
+		canMoveView: false,
+		ctorDescriptor: new SyncDescriptor(NewChatViewPane),
+		when: ContextKeyExpr.and(IsSessionsWindowContext, IsNewChatSessionContext),
+		windowVisibility: WindowVisibility.Sessions,
+	}], chatViewContainer);
+}

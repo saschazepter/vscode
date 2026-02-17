@@ -54,11 +54,6 @@ export class DelegationSessionPickerActionItem extends SessionTypePickerActionIt
 			return true; // Always show active session type
 		}
 
-		// If the delegate specifies allowed targets, hide targets not in the set
-		if (this.delegate.allowedTargets && !this.delegate.allowedTargets.has(type)) {
-			return false;
-		}
-
 		return getAgentCanContinueIn(type);
 	}
 
