@@ -144,8 +144,16 @@ steps:
       exec { node "$env:BUILD_SOURCESDIRECTORY/node_modules/@vscode/telemetry-extractor/out/extractor.js" --sourceDir "$env:BUILD_SOURCESDIRECTORY" --excludedDir "$env:BUILD_SOURCESDIRECTORY/extensions" --outputDir . --applyEndpoints }
       exec { node "$env:BUILD_SOURCESDIRECTORY/node_modules/@vscode/telemetry-extractor/out/extractor.js" --config "$env:BUILD_SOURCESDIRECTORY/build/azure-pipelines/common/telemetry-config.json" -o . }
       mkdir -Force "$env:BUILD_SOURCESDIRECTORY/.build/telemetry"
-      Move-Item declarations-resolved.json "$env:BUILD_SOURCESDIRECTORY/.build/telemetry/telemetry-core.json"
-      Move-Item config-resolved.json "$env:BUILD_SOURCESDIRECTORY/.build/telemetry/telemetry-extensions.json"
+      if (Test-Path declarations-resolved.json) {
+        Move-Item declarations-resolved.json "$env:BUILD_SOURCESDIRECTORY/.build/telemetry/telemetry-core.json"
+      } else {
+        Write-Host "##vso[task.logissue type=warning]declarations-resolved.json not found"
+      }
+      if (Test-Path config-resolved.json) {
+        Move-Item config-resolved.json "$env:BUILD_SOURCESDIRECTORY/.build/telemetry/telemetry-extensions.json"
+      } else {
+        Write-Host "##vso[task.logissue type=warning]config-resolved.json not found"
+      }
       Pop-Location
       Remove-Item -Recurse -Force $extraction
     displayName: Generate lists of telemetry events
