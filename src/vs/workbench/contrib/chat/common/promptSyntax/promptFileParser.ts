@@ -496,7 +496,7 @@ export interface IBodyVariableReference {
  * Values can be unquoted or quoted (single or double quotes).
  *
  * @param input A string containing comma-separated values
- * @returns An IArrayValue containing the parsed values and their ranges
+ * @returns An ISequenceValue containing the parsed values and their ranges
  */
 export function parseCommaSeparatedList(stringValue: IScalarValue): ISequenceValue {
 	const result: IScalarValue[] = [];
