@@ -4,9 +4,9 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Disposable } from '../../../../base/common/lifecycle.js';
-import { autorun, debouncedObservable, derived, IObservable, observableFromEvent, observableSignalFromEvent, observableValue, runOnChange, waitForState } from '../../../../base/common/observable.js';
-import { ICodeEditor, IDiffEditor } from '../../../../editor/browser/editorBrowser.js';
-import { observableCodeEditor, ObservableCodeEditor } from '../../../../editor/browser/observableCodeEditor.js';
+import { autorun, debouncedObservable, derived, observableSignalFromEvent, observableValue, runOnChange, waitForState } from '../../../../base/common/observable.js';
+import { ICodeEditor } from '../../../../editor/browser/editorBrowser.js';
+import { observableCodeEditor } from '../../../../editor/browser/observableCodeEditor.js';
 import { ScrollType } from '../../../../editor/common/editorCommon.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { InlineChatConfigKeys } from '../common/inlineChat.js';
@@ -20,25 +20,9 @@ import { Selection, SelectionDirection } from '../../../../editor/common/core/se
 import { assertType } from '../../../../base/common/types.js';
 import { CursorChangeReason } from '../../../../editor/common/cursorEvents.js';
 import { IInlineChatSessionService } from './inlineChatSessionService.js';
-import { EditorOption } from '../../../../editor/common/config/editorOptions.js';
-import { ICodeEditorService } from '../../../../editor/browser/services/codeEditorService.js';
-import { DetailedLineRangeMapping } from '../../../../editor/common/diff/rangeMapping.js';
-import { Event } from '../../../../base/common/event.js';
-import { IChatEditingService } from '../../chat/common/editing/chatEditingService.js';
-import { IAgentSessionsService } from '../../chat/browser/agentSessions/agentSessionsService.js';
-import { URI } from '../../../../base/common/uri.js';
-import { AgentFeedbackAffordance } from './inlineChatAgentFeedbackAffordance.js';
-import { agentSessionContainsResource, editingEntriesContainResource } from '../../chat/browser/sessionResourceMatching.js';
 import { CodeActionController } from '../../../../editor/contrib/codeAction/browser/codeActionController.js';
 import { ITelemetryService } from '../../../../platform/telemetry/common/telemetry.js';
 import { generateUuid } from '../../../../base/common/uuid.js';
-
-type AgentSessionResourceContext = {
-	readonly sessionResource: URI;
-	readonly resourceUri: URI;
-};
-
-type AffordanceMode = 'off' | 'gutter' | 'editor' | 'feedback';
 
 type InlineChatAffordanceEvent = {
 	mode: string;
@@ -52,73 +36,6 @@ type InlineChatAffordanceClassification = {
 	comment: 'Tracks when the inline chat affordance is shown or selected.';
 };
 
-class InlineChatEditorContext extends Disposable {
-
-	readonly #diffInfoObs: IObservable<{ diffEditor: IDiffEditor } | undefined>;
-	readonly diffMappings: IObservable<readonly DetailedLineRangeMapping[] | undefined>;
-	readonly agentSessionResourceContextObs: IObservable<AgentSessionResourceContext | undefined>;
-
-	constructor(
-		private readonly _editor: ICodeEditor,
-		private readonly _editorObs: ObservableCodeEditor,
-		@ICodeEditorService codeEditorService: ICodeEditorService,
-		@IChatEditingService chatEditingService: IChatEditingService,
-		@IAgentSessionsService agentSessionsService: IAgentSessionsService,
-	) {
-		super();
-
-		this.#diffInfoObs = observableFromEvent<{ diffEditor: IDiffEditor } | undefined>(
-			Event.any(codeEditorService.onDiffEditorAdd, codeEditorService.onDiffEditorRemove),
-			() => {
-				if (!this._editor.getOption(EditorOption.inDiffEditor)) {
-					return undefined;
-				}
-				for (const de of codeEditorService.listDiffEditors()) {
-					if (de.getModifiedEditor() === this._editor) {
-						return { diffEditor: de };
-					}
-				}
-				return undefined;
-			}
-		);
-
-		this.diffMappings = derived(r => {
-			const info = this.#diffInfoObs.read(r);
-			if (!info) {
-				return undefined;
-			}
-			observableSignalFromEvent(this, info.diffEditor.onDidUpdateDiff).read(r);
-			return info.diffEditor.getDiffComputationResult()?.changes2 ?? [];
-		});
-
-		this.agentSessionResourceContextObs = derived(r => {
-			const model = this._editorObs.model.read(r);
-			if (!model) {
-				return undefined;
-			}
-
-			const resourceUri = model.uri;
-
-			const editingSessions = chatEditingService.editingSessionsObs.read(r);
-			for (const editingSession of editingSessions) {
-				const entries = editingSession.entries.read(r);
-				if (editingEntriesContainResource(entries, resourceUri)) {
-					return { sessionResource: editingSession.chatSessionResource, resourceUri };
-				}
-			}
-
-			observableSignalFromEvent(this, agentSessionsService.model.onDidChangeSessions).read(r);
-			for (const session of agentSessionsService.model.sessions) {
-				if (agentSessionContainsResource(session, resourceUri)) {
-					return { sessionResource: session.resource, resourceUri };
-				}
-			}
-
-			return undefined;
-		});
-	}
-}
-
 export class InlineChatAffordance extends Disposable {
 
 	readonly #editor: ICodeEditor;
@@ -131,6 +48,8 @@ export class InlineChatAffordance extends Disposable {
 		inputWidget: InlineChatInputWidget,
 		@IInstantiationService instantiationService: IInstantiationService,
 		@IConfigurationService configurationService: IConfigurationService,
+		@IChatEntitlementService chatEntiteldService: IChatEntitlementService,
+		@IInlineChatSessionService inlineChatSessionService: IInlineChatSessionService,
 		@ITelemetryService telemetryService: ITelemetryService,
 	) {
 		super();
@@ -139,40 +58,65 @@ export class InlineChatAffordance extends Disposable {
 		this.#instantiationService = instantiationService;
 
 		const editorObs = observableCodeEditor(this.#editor);
-		const context = this._store.add(this.#instantiationService.createInstance(InlineChatEditorContext, this.#editor, editorObs));
+		const affordance = observableConfigValue<'off' | 'gutter' | 'editor'>(InlineChatConfigKeys.Affordance, 'off', configurationService);
+		const debouncedSelection = debouncedObservable(editorObs.cursorSelection, 500);
 
-		const configuredAffordance = observableConfigValue<'off' | 'gutter' | 'editor'>(InlineChatConfigKeys.Affordance, 'off', configurationService);
-		const affordanceModeObs = derived<AffordanceMode>(r => context.agentSessionResourceContextObs.read(r) ? 'feedback' : configuredAffordance.read(r));
+		const selectionData = observableValue<Selection | undefined>(this, undefined);
 
-		// --- Shared selection tracking ---
-		const selectionData = this._store.add(this.#instantiationService.createInstance(SelectionTracker, editorObs, this.#editor, context.diffMappings)).selectionData;
-
+		let explicitSelection = false;
 		let affordanceId: string | undefined;
 
+		this._store.add(runOnChange(editorObs.selections, (value, _prev, events) => {
+			explicitSelection = events.every(e => e.reason === CursorChangeReason.Explicit);
+			if (!value || value.length !== 1 || value[0].isEmpty() || !explicitSelection) {
+				selectionData.set(undefined, undefined);
+			}
+		}));
+
 		this._store.add(autorun(r => {
-			const value = selectionData.read(r);
-			if (!value) {
+			const value = debouncedSelection.read(r);
+			if (!value || value.isEmpty() || !explicitSelection || this.#editor.getModel()?.getValueInRange(value).match(/^\s+$/)) {
+				selectionData.set(undefined, undefined);
 				affordanceId = undefined;
 				return;
 			}
 			affordanceId = generateUuid();
-			const mode = configuredAffordance.read(undefined);
+			const mode = affordance.read(undefined);
 			if (mode === 'gutter' || mode === 'editor') {
 				telemetryService.publicLog2<InlineChatAffordanceEvent, InlineChatAffordanceClassification>('inlineChatAffordance/shown', { mode, id: affordanceId });
+			}
+			selectionData.set(value, undefined);
+		}));
+
+		this._store.add(autorun(r => {
+			if (chatEntiteldService.sentimentObs.read(r).hidden) {
+				selectionData.set(undefined, undefined);
+			}
+		}));
+
+		const hasSessionObs = derived(r => {
+			observableSignalFromEvent(this, inlineChatSessionService.onDidChangeSessions).read(r);
+			const model = editorObs.model.read(r);
+			return model ? inlineChatSessionService.getSessionByTextModel(model.uri) !== undefined : false;
+		});
+
+		this._store.add(autorun(r => {
+			if (hasSessionObs.read(r)) {
+				selectionData.set(undefined, undefined);
 			}
 		}));
 
 		this._store.add(this.#instantiationService.createInstance(
 			InlineChatGutterAffordance,
 			editorObs,
-			derived(r => affordanceModeObs.read(r) === 'gutter' ? selectionData.read(r) : undefined),
+			derived(r => affordance.read(r) === 'gutter' ? selectionData.read(r) : undefined),
 			this.#menuData
 		));
 
 		const editorAffordance = this.#instantiationService.createInstance(
 			InlineChatEditorAffordance,
 			this.#editor,
-			derived(r => affordanceModeObs.read(r) === 'editor' ? selectionData.read(r) : undefined)
+			derived(r => affordance.read(r) === 'editor' ? selectionData.read(r) : undefined)
 		);
 		this._store.add(editorAffordance);
 		this._store.add(editorAffordance.onDidRunAction(() => {
@@ -181,15 +125,8 @@ export class InlineChatAffordance extends Disposable {
 			}
 		}));
 
-		this._store.add(this.#instantiationService.createInstance(
-			AgentFeedbackAffordance,
-			this.#editor, this.#inputWidget, selectionData, context.agentSessionResourceContextObs,
-			context.diffMappings, this.#menuData
-		));
-
-		// --- Shared: bridge _menuData → input widget show/hide ---
 		this._store.add(autorun(r => {
-			const isEditor = configuredAffordance.read(r) === 'editor';
+			const isEditor = affordance.read(r) === 'editor';
 			const controller = CodeActionController.get(this.#editor);
 			if (controller) {
 				controller.onlyLightBulbWithEmptySelection = isEditor;
@@ -199,7 +136,6 @@ export class InlineChatAffordance extends Disposable {
 		this._store.add(autorun(r => {
 			const data = this.#menuData.read(r);
 			if (!data) {
-				this.#inputWidget.hideWidget();
 				return;
 			}
 
@@ -214,7 +150,8 @@ export class InlineChatAffordance extends Disposable {
 			const editorRect = editorDomNode.getBoundingClientRect();
 			const left = data.rect.left - editorRect.left;
 
-			this.#inputWidget.show(data.lineNumber, left, data.above, { focusInput: affordanceModeObs.read(r) !== 'feedback' });
+			// Show the overlay widget
+			this.#inputWidget.show(data.lineNumber, left, data.above);
 		}));
 
 		this._store.add(autorun(r => {
@@ -243,79 +180,5 @@ export class InlineChatAffordance extends Disposable {
 		}, undefined);
 
 		await waitForState(this.#inputWidget.position, pos => pos === null);
-	}
-}
-
-// --- Selection Tracking -------------------------------------------------------
-
-/**
- * Tracks the user's explicit selection in the editor.
- * In diff editors, also accepts empty selections on diff-changed lines.
- */
-class SelectionTracker extends Disposable {
-
-	readonly selectionData = observableValue<Selection | undefined>(this, undefined);
-
-	constructor(
-		editorObs: ObservableCodeEditor,
-		editor: ICodeEditor,
-		diffMappings: IObservable<readonly DetailedLineRangeMapping[] | undefined>,
-		@IChatEntitlementService chatEntitlementService: IChatEntitlementService,
-		@IInlineChatSessionService inlineChatSessionService: IInlineChatSessionService,
-	) {
-		super();
-
-		const debouncedSelection = debouncedObservable(editorObs.cursorSelection, 500);
-		let explicitSelection = false;
-
-		this._store.add(runOnChange(editorObs.selections, (_value, _prev, events) => {
-			explicitSelection = events.every(e => e.reason === CursorChangeReason.Explicit);
-			this.selectionData.set(undefined, undefined);
-		}));
-
-		this._store.add(autorun(r => {
-			const value = debouncedSelection.read(r);
-			if (!value || !explicitSelection) {
-				this.selectionData.set(undefined, undefined);
-				return;
-			}
-
-			if (value.isEmpty()) {
-				const mappings = diffMappings.read(r);
-				if (mappings) {
-					const cursorLine = value.getPosition().lineNumber;
-					if (mappings.some(m => m.modified.contains(cursorLine))) {
-						this.selectionData.set(value, undefined);
-						return;
-					}
-				}
-				this.selectionData.set(undefined, undefined);
-				return;
-			}
-
-			if (editor.getModel()?.getValueInRange(value).match(/^\s+$/)) {
-				this.selectionData.set(undefined, undefined);
-				return;
-			}
-			this.selectionData.set(value, undefined);
-		}));
-
-		this._store.add(autorun(r => {
-			if (chatEntitlementService.sentimentObs.read(r).hidden) {
-				this.selectionData.set(undefined, undefined);
-			}
-		}));
-
-		const hasSessionObs = derived(r => {
-			observableSignalFromEvent(this, inlineChatSessionService.onDidChangeSessions).read(r);
-			const model = editorObs.model.read(r);
-			return model ? inlineChatSessionService.getSessionByTextModel(model.uri) !== undefined : false;
-		});
-
-		this._store.add(autorun(r => {
-			if (hasSessionObs.read(r)) {
-				this.selectionData.set(undefined, undefined);
-			}
-		}));
 	}
 }
