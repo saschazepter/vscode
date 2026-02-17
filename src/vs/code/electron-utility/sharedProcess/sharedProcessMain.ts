@@ -136,7 +136,7 @@ import { IMeteredConnectionService } from '../../../platform/meteredConnection/c
 import { MeteredConnectionChannelClient, METERED_CONNECTION_CHANNEL } from '../../../platform/meteredConnection/common/meteredConnectionIpc.js';
 import { IPlaywrightService } from '../../../platform/browserView/common/playwrightService.js';
 import { PlaywrightService } from '../../../platform/browserView/node/playwrightService.js';
-import { IBrowserViewGroupRemoteService, BrowserViewGroupRemoteService } from '../../../platform/browserView/common/browserViewGroupRemoteService.js';
+import { IBrowserViewGroupRemoteService, BrowserViewGroupRemoteService } from '../../../platform/browserView/node/browserViewGroupRemoteService.js';
 
 class SharedProcessMain extends Disposable implements IClientConnectionFilter {
 

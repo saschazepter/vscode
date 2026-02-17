@@ -7,7 +7,7 @@ import { Disposable } from '../../../base/common/lifecycle.js';
 import { DeferredPromise } from '../../../base/common/async.js';
 import { ILogService } from '../../log/common/log.js';
 import { IPlaywrightService } from '../common/playwrightService.js';
-import { IBrowserViewGroupRemoteService } from '../common/browserViewGroupRemoteService.js';
+import { IBrowserViewGroupRemoteService } from '../node/browserViewGroupRemoteService.js';
 import { IBrowserViewGroup } from '../common/browserViewGroup.js';
 
 // eslint-disable-next-line local/code-import-patterns

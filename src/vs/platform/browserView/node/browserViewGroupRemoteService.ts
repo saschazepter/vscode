@@ -8,7 +8,7 @@ import { Disposable } from '../../../base/common/lifecycle.js';
 import { ProxyChannel } from '../../../base/parts/ipc/common/ipc.js';
 import { createDecorator } from '../../instantiation/common/instantiation.js';
 import { IMainProcessService } from '../../ipc/common/mainProcessService.js';
-import { IBrowserViewGroup, IBrowserViewGroupService, IBrowserViewGroupViewEvent, ipcBrowserViewGroupChannelName } from './browserViewGroup.js';
+import { IBrowserViewGroup, IBrowserViewGroupService, IBrowserViewGroupViewEvent, ipcBrowserViewGroupChannelName } from '../common/browserViewGroup.js';
 
 export const IBrowserViewGroupRemoteService = createDecorator<IBrowserViewGroupRemoteService>('browserViewGroupRemoteService');
 
