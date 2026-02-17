@@ -92,7 +92,6 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 
 	private restoringSession: Promise<void> | undefined;
 	private readonly modelRef = this._register(new MutableDisposable<IChatModelReference>());
-	private _showModelSequence = 0;
 
 	private readonly activityBadge = this._register(new MutableDisposable());
 
@@ -240,17 +239,11 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 	private onDidChangeAgents(): void {
 		if (this.chatAgentService.getDefaultAgent(ChatAgentLocation.Chat)) {
 			if (!this._widget?.viewModel && !this.restoringSession) {
-				const seq = this._showModelSequence;
 				const sessionResource = this.getTransferredOrPersistedSessionInfo();
 				this.restoringSession =
 					(sessionResource ? this.chatService.getOrRestoreSession(sessionResource) : Promise.resolve(undefined)).then(async modelRef => {
 						if (!this._widget) {
 							return; // renderBody has not been called yet
-						}
-
-						if (this._showModelSequence !== seq) {
-							modelRef?.dispose();
-							return; // loadSession was called while we were restoring
 						}
 
 						// The widget may be hidden at this point, because welcome views were allowed. Use setVisible to
@@ -667,13 +660,8 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 	//#region Model Management
 
 	private async applyModel(): Promise<void> {
-		const seq = this._showModelSequence;
 		const sessionResource = this.getTransferredOrPersistedSessionInfo();
 		const modelRef = sessionResource ? await this.chatService.getOrRestoreSession(sessionResource) : undefined;
-		if (this._showModelSequence !== seq) {
-			modelRef?.dispose();
-			return; // loadSession was called while we were loading
-		}
 		await this.showModel(modelRef);
 	}
 
@@ -756,7 +744,6 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 	}
 
 	async loadSession(sessionResource: URI): Promise<IChatModel | undefined> {
-		this._showModelSequence++; // Cancel any pending applyModel
 		return this.progressService.withProgress({ location: ChatViewId, delay: 200 }, async () => {
 			let queue: Promise<void> = Promise.resolve();
 

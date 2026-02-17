@@ -42,7 +42,7 @@ import { ChatSessionPickerActionItem, IChatSessionPickerDelegate } from '../../.
 import { SearchableOptionPickerActionItem } from '../../../../workbench/contrib/chat/browser/chatSessions/searchableOptionPickerActionItem.js';
 import { ChatAgentLocation, ChatModeKind } from '../../../../workbench/contrib/chat/common/constants.js';
 import { IChatSendRequestOptions } from '../../../../workbench/contrib/chat/common/chatService/chatService.js';
-import { IChatSessionProviderOptionGroup, IChatSessionProviderOptionItem, IChatSessionsService, isModelOptionGroup } from '../../../../workbench/contrib/chat/common/chatSessionsService.js';
+import { IChatSessionProviderOptionGroup, IChatSessionProviderOptionItem, IChatSessionsService } from '../../../../workbench/contrib/chat/common/chatSessionsService.js';
 import { ILanguageModelChatMetadataAndIdentifier, ILanguageModelsService } from '../../../../workbench/contrib/chat/common/languageModels.js';
 import { IModelPickerDelegate, ModelPickerActionItem } from '../../../../workbench/contrib/chat/browser/widget/input/modelPickerActionItem.js';
 import { IChatInputPickerOptions } from '../../../../workbench/contrib/chat/browser/widget/input/chatInputPickerActionItem.js';
@@ -807,3 +807,16 @@ export class NewChatViewPane extends ViewPane {
 }
 
 // #endregion
+
+/**
+ * Check whether an option group represents the model picker.
+ * The convention is `id: 'models'` but extensions may use different IDs
+ * per session type, so we also fall back to name matching.
+ */
+function isModelOptionGroup(group: IChatSessionProviderOptionGroup): boolean {
+	if (group.id === 'models') {
+		return true;
+	}
+	const nameLower = group.name.toLowerCase();
+	return nameLower === 'model' || nameLower === 'models';
+}
