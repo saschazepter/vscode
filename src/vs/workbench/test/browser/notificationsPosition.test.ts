@@ -69,36 +69,6 @@ suite('Notifications Position', () => {
 		});
 	});
 
-	suite('Top Offset for Top-Right', () => {
-
-		function computeTopOffset(position: NotificationsPosition, titleBarVisible: boolean): number | undefined {
-			if (position !== NotificationsPosition.TOP_RIGHT) {
-				return undefined;
-			}
-			let topOffset = 7;
-			if (titleBarVisible) {
-				topOffset += 35;
-			}
-			return topOffset;
-		}
-
-		test('bottom-right has no top offset', () => {
-			assert.strictEqual(computeTopOffset(NotificationsPosition.BOTTOM_RIGHT, true), undefined);
-		});
-
-		test('bottom-left has no top offset', () => {
-			assert.strictEqual(computeTopOffset(NotificationsPosition.BOTTOM_LEFT, true), undefined);
-		});
-
-		test('top-right without titlebar has 7px offset', () => {
-			assert.strictEqual(computeTopOffset(NotificationsPosition.TOP_RIGHT, false), 7);
-		});
-
-		test('top-right with titlebar has 42px offset', () => {
-			assert.strictEqual(computeTopOffset(NotificationsPosition.TOP_RIGHT, true), 42);
-		});
-	});
-
 	suite('NotificationsPosition Enum Values', () => {
 
 		test('enum values match expected strings', () => {
