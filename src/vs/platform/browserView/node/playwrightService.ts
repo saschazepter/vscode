@@ -170,7 +170,13 @@ class PlaywrightPageMap extends Disposable {
 
 		// Adding the view fires onDidAddView (pushes to viewIdQueue) and
 		// eventually a Playwright page event (pushes to pageQueue).
-		await this._group.addView(viewId);
+		try {
+			await this._group.addView(viewId);
+		} catch (err: unknown) {
+			const errorMessage = err instanceof Error ? err.message : String(err);
+			this.logService.error('[PlaywrightService] Failed to add view:', errorMessage);
+			deferred.error(new Error(`Failed to get page: ${errorMessage}`));
+		}
 
 		return deferred.p;
 	}
