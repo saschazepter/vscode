@@ -12,6 +12,7 @@ export enum ChatConfiguration {
 	AIDisabled = 'chat.disableAIFeatures',
 	AgentEnabled = 'chat.agent.enabled',
 	PlanAgentDefaultModel = 'chat.planAgent.defaultModel',
+	ExploreAgentDefaultModel = 'chat.exploreAgent.defaultModel',
 	RequestQueueingEnabled = 'chat.requestQueuing.enabled',
 	RequestQueueingDefaultAction = 'chat.requestQueuing.defaultAction',
 	AgentStatusEnabled = 'chat.agentsControl.enabled',
@@ -42,12 +43,14 @@ export enum ChatConfiguration {
 	ChatViewSessionsGrouping = 'chat.viewSessions.grouping',
 	ChatViewSessionsOrientation = 'chat.viewSessions.orientation',
 	ChatViewProgressBadgeEnabled = 'chat.viewProgressBadge.enabled',
+	ChatContextUsageEnabled = 'chat.contextUsage.enabled',
 	SubagentToolCustomAgents = 'chat.customAgentInSubagent.enabled',
 	ShowCodeBlockProgressAnimation = 'chat.agent.codeBlockProgress',
 	RestoreLastPanelSession = 'chat.restoreLastPanelSession',
 	ExitAfterDelegation = 'chat.exitAfterDelegation',
 	AgentsControlClickBehavior = 'chat.agentsControl.clickBehavior',
 	ExplainChangesEnabled = 'chat.editing.explainChanges.enabled',
+	GrowthNotificationEnabled = 'chat.growthNotification.enabled',
 }
 
 /**

@@ -1476,6 +1476,7 @@ export interface ExtHostChatAgentsShape2 {
 	$providePromptFiles(handle: number, type: PromptsType, context: IPromptFileContext, token: CancellationToken): Promise<Dto<IPromptFileResource>[] | undefined>;
 	$setRequestTools(requestId: string, tools: UserSelectedTools): void;
 	$setYieldRequested(requestId: string): void;
+	$acceptActiveChatSession(sessionResource: UriComponents | undefined): void;
 }
 export interface IChatParticipantMetadata {
 	participant: string;
@@ -3384,6 +3385,7 @@ export type IChatSessionHistoryItemDto = {
 	participant: string;
 	command?: string;
 	variableData?: Dto<IChatRequestVariableData>;
+	modelId?: string;
 } | {
 	type: 'response';
 	parts: IChatProgressDto[];
