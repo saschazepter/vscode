@@ -355,9 +355,6 @@ export class OutputMonitor extends Disposable implements IOutputMonitor {
 		const custom = await this._pollFn?.(this._execution, token, this._taskService);
 		this._logService.trace(`OutputMonitor: Custom poller result: ${custom ? 'provided' : 'none'}`);
 		const resources = custom?.resources;
-		// Only assess output for errors via LLM when there is no custom poller. Custom pollers
-		// (e.g. taskProblemPollFn) already provide structured error information in their output,
-		// so running the LLM assessment would be redundant and slow (~10s).
 		const modelOutputEvalResponse = this._pollFn ? undefined : await this._assessOutputForErrors(this._execution.getOutput(), token);
 		return { resources, modelOutputEvalResponse, shouldContinuePollling: false, output: custom?.output ?? output };
 	}
