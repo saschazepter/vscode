@@ -113,6 +113,11 @@ export interface ITipDefinition {
 	 */
 	readonly enabledCommands?: string[];
 	/**
+	 * Chat model IDs for which this tip is eligible.
+	 * Compared against the lowercased `chatModelId` context key.
+	 */
+	readonly onlyWhenModelIds?: readonly string[];
+	/**
 	 * Command IDs that, if ever executed in this workspace, make this tip ineligible.
 	 * The tip won't be shown if the user has already performed the action it suggests.
 	 */
@@ -144,6 +149,11 @@ export interface ITipDefinition {
  * Static catalog of tips. Each tip has an optional when clause for eligibility.
  */
 const TIP_CATALOG: ITipDefinition[] = [
+	{
+		id: 'tip.switchToGpt5Mini',
+		message: localize('tip.switchToGpt5Mini', "Tip: Using gpt-4.1? Try switching to GPT-5-mini in the model picker for better coding performance."),
+		onlyWhenModelIds: ['gpt-4.1'],
+	},
 	{
 		id: 'tip.agentMode',
 		message: localize('tip.agentMode', "Tip: Try [Agents](command:workbench.action.chat.openEditSession) to make edits across your project and run commands."),
@@ -711,6 +721,12 @@ export class ChatTipService extends Disposable implements IChatTipService {
 	}
 
 	private _isEligible(tip: ITipDefinition, contextKeyService: IContextKeyService): boolean {
+		if (tip.onlyWhenModelIds?.length) {
+			const currentModelId = contextKeyService.getContextKeyValue<string>(ChatContextKeys.chatModelId.key)?.toLowerCase() ?? '';
+			if (!tip.onlyWhenModelIds.includes(currentModelId)) {
+				return false;
+			}
+		}
 		if (tip.when && !contextKeyService.contextMatchesRules(tip.when)) {
 			this._logService.debug('#ChatTips: tip is not eligible due to when clause', tip.id, tip.when.serialize());
 			return false;

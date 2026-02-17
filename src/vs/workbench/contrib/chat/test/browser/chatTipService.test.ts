@@ -100,6 +100,26 @@ suite('ChatTipService', () => {
 		assert.ok(tip.content.value.length > 0, 'Tip should have content');
 	});
 
+	test('returns GPT-5-mini switch tip when current model is gpt-4.1', () => {
+		const service = createService();
+		contextKeyService.createKey(ChatContextKeys.chatModelId.key, 'gpt-4.1');
+
+		const tip = service.getWelcomeTip(contextKeyService);
+
+		assert.ok(tip);
+		assert.strictEqual(tip.id, 'tip.switchToGpt5Mini');
+	});
+
+	test('does not return GPT-5-mini switch tip when current model is not gpt-4.1', () => {
+		const service = createService();
+		contextKeyService.createKey(ChatContextKeys.chatModelId.key, 'gpt-5-mini');
+
+		const tip = service.getWelcomeTip(contextKeyService);
+
+		assert.ok(tip);
+		assert.notStrictEqual(tip.id, 'tip.switchToGpt5Mini');
+	});
+
 	test('returns same welcome tip on rerender', () => {
 		const service = createService();
 
