@@ -882,10 +882,11 @@ export class NewChatViewPane extends ViewPane {
 	}
 
 	private computeAllowedTargets(): AgentSessionProviders[] {
-		const targets = [AgentSessionProviders.Background, AgentSessionProviders.Cloud];
+		const targets: AgentSessionProviders[] = [];
 		if (this.workspaceContextService.getWorkspace().folders.length === 1) {
 			targets.push(AgentSessionProviders.Local);
 		}
+		targets.push(AgentSessionProviders.Background, AgentSessionProviders.Cloud);
 		return targets;
 	}
 
