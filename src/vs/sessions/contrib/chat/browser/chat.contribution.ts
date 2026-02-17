@@ -9,6 +9,7 @@ import { ServicesAccessor } from '../../../../editor/browser/editorExtensions.js
 import { localize, localize2 } from '../../../../nls.js';
 import { Action2, MenuRegistry, registerAction2 } from '../../../../platform/actions/common/actions.js';
 import { IHostService } from '../../../../workbench/services/host/browser/host.js';
+import { Disposable } from '../../../../base/common/lifecycle.js';
 import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../../workbench/common/contributions.js';
 import { IViewContainersRegistry, IViewsRegistry, ViewContainerLocation, Extensions as ViewExtensions, WindowVisibility } from '../../../../workbench/common/views.js';
 import { Registry } from '../../../../platform/registry/common/platform.js';
@@ -31,7 +32,7 @@ import { ChatViewPane } from '../../../../workbench/contrib/chat/browser/widgetH
 import { IWorkbenchEnvironmentService } from '../../../../workbench/services/environment/common/environmentService.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { IWorkbenchLayoutService } from '../../../../workbench/services/layout/browser/layoutService.js';
-import { IsSessionsWindowContext } from '../../../../workbench/common/contextkeys.js';
+import { IsSessionsUtilityProcessContext, IsSessionsWindowContext } from '../../../../workbench/common/contextkeys.js';
 import { SdkChatViewPane, SdkChatViewId } from '../../../browser/widget/sdkChatViewPane.js';
 import { CopilotSdkDebugLog } from '../../../browser/copilotSdkDebugLog.js';
 import { CopilotSdkDebugPanel } from '../../../browser/copilotSdkDebugPanel.js';
@@ -133,7 +134,7 @@ class RegisterChatViewContainerContribution implements IWorkbenchContribution {
 	constructor(
 		@IWorkbenchEnvironmentService environmentService: IWorkbenchEnvironmentService,
 	) {
-		if (environmentService.isSessionsSdkWindow) {
+		if (environmentService.isSessionsUtilityProcess) {
 			this._registerSdkViews();
 		} else {
 			this._registerDefaultViews();
@@ -234,8 +235,26 @@ registerAction2(BranchChatSessionAction);
 registerWorkbenchContribution2(RegisterChatViewContainerContribution.ID, RegisterChatViewContainerContribution, WorkbenchPhase.BlockStartup);
 registerWorkbenchContribution2(RunScriptContribution.ID, RunScriptContribution, WorkbenchPhase.AfterRestored);
 
-// SDK debug log (always-on when using SDK - captures all events from startup)
-registerWorkbenchContribution2(CopilotSdkDebugLog.ID, CopilotSdkDebugLog, WorkbenchPhase.AfterRestored);
+class CopilotSdkDebugContribution extends Disposable implements IWorkbenchContribution {
+
+	static readonly ID = 'copilotSdk.debugContribution';
+
+	constructor(
+		@IWorkbenchEnvironmentService private readonly environmentService: IWorkbenchEnvironmentService,
+		@IInstantiationService private readonly instantiationService: IInstantiationService,
+	) {
+		super();
+		// Only initialize debug logging when the SDK utility process is enabled
+		if (!this.environmentService.isSessionsUtilityProcess) {
+			return;
+		}
+
+		this.instantiationService.createInstance(CopilotSdkDebugLog);
+	}
+}
+
+// SDK debug log (only when using SDK - captures all events from startup)
+registerWorkbenchContribution2(CopilotSdkDebugContribution.ID, CopilotSdkDebugContribution, WorkbenchPhase.AfterRestored);
 
 // SDK debug panel (command palette action)
 let activeDebugBackdrop: HTMLElement | undefined;
@@ -246,9 +265,15 @@ registerAction2(class CopilotSdkDebugPanelAction extends Action2 {
 			title: localize2('copilotSdkDebugPanel', 'Copilot SDK: Open Debug Panel'),
 			f1: true,
 			icon: Codicon.beaker,
+			precondition: IsSessionsUtilityProcessContext,
 		});
 	}
 	async run(accessor: ServicesAccessor): Promise<void> {
+		const environmentService = accessor.get(IWorkbenchEnvironmentService);
+		if (!environmentService.isSessionsUtilityProcess) {
+			return;
+		}
+
 		const layoutService = accessor.get(IWorkbenchLayoutService);
 		const instantiationService = accessor.get(IInstantiationService);
 		const container = layoutService.mainContainer;
@@ -258,6 +283,10 @@ registerAction2(class CopilotSdkDebugPanelAction extends Action2 {
 			activeDebugBackdrop = undefined;
 			return;
 		}
+		const log = CopilotSdkDebugLog.instance;
+		if (!log) {
+			return;
+		}
 		const backdrop = dom.$('.copilot-sdk-debug-backdrop');
 		activeDebugBackdrop = backdrop;
 		backdrop.style.cssText = 'position:absolute;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.5);';
@@ -265,7 +294,7 @@ registerAction2(class CopilotSdkDebugPanelAction extends Action2 {
 		const modal = dom.$('div');
 		modal.style.cssText = 'width:560px;height:80%;max-height:700px;border-radius:8px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,0.4);';
 		backdrop.appendChild(modal);
-		const panel = instantiationService.createInstance(CopilotSdkDebugPanel, modal, CopilotSdkDebugLog.instance!);
+		const panel = instantiationService.createInstance(CopilotSdkDebugPanel, modal, log);
 		const close = () => {
 			panel.dispose();
 			backdrop.remove();
