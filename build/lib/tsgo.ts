@@ -21,7 +21,7 @@ export function spawnTsgo(projectPath: string, config: { taskName: string; noEmi
 		if (errorLines.length > 0) {
 			fancyLog(`Finished ${ansiColors.green(config.taskName)} ${projectPath} with ${errorLines.length} errors.`);
 			for (const line of errorLines) {
-				fancyLog.error(line);
+				fancyLog(line);
 			}
 		}
 	}
