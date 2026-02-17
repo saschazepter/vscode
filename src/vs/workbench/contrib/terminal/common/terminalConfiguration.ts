@@ -654,7 +654,7 @@ const terminalConfiguration: IStringDictionary<IConfigurationPropertySchema> = {
 	},
 	[TerminalSettingId.EnableImages]: {
 		restricted: true,
-		markdownDescription: localize('terminal.integrated.enableImages', "Enables image support in the terminal, this will only work when {0} is enabled. Both sixel and iTerm's inline image protocol are supported on Linux and macOS. This will only work on Windows for versions of ConPTY >= v2 which is shipped with Windows itself, see also {1}. Images will currently not be restored between window reloads/reconnects.", `\`#${TerminalSettingId.GpuAcceleration}#\``, `\`#${TerminalSettingId.WindowsUseConptyDll}#\``),
+		markdownDescription: localize('terminal.integrated.enableImages', "Enables image support in the terminal, including sixel, iTerm's inline image protocol, and the kitty graphics protocol. This will only work when {0} is enabled. Sixel and iTerm's inline image protocol are supported on Linux and macOS. This will only work on Windows for versions of ConPTY >= v2 which is shipped with Windows itself, see also {1}. Images will currently not be restored between window reloads/reconnects.\n\nNote: Kitty graphics z-index support (rendering images behind text) only works when {0} is set to {2}. Some kitty graphics features may also require {3} to be enabled.", `\`#${TerminalSettingId.GpuAcceleration}#\``, `\`#${TerminalSettingId.WindowsUseConptyDll}#\``, '`"off"`', `\`#terminal.integrated.allowTransparency#\``),
 		type: 'boolean',
 		default: false
 	},
