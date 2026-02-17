@@ -134,6 +134,12 @@ export class SidebarPart extends AbstractPaneCompositePart {
 	protected override createTitleArea(parent: HTMLElement): HTMLElement | undefined {
 		const titleArea = super.createTitleArea(parent);
 
+		if (titleArea) {
+			// Add a drag region so the sidebar title area can be used to move the window,
+			// matching the titlebar's drag behavior.
+			prepend(titleArea, $('div.titlebar-drag-region'));
+		}
+
 		// macOS native: the sidebar spans full height and the traffic lights
 		// overlay the top-left corner. Add a fixed-width spacer inside the
 		// title area to push content horizontally past the traffic lights.
