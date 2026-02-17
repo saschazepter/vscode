@@ -98,6 +98,7 @@ interface ILazyToolItem {
 	toolInvocationId?: string;
 	toolInvocationOrMarkdown?: IChatToolInvocation | IChatToolInvocationSerialized | IChatMarkdownContent;
 	originalParent?: HTMLElement;
+	isHook?: boolean;
 }
 
 interface ILazyThinkingItem {
@@ -1016,7 +1017,8 @@ ${this.hookCount > 0 ? `EXAMPLES WITH BLOCKED CONTENT (from hooks):
 				lazy: new Lazy(factory),
 				toolInvocationId,
 				toolInvocationOrMarkdown,
-				originalParent
+				originalParent,
+				isHook: !toolInvocationOrMarkdown && !!toolInvocationId
 			};
 			this.lazyItems.push(item);
 		}
@@ -1034,9 +1036,14 @@ ${this.hookCount > 0 ? `EXAMPLES WITH BLOCKED CONTENT (from hooks):
 			return false;
 		}
 
+		const removedItem = this.lazyItems[index];
 		this.lazyItems.splice(index, 1);
 		this.appendedItemCount--;
-		this.toolInvocationCount--;
+		if (removedItem.kind === 'tool' && removedItem.isHook) {
+			this.hookCount = Math.max(0, this.hookCount - 1);
+		} else {
+			this.toolInvocationCount--;
+		}
 
 		const toolInvocationsIndex = this.toolInvocations.findIndex(t =>
 			(t.kind === 'toolInvocation' || t.kind === 'toolInvocationSerialized') && t.toolId === toolInvocationId
@@ -1103,11 +1110,12 @@ ${this.hookCount > 0 ? `EXAMPLES WITH BLOCKED CONTENT (from hooks):
 			return;
 		}
 
-		this.toolInvocationCount++;
-
 		// Track hooks separately: if toolInvocationOrMarkdown is undefined, it's a hook item
-		if (!toolInvocationOrMarkdown) {
+		const isHook = !toolInvocationOrMarkdown;
+		if (isHook) {
 			this.hookCount++;
+		} else {
+			this.toolInvocationCount++;
 		}
 
 		let toolCallLabel: string;
