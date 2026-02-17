@@ -26,7 +26,7 @@ export const IMcpSandboxService = createDecorator<IMcpSandboxService>('mcpSandbo
 export interface IMcpSandboxService {
 	readonly _serviceBrand: undefined;
 	launchInSandboxIfEnabled(serverDef: McpServerDefinition, launch: McpServerLaunch): Promise<McpServerLaunch>;
-	isEnabled(serverDef: McpServerDefinition): Promise<boolean>;
+	isEnabled(serverDef: McpServerDefinition, serverLabel?: string): Promise<boolean>;
 }
 
 export class McpSandboxService extends Disposable implements IMcpSandboxService {
@@ -44,6 +44,7 @@ export class McpSandboxService extends Disposable implements IMcpSandboxService 
 	private _appRoot: string;
 	private _os: OperatingSystem = OS;
 	private _sandboxEnabledMcpServers: Set<string> = new Set();
+	private readonly _defaultAllowedDomains: readonly string[] = ['*.npmjs.org'];
 
 	constructor(
 		@IFileService private readonly _fileService: IFileService,
@@ -65,7 +66,7 @@ export class McpSandboxService extends Disposable implements IMcpSandboxService 
 		}));
 	}
 
-	public async isEnabled(serverDef: McpServerDefinition): Promise<boolean> {
+	public async isEnabled(serverDef: McpServerDefinition, serverLabel?: string): Promise<boolean> {
 		this._remoteEnvDetails = await this._remoteEnvDetailsPromise;
 		this._os = this._remoteEnvDetails ? this._remoteEnvDetails.os : OS;
 
@@ -74,7 +75,7 @@ export class McpSandboxService extends Disposable implements IMcpSandboxService 
 		}
 		//debug: add logs for debugging sandbox enablement issues.
 		this._logService.debug(`McpSandboxService: Checking sandbox enablement for server ${serverDef.label}. Enabled servers: ${[...this._sandboxEnabledMcpServers].join(', ')}`);
-		return this._sandboxEnabledMcpServers.has(serverDef.label);
+		return this._sandboxEnabledMcpServers.has(serverLabel ?? serverDef.label);
 	}
 
 	public async getSandboxRuntimePath(): Promise<string | undefined> {
@@ -178,14 +179,51 @@ export class McpSandboxService extends Disposable implements IMcpSandboxService 
 		if (!this._tempDir) {
 			return undefined;
 		}
-		if (this._sandboxConfigPath && this._areSandboxConfigsEqual(this._sandboxConfig, sandboxConfig)) {
+		const normalizedSandboxConfig = this._withDefaultSandboxConfig(sandboxConfig);
+		if (this._sandboxConfigPath && this._areSandboxConfigsEqual(this._sandboxConfig, normalizedSandboxConfig)) {
 			return this._sandboxConfigPath;
 		}
-		this._sandboxConfig = sandboxConfig;
+		this._sandboxConfig = normalizedSandboxConfig;
 		const configFileUri = URI.joinPath(this._tempDir, `vscode-mcp-sandbox-settings-${this._sandboxSettingsId}.json`);
 		this._sandboxConfigPath = configFileUri.path;
 		await this._fileService.createFile(configFileUri, VSBuffer.fromString(JSON.stringify(this._sandboxConfig, null, '\t')), { overwrite: true });
 		return this._sandboxConfigPath;
+	}
+
+	private _withDefaultSandboxConfig(sandboxConfig?: IMcpSandboxConfiguration): IMcpSandboxConfiguration {
+		const mergedAllowWrite = [...(sandboxConfig?.filesystem?.allowWrite ?? [])];
+		for (const defaultAllowWrite of this._getDefaultAllowWrite()) {
+			if (defaultAllowWrite) {
+				mergedAllowWrite.push(defaultAllowWrite);
+			}
+		}
+
+		const mergedAllowedDomains = [...(sandboxConfig?.network?.allowedDomains ?? [])];
+		for (const defaultAllowedDomain of this._defaultAllowedDomains) {
+			if (defaultAllowedDomain) {
+				mergedAllowedDomains.push(defaultAllowedDomain);
+			}
+		}
+
+		return {
+			...sandboxConfig,
+			network: {
+				...sandboxConfig?.network,
+				allowedDomains: mergedAllowedDomains,
+			},
+			filesystem: {
+				...sandboxConfig?.filesystem,
+				allowWrite: mergedAllowWrite,
+			},
+		};
+	}
+
+	private _getDefaultAllowWrite(): readonly string[] {
+		return [
+			'.',
+			'~/.npm',
+			this._pathJoin(this._appRoot, 'node_modules', '@anthropic-ai'),
+		];
 	}
 
 	// TODO: this should not be registered if there is no sandboxing enabled.
