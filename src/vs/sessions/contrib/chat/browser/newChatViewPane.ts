@@ -47,6 +47,7 @@ import { IModelPickerDelegate, ModelPickerActionItem } from '../../../../workben
 import { IChatInputPickerOptions } from '../../../../workbench/contrib/chat/browser/widget/input/chatInputPickerActionItem.js';
 import { WorkspaceFolderCountContext } from '../../../../workbench/common/contextkeys.js';
 import { IViewDescriptorService } from '../../../../workbench/common/views.js';
+import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
 import { IViewPaneOptions, ViewPane } from '../../../../workbench/browser/parts/views/viewPane.js';
 import { ContextMenuController } from '../../../../editor/contrib/contextmenu/browser/contextmenu.js';
 import { getSimpleEditorOptions } from '../../../../workbench/contrib/codeEditor/browser/simpleEditorOptions.js';
@@ -104,6 +105,20 @@ class TargetConfig extends Disposable implements ITargetConfig {
 			this._onDidChangeSelectedTarget.fire(target);
 		}
 	}
+
+	setAllowedTargets(targets: AgentSessionProviders[]): void {
+		const newSet = new Set(targets);
+		this._allowedTargets.set(newSet, undefined);
+		this._onDidChangeAllowedTargets.fire(newSet);
+
+		// If the currently selected target is no longer allowed, switch to the first allowed target
+		const current = this._selectedTarget.get();
+		if (current && !newSet.has(current)) {
+			const fallback = newSet.values().next().value;
+			this._selectedTarget.set(fallback, undefined);
+			this._onDidChangeSelectedTarget.fire(fallback);
+		}
+	}
 }
 
 // #endregion
@@ -139,7 +154,7 @@ export interface INewChatWidgetOptions {
  */
 class NewChatWidget extends Disposable {
 
-	private readonly _targetConfig: ITargetConfig;
+	private readonly _targetConfig: TargetConfig;
 	private readonly _options: INewChatWidgetOptions;
 
 	// Input
@@ -711,6 +726,10 @@ class NewChatWidget extends Disposable {
 	focusInput(): void {
 		this._editor?.focus();
 	}
+
+	updateAllowedTargets(targets: AgentSessionProviders[]): void {
+		this._targetConfig.setAllowedTargets(targets);
+	}
 }
 
 // #endregion
@@ -738,6 +757,7 @@ export class NewChatViewPane extends ViewPane {
 		@IThemeService themeService: IThemeService,
 		@IHoverService hoverService: IHoverService,
 		@ISessionsManagementService private readonly activeSessionService: ISessionsManagementService,
+		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
 		@ILogService private readonly logService: ILogService,
 	) {
 		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
@@ -750,7 +770,7 @@ export class NewChatViewPane extends ViewPane {
 			NewChatWidget,
 			{
 				targetConfig: {
-					allowedTargets: [AgentSessionProviders.Background, AgentSessionProviders.Cloud],
+					allowedTargets: this.computeAllowedTargets(),
 					defaultTarget: AgentSessionProviders.Background,
 				},
 				onSendRequest: (data) => {
@@ -763,6 +783,18 @@ export class NewChatViewPane extends ViewPane {
 
 		this._widget.render(container);
 		this._widget.focusInput();
+
+		this._register(this.workspaceContextService.onDidChangeWorkspaceFolders(() => {
+			this._widget?.updateAllowedTargets(this.computeAllowedTargets());
+		}));
+	}
+
+	private computeAllowedTargets(): AgentSessionProviders[] {
+		const targets = [AgentSessionProviders.Background, AgentSessionProviders.Cloud];
+		if (this.workspaceContextService.getWorkspace().folders.length === 1) {
+			targets.push(AgentSessionProviders.Local);
+		}
+		return targets;
 	}
 
 	protected override layoutBody(height: number, width: number): void {
