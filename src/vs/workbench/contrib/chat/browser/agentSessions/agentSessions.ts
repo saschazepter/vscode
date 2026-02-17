@@ -12,8 +12,6 @@ import { IChatSessionTiming } from '../../common/chatService/chatService.js';
 import { foreground, listActiveSelectionForeground, registerColor, transparent } from '../../../../../platform/theme/common/colorRegistry.js';
 import { getChatSessionType } from '../../common/model/chatUri.js';
 
-export const AgentSessionsViewId = 'workbench.view.agentSessions';
-
 export enum AgentSessionProviders {
 	Local = 'local',
 	Background = 'copilotcli',
@@ -50,14 +48,11 @@ export function getAgentSessionProvider(sessionResource: URI | string): AgentSes
  */
 export const backgroundAgentDisplayName = observableValue<string>('backgroundAgentDisplayName', localize('chat.session.providerLabel.background', "Background"));
 
-export function getAgentSessionProviderName(provider: AgentSessionProviders, agentSessionsDedicatedWindow = false): string {
+export function getAgentSessionProviderName(provider: AgentSessionProviders): string {
 	switch (provider) {
 		case AgentSessionProviders.Local:
 			return localize('chat.session.providerLabel.local', "Local");
 		case AgentSessionProviders.Background:
-			if (agentSessionsDedicatedWindow) {
-				return localize('chat.session.providerLabel.background.dedicatedWindow', "Worktree");
-			}
 			return backgroundAgentDisplayName.get();
 		case AgentSessionProviders.Cloud:
 			return localize('chat.session.providerLabel.cloud', "Cloud");

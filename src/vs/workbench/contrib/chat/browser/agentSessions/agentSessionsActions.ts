@@ -8,7 +8,7 @@ import { AgentSessionSection, IAgentSession, IAgentSessionSection, IMarshalledAg
 import { Action2, MenuId, MenuRegistry } from '../../../../../platform/actions/common/actions.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { ServicesAccessor } from '../../../../../editor/browser/editorExtensions.js';
-import { AGENT_SESSION_DELETE_ACTION_ID, AGENT_SESSION_RENAME_ACTION_ID, AgentSessionProviders, AgentSessionsViewerOrientation, AgentSessionsViewId, IAgentSessionsControl } from './agentSessions.js';
+import { AGENT_SESSION_DELETE_ACTION_ID, AGENT_SESSION_RENAME_ACTION_ID, AgentSessionProviders, AgentSessionsViewerOrientation, IAgentSessionsControl } from './agentSessions.js';
 import { IChatService } from '../../common/chatService/chatService.js';
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
 import { IChatEditorOptions } from '../widgetHosts/editor/chatEditor.js';
@@ -466,7 +466,7 @@ export class ArchiveAgentSessionAction extends BaseAgentSessionAction {
 			menu: [{
 				id: MenuId.AgentSessionItemToolbar,
 				group: 'navigation',
-				order: 2,
+				order: 1,
 				when: ChatContextKeys.isArchivedAgentSession.negate(),
 			}, {
 				id: MenuId.AgentSessionsContext,
@@ -794,16 +794,11 @@ export class RefreshAgentSessionsViewerAction extends Action2 {
 			id: 'agentSessionsViewer.refresh',
 			title: localize2('refresh', "Refresh Agent Sessions"),
 			icon: Codicon.refresh,
-			menu: [{
+			menu: {
 				id: MenuId.AgentSessionsToolbar,
 				group: 'navigation',
 				order: 1,
-			}, {
-				id: MenuId.ViewTitle,
-				group: 'navigation',
-				order: 1,
-				when: ContextKeyExpr.equals('view', AgentSessionsViewId),
-			}],
+			},
 		});
 	}
 
@@ -819,16 +814,11 @@ export class FindAgentSessionInViewerAction extends Action2 {
 			id: 'agentSessionsViewer.find',
 			title: localize2('find', "Find Agent Session"),
 			icon: Codicon.search,
-			menu: [{
+			menu: {
 				id: MenuId.AgentSessionsToolbar,
 				group: 'navigation',
 				order: 2,
-			}, {
-				id: MenuId.ViewTitle,
-				group: 'navigation',
-				order: 2,
-				when: ContextKeyExpr.equals('view', AgentSessionsViewId),
-			}]
+			}
 		});
 	}
 
