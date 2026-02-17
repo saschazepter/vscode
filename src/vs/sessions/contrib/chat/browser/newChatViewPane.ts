@@ -449,7 +449,6 @@ class NewChatWidget extends Disposable {
 			const currentAllowed = this._targetConfig.allowedTargets.get();
 			const currentActive = this._targetConfig.selectedTarget.get();
 			const actions = [...currentAllowed]
-				.filter(t => t !== AgentSessionProviders.Local)
 				.map(sessionType => {
 					const label = getAgentSessionProviderName(sessionType);
 					return toAction({
