@@ -183,20 +183,16 @@ export interface IChatSession extends IDisposable {
 		history: any[], // TODO: Nail down types
 		token: CancellationToken
 	) => Promise<void>;
+
+	/**
+	 * Optional handler for checkpoint restoration.
+	 * When present, the checkpoint restore UI will be shown for this session.
+	 */
+	checkpointHandler?: (requestId: string, token: CancellationToken) => Promise<void>;
 }
 
 export interface IChatSessionContentProvider {
 	provideChatSessionContent(sessionResource: URI, token: CancellationToken): Promise<IChatSession>;
-
-	/**
-	 * Called when a checkpoint restoration is requested for a chat session.
-	 * This allows the provider to handle restoring the session state to a specific request.
-	 */
-	handleRestoreCheckpoint?(sessionResource: URI, requestId: string, token: CancellationToken): Promise<void>;
-}
-
-export interface IChatSessionContentProviderCapabilities {
-	supportsCheckpoints?: boolean;
 }
 
 export interface IChatSessionItemController {
@@ -259,19 +255,14 @@ export interface IChatSessionsService {
 
 	getContentProviderSchemes(): string[];
 
-	registerChatSessionContentProvider(scheme: string, provider: IChatSessionContentProvider, capabilities?: IChatSessionContentProviderCapabilities): IDisposable;
+	registerChatSessionContentProvider(scheme: string, provider: IChatSessionContentProvider): IDisposable;
 	canResolveChatSession(sessionResource: URI): Promise<boolean>;
 	getOrCreateChatSession(sessionResource: URI, token: CancellationToken): Promise<IChatSession>;
 
 	/**
-	 * Get the content provider for a specific session resource
+	 * Get the checkpoint handler for a specific session resource, if one exists.
 	 */
-	getContentProvider(sessionResource: URI): IChatSessionContentProvider | undefined;
-
-	/**
-	 * Check if a session type supports checkpoints.
-	 */
-	supportsCheckpointsForSessionType(chatSessionType: string): boolean;
+	getCheckpointHandler(sessionResource: URI): ((requestId: string, token: CancellationToken) => Promise<void>) | undefined;
 
 	hasAnySessionOptions(sessionResource: URI): boolean;
 	getSessionOption(sessionResource: URI, optionId: string): string | IChatSessionProviderOptionItem | undefined;

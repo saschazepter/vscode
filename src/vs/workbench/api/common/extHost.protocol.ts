@@ -3406,6 +3406,7 @@ export interface ChatSessionDto {
 	history: Array<IChatSessionHistoryItemDto>;
 	hasActiveResponseCallback: boolean;
 	hasRequestHandler: boolean;
+	hasCheckpointHandler: boolean;
 	supportsInterruption: boolean;
 	options?: Record<string, string | IChatSessionProviderOptionItem>;
 }
@@ -3421,7 +3422,7 @@ export interface MainThreadChatSessionsShape extends IDisposable {
 	$updateChatSessionItem(handle: number, item: Dto<IChatSessionItem>): Promise<void>;
 	$onDidChangeChatSessionItems(handle: number): void;
 	$onDidCommitChatSessionItem(handle: number, original: UriComponents, modified: UriComponents): void;
-	$registerChatSessionContentProvider(handle: number, chatSessionScheme: string, supportsCheckpoints: boolean): void;
+	$registerChatSessionContentProvider(handle: number, chatSessionScheme: string): void;
 	$unregisterChatSessionContentProvider(handle: number): void;
 	$onDidChangeChatSessionOptions(handle: number, sessionResource: UriComponents, updates: ReadonlyArray<ChatSessionOptionUpdateDto2>): void;
 	$onDidChangeChatSessionProviderOptions(handle: number): void;

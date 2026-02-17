@@ -64,6 +64,7 @@ export class ObservableChatSession extends Disposable implements IChatSession {
 		history: any[],
 		token: CancellationToken
 	) => Promise<void>;
+	checkpointHandler?: (requestId: string, token: CancellationToken) => Promise<void>;
 
 	private readonly _proxy: ExtHostChatSessionsShape;
 	private readonly _providerHandle: number;
@@ -231,6 +232,12 @@ export class ObservableChatSession extends Disposable implements IChatSession {
 						// Ensure progress observation is cleaned up
 						progressDisposable.dispose();
 					}
+				};
+			}
+
+			if (sessionContent.hasCheckpointHandler && !this.checkpointHandler) {
+				this.checkpointHandler = async (requestId: string, token: CancellationToken) => {
+					await this._proxy.$handleRestoreCheckpoint(this._providerHandle, this.sessionResource, requestId, token);
 				};
 			}
 
@@ -649,16 +656,13 @@ export class MainThreadChatSessions extends Disposable implements MainThreadChat
 		this._itemControllerRegistrations.deleteAndDispose(handle);
 	}
 
-	$registerChatSessionContentProvider(handle: number, chatSessionScheme: string, supportsCheckpoints: boolean): void {
+	$registerChatSessionContentProvider(handle: number, chatSessionScheme: string): void {
 		const provider: IChatSessionContentProvider = {
-			provideChatSessionContent: (resource, token) => this._provideChatSessionContent(handle, resource, token),
-			handleRestoreCheckpoint: async (resource, requestId, token) => {
-				await this._proxy.$handleRestoreCheckpoint(handle, resource, requestId, token);
-			}
+			provideChatSessionContent: (resource, token) => this._provideChatSessionContent(handle, resource, token)
 		};
 
 		this._sessionTypeToHandle.set(chatSessionScheme, handle);
-		this._contentProvidersRegistrations.set(handle, this._chatSessionsService.registerChatSessionContentProvider(chatSessionScheme, provider, { supportsCheckpoints }));
+		this._contentProvidersRegistrations.set(handle, this._chatSessionsService.registerChatSessionContentProvider(chatSessionScheme, provider));
 		this._refreshProviderOptions(handle, chatSessionScheme);
 	}
 

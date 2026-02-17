@@ -1992,6 +1992,13 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		this.inputPart.setInputModel(model.inputModel, model.getRequests().length === 0);
 		this.listWidget.setViewModel(this.viewModel);
 
+		// Check if the session supports checkpoints and update UI accordingly
+		const hasCheckpointHandler = !!this.chatSessionsService.getCheckpointHandler(model.sessionResource);
+		this._sessionSupportsCheckpointsContextKey.set(hasCheckpointHandler);
+		if (hasCheckpointHandler && this._lockedAgent) {
+			this.listWidget?.updateRendererOptions({ restorable: true });
+		}
+
 		if (this._lockedAgent) {
 			let placeholder = this.chatSessionsService.getInputPlaceholderForSessionType(this._lockedAgent.id);
 			if (!placeholder) {
@@ -2122,7 +2129,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 	}
 
 	// Coding agent locking methods
-	lockToCodingAgent(name: string, displayName: string, agentId: string, options?: { restorable?: boolean }): void {
+	lockToCodingAgent(name: string, displayName: string, agentId: string): void {
 		this._lockedAgent = {
 			id: agentId,
 			name,
@@ -2130,12 +2137,12 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			displayName
 		};
 		this._lockedToCodingAgentContextKey.set(true);
-		this._sessionSupportsCheckpointsContextKey.set(!!options?.restorable);
+		this._sessionSupportsCheckpointsContextKey.set(false);
 		this.renderWelcomeViewContentIfNeeded();
 		// Update capabilities for the locked agent
 		const agent = this.chatAgentService.getAgent(agentId);
 		this._updateAgentCapabilitiesContextKeys(agent);
-		this.listWidget?.updateRendererOptions({ restorable: options?.restorable ?? false, editable: false, noFooter: true, progressMessageAtBottomOfResponse: true });
+		this.listWidget?.updateRendererOptions({ restorable: false, editable: false, noFooter: true, progressMessageAtBottomOfResponse: true });
 		if (this.visible) {
 			this.listWidget?.rerender();
 		}

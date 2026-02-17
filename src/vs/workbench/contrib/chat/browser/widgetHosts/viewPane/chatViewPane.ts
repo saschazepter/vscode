@@ -725,8 +725,7 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 
 		const contribution = this.chatSessionsService.getChatSessionContribution(sessionType);
 		if (contribution) {
-			const supportsCheckpoints = this.chatSessionsService.supportsCheckpointsForSessionType(sessionType);
-			this._widget.lockToCodingAgent(contribution.name, contribution.displayName, contribution.type, { restorable: supportsCheckpoints });
+			this._widget.lockToCodingAgent(contribution.name, contribution.displayName, contribution.type);
 		} else {
 			this._widget.unlockFromCodingAgent();
 		}

@@ -336,6 +336,20 @@ declare module 'vscode' {
 		// TODO: Should we introduce our own type for `ChatRequestHandler` since not all field apply to chat sessions?
 		// TODO: Revisit this to align with code.
 		readonly requestHandler: ChatRequestHandler | undefined;
+
+		/**
+		 * Optional handler for checkpoint restoration. When present, the checkpoint
+		 * restore UI will be shown for this session, and this handler will be invoked
+		 * when the user restores a checkpoint.
+		 *
+		 * For example, agents that manage their own history (like Claude SDK using user
+		 * message IDs) can use this to restore their internal state rather than relying
+		 * on the default full-history restoration.
+		 *
+		 * @param requestId The ID of the request to restore to.
+		 * @param token A cancellation token.
+		 */
+		readonly checkpointHandler?: (requestId: string, token: CancellationToken) => Thenable<void>;
 	}
 
 	/**
@@ -403,20 +417,6 @@ declare module 'vscode' {
 		 * @param token
 		 */
 		provideChatSessionProviderOptions?(token: CancellationToken): Thenable<ChatSessionProviderOptions | ChatSessionProviderOptions>;
-
-		/**
-		 * Called when a checkpoint restoration is requested for a chat session.
-		 * This allows the provider to handle restoring the session state to a specific request.
-		 * 
-		 * For example, agents that manage their own history (like Claude SDK using user message IDs)
-		 * can use this to restore their internal state rather than relying on the default
-		 * full-history restoration.
-		 * 
-		 * @param resource The URI of the chat session.
-		 * @param requestId The ID of the request to restore to.
-		 * @param token A cancellation token.
-		 */
-		handleRestoreCheckpoint?(resource: Uri, requestId: string, token: CancellationToken): Thenable<void>;
 	}
 
 	export interface ChatSessionOptionUpdate {
@@ -457,14 +457,6 @@ declare module 'vscode' {
 		 * Whether sessions can be interrupted and resumed without side-effects.
 		 */
 		supportsInterruptions?: boolean;
-
-		/**
-		 * Whether sessions support checkpoint restoration.
-		 * When true, the checkpoint restore UI will be shown for sessions of this type,
-		 * and the {@link ChatSessionContentProvider.handleRestoreCheckpoint} callback
-		 * will be invoked when the user restores a checkpoint.
-		 */
-		supportsCheckpoints?: boolean;
 	}
 
 	/**

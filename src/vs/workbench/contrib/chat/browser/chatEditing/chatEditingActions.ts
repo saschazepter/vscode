@@ -441,14 +441,13 @@ async function restoreSnapshotWithConfirmationByRequestId(accessor: ServicesAcce
 		return;
 	}
 
-	// Check if the content provider has a custom checkpoint handler
+	// Check if the session has a custom checkpoint handler
 	const chatSessionsService = accessor.get(IChatSessionsService);
-	const contentProvider = chatSessionsService.getContentProvider(sessionResource);
+	const checkpointHandler = chatSessionsService.getCheckpointHandler(sessionResource);
 
-	if (contentProvider?.handleRestoreCheckpoint) {
-		// Let the content provider handle the checkpoint restoration
+	if (checkpointHandler) {
 		const snapshotRequestId = chatRequests[itemIndex].id;
-		await contentProvider.handleRestoreCheckpoint(sessionResource, snapshotRequestId, CancellationToken.None);
+		await checkpointHandler(snapshotRequestId, CancellationToken.None);
 		return;
 	}
 

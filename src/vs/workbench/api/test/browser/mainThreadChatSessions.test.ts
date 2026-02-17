@@ -78,12 +78,14 @@ suite('ObservableChatSession', function () {
 		history?: any[];
 		hasActiveResponseCallback?: boolean;
 		hasRequestHandler?: boolean;
+		hasCheckpointHandler?: boolean;
 	} = {}) {
 		return {
 			id: options.id || 'test-id',
 			history: options.history || [],
 			hasActiveResponseCallback: options.hasActiveResponseCallback || false,
-			hasRequestHandler: options.hasRequestHandler || false
+			hasRequestHandler: options.hasRequestHandler || false,
+			hasCheckpointHandler: options.hasCheckpointHandler || false,
 		};
 	}
 
@@ -418,7 +420,7 @@ suite('MainThreadChatSessions', function () {
 
 	test('provideChatSessionContent creates and initializes session', async function () {
 		const sessionScheme = 'test-session-type';
-		mainThread.$registerChatSessionContentProvider(1, sessionScheme, false);
+		mainThread.$registerChatSessionContentProvider(1, sessionScheme);
 
 		const sessionContent = {
 			id: 'test-session',
@@ -444,7 +446,7 @@ suite('MainThreadChatSessions', function () {
 	test('$handleProgressChunk routes to correct session', async function () {
 		const sessionScheme = 'test-session-type';
 
-		mainThread.$registerChatSessionContentProvider(1, sessionScheme, false);
+		mainThread.$registerChatSessionContentProvider(1, sessionScheme);
 
 		const sessionContent = {
 			id: 'test-session',
@@ -469,7 +471,7 @@ suite('MainThreadChatSessions', function () {
 
 	test('$handleProgressComplete marks session complete', async function () {
 		const sessionScheme = 'test-session-type';
-		mainThread.$registerChatSessionContentProvider(1, sessionScheme, false);
+		mainThread.$registerChatSessionContentProvider(1, sessionScheme);
 
 		const sessionContent = {
 			id: 'test-session',
@@ -494,7 +496,7 @@ suite('MainThreadChatSessions', function () {
 
 	test('integration with multiple request/response pairs', async function () {
 		const sessionScheme = 'test-session-type';
-		mainThread.$registerChatSessionContentProvider(1, sessionScheme, false);
+		mainThread.$registerChatSessionContentProvider(1, sessionScheme);
 
 		const sessionContent = {
 			id: 'multi-turn-session',
@@ -550,7 +552,7 @@ suite('MainThreadChatSessions', function () {
 		provideOptionsStub.onFirstCall().resolves({ optionGroups: optionGroups1 } as IChatSessionProviderOptions);
 		provideOptionsStub.onSecondCall().resolves({ optionGroups: optionGroups2 } as IChatSessionProviderOptions);
 
-		mainThread.$registerChatSessionContentProvider(handle, sessionScheme, false);
+		mainThread.$registerChatSessionContentProvider(handle, sessionScheme);
 
 		// Wait for initial options fetch triggered on registration
 		await new Promise(resolve => setTimeout(resolve, 0));
@@ -572,7 +574,7 @@ suite('MainThreadChatSessions', function () {
 
 	test('getSessionOption returns undefined for unset options', async function () {
 		const sessionScheme = 'test-session-type';
-		mainThread.$registerChatSessionContentProvider(1, sessionScheme, false);
+		mainThread.$registerChatSessionContentProvider(1, sessionScheme);
 
 		const sessionContent = {
 			id: 'test-session',
@@ -596,7 +598,7 @@ suite('MainThreadChatSessions', function () {
 
 	test('getSessionOption returns value for explicitly set options', async function () {
 		const sessionScheme = 'test-session-type';
-		mainThread.$registerChatSessionContentProvider(1, sessionScheme, false);
+		mainThread.$registerChatSessionContentProvider(1, sessionScheme);
 
 		const sessionContent = {
 			id: 'test-session',
@@ -628,7 +630,7 @@ suite('MainThreadChatSessions', function () {
 		const sessionScheme = 'test-session-type';
 		const handle = 1;
 
-		mainThread.$registerChatSessionContentProvider(handle, sessionScheme, false);
+		mainThread.$registerChatSessionContentProvider(handle, sessionScheme);
 
 		const sessionContent = {
 			id: 'test-session',
@@ -685,7 +687,7 @@ suite('MainThreadChatSessions', function () {
 
 	test('setSessionOption updates option and getSessionOption reflects change', async function () {
 		const sessionScheme = 'test-session-type';
-		mainThread.$registerChatSessionContentProvider(1, sessionScheme, false);
+		mainThread.$registerChatSessionContentProvider(1, sessionScheme);
 
 		const sessionContent = {
 			id: 'test-session',
@@ -714,7 +716,7 @@ suite('MainThreadChatSessions', function () {
 
 	test('hasAnySessionOptions returns correct values', async function () {
 		const sessionScheme = 'test-session-type';
-		mainThread.$registerChatSessionContentProvider(1, sessionScheme, false);
+		mainThread.$registerChatSessionContentProvider(1, sessionScheme);
 
 		// Session with options
 		const sessionContentWithOptions = {

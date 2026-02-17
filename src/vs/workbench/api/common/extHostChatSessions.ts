@@ -448,7 +448,7 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 		const disposables = new DisposableStore();
 
 		this._chatSessionContentProviders.set(handle, { provider, extension, capabilities, disposable: disposables });
-		this._proxy.$registerChatSessionContentProvider(handle, chatSessionScheme, !!capabilities?.supportsCheckpoints);
+		this._proxy.$registerChatSessionContentProvider(handle, chatSessionScheme);
 
 		if (provider.onDidChangeChatSessionOptions) {
 			disposables.add(provider.onDidChangeChatSessionOptions(evt => {
@@ -517,6 +517,7 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 			resource: URI.revive(sessionResource),
 			hasActiveResponseCallback: !!session.activeResponseCallback,
 			hasRequestHandler: !!session.requestHandler,
+			hasCheckpointHandler: !!session.checkpointHandler,
 			supportsInterruption: !!capabilities?.supportsInterruptions,
 			options: session.options,
 			history: session.history.map(turn => {
@@ -555,22 +556,19 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 
 	async $handleRestoreCheckpoint(handle: number, sessionResourceComponents: UriComponents, requestId: string, token: CancellationToken): Promise<void> {
 		const sessionResource = URI.revive(sessionResourceComponents);
-		const provider = this._chatSessionContentProviders.get(handle);
-		if (!provider) {
-			this._logService.warn(`No provider for handle ${handle}`);
+		const sessionEntry = this._extHostChatSessions.get(sessionResource);
+		if (!sessionEntry) {
+			this._logService.warn(`No session for resource ${sessionResource}`);
 			return;
 		}
 
-		if (!provider.provider.handleRestoreCheckpoint) {
-			this._logService.debug(`Provider for handle ${handle} does not implement handleRestoreCheckpoint`);
+		const session = sessionEntry.sessionObj.session;
+		if (!session.checkpointHandler) {
+			this._logService.debug(`Session for resource ${sessionResource} does not have a checkpointHandler`);
 			return;
 		}
 
-		try {
-			await provider.provider.handleRestoreCheckpoint(sessionResource, requestId, token);
-		} catch (error) {
-			this._logService.error(`Error calling handleRestoreCheckpoint for handle ${handle}, sessionResource ${sessionResource}, requestId ${requestId}:`, error);
-		}
+		await session.checkpointHandler(requestId, token);
 	}
 
 	async $provideChatSessionProviderOptions(handle: number, token: CancellationToken): Promise<IChatSessionProviderOptions | undefined> {
