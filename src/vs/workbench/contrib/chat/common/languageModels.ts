@@ -1429,7 +1429,7 @@ export class LanguageModelsService implements ILanguageModelsService {
 		const toPublic = (m: IRawCuratedModel): ICuratedModel => ({ id: m.id, isNew: m.isNew, minVSCodeVersion: m.minVSCodeVersion });
 		this._curatedModels = {
 			free: models.filter(m => !m.paidOnly).map(toPublic),
-			paid: models.map(toPublic),
+			paid: models.filter(m => m.paidOnly).map(toPublic),
 		};
 
 		const newIds = new Set<string>();

@@ -9,6 +9,7 @@ import { getBaseLayerHoverDelegate } from '../../../../../../base/browser/ui/hov
 import { getDefaultHoverDelegate } from '../../../../../../base/browser/ui/hover/hoverDelegateFactory.js';
 import { BaseActionViewItem } from '../../../../../../base/browser/ui/actionbar/actionViewItems.js';
 import { IAction } from '../../../../../../base/common/actions.js';
+import { MutableDisposable } from '../../../../../../base/common/lifecycle.js';
 import { autorun } from '../../../../../../base/common/observable.js';
 import { localize } from '../../../../../../nls.js';
 import { IContextKeyService } from '../../../../../../platform/contextkey/common/contextkey.js';
@@ -27,6 +28,7 @@ import { IModelPickerDelegate } from './modelPickerActionItem.js';
  */
 export class EnhancedModelPickerActionItem extends BaseActionViewItem {
 	private readonly _pickerWidget: ModelPickerWidget;
+	private readonly _managedHover = this._register(new MutableDisposable());
 
 	constructor(
 		action: IAction,
@@ -102,11 +104,13 @@ export class EnhancedModelPickerActionItem extends BaseActionViewItem {
 		}
 		const hoverContent = this._getHoverContents();
 		if (typeof hoverContent === 'string' && hoverContent) {
-			this._register(getBaseLayerHoverDelegate().setupManagedHover(
+			this._managedHover.value = getBaseLayerHoverDelegate().setupManagedHover(
 				getDefaultHoverDelegate('mouse'),
 				this.element,
 				hoverContent
-			));
+			);
+		} else {
+			this._managedHover.clear();
 		}
 	}
 

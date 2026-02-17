@@ -25,6 +25,7 @@ import { IChatRequestHooks } from '../promptSyntax/hookSchema.js';
 import { IRawChatCommandContribution } from './chatParticipantContribTypes.js';
 import { IChatFollowup, IChatLocationData, IChatProgress, IChatResponseErrorDetails, IChatTaskDto } from '../chatService/chatService.js';
 import { ChatAgentLocation, ChatConfiguration, ChatModeKind } from '../constants.js';
+import { ILanguageModelsService } from '../languageModels.js';
 
 //#region agent service, commands etc
 
@@ -660,8 +661,6 @@ export interface IChatAgentNameService {
 	_serviceBrand: undefined;
 	getAgentNameRestriction(chatAgentData: IChatAgentData): boolean;
 }
-
-import { ILanguageModelsService } from '../languageModels.js';
 
 export class ChatAgentNameService implements IChatAgentNameService {
 
