@@ -1042,9 +1042,6 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 	private getModels(): ILanguageModelChatMetadataAndIdentifier[] {
 		const sessionResource = this._widget?.viewModel?.model.sessionResource;
 		const sessionType = sessionResource ? getChatSessionType(sessionResource) : undefined;
-
-		// For agent-host sessions, only show models from the agent-host vendor
-		// (driven by the SDK's listModels). Other sessions show all models.
 		const agentHostOnly = sessionType === AgentSessionProviders.AgentHost;
 
 		const cachedModels = this.storageService.getObject<ILanguageModelChatMetadataAndIdentifier[]>(CachedLanguageModelsKey, StorageScope.APPLICATION, []);

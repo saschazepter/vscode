@@ -30,6 +30,7 @@ export class AgentService extends Disposable implements IAgentService {
 	readonly onDidSessionProgress = this._onDidSessionProgress.event;
 
 	private _client: CopilotClient | undefined;
+	private _clientStarting: Promise<CopilotClient> | undefined;
 	private _githubToken: string | undefined;
 	private readonly _sessions = this._register(new DisposableMap<string, CopilotSessionWrapper>());
 	/** Tracks active tool invocations so we can produce past-tense messages on completion. Keyed by `sessionId:toolCallId`. */
@@ -50,24 +51,35 @@ export class AgentService extends Disposable implements IAgentService {
 		this._logService.info(`Auth token ${tokenChanged ? 'updated' : 'unchanged'} (${token.substring(0, 4)}...)`);
 		if (tokenChanged && this._client && this._sessions.size === 0) {
 			this._logService.info('Restarting CopilotClient with new token');
-			await this._client.stop();
+			const client = this._client;
 			this._client = undefined;
+			this._clientStarting = undefined;
+			await client.stop();
 		}
 	}
 
 	// ---- client lifecycle ---------------------------------------------------
 
 	private async _ensureClient(): Promise<CopilotClient> {
-		if (!this._client) {
+		if (this._client) {
+			return this._client;
+		}
+		if (this._clientStarting) {
+			return this._clientStarting;
+		}
+		this._clientStarting = (async () => {
 			this._logService.info(`Starting CopilotClient... ${this._githubToken ? '(with token)' : '(using logged-in user)'}`);
-			this._client = new CopilotClient({
+			const client = new CopilotClient({
 				githubToken: this._githubToken,
 				useLoggedInUser: !this._githubToken,
 			});
-			await this._client.start();
+			await client.start();
 			this._logService.info('CopilotClient started successfully');
-		}
-		return this._client;
+			this._client = client;
+			this._clientStarting = undefined;
+			return client;
+		})();
+		return this._clientStarting;
 	}
 
 	// ---- session management -------------------------------------------------

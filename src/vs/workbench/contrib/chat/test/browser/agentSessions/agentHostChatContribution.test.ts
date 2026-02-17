@@ -114,7 +114,10 @@ function createTestServices(disposables: DisposableStore) {
 	});
 	instantiationService.stub(IDefaultAccountService, { onDidChangeDefaultAccount: Event.None, getDefaultAccount: async () => null });
 	instantiationService.stub(IAuthenticationService, { onDidChangeSessions: Event.None });
-	instantiationService.stub(ILanguageModelsService, { registerLanguageModelProvider: () => toDisposable(() => { }) });
+	instantiationService.stub(ILanguageModelsService, {
+		deltaLanguageModelChatProviderDescriptors: () => { },
+		registerLanguageModelProvider: () => toDisposable(() => { }),
+	});
 
 	return { instantiationService, agentHostService, chatAgentService };
 }
