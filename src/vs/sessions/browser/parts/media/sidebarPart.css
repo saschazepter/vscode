@@ -23,12 +23,9 @@
 	-webkit-app-region: drag;
 }
 
-/* Interactive elements inside the title area must not be draggable */
-.agent-sessions-workbench .part.sidebar > .composite.title > .global-actions,
-.agent-sessions-workbench .part.sidebar > .composite.title > .global-actions-left,
-.agent-sessions-workbench .part.sidebar > .composite.title > .title-actions,
-.agent-sessions-workbench .part.sidebar > .composite.title > .title-label,
-.agent-sessions-workbench .part.sidebar > .composite.title > .composite-bar-container {
+/* Interactive elements in the title area must not be draggable */
+.agent-sessions-workbench .part.sidebar > .composite.title .action-label,
+.agent-sessions-workbench .part.sidebar > .composite.title .monaco-toolbar {
 	-webkit-app-region: no-drag;
 }
 
