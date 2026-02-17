@@ -20,6 +20,7 @@ import { isEqual } from '../../../../../base/common/resources.js';
 import { IChatEditingService } from '../../common/editing/chatEditingService.js';
 import { IAgentSessionsService } from '../agentSessions/agentSessionsService.js';
 import { agentSessionContainsResource, editingEntriesContainResource } from '../sessionResourceMatching.js';
+import { IChatWidget, IChatWidgetService } from '../chat.js';
 
 // --- Types --------------------------------------------------------------------
 
@@ -77,11 +78,6 @@ export interface IAgentFeedbackService {
 	getNextFeedback(sessionResource: URI, next: boolean): IAgentFeedback | undefined;
 
 	/**
-	 * Set the current navigation anchor for a session.
-	 */
-	setNavigationAnchor(sessionResource: URI, feedbackId: string | undefined): void;
-
-	/**
 	 * Get the current navigation bearings for a session.
 	 */
 	getNavigationBearing(sessionResource: URI): IAgentFeedbackNavigationBearing;
@@ -96,6 +92,7 @@ export interface IAgentFeedbackService {
 
 const AGENT_FEEDBACK_OWNER = 'agentFeedbackController';
 const AGENT_FEEDBACK_CONTEXT_VALUE = 'agentFeedback';
+const AGENT_FEEDBACK_ATTACHMENT_ID_PREFIX = 'agentFeedback:';
 
 export class AgentFeedbackService extends Disposable implements IAgentFeedbackService {
 
@@ -119,8 +116,41 @@ export class AgentFeedbackService extends Disposable implements IAgentFeedbackSe
 		@ICommentService private readonly _commentService: ICommentService,
 		@IChatEditingService private readonly _chatEditingService: IChatEditingService,
 		@IAgentSessionsService private readonly _agentSessionsService: IAgentSessionsService,
+		@IChatWidgetService private readonly _chatWidgetService: IChatWidgetService,
 	) {
 		super();
+
+		this._registerChatWidgetListeners();
+	}
+
+	private _registerChatWidgetListeners(): void {
+		for (const widget of this._chatWidgetService.getAllWidgets()) {
+			this._registerWidgetListeners(widget);
+		}
+
+		this._store.add(this._chatWidgetService.onDidAddWidget(widget => {
+			this._registerWidgetListeners(widget);
+		}));
+	}
+
+	private _registerWidgetListeners(widget: IChatWidget): void {
+		this._store.add(widget.attachmentModel.onDidChange(e => {
+			for (const deletedId of e.deleted) {
+				if (!deletedId.startsWith(AGENT_FEEDBACK_ATTACHMENT_ID_PREFIX)) {
+					continue;
+				}
+
+				const sessionResourceString = deletedId.slice(AGENT_FEEDBACK_ATTACHMENT_ID_PREFIX.length);
+				if (!sessionResourceString) {
+					continue;
+				}
+
+				const sessionResource = URI.parse(sessionResourceString);
+				if (this.getFeedback(sessionResource).length > 0) {
+					this.clearFeedback(sessionResource);
+				}
+			}
+		}));
 	}
 
 	private _ensureController(): void {
@@ -351,21 +381,6 @@ export class AgentFeedbackService extends Disposable implements IAgentFeedbackSe
 		this._navigationAnchorBySession.set(key, feedback.id);
 		this._onDidChangeNavigation.fire(sessionResource);
 		return feedback;
-	}
-
-	setNavigationAnchor(sessionResource: URI, feedbackId: string | undefined): void {
-		const key = sessionResource.toString();
-		if (!feedbackId) {
-			this._navigationAnchorBySession.delete(key);
-			this._onDidChangeNavigation.fire(sessionResource);
-			return;
-		}
-
-		const feedbackItems = this._feedbackBySession.get(key);
-		if (feedbackItems?.some(item => item.id === feedbackId)) {
-			this._navigationAnchorBySession.set(key, feedbackId);
-			this._onDidChangeNavigation.fire(sessionResource);
-		}
 	}
 
 	getNavigationBearing(sessionResource: URI): IAgentFeedbackNavigationBearing {
