@@ -129,6 +129,9 @@ steps:
       Write-Host "All required compilation folders checked."
     displayName: Validate compilation folders
 
+  - script: bash ./build/azure-pipelines/common/extract-telemetry.sh
+    displayName: Generate lists of telemetry events
+
   - ${{ if or(eq(parameters.VSCODE_RUN_ELECTRON_TESTS, true), eq(parameters.VSCODE_RUN_BROWSER_TESTS, true), eq(parameters.VSCODE_RUN_REMOTE_TESTS, true)) }}:
     - powershell: npm run compile
       displayName: Compile smoke test suites (non-OSS)
