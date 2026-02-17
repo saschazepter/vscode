@@ -223,6 +223,7 @@
 
 /* Line counts in buttons */
 .changes-view-body .chat-editing-session-actions .monaco-button.working-set-diff-stats {
+	flex-shrink: 0;
 	padding-left: 4px;
 	padding-right: 8px;
 }
