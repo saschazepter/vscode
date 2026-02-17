@@ -200,6 +200,10 @@ export interface IInjectedTextInlineDecorationsComputerContext {
 	 * Get the wrapped text indent length for a model line number
 	 */
 	getWrappedTextIndentLength(modelLineNumber: number): number;
+	/**
+	 * Get the view line number for the first output line of a model line
+	 */
+	getBaseViewLineNumber(modelLineNumber: number): number;
 }
 
 export class InjectedTextInlineDecorationsComputer implements IInlineDecorationsComputer {
@@ -244,7 +248,8 @@ export class InjectedTextInlineDecorationsComputer implements IInlineDecorations
 						const start = offset + Math.max(injectedTextStartOffsetInInputWithInjections - lineStartOffsetInInputWithInjections, 0);
 						const end = offset + Math.min(injectedTextEndOffsetInInputWithInjections - lineStartOffsetInInputWithInjections, lineEndOffsetInInputWithInjections - lineStartOffsetInInputWithInjections);
 						if (start !== end) {
-							const range = new Range(modelLineNumber, start + 1, modelLineNumber, end + 1);
+							const viewLineNumber = this.context.getBaseViewLineNumber(modelLineNumber) + outputLineIndex;
+							const range = new Range(viewLineNumber, start + 1, viewLineNumber, end + 1);
 							const type: InlineDecorationType = options.inlineClassNameAffectsLetterSpacing ? InlineDecorationType.RegularAffectingLetterSpacing : InlineDecorationType.Regular;
 							inlineDecorations.push(new InlineDecoration(range, options.inlineClassName, type));
 						}
