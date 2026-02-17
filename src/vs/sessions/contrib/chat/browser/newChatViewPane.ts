@@ -285,7 +285,6 @@ class NewChatWidget extends Disposable {
 			fontSize: 13,
 			lineHeight: 20,
 			padding: { top: 8, bottom: 2 },
-			lineDecorationsWidth: 12,
 			wrappingStrategy: 'advanced',
 			stickyScroll: { enabled: false },
 			renderWhitespace: 'none',
