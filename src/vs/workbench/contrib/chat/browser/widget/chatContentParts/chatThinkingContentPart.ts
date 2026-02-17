@@ -1365,10 +1365,7 @@ ${this.hookCount > 0 ? `EXAMPLES WITH BLOCKED CONTENT (from hooks):
 	}
 
 	protected override setTitle(title: string, omitPrefix?: boolean): void {
-		// Only block title updates if a generated title has already been set.
-		// This allows hook titles to update even after the response completes,
-		// while still preventing overwrites once an LLM-generated title is finalized.
-		if (!title || this.content.generatedTitle) {
+		if (!title || this.element.isComplete) {
 			return;
 		}
 
