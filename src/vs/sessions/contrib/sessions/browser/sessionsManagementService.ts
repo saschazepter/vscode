@@ -16,7 +16,7 @@ import { ChatViewPaneTarget, IChatWidgetService } from '../../../../workbench/co
 import { IChatSessionItem, IChatSessionProviderOptionItem, IChatSessionsService } from '../../../../workbench/contrib/chat/common/chatSessionsService.js';
 import { IChatService, IChatSendRequestOptions } from '../../../../workbench/contrib/chat/common/chatService/chatService.js';
 import { ChatAgentLocation } from '../../../../workbench/contrib/chat/common/constants.js';
-import { IAgentSession } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsModel.js';
+import { IAgentSession, isAgentSession } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsModel.js';
 import { IAgentSessionsService } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsService.js';
 
 export const IsNewChatSessionContext = new RawContextKey<boolean>('isNewChatSession', true);
@@ -43,7 +43,7 @@ export type IActiveSessionItem = (IChatSessionItem | IAgentSession) & {
 	readonly worktree: URI | undefined;
 };
 
-export interface ISessionsWorkbenchService {
+export interface ISessionsManagementService {
 	readonly _serviceBrand: undefined;
 
 	/**
@@ -75,9 +75,9 @@ export interface ISessionsWorkbenchService {
 	openNewSession(): void;
 }
 
-export const ISessionsWorkbenchService = createDecorator<ISessionsWorkbenchService>('sessionsWorkbenchService');
+export const ISessionsManagementService = createDecorator<ISessionsManagementService>('sessionsManagementService');
 
-export class SessionsWorkbenchService extends Disposable implements ISessionsWorkbenchService {
+export class SessionsManagementService extends Disposable implements ISessionsManagementService {
 
 	declare readonly _serviceBrand: undefined;
 
@@ -137,6 +137,12 @@ export class SessionsWorkbenchService extends Disposable implements ISessionsWor
 
 		const agentSession = this.agentSessionsService.model.getSession(currentActive.resource);
 		if (!agentSession) {
+			// Only switch sessions if the active session was a known agent session
+			// that got deleted. New session resources that aren't yet in the model
+			// should not trigger a switch.
+			if (isAgentSession(currentActive)) {
+				this.showNextSession();
+			}
 			return;
 		}
 
@@ -147,6 +153,19 @@ export class SessionsWorkbenchService extends Disposable implements ISessionsWor
 			worktree,
 		};
 		this._activeSession.set(activeSessionItem, undefined);
+	}
+
+	private showNextSession(): void {
+		const sessions = this.agentSessionsService.model.sessions
+			.filter(s => !s.isArchived())
+			.sort((a, b) => (b.timing.lastRequestEnded ?? b.timing.created) - (a.timing.lastRequestEnded ?? a.timing.created));
+
+		if (sessions.length > 0) {
+			this.setActiveSession(sessions[0]);
+			this.instantiationService.invokeFunction(openSessionDefault, sessions[0]);
+		} else {
+			this.openNewSession();
+		}
 	}
 
 	private getRepositoryFromMetadata(metadata: { readonly [key: string]: unknown } | undefined): [URI | undefined, URI | undefined] {

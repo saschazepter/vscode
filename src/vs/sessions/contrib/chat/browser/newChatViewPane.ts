@@ -7,7 +7,7 @@ import './media/chatWidget.css';
 import './media/chatWelcomePart.css';
 import * as dom from '../../../../base/browser/dom.js';
 import { Codicon } from '../../../../base/common/codicons.js';
-import { toAction } from '../../../../base/common/actions.js';
+import { Separator, toAction } from '../../../../base/common/actions.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { KeyCode } from '../../../../base/common/keyCodes.js';
 import { Disposable, DisposableStore, MutableDisposable } from '../../../../base/common/lifecycle.js';
@@ -30,12 +30,12 @@ import { IThemeService } from '../../../../platform/theme/common/themeService.js
 import { IHoverService } from '../../../../platform/hover/browser/hover.js';
 import { HoverPosition } from '../../../../base/browser/ui/hover/hoverWidget.js';
 import { renderIcon } from '../../../../base/browser/ui/iconLabel/iconLabels.js';
-import { isEqual } from '../../../../base/common/resources.js';
+import { basename, isEqual } from '../../../../base/common/resources.js';
 import { asCSSUrl } from '../../../../base/browser/cssValue.js';
 import { FileAccess } from '../../../../base/common/network.js';
 import { localize } from '../../../../nls.js';
 import { AgentSessionProviders, getAgentSessionProviderIcon } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessions.js';
-import { ISessionsWorkbenchService } from '../../sessions/browser/sessionsWorkbenchService.js';
+import { ISessionsManagementService } from '../../sessions/browser/sessionsManagementService.js';
 import { ChatSessionPosition, getResourceForNewChatSession } from '../../../../workbench/contrib/chat/browser/chatSessions/chatSessions.contribution.js';
 import { ChatSessionPickerActionItem, IChatSessionPickerDelegate } from '../../../../workbench/contrib/chat/browser/chatSessions/chatSessionPickerActionItem.js';
 import { SearchableOptionPickerActionItem } from '../../../../workbench/contrib/chat/browser/chatSessions/searchableOptionPickerActionItem.js';
@@ -47,6 +47,10 @@ import { IModelPickerDelegate, ModelPickerActionItem } from '../../../../workben
 import { IChatInputPickerOptions } from '../../../../workbench/contrib/chat/browser/widget/input/chatInputPickerActionItem.js';
 import { WorkspaceFolderCountContext } from '../../../../workbench/common/contextkeys.js';
 import { IViewDescriptorService } from '../../../../workbench/common/views.js';
+import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
+import { IFileDialogService } from '../../../../platform/dialogs/common/dialogs.js';
+import { IWorkspaceEditingService } from '../../../../workbench/services/workspaces/common/workspaceEditing.js';
+import { IWorkspacesService, isRecentFolder } from '../../../../platform/workspaces/common/workspaces.js';
 import { IViewPaneOptions, ViewPane } from '../../../../workbench/browser/parts/views/viewPane.js';
 import { ContextMenuController } from '../../../../editor/contrib/contextmenu/browser/contextmenu.js';
 import { getSimpleEditorOptions } from '../../../../workbench/contrib/codeEditor/browser/simpleEditorOptions.js';
@@ -104,6 +108,20 @@ class TargetConfig extends Disposable implements ITargetConfig {
 			this._onDidChangeSelectedTarget.fire(target);
 		}
 	}
+
+	setAllowedTargets(targets: AgentSessionProviders[]): void {
+		const newSet = new Set(targets);
+		this._allowedTargets.set(newSet, undefined);
+		this._onDidChangeAllowedTargets.fire(newSet);
+
+		// If the currently selected target is no longer allowed, switch to the first allowed target
+		const current = this._selectedTarget.get();
+		if (current && !newSet.has(current)) {
+			const fallback = newSet.values().next().value;
+			this._selectedTarget.set(fallback, undefined);
+			this._onDidChangeSelectedTarget.fire(fallback);
+		}
+	}
 }
 
 // #endregion
@@ -139,7 +157,7 @@ export interface INewChatWidgetOptions {
  */
 class NewChatWidget extends Disposable {
 
-	private readonly _targetConfig: ITargetConfig;
+	private readonly _targetConfig: TargetConfig;
 	private readonly _options: INewChatWidgetOptions;
 
 	// Input
@@ -174,6 +192,10 @@ class NewChatWidget extends Disposable {
 		@IProductService private readonly productService: IProductService,
 		@ILogService private readonly logService: ILogService,
 		@IHoverService _hoverService: IHoverService,
+		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
+		@IFileDialogService private readonly fileDialogService: IFileDialogService,
+		@IWorkspaceEditingService private readonly workspaceEditingService: IWorkspaceEditingService,
+		@IWorkspacesService private readonly workspacesService: IWorkspacesService,
 	) {
 		super();
 		this._targetConfig = this._register(new TargetConfig(options.targetConfig));
@@ -397,16 +419,16 @@ class NewChatWidget extends Disposable {
 
 		const pickersRow = dom.append(this._pickersContainer, dom.$('.chat-full-welcome-pickers'));
 
-		// Left group: target dropdown + non-repo extension pickers
+		// Left group: target dropdown (agent/worktree picker)
 		const leftGroup = dom.append(pickersRow, dom.$('.sessions-chat-pickers-left'));
 		this._targetDropdownContainer = dom.append(leftGroup, dom.$('.sessions-chat-dropdown-wrapper'));
 		this._renderTargetDropdown(this._targetDropdownContainer);
-		this._extensionPickersLeftContainer = dom.append(leftGroup, dom.$('.sessions-chat-extension-pickers-left'));
 
 		// Spacer
 		dom.append(pickersRow, dom.$('.sessions-chat-pickers-spacer'));
 
-		// Right group: repo/folder pickers
+		// Right group: all extension pickers (folder first, then others)
+		this._extensionPickersLeftContainer = undefined;
 		this._extensionPickersRightContainer = dom.append(pickersRow, dom.$('.sessions-chat-extension-pickers-right'));
 
 		this._renderExtensionPickers();
@@ -434,7 +456,6 @@ class NewChatWidget extends Disposable {
 			const currentAllowed = this._targetConfig.allowedTargets.get();
 			const currentActive = this._targetConfig.selectedTarget.get();
 			const actions = [...currentAllowed]
-				.filter(t => t !== AgentSessionProviders.Local)
 				.map(sessionType => {
 					const label = getAgentSessionProviderName(sessionType);
 					return toAction({
@@ -462,7 +483,7 @@ class NewChatWidget extends Disposable {
 	// --- Welcome: Extension option pickers ---
 
 	private _renderExtensionPickers(force?: boolean): void {
-		if (!this._extensionPickersLeftContainer || !this._extensionPickersRightContainer) {
+		if (!this._extensionPickersRightContainer) {
 			return;
 		}
 
@@ -472,8 +493,16 @@ class NewChatWidget extends Disposable {
 			return;
 		}
 
+		// For Local target, render a workspace folder picker instead of extension pickers
+		if (activeSessionType === AgentSessionProviders.Local) {
+			this._clearExtensionPickers();
+			this._renderLocalFolderPicker();
+			return;
+		}
+
 		const optionGroups = this.chatSessionsService.getOptionGroupsForSessionType(activeSessionType);
 		if (!optionGroups || optionGroups.length === 0) {
+			this._clearExtensionPickers();
 			return;
 		}
 
@@ -503,7 +532,15 @@ class NewChatWidget extends Disposable {
 			return;
 		}
 
-		visibleGroups.sort((a, b) => (a.when ? 1 : 0) - (b.when ? 1 : 0));
+		visibleGroups.sort((a, b) => {
+			// Repo/folder pickers first, then others
+			const aRepo = isRepoOrFolderGroup(a) ? 0 : 1;
+			const bRepo = isRepoOrFolderGroup(b) ? 0 : 1;
+			if (aRepo !== bRepo) {
+				return aRepo - bRepo;
+			}
+			return (a.when ? 1 : 0) - (b.when ? 1 : 0);
+		});
 
 		if (!force && this._pickerWidgets.size === visibleGroups.length) {
 			const allMatch = visibleGroups.every(g => this._pickerWidgets.has(g.id));
@@ -556,13 +593,73 @@ class NewChatWidget extends Disposable {
 			this._pickerWidgetDisposables.add(widget);
 			this._pickerWidgets.set(optionGroup.id, widget);
 
-			// Repo/folder pickers go to the right; others go to the left
-			const isRightAligned = isRepoOrFolderGroup(optionGroup);
-			const targetContainer = isRightAligned ? this._extensionPickersRightContainer! : this._extensionPickersLeftContainer!;
+			// All pickers go to the right
+			const targetContainer = this._extensionPickersRightContainer!;
 
 			const slot = dom.append(targetContainer, dom.$('.sessions-chat-picker-slot'));
 			widget.render(slot);
 		}
+	}
+
+	private _renderLocalFolderPicker(): void {
+		if (!this._extensionPickersRightContainer) {
+			return;
+		}
+
+		const folders = this.workspaceContextService.getWorkspace().folders;
+		const currentFolder = folders[0];
+		const folderName = currentFolder ? basename(currentFolder.uri) : localize('noFolder', "No Folder");
+
+		const slot = dom.append(this._extensionPickersRightContainer, dom.$('.sessions-chat-picker-slot'));
+		const button = dom.append(slot, dom.$('.sessions-chat-dropdown-button'));
+		button.tabIndex = 0;
+		button.role = 'button';
+		button.ariaHasPopup = 'true';
+		dom.append(button, renderIcon(Codicon.folder));
+		dom.append(button, dom.$('span.sessions-chat-dropdown-label', undefined, folderName));
+		dom.append(button, renderIcon(Codicon.chevronDown));
+
+		const switchFolder = async (folderUri: URI) => {
+			const foldersToDelete = this.workspaceContextService.getWorkspace().folders.map(f => f.uri);
+			await this.workspaceEditingService.updateFolders(0, foldersToDelete.length, [{ uri: folderUri }]);
+			this._renderExtensionPickers(true);
+		};
+
+		this._pickerWidgetDisposables.add(dom.addDisposableListener(button, dom.EventType.CLICK, async () => {
+			const recentlyOpened = await this.workspacesService.getRecentlyOpened();
+			const recentFolders = recentlyOpened.workspaces
+				.filter(isRecentFolder)
+				.filter(r => !currentFolder || !isEqual(r.folderUri, currentFolder.uri))
+				.slice(0, 10);
+
+			const actions = recentFolders.map(recent => toAction({
+				id: recent.folderUri.toString(),
+				label: recent.label || basename(recent.folderUri),
+				run: () => switchFolder(recent.folderUri),
+			}));
+
+			actions.push(new Separator());
+			actions.push(toAction({
+				id: 'browse',
+				label: localize('browseFolder', "Browse..."),
+				run: async () => {
+					const selected = await this.fileDialogService.showOpenDialog({
+						canSelectFiles: false,
+						canSelectFolders: true,
+						canSelectMany: false,
+						title: localize('selectFolder', "Select Folder"),
+					});
+					if (selected?.[0]) {
+						await switchFolder(selected[0]);
+					}
+				},
+			}));
+
+			this.contextMenuService.showContextMenu({
+				getAnchor: () => button,
+				getActions: () => actions,
+			});
+		}));
 	}
 
 	private _evaluateOptionGroupVisibility(optionGroup: { id: string; when?: string }): boolean {
@@ -704,6 +801,10 @@ class NewChatWidget extends Disposable {
 	focusInput(): void {
 		this._editor?.focus();
 	}
+
+	updateAllowedTargets(targets: AgentSessionProviders[]): void {
+		this._targetConfig.setAllowedTargets(targets);
+	}
 }
 
 // #endregion
@@ -730,7 +831,8 @@ export class NewChatViewPane extends ViewPane {
 		@IOpenerService openerService: IOpenerService,
 		@IThemeService themeService: IThemeService,
 		@IHoverService hoverService: IHoverService,
-		@ISessionsWorkbenchService private readonly activeSessionService: ISessionsWorkbenchService,
+		@ISessionsManagementService private readonly activeSessionService: ISessionsManagementService,
+		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
 		@ILogService private readonly logService: ILogService,
 	) {
 		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
@@ -743,7 +845,7 @@ export class NewChatViewPane extends ViewPane {
 			NewChatWidget,
 			{
 				targetConfig: {
-					allowedTargets: [AgentSessionProviders.Background, AgentSessionProviders.Cloud],
+					allowedTargets: this.computeAllowedTargets(),
 					defaultTarget: AgentSessionProviders.Background,
 				},
 				onSendRequest: (data) => {
@@ -756,6 +858,19 @@ export class NewChatViewPane extends ViewPane {
 
 		this._widget.render(container);
 		this._widget.focusInput();
+
+		this._register(this.workspaceContextService.onDidChangeWorkspaceFolders(() => {
+			this._widget?.updateAllowedTargets(this.computeAllowedTargets());
+		}));
+	}
+
+	private computeAllowedTargets(): AgentSessionProviders[] {
+		const targets: AgentSessionProviders[] = [];
+		if (this.workspaceContextService.getWorkspace().folders.length === 1) {
+			targets.push(AgentSessionProviders.Local);
+		}
+		targets.push(AgentSessionProviders.Background, AgentSessionProviders.Cloud);
+		return targets;
 	}
 
 	protected override layoutBody(height: number, width: number): void {
