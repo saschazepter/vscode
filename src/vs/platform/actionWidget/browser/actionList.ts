@@ -626,7 +626,6 @@ export class ActionList<T> extends Disposable {
 			}
 		}
 
-		this._list.layout(listHeight);
 		const effectiveMinWidth = Math.max(minWidth, this._options?.minWidth ?? 0);
 		let maxWidth = effectiveMinWidth;
 
