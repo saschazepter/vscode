@@ -871,7 +871,7 @@ ${this.hookCount > 0 ? `EXAMPLES WITH BLOCKED CONTENT (from hooks):
 			- "The error seems to be coming from the database connection..." → "Investigated database connection issue"
 			- "Looking at the UserService class, I see it handles..." → "Reviewed UserService implementation"
 
-			Content: ${context}${this.hookCount > 0 ? `\n\t\t\tNote: ${this.hookCount} hook(s) fired during this thinking block.` : ''}`;
+			Content: ${context};
 
 			const response = await this.languageModelsService.sendChatRequest(
 				models[0],
