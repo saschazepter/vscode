@@ -1587,6 +1587,16 @@ export class ChatWidget extends Disposable implements IChatWidget {
 
 		// Wire up ChatWidget-specific list widget events
 		this._register(this.listWidget.onDidClickRequest(async item => {
+			// If the click came from a sticky scroll row, scroll to reveal the real
+			// element and use its template so editing works on the actual row.
+			if (dom.findParentWithClass(item.rowContainer, 'monaco-tree-sticky-row') && isRequestVM(item.currentElement)) {
+				this.listWidget.reveal(item.currentElement, 0);
+				const realTemplate = this.listWidget.getTemplateDataForRequestId(item.currentElement.id);
+				if (realTemplate) {
+					this.clickedRequest(realTemplate);
+				}
+				return;
+			}
 			this.clickedRequest(item);
 		}));
 
