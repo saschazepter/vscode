@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { IDragAndDropData } from '../../dnd.js';
-import { addDisposableListener, Dimension, EventHelper, getActiveElement, getWindow, isActiveElement, isEditableElement, isHTMLElement, isKeyboardEvent, isMouseEvent, isPointerEvent } from '../../dom.js';
+import { addDisposableListener, Dimension, EventHelper, getActiveElement, getWindow, isActiveElement, isEditableElement, isHTMLElement, isMouseEvent } from '../../dom.js';
 import { createStyleSheet } from '../../domStylesheets.js';
 import { asCssValueWithDefault } from '../../cssValue.js';
 import { DomEmitter } from '../../event.js';
@@ -1812,7 +1812,7 @@ export class List<T> implements ISpliceable<T>, IDisposable {
 			}
 		}
 
-		if (browserEvent && (isKeyboardEvent(browserEvent))) {
+		if (browserEvent && !isMouseEvent(browserEvent)) {
 			this.view.domNode.classList.remove('pointer-focus');
 		}
 
