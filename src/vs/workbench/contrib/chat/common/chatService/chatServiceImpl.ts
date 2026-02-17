@@ -1171,9 +1171,12 @@ export class ChatService extends Disposable implements IChatService {
 		let shouldProcessPending = false;
 		const rawResponsePromise = sendRequestInternal();
 		// Note- requestId is not known at this point, assigned later
-		this._pendingRequests.set(model.sessionResource, this.instantiationService.createInstance(CancellableRequest, source, undefined));
+		const cancellableRequest = this.instantiationService.createInstance(CancellableRequest, source, undefined);
+		this._pendingRequests.set(model.sessionResource, cancellableRequest);
 		rawResponsePromise.finally(() => {
-			this._pendingRequests.deleteAndDispose(model.sessionResource);
+			if (this._pendingRequests.get(model.sessionResource) === cancellableRequest) {
+				this._pendingRequests.deleteAndDispose(model.sessionResource);
+			}
 			// Process the next pending request from the queue if any
 			if (shouldProcessPending) {
 				this.processNextPendingRequest(model);
