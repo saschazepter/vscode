@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { IDragAndDropData } from '../../dnd.js';
-import { addDisposableListener, Dimension, EventHelper, getActiveElement, getWindow, isActiveElement, isEditableElement, isHTMLElement, isMouseEvent } from '../../dom.js';
+import { addDisposableListener, Dimension, EventHelper, getActiveElement, getWindow, isActiveElement, isEditableElement, isHTMLElement, isKeyboardEvent, isMouseEvent, isPointerEvent } from '../../dom.js';
 import { createStyleSheet } from '../../domStylesheets.js';
 import { asCssValueWithDefault } from '../../cssValue.js';
 import { DomEmitter } from '../../event.js';
@@ -1562,9 +1562,6 @@ export class List<T> implements ISpliceable<T>, IDisposable {
 		this.disposables.add(addDisposableListener(this.view.domNode, 'pointerdown', () => {
 			this.view.domNode.classList.add('pointer-focus');
 		}));
-		this.disposables.add(addDisposableListener(this.view.domNode, 'keydown', () => {
-			this.view.domNode.classList.remove('pointer-focus');
-		}));
 
 		this.onDidChangeFocus(this._onFocusChange, this, this.disposables);
 		this.onDidChangeSelection(this._onSelectionChange, this, this.disposables);
@@ -1813,6 +1810,10 @@ export class List<T> implements ISpliceable<T>, IDisposable {
 			if (index < 0 || index >= this.length) {
 				throw new ListError(this.user, `Invalid index ${index}`);
 			}
+		}
+
+		if (browserEvent && (isKeyboardEvent(browserEvent))) {
+			this.view.domNode.classList.remove('pointer-focus');
 		}
 
 		this.focus.set(indexes, browserEvent);
