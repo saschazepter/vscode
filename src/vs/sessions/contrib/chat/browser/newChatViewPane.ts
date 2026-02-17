@@ -7,7 +7,7 @@ import './media/chatWidget.css';
 import './media/chatWelcomePart.css';
 import * as dom from '../../../../base/browser/dom.js';
 import { Codicon } from '../../../../base/common/codicons.js';
-import { Separator, toAction } from '../../../../base/common/actions.js';
+import { toAction } from '../../../../base/common/actions.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { KeyCode } from '../../../../base/common/keyCodes.js';
 import { Disposable, DisposableStore, MutableDisposable } from '../../../../base/common/lifecycle.js';
@@ -51,6 +51,8 @@ import { IWorkspaceContextService } from '../../../../platform/workspace/common/
 import { IFileDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 import { IWorkspaceEditingService } from '../../../../workbench/services/workspaces/common/workspaceEditing.js';
 import { IWorkspacesService, isRecentFolder } from '../../../../platform/workspaces/common/workspaces.js';
+import { IActionWidgetService } from '../../../../platform/actionWidget/browser/actionWidget.js';
+import { ActionListItemKind, IActionListItem } from '../../../../platform/actionWidget/browser/actionList.js';
 import { IViewPaneOptions, ViewPane } from '../../../../workbench/browser/parts/views/viewPane.js';
 import { ContextMenuController } from '../../../../editor/contrib/contextmenu/browser/contextmenu.js';
 import { getSimpleEditorOptions } from '../../../../workbench/contrib/codeEditor/browser/simpleEditorOptions.js';
@@ -196,6 +198,7 @@ class NewChatWidget extends Disposable {
 		@IFileDialogService private readonly fileDialogService: IFileDialogService,
 		@IWorkspaceEditingService private readonly workspaceEditingService: IWorkspaceEditingService,
 		@IWorkspacesService private readonly workspacesService: IWorkspacesService,
+		@IActionWidgetService private readonly actionWidgetService: IActionWidgetService,
 	) {
 		super();
 		this._targetConfig = this._register(new TargetConfig(options.targetConfig));
@@ -632,33 +635,50 @@ class NewChatWidget extends Disposable {
 				.filter(r => !currentFolder || !isEqual(r.folderUri, currentFolder.uri))
 				.slice(0, 10);
 
-			const actions = recentFolders.map(recent => toAction({
-				id: recent.folderUri.toString(),
+			const items: IActionListItem<URI>[] = recentFolders.map(recent => ({
+				item: recent.folderUri,
+				kind: ActionListItemKind.Action,
 				label: recent.label || basename(recent.folderUri),
-				run: () => switchFolder(recent.folderUri),
+				group: { icon: Codicon.folder, title: '' },
 			}));
 
-			actions.push(new Separator());
-			actions.push(toAction({
-				id: 'browse',
+			// Separator before Browse
+			items.push({ kind: ActionListItemKind.Separator });
+
+			// Browse action
+			items.push({
+				kind: ActionListItemKind.Action,
 				label: localize('browseFolder', "Browse..."),
-				run: async () => {
-					const selected = await this.fileDialogService.showOpenDialog({
-						canSelectFiles: false,
-						canSelectFolders: true,
-						canSelectMany: false,
-						title: localize('selectFolder', "Select Folder"),
-					});
-					if (selected?.[0]) {
-						await switchFolder(selected[0]);
-					}
-				},
-			}));
-
-			this.contextMenuService.showContextMenu({
-				getAnchor: () => button,
-				getActions: () => actions,
+				group: { icon: Codicon.folderOpened, title: '' },
 			});
+
+			this.actionWidgetService.show(
+				'localFolderPicker',
+				false,
+				items,
+				{
+					onSelect: async (selectedUri, _preview) => {
+						this.actionWidgetService.hide();
+						if (selectedUri) {
+							await switchFolder(selectedUri);
+						} else {
+							// Browse action (no item attached)
+							const selected = await this.fileDialogService.showOpenDialog({
+								canSelectFiles: false,
+								canSelectFolders: true,
+								canSelectMany: false,
+								title: localize('selectFolder', "Select Folder"),
+							});
+							if (selected?.[0]) {
+								await switchFolder(selected[0]);
+							}
+						}
+					},
+					onHide: () => { },
+				},
+				button,
+				undefined,
+			);
 		}));
 	}
 
