@@ -35,6 +35,7 @@ import { MCP } from './modelContextProtocol.js';
 import { UriTemplate } from './uriTemplate.js';
 
 export const extensionMcpCollectionPrefix = 'ext.';
+export const mcpSandboxedLaunchEnvironmentKey = 'VSCODE_MCP_SANDBOXED';
 
 export function extensionPrefixedIdentifier(identifier: ExtensionIdentifier, id: string): string {
 	return ExtensionIdentifier.toKey(identifier) + '/' + id;

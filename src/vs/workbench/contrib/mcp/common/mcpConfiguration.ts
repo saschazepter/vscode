@@ -184,7 +184,7 @@ export const mcpStdioServerSchema: IJSONSchema = {
 						allowedDomains: {
 							type: 'array',
 							items: { type: 'string' },
-							default: ['*.npmjs.org']
+							default: []
 						},
 						deniedDomains: {
 							type: 'array',
@@ -204,7 +204,7 @@ export const mcpStdioServerSchema: IJSONSchema = {
 						allowWrite: {
 							type: 'array',
 							items: { type: 'string' },
-							default: ['.', '~/.npm']
+							default: ['.']
 						},
 						denyWrite: {
 							type: 'array',

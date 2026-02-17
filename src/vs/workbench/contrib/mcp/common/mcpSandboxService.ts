@@ -19,7 +19,7 @@ import { IRemoteAgentEnvironment } from '../../../../platform/remote/common/remo
 import { IRemoteAgentService } from '../../../services/remote/common/remoteAgentService.js';
 import { IMcpSandboxConfiguration, McpServerType } from '../../../../platform/mcp/common/mcpPlatformTypes.js';
 import { IWorkbenchMcpManagementService } from '../../../services/mcp/common/mcpWorkbenchManagementService.js';
-import { McpServerDefinition, McpServerLaunch, McpServerTransportType } from './mcpTypes.js';
+import { mcpSandboxedLaunchEnvironmentKey, McpServerDefinition, McpServerLaunch, McpServerTransportType } from './mcpTypes.js';
 
 export const IMcpSandboxService = createDecorator<IMcpSandboxService>('mcpSandboxService');
 
@@ -31,7 +31,6 @@ export interface IMcpSandboxService {
 
 export class McpSandboxService extends Disposable implements IMcpSandboxService {
 	readonly _serviceBrand: undefined;
-
 
 	private _srtPath: string | undefined;
 	private _srtPathResolved = false;
@@ -57,10 +56,11 @@ export class McpSandboxService extends Disposable implements IMcpSandboxService 
 		this._appRoot = dirname(FileAccess.asFileUri('').path);
 		this._sandboxSettingsId = generateUuid();
 		this._remoteEnvDetailsPromise = this._remoteAgentService.getEnvironment();
+		// listen to MCP server updates to update the sandbox config file in case of any changes to the sandbox config for installed servers, since the sandbox config is stored in a file that is read during launch.
 		this._register(this._mcpManagementService.onDidUpdateMcpServers(e => {
 			void this._refreshSandboxConfigFromUpdates(e);
 		}));
-
+		// also listen to MCP server installs to populate the initial sandbox config and enabled servers set based on the install results.
 		this._register(this._mcpManagementService.onDidInstallMcpServers(e => {
 			this._populateSandboxConfigFromInstallResults(e);
 		}));
@@ -73,31 +73,8 @@ export class McpSandboxService extends Disposable implements IMcpSandboxService 
 		if (this._os === OperatingSystem.Windows) {
 			return false;
 		}
-		//debug: add logs for debugging sandbox enablement issues.
 		this._logService.debug(`McpSandboxService: Checking sandbox enablement for server ${serverDef.label}. Enabled servers: ${[...this._sandboxEnabledMcpServers].join(', ')}`);
 		return this._sandboxEnabledMcpServers.has(serverLabel ?? serverDef.label);
-	}
-
-	public async getSandboxRuntimePath(): Promise<string | undefined> {
-		await this._resolveSrtPath();
-		return this._srtPath;
-	}
-
-	public getSandboxEnvVariables(): Record<string, string> | undefined {
-		if (this._tempDir) {
-			return { TMPDIR: this._tempDir.path, SRT_DEBUG: 'true' };
-		}
-		return undefined;
-	}
-
-	public async getSandboxCommandArgs(command: string, args: readonly string[]): Promise<string[] | undefined> {
-		const result: string[] = [];
-		this._sandboxConfigPath = await this.getSandboxConfigPath();
-		if (this._sandboxConfigPath) {
-			result.push('--settings', this._sandboxConfigPath);
-		}
-		result.push(command, ...args);
-		return result;
 	}
 
 	public async launchInSandboxIfEnabled(serverDef: McpServerDefinition, launch: McpServerLaunch): Promise<McpServerLaunch> {
@@ -120,6 +97,28 @@ export class McpSandboxService extends Disposable implements IMcpSandboxService 
 		}
 		this._logService.debug(`McpSandboxService: launch details for server ${serverDef.label} - command: ${launch.command}, args: ${launch.args.join(' ')}, env: ${JSON.stringify(launch.env)}`);
 		return launch;
+	}
+
+	private async getSandboxRuntimePath(): Promise<string | undefined> {
+		await this._resolveSrtPath();
+		return this._srtPath;
+	}
+
+	private getSandboxEnvVariables(): Record<string, string> | undefined {
+		if (this._tempDir) {
+			return { TMPDIR: this._tempDir.path, SRT_DEBUG: 'true', [mcpSandboxedLaunchEnvironmentKey]: 'true' };
+		}
+		return undefined;
+	}
+
+	private async getSandboxCommandArgs(command: string, args: readonly string[]): Promise<string[] | undefined> {
+		const result: string[] = [];
+		this._sandboxConfigPath = await this.getSandboxConfigPath();
+		if (this._sandboxConfigPath) {
+			result.push('--settings', this._sandboxConfigPath);
+		}
+		result.push(command, ...args);
+		return result;
 	}
 
 	private async getSandboxConfigPath(sandboxConfig?: IMcpSandboxConfiguration): Promise<string | undefined> {
@@ -167,11 +166,9 @@ export class McpSandboxService extends Disposable implements IMcpSandboxService 
 		}
 		this._srtPathResolved = true;
 		const remoteEnv = this._remoteEnvDetails || await this._remoteEnvDetailsPromise;
-		if (!remoteEnv) {
-			this._srtPath = this._pathJoin(this._appRoot, 'node_modules', '@anthropic-ai', 'sandbox-runtime', 'dist', 'cli.js');
-			return;
+		if (remoteEnv) {
+			this._appRoot = remoteEnv.appRoot.path;
 		}
-		this._appRoot = remoteEnv.appRoot.path;
 		this._srtPath = this._pathJoin(this._appRoot, 'node_modules', '@anthropic-ai', 'sandbox-runtime', 'dist', 'cli.js');
 	}
 
@@ -190,6 +187,8 @@ export class McpSandboxService extends Disposable implements IMcpSandboxService 
 		return this._sandboxConfigPath;
 	}
 
+	// this method merges the default allowWrite paths and allowedDomains with the ones provided in the sandbox config, to ensure that the default necessary paths and domains are always included in the sandbox config used for launching,
+	//  even if they are not explicitly specified in the config provided by the user or the MCP server config.
 	private _withDefaultSandboxConfig(sandboxConfig?: IMcpSandboxConfiguration): IMcpSandboxConfiguration {
 		const mergedAllowWrite = [...(sandboxConfig?.filesystem?.allowWrite ?? [])];
 		for (const defaultAllowWrite of this._getDefaultAllowWrite()) {

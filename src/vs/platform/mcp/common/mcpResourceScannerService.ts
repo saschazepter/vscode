@@ -139,7 +139,7 @@ export class McpResourceScannerService extends Disposable implements IMcpResourc
 	}
 
 	private async writeScannedMcpServers(mcpResource: URI, scannedMcpServers: IScannedMcpServers): Promise<void> {
-		if ((scannedMcpServers.servers && Object.keys(scannedMcpServers.servers).length > 0) || (scannedMcpServers.inputs && scannedMcpServers.inputs.length > 0) || scannedMcpServers.sandbox) {
+		if ((scannedMcpServers.servers && Object.keys(scannedMcpServers.servers).length > 0) || (scannedMcpServers.inputs && scannedMcpServers.inputs.length > 0)) {
 			await this.fileService.writeFile(mcpResource, VSBuffer.fromString(JSON.stringify(scannedMcpServers, null, '\t')));
 		} else {
 			await this.fileService.del(mcpResource);
@@ -174,14 +174,13 @@ export class McpResourceScannerService extends Disposable implements IMcpResourc
 
 	private fromUserMcpServers(scannedMcpServers: IScannedMcpServers): IScannedMcpServers {
 		const userMcpServers: IScannedMcpServers = {
-			inputs: scannedMcpServers.inputs,
-			sandbox: scannedMcpServers.sandbox
+			inputs: scannedMcpServers.inputs
 		};
 		const servers = Object.entries(scannedMcpServers.servers ?? {});
 		if (servers.length > 0) {
 			userMcpServers.servers = {};
 			for (const [serverName, server] of servers) {
-				userMcpServers.servers[serverName] = this.sanitizeServer(server, scannedMcpServers.sandbox);
+				userMcpServers.servers[serverName] = this.sanitizeServer(server);
 			}
 		}
 		return userMcpServers;
