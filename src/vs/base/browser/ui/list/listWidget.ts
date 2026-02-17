@@ -979,28 +979,28 @@ export class DefaultStyleController implements IStyleController {
 		 */
 		const focusAndSelectionOutline = asCssValueWithDefault(styles.listFocusAndSelectionOutline, asCssValueWithDefault(styles.listSelectionOutline, styles.listFocusOutline ?? ''));
 		if (focusAndSelectionOutline) { // default: listFocusOutline
-			content.push(`.monaco-list${suffix}:focus:not(.pointer-focus) .monaco-list-row.focused.selected { outline: 1px solid ${focusAndSelectionOutline}; outline-offset: -1px;}`);
+			content.push(`.monaco-list${suffix}:not(.pointer-focus) .monaco-list-row.focused.selected { outline: 1px solid ${focusAndSelectionOutline}; outline-offset: -1px;}`);
 		}
 
 		if (styles.listFocusOutline) { // default: set
 			content.push(`
 				.monaco-drag-image${suffix},
-				.monaco-list${suffix}:focus:not(.pointer-focus) .monaco-list-row.focused,
+				.monaco-list${suffix}:not(.pointer-focus) .monaco-list-row.focused,
 				.context-menu-visible .monaco-list${suffix}.last-focused .monaco-list-row.focused { outline: 1px solid ${styles.listFocusOutline}; outline-offset: -1px; }
 			`);
 		}
 
 		const inactiveFocusAndSelectionOutline = asCssValueWithDefault(styles.listSelectionOutline, styles.listInactiveFocusOutline ?? '');
 		if (inactiveFocusAndSelectionOutline) {
-			content.push(`.monaco-list${suffix}:focus:not(.pointer-focus) .monaco-list-row.focused.selected { outline: 1px dotted ${inactiveFocusAndSelectionOutline}; outline-offset: -1px; }`);
+			content.push(`.monaco-list${suffix}:not(.pointer-focus) .monaco-list-row.focused.selected { outline: 1px dotted ${inactiveFocusAndSelectionOutline}; outline-offset: -1px; }`);
 		}
 
 		if (styles.listSelectionOutline) { // default: activeContrastBorder
-			content.push(`.monaco-list${suffix}:focus:not(.pointer-focus) .monaco-list-row.selected { outline: 1px dotted ${styles.listSelectionOutline}; outline-offset: -1px; }`);
+			content.push(`.monaco-list${suffix}:not(.pointer-focus) .monaco-list-row.selected { outline: 1px dotted ${styles.listSelectionOutline}; outline-offset: -1px; }`);
 		}
 
 		if (styles.listInactiveFocusOutline) { // default: null
-			content.push(`.monaco-list${suffix}:focus:not(.pointer-focus) .monaco-list-row.focused { outline: 1px dotted ${styles.listInactiveFocusOutline}; outline-offset: -1px; }`);
+			content.push(`.monaco-list${suffix}:not(.pointer-focus) .monaco-list-row.focused { outline: 1px dotted ${styles.listInactiveFocusOutline}; outline-offset: -1px; }`);
 		}
 
 		if (styles.listHoverOutline) {  // default: activeContrastBorder
