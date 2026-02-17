@@ -2008,7 +2008,9 @@ export class TerminalInstance extends Disposable implements ITerminalInstance {
 	private async _updatePtyDimensions(rawXterm: XTermTerminal): Promise<void> {
 		const pixelWidth = rawXterm.dimensions?.css.canvas.width;
 		const pixelHeight = rawXterm.dimensions?.css.canvas.height;
-		await this._processManager.setDimensions(rawXterm.cols, rawXterm.rows, undefined, pixelWidth ? Math.round(pixelWidth) : undefined, pixelHeight ? Math.round(pixelHeight) : undefined);
+		const roundedPixelWidth = pixelWidth ? Math.round(pixelWidth) : undefined;
+		const roundedPixelHeight = pixelHeight ? Math.round(pixelHeight) : undefined;
+		await this._processManager.setDimensions(rawXterm.cols, rawXterm.rows, undefined, roundedPixelWidth, roundedPixelHeight);
 	}
 
 	setShellType(shellType: TerminalShellType | undefined) {
