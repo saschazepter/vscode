@@ -411,10 +411,18 @@ export class ActionList<T> extends Disposable {
 
 	focusPrevious() {
 		this._list.focusPrevious(1, true, undefined, this.focusCondition);
+		const focused = this._list.getFocus();
+		if (focused.length > 0) {
+			this._list.reveal(focused[0]);
+		}
 	}
 
 	focusNext() {
 		this._list.focusNext(1, true, undefined, this.focusCondition);
+		const focused = this._list.getFocus();
+		if (focused.length > 0) {
+			this._list.reveal(focused[0]);
+		}
 	}
 
 	acceptSelected(preview?: boolean) {
