@@ -2253,30 +2253,6 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		}
 	}
 
-	private hasPendingQuestionCarousel(response: IChatResponseModel | undefined): boolean {
-		return Boolean(response?.response.value.some(part => part.kind === 'questionCarousel' && !part.isUsed));
-	}
-
-
-	private dismissPendingQuestionCarousel(): void {
-		if (!this.viewModel) {
-			return;
-		}
-
-		const responseId = this.input.questionCarouselResponseId;
-		if (!responseId || this.viewModel.model.lastRequest?.id !== responseId) {
-			return;
-		}
-
-		const carouselPart = this.input.questionCarousel;
-		if (!carouselPart) {
-			return;
-		}
-
-		carouselPart.ignore();
-		this.input.clearQuestionCarousel(responseId);
-	}
-
 	private async _acceptInput(query: { query: string } | undefined, options: IChatAcceptInputOptions = {}): Promise<IChatResponseModel | undefined> {
 		if (!query && this.input.generating) {
 			// if the user submits the input and generation finishes quickly, just submit it for them
@@ -2332,16 +2308,17 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		}
 
 		const model = this.viewModel.model;
-
-		// Enable steering while a question carousel is pending, useful for when the questions are off track and the user needs to course correct.
-		const hasPendingQuestionCarousel = this.hasPendingQuestionCarousel(model.lastRequest?.response);
-		const shouldAutoSteer = hasPendingQuestionCarousel && options.queue === undefined;
-		if (shouldAutoSteer) {
-			options.queue = ChatRequestQueueKind.Steering;
-			this.dismissPendingQuestionCarousel();
-		}
-
 		const requestInProgress = model.requestInProgress.get();
+		// Cancel the request if the user chooses to take a different path.
+		// This is a bit of a heuristic for the common case of tool confirmation+reroute.
+		// But we don't do this if there are queued messages, because we would either
+		// discard them or need a prompt (as in `confirmPendingRequestsBeforeSend`)
+		// which could be a surprising behavior if the user finishes typing a steering
+		// request just as confirmation is triggered.
+		if (model.requestNeedsInput.get() && !model.getPendingRequests().length) {
+			this.chatService.cancelCurrentRequestForSession(this.viewModel.sessionResource);
+			options.queue ??= ChatRequestQueueKind.Queued;
+		}
 		if (requestInProgress) {
 			options.queue ??= ChatRequestQueueKind.Queued;
 		}
