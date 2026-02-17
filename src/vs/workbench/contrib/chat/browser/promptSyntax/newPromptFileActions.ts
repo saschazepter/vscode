@@ -164,7 +164,7 @@ class AbstractNewPromptFileAction extends Action2 {
 	}
 }
 
-export function getDefaultContentSnippet(promptType: PromptsType, name: string | undefined, target: Target): string {
+function getDefaultContentSnippet(promptType: PromptsType, name: string | undefined, target: Target): string {
 	switch (promptType) {
 		case PromptsType.prompt:
 			return [

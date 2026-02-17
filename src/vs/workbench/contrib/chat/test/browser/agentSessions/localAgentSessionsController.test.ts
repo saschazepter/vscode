@@ -46,7 +46,6 @@ class MockChatService implements IChatService {
 	transferredSessionResource = undefined;
 	readonly onDidSubmitRequest = Event.None;
 	readonly onDidCreateModel = Event.None;
-	readonly onDidChangeSessions = Event.None;
 
 	private sessions = new Map<string, IChatModel>();
 	private liveSessionItems: IChatDetail[] = [];
