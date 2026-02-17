@@ -37,16 +37,8 @@ import { PlaceholderTextContribution } from '../../../../editor/contrib/placehol
 import { InlineChatRunOptions } from './inlineChatController.js';
 import { IInlineChatSession2 } from './inlineChatSessionService.js';
 import { Position } from '../../../../editor/common/core/position.js';
-import { Range } from '../../../../editor/common/core/range.js';
 import { CancelChatActionId } from '../../chat/browser/actions/chatExecuteActions.js';
 import { assertType } from '../../../../base/common/types.js';
-
-export interface IInlineChatInputHandler {
-	readonly menuId: MenuId | undefined;
-	readonly dismissOnEscape: boolean;
-	getPlaceholder(hasSelection: boolean): string;
-	submit(text: string): void;
-}
 
 /**
  * Overlay widget that displays a vertical action bar menu.
@@ -64,7 +56,6 @@ export class InlineChatInputWidget extends Disposable {
 	private readonly _showStore = this._store.add(new DisposableStore());
 	private readonly _stickyScrollHeight: IObservable<number>;
 	private _inlineStartAction: IAction | undefined;
-	private _handler: IInlineChatInputHandler | undefined;
 	private _anchorLineNumber: number = 0;
 	private _anchorLeft: number = 0;
 	private _anchorAbove: boolean = false;
@@ -124,15 +115,9 @@ export class InlineChatInputWidget extends Disposable {
 		this._store.add(autorun(r => {
 			const selection = this._editorObs.cursorSelection.read(r);
 			const hasSelection = selection && !selection.isEmpty();
-
-			let placeholderText: string;
-			if (this._handler) {
-				placeholderText = this._handler.getPlaceholder(!!hasSelection);
-			} else if (hasSelection) {
-				placeholderText = localize('placeholderWithSelection', "Modify selected code");
-			} else {
-				placeholderText = localize('placeholderNoSelection', "Generate code");
-			}
+			const placeholderText = hasSelection
+				? localize('placeholderWithSelection', "Modify selected code")
+				: localize('placeholderNoSelection', "Generate code");
 
 			this._input.updateOptions({ placeholder: this._keybindingService.appendKeybinding(placeholderText, ACTION_START) });
 		}));
@@ -148,12 +133,8 @@ export class InlineChatInputWidget extends Disposable {
 		this._store.add(this._input.onKeyDown(e => {
 			if (e.keyCode === KeyCode.Enter && !e.shiftKey) {
 				const value = this._input.getModel().getValue() ?? '';
-				if (this._handler && value) {
-					e.preventDefault();
-					e.stopPropagation();
-					this._handler.submit(value);
-					this._hide();
-				} else if (this._inlineStartAction && value) {
+				// TODO@jrieken this isn't nice
+				if (this._inlineStartAction && value) {
 					e.preventDefault();
 					e.stopPropagation();
 					this._actionBar.actionRunner.run(
@@ -162,9 +143,9 @@ export class InlineChatInputWidget extends Disposable {
 					);
 				}
 			} else if (e.keyCode === KeyCode.Escape) {
+				// Hide overlay if input is empty
 				const value = this._input.getModel().getValue() ?? '';
-				const alwaysDismiss = this._handler?.dismissOnEscape ?? false;
-				if (alwaysDismiss || !value) {
+				if (!value) {
 					e.preventDefault();
 					e.stopPropagation();
 					this._hide();
@@ -209,44 +190,12 @@ export class InlineChatInputWidget extends Disposable {
 	}
 
 	/**
-	 * Set a handler that provides custom placeholder text and submit behavior.
-	 * When set, the action bar is hidden and Enter submits via the handler.
-	 */
-	setCustomHandler(handler: IInlineChatInputHandler | undefined): void {
-		this._handler = handler;
-	}
-
-	/**
-	 * Hide the widget programmatically.
-	 */
-	hideWidget(): void {
-		this._hide();
-	}
-
-	get isFocused(): boolean {
-		return this._input.hasWidgetFocus();
-	}
-
-	/**
-	 * Focus the input editor, optionally inserting initial text.
-	 */
-	focusInput(initialText?: string): void {
-		this._input.focus();
-		if (initialText) {
-			const inputModel = this._input.getModel();
-			const endPos = inputModel.getFullModelRange().getEndPosition();
-			inputModel.applyEdits([{ range: Range.fromPositions(endPos), text: initialText }]);
-			this._input.setPosition(inputModel.getFullModelRange().getEndPosition());
-		}
-	}
-
-	/**
 	 * Show the widget at the specified line.
 	 * @param lineNumber The line number to anchor the widget to
 	 * @param left Left offset relative to editor
 	 * @param anchorAbove Whether to anchor above the position (widget grows upward)
 	 */
-	show(lineNumber: number, left: number, anchorAbove: boolean, options?: { focusInput?: boolean }): void {
+	show(lineNumber: number, left: number, anchorAbove: boolean): void {
 		this._showStore.clear();
 
 		// Clear input state
@@ -269,7 +218,7 @@ export class InlineChatInputWidget extends Disposable {
 			domNode: this._domNode,
 			position: this._position,
 			minContentWidthInPx: constObservable(0),
-			allowEditorOverflow: false,
+			allowEditorOverflow: true,
 		}));
 
 		// If anchoring above, adjust position after render to account for widget height
@@ -292,9 +241,7 @@ export class InlineChatInputWidget extends Disposable {
 		}));
 
 		// Focus the input editor
-		if (options?.focusInput !== false) {
-			setTimeout(() => this._input.focus(), 0);
-		}
+		setTimeout(() => this._input.focus(), 0);
 	}
 
 	private _updatePosition(): void {
@@ -345,15 +292,8 @@ export class InlineChatInputWidget extends Disposable {
 		this._actionBar.clear();
 		this._inlineStartAction = undefined;
 
-		if (this._handler && !this._handler.menuId) {
-			this._actionBar.domNode.style.display = 'none';
-			return;
-		}
-		this._actionBar.domNode.style.display = '';
-
 		// Get fresh actions from menu
-		const menuId = this._handler?.menuId ?? MenuId.ChatEditorInlineGutter;
-		const actions = getFlatActionBarActions(this._menuService.getMenuActions(menuId, this._contextKeyService, { shouldForwardArgs: true }));
+		const actions = getFlatActionBarActions(this._menuService.getMenuActions(MenuId.ChatEditorInlineGutter, this._contextKeyService, { shouldForwardArgs: true }));
 
 		// Set actions with keybindings (skip ACTION_START since we have the input editor)
 		for (const action of actions) {
