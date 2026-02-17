@@ -61,7 +61,7 @@
 .chat-full-welcome-inputSlot {
 	width: 100%;
 	max-width: 800px;
-	margin-top: 0;
+	margin-top: 12px;
 	box-sizing: border-box;
 	display: none;
 }
@@ -71,13 +71,13 @@
 	animation: chat-full-welcome-fade-in 0.35s ease 0.15s both;
 }
 
-/* Option group pickers container */
+/* Option group pickers container (below the input) */
 .chat-full-welcome-pickers-container {
 	display: none;
 	justify-content: center;
 	width: 100%;
 	max-width: 800px;
-	margin-bottom: 8px;
+	margin: 12px;
 	box-sizing: border-box;
 }
 
@@ -128,150 +128,141 @@
 	background-color: var(--vscode-input-background) !important;
 }
 
-/* Pickers row */
+/* Pickers row - flat horizontal bar below the input */
 .chat-full-welcome-pickers {
 	display: flex;
 	flex-direction: row;
 	flex-wrap: nowrap;
-	gap: 16px;
 	align-items: center;
-	justify-content: center;
+	width: 100%;
 	box-sizing: border-box;
+	padding: 0 2px;
 }
 
 .chat-full-welcome-pickers:empty {
 	display: none;
 }
 
-/* Target session type buttons */
-.chat-full-welcome-target-button {
-	display: flex;
-	align-items: center;
-	padding: 4px 2px;
-	border-radius: 4px;
-	cursor: pointer;
-	font-size: 12px;
-	color: var(--vscode-descriptionForeground);
-	background-color: transparent;
-	border: none;
-	position: relative;
-	z-index: 1;
-}
-
-.chat-full-welcome-target-button:hover {
-	color: var(--vscode-foreground);
-}
-
-.chat-full-welcome-target-label {
-	font-weight: 500;
-	padding: 2px 4px;
-	border-radius: 4px;
-}
-
-.chat-full-welcome-target-button.active {
-	color: var(--vscode-foreground);
-}
-
-.chat-full-welcome-target-group.has-selection .chat-full-welcome-target-button:not(.active) {
-	color: var(--vscode-disabledForeground);
-}
-
-.chat-full-welcome-target-group.has-selection .chat-full-welcome-target-button:not(.active):hover {
-	color: var(--vscode-foreground);
-}
-
-/* Separator between target buttons and extension pickers */
-.chat-full-welcome-pickers-separator {
-	width: 1px;
-	height: 20px;
-	background-color: var(--vscode-welcomePage-tileBorder, var(--vscode-contrastBorder, rgba(128, 128, 128, 0.35)));
-	flex-shrink: 0;
-	margin: 0 4px;
-	align-self: center;
-	transition: opacity 0.2s ease;
-}
-
-.chat-full-welcome-pickers-separator.hidden {
-	opacity: 0;
-	pointer-events: none;
-}
-
-/* Target buttons group */
-.chat-full-welcome-target-group {
+/* Left group (target dropdown + left-side extension pickers) */
+.sessions-chat-pickers-left {
 	display: flex;
 	align-items: center;
 	gap: 2px;
-	flex-shrink: 0;
-	position: relative;
+	min-width: 0;
 }
 
-/* Sliding indicator behind the active target button */
-.chat-full-welcome-target-indicator {
-	position: absolute;
-	top: 0;
-	left: 0;
-	height: 100%;
-	border-radius: 4px;
-	background-color: var(--vscode-toolbar-hoverBackground);
-	transition: left 0.25s cubic-bezier(0.4, 0, 0.2, 1), width 0.25s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.15s ease;
-	pointer-events: none;
-	opacity: 0;
-	z-index: 0;
+/* Spacer between left and right groups */
+.sessions-chat-pickers-spacer {
+	flex: 1;
 }
 
-.chat-full-welcome-target-indicator.visible {
-	opacity: 1;
-}
-
-/* Extension-contributed pickers */
-.chat-full-welcome-extension-pickers {
+/* Right group (repo/folder pickers) */
+.sessions-chat-extension-pickers-right {
 	display: flex;
-	flex-direction: row;
-	flex-wrap: nowrap;
-	gap: 16px;
 	align-items: center;
+	gap: 2px;
+	min-width: 0;
 }
 
-.chat-full-welcome-extension-pickers:empty {
+.sessions-chat-extension-pickers-right:empty {
 	display: none;
 }
 
-/* Individual picker row */
-.chat-full-welcome-picker-row {
+/* Left extension pickers container */
+.sessions-chat-extension-pickers-left {
 	display: flex;
 	align-items: center;
-	gap: 8px;
+	gap: 2px;
+	min-width: 0;
 }
 
-.chat-full-welcome-picker-label {
-	font-size: 12px;
-	font-weight: 500;
-	color: var(--vscode-descriptionForeground);
+.sessions-chat-extension-pickers-left:empty {
+	display: none;
 }
 
-.chat-full-welcome-picker-slot {
+/* Target dropdown button */
+.sessions-chat-dropdown-button {
 	display: flex;
 	align-items: center;
-}
-
-/* Style the picker action items rendered inside the slots */
-.chat-full-welcome-picker-slot .action-label {
-	padding: 4px 8px;
-	border: 1px solid var(--vscode-welcomePage-tileBorder, var(--vscode-contrastBorder, transparent));
-	border-radius: 4px;
-	background-color: transparent;
-	color: var(--vscode-foreground);
-	font-size: 12px;
+	height: 16px;
+	padding: 3px 0 3px 6px;
 	cursor: pointer;
+	font-size: 13px;
+	color: var(--vscode-descriptionForeground);
+	background-color: transparent;
+	border: none;
+	white-space: nowrap;
+	border-radius: 4px;
+}
+
+.sessions-chat-dropdown-button:hover {
+	background-color: var(--vscode-toolbar-hoverBackground);
+	color: var(--vscode-foreground);
+}
+
+.sessions-chat-dropdown-button:focus-visible {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: -1px;
+}
+
+.sessions-chat-dropdown-button .codicon {
+	font-size: 14px;
+	flex-shrink: 0;
+}
+
+.sessions-chat-dropdown-button .codicon.codicon-chevron-down {
+	font-size: 12px;
+	margin-left: 2px;
+}
+
+.sessions-chat-dropdown-label {
+	margin-left: 4px;
+}
+
+/* Extension picker slots (rendered inline in the row) */
+.sessions-chat-picker-slot {
 	display: flex;
 	align-items: center;
-	gap: 4px;
+	min-width: 0;
+	overflow: hidden;
 }
 
-.chat-full-welcome-picker-slot .action-label:hover {
-	background-color: var(--vscode-list-hoverBackground);
+.sessions-chat-picker-slot .action-label {
+	display: flex;
+	align-items: center;
+	height: 16px;
+	padding: 3px 0 3px 6px;
+	background-color: transparent;
+	border: none;
+	color: var(--vscode-descriptionForeground);
+	font-size: 13px;
+	cursor: pointer;
+	white-space: nowrap;
+	border-radius: 4px;
+	min-width: 0;
+	overflow: hidden;
 }
 
-.chat-full-welcome-picker-slot .action-label .codicon {
+.sessions-chat-picker-slot .action-label:hover {
+	background-color: var(--vscode-toolbar-hoverBackground);
+	color: var(--vscode-foreground);
+}
+
+.sessions-chat-picker-slot .action-label .codicon {
+	font-size: 14px;
+	flex-shrink: 0;
+}
+
+.sessions-chat-picker-slot .action-label .codicon-chevron-down {
 	font-size: 12px;
+	margin-left: 2px;
+}
+
+.sessions-chat-picker-slot .action-label .chat-session-option-label {
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.sessions-chat-picker-slot .action-label span + .chat-session-option-label {
+	margin-left: 2px;
 }

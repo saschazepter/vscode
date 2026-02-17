@@ -29,13 +29,12 @@ import { IProductService } from '../../../../platform/product/common/productServ
 import { IThemeService } from '../../../../platform/theme/common/themeService.js';
 import { IHoverService } from '../../../../platform/hover/browser/hover.js';
 import { HoverPosition } from '../../../../base/browser/ui/hover/hoverWidget.js';
-import { getDefaultHoverDelegate } from '../../../../base/browser/ui/hover/hoverDelegateFactory.js';
 import { renderIcon } from '../../../../base/browser/ui/iconLabel/iconLabels.js';
 import { isEqual } from '../../../../base/common/resources.js';
 import { asCSSUrl } from '../../../../base/browser/cssValue.js';
 import { FileAccess } from '../../../../base/common/network.js';
 import { localize } from '../../../../nls.js';
-import { AgentSessionProviders, getAgentSessionProviderName } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessions.js';
+import { AgentSessionProviders, getAgentSessionProviderIcon } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessions.js';
 import { ISessionsWorkbenchService } from '../../sessions/browser/sessionsWorkbenchService.js';
 import { ChatSessionPosition, getResourceForNewChatSession } from '../../../../workbench/contrib/chat/browser/chatSessions/chatSessions.contribution.js';
 import { ChatSessionPickerActionItem, IChatSessionPickerDelegate } from '../../../../workbench/contrib/chat/browser/chatSessions/chatSessionPickerActionItem.js';
@@ -152,11 +151,9 @@ class NewChatWidget extends Disposable {
 	// Welcome part
 	private readonly _welcomeContentDisposables = this._register(new DisposableStore());
 	private _pickersContainer: HTMLElement | undefined;
-	private _targetButtonsContainer: HTMLElement | undefined;
-	private _targetButtons: { element: HTMLElement; sessionType: AgentSessionProviders }[] = [];
-	private _targetIndicator: HTMLElement | undefined;
-	private _separatorElement: HTMLElement | undefined;
-	private _extensionPickersContainer: HTMLElement | undefined;
+	private _targetDropdownContainer: HTMLElement | undefined;
+	private _extensionPickersLeftContainer: HTMLElement | undefined;
+	private _extensionPickersRightContainer: HTMLElement | undefined;
 	private _inputSlot: HTMLElement | undefined;
 	private readonly _pickerWidgets = new Map<string, ChatSessionPickerActionItem | SearchableOptionPickerActionItem>();
 	private readonly _pickerWidgetDisposables = this._register(new DisposableStore());
@@ -173,9 +170,10 @@ class NewChatWidget extends Disposable {
 		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@ILanguageModelsService private readonly languageModelsService: ILanguageModelsService,
 		@IContextKeyService private readonly contextKeyService: IContextKeyService,
+		@IContextMenuService private readonly contextMenuService: IContextMenuService,
 		@IProductService private readonly productService: IProductService,
 		@ILogService private readonly logService: ILogService,
-		@IHoverService private readonly hoverService: IHoverService,
+		@IHoverService _hoverService: IHoverService,
 	) {
 		super();
 		this._targetConfig = this._register(new TargetConfig(options.targetConfig));
@@ -184,14 +182,14 @@ class NewChatWidget extends Disposable {
 		// When target changes, regenerate pending resource
 		this._register(this._targetConfig.onDidChangeSelectedTarget(() => {
 			this._generatePendingSessionResource();
-			this._updateTargetButtonStates();
+			this._updateTargetDropdown();
 			this._renderExtensionPickers(true);
 		}));
 
 		this._register(this._targetConfig.onDidChangeAllowedTargets(() => {
-			if (this._targetButtonsContainer) {
-				dom.clearNode(this._targetButtonsContainer);
-				this._renderTargetButtons(this._targetButtonsContainer);
+			if (this._targetDropdownContainer) {
+				dom.clearNode(this._targetDropdownContainer);
+				this._renderTargetDropdown(this._targetDropdownContainer);
 			}
 			this._renderExtensionPickers(true);
 		}));
@@ -232,20 +230,20 @@ class NewChatWidget extends Disposable {
 		const mascot = dom.append(header, dom.$('.chat-full-welcome-mascot'));
 		mascot.style.backgroundImage = asCSSUrl(FileAccess.asBrowserUri(`vs/sessions/contrib/chat/browser/media/code-icon-agent-sessions-${quality}.svg`));
 
-		// Option group pickers
-		this._pickersContainer = dom.append(welcomeElement, dom.$('.chat-full-welcome-pickers-container'));
-
 		// Input slot
 		this._inputSlot = dom.append(welcomeElement, dom.$('.chat-full-welcome-inputSlot'));
-
-		// Render target buttons & extension pickers
-		this._renderOptionGroupPickers();
 
 		// Input area inside the input slot
 		const inputArea = dom.$('.sessions-chat-input-area');
 		this._createEditor(inputArea);
 		this._createToolbar(inputArea);
 		this._inputSlot.appendChild(inputArea);
+
+		// Option group pickers (below the input)
+		this._pickersContainer = dom.append(welcomeElement, dom.$('.chat-full-welcome-pickers-container'));
+
+		// Render target buttons & extension pickers
+		this._renderOptionGroupPickers();
 
 		// Initialize model picker
 		this._initDefaultModel();
@@ -387,7 +385,7 @@ class NewChatWidget extends Disposable {
 			.filter((m): m is ILanguageModelChatMetadataAndIdentifier => !!m && !!m.metadata.isUserSelectable);
 	}
 
-	// --- Welcome: Target buttons ---
+	// --- Welcome: Target & option pickers (dropdown row below input) ---
 
 	private _renderOptionGroupPickers(): void {
 		if (!this._pickersContainer) {
@@ -399,110 +397,78 @@ class NewChatWidget extends Disposable {
 
 		const pickersRow = dom.append(this._pickersContainer, dom.$('.chat-full-welcome-pickers'));
 
-		this._targetButtonsContainer = dom.append(pickersRow, dom.$('.chat-full-welcome-target-group'));
-		this._renderTargetButtons(this._targetButtonsContainer);
+		// Left group: target dropdown + non-repo extension pickers
+		const leftGroup = dom.append(pickersRow, dom.$('.sessions-chat-pickers-left'));
+		this._targetDropdownContainer = dom.append(leftGroup, dom.$('.sessions-chat-dropdown-wrapper'));
+		this._renderTargetDropdown(this._targetDropdownContainer);
+		this._extensionPickersLeftContainer = dom.append(leftGroup, dom.$('.sessions-chat-extension-pickers-left'));
 
-		this._separatorElement = dom.append(pickersRow, dom.$('.chat-full-welcome-pickers-separator'));
+		// Spacer
+		dom.append(pickersRow, dom.$('.sessions-chat-pickers-spacer'));
 
-		this._extensionPickersContainer = dom.append(pickersRow, dom.$('.chat-full-welcome-extension-pickers'));
+		// Right group: repo/folder pickers
+		this._extensionPickersRightContainer = dom.append(pickersRow, dom.$('.sessions-chat-extension-pickers-right'));
 
 		this._renderExtensionPickers();
 	}
 
-	private _renderTargetButtons(container: HTMLElement): void {
+	private _renderTargetDropdown(container: HTMLElement): void {
 		const allowed = this._targetConfig.allowedTargets.get();
-		const activeType = this._targetConfig.selectedTarget.get() ?? AgentSessionProviders.Background;
-
-		this._targetIndicator = dom.append(container, dom.$('.chat-full-welcome-target-indicator'));
-		this._targetButtons = [];
-
-		for (const sessionType of allowed) {
-			if (sessionType === AgentSessionProviders.Local) {
-				continue;
-			}
-
-			const name = getAgentSessionProviderName(sessionType);
-			const button = dom.$('.chat-full-welcome-target-button');
-			button.appendChild(dom.$('span.chat-full-welcome-target-label', undefined, name));
-
-			const tooltip = this._getTargetTooltip(sessionType);
-			if (tooltip) {
-				this._welcomeContentDisposables.add(this.hoverService.setupManagedHover(getDefaultHoverDelegate('mouse'), button, tooltip));
-			}
-
-			button.classList.toggle('active', sessionType === activeType);
-			this._welcomeContentDisposables.add(dom.addDisposableListener(button, dom.EventType.CLICK, () => {
-				this._targetConfig.setSelectedTarget(sessionType);
-			}));
-
-			container.appendChild(button);
-			this._targetButtons.push({ element: button, sessionType });
-		}
-
-		container.classList.toggle('has-selection', [...allowed].includes(activeType));
-		dom.getWindow(container).requestAnimationFrame(() => this._updateTargetIndicatorPosition());
-	}
-
-	private _updateTargetButtonStates(): void {
-		const activeType = this._targetConfig.selectedTarget.get() ?? AgentSessionProviders.Background;
-		let hasActive = false;
-		for (const { element, sessionType } of this._targetButtons) {
-			const isActive = sessionType === activeType;
-			element.classList.toggle('active', isActive);
-			if (isActive) {
-				hasActive = true;
-			}
-		}
-		this._targetButtonsContainer?.classList.toggle('has-selection', hasActive);
-		this._updateTargetIndicatorPosition();
-	}
-
-	private _updateTargetIndicatorPosition(): void {
-		if (!this._targetIndicator || !this._targetButtonsContainer) {
+		if (allowed.size === 0) {
 			return;
 		}
-		const activeButton = this._targetButtons.find(b => b.element.classList.contains('active'));
-		if (!activeButton) {
-			this._targetIndicator.classList.remove('visible');
-			return;
-		}
-		const containerRect = this._targetButtonsContainer.getBoundingClientRect();
-		const buttonRect = activeButton.element.getBoundingClientRect();
-		const isFirstPosition = !this._targetIndicator.classList.contains('visible');
-		if (isFirstPosition) {
-			this._targetIndicator.style.transition = 'none';
-		}
-		this._targetIndicator.style.left = `${buttonRect.left - containerRect.left}px`;
-		this._targetIndicator.style.width = `${buttonRect.width}px`;
-		this._targetIndicator.classList.add('visible');
-		if (isFirstPosition) {
-			void this._targetIndicator.offsetWidth;
-			this._targetIndicator.style.transition = '';
-		}
+
+		const activeType = this._targetConfig.selectedTarget.get() ?? AgentSessionProviders.Background;
+		const icon = getAgentSessionProviderIcon(activeType);
+		const name = getAgentSessionProviderName(activeType);
+
+		const button = dom.append(container, dom.$('.sessions-chat-dropdown-button'));
+		button.tabIndex = 0;
+		button.role = 'button';
+		button.ariaHasPopup = 'true';
+		dom.append(button, renderIcon(icon));
+		dom.append(button, dom.$('span.sessions-chat-dropdown-label', undefined, name));
+		dom.append(button, renderIcon(Codicon.chevronDown));
+
+		this._welcomeContentDisposables.add(dom.addDisposableListener(button, dom.EventType.CLICK, () => {
+			const currentAllowed = this._targetConfig.allowedTargets.get();
+			const currentActive = this._targetConfig.selectedTarget.get();
+			const actions = [...currentAllowed]
+				.filter(t => t !== AgentSessionProviders.Local)
+				.map(sessionType => {
+					const label = getAgentSessionProviderName(sessionType);
+					return toAction({
+						id: `target.${sessionType}`,
+						label,
+						checked: sessionType === currentActive,
+						run: () => this._targetConfig.setSelectedTarget(sessionType),
+					});
+				});
+			this.contextMenuService.showContextMenu({
+				getAnchor: () => button,
+				getActions: () => actions,
+			});
+		}));
 	}
 
-	private _getTargetTooltip(sessionType: AgentSessionProviders): string | undefined {
-		switch (sessionType) {
-			case AgentSessionProviders.Background:
-				return localize('target.worktree.tooltip', "Run the agent locally using a git worktree. Changes are made in an isolated branch and can be reviewed before merging.");
-			case AgentSessionProviders.Cloud:
-				return localize('target.cloud.tooltip', "Run the agent in the cloud. The session runs remotely and results are synced back when complete.");
-			default:
-				return undefined;
+	private _updateTargetDropdown(): void {
+		if (!this._targetDropdownContainer) {
+			return;
 		}
+		dom.clearNode(this._targetDropdownContainer);
+		this._renderTargetDropdown(this._targetDropdownContainer);
 	}
 
 	// --- Welcome: Extension option pickers ---
 
 	private _renderExtensionPickers(force?: boolean): void {
-		if (!this._extensionPickersContainer || !this._separatorElement) {
+		if (!this._extensionPickersLeftContainer || !this._extensionPickersRightContainer) {
 			return;
 		}
 
 		const activeSessionType = this._targetConfig.selectedTarget.get();
 		if (!activeSessionType) {
 			this._clearExtensionPickers();
-			this._separatorElement.classList.add('hidden');
 			return;
 		}
 
@@ -525,7 +491,7 @@ class NewChatWidget extends Disposable {
 					}
 				}
 			}
-			const hasItems = group.items.length > 0 || (group.commands || []).length > 0;
+			const hasItems = group.items.length > 0 || (group.commands || []).length > 0 || !!group.searchable;
 			const passesWhenClause = this._evaluateOptionGroupVisibility(group);
 			if (hasItems && passesWhenClause) {
 				visibleGroups.push(group);
@@ -534,7 +500,6 @@ class NewChatWidget extends Disposable {
 
 		if (visibleGroups.length === 0) {
 			this._clearExtensionPickers();
-			this._separatorElement.classList.add('hidden');
 			return;
 		}
 
@@ -548,7 +513,6 @@ class NewChatWidget extends Disposable {
 		}
 
 		this._clearExtensionPickers();
-		this._separatorElement.classList.remove('hidden');
 
 		for (const optionGroup of visibleGroups) {
 			const initialItem = this._getDefaultOptionForGroup(optionGroup);
@@ -592,9 +556,11 @@ class NewChatWidget extends Disposable {
 			this._pickerWidgetDisposables.add(widget);
 			this._pickerWidgets.set(optionGroup.id, widget);
 
-			const row = dom.append(this._extensionPickersContainer!, dom.$('.chat-full-welcome-picker-row'));
-			dom.append(row, dom.$('.chat-full-welcome-picker-label', undefined, optionGroup.name));
-			const slot = dom.append(row, dom.$('.chat-full-welcome-picker-slot'));
+			// Repo/folder pickers go to the right; others go to the left
+			const isRightAligned = isRepoOrFolderGroup(optionGroup);
+			const targetContainer = isRightAligned ? this._extensionPickersRightContainer! : this._extensionPickersLeftContainer!;
+
+			const slot = dom.append(targetContainer, dom.$('.sessions-chat-picker-slot'));
 			widget.render(slot);
 		}
 	}
@@ -667,15 +633,17 @@ class NewChatWidget extends Disposable {
 		this._pickerWidgetDisposables.clear();
 		this._pickerWidgets.clear();
 		this._optionEmitters.clear();
-		this._targetButtons = [];
 	}
 
 	private _clearExtensionPickers(): void {
 		this._pickerWidgetDisposables.clear();
 		this._pickerWidgets.clear();
 		this._optionEmitters.clear();
-		if (this._extensionPickersContainer) {
-			dom.clearNode(this._extensionPickersContainer);
+		if (this._extensionPickersLeftContainer) {
+			dom.clearNode(this._extensionPickersLeftContainer);
+		}
+		if (this._extensionPickersRightContainer) {
+			dom.clearNode(this._extensionPickersRightContainer);
 		}
 	}
 
@@ -819,4 +787,33 @@ function isModelOptionGroup(group: IChatSessionProviderOptionGroup): boolean {
 	}
 	const nameLower = group.name.toLowerCase();
 	return nameLower === 'model' || nameLower === 'models';
+}
+
+/**
+ * Check whether an option group represents a repository or folder picker.
+ * These are placed on the right side of the pickers row.
+ */
+function isRepoOrFolderGroup(group: IChatSessionProviderOptionGroup): boolean {
+	const idLower = group.id.toLowerCase();
+	const nameLower = group.name.toLowerCase();
+	return idLower === 'repositories' || idLower === 'folders' ||
+		nameLower === 'repository' || nameLower === 'repositories' ||
+		nameLower === 'folder' || nameLower === 'folders';
+}
+
+function getAgentSessionProviderName(provider: AgentSessionProviders): string {
+	switch (provider) {
+		case AgentSessionProviders.Local:
+			return localize('chat.session.providerLabel.local', "Local");
+		case AgentSessionProviders.Background:
+			return localize('chat.session.providerLabel.background', "Worktree");
+		case AgentSessionProviders.Cloud:
+			return localize('chat.session.providerLabel.cloud', "Cloud");
+		case AgentSessionProviders.Claude:
+			return 'Claude';
+		case AgentSessionProviders.Codex:
+			return 'Codex';
+		case AgentSessionProviders.Growth:
+			return 'Growth';
+	}
 }

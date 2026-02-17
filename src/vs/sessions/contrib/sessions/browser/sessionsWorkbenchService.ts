@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Disposable } from '../../../../base/common/lifecycle.js';
+import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { IObservable, observableValue } from '../../../../base/common/observable.js';
 import { URI } from '../../../../base/common/uri.js';
 import { createDecorator, IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
@@ -14,6 +15,7 @@ import { ISessionOpenOptions, openSession as openSessionDefault } from '../../..
 import { ChatViewPaneTarget, IChatWidgetService } from '../../../../workbench/contrib/chat/browser/chat.js';
 import { IChatSessionItem, IChatSessionProviderOptionItem, IChatSessionsService } from '../../../../workbench/contrib/chat/common/chatSessionsService.js';
 import { IChatService, IChatSendRequestOptions } from '../../../../workbench/contrib/chat/common/chatService/chatService.js';
+import { ChatAgentLocation } from '../../../../workbench/contrib/chat/common/constants.js';
 import { IAgentSession } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsModel.js';
 import { IAgentSessionsService } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsService.js';
 
@@ -193,9 +195,13 @@ export class SessionsWorkbenchService extends Disposable implements ISessionsWor
 			this.setActiveSession(session);
 			await this.instantiationService.invokeFunction(openSessionDefault, session, openOptions);
 		} else {
+			// For new sessions, load via the chat service first so the model
+			// is ready before the ChatViewPane renders it.
+			const modelRef = await this.chatService.loadSessionForResource(sessionResource, ChatAgentLocation.Chat, CancellationToken.None);
 			const chatWidget = await this.chatWidgetService.openSession(sessionResource, ChatViewPaneTarget);
 			if (!chatWidget?.viewModel) {
 				this.logService.warn(`[ActiveSessionService] Failed to open session: ${sessionResource.toString()}`);
+				modelRef?.dispose();
 				return;
 			}
 			const repository = this.getRepositoryFromSessionOption(sessionResource);
@@ -236,11 +242,27 @@ export class SessionsWorkbenchService extends Disposable implements ISessionsWor
 			}
 		}
 
-		// 3. Send the request through the chat service - the model is now
+		// 3. Snapshot existing session resources so we can detect the new one
+		const existingResources = new Set(
+			this.agentSessionsService.model.sessions.map(s => s.resource.toString())
+		);
+
+		// 4. Send the request through the chat service - the model is now
 		//    connected to the ChatWidget, so tools and rendering work.
 		const result = await this.chatService.sendRequest(sessionResource, query, sendOptions);
 		if (result.kind === 'rejected') {
 			this.logService.error(`[ActiveSessionService] sendRequest rejected: ${result.reason}`);
+			return;
+		}
+
+		// 5. After send, the extension creates an agent session. Detect it
+		//    and set it as the active session so the titlebar and sidebar
+		//    reflect the new session.
+		const newSession = this.agentSessionsService.model.sessions.find(
+			s => !existingResources.has(s.resource.toString())
+		);
+		if (newSession) {
+			this.setActiveSession(newSession);
 		}
 	}
 
