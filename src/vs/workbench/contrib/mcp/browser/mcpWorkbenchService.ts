@@ -424,10 +424,13 @@ export class McpWorkbenchService extends Disposable implements IMcpWorkbenchServ
 		}
 
 		// Sort to ensure deterministic conflict resolution (prevents infinite loops)
+		// When multiple workspace folders define servers with the same name, we need
+		// to consistently pick the same winner. Sorting by resource path ensures that
+		// repeated calls return the same result, breaking the update loop.
 		userRemote.sort((a, b) => a.mcpResource.toString().localeCompare(b.mcpResource.toString()));
 		workspace.sort((a, b) => a.mcpResource.toString().localeCompare(b.mcpResource.toString()));
 
-		// Track which server resource path wins each name conflict
+		// Track which server resource path is selected for each name (to detect changes)
 		const newWinners = new Map<string, string>();
 
 		for (const server of userRemote) {
@@ -439,7 +442,6 @@ export class McpWorkbenchService extends Disposable implements IMcpWorkbenchServ
 				if (previousWinner !== newWinner) {
 					this.logService.warn(localize('overwriting', "Overwriting mcp server '{0}' from {1} with {2}.", server.name, server.mcpResource.path, existing.mcpResource.path));
 				}
-				newWinners.set(server.name, newWinner);
 			}
 			result.set(server.name, server);
 		}
@@ -453,9 +455,13 @@ export class McpWorkbenchService extends Disposable implements IMcpWorkbenchServ
 				if (previousWinner !== newWinner) {
 					this.logService.warn(localize('overwriting', "Overwriting mcp server '{0}' from {1} with {2}.", server.name, server.mcpResource.path, existing.mcpResource.path));
 				}
-				newWinners.set(server.name, newWinner);
 			}
 			result.set(server.name, server);
+		}
+
+		// Track all final winners (servers that ended up in the result map)
+		for (const server of result.values()) {
+			newWinners.set(server.name, server.mcpResource.toString());
 		}
 
 		// Update the cache with winners from this run
