@@ -24,8 +24,7 @@
 }
 
 /* Interactive elements in the title area must not be draggable */
-.agent-sessions-workbench .part.sidebar > .composite.title .action-label,
-.agent-sessions-workbench .part.sidebar > .composite.title .monaco-toolbar {
+.agent-sessions-workbench .part.sidebar > .composite.title .action-item {
 	-webkit-app-region: no-drag;
 }
 
