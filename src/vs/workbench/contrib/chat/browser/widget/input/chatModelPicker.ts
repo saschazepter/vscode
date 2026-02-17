@@ -24,21 +24,14 @@ import { MANAGE_CHAT_COMMAND_ID } from '../../../common/constants.js';
 import { ICuratedModel, ILanguageModelChatMetadataAndIdentifier, ILanguageModelsService } from '../../../common/languageModels.js';
 import { IChatEntitlementService, isProUser } from '../../../../../services/chat/common/chatEntitlementService.js';
 import { URI } from '../../../../../../base/common/uri.js';
+import * as semver from '../../../../../../base/common/semver/semver.js';
 
 function isVersionAtLeast(current: string, required: string): boolean {
-	const currentParts = current.split('.').map(Number);
-	const requiredParts = required.split('.').map(Number);
-	for (let i = 0; i < Math.max(currentParts.length, requiredParts.length); i++) {
-		const c = currentParts[i] ?? 0;
-		const r = requiredParts[i] ?? 0;
-		if (c > r) {
-			return true;
-		}
-		if (c < r) {
-			return false;
-		}
+	const currentSemver = semver.coerce(current);
+	if (!currentSemver) {
+		return false;
 	}
-	return true;
+	return semver.gte(currentSemver, required);
 }
 
 /**
