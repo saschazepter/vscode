@@ -59,8 +59,8 @@ if [ ! -f "ralph-progress.txt" ]; then
 fi
 
 # Count PRD status
-TOTAL_ITEMS=$(grep -c '"passes"' prd.json 2>/dev/null || echo "0")
-PASSING_ITEMS=$(grep -c '"passes": true' prd.json 2>/dev/null || echo "0")
+TOTAL_ITEMS=$(grep -c '"passes"' prd.json 2>/dev/null || true)
+PASSING_ITEMS=$(grep -c '"passes": true' prd.json 2>/dev/null || true)
 REMAINING=$((TOTAL_ITEMS - PASSING_ITEMS))
 
 echo "🔄 Starting Ralph Loop"
@@ -125,7 +125,7 @@ for ((i=1; i<=$ITERATIONS; i++)); do
     # Option 3: GitHub Copilot CLI
     # result=$(gh copilot suggest "$PROMPT" 2>&1)
 
-		result=$(copilot -p "$PROMPT" 2>&1)
+    result=$(copilot -p "$PROMPT")
 
     # For now, we'll just print instructions since this runs in VS Code
     echo "📋 Run this prompt in your AI coding assistant:"
@@ -142,7 +142,7 @@ for ((i=1; i<=$ITERATIONS; i++)); do
     fi
 
     # Check for completion
-    PASSING_ITEMS=$(grep -c '"passes": true' prd.json 2>/dev/null || echo "0")
+    PASSING_ITEMS=$(grep -c '"passes": true' prd.json 2>/dev/null || true)
     REMAINING=$((TOTAL_ITEMS - PASSING_ITEMS))
 
     echo ""
