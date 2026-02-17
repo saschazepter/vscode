@@ -1289,7 +1289,7 @@ export class CodeApplication extends Disposable {
 		const args = this.environmentMainService.args;
 
 		// Open sessions window if requested
-		if ((process as INodeProcess).isEmbeddedApp || args['sessions']) {
+		if ((process as INodeProcess).isEmbeddedApp) {
 			return windowsMainService.openSessionsWindow({ context, contextWindowId: undefined });
 		}
 
