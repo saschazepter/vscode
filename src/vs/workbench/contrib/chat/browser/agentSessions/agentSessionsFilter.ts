@@ -30,9 +30,6 @@ export interface IAgentSessionsFilterOptions extends Partial<IAgentSessionsFilte
 	readonly groupResults?: () => AgentSessionsGrouping | undefined;
 
 	overrideExclude?(session: IAgentSession): boolean | undefined;
-
-	/** When set, only these provider types appear in the filter menu. */
-	readonly showProviders?: readonly string[];
 }
 
 const DEFAULT_EXCLUDES: IAgentSessionsFilterExcludes = Object.freeze({
@@ -130,22 +127,14 @@ export class AgentSessionsFilter extends Disposable implements Required<IAgentSe
 	}
 
 	private registerProviderActions(disposables: DisposableStore, menuId: MenuId): void {
-		const showProviders = this.options.showProviders ? new Set(this.options.showProviders) : undefined;
-		const providers: { id: string; label: string }[] = [];
-
-		if (!showProviders || showProviders.has(AgentSessionProviders.Local)) {
-			providers.push({
-				id: AgentSessionProviders.Local,
-				label: getAgentSessionProviderName(AgentSessionProviders.Local)
-			});
-		}
+		const providers: { id: string; label: string }[] = [{
+			id: AgentSessionProviders.Local,
+			label: getAgentSessionProviderName(AgentSessionProviders.Local)
+		}];
 
 		for (const contribution of this.chatSessionsService.getAllChatSessionContributions()) {
 			if (providers.find(p => p.id === contribution.type)) {
 				continue; // already added
-			}
-			if (showProviders && !showProviders.has(contribution.type)) {
-				continue;
 			}
 
 			const knownProvider = getAgentSessionProvider(contribution.type);
