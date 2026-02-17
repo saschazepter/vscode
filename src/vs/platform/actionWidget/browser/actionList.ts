@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 import * as dom from '../../../base/browser/dom.js';
 import { ActionBar } from '../../../base/browser/ui/actionbar/actionbar.js';
+import { Button } from '../../../base/browser/ui/button/button.js';
 import { KeybindingLabel } from '../../../base/browser/ui/keybindingLabel/keybindingLabel.js';
 import { IListEvent, IListMouseEvent, IListRenderer, IListVirtualDelegate } from '../../../base/browser/ui/list/list.js';
 import { IListAccessibilityProvider, List } from '../../../base/browser/ui/list/listWidget.js';
@@ -18,7 +19,7 @@ import './actionWidget.css';
 import { localize } from '../../../nls.js';
 import { IContextViewService } from '../../contextview/browser/contextView.js';
 import { IKeybindingService } from '../../keybinding/common/keybinding.js';
-import { defaultListStyles } from '../../theme/browser/defaultStyles.js';
+import { defaultButtonStyles, defaultListStyles } from '../../theme/browser/defaultStyles.js';
 import { asCssVariable } from '../../theme/common/colorRegistry.js';
 import { ILayoutService } from '../../layout/browser/layoutService.js';
 import { IHoverService } from '../../hover/browser/hover.js';
@@ -82,12 +83,22 @@ export interface IActionListItem<T> {
 	 * Optional CSS class name to add to the row container.
 	 */
 	readonly className?: string;
+	/**
+	 * Optional badge text to display after the label (e.g., "New").
+	 */
+	readonly badge?: string;
+	/**
+	 * When set, the description is rendered as a primary button.
+	 * The callback is invoked when the button is clicked.
+	 */
+	readonly descriptionButton?: { readonly label: string; readonly onDidClick: () => void };
 }
 
 interface IActionMenuTemplateData {
 	readonly container: HTMLElement;
 	readonly icon: HTMLElement;
 	readonly text: HTMLElement;
+	readonly badge: HTMLElement;
 	readonly description?: HTMLElement;
 	readonly keybinding: KeybindingLabel;
 	readonly toolbar: HTMLElement;
@@ -104,42 +115,23 @@ export const enum ActionListItemKind {
 interface IHeaderTemplateData {
 	readonly container: HTMLElement;
 	readonly text: HTMLElement;
-	readonly toggle: HTMLElement;
 }
 
 class HeaderRenderer<T> implements IListRenderer<IActionListItem<T>, IHeaderTemplateData> {
 
 	get templateId(): string { return ActionListItemKind.Header; }
 
-	constructor(
-		private readonly _isCollapsed: (section: string) => boolean,
-	) { }
-
 	renderTemplate(container: HTMLElement): IHeaderTemplateData {
 		container.classList.add('group-header');
-
-		const toggle = document.createElement('span');
-		toggle.className = 'group-header-toggle';
-		container.append(toggle);
 
 		const text = document.createElement('span');
 		container.append(text);
 
-		return { container, text, toggle };
+		return { container, text };
 	}
 
 	renderElement(element: IActionListItem<T>, _index: number, templateData: IHeaderTemplateData): void {
 		templateData.text.textContent = element.group?.title ?? element.label ?? '';
-
-		const isCollapsible = !!element.section;
-		templateData.container.classList.toggle('collapsible', isCollapsible);
-		if (isCollapsible) {
-			const collapsed = this._isCollapsed(element.section!);
-			templateData.toggle.className = ThemeIcon.asClassName(collapsed ? Codicon.chevronRight : Codicon.chevronDown);
-			templateData.toggle.style.display = '';
-		} else {
-			templateData.toggle.style.display = 'none';
-		}
 	}
 
 	disposeTemplate(_templateData: IHeaderTemplateData): void {
@@ -194,6 +186,10 @@ class ActionItemRenderer<T> implements IListRenderer<IActionListItem<T>, IAction
 		text.className = 'title';
 		container.append(text);
 
+		const badge = document.createElement('span');
+		badge.className = 'action-item-badge';
+		container.append(badge);
+
 		const description = document.createElement('span');
 		description.className = 'description';
 		container.append(description);
@@ -206,7 +202,7 @@ class ActionItemRenderer<T> implements IListRenderer<IActionListItem<T>, IAction
 
 		const elementDisposables = new DisposableStore();
 
-		return { container, icon, text, description, keybinding, toolbar, elementDisposables };
+		return { container, icon, text, badge, description, keybinding, toolbar, elementDisposables };
 	}
 
 	renderElement(element: IActionListItem<T>, _index: number, data: IActionMenuTemplateData): void {
@@ -242,8 +238,27 @@ class ActionItemRenderer<T> implements IListRenderer<IActionListItem<T>, IAction
 
 		data.text.textContent = stripNewlines(element.label);
 
+		// Render optional badge
+		if (element.badge) {
+			data.badge.textContent = element.badge;
+			data.badge.style.display = '';
+		} else {
+			data.badge.textContent = '';
+			data.badge.style.display = 'none';
+		}
+
 		// if there is a keybinding, prioritize over description for now
-		if (element.keybinding) {
+		if (element.descriptionButton) {
+			data.description!.textContent = '';
+			data.description!.style.display = 'inline';
+			const button = new Button(data.description!, { ...defaultButtonStyles, small: true });
+			button.label = element.descriptionButton.label;
+			data.elementDisposables.add(button.onDidClick(e => {
+				e?.stopPropagation();
+				element.descriptionButton!.onDidClick();
+			}));
+			data.elementDisposables.add(button);
+		} else if (element.keybinding) {
 			data.description!.textContent = element.keybinding.getLabel();
 			data.description!.style.display = 'inline';
 			data.description!.style.letterSpacing = '0.5px';
@@ -390,7 +405,7 @@ export class ActionList<T> extends Disposable {
 
 		this._list = this._register(new List(user, this.domNode, virtualDelegate, [
 			new ActionItemRenderer<IActionListItem<T>>(preview, this._keybindingService),
-			new HeaderRenderer((section) => this._collapsedSections.has(section)),
+			new HeaderRenderer(),
 			new SeparatorRenderer(),
 		], {
 			keyboardSupport: false,
@@ -549,14 +564,23 @@ export class ActionList<T> extends Disposable {
 			}
 		}
 
+		// Capture whether the filter input currently has focus before splice
+		// which may cause DOM changes that shift focus.
+		const filterInputHasFocus = this._filterInput && dom.isActiveElement(this._filterInput);
+
 		this._list.splice(0, this._list.length, visible);
 
 		// Re-layout to adjust height after items changed
 		if (this._hasLaidOut) {
 			this.layout(this._lastMinWidth);
-			// Restore focus to the list after splice destroyed DOM elements,
+			// Restore focus after splice destroyed DOM elements,
 			// otherwise the blur handler in ActionWidgetService closes the widget.
-			this._list.domFocus();
+			// Keep focus on the filter input if the user is typing a filter.
+			if (filterInputHasFocus) {
+				this._filterInput!.focus();
+			} else {
+				this._list.domFocus();
+			}
 			// Reposition the context view so the widget grows in the correct direction
 			this._contextViewService.layout();
 		}
@@ -582,7 +606,6 @@ export class ActionList<T> extends Disposable {
 	}
 
 	layout(minWidth: number): number {
-		const isInitialLayout = !this._hasLaidOut;
 		this._hasLaidOut = true;
 		this._lastMinWidth = minWidth;
 		// Compute height based on currently visible items in the list
@@ -635,9 +658,7 @@ export class ActionList<T> extends Disposable {
 
 		this.domNode.style.height = `${listFinalHeight}px`;
 
-		if (isInitialLayout) {
-			this._list.domFocus();
-		}
+		this._list.domFocus();
 		return maxWidth;
 	}
 
@@ -754,11 +775,6 @@ export class ActionList<T> extends Disposable {
 	}
 
 	private onListClick(e: IListMouseEvent<IActionListItem<T>>): void {
-		if (e.element && e.element.kind === ActionListItemKind.Header && e.element.section) {
-			const section = e.element.section;
-			queueMicrotask(() => this._toggleSection(section));
-			return;
-		}
 		if (e.element && e.element.isSectionToggle && e.element.section) {
 			const section = e.element.section;
 			queueMicrotask(() => this._toggleSection(section));

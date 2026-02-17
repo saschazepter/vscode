@@ -7,8 +7,9 @@ import { CancellationToken } from '../../../../../base/common/cancellation.js';
 import { IStringDictionary } from '../../../../../base/common/collections.js';
 import { Event } from '../../../../../base/common/event.js';
 import { Disposable, IDisposable } from '../../../../../base/common/lifecycle.js';
+import { observableValue } from '../../../../../base/common/observable.js';
 import { ExtensionIdentifier } from '../../../../../platform/extensions/common/extensions.js';
-import { IChatMessage, ILanguageModelChatMetadata, ILanguageModelChatMetadataAndIdentifier, ILanguageModelChatProvider, ILanguageModelChatResponse, ILanguageModelChatSelector, ILanguageModelProviderDescriptor, ILanguageModelsGroup, ILanguageModelsService, IUserFriendlyLanguageModel } from '../../common/languageModels.js';
+import { IChatMessage, ICuratedModels, ILanguageModelChatMetadata, ILanguageModelChatMetadataAndIdentifier, ILanguageModelChatProvider, ILanguageModelChatResponse, ILanguageModelChatSelector, ILanguageModelProviderDescriptor, ILanguageModelsGroup, ILanguageModelsService, IUserFriendlyLanguageModel } from '../../common/languageModels.js';
 import { ILanguageModelsProviderGroup } from '../../common/languageModelsConfiguration.js';
 
 export class NullLanguageModelsService implements ILanguageModelsService {
@@ -92,9 +93,17 @@ export class NullLanguageModelsService implements ILanguageModelsService {
 
 	recordModelUsage(_modelIdentifier: string): void { }
 
-	getCuratedModelIds(): string[] {
+	getCuratedModels(): ICuratedModels {
+		return { free: [], paid: [] };
+	}
+
+	getNewModelIds(): string[] {
 		return [];
 	}
 
-	setCuratedModelIds(_modelIds: string[]): void { }
+	onDidChangeNewModelIds = Event.None;
+
+	markNewModelsAsSeen(): void { }
+
+	restrictedChatParticipants = observableValue('restrictedChatParticipants', Object.create(null));
 }
