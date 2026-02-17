@@ -7,8 +7,7 @@ import './media/chatWidget.css';
 import './media/chatWelcomePart.css';
 import * as dom from '../../../../base/browser/dom.js';
 import { Codicon } from '../../../../base/common/codicons.js';
-import { Separator, toAction } from '../../../../base/common/actions.js';
-import { DropdownMenu } from '../../../../base/browser/ui/dropdown/dropdown.js';
+import { toAction } from '../../../../base/common/actions.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { KeyCode } from '../../../../base/common/keyCodes.js';
 import { Disposable, DisposableStore, MutableDisposable } from '../../../../base/common/lifecycle.js';
@@ -52,6 +51,9 @@ import { IWorkspaceContextService } from '../../../../platform/workspace/common/
 import { IFileDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 import { IWorkspaceEditingService } from '../../../../workbench/services/workspaces/common/workspaceEditing.js';
 import { IWorkspacesService, isRecentFolder } from '../../../../platform/workspaces/common/workspaces.js';
+import { IContextViewService } from '../../../../platform/contextview/browser/contextView.js';
+import { SelectBox, ISelectOptionItem, SeparatorSelectOption } from '../../../../base/browser/ui/selectBox/selectBox.js';
+import { defaultSelectBoxStyles } from '../../../../platform/theme/browser/defaultStyles.js';
 import { IViewPaneOptions, ViewPane } from '../../../../workbench/browser/parts/views/viewPane.js';
 import { ContextMenuController } from '../../../../editor/contrib/contextmenu/browser/contextmenu.js';
 import { getSimpleEditorOptions } from '../../../../workbench/contrib/codeEditor/browser/simpleEditorOptions.js';
@@ -197,6 +199,7 @@ class NewChatWidget extends Disposable {
 		@IFileDialogService private readonly fileDialogService: IFileDialogService,
 		@IWorkspaceEditingService private readonly workspaceEditingService: IWorkspaceEditingService,
 		@IWorkspacesService private readonly workspacesService: IWorkspacesService,
+		@IContextViewService private readonly contextViewService: IContextViewService,
 	) {
 		super();
 		this._targetConfig = this._register(new TargetConfig(options.targetConfig));
@@ -609,9 +612,6 @@ class NewChatWidget extends Disposable {
 
 		const folders = this.workspaceContextService.getWorkspace().folders;
 		const currentFolder = folders[0];
-		const folderName = currentFolder ? basename(currentFolder.uri) : localize('noFolder', "No Folder");
-
-		const slot = dom.append(this._extensionPickersRightContainer, dom.$('.sessions-chat-picker-slot'));
 
 		const switchFolder = async (folderUri: URI) => {
 			const foldersToDelete = this.workspaceContextService.getWorkspace().folders.map(f => f.uri);
@@ -619,64 +619,67 @@ class NewChatWidget extends Disposable {
 			this._renderExtensionPickers(true);
 		};
 
-		const dropdown = new DropdownMenu(slot, {
-			contextMenuProvider: this.contextMenuService,
-			actions: [],
-			actionProvider: {
-				getActions: () => {
-					const recentlyOpened = this._lastRecentFolders ?? [];
-					const actions = recentlyOpened.map(recent => toAction({
-						id: recent.folderUri.toString(),
-						label: recent.label || basename(recent.folderUri),
-						run: () => switchFolder(recent.folderUri),
-					}));
-					if (actions.length > 0) {
-						actions.push(new Separator());
-					}
-					actions.push(toAction({
-						id: 'browse',
-						label: localize('browseFolder', "Browse..."),
-						run: async () => {
-							const selected = await this.fileDialogService.showOpenDialog({
-								canSelectFiles: false,
-								canSelectFolders: true,
-								canSelectMany: false,
-								title: localize('selectFolder', "Select Folder"),
-							});
-							if (selected?.[0]) {
-								await switchFolder(selected[0]);
-							}
-						},
-					}));
-					return actions;
+		this.workspacesService.getRecentlyOpened().then(recentlyOpened => {
+			if (!this._extensionPickersRightContainer) {
+				return;
+			}
+
+			const recentFolders = recentlyOpened.workspaces
+				.filter(isRecentFolder)
+				.slice(0, 10);
+
+			// Build the folder URI list in the same order as options
+			const folderUris: (URI | 'browse')[] = [];
+			const options: ISelectOptionItem[] = [];
+			let selectedIndex = 0;
+
+			for (let i = 0; i < recentFolders.length; i++) {
+				const recent = recentFolders[i];
+				const name = recent.label || basename(recent.folderUri);
+				options.push({ text: name });
+				folderUris.push(recent.folderUri);
+				if (currentFolder && isEqual(recent.folderUri, currentFolder.uri)) {
+					selectedIndex = i;
 				}
-			},
-			label: folderName,
+			}
+
+			// Add current folder if not in recent list
+			if (currentFolder && !recentFolders.some(r => isEqual(r.folderUri, currentFolder.uri))) {
+				options.unshift({ text: basename(currentFolder.uri) });
+				folderUris.unshift(currentFolder.uri);
+				selectedIndex = 0;
+			}
+
+			// Separator + Browse
+			options.push(SeparatorSelectOption);
+			folderUris.push('browse');
+			options.push({ text: localize('browseFolder', "Browse...") });
+			folderUris.push('browse');
+
+			const slot = dom.append(this._extensionPickersRightContainer!, dom.$('.sessions-chat-picker-slot'));
+			const selectBox = new SelectBox(options, selectedIndex, this.contextViewService, defaultSelectBoxStyles, { useCustomDrawn: true });
+			selectBox.render(slot);
+
+			this._pickerWidgetDisposables.add(selectBox);
+			this._pickerWidgetDisposables.add(selectBox.onDidSelect(async (e) => {
+				const selected = folderUris[e.index];
+				if (selected === 'browse') {
+					// Reset to previous selection
+					selectBox.select(selectedIndex);
+					const result = await this.fileDialogService.showOpenDialog({
+						canSelectFiles: false,
+						canSelectFolders: true,
+						canSelectMany: false,
+						title: localize('selectFolder', "Select Folder"),
+					});
+					if (result?.[0]) {
+						await switchFolder(result[0]);
+					}
+				} else {
+					await switchFolder(selected);
+				}
+			}));
 		});
-
-		// Override the default label rendering to include folder icon and chevron
-		const labelEl = dropdown.element.querySelector('.dropdown-label') as HTMLElement;
-		if (labelEl) {
-			dom.clearNode(labelEl);
-			dom.append(labelEl, renderIcon(Codicon.folder));
-			dom.append(labelEl, dom.$('span.sessions-chat-dropdown-label', undefined, folderName));
-			dom.append(labelEl, renderIcon(Codicon.chevronDown));
-		}
-
-		// Fetch recent folders asynchronously so the dropdown has them when opened
-		this._fetchRecentFolders(currentFolder?.uri);
-
-		this._pickerWidgetDisposables.add(dropdown);
-	}
-
-	private _lastRecentFolders: { folderUri: URI; label?: string }[] = [];
-
-	private async _fetchRecentFolders(currentFolderUri: URI | undefined): Promise<void> {
-		const recentlyOpened = await this.workspacesService.getRecentlyOpened();
-		this._lastRecentFolders = recentlyOpened.workspaces
-			.filter(isRecentFolder)
-			.filter(r => !currentFolderUri || !isEqual(r.folderUri, currentFolderUri))
-			.slice(0, 10);
 	}
 
 	private _evaluateOptionGroupVisibility(optionGroup: { id: string; when?: string }): boolean {
