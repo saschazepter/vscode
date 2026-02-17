@@ -51,7 +51,6 @@ import { ILanguageModelToolsService } from '../tools/languageModelToolsService.j
 import { ChatSessionOperationLog } from '../model/chatSessionOperationLog.js';
 import { IPromptsService } from '../promptSyntax/service/promptsService.js';
 import { IChatRequestHooks } from '../promptSyntax/hookSchema.js';
-import { IUriIdentityService } from '../../../../../platform/uriIdentity/common/uriIdentity.js';
 
 const serializedChatKey = 'interactive.sessions';
 
@@ -149,7 +148,6 @@ export class ChatService extends Disposable implements IChatService {
 		@IExtensionService private readonly extensionService: IExtensionService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
-		@IUriIdentityService private readonly uriIdentityService: IUriIdentityService,
 		@IChatSlashCommandService private readonly chatSlashCommandService: IChatSlashCommandService,
 		@IChatAgentService private readonly chatAgentService: IChatAgentService,
 		@IConfigurationService private readonly configurationService: IConfigurationService,
@@ -372,7 +370,6 @@ export class ChatService extends Disposable implements IChatService {
 	async getLiveSessionItems(): Promise<IChatDetail[]> {
 		return await Promise.all(Array.from(this._sessionModels.values())
 			.filter(session => this.shouldBeInHistory(session))
-			.filter(session => this.isPartOfWorkspace(session.workingFolder))
 			.map(async (session): Promise<IChatDetail> => {
 				const title = session.title || localize('newChat', "New Chat");
 				return {
@@ -383,7 +380,6 @@ export class ChatService extends Disposable implements IChatService {
 					isActive: true,
 					stats: await awaitStatsForSession(session),
 					lastResponseState: session.lastRequest?.response?.state ?? ResponseModelState.Pending,
-					workingFolder: session.workingFolder,
 				};
 			}));
 	}
@@ -396,7 +392,6 @@ export class ChatService extends Disposable implements IChatService {
 		return Object.values(index)
 			.filter(entry => !entry.isExternal)
 			.filter(entry => !this._sessionModels.has(LocalChatSessionUri.forSession(entry.sessionId)) && entry.initialLocation === ChatAgentLocation.Chat && !entry.isEmpty)
-			.filter(entry => this.isPartOfWorkspace(entry.workingFolder))
 			.map((entry): IChatDetail => {
 				const sessionResource = LocalChatSessionUri.forSession(entry.sessionId);
 				return ({
@@ -421,18 +416,6 @@ export class ChatService extends Disposable implements IChatService {
 		return undefined;
 	}
 
-	private isPartOfWorkspace(workingFolder: string | undefined): boolean {
-		const folders = this.workspaceContextService.getWorkspace().folders;
-		if (!workingFolder) {
-			return true;
-		}
-		if (folders.length === 0) {
-			return true;
-		}
-		const workingFolderUri = URI.parse(workingFolder);
-		return folders.some(folder => this.uriIdentityService.extUri.isEqual(folder.uri, workingFolderUri));
-	}
-
 	private shouldBeInHistory(entry: ChatModel): boolean {
 		return !entry.isImported && !!LocalChatSessionUri.parseLocalSessionId(entry.sessionResource) && entry.initialLocation === ChatAgentLocation.Chat;
 	}
@@ -451,24 +434,18 @@ export class ChatService extends Disposable implements IChatService {
 		const sessionId = generateUuid();
 		const sessionResource = LocalChatSessionUri.forSession(sessionId);
 
-		const folders = this.workspaceContextService.getWorkspace().folders;
-		const activeWorkspaceFolderUri = folders.length === 1
-			? folders[0].uri.toString()
-			: undefined;
-
 		return this._sessionModels.acquireOrCreate({
 			initialData: undefined,
 			location,
 			sessionResource,
 			canUseTools: options?.canUseTools ?? true,
 			disableBackgroundKeepAlive: options?.disableBackgroundKeepAlive,
-			workingFolder: activeWorkspaceFolderUri
 		});
 	}
 
 	private _startSession(props: IStartSessionProps): ChatModel {
-		const { initialData, location, sessionResource, canUseTools, transferEditingSession, disableBackgroundKeepAlive, inputState, workingFolder } = props;
-		const model = this.instantiationService.createInstance(ChatModel, initialData, { initialLocation: location, canUseTools, resource: sessionResource, disableBackgroundKeepAlive, inputState, workingFolder });
+		const { initialData, location, sessionResource, canUseTools, transferEditingSession, disableBackgroundKeepAlive, inputState } = props;
+		const model = this.instantiationService.createInstance(ChatModel, initialData, { initialLocation: location, canUseTools, resource: sessionResource, disableBackgroundKeepAlive, inputState });
 		if (location === ChatAgentLocation.Chat) {
 			model.startEditingSession(true, transferEditingSession);
 		}

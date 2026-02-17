@@ -1369,7 +1369,6 @@ export interface IChatModel extends IDisposable {
 	readonly timing: IChatSessionTiming;
 	readonly sessionResource: URI;
 	readonly initialLocation: ChatAgentLocation;
-	readonly workingFolder: string | undefined;
 	readonly title: string;
 	readonly hasCustomTitle: boolean;
 	readonly responderUsername: string;
@@ -1581,8 +1580,6 @@ export interface ISerializableChatData3 extends Omit<ISerializableChatData2, 've
 	repoData?: IExportableRepoData;
 	/** Pending requests that were queued but not yet processed */
 	pendingRequests?: ISerializablePendingRequestData[];
-	/** Working folder URI for this session (used in agent sessions workspace) */
-	workingFolder?: string;
 }
 
 /**
@@ -2100,11 +2097,6 @@ export class ChatModel extends Disposable implements IChatModel {
 		return this._canUseTools;
 	}
 
-	private readonly _workingFolder: string | undefined;
-	get workingFolder(): string | undefined {
-		return this._workingFolder;
-	}
-
 	private _disableBackgroundKeepAlive: boolean;
 	get willKeepAlive(): boolean {
 		return !this._disableBackgroundKeepAlive;
@@ -2114,7 +2106,7 @@ export class ChatModel extends Disposable implements IChatModel {
 
 	constructor(
 		dataRef: ISerializedChatDataReference | undefined,
-		initialModelProps: { initialLocation: ChatAgentLocation; canUseTools: boolean; inputState?: ISerializableChatModelInputState; resource?: URI; disableBackgroundKeepAlive?: boolean; workingFolder?: string },
+		initialModelProps: { initialLocation: ChatAgentLocation; canUseTools: boolean; inputState?: ISerializableChatModelInputState; resource?: URI; disableBackgroundKeepAlive?: boolean },
 		@ILogService private readonly logService: ILogService,
 		@IChatAgentService private readonly chatAgentService: IChatAgentService,
 		@IChatEditingService private readonly chatEditingService: IChatEditingService,
@@ -2180,8 +2172,6 @@ export class ChatModel extends Disposable implements IChatModel {
 		this._initialLocation = initialData?.initialLocation ?? initialModelProps.initialLocation;
 
 		this._canUseTools = initialModelProps.canUseTools;
-
-		this._workingFolder = (isValidFullData && initialData.workingFolder) || initialModelProps.workingFolder;
 
 		this.lastRequestObs = observableFromEvent(this, this.onDidChange, () => this._requests.at(-1));
 
@@ -2663,7 +2653,6 @@ export class ChatModel extends Disposable implements IChatModel {
 			customTitle: this._customTitle,
 			inputState: this.inputModel.toJSON(),
 			repoData: this._repoData,
-			workingFolder: this._workingFolder,
 		};
 	}
 

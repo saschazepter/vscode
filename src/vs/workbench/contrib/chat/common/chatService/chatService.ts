@@ -1202,7 +1202,6 @@ export interface IChatDetail {
 	isActive: boolean;
 	stats?: IChatSessionStats;
 	lastResponseState: ResponseModelState;
-	workingFolder?: string;
 }
 
 export interface IChatProviderInfo {
