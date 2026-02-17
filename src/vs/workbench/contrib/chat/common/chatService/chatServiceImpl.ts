@@ -340,7 +340,17 @@ export class ChatService extends Disposable implements IChatService {
 				return;
 			}
 
-			const sessionResource = LocalChatSessionUri.forSession(session.sessionId);
+			let sessionResource: URI;
+			// Non-local sessions store the full uri as the sessionId, so try parsing that first
+			if (session.sessionId.includes(':')) {
+				try {
+					sessionResource = URI.parse(session.sessionId, true);
+				} catch {
+					// Noop
+				}
+			}
+			sessionResource ??= LocalChatSessionUri.forSession(session.sessionId);
+
 			const sessionRef = await this.getOrRestoreSession(sessionResource);
 			if (sessionRef?.object.editingSession) {
 				await chatEditingSessionIsReady(sessionRef.object.editingSession);

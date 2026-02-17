@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Disposable } from '../../../../base/common/lifecycle.js';
+import { Disposable, IDisposable } from '../../../../base/common/lifecycle.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { IObservable, observableValue } from '../../../../base/common/observable.js';
 import { URI } from '../../../../base/common/uri.js';
@@ -189,15 +189,18 @@ export class SessionsWorkbenchService extends Disposable implements ISessionsWor
 	}
 
 	async openSession(sessionResource: URI, openOptions?: ISessionOpenOptions): Promise<void> {
-		this.isNewChatSessionContext.set(false);
 		const session = this.agentSessionsService.model.getSession(sessionResource);
 		if (session) {
+			this.isNewChatSessionContext.set(false);
 			this.setActiveSession(session);
 			await this.instantiationService.invokeFunction(openSessionDefault, session, openOptions);
 		} else {
 			// For new sessions, load via the chat service first so the model
 			// is ready before the ChatViewPane renders it.
 			const modelRef = await this.chatService.loadSessionForResource(sessionResource, ChatAgentLocation.Chat, CancellationToken.None);
+			// Switch view only after the model is loaded so the ChatViewPane
+			// has content immediately when it becomes visible.
+			this.isNewChatSessionContext.set(false);
 			const chatWidget = await this.chatWidgetService.openSession(sessionResource, ChatViewPaneTarget);
 			if (!chatWidget?.viewModel) {
 				this.logService.warn(`[ActiveSessionService] Failed to open session: ${sessionResource.toString()}`);
@@ -255,12 +258,31 @@ export class SessionsWorkbenchService extends Disposable implements ISessionsWor
 			return;
 		}
 
-		// 5. After send, the extension creates an agent session. Detect it
+		// 5. After send, the extension creates an agent session. Wait for it
 		//    and set it as the active session so the titlebar and sidebar
 		//    reflect the new session.
-		const newSession = this.agentSessionsService.model.sessions.find(
+		let newSession = this.agentSessionsService.model.sessions.find(
 			s => !existingResources.has(s.resource.toString())
 		);
+
+		if (!newSession) {
+			let listener: IDisposable | undefined;
+			newSession = await Promise.race([
+				new Promise<IAgentSession>(resolve => {
+					listener = this.agentSessionsService.model.onDidChangeSessions(() => {
+						const session = this.agentSessionsService.model.sessions.find(
+							s => !existingResources.has(s.resource.toString())
+						);
+						if (session) {
+							resolve(session);
+						}
+					});
+				}),
+				new Promise<undefined>(resolve => setTimeout(() => resolve(undefined), 30_000)),
+			]);
+			listener?.dispose();
+		}
+
 		if (newSession) {
 			this.setActiveSession(newSession);
 		}
