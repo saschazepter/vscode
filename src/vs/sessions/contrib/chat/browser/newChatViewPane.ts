@@ -397,16 +397,16 @@ class NewChatWidget extends Disposable {
 
 		const pickersRow = dom.append(this._pickersContainer, dom.$('.chat-full-welcome-pickers'));
 
-		// Left group: target dropdown + non-repo extension pickers
+		// Left group: target dropdown (agent/worktree picker)
 		const leftGroup = dom.append(pickersRow, dom.$('.sessions-chat-pickers-left'));
 		this._targetDropdownContainer = dom.append(leftGroup, dom.$('.sessions-chat-dropdown-wrapper'));
 		this._renderTargetDropdown(this._targetDropdownContainer);
-		this._extensionPickersLeftContainer = dom.append(leftGroup, dom.$('.sessions-chat-extension-pickers-left'));
 
 		// Spacer
 		dom.append(pickersRow, dom.$('.sessions-chat-pickers-spacer'));
 
-		// Right group: repo/folder pickers
+		// Right group: all extension pickers (folder first, then others)
+		this._extensionPickersLeftContainer = undefined;
 		this._extensionPickersRightContainer = dom.append(pickersRow, dom.$('.sessions-chat-extension-pickers-right'));
 
 		this._renderExtensionPickers();
@@ -462,7 +462,7 @@ class NewChatWidget extends Disposable {
 	// --- Welcome: Extension option pickers ---
 
 	private _renderExtensionPickers(force?: boolean): void {
-		if (!this._extensionPickersLeftContainer || !this._extensionPickersRightContainer) {
+		if (!this._extensionPickersRightContainer) {
 			return;
 		}
 
@@ -503,7 +503,15 @@ class NewChatWidget extends Disposable {
 			return;
 		}
 
-		visibleGroups.sort((a, b) => (a.when ? 1 : 0) - (b.when ? 1 : 0));
+		visibleGroups.sort((a, b) => {
+			// Repo/folder pickers first, then others
+			const aRepo = isRepoOrFolderGroup(a) ? 0 : 1;
+			const bRepo = isRepoOrFolderGroup(b) ? 0 : 1;
+			if (aRepo !== bRepo) {
+				return aRepo - bRepo;
+			}
+			return (a.when ? 1 : 0) - (b.when ? 1 : 0);
+		});
 
 		if (!force && this._pickerWidgets.size === visibleGroups.length) {
 			const allMatch = visibleGroups.every(g => this._pickerWidgets.has(g.id));
@@ -556,9 +564,8 @@ class NewChatWidget extends Disposable {
 			this._pickerWidgetDisposables.add(widget);
 			this._pickerWidgets.set(optionGroup.id, widget);
 
-			// Repo/folder pickers go to the right; others go to the left
-			const isRightAligned = isRepoOrFolderGroup(optionGroup);
-			const targetContainer = isRightAligned ? this._extensionPickersRightContainer! : this._extensionPickersLeftContainer!;
+			// All pickers go to the right
+			const targetContainer = this._extensionPickersRightContainer!;
 
 			const slot = dom.append(targetContainer, dom.$('.sessions-chat-picker-slot'));
 			widget.render(slot);
