@@ -133,10 +133,10 @@ steps:
       echo "All required compilation folders checked."
     displayName: Validate compilation folders
 
-  - ${{ if eq(parameters.VSCODE_RUN_COMPILE_EXTRAS, true) }}:
-    - script: ./build/azure-pipelines/common/extract-telemetry.sh
-      displayName: Generate lists of telemetry events
+  - script: ./build/azure-pipelines/common/extract-telemetry.sh
+    displayName: Generate lists of telemetry events
 
+  - ${{ if eq(parameters.VSCODE_RUN_COMPILE_EXTRAS, true) }}:
     - task: AzureCLI@2
       displayName: Fetch secrets
       inputs:
