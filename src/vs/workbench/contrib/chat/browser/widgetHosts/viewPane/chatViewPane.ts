@@ -63,6 +63,7 @@ import { IAgentSessionsService } from '../../agentSessions/agentSessionsService.
 import { HoverPosition } from '../../../../../../base/browser/ui/hover/hoverWidget.js';
 import { IAgentSession } from '../../agentSessions/agentSessionsModel.js';
 import { IChatEntitlementService } from '../../../../../services/chat/common/chatEntitlementService.js';
+import { IWorkbenchEnvironmentService } from '../../../../../services/environment/common/environmentService.js';
 
 interface IChatViewPaneState extends Partial<IChatModelInputState> {
 	/** @deprecated */
@@ -119,6 +120,7 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 		@IChatEntitlementService private readonly chatEntitlementService: IChatEntitlementService,
 		@ICommandService private readonly commandService: ICommandService,
 		@IActivityService private readonly activityService: IActivityService,
+		@IWorkbenchEnvironmentService private readonly workbenchEnvironmentService: IWorkbenchEnvironmentService,
 	) {
 		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
 
@@ -518,7 +520,9 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 				},
 				editorOverflowWidgetsDomNode,
 				enableImplicitContext: true,
-				enableWorkingSet: 'explicit',
+				enableWorkingSet: this.workbenchEnvironmentService.isSessionsWindow
+					? 'implicit'
+					: 'explicit',
 				supportsChangingModes: true,
 				dndContainer: parent,
 			},
