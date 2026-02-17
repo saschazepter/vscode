@@ -343,6 +343,7 @@ class NewChatWidget extends Disposable {
 				this._currentLanguageModel.set(model, undefined);
 			},
 			getModels: () => this._getAvailableModels(),
+			canManageModels: () => true,
 		};
 
 		const pickerOptions: IChatInputPickerOptions = {
