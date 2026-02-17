@@ -87,7 +87,7 @@ const buttonSanitizerConfig = Object.freeze<DomSanitizerConfig>({
 		override: ['b', 'i', 'u', 'code', 'span'],
 	},
 	allowedAttributes: {
-		override: ['class', 'style'],
+		override: ['class'],
 	},
 });
 
@@ -95,7 +95,7 @@ const buttonSanitizerConfig = Object.freeze<DomSanitizerConfig>({
 const buttonMarkdownRenderOptions = Object.freeze({
 	sanitizerConfig: {
 		allowedAttributes: {
-			override: ['class', 'style'],
+			override: ['class'],
 		}
 	}
 });
