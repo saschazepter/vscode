@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Disposable } from '../../../../base/common/lifecycle.js';
+import { Disposable, IDisposable } from '../../../../base/common/lifecycle.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { IObservable, observableValue } from '../../../../base/common/observable.js';
 import { URI } from '../../../../base/common/uri.js';
@@ -266,20 +266,21 @@ export class SessionsWorkbenchService extends Disposable implements ISessionsWor
 		);
 
 		if (!newSession) {
+			let listener: IDisposable | undefined;
 			newSession = await Promise.race([
 				new Promise<IAgentSession>(resolve => {
-					const disposable = this.agentSessionsService.model.onDidChangeSessions(() => {
+					listener = this.agentSessionsService.model.onDidChangeSessions(() => {
 						const session = this.agentSessionsService.model.sessions.find(
 							s => !existingResources.has(s.resource.toString())
 						);
 						if (session) {
-							disposable.dispose();
 							resolve(session);
 						}
 					});
 				}),
 				new Promise<undefined>(resolve => setTimeout(() => resolve(undefined), 30_000)),
 			]);
+			listener?.dispose();
 		}
 
 		if (newSession) {
