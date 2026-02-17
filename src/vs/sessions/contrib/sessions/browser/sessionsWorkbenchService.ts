@@ -137,6 +137,8 @@ export class SessionsWorkbenchService extends Disposable implements ISessionsWor
 
 		const agentSession = this.agentSessionsService.model.getSession(currentActive.resource);
 		if (!agentSession) {
+			// Active session was deleted — switch to the next available session
+			this.showNextSession();
 			return;
 		}
 
@@ -147,6 +149,19 @@ export class SessionsWorkbenchService extends Disposable implements ISessionsWor
 			worktree,
 		};
 		this._activeSession.set(activeSessionItem, undefined);
+	}
+
+	private showNextSession(): void {
+		const sessions = this.agentSessionsService.model.sessions
+			.filter(s => !s.isArchived())
+			.sort((a, b) => (b.timing.lastRequestEnded ?? b.timing.created) - (a.timing.lastRequestEnded ?? a.timing.created));
+
+		if (sessions.length > 0) {
+			this.setActiveSession(sessions[0]);
+			this.instantiationService.invokeFunction(openSessionDefault, sessions[0]);
+		} else {
+			this.openNewSession();
+		}
 	}
 
 	private getRepositoryFromMetadata(metadata: { readonly [key: string]: unknown } | undefined): [URI | undefined, URI | undefined] {
