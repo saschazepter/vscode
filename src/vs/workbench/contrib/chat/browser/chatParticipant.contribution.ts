@@ -20,7 +20,7 @@ import { Registry } from '../../../../platform/registry/common/platform.js';
 import { registerIcon } from '../../../../platform/theme/common/iconRegistry.js';
 import { ViewPaneContainer } from '../../../browser/parts/views/viewPaneContainer.js';
 import { IWorkbenchContribution } from '../../../common/contributions.js';
-import { IViewContainersRegistry, IViewDescriptor, IViewsRegistry, ViewContainer, ViewContainerLocation, Extensions as ViewExtensions, WindowVisibility } from '../../../common/views.js';
+import { IViewContainersRegistry, IViewDescriptor, IViewsRegistry, ViewContainer, ViewContainerLocation, Extensions as ViewExtensions } from '../../../common/views.js';
 import { Extensions, IExtensionFeaturesRegistry, IExtensionFeatureTableRenderer, IRenderedData, IRowData, ITableData } from '../../../services/extensionManagement/common/extensionFeatures.js';
 import { isProposedApiEnabled } from '../../../services/extensions/common/extensions.js';
 import * as extensionsRegistry from '../../../services/extensions/common/extensionsRegistry.js';
@@ -32,7 +32,6 @@ import { IRawChatParticipantContribution } from '../common/participants/chatPart
 import { ChatAgentLocation, ChatModeKind } from '../common/constants.js';
 import { ChatViewId, ChatViewContainerId } from './chat.js';
 import { ChatViewPane } from './widgetHosts/viewPane/chatViewPane.js';
-import { IsSessionsWindowContext } from '../../../common/contextkeys.js';
 
 // --- Chat Container &  View Registration
 
@@ -46,8 +45,7 @@ const chatViewContainer: ViewContainer = Registry.as<IViewContainersRegistry>(Vi
 	storageId: ChatViewContainerId,
 	hideIfEmpty: true,
 	order: 1,
-	windowVisibility: WindowVisibility.Both
-}, ViewContainerLocation.ChatBar, { isDefault: true, doNotRegisterOpenCommand: true });
+}, ViewContainerLocation.AuxiliaryBar, { isDefault: true, doNotRegisterOpenCommand: true });
 
 const chatViewDescriptor: IViewDescriptor = {
 	id: ChatViewId,
@@ -71,22 +69,13 @@ const chatViewDescriptor: IViewDescriptor = {
 	},
 	ctorDescriptor: new SyncDescriptor(ChatViewPane),
 	when: ContextKeyExpr.or(
-		// In sessions window: only show when there's an active session
-		ContextKeyExpr.and(IsSessionsWindowContext, ContextKeyExpr.has('isNewChatSession').negate()),
-		// In editor window: show based on standard conditions
-		ContextKeyExpr.and(
-			IsSessionsWindowContext.negate(),
-			ContextKeyExpr.or(
-				ContextKeyExpr.or(
-					ChatContextKeys.Setup.hidden,
-					ChatContextKeys.Setup.disabled
-				)?.negate(),
-				ChatContextKeys.panelParticipantRegistered,
-				ChatContextKeys.extensionInvalid
-			)
-		)
-	),
-	windowVisibility: WindowVisibility.Both
+		ContextKeyExpr.or(
+			ChatContextKeys.Setup.hidden,
+			ChatContextKeys.Setup.disabled
+		)?.negate(),
+		ChatContextKeys.panelParticipantRegistered,
+		ChatContextKeys.extensionInvalid
+	)
 };
 Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry).registerViews([chatViewDescriptor], chatViewContainer);
 
