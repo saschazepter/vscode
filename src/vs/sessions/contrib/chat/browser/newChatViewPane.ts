@@ -7,7 +7,8 @@ import './media/chatWidget.css';
 import './media/chatWelcomePart.css';
 import * as dom from '../../../../base/browser/dom.js';
 import { Codicon } from '../../../../base/common/codicons.js';
-import { toAction } from '../../../../base/common/actions.js';
+import { Separator, toAction } from '../../../../base/common/actions.js';
+import { DropdownMenu } from '../../../../base/browser/ui/dropdown/dropdown.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { KeyCode } from '../../../../base/common/keyCodes.js';
 import { Disposable, DisposableStore, MutableDisposable } from '../../../../base/common/lifecycle.js';
@@ -51,7 +52,6 @@ import { IWorkspaceContextService } from '../../../../platform/workspace/common/
 import { IFileDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 import { IWorkspaceEditingService } from '../../../../workbench/services/workspaces/common/workspaceEditing.js';
 import { IWorkspacesService, isRecentFolder } from '../../../../platform/workspaces/common/workspaces.js';
-import { IContextViewService } from '../../../../platform/contextview/browser/contextView.js';
 import { IViewPaneOptions, ViewPane } from '../../../../workbench/browser/parts/views/viewPane.js';
 import { ContextMenuController } from '../../../../editor/contrib/contextmenu/browser/contextmenu.js';
 import { getSimpleEditorOptions } from '../../../../workbench/contrib/codeEditor/browser/simpleEditorOptions.js';
@@ -197,7 +197,6 @@ class NewChatWidget extends Disposable {
 		@IFileDialogService private readonly fileDialogService: IFileDialogService,
 		@IWorkspaceEditingService private readonly workspaceEditingService: IWorkspaceEditingService,
 		@IWorkspacesService private readonly workspacesService: IWorkspacesService,
-		@IContextViewService private readonly contextViewService: IContextViewService,
 	) {
 		super();
 		this._targetConfig = this._register(new TargetConfig(options.targetConfig));
@@ -613,13 +612,6 @@ class NewChatWidget extends Disposable {
 		const folderName = currentFolder ? basename(currentFolder.uri) : localize('noFolder', "No Folder");
 
 		const slot = dom.append(this._extensionPickersRightContainer, dom.$('.sessions-chat-picker-slot'));
-		const button = dom.append(slot, dom.$('.sessions-chat-dropdown-button'));
-		button.tabIndex = 0;
-		button.role = 'button';
-		button.ariaHasPopup = 'true';
-		dom.append(button, renderIcon(Codicon.folder));
-		dom.append(button, dom.$('span.sessions-chat-dropdown-label', undefined, folderName));
-		dom.append(button, renderIcon(Codicon.chevronDown));
 
 		const switchFolder = async (folderUri: URI) => {
 			const foldersToDelete = this.workspaceContextService.getWorkspace().folders.map(f => f.uri);
@@ -627,76 +619,64 @@ class NewChatWidget extends Disposable {
 			this._renderExtensionPickers(true);
 		};
 
-		this._pickerWidgetDisposables.add(dom.addDisposableListener(button, dom.EventType.CLICK, async () => {
-			const recentlyOpened = await this.workspacesService.getRecentlyOpened();
-			const recentFolders = recentlyOpened.workspaces
-				.filter(isRecentFolder)
-				.filter(r => !currentFolder || !isEqual(r.folderUri, currentFolder.uri))
-				.slice(0, 10);
-
-			this.contextViewService.showContextView({
-				getAnchor: () => button,
-				render: (container) => {
-					const dropdown = dom.append(container, dom.$('.sessions-folder-dropdown'));
-
-					for (const recent of recentFolders) {
-						const item = dom.append(dropdown, dom.$('.sessions-folder-dropdown-item'));
-						dom.append(item, renderIcon(Codicon.folder));
-						dom.append(item, dom.$('span', undefined, recent.label || basename(recent.folderUri)));
-						item.tabIndex = 0;
-						item.role = 'menuitem';
-
-						dom.addDisposableListener(item, dom.EventType.CLICK, () => {
-							this.contextViewService.hideContextView();
-							switchFolder(recent.folderUri);
-						});
-						dom.addDisposableListener(item, dom.EventType.KEY_DOWN, (e: KeyboardEvent) => {
-							if (e.key === 'Enter' || e.key === ' ') {
-								e.preventDefault();
-								this.contextViewService.hideContextView();
-								switchFolder(recent.folderUri);
+		const dropdown = new DropdownMenu(slot, {
+			contextMenuProvider: this.contextMenuService,
+			actions: [],
+			actionProvider: {
+				getActions: () => {
+					const recentlyOpened = this._lastRecentFolders ?? [];
+					const actions = recentlyOpened.map(recent => toAction({
+						id: recent.folderUri.toString(),
+						label: recent.label || basename(recent.folderUri),
+						run: () => switchFolder(recent.folderUri),
+					}));
+					if (actions.length > 0) {
+						actions.push(new Separator());
+					}
+					actions.push(toAction({
+						id: 'browse',
+						label: localize('browseFolder', "Browse..."),
+						run: async () => {
+							const selected = await this.fileDialogService.showOpenDialog({
+								canSelectFiles: false,
+								canSelectFolders: true,
+								canSelectMany: false,
+								title: localize('selectFolder', "Select Folder"),
+							});
+							if (selected?.[0]) {
+								await switchFolder(selected[0]);
 							}
-						});
-					}
+						},
+					}));
+					return actions;
+				}
+			},
+			label: folderName,
+		});
 
-					if (recentFolders.length > 0) {
-						dom.append(dropdown, dom.$('.sessions-folder-dropdown-separator'));
-					}
+		// Override the default label rendering to include folder icon and chevron
+		const labelEl = dropdown.element.querySelector('.dropdown-label') as HTMLElement;
+		if (labelEl) {
+			dom.clearNode(labelEl);
+			dom.append(labelEl, renderIcon(Codicon.folder));
+			dom.append(labelEl, dom.$('span.sessions-chat-dropdown-label', undefined, folderName));
+			dom.append(labelEl, renderIcon(Codicon.chevronDown));
+		}
 
-					const browseItem = dom.append(dropdown, dom.$('.sessions-folder-dropdown-item'));
-					dom.append(browseItem, renderIcon(Codicon.folderOpened));
-					dom.append(browseItem, dom.$('span', undefined, localize('browseFolder', "Browse...")));
-					browseItem.tabIndex = 0;
-					browseItem.role = 'menuitem';
+		// Fetch recent folders asynchronously so the dropdown has them when opened
+		this._fetchRecentFolders(currentFolder?.uri);
 
-					dom.addDisposableListener(browseItem, dom.EventType.CLICK, async () => {
-						this.contextViewService.hideContextView();
-						const selected = await this.fileDialogService.showOpenDialog({
-							canSelectFiles: false,
-							canSelectFolders: true,
-							canSelectMany: false,
-							title: localize('selectFolder', "Select Folder"),
-						});
-						if (selected?.[0]) {
-							await switchFolder(selected[0]);
-						}
-					});
-					dom.addDisposableListener(browseItem, dom.EventType.KEY_DOWN, (e: KeyboardEvent) => {
-						if (e.key === 'Enter' || e.key === ' ') {
-							e.preventDefault();
-							browseItem.click();
-						}
-					});
+		this._pickerWidgetDisposables.add(dropdown);
+	}
 
-					// Focus the first item
-					const firstItem = dropdown.querySelector('.sessions-folder-dropdown-item') as HTMLElement;
-					firstItem?.focus();
+	private _lastRecentFolders: { folderUri: URI; label?: string }[] = [];
 
-					return { dispose: () => { } };
-				},
-				onHide: () => { },
-			});
-		}));
+	private async _fetchRecentFolders(currentFolderUri: URI | undefined): Promise<void> {
+		const recentlyOpened = await this.workspacesService.getRecentlyOpened();
+		this._lastRecentFolders = recentlyOpened.workspaces
+			.filter(isRecentFolder)
+			.filter(r => !currentFolderUri || !isEqual(r.folderUri, currentFolderUri))
+			.slice(0, 10);
 	}
 
 	private _evaluateOptionGroupVisibility(optionGroup: { id: string; when?: string }): boolean {
