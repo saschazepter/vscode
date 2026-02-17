@@ -440,7 +440,7 @@ export class McpWorkbenchService extends Disposable implements IMcpWorkbenchServ
 				const previousWinner = this._lastEnabledServersResult?.get(server.name);
 				const newWinner = server.mcpResource.toString();
 				if (previousWinner !== newWinner) {
-					this.logService.warn(localize('overwriting', "Overwriting mcp server '{0}' from {1} with {2}.", server.name, server.mcpResource.path, existing.mcpResource.path));
+					this.logService.warn(localize('overwriting', "Overwriting mcp server '{0}' from {1} with {2}.", server.name, existing.mcpResource.path, server.mcpResource.path));
 				}
 			}
 			result.set(server.name, server);
@@ -453,7 +453,7 @@ export class McpWorkbenchService extends Disposable implements IMcpWorkbenchServ
 				const previousWinner = this._lastEnabledServersResult?.get(server.name);
 				const newWinner = server.mcpResource.toString();
 				if (previousWinner !== newWinner) {
-					this.logService.warn(localize('overwriting', "Overwriting mcp server '{0}' from {1} with {2}.", server.name, server.mcpResource.path, existing.mcpResource.path));
+					this.logService.warn(localize('overwriting', "Overwriting mcp server '{0}' from {1} with {2}.", server.name, existing.mcpResource.path, server.mcpResource.path));
 				}
 			}
 			result.set(server.name, server);
