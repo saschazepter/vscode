@@ -1,0 +1,117 @@
+{
+  "items": [
+    {
+      "category": "technical",
+      "description": "Inline compilation into Windows compile step template (win32/steps/product-build-win32-compile.yml). Replace the DownloadPipelineArtifact@2 + ExtractFiles@1 steps (which download and extract the Compilation artifact) with the full inline compilation command: `npm exec -- npm-run-all2 -lp core-ci extensions-ci hygiene eslint valid-layers-check define-class-fields-check vscode-dts-compile-check tsec-compile-check test-build-scripts`. Add the compilation folder validation step from product-compile.yml. Add the smoke test and integration test compilation steps (conditional on VSCODE_STEP_ON_IT=false).",
+      "steps": [
+        "Remove the DownloadPipelineArtifact@2 task that downloads the Compilation artifact",
+        "Remove the ExtractFiles@1 task that extracts compilation.tar.gz",
+        "After the install-builtin-extensions template and mixin-quality step, add a powershell step that runs: npm exec -- npm-run-all2 -lp core-ci extensions-ci hygiene eslint valid-layers-check define-class-fields-check vscode-dts-compile-check tsec-compile-check test-build-scripts (with GITHUB_TOKEN env var)",
+        "Add a powershell step to validate compilation folders (out-build exists and is not empty, out-vscode-* folders exist and are not empty)",
+        "Add conditional steps to compile smoke test suites (npm run compile in test/smoke) and integration test suites (npm run compile in test/integration/browser) when VSCODE_STEP_ON_IT is false",
+        "Verify the Build client step still works (it depends on out-build/out-vscode-* existing)"
+      ],
+      "priority": "high",
+      "passes": false
+    },
+    {
+      "category": "technical",
+      "description": "Inline compilation into Linux compile step template (linux/steps/product-build-linux-compile.yml). Replace the DownloadPipelineArtifact@2 + tar extraction steps with the full inline compilation command. Add compilation folder validation and smoke/integration test compilation steps.",
+      "steps": [
+        "Remove the DownloadPipelineArtifact@2 task that downloads the Compilation artifact",
+        "Remove the script step that runs tar -xzf to extract compilation.tar.gz",
+        "After the install-builtin-extensions template and mixin-quality step, add a script step that runs: npm exec -- npm-run-all2 -lp core-ci extensions-ci hygiene eslint valid-layers-check define-class-fields-check vscode-dts-compile-check tsec-compile-check test-build-scripts (with GITHUB_TOKEN env var)",
+        "Add a script step to validate compilation folders",
+        "Add conditional steps to compile smoke test and integration test suites when VSCODE_STEP_ON_IT is false",
+        "Verify the Build client/server steps still work"
+      ],
+      "priority": "high",
+      "passes": false
+    },
+    {
+      "category": "technical",
+      "description": "Inline compilation into macOS compile step template (darwin/steps/product-build-darwin-compile.yml). Replace the DownloadPipelineArtifact@2 + tar extraction steps with the full inline compilation command. Add compilation folder validation and smoke/integration test compilation steps. Additionally, since macOS arm64 is the designated job: add sourcemap upload to Azure, telemetry events generation, download-builtin-extensions-cg, and Component Governance detection — but only when VSCODE_ARCH is arm64.",
+      "steps": [
+        "Remove the DownloadPipelineArtifact@2 task that downloads the Compilation artifact",
+        "Remove the script step that runs tar -xzf to extract compilation.tar.gz",
+        "After the install-builtin-extensions template and mixin-quality step, add a script step that runs: npm exec -- npm-run-all2 -lp core-ci extensions-ci hygiene eslint valid-layers-check define-class-fields-check vscode-dts-compile-check tsec-compile-check test-build-scripts (with GITHUB_TOKEN env var)",
+        "Add a script step to validate compilation folders",
+        "Add conditional steps to compile smoke test and integration test suites when VSCODE_STEP_ON_IT is false",
+        "Add sourcemap upload steps (AzureCLI@2 to fetch secrets + node build/azure-pipelines/upload-sourcemaps.ts) conditioned on VSCODE_ARCH == arm64",
+        "Add telemetry events generation step (./build/azure-pipelines/common/extract-telemetry.sh) conditioned on VSCODE_ARCH == arm64",
+        "Add download-builtin-extensions-cg step conditioned on VSCODE_ARCH == arm64",
+        "Add ComponentGovernanceComponentDetection@0 task conditioned on VSCODE_ARCH == arm64",
+        "Verify the Build client/server steps still work"
+      ],
+      "priority": "high",
+      "passes": false
+    },
+    {
+      "category": "technical",
+      "description": "Inline compilation into Alpine job (alpine/product-build-alpine.yml). Replace the DownloadPipelineArtifact@2 + tar extraction steps with the full inline compilation command. Add compilation folder validation step.",
+      "steps": [
+        "Remove the DownloadPipelineArtifact@2 task that downloads the Compilation artifact",
+        "Remove the script step that runs tar -xzf to extract compilation.tar.gz",
+        "After the install-builtin-extensions template and mixin-quality step, add a script step that runs: npm exec -- npm-run-all2 -lp core-ci extensions-ci hygiene eslint valid-layers-check define-class-fields-check vscode-dts-compile-check tsec-compile-check test-build-scripts (with GITHUB_TOKEN env var)",
+        "Add a script step to validate compilation folders",
+        "Verify the Build server steps still work"
+      ],
+      "priority": "high",
+      "passes": false
+    },
+    {
+      "category": "technical",
+      "description": "Inline compilation into Web job (web/product-build-web.yml). Replace the DownloadPipelineArtifact@2 + tar extraction steps with the full inline compilation command. Add compilation folder validation step.",
+      "steps": [
+        "Remove the DownloadPipelineArtifact@2 task that downloads the Compilation artifact",
+        "Remove the script step that runs tar -xzf to extract compilation.tar.gz",
+        "After the install-builtin-extensions template and mixin-quality step, add a script step that runs: npm exec -- npm-run-all2 -lp core-ci extensions-ci hygiene eslint valid-layers-check define-class-fields-check vscode-dts-compile-check tsec-compile-check test-build-scripts (with GITHUB_TOKEN env var)",
+        "Add a script step to validate compilation folders",
+        "Verify the Build step still works"
+      ],
+      "priority": "high",
+      "passes": false
+    },
+    {
+      "category": "technical",
+      "description": "Remove Compile stage and VSCODE_COMPILE_ONLY from main pipeline (product-build.yml). Remove the Compile stage definition, remove dependsOn: Compile from all platform stages (Windows, Linux, macOS, Alpine, Web), and remove the VSCODE_COMPILE_ONLY parameter and all conditionals that reference it.",
+      "steps": [
+        "Remove the entire Compile stage block (lines ~193-200) from product-build.yml",
+        "Remove dependsOn: Compile from the Windows stage dependsOn list",
+        "Remove dependsOn: Compile from the Linux stage dependsOn list",
+        "Remove dependsOn: Compile from the macOS stage dependsOn list",
+        "Remove dependsOn: Compile from the Alpine stage dependsOn list (and update its condition since it currently checks VSCODE_COMPILE_ONLY)",
+        "Remove dependsOn: Compile from the Web stage dependsOn list (and update its condition since it currently checks VSCODE_COMPILE_ONLY)",
+        "Remove the VSCODE_COMPILE_ONLY parameter definition",
+        "Remove all ${{ if ... eq(parameters.VSCODE_COMPILE_ONLY, false) }} conditionals (simplify the conditions that gate platform stages)",
+        "Remove the VSCODE_PUBLISH variable's reference to VSCODE_COMPILE_ONLY",
+        "Remove the APIScan stage's condition on VSCODE_COMPILE_ONLY",
+        "Verify all remaining stage conditions are correct after removing VSCODE_COMPILE_ONLY references"
+      ],
+      "priority": "high",
+      "passes": false
+    },
+    {
+      "category": "technical",
+      "description": "Update the macOS-only pipeline (product-build-macos.yml) to remove its Compile stage and inline compilation into the macOS CI jobs.",
+      "steps": [
+        "Remove the entire Compile stage block from product-build-macos.yml",
+        "Remove dependsOn: Compile from the macOS stage",
+        "The macOS stage uses darwin/product-build-darwin-ci.yml which uses darwin/steps/product-build-darwin-compile.yml — this template will already have inline compilation from a previous PRD item, so no further changes needed in the CI template"
+      ],
+      "priority": "high",
+      "passes": false
+    },
+    {
+      "category": "cleanup",
+      "description": "Delete the product-compile.yml file since it is no longer referenced by any pipeline. All its functionality has been inlined into platform jobs.",
+      "steps": [
+        "Verify product-compile.yml is not referenced by any other pipeline or template (grep for 'product-compile' across all yml files)",
+        "Delete build/azure-pipelines/product-compile.yml",
+        "Verify no broken references remain"
+      ],
+      "priority": "medium",
+      "passes": false
+    }
+  ]
+}
