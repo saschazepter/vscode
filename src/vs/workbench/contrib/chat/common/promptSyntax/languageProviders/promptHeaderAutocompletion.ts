@@ -299,7 +299,7 @@ export class PromptHeaderAutocompletion implements CompletionItemProvider {
 					return [{ name: '["*"]' }];
 				}
 				break;
-			case PromptHeaderAttributes.userInvokable:
+			case PromptHeaderAttributes.userInvocable:
 				if (promptType === PromptsType.agent || promptType === PromptsType.skill) {
 					return [{ name: 'true' }, { name: 'false' }];
 				}
@@ -317,7 +317,7 @@ export class PromptHeaderAutocompletion implements CompletionItemProvider {
 		const result = [];
 		for (const model of this.languageModelsService.getLanguageModelIds()) {
 			const metadata = this.languageModelsService.lookupLanguageModel(model);
-			if (metadata && metadata.isUserSelectable !== false) {
+			if (metadata && metadata.isUserSelectable !== false && !metadata.targetChatSessionType) {
 				if (!agentModeOnly || ILanguageModelChatMetadata.suitableForAgentMode(metadata)) {
 					result.push({
 						name: ILanguageModelChatMetadata.asQualifiedName(metadata),

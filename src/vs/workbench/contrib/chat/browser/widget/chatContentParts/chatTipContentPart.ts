@@ -10,13 +10,18 @@ import { renderIcon } from '../../../../../../base/browser/ui/iconLabel/iconLabe
 import { Codicon } from '../../../../../../base/common/codicons.js';
 import { Emitter } from '../../../../../../base/common/event.js';
 import { Disposable, MutableDisposable } from '../../../../../../base/common/lifecycle.js';
-import { localize2 } from '../../../../../../nls.js';
+import { MarkdownString } from '../../../../../../base/common/htmlContent.js';
+import { localize, localize2 } from '../../../../../../nls.js';
 import { getFlatContextMenuActions } from '../../../../../../platform/actions/browser/menuEntryActionViewItem.js';
+import { MenuWorkbenchToolBar } from '../../../../../../platform/actions/browser/toolbar.js';
 import { Action2, IMenuService, MenuId, registerAction2 } from '../../../../../../platform/actions/common/actions.js';
-import { IContextKeyService } from '../../../../../../platform/contextkey/common/contextkey.js';
+import { IContextKey, IContextKeyService } from '../../../../../../platform/contextkey/common/contextkey.js';
 import { IContextMenuService } from '../../../../../../platform/contextview/browser/contextView.js';
-import { ServicesAccessor } from '../../../../../../platform/instantiation/common/instantiation.js';
+import { ICommandService } from '../../../../../../platform/commands/common/commands.js';
+import { IDialogService } from '../../../../../../platform/dialogs/common/dialogs.js';
+import { IInstantiationService, ServicesAccessor } from '../../../../../../platform/instantiation/common/instantiation.js';
 import { IMarkdownRenderer } from '../../../../../../platform/markdown/browser/markdownRenderer.js';
+import { ChatContextKeys } from '../../../common/actions/chatContextKeys.js';
 import { IChatTip, IChatTipService } from '../../chatTipService.js';
 
 const $ = dom.$;
@@ -28,6 +33,9 @@ export class ChatTipContentPart extends Disposable {
 	public readonly onDidHide = this._onDidHide.event;
 
 	private readonly _renderedContent = this._register(new MutableDisposable());
+	private readonly _toolbar = this._register(new MutableDisposable<MenuWorkbenchToolBar>());
+
+	private readonly _inChatTipContextKey: IContextKey<boolean>;
 
 	constructor(
 		tip: IChatTip,
@@ -37,19 +45,40 @@ export class ChatTipContentPart extends Disposable {
 		@IContextMenuService private readonly _contextMenuService: IContextMenuService,
 		@IMenuService private readonly _menuService: IMenuService,
 		@IContextKeyService private readonly _contextKeyService: IContextKeyService,
+		@IInstantiationService private readonly _instantiationService: IInstantiationService,
 	) {
 		super();
 
 		this.domNode = $('.chat-tip-widget');
+		this.domNode.tabIndex = 0;
+		this.domNode.setAttribute('role', 'region');
+		this.domNode.setAttribute('aria-roledescription', localize('chatTipRoleDescription', "tip"));
+
+		this._inChatTipContextKey = ChatContextKeys.inChatTip.bindTo(this._contextKeyService);
+		const focusTracker = this._register(dom.trackFocus(this.domNode));
+		this._register(focusTracker.onDidFocus(() => this._inChatTipContextKey.set(true)));
+		this._register(focusTracker.onDidBlur(() => this._inChatTipContextKey.set(false)));
+		this._register({ dispose: () => this._inChatTipContextKey.reset() });
+
 		this._renderTip(tip);
 
 		this._register(this._chatTipService.onDidDismissTip(() => {
 			const nextTip = this._getNextTip();
 			if (nextTip) {
 				this._renderTip(nextTip);
+				this.focus();
 			} else {
 				this._onDidHide.fire();
 			}
+		}));
+
+		this._register(this._chatTipService.onDidNavigateTip(tip => {
+			this._renderTip(tip);
+			this.focus();
+		}));
+
+		this._register(this._chatTipService.onDidHideTip(() => {
+			this._onDidHide.fire();
 		}));
 
 		this._register(this._chatTipService.onDidDisableTips(() => {
@@ -69,14 +98,108 @@ export class ChatTipContentPart extends Disposable {
 		}));
 	}
 
+	hasFocus(): boolean {
+		return dom.isAncestorOfActiveElement(this.domNode);
+	}
+
+	focus(): void {
+		this.domNode.focus();
+	}
+
 	private _renderTip(tip: IChatTip): void {
 		dom.clearNode(this.domNode);
+		this._toolbar.clear();
+
 		this.domNode.appendChild(renderIcon(Codicon.lightbulb));
 		const markdownContent = this._renderer.render(tip.content);
 		this._renderedContent.value = markdownContent;
 		this.domNode.appendChild(markdownContent.element);
+
+		// Toolbar with previous, next, and dismiss actions via MenuWorkbenchToolBar
+		const toolbarContainer = $('.chat-tip-toolbar');
+		this._toolbar.value = this._instantiationService.createInstance(MenuWorkbenchToolBar, toolbarContainer, MenuId.ChatTipToolbar, {
+			menuOptions: {
+				shouldForwardArgs: true,
+			},
+		});
+		this.domNode.appendChild(toolbarContainer);
+
+		const textContent = markdownContent.element.textContent ?? localize('chatTip', "Chat tip");
+		const hasLink = /\[.*?\]\(.*?\)/.test(tip.content.value);
+		const ariaLabel = hasLink
+			? localize('chatTipWithAction', "{0} Tab to reach the action.", textContent)
+			: textContent;
+		this.domNode.setAttribute('aria-label', ariaLabel);
 	}
 }
+
+//#region Tip toolbar actions
+
+registerAction2(class PreviousTipAction extends Action2 {
+	constructor() {
+		super({
+			id: 'workbench.action.chat.previousTip',
+			title: localize2('chatTip.previous', "Previous tip"),
+			icon: Codicon.chevronLeft,
+			f1: false,
+			menu: [{
+				id: MenuId.ChatTipToolbar,
+				group: 'navigation',
+				order: 1,
+			}]
+		});
+	}
+
+	override async run(accessor: ServicesAccessor): Promise<void> {
+		const chatTipService = accessor.get(IChatTipService);
+		const contextKeyService = accessor.get(IContextKeyService);
+		chatTipService.navigateToPreviousTip(contextKeyService);
+	}
+});
+
+registerAction2(class NextTipAction extends Action2 {
+	constructor() {
+		super({
+			id: 'workbench.action.chat.nextTip',
+			title: localize2('chatTip.next', "Next tip"),
+			icon: Codicon.chevronRight,
+			f1: false,
+			menu: [{
+				id: MenuId.ChatTipToolbar,
+				group: 'navigation',
+				order: 2,
+			}]
+		});
+	}
+
+	override async run(accessor: ServicesAccessor): Promise<void> {
+		const chatTipService = accessor.get(IChatTipService);
+		const contextKeyService = accessor.get(IContextKeyService);
+		chatTipService.navigateToNextTip(contextKeyService);
+	}
+});
+
+registerAction2(class DismissTipToolbarAction extends Action2 {
+	constructor() {
+		super({
+			id: 'workbench.action.chat.dismissTipToolbar',
+			title: localize2('chatTip.dismissButton', "Dismiss tip"),
+			icon: Codicon.check,
+			f1: false,
+			menu: [{
+				id: MenuId.ChatTipToolbar,
+				group: 'navigation',
+				order: 3,
+			}]
+		});
+	}
+
+	override async run(accessor: ServicesAccessor): Promise<void> {
+		accessor.get(IChatTipService).dismissTip();
+	}
+});
+
+//#endregion
 
 //#region Tip context menu actions
 
@@ -104,17 +227,51 @@ registerAction2(class DisableTipsAction extends Action2 {
 		super({
 			id: 'workbench.action.chat.disableTips',
 			title: localize2('chatTip.disableTips', "Disable tips"),
+			icon: Codicon.bellSlash,
 			f1: false,
 			menu: [{
 				id: MenuId.ChatTipContext,
 				group: 'chatTip',
 				order: 2,
+			}, {
+				id: MenuId.ChatTipToolbar,
+				group: 'navigation',
+				order: 5,
 			}]
 		});
 	}
 
 	override async run(accessor: ServicesAccessor): Promise<void> {
-		await accessor.get(IChatTipService).disableTips();
+		const dialogService = accessor.get(IDialogService);
+		const chatTipService = accessor.get(IChatTipService);
+		const commandService = accessor.get(ICommandService);
+
+		const { result } = await dialogService.prompt<boolean>({
+			message: localize('chatTip.disableConfirmTitle', "Disable tips?"),
+			custom: {
+				markdownDetails: [{
+					markdown: new MarkdownString(localize('chatTip.disableConfirmDetail', "New tips are added frequently to help you get the most out of Copilot. You can re-enable tips anytime from the `chat.tips.enabled` setting.")),
+				}],
+			},
+			buttons: [
+				{
+					label: localize('chatTip.disableConfirmButton', "Disable tips"),
+					run: () => true,
+				},
+				{
+					label: localize('chatTip.openSettingButton', "Open Setting"),
+					run: () => {
+						commandService.executeCommand('workbench.action.openSettings', 'chat.tips.enabled');
+						return false;
+					},
+				},
+			],
+			cancelButton: true,
+		});
+
+		if (result) {
+			await chatTipService.disableTips();
+		}
 	}
 });
 

@@ -2323,6 +2323,12 @@ declare namespace monaco.editor {
 		 */
 		getCustomLineHeightsDecorations(ownerId?: number): IModelDecoration[];
 		/**
+		 * Gets all the decorations that contain custom line heights.
+		 * @param range The range to search in
+		 * @param ownerId If set, it will ignore decorations belonging to other owners.
+		 */
+		getCustomLineHeightsDecorationsInRange(range: Range, ownerId?: number): IModelDecoration[];
+		/**
 		 * Normalize a string containing whitespace according to indentation rules (converts to spaces or to tabs).
 		 */
 		normalizeIndentation(str: string): string;
@@ -3715,6 +3721,11 @@ declare namespace monaco.editor {
 		 * Defaults to false.
 		 */
 		formatOnPaste?: boolean;
+		/**
+		 * Controls whether double-clicking next to a bracket or quote selects the content inside.
+		 * Defaults to true.
+		 */
+		doubleClickSelectsBlock?: boolean;
 		/**
 		 * Controls if the editor should allow to move selections via drag and drop.
 		 * Defaults to false.
@@ -5236,7 +5247,8 @@ declare namespace monaco.editor {
 		inlineCompletionsAccessibilityVerbose = 169,
 		effectiveEditContext = 170,
 		scrollOnMiddleClick = 171,
-		effectiveAllowVariableFonts = 172
+		effectiveAllowVariableFonts = 172,
+		doubleClickSelectsBlock = 173
 	}
 
 	export const EditorOptions: {
@@ -5285,6 +5297,7 @@ declare namespace monaco.editor {
 		disableLayerHinting: IEditorOption<EditorOption.disableLayerHinting, boolean>;
 		disableMonospaceOptimizations: IEditorOption<EditorOption.disableMonospaceOptimizations, boolean>;
 		domReadOnly: IEditorOption<EditorOption.domReadOnly, boolean>;
+		doubleClickSelectsBlock: IEditorOption<EditorOption.doubleClickSelectsBlock, boolean>;
 		dragAndDrop: IEditorOption<EditorOption.dragAndDrop, boolean>;
 		emptySelectionClipboard: IEditorOption<EditorOption.emptySelectionClipboard, boolean>;
 		dropIntoEditor: IEditorOption<EditorOption.dropIntoEditor, Readonly<Required<IDropIntoEditorOptions>>>;

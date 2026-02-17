@@ -77,7 +77,6 @@ function registerToolForTest(service: LanguageModelToolsService, store: any, id:
 			tokenBudget: 100,
 			parameters,
 			context: context ? {
-				sessionId: context.sessionId,
 				sessionResource: LocalChatSessionUri.forSession(context.sessionId),
 			} : undefined,
 		}),
@@ -2902,7 +2901,6 @@ suite('LanguageModelToolsService', () => {
 			tokenBudget: 100,
 			parameters: { test: 1 },
 			context: {
-				sessionId,
 				sessionResource: LocalChatSessionUri.forSession(sessionId),
 			},
 			chatStreamToolCallId: 'stream-call-id', // This should correlate
@@ -3530,6 +3528,52 @@ suite('LanguageModelToolsService', () => {
 		const toolIds = tools.map(t => t.id);
 
 		assert.ok(toolIds.includes('multiSetTool'), 'Tool should be permitted if it belongs to at least one permitted toolset');
+	});
+
+	test('isPermitted allows internal tools with canBeReferencedInPrompt=false when agent mode is disabled (issue #292935)', () => {
+		// Disable agent mode
+		configurationService.setUserConfiguration(ChatConfiguration.AgentEnabled, false);
+
+		// Create internal infrastructure tool that explicitly cannot be referenced in prompts
+		const infrastructureTool: IToolData = {
+			id: 'infrastructureToolInternal',
+			toolReferenceName: 'infrastructureToolRef',
+			modelDescription: 'Infrastructure Tool',
+			displayName: 'Infrastructure Tool',
+			source: ToolDataSource.Internal,
+			canBeReferencedInPrompt: false,
+		};
+		store.add(service.registerToolData(infrastructureTool));
+
+		// Create internal tool with canBeReferencedInPrompt=true (should be blocked)
+		const referencableTool: IToolData = {
+			id: 'referencableTool',
+			toolReferenceName: 'referencableToolRef',
+			modelDescription: 'Referencable Tool',
+			displayName: 'Referencable Tool',
+			source: ToolDataSource.Internal,
+			canBeReferencedInPrompt: true,
+		};
+		store.add(service.registerToolData(referencableTool));
+
+		// Create internal tool with canBeReferencedInPrompt=undefined (should be blocked)
+		const undefinedTool: IToolData = {
+			id: 'undefinedTool',
+			toolReferenceName: 'undefinedToolRef',
+			modelDescription: 'Undefined Tool',
+			displayName: 'Undefined Tool',
+			source: ToolDataSource.Internal,
+			// canBeReferencedInPrompt is undefined
+		};
+		store.add(service.registerToolData(undefinedTool));
+
+		// Get tools - only the infrastructure tool should be available
+		const tools = Array.from(service.getTools(undefined));
+		const toolIds = tools.map(t => t.id);
+
+		assert.ok(toolIds.includes('infrastructureToolInternal'), 'Internal infrastructure tool with canBeReferencedInPrompt=false should be permitted when agent mode is disabled');
+		assert.ok(!toolIds.includes('referencableTool'), 'Internal tool with canBeReferencedInPrompt=true should NOT be permitted when agent mode is disabled');
+		assert.ok(!toolIds.includes('undefinedTool'), 'Internal tool with canBeReferencedInPrompt=undefined should NOT be permitted when agent mode is disabled');
 	});
 
 	suite('ToolSet when clause filtering (issue #291154)', () => {

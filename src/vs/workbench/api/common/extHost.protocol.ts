@@ -1460,6 +1460,7 @@ export type IChatAgentHistoryEntryDto = {
 export interface IChatSessionContextDto {
 	readonly chatSessionResource: UriComponents;
 	readonly isUntitled: boolean;
+	readonly initialSessionOptions?: ReadonlyArray<{ optionId: string; value: string }>;
 }
 
 export interface ExtHostChatAgentsShape2 {
@@ -1476,6 +1477,7 @@ export interface ExtHostChatAgentsShape2 {
 	$providePromptFiles(handle: number, type: PromptsType, context: IPromptFileContext, token: CancellationToken): Promise<Dto<IPromptFileResource>[] | undefined>;
 	$setRequestTools(requestId: string, tools: UserSelectedTools): void;
 	$setYieldRequested(requestId: string): void;
+	$acceptActiveChatSession(sessionResource: UriComponents | undefined): void;
 }
 export interface IChatParticipantMetadata {
 	participant: string;
@@ -3384,6 +3386,7 @@ export type IChatSessionHistoryItemDto = {
 	participant: string;
 	command?: string;
 	variableData?: Dto<IChatRequestVariableData>;
+	modelId?: string;
 } | {
 	type: 'response';
 	parts: IChatProgressDto[];
@@ -3414,13 +3417,18 @@ export interface IChatSessionProviderOptions {
 	optionGroups?: IChatSessionProviderOptionGroup[];
 }
 
+export interface IChatSessionItemsChange {
+	readonly addedOrUpdated: readonly Dto<IChatSessionItem>[];
+	readonly removed: readonly UriComponents[];
+}
+
 export interface MainThreadChatSessionsShape extends IDisposable {
-	$registerChatSessionItemController(handle: number, chatSessionType: string): void;
-	$unregisterChatSessionItemController(handle: number): void;
-	$setChatSessionItems(handle: number, items: Dto<IChatSessionItem>[]): Promise<void>;
-	$updateChatSessionItem(handle: number, item: Dto<IChatSessionItem>): Promise<void>;
-	$onDidChangeChatSessionItems(handle: number): void;
-	$onDidCommitChatSessionItem(handle: number, original: UriComponents, modified: UriComponents): void;
+	$registerChatSessionItemController(controllerHandle: number, chatSessionType: string): void;
+	$unregisterChatSessionItemController(controllerHandle: number): void;
+	$updateChatSessionItems(controllerHandle: number, change: IChatSessionItemsChange): Promise<void>;
+	$addOrUpdateChatSessionItem(controllerHandle: number, item: Dto<IChatSessionItem>): Promise<void>;
+	$onDidChangeChatSessionItems(controllerHandle: number): void;
+	$onDidCommitChatSessionItem(controllerHandle: number, original: UriComponents, modified: UriComponents): void;
 	$registerChatSessionContentProvider(handle: number, chatSessionScheme: string): void;
 	$unregisterChatSessionContentProvider(handle: number): void;
 	$onDidChangeChatSessionOptions(handle: number, sessionResource: UriComponents, updates: ReadonlyArray<ChatSessionOptionUpdateDto2>): void;
