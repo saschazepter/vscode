@@ -1129,8 +1129,8 @@ export class CodeApplication extends Disposable {
 		// Utility Process Worker
 		services.set(IUtilityProcessWorkerMainService, new SyncDescriptor(UtilityProcessWorkerMainService, undefined, true));
 
-		// Copilot SDK (utility process host) -- only when --sessions-sdk is active
-		if (this.environmentMainService.args['sessions-sdk']) {
+		// Copilot SDK (utility process host) -- only when --sessions-utility-process is active
+		if (this.environmentMainService.args['sessions-utility-process']) {
 			services.set(ICopilotSdkMainService, new SyncDescriptor(CopilotSdkMainService, undefined, true));
 		}
 

@@ -84,7 +84,7 @@ export class AgenticSessionsViewPane extends ViewPane {
 	private aiCustomizationContainer: HTMLElement | undefined;
 	private readonly shortcuts: IShortcutItem[] = [];
 
-	// SDK session list (used when --sessions-sdk is active)
+	// SDK session list (used when --sessions-utility-process is active)
 	private readonly _useSdk: boolean;
 	private _sdkSessions: ICopilotSessionMetadata[] = [];
 	private _sdkSelectedSessionId: string | undefined;
@@ -118,7 +118,7 @@ export class AgenticSessionsViewPane extends ViewPane {
 	) {
 		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
 
-		this._useSdk = environmentService.isSessionsSdkWindow;
+		this._useSdk = environmentService.isSessionsUtilityProcess;
 
 		// Initialize shortcuts
 		this.shortcuts = [
