@@ -51,8 +51,7 @@ import { IWorkspaceContextService } from '../../../../platform/workspace/common/
 import { IFileDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 import { IWorkspaceEditingService } from '../../../../workbench/services/workspaces/common/workspaceEditing.js';
 import { IWorkspacesService, isRecentFolder } from '../../../../platform/workspaces/common/workspaces.js';
-import { IActionWidgetService } from '../../../../platform/actionWidget/browser/actionWidget.js';
-import { ActionListItemKind, IActionListItem } from '../../../../platform/actionWidget/browser/actionList.js';
+import { IContextViewService } from '../../../../platform/contextview/browser/contextView.js';
 import { IViewPaneOptions, ViewPane } from '../../../../workbench/browser/parts/views/viewPane.js';
 import { ContextMenuController } from '../../../../editor/contrib/contextmenu/browser/contextmenu.js';
 import { getSimpleEditorOptions } from '../../../../workbench/contrib/codeEditor/browser/simpleEditorOptions.js';
@@ -198,7 +197,7 @@ class NewChatWidget extends Disposable {
 		@IFileDialogService private readonly fileDialogService: IFileDialogService,
 		@IWorkspaceEditingService private readonly workspaceEditingService: IWorkspaceEditingService,
 		@IWorkspacesService private readonly workspacesService: IWorkspacesService,
-		@IActionWidgetService private readonly actionWidgetService: IActionWidgetService,
+		@IContextViewService private readonly contextViewService: IContextViewService,
 	) {
 		super();
 		this._targetConfig = this._register(new TargetConfig(options.targetConfig));
@@ -635,50 +634,68 @@ class NewChatWidget extends Disposable {
 				.filter(r => !currentFolder || !isEqual(r.folderUri, currentFolder.uri))
 				.slice(0, 10);
 
-			const items: IActionListItem<URI>[] = recentFolders.map(recent => ({
-				item: recent.folderUri,
-				kind: ActionListItemKind.Action,
-				label: recent.label || basename(recent.folderUri),
-				group: { icon: Codicon.folder, title: '' },
-			}));
+			this.contextViewService.showContextView({
+				getAnchor: () => button,
+				render: (container) => {
+					const dropdown = dom.append(container, dom.$('.sessions-folder-dropdown'));
 
-			// Separator before Browse
-			items.push({ kind: ActionListItemKind.Separator });
+					for (const recent of recentFolders) {
+						const item = dom.append(dropdown, dom.$('.sessions-folder-dropdown-item'));
+						dom.append(item, renderIcon(Codicon.folder));
+						dom.append(item, dom.$('span', undefined, recent.label || basename(recent.folderUri)));
+						item.tabIndex = 0;
+						item.role = 'menuitem';
 
-			// Browse action
-			items.push({
-				kind: ActionListItemKind.Action,
-				label: localize('browseFolder', "Browse..."),
-				group: { icon: Codicon.folderOpened, title: '' },
-			});
-
-			this.actionWidgetService.show(
-				'localFolderPicker',
-				false,
-				items,
-				{
-					onSelect: async (selectedUri, _preview) => {
-						this.actionWidgetService.hide();
-						if (selectedUri) {
-							await switchFolder(selectedUri);
-						} else {
-							// Browse action (no item attached)
-							const selected = await this.fileDialogService.showOpenDialog({
-								canSelectFiles: false,
-								canSelectFolders: true,
-								canSelectMany: false,
-								title: localize('selectFolder', "Select Folder"),
-							});
-							if (selected?.[0]) {
-								await switchFolder(selected[0]);
+						dom.addDisposableListener(item, dom.EventType.CLICK, () => {
+							this.contextViewService.hideContextView();
+							switchFolder(recent.folderUri);
+						});
+						dom.addDisposableListener(item, dom.EventType.KEY_DOWN, (e: KeyboardEvent) => {
+							if (e.key === 'Enter' || e.key === ' ') {
+								e.preventDefault();
+								this.contextViewService.hideContextView();
+								switchFolder(recent.folderUri);
 							}
+						});
+					}
+
+					if (recentFolders.length > 0) {
+						dom.append(dropdown, dom.$('.sessions-folder-dropdown-separator'));
+					}
+
+					const browseItem = dom.append(dropdown, dom.$('.sessions-folder-dropdown-item'));
+					dom.append(browseItem, renderIcon(Codicon.folderOpened));
+					dom.append(browseItem, dom.$('span', undefined, localize('browseFolder', "Browse...")));
+					browseItem.tabIndex = 0;
+					browseItem.role = 'menuitem';
+
+					dom.addDisposableListener(browseItem, dom.EventType.CLICK, async () => {
+						this.contextViewService.hideContextView();
+						const selected = await this.fileDialogService.showOpenDialog({
+							canSelectFiles: false,
+							canSelectFolders: true,
+							canSelectMany: false,
+							title: localize('selectFolder', "Select Folder"),
+						});
+						if (selected?.[0]) {
+							await switchFolder(selected[0]);
 						}
-					},
-					onHide: () => { },
+					});
+					dom.addDisposableListener(browseItem, dom.EventType.KEY_DOWN, (e: KeyboardEvent) => {
+						if (e.key === 'Enter' || e.key === ' ') {
+							e.preventDefault();
+							browseItem.click();
+						}
+					});
+
+					// Focus the first item
+					const firstItem = dropdown.querySelector('.sessions-folder-dropdown-item') as HTMLElement;
+					firstItem?.focus();
+
+					return { dispose: () => { } };
 				},
-				button,
-				undefined,
-			);
+				onHide: () => { },
+			});
 		}));
 	}
 

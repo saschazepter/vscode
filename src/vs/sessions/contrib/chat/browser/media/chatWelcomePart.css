@@ -266,3 +266,38 @@
 .sessions-chat-picker-slot .action-label span + .chat-session-option-label {
 	margin-left: 2px;
 }
+
+/* Custom folder dropdown */
+.sessions-folder-dropdown {
+	padding: 4px 0;
+	min-width: 200px;
+	background-color: var(--vscode-menu-background);
+	color: var(--vscode-menu-foreground);
+	border: 1px solid var(--vscode-menu-border, var(--vscode-widget-border, transparent));
+	border-radius: 4px;
+	box-shadow: 0 2px 8px var(--vscode-widget-shadow);
+}
+
+.sessions-folder-dropdown-item {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 4px 12px;
+	cursor: pointer;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	outline: none;
+}
+
+.sessions-folder-dropdown-item:hover,
+.sessions-folder-dropdown-item:focus {
+	background-color: var(--vscode-menu-selectionBackground);
+	color: var(--vscode-menu-selectionForeground);
+}
+
+.sessions-folder-dropdown-separator {
+	height: 1px;
+	margin: 4px 8px;
+	background-color: var(--vscode-menu-separatorBackground, var(--vscode-widget-border, rgba(128, 128, 128, 0.35)));
+}
