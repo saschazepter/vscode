@@ -493,7 +493,7 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 		const editorOverflowWidgetsDomNode = this.layoutService.getContainer(getWindow(chatControlsContainer)).appendChild($('.chat-editor-overflow.monaco-editor'));
 		this._register(toDisposable(() => editorOverflowWidgetsDomNode.remove()));
 
-		// Chat Title
+		// Chat Title (unless we are hosted in the chat bar)
 		if (this.viewDescriptorService.getViewLocationById(this.id) !== ViewContainerLocation.ChatBar) {
 			this.createChatTitleControl(chatControlsContainer);
 		}
