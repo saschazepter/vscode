@@ -17,15 +17,15 @@ class TestableAskQuestionsTool extends AskQuestionsTool {
 }
 
 suite('AskQuestionsTool - convertCarouselAnswers', () => {
+	const store = ensureNoDisposablesAreLeakedInTestSuite();
 	let tool: TestableAskQuestionsTool;
-	ensureNoDisposablesAreLeakedInTestSuite();
 
 	setup(() => {
-		tool = new TestableAskQuestionsTool(
+		tool = store.add(new TestableAskQuestionsTool(
 			null! as IChatService,
 			NullTelemetryService,
 			new NullLogService()
-		);
+		));
 	});
 
 	teardown(() => {
