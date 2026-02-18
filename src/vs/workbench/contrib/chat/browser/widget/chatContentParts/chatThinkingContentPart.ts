@@ -197,8 +197,13 @@ export class ChatThinkingContentPart extends ChatCollapsibleContentPart implemen
 
 			// Read configured phrases from the single setting
 			const config = this.configurationService.getValue<{ mode?: 'replace' | 'append'; phrases?: string[] }>(ChatConfiguration.ThinkingPhrases);
-			const customPhrases = config?.phrases ?? [];
-			const mode = config?.mode ?? 'append';
+			const customPhrases = Array.isArray(config?.phrases)
+				? config.phrases
+					.filter((phrase): phrase is string => typeof phrase === 'string')
+					.map(phrase => phrase.trim())
+					.filter(phrase => phrase.length > 0)
+				: [];
+			const mode = config?.mode === 'replace' ? 'replace' : 'append';
 
 			if (customPhrases.length > 0) {
 				if (mode === 'replace') {

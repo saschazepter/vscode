@@ -1101,7 +1101,10 @@ configurationRegistry.registerConfiguration({
 		},
 		[ChatConfiguration.ThinkingPhrases]: {
 			type: 'object',
-			default: {},
+			default: {
+				mode: 'append',
+				phrases: []
+			},
 			properties: {
 				mode: {
 					type: 'string',
@@ -1117,7 +1120,7 @@ configurationRegistry.registerConfiguration({
 				}
 			},
 			additionalProperties: false,
-			markdownDescription: nls.localize('chat.agent.thinking.phrases', "Customize the loading messages shown during agent operations. Use `mode: 'replace'` to use only your phrases, or `mode: 'append'` to add them to the defaults."),
+			markdownDescription: nls.localize('chat.agent.thinking.phrases', "Customize the loading messages shown during agent operations. Use `\"mode\": \"replace\"` to use only your phrases, or `\"mode\": \"append\"` to add them to the defaults."),
 			tags: ['experimental'],
 		},
 		[ChatConfiguration.AutoExpandToolFailures]: {
