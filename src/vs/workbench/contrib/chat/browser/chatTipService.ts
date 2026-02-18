@@ -584,6 +584,7 @@ export class ChatTipService extends Disposable implements IChatTipService {
 		this._storageService.remove(ChatTipService._DISMISSED_TIP_KEY, StorageScope.PROFILE);
 		this._shownTip = undefined;
 		this._tipRequestId = undefined;
+		this._contextKeyService = undefined;
 		this._onDidDismissTip.fire();
 	}
 
