@@ -296,6 +296,11 @@ suite('ChatTipService', () => {
 	test('dismissed tips stay dismissed after disabling and re-enabling tips', async () => {
 		const service = createService();
 
+		// Flush microtask queue so async file-check exclusions resolve before
+		// we start dismissing tips (otherwise excludeUntilChecked tips are
+		// temporarily excluded and never get dismissed in the loop below).
+		await new Promise<void>(r => queueMicrotask(r));
+
 		for (let i = 0; i < 100; i++) {
 			const tip = service.getWelcomeTip(contextKeyService);
 			if (!tip) {
