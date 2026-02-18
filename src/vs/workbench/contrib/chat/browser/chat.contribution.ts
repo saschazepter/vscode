@@ -87,6 +87,11 @@ import { registerChatElicitationActions } from './actions/chatElicitationActions
 import { registerChatToolActions } from './actions/chatToolActions.js';
 import { ChatTransferContribution } from './actions/chatTransfer.js';
 import { registerChatCustomizationDiagnosticsAction } from './actions/chatCustomizationDiagnosticsAction.js';
+import { registerChatTroubleshootAction } from './actions/chatTroubleshootAction.js';
+import { IChatDebugService } from '../common/chatDebugService.js';
+import { ChatDebugServiceImpl } from '../common/chatDebugServiceImpl.js';
+import { ChatDebugEditor } from './chatDebugEditor.js';
+import { ChatDebugEditorInput, ChatDebugEditorInputSerializer } from './chatDebugEditorInput.js';
 import './agentSessions/agentSessions.contribution.js';
 import { backgroundAgentDisplayName } from './agentSessions/agentSessions.js';
 
@@ -1169,6 +1174,16 @@ Registry.as<IEditorPaneRegistry>(EditorExtensions.EditorPane).registerEditorPane
 		new SyncDescriptor(ChatEditorInput)
 	]
 );
+Registry.as<IEditorPaneRegistry>(EditorExtensions.EditorPane).registerEditorPane(
+	EditorPaneDescriptor.create(
+		ChatDebugEditor,
+		ChatDebugEditorInput.ID,
+		nls.localize('chatDebug', "Debug View")
+	),
+	[
+		new SyncDescriptor(ChatDebugEditorInput)
+	]
+);
 Registry.as<IConfigurationMigrationRegistry>(Extensions.ConfigurationMigration).registerConfigurationMigrations([
 	{
 		key: 'chat.experimental.detectParticipant.enabled',
@@ -1246,6 +1261,36 @@ class ChatResolverContribution extends Disposable {
 				}
 			}
 		));
+	}
+}
+
+class ChatDebugResolverContribution implements IWorkbenchContribution {
+
+	static readonly ID = 'workbench.contrib.chatDebugResolver';
+
+	constructor(
+		@IEditorResolverService editorResolverService: IEditorResolverService,
+	) {
+		editorResolverService.registerEditor(
+			`${ChatDebugEditorInput.RESOURCE.scheme}:**/**`,
+			{
+				id: ChatDebugEditorInput.ID,
+				label: nls.localize('chatDebug', "Debug View"),
+				priority: RegisteredEditorPriority.exclusive
+			},
+			{
+				singlePerResource: true,
+				canSupportResource: resource => resource.scheme === ChatDebugEditorInput.RESOURCE.scheme
+			},
+			{
+				createEditorInput: () => {
+					return {
+						editor: ChatDebugEditorInput.instance,
+						options: { pinned: true }
+					};
+				}
+			}
+		);
 	}
 }
 
@@ -1433,8 +1478,10 @@ AccessibleViewRegistry.register(new AgentChatAccessibilityHelp());
 
 registerEditorFeature(ChatInputBoxContentProvider);
 Registry.as<IEditorFactoryRegistry>(EditorExtensions.EditorFactory).registerEditorSerializer(ChatEditorInput.TypeID, ChatEditorInputSerializer);
+Registry.as<IEditorFactoryRegistry>(EditorExtensions.EditorFactory).registerEditorSerializer(ChatDebugEditorInput.ID, ChatDebugEditorInputSerializer);
 
 registerWorkbenchContribution2(ChatResolverContribution.ID, ChatResolverContribution, WorkbenchPhase.BlockStartup);
+registerWorkbenchContribution2(ChatDebugResolverContribution.ID, ChatDebugResolverContribution, WorkbenchPhase.BlockStartup);
 registerWorkbenchContribution2(ChatLanguageModelsDataContribution.ID, ChatLanguageModelsDataContribution, WorkbenchPhase.BlockRestore);
 registerWorkbenchContribution2(ChatSlashCommandsContribution.ID, ChatSlashCommandsContribution, WorkbenchPhase.Eventually);
 
@@ -1477,6 +1524,7 @@ registerChatActions();
 registerChatAccessibilityActions();
 registerChatCopyActions();
 registerChatCustomizationDiagnosticsAction();
+registerChatTroubleshootAction();
 registerChatCodeBlockActions();
 registerChatCodeCompareBlockActions();
 registerChatFileTreeActions();
@@ -1529,5 +1577,6 @@ registerSingleton(IChatOutputRendererService, ChatOutputRendererService, Instant
 registerSingleton(IChatLayoutService, ChatLayoutService, InstantiationType.Delayed);
 registerSingleton(IChatTipService, ChatTipService, InstantiationType.Delayed);
 registerSingleton(IAgentFeedbackService, AgentFeedbackService, InstantiationType.Delayed);
+registerSingleton(IChatDebugService, ChatDebugServiceImpl, InstantiationType.Delayed);
 
 ChatWidget.CONTRIBS.push(ChatDynamicVariableModel);

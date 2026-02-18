@@ -3555,6 +3555,13 @@ export enum ChatSessionStatus {
 	NeedsInput = 3
 }
 
+export enum ChatDebugLogLevel {
+	Trace = 0,
+	Info = 1,
+	Warning = 2,
+	Error = 3
+}
+
 export class ChatSessionChangedFile {
 	constructor(public readonly modifiedUri: vscode.Uri, public readonly insertions: number, public readonly deletions: number, public readonly originalUri?: vscode.Uri) { }
 }

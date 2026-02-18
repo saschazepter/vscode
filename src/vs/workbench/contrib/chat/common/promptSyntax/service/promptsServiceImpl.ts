@@ -40,6 +40,7 @@ import { HookSourceFormat, getHookSourceFormat, parseHooksFromFile } from '../ho
 import { IWorkspaceContextService } from '../../../../../../platform/workspace/common/workspace.js';
 import { IPathService } from '../../../../../services/path/common/pathService.js';
 import { getTarget, mapClaudeModels, mapClaudeTools } from '../languageProviders/promptValidator.js';
+import { IChatDebugService } from '../../chatDebugService.js';
 
 /**
  * Error thrown when a skill file is missing the required name attribute.
@@ -147,6 +148,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 		@ITelemetryService private readonly telemetryService: ITelemetryService,
 		@IWorkspaceContextService private readonly workspaceService: IWorkspaceContextService,
 		@IPathService private readonly pathService: IPathService,
+		@IChatDebugService private readonly chatDebugService: IChatDebugService,
 	) {
 		super();
 
@@ -225,17 +227,21 @@ export class PromptsService extends Disposable implements IPromptsService {
 			this.cachedFileLocations[type] = listPromise;
 			return listPromise;
 		}
+		this.chatDebugService.log(this.chatDebugService.activeSessionId ?? '', `Resolve ${type} (from cache)`);
 		return listPromise;
 	}
 
 	private async computeListPromptFiles(type: PromptsType, token: CancellationToken): Promise<readonly IPromptPath[]> {
+		this.chatDebugService.log(this.chatDebugService.activeSessionId ?? '', `Resolve ${type} (start)`);
 		const prompts = await Promise.all([
 			this.fileLocator.listFiles(type, PromptsStorage.user, token).then(uris => uris.map(uri => ({ uri, storage: PromptsStorage.user, type } satisfies IUserPromptPath))),
 			this.fileLocator.listFiles(type, PromptsStorage.local, token).then(uris => uris.map(uri => ({ uri, storage: PromptsStorage.local, type } satisfies ILocalPromptPath))),
 			this.getExtensionPromptFiles(type, token),
 		]);
 
-		return [...prompts.flat()];
+		const result = [...prompts.flat()];
+		this.chatDebugService.log(this.chatDebugService.activeSessionId ?? '', `Resolve ${type} (end)`, `Found ${result.length} files`);
+		return result;
 	}
 
 	/**
@@ -1097,21 +1103,28 @@ export class PromptsService extends Disposable implements IPromptsService {
 	}
 
 	public async getPromptDiscoveryInfo(type: PromptsType, token: CancellationToken): Promise<IPromptDiscoveryInfo> {
+		this.chatDebugService.log(this.chatDebugService.activeSessionId ?? '', `Discovery ${type} (start)`);
 		const files: IPromptFileDiscoveryResult[] = [];
 
+		let result: IPromptDiscoveryInfo;
 		if (type === PromptsType.skill) {
-			return this.getSkillDiscoveryInfo(token);
+			result = await this.getSkillDiscoveryInfo(token);
 		} else if (type === PromptsType.agent) {
-			return this.getAgentDiscoveryInfo(token);
+			result = await this.getAgentDiscoveryInfo(token);
 		} else if (type === PromptsType.prompt) {
-			return this.getPromptSlashCommandDiscoveryInfo(token);
+			result = await this.getPromptSlashCommandDiscoveryInfo(token);
 		} else if (type === PromptsType.instructions) {
-			return this.getInstructionsDiscoveryInfo(token);
+			result = await this.getInstructionsDiscoveryInfo(token);
 		} else if (type === PromptsType.hook) {
-			return this.getHookDiscoveryInfo(token);
+			result = await this.getHookDiscoveryInfo(token);
+		} else {
+			result = { type, files };
 		}
 
-		return { type, files };
+		const loadedCount = result.files.filter(f => f.status === 'loaded').length;
+		const skippedCount = result.files.filter(f => f.status === 'skipped').length;
+		this.chatDebugService.log(this.chatDebugService.activeSessionId ?? '', `Discovery ${type} (end)`, `${loadedCount} loaded, ${skippedCount} skipped`);
+		return result;
 	}
 
 	private async getSkillDiscoveryInfo(token: CancellationToken): Promise<IPromptDiscoveryInfo> {
