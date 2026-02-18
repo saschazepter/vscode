@@ -241,17 +241,6 @@ const TIP_CATALOG: ITipDefinition[] = [
 		excludeWhenToolsInvoked: ['runSubagent'],
 	},
 	{
-		id: 'tip.contextUsage',
-		message: localize('tip.contextUsage', "Tip: [View your context window usage](command:workbench.action.chat.showContextUsage) to see how many tokens are used and what's consuming them."),
-		when: ContextKeyExpr.and(
-			ChatContextKeys.chatModeKind.isEqualTo(ChatModeKind.Agent),
-			ChatContextKeys.contextUsageHasBeenOpened.negate(),
-			ChatContextKeys.chatSessionIsEmpty.negate(),
-		),
-		enabledCommands: ['workbench.action.chat.showContextUsage'],
-		excludeWhenCommandsExecuted: ['workbench.action.chat.showContextUsage'],
-	},
-	{
 		id: 'tip.sendToNewChat',
 		message: localize('tip.sendToNewChat', "Tip: Use [Send to New Chat](command:workbench.action.chat.sendToNewChat) to start a new conversation with a clean context window."),
 		when: ChatContextKeys.chatSessionIsEmpty.negate(),
