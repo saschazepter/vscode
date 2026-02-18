@@ -172,48 +172,6 @@ export const mcpStdioServerSchema: IJSONSchema = {
 				]
 			}
 		},
-		sandbox: {
-			description: localize('app.mcp.sandbox', "Sandbox settings for running the server."),
-			type: 'object',
-			additionalProperties: false,
-			properties: {
-				network: {
-					type: 'object',
-					additionalProperties: false,
-					properties: {
-						allowedDomains: {
-							type: 'array',
-							items: { type: 'string' },
-							default: []
-						},
-						deniedDomains: {
-							type: 'array',
-							items: { type: 'string' },
-							default: []
-						}
-					}
-				},
-				filesystem: {
-					type: 'object',
-					additionalProperties: false,
-					properties: {
-						denyRead: {
-							type: 'array',
-							items: { type: 'string' }
-						},
-						allowWrite: {
-							type: 'array',
-							items: { type: 'string' },
-							default: ['.']
-						},
-						denyWrite: {
-							type: 'array',
-							items: { type: 'string' }
-						}
-					}
-				}
-			}
-		},
 		...mcpDevModeProps(true),
 	}
 };
