@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 import * as dom from '../../../base/browser/dom.js';
 import { ActionBar } from '../../../base/browser/ui/actionbar/actionbar.js';
+import { Button } from '../../../base/browser/ui/button/button.js';
 import { KeybindingLabel } from '../../../base/browser/ui/keybindingLabel/keybindingLabel.js';
 import { IListEvent, IListMouseEvent, IListRenderer, IListVirtualDelegate } from '../../../base/browser/ui/list/list.js';
 import { IListAccessibilityProvider, List } from '../../../base/browser/ui/list/listWidget.js';
@@ -18,7 +19,7 @@ import './actionWidget.css';
 import { localize } from '../../../nls.js';
 import { IContextViewService } from '../../contextview/browser/contextView.js';
 import { IKeybindingService } from '../../keybinding/common/keybinding.js';
-import { defaultListStyles } from '../../theme/browser/defaultStyles.js';
+import { defaultButtonStyles, defaultListStyles } from '../../theme/browser/defaultStyles.js';
 import { asCssVariable } from '../../theme/common/colorRegistry.js';
 import { ILayoutService } from '../../layout/browser/layoutService.js';
 import { IHoverService } from '../../hover/browser/hover.js';
@@ -67,16 +68,42 @@ export interface IActionListItem<T> {
 	 * Optional toolbar actions shown when the item is focused or hovered.
 	 */
 	readonly toolbarActions?: IAction[];
+	/**
+	 * Optional section identifier. Items with the same section belong to the same
+	 * collapsible group. Only meaningful when the ActionList is created with
+	 * collapsible sections.
+	 */
+	readonly section?: string;
+	/**
+	 * When true, clicking this item toggles the section's collapsed state
+	 * instead of selecting it.
+	 */
+	readonly isSectionToggle?: boolean;
+	/**
+	 * Optional CSS class name to add to the row container.
+	 */
+	readonly className?: string;
+	/**
+	 * Optional badge text to display after the label (e.g., "New").
+	 */
+	readonly badge?: string;
+	/**
+	 * When set, the description is rendered as a primary button.
+	 * The callback is invoked when the button is clicked.
+	 */
+	readonly descriptionButton?: { readonly label: string; readonly onDidClick: () => void };
 }
 
 interface IActionMenuTemplateData {
 	readonly container: HTMLElement;
 	readonly icon: HTMLElement;
 	readonly text: HTMLElement;
+	readonly badge: HTMLElement;
 	readonly description?: HTMLElement;
 	readonly keybinding: KeybindingLabel;
 	readonly toolbar: HTMLElement;
 	readonly elementDisposables: DisposableStore;
+	previousClassName?: string;
 }
 
 export const enum ActionListItemKind {
@@ -159,6 +186,10 @@ class ActionItemRenderer<T> implements IListRenderer<IActionListItem<T>, IAction
 		text.className = 'title';
 		container.append(text);
 
+		const badge = document.createElement('span');
+		badge.className = 'action-item-badge';
+		container.append(badge);
+
 		const description = document.createElement('span');
 		description.className = 'description';
 		container.append(description);
@@ -171,7 +202,7 @@ class ActionItemRenderer<T> implements IListRenderer<IActionListItem<T>, IAction
 
 		const elementDisposables = new DisposableStore();
 
-		return { container, icon, text, description, keybinding, toolbar, elementDisposables };
+		return { container, icon, text, badge, description, keybinding, toolbar, elementDisposables };
 	}
 
 	renderElement(element: IActionListItem<T>, _index: number, data: IActionMenuTemplateData): void {
@@ -194,10 +225,40 @@ class ActionItemRenderer<T> implements IListRenderer<IActionListItem<T>, IAction
 
 		dom.setVisibility(!element.hideIcon, data.icon);
 
+		// Apply optional className - clean up previous to avoid stale classes
+		// from virtualized row reuse
+		if (data.previousClassName) {
+			data.container.classList.remove(data.previousClassName);
+		}
+		data.container.classList.toggle('action-list-custom', !!element.className);
+		if (element.className) {
+			data.container.classList.add(element.className);
+		}
+		data.previousClassName = element.className;
+
 		data.text.textContent = stripNewlines(element.label);
 
+		// Render optional badge
+		if (element.badge) {
+			data.badge.textContent = element.badge;
+			data.badge.style.display = '';
+		} else {
+			data.badge.textContent = '';
+			data.badge.style.display = 'none';
+		}
+
 		// if there is a keybinding, prioritize over description for now
-		if (element.keybinding) {
+		if (element.descriptionButton) {
+			data.description!.textContent = '';
+			data.description!.style.display = 'inline';
+			const button = new Button(data.description!, { ...defaultButtonStyles, small: true });
+			button.label = element.descriptionButton.label;
+			data.elementDisposables.add(button.onDidClick(e => {
+				e?.stopPropagation();
+				element.descriptionButton!.onDidClick();
+			}));
+			data.elementDisposables.add(button);
+		} else if (element.keybinding) {
 			data.description!.textContent = element.keybinding.getLabel();
 			data.description!.style.display = 'inline';
 			data.description!.style.letterSpacing = '0.5px';
@@ -261,6 +322,26 @@ function getKeyboardNavigationLabel<T>(item: IActionListItem<T>): string | undef
 	return undefined;
 }
 
+/**
+ * Options for configuring the action list.
+ */
+export interface IActionListOptions {
+	/**
+	 * When true, shows a filter input at the bottom of the list.
+	 */
+	readonly showFilter?: boolean;
+
+	/**
+	 * Section IDs that should be collapsed by default.
+	 */
+	readonly collapsedByDefault?: ReadonlySet<string>;
+
+	/**
+	 * Minimum width for the action list.
+	 */
+	readonly minWidth?: number;
+}
+
 export class ActionList<T> extends Disposable {
 
 	public readonly domNode: HTMLElement;
@@ -277,12 +358,20 @@ export class ActionList<T> extends Disposable {
 
 	private _hover = this._register(new MutableDisposable<IHoverWidget>());
 
+	private readonly _collapsedSections = new Set<string>();
+	private _filterText = '';
+	private readonly _filterInput: HTMLInputElement | undefined;
+	private readonly _filterContainer: HTMLElement | undefined;
+	private _lastMinWidth = 0;
+	private _hasLaidOut = false;
+
 	constructor(
 		user: string,
 		preview: boolean,
 		items: readonly IActionListItem<T>[],
 		private readonly _delegate: IActionListDelegate<T>,
 		accessibilityProvider: Partial<IListAccessibilityProvider<IActionListItem<T>>> | undefined,
+		private readonly _options: IActionListOptions | undefined,
 		@IContextViewService private readonly _contextViewService: IContextViewService,
 		@IKeybindingService private readonly _keybindingService: IKeybindingService,
 		@ILayoutService private readonly _layoutService: ILayoutService,
@@ -291,6 +380,14 @@ export class ActionList<T> extends Disposable {
 		super();
 		this.domNode = document.createElement('div');
 		this.domNode.classList.add('actionList');
+
+		// Initialize collapsed sections
+		if (this._options?.collapsedByDefault) {
+			for (const section of this._options.collapsedByDefault) {
+				this._collapsedSections.add(section);
+			}
+		}
+
 		const virtualDelegate: IListVirtualDelegate<IActionListItem<T>> = {
 			getHeight: element => {
 				switch (element.kind) {
@@ -312,7 +409,7 @@ export class ActionList<T> extends Disposable {
 			new SeparatorRenderer(),
 		], {
 			keyboardSupport: false,
-			typeNavigationEnabled: true,
+			typeNavigationEnabled: !this._options?.showFilter,
 			keyboardNavigationLabelProvider: { getKeyboardNavigationLabel },
 			accessibilityProvider: {
 				getAriaLabel: element => {
@@ -352,11 +449,149 @@ export class ActionList<T> extends Disposable {
 		this._register(this._list.onDidChangeSelection(e => this.onListSelection(e)));
 
 		this._allMenuItems = items;
-		this._list.splice(0, this._list.length, this._allMenuItems);
+
+		// Create filter input
+		if (this._options?.showFilter) {
+			this._filterContainer = document.createElement('div');
+			this._filterContainer.className = 'action-list-filter';
+
+			this._filterInput = document.createElement('input');
+			this._filterInput.type = 'text';
+			this._filterInput.className = 'action-list-filter-input';
+			this._filterInput.placeholder = localize('actionList.filter.placeholder', "Search...");
+			this._filterInput.setAttribute('aria-label', localize('actionList.filter.ariaLabel', "Filter items"));
+			this._filterContainer.appendChild(this._filterInput);
+
+			this._register(dom.addDisposableListener(this._filterInput, 'input', () => {
+				this._filterText = this._filterInput!.value;
+				this._applyFilter();
+			}));
+
+			// Keyboard navigation from filter input
+			this._register(dom.addDisposableListener(this._filterInput, 'keydown', (e: KeyboardEvent) => {
+				if (e.key === 'ArrowUp') {
+					e.preventDefault();
+					this._list.domFocus();
+					const lastIndex = this._list.length - 1;
+					if (lastIndex >= 0) {
+						this._list.focusLast(undefined, this.focusCondition);
+					}
+				} else if (e.key === 'ArrowDown') {
+					e.preventDefault();
+					this._list.domFocus();
+					this.focusNext();
+				} else if (e.key === 'Enter') {
+					e.preventDefault();
+					this.acceptSelected();
+				} else if (e.key === 'Escape') {
+					if (this._filterText) {
+						e.preventDefault();
+						e.stopPropagation();
+						this._filterInput!.value = '';
+						this._filterText = '';
+						this._applyFilter();
+					}
+				}
+			}));
+		}
+
+		this._applyFilter();
 
 		if (this._list.length) {
 			this.focusNext();
 		}
+	}
+
+	private _toggleSection(section: string): void {
+		if (this._collapsedSections.has(section)) {
+			this._collapsedSections.delete(section);
+		} else {
+			this._collapsedSections.add(section);
+		}
+		this._applyFilter();
+	}
+
+	private _applyFilter(): void {
+		const filterLower = this._filterText.toLowerCase();
+		const isFiltering = filterLower.length > 0;
+		const visible: IActionListItem<T>[] = [];
+
+		for (const item of this._allMenuItems) {
+			if (item.kind === ActionListItemKind.Header) {
+				if (isFiltering) {
+					// When filtering, skip all headers
+					continue;
+				}
+				visible.push(item);
+				continue;
+			}
+
+			if (item.kind === ActionListItemKind.Separator) {
+				if (isFiltering) {
+					continue;
+				}
+				visible.push(item);
+				continue;
+			}
+
+			// Action item
+			if (isFiltering) {
+				// When filtering, skip section toggle items and only match content
+				if (item.isSectionToggle) {
+					continue;
+				}
+				// Match against label and description
+				const label = (item.label ?? '').toLowerCase();
+				const desc = (item.description ?? '').toLowerCase();
+				if (label.includes(filterLower) || desc.includes(filterLower)) {
+					visible.push(item);
+				}
+			} else {
+				// Update icon for section toggle items based on collapsed state
+				if (item.isSectionToggle && item.section) {
+					const collapsed = this._collapsedSections.has(item.section);
+					visible.push({
+						...item,
+						group: { ...item.group!, icon: collapsed ? Codicon.chevronRight : Codicon.chevronDown },
+					});
+					continue;
+				}
+				// Not filtering - check collapsed sections
+				if (item.section && this._collapsedSections.has(item.section)) {
+					continue;
+				}
+				visible.push(item);
+			}
+		}
+
+		// Capture whether the filter input currently has focus before splice
+		// which may cause DOM changes that shift focus.
+		const filterInputHasFocus = this._filterInput && dom.isActiveElement(this._filterInput);
+
+		this._list.splice(0, this._list.length, visible);
+
+		// Re-layout to adjust height after items changed
+		if (this._hasLaidOut) {
+			this.layout(this._lastMinWidth);
+			// Restore focus after splice destroyed DOM elements,
+			// otherwise the blur handler in ActionWidgetService closes the widget.
+			// Keep focus on the filter input if the user is typing a filter.
+			if (filterInputHasFocus) {
+				this._filterInput!.focus();
+			} else {
+				this._list.domFocus();
+			}
+			// Reposition the context view so the widget grows in the correct direction
+			this._contextViewService.layout();
+		}
+	}
+
+	/**
+	 * Returns the filter container element, if filter is enabled.
+	 * The caller is responsible for appending it to the widget DOM.
+	 */
+	get filterContainer(): HTMLElement | undefined {
+		return this._filterContainer;
 	}
 
 	private focusCondition(element: IActionListItem<unknown>): boolean {
@@ -371,39 +606,57 @@ export class ActionList<T> extends Disposable {
 	}
 
 	layout(minWidth: number): number {
-		// Updating list height, depending on how many separators and headers there are.
-		const numHeaders = this._allMenuItems.filter(item => item.kind === 'header').length;
-		const numSeparators = this._allMenuItems.filter(item => item.kind === 'separator').length;
-		const itemsHeight = this._allMenuItems.length * this._actionLineHeight;
-		const heightWithHeaders = itemsHeight + numHeaders * this._headerLineHeight - numHeaders * this._actionLineHeight;
-		const heightWithSeparators = heightWithHeaders + numSeparators * this._separatorLineHeight - numSeparators * this._actionLineHeight;
-		this._list.layout(heightWithSeparators);
-		let maxWidth = minWidth;
+		this._hasLaidOut = true;
+		this._lastMinWidth = minWidth;
+		// Compute height based on currently visible items in the list
+		const visibleCount = this._list.length;
+		let listHeight = 0;
+		for (let i = 0; i < visibleCount; i++) {
+			const element = this._list.element(i);
+			switch (element.kind) {
+				case ActionListItemKind.Header:
+					listHeight += this._headerLineHeight;
+					break;
+				case ActionListItemKind.Separator:
+					listHeight += this._separatorLineHeight;
+					break;
+				default:
+					listHeight += this._actionLineHeight;
+					break;
+			}
+		}
 
-		if (this._allMenuItems.length >= 50) {
-			maxWidth = 380;
+		this._list.layout(listHeight);
+		const effectiveMinWidth = Math.max(minWidth, this._options?.minWidth ?? 0);
+		let maxWidth = effectiveMinWidth;
+
+		if (visibleCount >= 50) {
+			maxWidth = Math.max(380, effectiveMinWidth);
 		} else {
 			// For finding width dynamically (not using resize observer)
-			const itemWidths: number[] = this._allMenuItems.map((_, index): number => {
-				const element = this._getRowElement(index);
+			const itemWidths: number[] = [];
+			for (let i = 0; i < visibleCount; i++) {
+				const element = this._getRowElement(i);
 				if (element) {
 					element.style.width = 'auto';
 					const width = element.getBoundingClientRect().width;
 					element.style.width = '';
-					return width;
+					itemWidths.push(width);
 				}
-				return 0;
-			});
+			}
 
 			// resize observer - can be used in the future since list widget supports dynamic height but not width
-			maxWidth = Math.max(...itemWidths, minWidth);
+			maxWidth = Math.max(...itemWidths, effectiveMinWidth);
 		}
 
+		const filterHeight = this._filterContainer ? 36 : 0;
 		const maxVhPrecentage = 0.7;
-		const height = Math.min(heightWithSeparators, this._layoutService.getContainer(dom.getWindow(this.domNode)).clientHeight * maxVhPrecentage);
-		this._list.layout(height, maxWidth);
+		const maxHeight = this._layoutService.getContainer(dom.getWindow(this.domNode)).clientHeight * maxVhPrecentage;
+		const height = Math.min(listHeight + filterHeight, maxHeight);
+		const listFinalHeight = height - filterHeight;
+		this._list.layout(listFinalHeight, maxWidth);
 
-		this.domNode.style.height = `${height}px`;
+		this.domNode.style.height = `${listFinalHeight}px`;
 
 		this._list.domFocus();
 		return maxWidth;
@@ -447,6 +700,10 @@ export class ActionList<T> extends Disposable {
 		}
 
 		const element = e.elements[0];
+		if (element.isSectionToggle) {
+			this._list.setSelection([]);
+			return;
+		}
 		if (element.item && this.focusCondition(element)) {
 			this._delegate.onSelect(element.item, e.browserEvent instanceof PreviewSelectedEvent);
 		} else {
@@ -526,6 +783,11 @@ export class ActionList<T> extends Disposable {
 	}
 
 	private onListClick(e: IListMouseEvent<IActionListItem<T>>): void {
+		if (e.element && e.element.isSectionToggle && e.element.section) {
+			const section = e.element.section;
+			queueMicrotask(() => this._toggleSection(section));
+			return;
+		}
 		if (e.element && this.focusCondition(e.element)) {
 			this._list.setFocus([]);
 		}

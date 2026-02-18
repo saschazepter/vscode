@@ -124,6 +124,7 @@
 	0% {
 		background-position: 120% 0;
 	}
+
 	100% {
 		background-position: -120% 0;
 	}
@@ -457,14 +458,12 @@
 	}
 
 	/* not ideal but I cannot query the last div with this class... */
-	.rendered-markdown:last-of-type > P > SPAN:empty,
-	.rendered-markdown:last-of-type > SPAN:empty {
+	.rendered-markdown:last-of-type > P > SPAN:empty {
 		display: inline-block;
 		width: 11px;
 	}
 
-	.rendered-markdown:last-of-type > P > SPAN:empty::after,
-	.rendered-markdown:last-of-type > SPAN:empty::after {
+	.rendered-markdown:last-of-type > P > SPAN:empty::after {
 		content: '';
 		white-space: nowrap;
 		overflow: hidden;
@@ -1093,8 +1092,7 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	border: 1px solid var(--vscode-input-border, transparent);
 	background-color: var(--vscode-editor-background);
 	border-bottom: none;
-	border-top-left-radius: 4px;
-	border-top-right-radius: 4px;
+	border-radius: var(--vscode-cornerRadius-large) var(--vscode-cornerRadius-large) 0 0;
 	flex-direction: column;
 	gap: 2px;
 	overflow: hidden;
@@ -1336,14 +1334,27 @@ have to be updated for changes to the rules above, or to support more deeply nes
 		.action-label {
 			min-width: 0px;
 			overflow: hidden;
+			position: relative;
 
 			.chat-input-picker-label {
 				overflow: hidden;
 				text-overflow: ellipsis;
 			}
 
-			.codicon-warning {
-				color: var(--vscode-problemsWarningIcon-foreground);
+			.model-picker-badge {
+				display: inline-flex;
+				align-items: center;
+				margin-left: 4px;
+				flex-shrink: 0;
+				font-size: 12px;
+
+				.codicon.codicon-info {
+					color: var(--vscode-problemsInfoIcon-foreground) !important;
+				}
+
+				.codicon.codicon-warning {
+					color: var(--vscode-problemsWarningIcon-foreground) !important;
+				}
 			}
 
 			span + .chat-input-picker-label {
@@ -1367,6 +1378,20 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	}
 }
 
+/* Manage Models link style in model picker */
+.action-widget .monaco-list-row.action.manage-models-link {
+	color: var(--vscode-textLink-foreground) !important;
+}
+
+.action-widget .monaco-list-row.action.manage-models-link .codicon {
+	color: var(--vscode-textLink-foreground) !important;
+}
+
+.action-widget .monaco-list-row.action.manage-models-link:hover,
+.action-widget .monaco-list-row.action.manage-models-link.focused {
+	color: var(--vscode-textLink-activeForeground) !important;
+}
+
 
 
 .interactive-session .chat-input-toolbar .chat-input-picker-item .action-label,
@@ -1375,12 +1400,7 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	padding: 3px 0px 3px 6px;
 	display: flex;
 	align-items: center;
-	color: var(--vscode-descriptionForeground);
-}
-
-.monaco-workbench .interactive-session .chat-input-toolbars .monaco-action-bar .action-item .codicon.codicon,
-.monaco-workbench .interactive-session .chat-input-toolbars .action-label .codicon.codicon {
-	color: var(--vscode-descriptionForeground) !important;
+	color: var(--vscode-foreground);
 }
 
 .monaco-workbench .interactive-session .chat-input-toolbar .chat-input-picker-item .action-label .codicon-chevron-down,

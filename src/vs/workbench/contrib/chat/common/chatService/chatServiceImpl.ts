@@ -789,19 +789,14 @@ export class ChatService extends Disposable implements IChatService {
 		}
 
 		const hasPendingRequest = this._pendingRequests.has(sessionResource);
-		const hasPendingQueue = model.getPendingRequests().length > 0;
 
 		if (options?.queue) {
-			return this.queuePendingRequest(model, sessionResource, request, options);
+			const queued = this.queuePendingRequest(model, sessionResource, request, options);
+			this.processPendingRequests(sessionResource);
+			return queued;
 		} else if (hasPendingRequest) {
 			this.trace('sendRequest', `Session ${sessionResource} already has a pending request`);
 			return { kind: 'rejected', reason: 'Request already in progress' };
-		}
-
-		if (options?.queue && hasPendingQueue) {
-			const queued = this.queuePendingRequest(model, sessionResource, request, options);
-			this.processNextPendingRequest(model);
-			return queued;
 		}
 
 		const requests = model.getRequests();
@@ -846,6 +841,13 @@ export class ChatService extends Disposable implements IChatService {
 			parserContext = { selectedAgent: agent, mode: options.modeInfo?.kind };
 			const commandPart = options.slashCommand ? ` ${chatSubcommandLeader}${options.slashCommand}` : '';
 			request = `${chatAgentLeader}${agent.name}${commandPart} ${request}`;
+		} else if (options?.agentIdSilent && !parserContext?.forcedAgent) {
+			// Resolve slash commandsin the context of locked participant so its subcommands take precedence over global
+			// slash commands with the same name.
+			const silentAgent = this.chatAgentService.getAgent(options.agentIdSilent);
+			if (silentAgent) {
+				parserContext = { ...parserContext, forcedAgent: silentAgent };
+			}
 		}
 
 		const parsedRequest = this.instantiationService.createInstance(ChatRequestParser).parseChatRequest(sessionResource, request, location, parserContext);
@@ -1177,9 +1179,12 @@ export class ChatService extends Disposable implements IChatService {
 		let shouldProcessPending = false;
 		const rawResponsePromise = sendRequestInternal();
 		// Note- requestId is not known at this point, assigned later
-		this._pendingRequests.set(model.sessionResource, this.instantiationService.createInstance(CancellableRequest, source, undefined));
+		const cancellableRequest = this.instantiationService.createInstance(CancellableRequest, source, undefined);
+		this._pendingRequests.set(model.sessionResource, cancellableRequest);
 		rawResponsePromise.finally(() => {
-			this._pendingRequests.deleteAndDispose(model.sessionResource);
+			if (this._pendingRequests.get(model.sessionResource) === cancellableRequest) {
+				this._pendingRequests.deleteAndDispose(model.sessionResource);
+			}
 			// Process the next pending request from the queue if any
 			if (shouldProcessPending) {
 				this.processNextPendingRequest(model);
