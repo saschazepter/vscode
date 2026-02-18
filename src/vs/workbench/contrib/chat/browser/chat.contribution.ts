@@ -285,7 +285,7 @@ configurationRegistry.registerConfiguration({
 		'chat.tips.enabled': {
 			type: 'boolean',
 			scope: ConfigurationScope.APPLICATION,
-			description: nls.localize('chat.tips.enabled', "Controls whether tips are shown above user messages in chat. This is an experimental feature."),
+			description: nls.localize('chat.tips.enabled', "Controls whether tips are shown above user messages in chat. New tips are added frequently, so this is a helpful way to stay up to date with the latest features."),
 			default: false,
 			tags: ['experimental'],
 			experiment: {
@@ -1098,6 +1098,30 @@ configurationRegistry.registerConfiguration({
 			experiment: {
 				mode: 'auto'
 			}
+		},
+		[ChatConfiguration.ThinkingPhrases]: {
+			type: 'object',
+			default: {
+				mode: 'append',
+				phrases: []
+			},
+			properties: {
+				mode: {
+					type: 'string',
+					enum: ['replace', 'append'],
+					default: 'append',
+					description: nls.localize('chat.agent.thinking.phrases.mode', "'replace' replaces all default phrases entirely; 'append' adds your phrases to all default categories.")
+				},
+				phrases: {
+					type: 'array',
+					items: { type: 'string' },
+					default: [],
+					description: nls.localize('chat.agent.thinking.phrases.phrases', "Custom loading messages to show during thinking, terminal, and tool operations.")
+				}
+			},
+			additionalProperties: false,
+			markdownDescription: nls.localize('chat.agent.thinking.phrases', "Customize the loading messages shown during agent operations. Use `\"mode\": \"replace\"` to use only your phrases, or `\"mode\": \"append\"` to add them to the defaults."),
+			tags: ['experimental'],
 		},
 		[ChatConfiguration.AutoExpandToolFailures]: {
 			type: 'boolean',
