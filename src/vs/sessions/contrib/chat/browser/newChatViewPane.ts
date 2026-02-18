@@ -251,6 +251,8 @@ class NewChatWidget extends Disposable {
 		// Pre-fetch recently opened folders
 		this.workspacesService.getRecentlyOpened().then(recent => {
 			this._cachedRecentFolders = recent.workspaces.filter(isRecentFolder).slice(0, 10);
+		}).catch(error => {
+			this.logService.error('Failed to fetch recently opened workspaces for agent sessions', error);
 		});
 
 		// When target changes, regenerate pending resource
