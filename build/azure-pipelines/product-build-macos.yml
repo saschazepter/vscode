@@ -86,7 +86,6 @@ extends:
             parameters:
               VSCODE_CIBUILD: true
               VSCODE_TEST_SUITE: Electron
-              VSCODE_RUN_COMPILE_EXTRAS: true
           - template: build/azure-pipelines/darwin/product-build-darwin-ci.yml@self
             parameters:
               VSCODE_CIBUILD: true
