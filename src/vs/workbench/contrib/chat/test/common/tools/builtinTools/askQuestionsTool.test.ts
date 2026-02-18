@@ -28,6 +28,10 @@ suite('AskQuestionsTool - convertCarouselAnswers', () => {
 		);
 	});
 
+	teardown(() => {
+		tool?.dispose();
+	});
+
 	test('marks all questions as skipped when answers are undefined', () => {
 		const questions: IQuestion[] = [
 			{ header: 'Q1', question: 'First question?' },
