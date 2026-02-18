@@ -57,7 +57,7 @@ type AgentStatusClickEvent = {
 type AgentStatusClickClassification = {
 	source: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'Which part of the agent status widget was clicked.' };
 	action: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The action taken in response to the click.' };
-	owner: 'benibenj';
+	owner: 'joshspicer';
 	comment: 'Tracks interactions with the agent status command center control.';
 };
 
