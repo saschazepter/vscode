@@ -44,7 +44,6 @@ export class EnhancedModelPickerActionItem extends BaseActionViewItem {
 		this._pickerWidget = this._register(instantiationService.createInstance(ModelPickerWidget));
 		this._pickerWidget.setModels(delegate.getModels());
 		this._pickerWidget.setSelectedModel(delegate.currentModel.get());
-		this._updateBadge();
 
 		// Sync delegate → widget when model list or selection changes externally
 		this._register(autorun(t => {
@@ -64,7 +63,6 @@ export class EnhancedModelPickerActionItem extends BaseActionViewItem {
 		}));
 
 		// Update badge when new models appear
-		this._register(this.languageModelsService.onDidChangeNewModelIds(() => this._updateBadge()));
 	}
 
 	override render(container: HTMLElement): void {
@@ -91,11 +89,6 @@ export class EnhancedModelPickerActionItem extends BaseActionViewItem {
 
 	private _showPicker(): void {
 		this._pickerWidget.show(this._getAnchorElement());
-	}
-
-	private _updateBadge(): void {
-		const hasNew = this.languageModelsService.getNewModelIds().length > 0;
-		this._pickerWidget.setBadge(hasNew ? 'info' : undefined);
 	}
 
 	private _updateTooltip(): void {
