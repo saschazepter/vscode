@@ -315,25 +315,25 @@
 }
 
 @keyframes needs-input-bounce {
-	0%   { transform: translateY(0); }
-	3%   { transform: translateY(-3px); }
-	6%   { transform: translateY(0); }
-	9%   { transform: translateY(-3px); }
-	12%  { transform: translateY(0); }
-	15%  { transform: translateY(-3px); }
-	18%  { transform: translateY(0); }
-	100% { transform: translateY(0); }
+	0%    { transform: translateY(0); }
+	1.5%  { transform: translateY(-5px); }
+	3%    { transform: translateY(1px); }
+	4.5%  { transform: translateY(-4px); }
+	6%    { transform: translateY(1px); }
+	7.5%  { transform: translateY(-2px); }
+	9%    { transform: translateY(0); }
+	100%  { transform: translateY(0); }
 }
 
 @keyframes needs-input-pulse {
 	0%   { color: var(--vscode-textLink-foreground); }
-	3%   { color: var(--vscode-notificationsWarningIcon-foreground); transform: scale(1.2); }
-	6%   { color: var(--vscode-textLink-foreground); transform: scale(1); }
-	9%   { color: var(--vscode-notificationsWarningIcon-foreground); transform: scale(1.2); }
-	12%  { color: var(--vscode-textLink-foreground); transform: scale(1); }
-	15%  { color: var(--vscode-notificationsWarningIcon-foreground); transform: scale(1.2); }
-	18%  { color: var(--vscode-textLink-foreground); transform: scale(1); }
-	100% { color: var(--vscode-textLink-foreground); transform: scale(1); }
+	3%   { color: var(--vscode-notificationsWarningIcon-foreground); }
+	6%   { color: var(--vscode-textLink-foreground); }
+	9%   { color: var(--vscode-notificationsWarningIcon-foreground); }
+	12%  { color: var(--vscode-textLink-foreground); }
+	15%  { color: var(--vscode-notificationsWarningIcon-foreground); }
+	18%  { color: var(--vscode-textLink-foreground); }
+	100% { color: var(--vscode-textLink-foreground); }
 }
 
 .agent-session-icon.needs-input-animation-blink {
@@ -341,7 +341,7 @@
 }
 
 .agent-session-icon.needs-input-animation-bounce {
-	animation: needs-input-bounce 33s ease-in-out infinite;
+	animation: needs-input-bounce 33s linear infinite;
 }
 
 .agent-session-icon.needs-input-animation-pulse {
