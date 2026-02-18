@@ -10,7 +10,6 @@ import { renderIcon } from '../../../../../../base/browser/ui/iconLabel/iconLabe
 import { Codicon } from '../../../../../../base/common/codicons.js';
 import { Emitter } from '../../../../../../base/common/event.js';
 import { Disposable, MutableDisposable } from '../../../../../../base/common/lifecycle.js';
-import { MarkdownString } from '../../../../../../base/common/htmlContent.js';
 import { localize, localize2 } from '../../../../../../nls.js';
 import { getFlatContextMenuActions } from '../../../../../../platform/actions/browser/menuEntryActionViewItem.js';
 import { MenuWorkbenchToolBar } from '../../../../../../platform/actions/browser/toolbar.js';
@@ -18,7 +17,6 @@ import { Action2, IMenuService, MenuId, registerAction2 } from '../../../../../.
 import { IContextKey, IContextKeyService } from '../../../../../../platform/contextkey/common/contextkey.js';
 import { IContextMenuService } from '../../../../../../platform/contextview/browser/contextView.js';
 import { ICommandService } from '../../../../../../platform/commands/common/commands.js';
-import { IDialogService } from '../../../../../../platform/dialogs/common/dialogs.js';
 import { IInstantiationService, ServicesAccessor } from '../../../../../../platform/instantiation/common/instantiation.js';
 import { IMarkdownRenderer } from '../../../../../../platform/markdown/browser/markdownRenderer.js';
 import { ChatContextKeys } from '../../../common/actions/chatContextKeys.js';
@@ -242,36 +240,11 @@ registerAction2(class DisableTipsAction extends Action2 {
 	}
 
 	override async run(accessor: ServicesAccessor): Promise<void> {
-		const dialogService = accessor.get(IDialogService);
 		const chatTipService = accessor.get(IChatTipService);
 		const commandService = accessor.get(ICommandService);
 
-		const { result } = await dialogService.prompt<boolean>({
-			message: localize('chatTip.disableConfirmTitle', "Disable tips?"),
-			custom: {
-				markdownDetails: [{
-					markdown: new MarkdownString(localize('chatTip.disableConfirmDetail', "New tips are added frequently to help you get the most out of Copilot. You can re-enable tips anytime from the `chat.tips.enabled` setting.")),
-				}],
-			},
-			buttons: [
-				{
-					label: localize('chatTip.disableConfirmButton', "Disable tips"),
-					run: () => true,
-				},
-				{
-					label: localize('chatTip.openSettingButton', "Open Setting"),
-					run: () => {
-						commandService.executeCommand('workbench.action.openSettings', 'chat.tips.enabled');
-						return false;
-					},
-				},
-			],
-			cancelButton: true,
-		});
-
-		if (result) {
-			await chatTipService.disableTips();
-		}
+		await chatTipService.disableTips();
+		commandService.executeCommand('workbench.action.openSettings', 'chat.tips.enabled');
 	}
 });
 
