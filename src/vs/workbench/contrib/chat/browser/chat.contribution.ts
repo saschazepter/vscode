@@ -141,6 +141,10 @@ import { ChatWindowNotifier } from './chatWindowNotifier.js';
 import { ChatRepoInfoContribution } from './chatRepoInfo.js';
 import { VALID_PROMPT_FOLDER_PATTERN } from '../common/promptSyntax/utils/promptFilesLocator.js';
 import { ChatTipService, IChatTipService } from './chatTipService.js';
+import { AgentFeedbackService, IAgentFeedbackService } from './agentFeedback/agentFeedbackService.js';
+import { AgentFeedbackAttachmentContribution } from './agentFeedback/agentFeedbackAttachment.js';
+import { AgentFeedbackEditorOverlay } from './agentFeedback/agentFeedbackEditorOverlay.js';
+import { registerAgentFeedbackEditorActions } from './agentFeedback/agentFeedbackEditorActions.js';
 import { ChatQueuePickerRendering } from './widget/input/chatQueuePickerActionItem.js';
 import { ExploreAgentDefaultModel } from './exploreAgentDefaultModel.js';
 import { PlanAgentDefaultModel } from './planAgentDefaultModel.js';
@@ -280,6 +284,7 @@ configurationRegistry.registerConfiguration({
 		},
 		'chat.tips.enabled': {
 			type: 'boolean',
+			scope: ConfigurationScope.APPLICATION,
 			description: nls.localize('chat.tips.enabled', "Controls whether tips are shown above user messages in chat. This is an experimental feature."),
 			default: false,
 			tags: ['experimental'],
@@ -639,12 +644,6 @@ configurationRegistry.registerConfiguration({
 			enumItemLabels: ExploreAgentDefaultModel.modelLabels,
 			markdownEnumDescriptions: ExploreAgentDefaultModel.modelDescriptions
 		},
-		[ChatConfiguration.RequestQueueingEnabled]: {
-			type: 'boolean',
-			description: nls.localize('chat.requestQueuing.enabled.description', "When enabled, allows queuing additional messages while a request is in progress and steering the current request with a new message."),
-			default: true,
-			tags: ['experimental'],
-		},
 		[ChatConfiguration.RequestQueueingDefaultAction]: {
 			type: 'string',
 			enum: ['queue', 'steer'],
@@ -684,15 +683,10 @@ configurationRegistry.registerConfiguration({
 			default: true,
 			tags: ['experimental'],
 		},
-		['chat.statusWidget.sku']: {
-			type: 'string',
-			enum: ['free', 'anonymous'],
-			enumDescriptions: [
-				nls.localize('chat.statusWidget.sku.free', "Show status widget for free tier users."),
-				nls.localize('chat.statusWidget.sku.anonymous', "Show status widget for anonymous users.")
-			],
-			description: nls.localize('chat.statusWidget.enabled.description', "Controls which user type should see the status widget in new chat sessions when quota is exceeded."),
-			default: undefined,
+		['chat.statusWidget.anonymous']: {
+			type: 'boolean',
+			description: nls.localize('chat.statusWidget.anonymous.description', "Controls whether anonymous users see the status widget in new chat sessions when rate limited."),
+			default: false,
 			tags: ['experimental', 'advanced'],
 			experiment: {
 				mode: 'auto'
@@ -1087,6 +1081,24 @@ configurationRegistry.registerConfiguration({
 			markdownDescription: nls.localize('chat.agent.thinking.terminalTools', "When enabled, terminal tool calls are displayed inside the thinking dropdown with a simplified view."),
 			tags: ['experimental'],
 		},
+		'chat.tools.usagesTool.enabled': {
+			type: 'boolean',
+			default: true,
+			markdownDescription: nls.localize('chat.tools.usagesTool.enabled', "Controls whether the usages tool is available for finding references, definitions, and implementations of code symbols."),
+			tags: ['preview'],
+			experiment: {
+				mode: 'auto'
+			}
+		},
+		'chat.tools.renameTool.enabled': {
+			type: 'boolean',
+			default: true,
+			markdownDescription: nls.localize('chat.tools.renameTool.enabled', "Controls whether the rename tool is available for renaming code symbols across the workspace."),
+			tags: ['preview'],
+			experiment: {
+				mode: 'auto'
+			}
+		},
 		[ChatConfiguration.AutoExpandToolFailures]: {
 			type: 'boolean',
 			default: true,
@@ -1447,6 +1459,7 @@ registerWorkbenchContribution2(ChatAgentRecommendation.ID, ChatAgentRecommendati
 registerWorkbenchContribution2(ChatEditingEditorAccessibility.ID, ChatEditingEditorAccessibility, WorkbenchPhase.AfterRestored);
 registerWorkbenchContribution2(ChatQueuePickerRendering.ID, ChatQueuePickerRendering, WorkbenchPhase.BlockRestore);
 registerWorkbenchContribution2(ChatEditingEditorOverlay.ID, ChatEditingEditorOverlay, WorkbenchPhase.AfterRestored);
+registerWorkbenchContribution2(AgentFeedbackEditorOverlay.ID, AgentFeedbackEditorOverlay, WorkbenchPhase.AfterRestored);
 registerWorkbenchContribution2(SimpleBrowserOverlay.ID, SimpleBrowserOverlay, WorkbenchPhase.AfterRestored);
 registerWorkbenchContribution2(ChatEditingEditorContextKeys.ID, ChatEditingEditorContextKeys, WorkbenchPhase.AfterRestored);
 registerWorkbenchContribution2(ChatTransferContribution.ID, ChatTransferContribution, WorkbenchPhase.BlockRestore);
@@ -1458,6 +1471,7 @@ registerWorkbenchContribution2(UserToolSetsContributions.ID, UserToolSetsContrib
 registerWorkbenchContribution2(PromptLanguageFeaturesProvider.ID, PromptLanguageFeaturesProvider, WorkbenchPhase.Eventually);
 registerWorkbenchContribution2(ChatWindowNotifier.ID, ChatWindowNotifier, WorkbenchPhase.AfterRestored);
 registerWorkbenchContribution2(ChatRepoInfoContribution.ID, ChatRepoInfoContribution, WorkbenchPhase.Eventually);
+registerWorkbenchContribution2(AgentFeedbackAttachmentContribution.ID, AgentFeedbackAttachmentContribution, WorkbenchPhase.AfterRestored);
 
 registerChatActions();
 registerChatAccessibilityActions();
@@ -1477,6 +1491,7 @@ registerNewChatActions();
 registerChatContextActions();
 registerChatDeveloperActions();
 registerChatEditorActions();
+registerAgentFeedbackEditorActions();
 registerChatElicitationActions();
 registerChatToolActions();
 registerLanguageModelActions();
@@ -1513,5 +1528,6 @@ registerSingleton(IChatTodoListService, ChatTodoListService, InstantiationType.D
 registerSingleton(IChatOutputRendererService, ChatOutputRendererService, InstantiationType.Delayed);
 registerSingleton(IChatLayoutService, ChatLayoutService, InstantiationType.Delayed);
 registerSingleton(IChatTipService, ChatTipService, InstantiationType.Delayed);
+registerSingleton(IAgentFeedbackService, AgentFeedbackService, InstantiationType.Delayed);
 
 ChatWidget.CONTRIBS.push(ChatDynamicVariableModel);

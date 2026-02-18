@@ -219,7 +219,8 @@ export class AgentSessionRenderer extends Disposable implements ICompressibleTre
 		}
 
 		// Separator (dot between badge and description)
-		template.separator.classList.toggle('has-separator', hasBadge && !hasDiff);
+		const hasDescription = template.description.textContent !== '';
+		template.separator.classList.toggle('has-separator', hasBadge && hasDescription);
 
 		// Status
 		this.renderStatus(session, template);
@@ -502,7 +503,7 @@ export class AgentSessionSectionRenderer implements ICompressibleTreeRenderer<IA
 
 export class AgentSessionsListDelegate implements IListVirtualDelegate<AgentSessionListItem> {
 
-	static readonly ITEM_HEIGHT = 44;
+	static readonly ITEM_HEIGHT = 48;
 	static readonly SECTION_HEIGHT = 26;
 
 	getHeight(element: AgentSessionListItem): number {

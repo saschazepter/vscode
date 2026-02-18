@@ -184,7 +184,7 @@ suite('PromptsService', () => {
 					contents: [
 						'---',
 						'description: \'Root prompt description.\'',
-						'tools: [\'my-tool1\', , true]',
+						'tools: [\'my-tool1\', , tool]',
 						'agent: "agent" ',
 						'---',
 						'## Files',
@@ -239,7 +239,7 @@ suite('PromptsService', () => {
 					contents: [
 						'---',
 						'description: "Another file description."',
-						'tools: [\'my-tool3\', false, "my-tool2" ]',
+						'tools: [\'my-tool3\', "my-tool2" ]',
 						'applyTo: "**/*.tsx"',
 						'---',
 						`[](${rootFolder}/folder1/some-other-folder)`,
@@ -263,7 +263,7 @@ suite('PromptsService', () => {
 			const result1 = await service.parseNew(rootFileUri, CancellationToken.None);
 			assert.deepEqual(result1.uri, rootFileUri);
 			assert.deepEqual(result1.header?.description, 'Root prompt description.');
-			assert.deepEqual(result1.header?.tools, ['my-tool1']);
+			assert.deepEqual(result1.header?.tools, ['my-tool1', 'tool']);
 			assert.deepEqual(result1.header?.agent, 'agent');
 			assert.ok(result1.body);
 			assert.deepEqual(
