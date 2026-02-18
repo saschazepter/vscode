@@ -341,31 +341,6 @@ export class ChatViewModel extends Disposable implements IChatViewModel {
 			items = items.slice(-this._options.maxVisibleItems);
 		}
 
-		const pendingRequests = this._model.getPendingRequests();
-		if (pendingRequests.length > 0) {
-			// Separate steering and queued requests
-			const steeringRequests = pendingRequests.filter(p => p.kind === ChatRequestQueueKind.Steering);
-			const queuedRequests = pendingRequests.filter(p => p.kind === ChatRequestQueueKind.Queued);
-
-			// Add steering requests with their divider first
-			if (steeringRequests.length > 0) {
-				items.push({ kind: 'pendingDivider', id: 'pending-divider-steering', sessionResource: this._model.sessionResource, isComplete: true, dividerKind: ChatRequestQueueKind.Steering, currentRenderedHeight: undefined });
-				for (const pending of steeringRequests) {
-					const requestVM = this.instantiationService.createInstance(ChatRequestViewModel, pending.request, pending.kind);
-					items.push(requestVM);
-				}
-			}
-
-			// Add queued requests with their divider
-			if (queuedRequests.length > 0) {
-				items.push({ kind: 'pendingDivider', id: 'pending-divider-queued', sessionResource: this._model.sessionResource, isComplete: true, dividerKind: ChatRequestQueueKind.Queued, currentRenderedHeight: undefined });
-				for (const pending of queuedRequests) {
-					const requestVM = this.instantiationService.createInstance(ChatRequestViewModel, pending.request, pending.kind);
-					items.push(requestVM);
-				}
-			}
-		}
-
 		return items;
 	}
 

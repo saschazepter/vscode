@@ -819,8 +819,7 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	display: none;
 }
 
-.interactive-input-part:has(.chat-editing-session > .chat-editing-session-container) .chat-input-container,
-.interactive-input-part:has(.chat-todo-list-widget-container > .chat-todo-list-widget.has-todos) .chat-input-container,
+.interactive-input-part:has(.chat-working-set) .chat-input-container,
 .interactive-input-part:has(.chat-input-widgets-container > .chat-status-widget:not([style*="display: none"])) .chat-input-container,
 .interactive-input-part:has(.chat-getting-started-tip-container > .chat-tip-widget) .chat-input-container {
 	/* Remove top border radius when editing session, todo list, or status widget is present */
@@ -828,10 +827,263 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	border-top-right-radius: 0;
 }
 
-.interactive-session .chat-editing-session {
+.interactive-session .chat-working-set {
 	margin-bottom: -4px;
-	/* Counter the flex gap */
-	/* reset the 4px gap of the container for editing sessions */
+	width: 100%;
+	position: relative;
+	background-color: var(--vscode-editor-background);
+	border: 1px solid var(--vscode-input-border, transparent);
+	border-bottom: none;
+	border-radius: var(--vscode-cornerRadius-large) var(--vscode-cornerRadius-large) 0 0;
+	overflow: hidden;
+	animation: workingSetSlideIn 0.2s ease-out;
+}
+
+@keyframes workingSetSlideIn {
+	from {
+		opacity: 0;
+		max-height: 0;
+	}
+	to {
+		opacity: 1;
+		max-height: 500px;
+	}
+}
+
+.interactive-session .chat-working-set .chat-working-set-tab-bar {
+	padding: 3px;
+	border-bottom: 1px solid var(--vscode-input-border, transparent);
+	overflow: hidden;
+	animation: tabBarSlideIn 0.2s ease-out;
+}
+
+@keyframes tabBarSlideIn {
+	from {
+		max-height: 0;
+		opacity: 0;
+		padding-top: 0;
+		padding-bottom: 0;
+	}
+	to {
+		max-height: 40px;
+		opacity: 1;
+		padding-top: 3px;
+		padding-bottom: 3px;
+	}
+}
+
+.interactive-session .chat-working-set .chat-working-set-tab-bar .monaco-custom-radio {
+	display: flex;
+	gap: 2px;
+	justify-content: stretch;
+	align-items: stretch;
+}
+
+.interactive-session .chat-working-set .chat-working-set-tab-bar .monaco-custom-radio .monaco-button {
+	font-size: 11px;
+	padding: 4px 8px;
+	line-height: 18px;
+	flex: 1;
+	text-align: center;
+	border-radius: var(--vscode-cornerRadius-small, 4px);
+	border: none;
+}
+
+.interactive-session .chat-working-set .chat-working-set-tab-bar .monaco-custom-radio .monaco-button:not(.active) {
+	background-color: transparent;
+	border: none;
+}
+
+.interactive-session .chat-working-set .chat-working-set-tab-bar .monaco-custom-radio .monaco-button:not(.active):hover {
+	background-color: var(--vscode-toolbar-hoverBackground);
+}
+
+.interactive-session .chat-working-set .chat-working-set-tab-bar .monaco-custom-radio .monaco-button:last-child {
+	border-right: none;
+}
+
+.interactive-session .chat-working-set .chat-working-set-tab-bar .chat-tab-label {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 3px;
+	font-size: 11px;
+}
+
+.interactive-session .chat-working-set .chat-working-set-tab-bar .chat-tab-label .codicon,
+.interactive-session .chat-working-set .chat-working-set-tab-bar .monaco-button .codicon {
+	font-size: 14px;
+}
+
+.interactive-session .chat-working-set .chat-working-set-content > div {
+	display: none;
+}
+
+.interactive-session .chat-working-set .chat-working-set-content > div[style*="display: block"] {
+	display: block;
+}
+
+
+/* Fallback for first-child without explicit style */
+.interactive-session .chat-working-set .chat-working-set-content > div:not([style*="display: none"]):not([style*="display: block"]):first-child {
+	display: block;
+}
+
+/* Working set tab diff stats */
+.chat-tab-diff-added {
+	color: var(--vscode-gitDecoration-addedResourceForeground);
+}
+
+.chat-tab-diff-removed {
+	color: var(--vscode-gitDecoration-deletedResourceForeground);
+}
+
+/* Queue expanding toolbar */
+.chat-queue-expanding-toolbar {
+	position: relative;
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+}
+
+.chat-queue-always-visible {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+}
+
+.chat-queue-expanded-actions {
+	position: absolute;
+	right: 100%;
+	top: 50%;
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 0px;
+	opacity: 0;
+	max-width: 0;
+	transform: translateY(-50%) translateX(4px);
+	pointer-events: none;
+	transition: opacity 0.15s ease, transform 0.15s ease, max-width 0.15s ease;
+	z-index: 1;
+	overflow: hidden;
+}
+
+.chat-queue-expanding-toolbar:hover .chat-queue-expanded-actions,
+.chat-queue-expanding-toolbar:focus-within .chat-queue-expanded-actions {
+	opacity: 1;
+	max-width: 150px;
+	transform: translateY(-50%) translateX(0);
+	pointer-events: auto;
+}
+
+/* Queued prompts widget styles */
+.interactive-session .chat-queued-prompts-widget {
+	padding: 4px 3px;
+}
+
+.interactive-session .chat-queued-prompts-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	min-height: 22px;
+	padding: 0 4px;
+	font-size: 12px;
+}
+
+.interactive-session .chat-queued-prompts-header .chat-queued-prompts-toggle {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	cursor: pointer;
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	color: var(--vscode-foreground);
+	text-decoration: none;
+}
+
+.interactive-session .chat-queued-prompts-header .chat-queued-prompts-toggle:hover {
+	opacity: 0.8;
+}
+
+.interactive-session .chat-queued-prompts-header .chat-queued-prompts-chevron {
+	flex-shrink: 0;
+	font-size: 16px;
+	line-height: 22px;
+}
+
+.interactive-session .chat-queued-prompts-header .chat-queued-prompts-header-label {
+	white-space: nowrap;
+}
+
+.interactive-session .chat-queued-prompts-header .chat-queued-prompt-preview {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.interactive-session .chat-queued-prompts-header .chat-queued-prompts-count {
+	flex-shrink: 0;
+	font-size: 11px;
+	color: var(--vscode-descriptionForeground);
+	white-space: nowrap;
+}
+
+.interactive-session .chat-queued-prompts-header .chat-queued-prompts-clear-all {
+	cursor: pointer;
+	opacity: 0.7;
+	flex-shrink: 0;
+	margin-left: 4px;
+}
+
+.interactive-session .chat-queued-prompts-header .chat-queued-prompts-clear-all:hover {
+	opacity: 1;
+}
+
+.interactive-session .chat-queued-prompt-row {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	padding: 0 4px;
+	font-size: 12px;
+	height: 22px;
+	line-height: 22px;
+}
+
+.interactive-session .chat-queued-prompt-indicator {
+	flex-shrink: 0;
+	width: 20px;
+	text-align: center;
+	color: var(--vscode-descriptionForeground);
+}
+
+.interactive-session .chat-queued-prompt-text {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.interactive-session .chat-queued-prompt-action {
+	cursor: pointer;
+	opacity: 0;
+	flex-shrink: 0;
+	padding: 2px;
+}
+
+.interactive-session .chat-queued-prompt-row:hover .chat-queued-prompt-action {
+	opacity: 0.7;
+}
+
+.interactive-session .chat-queued-prompt-action:hover {
+	opacity: 1 !important;
+}
+
+.interactive-session .chat-editing-session {
 	width: 100%;
 	position: relative;
 }
@@ -839,20 +1091,12 @@ have to be updated for changes to the rules above, or to support more deeply nes
 .monaco-workbench .interactive-session .chat-editing-session .chat-editing-session-container {
 	padding: 4px 3px 4px 3px;
 	box-sizing: border-box;
-	background-color: var(--vscode-editor-background);
-	border: 1px solid var(--vscode-input-border, transparent);
-	border-bottom: none;
-	border-radius: var(--vscode-cornerRadius-large) var(--vscode-cornerRadius-large) 0 0;
 	display: flex;
 	flex-direction: column;
 	gap: 2px;
 	overflow: hidden;
 }
 
-.interactive-session .interactive-input-part > .chat-todo-list-widget-container:has(.chat-todo-list-widget.has-todos) + .chat-editing-session .chat-editing-session-container {
-	border-top-left-radius: 0;
-	border-top-right-radius: 0;
-}
 
 .interactive-session .chat-editing-session .monaco-list-row .chat-collapsible-list-action-bar {
 	padding-left: 5px;
@@ -1079,30 +1323,24 @@ have to be updated for changes to the rules above, or to support more deeply nes
 }
 
 /* Chat Todo List Widget Container - mirrors chat-editing-session styling */
-.interactive-session .interactive-input-part > .chat-todo-list-widget-container {
-	margin-bottom: -4px;
-	/* reset the 4px gap of the container for editing sessions */
+.interactive-session .interactive-input-part .chat-todo-list-widget-container {
 	width: 100%;
 	position: relative;
 }
 
-.interactive-session .interactive-input-part > .chat-todo-list-widget-container .chat-todo-list-widget {
+.interactive-session .interactive-input-part .chat-todo-list-widget-container .chat-todo-list-widget {
 	padding: 4px 3px 4px 3px;
 	box-sizing: border-box;
-	border: 1px solid var(--vscode-input-border, transparent);
-	background-color: var(--vscode-editor-background);
-	border-bottom: none;
-	border-radius: var(--vscode-cornerRadius-large) var(--vscode-cornerRadius-large) 0 0;
 	flex-direction: column;
 	gap: 2px;
 	overflow: hidden;
 }
 
-.interactive-session .interactive-input-part > .chat-todo-list-widget-container .chat-todo-list-widget .todo-list-expand {
+.interactive-session .interactive-input-part .chat-todo-list-widget-container .chat-todo-list-widget .todo-list-expand {
 	width: 100%;
 }
 
-.interactive-session .interactive-input-part > .chat-todo-list-widget-container .chat-todo-list-widget .todo-list-expand .monaco-button {
+.interactive-session .interactive-input-part .chat-todo-list-widget-container .chat-todo-list-widget .todo-list-expand .monaco-button {
 	display: flex;
 	align-items: center;
 	gap: 4px;
@@ -1116,11 +1354,11 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	min-width: unset;
 }
 
-.interactive-session .interactive-input-part > .chat-todo-list-widget-container .chat-todo-list-widget .todo-list-expand .monaco-button:focus:not(:focus-visible) {
+.interactive-session .interactive-input-part .chat-todo-list-widget-container .chat-todo-list-widget .todo-list-expand .monaco-button:focus:not(:focus-visible) {
 	outline: none;
 }
 
-.interactive-session .interactive-input-part > .chat-todo-list-widget-container .chat-todo-list-widget .todo-list-expand .todo-list-title-section {
+.interactive-session .interactive-input-part .chat-todo-list-widget-container .chat-todo-list-widget .todo-list-expand .todo-list-title-section {
 	padding-left: 3px;
 	display: flex;
 	align-items: center;
@@ -1132,13 +1370,13 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	line-height: 22px;
 }
 
-.interactive-session .interactive-input-part > .chat-todo-list-widget-container .chat-todo-list-widget .todo-list-expand .todo-list-title-section .codicon {
+.interactive-session .interactive-input-part .chat-todo-list-widget-container .chat-todo-list-widget .todo-list-expand .todo-list-title-section .codicon {
 	font-size: 16px;
 	line-height: 22px;
 	flex-shrink: 0;
 }
 
-.interactive-session .interactive-input-part > .chat-todo-list-widget-container .chat-todo-list-widget .todo-clear-button-container {
+.interactive-session .interactive-input-part .chat-todo-list-widget-container .chat-todo-list-widget .todo-clear-button-container {
 	padding-right: 2px;
 	display: flex;
 	align-items: center;
@@ -1146,7 +1384,7 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	opacity: 1;
 }
 
-.interactive-session .interactive-input-part > .chat-todo-list-widget-container .chat-todo-list-widget .todo-clear-button-container .monaco-button {
+.interactive-session .interactive-input-part .chat-todo-list-widget-container .chat-todo-list-widget .todo-clear-button-container .monaco-button {
 	background-color: transparent;
 	border-color: transparent;
 	color: var(--vscode-foreground);
@@ -1160,27 +1398,27 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	min-width: unset;
 }
 
-.interactive-session .interactive-input-part > .chat-todo-list-widget-container .chat-todo-list-widget .todo-clear-button-container .monaco-button:hover {
+.interactive-session .interactive-input-part .chat-todo-list-widget-container .chat-todo-list-widget .todo-clear-button-container .monaco-button:hover {
 	background-color: var(--vscode-toolbar-hoverBackground);
 }
 
-.interactive-session .interactive-input-part > .chat-todo-list-widget-container .chat-todo-list-widget .todo-clear-button-container .monaco-button:focus {
+.interactive-session .interactive-input-part .chat-todo-list-widget-container .chat-todo-list-widget .todo-clear-button-container .monaco-button:focus {
 	outline: 1px solid var(--vscode-focusBorder);
 	outline-offset: 1px;
 }
 
-.interactive-session .interactive-input-part > .chat-todo-list-widget-container .chat-todo-list-widget .todo-clear-button-container .monaco-button .codicon {
+.interactive-session .interactive-input-part .chat-todo-list-widget-container .chat-todo-list-widget .todo-clear-button-container .monaco-button .codicon {
 	font-size: 10px;
 	color: var(--vscode-foreground);
 }
 
 
-.interactive-session .interactive-input-part > .chat-todo-list-widget-container .chat-todo-list-widget .expand-icon {
+.interactive-session .interactive-input-part .chat-todo-list-widget-container .chat-todo-list-widget .expand-icon {
 	flex-shrink: 0;
 	margin-right: 3px;
 }
 
-.interactive-session .interactive-input-part > .chat-todo-list-widget-container .chat-todo-list-widget .todo-list-title {
+.interactive-session .interactive-input-part .chat-todo-list-widget-container .chat-todo-list-widget .todo-list-title {
 	font-weight: normal;
 	font-size: 12px;
 	display: flex;
@@ -1189,7 +1427,7 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	text-overflow: ellipsis;
 }
 
-.interactive-session .interactive-input-part > .chat-todo-list-widget-container .chat-todo-list-widget .todo-list-container {
+.interactive-session .interactive-input-part .chat-todo-list-widget-container .chat-todo-list-widget .todo-list-container {
 	margin-top: 2px;
 	max-height: calc(6.5 * 21px);
 	/* 6.5 items to show half-line affordance */
@@ -1203,14 +1441,14 @@ have to be updated for changes to the rules above, or to support more deeply nes
 }
 
 
-.interactive-session .interactive-input-part > .chat-todo-list-widget-container .chat-todo-list-widget .todo-list {
+.interactive-session .interactive-input-part .chat-todo-list-widget-container .chat-todo-list-widget .todo-list {
 	display: flex;
 	flex-direction: column;
 	gap: 4px;
 	scroll-snap-type: y proximity;
 }
 
-.interactive-session .interactive-input-part > .chat-todo-list-widget-container .chat-todo-list-widget .todo-item {
+.interactive-session .interactive-input-part .chat-todo-list-widget-container .chat-todo-list-widget .todo-item {
 	display: flex;
 	align-items: center;
 	gap: 6px;
@@ -1223,21 +1461,21 @@ have to be updated for changes to the rules above, or to support more deeply nes
 }
 
 
-.interactive-session .interactive-input-part > .chat-todo-list-widget-container .chat-todo-list-widget .todo-item:focus {
+.interactive-session .interactive-input-part .chat-todo-list-widget-container .chat-todo-list-widget .todo-item:focus {
 	outline: 1px solid var(--vscode-focusBorder);
 	outline-offset: -1px;
 }
 
-.interactive-session .interactive-input-part > .chat-todo-list-widget-container .chat-todo-list-widget .todo-item.focused {
+.interactive-session .interactive-input-part .chat-todo-list-widget-container .chat-todo-list-widget .todo-item.focused {
 	background-color: var(--vscode-list-focusBackground);
 }
 
-.interactive-session .interactive-input-part > .chat-todo-list-widget-container .chat-todo-list-widget .todo-item > .todo-status-icon.codicon {
+.interactive-session .interactive-input-part .chat-todo-list-widget-container .chat-todo-list-widget .todo-item > .todo-status-icon.codicon {
 	flex-shrink: 0;
 	font-size: 16px;
 }
 
-.interactive-session .interactive-input-part > .chat-todo-list-widget-container .chat-todo-list-widget .todo-content {
+.interactive-session .interactive-input-part .chat-todo-list-widget-container .chat-todo-list-widget .todo-content {
 	flex-grow: 1;
 	overflow: hidden;
 	white-space: nowrap;
@@ -1245,7 +1483,7 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	min-width: 0;
 }
 
-.interactive-session .interactive-input-part > .chat-todo-list-widget-container .chat-todo-list-widget .monaco-scrollable-element .monaco-list-rows .monaco-list-row {
+.interactive-session .interactive-input-part .chat-todo-list-widget-container .chat-todo-list-widget .monaco-scrollable-element .monaco-list-rows .monaco-list-row {
 	border-radius: var(--vscode-cornerRadius-small);
 }
 
@@ -2912,73 +3150,4 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	color: var(--vscode-descriptionForeground);
 }
 
-/* Pending request styles */
-.interactive-item-container.pending-request {
-	opacity: 0.7;
 
-	.request-hover {
-		top: -17px !important;
-	}
-}
-
-/* Drag handle for reordering pending messages */
-.interactive-item-container .chat-pending-drag-handle {
-	position: absolute;
-	left: 0;
-	top: 50%;
-	transform: translateY(-50%);
-	width: 16px;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	cursor: grab;
-	opacity: 0;
-	transition: opacity 0.15s;
-	color: var(--vscode-descriptionForeground);
-	margin-top: -4px; /* visually center with overlaid top controls */
-}
-
-.interactive-item-container.pending-request:hover .chat-pending-drag-handle {
-	opacity: 1;
-}
-
-/* Dragging state */
-.interactive-item-container.chat-pending-dragging {
-	opacity: 0.4;
-}
-
-/* Insertion indicator */
-.chat-pending-insert-indicator {
-	position: absolute;
-	height: 2px;
-	background: var(--vscode-focusBorder);
-	pointer-events: none;
-	z-index: 100;
-	display: none;
-}
-
-.interactive-item-container .chat-request-status {
-	color: var(--vscode-descriptionForeground);
-	font-size: var(--vscode-chat-font-size-body-xs);
-	margin-top: 2px;
-	text-align: right;
-}
-
-/* Pending divider styles */
-.interactive-item-container.pending-divider {
-	padding: 8px 16px;
-}
-
-.interactive-item-container.pending-divider .pending-divider-content {
-	display: flex;
-	align-items: center;
-	gap: 8px;
-}
-
-.interactive-item-container.pending-divider .pending-divider-label {
-	font-size: var(--vscode-chat-font-size-body-xs);
-	font-weight: 500;
-	text-transform: uppercase;
-	letter-spacing: 0.5px;
-	color: var(--vscode-descriptionForeground);
-}

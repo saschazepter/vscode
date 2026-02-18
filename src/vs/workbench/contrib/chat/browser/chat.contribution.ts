@@ -652,7 +652,7 @@ configurationRegistry.registerConfiguration({
 				nls.localize('chat.requestQueuing.defaultAction.steer', "Steer the current request by sending the message immediately, signaling the current request to yield."),
 			],
 			description: nls.localize('chat.requestQueuing.defaultAction.description', "Controls which action is the default for the queue button when a request is in progress."),
-			default: 'steer',
+			default: 'queue',
 		},
 		[ChatConfiguration.EditModeHidden]: {
 			type: 'boolean',

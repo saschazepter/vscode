@@ -250,6 +250,20 @@ export class ChatTodoListWidget extends Disposable {
 		return this.domNode.classList.contains('has-todos') && !!this._todoList && this._todoList.length > 0;
 	}
 
+	public getTodoStats(): { completed: number; total: number } | undefined {
+		if (!this._currentSessionResource) {
+			return undefined;
+		}
+		const todos = this.chatTodoListService.getTodos(this._currentSessionResource);
+		if (todos.length === 0) {
+			return undefined;
+		}
+		const completedCount = todos.filter(todo => todo.status === 'completed').length;
+		const hasInProgress = todos.some(todo => todo.status === 'in-progress');
+		const currentTaskNumber = hasInProgress ? completedCount + 1 : Math.max(1, completedCount);
+		return { completed: currentTaskNumber, total: todos.length };
+	}
+
 	public hasFocus(): boolean {
 		return dom.isAncestorOfActiveElement(this.todoListContainer);
 	}

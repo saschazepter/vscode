@@ -62,7 +62,7 @@ import { ChatAgentVoteDirection, ChatAgentVoteDownReason, ChatErrorLevel, ChatRe
 import { localChatSessionType } from '../../common/chatSessionsService.js';
 import { getChatSessionType } from '../../common/model/chatUri.js';
 import { IChatRequestVariableEntry } from '../../common/attachments/chatVariableEntries.js';
-import { IChatChangesSummaryPart, IChatCodeCitations, IChatErrorDetailsPart, IChatReferences, IChatRendererContent, IChatRequestViewModel, IChatResponseViewModel, IChatViewModel, isRequestVM, isResponseVM, IChatPendingDividerViewModel, isPendingDividerVM } from '../../common/model/chatViewModel.js';
+import { IChatChangesSummaryPart, IChatCodeCitations, IChatErrorDetailsPart, IChatReferences, IChatRendererContent, IChatRequestViewModel, IChatResponseViewModel, IChatViewModel, isRequestVM, isResponseVM } from '../../common/model/chatViewModel.js';
 import { getNWords } from '../../common/model/chatWordCounter.js';
 import { CodeBlockModelCollection } from '../../common/widget/codeBlockModelCollection.js';
 import { ChatAgentLocation, ChatConfiguration, ChatModeKind, CollapsedToolsDisplayMode, ThinkingDisplayMode } from '../../common/constants.js';
@@ -106,7 +106,6 @@ import { autorun, observableValue } from '../../../../../base/common/observable.
 import { isEqual } from '../../../../../base/common/resources.js';
 import { IAccessibilityService } from '../../../../../platform/accessibility/common/accessibility.js';
 import { ChatHookContentPart } from './chatContentParts/chatHookContentPart.js';
-import { ChatPendingDragController } from './chatPendingDragAndDrop.js';
 import { HookType } from '../../common/promptSyntax/hookSchema.js';
 import { ChatQuestionCarouselAutoReply } from './chatQuestionCarouselAutoReply.js';
 
@@ -283,12 +282,6 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 				carousels.clear();
 			}
 		}));
-	}
-
-	private _pendingDragController: ChatPendingDragController | undefined;
-
-	set pendingDragController(controller: ChatPendingDragController) {
-		this._pendingDragController = controller;
 	}
 
 	public updateOptions(options: IChatListItemRendererOptions): void {
@@ -661,16 +654,9 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		templateData.currentElement = element;
 		this.templateDataByRequestId.set(element.id, templateData);
 
-		// Handle pending divider with simplified rendering
-		if (isPendingDividerVM(element)) {
-			this.renderPendingDivider(element, templateData);
-			return;
-		}
-
 		const kind = isRequestVM(element) ? 'request' :
 			isResponseVM(element) ? 'response' :
-				isPendingDividerVM(element) ? 'pendingDivider' :
-					'welcome';
+				'welcome';
 		this.traceLayout('renderElement', `${kind}, index=${index}`);
 
 		ChatContextKeys.isResponse.bindTo(templateData.contextKeyService).set(isResponseVM(element));
@@ -808,39 +794,6 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		templateData.renderedPartsMounted = true;
 	}
 
-	private renderPendingDivider(element: IChatPendingDividerViewModel, templateData: IChatListItemTemplate): void {
-		templateData.rowContainer.classList.add('pending-item');
-		templateData.rowContainer.classList.add('pending-divider');
-		templateData.rowContainer.classList.remove('interactive-request', 'interactive-response', 'pending-request');
-
-		// Hide header elements not applicable to pending divider
-		templateData.avatarContainer.classList.add('hidden');
-		templateData.username.classList.add('hidden');
-		templateData.requestHover.classList.add('hidden');
-		templateData.checkpointContainer.classList.add('hidden');
-		templateData.checkpointRestoreContainer.classList.add('hidden');
-		templateData.footerToolbar.getElement().classList.add('hidden');
-		if (templateData.titleToolbar) {
-			templateData.titleToolbar.getElement().classList.add('hidden');
-		}
-
-		dom.clearNode(templateData.value);
-		dom.clearNode(templateData.detail);
-
-		const dividerContent = dom.$('.pending-divider-content');
-		const label = dom.append(dividerContent, dom.$('span.pending-divider-label'));
-
-		if (element.dividerKind === ChatRequestQueueKind.Steering) {
-			label.textContent = localize('steeringDivider', "Steering");
-			label.title = localize('steeringDividerTooltip', "Steering message will be sent after the next tool call happens");
-		} else {
-			label.textContent = localize('queuedDivider', "Queued");
-			label.title = localize('queuedDividerTooltip', "Queued messages will be sent after the current request completes");
-		}
-
-		templateData.value.appendChild(dividerContent);
-	}
-
 	private renderDetail(element: IChatResponseViewModel, templateData: IChatListItemTemplate): void {
 		dom.clearNode(templateData.detail);
 
@@ -871,9 +824,6 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 	}
 
 	private renderAvatar(element: ChatTreeItem, templateData: IChatListItemTemplate): void {
-		if (isPendingDividerVM(element)) {
-			return;
-		}
 		let icon: URI | ThemeIcon;
 		if (isResponseVM(element)) {
 			icon = this.getAgentIcon(element.agent?.metadata);
@@ -1010,20 +960,6 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 
 	private renderChatRequest(element: IChatRequestViewModel, index: number, templateData: IChatListItemTemplate) {
 		templateData.rowContainer.classList.toggle('chat-response-loading', false);
-		templateData.rowContainer.classList.toggle('pending-request', !!element.pendingKind);
-
-		if (element.pendingKind && this._pendingDragController) {
-			templateData.rowContainer.dataset.pendingRequestId = element.id;
-			templateData.rowContainer.dataset.pendingKind = element.pendingKind;
-
-			const sameKindCount = (this.viewModel?.model.getPendingRequests() ?? []).filter(p => p.kind === element.pendingKind).length;
-			if (sameKindCount > 1) {
-				const handle = dom.$('.chat-pending-drag-handle' + ThemeIcon.asCSSSelector(Codicon.gripper));
-				templateData.rowContainer.prepend(handle);
-				templateData.dragHandle = handle;
-				this._pendingDragController.attachDragHandle(element, handle, templateData.rowContainer, templateData.elementDisposables);
-			}
-		}
 
 		if (element.id === this.viewModel?.editing?.id) {
 			this._onDidRerender.fire(templateData);

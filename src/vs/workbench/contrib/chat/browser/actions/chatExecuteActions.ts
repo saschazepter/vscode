@@ -38,6 +38,7 @@ import { getEditingSessionContext } from '../chatEditing/chatEditingActions.js';
 import { ctxHasEditorModification, ctxHasRequestInProgress, ctxIsGlobalEditingSession } from '../chatEditing/chatEditingEditorContextKeys.js';
 import { ACTION_ID_NEW_CHAT, CHAT_CATEGORY, clearChatSessionPreservingType, handleCurrentEditingSession, handleModeSwitch } from './chatActions.js';
 import { CreateRemoteAgentJobAction } from './chatContinueInAction.js';
+import { queuingActionsPresent } from './chatQueueActions.js';
 
 export interface IVoiceChatExecuteActionContext {
 	readonly disableTimeout?: boolean;
@@ -846,6 +847,7 @@ export class CancelAction extends Action2 {
 					requestInProgressOrPendingToolCall,
 					ChatContextKeys.remoteJobCreating.negate(),
 					ChatContextKeys.currentlyEditing.negate(),
+					queuingActionsPresent?.negate(),
 				),
 				order: 4,
 				group: 'navigation',

@@ -2070,6 +2070,16 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		updatePendingRequestKeys(false);
 		this.viewModelDisposables.add(model.onDidChangePendingRequests(() => updatePendingRequestKeys(true)));
 
+		// Update placeholder based on request-in-progress state
+		this.viewModelDisposables.add(autorun(reader => {
+			const inProgress = model.requestInProgress.read(reader);
+			if (inProgress) {
+				this.viewModel?.setInputPlaceholder(localize('chat.steer.placeholder', "Steer active session while agent is working"));
+			} else {
+				this.viewModel?.resetInputPlaceholder();
+			}
+		}));
+
 		this.refreshParsedInput();
 		this.viewModelDisposables.add(model.onDidChange((e) => {
 			if (e.kind === 'setAgent') {

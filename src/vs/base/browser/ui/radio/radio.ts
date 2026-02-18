@@ -28,6 +28,7 @@ export interface IRadioOptionItem {
 	readonly tooltip?: string;
 	readonly isActive?: boolean;
 	readonly disabled?: boolean;
+	readonly labelElement?: HTMLElement;
 }
 
 export interface IRadioOptions {
@@ -107,7 +108,12 @@ export class Radio extends Widget {
 			isActive = item === this.activeItem;
 			button.element.classList.toggle('active', isActive);
 			button.element.classList.toggle('previous-active', isPreviousActive);
-			button.label = item.text;
+			if (item.labelElement) {
+				button.element.classList.add('monaco-text-button');
+				button.element.replaceChildren(item.labelElement.cloneNode(true));
+			} else {
+				button.label = item.text;
+			}
 		}
 	}
 
