@@ -10,12 +10,10 @@ import { Codicon } from '../../../../../../base/common/codicons.js';
 import { Emitter, Event } from '../../../../../../base/common/event.js';
 import { KeyCode } from '../../../../../../base/common/keyCodes.js';
 import { Disposable } from '../../../../../../base/common/lifecycle.js';
-import { ThemeIcon } from '../../../../../../base/common/themables.js';
 import { localize } from '../../../../../../nls.js';
-import { ActionListItemKind, IActionListItem, IActionListOptions } from '../../../../../../platform/actionWidget/browser/actionList.js';
-import { IActionWidgetService } from '../../../../../../platform/actionWidget/browser/actionWidget.js';
-import { IActionWidgetDropdownAction } from '../../../../../../platform/actionWidget/browser/actionWidgetDropdown.js';
+import { IActionListDropdownOptions, IActionListDropdownEntry, IActionListDropdownItem, ActionListDropdown, ActionListDropdownItemKind } from '../../../../../../platform/actionWidget/browser/actionListDropdown.js';
 import { ICommandService } from '../../../../../../platform/commands/common/commands.js';
+import { IInstantiationService } from '../../../../../../platform/instantiation/common/instantiation.js';
 import { IOpenerService } from '../../../../../../platform/opener/common/opener.js';
 import { IProductService } from '../../../../../../platform/product/common/productService.js';
 import { ITelemetryService } from '../../../../../../platform/telemetry/common/telemetry.js';
@@ -54,16 +52,11 @@ type ChatModelChangeEvent = {
 };
 
 function createModelItem(
-	action: IActionWidgetDropdownAction & { section?: string },
-): IActionListItem<IActionWidgetDropdownAction> {
+	action: IActionListDropdownItem,
+): IActionListDropdownEntry {
 	return {
 		item: action,
-		kind: ActionListItemKind.Action,
-		label: action.label,
-		description: action.description,
-		group: { title: '', icon: action.icon ?? ThemeIcon.fromId(action.checked ? Codicon.check.id : Codicon.blank.id) },
-		hideIcon: false,
-		section: action.section,
+		kind: ActionListDropdownItemKind.Action,
 	};
 }
 
@@ -72,13 +65,11 @@ function createModelAction(
 	selectedModelId: string | undefined,
 	onSelect: (model: ILanguageModelChatMetadataAndIdentifier) => void,
 	section?: string,
-): IActionWidgetDropdownAction & { section?: string } {
+): IActionListDropdownItem {
 	return {
 		id: model.identifier,
-		enabled: true,
 		icon: model.metadata.statusIcon,
 		checked: model.identifier === selectedModelId,
-		class: undefined,
 		description: model.metadata.multiplier ?? model.metadata.detail,
 		tooltip: model.metadata.name,
 		label: model.metadata.name,
@@ -107,8 +98,8 @@ function buildModelPickerItems(
 	commandService: ICommandService,
 	openerService: IOpenerService,
 	upgradePlanUrl: string | undefined,
-): IActionListItem<IActionWidgetDropdownAction>[] {
-	const items: IActionListItem<IActionWidgetDropdownAction>[] = [];
+): IActionListDropdownEntry[] {
+	const items: IActionListDropdownEntry[] = [];
 
 	// Collect all available models
 	const allModelsMap = new Map<string, ILanguageModelChatMetadataAndIdentifier>();
@@ -131,9 +122,7 @@ function buildModelPickerItems(
 	const autoDescription = defaultModel?.metadata.multiplier ?? defaultModel?.metadata.detail;
 	items.push(createModelItem({
 		id: 'auto',
-		enabled: true,
 		checked: isAutoSelected,
-		class: undefined,
 		tooltip: localize('chat.modelPicker.auto', "Auto"),
 		label: localize('chat.modelPicker.auto', "Auto"),
 		description: autoDescription,
@@ -154,15 +143,17 @@ function buildModelPickerItems(
 		if (model && !placed.has(model.identifier) && model !== defaultModel) {
 			promotedModels.push(model);
 			placed.add(model.identifier);
+			placed.add(model.metadata.id);
 		}
 	}
 
 	// Add curated - available ones become promoted, unavailable ones become disabled entries
 	for (const curated of curatedModels) {
 		const model = allModelsMap.get(curated.id) ?? modelsByMetadataId.get(curated.id);
-		if (model && !placed.has(model.identifier)) {
+		if (model && !placed.has(model.identifier) && !placed.has(model.metadata.id)) {
 			promotedModels.push(model);
 			placed.add(model.identifier);
+			placed.add(model.metadata.id);
 		} else if (!model) {
 			// Model is not available - determine reason
 			if (!isProUser) {
@@ -180,7 +171,7 @@ function buildModelPickerItems(
 
 	if (promotedModels.length > 0 || unavailableCurated.length > 0) {
 		items.push({
-			kind: ActionListItemKind.Separator,
+			kind: ActionListDropdownItemKind.Separator,
 		});
 		for (const model of promotedModels) {
 			const action = createModelAction(model, selectedModelId, onSelect);
@@ -202,21 +193,14 @@ function buildModelPickerItems(
 			items.push({
 				item: {
 					id: curated.id,
-					enabled: false,
-					checked: false,
-					class: undefined,
 					tooltip: label,
 					label: curated.id,
-					description: label,
+					disabled: true,
+					descriptionButton: { label, onDidClick: onButtonClick },
+					className: 'unavailable-model',
 					run: () => { }
 				},
-				kind: ActionListItemKind.Action,
-				label: curated.id,
-				descriptionButton: { label, onDidClick: onButtonClick },
-				disabled: true,
-				group: { title: '', icon: Codicon.blank },
-				hideIcon: false,
-				className: 'unavailable-model',
+				kind: ActionListDropdownItemKind.Action,
 			});
 		}
 	}
@@ -224,7 +208,7 @@ function buildModelPickerItems(
 	// --- 3. Other Models (collapsible) ---
 	const otherModels: ILanguageModelChatMetadataAndIdentifier[] = [];
 	for (const model of models) {
-		if (!placed.has(model.identifier)) {
+		if (!placed.has(model.identifier) && !placed.has(model.metadata.id)) {
 			// Skip the default model - it's already represented by the top-level "Auto" entry
 			const isDefault = Object.values(model.metadata.isDefaultForLocation).some(v => v);
 			if (isDefault) {
@@ -236,24 +220,18 @@ function buildModelPickerItems(
 
 	if (otherModels.length > 0) {
 		items.push({
-			kind: ActionListItemKind.Separator,
+			kind: ActionListDropdownItemKind.Separator,
 		});
 		items.push({
 			item: {
 				id: 'otherModels',
-				enabled: true,
-				checked: false,
-				class: undefined,
-				tooltip: localize('chat.modelPicker.otherModels', "Other Models"),
 				label: localize('chat.modelPicker.otherModels', "Other Models"),
+				tooltip: localize('chat.modelPicker.otherModels', "Other Models"),
+				section: ModelPickerSection.Other,
+				isSectionToggle: true,
 				run: () => { /* toggle handled by isSectionToggle */ }
 			},
-			kind: ActionListItemKind.Action,
-			label: localize('chat.modelPicker.otherModels', "Other Models"),
-			group: { title: '', icon: Codicon.chevronDown },
-			hideIcon: false,
-			section: ModelPickerSection.Other,
-			isSectionToggle: true,
+			kind: ActionListDropdownItemKind.Action,
 		});
 		for (const model of otherModels) {
 			const action = createModelAction(model, selectedModelId, onSelect, ModelPickerSection.Other);
@@ -264,34 +242,24 @@ function buildModelPickerItems(
 		items.push({
 			item: {
 				id: 'manageModels',
-				enabled: true,
-				checked: false,
-				class: 'manage-models-action',
-				tooltip: localize('chat.manageModels.tooltip', "Manage Language Models"),
 				label: localize('chat.manageModels', "Manage Models..."),
+				tooltip: localize('chat.manageModels.tooltip', "Manage Language Models"),
 				icon: Codicon.settingsGear,
+				section: ModelPickerSection.Other,
+				className: 'manage-models-link',
 				run: () => {
 					commandService.executeCommand(MANAGE_CHAT_COMMAND_ID);
 				}
 			},
-			kind: ActionListItemKind.Action,
-			label: localize('chat.manageModels', "Manage Models..."),
-			group: { title: '', icon: Codicon.settingsGear },
-			hideIcon: false,
-			section: ModelPickerSection.Other,
-			className: 'manage-models-link',
+			kind: ActionListDropdownItemKind.Action,
 		});
 	}
 
 	return items;
 }
 
-/**
- * Returns the ActionList options for the model picker (filter + collapsed sections).
- */
-function getModelPickerListOptions(): IActionListOptions {
+function getActionListDropdownOptions(): IActionListDropdownOptions {
 	return {
-		showFilter: true,
 		collapsedByDefault: new Set([ModelPickerSection.Other]),
 		minWidth: 300,
 	};
@@ -320,6 +288,7 @@ export class ModelPickerWidget extends Disposable {
 
 	private _domNode: HTMLElement | undefined;
 	private _badgeIcon: HTMLElement | undefined;
+	private readonly _dropdown: ActionListDropdown;
 
 	get selectedModel(): ILanguageModelChatMetadataAndIdentifier | undefined {
 		return this._selectedModel;
@@ -330,7 +299,7 @@ export class ModelPickerWidget extends Disposable {
 	}
 
 	constructor(
-		@IActionWidgetService private readonly _actionWidgetService: IActionWidgetService,
+		@IInstantiationService private readonly _instantiationService: IInstantiationService,
 		@ICommandService private readonly _commandService: ICommandService,
 		@IOpenerService private readonly _openerService: IOpenerService,
 		@ITelemetryService private readonly _telemetryService: ITelemetryService,
@@ -339,6 +308,7 @@ export class ModelPickerWidget extends Disposable {
 		@IChatEntitlementService private readonly _entitlementService: IChatEntitlementService,
 	) {
 		super();
+		this._dropdown = this._register(this._instantiationService.createInstance(ActionListDropdown));
 	}
 
 	setModels(models: ILanguageModelChatMetadataAndIdentifier[]): void {
@@ -393,9 +363,6 @@ export class ModelPickerWidget extends Disposable {
 			return;
 		}
 
-		// Mark new models as seen immediately when the picker is opened
-		this._languageModelsService.markNewModelsAsSeen();
-
 		const previousModel = this._selectedModel;
 
 		const onSelect = (model: ILanguageModelChatMetadataAndIdentifier) => {
@@ -415,7 +382,7 @@ export class ModelPickerWidget extends Disposable {
 		const items = buildModelPickerItems(
 			this._models,
 			this._selectedModel?.identifier,
-			this._languageModelsService.getRecentlyUsedModelIds(7),
+			this._languageModelsService.getRecentlyUsedModelIds(),
 			curatedForTier,
 			isPro,
 			this._productService.version,
@@ -425,47 +392,21 @@ export class ModelPickerWidget extends Disposable {
 			this._productService.defaultChatAgent?.upgradePlanUrl,
 		);
 
-		const listOptions = getModelPickerListOptions();
-		const previouslyFocusedElement = dom.getActiveElement();
+		const dropdownOptions = getActionListDropdownOptions();
 
 		const delegate = {
-			onSelect: (action: IActionWidgetDropdownAction) => {
-				this._actionWidgetService.hide();
-				action.run();
+			onSelect: (item: IActionListDropdownItem) => {
+				this._dropdown.hide();
+				item.run();
 			},
 			onHide: () => {
 				this._domNode?.setAttribute('aria-expanded', 'false');
-				if (dom.isHTMLElement(previouslyFocusedElement)) {
-					previouslyFocusedElement.focus();
-				}
 			}
 		};
 
 		this._domNode?.setAttribute('aria-expanded', 'true');
 
-		this._actionWidgetService.show(
-			'ChatModelPicker',
-			false,
-			items,
-			delegate,
-			anchorElement,
-			undefined,
-			[],
-			{
-				isChecked(element) {
-					return element.kind === 'action' && !!element?.item?.checked;
-				},
-				getRole: (e) => {
-					switch (e.kind) {
-						case 'action': return 'menuitemcheckbox';
-						case 'separator': return 'separator';
-						default: return 'separator';
-					}
-				},
-				getWidgetRole: () => 'menu',
-			},
-			listOptions
-		);
+		this._dropdown.show(items, delegate, anchorElement, dropdownOptions);
 	}
 
 	private _updateBadge(): void {

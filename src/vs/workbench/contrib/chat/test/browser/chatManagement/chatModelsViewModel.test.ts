@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import assert from 'assert';
-import { Emitter, Event } from '../../../../../../base/common/event.js';
+import { Emitter } from '../../../../../../base/common/event.js';
 import { IDisposable } from '../../../../../../base/common/lifecycle.js';
 import { observableValue } from '../../../../../../base/common/observable.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/test/common/utils.js';
@@ -136,12 +136,9 @@ class MockLanguageModelsService implements ILanguageModelsService {
 
 	async migrateLanguageModelsProviderGroup(languageModelsProviderGroup: ILanguageModelsProviderGroup): Promise<void> { }
 
-	getRecentlyUsedModelIds(_maxCount?: number): string[] { return []; }
-	recordModelUsage(_modelIdentifier: string): void { }
+	getRecentlyUsedModelIds(): string[] { return []; }
+	recordModelUsage(): void { }
 	getCuratedModels(): ICuratedModels { return { free: [], paid: [] }; }
-	getNewModelIds(): string[] { return []; }
-	onDidChangeNewModelIds = Event.None;
-	markNewModelsAsSeen(): void { }
 	restrictedChatParticipants = observableValue('restrictedChatParticipants', Object.create(null));
 }
 
