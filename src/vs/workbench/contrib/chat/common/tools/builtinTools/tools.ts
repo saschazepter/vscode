@@ -26,14 +26,9 @@ export class BuiltinToolsContribution extends Disposable implements IWorkbenchCo
 		const editTool = instantiationService.createInstance(EditTool);
 		this._register(toolsService.registerTool(EditToolData, editTool));
 
-		const existingAskQuestions = toolsService.getTool(AskQuestionsToolData.id);
-		const askQuestionsToolData = existingAskQuestions ?? AskQuestionsToolData;
-		if (!existingAskQuestions) {
-			const askQuestionsTool = this._register(instantiationService.createInstance(AskQuestionsTool));
-			this._register(toolsService.registerTool(askQuestionsToolData, askQuestionsTool));
-		}
-		// Surface in the VS Code tool set so it appears in the picker, # menu, and as vscode/askQuestions
-		this._register(toolsService.agentToolSet.addTool(askQuestionsToolData));
+		const askQuestionsTool = this._register(instantiationService.createInstance(AskQuestionsTool));
+		this._register(toolsService.registerTool(AskQuestionsToolData, askQuestionsTool));
+		this._register(toolsService.agentToolSet.addTool(AskQuestionsToolData));
 
 		const todoToolData = createManageTodoListToolData();
 		const manageTodoListTool = this._register(instantiationService.createInstance(ManageTodoListTool));
