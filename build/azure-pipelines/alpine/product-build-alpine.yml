@@ -164,7 +164,7 @@ jobs:
 
       - template: ../common/install-builtin-extensions.yml@self
 
-      - script: npm exec -- npm-run-all2 -lp core-ci extensions-ci
+      - script: npm exec -- gulp core-ci
         env:
           GITHUB_TOKEN: "$(github-distro-mixin-password)"
         displayName: Compile
