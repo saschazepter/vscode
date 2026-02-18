@@ -7,7 +7,7 @@ import { CancellationToken } from '../../../../../base/common/cancellation.js';
 import { match, splitGlobAware } from '../../../../../base/common/glob.js';
 import { ResourceMap, ResourceSet } from '../../../../../base/common/map.js';
 import { Schemas } from '../../../../../base/common/network.js';
-import { OperatingSystem } from '../../../../../base/common/platform.js';
+import { isWindows, OperatingSystem } from '../../../../../base/common/platform.js';
 import { basename, dirname } from '../../../../../base/common/resources.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { localize } from '../../../../../nls.js';
@@ -500,24 +500,14 @@ export class ComputeAutomaticInstructions {
 
 
 function getFilePath(uri: URI, remoteOS: OperatingSystem | undefined): string {
-	if (uri.scheme === Schemas.vscodeRemote) {
-		// For remote URIs, use uri.path directly (always forward slashes)
-		// instead of uri.fsPath which uses the local platform's separators.
-		// This ensures e.g. WSL paths stay as /home/... even when the
-		// local machine is Windows.
-		if (remoteOS === OperatingSystem.Windows) {
-			// Remote is Windows: convert to backslashes and strip leading slash before drive letter
-			const path = uri.path;
-			if (/^\/[a-zA-Z]:/.test(path)) {
-				return path.substring(1).replace(/\//g, '\\');
-			}
-			return path.replace(/\//g, '\\');
+	if (uri.scheme === Schemas.file || uri.scheme === Schemas.vscodeRemote) {
+		const fsPath = uri.fsPath;
+		// When local OS is Windows but remote is not (e.g. WSL),
+		// uri.fsPath incorrectly uses backslashes. Fix them up.
+		if (isWindows && remoteOS !== undefined && remoteOS !== OperatingSystem.Windows) {
+			return fsPath.replace(/\\/g, '/');
 		}
-		// Remote is Linux/macOS: path is already correct
-		return uri.path;
-	}
-	if (uri.scheme === Schemas.file) {
-		return uri.fsPath;
+		return fsPath;
 	}
 	return uri.toString();
 }
