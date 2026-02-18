@@ -8,6 +8,7 @@ import { Disposable } from '../../../../base/common/lifecycle.js';
 import { FileAccess } from '../../../../base/common/network.js';
 import { dirname, posix, win32 } from '../../../../base/common/path.js';
 import { OperatingSystem, OS } from '../../../../base/common/platform.js';
+import { equals } from '../../../../base/common/objects.js';
 import { URI } from '../../../../base/common/uri.js';
 import { generateUuid } from '../../../../base/common/uuid.js';
 import { IEnvironmentService } from '../../../../platform/environment/common/environment.js';
@@ -25,7 +26,7 @@ export const IMcpSandboxService = createDecorator<IMcpSandboxService>('mcpSandbo
 
 export interface IMcpSandboxService {
 	readonly _serviceBrand: undefined;
-	launchInSandboxIfEnabled(serverDef: McpServerDefinition, launch: McpServerLaunch): Promise<McpServerLaunch>;
+	launchInSandboxIfEnabled(serverDef: McpServerDefinition, launch: McpServerLaunch, remoteAuthority?: string): Promise<McpServerLaunch>;
 	isEnabled(serverDef: McpServerDefinition, serverLabel?: string): Promise<boolean>;
 }
 
@@ -66,10 +67,11 @@ export class McpSandboxService extends Disposable implements IMcpSandboxService 
 		}));
 	}
 
-	public async isEnabled(serverDef: McpServerDefinition, serverLabel?: string): Promise<boolean> {
-		this._remoteEnvDetails = await this._remoteEnvDetailsPromise;
-		this._os = this._remoteEnvDetails ? this._remoteEnvDetails.os : OS;
-
+	public async isEnabled(serverDef: McpServerDefinition, serverLabel?: string, remoteAuthority?: string): Promise<boolean> {
+		if (remoteAuthority) {
+			this._remoteEnvDetails = await this._remoteEnvDetailsPromise;
+			this._os = this._remoteEnvDetails ? this._remoteEnvDetails.os : OS;
+		}
 		if (this._os === OperatingSystem.Windows) {
 			return false;
 		}
@@ -77,13 +79,13 @@ export class McpSandboxService extends Disposable implements IMcpSandboxService 
 		return this._sandboxEnabledMcpServers.has(serverLabel ?? serverDef.label);
 	}
 
-	public async launchInSandboxIfEnabled(serverDef: McpServerDefinition, launch: McpServerLaunch): Promise<McpServerLaunch> {
+	public async launchInSandboxIfEnabled(serverDef: McpServerDefinition, launch: McpServerLaunch, remoteAuthority?: string): Promise<McpServerLaunch> {
 		if (launch.type !== McpServerTransportType.Stdio) {
 			return launch;
 		}
-		if (await this.isEnabled(serverDef)) {
-			const srtPath = await this.getSandboxRuntimePath();
-			const sandboxArgs = await this.getSandboxCommandArgs(launch.command, launch.args);
+		if (await this.isEnabled(serverDef, undefined, remoteAuthority)) {
+			const srtPath = await this.getSandboxRuntimePath(remoteAuthority);
+			const sandboxArgs = await this.getSandboxCommandArgs(launch.command, launch.args, remoteAuthority);
 			const sandboxEnv = this.getSandboxEnvVariables();
 			if (srtPath && sandboxArgs) {
 				return {
@@ -99,8 +101,8 @@ export class McpSandboxService extends Disposable implements IMcpSandboxService 
 		return launch;
 	}
 
-	private async getSandboxRuntimePath(): Promise<string | undefined> {
-		await this._resolveSrtPath();
+	private async getSandboxRuntimePath(remoteAuthority?: string): Promise<string | undefined> {
+		await this._resolveSrtPath(remoteAuthority);
 		return this._srtPath;
 	}
 
@@ -111,9 +113,9 @@ export class McpSandboxService extends Disposable implements IMcpSandboxService 
 		return undefined;
 	}
 
-	private async getSandboxCommandArgs(command: string, args: readonly string[]): Promise<string[] | undefined> {
+	private async getSandboxCommandArgs(command: string, args: readonly string[], remoteAuthority?: string): Promise<string[] | undefined> {
 		const result: string[] = [];
-		this._sandboxConfigPath = await this.getSandboxConfigPath();
+		this._sandboxConfigPath = await this.getSandboxConfigPath(remoteAuthority);
 		if (this._sandboxConfigPath) {
 			result.push('--settings', this._sandboxConfigPath);
 		}
@@ -121,14 +123,14 @@ export class McpSandboxService extends Disposable implements IMcpSandboxService 
 		return result;
 	}
 
-	private async getSandboxConfigPath(sandboxConfig?: IMcpSandboxConfiguration): Promise<string | undefined> {
+	private async getSandboxConfigPath(remoteAuthority?: string): Promise<string | undefined> {
 		if (this._os === OperatingSystem.Windows) {
 			return undefined;
 		}
 		if (!this._tempDir) {
-			await this._initTempDir();
+			await this._initTempDir(remoteAuthority);
 		}
-		this._sandboxConfigPath = await this._updateSandboxConfig(sandboxConfig ?? this._sandboxConfig);
+		this._sandboxConfigPath = await this._updateSandboxConfig(this._sandboxConfig);
 		this._logService.debug(`McpSandboxService: Updated sandbox config path: ${this._sandboxConfigPath}`);
 		return this._sandboxConfigPath;
 	}
@@ -160,14 +162,16 @@ export class McpSandboxService extends Disposable implements IMcpSandboxService 
 		}
 	}
 
-	private async _resolveSrtPath(): Promise<void> {
+	private async _resolveSrtPath(remoteAuthority?: string): Promise<void> {
 		if (this._srtPathResolved) {
 			return;
 		}
 		this._srtPathResolved = true;
-		const remoteEnv = this._remoteEnvDetails || await this._remoteEnvDetailsPromise;
-		if (remoteEnv) {
-			this._appRoot = remoteEnv.appRoot.path;
+		if (remoteAuthority) {
+			this._remoteEnvDetails = await this._remoteEnvDetailsPromise;
+			if (this._remoteEnvDetails) {
+				this._appRoot = this._remoteEnvDetails.appRoot.path;
+			}
 		}
 		this._srtPath = this._pathJoin(this._appRoot, 'node_modules', '@anthropic-ai', 'sandbox-runtime', 'dist', 'cli.js');
 	}
@@ -177,7 +181,7 @@ export class McpSandboxService extends Disposable implements IMcpSandboxService 
 			return undefined;
 		}
 		const normalizedSandboxConfig = this._withDefaultSandboxConfig(sandboxConfig);
-		if (this._sandboxConfigPath && this._areSandboxConfigsEqual(this._sandboxConfig, normalizedSandboxConfig)) {
+		if (this._sandboxConfigPath && equals(this._sandboxConfig, normalizedSandboxConfig)) {
 			return this._sandboxConfigPath;
 		}
 		this._sandboxConfig = normalizedSandboxConfig;
@@ -220,9 +224,7 @@ export class McpSandboxService extends Disposable implements IMcpSandboxService 
 
 	private _getDefaultAllowWrite(): readonly string[] {
 		return [
-			'.',
-			'~/.npm',
-			this._pathJoin(this._appRoot, 'node_modules', '@anthropic-ai'),
+			'~/.npm'
 		];
 	}
 
@@ -255,25 +257,17 @@ export class McpSandboxService extends Disposable implements IMcpSandboxService 
 		await this._updateSandboxConfig(sandboxConfig);
 	}
 
-	private _areSandboxConfigsEqual(left: IMcpSandboxConfiguration | undefined, right: IMcpSandboxConfiguration | undefined): boolean {
-		if (left === right) {
-			return true;
-		}
-		if (!left || !right) {
-			return false;
-		}
-		return JSON.stringify(left) === JSON.stringify(right);
-	}
-
 	private _pathJoin = (...segments: string[]) => {
 		const path = this._os === OperatingSystem.Windows ? win32 : posix;
 		return path.join(...segments);
 	};
 
-	private async _initTempDir(): Promise<void> {
-		const remoteEnv = this._remoteEnvDetails || await this._remoteEnvDetailsPromise;
-		if (remoteEnv) {
-			this._tempDir = remoteEnv.tmpDir;
+	private async _initTempDir(remoteAuthority?: string): Promise<void> {
+		if (remoteAuthority) {
+			this._remoteEnvDetails = await this._remoteEnvDetailsPromise;
+			if (this._remoteEnvDetails) {
+				this._tempDir = this._remoteEnvDetails.tmpDir;
+			}
 		} else {
 			const environmentService = this._environmentService as IEnvironmentService & { tmpDir?: URI };
 			this._tempDir = environmentService.tmpDir;
