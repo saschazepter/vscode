@@ -400,7 +400,7 @@
 .interactive-item-container .value .rendered-markdown h2 {
 	font-size: var(--vscode-chat-font-size-body-xl);
 	font-weight: 600;
-	margin: 16px 0 8px 0;
+	margin: 1.5em 0 0.875em 0;
 	font-family: var(--vscode-chat-font-family, inherit);
 }
 
@@ -417,8 +417,7 @@
 
 .interactive-item-container.editing-session .value .rendered-markdown h3 {
 	font-size: var(--vscode-chat-font-size-body-m);
-	margin: 0 0 8px 0;
-	font-weight: unset;
+	margin: 1.5em 0 0.875em 0;
 }
 
 /* Codicons next to text need to be aligned with the text */
@@ -668,7 +667,7 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	.monaco-tokenized-source,
 	code {
 		font-family: var(--monaco-monospace-font);
-		font-size: var(--vscode-chat-font-size-body-s);
+		font-size: 12px;
 		color: var(--vscode-textPreformat-foreground);
 		background-color: var(--vscode-textPreformat-background);
 		padding: 1px 3px;
