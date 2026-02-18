@@ -87,23 +87,15 @@ export class NullLanguageModelsService implements ILanguageModelsService {
 
 	async migrateLanguageModelsProviderGroup(languageModelsProviderGroup: ILanguageModelsProviderGroup): Promise<void> { }
 
-	getRecentlyUsedModelIds(_maxCount?: number): string[] {
+	getRecentlyUsedModelIds(): string[] {
 		return [];
 	}
 
-	recordModelUsage(_modelIdentifier: string): void { }
+	recordModelUsage(): void { }
 
 	getCuratedModels(): ICuratedModels {
 		return { free: [], paid: [] };
 	}
-
-	getNewModelIds(): string[] {
-		return [];
-	}
-
-	onDidChangeNewModelIds = Event.None;
-
-	markNewModelsAsSeen(): void { }
 
 	restrictedChatParticipants = observableValue('restrictedChatParticipants', Object.create(null));
 }

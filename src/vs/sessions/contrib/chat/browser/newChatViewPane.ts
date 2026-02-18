@@ -7,9 +7,12 @@ import './media/chatWidget.css';
 import './media/chatWelcomePart.css';
 import * as dom from '../../../../base/browser/dom.js';
 import { Codicon } from '../../../../base/common/codicons.js';
+import { ThemeIcon } from '../../../../base/common/themables.js';
 import { Separator, toAction } from '../../../../base/common/actions.js';
 import { Radio } from '../../../../base/browser/ui/radio/radio.js';
+import { DropdownMenuActionViewItem } from '../../../../base/browser/ui/dropdown/dropdownActionViewItem.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
+import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { KeyCode } from '../../../../base/common/keyCodes.js';
 import { Disposable, DisposableStore, MutableDisposable } from '../../../../base/common/lifecycle.js';
 import { IObservable, observableValue } from '../../../../base/common/observable.js';
@@ -48,13 +51,39 @@ import { WorkspaceFolderCountContext } from '../../../../workbench/common/contex
 import { IViewDescriptorService } from '../../../../workbench/common/views.js';
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
 import { IFileDialogService } from '../../../../platform/dialogs/common/dialogs.js';
-import { IWorkspacesService, isRecentFolder } from '../../../../platform/workspaces/common/workspaces.js';
+import { IWorkspacesService, IRecentFolder, isRecentFolder } from '../../../../platform/workspaces/common/workspaces.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
 import { IViewPaneOptions, ViewPane } from '../../../../workbench/browser/parts/views/viewPane.js';
 import { ContextMenuController } from '../../../../editor/contrib/contextmenu/browser/contextmenu.js';
 import { getSimpleEditorOptions } from '../../../../workbench/contrib/codeEditor/browser/simpleEditorOptions.js';
+import { isString } from '../../../../base/common/types.js';
 
 // #region --- Target Config ---
+
+/**
+ * A dropdown menu action item that shows an icon, a text label, and a chevron.
+ */
+class LabeledDropdownMenuActionViewItem extends DropdownMenuActionViewItem {
+	protected override renderLabel(element: HTMLElement): null {
+		// Render icon as a separate codicon element
+		const classNames = typeof this.options.classNames === 'string'
+			? this.options.classNames.split(/\s+/g).filter(s => !!s)
+			: (this.options.classNames ?? []);
+		if (classNames.length > 0) {
+			const icon = dom.append(element, dom.$('span'));
+			icon.classList.add('codicon', ...classNames);
+		}
+
+		// Add text label (not affected by codicon font)
+		const label = dom.append(element, dom.$('span.sessions-chat-dropdown-label'));
+		label.textContent = this._action.label;
+
+		// Add chevron
+		dom.append(element, renderIcon(Codicon.chevronDown));
+
+		return null;
+	}
+}
 
 /**
  * Tracks which agent session targets are available and which is selected.
@@ -178,6 +207,8 @@ class NewChatWidget extends Disposable {
 	private _localModePickersContainer: HTMLElement | undefined;
 	private _localMode: 'workspace' | 'worktree' = 'worktree';
 	private _selectedFolderUri: URI | undefined;
+	private _recentlyPickedFolders: URI[] = [];
+	private _cachedRecentFolders: IRecentFolder[] = [];
 	private readonly _pickerWidgets = new Map<string, ChatSessionPickerActionItem | SearchableOptionPickerActionItem>();
 	private readonly _pickerWidgetDisposables = this._register(new DisposableStore());
 	private readonly _optionEmitters = new Map<string, Emitter<IChatSessionProviderOptionItem>>();
@@ -205,11 +236,24 @@ class NewChatWidget extends Disposable {
 		this._targetConfig = this._register(new TargetConfig(options.targetConfig));
 		this._options = options;
 
-		// Restore last picked folder
+		// Restore last picked folder and recently picked folders
 		const lastFolder = this.storageService.get('agentSessions.lastPickedFolder', StorageScope.PROFILE);
 		if (lastFolder) {
 			try { this._selectedFolderUri = URI.parse(lastFolder); } catch { /* ignore */ }
 		}
+		try {
+			const stored = this.storageService.get('agentSessions.recentlyPickedFolders', StorageScope.PROFILE);
+			if (stored) {
+				this._recentlyPickedFolders = JSON.parse(stored).map((s: string) => URI.parse(s));
+			}
+		} catch { /* ignore */ }
+
+		// Pre-fetch recently opened folders
+		this.workspacesService.getRecentlyOpened().then(recent => {
+			this._cachedRecentFolders = recent.workspaces.filter(isRecentFolder).slice(0, 10);
+		}).catch(error => {
+			this.logService.error('Failed to fetch recently opened workspaces for agent sessions', error);
+		});
 
 		// When target changes, regenerate pending resource
 		this._register(this._targetConfig.onDidChangeSelectedTarget(() => {
@@ -228,10 +272,7 @@ class NewChatWidget extends Disposable {
 		}));
 
 		// Listen for option group changes to re-render pickers
-		this._register(this.chatSessionsService.onDidChangeOptionGroups(() => {
-			this._notifyFolderSelection();
-			this._renderExtensionPickers();
-		}));
+		this._register(this.chatSessionsService.onDidChangeOptionGroups(() => this._renderExtensionPickers()));
 
 		// React to chat session option changes
 		this._register(this.chatSessionsService.onDidChangeSessionOptions((e: URI | undefined) => {
@@ -304,17 +345,32 @@ class NewChatWidget extends Disposable {
 		return target;
 	}
 
+	private readonly _pendingSessionResources = new Map<string, URI>();
+
 	private _generatePendingSessionResource(): void {
 		const target = this._getEffectiveTarget();
 		if (!target || target === AgentSessionProviders.Local) {
 			this._pendingSessionResource = undefined;
 			return;
 		}
+
+		// Reuse existing pending resource for the same target type
+		const existing = this._pendingSessionResources.get(target);
+		if (existing) {
+			this._pendingSessionResource = existing;
+			return;
+		}
+
 		this._pendingSessionResource = getResourceForNewChatSession({
 			type: target,
 			position: this._options.sessionPosition ?? ChatSessionPosition.Sidebar,
 			displayName: '',
 		});
+		this._pendingSessionResources.set(target, this._pendingSessionResource);
+
+		// Create the session in the extension so that session options can be stored
+		this.chatSessionsService.getOrCreateChatSession(this._pendingSessionResource, CancellationToken.None)
+			.catch((err) => this.logService.trace('Failed to create pending session:', err));
 	}
 
 	// --- Editor ---
@@ -514,34 +570,30 @@ class NewChatWidget extends Disposable {
 			: localize('localMode.worktree', "Worktree");
 		const modeIcon = this._localMode === 'workspace' ? Codicon.folder : Codicon.worktree;
 
-		const button = dom.append(this._localModeDropdownContainer, dom.$('.sessions-chat-dropdown-button'));
-		button.tabIndex = 0;
-		button.role = 'button';
-		button.ariaHasPopup = 'true';
-		dom.append(button, renderIcon(modeIcon));
-		dom.append(button, dom.$('span.sessions-chat-dropdown-label', undefined, modeLabel));
-		dom.append(button, renderIcon(Codicon.chevronDown));
-
-		this._localModeDisposables.add(dom.addDisposableListener(button, dom.EventType.CLICK, () => {
-			const actions = [
-				toAction({
-					id: 'localMode.workspace',
-					label: localize('localMode.workspace', "Workspace"),
-					checked: this._localMode === 'workspace',
-					run: () => this._setLocalMode('workspace'),
-				}),
-				toAction({
-					id: 'localMode.worktree',
-					label: localize('localMode.worktree', "Worktree"),
-					checked: this._localMode === 'worktree',
-					run: () => this._setLocalMode('worktree'),
-				}),
-			];
-			this.contextMenuService.showContextMenu({
-				getAnchor: () => button,
-				getActions: () => actions,
-			});
-		}));
+		const modeAction = toAction({ id: 'localMode', label: modeLabel, run: () => { } });
+		const modeDropdown = this._localModeDisposables.add(new LabeledDropdownMenuActionViewItem(
+			modeAction,
+			{
+				getActions: () => [
+					toAction({
+						id: 'localMode.workspace',
+						label: localize('localMode.workspace', "Workspace"),
+						checked: this._localMode === 'workspace',
+						run: () => this._setLocalMode('workspace'),
+					}),
+					toAction({
+						id: 'localMode.worktree',
+						label: localize('localMode.worktree', "Worktree"),
+						checked: this._localMode === 'worktree',
+						run: () => this._setLocalMode('worktree'),
+					}),
+				],
+			},
+			this.contextMenuService,
+			{ classNames: [...ThemeIcon.asClassNameArray(modeIcon)] }
+		));
+		const modeSlot = dom.append(this._localModeDropdownContainer, dom.$('.sessions-chat-picker-slot'));
+		modeDropdown.render(modeSlot);
 
 		// Render pickers in the right side
 		this._renderLocalModePickers();
@@ -557,6 +609,7 @@ class NewChatWidget extends Disposable {
 	}
 
 	private _notifyFolderSelection(): void {
+		this._selectedOptions.clear();
 		if (!this._pendingSessionResource) {
 			return;
 		}
@@ -567,6 +620,11 @@ class NewChatWidget extends Disposable {
 				[{ optionId: 'repository', value: folderUri.fsPath }]
 			).catch((err) => this.logService.error('Failed to notify extension of folder selection:', err));
 		}
+	}
+
+	private _addToRecentlyPickedFolders(folderUri: URI): void {
+		this._recentlyPickedFolders = [folderUri, ...this._recentlyPickedFolders.filter(f => !isEqual(f, folderUri))].slice(0, 10);
+		this.storageService.store('agentSessions.recentlyPickedFolders', JSON.stringify(this._recentlyPickedFolders.map(f => f.toString())), StorageScope.PROFILE, StorageTarget.MACHINE);
 	}
 
 	private _renderLocalModePickers(): void {
@@ -725,56 +783,71 @@ class NewChatWidget extends Disposable {
 		const currentFolderUri = this._selectedFolderUri ?? this.workspaceContextService.getWorkspace().folders[0]?.uri;
 		const folderName = currentFolderUri ? basename(currentFolderUri) : localize('pickFolder', "Pick Folder");
 
-		const slot = dom.append(container, dom.$('.sessions-chat-picker-slot'));
-		const button = dom.append(slot, dom.$('.sessions-chat-dropdown-button'));
-		button.tabIndex = 0;
-		button.role = 'button';
-		button.ariaHasPopup = 'true';
-		dom.append(button, dom.$('span.sessions-chat-dropdown-label', undefined, folderName));
-		dom.append(button, renderIcon(Codicon.chevronDown));
-
 		const switchFolder = async (folderUri: URI) => {
 			this._selectedFolderUri = folderUri;
+			this._addToRecentlyPickedFolders(folderUri);
 			this.storageService.store('agentSessions.lastPickedFolder', folderUri.toString(), StorageScope.PROFILE, StorageTarget.MACHINE);
 			this._notifyFolderSelection();
 			this._renderExtensionPickers(true);
 		};
 
-		disposables.add(dom.addDisposableListener(button, dom.EventType.CLICK, async () => {
-			const recentlyOpened = await this.workspacesService.getRecentlyOpened();
-			const recentFolders = recentlyOpened.workspaces
-				.filter(isRecentFolder)
-				.filter(r => !currentFolderUri || !isEqual(r.folderUri, currentFolderUri))
-				.slice(0, 10);
+		const folderAction = toAction({ id: 'folderPicker', label: folderName, run: () => { } });
+		const folderDropdown = disposables.add(new LabeledDropdownMenuActionViewItem(
+			folderAction,
+			{
+				getActions: () => this._getFolderPickerActions(currentFolderUri, switchFolder),
+			},
+			this.contextMenuService,
+			{ classNames: [...ThemeIcon.asClassNameArray(Codicon.folder)] }
+		));
+		const slot = dom.append(container, dom.$('.sessions-chat-picker-slot'));
+		folderDropdown.render(slot);
+	}
 
-			const actions = recentFolders.map(recent => toAction({
-				id: recent.folderUri.toString(),
-				label: recent.label || basename(recent.folderUri),
-				run: () => switchFolder(recent.folderUri),
-			}));
+	private _getFolderPickerActions(currentFolderUri: URI | undefined, switchFolder: (uri: URI) => Promise<void>): (ReturnType<typeof toAction> | Separator)[] {
+		const seenUris = new Set<string>();
+		if (currentFolderUri) {
+			seenUris.add(currentFolderUri.toString());
+		}
 
-			actions.push(new Separator());
+		const actions: (ReturnType<typeof toAction> | Separator)[] = [];
+
+		// Combine recently picked folders and recently opened folders (picked first, then opened)
+		const allFolders: { uri: URI; label?: string }[] = [
+			...this._recentlyPickedFolders.map(uri => ({ uri })),
+			...this._cachedRecentFolders.map(r => ({ uri: r.folderUri, label: r.label })),
+		];
+		for (const folder of allFolders) {
+			const key = folder.uri.toString();
+			if (seenUris.has(key)) {
+				continue;
+			}
+			seenUris.add(key);
 			actions.push(toAction({
-				id: 'browse',
-				label: localize('browseFolder', "Browse..."),
-				run: async () => {
-					const selected = await this.fileDialogService.showOpenDialog({
-						canSelectFiles: false,
-						canSelectFolders: true,
-						canSelectMany: false,
-						title: localize('selectFolder', "Select Folder"),
-					});
-					if (selected?.[0]) {
-						await switchFolder(selected[0]);
-					}
-				},
+				id: key,
+				label: folder.label || basename(folder.uri),
+				run: () => switchFolder(folder.uri),
 			}));
+		}
 
-			this.contextMenuService.showContextMenu({
-				getAnchor: () => button,
-				getActions: () => actions,
-			});
+		actions.push(new Separator());
+		actions.push(toAction({
+			id: 'browse',
+			label: localize('browseFolder', "Browse..."),
+			run: async () => {
+				const selected = await this.fileDialogService.showOpenDialog({
+					canSelectFiles: false,
+					canSelectFolders: true,
+					canSelectMany: false,
+					title: localize('selectFolder', "Select Folder"),
+				});
+				if (selected?.[0]) {
+					await switchFolder(selected[0]);
+				}
+			},
 		}));
+
+		return actions;
 	}
 
 	private _renderExtensionPickersInContainer(container: HTMLElement, sessionType: AgentSessionProviders): void {
@@ -853,7 +926,19 @@ class NewChatWidget extends Disposable {
 	}
 
 	private _getDefaultOptionForGroup(optionGroup: IChatSessionProviderOptionGroup): IChatSessionProviderOptionItem | undefined {
-		return this._selectedOptions.get(optionGroup.id) ?? optionGroup.items.find((item) => item.default === true);
+		const selectedOption = this._selectedOptions.get(optionGroup.id);
+		if (selectedOption) {
+			return selectedOption;
+		}
+
+		if (this._pendingSessionResource) {
+			const sessionOption = this.chatSessionsService.getSessionOption(this._pendingSessionResource, optionGroup.id);
+			if (!isString(sessionOption)) {
+				return sessionOption;
+			}
+		}
+
+		return optionGroup.items.find((item) => item.default === true);
 	}
 
 	private _syncOptionsFromSession(sessionResource: URI): void {
