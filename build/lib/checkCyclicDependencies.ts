@@ -129,7 +129,7 @@ export function processFile(filename: string, graph: Graph): void {
 function main(): void {
 	const folder = process.argv[2];
 	if (!folder) {
-		console.error('Usage: npx tsx build/lib/checkCyclicDependencies.ts <folder>');
+		console.error('Usage: node build/lib/checkCyclicDependencies.ts <folder>');
 		process.exit(1);
 	}
 
