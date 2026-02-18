@@ -54,9 +54,9 @@ suite('MarkersModel Test', () => {
 		// Simulate a task problem matcher and language extension both reporting
 		// the same diagnostic for the same file (#244424).
 		const taskMarker = aMarker('some resource', MarkerSeverity.Error, 10, 5, 11, 10, 'some message', 'eslint');
-		(taskMarker as any).owner = 'taskOwner';
+		taskMarker.owner = 'taskOwner';
 		const extensionMarker = aMarker('some resource', MarkerSeverity.Error, 10, 5, 11, 10, 'some message', 'eslint');
-		(extensionMarker as any).owner = 'extensionOwner';
+		extensionMarker.owner = 'extensionOwner';
 
 		const testObject = new TestMarkersModel([taskMarker, extensionMarker]);
 		const actuals = testObject.resourceMarkers[0].markers;
