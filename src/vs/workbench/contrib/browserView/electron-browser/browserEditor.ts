@@ -43,7 +43,7 @@ import { ThemeIcon } from '../../../../base/common/themables.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { encodeBase64, VSBuffer } from '../../../../base/common/buffer.js';
 import { IChatRequestVariableEntry } from '../../chat/common/attachments/chatVariableEntries.js';
-import { IBrowserTargetLocator, getDisplayNameFromOuterHTML } from '../../../../platform/browserElements/common/browserElements.js';
+import { IElementAncestor, IElementData, IBrowserTargetLocator, getDisplayNameFromOuterHTML } from '../../../../platform/browserElements/common/browserElements.js';
 import { logBrowserOpen } from './browserViewTelemetry.js';
 import { URI } from '../../../../base/common/uri.js';
 
@@ -711,16 +711,14 @@ export class BrowserEditor extends EditorPane {
 			// Prepare HTML/CSS context
 			const displayName = getDisplayNameFromOuterHTML(elementData.outerHTML);
 			const attachCss = this.configurationService.getValue<boolean>('chat.sendElementsToChat.attachCSS');
-			let value = (attachCss ? 'Attached HTML and CSS Context' : 'Attached HTML Context') + '\n\n' + elementData.outerHTML;
-			if (attachCss) {
-				value += '\n\n' + elementData.computedStyle;
-			}
+			const value = this.createElementContextValue(elementData, displayName, attachCss);
 
 			toAttach.push({
 				id: 'element-' + Date.now(),
 				name: displayName,
 				fullName: displayName,
 				value: value,
+				modelDescription: 'Structured browser element context with HTML path, attributes, and computed styles.',
 				kind: 'element',
 				icon: ThemeIcon.fromId(Codicon.layout.id),
 				ancestors: elementData.ancestors,
@@ -804,6 +802,7 @@ export class BrowserEditor extends EditorPane {
 				name: localize('consoleLogs', 'Console Logs'),
 				fullName: localize('consoleLogs', 'Console Logs'),
 				value: logs,
+				modelDescription: 'Console logs captured from Integrated Browser.',
 				kind: 'element',
 				icon: ThemeIcon.fromId(Codicon.terminal.id),
 			});
@@ -848,6 +847,109 @@ export class BrowserEditor extends EditorPane {
 			this._consoleSessionCts.dispose(true);
 			this._consoleSessionCts = undefined;
 		}
+	}
+
+	private createElementContextValue(elementData: IElementData, displayName: string, attachCss: boolean): string {
+		const sections: string[] = [];
+		sections.push('Attached Element Context from Integrated Browser');
+		sections.push(`Element: ${displayName}`);
+
+		const htmlPath = this.formatElementPath(elementData.ancestors);
+		if (htmlPath) {
+			sections.push(`HTML Path:\n${htmlPath}`);
+		}
+
+		const attributeTable = this.formatElementMap(elementData.attributes);
+		if (attributeTable) {
+			sections.push(`Attributes:\n${attributeTable}`);
+		}
+
+		const computedStyleTable = this.formatElementMap(elementData.computedStyles);
+		if (computedStyleTable) {
+			sections.push(`Computed Styles:\n${computedStyleTable}`);
+		}
+
+		if (elementData.dimensions) {
+			const { top, left, width, height } = elementData.dimensions;
+			sections.push(
+				`Dimensions:\n- top: ${Math.round(top)}px\n- left: ${Math.round(left)}px\n- width: ${Math.round(width)}px\n- height: ${Math.round(height)}px`
+			);
+		}
+
+		const innerText = elementData.innerText?.trim();
+		if (innerText) {
+			sections.push(`Inner Text:\n\`\`\`text\n${innerText}\n\`\`\``);
+		}
+
+		sections.push(`Outer HTML:\n\`\`\`html\n${elementData.outerHTML}\n\`\`\``);
+
+		if (attachCss) {
+			sections.push(`Full Computed CSS:\n\`\`\`css\n${elementData.computedStyle}\n\`\`\``);
+		}
+
+		return sections.join('\n\n');
+	}
+
+	private formatElementPath(ancestors: readonly IElementAncestor[] | undefined): string | undefined {
+		if (!ancestors || ancestors.length === 0) {
+			return undefined;
+		}
+
+		return ancestors
+			.map(ancestor => {
+				const classes = ancestor.classNames?.length ? `.${ancestor.classNames.join('.')}` : '';
+				const id = ancestor.id ? `#${ancestor.id}` : '';
+				return `${ancestor.tagName}${id}${classes}`;
+			})
+			.join(' > ');
+	}
+
+	private formatElementMap(entries: Readonly<Record<string, string>> | undefined): string | undefined {
+		if (!entries || Object.keys(entries).length === 0) {
+			return undefined;
+		}
+
+		const normalizedEntries = new Map(Object.entries(entries));
+		const lines: string[] = [];
+
+		const marginShorthand = this.createBoxShorthand(normalizedEntries, 'margin');
+		if (marginShorthand) {
+			lines.push(`- margin: ${marginShorthand}`);
+		}
+
+		const paddingShorthand = this.createBoxShorthand(normalizedEntries, 'padding');
+		if (paddingShorthand) {
+			lines.push(`- padding: ${paddingShorthand}`);
+		}
+
+		for (const [name, value] of Array.from(normalizedEntries.entries()).sort(([a], [b]) => a.localeCompare(b))) {
+			lines.push(`- ${name}: ${value}`);
+		}
+
+		return lines.join('\n');
+	}
+
+	private createBoxShorthand(entries: Map<string, string>, propertyName: 'margin' | 'padding'): string | undefined {
+		const topKey = `${propertyName}-top`;
+		const rightKey = `${propertyName}-right`;
+		const bottomKey = `${propertyName}-bottom`;
+		const leftKey = `${propertyName}-left`;
+
+		const top = entries.get(topKey);
+		const right = entries.get(rightKey);
+		const bottom = entries.get(bottomKey);
+		const left = entries.get(leftKey);
+
+		if (top === undefined || right === undefined || bottom === undefined || left === undefined) {
+			return undefined;
+		}
+
+		entries.delete(topKey);
+		entries.delete(rightKey);
+		entries.delete(bottomKey);
+		entries.delete(leftKey);
+
+		return `${top} ${right} ${bottom} ${left}`;
 	}
 
 	/**

@@ -540,13 +540,12 @@ export class NativeBrowserElementsMainService extends Disposable implements INat
 								}
 							}
 
-							// Get key computed styles
-							const KEY_CSS_PROPERTIES = ['color', 'background-color', 'font-size', 'font-family', 'display', 'position'];
+							// Capture all computed styles for model-facing element context.
 							const { computedStyle: computedStyleArray } = await debuggers.sendCommand('CSS.getComputedStyleForNode', { nodeId }, sessionId);
 							if (computedStyleArray) {
 								computedStyles = {};
 								for (const prop of computedStyleArray) {
-									if (KEY_CSS_PROPERTIES.includes(prop.name)) {
+									if (prop.name && typeof prop.value === 'string') {
 										computedStyles[prop.name] = prop.value;
 									}
 								}
@@ -555,6 +554,7 @@ export class NativeBrowserElementsMainService extends Disposable implements INat
 							// Non-critical: if any enrichment fails, we still have the core data
 						}
 
+						// TODO: computedStyle here is actually the matched styles
 						resolve({
 							outerHTML,
 							computedStyle: formatted,

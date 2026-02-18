@@ -2492,6 +2492,22 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	overflow: hidden;
 }
 
+.chat-element-hover .chat-element-hover-show-more {
+	background: none;
+	border: none;
+	padding: 0;
+	margin-top: 6px;
+	color: var(--vscode-textLink-foreground);
+	cursor: pointer;
+	font-size: 12px;
+	text-decoration: underline;
+}
+
+.chat-element-hover .chat-element-hover-show-more:hover,
+.chat-element-hover .chat-element-hover-show-more:focus-visible {
+	color: var(--vscode-textLink-activeForeground);
+}
+
 
 .chat-attached-context-attachment .chat-attached-context-pill {
 	font-size: 12px;
