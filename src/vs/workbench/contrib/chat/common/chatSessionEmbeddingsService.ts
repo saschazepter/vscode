@@ -102,4 +102,10 @@ export interface IChatSessionEmbeddingsService extends IDisposable {
 	 * Remove a session from the index.
 	 */
 	removeSession(sessionResource: URI): void;
+
+	/**
+	 * Get indexed search text for a session, if available.
+	 * This can be used by views that want to support content-aware filtering.
+	 */
+	getSearchText(sessionResource: URI): string | undefined;
 }

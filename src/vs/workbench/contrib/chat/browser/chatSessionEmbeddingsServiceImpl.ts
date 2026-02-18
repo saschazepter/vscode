@@ -6,14 +6,15 @@
 import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { Disposable, DisposableStore } from '../../../../base/common/lifecycle.js';
-import { Schemas } from '../../../../base/common/network.js';
 import { URI } from '../../../../base/common/uri.js';
 import { normalizeTfIdfScores, TfIdfCalculator, TfIdfDocument } from '../../../../base/common/tfIdf.js';
+import { hasKey } from '../../../../base/common/types.js';
 import { localize } from '../../../../nls.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
-import { IChatService, IChatDetail, ResponseModelState } from '../common/chatService/chatService.js';
+import { IChatService, IChatDetail } from '../common/chatService/chatService.js';
 import { IChatSessionEmbeddingsService, IChatSessionSearchResult } from '../common/chatSessionEmbeddingsService.js';
 import { IAiEmbeddingVectorService } from '../../../services/aiEmbeddingVector/common/aiEmbeddingVectorService.js';
+import { chatSessionResourceToId } from '../common/model/chatUri.js';
 
 export class ChatSessionEmbeddingsService extends Disposable implements IChatSessionEmbeddingsService {
 	declare readonly _serviceBrand: undefined;
@@ -31,6 +32,7 @@ export class ChatSessionEmbeddingsService extends Disposable implements IChatSes
 		lastMessageDate: number;
 		textChunks: string[];
 	}>();
+	private readonly _indexedSessionTextById = new Map<string, string>();
 
 	private _isReady = false;
 	private _initPromise: Promise<void> | undefined;
@@ -80,7 +82,9 @@ export class ChatSessionEmbeddingsService extends Disposable implements IChatSes
 			}
 		}
 
-		return this._searchWithTfIdf(query, maxResults, token);
+		const results = this._searchWithTfIdf(query, maxResults, token);
+		this.logService.info(`[ChatSessionEmbeddingsService] Search for "${query}": ${results.length} results from ${this._indexedSessions.size} indexed sessions`);
+		return results;
 	}
 
 	private _searchWithTfIdf(query: string, maxResults: number, token: CancellationToken): IChatSessionSearchResult[] {
@@ -180,24 +184,20 @@ export class ChatSessionEmbeddingsService extends Disposable implements IChatSes
 
 		// Clear existing index
 		this._indexedSessions.clear();
+		this._indexedSessionTextById.clear();
 
-		// Get all history sessions (not currently active)
-		const historyItems = await this.chatService.getHistorySessionItems();
-		const liveItems = await this.chatService.getLiveSessionItems();
-		const allItems = [...historyItems, ...liveItems];
+		// Get all sessions (live + history)
+		const allItems = await this.chatService.getLocalSessionHistory();
 
 		const documents: TfIdfDocument[] = [];
 
-		for (const item of allItems) {
-			const sessionResource = item.sessionResource;
-			if (sessionResource.scheme !== Schemas.vscodeLocalChatSession) {
-				continue;
-			}
+		this.logService.info(`[ChatSessionEmbeddingsService] Found ${allItems.length} sessions to index`);
 
+		for (const item of allItems) {
 			try {
 				await this._indexSessionFromDetail(item, documents);
 			} catch (e) {
-				this.logService.trace(`[ChatSessionEmbeddingsService] Failed to index session ${sessionResource}: ${e}`);
+				this.logService.info(`[ChatSessionEmbeddingsService] Failed to index session ${item.sessionResource}: ${e}`);
 			}
 		}
 
@@ -206,7 +206,7 @@ export class ChatSessionEmbeddingsService extends Disposable implements IChatSes
 			this._tfIdfCalculator.updateDocuments(documents);
 		}
 
-		this.logService.trace(`[ChatSessionEmbeddingsService] Index rebuilt with ${this._indexedSessions.size} sessions`);
+		this.logService.info(`[ChatSessionEmbeddingsService] Index rebuilt with ${this._indexedSessions.size} sessions, ${documents.length} documents`);
 		this._onDidUpdateIndex.fire();
 	}
 
@@ -229,14 +229,10 @@ export class ChatSessionEmbeddingsService extends Disposable implements IChatSes
 		const sessionResource = item.sessionResource;
 		const key = sessionResource.toString();
 
-		// Skip sessions with incomplete responses
-		if (item.lastResponseState === ResponseModelState.Pending) {
-			return;
-		}
-
 		// Try to get session data for text extraction
 		const sessionRef = await this.chatService.getOrRestoreSession(sessionResource);
 		if (!sessionRef) {
+			this.logService.info(`[ChatSessionEmbeddingsService] Could not restore session: ${sessionResource}`);
 			return;
 		}
 
@@ -261,7 +257,7 @@ export class ChatSessionEmbeddingsService extends Disposable implements IChatSes
 				const parts: string[] = [];
 
 				// User message
-				const userMessage = request.message.text;
+				const userMessage = request.message.text || request.message.parts.map(part => part.text).join('');
 				if (userMessage) {
 					parts.push(userMessage);
 				}
@@ -271,6 +267,13 @@ export class ChatSessionEmbeddingsService extends Disposable implements IChatSes
 					for (const part of request.response.response.value) {
 						if (part.kind === 'markdownContent' && part.content.value) {
 							parts.push(part.content.value);
+						} else if (hasKey(part, { message: true }) && typeof part.message === 'string' && part.message.length > 0) {
+							parts.push(part.message);
+						} else if (hasKey(part, { content: true })) {
+							const candidateContent = part.content as unknown;
+							if (typeof candidateContent === 'string' && candidateContent.length > 0) {
+								parts.push(candidateContent);
+							}
 						}
 					}
 				}
@@ -288,6 +291,10 @@ export class ChatSessionEmbeddingsService extends Disposable implements IChatSes
 					textChunks,
 				});
 
+				const sessionId = chatSessionResourceToId(sessionResource);
+				this._indexedSessionTextById.set(sessionId, textChunks.join('\n'));
+				this.logService.info(`[ChatSessionEmbeddingsService] Indexed session "${model.title || 'Untitled Session'}" with ${textChunks.length} text chunks`);
+
 				documents.push({
 					key,
 					textChunks,
@@ -302,9 +309,21 @@ export class ChatSessionEmbeddingsService extends Disposable implements IChatSes
 	removeSession(sessionResource: URI): void {
 		const key = sessionResource.toString();
 		if (this._indexedSessions.delete(key)) {
+			const sessionId = chatSessionResourceToId(sessionResource);
+			this._indexedSessionTextById.delete(sessionId);
 			this._tfIdfCalculator.deleteDocument(key);
 			this._onDidUpdateIndex.fire();
 		}
+	}
+
+	getSearchText(sessionResource: URI): string | undefined {
+		const entry = this._indexedSessions.get(sessionResource.toString());
+		if (!entry) {
+			const sessionId = chatSessionResourceToId(sessionResource);
+			return this._indexedSessionTextById.get(sessionId);
+		}
+
+		return entry.textChunks.join('\n');
 	}
 }
 

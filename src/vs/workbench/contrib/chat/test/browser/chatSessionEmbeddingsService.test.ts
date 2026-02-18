@@ -130,7 +130,16 @@ class MockChatServiceForEmbeddings implements IChatService {
 	removePendingRequest(): void { }
 	setPendingRequests(): void { }
 	addCompleteRequest(): void { }
-	async getLocalSessionHistory(): Promise<IChatDetail[]> { return []; }
+	async getLocalSessionHistory(): Promise<IChatDetail[]> {
+		return Array.from(this._models.values()).map(model => ({
+			sessionResource: model.sessionResource,
+			title: model.title,
+			lastMessageDate: Date.now(),
+			timing: { created: Date.now(), lastRequestStarted: Date.now(), lastRequestEnded: Date.now() },
+			isActive: true,
+			lastResponseState: ResponseModelState.Complete,
+		}));
+	}
 	async clearAllHistoryEntries(): Promise<void> { }
 	async removeHistoryEntry(): Promise<void> { }
 	notifyUserAction(): void { }
