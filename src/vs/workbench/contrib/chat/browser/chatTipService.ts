@@ -23,6 +23,7 @@ import { ILanguageModelToolsService } from '../common/tools/languageModelToolsSe
 import { localChatSessionType } from '../common/chatSessionsService.js';
 import { IChatService } from '../common/chatService/chatService.js';
 import { CreateSlashCommandsUsageTracker } from './createSlashCommandsUsageTracker.js';
+import { IChatEntitlementService } from '../../../services/chat/common/chatEntitlementService.js';
 
 export const IChatTipService = createDecorator<IChatTipService>('chatTipService');
 
@@ -569,10 +570,16 @@ export class ChatTipService extends Disposable implements IChatTipService {
 		@IChatService private readonly _chatService: IChatService,
 		@IInstantiationService instantiationService: IInstantiationService,
 		@ILogService private readonly _logService: ILogService,
+		@IChatEntitlementService chatEntitlementService: IChatEntitlementService,
 	) {
 		super();
 		this._tracker = this._register(instantiationService.createInstance(TipEligibilityTracker, TIP_CATALOG));
 		this._createSlashCommandsUsageTracker = this._register(new CreateSlashCommandsUsageTracker(this._chatService, this._storageService, () => this._contextKeyService));
+		this._register(chatEntitlementService.onDidChangeQuotaExceeded(() => {
+			if (chatEntitlementService.quotas.chat?.percentRemaining === 0 && this._shownTip) {
+				this.hideTip();
+			}
+		}));
 	}
 
 	resetSession(): void {
