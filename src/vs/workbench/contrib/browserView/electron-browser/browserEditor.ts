@@ -52,6 +52,7 @@ export const CONTEXT_BROWSER_CAN_GO_FORWARD = new RawContextKey<boolean>('browse
 export const CONTEXT_BROWSER_FOCUSED = new RawContextKey<boolean>('browserFocused', true, localize('browser.editorFocused', "Whether the browser editor is focused"));
 export const CONTEXT_BROWSER_STORAGE_SCOPE = new RawContextKey<string>('browserStorageScope', '', localize('browser.storageScope', "The storage scope of the current browser view"));
 export const CONTEXT_BROWSER_HAS_URL = new RawContextKey<boolean>('browserHasUrl', false, localize('browser.hasUrl', "Whether the browser has a URL loaded"));
+export const CONTEXT_BROWSER_HAS_ERROR = new RawContextKey<boolean>('browserHasError', false, localize('browser.hasError', "Whether the browser has a load error"));
 export const CONTEXT_BROWSER_DEVTOOLS_OPEN = new RawContextKey<boolean>('browserDevToolsOpen', false, localize('browser.devToolsOpen', "Whether developer tools are open for the current browser view"));
 export const CONTEXT_BROWSER_ELEMENT_SELECTION_ACTIVE = new RawContextKey<boolean>('browserElementSelectionActive', false, localize('browser.elementSelectionActive', "Whether element selection is currently active"));
 
@@ -188,6 +189,7 @@ export class BrowserEditor extends EditorPane {
 	private _canGoForwardContext!: IContextKey<boolean>;
 	private _storageScopeContext!: IContextKey<string>;
 	private _hasUrlContext!: IContextKey<boolean>;
+	private _hasErrorContext!: IContextKey<boolean>;
 	private _devToolsOpenContext!: IContextKey<boolean>;
 	private _elementSelectionActiveContext!: IContextKey<boolean>;
 
@@ -227,6 +229,7 @@ export class BrowserEditor extends EditorPane {
 		this._canGoForwardContext = CONTEXT_BROWSER_CAN_GO_FORWARD.bindTo(contextKeyService);
 		this._storageScopeContext = CONTEXT_BROWSER_STORAGE_SCOPE.bindTo(contextKeyService);
 		this._hasUrlContext = CONTEXT_BROWSER_HAS_URL.bindTo(contextKeyService);
+		this._hasErrorContext = CONTEXT_BROWSER_HAS_ERROR.bindTo(contextKeyService);
 		this._devToolsOpenContext = CONTEXT_BROWSER_DEVTOOLS_OPEN.bindTo(contextKeyService);
 		this._elementSelectionActiveContext = CONTEXT_BROWSER_ELEMENT_SELECTION_ACTIVE.bindTo(contextKeyService);
 
@@ -526,6 +529,7 @@ export class BrowserEditor extends EditorPane {
 		}
 
 		const error: IBrowserViewLoadError | undefined = this._model.error;
+		this._hasErrorContext.set(!!error);
 		if (error) {
 			// Update error content
 
@@ -990,6 +994,7 @@ export class BrowserEditor extends EditorPane {
 		this._canGoBackContext.reset();
 		this._canGoForwardContext.reset();
 		this._hasUrlContext.reset();
+		this._hasErrorContext.reset();
 		this._storageScopeContext.reset();
 		this._devToolsOpenContext.reset();
 		this._elementSelectionActiveContext.reset();
