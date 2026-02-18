@@ -55,7 +55,12 @@ class OpenIntegratedBrowserAction extends Action2 {
 
 		logBrowserOpen(telemetryService, options.url ? 'commandWithUrl' : 'commandWithoutUrl');
 
-		await editorService.openEditor({ resource }, group);
+		const editorPane = await editorService.openEditor({ resource }, group);
+
+		// Lock the group when opening to the side
+		if (options.openToSide && editorPane?.group) {
+			editorPane.group.lock(true);
+		}
 	}
 }
 
@@ -249,6 +254,34 @@ class AddElementToChatAction extends Action2 {
 	}
 }
 
+class AddConsoleLogsToChatAction extends Action2 {
+	static readonly ID = 'workbench.action.browser.addConsoleLogsToChat';
+
+	constructor() {
+		const enabled = ContextKeyExpr.and(ChatContextKeys.enabled, ContextKeyExpr.equals('config.chat.sendElementsToChat.enabled', true));
+		super({
+			id: AddConsoleLogsToChatAction.ID,
+			title: localize2('browser.addConsoleLogsToChatAction', 'Add Console Logs to Chat'),
+			category: BrowserCategory,
+			icon: Codicon.output,
+			f1: true,
+			precondition: ContextKeyExpr.and(BROWSER_EDITOR_ACTIVE, CONTEXT_BROWSER_HAS_URL, enabled),
+			menu: {
+				id: MenuId.BrowserActionsToolbar,
+				group: 'actions',
+				order: 2,
+				when: enabled
+			}
+		});
+	}
+
+	async run(accessor: ServicesAccessor, browserEditor = accessor.get(IEditorService).activeEditorPane): Promise<void> {
+		if (browserEditor instanceof BrowserEditor) {
+			await browserEditor.addConsoleLogsToChat();
+		}
+	}
+}
+
 class ToggleDevToolsAction extends Action2 {
 	static readonly ID = 'workbench.action.browser.toggleDevTools';
 
@@ -264,7 +297,7 @@ class ToggleDevToolsAction extends Action2 {
 			menu: {
 				id: MenuId.BrowserActionsToolbar,
 				group: 'actions',
-				order: 2,
+				order: 3,
 			},
 			keybinding: {
 				weight: KeybindingWeight.WorkbenchContrib,
@@ -537,6 +570,7 @@ registerAction2(GoForwardAction);
 registerAction2(ReloadAction);
 registerAction2(FocusUrlInputAction);
 registerAction2(AddElementToChatAction);
+registerAction2(AddConsoleLogsToChatAction);
 registerAction2(ToggleDevToolsAction);
 registerAction2(OpenInExternalBrowserAction);
 registerAction2(ClearGlobalBrowserStorageAction);
