@@ -2645,8 +2645,8 @@ have to be updated for changes to the rules above, or to support more deeply nes
 		position: relative;
 		align-items: center;
 		gap: 4px;
-		margin-top: 16px;
-		margin-bottom: 16px;
+		margin-top: 0;
+		margin-bottom: 8px;
 
 		.checkpoint-line-left,
 		.checkpoint-line-right {
@@ -2675,7 +2675,7 @@ have to be updated for changes to the rules above, or to support more deeply nes
 		.monaco-toolbar .action-label {
 			font-size: 12px;
 			line-height: 18px;
-			color: var(--vscode-disabledForeground);
+			color: var(--vscode-descriptionForeground);
 			border: 1px solid transparent;
 			background-color: transparent;
 			padding: 1px 5px;
@@ -2688,13 +2688,18 @@ have to be updated for changes to the rules above, or to support more deeply nes
 		}
 	}
 
+	.checkpoint-container {
+		opacity: 0;
+		transition: opacity 0.1s ease-in-out;
+	}
+
 	.checkpoint-restore-container {
 		margin-top: 10px;
 
 		.checkpoint-label-text {
 			font-size: 12px;
 			line-height: 18px;
-			color: var(--vscode-disabledForeground);
+			color: var(--vscode-descriptionForeground);
 			display: flex;
 			align-items: center;
 			flex-shrink: 0;
@@ -2705,14 +2710,13 @@ have to be updated for changes to the rules above, or to support more deeply nes
 		.checkpoint-dot-separator {
 			font-size: 12px;
 			line-height: 18px;
-			color: var(--vscode-disabledForeground);
+			color: var(--vscode-descriptionForeground);
 			flex-shrink: 0;
 		}
 	}
 
-	.checkpoint-container .monaco-toolbar:focus-within,
-	.checkpoint-restore-container .monaco-toolbar,
-	.interactive-item-container.interactive-request:not(.editing):hover .checkpoint-container .monaco-toolbar {
+	.checkpoint-container:focus-within,
+	.interactive-item-container.interactive-request:not(.editing):hover .checkpoint-container {
 		opacity: 1;
 	}
 
@@ -2751,6 +2755,10 @@ have to be updated for changes to the rules above, or to support more deeply nes
 
 		.request-hover:not(.has-no-actions) {
 			display: block;
+		}
+
+		.checkpoint-container {
+			opacity: 1;
 		}
 	}
 
