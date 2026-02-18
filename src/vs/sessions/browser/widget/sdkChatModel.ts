@@ -15,6 +15,7 @@
 import { Emitter, Event } from '../../../base/common/event.js';
 import { IMarkdownString, MarkdownString } from '../../../base/common/htmlContent.js';
 import { Disposable } from '../../../base/common/lifecycle.js';
+import { localize } from '../../../nls.js';
 import { ICopilotSessionEvent } from '../../../platform/copilotSdk/common/copilotSdkService.js';
 
 // #region Part Types
@@ -141,10 +142,10 @@ export class SdkChatModel extends Disposable {
 				return this._handleSessionIdle();
 
 			case 'session.compaction_start':
-				return this._addProgressToAssistantTurn('Compacting context...');
+				return this._addProgressToAssistantTurn(localize('sdkChat.compacting', "Compacting context..."));
 
 			case 'session.compaction_complete':
-				return this._addProgressToAssistantTurn('Context compacted');
+				return this._addProgressToAssistantTurn(localize('sdkChat.compacted', "Context compacted"));
 
 			case 'assistant.turn_end':
 				return this._handleSessionIdle();

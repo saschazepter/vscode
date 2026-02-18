@@ -170,7 +170,7 @@ export class SdkChatWidget extends Disposable {
 				terminalService.createTerminal({ config: { cwd: URI.file(worktreePath) } }).then(instance => {
 					if (instance) { terminalService.setActiveInstance(instance); }
 					terminalGroupService.showPanel(true);
-				});
+				}, err => this._logService.error('[SdkChatWidget] Failed to create terminal', err));
 			});
 		}));
 		// Quick action: open in VS Code

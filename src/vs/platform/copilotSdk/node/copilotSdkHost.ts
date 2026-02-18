@@ -186,8 +186,10 @@ class CopilotSdkHost extends Disposable implements ICopilotSdkService {
 			return;
 		}
 
-		for (const [, session] of this._sessions) {
-			try { await session.destroy(); } catch { /* best-effort */ }
+		for (const [id, session] of this._sessions) {
+			try { await session.destroy(); } catch (e) {
+				this._onProcessOutput.fire({ stream: 'stderr', data: `[SDK] Failed to destroy session ${id}: ${e}` });
+			}
 		}
 		this._sessions.clear();
 		for (const store of this._sessionDisposables.values()) {
@@ -252,6 +254,8 @@ class CopilotSdkHost extends Disposable implements ICopilotSdkService {
 	async deleteSession(sessionId: string): Promise<void> {
 		const client = await this._ensureClient();
 		this._sessions.delete(sessionId);
+		this._sessionDisposables.get(sessionId)?.dispose();
+		this._sessionDisposables.delete(sessionId);
 		await client.deleteSession(sessionId);
 	}
 

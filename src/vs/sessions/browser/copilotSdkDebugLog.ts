@@ -43,6 +43,7 @@ export class CopilotSdkDebugLog extends Disposable {
 	) {
 		super();
 		CopilotSdkDebugLog._instance = this;
+		this._register({ dispose: () => { if (CopilotSdkDebugLog._instance === this) { CopilotSdkDebugLog._instance = undefined; } } });
 		this._subscribe();
 	}
 
