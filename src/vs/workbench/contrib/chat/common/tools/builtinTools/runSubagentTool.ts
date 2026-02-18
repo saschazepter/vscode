@@ -20,6 +20,7 @@ import { IChatProgress, IChatService } from '../../chatService/chatService.js';
 import { ChatAgentLocation, ChatConfiguration, ChatModeKind } from '../../constants.js';
 import { ILanguageModelsService } from '../../languageModels.js';
 import { ChatModel, IChatRequestModeInstructions } from '../../model/chatModel.js';
+import { chatSessionResourceToId } from '../../model/chatUri.js';
 import { IChatAgentRequest, IChatAgentService } from '../../participants/chatAgents.js';
 import { ComputeAutomaticInstructions } from '../../promptSyntax/computeAutomaticInstructions.js';
 import { IChatRequestHooks } from '../../promptSyntax/hookSchema.js';
@@ -250,7 +251,7 @@ export class RunSubagentTool extends Disposable implements IToolImpl {
 			// Collect hooks from hook .json files
 			let collectedHooks: IChatRequestHooks | undefined;
 			try {
-				const info = await this.promptsService.getHooks(token);
+				const info = await this.promptsService.getHooks(token, chatSessionResourceToId(invocation.context.sessionResource));
 				collectedHooks = info?.hooks;
 			} catch (error) {
 				this.logService.warn('[ChatService] Failed to collect hooks:', error);

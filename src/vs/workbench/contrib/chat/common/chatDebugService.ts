@@ -6,6 +6,7 @@
 import { Event } from '../../../../base/common/event.js';
 import { IDisposable } from '../../../../base/common/lifecycle.js';
 import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
+import { CancellationToken } from '../../../../base/common/cancellation.js';
 
 /**
  * The severity level of a chat debug log event.
@@ -22,6 +23,11 @@ export enum ChatDebugLogLevel {
  */
 export interface IChatDebugLogEvent {
 	/**
+	 * A unique identifier for this event.
+	 */
+	readonly id?: string;
+
+	/**
 	 * The session ID this event belongs to.
 	 */
 	readonly sessionId: string;
@@ -37,14 +43,24 @@ export interface IChatDebugLogEvent {
 	readonly name: string;
 
 	/**
-	 * Optional contents or details of the event.
+	 * Optional details of the event.
 	 */
-	readonly contents?: string;
+	readonly details?: string;
 
 	/**
 	 * The severity level of the event.
 	 */
 	readonly level: ChatDebugLogLevel;
+
+	/**
+	 * The category classifying the kind of event.
+	 */
+	readonly category?: string;
+
+	/**
+	 * The id of a parent event, used to build a hierarchical tree.
+	 */
+	readonly parentEventId?: string;
 }
 
 export const IChatDebugService = createDecorator<IChatDebugService>('chatDebugService');
@@ -65,12 +81,17 @@ export interface IChatDebugService extends IDisposable {
 	/**
 	 * Log an event to the debug service.
 	 */
-	log(sessionId: string, name: string, contents?: string, level?: ChatDebugLogLevel): void;
+	log(sessionId: string, name: string, details?: string, level?: ChatDebugLogLevel, options?: { id?: string; category?: string; parentEventId?: string }): void;
 
 	/**
 	 * Get all events for a specific session.
 	 */
 	getEvents(sessionId?: string): readonly IChatDebugLogEvent[];
+
+	/**
+	 * Get all session IDs that have logged events.
+	 */
+	getSessionIds(): readonly string[];
 
 	/**
 	 * The currently active session ID for debugging.
@@ -93,13 +114,18 @@ export interface IChatDebugService extends IDisposable {
 	 * Called when the Debug View is opened to fetch events from extensions.
 	 */
 	invokeProviders(sessionId: string): Promise<void>;
-}
 
-import { CancellationToken } from '../../../../base/common/cancellation.js';
+	/**
+	 * Resolve the full details of a log event by its id.
+	 * Delegates to the registered provider's resolveChatDebugLogEvent.
+	 */
+	resolveEvent(eventId: string): Promise<string | undefined>;
+}
 
 /**
  * Provider interface matching the extension API shape.
  */
 export interface IChatDebugLogProvider {
 	provideChatDebugLog(sessionId: string, token: CancellationToken): Promise<IChatDebugLogEvent[] | undefined>;
+	resolveChatDebugLogEvent?(eventId: string, token: CancellationToken): Promise<string | undefined>;
 }

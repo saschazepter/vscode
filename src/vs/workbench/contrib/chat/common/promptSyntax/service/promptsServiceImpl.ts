@@ -41,6 +41,7 @@ import { IWorkspaceContextService } from '../../../../../../platform/workspace/c
 import { IPathService } from '../../../../../services/path/common/pathService.js';
 import { getTarget, mapClaudeModels, mapClaudeTools } from '../languageProviders/promptValidator.js';
 import { IChatDebugService } from '../../chatDebugService.js';
+import { generateUuid } from '../../../../../../base/common/uuid.js';
 
 /**
  * Error thrown when a skill file is missing the required name attribute.
@@ -109,6 +110,22 @@ export class PromptsService extends Disposable implements IPromptsService {
 	 * The number in the returned tuple is textModel.getVersionId(), which is an internal VS Code counter that increments every time the text model's content changes.
 	 */
 	private readonly cachedParsedPromptFromModels = new ResourceMap<[number, ParsedPromptFile]>();
+
+	/**
+	 * Maps debug event IDs to their discovery info, so that
+	 * {@link IChatDebugService.resolveEvent} can return rich details.
+	 */
+	private readonly _discoveryEventDetails = new Map<string, IPromptDiscoveryInfo>();
+
+	/**
+	 * Temporarily set by callers (e.g. getHooks) to scope debug log
+	 * events to a specific session instead of the global active session.
+	 */
+	private _debugSessionIdOverride: string | undefined;
+
+	private get currentDebugSessionId(): string {
+		return this._debugSessionIdOverride ?? this.chatDebugService.activeSessionId ?? '';
+	}
 
 	/**
 	 * Cached file locations commands. Caching only happens if the corresponding `fileLocatorEvents` event is used.
@@ -188,6 +205,15 @@ export class PromptsService extends Disposable implements IPromptsService {
 		// Hack: Subscribe to activate caching (CachedPromise only caches when onDidChange has listeners)
 		this._register(this.cachedSkills.onDidChange(() => { }));
 		this._register(this.cachedHooks.onDidChange(() => { }));
+
+		// Register as a resolve provider so expanding a discovery event
+		// in the debug panel shows the full file list.
+		this._register(this.chatDebugService.registerProvider({
+			provideChatDebugLog: async () => undefined,
+			resolveChatDebugLogEvent: async (eventId) => {
+				return this._resolveDiscoveryEvent(eventId);
+			}
+		}));
 	}
 
 	protected createPromptFilesLocator(): PromptFilesLocator {
@@ -227,12 +253,12 @@ export class PromptsService extends Disposable implements IPromptsService {
 			this.cachedFileLocations[type] = listPromise;
 			return listPromise;
 		}
-		this.chatDebugService.log(this.chatDebugService.activeSessionId ?? '', `Resolve ${type} (from cache)`);
+		this.chatDebugService.log(this.currentDebugSessionId, `Resolve ${type} (from cache)`, undefined, undefined, { category: 'discovery' });
 		return listPromise;
 	}
 
 	private async computeListPromptFiles(type: PromptsType, token: CancellationToken): Promise<readonly IPromptPath[]> {
-		this.chatDebugService.log(this.chatDebugService.activeSessionId ?? '', `Resolve ${type} (start)`);
+		this.chatDebugService.log(this.currentDebugSessionId, `Resolve ${type} (start)`, undefined, undefined, { category: 'discovery' });
 		const prompts = await Promise.all([
 			this.fileLocator.listFiles(type, PromptsStorage.user, token).then(uris => uris.map(uri => ({ uri, storage: PromptsStorage.user, type } satisfies IUserPromptPath))),
 			this.fileLocator.listFiles(type, PromptsStorage.local, token).then(uris => uris.map(uri => ({ uri, storage: PromptsStorage.local, type } satisfies ILocalPromptPath))),
@@ -240,7 +266,9 @@ export class PromptsService extends Disposable implements IPromptsService {
 		]);
 
 		const result = [...prompts.flat()];
-		this.chatDebugService.log(this.chatDebugService.activeSessionId ?? '', `Resolve ${type} (end)`, `Found ${result.length} files`);
+		const resolveEventId = generateUuid();
+		this._discoveryEventDetails.set(resolveEventId, { type, files: result.map(p => ({ uri: p.uri, storage: p.storage, status: 'loaded' as const })) });
+		this.chatDebugService.log(this.currentDebugSessionId, `Resolve ${type} (end)`, `Found ${result.length} files`, undefined, { id: resolveEventId, category: 'discovery' });
 		return result;
 	}
 
@@ -1008,8 +1036,13 @@ export class PromptsService extends Disposable implements IPromptsService {
 		return result;
 	}
 
-	public async getHooks(token: CancellationToken): Promise<IConfiguredHooksInfo | undefined> {
-		return this.cachedHooks.get(token);
+	public async getHooks(token: CancellationToken, sessionId?: string): Promise<IConfiguredHooksInfo | undefined> {
+		this._debugSessionIdOverride = sessionId;
+		try {
+			return await this.cachedHooks.get(token);
+		} finally {
+			this._debugSessionIdOverride = undefined;
+		}
 	}
 
 	private async computeHooks(token: CancellationToken): Promise<IConfiguredHooksInfo | undefined> {
@@ -1103,7 +1136,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 	}
 
 	public async getPromptDiscoveryInfo(type: PromptsType, token: CancellationToken): Promise<IPromptDiscoveryInfo> {
-		this.chatDebugService.log(this.chatDebugService.activeSessionId ?? '', `Discovery ${type} (start)`);
+		this.chatDebugService.log(this.currentDebugSessionId, `Discovery ${type} (start)`, undefined, undefined, { category: 'discovery' });
 		const files: IPromptFileDiscoveryResult[] = [];
 
 		let result: IPromptDiscoveryInfo;
@@ -1123,8 +1156,53 @@ export class PromptsService extends Disposable implements IPromptsService {
 
 		const loadedCount = result.files.filter(f => f.status === 'loaded').length;
 		const skippedCount = result.files.filter(f => f.status === 'skipped').length;
-		this.chatDebugService.log(this.chatDebugService.activeSessionId ?? '', `Discovery ${type} (end)`, `${loadedCount} loaded, ${skippedCount} skipped`);
+		const eventId = generateUuid();
+		this._discoveryEventDetails.set(eventId, result);
+		this.chatDebugService.log(this.currentDebugSessionId, `Discovery ${type} (end)`, `${loadedCount} loaded, ${skippedCount} skipped`, undefined, { id: eventId, category: 'discovery' });
 		return result;
+	}
+
+	private _resolveDiscoveryEvent(eventId: string): string | undefined {
+		const info = this._discoveryEventDetails.get(eventId);
+		if (!info) {
+			return undefined;
+		}
+
+		const lines: string[] = [];
+		lines.push(`Discovery: ${info.type}`);
+		lines.push(`Total files: ${info.files.length}`);
+		lines.push('');
+
+		const loaded = info.files.filter(f => f.status === 'loaded');
+		const skipped = info.files.filter(f => f.status === 'skipped');
+
+		if (loaded.length > 0) {
+			lines.push(`Loaded (${loaded.length}):`);
+			for (const f of loaded) {
+				const label = f.name ?? basename(f.uri);
+				const storageSuffix = f.extensionId ? ` [ext: ${f.extensionId}]` : ` [${f.storage}]`;
+				lines.push(`  \u2713 ${label} - ${f.uri.path}${storageSuffix}`);
+			}
+			lines.push('');
+		}
+
+		if (skipped.length > 0) {
+			lines.push(`Skipped (${skipped.length}):`);
+			for (const f of skipped) {
+				const label = f.name ?? basename(f.uri);
+				const reason = f.skipReason ?? 'unknown';
+				let detail = `  \u2717 ${label} - ${reason}`;
+				if (f.errorMessage) {
+					detail += `: ${f.errorMessage}`;
+				}
+				if (f.duplicateOf) {
+					detail += ` (duplicate of ${f.duplicateOf.path})`;
+				}
+				lines.push(detail);
+			}
+		}
+
+		return lines.join('\n');
 	}
 
 	private async getSkillDiscoveryInfo(token: CancellationToken): Promise<IPromptDiscoveryInfo> {

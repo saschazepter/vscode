@@ -450,6 +450,7 @@ export interface IPromptsService extends IDisposable {
 	/**
 	 * Gets all hooks collected from hooks.json files.
 	 * The result is cached and invalidated when hook files change.
+	 * @param sessionId Optional session ID to scope debug logging to a specific session.
 	 */
-	getHooks(token: CancellationToken): Promise<IConfiguredHooksInfo | undefined>;
+	getHooks(token: CancellationToken, sessionId?: string): Promise<IConfiguredHooksInfo | undefined>;
 }

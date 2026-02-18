@@ -3,10 +3,9 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-// version: 2
+// version: 1
 
 declare module 'vscode' {
-
 	/**
 	 * The severity level of a chat debug log event.
 	 */
@@ -22,6 +21,11 @@ declare module 'vscode' {
 	 */
 	export interface ChatDebugLogEvent {
 		/**
+		 * A unique identifier for this event.
+		 */
+		readonly id?: string;
+
+		/**
 		 * The timestamp when the event was created.
 		 */
 		readonly created: Date;
@@ -32,14 +36,25 @@ declare module 'vscode' {
 		readonly name: string;
 
 		/**
-		 * Optional contents or details of the event.
+		 * Optional details of the event.
 		 */
-		readonly contents?: string;
+		readonly details?: string;
 
 		/**
 		 * The severity level of the event.
 		 */
 		readonly level: ChatDebugLogLevel;
+
+		/**
+		 * The category classifying the kind of event.
+		 */
+		readonly category?: string;
+
+		/**
+		 * The id of a parent event, used to build a hierarchical tree
+		 * (e.g., tool calls nested under a subagent invocation).
+		 */
+		readonly parentEventId?: string;
 	}
 
 	/**
@@ -61,6 +76,20 @@ declare module 'vscode' {
 			progress: Progress<ChatDebugLogEvent>,
 			token: CancellationToken
 		): ProviderResult<ChatDebugLogEvent[]>;
+
+		/**
+		 * Optionally resolve the full contents of a log event by its id.
+		 * Called when the user expands an event in the debug view, allowing
+		 * the provider to defer expensive detail loading until needed.
+		 *
+		 * @param eventId The {@link ChatDebugLogEvent.id id} of the event to resolve.
+		 * @param token A cancellation token.
+		 * @returns The resolved event details to be displayed in the debug detail view.
+		 */
+		resolveChatDebugLogEvent?(
+			eventId: string,
+			token: CancellationToken
+		): ProviderResult<string>;
 	}
 
 	export namespace chat {
