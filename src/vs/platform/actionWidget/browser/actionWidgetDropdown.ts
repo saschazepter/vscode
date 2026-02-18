@@ -204,7 +204,9 @@ export class ActionWidgetDropdown extends BaseDropdown {
 			getRole: (e) => {
 				switch (e.kind) {
 					case ActionListItemKind.Action:
-						return 'menuitemcheckbox';
+						// Auxiliary actions are not checkable options, so use 'menuitem' to
+						// avoid screen readers announcing them as unchecked checkboxes.
+						return e.item && auxiliaryActionIds.has(e.item.id) ? 'menuitem' : 'menuitemcheckbox';
 					case ActionListItemKind.Separator:
 						return 'separator';
 					default:
