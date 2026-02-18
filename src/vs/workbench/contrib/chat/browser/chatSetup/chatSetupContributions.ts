@@ -51,6 +51,7 @@ import { ChatSetupController } from './chatSetupController.js';
 import { GrowthSessionController, registerGrowthSession } from './chatSetupGrowthSession.js';
 import { AICodeActionsHelper, AINewSymbolNamesProvider, ChatCodeActionsProvider, SetupAgent } from './chatSetupProviders.js';
 import { ChatSetup } from './chatSetupRunner.js';
+import { IChatService } from '../../common/chatService/chatService.js';
 
 const defaultChat = {
 	chatExtensionId: product.defaultChatAgent?.chatExtensionId ?? '',
@@ -74,6 +75,7 @@ export class ChatSetupContribution extends Disposable implements IWorkbenchContr
 		@IExtensionService private readonly extensionService: IExtensionService,
 		@IEnvironmentService private readonly environmentService: IEnvironmentService,
 		@IChatSessionsService private readonly chatSessionsService: IChatSessionsService,
+		@IChatService private readonly chatService: IChatService,
 		@IConfigurationService private readonly configurationService: IConfigurationService,
 	) {
 		super();
@@ -181,9 +183,8 @@ export class ChatSetupContribution extends Disposable implements IWorkbenchContr
 
 		const updateGrowthSession = () => {
 			const experimentEnabled = this.configurationService.getValue<boolean>(ChatConfiguration.GrowthNotificationEnabled) === true;
-			// Show for users who don't have the Copilot extension installed yet.
-			// Additional conditions (e.g., anonymous, entitlement) can be layered here.
-			const shouldShow = experimentEnabled && !chatEntitlementService.sentiment.installed;
+			const hasInteractedWithChat = this.chatService.hasSessions();
+			const shouldShow = experimentEnabled && !hasInteractedWithChat;
 			if (shouldShow && !growthSessionDisposables.value) {
 				const disposables = new DisposableStore();
 				const controller = disposables.add(this.instantiationService.createInstance(GrowthSessionController));
