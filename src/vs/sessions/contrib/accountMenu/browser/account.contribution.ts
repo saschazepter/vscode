@@ -135,8 +135,9 @@ class AccountWidget extends ActionViewItem {
 		fillInActionBarActions(menu.getActions(), actions);
 		menu.dispose();
 
+		const rect = anchor.getBoundingClientRect();
 		this.contextMenuService.showContextMenu({
-			getAnchor: () => anchor,
+			getAnchor: () => ({ x: rect.left, y: rect.top }),
 			getActions: () => actions,
 		});
 	}
