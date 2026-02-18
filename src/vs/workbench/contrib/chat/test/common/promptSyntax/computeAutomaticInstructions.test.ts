@@ -40,6 +40,7 @@ import { IPathService } from '../../../../../services/path/common/pathService.js
 import { IFileQuery, ISearchService } from '../../../../../services/search/common/search.js';
 import { IExtensionService } from '../../../../../services/extensions/common/extensions.js';
 import { ILanguageModelToolsService } from '../../../common/tools/languageModelToolsService.js';
+import { IRemoteAgentService } from '../../../../../../workbench/services/remote/common/remoteAgentService.js';
 import { basename } from '../../../../../../base/common/resources.js';
 import { match } from '../../../../../../base/common/glob.js';
 import { ChatModeKind } from '../../../common/constants.js';
@@ -169,6 +170,10 @@ suite('ComputeAutomaticInstructions', () => {
 			getFullReferenceName: (tool: { name: string }) => tool.name,
 		} as unknown as ILanguageModelToolsService;
 		instaService.stub(ILanguageModelToolsService, toolsService);
+
+		instaService.stub(IRemoteAgentService, {
+			getEnvironment: () => Promise.resolve(null),
+		});
 
 		service = disposables.add(instaService.createInstance(PromptsService));
 		instaService.stub(IPromptsService, service);
