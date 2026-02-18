@@ -88,12 +88,6 @@ export class AgenticSessionsViewPane extends ViewPane {
 	private createControls(parent: HTMLElement): void {
 		const sessionsContainer = DOM.append(parent, $('.agent-sessions-container'));
 
-		// Sessions Filter (actions go to view title bar via menu registration)
-		const sessionsFilter = this._register(this.instantiationService.createInstance(AgentSessionsFilter, {
-			filterMenuId: SessionsViewFilterSubMenu,
-			groupResults: () => AgentSessionsGrouping.Date
-		}));
-
 		// Sessions section (top, fills available space)
 		const sessionsSection = DOM.append(sessionsContainer, $('.agent-sessions-section'));
 
@@ -121,6 +115,12 @@ export class AgenticSessionsViewPane extends ViewPane {
 			const keybindingHint = DOM.append(newSessionButton.element, $('span.new-session-keybinding-hint'));
 			keybindingHint.textContent = keybinding.getLabel() ?? '';
 		}
+
+		// Sessions filter: contributes filter actions via SessionsViewFilterSubMenu; actions are rendered in the sessions header toolbar (SessionsViewHeaderMenu)
+		const sessionsFilter = this._register(this.instantiationService.createInstance(AgentSessionsFilter, {
+			filterMenuId: SessionsViewFilterSubMenu,
+			groupResults: () => AgentSessionsGrouping.Date
+		}));
 
 		// Sessions Control
 		this.sessionsControlContainer = DOM.append(sessionsContent, $('.agent-sessions-control-container'));
