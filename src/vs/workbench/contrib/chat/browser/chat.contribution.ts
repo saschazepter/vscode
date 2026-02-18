@@ -76,6 +76,9 @@ import { ChatSubmitAction, registerChatExecuteActions } from './actions/chatExec
 import { registerChatFileTreeActions } from './actions/chatFileTreeActions.js';
 import { ChatGettingStartedContribution } from './actions/chatGettingStarted.js';
 import { registerChatForkActions } from './actions/chatForkActions.js';
+import { registerChatSessionSearchActions } from './actions/chatSessionSearchActions.js';
+import { ChatSessionEmbeddingsService } from './chatSessionEmbeddingsServiceImpl.js';
+import { IChatSessionEmbeddingsService } from '../common/chatSessionEmbeddingsService.js';
 import { registerChatExportActions } from './actions/chatImportExport.js';
 import { registerLanguageModelActions } from './actions/chatLanguageModelActions.js';
 import { registerMoveActions } from './actions/chatMoveActions.js';
@@ -1571,6 +1574,7 @@ registerChatQueueActions();
 registerQuickChatActions();
 registerChatExportActions();
 registerChatForkActions();
+registerChatSessionSearchActions();
 registerMoveActions();
 registerNewChatActions();
 registerChatContextActions();
@@ -1612,5 +1616,6 @@ registerSingleton(IChatTodoListService, ChatTodoListService, InstantiationType.D
 registerSingleton(IChatOutputRendererService, ChatOutputRendererService, InstantiationType.Delayed);
 registerSingleton(IChatLayoutService, ChatLayoutService, InstantiationType.Delayed);
 registerSingleton(IChatTipService, ChatTipService, InstantiationType.Delayed);
+registerSingleton(IChatSessionEmbeddingsService, ChatSessionEmbeddingsService, InstantiationType.Delayed);
 
 ChatWidget.CONTRIBS.push(ChatDynamicVariableModel);
