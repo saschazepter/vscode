@@ -873,7 +873,7 @@ export class ChatService extends Disposable implements IChatService {
 			agent: agentPart?.agent ?? defaultAgent,
 			agentSlashCommandPart,
 			commandPart,
-			sessionId: model.sessionId,
+			sessionResource: model.sessionResource,
 			location: model.initialLocation,
 			options,
 			enableCommandDetection
