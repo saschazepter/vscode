@@ -144,6 +144,25 @@ pre code {
 	border-color: rgba(255, 255, 255, 0.18);
 }
 
+::-webkit-scrollbar {
+	width: 10px;
+	height: 10px;
+}
+
+::-webkit-scrollbar-corner {
+	background-color: var(--vscode-editor-background);
+}
+
+::-webkit-scrollbar-thumb {
+	background-color: var(--vscode-scrollbarSlider-background);
+}
+::-webkit-scrollbar-thumb:hover {
+	background-color: var(--vscode-scrollbarSlider-hoverBackground);
+}
+::-webkit-scrollbar-thumb:active {
+	background-color: var(--vscode-scrollbarSlider-activeBackground);
+}
+
 @media (forced-colors: active) and (prefers-color-scheme: light){
 	body {
 		forced-color-adjust: none;
