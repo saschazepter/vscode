@@ -1044,6 +1044,14 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 				checkProposedApiEnabled(extension, 'chatStatusItem');
 				return extHostChatStatus.createChatStatusItem(extension, id);
 			},
+			get activeChatPanelSessionResource() {
+				checkProposedApiEnabled(extension, 'chatParticipantPrivate');
+				return extHostChatAgents2.activeChatPanelSessionResource;
+			},
+			onDidChangeActiveChatPanelSessionResource: (listeners, thisArgs?, disposables?) => {
+				checkProposedApiEnabled(extension, 'chatParticipantPrivate');
+				return _asExtensionEvent(extHostChatAgents2.onDidChangeActiveChatPanelSessionResource)(listeners, thisArgs, disposables);
+			},
 		};
 
 		// namespace: workspace
@@ -1078,7 +1086,7 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 			},
 			get isAgentSessionsWorkspace() {
 				checkProposedApiEnabled(extension, 'agentSessionsWorkspace');
-				return extHostWorkspace.isAgentSessionsWorkspace;
+				return !!initData.environment.isSessionsWindow;
 			},
 			updateWorkspaceFolders: (index, deleteCount, ...workspaceFoldersToAdd) => {
 				return extHostWorkspace.updateWorkspaceFolders(extension, index, deleteCount || 0, ...workspaceFoldersToAdd);

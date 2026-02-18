@@ -195,6 +195,7 @@ export class BrowserEditor extends EditorPane {
 	private readonly _inputDisposables = this._register(new DisposableStore());
 	private overlayManager: BrowserOverlayManager | undefined;
 	private _elementSelectionCts: CancellationTokenSource | undefined;
+	private _consoleSessionCts: CancellationTokenSource | undefined;
 	private _screenshotTimeout: ReturnType<typeof setTimeout> | undefined;
 
 	constructor(
@@ -367,6 +368,12 @@ export class BrowserEditor extends EditorPane {
 
 			// Update navigation bar and context keys from model
 			this.updateNavigationState(navEvent);
+
+			if (navEvent.url) {
+				this.startConsoleSession();
+			} else {
+				this.stopConsoleSession();
+			}
 		}));
 
 		this._inputDisposables.add(this._model.onDidChangeLoadingState(() => {
@@ -759,6 +766,66 @@ export class BrowserEditor extends EditorPane {
 		}
 	}
 
+	async addConsoleLogsToChat(): Promise<void> {
+		const resourceUri = this.input?.resource;
+		if (!resourceUri) {
+			return;
+		}
+
+		const locator: IBrowserTargetLocator = { browserViewId: BrowserViewUri.getId(resourceUri) };
+
+		try {
+			const logs = await this.browserElementsService.getConsoleLogs(locator);
+			if (!logs) {
+				return;
+			}
+
+			const toAttach: IChatRequestVariableEntry[] = [];
+			toAttach.push({
+				id: 'console-logs-' + Date.now(),
+				name: localize('consoleLogs', 'Console Logs'),
+				fullName: localize('consoleLogs', 'Console Logs'),
+				value: logs,
+				kind: 'element',
+				icon: ThemeIcon.fromId(Codicon.output.id),
+			});
+
+			const widget = await this.chatWidgetService.revealWidget() ?? this.chatWidgetService.lastFocusedWidget;
+			widget?.attachmentModel?.addContext(...toAttach);
+		} catch (error) {
+			this.logService.error('BrowserEditor.addConsoleLogsToChat: Failed to get console logs', error);
+		}
+	}
+
+	private startConsoleSession(): void {
+		// don't restart if already running
+		if (this._consoleSessionCts) {
+			return;
+		}
+
+		const resourceUri = this.input?.resource;
+		if (!resourceUri || !this._model?.url) {
+			return;
+		}
+
+		const cts = new CancellationTokenSource();
+		this._consoleSessionCts = cts;
+		const locator: IBrowserTargetLocator = { browserViewId: BrowserViewUri.getId(resourceUri) };
+
+		this.browserElementsService.startConsoleSession(cts.token, locator).catch(error => {
+			if (!cts.token.isCancellationRequested) {
+				this.logService.error('BrowserEditor: Failed to start console session', error);
+			}
+		});
+	}
+
+	private stopConsoleSession(): void {
+		if (this._consoleSessionCts) {
+			this._consoleSessionCts.dispose(true);
+			this._consoleSessionCts = undefined;
+		}
+	}
+
 	/**
 	 * Update navigation state and context keys
 	 */
@@ -906,6 +973,9 @@ export class BrowserEditor extends EditorPane {
 			this._elementSelectionCts.dispose(true);
 			this._elementSelectionCts = undefined;
 		}
+
+		// Cancel any active console session
+		this.stopConsoleSession();
 
 		// Cancel any scheduled screenshots
 		this.cancelScheduledScreenshot();
