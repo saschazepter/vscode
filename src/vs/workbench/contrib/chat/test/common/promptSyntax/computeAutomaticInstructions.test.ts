@@ -8,6 +8,7 @@ import * as sinon from 'sinon';
 import { CancellationToken } from '../../../../../../base/common/cancellation.js';
 import { Event } from '../../../../../../base/common/event.js';
 import { Schemas } from '../../../../../../base/common/network.js';
+import { OperatingSystem } from '../../../../../../base/common/platform.js';
 import { URI } from '../../../../../../base/common/uri.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/test/common/utils.js';
 import { ILanguageService } from '../../../../../../editor/common/languages/language.js';
@@ -27,7 +28,7 @@ import { testWorkspace } from '../../../../../../platform/workspace/test/common/
 import { IUserDataProfileService } from '../../../../../services/userDataProfile/common/userDataProfile.js';
 import { TestContextService, TestUserDataProfileService } from '../../../../../test/common/workbenchTestServices.js';
 import { ChatRequestVariableSet, isPromptFileVariableEntry, isPromptTextVariableEntry, toFileVariableEntry } from '../../../common/attachments/chatVariableEntries.js';
-import { ComputeAutomaticInstructions, InstructionsCollectionEvent } from '../../../common/promptSyntax/computeAutomaticInstructions.js';
+import { ComputeAutomaticInstructions, getFilePath, InstructionsCollectionEvent } from '../../../common/promptSyntax/computeAutomaticInstructions.js';
 import { PromptsConfig } from '../../../common/promptSyntax/config/config.js';
 import { AGENTS_SOURCE_FOLDER, CLAUDE_RULES_SOURCE_FOLDER, INSTRUCTION_FILE_EXTENSION, INSTRUCTIONS_DEFAULT_SOURCE_FOLDER, LEGACY_MODE_DEFAULT_SOURCE_FOLDER, PROMPT_DEFAULT_SOURCE_FOLDER, PROMPT_FILE_EXTENSION } from '../../../common/promptSyntax/config/promptFileLocations.js';
 import { INSTRUCTIONS_LANGUAGE_ID, PROMPT_LANGUAGE_ID } from '../../../common/promptSyntax/promptTypes.js';
@@ -2009,5 +2010,60 @@ suite('ComputeAutomaticInstructions', () => {
 		assert.ok(paths.includes(copilotUri.path), 'Should include copilot-instructions.md');
 		assert.ok(!paths.includes(agentMdUri.path), 'Should not include AGENTS.md (symlink to copilot)');
 		assert.ok(!paths.includes(claudeMdUri.path), 'Should not include CLAUDE.md (symlink to copilot)');
+	});
+});
+
+suite('getFilePath', () => {
+
+	ensureNoDisposablesAreLeakedInTestSuite();
+
+	test('should return fsPath for file:// URIs', () => {
+		const uri = URI.file('/workspace/src/file.ts');
+		const result = getFilePath(uri, undefined);
+		assert.strictEqual(result, uri.fsPath);
+	});
+
+	test('should return fsPath for vscode-remote URIs', () => {
+		const uri = URI.from({ scheme: Schemas.vscodeRemote, path: '/workspace/src/file.ts' });
+		const result = getFilePath(uri, undefined);
+		assert.strictEqual(result, uri.fsPath);
+	});
+
+	test('should return uri.toString() for other schemes', () => {
+		const uri = URI.from({ scheme: 'untitled', path: '/workspace/src/file.ts' });
+		const result = getFilePath(uri, undefined);
+		assert.strictEqual(result, uri.toString());
+	});
+
+	test('should return fsPath when local is Windows and remote is also Windows', () => {
+		const uri = URI.file('/workspace/src/file.ts');
+		const result = getFilePath(uri, OperatingSystem.Windows, /* localIsWindows */ true);
+		assert.strictEqual(result, uri.fsPath);
+	});
+
+	test('should replace backslashes when local is Windows and remote is Linux (WSL)', () => {
+		const uri = URI.from({ scheme: Schemas.vscodeRemote, path: '/home/user/project/file.ts' });
+		const result = getFilePath(uri, OperatingSystem.Linux, /* localIsWindows */ true);
+		assert.ok(!result.includes('\\'), 'Should not contain backslashes');
+		assert.ok(result.includes('/home/user/project/file.ts'), 'Should contain the forward-slash path');
+	});
+
+	test('should replace backslashes when local is Windows and remote is macOS', () => {
+		const uri = URI.from({ scheme: Schemas.vscodeRemote, path: '/Users/dev/project/file.ts' });
+		const result = getFilePath(uri, OperatingSystem.Macintosh, /* localIsWindows */ true);
+		assert.ok(!result.includes('\\'), 'Should not contain backslashes');
+		assert.ok(result.includes('/Users/dev/project/file.ts'), 'Should contain the forward-slash path');
+	});
+
+	test('should not replace slashes when local is not Windows', () => {
+		const uri = URI.from({ scheme: Schemas.vscodeRemote, path: '/home/user/project/file.ts' });
+		const result = getFilePath(uri, OperatingSystem.Linux, /* localIsWindows */ false);
+		assert.strictEqual(result, uri.fsPath);
+	});
+
+	test('should not replace slashes when remoteOS is undefined', () => {
+		const uri = URI.file('/workspace/src/file.ts');
+		const result = getFilePath(uri, undefined, /* localIsWindows */ true);
+		assert.strictEqual(result, uri.fsPath);
 	});
 });

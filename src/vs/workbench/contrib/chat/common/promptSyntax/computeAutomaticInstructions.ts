@@ -299,7 +299,7 @@ export class ComputeAutomaticInstructions {
 
 		const remoteEnv = await this._remoteAgentService.getEnvironment();
 		const remoteOS = remoteEnv?.os;
-		const filePath = (uri: URI) => getFilePath(uri, remoteOS);
+		const filePath = (uri: URI) => getFilePath(uri, remoteOS, isWindows);
 
 		const entries: string[] = [];
 		if (readTool) {
@@ -499,12 +499,12 @@ export class ComputeAutomaticInstructions {
 }
 
 
-function getFilePath(uri: URI, remoteOS: OperatingSystem | undefined): string {
+export function getFilePath(uri: URI, remoteOS: OperatingSystem | undefined, localIsWindows: boolean = isWindows): string {
 	if (uri.scheme === Schemas.file || uri.scheme === Schemas.vscodeRemote) {
 		const fsPath = uri.fsPath;
 		// When local OS is Windows but remote is not (e.g. WSL),
 		// uri.fsPath incorrectly uses backslashes. Fix them up.
-		if (isWindows && remoteOS !== undefined && remoteOS !== OperatingSystem.Windows) {
+		if (localIsWindows && remoteOS !== undefined && remoteOS !== OperatingSystem.Windows) {
 			return fsPath.replace(/\\/g, '/');
 		}
 		return fsPath;
