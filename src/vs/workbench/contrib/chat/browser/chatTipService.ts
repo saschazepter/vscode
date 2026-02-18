@@ -549,9 +549,9 @@ export class ChatTipService extends Disposable implements IChatTipService {
 
 	dismissTip(): void {
 		if (this._shownTip) {
-			const dismissed = this._getDismissedTipIds();
-			dismissed.push(this._shownTip.id);
-			this._storageService.store(ChatTipService._DISMISSED_TIP_KEY, JSON.stringify(dismissed), StorageScope.PROFILE, StorageTarget.MACHINE);
+			const dismissed = new Set(this._getDismissedTipIds());
+			dismissed.add(this._shownTip.id);
+			this._storageService.store(ChatTipService._DISMISSED_TIP_KEY, JSON.stringify([...dismissed]), StorageScope.PROFILE, StorageTarget.MACHINE);
 		}
 		this._shownTip = undefined;
 		this._tipRequestId = undefined;
@@ -577,14 +577,15 @@ export class ChatTipService extends Disposable implements IChatTipService {
 				return [];
 			}
 
-			// Safety valve: if every known tip has been dismissed (for example, due to a
-			// past bug that dismissed the current tip on every new session), treat this
-			// as "no tips dismissed" so the feature can recover.
-			if (parsed.length >= TIP_CATALOG.length) {
-				return [];
+			const knownTipIds = new Set(TIP_CATALOG.map(tip => tip.id));
+			const dismissed = new Set<string>();
+			for (const value of parsed) {
+				if (typeof value === 'string' && knownTipIds.has(value)) {
+					dismissed.add(value);
+				}
 			}
 
-			return parsed;
+			return [...dismissed];
 		} catch {
 			return [];
 		}
@@ -699,10 +700,8 @@ export class ChatTipService extends Disposable implements IChatTipService {
 			}
 		}
 
-		// Final fallback: if even that fails (all tips dismissed), stick with the
-		// catalog order so rotation still progresses.
 		if (!selectedTip) {
-			selectedTip = TIP_CATALOG[startIndex];
+			return undefined;
 		}
 
 		// Persist the selected tip id so the next use advances to the following one.

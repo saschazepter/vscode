@@ -279,6 +279,26 @@ suite('ChatTipService', () => {
 		assert.ok(tip2, 'Should return a tip after disabling and re-enabling');
 	});
 
+	test('dismissed tips stay dismissed after disabling and re-enabling tips', async () => {
+		const service = createService();
+
+		for (let i = 0; i < 100; i++) {
+			const tip = service.getWelcomeTip(contextKeyService);
+			if (!tip) {
+				break;
+			}
+
+			service.dismissTip();
+		}
+
+		assert.strictEqual(service.getWelcomeTip(contextKeyService), undefined, 'No tip should remain once all tips are dismissed');
+
+		await service.disableTips();
+		configurationService.setUserConfiguration('chat.tips.enabled', true);
+
+		assert.strictEqual(service.getWelcomeTip(contextKeyService), undefined, 'Dismissed tips should remain dismissed after re-enabling tips');
+	});
+
 	function createMockPromptsService(
 		agentInstructions: IResolvedAgentFile[] = [],
 		promptInstructions: IPromptPath[] = [],
