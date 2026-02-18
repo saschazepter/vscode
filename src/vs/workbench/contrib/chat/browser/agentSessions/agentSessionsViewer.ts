@@ -77,6 +77,7 @@ interface IAgentSessionItemTemplate {
 
 export interface IAgentSessionRendererOptions {
 	getHoverPosition(): HoverPosition;
+	richHover?: boolean;
 }
 
 export class AgentSessionRenderer extends Disposable implements ICompressibleTreeRenderer<IAgentSession, FuzzyScore, IAgentSessionItemTemplate> {
@@ -364,6 +365,10 @@ export class AgentSessionRenderer extends Disposable implements ICompressibleTre
 	}
 
 	private renderHover(session: ITreeNode<IAgentSession, FuzzyScore>, template: IAgentSessionItemTemplate): void {
+		if (this.options.richHover === false) {
+			return;
+		}
+
 		if (!isSessionInProgressStatus(session.element.status) && session.element.isRead()) {
 			return; // the hover is complex and large, for now limit it to in-progress sessions only
 		}
