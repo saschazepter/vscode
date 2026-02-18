@@ -71,52 +71,158 @@ export interface ICopilotSessionMetadata {
 // #region Events
 
 /**
- * Event types emitted by the Copilot SDK session.
- *
- * These map directly to the SDK's event types:
- * - `user.message` -- user prompt added
- * - `assistant.message` -- complete assistant response
- * - `assistant.message_delta` -- streaming response chunk
- * - `assistant.reasoning` -- complete reasoning content
- * - `assistant.reasoning_delta` -- streaming reasoning chunk
- * - `tool.execution_start` -- tool call started
- * - `tool.execution_complete` -- tool call finished
- * - `session.idle` -- session finished processing
- * - `session.compaction_start` -- context compaction started
- * - `session.compaction_complete` -- context compaction finished
+ * Common base fields for all session events crossing the IPC boundary.
+ * These are VS Code's own types -- deliberately curated from the SDK.
  */
-export type CopilotSessionEventType =
-	| 'user.message'
-	| 'assistant.message'
-	| 'assistant.message_delta'
-	| 'assistant.reasoning'
-	| 'assistant.reasoning_delta'
-	| 'assistant.turn_start'
-	| 'assistant.turn_end'
-	| 'assistant.usage'
-	| 'tool.execution_start'
-	| 'tool.execution_complete'
-	| 'session.idle'
-	| 'session.compaction_start'
-	| 'session.compaction_complete'
-	| 'session.usage_info';
-
-export interface ICopilotSessionEvent {
+export interface ICopilotSessionEventBase {
 	readonly sessionId: string;
-	readonly type: CopilotSessionEventType;
-	/** Event payload. Shape varies by type -- matches the SDK's event.data. */
-	readonly data: ICopilotSessionEventData;
+	readonly id: string;
+	readonly timestamp: string;
 }
 
-export interface ICopilotSessionEventData {
-	/** For `assistant.message`: the complete content. */
-	readonly content?: string;
-	/** For `assistant.message_delta`: the incremental content chunk. */
-	readonly deltaContent?: string;
-	/** For `tool.execution_start` / `tool.execution_complete`: the tool name. */
-	readonly toolName?: string;
-	/** Generic data passthrough for fields not explicitly typed. */
-	readonly [key: string]: unknown;
+/**
+ * Discriminated union of session event types the browser layer consumes.
+ * Each variant has a `type` discriminant and typed `data` payload.
+ *
+ * This is the stable VS Code contract -- the mapper in the node layer
+ * converts SDK events into these types. New event types are added here
+ * as the browser needs them.
+ */
+export type ICopilotSessionEvent =
+	| ICopilotUserMessageEvent
+	| ICopilotAssistantMessageEvent
+	| ICopilotAssistantDeltaEvent
+	| ICopilotReasoningEvent
+	| ICopilotReasoningDeltaEvent
+	| ICopilotTurnStartEvent
+	| ICopilotTurnEndEvent
+	| ICopilotUsageEvent
+	| ICopilotToolStartEvent
+	| ICopilotToolCompleteEvent
+	| ICopilotSessionIdleEvent
+	| ICopilotCompactionStartEvent
+	| ICopilotCompactionCompleteEvent
+	| ICopilotUsageInfoEvent;
+
+export type CopilotSessionEventType = ICopilotSessionEvent['type'];
+
+// --- Per-event interfaces ---
+// Each includes base fields (sessionId, id, timestamp) for discriminated union narrowing.
+
+export interface ICopilotUserMessageEvent extends ICopilotSessionEventBase {
+	readonly type: 'user.message';
+	readonly data: {
+		readonly content: string;
+		readonly transformedContent?: string;
+	};
+}
+
+export interface ICopilotAssistantMessageEvent extends ICopilotSessionEventBase {
+	readonly type: 'assistant.message';
+	readonly data: {
+		readonly messageId: string;
+		readonly content: string;
+		readonly parentToolCallId?: string;
+	};
+}
+
+export interface ICopilotAssistantDeltaEvent extends ICopilotSessionEventBase {
+	readonly type: 'assistant.message_delta';
+	readonly data: {
+		readonly messageId: string;
+		readonly deltaContent: string;
+		readonly parentToolCallId?: string;
+	};
+}
+
+export interface ICopilotReasoningEvent extends ICopilotSessionEventBase {
+	readonly type: 'assistant.reasoning';
+	readonly data: {
+		readonly reasoningId: string;
+		readonly content: string;
+	};
+}
+
+export interface ICopilotReasoningDeltaEvent extends ICopilotSessionEventBase {
+	readonly type: 'assistant.reasoning_delta';
+	readonly data: {
+		readonly reasoningId: string;
+		readonly deltaContent: string;
+	};
+}
+
+export interface ICopilotTurnStartEvent extends ICopilotSessionEventBase {
+	readonly type: 'assistant.turn_start';
+	readonly data: {
+		readonly turnId: string;
+	};
+}
+
+export interface ICopilotTurnEndEvent extends ICopilotSessionEventBase {
+	readonly type: 'assistant.turn_end';
+	readonly data: {
+		readonly turnId: string;
+	};
+}
+
+export interface ICopilotUsageEvent extends ICopilotSessionEventBase {
+	readonly type: 'assistant.usage';
+	readonly data: {
+		readonly model: string;
+		readonly inputTokens?: number;
+		readonly outputTokens?: number;
+		readonly cacheReadTokens?: number;
+	};
+}
+
+export interface ICopilotToolStartEvent extends ICopilotSessionEventBase {
+	readonly type: 'tool.execution_start';
+	readonly data: {
+		readonly toolCallId: string;
+		readonly toolName: string;
+		readonly arguments?: Record<string, unknown>;
+		readonly mcpServerName?: string;
+		readonly parentToolCallId?: string;
+	};
+}
+
+export interface ICopilotToolCompleteEvent extends ICopilotSessionEventBase {
+	readonly type: 'tool.execution_complete';
+	readonly data: {
+		readonly toolCallId: string;
+		readonly success: boolean;
+		readonly result?: { readonly content: string };
+		readonly error?: { readonly message: string };
+		readonly parentToolCallId?: string;
+	};
+}
+
+export interface ICopilotSessionIdleEvent extends ICopilotSessionEventBase {
+	readonly type: 'session.idle';
+	readonly data: Record<string, never>;
+}
+
+export interface ICopilotCompactionStartEvent extends ICopilotSessionEventBase {
+	readonly type: 'session.compaction_start';
+	readonly data: Record<string, never>;
+}
+
+export interface ICopilotCompactionCompleteEvent extends ICopilotSessionEventBase {
+	readonly type: 'session.compaction_complete';
+	readonly data: {
+		readonly success: boolean;
+		readonly preCompactionTokens?: number;
+		readonly postCompactionTokens?: number;
+	};
+}
+
+export interface ICopilotUsageInfoEvent extends ICopilotSessionEventBase {
+	readonly type: 'session.usage_info';
+	readonly data: {
+		readonly tokenLimit: number;
+		readonly currentTokens: number;
+		readonly messagesLength: number;
+	};
 }
 
 /**

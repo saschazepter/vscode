@@ -240,16 +240,16 @@ class CopilotSdkDebugContribution extends Disposable implements IWorkbenchContri
 	static readonly ID = 'copilotSdk.debugContribution';
 
 	constructor(
-		@IWorkbenchEnvironmentService private readonly environmentService: IWorkbenchEnvironmentService,
-		@IInstantiationService private readonly instantiationService: IInstantiationService,
+		@IWorkbenchEnvironmentService environmentService: IWorkbenchEnvironmentService,
+		@IInstantiationService instantiationService: IInstantiationService,
 	) {
 		super();
 		// Only initialize debug logging when the SDK utility process is enabled
-		if (!this.environmentService.isSessionsUtilityProcess) {
+		if (!environmentService.isSessionsUtilityProcess) {
 			return;
 		}
 
-		this.instantiationService.createInstance(CopilotSdkDebugLog);
+		this._register(instantiationService.createInstance(CopilotSdkDebugLog));
 	}
 }
 

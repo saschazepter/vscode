@@ -29,7 +29,6 @@ import { HoverPosition } from '../../../../base/browser/ui/hover/hoverWidget.js'
 import { IWorkbenchLayoutService } from '../../../../workbench/services/layout/browser/layoutService.js';
 import { Button } from '../../../../base/browser/ui/button/button.js';
 import { defaultButtonStyles } from '../../../../platform/theme/browser/defaultStyles.js';
-import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { KeybindingsRegistry, KeybindingWeight } from '../../../../platform/keybinding/common/keybindingsRegistry.js';
 import { ACTION_ID_NEW_CHAT } from '../../../../workbench/contrib/chat/browser/actions/chatActions.js';
 import { IEditorGroupsService } from '../../../../workbench/services/editor/common/editorGroupsService.js';
@@ -80,7 +79,6 @@ export class AgenticSessionsViewPane extends ViewPane {
 
 	private viewPaneContainer: HTMLElement | undefined;
 	private newSessionButtonContainer: HTMLElement | undefined;
-	private sessionsControlContainer: HTMLElement | undefined;
 	sessionsControl: AgentSessionsControl | undefined;
 	private aiCustomizationContainer: HTMLElement | undefined;
 	private readonly shortcuts: IShortcutItem[] = [];
@@ -90,7 +88,7 @@ export class AgenticSessionsViewPane extends ViewPane {
 	private _sdkSessions: ICopilotSessionMetadata[] = [];
 	private _sdkSelectedSessionId: string | undefined;
 	private _sdkListContainer: HTMLElement | undefined;
-	private readonly _sdkListDisposables = new DisposableStore();
+	private readonly _sdkListDisposables = this._register(new DisposableStore());
 
 	constructor(
 		options: IViewPaneOptions,
@@ -104,7 +102,6 @@ export class AgenticSessionsViewPane extends ViewPane {
 		@IThemeService themeService: IThemeService,
 		@IHoverService hoverService: IHoverService,
 		@IWorkbenchLayoutService private readonly layoutService: IWorkbenchLayoutService,
-		@ICommandService commandService: ICommandService,
 		@IEditorGroupsService private readonly editorGroupsService: IEditorGroupsService,
 		@IPromptsService private readonly promptsService: IPromptsService,
 		@ILanguageModelsService private readonly languageModelsService: ILanguageModelsService,
@@ -344,8 +341,8 @@ export class AgenticSessionsViewPane extends ViewPane {
 		}
 
 		// Sessions Control
-		this.sessionsControlContainer = DOM.append(sessionsContent, $('.agent-sessions-control-container'));
-		const sessionsControl = this.sessionsControl = this._register(this.instantiationService.createInstance(AgentSessionsControl, this.sessionsControlContainer, {
+		const sessionsControlContainer = DOM.append(sessionsContent, $('.agent-sessions-control-container'));
+		const sessionsControl = this.sessionsControl = this._register(this.instantiationService.createInstance(AgentSessionsControl, sessionsControlContainer, {
 			source: 'agentSessionsViewPane',
 			filter: sessionsFilter,
 			overrideStyles: this.getLocationBasedColors().listOverrideStyles,
@@ -587,14 +584,6 @@ export class AgenticSessionsViewPane extends ViewPane {
 		super.focus();
 
 		this.sessionsControl?.focus();
-	}
-
-	refresh(): void {
-		this.sessionsControl?.refresh();
-	}
-
-	openFind(): void {
-		this.sessionsControl?.openFind();
 	}
 }
 

@@ -21,8 +21,8 @@ import {
 	type ICopilotSessionMetadata,
 	type ICopilotStatusInfo,
 } from '../common/copilotSdkService.js';
-// eslint-disable-next-line local/code-import-patterns
-import type { CopilotClient, CopilotSession, SessionEvent, SessionLifecycleEvent } from '@github/copilot-sdk';
+import type { SdkSessionEvent, SdkModelInfo, SdkGetStatusResponse, SdkGetAuthStatusResponse } from './generated/sdkTypes.generated.js';
+import { mapSessionEvent, mapModelInfo, mapSessionMetadata, mapStatusResponse, mapAuthStatusResponse, mapSessionLifecycleEvent, type SdkSessionMetadataRuntime } from './copilotSdkMapper.js';
 
 /**
  * The Copilot SDK host runs in a utility process and wraps the
@@ -31,11 +31,18 @@ import type { CopilotClient, CopilotSession, SessionEvent, SessionLifecycleEvent
  * from it -- all methods become RPC calls and all `onFoo` events are
  * forwarded over the channel automatically.
  */
+/**
+ * Use `import()` for the SDK at runtime; these types are only for
+ * typing the local variables that hold SDK objects.
+ */
+type SdkClient = import('@github/copilot-sdk').CopilotClient;
+type SdkSession = import('@github/copilot-sdk').CopilotSession;
+
 class CopilotSdkHost extends Disposable implements ICopilotSdkService {
 	declare readonly _serviceBrand: undefined;
 
-	private _client: CopilotClient | undefined;
-	private readonly _sessions = new Map<string, CopilotSession>();
+	private _client: SdkClient | undefined;
+	private readonly _sessions = new Map<string, SdkSession>();
 	private _githubToken: string | undefined;
 	private _originalStderrWrite: typeof process.stderr.write | undefined;
 	private readonly _sessionDisposables = new Map<string, DisposableStore>();
@@ -85,7 +92,6 @@ class CopilotSdkHost extends Disposable implements ICopilotSdkService {
 			// node_modules.asar.unpacked/ so they can be spawned as processes.
 			cliPath = cliPath.replace(/\bnode_modules\.asar\b/, 'node_modules.asar.unpacked');
 			this._onProcessOutput.fire({ stream: 'stderr', data: `[SDK] Resolved bundled CLI: ${cliPath}` });
-			process.stderr.write(`[SDK-DEBUG] Resolved bundled CLI: ${cliPath}\n`);
 		} catch (e) {
 			const msg = e instanceof Error ? e.message : String(e);
 			this._onProcessOutput.fire({ stream: 'stderr', data: `[SDK] FAILED to resolve bundled CLI: ${msg}` });
@@ -134,8 +140,6 @@ class CopilotSdkHost extends Disposable implements ICopilotSdkService {
 			throw createErr;
 		}
 
-		// Log state transitions for debugging the "Connection is disposed" issue
-		process.stderr.write(`[SDK-DEBUG] Starting client with cliPath=${cliPath ?? 'default'}\n`);
 		try {
 			// Add a timeout - if start() hangs for more than 30s, something is wrong
 			const startPromise = this._client.start();
@@ -151,11 +155,6 @@ class CopilotSdkHost extends Disposable implements ICopilotSdkService {
 			this._client = undefined;
 			throw startErr;
 		}
-		process.stderr.write(`[SDK-DEBUG] Client started, state=${this._client.getState()}\n`);
-
-		// Log SDK client state changes
-		const state = this._client.getState();
-		this._onProcessOutput.fire({ stream: 'stderr', data: `[SDK] Client started, state: ${state}` });
 
 		// Intercept stderr to capture CLI subprocess output and forward as events.
 		// The SDK writes CLI stderr lines to process.stderr via its internal
@@ -172,15 +171,14 @@ class CopilotSdkHost extends Disposable implements ICopilotSdkService {
 		};
 
 		// Forward client lifecycle events
-		this._client.on('session.created', (event: SessionLifecycleEvent) => {
-			this._onSessionLifecycle.fire({ type: 'session.created', sessionId: event.sessionId });
-		});
-		this._client.on('session.deleted', (event: SessionLifecycleEvent) => {
-			this._onSessionLifecycle.fire({ type: 'session.deleted', sessionId: event.sessionId });
-		});
-		this._client.on('session.updated', (event: SessionLifecycleEvent) => {
-			this._onSessionLifecycle.fire({ type: 'session.updated', sessionId: event.sessionId });
-		});
+		for (const eventType of ['session.created', 'session.deleted', 'session.updated'] as const) {
+			this._client.on(eventType, (event) => {
+				const mapped = mapSessionLifecycleEvent(event);
+				if (mapped) {
+					this._onSessionLifecycle.fire(mapped);
+				}
+			});
+		}
 	}
 
 	async stop(): Promise<void> {
@@ -248,16 +246,7 @@ class CopilotSdkHost extends Disposable implements ICopilotSdkService {
 	async listSessions(): Promise<ICopilotSessionMetadata[]> {
 		const client = await this._ensureClient();
 		const sessions = await client.listSessions();
-		return sessions.map((s: { sessionId: string; summary?: string; startTime?: Date; modifiedTime?: Date; isRemote?: boolean; context?: { cwd?: string; repository?: string; branch?: string } }) => ({
-			sessionId: s.sessionId,
-			summary: s.summary,
-			startTime: s.startTime?.toISOString(),
-			modifiedTime: s.modifiedTime?.toISOString(),
-			isRemote: s.isRemote,
-			workspacePath: s.context?.cwd,
-			repository: s.context?.repository,
-			branch: s.context?.branch,
-		}));
+		return sessions.map(s => mapSessionMetadata(s as SdkSessionMetadataRuntime));
 	}
 
 	async deleteSession(sessionId: string): Promise<void> {
@@ -270,19 +259,12 @@ class CopilotSdkHost extends Disposable implements ICopilotSdkService {
 
 	async send(sessionId: string, prompt: string, options?: ICopilotSendOptions): Promise<string> {
 		const session = this._getSession(sessionId);
-		process.stderr.write(`[SDK-DEBUG] send called, sessionId=${sessionId.substring(0, 8)}, clientState=${this._client?.getState()}\n`);
-		try {
-			const result = await session.send({
-				prompt,
-				attachments: options?.attachments?.map(a => ({ type: a.type as 'file', path: a.path, displayName: a.displayName })),
-				mode: options?.mode,
-			});
-			process.stderr.write(`[SDK-DEBUG] send completed, result=${result}\n`);
-			return result;
-		} catch (err) {
-			process.stderr.write(`[SDK-DEBUG] send FAILED: ${err instanceof Error ? `${err.message}\n${err.stack}` : String(err)}\n`);
-			throw err;
-		}
+		const result = await session.send({
+			prompt,
+			attachments: options?.attachments?.map(a => ({ type: a.type as 'file', path: a.path, displayName: a.displayName })),
+			mode: options?.mode,
+		});
+		return result;
 	}
 
 	async sendAndWait(sessionId: string, prompt: string, options?: ICopilotSendOptions): Promise<ICopilotAssistantMessage | undefined> {
@@ -306,11 +288,14 @@ class CopilotSdkHost extends Disposable implements ICopilotSdkService {
 	async getMessages(sessionId: string): Promise<ICopilotSessionEvent[]> {
 		const session = this._getSession(sessionId);
 		const events = await session.getMessages();
-		return events.map((e: SessionEvent) => ({
-			sessionId,
-			type: e.type as ICopilotSessionEvent['type'],
-			data: (e as { data?: Record<string, unknown> }).data ?? {},
-		}));
+		const result: ICopilotSessionEvent[] = [];
+		for (const e of events) {
+			const mapped = mapSessionEvent(sessionId, e as SdkSessionEvent);
+			if (mapped) {
+				result.push(mapped);
+			}
+		}
+		return result;
 	}
 
 	// --- Models ---
@@ -318,22 +303,14 @@ class CopilotSdkHost extends Disposable implements ICopilotSdkService {
 	async listModels(): Promise<ICopilotModelInfo[]> {
 		const client = await this._ensureClient();
 		const models = await client.listModels();
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		return models.map((m: any) => ({
-			id: m.id as string,
-			name: m.name as string | undefined,
-			capabilities: m.capabilities as ICopilotModelInfo['capabilities'],
-			policy: m.policy as ICopilotModelInfo['policy'],
-			billing: m.billing as ICopilotModelInfo['billing'],
-			supportedReasoningEfforts: m.supportedReasoningEfforts as string[] | undefined,
-			defaultReasoningEffort: m.defaultReasoningEffort as string | undefined,
-		}));
+		return models.map(m => mapModelInfo(m as SdkModelInfo));
 	}
 
 	async getStatus(): Promise<ICopilotStatusInfo> {
 		const client = await this._ensureClient();
 		try {
-			return await client.getStatus() as ICopilotStatusInfo;
+			const status = await client.getStatus();
+			return mapStatusResponse(status as SdkGetStatusResponse);
 		} catch {
 			// CLI may not support this method yet
 			return { version: 'unknown', protocolVersion: 0 };
@@ -343,7 +320,8 @@ class CopilotSdkHost extends Disposable implements ICopilotSdkService {
 	async getAuthStatus(): Promise<ICopilotAuthStatus> {
 		const client = await this._ensureClient();
 		try {
-			return await client.getAuthStatus() as ICopilotAuthStatus;
+			const auth = await client.getAuthStatus();
+			return mapAuthStatusResponse(auth as SdkGetAuthStatusResponse);
 		} catch {
 			// CLI may not support this method yet
 			return { isAuthenticated: false, statusMessage: 'Auth status not available (CLI too old)' };
@@ -368,14 +346,14 @@ class CopilotSdkHost extends Disposable implements ICopilotSdkService {
 
 	// --- Private helpers ---
 
-	private async _ensureClient(): Promise<CopilotClient> {
+	private async _ensureClient(): Promise<SdkClient> {
 		if (!this._client) {
 			await this.start();
 		}
 		return this._client!;
 	}
 
-	private _getSession(sessionId: string): CopilotSession {
+	private _getSession(sessionId: string): SdkSession {
 		const session = this._sessions.get(sessionId);
 		if (!session) {
 			throw new Error(`No active session with ID: ${sessionId}`);
@@ -383,15 +361,14 @@ class CopilotSdkHost extends Disposable implements ICopilotSdkService {
 		return session;
 	}
 
-	private _attachSessionEvents(session: CopilotSession): void {
+	private _attachSessionEvents(session: SdkSession): void {
 		const sessionId = session.sessionId;
 		const store = new DisposableStore();
-		const listener = session.on((event: SessionEvent) => {
-			this._onSessionEvent.fire({
-				sessionId,
-				type: event.type as ICopilotSessionEvent['type'],
-				data: (event as { data?: Record<string, unknown> }).data ?? {},
-			});
+		const listener = session.on((event) => {
+			const mapped = mapSessionEvent(sessionId, event as SdkSessionEvent);
+			if (mapped) {
+				this._onSessionEvent.fire(mapped);
+			}
 		});
 		store.add(typeof listener === 'function' ? toDisposable(listener) : listener);
 		this._sessionDisposables.set(sessionId, store);

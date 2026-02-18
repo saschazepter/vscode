@@ -7,7 +7,6 @@ import * as paths from '../../../base/common/path.js';
 import './media/sdkChatWidget.css';
 import * as dom from '../../../base/browser/dom.js';
 import { Codicon } from '../../../base/common/codicons.js';
-import { Emitter, Event } from '../../../base/common/event.js';
 import { Disposable, DisposableStore } from '../../../base/common/lifecycle.js';
 import { localize } from '../../../nls.js';
 import { ThemeIcon } from '../../../base/common/themables.js';
@@ -51,7 +50,7 @@ export class SdkChatWidget extends Disposable {
 	private readonly _abortBtn: HTMLButtonElement;
 	private readonly _modelSelect: HTMLSelectElement;
 	private readonly _modelLabel: HTMLElement;
-	private readonly _folderBtn: HTMLElement;
+	private readonly _folderBtn: HTMLSelectElement;
 	private readonly _folderLabel: HTMLElement;
 	private _folderPath: string | undefined;
 	private readonly _statusBar: HTMLElement;
@@ -70,12 +69,6 @@ export class SdkChatWidget extends Disposable {
 	private _autoScroll = true;
 
 	private readonly _eventDisposables = this._register(new DisposableStore());
-
-	private readonly _onDidChangeState = this._register(new Emitter<void>());
-	readonly onDidChangeState: Event<void> = this._onDidChangeState.event;
-
-	private readonly _onDidChangeSessionId = this._register(new Emitter<string | undefined>());
-	readonly onDidChangeSessionId: Event<string | undefined> = this._onDidChangeSessionId.event;
 
 	constructor(
 		container: HTMLElement,
@@ -118,12 +111,12 @@ export class SdkChatWidget extends Disposable {
 		this._folderBtn = dom.append(folderPicker, $('select.sdk-chat-picker-select')) as HTMLSelectElement;
 		this._initDefaultFolder();
 		this._populateFolderHistory();
-		this._register(dom.addDisposableListener(this._folderBtn as HTMLSelectElement, 'change', () => {
-			const val = (this._folderBtn as HTMLSelectElement).value;
+		this._register(dom.addDisposableListener(this._folderBtn, 'change', () => {
+			const val = this._folderBtn.value;
 			if (val === '__browse__') {
 				this._pickFolder();
 				// Reset select to current folder
-				(this._folderBtn as HTMLSelectElement).value = this._folderPath ?? '';
+				this._folderBtn.value = this._folderPath ?? '';
 			} else {
 				this._folderPath = val || undefined;
 				this._folderLabel.textContent = val ? this._labelForPath(val) : localize('sdkChat.selectFolder', "Select folder");
@@ -222,9 +215,6 @@ export class SdkChatWidget extends Disposable {
 	}
 
 	focus(): void { this._textarea.focus(); }
-	get sessionId(): string | undefined { return this._sessionId; }
-	get isStreaming(): boolean { return this._isStreaming; }
-	get model(): SdkChatModel { return this._model; }
 
 	// --- Init ---
 
@@ -317,7 +307,7 @@ export class SdkChatWidget extends Disposable {
 	}
 
 	private _populateFolderHistory(): void {
-		const select = this._folderBtn as HTMLSelectElement;
+		const select = this._folderBtn;
 		dom.clearNode(select);
 		const history = this._getFolderHistory();
 
@@ -361,11 +351,10 @@ export class SdkChatWidget extends Disposable {
 			this._model.handleEvent(event);
 
 			// Update status bar with usage info
-			if (event.type === 'assistant.usage' as string) {
-				const data = event.data;
-				const model = data['model'] as string ?? '';
-				const input = data['inputTokens'] as number ?? 0;
-				const output = data['outputTokens'] as number ?? 0;
+			if (event.type === 'assistant.usage') {
+				const { model, inputTokens, outputTokens } = event.data;
+				const input = inputTokens ?? 0;
+				const output = outputTokens ?? 0;
 				this._setStatus(`${model} - ${input + output} tokens (${input} in, ${output} out)`);
 			}
 
@@ -545,7 +534,7 @@ export class SdkChatWidget extends Disposable {
 				CopilotSdkDebugLog.instance?.addEntry('\u2192', 'widget.createSession', JSON.stringify({ model, workingDirectory }));
 				this._sessionId = await this._sdk.createSession({ model, streaming: true, workingDirectory });
 				CopilotSdkDebugLog.instance?.addEntry('\u2190', 'widget.createSession', this._sessionId.substring(0, 8));
-				this._onDidChangeSessionId.fire(this._sessionId);
+
 			}
 
 			this._setStatus(localize('sdkChat.status.thinking', "Thinking..."));
@@ -577,7 +566,6 @@ export class SdkChatWidget extends Disposable {
 		this._sendBtn.style.display = streaming ? 'none' : '';
 		this._abortBtn.style.display = streaming ? '' : 'none';
 		this._textarea.disabled = streaming;
-		this._onDidChangeState.fire();
 	}
 
 	private _setStatus(text: string): void {
@@ -655,8 +643,6 @@ export class SdkChatWidget extends Disposable {
 		this._setStreaming(false);
 		this._setStatus(localize('sdkChat.status.ready', "Ready"));
 		this._updateWorktreeBar();
-		this._worktreePath = undefined;
-		this._onDidChangeSessionId.fire(undefined);
 		this._textarea.focus();
 	}
 
@@ -668,7 +654,6 @@ export class SdkChatWidget extends Disposable {
 		dom.clearNode(this._messagesContainer);
 
 		this._sessionId = sessionId;
-		this._onDidChangeSessionId.fire(sessionId);
 
 		try {
 			CopilotSdkDebugLog.instance?.addEntry('\u2192', 'widget.loadSession', sessionId.substring(0, 8));
@@ -717,10 +702,6 @@ export class SdkChatWidget extends Disposable {
 			}
 		}
 		this._renderedTurns.clear();
-	}
-
-	layout(_width: number, _height: number): void {
-		// CSS flexbox handles layout
 	}
 
 	override dispose(): void {

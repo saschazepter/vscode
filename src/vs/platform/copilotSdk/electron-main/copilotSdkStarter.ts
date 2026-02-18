@@ -14,7 +14,6 @@ import type { IServerChannel, IChannel } from '../../../base/parts/ipc/common/ip
 import { CopilotSdkChannel, ICopilotSdkMainService } from '../common/copilotSdkService.js';
 import { Schemas } from '../../../base/common/network.js';
 import { IEnvironmentMainService } from '../../environment/electron-main/environmentMainService.js';
-import { deepClone } from '../../../base/common/objects.js';
 import { CancellationToken } from '../../../base/common/cancellation.js';
 
 /**
@@ -45,12 +44,10 @@ export class CopilotSdkMainService extends Disposable implements ICopilotSdkMain
 
 	private _ensureChannel(): IChannel {
 		if (this._channel) {
-			this._logService.info('[CopilotSdkMainService] Reusing existing channel');
 			return this._channel;
 		}
 
-		this._logService.info('[CopilotSdkMainService] Starting Copilot SDK utility process...');
-		this._logService.info(`[CopilotSdkMainService] Logs path: ${this._environmentMainService.logsHome.with({ scheme: Schemas.file }).fsPath}`);
+		this._logService.info(`[CopilotSdkMainService] Starting Copilot SDK utility process (logs: ${this._environmentMainService.logsHome.with({ scheme: Schemas.file }).fsPath})`);
 
 		this._connectionStore = new DisposableStore();
 
@@ -67,16 +64,13 @@ export class CopilotSdkMainService extends Disposable implements ICopilotSdkMain
 		this._connectionStore.add(this._utilityProcess.onExit(e => this._logService.error(`[CopilotSdkHost] Process exited with code ${e.code}`)));
 		this._connectionStore.add(this._utilityProcess.onCrash(e => this._logService.error(`[CopilotSdkHost] Process crashed with code ${e.code}`)));
 
-		const entryPoint = 'vs/platform/copilotSdk/node/copilotSdkHost';
-		this._logService.info(`[CopilotSdkMainService] Entry point: ${entryPoint}`);
-
 		this._utilityProcess.start({
 			type: 'copilotSdkHost',
 			name: 'copilot-sdk-host',
-			entryPoint,
+			entryPoint: 'vs/platform/copilotSdk/node/copilotSdkHost',
 			args: ['--logsPath', this._environmentMainService.logsHome.with({ scheme: Schemas.file }).fsPath, '--disable-gpu'],
 			env: {
-				...deepClone(process.env) as Record<string, string>,
+				...process.env as Record<string, string>,
 				VSCODE_ESM_ENTRYPOINT: 'vs/platform/copilotSdk/node/copilotSdkHost',
 				VSCODE_PIPE_LOGGING: 'true',
 				VSCODE_VERBOSE_LOGGING: 'true',
@@ -84,12 +78,10 @@ export class CopilotSdkMainService extends Disposable implements ICopilotSdkMain
 		});
 
 		const port = this._utilityProcess.connect();
-		this._logService.info('[CopilotSdkMainService] MessagePort connected, creating client...');
 		const client = new MessagePortClient(port, 'copilotSdkHost');
 		this._connectionStore.add(client);
 
 		this._channel = client.getChannel(CopilotSdkChannel);
-
 		this._logService.info(`[CopilotSdkMainService] Channel '${CopilotSdkChannel}' acquired. Utility process ready.`);
 
 		return this._channel;
@@ -110,7 +102,6 @@ export class CopilotSdkMainService extends Disposable implements ICopilotSdkMain
 		this._connectionStore?.dispose();
 		this._connectionStore = undefined;
 		this._channel = undefined;
-		this._utilityProcess = undefined;
 	}
 
 	override dispose(): void {

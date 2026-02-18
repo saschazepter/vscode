@@ -170,7 +170,6 @@ class NewChatWidget extends Disposable {
 	private readonly _welcomeContentDisposables = this._register(new DisposableStore());
 	private _pickersContainer: HTMLElement | undefined;
 	private _targetDropdownContainer: HTMLElement | undefined;
-	private _extensionPickersLeftContainer: HTMLElement | undefined;
 	private _extensionPickersRightContainer: HTMLElement | undefined;
 	private _inputSlot: HTMLElement | undefined;
 	private readonly _pickerWidgets = new Map<string, ChatSessionPickerActionItem | SearchableOptionPickerActionItem>();
@@ -428,7 +427,6 @@ class NewChatWidget extends Disposable {
 		dom.append(pickersRow, dom.$('.sessions-chat-pickers-spacer'));
 
 		// Right group: all extension pickers (folder first, then others)
-		this._extensionPickersLeftContainer = undefined;
 		this._extensionPickersRightContainer = dom.append(pickersRow, dom.$('.sessions-chat-extension-pickers-right'));
 
 		this._renderExtensionPickers();
@@ -736,9 +734,6 @@ class NewChatWidget extends Disposable {
 		this._pickerWidgetDisposables.clear();
 		this._pickerWidgets.clear();
 		this._optionEmitters.clear();
-		if (this._extensionPickersLeftContainer) {
-			dom.clearNode(this._extensionPickersLeftContainer);
-		}
 		if (this._extensionPickersRightContainer) {
 			dom.clearNode(this._extensionPickersRightContainer);
 		}
@@ -792,10 +787,6 @@ class NewChatWidget extends Disposable {
 
 	layout(_height: number, _width: number): void {
 		this._editor?.layout();
-	}
-
-	setVisible(_visible: boolean): void {
-		// no-op
 	}
 
 	focusInput(): void {
@@ -881,11 +872,6 @@ export class NewChatViewPane extends ViewPane {
 	override focus(): void {
 		super.focus();
 		this._widget?.focusInput();
-	}
-
-	override setVisible(visible: boolean): void {
-		super.setVisible(visible);
-		this._widget?.setVisible(visible);
 	}
 }
 

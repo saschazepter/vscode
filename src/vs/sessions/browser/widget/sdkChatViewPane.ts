@@ -4,7 +4,6 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { $, append } from '../../../base/browser/dom.js';
-import { localize2 } from '../../../nls.js';
 import { IKeybindingService } from '../../../platform/keybinding/common/keybinding.js';
 import { IContextMenuService } from '../../../platform/contextview/browser/contextView.js';
 import { IConfigurationService } from '../../../platform/configuration/common/configuration.js';
@@ -20,9 +19,6 @@ import { SdkChatWidget } from './sdkChatWidget.js';
 export const SdkChatViewId = 'workbench.panel.chat.view.sdkChat';
 
 export class SdkChatViewPane extends ViewPane {
-
-	static readonly ID = SdkChatViewId;
-	static readonly TITLE = localize2('sdkChatViewPane.title', "Chat");
 
 	private _widget: SdkChatWidget | undefined;
 
@@ -43,7 +39,7 @@ export class SdkChatViewPane extends ViewPane {
 		@IHoverService hoverService: IHoverService,
 	) {
 		super(
-			{ ...options },
+			options,
 			keybindingService,
 			contextMenuService,
 			configurationService,
@@ -64,17 +60,8 @@ export class SdkChatViewPane extends ViewPane {
 		this._widget = this._register(this.instantiationService.createInstance(SdkChatWidget, widgetContainer));
 	}
 
-	protected override layoutBody(height: number, width: number): void {
-		super.layoutBody(height, width);
-		this._widget?.layout(width, height);
-	}
-
 	override focus(): void {
 		super.focus();
 		this._widget?.focus();
-	}
-
-	override shouldShowWelcome(): boolean {
-		return false;
 	}
 }

@@ -91,7 +91,7 @@ export class SdkContentPartRenderer {
 		store.add(result);
 		el.appendChild(result.element);
 		this._renderDisposables.set(el, store);
-		return { domNode: el, dispose: () => store.dispose() };
+		return { domNode: el, dispose: () => { this._renderDisposables.get(el)?.dispose(); this._renderDisposables.delete(el); } };
 	}
 
 	private _updateMarkdown(part: ISdkMarkdownPart, el: HTMLElement): boolean {
@@ -129,7 +129,7 @@ export class SdkContentPartRenderer {
 		content.appendChild(result.element);
 		this._renderDisposables.set(el, store);
 
-		return { domNode: el, dispose: () => store.dispose() };
+		return { domNode: el, dispose: () => { this._renderDisposables.get(el)?.dispose(); this._renderDisposables.delete(el); } };
 	}
 
 	private _updateThinking(part: ISdkThinkingPart, el: HTMLElement): boolean {

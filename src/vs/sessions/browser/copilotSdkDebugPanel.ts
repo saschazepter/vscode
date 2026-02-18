@@ -35,6 +35,7 @@ export class CopilotSdkDebugPanel extends Disposable {
 	private _activeTab: 'rpc' | 'process' | 'info' = 'rpc';
 
 	private readonly _eventDisposables = this._register(new DisposableStore());
+	private readonly _sessionInfoDisposables = this._register(new DisposableStore());
 
 	constructor(
 		container: HTMLElement,
@@ -347,7 +348,7 @@ export class CopilotSdkDebugPanel extends Disposable {
 					if (!this._sessionId) { this._debugLog.addEntry('X', 'getMessages', 'No session'); return; }
 					this._debugLog.addEntry('\u2192', 'getMessages', this._sessionId.substring(0, 8));
 					const messages = await this._sdk.getMessages(this._sessionId);
-					const summary = messages.map(m => `${m.type}${m.data.deltaContent ? ':' + (m.data.deltaContent as string).substring(0, 30) : ''}`).join(', ');
+					const summary = messages.map(m => m.type).join(', ');
 					this._debugLog.addEntry('\u2190', 'getMessages', `${messages.length} events: ${summary.substring(0, 200)}`);
 					break;
 				}
@@ -459,6 +460,7 @@ export class CopilotSdkDebugPanel extends Disposable {
 	 * Refresh the Session Info tab with comprehensive debug information.
 	 */
 	private async _refreshSessionInfo(): Promise<void> {
+		this._sessionInfoDisposables.clear();
 		dom.clearNode(this._sessionInfoContainer);
 
 		const add = (label: string, value: string, color?: string) => {
@@ -601,13 +603,13 @@ export class CopilotSdkDebugPanel extends Disposable {
 		const refreshBtn = dom.append(this._sessionInfoContainer, $('button')) as HTMLButtonElement;
 		refreshBtn.textContent = 'Refresh';
 		refreshBtn.style.cssText = 'margin-top:12px;font-size:11px;padding:4px 12px;background:var(--vscode-button-secondaryBackground);color:var(--vscode-button-secondaryForeground);border:none;border-radius:3px;cursor:pointer;';
-		this._register(dom.addDisposableListener(refreshBtn, 'click', () => this._refreshSessionInfo()));
+		this._sessionInfoDisposables.add(dom.addDisposableListener(refreshBtn, 'click', () => this._refreshSessionInfo()));
 
 		// Copy all info button
 		const copyInfoBtn = dom.append(this._sessionInfoContainer, $('button')) as HTMLButtonElement;
 		copyInfoBtn.textContent = 'Copy All Info';
 		copyInfoBtn.style.cssText = 'margin-top:4px;margin-left:4px;font-size:11px;padding:4px 12px;background:var(--vscode-button-secondaryBackground);color:var(--vscode-button-secondaryForeground);border:none;border-radius:3px;cursor:pointer;';
-		this._register(dom.addDisposableListener(copyInfoBtn, 'click', () => {
+		this._sessionInfoDisposables.add(dom.addDisposableListener(copyInfoBtn, 'click', () => {
 			this._clipboardService.writeText(this._sessionInfoContainer.textContent ?? '');
 			copyInfoBtn.textContent = 'Copied!';
 			setTimeout(() => { copyInfoBtn.textContent = 'Copy All Info'; }, 1500);

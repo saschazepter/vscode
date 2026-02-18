@@ -29,8 +29,6 @@ export interface IDebugLogEntry {
 
 export class CopilotSdkDebugLog extends Disposable {
 
-	static readonly ID = 'copilotSdk.debugLog';
-
 	private static _instance: CopilotSdkDebugLog | undefined;
 	static get instance(): CopilotSdkDebugLog | undefined { return CopilotSdkDebugLog._instance; }
 
