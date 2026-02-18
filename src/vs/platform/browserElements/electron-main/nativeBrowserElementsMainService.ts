@@ -30,11 +30,13 @@ interface NodeDataResponse {
 	innerText?: string;
 }
 
+const MAX_CONSOLE_LOG_ENTRIES = 1000;
+
 /** Stores captured console log entries, keyed by a locator string. */
 const consoleLogStore = new Map<string, string[]>();
 
-function locatorKey(locator: IBrowserTargetLocator): string {
-	return locator.browserViewId ?? locator.webviewId ?? '';
+function locatorKey(locator: IBrowserTargetLocator): string | undefined {
+	return locator.browserViewId ?? locator.webviewId;
 }
 
 export class NativeBrowserElementsMainService extends Disposable implements INativeBrowserElementsMainService {
@@ -52,6 +54,10 @@ export class NativeBrowserElementsMainService extends Disposable implements INat
 
 	async getConsoleLogs(windowId: number | undefined, locator: IBrowserTargetLocator): Promise<string | undefined> {
 		const key = locatorKey(locator);
+		if (!key) {
+			return undefined;
+		}
+
 		const entries = consoleLogStore.get(key);
 		if (!entries || entries.length === 0) {
 			return undefined;
@@ -64,6 +70,7 @@ export class NativeBrowserElementsMainService extends Disposable implements INat
 		if (!window?.win) {
 			return undefined;
 		}
+		const windowWebContents = window.win.webContents;
 
 		// For BrowserView targets, listen to the console-message event directly
 		// on the BrowserView's webContents. No CDP needed.
@@ -77,6 +84,10 @@ export class NativeBrowserElementsMainService extends Disposable implements INat
 		}
 
 		const key = locatorKey(locator);
+		if (!key) {
+			return undefined;
+		}
+
 		// Initialize log store for this locator if it doesn't exist yet (don't clear on restart)
 		if (!consoleLogStore.has(key)) {
 			consoleLogStore.set(key, []);
@@ -88,19 +99,35 @@ export class NativeBrowserElementsMainService extends Disposable implements INat
 			const formatted = `[${levelName}] ${message}`;
 			const current = consoleLogStore.get(key) ?? [];
 			current.push(formatted);
+			if (current.length > MAX_CONSOLE_LOG_ENTRIES) {
+				current.splice(0, current.length - MAX_CONSOLE_LOG_ENTRIES);
+			}
 			consoleLogStore.set(key, current);
 		};
 
-		targetWebContents.on('console-message', onConsoleMessage);
+		const cleanupListeners = () => {
+			targetWebContents?.off('console-message', onConsoleMessage);
+			targetWebContents?.off('destroyed', onTargetDestroyed);
+			windowWebContents.off('ipc-message', onIpcMessage);
+		};
 
-		window.win.webContents.on('ipc-message', async (_event, channel, closedCancelAndDetachId) => {
+		const onIpcMessage = (_event: Electron.Event, channel: string, closedCancelAndDetachId: number) => {
 			if (channel === `vscode:cancelConsoleSession${cancelAndDetachId}`) {
 				if (cancelAndDetachId !== closedCancelAndDetachId) {
 					return;
 				}
-				targetWebContents?.off('console-message', onConsoleMessage);
+				cleanupListeners();
 			}
-		});
+		};
+
+		const onTargetDestroyed = () => {
+			cleanupListeners();
+		};
+
+		targetWebContents.on('console-message', onConsoleMessage);
+		targetWebContents.on('destroyed', onTargetDestroyed);
+		windowWebContents.on('ipc-message', onIpcMessage);
+		token.onCancellationRequested(cleanupListeners);
 	}
 
 	/**
@@ -359,7 +386,7 @@ export class NativeBrowserElementsMainService extends Disposable implements INat
 			}, sessionId);
 		} catch (e) {
 			debuggers.detach();
-			throw new Error('No target found', e);
+			throw new Error('No target found', { cause: e });
 		}
 
 		if (!targetSessionId) {

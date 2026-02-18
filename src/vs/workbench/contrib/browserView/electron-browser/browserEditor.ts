@@ -372,7 +372,7 @@ export class BrowserEditor extends EditorPane {
 			// Update navigation bar and context keys from model
 			this.updateNavigationState(navEvent);
 
-			// Restart console session on navigation to capture logs from the new page
+			// Ensure a console session is active while a page URL is loaded.
 			if (navEvent.url) {
 				this.startConsoleSession();
 			} else {
@@ -902,8 +902,6 @@ export class BrowserEditor extends EditorPane {
 	}
 
 	private async doScreenshot(): Promise<void> {
-
-
 		if (!this._model) {
 			return;
 		}

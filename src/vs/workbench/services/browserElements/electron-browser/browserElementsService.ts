@@ -48,7 +48,7 @@ class WorkbenchBrowserElementsService implements IBrowserElementsService {
 		try {
 			await this.simpleBrowser.startConsoleSession(token, locator, cancelAndDetachId);
 		} catch (error) {
-			throw new Error('Failed to start console session', error);
+			throw new Error('Failed to start console session', { cause: error });
 		} finally {
 			disposable.dispose();
 		}
@@ -65,7 +65,7 @@ class WorkbenchBrowserElementsService implements IBrowserElementsService {
 		try {
 			await this.simpleBrowser.startDebugSession(token, locator, cancelAndDetachId);
 		} catch (error) {
-			throw new Error('No debug session target found', error);
+			throw new Error('No debug session target found', { cause: error });
 		} finally {
 			disposable.dispose();
 		}
