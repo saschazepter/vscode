@@ -10,7 +10,7 @@ import { Codicon } from '../../../../base/common/codicons.js';
 import { KeyCode, KeyMod } from '../../../../base/common/keyCodes.js';
 import { autorun } from '../../../../base/common/observable.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
-import { ContextKeyExpr, IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
+import { IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { IContextMenuService } from '../../../../platform/contextview/browser/contextView.js';
 import { IInstantiationService, ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
 import { IKeybindingService } from '../../../../platform/keybinding/common/keybinding.js';
@@ -25,6 +25,7 @@ import { AgentSessionsControl } from '../../../../workbench/contrib/chat/browser
 import { AgentSessionsFilter, AgentSessionsGrouping } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsFilter.js';
 import { ISessionsManagementService } from './sessionsManagementService.js';
 import { Action2, ISubmenuItem, MenuId, MenuRegistry, registerAction2 } from '../../../../platform/actions/common/actions.js';
+import { MenuWorkbenchToolBar } from '../../../../platform/actions/browser/toolbar.js';
 import { HoverPosition } from '../../../../base/browser/ui/hover/hoverWidget.js';
 import { IWorkbenchLayoutService } from '../../../../workbench/services/layout/browser/layoutService.js';
 import { Button } from '../../../../base/browser/ui/button/button.js';
@@ -48,6 +49,7 @@ import { agentIcon, instructionsIcon, promptIcon, skillIcon, hookIcon, workspace
 const $ = DOM.$;
 export const SessionsViewId = 'agentic.workbench.view.sessionsView';
 const SessionsViewFilterSubMenu = new MenuId('AgentSessionsViewFilterSubMenu');
+const SessionsViewHeaderMenu = new MenuId('AgentSessionsViewHeaderMenu');
 
 /**
  * Per-source breakdown of item counts.
@@ -150,6 +152,15 @@ export class AgenticSessionsViewPane extends ViewPane {
 
 		// Sessions section (top, fills available space)
 		const sessionsSection = DOM.append(sessionsContainer, $('.agent-sessions-section'));
+
+		// Sessions header with title and toolbar actions
+		const sessionsHeader = DOM.append(sessionsSection, $('.agent-sessions-header'));
+		const headerText = DOM.append(sessionsHeader, $('span'));
+		headerText.textContent = localize('sessions', "SESSIONS");
+		const headerToolbarContainer = DOM.append(sessionsHeader, $('.agent-sessions-header-toolbar'));
+		this._register(this.instantiationService.createInstance(MenuWorkbenchToolBar, headerToolbarContainer, SessionsViewHeaderMenu, {
+			menuOptions: { shouldForwardArgs: true },
+		}));
 
 		// Sessions content container
 		const sessionsContent = DOM.append(sessionsSection, $('.agent-sessions-content'));
@@ -432,13 +443,12 @@ KeybindingsRegistry.registerKeybindingRule({
 	primary: KeyMod.CtrlCmd | KeyCode.KeyN,
 });
 
-MenuRegistry.appendMenuItem(MenuId.ViewTitle, {
+MenuRegistry.appendMenuItem(SessionsViewHeaderMenu, {
 	submenu: SessionsViewFilterSubMenu,
 	title: localize2('filterAgentSessions', "Filter Agent Sessions"),
 	group: 'navigation',
 	order: 3,
 	icon: Codicon.filter,
-	when: ContextKeyExpr.equals('view', SessionsViewId)
 } satisfies ISubmenuItem);
 
 registerAction2(class RefreshAgentSessionsViewerAction extends Action2 {
@@ -448,10 +458,9 @@ registerAction2(class RefreshAgentSessionsViewerAction extends Action2 {
 			title: localize2('refresh', "Refresh Agent Sessions"),
 			icon: Codicon.refresh,
 			menu: [{
-				id: MenuId.ViewTitle,
+				id: SessionsViewHeaderMenu,
 				group: 'navigation',
 				order: 1,
-				when: ContextKeyExpr.equals('view', SessionsViewId),
 			}],
 		});
 	}
@@ -470,10 +479,9 @@ registerAction2(class FindAgentSessionInViewerAction extends Action2 {
 			title: localize2('find', "Find Agent Session"),
 			icon: Codicon.search,
 			menu: [{
-				id: MenuId.ViewTitle,
+				id: SessionsViewHeaderMenu,
 				group: 'navigation',
 				order: 2,
-				when: ContextKeyExpr.equals('view', SessionsViewId),
 			}]
 		});
 	}
