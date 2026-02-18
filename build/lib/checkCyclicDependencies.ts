@@ -9,7 +9,7 @@ import * as ts from 'typescript';
 
 // --- Graph (extracted from build/lib/tsb/utils.ts) ---
 
-class Node {
+export class Node {
 	readonly incoming = new Map<string, Node>();
 	readonly outgoing = new Map<string, Node>();
 
@@ -20,7 +20,7 @@ class Node {
 	}
 }
 
-class Graph {
+export class Graph {
 	private _nodes = new Map<string, Node>();
 
 	inertEdge(from: string, to: string): void {
@@ -82,11 +82,11 @@ class Graph {
 
 // --- Dependency scanning & cycle detection ---
 
-function normalize(p: string): string {
+export function normalize(p: string): string {
 	return p.replace(/\\/g, '/');
 }
 
-function collectJsFiles(dir: string): string[] {
+export function collectJsFiles(dir: string): string[] {
 	const results: string[] = [];
 	for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
 		const full = path.join(dir, entry.name);
@@ -99,7 +99,7 @@ function collectJsFiles(dir: string): string[] {
 	return results;
 }
 
-function processFile(filename: string, graph: Graph): void {
+export function processFile(filename: string, graph: Graph): void {
 	const content = fs.readFileSync(filename, 'utf-8');
 	const info = ts.preProcessFile(content, true);
 
@@ -168,4 +168,6 @@ function main(): void {
 	}
 }
 
-main();
+if (process.argv[1] && normalize(path.resolve(process.argv[1])).endsWith('checkCyclicDependencies.ts')) {
+	main();
+}
