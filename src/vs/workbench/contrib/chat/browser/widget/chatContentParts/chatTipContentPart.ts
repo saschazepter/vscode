@@ -6,7 +6,6 @@
 import './media/chatTipContent.css';
 import * as dom from '../../../../../../base/browser/dom.js';
 import { StandardMouseEvent } from '../../../../../../base/browser/mouseEvent.js';
-import { status } from '../../../../../../base/browser/ui/aria/aria.js';
 import { renderIcon } from '../../../../../../base/browser/ui/iconLabel/iconLabels.js';
 import { Codicon } from '../../../../../../base/common/codicons.js';
 import { Emitter } from '../../../../../../base/common/event.js';
@@ -17,6 +16,7 @@ import { MenuWorkbenchToolBar } from '../../../../../../platform/actions/browser
 import { Action2, IMenuService, MenuId, registerAction2 } from '../../../../../../platform/actions/common/actions.js';
 import { IContextKey, IContextKeyService } from '../../../../../../platform/contextkey/common/contextkey.js';
 import { IContextMenuService } from '../../../../../../platform/contextview/browser/contextView.js';
+import { ICommandService } from '../../../../../../platform/commands/common/commands.js';
 import { IInstantiationService, ServicesAccessor } from '../../../../../../platform/instantiation/common/instantiation.js';
 import { IMarkdownRenderer } from '../../../../../../platform/markdown/browser/markdownRenderer.js';
 import { ChatContextKeys } from '../../../common/actions/chatContextKeys.js';
@@ -38,7 +38,6 @@ export class ChatTipContentPart extends Disposable {
 	constructor(
 		tip: IChatTip,
 		private readonly _renderer: IMarkdownRenderer,
-		private readonly _getNextTip: () => IChatTip | undefined,
 		@IChatTipService private readonly _chatTipService: IChatTipService,
 		@IContextMenuService private readonly _contextMenuService: IContextMenuService,
 		@IMenuService private readonly _menuService: IMenuService,
@@ -61,9 +60,10 @@ export class ChatTipContentPart extends Disposable {
 		this._renderTip(tip);
 
 		this._register(this._chatTipService.onDidDismissTip(() => {
-			const nextTip = this._getNextTip();
+			const nextTip = this._chatTipService.navigateToNextTip();
 			if (nextTip) {
 				this._renderTip(nextTip);
+				dom.runAtThisOrScheduleAtNextAnimationFrame(dom.getWindow(this.domNode), () => this.focus());
 			} else {
 				this._onDidHide.fire();
 			}
@@ -71,6 +71,7 @@ export class ChatTipContentPart extends Disposable {
 
 		this._register(this._chatTipService.onDidNavigateTip(tip => {
 			this._renderTip(tip);
+			dom.runAtThisOrScheduleAtNextAnimationFrame(dom.getWindow(this.domNode), () => this.focus());
 		}));
 
 		this._register(this._chatTipService.onDidHideTip(() => {
@@ -123,10 +124,9 @@ export class ChatTipContentPart extends Disposable {
 		const textContent = markdownContent.element.textContent ?? localize('chatTip', "Chat tip");
 		const hasLink = /\[.*?\]\(.*?\)/.test(tip.content.value);
 		const ariaLabel = hasLink
-			? localize('chatTipWithAction', "{0} Tab to the action.", textContent)
+			? localize('chatTipWithAction', "{0} Tab to reach the action.", textContent)
 			: textContent;
 		this.domNode.setAttribute('aria-label', ariaLabel);
-		status(ariaLabel);
 	}
 }
 
@@ -136,7 +136,7 @@ registerAction2(class PreviousTipAction extends Action2 {
 	constructor() {
 		super({
 			id: 'workbench.action.chat.previousTip',
-			title: localize2('chatTip.previous', "Previous Tip"),
+			title: localize2('chatTip.previous', "Previous tip"),
 			icon: Codicon.chevronLeft,
 			f1: false,
 			menu: [{
@@ -149,8 +149,7 @@ registerAction2(class PreviousTipAction extends Action2 {
 
 	override async run(accessor: ServicesAccessor): Promise<void> {
 		const chatTipService = accessor.get(IChatTipService);
-		const contextKeyService = accessor.get(IContextKeyService);
-		chatTipService.navigateToPreviousTip(contextKeyService);
+		chatTipService.navigateToPreviousTip();
 	}
 });
 
@@ -158,7 +157,7 @@ registerAction2(class NextTipAction extends Action2 {
 	constructor() {
 		super({
 			id: 'workbench.action.chat.nextTip',
-			title: localize2('chatTip.next', "Next Tip"),
+			title: localize2('chatTip.next', "Next tip"),
 			icon: Codicon.chevronRight,
 			f1: false,
 			menu: [{
@@ -171,8 +170,7 @@ registerAction2(class NextTipAction extends Action2 {
 
 	override async run(accessor: ServicesAccessor): Promise<void> {
 		const chatTipService = accessor.get(IChatTipService);
-		const contextKeyService = accessor.get(IContextKeyService);
-		chatTipService.navigateToNextTip(contextKeyService);
+		chatTipService.navigateToNextTip();
 	}
 });
 
@@ -180,7 +178,7 @@ registerAction2(class DismissTipToolbarAction extends Action2 {
 	constructor() {
 		super({
 			id: 'workbench.action.chat.dismissTipToolbar',
-			title: localize2('chatTip.dismissButton', "Dismiss Tip"),
+			title: localize2('chatTip.dismissButton', "Dismiss tip"),
 			icon: Codicon.check,
 			f1: false,
 			menu: [{
@@ -193,26 +191,6 @@ registerAction2(class DismissTipToolbarAction extends Action2 {
 
 	override async run(accessor: ServicesAccessor): Promise<void> {
 		accessor.get(IChatTipService).dismissTip();
-	}
-});
-
-registerAction2(class CloseTipToolbarAction extends Action2 {
-	constructor() {
-		super({
-			id: 'workbench.action.chat.closeTip',
-			title: localize2('chatTip.close', "Close Tips"),
-			icon: Codicon.close,
-			f1: false,
-			menu: [{
-				id: MenuId.ChatTipToolbar,
-				group: 'navigation',
-				order: 4,
-			}]
-		});
-	}
-
-	override async run(accessor: ServicesAccessor): Promise<void> {
-		accessor.get(IChatTipService).hideTip();
 	}
 });
 
@@ -244,17 +222,41 @@ registerAction2(class DisableTipsAction extends Action2 {
 		super({
 			id: 'workbench.action.chat.disableTips',
 			title: localize2('chatTip.disableTips', "Disable tips"),
+			icon: Codicon.bellSlash,
 			f1: false,
 			menu: [{
 				id: MenuId.ChatTipContext,
 				group: 'chatTip',
 				order: 2,
+			}, {
+				id: MenuId.ChatTipToolbar,
+				group: 'navigation',
+				order: 5,
 			}]
 		});
 	}
 
 	override async run(accessor: ServicesAccessor): Promise<void> {
-		await accessor.get(IChatTipService).disableTips();
+		const chatTipService = accessor.get(IChatTipService);
+		const commandService = accessor.get(ICommandService);
+
+		await chatTipService.disableTips();
+		await commandService.executeCommand('workbench.action.openSettings', 'chat.tips.enabled');
+	}
+});
+
+registerAction2(class ResetDismissedTipsAction extends Action2 {
+	constructor() {
+		super({
+			id: 'workbench.action.chat.resetDismissedTips',
+			title: localize2('chatTip.resetDismissedTips', "Reset Dismissed Tips"),
+			f1: true,
+			precondition: ChatContextKeys.enabled,
+		});
+	}
+
+	override async run(accessor: ServicesAccessor): Promise<void> {
+		accessor.get(IChatTipService).clearDismissedTips();
 	}
 });
 

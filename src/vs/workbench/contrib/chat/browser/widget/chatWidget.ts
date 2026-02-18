@@ -7,6 +7,7 @@ import './media/chat.css';
 import './media/chatAgentHover.css';
 import './media/chatViewWelcome.css';
 import * as dom from '../../../../../base/browser/dom.js';
+import { status } from '../../../../../base/browser/ui/aria/aria.js';
 import { IMouseWheelEvent } from '../../../../../base/browser/mouseEvent.js';
 import { disposableTimeout, timeout } from '../../../../../base/common/async.js';
 import { CancellationToken } from '../../../../../base/common/cancellation.js';
@@ -255,6 +256,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 	private readonly welcomePart: MutableDisposable<ChatViewWelcomePart> = this._register(new MutableDisposable());
 
 	private readonly _gettingStartedTipPart = this._register(new MutableDisposable<DisposableStore>());
+	private _gettingStartedTipPartRef: ChatTipContentPart | undefined;
 
 	private readonly chatSuggestNextWidget: ChatSuggestNextWidget;
 
@@ -418,6 +420,23 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		this.requestInProgress = ChatContextKeys.requestInProgress.bindTo(contextKeyService);
 
 		this._register(this.chatEntitlementService.onDidChangeAnonymous(() => this.renderWelcomeViewContentIfNeeded()));
+
+		this._register(this.configurationService.onDidChangeConfiguration(e => {
+			if (e.affectsConfiguration('chat.tips.enabled')) {
+				if (!this.configurationService.getValue<boolean>('chat.tips.enabled')) {
+					// Clear the existing tip so it doesn't linger
+					if (this.inputPart) {
+						this._gettingStartedTipPartRef = undefined;
+						this._gettingStartedTipPart.clear();
+						const tipContainer = this.inputPart.gettingStartedTipContainerElement;
+						dom.clearNode(tipContainer);
+						dom.setVisibility(false, tipContainer);
+					}
+				} else {
+					this.updateChatViewVisibility();
+				}
+			}
+		}));
 
 		this._register(bindContextKey(decidedChatEditingResourceContextKey, contextKeyService, (reader) => {
 			const currentSession = this._editingSession.read(reader);
@@ -616,6 +635,14 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		return this.input.height.get() + this.listWidget.contentHeight + this.chatSuggestNextWidget.height;
 	}
 
+	get scrollTop(): number {
+		return this.listWidget.scrollTop;
+	}
+
+	set scrollTop(value: number) {
+		this.listWidget.scrollTop = value;
+	}
+
 	get attachmentModel(): ChatAttachmentModel {
 		return this.input.attachmentModel;
 	}
@@ -652,6 +679,11 @@ export class ChatWidget extends Disposable implements IChatWidget {
 
 		this.renderWelcomeViewContentIfNeeded();
 		this.createList(this.listContainer, { editable: !isInlineChat(this) && !isQuickChat(this), ...this.viewOptions.rendererOptions, renderStyle });
+
+		// Forward scroll events from the parent container margins (outside the max-width area) to the chat list
+		this._register(dom.addDisposableListener(parent, dom.EventType.MOUSE_WHEEL, (e: IMouseWheelEvent) => {
+			this.listWidget.delegateScrollFromMouseWheelEvent(e);
+		}));
 
 		// Update the font family and size
 		this._register(autorun(reader => {
@@ -768,12 +800,16 @@ export class ChatWidget extends Disposable implements IChatWidget {
 	}
 
 	toggleTipFocus(): boolean {
-		if (this.listWidget.hasTipFocus()) {
+		if (this._gettingStartedTipPartRef?.hasFocus()) {
 			this.focusInput();
 			return true;
 		}
 
-		return this.listWidget.focusTip();
+		if (!this._gettingStartedTipPartRef) {
+			return false;
+		}
+		this._gettingStartedTipPartRef.focus();
+		return true;
 	}
 
 	hasInputFocus(): boolean {
@@ -879,6 +915,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 				} else {
 					// Dispose the cached tip part so the next empty state picks a
 					// fresh (rotated) tip instead of re-showing the stale one.
+					this._gettingStartedTipPartRef = undefined;
 					this._gettingStartedTipPart.clear();
 					dom.clearNode(tipContainer);
 					dom.setVisibility(false, tipContainer);
@@ -969,14 +1006,16 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		const tipPart = store.add(this.instantiationService.createInstance(ChatTipContentPart,
 			tip,
 			renderer,
-			() => this.chatTipService.getWelcomeTip(this.contextKeyService),
 		));
 		tipContainer.appendChild(tipPart.domNode);
+		this._gettingStartedTipPartRef = tipPart;
 
 		store.add(tipPart.onDidHide(() => {
 			tipPart.domNode.remove();
+			this._gettingStartedTipPartRef = undefined;
 			this._gettingStartedTipPart.clear();
 			dom.setVisibility(false, tipContainer);
+			this.focusInput();
 		}));
 
 		this._gettingStartedTipPart.value = store;
@@ -1892,6 +1931,25 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			this.renderFollowups();
 			this.renderChatSuggestNextWidget();
 		}));
+		let previousModelIdentifier: string | undefined;
+		this._register(autorun(reader => {
+			const modelIdentifier = this.inputPart.selectedLanguageModel.read(reader)?.identifier;
+			if (previousModelIdentifier === undefined) {
+				previousModelIdentifier = modelIdentifier;
+				return;
+			}
+
+			if (previousModelIdentifier === modelIdentifier) {
+				return;
+			}
+
+			previousModelIdentifier = modelIdentifier;
+			if (!this._gettingStartedTipPartRef) {
+				return;
+			}
+
+			this.chatTipService.getWelcomeTip(this.contextKeyService);
+		}));
 
 		this._register(autorun(r => {
 			const toolSetIds = new Set<string>();
@@ -1949,19 +2007,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 
 		this._codeBlockModelCollection.clear();
 
-		this.container.setAttribute('data-session-id', model.sessionId);
 		this.viewModel = this.instantiationService.createInstance(ChatViewModel, model, this._codeBlockModelCollection, undefined);
-
-		// mark any question carousels as used on reload
-		for (const request of model.getRequests()) {
-			if (request.response) {
-				for (const part of request.response.entireResponse.value) {
-					if (part.kind === 'questionCarousel' && !part.isUsed) {
-						part.isUsed = true;
-					}
-				}
-			}
-		}
 
 		// Pass input model reference to input part for state syncing
 		this.inputPart.setInputModel(model.inputModel, model.getRequests().length === 0);
@@ -2008,12 +2054,19 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			this.onDidChangeItems();
 		}));
 		this._sessionIsEmptyContextKey.set(model.getRequests().length === 0);
-		const updatePendingRequestKeys = () => {
-			const pendingCount = model.getPendingRequests().length;
+		let lastSteeringCount = 0;
+		const updatePendingRequestKeys = (announceSteering: boolean) => {
+			const pendingRequests = model.getPendingRequests();
+			const pendingCount = pendingRequests.length;
 			this._hasPendingRequestsContextKey.set(pendingCount > 0);
+			const steeringCount = pendingRequests.filter(pending => pending.kind === ChatRequestQueueKind.Steering).length;
+			if (announceSteering && steeringCount > 0 && lastSteeringCount === 0) {
+				status(localize('chat.pendingRequests.steeringQueued', "Steering"));
+			}
+			lastSteeringCount = steeringCount;
 		};
-		updatePendingRequestKeys();
-		this.viewModelDisposables.add(model.onDidChangePendingRequests(() => updatePendingRequestKeys()));
+		updatePendingRequestKeys(false);
+		this.viewModelDisposables.add(model.onDidChangePendingRequests(() => updatePendingRequestKeys(true)));
 
 		this.refreshParsedInput();
 		this.viewModelDisposables.add(model.onDidChange((e) => {
@@ -2214,30 +2267,6 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		}
 	}
 
-	private hasPendingQuestionCarousel(response: IChatResponseModel | undefined): boolean {
-		return Boolean(response?.response.value.some(part => part.kind === 'questionCarousel' && !part.isUsed));
-	}
-
-
-	private dismissPendingQuestionCarousel(): void {
-		if (!this.viewModel) {
-			return;
-		}
-
-		const responseId = this.input.questionCarouselResponseId;
-		if (!responseId || this.viewModel.model.lastRequest?.id !== responseId) {
-			return;
-		}
-
-		const carouselPart = this.input.questionCarousel;
-		if (!carouselPart) {
-			return;
-		}
-
-		carouselPart.ignore();
-		this.input.clearQuestionCarousel(responseId);
-	}
-
 	private async _acceptInput(query: { query: string } | undefined, options: IChatAcceptInputOptions = {}): Promise<IChatResponseModel | undefined> {
 		if (!query && this.input.generating) {
 			// if the user submits the input and generation finishes quickly, just submit it for them
@@ -2293,16 +2322,17 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		}
 
 		const model = this.viewModel.model;
-
-		// Enable steering while a question carousel is pending, useful for when the questions are off track and the user needs to course correct.
-		const hasPendingQuestionCarousel = this.hasPendingQuestionCarousel(model.lastRequest?.response);
-		const shouldAutoSteer = hasPendingQuestionCarousel && options.queue === undefined;
-		if (shouldAutoSteer) {
-			options.queue = ChatRequestQueueKind.Steering;
-			this.dismissPendingQuestionCarousel();
-		}
-
 		const requestInProgress = model.requestInProgress.get();
+		// Cancel the request if the user chooses to take a different path.
+		// This is a bit of a heuristic for the common case of tool confirmation+reroute.
+		// But we don't do this if there are queued messages, because we would either
+		// discard them or need a prompt (as in `confirmPendingRequestsBeforeSend`)
+		// which could be a surprising behavior if the user finishes typing a steering
+		// request just as confirmation is triggered.
+		if (model.requestNeedsInput.get() && !model.getPendingRequests().length) {
+			this.chatService.cancelCurrentRequestForSession(this.viewModel.sessionResource);
+			options.queue ??= ChatRequestQueueKind.Queued;
+		}
 		if (requestInProgress) {
 			options.queue ??= ChatRequestQueueKind.Queued;
 		}

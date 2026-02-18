@@ -38,7 +38,7 @@ import { TestContextService, TestUserDataProfileService } from '../../../../../.
 import { ChatRequestVariableSet, isPromptFileVariableEntry, toFileVariableEntry } from '../../../../common/attachments/chatVariableEntries.js';
 import { ComputeAutomaticInstructions, newInstructionsCollectionEvent } from '../../../../common/promptSyntax/computeAutomaticInstructions.js';
 import { PromptsConfig } from '../../../../common/promptSyntax/config/config.js';
-import { AGENTS_SOURCE_FOLDER, CLAUDE_CONFIG_FOLDER, INSTRUCTION_FILE_EXTENSION, INSTRUCTIONS_DEFAULT_SOURCE_FOLDER, LEGACY_MODE_DEFAULT_SOURCE_FOLDER, PROMPT_DEFAULT_SOURCE_FOLDER, PROMPT_FILE_EXTENSION } from '../../../../common/promptSyntax/config/promptFileLocations.js';
+import { AGENTS_SOURCE_FOLDER, CLAUDE_CONFIG_FOLDER, HOOKS_SOURCE_FOLDER, INSTRUCTION_FILE_EXTENSION, INSTRUCTIONS_DEFAULT_SOURCE_FOLDER, LEGACY_MODE_DEFAULT_SOURCE_FOLDER, PROMPT_DEFAULT_SOURCE_FOLDER, PROMPT_FILE_EXTENSION } from '../../../../common/promptSyntax/config/promptFileLocations.js';
 import { INSTRUCTIONS_LANGUAGE_ID, PROMPT_LANGUAGE_ID, PromptsType } from '../../../../common/promptSyntax/promptTypes.js';
 import { ExtensionAgentSourceType, ICustomAgent, IPromptFileContext, IPromptsService, PromptsStorage, Target } from '../../../../common/promptSyntax/service/promptsService.js';
 import { PromptsService } from '../../../../common/promptSyntax/service/promptsServiceImpl.js';
@@ -47,7 +47,9 @@ import { InMemoryStorageService, IStorageService } from '../../../../../../../pl
 import { IPathService } from '../../../../../../services/path/common/pathService.js';
 import { IFileMatch, IFileQuery, ISearchService } from '../../../../../../services/search/common/search.js';
 import { IExtensionService } from '../../../../../../services/extensions/common/extensions.js';
+import { IRemoteAgentService } from '../../../../../../services/remote/common/remoteAgentService.js';
 import { ChatModeKind } from '../../../../common/constants.js';
+import { HookType } from '../../../../common/promptSyntax/hookSchema.js';
 
 suite('PromptsService', () => {
 	const disposables = ensureNoDisposablesAreLeakedInTestSuite();
@@ -152,6 +154,10 @@ suite('PromptsService', () => {
 			}
 		});
 
+		instaService.stub(IRemoteAgentService, {
+			getEnvironment: () => Promise.resolve(null),
+		});
+
 		service = disposables.add(instaService.createInstance(PromptsService));
 		instaService.stub(IPromptsService, service);
 	});
@@ -183,7 +189,7 @@ suite('PromptsService', () => {
 					contents: [
 						'---',
 						'description: \'Root prompt description.\'',
-						'tools: [\'my-tool1\', , true]',
+						'tools: [\'my-tool1\', , tool]',
 						'agent: "agent" ',
 						'---',
 						'## Files',
@@ -238,7 +244,7 @@ suite('PromptsService', () => {
 					contents: [
 						'---',
 						'description: "Another file description."',
-						'tools: [\'my-tool3\', false, "my-tool2" ]',
+						'tools: [\'my-tool3\', "my-tool2" ]',
 						'applyTo: "**/*.tsx"',
 						'---',
 						`[](${rootFolder}/folder1/some-other-folder)`,
@@ -262,7 +268,7 @@ suite('PromptsService', () => {
 			const result1 = await service.parseNew(rootFileUri, CancellationToken.None);
 			assert.deepEqual(result1.uri, rootFileUri);
 			assert.deepEqual(result1.header?.description, 'Root prompt description.');
-			assert.deepEqual(result1.header?.tools, ['my-tool1']);
+			assert.deepEqual(result1.header?.tools, ['my-tool1', 'tool']);
 			assert.deepEqual(result1.header?.agent, 'agent');
 			assert.ok(result1.body);
 			assert.deepEqual(
@@ -3368,6 +3374,59 @@ suite('PromptsService', () => {
 				cmd.promptPath.uri.path.includes('no-header-skill'));
 			assert.ok(noHeaderSkillInFiltered,
 				'Skill without header should be included when applying userInvocable filter (defaults to true)');
+		});
+	});
+
+	suite('hooks', () => {
+		test('multi-root workspace resolves cwd to per-hook-file workspace folder', async function () {
+			const folder1Uri = URI.file('/workspace-a');
+			const folder2Uri = URI.file('/workspace-b');
+
+			workspaceContextService.setWorkspace(testWorkspace(folder1Uri, folder2Uri));
+			testConfigService.setUserConfiguration(PromptsConfig.USE_CHAT_HOOKS, true);
+			testConfigService.setUserConfiguration(PromptsConfig.HOOKS_LOCATION_KEY, { [HOOKS_SOURCE_FOLDER]: true });
+
+			await mockFiles(fileService, [
+				{
+					path: '/workspace-a/.github/hooks/my-hook.json',
+					contents: [
+						JSON.stringify({
+							hooks: {
+								[HookType.PreToolUse]: [
+									{ type: 'command', command: 'echo folder-a' },
+								],
+							},
+						}),
+					],
+				},
+				{
+					path: '/workspace-b/.github/hooks/my-hook.json',
+					contents: [
+						JSON.stringify({
+							hooks: {
+								[HookType.PreToolUse]: [
+									{ type: 'command', command: 'echo folder-b' },
+								],
+							},
+						}),
+					],
+				},
+			]);
+
+			const result = await service.getHooks(CancellationToken.None);
+			assert.ok(result, 'Expected hooks result');
+
+			const preToolUseHooks = result.hooks[HookType.PreToolUse];
+			assert.ok(preToolUseHooks, 'Expected PreToolUse hooks');
+			assert.strictEqual(preToolUseHooks.length, 2, 'Expected two PreToolUse hooks');
+
+			const hookA = preToolUseHooks.find(h => h.command === 'echo folder-a');
+			const hookB = preToolUseHooks.find(h => h.command === 'echo folder-b');
+			assert.ok(hookA, 'Expected hook from folder-a');
+			assert.ok(hookB, 'Expected hook from folder-b');
+
+			assert.strictEqual(hookA.cwd?.path, folder1Uri.path, 'Hook from folder-a should have cwd pointing to workspace-a');
+			assert.strictEqual(hookB.cwd?.path, folder2Uri.path, 'Hook from folder-b should have cwd pointing to workspace-b');
 		});
 	});
 });

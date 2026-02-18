@@ -10,6 +10,7 @@ import { ServicesAccessor } from '../../../../../platform/instantiation/common/i
 import { KeybindingWeight } from '../../../../../platform/keybinding/common/keybindingsRegistry.js';
 import { KeyCode, KeyMod } from '../../../../../base/common/keyCodes.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
+import { ContextKeyExpr } from '../../../../../platform/contextkey/common/contextkey.js';
 import { IChatWidgetService } from '../chat.js';
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
 import { isResponseVM } from '../../common/model/chatViewModel.js';
@@ -33,7 +34,7 @@ class AnnounceChatConfirmationAction extends Action2 {
 			keybinding: {
 				weight: KeybindingWeight.WorkbenchContrib,
 				primary: KeyMod.CtrlCmd | KeyCode.KeyA | KeyMod.Shift,
-				when: CONTEXT_ACCESSIBILITY_MODE_ENABLED
+				when: ContextKeyExpr.and(CONTEXT_ACCESSIBILITY_MODE_ENABLED, ChatContextKeys.Editing.hasQuestionCarousel.negate())
 			}
 		});
 	}
@@ -66,7 +67,12 @@ class AnnounceChatConfirmationAction extends Action2 {
 		}
 
 		if (firstConfirmationElement) {
-			firstConfirmationElement.focus();
+			// Toggle: if the confirmation is already focused, move focus back to input
+			if (firstConfirmationElement.contains(pendingWidget.domNode.ownerDocument.activeElement)) {
+				pendingWidget.focusInput();
+			} else {
+				firstConfirmationElement.focus();
+			}
 		} else {
 			alert(localize('noConfirmationRequired', 'No chat confirmation required'));
 		}

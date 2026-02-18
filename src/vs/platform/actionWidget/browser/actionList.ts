@@ -267,8 +267,8 @@ export class ActionList<T> extends Disposable {
 
 	private readonly _list: List<IActionListItem<T>>;
 
-	private readonly _actionLineHeight = 28;
-	private readonly _headerLineHeight = 28;
+	private readonly _actionLineHeight = 24;
+	private readonly _headerLineHeight = 24;
 	private readonly _separatorLineHeight = 8;
 
 	private readonly _allMenuItems: readonly IActionListItem<T>[];
@@ -415,7 +415,6 @@ export class ActionList<T> extends Disposable {
 		if (focused.length > 0) {
 			this._list.reveal(focused[0]);
 		}
-		this._list.domFocus();
 	}
 
 	focusNext() {
@@ -424,7 +423,6 @@ export class ActionList<T> extends Disposable {
 		if (focused.length > 0) {
 			this._list.reveal(focused[0]);
 		}
-		this._list.domFocus();
 	}
 
 	acceptSelected(preview?: boolean) {
@@ -457,7 +455,6 @@ export class ActionList<T> extends Disposable {
 	}
 
 	private onFocus() {
-		this._list.domFocus();
 		const focused = this._list.getFocus();
 		if (focused.length === 0) {
 			return;

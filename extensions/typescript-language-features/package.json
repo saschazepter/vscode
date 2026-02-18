@@ -798,6 +798,26 @@
         "title": "%configuration.preferences%",
         "order": 21,
         "properties": {
+          "js/ts.preferences.quoteStyle": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "single",
+              "double"
+            ],
+            "default": "auto",
+            "markdownDescription": "%typescript.preferences.quoteStyle%",
+            "markdownEnumDescriptions": [
+              "%typescript.preferences.quoteStyle.auto%",
+              "%typescript.preferences.quoteStyle.single%",
+              "%typescript.preferences.quoteStyle.double%"
+            ],
+            "scope": "language-overridable",
+            "tags": [
+              "JavaScript",
+              "TypeScript"
+            ]
+          },
           "javascript.preferences.quoteStyle": {
             "type": "string",
             "enum": [
@@ -812,6 +832,7 @@
               "%typescript.preferences.quoteStyle.single%",
               "%typescript.preferences.quoteStyle.double%"
             ],
+            "markdownDeprecationMessage": "%configuration.preferences.quoteStyle.unifiedDeprecationMessage%",
             "scope": "language-overridable"
           },
           "typescript.preferences.quoteStyle": {
@@ -828,7 +849,30 @@
               "%typescript.preferences.quoteStyle.single%",
               "%typescript.preferences.quoteStyle.double%"
             ],
+            "markdownDeprecationMessage": "%configuration.preferences.quoteStyle.unifiedDeprecationMessage%",
             "scope": "language-overridable"
+          },
+          "js/ts.preferences.importModuleSpecifier": {
+            "type": "string",
+            "enum": [
+              "shortest",
+              "relative",
+              "non-relative",
+              "project-relative"
+            ],
+            "markdownEnumDescriptions": [
+              "%typescript.preferences.importModuleSpecifier.shortest%",
+              "%typescript.preferences.importModuleSpecifier.relative%",
+              "%typescript.preferences.importModuleSpecifier.nonRelative%",
+              "%typescript.preferences.importModuleSpecifier.projectRelative%"
+            ],
+            "default": "shortest",
+            "description": "%typescript.preferences.importModuleSpecifier%",
+            "scope": "language-overridable",
+            "tags": [
+              "JavaScript",
+              "TypeScript"
+            ]
           },
           "javascript.preferences.importModuleSpecifier": {
             "type": "string",
@@ -846,6 +890,7 @@
             ],
             "default": "shortest",
             "description": "%typescript.preferences.importModuleSpecifier%",
+            "markdownDeprecationMessage": "%configuration.preferences.importModuleSpecifier.unifiedDeprecationMessage%",
             "scope": "language-overridable"
           },
           "typescript.preferences.importModuleSpecifier": {
@@ -864,7 +909,36 @@
             ],
             "default": "shortest",
             "description": "%typescript.preferences.importModuleSpecifier%",
+            "markdownDeprecationMessage": "%configuration.preferences.importModuleSpecifier.unifiedDeprecationMessage%",
             "scope": "language-overridable"
+          },
+          "js/ts.preferences.importModuleSpecifierEnding": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "minimal",
+              "index",
+              "js"
+            ],
+            "enumItemLabels": [
+              null,
+              null,
+              null,
+              "%typescript.preferences.importModuleSpecifierEnding.label.js%"
+            ],
+            "markdownEnumDescriptions": [
+              "%typescript.preferences.importModuleSpecifierEnding.auto%",
+              "%typescript.preferences.importModuleSpecifierEnding.minimal%",
+              "%typescript.preferences.importModuleSpecifierEnding.index%",
+              "%typescript.preferences.importModuleSpecifierEnding.js%"
+            ],
+            "default": "auto",
+            "description": "%typescript.preferences.importModuleSpecifierEnding%",
+            "scope": "language-overridable",
+            "tags": [
+              "JavaScript",
+              "TypeScript"
+            ]
           },
           "javascript.preferences.importModuleSpecifierEnding": {
             "type": "string",
@@ -888,6 +962,7 @@
             ],
             "default": "auto",
             "description": "%typescript.preferences.importModuleSpecifierEnding%",
+            "markdownDeprecationMessage": "%configuration.preferences.importModuleSpecifierEnding.unifiedDeprecationMessage%",
             "scope": "language-overridable"
           },
           "typescript.preferences.importModuleSpecifierEnding": {
@@ -912,7 +987,28 @@
             ],
             "default": "auto",
             "description": "%typescript.preferences.importModuleSpecifierEnding%",
+            "markdownDeprecationMessage": "%configuration.preferences.importModuleSpecifierEnding.unifiedDeprecationMessage%",
             "scope": "language-overridable"
+          },
+          "js/ts.preferences.jsxAttributeCompletionStyle": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "braces",
+              "none"
+            ],
+            "markdownEnumDescriptions": [
+              "%configuration.preferences.jsxAttributeCompletionStyle.auto%",
+              "%typescript.preferences.jsxAttributeCompletionStyle.braces%",
+              "%typescript.preferences.jsxAttributeCompletionStyle.none%"
+            ],
+            "default": "auto",
+            "description": "%typescript.preferences.jsxAttributeCompletionStyle%",
+            "scope": "language-overridable",
+            "tags": [
+              "JavaScript",
+              "TypeScript"
+            ]
           },
           "javascript.preferences.jsxAttributeCompletionStyle": {
             "type": "string",
@@ -928,6 +1024,7 @@
             ],
             "default": "auto",
             "description": "%typescript.preferences.jsxAttributeCompletionStyle%",
+            "markdownDeprecationMessage": "%configuration.preferences.jsxAttributeCompletionStyle.unifiedDeprecationMessage%",
             "scope": "language-overridable"
           },
           "typescript.preferences.jsxAttributeCompletionStyle": {
@@ -944,7 +1041,27 @@
             ],
             "default": "auto",
             "description": "%typescript.preferences.jsxAttributeCompletionStyle%",
+            "markdownDeprecationMessage": "%configuration.preferences.jsxAttributeCompletionStyle.unifiedDeprecationMessage%",
             "scope": "language-overridable"
+          },
+          "js/ts.preferences.includePackageJsonAutoImports": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "on",
+              "off"
+            ],
+            "enumDescriptions": [
+              "%typescript.preferences.includePackageJsonAutoImports.auto%",
+              "%typescript.preferences.includePackageJsonAutoImports.on%",
+              "%typescript.preferences.includePackageJsonAutoImports.off%"
+            ],
+            "default": "auto",
+            "markdownDescription": "%typescript.preferences.includePackageJsonAutoImports%",
+            "scope": "window",
+            "tags": [
+              "TypeScript"
+            ]
           },
           "typescript.preferences.includePackageJsonAutoImports": {
             "type": "string",
@@ -960,7 +1077,20 @@
             ],
             "default": "auto",
             "markdownDescription": "%typescript.preferences.includePackageJsonAutoImports%",
+            "markdownDeprecationMessage": "%configuration.preferences.includePackageJsonAutoImports.unifiedDeprecationMessage%",
             "scope": "window"
+          },
+          "js/ts.preferences.autoImportFileExcludePatterns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "markdownDescription": "%typescript.preferences.autoImportFileExcludePatterns%",
+            "scope": "resource",
+            "tags": [
+              "JavaScript",
+              "TypeScript"
+            ]
           },
           "javascript.preferences.autoImportFileExcludePatterns": {
             "type": "array",
@@ -968,6 +1098,7 @@
               "type": "string"
             },
             "markdownDescription": "%typescript.preferences.autoImportFileExcludePatterns%",
+            "markdownDeprecationMessage": "%configuration.preferences.autoImportFileExcludePatterns.unifiedDeprecationMessage%",
             "scope": "resource"
           },
           "typescript.preferences.autoImportFileExcludePatterns": {
@@ -976,7 +1107,20 @@
               "type": "string"
             },
             "markdownDescription": "%typescript.preferences.autoImportFileExcludePatterns%",
+            "markdownDeprecationMessage": "%configuration.preferences.autoImportFileExcludePatterns.unifiedDeprecationMessage%",
             "scope": "resource"
+          },
+          "js/ts.preferences.autoImportSpecifierExcludeRegexes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "markdownDescription": "%typescript.preferences.autoImportSpecifierExcludeRegexes%",
+            "scope": "resource",
+            "tags": [
+              "JavaScript",
+              "TypeScript"
+            ]
           },
           "javascript.preferences.autoImportSpecifierExcludeRegexes": {
             "type": "array",
@@ -984,6 +1128,7 @@
               "type": "string"
             },
             "markdownDescription": "%typescript.preferences.autoImportSpecifierExcludeRegexes%",
+            "markdownDeprecationMessage": "%configuration.preferences.autoImportSpecifierExcludeRegexes.unifiedDeprecationMessage%",
             "scope": "resource"
           },
           "typescript.preferences.autoImportSpecifierExcludeRegexes": {
@@ -992,41 +1137,159 @@
               "type": "string"
             },
             "markdownDescription": "%typescript.preferences.autoImportSpecifierExcludeRegexes%",
+            "markdownDeprecationMessage": "%configuration.preferences.autoImportSpecifierExcludeRegexes.unifiedDeprecationMessage%",
             "scope": "resource"
+          },
+          "js/ts.preferences.preferTypeOnlyAutoImports": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "%typescript.preferences.preferTypeOnlyAutoImports%",
+            "scope": "resource",
+            "tags": [
+              "TypeScript"
+            ]
           },
           "typescript.preferences.preferTypeOnlyAutoImports": {
             "type": "boolean",
             "default": false,
             "markdownDescription": "%typescript.preferences.preferTypeOnlyAutoImports%",
+            "markdownDeprecationMessage": "%configuration.preferences.preferTypeOnlyAutoImports.unifiedDeprecationMessage%",
             "scope": "resource"
+          },
+          "js/ts.preferences.useAliasesForRenames": {
+            "type": "boolean",
+            "default": true,
+            "description": "%typescript.preferences.useAliasesForRenames%",
+            "scope": "language-overridable",
+            "tags": [
+              "JavaScript",
+              "TypeScript"
+            ]
           },
           "javascript.preferences.useAliasesForRenames": {
             "type": "boolean",
             "default": true,
             "description": "%typescript.preferences.useAliasesForRenames%",
+            "markdownDeprecationMessage": "%configuration.preferences.useAliasesForRenames.unifiedDeprecationMessage%",
             "scope": "language-overridable"
           },
           "typescript.preferences.useAliasesForRenames": {
             "type": "boolean",
             "default": true,
             "description": "%typescript.preferences.useAliasesForRenames%",
+            "markdownDeprecationMessage": "%configuration.preferences.useAliasesForRenames.unifiedDeprecationMessage%",
             "scope": "language-overridable"
+          },
+          "js/ts.preferences.renameMatchingJsxTags": {
+            "type": "boolean",
+            "default": true,
+            "description": "%typescript.preferences.renameMatchingJsxTags%",
+            "scope": "language-overridable",
+            "tags": [
+              "JavaScript",
+              "TypeScript"
+            ]
           },
           "javascript.preferences.renameMatchingJsxTags": {
             "type": "boolean",
             "default": true,
             "description": "%typescript.preferences.renameMatchingJsxTags%",
+            "markdownDeprecationMessage": "%configuration.preferences.renameMatchingJsxTags.unifiedDeprecationMessage%",
             "scope": "language-overridable"
           },
           "typescript.preferences.renameMatchingJsxTags": {
             "type": "boolean",
             "default": true,
             "description": "%typescript.preferences.renameMatchingJsxTags%",
+            "markdownDeprecationMessage": "%configuration.preferences.renameMatchingJsxTags.unifiedDeprecationMessage%",
             "scope": "language-overridable"
+          },
+          "js/ts.preferences.organizeImports": {
+            "type": "object",
+            "markdownDescription": "%typescript.preferences.organizeImports%",
+            "properties": {
+              "caseSensitivity": {
+                "type": "string",
+                "markdownDescription": "%typescript.preferences.organizeImports.caseSensitivity%",
+                "enum": [
+                  "auto",
+                  "caseInsensitive",
+                  "caseSensitive"
+                ],
+                "markdownEnumDescriptions": [
+                  "%typescript.preferences.organizeImports.caseSensitivity.auto%",
+                  "%typescript.preferences.organizeImports.caseSensitivity.insensitive",
+                  "%typescript.preferences.organizeImports.caseSensitivity.sensitive%"
+                ],
+                "default": "auto"
+              },
+              "typeOrder": {
+                "type": "string",
+                "markdownDescription": "%typescript.preferences.organizeImports.typeOrder%",
+                "enum": [
+                  "auto",
+                  "last",
+                  "inline",
+                  "first"
+                ],
+                "default": "auto",
+                "markdownEnumDescriptions": [
+                  "%typescript.preferences.organizeImports.typeOrder.auto%",
+                  "%typescript.preferences.organizeImports.typeOrder.last%",
+                  "%typescript.preferences.organizeImports.typeOrder.inline%",
+                  "%typescript.preferences.organizeImports.typeOrder.first%"
+                ]
+              },
+              "unicodeCollation": {
+                "type": "string",
+                "markdownDescription": "%typescript.preferences.organizeImports.unicodeCollation%",
+                "enum": [
+                  "ordinal",
+                  "unicode"
+                ],
+                "markdownEnumDescriptions": [
+                  "%typescript.preferences.organizeImports.unicodeCollation.ordinal%",
+                  "%typescript.preferences.organizeImports.unicodeCollation.unicode%"
+                ],
+                "default": "ordinal"
+              },
+              "locale": {
+                "type": "string",
+                "markdownDescription": "%typescript.preferences.organizeImports.locale%"
+              },
+              "numericCollation": {
+                "type": "boolean",
+                "markdownDescription": "%typescript.preferences.organizeImports.numericCollation%"
+              },
+              "accentCollation": {
+                "type": "boolean",
+                "markdownDescription": "%typescript.preferences.organizeImports.accentCollation%"
+              },
+              "caseFirst": {
+                "type": "string",
+                "markdownDescription": "%typescript.preferences.organizeImports.caseFirst%",
+                "enum": [
+                  "default",
+                  "upper",
+                  "lower"
+                ],
+                "markdownEnumDescriptions": [
+                  "%typescript.preferences.organizeImports.caseFirst.default%",
+                  "%typescript.preferences.organizeImports.caseFirst.upper%",
+                  "%typescript.preferences.organizeImports.caseFirst.lower%"
+                ],
+                "default": "default"
+              }
+            },
+            "tags": [
+              "JavaScript",
+              "TypeScript"
+            ]
           },
           "javascript.preferences.organizeImports": {
             "type": "object",
             "markdownDescription": "%typescript.preferences.organizeImports%",
+            "markdownDeprecationMessage": "%configuration.preferences.organizeImports.unifiedDeprecationMessage%",
             "properties": {
               "caseSensitivity": {
                 "type": "string",
@@ -1105,6 +1368,7 @@
           "typescript.preferences.organizeImports": {
             "type": "object",
             "markdownDescription": "%typescript.preferences.organizeImports%",
+            "markdownDeprecationMessage": "%configuration.preferences.organizeImports.unifiedDeprecationMessage%",
             "properties": {
               "caseSensitivity": {
                 "type": "string",
@@ -1187,208 +1451,431 @@
         "title": "%configuration.format%",
         "order": 23,
         "properties": {
+          "js/ts.format.enabled": {
+            "type": "boolean",
+            "default": true,
+            "description": "%format.enable%",
+            "scope": "language-overridable",
+            "tags": [
+              "JavaScript",
+              "TypeScript"
+            ]
+          },
           "javascript.format.enable": {
             "type": "boolean",
             "default": true,
             "description": "%javascript.format.enable%",
+            "markdownDeprecationMessage": "%configuration.format.enable.unifiedDeprecationMessage%",
             "scope": "window"
           },
           "typescript.format.enable": {
             "type": "boolean",
             "default": true,
             "description": "%typescript.format.enable%",
+            "markdownDeprecationMessage": "%configuration.format.enable.unifiedDeprecationMessage%",
             "scope": "window"
+          },
+          "js/ts.format.insertSpaceAfterCommaDelimiter": {
+            "type": "boolean",
+            "default": true,
+            "description": "%format.insertSpaceAfterCommaDelimiter%",
+            "scope": "language-overridable",
+            "tags": [
+              "JavaScript",
+              "TypeScript"
+            ]
           },
           "javascript.format.insertSpaceAfterCommaDelimiter": {
             "type": "boolean",
             "default": true,
             "description": "%format.insertSpaceAfterCommaDelimiter%",
+            "markdownDeprecationMessage": "%configuration.format.insertSpaceAfterCommaDelimiter.unifiedDeprecationMessage%",
             "scope": "resource"
           },
           "typescript.format.insertSpaceAfterCommaDelimiter": {
             "type": "boolean",
             "default": true,
             "description": "%format.insertSpaceAfterCommaDelimiter%",
+            "markdownDeprecationMessage": "%configuration.format.insertSpaceAfterCommaDelimiter.unifiedDeprecationMessage%",
             "scope": "resource"
+          },
+          "js/ts.format.insertSpaceAfterConstructor": {
+            "type": "boolean",
+            "default": false,
+            "description": "%format.insertSpaceAfterConstructor%",
+            "scope": "language-overridable",
+            "tags": [
+              "JavaScript",
+              "TypeScript"
+            ]
           },
           "javascript.format.insertSpaceAfterConstructor": {
             "type": "boolean",
             "default": false,
             "description": "%format.insertSpaceAfterConstructor%",
+            "markdownDeprecationMessage": "%configuration.format.insertSpaceAfterConstructor.unifiedDeprecationMessage%",
             "scope": "resource"
           },
           "typescript.format.insertSpaceAfterConstructor": {
             "type": "boolean",
             "default": false,
             "description": "%format.insertSpaceAfterConstructor%",
+            "markdownDeprecationMessage": "%configuration.format.insertSpaceAfterConstructor.unifiedDeprecationMessage%",
             "scope": "resource"
+          },
+          "js/ts.format.insertSpaceAfterSemicolonInForStatements": {
+            "type": "boolean",
+            "default": true,
+            "description": "%format.insertSpaceAfterSemicolonInForStatements%",
+            "scope": "language-overridable",
+            "tags": [
+              "JavaScript",
+              "TypeScript"
+            ]
           },
           "javascript.format.insertSpaceAfterSemicolonInForStatements": {
             "type": "boolean",
             "default": true,
             "description": "%format.insertSpaceAfterSemicolonInForStatements%",
+            "markdownDeprecationMessage": "%configuration.format.insertSpaceAfterSemicolonInForStatements.unifiedDeprecationMessage%",
             "scope": "resource"
           },
           "typescript.format.insertSpaceAfterSemicolonInForStatements": {
             "type": "boolean",
             "default": true,
             "description": "%format.insertSpaceAfterSemicolonInForStatements%",
+            "markdownDeprecationMessage": "%configuration.format.insertSpaceAfterSemicolonInForStatements.unifiedDeprecationMessage%",
             "scope": "resource"
+          },
+          "js/ts.format.insertSpaceBeforeAndAfterBinaryOperators": {
+            "type": "boolean",
+            "default": true,
+            "description": "%format.insertSpaceBeforeAndAfterBinaryOperators%",
+            "scope": "language-overridable",
+            "tags": [
+              "JavaScript",
+              "TypeScript"
+            ]
           },
           "javascript.format.insertSpaceBeforeAndAfterBinaryOperators": {
             "type": "boolean",
             "default": true,
             "description": "%format.insertSpaceBeforeAndAfterBinaryOperators%",
+            "markdownDeprecationMessage": "%configuration.format.insertSpaceBeforeAndAfterBinaryOperators.unifiedDeprecationMessage%",
             "scope": "resource"
           },
           "typescript.format.insertSpaceBeforeAndAfterBinaryOperators": {
             "type": "boolean",
             "default": true,
             "description": "%format.insertSpaceBeforeAndAfterBinaryOperators%",
+            "markdownDeprecationMessage": "%configuration.format.insertSpaceBeforeAndAfterBinaryOperators.unifiedDeprecationMessage%",
             "scope": "resource"
+          },
+          "js/ts.format.insertSpaceAfterKeywordsInControlFlowStatements": {
+            "type": "boolean",
+            "default": true,
+            "description": "%format.insertSpaceAfterKeywordsInControlFlowStatements%",
+            "scope": "language-overridable",
+            "tags": [
+              "JavaScript",
+              "TypeScript"
+            ]
           },
           "javascript.format.insertSpaceAfterKeywordsInControlFlowStatements": {
             "type": "boolean",
             "default": true,
             "description": "%format.insertSpaceAfterKeywordsInControlFlowStatements%",
+            "markdownDeprecationMessage": "%configuration.format.insertSpaceAfterKeywordsInControlFlowStatements.unifiedDeprecationMessage%",
             "scope": "resource"
           },
           "typescript.format.insertSpaceAfterKeywordsInControlFlowStatements": {
             "type": "boolean",
             "default": true,
             "description": "%format.insertSpaceAfterKeywordsInControlFlowStatements%",
+            "markdownDeprecationMessage": "%configuration.format.insertSpaceAfterKeywordsInControlFlowStatements.unifiedDeprecationMessage%",
             "scope": "resource"
+          },
+          "js/ts.format.insertSpaceAfterFunctionKeywordForAnonymousFunctions": {
+            "type": "boolean",
+            "default": true,
+            "description": "%format.insertSpaceAfterFunctionKeywordForAnonymousFunctions%",
+            "scope": "language-overridable",
+            "tags": [
+              "JavaScript",
+              "TypeScript"
+            ]
           },
           "javascript.format.insertSpaceAfterFunctionKeywordForAnonymousFunctions": {
             "type": "boolean",
             "default": true,
             "description": "%format.insertSpaceAfterFunctionKeywordForAnonymousFunctions%",
+            "markdownDeprecationMessage": "%configuration.format.insertSpaceAfterFunctionKeywordForAnonymousFunctions.unifiedDeprecationMessage%",
             "scope": "resource"
           },
           "typescript.format.insertSpaceAfterFunctionKeywordForAnonymousFunctions": {
             "type": "boolean",
             "default": true,
             "description": "%format.insertSpaceAfterFunctionKeywordForAnonymousFunctions%",
+            "markdownDeprecationMessage": "%configuration.format.insertSpaceAfterFunctionKeywordForAnonymousFunctions.unifiedDeprecationMessage%",
             "scope": "resource"
+          },
+          "js/ts.format.insertSpaceBeforeFunctionParenthesis": {
+            "type": "boolean",
+            "default": false,
+            "description": "%format.insertSpaceBeforeFunctionParenthesis%",
+            "scope": "language-overridable",
+            "tags": [
+              "JavaScript",
+              "TypeScript"
+            ]
           },
           "javascript.format.insertSpaceBeforeFunctionParenthesis": {
             "type": "boolean",
             "default": false,
             "description": "%format.insertSpaceBeforeFunctionParenthesis%",
+            "markdownDeprecationMessage": "%configuration.format.insertSpaceBeforeFunctionParenthesis.unifiedDeprecationMessage%",
             "scope": "resource"
           },
           "typescript.format.insertSpaceBeforeFunctionParenthesis": {
             "type": "boolean",
             "default": false,
             "description": "%format.insertSpaceBeforeFunctionParenthesis%",
+            "markdownDeprecationMessage": "%configuration.format.insertSpaceBeforeFunctionParenthesis.unifiedDeprecationMessage%",
             "scope": "resource"
+          },
+          "js/ts.format.insertSpaceAfterOpeningAndBeforeClosingNonemptyParenthesis": {
+            "type": "boolean",
+            "default": false,
+            "description": "%format.insertSpaceAfterOpeningAndBeforeClosingNonemptyParenthesis%",
+            "scope": "language-overridable",
+            "tags": [
+              "JavaScript",
+              "TypeScript"
+            ]
           },
           "javascript.format.insertSpaceAfterOpeningAndBeforeClosingNonemptyParenthesis": {
             "type": "boolean",
             "default": false,
             "description": "%format.insertSpaceAfterOpeningAndBeforeClosingNonemptyParenthesis%",
+            "markdownDeprecationMessage": "%configuration.format.insertSpaceAfterOpeningAndBeforeClosingNonemptyParenthesis.unifiedDeprecationMessage%",
             "scope": "resource"
           },
           "typescript.format.insertSpaceAfterOpeningAndBeforeClosingNonemptyParenthesis": {
             "type": "boolean",
             "default": false,
             "description": "%format.insertSpaceAfterOpeningAndBeforeClosingNonemptyParenthesis%",
+            "markdownDeprecationMessage": "%configuration.format.insertSpaceAfterOpeningAndBeforeClosingNonemptyParenthesis.unifiedDeprecationMessage%",
             "scope": "resource"
+          },
+          "js/ts.format.insertSpaceAfterOpeningAndBeforeClosingNonemptyBrackets": {
+            "type": "boolean",
+            "default": false,
+            "description": "%format.insertSpaceAfterOpeningAndBeforeClosingNonemptyBrackets%",
+            "scope": "language-overridable",
+            "tags": [
+              "JavaScript",
+              "TypeScript"
+            ]
           },
           "javascript.format.insertSpaceAfterOpeningAndBeforeClosingNonemptyBrackets": {
             "type": "boolean",
             "default": false,
             "description": "%format.insertSpaceAfterOpeningAndBeforeClosingNonemptyBrackets%",
+            "markdownDeprecationMessage": "%configuration.format.insertSpaceAfterOpeningAndBeforeClosingNonemptyBrackets.unifiedDeprecationMessage%",
             "scope": "resource"
           },
           "typescript.format.insertSpaceAfterOpeningAndBeforeClosingNonemptyBrackets": {
             "type": "boolean",
             "default": false,
             "description": "%format.insertSpaceAfterOpeningAndBeforeClosingNonemptyBrackets%",
+            "markdownDeprecationMessage": "%configuration.format.insertSpaceAfterOpeningAndBeforeClosingNonemptyBrackets.unifiedDeprecationMessage%",
             "scope": "resource"
+          },
+          "js/ts.format.insertSpaceAfterOpeningAndBeforeClosingNonemptyBraces": {
+            "type": "boolean",
+            "default": true,
+            "description": "%format.insertSpaceAfterOpeningAndBeforeClosingNonemptyBraces%",
+            "scope": "language-overridable",
+            "tags": [
+              "JavaScript",
+              "TypeScript"
+            ]
           },
           "javascript.format.insertSpaceAfterOpeningAndBeforeClosingNonemptyBraces": {
             "type": "boolean",
             "default": true,
             "description": "%format.insertSpaceAfterOpeningAndBeforeClosingNonemptyBraces%",
+            "markdownDeprecationMessage": "%configuration.format.insertSpaceAfterOpeningAndBeforeClosingNonemptyBraces.unifiedDeprecationMessage%",
             "scope": "resource"
           },
           "typescript.format.insertSpaceAfterOpeningAndBeforeClosingNonemptyBraces": {
             "type": "boolean",
             "default": true,
             "description": "%format.insertSpaceAfterOpeningAndBeforeClosingNonemptyBraces%",
+            "markdownDeprecationMessage": "%configuration.format.insertSpaceAfterOpeningAndBeforeClosingNonemptyBraces.unifiedDeprecationMessage%",
             "scope": "resource"
+          },
+          "js/ts.format.insertSpaceAfterOpeningAndBeforeClosingEmptyBraces": {
+            "type": "boolean",
+            "default": true,
+            "description": "%format.insertSpaceAfterOpeningAndBeforeClosingEmptyBraces%",
+            "scope": "language-overridable",
+            "tags": [
+              "JavaScript",
+              "TypeScript"
+            ]
           },
           "javascript.format.insertSpaceAfterOpeningAndBeforeClosingEmptyBraces": {
             "type": "boolean",
             "default": true,
             "description": "%format.insertSpaceAfterOpeningAndBeforeClosingEmptyBraces%",
+            "markdownDeprecationMessage": "%configuration.format.insertSpaceAfterOpeningAndBeforeClosingEmptyBraces.unifiedDeprecationMessage%",
             "scope": "resource"
           },
           "typescript.format.insertSpaceAfterOpeningAndBeforeClosingEmptyBraces": {
             "type": "boolean",
             "default": true,
             "description": "%format.insertSpaceAfterOpeningAndBeforeClosingEmptyBraces%",
+            "markdownDeprecationMessage": "%configuration.format.insertSpaceAfterOpeningAndBeforeClosingEmptyBraces.unifiedDeprecationMessage%",
             "scope": "resource"
+          },
+          "js/ts.format.insertSpaceAfterOpeningAndBeforeClosingTemplateStringBraces": {
+            "type": "boolean",
+            "default": false,
+            "description": "%format.insertSpaceAfterOpeningAndBeforeClosingTemplateStringBraces%",
+            "scope": "language-overridable",
+            "tags": [
+              "JavaScript",
+              "TypeScript"
+            ]
           },
           "javascript.format.insertSpaceAfterOpeningAndBeforeClosingTemplateStringBraces": {
             "type": "boolean",
             "default": false,
             "description": "%format.insertSpaceAfterOpeningAndBeforeClosingTemplateStringBraces%",
+            "markdownDeprecationMessage": "%configuration.format.insertSpaceAfterOpeningAndBeforeClosingTemplateStringBraces.unifiedDeprecationMessage%",
             "scope": "resource"
           },
           "typescript.format.insertSpaceAfterOpeningAndBeforeClosingTemplateStringBraces": {
             "type": "boolean",
             "default": false,
             "description": "%format.insertSpaceAfterOpeningAndBeforeClosingTemplateStringBraces%",
+            "markdownDeprecationMessage": "%configuration.format.insertSpaceAfterOpeningAndBeforeClosingTemplateStringBraces.unifiedDeprecationMessage%",
             "scope": "resource"
+          },
+          "js/ts.format.insertSpaceAfterOpeningAndBeforeClosingJsxExpressionBraces": {
+            "type": "boolean",
+            "default": false,
+            "description": "%format.insertSpaceAfterOpeningAndBeforeClosingJsxExpressionBraces%",
+            "scope": "language-overridable",
+            "tags": [
+              "JavaScript",
+              "TypeScript"
+            ]
           },
           "javascript.format.insertSpaceAfterOpeningAndBeforeClosingJsxExpressionBraces": {
             "type": "boolean",
             "default": false,
             "description": "%format.insertSpaceAfterOpeningAndBeforeClosingJsxExpressionBraces%",
+            "markdownDeprecationMessage": "%configuration.format.insertSpaceAfterOpeningAndBeforeClosingJsxExpressionBraces.unifiedDeprecationMessage%",
             "scope": "resource"
           },
           "typescript.format.insertSpaceAfterOpeningAndBeforeClosingJsxExpressionBraces": {
             "type": "boolean",
             "default": false,
             "description": "%format.insertSpaceAfterOpeningAndBeforeClosingJsxExpressionBraces%",
+            "markdownDeprecationMessage": "%configuration.format.insertSpaceAfterOpeningAndBeforeClosingJsxExpressionBraces.unifiedDeprecationMessage%",
             "scope": "resource"
+          },
+          "js/ts.format.insertSpaceAfterTypeAssertion": {
+            "type": "boolean",
+            "default": false,
+            "description": "%format.insertSpaceAfterTypeAssertion%",
+            "scope": "language-overridable",
+            "tags": [
+              "TypeScript"
+            ]
           },
           "typescript.format.insertSpaceAfterTypeAssertion": {
             "type": "boolean",
             "default": false,
             "description": "%format.insertSpaceAfterTypeAssertion%",
+            "markdownDeprecationMessage": "%configuration.format.insertSpaceAfterTypeAssertion.unifiedDeprecationMessage%",
             "scope": "resource"
+          },
+          "js/ts.format.placeOpenBraceOnNewLineForFunctions": {
+            "type": "boolean",
+            "default": false,
+            "description": "%format.placeOpenBraceOnNewLineForFunctions%",
+            "scope": "language-overridable",
+            "tags": [
+              "JavaScript",
+              "TypeScript"
+            ]
           },
           "javascript.format.placeOpenBraceOnNewLineForFunctions": {
             "type": "boolean",
             "default": false,
             "description": "%format.placeOpenBraceOnNewLineForFunctions%",
+            "markdownDeprecationMessage": "%configuration.format.placeOpenBraceOnNewLineForFunctions.unifiedDeprecationMessage%",
             "scope": "resource"
           },
           "typescript.format.placeOpenBraceOnNewLineForFunctions": {
             "type": "boolean",
             "default": false,
             "description": "%format.placeOpenBraceOnNewLineForFunctions%",
+            "markdownDeprecationMessage": "%configuration.format.placeOpenBraceOnNewLineForFunctions.unifiedDeprecationMessage%",
             "scope": "resource"
+          },
+          "js/ts.format.placeOpenBraceOnNewLineForControlBlocks": {
+            "type": "boolean",
+            "default": false,
+            "description": "%format.placeOpenBraceOnNewLineForControlBlocks%",
+            "scope": "language-overridable",
+            "tags": [
+              "JavaScript",
+              "TypeScript"
+            ]
           },
           "javascript.format.placeOpenBraceOnNewLineForControlBlocks": {
             "type": "boolean",
             "default": false,
             "description": "%format.placeOpenBraceOnNewLineForControlBlocks%",
+            "markdownDeprecationMessage": "%configuration.format.placeOpenBraceOnNewLineForControlBlocks.unifiedDeprecationMessage%",
             "scope": "resource"
           },
           "typescript.format.placeOpenBraceOnNewLineForControlBlocks": {
             "type": "boolean",
             "default": false,
             "description": "%format.placeOpenBraceOnNewLineForControlBlocks%",
+            "markdownDeprecationMessage": "%configuration.format.placeOpenBraceOnNewLineForControlBlocks.unifiedDeprecationMessage%",
             "scope": "resource"
+          },
+          "js/ts.format.semicolons": {
+            "type": "string",
+            "default": "ignore",
+            "description": "%format.semicolons%",
+            "scope": "language-overridable",
+            "enum": [
+              "ignore",
+              "insert",
+              "remove"
+            ],
+            "enumDescriptions": [
+              "%format.semicolons.ignore%",
+              "%format.semicolons.insert%",
+              "%format.semicolons.remove%"
+            ],
+            "tags": [
+              "JavaScript",
+              "TypeScript"
+            ]
           },
           "javascript.format.semicolons": {
             "type": "string",
             "default": "ignore",
             "description": "%format.semicolons%",
+            "markdownDeprecationMessage": "%configuration.format.semicolons.unifiedDeprecationMessage%",
             "scope": "resource",
             "enum": [
               "ignore",
@@ -1405,6 +1892,7 @@
             "type": "string",
             "default": "ignore",
             "description": "%format.semicolons%",
+            "markdownDeprecationMessage": "%configuration.format.semicolons.unifiedDeprecationMessage%",
             "scope": "resource",
             "enum": [
               "ignore",
@@ -1417,16 +1905,28 @@
               "%format.semicolons.remove%"
             ]
           },
+          "js/ts.format.indentSwitchCase": {
+            "type": "boolean",
+            "default": true,
+            "description": "%format.indentSwitchCase%",
+            "scope": "language-overridable",
+            "tags": [
+              "JavaScript",
+              "TypeScript"
+            ]
+          },
           "javascript.format.indentSwitchCase": {
             "type": "boolean",
             "default": true,
             "description": "%format.indentSwitchCase%",
+            "markdownDeprecationMessage": "%configuration.format.indentSwitchCase.unifiedDeprecationMessage%",
             "scope": "resource"
           },
           "typescript.format.indentSwitchCase": {
             "type": "boolean",
             "default": true,
             "description": "%format.indentSwitchCase%",
+            "markdownDeprecationMessage": "%configuration.format.indentSwitchCase.unifiedDeprecationMessage%",
             "scope": "resource"
           }
         }
