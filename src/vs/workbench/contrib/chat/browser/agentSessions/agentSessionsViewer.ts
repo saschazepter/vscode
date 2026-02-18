@@ -77,7 +77,7 @@ interface IAgentSessionItemTemplate {
 
 export interface IAgentSessionRendererOptions {
 	getHoverPosition(): HoverPosition;
-	richHover?: boolean;
+	disableHover?: boolean;
 }
 
 export class AgentSessionRenderer extends Disposable implements ICompressibleTreeRenderer<IAgentSession, FuzzyScore, IAgentSessionItemTemplate> {
@@ -365,7 +365,7 @@ export class AgentSessionRenderer extends Disposable implements ICompressibleTre
 	}
 
 	private renderHover(session: ITreeNode<IAgentSession, FuzzyScore>, template: IAgentSessionItemTemplate): void {
-		if (this.options.richHover === false) {
+		if (this.options.disableHover) {
 			return;
 		}
 

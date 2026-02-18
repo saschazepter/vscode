@@ -40,7 +40,7 @@ export interface IAgentSessionsControlOptions extends IAgentSessionsSorterOption
 	readonly overrideStyles: IStyleOverride<IListStyles>;
 	readonly filter: IAgentSessionsFilter;
 	readonly source: string;
-	readonly richHover?: boolean;
+	readonly disableHover?: boolean;
 
 	getHoverPosition(): HoverPosition;
 	trackActiveEditorSession(): boolean;
