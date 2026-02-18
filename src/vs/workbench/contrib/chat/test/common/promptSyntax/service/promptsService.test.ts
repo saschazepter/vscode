@@ -50,6 +50,8 @@ import { IExtensionService } from '../../../../../../services/extensions/common/
 import { IRemoteAgentService } from '../../../../../../services/remote/common/remoteAgentService.js';
 import { ChatModeKind } from '../../../../common/constants.js';
 import { HookType } from '../../../../common/promptSyntax/hookSchema.js';
+import { IContextKeyService } from '../../../../../../../platform/contextkey/common/contextkey.js';
+import { MockContextKeyService } from '../../../../../../../platform/keybinding/test/common/mockKeybindingService.js';
 
 suite('PromptsService', () => {
 	const disposables = ensureNoDisposablesAreLeakedInTestSuite();
@@ -157,6 +159,8 @@ suite('PromptsService', () => {
 		instaService.stub(IRemoteAgentService, {
 			getEnvironment: () => Promise.resolve(null),
 		});
+
+		instaService.stub(IContextKeyService, new MockContextKeyService());
 
 		service = disposables.add(instaService.createInstance(PromptsService));
 		instaService.stub(IPromptsService, service);
