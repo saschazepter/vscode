@@ -25,7 +25,6 @@ import { ITelemetryService } from '../../../../../../platform/telemetry/common/t
 import { IWorkbenchContribution } from '../../../../../common/contributions.js';
 import { ChatContextKeys } from '../../../common/actions/chatContextKeys.js';
 import { ChatConfiguration } from '../../../common/constants.js';
-import { IChatService } from '../../../common/chatService/chatService.js';
 import { ChatSubmitAction } from '../../actions/chatExecuteActions.js';
 import { ChatQueueMessageAction, ChatSteerWithMessageAction } from '../../actions/chatQueueActions.js';
 import { IChatWidgetService } from '../../chat.js';
@@ -56,7 +55,6 @@ export class ChatQueuePickerActionItem extends BaseActionViewItem {
 		@IContextKeyService contextKeyService: IContextKeyService,
 		@ITelemetryService telemetryService: ITelemetryService,
 		@IChatWidgetService private readonly chatWidgetService: IChatWidgetService,
-		@IChatService private readonly chatService: IChatService,
 	) {
 		super(undefined, action);
 
@@ -96,11 +94,6 @@ export class ChatQueuePickerActionItem extends BaseActionViewItem {
 				this._updatePrimaryAction();
 			}
 		}));
-
-		// Update queue depth badge when chat model changes
-		this._register(this.chatService.onDidPerformSessionAction(() => {
-			this._updateQueueDepthBadge();
-		}));
 	}
 
 	private _isSteerDefault(): boolean {
@@ -137,7 +130,10 @@ export class ChatQueuePickerActionItem extends BaseActionViewItem {
 		const actionId = this._isSteerDefault()
 			? ChatSteerWithMessageAction.ID
 			: ChatQueueMessageAction.ID;
-		this.commandService.executeCommand(actionId);
+		this.commandService.executeCommand(actionId).then(() => {
+			// Update badge after the action completes
+			setTimeout(() => this._updateQueueDepthBadge(), 100);
+		});
 	}
 
 	override render(container: HTMLElement): void {
@@ -210,7 +206,9 @@ export class ChatQueuePickerActionItem extends BaseActionViewItem {
 				content: localize('chat.sendNext.hover', "Queue this message to send after the current request completes. The current response will finish uninterrupted before the queued message is sent."),
 			},
 			run: () => {
-				this.commandService.executeCommand(ChatQueueMessageAction.ID);
+				this.commandService.executeCommand(ChatQueueMessageAction.ID).then(() => {
+					setTimeout(() => this._updateQueueDepthBadge(), 100);
+				});
 			}
 		};
 
@@ -225,7 +223,9 @@ export class ChatQueuePickerActionItem extends BaseActionViewItem {
 				content: localize('chat.sendNow.hover', "Send this message at the next opportunity, signaling the current request to yield. The current response will stop and the new message will be sent immediately."),
 			},
 			run: () => {
-				this.commandService.executeCommand(ChatSteerWithMessageAction.ID);
+				this.commandService.executeCommand(ChatSteerWithMessageAction.ID).then(() => {
+					setTimeout(() => this._updateQueueDepthBadge(), 100);
+				});
 			}
 		};
 
@@ -240,7 +240,9 @@ export class ChatQueuePickerActionItem extends BaseActionViewItem {
 				content: localize('chat.cancelAndSend.hover', "Cancel the current request and send this message immediately."),
 			},
 			run: () => {
-				this.commandService.executeCommand(ChatSubmitAction.ID);
+				this.commandService.executeCommand(ChatSubmitAction.ID).then(() => {
+					setTimeout(() => this._updateQueueDepthBadge(), 100);
+				});
 			}
 		};
 
