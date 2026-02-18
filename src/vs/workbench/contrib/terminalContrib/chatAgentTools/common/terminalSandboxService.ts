@@ -35,6 +35,7 @@ export interface ITerminalSandboxService {
 export class TerminalSandboxService extends Disposable implements ITerminalSandboxService {
 	readonly _serviceBrand: undefined;
 	private _srtPath: string;
+	private _rgBinDir: string;
 	private _execPath?: string;
 	private _sandboxConfigPath: string | undefined;
 	private _needsForceUpdateConfigFile = true;
@@ -53,6 +54,10 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 		const appRoot = dirname(FileAccess.asFileUri('').fsPath);
 		// srt path is dist/cli.js inside the sandbox-runtime package.
 		this._srtPath = join(appRoot, 'node_modules', '@anthropic-ai', 'sandbox-runtime', 'dist', 'cli.js');
+		// Compute the path to VS Code's bundled ripgrep binary directory.
+		// The ripgrep binary is in node_modules/@vscode/ripgrep/bin/ (or node_modules.asar.unpacked for packaged builds)
+		const rgPackagePath = join(appRoot, 'node_modules', '@vscode', 'ripgrep', 'bin');
+		this._rgBinDir = rgPackagePath.replace(/\bnode_modules\.asar\b/, 'node_modules.asar.unpacked');
 		// Get the node executable path from native environment service if available (Electron's execPath with ELECTRON_RUN_AS_NODE)
 		const nativeEnv = this._environmentService as IEnvironmentService & { execPath?: string };
 		this._execPath = nativeEnv.execPath;
@@ -89,9 +94,10 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 		}
 		// Use ELECTRON_RUN_AS_NODE=1 to make Electron executable behave as Node.js
 		// TMPDIR must be set as environment variable before the command
+		// Add the VS Code bundled ripgrep bin directory to PATH so 'rg' is available without requiring user installation
 		// Use -c to pass the command string directly (like sh -c), avoiding argument parsing issues
 		const wrappedCommand = `"${this._execPath}" "${this._srtPath}" TMPDIR=${this._tempDir.fsPath} --settings "${this._sandboxConfigPath}" -c "${command}"`;
-		return `ELECTRON_RUN_AS_NODE=1 ${wrappedCommand}`;
+		return `ELECTRON_RUN_AS_NODE=1 PATH="${this._rgBinDir}:$PATH" ${wrappedCommand}`;
 	}
 
 	public getTempDir(): URI | undefined {
