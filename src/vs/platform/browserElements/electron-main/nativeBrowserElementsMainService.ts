@@ -25,10 +25,15 @@ interface NodeDataResponse {
 	bounds: IRectangle;
 }
 
+const MAX_CONSOLE_LOG_ENTRIES = 1000;
 const consoleLogStore = new Map<string, string[]>();
 
 function locatorKey(locator: IBrowserTargetLocator): string {
-	return locator.browserViewId ?? locator.webviewId ?? '';
+	const key = locator.browserViewId ?? locator.webviewId;
+	if (!key) {
+		return 'unknown';
+	}
+	return key;
 }
 
 export class NativeBrowserElementsMainService extends Disposable implements INativeBrowserElementsMainService {
@@ -79,19 +84,40 @@ export class NativeBrowserElementsMainService extends Disposable implements INat
 			const formatted = `[${levelName}] ${message}`;
 			const current = consoleLogStore.get(key) ?? [];
 			current.push(formatted);
+			if (current.length > MAX_CONSOLE_LOG_ENTRIES) {
+				current.splice(0, current.length - MAX_CONSOLE_LOG_ENTRIES);
+			}
 			consoleLogStore.set(key, current);
 		};
 
-		targetWebContents.on('console-message', onConsoleMessage);
+		const cleanupListeners = () => {
+			targetWebContents?.off('console-message', onConsoleMessage);
+			window.win?.webContents.off('ipc-message', onIpcMessage);
+		};
 
-		window.win.webContents.on('ipc-message', async (_event, channel, closedCancelAndDetachId) => {
+		const onIpcMessage = async (_event: Electron.Event, channel: string, closedCancelAndDetachId: number) => {
 			if (channel === `vscode:cancelConsoleSession${cancelAndDetachId}`) {
 				if (cancelAndDetachId !== closedCancelAndDetachId) {
 					return;
 				}
-				targetWebContents?.off('console-message', onConsoleMessage);
+				cleanupListeners();
+				consoleLogStore.delete(key);
 			}
+		};
+
+		targetWebContents.on('console-message', onConsoleMessage);
+
+		targetWebContents.once('destroyed', () => {
+			cleanupListeners();
+			consoleLogStore.delete(key);
 		});
+
+		token.onCancellationRequested(() => {
+			cleanupListeners();
+			consoleLogStore.delete(key);
+		});
+
+		window.win.webContents.on('ipc-message', onIpcMessage);
 	}
 
 	/**

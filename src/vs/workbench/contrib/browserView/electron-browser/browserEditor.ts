@@ -431,11 +431,6 @@ export class BrowserEditor extends EditorPane {
 		this.layoutBrowserContainer();
 		this.updateVisibility();
 		this.doScreenshot();
-
-		// only start if url is loaded and valid
-		if (this._model.url) {
-			this.startConsoleSession();
-		}
 	}
 
 	protected override setEditorVisible(visible: boolean): void {
@@ -792,7 +787,7 @@ export class BrowserEditor extends EditorPane {
 				fullName: localize('consoleLogs', 'Console Logs'),
 				value: logs,
 				kind: 'element',
-				icon: ThemeIcon.fromId(Codicon.terminal.id),
+				icon: ThemeIcon.fromId(Codicon.output.id),
 			});
 
 			const widget = await this.chatWidgetService.revealWidget() ?? this.chatWidgetService.lastFocusedWidget;
