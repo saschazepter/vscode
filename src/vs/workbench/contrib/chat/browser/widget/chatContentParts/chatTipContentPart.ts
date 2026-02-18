@@ -275,4 +275,19 @@ registerAction2(class DisableTipsAction extends Action2 {
 	}
 });
 
+registerAction2(class ResetDismissedTipsAction extends Action2 {
+	constructor() {
+		super({
+			id: 'workbench.action.chat.resetDismissedTips',
+			title: localize2('chatTip.resetDismissedTips', "Reset Dismissed Tips"),
+			f1: true,
+			precondition: ChatContextKeys.enabled,
+		});
+	}
+
+	override async run(accessor: ServicesAccessor): Promise<void> {
+		accessor.get(IChatTipService).clearDismissedTips();
+	}
+});
+
 //#endregion

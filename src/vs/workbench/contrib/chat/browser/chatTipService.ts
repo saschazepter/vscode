@@ -261,8 +261,8 @@ const TIP_CATALOG: ITipDefinition[] = [
 ];
 
 /**
- * Tracks workspace-level signals that determine whether certain tips should be
- * excluded. Persists state to workspace storage and disposes listeners once all
+ * Tracks user-level signals that determine whether certain tips should be
+ * excluded. Persists state to application storage and disposes listeners once all
  * signals of interest have been observed.
  */
 export class TipEligibilityTracker extends Disposable {
@@ -306,13 +306,13 @@ export class TipEligibilityTracker extends Disposable {
 
 		// --- Restore persisted state -------------------------------------------
 
-		const storedCmds = this._storageService.get(TipEligibilityTracker._COMMANDS_STORAGE_KEY, StorageScope.WORKSPACE);
+		const storedCmds = this._storageService.get(TipEligibilityTracker._COMMANDS_STORAGE_KEY, StorageScope.APPLICATION);
 		this._executedCommands = new Set<string>(storedCmds ? JSON.parse(storedCmds) : []);
 
-		const storedModes = this._storageService.get(TipEligibilityTracker._MODES_STORAGE_KEY, StorageScope.WORKSPACE);
+		const storedModes = this._storageService.get(TipEligibilityTracker._MODES_STORAGE_KEY, StorageScope.APPLICATION);
 		this._usedModes = new Set<string>(storedModes ? JSON.parse(storedModes) : []);
 
-		const storedTools = this._storageService.get(TipEligibilityTracker._TOOLS_STORAGE_KEY, StorageScope.WORKSPACE);
+		const storedTools = this._storageService.get(TipEligibilityTracker._TOOLS_STORAGE_KEY, StorageScope.APPLICATION);
 		this._invokedTools = new Set<string>(storedTools ? JSON.parse(storedTools) : []);
 
 		// --- Derive what still needs tracking ----------------------------------
@@ -498,7 +498,7 @@ export class TipEligibilityTracker extends Disposable {
 	}
 
 	private _persistSet(key: string, set: Set<string>): void {
-		this._storageService.store(key, JSON.stringify([...set]), StorageScope.WORKSPACE, StorageTarget.MACHINE);
+		this._storageService.store(key, JSON.stringify([...set]), StorageScope.APPLICATION, StorageTarget.MACHINE);
 	}
 }
 
@@ -551,7 +551,7 @@ export class ChatTipService extends Disposable implements IChatTipService {
 		if (this._shownTip) {
 			const dismissed = new Set(this._getDismissedTipIds());
 			dismissed.add(this._shownTip.id);
-			this._storageService.store(ChatTipService._DISMISSED_TIP_KEY, JSON.stringify([...dismissed]), StorageScope.PROFILE, StorageTarget.MACHINE);
+			this._storageService.store(ChatTipService._DISMISSED_TIP_KEY, JSON.stringify([...dismissed]), StorageScope.APPLICATION, StorageTarget.MACHINE);
 		}
 		this._shownTip = undefined;
 		this._tipRequestId = undefined;
@@ -559,14 +559,14 @@ export class ChatTipService extends Disposable implements IChatTipService {
 	}
 
 	clearDismissedTips(): void {
-		this._storageService.remove(ChatTipService._DISMISSED_TIP_KEY, StorageScope.PROFILE);
+		this._storageService.remove(ChatTipService._DISMISSED_TIP_KEY, StorageScope.APPLICATION);
 		this._shownTip = undefined;
 		this._tipRequestId = undefined;
 		this._onDidDismissTip.fire();
 	}
 
 	private _getDismissedTipIds(): string[] {
-		const raw = this._storageService.get(ChatTipService._DISMISSED_TIP_KEY, StorageScope.PROFILE);
+		const raw = this._storageService.get(ChatTipService._DISMISSED_TIP_KEY, StorageScope.APPLICATION);
 		if (!raw) {
 			return [];
 		}
@@ -631,7 +631,7 @@ export class ChatTipService extends Disposable implements IChatTipService {
 				const nextTip = this._findNextEligibleTip(this._shownTip.id, contextKeyService);
 				if (nextTip) {
 					this._shownTip = nextTip;
-					this._storageService.store(ChatTipService._LAST_TIP_ID_KEY, nextTip.id, StorageScope.PROFILE, StorageTarget.USER);
+					this._storageService.store(ChatTipService._LAST_TIP_ID_KEY, nextTip.id, StorageScope.APPLICATION, StorageTarget.USER);
 					const tip = this._createTip(nextTip);
 					this._onDidNavigateTip.fire(tip);
 					return tip;
@@ -671,7 +671,7 @@ export class ChatTipService extends Disposable implements IChatTipService {
 		let selectedTip: ITipDefinition | undefined;
 
 		// Determine where to start in the catalog based on the last-shown tip.
-		const lastTipId = this._storageService.get(ChatTipService._LAST_TIP_ID_KEY, StorageScope.PROFILE);
+		const lastTipId = this._storageService.get(ChatTipService._LAST_TIP_ID_KEY, StorageScope.APPLICATION);
 		const lastCatalogIndex = lastTipId ? TIP_CATALOG.findIndex(tip => tip.id === lastTipId) : -1;
 		const startIndex = lastCatalogIndex === -1 ? 0 : (lastCatalogIndex + 1) % TIP_CATALOG.length;
 
@@ -686,26 +686,12 @@ export class ChatTipService extends Disposable implements IChatTipService {
 			}
 		}
 
-		// Pass 2: if everything was ineligible (e.g., user has already done all
-		// the suggested actions), still advance through the catalog but only skip
-		// tips that were explicitly dismissed.
-		if (!selectedTip) {
-			for (let i = 0; i < TIP_CATALOG.length; i++) {
-				const idx = (startIndex + i) % TIP_CATALOG.length;
-				const candidate = TIP_CATALOG[idx];
-				if (!dismissedIds.has(candidate.id)) {
-					selectedTip = candidate;
-					break;
-				}
-			}
-		}
-
 		if (!selectedTip) {
 			return undefined;
 		}
 
 		// Persist the selected tip id so the next use advances to the following one.
-		this._storageService.store(ChatTipService._LAST_TIP_ID_KEY, selectedTip.id, StorageScope.PROFILE, StorageTarget.USER);
+		this._storageService.store(ChatTipService._LAST_TIP_ID_KEY, selectedTip.id, StorageScope.APPLICATION, StorageTarget.USER);
 
 		// Record that we've shown a tip this session
 		this._tipRequestId = sourceId;
@@ -738,7 +724,7 @@ export class ChatTipService extends Disposable implements IChatTipService {
 			const candidate = TIP_CATALOG[idx];
 			if (!dismissedIds.has(candidate.id) && this._isEligible(candidate, contextKeyService)) {
 				this._shownTip = candidate;
-				this._storageService.store(ChatTipService._LAST_TIP_ID_KEY, candidate.id, StorageScope.PROFILE, StorageTarget.USER);
+				this._storageService.store(ChatTipService._LAST_TIP_ID_KEY, candidate.id, StorageScope.APPLICATION, StorageTarget.USER);
 				const tip = this._createTip(candidate);
 				this._onDidNavigateTip.fire(tip);
 				return tip;
