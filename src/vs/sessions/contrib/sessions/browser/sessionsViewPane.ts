@@ -194,6 +194,8 @@ export class AgenticSessionsViewPane extends ViewPane {
 				if (!sessionsControl.reveal(activeSession.resource)) {
 					sessionsControl.clearFocus();
 				}
+			} else {
+				sessionsControl.clearFocus(); // clear selection when a new session is created
 			}
 		}));
 
