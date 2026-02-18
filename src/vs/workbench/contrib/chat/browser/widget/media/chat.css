@@ -2659,7 +2659,6 @@ have to be updated for changes to the rules above, or to support more deeply nes
 			position: absolute;
 			top: 4px;
 			margin-left: 25px;
-			gap: 4px;
 			background: var(--vscode-sideBar-background);
 		}
 
