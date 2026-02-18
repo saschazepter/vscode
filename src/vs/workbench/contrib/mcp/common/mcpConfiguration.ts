@@ -217,7 +217,7 @@ export const mcpServerSchema: IJSONSchema = {
 						allowWrite: {
 							type: 'array',
 							items: { type: 'string' },
-							default: ['.']
+							default: []
 						},
 						denyWrite: {
 							type: 'array',

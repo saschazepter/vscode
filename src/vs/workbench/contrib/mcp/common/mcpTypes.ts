@@ -199,7 +199,8 @@ export namespace McpServerDefinition {
 			&& objectsEqual(a.presentation, b.presentation)
 			&& objectsEqual(a.variableReplacement, b.variableReplacement)
 			&& objectsEqual(a.devMode, b.devMode)
-			&& a.sandboxEnabled === b.sandboxEnabled;
+			&& a.sandboxEnabled === b.sandboxEnabled
+			&& objectsEqual(a.sandbox, b.sandbox);
 	}
 }
 
