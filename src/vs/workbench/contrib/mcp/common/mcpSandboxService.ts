@@ -96,8 +96,8 @@ export class McpSandboxService extends Disposable implements IMcpSandboxService 
 					type: McpServerTransportType.Stdio,
 				};
 			}
+			this._logService.debug(`McpSandboxService: launch details for server ${serverDef.label} - command: ${launch.command}, args: ${launch.args.join(' ')}`);
 		}
-		this._logService.debug(`McpSandboxService: launch details for server ${serverDef.label} - command: ${launch.command}, args: ${launch.args.join(' ')}, env: ${JSON.stringify(launch.env)}`);
 		return launch;
 	}
 
