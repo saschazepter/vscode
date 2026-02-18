@@ -521,6 +521,7 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		label.textContent = localize('checkpointRestore', 'Checkpoint Restored');
 		const dot = dom.append(checkpointRestoreContainer, $('span.checkpoint-dot-separator'));
 		dot.textContent = '\u00B7';
+		dot.setAttribute('aria-hidden', 'true');
 		const checkpointRestoreToolbar = templateDisposables.add(scopedInstantiationService.createInstance(MenuWorkbenchToolBar, checkpointRestoreContainer, MenuId.ChatMessageRestoreCheckpoint, {
 			actionViewItemProvider: (action, options) => {
 				if (action instanceof MenuItemAction) {
