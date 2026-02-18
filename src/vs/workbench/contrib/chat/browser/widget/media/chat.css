@@ -2677,6 +2677,10 @@ have to be updated for changes to the rules above, or to support more deeply nes
 			padding: 1px 5px;
 		}
 
+		.monaco-toolbar .action-label.codicon.codicon-repo-forked {
+			width: fit-content;
+		}
+
 		.monaco-toolbar .action-label:hover {
 			color: var(--vscode-foreground);
 			border-color: var(--vscode-chat-requestBorder, var(--vscode-input-background));
