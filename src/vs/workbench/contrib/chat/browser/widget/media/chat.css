@@ -2662,6 +2662,10 @@ have to be updated for changes to the rules above, or to support more deeply nes
 			background: var(--vscode-sideBar-background);
 		}
 
+		.monaco-toolbar .actions-container {
+			gap: 4px;
+		}
+
 		.monaco-toolbar .action-label {
 			border: 1px solid var(--vscode-chat-requestBorder, var(--vscode-input-background));
 			padding: 1px 5px;
