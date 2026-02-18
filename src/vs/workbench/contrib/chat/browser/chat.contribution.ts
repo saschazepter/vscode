@@ -1457,7 +1457,7 @@ class ChatSlashStaticSlashCommandsContribution extends Disposable {
 		}));
 		this._store.add(slashCommandService.registerSlashCommand({
 			command: 'fork',
-			detail: nls.localize('fork', "Fork conversation into a new chat session"),
+			detail: nls.localize('chat.slashCommand.fork.detail', "Fork conversation into a new chat session"),
 			sortText: 'z2_fork',
 			executeImmediately: true,
 			silent: true,

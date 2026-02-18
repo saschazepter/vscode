@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Codicon } from '../../../../../base/common/codicons.js';
+import { onUnexpectedError } from '../../../../../base/common/errors.js';
 import { revive } from '../../../../../base/common/marshalling.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { generateUuid } from '../../../../../base/common/uuid.js';
@@ -43,7 +44,7 @@ export function registerChatForkActions() {
 		async run(accessor: ServicesAccessor, ...args: unknown[]) {
 			const chatWidgetService = accessor.get(IChatWidgetService);
 			const chatService = accessor.get(IChatService);
-			const forkedTitlePrefix = localize('chat.forked.titlePrefix', "Forked: ");
+			const FORKED_TITLE_MARKER = '[forked]';
 
 			// When invoked via /fork slash command, args[0] is a URI (sessionResource).
 			// Fork at the last request in that session.
@@ -63,9 +64,9 @@ export function registerChatForkActions() {
 				cleanData.sessionId = generateUuid();
 				const forkTimestamp = Date.now();
 				cleanData.creationDate = forkTimestamp;
-				cleanData.customTitle = chatModel.title.startsWith(forkedTitlePrefix)
+				cleanData.customTitle = chatModel.title.includes(FORKED_TITLE_MARKER)
 					? chatModel.title
-					: localize('chat.forked.title', "Forked: {0}", chatModel.title);
+					: localize('chat.forked.title', "Forked: {0}", chatModel.title) + ` ${FORKED_TITLE_MARKER}`;
 				for (const [index, req] of cleanData.requests.entries()) {
 					req.shouldBeRemovedOnSend = undefined;
 					req.isHidden = undefined;
@@ -85,12 +86,10 @@ export function registerChatForkActions() {
 
 				// Defer navigation until after the slash command flow completes.
 				const newSessionResource = modelRef.object.sessionResource;
-				setTimeout(async () => {
-					try {
-						await chatWidgetService.openSession(newSessionResource, ChatViewPaneTarget);
-					} finally {
-						modelRef.dispose();
-					}
+				setTimeout(() => {
+					chatWidgetService.openSession(newSessionResource, ChatViewPaneTarget)
+						.catch(onUnexpectedError)
+						.finally(() => modelRef.dispose());
 				}, 0);
 				return;
 			}
@@ -133,7 +132,6 @@ export function registerChatForkActions() {
 
 			// Export the full session data and truncate to include only requests up to and including the target
 			const serializedData = chatModel.toJSON();
-			const isRequestItem = isRequestVM(item);
 			let targetIndex = -1;
 			if (widget?.viewModel) {
 				let requestIndex = -1;
@@ -142,14 +140,14 @@ export function registerChatForkActions() {
 						requestIndex += 1;
 					}
 					if (entry.id === item?.id) {
-						targetIndex = isRequestVM(entry) ? Math.max(0, requestIndex - 1) : requestIndex;
+						targetIndex = requestIndex;
 						break;
 					}
 				}
 			}
 			if (targetIndex < 0) {
 				const requestIndex = chatModel.getRequests().findIndex(r => r.id === targetRequestId);
-				targetIndex = isRequestItem ? Math.max(0, requestIndex - 1) : requestIndex;
+				targetIndex = requestIndex;
 			}
 			if (targetIndex < 0) {
 				return;
@@ -162,9 +160,9 @@ export function registerChatForkActions() {
 			forkedData.sessionId = generateUuid();
 			const forkedTimestamp = Date.now();
 			forkedData.creationDate = forkedTimestamp;
-			forkedData.customTitle = chatModel.title.startsWith(forkedTitlePrefix)
+			forkedData.customTitle = chatModel.title.includes(FORKED_TITLE_MARKER)
 				? chatModel.title
-				: localize('chat.forked.title', "Forked: {0}", chatModel.title);
+				: localize('chat.forked.title', "Forked: {0}", chatModel.title) + ` ${FORKED_TITLE_MARKER}`;
 			for (const [index, req] of forkedData.requests.entries()) {
 				req.shouldBeRemovedOnSend = undefined;
 				req.isHidden = undefined;
