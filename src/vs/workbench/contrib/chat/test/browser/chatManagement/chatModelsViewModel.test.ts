@@ -4,10 +4,11 @@
  *--------------------------------------------------------------------------------------------*/
 
 import assert from 'assert';
-import { Emitter } from '../../../../../../base/common/event.js';
+import { Emitter, Event } from '../../../../../../base/common/event.js';
 import { IDisposable } from '../../../../../../base/common/lifecycle.js';
+import { observableValue } from '../../../../../../base/common/observable.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/test/common/utils.js';
-import { ILanguageModelChatMetadata, ILanguageModelChatMetadataAndIdentifier, ILanguageModelChatProvider, ILanguageModelChatSelector, ILanguageModelsGroup, ILanguageModelsService, IUserFriendlyLanguageModel, ILanguageModelProviderDescriptor } from '../../../common/languageModels.js';
+import { ICuratedModels, ILanguageModelChatMetadata, ILanguageModelChatMetadataAndIdentifier, ILanguageModelChatProvider, ILanguageModelChatSelector, ILanguageModelsGroup, ILanguageModelsService, IUserFriendlyLanguageModel, ILanguageModelProviderDescriptor } from '../../../common/languageModels.js';
 import { ChatModelGroup, ChatModelsViewModel, ILanguageModelEntry, ILanguageModelProviderEntry, isLanguageModelProviderEntry, isLanguageModelGroupEntry, ILanguageModelGroupEntry } from '../../../browser/chatManagement/chatModelsViewModel.js';
 import { ExtensionIdentifier } from '../../../../../../platform/extensions/common/extensions.js';
 import { IStringDictionary } from '../../../../../../base/common/collections.js';
@@ -134,6 +135,14 @@ class MockLanguageModelsService implements ILanguageModelsService {
 	}
 
 	async migrateLanguageModelsProviderGroup(languageModelsProviderGroup: ILanguageModelsProviderGroup): Promise<void> { }
+
+	getRecentlyUsedModelIds(_maxCount?: number): string[] { return []; }
+	recordModelUsage(_modelIdentifier: string): void { }
+	getCuratedModels(): ICuratedModels { return { free: [], paid: [] }; }
+	getNewModelIds(): string[] { return []; }
+	onDidChangeNewModelIds = Event.None;
+	markNewModelsAsSeen(): void { }
+	restrictedChatParticipants = observableValue('restrictedChatParticipants', Object.create(null));
 }
 
 suite('ChatModelsViewModel', () => {
