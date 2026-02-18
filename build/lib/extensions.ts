@@ -25,7 +25,6 @@ import { getProductionDependencies } from './dependencies.ts';
 import { type IExtensionDefinition, getExtensionStream } from './builtInExtensions.ts';
 import { getVersion } from './getVersion.ts';
 import { fetchUrls, fetchGithub } from './fetch.ts';
-import { createTsgoStream, spawnTsgo } from './tsgo.ts';
 import vzip from 'gulp-vinyl-zip';
 
 import { createRequire } from 'module';
@@ -68,27 +67,23 @@ function updateExtensionPackageJSON(input: Stream, update: (data: any) => any): 
 function fromLocal(extensionPath: string, forWeb: boolean, disableMangle: boolean): Stream {
 
 	const esbuildConfigFileName = forWeb
-		? 'esbuild.browser.mts'
-		: 'esbuild.mts';
+		? 'esbuild-browser.ts'
+		: 'esbuild.ts';
 
 	const webpackConfigFileName = forWeb
 		? `extension-browser.webpack.config.js`
 		: `extension.webpack.config.js`;
 
 	const hasEsbuild = fs.existsSync(path.join(extensionPath, esbuildConfigFileName));
-	const hasWebpack = fs.existsSync(path.join(extensionPath, webpackConfigFileName));
+	const isWebPacked = fs.existsSync(path.join(extensionPath, webpackConfigFileName));
 
 	let input: Stream;
 	let isBundled = false;
 
 	if (hasEsbuild) {
-		// Unlike webpack, esbuild only does bundling so we still want to run a separate type check step
-		input = es.merge(
-			fromLocalEsbuild(extensionPath, esbuildConfigFileName),
-			typeCheckExtensionStream(extensionPath, forWeb),
-		);
+		input = fromLocalEsbuild(extensionPath, esbuildConfigFileName);
 		isBundled = true;
-	} else if (hasWebpack) {
+	} else if (isWebPacked) {
 		input = fromLocalWebpack(extensionPath, webpackConfigFileName, disableMangle);
 		isBundled = true;
 	} else {
@@ -110,17 +105,6 @@ function fromLocal(extensionPath: string, forWeb: boolean, disableMangle: boolea
 	return input;
 }
 
-export function typeCheckExtension(extensionPath: string, forWeb: boolean): Promise<void> {
-	const tsconfigFileName = forWeb ? 'tsconfig.browser.json' : 'tsconfig.json';
-	const tsconfigPath = path.join(extensionPath, tsconfigFileName);
-	return spawnTsgo(tsconfigPath, { taskName: 'typechecking extension (tsgo)', noEmit: true });
-}
-
-export function typeCheckExtensionStream(extensionPath: string, forWeb: boolean): Stream {
-	const tsconfigFileName = forWeb ? 'tsconfig.browser.json' : 'tsconfig.json';
-	const tsconfigPath = path.join(extensionPath, tsconfigFileName);
-	return createTsgoStream(tsconfigPath, { taskName: 'typechecking extension (tsgo)', noEmit: true });
-}
 
 function fromLocalWebpack(extensionPath: string, webpackConfigFileName: string, disableMangle: boolean): Stream {
 	const vsce = require('@vscode/vsce') as typeof import('@vscode/vsce');
@@ -283,7 +267,6 @@ function fromLocalEsbuild(extensionPath: string, esbuildConfigFileName: string):
 			if (error) {
 				return reject(error);
 			}
-
 			const matches = (stderr || '').match(/\> (.+): error: (.+)?/g);
 			fancyLog(`Bundled extension: ${ansiColors.yellow(path.join(path.basename(extensionPath), esbuildConfigFileName))} with ${matches ? matches.length : 0} errors.`);
 			for (const match of matches || []) {
@@ -441,7 +424,7 @@ interface IExtensionManifest {
 /**
  * Loosely based on `getExtensionKind` from `src/vs/workbench/services/extensions/common/extensionManifestPropertiesService.ts`
  */
-export function isWebExtension(manifest: IExtensionManifest): boolean {
+function isWebExtension(manifest: IExtensionManifest): boolean {
 	if (Boolean(manifest.browser)) {
 		return true;
 	}
@@ -578,11 +561,11 @@ export function packageMarketplaceExtensionsStream(forWeb: boolean): Stream {
 }
 
 export interface IScannedBuiltinExtension {
-	readonly extensionPath: string;
-	readonly packageJSON: unknown;
-	readonly packageNLS: unknown | undefined;
-	readonly readmePath: string | undefined;
-	readonly changelogPath: string | undefined;
+	extensionPath: string;
+	packageJSON: any;
+	packageNLS?: any;
+	readmePath?: string;
+	changelogPath?: string;
 }
 
 export function scanBuiltinExtensions(extensionsRoot: string, exclude: string[] = []): IScannedBuiltinExtension[] {
@@ -648,6 +631,17 @@ export function translatePackageJSON(packageJSON: string, packageNLSPath: string
 }
 
 const extensionsPath = path.join(root, 'extensions');
+
+// Additional projects to run esbuild on. These typically build code for webviews
+const esbuildMediaScripts = [
+	'ipynb/esbuild.mjs',
+	'markdown-language-features/esbuild-notebook.mjs',
+	'markdown-language-features/esbuild-preview.mjs',
+	'markdown-math/esbuild.mjs',
+	'mermaid-chat-features/esbuild-chat-webview.mjs',
+	'notebook-renderers/esbuild.mjs',
+	'simple-browser/esbuild-preview.mjs',
+];
 
 export async function webpackExtensions(taskName: string, isWatch: boolean, webpackConfigLocations: { configPath: string; outputRoot?: string }[]) {
 	const webpack = require('webpack') as typeof import('webpack');
@@ -747,18 +741,6 @@ export async function esbuildExtensions(taskName: string, isWatch: boolean, scri
 
 	await Promise.all(tasks);
 }
-
-
-// Additional projects to run esbuild on. These typically build code for webviews
-const esbuildMediaScripts = [
-	'ipynb/esbuild.notebook.mts',
-	'markdown-language-features/esbuild.notebook.mts',
-	'markdown-language-features/esbuild.webview.mts',
-	'markdown-math/esbuild.notebook.mts',
-	'mermaid-chat-features/esbuild.webview.mts',
-	'notebook-renderers/esbuild.notebook.mts',
-	'simple-browser/esbuild.webview.mts',
-];
 
 export function buildExtensionMedia(isWatch: boolean, outputRoot?: string): Promise<void> {
 	return esbuildExtensions('esbuilding extension media', isWatch, esbuildMediaScripts.map(p => ({

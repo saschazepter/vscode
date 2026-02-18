@@ -577,10 +577,6 @@ export class BrowserHostService extends Disposable implements IHostService {
 		// There seems to be no API to bring a window to front in browsers
 	}
 
-	async setWindowDimmed(_targetWindow: Window, _dimmed: boolean): Promise<void> {
-		// not supported in browser
-	}
-
 	async getCursorScreenPoint(): Promise<undefined> {
 		return undefined;
 	}

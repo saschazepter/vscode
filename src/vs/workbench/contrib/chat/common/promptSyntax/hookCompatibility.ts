@@ -5,8 +5,8 @@
 
 import { URI } from '../../../../../base/common/uri.js';
 import { basename, dirname } from '../../../../../base/common/path.js';
-import { HookType, IHookCommand, toHookType } from './hookSchema.js';
-import { parseClaudeHooks, extractHookCommandsFromItem } from './hookClaudeCompat.js';
+import { HookType, IHookCommand, toHookType, resolveHookCommand } from './hookSchema.js';
+import { parseClaudeHooks } from './hookClaudeCompat.js';
 import { resolveCopilotCliHookType } from './hookCopilotCliCompat.js';
 
 /**
@@ -97,9 +97,10 @@ export function parseCopilotHooks(
 		const commands: IHookCommand[] = [];
 
 		for (const item of hookArray) {
-			// Use helper that handles both direct commands and Claude-style nested matcher structures
-			const extracted = extractHookCommandsFromItem(item, workspaceRootUri, userHome);
-			commands.push(...extracted);
+			const resolved = resolveHookCommand(item as Record<string, unknown>, workspaceRootUri, userHome);
+			if (resolved) {
+				commands.push(resolved);
+			}
 		}
 
 		if (commands.length > 0) {

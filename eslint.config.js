@@ -77,7 +77,7 @@ export default tseslint.config(
 			'no-var': 'warn',
 			'semi': 'warn',
 			'local/code-translation-remind': 'warn',
-			'local/code-no-declare-const-enum': 'warn',
+			'local/code-no-native-private': 'warn',
 			'local/code-parameter-properties-must-have-explicit-accessibility': 'warn',
 			'local/code-no-nls-in-standalone-editor': 'warn',
 			'local/code-no-potentially-unsafe-disposables': 'warn',
@@ -92,7 +92,6 @@ export default tseslint.config(
 			'local/code-no-localized-model-description': 'warn',
 			'local/code-policy-localization-key-match': 'warn',
 			'local/code-no-localization-template-literals': 'error',
-			'local/code-no-http-import': ['warn', { target: 'src/vs/**' }],
 			'local/code-no-deep-import-of-internal': ['error', { '.*Internal': true, 'searchExtTypesInternal': false }],
 			'local/code-layering': [
 				'warn',
@@ -1686,7 +1685,6 @@ export default tseslint.config(
 						'vs/workbench/~',
 						'vs/workbench/services/*/~',
 						'vs/workbench/contrib/*/~',
-						'vs/sessions/~',
 						'vs/workbench/contrib/terminal/terminalContribChatExports*',
 						'vs/workbench/contrib/terminal/terminalContribExports*',
 						'vscode-notebook-renderer', // Type only import
@@ -1761,17 +1759,6 @@ export default tseslint.config(
 							'when': 'hasBrowser',
 							'pattern': 'vs/workbench/services/*/~'
 						}
-					]
-				},
-				{
-					'target': 'src/vs/sessions/electron-browser/sessions.ts',
-					'layer': 'electron-browser',
-					'restrictions': [
-						'vs/base/~',
-						'vs/base/parts/*/~',
-						'vs/platform/*/~',
-						'vs/sessions/~',
-						'vs/sessions/sessions.desktop.main.js'
 					]
 				},
 				{
@@ -1906,74 +1893,7 @@ export default tseslint.config(
 						'src/*.js',
 						'*' // node.js
 					]
-				},
-				{
-					'target': 'src/vs/sessions/sessions.common.main.ts',
-					'layer': 'browser',
-					'restrictions': [
-						'vs/base/~',
-						'vs/base/parts/*/~',
-						'vs/platform/*/~',
-						'vs/editor/~',
-						'vs/editor/contrib/*/~',
-						'vs/editor/editor.all.js',
-						'vs/workbench/~',
-						'vs/workbench/api/~',
-						'vs/workbench/services/*/~',
-						'vs/workbench/contrib/*/~',
-						'vs/workbench/contrib/terminal/terminal.all.js'
-					]
-				},
-				{
-					'target': 'src/vs/sessions/sessions.desktop.main.ts',
-					'layer': 'electron-browser',
-					'restrictions': [
-						'vs/base/*/~',
-						'vs/base/parts/*/~',
-						'vs/platform/*/~',
-						'vs/editor/~',
-						'vs/editor/contrib/*/~',
-						'vs/editor/editor.all.js',
-						'vs/sessions/~',
-						'vs/sessions/contrib/*/~',
-						'vs/workbench/~',
-						'vs/workbench/api/~',
-						'vs/workbench/services/*/~',
-						'vs/workbench/contrib/*/~',
-						'vs/sessions/sessions.common.main.js'
-					]
-				},
-				{
-					'target': 'src/vs/sessions/~',
-					'restrictions': [
-						'vs/base/~',
-						'vs/base/parts/*/~',
-						'vs/platform/*/~',
-						'vs/editor/~',
-						'vs/editor/contrib/*/~',
-						'vs/workbench/~',
-						'vs/workbench/browser/**',
-						'vs/workbench/contrib/**',
-						'vs/workbench/services/*/~',
-						'vs/sessions/~'
-					]
-				},
-				{
-					'target': 'src/vs/sessions/contrib/*/~',
-					'restrictions': [
-						'vs/base/~',
-						'vs/base/parts/*/~',
-						'vs/platform/*/~',
-						'vs/editor/~',
-						'vs/editor/contrib/*/~',
-						'vs/workbench/~',
-						'vs/workbench/browser/**',
-						'vs/workbench/services/*/~',
-						'vs/workbench/contrib/*/~',
-						'vs/sessions/~',
-						'vs/sessions/contrib/*/~'
-					]
-				},
+				}
 			]
 		}
 	},

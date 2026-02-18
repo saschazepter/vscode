@@ -558,12 +558,13 @@ export class ReleaseNotesManager extends Disposable {
 						font-size: var(--vscode-font-size);
 						font-family: var(--vscode-font-family);
 						white-space: nowrap;
-						box-shadow: 0 2px 8px var(--vscode-widget-shadow);
+						box-shadow: 1px 1px 1px rgba(0,0,0,.25);
 						z-index: 100;
 						overflow: hidden;
 						display: flex;
 						align-items: center;
 						justify-content: center;
+						transition: border-radius 0.25s ease, padding 0.25s ease, width 0.25s ease;
 					}
 
 					#update-action-btn .icon {
@@ -586,18 +587,16 @@ export class ReleaseNotesManager extends Disposable {
 						max-width: 0;
 						opacity: 0;
 						margin-left: 0;
+						transition: max-width 0.25s ease, opacity 0.2s ease, margin-left 0.25s ease;
 					}
 
 					#update-action-btn:hover,
 					#update-action-btn.expanded {
 						background-color: var(--vscode-button-hoverBackground);
-						box-shadow: 0 2px 8px var(--vscode-widget-shadow);
+						box-shadow: 2px 2px 2px rgba(0,0,0,.25);
 						width: auto;
-						height: auto;
-						max-height: 40px;
-						border-radius: var(--vscode-cornerRadius-small);
-						padding: 6px 10px;
-						line-height: 16px;
+						border-radius: 20px;
+						padding: 0 14px;
 					}
 
 					#update-action-btn:hover .label,
@@ -609,7 +608,6 @@ export class ReleaseNotesManager extends Disposable {
 
 					#update-action-btn.expanded {
 						background-color: var(--vscode-button-background);
-						box-shadow: 0 2px 8px var(--vscode-widget-shadow);
 					}
 
 					body.vscode-high-contrast #update-action-btn {

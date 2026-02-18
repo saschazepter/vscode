@@ -87,8 +87,8 @@ export interface IFileStatusInfo {
 	overwrittenBy?: string;
 	/** Extension ID if this file comes from an extension */
 	extensionId?: string;
-	/** If false, hidden from / menu (user-invocable: false) */
-	userInvocable?: boolean;
+	/** If true, hidden from / menu (user-invokable: false) */
+	userInvokable?: boolean;
 	/** If true, won't be auto-loaded by agent (disable-model-invocation: true) */
 	disableModelInvocation?: boolean;
 }
@@ -450,8 +450,6 @@ function getSkipReasonMessage(skipReason: PromptFileSkipReason | undefined, erro
 			return nls.localize('status.typeDisabled', 'Disabled');
 		case 'all-hooks-disabled':
 			return nls.localize('status.allHooksDisabled', 'All hooks disabled via disableAllHooks');
-		case 'claude-hooks-disabled':
-			return nls.localize('status.claudeHooksDisabled', 'Claude hooks disabled via chat.useClaudeHooks setting');
 		default:
 			return errorMessage ?? nls.localize('status.unknownError', 'Unknown error');
 	}
@@ -468,7 +466,7 @@ function convertDiscoveryResultToFileStatus(result: IPromptFileDiscoveryResult):
 			name: result.name,
 			storage: result.storage,
 			extensionId: result.extensionId,
-			userInvocable: result.userInvocable,
+			userInvokable: result.userInvokable,
 			disableModelInvocation: result.disableModelInvocation
 		};
 	}
@@ -791,8 +789,8 @@ function getSkillFlags(file: IFileStatusInfo, type: PromptsType): string {
 		flags.push(`${ICON_MANUAL} *${nls.localize('status.skill.manualOnly', 'manual only')}*`);
 	}
 
-	// userInvocable: false means hidden from / menu
-	if (file.userInvocable === false) {
+	// userInvokable: false means hidden from / menu
+	if (file.userInvokable === false) {
 		flags.push(`${ICON_HIDDEN} *${nls.localize('status.skill.hiddenFromMenu', 'hidden from menu')}*`);
 	}
 

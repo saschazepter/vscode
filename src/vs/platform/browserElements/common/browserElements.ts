@@ -46,10 +46,6 @@ export interface INativeBrowserElementsService {
 	getElementData(rect: IRectangle, token: CancellationToken, locator: IBrowserTargetLocator, cancellationId?: number): Promise<IElementData | undefined>;
 
 	startDebugSession(token: CancellationToken, locator: IBrowserTargetLocator, cancelAndDetachId?: number): Promise<void>;
-
-	startConsoleSession(token: CancellationToken, locator: IBrowserTargetLocator, cancelAndDetachId?: number): Promise<void>;
-
-	getConsoleLogs(locator: IBrowserTargetLocator): Promise<string | undefined>;
 }
 
 /**

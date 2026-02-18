@@ -16,7 +16,7 @@ import { DisposableStore } from '../../../../../base/common/lifecycle.js';
 import { IMarkdownRendererService } from '../../../../../platform/markdown/browser/markdownRenderer.js';
 import { localize } from '../../../../../nls.js';
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
-import { createWorkbenchDialogOptions } from '../../../../browser/parts/dialogs/dialog.js';
+import { createWorkbenchDialogOptions } from '../../../../../platform/dialogs/browser/dialog.js';
 import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
 import { IKeybindingService } from '../../../../../platform/keybinding/common/keybinding.js';
 import { ILayoutService } from '../../../../../platform/layout/browser/layoutService.js';
@@ -30,7 +30,6 @@ import { IChatWidgetService } from '../chat.js';
 import { ChatSetupController } from './chatSetupController.js';
 import { IChatSetupResult, ChatSetupAnonymous, InstallChatEvent, InstallChatClassification, ChatSetupStrategy, ChatSetupResultValue } from './chatSetup.js';
 import { IDefaultAccountService } from '../../../../../platform/defaultAccount/common/defaultAccount.js';
-import { IHostService } from '../../../../services/host/browser/host.js';
 
 const defaultChat = {
 	publicCodeMatchesUrl: product.defaultChatAgent?.publicCodeMatchesUrl ?? '',
@@ -49,7 +48,7 @@ export class ChatSetup {
 		let instance = ChatSetup.instance;
 		if (!instance) {
 			instance = ChatSetup.instance = instantiationService.invokeFunction(accessor => {
-				return new ChatSetup(context, controller, accessor.get(ITelemetryService), accessor.get(IWorkbenchLayoutService), accessor.get(IKeybindingService), accessor.get(IChatEntitlementService) as ChatEntitlementService, accessor.get(ILogService), accessor.get(IChatWidgetService), accessor.get(IWorkspaceTrustRequestService), accessor.get(IMarkdownRendererService), accessor.get(IDefaultAccountService), accessor.get(IHostService));
+				return new ChatSetup(context, controller, accessor.get(ITelemetryService), accessor.get(IWorkbenchLayoutService), accessor.get(IKeybindingService), accessor.get(IChatEntitlementService) as ChatEntitlementService, accessor.get(ILogService), accessor.get(IChatWidgetService), accessor.get(IWorkspaceTrustRequestService), accessor.get(IMarkdownRendererService), accessor.get(IDefaultAccountService));
 			});
 		}
 
@@ -72,7 +71,6 @@ export class ChatSetup {
 		@IWorkspaceTrustRequestService private readonly workspaceTrustRequestService: IWorkspaceTrustRequestService,
 		@IMarkdownRendererService private readonly markdownRendererService: IMarkdownRendererService,
 		@IDefaultAccountService private readonly defaultAccountService: IDefaultAccountService,
-		@IHostService private readonly hostService: IHostService
 	) { }
 
 	skipDialog(): void {
@@ -178,7 +176,7 @@ export class ChatSetup {
 				disableCloseButton: true,
 				renderFooter: footer => footer.appendChild(this.createDialogFooter(disposables, options)),
 				buttonOptions: buttons.map(button => button[2])
-			}, this.keybindingService, this.layoutService, this.hostService)
+			}, this.keybindingService, this.layoutService)
 		));
 
 		const { button } = await dialog.show();

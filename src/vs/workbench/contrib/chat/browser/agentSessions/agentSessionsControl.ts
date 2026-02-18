@@ -9,14 +9,14 @@ import { IContextMenuService } from '../../../../../platform/contextview/browser
 import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
 import { IOpenEvent, WorkbenchCompressibleAsyncDataTree } from '../../../../../platform/list/browser/listService.js';
 import { $, append, EventHelper } from '../../../../../base/browser/dom.js';
-import { AgentSessionSection, IAgentSession, IAgentSessionSection, IAgentSessionsModel, IMarshalledAgentSessionContext, isAgentSession, isAgentSessionSection, isSessionInProgressStatus } from './agentSessionsModel.js';
+import { AgentSessionSection, IAgentSession, IAgentSessionSection, IAgentSessionsModel, IMarshalledAgentSessionContext, isAgentSession, isAgentSessionSection } from './agentSessionsModel.js';
 import { AgentSessionListItem, AgentSessionRenderer, AgentSessionsAccessibilityProvider, AgentSessionsCompressionDelegate, AgentSessionsDataSource, AgentSessionsDragAndDrop, AgentSessionsIdentityProvider, AgentSessionsKeyboardNavigationLabelProvider, AgentSessionsListDelegate, AgentSessionSectionRenderer, AgentSessionsSorter, IAgentSessionsFilter, IAgentSessionsSorterOptions } from './agentSessionsViewer.js';
 import { FuzzyScore } from '../../../../../base/common/filters.js';
 import { IMenuService, MenuId } from '../../../../../platform/actions/common/actions.js';
 import { IChatSessionsService } from '../../common/chatSessionsService.js';
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
 import { ACTION_ID_NEW_CHAT } from '../actions/chatActions.js';
-import { Emitter, Event } from '../../../../../base/common/event.js';
+import { Event } from '../../../../../base/common/event.js';
 import { Disposable } from '../../../../../base/common/lifecycle.js';
 import { Throttler } from '../../../../../base/common/async.js';
 import { ITreeContextMenuEvent } from '../../../../../base/browser/ui/tree/tree.js';
@@ -27,7 +27,7 @@ import { IAgentSessionsService } from './agentSessionsService.js';
 import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry.js';
 import { IListStyles } from '../../../../../base/browser/ui/list/listWidget.js';
 import { IStyleOverride } from '../../../../../platform/theme/browser/defaultStyles.js';
-import { getAgentSessionTime, IAgentSessionsControl } from './agentSessions.js';
+import { IAgentSessionsControl } from './agentSessions.js';
 import { HoverPosition } from '../../../../../base/browser/ui/hover/hoverWidget.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { ISessionOpenOptions, openSession } from './agentSessionsOpener.js';
@@ -43,10 +43,8 @@ export interface IAgentSessionsControlOptions extends IAgentSessionsSorterOption
 
 	getHoverPosition(): HoverPosition;
 	trackActiveEditorSession(): boolean;
-	collapseOlderSections?(): boolean;
 
 	overrideSessionOpenOptions?(openEvent: IOpenEvent<AgentSessionListItem | undefined>): ISessionOpenOptions;
-	overrideSessionOpen?(resource: URI, openOptions?: ISessionOpenOptions): Promise<void>;
 	notifySessionOpened?(resource: URI, widget: IChatWidget): void;
 }
 
@@ -71,9 +69,6 @@ export class AgentSessionsControl extends Disposable implements IAgentSessionsCo
 	private sessionsListFindIsOpen = false;
 
 	private readonly updateSessionsListThrottler = this._register(new Throttler());
-
-	private readonly _onDidUpdate = this._register(new Emitter<void>());
-	readonly onDidUpdate: Event<void> = this._onDidUpdate.event;
 
 	private visible: boolean = true;
 
@@ -146,15 +141,6 @@ export class AgentSessionsControl extends Disposable implements IAgentSessionsCo
 				}
 				if (element.section === AgentSessionSection.Archived && this.options.filter.getExcludes().archived) {
 					return true; // Archived section is collapsed when archived are excluded
-				}
-				if (this.options.collapseOlderSections?.()) {
-					const olderSections = [AgentSessionSection.Week, AgentSessionSection.Older, AgentSessionSection.Archived];
-					if (olderSections.includes(element.section)) {
-						return true; // Collapse older time sections if option is enabled
-					}
-					if (element.section === AgentSessionSection.Yesterday && this.hasTodaySessions()) {
-						return true; // Also collapse Yesterday when there are sessions from Today
-					}
 				}
 			}
 
@@ -239,17 +225,6 @@ export class AgentSessionsControl extends Disposable implements IAgentSessionsCo
 		}));
 	}
 
-	private hasTodaySessions(): boolean {
-		const startOfToday = new Date().setHours(0, 0, 0, 0);
-
-		return this.agentSessionsService.model.sessions.some(session =>
-			!session.isArchived() && (
-				isSessionInProgressStatus(session.status) ||
-				getAgentSessionTime(session.timing) >= startOfToday
-			)
-		);
-	}
-
 	private async openAgentSession(e: IOpenEvent<AgentSessionListItem | undefined>): Promise<void> {
 		const element = e.element;
 		if (!element || isAgentSessionSection(element)) {
@@ -262,13 +237,9 @@ export class AgentSessionsControl extends Disposable implements IAgentSessionsCo
 		});
 
 		const options = this.options.overrideSessionOpenOptions?.(e) ?? e;
-		if (this.options.overrideSessionOpen) {
-			await this.options.overrideSessionOpen(element.resource, options);
-		} else {
-			const widget = await this.instantiationService.invokeFunction(openSession, element, options);
-			if (widget) {
-				this.options.notifySessionOpened?.(element.resource, widget);
-			}
+		const widget = await this.instantiationService.invokeFunction(openSession, element, options);
+		if (widget) {
+			this.options.notifySessionOpened?.(element.resource, widget);
 		}
 	}
 
@@ -370,11 +341,7 @@ export class AgentSessionsControl extends Disposable implements IAgentSessionsCo
 	}
 
 	async update(): Promise<void> {
-		return this.updateSessionsListThrottler.queue(async () => {
-			await this.sessionsList?.updateChildren();
-
-			this._onDidUpdate.fire();
-		});
+		return this.updateSessionsListThrottler.queue(async () => this.sessionsList?.updateChildren());
 	}
 
 	setVisible(visible: boolean): void {

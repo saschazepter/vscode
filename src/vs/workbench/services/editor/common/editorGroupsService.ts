@@ -7,7 +7,7 @@ import { Event } from '../../../../base/common/event.js';
 import { IInstantiationService, createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
 import { IEditorPane, GroupIdentifier, EditorInputWithOptions, CloseDirection, IEditorPartOptions, IEditorPartOptionsChangeEvent, EditorsOrder, IVisibleEditorPane, IEditorCloseEvent, IUntypedEditorInput, isEditorInput, IEditorWillMoveEvent, IMatchEditorOptions, IActiveEditorChangeEvent, IFindEditorOptions, IToolbarActions } from '../../../common/editor.js';
 import { EditorInput } from '../../../common/editor/editorInput.js';
-import { IEditorOptions, IModalEditorNavigation, IModalEditorPartOptions } from '../../../../platform/editor/common/editor.js';
+import { IEditorOptions } from '../../../../platform/editor/common/editor.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { IDimension } from '../../../../editor/common/core/2d/dimension.js';
 import { DisposableStore, IDisposable } from '../../../../base/common/lifecycle.js';
@@ -19,24 +19,6 @@ import { IMenuChangeEvent, MenuId } from '../../../../platform/actions/common/ac
 import { DeepPartial } from '../../../../base/common/types.js';
 
 export const IEditorGroupsService = createDecorator<IEditorGroupsService>('editorGroupsService');
-
-export const enum GroupActivationReason {
-
-	/**
-	 * Group was activated explicitly by user or programmatic action.
-	 */
-	DEFAULT = 0,
-
-	/**
-	 * Group was activated because a modal or auxiliary editor part was closing.
-	 */
-	PART_CLOSE = 1
-}
-
-export interface IEditorGroupActivationEvent {
-	readonly group: IEditorGroup;
-	readonly reason: GroupActivationReason;
-}
 
 export const enum GroupDirection {
 	UP,
@@ -230,7 +212,7 @@ export interface IEditorGroupsContainer {
 	/**
 	 * An event for when a group gets activated.
 	 */
-	readonly onDidActivateGroup: Event<IEditorGroupActivationEvent>;
+	readonly onDidActivateGroup: Event<IEditorGroup>;
 
 	/**
 	 * An event for when the index of a group changes.
@@ -524,9 +506,9 @@ export interface IAuxiliaryEditorPart extends IEditorPart {
 export interface IModalEditorPart extends IEditorPart {
 
 	/**
-	 * Modal container of the editor part.
+	 * Fired when this modal editor part is about to close.
 	 */
-	readonly modalElement: unknown /* HTMLElement */;
+	readonly onWillClose: Event<void>;
 
 	/**
 	 * Whether the modal editor part is currently maximized.
@@ -542,21 +524,6 @@ export interface IModalEditorPart extends IEditorPart {
 	 * Toggle between default and maximized size.
 	 */
 	toggleMaximized(): void;
-
-	/**
-	 * The current navigation context, if any.
-	 */
-	readonly navigation: IModalEditorNavigation | undefined;
-
-	/**
-	 * Update options for the modal editor part.
-	 */
-	updateOptions(options?: IModalEditorPartOptions): void;
-
-	/**
-	 * Fired when this modal editor part is about to close.
-	 */
-	readonly onWillClose: Event<void>;
 
 	/**
 	 * Close this modal editor part after moving all
@@ -641,7 +608,7 @@ export interface IEditorGroupsService extends IEditorGroupsContainer {
 	 * If a modal part already exists, it will be returned
 	 * instead of creating a new one.
 	 */
-	createModalEditorPart(options?: IModalEditorPartOptions): Promise<IModalEditorPart>;
+	createModalEditorPart(): Promise<IModalEditorPart>;
 
 	/**
 	 * The currently active modal editor part, if any.

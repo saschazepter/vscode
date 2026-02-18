@@ -362,5 +362,5 @@ suite('OutputMonitor', () => {
 
 });
 function createTestContext(id: string): IToolInvocationContext {
-	return { sessionResource: LocalChatSessionUri.forSession(id) };
+	return { sessionId: id, sessionResource: LocalChatSessionUri.forSession(id) };
 }

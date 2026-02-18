@@ -93,7 +93,6 @@ export interface IChatSessionsExtensionPoint {
 	 * Custom agents without a `target` property are also shown in all filtered lists
 	 */
 	readonly customAgentTarget?: Target;
-	readonly requiresCustomModels?: boolean;
 }
 
 export interface IChatSessionItem {
@@ -136,7 +135,6 @@ export type IChatSessionHistoryItem = {
 	participant: string;
 	command?: string;
 	variableData?: IChatRequestVariableData;
-	modelId?: string;
 } | {
 	type: 'response';
 	parts: IChatProgress[];
@@ -262,7 +260,7 @@ export interface IChatSessionsService {
 	/**
 	 * Fired when options for a chat session change.
 	 */
-	readonly onDidChangeSessionOptions: Event<URI>;
+	onDidChangeSessionOptions: Event<URI>;
 
 	/**
 	 * Get the capabilities for a specific session type
@@ -275,11 +273,7 @@ export interface IChatSessionsService {
 	 */
 	getCustomAgentTargetForSessionType(chatSessionType: string): Target;
 
-	/**
-	 * Returns whether the session type requires custom models. When true, the model picker should show filtered custom models.
-	 */
-	requiresCustomModelsForSessionType(chatSessionType: string): boolean;
-	readonly onDidChangeOptionGroups: Event<string>;
+	onDidChangeOptionGroups: Event<string>;
 
 	getOptionGroupsForSessionType(chatSessionType: string): IChatSessionProviderOptionGroup[] | undefined;
 	setOptionGroupsForSessionType(chatSessionType: string, handle: number, optionGroups?: IChatSessionProviderOptionGroup[]): void;

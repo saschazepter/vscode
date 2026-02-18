@@ -7,19 +7,19 @@ import assert from 'assert';
 import { Emitter, Event } from '../../../../../base/common/event.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
 import { ICommandEvent, ICommandService } from '../../../../../platform/commands/common/commands.js';
-import { ConfigurationTarget, IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
+import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
 import { TestConfigurationService } from '../../../../../platform/configuration/test/common/testConfigurationService.js';
 import { IContextKeyService } from '../../../../../platform/contextkey/common/contextkey.js';
 import { TestInstantiationService } from '../../../../../platform/instantiation/test/common/instantiationServiceMock.js';
 import { MockContextKeyService } from '../../../../../platform/keybinding/test/common/mockKeybindingService.js';
 import { ILogService, NullLogService } from '../../../../../platform/log/common/log.js';
 import { IProductService } from '../../../../../platform/product/common/productService.js';
-import { IStorageService, InMemoryStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
+import { IStorageService, InMemoryStorageService } from '../../../../../platform/storage/common/storage.js';
 import { ChatTipService, ITipDefinition, TipEligibilityTracker } from '../../browser/chatTipService.js';
 import { AgentFileType, IPromptPath, IPromptsService, IResolvedAgentFile, PromptsStorage } from '../../common/promptSyntax/service/promptsService.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
-import { ChatAgentLocation, ChatModeKind } from '../../common/constants.js';
+import { ChatModeKind } from '../../common/constants.js';
 import { PromptsType } from '../../common/promptSyntax/promptTypes.js';
 import { ILanguageModelToolsService } from '../../common/tools/languageModelToolsService.js';
 import { MockLanguageModelToolsService } from '../common/tools/mockLanguageModelToolsService.js';
@@ -27,19 +27,6 @@ import { MockLanguageModelToolsService } from '../common/tools/mockLanguageModel
 class MockContextKeyServiceWithRulesMatching extends MockContextKeyService {
 	override contextMatchesRules(): boolean {
 		return true;
-	}
-}
-
-class TrackingConfigurationService extends TestConfigurationService {
-	public lastUpdateTarget: ConfigurationTarget | undefined;
-	public lastUpdateKey: string | undefined;
-	public lastUpdateValue: unknown;
-
-	override updateValue(key: string, value: unknown, arg3?: unknown): Promise<void> {
-		this.lastUpdateKey = key;
-		this.lastUpdateValue = value;
-		this.lastUpdateTarget = arg3 as ConfigurationTarget | undefined;
-		return Promise.resolve(undefined);
 	}
 }
 
@@ -91,89 +78,49 @@ suite('ChatTipService', () => {
 		instantiationService.stub(ILanguageModelToolsService, testDisposables.add(new MockLanguageModelToolsService()));
 	});
 
-	test('returns a welcome tip', () => {
+	test('returns a tip for new requests with timestamp after service creation', () => {
 		const service = createService();
+		const now = Date.now();
 
-		const tip = service.getWelcomeTip(contextKeyService);
-		assert.ok(tip, 'Should return a welcome tip');
+		// Request created after service initialization
+		const tip = service.getNextTip('request-1', now + 1000, contextKeyService);
+		assert.ok(tip, 'Should return a tip for requests created after service instantiation');
 		assert.ok(tip.id.startsWith('tip.'), 'Tip should have a valid ID');
 		assert.ok(tip.content.value.length > 0, 'Tip should have content');
 	});
 
-	test('returns Auto switch tip when current model is gpt-4.1', () => {
+	test('returns undefined for old requests with timestamp before service creation', () => {
 		const service = createService();
-		contextKeyService.createKey(ChatContextKeys.chatModelId.key, 'gpt-4.1');
+		const now = Date.now();
 
-		const tip = service.getWelcomeTip(contextKeyService);
-
-		assert.ok(tip);
-		assert.strictEqual(tip.id, 'tip.switchToAuto');
+		// Request created before service initialization (simulating restored chat)
+		const tip = service.getNextTip('old-request', now - 10000, contextKeyService);
+		assert.strictEqual(tip, undefined, 'Should not return a tip for requests created before service instantiation');
 	});
 
-	test('does not return Auto switch tip when current model is not gpt-4.1', () => {
+	test('only shows one tip per session', () => {
 		const service = createService();
-		contextKeyService.createKey(ChatContextKeys.chatModelId.key, 'auto');
+		const now = Date.now();
 
-		const tip = service.getWelcomeTip(contextKeyService);
+		// First request gets a tip
+		const tip1 = service.getNextTip('request-1', now + 1000, contextKeyService);
+		assert.ok(tip1, 'First request should get a tip');
 
-		assert.ok(tip);
-		assert.notStrictEqual(tip.id, 'tip.switchToAuto');
+		// Second request does not get a tip
+		const tip2 = service.getNextTip('request-2', now + 2000, contextKeyService);
+		assert.strictEqual(tip2, undefined, 'Second request should not get a tip');
 	});
 
-	test('does not return Auto switch tip when current model context key is empty and no fallback is available', () => {
+	test('returns same tip on rerender of same request', () => {
 		const service = createService();
-		contextKeyService.createKey(ChatContextKeys.chatModelId.key, '');
+		const now = Date.now();
 
-		const tip = service.getWelcomeTip(contextKeyService);
-
-		assert.ok(tip);
-		assert.notStrictEqual(tip.id, 'tip.switchToAuto');
-	});
-
-	test('returns Auto switch tip when current model is persisted and context key is empty', () => {
-		storageService.store('chat.currentLanguageModel.panel', 'copilot/gpt-4.1-2025-04-14', StorageScope.APPLICATION, StorageTarget.USER);
-		const service = createService();
-		contextKeyService.createKey(ChatContextKeys.chatModelId.key, '');
-
-		const tip = service.getWelcomeTip(contextKeyService);
-
-		assert.ok(tip);
-		assert.strictEqual(tip.id, 'tip.switchToAuto');
-	});
-
-	test('returns Auto switch tip when current model is versioned gpt-4.1', () => {
-		const service = createService();
-		contextKeyService.createKey(ChatContextKeys.chatModelId.key, 'gpt-4.1-2025-04-14');
-
-		const tip = service.getWelcomeTip(contextKeyService);
-
-		assert.ok(tip);
-		assert.strictEqual(tip.id, 'tip.switchToAuto');
-	});
-
-	test('switching models advances away from gpt-4.1 tip', () => {
-		const service = createService();
-		contextKeyService.createKey(ChatContextKeys.chatModelId.key, 'gpt-4.1');
-
-		const firstTip = service.getWelcomeTip(contextKeyService);
-		assert.ok(firstTip);
-		assert.strictEqual(firstTip.id, 'tip.switchToAuto');
-
-		const switchedContextKeyService = new MockContextKeyServiceWithRulesMatching();
-		switchedContextKeyService.createKey(ChatContextKeys.chatModelId.key, 'auto');
-		const nextTip = service.getWelcomeTip(switchedContextKeyService);
-
-		assert.ok(nextTip);
-		assert.notStrictEqual(nextTip.id, 'tip.switchToAuto');
-	});
-
-	test('returns same welcome tip on rerender', () => {
-		const service = createService();
-
-		const tip1 = service.getWelcomeTip(contextKeyService);
+		// First call gets a tip
+		const tip1 = service.getNextTip('request-1', now + 1000, contextKeyService);
 		assert.ok(tip1);
 
-		const tip2 = service.getWelcomeTip(contextKeyService);
+		// Same request ID gets the same tip on rerender
+		const tip2 = service.getNextTip('request-1', now + 1000, contextKeyService);
 		assert.ok(tip2);
 		assert.strictEqual(tip1.id, tip2.id, 'Should return same tip for stable rerender');
 		assert.strictEqual(tip1.content.value, tip2.content.value);
@@ -181,56 +128,71 @@ suite('ChatTipService', () => {
 
 	test('returns undefined when Copilot is not enabled', () => {
 		const service = createService(/* hasCopilot */ false);
+		const now = Date.now();
 
-		const tip = service.getWelcomeTip(contextKeyService);
+		const tip = service.getNextTip('request-1', now + 1000, contextKeyService);
 		assert.strictEqual(tip, undefined, 'Should not return a tip when Copilot is not enabled');
 	});
 
 	test('returns undefined when tips setting is disabled', () => {
 		const service = createService(/* hasCopilot */ true, /* tipsEnabled */ false);
+		const now = Date.now();
 
-		const tip = service.getWelcomeTip(contextKeyService);
+		const tip = service.getNextTip('request-1', now + 1000, contextKeyService);
 		assert.strictEqual(tip, undefined, 'Should not return a tip when tips setting is disabled');
 	});
 
-	test('returns undefined when location is terminal', () => {
+	test('old requests do not consume the session tip allowance', () => {
 		const service = createService();
+		const now = Date.now();
 
-		const terminalContextKeyService = new MockContextKeyServiceWithRulesMatching();
-		terminalContextKeyService.createKey(ChatContextKeys.location.key, ChatAgentLocation.Terminal);
+		// Old request should not consume the tip allowance
+		const oldTip = service.getNextTip('old-request', now - 10000, contextKeyService);
+		assert.strictEqual(oldTip, undefined);
 
-		const tip = service.getWelcomeTip(terminalContextKeyService);
-		assert.strictEqual(tip, undefined, 'Should not return a tip in terminal inline chat');
+		// New request should still be able to get a tip
+		const newTip = service.getNextTip('new-request', now + 1000, contextKeyService);
+		assert.ok(newTip, 'New request should get a tip after old request was skipped');
 	});
 
-	test('returns undefined when location is editor inline', () => {
+	test('multiple old requests do not affect new request tip', () => {
 		const service = createService();
+		const now = Date.now();
 
-		const editorContextKeyService = new MockContextKeyServiceWithRulesMatching();
-		editorContextKeyService.createKey(ChatContextKeys.location.key, ChatAgentLocation.EditorInline);
+		// Simulate multiple restored requests being rendered
+		service.getNextTip('old-1', now - 30000, contextKeyService);
+		service.getNextTip('old-2', now - 20000, contextKeyService);
+		service.getNextTip('old-3', now - 10000, contextKeyService);
 
-		const tip = service.getWelcomeTip(editorContextKeyService);
-		assert.strictEqual(tip, undefined, 'Should not return a tip in editor inline chat');
+		// New request should still get a tip
+		const tip = service.getNextTip('new-request', now + 1000, contextKeyService);
+		assert.ok(tip, 'New request should get a tip after multiple old requests');
 	});
 
 	test('dismissTip excludes the dismissed tip and allows a new one', () => {
 		const service = createService();
+		const now = Date.now();
 
-		const tip1 = service.getWelcomeTip(contextKeyService);
+		// Get a tip
+		const tip1 = service.getNextTip('request-1', now + 1000, contextKeyService);
 		assert.ok(tip1);
 
+		// Dismiss it
 		service.dismissTip();
 
-		const tip2 = service.getWelcomeTip(contextKeyService);
+		// Next call should return a different tip (since the dismissed one is excluded)
+		const tip2 = service.getNextTip('request-1', now + 1000, contextKeyService);
 		if (tip2) {
 			assert.notStrictEqual(tip1.id, tip2.id, 'Dismissed tip should not be shown again');
 		}
+		// tip2 may be undefined if it was the only eligible tip — that's also valid
 	});
 
 	test('dismissTip fires onDidDismissTip event', () => {
 		const service = createService();
+		const now = Date.now();
 
-		service.getWelcomeTip(contextKeyService);
+		service.getNextTip('request-1', now + 1000, contextKeyService);
 
 		let fired = false;
 		testDisposables.add(service.onDidDismissTip(() => { fired = true; }));
@@ -241,8 +203,9 @@ suite('ChatTipService', () => {
 
 	test('disableTips fires onDidDisableTips event', async () => {
 		const service = createService();
+		const now = Date.now();
 
-		service.getWelcomeTip(contextKeyService);
+		service.getNextTip('request-1', now + 1000, contextKeyService);
 
 		let fired = false;
 		testDisposables.add(service.onDidDisableTips(() => { fired = true; }));
@@ -251,31 +214,22 @@ suite('ChatTipService', () => {
 		assert.ok(fired, 'onDidDisableTips should fire');
 	});
 
-	test('disableTips writes to application settings target', async () => {
-		const trackingConfigurationService = new TrackingConfigurationService();
-		configurationService = trackingConfigurationService;
-		instantiationService.stub(IConfigurationService, configurationService);
-
-		const service = createService();
-
-		await service.disableTips();
-
-		assert.strictEqual(trackingConfigurationService.lastUpdateKey, 'chat.tips.enabled');
-		assert.strictEqual(trackingConfigurationService.lastUpdateValue, false);
-		assert.strictEqual(trackingConfigurationService.lastUpdateTarget, ConfigurationTarget.APPLICATION);
-	});
-
 	test('disableTips resets state so re-enabling works', async () => {
 		const service = createService();
+		const now = Date.now();
 
-		const tip1 = service.getWelcomeTip(contextKeyService);
+		// Show a tip
+		const tip1 = service.getNextTip('request-1', now + 1000, contextKeyService);
 		assert.ok(tip1);
 
+		// Disable tips
 		await service.disableTips();
 
+		// Re-enable tips
 		configurationService.setUserConfiguration('chat.tips.enabled', true);
 
-		const tip2 = service.getWelcomeTip(contextKeyService);
+		// Should be able to get a tip again on a new request
+		const tip2 = service.getNextTip('request-2', now + 2000, contextKeyService);
 		assert.ok(tip2, 'Should return a tip after disabling and re-enabling');
 	});
 
@@ -525,16 +479,37 @@ suite('ChatTipService', () => {
 		assert.strictEqual(tracker2.isExcluded(tip), true, 'New tracker should read persisted mode exclusion from workspace storage');
 	});
 
-	test('resetSession allows a new welcome tip', () => {
+	test('resetSession allows tips in a new conversation', () => {
 		const service = createService();
+		const now = Date.now();
 
-		const tip1 = service.getWelcomeTip(contextKeyService);
-		assert.ok(tip1, 'Should get a welcome tip');
+		// Show a tip in the first conversation
+		const tip1 = service.getNextTip('request-1', now + 1000, contextKeyService);
+		assert.ok(tip1, 'First request should get a tip');
 
+		// Second request — no tip (one per session)
+		const tip2 = service.getNextTip('request-2', now + 2000, contextKeyService);
+		assert.strictEqual(tip2, undefined, 'Second request should not get a tip');
+
+		// Start a new conversation
 		service.resetSession();
 
-		const tip2 = service.getWelcomeTip(contextKeyService);
-		assert.ok(tip2, 'Should get a welcome tip after resetSession');
+		// New request after reset should get a tip
+		const tip3 = service.getNextTip('request-3', Date.now() + 1000, contextKeyService);
+		assert.ok(tip3, 'First request after resetSession should get a tip');
+	});
+
+	test('chatResponse tip shows regardless of welcome tip', () => {
+		const service = createService();
+		const now = Date.now();
+
+		// Show a welcome tip (simulating the getting-started view)
+		const welcomeTip = service.getWelcomeTip(contextKeyService);
+		assert.ok(welcomeTip, 'Welcome tip should be shown');
+
+		// First new request should still get a chatResponse tip
+		const tip = service.getNextTip('request-1', now + 1000, contextKeyService);
+		assert.ok(tip, 'ChatResponse tip should show even when welcome tip was shown');
 	});
 
 	test('excludes tip when tracked tool has been invoked', () => {
@@ -636,6 +611,47 @@ suite('ChatTipService', () => {
 		await new Promise(r => setTimeout(r, 0));
 
 		assert.strictEqual(tracker.isExcluded(tip), false, 'Should not be excluded when no skill files exist');
+	});
+
+	test('excludes tip when requiresAnyToolSetRegistered tool sets are not registered', () => {
+		const tip: ITipDefinition = {
+			id: 'tip.githubRepo',
+			message: 'test',
+			requiresAnyToolSetRegistered: ['github', 'github-pull-request'],
+		};
+
+		const tracker = testDisposables.add(new TipEligibilityTracker(
+			[tip],
+			{ onDidExecuteCommand: Event.None, onWillExecuteCommand: Event.None } as Partial<ICommandService> as ICommandService,
+			storageService,
+			createMockPromptsService() as IPromptsService,
+			createMockToolsService(),
+			new NullLogService(),
+		));
+
+		assert.strictEqual(tracker.isExcluded(tip), true, 'Should be excluded when no required tool sets are registered');
+	});
+
+	test('does not exclude tip when at least one requiresAnyToolSetRegistered tool set is registered', () => {
+		const mockToolsService = createMockToolsService();
+		mockToolsService.addRegisteredToolSetName('github');
+
+		const tip: ITipDefinition = {
+			id: 'tip.githubRepo',
+			message: 'test',
+			requiresAnyToolSetRegistered: ['github', 'github-pull-request'],
+		};
+
+		const tracker = testDisposables.add(new TipEligibilityTracker(
+			[tip],
+			{ onDidExecuteCommand: Event.None, onWillExecuteCommand: Event.None } as Partial<ICommandService> as ICommandService,
+			storageService,
+			createMockPromptsService() as IPromptsService,
+			mockToolsService,
+			new NullLogService(),
+		));
+
+		assert.strictEqual(tracker.isExcluded(tip), false, 'Should not be excluded when at least one required tool set is registered');
 	});
 
 	test('re-checks agent file exclusion when onDidChangeCustomAgents fires', async () => {

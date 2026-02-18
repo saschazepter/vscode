@@ -124,7 +124,6 @@
 	0% {
 		background-position: 120% 0;
 	}
-
 	100% {
 		background-position: -120% 0;
 	}
@@ -794,16 +793,22 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	margin-right: 3px;
 }
 
-.monaco-workbench .interactive-session .chat-input-container {
+.interactive-session .chat-input-container {
 	box-sizing: border-box;
 	cursor: text;
 	background-color: var(--vscode-input-background);
 	border: 1px solid var(--vscode-input-border, transparent);
-	border-radius: var(--vscode-cornerRadius-large);
+	border-radius: 4px;
 	padding: 0 6px 6px 6px;
 	/* top padding is inside the editor widget */
 	width: 100%;
 	position: relative;
+}
+
+/* When a getting-started tip is shown, visually attach it to the input */
+.interactive-session.chat-has-getting-started-tip .chat-input-container {
+	border-top-left-radius: 0;
+	border-top-right-radius: 0;
 }
 
 /* Context usage widget container - positioned at top right of chat input */
@@ -821,8 +826,7 @@ have to be updated for changes to the rules above, or to support more deeply nes
 
 .interactive-input-part:has(.chat-editing-session > .chat-editing-session-container) .chat-input-container,
 .interactive-input-part:has(.chat-todo-list-widget-container > .chat-todo-list-widget.has-todos) .chat-input-container,
-.interactive-input-part:has(.chat-input-widgets-container > .chat-status-widget:not([style*="display: none"])) .chat-input-container,
-.interactive-input-part:has(.chat-getting-started-tip-container > .chat-tip-widget) .chat-input-container {
+.interactive-input-part:has(.chat-input-widgets-container > .chat-status-widget:not([style*="display: none"])) .chat-input-container {
 	/* Remove top border radius when editing session, todo list, or status widget is present */
 	border-top-left-radius: 0;
 	border-top-right-radius: 0;
@@ -836,13 +840,13 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	position: relative;
 }
 
-.monaco-workbench .interactive-session .chat-editing-session .chat-editing-session-container {
+.interactive-session .chat-editing-session .chat-editing-session-container {
 	padding: 4px 3px 4px 3px;
 	box-sizing: border-box;
 	background-color: var(--vscode-editor-background);
 	border: 1px solid var(--vscode-input-border, transparent);
 	border-bottom: none;
-	border-radius: var(--vscode-cornerRadius-large) var(--vscode-cornerRadius-large) 0 0;
+	border-radius: 4px 4px 0 0;
 	display: flex;
 	flex-direction: column;
 	gap: 2px;
@@ -936,7 +940,7 @@ have to be updated for changes to the rules above, or to support more deeply nes
 		border-radius: 2px;
 		border: none;
 		background-color: unset;
-		color: var(--vscode-descriptionForeground);
+		color: var(--vscode-foreground)
 	}
 
 	.monaco-button:focus-visible {
@@ -1078,6 +1082,23 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	position: relative;
 }
 
+/* question carousel - this is above edits and todos */
+.interactive-session .interactive-input-part > .chat-question-carousel-widget-container {
+	width: 100%;
+	position: relative;
+}
+
+.interactive-session .interactive-input-part > .chat-question-carousel-widget-container:empty {
+	display: none;
+}
+
+.interactive-session .interactive-input-part > .chat-question-carousel-widget-container .chat-question-carousel-container {
+	margin: 0px;
+	border: 1px solid var(--vscode-input-border, transparent);
+	background-color: var(--vscode-editor-background);
+	border-radius: 4px;
+}
+
 /* Chat Todo List Widget Container - mirrors chat-editing-session styling */
 .interactive-session .interactive-input-part > .chat-todo-list-widget-container {
 	margin-bottom: -4px;
@@ -1092,7 +1113,8 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	border: 1px solid var(--vscode-input-border, transparent);
 	background-color: var(--vscode-editor-background);
 	border-bottom: none;
-	border-radius: var(--vscode-cornerRadius-large) var(--vscode-cornerRadius-large) 0 0;
+	border-top-left-radius: 4px;
+	border-top-right-radius: 4px;
 	flex-direction: column;
 	gap: 2px;
 	overflow: hidden;
@@ -1298,10 +1320,6 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	padding-left: 4px;
 }
 
-.interactive-session .chat-editor-container .monaco-editor .view-lines {
-	padding-left: 4px;
-}
-
 .interactive-session .chat-input-toolbars {
 	display: flex;
 }
@@ -1334,27 +1352,14 @@ have to be updated for changes to the rules above, or to support more deeply nes
 		.action-label {
 			min-width: 0px;
 			overflow: hidden;
-			position: relative;
 
 			.chat-input-picker-label {
 				overflow: hidden;
 				text-overflow: ellipsis;
 			}
 
-			.model-picker-badge {
-				display: inline-flex;
-				align-items: center;
-				margin-left: 4px;
-				flex-shrink: 0;
-				font-size: 12px;
-
-				.codicon.codicon-info {
-					color: var(--vscode-problemsInfoIcon-foreground) !important;
-				}
-
-				.codicon.codicon-warning {
-					color: var(--vscode-problemsWarningIcon-foreground) !important;
-				}
+			.codicon-warning {
+				color: var(--vscode-problemsWarningIcon-foreground);
 			}
 
 			span + .chat-input-picker-label {
@@ -1378,20 +1383,6 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	}
 }
 
-/* Manage Models link style in model picker */
-.action-widget .monaco-list-row.action.manage-models-link {
-	color: var(--vscode-textLink-foreground) !important;
-}
-
-.action-widget .monaco-list-row.action.manage-models-link .codicon {
-	color: var(--vscode-textLink-foreground) !important;
-}
-
-.action-widget .monaco-list-row.action.manage-models-link:hover,
-.action-widget .monaco-list-row.action.manage-models-link.focused {
-	color: var(--vscode-textLink-activeForeground) !important;
-}
-
 
 
 .interactive-session .chat-input-toolbar .chat-input-picker-item .action-label,
@@ -1400,11 +1391,11 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	padding: 3px 0px 3px 6px;
 	display: flex;
 	align-items: center;
-	color: var(--vscode-foreground);
 }
 
-.monaco-workbench .interactive-session .chat-input-toolbar .chat-input-picker-item .action-label .codicon-chevron-down,
-.monaco-workbench .interactive-session .chat-input-toolbar .chat-sessionPicker-item .action-label .codicon-chevron-down {
+
+.interactive-session .chat-input-toolbar .chat-input-picker-item .action-label .codicon-chevron-down,
+.interactive-session .chat-input-toolbar .chat-sessionPicker-item .action-label .codicon-chevron-down {
 	font-size: 12px;
 	margin-left: 2px;
 }
@@ -2139,6 +2130,12 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	display: none;
 }
 
+/* Tree view: remove twistie indent for leaf (non-collapsible) file rows */
+.interactive-session .chat-editing-session-list .monaco-tl-twistie:not(.collapsible) {
+	width: 0;
+	padding-right: 0;
+}
+
 .interactive-session .chat-summary-list .monaco-list .monaco-list-row {
 	border-radius: 4px;
 }
@@ -2275,13 +2272,8 @@ have to be updated for changes to the rules above, or to support more deeply nes
 		}
 	}
 
-	/* hide spinner icon for shimmer progress, shimmer handles animation */
-	&.shimmer-progress > .codicon {
-		display: none;
-	}
-
-	/* shimmer animation for shimmer progress */
-	&.shimmer-progress .rendered-markdown.progress-step > p {
+	/* shimmer animation for working progress only */
+	&.working-progress:has(.codicon-loading) .rendered-markdown.progress-step > p {
 		background: linear-gradient(
 			90deg,
 			var(--vscode-descriptionForeground) 0%,

@@ -29,7 +29,6 @@ export class MockLanguageModelToolsService extends Disposable implements ILangua
 
 	private readonly _registeredToolIds = new Set<string>();
 	private readonly _registeredToolSetNames = new Set<string>();
-	private readonly _toolSetTools = new Map<string, IToolData[]>();
 
 	constructor() {
 		super();
@@ -136,17 +135,13 @@ export class MockLanguageModelToolsService extends Disposable implements ILangua
 		return [];
 	}
 
-	addRegisteredToolSetName(name: string, tools?: IToolData[]): void {
+	addRegisteredToolSetName(name: string): void {
 		this._registeredToolSetNames.add(name);
-		if (tools) {
-			this._toolSetTools.set(name, tools);
-		}
 	}
 
 	getToolSetByName(name: string): IToolSet | undefined {
 		if (this._registeredToolSetNames.has(name)) {
-			const tools = this._toolSetTools.get(name) ?? [];
-			return { id: name, referenceName: name, icon: ThemeIcon.fromId(Codicon.tools.id), source: ToolDataSource.Internal, getTools: () => tools };
+			return { id: name, referenceName: name, icon: ThemeIcon.fromId(Codicon.tools.id), source: ToolDataSource.Internal, getTools: () => [] };
 		}
 		return undefined;
 	}

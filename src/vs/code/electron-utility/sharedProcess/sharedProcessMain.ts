@@ -134,8 +134,6 @@ import { IMcpGalleryManifestService } from '../../../platform/mcp/common/mcpGall
 import { McpGalleryManifestIPCService } from '../../../platform/mcp/common/mcpGalleryManifestServiceIpc.js';
 import { IMeteredConnectionService } from '../../../platform/meteredConnection/common/meteredConnection.js';
 import { MeteredConnectionChannelClient, METERED_CONNECTION_CHANNEL } from '../../../platform/meteredConnection/common/meteredConnectionIpc.js';
-import { IPlaywrightService } from '../../../platform/browserView/common/playwrightService.js';
-import { PlaywrightService } from '../../../platform/browserView/node/playwrightService.js';
 
 class SharedProcessMain extends Disposable implements IClientConnectionFilter {
 
@@ -403,9 +401,6 @@ class SharedProcessMain extends Disposable implements IClientConnectionFilter {
 		// Web Content Extractor
 		services.set(ISharedWebContentExtractorService, new SyncDescriptor(SharedWebContentExtractorService));
 
-		// Playwright
-		services.set(IPlaywrightService, new SyncDescriptor(PlaywrightService));
-
 		return new InstantiationService(services);
 	}
 
@@ -472,10 +467,6 @@ class SharedProcessMain extends Disposable implements IClientConnectionFilter {
 		// Web Content Extractor
 		const webContentExtractorChannel = ProxyChannel.fromService(accessor.get(ISharedWebContentExtractorService), this._store);
 		this.server.registerChannel('sharedWebContentExtractor', webContentExtractorChannel);
-
-		// Playwright
-		const playwrightChannel = ProxyChannel.fromService(accessor.get(IPlaywrightService), this._store);
-		this.server.registerChannel('playwright', playwrightChannel);
 	}
 
 	private registerErrorHandler(logService: ILogService): void {

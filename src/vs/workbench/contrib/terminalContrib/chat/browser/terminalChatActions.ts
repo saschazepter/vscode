@@ -478,6 +478,7 @@ KeybindingsRegistry.registerCommandAndKeybindingRule({
 	id: TerminalChatCommandId.FocusMostRecentChatTerminal,
 	weight: KeybindingWeight.WorkbenchContrib,
 	when: ChatContextKeys.inChatSession,
+	primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyMod.Alt | KeyCode.KeyT,
 	handler: async (accessor: ServicesAccessor) => {
 		const terminalChatService = accessor.get(ITerminalChatService);
 		const part = terminalChatService.getMostRecentProgressPart();

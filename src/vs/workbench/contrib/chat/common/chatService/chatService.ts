@@ -229,7 +229,6 @@ export class ChatMultiDiffData implements IChatMultiDiffData {
 export interface IChatProgressMessage {
 	content: IMarkdownString;
 	kind: 'progressMessage';
-	shimmer?: boolean;
 }
 
 export interface IChatTask extends IChatTaskDto {
@@ -910,10 +909,6 @@ export interface IChatMcpServersStartingSerialized {
 	didStartServerIds?: string[];
 }
 
-export interface IChatDisabledClaudeHooksPart {
-	readonly kind: 'disabledClaudeHooks';
-}
-
 export class ChatMcpServersStarting implements IChatMcpServersStarting {
 	public readonly kind = 'mcpServersStarting';
 
@@ -978,8 +973,7 @@ export type IChatProgress =
 	| IChatMcpServersStarting
 	| IChatMcpServersStartingSerialized
 	| IChatHookPart
-	| IChatExternalToolInvocationUpdate
-	| IChatDisabledClaudeHooksPart;
+	| IChatExternalToolInvocationUpdate;
 
 export interface IChatFollowup {
 	kind: 'reply';
@@ -1446,7 +1440,6 @@ export interface IChatSessionContext {
 	readonly chatSessionType: string;
 	readonly chatSessionResource: URI;
 	readonly isUntitled: boolean;
-	readonly initialSessionOptions?: ReadonlyArray<{ optionId: string; value: string | { id: string; name: string } }>;
 }
 
 export const KEYWORD_ACTIVIATION_SETTING_ID = 'accessibility.voice.keywordActivation';

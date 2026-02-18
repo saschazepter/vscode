@@ -567,11 +567,6 @@ export interface IEditorOptions {
 	 */
 	formatOnPaste?: boolean;
 	/**
-	 * Controls whether double-clicking next to a bracket or quote selects the content inside.
-	 * Defaults to true.
-	 */
-	doubleClickSelectsBlock?: boolean;
-	/**
 	 * Controls if the editor should allow to move selections via drag and drop.
 	 * Defaults to false.
 	 */
@@ -5920,8 +5915,7 @@ export const enum EditorOption {
 	inlineCompletionsAccessibilityVerbose,
 	effectiveEditContext,
 	scrollOnMiddleClick,
-	effectiveAllowVariableFonts,
-	doubleClickSelectsBlock
+	effectiveAllowVariableFonts
 }
 
 export const EditorOptions = {
@@ -6213,10 +6207,6 @@ export const EditorOptions = {
 	)),
 	domReadOnly: register(new EditorBooleanOption(
 		EditorOption.domReadOnly, 'domReadOnly', false,
-	)),
-	doubleClickSelectsBlock: register(new EditorBooleanOption(
-		EditorOption.doubleClickSelectsBlock, 'doubleClickSelectsBlock', true,
-		{ description: nls.localize('doubleClickSelectsBlock', "Controls whether double-clicking next to a bracket or quote selects the content inside.") }
 	)),
 	dragAndDrop: register(new EditorBooleanOption(
 		EditorOption.dragAndDrop, 'dragAndDrop', true,

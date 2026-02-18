@@ -163,6 +163,10 @@ export class SessionTypePickerActionItem extends ChatInputPickerActionViewItem {
 
 		const contributions = this.chatSessionsService.getAllChatSessionContributions();
 		for (const contribution of contributions) {
+			if (contribution.isReadOnly) {
+				continue; // Read-only sessions are not interactive and should not appear in session target picker
+			}
+
 			const agentSessionType = getAgentSessionProvider(contribution.type);
 			if (!agentSessionType) {
 				continue;
@@ -205,7 +209,7 @@ export class SessionTypePickerActionItem extends ChatInputPickerActionViewItem {
 
 		const labelElements = [];
 		labelElements.push(...renderLabelWithIcons(`$(${icon.id})`));
-		if (!this.pickerOptions.onlyShowIconsForDefaultActions.get()) {
+		if (currentType !== AgentSessionProviders.Local || !this.pickerOptions.onlyShowIconsForDefaultActions.get()) {
 			labelElements.push(dom.$('span.chat-input-picker-label', undefined, label));
 		}
 		labelElements.push(...renderLabelWithIcons(`$(chevron-down)`));

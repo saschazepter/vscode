@@ -33,7 +33,6 @@ import { IConfigurationService } from '../../../../platform/configuration/common
 import { getContextMenuActions } from '../../../../platform/actions/browser/menuEntryActionViewItem.js';
 import { IHoverService } from '../../../../platform/hover/browser/hover.js';
 import { VisibleViewContainersTracker } from '../visibleViewContainersTracker.js';
-import { Extensions } from '../../panecomposite.js';
 
 interface IAuxiliaryBarPartConfiguration {
 	position: ActivityBarPosition;
@@ -111,10 +110,6 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 			'auxiliarybar',
 			undefined,
 			SIDE_BAR_TITLE_BORDER,
-			ViewContainerLocation.AuxiliaryBar,
-			Extensions.Auxiliary,
-			MenuId.AuxiliaryBarTitle,
-			undefined,
 			notificationService,
 			storageService,
 			contextMenuService,
@@ -151,7 +146,7 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 	private onDidChangeAutoHideViewContainers(e: { before: number; after: number }): void {
 		// Only update if auto-hide is enabled and composite bar would show
 		const autoHide = this.configurationService.getValue<boolean>(LayoutSettings.ACTIVITY_BAR_AUTO_HIDE);
-		if (autoHide && (this.configuration.position === ActivityBarPosition.TOP || this.configuration.position === ActivityBarPosition.BOTTOM)) {
+		if (autoHide && (this.configuration.position !== ActivityBarPosition.HIDDEN)) {
 			const visibleBefore = e.before > 1;
 			const visibleAfter = e.after > 1;
 			if (visibleBefore !== visibleAfter) {
@@ -266,17 +261,14 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 		}
 
 		// Check if auto-hide is enabled and there's only one visible view container
-		// while the activity bar is configured to be top or bottom.
-		if (this.configuration.position === ActivityBarPosition.TOP || this.configuration.position === ActivityBarPosition.BOTTOM) {
-			const autoHide = this.configurationService.getValue<boolean>(LayoutSettings.ACTIVITY_BAR_AUTO_HIDE);
-			if (autoHide) {
-				// Use visible composite count from the composite bar if available (considers pinned state),
-				// otherwise fall back to the tracker's count (based on active view descriptors).
-				// Note: We access paneCompositeBar directly to avoid circular calls with getVisiblePaneCompositeIds()
-				const visibleCount = this.visibleViewContainersTracker.visibleCount;
-				if (visibleCount <= 1) {
-					return false;
-				}
+		const autoHide = this.configurationService.getValue<boolean>(LayoutSettings.ACTIVITY_BAR_AUTO_HIDE);
+		if (autoHide) {
+			// Use visible composite count from the composite bar if available (considers pinned state),
+			// otherwise fall back to the tracker's count (based on active view descriptors).
+			// Note: We access paneCompositeBar directly to avoid circular calls with getVisiblePaneCompositeIds()
+			const visibleCount = this.visibleViewContainersTracker.visibleCount;
+			if (visibleCount <= 1) {
+				return false;
 			}
 		}
 

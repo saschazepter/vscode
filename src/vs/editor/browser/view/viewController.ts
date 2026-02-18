@@ -175,22 +175,16 @@ export class ViewController {
 			}
 		}
 
-		// Expand to the contiguous run of string tokens (StandardTokenType.String) around the click position.
+		// Check if current token is a string.
 		const lineTokens = tokens.getLineTokens(lineNumber);
-		let startIndex = lineTokens.findTokenIndexAtOffset(column - 1);
-		let endIndex = startIndex;
-		while (startIndex > 0 &&
-			lineTokens.getStandardTokenType(startIndex - 1) === StandardTokenType.String) {
-			startIndex--;
-		}
-		while (endIndex + 1 < lineTokens.getCount() &&
-			lineTokens.getStandardTokenType(endIndex + 1) === StandardTokenType.String) {
-			endIndex++;
+		const index = lineTokens.findTokenIndexAtOffset(column - 1);
+		if (lineTokens.getStandardTokenType(index) !== StandardTokenType.String) {
+			return undefined;
 		}
 
 		// Verify the click is after starting or before closing quote.
-		const tokenStart = lineTokens.getStartOffset(startIndex);
-		const tokenEnd = lineTokens.getEndOffset(endIndex);
+		const tokenStart = lineTokens.getStartOffset(index);
+		const tokenEnd = lineTokens.getEndOffset(index);
 		if (column !== tokenStart + 2 && column !== tokenEnd) {
 			return undefined;
 		}
@@ -264,12 +258,9 @@ export class ViewController {
 					if (data.inSelectionMode) {
 						this._wordSelectDrag(data.position, data.revealType);
 					} else {
-						let selection: Selection | undefined;
-						if (options.get(EditorOption.doubleClickSelectsBlock)) {
-							const model = this.viewModel.model;
-							const modelPos = this._convertViewToModelPosition(data.position);
-							selection = ViewController._trySelectBracketContent(model, modelPos) || ViewController._trySelectStringContent(model, modelPos);
-						}
+						const model = this.viewModel.model;
+						const modelPos = this._convertViewToModelPosition(data.position);
+						const selection = ViewController._trySelectBracketContent(model, modelPos) || ViewController._trySelectStringContent(model, modelPos);
 						if (selection) {
 							this._select(selection);
 						} else {

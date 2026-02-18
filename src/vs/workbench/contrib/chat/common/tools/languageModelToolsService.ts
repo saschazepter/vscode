@@ -199,12 +199,14 @@ export interface IToolInvocation {
 }
 
 export interface IToolInvocationContext {
+	/** @deprecated Use {@link sessionResource} instead */
+	readonly sessionId: string;
 	readonly sessionResource: URI;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function isToolInvocationContext(obj: any): obj is IToolInvocationContext {
-	return obj !== null && typeof obj === 'object' && URI.isUri(obj.sessionResource);
+	return typeof obj === 'object' && typeof obj.sessionId === 'string' && URI.isUri(obj.sessionResource);
 }
 
 export interface IToolInvocationPreparationContext {
@@ -212,6 +214,8 @@ export interface IToolInvocationPreparationContext {
 	parameters: any;
 	toolCallId: string;
 	chatRequestId?: string;
+	/** @deprecated Use {@link chatSessionResource} instead */
+	chatSessionId?: string;
 	chatSessionResource: URI | undefined;
 	chatInteractionId?: string;
 	modelId?: string;

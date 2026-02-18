@@ -834,7 +834,6 @@ export interface ITerminalInstance extends IBaseTerminalInstance {
 	readonly fixedCols?: number;
 	readonly fixedRows?: number;
 	readonly domElement: HTMLElement;
-	readonly isVisible: boolean;
 	readonly icon?: TerminalIcon;
 	readonly color?: string;
 	readonly reconnectionProperties?: IReconnectionProperties;

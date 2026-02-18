@@ -56,12 +56,12 @@
 
 /** Styles for each row in the list element **/
 .action-widget .monaco-list .monaco-list-row {
-	padding: 0 4px 0 8px;
+	padding: 0 4px 0 4px;
 	white-space: nowrap;
 	cursor: pointer;
 	touch-action: none;
 	width: 100%;
-	border-radius: var(--vscode-cornerRadius-small);
+	border-radius: 3px;
 }
 
 .action-widget .monaco-list .monaco-list-row.action.focused:not(.option-disabled) {
@@ -73,8 +73,8 @@
 
 .action-widget .monaco-list-row.group-header {
 	color: var(--vscode-descriptionForeground) !important;
-	font-weight: 500;
-	font-size: 11px;
+	font-weight: 600;
+	font-size: 13px;
 }
 
 .action-widget .monaco-list-row.group-header:not(:first-of-type) {
@@ -120,17 +120,8 @@
 
 .action-widget .monaco-list-row.action {
 	display: flex;
-	gap: 6px;
+	gap: 4px;
 	align-items: center;
-	color: var(--vscode-foreground) !important;
-}
-
-.action-widget .monaco-list-row.action .codicon {
-	font-size: 12px;
-}
-
-.action-widget .monaco-list-row.action .action-list-item-toolbar .codicon {
-	font-size: 16px;
 }
 
 .action-widget .monaco-list-row.action.option-disabled,
@@ -149,16 +140,6 @@
 	flex: 1;
 	overflow: hidden;
 	text-overflow: ellipsis;
-}
-
-.action-widget .monaco-list-row.action .action-item-badge {
-	padding: 0px 6px;
-	border-radius: 10px;
-	background-color: var(--vscode-badge-background);
-	color: var(--vscode-badge-foreground);
-	font-size: 11px;
-	line-height: 18px;
-	flex-shrink: 0;
 }
 
 .action-widget .monaco-list-row.action .monaco-keybinding > .monaco-keybinding-key {
@@ -187,13 +168,13 @@
 }
 
 .action-widget .action-widget-action-bar .actions-container {
-	padding: 2px 8px 0px 26px;
+	padding: 4px 8px 2px 24px;
 	width: auto;
 }
 
 .action-widget-action-bar .action-label {
 	color: var(--vscode-textLink-activeForeground);
-	font-size: 12px;
+	font-size: 13px;
 	line-height: 22px;
 	padding: 0;
 	pointer-events: all;
@@ -216,9 +197,7 @@
 .action-widget .monaco-list .monaco-list-row .description {
 	opacity: 0.7;
 	margin-left: 0.5em;
-	flex-shrink: 0;
 }
-
 
 /* Item toolbar - shows on hover/focus */
 .action-widget .monaco-list-row.action .action-list-item-toolbar {
@@ -239,30 +218,4 @@
 	align-items: center;
 	gap: 4px;
 	font-size: 12px;
-}
-
-/* Filter input */
-.action-widget .action-list-filter {
-	border-top: 1px solid var(--vscode-editorHoverWidget-border);
-	padding: 4px;
-}
-
-.action-widget .action-list-filter-input {
-	width: 100%;
-	box-sizing: border-box;
-	padding: 4px 8px;
-	border: 1px solid var(--vscode-input-border, transparent);
-	border-radius: 3px;
-	background-color: var(--vscode-input-background);
-	color: var(--vscode-input-foreground);
-	font-size: 12px;
-	outline: none;
-}
-
-.action-widget .action-list-filter-input:focus {
-	border-color: var(--vscode-focusBorder);
-}
-
-.action-widget .action-list-filter-input::placeholder {
-	color: var(--vscode-input-placeholderForeground);
 }

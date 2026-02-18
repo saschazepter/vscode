@@ -14,17 +14,11 @@ configurationRegistry.registerConfiguration({
 	title: localize('networkConfigurationTitle', "Network"),
 	type: 'object',
 	properties: {
-		'network.meteredConnection': {
-			type: 'string',
-			enum: ['auto', 'on', 'off'],
-			enumDescriptions: [
-				localize('meteredConnection.auto', "Automatically detect metered connections using the operating system's network status."),
-				localize('meteredConnection.on', "Always treat the network connection as metered. Automatic updates and downloads will be postponed."),
-				localize('meteredConnection.off', "Never treat the network connection as metered.")
-			],
-			default: 'auto',
+		'network.respectMeteredConnections': {
+			type: 'boolean',
+			default: true,
 			scope: ConfigurationScope.APPLICATION,
-			description: localize('meteredConnection', "Controls whether the current network connection should be treated as metered. When metered, automatic updates, extension downloads, and other background network activity will be postponed to reduce data usage."),
+			description: localize('respectMeteredConnections', "When enabled, automatic updates and downloads will be postponed when on a metered network connection (such as mobile data or tethering)."),
 			tags: ['usesOnlineServices']
 		}
 	}

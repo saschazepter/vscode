@@ -108,12 +108,7 @@ export namespace PromptsConfig {
 	/**
 	 * Configuration key for chat hooks usage.
 	 */
-	export const USE_CHAT_HOOKS = 'chat.useHooks';
-
-	/**
-	 * Configuration key for enabling Claude hooks.
-	 */
-	export const USE_CLAUDE_HOOKS = 'chat.useClaudeHooks';
+	export const USE_CHAT_HOOKS = 'chat.useChatHooks';
 
 	/**
 	 * Configuration key for enabling stronger skill adherence prompt (experimental).

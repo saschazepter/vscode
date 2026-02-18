@@ -216,7 +216,6 @@ export class DisposableTunnel {
 
 	dispose(): Promise<void> {
 		this._onDispose.fire();
-		this._onDispose.dispose();
 		return this._dispose();
 	}
 }

@@ -4,16 +4,13 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as dom from '../../../../../../base/browser/dom.js';
-import { renderAsPlaintext } from '../../../../../../base/browser/markdownRenderer.js';
 import { StandardKeyboardEvent } from '../../../../../../base/browser/keyboardEvent.js';
 import { Emitter, Event } from '../../../../../../base/common/event.js';
-import { IMarkdownString, MarkdownString, isMarkdownString } from '../../../../../../base/common/htmlContent.js';
 import { KeyCode } from '../../../../../../base/common/keyCodes.js';
 import { Disposable, DisposableStore, MutableDisposable } from '../../../../../../base/common/lifecycle.js';
 import { hasKey } from '../../../../../../base/common/types.js';
 import { localize } from '../../../../../../nls.js';
 import { IAccessibilityService } from '../../../../../../platform/accessibility/common/accessibility.js';
-import { IMarkdownRendererService } from '../../../../../../platform/markdown/browser/markdownRenderer.js';
 import { defaultButtonStyles, defaultCheckboxStyles, defaultInputBoxStyles } from '../../../../../../platform/theme/browser/defaultStyles.js';
 import { Button } from '../../../../../../base/browser/ui/button/button.js';
 import { InputBox } from '../../../../../../base/browser/ui/inputbox/inputBox.js';
@@ -58,7 +55,6 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 	private readonly _multiSelectCheckboxes: Map<string, Checkbox[]> = new Map();
 	private readonly _freeformTextareas: Map<string, HTMLTextAreaElement> = new Map();
 	private readonly _inputBoxes: DisposableStore = this._register(new DisposableStore());
-	private readonly _questionRenderStore = this._register(new MutableDisposable<DisposableStore>());
 
 	/**
 	 * Disposable store for interactive UI components (header, nav buttons, etc.)
@@ -70,7 +66,6 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 		public readonly carousel: IChatQuestionCarousel,
 		context: IChatContentPartRenderContext,
 		private readonly _options: IChatQuestionCarouselOptions,
-		@IMarkdownRendererService private readonly _markdownRendererService: IMarkdownRendererService,
 		@IHoverService private readonly _hoverService: IHoverService,
 		@IAccessibilityService private readonly _accessibilityService: IAccessibilityService,
 	) {
@@ -238,7 +233,7 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 		const question = this.carousel.questions[this._currentIndex];
 		if (question) {
 			const questionText = question.message ?? question.title;
-			const messageContent = this.getQuestionText(questionText);
+			const messageContent = typeof questionText === 'string' ? questionText : questionText.value;
 			const questionCount = this.carousel.questions.length;
 			const alertMessage = questionCount === 1
 				? messageContent
@@ -270,7 +265,6 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 	private clearInteractiveResources(): void {
 		// Dispose interactive UI disposables (header, nav buttons, etc.)
 		this._interactiveUIStore.clear();
-		this._questionRenderStore.clear();
 		this._inputBoxes.clear();
 		this._textInputBoxes.clear();
 		this._singleSelectItems.clear();
@@ -406,7 +400,7 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 		}
 
 		const questionText = question.message ?? question.title;
-		const messageContent = this.getQuestionText(questionText);
+		const messageContent = typeof questionText === 'string' ? questionText : questionText.value;
 		const questionCount = this.carousel.questions.length;
 
 		if (questionCount === 1) {
@@ -435,9 +429,6 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 			return;
 		}
 
-		const questionRenderStore = new DisposableStore();
-		this._questionRenderStore.value = questionRenderStore;
-
 		// Clear previous input boxes and stale references
 		this._inputBoxes.clear();
 		this._textInputBoxes.clear();
@@ -461,29 +452,26 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 		const questionText = question.message ?? question.title;
 		if (questionText) {
 			const title = dom.$('.chat-question-title');
-			const messageContent = this.getQuestionText(questionText);
+			const messageContent = typeof questionText === 'string'
+				? questionText
+				: questionText.value;
 
 			title.setAttribute('aria-label', messageContent);
 
-			if (isMarkdownString(questionText)) {
-				const renderedTitle = questionRenderStore.add(this._markdownRendererService.render(MarkdownString.lift(questionText)));
-				title.appendChild(renderedTitle.element);
-			} else {
-				// Check for subtitle in parentheses at the end
-				const parenMatch = messageContent.match(/^(.+?)\s*(\([^)]+\))\s*$/);
-				if (parenMatch) {
-					// Main title (bold)
-					const mainTitle = dom.$('span.chat-question-title-main');
-					mainTitle.textContent = parenMatch[1];
-					title.appendChild(mainTitle);
+			// Check for subtitle in parentheses at the end
+			const parenMatch = messageContent.match(/^(.+?)\s*(\([^)]+\))\s*$/);
+			if (parenMatch) {
+				// Main title (bold)
+				const mainTitle = dom.$('span.chat-question-title-main');
+				mainTitle.textContent = parenMatch[1];
+				title.appendChild(mainTitle);
 
-					// Subtitle in parentheses (normal weight)
-					const subtitle = dom.$('span.chat-question-title-subtitle');
-					subtitle.textContent = ' ' + parenMatch[2];
-					title.appendChild(subtitle);
-				} else {
-					title.textContent = messageContent;
-				}
+				// Subtitle in parentheses (normal weight)
+				const subtitle = dom.$('span.chat-question-title-subtitle');
+				subtitle.textContent = ' ' + parenMatch[2];
+				title.appendChild(subtitle);
+			} else {
+				title.textContent = messageContent;
 			}
 			headerRow.appendChild(title);
 		}
@@ -1094,9 +1082,7 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 	private renderSummary(): void {
 		// If no answers, show skipped message
 		if (this._answers.size === 0) {
-			if (this.carousel.isUsed) {
-				this.renderSkippedMessage();
-			}
+			this.renderSkippedMessage();
 			return;
 		}
 
@@ -1190,14 +1176,6 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 			default:
 				return String(answer);
 		}
-	}
-
-	private getQuestionText(questionText: string | IMarkdownString): string {
-		if (typeof questionText === 'string') {
-			return questionText;
-		}
-
-		return renderAsPlaintext(questionText);
 	}
 
 	hasSameContent(other: IChatRendererContent, _followingContent: IChatRendererContent[], element: ChatTreeItem): boolean {

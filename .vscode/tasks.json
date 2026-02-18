@@ -73,11 +73,10 @@
 				"owner": "typescript",
 				"applyTo": "closedDocuments",
 				"fileLocation": [
-					"relative",
-					"${workspaceFolder}"
+					"absolute"
 				],
 				"pattern": {
-					"regexp": "\\] ([^(]+)\\((\\d+,\\d+)\\): (.*)$",
+					"regexp": "Error: ([^(]+)\\((\\d+|\\d+,\\d+|\\d+,\\d+,\\d+,\\d+)\\): (.*)$",
 					"file": 1,
 					"location": 2,
 					"message": 3
