@@ -20,11 +20,11 @@ export class PlaywrightService extends Disposable implements IPlaywrightService 
 	declare readonly _serviceBrand: undefined;
 
 	private _browser: Browser | undefined;
-	private _pages: PlaywrightPageMap | undefined;
+	private _pages: PlaywrightPageManager | undefined;
 	private _initPromise: Promise<void> | undefined;
 
 	constructor(
-		@IBrowserViewGroupRemoteService private readonly groupRemoteService: IBrowserViewGroupRemoteService,
+		@IBrowserViewGroupRemoteService private readonly browserViewGroupRemoteService: IBrowserViewGroupRemoteService,
 		@ILogService private readonly logService: ILogService,
 	) {
 		super();
@@ -45,7 +45,7 @@ export class PlaywrightService extends Disposable implements IPlaywrightService 
 		this._initPromise = (async () => {
 			try {
 				this.logService.debug('[PlaywrightService] Creating browser view group');
-				const group = this._register(await this.groupRemoteService.createGroup());
+				const group = this._register(await this.browserViewGroupRemoteService.createGroup());
 
 				this.logService.debug('[PlaywrightService] Connecting to browser via CDP');
 				const playwright = await import('playwright-core');
@@ -60,13 +60,13 @@ export class PlaywrightService extends Disposable implements IPlaywrightService 
 					throw new Error('PlaywrightService was disposed during initialization');
 				}
 
-				const pageMap = this._register(new PlaywrightPageMap(group, browser, this.logService));
+				const pageManager = this._register(new PlaywrightPageManager(group, browser, this.logService));
 
 				browser.on('disconnected', () => {
 					this.logService.debug('[PlaywrightService] Browser disconnected');
 					if (this._browser === browser) {
 						group.dispose();
-						pageMap.dispose();
+						pageManager.dispose();
 
 						this._browser = undefined;
 						this._pages = undefined;
@@ -75,7 +75,7 @@ export class PlaywrightService extends Disposable implements IPlaywrightService 
 				});
 
 				this._browser = browser;
-				this._pages = pageMap;
+				this._pages = pageManager;
 			} catch (e) {
 				this._initPromise = undefined;
 				throw e;
@@ -111,7 +111,7 @@ export class PlaywrightService extends Disposable implements IPlaywrightService 
  * A periodic scan handles the case where Playwright creates a new
  * {@link BrowserContext} for a target whose session was previously unknown.
  */
-class PlaywrightPageMap extends Disposable {
+class PlaywrightPageManager extends Disposable {
 
 	private readonly _viewIdToPage = new Map<string, Page>();
 	private readonly _pageToViewId = new WeakMap<Page, string>();
@@ -138,8 +138,8 @@ class PlaywrightPageMap extends Disposable {
 	) {
 		super();
 
-		this._register(_group.onDidAddView(e => this.getPage(e.viewId)));
-		this._register(_group.onDidRemoveView(e => this.removePage(e.viewId)));
+		this._register(_group.onDidAddView(e => this.onViewAdded(e.viewId)));
+		this._register(_group.onDidRemoveView(e => this.onViewRemoved(e.viewId)));
 		this.scanForNewContexts();
 	}
 
@@ -148,19 +148,72 @@ class PlaywrightPageMap extends Disposable {
 	 */
 	async newPage(): Promise<{ viewId: string; page: Page }> {
 		const page = await this._browser.newPage();
-		const viewId = await this.getViewId(page);
+		const viewId = await this.onPageAdded(page);
 
 		return { viewId, page };
 	}
 
 	/**
-	 * Get the Playwright {@link Page} for a browser view.
-	 * If the view is not yet in the group, it is added automatically.
+	 * Explicitly add an existing browser view to the CDP group.
 	 */
-	async getPage(viewId: string, timeoutMs = 10000): Promise<Page> {
+	async addPage(viewId: string): Promise<void> {
+		if (this._viewIdToPage.has(viewId)) {
+			return;
+		}
+		if (this._viewIdQueue.some(item => item.viewId === viewId)) {
+			return;
+		}
+
+		// ensure the viewId is queued so we can immediately fetch the promise via getPage().
+		this.onViewAdded(viewId);
+
+		try {
+			await this._group.addView(viewId);
+		} catch (err: unknown) {
+			const errorMessage = err instanceof Error ? err.message : String(err);
+			this.logService.error('[PlaywrightPageMap] Failed to add view:', errorMessage);
+			this.onViewRemoved(viewId);
+		}
+	}
+
+	/**
+	 * Remove a browser view from the CDP group.
+	 */
+	async removePage(viewId: string): Promise<void> {
+		this.onViewRemoved(viewId);
+		try {
+			await this._group.removeView(viewId);
+		} catch (err: unknown) {
+			const errorMessage = err instanceof Error ? err.message : String(err);
+			this.logService.error('[PlaywrightPageMap] Failed to remove view:', errorMessage);
+		}
+	}
+
+	/**
+	 * Get the Playwright {@link Page} for a browser view that has already been added.
+	 * Throws if the view has not been added.
+	 */
+	async getPage(viewId: string): Promise<Page> {
 		const resolved = this._viewIdToPage.get(viewId);
 		if (resolved) {
 			return resolved;
+		}
+		const queued = this._viewIdQueue.find(item => item.viewId === viewId);
+		if (queued) {
+			return queued.page.p;
+		}
+
+		throw new Error(`Page "${viewId}" has not been added to the Playwright service`);
+	}
+
+	/**
+	 * Called when the group fires onDidAddView. Creates a deferred entry in
+	 * the view ID queue and attempts to match it with a page.
+	 */
+	private onViewAdded(viewId: string, timeoutMs = 10000): Promise<Page> {
+		const resolved = this._viewIdToPage.get(viewId);
+		if (resolved) {
+			return Promise.resolve(resolved);
 		}
 		const queued = this._viewIdQueue.find(item => item.viewId === viewId);
 		if (queued) {
@@ -180,23 +233,12 @@ class PlaywrightPageMap extends Disposable {
 
 		this._viewIdQueue.push({ viewId, page: deferred });
 		this.tryMatch();
-
 		this.ensureScanning();
-
-		// Adding the view fires onDidAddView (pushes to viewIdQueue) and
-		// eventually a Playwright page event (pushes to pageQueue).
-		try {
-			await this._group.addView(viewId);
-		} catch (err: unknown) {
-			const errorMessage = err instanceof Error ? err.message : String(err);
-			this.logService.error('[PlaywrightService] Failed to add view:', errorMessage);
-			deferred.error(new Error(`Failed to get page: ${errorMessage}`));
-		}
 
 		return deferred.p;
 	}
 
-	private removePage(viewId: string): void {
+	private onViewRemoved(viewId: string): void {
 		this._viewIdQueue = this._viewIdQueue.filter(item => item.viewId !== viewId);
 		const page = this._viewIdToPage.get(viewId);
 		if (page) {
@@ -205,7 +247,7 @@ class PlaywrightPageMap extends Disposable {
 		this._viewIdToPage.delete(viewId);
 	}
 
-	private getViewId(page: Page, timeoutMs = 10000): Promise<string> {
+	private onPageAdded(page: Page, timeoutMs = 10000): Promise<string> {
 		const resolved = this._pageToViewId.get(page);
 		if (resolved) {
 			return Promise.resolve(resolved);
@@ -214,6 +256,9 @@ class PlaywrightPageMap extends Disposable {
 		if (queued) {
 			return queued.viewId.p;
 		}
+
+		this.onContextAdded(page.context());
+		page.once('close', () => this.onPageRemoved(page));
 
 		const deferred = new DeferredPromise<string>();
 		const timeout = setTimeout(() => deferred.error(new Error(`Timed out waiting for browser view`)), timeoutMs);
@@ -226,6 +271,33 @@ class PlaywrightPageMap extends Disposable {
 		this.tryMatch();
 
 		return deferred.p;
+	}
+
+	private onPageRemoved(page: Page): void {
+		this._pageQueue = this._pageQueue.filter(item => item.page !== page);
+		const viewId = this._pageToViewId.get(page);
+		if (viewId) {
+			this._viewIdToPage.delete(viewId);
+		}
+		this._pageToViewId.delete(page);
+	}
+
+	private onContextAdded(context: BrowserContext): void {
+		if (this._watchedContexts.has(context)) {
+			return;
+		}
+		this._watchedContexts.add(context);
+
+		context.on('page', (page: Page) => this.onPageAdded(page));
+		context.on('close', () => this.onContextRemoved(context));
+
+		for (const page of context.pages()) {
+			this.onPageAdded(page);
+		}
+	}
+
+	private onContextRemoved(context: BrowserContext): void {
+		this._watchedContexts.delete(context);
 	}
 
 	// --- Matching ---
@@ -241,12 +313,11 @@ class PlaywrightPageMap extends Disposable {
 
 			this._viewIdToPage.set(viewIdItem.viewId, pageItem.page);
 			this._pageToViewId.set(pageItem.page, viewIdItem.viewId);
-			pageItem.page.once('close', () => this._viewIdToPage.delete(viewIdItem.viewId));
-
-			this.logService.debug(`[PlaywrightPageMap] Matched view ${viewIdItem.viewId} → page`);
 
 			viewIdItem.page.complete(pageItem.page);
 			pageItem.viewId.complete(viewIdItem.viewId);
+
+			this.logService.debug(`[PlaywrightPageMap] Matched view ${viewIdItem.viewId} → page`);
 		}
 
 		if (this._viewIdQueue.length === 0) {
@@ -262,17 +333,7 @@ class PlaywrightPageMap extends Disposable {
 	 */
 	private scanForNewContexts(): void {
 		for (const context of this._browser.contexts()) {
-			if (this._watchedContexts.has(context)) {
-				continue;
-			}
-			this._watchedContexts.add(context);
-
-			context.on('page', (page: Page) => this.getViewId(page));
-			context.on('close', () => this._watchedContexts.delete(context));
-
-			for (const page of context.pages()) {
-				this.getViewId(page);
-			}
+			this.onContextAdded(context);
 		}
 	}
 

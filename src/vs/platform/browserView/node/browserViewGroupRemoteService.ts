@@ -19,7 +19,7 @@ export const IBrowserViewGroupRemoteService = createDecorator<IBrowserViewGroupR
  * IPC and provides {@link IBrowserViewGroup} instances for
  * interacting with groups.
  *
- * Usable from the shared process or the workbench renderer.
+ * Usable from the shared process.
  */
 export interface IBrowserViewGroupRemoteService {
 	readonly _serviceBrand: undefined;
