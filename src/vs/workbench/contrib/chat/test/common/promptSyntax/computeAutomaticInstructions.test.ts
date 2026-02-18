@@ -2040,35 +2040,30 @@ suite('getFilePath', () => {
 		assert.strictEqual(result, uri.toString());
 	});
 
-	test('should return fsPath when local is Windows and remote is also Windows', () => {
-		const uri = URI.file('/workspace/src/file.ts');
-		const result = getFilePath(uri, OperatingSystem.Windows, /* localIsWindows */ true);
-		assert.strictEqual(result, uri.fsPath);
+	test('should use backslashes when remote is Windows', () => {
+		const uri = URI.from({ scheme: Schemas.vscodeRemote, path: '/C:/Users/dev/project/file.ts' });
+		const result = getFilePath(uri, OperatingSystem.Windows);
+		assert.ok(!result.includes('/'), 'Should not contain forward slashes');
+		assert.ok(result.includes('\\'), 'Should contain backslashes');
 	});
 
-	test('should replace backslashes when local is Windows and remote is Linux (WSL)', () => {
+	test('should use forward slashes when remote is Linux', () => {
 		const uri = URI.from({ scheme: Schemas.vscodeRemote, path: '/home/user/project/file.ts' });
-		const result = getFilePath(uri, OperatingSystem.Linux, /* localIsWindows */ true);
+		const result = getFilePath(uri, OperatingSystem.Linux);
 		assert.ok(!result.includes('\\'), 'Should not contain backslashes');
 		assert.ok(result.includes('/home/user/project/file.ts'), 'Should contain the forward-slash path');
 	});
 
-	test('should replace backslashes when local is Windows and remote is macOS', () => {
+	test('should use forward slashes when remote is macOS', () => {
 		const uri = URI.from({ scheme: Schemas.vscodeRemote, path: '/Users/dev/project/file.ts' });
-		const result = getFilePath(uri, OperatingSystem.Macintosh, /* localIsWindows */ true);
+		const result = getFilePath(uri, OperatingSystem.Macintosh);
 		assert.ok(!result.includes('\\'), 'Should not contain backslashes');
 		assert.ok(result.includes('/Users/dev/project/file.ts'), 'Should contain the forward-slash path');
 	});
 
-	test('should not replace slashes when local is not Windows', () => {
-		const uri = URI.from({ scheme: Schemas.vscodeRemote, path: '/home/user/project/file.ts' });
-		const result = getFilePath(uri, OperatingSystem.Linux, /* localIsWindows */ false);
-		assert.strictEqual(result, uri.fsPath);
-	});
-
 	test('should not replace slashes when remoteOS is undefined', () => {
 		const uri = URI.file('/workspace/src/file.ts');
-		const result = getFilePath(uri, undefined, /* localIsWindows */ true);
+		const result = getFilePath(uri, undefined);
 		assert.strictEqual(result, uri.fsPath);
 	});
 });

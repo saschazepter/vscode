@@ -7,7 +7,7 @@ import { CancellationToken } from '../../../../../base/common/cancellation.js';
 import { match, splitGlobAware } from '../../../../../base/common/glob.js';
 import { ResourceMap, ResourceSet } from '../../../../../base/common/map.js';
 import { Schemas } from '../../../../../base/common/network.js';
-import { isWindows, OperatingSystem } from '../../../../../base/common/platform.js';
+import { OperatingSystem } from '../../../../../base/common/platform.js';
 import { basename, dirname } from '../../../../../base/common/resources.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { localize } from '../../../../../nls.js';
@@ -299,7 +299,7 @@ export class ComputeAutomaticInstructions {
 
 		const remoteEnv = await this._remoteAgentService.getEnvironment();
 		const remoteOS = remoteEnv?.os;
-		const filePath = (uri: URI) => getFilePath(uri, remoteOS, isWindows);
+		const filePath = (uri: URI) => getFilePath(uri, remoteOS);
 
 		const entries: string[] = [];
 		if (readTool) {
@@ -499,12 +499,16 @@ export class ComputeAutomaticInstructions {
 }
 
 
-export function getFilePath(uri: URI, remoteOS: OperatingSystem | undefined, localIsWindows: boolean = isWindows): string {
+export function getFilePath(uri: URI, remoteOS: OperatingSystem | undefined): string {
 	if (uri.scheme === Schemas.file || uri.scheme === Schemas.vscodeRemote) {
 		const fsPath = uri.fsPath;
-		// When local OS is Windows but remote is not (e.g. WSL),
-		// uri.fsPath incorrectly uses backslashes. Fix them up.
-		if (localIsWindows && remoteOS !== undefined && remoteOS !== OperatingSystem.Windows) {
+		// uri.fsPath uses the local OS's path separators, but the path
+		// may belong to a remote with a different OS. Normalize separators
+		// to match the remote OS (idempotent when local and remote match).
+		if (remoteOS !== undefined) {
+			if (remoteOS === OperatingSystem.Windows) {
+				return fsPath.replace(/\//g, '\\');
+			}
 			return fsPath.replace(/\\/g, '/');
 		}
 		return fsPath;
