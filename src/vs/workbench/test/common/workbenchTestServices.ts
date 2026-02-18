@@ -805,6 +805,10 @@ export class TestChatEntitlementService implements IChatEntitlementService {
 	readonly anonymous = false;
 	onDidChangeAnonymous = Event.None;
 	readonly anonymousObs = observableValue({}, false);
+
+	markAnonymousRateLimited(): void { }
+
+	readonly previewFeaturesDisabled = false;
 }
 
 export class TestLifecycleService extends Disposable implements ILifecycleService {
