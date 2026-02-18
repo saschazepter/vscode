@@ -21,6 +21,8 @@ import { localize } from '../../../../nls.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { ILanguageModelToolsService } from '../common/tools/languageModelToolsService.js';
 import { localChatSessionType } from '../common/chatSessionsService.js';
+import { IChatService } from '../common/chatService/chatService.js';
+import { CreateSlashCommandsUsageTracker } from './createSlashCommandsUsageTracker.js';
 import { IChatEntitlementService } from '../../../services/chat/common/chatEntitlementService.js';
 
 export const IChatTipService = createDecorator<IChatTipService>('chatTipService');
@@ -153,6 +155,26 @@ const TIP_CATALOG: ITipDefinition[] = [
 		message: localize('tip.switchToAuto', "Tip: Using gpt-4.1? Try switching to [Auto](command:workbench.action.chat.openModelPicker) in the model picker for better coding performance."),
 		enabledCommands: ['workbench.action.chat.openModelPicker'],
 		onlyWhenModelIds: ['gpt-4.1'],
+	},
+	{
+		id: 'tip.createSlashCommands',
+		message: localize(
+			'tip.createSlashCommands',
+			"Tip: Use [/create-instruction](command:workbench.action.chat.generateInstruction), [/create-prompt](command:workbench.action.chat.generatePrompt), [/create-agent](command:workbench.action.chat.generateAgent), or [/create-skill](command:workbench.action.chat.generateSkill) to generate reusable agent customization files."
+		),
+		when: ChatContextKeys.hasUsedCreateSlashCommands.negate(),
+		enabledCommands: [
+			'workbench.action.chat.generateInstruction',
+			'workbench.action.chat.generatePrompt',
+			'workbench.action.chat.generateAgent',
+			'workbench.action.chat.generateSkill',
+		],
+		excludeWhenCommandsExecuted: [
+			'workbench.action.chat.generateInstruction',
+			'workbench.action.chat.generatePrompt',
+			'workbench.action.chat.generateAgent',
+			'workbench.action.chat.generateSkill',
+		],
 	},
 	{
 		id: 'tip.agentMode',
@@ -539,18 +561,20 @@ export class ChatTipService extends Disposable implements IChatTipService {
 	private static readonly _DISMISSED_TIP_KEY = 'chat.tip.dismissed';
 	private static readonly _LAST_TIP_ID_KEY = 'chat.tip.lastTipId';
 	private readonly _tracker: TipEligibilityTracker;
+	private readonly _createSlashCommandsUsageTracker: CreateSlashCommandsUsageTracker;
 
 	constructor(
 		@IProductService private readonly _productService: IProductService,
 		@IConfigurationService private readonly _configurationService: IConfigurationService,
 		@IStorageService private readonly _storageService: IStorageService,
+		@IChatService private readonly _chatService: IChatService,
 		@IInstantiationService instantiationService: IInstantiationService,
 		@ILogService private readonly _logService: ILogService,
 		@IChatEntitlementService chatEntitlementService: IChatEntitlementService,
 	) {
 		super();
 		this._tracker = this._register(instantiationService.createInstance(TipEligibilityTracker, TIP_CATALOG));
-
+		this._createSlashCommandsUsageTracker = this._register(new CreateSlashCommandsUsageTracker(this._chatService, this._storageService, () => this._contextKeyService));
 		this._register(chatEntitlementService.onDidChangeQuotaExceeded(() => {
 			if (chatEntitlementService.quotas.chat?.percentRemaining === 0 && this._shownTip) {
 				this.hideTip();
@@ -625,6 +649,7 @@ export class ChatTipService extends Disposable implements IChatTipService {
 	}
 
 	getWelcomeTip(contextKeyService: IContextKeyService): IChatTip | undefined {
+		this._createSlashCommandsUsageTracker.syncContextKey(contextKeyService);
 		// Check if tips are enabled
 		if (!this._configurationService.getValue<boolean>('chat.tips.enabled')) {
 			return undefined;
@@ -669,6 +694,7 @@ export class ChatTipService extends Disposable implements IChatTipService {
 	}
 
 	private _findNextEligibleTip(currentTipId: string, contextKeyService: IContextKeyService): ITipDefinition | undefined {
+		this._createSlashCommandsUsageTracker.syncContextKey(contextKeyService);
 		const currentIndex = TIP_CATALOG.findIndex(tip => tip.id === currentTipId);
 		if (currentIndex === -1) {
 			return undefined;
@@ -687,6 +713,7 @@ export class ChatTipService extends Disposable implements IChatTipService {
 	}
 
 	private _pickTip(sourceId: string, contextKeyService: IContextKeyService): IChatTip | undefined {
+		this._createSlashCommandsUsageTracker.syncContextKey(contextKeyService);
 		// Record the current mode for future eligibility decisions.
 		this._tracker.recordCurrentMode(contextKeyService);
 
@@ -738,6 +765,7 @@ export class ChatTipService extends Disposable implements IChatTipService {
 	}
 
 	private _navigateTip(direction: 1 | -1, contextKeyService: IContextKeyService): IChatTip | undefined {
+		this._createSlashCommandsUsageTracker.syncContextKey(contextKeyService);
 		if (!this._shownTip) {
 			return undefined;
 		}
