@@ -1470,7 +1470,7 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		}
 
 		// don't pin ask questions tool invocations
-		const isAskQuestionsTool = (part.kind === 'toolInvocation' || part.kind === 'toolInvocationSerialized') && part.toolId === 'copilot_askQuestions';
+		const isAskQuestionsTool = (part.kind === 'toolInvocation' || part.kind === 'toolInvocationSerialized') && (part.toolId === 'copilot_askQuestions' || part.toolId === 'vscode_askQuestions');
 		if (isAskQuestionsTool) {
 			return false;
 		}

@@ -505,6 +505,17 @@ export class ChatService extends Disposable implements IChatService {
 		return this._sessionModels.get(sessionResource);
 	}
 
+	findRequestById(requestId: string): IChatRequestModel | undefined {
+		for (const model of this._sessionModels.values()) {
+			const request = model.getRequests().find(candidate => candidate.id === requestId);
+			if (request) {
+				return request;
+			}
+		}
+
+		return undefined;
+	}
+
 	getActiveSessionReference(sessionResource: URI): IChatModelReference | undefined {
 		return this._sessionModels.acquireExisting(sessionResource);
 	}

@@ -1358,6 +1358,12 @@ export interface IChatService {
 	getSession(sessionResource: URI): IChatModel | undefined;
 
 	/**
+	 * Find a request by ID across all sessions.
+	 * @param requestId
+	 */
+	findRequestById(requestId: string): IChatRequestModel | undefined;
+
+	/**
 	 * Acquire a reference to an active session.
 	 */
 	getActiveSessionReference(sessionResource: URI): IChatModelReference | undefined;
