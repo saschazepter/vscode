@@ -40,7 +40,6 @@ export class ChatTipContentPart extends Disposable {
 	constructor(
 		tip: IChatTip,
 		private readonly _renderer: IMarkdownRenderer,
-		private readonly _getNextTip: () => IChatTip | undefined,
 		@IChatTipService private readonly _chatTipService: IChatTipService,
 		@IContextMenuService private readonly _contextMenuService: IContextMenuService,
 		@IMenuService private readonly _menuService: IMenuService,
@@ -63,7 +62,7 @@ export class ChatTipContentPart extends Disposable {
 		this._renderTip(tip);
 
 		this._register(this._chatTipService.onDidDismissTip(() => {
-			const nextTip = this._getNextTip();
+			const nextTip = this._chatTipService.navigateToNextTip();
 			if (nextTip) {
 				this._renderTip(nextTip);
 				dom.runAtThisOrScheduleAtNextAnimationFrame(dom.getWindow(this.domNode), () => this.focus());
@@ -152,8 +151,7 @@ registerAction2(class PreviousTipAction extends Action2 {
 
 	override async run(accessor: ServicesAccessor): Promise<void> {
 		const chatTipService = accessor.get(IChatTipService);
-		const contextKeyService = accessor.get(IContextKeyService);
-		chatTipService.navigateToPreviousTip(contextKeyService);
+		chatTipService.navigateToPreviousTip();
 	}
 });
 
@@ -174,8 +172,7 @@ registerAction2(class NextTipAction extends Action2 {
 
 	override async run(accessor: ServicesAccessor): Promise<void> {
 		const chatTipService = accessor.get(IChatTipService);
-		const contextKeyService = accessor.get(IContextKeyService);
-		chatTipService.navigateToNextTip(contextKeyService);
+		chatTipService.navigateToNextTip();
 	}
 });
 

@@ -1006,7 +1006,6 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		const tipPart = store.add(this.instantiationService.createInstance(ChatTipContentPart,
 			tip,
 			renderer,
-			() => this.chatTipService.getWelcomeTip(this.contextKeyService),
 		));
 		tipContainer.appendChild(tipPart.domNode);
 		this._gettingStartedTipPartRef = tipPart;

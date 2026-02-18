@@ -67,7 +67,7 @@ export interface IChatTipService {
 
 	/**
 	 * Dismisses the current tip and allows a new one to be picked for the same request.
-	 * The dismissed tip will not be shown again in this profile.
+	 * The dismissed tip will not be shown again for this user on this application installation.
 	 */
 	dismissTip(): void;
 
@@ -84,15 +84,13 @@ export interface IChatTipService {
 
 	/**
 	 * Navigates to the next tip in the catalog without permanently dismissing the current one.
-	 * @param contextKeyService The context key service to evaluate tip eligibility.
 	 */
-	navigateToNextTip(contextKeyService: IContextKeyService): IChatTip | undefined;
+	navigateToNextTip(): IChatTip | undefined;
 
 	/**
 	 * Navigates to the previous tip in the catalog without permanently dismissing the current one.
-	 * @param contextKeyService The context key service to evaluate tip eligibility.
 	 */
-	navigateToPreviousTip(contextKeyService: IContextKeyService): IChatTip | undefined;
+	navigateToPreviousTip(): IChatTip | undefined;
 
 	/**
 	 * Clears all dismissed tips so they can be shown again.
@@ -306,13 +304,13 @@ export class TipEligibilityTracker extends Disposable {
 
 		// --- Restore persisted state -------------------------------------------
 
-		const storedCmds = this._storageService.get(TipEligibilityTracker._COMMANDS_STORAGE_KEY, StorageScope.APPLICATION);
+		const storedCmds = this._readApplicationWithProfileFallback(TipEligibilityTracker._COMMANDS_STORAGE_KEY);
 		this._executedCommands = new Set<string>(storedCmds ? JSON.parse(storedCmds) : []);
 
-		const storedModes = this._storageService.get(TipEligibilityTracker._MODES_STORAGE_KEY, StorageScope.APPLICATION);
+		const storedModes = this._readApplicationWithProfileFallback(TipEligibilityTracker._MODES_STORAGE_KEY);
 		this._usedModes = new Set<string>(storedModes ? JSON.parse(storedModes) : []);
 
-		const storedTools = this._storageService.get(TipEligibilityTracker._TOOLS_STORAGE_KEY, StorageScope.APPLICATION);
+		const storedTools = this._readApplicationWithProfileFallback(TipEligibilityTracker._TOOLS_STORAGE_KEY);
 		this._invokedTools = new Set<string>(storedTools ? JSON.parse(storedTools) : []);
 
 		// --- Derive what still needs tracking ----------------------------------
@@ -500,6 +498,20 @@ export class TipEligibilityTracker extends Disposable {
 	private _persistSet(key: string, set: Set<string>): void {
 		this._storageService.store(key, JSON.stringify([...set]), StorageScope.APPLICATION, StorageTarget.MACHINE);
 	}
+
+	private _readApplicationWithProfileFallback(key: string): string | undefined {
+		const applicationValue = this._storageService.get(key, StorageScope.APPLICATION);
+		if (applicationValue) {
+			return applicationValue;
+		}
+
+		const profileValue = this._storageService.get(key, StorageScope.PROFILE);
+		if (profileValue) {
+			this._storageService.store(key, profileValue, StorageScope.APPLICATION, StorageTarget.MACHINE);
+		}
+
+		return profileValue;
+	}
 }
 
 export class ChatTipService extends Disposable implements IChatTipService {
@@ -527,6 +539,13 @@ export class ChatTipService extends Disposable implements IChatTipService {
 	 */
 	private _shownTip: ITipDefinition | undefined;
 
+	/**
+	 * The scoped context key service from the chat widget, stored when
+	 * {@link getWelcomeTip} is first called so that navigation methods
+	 * can evaluate when-clause eligibility against the correct context.
+	 */
+	private _contextKeyService: IContextKeyService | undefined;
+
 	private static readonly _DISMISSED_TIP_KEY = 'chat.tip.dismissed';
 	private static readonly _LAST_TIP_ID_KEY = 'chat.tip.lastTipId';
 	private readonly _tracker: TipEligibilityTracker;
@@ -545,6 +564,7 @@ export class ChatTipService extends Disposable implements IChatTipService {
 	resetSession(): void {
 		this._shownTip = undefined;
 		this._tipRequestId = undefined;
+		this._contextKeyService = undefined;
 	}
 
 	dismissTip(): void {
@@ -553,20 +573,22 @@ export class ChatTipService extends Disposable implements IChatTipService {
 			dismissed.add(this._shownTip.id);
 			this._storageService.store(ChatTipService._DISMISSED_TIP_KEY, JSON.stringify([...dismissed]), StorageScope.APPLICATION, StorageTarget.MACHINE);
 		}
-		this._shownTip = undefined;
+		// Keep the current tip reference so callers can navigate relative to it
+		// (for example, dismiss -> next should mirror next/previous behavior).
 		this._tipRequestId = undefined;
 		this._onDidDismissTip.fire();
 	}
 
 	clearDismissedTips(): void {
 		this._storageService.remove(ChatTipService._DISMISSED_TIP_KEY, StorageScope.APPLICATION);
+		this._storageService.remove(ChatTipService._DISMISSED_TIP_KEY, StorageScope.PROFILE);
 		this._shownTip = undefined;
 		this._tipRequestId = undefined;
 		this._onDidDismissTip.fire();
 	}
 
 	private _getDismissedTipIds(): string[] {
-		const raw = this._storageService.get(ChatTipService._DISMISSED_TIP_KEY, StorageScope.APPLICATION);
+		const raw = this._readApplicationWithProfileFallback(ChatTipService._DISMISSED_TIP_KEY);
 		if (!raw) {
 			return [];
 		}
@@ -609,6 +631,9 @@ export class ChatTipService extends Disposable implements IChatTipService {
 		if (!this._configurationService.getValue<boolean>('chat.tips.enabled')) {
 			return undefined;
 		}
+
+		// Store the scoped context key service for later navigation calls
+		this._contextKeyService = contextKeyService;
 
 		// Only show tips for Copilot
 		if (!this._isCopilotEnabled()) {
@@ -671,7 +696,7 @@ export class ChatTipService extends Disposable implements IChatTipService {
 		let selectedTip: ITipDefinition | undefined;
 
 		// Determine where to start in the catalog based on the last-shown tip.
-		const lastTipId = this._storageService.get(ChatTipService._LAST_TIP_ID_KEY, StorageScope.APPLICATION);
+		const lastTipId = this._readApplicationWithProfileFallback(ChatTipService._LAST_TIP_ID_KEY);
 		const lastCatalogIndex = lastTipId ? TIP_CATALOG.findIndex(tip => tip.id === lastTipId) : -1;
 		const startIndex = lastCatalogIndex === -1 ? 0 : (lastCatalogIndex + 1) % TIP_CATALOG.length;
 
@@ -700,12 +725,18 @@ export class ChatTipService extends Disposable implements IChatTipService {
 		return this._createTip(selectedTip);
 	}
 
-	navigateToNextTip(contextKeyService: IContextKeyService): IChatTip | undefined {
-		return this._navigateTip(1, contextKeyService);
+	navigateToNextTip(): IChatTip | undefined {
+		if (!this._contextKeyService) {
+			return undefined;
+		}
+		return this._navigateTip(1, this._contextKeyService);
 	}
 
-	navigateToPreviousTip(contextKeyService: IContextKeyService): IChatTip | undefined {
-		return this._navigateTip(-1, contextKeyService);
+	navigateToPreviousTip(): IChatTip | undefined {
+		if (!this._contextKeyService) {
+			return undefined;
+		}
+		return this._navigateTip(-1, this._contextKeyService);
 	}
 
 	private _navigateTip(direction: 1 | -1, contextKeyService: IContextKeyService): IChatTip | undefined {
@@ -724,6 +755,7 @@ export class ChatTipService extends Disposable implements IChatTipService {
 			const candidate = TIP_CATALOG[idx];
 			if (!dismissedIds.has(candidate.id) && this._isEligible(candidate, contextKeyService)) {
 				this._shownTip = candidate;
+				this._tipRequestId = 'welcome';
 				this._storageService.store(ChatTipService._LAST_TIP_ID_KEY, candidate.id, StorageScope.APPLICATION, StorageTarget.USER);
 				const tip = this._createTip(candidate);
 				this._onDidNavigateTip.fire(tip);
@@ -812,5 +844,19 @@ export class ChatTipService extends Disposable implements IChatTipService {
 			content: markdown,
 			enabledCommands: tipDef.enabledCommands,
 		};
+	}
+
+	private _readApplicationWithProfileFallback(key: string): string | undefined {
+		const applicationValue = this._storageService.get(key, StorageScope.APPLICATION);
+		if (applicationValue) {
+			return applicationValue;
+		}
+
+		const profileValue = this._storageService.get(key, StorageScope.PROFILE);
+		if (profileValue) {
+			this._storageService.store(key, profileValue, StorageScope.APPLICATION, StorageTarget.MACHINE);
+		}
+
+		return profileValue;
 	}
 }

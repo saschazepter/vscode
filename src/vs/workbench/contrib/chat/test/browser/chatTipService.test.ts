@@ -227,6 +227,20 @@ suite('ChatTipService', () => {
 		}
 	});
 
+	test('dismissTip keeps navigation context for next tip traversal', () => {
+		const service = createService();
+
+		const tip1 = service.getWelcomeTip(contextKeyService);
+		assert.ok(tip1);
+
+		service.dismissTip();
+
+		const tip2 = service.navigateToNextTip();
+		if (tip2) {
+			assert.notStrictEqual(tip1.id, tip2.id, 'Dismissed tip should not be returned by next navigation');
+		}
+	});
+
 	test('dismissTip fires onDidDismissTip event', () => {
 		const service = createService();
 
@@ -318,6 +332,18 @@ suite('ChatTipService', () => {
 		assert.ok(service.getWelcomeTip(contextKeyService), 'A tip should be visible again after clearing dismissed tips');
 	});
 
+	test('migrates dismissed tips from profile to application storage', () => {
+		storageService.store('chat.tip.dismissed', JSON.stringify(['tip.switchToAuto']), StorageScope.PROFILE, StorageTarget.MACHINE);
+		const service = createService();
+		contextKeyService.createKey(ChatContextKeys.chatModelId.key, 'gpt-4.1');
+
+		const tip = service.getWelcomeTip(contextKeyService);
+
+		assert.ok(tip);
+		assert.notStrictEqual(tip.id, 'tip.switchToAuto', 'Should honor profile-stored dismissed tip id');
+		assert.ok(storageService.get('chat.tip.dismissed', StorageScope.APPLICATION), 'Expected dismissed tips to migrate to application storage');
+	});
+
 	function createMockPromptsService(
 		agentInstructions: IResolvedAgentFile[] = [],
 		promptInstructions: IPromptPath[] = [],
@@ -378,6 +404,28 @@ suite('ChatTipService', () => {
 		assert.ok(storageService.get('chat.tips.executedCommands', StorageScope.APPLICATION), 'Expected executed command exclusions in application storage');
 		assert.strictEqual(storageService.get('chat.tips.executedCommands', StorageScope.PROFILE), undefined, 'Did not expect executed command exclusions in profile storage');
 		assert.strictEqual(storageService.get('chat.tips.executedCommands', StorageScope.WORKSPACE), undefined, 'Did not expect executed command exclusions in workspace storage');
+	});
+
+	test('migrates executed command exclusions from profile to application storage', () => {
+		const tip: ITipDefinition = {
+			id: 'tip.undoChanges',
+			message: 'test',
+			excludeWhenCommandsExecuted: ['workbench.action.chat.restoreCheckpoint'],
+		};
+
+		storageService.store('chat.tips.executedCommands', JSON.stringify(['workbench.action.chat.restoreCheckpoint']), StorageScope.PROFILE, StorageTarget.MACHINE);
+
+		const tracker = testDisposables.add(new TipEligibilityTracker(
+			[tip],
+			{ onDidExecuteCommand: commandExecutedEmitter.event, onWillExecuteCommand: Event.None } as Partial<ICommandService> as ICommandService,
+			storageService,
+			createMockPromptsService() as IPromptsService,
+			createMockToolsService(),
+			new NullLogService(),
+		));
+
+		assert.strictEqual(tracker.isExcluded(tip), true, 'Should honor profile-stored exclusions');
+		assert.ok(storageService.get('chat.tips.executedCommands', StorageScope.APPLICATION), 'Expected migrated exclusion data in application storage');
 	});
 
 	test('excludes tip.customInstructions when copilot-instructions.md exists in workspace', async () => {
