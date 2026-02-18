@@ -2665,6 +2665,7 @@ have to be updated for changes to the rules above, or to support more deeply nes
 			width: fit-content;
 			user-select: none;
 			flex-shrink: 0;
+			gap: 4px;
 		}
 
 		.monaco-toolbar .action-label {
