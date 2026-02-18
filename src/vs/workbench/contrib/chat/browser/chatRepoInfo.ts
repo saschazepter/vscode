@@ -413,19 +413,26 @@ export function captureRepoMetadata(scmService: ISCMService): IExportableRepoDat
 		}
 	}
 
-	// Determine sync status without file I/O.
-	// Note: workspaceType is always 'remote-git' here because we cannot distinguish
-	// plain-folder or local-git without reading .git or .git/config (which requires I/O).
+	// Determine workspace type and sync status without file I/O.
+	// Cannot determine remoteUrl/remoteVendor or detect plain-folder here (requires reading .git/config).
 	// The full captureRepoInfo at export time will produce accurate classification.
-	const workspaceType: IExportableRepoData['workspaceType'] = 'remote-git';
+	let workspaceType: IExportableRepoData['workspaceType'];
 	let syncStatus: IExportableRepoData['syncStatus'];
 
-	if (!remoteTrackingBranch) {
-		syncStatus = 'unpublished';
-	} else if (localHeadCommit === remoteHeadCommit) {
-		syncStatus = 'synced';
+	if (remoteTrackingBranch || remoteHeadCommit || remoteBaseBranch) {
+		workspaceType = 'remote-git';
+
+		if (!remoteTrackingBranch) {
+			syncStatus = 'unpublished';
+		} else if (localHeadCommit && remoteHeadCommit && localHeadCommit === remoteHeadCommit) {
+			syncStatus = 'synced';
+		} else {
+			syncStatus = 'unpushed';
+		}
 	} else {
-		syncStatus = 'unpushed';
+		// No remote refs available; conservatively classify as local-git
+		workspaceType = 'local-git';
+		syncStatus = 'local-only';
 	}
 
 	return {
@@ -681,7 +688,7 @@ export class ChatRepoInfoContribution extends Disposable implements IWorkbenchCo
 			properties: {
 				[ChatConfiguration.RepoInfoEnabled]: {
 					type: 'boolean',
-					description: nls.localize('chat.repoInfo.enabled', "Controls whether repository information (branch, commit, working tree diffs) is captured for chat sessions for internal diagnostics."),
+					description: nls.localize('chat.repoInfo.enabled', "Controls whether lightweight repository metadata (branch, commit, remotes) is captured when a chat request is submitted for internal diagnostics."),
 					default: false,
 				}
 			}
