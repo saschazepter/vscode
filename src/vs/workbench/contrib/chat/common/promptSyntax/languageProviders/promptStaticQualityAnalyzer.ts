@@ -252,6 +252,7 @@ export class PromptStaticQualityAnalyzer {
 
 		for (let i = 0; i < lines.length; i++) {
 			const line = lines[i];
+			instructionRegex.lastIndex = 0;
 			let match: RegExpExecArray | null;
 			while ((match = instructionRegex.exec(line)) !== null) {
 				const normalized = match[1].toLowerCase().trim().replace(/\s+/g, ' ');

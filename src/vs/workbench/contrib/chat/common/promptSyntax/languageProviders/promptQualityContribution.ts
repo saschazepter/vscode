@@ -162,16 +162,21 @@ class QualityModelTracker extends Disposable {
 			const cts = new CancellationTokenSource();
 			this.llmCts.value = cts;
 
+			// Snapshot the static markers and model version at request time
+			// so we only apply merged results if the model hasn't changed.
+			const snapshotStaticMarkers = [...this.lastStaticMarkers];
+			const snapshotVersionId = this.textModel.getVersionId();
+
 			try {
 				const llmMarkers: IMarkerData[] = [];
 				const bodyStart = this.getBodyStartLine();
 				await this.llmAnalyzer.analyze(this.textModel, bodyStart, cts.token, m => llmMarkers.push(m));
 
-				if (!cts.token.isCancellationRequested) {
+				if (!cts.token.isCancellationRequested && this.textModel.getVersionId() === snapshotVersionId) {
 					this.markerService.changeOne(
 						QUALITY_MARKERS_OWNER_ID,
 						this.textModel.uri,
-						[...this.lastStaticMarkers, ...llmMarkers],
+						[...snapshotStaticMarkers, ...llmMarkers],
 					);
 				}
 			} catch {

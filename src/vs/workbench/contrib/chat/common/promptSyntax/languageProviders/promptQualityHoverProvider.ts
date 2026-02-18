@@ -55,7 +55,12 @@ export class PromptQualityHoverProvider implements HoverProvider {
 					const end = start + strengthMatch[0].length;
 					if (position.column >= start && position.column <= end) {
 						const content = new MarkdownString();
-						content.appendMarkdown(`**${localize('promptQualityHover.instructionStrength', "Instruction Strength")}:** ${strength}\n\n${getStrengthDescription(strength)}`);
+						content.appendMarkdown(localize(
+							'promptQualityHover.instructionStrengthHover',
+							"**Instruction Strength:** {0}\n\n{1}",
+							strength,
+							getStrengthDescription(strength),
+						));
 						return {
 							contents: [content],
 							range: new Range(position.lineNumber, start, position.lineNumber, end),

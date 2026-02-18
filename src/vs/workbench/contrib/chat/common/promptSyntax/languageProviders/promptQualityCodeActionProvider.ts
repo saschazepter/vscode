@@ -11,6 +11,7 @@ import { localize } from '../../../../../../nls.js';
 import { IMarkerService } from '../../../../../../platform/markers/common/markers.js';
 import { Selection } from '../../../../../../editor/common/core/selection.js';
 import { CodeActionKind } from '../../../../../../editor/contrib/codeAction/common/types.js';
+import { HierarchicalKind } from '../../../../../../base/common/hierarchicalKind.js';
 import { QUALITY_MARKERS_OWNER_ID } from './promptQualityContribution.js';
 
 /**
@@ -41,6 +42,11 @@ export class PromptQualityCodeActionProvider implements CodeActionProvider {
 	) { }
 
 	async provideCodeActions(model: ITextModel, range: Range | Selection, context: CodeActionContext, _token: CancellationToken): Promise<CodeActionList | undefined> {
+		// Early exit if a specific kind is requested that we don't provide
+		if (context.only && !CodeActionKind.QuickFix.contains(new HierarchicalKind(context.only))) {
+			return undefined;
+		}
+
 		const markers = this.markerService.read({
 			resource: model.uri,
 			owner: QUALITY_MARKERS_OWNER_ID,

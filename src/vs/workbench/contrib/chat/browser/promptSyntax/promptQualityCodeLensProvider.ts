@@ -54,40 +54,36 @@ class PromptQualityCodeLensProvider extends Disposable implements CodeLensProvid
 				title: issueCount === 0
 					? localize('promptQualityCodeLens.noIssues', "Prompt Quality: No issues found")
 					: localize('promptQualityCodeLens.issues', "Prompt Quality: {0} issue(s) found", issueCount),
-				id: issueCount > 0 ? 'workbench.actions.view.problems' : '',
+				id: 'workbench.actions.view.problems',
 			},
 		});
 
-		// Per-section token counts
+		// Per-section token counts (single pass)
 		const lineCount = model.getLineCount();
+		type SectionInfo = { line: number; name: string; chars: number };
+		const sections: SectionInfo[] = [];
+		let currentSection: SectionInfo | undefined;
 		for (let i = 1; i <= lineCount; i++) {
 			const lineContent = model.getLineContent(i);
 			const headerMatch = lineContent.match(/^(#{1,6})\s+(.+)$/);
 			if (headerMatch) {
-				const sectionName = headerMatch[2];
-				// Find the end of this section (next header or end of file)
-				let sectionEnd = lineCount;
-				for (let j = i + 1; j <= lineCount; j++) {
-					if (/^#{1,6}\s+/.test(model.getLineContent(j))) {
-						sectionEnd = j - 1;
-						break;
-					}
-				}
-				// Estimate tokens for this section
-				let sectionChars = 0;
-				for (let j = i; j <= sectionEnd; j++) {
-					sectionChars += model.getLineContent(j).length + 1; // +1 for newline
-				}
-				const sectionTokens = Math.ceil(sectionChars / CHARS_PER_TOKEN);
-
-				lenses.push({
-					range: { startLineNumber: i, startColumn: 1, endLineNumber: i, endColumn: 1 },
-					command: {
-						title: localize('promptQualityCodeLens.sectionTokens', "\u00A7 {0} \u2014 ~{1} tokens", sectionName, sectionTokens),
-						id: '',
-					},
-				});
+				currentSection = { line: i, name: headerMatch[2], chars: 0 };
+				sections.push(currentSection);
 			}
+			if (currentSection) {
+				currentSection.chars += lineContent.length + 1; // +1 for newline
+			}
+		}
+
+		for (const section of sections) {
+			const sectionTokens = Math.ceil(section.chars / CHARS_PER_TOKEN);
+			lenses.push({
+				range: { startLineNumber: section.line, startColumn: 1, endLineNumber: section.line, endColumn: 1 },
+				command: {
+					title: localize('promptQualityCodeLens.sectionTokens', "\u00A7 {0} \u2014 ~{1} tokens", section.name, sectionTokens),
+					id: 'workbench.actions.view.problems',
+				},
+			});
 		}
 
 		if (lenses.length === 0) {
