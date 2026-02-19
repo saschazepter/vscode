@@ -155,7 +155,7 @@ const policies: ExportedPolicyDataDto = {
 			localization: {
 				description: {
 					key: 'autoApprove2.description',
-					value: 'Global auto approve also known as "YOLO mode" disables manual approval completely for all tools in all workspaces, allowing the agent to act fully autonomously. This is extremely dangerous and is *never* recommended, even containerized environments like Codespaces and Dev Containers have user keys forwarded into the container that could be compromised.\n\nThis feature disables critical security protections and makes it much easier for an attacker to compromise the machine.'
+					value: 'Global auto approve also known as "YOLO mode" disables manual approval completely for all tools in all workspaces, allowing the agent to act fully autonomously. Running with chat.tools.terminal.sandbox.enabled enabled is recommended.'
 				}
 			},
 			type: 'boolean',
