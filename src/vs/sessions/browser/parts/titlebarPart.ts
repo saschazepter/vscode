@@ -154,7 +154,7 @@ export class TitlebarPart extends Part implements ITitlebarPart {
 			if (isMacintosh && isNative && primaryWindowControlsLocation === 'left') {
 				// macOS native: traffic lights are rendered by the OS at the top-left corner.
 				// Add a fixed-width spacer to push content past the traffic lights.
-				const spacer = append(this.leftContent, $('div.window-controls-spacer'));
+				const spacer = append(this.leftContent, $('div.window-controls-container'));
 				spacer.style.width = '70px';
 				spacer.style.flexShrink = '0';
 
