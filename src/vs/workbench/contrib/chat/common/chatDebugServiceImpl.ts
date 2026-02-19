@@ -36,6 +36,7 @@ export class ChatDebugServiceImpl extends Disposable implements IChatDebugServic
 	}
 
 	addEvent(event: IChatDebugEvent): void {
+		console.log('[chatDebug][service.addEvent] Adding event:', { kind: event.kind, sessionId: event.sessionId, id: event.id });
 		this._events.push(event);
 		this._onDidAddEvent.fire(event);
 	}
@@ -63,6 +64,7 @@ export class ChatDebugServiceImpl extends Disposable implements IChatDebugServic
 	}
 
 	async invokeProviders(sessionId: string): Promise<void> {
+		console.log('[chatDebug][service.invokeProviders] Called for sessionId:', sessionId, 'providers:', this._providers.size);
 		// Cancel previous invocation so extension-side listeners are cleaned up
 		this._currentInvocationCts?.cancel();
 		this._currentInvocationCts?.dispose();
@@ -74,16 +76,18 @@ export class ChatDebugServiceImpl extends Disposable implements IChatDebugServic
 			const promises = [...this._providers].map(async (provider) => {
 				try {
 					const events = await provider.provideChatDebugLog(sessionId, cts.token);
+					console.log('[chatDebug][service.invokeProviders] Provider returned:', events?.length ?? 'undefined', 'events', events?.map(e => ({ kind: e.kind, id: e.id })));
 					if (events) {
 						for (const event of events) {
+							console.log('[chatDebug][service.invokeProviders] Adding event from provider:', { kind: event.kind, id: event.id, sessionId: event.sessionId });
 							this.addEvent({
 								...event,
 								sessionId: event.sessionId ?? sessionId,
 							});
 						}
 					}
-				} catch {
-					// best effort
+				} catch (err) {
+					console.error('[chatDebug][service.invokeProviders] Provider error:', err);
 				}
 			});
 			await Promise.allSettled(promises);

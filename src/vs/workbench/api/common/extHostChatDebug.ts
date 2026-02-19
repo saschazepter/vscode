@@ -65,7 +65,9 @@ export class ExtHostChatDebug extends Disposable implements ExtHostChatDebugShap
 		// Forward progress events to the main thread
 		store.add(emitter.event(event => {
 			const dto = this._serializeEvent(event);
-			(dto as { sessionId?: string }).sessionId = sessionId;
+			if (!dto.sessionId) {
+				(dto as { sessionId?: string }).sessionId = sessionId;
+			}
 			this._proxy.$acceptChatDebugEvent(handle, dto);
 		}));
 
@@ -98,6 +100,7 @@ export class ExtHostChatDebug extends Disposable implements ExtHostChatDebugShap
 	private _serializeEvent(event: vscode.ChatDebugEvent): IChatDebugEventDto {
 		const base = {
 			id: event.id,
+			sessionId: (event as { sessionId?: string }).sessionId,
 			created: event.created.getTime(),
 			parentEventId: event.parentEventId,
 		};
@@ -149,6 +152,11 @@ export class ExtHostChatDebug extends Disposable implements ExtHostChatDebugShap
 		}
 
 		// Fallback: treat as generic if the event doesn't match known classes
+		console.warn('[chatDebug][extHost._serializeEvent] FALLBACK to generic! Event did not match any instanceof check.', {
+			constructor: event?.constructor?.name,
+			keys: Object.keys(event),
+			agentName: (event as { agentName?: string }).agentName,
+		});
 		const generic = event as vscode.ChatDebugGenericEvent;
 		return {
 			...base,

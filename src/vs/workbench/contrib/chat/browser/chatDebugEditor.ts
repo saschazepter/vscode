@@ -3,30 +3,124 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { addDisposableListener, Dimension, EventType } from '../../../../../base/browser/dom.js';
-import { createStyleSheet } from '../../../../../base/browser/domStylesheets.js';
-import { WorkbenchList } from '../../../../../platform/list/browser/listService.js';
-import { localize } from '../../../../../nls.js';
-import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
-import { IStorageService } from '../../../../../platform/storage/common/storage.js';
-import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry.js';
-import { IThemeService } from '../../../../../platform/theme/common/themeService.js';
-import { EditorPane } from '../../../../browser/parts/editor/editorPane.js';
-import { IEditorGroup } from '../../../../services/editor/common/editorGroupsService.js';
-import { ChatDebugLogLevel, IChatDebugEvent, IChatDebugService } from '../../common/chatDebugService.js';
-import { IChatService } from '../../common/chatService/chatService.js';
-import { chatSessionResourceToId, LocalChatSessionUri } from '../../common/model/chatUri.js';
-import { DisposableStore, IDisposable } from '../../../../../base/common/lifecycle.js';
-import { IChatWidgetService } from '../chat.js';
-import { IEditorService } from '../../../../services/editor/common/editorService.js';
-import { IUntitledTextResourceEditorInput } from '../../../../common/editor.js';
-import { IClipboardService } from '../../../../../platform/clipboard/common/clipboardService.js';
-import { isUUID } from '../../../../../base/common/uuid.js';
-import { Codicon } from '../../../../../base/common/codicons.js';
-import { ThemeIcon } from '../../../../../base/common/themables.js';
-import { ChatDebugEventRenderer, ChatDebugEventDelegate } from './chatDebugEventList.js';
-import { chatDebugStyles } from './chatDebugStyles.js';
-import { generateSubagentFlowchart, renderVisualFlow } from './chatDebugSubagentChart.js';
+import { addDisposableListener, Dimension, EventType } from '../../../../base/browser/dom.js';
+import { createStyleSheet } from '../../../../base/browser/domStylesheets.js';
+import { IListRenderer, IListVirtualDelegate } from '../../../../base/browser/ui/list/list.js';
+import { WorkbenchList } from '../../../../platform/list/browser/listService.js';
+import { localize } from '../../../../nls.js';
+import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
+import { IStorageService } from '../../../../platform/storage/common/storage.js';
+import { ITelemetryService } from '../../../../platform/telemetry/common/telemetry.js';
+import { IThemeService } from '../../../../platform/theme/common/themeService.js';
+import { EditorPane } from '../../../browser/parts/editor/editorPane.js';
+import { IEditorGroup } from '../../../services/editor/common/editorGroupsService.js';
+import { ChatDebugLogLevel, IChatDebugEvent, IChatDebugService } from '../common/chatDebugService.js';
+import { IChatService } from '../common/chatService/chatService.js';
+import { chatSessionResourceToId, LocalChatSessionUri } from '../common/model/chatUri.js';
+import { DisposableStore, IDisposable } from '../../../../base/common/lifecycle.js';
+import { safeIntl } from '../../../../base/common/date.js';
+import { IChatWidgetService } from './chat.js';
+import { IEditorService } from '../../../services/editor/common/editorService.js';
+import { IUntitledTextResourceEditorInput } from '../../../common/editor.js';
+import { IClipboardService } from '../../../../platform/clipboard/common/clipboardService.js';
+import { isUUID } from '../../../../base/common/uuid.js';
+import { Codicon } from '../../../../base/common/codicons.js';
+import { ThemeIcon } from '../../../../base/common/themables.js';
+
+interface IChatDebugEventTemplate {
+	readonly container: HTMLElement;
+	readonly created: HTMLElement;
+	readonly name: HTMLElement;
+	readonly details: HTMLElement;
+}
+
+class ChatDebugEventRenderer implements IListRenderer<IChatDebugEvent, IChatDebugEventTemplate> {
+	static readonly TEMPLATE_ID = 'chatDebugEvent';
+
+	get templateId(): string {
+		return ChatDebugEventRenderer.TEMPLATE_ID;
+	}
+
+	renderTemplate(container: HTMLElement): IChatDebugEventTemplate {
+		container.classList.add('chat-debug-log-row');
+
+		const created = document.createElement('span');
+		created.className = 'chat-debug-log-created';
+		const name = document.createElement('span');
+		name.className = 'chat-debug-log-name';
+		const details = document.createElement('span');
+		details.className = 'chat-debug-log-details';
+
+		container.appendChild(created);
+		container.appendChild(name);
+		container.appendChild(details);
+
+		return { container, created, name, details };
+	}
+
+	renderElement(element: IChatDebugEvent, index: number, templateData: IChatDebugEventTemplate): void {
+		const dateFormatter = safeIntl.DateTimeFormat(undefined, {
+			month: 'short',
+			day: 'numeric',
+			hour: 'numeric',
+			minute: '2-digit',
+			second: '2-digit',
+		});
+
+		templateData.created.textContent = dateFormatter.value.format(element.created);
+
+		switch (element.kind) {
+			case 'toolCall':
+				templateData.name.textContent = element.toolName;
+				templateData.details.textContent = element.result ?? '';
+				break;
+			case 'modelTurn':
+				templateData.name.textContent = element.model ?? localize('chatDebug.modelTurn', "Model Turn");
+				templateData.details.textContent = element.totalTokens !== undefined
+					? localize('chatDebug.tokens', "{0} tokens", element.totalTokens)
+					: '';
+				break;
+			case 'generic':
+				templateData.name.textContent = element.name;
+				templateData.details.textContent = element.details ?? '';
+				break;
+			case 'subagentInvocation':
+				templateData.name.textContent = element.agentName;
+				templateData.details.textContent = element.description ?? (element.status ?? '');
+				break;
+		}
+
+		// Tree indentation for child events
+		if (element.parentEventId) {
+			templateData.container.classList.add('chat-debug-log-child');
+		} else {
+			templateData.container.classList.remove('chat-debug-log-child');
+		}
+
+		const isError = element.kind === 'generic' && element.level === ChatDebugLogLevel.Error
+			|| element.kind === 'toolCall' && element.result === 'error';
+		const isWarning = element.kind === 'generic' && element.level === ChatDebugLogLevel.Warning;
+		const isTrace = element.kind === 'generic' && element.level === ChatDebugLogLevel.Trace;
+
+		templateData.container.classList.toggle('chat-debug-log-error', isError);
+		templateData.container.classList.toggle('chat-debug-log-warning', isWarning);
+		templateData.container.classList.toggle('chat-debug-log-trace', isTrace);
+	}
+
+	disposeTemplate(_templateData: IChatDebugEventTemplate): void {
+		// noop
+	}
+}
+
+class ChatDebugEventDelegate implements IListVirtualDelegate<IChatDebugEvent> {
+	getHeight(_element: IChatDebugEvent): number {
+		return 28;
+	}
+
+	getTemplateId(_element: IChatDebugEvent): string {
+		return ChatDebugEventRenderer.TEMPLATE_ID;
+	}
+}
 
 const enum ViewState {
 	Home = 'home',
@@ -137,19 +231,11 @@ export class ChatDebugEditor extends EditorPane {
 			}
 		}));
 
-		// When a model's title changes, refresh the view to show the updated title
-		this._register(this.chatService.onDidCreateModel(model => {
-			this._register(model.onDidChange(e => {
-				if (e.kind === 'setCustomTitle') {
-					if (this.viewState === ViewState.Home) {
-						this.renderHomeContent();
-					} else if (this.viewState === ViewState.Overview || this.viewState === ViewState.Logs || this.viewState === ViewState.SubagentChart) {
-						this.updateOverviewBreadcrumb();
-						this.updateLogsBreadcrumb();
-						this.updateSubagentChartBreadcrumb();
-					}
-				}
-			}));
+		// When a request is submitted, the session title may update
+		this._register(this.chatService.onDidSubmitRequest(() => {
+			if (this.viewState === ViewState.Home) {
+				this.renderHomeContent();
+			}
 		}));
 
 		this.showView(ViewState.Home);
@@ -766,7 +852,6 @@ export class ChatDebugEditor extends EditorPane {
 		this.detailContainer.appendChild(header);
 
 		const pre = document.createElement('pre');
-		pre.tabIndex = 0;
 		if (resolved) {
 			this.currentDetailText = resolved;
 		} else {
@@ -886,13 +971,8 @@ export class ChatDebugEditor extends EditorPane {
 		this.subagentChartContent.textContent = '';
 		this.updateSubagentChartBreadcrumb();
 
-		console.log('[chatDebug][renderSubagentChart] currentSessionId:', this.currentSessionId);
 		const events = this.chatDebugService.getEvents(this.currentSessionId);
-		console.log('[chatDebug][renderSubagentChart] Events from debug service:', events.length);
-		const kindCounts: Record<string, number> = {};
-		for (const e of events) { kindCounts[e.kind] = (kindCounts[e.kind] || 0) + 1; }
-		console.log('[chatDebug][renderSubagentChart] Event kinds breakdown:', kindCounts);
-		const mermaidCode = generateSubagentFlowchart(events);
+		const mermaidCode = this._generateSubagentFlowchart(events);
 
 		// Title
 		const titleEl = document.createElement('h3');
@@ -933,7 +1013,7 @@ export class ChatDebugEditor extends EditorPane {
 		// Visual flow representation (HTML/CSS)
 		const flowContainer = document.createElement('div');
 		flowContainer.className = 'chat-debug-subagent-flow-visual';
-		renderVisualFlow(flowContainer, events);
+		this._renderVisualFlow(flowContainer, events);
 		this.subagentChartContent.appendChild(flowContainer);
 
 		// Mermaid code block
@@ -953,6 +1033,255 @@ export class ChatDebugEditor extends EditorPane {
 		codeSection.appendChild(pre);
 
 		this.subagentChartContent.appendChild(codeSection);
+	}
+
+	/**
+	 * Derive subagent info from events:
+	 * - Explicit `subagentInvocation` events
+	 * - `toolCall` events where toolName is 'runSubagent'
+	 * - `toolCall` events that have a parentEventId matching a subagent
+	 */
+	private _deriveSubagentData(events: readonly IChatDebugEvent[]): { name: string; description?: string; status?: string; toolCalls: number; modelTurns: number; durationMs?: number; childEvents: readonly IChatDebugEvent[] }[] {
+		const subagents: Map<string, { name: string; description?: string; status?: string; toolCalls: number; modelTurns: number; durationMs?: number; childEvents: IChatDebugEvent[] }> = new Map();
+
+		// Collect from explicit subagentInvocation events
+		for (const event of events) {
+			if (event.kind === 'subagentInvocation') {
+				const key = event.id ?? event.agentName;
+				subagents.set(key, {
+					name: event.agentName,
+					description: event.description,
+					status: event.status,
+					toolCalls: event.toolCallCount ?? 0,
+					modelTurns: event.modelTurnCount ?? 0,
+					durationMs: event.durationInMillis,
+					childEvents: [],
+				});
+			}
+		}
+
+		// Collect from runSubagent tool calls
+		for (const event of events) {
+			if (event.kind === 'toolCall' && event.toolName === 'runSubagent') {
+				const key = event.id ?? `runSubagent-${event.created.getTime()}`;
+				if (!subagents.has(key)) {
+					// Try to extract agent name from input JSON
+					let agentName = 'Subagent';
+					let description: string | undefined;
+					if (event.input) {
+						try {
+							const parsed: { agentName?: string; description?: string } = JSON.parse(event.input);
+							agentName = parsed.agentName ?? 'Subagent';
+							description = parsed.description;
+						} catch {
+							// best effort
+						}
+					}
+					subagents.set(key, {
+						name: agentName,
+						description,
+						status: event.result,
+						toolCalls: 0,
+						modelTurns: 0,
+						durationMs: event.durationInMillis,
+						childEvents: [],
+					});
+				}
+			}
+		}
+
+		// Infer subagents from orphaned parentEventId references
+		const eventsById = new Map<string, IChatDebugEvent>();
+		for (const event of events) {
+			if (event.id) {
+				eventsById.set(event.id, event);
+			}
+		}
+		for (const event of events) {
+			if (event.parentEventId && !subagents.has(event.parentEventId)) {
+				const parentEvent = eventsById.get(event.parentEventId);
+				const name = parentEvent?.kind === 'generic' ? (parentEvent.name || 'Subagent') : 'Subagent';
+				const description = parentEvent?.kind === 'generic' ? parentEvent.details : undefined;
+				subagents.set(event.parentEventId, {
+					name,
+					description,
+					status: undefined,
+					toolCalls: 0,
+					modelTurns: 0,
+					durationMs: undefined,
+					childEvents: [],
+				});
+			}
+		}
+
+		// Attach child events (by parentEventId)
+		for (const event of events) {
+			if (event.parentEventId && subagents.has(event.parentEventId)) {
+				const sub = subagents.get(event.parentEventId)!;
+				sub.childEvents.push(event);
+				if (event.kind === 'toolCall') {
+					sub.toolCalls++;
+				} else if (event.kind === 'modelTurn') {
+					sub.modelTurns++;
+				}
+			}
+		}
+
+		return [...subagents.values()];
+	}
+
+	/**
+	 * Generate a Mermaid flowchart from events, showing main agent flow
+	 * with subagent invocations as subgraphs.
+	 */
+	private _generateSubagentFlowchart(events: readonly IChatDebugEvent[]): string {
+		const subagents = this._deriveSubagentData(events);
+		const modelTurns = events.filter(e => e.kind === 'modelTurn');
+		const mainToolCalls = events.filter(e => e.kind === 'toolCall' && e.toolName !== 'runSubagent' && !e.parentEventId);
+
+		const lines: string[] = [];
+		lines.push('flowchart TD');
+
+		// Start node
+		lines.push('    start([Start]) --> mainAgent');
+		lines.push(`    mainAgent["Main Agent<br/>${modelTurns.length} model turns<br/>${mainToolCalls.length} tool calls"]`);
+
+		if (subagents.length === 0) {
+			lines.push('    mainAgent --> finish([End])');
+		} else {
+			// Connect main agent to each subagent
+			for (let i = 0; i < subagents.length; i++) {
+				const sub = subagents[i];
+				const nodeId = `sub${i}`;
+				const statusIcon = sub.status === 'failed' ? '&#10060;' : sub.status === 'completed' ? '&#9989;' : '&#9654;';
+
+				lines.push('');
+				lines.push(`    mainAgent --> ${nodeId}`);
+				lines.push(`    subgraph ${nodeId}_group["${sub.name}"]`);
+				lines.push(`        ${nodeId}["${statusIcon} ${sub.name}<br/>${sub.description ? sub.description.substring(0, 50) + '<br/>' : ''}${sub.modelTurns} model turns, ${sub.toolCalls} tool calls${sub.durationMs !== undefined ? '<br/>' + sub.durationMs + 'ms' : ''}"]`);
+
+				// Show top tool calls for this subagent
+				const childTools = sub.childEvents.filter(e => e.kind === 'toolCall');
+				const toolNames = new Map<string, number>();
+				for (const tc of childTools) {
+					if (tc.kind === 'toolCall') {
+						toolNames.set(tc.toolName, (toolNames.get(tc.toolName) ?? 0) + 1);
+					}
+				}
+				if (toolNames.size > 0) {
+					const toolSummary = [...toolNames.entries()]
+						.sort((a, b) => b[1] - a[1])
+						.slice(0, 5)
+						.map(([name, count]) => `${name} x${count}`)
+						.join('<br/>');
+					lines.push(`        ${nodeId}_tools["Tools:<br/>${toolSummary}"]`);
+					lines.push(`        ${nodeId} --> ${nodeId}_tools`);
+				}
+
+				lines.push('    end');
+				lines.push(`    ${nodeId}_group --> mainAgent_return${i}(["Return to Main Agent"])`);
+			}
+
+			// Final node
+			const lastIdx = subagents.length - 1;
+			lines.push(`    mainAgent_return${lastIdx} --> finish([End])`);
+
+			// Connect intermediate returns
+			for (let i = 0; i < lastIdx; i++) {
+				lines.push(`    mainAgent_return${i} --> mainAgent`);
+			}
+		}
+
+		// Styling
+		lines.push('');
+		lines.push('    classDef mainNode fill:#4a9eff,stroke:#2b7de9,color:#fff');
+		lines.push('    classDef subNode fill:#9c27b0,stroke:#7b1fa2,color:#fff');
+		lines.push('    classDef toolNode fill:#455a64,stroke:#37474f,color:#cfd8dc');
+		lines.push('    classDef returnNode fill:#66bb6a,stroke:#43a047,color:#fff');
+		lines.push('    class mainAgent mainNode');
+
+		for (let i = 0; i < subagents.length; i++) {
+			lines.push(`    class sub${i} subNode`);
+			lines.push(`    class sub${i}_tools toolNode`);
+			lines.push(`    class mainAgent_return${i} returnNode`);
+		}
+
+		return lines.join('\n');
+	}
+
+	/**
+	 * Render a simple visual HTML/CSS flow representation of the subagent invocations.
+	 */
+	private _renderVisualFlow(container: HTMLElement, events: readonly IChatDebugEvent[]): void {
+		const subagents = this._deriveSubagentData(events);
+
+		if (subagents.length === 0) {
+			const empty = document.createElement('p');
+			empty.className = 'chat-debug-subagent-flow-empty';
+			empty.textContent = localize('chatDebug.noSubagents', "No subagent invocations detected in this session.");
+			container.appendChild(empty);
+			return;
+		}
+
+		// Main agent node
+		const mainNode = document.createElement('div');
+		mainNode.className = 'chat-debug-flow-node chat-debug-flow-main';
+		mainNode.textContent = localize('chatDebug.mainAgent', "Main Agent");
+		container.appendChild(mainNode);
+
+		for (const sub of subagents) {
+			// Arrow
+			const arrow = document.createElement('div');
+			arrow.className = 'chat-debug-flow-arrow';
+			arrow.textContent = '\u2193'; // ↓
+			container.appendChild(arrow);
+
+			// Subagent node
+			const subNode = document.createElement('div');
+			subNode.className = 'chat-debug-flow-node chat-debug-flow-subagent';
+
+			const nameEl = document.createElement('div');
+			nameEl.className = 'chat-debug-flow-subagent-name';
+			const statusIcon = sub.status === 'failed' ? '\u274C' : sub.status === 'completed' ? '\u2705' : '\u25B6';
+			nameEl.textContent = `${statusIcon} ${sub.name}`;
+			subNode.appendChild(nameEl);
+
+			if (sub.description) {
+				const descEl = document.createElement('div');
+				descEl.className = 'chat-debug-flow-subagent-desc';
+				descEl.textContent = sub.description.length > 60 ? sub.description.substring(0, 60) + '...' : sub.description;
+				subNode.appendChild(descEl);
+			}
+
+			const statsEl = document.createElement('div');
+			statsEl.className = 'chat-debug-flow-subagent-stats';
+			const parts: string[] = [];
+			if (sub.modelTurns > 0) {
+				parts.push(localize('chatDebug.flowModelTurns', "{0} model turns", sub.modelTurns));
+			}
+			if (sub.toolCalls > 0) {
+				parts.push(localize('chatDebug.flowToolCalls', "{0} tool calls", sub.toolCalls));
+			}
+			if (sub.durationMs !== undefined) {
+				parts.push(`${sub.durationMs}ms`);
+			}
+			statsEl.textContent = parts.join(' \u00B7 ');
+			subNode.appendChild(statsEl);
+
+			container.appendChild(subNode);
+
+			// Return arrow
+			const returnArrow = document.createElement('div');
+			returnArrow.className = 'chat-debug-flow-arrow chat-debug-flow-arrow-return';
+			returnArrow.textContent = '\u2193'; // ↓
+			container.appendChild(returnArrow);
+		}
+
+		// End node
+		const endNode = document.createElement('div');
+		endNode.className = 'chat-debug-flow-node chat-debug-flow-end';
+		endNode.textContent = localize('chatDebug.end', "End");
+		container.appendChild(endNode);
 	}
 
 	// =====================================================================
@@ -1023,3 +1352,479 @@ export class ChatDebugEditor extends EditorPane {
 		super.dispose();
 	}
 }
+
+const chatDebugStyles = `
+.chat-debug-editor {
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+}
+
+/* ---- Home view ---- */
+.chat-debug-home {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	padding: 48px 24px;
+	overflow-y: auto;
+	flex: 1;
+}
+.chat-debug-home-title {
+	font-size: 18px;
+	font-weight: 600;
+	margin: 0 0 8px;
+}
+.chat-debug-home-subtitle {
+	font-size: 13px;
+	color: var(--vscode-descriptionForeground);
+	margin: 0 0 24px;
+}
+.chat-debug-home-empty {
+	font-size: 13px;
+	color: var(--vscode-descriptionForeground);
+	margin: 0;
+}
+.chat-debug-home-session-list {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	width: 100%;
+	max-width: 400px;
+}
+.chat-debug-home-session-item {
+	display: flex;
+	align-items: center;
+	width: 100%;
+	text-align: left;
+	padding: 8px 12px;
+	border: 1px solid var(--vscode-widget-border, transparent);
+	background: transparent;
+	color: var(--vscode-foreground);
+	border-radius: 4px;
+	cursor: pointer;
+	font-size: 13px;
+	gap: 8px;
+}
+.chat-debug-home-session-item:hover {
+	background: var(--vscode-list-hoverBackground);
+}
+.chat-debug-home-session-item-active {
+	border-color: var(--vscode-focusBorder);
+}
+.chat-debug-home-session-item-title {
+	flex: 1;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.chat-debug-home-session-item-shimmer {
+	height: 14px;
+	min-width: 160px;
+	border-radius: 3px;
+	background: linear-gradient(
+		90deg,
+		var(--vscode-descriptionForeground) 25%,
+		var(--vscode-chat-thinkingShimmer, rgba(255, 255, 255, 0.3)) 50%,
+		var(--vscode-descriptionForeground) 75%
+	);
+	background-size: 200% 100%;
+	animation: chat-debug-shimmer 2s linear infinite;
+	opacity: 0.15;
+}
+.chat-debug-home-session-badge {
+	flex-shrink: 0;
+	padding: 2px 8px;
+	border-radius: 10px;
+	background: var(--vscode-badge-background);
+	color: var(--vscode-badge-foreground);
+	font-size: 11px;
+	font-weight: 500;
+}
+
+@keyframes chat-debug-shimmer {
+	0% { background-position: 120% 0; }
+	100% { background-position: -120% 0; }
+}
+
+/* ---- Breadcrumb ---- */
+.chat-debug-breadcrumb {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 8px 16px;
+	font-size: 12px;
+	flex-shrink: 0;
+	border-bottom: 1px solid var(--vscode-widget-border, transparent);
+}
+.chat-debug-breadcrumb-link {
+	border: none;
+	background: transparent;
+	color: var(--vscode-textLink-foreground);
+	cursor: pointer;
+	font-size: 12px;
+	padding: 0;
+	text-decoration: none;
+}
+.chat-debug-breadcrumb-link:hover {
+	text-decoration: underline;
+}
+.chat-debug-breadcrumb-sep {
+	color: var(--vscode-descriptionForeground);
+}
+.chat-debug-breadcrumb-current {
+	color: var(--vscode-foreground);
+}
+
+/* ---- Overview view ---- */
+.chat-debug-overview {
+	display: flex;
+	flex-direction: column;
+	overflow-y: auto;
+	flex: 1;
+}
+.chat-debug-overview-content {
+	padding: 16px 24px;
+}
+.chat-debug-overview-title-row {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	margin-bottom: 20px;
+}
+.chat-debug-overview-title {
+	font-size: 16px;
+	font-weight: 600;
+	margin: 0;
+}
+.chat-debug-overview-section {
+	margin-bottom: 24px;
+}
+.chat-debug-overview-section-label {
+	font-size: 13px;
+	font-weight: 600;
+	margin: 0 0 10px;
+	color: var(--vscode-foreground);
+}
+.chat-debug-overview-metrics {
+	display: flex;
+	gap: 12px;
+	flex-wrap: wrap;
+}
+.chat-debug-overview-metric-card {
+	border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+	border-radius: 4px;
+	padding: 12px 16px;
+	min-width: 120px;
+}
+.chat-debug-overview-metric-label {
+	font-size: 11px;
+	color: var(--vscode-descriptionForeground);
+	margin-bottom: 4px;
+}
+.chat-debug-overview-metric-value {
+	font-size: 16px;
+	font-weight: 600;
+}
+.chat-debug-overview-actions {
+	display: flex;
+	gap: 10px;
+	flex-wrap: wrap;
+}
+.chat-debug-overview-action-button {
+	padding: 8px 16px;
+	border: 1px solid var(--vscode-button-border, var(--vscode-contrastBorder, transparent));
+	background: var(--vscode-button-secondaryBackground);
+	color: var(--vscode-button-secondaryForeground);
+	border-radius: 2px;
+	cursor: pointer;
+	font-size: 13px;
+}
+.chat-debug-overview-action-button:hover {
+	background: var(--vscode-button-secondaryHoverBackground);
+}
+.chat-debug-icon-button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 26px;
+	height: 26px;
+	border: none;
+	background: transparent;
+	color: var(--vscode-foreground);
+	border-radius: 4px;
+	cursor: pointer;
+	opacity: 0.7;
+	flex-shrink: 0;
+}
+.chat-debug-icon-button:hover {
+	opacity: 1;
+	background: var(--vscode-toolbar-hoverBackground);
+}
+.chat-debug-overview-action-button-primary {
+	background: var(--vscode-button-background);
+	color: var(--vscode-button-foreground);
+}
+.chat-debug-overview-action-button-primary:hover {
+	background: var(--vscode-button-hoverBackground);
+}
+
+/* ---- Logs view ---- */
+.chat-debug-logs {
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	flex: 1;
+}
+.chat-debug-editor-header {
+	display: flex;
+	align-items: center;
+	padding: 8px 16px;
+	gap: 12px;
+	flex-shrink: 0;
+}
+.chat-debug-search {
+	flex: 1;
+	max-width: 300px;
+	padding: 4px 8px;
+	border: 1px solid var(--vscode-input-border, transparent);
+	background: var(--vscode-input-background);
+	color: var(--vscode-input-foreground);
+	border-radius: 2px;
+	outline: none;
+}
+.chat-debug-search:focus {
+	border-color: var(--vscode-focusBorder);
+}
+.chat-debug-filter-select {
+	padding: 4px 8px;
+	border: 1px solid var(--vscode-input-border, transparent);
+	background: var(--vscode-input-background);
+	color: var(--vscode-input-foreground);
+	border-radius: 2px;
+	outline: none;
+	font-size: 12px;
+}
+.chat-debug-filter-select:focus {
+	border-color: var(--vscode-focusBorder);
+}
+.chat-debug-table-header {
+	display: flex;
+	padding: 4px 16px;
+	font-weight: 600;
+	font-size: 12px;
+	border-bottom: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+	flex-shrink: 0;
+	color: var(--vscode-foreground);
+	opacity: 0.8;
+}
+.chat-debug-table-header .chat-debug-col-created {
+	width: 160px;
+	flex-shrink: 0;
+}
+.chat-debug-table-header .chat-debug-col-name {
+	width: 200px;
+	flex-shrink: 0;
+}
+.chat-debug-table-header .chat-debug-col-details {
+	flex: 1;
+}
+.chat-debug-logs-body {
+	display: flex;
+	flex-direction: row;
+	flex: 1;
+	overflow: hidden;
+}
+.chat-debug-list-container {
+	flex: 1;
+	overflow: hidden;
+}
+.chat-debug-log-row {
+	display: flex;
+	align-items: center;
+	padding: 0 16px;
+	height: 28px;
+	border-bottom: 1px solid var(--vscode-widget-border, transparent);
+	font-size: 12px;
+}
+.chat-debug-log-row .chat-debug-log-created {
+	width: 160px;
+	flex-shrink: 0;
+	color: var(--vscode-descriptionForeground);
+}
+.chat-debug-log-row .chat-debug-log-name {
+	width: 200px;
+	flex-shrink: 0;
+	font-weight: 500;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.chat-debug-log-row .chat-debug-log-details {
+	flex: 1;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.chat-debug-log-row.chat-debug-log-child {
+	padding-left: 32px;
+	opacity: 0.9;
+}
+.chat-debug-log-row.chat-debug-log-error {
+	background-color: var(--vscode-inputValidation-errorBackground, rgba(255, 0, 0, 0.1));
+	color: var(--vscode-errorForeground);
+}
+.chat-debug-log-row.chat-debug-log-warning {
+	background-color: var(--vscode-inputValidation-warningBackground, rgba(255, 204, 0, 0.1));
+}
+.chat-debug-log-row.chat-debug-log-trace {
+	opacity: 0.7;
+}
+.chat-debug-detail-panel {
+	flex-shrink: 0;
+	width: 350px;
+	overflow-y: auto;
+	padding: 8px 16px;
+	border-left: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+	background: var(--vscode-editorWidget-background);
+	font-size: 12px;
+	position: relative;
+}
+.chat-debug-detail-header {
+	display: flex;
+	justify-content: flex-end;
+	position: sticky;
+	top: 0;
+}
+.chat-debug-detail-button {
+	border: none;
+	background: transparent;
+	color: var(--vscode-foreground);
+	cursor: pointer;
+	font-size: 16px;
+	line-height: 1;
+	padding: 2px 6px;
+	border-radius: 4px;
+	opacity: 0.7;
+}
+.chat-debug-detail-button:hover {
+	opacity: 1;
+	background: var(--vscode-toolbar-hoverBackground);
+}
+.chat-debug-detail-panel pre {
+	margin: 0;
+	white-space: pre-wrap;
+	word-break: break-word;
+	font-family: var(--vscode-editor-font-family, monospace);
+	font-size: 12px;
+	user-select: text;
+	-webkit-user-select: text;
+	cursor: text;
+}
+
+/* ---- Subagent Chart view ---- */
+.chat-debug-subagent-chart {
+	display: flex;
+	flex-direction: column;
+	overflow-y: auto;
+	flex: 1;
+}
+.chat-debug-subagent-chart-content {
+	padding: 16px 24px;
+}
+.chat-debug-subagent-chart-title {
+	font-size: 14px;
+	font-weight: 600;
+	margin: 0 0 6px;
+}
+.chat-debug-subagent-chart-desc {
+	font-size: 12px;
+	color: var(--vscode-descriptionForeground);
+	margin: 0 0 16px;
+}
+.chat-debug-subagent-chart-actions {
+	display: flex;
+	gap: 8px;
+	margin-bottom: 20px;
+}
+.chat-debug-subagent-flow-visual {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	padding: 16px 0;
+	margin-bottom: 24px;
+}
+.chat-debug-flow-node {
+	padding: 10px 20px;
+	border-radius: 6px;
+	font-size: 13px;
+	font-weight: 500;
+	text-align: center;
+	min-width: 180px;
+	max-width: 360px;
+}
+.chat-debug-flow-main {
+	background: var(--vscode-button-background);
+	color: var(--vscode-button-foreground);
+}
+.chat-debug-flow-subagent {
+	background: var(--vscode-editorWidget-background);
+	border: 2px solid var(--vscode-focusBorder);
+	color: var(--vscode-foreground);
+}
+.chat-debug-flow-subagent-name {
+	font-weight: 600;
+	margin-bottom: 4px;
+}
+.chat-debug-flow-subagent-desc {
+	font-size: 11px;
+	color: var(--vscode-descriptionForeground);
+	margin-bottom: 4px;
+}
+.chat-debug-flow-subagent-stats {
+	font-size: 11px;
+	color: var(--vscode-descriptionForeground);
+}
+.chat-debug-flow-end {
+	background: var(--vscode-badge-background);
+	color: var(--vscode-badge-foreground);
+}
+.chat-debug-flow-arrow {
+	font-size: 20px;
+	line-height: 1;
+	padding: 4px 0;
+	color: var(--vscode-foreground);
+	opacity: 0.5;
+}
+.chat-debug-flow-arrow-return {
+	opacity: 0.3;
+}
+.chat-debug-subagent-flow-empty {
+	font-size: 13px;
+	color: var(--vscode-descriptionForeground);
+	text-align: center;
+	padding: 32px 0;
+}
+.chat-debug-subagent-chart-code-section {
+	border-top: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+	padding-top: 16px;
+}
+.chat-debug-subagent-chart-code-label {
+	font-size: 13px;
+	font-weight: 600;
+	margin: 0 0 8px;
+}
+.chat-debug-subagent-chart-code {
+	background: var(--vscode-textCodeBlock-background);
+	border: 1px solid var(--vscode-widget-border, transparent);
+	border-radius: 4px;
+	padding: 12px;
+	margin: 0;
+	overflow-x: auto;
+	font-family: var(--vscode-editor-font-family, monospace);
+	font-size: 12px;
+	white-space: pre;
+	user-select: text;
+	-webkit-user-select: text;
+	cursor: text;
+}
+`;

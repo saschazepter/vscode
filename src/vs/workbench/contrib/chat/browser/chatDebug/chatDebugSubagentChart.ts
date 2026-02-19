@@ -25,9 +25,13 @@ export interface ISubagentData {
 export function deriveSubagentData(events: readonly IChatDebugEvent[]): ISubagentData[] {
 	const subagents: Map<string, { name: string; description?: string; status?: string; toolCalls: number; modelTurns: number; durationMs?: number; childEvents: IChatDebugEvent[] }> = new Map();
 
+	console.log('[chatDebug][deriveSubagentData] Total events received:', events.length);
+	console.log('[chatDebug][deriveSubagentData] Event kinds:', events.map(e => e.kind));
+
 	// Collect from explicit subagentInvocation events
 	for (const event of events) {
 		if (event.kind === 'subagentInvocation') {
+			console.log('[chatDebug][deriveSubagentData] Found subagentInvocation event:', { id: event.id, agentName: event.agentName, description: event.description, status: event.status, sessionId: event.sessionId });
 			const key = event.id ?? event.agentName;
 			subagents.set(key, {
 				name: event.agentName,
@@ -41,9 +45,12 @@ export function deriveSubagentData(events: readonly IChatDebugEvent[]): ISubagen
 		}
 	}
 
+	console.log('[chatDebug][deriveSubagentData] Subagents after explicit subagentInvocation scan:', subagents.size, [...subagents.keys()]);
+
 	// Collect from runSubagent tool calls
 	for (const event of events) {
 		if (event.kind === 'toolCall' && event.toolName === 'runSubagent') {
+			console.log('[chatDebug][deriveSubagentData] Found runSubagent toolCall:', { id: event.id, input: event.input?.substring(0, 200), sessionId: event.sessionId });
 			const key = event.id ?? `runSubagent-${event.created.getTime()}`;
 			if (!subagents.has(key)) {
 				// Try to extract agent name from input JSON
@@ -71,6 +78,34 @@ export function deriveSubagentData(events: readonly IChatDebugEvent[]): ISubagen
 		}
 	}
 
+	console.log('[chatDebug][deriveSubagentData] Subagents after runSubagent toolCall scan:', subagents.size, [...subagents.keys()]);
+
+	// Infer subagents from orphaned parentEventId references.
+	// If events reference a parentEventId that isn't already a known subagent,
+	// look up the parent event and create a synthetic subagent entry.
+	const eventsById = new Map<string, IChatDebugEvent>();
+	for (const event of events) {
+		if (event.id) {
+			eventsById.set(event.id, event);
+		}
+	}
+	for (const event of events) {
+		if (event.parentEventId && !subagents.has(event.parentEventId)) {
+			const parentEvent = eventsById.get(event.parentEventId);
+			const name = parentEvent?.kind === 'generic' ? (parentEvent.name || 'Subagent') : 'Subagent';
+			const description = parentEvent?.kind === 'generic' ? parentEvent.details : undefined;
+			subagents.set(event.parentEventId, {
+				name,
+				description,
+				status: undefined,
+				toolCalls: 0,
+				modelTurns: 0,
+				durationMs: undefined,
+				childEvents: [],
+			});
+		}
+	}
+
 	// Attach child events (by parentEventId)
 	for (const event of events) {
 		if (event.parentEventId && subagents.has(event.parentEventId)) {
@@ -84,7 +119,9 @@ export function deriveSubagentData(events: readonly IChatDebugEvent[]): ISubagen
 		}
 	}
 
-	return [...subagents.values()];
+	const result = [...subagents.values()];
+	console.log('[chatDebug][deriveSubagentData] Final subagent count:', result.length, result.map(s => ({ name: s.name, status: s.status, toolCalls: s.toolCalls, modelTurns: s.modelTurns })));
+	return result;
 }
 
 /**
@@ -170,7 +207,9 @@ export function generateSubagentFlowchart(events: readonly IChatDebugEvent[]): s
  * Render a simple visual HTML/CSS flow representation of the subagent invocations.
  */
 export function renderVisualFlow(container: HTMLElement, events: readonly IChatDebugEvent[]): void {
+	console.log('[chatDebug][renderVisualFlow] Rendering visual flow with', events.length, 'events');
 	const subagents = deriveSubagentData(events);
+	console.log('[chatDebug][renderVisualFlow] Derived subagents:', subagents.length);
 
 	if (subagents.length === 0) {
 		const empty = document.createElement('p');

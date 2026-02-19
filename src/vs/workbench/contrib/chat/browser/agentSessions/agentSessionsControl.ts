@@ -193,6 +193,7 @@ export class AgentSessionsControl extends Disposable implements IAgentSessionsCo
 		const model = this.agentSessionsService.model;
 
 		this._register(this.options.filter.onDidChange(async () => {
+			console.debug('[AgentSessionsControl] filter.onDidChange fired, visible:', this.visible);
 			if (this.visible) {
 				this.updateSectionCollapseStates();
 				this.update();
@@ -200,6 +201,7 @@ export class AgentSessionsControl extends Disposable implements IAgentSessionsCo
 		}));
 
 		this._register(model.onDidChangeSessions(() => {
+			console.debug('[AgentSessionsControl] model.onDidChangeSessions fired, visible:', this.visible, 'total sessions:', model.sessions.length);
 			if (this.visible) {
 				this.update();
 			}
@@ -370,8 +372,10 @@ export class AgentSessionsControl extends Disposable implements IAgentSessionsCo
 	}
 
 	async update(): Promise<void> {
+		console.debug('[AgentSessionsControl] update() called, queuing updateChildren');
 		return this.updateSessionsListThrottler.queue(async () => {
 			await this.sessionsList?.updateChildren();
+			console.debug('[AgentSessionsControl] updateChildren complete');
 
 			this._onDidUpdate.fire();
 		});
@@ -382,6 +386,7 @@ export class AgentSessionsControl extends Disposable implements IAgentSessionsCo
 			return;
 		}
 
+		console.debug('[AgentSessionsControl] setVisible changed to:', visible);
 		this.visible = visible;
 
 		if (this.visible) {

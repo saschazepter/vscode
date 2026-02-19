@@ -3569,6 +3569,7 @@ export enum ChatDebugToolCallResult {
 
 export class ChatDebugToolCallEvent {
 	id?: string;
+	sessionId?: string;
 	created: Date;
 	parentEventId?: string;
 	toolName: string;
@@ -3586,6 +3587,7 @@ export class ChatDebugToolCallEvent {
 
 export class ChatDebugModelTurnEvent {
 	id?: string;
+	sessionId?: string;
 	created: Date;
 	parentEventId?: string;
 	model?: string;
@@ -3602,6 +3604,7 @@ export class ChatDebugModelTurnEvent {
 
 export class ChatDebugGenericEvent {
 	id?: string;
+	sessionId?: string;
 	created: Date;
 	parentEventId?: string;
 	name: string;
@@ -3618,6 +3621,7 @@ export class ChatDebugGenericEvent {
 
 export class ChatDebugSubagentInvocationEvent {
 	id?: string;
+	sessionId?: string;
 	created: Date;
 	parentEventId?: string;
 	agentName: string;

@@ -35,6 +35,13 @@ declare module 'vscode' {
 		id?: string;
 
 		/**
+		 * The chat session this event belongs to. When provided, the event
+		 * is attributed to this session even if it arrives through a progress
+		 * pipeline opened for a different session.
+		 */
+		sessionId?: string;
+
+		/**
 		 * The timestamp when the event was created.
 		 */
 		created: Date;
@@ -94,6 +101,13 @@ declare module 'vscode' {
 		id?: string;
 
 		/**
+		 * The chat session this event belongs to. When provided, the event
+		 * is attributed to this session even if it arrives through a progress
+		 * pipeline opened for a different session.
+		 */
+		sessionId?: string;
+
+		/**
 		 * The timestamp when the event was created.
 		 */
 		created: Date;
@@ -149,6 +163,13 @@ declare module 'vscode' {
 		 * A unique identifier for this event.
 		 */
 		id?: string;
+
+		/**
+		 * The chat session this event belongs to. When provided, the event
+		 * is attributed to this session even if it arrives through a progress
+		 * pipeline opened for a different session.
+		 */
+		sessionId?: string;
 
 		/**
 		 * The timestamp when the event was created.
@@ -207,6 +228,13 @@ declare module 'vscode' {
 		 * A unique identifier for this event.
 		 */
 		id?: string;
+
+		/**
+		 * The chat session this event belongs to. When provided, the event
+		 * is attributed to this session even if it arrives through a progress
+		 * pipeline opened for a different session.
+		 */
+		sessionId?: string;
 
 		/**
 		 * The timestamp when the event was created.

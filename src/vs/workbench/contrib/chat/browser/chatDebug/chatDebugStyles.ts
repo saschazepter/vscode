@@ -369,6 +369,11 @@ export const chatDebugStyles = `
 	user-select: text;
 	-webkit-user-select: text;
 	cursor: text;
+	outline: none;
+}
+.chat-debug-detail-panel pre:focus {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: -1px;
 }
 
 /* ---- Subagent Chart view ---- */
