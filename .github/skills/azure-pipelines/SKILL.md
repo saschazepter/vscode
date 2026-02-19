@@ -66,21 +66,21 @@ Use the [queue command](./azure-pipeline.ts) to queue a validation build:
 
 ```bash
 # Queue a build on the current branch
-node --experimental-strip-types .github/skills/azure-pipelines/azure-pipeline.ts queue
+node .github/skills/azure-pipelines/azure-pipeline.ts queue
 
 # Queue with a specific source branch
-node --experimental-strip-types .github/skills/azure-pipelines/azure-pipeline.ts queue --branch my-feature-branch
+node .github/skills/azure-pipelines/azure-pipeline.ts queue --branch my-feature-branch
 
 # Queue with custom variables (e.g., to skip certain stages)
-node --experimental-strip-types .github/skills/azure-pipelines/azure-pipeline.ts queue --variables "SKIP_TESTS=true"
+node .github/skills/azure-pipelines/azure-pipeline.ts queue --variables "SKIP_TESTS=true"
 ```
 
 > **Important**: Before queueing a new build, cancel any previous builds on the same branch that you no longer need. This frees up build agents and reduces resource waste:
 > ```bash
 > # Find the build ID from status, then cancel it
-> node --experimental-strip-types .github/skills/azure-pipelines/azure-pipeline.ts status
-> node --experimental-strip-types .github/skills/azure-pipelines/azure-pipeline.ts cancel --build-id <id>
-> node --experimental-strip-types .github/skills/azure-pipelines/azure-pipeline.ts queue
+> node .github/skills/azure-pipelines/azure-pipeline.ts status
+> node .github/skills/azure-pipelines/azure-pipeline.ts cancel --build-id <id>
+> node .github/skills/azure-pipelines/azure-pipeline.ts queue
 > ```
 
 ### Script Options
@@ -99,17 +99,17 @@ node --experimental-strip-types .github/skills/azure-pipelines/azure-pipeline.ts
 Use the [status command](./azure-pipeline.ts) to monitor a running build:
 
 ```bash
-# Get status of the most recent build on your branch
-node --experimental-strip-types .github/skills/azure-pipelines/azure-pipeline.ts status
+# Get status of the most recent builds
+node .github/skills/azure-pipelines/azure-pipeline.ts status
 
 # Get overview of a specific build by ID
-node --experimental-strip-types .github/skills/azure-pipelines/azure-pipeline.ts status --build-id 123456
+node .github/skills/azure-pipelines/azure-pipeline.ts status --build-id 123456
 
 # Watch build status (refreshes every 30 seconds)
-node --experimental-strip-types .github/skills/azure-pipelines/azure-pipeline.ts status --watch
+node .github/skills/azure-pipelines/azure-pipeline.ts status --watch
 
 # Watch with custom interval (60 seconds)
-node --experimental-strip-types .github/skills/azure-pipelines/azure-pipeline.ts status --watch 60
+node .github/skills/azure-pipelines/azure-pipeline.ts status --watch 60
 ```
 
 ### Script Options
@@ -133,10 +133,10 @@ Use the [cancel command](./azure-pipeline.ts) to stop a running build:
 
 ```bash
 # Cancel a build by ID (use status command to find IDs)
-node --experimental-strip-types .github/skills/azure-pipelines/azure-pipeline.ts cancel --build-id 123456
+node .github/skills/azure-pipelines/azure-pipeline.ts cancel --build-id 123456
 
 # Dry run (show what would be cancelled)
-node --experimental-strip-types .github/skills/azure-pipelines/azure-pipeline.ts cancel --build-id 123456 --dry-run
+node .github/skills/azure-pipelines/azure-pipeline.ts cancel --build-id 123456 --dry-run
 ```
 
 ### Script Options
@@ -146,6 +146,44 @@ node --experimental-strip-types .github/skills/azure-pipelines/azure-pipeline.ts
 | `--build-id <id>` | Build ID to cancel (required) |
 | `--definition <id>` | Pipeline definition ID (default: 111) |
 | `--dry-run` | Print what would be cancelled without executing |
+
+---
+
+## Testing Pipeline Changes
+
+When the user asks to **test changes in an Azure Pipelines build**, follow this workflow:
+
+1. **Queue a new build** on the current branch
+2. **Poll for completion** by periodically checking the build status until it finishes
+
+### Polling for Build Completion
+
+Use a shell loop with `sleep` to poll the build status. The `sleep` command works on all major operating systems:
+
+```bash
+# Queue the build and note the build ID from output (e.g., 123456)
+node .github/skills/azure-pipelines/azure-pipeline.ts queue
+
+# Poll every 60 seconds until complete (works on macOS, Linux, and Windows with Git Bash/WSL)
+# Replace <BUILD_ID> with the actual build ID from the queue command
+while true; do
+  node .github/skills/azure-pipelines/azure-pipeline.ts status --build-id <BUILD_ID> --json 2>/dev/null | grep -q '"status": "completed"' && break
+  sleep 60
+done
+
+# Check final result
+node .github/skills/azure-pipelines/azure-pipeline.ts status --build-id <BUILD_ID>
+```
+
+Alternatively, use the built-in `--watch` flag which handles polling automatically:
+
+```bash
+node .github/skills/azure-pipelines/azure-pipeline.ts queue
+# Use the build ID returned by the queue command
+node .github/skills/azure-pipelines/azure-pipeline.ts status --build-id <BUILD_ID> --watch
+```
+
+> **Note**: The `--watch` flag polls every 30 seconds by default. Use `--watch 60` for a 60-second interval to reduce API calls.
 
 ---
 
@@ -159,45 +197,45 @@ git add -A && git commit -m "test: pipeline changes"
 git push origin HEAD
 
 # Check for any previous builds on this branch and cancel if needed
-node --experimental-strip-types .github/skills/azure-pipelines/azure-pipeline.ts status
-node --experimental-strip-types .github/skills/azure-pipelines/azure-pipeline.ts cancel --build-id <id>  # if there's an active build
+node .github/skills/azure-pipelines/azure-pipeline.ts status
+node .github/skills/azure-pipelines/azure-pipeline.ts cancel --build-id <id>  # if there's an active build
 
 # Queue and watch the new build
-node --experimental-strip-types .github/skills/azure-pipelines/azure-pipeline.ts queue
-node --experimental-strip-types .github/skills/azure-pipelines/azure-pipeline.ts status --watch
+node .github/skills/azure-pipelines/azure-pipeline.ts queue
+node .github/skills/azure-pipelines/azure-pipeline.ts status --watch
 ```
 
 ### 2. Investigate a Build
 
 ```bash
 # Get overview of a build (shows stages, artifacts, and log IDs)
-node --experimental-strip-types .github/skills/azure-pipelines/azure-pipeline.ts status --build-id 123456
+node .github/skills/azure-pipelines/azure-pipeline.ts status --build-id 123456
 
 # Download a specific log for deeper inspection
-node --experimental-strip-types .github/skills/azure-pipelines/azure-pipeline.ts status --build-id 123456 --download-log 5
+node .github/skills/azure-pipelines/azure-pipeline.ts status --build-id 123456 --download-log 5
 
 # Download an artifact
-node --experimental-strip-types .github/skills/azure-pipelines/azure-pipeline.ts status --build-id 123456 --download-artifact unsigned_vscode_cli_win32_x64_cli
+node .github/skills/azure-pipelines/azure-pipeline.ts status --build-id 123456 --download-artifact unsigned_vscode_cli_win32_x64_cli
 ```
 
 ### 3. Test with Modified Variables
 
 ```bash
 # Skip expensive stages during validation
-node --experimental-strip-types .github/skills/azure-pipelines/azure-pipeline.ts queue --variables "VSCODE_BUILD_SKIP_INTEGRATION_TESTS=true"
+node .github/skills/azure-pipelines/azure-pipeline.ts queue --variables "VSCODE_BUILD_SKIP_INTEGRATION_TESTS=true"
 ```
 
 ### 4. Cancel a Running Build
 
 ```bash
 # First, find the build ID
-node --experimental-strip-types .github/skills/azure-pipelines/azure-pipeline.ts status
+node .github/skills/azure-pipelines/azure-pipeline.ts status
 
 # Cancel a specific build by ID
-node --experimental-strip-types .github/skills/azure-pipelines/azure-pipeline.ts cancel --build-id 123456
+node .github/skills/azure-pipelines/azure-pipeline.ts cancel --build-id 123456
 
 # Dry run to see what would be cancelled
-node --experimental-strip-types .github/skills/azure-pipelines/azure-pipeline.ts cancel --build-id 123456 --dry-run
+node .github/skills/azure-pipelines/azure-pipeline.ts cancel --build-id 123456 --dry-run
 ```
 
 ### 5. Iterate on Pipeline Changes
@@ -210,12 +248,12 @@ git add -A && git commit --amend --no-edit
 git push --force-with-lease origin HEAD
 
 # Find the outdated build ID and cancel it
-node --experimental-strip-types .github/skills/azure-pipelines/azure-pipeline.ts status
-node --experimental-strip-types .github/skills/azure-pipelines/azure-pipeline.ts cancel --build-id <id>
+node .github/skills/azure-pipelines/azure-pipeline.ts status
+node .github/skills/azure-pipelines/azure-pipeline.ts cancel --build-id <id>
 
 # Queue a fresh build and monitor
-node --experimental-strip-types .github/skills/azure-pipelines/azure-pipeline.ts queue
-node --experimental-strip-types .github/skills/azure-pipelines/azure-pipeline.ts status --watch
+node .github/skills/azure-pipelines/azure-pipeline.ts queue
+node .github/skills/azure-pipelines/azure-pipeline.ts status --watch
 ```
 
 ---
