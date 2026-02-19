@@ -6,13 +6,14 @@
 import { Disposable, DisposableStore } from '../../../base/common/lifecycle.js';
 import { ChatDebugLogLevel, IChatDebugService } from '../../contrib/chat/common/chatDebugService.js';
 import { extHostNamedCustomer, IExtHostContext } from '../../services/extensions/common/extHostCustomers.js';
-import { ExtHostChatDebugShape, ExtHostContext, IChatDebugLogEventDto, MainContext, MainThreadChatDebugShape } from '../common/extHost.protocol.js';
+import { ExtHostChatDebugShape, ExtHostContext, IChatDebugLogEventDto, IChatDebugSessionOverviewDto, MainContext, MainThreadChatDebugShape } from '../common/extHost.protocol.js';
 import { Proxied } from '../../services/extensions/common/proxyIdentifier.js';
 
 @extHostNamedCustomer(MainContext.MainThreadChatDebug)
 export class MainThreadChatDebug extends Disposable implements MainThreadChatDebugShape {
 	private readonly _proxy: Proxied<ExtHostChatDebugShape>;
 	private readonly _providerDisposables = new Map<number, DisposableStore>();
+	private readonly _overviewProviderDisposables = new Map<number, DisposableStore>();
 	private readonly _activeSessionIds = new Map<number, string>();
 
 	constructor(
@@ -49,6 +50,23 @@ export class MainThreadChatDebug extends Disposable implements MainThreadChatDeb
 		this._activeSessionIds.delete(handle);
 	}
 
+	$registerChatDebugSessionOverviewProvider(handle: number): void {
+		const disposables = new DisposableStore();
+		this._overviewProviderDisposables.set(handle, disposables);
+
+		disposables.add(this._chatDebugService.registerOverviewProvider({
+			provideChatDebugSessionOverview: async (sessionId, token) => {
+				return this._reviveOverview(await this._proxy.$provideChatDebugSessionOverview(handle, sessionId, token));
+			}
+		}));
+	}
+
+	$unregisterChatDebugSessionOverviewProvider(handle: number): void {
+		const disposables = this._overviewProviderDisposables.get(handle);
+		disposables?.dispose();
+		this._overviewProviderDisposables.delete(handle);
+	}
+
 	$acceptChatDebugLogEvent(handle: number, event: IChatDebugLogEventDto): void {
 		const sessionId = this._activeSessionIds.get(handle) ?? this._chatDebugService.activeSessionId ?? '';
 		this._chatDebugService.log(sessionId, event.name, event.details, event.level as ChatDebugLogLevel, {
@@ -68,6 +86,17 @@ export class MainThreadChatDebug extends Disposable implements MainThreadChatDeb
 			level: dto.level as ChatDebugLogLevel,
 			category: dto.category,
 			parentEventId: dto.parentEventId,
+		};
+	}
+
+	private _reviveOverview(dto: IChatDebugSessionOverviewDto | undefined) {
+		if (!dto) {
+			return undefined;
+		}
+		return {
+			sessionTitle: dto.sessionTitle,
+			metrics: dto.metrics,
+			actions: dto.actions,
 		};
 	}
 }

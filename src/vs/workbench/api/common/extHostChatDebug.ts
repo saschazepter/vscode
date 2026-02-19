@@ -7,7 +7,7 @@ import type * as vscode from 'vscode';
 import { CancellationToken } from '../../../base/common/cancellation.js';
 import { Emitter } from '../../../base/common/event.js';
 import { Disposable, DisposableStore, toDisposable } from '../../../base/common/lifecycle.js';
-import { ExtHostChatDebugShape, IChatDebugLogEventDto, MainContext, MainThreadChatDebugShape } from './extHost.protocol.js';
+import { ExtHostChatDebugShape, IChatDebugLogEventDto, IChatDebugSessionOverviewDto, MainContext, MainThreadChatDebugShape } from './extHost.protocol.js';
 import { IExtHostRpcService } from './extHostRpcService.js';
 
 export class ExtHostChatDebug extends Disposable implements ExtHostChatDebugShape {
@@ -15,7 +15,8 @@ export class ExtHostChatDebug extends Disposable implements ExtHostChatDebugShap
 
 	private readonly _proxy: MainThreadChatDebugShape;
 	private _provider: vscode.ChatDebugLogProvider | undefined;
-	private _providerHandle: number = 0;
+	private _overviewProvider: vscode.ChatDebugSessionOverviewProvider | undefined;
+	private _nextHandle: number = 0;
 	private readonly _activeProgress = new Map<number, DisposableStore>();
 
 	constructor(
@@ -38,13 +39,27 @@ export class ExtHostChatDebug extends Disposable implements ExtHostChatDebugShap
 			throw new Error('A ChatDebugLogProvider is already registered.');
 		}
 		this._provider = provider;
-		const handle = this._providerHandle++;
+		const handle = this._nextHandle++;
 		this._proxy.$registerChatDebugLogProvider(handle);
 
 		return toDisposable(() => {
 			this._provider = undefined;
 			this._cleanupProgress(handle);
 			this._proxy.$unregisterChatDebugLogProvider(handle);
+		});
+	}
+
+	registerChatDebugSessionOverviewProvider(provider: vscode.ChatDebugSessionOverviewProvider): vscode.Disposable {
+		if (this._overviewProvider) {
+			throw new Error('A ChatDebugSessionOverviewProvider is already registered.');
+		}
+		this._overviewProvider = provider;
+		const handle = this._nextHandle++;
+		this._proxy.$registerChatDebugSessionOverviewProvider(handle);
+
+		return toDisposable(() => {
+			this._overviewProvider = undefined;
+			this._proxy.$unregisterChatDebugSessionOverviewProvider(handle);
 		});
 	}
 
@@ -114,6 +129,21 @@ export class ExtHostChatDebug extends Disposable implements ExtHostChatDebugShap
 		}
 		const result = await this._provider.resolveChatDebugLogEvent(eventId, token);
 		return result ?? undefined;
+	}
+
+	async $provideChatDebugSessionOverview(_handle: number, sessionId: string, token: CancellationToken): Promise<IChatDebugSessionOverviewDto | undefined> {
+		if (!this._overviewProvider) {
+			return undefined;
+		}
+		const result = await this._overviewProvider.provideChatDebugSessionOverview(sessionId, token);
+		if (!result) {
+			return undefined;
+		}
+		return {
+			sessionTitle: result.sessionTitle,
+			metrics: result.metrics?.map(m => ({ label: m.label, value: m.value })),
+			actions: result.actions?.map(a => ({ group: a.group, label: a.label, commandId: a.commandId, commandArgs: a.commandArgs })),
+		};
 	}
 
 	override dispose(): void {

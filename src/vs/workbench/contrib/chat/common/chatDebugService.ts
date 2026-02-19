@@ -63,6 +63,33 @@ export interface IChatDebugLogEvent {
 	readonly parentEventId?: string;
 }
 
+/**
+ * A single metric displayed in the session overview.
+ */
+export interface IChatDebugSessionOverviewMetric {
+	readonly label: string;
+	readonly value: string;
+}
+
+/**
+ * An action button displayed in the session overview.
+ */
+export interface IChatDebugSessionOverviewAction {
+	readonly group: string;
+	readonly label: string;
+	readonly commandId?: string;
+	readonly commandArgs?: unknown[];
+}
+
+/**
+ * Overview information for a chat debug session.
+ */
+export interface IChatDebugSessionOverview {
+	readonly sessionTitle?: string;
+	readonly metrics?: IChatDebugSessionOverviewMetric[];
+	readonly actions?: IChatDebugSessionOverviewAction[];
+}
+
 export const IChatDebugService = createDecorator<IChatDebugService>('chatDebugService');
 
 /**
@@ -99,6 +126,15 @@ export interface IChatDebugService extends IDisposable {
 	activeSessionId: string | undefined;
 
 	/**
+	 * Optional hint for which view the editor should show next.
+	 * Set before opening the editor, then consumed and cleared by the editor.
+	 * - 'home': home view
+	 * - 'overview': session overview
+	 * - 'logs': log event table
+	 */
+	activeViewHint: 'home' | 'overview' | 'logs' | undefined;
+
+	/**
 	 * Clear all logged events.
 	 */
 	clear(): void;
@@ -108,6 +144,12 @@ export interface IChatDebugService extends IDisposable {
 	 * This is used by the extension API (ChatDebugLogProvider).
 	 */
 	registerProvider(provider: IChatDebugLogProvider): IDisposable;
+
+	/**
+	 * Register an external provider that supplies session overview information.
+	 * This is used by the extension API (ChatDebugSessionOverviewProvider).
+	 */
+	registerOverviewProvider(provider: IChatDebugSessionOverviewProvider): IDisposable;
 
 	/**
 	 * Invoke all registered providers for a given session ID.
@@ -120,12 +162,24 @@ export interface IChatDebugService extends IDisposable {
 	 * Delegates to the registered provider's resolveChatDebugLogEvent.
 	 */
 	resolveEvent(eventId: string): Promise<string | undefined>;
+
+	/**
+	 * Get overview information for a session from registered overview providers.
+	 */
+	getOverview(sessionId: string): Promise<IChatDebugSessionOverview | undefined>;
 }
 
 /**
- * Provider interface matching the extension API shape.
+ * Provider interface for debug log events.
  */
 export interface IChatDebugLogProvider {
 	provideChatDebugLog(sessionId: string, token: CancellationToken): Promise<IChatDebugLogEvent[] | undefined>;
 	resolveChatDebugLogEvent?(eventId: string, token: CancellationToken): Promise<string | undefined>;
+}
+
+/**
+ * Provider interface for session overview information.
+ */
+export interface IChatDebugSessionOverviewProvider {
+	provideChatDebugSessionOverview(sessionId: string, token: CancellationToken): Promise<IChatDebugSessionOverview | undefined>;
 }

@@ -1384,14 +1384,35 @@ export interface IChatDebugLogEventDto {
 	readonly parentEventId?: string;
 }
 
+export interface IChatDebugSessionOverviewMetricDto {
+	readonly label: string;
+	readonly value: string;
+}
+
+export interface IChatDebugSessionOverviewActionDto {
+	readonly group: string;
+	readonly label: string;
+	readonly commandId?: string;
+	readonly commandArgs?: unknown[];
+}
+
+export interface IChatDebugSessionOverviewDto {
+	readonly sessionTitle?: string;
+	readonly metrics?: IChatDebugSessionOverviewMetricDto[];
+	readonly actions?: IChatDebugSessionOverviewActionDto[];
+}
+
 export interface ExtHostChatDebugShape {
 	$provideChatDebugLog(handle: number, sessionId: string, token: CancellationToken): Promise<IChatDebugLogEventDto[] | undefined>;
 	$resolveChatDebugLogEvent(handle: number, eventId: string, token: CancellationToken): Promise<string | undefined>;
+	$provideChatDebugSessionOverview(handle: number, sessionId: string, token: CancellationToken): Promise<IChatDebugSessionOverviewDto | undefined>;
 }
 
 export interface MainThreadChatDebugShape extends IDisposable {
 	$registerChatDebugLogProvider(handle: number): void;
 	$unregisterChatDebugLogProvider(handle: number): void;
+	$registerChatDebugSessionOverviewProvider(handle: number): void;
+	$unregisterChatDebugSessionOverviewProvider(handle: number): void;
 	$acceptChatDebugLogEvent(handle: number, event: IChatDebugLogEventDto): void;
 }
 

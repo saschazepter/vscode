@@ -1672,6 +1672,10 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 				checkProposedApiEnabled(extension, 'chatDebug');
 				return extHostChatDebug.registerChatDebugLogProvider(provider);
 			},
+			registerChatDebugSessionOverviewProvider(provider: vscode.ChatDebugSessionOverviewProvider): vscode.Disposable {
+				checkProposedApiEnabled(extension, 'chatDebug');
+				return extHostChatDebug.registerChatDebugSessionOverviewProvider(provider);
+			},
 		};
 
 		// namespace: lm

@@ -6,7 +6,7 @@
 import { CancellationTokenSource } from '../../../../base/common/cancellation.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { Disposable, IDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
-import { ChatDebugLogLevel, IChatDebugLogEvent, IChatDebugLogProvider, IChatDebugService } from './chatDebugService.js';
+import { ChatDebugLogLevel, IChatDebugLogEvent, IChatDebugLogProvider, IChatDebugService, IChatDebugSessionOverview, IChatDebugSessionOverviewProvider } from './chatDebugService.js';
 
 export class ChatDebugServiceImpl extends Disposable implements IChatDebugService {
 	declare readonly _serviceBrand: undefined;
@@ -16,9 +16,11 @@ export class ChatDebugServiceImpl extends Disposable implements IChatDebugServic
 	readonly onDidAddEvent: Event<IChatDebugLogEvent> = this._onDidAddEvent.event;
 
 	private readonly _providers = new Set<IChatDebugLogProvider>();
+	private readonly _overviewProviders = new Set<IChatDebugSessionOverviewProvider>();
 	private _currentInvocationCts: CancellationTokenSource | undefined;
 
 	activeSessionId: string | undefined;
+	activeViewHint: 'home' | 'overview' | 'logs' | undefined;
 
 	log(sessionId: string, name: string, details?: string, level: ChatDebugLogLevel = ChatDebugLogLevel.Info, options?: { id?: string; category?: string; parentEventId?: string }): void {
 		const event: IChatDebugLogEvent = {
@@ -56,6 +58,13 @@ export class ChatDebugServiceImpl extends Disposable implements IChatDebugServic
 		return toDisposable(() => {
 			console.log(`[ChatDebugService] provider unregistered, total providers: ${this._providers.size - 1}`);
 			this._providers.delete(provider);
+		});
+	}
+
+	registerOverviewProvider(provider: IChatDebugSessionOverviewProvider): IDisposable {
+		this._overviewProviders.add(provider);
+		return toDisposable(() => {
+			this._overviewProviders.delete(provider);
 		});
 	}
 
@@ -107,6 +116,21 @@ export class ChatDebugServiceImpl extends Disposable implements IChatDebugServic
 					if (resolved !== undefined) {
 						return resolved;
 					}
+				}
+			}
+			return undefined;
+		} finally {
+			cts.dispose();
+		}
+	}
+
+	async getOverview(sessionId: string): Promise<IChatDebugSessionOverview | undefined> {
+		const cts = new CancellationTokenSource();
+		try {
+			for (const provider of this._overviewProviders) {
+				const overview = await provider.provideChatDebugSessionOverview(sessionId, cts.token);
+				if (overview !== undefined) {
+					return overview;
 				}
 			}
 			return undefined;

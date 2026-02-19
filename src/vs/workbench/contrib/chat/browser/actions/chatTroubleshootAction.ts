@@ -19,11 +19,32 @@ import { ChatDebugEditorInput } from '../chatDebugEditorInput.js';
  * Registers the Troubleshoot action for the chat context menu.
  */
 export function registerChatTroubleshootAction() {
+	registerAction2(class OpenDebugViewAction extends Action2 {
+		constructor() {
+			super({
+				id: 'workbench.action.chat.openDebugView',
+				title: localize2('chat.openDebugView.label', "Open Debug View"),
+				f1: true,
+				category: CHAT_CATEGORY,
+			});
+		}
+
+		async run(accessor: ServicesAccessor): Promise<void> {
+			const editorService = accessor.get(IEditorService);
+			const chatDebugService = accessor.get(IChatDebugService);
+
+			// Clear active session so the editor shows the home view
+			chatDebugService.activeSessionId = undefined;
+
+			await editorService.openEditor(ChatDebugEditorInput.instance, { pinned: true });
+		}
+	});
+
 	registerAction2(class TroubleshootAction extends Action2 {
 		constructor() {
 			super({
 				id: 'workbench.action.chat.troubleshoot',
-				title: localize2('chat.troubleshoot.label', "Troubleshoot"),
+				title: localize2('chat.troubleshoot.label', "View Logs"),
 				f1: false,
 				category: CHAT_CATEGORY,
 				menu: [{
@@ -58,6 +79,7 @@ export function registerChatTroubleshootAction() {
 			const sessionId = sessionResource ? chatSessionResourceToId(sessionResource) : '';
 			console.log('[Troubleshoot] sessionId:', sessionId);
 			chatDebugService.activeSessionId = sessionId;
+			chatDebugService.activeViewHint = 'logs';
 
 			// Invoke extension providers to fetch events for this session
 			await chatDebugService.invokeProviders(sessionId);
