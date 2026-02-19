@@ -60,6 +60,7 @@ import { IPromptsService } from '../common/promptSyntax/service/promptsService.j
 import { PromptsService } from '../common/promptSyntax/service/promptsServiceImpl.js';
 import { LanguageModelToolsExtensionPointHandler } from '../common/tools/languageModelToolsContribution.js';
 import { BuiltinToolsContribution } from '../common/tools/builtinTools/tools.js';
+import { RenameToolContribution } from './tools/renameTool.js';
 import { UsagesToolContribution } from './tools/usagesTool.js';
 import { IVoiceChatService, VoiceChatService } from '../common/voiceChatService.js';
 import { registerChatAccessibilityActions } from './actions/chatAccessibilityActions.js';
@@ -73,6 +74,7 @@ import { registerChatDeveloperActions } from './actions/chatDeveloperActions.js'
 import { registerChatExecuteActions } from './actions/chatExecuteActions.js';
 import { registerChatFileTreeActions } from './actions/chatFileTreeActions.js';
 import { ChatGettingStartedContribution } from './actions/chatGettingStarted.js';
+import { registerChatForkActions } from './actions/chatForkActions.js';
 import { registerChatExportActions } from './actions/chatImportExport.js';
 import { registerLanguageModelActions } from './actions/chatLanguageModelActions.js';
 import { registerMoveActions } from './actions/chatMoveActions.js';
@@ -199,11 +201,10 @@ configurationRegistry.registerConfiguration({
 		},
 		[ChatConfiguration.AgentsControlClickBehavior]: {
 			type: 'string',
-			enum: [AgentsControlClickBehavior.Default, AgentsControlClickBehavior.Cycle, AgentsControlClickBehavior.Focus],
+			enum: [AgentsControlClickBehavior.Default, AgentsControlClickBehavior.Cycle],
 			enumDescriptions: [
 				nls.localize('chat.agentsControl.clickBehavior.default', "Clicking chat icon toggles chat visibility."),
 				nls.localize('chat.agentsControl.clickBehavior.cycle', "Clicking chat icon cycles through: show chat, maximize chat, hide chat. This requires chat to be contained in the secondary sidebar."),
-				nls.localize('chat.agentsControl.clickBehavior.focus', "Clicking chat icon focuses the chat view and maximizes it if located in the secondary sidebar.")
 			],
 			markdownDescription: nls.localize('chat.agentsControl.clickBehavior', "Controls the behavior when clicking on the chat icon in the command center."),
 			default: product.quality !== 'stable' ? AgentsControlClickBehavior.Cycle : AgentsControlClickBehavior.Default,
@@ -279,7 +280,8 @@ configurationRegistry.registerConfiguration({
 		},
 		'chat.tips.enabled': {
 			type: 'boolean',
-			description: nls.localize('chat.tips.enabled', "Controls whether tips are shown above user messages in chat. This is an experimental feature."),
+			scope: ConfigurationScope.APPLICATION,
+			description: nls.localize('chat.tips.enabled', "Controls whether tips are shown above user messages in chat. New tips are added frequently, so this is a helpful way to stay up to date with the latest features."),
 			default: false,
 			tags: ['experimental'],
 			experiment: {
@@ -650,12 +652,6 @@ configurationRegistry.registerConfiguration({
 			enumItemLabels: ExploreAgentDefaultModel.modelLabels,
 			markdownEnumDescriptions: ExploreAgentDefaultModel.modelDescriptions
 		},
-		[ChatConfiguration.RequestQueueingEnabled]: {
-			type: 'boolean',
-			description: nls.localize('chat.requestQueuing.enabled.description', "When enabled, allows queuing additional messages while a request is in progress and steering the current request with a new message."),
-			default: true,
-			tags: ['experimental'],
-		},
 		[ChatConfiguration.RequestQueueingDefaultAction]: {
 			type: 'string',
 			enum: ['queue', 'steer'],
@@ -669,7 +665,7 @@ configurationRegistry.registerConfiguration({
 		[ChatConfiguration.EditModeHidden]: {
 			type: 'boolean',
 			description: nls.localize('chat.editMode.hidden', "When enabled, hides the Edit mode from the chat mode picker."),
-			default: false,
+			default: true,
 			tags: ['experimental'],
 			experiment: {
 				mode: 'auto'
@@ -695,15 +691,10 @@ configurationRegistry.registerConfiguration({
 			default: true,
 			tags: ['experimental'],
 		},
-		['chat.statusWidget.sku']: {
-			type: 'string',
-			enum: ['free', 'anonymous'],
-			enumDescriptions: [
-				nls.localize('chat.statusWidget.sku.free', "Show status widget for free tier users."),
-				nls.localize('chat.statusWidget.sku.anonymous', "Show status widget for anonymous users.")
-			],
-			description: nls.localize('chat.statusWidget.enabled.description', "Controls which user type should see the status widget in new chat sessions when quota is exceeded."),
-			default: undefined,
+		['chat.statusWidget.anonymous']: {
+			type: 'boolean',
+			description: nls.localize('chat.statusWidget.anonymous.description', "Controls whether anonymous users see the status widget in new chat sessions when rate limited."),
+			default: false,
 			tags: ['experimental', 'advanced'],
 			experiment: {
 				mode: 'auto'
@@ -1098,6 +1089,48 @@ configurationRegistry.registerConfiguration({
 			markdownDescription: nls.localize('chat.agent.thinking.terminalTools', "When enabled, terminal tool calls are displayed inside the thinking dropdown with a simplified view."),
 			tags: ['experimental'],
 		},
+		'chat.tools.usagesTool.enabled': {
+			type: 'boolean',
+			default: true,
+			markdownDescription: nls.localize('chat.tools.usagesTool.enabled', "Controls whether the usages tool is available for finding references, definitions, and implementations of code symbols."),
+			tags: ['preview'],
+			experiment: {
+				mode: 'auto'
+			}
+		},
+		'chat.tools.renameTool.enabled': {
+			type: 'boolean',
+			default: true,
+			markdownDescription: nls.localize('chat.tools.renameTool.enabled', "Controls whether the rename tool is available for renaming code symbols across the workspace."),
+			tags: ['preview'],
+			experiment: {
+				mode: 'auto'
+			}
+		},
+		[ChatConfiguration.ThinkingPhrases]: {
+			type: 'object',
+			default: {
+				mode: 'append',
+				phrases: []
+			},
+			properties: {
+				mode: {
+					type: 'string',
+					enum: ['replace', 'append'],
+					default: 'append',
+					description: nls.localize('chat.agent.thinking.phrases.mode', "'replace' replaces all default phrases entirely; 'append' adds your phrases to all default categories.")
+				},
+				phrases: {
+					type: 'array',
+					items: { type: 'string' },
+					default: [],
+					description: nls.localize('chat.agent.thinking.phrases.phrases', "Custom loading messages to show during thinking, terminal, and tool operations.")
+				}
+			},
+			additionalProperties: false,
+			markdownDescription: nls.localize('chat.agent.thinking.phrases', "Customize the loading messages shown during agent operations. Use `\"mode\": \"replace\"` to use only your phrases, or `\"mode\": \"append\"` to add them to the defaults."),
+			tags: ['experimental'],
+		},
 		[ChatConfiguration.AutoExpandToolFailures]: {
 			type: 'boolean',
 			default: true,
@@ -1135,7 +1168,7 @@ configurationRegistry.registerConfiguration({
 		[ChatConfiguration.ExitAfterDelegation]: {
 			type: 'boolean',
 			description: nls.localize('chat.exitAfterDelegation', "Controls whether the chat panel automatically exits after delegating a request to another session."),
-			default: true,
+			default: false,
 			tags: ['preview'],
 		},
 		'chat.extensionUnification.enabled': {
@@ -1450,6 +1483,7 @@ registerWorkbenchContribution2(ChatTeardownContribution.ID, ChatTeardownContribu
 registerWorkbenchContribution2(ChatStatusBarEntry.ID, ChatStatusBarEntry, WorkbenchPhase.BlockRestore);
 registerWorkbenchContribution2(BuiltinToolsContribution.ID, BuiltinToolsContribution, WorkbenchPhase.Eventually);
 registerWorkbenchContribution2(UsagesToolContribution.ID, UsagesToolContribution, WorkbenchPhase.BlockRestore);
+registerWorkbenchContribution2(RenameToolContribution.ID, RenameToolContribution, WorkbenchPhase.BlockRestore);
 registerWorkbenchContribution2(ChatAgentSettingContribution.ID, ChatAgentSettingContribution, WorkbenchPhase.AfterRestored);
 registerWorkbenchContribution2(ChatAgentActionsContribution.ID, ChatAgentActionsContribution, WorkbenchPhase.Eventually);
 registerWorkbenchContribution2(ToolReferenceNamesContribution.ID, ToolReferenceNamesContribution, WorkbenchPhase.AfterRestored);
@@ -1482,6 +1516,7 @@ registerChatExecuteActions();
 registerChatQueueActions();
 registerQuickChatActions();
 registerChatExportActions();
+registerChatForkActions();
 registerMoveActions();
 registerNewChatActions();
 registerChatContextActions();

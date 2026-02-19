@@ -21,6 +21,8 @@ import { CDPBrowserProxy } from '../common/cdp/proxy.js';
 export const IBrowserViewMainService = createDecorator<IBrowserViewMainService>('browserViewMainService');
 
 export interface IBrowserViewMainService extends IBrowserViewService, ICDPBrowserTarget {
+	readonly _serviceBrand: undefined;
+
 	tryGetBrowserView(id: string): BrowserView | undefined;
 }
 

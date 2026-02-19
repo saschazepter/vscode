@@ -3,8 +3,6 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-/* eslint-disable local/code-no-native-private */
-
 import { URI, UriComponents } from '../../../base/common/uri.js';
 import { Event, Emitter } from '../../../base/common/event.js';
 import { debounce } from '../../../base/common/decorators.js';
