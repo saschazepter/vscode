@@ -868,7 +868,7 @@ export class ChatService extends Disposable implements IChatService {
 
 	private _sendRequestAsync(model: ChatModel, sessionResource: URI, parsedRequest: IParsedChatRequest, attempt: number, enableCommandDetection: boolean, defaultAgent: IChatAgentData, location: ChatAgentLocation, options?: IChatSendRequestOptions): IChatSendRequestResponseState {
 		const followupsCancelToken = this.refreshFollowupsCancellationToken(sessionResource);
-		let request: ChatRequestModel;
+		let request: ChatRequestModel | undefined;
 		const agentPart = parsedRequest.parts.find((r): r is ChatRequestAgentPart => r instanceof ChatRequestAgentPart);
 		const agentSlashCommandPart = parsedRequest.parts.find((r): r is ChatRequestAgentSubcommandPart => r instanceof ChatRequestAgentSubcommandPart);
 		const commandPart = parsedRequest.parts.find((r): r is ChatRequestSlashCommandPart => r instanceof ChatRequestSlashCommandPart);
@@ -916,7 +916,9 @@ export class ChatService extends Disposable implements IChatService {
 						this.trace('sendRequest', `Provider returned progress: ${JSON.stringify(progressItem)}`);
 					}
 
-					model.acceptResponseProgress(request, progressItem, !isLast);
+					if (request) {
+						model.acceptResponseProgress(request, progressItem, !isLast);
+					}
 				}
 				completeResponseCreated();
 			};
@@ -1016,7 +1018,7 @@ export class ChatService extends Disposable implements IChatService {
 								return;
 							}
 
-							if (tools) {
+							if (tools && request) {
 								this.chatAgentService.setRequestTools(agent.id, request.id, tools);
 								// in case the request has not been sent out yet:
 								agentRequest.userSelectedTools = tools;
@@ -1047,7 +1049,7 @@ export class ChatService extends Disposable implements IChatService {
 						const result = await this.chatAgentService.detectAgentOrCommand(chatAgentRequest, defaultAgentHistory, { location }, token);
 						if (result && this.chatAgentService.getAgent(result.agent.id)?.locations?.includes(location)) {
 							// Update the response in the ChatModel to reflect the detected agent and command
-							request.response?.setAgent(result.agent, result.command);
+							request?.response?.setAgent(result.agent, result.command);
 							detectedAgent = result.agent;
 							detectedCommand = result.command;
 						}
@@ -1065,7 +1067,7 @@ export class ChatService extends Disposable implements IChatService {
 					const pendingRequest = this._pendingRequests.get(sessionResource);
 					if (pendingRequest) {
 						store.add(autorun(reader => {
-							if (pendingRequest.yieldRequested.read(reader)) {
+							if (pendingRequest.yieldRequested.read(reader) && request) {
 								this.chatAgentService.setYieldRequested(agent.id, request.id);
 							}
 						}));
@@ -1120,7 +1122,9 @@ export class ChatService extends Disposable implements IChatService {
 					throw new Error(`Cannot handle request`);
 				}
 
-				if (token.isCancellationRequested && !rawResult) {
+				if ((token.isCancellationRequested && !rawResult)) {
+					return;
+				} else if (!request) {
 					return;
 				} else {
 					if (!rawResult) {
@@ -1154,7 +1158,7 @@ export class ChatService extends Disposable implements IChatService {
 					request.response?.complete();
 					if (agentOrCommandFollowups) {
 						agentOrCommandFollowups.then(followups => {
-							model.setFollowups(request, followups);
+							model.setFollowups(request!, followups);
 							const commandForTelemetry = agentSlashCommandPart ? agentSlashCommandPart.command.name : commandPart?.slashCommand.command;
 							this._chatServiceTelemetry.retrievedFollowups(agentPart?.agent.id ?? '', commandForTelemetry, followups?.length ?? 0);
 						});
@@ -1162,15 +1166,15 @@ export class ChatService extends Disposable implements IChatService {
 				}
 			} catch (err) {
 				this.logService.error(`Error while handling chat request: ${toErrorMessage(err, true)}`);
-				requestTelemetry.complete({
-					timeToFirstProgress: undefined,
-					totalTime: undefined,
-					result: 'error',
-					requestType,
-					detectedAgent,
-					request,
-				});
 				if (request) {
+					requestTelemetry.complete({
+						timeToFirstProgress: undefined,
+						totalTime: undefined,
+						result: 'error',
+						requestType,
+						detectedAgent,
+						request,
+					});
 					const rawResult: IChatAgentResult = { errorDetails: { message: err.message } };
 					model.setResponse(request, rawResult);
 					completeResponseCreated();
