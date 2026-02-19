@@ -22,7 +22,6 @@ import { TerminalChatAgentToolsSettingId } from './terminalChatAgentToolsConfigu
 import { IRemoteAgentEnvironment } from '../../../../../platform/remote/common/remoteAgentEnvironment.js';
 import { ITrustedDomainService } from '../../../url/common/trustedDomainService.js';
 
-
 export const ITerminalSandboxService = createDecorator<ITerminalSandboxService>('terminalSandboxService');
 
 export interface ITerminalSandboxService {
