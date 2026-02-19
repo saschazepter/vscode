@@ -718,7 +718,9 @@ export class BrowserEditor extends EditorPane {
 				name: displayName,
 				fullName: displayName,
 				value: value,
-				modelDescription: 'Structured browser element context with HTML path, attributes, and computed styles.',
+				modelDescription: attachCss
+					? 'Structured browser element context with HTML path, attributes, and computed styles.'
+					: 'Structured browser element context with HTML path and attributes.',
 				kind: 'element',
 				icon: ThemeIcon.fromId(Codicon.layout.id),
 				ancestors: elementData.ancestors,
