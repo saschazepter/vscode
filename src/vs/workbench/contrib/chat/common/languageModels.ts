@@ -409,8 +409,8 @@ export interface IPaidModelControlEntry {
 }
 
 export interface IModelsControlManifest {
-	readonly free: IFreeModelControlEntry[];
-	readonly paid: IPaidModelControlEntry[];
+	readonly free: IStringDictionary<IFreeModelControlEntry>;
+	readonly paid: IStringDictionary<IPaidModelControlEntry>;
 }
 
 const languageModelChatProviderType = {
@@ -541,7 +541,7 @@ export class LanguageModelsService implements ILanguageModelsService {
 	private readonly _onDidChangeModelsControlManifest = this._store.add(new Emitter<IModelsControlManifest>());
 	readonly onDidChangeModelsControlManifest = this._onDidChangeModelsControlManifest.event;
 
-	private _modelsControlManifest: IModelsControlManifest = { free: [], paid: [] };
+	private _modelsControlManifest: IModelsControlManifest = { free: {}, paid: {} };
 
 	private _chatControlUrl: string | undefined;
 	private _chatControlDisposed = false;
@@ -1415,18 +1415,18 @@ export class LanguageModelsService implements ILanguageModelsService {
 	}
 
 	private _setModelsControlManifest(response: IChatControlResponse['models']): void {
-		const free: IFreeModelControlEntry[] = [];
-		const paid: IPaidModelControlEntry[] = [];
+		const free: IStringDictionary<IFreeModelControlEntry> = {};
+		const paid: IStringDictionary<IPaidModelControlEntry> = {};
 
 		if (response?.free) {
-			for (const [, entry] of Object.entries(response.free)) {
-				free.push({ id: entry.id, label: entry.label });
+			for (const [key, entry] of Object.entries(response.free)) {
+				free[key] = { id: entry.id, label: entry.label };
 			}
 		}
 
 		if (response?.paid) {
-			for (const [, entry] of Object.entries(response.paid)) {
-				paid.push({ id: entry.id, label: entry.label, featured: entry.featured, minVSCodeVersion: entry.minVSCodeVersion });
+			for (const [key, entry] of Object.entries(response.paid)) {
+				paid[key] = { id: entry.id, label: entry.label, featured: entry.featured, minVSCodeVersion: entry.minVSCodeVersion };
 			}
 		}
 

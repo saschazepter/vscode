@@ -454,7 +454,7 @@ export class ModelPickerWidget extends Disposable {
 
 		const isPro = isProUser(this._entitlementService.entitlement);
 		const manifest = this._languageModelsService.getModelsControlManifest();
-		const controlModelsForTier = isPro ? manifest.paid : manifest.free;
+		const controlModelsForTier = isPro ? Object.values(manifest.paid) : Object.values(manifest.free);
 
 		const items = buildModelPickerItems(
 			this._delegate.getModels(),

@@ -95,7 +95,7 @@ export class NullLanguageModelsService implements ILanguageModelsService {
 	addToRecentlyUsedList(): void { }
 
 	getModelsControlManifest(): IModelsControlManifest {
-		return { free: [], paid: [] };
+		return { free: {}, paid: {} };
 	}
 
 	restrictedChatParticipants = observableValue('restrictedChatParticipants', Object.create(null));
