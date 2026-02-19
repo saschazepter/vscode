@@ -28,9 +28,7 @@ async function main(buildDir?: string) {
 	const filesToSkip = [
 		'**/CodeResources',
 		'**/Credits.rtf',
-		'**/policies/{*.mobileconfig,**/*.plist}',
-		'**/telemetry-core.json',
-		'**/telemetry-extensions.json',
+		'**/policies/{*.mobileconfig,**/*.plist}'
 	];
 
 	await makeUniversalApp({

@@ -15,5 +15,6 @@ node $BUILD_SOURCESDIRECTORY/node_modules/.bin/vscode-telemetry-extractor --conf
 mkdir -p $BUILD_SOURCESDIRECTORY/.build/telemetry
 mv declarations-resolved.json $BUILD_SOURCESDIRECTORY/.build/telemetry/telemetry-core.json
 mv config-resolved.json $BUILD_SOURCESDIRECTORY/.build/telemetry/telemetry-extensions.json
+node $BUILD_SOURCESDIRECTORY/build/azure-pipelines/common/sort-telemetry.ts $BUILD_SOURCESDIRECTORY/.build/telemetry/telemetry-core.json $BUILD_SOURCESDIRECTORY/.build/telemetry/telemetry-extensions.json
 cd ..
 rm -rf extraction

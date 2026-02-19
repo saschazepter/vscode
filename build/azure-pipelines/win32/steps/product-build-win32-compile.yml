@@ -154,6 +154,7 @@ steps:
       } else {
         Write-Host "##vso[task.logissue type=warning]config-resolved.json not found"
       }
+      exec { node "$env:BUILD_SOURCESDIRECTORY/build/azure-pipelines/common/sort-telemetry.ts" "$env:BUILD_SOURCESDIRECTORY/.build/telemetry/telemetry-core.json" "$env:BUILD_SOURCESDIRECTORY/.build/telemetry/telemetry-extensions.json" }
       Pop-Location
       Remove-Item -Recurse -Force $extraction
     displayName: Generate lists of telemetry events
