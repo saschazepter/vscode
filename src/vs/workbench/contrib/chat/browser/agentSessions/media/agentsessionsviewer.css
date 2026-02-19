@@ -337,13 +337,13 @@
 }
 
 .agent-session-icon.needs-input-animation-blink {
-	animation: needs-input-blink 33s ease-in-out infinite;
+	animation: needs-input-blink 16s ease-in-out infinite;
 }
 
 .agent-session-icon.needs-input-animation-bounce {
-	animation: needs-input-bounce 33s linear infinite;
+	animation: needs-input-bounce 16s linear infinite;
 }
 
 .agent-session-icon.needs-input-animation-pulse {
-	animation: needs-input-pulse 33s ease-in-out infinite;
+	animation: needs-input-pulse 16s ease-in-out infinite;
 }
