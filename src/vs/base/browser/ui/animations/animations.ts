@@ -6,6 +6,13 @@
 import { ThemeIcon } from '../../../common/themables.js';
 import * as dom from '../../dom.js';
 
+export const enum ClickAnimation {
+	Confetti = 1,
+	FloatingIcons = 2,
+	PulseWave = 3,
+	RadiantLines = 4,
+}
+
 const confettiColors = [
 	'#007acc',
 	'#005a9e',
@@ -425,4 +432,29 @@ export function triggerRadiantLinesAnimation(element: HTMLElement) {
 	}
 
 	cleanupOverlay(2000);
+}
+
+/**
+ * Triggers the specified click animation on the element.
+ * @param element The target element to animate.
+ * @param animation The type of click animation to trigger.
+ * @param icon Optional icon for animations that require it (e.g., FloatingIcons).
+ */
+export function triggerClickAnimation(element: HTMLElement, animation: ClickAnimation, icon?: ThemeIcon) {
+	switch (animation) {
+		case ClickAnimation.Confetti:
+			triggerConfettiAnimation(element);
+			break;
+		case ClickAnimation.FloatingIcons:
+			if (icon) {
+				triggerFloatingIconsAnimation(element, icon);
+			}
+			break;
+		case ClickAnimation.PulseWave:
+			triggerPulseWaveAnimation(element);
+			break;
+		case ClickAnimation.RadiantLines:
+			triggerRadiantLinesAnimation(element);
+			break;
+	}
 }

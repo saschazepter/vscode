@@ -286,17 +286,17 @@ configurationRegistry.registerConfiguration({
 				mode: 'auto'
 			}
 		},
-		'chat.thumbsUpAnimation': {
+		'chat.upvoteAnimation': {
 			type: 'string',
 			enum: ['off', 'confetti', 'floatingThumbs', 'pulseWave', 'radiantLines'],
 			enumDescriptions: [
-				nls.localize('chat.thumbsUpAnimation.off', "No animation is shown."),
-				nls.localize('chat.thumbsUpAnimation.confetti', "Shows a confetti burst animation around the thumbs up button."),
-				nls.localize('chat.thumbsUpAnimation.floatingThumbs', "Shows floating thumbs up icons rising from the button."),
-				nls.localize('chat.thumbsUpAnimation.pulseWave', "Shows expanding pulse rings from the button."),
-				nls.localize('chat.thumbsUpAnimation.radiantLines', "Shows radiant lines emanating from the button."),
+				nls.localize('chat.upvoteAnimation.off', "No animation is shown."),
+				nls.localize('chat.upvoteAnimation.confetti', "Shows a confetti burst animation around the thumbs up button."),
+				nls.localize('chat.upvoteAnimation.floatingThumbs', "Shows floating thumbs up icons rising from the button."),
+				nls.localize('chat.upvoteAnimation.pulseWave', "Shows expanding pulse rings from the button."),
+				nls.localize('chat.upvoteAnimation.radiantLines', "Shows radiant lines emanating from the button."),
 			],
-			description: nls.localize('chat.thumbsUpAnimation', "Controls whether an animation is shown when clicking the thumbs up button on a chat response."),
+			description: nls.localize('chat.upvoteAnimation', "Controls whether an animation is shown when clicking the thumbs up button on a chat response."),
 			default: 'off',
 		},
 		'chat.experimental.detectParticipant.enabled': {
@@ -1187,7 +1187,14 @@ Registry.as<IConfigurationMigrationRegistry>(Extensions.ConfigurationMigration).
 		key: 'chat.confettiOnThumbsUp',
 		migrateFn: (value, _accessor) => ([
 			['chat.confettiOnThumbsUp', { value: undefined }],
-			['chat.thumbsUpAnimation', { value }]
+			['chat.upvoteAnimation', { value }]
+		])
+	},
+	{
+		key: 'chat.thumbsUpAnimation',
+		migrateFn: (value, _accessor) => ([
+			['chat.thumbsUpAnimation', { value: undefined }],
+			['chat.upvoteAnimation', { value }]
 		])
 	},
 	{
