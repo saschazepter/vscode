@@ -172,7 +172,7 @@ export class AskQuestionsTool extends Disposable implements IToolImpl {
 		this.sendTelemetry(invocation.chatRequestId, questions.length, answeredCount, skippedCount, freeTextCount, recommendedAvailableCount, recommendedSelectedCount, stopWatch.elapsed());
 
 		const toolResultJson = JSON.stringify(converted);
-		this.logService.trace(`[AskQuestionsTool] Returning tool result: ${toolResultJson}`);
+		this.logService.trace(`[AskQuestionsTool] Returning tool result with metrics: questions=${questions.length}, answered=${answeredCount}, skipped=${skippedCount}, freeText=${freeTextCount}, recommendedAvailable=${recommendedAvailableCount}, recommendedSelected=${recommendedSelectedCount}`);
 		return {
 			content: [{ kind: 'text', value: toolResultJson }]
 		};
