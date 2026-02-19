@@ -164,7 +164,12 @@ function buildModelPickerItems(
 	if (selectedModelId && selectedModelId !== autoModel?.identifier) {
 		const selectedModel = allModelsMap.get(selectedModelId);
 		if (selectedModel && !placed.has(selectedModel.identifier)) {
-			promotedModels.push(selectedModel);
+			const entry = controlModels[selectedModel.metadata.id];
+			if (entry?.minVSCodeVersion && !isVersionAtLeast(currentVSCodeVersion, entry.minVSCodeVersion)) {
+				unavailableModels.push({ entry, reason: 'update' });
+			} else {
+				promotedModels.push(selectedModel);
+			}
 			placed.add(selectedModel.identifier);
 			placed.add(selectedModel.metadata.id);
 		}
