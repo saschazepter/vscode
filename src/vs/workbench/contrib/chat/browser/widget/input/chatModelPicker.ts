@@ -6,6 +6,7 @@
 import * as dom from '../../../../../../base/browser/dom.js';
 import { StandardKeyboardEvent } from '../../../../../../base/browser/keyboardEvent.js';
 import { renderIcon, renderLabelWithIcons } from '../../../../../../base/browser/ui/iconLabel/iconLabels.js';
+import { IStringDictionary } from '../../../../../../base/common/collections.js';
 import { Codicon } from '../../../../../../base/common/codicons.js';
 import { Emitter, Event } from '../../../../../../base/common/event.js';
 import { MarkdownString } from '../../../../../../base/common/htmlContent.js';
@@ -120,7 +121,7 @@ function buildModelPickerItems(
 	models: ILanguageModelChatMetadataAndIdentifier[],
 	selectedModelId: string | undefined,
 	recentModelIds: string[],
-	controlModels: readonly IModelControlEntry[],
+	controlModels: IStringDictionary<IModelControlEntry>,
 	isProUser: boolean,
 	currentVSCodeVersion: string,
 	updateStateType: StateType,
@@ -170,15 +171,11 @@ function buildModelPickerItems(
 	}
 
 	// Add recently used
-	const controlModelsMap = new Map<string, IModelControlEntry>();
-	for (const entry of controlModels) {
-		controlModelsMap.set(entry.id, entry);
-	}
 	for (const id of recentModelIds) {
 		const model = allModelsMap.get(id) ?? modelsByMetadataId.get(id);
 		if (model && !placed.has(model.identifier)) {
 			// Check if the model needs a version update
-			const entry = controlModelsMap.get(model.metadata.id);
+			const entry = controlModels[model.metadata.id];
 			if (entry?.minVSCodeVersion && !isVersionAtLeast(currentVSCodeVersion, entry.minVSCodeVersion)) {
 				unavailableModels.push({ entry, reason: 'update' });
 			} else {
@@ -188,7 +185,7 @@ function buildModelPickerItems(
 			placed.add(model.metadata.id);
 		} else if (!model && !placed.has(id)) {
 			// Model not available - check if it's in the control manifest
-			const entry = controlModelsMap.get(id);
+			const entry = controlModels[id];
 			if (entry) {
 				placed.add(id);
 				if (!isProUser) {
@@ -203,7 +200,7 @@ function buildModelPickerItems(
 	}
 
 	// Add featured control manifest models - available ones become promoted, unavailable ones become disabled entries
-	for (const entry of controlModels) {
+	for (const entry of Object.values(controlModels)) {
 		if (!entry.featured) {
 			continue;
 		}
@@ -327,7 +324,7 @@ function buildModelPickerItems(
 			isSectionToggle: true,
 		});
 		for (const model of otherModels) {
-			const entry = controlModelsMap.get(model.metadata.id) ?? controlModelsMap.get(model.identifier);
+			const entry = controlModels[model.metadata.id] ?? controlModels[model.identifier];
 			if (entry?.minVSCodeVersion && !isVersionAtLeast(currentVSCodeVersion, entry.minVSCodeVersion)) {
 				items.push({
 					item: {
@@ -495,7 +492,7 @@ export class ModelPickerWidget extends Disposable {
 
 		const isPro = isProUser(this._entitlementService.entitlement);
 		const manifest = this._languageModelsService.getModelsControlManifest();
-		const controlModelsForTier = isPro ? Object.values(manifest.paid) : Object.values(manifest.free);
+		const controlModelsForTier = isPro ? manifest.paid : manifest.free;
 
 		const items = buildModelPickerItems(
 			this._delegate.getModels(),
