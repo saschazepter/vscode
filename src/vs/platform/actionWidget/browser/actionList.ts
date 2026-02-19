@@ -499,7 +499,23 @@ export class ActionList<T> extends Disposable {
 		this._applyFilter();
 
 		if (this._list.length) {
-			this.focusNext();
+			this._focusCheckedOrFirst();
+		}
+
+		// When the list has focus and user types a printable character,
+		// forward it to the filter input so search begins automatically.
+		if (this._filterInput) {
+			this._register(dom.addDisposableListener(this.domNode, 'keydown', (e: KeyboardEvent) => {
+				if (this._filterInput && !dom.isActiveElement(this._filterInput)
+					&& e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+					this._filterInput.focus();
+					this._filterInput.value = e.key;
+					this._filterText = e.key;
+					this._applyFilter();
+					e.preventDefault();
+					e.stopPropagation();
+				}
+			}));
 		}
 	}
 
@@ -603,11 +619,21 @@ export class ActionList<T> extends Disposable {
 	}
 
 	focus(): void {
-		if (this._filterInput) {
-			this._filterInput.focus();
-		} else {
-			this._list.domFocus();
+		this._list.domFocus();
+		this._focusCheckedOrFirst();
+	}
+
+	private _focusCheckedOrFirst(): void {
+		// Try to focus the checked item first
+		for (let i = 0; i < this._list.length; i++) {
+			const element = this._list.element(i);
+			if (element.kind === ActionListItemKind.Action && (element.item as { checked?: boolean })?.checked) {
+				this._list.setFocus([i]);
+				this._list.reveal(i);
+				return;
+			}
 		}
+		this.focusNext();
 	}
 
 	hide(didCancel?: boolean): void {
