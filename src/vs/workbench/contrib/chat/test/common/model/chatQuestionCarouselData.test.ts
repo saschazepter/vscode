@@ -5,6 +5,7 @@
 
 import assert from 'assert';
 import { timeout } from '../../../../../../base/common/async.js';
+import { runWithFakedTimers } from '../../../../../../base/test/common/timeTravelScheduler.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/test/common/utils.js';
 import { ChatQuestionCarouselData } from '../../../common/model/chatProgressTypes/chatQuestionCarouselData.js';
 import { IChatQuestion } from '../../../common/chatService/chatService.js';
@@ -83,27 +84,37 @@ suite('ChatQuestionCarouselData', () => {
 
 	suite('Parallel Carousel Handling', () => {
 		test('when carousel is superseded, completing with undefined does not block', async () => {
-			// This simulates the scenario where parallel subagents call askQuestions
-			// and the first carousel is superseded by the second
-			const carousel1 = new ChatQuestionCarouselData(createQuestions(), true, 'resolve-1');
-			const carousel2 = new ChatQuestionCarouselData(createQuestions(), true, 'resolve-2');
+			await runWithFakedTimers({ useFakeTimers: true }, async () => {
+				// This simulates the scenario where parallel subagents call askQuestions
+				// and the first carousel is superseded by the second
+				const carousel1 = new ChatQuestionCarouselData(createQuestions(), true, 'resolve-1');
+				const carousel2 = new ChatQuestionCarouselData(createQuestions(), true, 'resolve-2');
 
-			// Simulate carousel1 being superseded - we complete it with undefined (skipped)
-			carousel1.completion.complete({ answers: undefined });
+				// Simulate carousel1 being superseded - we complete it with undefined (skipped)
+				carousel1.completion.complete({ answers: undefined });
 
-			// Now complete carousel2 normally
-			carousel2.completion.complete({ answers: { q1: 'answer2' } });
+				// Now complete carousel2 normally
+				carousel2.completion.complete({ answers: { q1: 'answer2' } });
 
-			// Both should complete without blocking
-			const [result1, result2] = await Promise.all([
-				Promise.race([carousel1.completion.p, timeout(100).then(() => 'timeout')]),
-				Promise.race([carousel2.completion.p, timeout(100).then(() => 'timeout')])
-			]);
+				const timeoutPromise1 = timeout(100);
+				const timeoutPromise2 = timeout(100);
 
-			assert.notStrictEqual(result1, 'timeout', 'Carousel 1 should not timeout');
-			assert.notStrictEqual(result2, 'timeout', 'Carousel 2 should not timeout');
-			assert.deepStrictEqual((result1 as { answers: unknown }).answers, undefined);
-			assert.deepStrictEqual((result2 as { answers: unknown }).answers, { q1: 'answer2' });
+				try {
+					// Both should complete without blocking
+					const [result1, result2] = await Promise.all([
+						Promise.race([carousel1.completion.p, timeoutPromise1.then(() => 'timeout')]),
+						Promise.race([carousel2.completion.p, timeoutPromise2.then(() => 'timeout')])
+					]);
+
+					assert.notStrictEqual(result1, 'timeout', 'Carousel 1 should not timeout');
+					assert.notStrictEqual(result2, 'timeout', 'Carousel 2 should not timeout');
+					assert.deepStrictEqual((result1 as { answers: unknown }).answers, undefined);
+					assert.deepStrictEqual((result2 as { answers: unknown }).answers, { q1: 'answer2' });
+				} finally {
+					timeoutPromise1.cancel();
+					timeoutPromise2.cancel();
+				}
+			});
 		});
 
 		test('completing an already settled carousel is safe', () => {
