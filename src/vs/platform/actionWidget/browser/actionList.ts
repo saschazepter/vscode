@@ -89,6 +89,10 @@ export interface IActionListItem<T> {
 	 * Optional badge text to display after the label (e.g., "New").
 	 */
 	readonly badge?: string;
+	/**
+	 * When true, this item is always shown when filtering produces no other results.
+	 */
+	readonly showAlways?: boolean;
 }
 
 interface IActionMenuTemplateData {
@@ -592,6 +596,15 @@ export class ActionList<T> extends Disposable {
 					continue;
 				}
 				visible.push(item);
+			}
+		}
+
+		// When filtering produces no results, show items tagged with showAlways
+		if (isFiltering && visible.length === 0) {
+			for (const item of this._allMenuItems) {
+				if (item.showAlways && item.kind === ActionListItemKind.Action) {
+					visible.push(item);
+				}
 			}
 		}
 

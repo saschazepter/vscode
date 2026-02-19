@@ -303,6 +303,7 @@ export function buildModelPickerItems(
 			hideIcon: false,
 			section: ModelPickerSection.Other,
 			className: 'manage-models-link',
+			showAlways: true,
 		});
 	}
 
