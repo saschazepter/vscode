@@ -357,15 +357,49 @@ export class TestContext {
 		}
 
 		this.log(`Validating Authenticode signature for ${filePath}`);
+		this.validateAuthenticodeSignaturesForFiles([filePath]);
+	}
 
-		const result = this.run('powershell', '-NoProfile', '-Command', `Get-AuthenticodeSignature "${filePath}" | Select-Object -ExpandProperty Status`);
+	/**
+	 * Collects all files matching the Authenticode include pattern from the specified directory recursively.
+	 */
+	private collectAuthenticodeFiles(dir: string, files: string[]): void {
+		const entries = fs.readdirSync(dir, { withFileTypes: true });
+		for (const entry of entries) {
+			const filePath = path.join(dir, entry.name);
+			if (entry.isDirectory()) {
+				this.collectAuthenticodeFiles(filePath, files);
+			} else if (TestContext.authenticodeInclude.test(entry.name)) {
+				files.push(filePath);
+			}
+		}
+	}
+
+	/**
+	 * Validates Authenticode signatures for the specified list of files in a single PowerShell call.
+	 */
+	private validateAuthenticodeSignaturesForFiles(files: string[]): void {
+		if (files.length === 0) {
+			return;
+		}
+
+		const fileList = files.map(file => `"${file}"`).join(',');
+		const command = `@(${fileList}) | ForEach-Object { $sig = Get-AuthenticodeSignature $_; "$($sig.Path)|$($sig.Status)" }`;
+		const result = this.run('powershell', '-NoProfile', '-Command', command);
 		if (result.error !== undefined) {
 			this.error(`Failed to run Get-AuthenticodeSignature: ${result.error.message}`);
 		}
 
-		const status = result.stdout.trim();
-		if (status !== 'Valid') {
-			this.error(`Authenticode signature is not valid for ${filePath}: ${status}`);
+		const invalid: string[] = [];
+		for (const line of result.stdout.trim().split('\n')) {
+			const [, filePath, status] = /^(.+)\|(\w+)$/.exec(line.trim()) ?? [];
+			if (filePath && status !== 'Valid') {
+				invalid.push(`${filePath}: ${status}`);
+			}
+		}
+
+		if (invalid.length > 0) {
+			this.error(`Authenticode signatures are not valid:\n${invalid.join('\n')}`);
 		}
 	}
 
@@ -379,15 +413,10 @@ export class TestContext {
 			return;
 		}
 
-		const files = fs.readdirSync(dir, { withFileTypes: true });
-		for (const file of files) {
-			const filePath = path.join(dir, file.name);
-			if (file.isDirectory()) {
-				this.validateAllAuthenticodeSignatures(filePath);
-			} else if (TestContext.authenticodeInclude.test(file.name)) {
-				this.validateAuthenticodeSignature(filePath);
-			}
-		}
+		const files: string[] = [];
+		this.collectAuthenticodeFiles(dir, files);
+		this.log(`Found ${files.length} file(s) to validate Authenticode signatures`);
+		this.validateAuthenticodeSignaturesForFiles(files);
 	}
 
 	/**
