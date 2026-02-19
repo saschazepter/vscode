@@ -218,32 +218,28 @@ export class AskQuestionsTool extends Disposable implements IToolImpl {
 	}
 
 	private getRequest(chatSessionResource: URI | undefined, chatRequestId: string | undefined): { request: IChatRequestModel | undefined; sessionResource: URI | undefined } {
-		if (chatSessionResource) {
-			const model = this.chatService.getSession(chatSessionResource);
-			let request: IChatRequestModel | undefined;
-			if (model) {
-				// Prefer an exact match on chatRequestId when possible
-				if (chatRequestId) {
-					request = model.getRequests().find(r => r.id === chatRequestId);
-				}
-				// Fall back to the most recent request in the session if we can't find a match
-				if (!request) {
-					request = model.getRequests().at(-1);
-				}
+		if (!chatSessionResource) {
+			return { request: undefined, sessionResource: undefined };
+		}
+
+		const model = this.chatService.getSession(chatSessionResource);
+		let request: IChatRequestModel | undefined;
+		if (model) {
+			// Prefer an exact match on chatRequestId when possible
+			if (chatRequestId) {
+				request = model.getRequests().find(r => r.id === chatRequestId);
 			}
-			if (request) {
-				return { request, sessionResource: chatSessionResource };
+			// Fall back to the most recent request in the session if we can't find a match
+			if (!request) {
+				request = model.getRequests().at(-1);
 			}
 		}
 
-		if (chatRequestId) {
-			const request = this.chatService.findRequestById(chatRequestId);
-			if (request) {
-				return { request, sessionResource: request.session.sessionResource };
-			}
+		if (!request) {
+			return { request: undefined, sessionResource: chatSessionResource };
 		}
 
-		return { request: undefined, sessionResource: chatSessionResource };
+		return { request, sessionResource: chatSessionResource };
 	}
 
 	private toQuestionCarousel(questions: IQuestion[]): IChatQuestionCarousel {

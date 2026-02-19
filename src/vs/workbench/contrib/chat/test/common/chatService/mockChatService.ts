@@ -47,9 +47,6 @@ export class MockChatService implements IChatService {
 		// eslint-disable-next-line local/code-no-dangerous-type-assertions
 		return this.sessions.get(sessionResource) ?? {} as IChatModel;
 	}
-	findRequestById(_requestId: string): IChatRequestModel | undefined {
-		return undefined;
-	}
 	getLatestRequest(): IChatRequestModel | undefined {
 		return undefined;
 	}

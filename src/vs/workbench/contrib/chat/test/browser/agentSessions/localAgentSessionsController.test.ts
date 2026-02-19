@@ -106,10 +106,6 @@ class MockChatService implements IChatService {
 		return this.sessions.get(sessionResource.toString());
 	}
 
-	findRequestById(_requestId: string): IChatRequestModel | undefined {
-		return undefined;
-	}
-
 	getLatestRequest(): IChatRequestModel | undefined {
 		return undefined;
 	}

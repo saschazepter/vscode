@@ -304,7 +304,7 @@ export class ChatService extends Disposable implements IChatService {
 
 	private deserializeChats(sessionData: string): ISerializableChatsData {
 		try {
-			const arrayOfSessions: ISerializableChatDataIn[] = revive(JSON.parse(sessionData)); // Revive serialized URIs in session data
+			const arrayOfSessions = revive(JSON.parse(sessionData)) as ISerializableChatDataIn[]; // Revive serialized URIs in session data
 			if (!Array.isArray(arrayOfSessions)) {
 				throw new Error('Expected array');
 			}
@@ -503,17 +503,6 @@ export class ChatService extends Disposable implements IChatService {
 
 	getSession(sessionResource: URI): IChatModel | undefined {
 		return this._sessionModels.get(sessionResource);
-	}
-
-	findRequestById(requestId: string): IChatRequestModel | undefined {
-		for (const model of this._sessionModels.values()) {
-			const request = model.getRequests().find(candidate => candidate.id === requestId);
-			if (request) {
-				return request;
-			}
-		}
-
-		return undefined;
 	}
 
 	getActiveSessionReference(sessionResource: URI): IChatModelReference | undefined {
