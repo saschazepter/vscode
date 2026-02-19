@@ -151,12 +151,35 @@ function buildModelPickerItems(
 	}
 
 	// Add recently used
+	const curatedModelsMap = new Map<string, ICuratedModel>();
+	for (const curated of curatedModels) {
+		curatedModelsMap.set(curated.id, curated);
+	}
 	for (const id of recentModelIds) {
 		const model = allModelsMap.get(id);
 		if (model && !placed.has(model.identifier)) {
-			promotedModels.push(model);
+			// Check if the model is curated and needs a version update
+			const curated = curatedModelsMap.get(model.metadata.id) ?? curatedModelsMap.get(model.identifier);
+			if (curated?.minVSCodeVersion && !isVersionAtLeast(currentVSCodeVersion, curated.minVSCodeVersion)) {
+				unavailableCurated.push({ curated, reason: 'update' });
+			} else {
+				promotedModels.push(model);
+			}
 			placed.add(model.identifier);
 			placed.add(model.metadata.id);
+		} else if (!model && !placed.has(id)) {
+			// Model not available - check if it's a curated model
+			const curated = curatedModelsMap.get(id);
+			if (curated) {
+				placed.add(id);
+				if (!isProUser) {
+					unavailableCurated.push({ curated, reason: 'upgrade' });
+				} else if (curated.minVSCodeVersion && !isVersionAtLeast(currentVSCodeVersion, curated.minVSCodeVersion)) {
+					unavailableCurated.push({ curated, reason: 'update' });
+				} else {
+					unavailableCurated.push({ curated, reason: 'admin' });
+				}
+			}
 		}
 	}
 
