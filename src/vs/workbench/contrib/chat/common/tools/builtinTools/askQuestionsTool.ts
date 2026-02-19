@@ -186,7 +186,7 @@ export class AskQuestionsTool extends Disposable implements IToolImpl {
 			return this.createSkippedResult(questions);
 		}
 
-		const carousel = this.toQuestionCarousel(questions);
+		const { carousel, idToHeaderMap } = this.toQuestionCarousel(questions);
 		this.chatService.appendProgress(request, carousel);
 
 		const answerResult = await raceCancellation(carousel.completion.p, token);
@@ -196,7 +196,7 @@ export class AskQuestionsTool extends Disposable implements IToolImpl {
 
 		progress.report({ message: localize('askQuestionsTool.progress', 'Analyzing your answers...') });
 
-		const converted = this.convertCarouselAnswers(questions, answerResult?.answers);
+		const converted = this.convertCarouselAnswers(questions, answerResult?.answers, idToHeaderMap);
 		const { answeredCount, skippedCount, freeTextCount, recommendedAvailableCount, recommendedSelectedCount } = this.collectMetrics(questions, converted);
 
 		this.sendTelemetry(invocation.chatRequestId, questions.length, answeredCount, skippedCount, freeTextCount, recommendedAvailableCount, recommendedSelectedCount, stopWatch.elapsed());
@@ -221,8 +221,9 @@ export class AskQuestionsTool extends Disposable implements IToolImpl {
 				throw new Error(localize('askQuestionsTool.invalidOptions', 'Question "{0}" must have at least two options, or none for free text input.', question.header));
 			}
 
-			// Apply hard limits to truncate values that exceed the more lenient hard limit
-			(question as { header: string }).header = truncateToLimit(question.header, HardLimits.header) ?? question.header;
+			// Apply hard limits to truncate display values that exceed the more lenient hard limit
+			// Note: The original header is preserved and used as the answer key in convertCarouselAnswers
+			// to avoid collisions when distinct headers become identical after truncation
 			(question as { question: string }).question = truncateToLimit(question.question, HardLimits.question) ?? question.question;
 		}
 
@@ -266,12 +267,16 @@ export class AskQuestionsTool extends Disposable implements IToolImpl {
 		return { request, sessionResource: chatSessionResource };
 	}
 
-	private toQuestionCarousel(questions: IQuestion[]): ChatQuestionCarouselData {
-		const mappedQuestions = questions.map(question => this.toChatQuestion(question));
-		return new ChatQuestionCarouselData(mappedQuestions, true, generateUuid());
+	private toQuestionCarousel(questions: IQuestion[]): { carousel: ChatQuestionCarouselData; idToHeaderMap: Map<string, string> } {
+		const idToHeaderMap = new Map<string, string>();
+		const mappedQuestions = questions.map(question => this.toChatQuestion(question, idToHeaderMap));
+		return {
+			carousel: new ChatQuestionCarouselData(mappedQuestions, true, generateUuid()),
+			idToHeaderMap
+		};
 	}
 
-	private toChatQuestion(question: IQuestion): IChatQuestion {
+	private toChatQuestion(question: IQuestion, idToHeaderMap: Map<string, string>): IChatQuestion {
 		let type: IChatQuestion['type'];
 		if (!question.options || question.options.length === 0) {
 			type = 'text';
@@ -289,10 +294,18 @@ export class AskQuestionsTool extends Disposable implements IToolImpl {
 			}
 		}
 
+		// Use a stable UUID as the internal ID to avoid collisions when truncating headers
+		// The original header is preserved in idToHeaderMap for answer correlation
+		const internalId = generateUuid();
+		idToHeaderMap.set(internalId, question.header);
+
+		// Truncate header for display only
+		const displayTitle = truncateToLimit(question.header, HardLimits.header) ?? question.header;
+
 		return {
-			id: question.header,
+			id: internalId,
 			type,
-			title: question.header,
+			title: displayTitle,
 			message: question.question,
 			options: question.options?.map(opt => ({
 				id: opt.label,
@@ -304,12 +317,18 @@ export class AskQuestionsTool extends Disposable implements IToolImpl {
 		};
 	}
 
-	protected convertCarouselAnswers(questions: IQuestion[], carouselAnswers: Record<string, unknown> | undefined): IAnswerResult {
+	protected convertCarouselAnswers(questions: IQuestion[], carouselAnswers: Record<string, unknown> | undefined, idToHeaderMap: Map<string, string>): IAnswerResult {
 		const result: IAnswerResult = { answers: {} };
 
 		if (carouselAnswers) {
 			this.logService.trace(`[AskQuestionsTool] Carousel answer keys: ${Object.keys(carouselAnswers).join(', ')}`);
 			this.logService.trace(`[AskQuestionsTool] Question headers: ${questions.map(q => q.header).join(', ')}`);
+		}
+
+		// Build a reverse map: original header -> internal ID
+		const headerToIdMap = new Map<string, string>();
+		for (const [internalId, originalHeader] of idToHeaderMap) {
+			headerToIdMap.set(originalHeader, internalId);
 		}
 
 		for (const question of questions) {
@@ -322,8 +341,10 @@ export class AskQuestionsTool extends Disposable implements IToolImpl {
 				continue;
 			}
 
-			const answer = carouselAnswers[question.header];
-			this.logService.trace(`[AskQuestionsTool] Processing question "${question.header}", raw answer: ${JSON.stringify(answer)}, type: ${typeof answer}`);
+			// Look up the answer using the internal ID that was used in the carousel
+			const internalId = headerToIdMap.get(question.header);
+			const answer = internalId ? carouselAnswers[internalId] : undefined;
+			this.logService.trace(`[AskQuestionsTool] Processing question "${question.header}" (internal ID: ${internalId}), raw answer: ${JSON.stringify(answer)}, type: ${typeof answer}`);
 
 			if (answer === undefined) {
 				result.answers[question.header] = {
