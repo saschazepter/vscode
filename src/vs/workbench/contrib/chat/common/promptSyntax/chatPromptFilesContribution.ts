@@ -18,6 +18,7 @@ import { CancellationToken } from '../../../../../base/common/cancellation.js';
 import { SyncDescriptor } from '../../../../../platform/instantiation/common/descriptors.js';
 import { Registry } from '../../../../../platform/registry/common/platform.js';
 import { Extensions, IExtensionFeaturesRegistry, IExtensionFeatureTableRenderer, IRenderedData, IRowData, ITableData } from '../../../../services/extensionManagement/common/extensionFeatures.js';
+import { ContextKeyExpr } from '../../../../../platform/contextkey/common/contextkey.js';
 
 interface IRawChatFileContribution {
 	readonly path: string;
@@ -125,6 +126,10 @@ export class ChatPromptFilesExtensionPointHandler implements IWorkbenchContribut
 					const fileUri = joinPath(ext.description.extensionLocation, raw.path);
 					if (!isEqualOrParent(fileUri, ext.description.extensionLocation)) {
 						ext.collector.error(localize('extension.invalid.path', "Extension '{0}' {1} entry '{2}' resolves outside the extension.", ext.description.identifier.value, contributionPoint, raw.path));
+						continue;
+					}
+					if (raw.when && !ContextKeyExpr.deserialize(raw.when)) {
+						ext.collector.error(localize('extension.invalid.when', "Extension '{0}' {1} entry '{2}' has an invalid when clause: '{3}'.", ext.description.identifier.value, contributionPoint, raw.path, raw.when));
 						continue;
 					}
 					try {

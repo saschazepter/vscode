@@ -138,7 +138,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 	 * Context keys referenced by contributed file `when` clauses.
 	 */
 	private readonly _contributedWhenKeys = new Set<string>();
-	private readonly _contributedWhenClauses = new ResourceMap<string>();
+	private readonly _contributedWhenClauses = new Map<string, string>();
 	private readonly _onDidContributedWhenChange = this._register(new Emitter<void>());
 
 	constructor(
@@ -408,7 +408,17 @@ export class PromptsService extends Disposable implements IPromptsService {
 		const contributedFiles = settledResults
 			.filter((result): result is PromiseFulfilledResult<IExtensionPromptPath> => result.status === 'fulfilled')
 			.map(result => result.value)
-			.filter(file => !file.when || this.contextKeyService.contextMatchesRules(ContextKeyExpr.deserialize(file.when)));
+			.filter(file => {
+				if (!file.when) {
+					return true;
+				}
+				const expr = ContextKeyExpr.deserialize(file.when);
+				if (!expr) {
+					this.logger.warn(`[getExtensionPromptFiles] Ignoring contributed prompt file with invalid when clause: ${file.when}`);
+					return false;
+				}
+				return this.contextKeyService.contextMatchesRules(expr);
+			});
 
 		const activationEvent = this.getProviderActivationEvent(type);
 		if (!activationEvent) {
@@ -681,7 +691,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 		})();
 		bucket.set(uri, entryPromise);
 		if (when) {
-			this._contributedWhenClauses.set(uri, when);
+			this._contributedWhenClauses.set(`${type}/${uri.toString()}`, when);
 		}
 
 		const flushCachesIfRequired = () => {
@@ -704,7 +714,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 		return {
 			dispose: () => {
 				bucket.delete(uri);
-				this._contributedWhenClauses.delete(uri);
+				this._contributedWhenClauses.delete(`${type}/${uri.toString()}`);
 				flushCachesIfRequired();
 			}
 		};
