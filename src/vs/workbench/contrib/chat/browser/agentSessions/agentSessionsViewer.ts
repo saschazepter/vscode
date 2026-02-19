@@ -76,6 +76,7 @@ interface IAgentSessionItemTemplate {
 }
 
 export interface IAgentSessionRendererOptions {
+	readonly disableHover?: boolean;
 	getHoverPosition(): HoverPosition;
 }
 
@@ -219,7 +220,8 @@ export class AgentSessionRenderer extends Disposable implements ICompressibleTre
 		}
 
 		// Separator (dot between badge and description)
-		template.separator.classList.toggle('has-separator', hasBadge && !hasDiff);
+		const hasDescription = template.description.textContent !== '';
+		template.separator.classList.toggle('has-separator', hasBadge && hasDescription);
 
 		// Status
 		this.renderStatus(session, template);
@@ -363,6 +365,10 @@ export class AgentSessionRenderer extends Disposable implements ICompressibleTre
 	}
 
 	private renderHover(session: ITreeNode<IAgentSession, FuzzyScore>, template: IAgentSessionItemTemplate): void {
+		if (this.options.disableHover) {
+			return;
+		}
+
 		if (!isSessionInProgressStatus(session.element.status) && session.element.isRead()) {
 			return; // the hover is complex and large, for now limit it to in-progress sessions only
 		}
@@ -502,7 +508,7 @@ export class AgentSessionSectionRenderer implements ICompressibleTreeRenderer<IA
 
 export class AgentSessionsListDelegate implements IListVirtualDelegate<AgentSessionListItem> {
 
-	static readonly ITEM_HEIGHT = 44;
+	static readonly ITEM_HEIGHT = 48;
 	static readonly SECTION_HEIGHT = 26;
 
 	getHeight(element: AgentSessionListItem): number {

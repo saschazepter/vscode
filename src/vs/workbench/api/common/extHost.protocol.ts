@@ -1460,6 +1460,7 @@ export type IChatAgentHistoryEntryDto = {
 export interface IChatSessionContextDto {
 	readonly chatSessionResource: UriComponents;
 	readonly isUntitled: boolean;
+	readonly initialSessionOptions?: ReadonlyArray<{ optionId: string; value: string }>;
 }
 
 export interface ExtHostChatAgentsShape2 {
@@ -3385,6 +3386,7 @@ export type IChatSessionHistoryItemDto = {
 	participant: string;
 	command?: string;
 	variableData?: Dto<IChatRequestVariableData>;
+	modelId?: string;
 } | {
 	type: 'response';
 	parts: IChatProgressDto[];
@@ -3440,6 +3442,7 @@ export interface MainThreadChatSessionsShape extends IDisposable {
 export interface ExtHostChatSessionsShape {
 	$refreshChatSessionItems(providerHandle: number, token: CancellationToken): Promise<void>;
 	$onDidChangeChatSessionItemState(providerHandle: number, sessionResource: UriComponents, archived: boolean): void;
+	$newChatSessionItem(controllerHandle: number, request: Dto<IChatAgentRequest>, token: CancellationToken): Promise<Dto<IChatSessionItem> | undefined>;
 
 	$provideChatSessionContent(providerHandle: number, sessionResource: UriComponents, token: CancellationToken): Promise<ChatSessionDto>;
 	$interruptChatSessionActiveResponse(providerHandle: number, sessionResource: UriComponents, requestId: string): Promise<void>;

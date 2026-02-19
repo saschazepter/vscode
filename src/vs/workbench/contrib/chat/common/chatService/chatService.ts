@@ -229,6 +229,7 @@ export class ChatMultiDiffData implements IChatMultiDiffData {
 export interface IChatProgressMessage {
 	content: IMarkdownString;
 	kind: 'progressMessage';
+	shimmer?: boolean;
 }
 
 export interface IChatTask extends IChatTaskDto {
@@ -1328,6 +1329,12 @@ export interface IChatSendRequestOptions {
 	 */
 	queue?: ChatRequestQueueKind;
 
+	/**
+	 * When true, the queued request will not be processed immediately even if no request is active.
+	 * The request stays in the queue until `processPendingRequests` is called explicitly.
+	 */
+	pauseQueue?: boolean;
+
 }
 
 export type IChatModelReference = IReference<IChatModel>;
@@ -1445,6 +1452,7 @@ export interface IChatSessionContext {
 	readonly chatSessionType: string;
 	readonly chatSessionResource: URI;
 	readonly isUntitled: boolean;
+	readonly initialSessionOptions?: ReadonlyArray<{ optionId: string; value: string | { id: string; name: string } }>;
 }
 
 export const KEYWORD_ACTIVIATION_SETTING_ID = 'accessibility.voice.keywordActivation';
@@ -1453,3 +1461,21 @@ export interface IChatSessionStartOptions {
 	canUseTools?: boolean;
 	disableBackgroundKeepAlive?: boolean;
 }
+
+export const ChatStopCancellationNoopEventName = 'chat.stopCancellationNoop';
+
+export type ChatStopCancellationNoopEvent = {
+	source: 'cancelAction' | 'chatService';
+	reason: 'noWidget' | 'noViewModel' | 'noPendingRequest' | 'requestAlreadyCanceled' | 'requestIdUnavailable';
+	requestInProgress: 'true' | 'false' | 'unknown';
+	pendingRequests: number;
+};
+
+export type ChatStopCancellationNoopClassification = {
+	source: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The layer where stop cancellation no-op occurred.' };
+	reason: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The no-op reason when stop cancellation did not dispatch fully.' };
+	requestInProgress: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'Whether request-in-progress was true, false, or unknown at no-op time.' };
+	pendingRequests: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The number of queued pending requests at no-op time when known.'; isMeasurement: true };
+	owner: 'roblourens';
+	comment: 'Tracks possible no-op stop cancellation paths.';
+};

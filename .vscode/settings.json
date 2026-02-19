@@ -9,6 +9,9 @@
 		"scripts/test-integration.bat": true,
 		"scripts/test-integration.sh": true,
 	},
+	"chat.tools.edits.autoApprove": {
+		".github/skills/azure-pipelines/azure-pipeline.ts": false
+	},
 	"chat.viewSessions.enabled": true,
 	"chat.editing.explainChanges.enabled": true,
 	// --- Editor ---
@@ -49,7 +52,7 @@
 		"build/**/*.js.map": true,
 		"build/**/*.js": {
 			"when": "$(basename).ts"
-		}
+		},
 	},
 	"files.associations": {
 		"cglicenses.json": "jsonc",
@@ -69,7 +72,8 @@
 		"extensions/terminal-suggest/src/completions/upstream/**": true,
 		"test/smoke/out/**": true,
 		"test/automation/out/**": true,
-		"test/integration/browser/out/**": true
+		"test/integration/browser/out/**": true,
+		// "src/vs/sessions/**": true
 	},
 	// --- Search ---
 	"search.exclude": {
