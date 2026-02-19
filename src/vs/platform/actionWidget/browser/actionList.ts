@@ -788,6 +788,19 @@ export class ActionList<T> extends Disposable {
 		}
 	}
 
+	toggleFocusedSection(): boolean {
+		const focused = this._list.getFocus();
+		if (focused.length === 0) {
+			return false;
+		}
+		const element = this._list.element(focused[0]);
+		if (element.isSectionToggle && element.section) {
+			this._toggleSection(element.section);
+			return true;
+		}
+		return false;
+	}
+
 	private _getFocusedSection(): string | undefined {
 		const focused = this._list.getFocus();
 		if (focused.length === 0) {
