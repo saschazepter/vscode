@@ -5,13 +5,14 @@
 
 .action-widget {
 	font-size: 13px;
+	border-radius: 0;
 	min-width: 100px;
 	max-width: 80vw;
 	z-index: 40;
 	display: block;
 	width: 100%;
 	border: 1px solid var(--vscode-editorHoverWidget-border) !important;
-	border-radius: var(--vscode-cornerRadius-large);
+	border-radius: 5px;
 	background-color: var(--vscode-menu-background);
 	color: var(--vscode-menu-foreground);
 	padding: 4px;
@@ -60,12 +61,12 @@
 	cursor: pointer;
 	touch-action: none;
 	width: 100%;
-	border-radius: var(--vscode-cornerRadius-medium);
+	border-radius: var(--vscode-cornerRadius-small);
 }
 
 .action-widget .monaco-list .monaco-list-row.action.focused:not(.option-disabled) {
-	background-color: var(--vscode-list-hoverBackground) !important;
-	color: var(--vscode-list-hoverForeground);
+	background-color: var(--vscode-list-activeSelectionBackground) !important;
+	color: var(--vscode-list-activeSelectionForeground);
 	outline: 1px solid var(--vscode-menu-selectionBorder, transparent);
 	outline-offset: -1px;
 }
@@ -121,6 +122,7 @@
 	display: flex;
 	gap: 6px;
 	align-items: center;
+	color: var(--vscode-foreground) !important;
 }
 
 .action-widget .monaco-list-row.action .codicon {
@@ -135,7 +137,7 @@
 .action-widget .monaco-list:focus .monaco-list-row.focused.action.option-disabled,
 .action-widget .monaco-list-row.action.option-disabled .codicon,
 .action-widget .monaco-list:not(.drop-target):not(.dragging) .monaco-list-row:hover:not(.selected):not(.focused).option-disabled {
-	color: var(--vscode-disabledForeground);
+	color: var(--vscode-disabledForeground) !important;
 }
 
 
@@ -147,6 +149,16 @@
 	flex: 1;
 	overflow: hidden;
 	text-overflow: ellipsis;
+}
+
+.action-widget .monaco-list-row.action .action-item-badge {
+	padding: 0px 6px;
+	border-radius: 10px;
+	background-color: var(--vscode-badge-background);
+	color: var(--vscode-badge-foreground);
+	font-size: 11px;
+	line-height: 18px;
+	flex-shrink: 0;
 }
 
 .action-widget .monaco-list-row.action .monaco-keybinding > .monaco-keybinding-key {
@@ -202,10 +214,11 @@
 }
 
 .action-widget .monaco-list .monaco-list-row .description {
-	color: var(--vscode-descriptionForeground);
+	opacity: 0.7;
 	margin-left: 0.5em;
-	font-size: 12px;
+	flex-shrink: 0;
 }
+
 
 /* Item toolbar - shows on hover/focus */
 .action-widget .monaco-list-row.action .action-list-item-toolbar {
@@ -226,4 +239,30 @@
 	align-items: center;
 	gap: 4px;
 	font-size: 12px;
+}
+
+/* Filter input */
+.action-widget .action-list-filter {
+	border-top: 1px solid var(--vscode-editorHoverWidget-border);
+	padding: 4px;
+}
+
+.action-widget .action-list-filter-input {
+	width: 100%;
+	box-sizing: border-box;
+	padding: 4px 8px;
+	border: 1px solid var(--vscode-input-border, transparent);
+	border-radius: 3px;
+	background-color: var(--vscode-input-background);
+	color: var(--vscode-input-foreground);
+	font-size: 12px;
+	outline: none;
+}
+
+.action-widget .action-list-filter-input:focus {
+	border-color: var(--vscode-focusBorder);
+}
+
+.action-widget .action-list-filter-input::placeholder {
+	color: var(--vscode-input-placeholderForeground);
 }

@@ -446,6 +446,7 @@ class NewChatWidget extends Disposable {
 			currentModel: this._currentLanguageModel,
 			setModel: (model: ILanguageModelChatMetadataAndIdentifier) => {
 				this._currentLanguageModel.set(model, undefined);
+				this.languageModelsService.addToRecentlyUsedList(model);
 			},
 			getModels: () => this._getAvailableModels(),
 			canManageModels: () => true,
@@ -487,7 +488,17 @@ class NewChatWidget extends Disposable {
 				const metadata = this.languageModelsService.lookupLanguageModel(id);
 				return metadata ? { metadata, identifier: id } : undefined;
 			})
-			.filter((m): m is ILanguageModelChatMetadataAndIdentifier => !!m && !!m.metadata.isUserSelectable);
+			.filter((m): m is ILanguageModelChatMetadataAndIdentifier => !!m && this.shouldShowModel(m));
+	}
+
+	private shouldShowModel(model: ILanguageModelChatMetadataAndIdentifier): boolean {
+		if (!model.metadata.isUserSelectable) {
+			return false;
+		}
+		if (model.metadata.targetChatSessionType === AgentSessionProviders.Background) {
+			return false;
+		}
+		return true;
 	}
 
 	// --- Welcome: Target & option pickers (dropdown row below input) ---
