@@ -585,9 +585,7 @@ export class InstallAction extends ExtensionAction {
 			}
 		}
 
-		this.extensionsWorkbenchService.open(this.extension, { showPreReleaseVersion: this.options.installPreReleaseVersion });
-
-		alert(localize('installExtensionStart', "Installing extension {0} started. An editor is now open with more details on this extension", this.extension.displayName));
+		alert(localize('installExtensionStart', "Installing extension {0} started.", this.extension.displayName));
 
 		/* __GDPR__
 			"extensions:action:install" : {
@@ -824,8 +822,7 @@ export abstract class InstallInOtherServerAction extends ExtensionAction {
 		if (!this.server) {
 			return;
 		}
-		this.extensionsWorkbenchService.open(this.extension);
-		alert(localize('installExtensionStart', "Installing extension {0} started. An editor is now open with more details on this extension", this.extension.displayName));
+		alert(localize('installExtensionStart', "Installing extension {0} started.", this.extension.displayName));
 		return this.extensionsWorkbenchService.installInServer(this.extension, this.server);
 	}
 
@@ -1556,7 +1553,6 @@ export class TogglePreReleaseExtensionAction extends ExtensionAction {
 		if (!this.extension) {
 			return;
 		}
-		this.extensionsWorkbenchService.open(this.extension, { showPreReleaseVersion: !this.extension.preRelease });
 		await this.extensionsWorkbenchService.togglePreRelease(this.extension);
 	}
 }
