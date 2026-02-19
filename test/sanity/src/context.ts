@@ -358,10 +358,7 @@ export class TestContext {
 
 		const fileList = files.map(file => `"${file}"`).join(',');
 		const command = `@(${fileList}) | ForEach-Object { $sig = Get-AuthenticodeSignature $_; "$($sig.Path)|$($sig.Status)" }`;
-		const result = this.run('powershell', '-NoProfile', '-Command', command);
-		if (result.error !== undefined) {
-			this.error(`Failed to run Get-AuthenticodeSignature: ${result.error.message}`);
-		}
+		const result = this.runNoErrors('powershell', '-NoProfile', '-Command', command);
 
 		const invalid: string[] = [];
 		for (const line of result.stdout.trim().split('\n')) {
