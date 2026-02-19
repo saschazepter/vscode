@@ -570,6 +570,11 @@ export class ActionList<T> extends Disposable {
 
 			// Action item
 			if (isFiltering) {
+				// Always show items tagged with showAlways
+				if (item.showAlways) {
+					visible.push(item);
+					continue;
+				}
 				// When filtering, skip section toggle items and only match content
 				if (item.isSectionToggle) {
 					continue;
@@ -596,15 +601,6 @@ export class ActionList<T> extends Disposable {
 					continue;
 				}
 				visible.push(item);
-			}
-		}
-
-		// When filtering produces no results, show items tagged with showAlways
-		if (isFiltering && visible.length === 0) {
-			for (const item of this._allMenuItems) {
-				if (item.showAlways && item.kind === ActionListItemKind.Action) {
-					visible.push(item);
-				}
 			}
 		}
 
