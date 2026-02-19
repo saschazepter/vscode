@@ -393,13 +393,17 @@ export class TestContext {
 		const invalid: string[] = [];
 		for (const line of result.stdout.trim().split('\n')) {
 			const [, filePath, status] = /^(.+)\|(\w+)$/.exec(line.trim()) ?? [];
-			if (filePath && status !== 'Valid') {
-				invalid.push(`${filePath}: ${status}`);
+			if (filePath) {
+				if (status === 'Valid') {
+					this.log(`Authenticode signature is valid for ${filePath}`);
+				} else {
+					invalid.push(`${filePath}: ${status}`);
+				}
 			}
 		}
 
 		if (invalid.length > 0) {
-			this.error(`Authenticode signatures are not valid:\n${invalid.join('\n')}`);
+			this.error(`Authenticode signatures are not valid for:\n${invalid.join('\n')}`);
 		}
 	}
 

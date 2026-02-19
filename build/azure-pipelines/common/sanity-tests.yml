@@ -66,8 +66,8 @@ jobs:
 
             echo ##vso[task.prependpath]%NODE_ROOT%
 
-            echo signltool.exe verify "%NODE_ROOT%\node.exe"
-            signltool.exe verify "%NODE_ROOT%\node.exe"
+            echo signtool.exe verify "%NODE_ROOT%\node.exe"
+            signtool.exe verify "%NODE_ROOT%\node.exe"
           displayName: Install Node.js (Windows ARM64)
 
       - ${{ if not(and(eq(parameters.os, 'windows'), eq(parameters.arch, 'arm64'))) }}:
