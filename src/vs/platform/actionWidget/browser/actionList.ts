@@ -358,6 +358,7 @@ export class ActionList<T> extends Disposable {
 
 	private readonly _collapsedSections = new Set<string>();
 	private _filterText = '';
+	private _suppressHover = false;
 	private readonly _filterInput: HTMLInputElement | undefined;
 	private readonly _filterContainer: HTMLElement | undefined;
 	private _lastMinWidth = 0;
@@ -624,16 +625,21 @@ export class ActionList<T> extends Disposable {
 	}
 
 	private _focusCheckedOrFirst(): void {
-		// Try to focus the checked item first
-		for (let i = 0; i < this._list.length; i++) {
-			const element = this._list.element(i);
-			if (element.kind === ActionListItemKind.Action && (element.item as { checked?: boolean })?.checked) {
-				this._list.setFocus([i]);
-				this._list.reveal(i);
-				return;
+		this._suppressHover = true;
+		try {
+			// Try to focus the checked item first
+			for (let i = 0; i < this._list.length; i++) {
+				const element = this._list.element(i);
+				if (element.kind === ActionListItemKind.Action && (element.item as { checked?: boolean })?.checked) {
+					this._list.setFocus([i]);
+					this._list.reveal(i);
+					return;
+				}
 			}
+			this.focusNext();
+		} finally {
+			this._suppressHover = false;
 		}
-		this.focusNext();
 	}
 
 	hide(didCancel?: boolean): void {
@@ -810,8 +816,10 @@ export class ActionList<T> extends Disposable {
 		const element = this._list.element(focusIndex);
 		this._delegate.onFocus?.(element.item);
 
-		// Show hover on focus change
-		this._showHoverForElement(element, focusIndex);
+		// Show hover on focus change (suppress during programmatic focus)
+		if (!this._suppressHover) {
+			this._showHoverForElement(element, focusIndex);
+		}
 	}
 
 	private _getRowElement(index: number): HTMLElement | null {
