@@ -2051,6 +2051,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		options.autoClosingBrackets = this.configurationService.getValue('editor.autoClosingBrackets');
 		options.autoClosingQuotes = this.configurationService.getValue('editor.autoClosingQuotes');
 		options.autoSurround = this.configurationService.getValue('editor.autoSurround');
+		options.quickSuggestions = false;
 		options.suggest = {
 			showIcons: true,
 			showSnippets: false,
