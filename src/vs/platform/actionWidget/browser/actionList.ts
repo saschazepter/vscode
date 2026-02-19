@@ -617,9 +617,7 @@ export class ActionList<T> extends Disposable {
 		this._contextViewService.hideContextView();
 	}
 
-	layout(minWidth: number): number {
-		this._hasLaidOut = true;
-		this._lastMinWidth = minWidth;
+	private computeHeight(): number {
 		// Compute height based on currently visible items in the list
 		const visibleCount = this._list.length;
 		let listHeight = 0;
@@ -638,16 +636,32 @@ export class ActionList<T> extends Disposable {
 			}
 		}
 
-		this._list.layout(listHeight);
+		const filterHeight = this._filterContainer ? 36 : 0;
+		const padding = 10;
+		const targetWindow = dom.getWindow(this.domNode);
+		const windowHeight = this._layoutService.getContainer(targetWindow).clientHeight;
+		const widgetTop = this.domNode.getBoundingClientRect().top;
+		const availableHeight = widgetTop > 0 ? windowHeight - widgetTop - padding : windowHeight * 0.7;
+		const maxHeight = Math.max(availableHeight, this._actionLineHeight * 3 + filterHeight);
+		const height = Math.min(listHeight + filterHeight, maxHeight);
+		return height - filterHeight;
+	}
+
+	private computeMaxWidth(minWidth: number): number {
+		const visibleCount = this._list.length;
 		const effectiveMinWidth = Math.max(minWidth, this._options?.minWidth ?? 0);
 		let maxWidth = effectiveMinWidth;
 
 		const totalItemCount = this._allMenuItems.length;
 		if (totalItemCount >= 50) {
-			maxWidth = Math.max(380, effectiveMinWidth);
-		} else if (this._cachedMaxWidth !== undefined) {
-			maxWidth = this._cachedMaxWidth;
-		} else if (totalItemCount > visibleCount) {
+			return Math.max(380, effectiveMinWidth);
+		}
+
+		if (this._cachedMaxWidth !== undefined) {
+			return this._cachedMaxWidth;
+		}
+
+		if (totalItemCount > visibleCount) {
 			// Temporarily splice in all items to measure widths,
 			// preventing width jumps when expanding/collapsing sections.
 			const visibleItems: IActionListItem<T>[] = [];
@@ -679,36 +693,37 @@ export class ActionList<T> extends Disposable {
 			}
 
 			maxWidth = Math.max(...itemWidths, effectiveMinWidth);
-			this._cachedMaxWidth = maxWidth;
 
 			// Restore visible items
 			this._list.splice(0, allItems.length, visibleItems);
-			this._list.layout(listHeight);
-		} else {
-			// All items are visible, measure them directly
-			const itemWidths: number[] = [];
-			for (let i = 0; i < visibleCount; i++) {
-				const element = this._getRowElement(i);
-				if (element) {
-					element.style.width = 'auto';
-					const width = element.getBoundingClientRect().width;
-					element.style.width = '';
-					itemWidths.push(width);
-				}
-			}
-			maxWidth = Math.max(...itemWidths, effectiveMinWidth);
+			return maxWidth;
 		}
 
-		const filterHeight = this._filterContainer ? 36 : 0;
-		const maxVhPrecentage = 0.7;
-		const maxHeight = this._layoutService.getContainer(dom.getWindow(this.domNode)).clientHeight * maxVhPrecentage;
-		const height = Math.min(listHeight + filterHeight, maxHeight);
-		const listFinalHeight = height - filterHeight;
-		this._list.layout(listFinalHeight, maxWidth);
+		// All items are visible, measure them directly
+		const itemWidths: number[] = [];
+		for (let i = 0; i < visibleCount; i++) {
+			const element = this._getRowElement(i);
+			if (element) {
+				element.style.width = 'auto';
+				const width = element.getBoundingClientRect().width;
+				element.style.width = '';
+				itemWidths.push(width);
+			}
+		}
+		return Math.max(...itemWidths, effectiveMinWidth);
+	}
 
-		this.domNode.style.height = `${listFinalHeight}px`;
+	layout(minWidth: number): number {
+		this._hasLaidOut = true;
+		this._lastMinWidth = minWidth;
 
-		return maxWidth;
+		const listHeight = this.computeHeight();
+		this._list.layout(listHeight);
+
+		this._cachedMaxWidth = this.computeMaxWidth(minWidth);
+		this._list.layout(listHeight, this._cachedMaxWidth);
+		this.domNode.style.height = `${listHeight}px`;
+		return this._cachedMaxWidth;
 	}
 
 	focusPrevious() {
