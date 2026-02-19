@@ -21,7 +21,7 @@ import { IProductService } from '../../../../../../platform/product/common/produ
 import { ITelemetryService } from '../../../../../../platform/telemetry/common/telemetry.js';
 import { TelemetryTrustedValue } from '../../../../../../platform/telemetry/common/telemetryUtils.js';
 import { MANAGE_CHAT_COMMAND_ID } from '../../../common/constants.js';
-import { IFreeModelControlEntry, ILanguageModelChatMetadataAndIdentifier, ILanguageModelsService, IPaidModelControlEntry } from '../../../common/languageModels.js';
+import { IModelControlEntry, ILanguageModelChatMetadataAndIdentifier, ILanguageModelsService } from '../../../common/languageModels.js';
 import { IChatEntitlementService, isProUser } from '../../../../../services/chat/common/chatEntitlementService.js';
 import * as semver from '../../../../../../base/common/semver/semver.js';
 import { IModelPickerDelegate } from './modelPickerActionItem.js';
@@ -120,7 +120,7 @@ function buildModelPickerItems(
 	models: ILanguageModelChatMetadataAndIdentifier[],
 	selectedModelId: string | undefined,
 	recentModelIds: string[],
-	controlModels: readonly (IFreeModelControlEntry | IPaidModelControlEntry)[],
+	controlModels: readonly IModelControlEntry[],
 	isProUser: boolean,
 	currentVSCodeVersion: string,
 	updateStateType: StateType,
@@ -157,7 +157,7 @@ function buildModelPickerItems(
 
 	// --- 2. Promoted models (recently used + curated, merged & sorted alphabetically) ---
 	const promotedModels: ILanguageModelChatMetadataAndIdentifier[] = [];
-	const unavailableModels: { entry: IFreeModelControlEntry | IPaidModelControlEntry; reason: 'upgrade' | 'update' | 'admin' }[] = [];
+	const unavailableModels: { entry: IModelControlEntry; reason: 'upgrade' | 'update' | 'admin' }[] = [];
 
 	// Always include the currently selected model in the promoted group
 	if (selectedModelId && selectedModelId !== autoModel?.identifier) {
@@ -170,7 +170,7 @@ function buildModelPickerItems(
 	}
 
 	// Add recently used
-	const controlModelsMap = new Map<string, IFreeModelControlEntry | IPaidModelControlEntry>();
+	const controlModelsMap = new Map<string, IModelControlEntry>();
 	for (const entry of controlModels) {
 		controlModelsMap.set(entry.id, entry);
 	}
@@ -179,9 +179,8 @@ function buildModelPickerItems(
 		if (model && !placed.has(model.identifier)) {
 			// Check if the model needs a version update
 			const entry = controlModelsMap.get(model.metadata.id) ?? controlModelsMap.get(model.identifier);
-			const minVersion = entry && 'minVSCodeVersion' in entry ? entry.minVSCodeVersion : undefined;
-			if (minVersion && !isVersionAtLeast(currentVSCodeVersion, minVersion)) {
-				unavailableModels.push({ entry: entry!, reason: 'update' });
+			if (entry?.minVSCodeVersion && !isVersionAtLeast(currentVSCodeVersion, entry.minVSCodeVersion)) {
+				unavailableModels.push({ entry, reason: 'update' });
 			} else {
 				promotedModels.push(model);
 			}
@@ -192,10 +191,9 @@ function buildModelPickerItems(
 			const entry = controlModelsMap.get(id);
 			if (entry) {
 				placed.add(id);
-				const minVersion = 'minVSCodeVersion' in entry ? entry.minVSCodeVersion : undefined;
 				if (!isProUser) {
 					unavailableModels.push({ entry, reason: 'upgrade' });
-				} else if (minVersion && !isVersionAtLeast(currentVSCodeVersion, minVersion)) {
+				} else if (entry.minVSCodeVersion && !isVersionAtLeast(currentVSCodeVersion, entry.minVSCodeVersion)) {
 					unavailableModels.push({ entry, reason: 'update' });
 				} else {
 					unavailableModels.push({ entry, reason: 'admin' });
@@ -206,15 +204,14 @@ function buildModelPickerItems(
 
 	// Add featured control manifest models - available ones become promoted, unavailable ones become disabled entries
 	for (const entry of controlModels) {
-		if (!('featured' in entry) || !entry.featured) {
+		if (!entry.featured) {
 			continue;
 		}
 		const model = allModelsMap.get(entry.id) ?? modelsByMetadataId.get(entry.id);
 		if (model && !placed.has(model.identifier) && !placed.has(model.metadata.id)) {
 			placed.add(model.identifier);
 			placed.add(model.metadata.id);
-			const minVersion = 'minVSCodeVersion' in entry ? entry.minVSCodeVersion : undefined;
-			if (minVersion && !isVersionAtLeast(currentVSCodeVersion, minVersion)) {
+			if (entry.minVSCodeVersion && !isVersionAtLeast(currentVSCodeVersion, entry.minVSCodeVersion)) {
 				unavailableModels.push({ entry, reason: 'update' });
 			} else {
 				promotedModels.push(model);
@@ -223,13 +220,10 @@ function buildModelPickerItems(
 			// Model is not available - determine reason
 			if (!isProUser) {
 				unavailableModels.push({ entry, reason: 'upgrade' });
+			} else if (entry.minVSCodeVersion && !isVersionAtLeast(currentVSCodeVersion, entry.minVSCodeVersion)) {
+				unavailableModels.push({ entry, reason: 'update' });
 			} else {
-				const minVersion = 'minVSCodeVersion' in entry ? entry.minVSCodeVersion : undefined;
-				if (minVersion && !isVersionAtLeast(currentVSCodeVersion, minVersion)) {
-					unavailableModels.push({ entry, reason: 'update' });
-				} else {
-					unavailableModels.push({ entry, reason: 'admin' });
-				}
+				unavailableModels.push({ entry, reason: 'admin' });
 			}
 		}
 	}
@@ -334,8 +328,7 @@ function buildModelPickerItems(
 		});
 		for (const model of otherModels) {
 			const entry = controlModelsMap.get(model.metadata.id) ?? controlModelsMap.get(model.identifier);
-			const minVersion = entry && 'minVSCodeVersion' in entry ? entry.minVSCodeVersion : undefined;
-			if (minVersion && !isVersionAtLeast(currentVSCodeVersion, minVersion)) {
+			if (entry?.minVSCodeVersion && !isVersionAtLeast(currentVSCodeVersion, entry.minVSCodeVersion)) {
 				items.push({
 					item: {
 						id: model.identifier,

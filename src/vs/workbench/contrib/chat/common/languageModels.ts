@@ -396,13 +396,7 @@ export interface ILanguageModelsService {
 	readonly restrictedChatParticipants: IObservable<{ [name: string]: string[] }>;
 }
 
-export interface IFreeModelControlEntry {
-	readonly id: string;
-	readonly label: string;
-	readonly featured?: boolean;
-}
-
-export interface IPaidModelControlEntry {
+export interface IModelControlEntry {
 	readonly id: string;
 	readonly label: string;
 	readonly featured?: boolean;
@@ -410,8 +404,8 @@ export interface IPaidModelControlEntry {
 }
 
 export interface IModelsControlManifest {
-	readonly free: IStringDictionary<IFreeModelControlEntry>;
-	readonly paid: IStringDictionary<IPaidModelControlEntry>;
+	readonly free: IStringDictionary<IModelControlEntry>;
+	readonly paid: IStringDictionary<IModelControlEntry>;
 }
 
 const languageModelChatProviderType = {
@@ -1416,8 +1410,8 @@ export class LanguageModelsService implements ILanguageModelsService {
 	}
 
 	private _setModelsControlManifest(response: IChatControlResponse['models']): void {
-		const free: IStringDictionary<IFreeModelControlEntry> = {};
-		const paid: IStringDictionary<IPaidModelControlEntry> = {};
+		const free: IStringDictionary<IModelControlEntry> = {};
+		const paid: IStringDictionary<IModelControlEntry> = {};
 
 		if (response?.free) {
 			for (const [key, entry] of Object.entries(response.free)) {
