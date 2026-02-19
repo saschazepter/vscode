@@ -25,6 +25,7 @@ import { IFreeModelControlEntry, ILanguageModelChatMetadataAndIdentifier, ILangu
 import { IChatEntitlementService, isProUser } from '../../../../../services/chat/common/chatEntitlementService.js';
 import * as semver from '../../../../../../base/common/semver/semver.js';
 import { IModelPickerDelegate } from './modelPickerActionItem.js';
+import { IUpdateService, StateType } from '../../../../../../platform/update/common/update.js';
 
 function isVersionAtLeast(current: string, required: string): boolean {
 	const currentSemver = semver.coerce(current);
@@ -32,6 +33,23 @@ function isVersionAtLeast(current: string, required: string): boolean {
 		return false;
 	}
 	return semver.gte(currentSemver, required);
+}
+
+function getUpdateHoverContent(updateState: StateType): MarkdownString {
+	const hoverContent = new MarkdownString('', { isTrusted: true, supportThemeIcons: true });
+	switch (updateState) {
+		case StateType.AvailableForDownload:
+			hoverContent.appendMarkdown(localize('chat.modelPicker.downloadUpdateHover', "This model requires a newer version of VS Code. [Download Update](command:update.downloadUpdate) to access it."));
+			break;
+		case StateType.Downloaded:
+		case StateType.Ready:
+			hoverContent.appendMarkdown(localize('chat.modelPicker.restartUpdateHover', "This model requires a newer version of VS Code. [Restart to Update](command:update.restartToUpdate) to access it."));
+			break;
+		default:
+			hoverContent.appendMarkdown(localize('chat.modelPicker.checkUpdateHover', "This model requires a newer version of VS Code. [Check for Updates](command:update.checkForUpdate) to access it."));
+			break;
+	}
+	return hoverContent;
 }
 
 /**
@@ -105,6 +123,7 @@ function buildModelPickerItems(
 	controlModels: readonly (IFreeModelControlEntry | IPaidModelControlEntry)[],
 	isProUser: boolean,
 	currentVSCodeVersion: string,
+	updateStateType: StateType,
 	onSelect: (model: ILanguageModelChatMetadataAndIdentifier) => void,
 	commandService: ICommandService,
 	upgradePlanUrl: string | undefined,
@@ -235,12 +254,14 @@ function buildModelPickerItems(
 				icon = Codicon.warning;
 			}
 
-			const hoverContent = new MarkdownString('', { isTrusted: true, supportThemeIcons: true });
+			let hoverContent: MarkdownString;
 			if (reason === 'upgrade' && upgradePlanUrl) {
+				hoverContent = new MarkdownString('', { isTrusted: true, supportThemeIcons: true });
 				hoverContent.appendMarkdown(localize('chat.modelPicker.upgradeHover', "This model requires a paid plan. [Upgrade]({0}) to access it.", upgradePlanUrl));
 			} else if (reason === 'update') {
-				hoverContent.appendMarkdown(localize('chat.modelPicker.updateHover', "This model requires a newer version of VS Code."));
+				hoverContent = getUpdateHoverContent(updateStateType);
 			} else {
+				hoverContent = new MarkdownString('', { isTrusted: true, supportThemeIcons: true });
 				hoverContent.appendMarkdown(localize('chat.modelPicker.adminHover', "This model is not available. Contact your administrator to enable it."));
 			}
 
@@ -312,8 +333,6 @@ function buildModelPickerItems(
 			const entry = controlModelsMap.get(model.metadata.id) ?? controlModelsMap.get(model.identifier);
 			const minVersion = entry && 'minVSCodeVersion' in entry ? entry.minVSCodeVersion : undefined;
 			if (minVersion && !isVersionAtLeast(currentVSCodeVersion, minVersion)) {
-				const hoverContent = new MarkdownString('', { isTrusted: true, supportThemeIcons: true });
-				hoverContent.appendMarkdown(localize('chat.modelPicker.updateHover', "This model requires a newer version of VS Code."));
 				items.push({
 					item: {
 						id: model.identifier,
@@ -330,7 +349,7 @@ function buildModelPickerItems(
 					group: { title: '', icon: Codicon.warning },
 					hideIcon: false,
 					section: ModelPickerSection.Other,
-					hover: { content: hoverContent },
+					hover: { content: getUpdateHoverContent(updateStateType) },
 				});
 			} else {
 				const action = createModelAction(model, selectedModelId, onSelect, ModelPickerSection.Other);
@@ -414,6 +433,7 @@ export class ModelPickerWidget extends Disposable {
 		@ILanguageModelsService private readonly _languageModelsService: ILanguageModelsService,
 		@IProductService private readonly _productService: IProductService,
 		@IChatEntitlementService private readonly _entitlementService: IChatEntitlementService,
+		@IUpdateService private readonly _updateService: IUpdateService,
 	) {
 		super();
 	}
@@ -488,6 +508,7 @@ export class ModelPickerWidget extends Disposable {
 			controlModelsForTier,
 			isPro,
 			this._productService.version,
+			this._updateService.state.type,
 			onSelect,
 			this._commandService,
 			this._productService.defaultChatAgent?.upgradePlanUrl,
