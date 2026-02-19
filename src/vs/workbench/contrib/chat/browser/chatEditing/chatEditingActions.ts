@@ -30,7 +30,7 @@ import { IEditorService } from '../../../../services/editor/common/editorService
 import { IAgentSessionsService } from '../agentSessions/agentSessionsService.js';
 import { isChatViewTitleActionContext } from '../../common/actions/chatActions.js';
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
-import { applyingChatEditsFailedContextKey, chatEditingWidgetFileStateContextKey, hasAppliedChatEditsContextKey, IChatEditingService, IChatEditingSession, ModifiedFileEntryState } from '../../common/editing/chatEditingService.js';
+import { applyingChatEditsFailedContextKey, hasAppliedChatEditsContextKey, IChatEditingService, IChatEditingSession } from '../../common/editing/chatEditingService.js';
 import { IChatService } from '../../common/chatService/chatService.js';
 import { isChatTreeItem, isRequestVM, isResponseVM } from '../../common/model/chatViewModel.js';
 import { ChatAgentLocation, ChatConfiguration, ChatModeKind } from '../../common/constants.js';
