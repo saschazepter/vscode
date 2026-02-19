@@ -392,6 +392,40 @@ export class ChatTerminalToolConfirmationSubPart extends BaseChatToolInvocationS
 			const tooltip = this.keybindingService.appendKeybinding(tooltipDetail, actionId);
 			return { label, tooltip };
 		};
+
+		// find session scoped action
+		const sessionAction = moreActions?.find(
+			(action): action is IChatConfirmationButton<TerminalNewAutoApproveButtonData> =>
+				!(action instanceof Separator) && 'data' in action && isObject(action.data) &&
+				(action.data.type === 'sessionApproval' || (action.data.type === 'newRule' && this._isSessionRule(action.data)))
+		);
+
+		if (sessionAction && moreActions) {
+			const allowAction: IChatConfirmationButton<boolean> = {
+				...getLabelAndTooltip(localize('tool.allow', "Allow"), AcceptToolConfirmationActionId),
+				data: true,
+			};
+
+			// rebuild additional list with allow action
+			const remainingActions: (IChatConfirmationButton<TerminalNewAutoApproveButtonData | boolean> | Separator)[] = [
+				allowAction,
+				...moreActions.filter(action => action !== sessionAction),
+			];
+			return [
+				{
+					label: sessionAction.label,
+					tooltip: sessionAction.tooltip,
+					data: sessionAction.data,
+					moreActions: remainingActions,
+				},
+				{
+					...getLabelAndTooltip(localize('tool.skip', "Skip"), SkipToolConfirmationActionId, localize('skip.detail', 'Proceed without executing this command')),
+					data: { type: 'skip' },
+					isSecondary: true,
+				},
+			];
+		}
+
 		return [
 			{
 				...getLabelAndTooltip(localize('tool.allow', "Allow"), AcceptToolConfirmationActionId),
@@ -404,6 +438,11 @@ export class ChatTerminalToolConfirmationSubPart extends BaseChatToolInvocationS
 				isSecondary: true,
 			},
 		];
+	}
+
+	private _isSessionRule(data: TerminalNewAutoApproveButtonData & { type: 'newRule' }): boolean {
+		const rules = asArray(data.rule);
+		return rules.length > 0 && rules.every(r => r.scope === 'session');
 	}
 
 	private async _showAutoApproveWarning(): Promise<boolean> {
