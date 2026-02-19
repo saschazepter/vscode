@@ -7,7 +7,8 @@ import type * as vscode from 'vscode';
 import { CancellationToken } from '../../../base/common/cancellation.js';
 import { Emitter } from '../../../base/common/event.js';
 import { Disposable, DisposableStore, toDisposable } from '../../../base/common/lifecycle.js';
-import { ExtHostChatDebugShape, IChatDebugLogEventDto, IChatDebugSessionOverviewDto, MainContext, MainThreadChatDebugShape } from './extHost.protocol.js';
+import { ExtHostChatDebugShape, IChatDebugEventDto, MainContext, MainThreadChatDebugShape } from './extHost.protocol.js';
+import { ChatDebugGenericEvent, ChatDebugModelTurnEvent, ChatDebugSubagentInvocationEvent, ChatDebugToolCallEvent, ChatDebugToolCallResult } from './extHostTypes.js';
 import { IExtHostRpcService } from './extHostRpcService.js';
 
 export class ExtHostChatDebug extends Disposable implements ExtHostChatDebugShape {
@@ -15,7 +16,6 @@ export class ExtHostChatDebug extends Disposable implements ExtHostChatDebugShap
 
 	private readonly _proxy: MainThreadChatDebugShape;
 	private _provider: vscode.ChatDebugLogProvider | undefined;
-	private _overviewProvider: vscode.ChatDebugSessionOverviewProvider | undefined;
 	private _nextHandle: number = 0;
 	private readonly _activeProgress = new Map<number, DisposableStore>();
 
@@ -49,21 +49,7 @@ export class ExtHostChatDebug extends Disposable implements ExtHostChatDebugShap
 		});
 	}
 
-	registerChatDebugSessionOverviewProvider(provider: vscode.ChatDebugSessionOverviewProvider): vscode.Disposable {
-		if (this._overviewProvider) {
-			throw new Error('A ChatDebugSessionOverviewProvider is already registered.');
-		}
-		this._overviewProvider = provider;
-		const handle = this._nextHandle++;
-		this._proxy.$registerChatDebugSessionOverviewProvider(handle);
-
-		return toDisposable(() => {
-			this._overviewProvider = undefined;
-			this._proxy.$unregisterChatDebugSessionOverviewProvider(handle);
-		});
-	}
-
-	async $provideChatDebugLog(handle: number, sessionId: string, token: CancellationToken): Promise<IChatDebugLogEventDto[] | undefined> {
+	async $provideChatDebugLog(handle: number, sessionId: string, token: CancellationToken): Promise<IChatDebugEventDto[] | undefined> {
 		if (!this._provider) {
 			return undefined;
 		}
@@ -74,19 +60,13 @@ export class ExtHostChatDebug extends Disposable implements ExtHostChatDebugShap
 		const store = new DisposableStore();
 		this._activeProgress.set(handle, store);
 
-		const emitter = store.add(new Emitter<vscode.ChatDebugLogEvent>());
+		const emitter = store.add(new Emitter<vscode.ChatDebugEvent>());
 
 		// Forward progress events to the main thread
 		store.add(emitter.event(event => {
-			this._proxy.$acceptChatDebugLogEvent(handle, {
-				id: event.id,
-				created: event.created.getTime(),
-				name: event.name,
-				details: event.details,
-				level: event.level,
-				category: event.category,
-				parentEventId: event.parentEventId,
-			});
+			const dto = this._serializeEvent(event);
+			(dto as { sessionId?: string }).sessionId = sessionId;
+			this._proxy.$acceptChatDebugEvent(handle, dto);
 		}));
 
 		// Clean up when the token is cancelled
@@ -95,7 +75,7 @@ export class ExtHostChatDebug extends Disposable implements ExtHostChatDebugShap
 		}));
 
 		try {
-			const progress: vscode.Progress<vscode.ChatDebugLogEvent> = {
+			const progress: vscode.Progress<vscode.ChatDebugEvent> = {
 				report: (value) => emitter.fire(value)
 			};
 
@@ -104,15 +84,7 @@ export class ExtHostChatDebug extends Disposable implements ExtHostChatDebugShap
 				return undefined;
 			}
 
-			return result.map(event => ({
-				id: event.id,
-				created: event.created.getTime(),
-				name: event.name,
-				details: event.details,
-				level: event.level,
-				category: event.category,
-				parentEventId: event.parentEventId,
-			}));
+			return result.map(event => this._serializeEvent(event));
 		} catch (err) {
 			this._cleanupProgress(handle);
 			throw err;
@@ -123,27 +95,77 @@ export class ExtHostChatDebug extends Disposable implements ExtHostChatDebugShap
 		// is cancelled, or the provider is unregistered.
 	}
 
+	private _serializeEvent(event: vscode.ChatDebugEvent): IChatDebugEventDto {
+		const base = {
+			id: event.id,
+			created: event.created.getTime(),
+			parentEventId: event.parentEventId,
+		};
+
+		if (event instanceof ChatDebugToolCallEvent) {
+			return {
+				...base,
+				kind: 'toolCall',
+				toolName: event.toolName,
+				toolCallId: event.toolCallId,
+				input: event.input,
+				output: event.output,
+				result: event.result === ChatDebugToolCallResult.Success ? 'success'
+					: event.result === ChatDebugToolCallResult.Error ? 'error'
+						: undefined,
+				durationInMillis: event.durationInMillis,
+			};
+		} else if (event instanceof ChatDebugModelTurnEvent) {
+			return {
+				...base,
+				kind: 'modelTurn',
+				model: event.model,
+				inputTokens: event.inputTokens,
+				outputTokens: event.outputTokens,
+				totalTokens: event.totalTokens,
+				cost: event.cost,
+				durationInMillis: event.durationInMillis,
+			};
+		} else if (event instanceof ChatDebugGenericEvent) {
+			return {
+				...base,
+				kind: 'generic',
+				name: event.name,
+				details: event.details,
+				level: event.level,
+				category: event.category,
+			};
+		} else if (event instanceof ChatDebugSubagentInvocationEvent) {
+			return {
+				...base,
+				kind: 'subagentInvocation',
+				agentName: event.agentName,
+				description: event.description,
+				status: event.status,
+				durationInMillis: event.durationInMillis,
+				toolCallCount: event.toolCallCount,
+				modelTurnCount: event.modelTurnCount,
+			};
+		}
+
+		// Fallback: treat as generic if the event doesn't match known classes
+		const generic = event as vscode.ChatDebugGenericEvent;
+		return {
+			...base,
+			kind: 'generic',
+			name: generic.name ?? '',
+			details: generic.details,
+			level: generic.level ?? 1,
+			category: generic.category,
+		};
+	}
+
 	async $resolveChatDebugLogEvent(_handle: number, eventId: string, token: CancellationToken): Promise<string | undefined> {
 		if (!this._provider?.resolveChatDebugLogEvent) {
 			return undefined;
 		}
 		const result = await this._provider.resolveChatDebugLogEvent(eventId, token);
 		return result ?? undefined;
-	}
-
-	async $provideChatDebugSessionOverview(_handle: number, sessionId: string, token: CancellationToken): Promise<IChatDebugSessionOverviewDto | undefined> {
-		if (!this._overviewProvider) {
-			return undefined;
-		}
-		const result = await this._overviewProvider.provideChatDebugSessionOverview(sessionId, token);
-		if (!result) {
-			return undefined;
-		}
-		return {
-			sessionTitle: result.sessionTitle,
-			metrics: result.metrics?.map(m => ({ label: m.label, value: m.value })),
-			actions: result.actions?.map(a => ({ group: a.group, label: a.label, commandId: a.commandId, commandArgs: a.commandArgs })),
-		};
 	}
 
 	override dispose(): void {

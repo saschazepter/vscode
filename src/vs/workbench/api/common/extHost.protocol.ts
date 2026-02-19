@@ -1374,46 +1374,62 @@ export interface MainThreadChatContextShape extends IDisposable {
 	$executeChatContextItemCommand(itemHandle: number): Promise<void>;
 }
 
-export interface IChatDebugLogEventDto {
+export interface IChatDebugEventCommonDto {
 	readonly id?: string;
+	readonly sessionId?: string;
 	readonly created: number;
+	readonly parentEventId?: string;
+}
+
+export interface IChatDebugToolCallEventDto extends IChatDebugEventCommonDto {
+	readonly kind: 'toolCall';
+	readonly toolName: string;
+	readonly toolCallId?: string;
+	readonly input?: string;
+	readonly output?: string;
+	readonly result?: 'success' | 'error';
+	readonly durationInMillis?: number;
+}
+
+export interface IChatDebugModelTurnEventDto extends IChatDebugEventCommonDto {
+	readonly kind: 'modelTurn';
+	readonly model?: string;
+	readonly inputTokens?: number;
+	readonly outputTokens?: number;
+	readonly totalTokens?: number;
+	readonly cost?: number;
+	readonly durationInMillis?: number;
+}
+
+export interface IChatDebugGenericEventDto extends IChatDebugEventCommonDto {
+	readonly kind: 'generic';
 	readonly name: string;
 	readonly details?: string;
 	readonly level: number;
 	readonly category?: string;
-	readonly parentEventId?: string;
 }
 
-export interface IChatDebugSessionOverviewMetricDto {
-	readonly label: string;
-	readonly value: string;
+export interface IChatDebugSubagentInvocationEventDto extends IChatDebugEventCommonDto {
+	readonly kind: 'subagentInvocation';
+	readonly agentName: string;
+	readonly description?: string;
+	readonly status?: 'running' | 'completed' | 'failed';
+	readonly durationInMillis?: number;
+	readonly toolCallCount?: number;
+	readonly modelTurnCount?: number;
 }
 
-export interface IChatDebugSessionOverviewActionDto {
-	readonly group: string;
-	readonly label: string;
-	readonly commandId?: string;
-	readonly commandArgs?: unknown[];
-}
-
-export interface IChatDebugSessionOverviewDto {
-	readonly sessionTitle?: string;
-	readonly metrics?: IChatDebugSessionOverviewMetricDto[];
-	readonly actions?: IChatDebugSessionOverviewActionDto[];
-}
+export type IChatDebugEventDto = IChatDebugToolCallEventDto | IChatDebugModelTurnEventDto | IChatDebugGenericEventDto | IChatDebugSubagentInvocationEventDto;
 
 export interface ExtHostChatDebugShape {
-	$provideChatDebugLog(handle: number, sessionId: string, token: CancellationToken): Promise<IChatDebugLogEventDto[] | undefined>;
+	$provideChatDebugLog(handle: number, sessionId: string, token: CancellationToken): Promise<IChatDebugEventDto[] | undefined>;
 	$resolveChatDebugLogEvent(handle: number, eventId: string, token: CancellationToken): Promise<string | undefined>;
-	$provideChatDebugSessionOverview(handle: number, sessionId: string, token: CancellationToken): Promise<IChatDebugSessionOverviewDto | undefined>;
 }
 
 export interface MainThreadChatDebugShape extends IDisposable {
 	$registerChatDebugLogProvider(handle: number): void;
 	$unregisterChatDebugLogProvider(handle: number): void;
-	$registerChatDebugSessionOverviewProvider(handle: number): void;
-	$unregisterChatDebugSessionOverviewProvider(handle: number): void;
-	$acceptChatDebugLogEvent(handle: number, event: IChatDebugLogEventDto): void;
+	$acceptChatDebugEvent(handle: number, event: IChatDebugEventDto): void;
 }
 
 export interface MainThreadEmbeddingsShape extends IDisposable {

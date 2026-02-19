@@ -32,7 +32,7 @@ import { AGENT_MD_FILENAME, CLAUDE_CONFIG_FOLDER, CLAUDE_LOCAL_MD_FILENAME, CLAU
 import { PROMPT_LANGUAGE_ID, PromptsType, getPromptsTypeForLanguageId } from '../promptTypes.js';
 import { PromptFilesLocator } from '../utils/promptFilesLocator.js';
 import { PromptFileParser, ParsedPromptFile, PromptHeaderAttributes } from '../promptFileParser.js';
-import { IAgentInstructions, type IAgentSource, IChatPromptSlashCommand, IConfiguredHooksInfo, ICustomAgent, IExtensionPromptPath, ILocalPromptPath, IPromptPath, IPromptsService, IAgentSkill, IUserPromptPath, PromptsStorage, ExtensionAgentSourceType, CUSTOM_AGENT_PROVIDER_ACTIVATION_EVENT, INSTRUCTIONS_PROVIDER_ACTIVATION_EVENT, IPromptFileContext, IPromptFileResource, PROMPT_FILE_PROVIDER_ACTIVATION_EVENT, SKILL_PROVIDER_ACTIVATION_EVENT, IPromptDiscoveryInfo, IPromptFileDiscoveryResult, ICustomAgentVisibility, IResolvedAgentFile, AgentFileType, Logger, Target } from './promptsService.js';
+import { IAgentInstructions, type IAgentSource, IChatPromptSlashCommand, IConfiguredHooksInfo, ICustomAgent, IExtensionPromptPath, ILocalPromptPath, IPromptPath, IPromptsService, IAgentSkill, IUserPromptPath, PromptsStorage, ExtensionAgentSourceType, CUSTOM_AGENT_PROVIDER_ACTIVATION_EVENT, INSTRUCTIONS_PROVIDER_ACTIVATION_EVENT, IPromptFileContext, IPromptFileResource, PROMPT_FILE_PROVIDER_ACTIVATION_EVENT, SKILL_PROVIDER_ACTIVATION_EVENT, IPromptDiscoveryInfo, IPromptFileDiscoveryResult, IPromptSourceFolderResult, ICustomAgentVisibility, IResolvedAgentFile, AgentFileType, Logger, Target } from './promptsService.js';
 import { Delayer } from '../../../../../../base/common/async.js';
 import { Schemas } from '../../../../../../base/common/network.js';
 import { IChatRequestHooks, IHookCommand, HookType } from '../hookSchema.js';
@@ -266,10 +266,57 @@ export class PromptsService extends Disposable implements IPromptsService {
 		]);
 
 		const result = [...prompts.flat()];
+
+		// Collect source folder diagnostics
+		const sourceFolders = await this._collectSourceFolderDiagnostics(type, result);
+
 		const resolveEventId = generateUuid();
-		this._discoveryEventDetails.set(resolveEventId, { type, files: result.map(p => ({ uri: p.uri, storage: p.storage, status: 'loaded' as const })) });
+		this._discoveryEventDetails.set(resolveEventId, {
+			type,
+			files: result.map(p => ({ uri: p.uri, storage: p.storage, status: 'loaded' as const })),
+			sourceFolders,
+		});
 		this.chatDebugService.log(this.currentDebugSessionId, `Resolve ${type} (end)`, `Found ${result.length} files`, undefined, { id: resolveEventId, category: 'discovery' });
 		return result;
+	}
+
+	/**
+	 * Collects diagnostic information about which source folders were searched
+	 * and whether they exist, for display in the debug panel.
+	 */
+	private async _collectSourceFolderDiagnostics(type: PromptsType, foundFiles: readonly { uri: URI }[]): Promise<IPromptSourceFolderResult[]> {
+		const resolvedFolders = await this.fileLocator.getResolvedSourceFolders(type);
+		const results: IPromptSourceFolderResult[] = [];
+
+		for (const folder of resolvedFolders) {
+			const fileCount = foundFiles.filter(f => f.uri.path.startsWith(folder.uri.path + '/')).length;
+			let exists = fileCount > 0;
+			let errorMessage: string | undefined;
+
+			if (!exists) {
+				try {
+					const stat = await this.fileService.stat(folder.uri);
+					exists = stat.isDirectory;
+				} catch (e) {
+					if (e instanceof FileOperationError && e.fileOperationResult === FileOperationResult.FILE_NOT_FOUND) {
+						exists = false;
+					} else {
+						exists = false;
+						errorMessage = e instanceof Error ? e.message : String(e);
+					}
+				}
+			}
+
+			results.push({
+				uri: folder.uri,
+				storage: folder.storage,
+				exists,
+				fileCount,
+				errorMessage,
+			});
+		}
+
+		return results;
 	}
 
 	/**
@@ -491,8 +538,13 @@ export class PromptsService extends Disposable implements IPromptsService {
 		return this.cachedSlashCommands.onDidChange;
 	}
 
-	public async getPromptSlashCommands(token: CancellationToken): Promise<readonly IChatPromptSlashCommand[]> {
-		return this.cachedSlashCommands.get(token);
+	public async getPromptSlashCommands(token: CancellationToken, sessionId?: string): Promise<readonly IChatPromptSlashCommand[]> {
+		this._debugSessionIdOverride = sessionId;
+		try {
+			return await this.cachedSlashCommands.get(token);
+		} finally {
+			this._debugSessionIdOverride = undefined;
+		}
 	}
 
 	private async computePromptSlashCommands(token: CancellationToken): Promise<readonly IChatPromptSlashCommand[]> {
@@ -565,8 +617,13 @@ export class PromptsService extends Disposable implements IPromptsService {
 		return this.cachedCustomAgents.onDidChange;
 	}
 
-	public async getCustomAgents(token: CancellationToken): Promise<readonly ICustomAgent[]> {
-		return this.cachedCustomAgents.get(token);
+	public async getCustomAgents(token: CancellationToken, sessionId?: string): Promise<readonly ICustomAgent[]> {
+		this._debugSessionIdOverride = sessionId;
+		try {
+			return await this.cachedCustomAgents.get(token);
+		} finally {
+			this._debugSessionIdOverride = undefined;
+		}
 	}
 
 	private async computeCustomAgents(token: CancellationToken): Promise<readonly ICustomAgent[]> {
@@ -927,13 +984,18 @@ export class PromptsService extends Disposable implements IPromptsService {
 		return this.cachedSkills.onDidChange;
 	}
 
-	public async findAgentSkills(token: CancellationToken): Promise<IAgentSkill[] | undefined> {
+	public async findAgentSkills(token: CancellationToken, sessionId?: string): Promise<IAgentSkill[] | undefined> {
 		const useAgentSkills = this.configurationService.getValue(PromptsConfig.USE_AGENT_SKILLS);
 		if (!useAgentSkills) {
 			return undefined;
 		}
 
-		return this.cachedSkills.get(token);
+		this._debugSessionIdOverride = sessionId;
+		try {
+			return await this.cachedSkills.get(token);
+		} finally {
+			this._debugSessionIdOverride = undefined;
+		}
 	}
 
 	private async computeAgentSkills(token: CancellationToken): Promise<IAgentSkill[]> {
@@ -1135,31 +1197,43 @@ export class PromptsService extends Disposable implements IPromptsService {
 		return { hooks: result, hasDisabledClaudeHooks };
 	}
 
-	public async getPromptDiscoveryInfo(type: PromptsType, token: CancellationToken): Promise<IPromptDiscoveryInfo> {
-		this.chatDebugService.log(this.currentDebugSessionId, `Discovery ${type} (start)`, undefined, undefined, { category: 'discovery' });
-		const files: IPromptFileDiscoveryResult[] = [];
+	public async getPromptDiscoveryInfo(type: PromptsType, token: CancellationToken, sessionId?: string): Promise<IPromptDiscoveryInfo> {
+		this._debugSessionIdOverride = sessionId;
+		try {
+			this.chatDebugService.log(this.currentDebugSessionId, `Discovery ${type} (start)`, undefined, undefined, { category: 'discovery' });
+			const files: IPromptFileDiscoveryResult[] = [];
 
-		let result: IPromptDiscoveryInfo;
-		if (type === PromptsType.skill) {
-			result = await this.getSkillDiscoveryInfo(token);
-		} else if (type === PromptsType.agent) {
-			result = await this.getAgentDiscoveryInfo(token);
-		} else if (type === PromptsType.prompt) {
-			result = await this.getPromptSlashCommandDiscoveryInfo(token);
-		} else if (type === PromptsType.instructions) {
-			result = await this.getInstructionsDiscoveryInfo(token);
-		} else if (type === PromptsType.hook) {
-			result = await this.getHookDiscoveryInfo(token);
-		} else {
-			result = { type, files };
+			let result: IPromptDiscoveryInfo;
+			if (type === PromptsType.skill) {
+				result = await this.getSkillDiscoveryInfo(token);
+			} else if (type === PromptsType.agent) {
+				result = await this.getAgentDiscoveryInfo(token);
+			} else if (type === PromptsType.prompt) {
+				result = await this.getPromptSlashCommandDiscoveryInfo(token);
+			} else if (type === PromptsType.instructions) {
+				result = await this.getInstructionsDiscoveryInfo(token);
+			} else if (type === PromptsType.hook) {
+				result = await this.getHookDiscoveryInfo(token);
+			} else {
+				result = { type, files };
+			}
+
+			const loadedCount = result.files.filter(f => f.status === 'loaded').length;
+			const skippedCount = result.files.filter(f => f.status === 'skipped').length;
+			const eventId = generateUuid();
+
+			// Add source folder diagnostics if not already present
+			if (!result.sourceFolders) {
+				const sourceFolders = await this._collectSourceFolderDiagnostics(type, result.files.filter(f => f.status === 'loaded'));
+				result = { ...result, sourceFolders };
+			}
+
+			this._discoveryEventDetails.set(eventId, result);
+			this.chatDebugService.log(this.currentDebugSessionId, `Discovery ${type} (end)`, `${loadedCount} loaded, ${skippedCount} skipped`, undefined, { id: eventId, category: 'discovery' });
+			return result;
+		} finally {
+			this._debugSessionIdOverride = undefined;
 		}
-
-		const loadedCount = result.files.filter(f => f.status === 'loaded').length;
-		const skippedCount = result.files.filter(f => f.status === 'skipped').length;
-		const eventId = generateUuid();
-		this._discoveryEventDetails.set(eventId, result);
-		this.chatDebugService.log(this.currentDebugSessionId, `Discovery ${type} (end)`, `${loadedCount} loaded, ${skippedCount} skipped`, undefined, { id: eventId, category: 'discovery' });
-		return result;
 	}
 
 	private _resolveDiscoveryEvent(eventId: string): string | undefined {
@@ -1172,6 +1246,25 @@ export class PromptsService extends Disposable implements IPromptsService {
 		lines.push(`Discovery: ${info.type}`);
 		lines.push(`Total files: ${info.files.length}`);
 		lines.push('');
+
+		// Source folders diagnostics
+		if (info.sourceFolders && info.sourceFolders.length > 0) {
+			lines.push(`Source folders searched (${info.sourceFolders.length}):`);
+			for (const folder of info.sourceFolders) {
+				const statusIcon = folder.exists ? '\u2713' : '\u2717';
+				const storageSuffix = ` [${folder.storage}]`;
+				let detail = `  ${statusIcon} ${folder.uri.path}${storageSuffix}`;
+				if (folder.exists) {
+					detail += ` - ${folder.fileCount} file(s)`;
+				} else if (folder.errorMessage) {
+					detail += ` - error: ${folder.errorMessage}`;
+				} else {
+					detail += ' - not found';
+				}
+				lines.push(detail);
+			}
+			lines.push('');
+		}
 
 		const loaded = info.files.filter(f => f.status === 'loaded');
 		const skipped = info.files.filter(f => f.status === 'skipped');

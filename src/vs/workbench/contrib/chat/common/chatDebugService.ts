@@ -19,101 +19,99 @@ export enum ChatDebugLogLevel {
 }
 
 /**
- * A single event in the chat debug log.
+ * Common properties shared by all chat debug event types.
  */
-export interface IChatDebugLogEvent {
-	/**
-	 * A unique identifier for this event.
-	 */
+export interface IChatDebugEventCommon {
 	readonly id?: string;
-
-	/**
-	 * The session ID this event belongs to.
-	 */
 	readonly sessionId: string;
-
-	/**
-	 * The timestamp when the event was created.
-	 */
 	readonly created: Date;
-
-	/**
-	 * A short name describing the event (e.g., "Resolved skills (start)").
-	 */
-	readonly name: string;
-
-	/**
-	 * Optional details of the event.
-	 */
-	readonly details?: string;
-
-	/**
-	 * The severity level of the event.
-	 */
-	readonly level: ChatDebugLogLevel;
-
-	/**
-	 * The category classifying the kind of event.
-	 */
-	readonly category?: string;
-
-	/**
-	 * The id of a parent event, used to build a hierarchical tree.
-	 */
 	readonly parentEventId?: string;
 }
 
 /**
- * A single metric displayed in the session overview.
+ * A tool call event in the chat debug log.
  */
-export interface IChatDebugSessionOverviewMetric {
-	readonly label: string;
-	readonly value: string;
+export interface IChatDebugToolCallEvent extends IChatDebugEventCommon {
+	readonly kind: 'toolCall';
+	readonly toolName: string;
+	readonly toolCallId?: string;
+	readonly input?: string;
+	readonly output?: string;
+	readonly result?: 'success' | 'error';
+	readonly durationInMillis?: number;
 }
 
 /**
- * An action button displayed in the session overview.
+ * A model turn event representing an LLM request/response.
  */
-export interface IChatDebugSessionOverviewAction {
-	readonly group: string;
-	readonly label: string;
-	readonly commandId?: string;
-	readonly commandArgs?: unknown[];
+export interface IChatDebugModelTurnEvent extends IChatDebugEventCommon {
+	readonly kind: 'modelTurn';
+	readonly model?: string;
+	readonly inputTokens?: number;
+	readonly outputTokens?: number;
+	readonly totalTokens?: number;
+	readonly cost?: number;
+	readonly durationInMillis?: number;
 }
 
 /**
- * Overview information for a chat debug session.
+ * A generic log event for unstructured or miscellaneous messages.
  */
-export interface IChatDebugSessionOverview {
-	readonly sessionTitle?: string;
-	readonly metrics?: IChatDebugSessionOverviewMetric[];
-	readonly actions?: IChatDebugSessionOverviewAction[];
+export interface IChatDebugGenericEvent extends IChatDebugEventCommon {
+	readonly kind: 'generic';
+	readonly name: string;
+	readonly details?: string;
+	readonly level: ChatDebugLogLevel;
+	readonly category?: string;
 }
+
+/**
+ * A subagent invocation event, representing a spawned sub-agent within a session.
+ */
+export interface IChatDebugSubagentInvocationEvent extends IChatDebugEventCommon {
+	readonly kind: 'subagentInvocation';
+	readonly agentName: string;
+	readonly description?: string;
+	readonly status?: 'running' | 'completed' | 'failed';
+	readonly durationInMillis?: number;
+	readonly toolCallCount?: number;
+	readonly modelTurnCount?: number;
+}
+
+/**
+ * Union of all internal chat debug event types.
+ */
+export type IChatDebugEvent = IChatDebugToolCallEvent | IChatDebugModelTurnEvent | IChatDebugGenericEvent | IChatDebugSubagentInvocationEvent;
 
 export const IChatDebugService = createDecorator<IChatDebugService>('chatDebugService');
 
 /**
- * Service for collecting and exposing chat debug log events.
- * Internal components (e.g. PromptsService) can log events,
+ * Service for collecting and exposing chat debug events.
+ * Internal components can log events,
  * and the debug editor pane can display them.
  */
 export interface IChatDebugService extends IDisposable {
 	readonly _serviceBrand: undefined;
 
 	/**
-	 * Fired when a new log event is added.
+	 * Fired when a new event is added.
 	 */
-	readonly onDidAddEvent: Event<IChatDebugLogEvent>;
+	readonly onDidAddEvent: Event<IChatDebugEvent>;
 
 	/**
-	 * Log an event to the debug service.
+	 * Log a generic event to the debug service.
 	 */
 	log(sessionId: string, name: string, details?: string, level?: ChatDebugLogLevel, options?: { id?: string; category?: string; parentEventId?: string }): void;
 
 	/**
+	 * Add a typed event to the debug service.
+	 */
+	addEvent(event: IChatDebugEvent): void;
+
+	/**
 	 * Get all events for a specific session.
 	 */
-	getEvents(sessionId?: string): readonly IChatDebugLogEvent[];
+	getEvents(sessionId?: string): readonly IChatDebugEvent[];
 
 	/**
 	 * Get all session IDs that have logged events.
@@ -140,16 +138,10 @@ export interface IChatDebugService extends IDisposable {
 	clear(): void;
 
 	/**
-	 * Register an external provider that can supply additional debug log events.
+	 * Register an external provider that can supply additional debug events.
 	 * This is used by the extension API (ChatDebugLogProvider).
 	 */
 	registerProvider(provider: IChatDebugLogProvider): IDisposable;
-
-	/**
-	 * Register an external provider that supplies session overview information.
-	 * This is used by the extension API (ChatDebugSessionOverviewProvider).
-	 */
-	registerOverviewProvider(provider: IChatDebugSessionOverviewProvider): IDisposable;
 
 	/**
 	 * Invoke all registered providers for a given session ID.
@@ -158,28 +150,16 @@ export interface IChatDebugService extends IDisposable {
 	invokeProviders(sessionId: string): Promise<void>;
 
 	/**
-	 * Resolve the full details of a log event by its id.
+	 * Resolve the full details of an event by its id.
 	 * Delegates to the registered provider's resolveChatDebugLogEvent.
 	 */
 	resolveEvent(eventId: string): Promise<string | undefined>;
-
-	/**
-	 * Get overview information for a session from registered overview providers.
-	 */
-	getOverview(sessionId: string): Promise<IChatDebugSessionOverview | undefined>;
 }
 
 /**
- * Provider interface for debug log events.
+ * Provider interface for debug events.
  */
 export interface IChatDebugLogProvider {
-	provideChatDebugLog(sessionId: string, token: CancellationToken): Promise<IChatDebugLogEvent[] | undefined>;
+	provideChatDebugLog(sessionId: string, token: CancellationToken): Promise<IChatDebugEvent[] | undefined>;
 	resolveChatDebugLogEvent?(eventId: string, token: CancellationToken): Promise<string | undefined>;
-}
-
-/**
- * Provider interface for session overview information.
- */
-export interface IChatDebugSessionOverviewProvider {
-	provideChatDebugSessionOverview(sessionId: string, token: CancellationToken): Promise<IChatDebugSessionOverview | undefined>;
 }

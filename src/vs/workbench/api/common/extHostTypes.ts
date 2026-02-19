@@ -3562,6 +3562,77 @@ export enum ChatDebugLogLevel {
 	Error = 3
 }
 
+export enum ChatDebugToolCallResult {
+	Success = 0,
+	Error = 1
+}
+
+export class ChatDebugToolCallEvent {
+	id?: string;
+	created: Date;
+	parentEventId?: string;
+	toolName: string;
+	toolCallId?: string;
+	input?: string;
+	output?: string;
+	result?: ChatDebugToolCallResult;
+	durationInMillis?: number;
+
+	constructor(toolName: string, created: Date) {
+		this.toolName = toolName;
+		this.created = created;
+	}
+}
+
+export class ChatDebugModelTurnEvent {
+	id?: string;
+	created: Date;
+	parentEventId?: string;
+	model?: string;
+	inputTokens?: number;
+	outputTokens?: number;
+	totalTokens?: number;
+	cost?: number;
+	durationInMillis?: number;
+
+	constructor(created: Date) {
+		this.created = created;
+	}
+}
+
+export class ChatDebugGenericEvent {
+	id?: string;
+	created: Date;
+	parentEventId?: string;
+	name: string;
+	details?: string;
+	level: ChatDebugLogLevel;
+	category?: string;
+
+	constructor(name: string, level: ChatDebugLogLevel, created: Date) {
+		this.name = name;
+		this.level = level;
+		this.created = created;
+	}
+}
+
+export class ChatDebugSubagentInvocationEvent {
+	id?: string;
+	created: Date;
+	parentEventId?: string;
+	agentName: string;
+	description?: string;
+	status?: 'running' | 'completed' | 'failed';
+	durationInMillis?: number;
+	toolCallCount?: number;
+	modelTurnCount?: number;
+
+	constructor(agentName: string, created: Date) {
+		this.agentName = agentName;
+		this.created = created;
+	}
+}
+
 export class ChatSessionChangedFile {
 	constructor(public readonly modifiedUri: vscode.Uri, public readonly insertions: number, public readonly deletions: number, public readonly originalUri?: vscode.Uri) { }
 }

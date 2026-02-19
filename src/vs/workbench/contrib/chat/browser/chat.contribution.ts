@@ -90,8 +90,8 @@ import { registerChatCustomizationDiagnosticsAction } from './actions/chatCustom
 import { registerChatTroubleshootAction } from './actions/chatTroubleshootAction.js';
 import { IChatDebugService } from '../common/chatDebugService.js';
 import { ChatDebugServiceImpl } from '../common/chatDebugServiceImpl.js';
-import { ChatDebugEditor } from './chatDebugEditor.js';
-import { ChatDebugEditorInput, ChatDebugEditorInputSerializer } from './chatDebugEditorInput.js';
+import { ChatDebugEditor } from './chatDebug/chatDebugEditor.js';
+import { ChatDebugEditorInput, ChatDebugEditorInputSerializer } from './chatDebug/chatDebugEditorInput.js';
 import './agentSessions/agentSessions.contribution.js';
 import { backgroundAgentDisplayName } from './agentSessions/agentSessions.js';
 

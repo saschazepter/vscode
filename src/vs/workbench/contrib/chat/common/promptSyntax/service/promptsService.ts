@@ -299,11 +299,27 @@ export interface IPromptFileDiscoveryResult {
 }
 
 /**
+ * Diagnostic information about a source folder that was searched during discovery.
+ */
+export interface IPromptSourceFolderResult {
+	readonly uri: URI;
+	readonly storage: PromptsStorage;
+	/** Whether the folder exists on disk */
+	readonly exists: boolean;
+	/** Number of matching files found in this folder */
+	readonly fileCount: number;
+	/** Error message if resolution failed */
+	readonly errorMessage?: string;
+}
+
+/**
  * Summary of prompt file discovery for a specific type.
  */
 export interface IPromptDiscoveryInfo {
 	readonly type: PromptsType;
 	readonly files: readonly IPromptFileDiscoveryResult[];
+	/** Source folders that were searched, with their existence and file count */
+	readonly sourceFolders?: readonly IPromptSourceFolderResult[];
 }
 
 export interface IConfiguredHooksInfo {
@@ -363,8 +379,9 @@ export interface IPromptsService extends IDisposable {
 
 	/**
 	 * Returns a prompt command if the command name is valid.
+	 * @param sessionId Optional session ID to scope debug logging to a specific session.
 	 */
-	getPromptSlashCommands(token: CancellationToken): Promise<readonly IChatPromptSlashCommand[]>;
+	getPromptSlashCommands(token: CancellationToken, sessionId?: string): Promise<readonly IChatPromptSlashCommand[]>;
 
 	/**
 	 * Returns the prompt command name for the given URI.
@@ -378,8 +395,9 @@ export interface IPromptsService extends IDisposable {
 
 	/**
 	 * Finds all available custom agents
+	 * @param sessionId Optional session ID to scope debug logging to a specific session.
 	 */
-	getCustomAgents(token: CancellationToken): Promise<readonly ICustomAgent[]>;
+	getCustomAgents(token: CancellationToken, sessionId?: string): Promise<readonly ICustomAgent[]>;
 
 	/**
 	 * Parses the provided URI
@@ -437,15 +455,17 @@ export interface IPromptsService extends IDisposable {
 
 	/**
 	 * Gets list of agent skills files.
+	 * @param sessionId Optional session ID to scope debug logging to a specific session.
 	 */
-	findAgentSkills(token: CancellationToken): Promise<IAgentSkill[] | undefined>;
+	findAgentSkills(token: CancellationToken, sessionId?: string): Promise<IAgentSkill[] | undefined>;
 
 	/**
 	 * Gets detailed discovery information for a prompt type.
 	 * This includes all files found and their load/skip status with reasons.
 	 * Used for diagnostics and config-info displays.
+	 * @param sessionId Optional session ID to scope debug logging to a specific session.
 	 */
-	getPromptDiscoveryInfo(type: PromptsType, token: CancellationToken): Promise<IPromptDiscoveryInfo>;
+	getPromptDiscoveryInfo(type: PromptsType, token: CancellationToken, sessionId?: string): Promise<IPromptDiscoveryInfo>;
 
 	/**
 	 * Gets all hooks collected from hooks.json files.

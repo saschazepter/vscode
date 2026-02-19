@@ -13,7 +13,7 @@ import { IChatDebugService } from '../../common/chatDebugService.js';
 import { chatSessionResourceToId } from '../../common/model/chatUri.js';
 import { ChatViewId, IChatWidgetService } from '../chat.js';
 import { CHAT_CATEGORY, CHAT_CONFIG_MENU_ID } from './chatActions.js';
-import { ChatDebugEditorInput } from '../chatDebugEditorInput.js';
+import { ChatDebugEditorInput } from '../chatDebug/chatDebugEditorInput.js';
 
 /**
  * Registers the Troubleshoot action for the chat context menu.
