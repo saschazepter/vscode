@@ -399,6 +399,7 @@ export interface ILanguageModelsService {
 export interface IFreeModelControlEntry {
 	readonly id: string;
 	readonly label: string;
+	readonly featured?: boolean;
 }
 
 export interface IPaidModelControlEntry {
@@ -507,7 +508,7 @@ interface IChatControlResponse {
 	readonly version: number;
 	readonly restrictedChatParticipants: { [name: string]: string[] };
 	readonly models?: {
-		readonly free?: Record<string, { readonly id: string; readonly label: string }>;
+		readonly free?: Record<string, { readonly id: string; readonly label: string; readonly featured?: boolean }>;
 		readonly paid?: Record<string, { readonly id: string; readonly label: string; readonly featured?: boolean; readonly minVSCodeVersion?: string }>;
 	};
 }
@@ -1420,7 +1421,7 @@ export class LanguageModelsService implements ILanguageModelsService {
 
 		if (response?.free) {
 			for (const [key, entry] of Object.entries(response.free)) {
-				free[key] = { id: entry.id, label: entry.label };
+				free[key] = { id: entry.id, label: entry.label, featured: entry.featured };
 			}
 		}
 
