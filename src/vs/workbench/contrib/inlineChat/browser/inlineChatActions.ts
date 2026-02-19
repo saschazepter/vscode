@@ -31,6 +31,7 @@ import { IChatWidgetService } from '../../chat/browser/chat.js';
 import { IAgentFeedbackVariableEntry } from '../../chat/common/attachments/chatVariableEntries.js';
 import { generateUuid } from '../../../../base/common/uuid.js';
 import { basename } from '../../../../base/common/resources.js';
+import { ChatRequestQueueKind } from '../../chat/common/chatService/chatService.js';
 
 
 CommandsRegistry.registerCommandAlias('interactiveEditor.start', 'inlineChat.start');
@@ -510,7 +511,7 @@ export class SubmitToChatAction extends AbstractInlineChatAction {
 		if (selection && !selection.isEmpty()) {
 			await widget.attachmentModel.addFile(editor.getModel().uri, selection);
 		}
-		await widget.acceptInput(value);
+		await widget.acceptInput(value, { queue: ChatRequestQueueKind.Queued });
 	}
 }
 
