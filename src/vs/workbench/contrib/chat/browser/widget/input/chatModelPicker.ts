@@ -527,9 +527,13 @@ export class ModelPickerWidget extends Disposable {
 		};
 
 		const models = this._delegate.getModels();
+		const showCuratedModels = this._delegate.showCuratedModels?.() ?? true;
 		const isPro = isProUser(this._entitlementService.entitlement);
-		const manifest = this._languageModelsService.getModelsControlManifest();
-		const controlModelsForTier = isPro ? manifest.paid : manifest.free;
+		let controlModelsForTier: IStringDictionary<IModelControlEntry> = {};
+		if (showCuratedModels) {
+			const manifest = this._languageModelsService.getModelsControlManifest();
+			controlModelsForTier = isPro ? manifest.paid : manifest.free;
+		}
 		const items = buildModelPickerItems(
 			models,
 			this._selectedModel?.identifier,

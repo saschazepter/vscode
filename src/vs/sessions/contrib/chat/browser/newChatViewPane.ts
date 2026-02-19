@@ -470,6 +470,7 @@ class NewChatWidget extends Disposable {
 			},
 			getModels: () => this._getAvailableModels(),
 			canManageModels: () => true,
+			showCuratedModels: () => this._localMode === 'workspace',
 		};
 
 		const pickerOptions: IChatInputPickerOptions = {
