@@ -694,7 +694,7 @@ export class AgentSessionsDataSource implements IAsyncDataSource<IAgentSessionsM
 		if (othersSessions.length > 0) {
 			result.push({
 				section: AgentSessionSection.More,
-				label: AgentSessionSectionLabels[AgentSessionSection.More],
+				label: localize('agentSessions.moreSectionWithCount', "More ({0})", othersSessions.length),
 				sessions: othersSessions
 			});
 		}
