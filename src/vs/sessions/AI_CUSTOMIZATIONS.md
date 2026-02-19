@@ -46,7 +46,7 @@ Key services to rely on:
 - Chat models and session state: [src/vs/workbench/contrib/chat/common/chatService/chatService.ts](../workbench/contrib/chat/common/chatService/chatService.ts)
 - File and model plumbing: [src/vs/platform/files/common/files.ts](../platform/files/common/files.ts), [src/vs/editor/common/services/resolverService.ts](../editor/common/services/resolverService.ts)
 
-The active worktree comes from `IActiveSessionService` and is the source of truth for any workspace/worktree scoping.
+The active worktree comes from `ISessionsManagementService` and is the source of truth for any workspace/worktree scoping.
 
 In the agentic workbench, prompt discovery is scoped by an agentic prompt service override that uses the active session root for workspace folders. See [src/vs/sessions/contrib/chat/browser/promptsService.ts](contrib/chat/browser/promptsService.ts).
 

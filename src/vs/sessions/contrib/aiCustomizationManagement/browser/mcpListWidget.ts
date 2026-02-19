@@ -246,11 +246,13 @@ export class McpListWidget extends Disposable {
 		// Handle context menu
 		this._register(this.list.onContextMenu(e => this.onContextMenu(e)));
 
-		// Listen to MCP service changes
-		this._register(this.mcpWorkbenchService.onChange(() => this.refresh()));
+		// Listen to MCP service changes (debounced to coalesce rapid events)
+		const delayedRefresh = this._register(new Delayer<void>(100));
+		const scheduleRefresh = () => { delayedRefresh.trigger(() => this.refresh()); };
+		this._register(this.mcpWorkbenchService.onChange(scheduleRefresh));
 		this._register(autorun(reader => {
 			this.mcpService.servers.read(reader);
-			this.refresh();
+			scheduleRefresh();
 		}));
 
 		// Initial refresh

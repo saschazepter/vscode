@@ -92,7 +92,7 @@ aiCustomizationTreeView/browser/
 ## Integration Points
 
 - `IPromptsService` for agents/skills/instructions/prompts.
-- `IActiveSessionService` for worktree filtering.
+- `ISessionsManagementService` for worktree filtering.
 - `IWorkspaceContextService` to refresh on workspace changes.
 - `ILogService` for error reporting during data fetch.
 

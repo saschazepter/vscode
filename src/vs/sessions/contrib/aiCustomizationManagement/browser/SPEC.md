@@ -61,7 +61,7 @@ aiCustomizationManagement/browser/
 - Auto-commits worktree files on exit via agent session command.
 
 **Overview View:**
-- A compact view (`AICustomizationOverviewView`) shows counts and deep-links to sections.
+- A compact view (`AICustomizationOverviewView`) shows counts and deep-links to all 7 sections.
 
 **Creation flows:**
 - Manual create (worktree/user) with snippet templates.
@@ -81,7 +81,7 @@ aiCustomizationManagement/browser/
 - Debounced (200ms) filtering.
 
 **Active session scoping:**
-- The active worktree comes from `IActiveSessionService` and is the source of truth for scoping.
+- The active worktree comes from `ISessionsManagementService` and is the source of truth for scoping.
 - Prompt discovery is scoped by the agentic prompt service override using the active session root.
 - Views refresh counts/filters when the active session changes.
 
@@ -149,7 +149,7 @@ This is the only UI surface for creating new customizations.
 
 - `IPromptsService` for agent/skill/prompt/instructions discovery.
 - `parseAllHookFiles` for hooks.
-- `IActiveSessionService` for worktree filtering.
+- `ISessionsManagementService` for worktree filtering.
 - `ISCMService` for git status badges.
 - `ITextModelService` and `IFileService` for embedded editor I/O.
 - `IDialogService` for delete confirmation and extension-file guardrails.

@@ -5,7 +5,9 @@
 
 import './media/aiCustomizationManagement.css';
 import * as DOM from '../../../../base/browser/dom.js';
+import { Delayer } from '../../../../base/common/async.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
+import { Codicon } from '../../../../base/common/codicons.js';
 import { autorun } from '../../../../base/common/observable.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { localize } from '../../../../nls.js';
@@ -22,10 +24,12 @@ import { IHoverService } from '../../../../platform/hover/browser/hover.js';
 import { IEditorGroupsService } from '../../../../workbench/services/editor/common/editorGroupsService.js';
 import { IPromptsService } from '../../../../workbench/contrib/chat/common/promptSyntax/service/promptsService.js';
 import { PromptsType } from '../../../../workbench/contrib/chat/common/promptSyntax/promptTypes.js';
+import { ILanguageModelsService } from '../../../../workbench/contrib/chat/common/languageModels.js';
+import { IMcpService } from '../../../../workbench/contrib/mcp/common/mcpTypes.js';
 import { AICustomizationManagementSection } from './aiCustomizationManagement.js';
 import { AICustomizationManagementEditorInput } from './aiCustomizationManagementEditorInput.js';
 import { AICustomizationManagementEditor } from './aiCustomizationManagementEditor.js';
-import { agentIcon, instructionsIcon, promptIcon, skillIcon } from '../../aiCustomizationTreeView/browser/aiCustomizationTreeViewIcons.js';
+import { agentIcon, instructionsIcon, promptIcon, skillIcon, hookIcon } from '../../aiCustomizationTreeView/browser/aiCustomizationTreeViewIcons.js';
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
 import { ISessionsManagementService } from '../../sessions/browser/sessionsManagementService.js';
 
@@ -51,6 +55,7 @@ export class AICustomizationOverviewView extends ViewPane {
 	private sectionsContainer!: HTMLElement;
 	private readonly sections: ISectionSummary[] = [];
 	private readonly countElements = new Map<AICustomizationManagementSection, HTMLElement>();
+	private readonly delayedLoadCounts = new Delayer<void>(100);
 
 	constructor(
 		options: IViewPaneOptions,
@@ -67,6 +72,8 @@ export class AICustomizationOverviewView extends ViewPane {
 		@IPromptsService private readonly promptsService: IPromptsService,
 		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
 		@ISessionsManagementService private readonly activeSessionService: ISessionsManagementService,
+		@ILanguageModelsService private readonly languageModelsService: ILanguageModelsService,
+		@IMcpService private readonly mcpService: IMcpService,
 	) {
 		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
 
@@ -76,17 +83,26 @@ export class AICustomizationOverviewView extends ViewPane {
 			{ id: AICustomizationManagementSection.Skills, label: localize('skills', "Skills"), icon: skillIcon, count: 0 },
 			{ id: AICustomizationManagementSection.Instructions, label: localize('instructions', "Instructions"), icon: instructionsIcon, count: 0 },
 			{ id: AICustomizationManagementSection.Prompts, label: localize('prompts', "Prompts"), icon: promptIcon, count: 0 },
+			{ id: AICustomizationManagementSection.Hooks, label: localize('hooks', "Hooks"), icon: hookIcon, count: 0 },
+			{ id: AICustomizationManagementSection.McpServers, label: localize('mcpServers', "MCP Servers"), icon: Codicon.server, count: 0 },
+			{ id: AICustomizationManagementSection.Models, label: localize('models', "Models"), icon: Codicon.vm, count: 0 },
 		);
 
-		// Listen to changes
-		this._register(this.promptsService.onDidChangeCustomAgents(() => this.loadCounts()));
-		this._register(this.promptsService.onDidChangeSlashCommands(() => this.loadCounts()));
+		// Listen to changes (debounced to coalesce rapid events)
+		const scheduleLoadCounts = () => { this.delayedLoadCounts.trigger(() => this.loadCounts()); };
+		this._register(this.promptsService.onDidChangeCustomAgents(scheduleLoadCounts));
+		this._register(this.promptsService.onDidChangeSlashCommands(scheduleLoadCounts));
+		this._register(this.languageModelsService.onDidChangeLanguageModels(scheduleLoadCounts));
+		this._register(autorun(reader => {
+			this.mcpService.servers.read(reader);
+			scheduleLoadCounts();
+		}));
 
 		// Listen to workspace folder changes to update counts
-		this._register(this.workspaceContextService.onDidChangeWorkspaceFolders(() => this.loadCounts()));
+		this._register(this.workspaceContextService.onDidChangeWorkspaceFolders(scheduleLoadCounts));
 		this._register(autorun(reader => {
 			this.activeSessionService.activeSession.read(reader);
-			this.loadCounts();
+			scheduleLoadCounts();
 		}));
 
 	}
@@ -153,6 +169,7 @@ export class AICustomizationOverviewView extends ViewPane {
 			{ section: AICustomizationManagementSection.Skills, type: PromptsType.skill },
 			{ section: AICustomizationManagementSection.Instructions, type: PromptsType.instructions },
 			{ section: AICustomizationManagementSection.Prompts, type: PromptsType.prompt },
+			{ section: AICustomizationManagementSection.Hooks, type: PromptsType.hook },
 		];
 
 		await Promise.all(sectionPromptTypes.map(async ({ section, type }) => {
@@ -172,6 +189,18 @@ export class AICustomizationOverviewView extends ViewPane {
 				sectionData.count = count;
 			}
 		}));
+
+		// MCP Servers count
+		const mcpSection = this.sections.find(s => s.id === AICustomizationManagementSection.McpServers);
+		if (mcpSection) {
+			mcpSection.count = this.mcpService.servers.get().length;
+		}
+
+		// Models count
+		const modelsSection = this.sections.find(s => s.id === AICustomizationManagementSection.Models);
+		if (modelsSection) {
+			modelsSection.count = this.languageModelsService.getLanguageModelIds().length;
+		}
 
 		this.updateCountElements();
 	}

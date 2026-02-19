@@ -5,6 +5,7 @@
 
 import './media/aiCustomizationTreeView.css';
 import * as dom from '../../../../base/browser/dom.js';
+import { Delayer } from '../../../../base/common/async.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { DisposableStore } from '../../../../base/common/lifecycle.js';
 import { autorun } from '../../../../base/common/observable.js';
@@ -466,6 +467,7 @@ export class AICustomizationViewPane extends ViewPane {
 	private dataSource: UnifiedAICustomizationDataSource | undefined;
 	private treeContainer: HTMLElement | undefined;
 	private readonly treeDisposables = this._register(new DisposableStore());
+	private readonly delayedRefresh = new Delayer<void>(100);
 
 	// Context keys for controlling menu visibility and welcome content
 	private readonly isEmptyContextKey: IContextKey<boolean>;
@@ -495,15 +497,16 @@ export class AICustomizationViewPane extends ViewPane {
 		this.isEmptyContextKey = AICustomizationIsEmptyContextKey.bindTo(contextKeyService);
 		this.itemTypeContextKey = AICustomizationItemTypeContextKey.bindTo(contextKeyService);
 
-		// Subscribe to prompt service events to refresh tree
-		this._register(this.promptsService.onDidChangeCustomAgents(() => this.refresh()));
-		this._register(this.promptsService.onDidChangeSlashCommands(() => this.refresh()));
+		// Subscribe to events to refresh tree (debounced to coalesce rapid events)
+		const scheduleRefresh = () => { this.delayedRefresh.trigger(() => this.refresh()); };
+		this._register(this.promptsService.onDidChangeCustomAgents(scheduleRefresh));
+		this._register(this.promptsService.onDidChangeSlashCommands(scheduleRefresh));
 
 		// Listen to workspace folder changes to refresh tree
-		this._register(this.workspaceContextService.onDidChangeWorkspaceFolders(() => this.refresh()));
+		this._register(this.workspaceContextService.onDidChangeWorkspaceFolders(scheduleRefresh));
 		this._register(autorun(reader => {
 			this.activeSessionService.activeSession.read(reader);
-			this.refresh();
+			scheduleRefresh();
 		}));
 
 	}

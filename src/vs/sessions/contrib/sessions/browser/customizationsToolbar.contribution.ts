@@ -7,6 +7,7 @@ import '../../../browser/media/sidebarActionButton.css';
 import './media/customizationsToolbar.css';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { Disposable, DisposableStore } from '../../../../base/common/lifecycle.js';
+import { Delayer } from '../../../../base/common/async.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { localize, localize2 } from '../../../../nls.js';
 import { Action2, registerAction2 } from '../../../../platform/actions/common/actions.js';
@@ -101,6 +102,7 @@ const CUSTOMIZATION_ITEMS: ICustomizationItemConfig[] = [
 class CustomizationLinkViewItem extends ActionViewItem {
 
 	private readonly _viewItemDisposables: DisposableStore;
+	private readonly _delayedUpdateCounts: Delayer<void>;
 	private _button: Button | undefined;
 	private _countContainer: HTMLElement | undefined;
 
@@ -116,6 +118,7 @@ class CustomizationLinkViewItem extends ActionViewItem {
 	) {
 		super(undefined, action, { ...options, icon: false, label: false });
 		this._viewItemDisposables = this._register(new DisposableStore());
+		this._delayedUpdateCounts = this._register(new Delayer(100));
 	}
 
 	protected override getTooltip(): string | undefined {
@@ -148,18 +151,19 @@ class CustomizationLinkViewItem extends ActionViewItem {
 		// Count container (inside button, floating right)
 		this._countContainer = append(this._button.element, $('span.customization-link-counts'));
 
-		// Subscribe to changes
-		this._viewItemDisposables.add(this._promptsService.onDidChangeCustomAgents(() => this._updateCounts()));
-		this._viewItemDisposables.add(this._promptsService.onDidChangeSlashCommands(() => this._updateCounts()));
-		this._viewItemDisposables.add(this._languageModelsService.onDidChangeLanguageModels(() => this._updateCounts()));
+		// Subscribe to changes (debounced to coalesce rapid events)
+		const scheduleUpdate = () => { this._delayedUpdateCounts.trigger(() => this._updateCounts()); };
+		this._viewItemDisposables.add(this._promptsService.onDidChangeCustomAgents(scheduleUpdate));
+		this._viewItemDisposables.add(this._promptsService.onDidChangeSlashCommands(scheduleUpdate));
+		this._viewItemDisposables.add(this._languageModelsService.onDidChangeLanguageModels(scheduleUpdate));
 		this._viewItemDisposables.add(autorun(reader => {
 			this._mcpService.servers.read(reader);
-			this._updateCounts();
+			scheduleUpdate();
 		}));
-		this._viewItemDisposables.add(this._workspaceContextService.onDidChangeWorkspaceFolders(() => this._updateCounts()));
+		this._viewItemDisposables.add(this._workspaceContextService.onDidChangeWorkspaceFolders(scheduleUpdate));
 		this._viewItemDisposables.add(autorun(reader => {
 			this._activeSessionService.activeSession.read(reader);
-			this._updateCounts();
+			scheduleUpdate();
 		}));
 
 		// Initial count

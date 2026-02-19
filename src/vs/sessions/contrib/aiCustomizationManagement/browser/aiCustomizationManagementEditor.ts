@@ -59,6 +59,7 @@ import { CustomizationCreatorService } from './customizationCreatorService.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { IActiveSessionItem, ISessionsManagementService } from '../../sessions/browser/sessionsManagementService.js';
 import { IWorkingCopyService } from '../../../../workbench/services/workingCopy/common/workingCopyService.js';
+import { ILogService } from '../../../../platform/log/common/log.js';
 
 const $ = DOM.$;
 
@@ -175,6 +176,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 		@ICommandService private readonly commandService: ICommandService,
 		@ISessionsManagementService private readonly activeSessionService: ISessionsManagementService,
 		@IWorkingCopyService private readonly workingCopyService: IWorkingCopyService,
+		@ILogService private readonly logService: ILogService,
 	) {
 		super(AICustomizationManagementEditor.ID, group, telemetryService, themeService, storageService);
 
@@ -577,7 +579,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 			}));
 		} catch (error) {
 			// If we can't load the model, go back to the list
-			console.error('Failed to load model for embedded editor:', error);
+			this.logService.error('[AICustomizationManagementEditor] Failed to load model for embedded editor:', error);
 			this.goBackToList();
 		}
 	}

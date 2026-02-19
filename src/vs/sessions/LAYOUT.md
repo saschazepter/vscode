@@ -95,8 +95,8 @@ The widget:
 - Extends `BaseActionViewItem` and renders a clickable label showing the active session title
 - Shows kind icon (provider type icon), session title, repository folder name, and changes summary (+insertions -deletions)
 - On click, opens the `AgentSessionsPicker` quick pick to switch between sessions
-- Gets the active session label from `IActiveSessionService.getActiveSession()` and the live model title from `IChatService`, falling back to "New Session" if no active session is found
-- Re-renders automatically when the active session changes via `autorun` on `IActiveSessionService.activeSession`, and when session data changes via `IAgentSessionsService.model.onDidChangeSessions`
+- Gets the active session label from `ISessionsManagementService.getActiveSession()` and the live model title from `IChatService`, falling back to "New Session" if no active session is found
+- Re-renders automatically when the active session changes via `autorun` on `ISessionsManagementService.activeSession`, and when session data changes via `IAgentSessionsService.model.onDidChangeSessions`
 - Is registered via `SessionsTitleBarContribution` (an `IWorkbenchContribution` in `contrib/sessions/browser/sessionsTitleBarWidget.ts`) that calls `IActionViewItemService.register()` to intercept the submenu rendering
 
 ### 3.3 Left Toolbar
@@ -606,7 +606,7 @@ src/vs/sessions/
 │       ├── sessions.contribution.ts        # Sessions view container, view, and title bar widget registration
 │       ├── sessionsViewPane.ts             # Sessions list view pane
 │       ├── sessionsTitleBarWidget.ts       # Title bar widget (SessionsTitleBarWidget, SessionsTitleBarContribution)
-│       ├── activeSessionService.ts         # IActiveSessionService implementation
+│       ├── activeSessionService.ts         # ISessionsManagementService implementation
 │       └── media/
 │           └── sessionsTitleBarWidget.css
 ```

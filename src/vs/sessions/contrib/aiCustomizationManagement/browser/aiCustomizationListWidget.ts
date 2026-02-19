@@ -314,6 +314,7 @@ export class AICustomizationListWidget extends Disposable {
 	private readonly collapsedGroups = new Set<PromptsStorage>();
 
 	private readonly delayedFilter = new Delayer<void>(200);
+	private readonly delayedRefresh = new Delayer<void>(100);
 
 	private readonly _onDidSelectItem = this._register(new Emitter<IAICustomizationListItem>());
 	readonly onDidSelectItem: Event<IAICustomizationListItem> = this._onDidSelectItem.event;
@@ -668,7 +669,7 @@ export class AICustomizationListWidget extends Disposable {
 	 */
 	async refresh(): Promise<void> {
 		this.updateAddButton();
-		await this.loadItems();
+		await this.delayedRefresh.trigger(() => this.loadItems());
 	}
 
 	/**
@@ -677,10 +678,6 @@ export class AICustomizationListWidget extends Disposable {
 	private async loadItems(): Promise<void> {
 		const promptType = sectionToPromptType(this.currentSection);
 		const items: IAICustomizationListItem[] = [];
-
-		const folders = this.workspaceContextService.getWorkspace().folders;
-		const activeRepo = getActiveSessionRoot(this.activeSessionService);
-		this.logService.info(`[AICustomizationListWidget] loadItems: section=${this.currentSection}, promptType=${promptType}, workspaceFolders=[${folders.map(f => f.uri.toString()).join(', ')}], activeRepo=${activeRepo?.toString() ?? 'none'}`);
 
 
 		if (promptType === PromptsType.agent) {
@@ -795,7 +792,7 @@ export class AICustomizationListWidget extends Disposable {
 		// Set git status for worktree (local) items
 		this.updateGitStatus(items);
 
-		this.logService.info(`[AICustomizationListWidget] loadItems complete: ${items.length} items loaded [${items.map(i => `${i.name}(${i.storage}:${i.uri.toString()})`).join(', ')}]`);
+		this.logService.debug(`[AICustomizationListWidget] loadItems complete: ${items.length} items loaded [${items.map(i => `${i.name}(${i.storage}:${i.uri.toString()})`).join(', ')}]`);
 
 		this.allItems = items;
 		this.filterItems();
@@ -871,7 +868,7 @@ export class AICustomizationListWidget extends Disposable {
 		}
 
 		const totalBeforeFilter = matchedItems.length;
-		this.logService.info(`[AICustomizationListWidget] filterItems: allItems=${this.allItems.length}, matched=${totalBeforeFilter}`);
+		this.logService.debug(`[AICustomizationListWidget] filterItems: allItems=${this.allItems.length}, matched=${totalBeforeFilter}`);
 
 		// Group items by storage
 		const groups: { storage: PromptsStorage; label: string; icon: ThemeIcon; items: IAICustomizationListItem[] }[] = [
@@ -922,7 +919,7 @@ export class AICustomizationListWidget extends Disposable {
 		}
 
 		this.list.splice(0, this.list.length, this.displayEntries);
-		this.logService.info(`[AICustomizationListWidget] filterItems complete: ${this.displayEntries.length} display entries spliced into list`);
+		this.logService.debug(`[AICustomizationListWidget] filterItems complete: ${this.displayEntries.length} display entries spliced into list`);
 		this.updateEmptyState();
 	}
 
