@@ -694,7 +694,7 @@ export class AgentSessionsDataSource implements IAsyncDataSource<IAgentSessionsM
 		if (othersSessions.length > 0) {
 			result.push({
 				section: AgentSessionSection.More,
-				label: localize('agentSessions.moreSectionWithCount', "More ({0})", othersSessions.length),
+				label: AgentSessionSectionLabels[AgentSessionSection.More],
 				sessions: othersSessions
 			});
 		}
@@ -769,7 +769,7 @@ export function groupAgentSessionsByDate(sessions: IAgentSession[]): Map<AgentSe
 		[AgentSessionSection.Yesterday, { section: AgentSessionSection.Yesterday, label: AgentSessionSectionLabels[AgentSessionSection.Yesterday], sessions: yesterdaySessions }],
 		[AgentSessionSection.Week, { section: AgentSessionSection.Week, label: AgentSessionSectionLabels[AgentSessionSection.Week], sessions: weekSessions }],
 		[AgentSessionSection.Older, { section: AgentSessionSection.Older, label: AgentSessionSectionLabels[AgentSessionSection.Older], sessions: olderSessions }],
-		[AgentSessionSection.Archived, { section: AgentSessionSection.Archived, label: localize('agentSessions.archivedSectionWithCount', "Archived ({0})", archivedSessions.length), sessions: archivedSessions }],
+		[AgentSessionSection.Archived, { section: AgentSessionSection.Archived, label: AgentSessionSectionLabels[AgentSessionSection.Archived], sessions: archivedSessions }],
 	]);
 }
 
