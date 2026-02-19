@@ -150,7 +150,7 @@ export class InlineChatEditorAffordance extends Disposable implements IContentWi
 	private readonly _onDidRunAction = this._store.add(new Emitter<string>());
 	readonly onDidRunAction: Event<string> = this._onDidRunAction.event;
 
-	readonly allowEditorOverflow = false;
+	readonly allowEditorOverflow = true;
 	readonly suppressMouseDown = false;
 
 	constructor(

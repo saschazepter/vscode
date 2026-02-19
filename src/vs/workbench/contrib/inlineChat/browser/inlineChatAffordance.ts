@@ -118,7 +118,6 @@ export class InlineChatAffordance extends Disposable {
 			InlineChatGutterAffordance,
 			editorObs,
 			derived(r => affordance.read(r) === 'gutter' ? selectionData.read(r) : undefined),
-			this.#menuData
 		));
 
 		const editorAffordance = this.#instantiationService.createInstance(

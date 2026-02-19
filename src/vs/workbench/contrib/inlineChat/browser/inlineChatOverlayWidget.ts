@@ -150,24 +150,14 @@ export class InlineChatInputWidget extends Disposable {
 		this._store.add(resizeObserver);
 		this._store.add(resizeObserver.observe(toolbar.getElement()));
 
-		// Compute min and max widget width based on editor content width
-		const maxWidgetWidth = derived(r => {
-			const layoutInfo = this._editorObs.layoutInfo.read(r);
-			return Math.max(0, Math.round(layoutInfo.contentWidth * 0.70));
-		});
-		const minWidgetWidth = derived(r => {
-			const layoutInfo = this._editorObs.layoutInfo.read(r);
-			return Math.max(0, Math.round(layoutInfo.contentWidth * 0.33));
-		});
-
 		const contentWidth = observableFromEvent(this, this._input.onDidChangeModelContent, () => this._input.getContentWidth());
 		const contentHeight = observableFromEvent(this, this._input.onDidContentSizeChange, () => this._input.getContentHeight());
 
 		this._layoutData = derived(r => {
 			const editorPad = 6;
 			const totalWidth = contentWidth.read(r) + editorPad + toolbarWidth.read(r);
-			const minWidth = minWidgetWidth.read(r);
-			const maxWidth = maxWidgetWidth.read(r);
+			const minWidth = 220;
+			const maxWidth = 600;
 			const clampedWidth = this._input.getOption(EditorOption.wordWrap) === 'on'
 				? maxWidth
 				: Math.max(minWidth, Math.min(totalWidth, maxWidth));

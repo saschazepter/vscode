@@ -146,7 +146,7 @@ export class StartSessionAction extends Action2 {
 MenuRegistry.appendMenuItem(MenuId.InlineChatEditorAffordance, {
 	group: '0_chat',
 	order: 1,
-	when: ContextKeyExpr.and(EditorContextKeys.hasNonEmptySelection, CTX_INLINE_CHAT_FILE_BELONGS_TO_CHAT.negate()),
+	when: ContextKeyExpr.and(EditorContextKeys.writable, EditorContextKeys.hasNonEmptySelection, CTX_INLINE_CHAT_FILE_BELONGS_TO_CHAT.negate()),
 	command: {
 		id: ACTION_START,
 		title: localize('editCode', "Ask for Edits"),
