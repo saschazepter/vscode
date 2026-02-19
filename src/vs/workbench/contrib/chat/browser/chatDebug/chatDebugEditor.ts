@@ -663,7 +663,7 @@ export class ChatDebugEditor extends EditorPane {
 		const viewSubagentIcon = document.createElement('span');
 		viewSubagentIcon.className = ThemeIcon.asClassName(Codicon.typeHierarchy);
 		viewSubagentBtn.appendChild(viewSubagentIcon);
-		viewSubagentBtn.append(localize('chatDebug.viewSubagentChart', "Subagent Flow"));
+		viewSubagentBtn.append(localize('chatDebug.viewSubagentChart', "Agent Flow"));
 		viewSubagentBtn.addEventListener('click', () => {
 			this.showView(ViewState.SubagentChart);
 		});
@@ -1236,7 +1236,7 @@ export class ChatDebugEditor extends EditorPane {
 		this.subagentChartBreadcrumbWidget.setItems([
 			new TextBreadcrumbItem(localize('chatDebug.title', "Chat Debug Panel"), true),
 			new TextBreadcrumbItem(sessionTitle, true),
-			new TextBreadcrumbItem(localize('chatDebug.subagentFlow', "Subagent Flow")),
+			new TextBreadcrumbItem(localize('chatDebug.subagentFlow', "Agent Flow")),
 		]);
 	}
 
@@ -1258,12 +1258,12 @@ export class ChatDebugEditor extends EditorPane {
 		// Title
 		const titleEl = document.createElement('h3');
 		titleEl.className = 'chat-debug-subagent-chart-title';
-		titleEl.textContent = localize('chatDebug.subagentFlowDiagram', "Subagent Flow Diagram");
+		titleEl.textContent = localize('chatDebug.subagentFlowDiagram', "Agent Flow Diagram");
 		this.subagentChartContent.appendChild(titleEl);
 
 		const desc = document.createElement('p');
 		desc.className = 'chat-debug-subagent-chart-desc';
-		desc.textContent = localize('chatDebug.subagentFlowDesc', "Mermaid flowchart showing the control flow between the main agent and sub-agents.");
+		desc.textContent = localize('chatDebug.subagentFlowDesc', "Flowchart showing the control flow of the agent session, including tool calls and sub-agent invocations.");
 		this.subagentChartContent.appendChild(desc);
 
 		// Actions bar

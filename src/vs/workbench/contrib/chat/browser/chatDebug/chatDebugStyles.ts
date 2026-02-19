@@ -460,6 +460,27 @@ export const chatDebugStyles = `
 	font-size: 11px;
 	color: var(--vscode-descriptionForeground);
 }
+.chat-debug-flow-tool-chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+	margin-top: 6px;
+}
+.chat-debug-flow-tool-chip {
+	display: inline-block;
+	font-size: 10px;
+	line-height: 1;
+	padding: 3px 7px;
+	border-radius: 10px;
+	background: var(--vscode-badge-background);
+	color: var(--vscode-badge-foreground);
+	white-space: nowrap;
+	opacity: 0.85;
+}
+.chat-debug-flow-tool-chip-more {
+	opacity: 0.6;
+	font-style: italic;
+}
 .chat-debug-flow-end {
 	background: var(--vscode-badge-background);
 	color: var(--vscode-badge-foreground);
