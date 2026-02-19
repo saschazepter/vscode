@@ -254,4 +254,16 @@ suite('TerminalSandboxService - allowTrustedDomains', () => {
 		const config = JSON.parse(configContent);
 		strictEqual(config.network.allowedDomains.length, 0, 'Should have no domains (* filtered out)');
 	});
+
+	test('should add ripgrep bin directory to PATH when wrapping command', async () => {
+		const sandboxService = store.add(instantiationService.createInstance(TerminalSandboxService));
+		await sandboxService.getSandboxConfigPath();
+
+		const wrappedCommand = sandboxService.wrapCommand('echo test');
+
+		ok(
+			wrappedCommand.includes('PATH=$PATH:/app/node_modules/@vscode/ripgrep/bin'),
+			'Wrapped command should include ripgrep bin directory in PATH'
+		);
+	});
 });
