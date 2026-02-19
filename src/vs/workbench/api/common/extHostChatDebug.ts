@@ -7,8 +7,8 @@ import type * as vscode from 'vscode';
 import { CancellationToken } from '../../../base/common/cancellation.js';
 import { Emitter } from '../../../base/common/event.js';
 import { Disposable, DisposableStore, toDisposable } from '../../../base/common/lifecycle.js';
-import { ExtHostChatDebugShape, IChatDebugEventDto, MainContext, MainThreadChatDebugShape } from './extHost.protocol.js';
-import { ChatDebugEventTextContent, ChatDebugGenericEvent, ChatDebugModelTurnEvent, ChatDebugSubagentInvocationEvent, ChatDebugToolCallEvent, ChatDebugToolCallResult, ChatDebugUserMessageEvent, ChatDebugAgentResponseEvent } from './extHostTypes.js';
+import { ExtHostChatDebugShape, IChatDebugEventDto, IChatDebugResolvedEventContentDto, MainContext, MainThreadChatDebugShape } from './extHost.protocol.js';
+import { ChatDebugEventMessageContent, ChatDebugEventTextContent, ChatDebugGenericEvent, ChatDebugMessageContentType, ChatDebugModelTurnEvent, ChatDebugSubagentInvocationEvent, ChatDebugToolCallEvent, ChatDebugToolCallResult, ChatDebugUserMessageEvent, ChatDebugAgentResponseEvent } from './extHostTypes.js';
 import { IExtHostRpcService } from './extHostRpcService.js';
 
 export class ExtHostChatDebug extends Disposable implements ExtHostChatDebugShape {
@@ -177,8 +177,68 @@ export class ExtHostChatDebug extends Disposable implements ExtHostChatDebugShap
 			};
 		}
 
-		// Fallback: treat as generic if the event doesn't match known classes
-		console.warn('[chatDebug][extHost._serializeEvent] FALLBACK to generic! Event did not match any instanceof check.', {
+		// Duck-type fallback: if instanceof fails (e.g. extension bundles its own
+		// copy of the API types), detect the event kind by its unique properties.
+		const duck = event as unknown as Record<string, unknown>;
+		const ctorName = duck.constructor?.name;
+		if (ctorName === 'ChatDebugToolCallEvent' || (typeof duck.toolName === 'string' && duck.toolCallId !== undefined)) {
+			const e = event as vscode.ChatDebugToolCallEvent;
+			return {
+				...base,
+				kind: 'toolCall',
+				toolName: e.toolName,
+				toolCallId: e.toolCallId,
+				input: e.input,
+				output: e.output,
+				result: e.result === ChatDebugToolCallResult.Success ? 'success'
+					: e.result === ChatDebugToolCallResult.Error ? 'error'
+						: undefined,
+				durationInMillis: e.durationInMillis,
+			};
+		} else if (ctorName === 'ChatDebugUserMessageEvent' || (Array.isArray(duck.sections) && typeof duck.message === 'string' && ctorName !== 'ChatDebugAgentResponseEvent')) {
+			const e = event as vscode.ChatDebugUserMessageEvent;
+			return {
+				...base,
+				kind: 'userMessage',
+				message: e.message,
+				sections: e.sections.map(s => ({ name: s.name, content: s.content })),
+			};
+		} else if (ctorName === 'ChatDebugAgentResponseEvent' || (Array.isArray(duck.sections) && typeof duck.message === 'string')) {
+			const e = event as vscode.ChatDebugAgentResponseEvent;
+			return {
+				...base,
+				kind: 'agentResponse',
+				message: e.message,
+				sections: e.sections.map(s => ({ name: s.name, content: s.content })),
+			};
+		} else if (ctorName === 'ChatDebugSubagentInvocationEvent' || typeof duck.agentName === 'string') {
+			const e = event as vscode.ChatDebugSubagentInvocationEvent;
+			return {
+				...base,
+				kind: 'subagentInvocation',
+				agentName: e.agentName,
+				description: e.description,
+				status: e.status as unknown as 'running' | 'completed' | 'failed' | undefined,
+				durationInMillis: e.durationInMillis,
+				toolCallCount: e.toolCallCount,
+				modelTurnCount: e.modelTurnCount,
+			};
+		} else if (ctorName === 'ChatDebugModelTurnEvent' || duck.inputTokens !== undefined || duck.outputTokens !== undefined || duck.totalTokens !== undefined) {
+			const e = event as vscode.ChatDebugModelTurnEvent;
+			return {
+				...base,
+				kind: 'modelTurn',
+				model: e.model,
+				inputTokens: e.inputTokens,
+				outputTokens: e.outputTokens,
+				totalTokens: e.totalTokens,
+				cost: e.cost,
+				durationInMillis: e.durationInMillis,
+			};
+		}
+
+		// Final fallback: treat as generic
+		console.warn('[chatDebug][extHost._serializeEvent] FALLBACK to generic! Event did not match any instanceof or duck-type check.', {
 			constructor: event?.constructor?.name,
 			keys: Object.keys(event),
 			agentName: (event as { agentName?: string }).agentName,
@@ -194,7 +254,7 @@ export class ExtHostChatDebug extends Disposable implements ExtHostChatDebugShap
 		};
 	}
 
-	async $resolveChatDebugLogEvent(_handle: number, eventId: string, token: CancellationToken): Promise<{ kind: 'text'; value: string } | undefined> {
+	async $resolveChatDebugLogEvent(_handle: number, eventId: string, token: CancellationToken): Promise<IChatDebugResolvedEventContentDto | undefined> {
 		if (!this._provider?.resolveChatDebugLogEvent) {
 			return undefined;
 		}
@@ -204,6 +264,44 @@ export class ExtHostChatDebug extends Disposable implements ExtHostChatDebugShap
 		}
 		if (result instanceof ChatDebugEventTextContent) {
 			return { kind: 'text', value: result.value };
+		}
+		if (result instanceof ChatDebugEventMessageContent) {
+			return {
+				kind: 'message',
+				type: result.type === ChatDebugMessageContentType.User ? 'user' : 'agent',
+				message: result.message,
+				sections: result.sections.map(s => ({ name: s.name, content: s.content })),
+			};
+		}
+		// Extensions may return ChatDebugUserMessageEvent / ChatDebugAgentResponseEvent
+		// from resolveChatDebugLogEvent - convert them to message content DTOs.
+		if (result instanceof ChatDebugUserMessageEvent) {
+			return {
+				kind: 'message',
+				type: 'user',
+				message: result.message,
+				sections: result.sections.map(s => ({ name: s.name, content: s.content })),
+			};
+		}
+		if (result instanceof ChatDebugAgentResponseEvent) {
+			return {
+				kind: 'message',
+				type: 'agent',
+				message: result.message,
+				sections: result.sections.map(s => ({ name: s.name, content: s.content })),
+			};
+		}
+		// Duck-type fallback for any object with sections + message
+		const duck = result as unknown as Record<string, unknown>;
+		if (Array.isArray(duck.sections) && typeof duck.message === 'string') {
+			const ctorName = duck.constructor?.name;
+			const isAgent = ctorName === 'ChatDebugAgentResponseEvent' || ctorName === 'ChatDebugEventMessageContent' && duck.type === ChatDebugMessageContentType.Agent;
+			return {
+				kind: 'message',
+				type: isAgent ? 'agent' : 'user',
+				message: duck.message as string,
+				sections: (duck.sections as Array<{ name: string; content: string }>).map(s => ({ name: s.name, content: s.content })),
+			};
 		}
 		return undefined;
 	}

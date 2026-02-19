@@ -50,7 +50,7 @@ export function deriveSubagentData(events: readonly IChatDebugEvent[]): ISubagen
 			const key = event.id ?? `runSubagent-${event.created.getTime()}`;
 			if (!subagents.has(key)) {
 				// Try to extract agent name from input JSON
-				let agentName = 'Subagent';
+				let agentName = localize('chatDebug.subagent', "Subagent");
 				let description: string | undefined;
 				if (event.input) {
 					try {
@@ -86,7 +86,7 @@ export function deriveSubagentData(events: readonly IChatDebugEvent[]): ISubagen
 	for (const event of events) {
 		if (event.parentEventId && !subagents.has(event.parentEventId)) {
 			const parentEvent = eventsById.get(event.parentEventId);
-			const name = parentEvent?.kind === 'generic' ? (parentEvent.name || 'Subagent') : 'Subagent';
+			const name = parentEvent?.kind === 'generic' ? (parentEvent.name || localize('chatDebug.subagent', "Subagent")) : localize('chatDebug.subagent', "Subagent");
 			const description = parentEvent?.kind === 'generic' ? parentEvent.details : undefined;
 			subagents.set(event.parentEventId, {
 				name,

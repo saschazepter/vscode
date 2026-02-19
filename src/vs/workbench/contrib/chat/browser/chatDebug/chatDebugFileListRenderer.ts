@@ -72,13 +72,13 @@ export function renderFileListContent(content: IChatDebugEventFileListContent, o
 
 			row.appendChild(createInlineFileLink(folder.uri, folder.uri.path, FileKind.FOLDER, openerService, modelService, languageService, hoverService, labelService, disposables));
 
-			DOM.append(row, $('span.chat-debug-file-list-badge', undefined, ` [${folder.storage}]`));
+			DOM.append(row, $('span.chat-debug-file-list-badge', undefined, localize('chatDebug.storageBadge', " [{0}]", folder.storage)));
 
 			let detailText: string;
 			if (folder.exists) {
-				detailText = ` (${folder.fileCount} file(s))`;
+				detailText = localize('chatDebug.fileCount', " ({0} file(s))", folder.fileCount);
 			} else if (folder.errorMessage) {
-				detailText = ` (error: ${folder.errorMessage})`;
+				detailText = localize('chatDebug.folderError', " (error: {0})", folder.errorMessage);
 			} else {
 				detailText = localize('chatDebug.notFound', " (not found)");
 			}
@@ -90,9 +90,7 @@ export function renderFileListContent(content: IChatDebugEventFileListContent, o
 	const loaded = content.files.filter(f => f.status === 'loaded');
 	if (loaded.length > 0) {
 		const section = DOM.append(container, $('div.chat-debug-file-list-section'));
-		const sectionTitle = DOM.append(section, $('div.chat-debug-file-list-section-title'));
-		DOM.append(sectionTitle, $(`span.chat-debug-file-list-status-icon.status-loaded${ThemeIcon.asCSSSelector(Codicon.check)}`));
-		DOM.append(sectionTitle, $('span', undefined,
+		DOM.append(section, $('div.chat-debug-file-list-section-title', undefined,
 			localize('chatDebug.loadedFiles', "Loaded ({0})", loaded.length)));
 
 		for (const file of loaded) {
@@ -100,7 +98,7 @@ export function renderFileListContent(content: IChatDebugEventFileListContent, o
 			DOM.append(row, $(`span.chat-debug-file-list-icon${ThemeIcon.asCSSSelector(Codicon.check)}`));
 			row.appendChild(createInlineFileLink(file.uri, file.name ?? file.uri.path, FileKind.FILE, openerService, modelService, languageService, hoverService, labelService, disposables));
 			DOM.append(row, $('span.chat-debug-file-list-badge', undefined,
-				file.extensionId ? ` [extension: ${file.extensionId}]` : ` [${file.storage}]`));
+				file.extensionId ? localize('chatDebug.extensionBadge', " [extension: {0}]", file.extensionId) : localize('chatDebug.storageBadge', " [{0}]", file.storage)));
 		}
 	}
 
@@ -108,14 +106,7 @@ export function renderFileListContent(content: IChatDebugEventFileListContent, o
 	const skipped = content.files.filter(f => f.status === 'skipped');
 	if (skipped.length > 0) {
 		const section = DOM.append(container, $('div.chat-debug-file-list-section'));
-		const hasErrors = skipped.some(f => f.skipReason === 'parse-error' || f.errorMessage);
-		const sectionTitle = DOM.append(section, $('div.chat-debug-file-list-section-title'));
-		if (hasErrors) {
-			DOM.append(sectionTitle, $(`span.chat-debug-file-list-status-icon.status-error${ThemeIcon.asCSSSelector(Codicon.error)}`));
-		} else {
-			DOM.append(sectionTitle, $(`span.chat-debug-file-list-status-icon.status-skipped${ThemeIcon.asCSSSelector(Codicon.debugStackframeDot)}`));
-		}
-		DOM.append(sectionTitle, $('span', undefined,
+		DOM.append(section, $('div.chat-debug-file-list-section-title', undefined,
 			localize('chatDebug.skippedFiles', "Skipped ({0})", skipped.length)));
 
 		for (const file of skipped) {
@@ -123,12 +114,12 @@ export function renderFileListContent(content: IChatDebugEventFileListContent, o
 			DOM.append(row, $(`span.chat-debug-file-list-icon${ThemeIcon.asCSSSelector(Codicon.close)}`));
 			row.appendChild(createInlineFileLink(file.uri, file.name ?? file.uri.path, FileKind.FILE, openerService, modelService, languageService, hoverService, labelService, disposables));
 
-			let reasonText = ` (${file.skipReason ?? 'unknown'}`;
+			let reasonText = ` (${file.skipReason ?? localize('chatDebug.unknown', "unknown")}`;
 			if (file.errorMessage) {
 				reasonText += `: ${file.errorMessage}`;
 			}
 			if (file.duplicateOf) {
-				reasonText += `, duplicate of ${file.duplicateOf.path}`;
+				reasonText += localize('chatDebug.duplicateOf', ", duplicate of {0}", file.duplicateOf.path);
 			}
 			reasonText += ')';
 			DOM.append(row, $('span.chat-debug-file-list-detail', undefined, reasonText));
@@ -144,21 +135,21 @@ export function renderFileListContent(content: IChatDebugEventFileListContent, o
 export function fileListToPlainText(content: IChatDebugEventFileListContent): string {
 	const lines: string[] = [];
 	const capitalizedType = content.discoveryType.charAt(0).toUpperCase() + content.discoveryType.slice(1);
-	lines.push(`${capitalizedType} Discovery Results`);
-	lines.push(`Total files: ${content.files.length}`);
+	lines.push(localize('chatDebug.plainText.discoveryResults', "{0} Discovery Results", capitalizedType));
+	lines.push(localize('chatDebug.plainText.totalFiles', "Total files: {0}", content.files.length));
 	lines.push('');
 
 	if (content.sourceFolders && content.sourceFolders.length > 0) {
-		lines.push(`Source folders searched (${content.sourceFolders.length})`);
+		lines.push(localize('chatDebug.plainText.sourceFolders', "Source folders searched ({0})", content.sourceFolders.length));
 		for (const folder of content.sourceFolders) {
 			const statusIcon = folder.exists ? '\u2713' : '\u2717';
 			let detail = `  ${statusIcon} ${folder.uri.path} [${folder.storage}]`;
 			if (folder.exists) {
-				detail += ` (${folder.fileCount} file(s))`;
+				detail += localize('chatDebug.plainText.fileCount', " ({0} file(s))", folder.fileCount);
 			} else if (folder.errorMessage) {
-				detail += ` (error: ${folder.errorMessage})`;
+				detail += localize('chatDebug.plainText.error', " (error: {0})", folder.errorMessage);
 			} else {
-				detail += ' (not found)';
+				detail += localize('chatDebug.plainText.notFound', " (not found)");
 			}
 			lines.push(detail);
 		}
@@ -169,26 +160,28 @@ export function fileListToPlainText(content: IChatDebugEventFileListContent): st
 	const skipped = content.files.filter(f => f.status === 'skipped');
 
 	if (loaded.length > 0) {
-		lines.push(`Loaded (${loaded.length})`);
+		lines.push(localize('chatDebug.plainText.loaded', "Loaded ({0})", loaded.length));
 		for (const f of loaded) {
 			const label = f.name ?? f.uri.path;
-			const storageSuffix = f.extensionId ? ` [extension: ${f.extensionId}]` : ` [${f.storage}]`;
+			const storageSuffix = f.extensionId
+				? localize('chatDebug.plainText.extensionBadge', " [extension: {0}]", f.extensionId)
+				: localize('chatDebug.plainText.storageBadge', " [{0}]", f.storage);
 			lines.push(`  \u2713 ${label} - ${f.uri.path}${storageSuffix}`);
 		}
 		lines.push('');
 	}
 
 	if (skipped.length > 0) {
-		lines.push(`Skipped (${skipped.length})`);
+		lines.push(localize('chatDebug.plainText.skipped', "Skipped ({0})", skipped.length));
 		for (const f of skipped) {
 			const label = f.name ?? f.uri.path;
-			const reason = f.skipReason ?? 'unknown';
+			const reason = f.skipReason ?? localize('chatDebug.plainText.unknown', "unknown");
 			let detail = `  \u2717 ${label} (${reason}`;
 			if (f.errorMessage) {
 				detail += `: ${f.errorMessage}`;
 			}
 			if (f.duplicateOf) {
-				detail += `, duplicate of ${f.duplicateOf.path}`;
+				detail += localize('chatDebug.plainText.duplicateOf', ", duplicate of {0}", f.duplicateOf.path);
 			}
 			detail += ')';
 			lines.push(detail);

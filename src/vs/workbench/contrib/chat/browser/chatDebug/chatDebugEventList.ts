@@ -49,6 +49,14 @@ function renderEventToTemplate(element: IChatDebugEvent, templateData: IChatDebu
 			templateData.name.textContent = element.agentName;
 			templateData.details.textContent = element.description ?? (element.status ?? '');
 			break;
+		case 'userMessage':
+			templateData.name.textContent = localize('chatDebug.userMessage', "User Message");
+			templateData.details.textContent = element.message;
+			break;
+		case 'agentResponse':
+			templateData.name.textContent = localize('chatDebug.agentResponse', "Agent Response");
+			templateData.details.textContent = element.message;
+			break;
 	}
 
 	const isError = element.kind === 'generic' && element.level === ChatDebugLogLevel.Error

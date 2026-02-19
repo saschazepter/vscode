@@ -559,7 +559,7 @@
 }
 .chat-debug-file-list-row {
 	display: flex;
-	align-items: baseline;
+	align-items: center;
 	padding: 2px 0;
 	gap: 4px;
 	flex-wrap: wrap;
@@ -635,6 +635,8 @@
 	background: var(--vscode-editorWidget-background);
 	border-radius: 3px;
 	user-select: none;
+	font-weight: 600;
+	color: var(--vscode-foreground);
 }
 .chat-debug-message-section-header:hover {
 	background: var(--vscode-list-hoverBackground);
@@ -656,9 +658,11 @@
 	white-space: pre-wrap;
 	word-break: break-word;
 	font-size: 12px;
+	font-family: var(--vscode-chat-font-family, monospace);
 	border-top: 1px solid var(--vscode-widget-border, transparent);
 	max-height: 300px;
 	overflow-y: auto;
+	background: transparent;
 	outline: none;
 }
 .chat-debug-message-section-content:focus {

@@ -1443,7 +1443,14 @@ export interface IChatDebugEventTextContentDto {
 	readonly value: string;
 }
 
-export type IChatDebugResolvedEventContentDto = IChatDebugEventTextContentDto;
+export interface IChatDebugEventMessageContentDto {
+	readonly kind: 'message';
+	readonly type: 'user' | 'agent';
+	readonly message: string;
+	readonly sections: readonly IChatDebugMessageSectionDto[];
+}
+
+export type IChatDebugResolvedEventContentDto = IChatDebugEventTextContentDto | IChatDebugEventMessageContentDto;
 
 export interface ExtHostChatDebugShape {
 	$provideChatDebugLog(handle: number, sessionId: string, token: CancellationToken): Promise<IChatDebugEventDto[] | undefined>;

@@ -238,9 +238,20 @@ export interface IChatDebugEventFileListContent {
 }
 
 /**
+ * Structured message content for a resolved debug event,
+ * containing collapsible sections.
+ */
+export interface IChatDebugEventMessageContent {
+	readonly kind: 'message';
+	readonly type: 'user' | 'agent';
+	readonly message: string;
+	readonly sections: readonly IChatDebugMessageSection[];
+}
+
+/**
  * Union of all resolved event content types.
  */
-export type IChatDebugResolvedEventContent = IChatDebugEventTextContent | IChatDebugEventFileListContent;
+export type IChatDebugResolvedEventContent = IChatDebugEventTextContent | IChatDebugEventFileListContent | IChatDebugEventMessageContent;
 
 /**
  * Provider interface for debug events.

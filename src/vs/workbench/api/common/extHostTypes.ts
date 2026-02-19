@@ -3691,6 +3691,23 @@ export class ChatDebugEventTextContent {
 	}
 }
 
+export enum ChatDebugMessageContentType {
+	User = 0,
+	Agent = 1
+}
+
+export class ChatDebugEventMessageContent {
+	type: ChatDebugMessageContentType;
+	message: string;
+	sections: ChatDebugMessageSection[];
+
+	constructor(type: ChatDebugMessageContentType, message: string, sections: ChatDebugMessageSection[]) {
+		this.type = type;
+		this.message = message;
+		this.sections = sections;
+	}
+}
+
 export class ChatSessionChangedFile {
 	constructor(public readonly modifiedUri: vscode.Uri, public readonly insertions: number, public readonly deletions: number, public readonly originalUri?: vscode.Uri) { }
 }

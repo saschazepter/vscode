@@ -416,9 +416,49 @@ declare module 'vscode' {
 	}
 
 	/**
-	 * Union of all resolved event content types.
+	 * The type of a debug message content.
 	 */
-	export type ChatDebugResolvedEventContent = ChatDebugEventTextContent;
+	export enum ChatDebugMessageContentType {
+		User = 0,
+		Agent = 1
+	}
+
+	/**
+	 * Structured message content for a resolved chat debug event,
+	 * containing collapsible sections (e.g., prompt parts or response parts).
+	 */
+	export class ChatDebugEventMessageContent {
+		/**
+		 * The type of message.
+		 */
+		type: ChatDebugMessageContentType;
+
+		/**
+		 * A short summary of the message.
+		 */
+		message: string;
+
+		/**
+		 * The structured sections of the message.
+		 */
+		sections: ChatDebugMessageSection[];
+
+		/**
+		 * Create a new ChatDebugEventMessageContent.
+		 * @param type The type of message.
+		 * @param message A short summary.
+		 * @param sections The structured sections.
+		 */
+		constructor(type: ChatDebugMessageContentType, message: string, sections: ChatDebugMessageSection[]);
+	}
+
+	/**
+	 * Union of all resolved event content types.
+	 * Extensions may also return {@link ChatDebugUserMessageEvent} or
+	 * {@link ChatDebugAgentResponseEvent} from resolve, which will be
+	 * automatically converted to structured message content.
+	 */
+	export type ChatDebugResolvedEventContent = ChatDebugEventTextContent | ChatDebugEventMessageContent | ChatDebugUserMessageEvent | ChatDebugAgentResponseEvent;
 
 	/**
 	 * Union of all chat debug event types. Each type is a class,

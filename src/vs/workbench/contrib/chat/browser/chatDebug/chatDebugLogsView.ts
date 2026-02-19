@@ -42,7 +42,7 @@ import {
 } from './chatDebugTypes.js';
 import { formatEventDetail } from './chatDebugEventDetailRenderer.js';
 import { renderFileListContent, fileListToPlainText } from './chatDebugFileListRenderer.js';
-import { renderUserMessageContent, renderAgentResponseContent, messageEventToPlainText } from './chatDebugMessageContentRenderer.js';
+import { renderUserMessageContent, renderAgentResponseContent, messageEventToPlainText, renderResolvedMessageContent, resolvedMessageToPlainText } from './chatDebugMessageContentRenderer.js';
 
 const $ = DOM.$;
 
@@ -198,12 +198,12 @@ export class ChatDebugLogsView extends Disposable {
 		const accessibilityProvider = {
 			getAriaLabel: (e: IChatDebugEvent) => {
 				switch (e.kind) {
-					case 'toolCall': return `${e.kind}: ${e.toolName}${e.result ? ` (${e.result})` : ''}`;
-					case 'modelTurn': return `${e.kind}: ${e.model ?? 'model'}${e.totalTokens ? ` ${e.totalTokens} tokens` : ''}`;
+					case 'toolCall': return localize('chatDebug.aria.toolCall', "Tool call: {0}{1}", e.toolName, e.result ? ` (${e.result})` : '');
+					case 'modelTurn': return localize('chatDebug.aria.modelTurn', "Model turn: {0}{1}", e.model ?? localize('chatDebug.aria.model', "model"), e.totalTokens ? localize('chatDebug.aria.tokenCount', " {0} tokens", e.totalTokens) : '');
 					case 'generic': return `${e.category ? e.category + ': ' : ''}${e.name}: ${e.details ?? ''}`;
-					case 'subagentInvocation': return `${e.kind}: ${e.agentName}${e.description ? ` - ${e.description}` : ''}`;
-					case 'userMessage': return `user message: ${e.message}`;
-					case 'agentResponse': return `agent response: ${e.message}`;
+					case 'subagentInvocation': return localize('chatDebug.aria.subagent', "Subagent: {0}{1}", e.agentName, e.description ? ` - ${e.description}` : '');
+					case 'userMessage': return localize('chatDebug.aria.userMessage', "User message: {0}", e.message);
+					case 'agentResponse': return localize('chatDebug.aria.agentResponse', "Agent response: {0}", e.message);
 				}
 			},
 			getWidgetAriaLabel: () => localize('chatDebug.ariaLabel', "Chat Debug Events"),
@@ -573,6 +573,11 @@ export class ChatDebugLogsView extends Disposable {
 			const { element: contentEl, disposables: contentDisposables } = this.instantiationService.invokeFunction(accessor =>
 				renderFileListContent(resolved, this.openerService, accessor.get(IModelService), accessor.get(ILanguageService), this.hoverService, accessor.get(ILabelService))
 			);
+			this.detailDisposables.add(contentDisposables);
+			this.detailContainer.appendChild(contentEl);
+		} else if (resolved && resolved.kind === 'message') {
+			this.currentDetailText = resolvedMessageToPlainText(resolved);
+			const { element: contentEl, disposables: contentDisposables } = renderResolvedMessageContent(resolved);
 			this.detailDisposables.add(contentDisposables);
 			this.detailContainer.appendChild(contentEl);
 		} else if (event.kind === 'userMessage') {

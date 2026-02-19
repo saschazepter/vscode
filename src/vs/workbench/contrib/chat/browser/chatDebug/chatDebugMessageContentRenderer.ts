@@ -8,14 +8,14 @@ import { Codicon } from '../../../../../base/common/codicons.js';
 import { DisposableStore } from '../../../../../base/common/lifecycle.js';
 import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { localize } from '../../../../../nls.js';
-import { IChatDebugMessageSection, IChatDebugUserMessageEvent, IChatDebugAgentResponseEvent } from '../../common/chatDebugService.js';
+import { IChatDebugMessageSection, IChatDebugUserMessageEvent, IChatDebugAgentResponseEvent, IChatDebugEventMessageContent } from '../../common/chatDebugService.js';
 
 const $ = DOM.$;
 
 /**
  * Render a collapsible section with a clickable header and pre-formatted content.
  */
-function renderCollapsibleSection(parent: HTMLElement, section: IChatDebugMessageSection, disposables: DisposableStore, initiallyCollapsed: boolean = true): void {
+function renderCollapsibleSection(parent: HTMLElement, section: IChatDebugMessageSection, disposables: DisposableStore, initiallyCollapsed: boolean = false): void {
 	const sectionEl = DOM.append(parent, $('div.chat-debug-message-section'));
 
 	const header = DOM.append(sectionEl, $('div.chat-debug-message-section-header'));
@@ -34,7 +34,7 @@ function renderCollapsibleSection(parent: HTMLElement, section: IChatDebugMessag
 	const updateState = () => {
 		DOM.clearNode(chevron);
 		const icon = collapsed ? Codicon.chevronRight : Codicon.chevronDown;
-		chevron.classList.add(ThemeIcon.asClassName(icon));
+		chevron.classList.add(...ThemeIcon.asClassName(icon).split(' '));
 		contentEl.style.display = collapsed ? 'none' : 'block';
 	};
 
@@ -62,7 +62,7 @@ export function renderUserMessageContent(event: IChatDebugUserMessageEvent): { e
 	if (event.sections.length > 0) {
 		const sectionsContainer = DOM.append(container, $('div.chat-debug-message-sections'));
 		DOM.append(sectionsContainer, $('div.chat-debug-message-sections-label', undefined,
-			localize('chatDebug.promptSections', "Prompt Sections ({0}):", event.sections.length)));
+			localize('chatDebug.promptSections', "Prompt Sections ({0})", event.sections.length)));
 
 		for (const section of event.sections) {
 			renderCollapsibleSection(sectionsContainer, section, disposables);
@@ -86,7 +86,7 @@ export function renderAgentResponseContent(event: IChatDebugAgentResponseEvent):
 	if (event.sections.length > 0) {
 		const sectionsContainer = DOM.append(container, $('div.chat-debug-message-sections'));
 		DOM.append(sectionsContainer, $('div.chat-debug-message-sections-label', undefined,
-			localize('chatDebug.responseSections', "Response Sections ({0}):", event.sections.length)));
+			localize('chatDebug.responseSections', "Response Sections ({0})", event.sections.length)));
 
 		for (const section of event.sections) {
 			renderCollapsibleSection(sectionsContainer, section, disposables);
@@ -101,11 +101,60 @@ export function renderAgentResponseContent(event: IChatDebugAgentResponseEvent):
  */
 export function messageEventToPlainText(event: IChatDebugUserMessageEvent | IChatDebugAgentResponseEvent): string {
 	const lines: string[] = [];
-	const label = event.kind === 'userMessage' ? 'User Message' : 'Agent Response';
+	const label = event.kind === 'userMessage' ? localize('chatDebug.userMessage', "User Message") : localize('chatDebug.agentResponse', "Agent Response");
 	lines.push(`${label}: ${event.message}`);
 	lines.push('');
 
 	for (const section of event.sections) {
+		lines.push(`--- ${section.name} ---`);
+		lines.push(section.content);
+		lines.push('');
+	}
+
+	return lines.join('\n');
+}
+
+/**
+ * Render a resolved message content (from resolveChatDebugLogEvent) with collapsible sections.
+ */
+export function renderResolvedMessageContent(content: IChatDebugEventMessageContent): { element: HTMLElement; disposables: DisposableStore } {
+	const disposables = new DisposableStore();
+	const container = $('div.chat-debug-message-content');
+	container.tabIndex = 0;
+
+	const title = content.type === 'user'
+		? localize('chatDebug.userMessage', "User Message")
+		: localize('chatDebug.agentResponse', "Agent Response");
+	DOM.append(container, $('div.chat-debug-message-content-title', undefined, title));
+	DOM.append(container, $('div.chat-debug-message-content-summary', undefined, content.message));
+
+	if (content.sections.length > 0) {
+		const sectionsContainer = DOM.append(container, $('div.chat-debug-message-sections'));
+		const label = content.type === 'user'
+			? localize('chatDebug.promptSections', "Prompt Sections ({0})", content.sections.length)
+			: localize('chatDebug.responseSections', "Response Sections ({0})", content.sections.length);
+		DOM.append(sectionsContainer, $('div.chat-debug-message-sections-label', undefined, label));
+
+		for (const section of content.sections) {
+			renderCollapsibleSection(sectionsContainer, section, disposables);
+		}
+	}
+
+	return { element: container, disposables };
+}
+
+/**
+ * Convert a resolved message content to plain text.
+ */
+export function resolvedMessageToPlainText(content: IChatDebugEventMessageContent): string {
+	const lines: string[] = [];
+	const label = content.type === 'user'
+		? localize('chatDebug.userMessage', "User Message")
+		: localize('chatDebug.agentResponse', "Agent Response");
+	lines.push(`${label}: ${content.message}`);
+	lines.push('');
+
+	for (const section of content.sections) {
 		lines.push(`--- ${section.name} ---`);
 		lines.push(section.content);
 		lines.push('');
