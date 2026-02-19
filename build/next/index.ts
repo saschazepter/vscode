@@ -7,12 +7,13 @@ import * as esbuild from 'esbuild';
 import * as fs from 'fs';
 import * as path from 'path';
 import { promisify } from 'util';
-import { execSync } from 'child_process';
+
 import glob from 'glob';
 import gulpWatch from '../lib/watch/index.ts';
 import { nlsPlugin, createNLSCollector, finalizeNLS, postProcessNLS } from './nls-plugin.ts';
 import { convertPrivateFields, type ConvertPrivateFieldsResult } from './private-to-property.ts';
 import { getVersion } from '../lib/getVersion.ts';
+import { getGitCommitDate } from '../lib/date.ts';
 import product from '../../product.json' with { type: 'json' };
 import packageJson from '../../package.json' with { type: 'json' };
 import { useEsbuildTranspile } from '../buildConfig.ts';
@@ -27,14 +28,6 @@ const REPO_ROOT = path.dirname(path.dirname(import.meta.dirname));
 const commit = getVersion(REPO_ROOT);
 const quality = (product as { quality?: string }).quality;
 const version = (quality && quality !== 'stable') ? `${packageJson.version}-${quality}` : packageJson.version;
-
-function getGitCommitDate(): string {
-	try {
-		return execSync('git log -1 --format=%cI HEAD', { cwd: REPO_ROOT, encoding: 'utf8' }).trim();
-	} catch {
-		return new Date().toISOString();
-	}
-}
 
 // CLI: transpile [--watch] | bundle [--minify] [--nls] [--out <dir>]
 const command = process.argv[2]; // 'transpile' or 'bundle'

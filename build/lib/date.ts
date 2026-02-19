@@ -14,7 +14,7 @@ const root = path.join(import.meta.dirname, '..', '..');
  * so that independent builds on different machines produce the same
  * timestamp (required for deterministic builds, e.g. macOS Universal).
  */
-function getGitCommitDate(): string {
+export function getGitCommitDate(): string {
 	try {
 		return execSync('git log -1 --format=%cI HEAD', { cwd: root, encoding: 'utf8' }).trim();
 	} catch {
