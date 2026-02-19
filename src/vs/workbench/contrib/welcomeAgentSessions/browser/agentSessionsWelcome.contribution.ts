@@ -24,6 +24,7 @@ import { Action2, registerAction2 } from '../../../../platform/actions/common/ac
 import { ChatContextKeys } from '../../chat/common/actions/chatContextKeys.js';
 import { IWorkspaceContextService, WorkbenchState } from '../../../../platform/workspace/common/workspace.js';
 import { IChatEntitlementService } from '../../../services/chat/common/chatEntitlementService.js';
+import { IWorkbenchLayoutService, Parts } from '../../../services/layout/browser/layoutService.js';
 
 // Registration priority
 const agentSessionsWelcomeInputTypeId = 'workbench.editors.agentSessionsWelcomeInput';
@@ -108,12 +109,16 @@ registerAction2(class OpenAgentSessionsWelcomeAction extends Action2 {
 		const editorService = accessor.get(IEditorService);
 		const instantiationService = accessor.get(IInstantiationService);
 		const workspaceContextService = accessor.get(IWorkspaceContextService);
+		const layoutService = accessor.get(IWorkbenchLayoutService);
 		const input = instantiationService.createInstance(AgentSessionsWelcomeInput, { initiator: 'command', workspaceKind: getWorkspaceKind(workspaceContextService) });
 		await editorService.openEditor(input, { pinned: true });
+
+		// Hide the auxiliary bar (chat panel) to avoid duplicate chat UI
+		layoutService.setPartHidden(true, Parts.AUXILIARYBAR_PART);
 	}
 });
 
-// Runner contribution - handles opening on startup
+// Runner contribution - handles opening on startup and mutual exclusivity between welcome page and chat panel
 class AgentSessionsWelcomeRunnerContribution extends Disposable implements IWorkbenchContribution {
 	static readonly ID = 'workbench.contrib.agentSessionsWelcomeRunner';
 
@@ -125,10 +130,12 @@ class AgentSessionsWelcomeRunnerContribution extends Disposable implements IWork
 		@IContextKeyService private readonly contextKeyService: IContextKeyService,
 		@IStorageService private readonly storageService: IStorageService,
 		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
-		@IChatEntitlementService private readonly chatEntitlementService: IChatEntitlementService
+		@IChatEntitlementService private readonly chatEntitlementService: IChatEntitlementService,
+		@IWorkbenchLayoutService private readonly layoutService: IWorkbenchLayoutService
 	) {
 		super();
 		this.run();
+		this.registerMutualExclusivity();
 	}
 
 	private async run(): Promise<void> {
@@ -164,6 +171,41 @@ class AgentSessionsWelcomeRunnerContribution extends Disposable implements IWork
 		// Open the agent sessions welcome page
 		const input = this.instantiationService.createInstance(AgentSessionsWelcomeInput, { initiator: 'startup', workspaceKind: getWorkspaceKind(this.workspaceContextService) });
 		await this.editorService.openEditor(input, { pinned: false });
+
+		// Hide the auxiliary bar (chat panel) to avoid duplicate chat UI
+		this.layoutService.setPartHidden(true, Parts.AUXILIARYBAR_PART);
+	}
+
+	private hasWelcomeEditorOpen(): boolean {
+		return this.editorService.editors.some(editor => editor instanceof AgentSessionsWelcomeInput);
+	}
+
+	private closeWelcomeEditors(): void {
+		for (const group of this.editorGroupsService.groups) {
+			for (const editor of group.editors) {
+				if (editor instanceof AgentSessionsWelcomeInput) {
+					group.closeEditor(editor);
+				}
+			}
+		}
+	}
+
+	private registerMutualExclusivity(): void {
+		// When the auxiliary bar (chat panel) becomes visible, close the welcome page
+		this._register(this.layoutService.onDidChangePartVisibility(e => {
+			if (e.partId === Parts.AUXILIARYBAR_PART && e.visible && this.hasWelcomeEditorOpen()) {
+				this.closeWelcomeEditors();
+			}
+		}));
+
+		// When the welcome page becomes the active editor, hide the auxiliary bar
+		this._register(this.editorService.onDidActiveEditorChange(() => {
+			if (this.editorService.activeEditor instanceof AgentSessionsWelcomeInput) {
+				if (this.layoutService.isVisible(Parts.AUXILIARYBAR_PART)) {
+					this.layoutService.setPartHidden(true, Parts.AUXILIARYBAR_PART);
+				}
+			}
+		}));
 	}
 }
 
