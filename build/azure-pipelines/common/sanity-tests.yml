@@ -17,9 +17,6 @@ parameters:
   - name: baseImage
     type: string
     default: ""
-  - name: pageSize
-    type: string
-    default: ""
   - name: args
     type: string
     default: ""
@@ -113,9 +110,9 @@ jobs:
       - ${{ if ne(parameters.container, '') }}:
         - task: Cache@2
           inputs:
-            key: 'docker-v3 | "${{ parameters.container }}" | "${{ parameters.arch }}" | "${{ parameters.pageSize }}" | "$(Agent.OS)" | $(TEST_DIR)/containers/${{ parameters.container }}.dockerfile'
+            key: 'docker-v3 | "${{ parameters.container }}" | "${{ parameters.arch }}" | "$(Agent.OS)" | $(TEST_DIR)/containers/${{ parameters.container }}.dockerfile'
             path: $(DOCKER_CACHE_DIR)
-            restoreKeys: docker-v3 | "${{ parameters.container }}" | "${{ parameters.arch }}" | "${{ parameters.pageSize }}" | "$(Agent.OS)"
+            restoreKeys: docker-v3 | "${{ parameters.container }}" | "${{ parameters.arch }}" | "$(Agent.OS)"
             cacheHitVar: DOCKER_CACHE_HIT
           displayName: Download Docker Image
 
@@ -130,7 +127,6 @@ jobs:
               --container "${{ parameters.container }}" \
               --arch "${{ parameters.arch }}" \
               --base-image "${{ parameters.baseImage }}" \
-              --page-size "${{ parameters.pageSize }}" \
               --quality "$(BUILD_QUALITY)" \
               --commit "$(BUILD_COMMIT)" \
               --test-results "/root/results.xml" \
