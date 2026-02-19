@@ -456,13 +456,13 @@ export class PtyService extends Disposable implements IPtyService {
 		return this._throwIfNoPty(id).writeBinary(data);
 	}
 	@traceRpc
-	async resize(id: number, cols: number, rows: number): Promise<void> {
+	async resize(id: number, cols: number, rows: number, pixelWidth?: number, pixelHeight?: number): Promise<void> {
 		const pty = this._throwIfNoPty(id);
 		if (pty) {
 			for (const contrib of this._contributions) {
-				contrib.handleProcessResize(id, cols, rows);
+				contrib.handleProcessResize(id, cols, rows, pixelWidth, pixelHeight);
 			}
-			pty.resize(cols, rows);
+			pty.resize(cols, rows, pixelWidth, pixelHeight);
 		}
 	}
 	@traceRpc
@@ -903,7 +903,7 @@ class PersistentTerminalProcess extends Disposable {
 	writeBinary(data: string): Promise<void> {
 		return this._terminalProcess.processBinary(data);
 	}
-	resize(cols: number, rows: number): void {
+	resize(cols: number, rows: number, pixelWidth?: number, pixelHeight?: number): void {
 		if (this._inReplay) {
 			return;
 		}
@@ -912,7 +912,7 @@ class PersistentTerminalProcess extends Disposable {
 		// Buffered events should flush when a resize occurs
 		this._bufferer.flushBuffer(this._persistentProcessId);
 
-		return this._terminalProcess.resize(cols, rows);
+		return this._terminalProcess.resize(cols, rows, pixelWidth, pixelHeight);
 	}
 	async clearBuffer(): Promise<void> {
 		this._serializer.clearBuffer();
