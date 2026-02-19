@@ -242,16 +242,24 @@ function buildModelPickerItems(
 			let description: string | MarkdownString | undefined;
 			let icon: ThemeIcon = Codicon.blank;
 
-			if (reason === 'upgrade' && upgradePlanUrl) {
-				description = new MarkdownString(localize('chat.modelPicker.upgradeLink', "[Upgrade]({0})", upgradePlanUrl), { isTrusted: true });
+			if (reason === 'upgrade') {
+				if (upgradePlanUrl) {
+					description = new MarkdownString(localize('chat.modelPicker.upgradeLink', "[Upgrade]({0})", upgradePlanUrl), { isTrusted: true });
+				} else {
+					description = localize('chat.modelPicker.upgrade', "Upgrade");
+				}
 			} else {
 				icon = Codicon.warning;
 			}
 
 			let hoverContent: MarkdownString;
-			if (reason === 'upgrade' && upgradePlanUrl) {
+			if (reason === 'upgrade') {
 				hoverContent = new MarkdownString('', { isTrusted: true, supportThemeIcons: true });
-				hoverContent.appendMarkdown(localize('chat.modelPicker.upgradeHover', "This model requires a paid plan. [Upgrade]({0}) to access it.", upgradePlanUrl));
+				if (upgradePlanUrl) {
+					hoverContent.appendMarkdown(localize('chat.modelPicker.upgradeHover', "This model requires a paid plan. [Upgrade]({0}) to access it.", upgradePlanUrl));
+				} else {
+					hoverContent.appendMarkdown(localize('chat.modelPicker.upgradeHoverNoLink', "This model requires a paid plan."));
+				}
 			} else if (reason === 'update') {
 				hoverContent = getUpdateHoverContent(updateStateType);
 			} else {
