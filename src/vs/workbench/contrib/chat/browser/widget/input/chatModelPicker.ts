@@ -309,8 +309,33 @@ function buildModelPickerItems(
 			isSectionToggle: true,
 		});
 		for (const model of otherModels) {
-			const action = createModelAction(model, selectedModelId, onSelect, ModelPickerSection.Other);
-			items.push(createModelItem(action, model));
+			const entry = controlModelsMap.get(model.metadata.id) ?? controlModelsMap.get(model.identifier);
+			const minVersion = entry && 'minVSCodeVersion' in entry ? entry.minVSCodeVersion : undefined;
+			if (minVersion && !isVersionAtLeast(currentVSCodeVersion, minVersion)) {
+				const hoverContent = new MarkdownString('', { isTrusted: true, supportThemeIcons: true });
+				hoverContent.appendMarkdown(localize('chat.modelPicker.updateHover', "This model requires a newer version of VS Code."));
+				items.push({
+					item: {
+						id: model.identifier,
+						enabled: false,
+						checked: false,
+						class: undefined,
+						tooltip: model.metadata.name,
+						label: model.metadata.name,
+						run: () => { }
+					},
+					kind: ActionListItemKind.Action,
+					label: model.metadata.name,
+					disabled: true,
+					group: { title: '', icon: Codicon.warning },
+					hideIcon: false,
+					section: ModelPickerSection.Other,
+					hover: { content: hoverContent },
+				});
+			} else {
+				const action = createModelAction(model, selectedModelId, onSelect, ModelPickerSection.Other);
+				items.push(createModelItem(action, model));
+			}
 		}
 
 		// "Manage Models..." entry inside Other Models section, styled as a link
