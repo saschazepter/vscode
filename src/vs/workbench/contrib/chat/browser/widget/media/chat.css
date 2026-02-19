@@ -2675,10 +2675,25 @@ have to be updated for changes to the rules above, or to support more deeply nes
 			border: 1px solid transparent;
 			background-color: transparent;
 			padding: 1px 5px;
+			margin-right: 5px;
 		}
 
 		.monaco-toolbar .action-label.codicon.codicon-repo-forked {
 			width: fit-content;
+			padding: 2px 5px;
+		}
+
+		.monaco-toolbar .actions-container > .action-item:not(:first-child):has(.action-label.codicon.codicon-repo-forked) {
+			display: flex;
+			align-items: center;
+			gap: 4px;
+		}
+
+		.monaco-toolbar .actions-container > .action-item:not(:first-child):has(.action-label.codicon.codicon-repo-forked)::before {
+			content: '\00B7';
+			font-size: 12px;
+			line-height: 18px;
+			color: var(--vscode-descriptionForeground);
 		}
 
 		.monaco-toolbar .action-label:hover {
