@@ -224,22 +224,22 @@ function buildModelPickerItems(
 			items.push(createModelItem(action, model));
 		}
 
-		// Unavailable models shown as disabled with action link
+		// Unavailable models shown as disabled
 		for (const { entry, reason } of unavailableModels) {
-			let description: string | MarkdownString;
+			let description: string | MarkdownString | undefined;
+			let icon: ThemeIcon = Codicon.blank;
+
 			if (reason === 'upgrade' && upgradePlanUrl) {
 				description = new MarkdownString(localize('chat.modelPicker.upgradeLink', "[Upgrade]({0})", upgradePlanUrl), { isTrusted: true });
-			} else if (reason === 'update') {
-				description = new MarkdownString(localize('chat.modelPicker.updateLink', "[Update VS Code](command:update.checkForUpdate)"), { isTrusted: true });
 			} else {
-				description = localize('chat.modelPicker.adminEnable', "Contact Admin");
+				icon = Codicon.warning;
 			}
 
 			const hoverContent = new MarkdownString('', { isTrusted: true, supportThemeIcons: true });
 			if (reason === 'upgrade' && upgradePlanUrl) {
 				hoverContent.appendMarkdown(localize('chat.modelPicker.upgradeHover', "This model requires a paid plan. [Upgrade]({0}) to access it.", upgradePlanUrl));
 			} else if (reason === 'update') {
-				hoverContent.appendMarkdown(localize('chat.modelPicker.updateHover', "This model requires a newer version of VS Code. [Update VS Code](command:update.checkForUpdate) to access it."));
+				hoverContent.appendMarkdown(localize('chat.modelPicker.updateHover', "This model requires a newer version of VS Code."));
 			} else {
 				hoverContent.appendMarkdown(localize('chat.modelPicker.adminHover', "This model is not available. Contact your administrator to enable it."));
 			}
@@ -259,7 +259,7 @@ function buildModelPickerItems(
 				label: entry.label,
 				description,
 				disabled: true,
-				group: { title: '', icon: Codicon.blank },
+				group: { title: '', icon },
 				hideIcon: false,
 				hover: { content: hoverContent },
 			});
