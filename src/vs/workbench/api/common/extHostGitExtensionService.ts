@@ -10,7 +10,7 @@ import { ExtensionIdentifier } from '../../../platform/extensions/common/extensi
 import { createDecorator } from '../../../platform/instantiation/common/instantiation.js';
 import { IExtHostExtensionService } from './extHostExtensionService.js';
 import { IExtHostRpcService } from './extHostRpcService.js';
-import { ExtHostGitExtensionShape as ExtHostGitExtensionShape } from './extHost.protocol.js';
+import { ExtHostGitExtensionShape } from './extHost.protocol.js';
 
 const GIT_EXTENSION_ID = 'vscode.git';
 
