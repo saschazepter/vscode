@@ -297,7 +297,7 @@ configurationRegistry.registerConfiguration({
 				nls.localize('chat.upvoteAnimation.radiantLines', "Shows radiant lines emanating from the button."),
 			],
 			description: nls.localize('chat.upvoteAnimation', "Controls whether an animation is shown when clicking the thumbs up button on a chat response."),
-			default: 'off',
+			default: 'floatingThumbs',
 		},
 		'chat.experimental.detectParticipant.enabled': {
 			type: 'boolean',
@@ -1181,20 +1181,6 @@ Registry.as<IConfigurationMigrationRegistry>(Extensions.ConfigurationMigration).
 		migrateFn: (value, _accessor) => ([
 			['chat.useClaudeSkills', { value: undefined }],
 			['chat.useAgentSkills', { value }]
-		])
-	},
-	{
-		key: 'chat.confettiOnThumbsUp',
-		migrateFn: (value, _accessor) => ([
-			['chat.confettiOnThumbsUp', { value: undefined }],
-			['chat.upvoteAnimation', { value }]
-		])
-	},
-	{
-		key: 'chat.thumbsUpAnimation',
-		migrateFn: (value, _accessor) => ([
-			['chat.thumbsUpAnimation', { value: undefined }],
-			['chat.upvoteAnimation', { value }]
 		])
 	},
 	{
