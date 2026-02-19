@@ -24,6 +24,7 @@ export class NullLanguageModelsService implements ILanguageModelsService {
 
 	onDidChangeLanguageModels = Event.None;
 	onDidChangeLanguageModelVendors = Event.None;
+	onDidChangeCuratedModels = Event.None;
 
 	updateModelPickerPreference(modelIdentifier: string, showInModelPicker: boolean): void {
 		return;
@@ -91,7 +92,7 @@ export class NullLanguageModelsService implements ILanguageModelsService {
 		return [];
 	}
 
-	recordModelUsage(): void { }
+	addToRecentlyUsedList(): void { }
 
 	getCuratedModels(): ICuratedModels {
 		return { free: [], paid: [] };

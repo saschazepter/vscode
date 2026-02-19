@@ -376,13 +376,18 @@ export interface ILanguageModelsService {
 	/**
 	 * Records that a model was used, updating the recently used list.
 	 */
-	recordModelUsage(model: ILanguageModelChatMetadataAndIdentifier): void;
+	addToRecentlyUsedList(model: ILanguageModelChatMetadataAndIdentifier): void;
 
 	/**
 	 * Returns the curated models from the models control manifest,
 	 * separated into free and paid tiers.
 	 */
 	getCuratedModels(): ICuratedModels;
+
+	/**
+	 * Fires when curated models change.
+	 */
+	readonly onDidChangeCuratedModels: Event<ICuratedModels>;
 
 	/**
 	 * Observable map of restricted chat participant names to allowed extension publisher/IDs.
@@ -393,6 +398,7 @@ export interface ILanguageModelsService {
 
 export interface ICuratedModel {
 	readonly id: string;
+	readonly label: string;
 	readonly isNew?: boolean;
 	readonly minVSCodeVersion?: string;
 }
@@ -494,6 +500,7 @@ const CHAT_CURATED_MODELS_STORAGE_KEY = 'chat.curatedModels';
 
 interface IRawCuratedModel {
 	readonly id: string;
+	readonly label: string;
 	readonly isNew?: boolean;
 	readonly minVSCodeVersion?: string;
 }
@@ -532,6 +539,10 @@ export class LanguageModelsService implements ILanguageModelsService {
 	readonly onDidChangeLanguageModels: Event<string> = this._onLanguageModelChange.event;
 
 	private _recentlyUsedModelIds: string[] = [];
+
+	private readonly _onDidChangeCuratedModels = this._store.add(new Emitter<ICuratedModels>());
+	readonly onDidChangeCuratedModels = this._onDidChangeCuratedModels.event;
+
 	private _curatedModels: ICuratedModels = { free: [], paid: [] };
 
 	private _chatControlUrl: string | undefined;
@@ -1374,11 +1385,11 @@ export class LanguageModelsService implements ILanguageModelsService {
 	getRecentlyUsedModelIds(): string[] {
 		// Filter to only include models that still exist in the cache
 		return this._recentlyUsedModelIds
-			.filter(id => this._modelCache.has(id))
+			.filter(id => this._modelCache.has(id) && id !== 'auto')
 			.slice(0, 5);
 	}
 
-	recordModelUsage(model: ILanguageModelChatMetadataAndIdentifier): void {
+	addToRecentlyUsedList(model: ILanguageModelChatMetadataAndIdentifier): void {
 		if (model.metadata.id === 'auto' && this._vendors.get(model.metadata.vendor)?.isDefault) {
 			return;
 		}
@@ -1406,7 +1417,7 @@ export class LanguageModelsService implements ILanguageModelsService {
 	}
 
 	private _setCuratedModels(free: IRawCuratedModel[], paid: IRawCuratedModel[]): void {
-		const toPublic = (m: IRawCuratedModel): ICuratedModel => ({ id: m.id, isNew: m.isNew, minVSCodeVersion: m.minVSCodeVersion });
+		const toPublic = (m: IRawCuratedModel): ICuratedModel => ({ id: m.id, label: m.label, isNew: m.isNew, minVSCodeVersion: m.minVSCodeVersion });
 
 		this._curatedModels = { free: [], paid: [] };
 		const newIds = new Set<string>();
@@ -1424,6 +1435,8 @@ export class LanguageModelsService implements ILanguageModelsService {
 				newIds.add(model.id);
 			}
 		}
+
+		this._onDidChangeCuratedModels.fire(this._curatedModels);
 	}
 
 	//#region Chat control data
