@@ -68,9 +68,6 @@ export class OpenSessionWorktreeInVSCodeAction extends Action2 {
 			return;
 		}
 
-		const params = new URLSearchParams();
-		params.set('session', activeSession.resource.toString());
-
 		const scheme = productService.quality === 'stable'
 			? 'vscode'
 			: productService.quality === 'exploration'
@@ -81,7 +78,6 @@ export class OpenSessionWorktreeInVSCodeAction extends Action2 {
 			scheme,
 			authority: Schemas.file,
 			path: folderUri.path,
-			query: params.toString()
 		}), { openExternal: true });
 	}
 }
