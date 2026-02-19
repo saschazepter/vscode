@@ -526,7 +526,8 @@
 }
 .chat-debug-file-list-title {
 	font-weight: 600;
-	margin-bottom: 2px;
+	font-size: 14px;
+	margin-bottom: 4px;
 }
 .chat-debug-file-list-summary {
 	color: var(--vscode-descriptionForeground);
@@ -538,6 +539,23 @@
 .chat-debug-file-list-section-title {
 	font-weight: 600;
 	margin-bottom: 4px;
+	display: flex;
+	align-items: center;
+	gap: 4px;
+}
+.chat-debug-file-list-status-icon {
+	flex-shrink: 0;
+	width: 16px;
+	text-align: center;
+}
+.chat-debug-file-list-status-icon.status-loaded {
+	color: var(--vscode-testing-iconPassed, #73c991);
+}
+.chat-debug-file-list-status-icon.status-skipped {
+	color: var(--vscode-descriptionForeground);
+}
+.chat-debug-file-list-status-icon.status-error {
+	color: var(--vscode-testing-iconFailed, #f14c4c);
 }
 .chat-debug-file-list-row {
 	display: flex;
@@ -577,4 +595,73 @@
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
+}
+
+/* ---- Message Content (User Message / Agent Response) ---- */
+.chat-debug-message-content {
+	padding: 8px 12px;
+	overflow-y: auto;
+	font-size: 12px;
+	user-select: text;
+	-webkit-user-select: text;
+}
+.chat-debug-message-content-title {
+	font-weight: 600;
+	margin-bottom: 2px;
+}
+.chat-debug-message-content-summary {
+	color: var(--vscode-descriptionForeground);
+	margin-bottom: 8px;
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+.chat-debug-message-sections {
+	margin-top: 4px;
+}
+.chat-debug-message-sections-label {
+	font-weight: 600;
+	margin-bottom: 4px;
+}
+.chat-debug-message-section {
+	margin-bottom: 4px;
+	border: 1px solid var(--vscode-widget-border, transparent);
+	border-radius: 4px;
+}
+.chat-debug-message-section-header {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	padding: 4px 8px;
+	background: var(--vscode-editorWidget-background);
+	border-radius: 3px;
+	user-select: none;
+}
+.chat-debug-message-section-header:hover {
+	background: var(--vscode-list-hoverBackground);
+}
+.chat-debug-message-section-chevron {
+	flex-shrink: 0;
+	width: 16px;
+	text-align: center;
+}
+.chat-debug-message-section-title {
+	flex: 1;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.chat-debug-message-section-content {
+	margin: 0;
+	padding: 8px 12px;
+	white-space: pre-wrap;
+	word-break: break-word;
+	font-size: 12px;
+	border-top: 1px solid var(--vscode-widget-border, transparent);
+	max-height: 300px;
+	overflow-y: auto;
+	outline: none;
+}
+.chat-debug-message-section-content:focus {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: -1px;
 }

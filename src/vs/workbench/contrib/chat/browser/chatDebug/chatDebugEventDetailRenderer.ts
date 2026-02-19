@@ -39,5 +39,19 @@ export function formatEventDetail(event: IChatDebugEvent): string {
 			if (event.modelTurnCount !== undefined) { parts.push(`Model turns: ${event.modelTurnCount}`); }
 			return parts.join('\n');
 		}
+		case 'userMessage': {
+			const parts = [`User Message: ${event.message}`];
+			for (const section of event.sections) {
+				parts.push(`\n--- ${section.name} ---\n${section.content}`);
+			}
+			return parts.join('\n');
+		}
+		case 'agentResponse': {
+			const parts = [`Agent Response: ${event.message}`];
+			for (const section of event.sections) {
+				parts.push(`\n--- ${section.name} ---\n${section.content}`);
+			}
+			return parts.join('\n');
+		}
 	}
 }

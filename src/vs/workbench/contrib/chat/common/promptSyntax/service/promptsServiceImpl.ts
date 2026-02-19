@@ -614,7 +614,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 				const discoveryInfo = await this.getAgentDiscoveryInfo(token);
 				const eventId = generateUuid();
 				this._discoveryEventDetails.set(eventId, discoveryInfo);
-				this.chatDebugService.log(sessionId, `Load agents`, `Resolved ${result.length} agents in ${elapsed.toFixed(1)}ms`, undefined, { id: eventId, category: 'discovery' });
+				this.chatDebugService.log(sessionId, `Load agents`, `Resolved ${result.length} ${result.length === 1 ? 'agent' : 'agents'} in ${elapsed.toFixed(1)}ms`, undefined, { id: eventId, category: 'discovery' });
 			}
 			return result;
 		} finally {
@@ -995,7 +995,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 				const discoveryInfo = await this.getSkillDiscoveryInfo(token);
 				const eventId = generateUuid();
 				this._discoveryEventDetails.set(eventId, discoveryInfo);
-				this.chatDebugService.log(sessionId, `Load skills`, `Resolved ${result.length} skills in ${elapsed.toFixed(1)}ms`, undefined, { id: eventId, category: 'discovery' });
+				this.chatDebugService.log(sessionId, `Load skills`, `Resolved ${result.length} ${result.length === 1 ? 'skill' : 'skills'} in ${elapsed.toFixed(1)}ms`, undefined, { id: eventId, category: 'discovery' });
 			}
 			return result;
 		} finally {
@@ -1114,7 +1114,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 				const discoveryInfo = await this.getHookDiscoveryInfo(token);
 				const eventId = generateUuid();
 				this._discoveryEventDetails.set(eventId, discoveryInfo);
-				this.chatDebugService.log(sessionId, `Load hooks`, `Resolved ${hookCount} hooks in ${elapsed.toFixed(1)}ms`, undefined, { id: eventId, category: 'discovery' });
+				this.chatDebugService.log(sessionId, `Load hooks`, `Resolved ${hookCount} ${hookCount === 1 ? 'hook' : 'hooks'} in ${elapsed.toFixed(1)}ms`, undefined, { id: eventId, category: 'discovery' });
 			}
 			return result;
 		} finally {
@@ -1132,7 +1132,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 				const discoveryInfo = await this.getInstructionsDiscoveryInfo(token);
 				const eventId = generateUuid();
 				this._discoveryEventDetails.set(eventId, discoveryInfo);
-				this.chatDebugService.log(sessionId, `Load instructions`, `Resolved ${result.length} instructions in ${elapsed.toFixed(1)}ms`, undefined, { id: eventId, category: 'discovery' });
+				this.chatDebugService.log(sessionId, `Load instructions`, `Resolved ${result.length} ${result.length === 1 ? 'instruction' : 'instructions'} in ${elapsed.toFixed(1)}ms`, undefined, { id: eventId, category: 'discovery' });
 			}
 			return result;
 		} finally {

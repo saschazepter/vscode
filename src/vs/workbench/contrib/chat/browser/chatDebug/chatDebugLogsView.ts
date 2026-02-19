@@ -37,10 +37,12 @@ import {
 	TextBreadcrumbItem, LogsViewMode,
 	CHAT_DEBUG_FILTER_ACTIVE,
 	CHAT_DEBUG_KIND_TOOL_CALL, CHAT_DEBUG_KIND_MODEL_TURN, CHAT_DEBUG_KIND_GENERIC, CHAT_DEBUG_KIND_SUBAGENT,
+	CHAT_DEBUG_KIND_USER_MESSAGE, CHAT_DEBUG_KIND_AGENT_RESPONSE,
 	CHAT_DEBUG_LEVEL_TRACE, CHAT_DEBUG_LEVEL_INFO, CHAT_DEBUG_LEVEL_WARNING, CHAT_DEBUG_LEVEL_ERROR,
 } from './chatDebugTypes.js';
 import { formatEventDetail } from './chatDebugEventDetailRenderer.js';
 import { renderFileListContent, fileListToPlainText } from './chatDebugFileListRenderer.js';
+import { renderUserMessageContent, renderAgentResponseContent, messageEventToPlainText } from './chatDebugMessageContentRenderer.js';
 
 const $ = DOM.$;
 
@@ -76,6 +78,8 @@ export class ChatDebugLogsView extends Disposable {
 	private filterKindModelTurn: boolean = true;
 	private filterKindGeneric: boolean = true;
 	private filterKindSubagent: boolean = true;
+	private filterKindUserMessage: boolean = true;
+	private filterKindAgentResponse: boolean = true;
 	private filterLevelTrace: boolean = true;
 	private filterLevelInfo: boolean = true;
 	private filterLevelWarning: boolean = true;
@@ -84,6 +88,8 @@ export class ChatDebugLogsView extends Disposable {
 	private kindModelTurnKey: IContextKey<boolean>;
 	private kindGenericKey: IContextKey<boolean>;
 	private kindSubagentKey: IContextKey<boolean>;
+	private kindUserMessageKey: IContextKey<boolean>;
+	private kindAgentResponseKey: IContextKey<boolean>;
 	private levelTraceKey: IContextKey<boolean>;
 	private levelInfoKey: IContextKey<boolean>;
 	private levelWarningKey: IContextKey<boolean>;
@@ -138,6 +144,10 @@ export class ChatDebugLogsView extends Disposable {
 		this.kindGenericKey.set(true);
 		this.kindSubagentKey = CHAT_DEBUG_KIND_SUBAGENT.bindTo(scopedContextKeyService);
 		this.kindSubagentKey.set(true);
+		this.kindUserMessageKey = CHAT_DEBUG_KIND_USER_MESSAGE.bindTo(scopedContextKeyService);
+		this.kindUserMessageKey.set(true);
+		this.kindAgentResponseKey = CHAT_DEBUG_KIND_AGENT_RESPONSE.bindTo(scopedContextKeyService);
+		this.kindAgentResponseKey.set(true);
 		this.levelTraceKey = CHAT_DEBUG_LEVEL_TRACE.bindTo(scopedContextKeyService);
 		this.levelTraceKey.set(true);
 		this.levelInfoKey = CHAT_DEBUG_LEVEL_INFO.bindTo(scopedContextKeyService);
@@ -192,6 +202,8 @@ export class ChatDebugLogsView extends Disposable {
 					case 'modelTurn': return `${e.kind}: ${e.model ?? 'model'}${e.totalTokens ? ` ${e.totalTokens} tokens` : ''}`;
 					case 'generic': return `${e.category ? e.category + ': ' : ''}${e.name}: ${e.details ?? ''}`;
 					case 'subagentInvocation': return `${e.kind}: ${e.agentName}${e.description ? ` - ${e.description}` : ''}`;
+					case 'userMessage': return `user message: ${e.message}`;
+					case 'agentResponse': return `agent response: ${e.message}`;
 				}
 			},
 			getWidgetAriaLabel: () => localize('chatDebug.ariaLabel', "Chat Debug Events"),
@@ -302,6 +314,8 @@ export class ChatDebugLogsView extends Disposable {
 				case 'modelTurn': return this.filterKindModelTurn;
 				case 'generic': return this.filterKindGeneric;
 				case 'subagentInvocation': return this.filterKindSubagent;
+				case 'userMessage': return this.filterKindUserMessage;
+				case 'agentResponse': return this.filterKindAgentResponse;
 			}
 		});
 
@@ -323,25 +337,46 @@ export class ChatDebugLogsView extends Disposable {
 
 		// Filter by text search
 		if (this.filterText) {
+			const terms = this.filterText.split(/\s*,\s*/).filter(t => t.length > 0);
+			const includeTerms = terms.filter(t => !t.startsWith('!')).map(t => t.trim());
+			const excludeTerms = terms.filter(t => t.startsWith('!')).map(t => t.slice(1).trim()).filter(t => t.length > 0);
+
 			filtered = filtered.filter(e => {
-				if (e.kind.toLowerCase().includes(this.filterText)) {
-					return true;
+				const matchesText = (term: string): boolean => {
+					if (e.kind.toLowerCase().includes(term)) {
+						return true;
+					}
+					switch (e.kind) {
+						case 'toolCall':
+							return e.toolName.toLowerCase().includes(term) ||
+								(e.input?.toLowerCase().includes(term) ?? false) ||
+								(e.output?.toLowerCase().includes(term) ?? false);
+						case 'modelTurn':
+							return (e.model?.toLowerCase().includes(term) ?? false);
+						case 'generic':
+							return e.name.toLowerCase().includes(term) ||
+								(e.details?.toLowerCase().includes(term) ?? false) ||
+								(e.category?.toLowerCase().includes(term) ?? false);
+						case 'subagentInvocation':
+							return e.agentName.toLowerCase().includes(term) ||
+								(e.description?.toLowerCase().includes(term) ?? false); case 'userMessage':
+							return e.message.toLowerCase().includes(term) ||
+								e.sections.some(s => s.name.toLowerCase().includes(term) || s.content.toLowerCase().includes(term));
+						case 'agentResponse':
+							return e.message.toLowerCase().includes(term) ||
+								e.sections.some(s => s.name.toLowerCase().includes(term) || s.content.toLowerCase().includes(term));
+					}
+				};
+
+				// Exclude terms: if any exclude term matches, filter out the event
+				if (excludeTerms.some(term => matchesText(term))) {
+					return false;
 				}
-				switch (e.kind) {
-					case 'toolCall':
-						return e.toolName.toLowerCase().includes(this.filterText) ||
-							(e.input?.toLowerCase().includes(this.filterText)) ||
-							(e.output?.toLowerCase().includes(this.filterText));
-					case 'modelTurn':
-						return (e.model?.toLowerCase().includes(this.filterText));
-					case 'generic':
-						return e.name.toLowerCase().includes(this.filterText) ||
-							(e.details?.toLowerCase().includes(this.filterText)) ||
-							(e.category?.toLowerCase().includes(this.filterText));
-					case 'subagentInvocation':
-						return e.agentName.toLowerCase().includes(this.filterText) ||
-							(e.description?.toLowerCase().includes(this.filterText));
+				// Include terms: if present, at least one must match
+				if (includeTerms.length > 0) {
+					return includeTerms.some(term => matchesText(term));
 				}
+				return true;
 			});
 		}
 
@@ -465,6 +500,8 @@ export class ChatDebugLogsView extends Disposable {
 		registerKindToggle('chatDebug.filter.toggleModelTurn', localize('chatDebug.filter.modelTurn', "Model Turns"), CHAT_DEBUG_KIND_MODEL_TURN, () => this.filterKindModelTurn, v => { this.filterKindModelTurn = v; }, this.kindModelTurnKey);
 		registerKindToggle('chatDebug.filter.toggleGeneric', localize('chatDebug.filter.generic', "Generic"), CHAT_DEBUG_KIND_GENERIC, () => this.filterKindGeneric, v => { this.filterKindGeneric = v; }, this.kindGenericKey);
 		registerKindToggle('chatDebug.filter.toggleSubagent', localize('chatDebug.filter.subagent', "Subagent Invocations"), CHAT_DEBUG_KIND_SUBAGENT, () => this.filterKindSubagent, v => { this.filterKindSubagent = v; }, this.kindSubagentKey);
+		registerKindToggle('chatDebug.filter.toggleUserMessage', localize('chatDebug.filter.userMessage', "User Messages"), CHAT_DEBUG_KIND_USER_MESSAGE, () => this.filterKindUserMessage, v => { this.filterKindUserMessage = v; }, this.kindUserMessageKey);
+		registerKindToggle('chatDebug.filter.toggleAgentResponse', localize('chatDebug.filter.agentResponse', "Agent Responses"), CHAT_DEBUG_KIND_AGENT_RESPONSE, () => this.filterKindAgentResponse, v => { this.filterKindAgentResponse = v; }, this.kindAgentResponseKey);
 
 		const registerLevelToggle = (id: string, title: string, key: RawContextKey<boolean>, flagGetter: () => boolean, flagSetter: (v: boolean) => void, ctxKey: IContextKey<boolean>) => {
 			this._register(CommandsRegistry.registerCommand(id, () => {
@@ -490,6 +527,7 @@ export class ChatDebugLogsView extends Disposable {
 	private updateMoreFiltersChecked(): void {
 		const allOn = this.filterKindToolCall && this.filterKindModelTurn &&
 			this.filterKindGeneric && this.filterKindSubagent &&
+			this.filterKindUserMessage && this.filterKindAgentResponse &&
 			this.filterLevelTrace && this.filterLevelInfo &&
 			this.filterLevelWarning && this.filterLevelError;
 		this.filterWidget.checkMoreFilters(!allOn);
@@ -535,6 +573,16 @@ export class ChatDebugLogsView extends Disposable {
 			const { element: contentEl, disposables: contentDisposables } = this.instantiationService.invokeFunction(accessor =>
 				renderFileListContent(resolved, this.openerService, accessor.get(IModelService), accessor.get(ILanguageService), this.hoverService, accessor.get(ILabelService))
 			);
+			this.detailDisposables.add(contentDisposables);
+			this.detailContainer.appendChild(contentEl);
+		} else if (event.kind === 'userMessage') {
+			this.currentDetailText = messageEventToPlainText(event);
+			const { element: contentEl, disposables: contentDisposables } = renderUserMessageContent(event);
+			this.detailDisposables.add(contentDisposables);
+			this.detailContainer.appendChild(contentEl);
+		} else if (event.kind === 'agentResponse') {
+			this.currentDetailText = messageEventToPlainText(event);
+			const { element: contentEl, disposables: contentDisposables } = renderAgentResponseContent(event);
 			this.detailDisposables.add(contentDisposables);
 			this.detailContainer.appendChild(contentEl);
 		} else {

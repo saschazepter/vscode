@@ -80,9 +80,35 @@ export interface IChatDebugSubagentInvocationEvent extends IChatDebugEventCommon
 }
 
 /**
+ * A named section within a user message or agent response.
+ */
+export interface IChatDebugMessageSection {
+	readonly name: string;
+	readonly content: string;
+}
+
+/**
+ * A user message event, representing the full prompt sent by the user.
+ */
+export interface IChatDebugUserMessageEvent extends IChatDebugEventCommon {
+	readonly kind: 'userMessage';
+	readonly message: string;
+	readonly sections: readonly IChatDebugMessageSection[];
+}
+
+/**
+ * An agent response event, representing the agent's response.
+ */
+export interface IChatDebugAgentResponseEvent extends IChatDebugEventCommon {
+	readonly kind: 'agentResponse';
+	readonly message: string;
+	readonly sections: readonly IChatDebugMessageSection[];
+}
+
+/**
  * Union of all internal chat debug event types.
  */
-export type IChatDebugEvent = IChatDebugToolCallEvent | IChatDebugModelTurnEvent | IChatDebugGenericEvent | IChatDebugSubagentInvocationEvent;
+export type IChatDebugEvent = IChatDebugToolCallEvent | IChatDebugModelTurnEvent | IChatDebugGenericEvent | IChatDebugSubagentInvocationEvent | IChatDebugUserMessageEvent | IChatDebugAgentResponseEvent;
 
 export const IChatDebugService = createDecorator<IChatDebugService>('chatDebugService');
 

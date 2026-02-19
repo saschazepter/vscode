@@ -3643,6 +3643,46 @@ export class ChatDebugSubagentInvocationEvent {
 	}
 }
 
+export class ChatDebugMessageSection {
+	name: string;
+	content: string;
+
+	constructor(name: string, content: string) {
+		this.name = name;
+		this.content = content;
+	}
+}
+
+export class ChatDebugUserMessageEvent {
+	id?: string;
+	sessionId?: string;
+	created: Date;
+	parentEventId?: string;
+	message: string;
+	sections: ChatDebugMessageSection[];
+
+	constructor(message: string, created: Date) {
+		this.message = message;
+		this.created = created;
+		this.sections = [];
+	}
+}
+
+export class ChatDebugAgentResponseEvent {
+	id?: string;
+	sessionId?: string;
+	created: Date;
+	parentEventId?: string;
+	message: string;
+	sections: ChatDebugMessageSection[];
+
+	constructor(message: string, created: Date) {
+		this.message = message;
+		this.created = created;
+		this.sections = [];
+	}
+}
+
 export class ChatDebugEventTextContent {
 	value: string;
 

@@ -8,7 +8,7 @@ import { CancellationToken } from '../../../base/common/cancellation.js';
 import { Emitter } from '../../../base/common/event.js';
 import { Disposable, DisposableStore, toDisposable } from '../../../base/common/lifecycle.js';
 import { ExtHostChatDebugShape, IChatDebugEventDto, MainContext, MainThreadChatDebugShape } from './extHost.protocol.js';
-import { ChatDebugEventTextContent, ChatDebugGenericEvent, ChatDebugModelTurnEvent, ChatDebugSubagentInvocationEvent, ChatDebugToolCallEvent, ChatDebugToolCallResult } from './extHostTypes.js';
+import { ChatDebugEventTextContent, ChatDebugGenericEvent, ChatDebugModelTurnEvent, ChatDebugSubagentInvocationEvent, ChatDebugToolCallEvent, ChatDebugToolCallResult, ChatDebugUserMessageEvent, ChatDebugAgentResponseEvent } from './extHostTypes.js';
 import { IExtHostRpcService } from './extHostRpcService.js';
 
 export class ExtHostChatDebug extends Disposable implements ExtHostChatDebugShape {
@@ -160,6 +160,20 @@ export class ExtHostChatDebug extends Disposable implements ExtHostChatDebugShap
 				durationInMillis: event.durationInMillis,
 				toolCallCount: event.toolCallCount,
 				modelTurnCount: event.modelTurnCount,
+			};
+		} else if (event instanceof ChatDebugUserMessageEvent) {
+			return {
+				...base,
+				kind: 'userMessage',
+				message: event.message,
+				sections: event.sections.map(s => ({ name: s.name, content: s.content })),
+			};
+		} else if (event instanceof ChatDebugAgentResponseEvent) {
+			return {
+				...base,
+				kind: 'agentResponse',
+				message: event.message,
+				sections: event.sections.map(s => ({ name: s.name, content: s.content })),
 			};
 		}
 

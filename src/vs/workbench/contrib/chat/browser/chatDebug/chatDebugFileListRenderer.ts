@@ -54,20 +54,21 @@ export function renderFileListContent(content: IChatDebugEventFileListContent, o
 	const container = $('div.chat-debug-file-list');
 	container.tabIndex = 0;
 
-	DOM.append(container, $('div.chat-debug-file-list-title', undefined, localize('chatDebug.discovery', "Discovery: {0}", content.discoveryType)));
+	const capitalizedType = content.discoveryType.charAt(0).toUpperCase() + content.discoveryType.slice(1);
+	DOM.append(container, $('div.chat-debug-file-list-title', undefined, localize('chatDebug.discoveryResults', "{0} Discovery Results", capitalizedType)));
 	DOM.append(container, $('div.chat-debug-file-list-summary', undefined, localize('chatDebug.totalFiles', "Total files: {0}", content.files.length)));
 
 	// Source folders
 	if (content.sourceFolders && content.sourceFolders.length > 0) {
 		const foldersSection = DOM.append(container, $('div.chat-debug-file-list-section'));
 		DOM.append(foldersSection, $('div.chat-debug-file-list-section-title', undefined,
-			localize('chatDebug.sourceFolders', "Source folders searched ({0}):", content.sourceFolders.length)));
+			localize('chatDebug.sourceFolders', "Source folders searched ({0})", content.sourceFolders.length)));
 
 		for (const folder of content.sourceFolders) {
 			const row = DOM.append(foldersSection, $('div.chat-debug-file-list-row'));
 
-			const iconClass = folder.exists ? ThemeIcon.asClassName(Codicon.check) : ThemeIcon.asClassName(Codicon.close);
-			DOM.append(row, $(`span.chat-debug-file-list-icon.${iconClass}`));
+			const iconClass = folder.exists ? ThemeIcon.asCSSSelector(Codicon.check) : ThemeIcon.asCSSSelector(Codicon.close);
+			DOM.append(row, $(`span.chat-debug-file-list-icon${iconClass}`));
 
 			row.appendChild(createInlineFileLink(folder.uri, folder.uri.path, FileKind.FOLDER, openerService, modelService, languageService, hoverService, labelService, disposables));
 
@@ -89,12 +90,14 @@ export function renderFileListContent(content: IChatDebugEventFileListContent, o
 	const loaded = content.files.filter(f => f.status === 'loaded');
 	if (loaded.length > 0) {
 		const section = DOM.append(container, $('div.chat-debug-file-list-section'));
-		DOM.append(section, $('div.chat-debug-file-list-section-title', undefined,
-			localize('chatDebug.loadedFiles', "Loaded ({0}):", loaded.length)));
+		const sectionTitle = DOM.append(section, $('div.chat-debug-file-list-section-title'));
+		DOM.append(sectionTitle, $(`span.chat-debug-file-list-status-icon.status-loaded${ThemeIcon.asCSSSelector(Codicon.check)}`));
+		DOM.append(sectionTitle, $('span', undefined,
+			localize('chatDebug.loadedFiles', "Loaded ({0})", loaded.length)));
 
 		for (const file of loaded) {
 			const row = DOM.append(section, $('div.chat-debug-file-list-row'));
-			DOM.append(row, $(`span.chat-debug-file-list-icon.${ThemeIcon.asClassName(Codicon.check)}`));
+			DOM.append(row, $(`span.chat-debug-file-list-icon${ThemeIcon.asCSSSelector(Codicon.check)}`));
 			row.appendChild(createInlineFileLink(file.uri, file.name ?? file.uri.path, FileKind.FILE, openerService, modelService, languageService, hoverService, labelService, disposables));
 			DOM.append(row, $('span.chat-debug-file-list-badge', undefined,
 				file.extensionId ? ` [extension: ${file.extensionId}]` : ` [${file.storage}]`));
@@ -105,12 +108,19 @@ export function renderFileListContent(content: IChatDebugEventFileListContent, o
 	const skipped = content.files.filter(f => f.status === 'skipped');
 	if (skipped.length > 0) {
 		const section = DOM.append(container, $('div.chat-debug-file-list-section'));
-		DOM.append(section, $('div.chat-debug-file-list-section-title', undefined,
-			localize('chatDebug.skippedFiles', "Skipped ({0}):", skipped.length)));
+		const hasErrors = skipped.some(f => f.skipReason === 'parse-error' || f.errorMessage);
+		const sectionTitle = DOM.append(section, $('div.chat-debug-file-list-section-title'));
+		if (hasErrors) {
+			DOM.append(sectionTitle, $(`span.chat-debug-file-list-status-icon.status-error${ThemeIcon.asCSSSelector(Codicon.error)}`));
+		} else {
+			DOM.append(sectionTitle, $(`span.chat-debug-file-list-status-icon.status-skipped${ThemeIcon.asCSSSelector(Codicon.debugStackframeDot)}`));
+		}
+		DOM.append(sectionTitle, $('span', undefined,
+			localize('chatDebug.skippedFiles', "Skipped ({0})", skipped.length)));
 
 		for (const file of skipped) {
 			const row = DOM.append(section, $('div.chat-debug-file-list-row'));
-			DOM.append(row, $(`span.chat-debug-file-list-icon.${ThemeIcon.asClassName(Codicon.close)}`));
+			DOM.append(row, $(`span.chat-debug-file-list-icon${ThemeIcon.asCSSSelector(Codicon.close)}`));
 			row.appendChild(createInlineFileLink(file.uri, file.name ?? file.uri.path, FileKind.FILE, openerService, modelService, languageService, hoverService, labelService, disposables));
 
 			let reasonText = ` (${file.skipReason ?? 'unknown'}`;
@@ -133,12 +143,13 @@ export function renderFileListContent(content: IChatDebugEventFileListContent, o
  */
 export function fileListToPlainText(content: IChatDebugEventFileListContent): string {
 	const lines: string[] = [];
-	lines.push(`Discovery: ${content.discoveryType}`);
+	const capitalizedType = content.discoveryType.charAt(0).toUpperCase() + content.discoveryType.slice(1);
+	lines.push(`${capitalizedType} Discovery Results`);
 	lines.push(`Total files: ${content.files.length}`);
 	lines.push('');
 
 	if (content.sourceFolders && content.sourceFolders.length > 0) {
-		lines.push(`Source folders searched (${content.sourceFolders.length}):`);
+		lines.push(`Source folders searched (${content.sourceFolders.length})`);
 		for (const folder of content.sourceFolders) {
 			const statusIcon = folder.exists ? '\u2713' : '\u2717';
 			let detail = `  ${statusIcon} ${folder.uri.path} [${folder.storage}]`;
@@ -158,7 +169,7 @@ export function fileListToPlainText(content: IChatDebugEventFileListContent): st
 	const skipped = content.files.filter(f => f.status === 'skipped');
 
 	if (loaded.length > 0) {
-		lines.push(`Loaded (${loaded.length}):`);
+		lines.push(`Loaded (${loaded.length})`);
 		for (const f of loaded) {
 			const label = f.name ?? f.uri.path;
 			const storageSuffix = f.extensionId ? ` [extension: ${f.extensionId}]` : ` [${f.storage}]`;
@@ -168,7 +179,7 @@ export function fileListToPlainText(content: IChatDebugEventFileListContent): st
 	}
 
 	if (skipped.length > 0) {
-		lines.push(`Skipped (${skipped.length}):`);
+		lines.push(`Skipped (${skipped.length})`);
 		for (const f of skipped) {
 			const label = f.name ?? f.uri.path;
 			const reason = f.skipReason ?? 'unknown';

@@ -103,6 +103,20 @@ export class MainThreadChatDebug extends Disposable implements MainThreadChatDeb
 					toolCallCount: dto.toolCallCount,
 					modelTurnCount: dto.modelTurnCount,
 				};
+			case 'userMessage':
+				return {
+					...base,
+					kind: 'userMessage',
+					message: dto.message,
+					sections: dto.sections,
+				};
+			case 'agentResponse':
+				return {
+					...base,
+					kind: 'agentResponse',
+					message: dto.message,
+					sections: dto.sections,
+				};
 		}
 	}
 }

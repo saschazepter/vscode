@@ -1419,7 +1419,24 @@ export interface IChatDebugSubagentInvocationEventDto extends IChatDebugEventCom
 	readonly modelTurnCount?: number;
 }
 
-export type IChatDebugEventDto = IChatDebugToolCallEventDto | IChatDebugModelTurnEventDto | IChatDebugGenericEventDto | IChatDebugSubagentInvocationEventDto;
+export interface IChatDebugMessageSectionDto {
+	readonly name: string;
+	readonly content: string;
+}
+
+export interface IChatDebugUserMessageEventDto extends IChatDebugEventCommonDto {
+	readonly kind: 'userMessage';
+	readonly message: string;
+	readonly sections: readonly IChatDebugMessageSectionDto[];
+}
+
+export interface IChatDebugAgentResponseEventDto extends IChatDebugEventCommonDto {
+	readonly kind: 'agentResponse';
+	readonly message: string;
+	readonly sections: readonly IChatDebugMessageSectionDto[];
+}
+
+export type IChatDebugEventDto = IChatDebugToolCallEventDto | IChatDebugModelTurnEventDto | IChatDebugGenericEventDto | IChatDebugSubagentInvocationEventDto | IChatDebugUserMessageEventDto | IChatDebugAgentResponseEventDto;
 
 export interface IChatDebugEventTextContentDto {
 	readonly kind: 'text';
