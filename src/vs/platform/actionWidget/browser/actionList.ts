@@ -508,7 +508,7 @@ export class ActionList<T> extends Disposable {
 		if (this._filterInput) {
 			this._register(dom.addDisposableListener(this.domNode, 'keydown', (e: KeyboardEvent) => {
 				if (this._filterInput && !dom.isActiveElement(this._filterInput)
-					&& e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+					&& e.key.length === 1 && e.key !== ' ' && !e.ctrlKey && !e.metaKey && !e.altKey) {
 					this._filterInput.focus();
 					this._filterInput.value = e.key;
 					this._filterText = e.key;

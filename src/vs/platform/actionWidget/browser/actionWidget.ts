@@ -97,8 +97,8 @@ class ActionWidgetService extends Disposable implements IActionWidgetService {
 		this._list?.value?.expandFocusedSection();
 	}
 
-	toggleSection() {
-		this._list?.value?.toggleFocusedSection();
+	toggleSection(): boolean {
+		return this._list?.value?.toggleFocusedSection() ?? false;
 	}
 
 	hide(didCancel?: boolean) {
@@ -314,7 +314,9 @@ registerAction2(class extends Action2 {
 	run(accessor: ServicesAccessor): void {
 		const widgetService = accessor.get(IActionWidgetService);
 		if (widgetService instanceof ActionWidgetService) {
-			widgetService.toggleSection();
+			if (!widgetService.toggleSection()) {
+				widgetService.acceptSelected();
+			}
 		}
 	}
 });
