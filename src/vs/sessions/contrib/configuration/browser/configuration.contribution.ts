@@ -24,6 +24,7 @@ Registry.as<IConfigurationRegistry>(Extensions.Configuration).registerDefaultCon
 		'github.copilot.chat.claudeCode.enabled': true,
 		'github.copilot.chat.cli.branchSupport.enabled': true,
 		'github.copilot.chat.languageContext.typescript.enabled': true,
+		'github.copilot.chat.cli.mcp.enabled': true,
 
 		'inlineChat.affordance': 'editor',
 		'inlineChat.renderMode': 'hover',
@@ -33,7 +34,10 @@ Registry.as<IConfigurationRegistry>(Extensions.Configuration).registerDefaultCon
 		'workbench.startupEditor': 'none',
 		'workbench.tips.enabled': false,
 		'workbench.layoutControl.type': 'toggles',
-		'workbench.editor.allowOpenInModalEditor': false
+		'workbench.editor.allowOpenInModalEditor': false,
+		'window.menuStyle': 'custom',
+
+		'terminal.integrated.initialHint': false
 	},
 	donotCache: true
 }]);
