@@ -363,7 +363,8 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 			{
 				detached: true,
 				stdio: ['ignore', 'ignore', 'ignore'],
-				windowsVerbatimArguments: true
+				windowsVerbatimArguments: true,
+				env: { ...process.env, __COMPAT_LAYER: 'RunAsInvoker' }
 			}
 		);
 
@@ -495,7 +496,8 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 		} else {
 			spawn(this.availableUpdate.packagePath, ['/silent', '/log', '/mergetasks=runcode,!desktopicon,!quicklaunchicon'], {
 				detached: true,
-				stdio: ['ignore', 'ignore', 'ignore']
+				stdio: ['ignore', 'ignore', 'ignore'],
+				env: { ...process.env, __COMPAT_LAYER: 'RunAsInvoker' }
 			});
 		}
 	}
