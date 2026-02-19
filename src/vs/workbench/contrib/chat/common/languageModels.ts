@@ -379,15 +379,15 @@ export interface ILanguageModelsService {
 	addToRecentlyUsedList(model: ILanguageModelChatMetadataAndIdentifier): void;
 
 	/**
-	 * Returns the curated models from the models control manifest,
+	 * Returns the models from the control manifest,
 	 * separated into free and paid tiers.
 	 */
-	getCuratedModels(): ICuratedModels;
+	getModelsControlManifest(): IModelsControlManifest;
 
 	/**
-	 * Fires when curated models change.
+	 * Fires when models control manifest changes.
 	 */
-	readonly onDidChangeCuratedModels: Event<ICuratedModels>;
+	readonly onDidChangeModelsControlManifest: Event<IModelsControlManifest>;
 
 	/**
 	 * Observable map of restricted chat participant names to allowed extension publisher/IDs.
@@ -396,16 +396,21 @@ export interface ILanguageModelsService {
 	readonly restrictedChatParticipants: IObservable<{ [name: string]: string[] }>;
 }
 
-export interface ICuratedModel {
+export interface IFreeModelControlEntry {
 	readonly id: string;
 	readonly label: string;
-	readonly isNew?: boolean;
+}
+
+export interface IPaidModelControlEntry {
+	readonly id: string;
+	readonly label: string;
+	readonly featured?: boolean;
 	readonly minVSCodeVersion?: string;
 }
 
-export interface ICuratedModels {
-	readonly free: ICuratedModel[];
-	readonly paid: ICuratedModel[];
+export interface IModelsControlManifest {
+	readonly free: IFreeModelControlEntry[];
+	readonly paid: IPaidModelControlEntry[];
 }
 
 const languageModelChatProviderType = {
@@ -496,21 +501,14 @@ export const languageModelChatProviderExtensionPoint = ExtensionsRegistry.regist
 const CHAT_MODEL_PICKER_PREFERENCES_STORAGE_KEY = 'chatModelPickerPreferences';
 const CHAT_MODEL_RECENTLY_USED_STORAGE_KEY = 'chatModelRecentlyUsed';
 const CHAT_PARTICIPANT_NAME_REGISTRY_STORAGE_KEY = 'chat.participantNameRegistry';
-const CHAT_CURATED_MODELS_STORAGE_KEY = 'chat.curatedModels';
-
-interface IRawCuratedModel {
-	readonly id: string;
-	readonly label: string;
-	readonly isNew?: boolean;
-	readonly minVSCodeVersion?: string;
-}
+const CHAT_MODELS_CONTROL_STORAGE_KEY = 'chat.modelsControl';
 
 interface IChatControlResponse {
 	readonly version: number;
 	readonly restrictedChatParticipants: { [name: string]: string[] };
-	readonly curatedModels?: {
-		readonly free?: IRawCuratedModel[];
-		readonly paid?: IRawCuratedModel[];
+	readonly models?: {
+		readonly free?: Record<string, { readonly id: string; readonly label: string }>;
+		readonly paid?: Record<string, { readonly id: string; readonly label: string; readonly featured?: boolean; readonly minVSCodeVersion?: string }>;
 	};
 }
 
@@ -540,10 +538,10 @@ export class LanguageModelsService implements ILanguageModelsService {
 
 	private _recentlyUsedModelIds: string[] = [];
 
-	private readonly _onDidChangeCuratedModels = this._store.add(new Emitter<ICuratedModels>());
-	readonly onDidChangeCuratedModels = this._onDidChangeCuratedModels.event;
+	private readonly _onDidChangeModelsControlManifest = this._store.add(new Emitter<IModelsControlManifest>());
+	readonly onDidChangeModelsControlManifest = this._onDidChangeModelsControlManifest.event;
 
-	private _curatedModels: ICuratedModels = { free: [], paid: [] };
+	private _modelsControlManifest: IModelsControlManifest = { free: [], paid: [] };
 
 	private _chatControlUrl: string | undefined;
 	private _chatControlDisposed = false;
@@ -1410,33 +1408,30 @@ export class LanguageModelsService implements ILanguageModelsService {
 
 	//#endregion
 
-	//#region Curated models
+	//#region Models control manifest
 
-	getCuratedModels(): ICuratedModels {
-		return this._curatedModels;
+	getModelsControlManifest(): IModelsControlManifest {
+		return this._modelsControlManifest;
 	}
 
-	private _setCuratedModels(free: IRawCuratedModel[], paid: IRawCuratedModel[]): void {
-		const toPublic = (m: IRawCuratedModel): ICuratedModel => ({ id: m.id, label: m.label, isNew: m.isNew, minVSCodeVersion: m.minVSCodeVersion });
+	private _setModelsControlManifest(response: IChatControlResponse['models']): void {
+		const free: IFreeModelControlEntry[] = [];
+		const paid: IPaidModelControlEntry[] = [];
 
-		this._curatedModels = { free: [], paid: [] };
-		const newIds = new Set<string>();
-
-		for (const model of free) {
-			this._curatedModels.free.push(toPublic(model));
-			if (model.isNew) {
-				newIds.add(model.id);
+		if (response?.free) {
+			for (const [, entry] of Object.entries(response.free)) {
+				free.push({ id: entry.id, label: entry.label });
 			}
 		}
 
-		for (const model of paid) {
-			this._curatedModels.paid.push(toPublic(model));
-			if (model.isNew) {
-				newIds.add(model.id);
+		if (response?.paid) {
+			for (const [, entry] of Object.entries(response.paid)) {
+				paid.push({ id: entry.id, label: entry.label, featured: entry.featured, minVSCodeVersion: entry.minVSCodeVersion });
 			}
 		}
 
-		this._onDidChangeCuratedModels.fire(this._curatedModels);
+		this._modelsControlManifest = { free, paid };
+		this._onDidChangeModelsControlManifest.fire(this._modelsControlManifest);
 	}
 
 	//#region Chat control data
@@ -1455,15 +1450,15 @@ export class LanguageModelsService implements ILanguageModelsService {
 			this._storageService.remove(CHAT_PARTICIPANT_NAME_REGISTRY_STORAGE_KEY, StorageScope.APPLICATION);
 		}
 
-		// Restore curated models from storage
-		const rawCurated = this._storageService.get(CHAT_CURATED_MODELS_STORAGE_KEY, StorageScope.APPLICATION);
+		// Restore models control manifest from storage
+		const rawModels = this._storageService.get(CHAT_MODELS_CONTROL_STORAGE_KEY, StorageScope.APPLICATION);
 		try {
-			const curated = JSON.parse(rawCurated ?? '{}');
-			if (isObject(curated) && Array.isArray(curated.free) && Array.isArray(curated.paid)) {
-				this._setCuratedModels(curated.free, curated.paid);
+			const models = JSON.parse(rawModels ?? '{}');
+			if (isObject(models)) {
+				this._setModelsControlManifest(models);
 			}
 		} catch (err) {
-			this._storageService.remove(CHAT_CURATED_MODELS_STORAGE_KEY, StorageScope.APPLICATION);
+			this._storageService.remove(CHAT_MODELS_CONTROL_STORAGE_KEY, StorageScope.APPLICATION);
 		}
 
 		this._refreshChatControlData();
@@ -1498,10 +1493,10 @@ export class LanguageModelsService implements ILanguageModelsService {
 		this._restrictedChatParticipants.set(registry, undefined);
 		this._storageService.store(CHAT_PARTICIPANT_NAME_REGISTRY_STORAGE_KEY, JSON.stringify(registry), StorageScope.APPLICATION, StorageTarget.MACHINE);
 
-		// Update curated models
-		if (result.curatedModels) {
-			this._setCuratedModels(result.curatedModels?.free ?? [], result.curatedModels?.paid ?? []);
-			this._storageService.store(CHAT_CURATED_MODELS_STORAGE_KEY, JSON.stringify(result.curatedModels), StorageScope.APPLICATION, StorageTarget.MACHINE);
+		// Update models control manifest
+		if (result.models) {
+			this._setModelsControlManifest(result.models);
+			this._storageService.store(CHAT_MODELS_CONTROL_STORAGE_KEY, JSON.stringify(result.models), StorageScope.APPLICATION, StorageTarget.MACHINE);
 		}
 	}
 

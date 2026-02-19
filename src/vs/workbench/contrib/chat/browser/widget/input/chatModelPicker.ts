@@ -21,7 +21,7 @@ import { IProductService } from '../../../../../../platform/product/common/produ
 import { ITelemetryService } from '../../../../../../platform/telemetry/common/telemetry.js';
 import { TelemetryTrustedValue } from '../../../../../../platform/telemetry/common/telemetryUtils.js';
 import { MANAGE_CHAT_COMMAND_ID } from '../../../common/constants.js';
-import { ICuratedModel, ILanguageModelChatMetadataAndIdentifier, ILanguageModelsService } from '../../../common/languageModels.js';
+import { IFreeModelControlEntry, ILanguageModelChatMetadataAndIdentifier, ILanguageModelsService, IPaidModelControlEntry } from '../../../common/languageModels.js';
 import { IChatEntitlementService, isProUser } from '../../../../../services/chat/common/chatEntitlementService.js';
 import * as semver from '../../../../../../base/common/semver/semver.js';
 import { IModelPickerDelegate } from './modelPickerActionItem.js';
@@ -102,7 +102,7 @@ function buildModelPickerItems(
 	models: ILanguageModelChatMetadataAndIdentifier[],
 	selectedModelId: string | undefined,
 	recentModelIds: string[],
-	curatedModels: ICuratedModel[],
+	controlModels: readonly (IFreeModelControlEntry | IPaidModelControlEntry)[],
 	isProUser: boolean,
 	currentVSCodeVersion: string,
 	onSelect: (model: ILanguageModelChatMetadataAndIdentifier) => void,
@@ -138,7 +138,7 @@ function buildModelPickerItems(
 
 	// --- 2. Promoted models (recently used + curated, merged & sorted alphabetically) ---
 	const promotedModels: ILanguageModelChatMetadataAndIdentifier[] = [];
-	const unavailableCurated: { curated: ICuratedModel; reason: 'upgrade' | 'update' | 'admin' }[] = [];
+	const unavailableModels: { entry: IFreeModelControlEntry | IPaidModelControlEntry; reason: 'upgrade' | 'update' | 'admin' }[] = [];
 
 	// Always include the currently selected model in the promoted group
 	if (selectedModelId && selectedModelId !== autoModel?.identifier) {
@@ -151,57 +151,63 @@ function buildModelPickerItems(
 	}
 
 	// Add recently used
-	const curatedModelsMap = new Map<string, ICuratedModel>();
-	for (const curated of curatedModels) {
-		curatedModelsMap.set(curated.id, curated);
+	const controlModelsMap = new Map<string, IFreeModelControlEntry | IPaidModelControlEntry>();
+	for (const entry of controlModels) {
+		controlModelsMap.set(entry.id, entry);
 	}
 	for (const id of recentModelIds) {
 		const model = allModelsMap.get(id);
 		if (model && !placed.has(model.identifier)) {
-			// Check if the model is curated and needs a version update
-			const curated = curatedModelsMap.get(model.metadata.id) ?? curatedModelsMap.get(model.identifier);
-			if (curated?.minVSCodeVersion && !isVersionAtLeast(currentVSCodeVersion, curated.minVSCodeVersion)) {
-				unavailableCurated.push({ curated, reason: 'update' });
+			// Check if the model needs a version update
+			const entry = controlModelsMap.get(model.metadata.id) ?? controlModelsMap.get(model.identifier);
+			const minVersion = entry && 'minVSCodeVersion' in entry ? entry.minVSCodeVersion : undefined;
+			if (minVersion && !isVersionAtLeast(currentVSCodeVersion, minVersion)) {
+				unavailableModels.push({ entry: entry!, reason: 'update' });
 			} else {
 				promotedModels.push(model);
 			}
 			placed.add(model.identifier);
 			placed.add(model.metadata.id);
 		} else if (!model && !placed.has(id)) {
-			// Model not available - check if it's a curated model
-			const curated = curatedModelsMap.get(id);
-			if (curated) {
+			// Model not available - check if it's in the control manifest
+			const entry = controlModelsMap.get(id);
+			if (entry) {
 				placed.add(id);
+				const minVersion = 'minVSCodeVersion' in entry ? entry.minVSCodeVersion : undefined;
 				if (!isProUser) {
-					unavailableCurated.push({ curated, reason: 'upgrade' });
-				} else if (curated.minVSCodeVersion && !isVersionAtLeast(currentVSCodeVersion, curated.minVSCodeVersion)) {
-					unavailableCurated.push({ curated, reason: 'update' });
+					unavailableModels.push({ entry, reason: 'upgrade' });
+				} else if (minVersion && !isVersionAtLeast(currentVSCodeVersion, minVersion)) {
+					unavailableModels.push({ entry, reason: 'update' });
 				} else {
-					unavailableCurated.push({ curated, reason: 'admin' });
+					unavailableModels.push({ entry, reason: 'admin' });
 				}
 			}
 		}
 	}
 
-	// Add curated - available ones become promoted, unavailable ones become disabled entries
-	for (const curated of curatedModels) {
-		const model = allModelsMap.get(curated.id) ?? modelsByMetadataId.get(curated.id);
+	// Add control manifest models - available ones become promoted, unavailable ones become disabled entries
+	for (const entry of controlModels) {
+		const model = allModelsMap.get(entry.id) ?? modelsByMetadataId.get(entry.id);
 		if (model && !placed.has(model.identifier) && !placed.has(model.metadata.id)) {
 			placed.add(model.identifier);
 			placed.add(model.metadata.id);
-			if (curated.minVSCodeVersion && !isVersionAtLeast(currentVSCodeVersion, curated.minVSCodeVersion)) {
-				unavailableCurated.push({ curated, reason: 'update' });
+			const minVersion = 'minVSCodeVersion' in entry ? entry.minVSCodeVersion : undefined;
+			if (minVersion && !isVersionAtLeast(currentVSCodeVersion, minVersion)) {
+				unavailableModels.push({ entry, reason: 'update' });
 			} else {
 				promotedModels.push(model);
 			}
 		} else if (!model) {
 			// Model is not available - determine reason
 			if (!isProUser) {
-				unavailableCurated.push({ curated, reason: 'upgrade' });
-			} else if (curated.minVSCodeVersion && !isVersionAtLeast(currentVSCodeVersion, curated.minVSCodeVersion)) {
-				unavailableCurated.push({ curated, reason: 'update' });
+				unavailableModels.push({ entry, reason: 'upgrade' });
 			} else {
-				unavailableCurated.push({ curated, reason: 'admin' });
+				const minVersion = 'minVSCodeVersion' in entry ? entry.minVSCodeVersion : undefined;
+				if (minVersion && !isVersionAtLeast(currentVSCodeVersion, minVersion)) {
+					unavailableModels.push({ entry, reason: 'update' });
+				} else {
+					unavailableModels.push({ entry, reason: 'admin' });
+				}
 			}
 		}
 	}
@@ -209,7 +215,7 @@ function buildModelPickerItems(
 	// Sort alphabetically for a stable list
 	promotedModels.sort((a, b) => a.metadata.name.localeCompare(b.metadata.name));
 
-	if (promotedModels.length > 0 || unavailableCurated.length > 0) {
+	if (promotedModels.length > 0 || unavailableModels.length > 0) {
 		items.push({
 			kind: ActionListItemKind.Separator,
 		});
@@ -218,8 +224,8 @@ function buildModelPickerItems(
 			items.push(createModelItem(action, model));
 		}
 
-		// Unavailable curated models shown as disabled with action link
-		for (const { curated, reason } of unavailableCurated) {
+		// Unavailable models shown as disabled with action link
+		for (const { entry, reason } of unavailableModels) {
 			let description: string | MarkdownString;
 			if (reason === 'upgrade' && upgradePlanUrl) {
 				description = new MarkdownString(localize('chat.modelPicker.upgradeLink', "[Upgrade]({0})", upgradePlanUrl), { isTrusted: true });
@@ -240,17 +246,17 @@ function buildModelPickerItems(
 
 			items.push({
 				item: {
-					id: curated.id,
+					id: entry.id,
 					enabled: false,
 					checked: false,
 					class: undefined,
-					tooltip: curated.label,
-					label: curated.label,
+					tooltip: entry.label,
+					label: entry.label,
 					description: typeof description === 'string' ? description : undefined,
 					run: () => { }
 				},
 				kind: ActionListItemKind.Action,
-				label: curated.label,
+				label: entry.label,
 				description,
 				disabled: true,
 				group: { title: '', icon: Codicon.blank },
@@ -447,14 +453,14 @@ export class ModelPickerWidget extends Disposable {
 		};
 
 		const isPro = isProUser(this._entitlementService.entitlement);
-		const curatedModels = this._languageModelsService.getCuratedModels();
-		const curatedForTier = isPro ? curatedModels.paid : curatedModels.free;
+		const manifest = this._languageModelsService.getModelsControlManifest();
+		const controlModelsForTier = isPro ? manifest.paid : manifest.free;
 
 		const items = buildModelPickerItems(
 			this._delegate.getModels(),
 			this._selectedModel?.identifier,
 			this._languageModelsService.getRecentlyUsedModelIds(),
-			curatedForTier,
+			controlModelsForTier,
 			isPro,
 			this._productService.version,
 			onSelect,

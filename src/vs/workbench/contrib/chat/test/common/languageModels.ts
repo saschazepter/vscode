@@ -9,7 +9,7 @@ import { Event } from '../../../../../base/common/event.js';
 import { Disposable, IDisposable } from '../../../../../base/common/lifecycle.js';
 import { observableValue } from '../../../../../base/common/observable.js';
 import { ExtensionIdentifier } from '../../../../../platform/extensions/common/extensions.js';
-import { IChatMessage, ICuratedModels, ILanguageModelChatMetadata, ILanguageModelChatMetadataAndIdentifier, ILanguageModelChatProvider, ILanguageModelChatResponse, ILanguageModelChatSelector, ILanguageModelProviderDescriptor, ILanguageModelsGroup, ILanguageModelsService, IUserFriendlyLanguageModel } from '../../common/languageModels.js';
+import { IChatMessage, IModelsControlManifest, ILanguageModelChatMetadata, ILanguageModelChatMetadataAndIdentifier, ILanguageModelChatProvider, ILanguageModelChatResponse, ILanguageModelChatSelector, ILanguageModelProviderDescriptor, ILanguageModelsGroup, ILanguageModelsService, IUserFriendlyLanguageModel } from '../../common/languageModels.js';
 import { ILanguageModelsProviderGroup } from '../../common/languageModelsConfiguration.js';
 
 export class NullLanguageModelsService implements ILanguageModelsService {
@@ -24,7 +24,7 @@ export class NullLanguageModelsService implements ILanguageModelsService {
 
 	onDidChangeLanguageModels = Event.None;
 	onDidChangeLanguageModelVendors = Event.None;
-	onDidChangeCuratedModels = Event.None;
+	onDidChangeModelsControlManifest = Event.None;
 
 	updateModelPickerPreference(modelIdentifier: string, showInModelPicker: boolean): void {
 		return;
@@ -94,7 +94,7 @@ export class NullLanguageModelsService implements ILanguageModelsService {
 
 	addToRecentlyUsedList(): void { }
 
-	getCuratedModels(): ICuratedModels {
+	getModelsControlManifest(): IModelsControlManifest {
 		return { free: [], paid: [] };
 	}
 
