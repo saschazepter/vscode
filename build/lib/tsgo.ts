@@ -18,11 +18,9 @@ export function spawnTsgo(projectPath: string, config: { taskName: string; noEmi
 	function runReporter(output: string) {
 		const lines = (output || '').split('\n');
 		const errorLines = lines.filter(line => /error \w+:/.test(line));
-		if (errorLines.length > 0) {
-			fancyLog(`Finished ${ansiColors.green(config.taskName)} ${projectPath} with ${errorLines.length} errors.`);
-			for (const line of errorLines) {
-				fancyLog(line);
-			}
+		fancyLog(`Finished ${ansiColors.green(config.taskName)} ${projectPath} with ${errorLines.length} errors.`);
+		for (const line of errorLines) {
+			fancyLog(line);
 		}
 	}
 
