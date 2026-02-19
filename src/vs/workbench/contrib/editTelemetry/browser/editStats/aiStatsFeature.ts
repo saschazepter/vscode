@@ -6,23 +6,29 @@
 import { sumBy } from '../../../../../base/common/arrays.js';
 import { TaskQueue, timeout } from '../../../../../base/common/async.js';
 import { Lazy } from '../../../../../base/common/lazy.js';
-import { Disposable, DisposableStore, toDisposable } from '../../../../../base/common/lifecycle.js';
-import { autorun, derived, mapObservableArrayCached, observableValue, runOnChange } from '../../../../../base/common/observable.js';
+import { Disposable, DisposableMap, DisposableStore, toDisposable } from '../../../../../base/common/lifecycle.js';
+import { autorun, autorunIterableDelta, derived, mapObservableArrayCached, observableValue, runOnChange } from '../../../../../base/common/observable.js';
 import { AnnotatedStringEdit } from '../../../../../editor/common/core/edits/stringEdit.js';
 import { isAiEdit, isUserEdit } from '../../../../../editor/common/textModelEditSource.js';
 import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
+import { IChatService } from '../../../chat/common/chatService/chatService.js';
+import { ILanguageModelsService } from '../../../chat/common/languageModels.js';
+import { IChatModel, IChatResponseModel } from '../../../chat/common/model/chatModel.js';
 import { AnnotatedDocuments } from '../helpers/annotatedDocuments.js';
 import { AiStatsStatusBar } from './aiStatsStatusBar.js';
 
 export class AiStatsFeature extends Disposable {
 	private readonly _data: IValue<IData>;
 	private readonly _dataVersion = observableValue(this, 0);
+	private readonly _trackedRequestIds = new Set<string>();
 
 	constructor(
 		annotatedDocuments: AnnotatedDocuments,
 		@IStorageService private readonly _storageService: IStorageService,
 		@IInstantiationService private readonly _instantiationService: IInstantiationService,
+		@IChatService private readonly _chatService: IChatService,
+		@ILanguageModelsService private readonly _languageModelsService: ILanguageModelsService,
 	) {
 		super();
 
@@ -34,6 +40,8 @@ export class AiStatsFeature extends Disposable {
 		this._register(autorun(reader => {
 			reader.store.add(this._instantiationService.createInstance(AiStatsStatusBar.hot.read(reader), this));
 		}));
+
+		this._trackChatRequests();
 
 
 		const lastRequestIds: string[] = [];
@@ -135,6 +143,144 @@ export class AiStatsFeature extends Disposable {
 		return sumBy(sessionsToday, s => s.acceptedInlineSuggestions ?? 0);
 	});
 
+	public readonly chatRequests = derived(this, r => {
+		this._dataVersion.read(r);
+		const val = this._data.getValue();
+		return val?.chatRequests ?? [];
+	});
+
+	public readonly chatSessionCount = derived(this, r => {
+		const requests = this.chatRequests.read(r);
+		const uniqueSessions = new Set(requests.map(req => req.sessionId));
+		return uniqueSessions.size;
+	});
+
+	public readonly totalTokenUsage = derived(this, r => {
+		const requests = this.chatRequests.read(r);
+		const input = sumBy(requests, req => req.promptTokens);
+		const output = sumBy(requests, req => req.completionTokens);
+		return { total: input + output, input, output };
+	});
+
+	public readonly requestsByDayOfWeek = derived(this, r => {
+		const requests = this.chatRequests.read(r);
+		const counts: number[] = [0, 0, 0, 0, 0, 0, 0]; // Sun-Sat
+		for (const req of requests) {
+			const day = new Date(req.timestamp).getDay();
+			counts[day]++;
+		}
+		return counts;
+	});
+
+	public readonly requestsByHourOfDay = derived(this, r => {
+		const requests = this.chatRequests.read(r);
+		const counts: number[] = new Array(24).fill(0);
+		for (const req of requests) {
+			const hour = new Date(req.timestamp).getHours();
+			counts[hour]++;
+		}
+		return counts;
+	});
+
+	public readonly topModels = derived(this, r => {
+		const requests = this.chatRequests.read(r);
+		const modelCounts = new Map<string, number>();
+		for (const req of requests) {
+			const model = req.modelId;
+			if (!model) {
+				continue;
+			}
+			modelCounts.set(model, (modelCounts.get(model) ?? 0) + 1);
+		}
+		return [...modelCounts.entries()]
+			.map(([modelId, count]) => {
+				const metadata = this._languageModelsService.lookupLanguageModel(modelId);
+				const displayName = metadata?.name || modelId;
+				return { modelId: displayName, count };
+			})
+			.sort((a, b) => b.count - a.count);
+	});
+
+	private _trackChatRequests(): void {
+		const modelTrackers = this._register(new DisposableMap<string>());
+
+		this._register(autorunIterableDelta(
+			reader => this._chatService.chatModels.read(reader),
+			({ addedValues, removedValues }) => {
+				for (const model of addedValues) {
+					modelTrackers.set(model.sessionId, this._trackChatModel(model));
+				}
+				for (const model of removedValues) {
+					modelTrackers.deleteAndDispose(model.sessionId);
+				}
+			}
+		));
+	}
+
+	private _trackChatModel(model: IChatModel): DisposableStore {
+		const store = new DisposableStore();
+
+		// Record any already-completed requests
+		for (const request of model.getRequests()) {
+			if (request.response?.isComplete) {
+				this._recordChatRequest(request.response, model.sessionId);
+			}
+		}
+
+		// Listen for new completed requests
+		store.add(model.onDidChange(e => {
+			if (e.kind === 'completedRequest') {
+				const response = e.request.response;
+				if (response?.isComplete) {
+					this._recordChatRequest(response, model.sessionId);
+				}
+			}
+		}));
+
+		return store;
+	}
+
+	private _recordChatRequest(response: IChatResponseModel, sessionId: string): void {
+		const request = response.request;
+		if (!request) {
+			return;
+		}
+
+		const requestId = request.id;
+		if (this._trackedRequestIds.has(requestId)) {
+			return;
+		}
+		this._trackedRequestIds.add(requestId);
+
+		const record: IChatRequestRecord = {
+			timestamp: request.timestamp,
+			modelId: request.modelId ?? '',
+			promptTokens: response.usage?.promptTokens ?? 0,
+			completionTokens: response.usage?.completionTokens ?? 0,
+			sessionId,
+			requestId,
+		};
+
+		const state = this._data.getValue() ?? { sessions: [] };
+		if (!state.chatRequests) {
+			state.chatRequests = [];
+		}
+
+		// Deduplicate
+		if (state.chatRequests.some(r => r.requestId === requestId)) {
+			return;
+		}
+
+		state.chatRequests.push(record);
+
+		// Clean up old records (keep last 7 days)
+		const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+		state.chatRequests = state.chatRequests.filter(r => r.timestamp > sevenDaysAgo);
+
+		this._data.writeValue(state);
+		this._dataVersion.set(this._dataVersion.get() + 1, undefined);
+	}
+
 	private _getDataAndSession(): { data: IData; currentSession: ISession } {
 		const state = this._data.getValue() ?? { sessions: [] };
 
@@ -164,6 +310,7 @@ export class AiStatsFeature extends Disposable {
 
 interface IData {
 	sessions: ISession[];
+	chatRequests?: IChatRequestRecord[];
 }
 
 // 5 min window
@@ -173,6 +320,15 @@ interface ISession {
 	aiCharacters: number;
 	acceptedInlineSuggestions: number | undefined;
 	chatEditCount: number | undefined;
+}
+
+export interface IChatRequestRecord {
+	timestamp: number;
+	modelId: string;
+	promptTokens: number;
+	completionTokens: number;
+	sessionId: string;
+	requestId: string;
 }
 
 

@@ -283,3 +283,150 @@ export function createAiStatsChart(
 
 	return container;
 }
+
+const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+export function createDayOfWeekChart(requestsByDay: number[]): HTMLElement {
+	const width = 280;
+	const height = 80;
+	const margin = { top: 10, right: 10, bottom: 20, left: 30 };
+	const innerWidth = width - margin.left - margin.right;
+	const innerHeight = height - margin.top - margin.bottom;
+
+	const container = $('.ai-stats-chart-container');
+	container.style.position = 'relative';
+
+	const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+	svg.setAttribute('width', `${width}px`);
+	svg.setAttribute('height', `${height}px`);
+	svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+	svg.style.display = 'block';
+	container.appendChild(svg);
+
+	const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+	g.setAttribute('transform', `translate(${margin.left},${margin.top})`);
+	svg.appendChild(g);
+
+	const maxCount = Math.max(...requestsByDay, 1);
+	const barWidth = Math.min(28, (innerWidth - 6 * 4) / 7);
+	const gap = 4;
+	const totalBarSpace = 7 * barWidth + 6 * gap;
+	const startX = (innerWidth - totalBarSpace) / 2;
+
+	// X-axis line
+	const xAxisLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+	xAxisLine.setAttribute('x1', '0');
+	xAxisLine.setAttribute('y1', `${innerHeight}`);
+	xAxisLine.setAttribute('x2', `${innerWidth}`);
+	xAxisLine.setAttribute('y2', `${innerHeight}`);
+	xAxisLine.setAttribute('stroke', asCssVariable(chartsLines));
+	xAxisLine.setAttribute('stroke-width', '1px');
+	g.appendChild(xAxisLine);
+
+	for (let i = 0; i < 7; i++) {
+		const x = startX + i * (barWidth + gap);
+		const barHeight = (requestsByDay[i] / maxCount) * innerHeight;
+		const y = innerHeight - barHeight;
+
+		const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+		rect.setAttribute('x', `${x}`);
+		rect.setAttribute('y', `${y}`);
+		rect.setAttribute('width', `${barWidth}`);
+		rect.setAttribute('height', `${Math.max(1, barHeight)}`);
+		rect.setAttribute('fill', asCssVariable(chartsBlue));
+		rect.setAttribute('rx', '2');
+		g.appendChild(rect);
+
+		// Day label
+		const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+		label.setAttribute('x', `${x + barWidth / 2}`);
+		label.setAttribute('y', `${innerHeight + 12}`);
+		label.setAttribute('text-anchor', 'middle');
+		label.setAttribute('fill', asCssVariable(chartsForeground));
+		label.setAttribute('font-size', '8px');
+		label.textContent = DAY_LABELS[i];
+		g.appendChild(label);
+	}
+
+	return container;
+}
+
+export interface IModelUsageData {
+	modelId: string;
+	count: number;
+}
+
+export function createModelBarChart(models: IModelUsageData[]): HTMLElement {
+	const topModels = models.slice(0, 5);
+	const rowHeight = 18;
+	const height = topModels.length * rowHeight + 4;
+
+	const container = $('.ai-stats-chart-container');
+	container.style.position = 'relative';
+
+	if (topModels.length === 0) {
+		const noData = $('div');
+		noData.style.fontSize = '11px';
+		noData.style.color = `var(--vscode-descriptionForeground)`;
+		noData.textContent = localize('noModelData', "No model data yet");
+		container.appendChild(noData);
+		return container;
+	}
+
+	// Measure the longest label to size the chart dynamically
+	const canvas = document.createElement('canvas');
+	const ctx = canvas.getContext('2d')!;
+	ctx.font = '10px sans-serif';
+	const maxLabelWidth = Math.max(...topModels.map(m => ctx.measureText(m.modelId).width));
+	const labelWidth = Math.ceil(maxLabelWidth) + 12;
+
+	const maxCount = Math.max(...topModels.map(m => m.count), 1);
+	const barMaxWidth = 80;
+	const countWidth = 30;
+	const width = labelWidth + barMaxWidth + countWidth;
+
+	const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+	svg.setAttribute('width', `${width}px`);
+	svg.setAttribute('height', `${height}px`);
+	svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+	svg.style.display = 'block';
+	container.appendChild(svg);
+
+	topModels.forEach((model, i) => {
+		const y = i * rowHeight + 2;
+		const barWidth = (model.count / maxCount) * barMaxWidth;
+
+		// Model name label
+		const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+		label.setAttribute('x', `${labelWidth - 4}`);
+		label.setAttribute('y', `${y + 12}`);
+		label.setAttribute('text-anchor', 'end');
+		label.setAttribute('fill', asCssVariable(chartsForeground));
+		label.setAttribute('font-size', '10px');
+		label.textContent = model.modelId;
+		svg.appendChild(label);
+
+		// Bar
+		const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+		rect.setAttribute('x', `${labelWidth}`);
+		rect.setAttribute('y', `${y + 2}`);
+		rect.setAttribute('width', `${Math.max(2, barWidth)}`);
+		rect.setAttribute('height', '12');
+		rect.setAttribute('fill', asCssVariable(chartsBlue));
+		rect.setAttribute('rx', '2');
+		svg.appendChild(rect);
+
+		// Count label
+		const countLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+		countLabel.setAttribute('x', `${labelWidth + Math.max(2, barWidth) + 4}`);
+		countLabel.setAttribute('y', `${y + 12}`);
+		countLabel.setAttribute('text-anchor', 'start');
+		countLabel.setAttribute('fill', asCssVariable(chartsForeground));
+		countLabel.setAttribute('font-size', '9px');
+		countLabel.textContent = `${model.count}`;
+		svg.appendChild(countLabel);
+	});
+
+	return container;
+}
+
