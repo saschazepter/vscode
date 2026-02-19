@@ -130,7 +130,7 @@ steps:
       echo "All required compilation folders checked."
     displayName: Validate compilation folders
 
-  - script: ./build/azure-pipelines/common/extract-telemetry.sh
+  - script: node build/azure-pipelines/common/extract-telemetry.ts
     displayName: Generate lists of telemetry events
 
   - task: AzureCLI@2
