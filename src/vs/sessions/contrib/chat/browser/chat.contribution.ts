@@ -4,13 +4,12 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Codicon } from '../../../../base/common/codicons.js';
-import * as dom from '../../../../base/browser/dom.js';
 import { KeyCode, KeyMod } from '../../../../base/common/keyCodes.js';
 import { ServicesAccessor } from '../../../../editor/browser/editorExtensions.js';
 import { localize, localize2 } from '../../../../nls.js';
 import { Action2, MenuRegistry, registerAction2 } from '../../../../platform/actions/common/actions.js';
 import { IHostService } from '../../../../workbench/services/host/browser/host.js';
-import { Disposable } from '../../../../base/common/lifecycle.js';
+import { Disposable, IDisposable } from '../../../../base/common/lifecycle.js';
 import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../../workbench/common/contributions.js';
 import { IViewContainersRegistry, IViewsRegistry, ViewContainerLocation, Extensions as ViewExtensions, WindowVisibility } from '../../../../workbench/common/views.js';
 import { Registry } from '../../../../platform/registry/common/platform.js';
@@ -41,6 +40,10 @@ import { IsSessionsUtilityProcessContext, IsSessionsWindowContext } from '../../
 import { SdkChatViewPane, SdkChatViewId } from '../../../browser/widget/sdkChatViewPane.js';
 import { CopilotSdkDebugLog } from '../../../browser/copilotSdkDebugLog.js';
 import { CopilotSdkDebugPanel } from '../../../browser/copilotSdkDebugPanel.js';
+import { CloudTaskDebugLog } from '../../../browser/cloudTaskDebugLog.js';
+import { CloudTaskDebugPanel } from '../../../browser/cloudTaskDebugPanel.js';
+import { openDebugModal } from '../../../browser/debugModal.js';
+import { BaseDebugLog, type IBaseDebugLogEntry } from '../../../browser/debugLog.js';
 
 export class OpenSessionWorktreeInVSCodeAction extends Action2 {
 	static readonly ID = 'chat.openSessionWorktreeInVSCode';
@@ -267,76 +270,94 @@ registerAction2(BranchChatSessionAction);
 registerWorkbenchContribution2(RegisterChatViewContainerContribution.ID, RegisterChatViewContainerContribution, WorkbenchPhase.BlockStartup);
 registerWorkbenchContribution2(RunScriptContribution.ID, RunScriptContribution, WorkbenchPhase.AfterRestored);
 
-class CopilotSdkDebugContribution extends Disposable implements IWorkbenchContribution {
+// --- Debug feature registration helper ---
+// Eliminates duplication between the SDK and Cloud Task debug contributions.
 
-	static readonly ID = 'copilotSdk.debugContribution';
+function registerDebugFeature(options: {
+	contributionId: string;
+	actionId: string;
+	title: ReturnType<typeof localize2>;
+	LogCtor: new (...args: unknown[]) => Disposable;
+	getLog: () => { instance: BaseDebugLog<IBaseDebugLogEntry> | undefined };
+	createPanel: (instantiationService: IInstantiationService, el: HTMLElement, log: BaseDebugLog<IBaseDebugLogEntry>) => Disposable;
+}): void {
 
-	constructor(
-		@IWorkbenchEnvironmentService environmentService: IWorkbenchEnvironmentService,
-		@IInstantiationService instantiationService: IInstantiationService,
-	) {
-		super();
-		// Only initialize debug logging when the SDK utility process is enabled
-		if (!environmentService.isSessionsUtilityProcess) {
-			return;
+	// 1. Workbench contribution - creates the debug log singleton on startup
+	class DebugLogContribution extends Disposable implements IWorkbenchContribution {
+		static readonly ID = options.contributionId;
+		constructor(
+			@IWorkbenchEnvironmentService environmentService: IWorkbenchEnvironmentService,
+			@IInstantiationService instantiationService: IInstantiationService,
+		) {
+			super();
+			if (!environmentService.isSessionsUtilityProcess) {
+				return;
+			}
+			this._register(instantiationService.createInstance(options.LogCtor));
 		}
-
-		this._register(instantiationService.createInstance(CopilotSdkDebugLog));
 	}
+	registerWorkbenchContribution2(DebugLogContribution.ID, DebugLogContribution, WorkbenchPhase.AfterRestored);
+
+	// 2. Command palette action - toggles a debug modal with the debug panel
+	let activeModal: IDisposable | undefined;
+	registerAction2(class DebugPanelAction extends Action2 {
+		constructor() {
+			super({
+				id: options.actionId,
+				title: options.title,
+				f1: true,
+				icon: Codicon.beaker,
+				precondition: IsSessionsUtilityProcessContext,
+			});
+		}
+		async run(accessor: ServicesAccessor): Promise<void> {
+			const environmentService = accessor.get(IWorkbenchEnvironmentService);
+			if (!environmentService.isSessionsUtilityProcess) {
+				return;
+			}
+
+			if (activeModal) {
+				activeModal.dispose();
+				activeModal = undefined;
+				return;
+			}
+
+			const log = options.getLog().instance;
+			if (!log) {
+				return;
+			}
+
+			const layoutService = accessor.get(IWorkbenchLayoutService);
+			const instantiationService = accessor.get(IInstantiationService);
+			activeModal = openDebugModal(
+				{ container: layoutService.mainContainer },
+				(contentEl) => {
+					const panel = options.createPanel(instantiationService, contentEl, log);
+					return { dispose: () => { panel.dispose(); activeModal = undefined; } };
+				},
+			);
+		}
+	});
 }
 
-// SDK debug log (only when using SDK - captures all events from startup)
-registerWorkbenchContribution2(CopilotSdkDebugContribution.ID, CopilotSdkDebugContribution, WorkbenchPhase.AfterRestored);
+// SDK debug feature
+registerDebugFeature({
+	contributionId: 'copilotSdk.debugContribution',
+	actionId: 'copilotSdk.openDebugPanel',
+	title: localize2('copilotSdkDebugPanel', 'Copilot SDK: Open Debug Panel'),
+	LogCtor: CopilotSdkDebugLog,
+	getLog: () => CopilotSdkDebugLog,
+	createPanel: (inst, el, log) => inst.createInstance(CopilotSdkDebugPanel, el, log),
+});
 
-// SDK debug panel (command palette action)
-let activeDebugBackdrop: HTMLElement | undefined;
-registerAction2(class CopilotSdkDebugPanelAction extends Action2 {
-	constructor() {
-		super({
-			id: 'copilotSdk.openDebugPanel',
-			title: localize2('copilotSdkDebugPanel', 'Copilot SDK: Open Debug Panel'),
-			f1: true,
-			icon: Codicon.beaker,
-			precondition: IsSessionsUtilityProcessContext,
-		});
-	}
-	async run(accessor: ServicesAccessor): Promise<void> {
-		const environmentService = accessor.get(IWorkbenchEnvironmentService);
-		if (!environmentService.isSessionsUtilityProcess) {
-			return;
-		}
-
-		const layoutService = accessor.get(IWorkbenchLayoutService);
-		const instantiationService = accessor.get(IInstantiationService);
-		const container = layoutService.mainContainer;
-		const targetWindow = dom.getWindow(container);
-		if (activeDebugBackdrop) {
-			activeDebugBackdrop.remove();
-			activeDebugBackdrop = undefined;
-			return;
-		}
-		const log = CopilotSdkDebugLog.instance;
-		if (!log) {
-			return;
-		}
-		const backdrop = dom.$('.copilot-sdk-debug-backdrop');
-		activeDebugBackdrop = backdrop;
-		backdrop.style.cssText = 'position:absolute;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.5);';
-		container.appendChild(backdrop);
-		const modal = dom.$('div');
-		modal.style.cssText = 'width:560px;height:80%;max-height:700px;border-radius:8px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,0.4);';
-		backdrop.appendChild(modal);
-		const panel = instantiationService.createInstance(CopilotSdkDebugPanel, modal, log);
-		const close = () => {
-			panel.dispose();
-			backdrop.remove();
-			activeDebugBackdrop = undefined;
-			targetWindow.document.removeEventListener('keydown', onKeyDown);
-		};
-		const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') { close(); } };
-		backdrop.addEventListener('click', (e) => { if (e.target === backdrop) { close(); } });
-		targetWindow.document.addEventListener('keydown', onKeyDown);
-	}
+// Cloud Task debug feature
+registerDebugFeature({
+	contributionId: 'cloudTask.debugContribution',
+	actionId: 'cloudTask.openDebugPanel',
+	title: localize2('cloudTaskDebugPanel', 'Cloud Task: Open Debug Panel'),
+	LogCtor: CloudTaskDebugLog,
+	getLog: () => CloudTaskDebugLog,
+	createPanel: (inst, el, log) => inst.createInstance(CloudTaskDebugPanel, el, log),
 });
 
 // register services

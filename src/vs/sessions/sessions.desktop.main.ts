@@ -33,6 +33,7 @@ import '../workbench/services/lifecycle/electron-browser/lifecycleService.js';
 import '../workbench/services/host/electron-browser/nativeHostService.js';
 import '../platform/meteredConnection/electron-browser/meteredConnectionService.js';
 import '../workbench/services/request/electron-browser/requestService.js';
+import './electron-browser/requestService.js'; // Override: proxy requests through main process to bypass CORS
 import '../workbench/services/clipboard/electron-browser/clipboardService.js';
 import '../workbench/services/contextmenu/electron-browser/contextmenuService.js';
 import '../workbench/services/workspaces/electron-browser/workspaceEditingService.js';
@@ -196,6 +197,9 @@ import './contrib/configuration/browser/configuration.contribution.js';
 
 // Copilot SDK service (utility process proxy, lazy-started)
 import './electron-browser/copilotSdkService.js';
+
+// Cloud Task API service
+import './contrib/cloudTask/browser/cloudTask.contribution.js';
 
 //#endregion
 

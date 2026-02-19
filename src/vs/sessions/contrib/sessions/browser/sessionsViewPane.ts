@@ -45,10 +45,14 @@ import { IViewsService } from '../../../../workbench/services/views/common/views
 import { agentIcon, instructionsIcon, promptIcon, skillIcon, hookIcon, workspaceIcon, userIcon, extensionIcon } from '../../aiCustomizationTreeView/browser/aiCustomizationTreeViewIcons.js';
 import { IWorkbenchEnvironmentService } from '../../../../workbench/services/environment/common/environmentService.js';
 import { ICopilotSdkService, type ICopilotSessionMetadata } from '../../../../platform/copilotSdk/common/copilotSdkService.js';
+import { ICloudTaskService, type ICloudTask, type ICloudTaskChangeEvent } from '../../../../platform/cloudTask/common/cloudTaskService.js';
 import { SdkChatViewPane, SdkChatViewId } from '../../../browser/widget/sdkChatViewPane.js';
 import { DisposableStore } from '../../../../base/common/lifecycle.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { IDialogService } from '../../../../platform/dialogs/common/dialogs.js';
+import { type ISessionListItem } from '../../../common/sessionListItem.js';
+import { sdkSessionToListItem, cloudTaskToListItem } from '../../../common/sessionListItemAdapters.js';
+import { renderSessionListItem } from '../../../browser/widget/sessionListItemRenderer.js';
 
 const $ = DOM.$;
 export const SessionsViewId = 'agentic.workbench.view.sessionsView';
@@ -86,9 +90,12 @@ export class AgenticSessionsViewPane extends ViewPane {
 	// SDK session list (used when --sessions-utility-process is active)
 	private readonly _useSdk: boolean;
 	private _sdkSessions: ICopilotSessionMetadata[] = [];
-	private _sdkSelectedSessionId: string | undefined;
-	private _sdkListContainer: HTMLElement | undefined;
-	private readonly _sdkListDisposables = this._register(new DisposableStore());
+	private _cloudTasks: ICloudTask[] = [];
+	private _selectedItemId: string | undefined;
+
+	// Unified list (combined SDK sessions + cloud tasks)
+	private _unifiedListContainer: HTMLElement | undefined;
+	private readonly _unifiedListDisposables = this._register(new DisposableStore());
 
 	constructor(
 		options: IViewPaneOptions,
@@ -111,6 +118,7 @@ export class AgenticSessionsViewPane extends ViewPane {
 		@ISessionsManagementService private readonly activeSessionService: ISessionsManagementService,
 		@IWorkbenchEnvironmentService environmentService: IWorkbenchEnvironmentService,
 		@ICopilotSdkService private readonly copilotSdkService: ICopilotSdkService,
+		@ICloudTaskService private readonly cloudTaskService: ICloudTaskService,
 		@IViewsService private readonly viewsService: IViewsService,
 		@ILogService private readonly logService: ILogService,
 		@IDialogService private readonly dialogService: IDialogService,
@@ -148,7 +156,12 @@ export class AgenticSessionsViewPane extends ViewPane {
 
 		// SDK session lifecycle updates
 		if (this._useSdk) {
-			this._register(this.copilotSdkService.onSessionLifecycle(() => this._refreshSdkSessionList()));
+			this._register(this.copilotSdkService.onSessionLifecycle(() => this._refreshUnifiedList()));
+			this._register(this.cloudTaskService.onDidChangeTasks(event => {
+				this._handleCloudTaskChange(event);
+				this._renderUnifiedList();
+			}));
+			this.cloudTaskService.startPolling();
 		}
 
 	}
@@ -186,11 +199,9 @@ export class AgenticSessionsViewPane extends ViewPane {
 		newSessionButton.label = localize('newSession', "New Session");
 		this._register(newSessionButton.onDidClick(() => {
 			const chatPane = this.viewsService.getViewWithId<SdkChatViewPane>(SdkChatViewId);
-			if (chatPane?.widget) {
-				chatPane.widget.newSession();
-				this._sdkSelectedSessionId = undefined;
-				this._renderSdkSessionList();
-			}
+			chatPane?.showEmpty();
+			this._selectedItemId = undefined;
+			this._renderUnifiedList();
 		}));
 
 		const keybinding = this.keybindingService.lookupKeybinding(ACTION_ID_NEW_CHAT);
@@ -199,85 +210,138 @@ export class AgenticSessionsViewPane extends ViewPane {
 			keybindingHint.textContent = keybinding.getLabel() ?? '';
 		}
 
-		// SDK Sessions list
-		this._sdkListContainer = DOM.append(sessionsContent, $('.agent-sessions-control-container'));
-		this._refreshSdkSessionList();
+		// Unified list (SDK sessions + cloud tasks combined)
+		this._unifiedListContainer = DOM.append(sessionsContent, $('.agent-sessions-control-container'));
+		this._refreshUnifiedList();
 	}
 
-	private async _refreshSdkSessionList(): Promise<void> {
+	// -----------------------------------------------------------------------
+	// Unified list (SDK sessions + cloud tasks combined, sorted by time)
+	// -----------------------------------------------------------------------
+
+	private async _refreshUnifiedList(): Promise<void> {
 		try {
 			this._sdkSessions = await this.copilotSdkService.listSessions();
 		} catch (err) {
 			this.logService.error('[SessionsViewPane] Failed to list SDK sessions:', err);
 			this._sdkSessions = [];
 		}
-		this._renderSdkSessionList();
+
+		// Fetch cloud tasks from the global endpoint and merge into our list.
+		// Tasks from listTasks() may have empty ownerName/repoName since they
+		// come from the global endpoint rather than a repo-specific route.
+		try {
+			const result = await this.cloudTaskService.listTasks({ includeCounts: true });
+			const taskMap = new Map<string, ICloudTask>();
+			// Keep any existing tasks (from polling) that have owner/repo info
+			for (const t of this._cloudTasks) {
+				taskMap.set(t.id, t);
+			}
+			// Merge in fresh results, preferring tasks that already have owner/repo
+			for (const t of result.tasks) {
+				const existing = taskMap.get(t.id);
+				if (!existing || (!existing.ownerName && t.ownerName)) {
+					taskMap.set(t.id, t);
+				}
+			}
+			this._cloudTasks = [...taskMap.values()];
+		} catch (err) {
+			this.logService.error('[SessionsViewPane] Failed to list cloud tasks:', err);
+		}
+
+		this._renderUnifiedList();
 	}
 
-	private _renderSdkSessionList(): void {
-		if (!this._sdkListContainer) { return; }
-		this._sdkListDisposables.clear();
-		DOM.clearNode(this._sdkListContainer);
+	private _renderUnifiedList(): void {
+		if (!this._unifiedListContainer) { return; }
+		this._unifiedListDisposables.clear();
+		DOM.clearNode(this._unifiedListContainer);
 
-		if (this._sdkSessions.length === 0) {
-			const empty = DOM.append(this._sdkListContainer, $('.sdk-session-list-empty'));
+		// Build unified items via adapters, attaching actions
+		const items: ISessionListItem[] = [];
+
+		for (const session of this._sdkSessions) {
+			items.push({
+				...sdkSessionToListItem(session),
+				action: {
+					icon: Codicon.trash,
+					tooltip: localize('deleteSession', "Delete Session"),
+					execute: () => this._deleteSdkSession(session.sessionId),
+				},
+			});
+		}
+
+		for (const task of this._cloudTasks) {
+			items.push({
+				...cloudTaskToListItem(task),
+				action: task.archivedAt ? undefined : {
+					icon: Codicon.archive,
+					tooltip: localize('archiveTask', "Archive Task"),
+					execute: () => this._archiveCloudTask(task),
+				},
+			});
+		}
+
+		// Sort newest first
+		items.sort((a, b) => b.timestamp - a.timestamp);
+
+		if (items.length === 0) {
+			const empty = DOM.append(this._unifiedListContainer, $('.sdk-session-list-empty'));
 			empty.textContent = localize('noSessions', "No sessions yet");
 			return;
 		}
 
-		for (const session of this._sdkSessions) {
-			const item = DOM.append(this._sdkListContainer, $('.sdk-session-item'));
-			item.tabIndex = 0;
-			item.setAttribute('role', 'listitem');
-			item.setAttribute('data-session-id', session.sessionId);
-			if (session.sessionId === this._sdkSelectedSessionId) { item.classList.add('selected'); }
-
-			const icon = DOM.append(item, $('span.sdk-session-icon'));
-			icon.classList.add(...ThemeIcon.asClassNameArray(Codicon.commentDiscussion));
-
-			const details = DOM.append(item, $('span.sdk-session-details'));
-			const label = DOM.append(details, $('span.sdk-session-label'));
-			label.textContent = session.summary || localize('untitledSession', "Untitled Session");
-
-			if (session.workspacePath || session.repository) {
-				const pathEl = DOM.append(details, $('span.sdk-session-path'));
-				pathEl.textContent = session.repository
-					? (session.branch ? `${session.repository} (${session.branch})` : session.repository)
-					: session.workspacePath ?? '';
-			}
-
-			if (session.modifiedTime || session.startTime) {
-				const timeEl = DOM.append(item, $('span.sdk-session-time'));
-				const date = new Date((session.modifiedTime ?? session.startTime)!);
-				timeEl.textContent = this._relativeTime(date);
-			}
-
-			// Delete button
-			const actions = DOM.append(item, $('span.sdk-session-actions'));
-			const deleteBtn = DOM.append(actions, $('button.sdk-session-action-btn')) as HTMLButtonElement;
-			deleteBtn.title = localize('deleteSession', "Delete Session");
-			DOM.append(deleteBtn, $('span')).classList.add(...ThemeIcon.asClassNameArray(Codicon.trash));
-			this._sdkListDisposables.add(DOM.addDisposableListener(deleteBtn, 'click', (e) => {
-				DOM.EventHelper.stop(e);
-				this._deleteSdkSession(session.sessionId);
-			}));
-
-			this._sdkListDisposables.add(DOM.addDisposableListener(item, 'click', () => this._selectSdkSession(session.sessionId)));
-			this._sdkListDisposables.add(DOM.addDisposableListener(item, 'keydown', (e: KeyboardEvent) => {
-				if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); this._selectSdkSession(session.sessionId); }
-			}));
+		for (const item of items) {
+			const { disposables } = renderSessionListItem(
+				this._unifiedListContainer,
+				item,
+				item.id === this._selectedItemId,
+				() => this._selectItem(item),
+			);
+			this._unifiedListDisposables.add(disposables);
 		}
 	}
 
-	private _selectSdkSession(sessionId: string): void {
-		this._sdkSelectedSessionId = sessionId;
-		if (this._sdkListContainer) {
-			for (const child of this._sdkListContainer.children) {
-				child.classList.toggle('selected', (child as HTMLElement).getAttribute('data-session-id') === sessionId);
+	private _selectItem(item: ISessionListItem): void {
+		this._selectedItemId = item.id;
+		this._updateUnifiedSelection();
+		const chatPane = this.viewsService.getViewWithId<SdkChatViewPane>(SdkChatViewId);
+		chatPane?.showItem(item);
+	}
+
+	private _handleCloudTaskChange(event: ICloudTaskChangeEvent): void {
+		switch (event.type) {
+			case 'added':
+				if (event.task && !this._cloudTasks.some(t => t.id === event.taskId)) {
+					this._cloudTasks.push(event.task);
+				}
+				break;
+			case 'updated':
+				if (event.task) {
+					const idx = this._cloudTasks.findIndex(t => t.id === event.taskId);
+					if (idx >= 0) {
+						this._cloudTasks[idx] = event.task;
+					} else {
+						this._cloudTasks.push(event.task);
+					}
+				}
+				break;
+			case 'removed': {
+				const removeIdx = this._cloudTasks.findIndex(t => t.id === event.taskId);
+				if (removeIdx >= 0) {
+					this._cloudTasks.splice(removeIdx, 1);
+				}
+				break;
 			}
 		}
-		const chatPane = this.viewsService.getViewWithId<SdkChatViewPane>(SdkChatViewId);
-		chatPane?.widget?.loadSession(sessionId);
+	}
+
+	private _updateUnifiedSelection(): void {
+		if (!this._unifiedListContainer) { return; }
+		for (const child of this._unifiedListContainer.children) {
+			const el = child as HTMLElement;
+			el.classList.toggle('selected', el.getAttribute('data-item-id') === this._selectedItemId);
+		}
 	}
 
 	private async _deleteSdkSession(sessionId: string): Promise<void> {
@@ -292,25 +356,33 @@ export class AgenticSessionsViewPane extends ViewPane {
 			return;
 		}
 		try { await this.copilotSdkService.deleteSession(sessionId); } catch { /* best-effort */ }
-		if (this._sdkSelectedSessionId === sessionId) {
-			this._sdkSelectedSessionId = undefined;
+		if (this._selectedItemId === sessionId) {
+			this._selectedItemId = undefined;
 			const chatPane = this.viewsService.getViewWithId<SdkChatViewPane>(SdkChatViewId);
-			chatPane?.widget?.newSession();
+			chatPane?.showEmpty();
 		}
-		this._refreshSdkSessionList();
+		this._refreshUnifiedList();
 	}
 
-	private _relativeTime(date: Date): string {
-		const diffMs = Date.now() - date.getTime();
-		if (diffMs <= 0) { return localize('justNow', "just now"); }
-		const diffMins = Math.floor(diffMs / 60000);
-		if (diffMins < 1) { return localize('justNow', "just now"); }
-		if (diffMins < 60) { return localize('minutesAgo', "{0}m ago", diffMins); }
-		const diffHours = Math.floor(diffMins / 60);
-		if (diffHours < 24) { return localize('hoursAgo', "{0}h ago", diffHours); }
-		const diffDays = Math.floor(diffHours / 24);
-		if (diffDays < 7) { return localize('daysAgo', "{0}d ago", diffDays); }
-		return date.toLocaleDateString();
+	private async _archiveCloudTask(task: ICloudTask): Promise<void> {
+		const confirmation = await this.dialogService.confirm({
+			message: localize('archiveCloudTask.confirm', "Archive this cloud task?"),
+			detail: task.name || task.id,
+			primaryButton: localize('archiveTask.confirm.button', "Archive"),
+			cancelButton: localize('cancel', "Cancel")
+		});
+		if (!confirmation.confirmed) {
+			return;
+		}
+		try {
+			await this.cloudTaskService.archiveTask(task.ownerName, task.repoName, task.id);
+		} catch { /* best-effort */ }
+		if (this._selectedItemId === task.id) {
+			this._selectedItemId = undefined;
+			const chatPane = this.viewsService.getViewWithId<SdkChatViewPane>(SdkChatViewId);
+			chatPane?.showEmpty();
+		}
+		this._refreshUnifiedList();
 	}
 
 	private _createDefaultControls(sessionsContainer: HTMLElement): void {

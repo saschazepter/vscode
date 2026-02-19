@@ -8,6 +8,7 @@ import './media/sdkChatWidget.css';
 import * as dom from '../../../base/browser/dom.js';
 import { Codicon } from '../../../base/common/codicons.js';
 import { Disposable, DisposableStore } from '../../../base/common/lifecycle.js';
+import { Emitter, Event } from '../../../base/common/event.js';
 import { localize } from '../../../nls.js';
 import { ThemeIcon } from '../../../base/common/themables.js';
 import { type ICopilotModelInfo, ICopilotSdkService } from '../../../platform/copilotSdk/common/copilotSdkService.js';
@@ -23,6 +24,12 @@ import { IHostService } from '../../../workbench/services/host/browser/host.js';
 import { SdkChatModel, type ISdkChatModelChange } from './sdkChatModel.js';
 import { SdkContentPartRenderer, type IRenderedContentPart } from './sdkContentPartRenderer.js';
 import { CopilotSdkDebugLog } from '../copilotSdkDebugLog.js';
+import { ICloudTaskService } from '../../../platform/cloudTask/common/cloudTaskService.js';
+import { type ISessionListItem, SessionListItemKind } from '../../common/sessionListItem.js';
+import { cloudTaskToListItem } from '../../common/sessionListItemAdapters.js';
+import type { ISessionDetailWidget } from './sessionDetailWidget.js';
+
+type TaskMode = 'local' | 'cloud';
 
 const $ = dom.$;
 
@@ -38,7 +45,7 @@ interface IRenderedTurn {
  * chat design language (using `ChatContentMarkdownRenderer`,
  * chat CSS classes, etc.).
  */
-export class SdkChatWidget extends Disposable {
+export class SdkChatWidget extends Disposable implements ISessionDetailWidget {
 
 	readonly element: HTMLElement;
 
@@ -60,6 +67,18 @@ export class SdkChatWidget extends Disposable {
 	private readonly _worktreeLabel: HTMLElement;
 	private _worktreePath: string | undefined;
 
+	// Task mode toggle (local vs cloud)
+	private _taskMode: TaskMode = 'local';
+	private readonly _modeToggleContainer: HTMLElement;
+	private readonly _localModeBtn: HTMLButtonElement;
+	private readonly _cloudModeBtn: HTMLButtonElement;
+	private readonly _localPickersContainer: HTMLElement;
+	private readonly _cloudPickersContainer: HTMLElement;
+	private readonly _repoInput: HTMLInputElement;
+
+	private readonly _onDidCreateCloudTask = this._register(new Emitter<ISessionListItem>());
+	readonly onDidCreateCloudTask: Event<ISessionListItem> = this._onDidCreateCloudTask.event;
+
 	private readonly _model: SdkChatModel;
 	private readonly _partRenderer: SdkContentPartRenderer;
 	private readonly _renderedTurns = new Map<string, IRenderedTurn>();
@@ -73,6 +92,7 @@ export class SdkChatWidget extends Disposable {
 	constructor(
 		container: HTMLElement,
 		@ICopilotSdkService private readonly _sdk: ICopilotSdkService,
+		@ICloudTaskService private readonly _cloudTaskService: ICloudTaskService,
 		@IInstantiationService private readonly _instantiationService: IInstantiationService,
 		@ILogService private readonly _logService: ILogService,
 		@IWorkspaceContextService private readonly _workspaceContextService: IWorkspaceContextService,
@@ -101,11 +121,25 @@ export class SdkChatWidget extends Disposable {
 		this._textarea.rows = 1;
 		const inputToolbar = dom.append(inputBox, $('.sdk-chat-input-toolbar'));
 
-		// Left: pickers (folder + model)
+		// Left: mode toggle + pickers
 		const pickerGroup = dom.append(inputToolbar, $('.sdk-chat-picker-group'));
 
+		// Mode toggle: Local Task / Cloud Task
+		this._modeToggleContainer = dom.append(pickerGroup, $('.sdk-chat-mode-toggle'));
+		this._localModeBtn = dom.append(this._modeToggleContainer, $('button.sdk-chat-mode-btn.sdk-chat-mode-active')) as HTMLButtonElement;
+		dom.append(this._localModeBtn, $(`span${ThemeIcon.asCSSSelector(Codicon.terminal)}`)).classList.add('codicon');
+		dom.append(this._localModeBtn, $('span')).textContent = localize('sdkChat.mode.local', "Local");
+		this._cloudModeBtn = dom.append(this._modeToggleContainer, $('button.sdk-chat-mode-btn')) as HTMLButtonElement;
+		dom.append(this._cloudModeBtn, $(`span${ThemeIcon.asCSSSelector(Codicon.cloud)}`)).classList.add('codicon');
+		dom.append(this._cloudModeBtn, $('span')).textContent = localize('sdkChat.mode.cloud', "Cloud");
+		this._register(dom.addDisposableListener(this._localModeBtn, 'click', () => this._setTaskMode('local')));
+		this._register(dom.addDisposableListener(this._cloudModeBtn, 'click', () => this._setTaskMode('cloud')));
+
+		// Local pickers (folder + model) - visible when mode = local
+		this._localPickersContainer = dom.append(pickerGroup, $('.sdk-chat-local-pickers'));
+
 		// Folder picker with history dropdown
-		const folderPicker = dom.append(pickerGroup, $('.sdk-chat-picker.sdk-chat-model-picker'));
+		const folderPicker = dom.append(this._localPickersContainer, $('.sdk-chat-picker.sdk-chat-model-picker'));
 		dom.append(folderPicker, $(`span${ThemeIcon.asCSSSelector(Codicon.folder)}`)).classList.add('codicon');
 		this._folderLabel = dom.append(folderPicker, $('span.sdk-chat-picker-label'));
 		this._folderBtn = dom.append(folderPicker, $('select.sdk-chat-picker-select')) as HTMLSelectElement;
@@ -125,7 +159,7 @@ export class SdkChatWidget extends Disposable {
 		}));
 
 		// Model picker
-		const modelPicker = dom.append(pickerGroup, $('.sdk-chat-picker.sdk-chat-model-picker'));
+		const modelPicker = dom.append(this._localPickersContainer, $('.sdk-chat-picker.sdk-chat-model-picker'));
 		dom.append(modelPicker, $(`span${ThemeIcon.asCSSSelector(Codicon.vm)}`)).classList.add('codicon');
 		this._modelLabel = dom.append(modelPicker, $('span.sdk-chat-picker-label'));
 		this._modelLabel.textContent = localize('sdkChat.selectModel', "Select model");
@@ -134,6 +168,15 @@ export class SdkChatWidget extends Disposable {
 			const opt = this._modelSelect.options[this._modelSelect.selectedIndex];
 			this._modelLabel.textContent = opt?.textContent ?? '';
 		}));
+
+		// Cloud pickers (repo input) - visible when mode = cloud
+		this._cloudPickersContainer = dom.append(pickerGroup, $('.sdk-chat-cloud-pickers'));
+		this._cloudPickersContainer.style.display = 'none';
+		const repoPicker = dom.append(this._cloudPickersContainer, $('.sdk-chat-picker.sdk-chat-model-picker'));
+		dom.append(repoPicker, $(`span${ThemeIcon.asCSSSelector(Codicon.repo)}`)).classList.add('codicon');
+		this._repoInput = dom.append(repoPicker, $('input.sdk-chat-repo-input')) as HTMLInputElement;
+		this._repoInput.type = 'text';
+		this._repoInput.placeholder = localize('sdkChat.repoPlaceholder', "owner/repo");
 
 		// Right: send/abort buttons
 		const buttonGroup = dom.append(inputToolbar, $('.sdk-chat-input-buttons'));
@@ -517,6 +560,13 @@ export class SdkChatWidget extends Disposable {
 	// --- Send / Abort ---
 
 	private async _handleSend(): Promise<void> {
+		if (this._taskMode === 'cloud') {
+			return this._handleCloudSend();
+		}
+		return this._handleLocalSend();
+	}
+
+	private async _handleLocalSend(): Promise<void> {
 		const prompt = this._textarea.value.trim();
 		if (!prompt || this._isStreaming) { return; }
 
@@ -548,6 +598,37 @@ export class SdkChatWidget extends Disposable {
 		}
 	}
 
+	private async _handleCloudSend(): Promise<void> {
+		const prompt = this._textarea.value.trim();
+		if (!prompt) { return; }
+
+		const repoValue = this._repoInput.value.trim();
+		const slashIdx = repoValue.indexOf('/');
+		if (slashIdx <= 0 || slashIdx === repoValue.length - 1) {
+			this._setStatus(localize('sdkChat.status.repoRequired', "Enter owner/repo (e.g. microsoft/vscode)"));
+			return;
+		}
+		const owner = repoValue.substring(0, slashIdx);
+		const repo = repoValue.substring(slashIdx + 1);
+
+		this._textarea.value = '';
+		this._autoResizeTextarea();
+		this._setStatus(localize('sdkChat.status.creatingCloudTask', "Creating cloud task..."));
+
+		try {
+			const task = await this._cloudTaskService.createTask({
+				owner,
+				repo,
+				eventContent: prompt,
+			});
+			this._setStatus(localize('sdkChat.status.cloudTaskCreated', "Cloud task created: {0}", task.id.substring(0, 8)));
+			this._onDidCreateCloudTask.fire(cloudTaskToListItem(task));
+		} catch (err) {
+			this._logService.error('[SdkChatWidget] Cloud task creation failed:', err);
+			this._setStatus(localize('sdkChat.status.cloudTaskFailed', "Cloud task creation failed"));
+		}
+	}
+
 	private async _handleAbort(): Promise<void> {
 		if (!this._sessionId) { return; }
 		try {
@@ -557,6 +638,30 @@ export class SdkChatWidget extends Disposable {
 		} catch (err) {
 			this._logService.error('[SdkChatWidget] Abort failed:', err);
 		}
+	}
+
+	// --- Task mode ---
+
+	private _setTaskMode(mode: TaskMode): void {
+		if (this._taskMode === mode) {
+			return;
+		}
+		this._taskMode = mode;
+
+		// Toggle active button styles
+		this._localModeBtn.classList.toggle('sdk-chat-mode-active', mode === 'local');
+		this._cloudModeBtn.classList.toggle('sdk-chat-mode-active', mode === 'cloud');
+
+		// Show/hide picker containers
+		this._localPickersContainer.style.display = mode === 'local' ? '' : 'none';
+		this._cloudPickersContainer.style.display = mode === 'cloud' ? '' : 'none';
+
+		// Update placeholder
+		this._textarea.placeholder = mode === 'local'
+			? localize('sdkChat.placeholder', "Describe what to build next")
+			: localize('sdkChat.placeholder.cloud', "Describe the task for the cloud agent");
+
+		this._textarea.focus();
 	}
 
 	// --- UI helpers ---
@@ -693,6 +798,24 @@ export class SdkChatWidget extends Disposable {
 			this._setStatus(localize('sdkChat.status.loadFailed', "Failed to load session"));
 		}
 		this._scrollToBottom();
+	}
+
+	/**
+	 * Load a session list item into the widget.
+	 * Implements {@link ISessionDetailWidget.load}.
+	 */
+	async load(item: ISessionListItem): Promise<void> {
+		if (item.loadData.kind === SessionListItemKind.SdkSession) {
+			await this.loadSession(item.loadData.sessionId);
+		}
+	}
+
+	/**
+	 * Clear the widget and return to welcome state.
+	 * Implements {@link ISessionDetailWidget.clear}.
+	 */
+	clear(): void {
+		this.newSession();
 	}
 
 	private _disposeRenderedTurns(): void {

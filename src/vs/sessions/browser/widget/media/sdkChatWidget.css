@@ -621,3 +621,57 @@
 .sdk-chat-debug-link .codicon {
 	font-size: 12px;
 }
+
+/* Mode toggle (Local / Cloud) */
+.sdk-chat-mode-toggle {
+	display: flex;
+	align-items: center;
+	border: 1px solid var(--vscode-input-border, rgba(127, 127, 127, 0.2));
+	border-radius: 6px;
+	overflow: hidden;
+	margin-right: 4px;
+}
+
+.sdk-chat-mode-btn {
+	display: flex;
+	align-items: center;
+	gap: 3px;
+	border: none;
+	background: transparent;
+	color: var(--vscode-descriptionForeground);
+	font-size: 11px;
+	padding: 3px 8px;
+	cursor: pointer;
+	transition: background-color 0.12s ease, color 0.12s ease;
+	white-space: nowrap;
+}
+
+.sdk-chat-mode-btn:hover {
+	background-color: var(--vscode-toolbar-hoverBackground, rgba(127, 127, 127, 0.08));
+}
+
+.sdk-chat-mode-btn.sdk-chat-mode-active {
+	background-color: var(--vscode-button-background);
+	color: var(--vscode-button-foreground);
+}
+
+.sdk-chat-mode-btn .codicon {
+	font-size: 12px;
+}
+
+/* Local/Cloud picker containers */
+.sdk-chat-local-pickers,
+.sdk-chat-cloud-pickers {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+}
+
+.sdk-chat-repo-input {
+	border: none;
+	background: transparent;
+	color: var(--vscode-foreground);
+	font-size: 11px;
+	width: 120px;
+	outline: none;
+}

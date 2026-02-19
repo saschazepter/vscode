@@ -16,6 +16,7 @@ export enum AgentSessionProviders {
 	Local = 'local',
 	Background = 'copilotcli',
 	Cloud = 'copilot-cloud-agent',
+	CloudTask = 'cloud-task-api',
 	Claude = 'claude-code',
 	Codex = 'openai-codex',
 	Growth = 'copilot-growth',
@@ -25,6 +26,7 @@ export function isBuiltInAgentSessionProvider(provider: string): boolean {
 	return provider === AgentSessionProviders.Local ||
 		provider === AgentSessionProviders.Background ||
 		provider === AgentSessionProviders.Cloud ||
+		provider === AgentSessionProviders.CloudTask ||
 		provider === AgentSessionProviders.Claude;
 }
 
@@ -34,6 +36,7 @@ export function getAgentSessionProvider(sessionResource: URI | string): AgentSes
 		case AgentSessionProviders.Local:
 		case AgentSessionProviders.Background:
 		case AgentSessionProviders.Cloud:
+		case AgentSessionProviders.CloudTask:
 		case AgentSessionProviders.Claude:
 		case AgentSessionProviders.Codex:
 			return type;
@@ -56,6 +59,8 @@ export function getAgentSessionProviderName(provider: AgentSessionProviders): st
 			return backgroundAgentDisplayName.get();
 		case AgentSessionProviders.Cloud:
 			return localize('chat.session.providerLabel.cloud', "Cloud");
+		case AgentSessionProviders.CloudTask:
+			return localize('chat.session.providerLabel.cloudTask', "Cloud Task");
 		case AgentSessionProviders.Claude:
 			return 'Claude';
 		case AgentSessionProviders.Codex:
@@ -73,6 +78,8 @@ export function getAgentSessionProviderIcon(provider: AgentSessionProviders): Th
 			return Codicon.worktree;
 		case AgentSessionProviders.Cloud:
 			return Codicon.cloud;
+		case AgentSessionProviders.CloudTask:
+			return Codicon.cloud;
 		case AgentSessionProviders.Codex:
 			return Codicon.openai;
 		case AgentSessionProviders.Claude:
@@ -87,6 +94,7 @@ export function isFirstPartyAgentSessionProvider(provider: AgentSessionProviders
 		case AgentSessionProviders.Local:
 		case AgentSessionProviders.Background:
 		case AgentSessionProviders.Cloud:
+		case AgentSessionProviders.CloudTask:
 			return true;
 		case AgentSessionProviders.Claude:
 		case AgentSessionProviders.Codex:
@@ -101,6 +109,7 @@ export function getAgentCanContinueIn(provider: AgentSessionProviders): boolean 
 		case AgentSessionProviders.Background:
 		case AgentSessionProviders.Cloud:
 			return true;
+		case AgentSessionProviders.CloudTask:
 		case AgentSessionProviders.Claude:
 		case AgentSessionProviders.Codex:
 		case AgentSessionProviders.Growth:
@@ -116,6 +125,8 @@ export function getAgentSessionProviderDescription(provider: AgentSessionProvide
 			return localize('chat.session.providerDescription.background', "Delegate tasks to a background agent running locally on your machine. The agent iterates via chat and works asynchronously in a Git worktree to implement changes isolated from your main workspace using the GitHub Copilot CLI.");
 		case AgentSessionProviders.Cloud:
 			return localize('chat.session.providerDescription.cloud', "Delegate tasks to the GitHub Copilot coding agent. The agent iterates via chat and works asynchronously in the cloud to implement changes and pull requests as needed.");
+		case AgentSessionProviders.CloudTask:
+			return localize('chat.session.providerDescription.cloudTask', "Create and manage tasks on the GitHub Copilot coding agent cloud service. Tasks run asynchronously in the cloud and produce pull requests.");
 		case AgentSessionProviders.Claude:
 			return localize('chat.session.providerDescription.claude', "Delegate tasks to the Claude Agent SDK using the Claude models included in your GitHub Copilot subscription. The agent iterates via chat and works interactively to implement changes on your main workspace.");
 		case AgentSessionProviders.Codex:

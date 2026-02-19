@@ -1096,6 +1096,8 @@ function getAgentSessionProviderName(provider: AgentSessionProviders): string {
 			return localize('chat.session.providerLabel.background', "Worktree");
 		case AgentSessionProviders.Cloud:
 			return localize('chat.session.providerLabel.cloud', "Cloud");
+		case AgentSessionProviders.CloudTask:
+			return localize('chat.session.providerLabel.cloudTask', "Cloud Task");
 		case AgentSessionProviders.Claude:
 			return 'Claude';
 		case AgentSessionProviders.Codex:

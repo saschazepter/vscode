@@ -9,94 +9,54 @@
  * Delete this entire file to remove the debug panel.
  */
 
-import './media/copilotSdkDebugPanel.css';
 import * as dom from '../../base/browser/dom.js';
-import { Disposable, DisposableStore } from '../../base/common/lifecycle.js';
 import { ICopilotSdkService } from '../../platform/copilotSdk/common/copilotSdkService.js';
 import { IClipboardService } from '../../platform/clipboard/common/clipboardService.js';
 import { CopilotSdkDebugLog, IDebugLogEntry } from './copilotSdkDebugLog.js';
 import { IDialogService } from '../../platform/dialogs/common/dialogs.js';
 import { localize } from '../../nls.js';
+import { BaseDebugPanel, IDebugPanelTab } from './baseDebugPanel.js';
 
 const $ = dom.$;
 
-export class CopilotSdkDebugPanel extends Disposable {
+export class CopilotSdkDebugPanel extends BaseDebugPanel<IDebugLogEntry, CopilotSdkDebugLog> {
 
-	readonly element: HTMLElement;
-
-	private readonly _rpcLogContainer: HTMLElement;
-	private readonly _processLogContainer: HTMLElement;
-	private readonly _sessionInfoContainer: HTMLElement;
-	private readonly _inputArea: HTMLTextAreaElement;
-	private readonly _statusBar: HTMLElement;
-	private readonly _cwdInput: HTMLInputElement;
-	private readonly _modelSelect: HTMLSelectElement;
 	private _sessionId: string | undefined;
-	private _activeTab: 'rpc' | 'process' | 'info' = 'rpc';
-
-	private readonly _eventDisposables = this._register(new DisposableStore());
-	private readonly _sessionInfoDisposables = this._register(new DisposableStore());
+	private _modelSelect!: HTMLSelectElement;
+	private _cwdInput!: HTMLInputElement;
 
 	constructor(
 		container: HTMLElement,
-		private readonly _debugLog: CopilotSdkDebugLog,
+		debugLog: CopilotSdkDebugLog,
 		@ICopilotSdkService private readonly _sdk: ICopilotSdkService,
-		@IClipboardService private readonly _clipboardService: IClipboardService,
+		@IClipboardService clipboardService: IClipboardService,
 		@IDialogService private readonly _dialogService: IDialogService,
 	) {
-		super();
+		super(container, debugLog, clipboardService);
+		this._setStatus('Not connected');
+		this._initializeModels();
+	}
 
-		this.element = dom.append(container, $('.copilot-sdk-debug-panel'));
+	protected override _getTitle(): string { return 'Copilot SDK RPC Debug'; }
+	protected override _getInputPlaceholder(): string { return 'Message prompt (used by Send Message)...'; }
 
-		// Header
-		const header = dom.append(this.element, $('.debug-panel-header'));
-		dom.append(header, $('span')).textContent = 'Copilot SDK RPC Debug';
-		const clearBtn = dom.append(header, $('button')) as HTMLButtonElement;
-		clearBtn.textContent = 'Clear';
-		clearBtn.style.cssText = 'margin-left:auto;font-size:11px;padding:2px 8px;background:var(--vscode-button-secondaryBackground);color:var(--vscode-button-secondaryForeground);border:none;border-radius:3px;cursor:pointer;';
-		this._register(dom.addDisposableListener(clearBtn, 'click', () => {
-			if (this._activeTab === 'rpc') {
-				dom.clearNode(this._rpcLogContainer);
-				this._debugLog.clear('rpc');
-			} else {
-				dom.clearNode(this._processLogContainer);
-				this._debugLog.clear('process');
-			}
-		}));
+	protected override _getTabs(): IDebugPanelTab[] {
+		return [
+			{ id: 'rpc', label: 'RPC Log' },
+			{ id: 'process', label: 'Process Output' },
+			{ id: 'info', label: 'Session Info', isInfoStyle: true },
+		];
+	}
 
-		const copyBtn = dom.append(header, $('button')) as HTMLButtonElement;
-		copyBtn.textContent = 'Copy All';
-		copyBtn.style.cssText = 'margin-left:4px;font-size:11px;padding:2px 8px;background:var(--vscode-button-secondaryBackground);color:var(--vscode-button-secondaryForeground);border:none;border-radius:3px;cursor:pointer;';
-		this._register(dom.addDisposableListener(copyBtn, 'click', () => {
-			const stream = this._activeTab === 'rpc' ? 'rpc' : 'process';
-			const lines = this._debugLog.entries
-				.filter(e => e.stream === stream)
-				.map(e => `${String(e.id).padStart(3, '0')} ${e.direction} ${e.tag ? `[${e.tag}] ` : ''}${e.method} ${e.detail} ${e.timestamp}`);
-			this._clipboardService.writeText(lines.join('\n'));
-			copyBtn.textContent = 'Copied!';
-			setTimeout(() => { copyBtn.textContent = 'Copy All'; }, 1500);
-		}));
+	protected override _buildConfigRows(parent: HTMLElement): void {
+		this._modelSelect = this._addConfigSelect(parent, 'Model:');
 
-		// Status
-		this._statusBar = dom.append(this.element, $('.debug-panel-status'));
-		this._statusBar.textContent = 'Not connected';
-
-		// Config row: model + cwd
-		const configRow = dom.append(this.element, $('.debug-panel-model-row'));
-		dom.append(configRow, $('label')).textContent = 'Model:';
-		this._modelSelect = dom.append(configRow, $('select.debug-panel-model-select')) as HTMLSelectElement;
-
-		const cwdRow = dom.append(this.element, $('.debug-panel-model-row'));
-		dom.append(cwdRow, $('label')).textContent = 'CWD:';
-		this._cwdInput = dom.append(cwdRow, $('input.debug-panel-model-select')) as HTMLInputElement;
-		this._cwdInput.type = 'text';
-		this._cwdInput.placeholder = '/path/to/project';
+		this._cwdInput = this._addConfigInput(parent, 'CWD:', '/path/to/project');
 		this._cwdInput.value = '/tmp';
+	}
 
-		// Helper buttons - organized in rows
-		const helpers = dom.append(this.element, $('.debug-panel-helpers'));
-		// allow-any-unicode-next-line
-		const btns: Array<{ label: string; fn: () => void }> = [
+	protected override _getHelperButtons(): Array<{ label: string; fn: () => void }> {
+		return [
 			// Lifecycle
 			{ label: '> Start', fn: () => this._rpc('start') },
 			{ label: 'Stop', fn: () => this._rpc('stop') },
@@ -123,112 +83,34 @@ export class CopilotSdkDebugPanel extends Disposable {
 			{ label: 'Dump Sessions (JSON)', fn: () => this._dumpSessionsJson() },
 			{ label: 'DELETE ALL SESSIONS', fn: () => this._deleteAllSessions() },
 		];
-		for (const { label, fn } of btns) {
-			const btn = dom.append(helpers, $('button.debug-helper-btn')) as HTMLButtonElement;
-			btn.textContent = label;
-			this._register(dom.addDisposableListener(btn, 'click', fn));
-		}
-
-		// Tab bar
-		const tabBar = dom.append(this.element, $('.debug-panel-tabs'));
-		const rpcTab = dom.append(tabBar, $('button.debug-tab.debug-tab-active')) as HTMLButtonElement;
-		rpcTab.textContent = 'RPC Log';
-		const processTab = dom.append(tabBar, $('button.debug-tab')) as HTMLButtonElement;
-		processTab.textContent = 'Process Output';
-		const infoTab = dom.append(tabBar, $('button.debug-tab')) as HTMLButtonElement;
-		infoTab.textContent = 'Session Info';
-		const switchTab = (tab: 'rpc' | 'process' | 'info') => {
-			this._activeTab = tab;
-			rpcTab.classList.toggle('debug-tab-active', tab === 'rpc');
-			processTab.classList.toggle('debug-tab-active', tab === 'process');
-			infoTab.classList.toggle('debug-tab-active', tab === 'info');
-			this._rpcLogContainer.style.display = tab === 'rpc' ? '' : 'none';
-			this._processLogContainer.style.display = tab === 'process' ? '' : 'none';
-			this._sessionInfoContainer.style.display = tab === 'info' ? '' : 'none';
-			if (tab === 'info') { this._refreshSessionInfo(); }
-		};
-		this._register(dom.addDisposableListener(rpcTab, 'click', () => switchTab('rpc')));
-		this._register(dom.addDisposableListener(processTab, 'click', () => switchTab('process')));
-		this._register(dom.addDisposableListener(infoTab, 'click', () => switchTab('info')));
-
-		// RPC log stream
-		this._rpcLogContainer = dom.append(this.element, $('.debug-panel-messages'));
-
-		// Process output log
-		this._processLogContainer = dom.append(this.element, $('.debug-panel-messages'));
-		this._processLogContainer.style.display = 'none';
-
-		// Session info dump
-		this._sessionInfoContainer = dom.append(this.element, $('.debug-panel-messages'));
-		this._sessionInfoContainer.style.display = 'none';
-		this._sessionInfoContainer.style.whiteSpace = 'pre-wrap';
-		this._sessionInfoContainer.style.fontFamily = 'var(--monaco-monospace-font)';
-		this._sessionInfoContainer.style.fontSize = '11px';
-		this._sessionInfoContainer.style.padding = '8px';
-
-		// Free-form input for sending prompts
-		const inputRow = dom.append(this.element, $('.debug-panel-input-row'));
-		this._inputArea = dom.append(inputRow, $('textarea.debug-panel-input')) as HTMLTextAreaElement;
-		this._inputArea.placeholder = 'Message prompt (used by Send Message)...';
-		this._inputArea.rows = 2;
-
-		// Replay buffered log entries, then subscribe for new ones
-		this._replayAndSubscribe();
-		this._initializeModels();
 	}
 
-	/**
-	 * Render all buffered log entries then subscribe for new ones.
-	 */
-	private _replayAndSubscribe(): void {
-		for (const entry of this._debugLog.entries) {
-			this._renderEntry(entry);
+	protected override _onClear(): void {
+		if (this._activeTab === 'rpc') {
+			dom.clearNode(this._getTabContainer('rpc'));
+			this._debugLog.clear('rpc');
+		} else {
+			dom.clearNode(this._getTabContainer('process'));
+			this._debugLog.clear('process');
 		}
-
-		this._eventDisposables.clear();
-		this._eventDisposables.add(this._debugLog.onDidAddEntry(entry => {
-			this._renderEntry(entry);
-		}));
 	}
 
-	private _renderEntry(entry: IDebugLogEntry): void {
+	protected override _getClipboardContent(): string {
+		const stream = this._activeTab === 'rpc' ? 'rpc' : 'process';
+		return this._formatEntries(this._debugLog.entries.filter(e => e.stream === stream));
+	}
+
+	protected override _renderEntry(entry: IDebugLogEntry): void {
 		if (entry.stream === 'process') {
 			this._renderProcessEntry(entry);
 		} else {
-			this._renderRpcEntry(entry);
+			this._renderStandardLogEntry(this._getTabContainer('rpc'), entry);
 		}
-	}
-
-	private _renderRpcEntry(entry: IDebugLogEntry): void {
-		const el = dom.append(this._rpcLogContainer, $('.debug-rpc-entry'));
-
-		const num = dom.append(el, $('span.debug-rpc-num'));
-		num.textContent = String(entry.id).padStart(3, '0');
-
-		const dir = dom.append(el, $('span.debug-rpc-dir'));
-		dir.textContent = entry.direction;
-
-		if (entry.tag) {
-			const tagEl = dom.append(el, $('span.debug-rpc-tag'));
-			tagEl.textContent = entry.tag;
-		}
-
-		const meth = dom.append(el, $('span.debug-rpc-method'));
-		meth.textContent = entry.method;
-
-		if (entry.detail) {
-			const det = dom.append(el, $('span.debug-rpc-detail'));
-			det.textContent = entry.detail;
-		}
-
-		const time = dom.append(el, $('span.debug-rpc-time'));
-		time.textContent = entry.timestamp;
-
-		this._rpcLogContainer.scrollTop = this._rpcLogContainer.scrollHeight;
 	}
 
 	private _renderProcessEntry(entry: IDebugLogEntry): void {
-		const el = dom.append(this._processLogContainer, $('.debug-rpc-entry'));
+		const container = this._getTabContainer('process');
+		const el = dom.append(container, $('.debug-rpc-entry'));
 		const time = dom.append(el, $('span.debug-rpc-time'));
 		time.textContent = entry.timestamp;
 		const streamTag = dom.append(el, $('span.debug-rpc-tag'));
@@ -238,7 +120,7 @@ export class CopilotSdkDebugPanel extends Disposable {
 		content.style.whiteSpace = 'pre-wrap';
 		content.style.flex = '1';
 
-		this._processLogContainer.scrollTop = this._processLogContainer.scrollHeight;
+		container.scrollTop = container.scrollHeight;
 	}
 
 	private async _initializeModels(): Promise<void> {
@@ -452,81 +334,58 @@ export class CopilotSdkDebugPanel extends Disposable {
 		}
 	}
 
-	private _setStatus(text: string): void {
-		this._statusBar.textContent = text;
-	}
-
-	/**
-	 * Refresh the Session Info tab with comprehensive debug information.
-	 */
-	private async _refreshSessionInfo(): Promise<void> {
-		this._sessionInfoDisposables.clear();
-		dom.clearNode(this._sessionInfoContainer);
-
-		const add = (label: string, value: string, color?: string) => {
-			const line = dom.append(this._sessionInfoContainer, $('div'));
-			line.style.marginBottom = '2px';
-			const labelEl = dom.append(line, $('span'));
-			labelEl.textContent = label + ': ';
-			labelEl.style.color = 'var(--vscode-descriptionForeground)';
-			const valueEl = dom.append(line, $('span'));
-			valueEl.textContent = value;
-			if (color) { valueEl.style.color = color; }
-		};
-
-		const section = (title: string) => {
-			const h = dom.append(this._sessionInfoContainer, $('div'));
-			h.style.cssText = 'margin:8px 0 4px;font-weight:bold;color:var(--vscode-foreground);border-bottom:1px solid var(--vscode-widget-border);padding-bottom:2px;';
-			h.textContent = title;
-		};
+	protected override async _refreshInfo(): Promise<void> {
+		this._infoDisposables.clear();
+		const container = this._getTabContainer('info');
+		dom.clearNode(container);
 
 		// SDK State
-		section('SDK STATE');
-		add('Debug panel session ID', this._sessionId ?? '(none)');
-		add('Log entries (RPC)', String(this._debugLog.entries.filter(e => e.stream === 'rpc').length));
-		add('Log entries (process)', String(this._debugLog.entries.filter(e => e.stream === 'process').length));
+		this._addInfoSection(container, 'SDK STATE');
+		this._addInfoLine(container, 'Debug panel session ID', this._sessionId ?? '(none)');
+		this._addInfoLine(container, 'Log entries (RPC)', String(this._debugLog.entries.filter(e => e.stream === 'rpc').length));
+		this._addInfoLine(container, 'Log entries (process)', String(this._debugLog.entries.filter(e => e.stream === 'process').length));
 
 		// CLI Status
-		section('CLI STATUS');
+		this._addInfoSection(container, 'CLI STATUS');
 		try {
 			const status = await this._sdk.getStatus();
-			add('CLI version', status.version);
-			add('Protocol version', String(status.protocolVersion));
+			this._addInfoLine(container, 'CLI version', status.version);
+			this._addInfoLine(container, 'Protocol version', String(status.protocolVersion));
 		} catch (err) {
-			add('Error', String(err));
+			this._addInfoLine(container, 'Error', String(err));
 		}
 
 		// Auth Status
-		section('AUTHENTICATION');
+		this._addInfoSection(container, 'AUTHENTICATION');
 		try {
 			const auth = await this._sdk.getAuthStatus();
-			add('Authenticated', auth.isAuthenticated ? 'Yes' : 'No', auth.isAuthenticated ? 'var(--vscode-terminal-ansiGreen)' : 'var(--vscode-errorForeground)');
-			if (auth.login) { add('Login', auth.login); }
-			if (auth.authType) { add('Auth type', auth.authType); }
-			if (auth.host) { add('Host', auth.host); }
-			if (auth.statusMessage) { add('Status', auth.statusMessage); }
+			this._addInfoLine(container, 'Authenticated', auth.isAuthenticated ? 'Yes' : 'No', auth.isAuthenticated ? 'var(--vscode-terminal-ansiGreen)' : 'var(--vscode-errorForeground)');
+			if (auth.login) { this._addInfoLine(container, 'Login', auth.login); }
+			if (auth.authType) { this._addInfoLine(container, 'Auth type', auth.authType); }
+			if (auth.host) { this._addInfoLine(container, 'Host', auth.host); }
+			if (auth.statusMessage) { this._addInfoLine(container, 'Status', auth.statusMessage); }
 		} catch (err) {
-			add('Error', String(err));
+			this._addInfoLine(container, 'Error', String(err));
 		}
 
 		// All sessions
-		section('ALL SESSIONS');
+		this._addInfoSection(container, 'ALL SESSIONS');
 		try {
 			const sessions = await this._sdk.listSessions();
-			add('Total sessions', String(sessions.length));
+			this._addInfoLine(container, 'Total sessions', String(sessions.length));
 			for (const s of sessions) {
-				const line = dom.append(this._sessionInfoContainer, $('div'));
+				const line = dom.append(container, $('div'));
 				line.style.cssText = 'margin:4px 0;padding:4px 6px;border-radius:3px;background:var(--vscode-editor-inactiveSelectionBackground);';
 				const idEl = dom.append(line, $('div'));
 				idEl.style.cssText = 'font-weight:bold;color:var(--vscode-textLink-foreground);';
 				idEl.textContent = `Session ${s.sessionId.substring(0, 12)}`;
-				if (s.summary) { add('  Summary', s.summary); }
-				if (s.workspacePath) { add('  Workspace path', s.workspacePath, 'var(--vscode-terminal-ansiGreen)'); }
-				if (s.repository) { add('  Repository', s.repository); }
-				if (s.branch) { add('  Branch', s.branch); }
-				if (s.startTime) { add('  Started', new Date(s.startTime).toLocaleString()); }
-				if (s.modifiedTime) { add('  Modified', new Date(s.modifiedTime).toLocaleString()); }
-				add('  Remote', s.isRemote ? 'Yes' : 'No');
+				if (s.summary) { this._addInfoLine(container, '  Summary', s.summary); }
+				if (s.workspacePath) { this._addInfoLine(container, '  Workspace path', s.workspacePath, 'var(--vscode-terminal-ansiGreen)'); }
+				if (s.repository) { this._addInfoLine(container, '  Repository', s.repository); }
+				if (s.branch) { this._addInfoLine(container, '  Branch', s.branch); }
+				if (s.startTime) { this._addInfoLine(container, '  Started', new Date(s.startTime).toLocaleString()); }
+				if (s.modifiedTime) { this._addInfoLine(container, '  Modified', new Date(s.modifiedTime).toLocaleString()); }
+				this._addInfoLine(container, '  Remote', s.isRemote ? 'Yes' : 'No');
 
 				// Get messages for this session to show event breakdown
 				try {
@@ -535,23 +394,23 @@ export class CopilotSdkDebugPanel extends Disposable {
 					for (const ev of events) {
 						typeCounts[ev.type] = (typeCounts[ev.type] ?? 0) + 1;
 					}
-					add('  Events', `${events.length} total`);
+					this._addInfoLine(container, '  Events', `${events.length} total`);
 					for (const [type, count] of Object.entries(typeCounts)) {
-						add(`    ${type}`, String(count));
+						this._addInfoLine(container, `    ${type}`, String(count));
 					}
 				} catch {
-					add('  Events', '(failed to load)');
+					this._addInfoLine(container, '  Events', '(failed to load)');
 				}
 			}
 		} catch (err) {
-			add('Error loading sessions', String(err));
+			this._addInfoLine(container, 'Error loading sessions', String(err));
 		}
 
 		// Models
-		section('AVAILABLE MODELS');
+		this._addInfoSection(container, 'AVAILABLE MODELS');
 		try {
 			const models = await this._sdk.listModels();
-			add('Total models', String(models.length));
+			this._addInfoLine(container, 'Total models', String(models.length));
 			for (const m of models) {
 				const caps = m.capabilities?.supports;
 				const flags: string[] = [];
@@ -563,14 +422,14 @@ export class CopilotSdkDebugPanel extends Disposable {
 				const policy = m.policy?.state;
 				if (policy && policy !== 'enabled') { flags.push(policy); }
 				const label = flags.length > 0 ? `${m.name ?? m.id} [${flags.join(', ')}]` : (m.name ?? m.id);
-				add(`  ${m.id}`, label);
+				this._addInfoLine(container, `  ${m.id}`, label);
 			}
 		} catch (err) {
-			add('Error loading models', String(err));
+			this._addInfoLine(container, 'Error loading models', String(err));
 		}
 
 		// Event stats from debug log
-		section('EVENT STATISTICS (from debug log)');
+		this._addInfoSection(container, 'EVENT STATISTICS (from debug log)');
 		const eventTypeCounts: Record<string, number> = {};
 		const sessionEventCounts: Record<string, number> = {};
 		for (const entry of this._debugLog.entries) {
@@ -584,35 +443,22 @@ export class CopilotSdkDebugPanel extends Disposable {
 		}
 		if (Object.keys(eventTypeCounts).length > 0) {
 			for (const [type, count] of Object.entries(eventTypeCounts).sort((a, b) => b[1] - a[1])) {
-				add(`  ${type}`, String(count));
+				this._addInfoLine(container, `  ${type}`, String(count));
 			}
 		} else {
-			add('  (no events yet)', '');
+			this._addInfoLine(container, '  (no events yet)', '');
 		}
 
-		section('EVENTS PER SESSION (from debug log)');
+		this._addInfoSection(container, 'EVENTS PER SESSION (from debug log)');
 		if (Object.keys(sessionEventCounts).length > 0) {
 			for (const [sid, count] of Object.entries(sessionEventCounts).sort((a, b) => b[1] - a[1])) {
-				add(`  Session ${sid}`, `${count} events`);
+				this._addInfoLine(container, `  Session ${sid}`, `${count} events`);
 			}
 		} else {
-			add('  (no events yet)', '');
+			this._addInfoLine(container, '  (no events yet)', '');
 		}
 
-		// Refresh button at the bottom
-		const refreshBtn = dom.append(this._sessionInfoContainer, $('button')) as HTMLButtonElement;
-		refreshBtn.textContent = 'Refresh';
-		refreshBtn.style.cssText = 'margin-top:12px;font-size:11px;padding:4px 12px;background:var(--vscode-button-secondaryBackground);color:var(--vscode-button-secondaryForeground);border:none;border-radius:3px;cursor:pointer;';
-		this._sessionInfoDisposables.add(dom.addDisposableListener(refreshBtn, 'click', () => this._refreshSessionInfo()));
-
-		// Copy all info button
-		const copyInfoBtn = dom.append(this._sessionInfoContainer, $('button')) as HTMLButtonElement;
-		copyInfoBtn.textContent = 'Copy All Info';
-		copyInfoBtn.style.cssText = 'margin-top:4px;margin-left:4px;font-size:11px;padding:4px 12px;background:var(--vscode-button-secondaryBackground);color:var(--vscode-button-secondaryForeground);border:none;border-radius:3px;cursor:pointer;';
-		this._sessionInfoDisposables.add(dom.addDisposableListener(copyInfoBtn, 'click', () => {
-			this._clipboardService.writeText(this._sessionInfoContainer.textContent ?? '');
-			copyInfoBtn.textContent = 'Copied!';
-			setTimeout(() => { copyInfoBtn.textContent = 'Copy All Info'; }, 1500);
-		}));
+		// Footer buttons
+		this._addInfoFooterButtons(container, this._infoDisposables, () => this._refreshInfo());
 	}
 }
