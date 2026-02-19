@@ -67,7 +67,7 @@ jobs:
             echo ##vso[task.prependpath]%NODE_ROOT%
           displayName: Install Node.js (Windows ARM64)
 
-      - ${{ if not(and(eq(parameters.os, 'windows'), eq(parameters.arch, 'arm64'))) }}:
+      - ${{ else }}:
         - task: NodeTool@0
           inputs:
             versionSource: fromFile
