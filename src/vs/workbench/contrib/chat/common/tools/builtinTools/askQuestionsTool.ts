@@ -25,6 +25,34 @@ import { URI } from '../../../../../../base/common/uri.js';
 // Use a distinct id to avoid clashing with extension-provided tools
 export const AskQuestionsToolId = 'vscode_askQuestions';
 
+// Soft limits are used in the schema to guide the model
+// Hard limits are more lenient and used to truncate if the model overshoots
+//
+// Example text at each limit:
+// - header soft (50 chars):        "Which database engine do you want to use for this?"
+// - header hard (75 chars):        "Which database engine and connection pooling strategy do you want to use here?"
+// - question soft (200 chars):     "What testing framework would you like to use for this project? Consider factors like your team's familiarity, community support, and integration with your existing CI/CD pipeline when making choice."
+// - question hard (300 chars):     "What testing framework would you like to use for this project? Consider factors like your team's familiarity with the framework, community support and documentation quality, integration with your existing CI/CD pipeline, and the specific testing needs of your application architecture when deciding."
+const SoftLimits = {
+	header: 50,
+	question: 200
+} as const;
+
+const HardLimits = {
+	header: 75,
+	question: 300
+} as const;
+
+function truncateToLimit(value: string | undefined, limit: number): string | undefined {
+	if (value === undefined) {
+		return undefined;
+	}
+	if (value.length > limit) {
+		return value.slice(0, limit - 3) + '...';
+	}
+	return value;
+}
+
 export interface IQuestionOption {
 	readonly label: string;
 	readonly description?: string;
@@ -60,12 +88,12 @@ export function createAskQuestionsToolData(): IToolData {
 			header: {
 				type: 'string',
 				description: 'Short identifier for the question. Must be unique so answers can be mapped back to the question.',
-				maxLength: 50
+				maxLength: SoftLimits.header
 			},
 			question: {
 				type: 'string',
 				description: 'The question text to display to the user. Keep it concise, ideally one sentence.',
-				maxLength: 200
+				maxLength: SoftLimits.question
 			},
 			multiSelect: {
 				type: 'boolean',
@@ -83,13 +111,11 @@ export function createAskQuestionsToolData(): IToolData {
 					properties: {
 						label: {
 							type: 'string',
-							description: 'Display label and value for the option.',
-							maxLength: 100
+							description: 'Display label and value for the option.'
 						},
 						description: {
 							type: 'string',
-							description: 'Optional secondary text shown with the option.',
-							maxLength: 200
+							description: 'Optional secondary text shown with the option.'
 						},
 						recommended: {
 							type: 'boolean',
@@ -194,6 +220,10 @@ export class AskQuestionsTool extends Disposable implements IToolImpl {
 			if (question.options && question.options.length === 1) {
 				throw new Error(localize('askQuestionsTool.invalidOptions', 'Question "{0}" must have at least two options, or none for free text input.', question.header));
 			}
+
+			// Apply hard limits to truncate values that exceed the more lenient hard limit
+			(question as { header: string }).header = truncateToLimit(question.header, HardLimits.header) ?? question.header;
+			(question as { question: string }).question = truncateToLimit(question.question, HardLimits.question) ?? question.question;
 		}
 
 		const questionCount = questions.length;
