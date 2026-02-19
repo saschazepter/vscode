@@ -166,10 +166,10 @@ export class ChatDebugEditor extends EditorPane {
 		this.createOverviewView(this.container);
 		this.createLogsView(this.container);
 
-		// When new debug events arrive, refresh if on logs view
+		// When new debug events arrive, refresh the current view
 		this._register(this.chatDebugService.onDidAddEvent(() => {
-			if (this.viewState === ViewState.Logs) {
-				// event listener handles individual adds
+			if (this.viewState === ViewState.Home) {
+				this.renderHomeContent();
 			}
 		}));
 
@@ -187,6 +187,13 @@ export class ChatDebugEditor extends EditorPane {
 		}));
 
 		this._register(this.chatService.onDidDisposeSession(() => {
+			if (this.viewState === ViewState.Home) {
+				this.renderHomeContent();
+			}
+		}));
+
+		// When a request is submitted, the session title may update
+		this._register(this.chatService.onDidSubmitRequest(() => {
 			if (this.viewState === ViewState.Home) {
 				this.renderHomeContent();
 			}
@@ -255,35 +262,24 @@ export class ChatDebugEditor extends EditorPane {
 		subtitle.textContent = localize('chatDebug.homeSubtitle', "Select a chat session to debug");
 		this.homeContainer.appendChild(subtitle);
 
-		const buttonsRow = document.createElement('div');
-		buttonsRow.className = 'chat-debug-home-buttons';
-		this.homeContainer.appendChild(buttonsRow);
-
-		// "Use Active Chat" button
+		// Determine the active session ID
 		const activeWidget = this.chatWidgetService.lastFocusedWidget;
 		const activeSessionId = activeWidget?.viewModel?.sessionResource
 			? chatSessionResourceToId(activeWidget.viewModel.sessionResource)
 			: undefined;
 
-		const useActiveButton = document.createElement('button');
-		useActiveButton.className = 'chat-debug-home-button chat-debug-home-button-primary';
-		useActiveButton.textContent = localize('chatDebug.useActiveChat', "Use Active Chat");
-		useActiveButton.disabled = !activeSessionId;
+		// List all sessions with debug log data
+		const sessionIds = [...this.chatDebugService.getSessionIds()];
+
+		// Sort: active session first
 		if (activeSessionId) {
-			useActiveButton.addEventListener('click', () => {
-				this.navigateToSession(activeSessionId);
-			});
+			const activeIndex = sessionIds.indexOf(activeSessionId);
+			if (activeIndex > 0) {
+				sessionIds.splice(activeIndex, 1);
+				sessionIds.unshift(activeSessionId);
+			}
 		}
-		buttonsRow.appendChild(useActiveButton);
 
-		// "Load from Local Sessions" button
-		const loadLocalButton = document.createElement('button');
-		loadLocalButton.className = 'chat-debug-home-button';
-		loadLocalButton.textContent = localize('chatDebug.loadFromLocal', "Load from Local Sessions");
-		buttonsRow.appendChild(loadLocalButton);
-
-		// Build a session list below the buttons
-		const sessionIds = this.chatDebugService.getSessionIds();
 		if (sessionIds.length > 0) {
 			const sessionList = document.createElement('div');
 			sessionList.className = 'chat-debug-home-session-list';
@@ -291,10 +287,26 @@ export class ChatDebugEditor extends EditorPane {
 			for (const sessionId of sessionIds) {
 				const sessionUri = LocalChatSessionUri.forSession(sessionId);
 				const sessionTitle = this.chatService.getSessionTitle(sessionUri) || sessionId;
+				const isActive = sessionId === activeSessionId;
 
 				const item = document.createElement('button');
 				item.className = 'chat-debug-home-session-item';
-				item.textContent = sessionTitle;
+				if (isActive) {
+					item.classList.add('chat-debug-home-session-item-active');
+				}
+
+				const titleSpan = document.createElement('span');
+				titleSpan.className = 'chat-debug-home-session-item-title';
+				titleSpan.textContent = sessionTitle;
+				item.appendChild(titleSpan);
+
+				if (isActive) {
+					const badge = document.createElement('span');
+					badge.className = 'chat-debug-home-session-badge';
+					badge.textContent = localize('chatDebug.active', "Active");
+					item.appendChild(badge);
+				}
+
 				item.addEventListener('click', () => {
 					this.navigateToSession(sessionId);
 				});
@@ -302,6 +314,11 @@ export class ChatDebugEditor extends EditorPane {
 			}
 
 			this.homeContainer.appendChild(sessionList);
+		} else {
+			const empty = document.createElement('p');
+			empty.className = 'chat-debug-home-empty';
+			empty.textContent = localize('chatDebug.noSessions', "No sessions with debug data");
+			this.homeContainer.appendChild(empty);
 		}
 	}
 
@@ -738,35 +755,10 @@ const chatDebugStyles = `
 	color: var(--vscode-descriptionForeground);
 	margin: 0 0 24px;
 }
-.chat-debug-home-buttons {
-	display: flex;
-	gap: 12px;
-	flex-wrap: wrap;
-	justify-content: center;
-	margin-bottom: 32px;
-}
-.chat-debug-home-button {
-	padding: 8px 16px;
-	border: 1px solid var(--vscode-button-border, var(--vscode-contrastBorder, transparent));
-	background: var(--vscode-button-secondaryBackground);
-	color: var(--vscode-button-secondaryForeground);
-	border-radius: 2px;
-	cursor: pointer;
+.chat-debug-home-empty {
 	font-size: 13px;
-}
-.chat-debug-home-button:hover {
-	background: var(--vscode-button-secondaryHoverBackground);
-}
-.chat-debug-home-button:disabled {
-	opacity: 0.5;
-	cursor: default;
-}
-.chat-debug-home-button-primary {
-	background: var(--vscode-button-background);
-	color: var(--vscode-button-foreground);
-}
-.chat-debug-home-button-primary:hover {
-	background: var(--vscode-button-hoverBackground);
+	color: var(--vscode-descriptionForeground);
+	margin: 0;
 }
 .chat-debug-home-session-list {
 	display: flex;
@@ -776,7 +768,8 @@ const chatDebugStyles = `
 	max-width: 400px;
 }
 .chat-debug-home-session-item {
-	display: block;
+	display: flex;
+	align-items: center;
 	width: 100%;
 	text-align: left;
 	padding: 8px 12px;
@@ -786,9 +779,28 @@ const chatDebugStyles = `
 	border-radius: 4px;
 	cursor: pointer;
 	font-size: 13px;
+	gap: 8px;
 }
 .chat-debug-home-session-item:hover {
 	background: var(--vscode-list-hoverBackground);
+}
+.chat-debug-home-session-item-active {
+	border-color: var(--vscode-focusBorder);
+}
+.chat-debug-home-session-item-title {
+	flex: 1;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.chat-debug-home-session-badge {
+	flex-shrink: 0;
+	padding: 2px 8px;
+	border-radius: 10px;
+	background: var(--vscode-badge-background);
+	color: var(--vscode-badge-foreground);
+	font-size: 11px;
+	font-weight: 500;
 }
 
 /* ---- Breadcrumb ---- */
