@@ -12,6 +12,7 @@ import { ITextResourceConfigurationService } from '../../../../editor/common/ser
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { IContextKeyService, IContextKey, ContextKeyExpr } from '../../../../platform/contextkey/common/contextkey.js';
 import { IEditorOpenContext } from '../../../common/editor.js';
+import { EditorInput } from '../../../common/editor/editorInput.js';
 import { AbstractTextResourceEditor } from '../../../browser/parts/editor/textResourceEditor.js';
 import { OUTPUT_VIEW_ID, CONTEXT_IN_OUTPUT, IOutputChannel, CONTEXT_OUTPUT_SCROLL_LOCK, IOutputService, IOutputViewFilters, OUTPUT_FILTER_FOCUS_CONTEXT, ILogEntry, HIDE_CATEGORY_FILTER_CONTEXT } from '../../../services/output/common/output.js';
 import { IThemeService } from '../../../../platform/theme/common/themeService.js';
@@ -251,6 +252,11 @@ export class OutputEditor extends AbstractTextResourceEditor {
 
 	override getTitle(): string {
 		return nls.localize('output', "Output");
+	}
+
+	protected override updateReadonly(_input: EditorInput): void {
+		// Output editors are always readonly
+		this.updateEditorControlOptions(this.getReadonlyConfiguration(true));
 	}
 
 	protected override getConfigurationOverrides(configuration: IEditorConfiguration): ICodeEditorOptions {
