@@ -252,7 +252,9 @@ export function buildModelPickerItems(
 				return aName.localeCompare(bName);
 			});
 
-			items.push({ kind: ActionListItemKind.Separator });
+			if (items.length > 0) {
+				items.push({ kind: ActionListItemKind.Separator });
+			}
 			for (const item of promotedItems) {
 				if (item.kind === 'available') {
 					items.push(createModelItem(createModelAction(item.model, selectedModelId, onSelect), item.model));
@@ -276,7 +278,9 @@ export function buildModelPickerItems(
 			});
 
 		if (otherModels.length > 0) {
-			items.push({ kind: ActionListItemKind.Separator });
+			if (items.length > 0) {
+				items.push({ kind: ActionListItemKind.Separator });
+			}
 			items.push({
 				item: {
 					id: 'otherModels',
