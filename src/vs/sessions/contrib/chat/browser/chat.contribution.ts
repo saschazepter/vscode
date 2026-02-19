@@ -71,8 +71,10 @@ export class OpenSessionWorktreeInVSCodeAction extends Action2 {
 		const params = new URLSearchParams();
 		params.set('session', activeSession.resource.toString());
 
+		const scheme = productService.quality === 'stable' ? 'code' : 'code-insiders';
+
 		await openerService.open(URI.from({
-			scheme: productService.urlProtocol,
+			scheme,
 			authority: Schemas.file,
 			path: folderUri.path,
 			query: params.toString()
