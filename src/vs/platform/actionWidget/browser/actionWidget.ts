@@ -103,6 +103,10 @@ class ActionWidgetService extends Disposable implements IActionWidgetService {
 		return this._list?.value?.toggleFocusedSection() ?? false;
 	}
 
+	clearFilter(): boolean {
+		return this._list?.value?.clearFilter() ?? false;
+	}
+
 	hide(didCancel?: boolean) {
 		this._list.value?.hide(didCancel);
 		this._list.clear();
@@ -217,6 +221,29 @@ registerAction2(class extends Action2 {
 
 	run(accessor: ServicesAccessor): void {
 		accessor.get(IActionWidgetService).hide(true);
+	}
+});
+
+registerAction2(class extends Action2 {
+	constructor() {
+		super({
+			id: 'clearFilterCodeActionWidget',
+			title: localize2('clearFilterCodeActionWidget.title', "Clear action widget filter"),
+			precondition: ContextKeyExpr.and(ActionWidgetContextKeys.Visible, ActionWidgetContextKeys.FilterFocused),
+			keybinding: {
+				weight: weight + 1,
+				primary: KeyCode.Escape,
+			}
+		});
+	}
+
+	run(accessor: ServicesAccessor): void {
+		const widgetService = accessor.get(IActionWidgetService);
+		if (widgetService instanceof ActionWidgetService) {
+			if (!widgetService.clearFilter()) {
+				widgetService.hide(true);
+			}
+		}
 	}
 });
 
