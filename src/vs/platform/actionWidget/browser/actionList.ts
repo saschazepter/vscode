@@ -774,6 +774,32 @@ export class ActionList<T> extends Disposable {
 		}
 	}
 
+	collapseFocusedSection() {
+		const section = this._getFocusedSection();
+		if (section && !this._collapsedSections.has(section)) {
+			this._toggleSection(section);
+		}
+	}
+
+	expandFocusedSection() {
+		const section = this._getFocusedSection();
+		if (section && this._collapsedSections.has(section)) {
+			this._toggleSection(section);
+		}
+	}
+
+	private _getFocusedSection(): string | undefined {
+		const focused = this._list.getFocus();
+		if (focused.length === 0) {
+			return undefined;
+		}
+		const element = this._list.element(focused[0]);
+		if (element.isSectionToggle && element.section) {
+			return element.section;
+		}
+		return element.section;
+	}
+
 	acceptSelected(preview?: boolean) {
 		const focused = this._list.getFocus();
 		if (focused.length === 0) {

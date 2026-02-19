@@ -89,6 +89,14 @@ class ActionWidgetService extends Disposable implements IActionWidgetService {
 		this._list?.value?.focusNext();
 	}
 
+	collapseSection() {
+		this._list?.value?.collapseFocusedSection();
+	}
+
+	expandSection() {
+		this._list?.value?.expandFocusedSection();
+	}
+
 	hide(didCancel?: boolean) {
 		this._list.value?.hide(didCancel);
 		this._list.clear();
@@ -240,6 +248,48 @@ registerAction2(class extends Action2 {
 		const widgetService = accessor.get(IActionWidgetService);
 		if (widgetService instanceof ActionWidgetService) {
 			widgetService.focusNext();
+		}
+	}
+});
+
+registerAction2(class extends Action2 {
+	constructor() {
+		super({
+			id: 'collapseSectionCodeAction',
+			title: localize2('collapseSectionCodeAction.title', "Collapse section"),
+			precondition: ActionWidgetContextKeys.Visible,
+			keybinding: {
+				weight,
+				primary: KeyCode.LeftArrow,
+			}
+		});
+	}
+
+	run(accessor: ServicesAccessor): void {
+		const widgetService = accessor.get(IActionWidgetService);
+		if (widgetService instanceof ActionWidgetService) {
+			widgetService.collapseSection();
+		}
+	}
+});
+
+registerAction2(class extends Action2 {
+	constructor() {
+		super({
+			id: 'expandSectionCodeAction',
+			title: localize2('expandSectionCodeAction.title', "Expand section"),
+			precondition: ActionWidgetContextKeys.Visible,
+			keybinding: {
+				weight,
+				primary: KeyCode.RightArrow,
+			}
+		});
+	}
+
+	run(accessor: ServicesAccessor): void {
+		const widgetService = accessor.get(IActionWidgetService);
+		if (widgetService instanceof ActionWidgetService) {
+			widgetService.expandSection();
 		}
 	}
 });
