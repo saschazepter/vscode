@@ -805,17 +805,11 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	position: relative;
 }
 
-/* Context usage widget container - positioned at top right of chat input */
-.interactive-session .chat-input-container .chat-context-usage-container {
-	position: absolute;
-	top: 4px;
-	right: 6px;
-	z-index: 1;
-}
-
-/* Hide context usage widget in compact mode (quick chat) */
-.interactive-session .interactive-input-part.compact .chat-context-usage-container {
-	display: none;
+/* Context usage widget container - positioned in the bottom toolbar */
+.interactive-session .chat-input-toolbars .chat-context-usage-container {
+	display: flex;
+	align-items: center;
+	flex-shrink: 0;
 }
 
 .interactive-input-part:has(.chat-editing-session > .chat-editing-session-container) .chat-input-container,
@@ -1008,7 +1002,6 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	flex-direction: row;
 	gap: 4px;
 	margin-top: 6px;
-	margin-right: 20px;
 	flex-wrap: wrap;
 	cursor: default;
 }
@@ -1303,6 +1296,7 @@ have to be updated for changes to the rules above, or to support more deeply nes
 
 .interactive-session .chat-input-toolbars {
 	display: flex;
+	align-items: center;
 }
 
 .interactive-session .chat-input-toolbars :not(.responsive.chat-input-toolbar) .actions-container:first-child {
@@ -1600,7 +1594,6 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	padding: 8px 0 0 0
 }
 
-.action-item.chat-attachment-button .action-label,
 .interactive-session .chat-attached-context .chat-attached-context-attachment {
 	display: flex;
 	overflow: hidden;
@@ -1613,38 +1606,9 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	width: fit-content;
 }
 
-.action-item.chat-attachment-button .action-label {
-	padding: 0 4px;
-}
-
 .interactive-session .interactive-list .chat-attached-context .chat-attached-context-attachment {
 	font-family: var(--vscode-chat-font-family, inherit);
 	font-size: var(--vscode-chat-font-size-body-xs);
-}
-
-.action-item.chat-attachment-button > .action-label > .codicon {
-	font-size: 14px;
-	height: auto;
-}
-
-.interactive-session .action-item.chat-attachment-button .action-label:not(.has-label) {
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	padding: 2px 4px 2px 4px;
-	height: fit-content;
-	gap: 0;
-	border: 1px solid var(--vscode-chat-requestBorder, var(--vscode-input-background, transparent));
-	border-radius: 4px;
-	box-sizing: border-box;
-
-	.codicon {
-		width: 14px;
-	}
-}
-
-.action-item.chat-attachment-button .codicon {
-	font-size: 14px;
 }
 
 .action-item.chat-mcp {
@@ -1747,11 +1711,6 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	display: flex;
 	flex-wrap: wrap;
 	gap: 4px;
-}
-
-.interactive-session .chat-attachment-toolbar .actions-container {
-	gap: 4px;
-	flex-wrap: wrap;
 }
 
 .interactive-session .interactive-input-part.compact .chat-attached-context {
