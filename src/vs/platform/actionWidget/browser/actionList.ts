@@ -534,6 +534,13 @@ export class ActionList<T> extends Disposable {
 		const isFiltering = filterLower.length > 0;
 		const visible: IActionListItem<T>[] = [];
 
+		// Remember the focused item before splice
+		const focusedIndexes = this._list.getFocus();
+		let focusedItem: IActionListItem<T> | undefined;
+		if (focusedIndexes.length > 0) {
+			focusedItem = this._list.element(focusedIndexes[0]);
+		}
+
 		for (const item of this._allMenuItems) {
 			if (item.kind === ActionListItemKind.Header) {
 				if (isFiltering) {
@@ -599,6 +606,20 @@ export class ActionList<T> extends Disposable {
 				this._filterInput?.focus();
 			} else {
 				this._list.domFocus();
+				// Restore focus to the previously focused item
+				if (focusedItem) {
+					const focusedItemId = (focusedItem.item as { id?: string })?.id;
+					if (focusedItemId) {
+						for (let i = 0; i < this._list.length; i++) {
+							const el = this._list.element(i);
+							if ((el.item as { id?: string })?.id === focusedItemId) {
+								this._list.setFocus([i]);
+								this._list.reveal(i);
+								break;
+							}
+						}
+					}
+				}
 			}
 			// Reposition the context view so the widget grows in the correct direction
 			if (reposition) {
