@@ -40,6 +40,7 @@ import { ChatPendingDragController } from './chatPendingDragAndDrop.js';
 export interface IChatListWidgetStyles {
 	listForeground?: string;
 	listBackground?: string;
+	listShadow?: string;
 }
 
 export interface IChatListWidgetOptions {
@@ -416,7 +417,7 @@ export class ChatListWidget extends Disposable {
 					listInactiveSelectionIconForeground: undefined,
 					treeStickyScrollBackground: styles.listBackground,
 					treeStickyScrollBorder: undefined,
-					treeStickyScrollShadow: undefined,
+					treeStickyScrollShadow: styles.listShadow,
 				}
 			}
 		));
