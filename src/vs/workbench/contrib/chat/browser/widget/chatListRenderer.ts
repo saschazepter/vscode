@@ -2086,6 +2086,7 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 				carousel.data = answersRecord;
 			}
 			carousel.isUsed = true;
+			carousel.completion?.resolve({ answers: answersRecord });
 
 			// Notify the extension about the carousel answers to resolve the deferred promise
 			if (isResponseVM(context.element) && carousel.resolveId) {
@@ -2107,6 +2108,7 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 			if (responseIsComplete && !carousel.isUsed && isResponseVM(context.element) && carousel.resolveId && carousel.data === undefined) {
 				carousel.data = {};
 				carousel.isUsed = true;
+				carousel.completion?.resolve({ answers: undefined });
 				this.chatService.notifyQuestionCarouselAnswer(context.element.requestId, carousel.resolveId, undefined);
 				this.pendingQuestionCarousels.get(context.element.sessionResource)?.clear();
 			}

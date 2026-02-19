@@ -362,6 +362,12 @@ export interface IChatQuestion {
 	allowFreeformInput?: boolean;
 }
 
+export interface IChatQuestionCarouselCompletion {
+	readonly promise: Promise<{ answers: Record<string, unknown> | undefined }>;
+	resolve(value: { answers: Record<string, unknown> | undefined }): void;
+	reject(error: unknown): void;
+}
+
 /**
  * A carousel for presenting multiple questions inline in the chat response.
  * Users can navigate between questions and submit their answers.
@@ -371,6 +377,8 @@ export interface IChatQuestionCarousel {
 	allowSkip: boolean;
 	/** Unique identifier for resolving the carousel answers back to the extension */
 	resolveId?: string;
+	/** Optional promise that resolves when the carousel is answered or skipped */
+	completion?: IChatQuestionCarouselCompletion;
 	/** Storage for collected answers when user submits */
 	data?: Record<string, unknown>;
 	/** Whether the carousel has been submitted/skipped */
