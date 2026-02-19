@@ -25,6 +25,18 @@ import { URI } from '../../../../../../base/common/uri.js';
 // Use a distinct id to avoid clashing with extension-provided tools
 export const AskQuestionsToolId = 'vscode_askQuestions';
 
+// Soft limits (used in JSON schema to guide the model)
+const QUESTION_HEADER_MAX_LENGTH = 50;
+const QUESTION_TEXT_MAX_LENGTH = 200;
+const OPTION_LABEL_MAX_LENGTH = 100;
+const OPTION_DESCRIPTION_MAX_LENGTH = 200;
+
+// Hard limits: more lenient than soft limits to handle model overshoot; values are clamped here at runtime
+const QUESTION_HEADER_HARD_LIMIT = 100;
+const QUESTION_TEXT_HARD_LIMIT = 500;
+const OPTION_LABEL_HARD_LIMIT = 200;
+const OPTION_DESCRIPTION_HARD_LIMIT = 500;
+
 export interface IQuestionOption {
 	readonly label: string;
 	readonly description?: string;
@@ -60,12 +72,12 @@ export function createAskQuestionsToolData(): IToolData {
 			header: {
 				type: 'string',
 				description: 'Short identifier for the question. Must be unique so answers can be mapped back to the question.',
-				maxLength: 50
+				maxLength: QUESTION_HEADER_MAX_LENGTH
 			},
 			question: {
 				type: 'string',
 				description: 'The question text to display to the user. Keep it concise, ideally one sentence.',
-				maxLength: 200
+				maxLength: QUESTION_TEXT_MAX_LENGTH
 			},
 			multiSelect: {
 				type: 'boolean',
@@ -84,12 +96,12 @@ export function createAskQuestionsToolData(): IToolData {
 						label: {
 							type: 'string',
 							description: 'Display label and value for the option.',
-							maxLength: 100
+							maxLength: OPTION_LABEL_MAX_LENGTH
 						},
 						description: {
 							type: 'string',
 							description: 'Optional secondary text shown with the option.',
-							maxLength: 200
+							maxLength: OPTION_DESCRIPTION_MAX_LENGTH
 						},
 						recommended: {
 							type: 'boolean',
@@ -144,12 +156,15 @@ export class AskQuestionsTool extends Disposable implements IToolImpl {
 	async invoke(invocation: IToolInvocation, _countTokens: CountTokensCallback, progress: ToolProgress, token: CancellationToken): Promise<IToolResult> {
 		const stopWatch = StopWatch.create(true);
 		const parameters = invocation.parameters as IAskQuestionsParams;
-		const { questions } = parameters;
-		this.logService.trace(`[AskQuestionsTool] Invoking with ${questions?.length ?? 0} question(s)`);
+		const rawQuestions = parameters.questions;
+		this.logService.trace(`[AskQuestionsTool] Invoking with ${rawQuestions?.length ?? 0} question(s)`);
 
-		if (!questions || questions.length === 0) {
+		if (!rawQuestions || rawQuestions.length === 0) {
 			throw new Error(localize('askQuestionsTool.noQuestions', 'No questions provided. The questions array must contain at least one question.'));
 		}
+
+		// Apply hard limits to guard against model overshoot of the soft-limit hints in the schema
+		const questions = rawQuestions.map(q => this.sanitizeQuestion(q));
 
 		const chatSessionResource = invocation.context?.sessionResource;
 		const chatRequestId = invocation.chatRequestId;
@@ -422,6 +437,19 @@ export class AskQuestionsTool extends Disposable implements IToolImpl {
 		}
 		return {
 			content: [{ kind: 'text', value: JSON.stringify({ answers: skippedAnswers }) }]
+		};
+	}
+
+	protected sanitizeQuestion(question: IQuestion): IQuestion {
+		return {
+			...question,
+			header: question.header.substring(0, QUESTION_HEADER_HARD_LIMIT),
+			question: question.question.substring(0, QUESTION_TEXT_HARD_LIMIT),
+			options: question.options?.map(opt => ({
+				...opt,
+				label: opt.label.substring(0, OPTION_LABEL_HARD_LIMIT),
+				description: opt.description?.substring(0, OPTION_DESCRIPTION_HARD_LIMIT)
+			}))
 		};
 	}
 

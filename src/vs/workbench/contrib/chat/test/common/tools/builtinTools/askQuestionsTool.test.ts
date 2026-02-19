@@ -14,6 +14,10 @@ class TestableAskQuestionsTool extends AskQuestionsTool {
 	public testConvertCarouselAnswers(questions: IQuestion[], carouselAnswers: Record<string, unknown> | undefined): IAnswerResult {
 		return this.convertCarouselAnswers(questions, carouselAnswers);
 	}
+
+	public testSanitizeQuestion(question: IQuestion): IQuestion {
+		return this.sanitizeQuestion(question);
+	}
 }
 
 suite('AskQuestionsTool - convertCarouselAnswers', () => {
@@ -142,5 +146,69 @@ suite('AskQuestionsTool - convertCarouselAnswers', () => {
 		const result = tool.testConvertCarouselAnswers(questions, { Case: 'yes' });
 
 		assert.deepStrictEqual(result.answers['Case'], { selected: [], freeText: 'yes', skipped: false });
+	});
+});
+
+suite('AskQuestionsTool - sanitizeQuestion', () => {
+	const store = ensureNoDisposablesAreLeakedInTestSuite();
+	let tool: TestableAskQuestionsTool;
+
+	setup(() => {
+		tool = store.add(new TestableAskQuestionsTool(
+			null! as IChatService,
+			NullTelemetryService,
+			new NullLogService()
+		));
+	});
+
+	teardown(() => {
+		tool?.dispose();
+	});
+
+	test('leaves short values unchanged', () => {
+		const question: IQuestion = {
+			header: 'Short',
+			question: 'A short question?',
+			options: [{ label: 'Yes', description: 'Affirmative' }]
+		};
+		assert.deepStrictEqual(tool.testSanitizeQuestion(question), question);
+	});
+
+	test('truncates header at hard limit (100)', () => {
+		const longHeader = 'H'.repeat(150);
+		const result = tool.testSanitizeQuestion({ header: longHeader, question: 'Q?' });
+		assert.strictEqual(result.header.length, 100);
+	});
+
+	test('truncates question text at hard limit (500)', () => {
+		const longQuestion = 'Q'.repeat(600);
+		const result = tool.testSanitizeQuestion({ header: 'H', question: longQuestion });
+		assert.strictEqual(result.question.length, 500);
+	});
+
+	test('truncates option label at hard limit (200)', () => {
+		const longLabel = 'L'.repeat(250);
+		const result = tool.testSanitizeQuestion({ header: 'H', question: 'Q?', options: [{ label: longLabel }] });
+		assert.strictEqual(result.options![0].label.length, 200);
+	});
+
+	test('truncates option description at hard limit (500)', () => {
+		const longDesc = 'D'.repeat(600);
+		const result = tool.testSanitizeQuestion({ header: 'H', question: 'Q?', options: [{ label: 'L', description: longDesc }] });
+		assert.strictEqual(result.options![0].description!.length, 500);
+	});
+
+	test('preserves other question fields', () => {
+		const question: IQuestion = {
+			header: 'H',
+			question: 'Q?',
+			multiSelect: true,
+			allowFreeformInput: true,
+			options: [{ label: 'A', recommended: true }]
+		};
+		const result = tool.testSanitizeQuestion(question);
+		assert.strictEqual(result.multiSelect, true);
+		assert.strictEqual(result.allowFreeformInput, true);
+		assert.strictEqual(result.options![0].recommended, true);
 	});
 });
