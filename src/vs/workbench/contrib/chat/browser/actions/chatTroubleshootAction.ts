@@ -51,17 +51,18 @@ export function registerChatTroubleshootAction() {
 				menu: [{
 					id: MenuId.ChatContext,
 					group: 'z_clear',
-					order: 0
+					order: -1,
+					when: ChatContextKeys.chatSessionHasDebugData
 				}, {
 					id: CHAT_CONFIG_MENU_ID,
-					when: ContextKeyExpr.and(ChatContextKeys.enabled, ContextKeyExpr.equals('view', ChatViewId)),
-					order: 15,
+					when: ContextKeyExpr.and(ChatContextKeys.enabled, ContextKeyExpr.equals('view', ChatViewId), ChatContextKeys.chatSessionHasDebugData),
+					order: 14,
 					group: '3_configure'
 				}, {
 					id: MenuId.ChatWelcomeContext,
 					group: '2_settings',
-					order: 1,
-					when: ChatContextKeys.inChatEditor.negate()
+					order: 0,
+					when: ContextKeyExpr.and(ChatContextKeys.inChatEditor.negate(), ChatContextKeys.chatSessionHasDebugData)
 				}]
 			});
 		}

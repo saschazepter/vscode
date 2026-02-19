@@ -3,7 +3,6 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-export const chatDebugStyles = `
 .chat-debug-editor {
 	display: flex;
 	flex-direction: column;
@@ -147,6 +146,9 @@ export const chatDebugStyles = `
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
+	display: flex;
+	align-items: center;
+	gap: 6px;
 }
 .chat-debug-overview-title-actions {
 	display: flex;
@@ -281,6 +283,16 @@ export const chatDebugStyles = `
 }
 .chat-debug-view-mode-toggle:focus {
 	border-color: var(--vscode-focusBorder);
+}
+.chat-debug-view-mode-labels {
+	display: grid;
+}
+.chat-debug-view-mode-label {
+	grid-row: 1;
+	grid-column: 1;
+}
+.chat-debug-view-mode-label.hidden {
+	visibility: hidden;
 }
 .chat-debug-table-header {
 	display: flex;
@@ -529,9 +541,14 @@ export const chatDebugStyles = `
 }
 .chat-debug-file-list-row {
 	display: flex;
-	align-items: center;
+	align-items: baseline;
 	padding: 2px 0;
 	gap: 4px;
+	flex-wrap: wrap;
+}
+.chat-debug-file-list-row .chat-inline-anchor-widget {
+	text-wrap: wrap;
+	word-break: break-all;
 }
 .chat-debug-file-list-icon {
 	flex-shrink: 0;
@@ -561,4 +578,3 @@ export const chatDebugStyles = `
 	overflow: hidden;
 	text-overflow: ellipsis;
 }
-`;

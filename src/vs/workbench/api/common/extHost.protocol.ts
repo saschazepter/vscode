@@ -1421,9 +1421,16 @@ export interface IChatDebugSubagentInvocationEventDto extends IChatDebugEventCom
 
 export type IChatDebugEventDto = IChatDebugToolCallEventDto | IChatDebugModelTurnEventDto | IChatDebugGenericEventDto | IChatDebugSubagentInvocationEventDto;
 
+export interface IChatDebugEventTextContentDto {
+	readonly kind: 'text';
+	readonly value: string;
+}
+
+export type IChatDebugResolvedEventContentDto = IChatDebugEventTextContentDto;
+
 export interface ExtHostChatDebugShape {
 	$provideChatDebugLog(handle: number, sessionId: string, token: CancellationToken): Promise<IChatDebugEventDto[] | undefined>;
-	$resolveChatDebugLogEvent(handle: number, eventId: string, token: CancellationToken): Promise<string | undefined>;
+	$resolveChatDebugLogEvent(handle: number, eventId: string, token: CancellationToken): Promise<IChatDebugResolvedEventContentDto | undefined>;
 }
 
 export interface MainThreadChatDebugShape extends IDisposable {

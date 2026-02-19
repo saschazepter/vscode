@@ -8,7 +8,7 @@ import { CancellationToken } from '../../../base/common/cancellation.js';
 import { Emitter } from '../../../base/common/event.js';
 import { Disposable, DisposableStore, toDisposable } from '../../../base/common/lifecycle.js';
 import { ExtHostChatDebugShape, IChatDebugEventDto, MainContext, MainThreadChatDebugShape } from './extHost.protocol.js';
-import { ChatDebugGenericEvent, ChatDebugModelTurnEvent, ChatDebugSubagentInvocationEvent, ChatDebugToolCallEvent, ChatDebugToolCallResult } from './extHostTypes.js';
+import { ChatDebugEventTextContent, ChatDebugGenericEvent, ChatDebugModelTurnEvent, ChatDebugSubagentInvocationEvent, ChatDebugToolCallEvent, ChatDebugToolCallResult } from './extHostTypes.js';
 import { IExtHostRpcService } from './extHostRpcService.js';
 
 export class ExtHostChatDebug extends Disposable implements ExtHostChatDebugShape {
@@ -180,12 +180,18 @@ export class ExtHostChatDebug extends Disposable implements ExtHostChatDebugShap
 		};
 	}
 
-	async $resolveChatDebugLogEvent(_handle: number, eventId: string, token: CancellationToken): Promise<string | undefined> {
+	async $resolveChatDebugLogEvent(_handle: number, eventId: string, token: CancellationToken): Promise<{ kind: 'text'; value: string } | undefined> {
 		if (!this._provider?.resolveChatDebugLogEvent) {
 			return undefined;
 		}
 		const result = await this._provider.resolveChatDebugLogEvent(eventId, token);
-		return result ?? undefined;
+		if (!result) {
+			return undefined;
+		}
+		if (result instanceof ChatDebugEventTextContent) {
+			return { kind: 'text', value: result.value };
+		}
+		return undefined;
 	}
 
 	override dispose(): void {

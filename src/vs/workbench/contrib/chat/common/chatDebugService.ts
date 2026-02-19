@@ -5,6 +5,7 @@
 
 import { Event } from '../../../../base/common/event.js';
 import { IDisposable } from '../../../../base/common/lifecycle.js';
+import { URI } from '../../../../base/common/uri.js';
 import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
 
@@ -158,13 +159,67 @@ export interface IChatDebugService extends IDisposable {
 	 * Resolve the full details of an event by its id.
 	 * Delegates to the registered provider's resolveChatDebugLogEvent.
 	 */
-	resolveEvent(eventId: string): Promise<string | undefined>;
+	resolveEvent(eventId: string): Promise<IChatDebugResolvedEventContent | undefined>;
 }
+
+/**
+ * Plain text content for a resolved debug event.
+ */
+export interface IChatDebugEventTextContent {
+	readonly kind: 'text';
+	readonly value: string;
+}
+
+/**
+ * The status of a file in a file list content.
+ */
+export type ChatDebugFileStatus = 'loaded' | 'skipped';
+
+/**
+ * A single file entry in a file list content.
+ */
+export interface IChatDebugFileEntry {
+	readonly uri: URI;
+	readonly name?: string;
+	readonly status: ChatDebugFileStatus;
+	readonly storage?: string;
+	readonly extensionId?: string;
+	readonly skipReason?: string;
+	readonly errorMessage?: string;
+	readonly duplicateOf?: URI;
+}
+
+/**
+ * A source folder entry in a file list content.
+ */
+export interface IChatDebugSourceFolderEntry {
+	readonly uri: URI;
+	readonly storage: string;
+	readonly exists: boolean;
+	readonly fileCount: number;
+	readonly errorMessage?: string;
+}
+
+/**
+ * Structured file list content for a resolved debug event.
+ * Contains resolved files and skipped/failed paths for rich rendering.
+ */
+export interface IChatDebugEventFileListContent {
+	readonly kind: 'fileList';
+	readonly discoveryType: string;
+	readonly files: readonly IChatDebugFileEntry[];
+	readonly sourceFolders?: readonly IChatDebugSourceFolderEntry[];
+}
+
+/**
+ * Union of all resolved event content types.
+ */
+export type IChatDebugResolvedEventContent = IChatDebugEventTextContent | IChatDebugEventFileListContent;
 
 /**
  * Provider interface for debug events.
  */
 export interface IChatDebugLogProvider {
 	provideChatDebugLog(sessionId: string, token: CancellationToken): Promise<IChatDebugEvent[] | undefined>;
-	resolveChatDebugLogEvent?(eventId: string, token: CancellationToken): Promise<string | undefined>;
+	resolveChatDebugLogEvent?(eventId: string, token: CancellationToken): Promise<IChatDebugResolvedEventContent | undefined>;
 }

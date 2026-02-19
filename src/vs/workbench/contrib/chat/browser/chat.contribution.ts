@@ -86,7 +86,6 @@ import { registerChatTitleActions } from './actions/chatTitleActions.js';
 import { registerChatElicitationActions } from './actions/chatElicitationActions.js';
 import { registerChatToolActions } from './actions/chatToolActions.js';
 import { ChatTransferContribution } from './actions/chatTransfer.js';
-import { registerChatCustomizationDiagnosticsAction } from './actions/chatCustomizationDiagnosticsAction.js';
 import { registerChatTroubleshootAction } from './actions/chatTroubleshootAction.js';
 import { IChatDebugService } from '../common/chatDebugService.js';
 import { ChatDebugServiceImpl } from '../common/chatDebugServiceImpl.js';
@@ -1523,7 +1522,6 @@ registerWorkbenchContribution2(AgentFeedbackAttachmentContribution.ID, AgentFeed
 registerChatActions();
 registerChatAccessibilityActions();
 registerChatCopyActions();
-registerChatCustomizationDiagnosticsAction();
 registerChatTroubleshootAction();
 registerChatCodeBlockActions();
 registerChatCodeCompareBlockActions();

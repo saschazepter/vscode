@@ -473,4 +473,10 @@ export interface IPromptsService extends IDisposable {
 	 * @param sessionId Optional session ID to scope debug logging to a specific session.
 	 */
 	getHooks(token: CancellationToken, sessionId?: string): Promise<IConfiguredHooksInfo | undefined>;
+
+	/**
+	 * Gets all instruction files, logging discovery info to the debug log.
+	 * @param sessionId Optional session ID to scope debug logging to a specific session.
+	 */
+	getInstructionFiles(token: CancellationToken, sessionId?: string): Promise<readonly IPromptPath[]>;
 }

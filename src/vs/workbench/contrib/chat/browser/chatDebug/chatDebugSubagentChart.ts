@@ -3,8 +3,11 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import * as DOM from '../../../../../base/browser/dom.js';
 import { localize } from '../../../../../nls.js';
 import { IChatDebugEvent } from '../../common/chatDebugService.js';
+
+const $ = DOM.$;
 
 export interface ISubagentData {
 	name: string;
@@ -25,13 +28,9 @@ export interface ISubagentData {
 export function deriveSubagentData(events: readonly IChatDebugEvent[]): ISubagentData[] {
 	const subagents: Map<string, { name: string; description?: string; status?: string; toolCalls: number; modelTurns: number; durationMs?: number; childEvents: IChatDebugEvent[] }> = new Map();
 
-	console.log('[chatDebug][deriveSubagentData] Total events received:', events.length);
-	console.log('[chatDebug][deriveSubagentData] Event kinds:', events.map(e => e.kind));
-
 	// Collect from explicit subagentInvocation events
 	for (const event of events) {
 		if (event.kind === 'subagentInvocation') {
-			console.log('[chatDebug][deriveSubagentData] Found subagentInvocation event:', { id: event.id, agentName: event.agentName, description: event.description, status: event.status, sessionId: event.sessionId });
 			const key = event.id ?? event.agentName;
 			subagents.set(key, {
 				name: event.agentName,
@@ -45,12 +44,9 @@ export function deriveSubagentData(events: readonly IChatDebugEvent[]): ISubagen
 		}
 	}
 
-	console.log('[chatDebug][deriveSubagentData] Subagents after explicit subagentInvocation scan:', subagents.size, [...subagents.keys()]);
-
 	// Collect from runSubagent tool calls
 	for (const event of events) {
 		if (event.kind === 'toolCall' && event.toolName === 'runSubagent') {
-			console.log('[chatDebug][deriveSubagentData] Found runSubagent toolCall:', { id: event.id, input: event.input?.substring(0, 200), sessionId: event.sessionId });
 			const key = event.id ?? `runSubagent-${event.created.getTime()}`;
 			if (!subagents.has(key)) {
 				// Try to extract agent name from input JSON
@@ -77,8 +73,6 @@ export function deriveSubagentData(events: readonly IChatDebugEvent[]): ISubagen
 			}
 		}
 	}
-
-	console.log('[chatDebug][deriveSubagentData] Subagents after runSubagent toolCall scan:', subagents.size, [...subagents.keys()]);
 
 	// Infer subagents from orphaned parentEventId references.
 	// If events reference a parentEventId that isn't already a known subagent,
@@ -119,9 +113,7 @@ export function deriveSubagentData(events: readonly IChatDebugEvent[]): ISubagen
 		}
 	}
 
-	const result = [...subagents.values()];
-	console.log('[chatDebug][deriveSubagentData] Final subagent count:', result.length, result.map(s => ({ name: s.name, status: s.status, toolCalls: s.toolCalls, modelTurns: s.modelTurns })));
-	return result;
+	return [...subagents.values()];
 }
 
 /**
@@ -207,50 +199,32 @@ export function generateSubagentFlowchart(events: readonly IChatDebugEvent[]): s
  * Render a simple visual HTML/CSS flow representation of the subagent invocations.
  */
 export function renderVisualFlow(container: HTMLElement, events: readonly IChatDebugEvent[]): void {
-	console.log('[chatDebug][renderVisualFlow] Rendering visual flow with', events.length, 'events');
 	const subagents = deriveSubagentData(events);
-	console.log('[chatDebug][renderVisualFlow] Derived subagents:', subagents.length);
 
 	if (subagents.length === 0) {
-		const empty = document.createElement('p');
-		empty.className = 'chat-debug-subagent-flow-empty';
-		empty.textContent = localize('chatDebug.noSubagents', "No subagent invocations detected in this session.");
-		container.appendChild(empty);
+		DOM.append(container, $('p.chat-debug-subagent-flow-empty', undefined, localize('chatDebug.noSubagents', "No subagent invocations detected in this session.")));
 		return;
 	}
 
 	// Main agent node
-	const mainNode = document.createElement('div');
-	mainNode.className = 'chat-debug-flow-node chat-debug-flow-main';
-	mainNode.textContent = localize('chatDebug.mainAgent', "Main Agent");
-	container.appendChild(mainNode);
+	DOM.append(container, $('div.chat-debug-flow-node.chat-debug-flow-main', undefined, localize('chatDebug.mainAgent', "Main Agent")));
 
 	for (const sub of subagents) {
 		// Arrow
-		const arrow = document.createElement('div');
-		arrow.className = 'chat-debug-flow-arrow';
-		arrow.textContent = '\u2193'; // ↓
-		container.appendChild(arrow);
+		DOM.append(container, $('div.chat-debug-flow-arrow', undefined, '\u2193'));
 
 		// Subagent node
-		const subNode = document.createElement('div');
-		subNode.className = 'chat-debug-flow-node chat-debug-flow-subagent';
+		const subNode = DOM.append(container, $('div.chat-debug-flow-node.chat-debug-flow-subagent'));
 
-		const nameEl = document.createElement('div');
-		nameEl.className = 'chat-debug-flow-subagent-name';
 		const statusIcon = sub.status === 'failed' ? '\u274C' : sub.status === 'completed' ? '\u2705' : '\u25B6';
-		nameEl.textContent = `${statusIcon} ${sub.name}`;
-		subNode.appendChild(nameEl);
+		DOM.append(subNode, $('div.chat-debug-flow-subagent-name', undefined, `${statusIcon} ${sub.name}`));
 
 		if (sub.description) {
-			const descEl = document.createElement('div');
-			descEl.className = 'chat-debug-flow-subagent-desc';
-			descEl.textContent = sub.description.length > 60 ? sub.description.substring(0, 60) + '...' : sub.description;
-			subNode.appendChild(descEl);
+			DOM.append(subNode, $('div.chat-debug-flow-subagent-desc', undefined,
+				sub.description.length > 60 ? sub.description.substring(0, 60) + '...' : sub.description
+			));
 		}
 
-		const statsEl = document.createElement('div');
-		statsEl.className = 'chat-debug-flow-subagent-stats';
 		const parts: string[] = [];
 		if (sub.modelTurns > 0) {
 			parts.push(localize('chatDebug.flowModelTurns', "{0} model turns", sub.modelTurns));
@@ -261,21 +235,12 @@ export function renderVisualFlow(container: HTMLElement, events: readonly IChatD
 		if (sub.durationMs !== undefined) {
 			parts.push(`${sub.durationMs}ms`);
 		}
-		statsEl.textContent = parts.join(' \u00B7 ');
-		subNode.appendChild(statsEl);
-
-		container.appendChild(subNode);
+		DOM.append(subNode, $('div.chat-debug-flow-subagent-stats', undefined, parts.join(' \u00B7 ')));
 
 		// Return arrow
-		const returnArrow = document.createElement('div');
-		returnArrow.className = 'chat-debug-flow-arrow chat-debug-flow-arrow-return';
-		returnArrow.textContent = '\u2193'; // ↓
-		container.appendChild(returnArrow);
+		DOM.append(container, $('div.chat-debug-flow-arrow.chat-debug-flow-arrow-return', undefined, '\u2193'));
 	}
 
 	// End node
-	const endNode = document.createElement('div');
-	endNode.className = 'chat-debug-flow-node chat-debug-flow-end';
-	endNode.textContent = localize('chatDebug.end', "End");
-	container.appendChild(endNode);
+	DOM.append(container, $('div.chat-debug-flow-node.chat-debug-flow-end', undefined, localize('chatDebug.end', "End")));
 }

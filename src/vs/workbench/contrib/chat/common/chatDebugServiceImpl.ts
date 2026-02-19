@@ -6,7 +6,7 @@
 import { CancellationToken, CancellationTokenSource } from '../../../../base/common/cancellation.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { Disposable, IDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
-import { ChatDebugLogLevel, IChatDebugEvent, IChatDebugLogProvider, IChatDebugService } from './chatDebugService.js';
+import { ChatDebugLogLevel, IChatDebugEvent, IChatDebugLogProvider, IChatDebugResolvedEventContent, IChatDebugService } from './chatDebugService.js';
 
 export class ChatDebugServiceImpl extends Disposable implements IChatDebugService {
 	declare readonly _serviceBrand: undefined;
@@ -123,7 +123,7 @@ export class ChatDebugServiceImpl extends Disposable implements IChatDebugServic
 		}
 	}
 
-	async resolveEvent(eventId: string): Promise<string | undefined> {
+	async resolveEvent(eventId: string): Promise<IChatDebugResolvedEventContent | undefined> {
 		const cts = new CancellationTokenSource();
 		try {
 			for (const provider of this._providers) {

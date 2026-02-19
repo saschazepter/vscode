@@ -3643,6 +3643,14 @@ export class ChatDebugSubagentInvocationEvent {
 	}
 }
 
+export class ChatDebugEventTextContent {
+	value: string;
+
+	constructor(value: string) {
+		this.value = value;
+	}
+}
+
 export class ChatSessionChangedFile {
 	constructor(public readonly modifiedUri: vscode.Uri, public readonly insertions: number, public readonly deletions: number, public readonly originalUri?: vscode.Uri) { }
 }

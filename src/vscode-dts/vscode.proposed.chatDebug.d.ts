@@ -285,6 +285,27 @@ declare module 'vscode' {
 	}
 
 	/**
+	 * Plain text content for a resolved chat debug event.
+	 */
+	export class ChatDebugEventTextContent {
+		/**
+		 * The text value.
+		 */
+		value: string;
+
+		/**
+		 * Create a new ChatDebugEventTextContent.
+		 * @param value The text value.
+		 */
+		constructor(value: string);
+	}
+
+	/**
+	 * Union of all resolved event content types.
+	 */
+	export type ChatDebugResolvedEventContent = ChatDebugEventTextContent;
+
+	/**
 	 * Union of all chat debug event types. Each type is a class,
 	 * following the same pattern as {@link ChatResponsePart}.
 	 */
@@ -317,12 +338,12 @@ declare module 'vscode' {
 		 *
 		 * @param eventId The id of the event to resolve.
 		 * @param token A cancellation token.
-		 * @returns The resolved event details to be displayed in the debug detail view.
+		 * @returns The resolved event content to be displayed in the debug detail view.
 		 */
 		resolveChatDebugLogEvent?(
 			eventId: string,
 			token: CancellationToken
-		): ProviderResult<string>;
+		): ProviderResult<ChatDebugResolvedEventContent>;
 	}
 
 	export namespace chat {
