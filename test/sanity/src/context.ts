@@ -61,15 +61,12 @@ export class TestContext {
 	/**
 	 * Returns the OS temp directory with expanded long names on Windows.
 	 */
-	public readonly osTempDir = (function () {
+	public readonly osTempDir = (() => {
 		let tempDir = fs.realpathSync(os.tmpdir());
 
 		// On Windows, expand short 8.3 file names to long names
 		if (os.platform() === 'win32') {
-			const result = spawnSync('powershell', ['-Command', `(Get-Item "${tempDir}").FullName`], { encoding: 'utf-8' });
-			if (result.status === 0 && result.stdout) {
-				tempDir = result.stdout.trim();
-			}
+			tempDir = fs.realpathSync.native(tempDir);
 		}
 
 		return tempDir;
@@ -298,39 +295,12 @@ export class TestContext {
 		const { url, sha256hash } = await this.fetchMetadata(target);
 		const filePath = path.join(this.createTempDir(), path.basename(url));
 
-		const maxRetries = 5;
-		let lastError: Error | undefined;
+		this.log(`Downloading ${url} to ${filePath}`);
+		this.runNoErrors('curl', '-fSL', '--retry', '5', '--retry-delay', '2', '--retry-all-errors', '-o', filePath, url);
+		this.log(`Downloaded ${url} to ${filePath}`);
 
-		for (let attempt = 0; attempt < maxRetries; attempt++) {
-			if (attempt > 0) {
-				const delay = Math.pow(2, attempt - 1) * 1000;
-				this.log(`Retrying download (attempt ${attempt + 1}/${maxRetries}) after ${delay}ms`);
-				await new Promise(resolve => setTimeout(resolve, delay));
-			}
-
-			try {
-				this.log(`Downloading ${url} to ${filePath}`);
-				const { body } = await this.fetchNoErrors(url);
-
-				const stream = fs.createWriteStream(filePath);
-				await new Promise<void>((resolve, reject) => {
-					body.on('error', reject);
-					stream.on('error', reject);
-					stream.on('finish', resolve);
-					body.pipe(stream);
-				});
-
-				this.log(`Downloaded ${url} to ${filePath}`);
-				this.validateSha256Hash(filePath, sha256hash);
-
-				return filePath;
-			} catch (error) {
-				lastError = error instanceof Error ? error : new Error(String(error));
-				this.log(`Download attempt ${attempt + 1} failed: ${lastError.message}`);
-			}
-		}
-
-		this.error(`Failed to download ${url} after ${maxRetries} attempts: ${lastError?.message}`);
+		this.validateSha256Hash(filePath, sha256hash);
+		return filePath;
 	}
 
 	/**
@@ -360,15 +330,53 @@ export class TestContext {
 		}
 
 		this.log(`Validating Authenticode signature for ${filePath}`);
+		this.validateAuthenticodeSignaturesForFiles([filePath]);
+	}
 
-		const result = this.run('powershell', '-Command', `Get-AuthenticodeSignature "${filePath}" | Select-Object -ExpandProperty Status`);
+	/**
+	 * Collects all files matching the Authenticode include pattern from the specified directory recursively.
+	 */
+	private collectAuthenticodeFiles(dir: string, files: string[]): void {
+		const entries = fs.readdirSync(dir, { withFileTypes: true });
+		for (const entry of entries) {
+			const filePath = path.join(dir, entry.name);
+			if (entry.isDirectory()) {
+				this.collectAuthenticodeFiles(filePath, files);
+			} else if (TestContext.authenticodeInclude.test(entry.name)) {
+				files.push(filePath);
+			}
+		}
+	}
+
+	/**
+	 * Validates Authenticode signatures for the specified list of files in a single PowerShell call.
+	 */
+	private validateAuthenticodeSignaturesForFiles(files: string[]): void {
+		if (files.length === 0) {
+			return;
+		}
+
+		const fileList = files.map(file => `"${file}"`).join(',');
+		const command = `@(${fileList}) | ForEach-Object { $sig = Get-AuthenticodeSignature $_; "$($sig.Path)|$($sig.Status)" }`;
+		const result = this.run('powershell', '-NoProfile', '-Command', command);
 		if (result.error !== undefined) {
 			this.error(`Failed to run Get-AuthenticodeSignature: ${result.error.message}`);
 		}
 
-		const status = result.stdout.trim();
-		if (status !== 'Valid') {
-			this.error(`Authenticode signature is not valid for ${filePath}: ${status}`);
+		const invalid: string[] = [];
+		for (const line of result.stdout.trim().split('\n')) {
+			const [, filePath, status] = /^(.+)\|(\w+)$/.exec(line.trim()) ?? [];
+			if (filePath) {
+				if (status === 'Valid') {
+					this.log(`Authenticode signature is valid for ${filePath}`);
+				} else {
+					invalid.push(`${filePath}: ${status}`);
+				}
+			}
+		}
+
+		if (invalid.length > 0) {
+			this.error(`Authenticode signatures are not valid for:\n${invalid.join('\n')}`);
 		}
 	}
 
@@ -382,15 +390,10 @@ export class TestContext {
 			return;
 		}
 
-		const files = fs.readdirSync(dir, { withFileTypes: true });
-		for (const file of files) {
-			const filePath = path.join(dir, file.name);
-			if (file.isDirectory()) {
-				this.validateAllAuthenticodeSignatures(filePath);
-			} else if (TestContext.authenticodeInclude.test(file.name)) {
-				this.validateAuthenticodeSignature(filePath);
-			}
-		}
+		const files: string[] = [];
+		this.collectAuthenticodeFiles(dir, files);
+		this.log(`Found ${files.length} file(s) to validate Authenticode signatures`);
+		this.validateAuthenticodeSignaturesForFiles(files);
 	}
 
 	/**
