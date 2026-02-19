@@ -5,7 +5,7 @@
 
 import * as dom from '../../../../base/browser/dom.js';
 import { Codicon } from '../../../../base/common/codicons.js';
-import { Disposable } from '../../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore } from '../../../../base/common/lifecycle.js';
 import { URI } from '../../../../base/common/uri.js';
 import { Emitter } from '../../../../base/common/event.js';
 import { renderIcon } from '../../../../base/browser/ui/iconLabel/iconLabels.js';
@@ -41,6 +41,7 @@ export class NewChatContextAttachments extends Disposable {
 
 	private readonly _attachedContext: IChatRequestVariableEntry[] = [];
 	private _container: HTMLElement | undefined;
+	private readonly _renderDisposables = this._register(new DisposableStore());
 
 	private readonly _onDidChangeContext = this._register(new Emitter<void>());
 	readonly onDidChangeContext = this._onDidChangeContext.event;
@@ -72,6 +73,7 @@ export class NewChatContextAttachments extends Disposable {
 			return;
 		}
 
+		this._renderDisposables.clear();
 		dom.clearNode(this._container);
 
 		if (this._attachedContext.length === 0) {
@@ -92,7 +94,7 @@ export class NewChatContextAttachments extends Disposable {
 			removeButton.tabIndex = 0;
 			removeButton.role = 'button';
 			dom.append(removeButton, renderIcon(Codicon.close));
-			this._register(dom.addDisposableListener(removeButton, dom.EventType.CLICK, (e) => {
+			this._renderDisposables.add(dom.addDisposableListener(removeButton, dom.EventType.CLICK, (e) => {
 				e.stopPropagation();
 				this._removeAttachment(entry.id);
 			}));
