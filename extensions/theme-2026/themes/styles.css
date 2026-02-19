@@ -127,11 +127,6 @@
 	z-index: 10;
 }
 
-.monaco-workbench .part.editor > .content .editor-group-container > .title .tabs-container > .tab.active {
-	border-radius: 0;
-	border-top: none !important;
-}
-
 .monaco-workbench.vs .part.editor > .content .editor-group-container > .title .tabs-container > .tab.active {
 	box-shadow: inset var(--shadow-active-tab);
 	position: relative;
@@ -154,14 +149,6 @@
 /* Title Bar */
 .monaco-workbench.vs .part.titlebar {
 	box-shadow: var(--shadow-md);
-}
-
-.monaco-workbench .part.titlebar.inactive {
-	background: var(--vscode-titleBar-inactiveBackground) !important;
-
-	& > * {
-		opacity: 0.3;
-	}
 }
 
 /* Quick Input (Command Palette) */
