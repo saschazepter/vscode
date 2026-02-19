@@ -105,6 +105,10 @@ class ActionWidgetService extends Disposable implements IActionWidgetService {
 
 		this._list.value = list;
 		if (this._list.value) {
+			// Filter input (above the list)
+			if (this._list.value.filterContainer) {
+				widget.appendChild(this._list.value.filterContainer);
+			}
 			widget.appendChild(this._list.value.domNode);
 		} else {
 			throw new Error('List has no value');
@@ -135,11 +139,6 @@ class ActionWidgetService extends Disposable implements IActionWidgetService {
 				renderDisposables.add(actionBar);
 				actionBarWidth = actionBar.getContainer().offsetWidth;
 			}
-		}
-
-		// Filter input (appended after the list, before action bar visually)
-		if (this._list.value?.filterContainer) {
-			widget.appendChild(this._list.value.filterContainer);
 		}
 
 		const width = this._list.value?.layout(actionBarWidth);
