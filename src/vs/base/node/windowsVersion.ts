@@ -80,7 +80,7 @@ export async function getWindowsBuildNumberAsync(): Promise<number> {
 }
 
 /**
- * Synchronous version of getWindowsBuildNumber().
+ * Synchronous version of getWindowsBuildNumberAsync().
  * @returns The Windows build number (e.g., 19041 for Windows 10 2004)
  */
 export function getWindowsBuildNumberSync(): number {
