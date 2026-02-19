@@ -304,7 +304,7 @@ export class ChatService extends Disposable implements IChatService {
 
 	private deserializeChats(sessionData: string): ISerializableChatsData {
 		try {
-			const arrayOfSessions = revive(JSON.parse(sessionData)) as ISerializableChatDataIn[]; // Revive serialized URIs in session data
+			const arrayOfSessions: ISerializableChatDataIn[] = revive(JSON.parse(sessionData)); // Revive serialized URIs in session data
 			if (!Array.isArray(arrayOfSessions)) {
 				throw new Error('Expected array');
 			}

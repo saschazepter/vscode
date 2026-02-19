@@ -5,13 +5,13 @@
 
 import { CancellationToken } from '../../../../../../base/common/cancellation.js';
 import { CancellationError } from '../../../../../../base/common/errors.js';
-import { Event } from '../../../../../../base/common/event.js';
 import { MarkdownString } from '../../../../../../base/common/htmlContent.js';
 import { IJSONSchema, IJSONSchemaMap } from '../../../../../../base/common/jsonSchema.js';
-import { Disposable, DisposableStore } from '../../../../../../base/common/lifecycle.js';
+import { Disposable } from '../../../../../../base/common/lifecycle.js';
 import { generateUuid } from '../../../../../../base/common/uuid.js';
 import { localize } from '../../../../../../nls.js';
-import { IChatQuestion, IChatQuestionCarousel, IChatService } from '../../chatService/chatService.js';
+import { IChatQuestion, IChatService } from '../../chatService/chatService.js';
+import { ChatQuestionCarouselData } from '../../model/chatProgressTypes/chatQuestionCarouselData.js';
 import { IChatRequestModel } from '../../model/chatModel.js';
 import { StopWatch } from '../../../../../../base/common/stopwatch.js';
 import { ILogService } from '../../../../../../platform/log/common/log.js';
@@ -19,7 +19,7 @@ import { ITelemetryService } from '../../../../../../platform/telemetry/common/t
 import { CountTokensCallback, IPreparedToolInvocation, IToolData, IToolImpl, IToolInvocation, IToolInvocationPreparationContext, IToolResult, ToolDataSource, ToolProgress } from '../languageModelToolsService.js';
 import { ThemeIcon } from '../../../../../../base/common/themables.js';
 import { Codicon } from '../../../../../../base/common/codicons.js';
-import { DeferredPromise, raceCancellation } from '../../../../../../base/common/async.js';
+import { raceCancellation } from '../../../../../../base/common/async.js';
 import { URI } from '../../../../../../base/common/uri.js';
 
 // Use a distinct id to avoid clashing with extension-provided tools
@@ -159,19 +159,9 @@ export class AskQuestionsTool extends Disposable implements IToolImpl {
 		const carousel = this.toQuestionCarousel(questions);
 		this.chatService.appendProgress(request, carousel);
 
-		const disposables = new DisposableStore();
-		let answerResult: { answers: Record<string, unknown> | undefined } | undefined;
-		try {
-			const answersPromise = carousel.completion?.promise ?? Event.toPromise<{ requestId: string; resolveId: string; answers: Record<string, unknown> | undefined }>(
-				Event.filter(this.chatService.onDidReceiveQuestionCarouselAnswer, e => e.requestId === request.id && e.resolveId === carousel.resolveId),
-				disposables
-			).then(e => ({ answers: e.answers }));
-			answerResult = await raceCancellation(answersPromise, token);
-			if (token.isCancellationRequested) {
-				throw new CancellationError();
-			}
-		} finally {
-			disposables.dispose();
+		const answerResult = await raceCancellation(carousel.completion.p, token);
+		if (token.isCancellationRequested) {
+			throw new CancellationError();
 		}
 
 		progress.report({ message: localize('askQuestionsTool.progress', 'Analyzing your answers...') });
@@ -242,26 +232,9 @@ export class AskQuestionsTool extends Disposable implements IToolImpl {
 		return { request, sessionResource: chatSessionResource };
 	}
 
-	private toQuestionCarousel(questions: IQuestion[]): IChatQuestionCarousel {
+	private toQuestionCarousel(questions: IQuestion[]): ChatQuestionCarouselData {
 		const mappedQuestions = questions.map(question => this.toChatQuestion(question));
-		const completion = new DeferredPromise<{ answers: Record<string, unknown> | undefined }>();
-		const carousel: IChatQuestionCarousel = {
-			kind: 'questionCarousel',
-			questions: mappedQuestions,
-			allowSkip: true,
-			resolveId: generateUuid()
-		};
-
-		Object.defineProperty(carousel, 'completion', {
-			value: {
-				promise: completion.p,
-				resolve: (value: { answers: Record<string, unknown> | undefined }) => completion.complete(value),
-				reject: (error: unknown) => completion.error(error)
-			},
-			enumerable: false
-		});
-
-		return carousel;
+		return new ChatQuestionCarouselData(mappedQuestions, true, generateUuid());
 	}
 
 	private toChatQuestion(question: IQuestion): IChatQuestion {

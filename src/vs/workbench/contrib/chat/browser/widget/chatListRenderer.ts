@@ -59,6 +59,7 @@ import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
 import { IChatTextEditGroup } from '../../common/model/chatModel.js';
 import { chatSubcommandLeader } from '../../common/requestParser/chatParserTypes.js';
 import { ChatAgentVoteDirection, ChatAgentVoteDownReason, ChatErrorLevel, ChatRequestQueueKind, IChatConfirmation, IChatContentReference, IChatDisabledClaudeHooksPart, IChatElicitationRequest, IChatElicitationRequestSerialized, IChatExtensionsContent, IChatFollowup, IChatHookPart, IChatMarkdownContent, IChatMcpServersStarting, IChatMcpServersStartingSerialized, IChatMultiDiffData, IChatMultiDiffDataSerialized, IChatPullRequestContent, IChatQuestionCarousel, IChatService, IChatTask, IChatTaskSerialized, IChatThinkingPart, IChatToolInvocation, IChatToolInvocationSerialized, IChatTreeData, IChatUndoStop, isChatFollowup } from '../../common/chatService/chatService.js';
+import { ChatQuestionCarouselData } from '../../common/model/chatProgressTypes/chatQuestionCarouselData.js';
 import { localChatSessionType } from '../../common/chatSessionsService.js';
 import { getChatSessionType } from '../../common/model/chatUri.js';
 import { IChatRequestVariableEntry } from '../../common/attachments/chatVariableEntries.js';
@@ -2086,7 +2087,9 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 				carousel.data = answersRecord;
 			}
 			carousel.isUsed = true;
-			carousel.completion?.resolve({ answers: answersRecord });
+			if (carousel instanceof ChatQuestionCarouselData) {
+				carousel.completion.complete({ answers: answersRecord });
+			}
 
 			// Notify the extension about the carousel answers to resolve the deferred promise
 			if (isResponseVM(context.element) && carousel.resolveId) {
@@ -2108,7 +2111,9 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 			if (responseIsComplete && !carousel.isUsed && isResponseVM(context.element) && carousel.resolveId && carousel.data === undefined) {
 				carousel.data = {};
 				carousel.isUsed = true;
-				carousel.completion?.resolve({ answers: undefined });
+				if (carousel instanceof ChatQuestionCarouselData) {
+					carousel.completion.complete({ answers: undefined });
+				}
 				this.chatService.notifyQuestionCarouselAnswer(context.element.requestId, carousel.resolveId, undefined);
 				this.pendingQuestionCarousels.get(context.element.sessionResource)?.clear();
 			}
