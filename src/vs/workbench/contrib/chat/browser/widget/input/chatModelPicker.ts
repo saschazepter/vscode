@@ -551,12 +551,15 @@ export class ModelPickerWidget extends Disposable {
 
 
 function getModelHoverContent(model: ILanguageModelChatMetadataAndIdentifier): MarkdownString {
+	const isAuto = model.metadata.id === 'auto' && model.metadata.vendor === 'copilot';
 	const markdown = new MarkdownString('', { isTrusted: true, supportThemeIcons: true });
 	markdown.appendMarkdown(`**${model.metadata.name}**`);
-	if (model.metadata.id !== model.metadata.version) {
-		markdown.appendMarkdown(`&nbsp;<span style="background-color:#8080802B;">&nbsp;_${model.metadata.id}@${model.metadata.version}_&nbsp;</span>`);
-	} else {
-		markdown.appendMarkdown(`&nbsp;<span style="background-color:#8080802B;">&nbsp;_${model.metadata.id}_&nbsp;</span>`);
+	if (!isAuto) {
+		if (model.metadata.id !== model.metadata.version) {
+			markdown.appendMarkdown(`&nbsp;<span style="background-color:#8080802B;">&nbsp;_${model.metadata.id}@${model.metadata.version}_&nbsp;</span>`);
+		} else {
+			markdown.appendMarkdown(`&nbsp;<span style="background-color:#8080802B;">&nbsp;_${model.metadata.id}_&nbsp;</span>`);
+		}
 	}
 	markdown.appendText(`\n`);
 
@@ -575,7 +578,7 @@ function getModelHoverContent(model: ILanguageModelChatMetadataAndIdentifier): M
 		markdown.appendText(`\n`);
 	}
 
-	if (model.metadata.maxInputTokens || model.metadata.maxOutputTokens) {
+	if (!isAuto && (model.metadata.maxInputTokens || model.metadata.maxOutputTokens)) {
 		const totalTokens = (model.metadata.maxInputTokens ?? 0) + (model.metadata.maxOutputTokens ?? 0);
 		markdown.appendMarkdown(`${localize('models.contextSize', 'Context Size')}: `);
 		markdown.appendMarkdown(`${formatTokenCount(totalTokens)}`);
