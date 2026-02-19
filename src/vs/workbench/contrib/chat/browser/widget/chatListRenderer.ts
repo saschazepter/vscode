@@ -1700,7 +1700,7 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 			} else if (content.kind === 'markdownContent') {
 				return this.renderMarkdown(content, templateData, context);
 			} else if (content.kind === 'references') {
-				return this.renderContentReferencesListData(content, undefined, context, templateData);
+				return undefined;
 			} else if (content.kind === 'codeCitations') {
 				return this.renderCodeCitations(content, context, templateData);
 			} else if (content.kind === 'toolInvocation' || content.kind === 'toolInvocationSerialized') {
