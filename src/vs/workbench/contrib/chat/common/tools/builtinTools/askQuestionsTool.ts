@@ -59,11 +59,13 @@ export function createAskQuestionsToolData(): IToolData {
 		properties: {
 			header: {
 				type: 'string',
-				description: 'Short identifier for the question. Must be unique so answers can be mapped back to the question.'
+				description: 'Short identifier for the question. Must be unique so answers can be mapped back to the question.',
+				maxLength: 50
 			},
 			question: {
 				type: 'string',
-				description: 'The question text to display to the user.'
+				description: 'The question text to display to the user. Keep it concise, ideally one sentence.',
+				maxLength: 200
 			},
 			multiSelect: {
 				type: 'boolean',
@@ -81,11 +83,13 @@ export function createAskQuestionsToolData(): IToolData {
 					properties: {
 						label: {
 							type: 'string',
-							description: 'Display label and value for the option.'
+							description: 'Display label and value for the option.',
+							maxLength: 100
 						},
 						description: {
 							type: 'string',
-							description: 'Optional secondary text shown with the option.'
+							description: 'Optional secondary text shown with the option.',
+							maxLength: 200
 						},
 						recommended: {
 							type: 'boolean',
