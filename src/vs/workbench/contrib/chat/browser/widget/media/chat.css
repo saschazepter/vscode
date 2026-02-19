@@ -329,8 +329,7 @@
 	border-right: none;
 }
 
-.interactive-item-container .value .rendered-markdown table tr:last-child td,
-.interactive-item-container .value .rendered-markdown table tr:last-child th {
+.interactive-item-container .value .rendered-markdown table tbody tr:last-child td {
 	border-bottom: none;
 }
 
@@ -865,7 +864,7 @@ have to be updated for changes to the rules above, or to support more deeply nes
 }
 
 .interactive-session .chat-editing-session .chat-editing-session-container.show-file-icons .monaco-scrollable-element .monaco-list-rows .monaco-list-row {
-	border-radius: 2px;
+	border-radius: var(--vscode-cornerRadius-small);
 }
 
 .interactive-session .chat-editing-session .chat-editing-session-container.show-file-icons .chat-editing-session-list .monaco-scrollable-element:has(.visible.scrollbar.vertical) .monaco-list-row .monaco-icon-label {
@@ -2003,7 +2002,7 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	flex-direction: column;
 	flex-wrap: wrap;
 	align-items: center;
-	border-radius: 4px;
+	border-radius: var(--vscode-cornerRadius-medium);
 	border: 1px solid var(--vscode-chat-requestBorder);
 
 	.chat-view-changes-icon {
@@ -2020,11 +2019,11 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	.insertions-and-deletions {
 		display: flex;
 		margin-right: 5px;
-		font-size: 12px;
+		font-size: 11px;
 	}
 
 	.checkpoint-file-changes-summary-header {
-		padding: 3px 3px 3px 3px;
+		padding: 2px 3px;
 		width: 100%;
 		display: flex;
 		box-sizing: border-box;
@@ -2045,16 +2044,21 @@ have to be updated for changes to the rules above, or to support more deeply nes
 
 	.checkpoint-file-changes-summary-header .chat-file-changes-label .monaco-button {
 		width: 100%;
+		background-color: transparent !important;
+		color: var(--vscode-descriptionForeground);
+		padding: 0;
+		gap: 2px;
 	}
 
 	.checkpoint-file-changes-summary-header .chat-file-changes-label .monaco-button .codicon {
 		font-size: 16px;
+		color: var(--vscode-descriptionForeground);
 	}
 
 	.chat-summary-list {
 		width: 100%;
 		max-width: 100%;
-		padding: 0px;
+		padding: 2px;
 		margin-bottom: 0px;
 		border-bottom: 0px;
 		border-left: 0px;
@@ -2065,6 +2069,7 @@ have to be updated for changes to the rules above, or to support more deeply nes
 
 	.chat-summary-list .monaco-icon-label {
 		display: flex;
+		padding: 0px 3px;
 	}
 
 	.chat-summary-list .monaco-scrollable-element {
@@ -2073,14 +2078,12 @@ have to be updated for changes to the rules above, or to support more deeply nes
 
 	.insertions {
 		color: var(--vscode-chat-linesAddedForeground);
-		font-weight: bold;
 		padding-left: 5px;
 		padding-right: 5px;
 	}
 
 	.deletions {
 		color: var(--vscode-chat-linesRemovedForeground);
-		font-weight: bold;
 	}
 }
 
@@ -2139,7 +2142,7 @@ have to be updated for changes to the rules above, or to support more deeply nes
 }
 
 .interactive-session .chat-summary-list .monaco-list .monaco-list-row {
-	border-radius: 4px;
+	border-radius: var(--vscode-cornerRadius-small);
 }
 
 .interactive-session .chat-summary-list .monaco-list .monaco-list-row:hover {
