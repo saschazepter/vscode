@@ -16,6 +16,10 @@ export class GitService extends Disposable implements IGitService {
 		this._delegate = delegate;
 	}
 
+	clearDelegate(): void {
+		this._delegate = undefined;
+	}
+
 	async openRepository(root: URI): Promise<URI | undefined> {
 		if (!this._delegate) {
 			return undefined;

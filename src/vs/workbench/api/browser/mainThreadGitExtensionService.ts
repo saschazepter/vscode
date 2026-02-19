@@ -15,7 +15,7 @@ export class MainThreadGitExtensionService extends Disposable implements MainThr
 
 	constructor(
 		extHostContext: IExtHostContext,
-		@IGitService gitService: IGitService,
+		@IGitService private readonly gitService: IGitService,
 	) {
 		super();
 
@@ -26,5 +26,10 @@ export class MainThreadGitExtensionService extends Disposable implements MainThr
 	async openRepository(uri: URI): Promise<URI | undefined> {
 		const result = await this._proxy.$openRepository(uri);
 		return result ? URI.revive(result) : undefined;
+	}
+
+	override dispose(): void {
+		this.gitService.clearDelegate();
+		super.dispose();
 	}
 }

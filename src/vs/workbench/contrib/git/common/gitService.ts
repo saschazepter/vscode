@@ -20,10 +20,8 @@ export const IGitService = createDecorator<IGitService>('gitService');
 export interface IGitService {
 	readonly _serviceBrand: undefined;
 
-	/**
-	 * Called by MainThreadGit to wire up the ext host delegate.
-	 */
 	setDelegate(delegate: IGitExtensionService): void;
+	clearDelegate(): void;
 
 	/**
 	 * Open a git repository at the given URI.
