@@ -209,15 +209,15 @@ export class MenuEntryActionViewItem<T extends IMenuEntryActionViewItemOptions =
 		event.preventDefault();
 		event.stopPropagation();
 
+		if (this._options?.onClickAnimation && this.element && !this._accessibilityService.isMotionReduced()) {
+			const icon = this._menuItemAction.item.icon;
+			triggerClickAnimation(this.element, this._options.onClickAnimation, ThemeIcon.isThemeIcon(icon) ? icon : undefined);
+		}
+
 		try {
 			await this.actionRunner.run(this._commandAction, this._context);
 		} catch (err) {
 			this._notificationService.error(err);
-		}
-
-		if (this._options?.onClickAnimation && this.element && !this._accessibilityService.isMotionReduced()) {
-			const icon = this._menuItemAction.item.icon;
-			triggerClickAnimation(this.element, this._options.onClickAnimation, ThemeIcon.isThemeIcon(icon) ? icon : undefined);
 		}
 	}
 
