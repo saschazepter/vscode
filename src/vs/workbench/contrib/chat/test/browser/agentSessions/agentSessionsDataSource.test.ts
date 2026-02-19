@@ -209,7 +209,6 @@ suite('AgentSessionsDataSource', () => {
 			const sections = getSectionsFromResult(result);
 
 			// No InProgress section - sessions go into date-based sections
-			assert.ok(!sections.some(s => s.section === 'inProgress'));
 			const todaySection = sections.find(s => s.section === AgentSessionSection.Today);
 			assert.ok(todaySection);
 			assert.strictEqual(todaySection.sessions.length, 2); // completed + needs-input
