@@ -144,6 +144,11 @@ export interface ITipDefinition {
 		/** If true, exclude the tip until the async file check completes. Default: false. */
 		readonly excludeUntilChecked?: boolean;
 	};
+	/**
+	 * Setting keys that, if changed from their default value, make this tip ineligible.
+	 * The tip won't be shown if the user has already customized the setting it describes.
+	 */
+	readonly excludeWhenSettingsChanged?: string[];
 }
 
 /**
@@ -267,6 +272,20 @@ const TIP_CATALOG: ITipDefinition[] = [
 		when: ChatContextKeys.chatSessionIsEmpty.negate(),
 		enabledCommands: ['workbench.action.chat.sendToNewChat'],
 		excludeWhenCommandsExecuted: ['workbench.action.chat.sendToNewChat'],
+	},
+	{
+		id: 'tip.thinkingStyle',
+		message: localize('tip.thinkingStyle', "Tip: Change how the agent's reasoning is displayed with the [thinking style](command:workbench.action.openSettings?%5B%22chat.agent.thinking.style%22%5D) setting."),
+		when: ChatContextKeys.chatModeKind.isEqualTo(ChatModeKind.Agent),
+		enabledCommands: ['workbench.action.openSettings'],
+		excludeWhenSettingsChanged: ['chat.agent.thinking.style'],
+	},
+	{
+		id: 'tip.thinkingPhrases',
+		message: localize('tip.thinkingPhrases', "Tip: Customize the loading messages shown while the agent works with [thinking phrases](command:workbench.action.openSettings?%5B%22chat.agent.thinking.phrases%22%5D)."),
+		when: ChatContextKeys.chatModeKind.isEqualTo(ChatModeKind.Agent),
+		enabledCommands: ['workbench.action.openSettings'],
+		excludeWhenSettingsChanged: ['chat.agent.thinking.phrases'],
 	},
 ];
 
@@ -837,6 +856,15 @@ export class ChatTipService extends Disposable implements IChatTipService {
 			if (inspected.policyValue === false) {
 				this._logService.debug('#ChatTips: tip excluded because policy restricts auto-approve', tip.id);
 				return false;
+			}
+		}
+		if (tip.excludeWhenSettingsChanged) {
+			for (const key of tip.excludeWhenSettingsChanged) {
+				const inspected = this._configurationService.inspect(key);
+				if (inspected.userValue !== undefined || inspected.userLocalValue !== undefined || inspected.userRemoteValue !== undefined || inspected.workspaceValue !== undefined || inspected.workspaceFolderValue !== undefined) {
+					this._logService.debug('#ChatTips: tip excluded because setting was changed from default', tip.id, key);
+					return false;
+				}
 			}
 		}
 		this._logService.debug('#ChatTips: tip is eligible', tip.id);
