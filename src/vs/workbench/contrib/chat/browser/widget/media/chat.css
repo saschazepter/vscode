@@ -329,7 +329,8 @@
 	border-right: none;
 }
 
-.interactive-item-container .value .rendered-markdown table tbody tr:last-child td {
+.interactive-item-container .value .rendered-markdown table tr:last-child td,
+.interactive-item-container .value .rendered-markdown table tr:last-child th {
 	border-bottom: none;
 }
 
