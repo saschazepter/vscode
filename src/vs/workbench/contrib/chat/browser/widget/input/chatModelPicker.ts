@@ -204,8 +204,11 @@ function buildModelPickerItems(
 		}
 	}
 
-	// Add control manifest models - available ones become promoted, unavailable ones become disabled entries
+	// Add featured control manifest models - available ones become promoted, unavailable ones become disabled entries
 	for (const entry of controlModels) {
+		if (!('featured' in entry) || !entry.featured) {
+			continue;
+		}
 		const model = allModelsMap.get(entry.id) ?? modelsByMetadataId.get(entry.id);
 		if (model && !placed.has(model.identifier) && !placed.has(model.metadata.id)) {
 			placed.add(model.identifier);
