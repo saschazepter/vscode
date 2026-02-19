@@ -358,7 +358,6 @@ export class ActionList<T> extends Disposable {
 
 	private readonly _collapsedSections = new Set<string>();
 	private _filterText = '';
-	private _suppressHover = false;
 	private readonly _filterInput: HTMLInputElement | undefined;
 	private readonly _filterContainer: HTMLElement | undefined;
 	private _lastMinWidth = 0;
@@ -447,7 +446,7 @@ export class ActionList<T> extends Disposable {
 
 		this._register(this._list.onMouseClick(e => this.onListClick(e)));
 		this._register(this._list.onMouseOver(e => this.onListHover(e)));
-		this._register(this._list.onDidChangeFocus(() => this.onFocus()));
+		this._register(this._list.onDidChangeFocus(e => this.onFocus(e.browserEvent)));
 		this._register(this._list.onDidChangeSelection(e => this.onListSelection(e)));
 
 		this._allMenuItems = items;
@@ -625,21 +624,16 @@ export class ActionList<T> extends Disposable {
 	}
 
 	private _focusCheckedOrFirst(): void {
-		this._suppressHover = true;
-		try {
-			// Try to focus the checked item first
-			for (let i = 0; i < this._list.length; i++) {
-				const element = this._list.element(i);
-				if (element.kind === ActionListItemKind.Action && (element.item as { checked?: boolean })?.checked) {
-					this._list.setFocus([i]);
-					this._list.reveal(i);
-					return;
-				}
+		// Try to focus the checked item first
+		for (let i = 0; i < this._list.length; i++) {
+			const element = this._list.element(i);
+			if (element.kind === ActionListItemKind.Action && (element.item as { checked?: boolean })?.checked) {
+				this._list.setFocus([i]);
+				this._list.reveal(i);
+				return;
 			}
-			this.focusNext();
-		} finally {
-			this._suppressHover = false;
 		}
+		this.focusNext();
 	}
 
 	hide(didCancel?: boolean): void {
@@ -807,7 +801,7 @@ export class ActionList<T> extends Disposable {
 		}
 	}
 
-	private onFocus() {
+	private onFocus(browserEvent?: UIEvent) {
 		const focused = this._list.getFocus();
 		if (focused.length === 0) {
 			return;
@@ -816,8 +810,8 @@ export class ActionList<T> extends Disposable {
 		const element = this._list.element(focusIndex);
 		this._delegate.onFocus?.(element.item);
 
-		// Show hover on focus change (suppress during programmatic focus)
-		if (!this._suppressHover) {
+		// Show hover only on user-driven focus changes
+		if (browserEvent) {
 			this._showHoverForElement(element, focusIndex);
 		}
 	}
