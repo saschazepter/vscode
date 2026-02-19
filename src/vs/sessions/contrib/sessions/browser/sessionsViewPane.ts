@@ -311,11 +311,8 @@ registerAction2(class RefreshAgentSessionsViewerAction extends Action2 {
 			id: 'sessionsView.refresh',
 			title: localize2('refresh', "Refresh Agent Sessions"),
 			icon: Codicon.refresh,
-			menu: [{
-				id: SessionsViewHeaderMenu,
-				group: 'navigation',
-				order: 1,
-			}],
+			f1: true,
+			category: localize2('sessionsViewCategory', "Agent Sessions"),
 		});
 	}
 	override run(accessor: ServicesAccessor) {

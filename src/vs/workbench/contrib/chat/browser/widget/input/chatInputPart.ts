@@ -998,8 +998,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 	public setCurrentLanguageModel(model: ILanguageModelChatMetadataAndIdentifier) {
 		this._currentLanguageModel.set(model, undefined);
 
-		// Record usage for the recently used models list
-		this.languageModelsService.recordModelUsage(model);
+		this.languageModelsService.addToRecentlyUsedList(model);
 
 		if (this.cachedWidth) {
 			// For quick chat and editor chat, relayout because the input may need to shrink to accomodate the model name
