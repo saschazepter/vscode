@@ -91,7 +91,7 @@ import { ChatMultiDiffContentPart } from './chatContentParts/chatMultiDiffConten
 import { ChatProgressContentPart, ChatWorkingProgressContentPart } from './chatContentParts/chatProgressContentPart.js';
 import { ChatPullRequestContentPart } from './chatContentParts/chatPullRequestContentPart.js';
 import { ChatQuotaExceededPart } from './chatContentParts/chatQuotaExceededPart.js';
-import { ChatCollapsibleListContentPart, ChatUsedReferencesListContentPart, CollapsibleListPool } from './chatContentParts/chatReferencesContentPart.js';
+import { CollapsibleListPool } from './chatContentParts/chatReferencesContentPart.js';
 import { ChatTaskContentPart } from './chatContentParts/chatTaskContentPart.js';
 import { ChatTextEditContentPart } from './chatContentParts/chatTextEditContentPart.js';
 import { ChatThinkingContentPart } from './chatContentParts/chatThinkingContentPart.js';
@@ -1700,7 +1700,7 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 			} else if (content.kind === 'markdownContent') {
 				return this.renderMarkdown(content, templateData, context);
 			} else if (content.kind === 'references') {
-				return undefined;
+				return this.renderNoContent(other => other.kind === content.kind);
 			} else if (content.kind === 'codeCitations') {
 				return this.renderCodeCitations(content, context, templateData);
 			} else if (content.kind === 'toolInvocation' || content.kind === 'toolInvocationSerialized') {
@@ -1812,12 +1812,6 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 	private renderMultiDiffData(content: IChatMultiDiffData | IChatMultiDiffDataSerialized, templateData: IChatListItemTemplate, context: IChatContentPartRenderContext): IChatContentPart {
 		const multiDiffPart = this.instantiationService.createInstance(ChatMultiDiffContentPart, content, context.element);
 		return multiDiffPart;
-	}
-
-	private renderContentReferencesListData(references: IChatReferences, labelOverride: string | undefined, context: IChatContentPartRenderContext, templateData: IChatListItemTemplate): ChatCollapsibleListContentPart {
-		const referencesPart = this.instantiationService.createInstance(ChatUsedReferencesListContentPart, references.references, labelOverride, context, this._contentReferencesListPool, { expandedWhenEmptyResponse: checkModeOption(this.delegate.currentChatMode(), this.rendererOptions.referencesExpandedWhenEmptyResponse) });
-
-		return referencesPart;
 	}
 
 	private renderCodeCitations(citations: IChatCodeCitations, context: IChatContentPartRenderContext, templateData: IChatListItemTemplate): ChatCodeCitationContentPart {
