@@ -31,7 +31,7 @@ export const AskQuestionsToolId = 'vscode_askQuestions';
 // Example text at each limit:
 // - header soft (50 chars):        "Which database engine do you want to use for this?"
 // - header hard (75 chars):        "Which database engine and connection pooling strategy do you want to use here?"
-// - question soft (200 chars):     "What testing framework would you like to use for this project? Consider factors like your team's familiarity, community support, and integration with your existing CI/CD pipeline when making choice."
+// - question soft (200 chars):     "What testing framework would you like to use for this project? Consider factors like your team's familiarity, community support, and integration with your existing CI/CD pipeline when making a choice."
 // - question hard (300 chars):     "What testing framework would you like to use for this project? Consider factors like your team's familiarity with the framework, community support and documentation quality, integration with your existing CI/CD pipeline, and the specific testing needs of your application architecture when deciding."
 const SoftLimits = {
 	header: 50,
