@@ -69,17 +69,32 @@ function cleanupOverlay(duration: number) {
 export function bounceElement(element: HTMLElement, opts: { scale?: number[]; rotate?: number[]; translateY?: number[]; duration?: number }) {
 	const frames: Keyframe[] = [];
 
-	const steps = opts.scale?.length ?? opts.rotate?.length ?? opts.translateY?.length ?? 0;
+	const steps = Math.max(opts.scale?.length ?? 0, opts.rotate?.length ?? 0, opts.translateY?.length ?? 0);
+	if (steps === 0) {
+		return;
+	}
+
 	for (let i = 0; i < steps; i++) {
-		const frame: Keyframe = { offset: i / (steps - 1) };
-		if (opts.scale) {
-			frame.transform = `scale(${opts.scale[i]})`;
+		const frame: Keyframe = { offset: steps === 1 ? 1 : i / (steps - 1) };
+		let transformParts = '';
+
+		const scale = opts.scale?.[i];
+		if (scale !== undefined) {
+			transformParts += `scale(${scale})`;
 		}
-		if (opts.rotate) {
-			frame.transform = `${frame.transform ?? ''} rotate(${opts.rotate[i]}deg)`.trim();
+
+		const rotate = opts.rotate?.[i];
+		if (rotate !== undefined) {
+			transformParts += ` rotate(${rotate}deg)`;
 		}
-		if (opts.translateY) {
-			frame.transform = `${frame.transform ?? ''} translateY(${opts.translateY[i]}px)`.trim();
+
+		const translateY = opts.translateY?.[i];
+		if (translateY !== undefined) {
+			transformParts += ` translateY(${translateY}px)`;
+		}
+
+		if (transformParts) {
+			frame.transform = transformParts.trim();
 		}
 		frames.push(frame);
 	}
@@ -418,11 +433,11 @@ export function triggerRadiantLinesAnimation(element: HTMLElement) {
 		lineWrapper.appendChild(line);
 
 		line.animate([
-			{ scaleX: 1, scaleY: 0, opacity: 0.6 },
-			{ scaleX: 1, scaleY: 1, opacity: 0.6, offset: 0.2 },
-			{ scaleX: 1, scaleY: 1, opacity: 0.6, offset: 0.6 },
-			{ scaleX: 1, scaleY: 1, opacity: 0.6, offset: 0.8 },
-			{ scaleX: 0, scaleY: 0.3, opacity: 0 },
+			{ transform: 'scale(1, 0)', opacity: 0.6 },
+			{ transform: 'scale(1, 1)', opacity: 0.6, offset: 0.2 },
+			{ transform: 'scale(1, 1)', opacity: 0.6, offset: 0.6 },
+			{ transform: 'scale(1, 1)', opacity: 0.6, offset: 0.8 },
+			{ transform: 'scale(0, 0.3)', opacity: 0 },
 		], {
 			duration: 1200,
 			delay: 150,
