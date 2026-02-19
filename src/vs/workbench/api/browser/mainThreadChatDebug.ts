@@ -47,10 +47,8 @@ export class MainThreadChatDebug extends Disposable implements MainThreadChatDeb
 	}
 
 	$acceptChatDebugEvent(handle: number, dto: IChatDebugEventDto): void {
-		console.log('[chatDebug][mainThread.$acceptChatDebugEvent] DTO received:', { kind: dto.kind, id: dto.id, sessionId: dto.sessionId, agentName: (dto as { agentName?: string }).agentName });
 		const sessionId = dto.sessionId ?? this._activeSessionIds.get(handle) ?? this._chatDebugService.activeSessionId ?? '';
 		const revived = this._reviveEvent(dto, sessionId);
-		console.log('[chatDebug][mainThread.$acceptChatDebugEvent] Revived event:', { kind: revived.kind, sessionId: revived.sessionId });
 		this._chatDebugService.addEvent(revived);
 	}
 

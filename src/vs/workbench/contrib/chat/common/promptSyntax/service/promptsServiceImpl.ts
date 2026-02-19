@@ -620,7 +620,11 @@ export class PromptsService extends Disposable implements IPromptsService {
 	public async getCustomAgents(token: CancellationToken, sessionId?: string): Promise<readonly ICustomAgent[]> {
 		this._debugSessionIdOverride = sessionId;
 		try {
-			return await this.cachedCustomAgents.get(token);
+			const result = await this.cachedCustomAgents.get(token);
+			if (sessionId) {
+				this.chatDebugService.log(sessionId, `Resolve agent (${result.length} agents)`, undefined, undefined, { category: 'discovery' });
+			}
+			return result;
 		} finally {
 			this._debugSessionIdOverride = undefined;
 		}
@@ -992,7 +996,11 @@ export class PromptsService extends Disposable implements IPromptsService {
 
 		this._debugSessionIdOverride = sessionId;
 		try {
-			return await this.cachedSkills.get(token);
+			const result = await this.cachedSkills.get(token);
+			if (sessionId) {
+				this.chatDebugService.log(sessionId, `Resolve skill (${result.length} skills)`, undefined, undefined, { category: 'discovery' });
+			}
+			return result;
 		} finally {
 			this._debugSessionIdOverride = undefined;
 		}
@@ -1101,7 +1109,12 @@ export class PromptsService extends Disposable implements IPromptsService {
 	public async getHooks(token: CancellationToken, sessionId?: string): Promise<IConfiguredHooksInfo | undefined> {
 		this._debugSessionIdOverride = sessionId;
 		try {
-			return await this.cachedHooks.get(token);
+			const result = await this.cachedHooks.get(token);
+			if (sessionId) {
+				const hookCount = result ? Object.values(result.hooks).reduce((sum, arr) => sum + arr.length, 0) : 0;
+				this.chatDebugService.log(sessionId, `Resolve hook (${hookCount} hooks)`, undefined, undefined, { category: 'discovery' });
+			}
+			return result;
 		} finally {
 			this._debugSessionIdOverride = undefined;
 		}

@@ -17,7 +17,8 @@ export class ExtHostChatDebug extends Disposable implements ExtHostChatDebugShap
 	private readonly _proxy: MainThreadChatDebugShape;
 	private _provider: vscode.ChatDebugLogProvider | undefined;
 	private _nextHandle: number = 0;
-	private readonly _activeProgress = new Map<number, DisposableStore>();
+	/** Progress pipelines keyed by `${handle}:${sessionId}` so multiple sessions can stream concurrently. */
+	private readonly _activeProgress = new Map<string, DisposableStore>();
 
 	constructor(
 		@IExtHostRpcService extHostRpc: IExtHostRpcService,
@@ -26,11 +27,15 @@ export class ExtHostChatDebug extends Disposable implements ExtHostChatDebugShap
 		this._proxy = extHostRpc.getProxy(MainContext.MainThreadChatDebug);
 	}
 
-	private _cleanupProgress(handle: number): void {
-		const store = this._activeProgress.get(handle);
+	private _progressKey(handle: number, sessionId: string): string {
+		return `${handle}:${sessionId}`;
+	}
+
+	private _cleanupProgress(key: string): void {
+		const store = this._activeProgress.get(key);
 		if (store) {
 			store.dispose();
-			this._activeProgress.delete(handle);
+			this._activeProgress.delete(key);
 		}
 	}
 
@@ -44,7 +49,13 @@ export class ExtHostChatDebug extends Disposable implements ExtHostChatDebugShap
 
 		return toDisposable(() => {
 			this._provider = undefined;
-			this._cleanupProgress(handle);
+			// Clean up all progress pipelines for this handle
+			for (const [key, store] of this._activeProgress) {
+				if (key.startsWith(`${handle}:`)) {
+					store.dispose();
+					this._activeProgress.delete(key);
+				}
+			}
 			this._proxy.$unregisterChatDebugLogProvider(handle);
 		});
 	}
@@ -54,11 +65,12 @@ export class ExtHostChatDebug extends Disposable implements ExtHostChatDebugShap
 			return undefined;
 		}
 
-		// Clean up any previous progress pipeline for this handle
-		this._cleanupProgress(handle);
+		// Clean up any previous progress pipeline for this handle+session pair
+		const key = this._progressKey(handle, sessionId);
+		this._cleanupProgress(key);
 
 		const store = new DisposableStore();
-		this._activeProgress.set(handle, store);
+		this._activeProgress.set(key, store);
 
 		const emitter = store.add(new Emitter<vscode.ChatDebugEvent>());
 
@@ -73,7 +85,7 @@ export class ExtHostChatDebug extends Disposable implements ExtHostChatDebugShap
 
 		// Clean up when the token is cancelled
 		store.add(token.onCancellationRequested(() => {
-			this._cleanupProgress(handle);
+			this._cleanupProgress(key);
 		}));
 
 		try {
@@ -88,7 +100,7 @@ export class ExtHostChatDebug extends Disposable implements ExtHostChatDebugShap
 
 			return result.map(event => this._serializeEvent(event));
 		} catch (err) {
-			this._cleanupProgress(handle);
+			this._cleanupProgress(key);
 			throw err;
 		}
 		// Note: do NOT dispose progress pipeline here - keep it alive for

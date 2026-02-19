@@ -138,6 +138,11 @@ export interface IChatDebugService extends IDisposable {
 	clear(): void;
 
 	/**
+	 * Clear logged events for a specific session.
+	 */
+	clearSession(sessionId: string): void;
+
+	/**
 	 * Register an external provider that can supply additional debug events.
 	 * This is used by the extension API (ChatDebugLogProvider).
 	 */

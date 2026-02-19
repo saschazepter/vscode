@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { CancellationTokenSource } from '../../../../base/common/cancellation.js';
+import { CancellationToken, CancellationTokenSource } from '../../../../base/common/cancellation.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { Disposable, IDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { ChatDebugLogLevel, IChatDebugEvent, IChatDebugLogProvider, IChatDebugService } from './chatDebugService.js';
@@ -16,7 +16,7 @@ export class ChatDebugServiceImpl extends Disposable implements IChatDebugServic
 	readonly onDidAddEvent: Event<IChatDebugEvent> = this._onDidAddEvent.event;
 
 	private readonly _providers = new Set<IChatDebugLogProvider>();
-	private _currentInvocationCts: CancellationTokenSource | undefined;
+	private readonly _invocationCts = new Map<string, CancellationTokenSource>();
 
 	activeSessionId: string | undefined;
 	activeViewHint: 'home' | 'overview' | 'logs' | undefined;
@@ -36,7 +36,6 @@ export class ChatDebugServiceImpl extends Disposable implements IChatDebugServic
 	}
 
 	addEvent(event: IChatDebugEvent): void {
-		console.log('[chatDebug][service.addEvent] Adding event:', { kind: event.kind, sessionId: event.sessionId, id: event.id });
 		this._events.push(event);
 		this._onDidAddEvent.fire(event);
 	}
@@ -56,48 +55,72 @@ export class ChatDebugServiceImpl extends Disposable implements IChatDebugServic
 		this._events.length = 0;
 	}
 
+	clearSession(sessionId: string): void {
+		for (let i = this._events.length - 1; i >= 0; i--) {
+			if (this._events[i].sessionId === sessionId) {
+				this._events.splice(i, 1);
+			}
+		}
+	}
+
 	registerProvider(provider: IChatDebugLogProvider): IDisposable {
 		this._providers.add(provider);
+
+		// Invoke the new provider for all sessions that already have active
+		// pipelines. This handles the case where invokeProviders() was called
+		// before this provider was registered (e.g. extension activated late).
+		for (const [sessionId, cts] of this._invocationCts) {
+			if (!cts.token.isCancellationRequested) {
+				this._invokeProvider(provider, sessionId, cts.token);
+			}
+		}
+
 		return toDisposable(() => {
 			this._providers.delete(provider);
 		});
 	}
 
 	async invokeProviders(sessionId: string): Promise<void> {
-		console.log('[chatDebug][service.invokeProviders] Called for sessionId:', sessionId, 'providers:', this._providers.size);
-		// Cancel previous invocation so extension-side listeners are cleaned up
-		this._currentInvocationCts?.cancel();
-		this._currentInvocationCts?.dispose();
+		// Cancel only the previous invocation for THIS session, not others.
+		// Each session has its own pipeline so events from multiple sessions
+		// can be streamed concurrently.
+		const existingCts = this._invocationCts.get(sessionId);
+		if (existingCts) {
+			existingCts.cancel();
+			existingCts.dispose();
+		}
 
 		const cts = new CancellationTokenSource();
-		this._currentInvocationCts = cts;
+		this._invocationCts.set(sessionId, cts);
 
 		try {
-			const promises = [...this._providers].map(async (provider) => {
-				try {
-					const events = await provider.provideChatDebugLog(sessionId, cts.token);
-					console.log('[chatDebug][service.invokeProviders] Provider returned:', events?.length ?? 'undefined', 'events', events?.map(e => ({ kind: e.kind, id: e.id })));
-					if (events) {
-						for (const event of events) {
-							console.log('[chatDebug][service.invokeProviders] Adding event from provider:', { kind: event.kind, id: event.id, sessionId: event.sessionId });
-							this.addEvent({
-								...event,
-								sessionId: event.sessionId ?? sessionId,
-							});
-						}
-					}
-				} catch (err) {
-					console.error('[chatDebug][service.invokeProviders] Provider error:', err);
-				}
-			});
+			const promises = [...this._providers].map(provider =>
+				this._invokeProvider(provider, sessionId, cts.token)
+			);
 			await Promise.allSettled(promises);
 		} catch {
 			// best effort
 		}
 		// Note: do NOT dispose the CTS here - the token is used by the
 		// extension-side progress pipeline which stays alive for streaming.
-		// It will be cancelled+disposed when the next invokeProviders call
-		// starts or when the service is disposed.
+		// It will be cancelled+disposed when re-invoking the same session
+		// or when the service is disposed.
+	}
+
+	private async _invokeProvider(provider: IChatDebugLogProvider, sessionId: string, token: CancellationToken): Promise<void> {
+		try {
+			const events = await provider.provideChatDebugLog(sessionId, token);
+			if (events) {
+				for (const event of events) {
+					this.addEvent({
+						...event,
+						sessionId: event.sessionId ?? sessionId,
+					});
+				}
+			}
+		} catch {
+			// best effort
+		}
 	}
 
 	async resolveEvent(eventId: string): Promise<string | undefined> {
@@ -118,9 +141,11 @@ export class ChatDebugServiceImpl extends Disposable implements IChatDebugServic
 	}
 
 	override dispose(): void {
-		this._currentInvocationCts?.cancel();
-		this._currentInvocationCts?.dispose();
-		this._currentInvocationCts = undefined;
+		for (const cts of this._invocationCts.values()) {
+			cts.cancel();
+			cts.dispose();
+		}
+		this._invocationCts.clear();
 		super.dispose();
 	}
 }

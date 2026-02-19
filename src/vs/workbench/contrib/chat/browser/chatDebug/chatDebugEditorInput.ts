@@ -41,7 +41,7 @@ export class ChatDebugEditorInput extends EditorInput {
 	readonly resource = ChatDebugEditorInput.RESOURCE;
 
 	override getName(): string {
-		return localize('chatDebugInputName', "Debug View");
+		return localize('chatDebugInputName', "Chat Debug Panel");
 	}
 
 	override getIcon(): ThemeIcon {

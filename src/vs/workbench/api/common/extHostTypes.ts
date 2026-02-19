@@ -3485,6 +3485,12 @@ export enum ChatTodoStatus {
 	Completed = 3
 }
 
+export enum ChatDebugSubagentStatus {
+	Running = 0,
+	Completed = 1,
+	Failed = 2
+}
+
 export class ChatToolInvocationPart {
 	toolName: string;
 	toolCallId: string;

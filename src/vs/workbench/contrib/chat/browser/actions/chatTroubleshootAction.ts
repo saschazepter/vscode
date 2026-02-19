@@ -13,6 +13,7 @@ import { IChatDebugService } from '../../common/chatDebugService.js';
 import { chatSessionResourceToId } from '../../common/model/chatUri.js';
 import { ChatViewId, IChatWidgetService } from '../chat.js';
 import { CHAT_CATEGORY, CHAT_CONFIG_MENU_ID } from './chatActions.js';
+import { ChatDebugEditor } from '../chatDebug/chatDebugEditor.js';
 import { ChatDebugEditorInput } from '../chatDebug/chatDebugEditorInput.js';
 
 /**
@@ -66,28 +67,26 @@ export function registerChatTroubleshootAction() {
 		}
 
 		async run(accessor: ServicesAccessor): Promise<void> {
-			console.log('[Troubleshoot] Action triggered');
 			const editorService = accessor.get(IEditorService);
 			const chatWidgetService = accessor.get(IChatWidgetService);
 			const chatDebugService = accessor.get(IChatDebugService);
 
 			// Get the active chat session ID from the last focused widget
 			const widget = chatWidgetService.lastFocusedWidget;
-			console.log('[Troubleshoot] lastFocusedWidget:', !!widget);
 			const sessionResource = widget?.viewModel?.sessionResource;
-			console.log('[Troubleshoot] sessionResource:', sessionResource?.toString());
 			const sessionId = sessionResource ? chatSessionResourceToId(sessionResource) : '';
-			console.log('[Troubleshoot] sessionId:', sessionId);
 			chatDebugService.activeSessionId = sessionId;
 			chatDebugService.activeViewHint = 'logs';
 
-			// Invoke extension providers to fetch events for this session
-			await chatDebugService.invokeProviders(sessionId);
-			console.log('[Troubleshoot] providers invoked, events:', chatDebugService.getEvents(sessionId).length);
+			// If the debug editor is already active, navigate directly since
+			// openEditor won't re-trigger setEditorVisible for a singleton input.
+			const activePane = editorService.activeEditorPane;
+			if (activePane instanceof ChatDebugEditor && sessionId) {
+				activePane.navigateToSession(sessionId, 'logs');
+				return;
+			}
 
-			console.log('[Troubleshoot] opening editor with input:', ChatDebugEditorInput.instance.typeId, ChatDebugEditorInput.instance.resource.toString());
-			const editor = await editorService.openEditor(ChatDebugEditorInput.instance, { pinned: true });
-			console.log('[Troubleshoot] openEditor returned:', !!editor, editor?.getId());
+			await editorService.openEditor(ChatDebugEditorInput.instance, { pinned: true });
 		}
 	});
 }

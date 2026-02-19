@@ -98,31 +98,29 @@ export const chatDebugStyles = `
 
 /* ---- Breadcrumb ---- */
 .chat-debug-breadcrumb {
-	display: flex;
-	align-items: center;
-	gap: 6px;
-	padding: 8px 16px;
-	font-size: 12px;
 	flex-shrink: 0;
 	border-bottom: 1px solid var(--vscode-widget-border, transparent);
 }
-.chat-debug-breadcrumb-link {
-	border: none;
-	background: transparent;
-	color: var(--vscode-textLink-foreground);
-	cursor: pointer;
+.chat-debug-breadcrumb .monaco-breadcrumbs {
+	height: 22px;
+}
+.chat-debug-breadcrumb .monaco-breadcrumb-item {
+	display: flex;
+	align-items: center;
 	font-size: 12px;
-	padding: 0;
-	text-decoration: none;
 }
-.chat-debug-breadcrumb-link:hover {
-	text-decoration: underline;
+.chat-debug-breadcrumb .monaco-breadcrumb-item::before {
+	width: 16px;
+	height: 22px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
 }
-.chat-debug-breadcrumb-sep {
-	color: var(--vscode-descriptionForeground);
+.chat-debug-breadcrumb-item-link {
+	cursor: pointer;
 }
-.chat-debug-breadcrumb-current {
-	color: var(--vscode-foreground);
+.chat-debug-breadcrumb .monaco-breadcrumb-item:last-child .codicon:last-child {
+	display: none;
 }
 
 /* ---- Overview view ---- */
@@ -145,6 +143,16 @@ export const chatDebugStyles = `
 	font-size: 16px;
 	font-weight: 600;
 	margin: 0;
+	flex: 1;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.chat-debug-overview-title-actions {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	flex-shrink: 0;
 }
 .chat-debug-overview-section {
 	margin-bottom: 24px;
@@ -175,12 +183,31 @@ export const chatDebugStyles = `
 	font-size: 16px;
 	font-weight: 600;
 }
+.chat-debug-overview-details {
+	display: grid;
+	grid-template-columns: auto 1fr;
+	gap: 6px 16px;
+	font-size: 13px;
+}
+.chat-debug-overview-detail-row {
+	display: contents;
+}
+.chat-debug-overview-detail-label {
+	color: var(--vscode-descriptionForeground);
+	white-space: nowrap;
+}
+.chat-debug-overview-detail-value {
+	color: var(--vscode-foreground);
+}
 .chat-debug-overview-actions {
 	display: flex;
 	gap: 10px;
 	flex-wrap: wrap;
 }
 .chat-debug-overview-action-button {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
 	padding: 8px 16px;
 	border: 1px solid var(--vscode-button-border, var(--vscode-contrastBorder, transparent));
 	background: var(--vscode-button-secondaryBackground);
@@ -232,20 +259,14 @@ export const chatDebugStyles = `
 	gap: 12px;
 	flex-shrink: 0;
 }
-.chat-debug-search {
+.chat-debug-editor-header .viewpane-filter-container {
 	flex: 1;
-	max-width: 300px;
-	padding: 4px 8px;
-	border: 1px solid var(--vscode-input-border, transparent);
-	background: var(--vscode-input-background);
-	color: var(--vscode-input-foreground);
-	border-radius: 2px;
-	outline: none;
+	max-width: 500px;
 }
-.chat-debug-search:focus {
-	border-color: var(--vscode-focusBorder);
-}
-.chat-debug-filter-select {
+.chat-debug-view-mode-toggle {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
 	padding: 4px 8px;
 	border: 1px solid var(--vscode-input-border, transparent);
 	background: var(--vscode-input-background);
@@ -253,8 +274,12 @@ export const chatDebugStyles = `
 	border-radius: 2px;
 	outline: none;
 	font-size: 12px;
+	cursor: pointer;
 }
-.chat-debug-filter-select:focus {
+.chat-debug-view-mode-toggle:hover {
+	background: var(--vscode-list-hoverBackground);
+}
+.chat-debug-view-mode-toggle:focus {
 	border-color: var(--vscode-focusBorder);
 }
 .chat-debug-table-header {
@@ -315,10 +340,6 @@ export const chatDebugStyles = `
 	text-overflow: ellipsis;
 	white-space: nowrap;
 }
-.chat-debug-log-row.chat-debug-log-child {
-	padding-left: 32px;
-	opacity: 0.9;
-}
 .chat-debug-log-row.chat-debug-log-error {
 	background-color: var(--vscode-inputValidation-errorBackground, rgba(255, 0, 0, 0.1));
 	color: var(--vscode-errorForeground);
@@ -335,6 +356,7 @@ export const chatDebugStyles = `
 	overflow-y: auto;
 	padding: 8px 16px;
 	border-left: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+	box-shadow: -6px 0 6px -6px var(--vscode-widget-shadow);
 	background: var(--vscode-editorWidget-background);
 	font-size: 12px;
 	position: relative;
@@ -364,7 +386,6 @@ export const chatDebugStyles = `
 	margin: 0;
 	white-space: pre-wrap;
 	word-break: break-word;
-	font-family: var(--vscode-editor-font-family, monospace);
 	font-size: 12px;
 	user-select: text;
 	-webkit-user-select: text;
