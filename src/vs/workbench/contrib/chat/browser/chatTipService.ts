@@ -9,7 +9,7 @@ import { ContextKeyExpr, ContextKeyExpression, IContextKeyService } from '../../
 import { createDecorator, IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { IProductService } from '../../../../platform/product/common/productService.js';
 import { ChatContextKeys } from '../common/actions/chatContextKeys.js';
-import { ChatAgentLocation, ChatModeKind } from '../common/constants.js';
+import { ChatAgentLocation, ChatConfiguration, ChatModeKind } from '../common/constants.js';
 import { ConfigurationTarget, IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { Disposable, MutableDisposable } from '../../../../base/common/lifecycle.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
@@ -560,8 +560,10 @@ export class ChatTipService extends Disposable implements IChatTipService {
 
 	private static readonly _DISMISSED_TIP_KEY = 'chat.tip.dismissed';
 	private static readonly _LAST_TIP_ID_KEY = 'chat.tip.lastTipId';
+	private static readonly _YOLO_EVER_ENABLED_KEY = 'chat.tip.yoloModeEverEnabled';
 	private readonly _tracker: TipEligibilityTracker;
 	private readonly _createSlashCommandsUsageTracker: CreateSlashCommandsUsageTracker;
+	private _yoloModeEverEnabled: boolean;
 
 	constructor(
 		@IProductService private readonly _productService: IProductService,
@@ -580,6 +582,25 @@ export class ChatTipService extends Disposable implements IChatTipService {
 				this.hideTip();
 			}
 		}));
+
+		// Track whether yolo mode was ever enabled
+		this._yoloModeEverEnabled = this._storageService.getBoolean(ChatTipService._YOLO_EVER_ENABLED_KEY, StorageScope.APPLICATION, false);
+		if (!this._yoloModeEverEnabled && this._configurationService.getValue<boolean>(ChatConfiguration.GlobalAutoApprove)) {
+			this._yoloModeEverEnabled = true;
+			this._storageService.store(ChatTipService._YOLO_EVER_ENABLED_KEY, true, StorageScope.APPLICATION, StorageTarget.MACHINE);
+		}
+		if (!this._yoloModeEverEnabled) {
+			const configListener = this._register(new MutableDisposable());
+			configListener.value = this._configurationService.onDidChangeConfiguration(e => {
+				if (e.affectsConfiguration(ChatConfiguration.GlobalAutoApprove)) {
+					if (this._configurationService.getValue<boolean>(ChatConfiguration.GlobalAutoApprove)) {
+						this._yoloModeEverEnabled = true;
+						this._storageService.store(ChatTipService._YOLO_EVER_ENABLED_KEY, true, StorageScope.APPLICATION, StorageTarget.MACHINE);
+						configListener.clear();
+					}
+				}
+			});
+		}
 	}
 
 	resetSession(): void {
@@ -806,6 +827,17 @@ export class ChatTipService extends Disposable implements IChatTipService {
 		}
 		if (this._tracker.isExcluded(tip)) {
 			return false;
+		}
+		if (tip.id === 'tip.yoloMode') {
+			if (this._yoloModeEverEnabled) {
+				this._logService.debug('#ChatTips: tip excluded because yolo mode was previously enabled', tip.id);
+				return false;
+			}
+			const inspected = this._configurationService.inspect<boolean>(ChatConfiguration.GlobalAutoApprove);
+			if (inspected.policyValue === false) {
+				this._logService.debug('#ChatTips: tip excluded because policy restricts auto-approve', tip.id);
+				return false;
+			}
 		}
 		this._logService.debug('#ChatTips: tip is eligible', tip.id);
 		return true;
