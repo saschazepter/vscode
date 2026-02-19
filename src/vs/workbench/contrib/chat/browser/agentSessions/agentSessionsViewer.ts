@@ -841,6 +841,17 @@ export class AgentSessionsSorter implements ITreeSorter<IAgentSession> {
 			return 1; // a (other) comes after b (needs input)
 		}
 
+		// In Progress
+		const aInProgress = sessionA.status === AgentSessionStatus.InProgress;
+		const bInProgress = sessionB.status === AgentSessionStatus.InProgress;
+
+		if (aInProgress && !bInProgress) {
+			return -1; // a (in-progress) comes before b (finished)
+		}
+		if (!aInProgress && bInProgress) {
+			return 1; // a (finished) comes after b (in-progress)
+		}
+
 		// Archived
 		const aArchived = sessionA.isArchived();
 		const bArchived = sessionB.isArchived();
