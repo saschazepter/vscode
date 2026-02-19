@@ -78,6 +78,7 @@ export class OpenSessionWorktreeInVSCodeAction extends Action2 {
 			scheme,
 			authority: Schemas.file,
 			path: folderUri.path,
+			query: 'windowId=_blank',
 		}), { openExternal: true });
 	}
 }
