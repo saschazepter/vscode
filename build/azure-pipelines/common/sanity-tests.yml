@@ -43,11 +43,38 @@ jobs:
         sparseCheckoutDirectories: test/sanity .nvmrc
         displayName: Checkout test/sanity
 
-      - task: NodeTool@0
-        inputs:
-          versionSource: fromFile
-          versionFilePath: .nvmrc
-        displayName: Install Node.js
+      - ${{ if and(eq(parameters.os, 'windows'), eq(parameters.arch, 'arm64')) }}:
+        - script: |
+            @echo off
+            setlocal
+
+            set /p NODE_VERSION=<"$(Build.SourcesDirectory)\.nvmrc"
+            if /I "%NODE_VERSION:~0,1%"=="v" set "NODE_VERSION=%NODE_VERSION:~1%"
+
+            set "ARCHIVE_NAME=node-v%NODE_VERSION%-win-arm64.zip"
+            set "DOWNLOAD_URL=https://nodejs.org/dist/v%NODE_VERSION%/%ARCHIVE_NAME%"
+            set "ARCHIVE_PATH=$(Agent.TempDirectory)\%ARCHIVE_NAME%"
+            set "EXTRACT_ROOT=$(Agent.TempDirectory)\nodejs"
+            set "NODE_ROOT=%EXTRACT_ROOT%\node-v%NODE_VERSION%-win-arm64"
+
+            if not exist "%NODE_ROOT%\node.exe" (
+              if exist "%EXTRACT_ROOT%" rmdir /s /q "%EXTRACT_ROOT%"
+              mkdir "%EXTRACT_ROOT%"
+              curl.exe -fsSL "%DOWNLOAD_URL%" -o "%ARCHIVE_PATH%"
+              tar -xf "%ARCHIVE_PATH%" -C "%EXTRACT_ROOT%"
+            )
+
+            echo ##vso[task.prependpath]%NODE_ROOT%
+            node --version
+            npm --version
+          displayName: Install Node.js (Windows ARM64)
+
+      - ${{ if not(and(eq(parameters.os, 'windows'), eq(parameters.arch, 'arm64'))) }}:
+        - task: NodeTool@0
+          inputs:
+            versionSource: fromFile
+            versionFilePath: .nvmrc
+          displayName: Install Node.js
 
       - script: npm config set registry "$(NPM_REGISTRY)" --location=project
         workingDirectory: $(TEST_DIR)

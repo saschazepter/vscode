@@ -59,14 +59,33 @@ export class TestContext {
 	public readonly capabilities = detectCapabilities();
 
 	/**
+	 * Returns the Windows PowerShell executable path for the current host architecture.
+	 */
+	private getPowerShellPath(): string {
+		const windowsDir = process.env['windir'] ?? process.env['SystemRoot'] ?? 'C:\\Windows';
+
+		// On Windows ARM, prefer the native PowerShell host when running under emulation.
+		if (/arm64/i.test(process.env.PROCESSOR_ARCHITEW6432 || process.env.PROCESSOR_ARCHITECTURE || '')) {
+			const armNativePath = path.join(windowsDir, 'Sysnative', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+			if (fs.existsSync(armNativePath)) {
+				return armNativePath;
+			}
+		}
+
+		const systemDir = process.env.hasOwnProperty('PROCESSOR_ARCHITEW6432') ? 'Sysnative' : 'System32';
+		const powerShellPath = path.join(windowsDir, systemDir, 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+		return fs.existsSync(powerShellPath) ? powerShellPath : 'powershell';
+	}
+
+	/**
 	 * Returns the OS temp directory with expanded long names on Windows.
 	 */
-	public readonly osTempDir = (function () {
+	public readonly osTempDir = (() => {
 		let tempDir = fs.realpathSync(os.tmpdir());
 
 		// On Windows, expand short 8.3 file names to long names
 		if (os.platform() === 'win32') {
-			const result = spawnSync('powershell', ['-Command', `(Get-Item "${tempDir}").FullName`], { encoding: 'utf-8' });
+			const result = spawnSync(this.getPowerShellPath(), ['-Command', `(Get-Item "${tempDir}").FullName`], { encoding: 'utf-8' });
 			if (result.status === 0 && result.stdout) {
 				tempDir = result.stdout.trim();
 			}
@@ -361,7 +380,7 @@ export class TestContext {
 
 		this.log(`Validating Authenticode signature for ${filePath}`);
 
-		const result = this.run('powershell', '-Command', `Get-AuthenticodeSignature "${filePath}" | Select-Object -ExpandProperty Status`);
+		const result = this.run(this.getPowerShellPath(), '-Command', `Get-AuthenticodeSignature "${filePath}" | Select-Object -ExpandProperty Status`);
 		if (result.error !== undefined) {
 			this.error(`Failed to run Get-AuthenticodeSignature: ${result.error.message}`);
 		}
