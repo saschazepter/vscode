@@ -145,13 +145,13 @@ export class AgentFeedbackEditorInputContribution extends Disposable implements 
 			return;
 		}
 
-		const match = getSessionForResource(model.uri, this._chatEditingService, this._agentSessionsService);
-		if (!match) {
+		const sessionResource = getSessionForResource(model.uri, this._chatEditingService, this._agentSessionsService);
+		if (!sessionResource) {
 			this._hide();
 			return;
 		}
 
-		this._sessionResource = match.sessionResource;
+		this._sessionResource = sessionResource;
 		this._show();
 	}
 

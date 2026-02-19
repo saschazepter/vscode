@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import './agentFeedbackEditorInputContribution.js';
+import './agentFeedbackGlyphMarginContribution.js';
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
 import { registerWorkbenchContribution2, WorkbenchPhase } from '../../../../workbench/common/contributions.js';
 import { AgentFeedbackService, IAgentFeedbackService } from './agentFeedbackService.js';
