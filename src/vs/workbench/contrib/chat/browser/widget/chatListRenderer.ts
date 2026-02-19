@@ -62,7 +62,7 @@ import { ChatAgentVoteDirection, ChatAgentVoteDownReason, ChatErrorLevel, ChatRe
 import { localChatSessionType } from '../../common/chatSessionsService.js';
 import { getChatSessionType } from '../../common/model/chatUri.js';
 import { IChatRequestVariableEntry } from '../../common/attachments/chatVariableEntries.js';
-import { IChatChangesSummaryPart, IChatCodeCitations, IChatErrorDetailsPart, IChatReferences, IChatRendererContent, IChatRequestViewModel, IChatResponseViewModel, IChatViewModel, isRequestVM, isResponseVM, IChatPendingDividerViewModel, isPendingDividerVM } from '../../common/model/chatViewModel.js';
+import { IChatChangesSummaryPart, IChatCodeCitations, IChatErrorDetailsPart, IChatRendererContent, IChatRequestViewModel, IChatResponseViewModel, IChatViewModel, isRequestVM, isResponseVM, IChatPendingDividerViewModel, isPendingDividerVM } from '../../common/model/chatViewModel.js';
 import { getNWords } from '../../common/model/chatWordCounter.js';
 import { CodeBlockModelCollection } from '../../common/widget/codeBlockModelCollection.js';
 import { ChatAgentLocation, ChatConfiguration, ChatModeKind, CollapsedToolsDisplayMode, ThinkingDisplayMode } from '../../common/constants.js';
