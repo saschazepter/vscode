@@ -12,6 +12,14 @@ import { ICommandService } from '../../../../../../../platform/commands/common/c
 import { StateType } from '../../../../../../../platform/update/common/update.js';
 import { buildModelPickerItems } from '../../../../browser/widget/input/chatModelPicker.js';
 import { ILanguageModelChatMetadata, ILanguageModelChatMetadataAndIdentifier, IModelControlEntry } from '../../../../common/languageModels.js';
+import { ChatEntitlement, IChatEntitlementService } from '../../../../../../services/chat/common/chatEntitlementService.js';
+
+const stubChatEntitlementService: Partial<IChatEntitlementService> = {
+	entitlement: ChatEntitlement.Pro,
+	sentiment: { installed: true } as IChatEntitlementService['sentiment'],
+	isInternal: false,
+	anonymous: false,
+};
 
 function createModel(id: string, name: string, vendor = 'copilot'): ILanguageModelChatMetadataAndIdentifier {
 	return {
@@ -75,8 +83,9 @@ function callBuild(
 		opts.currentVSCodeVersion ?? '1.100.0',
 		opts.updateStateType ?? StateType.Idle,
 		onSelect,
-		stubCommandService,
 		opts.upgradePlanUrl,
+		stubCommandService,
+		stubChatEntitlementService as IChatEntitlementService,
 	);
 }
 
@@ -92,15 +101,21 @@ suite('buildModelPickerItems', () => {
 		assert.strictEqual(actions[0].label, 'Auto');
 	});
 
-	test('empty models list produces no items', () => {
+	test('empty models list produces auto and manage models entries', () => {
 		const items = callBuild([]);
-		assert.strictEqual(items.length, 0);
+		const actions = getActionItems(items);
+		assert.strictEqual(actions.length, 2);
+		assert.strictEqual(actions[0].label, 'Auto');
+		assert.strictEqual(actions[1].item?.id, 'manageModels');
 	});
 
-	test('only auto model produces single item with no separators', () => {
+	test('only auto model produces auto and manage models with separator', () => {
 		const items = callBuild([createAutoModel()]);
-		assert.strictEqual(getActionItems(items).length, 1);
-		assert.strictEqual(getSeparatorCount(items), 0);
+		const actions = getActionItems(items);
+		assert.strictEqual(actions.length, 2);
+		assert.strictEqual(actions[0].label, 'Auto');
+		assert.strictEqual(actions[1].item?.id, 'manageModels');
+		assert.strictEqual(getSeparatorCount(items), 1);
 	});
 
 	test('selected model appears in promoted section', () => {
@@ -423,8 +438,9 @@ suite('buildModelPickerItems', () => {
 			'1.100.0',
 			StateType.Idle,
 			onSelect,
-			stubCommandService,
 			undefined,
+			stubCommandService,
+			stubChatEntitlementService as IChatEntitlementService,
 		);
 		const gptItem = getActionItems(items).find(a => a.label === 'GPT-4o');
 		assert.ok(gptItem?.item);
