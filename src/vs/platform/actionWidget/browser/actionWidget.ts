@@ -117,11 +117,15 @@ class ActionWidgetService extends Disposable implements IActionWidgetService {
 
 		this._list.value = list;
 		if (this._list.value) {
-			// Filter input (above the list)
-			if (this._list.value.filterContainer) {
+			// Filter input at the top
+			if (this._list.value.filterContainer && this._list.value.filterPlacement === 'top') {
 				widget.appendChild(this._list.value.filterContainer);
 			}
 			widget.appendChild(this._list.value.domNode);
+			// Filter input at the bottom
+			if (this._list.value.filterContainer && this._list.value.filterPlacement === 'bottom') {
+				widget.appendChild(this._list.value.filterContainer);
+			}
 		} else {
 			throw new Error('List has no value');
 		}

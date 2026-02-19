@@ -325,9 +325,14 @@ function getKeyboardNavigationLabel<T>(item: IActionListItem<T>): string | undef
  */
 export interface IActionListOptions {
 	/**
-	 * When true, shows a filter input at the bottom of the list.
+	 * When true, shows a filter input.
 	 */
 	readonly showFilter?: boolean;
+
+	/**
+	 * Placement of the filter input. Defaults to 'top'.
+	 */
+	readonly filterPlacement?: 'top' | 'bottom';
 
 	/**
 	 * Section IDs that should be collapsed by default.
@@ -634,6 +639,10 @@ export class ActionList<T> extends Disposable {
 	 */
 	get filterContainer(): HTMLElement | undefined {
 		return this._filterContainer;
+	}
+
+	get filterPlacement(): 'top' | 'bottom' {
+		return this._options?.filterPlacement ?? 'top';
 	}
 
 	private focusCondition(element: IActionListItem<unknown>): boolean {
