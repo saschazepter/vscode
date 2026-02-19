@@ -6,8 +6,9 @@
 /* Container - button style hover */
 .command-center .agent-sessions-titlebar-container {
 	display: flex;
-	width: fit-content;
+	width: 38vw;
 	max-width: 600px;
+	display: flex;
 	flex-direction: row;
 	flex-wrap: nowrap;
 	align-items: center;
