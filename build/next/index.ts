@@ -411,7 +411,7 @@ function scanBuiltinExtensions(extensionsRoot: string): Array<{ extensionPath: s
 }
 
 /**
- * Get the date from the out directory date file, or return current date.
+ * Get the date from the out directory date file, or return the git commit date.
  */
 function readISODate(outDir: string): string {
 	try {
