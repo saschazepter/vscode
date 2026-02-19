@@ -175,10 +175,10 @@ function buildModelPickerItems(
 		controlModelsMap.set(entry.id, entry);
 	}
 	for (const id of recentModelIds) {
-		const model = allModelsMap.get(id);
+		const model = allModelsMap.get(id) ?? modelsByMetadataId.get(id);
 		if (model && !placed.has(model.identifier)) {
 			// Check if the model needs a version update
-			const entry = controlModelsMap.get(model.metadata.id) ?? controlModelsMap.get(model.identifier);
+			const entry = controlModelsMap.get(model.metadata.id);
 			if (entry?.minVSCodeVersion && !isVersionAtLeast(currentVSCodeVersion, entry.minVSCodeVersion)) {
 				unavailableModels.push({ entry, reason: 'update' });
 			} else {
