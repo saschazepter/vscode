@@ -67,6 +67,7 @@ jobs:
             echo ##vso[task.prependpath]%NODE_ROOT%
 
             echo signtool.exe verify "%NODE_ROOT%\node.exe"
+            dir /s /b "C:\Program Files (x86)\Windows Kits\signtool.exe"
             signtool.exe verify "%NODE_ROOT%\node.exe"
           displayName: Install Node.js (Windows ARM64)
 
