@@ -30,7 +30,7 @@ import { IProductService } from '../../product/common/productService.js';
 import { asJson, IRequestService } from '../../request/common/request.js';
 import { ITelemetryService } from '../../telemetry/common/telemetry.js';
 import { AvailableForDownload, DisablementReason, IUpdate, State, StateType, UpdateType } from '../common/update.js';
-import { AbstractUpdateService, createUpdateURL, IUpdateURLOptions, UpdateErrorClassification } from './abstractUpdateService.js';
+import { AbstractUpdateService, createUpdateURL, getUpdateRequestHeaders, IUpdateURLOptions, UpdateErrorClassification } from './abstractUpdateService.js';
 
 interface IAvailableUpdate {
 	packagePath: string;
@@ -181,7 +181,8 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 			this.setState(State.CheckingForUpdates(explicit));
 		}
 
-		this.requestService.request({ url }, CancellationToken.None)
+		const headers = getUpdateRequestHeaders(this.productService.version);
+		this.requestService.request({ url, headers }, CancellationToken.None)
 			.then<IUpdate | null>(asJson)
 			.then(update => {
 				const updateType = getUpdateType();

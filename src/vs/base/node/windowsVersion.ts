@@ -92,6 +92,15 @@ export function getWindowsBuildNumberSync(): number {
 }
 
 /**
+ * Gets the cached Windows release string synchronously.
+ * Falls back to os.release() if the cache hasn't been initialized yet.
+ * @returns The Windows version in Major.Minor.Build format (e.g., "10.0.19041")
+ */
+export function getWindowsReleaseSync(): string {
+	return versionInfo?.release ?? os.release();
+}
+
+/**
  * Parses the Windows build number from os.release().
  * This is used as a fallback when registry reading is not available.
  */
