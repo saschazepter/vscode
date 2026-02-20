@@ -81,16 +81,18 @@ export class ChatWindowNotifier extends Disposable implements IWorkbenchContribu
 		const widget = this._chatWidgetService.getWidgetBySessionResource(sessionResource);
 		const targetWindow = widget ? dom.getWindow(widget.domNode) : mainWindow;
 
-		// Only notify if window doesn't have focus (unless 'always' mode)
-		if (mode !== ChatNotificationMode.Always && targetWindow.document.hasFocus()) {
+		const isFocused = targetWindow.document.hasFocus();
+		if (mode !== ChatNotificationMode.Always && isFocused) {
 			return;
 		}
 
 		// Clear any existing notification for this session
 		this._clearNotification(sessionResource);
 
-		// Focus window in notify mode (flash taskbar/dock)
-		await this._hostService.focus(targetWindow, { mode: FocusMode.Notify });
+		// Focus window in notify mode (flash taskbar/dock) if not already focused
+		if (!isFocused) {
+			await this._hostService.focus(targetWindow, { mode: FocusMode.Notify });
+		}
 
 		// Create OS notification
 		const notificationTitle = info.title ? localize('chatTitle', "Chat: {0}", info.title) : localize('chat.untitledChat', "Untitled Chat");

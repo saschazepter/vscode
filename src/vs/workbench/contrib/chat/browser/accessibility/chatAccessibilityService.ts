@@ -101,8 +101,8 @@ export class ChatAccessibilityService extends Disposable implements IChatAccessi
 			return;
 		}
 
-		// Only notify if window doesn't have focus (unless 'always' mode)
-		if (mode !== ChatNotificationMode.Always && targetWindow.document.hasFocus()) {
+		const isFocused = targetWindow.document.hasFocus();
+		if (mode !== ChatNotificationMode.Always && isFocused) {
 			return;
 		}
 
@@ -111,7 +111,10 @@ export class ChatAccessibilityService extends Disposable implements IChatAccessi
 			return;
 		}
 
-		await this._hostService.focus(targetWindow, { mode: FocusMode.Notify });
+		// Focus window in notify mode (flash taskbar/dock) if not already focused
+		if (!isFocused) {
+			await this._hostService.focus(targetWindow, { mode: FocusMode.Notify });
+		}
 
 		// Dispose any previous unhandled notifications to avoid replacement/coalescing.
 		this.toasts.clearAndDisposeAll();
