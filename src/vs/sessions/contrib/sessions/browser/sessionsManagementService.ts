@@ -25,6 +25,7 @@ import { IWorkspaceContextService } from '../../../../platform/workspace/common/
 import { IWorkspaceEditingService } from '../../../../workbench/services/workspaces/common/workspaceEditing.js';
 import { IViewsService } from '../../../../workbench/services/views/common/viewsService.js';
 import { AgentSessionProviders } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessions.js';
+import { IPendingSession, LocalPendingSession, RemotePendingSession } from '../chat/browser/pendingSession.js';
 
 export const IsNewChatSessionContext = new RawContextKey<boolean>('isNewChatSession', true);
 
@@ -79,6 +80,12 @@ export interface ISessionsManagementService {
 	 * Create a new session and set it as active, without opening a chat view.
 	 */
 	createNewPendingSession(pendingSessionResource: URI): Promise<IActiveSessionItem>;
+
+	/**
+	 * Create a pending session object for the given target type.
+	 * Local sessions collect options locally; remote sessions notify the extension.
+	 */
+	createPendingSessionForTarget(target: AgentSessionProviders, sessionResource: URI, defaultRepoUri?: URI): IPendingSession;
 
 	/**
 	 * Open a new session, apply options, and send the initial request.
@@ -253,6 +260,13 @@ export class SessionsManagementService extends Disposable implements ISessionsMa
 		const activeSessionItem = { ...chatSessionItem, repository, worktree: undefined };
 		this._activeSession.set(activeSessionItem, undefined);
 		return activeSessionItem;
+	}
+
+	createPendingSessionForTarget(target: AgentSessionProviders, sessionResource: URI, defaultRepoUri?: URI): IPendingSession {
+		if (target === AgentSessionProviders.Background || target === AgentSessionProviders.Local) {
+			return new LocalPendingSession(sessionResource, defaultRepoUri);
+		}
+		return new RemotePendingSession(sessionResource, this.chatSessionsService, this.logService);
 	}
 
 	/**
