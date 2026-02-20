@@ -15,6 +15,8 @@ import { IActiveSessionItem } from '../../sessions/browser/sessionsManagementSer
 
 import { IChatRequestVariableEntry } from '../../../../workbench/contrib/chat/common/attachments/chatVariableEntries.js';
 
+export type NewSessionChangeType = 'repoUri' | 'isolationMode' | 'branch' | 'options';
+
 /**
  * A new session represents a session being configured before the first
  * request is sent. It holds the user's selections (repoUri, isolationMode)
@@ -31,7 +33,7 @@ export interface INewSession {
 	readonly query: string | undefined;
 	readonly attachedContext: IChatRequestVariableEntry[] | undefined;
 	readonly selectedOptions: ReadonlyMap<string, IChatSessionProviderOptionItem>;
-	readonly onDidChange: Event<void>;
+	readonly onDidChange: Event<NewSessionChangeType>;
 	setRepoUri(uri: URI): void;
 	setIsolationMode(mode: IsolationMode): void;
 	setBranch(branch: string | undefined): void;
@@ -59,8 +61,8 @@ export class LocalNewSession extends Disposable implements INewSession {
 	private _query: string | undefined;
 	private _attachedContext: IChatRequestVariableEntry[] | undefined;
 
-	private readonly _onDidChange = this._register(new Emitter<void>());
-	readonly onDidChange: Event<void> = this._onDidChange.event;
+	private readonly _onDidChange = this._register(new Emitter<NewSessionChangeType>());
+	readonly onDidChange: Event<NewSessionChangeType> = this._onDidChange.event;
 
 	readonly target = AgentSessionProviders.Background;
 	readonly selectedOptions = new Map<string, IChatSessionProviderOptionItem>();
@@ -90,14 +92,14 @@ export class LocalNewSession extends Disposable implements INewSession {
 		this._repoUri = uri;
 		this._isolationMode = 'folder';
 		this._branch = undefined;
-		this._onDidChange.fire();
+		this._onDidChange.fire('repoUri');
 		this.setOption(REPOSITORY_OPTION_ID, uri.fsPath);
 	}
 
 	setIsolationMode(mode: IsolationMode): void {
 		if (this._isolationMode !== mode) {
 			this._isolationMode = mode;
-			this._onDidChange.fire();
+			this._onDidChange.fire('isolationMode');
 			this.setOption(ISOLATION_OPTION_ID, mode);
 		}
 	}
@@ -105,7 +107,7 @@ export class LocalNewSession extends Disposable implements INewSession {
 	setBranch(branch: string | undefined): void {
 		if (this._branch !== branch) {
 			this._branch = branch;
-			this._onDidChange.fire();
+			this._onDidChange.fire('branch');
 			this.setOption(BRANCH_OPTION_ID, branch ?? '');
 		}
 	}
@@ -148,8 +150,8 @@ export class RemoteNewSession extends Disposable implements INewSession {
 	private _query: string | undefined;
 	private _attachedContext: IChatRequestVariableEntry[] | undefined;
 
-	private readonly _onDidChange = this._register(new Emitter<void>());
-	readonly onDidChange: Event<void> = this._onDidChange.event;
+	private readonly _onDidChange = this._register(new Emitter<NewSessionChangeType>());
+	readonly onDidChange: Event<NewSessionChangeType> = this._onDidChange.event;
 
 	readonly selectedOptions = new Map<string, IChatSessionProviderOptionItem>();
 
@@ -171,18 +173,18 @@ export class RemoteNewSession extends Disposable implements INewSession {
 
 		// Listen for extension-driven option group and session option changes
 		this._register(this.chatSessionsService.onDidChangeOptionGroups(() => {
-			this._onDidChange.fire();
+			this._onDidChange.fire('options');
 		}));
 		this._register(this.chatSessionsService.onDidChangeSessionOptions((e: URI | undefined) => {
 			if (isEqual(this.resource, e)) {
-				this._onDidChange.fire();
+				this._onDidChange.fire('options');
 			}
 		}));
 	}
 
 	setRepoUri(uri: URI): void {
 		this._repoUri = uri;
-		this._onDidChange.fire();
+		this._onDidChange.fire('repoUri');
 		this.setOption('repository', uri.fsPath);
 	}
 
@@ -210,7 +212,7 @@ export class RemoteNewSession extends Disposable implements INewSession {
 		if (typeof value !== 'string') {
 			this.selectedOptions.set(optionId, value);
 		}
-		this._onDidChange.fire();
+		this._onDidChange.fire('options');
 		this.chatSessionsService.notifySessionOptionsChange(
 			this.resource,
 			[{ optionId, value }]

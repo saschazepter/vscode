@@ -128,11 +128,6 @@ class NewChatWidget extends Disposable {
 		this._branchPicker = this._register(this.instantiationService.createInstance(BranchPicker));
 		this._options = options;
 
-		// When folder changes, open repository for the new folder
-		this._register(this._folderPicker.onDidSelectFolder((folderUri) => {
-			this._openRepository(folderUri);
-		}));
-
 		// When target changes, create new session
 		this._register(this._targetPicker.onDidChangeTarget((target) => {
 			this._createNewSession();
@@ -229,15 +224,14 @@ class NewChatWidget extends Disposable {
 		this._renderExtensionPickers(true);
 
 		// Listen for session changes
-		let lastRepoUri = session.repoUri;
-		this._newSessionListener.value = session.onDidChange(() => {
-			// If repo changed, open the new repository
-			if (session.repoUri && session.repoUri !== lastRepoUri) {
-				lastRepoUri = session.repoUri;
+		this._newSessionListener.value = session.onDidChange((changeType) => {
+			if (changeType === 'repoUri' && session.repoUri) {
 				this._openRepository(session.repoUri);
 			}
-			this._syncOptionsFromSession(session.resource);
-			this._renderExtensionPickers();
+			if (changeType === 'options') {
+				this._syncOptionsFromSession(session.resource);
+				this._renderExtensionPickers();
+			}
 		});
 	}
 
