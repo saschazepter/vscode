@@ -6,7 +6,7 @@
 import { IActionWidgetService } from './actionWidget.js';
 import { IAction } from '../../../base/common/actions.js';
 import { BaseDropdown, IActionProvider, IBaseDropdownOptions } from '../../../base/browser/ui/dropdown/dropdown.js';
-import { ActionListItemKind, IActionListDelegate, IActionListItem, IActionListItemHover } from './actionList.js';
+import { ActionListItemKind, IActionListDelegate, IActionListItem, IActionListItemHover, IActionListOptions } from './actionList.js';
 import { ThemeIcon } from '../../../base/common/themables.js';
 import { Codicon } from '../../../base/common/codicons.js';
 import { getActiveElement, isHTMLElement } from '../../../base/browser/dom.js';
@@ -52,6 +52,11 @@ export interface IActionWidgetDropdownOptions extends IBaseDropdownOptions {
 	 * provided, no telemetry will be sent.
 	 */
 	readonly reporter?: { id: string; name?: string; includeOptions?: boolean };
+
+	/**
+	 * Options for the underlying ActionList (filter, collapsible sections).
+	 */
+	readonly listOptions?: IActionListOptions;
 }
 
 /**
@@ -77,7 +82,7 @@ export class ActionWidgetDropdown extends BaseDropdown {
 			return;
 		}
 
-		const actionBarActions = this._options.actionBarActions ?? this._options.actionBarActionProvider?.getActions() ?? [];
+		let actionBarActions = this._options.actionBarActions ?? this._options.actionBarActionProvider?.getActions() ?? [];
 		const actions = this._options.actions ?? this._options.actionProvider?.getActions() ?? [];
 
 		// Track the currently selected option before opening
@@ -154,13 +159,9 @@ export class ActionWidgetDropdown extends BaseDropdown {
 		const previouslyFocusedElement = getActiveElement();
 
 
-		const auxiliaryActionIds = new Set(actionBarActions.map(action => action.id));
-
 		const actionWidgetDelegate: IActionListDelegate<IActionWidgetDropdownAction> = {
 			onSelect: (action, preview) => {
-				if (!auxiliaryActionIds.has(action.id)) {
-					selectedOption = action;
-				}
+				selectedOption = action;
 				this.actionWidgetService.hide();
 				action.run();
 			},
@@ -172,30 +173,13 @@ export class ActionWidgetDropdown extends BaseDropdown {
 			}
 		};
 
-		if (actionBarActions.length) {
-			if (actionWidgetItems.length) {
-				actionWidgetItems.push({
-					label: '',
-					kind: ActionListItemKind.Separator,
-					canPreview: false,
-					disabled: false,
-					hideIcon: false,
-				});
+		actionBarActions = actionBarActions.map(action => ({
+			...action,
+			run: async (...args: unknown[]) => {
+				this.actionWidgetService.hide();
+				return action.run(...args);
 			}
-
-			for (const action of actionBarActions) {
-				actionWidgetItems.push({
-					item: action,
-					tooltip: action.tooltip,
-					kind: ActionListItemKind.Action,
-					canPreview: false,
-					group: { title: '', icon: ThemeIcon.fromId(Codicon.blank.id) },
-					disabled: !action.enabled,
-					hideIcon: false,
-					label: action.label,
-				});
-			}
-		}
+		}));
 
 		const accessibilityProvider: Partial<IListAccessibilityProvider<IActionListItem<IActionWidgetDropdownAction>>> = {
 			isChecked(element) {
@@ -204,9 +188,7 @@ export class ActionWidgetDropdown extends BaseDropdown {
 			getRole: (e) => {
 				switch (e.kind) {
 					case ActionListItemKind.Action:
-						// Auxiliary actions are not checkable options, so use 'menuitem' to
-						// avoid screen readers announcing them as unchecked checkboxes.
-						return e.item && auxiliaryActionIds.has(e.item.id) ? 'menuitem' : 'menuitemcheckbox';
+						return 'menuitemcheckbox';
 					case ActionListItemKind.Separator:
 						return 'separator';
 					default:
@@ -223,8 +205,9 @@ export class ActionWidgetDropdown extends BaseDropdown {
 			actionWidgetDelegate,
 			this._options.getAnchor?.() ?? this.element,
 			undefined,
-			[],
-			accessibilityProvider
+			actionBarActions,
+			accessibilityProvider,
+			this._options.listOptions
 		);
 	}
 

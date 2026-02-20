@@ -51,6 +51,10 @@ export class NativeTitlebarPart extends TitlebarPart {
 					this.cachedWindowControlStyles.bgColor !== this.element.style.backgroundColor ||
 					this.cachedWindowControlStyles.fgColor !== this.element.style.color
 				) {
+					this.cachedWindowControlStyles = {
+						bgColor: this.element.style.backgroundColor,
+						fgColor: this.element.style.color
+					};
 					this.nativeHostService.updateWindowControls({
 						targetWindowId: getWindowId(getWindow(this.element)),
 						backgroundColor: this.element.style.backgroundColor,
