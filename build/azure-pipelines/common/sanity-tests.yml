@@ -54,7 +54,8 @@ jobs:
               mkdir "!NODE_ROOT!"
               curl.exe -fsSL "https://nodejs.org/dist/v22.22.0/win-arm64/node.exe" -o "!NODE_EXE!"
 
-              for /f %%A in ('certutil -hashfile "!NODE_EXE!" SHA256 ^| findstr /r "^[0-9a-f]*$"') do set "ACTUAL_HASH=%%A"
+              set "ACTUAL_HASH="
+              for /f "skip=1" %%A in ('certutil -hashfile "!NODE_EXE!" SHA256') do if not defined ACTUAL_HASH set "ACTUAL_HASH=%%A"
               if /I not "!ACTUAL_HASH!"=="!EXPECTED_HASH!" (
                 echo Hash mismatch for node.exe
                 echo   expected: !EXPECTED_HASH!
