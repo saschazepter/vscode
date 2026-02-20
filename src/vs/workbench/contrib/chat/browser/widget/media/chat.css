@@ -825,6 +825,11 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	border-top-right-radius: 0;
 }
 
+.interactive-input-part:has(.chat-getting-started-tip-container > .chat-tip-widget) .chat-input-container {
+	/* Remove top border to avoid double border with the tip widget's bottom border */
+	border-top: none;
+}
+
 .interactive-session .chat-editing-session {
 	margin-bottom: -4px;
 	/* Counter the flex gap */
