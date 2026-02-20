@@ -206,7 +206,7 @@ export function buildModelPickerItems(
 			}
 			if (!model) {
 				const entry = controlModels[id];
-				if (entry) {
+				if (entry && !entry.exists) {
 					markPlaced(id);
 					promotedItems.push({ kind: 'unavailable', id, entry, reason: getUnavailableReason(entry) });
 					return true;
@@ -238,7 +238,7 @@ export function buildModelPickerItems(
 				} else {
 					promotedItems.push({ kind: 'available', model });
 				}
-			} else if (!model) {
+			} else if (!model && !entry.exists) {
 				markPlaced(entryId);
 				promotedItems.push({ kind: 'unavailable', id: entryId, entry, reason: getUnavailableReason(entry) });
 			}
