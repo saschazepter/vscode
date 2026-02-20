@@ -23,10 +23,12 @@ export interface INewSession {
 	readonly repoUri: URI | undefined;
 	readonly isolationMode: IsolationMode;
 	readonly branch: string | undefined;
+	readonly modelId: string | undefined;
 	readonly onDidChange: Event<void>;
 	setRepoUri(uri: URI): void;
 	setIsolationMode(mode: IsolationMode): void;
 	setBranch(branch: string | undefined): void;
+	setModelId(modelId: string | undefined): void;
 	setOption(optionId: string, value: IChatSessionProviderOptionItem | string): void;
 }
 
@@ -44,6 +46,7 @@ export class LocalNewSession extends Disposable implements INewSession {
 	private _repoUri: URI | undefined;
 	private _isolationMode: IsolationMode = 'worktree';
 	private _branch: string | undefined;
+	private _modelId: string | undefined;
 
 	private readonly _onDidChange = this._register(new Emitter<void>());
 	readonly onDidChange: Event<void> = this._onDidChange.event;
@@ -52,6 +55,7 @@ export class LocalNewSession extends Disposable implements INewSession {
 	get repoUri(): URI | undefined { return this._repoUri; }
 	get isolationMode(): IsolationMode { return this._isolationMode; }
 	get branch(): string | undefined { return this._branch; }
+	get modelId(): string | undefined { return this._modelId; }
 
 	constructor(
 		readonly activeSessionItem: IActiveSessionItem,
@@ -85,6 +89,10 @@ export class LocalNewSession extends Disposable implements INewSession {
 		}
 	}
 
+	setModelId(modelId: string | undefined): void {
+		this._modelId = modelId;
+	}
+
 	setOption(optionId: string, value: IChatSessionProviderOptionItem | string): void {
 		this.chatSessionsService.notifySessionOptionsChange(
 			this.resource,
@@ -102,6 +110,7 @@ export class RemoteNewSession extends Disposable implements INewSession {
 
 	private _repoUri: URI | undefined;
 	private _isolationMode: IsolationMode = 'worktree';
+	private _modelId: string | undefined;
 
 	private readonly _onDidChange = this._register(new Emitter<void>());
 	readonly onDidChange: Event<void> = this._onDidChange.event;
@@ -110,6 +119,7 @@ export class RemoteNewSession extends Disposable implements INewSession {
 	get repoUri(): URI | undefined { return this._repoUri; }
 	get isolationMode(): IsolationMode { return this._isolationMode; }
 	get branch(): string | undefined { return undefined; }
+	get modelId(): string | undefined { return this._modelId; }
 
 	constructor(
 		readonly activeSessionItem: IActiveSessionItem,
@@ -141,6 +151,10 @@ export class RemoteNewSession extends Disposable implements INewSession {
 
 	setBranch(_branch: string | undefined): void {
 		// No-op for remote sessions — branch is not relevant
+	}
+
+	setModelId(modelId: string | undefined): void {
+		this._modelId = modelId;
 	}
 
 	setOption(optionId: string, value: IChatSessionProviderOptionItem | string): void {

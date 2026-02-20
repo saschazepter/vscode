@@ -245,6 +245,12 @@ class NewChatWidget extends Disposable {
 		this._isolationModePicker.setNewSession(session);
 		this._branchPicker.setNewSession(session);
 
+		// Set the current model on the session
+		const currentModel = this._currentLanguageModel.get();
+		if (currentModel) {
+			session.setModelId(currentModel.identifier);
+		}
+
 		// Listen for session changes (e.g. extension-driven option updates for remote sessions)
 		this._newSessionListener.value = session.onDidChange(() => {
 			this._syncOptionsFromSession(session.resource);
@@ -372,6 +378,7 @@ class NewChatWidget extends Disposable {
 			currentModel: this._currentLanguageModel,
 			setModel: (model: ILanguageModelChatMetadataAndIdentifier) => {
 				this._currentLanguageModel.set(model, undefined);
+				this._newSession?.setModelId(model.identifier);
 			},
 			getModels: () => this._getAvailableModels(),
 			canManageModels: () => true,
@@ -665,7 +672,7 @@ class NewChatWidget extends Disposable {
 
 		const sendOptions: IChatSendRequestOptions = {
 			location: ChatAgentLocation.Chat,
-			userSelectedModelId: this._currentLanguageModel.get()?.identifier,
+			userSelectedModelId: this._newSession.modelId ?? this._currentLanguageModel.get()?.identifier,
 			modeInfo: {
 				kind: ChatModeKind.Agent,
 				isBuiltin: true,
