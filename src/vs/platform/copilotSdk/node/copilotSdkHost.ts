@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Emitter, Event } from '../../../base/common/event.js';
-import { Disposable, DisposableStore, toDisposable } from '../../../base/common/lifecycle.js';
+import { Disposable, DisposableMap, DisposableStore, toDisposable } from '../../../base/common/lifecycle.js';
 import { ProxyChannel } from '../../../base/parts/ipc/common/ipc.js';
 import { Server as UtilityProcessServer } from '../../../base/parts/ipc/node/ipc.mp.js';
 import {
@@ -12,6 +12,7 @@ import {
 	type ICopilotAssistantMessage,
 	type ICopilotAuthStatus,
 	type ICopilotModelInfo,
+	type ICopilotProcessOutput,
 	type ICopilotResumeSessionConfig,
 	type ICopilotSdkService,
 	type ICopilotSendOptions,
@@ -45,7 +46,8 @@ class CopilotSdkHost extends Disposable implements ICopilotSdkService {
 	private readonly _sessions = new Map<string, SdkSession>();
 	private _githubToken: string | undefined;
 	private _originalStderrWrite: typeof process.stderr.write | undefined;
-	private readonly _sessionDisposables = new Map<string, DisposableStore>();
+	private readonly _sessionDisposables = this._register(new DisposableMap<string, DisposableStore>());
+	private readonly _clientDisposables = this._register(new DisposableStore());
 
 	// --- Events ---
 	private readonly _onSessionEvent = this._register(new Emitter<ICopilotSessionEvent>());
@@ -54,8 +56,8 @@ class CopilotSdkHost extends Disposable implements ICopilotSdkService {
 	private readonly _onSessionLifecycle = this._register(new Emitter<ICopilotSessionLifecycleEvent>());
 	readonly onSessionLifecycle: Event<ICopilotSessionLifecycleEvent> = this._onSessionLifecycle.event;
 
-	private readonly _onProcessOutput = this._register(new Emitter<{ stream: 'stdout' | 'stderr'; data: string }>());
-	readonly onProcessOutput: Event<{ stream: 'stdout' | 'stderr'; data: string }> = this._onProcessOutput.event;
+	private readonly _onProcessOutput = this._register(new Emitter<ICopilotProcessOutput>());
+	readonly onProcessOutput: Event<ICopilotProcessOutput> = this._onProcessOutput.event;
 
 	// --- Lifecycle ---
 
@@ -171,13 +173,15 @@ class CopilotSdkHost extends Disposable implements ICopilotSdkService {
 		};
 
 		// Forward client lifecycle events
+		this._clientDisposables.clear();
 		for (const eventType of ['session.created', 'session.deleted', 'session.updated'] as const) {
-			this._client.on(eventType, (event) => {
+			const unsubscribe = this._client.on(eventType, (event) => {
 				const mapped = mapSessionLifecycleEvent(event);
 				if (mapped) {
 					this._onSessionLifecycle.fire(mapped);
 				}
 			});
+			this._clientDisposables.add(toDisposable(unsubscribe));
 		}
 	}
 
@@ -192,10 +196,8 @@ class CopilotSdkHost extends Disposable implements ICopilotSdkService {
 			}
 		}
 		this._sessions.clear();
-		for (const store of this._sessionDisposables.values()) {
-			store.dispose();
-		}
-		this._sessionDisposables.clear();
+		this._sessionDisposables.clearAndDisposeAll();
+		this._clientDisposables.clear();
 
 		await this._client.stop();
 		this._client = undefined;
@@ -240,8 +242,7 @@ class CopilotSdkHost extends Disposable implements ICopilotSdkService {
 		if (session) {
 			await session.destroy();
 			this._sessions.delete(sessionId);
-			this._sessionDisposables.get(sessionId)?.dispose();
-			this._sessionDisposables.delete(sessionId);
+			this._sessionDisposables.deleteAndDispose(sessionId);
 		}
 	}
 
@@ -254,8 +255,7 @@ class CopilotSdkHost extends Disposable implements ICopilotSdkService {
 	async deleteSession(sessionId: string): Promise<void> {
 		const client = await this._ensureClient();
 		this._sessions.delete(sessionId);
-		this._sessionDisposables.get(sessionId)?.dispose();
-		this._sessionDisposables.delete(sessionId);
+		this._sessionDisposables.deleteAndDispose(sessionId);
 		await client.deleteSession(sessionId);
 	}
 
