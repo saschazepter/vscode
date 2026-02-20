@@ -402,7 +402,6 @@ export interface ILanguageModelsService {
 }
 
 export interface IModelControlEntry {
-	readonly id: string;
 	readonly label: string;
 	readonly featured?: boolean;
 	readonly minVSCodeVersion?: string;
@@ -1429,7 +1428,7 @@ export class LanguageModelsService implements ILanguageModelsService {
 				if (!entry || !isObject(entry) || typeof entry.id !== 'string') {
 					continue;
 				}
-				free[entry.id] = { id: entry.id, label: entry.label, featured: entry.featured };
+				free[entry.id] = { label: entry.label, featured: entry.featured };
 			}
 		}
 
@@ -1439,7 +1438,7 @@ export class LanguageModelsService implements ILanguageModelsService {
 				if (!entry || !isObject(entry) || typeof entry.id !== 'string') {
 					continue;
 				}
-				paid[entry.id] = { id: entry.id, label: entry.label, featured: entry.featured, minVSCodeVersion: entry.minVSCodeVersion };
+				paid[entry.id] = { label: entry.label, featured: entry.featured, minVSCodeVersion: entry.minVSCodeVersion };
 			}
 		}
 

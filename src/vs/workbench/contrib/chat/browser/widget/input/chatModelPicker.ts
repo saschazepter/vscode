@@ -184,7 +184,7 @@ export function buildModelPickerItems(
 		// --- 2. Promoted section (selected + recently used + featured) ---
 		type PromotedItem =
 			| { kind: 'available'; model: ILanguageModelChatMetadataAndIdentifier }
-			| { kind: 'unavailable'; entry: IModelControlEntry; reason: 'upgrade' | 'update' | 'admin' };
+			| { kind: 'unavailable'; id: string; entry: IModelControlEntry; reason: 'upgrade' | 'update' | 'admin' };
 
 		const promotedItems: PromotedItem[] = [];
 
@@ -198,7 +198,7 @@ export function buildModelPickerItems(
 				markPlaced(model.identifier, model.metadata.id);
 				const entry = controlModels[model.metadata.id];
 				if (entry?.minVSCodeVersion && !isVersionAtLeast(currentVSCodeVersion, entry.minVSCodeVersion)) {
-					promotedItems.push({ kind: 'unavailable', entry, reason: 'update' });
+					promotedItems.push({ kind: 'unavailable', id: model.metadata.id, entry, reason: 'update' });
 				} else {
 					promotedItems.push({ kind: 'available', model });
 				}
@@ -208,7 +208,7 @@ export function buildModelPickerItems(
 				const entry = controlModels[id];
 				if (entry) {
 					markPlaced(id);
-					promotedItems.push({ kind: 'unavailable', entry, reason: getUnavailableReason(entry) });
+					promotedItems.push({ kind: 'unavailable', id, entry, reason: getUnavailableReason(entry) });
 					return true;
 				}
 			}
@@ -226,21 +226,21 @@ export function buildModelPickerItems(
 		}
 
 		// Featured models from control manifest
-		for (const entry of Object.values(controlModels)) {
-			if (!entry.featured || placed.has(entry.id)) {
+		for (const [entryId, entry] of Object.entries(controlModels)) {
+			if (!entry.featured || placed.has(entryId)) {
 				continue;
 			}
-			const model = resolveModel(entry.id);
+			const model = resolveModel(entryId);
 			if (model && !placed.has(model.identifier)) {
 				markPlaced(model.identifier, model.metadata.id);
 				if (entry.minVSCodeVersion && !isVersionAtLeast(currentVSCodeVersion, entry.minVSCodeVersion)) {
-					promotedItems.push({ kind: 'unavailable', entry, reason: 'update' });
+					promotedItems.push({ kind: 'unavailable', id: entryId, entry, reason: 'update' });
 				} else {
 					promotedItems.push({ kind: 'available', model });
 				}
 			} else if (!model) {
-				markPlaced(entry.id);
-				promotedItems.push({ kind: 'unavailable', entry, reason: getUnavailableReason(entry) });
+				markPlaced(entryId);
+				promotedItems.push({ kind: 'unavailable', id: entryId, entry, reason: getUnavailableReason(entry) });
 			}
 		}
 
@@ -259,7 +259,7 @@ export function buildModelPickerItems(
 				if (item.kind === 'available') {
 					items.push(createModelItem(createModelAction(item.model, selectedModelId, onSelect), item.model));
 				} else {
-					items.push(createUnavailableModelItem(item.entry, item.reason, upgradePlanUrl, updateStateType));
+					items.push(createUnavailableModelItem(item.id, item.entry, item.reason, upgradePlanUrl, updateStateType));
 				}
 			}
 		}
@@ -301,7 +301,7 @@ export function buildModelPickerItems(
 			for (const model of otherModels) {
 				const entry = controlModels[model.metadata.id] ?? controlModels[model.identifier];
 				if (entry?.minVSCodeVersion && !isVersionAtLeast(currentVSCodeVersion, entry.minVSCodeVersion)) {
-					items.push(createUnavailableModelItem(entry, 'update', upgradePlanUrl, updateStateType, ModelPickerSection.Other));
+					items.push(createUnavailableModelItem(model.metadata.id, entry, 'update', upgradePlanUrl, updateStateType, ModelPickerSection.Other));
 				} else {
 					items.push(createModelItem(createModelAction(model, selectedModelId, onSelect, ModelPickerSection.Other), model));
 				}
@@ -373,6 +373,7 @@ export function buildModelPickerItems(
 }
 
 function createUnavailableModelItem(
+	id: string,
 	entry: IModelControlEntry,
 	reason: 'upgrade' | 'update' | 'admin',
 	upgradePlanUrl: string | undefined,
@@ -405,7 +406,7 @@ function createUnavailableModelItem(
 
 	return {
 		item: {
-			id: entry.id,
+			id,
 			enabled: false,
 			checked: false,
 			class: undefined,
