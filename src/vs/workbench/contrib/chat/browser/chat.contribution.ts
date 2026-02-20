@@ -43,7 +43,7 @@ import { ChatTodoListService, IChatTodoListService } from '../common/tools/chatT
 import { ChatTransferService, IChatTransferService } from '../common/model/chatTransferService.js';
 import { IChatVariablesService } from '../common/attachments/chatVariables.js';
 import { ChatWidgetHistoryService, IChatWidgetHistoryService } from '../common/widget/chatWidgetHistoryService.js';
-import { AgentsControlClickBehavior, ChatConfiguration } from '../common/constants.js';
+import { AgentsControlClickBehavior, ChatConfiguration, ChatNotificationMode } from '../common/constants.js';
 import { ILanguageModelIgnoredFilesService, LanguageModelIgnoredFilesService } from '../common/ignoredFiles.js';
 import { ILanguageModelsService, LanguageModelsService } from '../common/languageModels.js';
 import { ILanguageModelStatsService, LanguageModelStatsService } from '../common/languageModelStats.js';
@@ -51,7 +51,7 @@ import { ILanguageModelToolsConfirmationService } from '../common/tools/language
 import { ILanguageModelToolsService } from '../common/tools/languageModelToolsService.js';
 import { ChatPromptFilesExtensionPointHandler } from '../common/promptSyntax/chatPromptFilesContribution.js';
 import { PromptsConfig } from '../common/promptSyntax/config/config.js';
-import { INSTRUCTIONS_DEFAULT_SOURCE_FOLDER, INSTRUCTION_FILE_EXTENSION, LEGACY_MODE_DEFAULT_SOURCE_FOLDER, LEGACY_MODE_FILE_EXTENSION, PROMPT_DEFAULT_SOURCE_FOLDER, PROMPT_FILE_EXTENSION, DEFAULT_SKILL_SOURCE_FOLDERS, AGENTS_SOURCE_FOLDER, AGENT_FILE_EXTENSION, SKILL_FILENAME, CLAUDE_AGENTS_SOURCE_FOLDER, CLAUDE_RULES_SOURCE_FOLDER, DEFAULT_HOOK_FILE_PATHS } from '../common/promptSyntax/config/promptFileLocations.js';
+import { INSTRUCTIONS_DEFAULT_SOURCE_FOLDER, INSTRUCTION_FILE_EXTENSION, LEGACY_MODE_DEFAULT_SOURCE_FOLDER, LEGACY_MODE_FILE_EXTENSION, PROMPT_DEFAULT_SOURCE_FOLDER, PROMPT_FILE_EXTENSION, DEFAULT_SKILL_SOURCE_FOLDERS, AGENTS_SOURCE_FOLDER, AGENT_FILE_EXTENSION, SKILL_FILENAME, CLAUDE_AGENTS_SOURCE_FOLDER, DEFAULT_HOOK_FILE_PATHS, DEFAULT_INSTRUCTIONS_SOURCE_FOLDERS } from '../common/promptSyntax/config/promptFileLocations.js';
 import { PromptLanguageFeaturesProvider } from '../common/promptSyntax/promptFileContributions.js';
 import { AGENT_DOCUMENTATION_URL, INSTRUCTIONS_DOCUMENTATION_URL, PROMPT_DOCUMENTATION_URL, SKILL_DOCUMENTATION_URL, HOOK_DOCUMENTATION_URL } from '../common/promptSyntax/promptTypes.js';
 import { hookFileSchema, HOOK_SCHEMA_URI, HOOK_FILE_GLOB } from '../common/promptSyntax/hookSchema.js';
@@ -96,6 +96,7 @@ import { ChatAccessibilityService } from './accessibility/chatAccessibilityServi
 import './attachments/chatAttachmentModel.js';
 import './widget/input/chatStatusWidget.js';
 import { ChatAttachmentResolveService, IChatAttachmentResolveService } from './attachments/chatAttachmentResolveService.js';
+import { ChatAttachmentWidgetRegistry, IChatAttachmentWidgetRegistry } from './attachments/chatAttachmentWidgetRegistry.js';
 import { ChatMarkdownAnchorService, IChatMarkdownAnchorService } from './widget/chatContentParts/chatMarkdownAnchorService.js';
 import { ChatContextPickService, IChatContextPickService } from './attachments/chatContextPickService.js';
 import { ChatInputBoxContentProvider } from './widget/input/editor/chatEditorInputContentProvider.js';
@@ -331,10 +332,16 @@ configurationRegistry.registerConfiguration({
 			default: {
 			}
 		},
-		'chat.notifyWindowOnConfirmation': {
-			type: 'boolean',
-			description: nls.localize('chat.notifyWindowOnConfirmation', "Controls whether a chat session should present the user with an OS notification when a confirmation or question needs input while the window is not in focus. This includes a window badge as well as notification toast."),
-			default: true,
+		[ChatConfiguration.NotifyWindowOnConfirmation]: {
+			type: 'string',
+			enum: ['off', 'windowNotFocused', 'always'],
+			enumDescriptions: [
+				nls.localize('chat.notifyWindowOnConfirmation.off', "Never show OS notifications for confirmations."),
+				nls.localize('chat.notifyWindowOnConfirmation.windowNotFocused', "Show OS notifications for confirmations when the window is not focused."),
+				nls.localize('chat.notifyWindowOnConfirmation.always', "Always show OS notifications for confirmations, even when the window is focused."),
+			],
+			description: nls.localize('chat.notifyWindowOnConfirmation', "Controls whether a chat session should present the user with an OS notification when a confirmation or question needs input. This includes a window badge as well as notification toast."),
+			default: 'windowNotFocused',
 		},
 		[ChatConfiguration.AutoReply]: {
 			default: false,
@@ -479,9 +486,15 @@ configurationRegistry.registerConfiguration({
 			description: nls.localize('chat.contextUsage.enabled', "Show the context window usage indicator in the chat input."),
 		},
 		[ChatConfiguration.NotifyWindowOnResponseReceived]: {
-			type: 'boolean',
-			default: true,
-			description: nls.localize('chat.notifyWindowOnResponseReceived', "Controls whether a chat session should present the user with an OS notification when a response is received while the window is not in focus. This includes a window badge as well as notification toast."),
+			type: 'string',
+			enum: ['off', 'windowNotFocused', 'always'],
+			enumDescriptions: [
+				nls.localize('chat.notifyWindowOnResponseReceived.off', "Never show OS notifications for responses."),
+				nls.localize('chat.notifyWindowOnResponseReceived.windowNotFocused', "Show OS notifications for responses when the window is not focused."),
+				nls.localize('chat.notifyWindowOnResponseReceived.always', "Always show OS notifications for responses, even when the window is focused."),
+			],
+			default: 'windowNotFocused',
+			description: nls.localize('chat.notifyWindowOnResponseReceived', "Controls whether a chat session should present the user with an OS notification when a response is received. This includes a window badge as well as notification toast."),
 		},
 		'chat.checkpoints.enabled': {
 			type: 'boolean',
@@ -747,8 +760,7 @@ configurationRegistry.registerConfiguration({
 				INSTRUCTIONS_DOCUMENTATION_URL,
 			),
 			default: {
-				[INSTRUCTIONS_DEFAULT_SOURCE_FOLDER]: true,
-				[CLAUDE_RULES_SOURCE_FOLDER]: true,
+				...DEFAULT_INSTRUCTIONS_SOURCE_FOLDERS.map((folder) => ({ [folder.path]: true })).reduce((acc, curr) => ({ ...acc, ...curr }), {}),
 			},
 			additionalProperties: { type: 'boolean' },
 			propertyNames: {
@@ -759,8 +771,7 @@ configurationRegistry.registerConfiguration({
 			tags: ['prompts', 'reusable prompts', 'prompt snippets', 'instructions'],
 			examples: [
 				{
-					[INSTRUCTIONS_DEFAULT_SOURCE_FOLDER]: true,
-					[CLAUDE_RULES_SOURCE_FOLDER]: true,
+					[DEFAULT_INSTRUCTIONS_SOURCE_FOLDERS[0].path]: true,
 				},
 				{
 					[INSTRUCTIONS_DEFAULT_SOURCE_FOLDER]: true,
@@ -1226,6 +1237,28 @@ Registry.as<IConfigurationMigrationRegistry>(Extensions.ConfigurationMigration).
 			return { value };
 		}
 	},
+	{
+		key: ChatConfiguration.NotifyWindowOnConfirmation,
+		migrateFn: (value: unknown) => {
+			if (value === true) {
+				return { value: ChatNotificationMode.WindowNotFocused };
+			} else if (value === false) {
+				return { value: ChatNotificationMode.Off };
+			}
+			return [];
+		}
+	},
+	{
+		key: ChatConfiguration.NotifyWindowOnResponseReceived,
+		migrateFn: (value: unknown) => {
+			if (value === true) {
+				return { value: ChatNotificationMode.WindowNotFocused };
+			} else if (value === false) {
+				return { value: ChatNotificationMode.Off };
+			}
+			return [];
+		}
+	},
 ]);
 
 class ChatResolverContribution extends Disposable {
@@ -1554,6 +1587,7 @@ registerSingleton(IPromptsService, PromptsService, InstantiationType.Delayed);
 registerSingleton(IChatContextPickService, ChatContextPickService, InstantiationType.Delayed);
 registerSingleton(IChatModeService, ChatModeService, InstantiationType.Delayed);
 registerSingleton(IChatAttachmentResolveService, ChatAttachmentResolveService, InstantiationType.Delayed);
+registerSingleton(IChatAttachmentWidgetRegistry, ChatAttachmentWidgetRegistry, InstantiationType.Delayed);
 registerSingleton(IChatTodoListService, ChatTodoListService, InstantiationType.Delayed);
 registerSingleton(IChatOutputRendererService, ChatOutputRendererService, InstantiationType.Delayed);
 registerSingleton(IChatLayoutService, ChatLayoutService, InstantiationType.Delayed);
