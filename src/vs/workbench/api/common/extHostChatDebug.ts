@@ -177,72 +177,83 @@ export class ExtHostChatDebug extends Disposable implements ExtHostChatDebugShap
 			};
 		}
 
-		// Duck-type fallback: if instanceof fails (e.g. extension bundles its own
-		// copy of the API types), detect the event kind by its unique properties.
-		const duck = event as unknown as Record<string, unknown>;
-		const ctorName = duck.constructor?.name;
-		if (ctorName === 'ChatDebugToolCallEvent' || (typeof duck.toolName === 'string' && duck.toolCallId !== undefined)) {
-			const e = event as vscode.ChatDebugToolCallEvent;
-			return {
-				...base,
-				kind: 'toolCall',
-				toolName: e.toolName,
-				toolCallId: e.toolCallId,
-				input: e.input,
-				output: e.output,
-				result: e.result === ChatDebugToolCallResult.Success ? 'success'
-					: e.result === ChatDebugToolCallResult.Error ? 'error'
-						: undefined,
-				durationInMillis: e.durationInMillis,
-			};
-		} else if (ctorName === 'ChatDebugUserMessageEvent' || (Array.isArray(duck.sections) && typeof duck.message === 'string' && ctorName !== 'ChatDebugAgentResponseEvent')) {
-			const e = event as vscode.ChatDebugUserMessageEvent;
-			return {
-				...base,
-				kind: 'userMessage',
-				message: e.message,
-				sections: e.sections.map(s => ({ name: s.name, content: s.content })),
-			};
-		} else if (ctorName === 'ChatDebugAgentResponseEvent' || (Array.isArray(duck.sections) && typeof duck.message === 'string')) {
-			const e = event as vscode.ChatDebugAgentResponseEvent;
-			return {
-				...base,
-				kind: 'agentResponse',
-				message: e.message,
-				sections: e.sections.map(s => ({ name: s.name, content: s.content })),
-			};
-		} else if (ctorName === 'ChatDebugSubagentInvocationEvent' || typeof duck.agentName === 'string') {
-			const e = event as vscode.ChatDebugSubagentInvocationEvent;
-			return {
-				...base,
-				kind: 'subagentInvocation',
-				agentName: e.agentName,
-				description: e.description,
-				status: e.status as unknown as 'running' | 'completed' | 'failed' | undefined,
-				durationInMillis: e.durationInMillis,
-				toolCallCount: e.toolCallCount,
-				modelTurnCount: e.modelTurnCount,
-			};
-		} else if (ctorName === 'ChatDebugModelTurnEvent' || duck.inputTokens !== undefined || duck.outputTokens !== undefined || duck.totalTokens !== undefined) {
-			const e = event as vscode.ChatDebugModelTurnEvent;
-			return {
-				...base,
-				kind: 'modelTurn',
-				model: e.model,
-				inputTokens: e.inputTokens,
-				outputTokens: e.outputTokens,
-				totalTokens: e.totalTokens,
-				cost: e.cost,
-				durationInMillis: e.durationInMillis,
-			};
+		// Discriminant fallback: if instanceof fails (e.g. extension bundles its
+		// own copy of the API types), use the _kind property set by constructors.
+		const kind = (event as { _kind?: string })._kind;
+		switch (kind) {
+			case 'toolCall': {
+				const e = event as vscode.ChatDebugToolCallEvent;
+				return {
+					...base,
+					kind: 'toolCall',
+					toolName: e.toolName,
+					toolCallId: e.toolCallId,
+					input: e.input,
+					output: e.output,
+					result: e.result === ChatDebugToolCallResult.Success ? 'success'
+						: e.result === ChatDebugToolCallResult.Error ? 'error'
+							: undefined,
+					durationInMillis: e.durationInMillis,
+				};
+			}
+			case 'modelTurn': {
+				const e = event as vscode.ChatDebugModelTurnEvent;
+				return {
+					...base,
+					kind: 'modelTurn',
+					model: e.model,
+					inputTokens: e.inputTokens,
+					outputTokens: e.outputTokens,
+					totalTokens: e.totalTokens,
+					cost: e.cost,
+					durationInMillis: e.durationInMillis,
+				};
+			}
+			case 'generic': {
+				const e = event as vscode.ChatDebugGenericEvent;
+				return {
+					...base,
+					kind: 'generic',
+					name: e.name,
+					details: e.details,
+					level: e.level,
+					category: e.category,
+				};
+			}
+			case 'subagentInvocation': {
+				const e = event as vscode.ChatDebugSubagentInvocationEvent;
+				return {
+					...base,
+					kind: 'subagentInvocation',
+					agentName: e.agentName,
+					description: e.description,
+					status: e.status as unknown as 'running' | 'completed' | 'failed' | undefined,
+					durationInMillis: e.durationInMillis,
+					toolCallCount: e.toolCallCount,
+					modelTurnCount: e.modelTurnCount,
+				};
+			}
+			case 'userMessage': {
+				const e = event as vscode.ChatDebugUserMessageEvent;
+				return {
+					...base,
+					kind: 'userMessage',
+					message: e.message,
+					sections: e.sections.map(s => ({ name: s.name, content: s.content })),
+				};
+			}
+			case 'agentResponse': {
+				const e = event as vscode.ChatDebugAgentResponseEvent;
+				return {
+					...base,
+					kind: 'agentResponse',
+					message: e.message,
+					sections: e.sections.map(s => ({ name: s.name, content: s.content })),
+				};
+			}
 		}
 
 		// Final fallback: treat as generic
-		console.warn('[chatDebug][extHost._serializeEvent] FALLBACK to generic! Event did not match any instanceof or duck-type check.', {
-			constructor: event?.constructor?.name,
-			keys: Object.keys(event),
-			agentName: (event as { agentName?: string }).agentName,
-		});
 		const generic = event as vscode.ChatDebugGenericEvent;
 		return {
 			...base,
@@ -291,16 +302,36 @@ export class ExtHostChatDebug extends Disposable implements ExtHostChatDebugShap
 				sections: result.sections.map(s => ({ name: s.name, content: s.content })),
 			};
 		}
-		// Duck-type fallback for any object with sections + message
-		const duck = result as unknown as Record<string, unknown>;
-		if (Array.isArray(duck.sections) && typeof duck.message === 'string') {
-			const ctorName = duck.constructor?.name;
-			const isAgent = ctorName === 'ChatDebugAgentResponseEvent' || ctorName === 'ChatDebugEventMessageContent' && duck.type === ChatDebugMessageContentType.Agent;
+		// Discriminant fallback for bundled types
+		const kind = (result as { _kind?: string })._kind;
+		if (kind === 'text') {
+			return { kind: 'text', value: (result as vscode.ChatDebugEventTextContent).value };
+		}
+		if (kind === 'messageContent') {
+			const msg = result as vscode.ChatDebugEventMessageContent;
 			return {
 				kind: 'message',
-				type: isAgent ? 'agent' : 'user',
-				message: duck.message as string,
-				sections: (duck.sections as Array<{ name: string; content: string }>).map(s => ({ name: s.name, content: s.content })),
+				type: msg.type === ChatDebugMessageContentType.User ? 'user' : 'agent',
+				message: msg.message,
+				sections: msg.sections.map(s => ({ name: s.name, content: s.content })),
+			};
+		}
+		if (kind === 'userMessage') {
+			const msg = result as vscode.ChatDebugUserMessageEvent;
+			return {
+				kind: 'message',
+				type: 'user',
+				message: msg.message,
+				sections: msg.sections.map(s => ({ name: s.name, content: s.content })),
+			};
+		}
+		if (kind === 'agentResponse') {
+			const msg = result as vscode.ChatDebugAgentResponseEvent;
+			return {
+				kind: 'message',
+				type: 'agent',
+				message: msg.message,
+				sections: msg.sections.map(s => ({ name: s.name, content: s.content })),
 			};
 		}
 		return undefined;

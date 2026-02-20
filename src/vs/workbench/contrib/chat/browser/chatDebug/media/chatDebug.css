@@ -315,6 +315,18 @@
 .chat-debug-table-header .chat-debug-col-details {
 	flex: 1;
 }
+.chat-debug-logs-content {
+	display: flex;
+	flex-direction: row;
+	flex: 1;
+	overflow: hidden;
+}
+.chat-debug-logs-main {
+	display: flex;
+	flex-direction: column;
+	flex: 1;
+	overflow: hidden;
+}
 .chat-debug-logs-body {
 	display: flex;
 	flex-direction: row;
@@ -353,11 +365,11 @@
 	white-space: nowrap;
 }
 .chat-debug-log-row.chat-debug-log-error {
-	background-color: var(--vscode-inputValidation-errorBackground, rgba(255, 0, 0, 0.1));
+	background-color: var(--vscode-inputValidation-errorBackground, rgba(255, 0, 0, 0.1)) !important;
 	color: var(--vscode-errorForeground);
 }
 .chat-debug-log-row.chat-debug-log-warning {
-	background-color: var(--vscode-inputValidation-warningBackground, rgba(255, 204, 0, 0.1));
+	background-color: var(--vscode-inputValidation-warningBackground, rgba(255, 204, 0, 0.1)) !important;
 }
 .chat-debug-log-row.chat-debug-log-trace {
 	opacity: 0.7;
@@ -365,19 +377,21 @@
 .chat-debug-detail-panel {
 	flex-shrink: 0;
 	width: 350px;
-	overflow-y: auto;
-	padding: 8px 16px;
+	display: flex;
+	flex-direction: column;
 	border-left: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+	border-top: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
 	box-shadow: -6px 0 6px -6px var(--vscode-widget-shadow);
 	background: var(--vscode-editorWidget-background);
 	font-size: 12px;
 	position: relative;
+	overflow: hidden;
 }
 .chat-debug-detail-header {
 	display: flex;
 	justify-content: flex-end;
-	position: sticky;
-	top: 0;
+	padding: 8px 16px 0;
+	flex-shrink: 0;
 }
 .chat-debug-detail-button {
 	border: none;
@@ -394,8 +408,14 @@
 	opacity: 1;
 	background: var(--vscode-toolbar-hoverBackground);
 }
+.chat-debug-detail-panel > pre {
+	flex: 1;
+	overflow-y: auto;
+	min-height: 0;
+}
 .chat-debug-detail-panel pre {
 	margin: 0;
+	padding: 8px 16px;
 	white-space: pre-wrap;
 	word-break: break-word;
 	font-size: 12px;
@@ -406,7 +426,6 @@
 }
 .chat-debug-detail-panel pre:focus {
 	outline: 1px solid var(--vscode-focusBorder);
-	outline-offset: -1px;
 }
 
 /* ---- Subagent Chart view ---- */
@@ -517,8 +536,12 @@
 }
 
 /* ---- File List Content ---- */
+.chat-debug-detail-panel > .chat-debug-file-list {
+	flex: 1;
+	min-height: 0;
+}
 .chat-debug-file-list {
-	padding: 8px 12px;
+	padding: 8px 16px;
 	overflow-y: auto;
 	font-size: 12px;
 	user-select: text;
@@ -562,11 +585,13 @@
 	align-items: center;
 	padding: 2px 0;
 	gap: 4px;
-	flex-wrap: wrap;
+	overflow: hidden;
 }
 .chat-debug-file-list-row .chat-inline-anchor-widget {
-	text-wrap: wrap;
-	word-break: break-all;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	flex-shrink: 0;
 }
 .chat-debug-file-list-icon {
 	flex-shrink: 0;
@@ -588,22 +613,35 @@
 .chat-debug-file-list-badge {
 	color: var(--vscode-descriptionForeground);
 	white-space: nowrap;
-	flex-shrink: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	flex-shrink: 1;
+	min-width: 0;
 }
 .chat-debug-file-list-detail {
 	color: var(--vscode-descriptionForeground);
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
+	flex-shrink: 1;
+	min-width: 0;
 }
 
 /* ---- Message Content (User Message / Agent Response) ---- */
+.chat-debug-detail-panel > .chat-debug-message-content {
+	flex: 1;
+	min-height: 0;
+}
 .chat-debug-message-content {
-	padding: 8px 12px;
+	padding: 8px 16px;
 	overflow-y: auto;
 	font-size: 12px;
 	user-select: text;
 	-webkit-user-select: text;
+	outline: none;
+}
+.chat-debug-message-content:focus {
+	outline: 1px solid var(--vscode-focusBorder);
 }
 .chat-debug-message-content-title {
 	font-weight: 600;
@@ -667,5 +705,4 @@
 }
 .chat-debug-message-section-content:focus {
 	outline: 1px solid var(--vscode-focusBorder);
-	outline-offset: -1px;
 }

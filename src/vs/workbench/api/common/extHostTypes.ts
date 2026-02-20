@@ -3574,6 +3574,7 @@ export enum ChatDebugToolCallResult {
 }
 
 export class ChatDebugToolCallEvent {
+	readonly _kind = 'toolCall';
 	id?: string;
 	sessionId?: string;
 	created: Date;
@@ -3592,6 +3593,7 @@ export class ChatDebugToolCallEvent {
 }
 
 export class ChatDebugModelTurnEvent {
+	readonly _kind = 'modelTurn';
 	id?: string;
 	sessionId?: string;
 	created: Date;
@@ -3609,6 +3611,7 @@ export class ChatDebugModelTurnEvent {
 }
 
 export class ChatDebugGenericEvent {
+	readonly _kind = 'generic';
 	id?: string;
 	sessionId?: string;
 	created: Date;
@@ -3626,6 +3629,7 @@ export class ChatDebugGenericEvent {
 }
 
 export class ChatDebugSubagentInvocationEvent {
+	readonly _kind = 'subagentInvocation';
 	id?: string;
 	sessionId?: string;
 	created: Date;
@@ -3654,6 +3658,7 @@ export class ChatDebugMessageSection {
 }
 
 export class ChatDebugUserMessageEvent {
+	readonly _kind = 'userMessage';
 	id?: string;
 	sessionId?: string;
 	created: Date;
@@ -3669,6 +3674,7 @@ export class ChatDebugUserMessageEvent {
 }
 
 export class ChatDebugAgentResponseEvent {
+	readonly _kind = 'agentResponse';
 	id?: string;
 	sessionId?: string;
 	created: Date;
@@ -3684,6 +3690,7 @@ export class ChatDebugAgentResponseEvent {
 }
 
 export class ChatDebugEventTextContent {
+	readonly _kind = 'text';
 	value: string;
 
 	constructor(value: string) {
@@ -3697,6 +3704,7 @@ export enum ChatDebugMessageContentType {
 }
 
 export class ChatDebugEventMessageContent {
+	readonly _kind = 'messageContent';
 	type: ChatDebugMessageContentType;
 	message: string;
 	sections: ChatDebugMessageSection[];

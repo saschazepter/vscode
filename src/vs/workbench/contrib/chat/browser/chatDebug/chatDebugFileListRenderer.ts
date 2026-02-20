@@ -10,6 +10,7 @@ import { Codicon } from '../../../../../base/common/codicons.js';
 import { DisposableStore } from '../../../../../base/common/lifecycle.js';
 import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { URI } from '../../../../../base/common/uri.js';
+import { dirname } from '../../../../../base/common/resources.js';
 import { ILanguageService } from '../../../../../editor/common/languages/language.js';
 import { getIconClasses } from '../../../../../editor/common/services/getIconClasses.js';
 import { IModelService } from '../../../../../editor/common/services/model.js';
@@ -24,9 +25,35 @@ import { InlineAnchorWidget } from '../widget/chatContentParts/chatInlineAnchorW
 const $ = DOM.$;
 
 /**
+ * Map a discovery type string to its corresponding settings key.
+ */
+function getSettingsKeyForDiscoveryType(discoveryType: string): string | undefined {
+	switch (discoveryType) {
+		case 'prompt': return 'chat.promptFilesLocations';
+		case 'instructions': return 'chat.instructionsFilesLocations';
+		case 'agent': return 'chat.agentFilesLocations';
+		case 'skill': return 'chat.agentSkillsLocations';
+		case 'hook': return 'chat.hookFilesLocations';
+		default: return undefined;
+	}
+}
+
+/**
+ * Get a display label for a file's location.
+ * Extension files show the extension ID,
+ * all other files show the relative (or tildified) parent folder path.
+ */
+function getFileLocationLabel(file: { uri: URI; storage?: string; extensionId?: string }, labelService: ILabelService): string {
+	if (file.extensionId) {
+		return file.extensionId;
+	}
+	return labelService.getUriLabel(dirname(file.uri), { relative: true });
+}
+
+/**
  * Create a file link element styled like the chat panel's InlineAnchorWidget.
  */
-function createInlineFileLink(uri: URI, displayText: string, fileKind: FileKind, openerService: IOpenerService, modelService: IModelService, languageService: ILanguageService, hoverService: IHoverService, labelService: ILabelService, disposables: DisposableStore): HTMLElement {
+function createInlineFileLink(uri: URI, displayText: string, fileKind: FileKind, openerService: IOpenerService, modelService: IModelService, languageService: ILanguageService, hoverService: IHoverService, labelService: ILabelService, disposables: DisposableStore, hoverSuffix?: string): HTMLElement {
 	const link = $(`a.${InlineAnchorWidget.className}.show-file-icons`);
 	link.style.cursor = 'pointer';
 
@@ -37,13 +64,34 @@ function createInlineFileLink(uri: URI, displayText: string, fileKind: FileKind,
 	DOM.append(link, $('span.icon-label', undefined, displayText));
 
 	const relativeLabel = labelService.getUriLabel(uri, { relative: true });
-	disposables.add(hoverService.setupManagedHover(getDefaultHoverDelegate('element'), link, relativeLabel));
+	const hoverText = hoverSuffix ? `${relativeLabel} ${hoverSuffix}` : relativeLabel;
+	disposables.add(hoverService.setupManagedHover(getDefaultHoverDelegate('element'), link, hoverText));
 	disposables.add(DOM.addDisposableListener(link, DOM.EventType.CLICK, (e) => {
 		e.preventDefault();
 		openerService.open(uri);
 	}));
 
 	return link;
+}
+
+/**
+ * Append a location badge to a row. If the file comes from an extension,
+ * the badge is a clickable link that opens the extension in the marketplace.
+ */
+function appendLocationBadge(row: HTMLElement, file: { extensionId?: string }, badgeText: string, cssClass: string, openerService: IOpenerService, hoverService: IHoverService, disposables: DisposableStore): void {
+	if (file.extensionId) {
+		const link = DOM.append(row, $(`a.${cssClass}`));
+		link.textContent = badgeText;
+		link.style.cursor = 'pointer';
+		disposables.add(hoverService.setupManagedHover(getDefaultHoverDelegate('element'), link, localize('chatDebug.openExtension', "Open {0} in Extensions", file.extensionId)));
+		disposables.add(DOM.addDisposableListener(link, DOM.EventType.CLICK, (e) => {
+			e.preventDefault();
+			e.stopPropagation();
+			openerService.open(URI.parse(`command:extension.open?${encodeURIComponent(JSON.stringify([file.extensionId]))}`), { allowCommands: true });
+		}));
+	} else {
+		DOM.append(row, $(`span.${cssClass}`, undefined, badgeText));
+	}
 }
 
 /**
@@ -58,34 +106,6 @@ export function renderFileListContent(content: IChatDebugEventFileListContent, o
 	DOM.append(container, $('div.chat-debug-file-list-title', undefined, localize('chatDebug.discoveryResults', "{0} Discovery Results", capitalizedType)));
 	DOM.append(container, $('div.chat-debug-file-list-summary', undefined, localize('chatDebug.totalFiles', "Total files: {0}", content.files.length)));
 
-	// Source folders
-	if (content.sourceFolders && content.sourceFolders.length > 0) {
-		const foldersSection = DOM.append(container, $('div.chat-debug-file-list-section'));
-		DOM.append(foldersSection, $('div.chat-debug-file-list-section-title', undefined,
-			localize('chatDebug.sourceFolders', "Source folders searched ({0})", content.sourceFolders.length)));
-
-		for (const folder of content.sourceFolders) {
-			const row = DOM.append(foldersSection, $('div.chat-debug-file-list-row'));
-
-			const iconClass = folder.exists ? ThemeIcon.asCSSSelector(Codicon.check) : ThemeIcon.asCSSSelector(Codicon.close);
-			DOM.append(row, $(`span.chat-debug-file-list-icon${iconClass}`));
-
-			row.appendChild(createInlineFileLink(folder.uri, folder.uri.path, FileKind.FOLDER, openerService, modelService, languageService, hoverService, labelService, disposables));
-
-			DOM.append(row, $('span.chat-debug-file-list-badge', undefined, localize('chatDebug.storageBadge', " [{0}]", folder.storage)));
-
-			let detailText: string;
-			if (folder.exists) {
-				detailText = localize('chatDebug.fileCount', " ({0} file(s))", folder.fileCount);
-			} else if (folder.errorMessage) {
-				detailText = localize('chatDebug.folderError', " (error: {0})", folder.errorMessage);
-			} else {
-				detailText = localize('chatDebug.notFound', " (not found)");
-			}
-			DOM.append(row, $('span.chat-debug-file-list-detail', undefined, detailText));
-		}
-	}
-
 	// Loaded files
 	const loaded = content.files.filter(f => f.status === 'loaded');
 	if (loaded.length > 0) {
@@ -96,9 +116,11 @@ export function renderFileListContent(content: IChatDebugEventFileListContent, o
 		for (const file of loaded) {
 			const row = DOM.append(section, $('div.chat-debug-file-list-row'));
 			DOM.append(row, $(`span.chat-debug-file-list-icon${ThemeIcon.asCSSSelector(Codicon.check)}`));
-			row.appendChild(createInlineFileLink(file.uri, file.name ?? file.uri.path, FileKind.FILE, openerService, modelService, languageService, hoverService, labelService, disposables));
-			DOM.append(row, $('span.chat-debug-file-list-badge', undefined,
-				file.extensionId ? localize('chatDebug.extensionBadge', " [extension: {0}]", file.extensionId) : localize('chatDebug.storageBadge', " [{0}]", file.storage)));
+			const locationBadgeText = localize('chatDebug.locationBadge', " ({0})", getFileLocationLabel(file, labelService));
+			// Only include location in tooltip when it's an extension ID (path would be redundant)
+			const hoverSuffix = file.extensionId ? locationBadgeText.trim() : undefined;
+			row.appendChild(createInlineFileLink(file.uri, file.name ?? file.uri.path, FileKind.FILE, openerService, modelService, languageService, hoverService, labelService, disposables, hoverSuffix));
+			appendLocationBadge(row, file, locationBadgeText, 'chat-debug-file-list-badge', openerService, hoverService, disposables);
 		}
 	}
 
@@ -112,7 +134,6 @@ export function renderFileListContent(content: IChatDebugEventFileListContent, o
 		for (const file of skipped) {
 			const row = DOM.append(section, $('div.chat-debug-file-list-row'));
 			DOM.append(row, $(`span.chat-debug-file-list-icon${ThemeIcon.asCSSSelector(Codicon.close)}`));
-			row.appendChild(createInlineFileLink(file.uri, file.name ?? file.uri.path, FileKind.FILE, openerService, modelService, languageService, hoverService, labelService, disposables));
 
 			let reasonText = ` (${file.skipReason ?? localize('chatDebug.unknown', "unknown")}`;
 			if (file.errorMessage) {
@@ -122,8 +143,92 @@ export function renderFileListContent(content: IChatDebugEventFileListContent, o
 				reasonText += localize('chatDebug.duplicateOf', ", duplicate of {0}", file.duplicateOf.path);
 			}
 			reasonText += ')';
-			DOM.append(row, $('span.chat-debug-file-list-detail', undefined, reasonText));
+			// Only include reason in tooltip when it's an extension file (path-based location is redundant)
+			const skippedHoverSuffix = file.extensionId ? reasonText.trim() : undefined;
+			row.appendChild(createInlineFileLink(file.uri, file.name ?? file.uri.path, FileKind.FILE, openerService, modelService, languageService, hoverService, labelService, disposables, skippedHoverSuffix));
+			appendLocationBadge(row, file, reasonText, 'chat-debug-file-list-detail', openerService, hoverService, disposables);
 		}
+	}
+
+	// Source folders (paths attempted) - collapsible, initially collapsed
+	if (content.sourceFolders && content.sourceFolders.length > 0) {
+		const sectionEl = DOM.append(container, $('div.chat-debug-message-section'));
+
+		const header = DOM.append(sectionEl, $('div.chat-debug-message-section-header'));
+		header.style.cursor = 'pointer';
+
+		const chevron = DOM.append(header, $('span.chat-debug-message-section-chevron'));
+		const titleEl = DOM.append(header, $('span.chat-debug-message-section-title', undefined,
+			localize('chatDebug.sourceFolders', "Sources ({0})", content.sourceFolders.length)));
+		titleEl.style.fontWeight = '600';
+
+		// Settings gear button on the right side of the header
+		const settingsKey = getSettingsKeyForDiscoveryType(content.discoveryType);
+		if (settingsKey) {
+			const gearBtn = DOM.append(header, $(`span${ThemeIcon.asCSSSelector(Codicon.settingsGear)}`));
+			gearBtn.style.cursor = 'pointer';
+			gearBtn.style.flexShrink = '0';
+			gearBtn.style.opacity = '0.7';
+			gearBtn.style.borderRadius = '3px';
+			gearBtn.style.padding = '2px';
+			disposables.add(hoverService.setupManagedHover(getDefaultHoverDelegate('mouse'), gearBtn, localize('chatDebug.openSettingsTooltip', "Configure locations")));
+			disposables.add(DOM.addDisposableListener(gearBtn, DOM.EventType.MOUSE_ENTER, () => {
+				gearBtn.style.opacity = '1';
+				gearBtn.style.background = 'var(--vscode-toolbar-hoverBackground)';
+				header.style.pointerEvents = 'none';
+				gearBtn.style.pointerEvents = 'auto';
+			}));
+			disposables.add(DOM.addDisposableListener(gearBtn, DOM.EventType.MOUSE_LEAVE, () => {
+				gearBtn.style.opacity = '0.7';
+				gearBtn.style.background = '';
+				header.style.pointerEvents = '';
+			}));
+			disposables.add(DOM.addDisposableListener(gearBtn, DOM.EventType.CLICK, (e) => {
+				e.preventDefault();
+				e.stopPropagation();
+				openerService.open(URI.parse(`command:workbench.action.openSettings?${encodeURIComponent(JSON.stringify([`@id:${settingsKey}`]))}`), { allowCommands: true });
+			}));
+		}
+
+		const contentEl = DOM.append(sectionEl, $('div'));
+		contentEl.style.padding = '8px 12px';
+		contentEl.style.overflow = 'hidden';
+
+		const capitalizedType = content.discoveryType.charAt(0).toUpperCase() + content.discoveryType.slice(1);
+		const sourcesCaption = capitalizedType.endsWith('s') ? capitalizedType : capitalizedType + 's';
+		const noteEl = DOM.append(contentEl, $('div', undefined,
+			localize('chatDebug.sourcesNote', "{0} were discovered by checking the following sources in order:", sourcesCaption)));
+		noteEl.style.marginBottom = '4px';
+		for (let i = 0; i < content.sourceFolders.length; i++) {
+			const folder = content.sourceFolders[i];
+			const row = DOM.append(contentEl, $('div'));
+			row.style.display = 'flex';
+			row.style.alignItems = 'flex-start';
+			row.style.gap = '6px';
+			row.style.padding = '1px 0';
+			const idx = DOM.append(row, $('span', undefined, `${i + 1}.`));
+			idx.style.color = 'var(--vscode-descriptionForeground)';
+			idx.style.flexShrink = '0';
+			idx.style.minWidth = '16px';
+			idx.style.textAlign = 'right';
+			const label = DOM.append(row, $('span', undefined, folder.uri.path));
+			label.style.wordBreak = 'break-all';
+		}
+
+		let collapsed = true;
+		const updateState = () => {
+			DOM.clearNode(chevron);
+			const icon = collapsed ? Codicon.chevronRight : Codicon.chevronDown;
+			chevron.classList.add(...ThemeIcon.asClassName(icon).split(' '));
+			contentEl.style.display = collapsed ? 'none' : 'block';
+		};
+		updateState();
+
+		disposables.add(DOM.addDisposableListener(header, DOM.EventType.CLICK, () => {
+			collapsed = !collapsed;
+			chevron.className = 'chat-debug-message-section-chevron';
+			updateState();
+		}));
 	}
 
 	return { element: container, disposables };
@@ -139,23 +244,6 @@ export function fileListToPlainText(content: IChatDebugEventFileListContent): st
 	lines.push(localize('chatDebug.plainText.totalFiles', "Total files: {0}", content.files.length));
 	lines.push('');
 
-	if (content.sourceFolders && content.sourceFolders.length > 0) {
-		lines.push(localize('chatDebug.plainText.sourceFolders', "Source folders searched ({0})", content.sourceFolders.length));
-		for (const folder of content.sourceFolders) {
-			const statusIcon = folder.exists ? '\u2713' : '\u2717';
-			let detail = `  ${statusIcon} ${folder.uri.path} [${folder.storage}]`;
-			if (folder.exists) {
-				detail += localize('chatDebug.plainText.fileCount', " ({0} file(s))", folder.fileCount);
-			} else if (folder.errorMessage) {
-				detail += localize('chatDebug.plainText.error', " (error: {0})", folder.errorMessage);
-			} else {
-				detail += localize('chatDebug.plainText.notFound', " (not found)");
-			}
-			lines.push(detail);
-		}
-		lines.push('');
-	}
-
 	const loaded = content.files.filter(f => f.status === 'loaded');
 	const skipped = content.files.filter(f => f.status === 'skipped');
 
@@ -163,10 +251,8 @@ export function fileListToPlainText(content: IChatDebugEventFileListContent): st
 		lines.push(localize('chatDebug.plainText.loaded', "Loaded ({0})", loaded.length));
 		for (const f of loaded) {
 			const label = f.name ?? f.uri.path;
-			const storageSuffix = f.extensionId
-				? localize('chatDebug.plainText.extensionBadge', " [extension: {0}]", f.extensionId)
-				: localize('chatDebug.plainText.storageBadge', " [{0}]", f.storage);
-			lines.push(`  \u2713 ${label} - ${f.uri.path}${storageSuffix}`);
+			const locationLabel = f.extensionId ?? dirname(f.uri).path;
+			lines.push(`  \u2713 ${label} - ${f.uri.path} (${locationLabel})`);
 		}
 		lines.push('');
 	}
@@ -185,6 +271,14 @@ export function fileListToPlainText(content: IChatDebugEventFileListContent): st
 			}
 			detail += ')';
 			lines.push(detail);
+		}
+	}
+
+	if (content.sourceFolders && content.sourceFolders.length > 0) {
+		lines.push('');
+		lines.push(localize('chatDebug.plainText.sourceFolders', "Sources ({0})", content.sourceFolders.length));
+		for (const folder of content.sourceFolders) {
+			lines.push(`  ${folder.uri.path}`);
 		}
 	}
 

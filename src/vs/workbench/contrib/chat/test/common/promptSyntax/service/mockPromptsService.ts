@@ -11,7 +11,7 @@ import { ITextModel } from '../../../../../../../editor/common/model.js';
 import { IExtensionDescription } from '../../../../../../../platform/extensions/common/extensions.js';
 import { PromptsType } from '../../../../common/promptSyntax/promptTypes.js';
 import { ParsedPromptFile } from '../../../../common/promptSyntax/promptFileParser.js';
-import { IAgentSkill, ICustomAgent, IPromptFileContext, IPromptFileResource, IPromptPath, IPromptsService, IResolvedAgentFile, PromptsStorage } from '../../../../common/promptSyntax/service/promptsService.js';
+import { IAgentSkill, ICustomAgent, IPromptFileContext, IPromptFileResource, IPromptPath, IPromptsService, IResolvedAgentFile, PromptsStorage, IPromptDiscoveryLogEntry } from '../../../../common/promptSyntax/service/promptsService.js';
 import { ResourceSet } from '../../../../../../../base/common/map.js';
 
 export class MockPromptsService implements IPromptsService {
@@ -20,6 +20,9 @@ export class MockPromptsService implements IPromptsService {
 
 	private readonly _onDidChangeCustomChatModes = new Emitter<void>();
 	readonly onDidChangeCustomAgents = this._onDidChangeCustomChatModes.event;
+
+	private readonly _onDidLogDiscovery = new Emitter<IPromptDiscoveryLogEntry>();
+	readonly onDidLogDiscovery: Event<IPromptDiscoveryLogEntry> = this._onDidLogDiscovery.event;
 
 	private _customModes: ICustomAgent[] = [];
 

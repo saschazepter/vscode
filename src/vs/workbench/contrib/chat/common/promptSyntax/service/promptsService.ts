@@ -18,6 +18,19 @@ import { IChatRequestHooks } from '../hookSchema.js';
 import { IResolvedPromptSourceFolder } from '../config/promptFileLocations.js';
 
 /**
+ * Entry emitted by the prompts service when discovery logging occurs.
+ * A debug bridge (e.g. contribution) can listen and forward these to IChatDebugService.
+ */
+export interface IPromptDiscoveryLogEntry {
+	readonly sessionId: string;
+	readonly name: string;
+	readonly details?: string;
+	readonly category?: string;
+	/** When present, the bridge should store this for later event resolution. */
+	readonly discoveryInfo?: IPromptDiscoveryInfo;
+}
+
+/**
  * Activation events for prompt file providers.
  */
 export const CUSTOM_AGENT_PROVIDER_ACTIVATION_EVENT = 'onCustomAgentProvider';
@@ -479,4 +492,10 @@ export interface IPromptsService extends IDisposable {
 	 * @param sessionId Optional session ID to scope debug logging to a specific session.
 	 */
 	getInstructionFiles(token: CancellationToken, sessionId?: string): Promise<readonly IPromptPath[]>;
+
+	/**
+	 * Fired when a discovery-related log entry is produced.
+	 * Listeners (such as a debug bridge) can forward these to IChatDebugService.
+	 */
+	readonly onDidLogDiscovery: Event<IPromptDiscoveryLogEntry>;
 }

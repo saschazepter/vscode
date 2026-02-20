@@ -429,19 +429,15 @@ export class AgentSessionsModel extends Disposable implements IAgentSessionsMode
 
 		// Sessions changes
 		this._register(this.chatSessionsService.onDidChangeItemsProviders(({ chatSessionType }) => {
-			console.debug('[AgentSessionsModel] onDidChangeItemsProviders fired for:', chatSessionType);
 			this.resolve(chatSessionType);
 		}));
 		this._register(this.chatSessionsService.onDidChangeAvailability(() => {
-			console.debug('[AgentSessionsModel] onDidChangeAvailability fired');
 			this.resolve(undefined);
 		}));
 		this._register(this.chatSessionsService.onDidChangeSessionItems(({ chatSessionType }) => {
-			console.debug('[AgentSessionsModel] onDidChangeSessionItems fired for:', chatSessionType);
 			this.updateItems([chatSessionType], CancellationToken.None);
 		}));
 		this._register(this.workspaceContextService.onDidChangeWorkspaceFolders(() => {
-			console.debug('[AgentSessionsModel] onDidChangeWorkspaceFolders fired');
 			this.resolve(undefined);
 		}));
 
@@ -457,7 +453,6 @@ export class AgentSessionsModel extends Disposable implements IAgentSessionsMode
 	}
 
 	async resolve(provider: string | string[] | undefined): Promise<void> {
-		console.debug('[AgentSessionsModel] resolve() called with provider:', provider);
 		if (Array.isArray(provider)) {
 			for (const p of provider) {
 				this.providersToResolve.add(p);
@@ -494,7 +489,6 @@ export class AgentSessionsModel extends Disposable implements IAgentSessionsMode
 	 * Update the sessions by fetching from the service. This does not trigger an explicit refresh
 	 */
 	private async updateItems(providerFilter: readonly string[] | undefined, token: CancellationToken): Promise<void> {
-		console.debug('[AgentSessionsModel] updateItems() called with providerFilter:', providerFilter);
 		const mapSessionContributionToType = new Map<string, IChatSessionsExtensionPoint>();
 		for (const contribution of this.chatSessionsService.getAllChatSessionContributions()) {
 			mapSessionContributionToType.set(contribution.type, contribution);
@@ -556,7 +550,6 @@ export class AgentSessionsModel extends Disposable implements IAgentSessionsMode
 		this._sessions = sessions;
 		this._resolved = true;
 
-		console.debug('[AgentSessionsModel] updateItems() complete. Total sessions:', sessions.size, 'Firing onDidChangeSessions.');
 		this.logger.logAllStatsIfTrace('Sessions resolved from providers');
 
 		this._onDidChangeSessions.fire();

@@ -24,7 +24,7 @@ export function registerChatTroubleshootAction() {
 		constructor() {
 			super({
 				id: 'workbench.action.chat.openDebugView',
-				title: localize2('chat.openDebugView.label', "Open Debug View"),
+				title: localize2('chat.openDebugView.label', "Open Debug Panel"),
 				f1: true,
 				category: CHAT_CATEGORY,
 			});

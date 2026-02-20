@@ -98,6 +98,7 @@ export class ChatDebugLogsView extends Disposable {
 	private readonly eventListener = this._register(new MutableDisposable());
 	private readonly detailDisposables = this._register(new DisposableStore());
 	private currentDetailText: string = '';
+	private currentDetailEventId: string | undefined;
 
 	constructor(
 		parent: HTMLElement,
@@ -183,14 +184,20 @@ export class ChatDebugLogsView extends Disposable {
 
 		this.registerFilterMenuItems();
 
+		// Content wrapper (flex row: main column + detail panel)
+		const contentContainer = DOM.append(this.container, $('.chat-debug-logs-content'));
+
+		// Main column (table header + list/tree body)
+		const mainColumn = DOM.append(contentContainer, $('.chat-debug-logs-main'));
+
 		// Table header
-		this.tableHeader = DOM.append(this.container, $('.chat-debug-table-header'));
+		this.tableHeader = DOM.append(mainColumn, $('.chat-debug-table-header'));
 		DOM.append(this.tableHeader, $('span.chat-debug-col-created', undefined, localize('chatDebug.col.created', "Created")));
 		DOM.append(this.tableHeader, $('span.chat-debug-col-name', undefined, localize('chatDebug.col.name', "Name")));
 		DOM.append(this.tableHeader, $('span.chat-debug-col-details', undefined, localize('chatDebug.col.details', "Details")));
 
 		// Body container
-		this.bodyContainer = DOM.append(this.container, $('.chat-debug-logs-body'));
+		this.bodyContainer = DOM.append(mainColumn, $('.chat-debug-logs-body'));
 
 		// List container
 		this.listContainer = DOM.append(this.bodyContainer, $('.chat-debug-list-container'));
@@ -232,9 +239,27 @@ export class ChatDebugLogsView extends Disposable {
 			{ identityProvider, accessibilityProvider }
 		));
 
-		// Detail panel
-		this.detailContainer = DOM.append(this.bodyContainer, $('.chat-debug-detail-panel'));
+		// Detail panel (sibling of main column so it aligns with table header)
+		this.detailContainer = DOM.append(contentContainer, $('.chat-debug-detail-panel'));
 		DOM.hide(this.detailContainer);
+
+		// Handle Ctrl+A / Cmd+A to select all within the focused content element
+		this._register(addDisposableListener(this.detailContainer, EventType.KEY_DOWN, (e: KeyboardEvent) => {
+			if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+				const target = e.target as HTMLElement;
+				if (target && this.detailContainer.contains(target)) {
+					e.preventDefault();
+					const targetWindow = DOM.getWindow(target);
+					const selection = targetWindow.getSelection();
+					if (selection) {
+						const range = document.createRange();
+						range.selectNodeContents(target);
+						selection.removeAllRanges();
+						selection.addRange(range);
+					}
+				}
+			}
+		}));
 
 		// Resolve event details on selection
 		this._register(this.list.onDidChangeSelection(e => {
@@ -534,6 +559,12 @@ export class ChatDebugLogsView extends Disposable {
 	}
 
 	private async resolveAndShowDetail(event: IChatDebugEvent): Promise<void> {
+		// Skip re-rendering if we're already showing this event's detail
+		if (event.id && event.id === this.currentDetailEventId) {
+			return;
+		}
+		this.currentDetailEventId = event.id;
+
 		const resolved = event.id ? await this.chatDebugService.resolveEvent(event.id) : undefined;
 
 		DOM.show(this.detailContainer);
@@ -603,6 +634,7 @@ export class ChatDebugLogsView extends Disposable {
 	}
 
 	private hideDetail(): void {
+		this.currentDetailEventId = undefined;
 		DOM.hide(this.detailContainer);
 		DOM.clearNode(this.detailContainer);
 		this.detailDisposables.clear();
