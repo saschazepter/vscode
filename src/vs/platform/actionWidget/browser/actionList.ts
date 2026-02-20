@@ -350,6 +350,19 @@ export interface IActionListOptions {
 	 * Minimum width for the action list.
 	 */
 	readonly minWidth?: number;
+
+	/**
+	 * Preferred placement for the filter input when shown.
+	 * - 'anchor' (default): closest to the anchor (top when below, bottom when above)
+	 * - 'top': always above the list
+	 * - 'bottom': always below the list
+	 */
+	readonly filterPosition?: 'anchor' | 'top' | 'bottom';
+
+	/**
+	 * When true and filtering is enabled, focuses the filter input when the list opens.
+	 */
+	readonly focusFilterOnOpen?: boolean;
 }
 
 export class ActionList<T> extends Disposable {
@@ -643,6 +656,12 @@ export class ActionList<T> extends Disposable {
 	 * when shown below, filter is at the top.
 	 */
 	get filterPlacement(): 'top' | 'bottom' {
+		if (this._options?.filterPosition === 'top') {
+			return 'top';
+		}
+		if (this._options?.filterPosition === 'bottom') {
+			return 'bottom';
+		}
 		return this._showAbove ? 'bottom' : 'top';
 	}
 
@@ -655,6 +674,10 @@ export class ActionList<T> extends Disposable {
 	}
 
 	focus(): void {
+		if (this._filterInput && this._options?.focusFilterOnOpen) {
+			this._filterInput.focus();
+			return;
+		}
 		this._list.domFocus();
 		this._focusCheckedOrFirst();
 	}
@@ -835,16 +858,12 @@ export class ActionList<T> extends Disposable {
 		this._list.layout(listHeight, this._cachedMaxWidth);
 		this.domNode.style.height = `${listHeight}px`;
 
-		// Place filter container on the correct side based on dropdown direction.
-		// When shown above, filter goes below the list (closest to anchor).
-		// When shown below, filter goes above the list (closest to anchor).
+		// Place filter container on the preferred side.
 		if (this._filterContainer && this._filterContainer.parentElement) {
 			const parent = this._filterContainer.parentElement;
-			if (this._showAbove) {
-				// Move filter after the list
+			if (this.filterPlacement === 'bottom') {
 				parent.appendChild(this._filterContainer);
 			} else {
-				// Move filter before the list
 				parent.insertBefore(this._filterContainer, this.domNode);
 			}
 		}
