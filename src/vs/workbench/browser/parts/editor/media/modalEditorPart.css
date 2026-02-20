@@ -72,10 +72,11 @@
 			color: inherit;
 			height: 32px;
 			line-height: 32px;
-		}
 
-		.monaco-icon-label::before {
-			height: 32px;
+			&::before,
+			& > .monaco-icon-label-iconpath {
+				height: 32px;
+			}
 		}
 	}
 
