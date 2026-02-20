@@ -55,7 +55,6 @@ function getFileLocationLabel(file: { uri: URI; storage?: string; extensionId?: 
  */
 function createInlineFileLink(uri: URI, displayText: string, fileKind: FileKind, openerService: IOpenerService, modelService: IModelService, languageService: ILanguageService, hoverService: IHoverService, labelService: ILabelService, disposables: DisposableStore, hoverSuffix?: string): HTMLElement {
 	const link = $(`a.${InlineAnchorWidget.className}.show-file-icons`);
-	link.style.cursor = 'pointer';
 
 	const iconEl = DOM.append(link, $('span.icon'));
 	const iconClasses = getIconClasses(modelService, languageService, uri, fileKind);
@@ -80,9 +79,8 @@ function createInlineFileLink(uri: URI, displayText: string, fileKind: FileKind,
  */
 function appendLocationBadge(row: HTMLElement, file: { extensionId?: string }, badgeText: string, cssClass: string, openerService: IOpenerService, hoverService: IHoverService, disposables: DisposableStore): void {
 	if (file.extensionId) {
-		const link = DOM.append(row, $(`a.${cssClass}`));
+		const link = DOM.append(row, $(`a.${cssClass}.chat-debug-file-list-badge-link`));
 		link.textContent = badgeText;
-		link.style.cursor = 'pointer';
 		disposables.add(hoverService.setupManagedHover(getDefaultHoverDelegate('element'), link, localize('chatDebug.openExtension', "Open {0} in Extensions", file.extensionId)));
 		disposables.add(DOM.addDisposableListener(link, DOM.EventType.CLICK, (e) => {
 			e.preventDefault();
@@ -155,33 +153,23 @@ export function renderFileListContent(content: IChatDebugEventFileListContent, o
 		const sectionEl = DOM.append(container, $('div.chat-debug-message-section'));
 
 		const header = DOM.append(sectionEl, $('div.chat-debug-message-section-header'));
-		header.style.cursor = 'pointer';
 
 		const chevron = DOM.append(header, $('span.chat-debug-message-section-chevron'));
-		const titleEl = DOM.append(header, $('span.chat-debug-message-section-title', undefined,
+		DOM.append(header, $('span.chat-debug-message-section-title', undefined,
 			localize('chatDebug.sourceFolders', "Sources ({0})", content.sourceFolders.length)));
-		titleEl.style.fontWeight = '600';
 
 		// Settings gear button on the right side of the header
 		const settingsKey = getSettingsKeyForDiscoveryType(content.discoveryType);
 		if (settingsKey) {
-			const gearBtn = DOM.append(header, $(`span${ThemeIcon.asCSSSelector(Codicon.settingsGear)}`));
-			gearBtn.style.cursor = 'pointer';
-			gearBtn.style.flexShrink = '0';
-			gearBtn.style.opacity = '0.7';
-			gearBtn.style.borderRadius = '3px';
-			gearBtn.style.padding = '2px';
+			const gearBtn = DOM.append(header, $(`span.chat-debug-settings-gear${ThemeIcon.asCSSSelector(Codicon.settingsGear)}`));
 			disposables.add(hoverService.setupManagedHover(getDefaultHoverDelegate('mouse'), gearBtn, localize('chatDebug.openSettingsTooltip', "Configure locations")));
 			disposables.add(DOM.addDisposableListener(gearBtn, DOM.EventType.MOUSE_ENTER, () => {
-				gearBtn.style.opacity = '1';
-				gearBtn.style.background = 'var(--vscode-toolbar-hoverBackground)';
-				header.style.pointerEvents = 'none';
-				gearBtn.style.pointerEvents = 'auto';
+				gearBtn.classList.add('chat-debug-settings-gear-hover-active');
+				header.classList.add('chat-debug-settings-gear-header-passthrough');
 			}));
 			disposables.add(DOM.addDisposableListener(gearBtn, DOM.EventType.MOUSE_LEAVE, () => {
-				gearBtn.style.opacity = '0.7';
-				gearBtn.style.background = '';
-				header.style.pointerEvents = '';
+				gearBtn.classList.remove('chat-debug-settings-gear-hover-active');
+				header.classList.remove('chat-debug-settings-gear-header-passthrough');
 			}));
 			disposables.add(DOM.addDisposableListener(gearBtn, DOM.EventType.CLICK, (e) => {
 				e.preventDefault();
@@ -190,29 +178,17 @@ export function renderFileListContent(content: IChatDebugEventFileListContent, o
 			}));
 		}
 
-		const contentEl = DOM.append(sectionEl, $('div'));
-		contentEl.style.padding = '8px 12px';
-		contentEl.style.overflow = 'hidden';
+		const contentEl = DOM.append(sectionEl, $('div.chat-debug-source-folder-content'));
 
 		const capitalizedType = content.discoveryType.charAt(0).toUpperCase() + content.discoveryType.slice(1);
 		const sourcesCaption = capitalizedType.endsWith('s') ? capitalizedType : capitalizedType + 's';
-		const noteEl = DOM.append(contentEl, $('div', undefined,
+		DOM.append(contentEl, $('div.chat-debug-source-folder-note', undefined,
 			localize('chatDebug.sourcesNote', "{0} were discovered by checking the following sources in order:", sourcesCaption)));
-		noteEl.style.marginBottom = '4px';
 		for (let i = 0; i < content.sourceFolders.length; i++) {
 			const folder = content.sourceFolders[i];
-			const row = DOM.append(contentEl, $('div'));
-			row.style.display = 'flex';
-			row.style.alignItems = 'flex-start';
-			row.style.gap = '6px';
-			row.style.padding = '1px 0';
-			const idx = DOM.append(row, $('span', undefined, `${i + 1}.`));
-			idx.style.color = 'var(--vscode-descriptionForeground)';
-			idx.style.flexShrink = '0';
-			idx.style.minWidth = '16px';
-			idx.style.textAlign = 'right';
-			const label = DOM.append(row, $('span', undefined, folder.uri.path));
-			label.style.wordBreak = 'break-all';
+			const row = DOM.append(contentEl, $('div.chat-debug-source-folder-row'));
+			DOM.append(row, $('span.chat-debug-source-folder-index', undefined, `${i + 1}.`));
+			DOM.append(row, $('span.chat-debug-source-folder-label', undefined, folder.uri.path));
 		}
 
 		let collapsed = true;

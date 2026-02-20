@@ -676,6 +676,7 @@
 	user-select: none;
 	font-weight: 600;
 	color: var(--vscode-foreground);
+	cursor: pointer;
 }
 .chat-debug-message-section-header:hover {
 	background: var(--vscode-list-hoverBackground);
@@ -706,4 +707,61 @@
 }
 .chat-debug-message-section-content:focus {
 	outline: 1px solid var(--vscode-focusBorder);
+}
+
+/* ---- File list: inline file link ---- */
+.chat-debug-file-list-row a.chat-inline-anchor-widget {
+	cursor: pointer;
+}
+
+/* ---- File list: settings gear button ---- */
+.chat-debug-settings-gear {
+	cursor: pointer;
+	flex-shrink: 0;
+	opacity: 0.7;
+	border-radius: 3px;
+	padding: 2px;
+}
+.chat-debug-settings-gear:hover {
+	opacity: 1;
+	background: var(--vscode-toolbar-hoverBackground);
+}
+.chat-debug-settings-gear-hover-active {
+	opacity: 1;
+	background: var(--vscode-toolbar-hoverBackground);
+}
+.chat-debug-settings-gear-header-passthrough {
+	pointer-events: none;
+}
+.chat-debug-settings-gear-header-passthrough .chat-debug-settings-gear {
+	pointer-events: auto;
+}
+
+/* ---- File list: source folder section ---- */
+.chat-debug-source-folder-content {
+	padding: 8px 12px;
+	overflow: hidden;
+}
+.chat-debug-source-folder-note {
+	margin-bottom: 4px;
+}
+.chat-debug-source-folder-row {
+	display: flex;
+	align-items: flex-start;
+	gap: 6px;
+	padding: 1px 0;
+}
+.chat-debug-source-folder-index {
+	color: var(--vscode-descriptionForeground);
+	flex-shrink: 0;
+	min-width: 16px;
+	text-align: right;
+}
+.chat-debug-source-folder-label {
+	word-break: break-all;
+}
+
+/* ---- File list: location badge link ---- */
+.chat-debug-file-list-badge-link {
+	cursor: pointer;
 }
