@@ -244,13 +244,14 @@ class NewChatWidget extends Disposable {
 			displayName: '',
 		});
 
-		const session = this.sessionsManagementService.createNewSessionForTarget(target, resource, defaultRepoUri);
-		this._newSessions.set(target, session);
-		this._newSession = session;
+		this.sessionsManagementService.createNewSessionForTarget(target, resource, defaultRepoUri).then(session => {
+			this._newSessions.set(target, session);
+			this._newSession = session;
 
-		// Wire pickers to the new session
-		this._folderPicker.setNewSession(session);
-		this._isolationModePicker.setNewSession(session);
+			// Wire pickers to the new session
+			this._folderPicker.setNewSession(session);
+			this._isolationModePicker.setNewSession(session);
+		}).catch((err) => this.logService.trace('Failed to create new session:', err));
 	}
 
 	// --- Editor ---

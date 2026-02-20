@@ -85,7 +85,7 @@ export interface ISessionsManagementService {
 	 * Create a pending session object for the given target type.
 	 * Local sessions collect options locally; remote sessions notify the extension.
 	 */
-	createNewSessionForTarget(target: AgentSessionProviders, sessionResource: URI, defaultRepoUri?: URI): INewSession;
+	createNewSessionForTarget(target: AgentSessionProviders, sessionResource: URI, defaultRepoUri?: URI): Promise<INewSession>;
 
 	/**
 	 * Open a new session, apply options, and send the initial request.
@@ -262,15 +262,13 @@ export class SessionsManagementService extends Disposable implements ISessionsMa
 		return activeSessionItem;
 	}
 
-	createNewSessionForTarget(target: AgentSessionProviders, sessionResource: URI, defaultRepoUri?: URI): INewSession {
-		// Create the underlying chat session resource
-		this.createNewPendingSession(sessionResource)
-			.catch((err) => this.logService.trace('Failed to create pending session:', err));
+	async createNewSessionForTarget(target: AgentSessionProviders, sessionResource: URI, defaultRepoUri?: URI): Promise<INewSession> {
+		const activeSessionItem = await this.createNewPendingSession(sessionResource);
 
 		if (target === AgentSessionProviders.Background || target === AgentSessionProviders.Local) {
-			return new LocalNewSession(sessionResource, defaultRepoUri);
+			return new LocalNewSession(activeSessionItem, defaultRepoUri);
 		}
-		return new RemoteNewSession(sessionResource, this.chatSessionsService, this.logService);
+		return new RemoteNewSession(activeSessionItem, this.chatSessionsService, this.logService);
 	}
 
 	/**

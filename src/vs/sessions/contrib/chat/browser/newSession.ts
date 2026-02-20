@@ -9,6 +9,7 @@ import { URI } from '../../../../base/common/uri.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { IChatSessionsService } from '../../../../workbench/contrib/chat/common/chatSessionsService.js';
 import { IsolationMode } from './sessionTargetPicker.js';
+import { IActiveSessionItem } from '../../sessions/browser/sessionsManagementService.js';
 
 /**
  * A new session represents a session being configured before the first
@@ -17,6 +18,7 @@ import { IsolationMode } from './sessionTargetPicker.js';
  */
 export interface INewSession {
 	readonly resource: URI;
+	readonly activeSessionItem: IActiveSessionItem;
 	readonly repoUri: URI | undefined;
 	readonly isolationMode: IsolationMode;
 	readonly onDidChange: Event<void>;
@@ -37,11 +39,12 @@ export class LocalNewSession extends Disposable implements INewSession {
 	private readonly _onDidChange = this._register(new Emitter<void>());
 	readonly onDidChange: Event<void> = this._onDidChange.event;
 
+	get resource(): URI { return this.activeSessionItem.resource; }
 	get repoUri(): URI | undefined { return this._repoUri; }
 	get isolationMode(): IsolationMode { return this._isolationMode; }
 
 	constructor(
-		readonly resource: URI,
+		readonly activeSessionItem: IActiveSessionItem,
 		defaultRepoUri: URI | undefined,
 	) {
 		super();
@@ -74,11 +77,12 @@ export class RemoteNewSession extends Disposable implements INewSession {
 	private readonly _onDidChange = this._register(new Emitter<void>());
 	readonly onDidChange: Event<void> = this._onDidChange.event;
 
+	get resource(): URI { return this.activeSessionItem.resource; }
 	get repoUri(): URI | undefined { return this._repoUri; }
 	get isolationMode(): IsolationMode { return this._isolationMode; }
 
 	constructor(
-		readonly resource: URI,
+		readonly activeSessionItem: IActiveSessionItem,
 		private readonly chatSessionsService: IChatSessionsService,
 		private readonly logService: ILogService,
 	) {
