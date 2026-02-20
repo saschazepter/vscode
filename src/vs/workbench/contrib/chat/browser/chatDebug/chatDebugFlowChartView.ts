@@ -46,6 +46,8 @@ export class ChatDebugFlowChartView extends Disposable {
 	private svgElement: SVGElement | undefined;
 
 	private currentSessionId: string = '';
+	private lastEventCount: number = 0;
+	private hasUserPanned: boolean = false;
 
 	constructor(
 		parent: HTMLElement,
@@ -79,6 +81,14 @@ export class ChatDebugFlowChartView extends Disposable {
 	}
 
 	setSession(sessionId: string): void {
+		if (this.currentSessionId !== sessionId) {
+			// Reset pan/zoom only on session change
+			this.scale = 1;
+			this.translateX = 0;
+			this.translateY = 0;
+			this.lastEventCount = 0;
+			this.hasUserPanned = false;
+		}
 		this.currentSessionId = sessionId;
 	}
 
@@ -112,12 +122,9 @@ export class ChatDebugFlowChartView extends Disposable {
 		this.loadDisposables.clear();
 		this.updateBreadcrumb();
 
-		// Reset pan/zoom
-		this.scale = 1;
-		this.translateX = 0;
-		this.translateY = 0;
-
 		const events = this.chatDebugService.getEvents(this.currentSessionId);
+		const isFirstLoad = this.lastEventCount === 0;
+		this.lastEventCount = events.length;
 
 		if (events.length === 0) {
 			const emptyMsg = DOM.append(this.content, $('.chat-debug-flowchart-empty'));
@@ -134,10 +141,15 @@ export class ChatDebugFlowChartView extends Disposable {
 		this.svgWrapper.appendChild(svg);
 		this.svgElement = svg;
 
-		// Center after layout
-		DOM.getWindow(this.content).requestAnimationFrame(() => {
-			this.centerContent();
-		});
+		// Only center on first load when user hasn't panned yet
+		if (isFirstLoad && !this.hasUserPanned) {
+			DOM.getWindow(this.content).requestAnimationFrame(() => {
+				this.centerContent();
+			});
+		} else {
+			// Apply existing transform to preserve position
+			this.applyTransform();
+		}
 	}
 
 	private setupPanZoom(): void {
@@ -154,6 +166,7 @@ export class ChatDebugFlowChartView extends Disposable {
 		}
 		e.preventDefault();
 		this.isPanning = true;
+		this.hasUserPanned = true;
 		this.startX = e.clientX - this.translateX;
 		this.startY = e.clientY - this.translateY;
 		this.content.style.cursor = 'grabbing';
@@ -182,6 +195,8 @@ export class ChatDebugFlowChartView extends Disposable {
 	private handleWheel(e: WheelEvent): void {
 		e.preventDefault();
 		e.stopPropagation();
+
+		this.hasUserPanned = true;
 
 		const rect = this.content.getBoundingClientRect();
 		const mouseX = e.clientX - rect.left;
