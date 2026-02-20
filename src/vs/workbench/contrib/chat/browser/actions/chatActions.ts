@@ -910,6 +910,54 @@ export function registerChatActions() {
 		}
 	});
 
+	registerAction2(class PreviousQuestionCarouselQuestionAction extends Action2 {
+		static readonly ID = 'workbench.action.chat.previousQuestion';
+
+		constructor() {
+			super({
+				id: PreviousQuestionCarouselQuestionAction.ID,
+				title: localize2('interactiveSession.previousQuestion.label', "Chat: Previous Question"),
+				category: CHAT_CATEGORY,
+				f1: true,
+				precondition: ContextKeyExpr.and(ChatContextKeys.inChatSession, ChatContextKeys.Editing.hasQuestionCarousel),
+				keybinding: [{
+					weight: KeybindingWeight.WorkbenchContrib,
+					primary: KeyMod.Alt | KeyCode.KeyP,
+					when: ContextKeyExpr.and(ChatContextKeys.inChatQuestionCarousel, ChatContextKeys.Editing.hasQuestionCarousel),
+				}]
+			});
+		}
+
+		run(accessor: ServicesAccessor): void {
+			const widgetService = accessor.get(IChatWidgetService);
+			widgetService.lastFocusedWidget?.navigateToPreviousQuestion();
+		}
+	});
+
+	registerAction2(class NextQuestionCarouselQuestionAction extends Action2 {
+		static readonly ID = 'workbench.action.chat.nextQuestion';
+
+		constructor() {
+			super({
+				id: NextQuestionCarouselQuestionAction.ID,
+				title: localize2('interactiveSession.nextQuestion.label', "Chat: Next Question"),
+				category: CHAT_CATEGORY,
+				f1: true,
+				precondition: ContextKeyExpr.and(ChatContextKeys.inChatSession, ChatContextKeys.Editing.hasQuestionCarousel),
+				keybinding: [{
+					weight: KeybindingWeight.WorkbenchContrib,
+					primary: KeyMod.Alt | KeyCode.KeyN,
+					when: ContextKeyExpr.and(ChatContextKeys.inChatQuestionCarousel, ChatContextKeys.Editing.hasQuestionCarousel),
+				}]
+			});
+		}
+
+		run(accessor: ServicesAccessor): void {
+			const widgetService = accessor.get(IChatWidgetService);
+			widgetService.lastFocusedWidget?.navigateToNextQuestion();
+		}
+	});
+
 	registerAction2(class FocusTipAction extends Action2 {
 		static readonly ID = 'workbench.action.chat.focusTip';
 
