@@ -75,6 +75,11 @@ export class ExtHostGitExtensionService extends Disposable implements IExtHostGi
 		super();
 	}
 
+	async $isGitExtensionAvailable(): Promise<boolean> {
+		const registry = await this._extHostExtensionService.getExtensionRegistry();
+		return !!registry.getExtensionDescription(GIT_EXTENSION_ID);
+	}
+
 	async $openRepository(uri: UriComponents): Promise<UriComponents | undefined> {
 		const api = await this._ensureGitApi();
 		if (!api) {

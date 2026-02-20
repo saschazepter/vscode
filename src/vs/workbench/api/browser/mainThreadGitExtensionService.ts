@@ -25,12 +25,23 @@ export class MainThreadGitExtensionService extends Disposable implements MainThr
 
 	constructor(
 		extHostContext: IExtHostContext,
-		@IGitService gitService: IGitService,
+		@IGitService private readonly gitService: IGitService,
 	) {
 		super();
 
 		this._proxy = extHostContext.getProxy(ExtHostContext.ExtHostGitExtension);
-		this._register(gitService.setDelegate(this));
+		this._initializeDelegate();
+	}
+
+	private async _initializeDelegate(): Promise<void> {
+		// Check whether the vscode.git extension is available in the extension host
+		// process before setting the delegate. The delegate should only be set once,
+		// for the extension host process that runs the vscode.git extension
+		const isExtensionAvailable = await this._proxy.$isGitExtensionAvailable();
+
+		if (isExtensionAvailable && !this._store.isDisposed) {
+			this._register(this.gitService.setDelegate(this));
+		}
 	}
 
 	async openRepository(uri: URI): Promise<URI | undefined> {

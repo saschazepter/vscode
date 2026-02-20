@@ -3,11 +3,11 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Sequencer, timeout } from '../../../../base/common/async.js';
+import { Sequencer } from '../../../../base/common/async.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
+import { BugIndicatingError } from '../../../../base/common/errors.js';
 import { Disposable, IDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { ResourceMap } from '../../../../base/common/map.js';
-import { observableValue, waitForState } from '../../../../base/common/observable.js';
 import { URI } from '../../../../base/common/uri.js';
 import { IGitService, IGitExtensionDelegate, GitRef, GitRefQuery, IGitRepository } from '../common/gitService.js';
 
@@ -22,25 +22,24 @@ export class GitService extends Disposable implements IGitService {
 		return this._repositories.values();
 	}
 
-	readonly isInitialized = observableValue(this, false);
-
 	setDelegate(delegate: IGitExtensionDelegate): IDisposable {
+		// The delegate can only be set once, since the vscode.git
+		// extension can only run in one extension host process per
+		// window.
+		if (this._delegate) {
+			throw new BugIndicatingError('GitService delegate is already set.');
+		}
+
 		this._delegate = delegate;
-		this.isInitialized.set(true, undefined);
 
 		return toDisposable(() => {
 			this._repositories.clear();
 			this._delegate = undefined;
-
-			this.isInitialized.set(false, undefined);
 		});
 	}
 
 	async openRepository(uri: URI): Promise<IGitRepository | undefined> {
 		return this._openRepositorySequencer.queue(async () => {
-			// Wait for the delegate to be set, but don't wait indefinitely (5 seconds)
-			await Promise.race([waitForState(this.isInitialized, isInitialized => isInitialized), timeout(5000)]);
-
 			if (!this._delegate) {
 				return undefined;
 			}

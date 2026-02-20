@@ -5,7 +5,6 @@
 
 import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { IDisposable } from '../../../../base/common/lifecycle.js';
-import { IObservable } from '../../../../base/common/observable.js';
 import { URI, UriComponents } from '../../../../base/common/uri.js';
 import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
 
@@ -43,8 +42,6 @@ export const IGitService = createDecorator<IGitService>('gitService');
 
 export interface IGitService {
 	readonly _serviceBrand: undefined;
-
-	readonly isInitialized: IObservable<boolean>;
 
 	readonly repositories: Iterable<IGitRepository>;
 

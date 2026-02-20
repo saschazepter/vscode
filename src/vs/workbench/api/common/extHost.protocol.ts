@@ -3477,6 +3477,7 @@ export interface GitRefDto {
 }
 
 export interface ExtHostGitExtensionShape {
+	$isGitExtensionAvailable(): Promise<boolean>;
 	$openRepository(root: UriComponents): Promise<UriComponents | undefined>;
 	$getRefs(root: UriComponents, query: GitRefQueryDto, token?: CancellationToken): Promise<GitRefDto[]>;
 }
