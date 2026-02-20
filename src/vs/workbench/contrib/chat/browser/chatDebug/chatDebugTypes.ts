@@ -23,7 +23,6 @@ export const enum ViewState {
 	Home = 'home',
 	Overview = 'overview',
 	Logs = 'logs',
-	SubagentChart = 'subagentChart',
 }
 
 export const enum LogsViewMode {

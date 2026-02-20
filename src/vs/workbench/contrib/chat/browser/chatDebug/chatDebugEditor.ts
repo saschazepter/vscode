@@ -22,7 +22,6 @@ import { ViewState, IChatDebugEditorOptions } from './chatDebugTypes.js';
 import { ChatDebugHomeView } from './chatDebugHomeView.js';
 import { ChatDebugOverviewView, OverviewNavigation } from './chatDebugOverviewView.js';
 import { ChatDebugLogsView, LogsNavigation } from './chatDebugLogsView.js';
-import { ChatDebugSubagentChartView, SubagentChartNavigation } from './chatDebugSubagentChartView.js';
 
 const $ = DOM.$;
 
@@ -38,7 +37,6 @@ export class ChatDebugEditor extends EditorPane {
 	private homeView: ChatDebugHomeView | undefined;
 	private overviewView: ChatDebugOverviewView | undefined;
 	private logsView: ChatDebugLogsView | undefined;
-	private subagentChartView: ChatDebugSubagentChartView | undefined;
 
 	private readonly sessionModelListener = this._register(new MutableDisposable());
 	private readonly modelChangeListeners = this._register(new DisposableMap<string>());
@@ -75,9 +73,6 @@ export class ChatDebugEditor extends EditorPane {
 				case OverviewNavigation.Logs:
 					this.showView(ViewState.Logs);
 					break;
-				case OverviewNavigation.SubagentChart:
-					this.showView(ViewState.SubagentChart);
-					break;
 			}
 		}));
 
@@ -89,19 +84,6 @@ export class ChatDebugEditor extends EditorPane {
 					this.showView(ViewState.Home);
 					break;
 				case LogsNavigation.Overview:
-					this.showView(ViewState.Overview);
-					break;
-			}
-		}));
-
-		this.subagentChartView = this._register(this.instantiationService.createInstance(ChatDebugSubagentChartView, this.container));
-		this._register(this.subagentChartView.onNavigate(nav => {
-			switch (nav) {
-				case SubagentChartNavigation.Home:
-					this.chatDebugService.activeSessionId = undefined;
-					this.showView(ViewState.Home);
-					break;
-				case SubagentChartNavigation.Overview:
 					this.showView(ViewState.Overview);
 					break;
 			}
@@ -143,10 +125,9 @@ export class ChatDebugEditor extends EditorPane {
 				if (e.kind === 'setCustomTitle') {
 					if (this.viewState === ViewState.Home) {
 						this.homeView?.render();
-					} else if (this.viewState === ViewState.Overview || this.viewState === ViewState.Logs || this.viewState === ViewState.SubagentChart) {
+					} else if (this.viewState === ViewState.Overview || this.viewState === ViewState.Logs) {
 						this.overviewView?.updateBreadcrumb();
 						this.logsView?.updateBreadcrumb();
-						this.subagentChartView?.updateBreadcrumb();
 					}
 				}
 			}));
@@ -194,11 +175,6 @@ export class ChatDebugEditor extends EditorPane {
 			this.logsView?.hide();
 		}
 
-		if (state === ViewState.SubagentChart) {
-			this.subagentChartView?.show();
-		} else {
-			this.subagentChartView?.hide();
-		}
 	}
 
 	navigateToSession(sessionId: string, view?: 'logs' | 'overview'): void {
@@ -207,7 +183,6 @@ export class ChatDebugEditor extends EditorPane {
 
 		this.overviewView?.setSession(sessionId);
 		this.logsView?.setSession(sessionId);
-		this.subagentChartView?.setSession(sessionId);
 
 		this.showView(view === 'logs' ? ViewState.Logs : ViewState.Overview);
 	}

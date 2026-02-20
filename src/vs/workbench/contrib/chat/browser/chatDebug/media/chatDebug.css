@@ -428,113 +428,6 @@
 	outline: 1px solid var(--vscode-focusBorder);
 }
 
-/* ---- Subagent Chart view ---- */
-.chat-debug-subagent-chart {
-	display: flex;
-	flex-direction: column;
-	overflow-y: auto;
-	flex: 1;
-}
-.chat-debug-subagent-chart-content {
-	padding: 16px 24px;
-}
-.chat-debug-subagent-chart-title {
-	font-size: 14px;
-	font-weight: 600;
-	margin: 0 0 6px;
-}
-.chat-debug-subagent-chart-desc {
-	font-size: 12px;
-	color: var(--vscode-descriptionForeground);
-	margin: 0 0 16px;
-}
-.chat-debug-subagent-chart-actions {
-	display: flex;
-	gap: 8px;
-	margin-bottom: 20px;
-}
-.chat-debug-subagent-flow-visual {
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	padding: 16px 0;
-	margin-bottom: 24px;
-}
-.chat-debug-flow-node {
-	padding: 10px 20px;
-	border-radius: 6px;
-	font-size: 13px;
-	font-weight: 500;
-	text-align: center;
-	min-width: 180px;
-	max-width: 360px;
-}
-.chat-debug-flow-main {
-	background: var(--vscode-button-background);
-	color: var(--vscode-button-foreground);
-}
-.chat-debug-flow-subagent {
-	background: var(--vscode-editorWidget-background);
-	border: 2px solid var(--vscode-focusBorder);
-	color: var(--vscode-foreground);
-}
-.chat-debug-flow-subagent-name {
-	font-weight: 600;
-	margin-bottom: 4px;
-}
-.chat-debug-flow-subagent-desc {
-	font-size: 11px;
-	color: var(--vscode-descriptionForeground);
-	margin-bottom: 4px;
-}
-.chat-debug-flow-subagent-stats {
-	font-size: 11px;
-	color: var(--vscode-descriptionForeground);
-}
-.chat-debug-flow-end {
-	background: var(--vscode-badge-background);
-	color: var(--vscode-badge-foreground);
-}
-.chat-debug-flow-arrow {
-	font-size: 20px;
-	line-height: 1;
-	padding: 4px 0;
-	color: var(--vscode-foreground);
-	opacity: 0.5;
-}
-.chat-debug-flow-arrow-return {
-	opacity: 0.3;
-}
-.chat-debug-subagent-flow-empty {
-	font-size: 13px;
-	color: var(--vscode-descriptionForeground);
-	text-align: center;
-	padding: 32px 0;
-}
-.chat-debug-subagent-chart-code-section {
-	border-top: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
-	padding-top: 16px;
-}
-.chat-debug-subagent-chart-code-label {
-	font-size: 13px;
-	font-weight: 600;
-	margin: 0 0 8px;
-}
-.chat-debug-subagent-chart-code {
-	background: var(--vscode-textCodeBlock-background);
-	border: 1px solid var(--vscode-widget-border, transparent);
-	border-radius: 4px;
-	padding: 12px;
-	margin: 0;
-	overflow-x: auto;
-	font-family: var(--vscode-chat-font-family, monospace);
-	font-size: 12px;
-	white-space: pre;
-	user-select: text;
-	-webkit-user-select: text;
-	cursor: text;
-}
-
 /* ---- File List Content ---- */
 .chat-debug-detail-panel > .chat-debug-file-list {
 	flex: 1;
@@ -665,6 +558,7 @@
 	margin-bottom: 4px;
 	border: 1px solid var(--vscode-widget-border, transparent);
 	border-radius: 4px;
+	overflow: hidden;
 }
 .chat-debug-message-section-header {
 	display: flex;
@@ -740,7 +634,7 @@
 /* ---- File list: source folder section ---- */
 .chat-debug-source-folder-content {
 	padding: 8px 12px;
-	overflow: hidden;
+	border-top: 1px solid var(--vscode-widget-border, transparent);
 }
 .chat-debug-source-folder-note {
 	margin-bottom: 4px;
