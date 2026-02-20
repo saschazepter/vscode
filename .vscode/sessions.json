@@ -23,6 +23,10 @@
 		{
 			"name": "Tests (Linux)",
 			"command": "./scripts/test.sh"
+		},
+		{
+			"name": "./scripts/code-cli.sh --user-data-dir ~/work/testing/setup/code-oss-1",
+			"command": "./scripts/code-cli.sh --user-data-dir ~/work/testing/setup/code-oss-1"
 		}
 	]
 }
