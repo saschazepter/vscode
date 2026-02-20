@@ -43,22 +43,22 @@ jobs:
       - ${{ if and(eq(parameters.os, 'windows'), eq(parameters.arch, 'arm64')) }}:
         - script: |
             @echo off
-            setlocal
+            setlocal enabledelayedexpansion
 
             set "EXPECTED_HASH=fd44256121597d6a3707f4c7730b4e3733eacb5a95cc78a099f601d7e7f8290d"
             set "NODE_ROOT=$(Agent.TempDirectory)\nodejs"
-            set "NODE_EXE=%NODE_ROOT%\node.exe"
+            set "NODE_EXE=!NODE_ROOT!\node.exe"
 
-            if not exist "%NODE_EXE%" (
-              if exist "%NODE_ROOT%" rmdir /s /q "%NODE_ROOT%"
-              mkdir "%NODE_ROOT%"
-              curl.exe -fsSL "https://nodejs.org/dist/v22.22.0/win-arm64/node.exe" -o "%NODE_EXE%"
+            if not exist "!NODE_EXE!" (
+              if exist "!NODE_ROOT!" rmdir /s /q "!NODE_ROOT!"
+              mkdir "!NODE_ROOT!"
+              curl.exe -fsSL "https://nodejs.org/dist/v22.22.0/win-arm64/node.exe" -o "!NODE_EXE!"
 
-              for /f %%A in ('certutil -hashfile "%NODE_EXE%" SHA256 ^| findstr /r "^[0-9a-f]*$"') do set "ACTUAL_HASH=%%A"
-              if /I not "%ACTUAL_HASH%"=="%EXPECTED_HASH%" (
+              for /f %%A in ('certutil -hashfile "!NODE_EXE!" SHA256 ^| findstr /r "^[0-9a-f]*$"') do set "ACTUAL_HASH=%%A"
+              if /I not "!ACTUAL_HASH!"=="!EXPECTED_HASH!" (
                 echo Hash mismatch for node.exe
-                echo   expected: %EXPECTED_HASH%
-                echo   actual:   %ACTUAL_HASH%
+                echo   expected: !EXPECTED_HASH!
+                echo   actual:   !ACTUAL_HASH!
                 exit /b 1
               )
             )
