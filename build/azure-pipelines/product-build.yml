@@ -29,7 +29,7 @@ parameters:
   - name: VSCODE_BUILD_TYPE
     displayName: Build Type
     type: string
-    default: Product Build
+    default: Product
     values:
       - Product
       - CI
