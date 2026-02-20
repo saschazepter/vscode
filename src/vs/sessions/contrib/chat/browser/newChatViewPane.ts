@@ -85,7 +85,7 @@ class NewChatWidget extends Disposable {
 	private readonly _modelPickerDisposable = this._register(new MutableDisposable());
 
 	// Pending session
-	private _newSession: INewSession | undefined;
+	private readonly _newSession = this._register(new MutableDisposable<INewSession>());
 	private readonly _newSessionListener = this._register(new MutableDisposable());
 
 	// Welcome part
@@ -181,6 +181,11 @@ class NewChatWidget extends Disposable {
 		const branchContainer = dom.append(isolationContainer, dom.$('.sessions-chat-local-mode-right'));
 		this._branchPicker.render(branchContainer);
 
+		// Set initial visibility based on default target
+		const isLocal = this._targetPicker.selectedTarget === AgentSessionProviders.Background;
+		this._isolationModePicker.setVisible(isLocal);
+		this._branchPicker.setVisible(isLocal);
+
 		// Render target buttons & extension pickers
 		this._renderOptionGroupPickers();
 
@@ -203,12 +208,16 @@ class NewChatWidget extends Disposable {
 			displayName: '',
 		});
 
-		const session = await this.sessionsManagementService.createNewSessionForTarget(target, resource, defaultRepoUri);
-		this._setNewSession(session);
+		try {
+			const session = await this.sessionsManagementService.createNewSessionForTarget(target, resource, defaultRepoUri);
+			this._setNewSession(session);
+		} catch (e) {
+			this.logService.error('Failed to create new session:', e);
+		}
 	}
 
 	private _setNewSession(session: INewSession): void {
-		this._newSession = session;
+		this._newSession.value = session;
 
 		// Wire pickers to the new session
 		this._folderPicker.setNewSession(session);
@@ -364,7 +373,7 @@ class NewChatWidget extends Disposable {
 			currentModel: this._currentLanguageModel,
 			setModel: (model: ILanguageModelChatMetadataAndIdentifier) => {
 				this._currentLanguageModel.set(model, undefined);
-				this._newSession?.setModelId(model.identifier);
+				this._newSession.value?.setModelId(model.identifier);
 			},
 			getModels: () => this._getAvailableModels(),
 			canManageModels: () => true,
@@ -529,7 +538,7 @@ class NewChatWidget extends Disposable {
 					this._updateOptionContextKey(optionGroup.id, option.id);
 					emitter.fire(option);
 
-					this._newSession?.setOption(optionGroup.id, option);
+					this._newSession.value?.setOption(optionGroup.id, option);
 
 					this._renderExtensionPickers(true);
 				},
@@ -537,7 +546,7 @@ class NewChatWidget extends Disposable {
 					const groups = this.chatSessionsService.getOptionGroupsForSessionType(activeSessionType);
 					return groups?.find((g: { id: string }) => g.id === optionGroup.id);
 				},
-				getSessionResource: () => this._newSession?.resource,
+				getSessionResource: () => this._newSession.value?.resource,
 			};
 
 			const action = toAction({ id: optionGroup.id, label: optionGroup.name, run: () => { } });
@@ -568,8 +577,8 @@ class NewChatWidget extends Disposable {
 			return selectedOption;
 		}
 
-		if (this._newSession) {
-			const sessionOption = this.chatSessionsService.getSessionOption(this._newSession.resource, optionGroup.id);
+		if (this._newSession.value) {
+			const sessionOption = this.chatSessionsService.getSessionOption(this._newSession.value.resource, optionGroup.id);
 			if (!isString(sessionOption)) {
 				return sessionOption;
 			}
@@ -649,21 +658,22 @@ class NewChatWidget extends Disposable {
 
 	private _send(): void {
 		const query = this._editor.getModel()?.getValue().trim();
-		if (!query || !this._newSession) {
+		const session = this._newSession.value;
+		if (!query || !session) {
 			return;
 		}
 
-		this._newSession.setQuery(query);
-		this._newSession.setAttachedContext(
+		session.setQuery(query);
+		session.setAttachedContext(
 			this._contextAttachments.attachments.length > 0 ? [...this._contextAttachments.attachments] : undefined
 		);
 
 		this.sessionsManagementService.sendRequestForNewSession(
-			this._newSession.resource
+			session.resource
 		).catch(e => this.logService.error('Failed to send request:', e));
 
 		// Clear sent session so a fresh one is created next time
-		this._newSession = undefined;
+		this._newSession.clear();
 		this._newSessionListener.clear();
 		this._contextAttachments.clear();
 	}

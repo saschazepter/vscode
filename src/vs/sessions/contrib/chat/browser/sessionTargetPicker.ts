@@ -81,6 +81,9 @@ export class SessionTargetPicker extends Disposable {
 	}
 
 	updateAllowedTargets(targets: AgentSessionProviders[]): void {
+		if (targets.length === 0) {
+			return;
+		}
 		this._allowedTargets = targets;
 		if (!targets.includes(this._selectedTarget)) {
 			this._selectedTarget = targets[0];

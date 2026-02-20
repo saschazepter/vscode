@@ -66,20 +66,24 @@ export class BranchPicker extends Disposable {
 		this._branches = [];
 		this._selectedBranch = undefined;
 
-		if (repository) {
-			const refs = await repository.getRefs({ pattern: 'refs/heads' });
-			this._branches = refs
-				.map(ref => ref.name)
-				.filter((name): name is string => !!name)
-				.filter(name => !name.includes(COPILOT_WORKTREE_PATTERN));
+		if (!repository) {
+			this._newSession?.setBranch(undefined);
+			this._updateTriggerLabel();
+			return;
+		}
 
-			// Select main, master, or the first branch by default
-			const defaultBranch = this._branches.find(b => b === 'main')
-				?? this._branches.find(b => b === 'master')
-				?? this._branches[0];
-			if (defaultBranch) {
-				this._selectBranch(defaultBranch);
-			}
+		const refs = await repository.getRefs({ pattern: 'refs/heads' });
+		this._branches = refs
+			.map(ref => ref.name)
+			.filter((name): name is string => !!name)
+			.filter(name => !name.includes(COPILOT_WORKTREE_PATTERN));
+
+		// Select main, master, or the first branch by default
+		const defaultBranch = this._branches.find(b => b === 'main')
+			?? this._branches.find(b => b === 'master')
+			?? this._branches[0];
+		if (defaultBranch) {
+			this._selectBranch(defaultBranch);
 		}
 
 		this._updateTriggerLabel();
