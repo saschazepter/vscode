@@ -43,7 +43,7 @@ import { ChatTodoListService, IChatTodoListService } from '../common/tools/chatT
 import { ChatTransferService, IChatTransferService } from '../common/model/chatTransferService.js';
 import { IChatVariablesService } from '../common/attachments/chatVariables.js';
 import { ChatWidgetHistoryService, IChatWidgetHistoryService } from '../common/widget/chatWidgetHistoryService.js';
-import { AgentsControlClickBehavior, ChatConfiguration } from '../common/constants.js';
+import { AgentsControlClickBehavior, ChatConfiguration, ChatNotificationMode } from '../common/constants.js';
 import { ILanguageModelIgnoredFilesService, LanguageModelIgnoredFilesService } from '../common/ignoredFiles.js';
 import { ILanguageModelsService, LanguageModelsService } from '../common/languageModels.js';
 import { ILanguageModelStatsService, LanguageModelStatsService } from '../common/languageModelStats.js';
@@ -332,10 +332,16 @@ configurationRegistry.registerConfiguration({
 			default: {
 			}
 		},
-		'chat.notifyWindowOnConfirmation': {
-			type: 'boolean',
-			description: nls.localize('chat.notifyWindowOnConfirmation', "Controls whether a chat session should present the user with an OS notification when a confirmation or question needs input while the window is not in focus. This includes a window badge as well as notification toast."),
-			default: true,
+		[ChatConfiguration.NotifyWindowOnConfirmation]: {
+			type: 'string',
+			enum: ['off', 'windowNotFocused', 'always'],
+			enumDescriptions: [
+				nls.localize('chat.notifyWindowOnConfirmation.off', "Never show OS notifications for confirmations."),
+				nls.localize('chat.notifyWindowOnConfirmation.windowNotFocused', "Show OS notifications for confirmations when the window is not focused."),
+				nls.localize('chat.notifyWindowOnConfirmation.always', "Always show OS notifications for confirmations, even when the window is focused."),
+			],
+			description: nls.localize('chat.notifyWindowOnConfirmation', "Controls whether a chat session should present the user with an OS notification when a confirmation or question needs input. This includes a window badge as well as notification toast."),
+			default: 'windowNotFocused',
 		},
 		[ChatConfiguration.AutoReply]: {
 			default: false,
@@ -480,9 +486,15 @@ configurationRegistry.registerConfiguration({
 			description: nls.localize('chat.contextUsage.enabled', "Show the context window usage indicator in the chat input."),
 		},
 		[ChatConfiguration.NotifyWindowOnResponseReceived]: {
-			type: 'boolean',
-			default: true,
-			description: nls.localize('chat.notifyWindowOnResponseReceived', "Controls whether a chat session should present the user with an OS notification when a response is received while the window is not in focus. This includes a window badge as well as notification toast."),
+			type: 'string',
+			enum: ['off', 'windowNotFocused', 'always'],
+			enumDescriptions: [
+				nls.localize('chat.notifyWindowOnResponseReceived.off', "Never show OS notifications for responses."),
+				nls.localize('chat.notifyWindowOnResponseReceived.windowNotFocused', "Show OS notifications for responses when the window is not focused."),
+				nls.localize('chat.notifyWindowOnResponseReceived.always', "Always show OS notifications for responses, even when the window is focused."),
+			],
+			default: 'windowNotFocused',
+			description: nls.localize('chat.notifyWindowOnResponseReceived', "Controls whether a chat session should present the user with an OS notification when a response is received. This includes a window badge as well as notification toast."),
 		},
 		'chat.checkpoints.enabled': {
 			type: 'boolean',
@@ -1223,6 +1235,28 @@ Registry.as<IConfigurationMigrationRegistry>(Extensions.ConfigurationMigration).
 			}
 
 			return { value };
+		}
+	},
+	{
+		key: ChatConfiguration.NotifyWindowOnConfirmation,
+		migrateFn: (value: unknown) => {
+			if (value === true) {
+				return { value: ChatNotificationMode.WindowNotFocused };
+			} else if (value === false) {
+				return { value: ChatNotificationMode.Off };
+			}
+			return [];
+		}
+	},
+	{
+		key: ChatConfiguration.NotifyWindowOnResponseReceived,
+		migrateFn: (value: unknown) => {
+			if (value === true) {
+				return { value: ChatNotificationMode.WindowNotFocused };
+			} else if (value === false) {
+				return { value: ChatNotificationMode.Off };
+			}
+			return [];
 		}
 	},
 ]);
