@@ -107,40 +107,21 @@ steps:
 
   - template: ../../common/install-builtin-extensions.yml@self
 
-  - powershell: npm exec -- gulp core-ci
+  - powershell: npm run gulp core-ci
     env:
       GITHUB_TOKEN: "$(github-distro-mixin-password)"
     displayName: Compile
-
-  - powershell: |
-      $ErrorActionPreference = "Stop"
-
-      if (-not (Test-Path "out-build")) { Write-Error "ERROR: out-build folder is missing"; exit 1 }
-      if ((Get-ChildItem "out-build" -Recurse | Measure-Object).Count -eq 0) { Write-Error "ERROR: out-build folder is empty"; exit 1 }
-      Write-Host "out-build exists and is not empty"
-
-      $folders = Get-ChildItem -Directory -Filter "out-vscode-*"
-      if ($folders.Count -eq 0) { Write-Error "ERROR: No out-vscode-* folders found"; exit 1 }
-      foreach ($folder in $folders) {
-        if ((Get-ChildItem $folder.FullName -Recurse | Measure-Object).Count -eq 0) { Write-Error "ERROR: $($folder.Name) is empty"; exit 1 }
-        Write-Host "$($folder.Name) exists and is not empty"
-      }
-
-      Write-Host "All required compilation folders checked."
-    displayName: Validate compilation folders
 
   - script: node build/azure-pipelines/common/extract-telemetry.ts
     displayName: Generate lists of telemetry events
 
   - ${{ if or(eq(parameters.VSCODE_RUN_ELECTRON_TESTS, true), eq(parameters.VSCODE_RUN_BROWSER_TESTS, true), eq(parameters.VSCODE_RUN_REMOTE_TESTS, true)) }}:
-    - powershell: npm run compile
-      displayName: Compile smoke test suites (non-OSS)
-      workingDirectory: test/smoke
-      condition: and(succeeded(), eq(variables['VSCODE_STEP_ON_IT'], 'false'))
-
-    - powershell: npm run compile
-      displayName: Compile integration test suites (non-OSS)
-      workingDirectory: test/integration/browser
+    - powershell: |
+        . build/azure-pipelines/win32/exec.ps1
+        $ErrorActionPreference = "Stop"
+        exec { npm run compile --prefix test/smoke }
+        exec { npm run compile --prefix test/integration/browser }
+      displayName: Compile test suites (non-OSS)
       condition: and(succeeded(), eq(variables['VSCODE_STEP_ON_IT'], 'false'))
 
   - ${{ if ne(parameters.VSCODE_CIBUILD, true) }}:

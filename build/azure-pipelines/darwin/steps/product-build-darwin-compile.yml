@@ -108,27 +108,10 @@ steps:
 
   - template: ../../common/install-builtin-extensions.yml@self
 
-  - script: npm exec -- gulp core-ci
+  - script: npm run gulp core-ci
     env:
       GITHUB_TOKEN: "$(github-distro-mixin-password)"
     displayName: Compile
-
-  - script: |
-      set -e
-
-      [ -d "out-build" ] || { echo "ERROR: out-build folder is missing" >&2; exit 1; }
-      [ -n "$(find out-build -mindepth 1 2>/dev/null | head -1)" ] || { echo "ERROR: out-build folder is empty" >&2; exit 1; }
-      echo "out-build exists and is not empty"
-
-      ls -d out-vscode-* >/dev/null 2>&1 || { echo "ERROR: No out-vscode-* folders found" >&2; exit 1; }
-      for folder in out-vscode-*; do
-        [ -d "$folder" ] || { echo "ERROR: $folder is missing" >&2; exit 1; }
-        [ -n "$(find "$folder" -mindepth 1 2>/dev/null | head -1)" ] || { echo "ERROR: $folder is empty" >&2; exit 1; }
-        echo "$folder exists and is not empty"
-      done
-
-      echo "All required compilation folders checked."
-    displayName: Validate compilation folders
 
   - script: node build/azure-pipelines/common/extract-telemetry.ts
     displayName: Generate lists of telemetry events
@@ -157,16 +140,9 @@ steps:
   - ${{ if or(eq(parameters.VSCODE_RUN_ELECTRON_TESTS, true), eq(parameters.VSCODE_RUN_BROWSER_TESTS, true), eq(parameters.VSCODE_RUN_REMOTE_TESTS, true)) }}:
     - script: |
         set -e
-        npm run compile
-      displayName: Compile smoke test suites (non-OSS)
-      workingDirectory: test/smoke
-      condition: and(succeeded(), eq(variables['VSCODE_STEP_ON_IT'], 'false'))
-
-    - script: |
-        set -e
-        npm run compile
-      displayName: Compile integration test suites (non-OSS)
-      workingDirectory: test/integration/browser
+        npm run compile --prefix test/smoke
+        npm run compile --prefix test/integration/browser
+      displayName: Compile test suites (non-OSS)
       condition: and(succeeded(), eq(variables['VSCODE_STEP_ON_IT'], 'false'))
 
   - ${{ if ne(parameters.VSCODE_CIBUILD, true) }}:

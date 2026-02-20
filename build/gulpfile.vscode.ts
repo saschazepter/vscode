@@ -243,6 +243,15 @@ const minifyVSCodeTask = task.define('minify-vscode', task.series(
 ));
 gulp.task(minifyVSCodeTask);
 
+gulp.task(task.define('core-ci-old', task.series(
+	gulp.task('compile-build-with-mangling') as task.Task,
+	task.parallel(
+		gulp.task('minify-vscode') as task.Task,
+		gulp.task('minify-vscode-reh') as task.Task,
+		gulp.task('minify-vscode-reh-web') as task.Task,
+	)
+)));
+
 gulp.task(task.define('core-ci', task.series(
 	copyCodiconsTask,
 	cleanExtensionsBuildTask,
