@@ -297,7 +297,7 @@ export class McpServer extends Disposable implements IMcpServer {
 	 * Helper function to call the function on the handler once it's online. The
 	 * connection started if it is not already.
 	 */
-	public static async callOn<R>(server: IMcpServer, fn: (handler: McpServerRequestHandler) => Promise<R>, token: CancellationToken = CancellationToken.None): Promise<R> {
+	public static async callOn<R>(server: IMcpServer, fn: (handler: McpServerRequestHandler, connection: IMcpServerConnection) => Promise<R>, token: CancellationToken = CancellationToken.None): Promise<R> {
 		await server.start({ promptType: 'all-untrusted' }); // idempotent
 
 		let ranOnce = false;
@@ -307,6 +307,7 @@ export class McpServer extends Disposable implements IMcpServer {
 
 			d = autorun(reader => {
 				const connection = server.connection.read(reader);
+				connection?.handler.read(reader); // ensure handler is ready before calling fn
 				if (!connection || ranOnce) {
 					return;
 				}
@@ -326,7 +327,7 @@ export class McpServer extends Disposable implements IMcpServer {
 					}
 				}
 
-				resolve(fn(handler));
+				resolve(fn(handler, connection));
 				ranOnce = true; // aggressive prevent multiple racey calls, don't dispose because autorun is sync
 			});
 		});

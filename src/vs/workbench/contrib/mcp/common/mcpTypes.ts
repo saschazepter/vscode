@@ -185,7 +185,7 @@ export namespace McpServerDefinition {
 			staticMetadata: def.staticMetadata,
 			launch: McpServerLaunch.fromSerialized(def.launch),
 			sandboxEnabled: def.sandboxEnabled,
-			sandbox: def.sandbox,
+			sandbox: def.sandboxEnabled ? def.sandbox : undefined,
 			variableReplacement: def.variableReplacement ? McpServerDefinitionVariableReplacement.fromSerialized(def.variableReplacement) : undefined,
 		};
 	}

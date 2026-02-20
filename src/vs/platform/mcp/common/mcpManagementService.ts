@@ -392,14 +392,27 @@ export abstract class AbstractMcpResourceManagementService extends AbstractCommo
 
 			for (const [name, server] of current) {
 				const previous = this.local.get(name);
+				let config = server.config;
+				if (server.config.type === McpServerType.LOCAL) {
+					config = {
+						...server.config,
+						sandboxEnabled: server.config.sandboxEnabled,
+						sandbox: server.config.sandboxEnabled ? server.config.sandbox : undefined
+					};
+				}
+				const updatedServer: ILocalMcpServer = {
+					...server,
+					config,
+				};
+
 				if (previous) {
-					if (!equals(previous, server)) {
-						updated.push(server);
-						this.local.set(name, server);
+					if (!equals(previous, updatedServer)) {
+						updated.push(updatedServer);
+						this.local.set(name, updatedServer);
 					}
 				} else {
-					added.push(server);
-					this.local.set(name, server);
+					added.push(updatedServer);
+					this.local.set(name, updatedServer);
 				}
 			}
 

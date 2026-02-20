@@ -174,13 +174,14 @@ export class McpResourceScannerService extends Disposable implements IMcpResourc
 
 	private fromUserMcpServers(scannedMcpServers: IScannedMcpServers): IScannedMcpServers {
 		const userMcpServers: IScannedMcpServers = {
-			inputs: scannedMcpServers.inputs
+			inputs: scannedMcpServers.inputs,
+			sandbox: scannedMcpServers.sandbox
 		};
 		const servers = Object.entries(scannedMcpServers.servers ?? {});
 		if (servers.length > 0) {
 			userMcpServers.servers = {};
 			for (const [serverName, server] of servers) {
-				userMcpServers.servers[serverName] = this.sanitizeServer(server);
+				userMcpServers.servers[serverName] = this.sanitizeServer(server, scannedMcpServers.sandbox);
 			}
 		}
 		return userMcpServers;
@@ -218,7 +219,7 @@ export class McpResourceScannerService extends Disposable implements IMcpResourc
 			(<Mutable<ICommonMcpServerConfiguration>>server).type = (<IMcpStdioServerConfiguration>server).command ? McpServerType.LOCAL : McpServerType.REMOTE;
 		}
 
-		if (sandbox && server.type === McpServerType.LOCAL && !(server as IMcpStdioServerConfiguration).sandbox) {
+		if (sandbox && server.type === McpServerType.LOCAL && !(server as IMcpStdioServerConfiguration).sandbox && server.sandboxEnabled) {
 			(<Mutable<IMcpStdioServerConfiguration>>server).sandbox = sandbox;
 		}
 

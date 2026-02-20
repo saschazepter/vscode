@@ -27,10 +27,10 @@ import { ChatResponseResource, getAttachableImageExtension } from '../../chat/co
 import { LanguageModelPartAudience } from '../../chat/common/languageModels.js';
 import { CountTokensCallback, ILanguageModelToolsService, IPreparedToolInvocation, IToolConfirmationMessages, IToolData, IToolImpl, IToolInvocation, IToolInvocationPreparationContext, IToolResult, IToolResultInputOutputDetails, ToolDataSource, ToolProgress, ToolSet } from '../../chat/common/tools/languageModelToolsService.js';
 import { IMcpRegistry } from './mcpRegistryTypes.js';
-import { IMcpSandboxService } from './mcpSandboxService.js';
 import { IMcpServer, IMcpService, IMcpTool, IMcpToolResourceLinkContents, McpResourceURI, McpToolResourceLinkMimeType, McpToolVisibility } from './mcpTypes.js';
 import { mcpServerToSourceData } from './mcpTypesUtils.js';
 import { ILifecycleService } from '../../../services/lifecycle/common/lifecycle.js';
+import { McpServer } from './mcpServer.js';
 
 interface ISyncedToolData {
 	toolData: IToolData;
@@ -201,14 +201,16 @@ class McpToolImplementation implements IToolImpl {
 		@IProductService private readonly _productService: IProductService,
 		@IFileService private readonly _fileService: IFileService,
 		@IImageResizeService private readonly _imageResizeService: IImageResizeService,
-		@IMcpSandboxService private readonly _mcpSandboxService: IMcpSandboxService,
 	) { }
 
 	async prepareToolInvocation(context: IToolInvocationPreparationContext): Promise<IPreparedToolInvocation> {
 		const tool = this._tool;
 		const server = this._server;
-		const serverDefinition = server.readDefinitions().get().server;
-		const isSandboxedServer = !!serverDefinition && await this._mcpSandboxService.isEnabled(serverDefinition, server.serverMetadata.get()?.serverName);
+		// ToDO: need to be revisited as the first tool invocation doesnt have sandbox info and we are optimistically assuming it is not sandboxed. We should ideally have the sandbox info.
+		const sandboxEnabled = await McpServer.callOn(server, async (_handler, connection) => {
+			return connection.definition.sandboxEnabled;
+		});
+		const isSandboxedServer = sandboxEnabled === true;
 
 		const mcpToolWarning = localize(
 			'mcp.tool.warning',
