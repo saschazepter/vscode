@@ -175,7 +175,7 @@ function doFindGroup(input: EditorInputWithOptions | IUntypedEditorInput, prefer
 		}
 	}
 
-	// Force modal editor part: redirect to the modal group when setting is 'always'
+	// Force modal editor part: redirect to the modal group when setting is 'on'
 	if (!group && configurationService.getValue<string>('workbench.editor.useModal') === 'on') {
 		group = editorGroupService.createModalEditorPart(options?.modal)
 			.then(part => part.activeGroup);
