@@ -358,7 +358,7 @@ configurationRegistry.registerConfiguration({
 				localization: {
 					description: {
 						key: 'autoApprove2.description',
-						value: nls.localize('autoApprove2.description', 'Global auto approve also known as "YOLO mode" disables manual approval completely for all tools in all workspaces, allowing the agent to act fully autonomously. Running with chat.tools.terminal.sandbox.enabled enabled is recommended.')
+						value: nls.localize('autoApprove2.description', 'Global auto approve also known as "YOLO mode" disables manual approval completely for all tools in all workspaces, allowing the agent to act fully autonomously. Running with `#chat.tools.terminal.sandbox.enabled#` enabled is recommended.')
 					}
 				},
 			}
