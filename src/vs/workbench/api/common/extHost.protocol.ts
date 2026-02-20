@@ -99,7 +99,6 @@ import { IExtHostDocumentSaveDelegate } from './extHostDocumentData.js';
 import { TerminalShellExecutionCommandLineConfidence } from './extHostTypes.js';
 import * as tasks from './shared/tasks.js';
 import { PromptsType } from '../../contrib/chat/common/promptSyntax/promptTypes.js';
-import { GitRefQuery } from '../../contrib/git/common/gitService.js';
 
 export type IconPathDto =
 	| UriComponents
@@ -3457,6 +3456,13 @@ export interface ExtHostChatSessionsShape {
 	$provideHandleOptionsChange(providerHandle: number, sessionResource: UriComponents, updates: ReadonlyArray<ChatSessionOptionUpdateDto>, token: CancellationToken): Promise<void>;
 }
 
+export interface GitRefQueryDto {
+	readonly contains?: string;
+	readonly count?: number;
+	readonly pattern?: string | string[];
+	readonly sort?: 'alphabetically' | 'committerdate' | 'creatordate';
+}
+
 export enum GitRefTypeDto {
 	Head,
 	RemoteHead,
@@ -3472,7 +3478,7 @@ export interface GitRefDto {
 
 export interface ExtHostGitExtensionShape {
 	$openRepository(root: UriComponents): Promise<UriComponents | undefined>;
-	$getRefs(root: UriComponents, query: GitRefQuery, token?: CancellationToken): Promise<GitRefDto[]>;
+	$getRefs(root: UriComponents, query: GitRefQueryDto, token?: CancellationToken): Promise<GitRefDto[]>;
 }
 
 // --- proxy identifiers

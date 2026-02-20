@@ -10,7 +10,7 @@ import { ExtensionIdentifier } from '../../../platform/extensions/common/extensi
 import { createDecorator } from '../../../platform/instantiation/common/instantiation.js';
 import { IExtHostExtensionService } from './extHostExtensionService.js';
 import { IExtHostRpcService } from './extHostRpcService.js';
-import { ExtHostGitExtensionShape, GitRefDto, GitRefTypeDto } from './extHost.protocol.js';
+import { ExtHostGitExtensionShape, GitRefDto, GitRefQueryDto, GitRefTypeDto } from './extHost.protocol.js';
 
 const GIT_EXTENSION_ID = 'vscode.git';
 
@@ -28,20 +28,20 @@ interface Repository {
 	getRefs(query: GitRefQuery, token?: vscode.CancellationToken): Promise<GitRef[]>;
 }
 
-export interface GitRef {
+interface GitRef {
 	type: GitRefType;
 	name?: string;
 	commit?: string;
 	remote?: string;
 }
 
-export const enum GitRefType {
+const enum GitRefType {
 	Head,
 	RemoteHead,
 	Tag
 }
 
-export interface GitRefQuery {
+interface GitRefQuery {
 	readonly contains?: string;
 	readonly count?: number;
 	readonly pattern?: string | string[];
@@ -85,7 +85,7 @@ export class ExtHostGitExtensionService extends Disposable implements IExtHostGi
 		return repository?.rootUri;
 	}
 
-	async $getRefs(uri: UriComponents, query: GitRefQuery, token?: vscode.CancellationToken): Promise<GitRefDto[]> {
+	async $getRefs(uri: UriComponents, query: GitRefQueryDto, token?: vscode.CancellationToken): Promise<GitRefDto[]> {
 		const api = await this._ensureGitApi();
 		if (!api) {
 			return [];
