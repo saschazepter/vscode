@@ -45,20 +45,22 @@ jobs:
             @echo off
             setlocal
 
-            set /p NODE_VERSION=<"$(Build.SourcesDirectory)\.nvmrc"
-            if /I "%NODE_VERSION:~0,1%"=="v" set "NODE_VERSION=%NODE_VERSION:~1%"
+            set "EXPECTED_HASH=fd44256121597d6a3707f4c7730b4e3733eacb5a95cc78a099f601d7e7f8290d"
+            set "NODE_ROOT=$(Agent.TempDirectory)\nodejs"
+            set "NODE_EXE=%NODE_ROOT%\node.exe"
 
-            set "ARCHIVE_NAME=node-v%NODE_VERSION%-win-arm64.zip"
-            set "DOWNLOAD_URL=https://nodejs.org/dist/v%NODE_VERSION%/%ARCHIVE_NAME%"
-            set "ARCHIVE_PATH=$(Agent.TempDirectory)\%ARCHIVE_NAME%"
-            set "EXTRACT_ROOT=$(Agent.TempDirectory)\nodejs"
-            set "NODE_ROOT=%EXTRACT_ROOT%\node-v%NODE_VERSION%-win-arm64"
+            if not exist "%NODE_EXE%" (
+              if exist "%NODE_ROOT%" rmdir /s /q "%NODE_ROOT%"
+              mkdir "%NODE_ROOT%"
+              curl.exe -fsSL "https://nodejs.org/dist/v22.22.0/win-arm64/node.exe" -o "%NODE_EXE%"
 
-            if not exist "%NODE_ROOT%\node.exe" (
-              if exist "%EXTRACT_ROOT%" rmdir /s /q "%EXTRACT_ROOT%"
-              mkdir "%EXTRACT_ROOT%"
-              curl.exe -fsSL "%DOWNLOAD_URL%" -o "%ARCHIVE_PATH%"
-              tar -xf "%ARCHIVE_PATH%" -C "%EXTRACT_ROOT%"
+              for /f %%A in ('certutil -hashfile "%NODE_EXE%" SHA256 ^| findstr /r "^[0-9a-f]*$"') do set "ACTUAL_HASH=%%A"
+              if /I not "%ACTUAL_HASH%"=="%EXPECTED_HASH%" (
+                echo Hash mismatch for node.exe
+                echo   expected: %EXPECTED_HASH%
+                echo   actual:   %ACTUAL_HASH%
+                exit /b 1
+              )
             )
 
             echo ##vso[task.prependpath]%NODE_ROOT%
