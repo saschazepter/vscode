@@ -1217,12 +1217,12 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 
 				alreadyRenderedPart.dispose();
 
-				// Remove old DOM from thinking wrapper to prevent accumulation
-				// of duplicate entries when re-rendering pinned parts
+				// Replace old DOM from thinking wrapper to prevent accumulation
+				// of duplicate entries when re-rendering pinned parts.
 				if (alreadyRenderedPart.domNode) {
 					const thinkingToolWrapper = dom.findParentWithClass(alreadyRenderedPart.domNode, 'chat-thinking-tool-wrapper');
 					if (thinkingToolWrapper) {
-						thinkingToolWrapper.remove();
+						thinkingToolWrapper.replaceWith(alreadyRenderedPart.domNode);
 					}
 				}
 			}
