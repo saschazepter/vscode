@@ -15,7 +15,7 @@ import { renderIcon } from '../../../../base/browser/ui/iconLabel/iconLabels.js'
 import { localize } from '../../../../nls.js';
 import { IContextMenuService } from '../../../../platform/contextview/browser/contextView.js';
 import { AgentSessionProviders } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessions.js';
-import { IPendingSession } from './pendingSession.js';
+import { INewSession } from './newSession.js';
 
 /**
  * A dropdown menu action item that shows an icon, a text label, and a chevron.
@@ -157,7 +157,7 @@ export type IsolationMode = 'worktree' | 'folder';
 export class IsolationModePicker extends Disposable {
 
 	private _isolationMode: IsolationMode = 'worktree';
-	private _pendingSession: IPendingSession | undefined;
+	private _newSession: INewSession | undefined;
 
 	private readonly _onDidChange = this._register(new Emitter<IsolationMode>());
 	readonly onDidChange: Event<IsolationMode> = this._onDidChange.event;
@@ -180,8 +180,8 @@ export class IsolationModePicker extends Disposable {
 	 * Sets the pending session that this picker writes to.
 	 * When the user selects a mode, it calls `setIsolationMode` on the session.
 	 */
-	setPendingSession(session: IPendingSession | undefined): void {
-		this._pendingSession = session;
+	setNewSession(session: INewSession | undefined): void {
+		this._newSession = session;
 	}
 
 	/**
@@ -244,7 +244,7 @@ export class IsolationModePicker extends Disposable {
 	private _setMode(mode: IsolationMode): void {
 		if (this._isolationMode !== mode) {
 			this._isolationMode = mode;
-			this._pendingSession?.setIsolationMode(mode);
+			this._newSession?.setIsolationMode(mode);
 			this._onDidChange.fire(mode);
 			this._renderDropdown();
 		}

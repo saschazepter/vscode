@@ -55,7 +55,7 @@ import { NewChatContextAttachments } from './newChatContextAttachments.js';
 import { GITHUB_REMOTE_FILE_SCHEME } from '../../fileTreeView/browser/githubFileSystemProvider.js';
 import { FolderPicker } from './folderPicker.js';
 import { IsolationModePicker, SessionTargetPicker } from './sessionTargetPicker.js';
-import { IPendingSession } from './pendingSession.js';
+import { INewSession } from './newSession.js';
 
 // #region --- Chat Welcome Widget ---
 
@@ -101,7 +101,7 @@ class NewChatWidget extends Disposable {
 	private readonly _modelPickerDisposable = this._register(new MutableDisposable());
 
 	// Pending session
-	private _pendingSession: IPendingSession | undefined;
+	private _newSession: INewSession | undefined;
 
 	// Welcome part
 	private _pickersContainer: HTMLElement | undefined;
@@ -158,8 +158,8 @@ class NewChatWidget extends Disposable {
 
 		// React to chat session option changes
 		this._register(this.chatSessionsService.onDidChangeSessionOptions((e: URI | undefined) => {
-			if (this._pendingSession && isEqual(this._pendingSession.resource, e)) {
-				this._syncOptionsFromSession(this._pendingSession.resource);
+			if (this._newSession && isEqual(this._newSession.resource, e)) {
+				this._syncOptionsFromSession(this._newSession.resource);
 				this._renderExtensionPickers();
 			}
 		}));
@@ -223,17 +223,17 @@ class NewChatWidget extends Disposable {
 		welcomeElement.classList.add('revealed');
 	}
 
-	private readonly _pendingSessions = new Map<string, IPendingSession>();
+	private readonly _newSessions = new Map<string, INewSession>();
 
 	private _createPendingSession(): void {
 		const target = this._targetPicker.selectedTarget;
 
 		// Reuse existing pending session for the same target type
-		const existing = this._pendingSessions.get(target);
+		const existing = this._newSessions.get(target);
 		if (existing) {
-			this._pendingSession = existing;
-			this._folderPicker.setPendingSession(existing);
-			this._isolationModePicker.setPendingSession(existing);
+			this._newSession = existing;
+			this._folderPicker.setNewSession(existing);
+			this._isolationModePicker.setNewSession(existing);
 			return;
 		}
 
@@ -244,13 +244,13 @@ class NewChatWidget extends Disposable {
 			displayName: '',
 		});
 
-		const session = this.sessionsManagementService.createPendingSessionForTarget(target, resource, defaultRepoUri);
-		this._pendingSessions.set(target, session);
-		this._pendingSession = session;
+		const session = this.sessionsManagementService.createNewSessionForTarget(target, resource, defaultRepoUri);
+		this._newSessions.set(target, session);
+		this._newSession = session;
 
 		// Wire pickers to the new session
-		this._folderPicker.setPendingSession(session);
-		this._isolationModePicker.setPendingSession(session);
+		this._folderPicker.setNewSession(session);
+		this._isolationModePicker.setNewSession(session);
 
 		// Create the underlying chat session resource
 		this.sessionsManagementService.createNewPendingSession(resource)
@@ -531,9 +531,9 @@ class NewChatWidget extends Disposable {
 					this._updateOptionContextKey(optionGroup.id, option.id);
 					emitter.fire(option);
 
-					if (this._pendingSession) {
+					if (this._newSession) {
 						this.chatSessionsService.notifySessionOptionsChange(
-							this._pendingSession.resource,
+							this._newSession.resource,
 							[{ optionId: optionGroup.id, value: option }]
 						).catch((err) => this.logService.error(`Failed to notify extension of ${optionGroup.id} change:`, err));
 					}
@@ -544,7 +544,7 @@ class NewChatWidget extends Disposable {
 					const groups = this.chatSessionsService.getOptionGroupsForSessionType(activeSessionType);
 					return groups?.find((g: { id: string }) => g.id === optionGroup.id);
 				},
-				getSessionResource: () => this._pendingSession?.resource,
+				getSessionResource: () => this._newSession?.resource,
 			};
 
 			const action = toAction({ id: optionGroup.id, label: optionGroup.name, run: () => { } });
@@ -575,8 +575,8 @@ class NewChatWidget extends Disposable {
 			return selectedOption;
 		}
 
-		if (this._pendingSession) {
-			const sessionOption = this.chatSessionsService.getSessionOption(this._pendingSession.resource, optionGroup.id);
+		if (this._newSession) {
+			const sessionOption = this.chatSessionsService.getSessionOption(this._newSession.resource, optionGroup.id);
 			if (!isString(sessionOption)) {
 				return sessionOption;
 			}
@@ -663,7 +663,7 @@ class NewChatWidget extends Disposable {
 		const target = this._targetPicker.selectedTarget;
 
 		const position = this._options.sessionPosition ?? ChatSessionPosition.Sidebar;
-		const resource = this._pendingSession?.resource
+		const resource = this._newSession?.resource
 			?? getResourceForNewChatSession({ type: target, position, displayName: '' });
 
 		const contribution = this.chatSessionsService.getChatSessionContribution(target);
@@ -682,7 +682,7 @@ class NewChatWidget extends Disposable {
 			attachedContext: this._contextAttachments.attachments.length > 0 ? [...this._contextAttachments.attachments] : undefined,
 		};
 
-		const folderUri = this._pendingSession?.repoUri ?? this._folderPicker.selectedFolderUri ?? this.workspaceContextService.getWorkspace().folders[0]?.uri;
+		const folderUri = this._newSession?.repoUri ?? this._folderPicker.selectedFolderUri ?? this.workspaceContextService.getWorkspace().folders[0]?.uri;
 
 		this._options.onSendRequest?.({
 			resource,

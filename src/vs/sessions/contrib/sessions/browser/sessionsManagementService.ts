@@ -25,7 +25,7 @@ import { IWorkspaceContextService } from '../../../../platform/workspace/common/
 import { IWorkspaceEditingService } from '../../../../workbench/services/workspaces/common/workspaceEditing.js';
 import { IViewsService } from '../../../../workbench/services/views/common/viewsService.js';
 import { AgentSessionProviders } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessions.js';
-import { IPendingSession, LocalPendingSession, RemotePendingSession } from '../chat/browser/pendingSession.js';
+import { INewSession, LocalNewSession, RemoteNewSession } from '../chat/browser/newSession.js';
 
 export const IsNewChatSessionContext = new RawContextKey<boolean>('isNewChatSession', true);
 
@@ -85,7 +85,7 @@ export interface ISessionsManagementService {
 	 * Create a pending session object for the given target type.
 	 * Local sessions collect options locally; remote sessions notify the extension.
 	 */
-	createPendingSessionForTarget(target: AgentSessionProviders, sessionResource: URI, defaultRepoUri?: URI): IPendingSession;
+	createNewSessionForTarget(target: AgentSessionProviders, sessionResource: URI, defaultRepoUri?: URI): INewSession;
 
 	/**
 	 * Open a new session, apply options, and send the initial request.
@@ -262,11 +262,11 @@ export class SessionsManagementService extends Disposable implements ISessionsMa
 		return activeSessionItem;
 	}
 
-	createPendingSessionForTarget(target: AgentSessionProviders, sessionResource: URI, defaultRepoUri?: URI): IPendingSession {
+	createNewSessionForTarget(target: AgentSessionProviders, sessionResource: URI, defaultRepoUri?: URI): INewSession {
 		if (target === AgentSessionProviders.Background || target === AgentSessionProviders.Local) {
-			return new LocalPendingSession(sessionResource, defaultRepoUri);
+			return new LocalNewSession(sessionResource, defaultRepoUri);
 		}
-		return new RemotePendingSession(sessionResource, this.chatSessionsService, this.logService);
+		return new RemoteNewSession(sessionResource, this.chatSessionsService, this.logService);
 	}
 
 	/**

@@ -11,11 +11,11 @@ import { IChatSessionsService } from '../../../../workbench/contrib/chat/common/
 import { IsolationMode } from './sessionTargetPicker.js';
 
 /**
- * A pending session represents a session being configured before the first
+ * A new session represents a session being configured before the first
  * request is sent. It holds the user's selections (repoUri, isolationMode)
  * and fires a single event when any property changes.
  */
-export interface IPendingSession {
+export interface INewSession {
 	readonly resource: URI;
 	readonly repoUri: URI | undefined;
 	readonly isolationMode: IsolationMode;
@@ -25,11 +25,11 @@ export interface IPendingSession {
 }
 
 /**
- * Local pending session for Background agent sessions.
+ * Local new session for Background agent sessions.
  * Fires `onDidChange` for both `repoUri` and `isolationMode` changes.
  * Does not notify the extension service.
  */
-export class LocalPendingSession extends Disposable implements IPendingSession {
+export class LocalNewSession extends Disposable implements INewSession {
 
 	private _repoUri: URI | undefined;
 	private _isolationMode: IsolationMode = 'worktree';
@@ -62,11 +62,11 @@ export class LocalPendingSession extends Disposable implements IPendingSession {
 }
 
 /**
- * Remote pending session for Cloud agent sessions.
+ * Remote new session for Cloud agent sessions.
  * Fires `onDidChange` and notifies the extension service when `repoUri` changes.
  * Ignores `isolationMode` (not relevant for cloud).
  */
-export class RemotePendingSession extends Disposable implements IPendingSession {
+export class RemoteNewSession extends Disposable implements INewSession {
 
 	private _repoUri: URI | undefined;
 	private _isolationMode: IsolationMode = 'worktree';
