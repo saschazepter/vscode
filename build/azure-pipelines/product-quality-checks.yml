@@ -168,7 +168,7 @@ jobs:
 
       - script: |
           set -e
-          AZURE_STORAGE_ACCOUNT="vscodesourcemaps" \
+          AZURE_STORAGE_ACCOUNT="vscodeweb" \
           AZURE_TENANT_ID="$(AZURE_TENANT_ID)" \
           AZURE_CLIENT_ID="$(AZURE_CLIENT_ID)" \
           AZURE_ID_TOKEN="$(AZURE_ID_TOKEN)" \
