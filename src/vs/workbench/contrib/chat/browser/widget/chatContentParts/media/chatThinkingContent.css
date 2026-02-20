@@ -101,8 +101,28 @@
 
 			.chat-used-context {
 				margin-bottom: 0px;
-				margin-left: 2px;
+				margin-left: 4px;
 				padding-left: 2px;
+			}
+
+			.chat-used-context {
+				.monaco-button.monaco-text-button {
+					color: var(--vscode-descriptionForeground);
+
+					:hover {
+						color: var(--vscode-foreground);
+					}
+
+					.monaco-button:hover .chat-collapsible-hover-chevron {
+						opacity: 1;
+					}
+				}
+			}
+
+			.chat-used-context:not(.chat-used-context-collapsed) {
+				.monaco-button.monaco-text-button {
+					color: var(--vscode-foreground);
+				}
 			}
 
 			.progress-container,
@@ -112,6 +132,10 @@
 
 			.codicon:not(.chat-thinking-icon) {
 				display: none;
+			}
+
+			.chat-collapsible-hover-chevron.codicon {
+				display: inline-flex;
 			}
 
 		}
