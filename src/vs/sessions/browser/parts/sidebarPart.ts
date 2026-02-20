@@ -12,7 +12,7 @@ import { IContextMenuService } from '../../../platform/contextview/browser/conte
 import { IKeybindingService } from '../../../platform/keybinding/common/keybinding.js';
 import { IInstantiationService } from '../../../platform/instantiation/common/instantiation.js';
 import { IThemeService } from '../../../platform/theme/common/themeService.js';
-import { SIDE_BAR_TITLE_FOREGROUND, SIDE_BAR_TITLE_BORDER, SIDE_BAR_BACKGROUND, SIDE_BAR_FOREGROUND, SIDE_BAR_BORDER, SIDE_BAR_DRAG_AND_DROP_BACKGROUND, ACTIVITY_BAR_BADGE_BACKGROUND, ACTIVITY_BAR_BADGE_FOREGROUND, ACTIVITY_BAR_TOP_FOREGROUND, ACTIVITY_BAR_TOP_ACTIVE_BORDER, ACTIVITY_BAR_TOP_INACTIVE_FOREGROUND, ACTIVITY_BAR_TOP_DRAG_AND_DROP_BORDER } from '../../../workbench/common/theme.js';
+import { SIDE_BAR_TITLE_FOREGROUND, SIDE_BAR_TITLE_BORDER, SIDE_BAR_BACKGROUND, SIDE_BAR_FOREGROUND, SIDE_BAR_BORDER, SIDE_BAR_DRAG_AND_DROP_BACKGROUND, ACTIVITY_BAR_BADGE_BACKGROUND, ACTIVITY_BAR_BADGE_FOREGROUND, ACTIVITY_BAR_TOP_FOREGROUND, ACTIVITY_BAR_TOP_ACTIVE_BORDER, ACTIVITY_BAR_TOP_INACTIVE_FOREGROUND, ACTIVITY_BAR_TOP_DRAG_AND_DROP_BORDER, TITLE_BAR_ACTIVE_BACKGROUND, TITLE_BAR_INACTIVE_BACKGROUND, TITLE_BAR_ACTIVE_FOREGROUND, TITLE_BAR_INACTIVE_FOREGROUND, TITLE_BAR_BORDER, WORKBENCH_BACKGROUND } from '../../../workbench/common/theme.js';
 import { contrastBorder } from '../../../platform/theme/common/colorRegistry.js';
 import { INotificationService } from '../../../platform/notification/common/notification.js';
 import { IContextKeyService } from '../../../platform/contextkey/common/contextkey.js';
@@ -37,6 +37,8 @@ import { HiddenItemStrategy, MenuWorkbenchToolBar } from '../../../platform/acti
 import { isMacintosh, isNative } from '../../../base/common/platform.js';
 import { isFullscreen, onDidChangeFullscreen } from '../../../base/browser/browser.js';
 import { mainWindow } from '../../../base/browser/window.js';
+import { IHostService } from '../../../workbench/services/host/browser/host.js';
+import { Color } from '../../../base/common/color.js';
 
 /**
  * Sidebar part specifically for agent sessions workbench.
@@ -60,6 +62,7 @@ export class SidebarPart extends AbstractPaneCompositePart {
 	private footerContainer: HTMLElement | undefined;
 	private footerToolbar: MenuWorkbenchToolBar | undefined;
 	private previousLayoutDimensions: { width: number; height: number; top: number; left: number } | undefined;
+	private isInactive: boolean = false;
 
 	//#region IView
 
@@ -101,6 +104,7 @@ export class SidebarPart extends AbstractPaneCompositePart {
 		@IContextKeyService contextKeyService: IContextKeyService,
 		@IExtensionService extensionService: IExtensionService,
 		@IMenuService menuService: IMenuService,
+		@IHostService private readonly hostService: IHostService,
 	) {
 		super(
 			Parts.SIDEBAR_PART,
@@ -129,6 +133,11 @@ export class SidebarPart extends AbstractPaneCompositePart {
 			extensionService,
 			menuService,
 		);
+
+		this._register(this.hostService.onDidChangeFocus(focused => {
+			this.isInactive = !focused;
+			this.updateStyles();
+		}));
 	}
 
 	override create(parent: HTMLElement): void {
@@ -223,6 +232,27 @@ export class SidebarPart extends AbstractPaneCompositePart {
 		container.style.borderRightWidth = borderColor ? '1px' : '';
 		container.style.borderRightStyle = borderColor ? 'solid' : '';
 		container.style.borderRightColor = borderColor;
+
+		// Apply titlebar colors to the sidebar title area so it visually
+		// extends the titlebar across the full window width.
+		if (this.titleArea) {
+			const titleBackground = this.getColor(this.isInactive ? TITLE_BAR_INACTIVE_BACKGROUND : TITLE_BAR_ACTIVE_BACKGROUND, (color, theme) => {
+				return color.isOpaque() ? color : color.makeOpaque(WORKBENCH_BACKGROUND(theme));
+			}) || '';
+			this.titleArea.style.backgroundColor = titleBackground;
+
+			if (titleBackground && Color.fromHex(titleBackground).isLighter()) {
+				this.titleArea.classList.add('light');
+			} else {
+				this.titleArea.classList.remove('light');
+			}
+
+			const titleForeground = this.getColor(this.isInactive ? TITLE_BAR_INACTIVE_FOREGROUND : TITLE_BAR_ACTIVE_FOREGROUND);
+			this.titleArea.style.color = titleForeground || '';
+
+			const titleBorder = this.getColor(TITLE_BAR_BORDER);
+			this.titleArea.style.borderBottom = titleBorder ? `1px solid ${titleBorder}` : '';
+		}
 	}
 
 	override layout(width: number, height: number, top: number, left: number): void {
