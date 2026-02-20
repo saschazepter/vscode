@@ -3,11 +3,11 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { observableValue } from '../../../src/vs/base/common/observable';
-import { createAiStatsHover, IAiStatsHoverData } from '../../../src/vs/workbench/contrib/editTelemetry/browser/editStats/aiStatsStatusBar';
-import { ISessionData } from '../../../src/vs/workbench/contrib/editTelemetry/browser/editStats/aiStatsChart';
-import { Random } from '../../../src/vs/editor/test/common/core/random';
-import { ComponentFixtureContext, defineComponentFixture, defineThemedFixtureGroup } from './fixtureUtils';
+import { observableValue } from '../../../../base/common/observable.js';
+import { createAiStatsHover, IAiStatsHoverData } from '../../../contrib/editTelemetry/browser/editStats/aiStatsStatusBar.js';
+import { ISessionData } from '../../../contrib/editTelemetry/browser/editStats/aiStatsChart.js';
+import { Random } from '../../../../editor/test/common/core/random.js';
+import { ComponentFixtureContext, defineComponentFixture, defineThemedFixtureGroup } from './fixtureUtils.js';
 
 export default defineThemedFixtureGroup({
 	AiStatsHover: defineComponentFixture({

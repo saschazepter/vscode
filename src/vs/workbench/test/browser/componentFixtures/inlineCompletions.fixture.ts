@@ -3,20 +3,20 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { constObservable } from '../../../../src/vs/base/common/observable';
-import { URI } from '../../../../src/vs/base/common/uri';
-import { Range } from '../../../../src/vs/editor/common/core/range';
-import { IEditorOptions } from '../../../../src/vs/editor/common/config/editorOptions';
-import { CodeEditorWidget, ICodeEditorWidgetOptions } from '../../../../src/vs/editor/browser/widget/codeEditor/codeEditorWidget';
-import { EditorExtensionsRegistry } from '../../../../src/vs/editor/browser/editorExtensions';
-import { InlineCompletionsController } from '../../../../src/vs/editor/contrib/inlineCompletions/browser/controller/inlineCompletionsController';
-import { InlineCompletionsSource, InlineCompletionsState } from '../../../../src/vs/editor/contrib/inlineCompletions/browser/model/inlineCompletionsSource';
-import { InlineEditItem } from '../../../../src/vs/editor/contrib/inlineCompletions/browser/model/inlineSuggestionItem';
-import { TextModelValueReference } from '../../../../src/vs/editor/contrib/inlineCompletions/browser/model/textModelValueReference';
-import { ComponentFixtureContext, createEditorServices, createTextModel, defineComponentFixture, defineThemedFixtureGroup } from '../fixtureUtils';
 
 // Import to register the inline completions contribution
-import '../../../../src/vs/editor/contrib/inlineCompletions/browser/inlineCompletions.contribution';
+import { constObservable, IObservableWithChange } from '../../../../base/common/observable.js';
+import { URI } from '../../../../base/common/uri.js';
+import { ComponentFixtureContext, createEditorServices, defineThemedFixtureGroup, defineComponentFixture, createTextModel } from './fixtureUtils.js';
+import { EditorExtensionsRegistry } from '../../../../editor/browser/editorExtensions.js';
+import { ICodeEditorWidgetOptions, CodeEditorWidget } from '../../../../editor/browser/widget/codeEditor/codeEditorWidget.js';
+import { IEditorOptions } from '../../../../editor/common/config/editorOptions.js';
+import { Range } from '../../../../editor/common/core/range.js';
+import { InlineCompletionsController } from '../../../../editor/contrib/inlineCompletions/browser/controller/inlineCompletionsController.js';
+import '../../../../editor/contrib/inlineCompletions/browser/inlineCompletions.contribution.js';
+import { InlineCompletionsSource, InlineCompletionsState } from '../../../../editor/contrib/inlineCompletions/browser/model/inlineCompletionsSource.js';
+import { InlineEditItem } from '../../../../editor/contrib/inlineCompletions/browser/model/inlineSuggestionItem.js';
+import { TextModelValueReference } from '../../../../editor/contrib/inlineCompletions/browser/model/textModelValueReference.js';
 
 
 // ============================================================================
@@ -52,15 +52,13 @@ function renderInlineEdit(options: InlineEditOptions): HTMLElement {
 	instantiationService.stubInstance(InlineCompletionsSource, {
 		cancelUpdate: () => { },
 		clear: () => { },
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		clearOperationOnTextModelChange: constObservable(undefined) as any,
+		clearOperationOnTextModelChange: constObservable(undefined) as IObservableWithChange<undefined, void>,
 		clearSuggestWidgetInlineCompletions: () => { },
 		dispose: () => { },
 		fetch: async () => true,
 		inlineCompletions: constObservable(new InlineCompletionsState([
 			InlineEditItem.createForTest(
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any
-				TextModelValueReference.snapshot(textModel as any),
+				TextModelValueReference.snapshot(textModel),
 				new Range(
 					options.range.startLineNumber,
 					options.range.startColumn,
@@ -117,11 +115,11 @@ export default defineThemedFixtureGroup({
 		render: (context) => renderInlineEdit({
 			...context,
 			code: `function greet(name) {
-    console.log("Hello, " + name);
+	console.log("Hello, " + name);
 }`,
 			cursorLine: 2,
 			range: { startLineNumber: 2, startColumn: 1, endLineNumber: 2, endColumn: 100 },
-			newText: '    console.log(`Hello, ${name}!`);',
+			newText: '\tconsole.log(`Hello, ${name}!`);',
 		}),
 	}),
 

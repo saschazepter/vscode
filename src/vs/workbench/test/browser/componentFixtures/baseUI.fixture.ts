@@ -3,21 +3,56 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { $ } from '../../../src/vs/base/browser/dom';
-import { Codicon } from '../../../src/vs/base/common/codicons';
-import { ThemeIcon } from '../../../src/vs/base/common/themables';
-import { Action, Separator } from '../../../src/vs/base/common/actions';
+import { $ } from '../../../../base/browser/dom.js';
+import { Codicon } from '../../../../base/common/codicons.js';
+import { ThemeIcon } from '../../../../base/common/themables.js';
+import { Action, Separator } from '../../../../base/common/actions.js';
 
 // UI Components
-import { Button, ButtonBar, ButtonWithDescription, unthemedButtonStyles } from '../../../src/vs/base/browser/ui/button/button';
-import { Toggle, Checkbox, unthemedToggleStyles } from '../../../src/vs/base/browser/ui/toggle/toggle';
-import { InputBox, MessageType, unthemedInboxStyles } from '../../../src/vs/base/browser/ui/inputbox/inputBox';
-import { CountBadge } from '../../../src/vs/base/browser/ui/countBadge/countBadge';
-import { ActionBar } from '../../../src/vs/base/browser/ui/actionbar/actionbar';
-import { ProgressBar } from '../../../src/vs/base/browser/ui/progressbar/progressbar';
-import { HighlightedLabel } from '../../../src/vs/base/browser/ui/highlightedlabel/highlightedLabel';
+import { Button, ButtonBar, ButtonWithDescription, unthemedButtonStyles } from '../../../../base/browser/ui/button/button.js';
+import { Toggle, Checkbox, unthemedToggleStyles } from '../../../../base/browser/ui/toggle/toggle.js';
+import { InputBox, MessageType, unthemedInboxStyles } from '../../../../base/browser/ui/inputbox/inputBox.js';
+import { CountBadge } from '../../../../base/browser/ui/countBadge/countBadge.js';
+import { ActionBar } from '../../../../base/browser/ui/actionbar/actionbar.js';
+import { ProgressBar } from '../../../../base/browser/ui/progressbar/progressbar.js';
+import { HighlightedLabel } from '../../../../base/browser/ui/highlightedlabel/highlightedLabel.js';
 
-import { ComponentFixtureContext, defineComponentFixture, defineThemedFixtureGroup } from './fixtureUtils';
+import { ComponentFixtureContext, defineComponentFixture, defineThemedFixtureGroup } from './fixtureUtils.js';
+
+
+export default defineThemedFixtureGroup({
+	Buttons: defineComponentFixture({
+		render: renderButtons,
+	}),
+
+	ButtonBar: defineComponentFixture({
+		render: renderButtonBar,
+	}),
+
+	Toggles: defineComponentFixture({
+		render: renderToggles,
+	}),
+
+	InputBoxes: defineComponentFixture({
+		render: renderInputBoxes,
+	}),
+
+	CountBadges: defineComponentFixture({
+		render: renderCountBadges,
+	}),
+
+	ActionBar: defineComponentFixture({
+		render: renderActionBar,
+	}),
+
+	ProgressBars: defineComponentFixture({
+		render: renderProgressBars,
+	}),
+
+	HighlightedLabels: defineComponentFixture({
+		render: renderHighlightedLabels,
+	}),
+});
 
 
 // ============================================================================
@@ -247,12 +282,6 @@ function renderInputBoxes({ container, disposableStore }: ComponentFixtureContex
 	container.style.gap = '16px';
 	container.style.width = '350px';
 
-	// Normal input
-	const normalInput = disposableStore.add(new InputBox(container, undefined, {
-		placeholder: 'Enter search query...',
-		inputBoxStyles: themedInputBoxStyles,
-	}));
-
 	// Input with value
 	const filledInput = disposableStore.add(new InputBox(container, undefined, {
 		placeholder: 'File path',
@@ -418,11 +447,6 @@ function renderProgressBars({ container, disposableStore }: ComponentFixtureCont
 		return barContainer;
 	};
 
-	// Infinite progress
-	const infiniteSection = createSection('Infinite Progress (loading...)');
-	const infiniteBar = disposableStore.add(new ProgressBar(infiniteSection, themedProgressBarOptions));
-	infiniteBar.infinite();
-
 	// Discrete progress - 30%
 	const progress30Section = createSection('Discrete Progress - 30%');
 	const progress30Bar = disposableStore.add(new ProgressBar(progress30Section, themedProgressBarOptions));
@@ -490,42 +514,3 @@ function renderHighlightedLabels({ container }: ComponentFixtureContext): HTMLEl
 
 	return container;
 }
-
-
-// ============================================================================
-// Export Fixtures
-// ============================================================================
-
-export default defineThemedFixtureGroup({
-	Buttons: defineComponentFixture({
-		render: renderButtons,
-	}),
-
-	ButtonBar: defineComponentFixture({
-		render: renderButtonBar,
-	}),
-
-	Toggles: defineComponentFixture({
-		render: renderToggles,
-	}),
-
-	InputBoxes: defineComponentFixture({
-		render: renderInputBoxes,
-	}),
-
-	CountBadges: defineComponentFixture({
-		render: renderCountBadges,
-	}),
-
-	ActionBar: defineComponentFixture({
-		render: renderActionBar,
-	}),
-
-	ProgressBars: defineComponentFixture({
-		render: renderProgressBars,
-	}),
-
-	HighlightedLabels: defineComponentFixture({
-		render: renderHighlightedLabels,
-	}),
-});
