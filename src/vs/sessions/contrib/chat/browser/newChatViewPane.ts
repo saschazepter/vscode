@@ -54,8 +54,7 @@ import { isString } from '../../../../base/common/types.js';
 import { NewChatContextAttachments } from './newChatContextAttachments.js';
 import { GITHUB_REMOTE_FILE_SCHEME } from '../../fileTreeView/browser/githubFileSystemProvider.js';
 import { FolderPicker } from './folderPicker.js';
-import { SessionTargetPicker } from './sessionTargetPicker.js';
-import { IsolationModePicker } from './isolationModePicker.js';
+import { IsolationModePicker, SessionTargetPicker } from './sessionTargetPicker.js';
 
 // #region --- Chat Welcome Widget ---
 
