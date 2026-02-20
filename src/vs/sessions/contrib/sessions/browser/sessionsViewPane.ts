@@ -118,8 +118,8 @@ export class AgenticSessionsViewPane extends ViewPane {
 			this._createDefaultControls(sessionsContainer);
 		}
 
-		// AI Customization shortcuts (always shown)
-		this.aiCustomizationContainer = DOM.append(sessionsContainer, $('.ai-customization-shortcuts'));
+		// AI Customization toolbar (bottom, fixed height)
+		this.aiCustomizationContainer = DOM.append(sessionsContainer, $('div'));
 		this.createAICustomizationShortcuts(this.aiCustomizationContainer);
 	}
 
@@ -319,10 +319,6 @@ export class AgenticSessionsViewPane extends ViewPane {
 				sessionsControl.clearFocus(); // clear selection when a new session is created
 			}
 		}));
-
-		// AI Customization toolbar (bottom, fixed height)
-		this.aiCustomizationContainer = DOM.append(sessionsContainer, $('div'));
-		this.createAICustomizationShortcuts(this.aiCustomizationContainer);
 	}
 
 	private restoreLastSelectedSession(): void {
