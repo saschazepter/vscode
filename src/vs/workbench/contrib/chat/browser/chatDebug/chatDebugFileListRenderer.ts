@@ -21,6 +21,7 @@ import { ILabelService } from '../../../../../platform/label/common/label.js';
 import { IOpenerService } from '../../../../../platform/opener/common/opener.js';
 import { IChatDebugEventFileListContent } from '../../common/chatDebugService.js';
 import { InlineAnchorWidget } from '../widget/chatContentParts/chatInlineAnchorWidget.js';
+import { setupCollapsibleToggle } from './chatDebugMessageContentRenderer.js';
 
 const $ = DOM.$;
 
@@ -191,20 +192,7 @@ export function renderFileListContent(content: IChatDebugEventFileListContent, o
 			DOM.append(row, $('span.chat-debug-source-folder-label', undefined, folder.uri.path));
 		}
 
-		let collapsed = true;
-		const updateState = () => {
-			DOM.clearNode(chevron);
-			const icon = collapsed ? Codicon.chevronRight : Codicon.chevronDown;
-			chevron.classList.add(...ThemeIcon.asClassName(icon).split(' '));
-			contentEl.style.display = collapsed ? 'none' : 'block';
-		};
-		updateState();
-
-		disposables.add(DOM.addDisposableListener(header, DOM.EventType.CLICK, () => {
-			collapsed = !collapsed;
-			chevron.className = 'chat-debug-message-section-chevron';
-			updateState();
-		}));
+		setupCollapsibleToggle(chevron, header, contentEl, disposables, /* initiallyCollapsed */ true);
 	}
 
 	return { element: container, disposables };

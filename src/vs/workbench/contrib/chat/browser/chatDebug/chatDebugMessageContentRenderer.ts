@@ -13,6 +13,29 @@ import { IChatDebugMessageSection, IChatDebugUserMessageEvent, IChatDebugAgentRe
 const $ = DOM.$;
 
 /**
+ * Wire up a collapsible toggle on a chevron+header+content triple.
+ * Handles icon switching and display toggling.
+ */
+export function setupCollapsibleToggle(chevron: HTMLElement, header: HTMLElement, contentEl: HTMLElement, disposables: DisposableStore, initiallyCollapsed: boolean = false): void {
+	let collapsed = initiallyCollapsed;
+
+	const updateState = () => {
+		DOM.clearNode(chevron);
+		const icon = collapsed ? Codicon.chevronRight : Codicon.chevronDown;
+		chevron.classList.add(...ThemeIcon.asClassName(icon).split(' '));
+		contentEl.style.display = collapsed ? 'none' : 'block';
+	};
+
+	updateState();
+
+	disposables.add(DOM.addDisposableListener(header, DOM.EventType.CLICK, () => {
+		collapsed = !collapsed;
+		chevron.className = 'chat-debug-message-section-chevron';
+		updateState();
+	}));
+}
+
+/**
  * Render a collapsible section with a clickable header and pre-formatted content.
  */
 function renderCollapsibleSection(parent: HTMLElement, section: IChatDebugMessageSection, disposables: DisposableStore, initiallyCollapsed: boolean = false): void {
@@ -27,23 +50,7 @@ function renderCollapsibleSection(parent: HTMLElement, section: IChatDebugMessag
 	contentEl.textContent = section.content;
 	contentEl.tabIndex = 0;
 
-	let collapsed = initiallyCollapsed;
-
-	const updateState = () => {
-		DOM.clearNode(chevron);
-		const icon = collapsed ? Codicon.chevronRight : Codicon.chevronDown;
-		chevron.classList.add(...ThemeIcon.asClassName(icon).split(' '));
-		contentEl.style.display = collapsed ? 'none' : 'block';
-	};
-
-	updateState();
-
-	disposables.add(DOM.addDisposableListener(header, DOM.EventType.CLICK, () => {
-		collapsed = !collapsed;
-		// Remove previous icon class
-		chevron.className = 'chat-debug-message-section-chevron';
-		updateState();
-	}));
+	setupCollapsibleToggle(chevron, header, contentEl, disposables, initiallyCollapsed);
 }
 
 /**
