@@ -44,19 +44,30 @@ export class GitService extends Disposable implements IGitService {
 				return undefined;
 			}
 
+			// Check whether we have an opened repository for the uri
+			let repository = this._repositories.get(uri);
+			if (repository) {
+				return repository;
+			}
+
+			// Open the repository to get the repository root
 			const root = await this._delegate.openRepository(uri);
 			if (!root) {
 				return undefined;
 			}
 
 			const rootUri = URI.revive(root);
-			let repository = this._repositories.get(rootUri);
+
+			// Check whether we have an opened repository for the root
+			repository = this._repositories.get(rootUri);
 			if (repository) {
 				return repository;
 			}
 
+			// Create a new repository
 			repository = new GitRepository(this._delegate, rootUri);
 			this._repositories.set(rootUri, repository);
+
 			return repository;
 		});
 	}
