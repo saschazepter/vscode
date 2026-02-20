@@ -137,7 +137,7 @@ class NewChatWidget extends Disposable {
 
 		// When target changes, create new pending session and re-render
 		this._register(this._targetPicker.onDidChangeTarget((target) => {
-			this._createPendingSession();
+			this._createNewSession();
 			this._renderExtensionPickers(true);
 			const isLocal = target === AgentSessionProviders.Background;
 			this._isolationModePicker.setVisible(isLocal);
@@ -199,8 +199,8 @@ class NewChatWidget extends Disposable {
 		// Initialize model picker
 		this._initDefaultModel();
 
-		// Create initial pending session and open initial repository
-		this._createPendingSession();
+		// Create initial session and open initial repository
+		this._createNewSession();
 		const initialFolderUri = this._folderPicker.selectedFolderUri ?? this.workspaceContextService.getWorkspace().folders[0]?.uri;
 		if (initialFolderUri) {
 			this._openRepository(initialFolderUri);
@@ -212,10 +212,10 @@ class NewChatWidget extends Disposable {
 
 	private readonly _newSessions = new Map<string, INewSession>();
 
-	private _createPendingSession(): void {
+	private async _createNewSession(): Promise<void> {
 		const target = this._targetPicker.selectedTarget;
 
-		// Reuse existing pending session for the same target type
+		// Reuse existing session for the same target type
 		const existing = this._newSessions.get(target);
 		if (existing) {
 			this._setNewSession(existing);
@@ -229,10 +229,9 @@ class NewChatWidget extends Disposable {
 			displayName: '',
 		});
 
-		this.sessionsManagementService.createNewSessionForTarget(target, resource, defaultRepoUri).then(session => {
-			this._newSessions.set(target, session);
-			this._setNewSession(session);
-		}).catch((err) => this.logService.trace('Failed to create new session:', err));
+		const session = await this.sessionsManagementService.createNewSessionForTarget(target, resource, defaultRepoUri);
+		this._newSessions.set(target, session);
+		this._setNewSession(session);
 	}
 
 	private _setNewSession(session: INewSession): void {
