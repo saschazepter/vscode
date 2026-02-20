@@ -206,7 +206,7 @@ class NewChatWidget extends Disposable {
 	private _localModeContainer: HTMLElement | undefined;
 	private _localModeDropdownContainer: HTMLElement | undefined;
 	private _localModePickersContainer: HTMLElement | undefined;
-	private _localMode: 'workspace' | 'worktree' = 'worktree';
+	private _localMode: 'worktree' | 'folder' = 'worktree';
 	private readonly _folderPicker: FolderPicker;
 	private _folderPickerContainer: HTMLElement | undefined;
 	private readonly _pickerWidgets = new Map<string, ChatSessionPickerActionItem | SearchableOptionPickerActionItem>();
@@ -337,18 +337,14 @@ class NewChatWidget extends Disposable {
 	}
 
 	private _getEffectiveTarget(): AgentSessionProviders | undefined {
-		const target = this._targetConfig.selectedTarget.get();
-		if (target === AgentSessionProviders.Local && this._localMode === 'worktree') {
-			return AgentSessionProviders.Background;
-		}
-		return target;
+		return this._targetConfig.selectedTarget.get();
 	}
 
 	private readonly _pendingSessionResources = new Map<string, URI>();
 
 	private _generatePendingSessionResource(): void {
 		const target = this._getEffectiveTarget();
-		if (!target || target === AgentSessionProviders.Local) {
+		if (!target) {
 			this._pendingSessionResource = undefined;
 			return;
 		}
@@ -437,7 +433,7 @@ class NewChatWidget extends Disposable {
 	private _getContextFolderUri(): URI | undefined {
 		const target = this._getEffectiveTarget();
 
-		if (!target || target === AgentSessionProviders.Local || target === AgentSessionProviders.Background) {
+		if (!target || target === AgentSessionProviders.Background) {
 			return this._folderPicker.selectedFolderUri ?? this.workspaceContextService.getWorkspace().folders[0]?.uri;
 		}
 
@@ -484,7 +480,7 @@ class NewChatWidget extends Disposable {
 			},
 			getModels: () => this._getAvailableModels(),
 			canManageModels: () => true,
-			showCuratedModels: () => this._localMode === 'workspace',
+			showCuratedModels: () => this._localMode === 'folder',
 		};
 
 		const pickerOptions: IChatInputPickerOptions = {
@@ -530,9 +526,6 @@ class NewChatWidget extends Disposable {
 		if (!model.metadata.isUserSelectable) {
 			return false;
 		}
-		if (model.metadata.targetChatSessionType === AgentSessionProviders.Background) {
-			return false;
-		}
 		return true;
 	}
 
@@ -571,8 +564,8 @@ class NewChatWidget extends Disposable {
 			return;
 		}
 
-		const activeType = this._targetConfig.selectedTarget.get() ?? AgentSessionProviders.Local;
-		const targets = [AgentSessionProviders.Local, AgentSessionProviders.Cloud].filter(t => allowed.has(t));
+		const activeType = this._targetConfig.selectedTarget.get() ?? AgentSessionProviders.Background;
+		const targets = [AgentSessionProviders.Background, AgentSessionProviders.Cloud].filter(t => allowed.has(t));
 		const activeIndex = targets.indexOf(activeType);
 
 		const radio = new Radio({
@@ -593,7 +586,7 @@ class NewChatWidget extends Disposable {
 		}));
 	}
 
-	// --- Local mode picker (Workspace / Worktree) ---
+	// --- Isolation mode picker (Worktree / Folder) ---
 
 	private readonly _localModeDisposables = this._register(new DisposableStore());
 
@@ -607,18 +600,18 @@ class NewChatWidget extends Disposable {
 		dom.clearNode(this._localModePickersContainer);
 
 		const selectedTarget = this._targetConfig.selectedTarget.get();
-		if (selectedTarget !== AgentSessionProviders.Local) {
+		if (selectedTarget !== AgentSessionProviders.Background) {
 			this._localModeContainer.style.visibility = 'hidden';
 			return;
 		}
 
 		this._localModeContainer.style.visibility = '';
 
-		// Dropdown button for Workspace / Worktree
-		const modeLabel = this._localMode === 'workspace'
-			? localize('localMode.workspace', "Workspace")
-			: localize('localMode.worktree', "Worktree");
-		const modeIcon = this._localMode === 'workspace' ? Codicon.folder : Codicon.worktree;
+		// Dropdown button for Worktree / Folder isolation
+		const modeLabel = this._localMode === 'worktree'
+			? localize('localMode.worktree', "Worktree")
+			: localize('localMode.folder', "Folder");
+		const modeIcon = this._localMode === 'worktree' ? Codicon.worktree : Codicon.folder;
 
 		const modeAction = toAction({ id: 'localMode', label: modeLabel, run: () => { } });
 		const modeDropdown = this._localModeDisposables.add(new LabeledDropdownMenuActionViewItem(
@@ -626,16 +619,16 @@ class NewChatWidget extends Disposable {
 			{
 				getActions: () => [
 					toAction({
-						id: 'localMode.workspace',
-						label: localize('localMode.workspace', "Workspace"),
-						checked: this._localMode === 'workspace',
-						run: () => this._setLocalMode('workspace'),
-					}),
-					toAction({
 						id: 'localMode.worktree',
 						label: localize('localMode.worktree', "Worktree"),
 						checked: this._localMode === 'worktree',
 						run: () => this._setLocalMode('worktree'),
+					}),
+					toAction({
+						id: 'localMode.folder',
+						label: localize('localMode.folder', "Folder"),
+						checked: this._localMode === 'folder',
+						run: () => this._setLocalMode('folder'),
 					}),
 				],
 			},
@@ -649,10 +642,9 @@ class NewChatWidget extends Disposable {
 		this._renderLocalModePickers();
 	}
 
-	private _setLocalMode(mode: 'workspace' | 'worktree'): void {
+	private _setLocalMode(mode: 'worktree' | 'folder'): void {
 		if (this._localMode !== mode) {
 			this._localMode = mode;
-			this._generatePendingSessionResource();
 			this._notifyFolderSelection();
 			this._renderLocalModePicker();
 		}
@@ -697,8 +689,8 @@ class NewChatWidget extends Disposable {
 			return;
 		}
 
-		// For Local target, show folder picker in top row and handle bottom row
-		if (this._targetConfig.selectedTarget.get() === AgentSessionProviders.Local) {
+		// For Background (Local) target, show folder picker in top row and handle bottom row
+		if (this._targetConfig.selectedTarget.get() === AgentSessionProviders.Background) {
 			this._clearExtensionPickers();
 			if (this._folderPickerContainer) {
 				this._folderPickerContainer.style.display = '';
@@ -992,9 +984,7 @@ class NewChatWidget extends Disposable {
 		const resource = this._pendingSessionResource
 			?? getResourceForNewChatSession({ type: target, position, displayName: '' });
 
-		const contribution = target !== AgentSessionProviders.Local
-			? this.chatSessionsService.getChatSessionContribution(target)
-			: undefined;
+		const contribution = this.chatSessionsService.getChatSessionContribution(target);
 
 		const sendOptions: IChatSendRequestOptions = {
 			location: ChatAgentLocation.Chat,
@@ -1079,7 +1069,7 @@ export class NewChatViewPane extends ViewPane {
 			{
 				targetConfig: {
 					allowedTargets: this.computeAllowedTargets(),
-					defaultTarget: AgentSessionProviders.Local,
+					defaultTarget: AgentSessionProviders.Background,
 				},
 				onSendRequest: (data) => {
 					this.activeSessionService.sendRequestForNewSession(
@@ -1098,7 +1088,7 @@ export class NewChatViewPane extends ViewPane {
 	}
 
 	private computeAllowedTargets(): AgentSessionProviders[] {
-		const targets: AgentSessionProviders[] = [AgentSessionProviders.Local, AgentSessionProviders.Cloud];
+		const targets: AgentSessionProviders[] = [AgentSessionProviders.Background, AgentSessionProviders.Cloud];
 		return targets;
 	}
 
@@ -1150,9 +1140,8 @@ function isRepoOrFolderGroup(group: IChatSessionProviderOptionGroup): boolean {
 function getAgentSessionProviderName(provider: AgentSessionProviders): string {
 	switch (provider) {
 		case AgentSessionProviders.Local:
-			return localize('chat.session.providerLabel.local', "Local");
 		case AgentSessionProviders.Background:
-			return localize('chat.session.providerLabel.background', "Worktree");
+			return localize('chat.session.providerLabel.local', "Local");
 		case AgentSessionProviders.Cloud:
 			return localize('chat.session.providerLabel.cloud', "Cloud");
 		case AgentSessionProviders.Claude:
