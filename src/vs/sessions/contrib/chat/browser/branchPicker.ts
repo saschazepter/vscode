@@ -61,7 +61,7 @@ export class BranchPicker extends Disposable {
 
 	/**
 	 * Sets the git repository and loads its branches.
-	 * When undefined, the picker is hidden.
+	 * When undefined, the picker is shown disabled.
 	 */
 	async setRepository(repository: IGitRepository | undefined): Promise<void> {
 		this._repository = repository;
@@ -84,7 +84,6 @@ export class BranchPicker extends Disposable {
 			}
 		}
 
-		this.setVisible(!!repository && this._branches.length > 0);
 		this._updateTriggerLabel();
 	}
 
@@ -130,7 +129,7 @@ export class BranchPicker extends Disposable {
 	 * Shows the branch picker dropdown anchored to the trigger element.
 	 */
 	showPicker(): void {
-		if (!this._triggerElement || this.actionWidgetService.isVisible) {
+		if (!this._triggerElement || this.actionWidgetService.isVisible || this._branches.length === 0) {
 			return;
 		}
 
@@ -185,10 +184,12 @@ export class BranchPicker extends Disposable {
 			return;
 		}
 		dom.clearNode(this._triggerElement);
+		const isDisabled = this._branches.length === 0;
 		const label = this._selectedBranch ?? localize('branchPicker.select', "Branch");
 		dom.append(this._triggerElement, renderIcon(Codicon.gitBranch));
 		const labelSpan = dom.append(this._triggerElement, dom.$('span.sessions-chat-dropdown-label'));
 		labelSpan.textContent = label;
 		dom.append(this._triggerElement, renderIcon(Codicon.chevronDown));
+		this._triggerElement.classList.toggle('disabled', isDisabled);
 	}
 }

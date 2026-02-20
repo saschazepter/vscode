@@ -157,7 +157,7 @@ export type IsolationMode = 'worktree' | 'folder';
  */
 export class IsolationModePicker extends Disposable {
 
-	private _isolationMode: IsolationMode = 'folder';
+	private _isolationMode: IsolationMode = 'worktree';
 	private _newSession: INewSession | undefined;
 	private _repository: IGitRepository | undefined;
 
@@ -229,12 +229,13 @@ export class IsolationModePicker extends Disposable {
 			? localize('isolationMode.worktree', "Worktree")
 			: localize('isolationMode.folder', "Folder");
 		const modeIcon = this._isolationMode === 'worktree' ? Codicon.worktree : Codicon.folder;
+		const isDisabled = !this._repository;
 
-		const modeAction = toAction({ id: 'isolationMode', label: modeLabel, run: () => { } });
+		const modeAction = toAction({ id: 'isolationMode', label: modeLabel, enabled: !isDisabled, run: () => { } });
 		const modeDropdown = this._renderDisposables.add(new LabeledDropdownMenuActionViewItem(
 			modeAction,
 			{
-				getActions: () => this._repository ? [
+				getActions: () => [
 					toAction({
 						id: 'isolationMode.worktree',
 						label: localize('isolationMode.worktree', "Worktree"),
@@ -247,7 +248,7 @@ export class IsolationModePicker extends Disposable {
 						checked: this._isolationMode === 'folder',
 						run: () => this._setMode('folder'),
 					}),
-				] : [],
+				],
 			},
 			this.contextMenuService,
 			{ classNames: [...ThemeIcon.asClassNameArray(modeIcon)] }
