@@ -10,9 +10,18 @@ import { ExtensionIdentifier } from '../../../platform/extensions/common/extensi
 import { createDecorator } from '../../../platform/instantiation/common/instantiation.js';
 import { IExtHostExtensionService } from './extHostExtensionService.js';
 import { IExtHostRpcService } from './extHostRpcService.js';
-import { ExtHostGitExtensionShape, GitRefDto } from './extHost.protocol.js';
+import { ExtHostGitExtensionShape, GitRefDto, GitRefTypeDto } from './extHost.protocol.js';
 
 const GIT_EXTENSION_ID = 'vscode.git';
+
+function toGitRefTypeDto(type: GitRefType): GitRefTypeDto {
+	switch (type) {
+		case GitRefType.Head: return GitRefTypeDto.Head;
+		case GitRefType.RemoteHead: return GitRefTypeDto.RemoteHead;
+		case GitRefType.Tag: return GitRefTypeDto.Tag;
+		default: throw new Error(`Unknown GitRefType: ${type}`);
+	}
+}
 
 interface Repository {
 	readonly rootUri: vscode.Uri;
@@ -103,7 +112,7 @@ export class ExtHostGitExtensionService extends Disposable implements IExtHostGi
 				return {
 					id,
 					name: ref.name,
-					type: ref.type,
+					type: toGitRefTypeDto(ref.type),
 					revision: ref.commit
 				} satisfies GitRefDto;
 			});

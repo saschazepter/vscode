@@ -28,6 +28,7 @@ export class GitService extends Disposable implements IGitService {
 
 		return toDisposable(() => {
 			this._delegate = undefined;
+			this._repositories.clear();
 			this.isInitialized.set(false, undefined);
 		});
 	}

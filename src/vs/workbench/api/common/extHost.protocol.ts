@@ -100,7 +100,6 @@ import { TerminalShellExecutionCommandLineConfidence } from './extHostTypes.js';
 import * as tasks from './shared/tasks.js';
 import { PromptsType } from '../../contrib/chat/common/promptSyntax/promptTypes.js';
 import { GitRefQuery } from '../../contrib/git/common/gitService.js';
-import { GitRefType } from './extHostGitExtensionService.js';
 
 export type IconPathDto =
 	| UriComponents
@@ -3458,10 +3457,16 @@ export interface ExtHostChatSessionsShape {
 	$provideHandleOptionsChange(providerHandle: number, sessionResource: UriComponents, updates: ReadonlyArray<ChatSessionOptionUpdateDto>, token: CancellationToken): Promise<void>;
 }
 
+export enum GitRefTypeDto {
+	Head,
+	RemoteHead,
+	Tag
+}
+
 export interface GitRefDto {
 	readonly id: string;
 	readonly name: string;
-	readonly type: GitRefType;
+	readonly type: GitRefTypeDto;
 	readonly revision: string;
 }
 

@@ -3,18 +3,18 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { CancellationToken } from '../../../base/common/cancellation.js'; import { Disposable } from '../../../base/common/lifecycle.js';
+import { CancellationToken } from '../../../base/common/cancellation.js';
+import { Disposable } from '../../../base/common/lifecycle.js';
 import { URI } from '../../../base/common/uri.js';
-import { GitRefType as ExtHostGitRefType } from '../../api/common/extHostGitExtensionService.js';
 import { IGitExtensionDelegate, IGitService, GitRef, GitRefQuery, GitRefType } from '../../contrib/git/common/gitService.js';
 import { extHostNamedCustomer, IExtHostContext } from '../../services/extensions/common/extHostCustomers.js';
-import { ExtHostContext, ExtHostGitExtensionShape, MainContext, MainThreadGitExtensionShape } from '../common/extHost.protocol.js';
+import { ExtHostContext, ExtHostGitExtensionShape, GitRefTypeDto, MainContext, MainThreadGitExtensionShape } from '../common/extHost.protocol.js';
 
-function toGitRefType(type: ExtHostGitRefType): GitRefType {
+function toGitRefType(type: GitRefTypeDto): GitRefType {
 	switch (type) {
-		case ExtHostGitRefType.Head: return GitRefType.Head;
-		case ExtHostGitRefType.RemoteHead: return GitRefType.RemoteHead;
-		case ExtHostGitRefType.Tag: return GitRefType.Tag;
+		case GitRefTypeDto.Head: return GitRefType.Head;
+		case GitRefTypeDto.RemoteHead: return GitRefType.RemoteHead;
+		case GitRefTypeDto.Tag: return GitRefType.Tag;
 		default: throw new Error(`Unknown GitRefType: ${type}`);
 	}
 }
