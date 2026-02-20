@@ -5,11 +5,11 @@
 
 import { Sequencer } from '../../../../base/common/async.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
+import { Emitter, Event } from '../../../../base/common/event.js';
 import { BugIndicatingError } from '../../../../base/common/errors.js';
 import { Disposable, IDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
-import { ResourceMap } from '../../../../base/common/map.js';
 import { URI } from '../../../../base/common/uri.js';
-import { IGitService, IGitExtensionDelegate, GitRef, GitRefQuery, IGitRepository } from '../common/gitService.js';
+import { IGitService, IGitExtensionDelegate, GitRef, GitRefQuery, IGitRepository, GitRepositoryState } from '../common/gitService.js';
 
 export class GitService extends Disposable implements IGitService {
 	declare readonly _serviceBrand: undefined;
@@ -17,9 +17,8 @@ export class GitService extends Disposable implements IGitService {
 	private _delegate: IGitExtensionDelegate | undefined;
 	private readonly _openRepositorySequencer = new Sequencer();
 
-	private readonly _repositories = new ResourceMap<IGitRepository>();
 	get repositories(): Iterable<IGitRepository> {
-		return this._repositories.values();
+		return this._delegate?.repositories ?? [];
 	}
 
 	setDelegate(delegate: IGitExtensionDelegate): IDisposable {
@@ -33,7 +32,6 @@ export class GitService extends Disposable implements IGitService {
 		this._delegate = delegate;
 
 		return toDisposable(() => {
-			this._repositories.clear();
 			this._delegate = undefined;
 		});
 	}
@@ -44,37 +42,29 @@ export class GitService extends Disposable implements IGitService {
 				return undefined;
 			}
 
-			// Check whether we have an opened repository for the uri
-			let repository = this._repositories.get(uri);
-			if (repository) {
-				return repository;
-			}
-
-			// Open the repository to get the repository root
-			const root = await this._delegate.openRepository(uri);
-			if (!root) {
-				return undefined;
-			}
-
-			const rootUri = URI.revive(root);
-
-			// Check whether we have an opened repository for the root
-			repository = this._repositories.get(rootUri);
-			if (repository) {
-				return repository;
-			}
-
-			// Create a new repository
-			repository = new GitRepository(this._delegate, rootUri);
-			this._repositories.set(rootUri, repository);
-
-			return repository;
+			return this._delegate.openRepository(uri);
 		});
 	}
 }
 
-export class GitRepository implements IGitRepository {
-	constructor(private readonly delegate: IGitExtensionDelegate, readonly rootUri: URI) { }
+export class GitRepository extends Disposable implements IGitRepository {
+	private readonly _onDidChangeState = this._register(new Emitter<void>());
+	readonly onDidChangeState: Event<void> = this._onDidChangeState.event;
+
+	private _state: GitRepositoryState = { HEAD: undefined };
+	get state(): GitRepositoryState { return this._state; }
+
+	setState(state: GitRepositoryState): void {
+		this._state = state;
+		this._onDidChangeState.fire();
+	}
+
+	constructor(
+		private readonly delegate: IGitExtensionDelegate,
+		readonly rootUri: URI
+	) {
+		super();
+	}
 
 	async getRefs(query: GitRefQuery, token?: CancellationToken): Promise<GitRef[]> {
 		return this.delegate.getRefs(this.rootUri, query, token);
