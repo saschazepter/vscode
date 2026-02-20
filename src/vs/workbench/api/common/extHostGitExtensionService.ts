@@ -159,6 +159,8 @@ export class ExtHostGitExtensionService extends Disposable implements IExtHostGi
 			repository.state.onDidChange, () => repository.state);
 		await waitForState(repositoryStateObs, state => !!state.HEAD);
 
+		const repositoryState = repositoryStateObs.get();
+
 		// Store the repository and its handle in the maps
 		const handle = ExtHostGitExtensionService._handlePool++;
 
@@ -169,8 +171,6 @@ export class ExtHostGitExtensionService extends Disposable implements IExtHostGi
 		this._disposables.add(repository.state.onDidChange(() => {
 			this._proxy.$onDidChangeRepository(handle);
 		}));
-
-		const repositoryState = repositoryStateObs.get();
 
 		return {
 			handle,
