@@ -453,11 +453,6 @@ function renderProgressBars({ container, disposableStore }: ComponentFixtureCont
 		return barContainer;
 	};
 
-	// Infinite progress
-	const infiniteSection = createSection('Infinite Progress (loading...)');
-	const infiniteBar = disposableStore.add(new ProgressBar(infiniteSection, themedProgressBarOptions));
-	infiniteBar.infinite();
-
 	// Discrete progress - 30%
 	const progress30Section = createSection('Discrete Progress - 30%');
 	const progress30Bar = disposableStore.add(new ProgressBar(progress30Section, themedProgressBarOptions));
