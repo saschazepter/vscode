@@ -5,6 +5,8 @@ jobs:
     variables:
       - name: skipComponentGovernanceDetection
         value: true
+      - name: Codeql.SkipTaskAutoInjection
+        value: true
     steps:
       - template: ./common/checkout.yml@self
 
