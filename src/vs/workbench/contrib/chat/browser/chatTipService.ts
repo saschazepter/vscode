@@ -690,6 +690,11 @@ export class ChatTipService extends Disposable implements IChatTipService {
 
 	getWelcomeTip(contextKeyService: IContextKeyService): IChatTip | undefined {
 		this._createSlashCommandsUsageTracker.syncContextKey(contextKeyService);
+		// Always record the current mode so that mode-based exclusions are
+		// persisted even on stable-rerender paths (e.g. user switches to Plan
+		// mode while viewing the Plan tip).
+		this._tracker.recordCurrentMode(contextKeyService);
+
 		// Check if tips are enabled
 		if (!this._configurationService.getValue<boolean>('chat.tips.enabled')) {
 			return undefined;

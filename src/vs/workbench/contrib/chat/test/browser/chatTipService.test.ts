@@ -662,6 +662,28 @@ suite('ChatTipService', () => {
 		assert.ok(tip2, 'Should get a welcome tip after resetSession');
 	});
 
+	test('Plan tip is excluded after switching to Plan mode during stable rerender', () => {
+		const service = createService();
+		// Start in Agent mode — Plan tip should be eligible
+		contextKeyService.createKey(ChatContextKeys.chatModeKind.key, ChatModeKind.Agent);
+		const modeNameKey = contextKeyService.createKey<string>(ChatContextKeys.chatModeName.key, 'Agent');
+
+		assert.ok(findTipById(service, 'tip.planMode'), 'Plan tip should be shown when in Agent mode');
+
+		// Simulate user switching to Plan mode (context keys update, widget rerenders)
+		modeNameKey.set('Plan');
+
+		// Stable rerender — getWelcomeTip is called again without resetSession
+		const rerenderTip = service.getWelcomeTip(contextKeyService);
+		assert.ok(!rerenderTip || rerenderTip.id !== 'tip.planMode', 'Plan tip should not be shown after switching to Plan mode');
+
+		// New session in Agent mode — Plan tip must NOT reappear
+		service.resetSession();
+		modeNameKey.set('Agent');
+
+		assertTipNeverShown(service, 'tip.planMode');
+	});
+
 	test('excludes tip when tracked tool has been invoked', () => {
 		const mockToolsService = createMockToolsService();
 		const tip: ITipDefinition = {
