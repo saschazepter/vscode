@@ -120,6 +120,11 @@ export class LocalNewSession extends Disposable implements INewSession {
 	}
 
 	setOption(optionId: string, value: IChatSessionProviderOptionItem | string): void {
+		if (typeof value === 'string') {
+			this.selectedOptions.set(optionId, { id: value, name: value });
+		} else {
+			this.selectedOptions.set(optionId, value);
+		}
 		this.chatSessionsService.notifySessionOptionsChange(
 			this.resource,
 			[{ optionId, value }]
