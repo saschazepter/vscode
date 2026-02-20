@@ -1935,6 +1935,7 @@ export default tseslint.config(
 						'vs/editor/contrib/*/~',
 						'vs/editor/editor.all.js',
 						'vs/sessions/~',
+						'vs/sessions/services/*/~',
 						'vs/sessions/contrib/*/~',
 						'vs/workbench/~',
 						'vs/workbench/api/~',
@@ -1956,6 +1957,22 @@ export default tseslint.config(
 						'vs/workbench/contrib/**',
 						'vs/workbench/services/*/~',
 						'vs/sessions/~'
+					]
+				},
+				{
+					'target': 'src/vs/sessions/services/*/~',
+					'restrictions': [
+						'vs/base/~',
+						'vs/base/parts/*/~',
+						'vs/platform/*/~',
+						'vs/editor/~',
+						'vs/editor/contrib/*/~',
+						'vs/workbench/~',
+						'vs/workbench/browser/**',
+						'vs/workbench/services/*/~',
+						'vs/workbench/contrib/*/~',
+						'vs/sessions/~',
+						'vs/sessions/services/*/~'
 					]
 				},
 				{

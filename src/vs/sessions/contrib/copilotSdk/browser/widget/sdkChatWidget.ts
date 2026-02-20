@@ -3,23 +3,23 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import * as paths from '../../../base/common/path.js';
+import * as paths from '../../../../../base/common/path.js';
 import './media/sdkChatWidget.css';
-import * as dom from '../../../base/browser/dom.js';
-import { Codicon } from '../../../base/common/codicons.js';
-import { Disposable, DisposableStore } from '../../../base/common/lifecycle.js';
-import { localize } from '../../../nls.js';
-import { ThemeIcon } from '../../../base/common/themables.js';
-import { type ICopilotModelInfo, ICopilotSdkService } from '../../../platform/copilotSdk/common/copilotSdkService.js';
-import { IInstantiationService } from '../../../platform/instantiation/common/instantiation.js';
-import { ILogService } from '../../../platform/log/common/log.js';
-import { IWorkspaceContextService } from '../../../platform/workspace/common/workspace.js';
-import { IFileDialogService } from '../../../platform/dialogs/common/dialogs.js';
-import { IStorageService, StorageScope, StorageTarget } from '../../../platform/storage/common/storage.js';
-import { IClipboardService } from '../../../platform/clipboard/common/clipboardService.js';
-import { URI } from '../../../base/common/uri.js';
-import { ITerminalService, ITerminalGroupService } from '../../../workbench/contrib/terminal/browser/terminal.js';
-import { IHostService } from '../../../workbench/services/host/browser/host.js';
+import * as dom from '../../../../../base/browser/dom.js';
+import { Codicon } from '../../../../../base/common/codicons.js';
+import { Disposable, DisposableStore } from '../../../../../base/common/lifecycle.js';
+import { localize } from '../../../../../nls.js';
+import { ThemeIcon } from '../../../../../base/common/themables.js';
+import { type ICopilotModelInfo, ICopilotSdkService } from '../../../../../platform/copilotSdk/common/copilotSdkService.js';
+import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
+import { ILogService } from '../../../../../platform/log/common/log.js';
+import { IWorkspaceContextService } from '../../../../../platform/workspace/common/workspace.js';
+import { IFileDialogService } from '../../../../../platform/dialogs/common/dialogs.js';
+import { IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
+import { IClipboardService } from '../../../../../platform/clipboard/common/clipboardService.js';
+import { URI } from '../../../../../base/common/uri.js';
+import { ITerminalService, ITerminalGroupService } from '../../../../../workbench/contrib/terminal/browser/terminal.js';
+import { IHostService } from '../../../../../workbench/services/host/browser/host.js';
 import { SdkChatModel, type ISdkChatModelChange } from './sdkChatModel.js';
 import { SdkContentPartRenderer, type IRenderedContentPart } from './sdkContentPartRenderer.js';
 import { CopilotSdkDebugLog } from '../copilotSdkDebugLog.js';

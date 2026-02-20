@@ -10,13 +10,13 @@
  */
 
 import './media/copilotSdkDebugPanel.css';
-import * as dom from '../../base/browser/dom.js';
-import { Disposable, DisposableStore } from '../../base/common/lifecycle.js';
-import { ICopilotSdkService } from '../../platform/copilotSdk/common/copilotSdkService.js';
-import { IClipboardService } from '../../platform/clipboard/common/clipboardService.js';
+import * as dom from '../../../../base/browser/dom.js';
+import { Disposable, DisposableStore } from '../../../../base/common/lifecycle.js';
+import { ICopilotSdkService } from '../../../../platform/copilotSdk/common/copilotSdkService.js';
+import { IClipboardService } from '../../../../platform/clipboard/common/clipboardService.js';
 import { CopilotSdkDebugLog, IDebugLogEntry } from './copilotSdkDebugLog.js';
-import { IDialogService } from '../../platform/dialogs/common/dialogs.js';
-import { localize } from '../../nls.js';
+import { IDialogService } from '../../../../platform/dialogs/common/dialogs.js';
+import { localize } from '../../../../nls.js';
 
 const $ = dom.$;
 

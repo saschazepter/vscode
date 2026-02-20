@@ -14,15 +14,15 @@
  * output for the content types we support.
  */
 
-import * as dom from '../../../base/browser/dom.js';
-import { Codicon } from '../../../base/common/codicons.js';
-import { IDisposable, DisposableStore } from '../../../base/common/lifecycle.js';
-import { MarkdownString } from '../../../base/common/htmlContent.js';
-import { ThemeIcon } from '../../../base/common/themables.js';
-import { localize } from '../../../nls.js';
-import { IInstantiationService } from '../../../platform/instantiation/common/instantiation.js';
-import { type IMarkdownRenderer } from '../../../platform/markdown/browser/markdownRenderer.js';
-import { ChatContentMarkdownRenderer } from '../../../workbench/contrib/chat/browser/widget/chatContentMarkdownRenderer.js';
+import * as dom from '../../../../../base/browser/dom.js';
+import { Codicon } from '../../../../../base/common/codicons.js';
+import { IDisposable, DisposableStore } from '../../../../../base/common/lifecycle.js';
+import { MarkdownString } from '../../../../../base/common/htmlContent.js';
+import { ThemeIcon } from '../../../../../base/common/themables.js';
+import { localize } from '../../../../../nls.js';
+import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
+import { type IMarkdownRenderer } from '../../../../../platform/markdown/browser/markdownRenderer.js';
+import { ChatContentMarkdownRenderer } from '../../../../../workbench/contrib/chat/browser/widget/chatContentMarkdownRenderer.js';
 import { type SdkChatPart, type ISdkMarkdownPart, type ISdkThinkingPart, type ISdkToolCallPart } from './sdkChatModel.js';
 
 const $ = dom.$;

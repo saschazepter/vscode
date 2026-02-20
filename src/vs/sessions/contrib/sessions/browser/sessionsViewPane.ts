@@ -43,7 +43,7 @@ import { Menus } from '../../../browser/menus.js';
 import { getCustomizationTotalCount } from './customizationCounts.js';
 import { IWorkbenchEnvironmentService } from '../../../../workbench/services/environment/common/environmentService.js';
 import { ICopilotSdkService, type ICopilotSessionMetadata } from '../../../../platform/copilotSdk/common/copilotSdkService.js';
-import { SdkChatViewPane, SdkChatViewId } from '../../../browser/widget/sdkChatViewPane.js';
+import { SdkChatViewPane, SdkChatViewId } from '../../copilotSdk/browser/widget/sdkChatViewPane.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { IDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 

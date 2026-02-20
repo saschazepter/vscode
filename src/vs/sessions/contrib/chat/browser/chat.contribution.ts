@@ -40,9 +40,9 @@ import { ChatViewPane } from '../../../../workbench/contrib/chat/browser/widgetH
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { IWorkbenchLayoutService } from '../../../../workbench/services/layout/browser/layoutService.js';
 import { IsSessionsWindowContext } from '../../../../workbench/common/contextkeys.js';
-import { SdkChatViewPane, SdkChatViewId } from '../../../browser/widget/sdkChatViewPane.js';
-import { CopilotSdkDebugLog } from '../../../browser/copilotSdkDebugLog.js';
-import { CopilotSdkDebugPanel } from '../../../browser/copilotSdkDebugPanel.js';
+import { SdkChatViewPane, SdkChatViewId } from '../../copilotSdk/browser/widget/sdkChatViewPane.js';
+import { CopilotSdkDebugPanel } from '../../copilotSdk/browser/copilotSdkDebugPanel.js';
+import { CopilotSdkDebugLog } from '../../copilotSdk/browser/copilotSdkDebugLog.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { ContextKeyExpr } from '../../../../platform/contextkey/common/contextkey.js';
@@ -298,7 +298,7 @@ class CopilotSdkDebugContribution extends Disposable implements IWorkbenchContri
 			return;
 		}
 
-		this._register(instantiationService.createInstance(CopilotSdkDebugLog));
+		instantiationService.createInstance(CopilotSdkDebugLog);
 	}
 }
 

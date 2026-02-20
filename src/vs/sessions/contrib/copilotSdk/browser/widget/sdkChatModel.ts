@@ -12,11 +12,11 @@
  * This model owns the data; the `SdkChatWidget` renders from it.
  */
 
-import { Emitter, Event } from '../../../base/common/event.js';
-import { IMarkdownString, MarkdownString } from '../../../base/common/htmlContent.js';
-import { Disposable } from '../../../base/common/lifecycle.js';
-import { localize } from '../../../nls.js';
-import { ICopilotSessionEvent } from '../../../platform/copilotSdk/common/copilotSdkService.js';
+import { Emitter, Event } from '../../../../../base/common/event.js';
+import { IMarkdownString, MarkdownString } from '../../../../../base/common/htmlContent.js';
+import { Disposable } from '../../../../../base/common/lifecycle.js';
+import { localize } from '../../../../../nls.js';
+import { ICopilotSessionEvent } from '../../../../../platform/copilotSdk/common/copilotSdkService.js';
 
 // #region Part Types
 

@@ -3,6 +3,10 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import { Emitter, Event } from '../../../../base/common/event.js';
+import { Disposable } from '../../../../base/common/lifecycle.js';
+import { ICopilotSdkService } from '../../../../platform/copilotSdk/common/copilotSdkService.js';
+
 /**
  * Always-on debug log for the Copilot SDK. Subscribes to all SDK events
  * at startup and buffers them so the debug panel can show the full history
@@ -11,9 +15,6 @@
  * Registered as a workbench contribution in `chat.contribution.ts`.
  */
 
-import { Disposable } from '../../base/common/lifecycle.js';
-import { Emitter, Event } from '../../base/common/event.js';
-import { ICopilotSdkService } from '../../platform/copilotSdk/common/copilotSdkService.js';
 
 const MAX_LOG_ENTRIES = 5000;
 
