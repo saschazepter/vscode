@@ -17,6 +17,9 @@ export class ChatDebugServiceImpl extends Disposable implements IChatDebugServic
 	private readonly _onDidAddEvent = this._register(new Emitter<IChatDebugEvent>());
 	readonly onDidAddEvent: Event<IChatDebugEvent> = this._onDidAddEvent.event;
 
+	private readonly _onDidClearSession = this._register(new Emitter<{ sessionId: string }>());
+	readonly onDidClearSession: Event<{ sessionId: string }> = this._onDidClearSession.event;
+
 	private readonly _providers = new Set<IChatDebugLogProvider>();
 	private readonly _invocationCts = new Map<string, CancellationTokenSource>();
 
@@ -65,6 +68,7 @@ export class ChatDebugServiceImpl extends Disposable implements IChatDebugServic
 				this._events.splice(i, 1);
 			}
 		}
+		this._onDidClearSession.fire({ sessionId });
 	}
 
 	registerProvider(provider: IChatDebugLogProvider): IDisposable {

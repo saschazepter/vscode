@@ -156,6 +156,11 @@ export interface IChatDebugService extends IDisposable {
 	clear(): void;
 
 	/**
+	 * Fired when events for a session are cleared.
+	 */
+	readonly onDidClearSession: Event<{ sessionId: string }>;
+
+	/**
 	 * Clear logged events for a specific session.
 	 */
 	clearSession(sessionId: string): void;
