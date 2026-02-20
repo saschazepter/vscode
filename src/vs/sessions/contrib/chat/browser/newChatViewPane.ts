@@ -40,7 +40,6 @@ import { ILanguageModelChatMetadataAndIdentifier, ILanguageModelsService } from 
 import { IModelPickerDelegate } from '../../../../workbench/contrib/chat/browser/widget/input/modelPickerActionItem.js';
 import { EnhancedModelPickerActionItem } from '../../../../workbench/contrib/chat/browser/widget/input/modelPickerActionItem2.js';
 import { IChatInputPickerOptions } from '../../../../workbench/contrib/chat/browser/widget/input/chatInputPickerActionItem.js';
-import { WorkspaceFolderCountContext } from '../../../../workbench/common/contextkeys.js';
 import { IViewDescriptorService } from '../../../../workbench/common/views.js';
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
 import { IViewPaneOptions, ViewPane } from '../../../../workbench/browser/parts/views/viewPane.js';
@@ -129,29 +128,17 @@ class NewChatWidget extends Disposable {
 		this._branchPicker = this._register(this.instantiationService.createInstance(BranchPicker));
 		this._options = options;
 
-		// When folder changes, open repository and update pickers
+		// When folder changes, open repository for the new folder
 		this._register(this._folderPicker.onDidSelectFolder((folderUri) => {
 			this._openRepository(folderUri);
-			this._renderExtensionPickers(true);
 		}));
 
-		// When target changes, create new pending session and re-render
+		// When target changes, create new session
 		this._register(this._targetPicker.onDidChangeTarget((target) => {
 			this._createNewSession();
-			this._renderExtensionPickers(true);
 			const isLocal = target === AgentSessionProviders.Background;
 			this._isolationModePicker.setVisible(isLocal);
 			this._branchPicker.setVisible(isLocal);
-		}));
-
-		const workspaceFolderCountKey = new Set([WorkspaceFolderCountContext.key]);
-		this._register(this.contextKeyService.onDidChangeContext(e => {
-			if (e.affectsSome(workspaceFolderCountKey)) {
-				this._renderExtensionPickers(true);
-			}
-			if (this._whenClauseKeys.size > 0 && e.affectsSome(this._whenClauseKeys)) {
-				this._renderExtensionPickers(true);
-			}
 		}));
 	}
 
@@ -238,8 +225,17 @@ class NewChatWidget extends Disposable {
 			this._openRepository(session.repoUri);
 		}
 
-		// Listen for session changes (e.g. extension-driven option updates for remote sessions)
+		// Render extension pickers for the new session
+		this._renderExtensionPickers(true);
+
+		// Listen for session changes
+		let lastRepoUri = session.repoUri;
 		this._newSessionListener.value = session.onDidChange(() => {
+			// If repo changed, open the new repository
+			if (session.repoUri && session.repoUri !== lastRepoUri) {
+				lastRepoUri = session.repoUri;
+				this._openRepository(session.repoUri);
+			}
 			this._syncOptionsFromSession(session.resource);
 			this._renderExtensionPickers();
 		});
