@@ -73,6 +73,12 @@ export class BranchPicker extends Disposable {
 			this._branches = refs
 				.map(ref => ref.name)
 				.filter((name): name is string => !!name);
+
+			// Select the first non-worktree branch by default
+			const defaultBranch = this._branches.find(b => !b.includes(COPILOT_WORKTREE_PATTERN)) ?? this._branches[0];
+			if (defaultBranch) {
+				this._selectBranch(defaultBranch);
+			}
 		}
 
 		this.setVisible(!!repository && this._branches.length > 0);
