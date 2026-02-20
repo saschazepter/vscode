@@ -19,11 +19,9 @@ function renderCollapsibleSection(parent: HTMLElement, section: IChatDebugMessag
 	const sectionEl = DOM.append(parent, $('div.chat-debug-message-section'));
 
 	const header = DOM.append(sectionEl, $('div.chat-debug-message-section-header'));
-	header.style.cursor = 'pointer';
 
 	const chevron = DOM.append(header, $(`span.chat-debug-message-section-chevron`));
-	const titleEl = DOM.append(header, $('span.chat-debug-message-section-title', undefined, section.name));
-	titleEl.style.fontWeight = '600';
+	DOM.append(header, $('span.chat-debug-message-section-title', undefined, section.name));
 
 	const contentEl = DOM.append(sectionEl, $('pre.chat-debug-message-section-content'));
 	contentEl.textContent = section.content;
