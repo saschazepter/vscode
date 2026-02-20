@@ -551,12 +551,7 @@ class NewChatWidget extends Disposable {
 					this._updateOptionContextKey(optionGroup.id, option.id);
 					emitter.fire(option);
 
-					if (this._newSession) {
-						this.chatSessionsService.notifySessionOptionsChange(
-							this._newSession.resource,
-							[{ optionId: optionGroup.id, value: option }]
-						).catch((err) => this.logService.error(`Failed to notify extension of ${optionGroup.id} change:`, err));
-					}
+					this._newSession?.setOption(optionGroup.id, option);
 
 					this._renderExtensionPickers(true);
 				},

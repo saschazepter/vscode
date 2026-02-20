@@ -8,7 +8,7 @@ import { Disposable } from '../../../../base/common/lifecycle.js';
 import { URI } from '../../../../base/common/uri.js';
 import { isEqual } from '../../../../base/common/resources.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
-import { IChatSessionsService } from '../../../../workbench/contrib/chat/common/chatSessionsService.js';
+import { IChatSessionProviderOptionItem, IChatSessionsService } from '../../../../workbench/contrib/chat/common/chatSessionsService.js';
 import { IsolationMode } from './sessionTargetPicker.js';
 import { IActiveSessionItem } from '../../sessions/browser/sessionsManagementService.js';
 
@@ -27,6 +27,7 @@ export interface INewSession {
 	setRepoUri(uri: URI): void;
 	setIsolationMode(mode: IsolationMode): void;
 	setBranch(branch: string | undefined): void;
+	setOption(optionId: string, value: IChatSessionProviderOptionItem): void;
 }
 
 /**
@@ -73,6 +74,10 @@ export class LocalNewSession extends Disposable implements INewSession {
 			this._branch = branch;
 			this._onDidChange.fire();
 		}
+	}
+
+	setOption(_optionId: string, _value: IChatSessionProviderOptionItem): void {
+		// No-op for local sessions
 	}
 }
 
@@ -127,5 +132,13 @@ export class RemoteNewSession extends Disposable implements INewSession {
 
 	setBranch(_branch: string | undefined): void {
 		// No-op for remote sessions — branch is not relevant
+	}
+
+	setOption(optionId: string, value: IChatSessionProviderOptionItem): void {
+		this._onDidChange.fire();
+		this.chatSessionsService.notifySessionOptionsChange(
+			this.resource,
+			[{ optionId, value }]
+		).catch((err) => this.logService.error(`Failed to notify extension of ${optionId} change:`, err));
 	}
 }
