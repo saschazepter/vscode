@@ -58,6 +58,7 @@ import { getSimpleEditorOptions } from '../../../../workbench/contrib/codeEditor
 import { IChatRequestVariableEntry } from '../../../../workbench/contrib/chat/common/attachments/chatVariableEntries.js';
 import { isString } from '../../../../base/common/types.js';
 import { NewChatContextAttachments } from './newChatContextAttachments.js';
+import { GITHUB_REMOTE_FILE_SCHEME } from '../../fileTreeView/browser/githubFileSystemProvider.js';
 
 // #region --- Target Config ---
 
@@ -441,7 +442,37 @@ class NewChatWidget extends Disposable {
 		attachButton.title = localize('addContext', "Add Context...");
 		attachButton.ariaLabel = localize('addContext', "Add Context...");
 		dom.append(attachButton, renderIcon(Codicon.add));
-		this._register(dom.addDisposableListener(attachButton, dom.EventType.CLICK, () => this._contextAttachments.showPicker()));
+		this._register(dom.addDisposableListener(attachButton, dom.EventType.CLICK, () => {
+			this._contextAttachments.showPicker(this._getContextFolderUri());
+		}));
+	}
+
+	/**
+	 * Returns the folder URI for the context picker based on the current target.
+	 * Local targets use the workspace folder; cloud targets construct a github-remote-file:// URI.
+	 */
+	private _getContextFolderUri(): URI | undefined {
+		const target = this._getEffectiveTarget();
+
+		if (!target || target === AgentSessionProviders.Local || target === AgentSessionProviders.Background) {
+			return this._selectedFolderUri ?? this.workspaceContextService.getWorkspace().folders[0]?.uri;
+		}
+
+		// For cloud targets, look for a repository option in the selected options
+		for (const [groupId, option] of this._selectedOptions) {
+			if (isRepoOrFolderGroup({ id: groupId, name: groupId, items: [] })) {
+				const nwo = option.id; // e.g. "owner/repo"
+				if (nwo && nwo.includes('/')) {
+					return URI.from({
+						scheme: GITHUB_REMOTE_FILE_SCHEME,
+						authority: 'github',
+						path: `/${nwo}/HEAD`,
+					});
+				}
+			}
+		}
+
+		return undefined;
 	}
 
 	private _createBottomToolbar(container: HTMLElement): void {
@@ -470,6 +501,7 @@ class NewChatWidget extends Disposable {
 			},
 			getModels: () => this._getAvailableModels(),
 			canManageModels: () => true,
+			showCuratedModels: () => this._localMode === 'workspace',
 		};
 
 		const pickerOptions: IChatInputPickerOptions = {

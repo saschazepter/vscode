@@ -288,7 +288,19 @@ configurationRegistry.registerConfiguration({
 				mode: 'auto'
 			}
 		},
-
+		'chat.upvoteAnimation': {
+			type: 'string',
+			enum: ['off', 'confetti', 'floatingThumbs', 'pulseWave', 'radiantLines'],
+			enumDescriptions: [
+				nls.localize('chat.upvoteAnimation.off', "No animation is shown."),
+				nls.localize('chat.upvoteAnimation.confetti', "Shows a confetti burst animation around the thumbs up button."),
+				nls.localize('chat.upvoteAnimation.floatingThumbs', "Shows floating thumbs up icons rising from the button."),
+				nls.localize('chat.upvoteAnimation.pulseWave', "Shows expanding pulse rings from the button."),
+				nls.localize('chat.upvoteAnimation.radiantLines', "Shows radiant lines emanating from the button."),
+			],
+			description: nls.localize('chat.upvoteAnimation', "Controls whether an animation is shown when clicking the thumbs up button on a chat response."),
+			default: 'floatingThumbs',
+		},
 		'chat.experimental.detectParticipant.enabled': {
 			type: 'boolean',
 			deprecationMessage: nls.localize('chat.experimental.detectParticipant.enabled.deprecated', "This setting is deprecated. Please use `chat.detectParticipant.enabled` instead."),
