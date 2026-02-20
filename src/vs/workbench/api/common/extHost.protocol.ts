@@ -99,6 +99,8 @@ import { IExtHostDocumentSaveDelegate } from './extHostDocumentData.js';
 import { TerminalShellExecutionCommandLineConfidence } from './extHostTypes.js';
 import * as tasks from './shared/tasks.js';
 import { PromptsType } from '../../contrib/chat/common/promptSyntax/promptTypes.js';
+import { GitRefQuery } from '../../contrib/git/common/gitService.js';
+import { GitRef } from './extHostGitExtensionService.js';
 
 export type IconPathDto =
 	| UriComponents
@@ -3458,6 +3460,7 @@ export interface ExtHostChatSessionsShape {
 
 export interface ExtHostGitExtensionShape {
 	$openRepository(root: UriComponents): Promise<UriComponents | undefined>;
+	$getRefs(root: UriComponents, query: GitRefQuery, token?: CancellationToken): Promise<GitRef[]>;
 }
 
 // --- proxy identifiers

@@ -14,8 +14,33 @@ import { ExtHostGitExtensionShape } from './extHost.protocol.js';
 
 const GIT_EXTENSION_ID = 'vscode.git';
 
+interface Repository {
+	readonly rootUri: vscode.Uri;
+	getRefs(query: GitRefQuery, token?: vscode.CancellationToken): Promise<GitRef[]>;
+}
+
+export interface GitRef {
+	type: GitRefType;
+	name?: string;
+	commit?: string;
+	remote?: string;
+}
+
+export const enum GitRefType {
+	Head,
+	RemoteHead,
+	Tag
+}
+
+export interface GitRefQuery {
+	readonly contains?: string;
+	readonly count?: number;
+	readonly pattern?: string | string[];
+	readonly sort?: 'alphabetically' | 'committerdate' | 'creatordate';
+}
+
 interface GitExtensionAPI {
-	openRepository(root: vscode.Uri): Promise<{ readonly rootUri: vscode.Uri } | null>;
+	openRepository(root: vscode.Uri): Promise<Repository | null>;
 }
 
 interface GitExtension {
@@ -51,6 +76,20 @@ export class ExtHostGitExtensionService extends Disposable implements IExtHostGi
 
 		const repository = await api.openRepository(URI.revive(uri));
 		return repository?.rootUri;
+	}
+
+	async $getRefs(uri: UriComponents, query: GitRefQuery, token?: vscode.CancellationToken): Promise<GitRef[]> {
+		const api = await this._ensureGitApi();
+		if (!api) {
+			return [];
+		}
+
+		const repository = await api.openRepository(URI.revive(uri));
+		if (!repository) {
+			return [];
+		}
+
+		return repository.getRefs(query, token);
 	}
 
 	// --- Private helpers ---

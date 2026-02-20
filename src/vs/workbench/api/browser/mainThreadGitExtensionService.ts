@@ -3,9 +3,9 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Disposable } from '../../../base/common/lifecycle.js';
+import { CancellationToken } from '../../../base/common/cancellation.js'; import { Disposable } from '../../../base/common/lifecycle.js';
 import { URI } from '../../../base/common/uri.js';
-import { IGitExtensionService, IGitService } from '../../contrib/git/common/gitService.js';
+import { IGitExtensionService, IGitService, GitRef, GitRefQuery, GitRefType } from '../../contrib/git/common/gitService.js';
 import { extHostNamedCustomer, IExtHostContext } from '../../services/extensions/common/extHostCustomers.js';
 import { ExtHostContext, ExtHostGitExtensionShape, MainContext, MainThreadGitExtensionShape } from '../common/extHost.protocol.js';
 
@@ -26,6 +26,21 @@ export class MainThreadGitExtensionService extends Disposable implements MainThr
 	async openRepository(uri: URI): Promise<URI | undefined> {
 		const result = await this._proxy.$openRepository(uri);
 		return result ? URI.revive(result) : undefined;
+	}
+
+	async getRefs(root: URI, query: GitRefQuery, token?: CancellationToken): Promise<GitRef[]> {
+		const result = await this._proxy.$getRefs(root, query, token);
+
+		if (token?.isCancellationRequested) {
+			return [];
+		}
+
+		return result.map(ref => ({
+			type: ref.type as unknown as GitRefType,
+			name: ref.name,
+			commit: ref.commit,
+			remote: ref.remote
+		}));
 	}
 
 	override dispose(): void {

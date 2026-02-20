@@ -5,7 +5,7 @@
 
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { URI } from '../../../../base/common/uri.js';
-import { IGitService, IGitExtensionService } from '../common/gitService.js';
+import { IGitService, IGitExtensionService, GitRef, GitRefQuery } from '../common/gitService.js';
 
 export class GitService extends Disposable implements IGitService {
 	declare readonly _serviceBrand: undefined;
@@ -18,6 +18,14 @@ export class GitService extends Disposable implements IGitService {
 
 	clearDelegate(): void {
 		this._delegate = undefined;
+	}
+
+	async getRefs(root: URI, query?: GitRefQuery): Promise<GitRef[]> {
+		if (!this._delegate) {
+			return [];
+		}
+
+		return this._delegate.getRefs(root, query);
 	}
 
 	async openRepository(root: URI): Promise<URI | undefined> {
