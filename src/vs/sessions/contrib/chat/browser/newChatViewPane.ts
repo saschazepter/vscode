@@ -234,6 +234,9 @@ class NewChatWidget extends Disposable {
 			if (changeType === 'repoUri' && session.repoUri) {
 				this._openRepository(session.repoUri);
 			}
+			if (changeType === 'isolationMode') {
+				this._branchPicker.setVisible(session.isolationMode === 'worktree');
+			}
 			if (changeType === 'options') {
 				this._syncOptionsFromSession(session.resource);
 				this._renderExtensionPickers();
