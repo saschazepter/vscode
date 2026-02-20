@@ -3,98 +3,98 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+// This should be the only place that is allowed to import from @vscode/component-explorer
+// eslint-disable-next-line local/code-import-patterns
 import { defineFixture, defineFixtureGroup, defineFixtureVariants } from '@vscode/component-explorer';
-import { DisposableStore, toDisposable } from '../../../src/vs/base/common/lifecycle';
-import { URI } from '../../../src/vs/base/common/uri';
-import '../style.css';
+import { DisposableStore, toDisposable } from '../../../../base/common/lifecycle.js';
+import { URI } from '../../../../base/common/uri.js';
+// eslint-disable-next-line local/code-import-patterns
+import '../../../../../../build/vite/style.css';
 
 // Theme
-import { COLOR_THEME_DARK_INITIAL_COLORS, COLOR_THEME_LIGHT_INITIAL_COLORS } from '../../../src/vs/workbench/services/themes/common/workbenchThemeService';
-import { ColorThemeData } from '../../../src/vs/workbench/services/themes/common/colorThemeData';
-import { ColorScheme } from '../../../src/vs/platform/theme/common/theme';
-import { generateColorThemeCSS } from '../../../src/vs/workbench/services/themes/browser/colorThemeCss';
-import { Registry } from '../../../src/vs/platform/registry/common/platform';
-import { Extensions as ThemingExtensions, IThemingRegistry } from '../../../src/vs/platform/theme/common/themeService';
-import { IEnvironmentService } from '../../../src/vs/platform/environment/common/environment';
-import { getIconsStyleSheet } from '../../../src/vs/platform/theme/browser/iconsStyleSheet';
+import { IEnvironmentService } from '../../../../platform/environment/common/environment.js';
+import { Registry } from '../../../../platform/registry/common/platform.js';
+import { getIconsStyleSheet } from '../../../../platform/theme/browser/iconsStyleSheet.js';
+import { ColorScheme } from '../../../../platform/theme/common/theme.js';
+import { IColorTheme, IThemeService, IThemingRegistry, Extensions as ThemingExtensions } from '../../../../platform/theme/common/themeService.js';
+import { generateColorThemeCSS } from '../../../services/themes/browser/colorThemeCss.js';
+import { ColorThemeData } from '../../../services/themes/common/colorThemeData.js';
+import { COLOR_THEME_DARK_INITIAL_COLORS, COLOR_THEME_LIGHT_INITIAL_COLORS } from '../../../services/themes/common/workbenchThemeService.js';
 
 // Instantiation
-import { ServiceCollection } from '../../../src/vs/platform/instantiation/common/serviceCollection';
-import { SyncDescriptor } from '../../../src/vs/platform/instantiation/common/descriptors';
-import { ServiceIdentifier } from '../../../src/vs/platform/instantiation/common/instantiation';
-import { TestInstantiationService } from '../../../src/vs/platform/instantiation/test/common/instantiationServiceMock';
+import { SyncDescriptor } from '../../../../platform/instantiation/common/descriptors.js';
+import { ServiceIdentifier } from '../../../../platform/instantiation/common/instantiation.js';
+import { ServiceCollection } from '../../../../platform/instantiation/common/serviceCollection.js';
+import { TestInstantiationService } from '../../../../platform/instantiation/test/common/instantiationServiceMock.js';
 
 // Test service implementations
-import { TestAccessibilityService } from '../../../src/vs/platform/accessibility/test/common/testAccessibilityService';
-import { MockKeybindingService, MockContextKeyService } from '../../../src/vs/platform/keybinding/test/common/mockKeybindingService';
-import { TestClipboardService } from '../../../src/vs/platform/clipboard/test/common/testClipboardService';
-import { TestEditorWorkerService } from '../../../src/vs/editor/test/common/services/testEditorWorkerService';
-import { NullOpenerService } from '../../../src/vs/platform/opener/test/common/nullOpenerService';
-import { TestNotificationService } from '../../../src/vs/platform/notification/test/common/testNotificationService';
-import { TestDialogService } from '../../../src/vs/platform/dialogs/test/common/testDialogService';
-import { TestConfigurationService } from '../../../src/vs/platform/configuration/test/common/testConfigurationService';
-import { TestTextResourcePropertiesService } from '../../../src/vs/editor/test/common/services/testTextResourcePropertiesService';
-import { TestThemeService } from '../../../src/vs/platform/theme/test/common/testThemeService';
-import { TestLanguageConfigurationService } from '../../../src/vs/editor/test/common/modes/testLanguageConfigurationService';
-import { TestCodeEditorService, TestCommandService } from '../../../src/vs/editor/test/browser/editorTestServices';
-import { TestTreeSitterLibraryService } from '../../../src/vs/editor/test/common/services/testTreeSitterLibraryService';
-import { TestMenuService } from '../../../src/vs/workbench/test/browser/workbenchTestServices';
-
-// Service interfaces
-import { IAccessibilityService } from '../../../src/vs/platform/accessibility/common/accessibility';
-import { IKeybindingService } from '../../../src/vs/platform/keybinding/common/keybinding';
-import { IClipboardService } from '../../../src/vs/platform/clipboard/common/clipboardService';
-import { IEditorWorkerService } from '../../../src/vs/editor/common/services/editorWorker';
-import { IOpenerService } from '../../../src/vs/platform/opener/common/opener';
-import { INotificationService } from '../../../src/vs/platform/notification/common/notification';
-import { IDialogService } from '../../../src/vs/platform/dialogs/common/dialogs';
-import { IUndoRedoService } from '../../../src/vs/platform/undoRedo/common/undoRedo';
-import { UndoRedoService } from '../../../src/vs/platform/undoRedo/common/undoRedoService';
-import { ILanguageService } from '../../../src/vs/editor/common/languages/language';
-import { LanguageService } from '../../../src/vs/editor/common/services/languageService';
-import { ILanguageConfigurationService } from '../../../src/vs/editor/common/languages/languageConfigurationRegistry';
-import { IConfigurationService } from '../../../src/vs/platform/configuration/common/configuration';
-import { ITextResourcePropertiesService } from '../../../src/vs/editor/common/services/textResourceConfiguration';
-import { IColorTheme, IThemeService } from '../../../src/vs/platform/theme/common/themeService';
-import { ILogService, NullLogService, ILoggerService, NullLoggerService } from '../../../src/vs/platform/log/common/log';
-import { IModelService } from '../../../src/vs/editor/common/services/model';
-import { ModelService } from '../../../src/vs/editor/common/services/modelService';
-import { ICodeEditorService } from '../../../src/vs/editor/browser/services/codeEditorService';
-import { IContextKeyService } from '../../../src/vs/platform/contextkey/common/contextkey';
-import { ICommandService } from '../../../src/vs/platform/commands/common/commands';
-import { ITelemetryService } from '../../../src/vs/platform/telemetry/common/telemetry';
-import { NullTelemetryServiceShape } from '../../../src/vs/platform/telemetry/common/telemetryUtils';
-import { ILanguageFeatureDebounceService, LanguageFeatureDebounceService } from '../../../src/vs/editor/common/services/languageFeatureDebounce';
-import { ILanguageFeaturesService } from '../../../src/vs/editor/common/services/languageFeatures';
-import { LanguageFeaturesService } from '../../../src/vs/editor/common/services/languageFeaturesService';
-import { ITreeSitterLibraryService } from '../../../src/vs/editor/common/services/treeSitter/treeSitterLibraryService';
-import { IInlineCompletionsService, InlineCompletionsService } from '../../../src/vs/editor/browser/services/inlineCompletionsService';
-import { ICodeLensCache } from '../../../src/vs/editor/contrib/codelens/browser/codeLensCache';
-import { IHoverService } from '../../../src/vs/platform/hover/browser/hover';
-import { IDataChannelService, NullDataChannelService } from '../../../src/vs/platform/dataChannel/common/dataChannel';
-import { IContextMenuService, IContextViewService } from '../../../src/vs/platform/contextview/browser/contextView';
-import { ILabelService } from '../../../src/vs/platform/label/common/label';
-import { IMenuService } from '../../../src/vs/platform/actions/common/actions';
-import { IActionViewItemService, NullActionViewItemService } from '../../../src/vs/platform/actions/browser/actionViewItemService';
-import { IDefaultAccountService } from '../../../src/vs/platform/defaultAccount/common/defaultAccount';
-import { IStorageService, IStorageValueChangeEvent, IWillSaveStateEvent, StorageScope, StorageTarget, IStorageTargetChangeEvent, IStorageEntry, WillSaveStateReason, IWorkspaceStorageValueChangeEvent, IProfileStorageValueChangeEvent, IApplicationStorageValueChangeEvent } from '../../../src/vs/platform/storage/common/storage';
-import { Emitter, Event } from '../../../src/vs/base/common/event';
-import { mock } from '../../../src/vs/base/test/common/mock';
-import { IAnyWorkspaceIdentifier } from '../../../src/vs/platform/workspace/common/workspace';
-import { IUserDataProfile } from '../../../src/vs/platform/userDataProfile/common/userDataProfile';
-import { IUserInteractionService, MockUserInteractionService } from '../../../src/vs/platform/userInteraction/browser/userInteractionService';
+import { TestCodeEditorService, TestCommandService } from '../../../../editor/test/browser/editorTestServices.js';
+import { TestLanguageConfigurationService } from '../../../../editor/test/common/modes/testLanguageConfigurationService.js';
+import { TestEditorWorkerService } from '../../../../editor/test/common/services/testEditorWorkerService.js';
+import { TestTextResourcePropertiesService } from '../../../../editor/test/common/services/testTextResourcePropertiesService.js';
+import { TestTreeSitterLibraryService } from '../../../../editor/test/common/services/testTreeSitterLibraryService.js';
+import { TestAccessibilityService } from '../../../../platform/accessibility/test/common/testAccessibilityService.js';
+import { TestClipboardService } from '../../../../platform/clipboard/test/common/testClipboardService.js';
+import { TestConfigurationService } from '../../../../platform/configuration/test/common/testConfigurationService.js';
+import { TestDialogService } from '../../../../platform/dialogs/test/common/testDialogService.js';
+import { MockContextKeyService, MockKeybindingService } from '../../../../platform/keybinding/test/common/mockKeybindingService.js';
+import { TestNotificationService } from '../../../../platform/notification/test/common/testNotificationService.js';
+import { NullOpenerService } from '../../../../platform/opener/test/common/nullOpenerService.js';
+import { TestThemeService } from '../../../../platform/theme/test/common/testThemeService.js';
+import { TestMenuService } from '../workbenchTestServices.js';
+import { Emitter, Event } from '../../../../base/common/event.js';
+import { mock } from '../../../../base/test/common/mock.js';
+import { ICodeEditorService } from '../../../../editor/browser/services/codeEditorService.js';
+import { IInlineCompletionsService, InlineCompletionsService } from '../../../../editor/browser/services/inlineCompletionsService.js';
+import { ILanguageService } from '../../../../editor/common/languages/language.js';
+import { ILanguageConfigurationService } from '../../../../editor/common/languages/languageConfigurationRegistry.js';
+import { IEditorWorkerService } from '../../../../editor/common/services/editorWorker.js';
+import { ILanguageFeatureDebounceService, LanguageFeatureDebounceService } from '../../../../editor/common/services/languageFeatureDebounce.js';
+import { ILanguageFeaturesService } from '../../../../editor/common/services/languageFeatures.js';
+import { LanguageFeaturesService } from '../../../../editor/common/services/languageFeaturesService.js';
+import { LanguageService } from '../../../../editor/common/services/languageService.js';
+import { IModelService } from '../../../../editor/common/services/model.js';
+import { ModelService } from '../../../../editor/common/services/modelService.js';
+import { ITextResourcePropertiesService } from '../../../../editor/common/services/textResourceConfiguration.js';
+import { ITreeSitterLibraryService } from '../../../../editor/common/services/treeSitter/treeSitterLibraryService.js';
+import { ICodeLensCache } from '../../../../editor/contrib/codelens/browser/codeLensCache.js';
+import { IAccessibilityService } from '../../../../platform/accessibility/common/accessibility.js';
+import { IActionViewItemService, NullActionViewItemService } from '../../../../platform/actions/browser/actionViewItemService.js';
+import { IMenuService } from '../../../../platform/actions/common/actions.js';
+import { IClipboardService } from '../../../../platform/clipboard/common/clipboardService.js';
+import { ICommandService } from '../../../../platform/commands/common/commands.js';
+import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
+import { IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
+import { IContextMenuService, IContextViewService } from '../../../../platform/contextview/browser/contextView.js';
+import { IDataChannelService, NullDataChannelService } from '../../../../platform/dataChannel/common/dataChannel.js';
+import { IDefaultAccountService } from '../../../../platform/defaultAccount/common/defaultAccount.js';
+import { IDialogService } from '../../../../platform/dialogs/common/dialogs.js';
+import { IHoverService } from '../../../../platform/hover/browser/hover.js';
+import { IKeybindingService } from '../../../../platform/keybinding/common/keybinding.js';
+import { ILabelService } from '../../../../platform/label/common/label.js';
+import { ILoggerService, ILogService, NullLoggerService, NullLogService } from '../../../../platform/log/common/log.js';
+import { INotificationService } from '../../../../platform/notification/common/notification.js';
+import { IOpenerService } from '../../../../platform/opener/common/opener.js';
+import { IApplicationStorageValueChangeEvent, IProfileStorageValueChangeEvent, IStorageEntry, IStorageService, IStorageTargetChangeEvent, IStorageValueChangeEvent, IWillSaveStateEvent, IWorkspaceStorageValueChangeEvent, StorageScope, StorageTarget, WillSaveStateReason } from '../../../../platform/storage/common/storage.js';
+import { ITelemetryService } from '../../../../platform/telemetry/common/telemetry.js';
+import { NullTelemetryServiceShape } from '../../../../platform/telemetry/common/telemetryUtils.js';
+import { IUndoRedoService } from '../../../../platform/undoRedo/common/undoRedo.js';
+import { UndoRedoService } from '../../../../platform/undoRedo/common/undoRedoService.js';
+import { IUserDataProfile } from '../../../../platform/userDataProfile/common/userDataProfile.js';
+import { IUserInteractionService, MockUserInteractionService } from '../../../../platform/userInteraction/browser/userInteractionService.js';
+import { IAnyWorkspaceIdentifier } from '../../../../platform/workspace/common/workspace.js';
 
 // Editor
-import { ITextModel } from '../../../src/vs/editor/common/model';
+import { ITextModel } from '../../../../editor/common/model.js';
 
 
 
 // Import color registrations to ensure colors are available
-import '../../../src/vs/platform/theme/common/colors/baseColors';
-import '../../../src/vs/platform/theme/common/colors/editorColors';
-import '../../../src/vs/platform/theme/common/colors/listColors';
-import '../../../src/vs/platform/theme/common/colors/miscColors';
-import '../../../src/vs/workbench/common/theme';
+import '../../../../platform/theme/common/colors/baseColors.js';
+import '../../../../platform/theme/common/colors/editorColors.js';
+import '../../../../platform/theme/common/colors/listColors.js';
+import '../../../../platform/theme/common/colors/miscColors.js';
+import '../../../common/theme.js';
 
 /**
  * A storage service that never stores anything and always returns the default/fallback value.
@@ -363,7 +363,7 @@ export function createEditorServices(disposables: DisposableStore, options?: Cre
 		put: () => { },
 		get: () => undefined,
 		delete: () => { },
-	} as ICodeLensCache);
+	});
 	defineInstance(IHoverService, {
 		_serviceBrand: undefined,
 		showDelayedHover: () => undefined,
@@ -374,7 +374,7 @@ export function createEditorServices(disposables: DisposableStore, options?: Cre
 		showAndFocusLastHover: () => { },
 		setupManagedHover: () => ({ dispose: () => { }, show: () => { }, hide: () => { }, update: () => { } }),
 		showManagedHover: () => { },
-	} as IHoverService);
+	});
 	defineInstance(IDefaultAccountService, {
 		_serviceBrand: undefined,
 		onDidChangeDefaultAccount: new Emitter<null>().event,
@@ -385,7 +385,8 @@ export function createEditorServices(disposables: DisposableStore, options?: Cre
 		setDefaultAccountProvider: () => { },
 		refresh: async () => null,
 		signIn: async () => null,
-	} as IDefaultAccountService);
+		signOut: async () => { },
+	});
 
 	// User interaction service with focus simulation enabled (all elements appear focused in fixtures)
 	defineInstance(IUserInteractionService, new MockUserInteractionService(true, false));
@@ -397,8 +398,7 @@ export function createEditorServices(disposables: DisposableStore, options?: Cre
 
 	disposables.add(toDisposable(() => {
 		for (const id of serviceIdentifiers) {
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			const instanceOrDescriptor = services.get(id) as any;
+			const instanceOrDescriptor = services.get(id);
 			if (typeof instanceOrDescriptor?.dispose === 'function') {
 				instanceOrDescriptor.dispose();
 			}
@@ -417,14 +417,17 @@ export function registerWorkbenchServices(registration: ServiceRegistration): vo
 		showContextMenu: () => { },
 		onDidShowContextMenu: () => ({ dispose: () => { } }),
 		onDidHideContextMenu: () => ({ dispose: () => { } }),
-	} as unknown as IContextMenuService);
+		_serviceBrand: undefined,
+	});
 
 	registration.defineInstance(IContextViewService, {
-		showContextView: () => ({ dispose: () => { } }),
+		showContextView: () => ({ close: () => { } }),
 		hideContextView: () => { },
-		getContextViewElement: () => null,
+		getContextViewElement: () => { throw new Error('Not implemented'); },
 		layout: () => { },
-	} as unknown as IContextViewService);
+		anchorAlignment: 0,
+		_serviceBrand: undefined,
+	});
 
 	registration.defineInstance(ILabelService, {
 		getUriLabel: (uri: URI) => uri.path,
@@ -435,7 +438,9 @@ export function registerWorkbenchServices(registration: ServiceRegistration): vo
 		registerFormatter: () => ({ dispose: () => { } }),
 		onDidChangeFormatters: () => ({ dispose: () => { } }),
 		registerCachedFormatter: () => ({ dispose: () => { } }),
-	} as unknown as ILabelService);
+		_serviceBrand: undefined,
+		getHostTooltip: () => '',
+	});
 
 	registration.define(IMenuService, TestMenuService);
 	registration.define(IActionViewItemService, NullActionViewItemService);
@@ -488,10 +493,11 @@ export function defineComponentFixture(options: ComponentFixtureOptions): Themed
 		displayMode: { type: 'component' },
 		properties: [],
 		background: theme === darkTheme ? 'dark' : 'light',
-		render: async (container: HTMLElement) => {
+		render: (container: HTMLElement) => {
 			const disposableStore = new DisposableStore();
 			setupTheme(container, theme);
-			return options.render({ container, disposableStore, theme });
+			options.render({ container, disposableStore, theme });
+			return disposableStore;
 		},
 	});
 

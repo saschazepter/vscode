@@ -3,9 +3,10 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { URI } from '../../../../src/vs/base/common/uri';
-import { CodeEditorWidget, ICodeEditorWidgetOptions } from '../../../../src/vs/editor/browser/widget/codeEditor/codeEditorWidget';
-import { ComponentFixtureContext, createEditorServices, createTextModel, defineComponentFixture, defineThemedFixtureGroup } from '../fixtureUtils';
+import { URI } from '../../../../base/common/uri.js';
+import { ComponentFixtureContext, createEditorServices, defineThemedFixtureGroup, defineComponentFixture, createTextModel } from './fixtureUtils.js';
+import { ICodeEditorWidgetOptions, CodeEditorWidget } from '../../../../editor/browser/widget/codeEditor/codeEditorWidget.js';
+
 
 const SAMPLE_CODE = `// Welcome to VS Code
 function greet(name: string): string {
