@@ -574,7 +574,7 @@ export class AccessibleView extends Disposable {
 				this._hasUnassignedKeybindings.set(true);
 				configureKbHint = this._configureUnassignedKbHint();
 			} else {
-				this._hasAssignedKeybindings.reset();
+				this._hasUnassignedKeybindings.reset();
 			}
 			if (resolvedContent.configuredKeybindingItems) {
 				provider.options.configuredKeybindingItems = resolvedContent.configuredKeybindingItems;
