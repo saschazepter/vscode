@@ -80,7 +80,10 @@ export class LocalNewSession extends Disposable implements INewSession {
 		private readonly logService: ILogService,
 	) {
 		super();
-		this._repoUri = defaultRepoUri;
+		if (defaultRepoUri) {
+			this._repoUri = defaultRepoUri;
+			this.setOption(REPOSITORY_OPTION_ID, defaultRepoUri.fsPath);
+		}
 	}
 
 	setRepoUri(uri: URI): void {
