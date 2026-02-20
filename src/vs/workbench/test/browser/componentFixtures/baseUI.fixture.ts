@@ -282,12 +282,6 @@ function renderInputBoxes({ container, disposableStore }: ComponentFixtureContex
 	container.style.gap = '16px';
 	container.style.width = '350px';
 
-	// Normal input
-	const normalInput = disposableStore.add(new InputBox(container, undefined, {
-		placeholder: 'Enter search query...',
-		inputBoxStyles: themedInputBoxStyles,
-	}));
-
 	// Input with value
 	const filledInput = disposableStore.add(new InputBox(container, undefined, {
 		placeholder: 'File path',
