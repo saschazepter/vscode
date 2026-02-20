@@ -287,31 +287,8 @@ export class LinuxExternalTerminalService extends ExternalTerminalService implem
 		// delete environment variables that have a null value
 		Object.keys(env).filter(v => env[v] === null).forEach(key => delete env[key]);
 
-		const options = {
-			cwd: dir,
-			env: env
-		};
-
-		let stderr = '';
-		const cmd = cp.spawn(exec, args, options);
-		cmd.on('error', err => {
-			reject(improveError(err));
-		});
-		cmd.stderr.on('data', (data) => {
-			stderr += data.toString();
-		});
-		cmd.on('exit', (code: number) => {
-			if (code === 0) {
-				resolve(undefined);
-			} else {
-				if (stderr) {
-					const lines = stderr.split('\n', 1);
-					reject(new Error(lines[0]));
-				} else {
-					reject(new Error(nls.localize('linux.term.failed', "'{0}' failed with exit code {1}", exec, code)));
-				}
-			}
-		});
+		const cmd = cp.spawn(exec, args, { cwd: dir, env });
+		setupSpawnErrorHandling(cmd, resolve, reject, exec);
 	}
 
 	private static _DEFAULT_TERMINAL_LINUX_READY: Promise<string>;
@@ -399,7 +376,7 @@ function setupSpawnErrorHandling(
 				const lines = stderr.split('\n', 1);
 				reject(new Error(lines[0]));
 			} else {
-				reject(new Error(nls.localize('mac.terminal.launch.failed', "Launching '{0}' failed with exit code {1}", terminalApp, code)));
+				reject(new Error(nls.localize('terminal.launch.failed', "Launching '{0}' failed with exit code {1}", terminalApp, code)));
 			}
 		}
 	});
