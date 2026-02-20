@@ -15,7 +15,6 @@ import { ICommandService } from '../../../../../platform/commands/common/command
 import { ConfigurationTarget, IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
 import { Extensions as ConfigurationExtensions, IConfigurationRegistry } from '../../../../../platform/configuration/common/configurationRegistry.js';
 import { IDialogService } from '../../../../../platform/dialogs/common/dialogs.js';
-import { ExtensionIdentifier } from '../../../../../platform/extensions/common/extensions.js';
 import { ILogService } from '../../../../../platform/log/common/log.js';
 import product from '../../../../../platform/product/common/product.js';
 import { IProductService } from '../../../../../platform/product/common/productService.js';
@@ -24,20 +23,18 @@ import { IQuickInputService } from '../../../../../platform/quickinput/common/qu
 import { Registry } from '../../../../../platform/registry/common/platform.js';
 import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry.js';
 import { IActivityService, ProgressBadge } from '../../../../services/activity/common/activity.js';
-import { EnablementState } from '../../../../services/extensionManagement/common/extensionManagement.js';
 import { ILifecycleService } from '../../../../services/lifecycle/common/lifecycle.js';
 import { IExtensionsWorkbenchService } from '../../../extensions/common/extensions.js';
 import { ChatEntitlement, ChatEntitlementContext, ChatEntitlementRequests, isProUser } from '../../../../services/chat/common/chatEntitlementService.js';
 import { CHAT_OPEN_ACTION_ID } from '../actions/chatActions.js';
 import { ChatViewId, ChatViewContainerId } from '../chat.js';
-import { ChatSetupAnonymous, ChatSetupStep, ChatSetupResultValue, InstallChatEvent, InstallChatClassification, refreshTokens } from './chatSetup.js';
+import { ChatSetupAnonymous, ChatSetupStep, ChatSetupResultValue, InstallChatEvent, InstallChatClassification, refreshTokens, maybeEnableAuthExtension } from './chatSetup.js';
 import { IDefaultAccount } from '../../../../../base/common/defaultAccount.js';
 import { IDefaultAccountService } from '../../../../../platform/defaultAccount/common/defaultAccount.js';
 
 const defaultChat = {
 	chatExtensionId: product.defaultChatAgent?.chatExtensionId ?? '',
 	provider: product.defaultChatAgent?.provider ?? { default: { id: '', name: '' }, enterprise: { id: '', name: '' }, apple: { id: '', name: '' }, google: { id: '', name: '' } },
-	providerExtensionId: product.defaultChatAgent?.providerExtensionId ?? '',
 	providerUriSetting: product.defaultChatAgent?.providerUriSetting ?? '',
 	completionsAdvancedSetting: product.defaultChatAgent?.completionsAdvancedSetting ?? '',
 };
@@ -156,7 +153,7 @@ export class ChatSetupController extends Disposable {
 	}
 
 	private async signIn(options: IChatSetupControllerOptions): Promise<{ defaultAccount: IDefaultAccount | undefined; entitlement: ChatEntitlement | undefined }> {
-		await this.maybeEnableAuthExtension();
+		await maybeEnableAuthExtension(this.extensionsWorkbenchService, this.logService);
 
 		let entitlements;
 		let defaultAccount;
@@ -180,29 +177,6 @@ export class ChatSetupController extends Disposable {
 		}
 
 		return { defaultAccount, entitlement: entitlements?.entitlement };
-	}
-
-	private async maybeEnableAuthExtension(): Promise<void> {
-		if (!defaultChat.providerExtensionId) {
-			return;
-		}
-
-		const providerExtension = this.extensionsWorkbenchService.local.find(
-			e => ExtensionIdentifier.equals(e.identifier.id, defaultChat.providerExtensionId)
-		);
-
-		if (!providerExtension) {
-			return;
-		}
-
-		if (
-			providerExtension.enablementState === EnablementState.DisabledGlobally ||
-			providerExtension.enablementState === EnablementState.DisabledWorkspace
-		) {
-			this.logService.info(`[chat setup] signIn: auth provider extension '${defaultChat.providerExtensionId}' is disabled, re-enabling it`);
-			await this.extensionsWorkbenchService.setEnablement([providerExtension], EnablementState.EnabledGlobally);
-			await this.extensionsWorkbenchService.updateRunningExtensions(localize('enableAuthExtension', "Enabling GitHub Authentication"));
-		}
 	}
 
 	private async install(entitlement: ChatEntitlement, watch: StopWatch, options: IChatSetupControllerOptions): Promise<ChatSetupResultValue> {
