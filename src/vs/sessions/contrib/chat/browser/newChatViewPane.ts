@@ -55,6 +55,7 @@ import { NewChatContextAttachments } from './newChatContextAttachments.js';
 import { GITHUB_REMOTE_FILE_SCHEME } from '../../fileTreeView/browser/githubFileSystemProvider.js';
 import { FolderPicker } from './folderPicker.js';
 import { SessionTargetPicker } from './sessionTargetPicker.js';
+import { IsolationModePicker } from './isolationModePicker.js';
 
 // #region --- Chat Welcome Widget ---
 
@@ -91,6 +92,7 @@ interface INewChatWidgetOptions {
 class NewChatWidget extends Disposable {
 
 	private readonly _targetPicker: SessionTargetPicker;
+	private readonly _isolationModePicker: IsolationModePicker;
 	private readonly _options: INewChatWidgetOptions;
 
 	// Input
@@ -134,9 +136,8 @@ class NewChatWidget extends Disposable {
 		super();
 		this._contextAttachments = this._register(this.instantiationService.createInstance(NewChatContextAttachments));
 		this._folderPicker = this._register(this.instantiationService.createInstance(FolderPicker));
-		this._targetPicker = this._register(this.instantiationService.createInstance(
-			SessionTargetPicker, options.allowedTargets, options.defaultTarget,
-		));
+		this._targetPicker = this._register(new SessionTargetPicker(options.allowedTargets, options.defaultTarget));
+		this._isolationModePicker = this._register(this.instantiationService.createInstance(IsolationModePicker));
 		this._options = options;
 
 		// When folder changes, notify extension and re-render pickers
@@ -146,14 +147,15 @@ class NewChatWidget extends Disposable {
 		}));
 
 		// When target changes, regenerate pending resource and re-render
-		this._register(this._targetPicker.onDidChangeTarget(() => {
+		this._register(this._targetPicker.onDidChangeTarget((target) => {
 			this._generatePendingSessionResource();
 			this._notifyFolderSelection();
 			this._renderExtensionPickers(true);
+			this._isolationModePicker.setVisible(target === AgentSessionProviders.Background);
 		}));
 
 		// When isolation mode changes, notify extension
-		this._register(this._targetPicker.onDidChangeIsolationMode(() => {
+		this._register(this._isolationModePicker.onDidChange(() => {
 			this._notifyFolderSelection();
 			this._renderIsolationModePickers();
 		}));
@@ -211,9 +213,11 @@ class NewChatWidget extends Disposable {
 		this._createBottomToolbar(inputArea);
 		this._inputSlot.appendChild(inputArea);
 
-		// Local mode picker (below the input, shown when Folder target is selected)
+		// Isolation mode picker (below the input, shown when Folder target is selected)
 		const isolationContainer = dom.append(welcomeElement, dom.$('.chat-full-welcome-local-mode'));
-		this._isolationPickersContainer = this._targetPicker.renderIsolationMode(isolationContainer);
+		this._isolationModePicker.render(isolationContainer);
+		dom.append(isolationContainer, dom.$('.sessions-chat-local-mode-spacer'));
+		this._isolationPickersContainer = dom.append(isolationContainer, dom.$('.sessions-chat-local-mode-right'));
 
 		// Render target buttons & extension pickers
 		this._renderOptionGroupPickers();
@@ -368,7 +372,7 @@ class NewChatWidget extends Disposable {
 			},
 			getModels: () => this._getAvailableModels(),
 			canManageModels: () => true,
-			showCuratedModels: () => this._targetPicker.isolationMode === 'folder',
+			showCuratedModels: () => this._isolationModePicker.isolationMode === 'folder',
 		};
 
 		const pickerOptions: IChatInputPickerOptions = {
@@ -432,7 +436,7 @@ class NewChatWidget extends Disposable {
 		// Left half: target switcher (right-justified within its half)
 		const leftHalf = dom.append(pickersRow, dom.$('.sessions-chat-pickers-left-half'));
 		const targetDropdownContainer = dom.append(leftHalf, dom.$('.sessions-chat-dropdown-wrapper'));
-		this._targetPicker.renderTargetRadio(targetDropdownContainer);
+		this._targetPicker.render(targetDropdownContainer);
 
 		// Right half: separator + pickers (left-justified within its half)
 		const rightHalf = dom.append(pickersRow, dom.$('.sessions-chat-pickers-right-half'));
@@ -469,7 +473,7 @@ class NewChatWidget extends Disposable {
 		this._isolationModeDisposables.clear();
 		dom.clearNode(this._isolationPickersContainer);
 
-		if (this._targetPicker.isolationMode === 'worktree') {
+		if (this._isolationModePicker.isolationMode === 'worktree') {
 			this._renderExtensionPickersInContainer(this._isolationPickersContainer, AgentSessionProviders.Background);
 		}
 	}
