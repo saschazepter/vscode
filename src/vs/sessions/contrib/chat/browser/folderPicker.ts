@@ -6,7 +6,7 @@
 import * as dom from '../../../../base/browser/dom.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
-import { Disposable } from '../../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore } from '../../../../base/common/lifecycle.js';
 import { basename, isEqual } from '../../../../base/common/resources.js';
 import { URI } from '../../../../base/common/uri.js';
 import { localize } from '../../../../nls.js';
@@ -44,6 +44,7 @@ export class FolderPicker extends Disposable {
 	private _cachedRecentFolders: { uri: URI; label?: string }[] = [];
 
 	private _triggerElement: HTMLElement | undefined;
+	private readonly _renderDisposables = this._register(new DisposableStore());
 
 	get selectedFolderUri(): URI | undefined {
 		return this._selectedFolderUri;
@@ -86,7 +87,11 @@ export class FolderPicker extends Disposable {
 	 * Returns the container element.
 	 */
 	render(container: HTMLElement): HTMLElement {
+		this._renderDisposables.clear();
+
 		const slot = dom.append(container, dom.$('.sessions-chat-picker-slot'));
+		this._renderDisposables.add({ dispose: () => slot.remove() });
+
 		const trigger = dom.append(slot, dom.$('a.action-label'));
 		trigger.tabIndex = 0;
 		trigger.role = 'button';
@@ -94,12 +99,12 @@ export class FolderPicker extends Disposable {
 
 		this._updateTriggerLabel(trigger);
 
-		this._register(dom.addDisposableListener(trigger, dom.EventType.CLICK, (e) => {
+		this._renderDisposables.add(dom.addDisposableListener(trigger, dom.EventType.CLICK, (e) => {
 			dom.EventHelper.stop(e, true);
 			this.showPicker();
 		}));
 
-		this._register(dom.addDisposableListener(trigger, dom.EventType.KEY_DOWN, (e) => {
+		this._renderDisposables.add(dom.addDisposableListener(trigger, dom.EventType.KEY_DOWN, (e) => {
 			if (e.key === 'Enter' || e.key === ' ') {
 				dom.EventHelper.stop(e, true);
 				this.showPicker();
@@ -121,6 +126,7 @@ export class FolderPicker extends Disposable {
 		const items = this._buildItems(currentFolderUri);
 		const showFilter = items.filter(i => i.kind === ActionListItemKind.Action).length > FILTER_THRESHOLD;
 
+		const triggerElement = this._triggerElement;
 		const delegate: IActionListDelegate<IFolderItem> = {
 			onSelect: (item) => {
 				this.actionWidgetService.hide();
@@ -130,7 +136,7 @@ export class FolderPicker extends Disposable {
 					this._selectFolder(item.uri);
 				}
 			},
-			onHide: () => { },
+			onHide: () => { triggerElement.focus(); },
 		};
 
 		this.actionWidgetService.show<IFolderItem>(
@@ -173,14 +179,18 @@ export class FolderPicker extends Disposable {
 	}
 
 	private async _browseForFolder(): Promise<void> {
-		const selected = await this.fileDialogService.showOpenDialog({
-			canSelectFiles: false,
-			canSelectFolders: true,
-			canSelectMany: false,
-			title: localize('selectFolder', "Select Folder"),
-		});
-		if (selected?.[0]) {
-			this._selectFolder(selected[0]);
+		try {
+			const selected = await this.fileDialogService.showOpenDialog({
+				canSelectFiles: false,
+				canSelectFolders: true,
+				canSelectMany: false,
+				title: localize('selectFolder', "Select Folder"),
+			});
+			if (selected?.[0]) {
+				this._selectFolder(selected[0]);
+			}
+		} catch {
+			// dialog was cancelled or failed — nothing to do
 		}
 	}
 
@@ -228,10 +238,12 @@ export class FolderPicker extends Disposable {
 		}
 
 		// Separator + Browse...
-		items.push({
-			kind: ActionListItemKind.Separator,
-			label: '',
-		});
+		if (items.length > 0) {
+			items.push({
+				kind: ActionListItemKind.Separator,
+				label: '',
+			});
+		}
 		items.push({
 			kind: ActionListItemKind.Action,
 			label: localize('browseFolder', "Browse..."),

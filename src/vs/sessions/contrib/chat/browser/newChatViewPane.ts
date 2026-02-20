@@ -208,6 +208,7 @@ class NewChatWidget extends Disposable {
 	private _localModePickersContainer: HTMLElement | undefined;
 	private _localMode: 'workspace' | 'worktree' = 'worktree';
 	private readonly _folderPicker: FolderPicker;
+	private _folderPickerContainer: HTMLElement | undefined;
 	private readonly _pickerWidgets = new Map<string, ChatSessionPickerActionItem | SearchableOptionPickerActionItem>();
 	private readonly _pickerWidgetDisposables = this._register(new DisposableStore());
 	private readonly _optionEmitters = new Map<string, Emitter<IChatSessionProviderOptionItem>>();
@@ -557,6 +558,10 @@ class NewChatWidget extends Disposable {
 		this._extensionPickersLeftContainer = dom.append(rightHalf, dom.$('.sessions-chat-pickers-left-separator'));
 		this._extensionPickersRightContainer = dom.append(rightHalf, dom.$('.sessions-chat-extension-pickers-right'));
 
+		// Folder picker (rendered once, shown/hidden based on target)
+		this._folderPickerContainer = this._folderPicker.render(rightHalf);
+		this._folderPickerContainer.style.display = 'none';
+
 		this._renderExtensionPickers();
 	}
 
@@ -695,7 +700,12 @@ class NewChatWidget extends Disposable {
 		// For Local target, show folder picker in top row and handle bottom row
 		if (this._targetConfig.selectedTarget.get() === AgentSessionProviders.Local) {
 			this._clearExtensionPickers();
-			this._renderLocalFolderPickerInTopRow();
+			if (this._folderPickerContainer) {
+				this._folderPickerContainer.style.display = '';
+			}
+			if (this._extensionPickersLeftContainer) {
+				this._extensionPickersLeftContainer.style.display = 'block';
+			}
 			this._renderLocalModePicker();
 			return;
 		}
@@ -804,23 +814,6 @@ class NewChatWidget extends Disposable {
 			const slot = dom.append(targetContainer, dom.$('.sessions-chat-picker-slot'));
 			widget.render(slot);
 		}
-	}
-
-	private _renderLocalFolderPickerInTopRow(): void {
-		if (!this._extensionPickersRightContainer) {
-			return;
-		}
-
-		// Show the separator
-		if (this._extensionPickersLeftContainer) {
-			this._extensionPickersLeftContainer.style.display = 'block';
-		}
-
-		this._renderLocalFolderPickerInContainer(this._extensionPickersRightContainer, this._pickerWidgetDisposables);
-	}
-
-	private _renderLocalFolderPickerInContainer(container: HTMLElement, _disposables: DisposableStore): void {
-		this._folderPicker.render(container);
 	}
 
 	private _renderExtensionPickersInContainer(container: HTMLElement, sessionType: AgentSessionProviders): void {
@@ -976,6 +969,9 @@ class NewChatWidget extends Disposable {
 		this._pickerWidgetDisposables.clear();
 		this._pickerWidgets.clear();
 		this._optionEmitters.clear();
+		if (this._folderPickerContainer) {
+			this._folderPickerContainer.style.display = 'none';
+		}
 		if (this._extensionPickersLeftContainer) {
 			this._extensionPickersLeftContainer.style.display = 'none';
 		}
