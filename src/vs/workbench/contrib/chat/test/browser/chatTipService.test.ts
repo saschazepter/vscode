@@ -1011,6 +1011,8 @@ suite('ChatTipService', () => {
 			assert.strictEqual(clickEvents.length, 1, 'Should log one commandClicked event');
 			assert.strictEqual(clickEvents[0].data.tipId, tip.id);
 			assert.strictEqual(clickEvents[0].data.commandId, tip.enabledCommands[0]);
+		} else {
+			assert.fail('Tip has no enabled commands; cannot test command click telemetry');
 		}
 	});
 
