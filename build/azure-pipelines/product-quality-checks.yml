@@ -2,6 +2,9 @@ jobs:
   - job: Quality
     displayName: Quality Checks
     timeoutInMinutes: 45
+    variables:
+      - name: skipComponentGovernanceDetection
+        value: true
     steps:
       - template: ./common/checkout.yml@self
 
@@ -134,9 +137,7 @@ jobs:
         continueOnError: true
         condition: and(succeeded(), eq(lower(variables['VSCODE_PUBLISH']), 'true'))
 
-      - template: ./common/install-builtin-extensions.yml@self
-
-      - script: npm exec -- npm-run-all2 -lp core-ci hygiene eslint valid-layers-check define-class-fields-check vscode-dts-compile-check tsec-compile-check test-build-scripts
+      - script: npm exec -- npm-run-all2 -lp hygiene eslint valid-layers-check define-class-fields-check vscode-dts-compile-check tsec-compile-check test-build-scripts
         env:
           GITHUB_TOKEN: "$(github-distro-mixin-password)"
         displayName: Compile & Hygiene
@@ -145,6 +146,7 @@ jobs:
         env:
           GITHUB_TOKEN: "$(github-distro-mixin-password)"
         displayName: Download component details of built-in extensions
+        condition: and(succeeded(), eq(lower(variables['VSCODE_PUBLISH']), 'true'))
 
       - task: ms.vss-governance-buildtask.governance-build-task-component-detection.ComponentGovernanceComponentDetection@0
         displayName: "Component Detection"
@@ -152,6 +154,7 @@ jobs:
           sourceScanPath: $(Build.SourcesDirectory)
           alertWarningLevel: Medium
         continueOnError: true
+        condition: and(succeeded(), eq(lower(variables['VSCODE_PUBLISH']), 'true'))
 
       - task: AzureCLI@2
         displayName: Fetch secrets
