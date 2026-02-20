@@ -1070,7 +1070,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		models.sort((a, b) => a.metadata.name.localeCompare(b.metadata.name));
 
 		const sessionType = this.getCurrentSessionType();
-		if (sessionType) {
+		if (sessionType && sessionType !== AgentSessionProviders.Local) {
 			// Session has a specific chat session type - show only models that target
 			// this session type, if any such models exist.
 			return models.filter(entry => entry.metadata?.targetChatSessionType === sessionType && entry.metadata?.isUserSelectable);

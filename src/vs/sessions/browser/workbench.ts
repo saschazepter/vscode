@@ -59,7 +59,6 @@ import { registerNotificationCommands } from '../../workbench/browser/parts/noti
 import { NotificationsToasts } from '../../workbench/browser/parts/notifications/notificationsToasts.js';
 import { IMarkdownRendererService } from '../../platform/markdown/browser/markdownRenderer.js';
 import { EditorMarkdownCodeBlockRenderer } from '../../editor/browser/widget/markdownRenderer/browser/editorMarkdownCodeBlockRenderer.js';
-import { EditorModal } from './parts/editorModal.js';
 import { SyncDescriptor } from '../../platform/instantiation/common/descriptors.js';
 import { TitleService } from './parts/titlebarPart.js';
 
@@ -83,8 +82,7 @@ enum LayoutClasses {
 	AUXILIARYBAR_HIDDEN = 'noauxiliarybar',
 	CHATBAR_HIDDEN = 'nochatbar',
 	FULLSCREEN = 'fullscreen',
-	MAXIMIZED = 'maximized',
-	EDITOR_MODAL_VISIBLE = 'editor-modal-visible'
+	MAXIMIZED = 'maximized'
 }
 
 //#endregion
@@ -230,8 +228,6 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 	private panelPartView!: ISerializableView;
 	private auxiliaryBarPartView!: ISerializableView;
 
-	// Editor modal
-	private editorModal!: EditorModal;
 	private chatBarPartView!: ISerializableView;
 
 	private readonly partVisibility: IPartVisibilityState = {
@@ -545,8 +541,8 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 			mark(`code/didCreatePart/${id}`);
 		}
 
-		// Create Editor Part in modal
-		this.createEditorModal();
+		// Create Editor Part (hidden — all editors open via MODAL_GROUP)
+		this.createHiddenEditorPart();
 
 		// Notification Handlers
 		this.createNotificationsHandlers(instantiationService, notificationService);
@@ -592,13 +588,18 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 		return part;
 	}
 
-	private createEditorModal(): void {
-		const editorPart = this.getPart(Parts.EDITOR_PART);
-		this.editorModal = this._register(new EditorModal(
-			this.mainContainer,
-			editorPart,
-			this.editorGroupService
-		));
+	private createHiddenEditorPart(): void {
+		const editorPartContainer = document.createElement('div');
+		editorPartContainer.classList.add('part', 'editor');
+		editorPartContainer.id = Parts.EDITOR_PART;
+		editorPartContainer.setAttribute('role', 'main');
+		editorPartContainer.style.display = 'none';
+
+		mark('code/willCreatePart/workbench.parts.editor');
+		this.getPart(Parts.EDITOR_PART).create(editorPartContainer, { restorePreviousState: false });
+		mark('code/didCreatePart/workbench.parts.editor');
+
+		this.mainContainer.appendChild(editorPartContainer);
 	}
 
 	private restore(lifecycleService: ILifecycleService): void {
@@ -880,9 +881,6 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 		// Layout the grid widget
 		this.workbenchGrid.layout(this._mainContainerDimension.width, this._mainContainerDimension.height);
 
-		// Layout the editor modal with workbench dimensions
-		this.editorModal.layout(this._mainContainerDimension.width, this._mainContainerDimension.height);
-
 		// Emit as event
 		this.handleContainerDidLayout(this.mainContainer, this._mainContainerDimension);
 	}
@@ -1106,14 +1104,6 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 
 		this.partVisibility.editor = !hidden;
 		this.mainContainer.classList.toggle(LayoutClasses.MAIN_EDITOR_AREA_HIDDEN, hidden);
-		this.mainContainer.classList.toggle(LayoutClasses.EDITOR_MODAL_VISIBLE, !hidden);
-
-		// Show/hide modal
-		if (hidden) {
-			this.editorModal.hide();
-		} else {
-			this.editorModal.show();
-		}
 	}
 
 	private setPanelHidden(hidden: boolean): void {

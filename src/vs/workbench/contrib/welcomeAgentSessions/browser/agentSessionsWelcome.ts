@@ -554,6 +554,7 @@ export class AgentSessionsWelcomePage extends EditorPane {
 			}),
 			filter: this.sessionsControlDisposables.add(this.instantiationService.createInstance(AgentSessionsFilter, {
 				limitResults: () => MAX_SESSIONS,
+				overrideExclude: (session) => session.isArchived() ? true : undefined,
 			})),
 			getHoverPosition: () => HoverPosition.BELOW,
 			trackActiveEditorSession: () => false,
