@@ -351,7 +351,7 @@ export function buildModelPickerItems(
 export function getModelPickerAccessibilityProvider() {
 	return {
 		isChecked(element: IActionListItem<IActionWidgetDropdownAction>) {
-			return element.kind === ActionListItemKind.Action && !!element?.item?.checked;
+			return element.kind === ActionListItemKind.Action ? !!element?.item?.checked : undefined;
 		},
 		getRole: (element: IActionListItem<IActionWidgetDropdownAction>) => {
 			switch (element.kind) {
