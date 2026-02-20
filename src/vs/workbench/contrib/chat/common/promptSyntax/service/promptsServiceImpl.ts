@@ -584,7 +584,16 @@ export class PromptsService extends Disposable implements IPromptsService {
 		if (sessionId) {
 			const elapsed = sw.elapsed();
 			const discoveryInfo = await this.getAgentDiscoveryInfo(token);
-			this._onDidLogDiscovery.fire({ sessionId, name: localize("promptsService.loadAgents", "Load Agents"), details: result.length === 1 ? localize("promptsService.resolvedAgent", "Resolved {0} agent in {1}ms", result.length, elapsed.toFixed(1)) : localize("promptsService.resolvedAgents", "Resolved {0} agents in {1}ms", result.length, elapsed.toFixed(1)), discoveryInfo, category: 'discovery' });
+			const details = result.length === 1
+				? localize("promptsService.resolvedAgent", "Resolved {0} agent in {1}ms", result.length, elapsed.toFixed(1))
+				: localize("promptsService.resolvedAgents", "Resolved {0} agents in {1}ms", result.length, elapsed.toFixed(1));
+			this._onDidLogDiscovery.fire({
+				sessionId,
+				name: localize("promptsService.loadAgents", "Load Agents"),
+				details,
+				discoveryInfo,
+				category: 'discovery',
+			});
 		}
 		return result;
 	}
@@ -958,7 +967,16 @@ export class PromptsService extends Disposable implements IPromptsService {
 		if (sessionId) {
 			const elapsed = sw.elapsed();
 			const discoveryInfo = await this.getSkillDiscoveryInfo(token);
-			this._onDidLogDiscovery.fire({ sessionId, name: localize("promptsService.loadSkills", "Load Skills"), details: result.length === 1 ? localize("promptsService.resolvedSkill", "Resolved {0} skill in {1}ms", result.length, elapsed.toFixed(1)) : localize("promptsService.resolvedSkills", "Resolved {0} skills in {1}ms", result.length, elapsed.toFixed(1)), discoveryInfo, category: 'discovery' });
+			const details = result.length === 1
+				? localize("promptsService.resolvedSkill", "Resolved {0} skill in {1}ms", result.length, elapsed.toFixed(1))
+				: localize("promptsService.resolvedSkills", "Resolved {0} skills in {1}ms", result.length, elapsed.toFixed(1));
+			this._onDidLogDiscovery.fire({
+				sessionId,
+				name: localize("promptsService.loadSkills", "Load Skills"),
+				details,
+				discoveryInfo,
+				category: 'discovery',
+			});
 		}
 		return result;
 	}
@@ -1070,7 +1088,16 @@ export class PromptsService extends Disposable implements IPromptsService {
 			const elapsed = sw.elapsed();
 			const hookCount = result ? Object.values(result.hooks).reduce((sum, arr) => sum + arr.length, 0) : 0;
 			const discoveryInfo = await this.getHookDiscoveryInfo(token);
-			this._onDidLogDiscovery.fire({ sessionId, name: localize("promptsService.loadHooks", "Load Hooks"), details: hookCount === 1 ? localize("promptsService.resolvedHook", "Resolved {0} hook in {1}ms", hookCount, elapsed.toFixed(1)) : localize("promptsService.resolvedHooks", "Resolved {0} hooks in {1}ms", hookCount, elapsed.toFixed(1)), discoveryInfo, category: 'discovery' });
+			const details = hookCount === 1
+				? localize("promptsService.resolvedHook", "Resolved {0} hook in {1}ms", hookCount, elapsed.toFixed(1))
+				: localize("promptsService.resolvedHooks", "Resolved {0} hooks in {1}ms", hookCount, elapsed.toFixed(1));
+			this._onDidLogDiscovery.fire({
+				sessionId,
+				name: localize("promptsService.loadHooks", "Load Hooks"),
+				details,
+				discoveryInfo,
+				category: 'discovery',
+			});
 		}
 		return result;
 	}
@@ -1081,7 +1108,16 @@ export class PromptsService extends Disposable implements IPromptsService {
 		if (sessionId) {
 			const elapsed = sw.elapsed();
 			const discoveryInfo = await this.getInstructionsDiscoveryInfo(token);
-			this._onDidLogDiscovery.fire({ sessionId, name: localize("promptsService.loadInstructions", "Load Instructions"), details: result.length === 1 ? localize("promptsService.resolvedInstruction", "Resolved {0} instruction in {1}ms", result.length, elapsed.toFixed(1)) : localize("promptsService.resolvedInstructions", "Resolved {0} instructions in {1}ms", result.length, elapsed.toFixed(1)), discoveryInfo, category: 'discovery' });
+			const details = result.length === 1
+				? localize("promptsService.resolvedInstruction", "Resolved {0} instruction in {1}ms", result.length, elapsed.toFixed(1))
+				: localize("promptsService.resolvedInstructions", "Resolved {0} instructions in {1}ms", result.length, elapsed.toFixed(1));
+			this._onDidLogDiscovery.fire({
+				sessionId,
+				name: localize("promptsService.loadInstructions", "Load Instructions"),
+				details,
+				discoveryInfo,
+				category: 'discovery',
+			});
 		}
 		return result;
 	}
@@ -1178,7 +1214,11 @@ export class PromptsService extends Disposable implements IPromptsService {
 
 	public async getPromptDiscoveryInfo(type: PromptsType, token: CancellationToken, sessionId?: string): Promise<IPromptDiscoveryInfo> {
 		if (sessionId) {
-			this._onDidLogDiscovery.fire({ sessionId, name: localize("promptsService.discoveryStart", "Discovery {0} (Start)", type), category: 'discovery' });
+			this._onDidLogDiscovery.fire({
+				sessionId,
+				name: localize("promptsService.discoveryStart", "Discovery {0} (Start)", type),
+				category: 'discovery',
+			});
 		}
 		const files: IPromptFileDiscoveryResult[] = [];
 
@@ -1207,7 +1247,19 @@ export class PromptsService extends Disposable implements IPromptsService {
 		}
 
 		if (sessionId) {
-			this._onDidLogDiscovery.fire({ sessionId, name: localize("promptsService.discoveryEnd", "Discovery {0} (End)", type), details: localize("promptsService.discoveryResult", "{0} loaded, {1} skipped", loadedCount, skippedCount), discoveryInfo: result, category: 'discovery' });
+			const details = localize(
+				"promptsService.discoveryResult",
+				"{0} loaded, {1} skipped",
+				loadedCount,
+				skippedCount,
+			);
+			this._onDidLogDiscovery.fire({
+				sessionId,
+				name: localize("promptsService.discoveryEnd", "Discovery {0} (End)", type),
+				details,
+				discoveryInfo: result,
+				category: 'discovery',
+			});
 		}
 		return result;
 	}
