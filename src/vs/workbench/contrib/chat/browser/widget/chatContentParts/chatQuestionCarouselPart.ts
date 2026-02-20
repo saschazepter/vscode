@@ -151,12 +151,12 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 		const arrowsContainer = dom.$('.chat-question-nav-arrows');
 
 		const previousLabel = localize('previous', 'Previous');
-		const previousHoverLabel = this.getLabelWithKeybinding(previousLabel, PREVIOUS_QUESTION_ACTION_ID);
+		const previousLabelWithKeybinding = this.getLabelWithKeybinding(previousLabel, PREVIOUS_QUESTION_ACTION_ID);
 		const prevButton = interactiveStore.add(new Button(arrowsContainer, { ...defaultButtonStyles, secondary: true, supportIcons: true }));
 		prevButton.element.classList.add('chat-question-nav-arrow', 'chat-question-nav-prev');
 		prevButton.label = `$(${Codicon.chevronLeft.id})`;
-		prevButton.element.setAttribute('aria-label', previousLabel);
-		interactiveStore.add(this._hoverService.setupDelayedHover(prevButton.element, { content: previousHoverLabel }));
+		prevButton.element.setAttribute('aria-label', previousLabelWithKeybinding);
+		interactiveStore.add(this._hoverService.setupDelayedHover(prevButton.element, { content: previousLabelWithKeybinding }));
 		this._prevButton = prevButton;
 
 		const nextButton = interactiveStore.add(new Button(arrowsContainer, { ...defaultButtonStyles, secondary: true, supportIcons: true }));
@@ -548,7 +548,7 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 		const isLastQuestion = this._currentIndex === this.carousel.questions.length - 1;
 		const submitLabel = localize('submit', 'Submit');
 		const nextLabel = localize('next', 'Next');
-		const nextHoverLabel = this.getLabelWithKeybinding(nextLabel, NEXT_QUESTION_ACTION_ID);
+		const nextLabelWithKeybinding = this.getLabelWithKeybinding(nextLabel, NEXT_QUESTION_ACTION_ID);
 		if (isLastQuestion) {
 			this._nextButton!.label = submitLabel;
 			this._nextButton!.element.setAttribute('aria-label', submitLabel);
@@ -557,10 +557,10 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 			this._nextButtonHover.value = this._hoverService.setupDelayedHover(this._nextButton!.element, { content: submitLabel });
 		} else {
 			this._nextButton!.label = `$(${Codicon.chevronRight.id})`;
-			this._nextButton!.element.setAttribute('aria-label', nextLabel);
+			this._nextButton!.element.setAttribute('aria-label', nextLabelWithKeybinding);
 			// Keep secondary style for next
 			this._nextButton!.element.classList.remove('chat-question-nav-submit');
-			this._nextButtonHover.value = this._hoverService.setupDelayedHover(this._nextButton!.element, { content: nextHoverLabel });
+			this._nextButtonHover.value = this._hoverService.setupDelayedHover(this._nextButton!.element, { content: nextLabelWithKeybinding });
 		}
 
 		// Update aria-label to reflect the current question
