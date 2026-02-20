@@ -71,7 +71,7 @@ export class ProgressBar extends Disposable {
 		this.element.classList.add('monaco-progress-container');
 		this.element.setAttribute('role', 'progressbar');
 		this.element.setAttribute('aria-valuemin', '0');
-		this.element.setAttribute('aria-label', options?.ariaLabel ?? NLS_PROGRESS_LABEL);
+		this.element.setAttribute('aria-label', options?.ariaLabel && options.ariaLabel.trim() ? options.ariaLabel : NLS_PROGRESS_LABEL);
 		container.appendChild(this.element);
 
 		this.bit = document.createElement('div');
