@@ -252,9 +252,6 @@ export function buildModelPickerItems(
 				return aName.localeCompare(bName);
 			});
 
-			if (items.length > 0) {
-				items.push({ kind: ActionListItemKind.Separator });
-			}
 			for (const item of promotedItems) {
 				if (item.kind === 'available') {
 					items.push(createModelItem(createModelAction(item.model, selectedModelId, onSelect), item.model));
@@ -317,6 +314,9 @@ export function buildModelPickerItems(
 		chatEntitlementService.entitlement === ChatEntitlement.Enterprise ||
 		chatEntitlementService.isInternal
 	) {
+		if (otherModels.length) {
+			items.push({ kind: ActionListItemKind.Separator, section: ModelPickerSection.Other });
+		}
 		items.push({
 			item: {
 				id: 'manageModels',
@@ -552,6 +552,7 @@ export class ModelPickerWidget extends Disposable {
 			filterPlaceholder: localize('chat.modelPicker.search', "Search models"),
 			filterPosition: 'top' as const,
 			focusFilterOnOpen: true,
+			filterInputClassName: 'minimal',
 			collapsedByDefault: new Set([ModelPickerSection.Other]),
 			minWidth: 300,
 		};

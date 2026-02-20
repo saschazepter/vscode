@@ -251,6 +251,18 @@
 	border-top: 1px solid var(--vscode-editorHoverWidget-border);
 }
 
+.action-widget .action-list-filter.minimal {
+	padding-bottom: 8px;
+}
+
+.action-widget .action-list-filter.minimal + .actionList {
+	padding-top: 4px;
+}
+
+.action-widget .action-list-filter.minimal:last-child {
+	border-top: none;
+}
+
 .action-widget .action-list-filter-input {
 	width: 100%;
 	box-sizing: border-box;
@@ -265,6 +277,11 @@
 
 .action-widget .action-list-filter-input:focus {
 	border-color: var(--vscode-focusBorder);
+}
+
+.action-widget .action-list-filter-input.minimal,
+.action-widget .action-list-filter-input.minimal:focus {
+	font-size: inherit;
 }
 
 .action-widget .action-list-filter-input::placeholder {
