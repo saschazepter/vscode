@@ -529,7 +529,6 @@ export class ModelPickerWidget extends Disposable {
 			showFilter: models.length >= 10,
 			filterPlaceholder: localize('chat.modelPicker.search', "Search models"),
 			focusFilterOnOpen: true,
-			filterInputClassName: 'minimal',
 			collapsedByDefault: new Set([ModelPickerSection.Other]),
 			minWidth: 300,
 		};

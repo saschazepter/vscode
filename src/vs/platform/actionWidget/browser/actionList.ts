@@ -357,11 +357,6 @@ export interface IActionListOptions {
 	 * When true and filtering is enabled, focuses the filter input when the list opens.
 	 */
 	readonly focusFilterOnOpen?: boolean;
-
-	/**
-	 * Additional CSS class to apply to the filter input element.
-	 */
-	readonly filterInputClassName?: string;
 }
 
 export class ActionList<T> extends Disposable {
@@ -497,10 +492,6 @@ export class ActionList<T> extends Disposable {
 			this._filterInput = document.createElement('input');
 			this._filterInput.type = 'text';
 			this._filterInput.className = 'action-list-filter-input';
-			if (this._options?.filterInputClassName) {
-				this._filterInput.classList.add(this._options.filterInputClassName);
-				this._filterContainer.classList.add(this._options.filterInputClassName);
-			}
 			this._filterInput.placeholder = this._options?.filterPlaceholder ?? localize('actionList.filter.placeholder', "Search...");
 			this._filterInput.setAttribute('aria-label', localize('actionList.filter.ariaLabel', "Filter items"));
 			this._filterContainer.appendChild(this._filterInput);
