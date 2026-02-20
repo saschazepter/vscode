@@ -89,7 +89,7 @@ class LabeledDropdownMenuActionViewItem extends DropdownMenuActionViewItem {
  * Tracks which agent session targets are available and which is selected.
  * Targets are fixed at construction time; only the selection changes.
  */
-export interface ITargetConfig {
+interface ITargetConfig {
 	readonly allowedTargets: IObservable<ReadonlySet<AgentSessionProviders>>;
 	readonly selectedTarget: IObservable<AgentSessionProviders | undefined>;
 	readonly onDidChangeSelectedTarget: Event<AgentSessionProviders | undefined>;
@@ -97,7 +97,7 @@ export interface ITargetConfig {
 	setSelectedTarget(target: AgentSessionProviders): void;
 }
 
-export interface ITargetConfigOptions {
+interface ITargetConfigOptions {
 	allowedTargets: AgentSessionProviders[];
 	defaultTarget?: AgentSessionProviders;
 }
@@ -159,7 +159,7 @@ class TargetConfig extends Disposable implements ITargetConfig {
 /**
  * Data passed to the `onSendRequest` callback when the user submits a query.
  */
-export interface INewChatSendRequestData {
+interface INewChatSendRequestData {
 	readonly resource: URI;
 	readonly target: AgentSessionProviders;
 	readonly query: string;
@@ -172,7 +172,7 @@ export interface INewChatSendRequestData {
 /**
  * Options for creating a `NewChatWidget`.
  */
-export interface INewChatWidgetOptions {
+interface INewChatWidgetOptions {
 	readonly targetConfig: ITargetConfigOptions;
 	readonly onSendRequest?: (data: INewChatSendRequestData) => void;
 	readonly sessionPosition?: ChatSessionPosition;
@@ -543,7 +543,7 @@ class NewChatWidget extends Disposable {
 			return;
 		}
 
-		this._disposePickerWidgets();
+		this._clearExtensionPickers();
 		dom.clearNode(this._pickersContainer);
 
 		const pickersRow = dom.append(this._pickersContainer, dom.$('.chat-full-welcome-pickers'));
@@ -959,12 +959,6 @@ class NewChatWidget extends Disposable {
 		return emitter;
 	}
 
-	private _disposePickerWidgets(): void {
-		this._pickerWidgetDisposables.clear();
-		this._pickerWidgets.clear();
-		this._optionEmitters.clear();
-	}
-
 	private _clearExtensionPickers(): void {
 		this._pickerWidgetDisposables.clear();
 		this._pickerWidgets.clear();
@@ -1035,10 +1029,6 @@ class NewChatWidget extends Disposable {
 
 	layout(_height: number, _width: number): void {
 		this._editor?.layout();
-	}
-
-	setVisible(_visible: boolean): void {
-		// no-op
 	}
 
 	focusInput(): void {
@@ -1124,7 +1114,6 @@ export class NewChatViewPane extends ViewPane {
 
 	override setVisible(visible: boolean): void {
 		super.setVisible(visible);
-		this._widget?.setVisible(visible);
 		if (visible) {
 			this._widget?.focusInput();
 		}
