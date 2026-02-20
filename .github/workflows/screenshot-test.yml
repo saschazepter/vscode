@@ -35,7 +35,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install build/vite dependencies
-        run: npm install
+        run: rm -f package-lock.json && npm install
         working-directory: build/vite
 
       - name: Install Playwright Chromium
