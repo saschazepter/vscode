@@ -10,7 +10,7 @@ import { ExtensionIdentifier } from '../../../platform/extensions/common/extensi
 import { createDecorator } from '../../../platform/instantiation/common/instantiation.js';
 import { IExtHostExtensionService } from './extHostExtensionService.js';
 import { IExtHostRpcService } from './extHostRpcService.js';
-import { ExtHostGitExtensionShape } from './extHost.protocol.js';
+import { ExtHostGitExtensionShape, GitRefDto } from './extHost.protocol.js';
 
 const GIT_EXTENSION_ID = 'vscode.git';
 
@@ -66,8 +66,6 @@ export class ExtHostGitExtensionService extends Disposable implements IExtHostGi
 		super();
 	}
 
-	// --- Called by the main thread via RPC (ExtHostGitShape) ---
-
 	async $openRepository(uri: UriComponents): Promise<UriComponents | undefined> {
 		const api = await this._ensureGitApi();
 		if (!api) {
@@ -78,7 +76,7 @@ export class ExtHostGitExtensionService extends Disposable implements IExtHostGi
 		return repository?.rootUri;
 	}
 
-	async $getRefs(uri: UriComponents, query: GitRefQuery, token?: vscode.CancellationToken): Promise<GitRef[]> {
+	async $getRefs(uri: UriComponents, query: GitRefQuery, token?: vscode.CancellationToken): Promise<GitRefDto[]> {
 		const api = await this._ensureGitApi();
 		if (!api) {
 			return [];
@@ -89,10 +87,32 @@ export class ExtHostGitExtensionService extends Disposable implements IExtHostGi
 			return [];
 		}
 
-		return repository.getRefs(query, token);
-	}
+		try {
+			const refs = await repository.getRefs(query, token);
+			const result: (GitRefDto | undefined)[] = refs.map(ref => {
+				if (!ref.name || !ref.commit) {
+					return undefined;
+				}
 
-	// --- Private helpers ---
+				const id = ref.type === GitRefType.Head
+					? `refs/heads/${ref.name}`
+					: ref.type === GitRefType.RemoteHead
+						? `refs/remotes/${ref.remote}/${ref.name}`
+						: `refs/tags/${ref.name}`;
+
+				return {
+					id,
+					name: ref.name,
+					type: ref.type,
+					revision: ref.commit
+				} satisfies GitRefDto;
+			});
+
+			return result.filter(ref => !!ref);
+		} catch {
+			return [];
+		}
+	}
 
 	private async _ensureGitApi(): Promise<GitExtensionAPI | undefined> {
 		if (this._gitApi) {

@@ -4,6 +4,8 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { CancellationToken } from '../../../../base/common/cancellation.js';
+import { IDisposable } from '../../../../base/common/lifecycle.js';
+import { IObservable } from '../../../../base/common/observable.js';
 import { URI, UriComponents } from '../../../../base/common/uri.js';
 import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
 
@@ -27,12 +29,12 @@ export interface GitRefQuery {
 	readonly sort?: 'alphabetically' | 'committerdate' | 'creatordate';
 }
 
-/**
- * Delegate interface that bridges to the git extension running
- * in the extension host. Set by MainThreadGit when an extension
- * host connects.
- */
-export interface IGitExtensionService {
+export interface IGitRepository {
+	readonly rootUri: URI;
+	getRefs(query: GitRefQuery, token?: CancellationToken): Promise<GitRef[]>;
+}
+
+export interface IGitExtensionDelegate {
 	getRefs(uri: UriComponents, query?: GitRefQuery, token?: CancellationToken): Promise<GitRef[]>;
 	openRepository(uri: UriComponents): Promise<UriComponents | undefined>;
 }
@@ -42,10 +44,11 @@ export const IGitService = createDecorator<IGitService>('gitService');
 export interface IGitService {
 	readonly _serviceBrand: undefined;
 
-	setDelegate(delegate: IGitExtensionService): void;
-	clearDelegate(): void;
+	readonly isInitialized: IObservable<boolean>;
 
-	getRefs(uri: URI, query?: GitRefQuery, token?: CancellationToken): Promise<GitRef[]>;
+	readonly repositories: Iterable<IGitRepository>;
 
-	openRepository(uri: URI): Promise<URI | undefined>;
+	setDelegate(delegate: IGitExtensionDelegate): IDisposable;
+
+	openRepository(uri: URI): Promise<IGitRepository | undefined>;
 }
