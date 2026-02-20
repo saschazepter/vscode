@@ -23,7 +23,8 @@ const $ = dom.$;
 
 /**
  * Widget that displays a status message with an optional action button.
- * Shown for free tier and Pro users when quota is exceeded (experiment controlled via onExP tag for anonymous users).
+ * Shown for free tier users when quota is exceeded, and for Pro users when the experimental setting is enabled.
+ * Anonymous users require the experimental setting to be enabled.
  */
 export class ChatStatusWidget extends Disposable implements IChatInputPartWidget {
 
@@ -55,7 +56,7 @@ export class ChatStatusWidget extends Disposable implements IChatInputPartWidget
 			this.createWidgetContent('anonymous');
 		} else if (entitlement === ChatEntitlement.Free) {
 			this.createWidgetContent('free');
-		} else if (entitlement === ChatEntitlement.Pro) {
+		} else if (entitlement === ChatEntitlement.Pro && this.configurationService.getValue<boolean>('chat.statusWidget.pro')) {
 			this.createWidgetContent('pro');
 		} else {
 			return;
