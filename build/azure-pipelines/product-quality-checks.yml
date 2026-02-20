@@ -65,10 +65,13 @@ jobs:
             fi
             echo "Npm install failed $i, trying again..."
           done
-        workingDirectory: build
         env:
+          npm_config_arch: x64
+          VSCODE_ARCH: x64
+          ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
           GITHUB_TOKEN: "$(github-distro-mixin-password)"
-        displayName: Install build dependencies
+        displayName: Install dependencies
         condition: and(succeeded(), ne(variables.NODE_MODULES_RESTORED, 'true'))
 
       - script: node build/azure-pipelines/distro/mixin-npm.ts
