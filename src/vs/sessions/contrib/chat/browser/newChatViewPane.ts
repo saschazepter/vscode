@@ -135,6 +135,12 @@ class NewChatWidget extends Disposable {
 			this._isolationModePicker.setVisible(isLocal);
 			this._branchPicker.setVisible(isLocal);
 		}));
+
+		this._register(this.contextKeyService.onDidChangeContext(e => {
+			if (this._whenClauseKeys.size > 0 && e.affectsSome(this._whenClauseKeys)) {
+				this._renderExtensionPickers(true);
+			}
+		}));
 	}
 
 	// --- Rendering ---
