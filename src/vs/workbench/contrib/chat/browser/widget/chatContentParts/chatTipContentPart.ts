@@ -9,6 +9,7 @@ import { StandardMouseEvent } from '../../../../../../base/browser/mouseEvent.js
 import { renderIcon } from '../../../../../../base/browser/ui/iconLabel/iconLabels.js';
 import { Codicon } from '../../../../../../base/common/codicons.js';
 import { Emitter } from '../../../../../../base/common/event.js';
+import { onUnexpectedError } from '../../../../../../base/common/errors.js';
 import { Disposable, MutableDisposable } from '../../../../../../base/common/lifecycle.js';
 import { IMarkdownString } from '../../../../../../base/common/htmlContent.js';
 import { localize, localize2 } from '../../../../../../nls.js';
@@ -116,7 +117,7 @@ export class ChatTipContentPart extends Disposable {
 
 		this.domNode.appendChild(renderIcon(Codicon.lightbulb));
 		const markdownContent = this._renderer.render(tip.content, {
-			actionHandler: (link, md) => { this._handleTipAction(link, md); }
+			actionHandler: (link, md) => { this._handleTipAction(link, md).catch(onUnexpectedError); }
 		});
 		this._renderedContent.value = markdownContent;
 		this.domNode.appendChild(markdownContent.element);
