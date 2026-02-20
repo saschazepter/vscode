@@ -12,7 +12,7 @@ import { ActionListItemKind, IActionListItem } from '../../../../../../../platfo
 import { IActionWidgetDropdownAction } from '../../../../../../../platform/actionWidget/browser/actionWidgetDropdown.js';
 import { ICommandService } from '../../../../../../../platform/commands/common/commands.js';
 import { StateType } from '../../../../../../../platform/update/common/update.js';
-import { buildModelPickerItems } from '../../../../browser/widget/input/chatModelPicker.js';
+import { buildModelPickerItems, getModelPickerAccessibilityProvider } from '../../../../browser/widget/input/chatModelPicker.js';
 import { ILanguageModelChatMetadata, ILanguageModelChatMetadataAndIdentifier, IModelControlEntry } from '../../../../common/languageModels.js';
 import { ChatEntitlement, IChatEntitlementService } from '../../../../../../services/chat/common/chatEntitlementService.js';
 
@@ -102,6 +102,13 @@ function callBuild(
 suite('buildModelPickerItems', () => {
 
 	ensureNoDisposablesAreLeakedInTestSuite();
+
+	test('accessibility provider uses radio semantics for model items', () => {
+		const provider = getModelPickerAccessibilityProvider();
+		assert.strictEqual(provider.getRole({ kind: ActionListItemKind.Action } as IActionListItem<IActionWidgetDropdownAction>), 'menuitemradio');
+		assert.strictEqual(provider.getRole({ kind: ActionListItemKind.Separator } as IActionListItem<IActionWidgetDropdownAction>), 'separator');
+		assert.strictEqual(provider.getWidgetRole(), 'menu');
+	});
 
 	test('auto model always appears first', () => {
 		const auto = createAutoModel();
