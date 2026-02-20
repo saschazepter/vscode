@@ -71,8 +71,11 @@ node .github/skills/azure-pipelines/azure-pipeline.ts queue
 # Queue with a specific source branch
 node .github/skills/azure-pipelines/azure-pipeline.ts queue --branch my-feature-branch
 
-# Queue with custom variables (e.g., to skip certain stages)
-node .github/skills/azure-pipelines/azure-pipeline.ts queue --variables "SKIP_TESTS=true"
+# Queue with custom parameters
+node .github/skills/azure-pipelines/azure-pipeline.ts queue --parameter "VSCODE_BUILD_WEB=false" --parameter "VSCODE_PUBLISH=false"
+
+# Parameter value with spaces
+node .github/skills/azure-pipelines/azure-pipeline.ts queue --parameter "VSCODE_BUILD_TYPE=Product Build"
 ```
 
 > **Important**: Before queueing a new build, cancel any previous builds on the same branch that you no longer need. This frees up build agents and reduces resource waste:
@@ -89,8 +92,42 @@ node .github/skills/azure-pipelines/azure-pipeline.ts queue --variables "SKIP_TE
 |--------|-------------|
 | `--branch <name>` | Source branch to build (default: current git branch) |
 | `--definition <id>` | Pipeline definition ID (default: 111) |
-| `--variables <vars>` | Pipeline variables in `KEY=value` format, space-separated |
+| `--parameter <entry>` | Pipeline parameter in `KEY=value` format (repeatable) |
+| `--parameters <list>` | Space-separated parameters in `KEY=value KEY2=value2` format |
 | `--dry-run` | Print the command without executing |
+
+### Product Build Queue Parameters (`build/azure-pipelines/product-build.yml`)
+
+| Name | Type | Default | Allowed Values | Description |
+|------|------|---------|----------------|-------------|
+| `VSCODE_QUALITY` | string | `insider` | `exploration`, `insider`, `stable` | Build quality channel |
+| `VSCODE_BUILD_TYPE` | string | `Product Build` | `Product Build`, `CI Build` | Build mode for product vs CI |
+| `NPM_REGISTRY` | string | `https://pkgs.dev.azure.com/monacotools/Monaco/_packaging/vscode/npm/registry/` | any URL | Custom npm registry |
+| `CARGO_REGISTRY` | string | `sparse+https://pkgs.dev.azure.com/monacotools/Monaco/_packaging/vscode/Cargo/index/` | any URL | Custom Cargo registry |
+| `VSCODE_BUILD_WIN32` | boolean | `true` | `true`, `false` | Build Windows x64 |
+| `VSCODE_BUILD_WIN32_ARM64` | boolean | `true` | `true`, `false` | Build Windows arm64 |
+| `VSCODE_BUILD_LINUX` | boolean | `true` | `true`, `false` | Build Linux x64 |
+| `VSCODE_BUILD_LINUX_SNAP` | boolean | `true` | `true`, `false` | Build Linux x64 Snap |
+| `VSCODE_BUILD_LINUX_ARM64` | boolean | `true` | `true`, `false` | Build Linux arm64 |
+| `VSCODE_BUILD_LINUX_ARMHF` | boolean | `true` | `true`, `false` | Build Linux armhf |
+| `VSCODE_BUILD_ALPINE` | boolean | `true` | `true`, `false` | Build Alpine x64 |
+| `VSCODE_BUILD_ALPINE_ARM64` | boolean | `true` | `true`, `false` | Build Alpine arm64 |
+| `VSCODE_BUILD_MACOS` | boolean | `true` | `true`, `false` | Build macOS x64 |
+| `VSCODE_BUILD_MACOS_ARM64` | boolean | `true` | `true`, `false` | Build macOS arm64 |
+| `VSCODE_BUILD_MACOS_UNIVERSAL` | boolean | `true` | `true`, `false` | Build macOS universal (requires both macOS arches) |
+| `VSCODE_BUILD_WEB` | boolean | `true` | `true`, `false` | Build Web artifacts |
+| `VSCODE_PUBLISH` | boolean | `true` | `true`, `false` | Publish to builds.code.visualstudio.com |
+| `VSCODE_RELEASE` | boolean | `false` | `true`, `false` | Trigger release flow if successful |
+| `VSCODE_STEP_ON_IT` | boolean | `false` | `true`, `false` | Skip tests |
+
+Example: run a quick CI-oriented validation with minimal publish/release side effects:
+
+```bash
+node .github/skills/azure-pipelines/azure-pipeline.ts queue \
+   --parameter "VSCODE_BUILD_TYPE=CI Build" \
+   --parameter "VSCODE_PUBLISH=false" \
+   --parameter "VSCODE_RELEASE=false"
+```
 
 ---
 
@@ -218,11 +255,16 @@ node .github/skills/azure-pipelines/azure-pipeline.ts status --build-id 123456 -
 node .github/skills/azure-pipelines/azure-pipeline.ts status --build-id 123456 --download-artifact unsigned_vscode_cli_win32_x64_cli
 ```
 
-### 3. Test with Modified Variables
+### 3. Test with Modified Parameters
 
 ```bash
-# Skip expensive stages during validation
-node .github/skills/azure-pipelines/azure-pipeline.ts queue --variables "VSCODE_BUILD_SKIP_INTEGRATION_TESTS=true"
+# Customize build matrix for quicker validation
+node .github/skills/azure-pipelines/azure-pipeline.ts queue \
+   --parameter "VSCODE_BUILD_TYPE=CI Build" \
+   --parameter "VSCODE_BUILD_WEB=false" \
+   --parameter "VSCODE_BUILD_ALPINE=false" \
+   --parameter "VSCODE_BUILD_ALPINE_ARM64=false" \
+   --parameter "VSCODE_PUBLISH=false"
 ```
 
 ### 4. Cancel a Running Build
