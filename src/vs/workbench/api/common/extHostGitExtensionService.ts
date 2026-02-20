@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import type * as vscode from 'vscode';
+import { Event } from '../../../base/common/event.js';
 import { Disposable, DisposableStore } from '../../../base/common/lifecycle.js';
 import { URI, UriComponents } from '../../../base/common/uri.js';
 import { ExtensionIdentifier } from '../../../platform/extensions/common/extensions.js';
@@ -53,7 +54,7 @@ interface Repository {
 
 interface RepositoryState {
 	readonly HEAD: Branch | undefined;
-	readonly onDidChange: vscode.Event<void>;
+	readonly onDidChange: Event<void>;
 }
 
 interface Branch extends GitRef {
@@ -130,7 +131,7 @@ export class ExtHostGitExtensionService extends Disposable implements IExtHostGi
 		return !!registry.getExtensionDescription(GIT_EXTENSION_ID);
 	}
 
-	async $openRepository(uri: UriComponents): Promise<{ handle: number; rootUri: UriComponents } | undefined> {
+	async $openRepository(uri: UriComponents): Promise<{ handle: number; rootUri: UriComponents; state: GitRepositoryStateDto } | undefined> {
 		const api = await this._ensureGitApi();
 		if (!api) {
 			return undefined;
@@ -143,7 +144,20 @@ export class ExtHostGitExtensionService extends Disposable implements IExtHostGi
 
 		const existingHandle = this._repositoryByUri.get(repository.rootUri);
 		if (existingHandle !== undefined) {
-			return { handle: existingHandle, rootUri: repository.rootUri };
+			return {
+				handle: existingHandle,
+				rootUri: repository.rootUri,
+				state: {
+					HEAD: repository.state.HEAD ? toGitBranchDto(repository.state.HEAD) : undefined
+				}
+			};
+		}
+
+		let repositoryState = repository.state;
+		if (repository.state.HEAD === undefined) {
+			// If the repository is not initialized, wait for it
+			await Event.toPromise(repository.state.onDidChange, this._disposables);
+			repositoryState = repository.state;
 		}
 
 		const handle = ExtHostGitExtensionService._handlePool++;
@@ -155,7 +169,13 @@ export class ExtHostGitExtensionService extends Disposable implements IExtHostGi
 			this._proxy.$onDidChangeRepository(handle);
 		}));
 
-		return { handle, rootUri: repository.rootUri };
+		return {
+			handle,
+			rootUri: repository.rootUri,
+			state: {
+				HEAD: repositoryState.HEAD ? toGitBranchDto(repositoryState.HEAD) : undefined
+			}
+		};
 	}
 
 	async $getRefs(handle: number, query: GitRefQueryDto, token?: vscode.CancellationToken): Promise<GitRefDto[]> {

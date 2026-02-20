@@ -3499,7 +3499,7 @@ export interface GitUpstreamRefDto {
 
 export interface ExtHostGitExtensionShape {
 	$isGitExtensionAvailable(): Promise<boolean>;
-	$openRepository(root: UriComponents): Promise<{ handle: number; rootUri: UriComponents } | undefined>;
+	$openRepository(root: UriComponents): Promise<{ handle: number; rootUri: UriComponents; state: GitRepositoryStateDto } | undefined>;
 	$getRefs(handle: number, query: GitRefQueryDto, token?: CancellationToken): Promise<GitRefDto[]>;
 	$getRepositoryState(handle: number): Promise<GitRepositoryStateDto | undefined>;
 }

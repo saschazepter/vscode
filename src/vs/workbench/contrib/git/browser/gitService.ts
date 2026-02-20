@@ -51,7 +51,7 @@ export class GitRepository extends Disposable implements IGitRepository {
 	private readonly _onDidChangeState = this._register(new Emitter<void>());
 	readonly onDidChangeState: Event<void> = this._onDidChangeState.event;
 
-	private _state: GitRepositoryState = { HEAD: undefined };
+	private _state: GitRepositoryState;
 	get state(): GitRepositoryState { return this._state; }
 
 	setState(state: GitRepositoryState): void {
@@ -61,9 +61,12 @@ export class GitRepository extends Disposable implements IGitRepository {
 
 	constructor(
 		private readonly delegate: IGitExtensionDelegate,
-		readonly rootUri: URI
+		readonly rootUri: URI,
+		state: GitRepositoryState
 	) {
 		super();
+
+		this._state = state;
 	}
 
 	async getRefs(query: GitRefQuery, token?: CancellationToken): Promise<GitRef[]> {

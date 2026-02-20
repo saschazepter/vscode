@@ -21,9 +21,9 @@ function toGitRefType(type: GitRefTypeDto): GitRefType {
 	}
 }
 
-function toGitRepositoryState(dto: GitRepositoryStateDto): GitRepositoryState {
+function toGitRepositoryState(dto: GitRepositoryStateDto | undefined): GitRepositoryState {
 	return {
-		HEAD: dto.HEAD ? {
+		HEAD: dto?.HEAD ? {
 			type: toGitRefType(dto.HEAD.type),
 			name: dto.HEAD.name,
 			commit: dto.HEAD.commit,
@@ -94,7 +94,8 @@ export class MainThreadGitExtensionService extends Disposable implements MainThr
 		}
 
 		// Create a new repository and store it in the maps
-		const repository = new GitRepository(this, repositoryRootUri);
+		const state = toGitRepositoryState(result.state);
+		const repository = new GitRepository(this, repositoryRootUri, state);
 
 		this._repositories.set(result.handle, repository);
 		this._repositoryHandles.set(repositoryRootUri, result.handle);
