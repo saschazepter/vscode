@@ -7,7 +7,6 @@ import * as dom from '../../../../base/browser/dom.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { Disposable, DisposableStore } from '../../../../base/common/lifecycle.js';
-import { URI } from '../../../../base/common/uri.js';
 import { localize } from '../../../../nls.js';
 import { IActionWidgetService } from '../../../../platform/actionWidget/browser/actionWidget.js';
 import { ActionListItemKind, IActionListDelegate, IActionListItem } from '../../../../platform/actionWidget/browser/actionList.js';
@@ -40,7 +39,7 @@ export class BranchPicker extends Disposable {
 	readonly onDidChange: Event<string | undefined> = this._onDidChange.event;
 
 	private readonly _renderDisposables = this._register(new DisposableStore());
-	private _container: HTMLElement | undefined;
+	private _slotElement: HTMLElement | undefined;
 	private _triggerElement: HTMLElement | undefined;
 
 	get selectedBranch(): string | undefined {
@@ -84,10 +83,13 @@ export class BranchPicker extends Disposable {
 	 * Renders the branch picker trigger into the given container.
 	 */
 	render(container: HTMLElement): void {
-		this._container = container;
 		this._renderDisposables.clear();
 
-		const trigger = dom.append(container, dom.$('a.action-label'));
+		const slot = dom.append(container, dom.$('.sessions-chat-picker-slot'));
+		this._slotElement = slot;
+		this._renderDisposables.add({ dispose: () => slot.remove() });
+
+		const trigger = dom.append(slot, dom.$('a.action-label'));
 		trigger.tabIndex = 0;
 		trigger.role = 'button';
 		this._triggerElement = trigger;
@@ -110,8 +112,8 @@ export class BranchPicker extends Disposable {
 	 * Shows or hides the picker.
 	 */
 	setVisible(visible: boolean): void {
-		if (this._container) {
-			this._container.style.visibility = visible ? '' : 'hidden';
+		if (this._slotElement) {
+			this._slotElement.style.display = visible ? '' : 'none';
 		}
 	}
 
@@ -153,10 +155,11 @@ export class BranchPicker extends Disposable {
 
 	private _buildItems(): IActionListItem<IBranchItem>[] {
 		const items: IActionListItem<IBranchItem>[] = [];
+		const copilotWorktreeSection = localize('branchPicker.copilotWorktrees', "Copilot Worktrees");
 		const worktreeBranches = this._branches.filter(b => b.startsWith(COPILOT_WORKTREE_PREFIX));
 		const otherBranches = this._branches.filter(b => !b.startsWith(COPILOT_WORKTREE_PREFIX));
 
-		// Regular branches first, no section header
+		// Regular branches first, no section
 		for (const branch of otherBranches) {
 			items.push({
 				kind: ActionListItemKind.Action,
@@ -166,18 +169,22 @@ export class BranchPicker extends Disposable {
 			});
 		}
 
-		// Copilot worktree branches in a collapsible section
+		// Copilot worktree branches in a toggleable section
 		if (worktreeBranches.length > 0) {
 			items.push({
-				kind: ActionListItemKind.Header,
-				label: localize('branchPicker.copilotWorktrees', "Copilot Worktrees"),
-				canCollapse: true,
+				kind: ActionListItemKind.Action,
+				label: copilotWorktreeSection,
+				isSectionToggle: true,
+				section: copilotWorktreeSection,
+				group: { title: '', icon: Codicon.blank },
+				item: { name: '' },
 			});
 			for (const branch of worktreeBranches) {
 				items.push({
 					kind: ActionListItemKind.Action,
 					label: branch,
-					group: { title: localize('branchPicker.copilotWorktrees', "Copilot Worktrees"), icon: this._selectedBranch === branch ? Codicon.check : Codicon.blank },
+					section: copilotWorktreeSection,
+					group: { title: '', icon: this._selectedBranch === branch ? Codicon.check : Codicon.blank },
 					item: { name: branch },
 				});
 			}
