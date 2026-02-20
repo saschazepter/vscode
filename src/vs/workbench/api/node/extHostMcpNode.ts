@@ -76,12 +76,6 @@ export class NodeExtHostMpcService extends ExtHostMcpService {
 			env[key] = value === null ? undefined : String(value);
 		}
 
-		// const isSandboxedLaunch = env[mcpSandboxedLaunchEnvironmentKey] === 'true';
-		// delete env[mcpSandboxedLaunchEnvironmentKey];
-		// if (isSandboxedLaunch) {
-		// 	delete env.VSCODE_INSPECTOR_OPTIONS;
-		// }
-
 		let child: ChildProcessWithoutNullStreams;
 		try {
 			const home = homedir();
