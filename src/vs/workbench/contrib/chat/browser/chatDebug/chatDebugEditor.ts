@@ -296,8 +296,4 @@ export class ChatDebugEditor extends EditorPane {
 		}
 		this.logsView?.layout(this.currentDimension);
 	}
-
-	override dispose(): void {
-		super.dispose();
-	}
 }
