@@ -893,7 +893,7 @@ export function registerChatActions() {
 				f1: true,
 				precondition: ChatContextKeys.inChatSession,
 				keybinding: [{
-					weight: KeybindingWeight.WorkbenchContrib,
+					weight: KeybindingWeight.ExternalExtension + 1,
 					primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyA,
 					when: ContextKeyExpr.and(ChatContextKeys.inChatSession, ChatContextKeys.Editing.hasQuestionCarousel),
 				}]
@@ -907,6 +907,54 @@ export function registerChatActions() {
 			if (!widget || !widget.toggleQuestionCarouselFocus()) {
 				alert(localize('chat.questionCarousel.focusUnavailable', "No chat question to focus right now."));
 			}
+		}
+	});
+
+	registerAction2(class PreviousQuestionCarouselQuestionAction extends Action2 {
+		static readonly ID = 'workbench.action.chat.previousQuestion';
+
+		constructor() {
+			super({
+				id: PreviousQuestionCarouselQuestionAction.ID,
+				title: localize2('interactiveSession.previousQuestion.label', "Chat: Previous Question"),
+				category: CHAT_CATEGORY,
+				f1: true,
+				precondition: ContextKeyExpr.and(ChatContextKeys.inChatSession, ChatContextKeys.Editing.hasQuestionCarousel),
+				keybinding: [{
+					weight: KeybindingWeight.WorkbenchContrib,
+					primary: KeyMod.Alt | KeyCode.KeyP,
+					when: ContextKeyExpr.and(ChatContextKeys.inChatQuestionCarousel, ChatContextKeys.Editing.hasQuestionCarousel),
+				}]
+			});
+		}
+
+		run(accessor: ServicesAccessor): void {
+			const widgetService = accessor.get(IChatWidgetService);
+			widgetService.lastFocusedWidget?.navigateToPreviousQuestion();
+		}
+	});
+
+	registerAction2(class NextQuestionCarouselQuestionAction extends Action2 {
+		static readonly ID = 'workbench.action.chat.nextQuestion';
+
+		constructor() {
+			super({
+				id: NextQuestionCarouselQuestionAction.ID,
+				title: localize2('interactiveSession.nextQuestion.label', "Chat: Next Question"),
+				category: CHAT_CATEGORY,
+				f1: true,
+				precondition: ContextKeyExpr.and(ChatContextKeys.inChatSession, ChatContextKeys.Editing.hasQuestionCarousel),
+				keybinding: [{
+					weight: KeybindingWeight.WorkbenchContrib,
+					primary: KeyMod.Alt | KeyCode.KeyN,
+					when: ContextKeyExpr.and(ChatContextKeys.inChatQuestionCarousel, ChatContextKeys.Editing.hasQuestionCarousel),
+				}]
+			});
+		}
+
+		run(accessor: ServicesAccessor): void {
+			const widgetService = accessor.get(IChatWidgetService);
+			widgetService.lastFocusedWidget?.navigateToNextQuestion();
 		}
 	});
 

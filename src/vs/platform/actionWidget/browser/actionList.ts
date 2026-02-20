@@ -337,6 +337,11 @@ export interface IActionListOptions {
 	readonly showFilter?: boolean;
 
 	/**
+	 * Placeholder text for the filter input.
+	 */
+	readonly filterPlaceholder?: string;
+
+	/**
 	 * Section IDs that should be collapsed by default.
 	 */
 	readonly collapsedByDefault?: ReadonlySet<string>;
@@ -480,7 +485,7 @@ export class ActionList<T> extends Disposable {
 			this._filterInput = document.createElement('input');
 			this._filterInput.type = 'text';
 			this._filterInput.className = 'action-list-filter-input';
-			this._filterInput.placeholder = localize('actionList.filter.placeholder', "Search...");
+			this._filterInput.placeholder = this._options?.filterPlaceholder ?? localize('actionList.filter.placeholder', "Search...");
 			this._filterInput.setAttribute('aria-label', localize('actionList.filter.ariaLabel', "Filter items"));
 			this._filterContainer.appendChild(this._filterInput);
 

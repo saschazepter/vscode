@@ -36,6 +36,7 @@ import { NewChatViewPane, SessionsViewId } from './newChatViewPane.js';
 import { ViewPaneContainer } from '../../../../workbench/browser/parts/views/viewPaneContainer.js';
 import { registerIcon } from '../../../../platform/theme/common/iconRegistry.js';
 import { ChatViewPane } from '../../../../workbench/contrib/chat/browser/widgetHosts/viewPane/chatViewPane.js';
+import { IsAuxiliaryWindowContext } from '../../../../workbench/common/contextkeys.js';
 
 export class OpenSessionWorktreeInVSCodeAction extends Action2 {
 	static readonly ID = 'chat.openSessionWorktreeInVSCode';
@@ -156,6 +157,7 @@ MenuRegistry.appendMenuItem(Menus.TitleBarRight, {
 	icon: Codicon.folderOpened,
 	group: 'navigation',
 	order: 9,
+	when: IsAuxiliaryWindowContext.toNegated()
 });
 
 
