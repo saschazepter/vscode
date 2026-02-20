@@ -16,6 +16,7 @@ import { IConfigurationMigrationRegistry, Extensions as ConfigurationMigrationEx
 import { registerWorkbenchContribution2, WorkbenchPhase } from '../../../common/contributions.js';
 import { EditorExtensions } from '../../../common/editor.js';
 import { mcpSchemaId } from '../../../services/configuration/common/configuration.js';
+import { ChatContextKeys } from '../../chat/common/actions/chatContextKeys.js';
 import { ExtensionMcpDiscovery } from '../common/discovery/extensionMcpDiscovery.js';
 import { InstalledMcpServersDiscovery } from '../common/discovery/installedMcpServersDiscovery.js';
 import { mcpDiscoveryRegistry } from '../common/discovery/mcpDiscovery.js';
@@ -32,8 +33,11 @@ import { McpResourceFilesystem } from '../common/mcpResourceFilesystem.js';
 import { McpSamplingService } from '../common/mcpSamplingService.js';
 import { McpService } from '../common/mcpService.js';
 import { IMcpElicitationService, IMcpSamplingService, IMcpService, IMcpWorkbenchService } from '../common/mcpTypes.js';
+import { IWorkbenchMcpGatewayService } from '../common/mcpGatewayService.js';
+import { BrowserMcpGatewayService } from './mcpGatewayService.js';
+import { McpGatewayToolBrokerContribution } from './mcpGatewayToolBrokerContribution.js';
 import { McpAddContextContribution } from './mcpAddContextContribution.js';
-import { AddConfigurationAction, EditStoredInput, ListMcpServerCommand, McpBrowseCommand, McpBrowseResourcesCommand, McpConfigureSamplingModels, McpConfirmationServerOptionsCommand, MCPServerActionRendering, McpServerOptionsCommand, McpSkipCurrentAutostartCommand, McpStartPromptingServerCommand, OpenRemoteUserMcpResourceCommand, OpenUserMcpResourceCommand, OpenWorkspaceFolderMcpResourceCommand, OpenWorkspaceMcpResourceCommand, RemoveStoredInput, ResetMcpCachedTools, ResetMcpTrustCommand, RestartServer, ShowConfiguration, ShowInstalledMcpServersCommand, ShowOutput, StartServer, StopServer } from './mcpCommands.js';
+import { AddConfigurationAction, EditStoredInput, InstallFromManifestAction, ListMcpServerCommand, McpBrowseCommand, McpBrowseResourcesCommand, McpConfigureSamplingModels, McpConfirmationServerOptionsCommand, MCPServerActionRendering, McpServerOptionsCommand, McpSkipCurrentAutostartCommand, McpStartPromptingServerCommand, OpenRemoteUserMcpResourceCommand, OpenUserMcpResourceCommand, OpenWorkspaceFolderMcpResourceCommand, OpenWorkspaceMcpResourceCommand, RemoveStoredInput, ResetMcpCachedTools, ResetMcpTrustCommand, RestartServer, ShowConfiguration, ShowInstalledMcpServersCommand, ShowOutput, StartServer, StopServer } from './mcpCommands.js';
 import { McpDiscovery } from './mcpDiscovery.js';
 import { McpElicitationService } from './mcpElicitationService.js';
 import { McpLanguageFeatures } from './mcpLanguageFeatures.js';
@@ -50,6 +54,7 @@ registerSingleton(IMcpWorkbenchService, McpWorkbenchService, InstantiationType.E
 registerSingleton(IMcpDevModeDebugging, McpDevModeDebugging, InstantiationType.Delayed);
 registerSingleton(IMcpSamplingService, McpSamplingService, InstantiationType.Delayed);
 registerSingleton(IMcpElicitationService, McpElicitationService, InstantiationType.Delayed);
+registerSingleton(IWorkbenchMcpGatewayService, BrowserMcpGatewayService, InstantiationType.Delayed);
 
 mcpDiscoveryRegistry.register(new SyncDescriptor(RemoteNativeMpcDiscovery));
 mcpDiscoveryRegistry.register(new SyncDescriptor(InstalledMcpServersDiscovery));
@@ -61,6 +66,7 @@ registerWorkbenchContribution2('mcpContextKeys', McpContextKeysController, Workb
 registerWorkbenchContribution2('mcpLanguageFeatures', McpLanguageFeatures, WorkbenchPhase.Eventually);
 registerWorkbenchContribution2('mcpResourceFilesystem', McpResourceFilesystem, WorkbenchPhase.BlockRestore);
 registerWorkbenchContribution2(McpLanguageModelToolContribution.ID, McpLanguageModelToolContribution, WorkbenchPhase.AfterRestored);
+registerWorkbenchContribution2('mcpGatewayToolBrokerRemote', McpGatewayToolBrokerContribution, WorkbenchPhase.AfterRestored);
 
 registerAction2(ListMcpServerCommand);
 registerAction2(McpServerOptionsCommand);
@@ -68,6 +74,7 @@ registerAction2(McpConfirmationServerOptionsCommand);
 registerAction2(ResetMcpTrustCommand);
 registerAction2(ResetMcpCachedTools);
 registerAction2(AddConfigurationAction);
+registerAction2(InstallFromManifestAction);
 registerAction2(RemoveStoredInput);
 registerAction2(EditStoredInput);
 registerAction2(StartServer);
@@ -108,6 +115,7 @@ Registry.as<IEditorPaneRegistry>(EditorExtensions.EditorPane).registerEditorPane
 Registry.as<IQuickAccessRegistry>(QuickAccessExtensions.Quickaccess).registerQuickAccessProvider({
 	ctor: McpResourceQuickAccess,
 	prefix: McpResourceQuickAccess.PREFIX,
+	when: ChatContextKeys.enabled,
 	placeholder: localize('mcp.quickaccess.placeholder', "Filter to an MCP resource"),
 	helpEntries: [{
 		description: localize('mcp.quickaccess.add', "MCP Server Resources"),

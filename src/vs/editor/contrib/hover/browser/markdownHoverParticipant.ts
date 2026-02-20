@@ -36,8 +36,8 @@ import { HoverStartSource } from './hoverOperation.js';
 import { ScrollEvent } from '../../../../base/common/scrollable.js';
 
 const $ = dom.$;
-const increaseHoverVerbosityIcon = registerIcon('hover-increase-verbosity', Codicon.add, nls.localize('increaseHoverVerbosity', 'Icon for increaseing hover verbosity.'));
-const decreaseHoverVerbosityIcon = registerIcon('hover-decrease-verbosity', Codicon.remove, nls.localize('decreaseHoverVerbosity', 'Icon for decreasing hover verbosity.'));
+const increaseHoverVerbosityIcon = registerIcon('hover-increase-verbosity', Codicon.addSmall, nls.localize('increaseHoverVerbosity', 'Icon for increaseing hover verbosity.'));
+const decreaseHoverVerbosityIcon = registerIcon('hover-decrease-verbosity', Codicon.removeSmall, nls.localize('decreaseHoverVerbosity', 'Icon for decreasing hover verbosity.'));
 
 export class MarkdownHover implements IHoverPart {
 
@@ -527,17 +527,9 @@ function renderMarkdown(
 
 export function labelForHoverVerbosityAction(keybindingService: IKeybindingService, action: HoverVerbosityAction): string {
 	switch (action) {
-		case HoverVerbosityAction.Increase: {
-			const kb = keybindingService.lookupKeybinding(INCREASE_HOVER_VERBOSITY_ACTION_ID);
-			return kb ?
-				nls.localize('increaseVerbosityWithKb', "Increase Hover Verbosity ({0})", kb.getLabel()) :
-				nls.localize('increaseVerbosity', "Increase Hover Verbosity");
-		}
-		case HoverVerbosityAction.Decrease: {
-			const kb = keybindingService.lookupKeybinding(DECREASE_HOVER_VERBOSITY_ACTION_ID);
-			return kb ?
-				nls.localize('decreaseVerbosityWithKb', "Decrease Hover Verbosity ({0})", kb.getLabel()) :
-				nls.localize('decreaseVerbosity', "Decrease Hover Verbosity");
-		}
+		case HoverVerbosityAction.Increase:
+			return keybindingService.appendKeybinding(nls.localize('increaseVerbosity', "Increase Hover Verbosity"), INCREASE_HOVER_VERBOSITY_ACTION_ID);
+		case HoverVerbosityAction.Decrease:
+			return keybindingService.appendKeybinding(nls.localize('decreaseVerbosity', "Decrease Hover Verbosity"), DECREASE_HOVER_VERBOSITY_ACTION_ID);
 	}
 }
