@@ -4,11 +4,12 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { CancellationToken } from '../../../../base/common/cancellation.js';
-import { Emitter, Event } from '../../../../base/common/event.js';
 import { BugIndicatingError } from '../../../../base/common/errors.js';
 import { Disposable, IDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { URI } from '../../../../base/common/uri.js';
 import { IGitService, IGitExtensionDelegate, GitRef, GitRefQuery, IGitRepository, GitRepositoryState } from '../common/gitService.js';
+import { ISettableObservable, observableValueOpts } from '../../../../base/common/observable.js';
+import { structuralEquals } from '../../../../base/common/equals.js';
 
 export class GitService extends Disposable implements IGitService {
 	declare readonly _serviceBrand: undefined;
@@ -44,25 +45,22 @@ export class GitService extends Disposable implements IGitService {
 }
 
 export class GitRepository extends Disposable implements IGitRepository {
-	private readonly _onDidChangeState = this._register(new Emitter<void>());
-	readonly onDidChangeState: Event<void> = this._onDidChangeState.event;
+	readonly rootUri: URI;
 
-	private _state: GitRepositoryState;
-	get state(): GitRepositoryState { return this._state; }
-
-	setState(state: GitRepositoryState): void {
-		this._state = state;
-		this._onDidChangeState.fire();
+	readonly state: ISettableObservable<GitRepositoryState>;
+	updateState(state: GitRepositoryState): void {
+		this.state.set(state, undefined);
 	}
 
 	constructor(
-		private readonly delegate: IGitExtensionDelegate,
-		readonly rootUri: URI,
-		state: GitRepositoryState
+		rootUri: URI,
+		initialState: GitRepositoryState,
+		private readonly delegate: IGitExtensionDelegate
 	) {
 		super();
 
-		this._state = state;
+		this.rootUri = rootUri;
+		this.state = observableValueOpts({ owner: this, equalsFn: structuralEquals }, initialState);
 	}
 
 	async getRefs(query: GitRefQuery, token?: CancellationToken): Promise<GitRef[]> {

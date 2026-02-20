@@ -6,6 +6,7 @@
 import type * as vscode from 'vscode';
 import { Event } from '../../../base/common/event.js';
 import { Disposable, DisposableStore } from '../../../base/common/lifecycle.js';
+import { observableFromEvent, waitForState } from '../../../base/common/observable.js';
 import { URI, UriComponents } from '../../../base/common/uri.js';
 import { ExtensionIdentifier } from '../../../platform/extensions/common/extensions.js';
 import { createDecorator } from '../../../platform/instantiation/common/instantiation.js';
@@ -153,18 +154,20 @@ export class ExtHostGitExtensionService extends Disposable implements IExtHostGi
 			};
 		}
 
-		let repositoryState = repository.state;
-		if (repository.state.HEAD === undefined) {
-			// If the repository is not initialized, wait for it
-			await Event.toPromise(repository.state.onDidChange, this._disposables);
-			repositoryState = repository.state;
-		}
+		// Ensure that the repository state is initialized
+		const repositoryStateObs = observableFromEvent(this,
+			repository.state.onDidChange, () => repository.state);
+		await waitForState(repositoryStateObs, state => !!state.HEAD);
 
+		const repositoryState = repositoryStateObs.get();
+
+		// Store the repository and its handle in the maps
 		const handle = ExtHostGitExtensionService._handlePool++;
 
 		this._repositories.set(handle, repository);
 		this._repositoryByUri.set(repository.rootUri, handle);
 
+		// Subscribe to repository state changes
 		this._disposables.add(repository.state.onDidChange(() => {
 			this._proxy.$onDidChangeRepository(handle);
 		}));
@@ -173,7 +176,9 @@ export class ExtHostGitExtensionService extends Disposable implements IExtHostGi
 			handle,
 			rootUri: repository.rootUri,
 			state: {
-				HEAD: repositoryState.HEAD ? toGitBranchDto(repositoryState.HEAD) : undefined
+				HEAD: repositoryState.HEAD
+					? toGitBranchDto(repositoryState.HEAD)
+					: undefined
 			}
 		};
 	}

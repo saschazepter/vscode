@@ -97,7 +97,7 @@ export class MainThreadGitExtensionService extends Disposable implements MainThr
 
 			// Create a new repository and store it in the maps
 			const state = toGitRepositoryState(result.state);
-			const repository = new GitRepository(this, repositoryRootUri, state);
+			const repository = new GitRepository(repositoryRootUri, state, this);
 
 			this._repositories.set(result.handle, repository);
 			this._repositoryHandles.set(repositoryRootUri, result.handle);
@@ -135,6 +135,7 @@ export class MainThreadGitExtensionService extends Disposable implements MainThr
 			return;
 		}
 
-		repository.setState(toGitRepositoryState(state));
+		// Update the repository state
+		repository.updateState(toGitRepositoryState(state));
 	}
 }
