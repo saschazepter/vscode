@@ -19,6 +19,7 @@ const CSS_DISCRETE = 'discrete';
 const NLS_PROGRESS_LABEL = localize('progress', "Progress");
 
 export interface IProgressBarOptions extends IProgressBarStyles {
+	ariaLabel?: string;
 }
 
 export interface IProgressBarStyles {
@@ -70,7 +71,7 @@ export class ProgressBar extends Disposable {
 		this.element.classList.add('monaco-progress-container');
 		this.element.setAttribute('role', 'progressbar');
 		this.element.setAttribute('aria-valuemin', '0');
-		this.element.setAttribute('aria-label', NLS_PROGRESS_LABEL);
+		this.element.setAttribute('aria-label', options?.ariaLabel ?? NLS_PROGRESS_LABEL);
 		container.appendChild(this.element);
 
 		this.bit = document.createElement('div');
