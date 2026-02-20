@@ -41,7 +41,6 @@ import { IViewsService } from '../../../../workbench/services/views/common/views
 import { HiddenItemStrategy, MenuWorkbenchToolBar } from '../../../../platform/actions/browser/toolbar.js';
 import { Menus } from '../../../browser/menus.js';
 import { getCustomizationTotalCount } from './customizationCounts.js';
-import { IWorkbenchEnvironmentService } from '../../../../workbench/services/environment/common/environmentService.js';
 import { ICopilotSdkService, type ICopilotSessionMetadata } from '../../../../platform/copilotSdk/common/copilotSdkService.js';
 import { SdkChatViewPane, SdkChatViewId } from '../../copilotSdk/browser/widget/sdkChatViewPane.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
@@ -84,7 +83,6 @@ export class AgenticSessionsViewPane extends ViewPane {
 		@IMcpService private readonly mcpService: IMcpService,
 		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
 		@ISessionsManagementService private readonly activeSessionService: ISessionsManagementService,
-		@IWorkbenchEnvironmentService environmentService: IWorkbenchEnvironmentService,
 		@ICopilotSdkService private readonly copilotSdkService: ICopilotSdkService,
 		@IViewsService private readonly viewsService: IViewsService,
 		@ILogService private readonly logService: ILogService,
@@ -288,8 +286,8 @@ export class AgenticSessionsViewPane extends ViewPane {
 		}
 
 		// Sessions Control
-		const sessionsControlContainer = DOM.append(sessionsContent, $('.agent-sessions-control-container'));
-		const sessionsControl = this.sessionsControl = this._register(this.instantiationService.createInstance(AgentSessionsControl, sessionsControlContainer, {
+		this.sessionsControlContainer = DOM.append(sessionsContent, $('.agent-sessions-control-container'));
+		const sessionsControl = this.sessionsControl = this._register(this.instantiationService.createInstance(AgentSessionsControl, this.sessionsControlContainer, {
 			source: 'agentSessionsViewPane',
 			filter: sessionsFilter,
 			overrideStyles: this.getLocationBasedColors().listOverrideStyles,
