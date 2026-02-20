@@ -149,7 +149,9 @@ class ChatLifecycleHandler extends Disposable {
 
 	private hasNonCloudSessionInProgress(): boolean {
 		return this.agentSessionsService.model.sessions.some(session =>
-			isSessionInProgressStatus(session.status) && session.providerType !== AgentSessionProviders.Cloud
+			isSessionInProgressStatus(session.status) &&
+			session.providerType !== AgentSessionProviders.Cloud &&
+			!session.isArchived()
 		);
 	}
 

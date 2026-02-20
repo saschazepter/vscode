@@ -26,7 +26,8 @@ export const workbenchDesktop = [
 	createModuleDescription('vs/platform/terminal/node/ptyHostMain'),
 	createModuleDescription('vs/platform/agent/node/agentHostMain'),
 	createModuleDescription('vs/workbench/api/node/extensionHostProcess'),
-	createModuleDescription('vs/workbench/workbench.desktop.main')
+	createModuleDescription('vs/workbench/workbench.desktop.main'),
+	createModuleDescription('vs/sessions/sessions.desktop.main')
 ];
 
 export const workbenchWeb = createModuleDescription('vs/workbench/workbench.web.main.internal');
@@ -43,6 +44,7 @@ export const code = [
 	createModuleDescription('vs/code/node/cliProcessMain'),
 	createModuleDescription('vs/code/electron-utility/sharedProcess/sharedProcessMain'),
 	createModuleDescription('vs/code/electron-browser/workbench/workbench'),
+	createModuleDescription('vs/sessions/electron-browser/sessions'),
 ];
 
 export const codeWeb = createModuleDescription('vs/code/browser/workbench/workbench');

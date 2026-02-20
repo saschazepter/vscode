@@ -128,7 +128,8 @@ export class ObservableChatSession extends Disposable implements IChatSession {
 						participant: turn.participant,
 						command: turn.command,
 						variableData: variables ? { variables } : undefined,
-						id: turn.id
+						id: turn.id,
+						modelId: turn.modelId,
 					};
 				}
 
@@ -344,6 +345,21 @@ class MainThreadChatSessionItemController extends Disposable implements IChatSes
 
 	refresh(token: CancellationToken): Promise<void> {
 		return this._proxy.$refreshChatSessionItems(this._handle, token);
+	}
+
+	async newChatSessionItem(request: IChatAgentRequest, token: CancellationToken): Promise<IChatSessionItem | undefined> {
+		const dto = await raceCancellationError(this._proxy.$newChatSessionItem(this._handle, request, token), token);
+		if (!dto) {
+			return undefined;
+		}
+		const item: IChatSessionItem = {
+			...dto,
+			resource: URI.revive(dto.resource),
+			changes: revive(dto.changes),
+		};
+		this._items.set(item.resource, item);
+		this._onDidChangeChatSessionItems.fire();
+		return item;
 	}
 
 	acceptChange(change: { readonly addedOrUpdated: readonly IChatSessionItem[]; readonly removed: readonly URI[] }): void {

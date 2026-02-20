@@ -118,6 +118,9 @@ export interface IMainContext extends IRPCProtocol {
 
 // --- main thread
 
+export interface MainThreadGitExtensionShape extends IDisposable {
+}
+
 export interface MainThreadClipboardShape extends IDisposable {
 	$readText(): Promise<string>;
 	$writeText(value: string): Promise<void>;
@@ -1460,6 +1463,7 @@ export type IChatAgentHistoryEntryDto = {
 export interface IChatSessionContextDto {
 	readonly chatSessionResource: UriComponents;
 	readonly isUntitled: boolean;
+	readonly initialSessionOptions?: ReadonlyArray<{ optionId: string; value: string }>;
 }
 
 export interface ExtHostChatAgentsShape2 {
@@ -3385,6 +3389,7 @@ export type IChatSessionHistoryItemDto = {
 	participant: string;
 	command?: string;
 	variableData?: Dto<IChatRequestVariableData>;
+	modelId?: string;
 } | {
 	type: 'response';
 	parts: IChatProgressDto[];
@@ -3440,6 +3445,7 @@ export interface MainThreadChatSessionsShape extends IDisposable {
 export interface ExtHostChatSessionsShape {
 	$refreshChatSessionItems(providerHandle: number, token: CancellationToken): Promise<void>;
 	$onDidChangeChatSessionItemState(providerHandle: number, sessionResource: UriComponents, archived: boolean): void;
+	$newChatSessionItem(controllerHandle: number, request: Dto<IChatAgentRequest>, token: CancellationToken): Promise<Dto<IChatSessionItem> | undefined>;
 
 	$provideChatSessionContent(providerHandle: number, sessionResource: UriComponents, token: CancellationToken): Promise<ChatSessionDto>;
 	$interruptChatSessionActiveResponse(providerHandle: number, sessionResource: UriComponents, requestId: string): Promise<void>;
@@ -3448,6 +3454,32 @@ export interface ExtHostChatSessionsShape {
 	$provideChatSessionProviderOptions(providerHandle: number, token: CancellationToken): Promise<IChatSessionProviderOptions | undefined>;
 	$invokeOptionGroupSearch(providerHandle: number, optionGroupId: string, query: string, token: CancellationToken): Promise<IChatSessionProviderOptionItem[]>;
 	$provideHandleOptionsChange(providerHandle: number, sessionResource: UriComponents, updates: ReadonlyArray<ChatSessionOptionUpdateDto>, token: CancellationToken): Promise<void>;
+}
+
+export interface GitRefQueryDto {
+	readonly contains?: string;
+	readonly count?: number;
+	readonly pattern?: string | string[];
+	readonly sort?: 'alphabetically' | 'committerdate' | 'creatordate';
+}
+
+export enum GitRefTypeDto {
+	Head,
+	RemoteHead,
+	Tag
+}
+
+export interface GitRefDto {
+	readonly id: string;
+	readonly name: string;
+	readonly type: GitRefTypeDto;
+	readonly revision: string;
+}
+
+export interface ExtHostGitExtensionShape {
+	$isGitExtensionAvailable(): Promise<boolean>;
+	$openRepository(root: UriComponents): Promise<UriComponents | undefined>;
+	$getRefs(root: UriComponents, query: GitRefQueryDto, token?: CancellationToken): Promise<GitRefDto[]>;
 }
 
 // --- proxy identifiers
@@ -3460,6 +3492,7 @@ export const MainContext = {
 	MainThreadChatAgents2: createProxyIdentifier<MainThreadChatAgentsShape2>('MainThreadChatAgents2'),
 	MainThreadCodeMapper: createProxyIdentifier<MainThreadCodeMapperShape>('MainThreadCodeMapper'),
 	MainThreadLanguageModelTools: createProxyIdentifier<MainThreadLanguageModelToolsShape>('MainThreadChatSkills'),
+	MainThreadGitExtension: createProxyIdentifier<MainThreadGitExtensionShape>('MainThreadGitExtension'),
 	MainThreadClipboard: createProxyIdentifier<MainThreadClipboardShape>('MainThreadClipboard'),
 	MainThreadCommands: createProxyIdentifier<MainThreadCommandsShape>('MainThreadCommands'),
 	MainThreadComments: createProxyIdentifier<MainThreadCommentsShape>('MainThreadComments'),
@@ -3610,4 +3643,5 @@ export const ExtHostContext = {
 	ExtHostMcp: createProxyIdentifier<ExtHostMcpShape>('ExtHostMcp'),
 	ExtHostDataChannels: createProxyIdentifier<ExtHostDataChannelsShape>('ExtHostDataChannels'),
 	ExtHostChatSessions: createProxyIdentifier<ExtHostChatSessionsShape>('ExtHostChatSessions'),
+	ExtHostGitExtension: createProxyIdentifier<ExtHostGitExtensionShape>('ExtHostGitExtension'),
 };
