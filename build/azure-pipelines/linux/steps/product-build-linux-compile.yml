@@ -164,17 +164,10 @@ steps:
 
   - template: ../../common/install-builtin-extensions.yml@self
 
-  - ${{ if eq(parameters.VSCODE_RUN_CHECKS, true) }}:
-    - script: npm exec -- npm-run-all2 -lp core-ci hygiene eslint valid-layers-check define-class-fields-check vscode-dts-compile-check tsec-compile-check test-build-scripts
-      env:
-        GITHUB_TOKEN: "$(github-distro-mixin-password)"
-      displayName: Compile & Hygiene
-
-  - ${{ if ne(parameters.VSCODE_RUN_CHECKS, true) }}:
-    - script: npm run gulp core-ci
-      env:
-        GITHUB_TOKEN: "$(github-distro-mixin-password)"
-      displayName: Compile
+  - script: npm run gulp core-ci
+    env:
+      GITHUB_TOKEN: "$(github-distro-mixin-password)"
+    displayName: Compile
 
   - ${{ if eq(parameters.VSCODE_ARCH, 'x64') }}:
     - script: node build/azure-pipelines/common/extract-telemetry.ts
@@ -187,19 +180,6 @@ steps:
         npm run compile --prefix test/integration/browser
       displayName: Compile test suites (non-OSS)
       condition: and(succeeded(), eq(variables['VSCODE_STEP_ON_IT'], 'false'))
-
-  - ${{ if eq(parameters.VSCODE_RUN_CHECKS, true) }}:
-    - script: npm run download-builtin-extensions-cg
-      env:
-        GITHUB_TOKEN: "$(github-distro-mixin-password)"
-      displayName: Download component details of built-in extensions
-
-    - task: ms.vss-governance-buildtask.governance-build-task-component-detection.ComponentGovernanceComponentDetection@0
-      displayName: "Component Detection"
-      inputs:
-        sourceScanPath: $(Build.SourcesDirectory)
-        alertWarningLevel: Medium
-      continueOnError: true
 
   - ${{ if ne(parameters.VSCODE_CIBUILD, true) }}:
     - script: npm run copy-policy-dto --prefix build && node build/lib/policies/policyGenerator.ts build/lib/policies/policyData.jsonc linux

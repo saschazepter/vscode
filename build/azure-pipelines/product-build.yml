@@ -187,14 +187,13 @@ extends:
         image: onebranch.azurecr.io/linux/ubuntu-2004-arm64:latest
     stages:
 
-      - ${{ if eq(variables['VSCODE_PUBLISH'], 'true') }}:
-        - stage: ValidationChecks
-          dependsOn: []
-          pool:
-            name: 1es-ubuntu-22.04-x64
-            os: linux
-          jobs:
-            - template: build/azure-pipelines/product-validation-checks.yml@self
+      - stage: Quality
+        dependsOn: []
+        pool:
+          name: 1es-ubuntu-22.04-x64
+          os: linux
+        jobs:
+          - template: build/azure-pipelines/product-quality-checks.yml@self
 
       - ${{ if or(eq(parameters.VSCODE_BUILD_LINUX, true),eq(parameters.VSCODE_BUILD_LINUX_ARMHF, true),eq(parameters.VSCODE_BUILD_LINUX_ARM64, true),eq(parameters.VSCODE_BUILD_MACOS, true),eq(parameters.VSCODE_BUILD_MACOS_ARM64, true),eq(parameters.VSCODE_BUILD_WIN32, true),eq(parameters.VSCODE_BUILD_WIN32_ARM64, true)) }}:
         - stage: CompileCLI
@@ -349,7 +348,6 @@ extends:
                   VSCODE_CIBUILD: ${{ variables.VSCODE_CIBUILD }}
                   VSCODE_QUALITY: ${{ variables.VSCODE_QUALITY }}
                   VSCODE_TEST_SUITE: Electron
-                  VSCODE_RUN_CHECKS: true
               - template: build/azure-pipelines/linux/product-build-linux-ci.yml@self
                 parameters:
                   VSCODE_CIBUILD: ${{ variables.VSCODE_CIBUILD }}
@@ -372,7 +370,6 @@ extends:
                   VSCODE_RUN_BROWSER_TESTS: ${{ eq(parameters.VSCODE_STEP_ON_IT, false) }}
                   VSCODE_RUN_REMOTE_TESTS: ${{ eq(parameters.VSCODE_STEP_ON_IT, false) }}
                   VSCODE_BUILD_LINUX_SNAP: ${{ parameters.VSCODE_BUILD_LINUX_SNAP }}
-                  VSCODE_RUN_CHECKS: true
 
             - ${{ if and(eq(variables['VSCODE_CIBUILD'], false), eq(parameters.VSCODE_BUILD_LINUX_ARMHF, true)) }}:
               - template: build/azure-pipelines/linux/product-build-linux.yml@self
