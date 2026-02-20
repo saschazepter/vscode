@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 /**
- * Generates `src/vs/platform/copilotSdk/node/generated/sdkTypes.generated.ts`
+ * Generates `src/vs/sessions/services/copilotSdk/node/generated/sdkTypes.generated.ts`
  * from the `@github/copilot-sdk` type definitions.
  *
  * This creates a compile-time mirror of SDK types in the node layer so the host
@@ -26,7 +26,7 @@ const __dirname = path.dirname(__filename);
 const ROOT = path.resolve(__dirname, '..', '..');
 const SDK_SESSION_EVENTS = path.join(ROOT, 'node_modules/@github/copilot-sdk/dist/generated/session-events.d.ts');
 const SDK_TYPES = path.join(ROOT, 'node_modules/@github/copilot-sdk/dist/types.d.ts');
-const OUTPUT = path.join(ROOT, 'src/vs/platform/copilotSdk/node/generated/sdkTypes.generated.ts');
+const OUTPUT = path.join(ROOT, 'src/vs/sessions/services/copilotSdk/node/generated/sdkTypes.generated.ts');
 
 function readSdkFile(filePath: string): string {
 	if (!fs.existsSync(filePath)) {

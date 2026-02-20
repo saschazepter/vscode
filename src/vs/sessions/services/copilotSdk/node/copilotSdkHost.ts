@@ -3,10 +3,10 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Emitter, Event } from '../../../base/common/event.js';
-import { Disposable, DisposableMap, DisposableStore, toDisposable } from '../../../base/common/lifecycle.js';
-import { ProxyChannel } from '../../../base/parts/ipc/common/ipc.js';
-import { Server as UtilityProcessServer } from '../../../base/parts/ipc/node/ipc.mp.js';
+import { Emitter, Event } from '../../../../base/common/event.js';
+import { Disposable, DisposableMap, DisposableStore, toDisposable } from '../../../../base/common/lifecycle.js';
+import { ProxyChannel } from '../../../../base/parts/ipc/common/ipc.js';
+import { Server as UtilityProcessServer } from '../../../../base/parts/ipc/node/ipc.mp.js';
 import {
 	CopilotSdkChannel,
 	type ICopilotAssistantMessage,
@@ -21,7 +21,7 @@ import {
 	type ICopilotSessionLifecycleEvent,
 	type ICopilotSessionMetadata,
 	type ICopilotStatusInfo,
-} from '../common/copilotSdkService.js';
+} from '../../../../platform/copilotSdk/common/copilotSdkService.js';
 import type { SdkSessionEvent, SdkModelInfo, SdkGetStatusResponse, SdkGetAuthStatusResponse } from './generated/sdkTypes.generated.js';
 import { mapSessionEvent, mapModelInfo, mapSessionMetadata, mapStatusResponse, mapAuthStatusResponse, mapSessionLifecycleEvent, type SdkSessionMetadataRuntime } from './copilotSdkMapper.js';
 
@@ -381,7 +381,7 @@ class CopilotSdkHost extends Disposable implements ICopilotSdkService {
 
 // --- Entry point ---
 // Only start when running as an Electron utility process (not when imported by the main process).
-import { isUtilityProcess } from '../../../base/parts/sandbox/node/electronTypes.js';
+import { isUtilityProcess } from '../../../../base/parts/sandbox/node/electronTypes.js';
 if (isUtilityProcess(process)) {
 	process.stderr.write('[CopilotSdkHost] Utility process entry point reached\n');
 	const disposables = new DisposableStore();

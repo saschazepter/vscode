@@ -28,7 +28,7 @@ import type {
 	ICopilotStatusInfo,
 	ICopilotAuthStatus,
 	ICopilotSessionLifecycleEvent,
-} from '../common/copilotSdkService.js';
+} from '../../../../platform/copilotSdk/common/copilotSdkService.js';
 
 /** Event types the VS Code common layer handles. Others are silently dropped. */
 const HANDLED_EVENT_TYPES: ReadonlySet<string> = new Set<SdkSessionEventType>([
