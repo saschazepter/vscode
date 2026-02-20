@@ -43,6 +43,18 @@ export const CHAT_DEBUG_LEVEL_INFO = new RawContextKey<boolean>('chatDebug.level
 export const CHAT_DEBUG_LEVEL_WARNING = new RawContextKey<boolean>('chatDebug.levelWarning', true);
 export const CHAT_DEBUG_LEVEL_ERROR = new RawContextKey<boolean>('chatDebug.levelError', true);
 
+// Filter toggle command IDs
+export const CHAT_DEBUG_CMD_TOGGLE_TOOL_CALL = 'chatDebug.filter.toggleToolCall';
+export const CHAT_DEBUG_CMD_TOGGLE_MODEL_TURN = 'chatDebug.filter.toggleModelTurn';
+export const CHAT_DEBUG_CMD_TOGGLE_GENERIC = 'chatDebug.filter.toggleGeneric';
+export const CHAT_DEBUG_CMD_TOGGLE_SUBAGENT = 'chatDebug.filter.toggleSubagent';
+export const CHAT_DEBUG_CMD_TOGGLE_USER_MESSAGE = 'chatDebug.filter.toggleUserMessage';
+export const CHAT_DEBUG_CMD_TOGGLE_AGENT_RESPONSE = 'chatDebug.filter.toggleAgentResponse';
+export const CHAT_DEBUG_CMD_TOGGLE_TRACE = 'chatDebug.filter.toggleTrace';
+export const CHAT_DEBUG_CMD_TOGGLE_INFO = 'chatDebug.filter.toggleInfo';
+export const CHAT_DEBUG_CMD_TOGGLE_WARNING = 'chatDebug.filter.toggleWarning';
+export const CHAT_DEBUG_CMD_TOGGLE_ERROR = 'chatDebug.filter.toggleError';
+
 export class TextBreadcrumbItem extends BreadcrumbsItem {
 	constructor(
 		private readonly _text: string,

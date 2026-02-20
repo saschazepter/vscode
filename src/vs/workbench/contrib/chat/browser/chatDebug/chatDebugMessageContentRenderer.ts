@@ -24,6 +24,7 @@ export function setupCollapsibleToggle(chevron: HTMLElement, header: HTMLElement
 		const icon = collapsed ? Codicon.chevronRight : Codicon.chevronDown;
 		chevron.classList.add(...ThemeIcon.asClassName(icon).split(' '));
 		contentEl.style.display = collapsed ? 'none' : 'block';
+		header.style.borderRadius = collapsed ? '' : '3px 3px 0 0';
 	};
 
 	updateState();

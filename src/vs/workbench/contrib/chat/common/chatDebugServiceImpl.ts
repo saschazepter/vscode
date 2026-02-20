@@ -60,9 +60,11 @@ export class ChatDebugServiceImpl extends Disposable implements IChatDebugServic
 	}
 
 	clearSession(sessionId: string): void {
-		const filtered = this._events.filter(e => e.sessionId !== sessionId);
-		this._events.length = 0;
-		this._events.push(...filtered);
+		for (let i = this._events.length - 1; i >= 0; i--) {
+			if (this._events[i].sessionId === sessionId) {
+				this._events.splice(i, 1);
+			}
+		}
 	}
 
 	registerProvider(provider: IChatDebugLogProvider): IDisposable {
@@ -126,20 +128,15 @@ export class ChatDebugServiceImpl extends Disposable implements IChatDebugServic
 	}
 
 	async resolveEvent(eventId: string): Promise<IChatDebugResolvedEventContent | undefined> {
-		const cts = new CancellationTokenSource();
-		try {
-			for (const provider of this._providers) {
-				if (provider.resolveChatDebugLogEvent) {
-					const resolved = await provider.resolveChatDebugLogEvent(eventId, cts.token);
-					if (resolved !== undefined) {
-						return resolved;
-					}
+		for (const provider of this._providers) {
+			if (provider.resolveChatDebugLogEvent) {
+				const resolved = await provider.resolveChatDebugLogEvent(eventId, CancellationToken.None);
+				if (resolved !== undefined) {
+					return resolved;
 				}
 			}
-			return undefined;
-		} finally {
-			cts.dispose();
 		}
+		return undefined;
 	}
 
 	override dispose(): void {

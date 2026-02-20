@@ -39,6 +39,9 @@ import {
 	CHAT_DEBUG_KIND_TOOL_CALL, CHAT_DEBUG_KIND_MODEL_TURN, CHAT_DEBUG_KIND_GENERIC, CHAT_DEBUG_KIND_SUBAGENT,
 	CHAT_DEBUG_KIND_USER_MESSAGE, CHAT_DEBUG_KIND_AGENT_RESPONSE,
 	CHAT_DEBUG_LEVEL_TRACE, CHAT_DEBUG_LEVEL_INFO, CHAT_DEBUG_LEVEL_WARNING, CHAT_DEBUG_LEVEL_ERROR,
+	CHAT_DEBUG_CMD_TOGGLE_TOOL_CALL, CHAT_DEBUG_CMD_TOGGLE_MODEL_TURN, CHAT_DEBUG_CMD_TOGGLE_GENERIC,
+	CHAT_DEBUG_CMD_TOGGLE_SUBAGENT, CHAT_DEBUG_CMD_TOGGLE_USER_MESSAGE, CHAT_DEBUG_CMD_TOGGLE_AGENT_RESPONSE,
+	CHAT_DEBUG_CMD_TOGGLE_TRACE, CHAT_DEBUG_CMD_TOGGLE_INFO, CHAT_DEBUG_CMD_TOGGLE_WARNING, CHAT_DEBUG_CMD_TOGGLE_ERROR,
 } from './chatDebugTypes.js';
 import { formatEventDetail } from './chatDebugEventDetailRenderer.js';
 import { renderFileListContent, fileListToPlainText } from './chatDebugFileListRenderer.js';
@@ -215,7 +218,21 @@ export class ChatDebugLogsView extends Disposable {
 			},
 			getWidgetAriaLabel: () => localize('chatDebug.ariaLabel', "Chat Debug Events"),
 		};
-		const identityProvider = { getId: (e: IChatDebugEvent) => e.id ?? `${e.created.getTime()}-${e.kind}` };
+		let nextFallbackId = 0;
+		const fallbackIds = new WeakMap<IChatDebugEvent, string>();
+		const identityProvider = {
+			getId: (e: IChatDebugEvent) => {
+				if (e.id) {
+					return e.id;
+				}
+				let fallback = fallbackIds.get(e);
+				if (!fallback) {
+					fallback = `_fallback_${nextFallbackId++}`;
+					fallbackIds.set(e, fallback);
+				}
+				return fallback;
+			}
+		};
 
 		this.list = this._register(this.instantiationService.createInstance(
 			WorkbenchList<IChatDebugEvent>,
@@ -252,7 +269,7 @@ export class ChatDebugLogsView extends Disposable {
 					const targetWindow = DOM.getWindow(target);
 					const selection = targetWindow.getSelection();
 					if (selection) {
-						const range = document.createRange();
+						const range = targetWindow.document.createRange();
 						range.selectNodeContents(target);
 						selection.removeAllRanges();
 						selection.addRange(range);
@@ -384,7 +401,8 @@ export class ChatDebugLogsView extends Disposable {
 								(e.category?.toLowerCase().includes(term) ?? false);
 						case 'subagentInvocation':
 							return e.agentName.toLowerCase().includes(term) ||
-								(e.description?.toLowerCase().includes(term) ?? false); case 'userMessage':
+								(e.description?.toLowerCase().includes(term) ?? false);
+						case 'userMessage':
 							return e.message.toLowerCase().includes(term) ||
 								e.sections.some(s => s.name.toLowerCase().includes(term) || s.content.toLowerCase().includes(term));
 						case 'agentResponse':
@@ -521,12 +539,12 @@ export class ChatDebugLogsView extends Disposable {
 			}));
 		};
 
-		registerKindToggle('chatDebug.filter.toggleToolCall', localize('chatDebug.filter.toolCall', "Tool Calls"), CHAT_DEBUG_KIND_TOOL_CALL, () => this.filterKindToolCall, v => { this.filterKindToolCall = v; }, this.kindToolCallKey);
-		registerKindToggle('chatDebug.filter.toggleModelTurn', localize('chatDebug.filter.modelTurn', "Model Turns"), CHAT_DEBUG_KIND_MODEL_TURN, () => this.filterKindModelTurn, v => { this.filterKindModelTurn = v; }, this.kindModelTurnKey);
-		registerKindToggle('chatDebug.filter.toggleGeneric', localize('chatDebug.filter.generic', "Generic"), CHAT_DEBUG_KIND_GENERIC, () => this.filterKindGeneric, v => { this.filterKindGeneric = v; }, this.kindGenericKey);
-		registerKindToggle('chatDebug.filter.toggleSubagent', localize('chatDebug.filter.subagent', "Subagent Invocations"), CHAT_DEBUG_KIND_SUBAGENT, () => this.filterKindSubagent, v => { this.filterKindSubagent = v; }, this.kindSubagentKey);
-		registerKindToggle('chatDebug.filter.toggleUserMessage', localize('chatDebug.filter.userMessage', "User Messages"), CHAT_DEBUG_KIND_USER_MESSAGE, () => this.filterKindUserMessage, v => { this.filterKindUserMessage = v; }, this.kindUserMessageKey);
-		registerKindToggle('chatDebug.filter.toggleAgentResponse', localize('chatDebug.filter.agentResponse', "Agent Responses"), CHAT_DEBUG_KIND_AGENT_RESPONSE, () => this.filterKindAgentResponse, v => { this.filterKindAgentResponse = v; }, this.kindAgentResponseKey);
+		registerKindToggle(CHAT_DEBUG_CMD_TOGGLE_TOOL_CALL, localize('chatDebug.filter.toolCall', "Tool Calls"), CHAT_DEBUG_KIND_TOOL_CALL, () => this.filterKindToolCall, v => { this.filterKindToolCall = v; }, this.kindToolCallKey);
+		registerKindToggle(CHAT_DEBUG_CMD_TOGGLE_MODEL_TURN, localize('chatDebug.filter.modelTurn', "Model Turns"), CHAT_DEBUG_KIND_MODEL_TURN, () => this.filterKindModelTurn, v => { this.filterKindModelTurn = v; }, this.kindModelTurnKey);
+		registerKindToggle(CHAT_DEBUG_CMD_TOGGLE_GENERIC, localize('chatDebug.filter.generic', "Generic"), CHAT_DEBUG_KIND_GENERIC, () => this.filterKindGeneric, v => { this.filterKindGeneric = v; }, this.kindGenericKey);
+		registerKindToggle(CHAT_DEBUG_CMD_TOGGLE_SUBAGENT, localize('chatDebug.filter.subagent', "Subagent Invocations"), CHAT_DEBUG_KIND_SUBAGENT, () => this.filterKindSubagent, v => { this.filterKindSubagent = v; }, this.kindSubagentKey);
+		registerKindToggle(CHAT_DEBUG_CMD_TOGGLE_USER_MESSAGE, localize('chatDebug.filter.userMessage', "User Messages"), CHAT_DEBUG_KIND_USER_MESSAGE, () => this.filterKindUserMessage, v => { this.filterKindUserMessage = v; }, this.kindUserMessageKey);
+		registerKindToggle(CHAT_DEBUG_CMD_TOGGLE_AGENT_RESPONSE, localize('chatDebug.filter.agentResponse', "Agent Responses"), CHAT_DEBUG_KIND_AGENT_RESPONSE, () => this.filterKindAgentResponse, v => { this.filterKindAgentResponse = v; }, this.kindAgentResponseKey);
 
 		const registerLevelToggle = (id: string, title: string, key: RawContextKey<boolean>, flagGetter: () => boolean, flagSetter: (v: boolean) => void, ctxKey: IContextKey<boolean>) => {
 			this._register(CommandsRegistry.registerCommand(id, () => {
@@ -543,10 +561,10 @@ export class ChatDebugLogsView extends Disposable {
 			}));
 		};
 
-		registerLevelToggle('chatDebug.filter.toggleTrace', localize('chatDebug.filter.trace', "Trace"), CHAT_DEBUG_LEVEL_TRACE, () => this.filterLevelTrace, v => { this.filterLevelTrace = v; }, this.levelTraceKey);
-		registerLevelToggle('chatDebug.filter.toggleInfo', localize('chatDebug.filter.info', "Info"), CHAT_DEBUG_LEVEL_INFO, () => this.filterLevelInfo, v => { this.filterLevelInfo = v; }, this.levelInfoKey);
-		registerLevelToggle('chatDebug.filter.toggleWarning', localize('chatDebug.filter.warning', "Warning"), CHAT_DEBUG_LEVEL_WARNING, () => this.filterLevelWarning, v => { this.filterLevelWarning = v; }, this.levelWarningKey);
-		registerLevelToggle('chatDebug.filter.toggleError', localize('chatDebug.filter.error', "Error"), CHAT_DEBUG_LEVEL_ERROR, () => this.filterLevelError, v => { this.filterLevelError = v; }, this.levelErrorKey);
+		registerLevelToggle(CHAT_DEBUG_CMD_TOGGLE_TRACE, localize('chatDebug.filter.trace', "Trace"), CHAT_DEBUG_LEVEL_TRACE, () => this.filterLevelTrace, v => { this.filterLevelTrace = v; }, this.levelTraceKey);
+		registerLevelToggle(CHAT_DEBUG_CMD_TOGGLE_INFO, localize('chatDebug.filter.info', "Info"), CHAT_DEBUG_LEVEL_INFO, () => this.filterLevelInfo, v => { this.filterLevelInfo = v; }, this.levelInfoKey);
+		registerLevelToggle(CHAT_DEBUG_CMD_TOGGLE_WARNING, localize('chatDebug.filter.warning', "Warning"), CHAT_DEBUG_LEVEL_WARNING, () => this.filterLevelWarning, v => { this.filterLevelWarning = v; }, this.levelWarningKey);
+		registerLevelToggle(CHAT_DEBUG_CMD_TOGGLE_ERROR, localize('chatDebug.filter.error', "Error"), CHAT_DEBUG_LEVEL_ERROR, () => this.filterLevelError, v => { this.filterLevelError = v; }, this.levelErrorKey);
 	}
 
 	private updateMoreFiltersChecked(): void {

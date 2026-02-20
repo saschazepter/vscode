@@ -7,7 +7,7 @@ import './media/chatDebug.css';
 
 import * as DOM from '../../../../../base/browser/dom.js';
 import { Dimension } from '../../../../../base/browser/dom.js';
-import { MutableDisposable } from '../../../../../base/common/lifecycle.js';
+import { DisposableMap, MutableDisposable } from '../../../../../base/common/lifecycle.js';
 import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
 import { IStorageService } from '../../../../../platform/storage/common/storage.js';
 import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry.js';
@@ -41,6 +41,7 @@ export class ChatDebugEditor extends EditorPane {
 	private subagentChartView: ChatDebugSubagentChartView | undefined;
 
 	private readonly sessionModelListener = this._register(new MutableDisposable());
+	private readonly modelChangeListeners = this._register(new DisposableMap<string>());
 
 	constructor(
 		group: IEditorGroup,
@@ -107,13 +108,15 @@ export class ChatDebugEditor extends EditorPane {
 		}));
 
 		// When new debug events arrive, refresh the current view
-		this._register(this.chatDebugService.onDidAddEvent(() => {
+		this._register(this.chatDebugService.onDidAddEvent(event => {
 			if (this.viewState === ViewState.Home) {
 				this.homeView?.render();
-			} else if (this.viewState === ViewState.Overview) {
-				this.overviewView?.refresh();
-			} else if (this.viewState === ViewState.Logs) {
-				this.logsView?.refreshList();
+			} else if (event.sessionId === this.chatDebugService.activeSessionId) {
+				if (this.viewState === ViewState.Overview) {
+					this.overviewView?.refresh();
+				} else if (this.viewState === ViewState.Logs) {
+					this.logsView?.refreshList();
+				}
 			}
 		}));
 
@@ -132,17 +135,11 @@ export class ChatDebugEditor extends EditorPane {
 			if (this.viewState === ViewState.Home) {
 				this.homeView?.render();
 			}
-		}));
 
-		this._register(this.chatService.onDidDisposeSession(() => {
-			if (this.viewState === ViewState.Home) {
-				this.homeView?.render();
-			}
-		}));
-
-		// When a model's title changes, refresh the view to show the updated title
-		this._register(this.chatService.onDidCreateModel(model => {
-			this._register(model.onDidChange(e => {
+			// Track title changes per model, disposing the previous listener
+			// for the same model URI to avoid leaks.
+			const key = model.sessionResource.toString();
+			this.modelChangeListeners.set(key, model.onDidChange(e => {
 				if (e.kind === 'setCustomTitle') {
 					if (this.viewState === ViewState.Home) {
 						this.homeView?.render();
@@ -153,6 +150,12 @@ export class ChatDebugEditor extends EditorPane {
 					}
 				}
 			}));
+		}));
+
+		this._register(this.chatService.onDidDisposeSession(() => {
+			if (this.viewState === ViewState.Home) {
+				this.homeView?.render();
+			}
 		}));
 
 		// Invoke providers for all existing chat sessions so their event
