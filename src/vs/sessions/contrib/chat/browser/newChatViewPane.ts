@@ -48,7 +48,6 @@ import { IWorkspaceContextService } from '../../../../platform/workspace/common/
 import { IViewPaneOptions, ViewPane } from '../../../../workbench/browser/parts/views/viewPane.js';
 import { ContextMenuController } from '../../../../editor/contrib/contextmenu/browser/contextmenu.js';
 import { getSimpleEditorOptions } from '../../../../workbench/contrib/codeEditor/browser/simpleEditorOptions.js';
-import { IChatRequestVariableEntry } from '../../../../workbench/contrib/chat/common/attachments/chatVariableEntries.js';
 import { isString } from '../../../../base/common/types.js';
 import { NewChatContextAttachments } from './newChatContextAttachments.js';
 import { GITHUB_REMOTE_FILE_SCHEME } from '../../fileTreeView/browser/githubFileSystemProvider.js';
@@ -61,25 +60,11 @@ import { INewSession } from './newSession.js';
 // #region --- Chat Welcome Widget ---
 
 /**
- * Data passed to the `onSendRequest` callback when the user submits a query.
- */
-interface INewChatSendRequestData {
-	readonly resource: URI;
-	readonly target: AgentSessionProviders;
-	readonly query: string;
-	readonly sendOptions: IChatSendRequestOptions;
-	readonly selectedOptions: ReadonlyMap<string, IChatSessionProviderOptionItem>;
-	readonly folderUri?: URI;
-	readonly attachedContext?: IChatRequestVariableEntry[];
-}
-
-/**
  * Options for creating a `NewChatWidget`.
  */
 interface INewChatWidgetOptions {
 	readonly allowedTargets: AgentSessionProviders[];
 	readonly defaultTarget: AgentSessionProviders;
-	readonly onSendRequest?: (data: INewChatSendRequestData) => void;
 	readonly sessionPosition?: ChatSessionPosition;
 }
 
@@ -671,16 +656,11 @@ class NewChatWidget extends Disposable {
 
 	private _send(): void {
 		const query = this._editor.getModel()?.getValue().trim();
-		if (!query) {
+		if (!query || !this._newSession) {
 			return;
 		}
 
 		const target = this._targetPicker.selectedTarget;
-
-		const position = this._options.sessionPosition ?? ChatSessionPosition.Sidebar;
-		const resource = this._newSession?.resource
-			?? getResourceForNewChatSession({ type: target, position, displayName: '' });
-
 		const contribution = this.chatSessionsService.getChatSessionContribution(target);
 
 		const sendOptions: IChatSendRequestOptions = {
@@ -697,17 +677,9 @@ class NewChatWidget extends Disposable {
 			attachedContext: this._contextAttachments.attachments.length > 0 ? [...this._contextAttachments.attachments] : undefined,
 		};
 
-		const folderUri = this._newSession?.repoUri ?? this._folderPicker.selectedFolderUri ?? this.workspaceContextService.getWorkspace().folders[0]?.uri;
-
-		this._options.onSendRequest?.({
-			resource,
-			target,
-			query,
-			sendOptions,
-			selectedOptions: new Map(this._selectedOptions),
-			folderUri,
-			attachedContext: this._contextAttachments.attachments.length > 0 ? [...this._contextAttachments.attachments] : undefined,
-		});
+		this.sessionsManagementService.sendRequestForNewSession(
+			this._newSession, query, sendOptions
+		).catch(e => this.logService.error('Failed to send request:', e));
 
 		this._contextAttachments.clear();
 	}
@@ -751,9 +723,7 @@ export class NewChatViewPane extends ViewPane {
 		@IOpenerService openerService: IOpenerService,
 		@IThemeService themeService: IThemeService,
 		@IHoverService hoverService: IHoverService,
-		@ISessionsManagementService private readonly activeSessionService: ISessionsManagementService,
 		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
-		@ILogService private readonly logService: ILogService,
 	) {
 		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
 	}
@@ -766,11 +736,6 @@ export class NewChatViewPane extends ViewPane {
 			{
 				allowedTargets: this.computeAllowedTargets(),
 				defaultTarget: AgentSessionProviders.Background,
-				onSendRequest: (data) => {
-					this.activeSessionService.sendRequestForNewSession(
-						data.resource, data.query, data.sendOptions, data.selectedOptions, data.folderUri
-					).catch(e => this.logService.error('NewChatViewPane: Failed to open session and send request', e));
-				},
 			} satisfies INewChatWidgetOptions,
 		));
 

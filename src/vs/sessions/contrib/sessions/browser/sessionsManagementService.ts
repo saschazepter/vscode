@@ -91,7 +91,7 @@ export interface ISessionsManagementService {
 	 * Open a new session, apply options, and send the initial request.
 	 * This is the main entry point for the new-chat welcome widget.
 	 */
-	sendRequestForNewSession(sessionResource: URI, query: string, sendOptions: IChatSendRequestOptions, selectedOptions?: ReadonlyMap<string, IChatSessionProviderOptionItem>, folderUri?: URI): Promise<void>;
+	sendRequestForNewSession(session: INewSession, query: string, sendOptions: IChatSendRequestOptions): Promise<void>;
 
 	/**
 	 * Commit files in a worktree and refresh the agent sessions model
@@ -323,11 +323,12 @@ export class SessionsManagementService extends Disposable implements ISessionsMa
 		this._activeSession.set(activeSessionItem, undefined);
 	}
 
-	async sendRequestForNewSession(sessionResource: URI, query: string, sendOptions: IChatSendRequestOptions, selectedOptions?: ReadonlyMap<string, IChatSessionProviderOptionItem>, folderUri?: URI): Promise<void> {
+	async sendRequestForNewSession(session: INewSession, query: string, sendOptions: IChatSendRequestOptions): Promise<void> {
+		const sessionResource = session.resource;
 		if (LocalChatSessionUri.isLocalSession(sessionResource)) {
-			await this.sendLocalSession(sessionResource, query, sendOptions, folderUri);
+			await this.sendLocalSession(sessionResource, query, sendOptions, session.repoUri);
 		} else {
-			await this.sendCustomSession(sessionResource, query, sendOptions, selectedOptions);
+			await this.sendCustomSession(sessionResource, query, sendOptions);
 		}
 	}
 
@@ -354,33 +355,14 @@ export class SessionsManagementService extends Disposable implements ISessionsMa
 
 	/**
 	 * Custom sessions (worktree, cloud, etc.) go through the chat service.
-	 * Apply selected options, send the request, then wait for the extension
-	 * to create an agent session so it appears in the sidebar.
+	 * Options have already been applied via setOption during session configuration.
+	 * Send the request, then wait for the extension to create an agent session.
 	 */
-	private async sendCustomSession(sessionResource: URI, query: string, sendOptions: IChatSendRequestOptions, selectedOptions?: ReadonlyMap<string, IChatSessionProviderOptionItem>): Promise<void> {
+	private async sendCustomSession(sessionResource: URI, query: string, sendOptions: IChatSendRequestOptions): Promise<void> {
 		// 1. Open the session - loads the model and shows the ChatViewPane
 		await this.openSession(sessionResource);
 
-		// 2. Apply selected options (repository, branch, etc.) to the contributed session
-		if (selectedOptions && selectedOptions.size > 0) {
-			const modelRef = this.chatService.getActiveSessionReference(sessionResource);
-			if (modelRef) {
-				const model = modelRef.object;
-				const contributedSession = model.contributedChatSession;
-				if (contributedSession) {
-					const initialSessionOptions = [...selectedOptions.entries()].map(
-						([optionId, value]) => ({ optionId, value })
-					);
-					model.setContributedChatSession({
-						...contributedSession,
-						initialSessionOptions,
-					});
-				}
-				modelRef.dispose();
-			}
-		}
-
-		// 3. Send the request
+		// 2. Send the request
 		const existingResources = new Set(
 			this.agentSessionsService.model.sessions.map(s => s.resource.toString())
 		);
