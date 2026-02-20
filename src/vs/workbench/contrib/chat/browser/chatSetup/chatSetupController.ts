@@ -153,7 +153,10 @@ export class ChatSetupController extends Disposable {
 	}
 
 	private async signIn(options: IChatSetupControllerOptions): Promise<{ defaultAccount: IDefaultAccount | undefined; entitlement: ChatEntitlement | undefined }> {
-		await maybeEnableAuthExtension(this.extensionsWorkbenchService, this.logService);
+		const authExtensionReEnabled = await maybeEnableAuthExtension(this.extensionsWorkbenchService, this.logService);
+		if (authExtensionReEnabled) {
+			refreshTokens(this.commandService);
+		}
 
 		let entitlements;
 		let defaultAccount;

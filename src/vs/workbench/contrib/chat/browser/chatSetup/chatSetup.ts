@@ -94,9 +94,14 @@ export async function maybeEnableAuthExtension(
 		providerExtension.enablementState === EnablementState.DisabledWorkspace
 	) {
 		logService.info(`[chat setup] auth provider extension '${defaultChat.providerExtensionId}' is disabled, re-enabling it`);
-		await extensionsWorkbenchService.setEnablement([providerExtension], EnablementState.EnabledGlobally);
-		await extensionsWorkbenchService.updateRunningExtensions(localize('enableAuthExtension', "Enabling GitHub Authentication"));
-		return true;
+		try {
+			await extensionsWorkbenchService.setEnablement([providerExtension], EnablementState.EnabledGlobally);
+			await extensionsWorkbenchService.updateRunningExtensions(localize('enableAuthExtension', "Enabling GitHub Authentication"));
+			return true;
+		} catch (error) {
+			logService.error(`[chat setup] failed to re-enable auth provider extension '${defaultChat.providerExtensionId}'`, error);
+			return false;
+		}
 	}
 
 	return false;
