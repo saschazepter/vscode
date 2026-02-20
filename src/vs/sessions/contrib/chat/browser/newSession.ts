@@ -6,6 +6,7 @@
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { URI } from '../../../../base/common/uri.js';
+import { isEqual } from '../../../../base/common/resources.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { IChatSessionsService } from '../../../../workbench/contrib/chat/common/chatSessionsService.js';
 import { IsolationMode } from './sessionTargetPicker.js';
@@ -99,6 +100,16 @@ export class RemoteNewSession extends Disposable implements INewSession {
 		private readonly logService: ILogService,
 	) {
 		super();
+
+		// Listen for extension-driven option group and session option changes
+		this._register(this.chatSessionsService.onDidChangeOptionGroups(() => {
+			this._onDidChange.fire();
+		}));
+		this._register(this.chatSessionsService.onDidChangeSessionOptions((e: URI | undefined) => {
+			if (isEqual(this.resource, e)) {
+				this._onDidChange.fire();
+			}
+		}));
 	}
 
 	setRepoUri(uri: URI): void {

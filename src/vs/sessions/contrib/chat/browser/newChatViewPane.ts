@@ -29,7 +29,6 @@ import { IThemeService } from '../../../../platform/theme/common/themeService.js
 import { IHoverService } from '../../../../platform/hover/browser/hover.js';
 import { HoverPosition } from '../../../../base/browser/ui/hover/hoverWidget.js';
 import { renderIcon } from '../../../../base/browser/ui/iconLabel/iconLabels.js';
-import { isEqual } from '../../../../base/common/resources.js';
 import { localize } from '../../../../nls.js';
 import { AgentSessionProviders } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessions.js';
 import { ISessionsManagementService } from '../../sessions/browser/sessionsManagementService.js';
@@ -105,6 +104,7 @@ class NewChatWidget extends Disposable {
 
 	// Pending session
 	private _newSession: INewSession | undefined;
+	private readonly _newSessionListener = this._register(new MutableDisposable());
 
 	// Welcome part
 	private _pickersContainer: HTMLElement | undefined;
@@ -159,17 +159,6 @@ class NewChatWidget extends Disposable {
 			const isLocal = target === AgentSessionProviders.Background;
 			this._isolationModePicker.setVisible(isLocal);
 			this._branchPicker.setVisible(isLocal);
-		}));
-
-		// Listen for option group changes to re-render pickers
-		this._register(this.chatSessionsService.onDidChangeOptionGroups(() => this._renderExtensionPickers()));
-
-		// React to chat session option changes
-		this._register(this.chatSessionsService.onDidChangeSessionOptions((e: URI | undefined) => {
-			if (this._newSession && isEqual(this._newSession.resource, e)) {
-				this._syncOptionsFromSession(this._newSession.resource);
-				this._renderExtensionPickers();
-			}
 		}));
 
 		const workspaceFolderCountKey = new Set([WorkspaceFolderCountContext.key]);
@@ -246,10 +235,7 @@ class NewChatWidget extends Disposable {
 		// Reuse existing pending session for the same target type
 		const existing = this._newSessions.get(target);
 		if (existing) {
-			this._newSession = existing;
-			this._folderPicker.setNewSession(existing);
-			this._isolationModePicker.setNewSession(existing);
-			this._branchPicker.setNewSession(existing);
+			this._setNewSession(existing);
 			return;
 		}
 
@@ -262,13 +248,23 @@ class NewChatWidget extends Disposable {
 
 		this.sessionsManagementService.createNewSessionForTarget(target, resource, defaultRepoUri).then(session => {
 			this._newSessions.set(target, session);
-			this._newSession = session;
-
-			// Wire pickers to the new session
-			this._folderPicker.setNewSession(session);
-			this._isolationModePicker.setNewSession(session);
-			this._branchPicker.setNewSession(session);
+			this._setNewSession(session);
 		}).catch((err) => this.logService.trace('Failed to create new session:', err));
+	}
+
+	private _setNewSession(session: INewSession): void {
+		this._newSession = session;
+
+		// Wire pickers to the new session
+		this._folderPicker.setNewSession(session);
+		this._isolationModePicker.setNewSession(session);
+		this._branchPicker.setNewSession(session);
+
+		// Listen for session changes (e.g. extension-driven option updates for remote sessions)
+		this._newSessionListener.value = session.onDidChange(() => {
+			this._syncOptionsFromSession(session.resource);
+			this._renderExtensionPickers();
+		});
 	}
 
 	private _openRepository(folderUri: URI): void {
