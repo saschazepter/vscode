@@ -2235,6 +2235,10 @@ have to be updated for changes to the rules above, or to support more deeply nes
 		}
 	}
 
+	> .codicon.codicon-check {
+		display: none;
+	}
+
 	.codicon {
 		/* Very aggressive list styles try to apply focus colors to every codicon in a list row. */
 		color: var(--vscode-icon-foreground) !important;
