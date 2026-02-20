@@ -11,7 +11,7 @@ import { toAction } from '../../../../base/common/actions.js';
 import { Emitter } from '../../../../base/common/event.js';
 import { KeyCode } from '../../../../base/common/keyCodes.js';
 import { Disposable, DisposableStore, MutableDisposable } from '../../../../base/common/lifecycle.js';
-import { autorun, observableValue } from '../../../../base/common/observable.js';
+import { observableValue } from '../../../../base/common/observable.js';
 import { URI } from '../../../../base/common/uri.js';
 
 import { CodeEditorWidget, ICodeEditorWidgetOptions } from '../../../../editor/browser/widget/codeEditor/codeEditorWidget.js';
@@ -271,25 +271,13 @@ class NewChatWidget extends Disposable {
 	}
 
 	private _openRepository(folderUri: URI): void {
-		const tryOpen = () => {
-			this.gitService.openRepository(folderUri).then(repository => {
-				this._isolationModePicker.setRepository(repository);
-				this._branchPicker.setRepository(repository);
-			}).catch(() => {
-				this._isolationModePicker.setRepository(undefined);
-				this._branchPicker.setRepository(undefined);
-			});
-		};
-
-		if (this.gitService.isInitialized.get()) {
-			tryOpen();
-		} else {
-			this._register(autorun(reader => {
-				if (this.gitService.isInitialized.read(reader)) {
-					tryOpen();
-				}
-			}));
-		}
+		this.gitService.openRepository(folderUri).then(repository => {
+			this._isolationModePicker.setRepository(repository);
+			this._branchPicker.setRepository(repository);
+		}).catch(() => {
+			this._isolationModePicker.setRepository(undefined);
+			this._branchPicker.setRepository(undefined);
+		});
 	}
 
 	// --- Editor ---
