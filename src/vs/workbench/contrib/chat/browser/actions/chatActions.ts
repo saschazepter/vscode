@@ -893,7 +893,7 @@ export function registerChatActions() {
 				f1: true,
 				precondition: ChatContextKeys.inChatSession,
 				keybinding: [{
-					weight: KeybindingWeight.WorkbenchContrib,
+					weight: KeybindingWeight.ExternalExtension + 1,
 					primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyA,
 					when: ContextKeyExpr.and(ChatContextKeys.inChatSession, ChatContextKeys.Editing.hasQuestionCarousel),
 				}]
