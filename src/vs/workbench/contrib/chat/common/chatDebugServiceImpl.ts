@@ -131,6 +131,15 @@ export class ChatDebugServiceImpl extends Disposable implements IChatDebugServic
 		}
 	}
 
+	endSession(sessionId: string): void {
+		const cts = this._invocationCts.get(sessionId);
+		if (cts) {
+			cts.cancel();
+			cts.dispose();
+			this._invocationCts.delete(sessionId);
+		}
+	}
+
 	async resolveEvent(eventId: string): Promise<IChatDebugResolvedEventContent | undefined> {
 		for (const provider of this._providers) {
 			if (provider.resolveChatDebugLogEvent) {

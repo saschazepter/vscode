@@ -178,6 +178,13 @@ export interface IChatDebugService extends IDisposable {
 	invokeProviders(sessionId: string): Promise<void>;
 
 	/**
+	 * End a debug session: cancels any in-flight provider invocation,
+	 * disposes the associated CancellationTokenSource, and removes it.
+	 * Called when the chat session is disposed/archived.
+	 */
+	endSession(sessionId: string): void;
+
+	/**
 	 * Resolve the full details of an event by its id.
 	 * Delegates to the registered provider's resolveChatDebugLogEvent.
 	 */

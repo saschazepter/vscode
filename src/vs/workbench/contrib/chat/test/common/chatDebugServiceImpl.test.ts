@@ -412,6 +412,56 @@ suite('ChatDebugServiceImpl', () => {
 		});
 	});
 
+	suite('endSession', () => {
+		test('should cancel and remove the CTS for a session', async () => {
+			let capturedToken: CancellationToken | undefined;
+
+			const provider: IChatDebugLogProvider = {
+				provideChatDebugLog: async (_sid, token) => {
+					capturedToken = token;
+					return [];
+				},
+			};
+
+			disposables.add(service.registerProvider(provider));
+			await service.invokeProviders('session');
+
+			assert.ok(capturedToken);
+			assert.strictEqual(capturedToken.isCancellationRequested, false);
+
+			service.endSession('session');
+
+			assert.strictEqual(capturedToken.isCancellationRequested, true);
+		});
+
+		test('should be safe to call for unknown session', () => {
+			// Should not throw
+			service.endSession('nonexistent');
+		});
+
+		test('late provider should not be invoked for ended session', async () => {
+			const firstProvider: IChatDebugLogProvider = {
+				provideChatDebugLog: async () => [],
+			};
+			disposables.add(service.registerProvider(firstProvider));
+			await service.invokeProviders('session');
+
+			service.endSession('session');
+
+			let lateCalled = false;
+			const lateProvider: IChatDebugLogProvider = {
+				provideChatDebugLog: async () => {
+					lateCalled = true;
+					return [];
+				},
+			};
+			disposables.add(service.registerProvider(lateProvider));
+
+			await new Promise(resolve => setTimeout(resolve, 10));
+			assert.strictEqual(lateCalled, false, 'Late provider should not be invoked for ended session');
+		});
+	});
+
 	suite('dispose', () => {
 		test('should cancel active invocations on dispose', async () => {
 			let capturedToken: CancellationToken | undefined;
