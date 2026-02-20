@@ -970,7 +970,7 @@ async function main() {
 		console.log(`\u2705 ${name}`);
 	}
 
-	const stages = new Set<string>();
+	const stages = new Set<string>(['Quality']);
 
 	if (
 		e('VSCODE_BUILD_STAGE_LINUX') === 'True' ||
