@@ -149,7 +149,7 @@ function getTargetLabel(provider: AgentSessionProviders): string {
 
 // #region --- Isolation Mode Picker ---
 
-export type IsolationMode = 'worktree' | 'folder';
+export type IsolationMode = 'worktree' | 'workspace';
 
 /**
  * A self-contained widget for selecting the isolation mode (Worktree vs Folder).
@@ -187,14 +187,14 @@ export class IsolationModePicker extends Disposable {
 
 	/**
 	 * Sets the git repository. When undefined, worktree option is hidden
-	 * and isolation mode falls back to 'folder'.
+	 * and isolation mode falls back to 'workspace'.
 	 */
 	setRepository(repository: IGitRepository | undefined): void {
 		this._repository = repository;
 		if (repository) {
 			this._setMode('worktree');
 		} else if (this._isolationMode === 'worktree') {
-			this._setMode('folder');
+			this._setMode('workspace');
 		}
 		this._renderDropdown();
 	}
@@ -245,8 +245,8 @@ export class IsolationModePicker extends Disposable {
 					toAction({
 						id: 'isolationMode.folder',
 						label: localize('isolationMode.folder', "Folder"),
-						checked: this._isolationMode === 'folder',
-						run: () => this._setMode('folder'),
+						checked: this._isolationMode === 'workspace',
+						run: () => this._setMode('workspace'),
 					}),
 				],
 			},

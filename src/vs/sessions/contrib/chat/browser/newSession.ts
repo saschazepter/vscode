@@ -90,7 +90,7 @@ export class LocalNewSession extends Disposable implements INewSession {
 
 	setRepoUri(uri: URI): void {
 		this._repoUri = uri;
-		this._isolationMode = 'folder';
+		this._isolationMode = 'workspace';
 		this._branch = undefined;
 		this._onDidChange.fire('repoUri');
 		this.setOption(REPOSITORY_OPTION_ID, uri.fsPath);
