@@ -22,7 +22,6 @@ import { IAgentSessionsService } from '../../../../workbench/contrib/chat/browse
 import { LocalChatSessionUri } from '../../../../workbench/contrib/chat/common/model/chatUri.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
-import { IWorkspaceEditingService } from '../../../../workbench/services/workspaces/common/workspaceEditing.js';
 import { IViewsService } from '../../../../workbench/services/views/common/viewsService.js';
 import { AgentSessionProviders } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessions.js';
 import { INewSession, LocalNewSession, RemoteNewSession } from '../../chat/browser/newSession.js';
@@ -123,7 +122,6 @@ export class SessionsManagementService extends Disposable implements ISessionsMa
 		@ILogService private readonly logService: ILogService,
 		@IContextKeyService contextKeyService: IContextKeyService,
 		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
-		@IWorkspaceEditingService private readonly workspaceEditingService: IWorkspaceEditingService,
 		@IViewsService private readonly viewsService: IViewsService,
 		@ICommandService private readonly commandService: ICommandService,
 	) {

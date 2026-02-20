@@ -32,7 +32,6 @@ export class BranchPicker extends Disposable {
 
 	private _selectedBranch: string | undefined;
 	private _newSession: INewSession | undefined;
-	private _repository: IGitRepository | undefined;
 	private _branches: string[] = [];
 
 	private readonly _onDidChange = this._register(new Emitter<string | undefined>());
@@ -64,7 +63,6 @@ export class BranchPicker extends Disposable {
 	 * When undefined, the picker is shown disabled.
 	 */
 	async setRepository(repository: IGitRepository | undefined): Promise<void> {
-		this._repository = repository;
 		this._branches = [];
 		this._selectedBranch = undefined;
 
@@ -154,7 +152,7 @@ export class BranchPicker extends Disposable {
 			undefined,
 			[],
 			{
-				getAriaLabel: (item) => item.name,
+				getAriaLabel: (item) => item.label ?? '',
 				getWidgetAriaLabel: () => localize('branchPicker.ariaLabel', "Branch Picker"),
 			},
 			totalActions > FILTER_THRESHOLD ? { showFilter: true, filterPlaceholder: localize('branchPicker.filter', "Filter branches...") } : undefined,

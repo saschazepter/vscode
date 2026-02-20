@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Emitter, Event } from '../../../../base/common/event.js';
-import { Disposable } from '../../../../base/common/lifecycle.js';
+import { Disposable, IDisposable } from '../../../../base/common/lifecycle.js';
 import { URI } from '../../../../base/common/uri.js';
 import { isEqual } from '../../../../base/common/resources.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
@@ -22,7 +22,7 @@ export type NewSessionChangeType = 'repoUri' | 'isolationMode' | 'branch' | 'opt
  * request is sent. It holds the user's selections (repoUri, isolationMode)
  * and fires a single event when any property changes.
  */
-export interface INewSession {
+export interface INewSession extends IDisposable {
 	readonly resource: URI;
 	readonly target: AgentSessionProviders;
 	readonly activeSessionItem: IActiveSessionItem;
