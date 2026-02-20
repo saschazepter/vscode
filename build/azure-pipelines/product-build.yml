@@ -31,8 +31,8 @@ parameters:
     type: string
     default: Product Build
     values:
-      - Product Build
-      - CI Build
+      - Product
+      - CI
   - name: NPM_REGISTRY
     displayName: "Custom NPM Registry"
     type: string
@@ -122,7 +122,7 @@ variables:
   - name: VSCODE_BUILD_STAGE_WEB
     value: ${{ eq(parameters.VSCODE_BUILD_WEB, true) }}
   - name: VSCODE_CIBUILD
-    value: ${{ or(in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI'), eq(parameters.VSCODE_BUILD_TYPE, 'CI Only')) }}
+    value: ${{ or(in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI'), eq(parameters.VSCODE_BUILD_TYPE, 'CI')) }}
   - name: VSCODE_PUBLISH
     value: ${{ and(eq(parameters.VSCODE_PUBLISH, true), eq(variables.VSCODE_CIBUILD, false)) }}
   - name: VSCODE_SCHEDULEDBUILD

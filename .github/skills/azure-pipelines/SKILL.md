@@ -101,7 +101,7 @@ node .github/skills/azure-pipelines/azure-pipeline.ts queue --parameter "VSCODE_
 | Name | Type | Default | Allowed Values | Description |
 |------|------|---------|----------------|-------------|
 | `VSCODE_QUALITY` | string | `insider` | `exploration`, `insider`, `stable` | Build quality channel |
-| `VSCODE_BUILD_TYPE` | string | `Product Build` | `Product Build`, `CI Build` | Build mode for product vs CI |
+| `VSCODE_BUILD_TYPE` | string | `Product Build` | `Product`, `CI` | Build mode for Product vs CI |
 | `NPM_REGISTRY` | string | `https://pkgs.dev.azure.com/monacotools/Monaco/_packaging/vscode/npm/registry/` | any URL | Custom npm registry |
 | `CARGO_REGISTRY` | string | `sparse+https://pkgs.dev.azure.com/monacotools/Monaco/_packaging/vscode/Cargo/index/` | any URL | Custom Cargo registry |
 | `VSCODE_BUILD_WIN32` | boolean | `true` | `true`, `false` | Build Windows x64 |
