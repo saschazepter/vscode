@@ -157,7 +157,7 @@ export type IsolationMode = 'worktree' | 'folder';
  */
 export class IsolationModePicker extends Disposable {
 
-	private _isolationMode: IsolationMode = 'worktree';
+	private _isolationMode: IsolationMode = 'folder';
 	private _newSession: INewSession | undefined;
 	private _repository: IGitRepository | undefined;
 
