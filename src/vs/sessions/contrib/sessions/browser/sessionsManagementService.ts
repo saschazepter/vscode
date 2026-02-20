@@ -16,7 +16,8 @@ import { ChatViewId, ChatViewPaneTarget, IChatWidgetService } from '../../../../
 import { ChatViewPane } from '../../../../workbench/contrib/chat/browser/widgetHosts/viewPane/chatViewPane.js';
 import { IChatSessionItem, IChatSessionProviderOptionItem, IChatSessionsService } from '../../../../workbench/contrib/chat/common/chatSessionsService.js';
 import { IChatService, IChatSendRequestOptions } from '../../../../workbench/contrib/chat/common/chatService/chatService.js';
-import { ChatAgentLocation } from '../../../../workbench/contrib/chat/common/constants.js';
+import { IChatRequestVariableEntry } from '../../../../workbench/contrib/chat/common/attachments/chatVariableEntries.js';
+import { ChatAgentLocation, ChatModeKind } from '../../../../workbench/contrib/chat/common/constants.js';
 import { IAgentSession, isAgentSession } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsModel.js';
 import { IAgentSessionsService } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsService.js';
 import { LocalChatSessionUri } from '../../../../workbench/contrib/chat/common/model/chatUri.js';
@@ -89,9 +90,9 @@ export interface ISessionsManagementService {
 
 	/**
 	 * Open a new session, apply options, and send the initial request.
-	 * This is the main entry point for the new-chat welcome widget.
+	 * Looks up the session by resource URI and builds send options from it.
 	 */
-	sendRequestForNewSession(session: INewSession, query: string, sendOptions: IChatSendRequestOptions): Promise<void>;
+	sendRequestForNewSession(sessionResource: URI, query: string, attachedContext?: IChatRequestVariableEntry[]): Promise<void>;
 
 	/**
 	 * Commit files in a worktree and refresh the agent sessions model
@@ -109,6 +110,7 @@ export class SessionsManagementService extends Disposable implements ISessionsMa
 	private readonly _activeSession = observableValue<IActiveSessionItem | undefined>(this, undefined);
 	readonly activeSession: IObservable<IActiveSessionItem | undefined> = this._activeSession;
 
+	private readonly _newSessions = new Map<string, INewSession>();
 	private lastSelectedSession: URI | undefined;
 	private readonly isNewChatSessionContext: IContextKey<boolean>;
 
@@ -265,10 +267,14 @@ export class SessionsManagementService extends Disposable implements ISessionsMa
 	async createNewSessionForTarget(target: AgentSessionProviders, sessionResource: URI, defaultRepoUri?: URI): Promise<INewSession> {
 		const activeSessionItem = await this.createNewPendingSession(sessionResource);
 
+		let newSession: INewSession;
 		if (target === AgentSessionProviders.Background || target === AgentSessionProviders.Local) {
-			return new LocalNewSession(activeSessionItem, defaultRepoUri, this.chatSessionsService, this.logService);
+			newSession = new LocalNewSession(activeSessionItem, defaultRepoUri, this.chatSessionsService, this.logService);
+		} else {
+			newSession = new RemoteNewSession(activeSessionItem, target, this.chatSessionsService, this.logService);
 		}
-		return new RemoteNewSession(activeSessionItem, this.chatSessionsService, this.logService);
+		this._newSessions.set(newSession.resource.toString(), newSession);
+		return newSession;
 	}
 
 	/**
@@ -323,12 +329,32 @@ export class SessionsManagementService extends Disposable implements ISessionsMa
 		this._activeSession.set(activeSessionItem, undefined);
 	}
 
-	async sendRequestForNewSession(session: INewSession, query: string, sendOptions: IChatSendRequestOptions): Promise<void> {
-		const sessionResource = session.resource;
+	async sendRequestForNewSession(sessionResource: URI, query: string, attachedContext?: IChatRequestVariableEntry[]): Promise<void> {
+		const session = this._newSessions.get(sessionResource.toString());
+		if (!session) {
+			this.logService.error(`[SessionsManagementService] No new session found for resource: ${sessionResource.toString()}`);
+			return;
+		}
+
+		const contribution = this.chatSessionsService.getChatSessionContribution(session.target);
+		const sendOptions: IChatSendRequestOptions = {
+			location: ChatAgentLocation.Chat,
+			userSelectedModelId: session.modelId,
+			modeInfo: {
+				kind: ChatModeKind.Agent,
+				isBuiltin: true,
+				modeInstructions: undefined,
+				modeId: 'agent',
+				applyCodeBlockSuggestionId: undefined,
+			},
+			agentIdSilent: contribution?.type,
+			attachedContext,
+		};
+
 		if (LocalChatSessionUri.isLocalSession(sessionResource)) {
 			await this.sendLocalSession(sessionResource, query, sendOptions, session.repoUri);
 		} else {
-			await this.sendCustomSession(sessionResource, query, sendOptions);
+			await this.sendCustomSession(sessionResource, query, sendOptions, session.selectedOptions);
 		}
 	}
 
@@ -358,11 +384,30 @@ export class SessionsManagementService extends Disposable implements ISessionsMa
 	 * Options have already been applied via setOption during session configuration.
 	 * Send the request, then wait for the extension to create an agent session.
 	 */
-	private async sendCustomSession(sessionResource: URI, query: string, sendOptions: IChatSendRequestOptions): Promise<void> {
+	private async sendCustomSession(sessionResource: URI, query: string, sendOptions: IChatSendRequestOptions, selectedOptions?: ReadonlyMap<string, IChatSessionProviderOptionItem>): Promise<void> {
 		// 1. Open the session - loads the model and shows the ChatViewPane
 		await this.openSession(sessionResource);
 
-		// 2. Send the request
+		// 2. Apply selected options (repository, branch, etc.) to the contributed session
+		if (selectedOptions && selectedOptions.size > 0) {
+			const modelRef = this.chatService.getActiveSessionReference(sessionResource);
+			if (modelRef) {
+				const model = modelRef.object;
+				const contributedSession = model.contributedChatSession;
+				if (contributedSession) {
+					const initialSessionOptions = [...selectedOptions.entries()].map(
+						([optionId, value]) => ({ optionId, value })
+					);
+					model.setContributedChatSession({
+						...contributedSession,
+						initialSessionOptions,
+					});
+				}
+				modelRef.dispose();
+			}
+		}
+
+		// 3. Send the request
 		const existingResources = new Set(
 			this.agentSessionsService.model.sessions.map(s => s.resource.toString())
 		);

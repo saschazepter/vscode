@@ -10,6 +10,7 @@ import { isEqual } from '../../../../base/common/resources.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { IChatSessionProviderOptionItem, IChatSessionsService } from '../../../../workbench/contrib/chat/common/chatSessionsService.js';
 import { IsolationMode } from './sessionTargetPicker.js';
+import { AgentSessionProviders } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessions.js';
 import { IActiveSessionItem } from '../../sessions/browser/sessionsManagementService.js';
 
 /**
@@ -19,11 +20,13 @@ import { IActiveSessionItem } from '../../sessions/browser/sessionsManagementSer
  */
 export interface INewSession {
 	readonly resource: URI;
+	readonly target: AgentSessionProviders;
 	readonly activeSessionItem: IActiveSessionItem;
 	readonly repoUri: URI | undefined;
 	readonly isolationMode: IsolationMode;
 	readonly branch: string | undefined;
 	readonly modelId: string | undefined;
+	readonly selectedOptions: ReadonlyMap<string, IChatSessionProviderOptionItem>;
 	readonly onDidChange: Event<void>;
 	setRepoUri(uri: URI): void;
 	setIsolationMode(mode: IsolationMode): void;
@@ -50,6 +53,9 @@ export class LocalNewSession extends Disposable implements INewSession {
 
 	private readonly _onDidChange = this._register(new Emitter<void>());
 	readonly onDidChange: Event<void> = this._onDidChange.event;
+
+	readonly target = AgentSessionProviders.Background;
+	readonly selectedOptions = new Map<string, IChatSessionProviderOptionItem>();
 
 	get resource(): URI { return this.activeSessionItem.resource; }
 	get repoUri(): URI | undefined { return this._repoUri; }
@@ -115,6 +121,8 @@ export class RemoteNewSession extends Disposable implements INewSession {
 	private readonly _onDidChange = this._register(new Emitter<void>());
 	readonly onDidChange: Event<void> = this._onDidChange.event;
 
+	readonly selectedOptions = new Map<string, IChatSessionProviderOptionItem>();
+
 	get resource(): URI { return this.activeSessionItem.resource; }
 	get repoUri(): URI | undefined { return this._repoUri; }
 	get isolationMode(): IsolationMode { return this._isolationMode; }
@@ -123,6 +131,7 @@ export class RemoteNewSession extends Disposable implements INewSession {
 
 	constructor(
 		readonly activeSessionItem: IActiveSessionItem,
+		readonly target: AgentSessionProviders,
 		private readonly chatSessionsService: IChatSessionsService,
 		private readonly logService: ILogService,
 	) {
@@ -158,6 +167,9 @@ export class RemoteNewSession extends Disposable implements INewSession {
 	}
 
 	setOption(optionId: string, value: IChatSessionProviderOptionItem | string): void {
+		if (typeof value !== 'string') {
+			this.selectedOptions.set(optionId, value);
+		}
 		this._onDidChange.fire();
 		this.chatSessionsService.notifySessionOptionsChange(
 			this.resource,

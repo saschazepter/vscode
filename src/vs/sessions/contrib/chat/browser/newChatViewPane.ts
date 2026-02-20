@@ -35,8 +35,6 @@ import { ISessionsManagementService } from '../../sessions/browser/sessionsManag
 import { ChatSessionPosition, getResourceForNewChatSession } from '../../../../workbench/contrib/chat/browser/chatSessions/chatSessions.contribution.js';
 import { ChatSessionPickerActionItem, IChatSessionPickerDelegate } from '../../../../workbench/contrib/chat/browser/chatSessions/chatSessionPickerActionItem.js';
 import { SearchableOptionPickerActionItem } from '../../../../workbench/contrib/chat/browser/chatSessions/searchableOptionPickerActionItem.js';
-import { ChatAgentLocation, ChatModeKind } from '../../../../workbench/contrib/chat/common/constants.js';
-import { IChatSendRequestOptions } from '../../../../workbench/contrib/chat/common/chatService/chatService.js';
 import { IChatSessionProviderOptionGroup, IChatSessionProviderOptionItem, IChatSessionsService } from '../../../../workbench/contrib/chat/common/chatSessionsService.js';
 import { ILanguageModelChatMetadataAndIdentifier, ILanguageModelsService } from '../../../../workbench/contrib/chat/common/languageModels.js';
 import { IModelPickerDelegate } from '../../../../workbench/contrib/chat/browser/widget/input/modelPickerActionItem.js';
@@ -667,25 +665,10 @@ class NewChatWidget extends Disposable {
 			return;
 		}
 
-		const target = this._targetPicker.selectedTarget;
-		const contribution = this.chatSessionsService.getChatSessionContribution(target);
-
-		const sendOptions: IChatSendRequestOptions = {
-			location: ChatAgentLocation.Chat,
-			userSelectedModelId: this._newSession.modelId ?? this._currentLanguageModel.get()?.identifier,
-			modeInfo: {
-				kind: ChatModeKind.Agent,
-				isBuiltin: true,
-				modeInstructions: undefined,
-				modeId: 'agent',
-				applyCodeBlockSuggestionId: undefined,
-			},
-			agentIdSilent: contribution?.type,
-			attachedContext: this._contextAttachments.attachments.length > 0 ? [...this._contextAttachments.attachments] : undefined,
-		};
+		const attachedContext = this._contextAttachments.attachments.length > 0 ? [...this._contextAttachments.attachments] : undefined;
 
 		this.sessionsManagementService.sendRequestForNewSession(
-			this._newSession, query, sendOptions
+			this._newSession.resource, query, attachedContext
 		).catch(e => this.logService.error('Failed to send request:', e));
 
 		this._contextAttachments.clear();
