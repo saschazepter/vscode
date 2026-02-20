@@ -75,5 +75,5 @@ After modifying layout code:
 1. Verify the build compiles without errors via the `VS Code - Build` task
 2. Ensure the grid structure matches the spec's visual representation
 3. Confirm part visibility toggling works correctly (show/hide/maximize)
-5. Test that editors open in the `ModalEditorPart` overlay and that it closes properly
+4. Test that editors open in the `ModalEditorPart` overlay and that it closes properly
 5. Verify sidebar footer renders with account widget
