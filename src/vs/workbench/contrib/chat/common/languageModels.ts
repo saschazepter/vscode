@@ -506,8 +506,8 @@ interface IChatControlResponse {
 	readonly version: number;
 	readonly restrictedChatParticipants: { [name: string]: string[] };
 	readonly models?: {
-		readonly free?: Record<string, { readonly id: string; readonly label: string; readonly featured?: boolean }>;
-		readonly paid?: Record<string, { readonly id: string; readonly label: string; readonly featured?: boolean; readonly minVSCodeVersion?: string }>;
+		readonly free?: Record<string, { readonly label: string; readonly featured?: boolean }>;
+		readonly paid?: Record<string, { readonly label: string; readonly featured?: boolean; readonly minVSCodeVersion?: string }>;
 	};
 }
 
@@ -1425,7 +1425,7 @@ export class LanguageModelsService implements ILanguageModelsService {
 		if (response?.free) {
 			const freeEntries = Array.isArray(response.free) ? response.free : Object.values(response.free);
 			for (const entry of freeEntries) {
-				if (!entry || !isObject(entry) || typeof entry.id !== 'string') {
+				if (!entry || !isObject(entry)) {
 					continue;
 				}
 				free[entry.id] = { label: entry.label, featured: entry.featured };
@@ -1435,7 +1435,7 @@ export class LanguageModelsService implements ILanguageModelsService {
 		if (response?.paid) {
 			const paidEntries = Array.isArray(response.paid) ? response.paid : Object.values(response.paid);
 			for (const entry of paidEntries) {
-				if (!entry || !isObject(entry) || typeof entry.id !== 'string') {
+				if (!entry || !isObject(entry)) {
 					continue;
 				}
 				paid[entry.id] = { label: entry.label, featured: entry.featured, minVSCodeVersion: entry.minVSCodeVersion };
