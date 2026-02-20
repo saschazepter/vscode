@@ -307,7 +307,6 @@ export class McpServer extends Disposable implements IMcpServer {
 
 			d = autorun(reader => {
 				const connection = server.connection.read(reader);
-				connection?.handler.read(reader); // ensure handler is ready before calling fn
 				if (!connection || ranOnce) {
 					return;
 				}
