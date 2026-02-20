@@ -55,7 +55,8 @@ import { NewChatContextAttachments } from './newChatContextAttachments.js';
 import { GITHUB_REMOTE_FILE_SCHEME } from '../../fileTreeView/browser/githubFileSystemProvider.js';
 import { FolderPicker } from './folderPicker.js';
 import { IGitService } from '../../../../workbench/contrib/git/common/gitService.js';
-import { BranchPicker, IsolationModePicker, SessionTargetPicker } from './sessionTargetPicker.js';
+import { IsolationModePicker, SessionTargetPicker } from './sessionTargetPicker.js';
+import { BranchPicker } from './branchPicker.js';
 import { INewSession } from './newSession.js';
 
 // #region --- Chat Welcome Widget ---
