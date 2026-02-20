@@ -357,6 +357,10 @@ export class SessionsManagementService extends Disposable implements ISessionsMa
 		};
 
 		await this.sendCustomSession(sessionResource, query, sendOptions, session.selectedOptions);
+
+		// Clean up the session after sending
+		this._newSessions.delete(sessionResource.toString());
+		session.dispose();
 	}
 
 	/**

@@ -665,6 +665,8 @@ class NewChatWidget extends Disposable {
 			return;
 		}
 
+		const target = this._targetPicker.selectedTarget;
+
 		this._newSession.setQuery(query);
 		this._newSession.setAttachedContext(
 			this._contextAttachments.attachments.length > 0 ? [...this._contextAttachments.attachments] : undefined
@@ -674,6 +676,10 @@ class NewChatWidget extends Disposable {
 			this._newSession.resource
 		).catch(e => this.logService.error('Failed to send request:', e));
 
+		// Clear sent session so a fresh one is created next time
+		this._newSessions.delete(target);
+		this._newSession = undefined;
+		this._newSessionListener.clear();
 		this._contextAttachments.clear();
 	}
 
