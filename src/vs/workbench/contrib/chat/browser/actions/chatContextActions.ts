@@ -465,14 +465,14 @@ export class AttachContextAction extends Action2 {
 		super({
 			id: 'workbench.action.chat.attachContext',
 			title: localize2('workbench.action.chat.attachContext.label.2', "Add Context..."),
-			icon: Codicon.attach,
+			icon: Codicon.add,
 			category: CHAT_CATEGORY,
 			keybinding: {
 				when: ContextKeyExpr.and(ChatContextKeys.inChatInput, ChatContextKeys.location.isEqualTo(ChatAgentLocation.Chat)),
 				primary: KeyMod.CtrlCmd | KeyCode.Slash,
 				weight: KeybindingWeight.EditorContrib
 			},
-			menu: {
+			menu: [{
 				when: ContextKeyExpr.and(
 					ContextKeyExpr.or(
 						ChatContextKeys.location.isEqualTo(ChatAgentLocation.Chat),
@@ -486,7 +486,21 @@ export class AttachContextAction extends Action2 {
 				id: MenuId.ChatInputAttachmentToolbar,
 				group: 'navigation',
 				order: 3
-			},
+			}, {
+				when: ContextKeyExpr.and(
+					ContextKeyExpr.or(
+						ChatContextKeys.location.isEqualTo(ChatAgentLocation.Chat),
+						ContextKeyExpr.and(ChatContextKeys.location.isEqualTo(ChatAgentLocation.EditorInline), CTX_INLINE_CHAT_V2_ENABLED)
+					),
+					ContextKeyExpr.or(
+						ChatContextKeys.lockedToCodingAgent.negate(),
+						ChatContextKeys.agentSupportsAttachments
+					)
+				),
+				id: MenuId.ChatInput,
+				group: 'navigation',
+				order: 101
+			}],
 
 		});
 	}

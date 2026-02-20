@@ -128,7 +128,10 @@ import { EnhancedModelPickerActionItem } from './modelPickerActionItem2.js';
 const $ = dom.$;
 
 const INPUT_EDITOR_MAX_HEIGHT = 250;
-const INPUT_EDITOR_MIN_HEIGHT = 56; // 2 lines (20px each) + padding (8px top + 8px bottom)
+const INPUT_EDITOR_MIN_VISIBLE_LINES = 2;
+const INPUT_EDITOR_DEFAULT_LINE_HEIGHT = 20;
+const INPUT_EDITOR_VERTICAL_PADDING = 8 + 8;
+const INPUT_EDITOR_MIN_HEIGHT = INPUT_EDITOR_MIN_VISIBLE_LINES * INPUT_EDITOR_DEFAULT_LINE_HEIGHT + INPUT_EDITOR_VERTICAL_PADDING;
 const CachedLanguageModelsKey = 'chat.cachedLanguageModels.v2';
 
 export interface IChatInputStyles {
@@ -3011,7 +3014,8 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 			const inputToolbarWidth = this.cachedInputToolbarWidth = this.inputActionsToolbar.getItemsWidth();
 			const executeToolbarPadding = (this.executeToolbar.getItemsLength() - 1) * 4;
 			const inputToolbarPadding = this.inputActionsToolbar.getItemsLength() ? (this.inputActionsToolbar.getItemsLength() - 1) * 4 : 0;
-			return executeToolbarWidth + executeToolbarPadding + (this.options.renderInputToolbarBelowInput ? 0 : inputToolbarWidth + inputToolbarPadding);
+			const contextUsageWidth = dom.getTotalWidth(this.contextUsageWidgetContainer);
+			return executeToolbarWidth + executeToolbarPadding + contextUsageWidth + (this.options.renderInputToolbarBelowInput ? 0 : inputToolbarWidth + inputToolbarPadding);
 		};
 
 		return {

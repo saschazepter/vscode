@@ -810,6 +810,11 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	display: flex;
 	align-items: center;
 	flex-shrink: 0;
+	order: 1;
+}
+
+.interactive-session .chat-input-toolbars > .chat-execute-toolbar {
+	order: 2;
 }
 
 .interactive-input-part:has(.chat-editing-session > .chat-editing-session-container) .chat-input-container,
@@ -1297,6 +1302,7 @@ have to be updated for changes to the rules above, or to support more deeply nes
 .interactive-session .chat-input-toolbars {
 	display: flex;
 	align-items: center;
+	gap: 6px;
 }
 
 .interactive-session .chat-input-toolbars :not(.responsive.chat-input-toolbar) .actions-container:first-child {
@@ -1316,9 +1322,15 @@ have to be updated for changes to the rules above, or to support more deeply nes
 }
 
 .interactive-session .chat-input-toolbars > .chat-input-toolbar {
+	order: 0;
 	overflow: hidden;
 	min-width: 0px;
 	width: 100%;
+	color: var(--vscode-icon-foreground);
+
+	.monaco-action-bar .action-item .codicon {
+		color: var(--vscode-icon-foreground);
+	}
 
 	.chat-input-picker-item {
 		min-width: 0px;
@@ -1393,7 +1405,7 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	padding: 3px 0px 3px 6px;
 	display: flex;
 	align-items: center;
-	color: var(--vscode-foreground);
+	color: var(--vscode-icon-foreground);
 }
 
 .monaco-workbench .interactive-session .chat-input-toolbar .chat-input-picker-item .action-label .codicon-chevron-down,
@@ -1410,6 +1422,16 @@ have to be updated for changes to the rules above, or to support more deeply nes
 .interactive-session .chat-input-toolbars .chat-sessionPicker-container {
 	display: flex;
 	max-width: 100%;
+}
+
+.monaco-workbench .interactive-session .chat-input-toolbars .monaco-action-bar .action-item .codicon,
+.monaco-workbench .interactive-session .chat-input-toolbars .action-label .codicon {
+	color: var(--vscode-icon-foreground) !important;
+}
+
+.monaco-workbench .interactive-session .chat-input-toolbars .monaco-action-bar .action-item.disabled .codicon,
+.monaco-workbench .interactive-session .chat-input-toolbars .action-label.disabled .codicon {
+	color: var(--vscode-disabledForeground) !important;
 }
 
 .interactive-session .chat-input-toolbars .codicon-debug-stop {
