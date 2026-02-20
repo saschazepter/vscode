@@ -105,7 +105,6 @@ class NewChatWidget extends Disposable {
 	private _extensionPickersLeftContainer: HTMLElement | undefined;
 	private _extensionPickersRightContainer: HTMLElement | undefined;
 	private _inputSlot: HTMLElement | undefined;
-	private _isolationPickersContainer: HTMLElement | undefined;
 	private readonly _folderPicker: FolderPicker;
 	private _folderPickerContainer: HTMLElement | undefined;
 	private readonly _pickerWidgets = new Map<string, ChatSessionPickerActionItem | SearchableOptionPickerActionItem>();
@@ -156,7 +155,6 @@ class NewChatWidget extends Disposable {
 		// When isolation mode changes, notify extension
 		this._register(this._isolationModePicker.onDidChange(() => {
 			this._notifyFolderSelection();
-			this._renderIsolationModePickers();
 		}));
 
 		// Listen for option group changes to re-render pickers
@@ -215,8 +213,6 @@ class NewChatWidget extends Disposable {
 		// Isolation mode picker (below the input, shown when Folder target is selected)
 		const isolationContainer = dom.append(welcomeElement, dom.$('.chat-full-welcome-local-mode'));
 		this._isolationModePicker.render(isolationContainer);
-		dom.append(isolationContainer, dom.$('.sessions-chat-local-mode-spacer'));
-		this._isolationPickersContainer = dom.append(isolationContainer, dom.$('.sessions-chat-local-mode-right'));
 
 		// Render target buttons & extension pickers
 		this._renderOptionGroupPickers();
@@ -463,21 +459,7 @@ class NewChatWidget extends Disposable {
 		}
 	}
 
-	private readonly _isolationModeDisposables = this._register(new DisposableStore());
-
-	private _renderIsolationModePickers(): void {
-		if (!this._isolationPickersContainer) {
-			return;
-		}
-		this._isolationModeDisposables.clear();
-		dom.clearNode(this._isolationPickersContainer);
-
-		if (this._isolationModePicker.isolationMode === 'worktree') {
-			this._renderExtensionPickersInContainer(this._isolationPickersContainer, AgentSessionProviders.Background);
-		}
-	}
-
-	// --- Welcome: Extension option pickers ---
+	// --- Welcome: Extension option pickers (Cloud target only) ---
 
 	private _renderExtensionPickers(force?: boolean): void {
 		if (!this._extensionPickersRightContainer) {
@@ -486,7 +468,7 @@ class NewChatWidget extends Disposable {
 
 		const activeSessionType = this._targetPicker.selectedTarget;
 
-		// For Folder (Background) target, show folder picker in top row and handle bottom row
+		// Extension pickers are only shown for Cloud target
 		if (activeSessionType === AgentSessionProviders.Background) {
 			this._clearExtensionPickers();
 			if (this._folderPickerContainer) {
@@ -495,7 +477,6 @@ class NewChatWidget extends Disposable {
 			if (this._extensionPickersLeftContainer) {
 				this._extensionPickersLeftContainer.style.display = 'block';
 			}
-			this._renderIsolationModePickers();
 			return;
 		}
 
@@ -531,16 +512,6 @@ class NewChatWidget extends Disposable {
 			return;
 		}
 
-		visibleGroups.sort((a, b) => {
-			// Repo/folder pickers first, then others
-			const aRepo = isRepoOrFolderGroup(a) ? 0 : 1;
-			const bRepo = isRepoOrFolderGroup(b) ? 0 : 1;
-			if (aRepo !== bRepo) {
-				return aRepo - bRepo;
-			}
-			return (a.when ? 1 : 0) - (b.when ? 1 : 0);
-		});
-
 		if (!force && this._pickerWidgets.size === visibleGroups.length) {
 			const allMatch = visibleGroups.every(g => this._pickerWidgets.has(g.id));
 			if (allMatch) {
@@ -550,7 +521,6 @@ class NewChatWidget extends Disposable {
 
 		this._clearExtensionPickers();
 
-		// Show the separator between target switcher and extension pickers
 		if (this._extensionPickersLeftContainer) {
 			this._extensionPickersLeftContainer.style.display = 'block';
 		}
@@ -597,77 +567,7 @@ class NewChatWidget extends Disposable {
 			this._pickerWidgetDisposables.add(widget);
 			this._pickerWidgets.set(optionGroup.id, widget);
 
-			// All pickers go to the right
-			const targetContainer = this._extensionPickersRightContainer!;
-
-			const slot = dom.append(targetContainer, dom.$('.sessions-chat-picker-slot'));
-			widget.render(slot);
-		}
-	}
-
-	private _renderExtensionPickersInContainer(container: HTMLElement, sessionType: AgentSessionProviders): void {
-		const optionGroups = this.chatSessionsService.getOptionGroupsForSessionType(sessionType);
-		if (!optionGroups || optionGroups.length === 0) {
-			return;
-		}
-
-		const visibleGroups: IChatSessionProviderOptionGroup[] = [];
-		for (const group of optionGroups) {
-			if (isModelOptionGroup(group)) {
-				continue;
-			}
-			if (group.id === 'repository') {
-				continue;
-			}
-			const hasItems = group.items.length > 0 || (group.commands || []).length > 0 || !!group.searchable;
-			const passesWhenClause = this._evaluateOptionGroupVisibility(group);
-			if (hasItems && passesWhenClause) {
-				visibleGroups.push(group);
-			}
-		}
-
-		for (const optionGroup of visibleGroups) {
-			const initialItem = this._getDefaultOptionForGroup(optionGroup);
-			const initialState = { group: optionGroup, item: initialItem };
-
-			if (initialItem) {
-				this._updateOptionContextKey(optionGroup.id, initialItem.id);
-			}
-
-			const emitter = this._getOrCreateOptionEmitter(optionGroup.id);
-			const itemDelegate: IChatSessionPickerDelegate = {
-				getCurrentOption: () => this._selectedOptions.get(optionGroup.id) ?? this._getDefaultOptionForGroup(optionGroup),
-				onDidChangeOption: emitter.event,
-				setOption: (option: IChatSessionProviderOptionItem) => {
-					this._selectedOptions.set(optionGroup.id, option);
-					this._updateOptionContextKey(optionGroup.id, option.id);
-					emitter.fire(option);
-
-					if (this._pendingSessionResource) {
-						this.chatSessionsService.notifySessionOptionsChange(
-							this._pendingSessionResource,
-							[{ optionId: optionGroup.id, value: option }]
-						).catch((err) => this.logService.error(`Failed to notify extension of ${optionGroup.id} change:`, err));
-					}
-
-					this._renderIsolationModePickers();
-				},
-				getOptionGroup: () => {
-					const groups = this.chatSessionsService.getOptionGroupsForSessionType(sessionType);
-					return groups?.find((g: { id: string }) => g.id === optionGroup.id);
-				},
-				getSessionResource: () => this._pendingSessionResource,
-			};
-
-			const action = toAction({ id: optionGroup.id, label: optionGroup.name, run: () => { } });
-			const widget = this.instantiationService.createInstance(
-				optionGroup.searchable ? SearchableOptionPickerActionItem : ChatSessionPickerActionItem,
-				action, initialState, itemDelegate
-			);
-
-			this._isolationModeDisposables.add(widget);
-
-			const slot = dom.append(container, dom.$('.sessions-chat-picker-slot'));
+			const slot = dom.append(this._extensionPickersRightContainer!, dom.$('.sessions-chat-picker-slot'));
 			widget.render(slot);
 		}
 	}
