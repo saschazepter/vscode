@@ -258,9 +258,6 @@ export class BrowserWorkbenchEnvironmentService implements IBrowserWorkbenchEnvi
 	get isSessionsWindow(): boolean { return false; }
 
 	@memoize
-	get isSessionsUtilityProcess(): boolean { return false; }
-
-	@memoize
 	get profile(): string | undefined { return this.payload?.get('profile'); }
 
 	@memoize

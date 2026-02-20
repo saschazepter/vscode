@@ -92,7 +92,7 @@ export class AgenticSessionsViewPane extends ViewPane {
 	) {
 		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
 
-		this._useSdk = environmentService.isSessionsUtilityProcess;
+		this._useSdk = configurationService.getValue('application.useSessionsUtilityProcess');
 		// SDK session lifecycle updates
 		if (this._useSdk) {
 			this._register(this.copilotSdkService.onSessionLifecycle(() => this._refreshSdkSessionList()));

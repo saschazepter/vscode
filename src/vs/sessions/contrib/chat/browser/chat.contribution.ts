@@ -37,14 +37,15 @@ import { NewChatViewPane, SessionsViewId } from './newChatViewPane.js';
 import { ViewPaneContainer } from '../../../../workbench/browser/parts/views/viewPaneContainer.js';
 import { registerIcon } from '../../../../platform/theme/common/iconRegistry.js';
 import { ChatViewPane } from '../../../../workbench/contrib/chat/browser/widgetHosts/viewPane/chatViewPane.js';
-import { IWorkbenchEnvironmentService } from '../../../../workbench/services/environment/common/environmentService.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { IWorkbenchLayoutService } from '../../../../workbench/services/layout/browser/layoutService.js';
-import { IsSessionsUtilityProcessContext, IsSessionsWindowContext } from '../../../../workbench/common/contextkeys.js';
+import { IsSessionsWindowContext } from '../../../../workbench/common/contextkeys.js';
 import { SdkChatViewPane, SdkChatViewId } from '../../../browser/widget/sdkChatViewPane.js';
 import { CopilotSdkDebugLog } from '../../../browser/copilotSdkDebugLog.js';
 import { CopilotSdkDebugPanel } from '../../../browser/copilotSdkDebugPanel.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
+import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
+import { ContextKeyExpr } from '../../../../platform/contextkey/common/contextkey.js';
 
 export class OpenSessionWorktreeInVSCodeAction extends Action2 {
 	static readonly ID = 'chat.openSessionWorktreeInVSCode';
@@ -180,9 +181,9 @@ class RegisterChatViewContainerContribution implements IWorkbenchContribution {
 	static ID = 'sessions.registerChatViewContainer';
 
 	constructor(
-		@IWorkbenchEnvironmentService environmentService: IWorkbenchEnvironmentService,
+		@IConfigurationService configurationService: IConfigurationService,
 	) {
-		if (environmentService.isSessionsUtilityProcess) {
+		if (configurationService.getValue('application.useSessionsUtilityProcess')) {
 			this._registerSdkViews();
 		} else {
 			this._registerDefaultViews();
@@ -288,12 +289,12 @@ class CopilotSdkDebugContribution extends Disposable implements IWorkbenchContri
 	static readonly ID = 'copilotSdk.debugContribution';
 
 	constructor(
-		@IWorkbenchEnvironmentService environmentService: IWorkbenchEnvironmentService,
+		@IConfigurationService configurationService: IConfigurationService,
 		@IInstantiationService instantiationService: IInstantiationService,
 	) {
 		super();
 		// Only initialize debug logging when the SDK utility process is enabled
-		if (!environmentService.isSessionsUtilityProcess) {
+		if (!configurationService.getValue('application.useSessionsUtilityProcess')) {
 			return;
 		}
 
@@ -313,12 +314,12 @@ registerAction2(class CopilotSdkDebugPanelAction extends Action2 {
 			title: localize2('copilotSdkDebugPanel', 'Copilot SDK: Open Debug Panel'),
 			f1: true,
 			icon: Codicon.beaker,
-			precondition: IsSessionsUtilityProcessContext,
+			precondition: ContextKeyExpr.equals('config.application.useSessionsUtilityProcess', true),
 		});
 	}
 	async run(accessor: ServicesAccessor): Promise<void> {
-		const environmentService = accessor.get(IWorkbenchEnvironmentService);
-		if (!environmentService.isSessionsUtilityProcess) {
+		const configurationService = accessor.get(IConfigurationService);
+		if (!configurationService.getValue('application.useSessionsUtilityProcess')) {
 			return;
 		}
 
