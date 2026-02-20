@@ -16,7 +16,6 @@ import { ChatViewId, ChatViewPaneTarget, IChatWidgetService } from '../../../../
 import { ChatViewPane } from '../../../../workbench/contrib/chat/browser/widgetHosts/viewPane/chatViewPane.js';
 import { IChatSessionItem, IChatSessionProviderOptionItem, IChatSessionsService } from '../../../../workbench/contrib/chat/common/chatSessionsService.js';
 import { IChatService, IChatSendRequestOptions } from '../../../../workbench/contrib/chat/common/chatService/chatService.js';
-import { IChatRequestVariableEntry } from '../../../../workbench/contrib/chat/common/attachments/chatVariableEntries.js';
 import { ChatAgentLocation, ChatModeKind } from '../../../../workbench/contrib/chat/common/constants.js';
 import { IAgentSession, isAgentSession } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsModel.js';
 import { IAgentSessionsService } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsService.js';
@@ -92,7 +91,7 @@ export interface ISessionsManagementService {
 	 * Open a new session, apply options, and send the initial request.
 	 * Looks up the session by resource URI and builds send options from it.
 	 */
-	sendRequestForNewSession(sessionResource: URI, query: string, attachedContext?: IChatRequestVariableEntry[]): Promise<void>;
+	sendRequestForNewSession(sessionResource: URI): Promise<void>;
 
 	/**
 	 * Commit files in a worktree and refresh the agent sessions model
@@ -329,10 +328,16 @@ export class SessionsManagementService extends Disposable implements ISessionsMa
 		this._activeSession.set(activeSessionItem, undefined);
 	}
 
-	async sendRequestForNewSession(sessionResource: URI, query: string, attachedContext?: IChatRequestVariableEntry[]): Promise<void> {
+	async sendRequestForNewSession(sessionResource: URI): Promise<void> {
 		const session = this._newSessions.get(sessionResource.toString());
 		if (!session) {
 			this.logService.error(`[SessionsManagementService] No new session found for resource: ${sessionResource.toString()}`);
+			return;
+		}
+
+		const query = session.query;
+		if (!query) {
+			this.logService.error('[SessionsManagementService] No query set on session');
 			return;
 		}
 
@@ -348,35 +353,10 @@ export class SessionsManagementService extends Disposable implements ISessionsMa
 				applyCodeBlockSuggestionId: undefined,
 			},
 			agentIdSilent: contribution?.type,
-			attachedContext,
+			attachedContext: session.attachedContext,
 		};
 
-		if (LocalChatSessionUri.isLocalSession(sessionResource)) {
-			await this.sendLocalSession(sessionResource, query, sendOptions, session.repoUri);
-		} else {
-			await this.sendCustomSession(sessionResource, query, sendOptions, session.selectedOptions);
-		}
-	}
-
-	/**
-	 * Local sessions run directly through the ChatWidget.
-	 * Set the workspace folder, open a fresh chat view, and submit via acceptInput.
-	 */
-	private async sendLocalSession(sessionResource: URI, query: string, sendOptions: IChatSendRequestOptions, folderUri?: URI): Promise<void> {
-		if (folderUri) {
-			await this.workspaceEditingService.updateFolders(0, this.workspaceContextService.getWorkspace().folders.length, [{ uri: folderUri }]);
-		}
-
-		await this.openSession(sessionResource);
-
-		const widget = this.chatWidgetService.lastFocusedWidget;
-		if (widget) {
-			if (sendOptions.attachedContext?.length) {
-				widget.attachmentModel.addContext(...sendOptions.attachedContext);
-			}
-			widget.setInput(query);
-			widget.acceptInput(query);
-		}
+		await this.sendCustomSession(sessionResource, query, sendOptions, session.selectedOptions);
 	}
 
 	/**

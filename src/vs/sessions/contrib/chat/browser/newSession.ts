@@ -13,6 +13,8 @@ import { IsolationMode } from './sessionTargetPicker.js';
 import { AgentSessionProviders } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessions.js';
 import { IActiveSessionItem } from '../../sessions/browser/sessionsManagementService.js';
 
+import { IChatRequestVariableEntry } from '../../../../workbench/contrib/chat/common/attachments/chatVariableEntries.js';
+
 /**
  * A new session represents a session being configured before the first
  * request is sent. It holds the user's selections (repoUri, isolationMode)
@@ -26,12 +28,16 @@ export interface INewSession {
 	readonly isolationMode: IsolationMode;
 	readonly branch: string | undefined;
 	readonly modelId: string | undefined;
+	readonly query: string | undefined;
+	readonly attachedContext: IChatRequestVariableEntry[] | undefined;
 	readonly selectedOptions: ReadonlyMap<string, IChatSessionProviderOptionItem>;
 	readonly onDidChange: Event<void>;
 	setRepoUri(uri: URI): void;
 	setIsolationMode(mode: IsolationMode): void;
 	setBranch(branch: string | undefined): void;
 	setModelId(modelId: string | undefined): void;
+	setQuery(query: string): void;
+	setAttachedContext(context: IChatRequestVariableEntry[] | undefined): void;
 	setOption(optionId: string, value: IChatSessionProviderOptionItem | string): void;
 }
 
@@ -50,6 +56,8 @@ export class LocalNewSession extends Disposable implements INewSession {
 	private _isolationMode: IsolationMode = 'worktree';
 	private _branch: string | undefined;
 	private _modelId: string | undefined;
+	private _query: string | undefined;
+	private _attachedContext: IChatRequestVariableEntry[] | undefined;
 
 	private readonly _onDidChange = this._register(new Emitter<void>());
 	readonly onDidChange: Event<void> = this._onDidChange.event;
@@ -62,6 +70,8 @@ export class LocalNewSession extends Disposable implements INewSession {
 	get isolationMode(): IsolationMode { return this._isolationMode; }
 	get branch(): string | undefined { return this._branch; }
 	get modelId(): string | undefined { return this._modelId; }
+	get query(): string | undefined { return this._query; }
+	get attachedContext(): IChatRequestVariableEntry[] | undefined { return this._attachedContext; }
 
 	constructor(
 		readonly activeSessionItem: IActiveSessionItem,
@@ -99,6 +109,14 @@ export class LocalNewSession extends Disposable implements INewSession {
 		this._modelId = modelId;
 	}
 
+	setQuery(query: string): void {
+		this._query = query;
+	}
+
+	setAttachedContext(context: IChatRequestVariableEntry[] | undefined): void {
+		this._attachedContext = context;
+	}
+
 	setOption(optionId: string, value: IChatSessionProviderOptionItem | string): void {
 		this.chatSessionsService.notifySessionOptionsChange(
 			this.resource,
@@ -117,6 +135,8 @@ export class RemoteNewSession extends Disposable implements INewSession {
 	private _repoUri: URI | undefined;
 	private _isolationMode: IsolationMode = 'worktree';
 	private _modelId: string | undefined;
+	private _query: string | undefined;
+	private _attachedContext: IChatRequestVariableEntry[] | undefined;
 
 	private readonly _onDidChange = this._register(new Emitter<void>());
 	readonly onDidChange: Event<void> = this._onDidChange.event;
@@ -128,6 +148,8 @@ export class RemoteNewSession extends Disposable implements INewSession {
 	get isolationMode(): IsolationMode { return this._isolationMode; }
 	get branch(): string | undefined { return undefined; }
 	get modelId(): string | undefined { return this._modelId; }
+	get query(): string | undefined { return this._query; }
+	get attachedContext(): IChatRequestVariableEntry[] | undefined { return this._attachedContext; }
 
 	constructor(
 		readonly activeSessionItem: IActiveSessionItem,
@@ -164,6 +186,14 @@ export class RemoteNewSession extends Disposable implements INewSession {
 
 	setModelId(modelId: string | undefined): void {
 		this._modelId = modelId;
+	}
+
+	setQuery(query: string): void {
+		this._query = query;
+	}
+
+	setAttachedContext(context: IChatRequestVariableEntry[] | undefined): void {
+		this._attachedContext = context;
 	}
 
 	setOption(optionId: string, value: IChatSessionProviderOptionItem | string): void {
