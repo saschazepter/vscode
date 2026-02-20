@@ -319,9 +319,7 @@ export function buildModelPickerItems(
 		chatEntitlementService.entitlement === ChatEntitlement.Enterprise ||
 		chatEntitlementService.isInternal
 	) {
-		if (otherModels.length) {
-			items.push({ kind: ActionListItemKind.Separator, section: ModelPickerSection.Other });
-		}
+		items.push({ kind: ActionListItemKind.Separator, section: otherModels.length ? ModelPickerSection.Other : undefined });
 		items.push({
 			item: {
 				id: 'manageModels',
