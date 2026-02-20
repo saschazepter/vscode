@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import './media/agentFeedbackGlyphMargin.css';
+import './media/agentFeedbackLineDecoration.css';
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { ICodeEditor, IEditorMouseEvent, MouseTargetType } from '../../../../editor/browser/editorBrowser.js';
 import { IEditorContribution } from '../../../../editor/common/editorCommon.js';
@@ -20,9 +20,9 @@ import { IAgentSessionsService } from '../../../../workbench/contrib/chat/browse
 import { getSessionForResource } from './agentFeedbackEditorUtils.js';
 import { Selection } from '../../../../editor/common/core/selection.js';
 
-const feedbackGlyphDecoration = ModelDecorationOptions.register({
-	description: 'agent-feedback-glyph',
-	linesDecorationsClassName: `${ThemeIcon.asClassName(Codicon.comment)} agent-feedback-glyph`,
+const feedbackLineDecoration = ModelDecorationOptions.register({
+	description: 'agent-feedback-line-decoration',
+	linesDecorationsClassName: `${ThemeIcon.asClassName(Codicon.comment)} agent-feedback-line-decoration`,
 	stickiness: TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
 });
 
@@ -32,9 +32,9 @@ const addFeedbackHintDecoration = ModelDecorationOptions.register({
 	stickiness: TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
 });
 
-export class AgentFeedbackGlyphMarginContribution extends Disposable implements IEditorContribution {
+export class AgentFeedbackLineDecorationContribution extends Disposable implements IEditorContribution {
 
-	static readonly ID = 'agentFeedback.glyphMarginContribution';
+	static readonly ID = 'agentFeedback.lineDecorationContribution';
 
 	private readonly _feedbackDecorations;
 
@@ -99,7 +99,7 @@ export class AgentFeedbackGlyphMarginContribution extends Disposable implements 
 			lines.add(line);
 			decorations.push({
 				range: new Range(line, 1, line, 1),
-				options: feedbackGlyphDecoration,
+				options: feedbackLineDecoration,
 			});
 		}
 
@@ -185,4 +185,4 @@ export class AgentFeedbackGlyphMarginContribution extends Disposable implements 
 	}
 }
 
-registerEditorContribution(AgentFeedbackGlyphMarginContribution.ID, AgentFeedbackGlyphMarginContribution, EditorContributionInstantiation.Eventually);
+registerEditorContribution(AgentFeedbackLineDecorationContribution.ID, AgentFeedbackLineDecorationContribution, EditorContributionInstantiation.Eventually);

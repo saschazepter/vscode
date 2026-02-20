@@ -320,6 +320,7 @@ class NewChatWidget extends Disposable {
 		// Input area inside the input slot
 		const inputArea = dom.$('.sessions-chat-input-area');
 		this._contextAttachments.registerDropTarget(inputArea);
+		this._contextAttachments.registerPasteHandler(inputArea);
 
 		// Attachments row (plus button + pills) inside input area, above editor
 		const attachRow = dom.append(inputArea, dom.$('.sessions-chat-attach-row'));
