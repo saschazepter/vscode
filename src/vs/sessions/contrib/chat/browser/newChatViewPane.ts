@@ -368,7 +368,7 @@ class NewChatWidget extends Disposable {
 			},
 			getModels: () => this._getAvailableModels(),
 			canManageModels: () => true,
-			showCuratedModels: () => this._isolationModePicker.isolationMode === 'workspace',
+			showCuratedModels: () => false,
 		};
 
 		const pickerOptions: IChatInputPickerOptions = {
