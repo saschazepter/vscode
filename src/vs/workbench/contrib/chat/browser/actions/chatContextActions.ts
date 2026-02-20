@@ -472,8 +472,9 @@ export class AttachContextAction extends Action2 {
 				primary: KeyMod.CtrlCmd | KeyCode.Slash,
 				weight: KeybindingWeight.EditorContrib
 			},
-			menu: {
+			menu: [{
 				when: ContextKeyExpr.and(
+					ChatContextKeys.inQuickChat.negate(),
 					ContextKeyExpr.or(
 						ChatContextKeys.location.isEqualTo(ChatAgentLocation.Chat),
 						ContextKeyExpr.and(ChatContextKeys.location.isEqualTo(ChatAgentLocation.EditorInline), CTX_INLINE_CHAT_V2_ENABLED)
@@ -486,7 +487,18 @@ export class AttachContextAction extends Action2 {
 				id: MenuId.ChatInput,
 				group: 'navigation',
 				order: 101
-			},
+			}, {
+				when: ContextKeyExpr.and(
+					ChatContextKeys.inQuickChat,
+					ContextKeyExpr.or(
+						ChatContextKeys.lockedToCodingAgent.negate(),
+						ChatContextKeys.agentSupportsAttachments
+					)
+				),
+				id: MenuId.ChatExecute,
+				group: 'navigation',
+				order: -1
+			}],
 
 		});
 	}
