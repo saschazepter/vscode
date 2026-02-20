@@ -19,6 +19,8 @@ Registry.as<IConfigurationRegistry>(Extensions.Configuration).registerDefaultCon
 
 		'files.autoSave': 'afterDelay',
 
+		'git.autofetch': true,
+		'git.detectWorktrees': false,
 		'git.showProgress': false,
 
 		'github.copilot.chat.claudeCode.enabled': true,
@@ -36,6 +38,7 @@ Registry.as<IConfigurationRegistry>(Extensions.Configuration).registerDefaultCon
 		'workbench.layoutControl.type': 'toggles',
 		'workbench.editor.allowOpenInModalEditor': false,
 		'window.menuStyle': 'custom',
+		'window.dialogStyle': 'custom',
 
 		'terminal.integrated.initialHint': false
 	},

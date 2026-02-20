@@ -12,7 +12,6 @@ import { Separator, toAction } from '../../../../base/common/actions.js';
 import { Radio } from '../../../../base/browser/ui/radio/radio.js';
 import { DropdownMenuActionViewItem } from '../../../../base/browser/ui/dropdown/dropdownActionViewItem.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
-import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { KeyCode } from '../../../../base/common/keyCodes.js';
 import { Disposable, DisposableStore, MutableDisposable } from '../../../../base/common/lifecycle.js';
 import { IObservable, observableValue } from '../../../../base/common/observable.js';
@@ -59,6 +58,7 @@ import { getSimpleEditorOptions } from '../../../../workbench/contrib/codeEditor
 import { IChatRequestVariableEntry } from '../../../../workbench/contrib/chat/common/attachments/chatVariableEntries.js';
 import { isString } from '../../../../base/common/types.js';
 import { NewChatContextAttachments } from './newChatContextAttachments.js';
+import { GITHUB_REMOTE_FILE_SCHEME } from '../../fileTreeView/browser/githubFileSystemProvider.js';
 
 // #region --- Target Config ---
 
@@ -237,6 +237,7 @@ class NewChatWidget extends Disposable {
 		@IFileDialogService private readonly fileDialogService: IFileDialogService,
 		@IWorkspacesService private readonly workspacesService: IWorkspacesService,
 		@IStorageService private readonly storageService: IStorageService,
+		@ISessionsManagementService private readonly sessionsManagementService: ISessionsManagementService,
 	) {
 		super();
 		this._contextAttachments = this._register(this.instantiationService.createInstance(NewChatContextAttachments));
@@ -319,6 +320,7 @@ class NewChatWidget extends Disposable {
 		// Input area inside the input slot
 		const inputArea = dom.$('.sessions-chat-input-area');
 		this._contextAttachments.registerDropTarget(inputArea);
+		this._contextAttachments.registerPasteHandler(inputArea);
 
 		// Attachments row (plus button + pills) inside input area, above editor
 		const attachRow = dom.append(inputArea, dom.$('.sessions-chat-attach-row'));
@@ -383,8 +385,7 @@ class NewChatWidget extends Disposable {
 		});
 		this._pendingSessionResources.set(target, this._pendingSessionResource);
 
-		// Create the session in the extension so that session options can be stored
-		this.chatSessionsService.getOrCreateChatSession(this._pendingSessionResource, CancellationToken.None)
+		this.sessionsManagementService.createNewPendingSession(this._pendingSessionResource,)
 			.catch((err) => this.logService.trace('Failed to create pending session:', err));
 	}
 
@@ -442,7 +443,37 @@ class NewChatWidget extends Disposable {
 		attachButton.title = localize('addContext', "Add Context...");
 		attachButton.ariaLabel = localize('addContext', "Add Context...");
 		dom.append(attachButton, renderIcon(Codicon.add));
-		this._register(dom.addDisposableListener(attachButton, dom.EventType.CLICK, () => this._contextAttachments.showPicker()));
+		this._register(dom.addDisposableListener(attachButton, dom.EventType.CLICK, () => {
+			this._contextAttachments.showPicker(this._getContextFolderUri());
+		}));
+	}
+
+	/**
+	 * Returns the folder URI for the context picker based on the current target.
+	 * Local targets use the workspace folder; cloud targets construct a github-remote-file:// URI.
+	 */
+	private _getContextFolderUri(): URI | undefined {
+		const target = this._getEffectiveTarget();
+
+		if (!target || target === AgentSessionProviders.Local || target === AgentSessionProviders.Background) {
+			return this._selectedFolderUri ?? this.workspaceContextService.getWorkspace().folders[0]?.uri;
+		}
+
+		// For cloud targets, look for a repository option in the selected options
+		for (const [groupId, option] of this._selectedOptions) {
+			if (isRepoOrFolderGroup({ id: groupId, name: groupId, items: [] })) {
+				const nwo = option.id; // e.g. "owner/repo"
+				if (nwo && nwo.includes('/')) {
+					return URI.from({
+						scheme: GITHUB_REMOTE_FILE_SCHEME,
+						authority: 'github',
+						path: `/${nwo}/HEAD`,
+					});
+				}
+			}
+		}
+
+		return undefined;
 	}
 
 	private _createBottomToolbar(container: HTMLElement): void {
@@ -468,10 +499,10 @@ class NewChatWidget extends Disposable {
 			currentModel: this._currentLanguageModel,
 			setModel: (model: ILanguageModelChatMetadataAndIdentifier) => {
 				this._currentLanguageModel.set(model, undefined);
-				this.languageModelsService.addToRecentlyUsedList(model);
 			},
 			getModels: () => this._getAvailableModels(),
 			canManageModels: () => true,
+			showCuratedModels: () => this._localMode === 'workspace',
 		};
 
 		const pickerOptions: IChatInputPickerOptions = {
