@@ -5,6 +5,7 @@
 
 import assert from 'assert';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../../base/test/common/utils.js';
+import { Codicon } from '../../../../../../../base/common/codicons.js';
 import { IStringDictionary } from '../../../../../../../base/common/collections.js';
 import { MarkdownString } from '../../../../../../../base/common/htmlContent.js';
 import { ActionListItemKind, IActionListItem } from '../../../../../../../platform/actionWidget/browser/actionList.js';
@@ -516,7 +517,7 @@ suite('buildModelPickerItems', () => {
 			[auto],
 			undefined,
 			['missing-model'],
-			{ 'missing-model': { label: 'Missing Model' } },
+			{ 'missing-model': { label: 'Missing Model' } as IModelControlEntry },
 			true,
 			'1.100.0',
 			StateType.Idle,
@@ -532,5 +533,21 @@ suite('buildModelPickerItems', () => {
 		const description = adminItem.description;
 		assert.ok(description instanceof MarkdownString);
 		assert.ok(description.value.includes('https://aka.ms/github-copilot-settings'));
+	});
+
+	test('unavailable models keep indentation with blank icon', () => {
+		const auto = createAutoModel();
+		const items = callBuild([auto], {
+			recentModelIds: ['missing-model'],
+			controlModels: {
+				'missing-model': { label: 'Missing Model' } as IModelControlEntry,
+			},
+			isProUser: false,
+		});
+
+		const unavailable = getActionItems(items).find(a => a.label === 'Missing Model');
+		assert.ok(unavailable);
+		assert.strictEqual(unavailable.hideIcon, false);
+		assert.strictEqual(unavailable.group?.icon?.id, Codicon.blank.id);
 	});
 });
