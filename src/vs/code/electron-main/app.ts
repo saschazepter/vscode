@@ -1132,7 +1132,7 @@ export class CodeApplication extends Disposable {
 		// Utility Process Worker
 		services.set(IUtilityProcessWorkerMainService, new SyncDescriptor(UtilityProcessWorkerMainService, undefined, true));
 
-		// Copilot SDK (utility process host)
+		// Copilot SDK Utility Process
 		if (this.configurationService.getValue('application.useSessionsUtilityProcess')) {
 			services.set(ICopilotSdkMainService, new SyncDescriptor(CopilotSdkMainService, undefined, true));
 		}
@@ -1143,7 +1143,6 @@ export class CodeApplication extends Disposable {
 		// MCP
 		services.set(INativeMcpDiscoveryHelperService, new SyncDescriptor(NativeMcpDiscoveryHelperService));
 		services.set(IMcpGatewayService, new SyncDescriptor(McpGatewayService));
-
 
 		// Dev Only: CSS service (for ESM)
 		services.set(ICSSDevelopmentService, new SyncDescriptor(CSSDevelopmentService, undefined, true));
@@ -1295,7 +1294,7 @@ export class CodeApplication extends Disposable {
 		const utilityProcessWorkerChannel = ProxyChannel.fromService(accessor.get(IUtilityProcessWorkerMainService), disposables);
 		mainProcessElectronServer.registerChannel(ipcUtilityProcessWorkerChannelName, utilityProcessWorkerChannel);
 
-		// Copilot SDK (lazy - utility process only starts on first call)
+		// Copilot SDK Utility Process
 		if (this.configurationService.getValue('application.useSessionsUtilityProcess')) {
 			const copilotSdkMainService = accessor.get(ICopilotSdkMainService);
 			mainProcessElectronServer.registerChannel(CopilotSdkChannel, copilotSdkMainService.getServerChannel());
