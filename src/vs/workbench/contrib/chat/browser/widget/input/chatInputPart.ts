@@ -38,7 +38,6 @@ import { CodeEditorWidget } from '../../../../../../editor/browser/widget/codeEd
 import { EditorLayoutInfo, EditorOptions, IEditorOptions } from '../../../../../../editor/common/config/editorOptions.js';
 import { IDimension } from '../../../../../../editor/common/core/2d/dimension.js';
 import { IPosition } from '../../../../../../editor/common/core/position.js';
-import { IRange, Range } from '../../../../../../editor/common/core/range.js';
 import { isLocation } from '../../../../../../editor/common/languages.js';
 import { ITextModel } from '../../../../../../editor/common/model.js';
 import { IModelService } from '../../../../../../editor/common/services/model.js';
@@ -81,7 +80,7 @@ import { getSimpleCodeEditorWidgetOptions, getSimpleEditorOptions, setupSimpleEd
 import { InlineChatConfigKeys } from '../../../../inlineChat/common/inlineChat.js';
 import { IChatViewTitleActionContext } from '../../../common/actions/chatActions.js';
 import { ChatContextKeys } from '../../../common/actions/chatContextKeys.js';
-import { ChatRequestVariableSet, IChatRequestVariableEntry, isElementVariableEntry, isImageVariableEntry, isNotebookOutputVariableEntry, isPasteVariableEntry, isPromptFileVariableEntry, isPromptTextVariableEntry, isSCMHistoryItemChangeRangeVariableEntry, isSCMHistoryItemChangeVariableEntry, isSCMHistoryItemVariableEntry, isStringVariableEntry } from '../../../common/attachments/chatVariableEntries.js';
+import { ChatRequestVariableSet, IChatRequestVariableEntry, isElementVariableEntry, isImageVariableEntry, isNotebookOutputVariableEntry, isPasteVariableEntry, isPromptFileVariableEntry, isPromptTextVariableEntry, isSCMHistoryItemChangeRangeVariableEntry, isSCMHistoryItemChangeVariableEntry, isSCMHistoryItemVariableEntry } from '../../../common/attachments/chatVariableEntries.js';
 import { ChatMode, IChatMode, IChatModeService } from '../../../common/chatModes.js';
 import { IChatFollowup, IChatQuestionCarousel, IChatService, IChatSessionContext } from '../../../common/chatService/chatService.js';
 import { agentOptionId, IChatSessionProviderOptionGroup, IChatSessionProviderOptionItem, IChatSessionsService, isIChatSessionFileChange2, localChatSessionType } from '../../../common/chatSessionsService.js';
@@ -2440,43 +2439,6 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		}
 
 		this._indexOfLastOpenedContext = -1;
-	}
-
-	private isAttachmentAlreadyAttached(targetUri: URI | undefined, targetRange: IRange | undefined, targetHandle: number | undefined, attachments: IChatRequestVariableEntry[]): boolean {
-		return attachments.some((attachment) => {
-			let uri: URI | undefined;
-			let range: IRange | undefined;
-			let handle: number | undefined;
-
-			if (URI.isUri(attachment.value)) {
-				uri = attachment.value;
-			} else if (isLocation(attachment.value)) {
-				uri = attachment.value.uri;
-				range = attachment.value.range;
-			} else if (isStringVariableEntry(attachment)) {
-				uri = attachment.uri;
-				handle = attachment.handle;
-			}
-
-			if ((handle !== undefined && targetHandle === undefined) || (handle === undefined && targetHandle !== undefined)) {
-				return false;
-			}
-
-			if (handle !== undefined && targetHandle !== undefined && handle !== targetHandle) {
-				return false;
-			}
-
-			if (!uri || !isEqual(uri, targetUri)) {
-				return false;
-			}
-
-			// check if the exact range is already attached
-			if (targetRange) {
-				return range && Range.equalsRange(range, targetRange);
-			}
-
-			return true;
-		});
 	}
 
 	private handleAttachmentDeletion(e: KeyboardEvent | unknown, index: number, attachment: IChatRequestVariableEntry) {
