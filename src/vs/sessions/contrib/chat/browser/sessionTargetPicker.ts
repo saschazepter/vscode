@@ -230,25 +230,11 @@ export class IsolationModePicker extends Disposable {
 			: localize('isolationMode.folder', "Folder");
 		const modeIcon = this._isolationMode === 'worktree' ? Codicon.worktree : Codicon.folder;
 
-		// If no repository, worktree is not available — show only a static label
-		if (!this._repository) {
-			const modeAction = toAction({ id: 'isolationMode', label: modeLabel, run: () => { } });
-			const modeDropdown = this._renderDisposables.add(new LabeledDropdownMenuActionViewItem(
-				modeAction,
-				{ getActions: () => [] },
-				this.contextMenuService,
-				{ classNames: [...ThemeIcon.asClassNameArray(modeIcon)] }
-			));
-			const modeSlot = dom.append(this._dropdownContainer, dom.$('.sessions-chat-picker-slot'));
-			modeDropdown.render(modeSlot);
-			return;
-		}
-
 		const modeAction = toAction({ id: 'isolationMode', label: modeLabel, run: () => { } });
 		const modeDropdown = this._renderDisposables.add(new LabeledDropdownMenuActionViewItem(
 			modeAction,
 			{
-				getActions: () => [
+				getActions: () => this._repository ? [
 					toAction({
 						id: 'isolationMode.worktree',
 						label: localize('isolationMode.worktree', "Worktree"),
@@ -261,7 +247,7 @@ export class IsolationModePicker extends Disposable {
 						checked: this._isolationMode === 'folder',
 						run: () => this._setMode('folder'),
 					}),
-				],
+				] : [],
 			},
 			this.contextMenuService,
 			{ classNames: [...ThemeIcon.asClassNameArray(modeIcon)] }

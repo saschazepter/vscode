@@ -27,7 +27,7 @@ export interface INewSession {
 	setRepoUri(uri: URI): void;
 	setIsolationMode(mode: IsolationMode): void;
 	setBranch(branch: string | undefined): void;
-	setOption(optionId: string, value: IChatSessionProviderOptionItem): void;
+	setOption(optionId: string, value: IChatSessionProviderOptionItem | string): void;
 }
 
 const REPOSITORY_OPTION_ID = 'repository';
@@ -66,14 +66,14 @@ export class LocalNewSession extends Disposable implements INewSession {
 	setRepoUri(uri: URI): void {
 		this._repoUri = uri;
 		this._onDidChange.fire();
-		this._notifyOptionChange(REPOSITORY_OPTION_ID, uri.fsPath);
+		this.setOption(REPOSITORY_OPTION_ID, uri.fsPath);
 	}
 
 	setIsolationMode(mode: IsolationMode): void {
 		if (this._isolationMode !== mode) {
 			this._isolationMode = mode;
 			this._onDidChange.fire();
-			this._notifyOptionChange(ISOLATION_OPTION_ID, mode);
+			this.setOption(ISOLATION_OPTION_ID, mode);
 		}
 	}
 
@@ -81,15 +81,11 @@ export class LocalNewSession extends Disposable implements INewSession {
 		if (this._branch !== branch) {
 			this._branch = branch;
 			this._onDidChange.fire();
-			this._notifyOptionChange(BRANCH_OPTION_ID, branch ?? '');
+			this.setOption(BRANCH_OPTION_ID, branch ?? '');
 		}
 	}
 
-	setOption(_optionId: string, _value: IChatSessionProviderOptionItem): void {
-		// No-op for local sessions
-	}
-
-	private _notifyOptionChange(optionId: string, value: string): void {
+	setOption(optionId: string, value: IChatSessionProviderOptionItem | string): void {
 		this.chatSessionsService.notifySessionOptionsChange(
 			this.resource,
 			[{ optionId, value }]
@@ -136,10 +132,7 @@ export class RemoteNewSession extends Disposable implements INewSession {
 	setRepoUri(uri: URI): void {
 		this._repoUri = uri;
 		this._onDidChange.fire();
-		this.chatSessionsService.notifySessionOptionsChange(
-			this.resource,
-			[{ optionId: 'repository', value: uri.fsPath }]
-		).catch((err) => this.logService.error('Failed to notify extension of repo change:', err));
+		this.setOption('repository', uri.fsPath);
 	}
 
 	setIsolationMode(_mode: IsolationMode): void {
@@ -150,7 +143,7 @@ export class RemoteNewSession extends Disposable implements INewSession {
 		// No-op for remote sessions — branch is not relevant
 	}
 
-	setOption(optionId: string, value: IChatSessionProviderOptionItem): void {
+	setOption(optionId: string, value: IChatSessionProviderOptionItem | string): void {
 		this._onDidChange.fire();
 		this.chatSessionsService.notifySessionOptionsChange(
 			this.resource,
