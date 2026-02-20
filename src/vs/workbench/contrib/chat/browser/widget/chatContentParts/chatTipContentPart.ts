@@ -10,6 +10,7 @@ import { renderIcon } from '../../../../../../base/browser/ui/iconLabel/iconLabe
 import { Codicon } from '../../../../../../base/common/codicons.js';
 import { Emitter } from '../../../../../../base/common/event.js';
 import { Disposable, MutableDisposable } from '../../../../../../base/common/lifecycle.js';
+import { IMarkdownString } from '../../../../../../base/common/htmlContent.js';
 import { localize, localize2 } from '../../../../../../nls.js';
 import { getFlatContextMenuActions } from '../../../../../../platform/actions/browser/menuEntryActionViewItem.js';
 import { MenuWorkbenchToolBar } from '../../../../../../platform/actions/browser/toolbar.js';
@@ -18,9 +19,12 @@ import { IContextKey, IContextKeyService } from '../../../../../../platform/cont
 import { IContextMenuService } from '../../../../../../platform/contextview/browser/contextView.js';
 import { ICommandService } from '../../../../../../platform/commands/common/commands.js';
 import { IInstantiationService, ServicesAccessor } from '../../../../../../platform/instantiation/common/instantiation.js';
-import { IMarkdownRenderer } from '../../../../../../platform/markdown/browser/markdownRenderer.js';
+import { IMarkdownRenderer, openLinkFromMarkdown } from '../../../../../../platform/markdown/browser/markdownRenderer.js';
+import { IOpenerService } from '../../../../../../platform/opener/common/opener.js';
 import { ChatContextKeys } from '../../../common/actions/chatContextKeys.js';
+import { CHAT_SETUP_ACTION_ID } from '../../actions/chatActions.js';
 import { IChatTip, IChatTipService } from '../../chatTipService.js';
+import { ChatEntitlement, IChatEntitlementService } from '../../../../../services/chat/common/chatEntitlementService.js';
 
 const $ = dom.$;
 
@@ -43,6 +47,9 @@ export class ChatTipContentPart extends Disposable {
 		@IMenuService private readonly _menuService: IMenuService,
 		@IContextKeyService private readonly _contextKeyService: IContextKeyService,
 		@IInstantiationService private readonly _instantiationService: IInstantiationService,
+		@IOpenerService private readonly _openerService: IOpenerService,
+		@ICommandService private readonly _commandService: ICommandService,
+		@IChatEntitlementService private readonly _chatEntitlementService: IChatEntitlementService,
 	) {
 		super();
 
@@ -108,7 +115,9 @@ export class ChatTipContentPart extends Disposable {
 		this._toolbar.clear();
 
 		this.domNode.appendChild(renderIcon(Codicon.lightbulb));
-		const markdownContent = this._renderer.render(tip.content);
+		const markdownContent = this._renderer.render(tip.content, {
+			actionHandler: (link, md) => { this._handleTipAction(link, md); }
+		});
 		this._renderedContent.value = markdownContent;
 		this.domNode.appendChild(markdownContent.element);
 
@@ -127,6 +136,26 @@ export class ChatTipContentPart extends Disposable {
 			? localize('chatTipWithAction', "{0} Tab to reach the action.", textContent)
 			: textContent;
 		this.domNode.setAttribute('aria-label', ariaLabel);
+	}
+
+	private async _handleTipAction(link: string, mdStr: IMarkdownString): Promise<void> {
+		if (link.startsWith('command:') && this._shouldTriggerSetup()) {
+			const setupSucceeded = await this._commandService.executeCommand<boolean | undefined>(CHAT_SETUP_ACTION_ID);
+			if (!setupSucceeded) {
+				return;
+			}
+		}
+
+		await openLinkFromMarkdown(this._openerService, link, mdStr.isTrusted);
+	}
+
+	private _shouldTriggerSetup(): boolean {
+		const sentiment = this._chatEntitlementService.sentiment;
+		if (!sentiment?.installed) {
+			return true;
+		}
+
+		return this._chatEntitlementService.entitlement === ChatEntitlement.Unknown;
 	}
 }
 
