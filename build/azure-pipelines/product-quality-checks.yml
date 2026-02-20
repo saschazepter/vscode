@@ -1,7 +1,7 @@
 jobs:
   - job: Quality
     displayName: Quality Checks
-    timeoutInMinutes: 45
+    timeoutInMinutes: 20
     variables:
       - name: skipComponentGovernanceDetection
         value: true
@@ -57,7 +57,6 @@ jobs:
 
       - script: |
           set -e
-
           for i in {1..5}; do # try 5 times
             npm ci && break
             if [ $i -eq 5 ]; then
