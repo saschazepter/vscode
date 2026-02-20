@@ -231,11 +231,11 @@ export class IsolationModePicker extends Disposable {
 		const modeIcon = this._isolationMode === 'worktree' ? Codicon.worktree : Codicon.folder;
 		const isDisabled = !this._repository;
 
-		const modeAction = toAction({ id: 'isolationMode', label: modeLabel, enabled: !isDisabled, run: () => { } });
+		const modeAction = toAction({ id: 'isolationMode', label: modeLabel, run: () => { } });
 		const modeDropdown = this._renderDisposables.add(new LabeledDropdownMenuActionViewItem(
 			modeAction,
 			{
-				getActions: () => [
+				getActions: () => isDisabled ? [] : [
 					toAction({
 						id: 'isolationMode.worktree',
 						label: localize('isolationMode.worktree', "Worktree"),
@@ -255,6 +255,7 @@ export class IsolationModePicker extends Disposable {
 		));
 		const modeSlot = dom.append(this._dropdownContainer, dom.$('.sessions-chat-picker-slot'));
 		modeDropdown.render(modeSlot);
+		modeSlot.classList.toggle('disabled', isDisabled);
 	}
 
 	private _setMode(mode: IsolationMode): void {
