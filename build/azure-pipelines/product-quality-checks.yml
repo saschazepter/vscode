@@ -58,10 +58,33 @@ jobs:
       - script: |
           set -e
 
-          source ./build/azure-pipelines/linux/setup-env.sh
+          for i in {1..5}; do # try 5 times
+            npm ci && break
+            if [ $i -eq 5 ]; then
+              echo "Npm install failed too many times" >&2
+              exit 1
+            fi
+            echo "Npm install failed $i, trying again..."
+          done
+        workingDirectory: build
+        env:
+          GITHUB_TOKEN: "$(github-distro-mixin-password)"
+        displayName: Install build dependencies
+        condition: and(succeeded(), ne(variables.NODE_MODULES_RESTORED, 'true'))
 
-          # Run preinstall script before root dependencies are installed
-          # so that v8 headers are patched correctly for native modules.
+      - script: |
+          set -e
+          export VSCODE_SYSROOT_DIR=$(Build.SourcesDirectory)/.build/sysroots/glibc-2.28-gcc-8.5.0
+          SYSROOT_ARCH="x64" VSCODE_SYSROOT_PREFIX="-glibc-2.28-gcc-8.5.0" node -e 'import { getVSCodeSysroot } from "./build/linux/debian/install-sysroot.ts"; (async () => { await getVSCodeSysroot(process.env["SYSROOT_ARCH"]); })()'
+        env:
+          VSCODE_ARCH: x64
+          GITHUB_TOKEN: "$(github-distro-mixin-password)"
+        displayName: Download vscode sysroots
+
+      - script: |
+          set -e
+
+          source ./build/azure-pipelines/linux/setup-env.sh
           node build/npm/preinstall.ts
 
           for i in {1..5}; do # try 5 times
