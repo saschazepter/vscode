@@ -465,7 +465,7 @@ extends:
           jobs:
             - template: build/azure-pipelines/web/product-build-web.yml@self
 
-      - ${{ if eq(variables['VSCODE_PUBLISH'], 'true') }}:
+      - ${{ if eq(variables['VSCODE_PUBLISH'], true) }}:
         - stage: Publish
           dependsOn: []
           jobs:
