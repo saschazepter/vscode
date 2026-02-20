@@ -550,7 +550,6 @@ export class ModelPickerWidget extends Disposable {
 		const listOptions = {
 			showFilter: models.length >= 10,
 			filterPlaceholder: localize('chat.modelPicker.search', "Search models"),
-			filterPosition: 'top' as const,
 			focusFilterOnOpen: true,
 			filterInputClassName: 'minimal',
 			collapsedByDefault: new Set([ModelPickerSection.Other]),

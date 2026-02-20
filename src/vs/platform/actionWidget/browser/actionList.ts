@@ -351,13 +351,7 @@ export interface IActionListOptions {
 	 */
 	readonly minWidth?: number;
 
-	/**
-	 * Preferred placement for the filter input when shown.
-	 * - 'anchor' (default): closest to the anchor (top when below, bottom when above)
-	 * - 'top': always above the list
-	 * - 'bottom': always below the list
-	 */
-	readonly filterPosition?: 'anchor' | 'top' | 'bottom';
+
 
 	/**
 	 * When true and filtering is enabled, focuses the filter input when the list opens.
@@ -662,20 +656,7 @@ export class ActionList<T> extends Disposable {
 		return this._filterContainer;
 	}
 
-	/**
-	 * Returns the resolved filter placement based on the dropdown direction.
-	 * When shown above the anchor, filter is at the bottom (closest to anchor);
-	 * when shown below, filter is at the top.
-	 */
-	get filterPlacement(): 'top' | 'bottom' {
-		if (this._options?.filterPosition === 'top') {
-			return 'top';
-		}
-		if (this._options?.filterPosition === 'bottom') {
-			return 'bottom';
-		}
-		return this._showAbove ? 'bottom' : 'top';
-	}
+
 
 	get filterInput(): HTMLInputElement | undefined {
 		return this._filterInput;
@@ -872,12 +853,7 @@ export class ActionList<T> extends Disposable {
 
 		// Place filter container on the preferred side.
 		if (this._filterContainer && this._filterContainer.parentElement) {
-			const parent = this._filterContainer.parentElement;
-			if (this.filterPlacement === 'bottom') {
-				parent.appendChild(this._filterContainer);
-			} else {
-				parent.insertBefore(this._filterContainer, this.domNode);
-			}
+			this._filterContainer.parentElement.insertBefore(this._filterContainer, this.domNode);
 		}
 
 		return this._cachedMaxWidth;
