@@ -562,6 +562,9 @@ suite('Modal Editor Group', () => {
 		test('findGroup auto-closes modal when setting is not on', async () => {
 			const instantiationService = workbenchInstantiationService({ contextKeyService: instantiationService => instantiationService.createInstance(MockScopableContextKeyService) }, disposables);
 			instantiationService.invokeFunction(accessor => Registry.as<IEditorFactoryRegistry>(EditorExtensions.EditorFactory).start(accessor));
+			const configurationService = new TestConfigurationService();
+			await configurationService.setUserConfiguration('workbench.editor.useModal', 'off');
+			instantiationService.stub(IConfigurationService, configurationService);
 			const parts = await createEditorParts(instantiationService, disposables);
 			instantiationService.stub(IEditorGroupsService, parts);
 
