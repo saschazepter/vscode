@@ -14,6 +14,8 @@ import { Disposable, DisposableStore } from '../../../../base/common/lifecycle.j
 import { renderIcon } from '../../../../base/browser/ui/iconLabel/iconLabels.js';
 import { localize } from '../../../../nls.js';
 import { IContextMenuService } from '../../../../platform/contextview/browser/contextView.js';
+import { IActionWidgetService } from '../../../../platform/actionWidget/browser/actionWidget.js';
+import { ActionListItemKind, IActionListDelegate, IActionListItem } from '../../../../platform/actionWidget/browser/actionList.js';
 import { AgentSessionProviders } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessions.js';
 import { IGitRepository } from '../../../../workbench/contrib/git/common/gitService.js';
 import { INewSession } from './newSession.js';
@@ -223,17 +225,24 @@ export class IsolationModePicker extends Disposable {
 		this._renderDisposables.clear();
 		dom.clearNode(this._dropdownContainer);
 
-		// If no repository, only show "Folder" without a dropdown
-		if (!this._repository) {
-			const label = dom.append(this._dropdownContainer, dom.$('span.sessions-chat-dropdown-label'));
-			label.textContent = localize('isolationMode.folder', "Folder");
-			return;
-		}
-
 		const modeLabel = this._isolationMode === 'worktree'
 			? localize('isolationMode.worktree', "Worktree")
 			: localize('isolationMode.folder', "Folder");
 		const modeIcon = this._isolationMode === 'worktree' ? Codicon.worktree : Codicon.folder;
+
+		// If no repository, worktree is not available — show only a static label
+		if (!this._repository) {
+			const modeAction = toAction({ id: 'isolationMode', label: modeLabel, run: () => { } });
+			const modeDropdown = this._renderDisposables.add(new LabeledDropdownMenuActionViewItem(
+				modeAction,
+				{ getActions: () => [] },
+				this.contextMenuService,
+				{ classNames: [...ThemeIcon.asClassNameArray(modeIcon)] }
+			));
+			const modeSlot = dom.append(this._dropdownContainer, dom.$('.sessions-chat-picker-slot'));
+			modeDropdown.render(modeSlot);
+			return;
+		}
 
 		const modeAction = toAction({ id: 'isolationMode', label: modeLabel, run: () => { } });
 		const modeDropdown = this._renderDisposables.add(new LabeledDropdownMenuActionViewItem(
@@ -275,9 +284,16 @@ export class IsolationModePicker extends Disposable {
 
 // #region --- Branch Picker ---
 
+const COPILOT_WORKTREE_PREFIX = 'copilot-worktree-';
+
+interface IBranchItem {
+	readonly name: string;
+}
+
 /**
  * A self-contained widget for selecting a git branch.
- * Uses `IGitRepository.getRefs` to list local branches.
+ * Uses `IGitRepository.getRefs` to list local branches, grouped into
+ * "Copilot Worktrees" and "Branches" sections.
  * Writes the selected branch to the new session object.
  */
 export class BranchPicker extends Disposable {
@@ -292,14 +308,14 @@ export class BranchPicker extends Disposable {
 
 	private readonly _renderDisposables = this._register(new DisposableStore());
 	private _container: HTMLElement | undefined;
-	private _dropdownContainer: HTMLElement | undefined;
+	private _triggerElement: HTMLElement | undefined;
 
 	get selectedBranch(): string | undefined {
 		return this._selectedBranch;
 	}
 
 	constructor(
-		@IContextMenuService private readonly contextMenuService: IContextMenuService,
+		@IActionWidgetService private readonly actionWidgetService: IActionWidgetService,
 	) {
 		super();
 	}
@@ -328,16 +344,33 @@ export class BranchPicker extends Disposable {
 		}
 
 		this.setVisible(!!repository && this._branches.length > 0);
-		this._renderDropdown();
+		this._updateTriggerLabel();
 	}
 
 	/**
-	 * Renders the branch picker dropdown into the given container.
+	 * Renders the branch picker trigger into the given container.
 	 */
 	render(container: HTMLElement): void {
 		this._container = container;
-		this._dropdownContainer = dom.append(container, dom.$('.sessions-chat-local-mode-left'));
-		this._renderDropdown();
+		this._renderDisposables.clear();
+
+		const trigger = dom.append(container, dom.$('a.action-label'));
+		trigger.tabIndex = 0;
+		trigger.role = 'button';
+		this._triggerElement = trigger;
+		this._updateTriggerLabel();
+
+		this._renderDisposables.add(dom.addDisposableListener(trigger, dom.EventType.CLICK, (e) => {
+			dom.EventHelper.stop(e, true);
+			this.showPicker();
+		}));
+
+		this._renderDisposables.add(dom.addDisposableListener(trigger, dom.EventType.KEY_DOWN, (e) => {
+			if (e.key === 'Enter' || e.key === ' ') {
+				dom.EventHelper.stop(e, true);
+				this.showPicker();
+			}
+		}));
 	}
 
 	/**
@@ -349,35 +382,76 @@ export class BranchPicker extends Disposable {
 		}
 	}
 
-	private _renderDropdown(): void {
-		if (!this._dropdownContainer) {
+	/**
+	 * Shows the branch picker dropdown anchored to the trigger element.
+	 */
+	showPicker(): void {
+		if (!this._triggerElement || this.actionWidgetService.isVisible) {
 			return;
 		}
 
-		this._renderDisposables.clear();
-		dom.clearNode(this._dropdownContainer);
-
-		if (!this._repository || this._branches.length === 0) {
-			return;
-		}
-
-		const currentLabel = this._selectedBranch ?? localize('branchPicker.select', "Branch");
-		const branchAction = toAction({ id: 'branchPicker', label: currentLabel, run: () => { } });
-		const branchDropdown = this._renderDisposables.add(new LabeledDropdownMenuActionViewItem(
-			branchAction,
-			{
-				getActions: () => this._branches.map(branch => toAction({
-					id: `branch.${branch}`,
-					label: branch,
-					checked: this._selectedBranch === branch,
-					run: () => this._selectBranch(branch),
-				})),
+		const items = this._buildItems();
+		const triggerElement = this._triggerElement;
+		const delegate: IActionListDelegate<IBranchItem> = {
+			onSelect: (item) => {
+				this.actionWidgetService.hide();
+				this._selectBranch(item.name);
 			},
-			this.contextMenuService,
-			{ classNames: [...ThemeIcon.asClassNameArray(Codicon.gitBranch)] }
-		));
-		const slot = dom.append(this._dropdownContainer, dom.$('.sessions-chat-picker-slot'));
-		branchDropdown.render(slot);
+			onHide: () => { triggerElement.focus(); },
+		};
+
+		this.actionWidgetService.show<IBranchItem>(
+			'branchPicker',
+			false,
+			items,
+			delegate,
+			this._triggerElement,
+			undefined,
+			[],
+			{
+				getAriaLabel: (item) => item.name,
+				getWidgetAriaLabel: () => localize('branchPicker.ariaLabel', "Branch Picker"),
+			},
+			this._branches.length > 10 ? { showFilter: true, filterPlaceholder: localize('branchPicker.filter', "Filter branches...") } : undefined,
+		);
+	}
+
+	private _buildItems(): IActionListItem<IBranchItem>[] {
+		const items: IActionListItem<IBranchItem>[] = [];
+		const worktreeBranches = this._branches.filter(b => b.startsWith(COPILOT_WORKTREE_PREFIX));
+		const otherBranches = this._branches.filter(b => !b.startsWith(COPILOT_WORKTREE_PREFIX));
+
+		if (worktreeBranches.length > 0) {
+			items.push({
+				kind: ActionListItemKind.Header,
+				label: localize('branchPicker.worktrees', "Copilot Worktrees"),
+			});
+			for (const branch of worktreeBranches) {
+				items.push({
+					kind: ActionListItemKind.Action,
+					label: branch,
+					group: { title: '', icon: this._selectedBranch === branch ? Codicon.check : Codicon.blank },
+					item: { name: branch },
+				});
+			}
+		}
+
+		if (otherBranches.length > 0) {
+			items.push({
+				kind: ActionListItemKind.Header,
+				label: localize('branchPicker.branches', "Branches"),
+			});
+			for (const branch of otherBranches) {
+				items.push({
+					kind: ActionListItemKind.Action,
+					label: branch,
+					group: { title: '', icon: this._selectedBranch === branch ? Codicon.check : Codicon.blank },
+					item: { name: branch },
+				});
+			}
+		}
+
+		return items;
 	}
 
 	private _selectBranch(branch: string): void {
@@ -385,8 +459,20 @@ export class BranchPicker extends Disposable {
 			this._selectedBranch = branch;
 			this._newSession?.setBranch(branch);
 			this._onDidChange.fire(branch);
-			this._renderDropdown();
+			this._updateTriggerLabel();
 		}
+	}
+
+	private _updateTriggerLabel(): void {
+		if (!this._triggerElement) {
+			return;
+		}
+		dom.clearNode(this._triggerElement);
+		const label = this._selectedBranch ?? localize('branchPicker.select', "Branch");
+		dom.append(this._triggerElement, renderIcon(Codicon.gitBranch));
+		const labelSpan = dom.append(this._triggerElement, dom.$('span.sessions-chat-dropdown-label'));
+		labelSpan.textContent = label;
+		dom.append(this._triggerElement, renderIcon(Codicon.chevronDown));
 	}
 }
 

@@ -216,7 +216,9 @@ class NewChatWidget extends Disposable {
 		// Isolation mode and branch pickers (below the input, shown when Local target is selected)
 		const isolationContainer = dom.append(welcomeElement, dom.$('.chat-full-welcome-local-mode'));
 		this._isolationModePicker.render(isolationContainer);
-		this._branchPicker.render(isolationContainer);
+		dom.append(isolationContainer, dom.$('.sessions-chat-local-mode-spacer'));
+		const branchContainer = dom.append(isolationContainer, dom.$('.sessions-chat-local-mode-right'));
+		this._branchPicker.render(branchContainer);
 
 		// Render target buttons & extension pickers
 		this._renderOptionGroupPickers();
