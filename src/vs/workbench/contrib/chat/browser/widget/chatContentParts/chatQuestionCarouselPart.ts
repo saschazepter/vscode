@@ -25,6 +25,8 @@ import { ChatTreeItem } from '../../chat.js';
 import { Codicon } from '../../../../../../base/common/codicons.js';
 import { HoverPosition } from '../../../../../../base/browser/ui/hover/hoverWidget.js';
 import { IHoverService } from '../../../../../../platform/hover/browser/hover.js';
+import { IContextKey, IContextKeyService } from '../../../../../../platform/contextkey/common/contextkey.js';
+import { ChatContextKeys } from '../../../common/actions/chatContextKeys.js';
 import './media/chatQuestionCarousel.css';
 
 export interface IChatQuestionCarouselOptions {
@@ -65,6 +67,7 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 	 * that should be disposed when transitioning to summary view.
 	 */
 	private readonly _interactiveUIStore: MutableDisposable<DisposableStore> = this._register(new MutableDisposable());
+	private readonly _inChatQuestionCarouselContextKey: IContextKey<boolean>;
 
 	constructor(
 		public readonly carousel: IChatQuestionCarousel,
@@ -73,10 +76,16 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 		@IMarkdownRendererService private readonly _markdownRendererService: IMarkdownRendererService,
 		@IHoverService private readonly _hoverService: IHoverService,
 		@IAccessibilityService private readonly _accessibilityService: IAccessibilityService,
+		@IContextKeyService private readonly _contextKeyService: IContextKeyService,
 	) {
 		super();
 
 		this.domNode = dom.$('.chat-question-carousel-container');
+		this._inChatQuestionCarouselContextKey = ChatContextKeys.inChatQuestionCarousel.bindTo(this._contextKeyService);
+		const focusTracker = this._register(dom.trackFocus(this.domNode));
+		this._register(focusTracker.onDidFocus(() => this._inChatQuestionCarouselContextKey.set(true)));
+		this._register(focusTracker.onDidBlur(() => this._inChatQuestionCarouselContextKey.set(false)));
+		this._register({ dispose: () => this._inChatQuestionCarouselContextKey.reset() });
 
 		// Set up accessibility attributes for the carousel container
 		this.domNode.tabIndex = 0;
@@ -428,6 +437,24 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 	 */
 	public hasFocus(): boolean {
 		return dom.isAncestorOfActiveElement(this.domNode);
+	}
+
+	public navigateToPreviousQuestion(): boolean {
+		if (this._currentIndex <= 0) {
+			return false;
+		}
+
+		this.navigate(-1);
+		return true;
+	}
+
+	public navigateToNextQuestion(): boolean {
+		if (this._currentIndex >= this.carousel.questions.length - 1) {
+			return false;
+		}
+
+		this.navigate(1);
+		return true;
 	}
 
 	private renderCurrentQuestion(focusContainerForScreenReader: boolean = false): void {
