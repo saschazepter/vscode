@@ -1488,16 +1488,34 @@ export class LanguageModelsService implements ILanguageModelsService {
 	}
 
 	private async _fetchChatControlData(): Promise<void> {
-		const context = await this._requestService.request({ type: 'GET', url: this._chatControlUrl! }, CancellationToken.None);
+		this._logService.trace('[LM] Fetching chat control data from', this._chatControlUrl);
 
-		if (context.res.statusCode !== 200) {
-			throw new Error('Could not get chat control data.');
+		let context;
+		try {
+			context = await this._requestService.request({ type: 'GET', url: this._chatControlUrl! }, CancellationToken.None);
+		} catch (err) {
+			this._logService.warn('[LM] Failed to request chat control data', getErrorMessage(err));
+			return;
 		}
 
-		const result = await asJson<IChatControlResponse>(context);
+		if (context.res.statusCode !== 200) {
+			this._logService.warn(`[LM] Chat control data request failed with status ${context.res.statusCode}`);
+			return;
+		}
+
+		let result: IChatControlResponse | null;
+		try {
+			result = await asJson<IChatControlResponse>(context);
+		} catch (err) {
+			this._logService.warn('[LM] Failed to parse chat control response', getErrorMessage(err));
+			return;
+		}
+
+		this._logService.trace('[LM] Received chat control response', result ? Object.keys(result) : 'null');
 
 		if (!result || result.version !== 1) {
-			throw new Error('Unexpected chat control response.');
+			this._logService.warn('[LM] Unexpected chat control response version', result?.version);
+			return;
 		}
 
 		// Update restricted chat participants
@@ -1507,6 +1525,7 @@ export class LanguageModelsService implements ILanguageModelsService {
 
 		// Update models control manifest
 		if (result.models) {
+			this._logService.trace('[LM] Updating models control manifest', { freeCount: Object.keys(result.models.free ?? {}).length, paidCount: Object.keys(result.models.paid ?? {}).length });
 			this._setModelsControlManifest(result.models);
 			this._storageService.store(CHAT_MODELS_CONTROL_STORAGE_KEY, JSON.stringify(result.models), StorageScope.APPLICATION, StorageTarget.MACHINE);
 		}
