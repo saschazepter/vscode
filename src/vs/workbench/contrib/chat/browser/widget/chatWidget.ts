@@ -2394,11 +2394,6 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		// Expand directory attachments: extract images as binary entries
 		const resolvedImageVariables = await this._resolveDirectoryImageAttachments(requestInputs.attachedContext.asArray());
 
-		if (this.viewModel.sessionResource && !options.queue) {
-			// todo@connor4312: move chatAccessibilityService.acceptRequest to a refcount model to handle queue messages
-			this.chatAccessibilityService.acceptRequest(this._viewModel!.sessionResource);
-		}
-
 		const result = await this.chatService.sendRequest(this.viewModel.sessionResource, requestInputs.input, {
 			userSelectedModelId: this.input.currentLanguageModel,
 			location: this.location,
@@ -2420,6 +2415,11 @@ export class ChatWidget extends Disposable implements IChatWidget {
 
 		if (ChatSendResult.isRejected(result)) {
 			return;
+		}
+
+		if (this.viewModel.sessionResource && !options.queue) {
+			// todo@connor4312: move chatAccessibilityService.acceptRequest to a refcount model to handle queue messages
+			this.chatAccessibilityService.acceptRequest(this._viewModel!.sessionResource);
 		}
 
 		// visibility sync before firing events to hide the welcome view
