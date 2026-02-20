@@ -1376,22 +1376,6 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	}
 }
 
-/* Manage Models link style in model picker */
-.action-widget .monaco-list-row.action.manage-models-link {
-	color: var(--vscode-textLink-foreground) !important;
-}
-
-.action-widget .monaco-list-row.action.manage-models-link .codicon {
-	color: var(--vscode-textLink-foreground) !important;
-}
-
-.action-widget .monaco-list-row.action.manage-models-link:hover,
-.action-widget .monaco-list-row.action.manage-models-link.focused {
-	color: var(--vscode-textLink-activeForeground) !important;
-}
-
-
-
 .interactive-session .chat-input-toolbar .chat-input-picker-item .action-label,
 .interactive-session .chat-input-toolbar .chat-sessionPicker-item .action-label {
 	height: 16px;
