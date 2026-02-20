@@ -191,7 +191,9 @@ export class IsolationModePicker extends Disposable {
 	 */
 	setRepository(repository: IGitRepository | undefined): void {
 		this._repository = repository;
-		if (!repository && this._isolationMode === 'worktree') {
+		if (repository) {
+			this._setMode('worktree');
+		} else if (this._isolationMode === 'worktree') {
 			this._setMode('folder');
 		}
 		this._renderDropdown();
