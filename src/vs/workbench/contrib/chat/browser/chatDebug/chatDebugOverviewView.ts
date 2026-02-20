@@ -253,11 +253,12 @@ export class ChatDebugOverviewView extends Disposable {
 			this._onNavigate.fire(OverviewNavigation.Logs);
 		}));
 
-		const viewSubagentBtn = DOM.append(row, $('button.chat-debug-overview-action-button'));
-		DOM.append(viewSubagentBtn, $(`span${ThemeIcon.asCSSSelector(Codicon.typeHierarchy)}`));
-		viewSubagentBtn.append(localize('chatDebug.viewSubagentChart', "Subagent Flow"));
-		this.loadDisposables.add(DOM.addDisposableListener(viewSubagentBtn, DOM.EventType.CLICK, () => {
-			this._onNavigate.fire(OverviewNavigation.SubagentChart);
-		}));
+		// TODO: enable this once the subagent chart is ready
+		// const viewSubagentBtn = DOM.append(row, $('button.chat-debug-overview-action-button'));
+		// DOM.append(viewSubagentBtn, $(`span${ThemeIcon.asCSSSelector(Codicon.typeHierarchy)}`));
+		// viewSubagentBtn.append(localize('chatDebug.viewSubagentChart', "Subagent Flow"));
+		// this.loadDisposables.add(DOM.addDisposableListener(viewSubagentBtn, DOM.EventType.CLICK, () => {
+		// 	this._onNavigate.fire(OverviewNavigation.SubagentChart);
+		// }));
 	}
 }
