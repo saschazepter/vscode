@@ -48,7 +48,7 @@ export class ChatDebugServiceImpl extends Disposable implements IChatDebugServic
 		if (sessionId) {
 			return this._events.filter(e => e.sessionId === sessionId);
 		}
-		return this._events;
+		return this._events.slice();
 	}
 
 	getSessionIds(): readonly string[] {
