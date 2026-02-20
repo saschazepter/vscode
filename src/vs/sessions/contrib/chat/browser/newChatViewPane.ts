@@ -199,12 +199,8 @@ class NewChatWidget extends Disposable {
 		// Initialize model picker
 		this._initDefaultModel();
 
-		// Create initial session and open initial repository
+		// Create initial session
 		this._createNewSession();
-		const initialFolderUri = this._folderPicker.selectedFolderUri ?? this.workspaceContextService.getWorkspace().folders[0]?.uri;
-		if (initialFolderUri) {
-			this._openRepository(initialFolderUri);
-		}
 
 		// Reveal
 		welcomeElement.classList.add('revealed');
@@ -235,6 +231,11 @@ class NewChatWidget extends Disposable {
 		const currentModel = this._currentLanguageModel.get();
 		if (currentModel) {
 			session.setModelId(currentModel.identifier);
+		}
+
+		// Open repository for the session's repoUri
+		if (session.repoUri) {
+			this._openRepository(session.repoUri);
 		}
 
 		// Listen for session changes (e.g. extension-driven option updates for remote sessions)
