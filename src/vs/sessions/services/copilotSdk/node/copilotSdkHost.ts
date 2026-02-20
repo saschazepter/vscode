@@ -145,10 +145,15 @@ class CopilotSdkHost extends Disposable implements ICopilotSdkService {
 		try {
 			// Add a timeout - if start() hangs for more than 30s, something is wrong
 			const startPromise = this._client.start();
-			const timeoutPromise = new Promise<never>((_, reject) =>
-				setTimeout(() => reject(new Error('SDK client.start() timed out after 30 seconds')), 30000)
-			);
-			await Promise.race([startPromise, timeoutPromise]);
+			let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+			const timeoutPromise = new Promise<never>((_, reject) => {
+				timeoutHandle = setTimeout(() => reject(new Error('SDK client.start() timed out after 30 seconds')), 30000);
+			});
+			try {
+				await Promise.race([startPromise, timeoutPromise]);
+			} finally {
+				if (timeoutHandle) { clearTimeout(timeoutHandle); }
+			}
 			this._onProcessOutput.fire({ stream: 'stderr', data: `[SDK] Client started, state=${this._client.getState()}` });
 		} catch (startErr) {
 			const msg = startErr instanceof Error ? `${startErr.message}\n${startErr.stack}` : String(startErr);
@@ -350,9 +355,14 @@ class CopilotSdkHost extends Disposable implements ICopilotSdkService {
 
 	// --- Private helpers ---
 
+	private _startPromise: Promise<void> | undefined;
+
 	private async _ensureClient(): Promise<SdkClient> {
 		if (!this._client) {
-			await this.start();
+			if (!this._startPromise) {
+				this._startPromise = this.start().finally(() => { this._startPromise = undefined; });
+			}
+			await this._startPromise;
 		}
 		return this._client!;
 	}

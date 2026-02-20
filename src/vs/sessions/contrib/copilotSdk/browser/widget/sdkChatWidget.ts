@@ -138,8 +138,12 @@ export class SdkChatWidget extends Disposable {
 		// Right: send/abort buttons
 		const buttonGroup = dom.append(inputToolbar, $('.sdk-chat-input-buttons'));
 		this._sendBtn = dom.append(buttonGroup, $('button.sdk-chat-send-btn')) as HTMLButtonElement;
+		this._sendBtn.title = localize('sdkChat.send', "Send Message");
+		this._sendBtn.ariaLabel = this._sendBtn.title;
 		dom.append(this._sendBtn, $(`span${ThemeIcon.asCSSSelector(Codicon.arrowUp)}`)).classList.add('codicon');
 		this._abortBtn = dom.append(buttonGroup, $('button.sdk-chat-abort-btn')) as HTMLButtonElement;
+		this._abortBtn.title = localize('sdkChat.abort', "Stop Generation");
+		this._abortBtn.ariaLabel = this._abortBtn.title;
 		dom.append(this._abortBtn, $(`span${ThemeIcon.asCSSSelector(Codicon.debugStop)}`)).classList.add('codicon');
 		this._abortBtn.style.display = 'none';
 
@@ -223,19 +227,24 @@ export class SdkChatWidget extends Disposable {
 			this._logService.info('[SdkChatWidget] Initializing - calling sdk.start()...');
 			CopilotSdkDebugLog.instance?.addEntry('\u2192', 'widget.start', '');
 			await this._sdk.start();
+			if (this._store.isDisposed) { return; }
 			this._logService.info('[SdkChatWidget] sdk.start() completed successfully');
 			CopilotSdkDebugLog.instance?.addEntry('\u2190', 'widget.start', 'OK');
 
 			// Check auth status
 			try {
 				const auth = await this._sdk.getAuthStatus();
+				if (this._store.isDisposed) { return; }
 				CopilotSdkDebugLog.instance?.addEntry('\u2190', 'widget.authStatus', auth.isAuthenticated ? `${auth.login} (${auth.authType})` : 'not authenticated');
 			} catch { /* non-critical */ }
+
+			if (this._store.isDisposed) { return; }
 
 			// Load models
 			this._logService.info('[SdkChatWidget] Calling sdk.listModels()...');
 			CopilotSdkDebugLog.instance?.addEntry('\u2192', 'widget.listModels', '');
 			const models = await this._sdk.listModels();
+			if (this._store.isDisposed) { return; }
 			this._logService.info(`[SdkChatWidget] listModels returned ${models.length} models`);
 			CopilotSdkDebugLog.instance?.addEntry('\u2190', 'widget.listModels', `${models.length} models`);
 			this._populateModelSelect(models);
@@ -243,6 +252,7 @@ export class SdkChatWidget extends Disposable {
 			this._textarea.disabled = false;
 			this._sendBtn.disabled = false;
 		} catch (err) {
+			if (this._store.isDisposed) { return; }
 			const msg = err instanceof Error ? `${err.message}\n${err.stack}` : String(err);
 			this._logService.error(`[SdkChatWidget] Init failed: ${msg}`);
 			CopilotSdkDebugLog.instance?.addEntry('X', 'widget.init', msg);
@@ -370,6 +380,7 @@ export class SdkChatWidget extends Disposable {
 		if (!this._sessionId) { return; }
 		try {
 			const sessions = await this._sdk.listSessions();
+			if (this._store.isDisposed) { return; }
 			const meta = sessions.find(s => s.sessionId === this._sessionId);
 			if (meta) {
 				this._updateWorktreeBar(meta.workspacePath, meta.repository, meta.branch);
@@ -533,15 +544,17 @@ export class SdkChatWidget extends Disposable {
 				this._setStatus(localize('sdkChat.status.creating', "Creating session..."));
 				CopilotSdkDebugLog.instance?.addEntry('\u2192', 'widget.createSession', JSON.stringify({ model, workingDirectory }));
 				this._sessionId = await this._sdk.createSession({ model, streaming: true, workingDirectory });
+				if (this._store.isDisposed) { return; }
 				CopilotSdkDebugLog.instance?.addEntry('\u2190', 'widget.createSession', this._sessionId.substring(0, 8));
-
 			}
 
 			this._setStatus(localize('sdkChat.status.thinking', "Thinking..."));
 			CopilotSdkDebugLog.instance?.addEntry('\u2192', 'widget.send', prompt.substring(0, 80));
 			await this._sdk.send(this._sessionId, prompt);
+			if (this._store.isDisposed) { return; }
 			CopilotSdkDebugLog.instance?.addEntry('\u2190', 'widget.send', 'queued');
 		} catch (err) {
+			if (this._store.isDisposed) { return; }
 			this._logService.error('[SdkChatWidget] Send failed:', err);
 			this._setStreaming(false);
 			this._setStatus(localize('sdkChat.status.sendFailed', "Send failed"));
@@ -658,9 +671,11 @@ export class SdkChatWidget extends Disposable {
 		try {
 			CopilotSdkDebugLog.instance?.addEntry('\u2192', 'widget.loadSession', sessionId.substring(0, 8));
 			await this._sdk.resumeSession(sessionId, { streaming: true });
+			if (this._store.isDisposed) { return; }
 
 			// Update folder picker from session metadata
 			const sessions = await this._sdk.listSessions();
+			if (this._store.isDisposed) { return; }
 			const meta = sessions.find(s => s.sessionId === sessionId);
 			if (meta?.workspacePath) {
 				this._folderPath = meta.workspacePath;
@@ -676,6 +691,7 @@ export class SdkChatWidget extends Disposable {
 			}
 
 			const events = await this._sdk.getMessages(sessionId);
+			if (this._store.isDisposed) { return; }
 			CopilotSdkDebugLog.instance?.addEntry('\u2190', 'widget.loadSession', `${events.length} events`);
 
 			this._welcomeContainer.style.display = 'none';
@@ -689,6 +705,7 @@ export class SdkChatWidget extends Disposable {
 			this._setStreaming(false);
 			this._setStatus(localize('sdkChat.status.ready', "Ready"));
 		} catch (err) {
+			if (this._store.isDisposed) { return; }
 			this._logService.error(`[SdkChatWidget] Load session failed:`, err);
 			this._setStatus(localize('sdkChat.status.loadFailed', "Failed to load session"));
 		}

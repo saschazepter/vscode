@@ -307,6 +307,7 @@ registerWorkbenchContribution2(CopilotSdkDebugContribution.ID, CopilotSdkDebugCo
 
 // SDK debug panel (command palette action)
 let activeDebugBackdrop: HTMLElement | undefined;
+let activeDebugClose: (() => void) | undefined;
 registerAction2(class CopilotSdkDebugPanelAction extends Action2 {
 	constructor() {
 		super({
@@ -328,8 +329,8 @@ registerAction2(class CopilotSdkDebugPanelAction extends Action2 {
 		const container = layoutService.mainContainer;
 		const targetWindow = dom.getWindow(container);
 		if (activeDebugBackdrop) {
-			activeDebugBackdrop.remove();
-			activeDebugBackdrop = undefined;
+			// Fire the stored close function to properly dispose panel + listeners
+			activeDebugClose?.();
 			return;
 		}
 		const log = CopilotSdkDebugLog.instance;
@@ -348,8 +349,10 @@ registerAction2(class CopilotSdkDebugPanelAction extends Action2 {
 			panel.dispose();
 			backdrop.remove();
 			activeDebugBackdrop = undefined;
+			activeDebugClose = undefined;
 			targetWindow.document.removeEventListener('keydown', onKeyDown);
 		};
+		activeDebugClose = close;
 		const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') { close(); } };
 		backdrop.addEventListener('click', (e) => { if (e.target === backdrop) { close(); } });
 		targetWindow.document.addEventListener('keydown', onKeyDown);

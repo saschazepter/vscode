@@ -49,48 +49,54 @@ export class CopilotSdkMainService extends Disposable implements ICopilotSdkMain
 
 		this._logService.info(`[CopilotSdkMainService] Starting Copilot SDK utility process (logs: ${this._environmentMainService.logsHome.with({ scheme: Schemas.file }).fsPath})`);
 
-		this._connectionStore = new DisposableStore();
+		try {
+			this._connectionStore = new DisposableStore();
 
-		this._utilityProcess = new UtilityProcess(this._logService, NullTelemetryService, this._lifecycleMainService);
-		this._connectionStore.add(toDisposable(() => {
-			this._logService.info('[CopilotSdkMainService] Utility process disposed');
-			this._utilityProcess?.kill();
-			this._utilityProcess?.dispose();
-			this._utilityProcess = undefined;
-		}));
+			this._utilityProcess = new UtilityProcess(this._logService, NullTelemetryService, this._lifecycleMainService);
+			this._connectionStore.add(toDisposable(() => {
+				this._logService.info('[CopilotSdkMainService] Utility process disposed');
+				this._utilityProcess?.kill();
+				this._utilityProcess?.dispose();
+				this._utilityProcess = undefined;
+			}));
 
-		this._connectionStore.add(this._utilityProcess.onStdout(data => this._logService.info(`[CopilotSdkHost:stdout] ${data}`)));
-		this._connectionStore.add(this._utilityProcess.onStderr(data => this._logService.warn(`[CopilotSdkHost:stderr] ${data}`)));
-		this._connectionStore.add(this._utilityProcess.onExit(e => {
-			this._logService.error(`[CopilotSdkHost] Process exited with code ${e.code}`);
+			this._connectionStore.add(this._utilityProcess.onStdout(data => this._logService.info(`[CopilotSdkHost:stdout] ${data}`)));
+			this._connectionStore.add(this._utilityProcess.onStderr(data => this._logService.warn(`[CopilotSdkHost:stderr] ${data}`)));
+			this._connectionStore.add(this._utilityProcess.onExit(e => {
+				this._logService.error(`[CopilotSdkHost] Process exited with code ${e.code}`);
+				this._teardown();
+			}));
+			this._connectionStore.add(this._utilityProcess.onCrash(e => {
+				this._logService.error(`[CopilotSdkHost] Process crashed with code ${e.code}`);
+				this._teardown();
+			}));
+
+			this._utilityProcess.start({
+				type: 'copilotSdkHost',
+				name: 'copilot-sdk-host',
+				entryPoint: 'vs/sessions/services/copilotSdk/node/copilotSdkHost',
+				args: ['--logsPath', this._environmentMainService.logsHome.with({ scheme: Schemas.file }).fsPath, '--disable-gpu'],
+				env: {
+					...process.env as Record<string, string>,
+					VSCODE_ESM_ENTRYPOINT: 'vs/sessions/services/copilotSdk/node/copilotSdkHost',
+					VSCODE_PIPE_LOGGING: 'true',
+					VSCODE_VERBOSE_LOGGING: 'true',
+				},
+			});
+
+			const port = this._utilityProcess.connect();
+			const client = new MessagePortClient(port, 'copilotSdkHost');
+			this._connectionStore.add(client);
+
+			this._channel = client.getChannel(CopilotSdkChannel);
+			this._logService.info(`[CopilotSdkMainService] Channel '${CopilotSdkChannel}' acquired. Utility process ready.`);
+
+			return this._channel;
+		} catch (e) {
+			this._logService.error('[CopilotSdkMainService] Failed to start utility process', e);
 			this._teardown();
-		}));
-		this._connectionStore.add(this._utilityProcess.onCrash(e => {
-			this._logService.error(`[CopilotSdkHost] Process crashed with code ${e.code}`);
-			this._teardown();
-		}));
-
-		this._utilityProcess.start({
-			type: 'copilotSdkHost',
-			name: 'copilot-sdk-host',
-			entryPoint: 'vs/sessions/services/copilotSdk/node/copilotSdkHost',
-			args: ['--logsPath', this._environmentMainService.logsHome.with({ scheme: Schemas.file }).fsPath, '--disable-gpu'],
-			env: {
-				...process.env as Record<string, string>,
-				VSCODE_ESM_ENTRYPOINT: 'vs/sessions/services/copilotSdk/node/copilotSdkHost',
-				VSCODE_PIPE_LOGGING: 'true',
-				VSCODE_VERBOSE_LOGGING: 'true',
-			},
-		});
-
-		const port = this._utilityProcess.connect();
-		const client = new MessagePortClient(port, 'copilotSdkHost');
-		this._connectionStore.add(client);
-
-		this._channel = client.getChannel(CopilotSdkChannel);
-		this._logService.info(`[CopilotSdkMainService] Channel '${CopilotSdkChannel}' acquired. Utility process ready.`);
-
-		return this._channel;
+			throw e;
+		}
 	}
 
 	getServerChannel(): IServerChannel<string> {
