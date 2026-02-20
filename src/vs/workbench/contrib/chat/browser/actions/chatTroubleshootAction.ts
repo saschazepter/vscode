@@ -27,6 +27,7 @@ export function registerChatTroubleshootAction() {
 				title: localize2('chat.openDebugView.label', "Open Debug Panel"),
 				f1: true,
 				category: CHAT_CATEGORY,
+				precondition: ChatContextKeys.enabled,
 			});
 		}
 
