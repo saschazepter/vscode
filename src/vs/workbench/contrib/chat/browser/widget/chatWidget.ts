@@ -2423,15 +2423,11 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			return;
 		}
 
-		const responseCreatedPromise = sent.data.responseCreatedPromise.then(responseModel => {
-			// Only start accessibility progress once a real request/response model exists.
-			this.chatAccessibilityService.acceptRequest(submittedSessionResource);
-			return responseModel;
-		});
-
 		this._onDidSubmitAgent.fire({ agent: sent.data.agent, slashCommand: sent.data.slashCommand });
 		this.handleDelegationExitIfNeeded(this._lockedAgent, sent.data.agent);
-		responseCreatedPromise.then(() => {
+		sent.data.responseCreatedPromise.then(() => {
+			// Only start accessibility progress once a real request/response model exists.
+			this.chatAccessibilityService.acceptRequest(submittedSessionResource);
 			sent.data.responseCompletePromise.then(() => {
 				const responses = this.viewModel?.getItems().filter(isResponseVM);
 				const lastResponse = responses?.[responses.length - 1];
@@ -2446,7 +2442,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			});
 		});
 
-		return responseCreatedPromise;
+		return sent.data.responseCreatedPromise;
 	}
 
 	// Resolve images from directory attachments to send as additional variables.
