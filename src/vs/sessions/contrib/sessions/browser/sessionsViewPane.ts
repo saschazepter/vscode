@@ -240,7 +240,7 @@ export class AgenticSessionsViewPane extends ViewPane {
 		if (this._sdkSelectedSessionId === sessionId) {
 			this._sdkSelectedSessionId = undefined;
 			const chatPane = this.viewsService.getViewWithId<SdkChatViewPane>(SdkChatViewId);
-			chatPane?.widget?.newSession();
+			await chatPane?.widget?.newSession();
 		}
 		this._refreshSdkSessionList();
 	}
