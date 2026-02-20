@@ -78,8 +78,9 @@ export class BranchPicker extends Disposable {
 			.filter((name): name is string => !!name)
 			.filter(name => !name.includes(COPILOT_WORKTREE_PATTERN));
 
-		// Select main, master, or the first branch by default
-		const defaultBranch = this._branches.find(b => b === 'main')
+		// Select active branch, main, master, or the first branch by default
+		const defaultBranch = this._branches.find(b => b === repository.state.get().HEAD?.name)
+			?? this._branches.find(b => b === 'main')
 			?? this._branches.find(b => b === 'master')
 			?? this._branches[0];
 		if (defaultBranch) {

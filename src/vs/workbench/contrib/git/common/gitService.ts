@@ -4,8 +4,8 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { CancellationToken } from '../../../../base/common/cancellation.js';
-import { Event } from '../../../../base/common/event.js';
 import { IDisposable } from '../../../../base/common/lifecycle.js';
+import { IObservable } from '../../../../base/common/observable.js';
 import { URI } from '../../../../base/common/uri.js';
 import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
 
@@ -48,10 +48,8 @@ export interface GitUpstreamRef {
 export interface IGitRepository {
 	readonly rootUri: URI;
 
-	readonly state: GitRepositoryState;
-	setState(state: GitRepositoryState): void;
-
-	readonly onDidChangeState: Event<void>;
+	readonly state: IObservable<GitRepositoryState>;
+	updateState(state: GitRepositoryState): void;
 
 	getRefs(query: GitRefQuery, token?: CancellationToken): Promise<GitRef[]>;
 }
