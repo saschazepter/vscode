@@ -325,7 +325,7 @@ export function buildModelPickerItems(
 				id: 'manageModels',
 				enabled: true,
 				checked: false,
-				class: 'manage-models-action',
+				class: undefined,
 				tooltip: localize('chat.manageModels.tooltip', "Manage Language Models"),
 				label: localize('chat.manageModels', "Manage Models..."),
 				icon: Codicon.settingsGear,
@@ -336,7 +336,6 @@ export function buildModelPickerItems(
 			group: { title: '', icon: Codicon.settingsGear },
 			hideIcon: false,
 			section: otherModels.length ? ModelPickerSection.Other : undefined,
-			className: 'manage-models-link',
 			showAlways: true,
 		});
 	}
@@ -353,7 +352,7 @@ export function buildModelPickerItems(
 				id: 'moreModels',
 				enabled: true,
 				checked: false,
-				class: 'more-models-action',
+				class: undefined,
 				tooltip: isNewOrAnonymousUser ? localize('chat.moreModels.tooltip', "Add Language Models") : localize('chat.morePremiumModels.tooltip', "Add Premium Models"),
 				label: isNewOrAnonymousUser ? localize('chat.moreModels', "Add Language Models") : localize('chat.morePremiumModels', "Add Premium Models"),
 				icon: Codicon.add,
@@ -366,7 +365,6 @@ export function buildModelPickerItems(
 			label: isNewOrAnonymousUser ? localize('chat.moreModels', "Add Language Models") : localize('chat.morePremiumModels', "Add Premium Models"),
 			group: { title: '', icon: Codicon.add },
 			hideIcon: false,
-			className: 'manage-models-link',
 			showAlways: true,
 		});
 	}
