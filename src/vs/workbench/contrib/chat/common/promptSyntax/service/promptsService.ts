@@ -114,6 +114,7 @@ export interface IExtensionPromptPath extends IPromptPathBase {
 	readonly source: ExtensionAgentSourceType;
 	readonly name?: string;
 	readonly description?: string;
+	readonly when?: string;
 }
 export interface ILocalPromptPath extends IPromptPathBase {
 	readonly storage: PromptsStorage.local;
@@ -422,7 +423,7 @@ export interface IPromptsService extends IDisposable {
 	 * Internal: register a contributed file. Returns a disposable that removes the contribution.
 	 * Not intended for extension authors; used by contribution point handler.
 	 */
-	registerContributedFile(type: PromptsType, uri: URI, extension: IExtensionDescription, name: string | undefined, description: string | undefined): IDisposable;
+	registerContributedFile(type: PromptsType, uri: URI, extension: IExtensionDescription, name: string | undefined, description: string | undefined, when?: string): IDisposable;
 
 
 	getPromptLocationLabel(promptPath: IPromptPath): string;

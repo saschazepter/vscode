@@ -21,7 +21,7 @@ import { Disposable, DisposableStore, IDisposable, MutableDisposable, thenIfNotD
 import { ResourceSet } from '../../../../../base/common/map.js';
 import { Schemas } from '../../../../../base/common/network.js';
 import { filter } from '../../../../../base/common/objects.js';
-import { autorun, observableFromEvent, observableValue } from '../../../../../base/common/observable.js';
+import { autorun, derived, observableFromEvent, observableValue } from '../../../../../base/common/observable.js';
 import { basename, extUri, isEqual } from '../../../../../base/common/resources.js';
 import { MicrotaskDelay } from '../../../../../base/common/symbols.js';
 import { isDefined } from '../../../../../base/common/types.js';
@@ -326,6 +326,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 	}
 
 	private readonly _editingSession = observableValue<IChatEditingSession | undefined>(this, undefined);
+	private readonly _viewModelObs = observableFromEvent(this, this.onDidChangeViewModel, () => this.viewModel);
 
 	private parsedChatRequest: IParsedChatRequest | undefined;
 	get parsedInput() {
@@ -417,7 +418,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 
 		this.viewContext = viewContext ?? {};
 
-		const viewModelObs = observableFromEvent(this, this.onDidChangeViewModel, () => this.viewModel);
+		const viewModelObs = this._viewModelObs;
 
 		if (typeof location === 'object') {
 			this._location = location;
@@ -1018,7 +1019,6 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		const tipPart = store.add(this.instantiationService.createInstance(ChatTipContentPart,
 			tip,
 			renderer,
-			() => this.chatTipService.getWelcomeTip(this.contextKeyService),
 		));
 		tipContainer.appendChild(tipPart.domNode);
 		this._gettingStartedTipPartRef = tipPart;
@@ -2020,7 +2020,6 @@ export class ChatWidget extends Disposable implements IChatWidget {
 
 		this._codeBlockModelCollection.clear();
 
-		this.container.setAttribute('data-session-id', model.sessionId);
 		this.viewModel = this.instantiationService.createInstance(ChatViewModel, model, this._codeBlockModelCollection, undefined);
 
 		// Pass input model reference to input part for state syncing
@@ -2344,6 +2343,9 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		// discard them or need a prompt (as in `confirmPendingRequestsBeforeSend`)
 		// which could be a surprising behavior if the user finishes typing a steering
 		// request just as confirmation is triggered.
+		if (options.alwaysQueue) {
+			options.queue ??= ChatRequestQueueKind.Queued;
+		}
 		if (model.requestNeedsInput.get() && !model.getPendingRequests().length) {
 			this.chatService.cancelCurrentRequestForSession(this.viewModel.sessionResource);
 			options.queue ??= ChatRequestQueueKind.Queued;
@@ -2351,7 +2353,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		if (requestInProgress) {
 			options.queue ??= ChatRequestQueueKind.Queued;
 		}
-		if (!requestInProgress && !isEditing && !(await this.confirmPendingRequestsBeforeSend(model, options))) {
+		if (!options.alwaysQueue && !requestInProgress && !isEditing && !(await this.confirmPendingRequestsBeforeSend(model, options))) {
 			return;
 		}
 
@@ -2414,7 +2416,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			userSelectedModelId: this.input.currentLanguageModel,
 			location: this.location,
 			locationData: this._location.resolveData?.(),
-			parserContext: { selectedAgent: this._lastSelectedAgent, mode: this.input.currentModeKind },
+			parserContext: { selectedAgent: this._lastSelectedAgent, mode: this.input.currentModeKind, attachmentCapabilities: this._lastSelectedAgent?.capabilities ?? this.attachmentCapabilities },
 			attachedContext: requestInputs.attachedContext.asArray(),
 			resolvedVariables: resolvedImageVariables,
 			noCommandDetection: options?.noCommandDetection,
@@ -2422,6 +2424,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			modeInfo: this.input.currentModeInfo,
 			agentIdSilent: this._lockedAgent?.id,
 			queue: options?.queue,
+			pauseQueue: options?.alwaysQueue,
 		});
 
 		if (this.viewModel.sessionResource && !options.queue && ChatSendResult.isRejected(result)) {
@@ -2525,9 +2528,26 @@ export class ChatWidget extends Disposable implements IChatWidget {
 	}
 
 	getModeRequestOptions(): Partial<IChatSendRequestOptions> {
+		const sessionResource = this.viewModel?.sessionResource;
+		const userSelectedTools = this.input.selectedToolsModel.userSelectedTools;
+
+		let lastToolsSnapshot = userSelectedTools.get();
+
+		// When the widget has loaded a new session, return a snapshot of the tools for this session.
+		// Only sync with the tools model when this session is shown.
+		const scopedTools = derived(reader => {
+			const activeSession = this._viewModelObs.read(reader)?.sessionResource;
+			if (isEqual(activeSession, sessionResource)) {
+				const tools = userSelectedTools.read(reader);
+				lastToolsSnapshot = tools;
+				return tools;
+			}
+			return lastToolsSnapshot;
+		});
+
 		return {
 			modeInfo: this.input.currentModeInfo,
-			userSelectedTools: this.input.selectedToolsModel.userSelectedTools,
+			userSelectedTools: scopedTools,
 		};
 	}
 
