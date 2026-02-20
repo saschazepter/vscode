@@ -263,6 +263,10 @@ export class SessionsManagementService extends Disposable implements ISessionsMa
 	}
 
 	createNewSessionForTarget(target: AgentSessionProviders, sessionResource: URI, defaultRepoUri?: URI): INewSession {
+		// Create the underlying chat session resource
+		this.createNewPendingSession(sessionResource)
+			.catch((err) => this.logService.trace('Failed to create pending session:', err));
+
 		if (target === AgentSessionProviders.Background || target === AgentSessionProviders.Local) {
 			return new LocalNewSession(sessionResource, defaultRepoUri);
 		}

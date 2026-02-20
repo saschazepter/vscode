@@ -251,10 +251,6 @@ class NewChatWidget extends Disposable {
 		// Wire pickers to the new session
 		this._folderPicker.setNewSession(session);
 		this._isolationModePicker.setNewSession(session);
-
-		// Create the underlying chat session resource
-		this.sessionsManagementService.createNewPendingSession(resource)
-			.catch((err) => this.logService.trace('Failed to create pending session:', err));
 	}
 
 	// --- Editor ---
