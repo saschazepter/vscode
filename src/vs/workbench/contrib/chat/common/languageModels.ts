@@ -506,8 +506,8 @@ interface IChatControlResponse {
 	readonly version: number;
 	readonly restrictedChatParticipants: { [name: string]: string[] };
 	readonly models?: {
-		readonly free?: Record<string, { readonly id: string; readonly label: string; readonly featured?: boolean }>;
-		readonly paid?: Record<string, { readonly id: string; readonly label: string; readonly featured?: boolean; readonly minVSCodeVersion?: string }>;
+		readonly free?: Record<string, { readonly label: string; readonly featured?: boolean }>;
+		readonly paid?: Record<string, { readonly label: string; readonly featured?: boolean; readonly minVSCodeVersion?: string }>;
 	};
 }
 
@@ -1425,7 +1425,7 @@ export class LanguageModelsService implements ILanguageModelsService {
 		if (response?.free) {
 			const freeEntries = Array.isArray(response.free) ? response.free : Object.values(response.free);
 			for (const entry of freeEntries) {
-				if (!entry || !isObject(entry) || typeof entry.id !== 'string') {
+				if (!entry || !isObject(entry)) {
 					continue;
 				}
 				free[entry.id] = { label: entry.label, featured: entry.featured };
@@ -1435,7 +1435,7 @@ export class LanguageModelsService implements ILanguageModelsService {
 		if (response?.paid) {
 			const paidEntries = Array.isArray(response.paid) ? response.paid : Object.values(response.paid);
 			for (const entry of paidEntries) {
-				if (!entry || !isObject(entry) || typeof entry.id !== 'string') {
+				if (!entry || !isObject(entry)) {
 					continue;
 				}
 				paid[entry.id] = { label: entry.label, featured: entry.featured, minVSCodeVersion: entry.minVSCodeVersion };
@@ -1488,16 +1488,34 @@ export class LanguageModelsService implements ILanguageModelsService {
 	}
 
 	private async _fetchChatControlData(): Promise<void> {
-		const context = await this._requestService.request({ type: 'GET', url: this._chatControlUrl! }, CancellationToken.None);
+		this._logService.trace('[LM] Fetching chat control data from', this._chatControlUrl);
 
-		if (context.res.statusCode !== 200) {
-			throw new Error('Could not get chat control data.');
+		let context;
+		try {
+			context = await this._requestService.request({ type: 'GET', url: this._chatControlUrl! }, CancellationToken.None);
+		} catch (err) {
+			this._logService.warn('[LM] Failed to request chat control data', getErrorMessage(err));
+			return;
 		}
 
-		const result = await asJson<IChatControlResponse>(context);
+		if (context.res.statusCode !== 200) {
+			this._logService.warn(`[LM] Chat control data request failed with status ${context.res.statusCode}`);
+			return;
+		}
+
+		let result: IChatControlResponse | null;
+		try {
+			result = await asJson<IChatControlResponse>(context);
+		} catch (err) {
+			this._logService.warn('[LM] Failed to parse chat control response', getErrorMessage(err));
+			return;
+		}
+
+		this._logService.trace('[LM] Received chat control response', result ? Object.keys(result) : 'null');
 
 		if (!result || result.version !== 1) {
-			throw new Error('Unexpected chat control response.');
+			this._logService.warn('[LM] Unexpected chat control response version', result?.version);
+			return;
 		}
 
 		// Update restricted chat participants
@@ -1507,6 +1525,7 @@ export class LanguageModelsService implements ILanguageModelsService {
 
 		// Update models control manifest
 		if (result.models) {
+			this._logService.trace('[LM] Updating models control manifest', { freeCount: Object.keys(result.models.free ?? {}).length, paidCount: Object.keys(result.models.paid ?? {}).length });
 			this._setModelsControlManifest(result.models);
 			this._storageService.store(CHAT_MODELS_CONTROL_STORAGE_KEY, JSON.stringify(result.models), StorageScope.APPLICATION, StorageTarget.MACHINE);
 		}
