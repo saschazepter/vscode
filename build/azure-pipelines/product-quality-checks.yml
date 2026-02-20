@@ -28,7 +28,7 @@ jobs:
         condition: and(succeeded(), ne(variables['NPM_REGISTRY'], 'none'))
         displayName: Setup NPM Registry
 
-      - script: mkdir -p .build && node build/azure-pipelines/common/computeNodeModulesCacheKey.ts linux x64 $(node -p process.arch) > .build/packagelockhash
+      - script: mkdir -p .build && node build/azure-pipelines/common/computeNodeModulesCacheKey.ts quality $(node -p process.arch) > .build/packagelockhash
         displayName: Prepare node_modules cache key
 
       - task: Cache@2
@@ -70,45 +70,6 @@ jobs:
         env:
           GITHUB_TOKEN: "$(github-distro-mixin-password)"
         displayName: Install build dependencies
-        condition: and(succeeded(), ne(variables.NODE_MODULES_RESTORED, 'true'))
-
-      - script: |
-          set -e
-          SYSROOT_ARCH=x64
-          if [ "$SYSROOT_ARCH" == "x64" ]; then
-            SYSROOT_ARCH="amd64"
-          fi
-          export VSCODE_SYSROOT_DIR=$(Build.SourcesDirectory)/.build/sysroots/glibc-2.28-gcc-8.5.0
-          SYSROOT_ARCH="$SYSROOT_ARCH" VSCODE_SYSROOT_PREFIX="-glibc-2.28-gcc-8.5.0" node -e 'import { getVSCodeSysroot } from "./build/linux/debian/install-sysroot.ts"; (async () => { await getVSCodeSysroot(process.env["SYSROOT_ARCH"]); })()'
-        env:
-          VSCODE_ARCH: x64
-          GITHUB_TOKEN: "$(github-distro-mixin-password)"
-        displayName: Download vscode sysroots
-
-      - script: |
-          set -e
-
-          source ./build/azure-pipelines/linux/setup-env.sh
-
-          # Run preinstall script before root dependencies are installed
-          # so that v8 headers are patched correctly for native modules.
-          node build/npm/preinstall.ts
-
-          for i in {1..5}; do # try 5 times
-            npm ci && break
-            if [ $i -eq 5 ]; then
-              echo "Npm install failed too many times" >&2
-              exit 1
-            fi
-            echo "Npm install failed $i, trying again..."
-          done
-        env:
-          npm_config_arch: x64
-          VSCODE_ARCH: x64
-          ELECTRON_SKIP_BINARY_DOWNLOAD: 1
-          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
-          GITHUB_TOKEN: "$(github-distro-mixin-password)"
-        displayName: Install dependencies
         condition: and(succeeded(), ne(variables.NODE_MODULES_RESTORED, 'true'))
 
       - script: node build/azure-pipelines/distro/mixin-npm.ts
