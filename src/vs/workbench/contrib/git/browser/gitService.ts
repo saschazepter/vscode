@@ -3,7 +3,6 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Sequencer } from '../../../../base/common/async.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { BugIndicatingError } from '../../../../base/common/errors.js';
@@ -15,7 +14,6 @@ export class GitService extends Disposable implements IGitService {
 	declare readonly _serviceBrand: undefined;
 
 	private _delegate: IGitExtensionDelegate | undefined;
-	private readonly _openRepositorySequencer = new Sequencer();
 
 	get repositories(): Iterable<IGitRepository> {
 		return this._delegate?.repositories ?? [];
@@ -37,13 +35,11 @@ export class GitService extends Disposable implements IGitService {
 	}
 
 	async openRepository(uri: URI): Promise<IGitRepository | undefined> {
-		return this._openRepositorySequencer.queue(async () => {
-			if (!this._delegate) {
-				return undefined;
-			}
+		if (!this._delegate) {
+			return undefined;
+		}
 
-			return this._delegate.openRepository(uri);
-		});
+		return this._delegate.openRepository(uri);
 	}
 }
 

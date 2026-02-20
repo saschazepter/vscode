@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { CancellationToken } from '../../../base/common/cancellation.js';
+import { Sequencer } from '../../../base/common/async.js'; import { CancellationToken } from '../../../base/common/cancellation.js';
 import { Disposable } from '../../../base/common/lifecycle.js';
 import { ResourceMap } from '../../../base/common/map.js';
 import { URI } from '../../../base/common/uri.js';
@@ -38,6 +38,7 @@ function toGitRepositoryState(dto: GitRepositoryStateDto | undefined): GitReposi
 @extHostNamedCustomer(MainContext.MainThreadGitExtension)
 export class MainThreadGitExtensionService extends Disposable implements MainThreadGitExtensionShape, IGitExtensionDelegate {
 	private readonly _proxy: ExtHostGitExtensionShape;
+	private readonly _openRepositorySequencer = new Sequencer();
 
 	private _repositoryHandles = new ResourceMap<number>();
 	private _repositories = new Map<number, IGitRepository>();
@@ -73,34 +74,36 @@ export class MainThreadGitExtensionService extends Disposable implements MainThr
 	}
 
 	async openRepository(uri: URI): Promise<IGitRepository | undefined> {
-		// Check if we already have a repository for the given URI
-		const existingRepository = this._getRepositoryByUri(uri);
-		if (existingRepository) {
-			return existingRepository;
-		}
+		return this._openRepositorySequencer.queue(async () => {
+			// Check if we already have a repository for the given URI
+			const existingRepository = this._getRepositoryByUri(uri);
+			if (existingRepository) {
+				return existingRepository;
+			}
 
-		// Open the repository
-		const result = await this._proxy.$openRepository(uri);
-		if (!result) {
-			return undefined;
-		}
+			// Open the repository
+			const result = await this._proxy.$openRepository(uri);
+			if (!result) {
+				return undefined;
+			}
 
-		const repositoryRootUri = URI.revive(result.rootUri);
+			const repositoryRootUri = URI.revive(result.rootUri);
 
-		// Check if we already have a repository for the given root
-		const existingRepositoryForRoot = this._getRepositoryByUri(repositoryRootUri);
-		if (existingRepositoryForRoot) {
-			return existingRepositoryForRoot;
-		}
+			// Check if we already have a repository for the given root
+			const existingRepositoryForRoot = this._getRepositoryByUri(repositoryRootUri);
+			if (existingRepositoryForRoot) {
+				return existingRepositoryForRoot;
+			}
 
-		// Create a new repository and store it in the maps
-		const state = toGitRepositoryState(result.state);
-		const repository = new GitRepository(this, repositoryRootUri, state);
+			// Create a new repository and store it in the maps
+			const state = toGitRepositoryState(result.state);
+			const repository = new GitRepository(this, repositoryRootUri, state);
 
-		this._repositories.set(result.handle, repository);
-		this._repositoryHandles.set(repositoryRootUri, result.handle);
+			this._repositories.set(result.handle, repository);
+			this._repositoryHandles.set(repositoryRootUri, result.handle);
 
-		return repository;
+			return repository;
+		});
 	}
 
 	async getRefs(root: URI, query: GitRefQuery, token?: CancellationToken): Promise<GitRef[]> {
