@@ -8,7 +8,7 @@ import { CancellationToken } from '../../../base/common/cancellation.js';
 import { Emitter } from '../../../base/common/event.js';
 import { Disposable, DisposableStore, toDisposable } from '../../../base/common/lifecycle.js';
 import { ExtHostChatDebugShape, IChatDebugEventDto, IChatDebugResolvedEventContentDto, MainContext, MainThreadChatDebugShape } from './extHost.protocol.js';
-import { ChatDebugEventMessageContent, ChatDebugEventTextContent, ChatDebugGenericEvent, ChatDebugMessageContentType, ChatDebugModelTurnEvent, ChatDebugSubagentInvocationEvent, ChatDebugToolCallEvent, ChatDebugToolCallResult, ChatDebugUserMessageEvent, ChatDebugAgentResponseEvent } from './extHostTypes.js';
+import { ChatDebugMessageContentType, ChatDebugToolCallResult } from './extHostTypes.js';
 import { IExtHostRpcService } from './extHostRpcService.js';
 
 export class ExtHostChatDebug extends Disposable implements ExtHostChatDebugShape {
@@ -117,68 +117,9 @@ export class ExtHostChatDebug extends Disposable implements ExtHostChatDebugShap
 			parentEventId: event.parentEventId,
 		};
 
-		if (event instanceof ChatDebugToolCallEvent) {
-			return {
-				...base,
-				kind: 'toolCall',
-				toolName: event.toolName,
-				toolCallId: event.toolCallId,
-				input: event.input,
-				output: event.output,
-				result: event.result === ChatDebugToolCallResult.Success ? 'success'
-					: event.result === ChatDebugToolCallResult.Error ? 'error'
-						: undefined,
-				durationInMillis: event.durationInMillis,
-			};
-		} else if (event instanceof ChatDebugModelTurnEvent) {
-			return {
-				...base,
-				kind: 'modelTurn',
-				model: event.model,
-				inputTokens: event.inputTokens,
-				outputTokens: event.outputTokens,
-				totalTokens: event.totalTokens,
-				cost: event.cost,
-				durationInMillis: event.durationInMillis,
-			};
-		} else if (event instanceof ChatDebugGenericEvent) {
-			return {
-				...base,
-				kind: 'generic',
-				name: event.name,
-				details: event.details,
-				level: event.level,
-				category: event.category,
-			};
-		} else if (event instanceof ChatDebugSubagentInvocationEvent) {
-			return {
-				...base,
-				kind: 'subagentInvocation',
-				agentName: event.agentName,
-				description: event.description,
-				status: event.status,
-				durationInMillis: event.durationInMillis,
-				toolCallCount: event.toolCallCount,
-				modelTurnCount: event.modelTurnCount,
-			};
-		} else if (event instanceof ChatDebugUserMessageEvent) {
-			return {
-				...base,
-				kind: 'userMessage',
-				message: event.message,
-				sections: event.sections.map(s => ({ name: s.name, content: s.content })),
-			};
-		} else if (event instanceof ChatDebugAgentResponseEvent) {
-			return {
-				...base,
-				kind: 'agentResponse',
-				message: event.message,
-				sections: event.sections.map(s => ({ name: s.name, content: s.content })),
-			};
-		}
-
-		// Discriminant fallback: if instanceof fails (e.g. extension bundles its
-		// own copy of the API types), use the _kind property set by constructors.
+		// Use the _kind discriminant set by all event class constructors.
+		// This works both for direct instances and when extensions bundle
+		// their own copy of the API types (where instanceof would fail).
 		const kind = (event as { _kind?: string })._kind;
 		switch (kind) {
 			case 'toolCall': {
@@ -251,18 +192,19 @@ export class ExtHostChatDebug extends Disposable implements ExtHostChatDebugShap
 					sections: e.sections.map(s => ({ name: s.name, content: s.content })),
 				};
 			}
+			default: {
+				// Final fallback: treat as generic
+				const generic = event as vscode.ChatDebugGenericEvent;
+				return {
+					...base,
+					kind: 'generic',
+					name: generic.name ?? '',
+					details: generic.details,
+					level: generic.level ?? 1,
+					category: generic.category,
+				};
+			}
 		}
-
-		// Final fallback: treat as generic
-		const generic = event as vscode.ChatDebugGenericEvent;
-		return {
-			...base,
-			kind: 'generic',
-			name: generic.name ?? '',
-			details: generic.details,
-			level: generic.level ?? 1,
-			category: generic.category,
-		};
 	}
 
 	async $resolveChatDebugLogEvent(_handle: number, eventId: string, token: CancellationToken): Promise<IChatDebugResolvedEventContentDto | undefined> {
@@ -273,68 +215,42 @@ export class ExtHostChatDebug extends Disposable implements ExtHostChatDebugShap
 		if (!result) {
 			return undefined;
 		}
-		if (result instanceof ChatDebugEventTextContent) {
-			return { kind: 'text', value: result.value };
-		}
-		if (result instanceof ChatDebugEventMessageContent) {
-			return {
-				kind: 'message',
-				type: result.type === ChatDebugMessageContentType.User ? 'user' : 'agent',
-				message: result.message,
-				sections: result.sections.map(s => ({ name: s.name, content: s.content })),
-			};
-		}
-		// Extensions may return ChatDebugUserMessageEvent / ChatDebugAgentResponseEvent
-		// from resolveChatDebugLogEvent - convert them to message content DTOs.
-		if (result instanceof ChatDebugUserMessageEvent) {
-			return {
-				kind: 'message',
-				type: 'user',
-				message: result.message,
-				sections: result.sections.map(s => ({ name: s.name, content: s.content })),
-			};
-		}
-		if (result instanceof ChatDebugAgentResponseEvent) {
-			return {
-				kind: 'message',
-				type: 'agent',
-				message: result.message,
-				sections: result.sections.map(s => ({ name: s.name, content: s.content })),
-			};
-		}
-		// Discriminant fallback for bundled types
+
+		// Use the _kind discriminant set by all content class constructors.
 		const kind = (result as { _kind?: string })._kind;
-		if (kind === 'text') {
-			return { kind: 'text', value: (result as vscode.ChatDebugEventTextContent).value };
+		switch (kind) {
+			case 'text':
+				return { kind: 'text', value: (result as vscode.ChatDebugEventTextContent).value };
+			case 'messageContent': {
+				const msg = result as vscode.ChatDebugEventMessageContent;
+				return {
+					kind: 'message',
+					type: msg.type === ChatDebugMessageContentType.User ? 'user' : 'agent',
+					message: msg.message,
+					sections: msg.sections.map(s => ({ name: s.name, content: s.content })),
+				};
+			}
+			case 'userMessage': {
+				const msg = result as vscode.ChatDebugUserMessageEvent;
+				return {
+					kind: 'message',
+					type: 'user',
+					message: msg.message,
+					sections: msg.sections.map(s => ({ name: s.name, content: s.content })),
+				};
+			}
+			case 'agentResponse': {
+				const msg = result as vscode.ChatDebugAgentResponseEvent;
+				return {
+					kind: 'message',
+					type: 'agent',
+					message: msg.message,
+					sections: msg.sections.map(s => ({ name: s.name, content: s.content })),
+				};
+			}
+			default:
+				return undefined;
 		}
-		if (kind === 'messageContent') {
-			const msg = result as vscode.ChatDebugEventMessageContent;
-			return {
-				kind: 'message',
-				type: msg.type === ChatDebugMessageContentType.User ? 'user' : 'agent',
-				message: msg.message,
-				sections: msg.sections.map(s => ({ name: s.name, content: s.content })),
-			};
-		}
-		if (kind === 'userMessage') {
-			const msg = result as vscode.ChatDebugUserMessageEvent;
-			return {
-				kind: 'message',
-				type: 'user',
-				message: msg.message,
-				sections: msg.sections.map(s => ({ name: s.name, content: s.content })),
-			};
-		}
-		if (kind === 'agentResponse') {
-			const msg = result as vscode.ChatDebugAgentResponseEvent;
-			return {
-				kind: 'message',
-				type: 'agent',
-				message: msg.message,
-				sections: msg.sections.map(s => ({ name: s.name, content: s.content })),
-			};
-		}
-		return undefined;
 	}
 
 	override dispose(): void {

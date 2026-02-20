@@ -1,0 +1,441 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+import assert from 'assert';
+import { CancellationToken, CancellationTokenSource } from '../../../../../base/common/cancellation.js';
+import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
+import { ChatDebugLogLevel, IChatDebugEvent, IChatDebugGenericEvent, IChatDebugLogProvider, IChatDebugModelTurnEvent, IChatDebugResolvedEventContent, IChatDebugToolCallEvent } from '../../common/chatDebugService.js';
+import { ChatDebugServiceImpl } from '../../common/chatDebugServiceImpl.js';
+
+suite('ChatDebugServiceImpl', () => {
+	const disposables = ensureNoDisposablesAreLeakedInTestSuite();
+
+	let service: ChatDebugServiceImpl;
+
+	setup(() => {
+		service = disposables.add(new ChatDebugServiceImpl());
+	});
+
+	suite('addEvent and getEvents', () => {
+		test('should add and retrieve events', () => {
+			const event: IChatDebugGenericEvent = {
+				kind: 'generic',
+				sessionId: 'session-1',
+				created: new Date(),
+				name: 'test-event',
+				level: ChatDebugLogLevel.Info,
+			};
+
+			service.addEvent(event);
+
+			assert.deepStrictEqual(service.getEvents(), [event]);
+		});
+
+		test('should filter events by sessionId', () => {
+			const event1: IChatDebugGenericEvent = {
+				kind: 'generic',
+				sessionId: 'session-1',
+				created: new Date(),
+				name: 'event-1',
+				level: ChatDebugLogLevel.Info,
+			};
+			const event2: IChatDebugGenericEvent = {
+				kind: 'generic',
+				sessionId: 'session-2',
+				created: new Date(),
+				name: 'event-2',
+				level: ChatDebugLogLevel.Warning,
+			};
+
+			service.addEvent(event1);
+			service.addEvent(event2);
+
+			assert.deepStrictEqual(service.getEvents('session-1'), [event1]);
+			assert.deepStrictEqual(service.getEvents('session-2'), [event2]);
+			assert.strictEqual(service.getEvents().length, 2);
+		});
+
+		test('should fire onDidAddEvent when event is added', () => {
+			const firedEvents: IChatDebugEvent[] = [];
+			disposables.add(service.onDidAddEvent(e => firedEvents.push(e)));
+
+			const event: IChatDebugGenericEvent = {
+				kind: 'generic',
+				sessionId: 'session-1',
+				created: new Date(),
+				name: 'test',
+				level: ChatDebugLogLevel.Info,
+			};
+			service.addEvent(event);
+
+			assert.deepStrictEqual(firedEvents, [event]);
+		});
+
+		test('should handle different event kinds', () => {
+			const toolCall: IChatDebugToolCallEvent = {
+				kind: 'toolCall',
+				sessionId: 'session-1',
+				created: new Date(),
+				toolName: 'readFile',
+				toolCallId: 'call-1',
+				input: '{"path": "/foo.ts"}',
+				output: 'file contents',
+				result: 'success',
+				durationInMillis: 42,
+			};
+			const modelTurn: IChatDebugModelTurnEvent = {
+				kind: 'modelTurn',
+				sessionId: 'session-1',
+				created: new Date(),
+				model: 'gpt-4',
+				inputTokens: 100,
+				outputTokens: 50,
+				totalTokens: 150,
+				cost: 0.003,
+				durationInMillis: 1200,
+			};
+
+			service.addEvent(toolCall);
+			service.addEvent(modelTurn);
+
+			const events = service.getEvents('session-1');
+			assert.strictEqual(events.length, 2);
+			assert.strictEqual(events[0].kind, 'toolCall');
+			assert.strictEqual(events[1].kind, 'modelTurn');
+		});
+	});
+
+	suite('log', () => {
+		test('should create a generic event with defaults', () => {
+			const firedEvents: IChatDebugEvent[] = [];
+			disposables.add(service.onDidAddEvent(e => firedEvents.push(e)));
+
+			service.log('session-1', 'Some name', 'Some details');
+
+			assert.strictEqual(firedEvents.length, 1);
+			const event = firedEvents[0];
+			assert.strictEqual(event.kind, 'generic');
+			assert.strictEqual(event.sessionId, 'session-1');
+			assert.strictEqual((event as IChatDebugGenericEvent).name, 'Some name');
+			assert.strictEqual((event as IChatDebugGenericEvent).details, 'Some details');
+			assert.strictEqual((event as IChatDebugGenericEvent).level, ChatDebugLogLevel.Info);
+		});
+
+		test('should accept custom level and options', () => {
+			const firedEvents: IChatDebugEvent[] = [];
+			disposables.add(service.onDidAddEvent(e => firedEvents.push(e)));
+
+			service.log('session-1', 'warning-event', 'oh no', ChatDebugLogLevel.Warning, {
+				id: 'my-id',
+				category: 'testing',
+				parentEventId: 'parent-1',
+			});
+
+			const event = firedEvents[0] as IChatDebugGenericEvent;
+			assert.strictEqual(event.level, ChatDebugLogLevel.Warning);
+			assert.strictEqual(event.id, 'my-id');
+			assert.strictEqual(event.category, 'testing');
+			assert.strictEqual(event.parentEventId, 'parent-1');
+		});
+	});
+
+	suite('getSessionIds', () => {
+		test('should return unique session IDs', () => {
+			service.addEvent({ kind: 'generic', sessionId: 'a', created: new Date(), name: 'e1', level: ChatDebugLogLevel.Info });
+			service.addEvent({ kind: 'generic', sessionId: 'b', created: new Date(), name: 'e2', level: ChatDebugLogLevel.Info });
+			service.addEvent({ kind: 'generic', sessionId: 'a', created: new Date(), name: 'e3', level: ChatDebugLogLevel.Info });
+
+			const ids = service.getSessionIds();
+			assert.deepStrictEqual([...ids].sort(), ['a', 'b']);
+		});
+
+		test('should return empty array when no events', () => {
+			assert.deepStrictEqual(service.getSessionIds(), []);
+		});
+	});
+
+	suite('clear and clearSession', () => {
+		test('should clear all events', () => {
+			service.addEvent({ kind: 'generic', sessionId: 'a', created: new Date(), name: 'e', level: ChatDebugLogLevel.Info });
+			service.addEvent({ kind: 'generic', sessionId: 'b', created: new Date(), name: 'e', level: ChatDebugLogLevel.Info });
+
+			service.clear();
+
+			assert.strictEqual(service.getEvents().length, 0);
+		});
+
+		test('should clear only events for a specific session', () => {
+			service.addEvent({ kind: 'generic', sessionId: 'a', created: new Date(), name: 'keep', level: ChatDebugLogLevel.Info });
+			service.addEvent({ kind: 'generic', sessionId: 'b', created: new Date(), name: 'remove', level: ChatDebugLogLevel.Info });
+
+			service.clearSession('b');
+
+			const events = service.getEvents();
+			assert.strictEqual(events.length, 1);
+			assert.strictEqual(events[0].sessionId, 'a');
+		});
+	});
+
+	suite('MAX_EVENTS cap', () => {
+		test('should evict oldest events when exceeding cap', () => {
+			// The max is 10_000. Add more than that and verify trimming.
+			// We'll test with a smaller count by adding events and checking boundary behavior.
+			for (let i = 0; i < 10_001; i++) {
+				service.addEvent({ kind: 'generic', sessionId: 'session', created: new Date(), name: `event-${i}`, level: ChatDebugLogLevel.Info });
+			}
+
+			const events = service.getEvents();
+			assert.ok(events.length <= 10_000, 'Should not exceed MAX_EVENTS');
+			// The first event should have been evicted
+			assert.ok(!(events as IChatDebugGenericEvent[]).find(e => e.name === 'event-0'), 'Event-0 should have been evicted');
+			// The last event should be present
+			assert.ok((events as IChatDebugGenericEvent[]).find(e => e.name === 'event-10000'), 'Last event should be present');
+		});
+	});
+
+	suite('activeSessionId and activeViewHint', () => {
+		test('should default to undefined', () => {
+			assert.strictEqual(service.activeSessionId, undefined);
+			assert.strictEqual(service.activeViewHint, undefined);
+		});
+
+		test('should be settable', () => {
+			service.activeSessionId = 'session-1';
+			service.activeViewHint = 'logs';
+
+			assert.strictEqual(service.activeSessionId, 'session-1');
+			assert.strictEqual(service.activeViewHint, 'logs');
+		});
+	});
+
+	suite('registerProvider', () => {
+		test('should register and unregister a provider', async () => {
+			const provider: IChatDebugLogProvider = {
+				provideChatDebugLog: async () => [{
+					kind: 'generic',
+					sessionId: 'ext-session',
+					created: new Date(),
+					name: 'from-provider',
+					level: ChatDebugLogLevel.Info,
+				}],
+			};
+
+			const reg = service.registerProvider(provider);
+			await service.invokeProviders('ext-session');
+
+			const events = service.getEvents('ext-session');
+			assert.ok(events.some(e => e.kind === 'generic' && (e as IChatDebugGenericEvent).name === 'from-provider'));
+
+			reg.dispose();
+		});
+
+		test('provider returning undefined should not add events', async () => {
+			const provider: IChatDebugLogProvider = {
+				provideChatDebugLog: async () => undefined,
+			};
+
+			disposables.add(service.registerProvider(provider));
+			await service.invokeProviders('empty-session');
+
+			assert.strictEqual(service.getEvents('empty-session').length, 0);
+		});
+
+		test('provider errors should be handled gracefully', async () => {
+			const provider: IChatDebugLogProvider = {
+				provideChatDebugLog: async () => { throw new Error('boom'); },
+			};
+
+			disposables.add(service.registerProvider(provider));
+			// Should not throw
+			await service.invokeProviders('error-session');
+			assert.strictEqual(service.getEvents('error-session').length, 0);
+		});
+	});
+
+	suite('invokeProviders', () => {
+		test('should invoke multiple providers and merge events', async () => {
+			const providerA: IChatDebugLogProvider = {
+				provideChatDebugLog: async () => [{
+					kind: 'generic',
+					sessionId: 'session',
+					created: new Date(),
+					name: 'from-A',
+					level: ChatDebugLogLevel.Info,
+				}],
+			};
+			const providerB: IChatDebugLogProvider = {
+				provideChatDebugLog: async () => [{
+					kind: 'generic',
+					sessionId: 'session',
+					created: new Date(),
+					name: 'from-B',
+					level: ChatDebugLogLevel.Info,
+				}],
+			};
+
+			disposables.add(service.registerProvider(providerA));
+			disposables.add(service.registerProvider(providerB));
+			await service.invokeProviders('session');
+
+			const names = (service.getEvents('session') as IChatDebugGenericEvent[]).map(e => e.name);
+			assert.ok(names.includes('from-A'));
+			assert.ok(names.includes('from-B'));
+		});
+
+		test('should cancel previous invocation for same session', async () => {
+			let cancelledToken: CancellationToken | undefined;
+
+			const provider: IChatDebugLogProvider = {
+				provideChatDebugLog: async (_sessionId, token) => {
+					cancelledToken = token;
+					return [];
+				},
+			};
+
+			disposables.add(service.registerProvider(provider));
+
+			// First invocation
+			await service.invokeProviders('session');
+			const firstToken = cancelledToken!;
+
+			// Second invocation for same session should cancel the first
+			await service.invokeProviders('session');
+			assert.strictEqual(firstToken.isCancellationRequested, true);
+		});
+
+		test('should not cancel invocations for different sessions', async () => {
+			const tokens: Map<string, CancellationToken> = new Map();
+
+			const provider: IChatDebugLogProvider = {
+				provideChatDebugLog: async (sessionId, token) => {
+					tokens.set(sessionId, token);
+					return [];
+				},
+			};
+
+			disposables.add(service.registerProvider(provider));
+
+			await service.invokeProviders('session-a');
+			await service.invokeProviders('session-b');
+
+			const tokenA = tokens.get('session-a')!;
+			assert.strictEqual(tokenA.isCancellationRequested, false, 'session-a token should not be cancelled');
+		});
+
+		test('newly registered provider should be invoked for active sessions', async () => {
+			// Start an invocation before the provider is registered
+			const firstProvider: IChatDebugLogProvider = {
+				provideChatDebugLog: async () => [],
+			};
+			disposables.add(service.registerProvider(firstProvider));
+			await service.invokeProviders('session');
+
+			// Now register a new provider — it should be invoked for the active session
+			const lateEvents: IChatDebugEvent[] = [];
+			const lateProvider: IChatDebugLogProvider = {
+				provideChatDebugLog: async () => {
+					const event: IChatDebugGenericEvent = {
+						kind: 'generic',
+						sessionId: 'session',
+						created: new Date(),
+						name: 'late-provider-event',
+						level: ChatDebugLogLevel.Info,
+					};
+					lateEvents.push(event);
+					return [event];
+				},
+			};
+
+			disposables.add(service.registerProvider(lateProvider));
+
+			// Give it a tick to let the async invocation complete
+			await new Promise(resolve => setTimeout(resolve, 10));
+
+			assert.ok(lateEvents.length > 0, 'Late provider should have been invoked');
+		});
+	});
+
+	suite('resolveEvent', () => {
+		test('should delegate to provider with resolveChatDebugLogEvent', async () => {
+			const resolved: IChatDebugResolvedEventContent = {
+				kind: 'text',
+				value: 'resolved detail text',
+			};
+
+			const provider: IChatDebugLogProvider = {
+				provideChatDebugLog: async () => undefined,
+				resolveChatDebugLogEvent: async (eventId) => {
+					if (eventId === 'my-event') {
+						return resolved;
+					}
+					return undefined;
+				},
+			};
+
+			disposables.add(service.registerProvider(provider));
+
+			const result = await service.resolveEvent('my-event');
+			assert.deepStrictEqual(result, resolved);
+		});
+
+		test('should return undefined if no provider resolves the event', async () => {
+			const provider: IChatDebugLogProvider = {
+				provideChatDebugLog: async () => undefined,
+				resolveChatDebugLogEvent: async () => undefined,
+			};
+
+			disposables.add(service.registerProvider(provider));
+
+			const result = await service.resolveEvent('nonexistent');
+			assert.strictEqual(result, undefined);
+		});
+
+		test('should return undefined when no providers registered', async () => {
+			const result = await service.resolveEvent('any-id');
+			assert.strictEqual(result, undefined);
+		});
+
+		test('should return first non-undefined resolution from multiple providers', async () => {
+			const provider1: IChatDebugLogProvider = {
+				provideChatDebugLog: async () => undefined,
+				resolveChatDebugLogEvent: async () => undefined,
+			};
+			const provider2: IChatDebugLogProvider = {
+				provideChatDebugLog: async () => undefined,
+				resolveChatDebugLogEvent: async () => ({ kind: 'text', value: 'from provider 2' }),
+			};
+
+			disposables.add(service.registerProvider(provider1));
+			disposables.add(service.registerProvider(provider2));
+
+			const result = await service.resolveEvent('any');
+			assert.deepStrictEqual(result, { kind: 'text', value: 'from provider 2' });
+		});
+	});
+
+	suite('dispose', () => {
+		test('should cancel active invocations on dispose', async () => {
+			let capturedToken: CancellationToken | undefined;
+
+			const provider: IChatDebugLogProvider = {
+				provideChatDebugLog: async (_sid, token) => {
+					capturedToken = token;
+					return [];
+				},
+			};
+
+			disposables.add(service.registerProvider(provider));
+			await service.invokeProviders('session');
+
+			const cts = new CancellationTokenSource();
+			disposables.add(cts);
+
+			service.dispose();
+
+			assert.ok(capturedToken);
+			assert.strictEqual(capturedToken.isCancellationRequested, true);
+		});
+	});
+});
