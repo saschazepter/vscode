@@ -87,8 +87,9 @@ export class AiContributionFeature extends Disposable {
 			const entry = this._trackers.get(URI.revive(resource));
 			if (entry) {
 				for (const edit of entry.tracker.getTrackedRanges()) {
-					return (edit.source.category === 'ai') &&
-						(level === 'all' || edit.source.feature === 'chat');
+					if (edit.source.category === 'ai' && (level === 'all' || edit.source.feature === 'chat')) {
+						return true;
+					}
 				}
 			}
 		}
@@ -106,6 +107,7 @@ export class AiContributionFeature extends Disposable {
 					this._trackers.set(uri, this._createTrackerEntry(doc));
 				} else {
 					this._trackers.delete(uri);
+					this._documentsByUri.delete(uri);
 				}
 			}
 		}

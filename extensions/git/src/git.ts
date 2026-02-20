@@ -973,7 +973,11 @@ export function parseCoAuthors(message: string): CoAuthor[] {
 
 	coAuthorRegex.lastIndex = 0;
 	while ((match = coAuthorRegex.exec(message)) !== null) {
-		coAuthors.push({ name: match[1], email: match[2] });
+		const name = match[1].trim();
+		const email = match[2].trim();
+		if (name && email) {
+			coAuthors.push({ name, email });
+		}
 	}
 
 	return coAuthors;

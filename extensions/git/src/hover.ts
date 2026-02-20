@@ -112,7 +112,7 @@ function appendContent(markdownString: MarkdownString, authorAvatar: string | un
 				markdownString.appendText(coAuthor.email);
 				markdownString.appendMarkdown(')');
 			} else {
-				markdownString.appendMarkdown(' **');
+				markdownString.appendMarkdown('**');
 				markdownString.appendText(coAuthor.name);
 				markdownString.appendMarkdown('**');
 			}
