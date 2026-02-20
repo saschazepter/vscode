@@ -42,7 +42,7 @@ class LabeledDropdownMenuActionViewItem extends DropdownMenuActionViewItem {
 // #region --- Session Target Picker ---
 
 /**
- * A self-contained widget for selecting the session target (Folder vs Cloud).
+ * A self-contained widget for selecting the session target (Local vs Cloud).
  * Encapsulates state, events, and rendering. Can be placed anywhere in the view.
  */
 export class SessionTargetPicker extends Disposable {
@@ -72,7 +72,7 @@ export class SessionTargetPicker extends Disposable {
 	}
 
 	/**
-	 * Renders the target radio (Folder / Cloud) into the given container.
+	 * Renders the target radio (Local / Cloud) into the given container.
 	 */
 	render(container: HTMLElement): void {
 		this._container = container;
@@ -132,7 +132,7 @@ function getTargetLabel(provider: AgentSessionProviders): string {
 	switch (provider) {
 		case AgentSessionProviders.Local:
 		case AgentSessionProviders.Background:
-			return localize('chat.session.providerLabel.folder', "Folder");
+			return localize('chat.session.providerLabel.local', "Local");
 		case AgentSessionProviders.Cloud:
 			return localize('chat.session.providerLabel.cloud', "Cloud");
 		case AgentSessionProviders.Claude:
