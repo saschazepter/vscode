@@ -1132,8 +1132,8 @@ export class CodeApplication extends Disposable {
 		// Utility Process Worker
 		services.set(IUtilityProcessWorkerMainService, new SyncDescriptor(UtilityProcessWorkerMainService, undefined, true));
 
-		// Copilot SDK (utility process host) -- only when --sessions-utility-process is active
-		if (this.environmentMainService.args['sessions-utility-process']) {
+		// Copilot SDK (utility process host)
+		if (this.configurationService.getValue('application.useSessionsUtilityProcess')) {
 			services.set(ICopilotSdkMainService, new SyncDescriptor(CopilotSdkMainService, undefined, true));
 		}
 
@@ -1296,7 +1296,7 @@ export class CodeApplication extends Disposable {
 		mainProcessElectronServer.registerChannel(ipcUtilityProcessWorkerChannelName, utilityProcessWorkerChannel);
 
 		// Copilot SDK (lazy - utility process only starts on first call)
-		if (this.environmentMainService.args['sessions-utility-process']) {
+		if (this.configurationService.getValue('application.useSessionsUtilityProcess')) {
 			const copilotSdkMainService = accessor.get(ICopilotSdkMainService);
 			mainProcessElectronServer.registerChannel(CopilotSdkChannel, copilotSdkMainService.getServerChannel());
 		}
@@ -1309,8 +1309,8 @@ export class CodeApplication extends Disposable {
 		const context = isLaunchedFromCli(process.env) ? OpenContext.CLI : OpenContext.DESKTOP;
 		const args = this.environmentMainService.args;
 
-		// Open sessions window if requested
-		if ((process as INodeProcess).isEmbeddedApp || args['sessions-utility-process']) {
+		// Handle sessions window first based on context
+		if ((process as INodeProcess).isEmbeddedApp || (args['sessions'] && this.productService.quality !== 'stable')) {
 			return windowsMainService.openSessionsWindow({ context, contextWindowId: undefined });
 		}
 

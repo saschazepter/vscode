@@ -9,8 +9,10 @@ import { KeyCode, KeyMod } from '../../../../base/common/keyCodes.js';
 import { ServicesAccessor } from '../../../../editor/browser/editorExtensions.js';
 import { localize, localize2 } from '../../../../nls.js';
 import { Action2, MenuRegistry, registerAction2 } from '../../../../platform/actions/common/actions.js';
-import { IHostService } from '../../../../workbench/services/host/browser/host.js';
-import { Disposable } from '../../../../base/common/lifecycle.js';
+import { Schemas } from '../../../../base/common/network.js';
+import { URI } from '../../../../base/common/uri.js';
+import { IOpenerService } from '../../../../platform/opener/common/opener.js';
+import { IProductService } from '../../../../platform/product/common/productService.js';
 import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../../workbench/common/contributions.js';
 import { IViewContainersRegistry, IViewsRegistry, ViewContainerLocation, Extensions as ViewExtensions, WindowVisibility } from '../../../../workbench/common/views.js';
 import { Registry } from '../../../../platform/registry/common/platform.js';
@@ -28,6 +30,7 @@ import { InstantiationType, registerSingleton } from '../../../../platform/insta
 import { KeybindingWeight } from '../../../../platform/keybinding/common/keybindingsRegistry.js';
 import { AgenticPromptsService } from './promptsService.js';
 import { IPromptsService } from '../../../../workbench/contrib/chat/common/promptSyntax/service/promptsService.js';
+import { ISessionsConfigurationService, SessionsConfigurationService } from './sessionsConfigurationService.js';
 import { ChatViewContainerId, ChatViewId } from '../../../../workbench/contrib/chat/browser/chat.js';
 import { CHAT_CATEGORY } from '../../../../workbench/contrib/chat/browser/actions/chatActions.js';
 import { NewChatViewPane, SessionsViewId } from './newChatViewPane.js';
@@ -41,6 +44,7 @@ import { IsSessionsUtilityProcessContext, IsSessionsWindowContext } from '../../
 import { SdkChatViewPane, SdkChatViewId } from '../../../browser/widget/sdkChatViewPane.js';
 import { CopilotSdkDebugLog } from '../../../browser/copilotSdkDebugLog.js';
 import { CopilotSdkDebugPanel } from '../../../browser/copilotSdkDebugPanel.js';
+import { Disposable } from '../../../../base/common/lifecycle.js';
 
 export class OpenSessionWorktreeInVSCodeAction extends Action2 {
 	static readonly ID = 'chat.openSessionWorktreeInVSCode';
@@ -58,8 +62,9 @@ export class OpenSessionWorktreeInVSCodeAction extends Action2 {
 		});
 	}
 
-	override async run(accessor: ServicesAccessor,): Promise<void> {
-		const hostService = accessor.get(IHostService);
+	override async run(accessor: ServicesAccessor): Promise<void> {
+		const openerService = accessor.get(IOpenerService);
+		const productService = accessor.get(IProductService);
 		const sessionsManagementService = accessor.get(ISessionsManagementService);
 
 		const activeSession = sessionsManagementService.activeSession.get();
@@ -73,7 +78,18 @@ export class OpenSessionWorktreeInVSCodeAction extends Action2 {
 			return;
 		}
 
-		await hostService.openWindow([{ folderUri }], { forceNewWindow: true });
+		const scheme = productService.quality === 'stable'
+			? 'vscode'
+			: productService.quality === 'exploration'
+				? 'vscode-exploration'
+				: 'vscode-insiders';
+
+		await openerService.open(URI.from({
+			scheme,
+			authority: Schemas.file,
+			path: folderUri.path,
+			query: 'windowId=_blank',
+		}), { openExternal: true });
 	}
 }
 registerAction2(OpenSessionWorktreeInVSCodeAction);
@@ -341,3 +357,4 @@ registerAction2(class CopilotSdkDebugPanelAction extends Action2 {
 
 // register services
 registerSingleton(IPromptsService, AgenticPromptsService, InstantiationType.Delayed);
+registerSingleton(ISessionsConfigurationService, SessionsConfigurationService, InstantiationType.Delayed);
