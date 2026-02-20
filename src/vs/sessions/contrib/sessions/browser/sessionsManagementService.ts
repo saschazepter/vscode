@@ -266,7 +266,7 @@ export class SessionsManagementService extends Disposable implements ISessionsMa
 		const activeSessionItem = await this.createNewPendingSession(sessionResource);
 
 		if (target === AgentSessionProviders.Background || target === AgentSessionProviders.Local) {
-			return new LocalNewSession(activeSessionItem, defaultRepoUri);
+			return new LocalNewSession(activeSessionItem, defaultRepoUri, this.chatSessionsService, this.logService);
 		}
 		return new RemoteNewSession(activeSessionItem, this.chatSessionsService, this.logService);
 	}

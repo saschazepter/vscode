@@ -30,10 +30,14 @@ export interface INewSession {
 	setOption(optionId: string, value: IChatSessionProviderOptionItem): void;
 }
 
+const REPOSITORY_OPTION_ID = 'repository';
+const BRANCH_OPTION_ID = 'branch';
+const ISOLATION_OPTION_ID = 'isolation';
+
 /**
  * Local new session for Background agent sessions.
  * Fires `onDidChange` for both `repoUri` and `isolationMode` changes.
- * Does not notify the extension service.
+ * Notifies the extension service with session options for each property change.
  */
 export class LocalNewSession extends Disposable implements INewSession {
 
@@ -52,6 +56,8 @@ export class LocalNewSession extends Disposable implements INewSession {
 	constructor(
 		readonly activeSessionItem: IActiveSessionItem,
 		defaultRepoUri: URI | undefined,
+		private readonly chatSessionsService: IChatSessionsService,
+		private readonly logService: ILogService,
 	) {
 		super();
 		this._repoUri = defaultRepoUri;
@@ -60,12 +66,14 @@ export class LocalNewSession extends Disposable implements INewSession {
 	setRepoUri(uri: URI): void {
 		this._repoUri = uri;
 		this._onDidChange.fire();
+		this._notifyOptionChange(REPOSITORY_OPTION_ID, uri.fsPath);
 	}
 
 	setIsolationMode(mode: IsolationMode): void {
 		if (this._isolationMode !== mode) {
 			this._isolationMode = mode;
 			this._onDidChange.fire();
+			this._notifyOptionChange(ISOLATION_OPTION_ID, mode);
 		}
 	}
 
@@ -73,11 +81,19 @@ export class LocalNewSession extends Disposable implements INewSession {
 		if (this._branch !== branch) {
 			this._branch = branch;
 			this._onDidChange.fire();
+			this._notifyOptionChange(BRANCH_OPTION_ID, branch ?? '');
 		}
 	}
 
 	setOption(_optionId: string, _value: IChatSessionProviderOptionItem): void {
 		// No-op for local sessions
+	}
+
+	private _notifyOptionChange(optionId: string, value: string): void {
+		this.chatSessionsService.notifySessionOptionsChange(
+			this.resource,
+			[{ optionId, value }]
+		).catch((err) => this.logService.error(`Failed to notify session option ${optionId} change:`, err));
 	}
 }
 
