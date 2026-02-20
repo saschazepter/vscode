@@ -151,15 +151,6 @@ export interface IChatDebugService extends IDisposable {
 	activeSessionId: string | undefined;
 
 	/**
-	 * Optional hint for which view the editor should show next.
-	 * Set before opening the editor, then consumed and cleared by the editor.
-	 * - 'home': home view
-	 * - 'overview': session overview
-	 * - 'logs': log event table
-	 */
-	activeViewHint: 'home' | 'overview' | 'logs' | undefined;
-
-	/**
 	 * Clear all logged events.
 	 */
 	clear(): void;

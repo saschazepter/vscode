@@ -6,8 +6,18 @@
 import * as DOM from '../../../../../base/browser/dom.js';
 import { BreadcrumbsItem } from '../../../../../base/browser/ui/breadcrumbs/breadcrumbsWidget.js';
 import { RawContextKey } from '../../../../../platform/contextkey/common/contextkey.js';
+import { IEditorOptions } from '../../../../../platform/editor/common/editor.js';
 
 const $ = DOM.$;
+
+/**
+ * Options passed to the chat debug editor pane to control
+ * which session and view to navigate to.
+ */
+export interface IChatDebugEditorOptions extends IEditorOptions {
+	readonly sessionId?: string;
+	readonly viewHint?: 'home' | 'overview' | 'logs';
+}
 
 export const enum ViewState {
 	Home = 'home',

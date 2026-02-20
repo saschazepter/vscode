@@ -13,8 +13,8 @@ import { IChatDebugService } from '../../common/chatDebugService.js';
 import { chatSessionResourceToId } from '../../common/model/chatUri.js';
 import { ChatViewId, IChatWidgetService } from '../chat.js';
 import { CHAT_CATEGORY, CHAT_CONFIG_MENU_ID } from './chatActions.js';
-import { ChatDebugEditor } from '../chatDebug/chatDebugEditor.js';
 import { ChatDebugEditorInput } from '../chatDebug/chatDebugEditorInput.js';
+import { IChatDebugEditorOptions } from '../chatDebug/chatDebugTypes.js';
 
 /**
  * Registers the Troubleshoot action for the chat context menu.
@@ -37,7 +37,8 @@ export function registerChatTroubleshootAction() {
 			// Clear active session so the editor shows the home view
 			chatDebugService.activeSessionId = undefined;
 
-			await editorService.openEditor(ChatDebugEditorInput.instance, { pinned: true });
+			const options: IChatDebugEditorOptions = { pinned: true, viewHint: 'home' };
+			await editorService.openEditor(ChatDebugEditorInput.instance, options);
 		}
 	});
 
@@ -77,17 +78,9 @@ export function registerChatTroubleshootAction() {
 			const sessionResource = widget?.viewModel?.sessionResource;
 			const sessionId = sessionResource ? chatSessionResourceToId(sessionResource) : '';
 			chatDebugService.activeSessionId = sessionId;
-			chatDebugService.activeViewHint = 'logs';
 
-			// If the debug editor is already active, navigate directly since
-			// openEditor won't re-trigger setEditorVisible for a singleton input.
-			const activePane = editorService.activeEditorPane;
-			if (activePane instanceof ChatDebugEditor && sessionId) {
-				activePane.navigateToSession(sessionId, 'logs');
-				return;
-			}
-
-			await editorService.openEditor(ChatDebugEditorInput.instance, { pinned: true });
+			const options: IChatDebugEditorOptions = { pinned: true, sessionId, viewHint: 'logs' };
+			await editorService.openEditor(ChatDebugEditorInput.instance, options);
 		}
 	});
 }

@@ -21,7 +21,6 @@ export class ChatDebugServiceImpl extends Disposable implements IChatDebugServic
 	private readonly _invocationCts = new Map<string, CancellationTokenSource>();
 
 	activeSessionId: string | undefined;
-	activeViewHint: 'home' | 'overview' | 'logs' | undefined;
 
 	log(sessionId: string, name: string, details?: string, level: ChatDebugLogLevel = ChatDebugLogLevel.Info, options?: { id?: string; category?: string; parentEventId?: string }): void {
 		this.addEvent({

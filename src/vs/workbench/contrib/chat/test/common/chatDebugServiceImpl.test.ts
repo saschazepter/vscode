@@ -195,18 +195,15 @@ suite('ChatDebugServiceImpl', () => {
 		});
 	});
 
-	suite('activeSessionId and activeViewHint', () => {
+	suite('activeSessionId', () => {
 		test('should default to undefined', () => {
 			assert.strictEqual(service.activeSessionId, undefined);
-			assert.strictEqual(service.activeViewHint, undefined);
 		});
 
 		test('should be settable', () => {
 			service.activeSessionId = 'session-1';
-			service.activeViewHint = 'logs';
 
 			assert.strictEqual(service.activeSessionId, 'session-1');
-			assert.strictEqual(service.activeViewHint, 'logs');
 		});
 	});
 

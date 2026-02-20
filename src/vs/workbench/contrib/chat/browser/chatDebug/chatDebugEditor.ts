@@ -18,7 +18,7 @@ import { IChatDebugService } from '../../common/chatDebugService.js';
 import { IChatService } from '../../common/chatService/chatService.js';
 import { chatSessionResourceToId, LocalChatSessionUri } from '../../common/model/chatUri.js';
 import { IChatWidgetService } from '../chat.js';
-import { ViewState } from './chatDebugTypes.js';
+import { ViewState, IChatDebugEditorOptions } from './chatDebugTypes.js';
 import { ChatDebugHomeView } from './chatDebugHomeView.js';
 import { ChatDebugOverviewView, OverviewNavigation } from './chatDebugOverviewView.js';
 import { ChatDebugLogsView, LogsNavigation } from './chatDebugLogsView.js';
@@ -237,19 +237,19 @@ export class ChatDebugEditor extends EditorPane {
 		}
 	}
 
+	override setOptions(options: IChatDebugEditorOptions | undefined): void {
+		super.setOptions(options);
+		if (options) {
+			this._applyNavigationOptions(options);
+		}
+	}
+
 	override setEditorVisible(visible: boolean): void {
 		super.setEditorVisible(visible);
 		if (visible) {
-			const hint = this.chatDebugService.activeViewHint;
-			this.chatDebugService.activeViewHint = undefined; // consume once
-
-			if (hint) {
-				const sessionId = this.chatDebugService.activeSessionId;
-				if (hint === 'logs' && sessionId) {
-					this.navigateToSession(sessionId, 'logs');
-				} else if (hint === 'overview' && sessionId) {
-					this.navigateToSession(sessionId, 'overview');
-				}
+			const options = this.options as IChatDebugEditorOptions | undefined;
+			if (options) {
+				this._applyNavigationOptions(options);
 			} else if (this.viewState === ViewState.Home) {
 				const sessionId = this.chatDebugService.activeSessionId;
 				if (sessionId) {
@@ -259,6 +259,22 @@ export class ChatDebugEditor extends EditorPane {
 				}
 			}
 			// Otherwise, preserve the current view state (e.g. Logs)
+		}
+	}
+
+	private _applyNavigationOptions(options: IChatDebugEditorOptions): void {
+		const { sessionId, viewHint } = options;
+		if (viewHint === 'logs' && sessionId) {
+			this.navigateToSession(sessionId, 'logs');
+		} else if (viewHint === 'overview' && sessionId) {
+			this.navigateToSession(sessionId, 'overview');
+		} else if (viewHint === 'home') {
+			this.chatDebugService.activeSessionId = undefined;
+			this.showView(ViewState.Home);
+		} else if (sessionId) {
+			this.navigateToSession(sessionId, 'overview');
+		} else if (this.viewState === ViewState.Home) {
+			this.showView(ViewState.Home);
 		}
 	}
 
