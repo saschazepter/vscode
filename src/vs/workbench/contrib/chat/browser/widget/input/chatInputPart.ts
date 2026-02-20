@@ -292,12 +292,14 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 	private chatGettingStartedTipContainer!: HTMLElement;
 	private chatQuestionCarouselContainer!: HTMLElement;
 	private chatInputWidgetsContainer!: HTMLElement;
+	private belowInputToolbarContainer: HTMLElement | undefined;
 	private inputContainer!: HTMLElement;
 	private readonly _widgetController = this._register(new MutableDisposable<ChatInputPartWidgetController>());
 
 	private contextUsageWidget?: ChatContextUsageWidget;
 	private contextUsageWidgetContainer!: HTMLElement;
 	private readonly _contextUsageDisposables = this._register(new MutableDisposable<DisposableStore>());
+	private readonly _belowInputPickerDisposables = this._register(new DisposableStore());
 
 	get inputContainerElement(): HTMLElement | undefined {
 		return this.inputContainer;
@@ -1964,10 +1966,11 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 							dom.h('.chat-attached-context@attachedContextContainer'),
 						]),
 						dom.h('.chat-editor-container@editorContainer'),
-						dom.h('.chat-input-toolbars@inputToolbars', [
-							dom.h('.chat-context-usage-container@contextUsageWidgetContainer'),
-						]),
+						dom.h('.chat-input-toolbars@inputToolbars'),
 					]),
+				]),
+				dom.h('.chat-input-below-toolbar@belowInputToolbar', [
+					dom.h('.chat-context-usage-container@contextUsageWidgetContainer'),
 				]),
 			]);
 		}
@@ -2151,6 +2154,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 			},
 		};
 
+		this.belowInputToolbarContainer = elements.belowInputToolbar;
 		this._register(dom.addStandardDisposableListener(toolbarsContainer, dom.EventType.CLICK, e => this.inputEditor.focus()));
 		this._register(dom.addStandardDisposableListener(this.attachmentsContainer, dom.EventType.CLICK, e => this.inputEditor.focus()));
 		this.inputActionsToolbar = this._register(this.instantiationService.createInstance(MenuWorkbenchToolBar, this.options.renderInputToolbarBelowInput ? this.attachmentsContainer : toolbarsContainer, MenuId.ChatInput, {
@@ -2216,7 +2220,29 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 					};
 					const isWelcomeViewMode = !!this.options.sessionTypePickerDelegate?.setActiveSessionProvider;
 					const Picker = (action.id === OpenSessionTargetPickerAction.ID || isWelcomeViewMode) ? SessionTypePickerActionItem : DelegationSessionPickerActionItem;
-					return this.sessionTargetWidget = this.instantiationService.createInstance(Picker, action, location === ChatWidgetLocation.Editor ? 'editor' : 'sidebar', delegate, pickerOptions);
+					const pickerWidget = this.instantiationService.createInstance(Picker, action, location === ChatWidgetLocation.Editor ? 'editor' : 'sidebar', delegate, pickerOptions);
+					this.sessionTargetWidget = pickerWidget;
+
+					// In non-compact mode, render the session picker below the input
+					if (this.belowInputToolbarContainer) {
+						// Clear previous below-input picker if any
+						this._belowInputPickerDisposables.clear();
+
+						const itemContainer = dom.$('.action-item.chat-below-input-session-picker');
+						pickerWidget.render(itemContainer);
+						this.belowInputToolbarContainer.insertBefore(itemContainer, this.belowInputToolbarContainer.firstChild);
+						this._belowInputPickerDisposables.add(pickerWidget);
+						this._belowInputPickerDisposables.add(toDisposable(() => itemContainer.remove()));
+						// Return hidden placeholder for the toolbar so it doesn't take up space
+						return new class extends BaseActionViewItem {
+							override render(container: HTMLElement): void {
+								super.render(container);
+								container.style.display = 'none';
+							}
+						}(undefined, action);
+					}
+
+					return pickerWidget;
 				} else if (action.id === OpenWorkspacePickerAction.ID && action instanceof MenuItemAction) {
 					if (this.workspaceContextService.getWorkbenchState() === WorkbenchState.EMPTY && this.options.workspacePickerDelegate) {
 						return this.instantiationService.createInstance(WorkspacePickerActionItem, action, this.options.workspacePickerDelegate, pickerOptions);

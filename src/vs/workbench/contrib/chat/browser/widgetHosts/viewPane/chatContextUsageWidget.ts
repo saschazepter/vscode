@@ -92,6 +92,7 @@ export class ChatContextUsageWidget extends Disposable {
 	readonly domNode: HTMLElement;
 
 	private readonly progressIndicator: CircularProgressIndicator;
+	private readonly percentageLabel: HTMLElement;
 
 	private readonly _isVisible = observableValue<boolean>(this, false);
 	get isVisible(): IObservable<boolean> { return this._isVisible; }
@@ -129,6 +130,9 @@ export class ChatContextUsageWidget extends Disposable {
 		const iconContainer = this.domNode.appendChild($('.icon-container'));
 		this.progressIndicator = new CircularProgressIndicator();
 		iconContainer.appendChild(this.progressIndicator.domNode);
+
+		// Percentage label
+		this.percentageLabel = this.domNode.appendChild($('.percentage-label'));
 
 		// Track context usage opened state
 		this._contextUsageOpenedKey = ChatContextKeys.contextUsageHasBeenOpened.bindTo(this.contextKeyService);
@@ -285,6 +289,9 @@ export class ChatContextUsageWidget extends Disposable {
 
 		// Update pie chart progress
 		this.progressIndicator.setProgress(percentage);
+
+		// Update percentage label
+		this.percentageLabel.textContent = `${Math.round(percentage)}%`;
 
 		// Update color based on usage level
 		this.domNode.classList.remove('warning', 'error');
