@@ -138,23 +138,16 @@ class NewChatWidget extends Disposable {
 		this._isolationModePicker = this._register(this.instantiationService.createInstance(IsolationModePicker));
 		this._options = options;
 
-		// When folder changes, notify extension and re-render pickers
+		// When folder changes, re-render pickers
 		this._register(this._folderPicker.onDidSelectFolder(() => {
-			this._notifyFolderSelection();
 			this._renderExtensionPickers(true);
 		}));
 
 		// When target changes, regenerate pending resource and re-render
 		this._register(this._targetPicker.onDidChangeTarget((target) => {
 			this._generatePendingSessionResource();
-			this._notifyFolderSelection();
 			this._renderExtensionPickers(true);
 			this._isolationModePicker.setVisible(target === AgentSessionProviders.Background);
-		}));
-
-		// When isolation mode changes, notify extension
-		this._register(this._isolationModePicker.onDidChange(() => {
-			this._notifyFolderSelection();
 		}));
 
 		// Listen for option group changes to re-render pickers
@@ -443,20 +436,6 @@ class NewChatWidget extends Disposable {
 		this._folderPickerContainer.style.display = 'none';
 
 		this._renderExtensionPickers();
-	}
-
-	private _notifyFolderSelection(): void {
-		this._selectedOptions.clear();
-		if (!this._pendingSessionResource) {
-			return;
-		}
-		const folderUri = this._folderPicker.selectedFolderUri ?? this.workspaceContextService.getWorkspace().folders[0]?.uri;
-		if (folderUri) {
-			this.chatSessionsService.notifySessionOptionsChange(
-				this._pendingSessionResource,
-				[{ optionId: 'repository', value: folderUri.fsPath }]
-			).catch((err) => this.logService.error('Failed to notify extension of folder selection:', err));
-		}
 	}
 
 	// --- Welcome: Extension option pickers (Cloud target only) ---
