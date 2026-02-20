@@ -15,6 +15,7 @@ import { renderIcon } from '../../../../base/browser/ui/iconLabel/iconLabels.js'
 import { localize } from '../../../../nls.js';
 import { IContextMenuService } from '../../../../platform/contextview/browser/contextView.js';
 import { AgentSessionProviders } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessions.js';
+import { IGitRepository } from '../../../../workbench/contrib/git/common/gitService.js';
 import { INewSession } from './newSession.js';
 
 /**
@@ -158,6 +159,7 @@ export class IsolationModePicker extends Disposable {
 
 	private _isolationMode: IsolationMode = 'worktree';
 	private _newSession: INewSession | undefined;
+	private _repository: IGitRepository | undefined;
 
 	private readonly _onDidChange = this._register(new Emitter<IsolationMode>());
 	readonly onDidChange: Event<IsolationMode> = this._onDidChange.event;
@@ -178,10 +180,21 @@ export class IsolationModePicker extends Disposable {
 
 	/**
 	 * Sets the pending session that this picker writes to.
-	 * When the user selects a mode, it calls `setIsolationMode` on the session.
 	 */
 	setNewSession(session: INewSession | undefined): void {
 		this._newSession = session;
+	}
+
+	/**
+	 * Sets the git repository. When undefined, worktree option is hidden
+	 * and isolation mode falls back to 'folder'.
+	 */
+	setRepository(repository: IGitRepository | undefined): void {
+		this._repository = repository;
+		if (!repository && this._isolationMode === 'worktree') {
+			this._setMode('folder');
+		}
+		this._renderDropdown();
 	}
 
 	/**
@@ -209,6 +222,13 @@ export class IsolationModePicker extends Disposable {
 
 		this._renderDisposables.clear();
 		dom.clearNode(this._dropdownContainer);
+
+		// If no repository, only show "Folder" without a dropdown
+		if (!this._repository) {
+			const label = dom.append(this._dropdownContainer, dom.$('span.sessions-chat-dropdown-label'));
+			label.textContent = localize('isolationMode.folder', "Folder");
+			return;
+		}
 
 		const modeLabel = this._isolationMode === 'worktree'
 			? localize('isolationMode.worktree', "Worktree")
@@ -246,6 +266,125 @@ export class IsolationModePicker extends Disposable {
 			this._isolationMode = mode;
 			this._newSession?.setIsolationMode(mode);
 			this._onDidChange.fire(mode);
+			this._renderDropdown();
+		}
+	}
+}
+
+// #endregion
+
+// #region --- Branch Picker ---
+
+/**
+ * A self-contained widget for selecting a git branch.
+ * Uses `IGitRepository.getRefs` to list local branches.
+ * Writes the selected branch to the new session object.
+ */
+export class BranchPicker extends Disposable {
+
+	private _selectedBranch: string | undefined;
+	private _newSession: INewSession | undefined;
+	private _repository: IGitRepository | undefined;
+	private _branches: string[] = [];
+
+	private readonly _onDidChange = this._register(new Emitter<string | undefined>());
+	readonly onDidChange: Event<string | undefined> = this._onDidChange.event;
+
+	private readonly _renderDisposables = this._register(new DisposableStore());
+	private _container: HTMLElement | undefined;
+	private _dropdownContainer: HTMLElement | undefined;
+
+	get selectedBranch(): string | undefined {
+		return this._selectedBranch;
+	}
+
+	constructor(
+		@IContextMenuService private readonly contextMenuService: IContextMenuService,
+	) {
+		super();
+	}
+
+	/**
+	 * Sets the new session that this picker writes to.
+	 */
+	setNewSession(session: INewSession | undefined): void {
+		this._newSession = session;
+	}
+
+	/**
+	 * Sets the git repository and loads its branches.
+	 * When undefined, the picker is hidden.
+	 */
+	async setRepository(repository: IGitRepository | undefined): Promise<void> {
+		this._repository = repository;
+		this._branches = [];
+		this._selectedBranch = undefined;
+
+		if (repository) {
+			const refs = await repository.getRefs({ pattern: 'refs/heads' });
+			this._branches = refs
+				.map(ref => ref.name)
+				.filter((name): name is string => !!name);
+		}
+
+		this.setVisible(!!repository && this._branches.length > 0);
+		this._renderDropdown();
+	}
+
+	/**
+	 * Renders the branch picker dropdown into the given container.
+	 */
+	render(container: HTMLElement): void {
+		this._container = container;
+		this._dropdownContainer = dom.append(container, dom.$('.sessions-chat-local-mode-left'));
+		this._renderDropdown();
+	}
+
+	/**
+	 * Shows or hides the picker.
+	 */
+	setVisible(visible: boolean): void {
+		if (this._container) {
+			this._container.style.visibility = visible ? '' : 'hidden';
+		}
+	}
+
+	private _renderDropdown(): void {
+		if (!this._dropdownContainer) {
+			return;
+		}
+
+		this._renderDisposables.clear();
+		dom.clearNode(this._dropdownContainer);
+
+		if (!this._repository || this._branches.length === 0) {
+			return;
+		}
+
+		const currentLabel = this._selectedBranch ?? localize('branchPicker.select', "Branch");
+		const branchAction = toAction({ id: 'branchPicker', label: currentLabel, run: () => { } });
+		const branchDropdown = this._renderDisposables.add(new LabeledDropdownMenuActionViewItem(
+			branchAction,
+			{
+				getActions: () => this._branches.map(branch => toAction({
+					id: `branch.${branch}`,
+					label: branch,
+					checked: this._selectedBranch === branch,
+					run: () => this._selectBranch(branch),
+				})),
+			},
+			this.contextMenuService,
+			{ classNames: [...ThemeIcon.asClassNameArray(Codicon.gitBranch)] }
+		));
+		const slot = dom.append(this._dropdownContainer, dom.$('.sessions-chat-picker-slot'));
+		branchDropdown.render(slot);
+	}
+
+	private _selectBranch(branch: string): void {
+		if (this._selectedBranch !== branch) {
+			this._selectedBranch = branch;
+			this._newSession?.setBranch(branch);
+			this._onDidChange.fire(branch);
 			this._renderDropdown();
 		}
 	}

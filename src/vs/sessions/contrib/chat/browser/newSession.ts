@@ -21,9 +21,11 @@ export interface INewSession {
 	readonly activeSessionItem: IActiveSessionItem;
 	readonly repoUri: URI | undefined;
 	readonly isolationMode: IsolationMode;
+	readonly branch: string | undefined;
 	readonly onDidChange: Event<void>;
 	setRepoUri(uri: URI): void;
 	setIsolationMode(mode: IsolationMode): void;
+	setBranch(branch: string | undefined): void;
 }
 
 /**
@@ -35,6 +37,7 @@ export class LocalNewSession extends Disposable implements INewSession {
 
 	private _repoUri: URI | undefined;
 	private _isolationMode: IsolationMode = 'worktree';
+	private _branch: string | undefined;
 
 	private readonly _onDidChange = this._register(new Emitter<void>());
 	readonly onDidChange: Event<void> = this._onDidChange.event;
@@ -42,6 +45,7 @@ export class LocalNewSession extends Disposable implements INewSession {
 	get resource(): URI { return this.activeSessionItem.resource; }
 	get repoUri(): URI | undefined { return this._repoUri; }
 	get isolationMode(): IsolationMode { return this._isolationMode; }
+	get branch(): string | undefined { return this._branch; }
 
 	constructor(
 		readonly activeSessionItem: IActiveSessionItem,
@@ -59,6 +63,13 @@ export class LocalNewSession extends Disposable implements INewSession {
 	setIsolationMode(mode: IsolationMode): void {
 		if (this._isolationMode !== mode) {
 			this._isolationMode = mode;
+			this._onDidChange.fire();
+		}
+	}
+
+	setBranch(branch: string | undefined): void {
+		if (this._branch !== branch) {
+			this._branch = branch;
 			this._onDidChange.fire();
 		}
 	}
@@ -80,6 +91,7 @@ export class RemoteNewSession extends Disposable implements INewSession {
 	get resource(): URI { return this.activeSessionItem.resource; }
 	get repoUri(): URI | undefined { return this._repoUri; }
 	get isolationMode(): IsolationMode { return this._isolationMode; }
+	get branch(): string | undefined { return undefined; }
 
 	constructor(
 		readonly activeSessionItem: IActiveSessionItem,
@@ -100,5 +112,9 @@ export class RemoteNewSession extends Disposable implements INewSession {
 
 	setIsolationMode(_mode: IsolationMode): void {
 		// No-op for remote sessions — isolation mode is not relevant
+	}
+
+	setBranch(_branch: string | undefined): void {
+		// No-op for remote sessions — branch is not relevant
 	}
 }

@@ -54,7 +54,8 @@ import { isString } from '../../../../base/common/types.js';
 import { NewChatContextAttachments } from './newChatContextAttachments.js';
 import { GITHUB_REMOTE_FILE_SCHEME } from '../../fileTreeView/browser/githubFileSystemProvider.js';
 import { FolderPicker } from './folderPicker.js';
-import { IsolationModePicker, SessionTargetPicker } from './sessionTargetPicker.js';
+import { IGitService } from '../../../../workbench/contrib/git/common/gitService.js';
+import { BranchPicker, IsolationModePicker, SessionTargetPicker } from './sessionTargetPicker.js';
 import { INewSession } from './newSession.js';
 
 // #region --- Chat Welcome Widget ---
@@ -93,6 +94,7 @@ class NewChatWidget extends Disposable {
 
 	private readonly _targetPicker: SessionTargetPicker;
 	private readonly _isolationModePicker: IsolationModePicker;
+	private readonly _branchPicker: BranchPicker;
 	private readonly _options: INewChatWidgetOptions;
 
 	// Input
@@ -133,16 +135,19 @@ class NewChatWidget extends Disposable {
 		@IHoverService _hoverService: IHoverService,
 		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
 		@ISessionsManagementService private readonly sessionsManagementService: ISessionsManagementService,
+		@IGitService private readonly gitService: IGitService,
 	) {
 		super();
 		this._contextAttachments = this._register(this.instantiationService.createInstance(NewChatContextAttachments));
 		this._folderPicker = this._register(this.instantiationService.createInstance(FolderPicker));
 		this._targetPicker = this._register(new SessionTargetPicker(options.allowedTargets, options.defaultTarget));
 		this._isolationModePicker = this._register(this.instantiationService.createInstance(IsolationModePicker));
+		this._branchPicker = this._register(this.instantiationService.createInstance(BranchPicker));
 		this._options = options;
 
-		// When folder changes, re-render pickers
-		this._register(this._folderPicker.onDidSelectFolder(() => {
+		// When folder changes, open repository and update pickers
+		this._register(this._folderPicker.onDidSelectFolder((folderUri) => {
+			this._openRepository(folderUri);
 			this._renderExtensionPickers(true);
 		}));
 
@@ -150,7 +155,9 @@ class NewChatWidget extends Disposable {
 		this._register(this._targetPicker.onDidChangeTarget((target) => {
 			this._createPendingSession();
 			this._renderExtensionPickers(true);
-			this._isolationModePicker.setVisible(target === AgentSessionProviders.Background);
+			const isLocal = target === AgentSessionProviders.Background;
+			this._isolationModePicker.setVisible(isLocal);
+			this._branchPicker.setVisible(isLocal);
 		}));
 
 		// Listen for option group changes to re-render pickers
@@ -206,9 +213,10 @@ class NewChatWidget extends Disposable {
 		this._createBottomToolbar(inputArea);
 		this._inputSlot.appendChild(inputArea);
 
-		// Isolation mode picker (below the input, shown when Folder target is selected)
+		// Isolation mode and branch pickers (below the input, shown when Local target is selected)
 		const isolationContainer = dom.append(welcomeElement, dom.$('.chat-full-welcome-local-mode'));
 		this._isolationModePicker.render(isolationContainer);
+		this._branchPicker.render(isolationContainer);
 
 		// Render target buttons & extension pickers
 		this._renderOptionGroupPickers();
@@ -216,8 +224,12 @@ class NewChatWidget extends Disposable {
 		// Initialize model picker
 		this._initDefaultModel();
 
-		// Create initial pending session
+		// Create initial pending session and open initial repository
 		this._createPendingSession();
+		const initialFolderUri = this._folderPicker.selectedFolderUri ?? this.workspaceContextService.getWorkspace().folders[0]?.uri;
+		if (initialFolderUri) {
+			this._openRepository(initialFolderUri);
+		}
 
 		// Reveal
 		welcomeElement.classList.add('revealed');
@@ -234,6 +246,7 @@ class NewChatWidget extends Disposable {
 			this._newSession = existing;
 			this._folderPicker.setNewSession(existing);
 			this._isolationModePicker.setNewSession(existing);
+			this._branchPicker.setNewSession(existing);
 			return;
 		}
 
@@ -251,7 +264,18 @@ class NewChatWidget extends Disposable {
 			// Wire pickers to the new session
 			this._folderPicker.setNewSession(session);
 			this._isolationModePicker.setNewSession(session);
+			this._branchPicker.setNewSession(session);
 		}).catch((err) => this.logService.trace('Failed to create new session:', err));
+	}
+
+	private _openRepository(folderUri: URI): void {
+		this.gitService.openRepository(folderUri).then(repository => {
+			this._isolationModePicker.setRepository(repository);
+			this._branchPicker.setRepository(repository);
+		}).catch(() => {
+			this._isolationModePicker.setRepository(undefined);
+			this._branchPicker.setRepository(undefined);
+		});
 	}
 
 	// --- Editor ---
