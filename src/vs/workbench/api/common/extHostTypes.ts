@@ -3636,7 +3636,7 @@ export class ChatDebugSubagentInvocationEvent {
 	parentEventId?: string;
 	agentName: string;
 	description?: string;
-	status?: 'running' | 'completed' | 'failed';
+	status?: ChatDebugSubagentStatus;
 	durationInMillis?: number;
 	toolCallCount?: number;
 	modelTurnCount?: number;

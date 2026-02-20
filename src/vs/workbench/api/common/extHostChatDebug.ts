@@ -8,7 +8,7 @@ import { CancellationToken } from '../../../base/common/cancellation.js';
 import { Emitter } from '../../../base/common/event.js';
 import { Disposable, DisposableStore, toDisposable } from '../../../base/common/lifecycle.js';
 import { ExtHostChatDebugShape, IChatDebugEventDto, IChatDebugResolvedEventContentDto, MainContext, MainThreadChatDebugShape } from './extHost.protocol.js';
-import { ChatDebugMessageContentType, ChatDebugToolCallResult } from './extHostTypes.js';
+import { ChatDebugMessageContentType, ChatDebugSubagentStatus, ChatDebugToolCallResult } from './extHostTypes.js';
 import { IExtHostRpcService } from './extHostRpcService.js';
 
 export class ExtHostChatDebug extends Disposable implements ExtHostChatDebugShape {
@@ -168,7 +168,10 @@ export class ExtHostChatDebug extends Disposable implements ExtHostChatDebugShap
 					kind: 'subagentInvocation',
 					agentName: e.agentName,
 					description: e.description,
-					status: e.status as unknown as 'running' | 'completed' | 'failed' | undefined,
+					status: e.status === ChatDebugSubagentStatus.Running ? 'running'
+						: e.status === ChatDebugSubagentStatus.Completed ? 'completed'
+							: e.status === ChatDebugSubagentStatus.Failed ? 'failed'
+								: undefined,
 					durationInMillis: e.durationInMillis,
 					toolCallCount: e.toolCallCount,
 					modelTurnCount: e.modelTurnCount,
