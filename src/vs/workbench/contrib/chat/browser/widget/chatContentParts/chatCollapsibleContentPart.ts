@@ -81,8 +81,8 @@ export abstract class ChatCollapsibleContentPart extends Disposable implements I
 		this._domNode = $('.chat-used-context', undefined, buttonElement);
 		collapseButton.label = referencesLabel;
 
-		// Add hover chevron indicator on the right
-		const hoverChevron = $('span.chat-collapsible-hover-chevron.codicon.codicon-chevron-right');
+		// Add hover chevron indicator on the right (decorative, hide from screen readers)
+		const hoverChevron = $('span.chat-collapsible-hover-chevron.codicon.codicon-chevron-right', { 'aria-hidden': 'true' });
 		collapseButton.element.appendChild(hoverChevron);
 
 		if (this.hoverMessage) {

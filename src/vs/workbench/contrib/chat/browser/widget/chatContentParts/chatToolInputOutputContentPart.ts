@@ -123,8 +123,9 @@ export class ChatCollapsibleInputOutputContentPart extends Disposable {
 		btn.element.classList.add('chat-confirmation-widget-title', 'monaco-text-button');
 		btn.labelElement.append(titleEl.root);
 
-		// Add hover chevron indicator on the right
+		// Add hover chevron indicator on the right (decorative, hide from screen readers)
 		const hoverChevron = dom.$('span.chat-collapsible-hover-chevron.codicon.codicon-chevron-right');
+		hoverChevron.setAttribute('aria-hidden', 'true');
 		btn.element.appendChild(hoverChevron);
 
 		const check = dom.h(isError
