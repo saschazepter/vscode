@@ -9,12 +9,12 @@ import { Emitter, Event } from '../../../../base/common/event.js';
 import { Disposable, DisposableStore } from '../../../../base/common/lifecycle.js';
 import { localize } from '../../../../nls.js';
 import { IActionWidgetService } from '../../../../platform/actionWidget/browser/actionWidget.js';
-import { ActionListItemKind, IActionListDelegate, IActionListItem } from '../../../../platform/actionWidget/browser/actionList.js';
+import { ActionListItemKind, IActionListDelegate, IActionListItem, IActionListOptions } from '../../../../platform/actionWidget/browser/actionList.js';
 import { IGitRepository } from '../../../../workbench/contrib/git/common/gitService.js';
 import { renderIcon } from '../../../../base/browser/ui/iconLabel/iconLabels.js';
 import { INewSession } from './newSession.js';
 
-const COPILOT_WORKTREE_PREFIX = 'copilot-worktree-';
+const COPILOT_WORKTREE_PATTERN = 'copilot-worktree-';
 const FILTER_THRESHOLD = 10;
 
 interface IBranchItem {
@@ -137,6 +137,12 @@ export class BranchPicker extends Disposable {
 
 		const totalActions = items.filter(i => i.kind === ActionListItemKind.Action).length;
 
+		const worktreesSection = localize('branchPicker.worktrees', "Worktrees");
+		const listOptions: IActionListOptions = {
+			collapsedByDefault: new Set([worktreesSection]),
+			...(totalActions > FILTER_THRESHOLD ? { showFilter: true, filterPlaceholder: localize('branchPicker.filter', "Filter branches...") } : undefined),
+		};
+
 		this.actionWidgetService.show<IBranchItem>(
 			'branchPicker',
 			false,
@@ -149,15 +155,15 @@ export class BranchPicker extends Disposable {
 				getAriaLabel: (item) => item.name,
 				getWidgetAriaLabel: () => localize('branchPicker.ariaLabel', "Branch Picker"),
 			},
-			totalActions > FILTER_THRESHOLD ? { showFilter: true, filterPlaceholder: localize('branchPicker.filter', "Filter branches...") } : undefined,
+			listOptions,
 		);
 	}
 
 	private _buildItems(): IActionListItem<IBranchItem>[] {
 		const items: IActionListItem<IBranchItem>[] = [];
-		const copilotWorktreeSection = localize('branchPicker.copilotWorktrees', "Copilot Worktrees");
-		const worktreeBranches = this._branches.filter(b => b.startsWith(COPILOT_WORKTREE_PREFIX));
-		const otherBranches = this._branches.filter(b => !b.startsWith(COPILOT_WORKTREE_PREFIX));
+		const worktreesSection = localize('branchPicker.worktrees', "Worktrees");
+		const worktreeBranches = this._branches.filter(b => b.includes(COPILOT_WORKTREE_PATTERN));
+		const otherBranches = this._branches.filter(b => !b.includes(COPILOT_WORKTREE_PATTERN));
 
 		// Regular branches first, no section
 		for (const branch of otherBranches) {
@@ -169,13 +175,13 @@ export class BranchPicker extends Disposable {
 			});
 		}
 
-		// Copilot worktree branches in a toggleable section
+		// Worktree branches in a toggleable, collapsed-by-default section
 		if (worktreeBranches.length > 0) {
 			items.push({
 				kind: ActionListItemKind.Action,
-				label: copilotWorktreeSection,
+				label: worktreesSection,
 				isSectionToggle: true,
-				section: copilotWorktreeSection,
+				section: worktreesSection,
 				group: { title: '', icon: Codicon.blank },
 				item: { name: '' },
 			});
@@ -183,7 +189,7 @@ export class BranchPicker extends Disposable {
 				items.push({
 					kind: ActionListItemKind.Action,
 					label: branch,
-					section: copilotWorktreeSection,
+					section: worktreesSection,
 					group: { title: '', icon: this._selectedBranch === branch ? Codicon.check : Codicon.blank },
 					item: { name: branch },
 				});
