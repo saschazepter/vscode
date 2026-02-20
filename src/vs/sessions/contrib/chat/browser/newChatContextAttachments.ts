@@ -36,6 +36,7 @@ import { getExcludes, ISearchConfiguration, ISearchService, QueryType } from '..
  * - File picker via quick access ("Files and Open Folders...")
  * - Image from Clipboard
  * - Drag and drop files
+ * - Paste images from clipboard (Ctrl/Cmd+V)
  */
 export class NewChatContextAttachments extends Disposable {
 
@@ -168,6 +169,64 @@ export class NewChatContextAttachments extends Disposable {
 				}
 			}
 		}));
+	}
+
+	// --- Paste ---
+
+	registerPasteHandler(element: HTMLElement): void {
+		const supportedMimeTypes = [
+			'image/png',
+			'image/jpeg',
+			'image/jpg',
+			'image/bmp',
+			'image/gif',
+			'image/tiff'
+		];
+
+		this._register(dom.addDisposableListener(element, dom.EventType.PASTE, async (e: ClipboardEvent) => {
+			const items = e.clipboardData?.items;
+			if (!items) {
+				return;
+			}
+
+			// Check synchronously for image data before any async work
+			// so preventDefault stops the editor from inserting text.
+			let imageFile: File | undefined;
+			for (const item of Array.from(items)) {
+				if (!item.type.startsWith('image/') || !supportedMimeTypes.includes(item.type)) {
+					continue;
+				}
+				const file = item.getAsFile();
+				if (file) {
+					imageFile = file;
+					break;
+				}
+			}
+
+			if (!imageFile) {
+				return;
+			}
+
+			e.preventDefault();
+			e.stopPropagation();
+
+			const arrayBuffer = await imageFile.arrayBuffer();
+			const data = new Uint8Array(arrayBuffer);
+			if (!isImage(data)) {
+				return;
+			}
+
+			const resizedData = await resizeImage(data, imageFile.type);
+			const displayName = this._getUniqueImageName();
+
+			this._addAttachments({
+				id: await imageToHash(resizedData),
+				name: displayName,
+				fullName: displayName,
+				value: resizedData,
+				kind: 'image',
+			});
+		}, true));
 	}
 
 	// --- Picker ---
@@ -402,16 +461,27 @@ export class NewChatContextAttachments extends Disposable {
 			return;
 		}
 
+		const displayName = this._getUniqueImageName();
+
 		this._addAttachments({
 			id: await imageToHash(imageData),
-			name: localize('pastedImage', "Pasted Image"),
-			fullName: localize('pastedImage', "Pasted Image"),
+			name: displayName,
+			fullName: displayName,
 			value: imageData,
 			kind: 'image',
 		});
 	}
 
 	// --- State management ---
+
+	private _getUniqueImageName(): string {
+		const baseName = localize('pastedImage', "Pasted Image");
+		let name = baseName;
+		for (let i = 2; this._attachedContext.some(a => a.name === name); i++) {
+			name = `${baseName} ${i}`;
+		}
+		return name;
+	}
 
 	private _addAttachments(...entries: IChatRequestVariableEntry[]): void {
 		for (const entry of entries) {

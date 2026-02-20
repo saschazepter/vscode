@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-.monaco-editor .agent-feedback-glyph,
+.monaco-editor .agent-feedback-line-decoration,
 .monaco-editor .agent-feedback-add-hint {
 	border-radius: 3px;
 	display: flex !important;
@@ -11,7 +11,7 @@
 	justify-content: center;
 }
 
-.monaco-editor .agent-feedback-glyph {
+.monaco-editor .agent-feedback-line-decoration {
 	background-color: var(--vscode-toolbar-hoverBackground);
 }
 

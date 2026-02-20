@@ -3456,8 +3456,30 @@ export interface ExtHostChatSessionsShape {
 	$provideHandleOptionsChange(providerHandle: number, sessionResource: UriComponents, updates: ReadonlyArray<ChatSessionOptionUpdateDto>, token: CancellationToken): Promise<void>;
 }
 
+export interface GitRefQueryDto {
+	readonly contains?: string;
+	readonly count?: number;
+	readonly pattern?: string | string[];
+	readonly sort?: 'alphabetically' | 'committerdate' | 'creatordate';
+}
+
+export enum GitRefTypeDto {
+	Head,
+	RemoteHead,
+	Tag
+}
+
+export interface GitRefDto {
+	readonly id: string;
+	readonly name: string;
+	readonly type: GitRefTypeDto;
+	readonly revision: string;
+}
+
 export interface ExtHostGitExtensionShape {
+	$isGitExtensionAvailable(): Promise<boolean>;
 	$openRepository(root: UriComponents): Promise<UriComponents | undefined>;
+	$getRefs(root: UriComponents, query: GitRefQueryDto, token?: CancellationToken): Promise<GitRefDto[]>;
 }
 
 // --- proxy identifiers

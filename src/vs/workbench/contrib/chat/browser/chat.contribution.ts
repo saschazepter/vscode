@@ -51,7 +51,7 @@ import { ILanguageModelToolsConfirmationService } from '../common/tools/language
 import { ILanguageModelToolsService } from '../common/tools/languageModelToolsService.js';
 import { ChatPromptFilesExtensionPointHandler } from '../common/promptSyntax/chatPromptFilesContribution.js';
 import { PromptsConfig } from '../common/promptSyntax/config/config.js';
-import { INSTRUCTIONS_DEFAULT_SOURCE_FOLDER, INSTRUCTION_FILE_EXTENSION, LEGACY_MODE_DEFAULT_SOURCE_FOLDER, LEGACY_MODE_FILE_EXTENSION, PROMPT_DEFAULT_SOURCE_FOLDER, PROMPT_FILE_EXTENSION, DEFAULT_SKILL_SOURCE_FOLDERS, AGENTS_SOURCE_FOLDER, AGENT_FILE_EXTENSION, SKILL_FILENAME, CLAUDE_AGENTS_SOURCE_FOLDER, CLAUDE_RULES_SOURCE_FOLDER, DEFAULT_HOOK_FILE_PATHS } from '../common/promptSyntax/config/promptFileLocations.js';
+import { INSTRUCTIONS_DEFAULT_SOURCE_FOLDER, INSTRUCTION_FILE_EXTENSION, LEGACY_MODE_DEFAULT_SOURCE_FOLDER, LEGACY_MODE_FILE_EXTENSION, PROMPT_DEFAULT_SOURCE_FOLDER, PROMPT_FILE_EXTENSION, DEFAULT_SKILL_SOURCE_FOLDERS, AGENTS_SOURCE_FOLDER, AGENT_FILE_EXTENSION, SKILL_FILENAME, CLAUDE_AGENTS_SOURCE_FOLDER, DEFAULT_HOOK_FILE_PATHS, DEFAULT_INSTRUCTIONS_SOURCE_FOLDERS } from '../common/promptSyntax/config/promptFileLocations.js';
 import { PromptLanguageFeaturesProvider } from '../common/promptSyntax/promptFileContributions.js';
 import { AGENT_DOCUMENTATION_URL, INSTRUCTIONS_DOCUMENTATION_URL, PROMPT_DOCUMENTATION_URL, SKILL_DOCUMENTATION_URL, HOOK_DOCUMENTATION_URL } from '../common/promptSyntax/promptTypes.js';
 import { hookFileSchema, HOOK_SCHEMA_URI, HOOK_FILE_GLOB } from '../common/promptSyntax/hookSchema.js';
@@ -96,6 +96,7 @@ import { ChatAccessibilityService } from './accessibility/chatAccessibilityServi
 import './attachments/chatAttachmentModel.js';
 import './widget/input/chatStatusWidget.js';
 import { ChatAttachmentResolveService, IChatAttachmentResolveService } from './attachments/chatAttachmentResolveService.js';
+import { ChatAttachmentWidgetRegistry, IChatAttachmentWidgetRegistry } from './attachments/chatAttachmentWidgetRegistry.js';
 import { ChatMarkdownAnchorService, IChatMarkdownAnchorService } from './widget/chatContentParts/chatMarkdownAnchorService.js';
 import { ChatContextPickService, IChatContextPickService } from './attachments/chatContextPickService.js';
 import { ChatInputBoxContentProvider } from './widget/input/editor/chatEditorInputContentProvider.js';
@@ -747,8 +748,7 @@ configurationRegistry.registerConfiguration({
 				INSTRUCTIONS_DOCUMENTATION_URL,
 			),
 			default: {
-				[INSTRUCTIONS_DEFAULT_SOURCE_FOLDER]: true,
-				[CLAUDE_RULES_SOURCE_FOLDER]: true,
+				...DEFAULT_INSTRUCTIONS_SOURCE_FOLDERS.map((folder) => ({ [folder.path]: true })).reduce((acc, curr) => ({ ...acc, ...curr }), {}),
 			},
 			additionalProperties: { type: 'boolean' },
 			propertyNames: {
@@ -759,8 +759,7 @@ configurationRegistry.registerConfiguration({
 			tags: ['prompts', 'reusable prompts', 'prompt snippets', 'instructions'],
 			examples: [
 				{
-					[INSTRUCTIONS_DEFAULT_SOURCE_FOLDER]: true,
-					[CLAUDE_RULES_SOURCE_FOLDER]: true,
+					[DEFAULT_INSTRUCTIONS_SOURCE_FOLDERS[0].path]: true,
 				},
 				{
 					[INSTRUCTIONS_DEFAULT_SOURCE_FOLDER]: true,
@@ -1554,6 +1553,7 @@ registerSingleton(IPromptsService, PromptsService, InstantiationType.Delayed);
 registerSingleton(IChatContextPickService, ChatContextPickService, InstantiationType.Delayed);
 registerSingleton(IChatModeService, ChatModeService, InstantiationType.Delayed);
 registerSingleton(IChatAttachmentResolveService, ChatAttachmentResolveService, InstantiationType.Delayed);
+registerSingleton(IChatAttachmentWidgetRegistry, ChatAttachmentWidgetRegistry, InstantiationType.Delayed);
 registerSingleton(IChatTodoListService, ChatTodoListService, InstantiationType.Delayed);
 registerSingleton(IChatOutputRendererService, ChatOutputRendererService, InstantiationType.Delayed);
 registerSingleton(IChatLayoutService, ChatLayoutService, InstantiationType.Delayed);
