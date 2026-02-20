@@ -61,8 +61,14 @@ export class CopilotSdkMainService extends Disposable implements ICopilotSdkMain
 
 		this._connectionStore.add(this._utilityProcess.onStdout(data => this._logService.info(`[CopilotSdkHost:stdout] ${data}`)));
 		this._connectionStore.add(this._utilityProcess.onStderr(data => this._logService.warn(`[CopilotSdkHost:stderr] ${data}`)));
-		this._connectionStore.add(this._utilityProcess.onExit(e => this._logService.error(`[CopilotSdkHost] Process exited with code ${e.code}`)));
-		this._connectionStore.add(this._utilityProcess.onCrash(e => this._logService.error(`[CopilotSdkHost] Process crashed with code ${e.code}`)));
+		this._connectionStore.add(this._utilityProcess.onExit(e => {
+			this._logService.error(`[CopilotSdkHost] Process exited with code ${e.code}`);
+			this._teardown();
+		}));
+		this._connectionStore.add(this._utilityProcess.onCrash(e => {
+			this._logService.error(`[CopilotSdkHost] Process crashed with code ${e.code}`);
+			this._teardown();
+		}));
 
 		this._utilityProcess.start({
 			type: 'copilotSdkHost',
