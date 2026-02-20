@@ -24,6 +24,21 @@ import { localChatSessionType } from '../common/chatSessionsService.js';
 import { IChatService } from '../common/chatService/chatService.js';
 import { CreateSlashCommandsUsageTracker } from './createSlashCommandsUsageTracker.js';
 import { IChatEntitlementService } from '../../../services/chat/common/chatEntitlementService.js';
+import { ITelemetryService } from '../../../../platform/telemetry/common/telemetry.js';
+
+type ChatTipEvent = {
+	tipId: string;
+	action: string;
+	commandId?: string;
+};
+
+type ChatTipClassification = {
+	tipId: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The identifier of the tip.' };
+	action: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The action performed on the tip (shown, dismissed, navigateNext, navigatePrevious, hidden, disabled, commandClicked).' };
+	commandId?: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The command ID that was clicked, if applicable.' };
+	owner: 'meganrogge';
+	comment: 'Tracks user interactions with chat tips to understand which tips resonate and which are dismissed.';
+};
 
 export const IChatTipService = createDecorator<IChatTipService>('chatTipService');
 
@@ -583,6 +598,7 @@ export class ChatTipService extends Disposable implements IChatTipService {
 	private readonly _tracker: TipEligibilityTracker;
 	private readonly _createSlashCommandsUsageTracker: CreateSlashCommandsUsageTracker;
 	private _yoloModeEverEnabled: boolean;
+	private readonly _tipCommandListener = this._register(new MutableDisposable());
 
 	constructor(
 		@IProductService private readonly _productService: IProductService,
@@ -592,6 +608,8 @@ export class ChatTipService extends Disposable implements IChatTipService {
 		@IInstantiationService instantiationService: IInstantiationService,
 		@ILogService private readonly _logService: ILogService,
 		@IChatEntitlementService chatEntitlementService: IChatEntitlementService,
+		@ICommandService private readonly _commandService: ICommandService,
+		@ITelemetryService private readonly _telemetryService: ITelemetryService,
 	) {
 		super();
 		this._tracker = this._register(instantiationService.createInstance(TipEligibilityTracker, TIP_CATALOG));
@@ -630,6 +648,7 @@ export class ChatTipService extends Disposable implements IChatTipService {
 
 	dismissTip(): void {
 		if (this._shownTip) {
+			this._logTipTelemetry(this._shownTip.id, 'dismissed');
 			const dismissed = new Set(this._getDismissedTipIds());
 			dismissed.add(this._shownTip.id);
 			this._storageService.store(ChatTipService._DISMISSED_TIP_KEY, JSON.stringify([...dismissed]), StorageScope.APPLICATION, StorageTarget.MACHINE);
@@ -676,12 +695,18 @@ export class ChatTipService extends Disposable implements IChatTipService {
 	}
 
 	hideTip(): void {
+		if (this._shownTip) {
+			this._logTipTelemetry(this._shownTip.id, 'hidden');
+		}
 		this._shownTip = undefined;
 		this._tipRequestId = undefined;
 		this._onDidHideTip.fire();
 	}
 
 	async disableTips(): Promise<void> {
+		if (this._shownTip) {
+			this._logTipTelemetry(this._shownTip.id, 'disabled');
+		}
 		this._shownTip = undefined;
 		this._tipRequestId = undefined;
 		await this._configurationService.updateValue('chat.tips.enabled', false, ConfigurationTarget.APPLICATION);
@@ -787,6 +812,9 @@ export class ChatTipService extends Disposable implements IChatTipService {
 		this._tipRequestId = sourceId;
 		this._shownTip = selectedTip;
 
+		this._logTipTelemetry(selectedTip.id, 'shown');
+		this._trackTipCommandClicks(selectedTip);
+
 		return this._createTip(selectedTip);
 	}
 
@@ -820,9 +848,12 @@ export class ChatTipService extends Disposable implements IChatTipService {
 			const idx = ((currentIndex + direction * i) % TIP_CATALOG.length + TIP_CATALOG.length) % TIP_CATALOG.length;
 			const candidate = TIP_CATALOG[idx];
 			if (!dismissedIds.has(candidate.id) && this._isEligible(candidate, contextKeyService)) {
+				this._logTipTelemetry(this._shownTip.id, direction === 1 ? 'navigateNext' : 'navigatePrevious');
 				this._shownTip = candidate;
 				this._tipRequestId = 'welcome';
 				this._storageService.store(ChatTipService._LAST_TIP_ID_KEY, candidate.id, StorageScope.APPLICATION, StorageTarget.USER);
+				this._logTipTelemetry(candidate.id, 'shown');
+				this._trackTipCommandClicks(candidate);
 				const tip = this._createTip(candidate);
 				this._onDidNavigateTip.fire(tip);
 				return tip;
@@ -930,6 +961,27 @@ export class ChatTipService extends Disposable implements IChatTipService {
 			content: markdown,
 			enabledCommands: tipDef.enabledCommands,
 		};
+	}
+
+	private _logTipTelemetry(tipId: string, action: string, commandId?: string): void {
+		this._telemetryService.publicLog2<ChatTipEvent, ChatTipClassification>('chatTip', {
+			tipId,
+			action,
+			commandId,
+		});
+	}
+
+	private _trackTipCommandClicks(tip: ITipDefinition): void {
+		this._tipCommandListener.clear();
+		if (!tip.enabledCommands?.length) {
+			return;
+		}
+		const enabledCommandSet = new Set(tip.enabledCommands);
+		this._tipCommandListener.value = this._commandService.onDidExecuteCommand(e => {
+			if (enabledCommandSet.has(e.commandId) && this._shownTip?.id === tip.id) {
+				this._logTipTelemetry(tip.id, 'commandClicked', e.commandId);
+			}
+		});
 	}
 
 	private _readApplicationWithProfileFallback(key: string): string | undefined {

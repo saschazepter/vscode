@@ -17,6 +17,7 @@ import { ITerminalService } from '../../../../workbench/contrib/terminal/browser
 import { Menus } from '../../../browser/menus.js';
 import { ContextKeyExpr } from '../../../../platform/contextkey/common/contextkey.js';
 import { ISessionScript, ISessionsConfigurationService } from './sessionsConfigurationService.js';
+import { IsAuxiliaryWindowContext } from '../../../../workbench/common/contextkeys.js';
 
 
 // Menu IDs - exported for use in auxiliary bar part
@@ -190,4 +191,5 @@ MenuRegistry.appendMenuItem(Menus.TitleBarRight, {
 	icon: Codicon.play,
 	group: 'navigation',
 	order: 8,
+	when: IsAuxiliaryWindowContext.toNegated()
 });
