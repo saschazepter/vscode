@@ -8,6 +8,9 @@ import { Emitter, Event } from '../../../../base/common/event.js';
 import { Disposable, IDisposable } from '../../../../base/common/lifecycle.js';
 import { VSBuffer } from '../../../../base/common/buffer.js';
 import { IPlaywrightService } from '../../../../platform/browserView/common/playwrightService.js';
+import { IDialogService } from '../../../../platform/dialogs/common/dialogs.js';
+import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
+import { localize } from '../../../../nls.js';
 import {
 	IBrowserViewBounds,
 	IBrowserViewNavigationEvent,
@@ -154,7 +157,9 @@ export class BrowserViewModel extends Disposable implements IBrowserViewModel {
 		@IWorkspaceTrustManagementService private readonly workspaceTrustManagementService: IWorkspaceTrustManagementService,
 		@ITelemetryService private readonly telemetryService: ITelemetryService,
 		@IConfigurationService private readonly configurationService: IConfigurationService,
-		@IPlaywrightService private readonly playwrightService: IPlaywrightService
+		@IPlaywrightService private readonly playwrightService: IPlaywrightService,
+		@IDialogService private readonly dialogService: IDialogService,
+		@IStorageService private readonly storageService: IStorageService,
 	) {
 		super();
 	}
@@ -360,8 +365,37 @@ export class BrowserViewModel extends Disposable implements IBrowserViewModel {
 		return this.browserViewService.clearStorage(this.id);
 	}
 
+	private static readonly SHARE_DONT_ASK_KEY = 'browserView.shareWithAgent.dontAskAgain';
+
 	async setSharedWithAgent(shared: boolean): Promise<void> {
 		if (shared) {
+			const storedChoice = this.storageService.getBoolean(BrowserViewModel.SHARE_DONT_ASK_KEY, StorageScope.PROFILE);
+
+			if (!storedChoice) {
+				// First time (or no stored preference) -- ask.
+				const result = await this.dialogService.confirm({
+					type: 'question',
+					title: localize('browserView.shareWithAgent.title', 'Share with Agent?'),
+					message: localize('browserView.shareWithAgent.message', 'Share this browser page with the agent?'),
+					detail: localize(
+						'browserView.shareWithAgent.detail',
+						'The agent will be able to read and modify browser content and saved data, including cookies.'
+					),
+					primaryButton: localize('browserView.shareWithAgent.allow', '&&Allow'),
+					cancelButton: localize('browserView.shareWithAgent.deny', 'Deny'),
+					checkbox: { label: localize('browserView.shareWithAgent.dontAskAgain', "Don't ask again"), checked: false },
+				});
+
+				// Only persist "don't ask again" if user accepted sharing, so the button doesn't just do nothing.
+				if (result.confirmed && result.checkboxChecked) {
+					this.storageService.store(BrowserViewModel.SHARE_DONT_ASK_KEY, result.confirmed, StorageScope.PROFILE, StorageTarget.USER);
+				}
+
+				if (!result.confirmed) {
+					return;
+				}
+			}
+
 			await this.playwrightService.startTrackingPage(this.id);
 		} else {
 			await this.playwrightService.stopTrackingPage(this.id);

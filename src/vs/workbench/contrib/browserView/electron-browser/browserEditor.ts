@@ -6,6 +6,7 @@
 import './media/browser.css';
 import { localize } from '../../../../nls.js';
 import { $, addDisposableListener, Dimension, EventType, IDomPosition, registerExternalFocusChecker } from '../../../../base/browser/dom.js';
+import { Button } from '../../../../base/browser/ui/button/button.js';
 import { renderIcon } from '../../../../base/browser/ui/iconLabel/iconLabels.js';
 import { CancellationToken, CancellationTokenSource } from '../../../../base/common/cancellation.js';
 import { RawContextKey, IContextKey, IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
@@ -67,12 +68,16 @@ const originalHtmlElementFocus = HTMLElement.prototype.focus;
 
 class BrowserNavigationBar extends Disposable {
 	private readonly _urlInput: HTMLInputElement;
+	private readonly _shareButton: Button;
+	private readonly _shareButtonContainer: HTMLElement;
 
 	constructor(
 		editor: BrowserEditor,
 		container: HTMLElement,
 		instantiationService: IInstantiationService,
-		scopedContextKeyService: IContextKeyService
+		scopedContextKeyService: IContextKeyService,
+		configurationService: IConfigurationService,
+		contextKeyService: IContextKeyService
 	) {
 		super();
 
@@ -104,10 +109,30 @@ class BrowserNavigationBar extends Disposable {
 			}
 		));
 
+		// URL input container (wraps input + share toggle)
+		const urlContainer = $('.browser-url-container');
+
 		// URL input
 		this._urlInput = $<HTMLInputElement>('input.browser-url-input');
 		this._urlInput.type = 'text';
 		this._urlInput.placeholder = localize('browser.urlPlaceholder', "Enter a URL");
+
+		// Share toggle button (inside URL bar, right side)
+		this._shareButtonContainer = $('.browser-share-toggle-container');
+		this._shareButton = this._register(new Button(this._shareButtonContainer, {
+			supportIcons: true,
+			title: localize('browser.shareWithAgent', "Share with Agent"),
+			small: true,
+			buttonBackground: 'transparent',
+			buttonHoverBackground: 'transparent',
+			buttonForeground: 'inherit',
+			hoverDelegate
+		}));
+		this._shareButton.element.classList.add('browser-share-toggle');
+		this._shareButton.label = '$(agent)';
+
+		urlContainer.appendChild(this._urlInput);
+		urlContainer.appendChild(this._shareButtonContainer);
 
 		// Create actions toolbar (right side) with scoped context
 		const actionsContainer = $('.browser-actions-toolbar');
@@ -126,9 +151,9 @@ class BrowserNavigationBar extends Disposable {
 		navToolbar.context = editor;
 		actionsToolbar.context = editor;
 
-		// Assemble layout: nav | url | actions
+		// Assemble layout: nav | url container | actions
 		container.appendChild(navContainer);
-		container.appendChild(this._urlInput);
+		container.appendChild(urlContainer);
 		container.appendChild(actionsContainer);
 
 		// Setup URL input handler
@@ -145,6 +170,42 @@ class BrowserNavigationBar extends Disposable {
 		this._register(addDisposableListener(this._urlInput, EventType.FOCUS, () => {
 			this._urlInput.select();
 		}));
+
+		// Share toggle click handler
+		this._register(this._shareButton.onDidClick(() => {
+			editor.toggleShareWithAgent();
+		}));
+
+		// Show share button only when chat is enabled and browser tools are enabled
+		const updateShareButtonVisibility = () => {
+			const chatEnabled = contextKeyService.getContextKeyValue<boolean>(ChatContextKeys.enabled.key);
+			const browserToolsEnabled = configurationService.getValue<boolean>('workbench.browser.enableChatTools');
+			this._shareButtonContainer.style.display = chatEnabled && browserToolsEnabled ? '' : 'none';
+		};
+		updateShareButtonVisibility();
+		this._register(configurationService.onDidChangeConfiguration(e => {
+			if (e.affectsConfiguration('workbench.browser.enableChatTools')) {
+				updateShareButtonVisibility();
+			}
+		}));
+		this._register(contextKeyService.onDidChangeContext(e => {
+			if (e.affectsSome(new Set([ChatContextKeys.enabled.key]))) {
+				updateShareButtonVisibility();
+			}
+		}));
+	}
+
+	/**
+	 * Update the share toggle visual state
+	 */
+	setShared(isShared: boolean): void {
+		this._shareButton.checked = isShared;
+		this._shareButton.label = isShared
+			? localize('browser.sharingWithAgent', "Sharing with Agent") + ' $(agent)'
+			: '$(agent)';
+		this._shareButton.setTitle(isShared
+			? localize('browser.unshareWithAgent', "Stop Sharing with Agent")
+			: localize('browser.shareWithAgent', "Share with Agent"));
 	}
 
 	/**
@@ -244,7 +305,7 @@ export class BrowserEditor extends EditorPane {
 		const toolbar = $('.browser-toolbar');
 
 		// Create navigation bar widget with scoped context
-		this._navigationBar = this._register(new BrowserNavigationBar(this, toolbar, this.instantiationService, contextKeyService));
+		this._navigationBar = this._register(new BrowserNavigationBar(this, toolbar, this.instantiationService, contextKeyService, this.configurationService, this.contextKeyService));
 
 		root.appendChild(toolbar);
 
@@ -332,6 +393,7 @@ export class BrowserEditor extends EditorPane {
 
 		this._storageScopeContext.set(this._model.storageScope);
 		this._devToolsOpenContext.set(this._model.isDevToolsOpen);
+		this._updateSharingState(this._model.sharedWithAgent);
 
 		// Update find widget with new model
 		this._findWidget.rawValue?.setModel(this._model);
@@ -339,6 +401,11 @@ export class BrowserEditor extends EditorPane {
 		// Clean up on input disposal
 		this._inputDisposables.add(input.onWillDispose(() => {
 			this._model = undefined;
+		}));
+
+		// Listen for sharing state changes on the model
+		this._inputDisposables.add(this._model.onDidChangeSharedWithAgent(isShared => {
+			this._updateSharingState(isShared);
 		}));
 
 		// Initialize UI state and context keys from model
@@ -576,6 +643,18 @@ export class BrowserEditor extends EditorPane {
 
 	getUrl(): string | undefined {
 		return this._model?.url;
+	}
+
+	private _updateSharingState(isShared: boolean): void {
+		this._browserContainer.classList.toggle('shared', isShared);
+		this._navigationBar.setShared(isShared);
+	}
+
+	toggleShareWithAgent(): void {
+		if (!this._model) {
+			return;
+		}
+		this._model.setSharedWithAgent(!this._model.sharedWithAgent);
 	}
 
 	async navigateToUrl(url: string): Promise<void> {
