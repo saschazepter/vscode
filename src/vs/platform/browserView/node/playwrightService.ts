@@ -14,7 +14,7 @@ import { VSBuffer } from '../../../base/common/buffer.js';
 import { PlaywrightTab } from './playwrightTab.js';
 
 // eslint-disable-next-line local/code-import-patterns
-import type { Browser, BrowserContext, Page } from 'playwright-core';
+import type { Browser, BrowserContext, Page } from 'playwright-core-for-agents';
 
 /**
  * Shared-process implementation of {@link IPlaywrightService}.
@@ -80,7 +80,7 @@ export class PlaywrightService extends Disposable implements IPlaywrightService 
 				const group = await this.browserViewGroupRemoteService.createGroup();
 
 				this.logService.debug('[PlaywrightService] Connecting to browser via CDP');
-				const playwright = await import('playwright-core');
+				const playwright = await import('playwright-core-for-agents');
 				const endpoint = await group.getDebugWebSocketEndpoint();
 				const browser = await playwright.chromium.connectOverCDP(endpoint);
 
@@ -89,6 +89,7 @@ export class PlaywrightService extends Disposable implements IPlaywrightService 
 				// This can happen if the service was disposed while we were waiting for the connection. In that case, clean up immediately.
 				if (this._initPromise === undefined) {
 					browser.close().catch(() => { /* ignore */ });
+					group.dispose();
 					throw new Error('PlaywrightService was disposed during initialization');
 				}
 
@@ -126,7 +127,7 @@ export class PlaywrightService extends Disposable implements IPlaywrightService 
 		return this._pages.getSummary(page, true);
 	}
 
-	async invokeFunction<TArgs extends unknown[], TReturn>(pageId: string, fnDef: string, ...args: TArgs): Promise<{ result: TReturn; summary: string }> {
+	async invokeFunction(pageId: string, fnDef: string, ...args: unknown[]): Promise<{ result: unknown; summary: string }> {
 		this.logService.info(`[PlaywrightService] Invoking function on view ${pageId}`);
 
 		try {

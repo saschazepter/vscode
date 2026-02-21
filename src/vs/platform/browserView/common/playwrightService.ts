@@ -70,7 +70,7 @@ export interface IPlaywrightService {
 	 * @param args Additional arguments to pass to the function after the `page` object.
 	 * @returns The result of the function execution, including a page summary.
 	 */
-	invokeFunction<TResult = unknown>(pageId: string, fnDef: string, ...args: unknown[]): Promise<{ result: TResult; summary: string }>;
+	invokeFunction(pageId: string, fnDef: string, ...args: unknown[]): Promise<{ result: unknown; summary: string }>;
 
 	/**
 	 * Takes a screenshot of the given page and returns it as a VSBuffer.
