@@ -85,6 +85,13 @@
 	opacity: 1;
 }
 
+.keybindings-editor > .keybindings-header > .keybindings-header-controls {
+	display: flex;
+	justify-content: flex-end;
+	margin-top: 10px;
+	padding-right: 10px;
+}
+
 /** Table styling **/
 
 .keybindings-editor > .keybindings-body .keybindings-table-container {
