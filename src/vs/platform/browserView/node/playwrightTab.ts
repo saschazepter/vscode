@@ -4,12 +4,12 @@
  *--------------------------------------------------------------------------------------------*/
 
 // eslint-disable-next-line local/code-import-patterns
-import type * as playwright from 'playwright-core-for-agents';
+import type * as playwright from '@vscode/playwright-core';
 import { Emitter, Event } from '../../../base/common/event.js';
 import { CancellationToken } from '../../../base/common/cancellation.js';
 import { createCancelablePromise, raceCancellablePromises } from '../../../base/common/async.js';
 
-declare module 'playwright-core-for-agents' {
+declare module '@vscode/playwright-core' {
 	interface Page {
 		// A hidden Playwright method that returns an AI-friendly snapshot of the page.
 		_snapshotForAI(options?: { track?: string }): Promise<{ full: string; incremental?: string }>;

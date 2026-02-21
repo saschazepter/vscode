@@ -14,7 +14,7 @@ import { VSBuffer } from '../../../base/common/buffer.js';
 import { PlaywrightTab } from './playwrightTab.js';
 
 // eslint-disable-next-line local/code-import-patterns
-import type { Browser, BrowserContext, Page } from 'playwright-core-for-agents';
+import type { Browser, BrowserContext, Page } from '@vscode/playwright-core';
 
 /**
  * Shared-process implementation of {@link IPlaywrightService}.
@@ -80,7 +80,7 @@ export class PlaywrightService extends Disposable implements IPlaywrightService 
 				const group = await this.browserViewGroupRemoteService.createGroup();
 
 				this.logService.debug('[PlaywrightService] Connecting to browser via CDP');
-				const playwright = await import('playwright-core-for-agents');
+				const playwright = await import('@vscode/playwright-core');
 				const endpoint = await group.getDebugWebSocketEndpoint();
 				const browser = await playwright.chromium.connectOverCDP(endpoint);
 
