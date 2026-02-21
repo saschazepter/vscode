@@ -189,6 +189,7 @@ export class PromptValidator {
 				this.validateUserInvocable(attributes, report);
 				this.validateUserInvokable(attributes, report);
 				this.validateDisableModelInvocation(attributes, report);
+				this.validateAutoApprove(attributes, report);
 				this.validateTools(attributes, ChatModeKind.Agent, target, report);
 				if (isVSCodeOrDefaultTarget(target)) {
 					this.validateModel(attributes, ChatModeKind.Agent, report);
@@ -655,6 +656,17 @@ export class PromptValidator {
 		}
 		if (!isTrueOrFalse(attribute.value)) {
 			report(toMarker(localize('promptValidator.disableModelInvocationMustBeBoolean', "The 'disable-model-invocation' attribute must be 'true' or 'false'."), attribute.value.range, MarkerSeverity.Error));
+			return;
+		}
+	}
+
+	private validateAutoApprove(attributes: IHeaderAttribute[], report: (markers: IMarkerData) => void): undefined {
+		const attribute = attributes.find(attr => attr.key === PromptHeaderAttributes.autoApprove);
+		if (!attribute) {
+			return;
+		}
+		if (!isTrueOrFalse(attribute.value)) {
+			report(toMarker(localize('promptValidator.autoApproveMustBeBoolean', "The 'auto-approve' attribute must be 'true' or 'false'."), attribute.value.range, MarkerSeverity.Error));
 			return;
 		}
 	}

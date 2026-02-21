@@ -114,7 +114,8 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 	private readonly _yoloSessions = new Set<string>();
 
 	/** Sessions with YOLO mode enabled for only the next request (keyed by session resource toString) */
-	private readonly _yoloNextRequestSessions = new Set<string>();
+	/** Maps session key → request ID that consumed the flag (null = pending, not yet consumed) */
+	private readonly _yoloNextRequestSessions = new Map<string, string | null>();
 
 	private readonly _isAgentModeEnabled: IObservable<boolean>;
 
@@ -270,20 +271,6 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 		}));
 	}
 
-	private _watchModelForRequestCompletion(sessionResource: URI): void {
-		const model = this._chatService.getSession(sessionResource);
-		if (!model) {
-			return;
-		}
-		const listener = model.onDidChange(e => {
-			if (e.kind === 'completedRequest') {
-				this._yoloNextRequestSessions.delete(sessionResource.toString());
-				listener.dispose();
-			}
-		});
-		Event.once(model.onDidDispose)(() => listener.dispose());
-	}
-
 	enableSessionYolo(sessionResource: URI): void {
 		this._ensureYoloCleanup();
 		this._yoloSessions.add(sessionResource.toString());
@@ -299,8 +286,7 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 
 	enableNextRequestYolo(sessionResource: URI): void {
 		this._ensureYoloCleanup();
-		this._yoloNextRequestSessions.add(sessionResource.toString());
-		this._watchModelForRequestCompletion(sessionResource);
+		this._yoloNextRequestSessions.set(sessionResource.toString(), null);
 	}
 
 	override dispose(): void {
@@ -1111,15 +1097,29 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 		// eligibility settings — the user explicitly asked to auto-approve everything.
 		if (chatSessionResource) {
 			const key = chatSessionResource.toString();
-			if (this._yoloSessions.has(key) || this._yoloNextRequestSessions.has(key)) {
-				return { type: ToolConfirmKind.Setting, id: 'chat.yolo.session' };
+			if (this._yoloSessions.has(key)) {
+				return { type: ToolConfirmKind.ConfirmationNotNeeded, reason: 'session-yolo' };
+			}
+
+			if (this._yoloNextRequestSessions.has(key)) {
+				const model = this._chatService.getSession(chatSessionResource);
+				const request = model?.getRequests().at(-1);
+				const consumedBy = this._yoloNextRequestSessions.get(key);
+				if (consumedBy === null && request) {
+					this._yoloNextRequestSessions.set(key, request.id);
+					return { type: ToolConfirmKind.ConfirmationNotNeeded, reason: 'session-yolo' };
+				} else if (consumedBy !== null && consumedBy === request?.id) {
+					return { type: ToolConfirmKind.ConfirmationNotNeeded, reason: 'session-yolo' };
+				} else {
+					this._yoloNextRequestSessions.delete(key);
+				}
 			}
 
 			// Mode-level auto-approve (e.g. autopilot agent with auto-approve: true)
 			const model = this._chatService.getSession(chatSessionResource);
 			const request = model?.getRequests().at(-1);
 			if (request?.modeInfo?.autoApprove) {
-				return { type: ToolConfirmKind.Setting, id: 'chat.mode.autoApprove' };
+				return { type: ToolConfirmKind.ConfirmationNotNeeded, reason: 'mode-auto-approve' };
 			}
 		}
 
@@ -1162,15 +1162,23 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 		// Session-scoped YOLO mode bypasses all post-execution confirmations
 		if (chatSessionResource) {
 			const key = chatSessionResource.toString();
-			if (this._yoloSessions.has(key) || this._yoloNextRequestSessions.has(key)) {
-				return { type: ToolConfirmKind.Setting, id: 'chat.yolo.session' };
+			if (this._yoloSessions.has(key)) {
+				return { type: ToolConfirmKind.ConfirmationNotNeeded, reason: 'session-yolo' };
+			}
+
+			const model = this._chatService.getSession(chatSessionResource);
+			const request = model?.getRequests().at(-1);
+
+			if (this._yoloNextRequestSessions.has(key)) {
+				const consumedBy = this._yoloNextRequestSessions.get(key);
+				if (consumedBy !== null && consumedBy === request?.id) {
+					return { type: ToolConfirmKind.ConfirmationNotNeeded, reason: 'session-yolo' };
+				}
 			}
 
 			// Mode-level auto-approve
-			const model = this._chatService.getSession(chatSessionResource);
-			const request = model?.getRequests().at(-1);
 			if (request?.modeInfo?.autoApprove) {
-				return { type: ToolConfirmKind.Setting, id: 'chat.mode.autoApprove' };
+				return { type: ToolConfirmKind.ConfirmationNotNeeded, reason: 'mode-auto-approve' };
 			}
 		}
 
