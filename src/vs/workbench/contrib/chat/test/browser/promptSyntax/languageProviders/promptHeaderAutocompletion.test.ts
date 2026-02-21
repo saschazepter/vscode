@@ -140,6 +140,7 @@ suite('PromptHeaderAutocompletion', () => {
 			assert.deepStrictEqual(actual.sort(sortByLabel), [
 				{ label: 'agents', result: 'agents: ${0:["*"]}' },
 				{ label: 'argument-hint', result: 'argument-hint: $0' },
+				{ label: 'auto-approve', result: 'auto-approve: $0' },
 				{ label: 'disable-model-invocation', result: 'disable-model-invocation: ${0:true}' },
 				{ label: 'handoffs', result: 'handoffs: $0' },
 				{ label: 'model', result: 'model: ${0:MAE 4 (olama)}' },
