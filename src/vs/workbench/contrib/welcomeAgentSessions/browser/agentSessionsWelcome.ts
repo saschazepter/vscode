@@ -47,7 +47,6 @@ import { ChatSessionPosition, getResourceForNewChatSession } from '../../chat/br
 import { IChatEntitlementService } from '../../../services/chat/common/chatEntitlementService.js';
 import { AgentSessionsControl, IAgentSessionsControlOptions } from '../../chat/browser/agentSessions/agentSessionsControl.js';
 import { AgentSessionsFilter } from '../../chat/browser/agentSessions/agentSessionsFilter.js';
-import { AgentSessionsListDelegate } from '../../chat/browser/agentSessions/agentSessionsViewer.js';
 import { HoverPosition } from '../../../../base/browser/ui/hover/hoverWidget.js';
 import { IResolvedWalkthrough, IWalkthroughsService } from '../../welcomeGettingStarted/browser/gettingStartedService.js';
 import { GettingStartedEditorOptions, GettingStartedInput } from '../../welcomeGettingStarted/browser/gettingStartedInput.js';
@@ -63,6 +62,7 @@ import { ILogService } from '../../../../platform/log/common/log.js';
 
 const configurationKey = 'workbench.startupEditor';
 const MAX_SESSIONS = 6;
+const WELCOME_SESSION_ITEM_HEIGHT = 26;
 const MAX_REPO_PICKS = 10;
 const MAX_WALKTHROUGHS = 10;
 
@@ -231,6 +231,9 @@ export class AgentSessionsWelcomePage extends EditorPane {
 		this.sessionsControl = undefined;
 		clearNode(this.contentContainer);
 
+		// Remove previous show-on-startup element if it exists
+		this.container.querySelector('.agentSessionsWelcome-showOnStartup')?.remove();
+
 		// Detect empty workspace and fetch recent workspaces
 		this._isEmptyWorkspace = this.workspaceContextService.getWorkbenchState() === WorkbenchState.EMPTY;
 		if (this._isEmptyWorkspace) {
@@ -260,6 +263,9 @@ export class AgentSessionsWelcomePage extends EditorPane {
 		const footer = append(this.contentContainer, $('.agentSessionsWelcome-footer'));
 		this.buildFooter(footer);
 
+		// Show on startup - pinned to bottom of container
+		this.buildShowOnStartup(this.container);
+
 		// Listen for session changes - store reference to avoid querySelector
 		let originalSessions = this.agentSessionsService.model.sessions.length > 0;
 		this.contentDisposables.add(this.agentSessionsService.model.onDidChangeSessions(() => {
@@ -279,12 +285,12 @@ export class AgentSessionsWelcomePage extends EditorPane {
 	private async buildStartEntries(container: HTMLElement): Promise<void> {
 		const workspaces = await this.getRecentlyOpenedWorkspaces(false);
 		const openEntry = workspaces.length > 0
-			? { icon: Codicon.folderOpened, label: localize('openRecent', "Open Recent..."), command: 'workbench.action.openRecent' }
-			: { icon: Codicon.folderOpened, label: localize('openFolder', "Open Folder..."), command: 'workbench.action.files.openFolder' };
+			? { icon: Codicon.folderOpened, label: localize('openRecent', "Open Recent"), command: 'workbench.action.openRecent' }
+			: { icon: Codicon.folderOpened, label: localize('openFolder', "Open Folder"), command: 'workbench.action.files.openFolder' };
 		const entries = [
 			openEntry,
-			{ icon: Codicon.newFile, label: localize('newFile', "New file..."), command: 'welcome.showNewFileEntries' },
-			{ icon: Codicon.repoClone, label: localize('cloneRepo', "Clone Git Repository..."), command: 'git.clone' },
+			{ icon: Codicon.newFile, label: localize('newFile', "New File"), command: 'welcome.showNewFileEntries' },
+			{ icon: Codicon.repoClone, label: localize('cloneRepo', "Clone Repository"), command: 'git.clone' },
 		];
 
 		for (const entry of entries) {
@@ -546,12 +552,25 @@ export class AgentSessionsWelcomePage extends EditorPane {
 
 
 	private buildSessionsGrid(container: HTMLElement, _sessions: IAgentSession[]): void {
+		// Section header
+		const sectionHeader = append(container, $('.agentSessionsWelcome-sessionsHeader'));
+		const sectionLabel = append(sectionHeader, $('span.agentSessionsWelcome-sessionsHeader-label'));
+		sectionLabel.textContent = localize('recent', "Recent");
+		const viewAllLink = append(sectionHeader, $('a.agentSessionsWelcome-sessionsHeader-viewAll'));
+		const totalSessions = this.agentSessionsService.model.sessions.filter(s => !s.isArchived()).length;
+		viewAllLink.textContent = localize('viewAllCount', "View All ({0})", totalSessions);
+		viewAllLink.onclick = () => {
+			this._closedBy = 'viewAllSessions';
+			this.revealMaximizedChat();
+		};
+
 		// Show cached sessions immediately if available, otherwise show loading skeleton
 		this.sessionsControlContainer = append(container, $('.agentSessionsWelcome-sessionsGrid'));
 		const options: IAgentSessionsControlOptions = {
 			overrideStyles: getListStyles({
 				listBackground: editorBackground,
 			}),
+			itemHeight: WELCOME_SESSION_ITEM_HEIGHT,
 			filter: this.sessionsControlDisposables.add(this.instantiationService.createInstance(AgentSessionsFilter, {
 				limitResults: () => MAX_SESSIONS,
 				overrideExclude: (session) => session.isArchived() ? true : undefined,
@@ -587,14 +606,6 @@ export class AgentSessionsWelcomePage extends EditorPane {
 		this.sessionsControlDisposables.add(scheduleAtNextAnimationFrame(getWindow(this.sessionsControlContainer), () => {
 			this.layoutSessionsControl();
 		}));
-
-		// "View all sessions" link
-		const openButton = append(container, $('button.agentSessionsWelcome-openSessionsButton'));
-		openButton.textContent = localize('viewAllSessions', "View All Sessions");
-		openButton.onclick = () => {
-			this._closedBy = 'viewAllSessions';
-			this.revealMaximizedChat();
-		};
 	}
 
 	private buildWalkthroughs(container: HTMLElement): void {
@@ -747,7 +758,9 @@ export class AgentSessionsWelcomePage extends EditorPane {
 	private buildFooter(container: HTMLElement): void {
 		// Privacy notice
 		this.buildPrivacyNotice(container);
+	}
 
+	private buildShowOnStartup(container: HTMLElement): void {
 		// Show on startup checkbox
 		const showOnStartupContainer = append(container, $('.agentSessionsWelcome-showOnStartup'));
 		const showOnStartupCheckbox = this.contentDisposables.add(new Toggle({
@@ -803,7 +816,7 @@ export class AgentSessionsWelcomePage extends EditorPane {
 			return;
 		}
 
-		const chatWidth = Math.min(800, this.lastDimension.width - 80);
+		const chatWidth = Math.min(520, this.lastDimension.width - 80);
 		// Use a reasonable height for the input part - the CSS will hide the list area
 		const inputHeight = 150;
 		this.chatWidget.layout(inputHeight, chatWidth);
@@ -814,23 +827,13 @@ export class AgentSessionsWelcomePage extends EditorPane {
 			return;
 		}
 
-		// TODO: @osortega this is a weird way of doing this, maybe we handle the 2-colum layout in the control itself?
-		const sessionsWidth = Math.min(800, this.lastDimension.width - 80);
-		// Calculate height based on actual visible sessions (capped at MAX_SESSIONS)
-		// Use ITEM_HEIGHT per item from AgentSessionsListDelegate
-		// Give the list FULL height so virtualization renders all items
-		// CSS transforms handle the 2-column visual layout
+		const sessionsWidth = Math.min(520, this.lastDimension.width - 80);
 		const visibleSessions = Math.min(
 			this.agentSessionsService.model.sessions.filter(s => !s.isArchived()).length,
 			MAX_SESSIONS
 		);
-		const sessionsHeight = visibleSessions * AgentSessionsListDelegate.ITEM_HEIGHT;
+		const sessionsHeight = visibleSessions * WELCOME_SESSION_ITEM_HEIGHT;
 		this.sessionsControl.layout(sessionsHeight, sessionsWidth);
-
-		// Set margin offset for 2-column layout: actual height - visual height
-		// Visual height = ceil(n/2) * ITEM_HEIGHT, so offset = floor(n/2) * ITEM_HEIGHT
-		const marginOffset = Math.floor(visibleSessions / 2) * AgentSessionsListDelegate.ITEM_HEIGHT;
-		this.sessionsControl.element!.style.marginBottom = `-${marginOffset}px`;
 	}
 
 	override focus(): void {

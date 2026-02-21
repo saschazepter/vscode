@@ -41,6 +41,7 @@ export interface IAgentSessionsControlOptions extends IAgentSessionsSorterOption
 	readonly filter: IAgentSessionsFilter;
 	readonly source: string;
 	readonly disableHover?: boolean;
+	readonly itemHeight?: number;
 
 	getHoverPosition(): HoverPosition;
 	trackActiveEditorSession(): boolean;
@@ -166,7 +167,7 @@ export class AgentSessionsControl extends Disposable implements IAgentSessionsCo
 		const list = this.sessionsList = this._register(this.instantiationService.createInstance(WorkbenchCompressibleAsyncDataTree,
 			'AgentSessionsView',
 			this.sessionsContainer,
-			new AgentSessionsListDelegate(),
+			new AgentSessionsListDelegate(this.options.itemHeight),
 			new AgentSessionsCompressionDelegate(),
 			[
 				this._register(this.instantiationService.createInstance(AgentSessionRenderer, this.options)),

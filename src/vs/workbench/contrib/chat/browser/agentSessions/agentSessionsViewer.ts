@@ -512,12 +512,18 @@ export class AgentSessionsListDelegate implements IListVirtualDelegate<AgentSess
 	static readonly ITEM_HEIGHT = 54;
 	static readonly SECTION_HEIGHT = 26;
 
+	private readonly itemHeight: number;
+
+	constructor(itemHeight?: number) {
+		this.itemHeight = itemHeight ?? AgentSessionsListDelegate.ITEM_HEIGHT;
+	}
+
 	getHeight(element: AgentSessionListItem): number {
 		if (isAgentSessionSection(element)) {
 			return AgentSessionsListDelegate.SECTION_HEIGHT;
 		}
 
-		return AgentSessionsListDelegate.ITEM_HEIGHT;
+		return this.itemHeight;
 	}
 
 	getTemplateId(element: AgentSessionListItem): string {

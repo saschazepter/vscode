@@ -167,7 +167,6 @@
 
 			.agent-session-diff-container,
 			.agent-session-badge {
-				font-weight: 500;
 				font-variant-numeric: tabular-nums;
 				overflow: hidden;
 			}
