@@ -205,25 +205,6 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 			}
 		));
 
-		// Clean up YOLO state when sessions are disposed
-		this._register(this._chatService.onDidDisposeSession(e => {
-			for (const sessionResource of e.sessionResource) {
-				const key = sessionResource.toString();
-				this._yoloSessions.delete(key);
-				this._yoloNextRequestSessions.delete(key);
-			}
-		}));
-
-		// Clear next-request YOLO when a request completes
-		this._register(this._chatService.onDidCreateModel(model => {
-			const listener = model.onDidChange(e => {
-				if (e.kind === 'completedRequest') {
-					const key = model.sessionResource.toString();
-					this._yoloNextRequestSessions.delete(key);
-				}
-			});
-			model.onDidDispose(() => listener.dispose());
-		}));
 	}
 
 	/**
@@ -271,7 +252,40 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 		return false;
 	}
 
+	private _yoloCleanupRegistered = false;
+
+	private _ensureYoloCleanup(): void {
+		if (this._yoloCleanupRegistered) {
+			return;
+		}
+		this._yoloCleanupRegistered = true;
+
+		// Clean up YOLO state when sessions are disposed
+		this._register(this._chatService.onDidDisposeSession(e => {
+			for (const sessionResource of e.sessionResource) {
+				const key = sessionResource.toString();
+				this._yoloSessions.delete(key);
+				this._yoloNextRequestSessions.delete(key);
+			}
+		}));
+	}
+
+	private _watchModelForRequestCompletion(sessionResource: URI): void {
+		const model = this._chatService.getSession(sessionResource);
+		if (!model) {
+			return;
+		}
+		const listener = model.onDidChange(e => {
+			if (e.kind === 'completedRequest') {
+				this._yoloNextRequestSessions.delete(sessionResource.toString());
+				listener.dispose();
+			}
+		});
+		Event.once(model.onDidDispose)(() => listener.dispose());
+	}
+
 	enableSessionYolo(sessionResource: URI): void {
+		this._ensureYoloCleanup();
 		this._yoloSessions.add(sessionResource.toString());
 	}
 
@@ -284,7 +298,9 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 	}
 
 	enableNextRequestYolo(sessionResource: URI): void {
+		this._ensureYoloCleanup();
 		this._yoloNextRequestSessions.add(sessionResource.toString());
+		this._watchModelForRequestCompletion(sessionResource);
 	}
 
 	override dispose(): void {
