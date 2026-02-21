@@ -8,6 +8,7 @@ import './media/chatDebug.css';
 import * as DOM from '../../../../../base/browser/dom.js';
 import { Dimension } from '../../../../../base/browser/dom.js';
 import { DisposableMap, MutableDisposable } from '../../../../../base/common/lifecycle.js';
+import { IContextKeyService } from '../../../../../platform/contextkey/common/contextkey.js';
 import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
 import { IStorageService } from '../../../../../platform/storage/common/storage.js';
 import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry.js';
@@ -19,6 +20,7 @@ import { IChatService } from '../../common/chatService/chatService.js';
 import { chatSessionResourceToId, LocalChatSessionUri } from '../../common/model/chatUri.js';
 import { IChatWidgetService } from '../chat.js';
 import { ViewState, IChatDebugEditorOptions } from './chatDebugTypes.js';
+import { ChatDebugFilterState, registerFilterMenuItems } from './chatDebugFilters.js';
 import { ChatDebugHomeView } from './chatDebugHomeView.js';
 import { ChatDebugOverviewView, OverviewNavigation } from './chatDebugOverviewView.js';
 import { ChatDebugLogsView, LogsNavigation } from './chatDebugLogsView.js';
@@ -39,6 +41,7 @@ export class ChatDebugEditor extends EditorPane {
 	private overviewView: ChatDebugOverviewView | undefined;
 	private logsView: ChatDebugLogsView | undefined;
 	private flowChartView: ChatDebugFlowChartView | undefined;
+	private filterState: ChatDebugFilterState | undefined;
 
 	private readonly sessionModelListener = this._register(new MutableDisposable());
 	private readonly modelChangeListeners = this._register(new DisposableMap<string>());
@@ -52,12 +55,18 @@ export class ChatDebugEditor extends EditorPane {
 		@IChatDebugService private readonly chatDebugService: IChatDebugService,
 		@IChatWidgetService private readonly chatWidgetService: IChatWidgetService,
 		@IChatService private readonly chatService: IChatService,
+		@IContextKeyService private readonly contextKeyService: IContextKeyService,
 	) {
 		super(ChatDebugEditor.ID, group, telemetryService, themeService, storageService);
 	}
 
 	protected override createEditor(parent: HTMLElement): void {
 		this.container = DOM.append(parent, $('.chat-debug-editor'));
+
+		// Shared filter state used by both Logs and FlowChart views
+		this.filterState = this._register(new ChatDebugFilterState());
+		const scopedContextKeyService = this._register(this.contextKeyService.createScoped(this.container));
+		this._register(registerFilterMenuItems(this.filterState, scopedContextKeyService));
 
 		// Create sub-views via DI
 		this.homeView = this._register(this.instantiationService.createInstance(ChatDebugHomeView, this.container));
@@ -81,7 +90,7 @@ export class ChatDebugEditor extends EditorPane {
 			}
 		}));
 
-		this.logsView = this._register(this.instantiationService.createInstance(ChatDebugLogsView, this.container));
+		this.logsView = this._register(this.instantiationService.createInstance(ChatDebugLogsView, this.container, this.filterState));
 		this._register(this.logsView.onNavigate(nav => {
 			switch (nav) {
 				case LogsNavigation.Home:
@@ -94,7 +103,7 @@ export class ChatDebugEditor extends EditorPane {
 			}
 		}));
 
-		this.flowChartView = this._register(this.instantiationService.createInstance(ChatDebugFlowChartView, this.container));
+		this.flowChartView = this._register(this.instantiationService.createInstance(ChatDebugFlowChartView, this.container, this.filterState));
 		this._register(this.flowChartView.onNavigate(nav => {
 			switch (nav) {
 				case FlowChartNavigation.Home:

@@ -9,12 +9,17 @@ import { Codicon } from '../../../../../base/common/codicons.js';
 import { Emitter } from '../../../../../base/common/event.js';
 import { Disposable, DisposableStore } from '../../../../../base/common/lifecycle.js';
 import { localize } from '../../../../../nls.js';
+import { IContextKeyService } from '../../../../../platform/contextkey/common/contextkey.js';
+import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
+import { ServiceCollection } from '../../../../../platform/instantiation/common/serviceCollection.js';
 import { defaultBreadcrumbsWidgetStyles } from '../../../../../platform/theme/browser/defaultStyles.js';
+import { FilterWidget } from '../../../../browser/parts/views/viewFilter.js';
 import { IChatDebugService } from '../../common/chatDebugService.js';
 import { IChatService } from '../../common/chatService/chatService.js';
 import { LocalChatSessionUri } from '../../common/model/chatUri.js';
 import { TextBreadcrumbItem } from './chatDebugTypes.js';
-import { buildFlowGraph, layoutFlowGraph, renderFlowChartSVG } from './chatDebugFlowChart.js';
+import { ChatDebugFilterState, bindFilterContextKeys } from './chatDebugFilters.js';
+import { buildFlowGraph, filterFlowNodes, layoutFlowGraph, renderFlowChartSVG } from './chatDebugFlowChart.js';
 
 const $ = DOM.$;
 
@@ -31,6 +36,7 @@ export class ChatDebugFlowChartView extends Disposable {
 	readonly container: HTMLElement;
 	private readonly content: HTMLElement;
 	private readonly breadcrumbWidget: BreadcrumbsWidget;
+	private readonly filterWidget: FilterWidget;
 	private readonly loadDisposables = this._register(new DisposableStore());
 
 	// Pan/zoom state
@@ -41,6 +47,10 @@ export class ChatDebugFlowChartView extends Disposable {
 	private startX = 0;
 	private startY = 0;
 
+	// Click detection (distinguish click from drag)
+	private mouseDownX = 0;
+	private mouseDownY = 0;
+
 	// Direct element references (avoid querySelector)
 	private svgWrapper: HTMLElement | undefined;
 	private svgElement: SVGElement | undefined;
@@ -49,10 +59,16 @@ export class ChatDebugFlowChartView extends Disposable {
 	private lastEventCount: number = 0;
 	private hasUserPanned: boolean = false;
 
+	// Collapse state — persists across refreshes, resets on session change
+	private readonly collapsedNodeIds = new Set<string>();
+
 	constructor(
 		parent: HTMLElement,
+		private readonly filterState: ChatDebugFilterState,
 		@IChatService private readonly chatService: IChatService,
 		@IChatDebugService private readonly chatDebugService: IChatDebugService,
+		@IContextKeyService private readonly contextKeyService: IContextKeyService,
+		@IInstantiationService private readonly instantiationService: IInstantiationService,
 	) {
 		super();
 		this.container = DOM.append(parent, $('.chat-debug-flowchart'));
@@ -74,6 +90,33 @@ export class ChatDebugFlowChartView extends Disposable {
 			}
 		}));
 
+		// Header with FilterWidget
+		const headerContainer = DOM.append(this.container, $('.chat-debug-editor-header'));
+		const scopedContextKeyService = this._register(this.contextKeyService.createScoped(headerContainer));
+		const syncContextKeys = bindFilterContextKeys(this.filterState, scopedContextKeyService);
+		syncContextKeys();
+
+		const childInstantiationService = this._register(this.instantiationService.createChild(
+			new ServiceCollection([IContextKeyService, scopedContextKeyService])
+		));
+		this.filterWidget = this._register(childInstantiationService.createInstance(FilterWidget, {
+			placeholder: localize('chatDebug.flowchart.search', "Filter nodes..."),
+			ariaLabel: localize('chatDebug.flowchart.filterAriaLabel', "Filter flow chart nodes"),
+		}));
+		const filterContainer = DOM.append(headerContainer, $('.viewpane-filter-container'));
+		filterContainer.appendChild(this.filterWidget.element);
+
+		this._register(this.filterWidget.onDidChangeFilterText(text => {
+			this.filterState.setTextFilter(text);
+		}));
+
+		// React to shared filter state changes
+		this._register(this.filterState.onDidChange(() => {
+			syncContextKeys();
+			this.filterWidget.checkMoreFilters(!this.filterState.isAllFiltersDefault());
+			this.load();
+		}));
+
 		this.content = DOM.append(this.container, $('.chat-debug-flowchart-content'));
 
 		// Set up pan/zoom event listeners
@@ -82,12 +125,13 @@ export class ChatDebugFlowChartView extends Disposable {
 
 	setSession(sessionId: string): void {
 		if (this.currentSessionId !== sessionId) {
-			// Reset pan/zoom only on session change
+			// Reset pan/zoom and collapse state on session change
 			this.scale = 1;
 			this.translateX = 0;
 			this.translateY = 0;
 			this.lastEventCount = 0;
 			this.hasUserPanned = false;
+			this.collapsedNodeIds.clear();
 		}
 		this.currentSessionId = sessionId;
 	}
@@ -132,9 +176,20 @@ export class ChatDebugFlowChartView extends Disposable {
 			return;
 		}
 
-		// Build and render the flow chart
+		// Build, filter, and render the flow chart
 		const flowNodes = buildFlowGraph(events);
-		const layout = layoutFlowGraph(flowNodes);
+		const filtered = filterFlowNodes(flowNodes, {
+			isKindVisible: kind => this.filterState.isKindVisible(kind),
+			textFilter: this.filterState.textFilter,
+		});
+
+		if (filtered.length === 0) {
+			const emptyMsg = DOM.append(this.content, $('.chat-debug-flowchart-empty'));
+			emptyMsg.textContent = localize('chatDebug.flowChart.noMatches', "No nodes match the current filter.");
+			return;
+		}
+
+		const layout = layoutFlowGraph(filtered, { collapsedIds: this.collapsedNodeIds });
 		const svg = renderFlowChartSVG(layout);
 
 		this.svgWrapper = DOM.append(this.content, $('.chat-debug-flowchart-svg-wrapper'));
@@ -153,11 +208,11 @@ export class ChatDebugFlowChartView extends Disposable {
 	}
 
 	private setupPanZoom(): void {
-		this.content.addEventListener('mousedown', e => this.handleMouseDown(e));
+		this._register(DOM.addDisposableListener(this.content, DOM.EventType.MOUSE_DOWN, e => this.handleMouseDown(e)));
 		const targetDocument = DOM.getWindow(this.content).document;
 		this._register(DOM.addDisposableListener(targetDocument, DOM.EventType.MOUSE_MOVE, e => this.handleMouseMove(e)));
-		this._register(DOM.addDisposableListener(targetDocument, DOM.EventType.MOUSE_UP, () => this.handleMouseUp()));
-		this.content.addEventListener('wheel', e => this.handleWheel(e), { passive: false });
+		this._register(DOM.addDisposableListener(targetDocument, DOM.EventType.MOUSE_UP, e => this.handleMouseUp(e)));
+		this._register(DOM.addDisposableListener(this.content, 'wheel', e => this.handleWheel(e), { passive: false }));
 	}
 
 	private handleMouseDown(e: MouseEvent): void {
@@ -169,6 +224,8 @@ export class ChatDebugFlowChartView extends Disposable {
 		this.hasUserPanned = true;
 		this.startX = e.clientX - this.translateX;
 		this.startY = e.clientY - this.translateY;
+		this.mouseDownX = e.clientX;
+		this.mouseDownY = e.clientY;
 		this.content.style.cursor = 'grabbing';
 	}
 
@@ -177,7 +234,7 @@ export class ChatDebugFlowChartView extends Disposable {
 			return;
 		}
 		if (e.buttons === 0) {
-			this.handleMouseUp();
+			this.handleMouseUp(e);
 			return;
 		}
 		this.translateX = e.clientX - this.startX;
@@ -185,10 +242,35 @@ export class ChatDebugFlowChartView extends Disposable {
 		this.applyTransform();
 	}
 
-	private handleMouseUp(): void {
+	private handleMouseUp(e: MouseEvent): void {
 		if (this.isPanning) {
 			this.isPanning = false;
 			this.content.style.cursor = 'grab';
+
+			// Detect click (not a drag) — distance < 5px
+			const dx = e.clientX - this.mouseDownX;
+			const dy = e.clientY - this.mouseDownY;
+			if (dx * dx + dy * dy < 25) {
+				this.handleClick(e);
+			}
+		}
+	}
+
+	private handleClick(e: MouseEvent): void {
+		// Walk up from the click target to find a subgraph header
+		let target = e.target as Element | null;
+		while (target && target !== this.content) {
+			const subgraphId = target.getAttribute?.('data-subgraph-id');
+			if (subgraphId) {
+				if (this.collapsedNodeIds.has(subgraphId)) {
+					this.collapsedNodeIds.delete(subgraphId);
+				} else {
+					this.collapsedNodeIds.add(subgraphId);
+				}
+				this.load();
+				return;
+			}
+			target = target.parentElement;
 		}
 	}
 

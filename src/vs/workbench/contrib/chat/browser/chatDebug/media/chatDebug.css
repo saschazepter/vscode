@@ -693,6 +693,12 @@
 .chat-debug-flowchart-node:hover rect:first-child {
 	opacity: 0.85;
 }
+.chat-debug-flowchart-subgraph-header {
+	cursor: pointer;
+}
+.chat-debug-flowchart-subgraph:hover rect.chat-debug-flowchart-subgraph-header {
+	opacity: 0.25;
+}
 .chat-debug-flowchart-empty {
 	display: flex;
 	align-items: center;
