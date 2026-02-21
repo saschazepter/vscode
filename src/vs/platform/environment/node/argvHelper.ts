@@ -4,7 +4,8 @@
  *--------------------------------------------------------------------------------------------*/
 
 import assert from 'assert';
-import { IProcessEnvironment } from '../../../base/common/platform.js';
+import { dirname, resolve } from '../../../base/common/path.js';
+import { IProcessEnvironment, isWindows } from '../../../base/common/platform.js';
 import { localize } from '../../../nls.js';
 import { NativeParsedArgs } from '../common/argv.js';
 import { ErrorReporter, NATIVE_CLI_COMMANDS, OPTIONS, parseArgs } from './argv.js';
@@ -62,6 +63,16 @@ function stripAppPath(argv: string[]): string[] | undefined {
  */
 export function parseMainProcessArgv(processArgv: string[]): NativeParsedArgs {
 	let [, ...args] = processArgv;
+
+	// When code.exe is configured to 'Run as administrator' on Windows, the CLI launcher (code.cmd) sets ELECTRON_RUN_AS_NODE=1 and passes
+	// cli.js as the first argument. The elevated process does not inherit the environment variable so Electron starts as a GUI app with cli.js
+	// as a stray positional argument. Detect and strip it.
+	if (isWindows && args.length > 0) {
+		const expectedCliJsPath = resolve(dirname(process.execPath), 'resources', 'app', 'out', 'cli.js');
+		if (resolve(args[0]).toLowerCase() === expectedCliJsPath.toLowerCase()) {
+			args.shift();
+		}
+	}
 
 	// If dev, remove the first non-option argument: it's the app location
 	if (process.env['VSCODE_DEV']) {
