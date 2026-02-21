@@ -628,7 +628,7 @@ function patchWin32DependenciesTask(destinationFolderName: string) {
 		const product = JSON.parse(await fs.promises.readFile(path.join(cwd, versionedResourcesFolder, 'resources', 'app', 'product.json'), 'utf8'));
 		const baseVersion = packageJson.version.replace(/-.*$/, '');
 
-		await Promise.all(deps.map(async dep => {
+		const patchPromises = deps.map(async dep => {
 			const basename = path.basename(dep);
 
 			await rcedit(path.join(cwd, dep), {
@@ -638,13 +638,36 @@ function patchWin32DependenciesTask(destinationFolderName: string) {
 					'FileDescription': product.nameLong,
 					'FileVersion': packageJson.version,
 					'InternalName': basename,
-					'LegalCopyright': 'Copyright (C) 2022 Microsoft. All rights reserved',
+					'LegalCopyright': 'Copyright (C) 2026 Microsoft. All rights reserved',
 					'OriginalFilename': basename,
 					'ProductName': product.nameLong,
 					'ProductVersion': packageJson.version,
 				}
 			});
-		}));
+		});
+
+		// Patch the tunnel CLI binary with version metadata
+		const tunnelExe = path.join(cwd, 'bin', `${product.tunnelApplicationName}.exe`);
+		const tunnelExists = await fs.promises.access(tunnelExe).then(() => true, () => false);
+		if (tunnelExists) {
+			const tunnelBasename = `${product.tunnelApplicationName}.exe`;
+			patchPromises.push(rcedit(tunnelExe, {
+				'file-version': baseVersion,
+				'product-version': baseVersion,
+				'version-string': {
+					'CompanyName': 'Microsoft Corporation',
+					'FileDescription': product.nameLong,
+					'FileVersion': packageJson.version,
+					'InternalName': tunnelBasename,
+					'LegalCopyright': 'Copyright (C) 2026 Microsoft. All rights reserved',
+					'OriginalFilename': tunnelBasename,
+					'ProductName': product.nameLong,
+					'ProductVersion': packageJson.version,
+				}
+			}) as Promise<void>);
+		}
+
+		await Promise.all(patchPromises);
 	};
 }
 
