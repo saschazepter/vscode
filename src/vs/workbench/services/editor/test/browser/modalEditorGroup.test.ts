@@ -506,13 +506,13 @@ suite('Modal Editor Group', () => {
 		modalPart.close();
 	});
 
-	suite('useModal: on', () => {
+	suite('useModal: all', () => {
 
 		test('findGroup creates modal and returns its active group', async () => {
 			const instantiationService = workbenchInstantiationService({ contextKeyService: instantiationService => instantiationService.createInstance(MockScopableContextKeyService) }, disposables);
 			instantiationService.invokeFunction(accessor => Registry.as<IEditorFactoryRegistry>(EditorExtensions.EditorFactory).start(accessor));
 			const configurationService = new TestConfigurationService();
-			await configurationService.setUserConfiguration('workbench.editor.useModal', 'on');
+			await configurationService.setUserConfiguration('workbench.editor.useModal', 'all');
 			instantiationService.stub(IConfigurationService, configurationService);
 			const parts = await createEditorParts(instantiationService, disposables);
 			instantiationService.stub(IEditorGroupsService, parts);
@@ -536,7 +536,7 @@ suite('Modal Editor Group', () => {
 			const instantiationService = workbenchInstantiationService({ contextKeyService: instantiationService => instantiationService.createInstance(MockScopableContextKeyService) }, disposables);
 			instantiationService.invokeFunction(accessor => Registry.as<IEditorFactoryRegistry>(EditorExtensions.EditorFactory).start(accessor));
 			const configurationService = new TestConfigurationService();
-			await configurationService.setUserConfiguration('workbench.editor.useModal', 'on');
+			await configurationService.setUserConfiguration('workbench.editor.useModal', 'all');
 			instantiationService.stub(IConfigurationService, configurationService);
 			const parts = await createEditorParts(instantiationService, disposables);
 			instantiationService.stub(IEditorGroupsService, parts);
@@ -559,7 +559,7 @@ suite('Modal Editor Group', () => {
 			modalPart.close();
 		});
 
-		test('findGroup auto-closes modal when setting is not on', async () => {
+		test('findGroup auto-closes modal when setting is not all', async () => {
 			const instantiationService = workbenchInstantiationService({ contextKeyService: instantiationService => instantiationService.createInstance(MockScopableContextKeyService) }, disposables);
 			instantiationService.invokeFunction(accessor => Registry.as<IEditorFactoryRegistry>(EditorExtensions.EditorFactory).start(accessor));
 			const configurationService = new TestConfigurationService();
