@@ -143,6 +143,14 @@ function measureNodeWidth(label: string, sublabel?: string): number {
 	return Math.max(NODE_MIN_WIDTH, labelWidth, sublabelWidth);
 }
 
+function countDescendants(node: FlowNode): number {
+	let count = node.children.length;
+	for (const child of node.children) {
+		count += countDescendants(child);
+	}
+	return count;
+}
+
 /**
  * Lays out grouped children (sequential or parallel) and connects edges.
  * Shared by both root-level layout and subtree-level layout.
@@ -156,6 +164,7 @@ function layoutGroups(
 	depth: number,
 	prevExitNodes: LayoutNode[],
 	result: { nodes: LayoutNode[]; edges: LayoutEdge[]; subgraphs: SubgraphRect[] },
+	collapsedIds?: ReadonlySet<string>,
 ): { exitNodes: LayoutNode[]; maxWidth: number; endY: number } {
 	let currentY = startY;
 	let maxWidth = 0;
@@ -163,7 +172,7 @@ function layoutGroups(
 
 	for (const group of groups) {
 		if (group.type === 'parallel') {
-			const pg = layoutParallelGroup(group.children, startX, currentY, depth);
+			const pg = layoutParallelGroup(group.children, startX, currentY, depth, collapsedIds);
 			result.nodes.push(...pg.nodes);
 			result.edges.push(...pg.edges);
 			result.subgraphs.push(...pg.subgraphs);
@@ -178,7 +187,7 @@ function layoutGroups(
 			currentY += pg.height + NODE_GAP_Y;
 		} else {
 			for (const child of group.children) {
-				const sub = layoutSubtree(child, startX, currentY, depth);
+				const sub = layoutSubtree(child, startX, currentY, depth, collapsedIds);
 				result.nodes.push(...sub.nodes);
 				result.edges.push(...sub.edges);
 				result.subgraphs.push(...sub.subgraphs);
@@ -208,11 +217,12 @@ function makeEdge(from: LayoutNode, to: LayoutNode): LayoutEdge {
  * Lays out a list of flow nodes in a top-down vertical flow.
  * Parallel subagent invocations are arranged side by side.
  */
-export function layoutFlowGraph(roots: FlowNode[]): FlowLayout {
+export function layoutFlowGraph(roots: FlowNode[], options?: { collapsedIds?: ReadonlySet<string> }): FlowLayout {
 	if (roots.length === 0) {
 		return { nodes: [], edges: [], subgraphs: [], width: 0, height: 0 };
 	}
 
+	const collapsedIds = options?.collapsedIds;
 	const groups = groupChildren(roots);
 	const result: { nodes: LayoutNode[]; edges: LayoutEdge[]; subgraphs: SubgraphRect[] } = {
 		nodes: [],
@@ -220,7 +230,7 @@ export function layoutFlowGraph(roots: FlowNode[]): FlowLayout {
 		subgraphs: [],
 	};
 
-	const { maxWidth, endY } = layoutGroups(groups, CANVAS_PADDING, CANVAS_PADDING, 0, [], result);
+	const { maxWidth, endY } = layoutGroups(groups, CANVAS_PADDING, CANVAS_PADDING, 0, [], result, collapsedIds);
 	const width = maxWidth + CANVAS_PADDING * 2;
 	const height = endY - NODE_GAP_Y + CANVAS_PADDING;
 
@@ -229,9 +239,10 @@ export function layoutFlowGraph(roots: FlowNode[]): FlowLayout {
 	return { nodes: result.nodes, edges: result.edges, subgraphs: result.subgraphs, width, height };
 }
 
-function layoutSubtree(node: FlowNode, startX: number, y: number, depth: number): SubtreeLayout {
+function layoutSubtree(node: FlowNode, startX: number, y: number, depth: number, collapsedIds?: ReadonlySet<string>): SubtreeLayout {
 	const nodeWidth = measureNodeWidth(node.label, node.sublabel);
 	const isSubagent = node.kind === 'subagentInvocation';
+	const isCollapsed = isSubagent && collapsedIds?.has(node.id);
 
 	const layoutNode: LayoutNode = {
 		id: node.id,
@@ -256,6 +267,29 @@ function layoutSubtree(node: FlowNode, startX: number, y: number, depth: number)
 		exitNodes: [layoutNode],
 	};
 
+	if (node.children.length === 0 && !isCollapsed) {
+		return result;
+	}
+
+	// Collapsed subagent: show just the header + a compact badge area
+	if (isCollapsed) {
+		const collapsedHeight = SUBGRAPH_HEADER_HEIGHT + SUBGRAPH_PADDING * 2;
+		const totalChildCount = countDescendants(node);
+		result.subgraphs.push({
+			label: node.label,
+			x: startX - SUBGRAPH_PADDING,
+			y: (y + NODE_HEIGHT + NODE_GAP_Y) - NODE_GAP_Y / 2,
+			width: Math.max(nodeWidth, NODE_MIN_WIDTH) + SUBGRAPH_PADDING * 2,
+			height: collapsedHeight,
+			depth,
+			nodeId: node.id,
+			collapsedChildCount: totalChildCount,
+		});
+		result.width = Math.max(nodeWidth, NODE_MIN_WIDTH + SUBGRAPH_PADDING * 2);
+		result.height = NODE_HEIGHT + NODE_GAP_Y + collapsedHeight;
+		return result;
+	}
+
 	if (node.children.length === 0) {
 		return result;
 	}
@@ -270,7 +304,7 @@ function layoutSubtree(node: FlowNode, startX: number, y: number, depth: number)
 	}
 
 	const { exitNodes, maxWidth, endY } = layoutGroups(
-		groups, startX + indentX, childStartY, childDepth, [layoutNode], result,
+		groups, startX + indentX, childStartY, childDepth, [layoutNode], result, collapsedIds,
 	);
 
 	// Adjust widths for indented subgraph content
@@ -285,6 +319,7 @@ function layoutSubtree(node: FlowNode, startX: number, y: number, depth: number)
 			width: Math.max(nodeWidth, maxWidth) + SUBGRAPH_PADDING * 2,
 			height: totalChildrenHeight + SUBGRAPH_HEADER_HEIGHT + NODE_GAP_Y,
 			depth,
+			nodeId: node.id,
 		});
 	}
 
@@ -295,7 +330,7 @@ function layoutSubtree(node: FlowNode, startX: number, y: number, depth: number)
 	return result;
 }
 
-function layoutParallelGroup(children: FlowNode[], startX: number, y: number, depth: number): {
+function layoutParallelGroup(children: FlowNode[], startX: number, y: number, depth: number, collapsedIds?: ReadonlySet<string>): {
 	nodes: LayoutNode[];
 	edges: LayoutEdge[];
 	subgraphs: SubgraphRect[];
@@ -309,7 +344,7 @@ function layoutParallelGroup(children: FlowNode[], startX: number, y: number, de
 	let maxHeight = 0;
 
 	for (const child of children) {
-		const subtree = layoutSubtree(child, 0, y, depth);
+		const subtree = layoutSubtree(child, 0, y, depth, collapsedIds);
 		subtreeLayouts.push(subtree);
 		totalWidth += subtree.width;
 		maxHeight = Math.max(maxHeight, subtree.height);
@@ -430,7 +465,9 @@ function renderSubgraphs(svg: SVGElement, subgraphs: readonly SubgraphRect[]): v
 	for (let sgIdx = 0; sgIdx < subgraphs.length; sgIdx++) {
 		const sg = subgraphs[sgIdx];
 		const color = SUBGRAPH_COLORS[sg.depth % SUBGRAPH_COLORS.length];
+		const isCollapsed = sg.collapsedChildCount !== undefined;
 		const g = document.createElementNS(SVG_NS, 'g');
+		g.classList.add('chat-debug-flowchart-subgraph');
 
 		const rectAttrs = { x: sg.x, y: sg.y, width: sg.width, height: sg.height, rx: NODE_BORDER_RADIUS, ry: NODE_BORDER_RADIUS };
 		const clipId = `sg-clip-${sgIdx}`;
@@ -449,10 +486,14 @@ function renderSubgraphs(svg: SVGElement, subgraphs: readonly SubgraphRect[]): v
 		// Gutter line
 		g.appendChild(svgEl('rect', { x: sg.x, y: sg.y, width: GUTTER_WIDTH, height: sg.height, fill: color, opacity: 0.7, 'clip-path': `url(#${clipId})` }));
 
-		// Header bar
-		g.appendChild(svgEl('rect', { x: sg.x, y: sg.y, width: sg.width, height: SUBGRAPH_HEADER_HEIGHT, fill: color, opacity: 0.15, 'clip-path': `url(#${clipId})` }));
+		// Header bar (clickable)
+		const headerBar = svgEl('rect', { x: sg.x, y: sg.y, width: sg.width, height: SUBGRAPH_HEADER_HEIGHT, fill: color, opacity: 0.15, 'clip-path': `url(#${clipId})` });
+		headerBar.setAttribute('data-subgraph-id', sg.nodeId);
+		headerBar.classList.add('chat-debug-flowchart-subgraph-header');
+		g.appendChild(headerBar);
 
-		// Header label
+		// Chevron + header label
+		const chevron = isCollapsed ? '\u25B6' : '\u25BC';
 		const headerText = svgEl('text', {
 			x: sg.x + GUTTER_WIDTH + 8,
 			y: sg.y + SUBGRAPH_HEADER_HEIGHT / 2 + 4,
@@ -461,8 +502,25 @@ function renderSubgraphs(svg: SVGElement, subgraphs: readonly SubgraphRect[]): v
 			'font-family': 'var(--vscode-font-family, sans-serif)',
 			'font-weight': '600',
 		});
-		headerText.textContent = sg.label;
+		headerText.textContent = `${chevron} ${sg.label}`;
+		headerText.setAttribute('data-subgraph-id', sg.nodeId);
+		headerText.classList.add('chat-debug-flowchart-subgraph-header');
 		g.appendChild(headerText);
+
+		// Collapsed badge
+		if (isCollapsed && sg.collapsedChildCount !== undefined) {
+			const badgeText = svgEl('text', {
+				x: sg.x + sg.width / 2,
+				y: sg.y + SUBGRAPH_HEADER_HEIGHT + SUBGRAPH_PADDING + 4,
+				'font-size': SUBLABEL_FONT_SIZE,
+				fill: 'var(--vscode-descriptionForeground)',
+				'font-family': 'var(--vscode-font-family, sans-serif)',
+				'font-style': 'italic',
+				'text-anchor': 'middle',
+			});
+			badgeText.textContent = `+${sg.collapsedChildCount} items`;
+			g.appendChild(badgeText);
+		}
 
 		svg.appendChild(g);
 	}

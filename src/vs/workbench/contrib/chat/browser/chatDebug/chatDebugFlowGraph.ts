@@ -18,6 +18,11 @@ export interface FlowNode {
 	readonly children: FlowNode[];
 }
 
+export interface FlowFilterOptions {
+	readonly isKindVisible: (kind: string) => boolean;
+	readonly textFilter: string;
+}
+
 export interface LayoutNode {
 	readonly id: string;
 	readonly kind: IChatDebugEvent['kind'];
@@ -45,6 +50,8 @@ export interface SubgraphRect {
 	readonly width: number;
 	readonly height: number;
 	readonly depth: number;
+	readonly nodeId: string;
+	readonly collapsedChildCount?: number;
 }
 
 export interface FlowLayout {
@@ -174,6 +181,77 @@ function applyModelTurnInfo(node: FlowNode, modelTurn: FlowNode | undefined): Fl
 		tooltip: newTooltip,
 		children: mergedChildren,
 	};
+}
+
+// ---- Flow node filtering ----
+
+/**
+ * Filters a flow node tree by kind visibility and text search.
+ * Returns a new tree — the input is not mutated.
+ *
+ * Kind filtering: nodes whose kind is not visible are removed.
+ * For `subagentInvocation` nodes, the entire subgraph is removed.
+ * For other kinds, the node is removed and its children are re-parented.
+ *
+ * Text filtering: only nodes whose label, sublabel, or tooltip match the
+ * search term are kept, along with all their ancestors (path to root).
+ * If a subagent label matches, its entire subgraph is kept.
+ */
+export function filterFlowNodes(nodes: FlowNode[], options: FlowFilterOptions): FlowNode[] {
+	let result = filterByKind(nodes, options.isKindVisible);
+	if (options.textFilter) {
+		result = filterByText(result, options.textFilter);
+	}
+	return result;
+}
+
+function filterByKind(nodes: FlowNode[], isKindVisible: (kind: string) => boolean): FlowNode[] {
+	const result: FlowNode[] = [];
+	let changed = false;
+	for (const node of nodes) {
+		if (!isKindVisible(node.kind)) {
+			changed = true;
+			// For subagents, drop the entire subgraph
+			if (node.kind === 'subagentInvocation') {
+				continue;
+			}
+			// For other kinds, re-parent children up
+			result.push(...filterByKind(node.children, isKindVisible));
+			continue;
+		}
+		const filteredChildren = filterByKind(node.children, isKindVisible);
+		if (filteredChildren !== node.children) {
+			changed = true;
+			result.push({ ...node, children: filteredChildren });
+		} else {
+			result.push(node);
+		}
+	}
+	return changed ? result : nodes;
+}
+
+function nodeMatchesText(node: FlowNode, text: string): boolean {
+	return node.label.toLowerCase().includes(text) ||
+		(node.sublabel?.toLowerCase().includes(text) ?? false) ||
+		(node.tooltip?.toLowerCase().includes(text) ?? false);
+}
+
+function filterByText(nodes: FlowNode[], text: string): FlowNode[] {
+	const result: FlowNode[] = [];
+	for (const node of nodes) {
+		if (nodeMatchesText(node, text)) {
+			// Node matches — keep it with all descendants
+			result.push(node);
+			continue;
+		}
+		// Check if any descendant matches
+		const filteredChildren = filterByText(node.children, text);
+		if (filteredChildren.length > 0) {
+			// Keep this node as an ancestor of matching descendants
+			result.push({ ...node, children: filteredChildren });
+		}
+	}
+	return result;
 }
 
 // ---- Event helpers ----

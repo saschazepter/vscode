@@ -5,8 +5,8 @@
 
 // Barrel re-export — keeps existing imports stable.
 // Data model + graph building (stable):
-export { buildFlowGraph } from './chatDebugFlowGraph.js';
-export type { FlowNode, FlowLayout, LayoutNode, LayoutEdge, SubgraphRect } from './chatDebugFlowGraph.js';
+export { buildFlowGraph, filterFlowNodes } from './chatDebugFlowGraph.js';
+export type { FlowNode, FlowFilterOptions, FlowLayout, LayoutNode, LayoutEdge, SubgraphRect } from './chatDebugFlowGraph.js';
 // Layout + rendering (feature work):
 export { layoutFlowGraph, renderFlowChartSVG } from './chatDebugFlowLayout.js';
 

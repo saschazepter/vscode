@@ -16,7 +16,7 @@ import { localize } from '../../../../../nls.js';
 import { ILanguageService } from '../../../../../editor/common/languages/language.js';
 import { IModelService } from '../../../../../editor/common/services/model.js';
 import { IClipboardService } from '../../../../../platform/clipboard/common/clipboardService.js';
-import { IContextKey, IContextKeyService, RawContextKey } from '../../../../../platform/contextkey/common/contextkey.js';
+import { IContextKeyService } from '../../../../../platform/contextkey/common/contextkey.js';
 import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
 import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
 import { ILabelService } from '../../../../../platform/label/common/label.js';
@@ -26,23 +26,13 @@ import { IOpenerService } from '../../../../../platform/opener/common/opener.js'
 import { defaultBreadcrumbsWidgetStyles } from '../../../../../platform/theme/browser/defaultStyles.js';
 import { IUntitledTextResourceEditorInput } from '../../../../common/editor.js';
 import { IEditorService } from '../../../../services/editor/common/editorService.js';
-import { FilterWidget, viewFilterSubmenu } from '../../../../browser/parts/views/viewFilter.js';
-import { MenuRegistry } from '../../../../../platform/actions/common/actions.js';
-import { CommandsRegistry } from '../../../../../platform/commands/common/commands.js';
+import { FilterWidget } from '../../../../browser/parts/views/viewFilter.js';
 import { ChatDebugLogLevel, IChatDebugEvent, IChatDebugService } from '../../common/chatDebugService.js';
 import { IChatService } from '../../common/chatService/chatService.js';
 import { LocalChatSessionUri } from '../../common/model/chatUri.js';
 import { ChatDebugEventRenderer, ChatDebugEventDelegate, ChatDebugEventTreeRenderer } from './chatDebugEventList.js';
-import {
-	TextBreadcrumbItem, LogsViewMode,
-	CHAT_DEBUG_FILTER_ACTIVE,
-	CHAT_DEBUG_KIND_TOOL_CALL, CHAT_DEBUG_KIND_MODEL_TURN, CHAT_DEBUG_KIND_GENERIC, CHAT_DEBUG_KIND_SUBAGENT,
-	CHAT_DEBUG_KIND_USER_MESSAGE, CHAT_DEBUG_KIND_AGENT_RESPONSE,
-	CHAT_DEBUG_LEVEL_TRACE, CHAT_DEBUG_LEVEL_INFO, CHAT_DEBUG_LEVEL_WARNING, CHAT_DEBUG_LEVEL_ERROR,
-	CHAT_DEBUG_CMD_TOGGLE_TOOL_CALL, CHAT_DEBUG_CMD_TOGGLE_MODEL_TURN, CHAT_DEBUG_CMD_TOGGLE_GENERIC,
-	CHAT_DEBUG_CMD_TOGGLE_SUBAGENT, CHAT_DEBUG_CMD_TOGGLE_USER_MESSAGE, CHAT_DEBUG_CMD_TOGGLE_AGENT_RESPONSE,
-	CHAT_DEBUG_CMD_TOGGLE_TRACE, CHAT_DEBUG_CMD_TOGGLE_INFO, CHAT_DEBUG_CMD_TOGGLE_WARNING, CHAT_DEBUG_CMD_TOGGLE_ERROR,
-} from './chatDebugTypes.js';
+import { TextBreadcrumbItem, LogsViewMode } from './chatDebugTypes.js';
+import { ChatDebugFilterState, bindFilterContextKeys } from './chatDebugFilters.js';
 import { formatEventDetail } from './chatDebugEventDetailRenderer.js';
 import { renderFileListContent, fileListToPlainText } from './chatDebugFileListRenderer.js';
 import { renderUserMessageContent, renderAgentResponseContent, messageEventToPlainText, renderResolvedMessageContent, resolvedMessageToPlainText } from './chatDebugMessageContentRenderer.js';
@@ -76,27 +66,6 @@ export class ChatDebugLogsView extends Disposable {
 	private currentSessionId: string = '';
 	private logsViewMode: LogsViewMode = LogsViewMode.List;
 	private events: IChatDebugEvent[] = [];
-	private filterText: string = '';
-	private filterKindToolCall: boolean = true;
-	private filterKindModelTurn: boolean = true;
-	private filterKindGeneric: boolean = true;
-	private filterKindSubagent: boolean = true;
-	private filterKindUserMessage: boolean = true;
-	private filterKindAgentResponse: boolean = true;
-	private filterLevelTrace: boolean = true;
-	private filterLevelInfo: boolean = true;
-	private filterLevelWarning: boolean = true;
-	private filterLevelError: boolean = true;
-	private kindToolCallKey: IContextKey<boolean>;
-	private kindModelTurnKey: IContextKey<boolean>;
-	private kindGenericKey: IContextKey<boolean>;
-	private kindSubagentKey: IContextKey<boolean>;
-	private kindUserMessageKey: IContextKey<boolean>;
-	private kindAgentResponseKey: IContextKey<boolean>;
-	private levelTraceKey: IContextKey<boolean>;
-	private levelInfoKey: IContextKey<boolean>;
-	private levelWarningKey: IContextKey<boolean>;
-	private levelErrorKey: IContextKey<boolean>;
 	private currentDimension: Dimension | undefined;
 	private readonly eventListener = this._register(new MutableDisposable());
 	private readonly detailDisposables = this._register(new DisposableStore());
@@ -105,6 +74,7 @@ export class ChatDebugLogsView extends Disposable {
 
 	constructor(
 		parent: HTMLElement,
+		private readonly filterState: ChatDebugFilterState,
 		@IChatService private readonly chatService: IChatService,
 		@IChatDebugService private readonly chatDebugService: IChatDebugService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
@@ -139,27 +109,8 @@ export class ChatDebugLogsView extends Disposable {
 
 		// Scoped context key service for filter menu items
 		const scopedContextKeyService = this._register(this.contextKeyService.createScoped(this.headerContainer));
-		CHAT_DEBUG_FILTER_ACTIVE.bindTo(scopedContextKeyService).set(true);
-		this.kindToolCallKey = CHAT_DEBUG_KIND_TOOL_CALL.bindTo(scopedContextKeyService);
-		this.kindToolCallKey.set(true);
-		this.kindModelTurnKey = CHAT_DEBUG_KIND_MODEL_TURN.bindTo(scopedContextKeyService);
-		this.kindModelTurnKey.set(true);
-		this.kindGenericKey = CHAT_DEBUG_KIND_GENERIC.bindTo(scopedContextKeyService);
-		this.kindGenericKey.set(true);
-		this.kindSubagentKey = CHAT_DEBUG_KIND_SUBAGENT.bindTo(scopedContextKeyService);
-		this.kindSubagentKey.set(true);
-		this.kindUserMessageKey = CHAT_DEBUG_KIND_USER_MESSAGE.bindTo(scopedContextKeyService);
-		this.kindUserMessageKey.set(true);
-		this.kindAgentResponseKey = CHAT_DEBUG_KIND_AGENT_RESPONSE.bindTo(scopedContextKeyService);
-		this.kindAgentResponseKey.set(true);
-		this.levelTraceKey = CHAT_DEBUG_LEVEL_TRACE.bindTo(scopedContextKeyService);
-		this.levelTraceKey.set(true);
-		this.levelInfoKey = CHAT_DEBUG_LEVEL_INFO.bindTo(scopedContextKeyService);
-		this.levelInfoKey.set(true);
-		this.levelWarningKey = CHAT_DEBUG_LEVEL_WARNING.bindTo(scopedContextKeyService);
-		this.levelWarningKey.set(true);
-		this.levelErrorKey = CHAT_DEBUG_LEVEL_ERROR.bindTo(scopedContextKeyService);
-		this.levelErrorKey.set(true);
+		const syncContextKeys = bindFilterContextKeys(this.filterState, scopedContextKeyService);
+		syncContextKeys();
 
 		const childInstantiationService = this._register(this.instantiationService.createChild(
 			new ServiceCollection([IContextKeyService, scopedContextKeyService])
@@ -181,11 +132,15 @@ export class ChatDebugLogsView extends Disposable {
 		filterContainer.appendChild(this.filterWidget.element);
 
 		this._register(this.filterWidget.onDidChangeFilterText(text => {
-			this.filterText = text.toLowerCase();
-			this.refreshList();
+			this.filterState.setTextFilter(text);
 		}));
 
-		this.registerFilterMenuItems();
+		// React to shared filter state changes
+		this._register(this.filterState.onDidChange(() => {
+			syncContextKeys();
+			this.updateMoreFiltersChecked();
+			this.refreshList();
+		}));
 
 		// Content wrapper (flex row: main column + detail panel)
 		const contentContainer = DOM.append(this.container, $('.chat-debug-logs-content'));
@@ -350,36 +305,28 @@ export class ChatDebugLogsView extends Disposable {
 		let filtered = this.events;
 
 		// Filter by kind toggles
-		filtered = filtered.filter(e => {
-			switch (e.kind) {
-				case 'toolCall': return this.filterKindToolCall;
-				case 'modelTurn': return this.filterKindModelTurn;
-				case 'generic': return this.filterKindGeneric;
-				case 'subagentInvocation': return this.filterKindSubagent;
-				case 'userMessage': return this.filterKindUserMessage;
-				case 'agentResponse': return this.filterKindAgentResponse;
-			}
-		});
+		filtered = filtered.filter(e => this.filterState.isKindVisible(e.kind));
 
 		// Filter by level toggles
 		filtered = filtered.filter(e => {
 			if (e.kind === 'generic') {
 				switch (e.level) {
-					case ChatDebugLogLevel.Trace: return this.filterLevelTrace;
-					case ChatDebugLogLevel.Info: return this.filterLevelInfo;
-					case ChatDebugLogLevel.Warning: return this.filterLevelWarning;
-					case ChatDebugLogLevel.Error: return this.filterLevelError;
+					case ChatDebugLogLevel.Trace: return this.filterState.filterLevelTrace;
+					case ChatDebugLogLevel.Info: return this.filterState.filterLevelInfo;
+					case ChatDebugLogLevel.Warning: return this.filterState.filterLevelWarning;
+					case ChatDebugLogLevel.Error: return this.filterState.filterLevelError;
 				}
 			}
 			if (e.kind === 'toolCall' && e.result === 'error') {
-				return this.filterLevelError;
+				return this.filterState.filterLevelError;
 			}
 			return true;
 		});
 
 		// Filter by text search
-		if (this.filterText) {
-			const terms = this.filterText.split(/\s*,\s*/).filter(t => t.length > 0);
+		const filterText = this.filterState.textFilter;
+		if (filterText) {
+			const terms = filterText.split(/\s*,\s*/).filter(t => t.length > 0);
 			const includeTerms = terms.filter(t => !t.startsWith('!')).map(t => t.trim());
 			const excludeTerms = terms.filter(t => t.startsWith('!')).map(t => t.slice(1).trim()).filter(t => t.length > 0);
 
@@ -523,57 +470,8 @@ export class ChatDebugLogsView extends Disposable {
 		}
 	}
 
-	private registerFilterMenuItems(): void {
-		const registerKindToggle = (id: string, title: string, key: RawContextKey<boolean>, flagGetter: () => boolean, flagSetter: (v: boolean) => void, ctxKey: IContextKey<boolean>) => {
-			this._register(CommandsRegistry.registerCommand(id, () => {
-				const newVal = !flagGetter();
-				flagSetter(newVal);
-				ctxKey.set(newVal);
-				this.refreshList();
-				this.updateMoreFiltersChecked();
-			}));
-			this._register(MenuRegistry.appendMenuItem(viewFilterSubmenu, {
-				command: { id, title, toggled: key },
-				group: '1_kind',
-				when: CHAT_DEBUG_FILTER_ACTIVE,
-			}));
-		};
-
-		registerKindToggle(CHAT_DEBUG_CMD_TOGGLE_TOOL_CALL, localize('chatDebug.filter.toolCall', "Tool Calls"), CHAT_DEBUG_KIND_TOOL_CALL, () => this.filterKindToolCall, v => { this.filterKindToolCall = v; }, this.kindToolCallKey);
-		registerKindToggle(CHAT_DEBUG_CMD_TOGGLE_MODEL_TURN, localize('chatDebug.filter.modelTurn', "Model Turns"), CHAT_DEBUG_KIND_MODEL_TURN, () => this.filterKindModelTurn, v => { this.filterKindModelTurn = v; }, this.kindModelTurnKey);
-		registerKindToggle(CHAT_DEBUG_CMD_TOGGLE_GENERIC, localize('chatDebug.filter.generic', "Generic"), CHAT_DEBUG_KIND_GENERIC, () => this.filterKindGeneric, v => { this.filterKindGeneric = v; }, this.kindGenericKey);
-		registerKindToggle(CHAT_DEBUG_CMD_TOGGLE_SUBAGENT, localize('chatDebug.filter.subagent', "Subagent Invocations"), CHAT_DEBUG_KIND_SUBAGENT, () => this.filterKindSubagent, v => { this.filterKindSubagent = v; }, this.kindSubagentKey);
-		registerKindToggle(CHAT_DEBUG_CMD_TOGGLE_USER_MESSAGE, localize('chatDebug.filter.userMessage', "User Messages"), CHAT_DEBUG_KIND_USER_MESSAGE, () => this.filterKindUserMessage, v => { this.filterKindUserMessage = v; }, this.kindUserMessageKey);
-		registerKindToggle(CHAT_DEBUG_CMD_TOGGLE_AGENT_RESPONSE, localize('chatDebug.filter.agentResponse', "Agent Responses"), CHAT_DEBUG_KIND_AGENT_RESPONSE, () => this.filterKindAgentResponse, v => { this.filterKindAgentResponse = v; }, this.kindAgentResponseKey);
-
-		const registerLevelToggle = (id: string, title: string, key: RawContextKey<boolean>, flagGetter: () => boolean, flagSetter: (v: boolean) => void, ctxKey: IContextKey<boolean>) => {
-			this._register(CommandsRegistry.registerCommand(id, () => {
-				const newVal = !flagGetter();
-				flagSetter(newVal);
-				ctxKey.set(newVal);
-				this.refreshList();
-				this.updateMoreFiltersChecked();
-			}));
-			this._register(MenuRegistry.appendMenuItem(viewFilterSubmenu, {
-				command: { id, title, toggled: key },
-				group: '2_level',
-				when: CHAT_DEBUG_FILTER_ACTIVE,
-			}));
-		};
-
-		registerLevelToggle(CHAT_DEBUG_CMD_TOGGLE_TRACE, localize('chatDebug.filter.trace', "Trace"), CHAT_DEBUG_LEVEL_TRACE, () => this.filterLevelTrace, v => { this.filterLevelTrace = v; }, this.levelTraceKey);
-		registerLevelToggle(CHAT_DEBUG_CMD_TOGGLE_INFO, localize('chatDebug.filter.info', "Info"), CHAT_DEBUG_LEVEL_INFO, () => this.filterLevelInfo, v => { this.filterLevelInfo = v; }, this.levelInfoKey);
-		registerLevelToggle(CHAT_DEBUG_CMD_TOGGLE_WARNING, localize('chatDebug.filter.warning', "Warning"), CHAT_DEBUG_LEVEL_WARNING, () => this.filterLevelWarning, v => { this.filterLevelWarning = v; }, this.levelWarningKey);
-		registerLevelToggle(CHAT_DEBUG_CMD_TOGGLE_ERROR, localize('chatDebug.filter.error', "Error"), CHAT_DEBUG_LEVEL_ERROR, () => this.filterLevelError, v => { this.filterLevelError = v; }, this.levelErrorKey);
-	}
-
 	private updateMoreFiltersChecked(): void {
-		const allOn = this.filterKindToolCall && this.filterKindModelTurn &&
-			this.filterKindGeneric && this.filterKindSubagent &&
-			this.filterKindUserMessage && this.filterKindAgentResponse &&
-			this.filterLevelTrace && this.filterLevelInfo &&
-			this.filterLevelWarning && this.filterLevelError;
-		this.filterWidget.checkMoreFilters(!allOn);
+		this.filterWidget.checkMoreFilters(!this.filterState.isAllFiltersDefault());
 	}
 
 	private async resolveAndShowDetail(event: IChatDebugEvent): Promise<void> {
