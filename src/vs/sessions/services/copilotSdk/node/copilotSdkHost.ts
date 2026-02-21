@@ -119,9 +119,8 @@ class CopilotSdkHost extends Disposable implements ICopilotSdkService {
 		}
 		// Tell the CLI to use stdio mode (no pty needed - avoids code signing issues)
 		cliEnv['COPILOT_AGENT_DISABLE_PTY'] = '1';
-		// Ensure the CLI doesn't inherit the Electron app's hardened runtime constraints
+		// Ensure the CLI doesn't inherit the Electron app's identity
 		delete cliEnv['__CFBundleIdentifier'];
-		delete cliEnv['APP_SANDBOX_CONTAINER_ID'];
 
 		this._onProcessOutput.fire({ stream: 'stderr', data: `[SDK] Creating CopilotClient with cliPath=${cliPath ?? 'default'}, useStdio=true` });
 
