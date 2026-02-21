@@ -9,6 +9,7 @@ import { getActionBarActions, MenuEntryActionViewItem } from '../../../../platfo
 import { autorun, constObservable, derived, IObservable, observableFromEvent } from '../../../../base/common/observable.js';
 import { URI } from '../../../../base/common/uri.js';
 import { HiddenItemStrategy, MenuWorkbenchToolBar } from '../../../../platform/actions/browser/toolbar.js';
+import { Separator } from '../../../../base/common/actions.js';
 import { IMenuService, MenuId, MenuItemAction } from '../../../../platform/actions/common/actions.js';
 import { IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
@@ -75,17 +76,26 @@ export class FloatingEditorToolbarWidget extends Disposable {
 		const menu = this._register(menuService.createMenu(_menuId, _scopedContextKeyService));
 		const menuGroupsObs = observableFromEvent(this, menu.onDidChange, () => menu.getActions());
 
-		const menuPrimaryActionIdObs = derived(reader => {
+		const menuPrimaryActionsObs = derived(reader => {
 			const menuGroups = menuGroupsObs.read(reader);
-
 			const { primary } = getActionBarActions(menuGroups, () => true);
+			return primary.filter(a => a.id !== Separator.ID);
+		});
+
+		const menuPrimaryActionIdObs = derived(reader => {
+			const primary = menuPrimaryActionsObs.read(reader);
 			return primary.length > 0 ? primary[0].id : undefined;
 		});
 
-		this.hasActions = derived(reader => menuGroupsObs.read(reader).length > 0);
+		this.hasActions = derived(reader => menuPrimaryActionsObs.read(reader).length > 0);
 
 		this.element = h('div.floating-menu-overlay-widget').root;
 		this._register(toDisposable(() => this.element.remove()));
+
+		this._register(autorun(reader => {
+			const actionsCount = menuPrimaryActionsObs.read(reader).length;
+			this.element.classList.toggle('single-button', actionsCount === 1);
+		}));
 
 		// Set height explicitly to ensure that the floating menu element
 		// is rendered in the lower right corner at the correct position.

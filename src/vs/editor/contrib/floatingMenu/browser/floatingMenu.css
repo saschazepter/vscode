@@ -17,6 +17,13 @@
 	box-shadow: 0 2px 8px var(--vscode-widget-shadow);
 	overflow: hidden;
 
+	&.single-button {
+		background-color: transparent;
+		border-color: transparent;
+		box-shadow: none;
+		padding: 0;
+	}
+
 	.actions-container {
 		gap: 4px;
 	}
