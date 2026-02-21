@@ -93,8 +93,14 @@ jobs:
           displayName: Publish unsigned CLI
           sbomEnabled: false
 
+      - script: |
+          set -e
+          mkdir -p $(Build.ArtifactStagingDirectory)/pkg/unsigned_vscode_cli_darwin_$(VSCODE_ARCH)_cli
+          cp $(Build.ArtifactStagingDirectory)/unsigned_vscode_cli_darwin_$(VSCODE_ARCH)_cli.zip $(Build.ArtifactStagingDirectory)/pkg/unsigned_vscode_cli_darwin_$(VSCODE_ARCH)_cli/unsigned_vscode_cli_darwin_$(VSCODE_ARCH)_cli.zip
+        displayName: Prepare CLI for signing
+
       - task: ExtractFiles@1
-        displayName: Extract unsigned CLI
+        displayName: Extract unsigned CLI (for SBOM)
         inputs:
           archiveFilePatterns: $(Build.ArtifactStagingDirectory)/unsigned_vscode_cli_darwin_$(VSCODE_ARCH)_cli.zip
           destinationFolder: $(Build.ArtifactStagingDirectory)/sign/unsigned_vscode_cli_darwin_$(VSCODE_ARCH)_cli
@@ -115,12 +121,12 @@ jobs:
           Pattern: noop
         displayName: 'Install ESRP Tooling'
 
-      - script: node build/azure-pipelines/common/sign.ts $(Agent.RootDirectory)/_tasks/EsrpCodeSigning_*/*/net6.0/esrpcli.dll sign-darwin $(Build.ArtifactStagingDirectory)/unsigned_vscode_cli_darwin_$(VSCODE_ARCH)_cli "*.zip"
+      - script: node build/azure-pipelines/common/sign.ts $(Agent.RootDirectory)/_tasks/EsrpCodeSigning_*/*/net6.0/esrpcli.dll sign-darwin $(Build.ArtifactStagingDirectory)/pkg/unsigned_vscode_cli_darwin_$(VSCODE_ARCH)_cli "*.zip"
         env:
           SYSTEM_ACCESSTOKEN: $(System.AccessToken)
         displayName: ✍️ Codesign
 
-      - script: node build/azure-pipelines/common/sign.ts $(Agent.RootDirectory)/_tasks/EsrpCodeSigning_*/*/net6.0/esrpcli.dll notarize-darwin $(Build.ArtifactStagingDirectory)/unsigned_vscode_cli_darwin_$(VSCODE_ARCH)_cli "*.zip"
+      - script: node build/azure-pipelines/common/sign.ts $(Agent.RootDirectory)/_tasks/EsrpCodeSigning_*/*/net6.0/esrpcli.dll notarize-darwin $(Build.ArtifactStagingDirectory)/pkg/unsigned_vscode_cli_darwin_$(VSCODE_ARCH)_cli "*.zip"
         env:
           SYSTEM_ACCESSTOKEN: $(System.AccessToken)
         displayName: ✍️ Notarize
@@ -128,5 +134,5 @@ jobs:
       - script: |
           set -e
           mkdir -p $(Build.ArtifactStagingDirectory)/out/vscode_cli_darwin_$(VSCODE_ARCH)_cli
-          mv $(Build.ArtifactStagingDirectory)/unsigned_vscode_cli_darwin_$(VSCODE_ARCH)_cli/unsigned_vscode_cli_darwin_$(VSCODE_ARCH)_cli.zip $(Build.ArtifactStagingDirectory)/out/vscode_cli_darwin_$(VSCODE_ARCH)_cli/vscode_cli_darwin_$(VSCODE_ARCH)_cli.zip
+          mv $(Build.ArtifactStagingDirectory)/pkg/unsigned_vscode_cli_darwin_$(VSCODE_ARCH)_cli/unsigned_vscode_cli_darwin_$(VSCODE_ARCH)_cli.zip $(Build.ArtifactStagingDirectory)/out/vscode_cli_darwin_$(VSCODE_ARCH)_cli/vscode_cli_darwin_$(VSCODE_ARCH)_cli.zip
         displayName: Rename signed artifact
