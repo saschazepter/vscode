@@ -122,7 +122,7 @@ export class MockChatService implements IChatService {
 	notifyQuestionCarouselAnswer(requestId: string, resolveId: string, answers: Record<string, unknown> | undefined): void {
 		throw new Error('Method not implemented.');
 	}
-	readonly onDidDisposeSession: Event<{ sessionResource: URI[]; reason: 'cleared' }> = Event.None;
+	readonly onDidDisposeSession: Event<{ sessionResource: URI[]; reason: 'cleared' }> = undefined!;
 
 	async transferChatSession(transferredSessionResource: URI, toWorkspace: URI): Promise<void> {
 		throw new Error('Method not implemented.');
