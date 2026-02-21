@@ -972,14 +972,6 @@ async function main() {
 
 	const stages = new Set<string>(['Quality']);
 
-	if (
-		e('VSCODE_BUILD_STAGE_LINUX') === 'True' ||
-		e('VSCODE_BUILD_STAGE_MACOS') === 'True' ||
-		e('VSCODE_BUILD_STAGE_WINDOWS') === 'True'
-	) {
-		stages.add('CompileCLI');
-	}
-
 	if (e('VSCODE_BUILD_STAGE_WINDOWS') === 'True') { stages.add('Windows'); }
 	if (e('VSCODE_BUILD_STAGE_LINUX') === 'True') { stages.add('Linux'); }
 	if (e('VSCODE_BUILD_STAGE_ALPINE') === 'True') { stages.add('Alpine'); }

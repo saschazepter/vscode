@@ -202,55 +202,6 @@ extends:
         jobs:
           - template: build/azure-pipelines/product-quality-checks.yml@self
 
-      - ${{ if or(eq(parameters.VSCODE_BUILD_LINUX, true),eq(parameters.VSCODE_BUILD_LINUX_ARMHF, true),eq(parameters.VSCODE_BUILD_LINUX_ARM64, true),eq(parameters.VSCODE_BUILD_MACOS, true),eq(parameters.VSCODE_BUILD_MACOS_ARM64, true),eq(parameters.VSCODE_BUILD_WIN32, true),eq(parameters.VSCODE_BUILD_WIN32_ARM64, true)) }}:
-        - stage: CompileCLI
-          dependsOn: []
-          jobs:
-            - ${{ if eq(parameters.VSCODE_BUILD_WIN32, true) }}:
-              - template: build/azure-pipelines/win32/product-build-win32-cli.yml@self
-                parameters:
-                  VSCODE_ARCH: x64
-                  VSCODE_QUALITY: ${{ variables.VSCODE_QUALITY }}
-                  VSCODE_CHECK_ONLY: ${{ variables.VSCODE_CIBUILD }}
-
-            - ${{ if and(eq(variables['VSCODE_CIBUILD'], false), eq(parameters.VSCODE_BUILD_WIN32_ARM64, true)) }}:
-              - template: build/azure-pipelines/win32/product-build-win32-cli.yml@self
-                parameters:
-                  VSCODE_ARCH: arm64
-                  VSCODE_QUALITY: ${{ variables.VSCODE_QUALITY }}
-
-            - ${{ if eq(parameters.VSCODE_BUILD_LINUX, true) }}:
-              - template: build/azure-pipelines/linux/product-build-linux-cli.yml@self
-                parameters:
-                  VSCODE_ARCH: x64
-                  VSCODE_CHECK_ONLY: ${{ variables.VSCODE_CIBUILD }}
-                  VSCODE_QUALITY: ${{ variables.VSCODE_QUALITY }}
-
-            - ${{ if and(eq(variables['VSCODE_CIBUILD'], false), eq(parameters.VSCODE_BUILD_LINUX_ARM64, true)) }}:
-              - template: build/azure-pipelines/linux/product-build-linux-cli.yml@self
-                parameters:
-                  VSCODE_ARCH: arm64
-                  VSCODE_QUALITY: ${{ variables.VSCODE_QUALITY }}
-
-            - ${{ if and(eq(variables['VSCODE_CIBUILD'], false), eq(parameters.VSCODE_BUILD_LINUX_ARMHF, true)) }}:
-              - template: build/azure-pipelines/linux/product-build-linux-cli.yml@self
-                parameters:
-                  VSCODE_ARCH: armhf
-                  VSCODE_QUALITY: ${{ variables.VSCODE_QUALITY }}
-
-            - ${{ if eq(parameters.VSCODE_BUILD_MACOS, true) }}:
-              - template: build/azure-pipelines/darwin/product-build-darwin-cli.yml@self
-                parameters:
-                  VSCODE_ARCH: x64
-                  VSCODE_CHECK_ONLY: ${{ variables.VSCODE_CIBUILD }}
-                  VSCODE_QUALITY: ${{ variables.VSCODE_QUALITY }}
-
-            - ${{ if and(eq(variables['VSCODE_CIBUILD'], false), eq(parameters.VSCODE_BUILD_MACOS_ARM64, true)) }}:
-              - template: build/azure-pipelines/darwin/product-build-darwin-cli.yml@self
-                parameters:
-                  VSCODE_ARCH: arm64
-                  VSCODE_QUALITY: ${{ variables.VSCODE_QUALITY }}
-
       - ${{ if eq(variables['VSCODE_CIBUILD'], true) }}:
         - stage: node_modules
           dependsOn: []
@@ -293,13 +244,24 @@ extends:
 
       - ${{ if eq(variables['VSCODE_BUILD_STAGE_WINDOWS'], true) }}:
         - stage: Windows
-          dependsOn:
-            - ${{ if or(eq(parameters.VSCODE_BUILD_LINUX, true),eq(parameters.VSCODE_BUILD_LINUX_ARMHF, true),eq(parameters.VSCODE_BUILD_LINUX_ARM64, true),eq(parameters.VSCODE_BUILD_MACOS, true),eq(parameters.VSCODE_BUILD_MACOS_ARM64, true),eq(parameters.VSCODE_BUILD_WIN32, true),eq(parameters.VSCODE_BUILD_WIN32_ARM64, true)) }}:
-              - CompileCLI
+          dependsOn: []
           pool:
             name: 1es-windows-2022-x64
             os: windows
           jobs:
+            - ${{ if eq(parameters.VSCODE_BUILD_WIN32, true) }}:
+              - template: build/azure-pipelines/win32/product-build-win32-cli.yml@self
+                parameters:
+                  VSCODE_ARCH: x64
+                  VSCODE_QUALITY: ${{ variables.VSCODE_QUALITY }}
+                  VSCODE_CHECK_ONLY: ${{ variables.VSCODE_CIBUILD }}
+
+            - ${{ if and(eq(variables['VSCODE_CIBUILD'], false), eq(parameters.VSCODE_BUILD_WIN32_ARM64, true)) }}:
+              - template: build/azure-pipelines/win32/product-build-win32-cli.yml@self
+                parameters:
+                  VSCODE_ARCH: arm64
+                  VSCODE_QUALITY: ${{ variables.VSCODE_QUALITY }}
+
             - ${{ if eq(variables['VSCODE_CIBUILD'], true) }}:
               - template: build/azure-pipelines/win32/product-build-win32-ci.yml@self
                 parameters:
@@ -334,21 +296,32 @@ extends:
                   VSCODE_CIBUILD: ${{ variables.VSCODE_CIBUILD }}
                   VSCODE_QUALITY: ${{ variables.VSCODE_QUALITY }}
 
-            - ${{ if and(eq(variables['VSCODE_CIBUILD'], false), or(eq(parameters.VSCODE_BUILD_WIN32, true), eq(parameters.VSCODE_BUILD_WIN32_ARM64, true))) }}:
-              - template: build/azure-pipelines/win32/product-build-win32-cli-sign.yml@self
-                parameters:
-                  VSCODE_BUILD_WIN32: ${{ parameters.VSCODE_BUILD_WIN32 }}
-                  VSCODE_BUILD_WIN32_ARM64: ${{ parameters.VSCODE_BUILD_WIN32_ARM64 }}
-
       - ${{ if eq(variables['VSCODE_BUILD_STAGE_LINUX'], true) }}:
         - stage: Linux
-          dependsOn:
-            - ${{ if or(eq(parameters.VSCODE_BUILD_LINUX, true),eq(parameters.VSCODE_BUILD_LINUX_ARMHF, true),eq(parameters.VSCODE_BUILD_LINUX_ARM64, true),eq(parameters.VSCODE_BUILD_MACOS, true),eq(parameters.VSCODE_BUILD_MACOS_ARM64, true),eq(parameters.VSCODE_BUILD_WIN32, true),eq(parameters.VSCODE_BUILD_WIN32_ARM64, true)) }}:
-              - CompileCLI
+          dependsOn: []
           pool:
             name: 1es-ubuntu-22.04-x64
             os: linux
           jobs:
+            - ${{ if eq(parameters.VSCODE_BUILD_LINUX, true) }}:
+              - template: build/azure-pipelines/linux/product-build-linux-cli.yml@self
+                parameters:
+                  VSCODE_ARCH: x64
+                  VSCODE_CHECK_ONLY: ${{ variables.VSCODE_CIBUILD }}
+                  VSCODE_QUALITY: ${{ variables.VSCODE_QUALITY }}
+
+            - ${{ if and(eq(variables['VSCODE_CIBUILD'], false), eq(parameters.VSCODE_BUILD_LINUX_ARM64, true)) }}:
+              - template: build/azure-pipelines/linux/product-build-linux-cli.yml@self
+                parameters:
+                  VSCODE_ARCH: arm64
+                  VSCODE_QUALITY: ${{ variables.VSCODE_QUALITY }}
+
+            - ${{ if and(eq(variables['VSCODE_CIBUILD'], false), eq(parameters.VSCODE_BUILD_LINUX_ARMHF, true)) }}:
+              - template: build/azure-pipelines/linux/product-build-linux-cli.yml@self
+                parameters:
+                  VSCODE_ARCH: armhf
+                  VSCODE_QUALITY: ${{ variables.VSCODE_QUALITY }}
+
             - ${{ if eq(variables['VSCODE_CIBUILD'], true) }}:
               - template: build/azure-pipelines/linux/product-build-linux-ci.yml@self
                 parameters:
@@ -417,9 +390,7 @@ extends:
 
       - ${{ if eq(variables['VSCODE_BUILD_STAGE_MACOS'], true) }}:
         - stage: macOS
-          dependsOn:
-            - ${{ if or(eq(parameters.VSCODE_BUILD_LINUX, true),eq(parameters.VSCODE_BUILD_LINUX_ARMHF, true),eq(parameters.VSCODE_BUILD_LINUX_ARM64, true),eq(parameters.VSCODE_BUILD_MACOS, true),eq(parameters.VSCODE_BUILD_MACOS_ARM64, true),eq(parameters.VSCODE_BUILD_WIN32, true),eq(parameters.VSCODE_BUILD_WIN32_ARM64, true)) }}:
-              - CompileCLI
+          dependsOn: []
           pool:
             name: AcesShared
             os: macOS
@@ -428,6 +399,19 @@ extends:
           variables:
             BUILDSECMON_OPT_IN: true
           jobs:
+            - ${{ if eq(parameters.VSCODE_BUILD_MACOS, true) }}:
+              - template: build/azure-pipelines/darwin/product-build-darwin-cli.yml@self
+                parameters:
+                  VSCODE_ARCH: x64
+                  VSCODE_CHECK_ONLY: ${{ variables.VSCODE_CIBUILD }}
+                  VSCODE_QUALITY: ${{ variables.VSCODE_QUALITY }}
+
+            - ${{ if and(eq(variables['VSCODE_CIBUILD'], false), eq(parameters.VSCODE_BUILD_MACOS_ARM64, true)) }}:
+              - template: build/azure-pipelines/darwin/product-build-darwin-cli.yml@self
+                parameters:
+                  VSCODE_ARCH: arm64
+                  VSCODE_QUALITY: ${{ variables.VSCODE_QUALITY }}
+
             - ${{ if eq(variables['VSCODE_CIBUILD'], true) }}:
               - template: build/azure-pipelines/darwin/product-build-darwin-ci.yml@self
                 parameters:
@@ -459,12 +443,6 @@ extends:
 
             - ${{ if and(eq(variables['VSCODE_CIBUILD'], false), eq(variables['VSCODE_BUILD_MACOS_UNIVERSAL'], true)) }}:
               - template: build/azure-pipelines/darwin/product-build-darwin-universal.yml@self
-
-            - ${{ if and(eq(variables['VSCODE_CIBUILD'], false), or(eq(parameters.VSCODE_BUILD_MACOS, true), eq(parameters.VSCODE_BUILD_MACOS_ARM64, true))) }}:
-              - template: build/azure-pipelines/darwin/product-build-darwin-cli-sign.yml@self
-                parameters:
-                  VSCODE_BUILD_MACOS: ${{ parameters.VSCODE_BUILD_MACOS }}
-                  VSCODE_BUILD_MACOS_ARM64: ${{ parameters.VSCODE_BUILD_MACOS_ARM64 }}
 
       - ${{ if and(eq(variables['VSCODE_CIBUILD'], false), eq(variables['VSCODE_BUILD_STAGE_WEB'], true)) }}:
         - stage: Web

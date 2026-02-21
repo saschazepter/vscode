@@ -159,6 +159,12 @@ steps:
     condition: and(succeeded(), ne(variables.NODE_MODULES_RESTORED, 'true'))
     displayName: Create node_modules archive
 
+  - ${{ if ne(parameters.VSCODE_CIBUILD, true) }}:
+    - script: npx deemon --detach --wait -- node build/azure-pipelines/common/waitForArtifacts.ts $(ARTIFACT_PREFIX)vscode_cli_linux_$(VSCODE_ARCH)_cli
+      env:
+        SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+      displayName: Wait for CLI artifact (background)
+
   - script: node build/azure-pipelines/distro/mixin-quality.ts
     displayName: Mixin distro quality
 
@@ -198,6 +204,11 @@ steps:
     displayName: Build client
 
   - ${{ if ne(parameters.VSCODE_CIBUILD, true) }}:
+    - script: npx deemon --attach -- node build/azure-pipelines/common/waitForArtifacts.ts $(ARTIFACT_PREFIX)vscode_cli_linux_$(VSCODE_ARCH)_cli
+      env:
+        SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+      displayName: Wait for CLI artifact
+
     - task: DownloadPipelineArtifact@2
       inputs:
         artifact: $(ARTIFACT_PREFIX)vscode_cli_linux_$(VSCODE_ARCH)_cli
