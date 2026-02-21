@@ -128,6 +128,7 @@ export class AgentSessionsWelcomePage extends EditorPane {
 	private chatModelRef: IReference<IChatModel> | undefined;
 	private sessionsControl: AgentSessionsControl | undefined;
 	private sessionsControlContainer: HTMLElement | undefined;
+	private showOnStartupElement: HTMLElement | undefined;
 	private readonly sessionsControlDisposables = this._register(new DisposableStore());
 	private readonly contentDisposables = this._register(new DisposableStore());
 	private contextService: IContextKeyService;
@@ -232,7 +233,8 @@ export class AgentSessionsWelcomePage extends EditorPane {
 		clearNode(this.contentContainer);
 
 		// Remove previous show-on-startup element if it exists
-		this.container.querySelector('.agentSessionsWelcome-showOnStartup')?.remove();
+		this.showOnStartupElement?.remove();
+		this.showOnStartupElement = undefined;
 
 		// Detect empty workspace and fetch recent workspaces
 		this._isEmptyWorkspace = this.workspaceContextService.getWorkbenchState() === WorkbenchState.EMPTY;
@@ -763,6 +765,7 @@ export class AgentSessionsWelcomePage extends EditorPane {
 	private buildShowOnStartup(container: HTMLElement): void {
 		// Show on startup checkbox
 		const showOnStartupContainer = append(container, $('.agentSessionsWelcome-showOnStartup'));
+		this.showOnStartupElement = showOnStartupContainer;
 		const showOnStartupCheckbox = this.contentDisposables.add(new Toggle({
 			icon: Codicon.check,
 			actionClassName: 'agentSessionsWelcome-checkbox',
