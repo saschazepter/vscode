@@ -1038,6 +1038,7 @@ export class ChatService extends Disposable implements IChatService {
 						enableCommandDetection &&
 						(location !== ChatAgentLocation.EditorInline || !this.configurationService.getValue(InlineChatConfigKeys.EnableV2)) &&
 						options?.modeInfo?.kind !== ChatModeKind.Agent &&
+						options?.modeInfo?.kind !== ChatModeKind.Autopilot &&
 						options?.modeInfo?.kind !== ChatModeKind.Edit &&
 						!options?.agentIdSilent
 					) {

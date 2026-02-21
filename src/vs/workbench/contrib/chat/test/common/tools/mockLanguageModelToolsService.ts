@@ -186,4 +186,14 @@ export class MockLanguageModelToolsService extends Disposable implements ILangua
 	getDeprecatedFullReferenceNames(): Map<string, Set<string>> {
 		throw new Error('Method not implemented.');
 	}
+
+	enableSessionYolo(_sessionResource: URI): void { }
+
+	disableSessionYolo(_sessionResource: URI): void { }
+
+	isSessionYolo(_sessionResource: URI): boolean {
+		return false;
+	}
+
+	enableNextRequestYolo(_sessionResource: URI): void { }
 }

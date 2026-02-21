@@ -9,10 +9,12 @@ import { Disposable } from '../../../../base/common/lifecycle.js';
 import * as nls from '../../../../nls.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
+import { INotificationService } from '../../../../platform/notification/common/notification.js';
 import { IChatAgentService } from '../common/participants/chatAgents.js';
 import { IChatSlashCommandService } from '../common/participants/chatSlashCommands.js';
 import { IChatService } from '../common/chatService/chatService.js';
 import { ChatAgentLocation, ChatModeKind } from '../common/constants.js';
+import { ILanguageModelToolsService } from '../common/tools/languageModelToolsService.js';
 import { ACTION_ID_NEW_CHAT } from './actions/chatActions.js';
 import { ChatSubmitAction, OpenModePickerAction, OpenModelPickerAction } from './actions/chatExecuteActions.js';
 import { ConfigureToolsAction } from './actions/chatToolActions.js';
@@ -36,6 +38,8 @@ export class ChatSlashCommandsContribution extends Disposable {
 		@IInstantiationService instantiationService: IInstantiationService,
 		@IAgentSessionsService agentSessionsService: IAgentSessionsService,
 		@IChatService chatService: IChatService,
+		@ILanguageModelToolsService toolsService: ILanguageModelToolsService,
+		@INotificationService notificationService: INotificationService,
 	) {
 		super();
 		this._store.add(slashCommandService.registerSlashCommand({
@@ -149,6 +153,33 @@ export class ChatSlashCommandsContribution extends Disposable {
 			const title = prompt.trim();
 			if (title) {
 				chatService.setChatSessionTitle(sessionResource, title);
+			}
+		}));
+		this._store.add(slashCommandService.registerSlashCommand({
+			command: 'yolo',
+			detail: nls.localize('yolo', "Toggle auto-approval of all tool calls"),
+			sortText: 'z1_yolo',
+			executeImmediately: false,
+			silent: true,
+			locations: [ChatAgentLocation.Chat]
+		}, async (prompt, _progress, _history, _location, sessionResource) => {
+			const trimmed = prompt.trim();
+			if (trimmed) {
+				// /yolo <prompt> — enable for next request only, then submit
+				toolsService.enableNextRequestYolo(sessionResource);
+				const widget = chatWidgetService.getWidgetBySessionResource(sessionResource);
+				if (widget) {
+					widget.acceptInput(trimmed);
+				}
+			} else {
+				// /yolo — toggle session YOLO mode
+				if (toolsService.isSessionYolo(sessionResource)) {
+					toolsService.disableSessionYolo(sessionResource);
+					notificationService.info(nls.localize('yolo.disabled', "YOLO mode disabled for this session"));
+				} else {
+					toolsService.enableSessionYolo(sessionResource);
+					notificationService.info(nls.localize('yolo.enabled', "YOLO mode enabled for this session — all tools will be auto-approved"));
+				}
 			}
 		}));
 		this._store.add(slashCommandService.registerSlashCommand({
