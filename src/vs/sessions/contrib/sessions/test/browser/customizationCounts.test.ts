@@ -100,7 +100,7 @@ function createMockWorkspaceService(opts: {
 		getActiveProjectRoot: () => opts.activeRoot,
 		managementSections: [],
 		getStorageSourceFilter: () => defaultFilter,
-		preferManualCreation: false,
+		isSessionsWindow: false,
 		commitFiles: async () => { },
 		generateCustomization: async () => { },
 	} as unknown as IAICustomizationWorkspaceService;
