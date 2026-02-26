@@ -90,7 +90,9 @@ export interface IAICustomizationWorkspaceService {
 	getStorageSourceFilter(type: PromptsType): IStorageSourceFilter;
 
 	/**
-	 * Whether this is a sessions window (vs core VS Code).
+	 * Indicates whether the current window is the Agent Sessions window
+	 * (sessions workbench) rather than the core VS Code workbench.
+	 * Used as a contextual flag, not to control creation behavior.
 	 */
 	readonly isSessionsWindow: boolean;
 
