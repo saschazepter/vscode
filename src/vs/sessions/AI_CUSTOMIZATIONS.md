@@ -107,7 +107,7 @@ Sessions overrides `PromptsService` via `AgenticPromptsService` (in `promptsServ
 
 ### Debug Panel
 
-Toggle via Command Palette: "Toggle Customizations Debug Panel". Shows a 4-stage pipeline view:
+Toggle via Command Palette: "Developer: Customizations Debug". Shows a 4-stage pipeline view:
 
 1. **Raw PromptsService data** — per-storage file lists + type-specific extras
 2. **After applyStorageSourceFilter** — what was removed and why
