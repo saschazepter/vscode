@@ -877,7 +877,7 @@ export class AICustomizationListWidget extends Disposable {
 			items.push(...pluginItems.map(mapToListItem));
 		}
 
-		// Apply storage source filter (removes items not in visible sources or excluded user roots)
+		// Apply storage source filter (keeps items in visible sources and allowed user roots)
 		const filter = this.workspaceService.getStorageSourceFilter(promptType);
 		const filteredItems = applyStorageSourceFilter(items, filter);
 		items.length = 0;
