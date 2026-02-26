@@ -820,8 +820,29 @@ export class AICustomizationListWidget extends Disposable {
 				});
 			}
 		} else {
-			// For instructions, fetch once and group by storage
-			const allItems = await this.promptsService.listPromptFiles(promptType, CancellationToken.None);
+			// For instructions, fetch prompt files and group by storage
+			const promptFiles = await this.promptsService.listPromptFiles(promptType, CancellationToken.None);
+			const allItems: IPromptPath[] = [...promptFiles];
+
+			// Also include agent instruction files (AGENTS.md, CLAUDE.md, copilot-instructions.md)
+			if (promptType === PromptsType.instructions) {
+				const agentInstructions = await this.promptsService.listAgentInstructions(CancellationToken.None, undefined);
+				const workspaceFolderUris = this.workspaceContextService.getWorkspace().folders.map(f => f.uri);
+				const activeRoot = this.workspaceService.getActiveProjectRoot();
+				if (activeRoot) {
+					workspaceFolderUris.push(activeRoot);
+				}
+				for (const file of agentInstructions) {
+					const isWorkspaceFile = workspaceFolderUris.some(root => file.uri.path.startsWith(root.path));
+					allItems.push({
+						uri: file.uri,
+						storage: isWorkspaceFile ? PromptsStorage.local : PromptsStorage.user,
+						type: PromptsType.instructions,
+						name: basename(file.uri),
+					});
+				}
+			}
+
 			const workspaceItems = allItems.filter(item => item.storage === PromptsStorage.local);
 			const userItems = allItems.filter(item => item.storage === PromptsStorage.user);
 			const extensionItems = allItems.filter(item => item.storage === PromptsStorage.extension);
@@ -846,6 +867,17 @@ export class AICustomizationListWidget extends Disposable {
 			items.push(...userItems.map(mapToListItem));
 			items.push(...extensionItems.map(mapToListItem));
 			items.push(...pluginItems.map(mapToListItem));
+		}
+
+		// Filter out files under excluded user roots
+		const excludedRoots = this.workspaceService.excludedUserFileRoots;
+		if (excludedRoots.length > 0) {
+			const excluded = excludedRoots.map(r => r.path);
+			for (let i = items.length - 1; i >= 0; i--) {
+				if (items[i].storage === PromptsStorage.user && excluded.some(root => items[i].uri.path.startsWith(root))) {
+					items.splice(i, 1);
+				}
+			}
 		}
 
 		// Sort items by name
