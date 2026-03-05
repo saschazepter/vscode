@@ -10,6 +10,7 @@ import { DisposableStore } from '../../../../base/common/lifecycle.js';
 import { autorun } from '../../../../base/common/observable.js';
 import { basename, dirname } from '../../../../base/common/resources.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
+import { Codicon } from '../../../../base/common/codicons.js';
 import { URI } from '../../../../base/common/uri.js';
 import { localize } from '../../../../nls.js';
 import { getContextMenuActions } from '../../../../platform/actions/browser/menuEntryActionViewItem.js';
@@ -28,6 +29,7 @@ import { IViewDescriptorService } from '../../../../workbench/common/views.js';
 import { IPromptsService, PromptsStorage, IAgentSkill, IPromptPath } from '../../../../workbench/contrib/chat/common/promptSyntax/service/promptsService.js';
 import { PromptsType } from '../../../../workbench/contrib/chat/common/promptSyntax/promptTypes.js';
 import { agentIcon, extensionIcon, instructionsIcon, mcpServerIcon, pluginIcon, promptIcon, skillIcon, userIcon, workspaceIcon } from '../../../../workbench/contrib/chat/browser/aiCustomization/aiCustomizationIcons.js';
+import { BUILTIN_STORAGE } from '../../chat/browser/promptsService.js';
 import { AICustomizationItemMenuId } from './aiCustomizationTreeView.js';
 import { AICustomizationManagementSection } from '../../../../workbench/contrib/chat/browser/aiCustomization/aiCustomizationManagement.js';
 import { AICustomizationManagementEditorInput } from '../../../../workbench/contrib/chat/browser/aiCustomization/aiCustomizationManagementEditorInput.js';
@@ -375,11 +377,13 @@ class UnifiedAICustomizationDataSource implements IAsyncDataSource<RootElement, 
 			const workspaceItems = allItems.filter(item => item.storage === PromptsStorage.local);
 			const userItems = allItems.filter(item => item.storage === PromptsStorage.user);
 			const extensionItems = allItems.filter(item => item.storage === PromptsStorage.extension);
+			const builtinItems = allItems.filter(item => item.storage === BUILTIN_STORAGE);
 
 			cached.files = new Map<PromptsStorage, readonly IPromptPath[]>([
 				[PromptsStorage.local, workspaceItems],
 				[PromptsStorage.user, userItems],
 				[PromptsStorage.extension, extensionItems],
+				[BUILTIN_STORAGE, builtinItems],
 			]);
 
 			const itemCount = allItems.length;
@@ -390,6 +394,7 @@ class UnifiedAICustomizationDataSource implements IAsyncDataSource<RootElement, 
 		const workspaceItems = cached.files!.get(PromptsStorage.local) || [];
 		const userItems = cached.files!.get(PromptsStorage.user) || [];
 		const extensionItems = cached.files!.get(PromptsStorage.extension) || [];
+		const builtinItems = cached.files!.get(BUILTIN_STORAGE) || [];
 
 		if (workspaceItems.length > 0) {
 			groups.push(this.createGroupItem(promptType, PromptsStorage.local, workspaceItems.length));
@@ -400,6 +405,9 @@ class UnifiedAICustomizationDataSource implements IAsyncDataSource<RootElement, 
 		if (extensionItems.length > 0) {
 			groups.push(this.createGroupItem(promptType, PromptsStorage.extension, extensionItems.length));
 		}
+		if (builtinItems.length > 0) {
+			groups.push(this.createGroupItem(promptType, BUILTIN_STORAGE, builtinItems.length));
+		}
 
 		return groups;
 	}
@@ -408,34 +416,37 @@ class UnifiedAICustomizationDataSource implements IAsyncDataSource<RootElement, 
 	 * Creates a group item with consistent structure.
 	 */
 	private createGroupItem(promptType: PromptsType, storage: PromptsStorage, count: number): IAICustomizationGroupItem {
-		const storageLabels: Record<PromptsStorage, string> = {
+		const storageLabels: Record<string, string> = {
 			[PromptsStorage.local]: localize('workspaceWithCount', "Workspace ({0})", count),
 			[PromptsStorage.user]: localize('userWithCount', "User ({0})", count),
 			[PromptsStorage.extension]: localize('extensionsWithCount', "Extensions ({0})", count),
 			[PromptsStorage.plugin]: localize('pluginsWithCount', "Plugins ({0})", count),
+			[BUILTIN_STORAGE]: localize('builtinWithCount', "Built-in ({0})", count),
 		};
 
-		const storageIcons: Record<PromptsStorage, ThemeIcon> = {
+		const storageIcons: Record<string, ThemeIcon> = {
 			[PromptsStorage.local]: workspaceIcon,
 			[PromptsStorage.user]: userIcon,
 			[PromptsStorage.extension]: extensionIcon,
 			[PromptsStorage.plugin]: pluginIcon,
+			[BUILTIN_STORAGE]: Codicon.starFull,
 		};
 
-		const storageSuffixes: Record<PromptsStorage, string> = {
+		const storageSuffixes: Record<string, string> = {
 			[PromptsStorage.local]: 'workspace',
 			[PromptsStorage.user]: 'user',
 			[PromptsStorage.extension]: 'extensions',
 			[PromptsStorage.plugin]: 'plugins',
+			[BUILTIN_STORAGE]: 'builtin',
 		};
 
 		return {
 			type: 'group',
-			id: `group-${promptType}-${storageSuffixes[storage]}`,
-			label: storageLabels[storage],
+			id: `group-${promptType}-${storageSuffixes[storage] ?? storage}`,
+			label: storageLabels[storage] ?? storage,
 			storage,
 			promptType,
-			icon: storageIcons[storage],
+			icon: storageIcons[storage] ?? promptIcon,
 		};
 	}
 

@@ -90,8 +90,19 @@ The shared `applyStorageSourceFilter()` helper applies this filter to any `{uri,
 Sessions overrides `PromptsService` via `AgenticPromptsService` (in `promptsService.ts`):
 
 - **Discovery**: `AgenticPromptFilesLocator` scopes workspace folders to the active session's worktree
+- **Built-in prompts**: Discovers bundled `.prompt.md` files from `vs/sessions/prompts/` and injects them as user-storage items
+- **User override**: Built-in prompts are omitted when a user or workspace prompt with the same name exists
 - **Creation targets**: `getSourceFolders()` override replaces VS Code profile user roots with `~/.copilot/{subfolder}` for CLI compatibility
 - **Hook folders**: Falls back to `.github/hooks` in the active worktree
+
+### Built-in Prompts
+
+Prompt files bundled with the Sessions app live in `src/vs/sessions/prompts/`. They are:
+
+- Discovered at runtime via `FileAccess.asFileUri('vs/sessions/prompts')`
+- Tagged with `BUILTIN_STORAGE` (a sessions-only cast of `'builtin' as PromptsStorage`) to avoid core changes
+- Identifiable by the `BUILTIN_PROMPTS_URI` prefix exported from `promptsService.ts`
+- Filtered out when a user/workspace prompt shares the same clean name (override behavior)
 
 ### Count Consistency
 
