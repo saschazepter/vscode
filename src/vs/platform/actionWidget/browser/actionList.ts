@@ -68,9 +68,9 @@ export interface IActionListItem<T> {
 	 */
 	readonly hover?: IActionListItemHover;
 	/**
-	 * Optional actions shown in the hover popup alongside the hover content.
-	 * When set, the hover displays actionable items (e.g., configuration options)
-	 * that the user can interact with.
+	 * Optional actions shown in a nested submenu panel, triggered by a chevron
+	 * indicator on the right side of the item. When set, hovering or clicking
+	 * the chevron opens an inline submenu with these actions.
 	 */
 	readonly submenuActions?: IAction[];
 	readonly keybinding?: ResolvedKeybinding;
