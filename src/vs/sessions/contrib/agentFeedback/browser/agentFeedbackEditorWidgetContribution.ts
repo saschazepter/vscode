@@ -38,6 +38,12 @@ import { MarkdownString } from '../../../../base/common/htmlContent.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { KeyCode } from '../../../../base/common/keyCodes.js';
 
+interface ICommentItemActions {
+	readonly editAction: Action;
+	readonly convertAction: Action | undefined;
+	readonly removeAction: Action;
+}
+
 /**
  * Widget that displays agent feedback comments for a group of nearby feedback items.
  * Positioned on the right side of the editor like a speech bubble.
@@ -198,30 +204,36 @@ export class AgentFeedbackEditorWidget extends Disposable implements IOverlayWid
 			const editTooltip = isEditable
 				? nls.localize('editComment', "Edit")
 				: nls.localize('editPRCommentDisabled', "PR review comments cannot be edited");
-			actionBar.push(new Action(
+			const editAction = new Action(
 				'agentFeedback.widget.edit',
 				editTooltip,
 				ThemeIcon.asClassName(Codicon.edit),
 				isEditable,
-				() => this._startEditing(comment, text),
-			), { icon: true, label: false });
+				() => this._startEditing(comment, text, itemActions),
+			);
+			actionBar.push(editAction, { icon: true, label: false });
 
+			let convertAction: Action | undefined;
 			if (comment.canConvertToAgentFeedback) {
-				actionBar.push(new Action(
+				convertAction = new Action(
 					'agentFeedback.widget.convert',
 					nls.localize('convertComment', "Convert to Agent Feedback"),
 					ThemeIcon.asClassName(Codicon.check),
 					true,
 					() => this._convertToAgentFeedback(comment),
-				), { icon: true, label: false });
+				);
+				actionBar.push(convertAction, { icon: true, label: false });
 			}
-			actionBar.push(new Action(
+			const removeAction = new Action(
 				'agentFeedback.widget.remove',
 				nls.localize('removeComment', "Remove"),
 				ThemeIcon.asClassName(Codicon.close),
 				true,
 				() => this._removeComment(comment),
-			), { icon: true, label: false });
+			);
+			actionBar.push(removeAction, { icon: true, label: false });
+
+			const itemActions = { editAction, convertAction, removeAction };
 			itemHeader.appendChild(actionBarContainer);
 			item.appendChild(itemHeader);
 
@@ -310,10 +322,17 @@ export class AgentFeedbackEditorWidget extends Disposable implements IOverlayWid
 		this._agentFeedbackService.removeFeedback(this._sessionResource, comment.sourceId);
 	}
 
-	private _startEditing(comment: ISessionEditorComment, textContainer: HTMLElement): void {
+	private _startEditing(comment: ISessionEditorComment, textContainer: HTMLElement, actions: ICommentItemActions): void {
 		if (comment.source === SessionEditorCommentSource.PRReview) {
 			return;
 		}
+
+		// Disable all actions while editing
+		actions.editAction.enabled = false;
+		if (actions.convertAction) {
+			actions.convertAction.enabled = false;
+		}
+		actions.removeAction.enabled = false;
 
 		const editStore = new DisposableStore();
 		this._eventStore.add(editStore);
@@ -348,13 +367,13 @@ export class AgentFeedbackEditorWidget extends Disposable implements IOverlayWid
 			} else if (e.keyCode === KeyCode.Escape) {
 				e.preventDefault();
 				e.stopPropagation();
-				this._stopEditing(comment, textContainer, editStore);
+				this._stopEditing(comment, textContainer, editStore, actions);
 			}
 		}));
 
 		// Stop editing when focus is lost
 		editStore.add(addDisposableListener(textarea, 'blur', () => {
-			this._stopEditing(comment, textContainer, editStore);
+			this._stopEditing(comment, textContainer, editStore, actions);
 		}));
 
 		textarea.focus();
@@ -368,8 +387,16 @@ export class AgentFeedbackEditorWidget extends Disposable implements IOverlayWid
 		}
 	}
 
-	private _stopEditing(comment: ISessionEditorComment, textContainer: HTMLElement, editStore: DisposableStore): void {
+	private _stopEditing(comment: ISessionEditorComment, textContainer: HTMLElement, editStore: DisposableStore, actions: ICommentItemActions): void {
 		editStore.dispose();
+
+		// Re-enable actions
+		actions.editAction.enabled = comment.source !== SessionEditorCommentSource.PRReview;
+		if (actions.convertAction) {
+			actions.convertAction.enabled = true;
+		}
+		actions.removeAction.enabled = true;
+
 		textContainer.classList.remove('editing');
 		clearNode(textContainer);
 		const rendered = this._markdownRendererService.render(new MarkdownString(comment.text));
