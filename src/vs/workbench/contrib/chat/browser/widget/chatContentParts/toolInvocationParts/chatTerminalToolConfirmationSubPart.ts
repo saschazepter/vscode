@@ -211,6 +211,10 @@ export class ChatTerminalToolConfirmationSubPart extends BaseChatToolInvocationS
 			},
 		));
 
+		if (terminalData.requestUnsandboxedExecution && terminalData.requestUnsandboxedExecutionReason) {
+			this._appendMarkdownPart(elements.disclaimer, new MarkdownString(`$(${Codicon.info.id}) ${terminalData.requestUnsandboxedExecutionReason}`, { supportThemeIcons: true }), codeBlockRenderOptions);
+		}
+
 		if (disclaimer) {
 			this._appendMarkdownPart(elements.disclaimer, disclaimer, codeBlockRenderOptions);
 		}
