@@ -8,12 +8,13 @@ import { registerColor, transparent } from '../../platform/theme/common/colorUti
 import { contrastBorder, iconForeground } from '../../platform/theme/common/colorRegistry.js';
 import { Color } from '../../base/common/color.js';
 import { buttonBackground } from '../../platform/theme/common/colors/inputColors.js';
-import { SIDE_BAR_BACKGROUND, SIDE_BAR_FOREGROUND } from '../../workbench/common/theme.js';
+import { SIDE_BAR_FOREGROUND } from '../../workbench/common/theme.js';
+import { editorBackground } from '../../platform/theme/common/colors/editorColors.js';
 
 // Sessions sidebar background color
 export const sessionsSidebarBackground = registerColor(
 	'sessionsSidebar.background',
-	SIDE_BAR_BACKGROUND,
+	editorBackground,
 	localize('sessionsSidebar.background', 'Background color of the sidebar view in the agent sessions window.')
 );
 
@@ -27,7 +28,7 @@ export const sessionsSidebarBorder = registerColor(
 // Sessions sidebar header colors
 export const sessionsSidebarHeaderBackground = registerColor(
 	'sessionsSidebarHeader.background',
-	SIDE_BAR_BACKGROUND,
+	editorBackground,
 	localize('sessionsSidebarHeader.background', 'Background color of the sidebar header area in the agent sessions window.')
 );
 
@@ -40,7 +41,7 @@ export const sessionsSidebarHeaderForeground = registerColor(
 // Chat bar title colors
 export const chatBarTitleBackground = registerColor(
 	'chatBarTitle.background',
-	SIDE_BAR_BACKGROUND,
+	editorBackground,
 	localize('chatBarTitle.background', 'Background color of the chat bar title area in the agent sessions window.')
 );
 
