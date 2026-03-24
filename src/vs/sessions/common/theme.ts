@@ -6,7 +6,6 @@
 import { localize } from '../../nls.js';
 import { registerColor, transparent } from '../../platform/theme/common/colorUtils.js';
 import { contrastBorder, iconForeground } from '../../platform/theme/common/colorRegistry.js';
-import { Color } from '../../base/common/color.js';
 import { buttonBackground } from '../../platform/theme/common/colors/inputColors.js';
 import { SIDE_BAR_FOREGROUND } from '../../workbench/common/theme.js';
 import { editorBackground } from '../../platform/theme/common/colors/editorColors.js';
@@ -16,13 +15,6 @@ export const sessionsSidebarBackground = registerColor(
 	'sessionsSidebar.background',
 	editorBackground,
 	localize('sessionsSidebar.background', 'Background color of the sidebar view in the agent sessions window.')
-);
-
-// Sessions sidebar border color
-export const sessionsSidebarBorder = registerColor(
-	'sessionsSidebar.border',
-	{ dark: Color.fromHex('#808080').transparent(0.35), light: Color.fromHex('#808080').transparent(0.35), hcDark: contrastBorder, hcLight: contrastBorder },
-	localize('sessionsSidebar.border', 'Border color of the sidebar in the agent sessions window.')
 );
 
 // Sessions sidebar header colors
