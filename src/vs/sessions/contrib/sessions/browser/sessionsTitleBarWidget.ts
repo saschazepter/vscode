@@ -382,7 +382,6 @@ class SidebarToggleActionViewItem extends ActionViewItem {
 			? ThemeIcon.asClassName(Codicon.layoutSidebarLeft)
 			: ThemeIcon.asClassName(Codicon.layoutSidebarLeftOff);
 	}
-
 	private _updateBadge(): void {
 		if (!this._countBadge) {
 			return;
