@@ -404,7 +404,7 @@ export class SetupAgent extends Disposable implements IChatAgentImplementation {
 
 					const diagnosticInfo = this.computeDiagnosticInfo(agentActivated, agentReady, languageModelReady, toolsModelReady, requestModel, languageModelsService, chatAgentService, modeInfo);
 
-					this.logService.warn('[chat setup]', warningMessage, diagnosticInfo);
+					this.logService.warn(`[chat setup] ${warningMessage}`, diagnosticInfo);
 
 					type ChatSetupTimeoutClassification = {
 						owner: 'chrmarti';
