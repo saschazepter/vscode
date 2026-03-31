@@ -338,6 +338,7 @@ class SidebarToggleActionViewItem extends ActionViewItem {
 
 	private _countBadge: HTMLElement | undefined;
 	private _focusTarget: SidebarToggleFocusTarget | undefined;
+	private readonly _renderDisposables = this._register(new DisposableStore());
 
 	constructor(
 		context: unknown,
@@ -352,6 +353,7 @@ class SidebarToggleActionViewItem extends ActionViewItem {
 	}
 
 	override render(container: HTMLElement): void {
+		this._renderDisposables.clear();
 		super.render(container);
 
 		container.classList.add('sidebar-toggle-action');
@@ -364,15 +366,15 @@ class SidebarToggleActionViewItem extends ActionViewItem {
 			sidebarVisible: this.layoutService.isVisible(Parts.SIDEBAR_PART),
 		});
 		if (this.label) {
-			this._register(addDisposableListener(this.label, EventType.FOCUS, () => {
+			this._renderDisposables.add(addDisposableListener(this.label, EventType.FOCUS, () => {
 				logSidebarToggleFocus('label-focus', { focusTarget: this._focusTarget });
 			}));
-			this._register(addDisposableListener(this.label, EventType.BLUR, () => {
+			this._renderDisposables.add(addDisposableListener(this.label, EventType.BLUR, () => {
 				logSidebarToggleFocus('label-blur', { focusTarget: this._focusTarget });
 			}));
 		}
 		this._restoreFocusIfRequested(container);
-		this._register(this.paneCompositePartService.onDidPaneCompositeOpen(e => {
+		this._renderDisposables.add(this.paneCompositePartService.onDidPaneCompositeOpen(e => {
 			if (e.viewContainerLocation === ViewContainerLocation.Sidebar) {
 				logSidebarToggleFocus('pane-composite-open', {
 					focusTarget: this._focusTarget,
@@ -395,7 +397,7 @@ class SidebarToggleActionViewItem extends ActionViewItem {
 				handler(e);
 			}
 		}));
-		this._register(autorun(reader => {
+		this._renderDisposables.add(autorun(reader => {
 			sessionsChanged.read(reader);
 			listModelChanged.read(reader);
 			sidebarVisibilityChanged.read(reader);
@@ -451,7 +453,7 @@ class SidebarToggleActionViewItem extends ActionViewItem {
 				ariaLabel: targetWindow.document.activeElement.getAttribute('aria-label')
 			} : String(targetWindow.document.activeElement)
 		});
-		this._register(scheduleAtNextAnimationFrame(targetWindow, () => {
+		this._renderDisposables.add(scheduleAtNextAnimationFrame(targetWindow, () => {
 			logSidebarToggleFocus('restore-first-frame', {
 				focusTarget: this._focusTarget,
 				activeElement: targetWindow.document.activeElement instanceof targetWindow.HTMLElement ? {
@@ -460,7 +462,7 @@ class SidebarToggleActionViewItem extends ActionViewItem {
 					ariaLabel: targetWindow.document.activeElement.getAttribute('aria-label')
 				} : String(targetWindow.document.activeElement)
 			});
-			this._register(scheduleAtNextAnimationFrame(targetWindow, () => {
+			this._renderDisposables.add(scheduleAtNextAnimationFrame(targetWindow, () => {
 				logSidebarToggleFocus('restore-second-frame-before-focus', {
 					focusTarget: this._focusTarget,
 					activeElement: targetWindow.document.activeElement instanceof targetWindow.HTMLElement ? {
