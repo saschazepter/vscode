@@ -100,6 +100,8 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 	private _bannerElement: HTMLElement | undefined;
 	private _bannerDismissed = false;
 	private _warningCardElement: HTMLElement | undefined;
+	private _autoAdvanceStates: string[] | undefined;
+	private _autoAdvanceIndex = 0;
 
 	constructor(
 		@IStatusbarService statusbarService: IStatusbarService,
@@ -123,6 +125,29 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 		this.setupInputInterceptor();
 	}
 
+	private startAutoAdvance(sku: string): void {
+		const states = CopilotPrototypeShellCoinStatusBarContribution.STATES;
+		const excluded = CopilotPrototypeShellCoinStatusBarContribution.EXCLUDED_CELLS;
+		// Build the valid state sequence for this SKU
+		this._autoAdvanceStates = states.filter(s => !excluded.has(`${sku}|${s}`));
+		this._autoAdvanceIndex = 0;
+		if (this._autoAdvanceStates.length > 0) {
+			this.setActiveCell(sku, this._autoAdvanceStates[0]);
+		}
+	}
+
+	private advanceState(): void {
+		if (!this._autoAdvanceStates || this._autoAdvanceStates.length === 0) {
+			return;
+		}
+		this._autoAdvanceIndex++;
+		if (this._autoAdvanceIndex >= this._autoAdvanceStates.length) {
+			// Wrap around to the beginning
+			this._autoAdvanceIndex = 0;
+		}
+		this.setActiveCell(this._activeSku, this._autoAdvanceStates[this._autoAdvanceIndex]);
+	}
+
 	private setupInputInterceptor(): void {
 		const tryAttach = () => {
 			const container = this.layoutService.getContainer(mainWindow);
@@ -132,25 +157,36 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 				return;
 			}
 
-				// Capture-phase listener to intercept before the chat widget processes it
+			// Capture-phase listener — advance state on submit, or block if input blocked
 			auxBar.addEventListener('keydown', (e) => {
-				if (this.isInputBlocked() && (e as KeyboardEvent).key === 'Enter' && !(e as KeyboardEvent).shiftKey) {
-					const target = e.target as HTMLElement;
-					if (target.closest('.chat-editor-container') || target.closest('.chat-input-container')) {
-						e.preventDefault();
-						e.stopPropagation();
-					}
+				const ke = e as KeyboardEvent;
+				if (ke.key !== 'Enter' || ke.shiftKey) {
+					return;
+				}
+				const target = e.target as HTMLElement;
+				if (!target.closest('.chat-editor-container') && !target.closest('.chat-input-container')) {
+					return;
+				}
+				if (this.isInputBlocked()) {
+					e.preventDefault();
+					e.stopPropagation();
+				} else if (this._autoAdvanceStates) {
+					// Schedule advance after the message is sent
+					setTimeout(() => this.advanceState(), 1500);
 				}
 			}, true);
 
 			// Also intercept clicks on the send/execute button
 			auxBar.addEventListener('click', (e) => {
+				const target = e.target as HTMLElement;
+				if (!target.closest('.chat-execute-toolbar')) {
+					return;
+				}
 				if (this.isInputBlocked()) {
-					const target = e.target as HTMLElement;
-					if (target.closest('.chat-execute-toolbar')) {
-						e.preventDefault();
-						e.stopPropagation();
-					}
+					e.preventDefault();
+					e.stopPropagation();
+				} else if (this._autoAdvanceStates) {
+					setTimeout(() => this.advanceState(), 1500);
 				}
 			}, true);
 		};
@@ -207,21 +243,25 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 		this._dashboardEntryAccessor.update(this.getDashboardEntryProps());
 		// Clear any existing warning card
 		this.clearWarningCard();
-		// Clear any existing banner
-		this.clearBanner();
 		// Show the right UI for the state
 		const hasOverage = sku === 'Pro/Pro+' || sku === 'Max';
 		if (hasOverage) {
 			// Pro with overage: only block for overage exhaustion
 			if (state === 'Overage Reached') {
+				this.clearBanner();
 				this.showWarningCard();
 			} else if (state.includes('Approached') || state === 'Session Reached' || state === 'Weekly Reached') {
 				this.updateBanner(state);
+			} else {
+				this.clearBanner();
 			}
 		} else if (state.includes('Reached')) {
+			this.clearBanner();
 			this.showWarningCard();
 		} else if (state.includes('Approached')) {
 			this.updateBanner(state);
+		} else {
+			this.clearBanner();
 		}
 	}
 
@@ -509,6 +549,9 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 			link.textContent = sku;
 			link.tabIndex = 0;
 			link.role = 'button';
+			link.addEventListener('click', () => {
+				this.startAutoAdvance(sku);
+			});
 			header.appendChild(link);
 			grid.appendChild(header);
 		}
@@ -533,6 +576,7 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 					}));
 					btn.label = '';
 					disposables.add(btn.onDidClick(() => {
+						this._autoAdvanceStates = undefined;
 						this.setActiveCell(sku, state);
 					}));
 				}
@@ -717,9 +761,6 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 		} else if (!isPro) {
 			const upgradeBtn = disposables.add(new Button(actions, { ...defaultButtonStyles, secondary: true }));
 			upgradeBtn.label = localize('upgrade', "Upgrade");
-			const overageBtn = disposables.add(new Button(actions, { ...defaultButtonStyles, secondary: true }));
-			overageBtn.label = localize('configureOverages', "Configure Overages");
-			overageBtn.enabled = false;
 		} else {
 			const configBudgetBtn = disposables.add(new Button(actions, { ...defaultButtonStyles, secondary: true }));
 			configBudgetBtn.label = localize('configureOverageBudget', "Configure Overage Budget");
