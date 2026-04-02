@@ -302,7 +302,8 @@
 }
 
 .copilot-prototype-dashboard-gauge + .copilot-prototype-dashboard-gauge,
-.copilot-prototype-dashboard-warning + .copilot-prototype-dashboard-gauge {
+.copilot-prototype-dashboard-warning + .copilot-prototype-dashboard-gauge,
+.copilot-prototype-dashboard-info + .copilot-prototype-dashboard-gauge {
 	padding-top: 8px;
 	border-top: 1px solid var(--vscode-editorWidget-border, rgba(255,255,255,0.1));
 }
@@ -314,6 +315,15 @@
 .copilot-prototype-dashboard-gauge-label {
 	font-size: 12px;
 	color: var(--vscode-foreground);
+	display: flex;
+	justify-content: space-between;
+	align-items: baseline;
+}
+
+.copilot-prototype-dashboard-gauge-status {
+	font-size: 11px;
+	color: var(--vscode-descriptionForeground);
+	font-weight: normal;
 }
 
 .copilot-prototype-dashboard-gauge-bar {
@@ -374,6 +384,26 @@
 }
 
 .copilot-prototype-dashboard-warning-text {
+	flex: 1;
+}
+
+/* Info callout (used for Pro overage states) */
+
+.copilot-prototype-dashboard-info {
+	display: flex;
+	gap: 6px;
+	font-size: 11px;
+	color: var(--vscode-descriptionForeground);
+	margin-bottom: 8px;
+	line-height: 1.4;
+}
+
+.copilot-prototype-dashboard-info-icon {
+	flex-shrink: 0;
+	color: var(--vscode-foreground);
+}
+
+.copilot-prototype-dashboard-info-text {
 	flex: 1;
 }
 
@@ -617,4 +647,13 @@
 
 .copilot-prototype-inline-warning-btn:hover {
 	background-color: var(--vscode-button-hoverBackground);
+}
+
+.copilot-prototype-inline-warning-btn.secondary {
+	background-color: var(--vscode-button-secondaryBackground);
+	color: var(--vscode-button-secondaryForeground);
+}
+
+.copilot-prototype-inline-warning-btn.secondary:hover {
+	background-color: var(--vscode-button-secondaryHoverBackground);
 }
