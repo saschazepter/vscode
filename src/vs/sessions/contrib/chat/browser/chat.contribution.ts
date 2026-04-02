@@ -196,6 +196,27 @@ export function sshAuthorityString(connection: IRemoteAgentHostSSHConnection): s
 	return encodeHex(VSBuffer.fromString(json));
 }
 
+class OpenSessionWorktreeInVSCodeNotAvailableAction extends Action2 {
+	constructor() {
+		super({
+			id: 'chat.openSessionWorktreeInVSCode.notAvailable',
+			title: localize2('openInVSCode', 'Open in VS Code'),
+			tooltip: localize('openInVSCodeNotAvailableTooltip', 'Open in VS Code is not available for this session type'),
+			icon: Codicon.vscodeInsiders,
+			precondition: ContextKeyExpr.false(),
+			menu: [{
+				id: Menus.TitleBarSessionMenu,
+				group: 'navigation',
+				order: 9,
+				when: ContextKeyExpr.and(IsAuxiliaryWindowContext.toNegated(), SessionsWelcomeVisibleContext.toNegated(), IsActiveSessionBackgroundProviderContext.toNegated()),
+			}]
+		});
+	}
+
+	override run(): void { }
+}
+registerAction2(OpenSessionWorktreeInVSCodeNotAvailableAction);
+
 class NewChatInSessionsWindowAction extends Action2 {
 
 	constructor() {

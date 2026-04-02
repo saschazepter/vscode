@@ -15,10 +15,12 @@ import { IWorkbenchContribution, getWorkbenchContribution, registerWorkbenchCont
 import { ITerminalInstance, ITerminalService } from '../../../../workbench/contrib/terminal/browser/terminal.js';
 import { TerminalCapability } from '../../../../platform/terminal/common/capabilities/capabilities.js';
 import { IPathService } from '../../../../workbench/services/path/common/pathService.js';
+import { Menus } from '../../../browser/menus.js';
+import { SessionsWelcomeVisibleContext } from '../../../common/contextkeys.js';
 import { ISessionsManagementService } from '../../../services/sessions/common/sessionsManagement.js';
 import { CopilotCLISessionType, ISession } from '../../../services/sessions/common/session.js';
 import { IsAuxiliaryWindowContext } from '../../../../workbench/common/contextkeys.js';
-import { IContextKeyService, RawContextKey } from '../../../../platform/contextkey/common/contextkey.js';
+import { ContextKeyExpr, IContextKeyService, RawContextKey } from '../../../../platform/contextkey/common/contextkey.js';
 import { ITelemetryService } from '../../../../platform/telemetry/common/telemetry.js';
 import { logSessionsInteraction } from '../../../common/sessionsTelemetry.js';
 import { IViewsService } from '../../../../workbench/services/views/common/viewsService.js';
@@ -307,7 +309,13 @@ class OpenSessionInTerminalAction extends Action2 {
 			toggled: {
 				condition: SessionsTerminalViewVisibleContext,
 				title: localize('hideTerminal', "Hide Terminal"),
-			}
+			},
+			menu: [{
+				id: Menus.TitleBarSessionMenu,
+				group: 'navigation',
+				order: 10,
+				when: ContextKeyExpr.and(IsAuxiliaryWindowContext.toNegated(), SessionsWelcomeVisibleContext.toNegated()),
+			}]
 		});
 	}
 
