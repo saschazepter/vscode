@@ -425,7 +425,7 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 				title: localize('inlineOverageReachedTitle', "You've reached your overage budget."),
 				description: localize('inlineOverageReachedDesc', "Copilot usage is paused until overage budget is increased or limits reset."),
 				buttonLabel: localize('editOverage', "Edit Overage"),
-				secondaryButtonLabel: localize('upgradeIncreaseLimits', "Upgrade to Increase Limits"),
+				secondaryButtonLabel: localize('upgrade', "Upgrade"),
 			};
 		}
 
@@ -772,7 +772,7 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 		const editOverageBtn = disposables.add(new Button(actions, { ...defaultButtonStyles, secondary: true }));
 		editOverageBtn.label = localize('editOverage', "Edit Overage");
 		const upgradeLimitsBtn = disposables.add(new Button(actions, { ...defaultButtonStyles, secondary: true }));
-		upgradeLimitsBtn.label = localize('upgradeIncreaseLimits', "Upgrade to Increase Limits");
+		upgradeLimitsBtn.label = localize('upgrade', "Upgrade");
 	}
 
 	private createInfoMessage(container: HTMLElement, message: string): void {
