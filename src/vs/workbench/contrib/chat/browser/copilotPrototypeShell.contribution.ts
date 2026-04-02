@@ -98,9 +98,13 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 	private _activeSku = 'Edu/Free';
 	private _activeState = 'Default';
 	private readonly _dashboardEntryAccessor;
+	private _bannerElement: HTMLElement | undefined;
+	private _bannerDismissed = false;
+	private _warningCardElement: HTMLElement | undefined;
 
 	constructor(
 		@IStatusbarService statusbarService: IStatusbarService,
+		@IWorkbenchLayoutService private readonly layoutService: IWorkbenchLayoutService,
 	) {
 		super();
 
@@ -115,6 +119,43 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 			location: { id: 'status.prototype.dashboard', priority: 1000 },
 			alignment: StatusbarAlignment.RIGHT,
 		}));
+
+		// Intercept chat submission in reached states
+		this.setupInputInterceptor();
+	}
+
+	private setupInputInterceptor(): void {
+		const tryAttach = () => {
+			const container = this.layoutService.getContainer(mainWindow);
+			const auxBar = container.querySelector('.part.auxiliarybar');
+			if (!auxBar) {
+				setTimeout(tryAttach, 1000);
+				return;
+			}
+
+			// Capture-phase listener to intercept before the chat widget processes it
+			auxBar.addEventListener('keydown', (e) => {
+				if (this._activeState.includes('Reached') && (e as KeyboardEvent).key === 'Enter' && !(e as KeyboardEvent).shiftKey) {
+					const target = e.target as HTMLElement;
+					if (target.closest('.chat-editor-container') || target.closest('.chat-input-container')) {
+						e.preventDefault();
+						e.stopPropagation();
+					}
+				}
+			}, true);
+
+			// Also intercept clicks on the send/execute button
+			auxBar.addEventListener('click', (e) => {
+				if (this._activeState.includes('Reached')) {
+					const target = e.target as HTMLElement;
+					if (target.closest('.chat-execute-toolbar')) {
+						e.preventDefault();
+						e.stopPropagation();
+					}
+				}
+			}, true);
+		};
+		tryAttach();
 	}
 
 	private getEntryProps(): IStatusbarEntry {
@@ -130,9 +171,17 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 	}
 
 	private getDashboardEntryProps(): IStatusbarEntry {
+		const isWarning = !this._bannerDismissed && this._activeState.includes('Approached');
+		const isError = !this._bannerDismissed && this._activeState.includes('Reached');
+		let text = '$(copilot)';
+		if (isWarning) {
+			text = '$(copilot-warning)';
+		} else if (isError) {
+			text = '$(copilot-error)';
+		}
 		return {
 			name: localize('copilotPrototypeDashboardEntry', "Copilot Dashboard"),
-			text: '$(copilot)',
+			text,
 			ariaLabel: localize('copilotPrototypeDashboardEntryAria', "Copilot Dashboard"),
 			tooltip: {
 				element: token => this.renderDashboard(token),
@@ -144,8 +193,205 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 	private setActiveCell(sku: string, state: string): void {
 		this._activeSku = sku;
 		this._activeState = state;
+		this._bannerDismissed = false;
 		// Update the dashboard entry so next tooltip render uses new state
 		this._dashboardEntryAccessor.update(this.getDashboardEntryProps());
+		// Clear any existing warning card
+		this.clearWarningCard();
+		// Clear any existing banner
+		this.clearBanner();
+		// Show the right UI for the state
+		if (state.includes('Reached')) {
+			this.showWarningCard();
+		} else if (state.includes('Approached')) {
+			this.updateBanner(state);
+		}
+	}
+
+	private getBannerMessage(state: string): string | undefined {
+		switch (state) {
+			case 'Session Approached':
+				return localize('bannerSessionApproach', "Approaching session limit. Resets at 10:00am.");
+			case 'Weekly Approached':
+				return localize('bannerWeeklyApproach', "Approaching weekly limit. Resets on April 6th.");
+			default:
+				return undefined;
+		}
+	}
+
+	private updateBanner(state: string): void {
+		const message = this.getBannerMessage(state);
+		const container = this.layoutService.getContainer(mainWindow);
+
+		if (!message) {
+			this.clearBanner();
+			return;
+		}
+
+		// Find the tip container in the aux bar (same slot as getting-started tips)
+		const tipContainer = container.querySelector('.part.auxiliarybar .chat-getting-started-tip-container');
+		if (!tipContainer) {
+			return;
+		}
+
+		// Create or update the banner
+		if (!this._bannerElement) {
+			this._bannerElement = mainWindow.document.createElement('div');
+			this._bannerElement.className = 'copilot-prototype-chat-banner';
+		}
+
+		// Clear and re-render content
+		this._bannerElement.textContent = '';
+
+		const text = mainWindow.document.createElement('span');
+		text.className = 'copilot-prototype-chat-banner-text';
+		text.textContent = message;
+
+		const dismiss = mainWindow.document.createElement('span');
+		dismiss.className = 'copilot-prototype-chat-banner-dismiss';
+		dismiss.append(...renderLabelWithIcons('$(close)'));
+		dismiss.tabIndex = 0;
+		dismiss.role = 'button';
+		dismiss.title = localize('dismiss', "Dismiss");
+		dismiss.addEventListener('click', () => {
+			this.clearBanner();
+			// Reset status bar icon to default copilot
+			this._bannerDismissed = true;
+			this._dashboardEntryAccessor.update(this.getDashboardEntryProps());
+		});
+
+		this._bannerElement.append(text, dismiss);
+
+		// Insert into the tip container and make it visible
+		if (!this._bannerElement.parentElement) {
+			tipContainer.appendChild(this._bannerElement);
+			(tipContainer as HTMLElement).style.display = '';
+		}
+	}
+
+	private clearBanner(): void {
+		if (this._bannerElement) {
+			const tipContainer = this._bannerElement.parentElement;
+			this._bannerElement.remove();
+			this._bannerElement = undefined;
+			if (tipContainer && tipContainer.children.length === 0) {
+				(tipContainer as HTMLElement).style.display = 'none';
+			}
+		}
+	}
+
+	private clearWarningCard(): void {
+		if (this._warningCardElement) {
+			const tipContainer = this._warningCardElement.parentElement;
+			this._warningCardElement.remove();
+			this._warningCardElement = undefined;
+			if (tipContainer && tipContainer.children.length === 0) {
+				(tipContainer as HTMLElement).style.display = 'none';
+			}
+		}
+	}
+
+	private showWarningCard(): void {
+		const content = this.getInlineWarningContent();
+		if (!content) {
+			return;
+		}
+
+		const container = this.layoutService.getContainer(mainWindow);
+		const tipContainer = container.querySelector('.part.auxiliarybar .chat-getting-started-tip-container') as HTMLElement | null;
+		if (!tipContainer) {
+			return;
+		}
+
+		this.clearWarningCard();
+
+		const card = mainWindow.document.createElement('div');
+		card.className = 'copilot-prototype-inline-warning';
+
+		const header = mainWindow.document.createElement('div');
+		header.className = 'copilot-prototype-inline-warning-header';
+		const headerIcon = mainWindow.document.createElement('span');
+		headerIcon.className = 'copilot-prototype-inline-warning-icon';
+		headerIcon.append(...renderLabelWithIcons('$(warning)'));
+		const headerTitle = mainWindow.document.createElement('span');
+		headerTitle.className = 'copilot-prototype-inline-warning-title';
+		headerTitle.textContent = content.title;
+		header.append(headerIcon, headerTitle);
+
+		const desc = mainWindow.document.createElement('div');
+		desc.className = 'copilot-prototype-inline-warning-desc';
+		desc.textContent = content.description;
+
+		const btnContainer = mainWindow.document.createElement('div');
+		btnContainer.className = 'copilot-prototype-inline-warning-actions';
+		const btn = mainWindow.document.createElement('button');
+		btn.className = 'copilot-prototype-inline-warning-btn';
+		btn.textContent = content.buttonLabel;
+		btnContainer.appendChild(btn);
+
+		card.append(header, desc, btnContainer);
+		this._warningCardElement = card;
+		tipContainer.appendChild(card);
+		tipContainer.style.display = '';
+	}
+
+	private getInlineWarningContent(): { title: string; description: string; buttonLabel: string } | undefined {
+		const sku = this._activeSku;
+		const state = this._activeState;
+
+		if (state === 'Session Reached') {
+			if (sku === 'Edu/Free') {
+				return {
+					title: localize('inlineSessionReachedTitle', "You've reached your session limit."),
+					description: localize('inlineSessionReachedDescFree', "Your session limit resets at 10:00am. Upgrade to Pro for higher limits."),
+					buttonLabel: localize('upgradeToPro', "Upgrade to Pro"),
+				};
+			}
+			if (sku === 'Pro/Pro+ No O') {
+				return {
+					title: localize('inlineSessionReachedTitle', "You've reached your session limit."),
+					description: localize('inlineSessionReachedDescProNoO', "Your session limit resets at 10:00am. Configure overages to continue using Copilot."),
+					buttonLabel: localize('configureOverage', "Configure Overage"),
+				};
+			}
+			return {
+				title: localize('inlineSessionReachedTitle', "You've reached your session limit."),
+				description: localize('inlineSessionReachedDescPro', "Your session limit resets at 10:00am."),
+				buttonLabel: localize('learnMore', "Learn more"),
+			};
+		}
+
+		if (state === 'Weekly Reached') {
+			if (sku === 'Edu/Free') {
+				return {
+					title: localize('inlineWeeklyReachedTitle', "You've reached your weekly limit."),
+					description: localize('inlineWeeklyReachedDescFree', "Your weekly limit resets on April 6th. Upgrade to Pro for higher limits."),
+					buttonLabel: localize('upgradeToPro', "Upgrade to Pro"),
+				};
+			}
+			if (sku === 'Pro/Pro+ No O') {
+				return {
+					title: localize('inlineWeeklyReachedTitle', "You've reached your weekly limit."),
+					description: localize('inlineWeeklyReachedDescProNoO', "Your weekly limit resets on April 6th. Configure overages to continue using Copilot."),
+					buttonLabel: localize('configureOverage', "Configure Overage"),
+				};
+			}
+			return {
+				title: localize('inlineWeeklyReachedTitle', "You've reached your weekly limit."),
+				description: localize('inlineWeeklyReachedDescPro', "Your weekly limit resets on April 6th. Increase overages budget to continue using premium models."),
+				buttonLabel: localize('increaseBudget', "Increase Budget"),
+			};
+		}
+
+		if (state === 'Overage Reached') {
+			return {
+				title: localize('inlineOverageReachedTitle', "You've reached your monthly budget."),
+				description: localize('inlineOverageReachedDesc', "We have automatically switched you to a cost optimized Fallback model. Increase overages budget to continue using premium models."),
+				buttonLabel: localize('increaseBudget', "Increase Budget"),
+			};
+		}
+
+		return undefined;
 	}
 
 	private static readonly SKUS = ['Edu/Free', 'Pro/Pro+ No O', 'Pro/Pro+', 'Max', 'Ent/Bus ULB', 'Ent/Bus'];
@@ -252,12 +498,20 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 
 		const dashboard = $('div.copilot-prototype-dashboard');
 
-		// Header row: title + settings gear
+		// Header row: title + icons
 		const header = append(dashboard, $('div.copilot-prototype-dashboard-header'));
 		const titleText = append(header, $('div.copilot-prototype-dashboard-title'));
-		titleText.textContent = localize('dashboardTitle', "Copilot Free Usage");
+		const isPro = sku !== 'Edu/Free';
+		titleText.textContent = isPro ? localize('dashboardTitlePro', "Copilot  Pro  Usage") : localize('dashboardTitle', "Copilot Free Usage");
 
-		const settingsIcon = append(header, $('div.copilot-prototype-dashboard-tab'));
+		const headerActions = append(header, $('div.copilot-prototype-dashboard-header-actions'));
+		if (isPro) {
+			const cardIcon = append(headerActions, $('div.copilot-prototype-dashboard-tab'));
+			cardIcon.append(...renderLabelWithIcons('$(credit-card)'));
+			cardIcon.title = localize('billing', "Billing");
+			cardIcon.tabIndex = 0;
+		}
+		const settingsIcon = append(headerActions, $('div.copilot-prototype-dashboard-tab'));
 		settingsIcon.append(...renderLabelWithIcons('$(settings-gear)'));
 		settingsIcon.title = localize('settings', "Settings");
 		settingsIcon.tabIndex = 0;
@@ -304,66 +558,74 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 		return dashboard;
 	}
 
-	private renderCopilotTab(content: HTMLElement, disposables: DisposableStore, _sku: string, state: string): void {
-		if (state === 'Session Approached') {
-			// Session Limit at 90% — warning state
-			this.createGauge(content, localize('sessionUsed90', "90% Used"), 90, localize('sessionResetBold', "**Session Limit** Resets today at 10:00am"), false, 'warning');
+	private renderCopilotTab(content: HTMLElement, disposables: DisposableStore, sku: string, state: string): void {
+		const isPro = sku !== 'Edu/Free';
+		const hasOverage = sku === 'Pro/Pro+' || sku === 'Max';
 
-			// Warning callout
+		// Session Limit
+		if (state === 'Session Approached') {
+			this.createGauge(content, localize('sessionUsed90', "90% Used"), 90, localize('sessionResetBold', "**Session Limit** Resets today at 10:00am"), false, 'warning');
 			const warning = append(content, $('div.copilot-prototype-dashboard-warning'));
 			const warningIcon = append(warning, $('span.copilot-prototype-dashboard-warning-icon'));
 			warningIcon.append(...renderLabelWithIcons('$(warning)'));
 			const warningBody = append(warning, $('span.copilot-prototype-dashboard-warning-text'));
-			warningBody.appendChild(mainWindow.document.createTextNode(localize('sessionApproachWarning', "Copilot will be paused when the session limit is reached. ")));
+			if (isPro) {
+				warningBody.appendChild(mainWindow.document.createTextNode(localize('sessionApproachWarningPro', "Once your session limit is reached, you will not be able to use Copilot until the limit resets or configure overages. ")));
+			} else {
+				warningBody.appendChild(mainWindow.document.createTextNode(localize('sessionApproachWarning', "Copilot usage will pause when the session limit is reached. It will become available once the limit resets. ")));
+			}
 			const learnMore = append(warningBody, $('a.copilot-prototype-coin-grid-link'));
 			learnMore.textContent = localize('learnMore', "Learn more");
 			learnMore.tabIndex = 0;
 			learnMore.role = 'link';
 		} else if (state === 'Session Reached') {
-			// Session Limit at 100% — error state
 			this.createGauge(content, localize('sessionUsed100', "100% Used"), 100, localize('sessionResetBoldReached', "**Session Limit** Resets today at 10:00am"), false, 'error');
-
-			// Error callout
 			const warning = append(content, $('div.copilot-prototype-dashboard-warning'));
 			const warningIcon = append(warning, $('span.copilot-prototype-dashboard-warning-icon.error'));
 			warningIcon.append(...renderLabelWithIcons('$(error)'));
 			const warningBody = append(warning, $('span.copilot-prototype-dashboard-warning-text'));
-			warningBody.appendChild(mainWindow.document.createTextNode(localize('sessionReachedWarning', "Copilot is paused until the session limit resets. ")));
+			if (isPro) {
+				warningBody.appendChild(mainWindow.document.createTextNode(localize('sessionReachedWarningPro', "Copilot usage is paused until Session limit resets or configure overages. ")));
+			} else {
+				warningBody.appendChild(mainWindow.document.createTextNode(localize('sessionReachedWarning', "Copilot usage is paused until the session limit resets. ")));
+			}
 			const learnMore = append(warningBody, $('a.copilot-prototype-coin-grid-link'));
 			learnMore.textContent = localize('learnMore', "Learn more");
 			learnMore.tabIndex = 0;
 			learnMore.role = 'link';
 		} else if (state === 'Weekly Reached') {
-			// Session Limit unavailable when weekly limit is reached
 			this.createGauge(content, localize('sessionUnavailable', "Unavailable"), 0, localize('sessionResetWithWeekly', "**Session Limit** Resets with Weekly Limit"), true);
 		} else {
-			// Default: Session Limit at 18%
 			this.createGauge(content, localize('sessionUsed', "18% Used"), 18, localize('sessionResetBoldDefault', "**Session Limit** Resets today at 10:00am"));
 		}
 
 		// Weekly Limit
 		if (state === 'Weekly Approached') {
 			this.createGauge(content, localize('weeklyUsed90', "90% Used"), 90, localize('weeklyResetBoldApproached', "**Weekly Limit** Resets on April 6th"), false, 'warning');
-
-			// Warning callout
 			const weeklyWarning = append(content, $('div.copilot-prototype-dashboard-warning'));
 			const weeklyWarningIcon = append(weeklyWarning, $('span.copilot-prototype-dashboard-warning-icon'));
 			weeklyWarningIcon.append(...renderLabelWithIcons('$(warning)'));
 			const weeklyWarningBody = append(weeklyWarning, $('span.copilot-prototype-dashboard-warning-text'));
-			weeklyWarningBody.appendChild(mainWindow.document.createTextNode(localize('weeklyApproachWarning', "Copilot will be paused when the weekly limit is reached. ")));
+			if (isPro) {
+				weeklyWarningBody.appendChild(mainWindow.document.createTextNode(localize('weeklyApproachWarningPro', "Copilot usage is paused until Weekly limit resets or configure overages budget. ")));
+			} else {
+				weeklyWarningBody.appendChild(mainWindow.document.createTextNode(localize('weeklyApproachWarning', "Copilot usage will pause when the weekly limit is reached. It will become available once the limit resets. ")));
+			}
 			const weeklyLearnMore = append(weeklyWarningBody, $('a.copilot-prototype-coin-grid-link'));
 			weeklyLearnMore.textContent = localize('learnMore', "Learn more");
 			weeklyLearnMore.tabIndex = 0;
 			weeklyLearnMore.role = 'link';
 		} else if (state === 'Weekly Reached') {
 			this.createGauge(content, localize('weeklyUsed100', "100% Used"), 100, localize('weeklyResetBoldReached', "**Weekly Limit** Resets on April 6th"), false, 'error');
-
-			// Error callout
 			const weeklyError = append(content, $('div.copilot-prototype-dashboard-warning'));
 			const weeklyErrorIcon = append(weeklyError, $('span.copilot-prototype-dashboard-warning-icon.error'));
 			weeklyErrorIcon.append(...renderLabelWithIcons('$(error)'));
 			const weeklyErrorBody = append(weeklyError, $('span.copilot-prototype-dashboard-warning-text'));
-			weeklyErrorBody.appendChild(mainWindow.document.createTextNode(localize('weeklyReachedWarning', "Copilot is paused until the weekly limit resets. ")));
+			if (isPro) {
+				weeklyErrorBody.appendChild(mainWindow.document.createTextNode(localize('weeklyReachedWarningPro', "Copilot usage is paused until Weekly limit resets or configure overages budget. ")));
+			} else {
+				weeklyErrorBody.appendChild(mainWindow.document.createTextNode(localize('weeklyReachedWarning', "Copilot usage is paused until the weekly limit resets. ")));
+			}
 			const weeklyLearnMore2 = append(weeklyErrorBody, $('a.copilot-prototype-coin-grid-link'));
 			weeklyLearnMore2.textContent = localize('learnMore', "Learn more");
 			weeklyLearnMore2.tabIndex = 0;
@@ -372,17 +634,36 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 			this.createGauge(content, localize('weeklyUsed', "56% Used"), 56, localize('weeklyResetBold', "**Weekly Limit** Resets on April 6th"));
 		}
 
-		// Overage Spend (unavailable)
-		this.createGauge(content, localize('unavailable', "Unavailable"), 0, localize('overageDescBold', "**Overage Spend** Available for Pro and Pro+ users"), true);
+		// Overage Spend
+		if (isPro && !hasOverage) {
+			// Pro/Pro+ No O: not configured
+			this.createGauge(content, localize('notConfigured', "Not Configured"), 0, localize('overageSpendBold', "**Overage Spend**"), true);
+		} else if (!isPro) {
+			// Edu/Free: unavailable
+			this.createGauge(content, localize('unavailable', "Unavailable"), 0, localize('overageDescBold', "**Overage Spend** Available for Pro and Pro+ users"), true);
+		} else {
+			// Pro/Pro+ with overage
+			this.createGauge(content, localize('overageConfigured', "Configured"), 0, localize('overageSpendBold', "**Overage Spend**"));
+		}
 
-		// Action buttons
+		// Action buttons — SKU-aware
 		const actions = append(content, $('div.copilot-prototype-dashboard-actions'));
-		const upgradeBtn = disposables.add(new Button(actions, { ...defaultButtonStyles, secondary: true }));
-		upgradeBtn.label = localize('upgradeToPro', "Upgrade to Pro");
-
-		const overageBtn = disposables.add(new Button(actions, { ...defaultButtonStyles, secondary: true }));
-		overageBtn.label = localize('configureOverages', "Configure Overages");
-		overageBtn.enabled = false;
+		if (isPro && !hasOverage) {
+			const configOverageBtn = disposables.add(new Button(actions, { ...defaultButtonStyles, secondary: true }));
+			configOverageBtn.label = localize('configureOverage', "Configure Overage");
+			const upgradeLimitsBtn = disposables.add(new Button(actions, { ...defaultButtonStyles, secondary: true }));
+			upgradeLimitsBtn.label = localize('upgradeToIncreaseLimits', "Upgrade to Increase Limits");
+			upgradeLimitsBtn.enabled = false;
+		} else if (!isPro) {
+			const upgradeBtn = disposables.add(new Button(actions, { ...defaultButtonStyles, secondary: true }));
+			upgradeBtn.label = localize('upgradeToPro', "Upgrade to Pro");
+			const overageBtn = disposables.add(new Button(actions, { ...defaultButtonStyles, secondary: true }));
+			overageBtn.label = localize('configureOverages', "Configure Overages");
+			overageBtn.enabled = false;
+		} else {
+			const configBudgetBtn = disposables.add(new Button(actions, { ...defaultButtonStyles, secondary: true }));
+			configBudgetBtn.label = localize('configureOverageBudget', "Configure Overage Budget");
+		}
 	}
 
 	private renderInlineTab(content: HTMLElement, disposables: DisposableStore, _sku: string, _state: string): void {

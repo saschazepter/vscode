@@ -45,6 +45,14 @@
 	color: inherit;
 }
 
+.monaco-workbench.copilot-prototype-shell .part.statusbar > .right-items > #chat\.prototypeDashboardEntry .codicon-copilot-warning {
+	color: var(--vscode-editorWarning-foreground);
+}
+
+.monaco-workbench.copilot-prototype-shell .part.statusbar > .right-items > #chat\.prototypeDashboardEntry .codicon-copilot-error {
+	color: var(--vscode-editorError-foreground);
+}
+
 .monaco-workbench.copilot-prototype-shell .part.auxiliarybar {
 	border-left: none;
 }
@@ -76,7 +84,6 @@
 .monaco-workbench.copilot-prototype-shell .part.auxiliarybar .pane-header,
 .monaco-workbench.copilot-prototype-shell .part.auxiliarybar .chat-view-title-container,
 .monaco-workbench.copilot-prototype-shell .part.auxiliarybar .agent-sessions-container,
-.monaco-workbench.copilot-prototype-shell .part.auxiliarybar .chat-getting-started-tip-container,
 .monaco-workbench.copilot-prototype-shell .part.auxiliarybar .chat-view-welcome {
 	display: none !important;
 }
@@ -247,6 +254,12 @@
 	color: var(--vscode-foreground);
 }
 
+.copilot-prototype-dashboard-header-actions {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+}
+
 .copilot-prototype-dashboard-tabs {
 	display: flex;
 	gap: 6px;
@@ -395,6 +408,8 @@
 
 .copilot-prototype-dashboard-settings {
 	margin-top: 8px;
+	padding-top: 8px;
+	border-top: 1px solid var(--vscode-editorWidget-border, rgba(255,255,255,0.1));
 }
 
 .copilot-prototype-dashboard-setting-row {
@@ -495,4 +510,111 @@
 	color: var(--vscode-foreground);
 	background: var(--vscode-toolbar-activeBackground);
 	border-color: var(--vscode-focusBorder);
+}
+
+/* ---- Chat banner (usage warning/error above chat input) ---- */
+
+.copilot-prototype-chat-banner {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	width: 100%;
+	max-width: 100%;
+	box-sizing: border-box;
+	padding: 6px;
+	background-color: var(--vscode-editorWidget-background);
+	border-radius: var(--vscode-cornerRadius-small) var(--vscode-cornerRadius-small) 0 0;
+	border: 1px solid var(--vscode-editorWidget-border, var(--vscode-input-border, transparent));
+	border-bottom: none;
+	font-size: var(--vscode-chat-font-size-body-s);
+	font-family: var(--vscode-chat-font-family, inherit);
+	color: var(--vscode-descriptionForeground);
+	flex-shrink: 0;
+	margin-bottom: -4px;
+}
+
+.copilot-prototype-chat-banner-text {
+	flex: 1;
+}
+
+.copilot-prototype-chat-banner-dismiss {
+	flex-shrink: 0;
+	cursor: pointer;
+	color: var(--vscode-descriptionForeground);
+	display: flex;
+	align-items: center;
+	padding: 4px;
+	border-radius: var(--vscode-cornerRadius-small);
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity 0.1s ease-in-out;
+}
+
+.copilot-prototype-chat-banner:hover .copilot-prototype-chat-banner-dismiss {
+	opacity: 1;
+	pointer-events: auto;
+}
+
+.copilot-prototype-chat-banner-dismiss:hover {
+	color: var(--vscode-foreground);
+	background-color: var(--vscode-toolbar-hoverBackground);
+}
+
+/* ---- Inline warning card (shown above input when limit is reached) ---- */
+
+.copilot-prototype-inline-warning {
+	padding: 10px 12px;
+	border-radius: var(--vscode-cornerRadius-small) var(--vscode-cornerRadius-small) 0 0;
+	border: 1px solid var(--vscode-editorWidget-border, var(--vscode-input-border, transparent));
+	border-bottom: none;
+	background-color: var(--vscode-editorWidget-background);
+	width: 100%;
+	box-sizing: border-box;
+	margin-bottom: -4px;
+}
+
+.copilot-prototype-inline-warning-header {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-bottom: 4px;
+}
+
+.copilot-prototype-inline-warning-icon {
+	color: var(--vscode-editorWarning-foreground);
+	flex-shrink: 0;
+	display: flex;
+	align-items: center;
+}
+
+.copilot-prototype-inline-warning-title {
+	font-weight: 600;
+	font-size: 13px;
+	color: var(--vscode-foreground);
+}
+
+.copilot-prototype-inline-warning-desc {
+	font-size: 12px;
+	color: var(--vscode-descriptionForeground);
+	line-height: 1.5;
+	margin-bottom: 10px;
+}
+
+.copilot-prototype-inline-warning-actions {
+	display: flex;
+	gap: 8px;
+}
+
+.copilot-prototype-inline-warning-btn {
+	padding: 4px 12px;
+	font-size: 12px;
+	border-radius: var(--vscode-cornerRadius-small, 4px);
+	border: none;
+	cursor: pointer;
+	color: var(--vscode-button-foreground);
+	background-color: var(--vscode-button-background);
+}
+
+.copilot-prototype-inline-warning-btn:hover {
+	background-color: var(--vscode-button-hoverBackground);
 }
