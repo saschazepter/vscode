@@ -159,20 +159,53 @@
 	display: flex;
 	flex-direction: column;
 	gap: 10px;
-	min-width: 220px;
-	padding: 6px;
+	padding: 8px;
 }
 
 .copilot-prototype-coin-widget-title {
 	font-weight: 600;
+	margin-bottom: 4px;
 }
 
-.copilot-prototype-coin-widget-description {
+.copilot-prototype-coin-grid {
+	display: grid;
+	gap: 4px;
+	align-items: center;
+}
+
+.copilot-prototype-coin-grid-corner {
+	font-size: 10px;
 	color: var(--vscode-descriptionForeground);
-	line-height: 1.4;
+	padding: 2px 6px 2px 0;
+	white-space: nowrap;
 }
 
-.copilot-prototype-coin-widget-actions {
+.copilot-prototype-coin-grid-col-header {
+	font-size: 10px;
+	font-weight: 600;
+	text-align: center;
+	padding: 2px 4px;
+	white-space: nowrap;
+	color: var(--vscode-foreground);
+}
+
+.copilot-prototype-coin-grid-row-header {
+	font-size: 10px;
+	padding: 2px 6px 2px 0;
+	white-space: nowrap;
+	color: var(--vscode-foreground);
+}
+
+.copilot-prototype-coin-grid-cell {
 	display: flex;
-	justify-content: flex-start;
+	justify-content: center;
+	align-items: center;
+}
+
+.copilot-prototype-coin-grid-cell .monaco-button {
+	min-width: 24px;
+	min-height: 20px;
+	width: 100%;
+	padding: 2px 4px;
+	border-radius: 3px;
 }

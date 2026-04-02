@@ -14,11 +14,9 @@ import { defaultButtonStyles } from '../../../../platform/theme/browser/defaultS
 import { IWorkbenchContribution, WorkbenchPhase, registerWorkbenchContribution2 } from '../../../common/contributions.js';
 import { ViewContainerLocation, IViewDescriptorService } from '../../../common/views.js';
 import { IStatusbarEntry, IStatusbarService, ShowTooltipCommand, StatusbarAlignment } from '../../../services/statusbar/browser/statusbar.js';
-import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { IWorkbenchLayoutService, Parts } from '../../../services/layout/browser/layoutService.js';
 import { IViewsService } from '../../../services/views/common/viewsService.js';
 import { ChatViewId } from './chat.js';
-import { MANAGE_CHAT_COMMAND_ID } from '../common/constants.js';
 
 export class CopilotPrototypeShellContribution extends Disposable implements IWorkbenchContribution {
 
@@ -94,7 +92,6 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 
 	constructor(
 		@IStatusbarService statusbarService: IStatusbarService,
-		@ICommandService private readonly commandService: ICommandService,
 	) {
 		super();
 
@@ -116,6 +113,9 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 		};
 	}
 
+	private static readonly SKUS = ['Edu/Free', 'Pro/Pro+ No O', 'Pro/Pro+', 'Max', 'Ent/Bus ULB', 'Ent/Bus'];
+	private static readonly STATES = ['Default', 'Session Approach', 'Session Reached', 'Weekly Approach', 'Weekly Reached', 'Overage Approach', 'Overage Reach'];
+
 	private renderTooltip(token: CancellationToken): HTMLElement {
 		const disposables = new DisposableStore();
 		disposables.add(token.onCancellationRequested(() => disposables.dispose()));
@@ -127,23 +127,51 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 		title.className = 'copilot-prototype-coin-widget-title';
 		title.textContent = localize('copilotPrototypeShellCoinWidgetTitle', "Prototype Coin");
 
-		const description = mainWindow.document.createElement('div');
-		description.className = 'copilot-prototype-coin-widget-description';
-		description.textContent = localize('copilotPrototypeShellCoinWidgetDescription', "A simple prototype widget entry for the custom shell.");
+		// Grid: SKU columns x State rows
+		const skus = CopilotPrototypeShellCoinStatusBarContribution.SKUS;
+		const states = CopilotPrototypeShellCoinStatusBarContribution.STATES;
 
-		const actions = mainWindow.document.createElement('div');
-		actions.className = 'copilot-prototype-coin-widget-actions';
+		const grid = mainWindow.document.createElement('div');
+		grid.className = 'copilot-prototype-coin-grid';
+		grid.style.gridTemplateColumns = `auto repeat(${skus.length}, 1fr)`;
+		grid.style.gridTemplateRows = `auto repeat(${states.length}, 1fr)`;
 
-		const manageButton = disposables.add(new Button(actions, {
-			...defaultButtonStyles,
-			secondary: true,
-		}));
-		manageButton.label = localize('copilotPrototypeShellCoinWidgetManage', "Manage");
-		disposables.add(manageButton.onDidClick(() => {
-			void this.commandService.executeCommand(MANAGE_CHAT_COMMAND_ID);
-		}));
+		// Top-left corner: empty cell
+		const corner = mainWindow.document.createElement('div');
+		corner.className = 'copilot-prototype-coin-grid-corner';
+		corner.textContent = localize('copilotPrototypeShellCoinGridStates', "States \\ SKU");
+		grid.appendChild(corner);
 
-		container.append(title, description, actions);
+		// Column headers (SKU)
+		for (const sku of skus) {
+			const header = mainWindow.document.createElement('div');
+			header.className = 'copilot-prototype-coin-grid-col-header';
+			header.textContent = sku;
+			grid.appendChild(header);
+		}
+
+		// Rows
+		for (const state of states) {
+			// Row header (State)
+			const rowHeader = mainWindow.document.createElement('div');
+			rowHeader.className = 'copilot-prototype-coin-grid-row-header';
+			rowHeader.textContent = state;
+			grid.appendChild(rowHeader);
+
+			// Grid cells: unlabeled buttons
+			for (const _sku of skus) {
+				const cell = mainWindow.document.createElement('div');
+				cell.className = 'copilot-prototype-coin-grid-cell';
+				const btn = disposables.add(new Button(cell, {
+					...defaultButtonStyles,
+					secondary: true,
+				}));
+				btn.label = '';
+				grid.appendChild(cell);
+			}
+		}
+
+		container.append(title, grid);
 		return container;
 	}
 }
