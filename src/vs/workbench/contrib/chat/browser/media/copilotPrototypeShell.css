@@ -27,7 +27,12 @@
 	justify-content: flex-end;
 }
 
-.monaco-workbench.copilot-prototype-shell .part.statusbar > .right-items > .statusbar-item:not(#chat\.statusBarEntry) {
+.monaco-workbench.copilot-prototype-shell .part.statusbar > .right-items > .statusbar-item:not(#chat\.statusBarEntry):not(#chat\.prototypeDashboardEntry) {
+	display: none;
+}
+
+/* Hide the real Copilot status entry, show our prototype dashboard entry */
+.monaco-workbench.copilot-prototype-shell .part.statusbar > .right-items > #chat\.statusBarEntry {
 	display: none;
 }
 
@@ -186,7 +191,17 @@
 	text-align: center;
 	padding: 2px 4px;
 	white-space: nowrap;
-	color: var(--vscode-foreground);
+}
+
+.copilot-prototype-coin-grid-link {
+	color: var(--vscode-textLink-foreground);
+	cursor: pointer;
+	text-decoration: none;
+}
+
+.copilot-prototype-coin-grid-link:hover {
+	text-decoration: underline;
+	color: var(--vscode-textLink-activeForeground);
 }
 
 .copilot-prototype-coin-grid-row-header {
@@ -208,4 +223,276 @@
 	width: 100%;
 	padding: 2px 4px;
 	border-radius: 3px;
+}
+
+/* ---- Dashboard (two-tab billing view — status bar tooltip) ---- */
+
+.copilot-prototype-dashboard {
+	width: 260px;
+}
+
+.copilot-prototype-dashboard-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding-bottom: 4px;
+	margin-bottom: 4px;
+	border-bottom: 1px solid var(--vscode-editorWidget-border, rgba(255,255,255,0.1));
+}
+
+
+.copilot-prototype-dashboard-title {
+	font-weight: 600;
+	font-size: 12px;
+	color: var(--vscode-foreground);
+}
+
+.copilot-prototype-dashboard-tabs {
+	display: flex;
+	gap: 6px;
+	align-items: center;
+}
+
+.copilot-prototype-dashboard-tab {
+	padding: 3px 6px;
+	border-radius: 4px;
+	cursor: pointer;
+	font-size: 12px;
+	color: var(--vscode-descriptionForeground);
+	background: transparent;
+	border: 1px solid transparent;
+}
+
+.copilot-prototype-dashboard-tab:hover {
+	color: var(--vscode-foreground);
+	background: var(--vscode-toolbar-hoverBackground);
+}
+
+.copilot-prototype-dashboard-tab.active {
+	color: var(--vscode-foreground);
+	border-color: var(--vscode-focusBorder);
+	background: var(--vscode-toolbar-activeBackground);
+}
+
+.copilot-prototype-dashboard-content {
+	display: none;
+}
+
+.copilot-prototype-dashboard-content.active {
+	display: block;
+}
+
+/* Gauge (quota indicator) */
+
+.copilot-prototype-dashboard-gauge {
+	margin-bottom: 8px;
+}
+
+.copilot-prototype-dashboard-gauge + .copilot-prototype-dashboard-gauge,
+.copilot-prototype-dashboard-warning + .copilot-prototype-dashboard-gauge {
+	padding-top: 8px;
+	border-top: 1px solid var(--vscode-editorWidget-border, rgba(255,255,255,0.1));
+}
+
+.copilot-prototype-dashboard-gauge.disabled {
+	opacity: 0.5;
+}
+
+.copilot-prototype-dashboard-gauge-label {
+	font-size: 12px;
+	color: var(--vscode-foreground);
+}
+
+.copilot-prototype-dashboard-gauge-bar {
+	width: 100%;
+	height: 4px;
+	border-radius: 4px;
+	background-color: var(--vscode-gauge-background);
+	border: 1px solid var(--vscode-gauge-border);
+	margin: 4px 0;
+	overflow: hidden;
+}
+
+.copilot-prototype-dashboard-gauge-bar-fill {
+	height: 100%;
+	border-radius: 4px;
+	background-color: var(--vscode-gauge-foreground);
+}
+
+.copilot-prototype-dashboard-gauge.disabled .copilot-prototype-dashboard-gauge-bar-fill {
+	background: var(--vscode-descriptionForeground);
+	opacity: 0.4;
+}
+
+.copilot-prototype-dashboard-gauge.warning .copilot-prototype-dashboard-gauge-bar {
+	background-color: var(--vscode-gauge-warningBackground);
+}
+
+.copilot-prototype-dashboard-gauge.warning .copilot-prototype-dashboard-gauge-bar-fill {
+	background-color: var(--vscode-gauge-warningForeground);
+}
+
+.copilot-prototype-dashboard-gauge.error .copilot-prototype-dashboard-gauge-bar {
+	background-color: var(--vscode-gauge-errorBackground);
+}
+
+.copilot-prototype-dashboard-gauge.error .copilot-prototype-dashboard-gauge-bar-fill {
+	background-color: var(--vscode-gauge-errorForeground);
+}
+
+/* Warning callout */
+
+.copilot-prototype-dashboard-warning {
+	display: flex;
+	gap: 6px;
+	font-size: 11px;
+	color: var(--vscode-descriptionForeground);
+	margin-bottom: 8px;
+	line-height: 1.4;
+}
+
+.copilot-prototype-dashboard-warning-icon {
+	flex-shrink: 0;
+	color: var(--vscode-editorWarning-foreground);
+}
+
+.copilot-prototype-dashboard-warning-icon.error {
+	color: var(--vscode-editorError-foreground);
+}
+
+.copilot-prototype-dashboard-warning-text {
+	flex: 1;
+}
+
+.copilot-prototype-dashboard-gauge-desc {
+	font-size: 11px;
+	color: var(--vscode-descriptionForeground);
+	margin-bottom: 4px;
+}
+
+.copilot-prototype-dashboard-gauge-desc strong {
+	font-weight: 600;
+}
+
+/* Actions row */
+
+.copilot-prototype-dashboard-actions {
+	display: flex;
+	gap: 6px;
+	margin-top: 8px;
+	margin-bottom: 4px;
+}
+
+.copilot-prototype-dashboard-actions .monaco-button {
+	flex: 1;
+	font-size: 11px;
+	padding: 4px 8px;
+	min-width: 0;
+	white-space: nowrap;
+}
+
+/* Settings section (inline suggestions tab) */
+
+.copilot-prototype-dashboard-settings {
+	margin-top: 8px;
+}
+
+.copilot-prototype-dashboard-setting-row {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	margin-bottom: 4px;
+}
+
+.copilot-prototype-dashboard-setting-row .monaco-custom-toggle {
+	flex-shrink: 0;
+}
+
+.copilot-prototype-dashboard-setting-label {
+	font-size: 12px;
+	color: var(--vscode-foreground);
+	line-height: 1.4;
+}
+
+/* Eagerness selector */
+
+.copilot-prototype-dashboard-eagerness {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	margin-top: 8px;
+	margin-bottom: 8px;
+}
+
+.copilot-prototype-dashboard-eagerness-group {
+	display: flex;
+	gap: 3px;
+}
+
+.copilot-prototype-dashboard-eagerness-group .monaco-button {
+	font-size: 11px;
+	padding: 2px 6px;
+	min-width: unset;
+}
+
+.copilot-prototype-dashboard-eagerness-group .monaco-button.active {
+	border-color: var(--vscode-focusBorder);
+}
+
+/* Snooze row */
+
+.copilot-prototype-dashboard-snooze {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	margin-top: 8px;
+}
+
+.copilot-prototype-dashboard-snooze .monaco-button {
+	font-size: 11px;
+	padding: 3px 10px;
+	flex-shrink: 0;
+	width: auto;
+}
+
+.copilot-prototype-dashboard-snooze-label {
+	font-size: 11px;
+	color: var(--vscode-descriptionForeground);
+}
+
+/* end of dashboard styles */
+
+/* Bottom tab bar */
+
+.copilot-prototype-dashboard-bottom-tabs {
+	display: flex;
+	justify-content: center;
+	gap: 4px;
+	margin-top: 8px;
+	padding-top: 8px;
+	border-top: 1px solid var(--vscode-editorWidget-border, rgba(255,255,255,0.1));
+}
+
+.copilot-prototype-dashboard-bottom-tabs .copilot-prototype-dashboard-tab {
+	padding: 4px 8px;
+	border-radius: 4px;
+	cursor: pointer;
+	font-size: 14px;
+	color: var(--vscode-descriptionForeground);
+	background: transparent;
+	border: 1px solid transparent;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.copilot-prototype-dashboard-bottom-tabs .copilot-prototype-dashboard-tab:hover {
+	color: var(--vscode-foreground);
+	background: var(--vscode-toolbar-hoverBackground);
+}
+
+.copilot-prototype-dashboard-bottom-tabs .copilot-prototype-dashboard-tab.active {
+	color: var(--vscode-foreground);
+	background: var(--vscode-toolbar-activeBackground);
+	border-color: var(--vscode-focusBorder);
 }
