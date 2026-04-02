@@ -212,10 +212,10 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 		// Show the right UI for the state
 		const hasOverage = sku === 'Pro/Pro+' || sku === 'Max';
 		if (hasOverage) {
-			// Pro with overage: only block/warn for overage states
+			// Pro with overage: only block for overage exhaustion
 			if (state === 'Overage Reached') {
 				this.showWarningCard();
-			} else if (state === 'Overage Approached') {
+			} else if (state.includes('Approached') || state === 'Session Reached' || state === 'Weekly Reached') {
 				this.updateBanner(state);
 			}
 		} else if (state.includes('Reached')) {
@@ -235,11 +235,28 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 	}
 
 	private getBannerMessage(state: string): string | undefined {
+		const hasOverage = this._activeSku === 'Pro/Pro+' || this._activeSku === 'Max';
 		switch (state) {
 			case 'Session Approached':
+				if (hasOverage) {
+					return localize('bannerSessionApproachOverage', "Approaching session limit. Once reached, overage budget will be used.");
+				}
 				return localize('bannerSessionApproach', "Approaching session limit. Resets at 10:00am.");
+			case 'Session Reached':
+				if (hasOverage) {
+					return localize('bannerSessionReachedOverage', "Using overage budget. Session limit resets at 10:00am.");
+				}
+				return undefined;
 			case 'Weekly Approached':
+				if (hasOverage) {
+					return localize('bannerWeeklyApproachOverage', "Approaching weekly limit. Once reached, overage budget will be used.");
+				}
 				return localize('bannerWeeklyApproach', "Approaching weekly limit. Resets on April 6th.");
+			case 'Weekly Reached':
+				if (hasOverage) {
+					return localize('bannerWeeklyReachedOverage', "Using overage budget. Weekly limit resets on April 6th.");
+				}
+				return undefined;
 			case 'Overage Approached':
 				return localize('bannerOverageApproach', "Approaching overage spend limit. Resets on May 1st.");
 			default:
@@ -717,9 +734,11 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 			this.createGauge(content, localize('sessionUsed90', "90% Used"), 90, localize('sessionResetBoldApproached', "**Session Limit.** Resets today at 10:00am."));
 			this.createInfoMessage(content, localize('proSessionApproachInfo', "Once session limit is reached, you will use overage spend until limit resets."));
 		} else if (state === 'Session Reached') {
-			this.createGauge(content, localize('sessionUsed100', "100% Used"), 100, localize('sessionResetBoldReached', "**Session Limit.** Resets today at 10:00am."));
+			// Gray out — overage has kicked in
+			this.createGauge(content, localize('sessionUsed100', "100% Used"), 100, localize('sessionResetBoldReached', "**Session Limit.** Resets today at 10:00am."), true);
 			this.createInfoMessage(content, localize('proSessionReachedInfo', "Using overage budget until Session limit resets."));
 		} else if (state === 'Weekly Reached' || state === 'Overage Approached' || state === 'Overage Reached') {
+			// Gray out — weekly (and therefore session) limit hit
 			this.createGauge(content, localize('sessionUnavailable', "Unavailable"), 0, localize('sessionResetWithWeekly', "**Session Limit.** Resets with Weekly Limit"), true);
 		} else {
 			this.createGauge(content, localize('sessionUsed', "18% Used"), 18, localize('sessionResetBoldDefault', "**Session Limit** Resets today at 10:00 AM"));
@@ -727,13 +746,15 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 
 		// Weekly Limit
 		if (state === 'Weekly Approached') {
-			this.createGauge(content, localize('weeklyUsed90', "90% Used"), 90, localize('weeklyResetBoldApproached', "**Weekly Limit** Resets on April 6th"));
+			this.createGauge(content, localize('weeklyUsed90', "90% Used"), 90, localize('weeklyResetBoldApproached', "**Weekly Limit.** Resets on April 6th."));
 			this.createInfoMessage(content, localize('proWeeklyApproachInfo', "Once weekly limit is reached, you will use overage spend until limit resets."));
 		} else if (state === 'Weekly Reached') {
-			this.createGauge(content, localize('weeklyUsed100', "100% Used"), 100, localize('weeklyResetBoldReached', "**Weekly Limit** Resets on April 6th"));
-			this.createInfoMessage(content, localize('proWeeklyReachedInfo', "Using overage budget until Weekly limit resets."));
-		} else if (state === 'Overage Approached' || state === 'Overage Reached') {
-			this.createGauge(content, localize('weeklyUsed100', "100% Used"), 100, localize('weeklyResetBoldReached', "**Weekly Limit** Resets on April 6th"));
+			// Gray out — overage has kicked in
+			this.createGauge(content, localize('weeklyUsed100', "100% Used"), 100, localize('weeklyResetBoldReached', "**Weekly Limit.** Resets on April 6th."), true);
+			this.createInfoMessage(content, localize('proWeeklyReachedInfo', "Using overage budget until Weely limit resets."));
+		} else if (state === 'Session Reached' || state === 'Overage Approached' || state === 'Overage Reached') {
+			// Gray out — overage is in use, weekly limit is not counting
+			this.createGauge(content, localize('weeklyUsed100', "100% Used"), 100, localize('weeklyResetBoldReached', "**Weekly Limit.** Resets on April 6th."), true);
 		} else {
 			this.createGauge(content, localize('weeklyUsed', "56% Used"), 56, localize('weeklyResetBold', "**Weekly Limit** Resets on April 6th"));
 		}
