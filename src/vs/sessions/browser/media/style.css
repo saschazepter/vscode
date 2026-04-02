@@ -60,6 +60,23 @@
 	background-color: var(--vscode-sessionsSidebar-background);
 }
 
+.agent-sessions-workbench.prototype-shell > .monaco-grid-view {
+	background-color: var(--vscode-editor-background);
+}
+
+.agent-sessions-workbench.prototype-shell .part.statusbar {
+	border-top: 1px solid var(--vscode-panel-border);
+}
+
+.agent-sessions-workbench.prototype-shell .part.statusbar > .right-items {
+	flex: 1;
+	justify-content: flex-end;
+}
+
+.agent-sessions-workbench.prototype-shell .part.statusbar > .items-container > .statusbar-item:not(#chat\.statusBarEntry) {
+	display: none;
+}
+
 /* ---- Chat Layout ---- */
 
 /* Remove max-width from the session container so the scrollbar extends full width */
@@ -105,6 +122,11 @@
 
 .agent-sessions-workbench .interactive-session .chat-input-container {
 	border-radius: var(--vscode-cornerRadius-large);
+}
+
+.agent-sessions-workbench.prototype-shell .interactive-session .chat-input-container {
+	border-radius: var(--vscode-cornerRadius-large);
+	border: 1px solid var(--vscode-panel-border);
 }
 .agent-sessions-workbench .interactive-session .interactive-input-part {
 	width: 100%;

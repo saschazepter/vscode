@@ -102,6 +102,8 @@ interface IPartVisibilityState {
 
 export class Workbench extends Disposable implements IWorkbenchLayoutService {
 
+	private static readonly PROTOTYPE_SHELL_CLASS = 'prototype-shell';
+
 	declare readonly _serviceBrand: undefined;
 
 	//#region Lifecycle Events
@@ -228,11 +230,12 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 	private sideBarPartView!: ISerializableView;
 	private panelPartView!: ISerializableView;
 	private auxiliaryBarPartView!: ISerializableView;
+	private statusBarPartView!: ISerializableView;
 
 	private chatBarPartView!: ISerializableView;
 
 	private readonly partVisibility: IPartVisibilityState = {
-		sidebar: true,
+		sidebar: false,
 		auxiliaryBar: false,
 		editor: false,
 		panel: false,
@@ -503,6 +506,7 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 		const workbenchClasses = coalesce([
 			'monaco-workbench',
 			'agent-sessions-workbench',
+			Workbench.PROTOTYPE_SHELL_CLASS,
 			platformClass,
 			isWeb ? 'web' : undefined,
 			isChrome ? 'chromium' : isFirefox ? 'firefox' : isSafari ? 'safari' : undefined,
@@ -525,6 +529,7 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 			{ id: Parts.AUXILIARYBAR_PART, role: 'none', classes: ['auxiliarybar', 'basepanel', 'right'] },
 			{ id: Parts.CHATBAR_PART, role: 'main', classes: ['chatbar', 'basepanel', 'right'] },
 			{ id: Parts.PANEL_PART, role: 'none', classes: ['panel', 'basepanel', positionToString(this.getPanelPosition())] },
+			{ id: Parts.STATUSBAR_PART, role: 'status', classes: ['statusbar'] },
 		]) {
 			const partContainer = this.createPartContainer(id, role, classes);
 
@@ -709,12 +714,14 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 		const auxiliaryBarPart = this.getPart(Parts.AUXILIARYBAR_PART);
 		const sideBar = this.getPart(Parts.SIDEBAR_PART);
 		const chatBarPart = this.getPart(Parts.CHATBAR_PART);
+		const statusBarPart = this.getPart(Parts.STATUSBAR_PART);
 
 		// View references for parts in the grid (editor is NOT in grid)
 		this.titleBarPartView = titleBar;
 		this.sideBarPartView = sideBar;
 		this.panelPartView = panelPart;
 		this.auxiliaryBarPartView = auxiliaryBarPart;
+		this.statusBarPartView = statusBarPart;
 		this.chatBarPartView = chatBarPart;
 
 		const viewMap: { [key: string]: ISerializableView } = {
@@ -722,6 +729,7 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 			[Parts.PANEL_PART]: this.panelPartView,
 			[Parts.SIDEBAR_PART]: this.sideBarPartView,
 			[Parts.AUXILIARYBAR_PART]: this.auxiliaryBarPartView,
+			[Parts.STATUSBAR_PART]: this.statusBarPartView,
 			[Parts.CHATBAR_PART]: this.chatBarPartView
 		};
 
@@ -786,13 +794,15 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 		const auxiliaryBarSize = 380;
 		const panelSize = 300;
 		const titleBarHeight = this.titleBarPartView?.minimumHeight ?? 30;
+		const statusBarHeight = this.statusBarPartView?.minimumHeight ?? 22;
 
 		// Calculate right section width and chat bar width
 		const rightSectionWidth = Math.max(0, width - sideBarSize);
 		const chatBarWidth = Math.max(0, rightSectionWidth - auxiliaryBarSize);
 
-		const contentHeight = height - titleBarHeight;
-		const topRightHeight = contentHeight - panelSize;
+		const mainContentHeight = Math.max(0, height - statusBarHeight);
+		const rightSectionHeight = Math.max(0, mainContentHeight - titleBarHeight);
+		const topRightHeight = Math.max(0, rightSectionHeight - panelSize);
 
 		const titleBarNode: ISerializedLeafNode = {
 			type: 'leaf',
@@ -829,6 +839,13 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 			visible: this.partVisibility.panel
 		};
 
+		const statusBarNode: ISerializedLeafNode = {
+			type: 'leaf',
+			data: { type: Parts.STATUSBAR_PART },
+			size: statusBarHeight,
+			visible: true
+		};
+
 		// Top right section: Chat Bar | Auxiliary Bar (horizontal)
 		const topRightSection: ISerializedNode = {
 			type: 'branch',
@@ -843,16 +860,22 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 			size: rightSectionWidth
 		};
 
+		const mainContentSection: ISerializedNode = {
+			type: 'branch',
+			data: [sideBarNode, rightSection],
+			size: mainContentHeight
+		};
+
 		const result: ISerializedGrid = {
 			root: {
 				type: 'branch',
 				size: height,
 				data: [
-					sideBarNode,
-					rightSection
+					mainContentSection,
+					statusBarNode
 				]
 			},
-			orientation: Orientation.HORIZONTAL,
+			orientation: Orientation.VERTICAL,
 			width,
 			height
 		};
@@ -896,7 +919,6 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 			!this.partVisibility.panel ? LayoutClasses.PANEL_HIDDEN : undefined,
 			!this.partVisibility.auxiliaryBar ? LayoutClasses.AUXILIARYBAR_HIDDEN : undefined,
 			!this.partVisibility.chatBar ? LayoutClasses.CHATBAR_HIDDEN : undefined,
-			LayoutClasses.STATUSBAR_HIDDEN, // agents window never has a status bar
 			this.mainWindowFullscreen ? LayoutClasses.FULLSCREEN : undefined
 		]);
 	}
@@ -1018,8 +1040,9 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 				return this.partVisibility.panel;
 			case Parts.CHATBAR_PART:
 				return this.partVisibility.chatBar;
-			case Parts.ACTIVITYBAR_PART:
 			case Parts.STATUSBAR_PART:
+				return true;
+			case Parts.ACTIVITYBAR_PART:
 			case Parts.BANNER_PART:
 			default:
 				return false;
@@ -1047,6 +1070,10 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 	}
 
 	private setSideBarHidden(hidden: boolean): void {
+		if (!hidden) {
+			return;
+		}
+
 		if (this.partVisibility.sidebar === !hidden) {
 			return;
 		}
@@ -1076,6 +1103,10 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 	}
 
 	private setAuxiliaryBarHidden(hidden: boolean): void {
+		if (!hidden) {
+			return;
+		}
+
 		if (this.partVisibility.auxiliaryBar === !hidden) {
 			return;
 		}
@@ -1114,6 +1145,10 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 	}
 
 	private setPanelHidden(hidden: boolean): void {
+		if (!hidden) {
+			return;
+		}
+
 		if (this.partVisibility.panel === !hidden) {
 			return;
 		}
@@ -1159,6 +1194,10 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 	}
 
 	private setChatBarHidden(hidden: boolean): void {
+		if (hidden) {
+			return;
+		}
+
 		if (this.partVisibility.chatBar === !hidden) {
 			return;
 		}

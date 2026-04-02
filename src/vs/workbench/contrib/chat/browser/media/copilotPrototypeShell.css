@@ -1,0 +1,178 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+.monaco-workbench.copilot-prototype-shell .editor-group-watermark,
+.monaco-workbench.copilot-prototype-shell .editor-group-watermark * {
+	display: none !important;
+}
+
+.monaco-workbench.copilot-prototype-shell .part.editor:empty,
+.monaco-workbench.copilot-prototype-shell .part.titlebar {
+	display: none !important;
+}
+
+.monaco-workbench.copilot-prototype-shell .part.statusbar > .left-items {
+	flex-grow: 1;
+	min-width: 0;
+}
+
+.monaco-workbench.copilot-prototype-shell .part.statusbar > .left-items > .statusbar-item:not(#chat\.prototypeCoinStatusBarEntry) {
+	display: none;
+}
+
+.monaco-workbench.copilot-prototype-shell .part.statusbar > .right-items {
+	margin-left: auto;
+	justify-content: flex-end;
+}
+
+.monaco-workbench.copilot-prototype-shell .part.statusbar > .right-items > .statusbar-item:not(#chat\.statusBarEntry) {
+	display: none;
+}
+
+.monaco-workbench.copilot-prototype-shell .part.statusbar > .left-items > #chat\.prototypeCoinStatusBarEntry {
+	margin-right: auto;
+	color: var(--vscode-editorWarning-foreground);
+}
+
+.monaco-workbench.copilot-prototype-shell .part.statusbar > .left-items > #chat\.prototypeCoinStatusBarEntry .codicon {
+	color: inherit;
+}
+
+.monaco-workbench.copilot-prototype-shell .part.auxiliarybar {
+	border-left: none;
+}
+
+/* Hide the aux bar composite title label and non-essential action buttons */
+.monaco-workbench.copilot-prototype-shell .part.auxiliarybar > .title > .title-label {
+	display: none !important;
+}
+
+.monaco-workbench.copilot-prototype-shell .part.auxiliarybar > .title > .composite-bar-container {
+	display: none !important;
+}
+
+.monaco-workbench.copilot-prototype-shell .part.auxiliarybar > .title > .title-actions .action-item {
+	display: none !important;
+}
+
+/* Keep only close and maximize buttons, pushed to the right */
+.monaco-workbench.copilot-prototype-shell .part.auxiliarybar > .title > .title-actions .action-item:has(.codicon-close),
+.monaco-workbench.copilot-prototype-shell .part.auxiliarybar > .title > .title-actions .action-item:has(.codicon-screen-full),
+.monaco-workbench.copilot-prototype-shell .part.auxiliarybar > .title > .title-actions .action-item:has(.codicon-screen-normal) {
+	display: flex !important;
+}
+
+.monaco-workbench.copilot-prototype-shell .part.auxiliarybar > .title > .title-actions {
+	margin-left: auto !important;
+}
+
+.monaco-workbench.copilot-prototype-shell .part.auxiliarybar .pane-header,
+.monaco-workbench.copilot-prototype-shell .part.auxiliarybar .chat-view-title-container,
+.monaco-workbench.copilot-prototype-shell .part.auxiliarybar .agent-sessions-container,
+.monaco-workbench.copilot-prototype-shell .part.auxiliarybar .chat-getting-started-tip-container,
+.monaco-workbench.copilot-prototype-shell .part.auxiliarybar .chat-view-welcome {
+	display: none !important;
+}
+
+/* Hide input toolbar chrome (pickers, plus, gear, overflow) but keep the send/execute button */
+.monaco-workbench.copilot-prototype-shell .part.auxiliarybar .chat-input-toolbar {
+	display: none !important;
+}
+
+.monaco-workbench.copilot-prototype-shell .part.auxiliarybar .chat-secondary-toolbar {
+	display: none !important;
+}
+
+/* Make the input a single compact line with send button inline */
+.monaco-workbench.copilot-prototype-shell .part.auxiliarybar .chat-input-container {
+	display: flex !important;
+	flex-direction: row !important;
+	align-items: center;
+	padding: 4px 6px !important;
+}
+
+.monaco-workbench.copilot-prototype-shell .part.auxiliarybar .chat-input-toolbars {
+	display: flex !important;
+	align-items: center;
+	justify-content: flex-end;
+	width: 100%;
+}
+
+.monaco-workbench.copilot-prototype-shell .part.auxiliarybar .chat-execute-toolbar {
+	display: flex !important;
+	margin-left: auto;
+}
+
+.monaco-workbench.copilot-prototype-shell .part.auxiliarybar .chat-editor-container {
+	flex: 1;
+	min-width: 0;
+}
+
+.monaco-workbench.copilot-prototype-shell .part.auxiliarybar .pane-body.chat-view-welcome-visible > .interactive-session {
+	display: flex !important;
+}
+
+.monaco-workbench.copilot-prototype-shell .part.auxiliarybar .pane-body.chat-view-welcome-visible > .chat-view-welcome {
+	display: none !important;
+}
+
+.monaco-workbench.copilot-prototype-shell .part.auxiliarybar .chat-viewpane,
+.monaco-workbench.copilot-prototype-shell .part.auxiliarybar .chat-controls-container,
+.monaco-workbench.copilot-prototype-shell .part.auxiliarybar .interactive-session {
+	height: 100%;
+}
+
+.monaco-workbench.copilot-prototype-shell .part.auxiliarybar .chat-controls-container {
+	justify-content: center;
+}
+
+.monaco-workbench.copilot-prototype-shell .part.auxiliarybar .interactive-session {
+	max-width: 700px;
+	width: 100%;
+	margin: 0 auto;
+	padding: 16px 20px;
+	box-sizing: border-box;
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+}
+
+.monaco-workbench.copilot-prototype-shell .part.auxiliarybar .interactive-input-part {
+	margin-top: auto;
+	margin-bottom: auto;
+	width: 100%;
+}
+
+/* When there are messages, let the conversation flow naturally from the top */
+.monaco-workbench.copilot-prototype-shell .part.auxiliarybar .interactive-session:has(.interactive-list .monaco-list-row) {
+	justify-content: flex-start;
+}
+
+.monaco-workbench.copilot-prototype-shell .part.auxiliarybar .interactive-session:has(.interactive-list .monaco-list-row) .interactive-input-part {
+	margin-top: auto;
+	margin-bottom: 0;
+}
+
+.copilot-prototype-coin-widget {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	min-width: 220px;
+	padding: 6px;
+}
+
+.copilot-prototype-coin-widget-title {
+	font-weight: 600;
+}
+
+.copilot-prototype-coin-widget-description {
+	color: var(--vscode-descriptionForeground);
+	line-height: 1.4;
+}
+
+.copilot-prototype-coin-widget-actions {
+	display: flex;
+	justify-content: flex-start;
+}

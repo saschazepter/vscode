@@ -3,11 +3,13 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import { getZoomFactor } from '../../../../base/browser/browser.js';
+import { mainWindow } from '../../../../base/browser/window.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { AgentHostContribution } from '../browser/agentSessions/agentHost/agentHostChatContribution.js';
 import { autorun } from '../../../../base/common/observable.js';
 import { resolve } from '../../../../base/common/path.js';
-import { isMacintosh } from '../../../../base/common/platform.js';
+import { isMacintosh, isTahoeOrNewer } from '../../../../base/common/platform.js';
 import { generateUuid } from '../../../../base/common/uuid.js';
 import { URI } from '../../../../base/common/uri.js';
 import { ipcRenderer } from '../../../../base/parts/sandbox/electron-browser/globals.js';
@@ -25,7 +27,7 @@ import { ViewContainerLocation } from '../../../common/views.js';
 import { IEditorService } from '../../../services/editor/common/editorService.js';
 import { INativeWorkbenchEnvironmentService } from '../../../services/environment/electron-browser/environmentService.js';
 import { IExtensionService } from '../../../services/extensions/common/extensions.js';
-import { IWorkbenchLayoutService } from '../../../services/layout/browser/layoutService.js';
+import { IWorkbenchLayoutService, Parts } from '../../../services/layout/browser/layoutService.js';
 import { ILifecycleService, ShutdownReason } from '../../../services/lifecycle/common/lifecycle.js';
 import { ACTION_ID_NEW_CHAT, CHAT_OPEN_ACTION_ID, IChatViewOpenOptions } from '../browser/actions/chatActions.js';
 import { ChatViewId, ChatViewPaneTarget, IChatWidgetService } from '../browser/chat.js';
@@ -130,6 +132,48 @@ class ChatSuspendThrottlingHandler extends Disposable {
 			// even when the window is not in focus.
 			nativeHostService.setBackgroundThrottling(!running);
 		}));
+	}
+}
+
+class CopilotPrototypeShellNativeWindowControlsContribution extends Disposable {
+
+	static readonly ID = 'workbench.contrib.copilotPrototypeShellNativeWindowControls';
+
+	constructor(
+		@INativeHostService private readonly nativeHostService: INativeHostService,
+		@IWorkbenchLayoutService private readonly layoutService: IWorkbenchLayoutService,
+		@INativeWorkbenchEnvironmentService private readonly environmentService: INativeWorkbenchEnvironmentService,
+	) {
+		super();
+
+		if (!isMacintosh) {
+			return;
+		}
+
+		this._register(this.layoutService.onDidChangePartVisibility(e => {
+			if (e.partId === Parts.TITLEBAR_PART) {
+				void this.updateWindowControlsHeight();
+			}
+		}));
+
+		void this.updateWindowControlsHeight();
+	}
+
+	private async updateWindowControlsHeight(): Promise<void> {
+		if (this.layoutService.isVisible(Parts.TITLEBAR_PART, mainWindow)) {
+			return;
+		}
+
+		const workbenchContainer = this.layoutService.getContainer(mainWindow);
+		if (!workbenchContainer.classList.contains('copilot-prototype-shell')) {
+			return;
+		}
+
+		const height = Math.round((isTahoeOrNewer(this.environmentService.os.release) ? 32 : 28) * getZoomFactor(mainWindow));
+		await this.nativeHostService.updateWindowControls({
+			targetWindowId: this.nativeHostService.windowId,
+			height,
+		});
 	}
 }
 
@@ -239,6 +283,7 @@ registerWorkbenchContribution2(KeywordActivationContribution.ID, KeywordActivati
 registerWorkbenchContribution2(NativeBuiltinToolsContribution.ID, NativeBuiltinToolsContribution, WorkbenchPhase.AfterRestored);
 registerWorkbenchContribution2(ChatCommandLineHandler.ID, ChatCommandLineHandler, WorkbenchPhase.BlockRestore);
 registerWorkbenchContribution2(ChatSuspendThrottlingHandler.ID, ChatSuspendThrottlingHandler, WorkbenchPhase.AfterRestored);
+registerWorkbenchContribution2(CopilotPrototypeShellNativeWindowControlsContribution.ID, CopilotPrototypeShellNativeWindowControlsContribution, WorkbenchPhase.AfterRestored);
 registerWorkbenchContribution2(ChatLifecycleHandler.ID, ChatLifecycleHandler, WorkbenchPhase.AfterRestored);
 registerWorkbenchContribution2(AgentHostContribution.ID, AgentHostContribution, WorkbenchPhase.AfterRestored);
 

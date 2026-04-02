@@ -38,6 +38,16 @@
 	margin: unset;
 }
 
+.agent-sessions-workbench.prototype-shell.monaco-workbench .part.titlebar > .sessions-titlebar-container > .titlebar-left,
+.agent-sessions-workbench.prototype-shell.monaco-workbench .part.titlebar > .sessions-titlebar-container > .titlebar-right {
+	display: none !important;
+}
+
+.agent-sessions-workbench.prototype-shell.monaco-workbench .part.titlebar > .sessions-titlebar-container > .titlebar-center {
+	justify-content: flex-start;
+	padding: 0 14px;
+}
+
 .agent-sessions-workbench.monaco-workbench.mac .part.titlebar > .sessions-titlebar-container > .titlebar-right {
 	order: 2;
 	width: fit-content;

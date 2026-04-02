@@ -10,7 +10,7 @@ The Agent Sessions Workbench (`Workbench` in `sessions/browser/workbench.ts`) pr
 
 - Does **not** support settings-based customization
 - Has **fixed** part positions
-- Excludes several standard workbench parts
+- Uses a **locked prototype shell** that keeps only the chat surface and Copilot status entry visible by default
 
 ---
 
@@ -19,17 +19,22 @@ The Agent Sessions Workbench (`Workbench` in `sessions/browser/workbench.ts`) pr
 ### 2.1 Visual Representation
 
 ```
-┌─────────┬───────────────────────────────────────────────────────┐
-│         │                    Titlebar                           │
-│         ├────────────────────────────────────┬──────────────────┤
-│ Sidebar │              Chat Bar              │  Auxiliary Bar   │
-│         ├────────────────────────────────────┴──────────────────┤
-│         │                      Panel                            │
-└─────────┴───────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                           Titlebar                              │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│                           Chat Bar                              │
+│                                                                 │
+├─────────────────────────────────────────────────────────────────┤
+│                          Status Bar                             │
+└─────────────────────────────────────────────────────────────────┘
 
 Editors open via MODAL_GROUP into the standard ModalEditorPart overlay
 (created on-demand by EditorParts.createModalEditorPart). The main
 editor part exists but is hidden (display:none) for future use.
+
+Sidebar, Auxiliary Bar, and Panel remain registered in the workbench but are
+locked hidden in the prototype shell.
 ```
 
 ### 2.2 Parts
@@ -39,11 +44,12 @@ editor part exists but is hidden (display:none) for future use.
 | Part | ID Constant | Position | Default Visibility | ViewContainerLocation |
 |------|-------------|----------|------------|----------------------|
 | Titlebar | `Parts.TITLEBAR_PART` | Top of right section | Always visible | — |
-| Sidebar | `Parts.SIDEBAR_PART` | Left, spans full height from top to bottom | Visible | `ViewContainerLocation.Sidebar` |
+| Sidebar | `Parts.SIDEBAR_PART` | Left, spans full height from top to bottom | Hidden and locked | `ViewContainerLocation.Sidebar` |
 | Chat Bar | `Parts.CHATBAR_PART` | Top-right section, takes remaining width | Visible | `ViewContainerLocation.ChatBar` |
 | Editor | `Parts.EDITOR_PART` | Hidden main part (not in grid); editors open via `MODAL_GROUP` into `ModalEditorPart` overlay | Hidden | — |
-| Auxiliary Bar | `Parts.AUXILIARYBAR_PART` | Top-right section, right side | Visible | `ViewContainerLocation.AuxiliaryBar` |
+| Auxiliary Bar | `Parts.AUXILIARYBAR_PART` | Top-right section, right side | Hidden and locked | `ViewContainerLocation.AuxiliaryBar` |
 | Panel | `Parts.PANEL_PART` | Below Chat Bar and Auxiliary Bar (right section only) | Hidden | `ViewContainerLocation.Panel` |
+| Status Bar | `Parts.STATUSBAR_PART` | Bottom of the window, spans the full width | Visible | — |
 
 #### Excluded Parts
 
@@ -52,7 +58,6 @@ The following parts from the default workbench are **not included**:
 | Part | ID Constant | Reason |
 |------|-------------|--------|
 | Activity Bar | `Parts.ACTIVITYBAR_PART` | Simplified navigation; global activities (Accounts, Manage) are in titlebar instead |
-| Status Bar | `Parts.STATUSBAR_PART` | Reduced chrome |
 | Banner | `Parts.BANNER_PART` | Not needed |
 
 ---
@@ -60,6 +65,8 @@ The following parts from the default workbench are **not included**:
 ## 3. Titlebar Configuration
 
 The Agent Sessions workbench uses a fully independent titlebar part (`TitlebarPart`) with its own title service (`TitleService`), implemented in `sessions/browser/parts/titlebarPart.ts`. This is a standalone implementation (not extending `BrowserTitlebarPart`) with a simple three-section layout driven entirely by menus.
+
+In the locked prototype shell, only the center command center remains visible. The left and right titlebar toolbars stay registered but are visually hidden.
 
 ### 3.1 Titlebar Part Architecture
 
@@ -151,27 +158,30 @@ The layout uses `SerializableGrid` from `vs/base/browser/ui/grid/grid.js`.
 The Editor part is **not** in the grid — it is rendered as a modal overlay (see Section 4.3).
 
 ```
-Orientation: HORIZONTAL (root)
-├── Sidebar (leaf, size: 300px default)
-└── Right Section (branch, VERTICAL, size: remaining width)
-    ├── Titlebar (leaf, size: titleBarHeight)
-    ├── Top Right (branch, HORIZONTAL, size: remaining height - panel)
-    │   ├── Chat Bar (leaf, size: remaining width)
-    │   └── Auxiliary Bar (leaf, size: 300px default)
-    └── Panel (leaf, size: 300px default, hidden by default)
+Orientation: VERTICAL (root)
+├── Main Content (branch, HORIZONTAL, size: remaining height - status bar)
+│   ├── Sidebar (leaf, size: 300px default, hidden in prototype shell)
+│   └── Right Section (branch, VERTICAL, size: remaining width)
+│       ├── Titlebar (leaf, size: titleBarHeight)
+│       ├── Top Right (branch, HORIZONTAL, size: remaining height - panel)
+│       │   ├── Chat Bar (leaf, size: remaining width)
+│       │   └── Auxiliary Bar (leaf, size: 380px default, hidden in prototype shell)
+│       └── Panel (leaf, size: 300px default, hidden in prototype shell)
+└── Status Bar (leaf, size: 22px)
 ```
 
-This structure places the sidebar at the root level spanning the full window height. The titlebar, chat bar, auxiliary bar, and panel are all within the right section.
+This structure keeps the status bar at the bottom of the window across the full width. The sidebar, titlebar, chat bar, auxiliary bar, and panel remain within the main content section.
 
 ### 4.2 Default Sizes
 
 | Part | Default Size |
 |------|--------------|
 | Sidebar | 300px width |
-| Auxiliary Bar | 300px width |
+| Auxiliary Bar | 380px width |
 | Chat Bar | Remaining space |
 | Panel | 300px height |
 | Titlebar | Determined by `minimumHeight` (~30px) |
+| Status Bar | 22px height |
 
 ### 4.3 Editor Modal
 
@@ -209,7 +219,7 @@ The setting `workbench.editor.useModal` is an enum with three values:
 | Feature | Default Workbench | Agent Sessions | Notes |
 |---------|-------------------|----------------|-------|
 | Activity Bar | ✅ Configurable | ❌ Not included | — |
-| Status Bar | ✅ Configurable | ❌ Not included | — |
+| Status Bar | ✅ Configurable | ✅ Always visible | Hosts the Copilot status entry in the prototype shell |
 | Sidebar Position | ✅ Left/Right | 🔒 Fixed: Left | `getSideBarPosition()` returns `Position.LEFT` |
 | Panel Position | ✅ Top/Bottom/Left/Right | 🔒 Fixed: Bottom | `getPanelPosition()` returns `Position.BOTTOM` |
 | Panel Alignment | ✅ Left/Center/Right/Justify | 🔒 Fixed: Justify | `getPanelAlignment()` returns `'justify'` |
@@ -219,7 +229,7 @@ The setting `workbench.editor.useModal` is an enum with three values:
 | Centered Editor Layout | ✅ Supported | ❌ No-op | `centerMainEditorLayout()` does nothing |
 | Menu Bar Toggle | ✅ Supported | ❌ No-op | `toggleMenuBar()` does nothing |
 | Resize Parts | ✅ Supported | ✅ Supported | Via grid or programmatic API |
-| Hide/Show Parts | ✅ Supported | ✅ Supported | Via `setPartHidden()` |
+| Hide/Show Parts | ✅ Supported | ⚠️ Limited | Sidebar, Auxiliary Bar, and Panel remain locked hidden in the prototype shell |
 | Window Maximized State | ✅ Supported | ✅ Supported | Tracked per window ID |
 | Fullscreen | ✅ Supported | ✅ Supported | CSS class applied |
 
@@ -330,6 +340,7 @@ Applied to `mainContainer` based on part visibility:
 | `noauxiliarybar` | Auxiliary bar is hidden |
 | `nochatbar` | Chat bar is hidden |
 | `nopanel` | Panel is hidden |
+| `prototype-shell` | Prototype shell styling is active |
 
 ### 8.2 Window State Classes
 
@@ -362,6 +373,7 @@ The Agent Sessions workbench uses specialized part implementations that extend t
 | Panel | `PanelPart` | `AbstractPaneCompositePart` | `sessions/browser/parts/panelPart.ts` |
 | Chat Bar | `ChatBarPart` | `AbstractPaneCompositePart` | `sessions/browser/parts/chatBarPart.ts` |
 | Titlebar | `TitlebarPart` / `MainTitlebarPart` | `Part` | `sessions/browser/parts/titlebarPart.ts` |
+| Status Bar | `StatusbarPart` | `Part` | `workbench/browser/parts/statusbar/statusbarPart.ts` |
 | Project Bar | `ProjectBarPart` | `Part` | `sessions/browser/parts/projectBarPart.ts` |
 
 ### 9.2 Key Differences from Standard Parts
@@ -456,6 +468,7 @@ The Agent Sessions workbench registers contributions via module imports in `sess
 | Run Script | `RunScriptContribution` | `AfterRestored` | `contrib/chat/browser/runScriptAction.ts` |
 | Title Bar Widget | `SessionsTitleBarContribution` | `AfterRestored` | `contrib/sessions/browser/sessionsTitleBarWidget.ts` |
 | Account Widget | `AccountWidgetContribution` | `AfterRestored` | `contrib/accountMenu/browser/account.contribution.ts` |
+| Copilot Status Bar Entry | `ChatStatusBarEntry` | `BlockRestore` | `workbench/contrib/chat/browser/chatStatus/chatStatusEntry.ts` |
 | Active Session Service | `ActiveSessionService` | Singleton | `contrib/sessions/browser/activeSessionService.ts` |
 | Prompts Service | `AgenticPromptsService` | Singleton | `contrib/chat/browser/promptsService.ts` |
 
@@ -626,8 +639,8 @@ interface IPartVisibilityState {
 
 | Part | Initial Visibility |
 |------|--------------------|
-| Sidebar | `true` (visible) |
-| Auxiliary Bar | `true` (visible) |
+| Sidebar | `false` (hidden) |
+| Auxiliary Bar | `false` (hidden) |
 | Chat Bar | `true` (visible) |
 | Editor | `false` (hidden) |
 | Panel | `false` (hidden) |
@@ -644,6 +657,7 @@ interface IPartVisibilityState {
 
 | Date | Change |
 |------|--------|
+| 2026-04-01 | Added a locked prototype shell for the sessions workbench: enabled the bottom status bar, routed the Copilot dashboard through the Copilot status entry there, and kept sidebar/auxiliary/panel surfaces registered but locked hidden so chat remains the only primary surface |
 | 2026-03-30 | Adjusted `.agent-sessions-titlebar-container` padding so it sits flush when the sidebar is visible and restores 16px left padding when the sidebar is hidden |
 | 2026-03-26 | Updated the sessions sidebar appear animation so only the body content (`.part.sidebar > .content`) slides/fades in during reveal while the sidebar title/header and footer remain fixed |
 | 2026-03-24 | Polished the sessions task configuration quick input modal to use stronger modal-style header chrome, increased horizontal padding in the quick input/form content, and added an explicit close action in the modal header |

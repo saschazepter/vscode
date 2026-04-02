@@ -103,6 +103,7 @@ import { ChatDebugServiceImpl } from '../common/chatDebugServiceImpl.js';
 import { ChatDebugEditor } from './chatDebug/chatDebugEditor.js';
 import { PromptsDebugContribution } from './promptsDebugContribution.js';
 import { ChatDebugEditorInput, ChatDebugEditorInputSerializer } from './chatDebug/chatDebugEditorInput.js';
+import './copilotPrototypeShell.contribution.js';
 import './agentSessions/agentSessions.contribution.js';
 
 import { ChatContextKeys } from '../common/actions/chatContextKeys.js';
@@ -324,7 +325,7 @@ configurationRegistry.registerConfiguration({
 			type: 'boolean',
 			scope: ConfigurationScope.APPLICATION,
 			description: nls.localize('chat.tips.enabled', "Controls whether tips are shown above user messages in chat. New tips are added frequently, so this is a helpful way to stay up to date with the latest features."),
-			default: true,
+			default: false,
 		},
 		'chat.upvoteAnimation': {
 			type: 'string',
@@ -553,7 +554,7 @@ configurationRegistry.registerConfiguration({
 		},
 		[ChatConfiguration.ChatViewSessionsEnabled]: {
 			type: 'boolean',
-			default: true,
+			default: false,
 			description: nls.localize('chat.viewSessions.enabled', "Show chat agent sessions when chat is empty or to the side when chat view is wide enough."),
 		},
 		[ChatConfiguration.ChatViewSessionsOrientation]: {
