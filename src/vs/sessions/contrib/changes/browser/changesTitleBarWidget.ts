@@ -159,7 +159,7 @@ export class ChangesTitleBarContribution extends Disposable implements IWorkbenc
 				toggled: AuxiliaryBarVisibleContext,
 			},
 			group: 'navigation',
-			order: 11, // After Run Script (8), Open in VS Code (9), and Open Terminal (10)
+			order: 9, // After Run Script (8)
 			when: ContextKeyExpr.and(IsAuxiliaryWindowContext.toNegated(), SessionsWelcomeVisibleContext.toNegated()),
 		}));
 

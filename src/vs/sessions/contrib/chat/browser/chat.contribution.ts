@@ -19,8 +19,7 @@ import { IViewContainersRegistry, IViewsRegistry, ViewContainerLocation, Extensi
 import { Registry } from '../../../../platform/registry/common/platform.js';
 import { SyncDescriptor } from '../../../../platform/instantiation/common/descriptors.js';
 import { ISessionsManagementService } from '../../../services/sessions/common/sessionsManagement.js';
-import { IsActiveSessionBackgroundProviderContext, IsNewChatSessionContext, SessionsWelcomeVisibleContext } from '../../../common/contextkeys.js';
-import { Menus } from '../../../browser/menus.js';
+import { IsActiveSessionBackgroundProviderContext, IsNewChatSessionContext } from '../../../common/contextkeys.js';
 import { BranchChatSessionAction } from './branchChatSessionAction.js';
 import { RunScriptContribution } from './runScriptAction.js';
 import './nullInlineChatSessionService.js';
@@ -41,7 +40,6 @@ import { ViewPaneContainer } from '../../../../workbench/browser/parts/views/vie
 import { registerIcon } from '../../../../platform/theme/common/iconRegistry.js';
 import { ChatViewPane } from '../../../../workbench/contrib/chat/browser/widgetHosts/viewPane/chatViewPane.js';
 import { IsAuxiliaryWindowContext } from '../../../../workbench/common/contextkeys.js';
-import { ContextKeyExpr } from '../../../../platform/contextkey/common/contextkey.js';
 import { CopilotCLISessionType } from '../../../services/sessions/common/session.js';
 import { AccessibleViewRegistry } from '../../../../platform/accessibility/browser/accessibleViewRegistry.js';
 import { SessionsChatAccessibilityHelp } from './sessionsChatAccessibilityHelp.js';
@@ -60,12 +58,6 @@ export class OpenSessionWorktreeInVSCodeAction extends Action2 {
 			title: localize2('openInVSCode', 'Open in VS Code'),
 			icon: Codicon.vscodeInsiders,
 			precondition: IsActiveSessionBackgroundProviderContext,
-			menu: [{
-				id: Menus.TitleBarSessionMenu,
-				group: 'navigation',
-				order: 9,
-				when: ContextKeyExpr.and(IsAuxiliaryWindowContext.toNegated(), SessionsWelcomeVisibleContext.toNegated()),
-			}]
 		});
 	}
 
