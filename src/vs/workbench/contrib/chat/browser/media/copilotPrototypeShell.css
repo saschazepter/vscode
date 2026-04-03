@@ -542,6 +542,14 @@
 	border-color: var(--vscode-focusBorder);
 }
 
+/* ---- Prototype banner/warning container (independent of getting-started tips) ---- */
+
+.copilot-prototype-banner-container {
+	display: flex;
+	flex-direction: column;
+	flex-shrink: 0;
+}
+
 /* ---- Chat banner (usage warning/error above chat input) ---- */
 
 .copilot-prototype-chat-banner {

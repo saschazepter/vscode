@@ -151,7 +151,7 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 	private setupInputInterceptor(): void {
 		const tryAttach = () => {
 			const container = this.layoutService.getContainer(mainWindow);
-			const auxBar = container.querySelector('.part.auxiliarybar');
+			const auxBar = container.querySelector('.part.auxiliarybar'); // eslint-disable-line no-restricted-syntax
 			if (!auxBar) {
 				setTimeout(tryAttach, 1000);
 				return;
@@ -304,18 +304,33 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 		}
 	}
 
+	private getOrCreatePrototypeContainer(): HTMLElement | null {
+		const container = this.layoutService.getContainer(mainWindow);
+		const inputPart = container.querySelector('.part.auxiliarybar .interactive-input-part') as HTMLElement | null; // eslint-disable-line no-restricted-syntax
+		if (!inputPart) {
+			return null;
+		}
+		let protoContainer = inputPart.querySelector('.copilot-prototype-banner-container') as HTMLElement | null; // eslint-disable-line no-restricted-syntax
+		if (!protoContainer) {
+			protoContainer = mainWindow.document.createElement('div');
+			protoContainer.className = 'copilot-prototype-banner-container';
+			protoContainer.style.display = 'none';
+			// Insert before the first child so it renders above the input box
+			inputPart.insertBefore(protoContainer, inputPart.firstChild);
+		}
+		return protoContainer;
+	}
+
 	private updateBanner(state: string): void {
 		const message = this.getBannerMessage(state);
-		const container = this.layoutService.getContainer(mainWindow);
 
 		if (!message) {
 			this.clearBanner();
 			return;
 		}
 
-		// Find the tip container in the aux bar (same slot as getting-started tips)
-		const tipContainer = container.querySelector('.part.auxiliarybar .chat-getting-started-tip-container');
-		if (!tipContainer) {
+		const protoContainer = this.getOrCreatePrototypeContainer();
+		if (!protoContainer) {
 			return;
 		}
 
@@ -347,31 +362,31 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 
 		this._bannerElement.append(text, dismiss);
 
-		// Insert into the tip container and make it visible
+		// Insert into the prototype container and make it visible
 		if (!this._bannerElement.parentElement) {
-			tipContainer.appendChild(this._bannerElement);
-			(tipContainer as HTMLElement).style.display = '';
+			protoContainer.appendChild(this._bannerElement);
+			protoContainer.style.display = '';
 		}
 	}
 
 	private clearBanner(): void {
 		if (this._bannerElement) {
-			const tipContainer = this._bannerElement.parentElement;
+			const protoContainer = this._bannerElement.parentElement;
 			this._bannerElement.remove();
 			this._bannerElement = undefined;
-			if (tipContainer && tipContainer.children.length === 0) {
-				(tipContainer as HTMLElement).style.display = 'none';
+			if (protoContainer && protoContainer.children.length === 0) {
+				(protoContainer as HTMLElement).style.display = 'none';
 			}
 		}
 	}
 
 	private clearWarningCard(): void {
 		if (this._warningCardElement) {
-			const tipContainer = this._warningCardElement.parentElement;
+			const protoContainer = this._warningCardElement.parentElement;
 			this._warningCardElement.remove();
 			this._warningCardElement = undefined;
-			if (tipContainer && tipContainer.children.length === 0) {
-				(tipContainer as HTMLElement).style.display = 'none';
+			if (protoContainer && protoContainer.children.length === 0) {
+				(protoContainer as HTMLElement).style.display = 'none';
 			}
 		}
 	}
@@ -382,9 +397,8 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 			return;
 		}
 
-		const container = this.layoutService.getContainer(mainWindow);
-		const tipContainer = container.querySelector('.part.auxiliarybar .chat-getting-started-tip-container') as HTMLElement | null;
-		if (!tipContainer) {
+		const protoContainer = this.getOrCreatePrototypeContainer();
+		if (!protoContainer) {
 			return;
 		}
 
@@ -423,8 +437,8 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 
 		card.append(header, desc, btnContainer);
 		this._warningCardElement = card;
-		tipContainer.appendChild(card);
-		tipContainer.style.display = '';
+		protoContainer.appendChild(card);
+		protoContainer.style.display = '';
 	}
 
 	private getInlineWarningContent(): { title: string; description: string; buttonLabel: string; secondaryButtonLabel?: string } | undefined {
@@ -776,26 +790,26 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 			this.createInfoMessage(content, localize('proSessionApproachInfo', "Once session limit is reached, you will use overage spend until limit resets."));
 		} else if (state === 'Session Reached') {
 			// Gray out — overage has kicked in
-			this.createGauge(content, localize('sessionUsed100', "100% Used"), 100, localize('sessionResetBoldReached', "**Session Limit.** Resets today at 10:00am."), true);
+			this.createGauge(content, localize('sessionUsed100', "100% Used"), 100, localize('proSessionResetBoldReached', "**Session Limit.** Resets today at 10:00am."), true);
 			this.createInfoMessage(content, localize('proSessionReachedInfo', "Using overage budget until Session limit resets."));
 		} else if (state === 'Weekly Reached' || state === 'Overage Approached' || state === 'Overage Reached') {
 			// Gray out — weekly (and therefore session) limit hit
-			this.createGauge(content, localize('sessionUnavailable', "Unavailable"), 0, localize('sessionResetWithWeekly', "**Session Limit.** Resets with Weekly Limit"), true);
+			this.createGauge(content, localize('sessionUnavailable', "Unavailable"), 0, localize('proSessionResetWithWeekly', "**Session Limit.** Resets with Weekly Limit"), true);
 		} else {
-			this.createGauge(content, localize('sessionUsed', "18% Used"), 18, localize('sessionResetBoldDefault', "**Session Limit** Resets today at 10:00 AM"));
+			this.createGauge(content, localize('sessionUsed', "18% Used"), 18, localize('proSessionResetBoldDefault', "**Session Limit** Resets today at 10:00 AM"));
 		}
 
 		// Weekly Limit
 		if (state === 'Weekly Approached') {
-			this.createGauge(content, localize('weeklyUsed90', "90% Used"), 90, localize('weeklyResetBoldApproached', "**Weekly Limit.** Resets on April 6th."));
+			this.createGauge(content, localize('weeklyUsed90', "90% Used"), 90, localize('proWeeklyResetBoldApproached', "**Weekly Limit.** Resets on April 6th."));
 			this.createInfoMessage(content, localize('proWeeklyApproachInfo', "Once weekly limit is reached, you will use overage spend until limit resets."));
 		} else if (state === 'Weekly Reached') {
 			// Gray out — overage has kicked in
-			this.createGauge(content, localize('weeklyUsed100', "100% Used"), 100, localize('weeklyResetBoldReached', "**Weekly Limit.** Resets on April 6th."), true);
+			this.createGauge(content, localize('weeklyUsed100', "100% Used"), 100, localize('proWeeklyResetBoldReached', "**Weekly Limit.** Resets on April 6th."), true);
 			this.createInfoMessage(content, localize('proWeeklyReachedInfo', "Using overage budget until Weely limit resets."));
 		} else if (state === 'Session Reached' || state === 'Overage Approached' || state === 'Overage Reached') {
 			// Gray out — overage is in use, weekly limit is not counting
-			this.createGauge(content, localize('weeklyUsed100', "100% Used"), 100, localize('weeklyResetBoldReached', "**Weekly Limit.** Resets on April 6th."), true);
+			this.createGauge(content, localize('weeklyUsed100', "100% Used"), 100, localize('proWeeklyResetBoldReached2', "**Weekly Limit.** Resets on April 6th."), true);
 		} else {
 			this.createGauge(content, localize('weeklyUsed', "56% Used"), 56, localize('weeklyResetBold', "**Weekly Limit** Resets on April 6th"));
 		}
