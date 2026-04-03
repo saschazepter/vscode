@@ -196,7 +196,7 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 	private getEntryProps(): IStatusbarEntry {
 		return {
 			name: localize('copilotPrototypeShellCoinEntry', "Prototype Coin"),
-			text: '$(circle-large-filled)',
+			text: '$(dashboard)',
 			ariaLabel: localize('copilotPrototypeShellCoinEntryAria', "Prototype Coin"),
 			tooltip: {
 				element: token => this.renderTooltip(token),
@@ -279,26 +279,26 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 		switch (state) {
 			case 'Session Approached':
 				if (hasOverage) {
-					return localize('bannerSessionApproachOverage', "Approaching session limit. Once reached, overage budget will be used.");
+					return localize('bannerSessionApproachOverage', "You've used most of your Five-Hour Limit. You'll start spending your Runover Budget soon.");
 				}
-				return localize('bannerSessionApproach', "Approaching session limit. Resets at 10:00am.");
+				return localize('bannerSessionApproach', "You've used most of your Five-Hour Limit. It resets at 10:00am.");
 			case 'Session Reached':
 				if (hasOverage) {
-					return localize('bannerSessionReachedOverage', "Using overage budget. Session limit resets at 10:00am.");
+					return localize('bannerSessionReachedOverage', "You've hit your Five-Hour Limit. Using Runover Budget until it resets at 10:00am.");
 				}
 				return undefined;
 			case 'Weekly Approached':
 				if (hasOverage) {
-					return localize('bannerWeeklyApproachOverage', "Approaching weekly limit. Once reached, overage budget will be used.");
+					return localize('bannerWeeklyApproachOverage', "You've used most of your Weekly Limit. You'll start spending your Runover Budget soon.");
 				}
-				return localize('bannerWeeklyApproach', "Approaching weekly limit. Resets on April 6th.");
+				return localize('bannerWeeklyApproach', "You've used most of your Weekly Limit. It resets on April 6th.");
 			case 'Weekly Reached':
 				if (hasOverage) {
-					return localize('bannerWeeklyReachedOverage', "Using overage budget. Weekly limit resets on April 6th.");
+					return localize('bannerWeeklyReachedOverage', "You've hit your Weekly Limit. Using Runover Budget until it resets on April 6th.");
 				}
 				return undefined;
 			case 'Overage Approached':
-				return localize('bannerOverageApproach', "Approaching overage spend limit. Resets on May 1st.");
+				return localize('bannerOverageApproach', "You've spent most of your Runover Budget. It resets on May 1st.");
 			default:
 				return undefined;
 		}
@@ -448,22 +448,22 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 		if (state === 'Session Reached') {
 			if (sku === 'Edu/Free') {
 				return {
-					title: localize('inlineSessionReachedTitle', "You've reached your session limit."),
-					description: localize('inlineSessionReachedDescFree', "Your session limit resets at 10:00am. Upgrade for higher limits."),
+					title: localize('inlineSessionReachedTitle', "You've reached your Five-Hour Limit."),
+					description: localize('inlineSessionReachedDescFree', "Resets at 10:00am, or upgrade to increase your limits."),
 					buttonLabel: localize('upgrade', "Upgrade"),
 				};
 			}
 			if (sku === 'Pro/Pro+ No O') {
 				return {
-					title: localize('inlineSessionReachedTitle', "You've reached your session limit."),
-					description: localize('inlineSessionReachedDescProNoO', "Your session limit resets at 10:00am. Configure overages to continue using Copilot."),
-					buttonLabel: localize('configureOverage', "Configure Overage"),
+					title: localize('inlineSessionReachedTitle', "You've reached your Five-Hour Limit."),
+					description: localize('inlineSessionReachedDescProNoO', "Resets at 10:00am. Configure a Runover Budget or upgrade to increase your limits."),
+					buttonLabel: localize('configureBudget', "Configure Budget"),
 					secondaryButtonLabel: localize('upgrade', "Upgrade"),
 				};
 			}
 			return {
-				title: localize('inlineSessionReachedTitle', "You've reached your session limit."),
-				description: localize('inlineSessionReachedDescPro', "Your session limit resets at 10:00am."),
+				title: localize('inlineSessionReachedTitle', "You've reached your Five-Hour Limit."),
+				description: localize('inlineSessionReachedDescPro', "Resets at 10:00am."),
 				buttonLabel: localize('learnMore', "Learn more"),
 			};
 		}
@@ -471,31 +471,31 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 		if (state === 'Weekly Reached') {
 			if (sku === 'Edu/Free') {
 				return {
-					title: localize('inlineWeeklyReachedTitle', "You've reached your weekly limit."),
-					description: localize('inlineWeeklyReachedDescFree', "Your weekly limit resets on April 6th. Upgrade for higher limits."),
+					title: localize('inlineWeeklyReachedTitle', "You've reached your Weekly Limit."),
+					description: localize('inlineWeeklyReachedDescFree', "Resets on April 6th, or upgrade to increase your limits."),
 					buttonLabel: localize('upgrade', "Upgrade"),
 				};
 			}
 			if (sku === 'Pro/Pro+ No O') {
 				return {
-					title: localize('inlineWeeklyReachedTitle', "You've reached your weekly limit."),
-					description: localize('inlineWeeklyReachedDescProNoO', "Your weekly limit resets on April 6th. Configure overages to continue using Copilot."),
-					buttonLabel: localize('configureOverage', "Configure Overage"),
+					title: localize('inlineWeeklyReachedTitle', "You've reached your Weekly Limit."),
+					description: localize('inlineWeeklyReachedDescProNoO', "Resets on April 6th. Configure a Runover Budget or upgrade to increase your limits."),
+					buttonLabel: localize('configureBudget', "Configure Budget"),
 					secondaryButtonLabel: localize('upgrade', "Upgrade"),
 				};
 			}
 			return {
-				title: localize('inlineWeeklyReachedTitle', "You've reached your weekly limit."),
-				description: localize('inlineWeeklyReachedDescPro', "Your weekly limit resets on April 6th. Increase overages budget to continue using premium models."),
+				title: localize('inlineWeeklyReachedTitle', "You've reached your Weekly Limit."),
+				description: localize('inlineWeeklyReachedDescPro', "Resets on April 6th. Increase Runover Budget to continue using premium models."),
 				buttonLabel: localize('increaseBudget', "Increase Budget"),
 			};
 		}
 
 		if (state === 'Overage Reached') {
 			return {
-				title: localize('inlineOverageReachedTitle', "You've reached your overage budget."),
-				description: localize('inlineOverageReachedDesc', "Copilot usage is paused until overage budget is increased or limits reset."),
-				buttonLabel: localize('editOverage', "Edit Overage"),
+				title: localize('inlineOverageReachedTitle', "You've reached your Runover Budget."),
+				description: localize('inlineOverageReachedDesc', "Copilot is paused until your Runover Budget is increased or limits reset. Upgrade to increase your limit."),
+				buttonLabel: localize('editBudget', "Edit Budget"),
 				secondaryButtonLabel: localize('upgrade', "Upgrade"),
 			};
 		}
@@ -504,28 +504,37 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 	}
 
 	private static readonly SKUS = ['Edu/Free', 'Pro/Pro+ No O', 'Pro/Pro+', 'Max', 'Ent/Bus ULB', 'Ent/Bus'];
-	private static readonly STATES = ['First Time', 'Default', 'Session Approached', 'Session Reached', 'Weekly Approached', 'Weekly Reached', 'Overage Approached', 'Overage Reached'];
+	private static readonly STATES = ['First Time', 'Default', 'Session Approached', 'Session Reached', 'Session Reset', 'Weekly Approached', 'Weekly Reached', 'Weekly Reset', 'Overage Approached', 'Overage Reached', 'Overage Reset'];
 	private static readonly EXCLUDED_CELLS: ReadonlySet<string> = new Set([
 		'Edu/Free|Overage Approached',
 		'Edu/Free|Overage Reached',
+		'Edu/Free|Overage Reset',
 		'Pro/Pro+ No O|Overage Approached',
 		'Pro/Pro+ No O|Overage Reached',
+		'Pro/Pro+ No O|Overage Reset',
 		'Max|Session Approached',
 		'Max|Session Reached',
+		'Max|Session Reset',
 		'Ent/Bus ULB|First Time',
 		'Ent/Bus ULB|Session Approached',
 		'Ent/Bus ULB|Session Reached',
+		'Ent/Bus ULB|Session Reset',
 		'Ent/Bus ULB|Weekly Approached',
 		'Ent/Bus ULB|Weekly Reached',
+		'Ent/Bus ULB|Weekly Reset',
 		'Ent/Bus ULB|Overage Approached',
 		'Ent/Bus ULB|Overage Reached',
+		'Ent/Bus ULB|Overage Reset',
 		'Ent/Bus|First Time',
 		'Ent/Bus|Session Approached',
 		'Ent/Bus|Session Reached',
+		'Ent/Bus|Session Reset',
 		'Ent/Bus|Weekly Approached',
 		'Ent/Bus|Weekly Reached',
+		'Ent/Bus|Weekly Reset',
 		'Ent/Bus|Overage Approached',
 		'Ent/Bus|Overage Reached',
+		'Ent/Bus|Overage Reset',
 	]);
 
 	private renderTooltip(token: CancellationToken): HTMLElement {
@@ -537,7 +546,7 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 
 		const title = mainWindow.document.createElement('div');
 		title.className = 'copilot-prototype-coin-widget-title';
-		title.textContent = localize('copilotPrototypeShellCoinWidgetTitle', "Prototype Coin");
+		title.textContent = localize('copilotPrototypeShellCoinWidgetTitle', "Prototype Coin · 04.03");
 
 		// Grid: SKU columns x State rows
 		const skus = CopilotPrototypeShellCoinStatusBarContribution.SKUS;
@@ -572,10 +581,10 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 
 		// Rows
 		for (const state of states) {
-			// Row header (State)
+			// Row header (State) — display-friendly names in the grid
 			const rowHeader = mainWindow.document.createElement('div');
 			rowHeader.className = 'copilot-prototype-coin-grid-row-header';
-			rowHeader.textContent = state;
+			rowHeader.textContent = state.replace('Reached', 'Exhausted').replace('Overage', 'Runover').replace('Session', 'Five-Hour');
 			grid.appendChild(rowHeader);
 
 			// Grid cells: unlabeled buttons (skip excluded intersections)
@@ -593,6 +602,19 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 						this._autoAdvanceStates = undefined;
 						this.setActiveCell(sku, state);
 					}));
+					// Add red button for Pro/Pro+ No O exhausted states
+					if (sku === 'Pro/Pro+ No O' && (state === 'Session Reached' || state === 'Weekly Reached')) {
+						const redBtn = disposables.add(new Button(cell, {
+							...defaultButtonStyles,
+							secondary: true,
+						}));
+						redBtn.label = '';
+						redBtn.element.classList.add('red');
+						disposables.add(redBtn.onDidClick(() => {
+							this._autoAdvanceStates = undefined;
+							this.setActiveCell(sku, state);
+						}));
+					}
 				}
 				grid.appendChild(cell);
 			}
@@ -682,13 +704,13 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 
 		// Session Limit
 		if (state === 'Session Approached') {
-			this.createGauge(content, localize('sessionUsed90', "90% Used"), 90, localize('sessionResetBold', "**Session Limit** Resets today at 10:00am"), false, 'warning');
+			this.createGauge(content, localize('sessionUsed90', "90% Used"), 90, localize('sessionResetBold', "**Five-Hour Limit** resets today at 10:00am"), false, 'warning');
 			const warning = append(content, $('div.copilot-prototype-dashboard-warning'));
 			const warningIcon = append(warning, $('span.copilot-prototype-dashboard-warning-icon'));
 			warningIcon.append(...renderLabelWithIcons('$(warning)'));
 			const warningBody = append(warning, $('span.copilot-prototype-dashboard-warning-text'));
 			if (isPro) {
-				warningBody.appendChild(mainWindow.document.createTextNode(localize('sessionApproachWarningPro', "Copilot will pause at the limit. Upgrade or configure overages to continue. ")));
+				warningBody.appendChild(mainWindow.document.createTextNode(localize('sessionApproachWarningPro', "Copilot will pause at the limit. Upgrade or configure budget to continue. ")));
 			} else {
 				warningBody.appendChild(mainWindow.document.createTextNode(localize('sessionApproachWarning', "Copilot will pause when the limit is reached. ")));
 			}
@@ -697,35 +719,35 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 			learnMore.tabIndex = 0;
 			learnMore.role = 'link';
 		} else if (state === 'Session Reached') {
-			this.createGauge(content, localize('sessionUsed100', "100% Used"), 100, localize('sessionResetBoldReached', "**Session Limit** Resets today at 10:00am"), false, 'error');
+			this.createGauge(content, localize('sessionUsed100', "100% Used"), 100, localize('sessionResetBoldReached', "**Five-Hour Limit** resets today at 10:00am"), false, 'error');
 			const warning = append(content, $('div.copilot-prototype-dashboard-warning'));
 			const warningIcon = append(warning, $('span.copilot-prototype-dashboard-warning-icon.error'));
 			warningIcon.append(...renderLabelWithIcons('$(error)'));
 			const warningBody = append(warning, $('span.copilot-prototype-dashboard-warning-text'));
 			if (isPro) {
-				warningBody.appendChild(mainWindow.document.createTextNode(localize('sessionReachedWarningPro', "Paused until limit resets. Upgrade or configure overages to continue. ")));
+				warningBody.appendChild(mainWindow.document.createTextNode(localize('sessionReachedWarningPro', "Copilot is paused until the limit resets. Upgrade or configure budget to continue. ")));
 			} else {
-				warningBody.appendChild(mainWindow.document.createTextNode(localize('sessionReachedWarning', "Paused until the session limit resets. ")));
+				warningBody.appendChild(mainWindow.document.createTextNode(localize('sessionReachedWarning', "Copilot is paused until the Five-Hour Limit resets. ")));
 			}
 			const learnMore = append(warningBody, $('a.copilot-prototype-coin-grid-link'));
 			learnMore.textContent = localize('learnMore', "Learn more");
 			learnMore.tabIndex = 0;
 			learnMore.role = 'link';
 		} else if (state === 'Weekly Reached') {
-			this.createGauge(content, localize('sessionUnavailable', "Unavailable"), 0, localize('sessionResetWithWeekly', "**Session Limit** Resets with Weekly Limit"), true);
+			this.createGauge(content, localize('sessionUsed100', "100% Used"), 100, localize('sessionResetWithWeekly', "**Five-Hour Limit** resets with Weekly Limit"), false, 'error');
 		} else {
-			this.createGauge(content, localize('sessionUsed', "18% Used"), 18, localize('sessionResetBoldDefault', "**Session Limit** Resets today at 10:00am"));
+			this.createGauge(content, localize('sessionUsed', "18% Used"), 18, localize('sessionResetBoldDefault', "**Five-Hour Limit** resets today at 10:00am"));
 		}
 
 		// Weekly Limit
 		if (state === 'Weekly Approached') {
-			this.createGauge(content, localize('weeklyUsed90', "90% Used"), 90, localize('weeklyResetBoldApproached', "**Weekly Limit** Resets on April 6th"), false, 'warning');
+			this.createGauge(content, localize('weeklyUsed90', "90% Used"), 90, localize('weeklyResetBoldApproached', "**Weekly Limit** resets on April 6th"), false, 'warning');
 			const weeklyWarning = append(content, $('div.copilot-prototype-dashboard-warning'));
 			const weeklyWarningIcon = append(weeklyWarning, $('span.copilot-prototype-dashboard-warning-icon'));
 			weeklyWarningIcon.append(...renderLabelWithIcons('$(warning)'));
 			const weeklyWarningBody = append(weeklyWarning, $('span.copilot-prototype-dashboard-warning-text'));
 			if (isPro) {
-				weeklyWarningBody.appendChild(mainWindow.document.createTextNode(localize('weeklyApproachWarningPro', "Copilot will pause at the limit. Upgrade or configure overages to continue. ")));
+				weeklyWarningBody.appendChild(mainWindow.document.createTextNode(localize('weeklyApproachWarningPro', "Copilot will pause at the limit. Upgrade or configure budget to continue. ")));
 			} else {
 				weeklyWarningBody.appendChild(mainWindow.document.createTextNode(localize('weeklyApproachWarning', "Copilot will pause when the limit is reached. ")));
 			}
@@ -734,41 +756,41 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 			weeklyLearnMore.tabIndex = 0;
 			weeklyLearnMore.role = 'link';
 		} else if (state === 'Weekly Reached') {
-			this.createGauge(content, localize('weeklyUsed100', "100% Used"), 100, localize('weeklyResetBoldReached', "**Weekly Limit** Resets on April 6th"), false, 'error');
+			this.createGauge(content, localize('weeklyUsed100', "100% Used"), 100, localize('weeklyResetBoldReached', "**Weekly Limit** resets on April 6th"), false, 'error');
 			const weeklyError = append(content, $('div.copilot-prototype-dashboard-warning'));
 			const weeklyErrorIcon = append(weeklyError, $('span.copilot-prototype-dashboard-warning-icon.error'));
 			weeklyErrorIcon.append(...renderLabelWithIcons('$(error)'));
 			const weeklyErrorBody = append(weeklyError, $('span.copilot-prototype-dashboard-warning-text'));
 			if (isPro) {
-				weeklyErrorBody.appendChild(mainWindow.document.createTextNode(localize('weeklyReachedWarningPro', "Paused until limit resets. Upgrade or configure overages to continue. ")));
+				weeklyErrorBody.appendChild(mainWindow.document.createTextNode(localize('weeklyReachedWarningPro', "Copilot is paused until the limit resets. Upgrade or configure budget to continue. ")));
 			} else {
-				weeklyErrorBody.appendChild(mainWindow.document.createTextNode(localize('weeklyReachedWarning', "Paused until the weekly limit resets. ")));
+				weeklyErrorBody.appendChild(mainWindow.document.createTextNode(localize('weeklyReachedWarning', "Copilot is paused until the Weekly Limit resets. ")));
 			}
 			const weeklyLearnMore2 = append(weeklyErrorBody, $('a.copilot-prototype-coin-grid-link'));
 			weeklyLearnMore2.textContent = localize('learnMore', "Learn more");
 			weeklyLearnMore2.tabIndex = 0;
 			weeklyLearnMore2.role = 'link';
 		} else {
-			this.createGauge(content, localize('weeklyUsed', "56% Used"), 56, localize('weeklyResetBold', "**Weekly Limit** Resets on April 6th"));
+			this.createGauge(content, localize('weeklyUsed', "56% Used"), 56, localize('weeklyResetBold', "**Weekly Limit** resets on April 6th"));
 		}
 
-		// Overage Spend
+		// Runover Budget
 		if (isPro && !hasOverage) {
 			// Pro/Pro+ No O: not configured
-			this.createGauge(content, localize('notConfigured', "Not Configured"), 0, localize('overageSpendBold', "**Overage Spend**"), true);
+			this.createGauge(content, localize('notConfigured', "Not Configured"), 0, localize('runoverBudgetBold', "**Runover Budget**"), true);
 		} else if (!isPro) {
 			// Edu/Free: unavailable
-			this.createGauge(content, localize('unavailable', "Unavailable"), 0, localize('overageDescBold', "**Overage Spend** Available for Pro and Pro+ users"), true);
+			this.createGauge(content, localize('unavailable', "Unavailable"), 0, localize('runoverDescBold', "**Runover Budget** For Pro, Pro+, and Max users"), true);
 		} else {
 			// Pro/Pro+ with overage
-			this.createGauge(content, localize('overageConfigured', "Configured"), 0, localize('overageSpendBold', "**Overage Spend**"));
+			this.createGauge(content, localize('overageConfigured', "Configured"), 0, localize('runoverBudgetBold', "**Runover Budget**"));
 		}
 
 		// Action buttons — SKU-aware
 		const actions = append(content, $('div.copilot-prototype-dashboard-actions'));
 		if (isPro && !hasOverage) {
 			const configOverageBtn = disposables.add(new Button(actions, { ...defaultButtonStyles, secondary: true }));
-			configOverageBtn.label = localize('configureOverage', "Configure Overage");
+			configOverageBtn.label = localize('configureBudget', "Configure Budget");
 			const upgradeLimitsBtn = disposables.add(new Button(actions, { ...defaultButtonStyles, secondary: true }));
 			upgradeLimitsBtn.label = localize('upgrade', "Upgrade");
 			upgradeLimitsBtn.enabled = false;
@@ -777,76 +799,76 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 			upgradeBtn.label = localize('upgrade', "Upgrade");
 		} else {
 			const configBudgetBtn = disposables.add(new Button(actions, { ...defaultButtonStyles, secondary: true }));
-			configBudgetBtn.label = localize('configureOverageBudget', "Configure Overage Budget");
+			configBudgetBtn.label = localize('configureBudget', "Configure Budget");
 		}
 	}
 
 	private renderProOverageCopilotTab(content: HTMLElement, disposables: DisposableStore, state: string): void {
 		const isOverageInUse = state === 'Session Reached' || state === 'Weekly Reached' || state === 'Overage Approached' || state === 'Overage Reached';
 
-		// Session Limit
+		// Five-Hour Limit
 		if (state === 'Session Approached') {
-			this.createGauge(content, localize('sessionUsed90', "90% Used"), 90, localize('sessionResetBoldApproached', "**Session Limit.** Resets today at 10:00am."));
-			this.createInfoMessage(content, localize('proSessionApproachInfo', "Once session limit is reached, you will use overage spend until limit resets."));
+			this.createGauge(content, localize('sessionUsed90', "90% Used"), 90, localize('sessionResetBoldApproached', "**Five-Hour Limit** resets today at 10:00am"));
+			this.createInfoMessage(content, localize('proSessionApproachInfo', "Once Five-Hour Limit is reached, your Runover Budget will be used until it resets."));
 		} else if (state === 'Session Reached') {
 			// Gray out — overage has kicked in
-			this.createGauge(content, localize('sessionUsed100', "100% Used"), 100, localize('proSessionResetBoldReached', "**Session Limit.** Resets today at 10:00am."), true);
-			this.createInfoMessage(content, localize('proSessionReachedInfo', "Using overage budget until Session limit resets."));
+			this.createGauge(content, localize('sessionUsed100', "100% Used"), 100, localize('proSessionResetBoldReached', "**Five-Hour Limit** resets today at 10:00am"), true);
+			this.createInfoMessage(content, localize('proSessionReachedInfo', "Using Runover Budget until Five-Hour Limit resets."));
 		} else if (state === 'Weekly Reached' || state === 'Overage Approached' || state === 'Overage Reached') {
-			// Gray out — weekly (and therefore session) limit hit
-			this.createGauge(content, localize('sessionUnavailable', "Unavailable"), 0, localize('proSessionResetWithWeekly', "**Session Limit.** Resets with Weekly Limit"), true);
+			// Both session and weekly limits exhaust together
+			this.createGauge(content, localize('sessionUsed100', "100% Used"), 100, localize('proSessionResetWithWeekly', "**Five-Hour Limit** resets with Weekly Limit"), true);
 		} else {
-			this.createGauge(content, localize('sessionUsed', "18% Used"), 18, localize('proSessionResetBoldDefault', "**Session Limit** Resets today at 10:00 AM"));
+			this.createGauge(content, localize('sessionUsed', "18% Used"), 18, localize('proSessionResetBoldDefault', "**Five-Hour Limit** resets today at 10:00am"));
 		}
 
 		// Weekly Limit
 		if (state === 'Weekly Approached') {
-			this.createGauge(content, localize('weeklyUsed90', "90% Used"), 90, localize('proWeeklyResetBoldApproached', "**Weekly Limit.** Resets on April 6th."));
-			this.createInfoMessage(content, localize('proWeeklyApproachInfo', "Once weekly limit is reached, you will use overage spend until limit resets."));
+			this.createGauge(content, localize('weeklyUsed90', "90% Used"), 90, localize('proWeeklyResetBoldApproached', "**Weekly Limit** resets on April 6th"));
+			this.createInfoMessage(content, localize('proWeeklyApproachInfo', "Once Weekly Limit is reached, your Runover Budget will be used until it resets."));
 		} else if (state === 'Weekly Reached') {
 			// Gray out — overage has kicked in
-			this.createGauge(content, localize('weeklyUsed100', "100% Used"), 100, localize('proWeeklyResetBoldReached', "**Weekly Limit.** Resets on April 6th."), true);
-			this.createInfoMessage(content, localize('proWeeklyReachedInfo', "Using overage budget until Weely limit resets."));
+			this.createGauge(content, localize('weeklyUsed100', "100% Used"), 100, localize('proWeeklyResetBoldReached', "**Weekly Limit** resets on April 6th"), true);
+			this.createInfoMessage(content, localize('proWeeklyReachedInfo', "Using Runover Budget until Weekly Limit resets."));
 		} else if (state === 'Session Reached' || state === 'Overage Approached' || state === 'Overage Reached') {
 			// Gray out — overage is in use, weekly limit is not counting
-			this.createGauge(content, localize('weeklyUsed100', "100% Used"), 100, localize('proWeeklyResetBoldReached2', "**Weekly Limit.** Resets on April 6th."), true);
+			this.createGauge(content, localize('weeklyUsed100', "100% Used"), 100, localize('proWeeklyResetBoldReached2', "**Weekly Limit** resets on April 6th"), true);
 		} else {
-			this.createGauge(content, localize('weeklyUsed', "56% Used"), 56, localize('weeklyResetBold', "**Weekly Limit** Resets on April 6th"));
+			this.createGauge(content, localize('weeklyUsed', "56% Used"), 56, localize('weeklyResetBold', "**Weekly Limit** resets on April 6th"));
 		}
 
-		// Overage Spend — with "In use" / "Not in use" status
+		// Runover Budget — with "In use" / "Not in use" status
 		if (state === 'Overage Reached') {
-			this.createGauge(content, localize('overageUsed100', "100% Used"), 100, localize('overageResetBold', "**Overage Spend** Resets on May 1st"), false, 'error', localize('inUse', "In use"));
+			this.createGauge(content, localize('overageUsed100', "100% Used"), 100, localize('runoverResetBold', "**Runover Budget** resets on May 1st"), false, 'error', localize('inUse', "In use"));
 			const warning = append(content, $('div.copilot-prototype-dashboard-warning'));
 			const warningIcon = append(warning, $('span.copilot-prototype-dashboard-warning-icon'));
 			warningIcon.append(...renderLabelWithIcons('$(warning)'));
 			const warningBody = append(warning, $('span.copilot-prototype-dashboard-warning-text'));
-			warningBody.appendChild(mainWindow.document.createTextNode(localize('proOverageReachedWarning', "Copilot usage is paused until Overage budget is increased or limits reset. ")));
+			warningBody.appendChild(mainWindow.document.createTextNode(localize('proOverageReachedWarning', "Copilot is paused until your runover budget is increased or limits reset. ")));
 			const learnMore = append(warningBody, $('a.copilot-prototype-coin-grid-link'));
 			learnMore.textContent = localize('learnMore', "Learn more");
 			learnMore.tabIndex = 0;
 			learnMore.role = 'link';
 		} else if (state === 'Overage Approached') {
-			this.createGauge(content, localize('overageUsed90', "90% Used"), 90, localize('overageResetBold', "**Overage Spend** Resets on May 1st"), false, 'warning', localize('inUse', "In use"));
+			this.createGauge(content, localize('overageUsed90', "90% Used"), 90, localize('runoverResetBold', "**Runover Budget** resets on May 1st"), false, 'warning', localize('inUse', "In use"));
 			const warning = append(content, $('div.copilot-prototype-dashboard-warning'));
 			const warningIcon = append(warning, $('span.copilot-prototype-dashboard-warning-icon'));
 			warningIcon.append(...renderLabelWithIcons('$(warning)'));
 			const warningBody = append(warning, $('span.copilot-prototype-dashboard-warning-text'));
-			warningBody.appendChild(mainWindow.document.createTextNode(localize('proOverageApproachWarning', "Once overage spend is reached, Copilot usage will pause until overage limit resets. ")));
+			warningBody.appendChild(mainWindow.document.createTextNode(localize('proOverageApproachWarning', "Once your runover budget runs out, Copilot will pause until it resets. ")));
 			const learnMore = append(warningBody, $('a.copilot-prototype-coin-grid-link'));
 			learnMore.textContent = localize('learnMore', "Learn more");
 			learnMore.tabIndex = 0;
 			learnMore.role = 'link';
 		} else if (isOverageInUse) {
-			this.createGauge(content, localize('overageUsed22', "22% Used"), 22, localize('overageResetBold', "**Overage Spend** Resets on May 1st"), false, undefined, localize('inUse', "In use"));
+			this.createGauge(content, localize('overageUsed22', "22% Used"), 22, localize('runoverResetBold', "**Runover Budget** resets on May 1st"), false, undefined, localize('inUse', "In use"));
 		} else {
-			this.createGauge(content, localize('overageUsed22', "22% Used"), 22, localize('overageResetBold', "**Overage Spend** Resets on May 1st"), true, undefined, localize('notInUse', "Not in use"));
+			this.createGauge(content, localize('overageUsed22', "22% Used"), 22, localize('runoverResetBold', "**Runover Budget** resets on May 1st"), true, undefined, localize('notInUse', "Not in use"));
 		}
 
 		// Action buttons
 		const actions = append(content, $('div.copilot-prototype-dashboard-actions'));
 		const editOverageBtn = disposables.add(new Button(actions, { ...defaultButtonStyles, secondary: true }));
-		editOverageBtn.label = localize('editOverage', "Edit Overage");
+		editOverageBtn.label = localize('editBudget', "Edit Budget");
 		const upgradeLimitsBtn = disposables.add(new Button(actions, { ...defaultButtonStyles, secondary: true }));
 		upgradeLimitsBtn.label = localize('upgrade', "Upgrade");
 	}
@@ -864,8 +886,14 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 	}
 
 	private renderInlineTab(content: HTMLElement, disposables: DisposableStore, _sku: string, _state: string): void {
-		// Inline Suggestions gauge
-		this.createGauge(content, localize('inlineUsed', "12% Used"), 12, localize('inlineResetBold', "**Inline Suggestions** Resets on May 1st"));
+		// Inline Suggestions gauge — non-free plans have no limit
+		if (_sku === 'Edu/Free') {
+			this.createGauge(content, localize('inlineUsed', "12% Used"), 12, localize('inlineResetBold', "**Inline Suggestions** Resets on May 1st"));
+		} else if (_sku === 'Ent/Bus ULB' || _sku === 'Ent/Bus') {
+			this.createGauge(content, localize('inlineIncluded', "Included"), 0, localize('inlineNoLimitOrg', "**Inline Suggestions** No limit set by your organization"), true);
+		} else {
+			this.createGauge(content, localize('inlineIncluded', "Included"), 0, localize('inlineNoLimitSub', "**Inline Suggestions** No limit set by your subscription"), true);
+		}
 
 		// Settings section
 		const settings = append(content, $('div.copilot-prototype-dashboard-settings'));
