@@ -100,6 +100,7 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 	private _bannerElement: HTMLElement | undefined;
 	private _bannerDismissed = false;
 	private _warningCardElement: HTMLElement | undefined;
+	private _microTransaction = false;
 	private _autoAdvanceStates: string[] | undefined;
 	private _autoAdvanceIndex = 0;
 
@@ -423,16 +424,30 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 
 		const btnContainer = mainWindow.document.createElement('div');
 		btnContainer.className = 'copilot-prototype-inline-warning-actions';
-		const btn = mainWindow.document.createElement('button');
-		btn.className = 'copilot-prototype-inline-warning-btn';
-		btn.textContent = content.buttonLabel;
-		btnContainer.appendChild(btn);
 
-		if (content.secondaryButtonLabel) {
-			const secondaryBtn = mainWindow.document.createElement('button');
-			secondaryBtn.className = 'copilot-prototype-inline-warning-btn secondary';
-			secondaryBtn.textContent = content.secondaryButtonLabel;
-			btnContainer.appendChild(secondaryBtn);
+		if (content.budgetButtons) {
+			for (let i = 0; i < content.budgetButtons.length; i++) {
+				const budgetBtn = mainWindow.document.createElement('button');
+				budgetBtn.className = i === 0 ? 'copilot-prototype-inline-warning-btn' : 'copilot-prototype-inline-warning-btn budget';
+				budgetBtn.textContent = content.budgetButtons[i];
+				btnContainer.appendChild(budgetBtn);
+			}
+			const otherBtn = mainWindow.document.createElement('button');
+			otherBtn.className = 'copilot-prototype-inline-warning-btn secondary';
+			otherBtn.textContent = content.buttonLabel;
+			btnContainer.appendChild(otherBtn);
+		} else {
+			const btn = mainWindow.document.createElement('button');
+			btn.className = 'copilot-prototype-inline-warning-btn';
+			btn.textContent = content.buttonLabel;
+			btnContainer.appendChild(btn);
+
+			if (content.secondaryButtonLabel) {
+				const secondaryBtn = mainWindow.document.createElement('button');
+				secondaryBtn.className = 'copilot-prototype-inline-warning-btn secondary';
+				secondaryBtn.textContent = content.secondaryButtonLabel;
+				btnContainer.appendChild(secondaryBtn);
+			}
 		}
 
 		card.append(header, desc, btnContainer);
@@ -441,7 +456,7 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 		protoContainer.style.display = '';
 	}
 
-	private getInlineWarningContent(): { title: string; description: string; buttonLabel: string; secondaryButtonLabel?: string } | undefined {
+	private getInlineWarningContent(): { title: string; description: string; buttonLabel: string; secondaryButtonLabel?: string; budgetButtons?: string[] } | undefined {
 		const sku = this._activeSku;
 		const state = this._activeState;
 
@@ -454,6 +469,14 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 				};
 			}
 			if (sku === 'Pro/Pro+ No O') {
+				if (this._microTransaction) {
+					return {
+						title: localize('inlineSessionReachedTitle', "You've reached your Five-Hour Limit."),
+						description: localize('inlineSessionReachedDescProNoOMicro', "Add a Runover Budget to keep using Copilot until your limit resets."),
+						budgetButtons: ['+$5', '+$10', '+$20'],
+						buttonLabel: localize('otherBudget', "Other"),
+					};
+				}
 				return {
 					title: localize('inlineSessionReachedTitle', "You've reached your Five-Hour Limit."),
 					description: localize('inlineSessionReachedDescProNoO', "Resets at 10:00am. Configure a Runover Budget or upgrade to increase your limits."),
@@ -477,6 +500,14 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 				};
 			}
 			if (sku === 'Pro/Pro+ No O') {
+				if (this._microTransaction) {
+					return {
+						title: localize('inlineWeeklyReachedTitle', "You've reached your Weekly Limit."),
+						description: localize('inlineWeeklyReachedDescProNoOMicro', "Add a Runover Budget to keep using Copilot until your limit resets."),
+						budgetButtons: ['+$5', '+$10', '+$20'],
+						buttonLabel: localize('otherBudget', "Other"),
+					};
+				}
 				return {
 					title: localize('inlineWeeklyReachedTitle', "You've reached your Weekly Limit."),
 					description: localize('inlineWeeklyReachedDescProNoO', "Resets on April 6th. Configure a Runover Budget or upgrade to increase your limits."),
@@ -492,6 +523,14 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 		}
 
 		if (state === 'Overage Reached') {
+			if (this._microTransaction) {
+				return {
+					title: localize('inlineOverageReachedTitle', "You've reached your Runover Budget."),
+					description: localize('inlineOverageReachedDescMicro', "Add more to your Runover Budget to keep using Copilot."),
+					budgetButtons: ['+$5', '+$10', '+$20'],
+					buttonLabel: localize('otherBudget', "Other"),
+				};
+			}
 			return {
 				title: localize('inlineOverageReachedTitle', "You've reached your Runover Budget."),
 				description: localize('inlineOverageReachedDesc', "Copilot is paused until your Runover Budget is increased or limits reset. Upgrade to increase your limit."),
@@ -600,6 +639,7 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 					btn.label = '';
 					disposables.add(btn.onDidClick(() => {
 						this._autoAdvanceStates = undefined;
+						this._microTransaction = false;
 						this.setActiveCell(sku, state);
 					}));
 					// Add red button for Pro/Pro+ No O exhausted states
@@ -612,6 +652,21 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 						redBtn.element.classList.add('red');
 						disposables.add(redBtn.onDidClick(() => {
 							this._autoAdvanceStates = undefined;
+							this._microTransaction = true;
+							this.setActiveCell(sku, state);
+						}));
+					}
+					// Add red button for Pro/Pro+ and Max overage exhausted
+					if ((sku === 'Pro/Pro+' || sku === 'Max') && state === 'Overage Reached') {
+						const redBtn = disposables.add(new Button(cell, {
+							...defaultButtonStyles,
+							secondary: true,
+						}));
+						redBtn.label = '';
+						redBtn.element.classList.add('red');
+						disposables.add(redBtn.onDidClick(() => {
+							this._autoAdvanceStates = undefined;
+							this._microTransaction = true;
 							this.setActiveCell(sku, state);
 						}));
 					}
@@ -775,7 +830,10 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 		}
 
 		// Runover Budget
-		if (isPro && !hasOverage) {
+		if (isPro && !hasOverage && this._microTransaction && (state === 'Session Reached' || state === 'Weekly Reached')) {
+			// Microtransaction: show $0/$0 undimmed
+			this.createGauge(content, localize('zeroBudget', "$0 / $0"), 0, localize('runoverBudgetBold', "**Runover Budget**"));
+		} else if (isPro && !hasOverage) {
 			// Pro/Pro+ No O: not configured
 			this.createGauge(content, localize('notConfigured', "Not Configured"), 0, localize('runoverBudgetBold', "**Runover Budget**"), true);
 		} else if (!isPro) {
@@ -788,7 +846,17 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 
 		// Action buttons — SKU-aware
 		const actions = append(content, $('div.copilot-prototype-dashboard-actions'));
-		if (isPro && !hasOverage) {
+		if (isPro && !hasOverage && this._microTransaction && (state === 'Session Reached' || state === 'Weekly Reached')) {
+			// Microtransaction: quick budget buttons
+			const fiveBtn = disposables.add(new Button(actions, { ...defaultButtonStyles }));
+			fiveBtn.label = '+$5';
+			for (const amount of ['+$10', '+$20']) {
+				const budgetBtn = disposables.add(new Button(actions, { ...defaultButtonStyles, secondary: true }));
+				budgetBtn.label = amount;
+			}
+			const otherBtn = disposables.add(new Button(actions, { ...defaultButtonStyles, secondary: true }));
+			otherBtn.label = localize('otherBudget', "Other");
+		} else if (isPro && !hasOverage) {
 			const configOverageBtn = disposables.add(new Button(actions, { ...defaultButtonStyles, secondary: true }));
 			configOverageBtn.label = localize('configureBudget', "Configure Budget");
 			const upgradeLimitsBtn = disposables.add(new Button(actions, { ...defaultButtonStyles, secondary: true }));
@@ -867,10 +935,22 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 
 		// Action buttons
 		const actions = append(content, $('div.copilot-prototype-dashboard-actions'));
-		const editOverageBtn = disposables.add(new Button(actions, { ...defaultButtonStyles, secondary: true }));
-		editOverageBtn.label = localize('editBudget', "Edit Budget");
-		const upgradeLimitsBtn = disposables.add(new Button(actions, { ...defaultButtonStyles, secondary: true }));
-		upgradeLimitsBtn.label = localize('upgrade', "Upgrade");
+		if (this._microTransaction && state === 'Overage Reached') {
+			// Microtransaction: quick budget buttons
+			const fiveBtn = disposables.add(new Button(actions, { ...defaultButtonStyles }));
+			fiveBtn.label = '+$5';
+			for (const amount of ['+$10', '+$20']) {
+				const budgetBtn = disposables.add(new Button(actions, { ...defaultButtonStyles, secondary: true }));
+				budgetBtn.label = amount;
+			}
+			const otherBtn = disposables.add(new Button(actions, { ...defaultButtonStyles, secondary: true }));
+			otherBtn.label = localize('otherBudget', "Other");
+		} else {
+			const editOverageBtn = disposables.add(new Button(actions, { ...defaultButtonStyles, secondary: true }));
+			editOverageBtn.label = localize('editBudget', "Edit Budget");
+			const upgradeLimitsBtn = disposables.add(new Button(actions, { ...defaultButtonStyles, secondary: true }));
+			upgradeLimitsBtn.label = localize('upgrade', "Upgrade");
+		}
 	}
 
 	private createInfoMessage(container: HTMLElement, message: string): void {

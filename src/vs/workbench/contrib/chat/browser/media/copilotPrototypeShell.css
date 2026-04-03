@@ -172,6 +172,7 @@
 	flex-direction: column;
 	gap: 10px;
 	padding: 8px;
+	overflow-x: auto;
 }
 
 .copilot-prototype-coin-widget-title {
@@ -671,4 +672,38 @@
 
 .copilot-prototype-inline-warning-btn.secondary:hover {
 	background-color: var(--vscode-button-secondaryHoverBackground);
+}
+
+.copilot-prototype-inline-warning-btn.budget {
+	background-color: var(--vscode-button-secondaryBackground);
+	color: var(--vscode-button-secondaryForeground);
+	font-weight: 600;
+}
+
+.copilot-prototype-inline-warning-btn.budget:hover {
+	background-color: var(--vscode-button-secondaryHoverBackground);
+}
+
+.copilot-prototype-inline-warning-link {
+	font-size: 12px;
+	color: var(--vscode-textLink-foreground);
+	cursor: pointer;
+	align-self: center;
+}
+
+.copilot-prototype-inline-warning-link:hover {
+	color: var(--vscode-textLink-activeForeground);
+	text-decoration: underline;
+}
+
+.copilot-prototype-dashboard-link {
+	font-size: 12px;
+	color: var(--vscode-textLink-foreground);
+	cursor: pointer;
+	align-self: center;
+}
+
+.copilot-prototype-dashboard-link:hover {
+	color: var(--vscode-textLink-activeForeground);
+	text-decoration: underline;
 }
