@@ -535,6 +535,50 @@ suite('Agent Summarization', () => {
 			&& successMeta!.outcome !== 'success';
 		expect(shouldSkipAfterSuccess).toBe(false);
 	});
+
+	test('summarization prompt renders additional instructions from summarizationInstructions prop', async () => {
+		const { instaService, endpoint, promptContext } = createSummarizationTestContext();
+		const propsInfo = instaService.createInstance(SummarizedConversationHistoryPropsBuilder).getProps({
+			priority: 1,
+			endpoint,
+			location: ChatLocation.Panel,
+			promptContext,
+			maxToolResultLength: Infinity,
+			summarizationInstructions: 'Please preserve all file paths and line numbers',
+		});
+		const renderer = PromptRenderer.create(instaService, endpoint, ConversationHistorySummarizationPrompt, {
+			...propsInfo.props,
+			simpleMode: false,
+		});
+		const r = await renderer.render();
+		const systemContent = r.messages
+			.filter(m => m.role === Raw.ChatRole.System)
+			.map(m => messageToMarkdown(m))
+			.join('\n');
+		expect(systemContent).toContain('Additional instructions from the user:');
+		expect(systemContent).toContain('Please preserve all file paths and line numbers');
+	});
+
+	test('summarization prompt does not include additional instructions section when summarizationInstructions is undefined', async () => {
+		const { instaService, endpoint, promptContext } = createSummarizationTestContext();
+		const propsInfo = instaService.createInstance(SummarizedConversationHistoryPropsBuilder).getProps({
+			priority: 1,
+			endpoint,
+			location: ChatLocation.Panel,
+			promptContext,
+			maxToolResultLength: Infinity,
+		});
+		const renderer = PromptRenderer.create(instaService, endpoint, ConversationHistorySummarizationPrompt, {
+			...propsInfo.props,
+			simpleMode: false,
+		});
+		const r = await renderer.render();
+		const systemContent = r.messages
+			.filter(m => m.role === Raw.ChatRole.System)
+			.map(m => messageToMarkdown(m))
+			.join('\n');
+		expect(systemContent).not.toContain('Additional instructions from the user:');
+	});
 });
 
 suite('extractInlineSummary', () => {

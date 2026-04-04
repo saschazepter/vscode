@@ -8,7 +8,7 @@ import { BasePromptElementProps, PrioritizedList, PromptElement, PromptMetadata,
 import { BudgetExceededError } from '@vscode/prompt-tsx/dist/base/materialized';
 import { ChatMessage } from '@vscode/prompt-tsx/dist/base/output/rawTypes';
 import type { ChatResponsePart, ChatResultPromptTokenDetail, LanguageModelToolInformation, NotebookDocument, Progress } from 'vscode';
-import { IChatHookService, PreCompactHookInput } from '../../../../platform/chat/common/chatHookService';
+import { IChatHookService, PreCompactHookInput, PreCompactHookOutput } from '../../../../platform/chat/common/chatHookService';
 import { ChatFetchResponseType, ChatLocation, ChatResponse, FetchSuccess } from '../../../../platform/chat/common/commonTypes';
 import { IHistoricalTurn, ISessionTranscriptService } from '../../../../platform/chat/common/sessionTranscriptService';
 import { ConfigKey, IConfigurationService } from '../../../../platform/configuration/common/configurationService';
@@ -586,12 +586,24 @@ class ConversationHistorySummarizer {
 
 	async summarizeHistory(): Promise<{ summary: string; toolCallRoundId: string; thinking?: ThinkingData; usage?: APIUsage; promptTokenDetails?: readonly ChatResultPromptTokenDetail[]; model?: string; summarizationMode?: string; numRounds?: number; numRoundsSinceLastSummarization?: number; durationMs?: number }> {
 		// Execute pre-compact hook before summarization to allow hooks to archive transcripts or perform cleanup
-		await this.executePreCompactHook();
+		// and optionally provide additional context for the summarization
+		const hookAdditionalContext = await this.executePreCompactHook();
 
 		// Just a function for test to create props and call this
 		const propsInfo = this.instantiationService.createInstance(SummarizedConversationHistoryPropsBuilder).getProps(this.props);
 
-		const summaryPromise = this.getSummaryWithFallback(propsInfo);
+		// If hook returned additional context, merge it into summarization instructions
+		const effectivePropsInfo = hookAdditionalContext ? {
+			...propsInfo,
+			props: {
+				...propsInfo.props,
+				summarizationInstructions: propsInfo.props.summarizationInstructions
+					? `${propsInfo.props.summarizationInstructions}\n${hookAdditionalContext}`
+					: hookAdditionalContext,
+			}
+		} : propsInfo;
+
+		const summaryPromise = this.getSummaryWithFallback(effectivePropsInfo);
 		this.progress?.report(new ChatResponseProgressPart2(l10n.t('Compacting conversation...'), async () => {
 			try {
 				await summaryPromise;
@@ -639,12 +651,15 @@ class ConversationHistorySummarizer {
 	/**
 	 * Executes the PreCompact hook before summarization starts.
 	 * This gives hook scripts a chance to archive the transcript or perform cleanup
-	 * before the conversation is compacted.
+	 * before the conversation is compacted, and optionally provide additional context
+	 * to include in the summarization instructions.
+	 *
+	 * @returns Additional context from hooks to merge into summarization instructions, or undefined.
 	 */
-	private async executePreCompactHook(): Promise<void> {
+	private async executePreCompactHook(): Promise<string | undefined> {
 		const hooks = this.props.promptContext.request?.hooks;
 		if (!hooks) {
-			return;
+			return undefined;
 		}
 
 		try {
@@ -652,14 +667,23 @@ class ConversationHistorySummarizer {
 				trigger: 'auto',
 			} satisfies PreCompactHookInput, this.props.promptContext.conversation?.sessionId, this.token ?? CancellationToken.None);
 
+			const allAdditionalContext: string[] = [];
 			for (const result of results) {
 				if (result.resultKind === 'error') {
 					const errorMessage = typeof result.output === 'string' ? result.output : 'Unknown error';
 					this.logService.error(`[ConversationHistorySummarizer] PreCompact hook error: ${errorMessage}`);
+				} else if (result.resultKind === 'success' && result.output && typeof result.output === 'object') {
+					const output = result.output as PreCompactHookOutput;
+					if (output.hookSpecificOutput?.additionalContext) {
+						allAdditionalContext.push(output.hookSpecificOutput.additionalContext);
+					}
 				}
 			}
+
+			return allAdditionalContext.length > 0 ? allAdditionalContext.join('\n') : undefined;
 		} catch (error) {
 			this.logService.error('[ConversationHistorySummarizer] Error executing PreCompact hook', error);
+			return undefined;
 		}
 	}
 
