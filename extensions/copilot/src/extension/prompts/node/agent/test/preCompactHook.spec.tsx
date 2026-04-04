@@ -157,7 +157,8 @@ describe('PreCompact Hook Integration', () => {
 				.filter(m => m.role === Raw.ChatRole.System)
 				.map(m => messageToMarkdown(m))
 				.join('\n');
-			expect(allSystemContent).toContain('Additional instructions from the user:');
+			expect(allSystemContent).toContain('Additional summarization instructions:');
+			expect(allSystemContent).toContain('Additional instructions from hooks:');
 			expect(allSystemContent).toContain('Focus on preserving database query details');
 		});
 
@@ -185,6 +186,7 @@ describe('PreCompact Hook Integration', () => {
 				.filter(m => m.role === Raw.ChatRole.System)
 				.map(m => messageToMarkdown(m))
 				.join('\n');
+			expect(allSystemContent).toContain('Additional instructions from hooks:');
 			expect(allSystemContent).toContain('Keep file paths');
 			expect(allSystemContent).toContain('Remember error messages');
 		});
@@ -205,7 +207,7 @@ describe('PreCompact Hook Integration', () => {
 				.filter(m => m.role === Raw.ChatRole.System)
 				.map(m => messageToMarkdown(m))
 				.join('\n');
-			expect(allSystemContent).not.toContain('Additional instructions from the user:');
+			expect(allSystemContent).not.toContain('Additional summarization instructions:');
 		});
 	});
 
@@ -236,7 +238,7 @@ describe('PreCompact Hook Integration', () => {
 				.filter(m => m.role === Raw.ChatRole.System)
 				.map(m => messageToMarkdown(m))
 				.join('\n');
-			expect(allSystemContent).not.toContain('Additional instructions from the user:');
+			expect(allSystemContent).not.toContain('Additional summarization instructions:');
 		});
 	});
 });

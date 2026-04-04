@@ -165,7 +165,7 @@ export class ConversationHistorySummarizationPrompt extends PromptElement<Conver
 					{SummaryPrompt}
 					{this.props.summarizationInstructions && <>
 						<br /><br />
-						## Additional instructions from the user:<br />
+						## Additional summarization instructions:<br />
 						{this.props.summarizationInstructions}
 					</>}
 				</SystemMessage>
@@ -585,21 +585,27 @@ class ConversationHistorySummarizer {
 	) { }
 
 	async summarizeHistory(): Promise<{ summary: string; toolCallRoundId: string; thinking?: ThinkingData; usage?: APIUsage; promptTokenDetails?: readonly ChatResultPromptTokenDetail[]; model?: string; summarizationMode?: string; numRounds?: number; numRoundsSinceLastSummarization?: number; durationMs?: number }> {
-		// Execute pre-compact hook before summarization to allow hooks to archive transcripts or perform cleanup
-		// and optionally provide additional context for the summarization
+		// Execute pre-compact hook to allow hooks to archive transcripts or provide additional context
 		const hookAdditionalContext = await this.executePreCompactHook();
 
 		// Just a function for test to create props and call this
 		const propsInfo = this.instantiationService.createInstance(SummarizedConversationHistoryPropsBuilder).getProps(this.props);
 
-		// If hook returned additional context, merge it into summarization instructions
-		const effectivePropsInfo = hookAdditionalContext ? {
+		// Merge hook context into summarization instructions, labeling sources separately
+		const effectiveSummarizationInstructions = hookAdditionalContext
+			? [
+				propsInfo.props.summarizationInstructions
+					? `User-provided additional instructions:\n${propsInfo.props.summarizationInstructions}`
+					: undefined,
+				`Additional instructions from hooks:\n${hookAdditionalContext}`,
+			].filter(value => !!value).join('\n\n')
+			: propsInfo.props.summarizationInstructions;
+
+		const effectivePropsInfo = effectiveSummarizationInstructions !== propsInfo.props.summarizationInstructions ? {
 			...propsInfo,
 			props: {
 				...propsInfo.props,
-				summarizationInstructions: propsInfo.props.summarizationInstructions
-					? `${propsInfo.props.summarizationInstructions}\n${hookAdditionalContext}`
-					: hookAdditionalContext,
+				summarizationInstructions: effectiveSummarizationInstructions,
 			}
 		} : propsInfo;
 

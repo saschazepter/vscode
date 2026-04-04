@@ -555,7 +555,7 @@ suite('Agent Summarization', () => {
 			.filter(m => m.role === Raw.ChatRole.System)
 			.map(m => messageToMarkdown(m))
 			.join('\n');
-		expect(systemContent).toContain('Additional instructions from the user:');
+		expect(systemContent).toContain('Additional summarization instructions:');
 		expect(systemContent).toContain('Please preserve all file paths and line numbers');
 	});
 
@@ -577,7 +577,7 @@ suite('Agent Summarization', () => {
 			.filter(m => m.role === Raw.ChatRole.System)
 			.map(m => messageToMarkdown(m))
 			.join('\n');
-		expect(systemContent).not.toContain('Additional instructions from the user:');
+		expect(systemContent).not.toContain('Additional summarization instructions:');
 	});
 });
 
