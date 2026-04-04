@@ -183,11 +183,12 @@ abstract class SubmitAction extends Action2 {
 
 const requestInProgressOrPendingToolCall = ContextKeyExpr.or(
 	ChatContextKeys.requestInProgress,
+	ChatContextKeys.requestNeedsInput,
 	ChatContextKeys.Editing.hasToolConfirmation,
 	ChatContextKeys.Editing.hasQuestionCarousel,
 );
 const requestInProgressWithoutInput = ContextKeyExpr.and(
-	ChatContextKeys.requestInProgress,
+	ContextKeyExpr.or(ChatContextKeys.requestInProgress, ChatContextKeys.requestNeedsInput),
 	ChatContextKeys.inputHasText.negate(),
 );
 const pendingToolCall = ContextKeyExpr.or(
