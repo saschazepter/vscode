@@ -168,6 +168,14 @@ function startRemoteAgentHost(
 				checkForOutput();
 			});
 
+			stream.on('error', (streamErr: Error) => {
+				if (!resolved) {
+					resolved = true;
+					clearTimeout(timeout);
+					reject(streamErr);
+				}
+			});
+
 			stream.on('close', (code: number) => {
 				if (!resolved) {
 					resolved = true;

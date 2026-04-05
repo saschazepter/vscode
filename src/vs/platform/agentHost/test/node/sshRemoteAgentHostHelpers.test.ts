@@ -478,5 +478,19 @@ suite('SSH Remote Agent Host Helpers', () => {
 			assert.ok(!commands.some(c => c.match(/^kill \d/)));
 			assert.ok(commands.some(c => c.includes('rm -f')));
 		});
+
+		test('kills process for stable quality', async () => {
+			const state = { pid: 1234, port: 8080, connectionToken: null };
+			const commands: string[] = [];
+			const exec: ISshExec = async (command: string) => {
+				commands.push(command);
+				if (command.includes('cat')) {
+					return { stdout: JSON.stringify(state), stderr: '', code: 0 };
+				}
+				return { stdout: '', stderr: '', code: 0 };
+			};
+			await cleanupRemoteAgentHost(exec, logService, 'stable');
+			assert.ok(commands.some(c => c.includes('kill 1234')));
+		});
 	});
 });

@@ -56,7 +56,6 @@ class MockSSHClient {
 		queueMicrotask(() => {
 			// Fire data events
 			if (response.stdout) {
-				const dataHandlers: Array<(data: Buffer) => void> = [];
 				const origOn = channel.on.bind(channel);
 				// Re-bind on to capture data handler
 				let dataHandler: ((data: Buffer) => void) | undefined;
@@ -64,7 +63,6 @@ class MockSSHClient {
 				channel.on = ((event: string, listener: (...args: unknown[]) => void) => {
 					if (event === 'data') {
 						dataHandler = listener as (data: Buffer) => void;
-						dataHandlers.push(dataHandler);
 					} else if (event === 'close') {
 						closeHandler = listener as (code: number) => void;
 					}
@@ -261,8 +259,8 @@ suite('SSHRemoteAgentHostMainService - connect flow', () => {
 			{ stdout: 'Linux\n', code: 0 },       // uname -s
 			{ stdout: 'x86_64\n', code: 0 },      // uname -m
 			{ stdout: '1.0.0\n', code: 0 },       // CLI --version
-			{ stdout: existingState, code: 0 },    // cat state file (found)
-			{ stdout: '', code: 0 },               // kill -0 (PID alive)
+			{ stdout: existingState, code: 0 },   // cat state file (found)
+			{ stdout: '', code: 0 },              // kill -0 (PID alive)
 		];
 
 		const result = await service.connect(makeConfig());
@@ -301,8 +299,8 @@ suite('SSHRemoteAgentHostMainService - connect flow', () => {
 			{ stdout: 'Linux\n', code: 0 },       // uname -s
 			{ stdout: 'x86_64\n', code: 0 },      // uname -m
 			{ stdout: '1.0.0\n', code: 0 },       // CLI --version
-			{ stdout: existingState, code: 0 },    // cat state file (found)
-			{ stdout: '', code: 0 },               // kill -0 (PID alive)
+			{ stdout: existingState, code: 0 },   // cat state file (found)
+			{ stdout: '', code: 0 },              // kill -0 (PID alive)
 			// cleanup: cat state file, kill PID, rm state file
 			{ stdout: existingState, code: 0 },
 			{ stdout: '', code: 0 },
