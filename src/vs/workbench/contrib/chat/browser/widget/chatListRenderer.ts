@@ -1765,7 +1765,7 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 			// Scoped to the current element's templateData to avoid finalizing thinking parts
 			// belonging to other (still-streaming) responses during scroll re-renders.
 			if (context.element.isComplete && !shouldPin) {
-				const elementTemplateData = this.templateDataByRequestId.get(context.element.id);
+				const elementTemplateData = this.getTemplateDataForRequestId(context.element.id);
 				if (elementTemplateData?.renderedParts) {
 					const lastThinking = this.getLastThinkingPart(elementTemplateData.renderedParts);
 					if (lastThinking?.getIsActive()) {
@@ -1782,7 +1782,7 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 			// Note: We don't finalize when non-subagent content arrives because parallel subagents may still be running.
 			// Scoped to the current element to avoid finalizing subagent parts on other responses during scroll re-renders.
 			if (context.element.isComplete && !isSubagentContent) {
-				const elementTemplateData = this.templateDataByRequestId.get(context.element.id);
+				const elementTemplateData = this.getTemplateDataForRequestId(context.element.id);
 				if (elementTemplateData) {
 					this.finalizeAllSubagentParts(elementTemplateData);
 				}
