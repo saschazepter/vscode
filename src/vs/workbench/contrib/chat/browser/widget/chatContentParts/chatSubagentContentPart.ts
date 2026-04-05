@@ -726,6 +726,7 @@ export class ChatSubagentContentPart extends ChatCollapsibleContentPart implemen
 		// Update working spinner label with a new random message
 		if (this.workingSpinnerLabel) {
 			this.workingSpinnerLabel.textContent = this.getRandomWorkingMessage();
+		}
 
 		// Ensure expanded when a tool needing confirmation is appended (e.g. after session switch)
 		if (toolInvocation.kind === 'toolInvocation') {
