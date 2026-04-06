@@ -293,7 +293,7 @@ class NewChatWidget extends Disposable implements IHistoryNavigationWidget {
 			renderWhitespace: 'none',
 			overflowWidgetsDomNode,
 			suggest: {
-				showIcons: false,
+				showIcons: true,
 				showSnippets: false,
 				showWords: true,
 				showStatusBar: false,

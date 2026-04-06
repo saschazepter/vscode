@@ -23,7 +23,8 @@ import { IConfigurationService } from '../../../../platform/configuration/common
 import { CommandsRegistry } from '../../../../platform/commands/common/commands.js';
 import { FileKind, IFileService } from '../../../../platform/files/common/files.js';
 import { ILabelService } from '../../../../platform/label/common/label.js';
-import { ISearchService, getExcludes, ISearchConfiguration, QueryType } from '../../../../workbench/services/search/common/search.js';
+import { ISearchService } from '../../../../workbench/services/search/common/search.js';
+import { searchFilesAndFolders } from '../../../../workbench/contrib/search/browser/searchChatContext.js';
 import { chatSlashCommandBackground, chatSlashCommandForeground } from '../../../../workbench/contrib/chat/common/widget/chatColors.js';
 import { themeColorFromId } from '../../../../base/common/themables.js';
 import { IDecorationOptions } from '../../../../editor/common/editorCommon.js';
@@ -249,25 +250,19 @@ export class VariableCompletionHandler extends Disposable {
 		result: CompletionList,
 		token: CancellationToken,
 	): Promise<void> {
-		const excludePattern = getExcludes(this.configurationService.getValue<ISearchConfiguration>({ resource: workspaceUri }));
-
 		try {
-			const searchResult = await this.searchService.fileSearch({
-				folderQueries: [{
-					folder: workspaceUri,
-					disregardIgnoreFiles: false,
-				}],
-				type: QueryType.File,
-				filePattern: pattern || '',
-				excludePattern,
-				sortByScore: true,
-				maxResults: 100,
-			}, token);
+			const { files, folders } = await searchFilesAndFolders(workspaceUri, pattern || '', true, token, undefined, this.configurationService, this.searchService);
 
-			for (const match of searchResult.results) {
-				if (!seen.has(match.resource)) {
-					seen.add(match.resource);
-					result.suggestions.push(makeItem(match.resource, FileKind.FILE));
+			for (const file of files) {
+				if (!seen.has(file)) {
+					seen.add(file);
+					result.suggestions.push(makeItem(file, FileKind.FILE));
+				}
+			}
+			for (const folder of folders) {
+				if (!seen.has(folder)) {
+					seen.add(folder);
+					result.suggestions.push(makeItem(folder, FileKind.FOLDER));
 				}
 			}
 		} catch {
