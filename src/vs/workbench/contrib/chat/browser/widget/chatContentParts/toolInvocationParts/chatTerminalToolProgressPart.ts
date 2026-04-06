@@ -379,6 +379,18 @@ export class ChatTerminalToolProgressPart extends BaseChatToolInvocationSubPart 
 		this._actionBar = this._register(new ActionBar(actionBarEl.actionBar, {}));
 		this._initializeTerminalActions();
 		this._terminalService.whenConnected.then(() => this._initializeTerminalActions());
+
+		// Listen for continue in background to remove the button (registered once in constructor,
+		// not inside _initializeTerminalActions which may be called multiple times)
+		const terminalToolSessionId = this._terminalData.terminalToolSessionId;
+		if (terminalToolSessionId) {
+			this._register(this._terminalChatService.onDidContinueInBackground(sessionId => {
+				if (sessionId === terminalToolSessionId) {
+					this._terminalData.didContinueInBackground = true;
+					this._removeContinueInBackgroundAction();
+				}
+			}));
+		}
 		let pastTenseMessage: string | undefined;
 		if (toolInvocation.pastTenseMessage) {
 			pastTenseMessage = `${typeof toolInvocation.pastTenseMessage === 'string' ? toolInvocation.pastTenseMessage : toolInvocation.pastTenseMessage.value}`;
@@ -588,13 +600,6 @@ export class ChatTerminalToolProgressPart extends BaseChatToolInvocationSubPart 
 			this._terminalSessionRegistration = this._store.add(listener);
 		}
 
-		// Listen for continue in background to remove the button
-		this._store.add(this._terminalChatService.onDidContinueInBackground(sessionId => {
-			if (sessionId === terminalToolSessionId) {
-				this._terminalData.didContinueInBackground = true;
-				this._removeContinueInBackgroundAction();
-			}
-		}));
 	}
 
 	private _addActions(terminalInstance?: ITerminalInstance, terminalToolSessionId?: string): void {
