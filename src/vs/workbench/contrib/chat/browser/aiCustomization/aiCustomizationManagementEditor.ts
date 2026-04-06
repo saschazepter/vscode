@@ -641,18 +641,17 @@ export class AICustomizationManagementEditor extends EditorPane {
 	 * unregistered).
 	 */
 	private ensureHarnessDropdown(): void {
-		const harnesses = this.harnessService.availableHarnesses.get();
-		const shouldShow = this.isHarnessSelectorEnabled && harnesses.length > 1;
-
-		if (shouldShow && !this.harnessDropdownContainer && this.sidebarContent) {
-			this.createHarnessDropdown(this.sidebarContent);
-		} else if (!shouldShow && this.harnessDropdownContainer) {
+		if (!this.isHarnessSelectorEnabled && this.harnessDropdownContainer) {
+			// Setting is off — remove the dropdown entirely
 			this.harnessDropdownContainer.remove();
 			this.harnessDropdownContainer = undefined;
 			this.harnessDropdownButton = undefined;
 			this.harnessDropdownIcon = undefined;
 			this.harnessDropdownLabel = undefined;
+		} else if (this.isHarnessSelectorEnabled && !this.harnessDropdownContainer && this.sidebarContent) {
+			this.createHarnessDropdown(this.sidebarContent);
 		}
+		// Visibility is handled by updateHarnessDropdown based on harness count
 	}
 
 	private updateHarnessDropdown(): void {
