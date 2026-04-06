@@ -439,6 +439,10 @@
 	justify-content: center;
 }
 
+.onboarding-a-personalize-section-theme.theme-only {
+	flex: 1;
+}
+
 .onboarding-a-personalize-section-keymap > .onboarding-a-theme-hint {
 	margin-top: 0;
 	margin-bottom: 10px;
@@ -470,6 +474,10 @@
 	display: grid;
 	grid-template-columns: repeat(4, minmax(0, 1fr));
 	gap: 12px;
+}
+
+.onboarding-a-theme-grid.theme-grid-expanded {
+	grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .onboarding-a-theme-card {

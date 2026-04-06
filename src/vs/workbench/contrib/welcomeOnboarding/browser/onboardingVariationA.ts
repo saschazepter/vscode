@@ -31,6 +31,7 @@ import {
 	OnboardingStepId,
 	ONBOARDING_STEPS,
 	ONBOARDING_THEME_OPTIONS,
+	ONBOARDING_THEME_OPTIONS_EXPANDED,
 	ONBOARDING_KEYMAP_OPTIONS,
 	ONBOARDING_RECOMMENDED_EXTENSIONS,
 	ONBOARDING_AI_PREFERENCE_OPTIONS,
@@ -114,7 +115,8 @@ export class OnboardingVariationA extends Disposable {
 
 		// Detect currently active theme
 		const currentTheme = this.themeService.getColorTheme();
-		const matchingTheme = ONBOARDING_THEME_OPTIONS.find(t => t.themeId === currentTheme.settingsId);
+		const matchingTheme = ONBOARDING_THEME_OPTIONS.find(t => t.themeId === currentTheme.settingsId)
+			?? ONBOARDING_THEME_OPTIONS_EXPANDED.find(t => t.themeId === currentTheme.settingsId);
 		if (matchingTheme) {
 			this.selectedThemeId = matchingTheme.id;
 		}
@@ -584,8 +586,16 @@ export class OnboardingVariationA extends Disposable {
 		themeGrid.setAttribute('role', 'radiogroup');
 		themeGrid.setAttribute('aria-label', localize('onboarding.personalize.themeLabel', "Choose a color theme"));
 
+		const hasOtherEditors = this._hasOtherEditors();
+		const themes = hasOtherEditors ? ONBOARDING_THEME_OPTIONS : ONBOARDING_THEME_OPTIONS_EXPANDED;
+
+		if (!hasOtherEditors) {
+			themeSection.classList.add('theme-only');
+			themeGrid.classList.add('theme-grid-expanded');
+		}
+
 		const themeCards: HTMLElement[] = [];
-		for (const theme of ONBOARDING_THEME_OPTIONS) {
+		for (const theme of themes) {
 			this._createThemeCard(themeGrid, theme, themeCards);
 		}
 
@@ -593,7 +603,6 @@ export class OnboardingVariationA extends Disposable {
 		const keymapOptions = this._detectedEditorIds
 			? ONBOARDING_KEYMAP_OPTIONS.filter(k => this._detectedEditorIds!.has(k.id))
 			: [];
-		const hasOtherEditors = this._hasOtherEditors();
 
 		if (hasOtherEditors) {
 			const keymapSection = append(wrapper, $('div.onboarding-a-personalize-section.onboarding-a-personalize-section-keymap'));
@@ -913,24 +922,18 @@ export class OnboardingVariationA extends Disposable {
 		if (isWindows) {
 			const localAppData = URI.joinPath(home, 'AppData', 'Local');
 			checks.push(
-				{ id: 'cursor', paths: [URI.joinPath(localAppData, 'Programs', 'cursor', 'Cursor.exe')] },
-				{ id: 'windsurf', paths: [URI.joinPath(localAppData, 'Programs', 'windsurf', 'Windsurf.exe')] },
 				{ id: 'sublime', paths: [URI.file('C:\\Program Files\\Sublime Text\\sublime_text.exe'), URI.file('C:\\Program Files\\Sublime Text 3\\sublime_text.exe')] },
 				{ id: 'intellij', paths: [URI.joinPath(localAppData, 'JetBrains', 'Toolbox')] },
 				{ id: 'vim', paths: [URI.joinPath(home, '_vimrc'), URI.joinPath(localAppData, 'nvim', 'init.vim'), URI.joinPath(localAppData, 'nvim', 'init.lua')] },
 			);
 		} else if (isMacintosh) {
 			checks.push(
-				{ id: 'cursor', paths: [URI.file('/Applications/Cursor.app')] },
-				{ id: 'windsurf', paths: [URI.file('/Applications/Windsurf.app')] },
 				{ id: 'sublime', paths: [URI.file('/Applications/Sublime Text.app')] },
 				{ id: 'intellij', paths: [URI.file('/Applications/IntelliJ IDEA.app'), URI.file('/Applications/IntelliJ IDEA CE.app')] },
 				{ id: 'vim', paths: [URI.joinPath(home, '.vimrc'), URI.joinPath(home, '.config', 'nvim', 'init.vim'), URI.joinPath(home, '.config', 'nvim', 'init.lua')] },
 			);
 		} else if (isLinux) {
 			checks.push(
-				{ id: 'cursor', paths: [URI.file('/usr/bin/cursor'), URI.file('/usr/local/bin/cursor')] },
-				{ id: 'windsurf', paths: [URI.file('/usr/bin/windsurf'), URI.file('/usr/local/bin/windsurf')] },
 				{ id: 'sublime', paths: [URI.file('/usr/bin/subl'), URI.file('/opt/sublime_text/sublime_text')] },
 				{ id: 'intellij', paths: [URI.joinPath(home, '.local', 'share', 'JetBrains', 'Toolbox'), URI.file('/opt/idea')] },
 				{ id: 'vim', paths: [URI.joinPath(home, '.vimrc'), URI.joinPath(home, '.config', 'nvim', 'init.vim'), URI.joinPath(home, '.config', 'nvim', 'init.lua')] },

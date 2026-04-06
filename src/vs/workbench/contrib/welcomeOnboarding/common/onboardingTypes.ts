@@ -222,6 +222,127 @@ export const ONBOARDING_THEME_OPTIONS: readonly IOnboardingThemeOption[] = [
 ];
 
 /**
+ * Expanded theme options shown when no keymap section is needed.
+ * Organized as: dark row, then light row.
+ */
+export const ONBOARDING_THEME_OPTIONS_EXPANDED: readonly IOnboardingThemeOption[] = [
+	{
+		id: 'dark-2026',
+		label: localize('onboarding.theme.dark2026.exp', "Dark 2026"),
+		themeId: 'Dark 2026',
+		type: 'dark',
+		preview: {
+			background: '#121314',
+			foreground: '#BBBEBF',
+			keyword: '#ff7b72',
+			string: '#a5d6ff',
+			comment: '#8b949e',
+			function: '#d2a8ff',
+			lineNumber: '#858889',
+			selection: '#276782',
+			sidebarBackground: '#191A1B',
+			tabBarBackground: '#191A1B',
+			tabActiveBorder: '#3994BC',
+		},
+	},
+	{
+		id: 'hc-dark',
+		label: localize('onboarding.theme.hcDark.exp', "Dark High Contrast"),
+		themeId: 'Default High Contrast',
+		type: 'hcDark',
+		preview: {
+			background: '#000000',
+			foreground: '#ffffff',
+			keyword: '#569cd6',
+			string: '#ce9178',
+			comment: '#7ca668',
+			function: '#dcdcaa',
+			lineNumber: '#858585',
+			selection: '#264f78',
+			sidebarBackground: '#000000',
+			tabBarBackground: '#000000',
+			tabActiveBorder: '#569cd6',
+		},
+	},
+	{
+		id: 'solarized-dark',
+		label: localize('onboarding.theme.solarizedDark', "Solarized Dark"),
+		themeId: 'Solarized Dark',
+		type: 'dark',
+		preview: {
+			background: '#002B36',
+			foreground: '#839496',
+			keyword: '#859900',
+			string: '#2AA198',
+			comment: '#586E75',
+			function: '#268BD2',
+			lineNumber: '#586E75',
+			selection: '#274642',
+			sidebarBackground: '#00212B',
+			tabBarBackground: '#004052',
+			tabActiveBorder: '#268BD2',
+		},
+	},
+	{
+		id: 'light-2026',
+		label: localize('onboarding.theme.light2026.exp', "Light 2026"),
+		themeId: 'Light 2026',
+		type: 'light',
+		preview: {
+			background: '#FFFFFF',
+			foreground: '#202020',
+			keyword: '#cf222e',
+			string: '#0a3069',
+			comment: '#6e7781',
+			function: '#8250df',
+			lineNumber: '#606060',
+			selection: '#0069CC40',
+			sidebarBackground: '#FAFAFD',
+			tabBarBackground: '#FAFAFD',
+			tabActiveBorder: '#000000',
+		},
+	},
+	{
+		id: 'hc-light',
+		label: localize('onboarding.theme.hcLight.exp', "Light High Contrast"),
+		themeId: 'Default High Contrast Light',
+		type: 'hcLight',
+		preview: {
+			background: '#ffffff',
+			foreground: '#292929',
+			keyword: '#0f4a85',
+			string: '#a31515',
+			comment: '#008000',
+			function: '#5e2cbc',
+			lineNumber: '#292929',
+			selection: '#add6ff',
+			sidebarBackground: '#ffffff',
+			tabBarBackground: '#ffffff',
+			tabActiveBorder: '#0f4a85',
+		},
+	},
+	{
+		id: 'solarized-light',
+		label: localize('onboarding.theme.solarizedLight', "Solarized Light"),
+		themeId: 'Solarized Light',
+		type: 'light',
+		preview: {
+			background: '#FDF6E3',
+			foreground: '#657B83',
+			keyword: '#859900',
+			string: '#2AA198',
+			comment: '#93A1A1',
+			function: '#268BD2',
+			lineNumber: '#93A1A1',
+			selection: '#EEE8D5',
+			sidebarBackground: '#EEE8D5',
+			tabBarBackground: '#D9D2C2',
+			tabActiveBorder: '#268BD2',
+		},
+	},
+];
+
+/**
  * Keymap options — keyboard shortcut presets from popular IDEs.
  */
 export const ONBOARDING_KEYMAP_OPTIONS: readonly IOnboardingKeymapOption[] = [
@@ -230,18 +351,6 @@ export const ONBOARDING_KEYMAP_OPTIONS: readonly IOnboardingKeymapOption[] = [
 		label: localize('onboarding.keymap.vscode', "VS Code"),
 		extensionId: undefined,
 		description: localize('onboarding.keymap.vscode.desc', "Default keyboard mapping"),
-	},
-	{
-		id: 'cursor',
-		label: localize('onboarding.keymap.cursor', "Cursor"),
-		extensionId: 'AntFu.cursor-keymaps',
-		description: localize('onboarding.keymap.cursor.desc', "Keyboard mapping from Cursor"),
-	},
-	{
-		id: 'windsurf',
-		label: localize('onboarding.keymap.windsurf', "Windsurf"),
-		extensionId: 'codeium.windsurf-keybindings',
-		description: localize('onboarding.keymap.windsurf.desc', "Keyboard mapping from Windsurf"),
 	},
 	{
 		id: 'sublime',
