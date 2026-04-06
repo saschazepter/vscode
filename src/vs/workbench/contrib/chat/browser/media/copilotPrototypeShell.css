@@ -152,6 +152,7 @@
 }
 
 .monaco-workbench.copilot-prototype-shell .part.auxiliarybar .interactive-input-part {
+	margin: 0;
 	margin-top: auto;
 	margin-bottom: auto;
 	width: 100%;

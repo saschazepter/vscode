@@ -138,6 +138,69 @@
 	box-sizing: border-box;
 }
 
+/* ---- Secondary toolbar icon tabs: left-aligned with proper tab pattern ---- */
+
+.agent-sessions-workbench .interactive-session .chat-secondary-toolbar {
+	justify-content: flex-start;
+	padding-left: 0;
+}
+
+.agent-sessions-workbench .interactive-session .chat-secondary-toolbar .chat-input-picker-item .action-label {
+	position: relative;
+	padding: 4px 8px;
+	border-radius: 0;
+}
+
+/* Active tab underline indicator */
+.agent-sessions-workbench .interactive-session .chat-secondary-toolbar .chat-input-picker-item .action-label::after {
+	content: '';
+	position: absolute;
+	bottom: 0;
+	left: 4px;
+	right: 4px;
+	height: 2px;
+	border-radius: 1px;
+	background-color: transparent;
+}
+
+.agent-sessions-workbench .interactive-session .chat-secondary-toolbar .chat-input-picker-item .action-label.checked::after {
+	background-color: var(--vscode-panelTitle-activeBorder);
+}
+
+/* Primary input toolbar icon tabs: left-aligned with underline tab pattern */
+
+.agent-sessions-workbench .interactive-session .chat-input-toolbars {
+	justify-content: flex-start;
+}
+
+.agent-sessions-workbench .interactive-session .chat-input-toolbars > .chat-input-toolbar {
+	width: auto;
+}
+
+.agent-sessions-workbench .interactive-session .chat-input-toolbars .chat-input-picker-item .action-label.hide-chevrons:not(:has(.chat-input-picker-label)),
+.agent-sessions-workbench .interactive-session .chat-input-toolbars .chat-input-picker-item.hide-chevrons .action-label:not(:has(.chat-input-picker-label)),
+.agent-sessions-workbench .interactive-session .chat-input-toolbars .chat-session-target-picker-item .action-label.hide-chevrons:not(:has(.chat-input-picker-label)),
+.agent-sessions-workbench .interactive-session .chat-input-toolbars .chat-session-target-picker-item.hide-chevrons .action-label:not(:has(.chat-input-picker-label)) {
+	position: relative;
+	border-radius: 0;
+	padding-bottom: 4px;
+}
+
+/* Active tab underline for collapsed icon-only picker items */
+.agent-sessions-workbench .interactive-session .chat-input-toolbars .chat-input-picker-item .action-label.hide-chevrons.checked::after,
+.agent-sessions-workbench .interactive-session .chat-input-toolbars .chat-input-picker-item.hide-chevrons .action-label.checked::after,
+.agent-sessions-workbench .interactive-session .chat-input-toolbars .chat-session-target-picker-item .action-label.hide-chevrons.checked::after,
+.agent-sessions-workbench .interactive-session .chat-input-toolbars .chat-session-target-picker-item.hide-chevrons .action-label.checked::after {
+	content: '';
+	position: absolute;
+	bottom: 0;
+	left: 4px;
+	right: 4px;
+	height: 2px;
+	border-radius: 1px;
+	background-color: var(--vscode-panelTitle-activeBorder);
+}
+
 /* ---- Modal Editor Block ---- */
 
 .agent-sessions-workbench .monaco-modal-editor-block {

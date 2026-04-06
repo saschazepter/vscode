@@ -718,7 +718,9 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 
 		// Render result details in footer if available
 		if (isResponseVM(element) && element.result?.details) {
-			templateData.footerDetailsContainer.textContent = element.result.details;
+			// Strip the multiplier suffix (e.g. " · 3x" or " • 3x") to show only the model name
+			const details = element.result.details.replace(/\s*[·•]\s*\d+(\.\d+)?x\s*$/i, '');
+			templateData.footerDetailsContainer.textContent = details;
 			templateData.footerDetailsContainer.classList.remove('hidden');
 		} else {
 			templateData.footerDetailsContainer.classList.add('hidden');
