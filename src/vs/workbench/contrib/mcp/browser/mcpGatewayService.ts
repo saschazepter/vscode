@@ -65,7 +65,9 @@ export class BrowserMcpGatewayService implements IWorkbenchMcpGatewayService {
 				onDidChangeServers,
 				dispose: () => {
 					this._logService.info(`[McpGateway][BrowserWorkbench] Disposing remote gateway: ${info.gatewayId}`);
-					channel.call('disposeGateway', info.gatewayId);
+					void channel.call('disposeGateway', info.gatewayId).then(undefined, error => {
+						this._logService.warn(`[McpGateway][BrowserWorkbench] Failed to dispose remote gateway: ${info.gatewayId}`, error);
+					});
 				}
 			};
 		});
