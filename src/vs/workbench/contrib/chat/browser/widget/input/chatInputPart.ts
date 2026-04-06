@@ -591,7 +591,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 				this.agentSessionTypeKey.set(newSessionType);
 				this.chatSessionSupportsDelegationKey.set(this.chatSessionsService.supportsDelegationForSessionType(newSessionType));
 				this.updateWidgetLockStateFromSessionType(newSessionType);
-				this.checkModeInSessionPool();
+				this.checkModeInSessionPool(newSessionType);
 				this.refreshChatSessionPickers();
 			}));
 		}
@@ -1159,12 +1159,15 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 	 * When the session has a customAgentTarget, only Agent mode and custom
 	 * modes matching that target are valid. Resets to Agent mode if invalid.
 	 */
-	private checkModeInSessionPool(): void {
-		const sessionResource = this._widget?.viewModel?.model.sessionResource;
-		if (!sessionResource) {
-			return;
+	private checkModeInSessionPool(sessionType?: string): void {
+		if (!sessionType) {
+			const sessionResource = this._widget?.viewModel?.model.sessionResource;
+			if (!sessionResource) {
+				return;
+			}
+			sessionType = getChatSessionType(sessionResource);
 		}
-		const customAgentTarget = this.chatSessionsService.getCustomAgentTargetForSessionType(getChatSessionType(sessionResource));
+		const customAgentTarget = this.chatSessionsService.getCustomAgentTargetForSessionType(sessionType);
 		if (!customAgentTarget || customAgentTarget === Target.Undefined) {
 			return;
 		}

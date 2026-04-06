@@ -76,8 +76,8 @@ export class ModePickerActionItem extends ChatInputPickerActionViewItem {
 	) {
 		const assignments = observableValue<{ showOldAskMode: boolean }>('modePickerAssignments', { showOldAskMode: false });
 
-		// Get custom agent target dynamically (may change when switching session types)
-		const getCustomAgentTarget = () => delegate.customAgentTarget?.() ?? Target.Undefined;
+		// Get custom agent target (if filtering is enabled)
+		const customAgentTarget = delegate.customAgentTarget?.() ?? Target.Undefined;
 
 		// Category definitions
 		const builtInCategory = { label: localize('built-in', "Built-In"), order: 0 };
@@ -162,12 +162,11 @@ export class ModePickerActionItem extends ChatInputPickerActionViewItem {
 
 		const actionProviderWithCustomAgentTarget: IActionWidgetDropdownActionProvider = {
 			getActions: () => {
-				const currentTarget = getCustomAgentTarget();
 				const modes = chatModeService.getModes();
 				const currentMode = delegate.currentMode.get();
 				const filteredCustomModes = modes.custom.filter(mode => {
 					const target = mode.target.get();
-					if (target !== currentTarget && target !== Target.Undefined) {
+					if (target !== customAgentTarget && target !== Target.Undefined) {
 						return false;
 					}
 					if (mode.when && !this.contextKeyService.contextMatchesRules(mode.when)) {
@@ -236,18 +235,8 @@ export class ModePickerActionItem extends ChatInputPickerActionViewItem {
 			}
 		};
 
-		const dynamicActionProvider: IActionWidgetDropdownActionProvider = {
-			getActions: () => {
-				const currentTarget = getCustomAgentTarget();
-				if (currentTarget !== Target.Undefined) {
-					return actionProviderWithCustomAgentTarget.getActions();
-				}
-				return actionProvider.getActions();
-			}
-		};
-
 		const modePickerActionWidgetOptions: Omit<IActionWidgetDropdownOptions, 'label' | 'labelRenderer'> = {
-			actionProvider: dynamicActionProvider,
+			actionProvider: customAgentTarget !== Target.Undefined ? actionProviderWithCustomAgentTarget : actionProvider,
 			actionBarActionProvider: {
 				getActions: () => this.getModePickerActionBarActions()
 			},
