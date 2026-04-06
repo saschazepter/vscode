@@ -1441,4 +1441,79 @@ suite('Protocol WebSocket E2E', function () {
 		}
 		assert.ok(gotError, 'should get error for invalid fork source session');
 	});
+
+	test('isRead and isDone flags survive in listSessions after dispatch', async function () {
+		this.timeout(15_000);
+
+		const sessionUri = await createAndSubscribeSession(client, 'test-read-done-flags');
+
+		// Dispatch isDone=true
+		client.notify('dispatchAction', {
+			clientSeq: 1,
+			action: {
+				type: 'session/isDoneChanged',
+				session: sessionUri,
+				isDone: true,
+			},
+		});
+
+		await client.waitForNotification(n => isActionNotification(n, 'session/isDoneChanged'));
+
+		// Dispatch isRead=true first so we can then toggle to false and
+		// prove the reducer actually applied the change (a fresh session
+		// already has isRead === undefined, which is the same as false).
+		client.notify('dispatchAction', {
+			clientSeq: 2,
+			action: {
+				type: 'session/isReadChanged',
+				session: sessionUri,
+				isRead: true,
+			},
+		});
+
+		await client.waitForNotification(n => isActionNotification(n, 'session/isReadChanged'));
+
+		// Verify isRead=true is reflected in snapshot before toggling off
+		const midSnapshot = await client.call<ISubscribeResult>('subscribe', { resource: sessionUri });
+		assert.strictEqual((midSnapshot.snapshot.state as ISessionState).summary.isRead, true, 'isRead should be true after first dispatch');
+
+		// Now toggle isRead back to false
+		client.notify('dispatchAction', {
+			clientSeq: 3,
+			action: {
+				type: 'session/isReadChanged',
+				session: sessionUri,
+				isRead: false,
+			},
+		});
+
+		await client.waitForNotification(n => isActionNotification(n, 'session/isReadChanged'));
+
+		// Verify the flags are reflected in the subscribed session state
+		const snapshot = await client.call<ISubscribeResult>('subscribe', { resource: sessionUri });
+		const state = snapshot.snapshot.state as ISessionState;
+		assert.strictEqual(state.summary.isDone, true, 'isDone should be true in snapshot');
+		assert.strictEqual(state.summary.isRead, undefined, 'isRead should be absent (false) in snapshot');
+
+		// Poll listSessions until the persisted flags appear (async DB write)
+		client.close();
+		const client2 = new TestProtocolClient(server.port);
+		await client2.connect();
+		await client2.call('initialize', { protocolVersion: PROTOCOL_VERSION, clientId: 'test-read-done-flags-2' });
+
+		let session: IListSessionsResult['items'][0] | undefined;
+		for (let i = 0; i < 20; i++) {
+			const result = await client2.call<IListSessionsResult>('listSessions');
+			session = result.items.find(s => s.resource === sessionUri);
+			if (session?.isDone === true && session?.isRead === false) {
+				break;
+			}
+			await timeout(100);
+		}
+		assert.ok(session, 'session should appear in listSessions');
+		assert.strictEqual(session.isDone, true, 'isDone should be persisted in listSessions');
+		assert.strictEqual(session.isRead, false, 'isRead should be persisted as false in listSessions');
+
+		client2.close();
+	});
 });
