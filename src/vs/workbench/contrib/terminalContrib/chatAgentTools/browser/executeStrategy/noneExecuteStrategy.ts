@@ -85,7 +85,8 @@ export class NoneExecuteStrategy extends Disposable implements ITerminalExecuteS
 			this._log(`Executing command line \`${commandLine}\``);
 			markerRecreation.dispose();
 			const startLine = this._startMarker.value?.line;
-			const forceBracketedPasteMode = isMacintosh;
+			const isMultiLine = commandLine.includes('\n');
+			const forceBracketedPasteMode = isMacintosh || isMultiLine;
 			this._instance.sendText(commandLine, true, forceBracketedPasteMode);
 
 			// Wait for the cursor to move past the command line before

@@ -133,7 +133,8 @@ export class BasicExecuteStrategy extends Disposable implements ITerminalExecute
 			// occurs.
 			this._log(`Executing command line \`${commandLine}\``);
 			markerRecreation.dispose();
-			const forceBracketedPasteMode = isMacintosh;
+			const isMultiLine = commandLine.includes('\n');
+			const forceBracketedPasteMode = isMacintosh || isMultiLine;
 			this._instance.sendText(commandLine, true, forceBracketedPasteMode);
 
 			// Wait for the next end execution event - note that this may not correspond to the actual

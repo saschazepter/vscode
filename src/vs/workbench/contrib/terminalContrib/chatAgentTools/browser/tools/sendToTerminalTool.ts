@@ -377,7 +377,15 @@ export class SendToTerminalTool extends Disposable implements IToolImpl {
 			};
 		}
 
-		await execution.instance.sendText(normalizeCommandForExecution(args.command), true);
+		const isMultiLine = args.command.includes('\n') || args.command.includes('\r');
+		if (isMultiLine) {
+			// Multiline commands (e.g. heredocs) must preserve newlines and use
+			// bracketed paste mode so the shell treats the input as a single paste
+			// rather than executing each line independently.
+			await execution.instance.sendText(args.command, true, true);
+		} else {
+			await execution.instance.sendText(normalizeCommandForExecution(args.command), true);
+		}
 
 		await timeout(100);
 		const recentOutput = getOutput(execution.instance, undefined, { lastNLines: 5 });
