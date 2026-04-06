@@ -10,7 +10,8 @@ import { URI } from '../../../../base/common/uri.js';
 import * as nls from '../../../../nls.js';
 import { agentHostAuthority } from '../../../../platform/agentHost/common/agentHostUri.js';
 import { type AgentProvider, type IAgentConnection } from '../../../../platform/agentHost/common/agentService.js';
-import { IRemoteAgentHostConnectionInfo, IRemoteAgentHostEntry, IRemoteAgentHostService, RemoteAgentHostConnectionStatus, RemoteAgentHostsEnabledSettingId, RemoteAgentHostsSettingId } from '../../../../platform/agentHost/common/remoteAgentHostService.js';
+import { IRemoteAgentHostConnectionInfo, IRemoteAgentHostEntry, IRemoteAgentHostService, RemoteAgentHostConnectionStatus, RemoteAgentHostEntryType, RemoteAgentHostsEnabledSettingId, RemoteAgentHostsSettingId, getEntryAddress } from '../../../../platform/agentHost/common/remoteAgentHostService.js';
+import { TunnelAgentHostsSettingId } from '../../../../platform/agentHost/common/tunnelAgentHost.js';
 import { type URI as ProtocolURI } from '../../../../platform/agentHost/common/state/protocol/state.js';
 import { isSessionAction } from '../../../../platform/agentHost/common/state/sessionActions.js';
 import { SessionClientState } from '../../../../platform/agentHost/common/state/sessionClientState.js';
@@ -153,7 +154,7 @@ export class RemoteAgentHostContribution extends Disposable implements IWorkbenc
 	private _reconcileProviders(): void {
 		const enabled = this._configurationService.getValue<boolean>(RemoteAgentHostsEnabledSettingId);
 		const entries = enabled ? this._remoteAgentHostService.configuredEntries : [];
-		const desiredAddresses = new Set(entries.map(e => e.address));
+		const desiredAddresses = new Set(entries.map(e => getEntryAddress(e)));
 
 		// Remove providers no longer configured
 		for (const [address] of this._providerStores) {
@@ -164,26 +165,28 @@ export class RemoteAgentHostContribution extends Disposable implements IWorkbenc
 
 		// Add or recreate providers for configured entries
 		for (const entry of entries) {
-			const existing = this._providerInstances.get(entry.address);
-			if (existing && existing.label !== (entry.name || entry.address)) {
+			const address = getEntryAddress(entry);
+			const existing = this._providerInstances.get(address);
+			if (existing && existing.label !== (entry.name || address)) {
 				// Name changed — recreate since ISessionsProvider.label is readonly
-				this._providerStores.deleteAndDispose(entry.address);
+				this._providerStores.deleteAndDispose(address);
 			}
-			if (!this._providerStores.has(entry.address)) {
+			if (!this._providerStores.has(address)) {
 				this._createProvider(entry);
 			}
 		}
 	}
 
 	private _createProvider(entry: IRemoteAgentHostEntry): void {
+		const address = getEntryAddress(entry);
 		const store = new DisposableStore();
 		const provider = this._instantiationService.createInstance(
-			RemoteAgentHostSessionsProvider, { address: entry.address, name: entry.name });
+			RemoteAgentHostSessionsProvider, { address, name: entry.name });
 		store.add(provider);
 		store.add(this._sessionsProvidersService.registerProvider(provider));
-		this._providerInstances.set(entry.address, provider);
-		store.add(toDisposable(() => this._providerInstances.delete(entry.address)));
-		this._providerStores.set(entry.address, store);
+		this._providerInstances.set(address, provider);
+		store.add(toDisposable(() => this._providerInstances.delete(address)));
+		this._providerStores.set(address, store);
 	}
 
 	/**
@@ -193,24 +196,26 @@ export class RemoteAgentHostContribution extends Disposable implements IWorkbenc
 	private _reconnectSSHEntries(): void {
 		const entries = this._remoteAgentHostService.configuredEntries;
 		for (const entry of entries) {
-			if (!entry.sshConfigHost) {
+			if (entry.connection.type !== RemoteAgentHostEntryType.SSH || !entry.connection.sshConfigHost) {
 				continue;
 			}
+			const address = getEntryAddress(entry);
+			const sshConfigHost = entry.connection.sshConfigHost;
 			// Skip if already connected or reconnecting
 			const hasConnection = this._remoteAgentHostService.connections.some(
-				c => c.address === entry.address && c.status === RemoteAgentHostConnectionStatus.Connected
+				c => c.address === address && c.status === RemoteAgentHostConnectionStatus.Connected
 			);
-			if (hasConnection || this._pendingSSHReconnects.has(entry.sshConfigHost)) {
+			if (hasConnection || this._pendingSSHReconnects.has(sshConfigHost)) {
 				continue;
 			}
-			this._pendingSSHReconnects.add(entry.sshConfigHost);
-			this._logService.info(`[RemoteAgentHost] Re-establishing SSH tunnel for ${entry.sshConfigHost}`);
-			this._sshService.reconnect(entry.sshConfigHost, entry.name).then(() => {
-				this._pendingSSHReconnects.delete(entry.sshConfigHost!);
-				this._logService.info(`[RemoteAgentHost] SSH tunnel re-established for ${entry.sshConfigHost}`);
+			this._pendingSSHReconnects.add(sshConfigHost);
+			this._logService.info(`[RemoteAgentHost] Re-establishing SSH tunnel for ${sshConfigHost}`);
+			this._sshService.reconnect(sshConfigHost, entry.name).then(() => {
+				this._pendingSSHReconnects.delete(sshConfigHost);
+				this._logService.info(`[RemoteAgentHost] SSH tunnel re-established for ${sshConfigHost}`);
 			}).catch(err => {
-				this._pendingSSHReconnects.delete(entry.sshConfigHost!);
-				this._logService.error(`[RemoteAgentHost] SSH reconnect failed for ${entry.sshConfigHost}`, err);
+				this._pendingSSHReconnects.delete(sshConfigHost);
+				this._logService.error(`[RemoteAgentHost] SSH reconnect failed for ${sshConfigHost}`, err);
 			});
 		}
 	}
@@ -588,7 +593,7 @@ Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration).regis
 			items: {
 				type: 'object',
 				properties: {
-					address: { type: 'string', description: nls.localize('chat.remoteAgentHosts.address', "The address of the remote agent host (e.g. \"localhost:3000\").") },
+					address: { type: 'string', description: nls.localize('chat.remoteAgentHosts.address', "The address of the remote agent host (e.g. \"localhost:3000\" or \"tunnel:abc123\").") },
 					name: { type: 'string', description: nls.localize('chat.remoteAgentHosts.name', "A display name for this remote agent host.") },
 					connectionToken: { type: 'string', description: nls.localize('chat.remoteAgentHosts.connectionToken', "An optional connection token for authenticating with the remote agent host.") },
 					sshConfigHost: { type: 'string', description: nls.localize('chat.remoteAgentHosts.sshConfigHost', "SSH config host alias for automatic reconnection via SSH tunnel.") },
@@ -596,6 +601,14 @@ Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration).regis
 				required: ['address', 'name'],
 			},
 			description: nls.localize('chat.remoteAgentHosts', "A list of remote agent host addresses to connect to (e.g. \"localhost:3000\")."),
+			default: [],
+			scope: ConfigurationScope.APPLICATION,
+			tags: ['experimental', 'advanced'],
+		},
+		[TunnelAgentHostsSettingId]: {
+			type: 'array',
+			items: { type: 'string' },
+			description: nls.localize('chat.remoteAgentTunnels', "Additional dev tunnel names to look for when connecting to remote agent hosts. These are looked up in addition to tunnels automatically enumerated from your account."),
 			default: [],
 			scope: ConfigurationScope.APPLICATION,
 			tags: ['experimental', 'advanced'],

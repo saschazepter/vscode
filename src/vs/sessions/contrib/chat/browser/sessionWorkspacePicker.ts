@@ -14,8 +14,10 @@ import { Schemas } from '../../../../base/common/network.js';
 import { localize } from '../../../../nls.js';
 import { IActionWidgetService } from '../../../../platform/actionWidget/browser/actionWidget.js';
 import { ActionListItemKind, IActionListDelegate, IActionListItem } from '../../../../platform/actionWidget/browser/actionList.js';
-import { IRemoteAgentHostService, RemoteAgentHostConnectionStatus } from '../../../../platform/agentHost/common/remoteAgentHostService.js';
+import { IRemoteAgentHostService, RemoteAgentHostConnectionStatus, RemoteAgentHostsEnabledSettingId } from '../../../../platform/agentHost/common/remoteAgentHostService.js';
 import { IClipboardService } from '../../../../platform/clipboard/common/clipboardService.js';
+import { ICommandService } from '../../../../platform/commands/common/commands.js';
+import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { IPreferencesService } from '../../../../workbench/services/preferences/common/preferences.js';
 import { IOutputService } from '../../../../workbench/services/output/common/output.js';
 import { IQuickInputService, IQuickPickItem } from '../../../../platform/quickinput/common/quickInput.js';
@@ -62,6 +64,8 @@ interface IWorkspacePickerItem {
 	readonly checked?: boolean;
 	/** Remote provider reference for gear menu actions. */
 	readonly remoteProvider?: ISessionsProvider;
+	/** When true, clicking this item triggers the tunnel connection command. */
+	readonly tunnelAction?: boolean;
 }
 
 /**
@@ -98,6 +102,8 @@ export class WorkspacePicker extends Disposable {
 		@IClipboardService private readonly clipboardService: IClipboardService,
 		@IPreferencesService private readonly preferencesService: IPreferencesService,
 		@IOutputService private readonly outputService: IOutputService,
+		@IConfigurationService private readonly configurationService: IConfigurationService,
+		@ICommandService private readonly commandService: ICommandService,
 	) {
 		super();
 
@@ -182,7 +188,9 @@ export class WorkspacePicker extends Disposable {
 		const delegate: IActionListDelegate<IWorkspacePickerItem> = {
 			onSelect: (item) => {
 				this.actionWidgetService.hide();
-				if (item.selection && this._isProviderUnavailable(item.selection.providerId)) {
+				if (item.tunnelAction) {
+					this.commandService.executeCommand('workbench.action.sessions.connectViaTunnel');
+				} else if (item.selection && this._isProviderUnavailable(item.selection.providerId)) {
 					// Workspace belongs to an unavailable remote — ignore selection
 					return;
 				}
@@ -445,6 +453,19 @@ export class WorkspacePicker extends Disposable {
 						},
 					}),
 				],
+			});
+		}
+
+		// "Tunnels..." entry — shown when remote agent hosts are enabled
+		if (this.configurationService.getValue<boolean>(RemoteAgentHostsEnabledSettingId)) {
+			if (items.length > 0 && items[items.length - 1].kind !== ActionListItemKind.Separator) {
+				items.push({ kind: ActionListItemKind.Separator, label: '' });
+			}
+			items.push({
+				kind: ActionListItemKind.Action,
+				label: localize('workspacePicker.tunnels', "Tunnels..."),
+				group: { title: '', icon: Codicon.cloud },
+				item: { tunnelAction: true },
 			});
 		}
 
