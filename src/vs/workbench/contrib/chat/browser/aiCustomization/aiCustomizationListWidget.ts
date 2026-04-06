@@ -1979,10 +1979,13 @@ export class AICustomizationListWidget extends Disposable {
 
 			for (const item of matchedItems) {
 				const key = item.groupKey ?? item.storage ?? PromptsStorage.local;
-				const group = groups.find(g => g.groupKey === key);
-				if (group) {
-					group.items.push(item);
+				let group = groups.find(g => g.groupKey === key);
+				if (!group) {
+					// Dynamically create a group for unknown groupKeys from providers
+					group = { groupKey: key, label: formatDisplayName(key), icon: Codicon.folder, description: '', items: [] };
+					groups.push(group);
 				}
+				group.items.push(item);
 			}
 
 			this.buildGroupedEntries(groups);
