@@ -28,6 +28,7 @@ import { IChatService } from '../../chat/common/chatService/chatService.js';
 import { computeProgressPercent, isMajorMinorVersionChange } from '../common/updateUtils.js';
 import { waitForState } from '../../../../base/common/observable.js';
 import './media/updateTitleBarEntry.css';
+import { IUpdateInfoButton } from '../common/updateInfoParser.js';
 import { UpdateTooltip } from './updateTooltip.js';
 
 const UPDATE_TITLE_BAR_ACTION_ID = 'workbench.actions.updateIndicator';
@@ -77,6 +78,7 @@ export class UpdateTitleBarContribution extends Disposable implements IWorkbench
 		@IChatService private readonly chatService: IChatService,
 		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@IContextKeyService contextKeyService: IContextKeyService,
+		@IHoverService private readonly hoverService: IHoverService,
 		@IHostService private readonly hostService: IHostService,
 		@IInstantiationService instantiationService: IInstantiationService,
 		@IProductService private readonly productService: IProductService,
@@ -115,17 +117,35 @@ export class UpdateTitleBarContribution extends Disposable implements IWorkbench
 			}
 		));
 
-		this._register(CommandsRegistry.registerCommand('_update.showUpdateInfo', (_accessor, markdown?: string) => this.showUpdateInfo(markdown)));
+		this._register(CommandsRegistry.registerCommand('_update.showUpdateInfo', (_accessor, markdown?: string, options?: { buttons?: IUpdateInfoButton[] }) => this.showUpdateInfo(markdown, options)));
 
 		void this.onStateChange(true);
 	}
 
-	private async showUpdateInfo(markdown?: string) {
-		const rendered = await this.tooltip.renderPostInstall(markdown);
+	private async showUpdateInfo(markdown?: string, options?: { buttons?: IUpdateInfoButton[] }) {
+		const rendered = await this.tooltip.renderPostInstall(markdown, options?.buttons);
 		if (rendered) {
 			this.tooltipVisible = true;
-			this.context.set(true);
-			this.entry?.showTooltip(true);
+
+			const targetWindow = dom.getActiveWindow();
+			const targetElement = targetWindow.document.body ?? targetWindow.document.documentElement;
+			const width = Math.min(640, Math.max(targetWindow.innerWidth - 32, 320));
+			const x = Math.max(targetWindow.innerWidth - width - 80, 16);
+			const y = 40;
+
+			this.hoverService.showInstantHover({
+				content: this.tooltip.domNode,
+				target: {
+					targetElements: [targetElement],
+					x,
+					y,
+					dispose: () => {
+						this.tooltipVisible = false;
+					}
+				},
+				persistence: { sticky: true },
+				appearance: { showPointer: false, compact: true, maxHeightRatio: 0.8 },
+			}, true);
 		}
 	}
 
@@ -223,6 +243,7 @@ export class UpdateTitleBarContribution extends Disposable implements IWorkbench
 export class UpdateTitleBarEntry extends BaseActionViewItem {
 	private content: HTMLElement | undefined;
 	private showTooltipOnRender = false;
+	private pendingTooltipOptions: { showPointer?: boolean; hideLabel?: boolean } | undefined;
 
 	constructor(
 		action: IAction,
@@ -249,14 +270,21 @@ export class UpdateTitleBarEntry extends BaseActionViewItem {
 
 		if (this.showTooltipOnRender) {
 			this.showTooltipOnRender = false;
-			dom.scheduleAtNextAnimationFrame(dom.getWindow(container), () => this.showTooltip());
+			const opts = this.pendingTooltipOptions;
+			this.pendingTooltipOptions = undefined;
+			dom.scheduleAtNextAnimationFrame(dom.getWindow(container), () => this.showTooltip(false, opts));
 		}
 	}
 
-	public showTooltip(focus = false) {
+	public showTooltip(focus = false, options?: { showPointer?: boolean; hideLabel?: boolean }) {
 		if (!this.element?.isConnected) {
 			this.showTooltipOnRender = true;
+			this.pendingTooltipOptions = options;
 			return;
+		}
+
+		if (options?.hideLabel && this.element) {
+			this.element.style.visibility = 'hidden';
 		}
 
 		this.hoverService.showInstantHover({
@@ -264,13 +292,16 @@ export class UpdateTitleBarEntry extends BaseActionViewItem {
 			target: {
 				targetElements: [this.element],
 				dispose: () => {
+					if (this.element) {
+						this.element.style.visibility = '';
+					}
 					if (!!this.element?.isConnected) {
 						this.onUserDismissedTooltip();
 					}
 				}
 			},
 			persistence: { sticky: true },
-			appearance: { showPointer: true, compact: true },
+			appearance: { showPointer: options?.showPointer ?? true, compact: true },
 		}, focus);
 	}
 

@@ -94,23 +94,27 @@
 	white-space: nowrap;
 }
 
-.update-tooltip .release-notes-button {
+.update-tooltip .update-button-secondary {
 	background-color: var(--vscode-button-secondaryBackground);
 	color: var(--vscode-button-secondaryForeground);
 	border: 1px solid var(--vscode-button-border, transparent);
 }
 
-.update-tooltip .release-notes-button:hover {
+.update-tooltip .update-button-secondary:hover {
 	background-color: var(--vscode-button-secondaryHoverBackground);
 }
 
-.update-tooltip .action-button {
+.update-tooltip .update-button-leading-secondary {
+	margin-right: auto;
+}
+
+.update-tooltip .update-button-primary {
 	background-color: var(--vscode-button-background);
 	color: var(--vscode-button-foreground);
 	border: 1px solid var(--vscode-button-border, transparent);
 }
 
-.update-tooltip .action-button:hover {
+.update-tooltip .update-button-primary:hover {
 	background-color: var(--vscode-button-hoverBackground);
 }
 

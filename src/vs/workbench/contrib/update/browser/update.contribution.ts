@@ -258,7 +258,7 @@ registerAction2(class ShowUpdateInfoAction extends Action2 {
 	async run(accessor: ServicesAccessor): Promise<void> {
 		const commandService = accessor.get(ICommandService);
 		const quickInputService = accessor.get(IQuickInputService);
-		const markdown = await quickInputService.input({ prompt: localize('showUpdateInfo.prompt', "Enter markdown to render (leave empty to load from URL)") });
+		const markdown = await quickInputService.input({ prompt: localize('showUpdateInfo.prompt', "Enter markdown to render, or JSON with markdown/buttons (leave empty to load from URL)") });
 		if (markdown === undefined) {
 			return; // cancelled
 		}
