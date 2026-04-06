@@ -301,6 +301,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 	private readonly editorDisposables = this._register(new DisposableStore());
 	private readonly promptsSectionCountScheduler = this._register(new RunOnceScheduler(() => this._doRefreshAllPromptsSectionCounts(), 100));
 	private _editorContentChanged = false;
+	private _previousActiveHarnessId: string | undefined;
 
 	// Folder picker (sessions window only)
 	private folderPickerContainer: HTMLElement | undefined;
@@ -573,6 +574,16 @@ export class AICustomizationManagementEditor extends EditorPane {
 			this.rebuildVisibleSections();
 			this.ensureHarnessDropdown();
 			this.updateHarnessDropdown();
+			// Reset counts to zero immediately on harness switch to prevent
+			// stale counts from the previous harness flashing before the async
+			// count refresh completes. Only reset when the active harness
+			// actually changed to avoid flicker on harness registration events.
+			if (this._previousActiveHarnessId !== undefined && this._previousActiveHarnessId !== activeId) {
+				for (const section of this.sections) {
+					this.updateSectionCount(section.id, 0);
+				}
+			}
+			this._previousActiveHarnessId = activeId;
 			this.refreshAllPromptsSectionCounts();
 		}));
 
