@@ -76,7 +76,7 @@ export class ChatDebugHomeView extends Disposable {
 			enableButton.element.style.width = 'auto';
 			enableButton.label = localize('chatDebug.openSetting', "Enable in Settings");
 			this.renderDisposables.add(enableButton.onDidClick(() => {
-				this.preferencesService.openSettings({ jsonEditor: false, query: AGENT_DEBUG_LOG_FILE_LOGGING_ENABLED_SETTING });
+				this.preferencesService.openSettings({ jsonEditor: false, query: `@id:${AGENT_DEBUG_LOG_FILE_LOGGING_ENABLED_SETTING}` });
 			}));
 			return;
 		}

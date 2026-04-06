@@ -386,7 +386,7 @@ export class ComputeAutomaticInstructions {
 			const agentSkills = await this._promptsService.findAgentSkills(token);
 			// Filter out skills with disableModelInvocation=true (they can only be triggered manually via /name)
 			// Also filter by `when` clause using the scoped context key service
-			// Also filter out the troubleshoot skill when the feature flags are disabled
+			// Also filter out the troubleshoot skill when  agent debug log file logging setting is disabled
 			const isFileLoggingEnabled = this._configurationService.getValue<boolean>(AGENT_DEBUG_LOG_FILE_LOGGING_ENABLED_SETTING);
 			const modelInvocableSkills = agentSkills?.filter(skill => {
 				if (skill.disableModelInvocation) {

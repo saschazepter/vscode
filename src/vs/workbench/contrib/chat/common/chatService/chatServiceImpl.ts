@@ -1099,6 +1099,7 @@ export class ChatService extends Disposable implements IChatService {
 						});
 						model.setResponse(request, {});
 						request.response?.complete();
+						store.dispose();
 						return;
 					}
 				}
