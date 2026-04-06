@@ -1679,7 +1679,9 @@ export class AICustomizationListWidget extends Disposable {
 					id: item.uri.toString(),
 					uri: item.uri,
 					name: item.name,
-					filename: basename(item.uri),
+					filename: item.uri.scheme === Schemas.file
+						? this.labelService.getUriLabel(item.uri, { relative: true })
+						: basename(item.uri),
 					description: item.description ?? descriptionsByUri.get(item.uri),
 					promptType,
 					disabled: item.enabled === false,
