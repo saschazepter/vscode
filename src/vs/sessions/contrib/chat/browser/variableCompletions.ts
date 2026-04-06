@@ -100,7 +100,7 @@ function computeRange(model: ITextModel, position: Position, reg: RegExp): IComp
 }
 
 /**
- * Provides `#file:` and `#folder:` completions for the sessions new-chat input,
+ * Provides `#file:` completions for files and folders in the sessions new-chat input,
  * following the same pattern as {@link SlashCommandHandler}.
  *
  * Completions are scoped to the workspace selected in the workspace picker dropdown,
