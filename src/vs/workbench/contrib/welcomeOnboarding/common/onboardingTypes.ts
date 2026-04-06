@@ -370,6 +370,18 @@ export const ONBOARDING_KEYMAP_OPTIONS: readonly IOnboardingKeymapOption[] = [
 		extensionId: 'vscodevim.vim',
 		description: localize('onboarding.keymap.vim.desc', "Vim modal editing"),
 	},
+	{
+		id: 'eclipse',
+		label: localize('onboarding.keymap.eclipse', "Eclipse"),
+		extensionId: 'alphabotsec.vscode-eclipse-keybindings',
+		description: localize('onboarding.keymap.eclipse.desc', "Keyboard mapping from Eclipse"),
+	},
+	{
+		id: 'notepadpp',
+		label: localize('onboarding.keymap.notepadpp', "Notepad++"),
+		extensionId: 'ms-vscode.notepadplusplus-keybindings',
+		description: localize('onboarding.keymap.notepadpp.desc', "Keyboard mapping from Notepad++"),
+	},
 ];
 
 
