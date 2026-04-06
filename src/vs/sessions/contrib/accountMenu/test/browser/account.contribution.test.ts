@@ -7,7 +7,6 @@ import assert from 'assert';
 import { Emitter } from '../../../../../base/common/event.js';
 import { DisposableStore } from '../../../../../base/common/lifecycle.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
-import { ICommandService } from '../../../../../platform/commands/common/commands.js';
 import { ChatEntitlement, IChatEntitlementService } from '../../../../../workbench/services/chat/common/chatEntitlementService.js';
 import { showSessionsWelcomeAfterSignOut } from '../../browser/account.contribution.js';
 
@@ -32,14 +31,7 @@ suite('Sessions - Account Contribution', () => {
 			},
 			onDidChangeEntitlement: entitlementChangeEmitter.event,
 		};
-		const commandService: Pick<ICommandService, 'executeCommand'> = {
-			async executeCommand(commandId) {
-				order.push(`command:${commandId}`);
-				return undefined;
-			},
-		};
-
-		const showWelcomePromise = showSessionsWelcomeAfterSignOut(chatEntitlementService, commandService);
+		const showWelcomePromise = showSessionsWelcomeAfterSignOut(chatEntitlementService, () => order.push('resetWelcome'));
 		order.push('signOut');
 		entitlement = ChatEntitlement.Unknown;
 		entitlementChangeEmitter.fire();
@@ -49,7 +41,7 @@ suite('Sessions - Account Contribution', () => {
 		assert.deepStrictEqual(order, [
 			'signOut',
 			'entitlementChanged',
-			'command:workbench.action.resetSessionsWelcome',
+			'resetWelcome',
 		]);
 	});
 
@@ -59,16 +51,9 @@ suite('Sessions - Account Contribution', () => {
 			entitlement: ChatEntitlement.Unknown,
 			onDidChangeEntitlement: disposables.add(new Emitter<void>()).event,
 		};
-		const commandService: Pick<ICommandService, 'executeCommand'> = {
-			async executeCommand(commandId) {
-				order.push(`command:${commandId}`);
-				return undefined;
-			},
-		};
+		await showSessionsWelcomeAfterSignOut(chatEntitlementService, () => order.push('resetWelcome'));
 
-		await showSessionsWelcomeAfterSignOut(chatEntitlementService, commandService);
-
-		assert.deepStrictEqual(order, ['command:workbench.action.resetSessionsWelcome']);
+		assert.deepStrictEqual(order, ['resetWelcome']);
 	});
 
 	test('handles entitlement becoming unknown while the listener is being attached', async () => {
@@ -85,15 +70,8 @@ suite('Sessions - Account Contribution', () => {
 			},
 			onDidChangeEntitlement,
 		};
-		const commandService: Pick<ICommandService, 'executeCommand'> = {
-			async executeCommand(commandId) {
-				order.push(`command:${commandId}`);
-				return undefined;
-			},
-		};
+		await showSessionsWelcomeAfterSignOut(chatEntitlementService, () => order.push('resetWelcome'));
 
-		await showSessionsWelcomeAfterSignOut(chatEntitlementService, commandService);
-
-		assert.deepStrictEqual(order, ['command:workbench.action.resetSessionsWelcome']);
+		assert.deepStrictEqual(order, ['resetWelcome']);
 	});
 });

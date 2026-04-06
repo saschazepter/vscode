@@ -47,6 +47,57 @@ function needsChatSetup(chatEntitlementService: Pick<IChatEntitlementService, 's
 function shouldPersistWelcomeCompletion(outcome: WalkthroughOutcome, chatEntitlementService: Pick<IChatEntitlementService, 'sentiment' | 'entitlement' | 'anonymous'>): boolean {
 	return outcome === 'completed' || !needsChatSetup(chatEntitlementService);
 }
+
+export function resetSessionsWelcome(
+	storageService: Pick<IStorageService, 'remove' | 'store'>,
+	instantiationService: IInstantiationService,
+	layoutService: IWorkbenchLayoutService,
+	chatEntitlementService: Pick<IChatEntitlementService, 'sentimentObs' | 'entitlementObs' | 'sentiment' | 'entitlement' | 'anonymous'>,
+	contextKeyService: IContextKeyService,
+	environmentService: IWorkbenchEnvironmentService,
+	logService: ILogService,
+): void {
+	// Clear completion marker
+	storageService.remove(WELCOME_COMPLETE_KEY, StorageScope.APPLICATION);
+
+	if (shouldSkipSessionsWelcome(environmentService)) {
+		return;
+	}
+
+	// Immediately show the walkthrough overlay
+	const store = new DisposableStore();
+	const welcomeVisibleKey = SessionsWelcomeVisibleContext.bindTo(contextKeyService);
+	welcomeVisibleKey.set(true);
+	store.add(toDisposable(() => welcomeVisibleKey.reset()));
+
+	const walkthrough = store.add(instantiationService.createInstance(
+		SessionsWalkthroughOverlay,
+		layoutService.mainContainer,
+	));
+
+	store.add(autorun(reader => {
+		chatEntitlementService.sentimentObs.read(reader);
+		chatEntitlementService.entitlementObs.read(reader);
+
+		if (!needsChatSetup(chatEntitlementService)) {
+			storageService.store(WELCOME_COMPLETE_KEY, true, StorageScope.APPLICATION, StorageTarget.MACHINE);
+			walkthrough.complete();
+			store.dispose();
+		}
+	}));
+
+	walkthrough.outcome
+		.then(outcome => {
+			logService.info(`[sessions welcome] Developer reset walkthrough finished with outcome: ${outcome}`);
+			if (shouldPersistWelcomeCompletion(outcome, chatEntitlementService)) {
+				storageService.store(WELCOME_COMPLETE_KEY, true, StorageScope.APPLICATION, StorageTarget.MACHINE);
+			}
+		})
+		.finally(() => {
+			store.dispose();
+		});
+}
+
 export class SessionsWelcomeContribution extends Disposable implements IWorkbenchContribution {
 
 	static readonly ID = 'workbench.contrib.sessionsWelcome';
@@ -187,45 +238,6 @@ registerAction2(class extends Action2 {
 		const contextKeyService = accessor.get(IContextKeyService);
 		const environmentService = accessor.get(IWorkbenchEnvironmentService);
 		const logService = accessor.get(ILogService);
-
-		// Clear completion marker
-		storageService.remove(WELCOME_COMPLETE_KEY, StorageScope.APPLICATION);
-
-		if (shouldSkipSessionsWelcome(environmentService)) {
-			return;
-		}
-
-		// Immediately show the walkthrough overlay
-		const store = new DisposableStore();
-		const welcomeVisibleKey = SessionsWelcomeVisibleContext.bindTo(contextKeyService);
-		welcomeVisibleKey.set(true);
-		store.add(toDisposable(() => welcomeVisibleKey.reset()));
-
-		const walkthrough = store.add(instantiationService.createInstance(
-			SessionsWalkthroughOverlay,
-			layoutService.mainContainer,
-		));
-
-		store.add(autorun(reader => {
-			chatEntitlementService.sentimentObs.read(reader);
-			chatEntitlementService.entitlementObs.read(reader);
-
-			if (!needsChatSetup(chatEntitlementService)) {
-				storageService.store(WELCOME_COMPLETE_KEY, true, StorageScope.APPLICATION, StorageTarget.MACHINE);
-				walkthrough.complete();
-				store.dispose();
-			}
-		}));
-
-		walkthrough.outcome
-			.then(outcome => {
-				logService.info(`[sessions welcome] Developer reset walkthrough finished with outcome: ${outcome}`);
-				if (shouldPersistWelcomeCompletion(outcome, chatEntitlementService)) {
-					storageService.store(WELCOME_COMPLETE_KEY, true, StorageScope.APPLICATION, StorageTarget.MACHINE);
-				}
-			})
-			.finally(() => {
-				store.dispose();
-			});
+		resetSessionsWelcome(storageService, instantiationService, layoutService, chatEntitlementService, contextKeyService, environmentService, logService);
 	}
 });

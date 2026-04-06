@@ -30,7 +30,6 @@ import { IUpdateService, State, StateType } from '../../../../platform/update/co
 import { IHoverService } from '../../../../platform/hover/browser/hover.js';
 import { IProductService } from '../../../../platform/product/common/productService.js';
 import { IOpenerService } from '../../../../platform/opener/common/opener.js';
-import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { IDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 import { IHostService } from '../../../../workbench/services/host/browser/host.js';
 import { URI } from '../../../../base/common/uri.js';
@@ -45,6 +44,11 @@ import { IsAuxiliaryWindowContext } from '../../../../workbench/common/contextke
 import { IAuthenticationAccessService } from '../../../../workbench/services/authentication/browser/authenticationAccessService.js';
 import { IAuthenticationUsageService } from '../../../../workbench/services/authentication/browser/authenticationUsageService.js';
 import { IAuthenticationService } from '../../../../workbench/services/authentication/common/authentication.js';
+import { resetSessionsWelcome } from '../../welcome/browser/welcome.contribution.js';
+import { IStorageService } from '../../../../platform/storage/common/storage.js';
+import { IWorkbenchLayoutService } from '../../../../workbench/services/layout/browser/layoutService.js';
+import { IWorkbenchEnvironmentService } from '../../../../workbench/services/environment/common/environmentService.js';
+import { ILogService } from '../../../../platform/log/common/log.js';
 
 // --- Account Menu Items --- //
 const AccountMenu = new MenuId('SessionsAccountMenu');
@@ -153,7 +157,7 @@ async function runSessionsUpdateAction(
 
 export async function showSessionsWelcomeAfterSignOut(
 	chatEntitlementService: Pick<IChatEntitlementService, 'entitlement' | 'onDidChangeEntitlement'>,
-	commandService: Pick<ICommandService, 'executeCommand'>,
+	resetWelcome: () => void,
 ): Promise<void> {
 	const waitForUnknownEntitlement = Event.toPromise(Event.filter(chatEntitlementService.onDidChangeEntitlement, () => chatEntitlementService.entitlement === ChatEntitlement.Unknown));
 	try {
@@ -164,7 +168,7 @@ export async function showSessionsWelcomeAfterSignOut(
 		waitForUnknownEntitlement.cancel();
 	}
 
-	await commandService.executeCommand('workbench.action.resetSessionsWelcome');
+	resetWelcome();
 }
 
 // Sign In (shown when signed out)
@@ -208,7 +212,12 @@ registerAction2(class extends Action2 {
 		const authenticationUsageService = accessor.get(IAuthenticationUsageService);
 		const authenticationAccessService = accessor.get(IAuthenticationAccessService);
 		const chatEntitlementService = accessor.get(IChatEntitlementService);
-		const commandService = accessor.get(ICommandService);
+		const storageService = accessor.get(IStorageService);
+		const instantiationService = accessor.get(IInstantiationService);
+		const layoutService = accessor.get(IWorkbenchLayoutService);
+		const contextKeyService = accessor.get(IContextKeyService);
+		const environmentService = accessor.get(IWorkbenchEnvironmentService);
+		const logService = accessor.get(ILogService);
 		const defaultAccount = await defaultAccountService.getDefaultAccount();
 		if (!defaultAccount) {
 			return;
@@ -232,7 +241,7 @@ registerAction2(class extends Action2 {
 		await Promise.all(sessions.map(session => authenticationService.removeSession(providerId, session.id)));
 		authenticationUsageService.removeAccountUsage(providerId, accountLabel);
 		authenticationAccessService.removeAllowedExtensions(providerId, accountLabel);
-		await showSessionsWelcomeAfterSignOut(chatEntitlementService, commandService);
+		await showSessionsWelcomeAfterSignOut(chatEntitlementService, () => resetSessionsWelcome(storageService, instantiationService, layoutService, chatEntitlementService, contextKeyService, environmentService, logService));
 	}
 });
 
