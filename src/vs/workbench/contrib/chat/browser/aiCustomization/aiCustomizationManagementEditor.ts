@@ -9,7 +9,7 @@ import { RunOnceScheduler } from '../../../../../base/common/async.js';
 import { CancellationToken } from '../../../../../base/common/cancellation.js';
 import { VSBuffer } from '../../../../../base/common/buffer.js';
 import { onUnexpectedError } from '../../../../../base/common/errors.js';
-import { DisposableStore, IReference, toDisposable } from '../../../../../base/common/lifecycle.js';
+import { DisposableStore, IReference, MutableDisposable, toDisposable } from '../../../../../base/common/lifecycle.js';
 import { Event } from '../../../../../base/common/event.js';
 import { autorun } from '../../../../../base/common/observable.js';
 import { Orientation, Sizing, SplitView } from '../../../../../base/browser/ui/splitview/splitview.js';
@@ -864,6 +864,21 @@ export class AICustomizationManagementEditor extends EditorPane {
 		this.editorDisposables.add(this.promptsService.onDidChangeSkills(() => this.refreshAllPromptsSectionCounts()));
 		this.editorDisposables.add(this.promptsService.onDidChangeInstructions(() => this.refreshAllPromptsSectionCounts()));
 		this.editorDisposables.add(this.promptsService.onDidChangeSlashCommands(() => this.refreshAllPromptsSectionCounts()));
+
+		// When a provider harness is active, also refresh all counts on provider
+		// data changes. The prompts service events above only cover the core
+		// path — provider-sourced items bypass those events entirely.
+		const providerCountDisposable = this.editorDisposables.add(new MutableDisposable());
+		this.editorDisposables.add(autorun(reader => {
+			this.harnessService.activeHarness.read(reader);
+			this.harnessService.availableHarnesses.read(reader);
+			const descriptor = this.harnessService.getActiveDescriptor();
+			if (descriptor.itemProvider) {
+				providerCountDisposable.value = descriptor.itemProvider.onDidChange(() => this.refreshAllPromptsSectionCounts());
+			} else {
+				providerCountDisposable.clear();
+			}
+		}));
 
 		// Load initial counts for all sections
 		this.refreshAllPromptsSectionCounts();
