@@ -369,7 +369,7 @@ class NewChatWidget extends Disposable implements IHistoryNavigationWidget {
 		// Slash commands
 		this._slashCommandHandler = this._register(this.instantiationService.createInstance(SlashCommandHandler, this._editor));
 
-		// Variable completions (#file, #folder, #selection)
+		// Variable completions (#file, #folder)
 		this._register(this.instantiationService.createInstance(
 			VariableCompletionHandler, this._editor, this._contextAttachments, () => this._getContextFolderUri(),
 		));
