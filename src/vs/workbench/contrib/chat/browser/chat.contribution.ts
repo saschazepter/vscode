@@ -730,8 +730,8 @@ configurationRegistry.registerConfiguration({
 				minimumVersion: '1.116',
 				localization: {
 					description: {
-						key: 'chat.plugins.enabled.policy',
-						value: nls.localize('chat.plugins.enabled.policy', "Enable agent plugin integration in chat."),
+						key: 'chat.plugins.enabled',
+						value: nls.localize('chat.plugins.enabled', "Enable agent plugin integration in chat."),
 					}
 				},
 			},
