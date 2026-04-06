@@ -96,7 +96,7 @@
 		"manageSettingsUrl": "https://aka.ms/github-copilot-settings",
 		"managePlanUrl": "https://aka.ms/github-copilot-manage-plan",
 		"manageOverageUrl": "https://aka.ms/github-copilot-manage-overage",
-		"upgradePlanUrl": "https://aka.ms/github-copilot-upgrade-plan",
+		"upgradePlanUrl": "https://github.com/github-copilot/signup/copilot_individual?utm_source=vscode",
 		"signUpUrl": "https://aka.ms/github-sign-up",
 		"provider": {
 			"default": {

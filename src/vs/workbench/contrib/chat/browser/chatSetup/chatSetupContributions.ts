@@ -35,7 +35,7 @@ import { IProductService } from '../../../../../platform/product/common/productS
 import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry.js';
 import { IWorkbenchContribution } from '../../../../common/contributions.js';
 import { IViewDescriptorService, ViewContainerLocation } from '../../../../common/views.js';
-import { ChatEntitlement, ChatEntitlementContext, ChatEntitlementRequests, ChatEntitlementService, IChatEntitlementService, isProUser } from '../../../../services/chat/common/chatEntitlementService.js';
+import { ChatEntitlement, ChatEntitlementContext, ChatEntitlementRequests, ChatEntitlementService, getChatUpgradePlanURI, IChatEntitlementService, isProUser } from '../../../../services/chat/common/chatEntitlementService.js';
 import { EnablementState, IWorkbenchExtensionEnablementService } from '../../../../services/extensionManagement/common/extensionManagement.js';
 import { ExtensionUrlHandlerOverrideRegistry, IExtensionUrlHandlerOverride } from '../../../../services/extensions/browser/extensionUrlHandler.js';
 import { IExtensionService } from '../../../../services/extensions/common/extensions.js';
@@ -436,8 +436,12 @@ export class ChatSetupContribution extends Disposable implements IWorkbenchContr
 				const openerService = accessor.get(IOpenerService);
 				const hostService = accessor.get(IHostService);
 				const commandService = accessor.get(ICommandService);
+				const productService = accessor.get(IProductService);
 
-				openerService.open(URI.parse(defaultChat.upgradePlanUrl));
+				const upgradePlanUri = getChatUpgradePlanURI(productService);
+				if (upgradePlanUri) {
+					openerService.open(upgradePlanUri);
+				}
 
 				const entitlement = context.state.entitlement;
 				if (!isProUser(entitlement)) {

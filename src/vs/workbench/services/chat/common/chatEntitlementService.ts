@@ -215,6 +215,39 @@ export function getChatPlanName(chatEntitlement: ChatEntitlement): string {
 	}
 }
 
+const CHAT_UPGRADE_REDIRECT_URL_STABLE = 'https://vscode.dev/redirect';
+const CHAT_UPGRADE_REDIRECT_URL_INSIDERS = 'https://insiders.vscode.dev/redirect';
+
+export function getChatUpgradePlanURI(productService: IProductService): URI | undefined {
+	const upgradePlanUrl = productService.defaultChatAgent?.upgradePlanUrl;
+	if (!upgradePlanUrl) {
+		return undefined;
+	}
+
+	const parsedUpgradePlanUrl = new URL(upgradePlanUrl);
+	const upgradePlanUri = URI.from({
+		scheme: parsedUpgradePlanUrl.protocol.replace(/:$/, ''),
+		authority: parsedUpgradePlanUrl.host,
+		path: parsedUpgradePlanUrl.pathname,
+		query: parsedUpgradePlanUrl.search.startsWith('?') ? parsedUpgradePlanUrl.search.slice(1) : parsedUpgradePlanUrl.search,
+		fragment: parsedUpgradePlanUrl.hash.startsWith('#') ? parsedUpgradePlanUrl.hash.slice(1) : parsedUpgradePlanUrl.hash
+	});
+	const chatExtensionId = productService.defaultChatAgent?.chatExtensionId;
+	if (!chatExtensionId) {
+		return upgradePlanUri;
+	}
+
+	const deepLinkUri = URI.from({ scheme: productService.urlProtocol, authority: chatExtensionId });
+
+	const isInsiders = productService.quality === 'insider' || /insiders/i.test(productService.urlProtocol);
+	const returnToUri = URI.parse(`${isInsiders ? CHAT_UPGRADE_REDIRECT_URL_INSIDERS : CHAT_UPGRADE_REDIRECT_URL_STABLE}?url=${encodeURIComponent(deepLinkUri.toString(true))}`);
+
+	const upgradeQuery = new URLSearchParams(upgradePlanUri.query);
+	upgradeQuery.set('return_to', returnToUri.toString(true));
+
+	return upgradePlanUri.with({ query: upgradeQuery.toString() });
+}
+
 //#region Service Implementation
 
 const defaultChatAgent = {
@@ -613,6 +646,7 @@ export class ChatEntitlementRequests extends Disposable {
 		@IRequestService private readonly requestService: IRequestService,
 		@IDialogService private readonly dialogService: IDialogService,
 		@IOpenerService private readonly openerService: IOpenerService,
+		@IProductService private readonly productService: IProductService,
 		@ILifecycleService private readonly lifecycleService: ILifecycleService,
 		@IDefaultAccountService private readonly defaultAccountService: IDefaultAccountService,
 		@IAuthenticationService private readonly authenticationService: IAuthenticationService,
@@ -960,7 +994,14 @@ export class ChatEntitlementRequests extends Disposable {
 					},
 					{
 						label: localize('learnMore', "Learn More"),
-						run: () => this.openerService.open(URI.parse(defaultChatAgent.upgradePlanUrl))
+						run: () => {
+							const upgradePlanUri = getChatUpgradePlanURI(this.productService);
+							if (upgradePlanUri) {
+								return this.openerService.open(upgradePlanUri);
+							}
+
+							return Promise.resolve(undefined);
+						}
 					}
 				]
 			});
