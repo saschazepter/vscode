@@ -795,29 +795,29 @@ export class ModelPickerWidget extends Disposable {
 function getModelHoverContent(model: ILanguageModelChatMetadataAndIdentifier, languageModelsService?: ILanguageModelsService): MarkdownString {
 	const isAuto = model.metadata.id === 'auto' && model.metadata.vendor === 'copilot';
 	const markdown = new MarkdownString('', { isTrusted: true, supportThemeIcons: true });
-	markdown.appendMarkdown(`**${model.metadata.name}**`);
+
+	// Provider name (bold) + model name
+	const vendorName = model.metadata.vendor === 'copilot' ? model.metadata.family : model.metadata.vendor;
+	if (vendorName) {
+		markdown.appendMarkdown(`**${vendorName}** ${model.metadata.name}`);
+	} else {
+		markdown.appendMarkdown(`**${model.metadata.name}**`);
+	}
 	markdown.appendText(`\n`);
 
-	if (model.metadata.statusIcon && model.metadata.tooltip) {
-		if (model.metadata.statusIcon) {
-			markdown.appendMarkdown(`$(${model.metadata.statusIcon.id})&nbsp;`);
-		}
+	// Model description from detail or tooltip
+	if (model.metadata.detail) {
+		markdown.appendMarkdown(`${model.metadata.detail}`);
+		markdown.appendText(`\n`);
+	} else if (model.metadata.tooltip) {
 		markdown.appendMarkdown(`${model.metadata.tooltip}`);
 		markdown.appendText(`\n`);
 	}
 
-	if (model.metadata.multiplier) {
-		markdown.appendMarkdown(`${localize('multiplier.tooltip', "Each chat message counts {0} toward your premium request quota", model.metadata.multiplier)}`);
-		markdown.appendText(`\n`);
-	}
+	// Build detail rows (config properties + context size) to check if separator is needed
+	const detailRows: string[] = [];
 
-	if (!isAuto && (model.metadata.maxInputTokens || model.metadata.maxOutputTokens)) {
-		const totalTokens = (model.metadata.maxInputTokens ?? 0) + (model.metadata.maxOutputTokens ?? 0);
-		markdown.appendMarkdown(`${localize('models.contextSize', 'Context Size')}: `);
-		markdown.appendMarkdown(`${formatTokenCount(totalTokens)}`);
-		markdown.appendText(`\n`);
-	}
-
+	// Thinking effort and other config properties
 	if (languageModelsService) {
 		const schema = model.metadata.configurationSchema;
 		if (schema?.properties) {
@@ -831,9 +831,24 @@ function getModelHoverContent(model: ILanguageModelChatMetadataAndIdentifier, la
 				const enumIndex = propSchema.enum?.indexOf(value) ?? -1;
 				const displayValue = enumItemLabels?.[enumIndex] ?? String(value);
 				const label = propSchema.title ?? key;
-				markdown.appendText(`${label}: ${displayValue}`);
-				markdown.appendText(`\n`);
+				detailRows.push(`${localize('modelHover.configLabel', "{0}:", label)}&nbsp;&nbsp;&nbsp;&nbsp;**${displayValue}**`);
 			}
+		}
+	}
+
+	// Context size with input/output breakdown
+	if (!isAuto && (model.metadata.maxInputTokens || model.metadata.maxOutputTokens)) {
+		const inputTokens = model.metadata.maxInputTokens ?? 0;
+		const outputTokens = model.metadata.maxOutputTokens ?? 0;
+		detailRows.push(`${localize('models.contextSize', 'Context Size')}:&nbsp;&nbsp;&nbsp;&nbsp;$(arrow-down) ${formatTokenCount(inputTokens)}&nbsp;&nbsp;$(arrow-up) ${formatTokenCount(outputTokens)}`);
+	}
+
+	if (detailRows.length > 0) {
+		markdown.appendMarkdown(`---`);
+		markdown.appendText(`\n`);
+		for (const row of detailRows) {
+			markdown.appendMarkdown(row);
+			markdown.appendText(`\n`);
 		}
 	}
 
