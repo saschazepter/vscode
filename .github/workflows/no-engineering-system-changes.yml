@@ -21,15 +21,22 @@ jobs:
             echo "engineering_systems_modified=false" >> $GITHUB_OUTPUT
             echo "No engineering systems were modified in this PR"
           fi
-      - name: Allow automated distro updates
+      - name: Allow automated distro or version field updates
         id: distro_exception
         if: ${{ steps.engineering_systems_check.outputs.engineering_systems_modified == 'true' && github.event.pull_request.user.login == 'vs-code-engineering[bot]' }}
         run: |
-          # Allow the vs-code-engineering bot ONLY when package.json is the
-          # sole changed file and the diff exclusively touches the "distro" field.
+          # Allow the vs-code-engineering bot ONLY when:
+          # 1. package.json is the sole changed file and the diff exclusively
+          #    touches the "distro" or "version" field, OR
+          # 2. package.json + package-lock.json are the only changed files and
+          #    the package.json diff exclusively touches the "version" field
+          #    (lock file updates are expected from npm install after version bump).
+
           ONLY_PKG=$(jq -e '. == ["package.json"]' "$HOME/files.json" > /dev/null 2>&1 && echo true || echo false)
-          if [[ "$ONLY_PKG" != "true" ]]; then
-            echo "Bot modified files beyond package.json — not allowed"
+          PKG_AND_LOCK=$(jq -e '. | sort == ["package-lock.json", "package.json"]' "$HOME/files.json" > /dev/null 2>&1 && echo true || echo false)
+
+          if [[ "$ONLY_PKG" != "true" && "$PKG_AND_LOCK" != "true" ]]; then
+            echo "Bot modified files beyond package.json (+ package-lock.json) — not allowed"
             echo "allowed=false" >> $GITHUB_OUTPUT
             exit 0
           fi
@@ -39,14 +46,22 @@ jobs:
             echo "allowed=false" >> $GITHUB_OUTPUT
             exit 0
           }
-          CHANGED_LINES=$(echo "$DIFF" | grep -E '^[+-]' | grep -vE '^(\+\+\+|---)' | wc -l)
-          DISTRO_LINES=$(echo "$DIFF" | grep -cE '^[+-][[:space:]]*"distro"[[:space:]]*:' || true)
 
-          if [[ "$CHANGED_LINES" -eq 2 && "$DISTRO_LINES" -eq 2 ]]; then
-            echo "Distro-only update by bot — allowing"
+          # Extract only the package.json diff section (ignore package-lock.json changes)
+          PKG_DIFF=$(echo "$DIFF" | awk '/^diff --git a\/package\.json b\/package\.json/{p=1} p && /^diff --git / && !/^diff --git a\/package\.json/{exit} p{print}')
+
+          CHANGED_LINES=$(echo "$PKG_DIFF" | grep -E '^[+-]' | grep -vE '^(\+\+\+|---)' | wc -l)
+          DISTRO_LINES=$(echo "$PKG_DIFF" | grep -cE '^[+-][[:space:]]*"distro"[[:space:]]*:' || true)
+          VERSION_LINES=$(echo "$PKG_DIFF" | grep -cE '^[+-][[:space:]]*"version"[[:space:]]*:' || true)
+
+          if [[ "$ONLY_PKG" == "true" && "$CHANGED_LINES" -eq 2 && ("$DISTRO_LINES" -eq 2 || "$VERSION_LINES" -eq 2) ]]; then
+            echo "Distro-only or version-only update by bot — allowing"
+            echo "allowed=true" >> $GITHUB_OUTPUT
+          elif [[ "$PKG_AND_LOCK" == "true" && "$CHANGED_LINES" -eq 2 && "$VERSION_LINES" -eq 2 ]]; then
+            echo "Version bump with lock file update by bot — allowing"
             echo "allowed=true" >> $GITHUB_OUTPUT
           else
-            echo "Bot changed more than the distro field — not allowed"
+            echo "Bot changed more than a single allowed field (distro or version) — not allowed"
             echo "allowed=false" >> $GITHUB_OUTPUT
           fi
         env:
