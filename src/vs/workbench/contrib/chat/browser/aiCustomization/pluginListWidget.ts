@@ -418,7 +418,7 @@ export class PluginListWidget extends Disposable {
 		}));
 
 		const createPluginButton = this._register(new Button(buttonContainer, { ...defaultButtonStyles, secondary: true, supportIcons: true }));
-		createPluginButton.label = `$(${Codicon.save.id})`;
+		createPluginButton.label = `$(${Codicon.newFile.id})`;
 		createPluginButton.setTitle(localize('createPlugin', "Create Plugin"));
 		createPluginButton.element.classList.add('list-icon-button');
 		this._register(this.hoverService.setupManagedHover(getDefaultHoverDelegate('element'), createPluginButton.element, localize('createPluginTooltip', "Create Plugin")));
