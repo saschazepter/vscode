@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as dom from '../../../../base/browser/dom.js';
-import { SubmenuAction, toAction } from '../../../../base/common/actions.js';
+import { IAction, SubmenuAction, toAction } from '../../../../base/common/actions.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { MarkdownString } from '../../../../base/common/htmlContent.js';
@@ -422,13 +422,28 @@ export class WorkspacePicker extends Disposable {
 			}
 		}
 
+		if (items.length > 0 && items[items.length - 1].kind !== ActionListItemKind.Separator && remoteProviders.length) {
+			items.push({ kind: ActionListItemKind.Separator, label: '' });
+		}
+
 		for (const provider of remoteProviders) {
 			const status = provider.connectionStatus!.get();
 			const isConnected = status === RemoteAgentHostConnectionStatus.Connected;
 			const providerBrowseIndex = allBrowseActions.findIndex(a => a.providerId === provider.id);
 
-			if (items.length > 0 && items[items.length - 1].kind !== ActionListItemKind.Separator) {
-				items.push({ kind: ActionListItemKind.Separator, label: '' });
+			const toolbarActions: IAction[] = [];
+
+			// Gear menu only for SSH hosts, not tunnel providers
+			if (!provider.remoteAddress?.startsWith('tunnel:')) {
+				toolbarActions.push(toAction({
+					id: `workspacePicker.remote.gear.${provider.id}`,
+					label: localize('workspacePicker.remoteOptions', "Options"),
+					class: ThemeIcon.asClassName(Codicon.gear),
+					run: () => {
+						this.actionWidgetService.hide();
+						this._showRemoteHostOptionsDelayed(provider);
+					},
+				}));
 			}
 
 			items.push({
@@ -442,17 +457,7 @@ export class WorkspacePicker extends Disposable {
 					browseActionIndex: isConnected && providerBrowseIndex >= 0 ? providerBrowseIndex : undefined,
 					remoteProvider: provider,
 				},
-				toolbarActions: [
-					toAction({
-						id: `workspacePicker.remote.gear.${provider.id}`,
-						label: localize('workspacePicker.remoteOptions', "Options"),
-						class: ThemeIcon.asClassName(Codicon.gear),
-						run: () => {
-							this.actionWidgetService.hide();
-							this._showRemoteHostOptionsDelayed(provider);
-						},
-					}),
-				],
+				toolbarActions,
 			});
 		}
 

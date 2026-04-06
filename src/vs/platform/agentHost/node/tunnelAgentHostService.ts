@@ -8,7 +8,7 @@ import type { TunnelManagementHttpClient } from '@microsoft/dev-tunnels-manageme
 import { createHash } from 'crypto';
 import type WebSocket from 'ws';
 import { Emitter, Event } from '../../../base/common/event.js';
-import { Disposable, toDisposable } from '../../../base/common/lifecycle.js';
+import { Disposable } from '../../../base/common/lifecycle.js';
 import { generateUuid } from '../../../base/common/uuid.js';
 import { ILogService } from '../../log/common/log.js';
 import {
@@ -51,19 +51,19 @@ class TunnelConnection extends Disposable {
 		readonly name: string,
 		readonly connectionToken: string,
 		private readonly _relay: { send: (data: string) => void; close: () => void },
-		relayClient: { dispose(): void },
+		private readonly _relayClient: { dispose(): void },
 	) {
 		super();
+	}
 
-		this._register(toDisposable(() => {
-			if (this._closed) {
-				return;
-			}
+	override dispose(): void {
+		if (!this._closed) {
 			this._closed = true;
 			this._relay.close();
-			relayClient.dispose();
+			this._relayClient.dispose();
 			this._onDidClose.fire();
-		}));
+		}
+		super.dispose();
 	}
 
 	relaySend(data: string): void {
@@ -317,7 +317,10 @@ export class TunnelAgentHostMainService extends Disposable implements ITunnelAge
 			});
 
 			ws.on('close', () => {
-				this._onDidRelayClose.fire(connectionId);
+				const conn = this._connections.get(connectionId);
+				if (conn) {
+					conn.dispose();
+				}
 			});
 
 			ws.on('error', (wsErr: unknown) => {

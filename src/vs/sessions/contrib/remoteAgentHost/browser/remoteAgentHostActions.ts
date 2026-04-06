@@ -576,10 +576,18 @@ async function promptToConnectViaTunnel(
 		return;
 	}
 
-	// Step 4: Connect to the tunnel
+	// Step 4: Connect to the tunnel with progress notification
+	const handle = notificationService.notify({
+		severity: Severity.Info,
+		message: localize('tunnelConnecting', "Connecting to tunnel '{0}'...", picked.tunnel.name),
+		progress: { infinite: true },
+	});
+
 	try {
 		await tunnelService.connect(picked.tunnel, authProvider);
+		handle.close();
 	} catch (err) {
+		handle.close();
 		notificationService.error(localize('tunnelConnectFailed', "Failed to connect to tunnel '{0}': {1}", picked.tunnel.name, err instanceof Error ? err.message : String(err)));
 		return;
 	}
