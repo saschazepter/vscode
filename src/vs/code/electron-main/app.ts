@@ -1736,7 +1736,7 @@ export class CodeApplication extends Disposable {
 	}
 
 	private registerEmbeddedAppWithLaunchServices(): void {
-		if (!isMacintosh || (process as INodeProcess).isEmbeddedApp || !this.productService.embedded?.nameShort) {
+		if (!isMacintosh || (process as INodeProcess).isEmbeddedApp || !this.productService.embedded?.nameShort || this.productService.quality === 'stable') {
 			return;
 		}
 
