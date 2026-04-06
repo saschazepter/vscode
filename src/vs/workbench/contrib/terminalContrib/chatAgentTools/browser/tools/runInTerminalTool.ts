@@ -10,7 +10,7 @@ import { Codicon } from '../../../../../../base/common/codicons.js';
 import { CancellationError } from '../../../../../../base/common/errors.js';
 import { Event } from '../../../../../../base/common/event.js';
 import { MarkdownString, type IMarkdownString } from '../../../../../../base/common/htmlContent.js';
-import { Disposable, DisposableStore, MutableDisposable } from '../../../../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore, type IDisposable, MutableDisposable } from '../../../../../../base/common/lifecycle.js';
 import { ResourceMap } from '../../../../../../base/common/map.js';
 import { getMediaMime } from '../../../../../../base/common/mime.js';
 import { basename, posix, win32 } from '../../../../../../base/common/path.js';
@@ -431,6 +431,14 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 	protected readonly _sessionTerminalAssociations = new ResourceMap<IToolTerminal>();
 	protected readonly _sessionTerminalInstances = new ResourceMap<Set<ITerminalInstance>>();
 	private readonly _terminalsBeingDisposedBySessionCleanup = new Set<ITerminalInstance>();
+
+	/**
+	 * Tracks active background completion notifications per terminal ID.
+	 * When a new notification is registered for a terminal that already has one,
+	 * the previous notification (and its OutputMonitor) is disposed first to
+	 * prevent listener accumulation on the terminal's onDidInputData emitter.
+	 */
+	private readonly _backgroundNotifications = new Map<string, IDisposable>();
 
 	// Immutable window state
 	protected readonly _osBackend: Promise<OperatingSystem>;
@@ -1766,6 +1774,11 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 	 * The output monitor is cancelled and disposed when a command finishes.
 	 */
 	private _registerCompletionNotification(terminalInstance: ITerminalInstance, termId: string, chatSessionResource: URI, commandName: string, outputMonitor?: OutputMonitor): void {
+		// Dispose any previous background notification for this terminal to prevent
+		// listener accumulation (e.g. multiple onDidInputData subscriptions).
+		this._backgroundNotifications.get(termId)?.dispose();
+		this._backgroundNotifications.delete(termId);
+
 		const commandDetection = terminalInstance.capabilities.get(TerminalCapability.CommandDetection);
 		if (!commandDetection) {
 			outputMonitor?.dispose();
@@ -1851,13 +1864,19 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 		});
 
 		const cleanup = () => {
+			this._backgroundNotifications.delete(termId);
 			listener.dispose();
 			disposedListener.dispose();
 			modelChangeListener.dispose();
+			// Cancel before dispose so that onCancellationRequested handlers fire
+			// and pending promises (e.g. _waitForNewData) resolve properly.
+			bgCts?.cancel();
 			bgCts?.dispose();
 			outputMonitor?.dispose();
 			sessionRef.dispose();
 		};
+
+		this._backgroundNotifications.set(termId, { dispose: cleanup });
 
 		this._register(listener);
 		this._register(disposedListener);
