@@ -1493,7 +1493,7 @@ suite('Protocol WebSocket E2E', function () {
 		const snapshot = await client.call<ISubscribeResult>('subscribe', { resource: sessionUri });
 		const state = snapshot.snapshot.state as ISessionState;
 		assert.strictEqual(state.summary.isDone, true, 'isDone should be true in snapshot');
-		assert.strictEqual(state.summary.isRead, undefined, 'isRead should be absent (false) in snapshot');
+		assert.strictEqual(state.summary.isRead, false, 'isRead should be false in snapshot');
 
 		// Poll listSessions until the persisted flags appear (async DB write)
 		client.close();

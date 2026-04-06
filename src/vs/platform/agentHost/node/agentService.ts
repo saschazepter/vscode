@@ -142,7 +142,7 @@ export class AgentService extends Disposable implements IAgentService {
 					ref.dispose();
 				}
 			} catch (e) {
-				this._logService.warn(`[AgentService] Failed to read session metadata overlay for ${s.session}: ${e}`);
+				this._logService.warn(`[AgentService] Failed to read session metadata overlay for ${s.session}`, e);
 			}
 			return s;
 		}));
