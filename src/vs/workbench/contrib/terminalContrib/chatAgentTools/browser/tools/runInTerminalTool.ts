@@ -10,7 +10,7 @@ import { Codicon } from '../../../../../../base/common/codicons.js';
 import { CancellationError } from '../../../../../../base/common/errors.js';
 import { Event } from '../../../../../../base/common/event.js';
 import { MarkdownString, type IMarkdownString } from '../../../../../../base/common/htmlContent.js';
-import { Disposable, DisposableMap, DisposableStore, MutableDisposable } from '../../../../../../base/common/lifecycle.js';
+import { Disposable, DisposableMap, DisposableStore, MutableDisposable, toDisposable } from '../../../../../../base/common/lifecycle.js';
 import { ResourceMap } from '../../../../../../base/common/map.js';
 import { getMediaMime } from '../../../../../../base/common/mime.js';
 import { basename, posix, win32 } from '../../../../../../base/common/path.js';
@@ -1809,22 +1809,33 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 		// Continue the output monitor in background mode for prompt-for-input detection.
 		// The monitor wakes only on new terminal data (not on a fixed interval), so
 		// resource cost is proportional to actual terminal activity.
-		let bgCts: CancellationTokenSource | undefined;
+		const store = new DisposableStore();
 		if (outputMonitor) {
-			bgCts = new CancellationTokenSource();
+			const bgCts = new CancellationTokenSource();
+			store.add(toDisposable(() => {
+				// Cancel before dispose so that onCancellationRequested handlers fire
+				// and pending promises (e.g. _waitForNewData) resolve properly.
+				bgCts.cancel();
+				bgCts.dispose();
+			}));
+			store.add(outputMonitor);
 			outputMonitor.continueMonitoringAsync(bgCts.token);
 		}
 
-		const listener = commandDetection.onCommandFinished(command => {
+		store.add(sessionRef);
+
+		const disposeNotification = () => this._backgroundNotifications.deleteAndDispose(termId);
+
+		store.add(commandDetection.onCommandFinished(command => {
 			const execution = RunInTerminalTool._activeExecutions.get(termId);
 			if (!execution) {
-				cleanup();
+				disposeNotification();
 				return;
 			}
 
 			// Dispose after first notification to avoid chatty repeated messages
 			// if the user runs additional commands via send_to_terminal.
-			cleanup();
+			disposeNotification();
 
 			const exitCode = command.exitCode;
 			const exitCodeText = exitCode !== undefined ? ` with exit code ${exitCode}` : '';
@@ -1841,41 +1852,28 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 			}).catch(e => {
 				this._logService.warn(`RunInTerminalTool: Failed to send completion notification for terminal ${termId}`, e);
 			});
-		});
+		}));
 
 		// Clean up all background resources when the terminal is disposed
 		// (e.g. user closes the terminal) to avoid leaking listeners and monitors.
-		const disposedListener = terminalInstance.onDisposed(() => {
-			cleanup();
-		});
+		store.add(terminalInstance.onDisposed(() => {
+			disposeNotification();
+		}));
 
 		// When a checkpoint is restored, requests are removed from the model.
 		// Cancel the background notification and dispose the terminal so that
 		// background processes don't outlive the rolled-back session state.
-		const modelChangeListener = sessionRef.object.onDidChange(e => {
+		store.add(sessionRef.object.onDidChange(e => {
 			if (e.kind === 'removeRequest') {
 				this._logService.debug(`RunInTerminalTool: Request removed from session, cleaning up background terminal ${termId}`);
 				RunInTerminalTool._activeExecutions.get(termId)?.dispose();
 				RunInTerminalTool._activeExecutions.delete(termId);
-				cleanup();
+				disposeNotification();
 				terminalInstance.dispose();
 			}
-		});
+		}));
 
-		const cleanup = () => {
-			this._backgroundNotifications.deleteAndLeak(termId);
-			listener.dispose();
-			disposedListener.dispose();
-			modelChangeListener.dispose();
-			// Cancel before dispose so that onCancellationRequested handlers fire
-			// and pending promises (e.g. _waitForNewData) resolve properly.
-			bgCts?.cancel();
-			bgCts?.dispose();
-			outputMonitor?.dispose();
-			sessionRef.dispose();
-		};
-
-		this._backgroundNotifications.set(termId, { dispose: cleanup });
+		this._backgroundNotifications.set(termId, store);
 	}
 	// #endregion
 }
