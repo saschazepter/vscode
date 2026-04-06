@@ -145,6 +145,14 @@ suite('RunInTerminalTool', () => {
 				onDidChangeSessionArchivedState: chatSessionArchivedEmitter.event,
 			} as IAgentSessionsService['model']
 		});
+		instantiationService.stub(ITerminalService, {
+			createTerminal: async () => createdTerminalInstance,
+			onDidDisposeInstance: terminalServiceDisposeEmitter.event,
+			onDidChangeInstances: Event.None,
+			revealTerminal: async () => { },
+			setActiveInstance: () => { },
+			setNextCommandId: async () => { }
+		});
 		instantiationService.stub(ITerminalChatService, store.add(instantiationService.createInstance(TerminalChatService)));
 		instantiationService.stub(IWorkspaceContextService, workspaceContextService);
 		instantiationService.stub(IHistoryService, {
@@ -181,13 +189,6 @@ suite('RunInTerminalTool', () => {
 			getTools() {
 				return [];
 			},
-		});
-		instantiationService.stub(ITerminalService, {
-			createTerminal: async () => createdTerminalInstance,
-			onDidDisposeInstance: terminalServiceDisposeEmitter.event,
-			revealTerminal: async () => { },
-			setActiveInstance: () => { },
-			setNextCommandId: async () => { }
 		});
 		instantiationService.stub(ITerminalProfileResolverService, {
 			getDefaultProfile: async () => ({ path: 'bash' } as ITerminalProfile)
