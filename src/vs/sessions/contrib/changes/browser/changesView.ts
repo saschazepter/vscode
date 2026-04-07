@@ -795,13 +795,10 @@ export class ChangesViewPane extends ViewPane {
 	}
 
 	override focus(): void {
+		super.focus();
+
 		if (this.tree && this.tree.getNode(null).visibleChildrenCount > 0) {
 			this.tree.domFocus();
-		} else {
-			if (this.element && !this.element.hasAttribute('tabindex')) {
-				this.element.setAttribute('tabindex', '0');
-			}
-			this.element.focus();
 		}
 	}
 
