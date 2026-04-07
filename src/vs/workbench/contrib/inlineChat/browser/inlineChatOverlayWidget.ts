@@ -198,7 +198,7 @@ export class InlineChatInputWidget extends Disposable {
 			this._container.style.width = `${totalWidth}px`;
 			this._inputContainer.style.width = `${inputWidth}px`;
 			this._input.layout({ width: inputWidth, height });
-			if (this._position.get() !== null) {
+			if (this._position.read(undefined) !== null) {
 				this._updatePosition();
 			}
 		}));
