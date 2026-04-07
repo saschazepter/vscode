@@ -6,10 +6,6 @@ import assert from 'assert';
 import { clearMarks, getMarks, mark } from '../../common/performance.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from './utils.js';
 
-function marksFor(prefix: string) {
-	return getMarks().filter(m => m.name.startsWith(prefix));
-}
-
 // Each test uses a unique prefix via a counter to avoid singleton state leaking between tests.
 let testCounter = 0;
 function uniquePrefix(): string {
@@ -26,25 +22,31 @@ suite('clearMarks', () => {
 		prefix = uniquePrefix();
 	});
 
-	test('clears all marks with matching prefix', () => {
-		mark(`${prefix}a`);
-		mark(`${prefix}b`);
-		mark(`${prefix}c`);
+	test('clears a specific mark by exact name', () => {
+		const nameA = `${prefix}a`;
+		const nameB = `${prefix}b`;
+		mark(nameA);
+		mark(nameB);
 
-		clearMarks(prefix);
-		assert.strictEqual(marksFor(prefix).length, 0);
+		clearMarks(nameA);
+
+		const remaining = getMarks().filter(m => m.name.startsWith(prefix));
+		assert.deepStrictEqual(remaining.map(m => m.name), [nameB]);
+
+		clearMarks(nameB);
 	});
 
-	test('does not clear marks with a different prefix', () => {
-		const otherPrefix = uniquePrefix();
-		mark(`${prefix}a`);
-		mark(`${otherPrefix}b`);
+	test('does not clear marks with a different name', () => {
+		const name1 = `${prefix}a`;
+		const name2 = `${uniquePrefix()}b`;
+		mark(name1);
+		mark(name2);
 
-		clearMarks(prefix);
+		clearMarks(name1);
 
-		assert.strictEqual(marksFor(prefix).length, 0);
-		assert.strictEqual(marksFor(otherPrefix).length, 1);
+		assert.strictEqual(getMarks().filter(m => m.name === name1).length, 0);
+		assert.strictEqual(getMarks().filter(m => m.name === name2).length, 1);
 
-		clearMarks(otherPrefix);
+		clearMarks(name2);
 	});
 });
