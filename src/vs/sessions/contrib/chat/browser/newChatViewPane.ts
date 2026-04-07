@@ -48,6 +48,7 @@ import { WorkspacePicker, IWorkspaceSelection } from './sessionWorkspacePicker.j
 import { Menus } from '../../../browser/menus.js';
 import { HiddenItemStrategy, MenuWorkbenchToolBar } from '../../../../platform/actions/browser/toolbar.js';
 import { SlashCommandHandler } from './slashCommands.js';
+import { VariableCompletionHandler } from './variableCompletions.js';
 import { IChatModelInputState } from '../../../../workbench/contrib/chat/common/model/chatModel.js';
 import { IChatRequestVariableEntry } from '../../../../workbench/contrib/chat/common/attachments/chatVariableEntries.js';
 import { ChatAgentLocation, ChatModeKind } from '../../../../workbench/contrib/chat/common/constants.js';
@@ -138,6 +139,9 @@ class NewChatWidget extends Disposable implements IHistoryNavigationWidget {
 		this._sessionTypePicker = this._register(this.instantiationService.createInstance(SessionTypePicker));
 
 		// When a workspace is selected, create a new session
+		this._register(this._workspacePicker.onDidChangeSelection(() => {
+			this._renderOptionGroupPickers();
+		}));
 		this._register(this._workspacePicker.onDidSelectWorkspace(async (workspace) => {
 			await this._onWorkspaceSelected(workspace);
 			this._focusEditor();
@@ -168,15 +172,14 @@ class NewChatWidget extends Disposable implements IHistoryNavigationWidget {
 
 		const welcomeElement = dom.append(wrapper, dom.$('.chat-full-welcome'));
 
-		// Watermark letterpress
-		const header = dom.append(welcomeElement, dom.$('.chat-full-welcome-header'));
-		dom.append(header, dom.$('.chat-full-welcome-letterpress'));
+		// Main empty-state content area (folder picker, input, local mode controls)
+		const welcomeContent = dom.append(welcomeElement, dom.$('.chat-full-welcome-content'));
 
 		// Option group pickers (above the input)
-		this._pickersContainer = dom.append(welcomeElement, dom.$('.chat-full-welcome-pickers-container'));
+		this._pickersContainer = dom.append(welcomeContent, dom.$('.chat-full-welcome-pickers-container'));
 
 		// Input slot
-		this._inputSlot = dom.append(welcomeElement, dom.$('.chat-full-welcome-inputSlot'));
+		this._inputSlot = dom.append(welcomeContent, dom.$('.chat-full-welcome-inputSlot'));
 
 		// Input area inside the input slot
 		const inputArea = dom.$('.sessions-chat-input-area');
@@ -193,7 +196,7 @@ class NewChatWidget extends Disposable implements IHistoryNavigationWidget {
 		this._inputSlot.appendChild(inputArea);
 
 		// Below-input row: session type picker, permission control, spacer, repository config (right)
-		const belowInputRow = dom.append(welcomeElement, dom.$('.chat-full-welcome-local-mode'));
+		const belowInputRow = dom.append(welcomeContent, dom.$('.chat-full-welcome-local-mode'));
 		this._sessionTypePicker.render(belowInputRow);
 		const controlContainer = dom.append(belowInputRow, dom.$('.sessions-chat-control-toolbar'));
 		this._register(this.instantiationService.createInstance(MenuWorkbenchToolBar, controlContainer, Menus.NewSessionControl, {
@@ -290,7 +293,7 @@ class NewChatWidget extends Disposable implements IHistoryNavigationWidget {
 			renderWhitespace: 'none',
 			overflowWidgetsDomNode,
 			suggest: {
-				showIcons: false,
+				showIcons: true,
 				showSnippets: false,
 				showWords: true,
 				showStatusBar: false,
@@ -366,6 +369,11 @@ class NewChatWidget extends Disposable implements IHistoryNavigationWidget {
 		// Slash commands
 		this._slashCommandHandler = this._register(this.instantiationService.createInstance(SlashCommandHandler, this._editor));
 
+		// Variable completions (#file, #folder)
+		this._register(this.instantiationService.createInstance(
+			VariableCompletionHandler, this._editor, this._contextAttachments, () => this._getContextFolderUri(),
+		));
+
 		this._register(this._editor.onDidChangeModelContent(() => {
 			this._updateDraftState();
 			this._updateSendButtonState();
@@ -438,6 +446,10 @@ class NewChatWidget extends Disposable implements IHistoryNavigationWidget {
 		dom.clearNode(this._pickersContainer);
 
 		const pickersRow = dom.append(this._pickersContainer, dom.$('.chat-full-welcome-pickers'));
+		const pickersLabel = dom.append(pickersRow, dom.$('.chat-full-welcome-pickers-label'));
+		pickersLabel.textContent = this._workspacePicker.selectedProject
+			? localize('newSessionIn', "New session in")
+			: localize('newSessionChooseWorkspace', "Start by picking a");
 
 		// Project picker (unified folder + repo picker)
 		this._workspacePicker.render(pickersRow);
@@ -508,7 +520,7 @@ class NewChatWidget extends Disposable implements IHistoryNavigationWidget {
 			return;
 		}
 		const hasText = !!this._editor?.getModel()?.getValue().trim();
-		const session = this.sessionsManagementService.activeSession.get()?.activeChat.get();
+		const session = this.sessionsManagementService.activeSession.get();
 		const hasActiveSession = !!session;
 		const isLoading = session?.loading.get() ?? false;
 		this._sendButton.enabled = !this._sending && hasText && hasActiveSession && !isLoading;
@@ -553,11 +565,11 @@ class NewChatWidget extends Disposable implements IHistoryNavigationWidget {
 		this._updateInputLoadingState();
 
 		try {
-			const chat = this.sessionsManagementService.activeSession.get()?.activeChat.get();
-			if (!chat) {
+			const session = this.sessionsManagementService.activeSession.get();
+			if (!session) {
 				return;
 			}
-			await this.sessionsManagementService.sendRequest(chat, { query, attachedContext });
+			await this.sessionsManagementService.sendAndCreateChat(session, { query, attachedContext });
 			this._contextAttachments.clear();
 			this._editor.getModel()?.setValue('');
 		} catch (e) {
