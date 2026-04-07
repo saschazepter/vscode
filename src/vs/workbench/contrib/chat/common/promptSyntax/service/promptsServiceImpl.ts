@@ -1376,6 +1376,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 		const fileResults = await Promise.all(hookFiles.map(async (hookFile): Promise<{
 			file?: IPromptFileDiscoveryResult;
 			hooks?: Map<HookType, IParsedHookCommand[]>;
+			sourceUri?: URI;
 			hasDisabledClaudeHooks?: boolean;
 		}> => {
 			const name = basename(hookFile.uri);
@@ -1456,6 +1457,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 				return {
 					file: { status: 'loaded', promptPath: this.withPromptPathMetadata(hookFile, name, hookFile.description) },
 					hooks,
+					sourceUri: hookFile.uri,
 				};
 			} catch (error) {
 				const msg = error instanceof Error ? error.message : String(error);
@@ -1476,21 +1478,23 @@ export class PromptsService extends Disposable implements IPromptsService {
 		let hasDisabledClaudeHooks = false;
 		const collectedHooks = new Map<HookType, IParsedHookCommand[]>();
 
-		for (const { file, hooks, hasDisabledClaudeHooks: disabled } of fileResults) {
+		for (const { file, hooks, sourceUri, hasDisabledClaudeHooks: disabled } of fileResults) {
 			if (file) {
 				files.push(file);
 			}
 			if (disabled) {
 				hasDisabledClaudeHooks = true;
 			}
-			if (hooks) {
+			if (hooks && sourceUri) {
 				for (const [hookType, commands] of hooks) {
 					let bucket = collectedHooks.get(hookType);
 					if (!bucket) {
 						bucket = [];
 						collectedHooks.set(hookType, bucket);
 					}
-					bucket.push(...commands);
+					for (const command of commands) {
+						bucket.push({ ...command, sourceUri });
+					}
 				}
 			}
 		}
@@ -1507,7 +1511,9 @@ export class PromptsService extends Disposable implements IPromptsService {
 					bucket = [];
 					collectedHooks.set(hook.type, bucket);
 				}
-				bucket.push(...hook.hooks);
+				for (const command of hook.hooks) {
+					bucket.push({ ...command, sourceUri: hook.uri });
+				}
 			}
 		}
 

@@ -8,23 +8,19 @@ import { Disposable } from '../../../../base/common/lifecycle.js';
 import { OS } from '../../../../base/common/platform.js';
 import { generateUuid } from '../../../../base/common/uuid.js';
 import { localize } from '../../../../nls.js';
-import { IFileService } from '../../../../platform/files/common/files.js';
-import { ILabelService } from '../../../../platform/label/common/label.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
-import { IRemoteAgentService } from '../../../services/remote/common/remoteAgentService.js';
 import { IWorkbenchContribution } from '../../../common/contributions.js';
-import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
-import { IPathService } from '../../../services/path/common/pathService.js';
 import { IChatDebugCustomizationLogEntry, IChatDebugEventFileListContent, IChatDebugResolvedEventContent, IChatDebugService } from '../common/chatDebugService.js';
 import { IChatAgentService } from '../common/participants/chatAgents.js';
 import { IChatService } from '../common/chatService/chatService.js';
+import { ChatRequestHooks, formatHookCommandLabel } from '../common/promptSyntax/hookSchema.js';
+import { HookType } from '../common/promptSyntax/hookTypes.js';
 import { PromptsType } from '../common/promptSyntax/promptTypes.js';
 import { IHookDiscoveryInfo, type InstructionsCollectionEvent, IPromptDiscoveryInfo, IPromptsService } from '../common/promptSyntax/service/promptsService.js';
-import { type IParsedHook, parseAllHookFiles } from './promptSyntax/hookUtils.js';
 
 interface ICustomizationEventData {
 	readonly collectionEvent: InstructionsCollectionEvent;
-	readonly parsedHooks: readonly IParsedHook[];
+	readonly hooks: ChatRequestHooks | undefined;
 }
 
 /**
@@ -50,11 +46,6 @@ export class PromptsDebugContribution extends Disposable implements IWorkbenchCo
 		@IChatService chatService: IChatService,
 		@IChatDebugService chatDebugService: IChatDebugService,
 		@ILogService logService: ILogService,
-		@IFileService private readonly fileService: IFileService,
-		@ILabelService private readonly labelService: ILabelService,
-		@IWorkspaceContextService private readonly workspaceService: IWorkspaceContextService,
-		@IPathService private readonly pathService: IPathService,
-		@IRemoteAgentService private readonly remoteAgentService: IRemoteAgentService,
 	) {
 		super();
 
@@ -135,18 +126,11 @@ export class PromptsDebugContribution extends Disposable implements IWorkbenchCo
 			// Log resolved customizations from the last instructions collection.
 			const collectionEvent = this.promptsService.lastInstructionsCollectionEvent;
 			if (!isFirstInvocation && collectionEvent) {
-				// Fetch the resolved hooks so they appear in the customization summary.
-				let parsedHooks: IParsedHook[] = [];
+				// Fetch the cached hook discovery info.
+				let resolvedHooks: ChatRequestHooks | undefined;
 				try {
-					// Parse all hook files to get per-command source file URIs.
-					const remoteEnv = await this.remoteAgentService.getEnvironment();
-					const targetOS = remoteEnv?.os ?? OS;
-					const workspaceRootUri = this.workspaceService.getWorkspace().folders[0]?.uri;
-					const userHome = (await this.pathService.userHome()).fsPath;
-					parsedHooks = await parseAllHookFiles(
-						this.promptsService, this.fileService, this.labelService,
-						workspaceRootUri, userHome, targetOS, CancellationToken.None,
-					);
+					const hookDiscoveryInfo = await this.promptsService.getDiscoveryInfo(PromptsType.hook, CancellationToken.None) as IHookDiscoveryInfo;
+					resolvedHooks = hookDiscoveryInfo.hooksInfo?.hooks;
 				} catch (error) {
 					logService.warn('Error while fetching hooks for customization debug event', error);
 				}
@@ -177,7 +161,7 @@ export class PromptsDebugContribution extends Disposable implements IWorkbenchCo
 					: summary;
 
 				const customizationEventId = generateUuid();
-				this._customizationEventDetails.set(customizationEventId, { collectionEvent, parsedHooks });
+				this._customizationEventDetails.set(customizationEventId, { collectionEvent, hooks: resolvedHooks });
 
 				// Evict oldest entries when the map exceeds the cap.
 				if (this._customizationEventDetails.size > PromptsDebugContribution.MAX_DISCOVERY_DETAILS) {
@@ -274,17 +258,25 @@ export class PromptsDebugContribution extends Disposable implements IWorkbenchCo
 			return undefined;
 		}
 
-		const { collectionEvent, parsedHooks } = data;
+		const { collectionEvent, hooks } = data;
 		const logs: IChatDebugCustomizationLogEntry[] = [...collectionEvent.debugDetails];
 
-		// Add hook entries from the parsed hooks, each with its source file URI.
-		for (const hook of parsedHooks) {
-			logs.push({
-				category: 'hook',
-				name: hook.commandLabel,
-				reason: hook.hookType,
-				uri: hook.fileUri,
-			});
+		// Add hook entries from the resolved hooks — each command carries its sourceUri.
+		if (hooks) {
+			for (const hookType of Object.values(HookType)) {
+				const commands = hooks[hookType];
+				if (commands && commands.length > 0) {
+					for (const cmd of commands) {
+						const commandLabel = formatHookCommandLabel(cmd, OS) || localize('hook.unknownCommand', '(unknown command)');
+						logs.push({
+							category: 'hook',
+							name: commandLabel,
+							reason: hookType,
+							uri: cmd.sourceUri,
+						});
+					}
+				}
+			}
 		}
 
 		return {
