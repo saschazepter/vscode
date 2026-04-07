@@ -138,7 +138,7 @@ export function createMessagesRequestBody(accessor: ServicesAccessor, options: I
 	// knows to use the search tool to discover them.
 	finalTools.push(...nonDeferredTools, ...deferredTools);
 
-	// Thinking is enabled only when options.enableThinking is true, a non-zero thinking budget
+	// Thinking is enabled only when options.modelCapabilities?.enableThinking is true, a non-zero thinking budget
 	// is configured for the model, and the model supports thinking. reasoningEffort (if present)
 	// is used only to configure the effort level when thinking is enabled, not to gate it.
 	const reasoningEffort = options.modelCapabilities?.reasoningEffort;
