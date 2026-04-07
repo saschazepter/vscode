@@ -263,7 +263,7 @@ export class PromptFilesLocator {
 		for (const location of absoluteLocations) {
 			// For directory-based hook configs, location.parent is the directory itself.
 			// For specific .json file paths, location.parent is the file; use its dirname.
-			const folder = extname(location.parent) === '.json' ? dirname(location.parent) : location.parent;
+			const folder = equalsIgnoreCase(extname(location.parent), '.json') ? dirname(location.parent) : location.parent;
 			result.add(folder);
 		}
 
