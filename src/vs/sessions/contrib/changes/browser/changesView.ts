@@ -5,7 +5,6 @@
 
 import './media/changesView.css';
 import * as dom from '../../../../base/browser/dom.js';
-import * as aria from '../../../../base/browser/ui/aria/aria.js';
 import { renderLabelWithIcons } from '../../../../base/browser/ui/iconLabel/iconLabels.js';
 import { IListVirtualDelegate } from '../../../../base/browser/ui/list/list.js';
 import { IObjectTreeElement, ITreeSorter } from '../../../../base/browser/ui/tree/tree.js';
@@ -803,7 +802,6 @@ export class ChangesViewPane extends ViewPane {
 				this.element.setAttribute('tabindex', '0');
 			}
 			this.element.focus();
-			aria.alert(localize('changesView.noChangesAlert', "No changes"));
 		}
 	}
 
