@@ -27,7 +27,7 @@ import { LocalChatSessionUri } from '../../contrib/chat/common/model/chatUri.js'
 import { ChatAgentLocation } from '../../contrib/chat/common/constants.js';
 import { checkProposedApiEnabled, isProposedApiEnabled } from '../../services/extensions/common/extensions.js';
 import { Dto } from '../../services/extensions/common/proxyIdentifier.js';
-import { ExtHostChatAgentsShape2, IChatAgentCompletionItem, IChatAgentHistoryEntryDto, IChatAgentProgressShape, IChatSessionCustomizationItemDto, IChatSessionCustomizationProviderMetadataDto, IChatProgressDto, IChatSessionContextDto, ICustomAgentDto, IExtensionChatAgentMetadata, IInstructionDto, IMainContext, ISkillDto, MainContext, MainThreadChatAgentsShape2 } from './extHost.protocol.js';
+import { ExtHostChatAgentsShape2, IChatAgentCompletionItem, IChatAgentHistoryEntryDto, IChatAgentProgressShape, IChatResourceDto, IChatSessionCustomizationItemDto, IChatSessionCustomizationProviderMetadataDto, IChatProgressDto, IChatSessionContextDto, ICustomAgentDto, IExtensionChatAgentMetadata, IInstructionDto, IMainContext, ISkillDto, ISlashCommandDto, MainContext, MainThreadChatAgentsShape2 } from './extHost.protocol.js';
 import { CommandsConverter, ExtHostCommands } from './extHostCommands.js';
 import { ExtHostDiagnostics } from './extHostDiagnostics.js';
 import { ExtHostDocuments } from './extHostDocuments.js';
@@ -497,10 +497,13 @@ export class ExtHostChatAgents2 extends Disposable implements ExtHostChatAgentsS
 	readonly onDidChangeInstructions = this._onDidChangeInstructions.event;
 	private readonly _onDidChangeSkills = this._register(new Emitter<void>());
 	readonly onDidChangeSkills = this._onDidChangeSkills.event;
+	private readonly _onDidChangeSlashCommands = this._register(new Emitter<void>());
+	readonly onDidChangeSlashCommands = this._onDidChangeSlashCommands.event;
 
-	private _customAgents: vscode.ChatResource[] = [];
-	private _instructions: vscode.ChatResource[] = [];
-	private _skills: vscode.ChatResource[] = [];
+	private _customAgents: vscode.ChatCustomAgent[] = [];
+	private _instructions: vscode.ChatInstruction[] = [];
+	private _skills: vscode.ChatSkill[] = [];
+	private _slashCommands: vscode.ChatSlashCommand[] = [];
 
 	private _activeChatPanelSessionResource: URI | undefined;
 
@@ -511,31 +514,91 @@ export class ExtHostChatAgents2 extends Disposable implements ExtHostChatAgentsS
 		return this._activeChatPanelSessionResource;
 	}
 
-	get customAgents(): readonly vscode.ChatResource[] {
+	get customAgents(): readonly vscode.ChatCustomAgent[] {
 		return this._customAgents;
 	}
 
-	get instructions(): readonly vscode.ChatResource[] {
+	get instructions(): readonly vscode.ChatInstruction[] {
 		return this._instructions;
 	}
 
-	get skills(): readonly vscode.ChatResource[] {
+	get skills(): readonly vscode.ChatSkill[] {
 		return this._skills;
 	}
 
+	get slashCommands(): readonly vscode.ChatSlashCommand[] {
+		return this._slashCommands;
+	}
+
+	private toCustomAgent(dto: ICustomAgentDto): vscode.ChatCustomAgent {
+		return Object.freeze<vscode.ChatCustomAgent>({
+			uri: URI.revive(dto.uri),
+			name: dto.name,
+			description: dto.description,
+			source: dto.source,
+			extensionId: dto.extensionId,
+			pluginUri: dto.pluginUri ? URI.revive(dto.pluginUri) : undefined,
+			argumentHint: dto.argumentHint,
+			userInvocable: dto.userInvocable,
+			disableModelInvocation: dto.disableModelInvocation,
+		});
+	}
+
+	private toInstruction(dto: IInstructionDto): vscode.ChatInstruction {
+		return Object.freeze<vscode.ChatInstruction>({
+			uri: URI.revive(dto.uri),
+			name: dto.name,
+			description: dto.description,
+			source: dto.source,
+			extensionId: dto.extensionId,
+			pluginUri: dto.pluginUri ? URI.revive(dto.pluginUri) : undefined,
+			pattern: dto.pattern,
+		});
+	}
+
+	private toSkill(dto: ISkillDto): vscode.ChatSkill {
+		return Object.freeze<vscode.ChatSkill>({
+			uri: URI.revive(dto.uri),
+			name: dto.name,
+			description: dto.description,
+			source: dto.source,
+			extensionId: dto.extensionId,
+			pluginUri: dto.pluginUri ? URI.revive(dto.pluginUri) : undefined,
+			userInvocable: dto.userInvocable,
+		});
+	}
+
+	private toSlashCommand(dto: ISlashCommandDto): vscode.ChatSlashCommand {
+		return Object.freeze<vscode.ChatSlashCommand>({
+			uri: URI.revive(dto.uri),
+			name: dto.name,
+			description: dto.description,
+			source: dto.source,
+			extensionId: dto.extensionId,
+			pluginUri: dto.pluginUri ? URI.revive(dto.pluginUri) : undefined,
+			argumentHint: dto.argumentHint,
+			userInvocable: dto.userInvocable,
+		});
+	}
+
 	$acceptCustomAgents(agents: ICustomAgentDto[]): void {
-		this._customAgents = agents.map(a => Object.freeze({ uri: URI.revive(a.uri) }));
+		this._customAgents = agents.map(agent => this.toCustomAgent(agent));
 		this._onDidChangeCustomAgents.fire();
 	}
 
 	$acceptInstructions(instructions: IInstructionDto[]): void {
-		this._instructions = instructions.map(i => Object.freeze({ uri: URI.revive(i.uri) }));
+		this._instructions = instructions.map(instruction => this.toInstruction(instruction));
 		this._onDidChangeInstructions.fire();
 	}
 
 	$acceptSkills(skills: ISkillDto[]): void {
-		this._skills = skills.map(s => Object.freeze({ uri: URI.revive(s.uri) }));
+		this._skills = skills.map(skill => this.toSkill(skill));
 		this._onDidChangeSkills.fire();
+	}
+
+	$acceptSlashCommands(slashCommands: ISlashCommandDto[]): void {
+		this._slashCommands = slashCommands.map(slashCommand => this.toSlashCommand(slashCommand));
+		this._onDidChangeSlashCommands.fire();
 	}
 
 	constructor(

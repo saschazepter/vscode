@@ -3,6 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import { hash } from '../../../../../base/common/hash.js';
 import { Iterable } from '../../../../../base/common/iterator.js';
 import { dirname, joinPath } from '../../../../../base/common/resources.js';
 import { splitLinesIncludeSeparators } from '../../../../../base/common/strings.js';
@@ -18,7 +19,7 @@ export class PromptFileParser {
 	public parse(uri: URI, content: string): ParsedPromptFile {
 		const linesWithEOL = splitLinesIncludeSeparators(content);
 		if (linesWithEOL.length === 0) {
-			return new ParsedPromptFile(uri, undefined, undefined);
+			return new ParsedPromptFile(uri, '', undefined, undefined);
 		}
 		let header: PromptHeader | undefined = undefined;
 		let body: PromptBody | undefined = undefined;
@@ -40,13 +41,15 @@ export class PromptFileParser {
 			const range = new Range(bodyStartLine + 1, 1, linesWithEOL.length + 1, 1);
 			body = new PromptBody(range, linesWithEOL, uri);
 		}
-		return new ParsedPromptFile(uri, header, body);
+		return new ParsedPromptFile(uri, content, header, body);
 	}
 }
 
 
 export class ParsedPromptFile {
-	constructor(public readonly uri: URI, public readonly header?: PromptHeader, public readonly body?: PromptBody) {
+	public readonly contentHash: number;
+	constructor(public readonly uri: URI, content: string, public readonly header?: PromptHeader, public readonly body?: PromptBody) {
+		this.contentHash = hash(content);
 	}
 }
 

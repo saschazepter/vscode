@@ -9,7 +9,7 @@ import { Emitter, Event } from '../../../../../../base/common/event.js';
 import { parse as parseJSONC } from '../../../../../../base/common/json.js';
 import { Disposable, DisposableStore, IDisposable } from '../../../../../../base/common/lifecycle.js';
 import { StopWatch } from '../../../../../../base/common/stopwatch.js';
-import { autorun, IReader } from '../../../../../../base/common/observable.js';
+import { autorun, derivedOpts, IObservable, IReader, observableValue, PromiseResult } from '../../../../../../base/common/observable.js';
 import { ResourceMap, ResourceSet } from '../../../../../../base/common/map.js';
 import { basename, dirname, isEqual } from '../../../../../../base/common/resources.js';
 import { URI } from '../../../../../../base/common/uri.js';
@@ -49,6 +49,9 @@ import { ContextKeyExpr, IContextKeyService } from '../../../../../../platform/c
 import { getCanonicalPluginCommandId, IAgentPlugin, IAgentPluginService } from '../../plugins/agentPluginService.js';
 import { isContributionEnabled } from '../../enablement.js';
 import { assertNever } from '../../../../../../base/common/assert.js';
+import { observableConfigValue } from '../../../../../../platform/observable/common/platformObservableUtils.js';
+import { hash } from '../../../../../../base/common/hash.js';
+import { arrayEqualsC } from '../../../../../../base/common/equals.js';
 
 /**
  * Error thrown when a skill file is missing the required name attribute.
@@ -587,6 +590,14 @@ export class PromptsService extends Disposable implements IPromptsService {
 		return this.cachedSlashCommands.onDidChangePromise;
 	}
 
+	/**
+	 * Internal observable state used by the main-thread chat bridge to publish updates
+	 * once slash command discovery has actually finished recomputing.
+	 */
+	public get slashCommandsCachedValue(): IObservable<PromiseResult<ISlashCommandDiscoveryInfo> | undefined> {
+		return this.cachedSlashCommands.cachedValue;
+	}
+
 	public async getPromptSlashCommands(token: CancellationToken): Promise<readonly IChatPromptSlashCommand[]> {
 		const discoveryInfo = await this.cachedSlashCommands.get(token);
 		const result = this.slashCommandsFromDiscoveryInfo(discoveryInfo);
@@ -619,10 +630,11 @@ export class PromptsService extends Disposable implements IPromptsService {
 				const description = parsedPromptFile?.header?.description ?? promptPath.description;
 				const argumentHint = parsedPromptFile?.header?.argumentHint;
 				const userInvocable = parsedPromptFile?.header?.userInvocable;
-				return { status: 'loaded', promptPath: this.withPromptPathMetadata(promptPath, name, description), argumentHint, userInvocable } satisfies ISlashCommandDiscoveryResult;
+				const contentHash = parsedPromptFile?.contentHash;
+				return { status: 'loaded', promptPath: this.withPromptPathMetadata(promptPath, name, description), argumentHint, userInvocable, contentHash } satisfies ISlashCommandDiscoveryResult;
 			} catch (e) {
 				this.logger.error(`[computeSlashCommandDiscoveryInfo] Failed to parse prompt file for slash command: ${promptPath.uri}`, e instanceof Error ? e.message : String(e));
-				return { status: 'skipped', skipReason: 'parse-error', errorMessage: e instanceof Error ? e.message : String(e), promptPath } satisfies ISlashCommandDiscoveryResult;
+				return { status: 'skipped', skipReason: 'parse-error', errorMessage: e instanceof Error ? e.message : String(e), promptPath, contentHash: -1 } satisfies ISlashCommandDiscoveryResult;
 			}
 		}));
 
@@ -647,7 +659,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 
 		for (const file of discoveryInfo.files) {
 			if (file.status === 'loaded') {
-				result.push(this.asChatPromptSlashCommand(file.argumentHint, file.userInvocable, file.promptPath));
+				result.push(this.asChatPromptSlashCommand(file.argumentHint, file.userInvocable, file.contentHash, file.promptPath));
 				seen.add(file.promptPath.uri);
 			}
 		}
@@ -656,9 +668,10 @@ export class PromptsService extends Disposable implements IPromptsService {
 		for (const model of this.modelService.getModels()) {
 			if (model.getLanguageId() === PROMPT_LANGUAGE_ID && model.uri.scheme === Schemas.untitled && !seen.has(model.uri)) {
 				const parsedPromptFile = this.getParsedPromptFile(model);
-				const name = parsedPromptFile?.header?.name ?? getCleanPromptName(model.uri);
-				const description = parsedPromptFile?.header?.description;
-				result.push(this.asChatPromptSlashCommand(parsedPromptFile?.header?.argumentHint, parsedPromptFile?.header?.userInvocable, { uri: model.uri, storage: PromptsStorage.local, type: PromptsType.prompt, name, description }));
+				const name = parsedPromptFile.header?.name ?? getCleanPromptName(model.uri);
+				const description = parsedPromptFile.header?.description;
+				const contentHash = parsedPromptFile.contentHash;
+				result.push(this.asChatPromptSlashCommand(parsedPromptFile.header?.argumentHint, parsedPromptFile.header?.userInvocable, contentHash, { uri: model.uri, storage: PromptsStorage.local, type: PromptsType.prompt, name, description }));
 			}
 		}
 
@@ -681,7 +694,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 		return undefined;
 	}
 
-	private asChatPromptSlashCommand(argumentHint: string | undefined, userInvocable: boolean | undefined, promptPath: IPromptPath): IChatPromptSlashCommand {
+	private asChatPromptSlashCommand(argumentHint: string | undefined, userInvocable: boolean | undefined, contentHash: number, promptPath: IPromptPath): IChatPromptSlashCommand {
 		let name = promptPath.name ?? getCleanPromptName(promptPath.uri);
 		name = name.replace(/[^\p{L}\d_\-\.:]+/gu, '-'); // replace spaces with dashes
 		return {
@@ -696,6 +709,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 			argumentHint: argumentHint,
 			userInvocable: userInvocable ?? true,
 			when: undefined,
+			contentHash: contentHash
 		};
 	}
 
@@ -717,8 +731,24 @@ export class PromptsService extends Disposable implements IPromptsService {
 		return this.cachedCustomAgents.onDidChangePromise;
 	}
 
+	/**
+	 * Internal observable state used by the main-thread chat bridge to publish updates
+	 * once custom agent discovery has actually finished recomputing.
+	 */
+	public get customAgentsCachedValue(): IObservable<PromiseResult<IAgentDiscoveryInfo> | undefined> {
+		return this.cachedCustomAgents.cachedValue;
+	}
+
 	public get onDidChangeInstructions(): Event<void> {
 		return this.cachedInstructions.onDidChangePromise;
+	}
+
+	/**
+	 * Internal observable state used by the main-thread chat bridge to publish updates
+	 * once instruction discovery has actually finished recomputing.
+	 */
+	public get instructionsCachedValue(): IObservable<PromiseResult<IInstructionDiscoveryInfo> | undefined> {
+		return this.cachedInstructions.cachedValue;
 	}
 
 	public async getCustomAgents(token: CancellationToken): Promise<readonly ICustomAgent[]> {
@@ -754,7 +784,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 			const uri = promptPath.uri;
 
 			if (disabledAgents.has(uri)) {
-				return { status: 'skipped', skipReason: 'disabled', promptPath };
+				return { status: 'skipped', skipReason: 'disabled', promptPath, contentHash: -1 } satisfies IAgentDiscoveryResult;
 			}
 
 			try {
@@ -793,11 +823,12 @@ export class PromptsService extends Disposable implements IPromptsService {
 				const name = ast.header?.name ?? promptPath.name ?? getCleanPromptName(uri);
 				const description = ast.header?.description ?? promptPath.description;
 				const target = getTarget(PromptsType.agent, ast.header ?? uri);
+				const contentHash = ast.contentHash;
 
 				const source: IAgentSource = IAgentSource.fromPromptPath(promptPath);
 				if (!ast.header) {
-					const agent: ICustomAgent = { uri, name, agentInstructions, source, target, visibility: { userInvocable: true, agentInvocable: true } };
-					return { status: 'loaded', promptPath: this.withPromptPathMetadata(promptPath, name, description), agent };
+					const agent: ICustomAgent = { uri, name, agentInstructions, source, target, contentHash, visibility: { userInvocable: true, agentInvocable: true } };
+					return { status: 'loaded', promptPath: this.withPromptPathMetadata(promptPath, name, description), agent, contentHash };
 				}
 				const visibility = {
 					userInvocable: ast.header.userInvocable !== false,
@@ -823,8 +854,8 @@ export class PromptsService extends Disposable implements IPromptsService {
 					hooks = parseSubagentHooksFromYaml(hooksRaw, workspaceRootUri, userHome, target);
 				}
 
-				const agent: ICustomAgent = { uri, name, description, model, tools, handOffs, argumentHint, target, visibility, agents, hooks, agentInstructions, source };
-				return { status: 'loaded', promptPath: this.withPromptPathMetadata(promptPath, name, description), agent };
+				const agent: ICustomAgent = { uri, name, description, model, tools, handOffs, argumentHint, target, visibility, agents, hooks, agentInstructions, source, contentHash };
+				return { status: 'loaded', promptPath: this.withPromptPathMetadata(promptPath, name, description), agent, contentHash };
 			} catch (e) {
 				const error = e instanceof Error ? e : new Error(String(e));
 				if (error instanceof FileOperationError && error.fileOperationResult === FileOperationResult.FILE_NOT_FOUND) {
@@ -837,6 +868,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 					skipReason: 'parse-error',
 					errorMessage: error.message,
 					promptPath,
+					contentHash: -1,
 				};
 			}
 		}));
@@ -1130,6 +1162,41 @@ export class PromptsService extends Disposable implements IPromptsService {
 		return this.cachedSkills.onDidChangePromise;
 	}
 
+	private _skillsObservable: Promise<IObservable<IAgentSkill[]>> | undefined;
+
+	/**
+	 * Get an observable of the resolved skills.
+	 */
+	public getSkillsObservable(token: CancellationToken): Promise<IObservable<IAgentSkill[]>> {
+		if (!this._skillsObservable) {
+			this._skillsObservable = (async () => {
+				const equalsFn = arrayEqualsC((a: IAgentSkill, b: IAgentSkill) => {
+					return (a.contentHash === b.contentHash) && (a.contentHash !== -1) && isEqual(a.uri, b.uri);
+				});
+				const obs = derivedOpts({ equalsFn }, (reader: IReader) => {
+					if (observableConfigValue(PromptsConfig.USE_AGENT_SKILLS, true, this.configurationService).read(reader) === false) {
+						return [];
+					}
+					const discoveryInfo = this.cachedSkills.cachedValue.read(reader);
+					if (discoveryInfo?.data) {
+						return this.skillsFromDiscoveryInfo(discoveryInfo?.data);
+					}
+					return [];
+				});
+				await this.cachedSkills.get(token); // trigger a computation so the observacble will get a value
+				this._register(this.onDidChangeSkills(() => {
+					if (!token.isCancellationRequested) {
+						void this.cachedSkills.get(token).catch(e => { // retrigger on change
+							this.logger.error('[promptsservice] skillsObservable failed to recomute skill', e);
+						});
+					}
+				}));
+				return obs;
+			})();
+		}
+		return this._skillsObservable;
+	}
+
 	public async findAgentSkills(token: CancellationToken): Promise<IAgentSkill[] | undefined> {
 		const useAgentSkills = this.configurationService.getValue(PromptsConfig.USE_AGENT_SKILLS);
 		if (!useAgentSkills) {
@@ -1159,6 +1226,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 					when: undefined,
 					pluginUri: file.promptPath.pluginUri,
 					extension: file.promptPath.extension,
+					contentHash: file.contentHash
 				});
 			}
 		}
@@ -1309,6 +1377,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 					name: file.promptPath.name,
 					description: file.promptPath.description,
 					pattern: file.pattern,
+					contentHash: file.contentHash
 				});
 			}
 		}
@@ -1333,6 +1402,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 			const files = hookFiles.map(promptPath => ({
 				status: 'skipped' as const,
 				skipReason,
+				contentHash: -1,
 				promptPath: this.withPromptPathMetadata(promptPath, basename(promptPath.uri), promptPath.description),
 			}));
 			const sourceFolders = await this._collectSourceFolderDiagnostics(PromptsType.hook);
@@ -1363,14 +1433,16 @@ export class PromptsService extends Disposable implements IPromptsService {
 				return {
 					file: {
 						status: 'loaded',
+						contentHash: -1,
 						promptPath: this.withPromptPathMetadata(hookFile, name, hookFile.description),
 					},
 				};
 			}
 
 			try {
-				const content = await this.fileService.readFile(hookFile.uri);
-				const json = parseJSONC(content.value.toString());
+				const fileContent = await this.fileService.readFile(hookFile.uri);
+				const content = fileContent.value.toString();
+				const json = parseJSONC(content);
 
 				// Validate it's an object
 				if (!json || typeof json !== 'object') {
@@ -1378,6 +1450,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 						file: {
 							status: 'skipped',
 							skipReason: 'parse-error',
+							contentHash: hash(content),
 							errorMessage: 'Invalid hooks file: must be a JSON object',
 							promptPath: this.withPromptPathMetadata(hookFile, name, hookFile.description),
 						},
@@ -1399,6 +1472,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 						file: {
 							status: 'skipped',
 							skipReason: 'all-hooks-disabled',
+							contentHash: -1,
 							promptPath: this.withPromptPathMetadata(hookFile, name, hookFile.description),
 						},
 					};
@@ -1412,6 +1486,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 						file: {
 							status: 'skipped',
 							skipReason: 'claude-hooks-disabled',
+							contentHash: -1,
 							promptPath: this.withPromptPathMetadata(hookFile, name, hookFile.description),
 						},
 						hasDisabledClaudeHooks: hasAnyCommands,
@@ -1432,7 +1507,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 				}
 
 				return {
-					file: { status: 'loaded', promptPath: this.withPromptPathMetadata(hookFile, name, hookFile.description) },
+					file: { status: 'loaded', contentHash: hash(content), promptPath: this.withPromptPathMetadata(hookFile, name, hookFile.description) },
 					hooks,
 				};
 			} catch (error) {
@@ -1443,6 +1518,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 						status: 'skipped',
 						skipReason: 'parse-error',
 						errorMessage: msg,
+						contentHash: -1,
 						promptPath: this.withPromptPathMetadata(hookFile, name, hookFile.description),
 					},
 				};
@@ -1550,6 +1626,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 
 				let name = parsedFile.header?.name;
 				const description = parsedFile.header?.description;
+				const contentHash = parsedFile.contentHash;
 
 				if (!name) {
 					this.logger.debug(`[computeSkillDiscoveryInfo] Agent skill file missing name attribute, using folder name "${folderName}": ${uri}`);
@@ -1563,7 +1640,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 
 				if (seenNames.has(sanitizedName)) {
 					this.logger.debug(`[computeSkillDiscoveryInfo] Skipping duplicate agent skill name: ${sanitizedName} at ${uri}`);
-					files.push({ status: 'skipped', skipReason: 'duplicate-name', duplicateOf: nameToUri.get(sanitizedName), promptPath: this.withPromptPathMetadata(promptPath, sanitizedName, description) });
+					files.push({ status: 'skipped', skipReason: 'duplicate-name', duplicateOf: nameToUri.get(sanitizedName), promptPath: this.withPromptPathMetadata(promptPath, sanitizedName, description), contentHash });
 					continue;
 				}
 
@@ -1572,7 +1649,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 				const disableModelInvocation = parsedFile.header?.disableModelInvocation === true;
 				const userInvocable = parsedFile.header?.userInvocable !== false;
 
-				files.push({ status: 'loaded', promptPath: this.withPromptPathMetadata(promptPath, sanitizedName, description), disableModelInvocation, userInvocable });
+				files.push({ status: 'loaded', promptPath: this.withPromptPathMetadata(promptPath, sanitizedName, description), disableModelInvocation, userInvocable, contentHash });
 			} catch (e) {
 				const msg = e instanceof Error ? e.message : String(e);
 				this.logger.error(`[computeSkillDiscoveryInfo] Failed to validate Agent skill file: ${uri}`, msg);
@@ -1581,6 +1658,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 					skipReason: 'parse-error',
 					errorMessage: msg,
 					promptPath,
+					contentHash: -1,
 				});
 			}
 		}
@@ -1601,10 +1679,12 @@ export class PromptsService extends Disposable implements IPromptsService {
 				const name = parsedPromptFile?.header?.name ?? promptPath.name ?? getCleanPromptName(uri);
 				const description = parsedPromptFile?.header?.description ?? promptPath.description;
 				const pattern = evaluateApplyToPattern(parsedPromptFile.header, isInClaudeRulesFolder(uri));
+				const contentHash = parsedPromptFile.contentHash;
 				files.push({
 					status: 'loaded',
 					pattern,
 					promptPath: this.withPromptPathMetadata(promptPath, name, description),
+					contentHash
 				});
 			} catch (e) {
 				files.push({
@@ -1612,6 +1692,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 					skipReason: 'parse-error',
 					errorMessage: e instanceof Error ? e.message : String(e),
 					promptPath,
+					contentHash: -1,
 				});
 			}
 		}
@@ -1626,6 +1707,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 class CachedPromise<T> extends Disposable {
 	private cachedPromise: Promise<T> | undefined = undefined;
 	private readonly onDidUpdatePromiseEmitter: Emitter<void>;
+	private readonly _cachedValue = observableValue<PromiseResult<T> | undefined>(this, undefined);
 
 	constructor(private readonly computeFn: (token: CancellationToken) => Promise<T>, private readonly getEvent: () => Event<void>, private readonly delay: number = 0) {
 		super();
@@ -1641,13 +1723,27 @@ class CachedPromise<T> extends Disposable {
 		return this.onDidUpdatePromiseEmitter.event;
 	}
 
+	/**
+	 * The most recently resolved value for the cached promise.
+	 * Is `undefined` before the promise resolves or after invalidation.
+	 */
+	public get cachedValue(): IObservable<PromiseResult<T> | undefined> {
+		return this._cachedValue;
+	}
+
 	public get(token: CancellationToken): Promise<T> {
 		if (this.cachedPromise !== undefined) {
 			return this.cachedPromise;
 		}
-		const promise = this.computeFn(token).catch(err => {
+		const promise = this.computeFn(token).then(value => {
+			if (this.cachedPromise === promise) {
+				this._cachedValue.set(new PromiseResult(value, undefined), undefined);
+			}
+			return value;
+		}, err => {
 			if (this.cachedPromise === promise) {
 				this.cachedPromise = undefined;
+				this._cachedValue.set(new PromiseResult<T>(undefined, err), undefined);
 			}
 			throw err;
 		});

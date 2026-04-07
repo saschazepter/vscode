@@ -62,7 +62,7 @@ function createMockPromptsService(instructionFiles: IFixtureInstructionFile[], a
 		override async getCustomAgents() { return []; }
 		override async parseNew(uri: URI): Promise<ParsedPromptFile> {
 			const file = instructionFiles.find(f => isEqual(f.promptPath.uri, uri));
-			const headerLines = [];
+			const headerLines: string[] = [];
 			headerLines.push('---\n');
 			if (file) {
 				if (file.name) {
@@ -81,7 +81,7 @@ function createMockPromptsService(instructionFiles: IFixtureInstructionFile[], a
 				uri,
 				headerLines
 			);
-			return new ParsedPromptFile(uri, header);
+			return new ParsedPromptFile(uri, headerLines.join(''), header);
 		}
 	}();
 }

@@ -5,6 +5,7 @@
 
 import { DeferredPromise } from '../../../base/common/async.js';
 import { CancellationToken } from '../../../base/common/cancellation.js';
+import { autorun, IObservable, PromiseResult } from '../../../base/common/observable.js';
 import { Emitter, Event } from '../../../base/common/event.js';
 import { IMarkdownString } from '../../../base/common/htmlContent.js';
 import { Disposable, DisposableMap, IDisposable } from '../../../base/common/lifecycle.js';
@@ -28,8 +29,9 @@ import { IChatWidget, IChatWidgetService } from '../../contrib/chat/browser/chat
 import { AgentSessionProviders, getAgentSessionProvider } from '../../contrib/chat/browser/agentSessions/agentSessions.js';
 import { AddDynamicVariableAction, IAddDynamicVariableContext } from '../../contrib/chat/browser/attachments/chatDynamicVariables.js';
 import { IChatAgentHistoryEntry, IChatAgentImplementation, IChatAgentRequest, IChatAgentService } from '../../contrib/chat/common/participants/chatAgents.js';
-import { IPromptFileContext, IPromptsService, PromptsStorage } from '../../contrib/chat/common/promptSyntax/service/promptsService.js';
-import { isValidPromptType } from '../../contrib/chat/common/promptSyntax/promptTypes.js';
+import { IAgentDiscoveryInfo, IInstructionDiscoveryInfo, IPromptFileContext, IPromptPathWithName, IPromptsService, ISlashCommandDiscoveryInfo, isPromptPathWithName, PromptsStorage } from '../../contrib/chat/common/promptSyntax/service/promptsService.js';
+import { PromptsService } from '../../contrib/chat/common/promptSyntax/service/promptsServiceImpl.js';
+import { isValidPromptType, PromptsType } from '../../contrib/chat/common/promptSyntax/promptTypes.js';
 import { IChatModel } from '../../contrib/chat/common/model/chatModel.js';
 import { ChatRequestAgentPart } from '../../contrib/chat/common/requestParser/chatParserTypes.js';
 import { ChatRequestParser } from '../../contrib/chat/common/requestParser/chatRequestParser.js';
@@ -41,7 +43,7 @@ import { ILanguageModelToolsService } from '../../contrib/chat/common/tools/lang
 import { IExtHostContext, extHostNamedCustomer } from '../../services/extensions/common/extHostCustomers.js';
 import { IExtensionService } from '../../services/extensions/common/extensions.js';
 import { Dto } from '../../services/extensions/common/proxyIdentifier.js';
-import { ExtHostChatAgentsShape2, ExtHostContext, IChatSessionCustomizationItemDto, IChatSessionCustomizationProviderMetadataDto, IChatNotebookEditDto, IChatParticipantMetadata, IChatProgressDto, IChatSessionContextDto, ICustomAgentDto, IDynamicChatAgentProps, IExtensionChatAgentMetadata, IInstructionDto, ISkillDto, MainContext, MainThreadChatAgentsShape2 } from '../common/extHost.protocol.js';
+import { ExtHostChatAgentsShape2, ExtHostContext, IChatResourceDto, IChatSessionCustomizationItemDto, IChatSessionCustomizationProviderMetadataDto, IChatNotebookEditDto, IChatParticipantMetadata, IChatProgressDto, IChatSessionContextDto, ICustomAgentDto, IDynamicChatAgentProps, IExtensionChatAgentMetadata, IInstructionDto, ISlashCommandDto, MainContext, MainThreadChatAgentsShape2 } from '../common/extHost.protocol.js';
 import { NotebookDto } from './mainThreadNotebookDto.js';
 import { isUntitledChatSession } from '../../contrib/chat/common/model/chatUri.js';
 import { ICustomizationHarnessService, IExternalCustomizationItem, IExternalCustomizationItemProvider, IHarnessDescriptor } from '../../contrib/chat/common/customizationHarnessService.js';
@@ -174,23 +176,7 @@ export class MainThreadChatAgents2 extends Disposable implements MainThreadChatA
 		// Push the initial active session if there is already a focused widget
 		this._acceptActiveChatSession(this._chatWidgetService.lastFocusedWidget);
 
-		// Push custom agents to ext host
-		void this._pushCustomAgents();
-		this._register(this._promptsService.onDidChangeCustomAgents(() => {
-			void this._pushCustomAgents();
-		}));
-
-		// Push instructions to ext host
-		void this._pushInstructions();
-		this._register(this._promptsService.onDidChangeInstructions(() => {
-			void this._pushInstructions();
-		}));
-
-		// Push skills to ext host
-		void this._pushSkills();
-		this._register(this._promptsService.onDidChangeSkills(() => {
-			void this._pushSkills();
-		}));
+		this._registerPromptResourceSync();
 	}
 
 	private _acceptActiveChatSession(widget: IChatWidget | undefined): void {
@@ -199,35 +185,126 @@ export class MainThreadChatAgents2 extends Disposable implements MainThreadChatA
 		this._proxy.$acceptActiveChatSession(isLocal ? sessionResource : undefined);
 	}
 
-	private async _pushCustomAgents(): Promise<void> {
-		try {
-			const customAgents = await this._promptsService.getCustomAgents(CancellationToken.None);
-			const dtos: ICustomAgentDto[] = customAgents.map(agent => ({ uri: agent.uri }));
-			this._proxy.$acceptCustomAgents(dtos);
-		} catch (error) {
-			this._logService.error('[chat] Failed to push custom agents to extension host', error);
+	private _registerPromptResourceSync(): void {
+		if (this._promptsService instanceof PromptsService) {
+			this._registerCachedPromptResourceSync(
+				this._promptsService.customAgentsCachedValue,
+				this._promptsService.onDidChangeCustomAgents,
+				() => this._promptsService.getDiscoveryInfo(PromptsType.agent, CancellationToken.None),
+				discoveryInfo => this._proxy.$acceptCustomAgents(this._customAgentDtosFromDiscoveryInfo(discoveryInfo)),
+				'[chat] Failed to refresh custom agents for extension host',
+			);
+			this._registerCachedPromptResourceSync(
+				this._promptsService.instructionsCachedValue,
+				this._promptsService.onDidChangeInstructions,
+				() => this._promptsService.getDiscoveryInfo(PromptsType.instructions, CancellationToken.None),
+				discoveryInfo => this._proxy.$acceptInstructions(this._instructionDtosFromDiscoveryInfo(discoveryInfo)),
+				'[chat] Failed to refresh instructions for extension host',
+			);
+			// this._registerCachedPromptResourceSync(
+			// 	this._promptsService.skillsCachedValue,
+			// 	this._promptsService.onDidChangeSkills,
+			// 	() => this._promptsService.getDiscoveryInfo(PromptsType.skill, CancellationToken.None),
+			// 	discoveryInfo => this._proxy.$acceptSkills(this._skillDtosFromDiscoveryInfo(discoveryInfo)),
+			// 	'[chat] Failed to refresh skills for extension host',
+			// );
+			this._registerCachedPromptResourceSync(
+				this._promptsService.slashCommandsCachedValue,
+				this._promptsService.onDidChangeSlashCommands,
+				() => this._promptsService.getDiscoveryInfo(PromptsType.prompt, CancellationToken.None),
+				discoveryInfo => this._proxy.$acceptSlashCommands(this._slashCommandDtosFromDiscoveryInfo(discoveryInfo)),
+				'[chat] Failed to refresh slash commands for extension host',
+			);
+			return;
 		}
 	}
 
-	private async _pushInstructions(): Promise<void> {
-		try {
-			const instructions = await this._promptsService.getInstructionFiles(CancellationToken.None);
-			const dtos: IInstructionDto[] = instructions.map(instruction => ({ uri: instruction.uri }));
-			this._proxy.$acceptInstructions(dtos);
-		} catch (error) {
-			this._logService.error('[chat] Failed to push instructions to extension host', error);
-		}
+	/**
+	 * Keeps the extension-facing prompt resource snapshots in sync with the resolved prompt caches.
+	 */
+	private _registerCachedPromptResourceSync<T>(
+		cachedValue: IObservable<PromiseResult<T> | undefined>,
+		onDidChange: Event<void>,
+		refresh: () => Promise<unknown>,
+		accept: (value: T) => void,
+		logMessage: string,
+	): void {
+		this._register(autorun(reader => {
+			const result = cachedValue.read(reader);
+			if (!result || result.error || typeof result.data === 'undefined') {
+				return;
+			}
+
+			accept(result.data);
+		}));
+
+		const refreshFromCache = () => {
+			void refresh().catch(error => {
+				this._logService.error(logMessage, error);
+			});
+		};
+
+		refreshFromCache();
+		this._register(onDidChange(() => {
+			refreshFromCache();
+		}));
 	}
 
-	private async _pushSkills(): Promise<void> {
-		try {
-			const skills = await this._promptsService.findAgentSkills(CancellationToken.None) ?? [];
-			const dtos: ISkillDto[] = skills.map(skill => ({ uri: skill.uri }));
-			this._proxy.$acceptSkills(dtos);
-		} catch (error) {
-			this._logService.error('[chat] Failed to push skills to extension host', error);
-		}
+	private _toChatResourceDto(resource: IPromptPathWithName): IChatResourceDto {
+		return {
+			uri: resource.uri,
+			name: resource.name,
+			description: resource.description,
+			source: resource.storage,
+			extensionId: resource.extension?.identifier.value,
+			pluginUri: resource.pluginUri,
+		};
 	}
+
+	private _customAgentDtosFromDiscoveryInfo(discoveryInfo: IAgentDiscoveryInfo): ICustomAgentDto[] {
+		const result: ICustomAgentDto[] = [];
+		for (const file of discoveryInfo.files) {
+			if (file.status === 'loaded' && isPromptPathWithName(file.promptPath) && file.agent) {
+				const agent = file.agent;
+				result.push({
+					...this._toChatResourceDto(file.promptPath),
+					argumentHint: agent.argumentHint,
+					userInvocable: agent.visibility.userInvocable,
+					disableModelInvocation: !agent.visibility.agentInvocable,
+				});
+			}
+		}
+		return result;
+	}
+
+	private _instructionDtosFromDiscoveryInfo(discoveryInfo: IInstructionDiscoveryInfo): IInstructionDto[] {
+		const result: IInstructionDto[] = [];
+		for (const file of discoveryInfo.files) {
+			if (file.status === 'loaded' && isPromptPathWithName(file.promptPath)) {
+				result.push({
+					...this._toChatResourceDto(file.promptPath),
+					pattern: file.pattern,
+				});
+			}
+		}
+		return result;
+	}
+
+	private _slashCommandDtosFromDiscoveryInfo(discoveryInfo: ISlashCommandDiscoveryInfo): ISlashCommandDto[] {
+		const result: ISlashCommandDto[] = [];
+		for (const file of discoveryInfo.files) {
+			if (file.status === 'loaded' && isPromptPathWithName(file.promptPath)) {
+				result.push({
+					...this._toChatResourceDto(file.promptPath),
+					argumentHint: file.argumentHint,
+					userInvocable: file.userInvocable ?? true,
+				});
+			}
+		}
+		return result;
+	}
+
+
 
 	$unregisterAgent(handle: number): void {
 		this._agents.deleteAndDispose(handle);

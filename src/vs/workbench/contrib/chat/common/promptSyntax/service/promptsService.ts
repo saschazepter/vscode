@@ -70,6 +70,11 @@ export enum PromptsStorage {
  */
 export type IPromptPath = IExtensionPromptPath | ILocalPromptPath | IUserPromptPath | IPluginPromptPath;
 
+export type IPromptPathWithName = IPromptPath & { name: string };
+
+export function isPromptPathWithName(obj: IPromptPath): obj is IPromptPathWithName {
+	return 'name' in obj && typeof obj.name === 'string';
+}
 
 export interface IPromptPathBase {
 	/**
@@ -230,6 +235,8 @@ export interface ICustomAgent {
 	 * Where the agent was loaded from.
 	 */
 	readonly source: IAgentSource;
+
+	readonly contentHash: number;
 }
 
 export interface IAgentInstructions {
@@ -250,6 +257,7 @@ export interface IChatPromptSlashCommand {
 	readonly extension?: IExtensionDescription;
 	readonly pluginUri?: URI;
 	readonly when: ContextKeyExpression | undefined;
+	readonly contentHash: number;
 }
 
 export interface IResolvedChatPromptSlashCommand extends IChatPromptSlashCommand {
@@ -296,6 +304,8 @@ export interface IInstructionFile {
 	 * The source that produced this prompt path.
 	 */
 	readonly source?: PromptFileSource;
+
+	readonly contentHash: number;
 }
 
 /**
@@ -329,6 +339,8 @@ export interface IAgentSkill {
 	 * Optional extension metadata describing where this skill originated.
 	 */
 	readonly extension?: IExtensionDescription;
+
+	readonly contentHash: number;
 }
 
 /**
@@ -387,6 +399,7 @@ export interface IPromptFileDiscoveryResult {
 	readonly userInvocable?: boolean;
 	/** If true, the skill won't be automatically loaded by the agent (disable-model-invocation: true) */
 	readonly disableModelInvocation?: boolean;
+	readonly contentHash: number;
 }
 
 /**

@@ -44,10 +44,10 @@ export class MockPromptsService implements IPromptsService {
 	getResolvedSourceFolders(_type: any): Promise<readonly any[]> { throw new Error('Not implemented'); }
 	isValidSlashCommandName(_command: string): boolean { return false; }
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	resolvePromptSlashCommand(command: string, _token: CancellationToken): Promise<any> { throw new Error('Not implemented'); }
-	get onDidChangeSlashCommands(): Event<void> { throw new Error('Not implemented'); }
+	resolvePromptSlashCommand(_command: string, _token: CancellationToken): Promise<any> { return Promise.resolve(undefined); }
+	onDidChangeSlashCommands: Event<void> = Event.None;
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	getPromptSlashCommands(_token: CancellationToken): Promise<any[]> { throw new Error('Not implemented'); }
+	getPromptSlashCommands(_token: CancellationToken): Promise<any[]> { return Promise.resolve([]); }
 	getPromptSlashCommandName(uri: URI, _token: CancellationToken): Promise<string> { throw new Error('Not implemented'); }
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	parse(_uri: URI, _type: any, _token: CancellationToken): Promise<any> { throw new Error('Not implemented'); }
@@ -62,10 +62,10 @@ export class MockPromptsService implements IPromptsService {
 	getDisabledPromptFiles(type: PromptsType): ResourceSet { throw new Error('Method not implemented.'); }
 	setDisabledPromptFiles(type: PromptsType, uris: ResourceSet): void { throw new Error('Method not implemented.'); }
 	registerPromptFileProvider(extension: IExtensionDescription, type: PromptsType, provider: { providePromptFiles: (context: IPromptFileContext, token: CancellationToken) => Promise<IPromptFileResource[] | undefined> }): IDisposable { throw new Error('Method not implemented.'); }
-	findAgentSkills(token: CancellationToken): Promise<IAgentSkill[] | undefined> { throw new Error('Method not implemented.'); }
+	findAgentSkills(_token: CancellationToken): Promise<IAgentSkill[] | undefined> { return Promise.resolve([]); }
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	getHooks(_token: CancellationToken): Promise<any> { throw new Error('Method not implemented.'); }
-	getInstructionFiles(_token: CancellationToken): Promise<readonly IInstructionFile[]> { throw new Error('Method not implemented.'); }
+	getInstructionFiles(_token: CancellationToken): Promise<readonly IInstructionFile[]> { return Promise.resolve([]); }
 	getDiscoveryInfo(_type: PromptsType, _token: CancellationToken): Promise<IPromptDiscoveryInfo> { throw new Error('Method not implemented.'); }
 	dispose(): void { }
 	onDidChangeInstructions: Event<void> = Event.None;

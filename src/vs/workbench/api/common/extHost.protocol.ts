@@ -1664,18 +1664,37 @@ export interface ExtHostChatAgentsShape2 {
 	$acceptCustomAgents(agents: ICustomAgentDto[]): void;
 	$acceptInstructions(instructions: IInstructionDto[]): void;
 	$acceptSkills(skills: ISkillDto[]): void;
+	$acceptSlashCommands(slashCommands: ISlashCommandDto[]): void;
 }
 
-export interface ICustomAgentDto {
-	uri: UriComponents;
+export type IChatResourceSourceDto = 'local' | 'user' | 'extension' | 'plugin';
+
+export interface IChatResourceDto {
+	readonly uri: UriComponents;
+	readonly name: string;
+	readonly description?: string;
+	readonly source: IChatResourceSourceDto;
+	readonly extensionId?: string;
+	readonly pluginUri?: UriComponents;
 }
 
-export interface IInstructionDto {
-	uri: UriComponents;
+export interface ICustomAgentDto extends IChatResourceDto {
+	readonly argumentHint?: string;
+	readonly userInvocable: boolean;
+	readonly disableModelInvocation: boolean;
 }
 
-export interface ISkillDto {
-	uri: UriComponents;
+export interface IInstructionDto extends IChatResourceDto {
+	readonly pattern?: string;
+}
+
+export interface ISkillDto extends IChatResourceDto {
+	readonly userInvocable: boolean;
+}
+
+export interface ISlashCommandDto extends IChatResourceDto {
+	readonly argumentHint?: string;
+	readonly userInvocable: boolean;
 }
 
 export interface IChatSessionCustomizationProviderMetadataDto {
