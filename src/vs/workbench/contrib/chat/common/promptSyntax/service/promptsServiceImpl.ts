@@ -865,7 +865,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 					hooks = parseSubagentHooksFromYaml(hooksRaw, workspaceRootUri, userHome, target);
 				}
 
-				const agent: ICustomAgent = { uri, name, description, model, tools, handOffs, argumentHint, target, visibility, agents, hooks, agentInstructions, source, ...(when !== undefined ? { when } : undefined), contentHash };
+				const agent: ICustomAgent = { uri, name, description, model, tools, handOffs, argumentHint, target, visibility, agents, hooks, agentInstructions, source, when, contentHash };
 				return { status: 'loaded', promptPath: this.withPromptPathMetadata(promptPath, name, description), agent, contentHash };
 			} catch (e) {
 				const error = e instanceof Error ? e : new Error(String(e));
