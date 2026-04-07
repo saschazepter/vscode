@@ -136,16 +136,17 @@ const enum Constants {
 if (isWindows) {
 	const ctrlV = String.fromCharCode('V'.charCodeAt(0) - Constants.CtrlLetterOffset);
 	KeybindingsRegistry.registerCommandAndKeybindingRule({
-		id: TerminalSendSequenceCommandId.SendSequence,
+		id: TerminalCommandId.PastePwsh,
 		weight: KeybindingWeight.WorkbenchContrib,
 		when: ContextKeyExpr.and(TerminalContextKeys.focus, ContextKeyExpr.equals(TerminalContextKeyStrings.ShellType, GeneralShellType.PowerShell), CONTEXT_ACCESSIBILITY_MODE_ENABLED.negate()),
 		primary: KeyMod.CtrlCmd | KeyCode.KeyV,
 		handler: async accessor => {
 			const clipboardService = accessor.get(IClipboardService);
+			const commandService = accessor.get(ICommandService);
 			if (!await clipboardService.readText() && await clipboardService.hasResources()) {
-				return accessor.get(ICommandService).executeCommand(TerminalCommandId.Paste);
+				return commandService.executeCommand(TerminalCommandId.Paste);
 			}
-			return terminalSendSequenceCommand(accessor, { text: ctrlV });
+			return commandService.executeCommand(TerminalCommandId.SendSequence, { text: ctrlV });
 		}
 	});
 }
