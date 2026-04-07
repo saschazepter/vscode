@@ -10,7 +10,7 @@ import { renderLabelWithIcons } from '../../../../base/browser/ui/iconLabel/icon
 import { Checkbox } from '../../../../base/browser/ui/toggle/toggle.js';
 import { mainWindow } from '../../../../base/browser/window.js';
 import { Event } from '../../../../base/common/event.js';
-import { CancellationToken } from '../../../../base/common/cancellation.js';
+import { CancellationToken, CancellationTokenSource } from '../../../../base/common/cancellation.js';
 import { Disposable, DisposableStore } from '../../../../base/common/lifecycle.js';
 import { localize } from '../../../../nls.js';
 import { defaultButtonStyles, defaultCheckboxStyles } from '../../../../platform/theme/browser/defaultStyles.js';
@@ -19,6 +19,7 @@ import { ViewContainerLocation, IViewDescriptorService } from '../../../common/v
 import { IStatusbarEntry, IStatusbarService, ShowTooltipCommand, StatusbarAlignment } from '../../../services/statusbar/browser/statusbar.js';
 import { IWorkbenchLayoutService, Parts } from '../../../services/layout/browser/layoutService.js';
 import { IViewsService } from '../../../services/views/common/viewsService.js';
+import { IHostService } from '../../../services/host/browser/host.js';
 import { ChatViewId } from './chat.js';
 
 export class CopilotPrototypeShellContribution extends Disposable implements IWorkbenchContribution {
@@ -103,10 +104,12 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 	private _microTransaction = false;
 	private _autoAdvanceStates: string[] | undefined;
 	private _autoAdvanceIndex = 0;
+	private _resumed = false;
 
 	constructor(
 		@IStatusbarService statusbarService: IStatusbarService,
 		@IWorkbenchLayoutService private readonly layoutService: IWorkbenchLayoutService,
+		@IHostService private readonly hostService: IHostService,
 	) {
 		super();
 
@@ -171,9 +174,12 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 				if (this.isInputBlocked()) {
 					e.preventDefault();
 					e.stopPropagation();
-				} else if (this._autoAdvanceStates) {
-					// Schedule advance after the message is sent
-					setTimeout(() => this.advanceState(), 1500);
+				} else {
+					this.clearResumedState();
+					if (this._autoAdvanceStates) {
+						// Schedule advance after the message is sent
+						setTimeout(() => this.advanceState(), 1500);
+					}
 				}
 			}, true);
 
@@ -186,8 +192,11 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 				if (this.isInputBlocked()) {
 					e.preventDefault();
 					e.stopPropagation();
-				} else if (this._autoAdvanceStates) {
-					setTimeout(() => this.advanceState(), 1500);
+				} else {
+					this.clearResumedState();
+					if (this._autoAdvanceStates) {
+						setTimeout(() => this.advanceState(), 1500);
+					}
 				}
 			}, true);
 		};
@@ -207,6 +216,19 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 	}
 
 	private getDashboardEntryProps(): IStatusbarEntry {
+		// Resumed state: green icon with "Copilot Resumed"
+		if (this._resumed) {
+			return {
+				name: localize('copilotPrototypeDashboardEntry', "Copilot Dashboard"),
+				text: '$(copilot) Copilot Resumed',
+				ariaLabel: localize('copilotPrototypeDashboardEntryResumedAria', "Copilot Resumed"),
+				backgroundColor: '#2ea04370',
+				tooltip: {
+					element: token => this.renderDashboard(token),
+				},
+				command: ShowTooltipCommand,
+			};
+		}
 		const hasOverage = this._activeSku === 'Pro/Pro+' || this._activeSku === 'Max';
 		// For Pro with overage, only show warning/error icons for overage states
 		const isWarning = !this._bannerDismissed && (
@@ -240,10 +262,21 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 		this._activeSku = sku;
 		this._activeState = state;
 		this._bannerDismissed = false;
+		this._resumed = false;
 		// Update the dashboard entry so next tooltip render uses new state
 		this._dashboardEntryAccessor.update(this.getDashboardEntryProps());
 		// Clear any existing warning card
 		this.clearWarningCard();
+
+		// Handle Reset states — OS notification + green status bar
+		if (state.includes('Reset')) {
+			this.clearBanner();
+			this._resumed = true;
+			this._dashboardEntryAccessor.update(this.getDashboardEntryProps());
+			this.fireResetNotification(state);
+			return;
+		}
+
 		// Show the right UI for the state
 		const hasOverage = sku === 'Pro/Pro+' || sku === 'Max';
 		if (hasOverage) {
@@ -273,6 +306,33 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 			return this._activeState === 'Overage Reached';
 		}
 		return this._activeState.includes('Reached');
+	}
+
+	private clearResumedState(): void {
+		if (this._resumed) {
+			this._resumed = false;
+			this._dashboardEntryAccessor.update(this.getDashboardEntryProps());
+		}
+	}
+
+	private fireResetNotification(state: string): void {
+		let limitType: string;
+		if (state === 'Session Reset') {
+			limitType = localize('fiveHourLimit', "five-hour limit");
+		} else if (state === 'Weekly Reset') {
+			limitType = localize('weeklyLimit', "weekly limit");
+		} else {
+			limitType = localize('runoverBudget', "runover budget");
+		}
+
+		const title = localize('resetNotificationTitle', "Copilot is available again!");
+		const body = localize('resetNotificationBody', "Your {0} has reset. Happy coding!", limitType);
+
+		// Fire OS notification via host service
+		const cts = new CancellationTokenSource();
+		this.hostService.showToast({ title, body }, cts.token);
+		// Auto-dispose after 30s so we don't leak
+		setTimeout(() => cts.dispose(true), 30000);
 	}
 
 	private getBannerMessage(state: string): string | undefined {
@@ -790,6 +850,8 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 			learnMore.role = 'link';
 		} else if (state === 'Weekly Reached') {
 			this.createGauge(content, localize('sessionUsed100', "100% Used"), 100, localize('sessionResetWithWeekly', "**Five-Hour Limit** resets with Weekly Limit"), false, 'error');
+		} else if (state === 'Session Reset' || state === 'Weekly Reset' || state === 'Overage Reset') {
+			this.createGauge(content, localize('sessionUsed0', "0% Used"), 0, localize('sessionResetBoldDefault', "**Five-Hour Limit** resets today at 10:00am"));
 		} else {
 			this.createGauge(content, localize('sessionUsed', "18% Used"), 18, localize('sessionResetBoldDefault', "**Five-Hour Limit** resets today at 10:00am"));
 		}
@@ -825,6 +887,8 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 			weeklyLearnMore2.textContent = localize('learnMore', "Learn more");
 			weeklyLearnMore2.tabIndex = 0;
 			weeklyLearnMore2.role = 'link';
+		} else if (state === 'Weekly Reset' || state === 'Overage Reset') {
+			this.createGauge(content, localize('weeklyUsed0', "0% Used"), 0, localize('weeklyResetBold', "**Weekly Limit** resets on April 6th"));
 		} else {
 			this.createGauge(content, localize('weeklyUsed', "56% Used"), 56, localize('weeklyResetBold', "**Weekly Limit** resets on April 6th"));
 		}
@@ -885,6 +949,8 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 		} else if (state === 'Weekly Reached' || state === 'Overage Approached' || state === 'Overage Reached') {
 			// Both session and weekly limits exhaust together
 			this.createGauge(content, localize('sessionUsed100', "100% Used"), 100, localize('proSessionResetWithWeekly', "**Five-Hour Limit** resets with Weekly Limit"), true);
+		} else if (state === 'Session Reset' || state === 'Weekly Reset' || state === 'Overage Reset') {
+			this.createGauge(content, localize('sessionUsed0', "0% Used"), 0, localize('proSessionResetBoldDefault', "**Five-Hour Limit** resets today at 10:00am"));
 		} else {
 			this.createGauge(content, localize('sessionUsed', "18% Used"), 18, localize('proSessionResetBoldDefault', "**Five-Hour Limit** resets today at 10:00am"));
 		}
@@ -900,6 +966,8 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 		} else if (state === 'Session Reached' || state === 'Overage Approached' || state === 'Overage Reached') {
 			// Gray out — overage is in use, weekly limit is not counting
 			this.createGauge(content, localize('weeklyUsed100', "100% Used"), 100, localize('proWeeklyResetBoldReached2', "**Weekly Limit** resets on April 6th"), true);
+		} else if (state === 'Weekly Reset' || state === 'Overage Reset') {
+			this.createGauge(content, localize('weeklyUsed0', "0% Used"), 0, localize('weeklyResetBold', "**Weekly Limit** resets on April 6th"));
 		} else {
 			this.createGauge(content, localize('weeklyUsed', "56% Used"), 56, localize('weeklyResetBold', "**Weekly Limit** resets on April 6th"));
 		}
@@ -929,6 +997,8 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 			learnMore.role = 'link';
 		} else if (isOverageInUse) {
 			this.createGauge(content, localize('overageUsed22', "22% Used"), 22, localize('runoverResetBold', "**Runover Budget** resets on May 1st"), false, undefined, localize('inUse', "In use"));
+		} else if (state === 'Overage Reset') {
+			this.createGauge(content, localize('overageUsed0', "0% Used"), 0, localize('runoverResetBold', "**Runover Budget** resets on May 1st"), true, undefined, localize('notInUse', "Not in use"));
 		} else {
 			this.createGauge(content, localize('overageUsed22', "22% Used"), 22, localize('runoverResetBold', "**Runover Budget** resets on May 1st"), true, undefined, localize('notInUse', "Not in use"));
 		}

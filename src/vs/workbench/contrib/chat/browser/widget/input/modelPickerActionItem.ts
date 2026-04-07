@@ -68,7 +68,18 @@ function modelDelegateToWidgetActionsProvider(delegate: IModelPickerDelegate, te
 				} satisfies IActionWidgetDropdownAction];
 			}
 			return models.map(model => {
-				const hoverMarkdown = getModelHoverContent(model, languageModelsService);
+				const isAuto = model.metadata.id === 'auto' && model.metadata.vendor === 'copilot';
+				const selectThisModel = () => {
+					if (model.identifier !== delegate.currentModel.get()?.identifier) {
+						const previousModel = delegate.currentModel.get();
+						telemetryService.publicLog2<ChatModelChangeEvent, ChatModelChangeClassification>('chat.modelChange', {
+							fromModel: previousModel?.metadata.vendor === 'copilot' ? new TelemetryTrustedValue(previousModel.identifier) : 'unknown',
+							toModel: model.metadata.vendor === 'copilot' ? new TelemetryTrustedValue(model.identifier) : 'unknown'
+						});
+						delegate.setModel(model);
+					}
+				};
+				const hoverMarkdown = getModelHoverContent(model, languageModelsService, undefined, selectThisModel);
 				return {
 					id: model.metadata.id,
 					enabled: true,
@@ -76,7 +87,7 @@ function modelDelegateToWidgetActionsProvider(delegate: IModelPickerDelegate, te
 					checked: model.identifier === delegate.currentModel.get()?.identifier,
 					category: model.metadata.modelPickerCategory || DEFAULT_MODEL_PICKER_CATEGORY,
 					class: undefined,
-					description: model.metadata.detail,
+					description: isAuto ? undefined : model.metadata.detail,
 					tooltip: '',
 					hover: { content: hoverMarkdown, position: pickerOptions.hoverPosition },
 					label: model.metadata.name,

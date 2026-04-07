@@ -51,7 +51,7 @@ export interface IActionListItemHover {
 	/**
 	 * Content to display in the hover.
 	 */
-	readonly content?: string | MarkdownString;
+	readonly content?: string | MarkdownString | HTMLElement;
 
 	readonly position?: IHoverPositionOptions;
 }
@@ -1186,6 +1186,7 @@ export class ActionListWidget<T> extends Disposable {
 		if (this._currentSubmenuElement === element || element.submenuActions?.length) {
 			return;
 		}
+
 		this._submenuDisposables.clear();
 
 		const rowElement = this._getRowElement(index);
@@ -1201,10 +1202,20 @@ export class ActionListWidget<T> extends Disposable {
 			return;
 		}
 
-		const markdown = typeof element.hover!.content === 'string' ? new MarkdownString(element.hover!.content) : element.hover!.content;
+		const hoverContent = element.hover!.content;
+		let content: IMarkdownString | string | HTMLElement;
+		if (dom.isHTMLElement(hoverContent)) {
+			content = hoverContent;
+		} else if (typeof hoverContent === 'string') {
+			content = new MarkdownString(hoverContent);
+		} else {
+			content = hoverContent!;
+		}
 		const linkHandler = this._options?.linkHandler;
-		this._hover.value = this._hoverService.showDelayedHover({
-			content: markdown ?? '',
+		const isInteractive = dom.isHTMLElement(content) && content.dataset['interactive'] === 'true';
+
+		const hoverOptions = {
+			content,
 			target: rowElement,
 			additionalClasses: ['action-widget-hover'],
 			linkHandler: linkHandler ? (url: string) => {
@@ -1218,7 +1229,21 @@ export class ActionListWidget<T> extends Disposable {
 			appearance: {
 				showPointer: true,
 			},
-		}, { groupId: `actionListHover` });
+			persistence: isInteractive ? {
+				hideOnHover: false,
+				sticky: true,
+			} : undefined,
+		};
+
+		if (isInteractive) {
+			// Interactive hovers are managed by the hover service directly
+			// (not stored in _hover) so they aren't auto-disposed on focus change.
+			// The hover service's sticky behavior keeps it alive until the user leaves.
+			this._hover.clear();
+			this._hoverService.showDelayedHover(hoverOptions, { groupId: `actionListInteractiveHover` });
+		} else {
+			this._hover.value = this._hoverService.showDelayedHover(hoverOptions, { groupId: `actionListHover` });
+		}
 	}
 
 	private _showSubmenuForItem(item: IActionListItem<T>): void {

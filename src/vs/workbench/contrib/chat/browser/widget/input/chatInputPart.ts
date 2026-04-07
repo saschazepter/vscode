@@ -2097,7 +2097,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 			this._modelInfoPicker = this._register(this.instantiationService.createInstance(
 				ModelPickerWidget,
 				pickerDelegate,
-				{ forcePosition: true, hoverPosition: HoverPosition.ABOVE },
+				{ forcePosition: true, hoverPosition: HoverPosition.LEFT },
 			));
 			this._modelInfoPicker.render(this._modelInfoLabel);
 

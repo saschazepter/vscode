@@ -94,6 +94,7 @@ function createModelItem(
 	model?: ILanguageModelChatMetadataAndIdentifier,
 	hoverPosition?: IHoverPositionOptions,
 	languageModelsService?: ILanguageModelsService,
+	onDismiss?: () => void,
 ): IActionListItem<IActionWidgetDropdownAction> {
 	return {
 		item: action,
@@ -103,8 +104,7 @@ function createModelItem(
 		group: { title: '', icon: action.icon ?? ThemeIcon.fromId(action.checked ? Codicon.check.id : Codicon.blank.id) },
 		hideIcon: false,
 		section: action.section,
-		hover: model ? { content: getModelHoverContent(model, languageModelsService), position: hoverPosition } : undefined,
-		submenuActions: action.toolbarActions,
+		hover: model ? { content: getModelHoverContent(model, languageModelsService, onDismiss, () => action.run()), position: hoverPosition } : undefined,
 	};
 }
 
@@ -147,7 +147,8 @@ function createModelAction(
 ): IActionWidgetDropdownAction & { section?: string } {
 	const toolbarActions = languageModelsService.getModelConfigurationActions(model.identifier);
 	const configDescription = getModelConfigurationDescription(model, languageModelsService);
-	const baseDescription = model.metadata.detail;
+	const isAuto = model.metadata.id === 'auto' && model.metadata.vendor === 'copilot';
+	const baseDescription = isAuto ? undefined : model.metadata.detail;
 	const description = configDescription && baseDescription
 		? `${configDescription} · ${baseDescription}`
 		: configDescription ?? baseDescription;
@@ -215,6 +216,7 @@ export function buildModelPickerItems(
 	showFeatured: boolean,
 	hoverPosition?: IHoverPositionOptions,
 	languageModelsService?: ILanguageModelsService,
+	onDismiss?: () => void,
 ): IActionListItem<IActionWidgetDropdownAction>[] {
 	const items: IActionListItem<IActionWidgetDropdownAction>[] = [];
 	if (models.length === 0) {
@@ -266,7 +268,7 @@ export function buildModelPickerItems(
 			const autoModel = models.find(m => m.metadata.id === 'auto' && m.metadata.vendor === 'copilot');
 			if (autoModel) {
 				markPlaced(autoModel.identifier, autoModel.metadata.id);
-				items.push(createModelItem(createModelAction(autoModel, selectedModelId, onSelect, languageModelsService!), autoModel, hoverPosition, languageModelsService));
+				items.push(createModelItem(createModelAction(autoModel, selectedModelId, onSelect, languageModelsService!), autoModel, hoverPosition, languageModelsService, onDismiss));
 			}
 
 			// --- 2. Promoted section (selected + recently used + featured) ---
@@ -354,7 +356,7 @@ export function buildModelPickerItems(
 
 				for (const item of promotedItems) {
 					if (item.kind === 'available') {
-						items.push(createModelItem(createModelAction(item.model, selectedModelId, onSelect, languageModelsService!), item.model, hoverPosition, languageModelsService));
+						items.push(createModelItem(createModelAction(item.model, selectedModelId, onSelect, languageModelsService!), item.model, hoverPosition, languageModelsService, onDismiss));
 					} else {
 						items.push(createUnavailableModelItem(item.id, item.entry, item.reason, manageSettingsUrl, updateStateType, undefined, hoverPosition));
 					}
@@ -407,7 +409,7 @@ export function buildModelPickerItems(
 					if (entry?.minVSCodeVersion && !isVersionAtLeast(currentVSCodeVersion, entry.minVSCodeVersion)) {
 						items.push(createUnavailableModelItem(model.metadata.id, entry, 'update', manageSettingsUrl, updateStateType, ModelPickerSection.Other, hoverPosition));
 					} else {
-						items.push(createModelItem(createModelAction(model, selectedModelId, onSelect, languageModelsService!, ModelPickerSection.Other), model, hoverPosition, languageModelsService));
+						items.push(createModelItem(createModelAction(model, selectedModelId, onSelect, languageModelsService!, ModelPickerSection.Other), model, hoverPosition, languageModelsService, onDismiss));
 					}
 				}
 			}
@@ -429,7 +431,7 @@ export function buildModelPickerItems(
 		// Flat list: auto first, then all models sorted alphabetically
 		const autoModel = models.find(m => m.metadata.id === 'auto' && m.metadata.vendor === 'copilot');
 		if (autoModel) {
-			items.push(createModelItem(createModelAction(autoModel, selectedModelId, onSelect, languageModelsService!), autoModel, hoverPosition, languageModelsService));
+			items.push(createModelItem(createModelAction(autoModel, selectedModelId, onSelect, languageModelsService!), autoModel, hoverPosition, languageModelsService, onDismiss));
 		}
 		const sortedModels = models
 			.filter(m => m !== autoModel)
@@ -438,7 +440,7 @@ export function buildModelPickerItems(
 				return vendorCmp !== 0 ? vendorCmp : a.metadata.name.localeCompare(b.metadata.name);
 			});
 		for (const model of sortedModels) {
-			items.push(createModelItem(createModelAction(model, selectedModelId, onSelect, languageModelsService!), model, hoverPosition, languageModelsService));
+			items.push(createModelItem(createModelAction(model, selectedModelId, onSelect, languageModelsService!), model, hoverPosition, languageModelsService, onDismiss));
 		}
 	}
 
@@ -667,6 +669,9 @@ export class ModelPickerWidget extends Disposable {
 			this._telemetryService.publicLog2<ChatModelPickerInteractionEvent, ChatModelPickerInteractionClassification>('chat.modelPickerInteraction', { interaction });
 		};
 		const manageSettingsUrl = this._productService.defaultChatAgent?.manageSettingsUrl;
+		const dismissPicker = () => {
+			this._actionWidgetService.hide();
+		};
 		const items = buildModelPickerItems(
 			models,
 			this._selectedModel?.identifier,
@@ -683,6 +688,7 @@ export class ModelPickerWidget extends Disposable {
 			this._delegate.showFeatured(),
 			this._hoverPosition,
 			this._languageModelsService,
+			dismissPicker,
 		);
 
 		const listOptions = {
@@ -792,67 +798,178 @@ export class ModelPickerWidget extends Disposable {
 }
 
 
-export function getModelHoverContent(model: ILanguageModelChatMetadataAndIdentifier, languageModelsService?: ILanguageModelsService): MarkdownString {
+export function getModelHoverContent(model: ILanguageModelChatMetadataAndIdentifier, languageModelsService?: ILanguageModelsService, onDismiss?: () => void, onSelectModel?: () => void): HTMLElement {
 	const isAuto = model.metadata.id === 'auto' && model.metadata.vendor === 'copilot';
-	const markdown = new MarkdownString('', { isTrusted: true, supportThemeIcons: true });
 
-	// Provider name (bold) + model name
-	const vendorName = model.metadata.vendor === 'copilot' ? model.metadata.family : model.metadata.vendor;
-	if (vendorName) {
-		markdown.appendMarkdown(`**${vendorName}** ${model.metadata.name}`);
-	} else {
-		markdown.appendMarkdown(`**${model.metadata.name}**`);
+	const container = dom.$('.chat-model-hover-card');
+	container.style.width = '240px';
+	container.style.padding = '10px 14px';
+	container.style.fontSize = '12px';
+	container.style.lineHeight = '1.5';
+
+	// Header: model name
+	const header = dom.append(container, dom.$('.chat-model-hover-header'));
+	header.style.marginBottom = '2px';
+
+	const nameEl = dom.append(header, dom.$('span'));
+	nameEl.style.fontWeight = '600';
+	nameEl.textContent = model.metadata.name;
+
+	// Description — strip "Rate is counted at Nx." suffix
+	let description = model.metadata.detail || model.metadata.tooltip;
+	if (description) {
+		description = description.replace(/\s*Rate is counted at \d+(\.\d+)?x\.?\s*$/i, '').trim();
 	}
-	markdown.appendText(`\n`);
-
-	// Model description from detail or tooltip
-	if (model.metadata.detail) {
-		markdown.appendMarkdown(`${model.metadata.detail}`);
-		markdown.appendText(`\n`);
-	} else if (model.metadata.tooltip) {
-		markdown.appendMarkdown(`${model.metadata.tooltip}`);
-		markdown.appendText(`\n`);
+	const descEl = dom.append(container, dom.$('.chat-model-hover-description'));
+	descEl.style.color = 'var(--vscode-descriptionForeground)';
+	descEl.style.marginBottom = '8px';
+	descEl.style.fontSize = '11px';
+	descEl.style.minHeight = '16px';
+	if (description) {
+		descEl.textContent = description;
 	}
 
-	// Build detail rows (config properties + context size) to check if separator is needed
-	const detailRows: string[] = [];
+	// Detail rows
+	const hasConfig = languageModelsService && model.metadata.configurationSchema?.properties;
+	const hasContext = !isAuto && (model.metadata.maxInputTokens || model.metadata.maxOutputTokens);
 
-	// Thinking effort and other config properties
-	if (languageModelsService) {
-		const schema = model.metadata.configurationSchema;
-		if (schema?.properties) {
+	if (hasConfig || hasContext) {
+		const separator = dom.append(container, dom.$('.chat-model-hover-separator'));
+		separator.style.borderTop = '1px solid var(--vscode-widget-border, rgba(128,128,128,0.2))';
+		separator.style.margin = '0 0 8px 0';
+
+		// Config properties with interactive square indicators (e.g. Thinking Effort)
+		if (hasConfig && languageModelsService) {
 			const currentConfig = languageModelsService.getModelConfiguration(model.identifier) ?? {};
-			for (const [key, propSchema] of Object.entries(schema.properties)) {
-				const value = currentConfig[key] ?? propSchema.default;
-				if (value === undefined) {
+			for (const [key, propSchema] of Object.entries(model.metadata.configurationSchema!.properties!)) {
+				const currentValue = currentConfig[key] ?? propSchema.default;
+				if (currentValue === undefined || !propSchema.enum) {
 					continue;
 				}
-				const enumItemLabels = propSchema.enumItemLabels;
-				const enumIndex = propSchema.enum?.indexOf(value) ?? -1;
-				const displayValue = enumItemLabels?.[enumIndex] ?? String(value);
+
+				// Mark container as interactive for sticky hover behavior
+				container.dataset['interactive'] = 'true';
 				const label = propSchema.title ?? key;
-				detailRows.push(`${localize('modelHover.configLabel', "{0}:", label)}&nbsp;&nbsp;&nbsp;&nbsp;**${displayValue}**`);
+
+				// Single row: label on left, squares + level text on right
+				const row = dom.append(container, dom.$('.chat-model-hover-config-row'));
+				row.style.display = 'flex';
+				row.style.justifyContent = 'space-between';
+				row.style.alignItems = 'center';
+				row.style.marginBottom = '6px';
+
+				const labelEl = dom.append(row, dom.$('span'));
+				labelEl.style.color = 'var(--vscode-descriptionForeground)';
+				labelEl.style.fontSize = '11px';
+				labelEl.style.whiteSpace = 'nowrap';
+				labelEl.textContent = `${label}:`;
+
+				// Right side: squares + level label
+				const rightSide = dom.append(row, dom.$('.chat-model-hover-config-controls'));
+				rightSide.style.display = 'flex';
+				rightSide.style.gap = '3px';
+				rightSide.style.alignItems = 'center';
+
+				const enumValues = propSchema.enum as unknown[];
+				const enumLabels = propSchema.enumItemLabels;
+				const selectedIndex = enumValues.indexOf(currentValue);
+
+				const squares: HTMLElement[] = [];
+				let currentSelectedIndex = selectedIndex;
+
+				const updateSquares = (activeIndex: number) => {
+					for (let j = 0; j < squares.length; j++) {
+						const sq = squares[j];
+						if (j <= activeIndex) {
+							sq.style.background = 'var(--vscode-foreground)';
+							sq.style.opacity = '1';
+						} else {
+							sq.style.background = 'var(--vscode-foreground)';
+							sq.style.opacity = '0.2';
+						}
+					}
+				};
+
+				for (let i = 0; i < enumValues.length; i++) {
+					const enumVal = enumValues[i];
+
+					const sq = dom.append(rightSide, dom.$('.chat-model-hover-square'));
+					sq.style.width = '10px';
+					sq.style.height = '10px';
+					sq.style.borderRadius = '2px';
+					sq.style.cursor = 'pointer';
+					sq.style.transition = 'opacity 0.1s';
+					sq.title = enumLabels?.[i] ?? String(enumVal);
+					squares.push(sq);
+
+					sq.addEventListener('click', (e) => {
+						e.stopPropagation();
+						languageModelsService.setModelConfiguration(model.identifier, { [key]: enumVal });
+						currentSelectedIndex = i;
+						updateSquares(i);
+						if (levelLabel) {
+							levelLabel.textContent = enumLabels?.[i] ?? String(enumVal);
+						}
+						// Select this model if it's not already selected, then dismiss
+						onSelectModel?.();
+						onDismiss?.();
+					});
+
+					sq.addEventListener('mouseenter', () => {
+						// Preview: light up squares up to hovered index and show label
+						for (let j = 0; j < squares.length; j++) {
+							squares[j].style.opacity = j <= i ? '0.7' : '0.15';
+						}
+						if (levelLabel) {
+							levelLabel.textContent = enumLabels?.[i] ?? String(enumVal);
+						}
+					});
+
+					sq.addEventListener('mouseleave', () => {
+						// Restore to current selection
+						updateSquares(currentSelectedIndex);
+						if (levelLabel) {
+							levelLabel.textContent = enumLabels?.[currentSelectedIndex] ?? String(currentValue);
+						}
+					});
+				}
+
+				// Current level label text — fixed width to prevent layout shift
+				const levelLabel = dom.append(rightSide, dom.$('span'));
+				levelLabel.style.marginLeft = '4px';
+				levelLabel.style.fontSize = '11px';
+				levelLabel.style.fontWeight = '600';
+				levelLabel.style.minWidth = '40px';
+				levelLabel.style.textAlign = 'right';
+				levelLabel.textContent = enumLabels?.[selectedIndex] ?? String(currentValue);
+
+				// Initial state
+				updateSquares(selectedIndex);
 			}
 		}
-	}
 
-	// Context size with input/output breakdown
-	if (!isAuto && (model.metadata.maxInputTokens || model.metadata.maxOutputTokens)) {
-		const inputTokens = model.metadata.maxInputTokens ?? 0;
-		const outputTokens = model.metadata.maxOutputTokens ?? 0;
-		detailRows.push(`${localize('models.contextSize', 'Context Size')}:&nbsp;&nbsp;&nbsp;&nbsp;$(arrow-down) ${formatTokenCount(inputTokens)}&nbsp;&nbsp;$(arrow-up) ${formatTokenCount(outputTokens)}`);
-	}
+		// Context size
+		if (hasContext) {
+			const row = dom.append(container, dom.$('.chat-model-hover-row'));
+			row.style.display = 'flex';
+			row.style.justifyContent = 'space-between';
+			row.style.alignItems = 'center';
 
-	if (detailRows.length > 0) {
-		markdown.appendMarkdown(`---`);
-		markdown.appendText(`\n`);
-		for (const row of detailRows) {
-			markdown.appendMarkdown(row);
-			markdown.appendText(`\n`);
+			const labelEl = dom.append(row, dom.$('span'));
+			labelEl.style.color = 'var(--vscode-descriptionForeground)';
+			labelEl.style.fontSize = '11px';
+			labelEl.textContent = `${localize('models.contextSize', 'Context Size')}:`;
+
+			const valueEl = dom.append(row, dom.$('span'));
+			valueEl.style.fontWeight = '600';
+			valueEl.style.fontSize = '11px';
+			const inputTokens = model.metadata.maxInputTokens ?? 0;
+			const outputTokens = model.metadata.maxOutputTokens ?? 0;
+			valueEl.textContent = `↓ ${formatTokenCount(inputTokens)}  ↑ ${formatTokenCount(outputTokens)}`;
 		}
 	}
 
-	return markdown;
+	return container;
 }
 
 
