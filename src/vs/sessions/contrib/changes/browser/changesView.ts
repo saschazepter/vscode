@@ -5,6 +5,7 @@
 
 import './media/changesView.css';
 import * as dom from '../../../../base/browser/dom.js';
+import * as aria from '../../../../base/browser/ui/aria/aria.js';
 import { renderLabelWithIcons } from '../../../../base/browser/ui/iconLabel/iconLabels.js';
 import { IListVirtualDelegate } from '../../../../base/browser/ui/list/list.js';
 import { IObjectTreeElement, ITreeSorter } from '../../../../base/browser/ui/tree/tree.js';
@@ -795,8 +796,15 @@ export class ChangesViewPane extends ViewPane {
 	}
 
 	override focus(): void {
-		super.focus();
-		this.tree?.domFocus();
+		if (this.tree && this.tree.getNode(null).visibleChildrenCount > 0) {
+			this.tree.domFocus();
+		} else {
+			if (this.element && !this.element.hasAttribute('tabindex')) {
+				this.element.setAttribute('tabindex', '0');
+			}
+			this.element.focus();
+			aria.alert(localize('changesView.noChangesAlert', "No changes"));
+		}
 	}
 
 	private renderSidebarList(
