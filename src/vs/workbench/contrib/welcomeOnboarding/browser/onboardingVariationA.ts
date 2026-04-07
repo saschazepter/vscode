@@ -7,6 +7,7 @@ import { Disposable, DisposableStore } from '../../../../base/common/lifecycle.j
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { $, append, addDisposableListener, EventType, clearNode, getActiveWindow } from '../../../../base/browser/dom.js';
 import { isCancellationError } from '../../../../base/common/errors.js';
+import { StopWatch } from '../../../../base/common/stopwatch.js';
 import { URI } from '../../../../base/common/uri.js';
 import { isWindows, isMacintosh, isLinux } from '../../../../base/common/platform.js';
 import { ILayoutService } from '../../../../platform/layout/browser/layoutService.js';
@@ -27,6 +28,8 @@ import product from '../../../../platform/product/common/product.js';
 import { IQuickInputService } from '../../../../platform/quickinput/common/quickInput.js';
 import { IFileService } from '../../../../platform/files/common/files.js';
 import { IPathService } from '../../../services/path/common/pathService.js';
+import { ITelemetryService } from '../../../../platform/telemetry/common/telemetry.js';
+import { InstallChatEvent, InstallChatClassification } from '../../chat/browser/chatSetup/chatSetup.js';
 import {
 	OnboardingStepId,
 	ONBOARDING_STEPS,
@@ -40,6 +43,32 @@ import {
 	getOnboardingStepTitle,
 	getOnboardingStepSubtitle,
 } from '../common/onboardingTypes.js';
+
+type OnboardingStepViewClassification = {
+	owner: 'cwebster-99';
+	comment: 'Tracks which onboarding step is viewed.';
+	step: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The step identifier.' };
+	stepNumber: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; isMeasurement: true; comment: 'The 1-based step index.' };
+};
+
+type OnboardingStepViewEvent = {
+	step: string;
+	stepNumber: number;
+};
+
+type OnboardingActionClassification = {
+	owner: 'cwebster-99';
+	comment: 'Tracks actions taken on the onboarding wizard.';
+	action: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The action performed.' };
+	step: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The step the action was performed on.' };
+	argument: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'Optional context such as theme id, extension id, or provider.' };
+};
+
+type OnboardingActionEvent = {
+	action: string;
+	step: string;
+	argument: string | undefined;
+};
 
 const defaultChat = {
 	publicCodeMatchesUrl: product.defaultChatAgent?.publicCodeMatchesUrl ?? '',
@@ -110,6 +139,7 @@ export class OnboardingVariationA extends Disposable {
 		@ICommandService private readonly commandService: ICommandService,
 		@IFileService private readonly fileService: IFileService,
 		@IPathService private readonly pathService: IPathService,
+		@ITelemetryService private readonly telemetryService: ITelemetryService,
 	) {
 		super();
 
@@ -163,6 +193,7 @@ export class OnboardingVariationA extends Disposable {
 		this.subtitleEl = append(this.bodyEl, $('p.onboarding-a-step-subtitle'));
 		this.contentEl = append(this.bodyEl, $('.onboarding-a-step-content'));
 		this._renderStep();
+		this._logStepView();
 
 		// Footer
 		const footer = append(this.card, $('.onboarding-a-footer'));
@@ -185,12 +216,20 @@ export class OnboardingVariationA extends Disposable {
 		this._updateButtonStates();
 
 		// Event handlers
-		this.disposables.add(addDisposableListener(this.skipButton, EventType.CLICK, () => this._dismiss('skip')));
-		this.disposables.add(addDisposableListener(this.backButton, EventType.CLICK, () => this._prevStep()));
+		this.disposables.add(addDisposableListener(this.skipButton, EventType.CLICK, () => {
+			this._logAction('skip');
+			this._dismiss('skip');
+		}));
+		this.disposables.add(addDisposableListener(this.backButton, EventType.CLICK, () => {
+			this._logAction('back');
+			this._prevStep();
+		}));
 		this.disposables.add(addDisposableListener(this.nextButton, EventType.CLICK, () => {
 			if (this._isLastStep()) {
+				this._logAction('complete');
 				this._dismiss('complete');
 			} else {
+				this._logAction('next');
 				this._nextStep();
 			}
 		}));
@@ -231,6 +270,8 @@ export class OnboardingVariationA extends Disposable {
 			return;
 		}
 
+		this._logAction('dismiss', undefined, reason);
+
 		this.overlay.classList.remove('visible');
 		this.overlay.classList.add('exiting');
 
@@ -262,6 +303,7 @@ export class OnboardingVariationA extends Disposable {
 			this._renderProgress();
 			this._updateButtonStates();
 			this._focusCurrentStepElement();
+			this._logStepView();
 		}
 	}
 
@@ -272,6 +314,7 @@ export class OnboardingVariationA extends Disposable {
 			this._renderProgress();
 			this._updateButtonStates();
 			this._focusCurrentStepElement();
+			this._logStepView();
 		}
 	}
 
@@ -394,6 +437,7 @@ export class OnboardingVariationA extends Disposable {
 			label: localize('onboarding.signIn.github.aria', "Continue with GitHub")
 		}));
 		this.stepDisposables.add(addDisposableListener(githubBtn, EventType.CLICK, () => {
+			this._logAction('signIn', undefined, 'github');
 			this._handleSignIn();
 		}));
 
@@ -402,6 +446,7 @@ export class OnboardingVariationA extends Disposable {
 			label: localize('onboarding.signIn.google', "Continue with Google")
 		}));
 		this.stepDisposables.add(addDisposableListener(googleBtn, EventType.CLICK, () => {
+			this._logAction('signIn', undefined, 'google');
 			this._handleSignIn('google');
 		}));
 
@@ -410,6 +455,7 @@ export class OnboardingVariationA extends Disposable {
 			label: localize('onboarding.signIn.apple', "Continue with Apple")
 		}));
 		this.stepDisposables.add(addDisposableListener(appleBtn, EventType.CLICK, () => {
+			this._logAction('signIn', undefined, 'apple');
 			this._handleSignIn('apple');
 		}));
 
@@ -418,6 +464,7 @@ export class OnboardingVariationA extends Disposable {
 			label: localize('onboarding.signIn.ghe.aria', "Continue with GitHub Enterprise")
 		}));
 		this.stepDisposables.add(addDisposableListener(gheBtn, EventType.CLICK, () => {
+			this._logAction('signIn', undefined, 'github-enterprise');
 			this._handleEnterpriseSignIn();
 		}));
 
@@ -465,6 +512,8 @@ export class OnboardingVariationA extends Disposable {
 	}
 
 	private async _handleSignIn(socialProvider?: string): Promise<void> {
+		const provider = socialProvider ?? 'github';
+		const watch = StopWatch.create();
 		try {
 			const account = await this.defaultAccountService.signIn({
 				extraAuthorizeParameters: { get_started_with: 'copilot-vscode' },
@@ -472,13 +521,16 @@ export class OnboardingVariationA extends Disposable {
 			});
 			if (account) {
 				this._userSignedIn = true;
+				this.telemetryService.publicLog2<InstallChatEvent, InstallChatClassification>('commandCenter.chatInstall', { installResult: 'installed', installDuration: watch.elapsed(), signUpErrorCode: undefined, provider });
 				this._nextStep();
 			}
 		} catch (error) {
 			if (isCancellationError(error)) {
+				this.telemetryService.publicLog2<InstallChatEvent, InstallChatClassification>('commandCenter.chatInstall', { installResult: 'cancelled', installDuration: watch.elapsed(), signUpErrorCode: undefined, provider });
 				return;
 			}
 
+			this.telemetryService.publicLog2<InstallChatEvent, InstallChatClassification>('commandCenter.chatInstall', { installResult: 'failedNotSignedIn', installDuration: watch.elapsed(), signUpErrorCode: undefined, provider });
 			this.notificationService.notify({
 				severity: Severity.Error,
 				message: localize('onboarding.signIn.error', "Sign-in failed. You can try again later from the Accounts menu."),
@@ -487,24 +539,29 @@ export class OnboardingVariationA extends Disposable {
 	}
 
 	private async _handleEnterpriseSignIn(): Promise<void> {
+		const watch = StopWatch.create();
 		try {
 			const configured = await this._ensureEnterpriseInstance();
 			if (!configured) {
 				return;
 			}
 
+			const provider = defaultChat.provider.enterprise.id;
 			const account = await this.defaultAccountService.signIn({
 				extraAuthorizeParameters: { get_started_with: 'copilot-vscode' },
 			});
 			if (account) {
 				this._userSignedIn = true;
+				this.telemetryService.publicLog2<InstallChatEvent, InstallChatClassification>('commandCenter.chatInstall', { installResult: 'installed', installDuration: watch.elapsed(), signUpErrorCode: undefined, provider });
 				this._nextStep();
 			}
 		} catch (error) {
 			if (isCancellationError(error)) {
+				this.telemetryService.publicLog2<InstallChatEvent, InstallChatClassification>('commandCenter.chatInstall', { installResult: 'cancelled', installDuration: watch.elapsed(), signUpErrorCode: undefined, provider: defaultChat.provider.enterprise.id });
 				return;
 			}
 
+			this.telemetryService.publicLog2<InstallChatEvent, InstallChatClassification>('commandCenter.chatInstall', { installResult: 'failedNotSignedIn', installDuration: watch.elapsed(), signUpErrorCode: undefined, provider: defaultChat.provider.enterprise.id });
 			this.notificationService.notify({
 				severity: Severity.Error,
 				message: localize('onboarding.signIn.enterprise.error', "GitHub Enterprise sign-in failed. Check your instance URL and try again."),
@@ -633,6 +690,7 @@ export class OnboardingVariationA extends Disposable {
 				}
 
 				this.stepDisposables.add(addDisposableListener(pill, EventType.CLICK, () => {
+					this._logAction('selectKeymap', undefined, keymap.id);
 					this.selectedKeymapId = keymap.id;
 
 					for (const p of keymapPills) {
@@ -683,6 +741,7 @@ export class OnboardingVariationA extends Disposable {
 		label.textContent = theme.label;
 
 		this.stepDisposables.add(addDisposableListener(card, EventType.CLICK, () => {
+			this._logAction('selectTheme', undefined, theme.id);
 			this._selectTheme(theme);
 			for (const c of allCards) {
 				c.classList.remove('selected');
@@ -781,6 +840,7 @@ export class OnboardingVariationA extends Disposable {
 			installBtn.textContent = localize('onboarding.ext.install', "Install");
 
 			this.stepDisposables.add(addDisposableListener(installBtn, EventType.CLICK, () => {
+				this._logAction('installExtension', undefined, ext.id);
 				installBtn.textContent = localize('onboarding.ext.installing', "Installing...");
 				installBtn.disabled = true;
 				this._installExtension(ext.id).then(
@@ -994,6 +1054,7 @@ export class OnboardingVariationA extends Disposable {
 			descEl.textContent = option.description;
 
 			this.stepDisposables.add(addDisposableListener(card, EventType.CLICK, () => {
+				this._logAction('selectAiMode', undefined, option.id);
 				this.selectedAiMode = option.id;
 				for (const c of allCards) {
 					c.classList.toggle('selected', c.dataset.id === option.id);
@@ -1052,18 +1113,21 @@ export class OnboardingVariationA extends Disposable {
 		// Left column: Local + Cloud — Right column: Copilot CLI + Inline
 		const { card: localCard } = this._createFeatureCard(features, Codicon.deviceDesktop, localize('onboarding.sessions.local', "Local Sessions"), localize('onboarding.sessions.local.desc', "Run agents locally with full access to your machine and tools."));
 		this.stepDisposables.add(addDisposableListener(localCard, EventType.CLICK, () => {
+			this._logAction('featureCardClick', undefined, 'local');
 			this._dismiss('complete');
 			this.commandService.executeCommand('workbench.action.chat.openNewChatSessionInPlace.local', 'sidebar');
 		}));
 
 		const { card: parallelCard } = this._createFeatureCard(features, Codicon.worktree, localize('onboarding.sessions.worktree', "Copilot CLI"), localize('onboarding.sessions.worktree.desc', "Branch off and work in parallel with isolated worktrees."));
 		this.stepDisposables.add(addDisposableListener(parallelCard, EventType.CLICK, () => {
+			this._logAction('featureCardClick', undefined, 'copilot-cli');
 			this._dismiss('complete');
 			this.commandService.executeCommand('workbench.action.chat.openNewChatSessionInPlace.copilotcli', 'sidebar');
 		}));
 
 		const { card: cloudCard } = this._createFeatureCard(features, Codicon.cloud, localize('onboarding.sessions.cloud', "Cloud Sessions"), localize('onboarding.sessions.cloud.desc', "Run agents in the cloud. Code keeps running even when you close the window."));
 		this.stepDisposables.add(addDisposableListener(cloudCard, EventType.CLICK, () => {
+			this._logAction('featureCardClick', undefined, 'cloud');
 			this._dismiss('complete');
 			this.commandService.executeCommand('workbench.action.chat.openNewChatSessionInPlace.copilot-cloud-agent', 'sidebar');
 		}));
@@ -1077,13 +1141,14 @@ export class OnboardingVariationA extends Disposable {
 			localize('onboarding.sessions.inline.desc3', " to dismiss."),
 		);
 		this.stepDisposables.add(addDisposableListener(inlineCard, EventType.CLICK, () => {
+			this._logAction('featureCardClick', undefined, 'inline');
 			this._dismiss('complete');
 			this.commandService.executeCommand('workbench.action.chat.open');
 		}));
 
 		// Doc links + optional sign-in nudge on the same row
 		const docs = append(wrapper, $('.onboarding-a-sessions-docs'));
-		this._createDocLink(docs, localize('onboarding.sessions.videoTutorials', "Watch video tutorials"), 'https://aka.ms/vscode-getting-started-video');
+		this._createDocLink(docs, localize('onboarding.sessions.videoTutorials', "Watch video tutorials"), 'https://aka.ms/vscode-getting-started-video', 'videoTutorials');
 
 		// Conditional sign-in nudge if user skipped sign-in on step 1
 		if (!this._userSignedIn) {
@@ -1098,6 +1163,7 @@ export class OnboardingVariationA extends Disposable {
 		btn.type = 'button';
 		btn.textContent = localize('onboarding.sessions.signInNudge', "Sign in for AI Powered Features");
 		this.stepDisposables.add(addDisposableListener(btn, EventType.CLICK, async () => {
+			this._logAction('signInNudge');
 			await this._handleSignIn();
 			if (this._userSignedIn) {
 				// Remove nudge after successful sign-in and re-render
@@ -1127,13 +1193,18 @@ export class OnboardingVariationA extends Disposable {
 		return kbd;
 	}
 
-	private _createDocLink(parent: HTMLElement, label: string, href: string): void {
+	private _createDocLink(parent: HTMLElement, label: string, href: string, linkId?: string): void {
 		const link = this._registerStepFocusable(append(parent, $<HTMLAnchorElement>('a.onboarding-a-doc-link')));
 		link.textContent = label;
 		link.href = href;
 		link.target = '_blank';
 		link.rel = 'noopener';
 		link.prepend(renderIcon(Codicon.linkExternal));
+		if (linkId) {
+			this.stepDisposables.add(addDisposableListener(link, EventType.CLICK, () => {
+				this._logAction('docLinkClick', undefined, linkId);
+			}));
+		}
 	}
 
 	private _createInlineLink(parent: HTMLElement, label: string, href: string): HTMLAnchorElement {
@@ -1194,6 +1265,26 @@ export class OnboardingVariationA extends Disposable {
 
 		const computedStyle = getActiveWindow().getComputedStyle(element);
 		return computedStyle.display !== 'none' && computedStyle.visibility !== 'hidden';
+	}
+
+	// =====================================================================
+	// Telemetry
+	// =====================================================================
+
+	private _logStepView(): void {
+		const stepId = this.steps[this.currentStepIndex];
+		this.telemetryService.publicLog2<OnboardingStepViewEvent, OnboardingStepViewClassification>('welcomeOnboarding.stepView', {
+			step: stepId,
+			stepNumber: this.currentStepIndex + 1,
+		});
+	}
+
+	private _logAction(action: string, stepOverride?: OnboardingStepId, argument?: string): void {
+		this.telemetryService.publicLog2<OnboardingActionEvent, OnboardingActionClassification>('welcomeOnboarding.actionExecuted', {
+			action,
+			step: stepOverride ?? this.steps[this.currentStepIndex],
+			argument: argument ?? undefined,
+		});
 	}
 
 	// =====================================================================
