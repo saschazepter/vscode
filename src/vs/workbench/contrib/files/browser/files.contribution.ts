@@ -376,6 +376,11 @@ configurationRegistry.registerConfiguration({
 			'description': nls.localize('files.simpleDialog.enable', "Enables the simple file dialog for opening and saving files and folders. The simple file dialog replaces the system file dialog when enabled."),
 			'default': false
 		},
+		'files.simpleDialog.autoComplete': {
+			'type': 'boolean',
+			'description': nls.localize('files.simpleDialog.autoComplete', "Controls whether the simple file dialog automatically completes the file name as you type. When disabled, the cursor position will be preserved when editing paths."),
+			'default': true
+		},
 		'files.participants.timeout': {
 			type: 'number',
 			default: 60000,
