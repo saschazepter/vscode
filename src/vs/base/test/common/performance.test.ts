@@ -22,6 +22,10 @@ suite('clearMarks', () => {
 		prefix = uniquePrefix();
 	});
 
+	teardown(() => {
+		clearMarks();
+	});
+
 	test('clears a specific mark by exact name', () => {
 		const nameA = `${prefix}a`;
 		const nameB = `${prefix}b`;
@@ -32,8 +36,6 @@ suite('clearMarks', () => {
 
 		const remaining = getMarks().filter(m => m.name.startsWith(prefix));
 		assert.deepStrictEqual(remaining.map(m => m.name), [nameB]);
-
-		clearMarks(nameB);
 	});
 
 	test('does not clear marks with a different name', () => {
@@ -46,7 +48,5 @@ suite('clearMarks', () => {
 
 		assert.strictEqual(getMarks().filter(m => m.name === name1).length, 0);
 		assert.strictEqual(getMarks().filter(m => m.name === name2).length, 1);
-
-		clearMarks(name2);
 	});
 });

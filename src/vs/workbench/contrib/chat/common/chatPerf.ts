@@ -65,8 +65,8 @@ export const ChatPerfMark = {
  * disposed — see {@link clearChatMarks}.
  */
 export function markChat(sessionResource: URI, name: string): void {
-	const fullName = `${chatPerfPrefix}${chatSessionResourceToId(sessionResource)}/${name}`;
 	const sessionId = chatSessionResourceToId(sessionResource);
+	const fullName = `${chatPerfPrefix}${sessionId}/${name}`;
 	let names = chatMarksBySession.get(sessionId);
 	if (!names) {
 		names = new Set();

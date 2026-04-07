@@ -26,7 +26,12 @@ function _definePolyfillMarks(timeOrigin?: number) {
 	}
 	function clearMarks(name?: string) {
 		if (typeof name === 'undefined') {
+			const hasTimeOrigin = _data.length >= 2 && _data[0] === 'code/timeOrigin';
+			const timeOriginValue = hasTimeOrigin ? _data[1] : undefined;
 			_data.length = 0;
+			if (hasTimeOrigin) {
+				_data.push('code/timeOrigin', timeOriginValue);
+			}
 		} else {
 			for (let i = _data.length - 2; i >= 0; i -= 2) {
 				if (_data[i] === name) {
