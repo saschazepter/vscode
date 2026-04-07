@@ -80,6 +80,7 @@ export class AgenticPromptsService extends PromptsService {
 					if (!rawName || !rawDescription) {
 						continue;
 					}
+					const contentHash = parsed.contentHash;
 					const name = sanitizeSkillText(rawName, 64);
 					const description = sanitizeSkillText(rawDescription, 1024);
 					const folderName = basename(child.resource);
@@ -93,6 +94,7 @@ export class AgenticPromptsService extends PromptsService {
 						description,
 						disableModelInvocation: parsed.header?.disableModelInvocation === true,
 						userInvocable: parsed.header?.userInvocable !== false,
+						contentHash
 					});
 				} catch (e) {
 					this.logger.warn(`[discoverBuiltinSkills] Failed to parse built-in skill: ${skillFileUri}`, e instanceof Error ? e.message : String(e));

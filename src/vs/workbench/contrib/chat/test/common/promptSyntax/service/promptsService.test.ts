@@ -6,7 +6,7 @@
 import assert from 'assert';
 import * as sinon from 'sinon';
 import { CancellationToken } from '../../../../../../../base/common/cancellation.js';
-import { Emitter, Event } from '../../../../../../../base/common/event.js';
+import { Event } from '../../../../../../../base/common/event.js';
 import { match } from '../../../../../../../base/common/glob.js';
 import { ResourceSet } from '../../../../../../../base/common/map.js';
 import { Schemas } from '../../../../../../../base/common/network.js';
@@ -51,7 +51,7 @@ import { IExtensionService } from '../../../../../../services/extensions/common/
 import { IRemoteAgentService } from '../../../../../../services/remote/common/remoteAgentService.js';
 import { ChatModeKind } from '../../../../common/constants.js';
 import { HookType } from '../../../../common/promptSyntax/hookTypes.js';
-import { IContextKeyService, IContextKeyChangeEvent } from '../../../../../../../platform/contextkey/common/contextkey.js';
+import { IContextKeyService } from '../../../../../../../platform/contextkey/common/contextkey.js';
 import { MockContextKeyService } from '../../../../../../../platform/keybinding/test/common/mockKeybindingService.js';
 import { IAgentPlugin, IAgentPluginAgent, IAgentPluginCommand, IAgentPluginHook, IAgentPluginInstruction, IAgentPluginMcpServerDefinition, IAgentPluginService, IAgentPluginSkill } from '../../../../common/plugins/agentPluginService.js';
 import { IWorkspaceTrustManagementService } from '../../../../../../../platform/workspace/common/workspaceTrust.js';
@@ -800,7 +800,8 @@ suite('PromptsService', () => {
 					agents: undefined,
 					hooks: undefined,
 					uri: URI.joinPath(rootFolderUri, '.github/agents/agent1.agent.md'),
-					source: { storage: PromptsStorage.local }
+					source: { storage: PromptsStorage.local },
+					contentHash: -1,
 				},
 			];
 
@@ -858,6 +859,7 @@ suite('PromptsService', () => {
 					hooks: undefined,
 					uri: URI.joinPath(rootFolderUri, '.github/agents/agent1.agent.md'),
 					source: { storage: PromptsStorage.local },
+					contentHash: -1,
 				},
 				{
 					name: 'agent2',
@@ -872,7 +874,8 @@ suite('PromptsService', () => {
 					uri: URI.joinPath(rootFolderUri, '.github/agents/agent2.agent.md'),
 					source: { storage: PromptsStorage.local },
 					target: Target.Undefined,
-					visibility: { userInvocable: true, agentInvocable: true }
+					visibility: { userInvocable: true, agentInvocable: true },
+					contentHash: -1,
 				}
 			];
 
@@ -933,7 +936,8 @@ suite('PromptsService', () => {
 					agents: undefined,
 					hooks: undefined,
 					uri: URI.joinPath(rootFolderUri, '.github/agents/agent1.agent.md'),
-					source: { storage: PromptsStorage.local }
+					source: { storage: PromptsStorage.local },
+					contentHash: -1,
 				},
 				{
 					name: 'agent2',
@@ -952,7 +956,8 @@ suite('PromptsService', () => {
 					agents: undefined,
 					hooks: undefined,
 					uri: URI.joinPath(rootFolderUri, '.github/agents/agent2.agent.md'),
-					source: { storage: PromptsStorage.local }
+					source: { storage: PromptsStorage.local },
+					contentHash: -1,
 				},
 			];
 
@@ -1023,7 +1028,8 @@ suite('PromptsService', () => {
 					agents: undefined,
 					hooks: undefined,
 					uri: URI.joinPath(rootFolderUri, '.github/agents/github-agent.agent.md'),
-					source: { storage: PromptsStorage.local }
+					source: { storage: PromptsStorage.local },
+					contentHash: -1,
 				},
 				{
 					name: 'vscode-agent',
@@ -1042,7 +1048,8 @@ suite('PromptsService', () => {
 					agents: undefined,
 					hooks: undefined,
 					uri: URI.joinPath(rootFolderUri, '.github/agents/vscode-agent.agent.md'),
-					source: { storage: PromptsStorage.local }
+					source: { storage: PromptsStorage.local },
+					contentHash: -1,
 				},
 				{
 					name: 'generic-agent',
@@ -1061,7 +1068,8 @@ suite('PromptsService', () => {
 					agents: undefined,
 					hooks: undefined,
 					uri: URI.joinPath(rootFolderUri, '.github/agents/generic-agent.agent.md'),
-					source: { storage: PromptsStorage.local }
+					source: { storage: PromptsStorage.local },
+					contentHash: -1
 				},
 			];
 
@@ -1139,7 +1147,8 @@ suite('PromptsService', () => {
 					agents: undefined,
 					hooks: undefined,
 					uri: URI.joinPath(rootFolderUri, '.github/agents/copilot-agent.agent.md'),
-					source: { storage: PromptsStorage.local }
+					source: { storage: PromptsStorage.local },
+					contentHash: -1,
 				},
 				{
 					name: 'claude-agent',
@@ -1160,7 +1169,8 @@ suite('PromptsService', () => {
 					agents: undefined,
 					hooks: undefined,
 					uri: URI.joinPath(rootFolderUri, '.claude/agents/claude-agent.md'),
-					source: { storage: PromptsStorage.local }
+					source: { storage: PromptsStorage.local },
+					contentHash: -1,
 				},
 				{
 					name: 'claude-agent2',
@@ -1180,7 +1190,8 @@ suite('PromptsService', () => {
 					agents: undefined,
 					hooks: undefined,
 					uri: URI.joinPath(rootFolderUri, '.claude/agents/claude-agent2.md'),
-					source: { storage: PromptsStorage.local }
+					source: { storage: PromptsStorage.local },
+					contentHash: -1,
 				},
 			];
 
@@ -1237,7 +1248,8 @@ suite('PromptsService', () => {
 					agents: undefined,
 					hooks: undefined,
 					uri: URI.joinPath(rootFolderUri, '.github/agents/demonstrate.md'),
-					source: { storage: PromptsStorage.local }
+					source: { storage: PromptsStorage.local },
+					contentHash: -1,
 				}
 			];
 
@@ -1308,7 +1320,8 @@ suite('PromptsService', () => {
 					visibility: { userInvocable: true, agentInvocable: true },
 					hooks: undefined,
 					uri: URI.joinPath(rootFolderUri, '.github/agents/restricted-agent.agent.md'),
-					source: { storage: PromptsStorage.local }
+					source: { storage: PromptsStorage.local },
+					contentHash: -1,
 				},
 				{
 					name: 'no-access-agent',
@@ -1327,7 +1340,8 @@ suite('PromptsService', () => {
 					visibility: { userInvocable: true, agentInvocable: true },
 					hooks: undefined,
 					uri: URI.joinPath(rootFolderUri, '.github/agents/no-access-agent.agent.md'),
-					source: { storage: PromptsStorage.local }
+					source: { storage: PromptsStorage.local },
+					contentHash: -1,
 				},
 				{
 					name: 'full-access-agent',
@@ -1346,7 +1360,8 @@ suite('PromptsService', () => {
 					visibility: { userInvocable: true, agentInvocable: true },
 					hooks: undefined,
 					uri: URI.joinPath(rootFolderUri, '.github/agents/full-access-agent.agent.md'),
-					source: { storage: PromptsStorage.local }
+					source: { storage: PromptsStorage.local },
+					contentHash: -1,
 				},
 			];
 
@@ -2045,49 +2060,22 @@ suite('PromptsService', () => {
 			registered2.dispose();
 		});
 
-		test('Contributed file with when clause is filtered by context key', async () => {
+		test('Contributed file with when clause is included at discovery and propagated for later evaluation', async () => {
 			const uri = URI.parse('file://extensions/my-extension/conditional.instructions.md');
 			const extension = {} as IExtensionDescription;
 
-			// Create a mock context key service that we can control
-			let matchResult = false;
-			const contextKeyChangeEmitter = disposables.add(new Emitter<IContextKeyChangeEvent>());
-			const testContextKeyService = new class extends MockContextKeyService {
-				override contextMatchesRules(): boolean {
-					return matchResult;
-				}
-				override get onDidChangeContext() {
-					return contextKeyChangeEmitter.event;
-				}
-			}();
-			instaService.stub(IContextKeyService, testContextKeyService);
-			service.dispose();
-			const testService = disposables.add(instaService.createInstance(PromptsService));
-
-			const registered = testService.registerContributedFile(
+			const registered = service.registerContributedFile(
 				PromptsType.instructions, uri, extension,
 				'Conditional Instructions', 'Only when enabled', 'myFeature.enabled',
 			);
 
-			// When clause is false - should be filtered out
-			const before = await testService.listPromptFiles(PromptsType.instructions, CancellationToken.None);
-			assert.strictEqual(before.length, 0, 'Should be filtered out when context key is false');
-
-			// Change context to make when clause true
-			matchResult = true;
-			contextKeyChangeEmitter.fire({
-				affectsSome: (keys) => keys.has('myFeature.enabled'),
-				allKeysContainedIn: () => false,
-			});
-
-			const after = await testService.listPromptFiles(PromptsType.instructions, CancellationToken.None);
-			assert.strictEqual(after.length, 1, 'Should be included when context key is true');
-			assert.strictEqual(after[0].uri.toString(), uri.toString());
+			// `when` is no longer evaluated at discovery time; the file should always be
+			// included so consumers can evaluate it with session-scoped context later.
+			const files = await service.listPromptFiles(PromptsType.instructions, CancellationToken.None);
+			assert.strictEqual(files.length, 1, 'Should be included regardless of context key match');
+			assert.strictEqual(files[0].uri.toString(), uri.toString());
 
 			registered.dispose();
-
-			// Restore original stub
-			instaService.stub(IContextKeyService, new MockContextKeyService());
 		});
 	});
 

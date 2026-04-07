@@ -12,6 +12,7 @@ import { ChatDebugLogLevel, IChatDebugEvent, IChatDebugGenericEvent, IChatDebugS
 import { ChatDebugServiceImpl } from '../../common/chatDebugServiceImpl.js';
 import { LocalChatSessionUri } from '../../common/model/chatUri.js';
 import { IChatAgentService, IChatAgentInvocationEvent } from '../../common/participants/chatAgents.js';
+import { IChatService } from '../../common/chatService/chatService.js';
 import { PromptsDebugContribution } from '../../browser/promptsDebugContribution.js';
 import { ILocalPromptPath, IPromptDiscoveryInfo, IPromptsService, PromptsStorage } from '../../common/promptSyntax/service/promptsService.js';
 import { PromptsType } from '../../common/promptSyntax/promptTypes.js';
@@ -50,6 +51,7 @@ suite('PromptsDebugContribution', () => {
 
 		willInvokeAgentEmitter = disposables.add(new Emitter<IChatAgentInvocationEvent>());
 		instaService.stub(IChatAgentService, { onWillInvokeAgent: willInvokeAgentEmitter.event } as Partial<IChatAgentService>);
+		instaService.stub(IChatService, { onDidDisposeSession: disposables.add(new Emitter()).event } as Partial<IChatService>);
 		promptsService = {
 			getDiscoveryInfo: async type => emptyDiscoveryInfo(type),
 		};
@@ -68,8 +70,9 @@ suite('PromptsDebugContribution', () => {
 			files: type === PromptsType.instructions ? [{
 				status: 'loaded' as const,
 				promptPath: createLocalPromptPath('/workspace/.github/instructions/test.instructions.md', 'test.instructions.md'),
+				contentHash: -1,
 			}] : [],
-		});
+		} satisfies IPromptDiscoveryInfo);
 
 		willInvokeAgentEmitter.fire({ agentId: 'test-agent', request: { sessionResource: LocalChatSessionUri.forSession('session-1') } as IChatAgentInvocationEvent['request'] });
 		await flushAsyncLogging();
@@ -96,6 +99,7 @@ suite('PromptsDebugContribution', () => {
 			files: [{
 				status: 'loaded' as const,
 				promptPath: createLocalPromptPath('/workspace/.github/instructions/test.instructions.md', 'test.instructions.md'),
+				contentHash: -1,
 			}],
 			sourceFolders: [{
 				uri: URI.file('/workspace/.github/instructions'),
@@ -159,11 +163,13 @@ suite('PromptsDebugContribution', () => {
 				{
 					status: 'loaded' as const,
 					promptPath: createLocalPromptPath('/workspace/.github/instructions/loaded.instructions.md', 'loaded.instructions.md'),
+					contentHash: -1,
 				},
 				{
 					status: 'skipped' as const,
 					promptPath: createLocalPromptPath('/workspace/.github/instructions/skipped.instructions.md', 'skipped.instructions.md'),
 					skipReason: 'disabled',
+					contentHash: -1,
 				},
 			],
 		};

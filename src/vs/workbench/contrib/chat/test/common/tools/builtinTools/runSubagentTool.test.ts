@@ -60,7 +60,8 @@ suite('RunSubagentTool', () => {
 				agentInstructions: { content: 'Custom agent body', toolReferences: [] },
 				source: { storage: PromptsStorage.local },
 				target: Target.Undefined,
-				visibility: { userInvocable: true, agentInvocable: true }
+				visibility: { userInvocable: true, agentInvocable: true },
+				contentHash: -1,
 			};
 			promptsService.setCustomModes([customMode]);
 
@@ -389,7 +390,8 @@ suite('RunSubagentTool', () => {
 				agentInstructions: { content: 'test', toolReferences: [] },
 				source: { storage: PromptsStorage.local },
 				target: Target.Undefined,
-				visibility: { userInvocable: true, agentInvocable: true }
+				visibility: { userInvocable: true, agentInvocable: true },
+				contentHash: -1,
 			};
 		}
 

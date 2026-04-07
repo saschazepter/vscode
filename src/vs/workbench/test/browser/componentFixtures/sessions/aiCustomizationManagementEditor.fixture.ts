@@ -142,6 +142,7 @@ function createMockPromptsService(files: IFixtureFile[], agentInstructions: IAge
 				description: f.description,
 				disableModelInvocation: false,
 				userInvocable: true,
+				contentHash: -1,
 				when: undefined,
 			}));
 		}
@@ -158,6 +159,7 @@ function createMockPromptsService(files: IFixtureFile[], agentInstructions: IAge
 					storage: f.storage,
 					source: undefined,
 					extension: toExtensionInfo(f) as never,
+					contentHash: -1,
 					when: undefined,
 				} satisfies IChatPromptSlashCommand;
 			}));

@@ -19,6 +19,7 @@ import { generateUuid } from '../../../base/common/uuid.js';
 import { Location } from '../../../editor/common/languages.js';
 import { ExtensionIdentifier, IExtensionDescription, IRelaxedExtensionDescription } from '../../../platform/extensions/common/extensions.js';
 import { ILogService } from '../../../platform/log/common/log.js';
+import { packErrorForTelemetry } from '../../../platform/telemetry/common/errorTelemetry.js';
 import { isChatViewTitleActionContext } from '../../contrib/chat/common/actions/chatActions.js';
 import { IChatAgentRequest, IChatAgentResult, IChatAgentResultTimings, UserSelectedTools } from '../../contrib/chat/common/participants/chatAgents.js';
 import { ChatAgentVoteDirection, IChatContentReference, IChatFollowup, IChatResponseErrorDetails, IChatUserActionEvent, IChatVoteAction } from '../../contrib/chat/common/chatService/chatService.js';
@@ -27,7 +28,7 @@ import { LocalChatSessionUri } from '../../contrib/chat/common/model/chatUri.js'
 import { ChatAgentLocation } from '../../contrib/chat/common/constants.js';
 import { checkProposedApiEnabled, isProposedApiEnabled } from '../../services/extensions/common/extensions.js';
 import { Dto } from '../../services/extensions/common/proxyIdentifier.js';
-import { ExtHostChatAgentsShape2, IChatAgentCompletionItem, IChatAgentHistoryEntryDto, IChatAgentProgressShape, IChatResourceDto, IChatSessionCustomizationItemDto, IChatSessionCustomizationProviderMetadataDto, IChatProgressDto, IChatSessionContextDto, ICustomAgentDto, IExtensionChatAgentMetadata, IInstructionDto, IMainContext, ISkillDto, ISlashCommandDto, MainContext, MainThreadChatAgentsShape2 } from './extHost.protocol.js';
+import { ExtHostChatAgentsShape2, IChatAgentCompletionItem, IChatAgentHistoryEntryDto, IChatAgentInvokeResult, IChatAgentProgressShape, IChatSessionCustomizationItemDto, IChatSessionCustomizationProviderMetadataDto, IChatProgressDto, IChatSessionContextDto, ICustomAgentDto, IExtensionChatAgentMetadata, IHookDto, IInstructionDto, IMainContext, IPluginDto, ISkillDto, ISlashCommandDto, MainContext, MainThreadChatAgentsShape2 } from './extHost.protocol.js';
 import { CommandsConverter, ExtHostCommands } from './extHostCommands.js';
 import { ExtHostDiagnostics } from './extHostDiagnostics.js';
 import { ExtHostDocuments } from './extHostDocuments.js';
@@ -472,7 +473,7 @@ export class ExtHostChatAgents2 extends Disposable implements ExtHostChatAgentsS
 	private readonly _participantDetectionProviders = new Map<number, ExtHostParticipantDetector>();
 
 	private static _contributionsProviderIdPool = 0;
-	private readonly _promptFileProviders = new Map<number, { extension: IExtensionDescription; provider: vscode.ChatCustomAgentProvider | vscode.ChatInstructionsProvider | vscode.ChatPromptFileProvider | vscode.ChatSkillProvider }>();
+	private readonly _promptFileProviders = new Map<number, { extension: IExtensionDescription; provider: vscode.ChatCustomAgentProvider | vscode.ChatInstructionsProvider | vscode.ChatPromptFileProvider | vscode.ChatSkillProvider | vscode.ChatHookProvider }>();
 
 	private static _customizationProviderIdPool = 0;
 	private readonly _customizationProviders = new Map<number, { extension: IExtensionDescription; provider: vscode.ChatSessionCustomizationProvider }>();
@@ -499,11 +500,17 @@ export class ExtHostChatAgents2 extends Disposable implements ExtHostChatAgentsS
 	readonly onDidChangeSkills = this._onDidChangeSkills.event;
 	private readonly _onDidChangeSlashCommands = this._register(new Emitter<void>());
 	readonly onDidChangeSlashCommands = this._onDidChangeSlashCommands.event;
+	private readonly _onDidChangeHooks = this._register(new Emitter<void>());
+	readonly onDidChangeHooks = this._onDidChangeHooks.event;
+	private readonly _onDidChangePlugins = this._register(new Emitter<void>());
+	readonly onDidChangePlugins = this._onDidChangePlugins.event;
 
 	private _customAgents: vscode.ChatCustomAgent[] = [];
 	private _instructions: vscode.ChatInstruction[] = [];
 	private _skills: vscode.ChatSkill[] = [];
 	private _slashCommands: vscode.ChatSlashCommand[] = [];
+	private _hooks: vscode.ChatHook[] = [];
+	private _plugins: vscode.ChatPlugin[] = [];
 
 	private _activeChatPanelSessionResource: URI | undefined;
 
@@ -581,6 +588,14 @@ export class ExtHostChatAgents2 extends Disposable implements ExtHostChatAgentsS
 		});
 	}
 
+	get hooks(): readonly vscode.ChatHook[] {
+		return this._hooks;
+	}
+
+	get plugins(): readonly vscode.ChatPlugin[] {
+		return this._plugins;
+	}
+
 	$acceptCustomAgents(agents: ICustomAgentDto[]): void {
 		this._customAgents = agents.map(agent => this.toCustomAgent(agent));
 		this._onDidChangeCustomAgents.fire();
@@ -599,6 +614,16 @@ export class ExtHostChatAgents2 extends Disposable implements ExtHostChatAgentsS
 	$acceptSlashCommands(slashCommands: ISlashCommandDto[]): void {
 		this._slashCommands = slashCommands.map(slashCommand => this.toSlashCommand(slashCommand));
 		this._onDidChangeSlashCommands.fire();
+	}
+
+	$acceptHooks(hooks: IHookDto[]): void {
+		this._hooks = hooks.map(h => Object.freeze({ uri: URI.revive(h.uri) }));
+		this._onDidChangeHooks.fire();
+	}
+
+	$acceptPlugins(plugins: IPluginDto[]): void {
+		this._plugins = plugins.map(p => Object.freeze({ uri: URI.revive(p.uri) }));
+		this._onDidChangePlugins.fire();
 	}
 
 	constructor(
@@ -662,7 +687,7 @@ export class ExtHostChatAgents2 extends Disposable implements ExtHostChatAgentsS
 	 * Internal method that handles all prompt file provider types.
 	 * Routes custom agents, instructions, prompt files, and skills to the unified internal implementation.
 	 */
-	registerPromptFileProvider(extension: IExtensionDescription, type: PromptsType, provider: vscode.ChatCustomAgentProvider | vscode.ChatInstructionsProvider | vscode.ChatPromptFileProvider | vscode.ChatSkillProvider): vscode.Disposable {
+	registerPromptFileProvider(extension: IExtensionDescription, type: PromptsType, provider: vscode.ChatCustomAgentProvider | vscode.ChatInstructionsProvider | vscode.ChatPromptFileProvider | vscode.ChatSkillProvider | vscode.ChatHookProvider): vscode.Disposable {
 		const handle = ExtHostChatAgents2._contributionsProviderIdPool++;
 		this._promptFileProviders.set(handle, { extension, provider });
 		this._proxy.$registerPromptFileProvider(handle, type, extension.identifier);
@@ -684,6 +709,9 @@ export class ExtHostChatAgents2 extends Disposable implements ExtHostChatAgentsS
 				break;
 			case PromptsType.skill:
 				changeEvent = (provider as vscode.ChatSkillProvider).onDidChangeSkills;
+				break;
+			case PromptsType.hook:
+				changeEvent = (provider as vscode.ChatHookProvider).onDidChangeHooks;
 				break;
 		}
 
@@ -722,6 +750,9 @@ export class ExtHostChatAgents2 extends Disposable implements ExtHostChatAgentsS
 			case PromptsType.skill:
 				resources = await (provider as vscode.ChatSkillProvider).provideSkills(context, token) ?? undefined;
 				break;
+			case PromptsType.hook:
+				resources = await (provider as vscode.ChatHookProvider).provideHooks(context, token) ?? undefined;
+				break;
 		}
 
 		return resources;
@@ -734,7 +765,7 @@ export class ExtHostChatAgents2 extends Disposable implements ExtHostChatAgentsS
 		const metadataDto: IChatSessionCustomizationProviderMetadataDto = {
 			label: metadata.label,
 			iconId: metadata.iconId,
-			unsupportedTypes: metadata.unsupportedTypes?.map(t => typeConvert.ChatSessionCustomizationType.from(t)),
+			supportedTypes: metadata.supportedTypes?.map(t => typeConvert.ChatSessionCustomizationType.from(t)),
 		};
 
 		this._proxy.$registerChatSessionCustomizationProvider(handle, chatSessionType, metadataDto, extension.identifier);
@@ -870,7 +901,7 @@ export class ExtHostChatAgents2 extends Disposable implements ExtHostChatAgentsS
 		}
 	}
 
-	async $invokeAgent(handle: number, requestDto: Dto<IChatAgentRequest>, context: { history: IChatAgentHistoryEntryDto[]; chatSessionContext?: IChatSessionContextDto }, token: CancellationToken): Promise<IChatAgentResult | undefined> {
+	async $invokeAgent(handle: number, requestDto: Dto<IChatAgentRequest>, context: { history: IChatAgentHistoryEntryDto[]; chatSessionContext?: IChatSessionContextDto }, token: CancellationToken): Promise<IChatAgentInvokeResult | undefined> {
 		const agent = this._agents.get(handle);
 		if (!agent) {
 			throw new Error(`[CHAT](${handle}) CANNOT invoke agent because the agent is not registered`);
@@ -964,7 +995,9 @@ export class ExtHostChatAgents2 extends Disposable implements ExtHostChatAgentsS
 
 			const isQuotaExceeded = e instanceof Error && e.name === 'ChatQuotaExceeded';
 			const isRateLimited = e instanceof Error && e.name === 'ChatRateLimited';
-			return { errorDetails: { message: toErrorMessage(e), responseIsIncomplete: true, isQuotaExceeded, isRateLimited } };
+			const { callstack: errorCallstack } = packErrorForTelemetry(e);
+			const errorName = e instanceof Error ? e.name : undefined;
+			return { errorDetails: { message: toErrorMessage(e), responseIsIncomplete: true, isQuotaExceeded, isRateLimited }, errorCallstack, errorName };
 
 		} finally {
 			if (inFlightRequest) {

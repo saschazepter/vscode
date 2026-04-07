@@ -78,7 +78,8 @@ suite('PromptHeaderAutocompletion', () => {
 			uri: URI.parse('myFs://.github/agents/agent1.agent.md'),
 			source: { storage: PromptsStorage.local },
 			target: Target.Undefined,
-			visibility: { userInvocable: true, agentInvocable: true }
+			visibility: { userInvocable: true, agentInvocable: true },
+			contentHash: -1
 		};
 
 		const parser = new PromptFileParser();

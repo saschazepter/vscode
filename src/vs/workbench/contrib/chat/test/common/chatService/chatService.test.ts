@@ -57,6 +57,7 @@ import { MockLanguageModelToolsService } from '../tools/mockLanguageModelToolsSe
 import { MockChatService } from './mockChatService.js';
 import { ChatSessionOptionsMap, IChatSessionsService } from '../../../common/chatSessionsService.js';
 import { MockChatSessionsService } from '../mockChatSessionsService.js';
+import { AGENT_DEBUG_LOG_FILE_LOGGING_ENABLED_SETTING, COPILOT_SKILL_URI_SCHEME, TROUBLESHOOT_SKILL_PATH } from '../../../common/promptSyntax/promptTypes.js';
 
 const chatAgentWithUsedContextId = 'ChatProviderWithUsedContext';
 const chatAgentWithUsedContext: IChatAgent = {
@@ -459,6 +460,60 @@ suite('ChatService', () => {
 		const chatModel2 = chatModel2Ref.object;
 
 		await assertSnapshot(toSnapshotExportData(chatModel2));
+	});
+
+	test('can serialize and deserialize implicit request flag', async () => {
+		let serializedChatData: ISerializableChatData;
+
+		{
+			const testService = createChatService();
+			const chatModel1Ref = testDisposables.add(startSessionModel(testService));
+			const chatModel1 = chatModel1Ref.object;
+
+			const response = await testService.sendRequest(chatModel1.sessionResource, 'test implicit request', { isSystemInitiated: true });
+			ChatSendResult.assertSent(response);
+			await response.data.responseCompletePromise;
+
+			assert.strictEqual(chatModel1.getRequests().length, 1);
+			assert.strictEqual(chatModel1.getRequests()[0].isSystemInitiated, true);
+
+			serializedChatData = JSON.parse(JSON.stringify(chatModel1));
+			assert.strictEqual(serializedChatData.requests.length, 1);
+			assert.strictEqual(serializedChatData.requests[0].isSystemInitiated, true);
+		}
+
+		const testService2 = createChatService();
+		const chatModel2Ref = testService2.loadSessionFromData(serializedChatData);
+		assert(chatModel2Ref);
+		testDisposables.add(chatModel2Ref);
+		const chatModel2 = chatModel2Ref.object;
+
+		assert.strictEqual(chatModel2.getRequests().length, 1);
+		assert.strictEqual(chatModel2.getRequests()[0].isSystemInitiated, true);
+	});
+
+	test('acquireExistingSession keeps model alive for steering request after refs released', async () => {
+		const testService = createChatService();
+		const modelRef = startSessionModel(testService);
+		const sessionResource = modelRef.object.sessionResource;
+
+		// Acquire a keep-alive reference (what the fix does)
+		const keepAliveRef = testDisposables.add(testService.acquireExistingSession(sessionResource, 'test#keepAlive')!);
+		assert.ok(keepAliveRef, 'acquireExistingSession should return a reference');
+
+		// Release the original reference to simulate user navigating away
+		modelRef.dispose();
+		await testService.waitForModelDisposals();
+
+		// Model should still be accessible because keepAliveRef holds it
+		const response = await testService.sendRequest(sessionResource, 'terminal completed', {
+			queue: ChatRequestQueueKind.Steering,
+			isSystemInitiated: true,
+		});
+		assert.strictEqual(response.kind, 'queued');
+
+		// Clean up
+		keepAliveRef.dispose();
 	});
 
 	test('onDidDisposeSession', async () => {
@@ -985,6 +1040,74 @@ suite('ChatService', () => {
 			]
 		);
 	});
+	test('troubleshoot skill via attachedContext is blocked when fileLogging.enabled is off', async () => {
+		const configService = instantiationService.get(IConfigurationService) as TestConfigurationService;
+		await configService.setUserConfiguration(AGENT_DEBUG_LOG_FILE_LOGGING_ENABLED_SETTING, false);
+
+		const troubleshootAgent: IChatAgentImplementation = {
+			async invoke(_request, _progress, _history, _token) {
+				return {};
+			},
+		};
+		testDisposables.add(chatAgentService.registerAgent('troubleshootAgent', { ...getAgentData('troubleshootAgent'), isDefault: true }));
+		testDisposables.add(chatAgentService.registerAgentImplementation('troubleshootAgent', troubleshootAgent));
+
+		const testService = createChatService();
+		const modelRef = testDisposables.add(startSessionModel(testService));
+		const model = modelRef.object;
+
+		const skillUri = URI.from({ scheme: COPILOT_SKILL_URI_SCHEME, path: TROUBLESHOOT_SKILL_PATH });
+		const response = await testService.sendRequest(model.sessionResource, 'investigate this issue', {
+			attachedContext: [{
+				id: 'troubleshoot-skill',
+				name: 'troubleshoot',
+				kind: 'generic',
+				value: skillUri,
+			}],
+		});
+		ChatSendResult.assertSent(response);
+		await response.data.responseCompletePromise;
+
+		const requests = model.getRequests();
+		assert.strictEqual(requests.length, 1);
+		const responseContent = requests[0].response?.response.toString();
+		assert.ok(responseContent?.includes(AGENT_DEBUG_LOG_FILE_LOGGING_ENABLED_SETTING), 'Response should mention the fileLogging setting');
+	});
+
+	test('troubleshoot skill via attachedContext proceeds when fileLogging.enabled is on', async () => {
+		const configService = instantiationService.get(IConfigurationService) as TestConfigurationService;
+		await configService.setUserConfiguration(AGENT_DEBUG_LOG_FILE_LOGGING_ENABLED_SETTING, true);
+
+		const troubleshootAgent: IChatAgentImplementation = {
+			async invoke(_request, progress, _history, _token) {
+				progress([{ kind: 'markdownContent', content: new MarkdownString('Troubleshooting complete') }]);
+				return {};
+			},
+		};
+		testDisposables.add(chatAgentService.registerAgent('troubleshootAgent2', { ...getAgentData('troubleshootAgent2'), isDefault: true }));
+		testDisposables.add(chatAgentService.registerAgentImplementation('troubleshootAgent2', troubleshootAgent));
+
+		const testService = createChatService();
+		const modelRef = testDisposables.add(startSessionModel(testService));
+		const model = modelRef.object;
+
+		const skillUri = URI.from({ scheme: COPILOT_SKILL_URI_SCHEME, path: TROUBLESHOOT_SKILL_PATH });
+		const response = await testService.sendRequest(model.sessionResource, 'investigate this issue', {
+			attachedContext: [{
+				id: 'troubleshoot-skill',
+				name: 'troubleshoot',
+				kind: 'generic',
+				value: skillUri,
+			}],
+		});
+		ChatSendResult.assertSent(response);
+		await response.data.responseCompletePromise;
+
+		const requests = model.getRequests();
+		assert.strictEqual(requests.length, 1);
+		const responseContent = requests[0].response?.response.toString();
+		assert.ok(!responseContent?.includes(AGENT_DEBUG_LOG_FILE_LOGGING_ENABLED_SETTING), 'Response should not contain the settings gate message');
+	});
 });
 
 
@@ -994,7 +1117,7 @@ function toSnapshotExportData(model: IChatModel) {
 		...exp,
 		requests: exp.requests.map(r => {
 			// Destructure properties after `vote` so we can insert `voteDownReason` in the correct position for snapshot compat
-			const { slashCommand, usedContext, contentReferences, codeCitations, timeSpentWaiting, ...rest } = r;
+			const { slashCommand, usedContext, contentReferences, codeCitations, timeSpentWaiting, isSystemInitiated: _isSystemInitiated, systemInitiatedLabel: _systemInitiatedLabel, ...rest } = r;
 			return {
 				...rest,
 				modelState: {

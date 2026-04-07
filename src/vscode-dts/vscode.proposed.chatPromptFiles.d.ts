@@ -103,6 +103,14 @@ declare module 'vscode' {
 		readonly userInvocable?: boolean;
 	}
 
+	export interface ChatHook {
+		readonly uri: Uri;
+	}
+
+	export interface ChatPlugin {
+		readonly uri: Uri;
+	}
+
 	// #endregion
 
 	// #region Providers
@@ -159,6 +167,28 @@ declare module 'vscode' {
 		 * @returns An array of prompt files or a promise that resolves to such.
 		 */
 		providePromptFiles(context: unknown, token: CancellationToken): ProviderResult<ChatResource[]>;
+	}
+
+	// #endregion
+
+	// #region HookProvider
+
+	/**
+	 * A provider that supplies hook configuration resources (from hooks JSON files).
+	 */
+	export interface ChatHookProvider {
+		/**
+		 * An optional event to signal that hooks have changed.
+		 */
+		readonly onDidChangeHooks?: Event<void>;
+
+		/**
+		 * Provide the list of hook configuration files available.
+		 * @param context Context for the provide call.
+		 * @param token A cancellation token.
+		 * @returns An array of hook resources or a promise that resolves to such.
+		 */
+		provideHooks(context: unknown, token: CancellationToken): ProviderResult<ChatResource[]>;
 	}
 
 	// #endregion
@@ -233,6 +263,28 @@ declare module 'vscode' {
 		export const slashCommands: readonly ChatSlashCommand[];
 
 		/**
+		 * An event that fires when the list of {@link hooks hooks} changes.
+		 */
+		export const onDidChangeHooks: Event<void>;
+
+		/**
+		 * The list of currently available hook configuration files.
+		 * These are JSON files that define lifecycle hooks from all sources
+		 * (workspace, user, and extension-provided).
+		 */
+		export const hooks: readonly ChatResource[];
+
+		/**
+		 * An event that fires when the list of {@link plugins plugins} changes.
+		 */
+		export const onDidChangePlugins: Event<void>;
+
+		/**
+		 * The list of currently installed agent plugins.
+		 */
+		export const plugins: readonly ChatResource[];
+
+		/**
 		 * Register a provider for custom agents.
 		 * @param provider The custom agent provider.
 		 * @returns A disposable that unregisters the provider when disposed.
@@ -259,6 +311,13 @@ declare module 'vscode' {
 		 * @returns A disposable that unregisters the provider when disposed.
 		 */
 		export function registerSkillProvider(provider: ChatSkillProvider): Disposable;
+
+		/**
+		 * Register a provider for hooks.
+		 * @param provider The hook provider.
+		 * @returns A disposable that unregisters the provider when disposed.
+		 */
+		export function registerHookProvider(provider: ChatHookProvider): Disposable;
 	}
 
 	// #endregion
