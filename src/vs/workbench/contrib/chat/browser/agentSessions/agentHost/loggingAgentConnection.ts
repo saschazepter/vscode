@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Emitter, Event } from '../../../../../../base/common/event.js';
-import { Disposable } from '../../../../../../base/common/lifecycle.js';
+import { Disposable, toDisposable } from '../../../../../../base/common/lifecycle.js';
 import { URI, UriComponents } from '../../../../../../base/common/uri.js';
 import { Registry } from '../../../../../../platform/registry/common/platform.js';
 import { IAgentConnection, IAgentCreateSessionConfig, IAgentSessionMetadata, IAuthenticateParams, IAuthenticateResult, AgentHostIpcLoggingSettingId } from '../../../../../../platform/agentHost/common/agentService.js';
@@ -53,6 +53,9 @@ export class LoggingAgentConnection extends Disposable implements IAgentConnecti
 
 	declare readonly _serviceBrand: undefined;
 
+	/** Ref-count per channel ID so the output channel survives reconnections. */
+	private static readonly _channelRefCounts = new Map<string, number>();
+
 	private _outputChannel: IOutputChannel | undefined;
 	private readonly _enabled: boolean;
 
@@ -72,18 +75,26 @@ export class LoggingAgentConnection extends Disposable implements IAgentConnecti
 		this._enabled = !!configurationService.getValue<boolean>(AgentHostIpcLoggingSettingId);
 
 		if (this._enabled) {
-			// Register the output channel if not already registered (e.g. by an
-			// earlier connection to the same host that was torn down on reconnect).
 			const registry = Registry.as<IOutputChannelRegistry>(Extensions.OutputChannels);
-			if (!registry.getChannel(this._channelId)) {
+			const refs = LoggingAgentConnection._channelRefCounts.get(this._channelId) ?? 0;
+			if (refs === 0) {
 				registry.registerChannel({
 					id: this._channelId,
 					label: this._channelLabel,
 					log: false,
 					languageId: 'log',
 				});
-				this._register({ dispose: () => registry.removeChannel(this._channelId) });
 			}
+			LoggingAgentConnection._channelRefCounts.set(this._channelId, refs + 1);
+			this._register(toDisposable(() => {
+				const current = LoggingAgentConnection._channelRefCounts.get(this._channelId)! - 1;
+				if (current <= 0) {
+					LoggingAgentConnection._channelRefCounts.delete(this._channelId);
+					registry.removeChannel(this._channelId);
+				} else {
+					LoggingAgentConnection._channelRefCounts.set(this._channelId, current);
+				}
+			}));
 		}
 
 		// Wrap events with logging
