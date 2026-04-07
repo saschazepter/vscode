@@ -3905,6 +3905,7 @@ suite('PromptsService', () => {
 
 			assert.deepStrictEqual(result.hooks[HookType.PreToolUse], [{
 				command: 'echo from-plugin',
+				sourceUri: URI.file('/plugins/test-plugin/hooks.json'),
 			}], 'Expected plugin hooks to be included in computed hooks');
 		});
 
@@ -3923,7 +3924,7 @@ suite('PromptsService', () => {
 
 			const before = await service.getHooks(CancellationToken.None);
 			assert.ok(before, 'Expected hooks result before plugin update');
-			assert.deepStrictEqual(before.hooks[HookType.PreToolUse], [{ command: 'echo before' }]);
+			assert.deepStrictEqual(before.hooks[HookType.PreToolUse], [{ command: 'echo before', sourceUri: URI.file('/plugins/test-plugin/hooks.json') }]);
 
 			hooks.set([{
 				type: HookType.PreToolUse,
@@ -3934,7 +3935,7 @@ suite('PromptsService', () => {
 
 			const after = await service.getHooks(CancellationToken.None);
 			assert.ok(after, 'Expected hooks result after plugin update');
-			assert.deepStrictEqual(after.hooks[HookType.PreToolUse], [{ command: 'echo after' }]);
+			assert.deepStrictEqual(after.hooks[HookType.PreToolUse], [{ command: 'echo after', sourceUri: URI.file('/plugins/test-plugin/hooks.json') }]);
 		});
 
 		test('returns undefined when workspace is untrusted', async function () {
