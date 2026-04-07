@@ -180,6 +180,11 @@ export class SimpleFileDialog extends Disposable implements ISimpleFileDialog {
 		this.getShowDotFiles();
 		this._autoCompleteEnabled = this.configurationService.getValue('files.simpleDialog.autoComplete') !== false;
 		const disposableStore = this._register(new DisposableStore());
+		disposableStore.add(this.configurationService.onDidChangeConfiguration(e => {
+			if (e.affectsConfiguration('files.simpleDialog.autoComplete')) {
+				this._autoCompleteEnabled = this.configurationService.getValue('files.simpleDialog.autoComplete') !== false;
+			}
+		}));
 		disposableStore.add(this.storageService.onDidChangeValue(StorageScope.WORKSPACE, 'remoteFileDialog.showDotFiles', disposableStore)(async _ => {
 			this.getShowDotFiles();
 			this.setButtons();
