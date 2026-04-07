@@ -16,10 +16,11 @@ import { IChatService } from '../common/chatService/chatService.js';
 import { ChatRequestHooks, formatHookCommandLabel } from '../common/promptSyntax/hookSchema.js';
 import { HookType } from '../common/promptSyntax/hookTypes.js';
 import { PromptsType } from '../common/promptSyntax/promptTypes.js';
-import { IHookDiscoveryInfo, type InstructionsCollectionEvent, IPromptDiscoveryInfo, IPromptsService } from '../common/promptSyntax/service/promptsService.js';
+import { IHookDiscoveryInfo, type InstructionsCollectionDebugInfo, IPromptDiscoveryInfo, IPromptsService } from '../common/promptSyntax/service/promptsService.js';
+import { lastInstructionsCollectionResult } from '../common/promptSyntax/computeAutomaticInstructions.js';
 
 interface ICustomizationEventData {
-	readonly collectionEvent: InstructionsCollectionEvent;
+	readonly debugInfo: InstructionsCollectionDebugInfo;
 	readonly hooks: ChatRequestHooks | undefined;
 }
 
@@ -124,8 +125,9 @@ export class PromptsDebugContribution extends Disposable implements IWorkbenchCo
 			}
 
 			// Log resolved customizations from the last instructions collection.
-			const collectionEvent = this.promptsService.lastInstructionsCollectionEvent;
-			if (!isFirstInvocation && collectionEvent) {
+			const lastResult = lastInstructionsCollectionResult;
+			if (!isFirstInvocation && lastResult) {
+				const { telemetryEvent: collectionEvent, debugInfo } = lastResult;
 				// Fetch the cached hook discovery info.
 				let resolvedHooks: ChatRequestHooks | undefined;
 				try {
@@ -148,11 +150,11 @@ export class PromptsDebugContribution extends Disposable implements IWorkbenchCo
 				if (collectionEvent.listedInstructionsCount > 0) {
 					parts.push(localize('customizations.listed', '{0} listed', collectionEvent.listedInstructionsCount));
 				}
-				const durationStr = collectionEvent.durationInMillis.toFixed(1);
+				const durationStr = debugInfo.durationInMillis.toFixed(1);
 				const summary = parts.length > 0
 					? localize('customizationsResolved.details', 'Resolved {0} customizations ({1}) in {2}ms', collectionEvent.totalInstructionsCount, parts.join(', '), durationStr)
 					: localize('customizationsResolved.none', 'No customizations resolved');
-				const detailSummaries = collectionEvent.debugDetails.map(e => {
+				const detailSummaries = debugInfo.debugDetails.map(e => {
 					const detail = e.reason ? `${e.name} — ${e.reason}` : e.name;
 					return `[${e.category}] ${detail}`;
 				});
@@ -161,7 +163,7 @@ export class PromptsDebugContribution extends Disposable implements IWorkbenchCo
 					: summary;
 
 				const customizationEventId = generateUuid();
-				this._customizationEventDetails.set(customizationEventId, { collectionEvent, hooks: resolvedHooks });
+				this._customizationEventDetails.set(customizationEventId, { debugInfo, hooks: resolvedHooks });
 
 				// Evict oldest entries when the map exceeds the cap.
 				if (this._customizationEventDetails.size > PromptsDebugContribution.MAX_DISCOVERY_DETAILS) {
@@ -258,8 +260,8 @@ export class PromptsDebugContribution extends Disposable implements IWorkbenchCo
 			return undefined;
 		}
 
-		const { collectionEvent, hooks } = data;
-		const logs: IChatDebugCustomizationLogEntry[] = [...collectionEvent.debugDetails];
+		const { debugInfo, hooks } = data;
+		const logs: IChatDebugCustomizationLogEntry[] = [...debugInfo.debugDetails];
 
 		// Add hook entries from the resolved hooks — each command carries its sourceUri.
 		if (hooks) {
@@ -282,7 +284,7 @@ export class PromptsDebugContribution extends Disposable implements IWorkbenchCo
 		return {
 			kind: 'customizationSummary',
 			resolutionLogs: logs,
-			durationInMillis: collectionEvent.durationInMillis,
+			durationInMillis: debugInfo.durationInMillis,
 			counts: {
 				instructions: logs.filter(e => e.category === 'applying' || e.category === 'referenced').length,
 				skills: logs.filter(e => e.category === 'skill').length,
