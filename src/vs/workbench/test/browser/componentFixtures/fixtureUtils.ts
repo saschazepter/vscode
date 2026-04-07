@@ -101,7 +101,8 @@ import { ITextModel } from '../../../../editor/common/model.js';
 
 
 // Import color registrations to ensure colors are available
-import { isThenable } from '../../../../base/common/async.js';
+import { IdleDeadline, installFakeRunWhenIdle, isThenable } from '../../../../base/common/async.js';
+import { AsyncSchedulerProcessor, originalGlobalValues, TimeTravelScheduler } from '../../../../base/test/common/timeTravelScheduler.js';
 import '../../../../platform/theme/common/colors/baseColors.js';
 import '../../../../platform/theme/common/colors/editorColors.js';
 import '../../../../platform/theme/common/colors/listColors.js';
@@ -291,7 +292,7 @@ function installGlobalStyles(): void {
 
 export function setupTheme(container: HTMLElement, theme: ColorThemeData): void {
 	installGlobalStyles();
-	container.classList.add('monaco-workbench', getPlatformClass(), ...theme.classNames);
+	container.classList.add('monaco-workbench', getPlatformClass(), 'disable-animations', ...theme.classNames);
 }
 
 function getPlatformClass(): string {
@@ -479,6 +480,7 @@ export function createEditorServices(disposables: DisposableStore, options?: Cre
 
 	definePartialInstance(ISessionsManagementService, {
 		_serviceBrand: undefined,
+		activeSession: constObservable(undefined),
 		getSession: () => undefined,
 		getSessions: () => [],
 	});
@@ -624,12 +626,54 @@ export function defineComponentFixture(options: ComponentFixtureOptions): Themed
 		isolation: 'none',
 		displayMode: { type: 'component' },
 		background: theme === darkTheme ? 'dark' : 'light',
-		render: (container: HTMLElement) => {
+		render: async (container: HTMLElement) => {
 			const disposableStore = new DisposableStore();
-			setupTheme(container, theme);
-			// Start render (may be async) - component-explorer will wait 2 rAF after this returns
-			const result = options.render({ container, disposableStore, theme });
-			return isThenable(result) ? result.then(() => disposableStore) : disposableStore;
+
+			async function actualRender() {
+
+				setupTheme(container, theme);
+
+				const scheduler = new TimeTravelScheduler(Date.now());
+				const p = new AsyncSchedulerProcessor(scheduler, {
+					maxTaskCount: 100,
+				});
+
+				disposableStore.add(scheduler.installGlobally());
+				disposableStore.add(installFakeRunWhenIdle((_targetWindow, callback, _timeout?) => {
+					return scheduler.schedule({
+						time: scheduler.now,
+						run: () => {
+							const deadline: IdleDeadline = {
+								didTimeout: true,
+								timeRemaining: () => 50,
+							};
+							callback(deadline);
+						},
+						source: {
+							toString() { return 'runWhenIdle'; },
+							stackTrace: undefined,
+						},
+					});
+				}));
+
+				const result = options.render({ container, disposableStore, theme });
+
+				const p2 = p.waitForEmptyQueue();
+
+				if (isThenable(result)) {
+					await result;
+				}
+
+				await p2;
+			}
+
+			await Promise.race([
+				actualRender(),
+				new Promise((resolve, reject) => originalGlobalValues.setTimeout(
+					() => reject(new Error('Timeout waiting for render to complete')), 400))
+			]);
+
+			return disposableStore;
 		},
 	});
 
