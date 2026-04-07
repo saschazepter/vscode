@@ -866,7 +866,7 @@ export class ChangesViewPane extends ViewPane {
 		// Layout on resize, accounting for the header height
 		disposables.add(onDidLayout(e => {
 			const headerHeight = headerNode.offsetHeight;
-			tree.layout(e.height - headerHeight, e.width);
+			tree.layout(Math.max(0, e.height - headerHeight), e.width);
 		}));
 
 		return disposables;
