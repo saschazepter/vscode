@@ -146,7 +146,7 @@ export class SearchSubagentToolCallingLoop extends ToolCallingLoop<ISearchSubage
 			messages,
 			finishedCb,
 			location: this.options.location,
-			modelCapabilities,
+			modelCapabilities: { ...modelCapabilities, reasoningEffort: undefined },
 			requestOptions: {
 				...requestOptions,
 				temperature: 0

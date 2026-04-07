@@ -132,7 +132,7 @@ export class ExecutionSubagentToolCallingLoop extends ToolCallingLoop<IExecution
 			messages,
 			finishedCb,
 			location: this.options.location,
-			modelCapabilities,
+			modelCapabilities: { ...modelCapabilities, reasoningEffort: undefined },
 			requestOptions: {
 				...(requestOptions ?? {}),
 				temperature: 0
