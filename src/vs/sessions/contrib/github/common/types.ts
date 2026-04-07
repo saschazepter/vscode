@@ -3,6 +3,9 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import { Codicon } from '../../../../base/common/codicons.js';
+import { themeColorFromId, ThemeIcon } from '../../../../base/common/themables.js';
+
 //#region Session Context
 
 /**
@@ -85,6 +88,27 @@ export interface IMergeBlocker {
 export interface IGitHubPullRequestMergeability {
 	readonly canMerge: boolean;
 	readonly blockers: readonly IMergeBlocker[];
+}
+
+/**
+ * Compute the PR status icon from a state string and optional draft flag.
+ * Accepts both the `GitHubPullRequestState` enum values and the
+ * string states the extension writes to session metadata (including `'draft'`).
+ */
+export function computePullRequestIcon(state: string, isDraft?: boolean): ThemeIcon {
+	switch (state) {
+		case GitHubPullRequestState.Merged:
+			return { ...Codicon.gitPullRequestDone, color: themeColorFromId('charts.purple') };
+		case GitHubPullRequestState.Closed:
+			return { ...Codicon.gitPullRequestClosed, color: themeColorFromId('charts.red') };
+		case 'draft':
+			return { ...Codicon.gitPullRequestDraft, color: themeColorFromId('descriptionForeground') };
+		default:
+			if (isDraft) {
+				return { ...Codicon.gitPullRequestDraft, color: themeColorFromId('descriptionForeground') };
+			}
+			return { ...Codicon.gitPullRequest, color: themeColorFromId('charts.green') };
+	}
 }
 
 //#endregion
