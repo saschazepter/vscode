@@ -282,7 +282,7 @@ export class AutomodeService extends Disposable implements IAutomodeService {
 
 			if (result.fallback) {
 				this._logService.info(`[AutomodeService] Router signaled fallback: ${result.fallback_reason ?? 'unknown'}, routing_method=${result.routing_method ?? 'n/a'}`);
-				return { lastRoutedPrompt: prompt, fallbackReason: `routerFallback:${result.fallback_reason ?? 'unknown'}` };
+				return { lastRoutedPrompt: prompt, fallbackReason: 'routerFallback' };
 			}
 
 			if (!result.candidate_models.length) {

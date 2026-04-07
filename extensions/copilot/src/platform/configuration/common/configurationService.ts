@@ -830,11 +830,13 @@ export namespace ConfigKey {
 		export const InstantApplyModelName = defineTeamInternalSetting<string>('chat.advanced.instantApply.modelName', ConfigType.ExperimentBased, CHAT_MODEL.GPT4OPROXY);
 		export const VerifyTextDocumentChanges = defineTeamInternalSetting<boolean>('chat.advanced.inlineEdits.verifyTextDocumentChanges', ConfigType.ExperimentBased, false);
 		export const UseAutoModeRouting = defineTeamInternalSetting<boolean>('chat.advanced.useAutoModeRouter', ConfigType.ExperimentBased, false);
-		/** Controls which routing method the auto-intent-service uses per-request.
-		 * '' (empty/default) = use server default.
-		 * 'binary' = binary classifier v1 (path B).
-		 * 'hydra' = HYDRA multi-head capability matching (path C).
-		 * Used for A/B/C experiments: A=automod, B=binary, C=hydra. */
+		/** Controls which `routing_method` value is sent to the auto-intent-service per request
+		 * when `UseAutoModeRouting` is enabled.
+		 * '' (empty/default) = omit `routing_method` and use the server default.
+		 * 'binary' = binary classifier v1.
+		 * 'hydra' = HYDRA multi-head capability matching.
+		 * For experiments, this setting selects the routing method only when router usage is enabled;
+		 * it does not by itself determine whether the router is called. */
 		export const AutoModeRoutingMethod = defineTeamInternalSetting<string>('chat.advanced.autoModeRoutingMethod', ConfigType.ExperimentBased, '', undefined, undefined, { experimentName: 'copilotchat.autoModeRoutingMethod' });
 
 		/** Inline Completions */
