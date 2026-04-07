@@ -23,6 +23,7 @@ import { BUILTIN_STORAGE } from '../../chat/common/builtinPromptsStorage.js';
 import { KeyCode, KeyMod } from '../../../../base/common/keyCodes.js';
 import { KeybindingWeight } from '../../../../platform/keybinding/common/keybindingsRegistry.js';
 import { SessionsView, SessionsViewId } from '../../sessions/browser/views/sessionsView.js';
+import { IsSessionsWindowContext } from '../../../../workbench/common/contextkeys.js';
 
 //#region Utilities
 
@@ -293,10 +294,12 @@ registerAction2(class extends Action2 {
 			id: FOCUS_AI_CUSTOMIZATION_VIEW_ID,
 			title: localize2('focusCustomizations', "Focus Chat Customizations"),
 			category: AI_CUSTOMIZATION_CATEGORY,
+			precondition: IsSessionsWindowContext,
 			f1: true,
 			keybinding: {
 				weight: KeybindingWeight.WorkbenchContrib,
 				primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyU,
+				when: IsSessionsWindowContext,
 			},
 		});
 	}

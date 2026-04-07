@@ -52,6 +52,7 @@ registerAction2(class FocusChangesViewAction extends Action2 {
 			id: 'workbench.action.agentSessions.focusChangesView',
 			title: localize2('focusChangesView', "Focus Changes View"),
 			category: Categories.View,
+			precondition: IsSessionsWindowContext,
 			f1: true,
 			keybinding: {
 				weight: KeybindingWeight.WorkbenchContrib,
@@ -75,6 +76,8 @@ registerAction2(class FocusChangesFileViewAction extends Action2 {
 			id: 'workbench.action.agentSessions.focusChangesFileView',
 			title: localize2('focusChangesFileView', "Focus on File Explorer"),
 			category: Categories.View,
+			precondition: IsSessionsWindowContext,
+			f1: true,
 			keybinding: {
 				weight: KeybindingWeight.WorkbenchContrib + 1,
 				primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyE,

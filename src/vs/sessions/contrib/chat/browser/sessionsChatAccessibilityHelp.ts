@@ -7,7 +7,7 @@ import { ServicesAccessor } from '../../../../editor/browser/editorExtensions.js
 import { AccessibleViewProviderId, AccessibleViewType, AccessibleContentProvider } from '../../../../platform/accessibility/browser/accessibleView.js';
 import { IAccessibleViewImplementation } from '../../../../platform/accessibility/browser/accessibleViewRegistry.js';
 import { AccessibilityVerbositySettingId } from '../../../../workbench/contrib/accessibility/browser/accessibilityConfiguration.js';
-import { IsNewChatSessionContext } from '../../../common/contextkeys.js';
+import { IsSessionsWindowContext } from '../../../../workbench/common/contextkeys.js';
 import { localize } from '../../../../nls.js';
 import { FOCUS_AI_CUSTOMIZATION_VIEW_ID } from '../../aiCustomizationTreeView/browser/aiCustomizationTreeView.js';
 import { IViewsService } from '../../../../workbench/services/views/common/viewsService.js';
@@ -17,7 +17,7 @@ export class SessionsChatAccessibilityHelp implements IAccessibleViewImplementat
 	readonly priority = 120;
 	readonly name = 'sessionsChat';
 	readonly type = AccessibleViewType.Help;
-	readonly when = IsNewChatSessionContext;
+	readonly when = IsSessionsWindowContext;
 
 	getProvider(accessor: ServicesAccessor) {
 		const viewsService = accessor.get(IViewsService);
