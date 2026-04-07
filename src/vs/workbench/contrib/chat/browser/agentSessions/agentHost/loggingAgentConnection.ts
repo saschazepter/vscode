@@ -40,8 +40,9 @@ function formatPayload(data: unknown): string {
  * traffic to a dedicated output channel. Used by both local and remote agent
  * host contributions to provide per-host IPC tracing.
  *
- * The output channel is registered on construction and removed on dispose,
- * so its lifetime matches the connection.
+ * The output channel is registered on first construction for a given channel
+ * ID and ref-counted across instances, so it survives reconnections and is
+ * only removed when the last instance for that ID is disposed.
  *
  * All method calls, results, errors, and events are logged with arrows:
  * - `>>` for outgoing calls
