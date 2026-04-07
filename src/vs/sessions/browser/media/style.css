@@ -264,3 +264,58 @@
 .agent-sessions-workbench .badge > .badge-content {
 	border-radius: 4px !important;
 }
+
+/* ---- Compact / Responsive Layout ---- */
+
+/*
+ * Compact mode is applied via the `.compact` class when the viewport width
+ * falls below COMPACT_WIDTH_THRESHOLD (600px). It removes card appearance
+ * (margins, border-radius, borders) for a full-bleed, app-like layout on
+ * phones and other narrow viewports. The sidebar and auxiliary bar are
+ * auto-hidden on entering compact mode.
+ */
+
+/* Remove card margins and rounding on all parts */
+.agent-sessions-workbench.compact .part.chatbar {
+	margin: 0;
+	border-radius: 0;
+	border-left: none;
+	border-right: none;
+}
+
+.agent-sessions-workbench.compact .part.auxiliarybar {
+	margin: 0;
+	border-radius: 0;
+	border-left: none;
+	border-right: none;
+}
+
+.agent-sessions-workbench.compact .part.panel {
+	margin: 0;
+	border-radius: 0;
+	border-left: none;
+	border-right: none;
+}
+
+/* Tighter content padding in chat items */
+.agent-sessions-workbench.compact .interactive-session .interactive-item-container {
+	padding-left: 8px !important;
+	padding-right: 8px !important;
+}
+
+.agent-sessions-workbench.compact .interactive-session > .chat-suggest-next-widget {
+	padding-left: 8px !important;
+	padding-right: 8px !important;
+}
+
+/* Tighter padding for the chat input area */
+.agent-sessions-workbench.compact .interactive-session .interactive-input-part {
+	padding: 4px 6px 8px 6px !important;
+}
+
+/* Disable appear transitions in compact mode to avoid layout jank */
+.agent-sessions-workbench.compact .part.auxiliarybar,
+.agent-sessions-workbench.compact .part.panel,
+.agent-sessions-workbench.compact .part.chatbar {
+	transition: none;
+}

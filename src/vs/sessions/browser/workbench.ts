@@ -83,8 +83,16 @@ enum LayoutClasses {
 	CHATBAR_HIDDEN = 'nochatbar',
 	STATUSBAR_HIDDEN = 'nostatusbar',
 	FULLSCREEN = 'fullscreen',
-	MAXIMIZED = 'maximized'
+	MAXIMIZED = 'maximized',
+	COMPACT = 'compact'
 }
+
+/**
+ * Width threshold (in CSS pixels) below which the sessions workbench
+ * switches to a compact, single-column layout suitable for phones and
+ * other narrow viewports.
+ */
+const COMPACT_WIDTH_THRESHOLD = 600;
 
 //#endregion
 
@@ -240,6 +248,7 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 	};
 
 	private mainWindowFullscreen = false;
+	private _isCompact = false;
 	private readonly maximized = new Set<number>();
 
 	private readonly restoredPromise = new DeferredPromise<void>();
@@ -668,6 +677,13 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 
 		// Initialize layout state (must be done before createWorkbenchLayout)
 		this._mainContainerDimension = getClientArea(this.parent, new Dimension(800, 600));
+
+		// Detect compact mode early so the initial grid hides sidebar/aux bar
+		this._isCompact = this._mainContainerDimension.width < COMPACT_WIDTH_THRESHOLD;
+		if (this._isCompact) {
+			this.partVisibility.sidebar = false;
+			this.partVisibility.auxiliaryBar = false;
+		}
 	}
 
 	private areAllGroupsEmpty(): boolean {
@@ -872,6 +888,23 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 
 		size(this.mainContainer, this._mainContainerDimension.width, this._mainContainerDimension.height);
 
+		// Compact mode: switch to a single-column layout on narrow viewports
+		const isCompact = this._mainContainerDimension.width < COMPACT_WIDTH_THRESHOLD;
+		if (isCompact !== this._isCompact) {
+			this._isCompact = isCompact;
+			this.mainContainer.classList.toggle(LayoutClasses.COMPACT, isCompact);
+
+			if (isCompact) {
+				// Auto-hide sidebar and auxiliary bar when entering compact mode
+				if (this.partVisibility.sidebar) {
+					this.setSideBarHidden(true);
+				}
+				if (this.partVisibility.auxiliaryBar) {
+					this.setAuxiliaryBarHidden(true);
+				}
+			}
+		}
+
 		// Layout the grid widget
 		this.workbenchGrid.layout(this._mainContainerDimension.width, this._mainContainerDimension.height);
 
@@ -897,7 +930,8 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
 			!this.partVisibility.auxiliaryBar ? LayoutClasses.AUXILIARYBAR_HIDDEN : undefined,
 			!this.partVisibility.chatBar ? LayoutClasses.CHATBAR_HIDDEN : undefined,
 			LayoutClasses.STATUSBAR_HIDDEN, // agents window never has a status bar
-			this.mainWindowFullscreen ? LayoutClasses.FULLSCREEN : undefined
+			this.mainWindowFullscreen ? LayoutClasses.FULLSCREEN : undefined,
+			this._isCompact ? LayoutClasses.COMPACT : undefined
 		]);
 	}
 

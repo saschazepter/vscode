@@ -124,3 +124,14 @@
 .agent-sessions-workbench.mac .part.titlebar .window-controls-container {
 	-webkit-app-region: drag;
 }
+
+/* ---- Compact mode ---- */
+
+/* Reduce titlebar padding so the session picker has more room */
+.agent-sessions-workbench.compact .part.titlebar > .sessions-titlebar-container > .titlebar-left > .left-toolbar-container {
+	padding-left: 4px;
+}
+
+.agent-sessions-workbench.compact.mac .part.titlebar > .sessions-titlebar-container > .titlebar-right {
+	margin-right: 4px;
+}
