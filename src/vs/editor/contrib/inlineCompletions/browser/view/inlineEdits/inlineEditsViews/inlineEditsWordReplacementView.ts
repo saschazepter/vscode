@@ -48,7 +48,7 @@ export class WordReplacementsViewData implements IEquatable<WordReplacementsView
 	}
 }
 
-const BORDER_WIDTH = 1;
+const BORDER_WIDTH = 4;
 const DOM_ID_OVERLAY = 'word-replacement-view-overlay';
 const DOM_ID_WIDGET = 'word-replacement-view-widget';
 const DOM_ID_REPLACEMENT = 'word-replacement-view-replacement';
