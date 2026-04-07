@@ -177,6 +177,14 @@ export class ChatDebugServiceImpl extends Disposable implements IChatDebugServic
 				// in getEvents(). Update the tracked kind.
 			}
 			seen.set(event.id, event.kind);
+			// Cap the dedup map to prevent unbounded growth in long sessions.
+			if (seen.size > ChatDebugServiceImpl.MAX_EVENTS_PER_SESSION) {
+				// Delete the oldest entry (first key in insertion order).
+				const firstKey = seen.keys().next().value;
+				if (firstKey !== undefined) {
+					seen.delete(firstKey);
+				}
+			}
 		}
 
 		let buffer = this._sessionBuffers.get(event.sessionResource);

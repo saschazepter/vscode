@@ -347,18 +347,16 @@ function resolvePendingExpansions(
 		}
 
 		// Edge from merged node to first expanded child.
-		// Use a short downward step from the bottom of the merged node
-		// then across, so the line doesn't pass horizontally through
-		// unrelated nodes in parallel lanes.
-		const stepDownY = mergedNode.y + mergedNode.height;
-		const targetMidY = childNodes[0].y + childNodes[0].height / 2;
+		// Use a horizontal edge aligned with the first child's midpoint
+		// so the orthogonal renderer doesn't need to route upward.
+		const edgeY = childNodes[0].y + childNodes[0].height / 2;
 		result.edges.push({
 			fromId: mergedNode.id,
 			toId: childNodes[0].id,
-			fromX: mergedNode.x + mergedNode.width / 2,
-			fromY: stepDownY,
-			toX: expandX + childNodes[0].width / 2,
-			toY: targetMidY,
+			fromX: mergedNode.x + mergedNode.width,
+			fromY: edgeY,
+			toX: expandX,
+			toY: edgeY,
 		});
 
 		// Vertical edges between consecutive children
