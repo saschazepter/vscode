@@ -106,6 +106,11 @@ export class ComputeAutomaticInstructions {
 		const debugInfo: InstructionsCollectionDebugInfo = newInstructionsCollectionDebugInfo();
 		const context = this._getContext(variables);
 
+		// Run customizations index computation in parallel with instruction
+		// processing since it only reads instructionFiles (no dependency on
+		// variables mutations from the steps below).
+		const customizationsIndexPromise = this._getCustomizationsIndex(instructionFiles, variables, telemetryEvent, debugInfo, token);
+
 		// find instructions where the `applyTo` matches the attached context
 		await this.addApplyingInstructions(instructionFiles, context, variables, telemetryEvent, debugInfo, token);
 
@@ -115,7 +120,7 @@ export class ComputeAutomaticInstructions {
 		// get copilot instructions
 		await this._addAgentInstructions(variables, telemetryEvent, debugInfo, token);
 
-		const customizationsIndexVariable = await this._getCustomizationsIndex(instructionFiles, variables, telemetryEvent, debugInfo, token);
+		const customizationsIndexVariable = await customizationsIndexPromise;
 		if (customizationsIndexVariable) {
 			variables.add(customizationsIndexVariable);
 			telemetryEvent.listedInstructionsCount++;
@@ -343,15 +348,20 @@ export class ComputeAutomaticInstructions {
 		const readTool = this._getTool('readFile');
 		const runSubagentTool = this._getTool(VSCodeToolReference.runSubagent);
 
-		const remoteEnv = await this._remoteAgentService.getEnvironment();
+		// Kick off independent async work in parallel
+		const searchNestedAgentMd = this._configurationService.getValue(PromptsConfig.USE_NESTED_AGENT_MD);
+		const customAgentsEnabled = !!this._configurationService.getValue(ChatConfiguration.SubagentToolCustomAgents);
+		const [remoteEnv, agentsMdFiles, agentSkills, agents] = await Promise.all([
+			this._remoteAgentService.getEnvironment(),
+			readTool && searchNestedAgentMd ? this._promptsService.listNestedAgentMDs(token) : Promise.resolve([]),
+			readTool ? this._promptsService.findAgentSkills(token) : Promise.resolve(undefined),
+			runSubagentTool && customAgentsEnabled ? this._promptsService.getCustomAgents(token) : Promise.resolve([]),
+		]);
 		const remoteOS = remoteEnv?.os;
 		const filePath = (uri: URI) => getFilePath(uri, remoteOS);
 
 		const entries: string[] = [];
 		if (readTool) {
-
-			const searchNestedAgentMd = this._configurationService.getValue(PromptsConfig.USE_NESTED_AGENT_MD);
-			const agentsMdPromise = searchNestedAgentMd ? this._promptsService.listNestedAgentMDs(token) : Promise.resolve([]);
 
 			entries.push('<instructions>');
 			entries.push('Here is a list of instruction files that contain rules for working with this codebase.');
@@ -376,7 +386,6 @@ export class ComputeAutomaticInstructions {
 				hasContent = true;
 			}
 
-			const agentsMdFiles = await agentsMdPromise;
 			for (const { uri } of agentsMdFiles) {
 				const folderName = this._labelService.getUriLabel(dirname(uri), { relative: true });
 				const description = folderName.trim().length === 0 ? localize('instruction.file.description.agentsmd.root', 'Instructions for the workspace') : localize('instruction.file.description.agentsmd.folder', 'Instructions for folder \'{0}\'', folderName);
@@ -393,8 +402,6 @@ export class ComputeAutomaticInstructions {
 			} else {
 				entries.push('</instructions>', '', ''); // add trailing newline
 			}
-
-			const agentSkills = await this._promptsService.findAgentSkills(token);
 			// Filter out skills with disableModelInvocation=true (they can only be triggered manually via /name)
 			// Also filter by `when` clause using the scoped context key service
 			// Also filter out the troubleshoot skill when  agent debug log file logging setting is disabled
@@ -457,7 +464,6 @@ export class ComputeAutomaticInstructions {
 		if (runSubagentTool) {
 			const generalPurposeAgentEnabled = !!this._configurationService.getValue<boolean>(ChatConfiguration.GeneralPurposeAgentEnabled);
 
-			const customAgentsEnabled = !!this._configurationService.getValue(ChatConfiguration.SubagentToolCustomAgents);
 			const canUseAgent = (() => {
 				if (!this._enabledSubagents || this._enabledSubagents.includes('*')) {
 					return (agent: ICustomAgent) => agent.visibility.agentInvocable && (!agent.when || this._contextKeyService.contextMatchesRules(agent.when));
@@ -466,7 +472,6 @@ export class ComputeAutomaticInstructions {
 					return (agent: ICustomAgent) => subagents.includes(agent.name) && (!agent.when || this._contextKeyService.contextMatchesRules(agent.when));
 				}
 			})();
-			const agents = customAgentsEnabled ? await this._promptsService.getCustomAgents(token) : [];
 
 			if (generalPurposeAgentEnabled || agents.length > 0) {
 				entries.push('<agents>');

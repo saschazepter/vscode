@@ -1538,12 +1538,13 @@ export class PromptsService extends Disposable implements IPromptsService {
 		const seenNames = new Set<string>();
 		const nameToUri = new Map<string, URI>();
 
-		// Collect all skills with their metadata for sorting
-		const allSkills: Array<IPromptPath> = [];
-		const discoveredSkills = await this.fileLocator.findAgentSkills(token);
-		const extensionSkills = await this.getExtensionPromptFiles(PromptsType.skill, token);
+		// Collect all skills with their metadata for sorting — discover in parallel
+		const [discoveredSkills, extensionSkills] = await Promise.all([
+			this.fileLocator.findAgentSkills(token),
+			this.getExtensionPromptFiles(PromptsType.skill, token),
+		]);
 		const pluginSkills = this._pluginPromptFilesByType.get(PromptsType.skill) ?? [];
-		allSkills.push(...discoveredSkills, ...extensionSkills, ...pluginSkills);
+		const allSkills: Array<IPromptPath> = [...discoveredSkills, ...extensionSkills, ...pluginSkills];
 
 		const getPriority = (skill: IPromptPath): number => {
 			if (skill.storage === PromptsStorage.local) {
@@ -1566,49 +1567,58 @@ export class PromptsService extends Disposable implements IPromptsService {
 		// Stable sort; we should keep order consistent to the order in the user's configuration object
 		allSkills.sort((a, b) => getPriority(a) - getPriority(b));
 
-		for (const skill of allSkills) {
+		// Parse all skill files in parallel, then apply deduplication in priority order
+		const parsedSkills = await Promise.all(allSkills.map(async (skill) => {
+			try {
+				const parsedFile = await this.parseNew(skill.uri, token);
+				return { skill, parsedFile, error: undefined };
+			} catch (e) {
+				return { skill, parsedFile: undefined, error: e instanceof Error ? e.message : String(e) };
+			}
+		}));
+
+		for (const { skill, parsedFile, error } of parsedSkills) {
 			const uri = skill.uri;
 			const promptPath = skill;
 
-			try {
-				const parsedFile = await this.parseNew(uri, token);
-				const folderName = getSkillFolderName(uri);
-
-				let name = parsedFile.header?.name;
-				const description = parsedFile.header?.description;
-
-				if (!name) {
-					this.logger.debug(`[computeSkillDiscoveryInfo] Agent skill file missing name attribute, using folder name "${folderName}": ${uri}`);
-					name = folderName;
-				}
-				let sanitizedName = this.truncateAgentSkillName(name, uri);
-				if (sanitizedName !== folderName) {
-					this.logger.debug(`[computeSkillDiscoveryInfo] Agent skill name "${sanitizedName}" does not match folder name "${folderName}", using folder name: ${uri}`);
-					sanitizedName = folderName;
-				}
-
-				if (seenNames.has(sanitizedName)) {
-					this.logger.debug(`[computeSkillDiscoveryInfo] Skipping duplicate agent skill name: ${sanitizedName} at ${uri}`);
-					files.push({ status: 'skipped', skipReason: 'duplicate-name', duplicateOf: nameToUri.get(sanitizedName), promptPath: this.withPromptPathMetadata(promptPath, sanitizedName, description) });
-					continue;
-				}
-
-				seenNames.add(sanitizedName);
-				nameToUri.set(sanitizedName, uri);
-				const disableModelInvocation = parsedFile.header?.disableModelInvocation === true;
-				const userInvocable = parsedFile.header?.userInvocable !== false;
-
-				files.push({ status: 'loaded', promptPath: this.withPromptPathMetadata(promptPath, sanitizedName, description), disableModelInvocation, userInvocable });
-			} catch (e) {
-				const msg = e instanceof Error ? e.message : String(e);
-				this.logger.error(`[computeSkillDiscoveryInfo] Failed to validate Agent skill file: ${uri}`, msg);
+			if (!parsedFile) {
+				this.logger.error(`[computeSkillDiscoveryInfo] Failed to validate Agent skill file: ${uri}`, error);
 				files.push({
 					status: 'skipped',
 					skipReason: 'parse-error',
-					errorMessage: msg,
+					errorMessage: error,
 					promptPath,
 				});
+				continue;
 			}
+
+			const folderName = getSkillFolderName(uri);
+
+			let name = parsedFile.header?.name;
+			const description = parsedFile.header?.description;
+
+			if (!name) {
+				this.logger.debug(`[computeSkillDiscoveryInfo] Agent skill file missing name attribute, using folder name "${folderName}": ${uri}`);
+				name = folderName;
+			}
+			let sanitizedName = this.truncateAgentSkillName(name, uri);
+			if (sanitizedName !== folderName) {
+				this.logger.debug(`[computeSkillDiscoveryInfo] Agent skill name "${sanitizedName}" does not match folder name "${folderName}", using folder name: ${uri}`);
+				sanitizedName = folderName;
+			}
+
+			if (seenNames.has(sanitizedName)) {
+				this.logger.debug(`[computeSkillDiscoveryInfo] Skipping duplicate agent skill name: ${sanitizedName} at ${uri}`);
+				files.push({ status: 'skipped', skipReason: 'duplicate-name', duplicateOf: nameToUri.get(sanitizedName), promptPath: this.withPromptPathMetadata(promptPath, sanitizedName, description) });
+				continue;
+			}
+
+			seenNames.add(sanitizedName);
+			nameToUri.set(sanitizedName, uri);
+			const disableModelInvocation = parsedFile.header?.disableModelInvocation === true;
+			const userInvocable = parsedFile.header?.userInvocable !== false;
+
+			files.push({ status: 'loaded', promptPath: this.withPromptPathMetadata(promptPath, sanitizedName, description), disableModelInvocation, userInvocable });
 		}
 
 		return files;
@@ -1616,31 +1626,31 @@ export class PromptsService extends Disposable implements IPromptsService {
 
 	private async getInstructionsDiscoveryInfo(token: CancellationToken): Promise<IInstructionDiscoveryInfo> {
 		const stopWatch = StopWatch.create(true);
-		const files: IInstructionDiscoveryResult[] = [];
 
 		const instructionsFiles = await this.listPromptFiles(PromptsType.instructions, token);
-		for (const promptPath of instructionsFiles) {
-			const uri = promptPath.uri;
 
+		// Parse all instruction files in parallel
+		const files = await Promise.all(instructionsFiles.map(async (promptPath): Promise<IInstructionDiscoveryResult> => {
+			const uri = promptPath.uri;
 			try {
 				const parsedPromptFile = await this.parseNew(uri, token);
 				const name = parsedPromptFile?.header?.name ?? promptPath.name ?? getCleanPromptName(uri);
 				const description = parsedPromptFile?.header?.description ?? promptPath.description;
 				const pattern = evaluateApplyToPattern(parsedPromptFile.header, isInClaudeRulesFolder(uri));
-				files.push({
+				return {
 					status: 'loaded',
 					pattern,
 					promptPath: this.withPromptPathMetadata(promptPath, name, description),
-				});
+				};
 			} catch (e) {
-				files.push({
+				return {
 					status: 'skipped',
 					skipReason: 'parse-error',
 					errorMessage: e instanceof Error ? e.message : String(e),
 					promptPath,
-				});
+				};
 			}
-		}
+		}));
 
 		const sourceFolders = await this._collectSourceFolderDiagnostics(PromptsType.instructions);
 		return { type: PromptsType.instructions, files, sourceFolders, durationInMillis: stopWatch.elapsed() };
