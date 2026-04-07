@@ -5,7 +5,8 @@
 
 import { CancellationToken } from '../../../../../../base/common/cancellation.js';
 import { Event } from '../../../../../../base/common/event.js';
-import { IDisposable } from '../../../../../../base/common/lifecycle.js';
+import { IObservable } from '../../../../../../base/common/observable.js';
+import { IDisposable, IReference } from '../../../../../../base/common/lifecycle.js';
 import { URI } from '../../../../../../base/common/uri.js';
 import { ITextModel } from '../../../../../../editor/common/model.js';
 import { ContextKeyExpression } from '../../../../../../platform/contextkey/common/contextkey.js';
@@ -574,6 +575,12 @@ export interface IPromptsService extends IDisposable {
 	getPromptSlashCommands(token: CancellationToken): Promise<readonly IChatPromptSlashCommand[]>;
 
 	/**
+	 * Gets a reference-counted observable of the resolved prompt slash commands.
+	 * Callers must dispose the returned reference when they no longer need updates.
+	 */
+	getPromptSlashCommandsObservable(): Promise<IReference<IObservable<readonly IChatPromptSlashCommand[]>>>;
+
+	/**
 	 * Returns the prompt command name for the given URI.
 	 */
 	getPromptSlashCommandName(uri: URI, token: CancellationToken): Promise<string>;
@@ -592,6 +599,12 @@ export interface IPromptsService extends IDisposable {
 	 * Finds all available custom agents
 	 */
 	getCustomAgents(token: CancellationToken): Promise<readonly ICustomAgent[]>;
+
+	/**
+	 * Gets a reference-counted observable of the resolved custom agents.
+	 * Callers must dispose the returned reference when they no longer need updates.
+	 */
+	getCustomAgentsObservable(): Promise<IReference<IObservable<readonly ICustomAgent[]>>>;
 
 	/**
 	 * Parses the provided URI
@@ -653,6 +666,12 @@ export interface IPromptsService extends IDisposable {
 	findAgentSkills(token: CancellationToken): Promise<IAgentSkill[] | undefined>;
 
 	/**
+	 * Gets a reference-counted observable of the resolved skills.
+	 * Callers must dispose the returned reference when they no longer need updates.
+	 */
+	getSkillsObservable(): Promise<IReference<IObservable<readonly IAgentSkill[]>>>;
+
+	/**
 	 * Event that is triggered when the list of skills changes.
 	 */
 	readonly onDidChangeSkills: Event<void>;
@@ -672,6 +691,12 @@ export interface IPromptsService extends IDisposable {
 	 * Gets all instruction files
 	 */
 	getInstructionFiles(token: CancellationToken): Promise<readonly IInstructionFile[]>;
+
+	/**
+	 * Gets a reference-counted observable of the resolved instruction files.
+	 * Callers must dispose the returned reference when they no longer need updates.
+	 */
+	getInstructionsObservable(): Promise<IReference<IObservable<readonly IInstructionFile[]>>>;
 
 	/**
 	 * Returns the cached discovery info for the given prompt type.

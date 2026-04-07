@@ -5,10 +5,10 @@
 
 import { DeferredPromise } from '../../../base/common/async.js';
 import { CancellationToken } from '../../../base/common/cancellation.js';
-import { autorun, IObservable, PromiseResult } from '../../../base/common/observable.js';
+import { autorun, IObservable } from '../../../base/common/observable.js';
 import { Emitter, Event } from '../../../base/common/event.js';
 import { IMarkdownString } from '../../../base/common/htmlContent.js';
-import { Disposable, DisposableMap, IDisposable } from '../../../base/common/lifecycle.js';
+import { Disposable, DisposableMap, IDisposable, IReference } from '../../../base/common/lifecycle.js';
 import { revive } from '../../../base/common/marshalling.js';
 import { Schemas } from '../../../base/common/network.js';
 import { escapeRegExpCharacters } from '../../../base/common/strings.js';
@@ -30,8 +30,7 @@ import { IChatWidget, IChatWidgetService } from '../../contrib/chat/browser/chat
 import { AgentSessionProviders, getAgentSessionProvider } from '../../contrib/chat/browser/agentSessions/agentSessions.js';
 import { AddDynamicVariableAction, IAddDynamicVariableContext } from '../../contrib/chat/browser/attachments/chatDynamicVariables.js';
 import { IChatAgentHistoryEntry, IChatAgentImplementation, IChatAgentRequest, IChatAgentService } from '../../contrib/chat/common/participants/chatAgents.js';
-import { IAgentDiscoveryInfo, IInstructionDiscoveryInfo, IPromptFileContext, IPromptPathWithName, IPromptsService, ISlashCommandDiscoveryInfo, isPromptPathWithName, PromptsStorage } from '../../contrib/chat/common/promptSyntax/service/promptsService.js';
-import { PromptsService } from '../../contrib/chat/common/promptSyntax/service/promptsServiceImpl.js';
+import { IAgentSkill, IChatPromptSlashCommand, ICustomAgent, IInstructionFile, IPromptFileContext, IPromptsService, PromptsStorage } from '../../contrib/chat/common/promptSyntax/service/promptsService.js';
 import { isValidPromptType, PromptsType } from '../../contrib/chat/common/promptSyntax/promptTypes.js';
 import { IChatModel } from '../../contrib/chat/common/model/chatModel.js';
 import { ChatRequestAgentPart } from '../../contrib/chat/common/requestParser/chatParserTypes.js';
@@ -44,7 +43,7 @@ import { ILanguageModelToolsService } from '../../contrib/chat/common/tools/lang
 import { IExtHostContext, extHostNamedCustomer } from '../../services/extensions/common/extHostCustomers.js';
 import { IExtensionService } from '../../services/extensions/common/extensions.js';
 import { Dto } from '../../services/extensions/common/proxyIdentifier.js';
-import { ExtHostChatAgentsShape2, ExtHostContext, IChatResourceDto, IChatAgentInvokeResult, IChatSessionCustomizationItemDto, IChatSessionCustomizationProviderMetadataDto, IChatNotebookEditDto, IChatParticipantMetadata, IChatProgressDto, IChatSessionContextDto, ICustomAgentDto, IDynamicChatAgentProps, IExtensionChatAgentMetadata, IHookDto, IInstructionDto, IPluginDto, ISlashCommandDto, MainContext, MainThreadChatAgentsShape2 } from '../common/extHost.protocol.js';
+import { ExtHostChatAgentsShape2, ExtHostContext, IChatResourceDto, IChatAgentInvokeResult, IChatSessionCustomizationItemDto, IChatSessionCustomizationProviderMetadataDto, IChatNotebookEditDto, IChatParticipantMetadata, IChatProgressDto, IChatSessionContextDto, ICustomAgentDto, IDynamicChatAgentProps, IExtensionChatAgentMetadata, IHookDto, IInstructionDto, IPluginDto, ISkillDto, ISlashCommandDto, MainContext, MainThreadChatAgentsShape2 } from '../common/extHost.protocol.js';
 import { NotebookDto } from './mainThreadNotebookDto.js';
 import { isUntitledChatSession } from '../../contrib/chat/common/model/chatUri.js';
 import { ICustomizationHarnessService, IExternalCustomizationItem, IExternalCustomizationItemProvider, IHarnessDescriptor } from '../../contrib/chat/common/customizationHarnessService.js';
@@ -205,125 +204,107 @@ export class MainThreadChatAgents2 extends Disposable implements MainThreadChatA
 	}
 
 	private _registerPromptResourceSync(): void {
-		if (this._promptsService instanceof PromptsService) {
-			this._registerCachedPromptResourceSync(
-				this._promptsService.customAgentsCachedValue,
-				this._promptsService.onDidChangeCustomAgents,
-				() => this._promptsService.getDiscoveryInfo(PromptsType.agent, CancellationToken.None),
-				discoveryInfo => this._proxy.$acceptCustomAgents(this._customAgentDtosFromDiscoveryInfo(discoveryInfo)),
-				'[chat] Failed to refresh custom agents for extension host',
-			);
-			this._registerCachedPromptResourceSync(
-				this._promptsService.instructionsCachedValue,
-				this._promptsService.onDidChangeInstructions,
-				() => this._promptsService.getDiscoveryInfo(PromptsType.instructions, CancellationToken.None),
-				discoveryInfo => this._proxy.$acceptInstructions(this._instructionDtosFromDiscoveryInfo(discoveryInfo)),
-				'[chat] Failed to refresh instructions for extension host',
-			);
-			// this._registerCachedPromptResourceSync(
-			// 	this._promptsService.skillsCachedValue,
-			// 	this._promptsService.onDidChangeSkills,
-			// 	() => this._promptsService.getDiscoveryInfo(PromptsType.skill, CancellationToken.None),
-			// 	discoveryInfo => this._proxy.$acceptSkills(this._skillDtosFromDiscoveryInfo(discoveryInfo)),
-			// 	'[chat] Failed to refresh skills for extension host',
-			// );
-			this._registerCachedPromptResourceSync(
-				this._promptsService.slashCommandsCachedValue,
-				this._promptsService.onDidChangeSlashCommands,
-				() => this._promptsService.getDiscoveryInfo(PromptsType.prompt, CancellationToken.None),
-				discoveryInfo => this._proxy.$acceptSlashCommands(this._slashCommandDtosFromDiscoveryInfo(discoveryInfo)),
-				'[chat] Failed to refresh slash commands for extension host',
-			);
-			return;
-		}
+		this._registerPromptResourceObservable(
+			this._promptsService.getCustomAgentsObservable(),
+			customAgents => this._proxy.$acceptCustomAgents(this._customAgentDtosFromCustomAgents(customAgents)),
+			'[chat] Failed to initialize custom agents sync for extension host',
+		);
+		this._registerPromptResourceObservable(
+			this._promptsService.getInstructionsObservable(),
+			instructions => this._proxy.$acceptInstructions(this._instructionDtosFromInstructions(instructions)),
+			'[chat] Failed to initialize instructions sync for extension host',
+		);
+		this._registerPromptResourceObservable(
+			this._promptsService.getSkillsObservable(),
+			skills => this._proxy.$acceptSkills(this._skillDtosFromSkills(skills)),
+			'[chat] Failed to initialize skills sync for extension host',
+		);
+		this._registerPromptResourceObservable(
+			this._promptsService.getPromptSlashCommandsObservable(),
+			slashCommands => this._proxy.$acceptSlashCommands(this._slashCommandDtosFromSlashCommands(slashCommands)),
+			'[chat] Failed to initialize slash commands sync for extension host',
+		);
 	}
 
 	/**
-	 * Keeps the extension-facing prompt resource snapshots in sync with the resolved prompt caches.
+	 * Keeps an extension-host snapshot in sync with a prompts-service observable.
 	 */
-	private _registerCachedPromptResourceSync<T>(
-		cachedValue: IObservable<PromiseResult<T> | undefined>,
-		onDidChange: Event<void>,
-		refresh: () => Promise<unknown>,
-		accept: (value: T) => void,
+	private _registerPromptResourceObservable<T>(
+		observablePromise: Promise<IReference<IObservable<readonly T[]>>>,
+		accept: (value: readonly T[]) => void,
 		logMessage: string,
 	): void {
-		this._register(autorun(reader => {
-			const result = cachedValue.read(reader);
-			if (!result || result.error || typeof result.data === 'undefined') {
-				return;
-			}
-
-			accept(result.data);
-		}));
-
-		const refreshFromCache = () => {
-			void refresh().catch(error => {
-				this._logService.error(logMessage, error);
-			});
-		};
-
-		refreshFromCache();
-		this._register(onDidChange(() => {
-			refreshFromCache();
-		}));
+		void observablePromise.then(reference => {
+			this._register(reference);
+			this._register(autorun(reader => {
+				accept(reference.object.read(reader));
+			}));
+		}).catch(error => {
+			this._logService.error(logMessage, error);
+		});
 	}
 
-	private _toChatResourceDto(resource: IPromptPathWithName): IChatResourceDto {
+	private _toChatResourceDto(resource: {
+		readonly uri: URI;
+		readonly name: string;
+		readonly description?: string;
+		readonly storage: PromptsStorage;
+		readonly extension?: { identifier: ExtensionIdentifier };
+		readonly extensionId?: string;
+		readonly pluginUri?: URI;
+	}): IChatResourceDto {
 		return {
 			uri: resource.uri,
 			name: resource.name,
 			description: resource.description,
 			source: resource.storage,
-			extensionId: resource.extension?.identifier.value,
+			extensionId: resource.extensionId ?? resource.extension?.identifier.value,
 			pluginUri: resource.pluginUri,
 		};
 	}
 
-	private _customAgentDtosFromDiscoveryInfo(discoveryInfo: IAgentDiscoveryInfo): ICustomAgentDto[] {
+	private _customAgentDtosFromCustomAgents(customAgents: readonly ICustomAgent[]): ICustomAgentDto[] {
 		const result: ICustomAgentDto[] = [];
-		for (const file of discoveryInfo.files) {
-			if (file.status === 'loaded' && isPromptPathWithName(file.promptPath) && file.agent) {
-				const agent = file.agent;
-				result.push({
-					...this._toChatResourceDto(file.promptPath),
-					argumentHint: agent.argumentHint,
-					userInvocable: agent.visibility.userInvocable,
-					disableModelInvocation: !agent.visibility.agentInvocable,
-				});
-			}
+		for (const agent of customAgents) {
+			const source = agent.source;
+			result.push({
+				...this._toChatResourceDto({
+					uri: agent.uri,
+					name: agent.name,
+					description: agent.description,
+					storage: source.storage,
+					extensionId: source.storage === PromptsStorage.extension ? source.extensionId.value : undefined,
+					pluginUri: source.storage === PromptsStorage.plugin ? source.pluginUri : undefined,
+				}),
+				argumentHint: agent.argumentHint,
+				userInvocable: agent.visibility.userInvocable,
+				disableModelInvocation: !agent.visibility.agentInvocable,
+			});
 		}
 		return result;
 	}
 
-	private _instructionDtosFromDiscoveryInfo(discoveryInfo: IInstructionDiscoveryInfo): IInstructionDto[] {
-		const result: IInstructionDto[] = [];
-		for (const file of discoveryInfo.files) {
-			if (file.status === 'loaded' && isPromptPathWithName(file.promptPath)) {
-				result.push({
-					...this._toChatResourceDto(file.promptPath),
-					pattern: file.pattern,
-				});
-			}
-		}
-		return result;
+	private _instructionDtosFromInstructions(instructions: readonly IInstructionFile[]): IInstructionDto[] {
+		return instructions.map(instruction => ({
+			...this._toChatResourceDto(instruction),
+			pattern: instruction.pattern,
+		}));
 	}
 
-	private _slashCommandDtosFromDiscoveryInfo(discoveryInfo: ISlashCommandDiscoveryInfo): ISlashCommandDto[] {
-		const result: ISlashCommandDto[] = [];
-		for (const file of discoveryInfo.files) {
-			if (file.status === 'loaded' && isPromptPathWithName(file.promptPath)) {
-				result.push({
-					...this._toChatResourceDto(file.promptPath),
-					argumentHint: file.argumentHint,
-					userInvocable: file.userInvocable ?? true,
-				});
-			}
-		}
-		return result;
+	private _skillDtosFromSkills(skills: readonly IAgentSkill[]): ISkillDto[] {
+		return skills.map(skill => ({
+			...this._toChatResourceDto(skill),
+			userInvocable: skill.userInvocable,
+		}));
 	}
 
-
+	private _slashCommandDtosFromSlashCommands(slashCommands: readonly IChatPromptSlashCommand[]): ISlashCommandDto[] {
+		return slashCommands.map(slashCommand => ({
+			...this._toChatResourceDto(slashCommand),
+			argumentHint: slashCommand.argumentHint,
+			userInvocable: slashCommand.userInvocable,
+		}));
+	}
 
 	private async _pushHooks(): Promise<void> {
 		try {

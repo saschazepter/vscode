@@ -3,11 +3,11 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { CancellationToken } from '../../../../../../base/common/cancellation.js';
+import { CancellationToken, CancellationTokenSource } from '../../../../../../base/common/cancellation.js';
 import { CancellationError } from '../../../../../../base/common/errors.js';
 import { Emitter, Event } from '../../../../../../base/common/event.js';
 import { parse as parseJSONC } from '../../../../../../base/common/json.js';
-import { Disposable, DisposableStore, IDisposable } from '../../../../../../base/common/lifecycle.js';
+import { AsyncReferenceCollection, Disposable, DisposableStore, IDisposable, IReference, ReferenceCollection, toDisposable } from '../../../../../../base/common/lifecycle.js';
 import { StopWatch } from '../../../../../../base/common/stopwatch.js';
 import { autorun, derivedOpts, IObservable, IReader, observableValue, PromiseResult } from '../../../../../../base/common/observable.js';
 import { ResourceMap, ResourceSet } from '../../../../../../base/common/map.js';
@@ -49,7 +49,6 @@ import { ContextKeyExpr, IContextKeyService } from '../../../../../../platform/c
 import { getCanonicalPluginCommandId, IAgentPlugin, IAgentPluginService } from '../../plugins/agentPluginService.js';
 import { isContributionEnabled } from '../../enablement.js';
 import { assertNever } from '../../../../../../base/common/assert.js';
-import { observableConfigValue } from '../../../../../../platform/observable/common/platformObservableUtils.js';
 import { hash } from '../../../../../../base/common/hash.js';
 import { arrayEqualsC } from '../../../../../../base/common/equals.js';
 
@@ -81,6 +80,42 @@ export class SkillNameMismatchError extends Error {
 		public readonly folderName: string
 	) {
 		super(`Skill name must match folder name: expected "${folderName}" but got "${skillName}"`);
+	}
+}
+
+/**
+ * Compares resolved prompt resource arrays using their URI and content hash.
+ */
+const equalsPromptResources = arrayEqualsC<{ readonly uri: URI; readonly contentHash: number }>((a, b) => {
+	return (a.contentHash === b.contentHash) && (a.contentHash !== -1) && isEqual(a.uri, b.uri);
+});
+
+/**
+ * Ref-counts prompt-resource observables and disposes their listeners when the last consumer releases them.
+ */
+interface IObservableReferenceEntry<T> {
+	readonly promise: Promise<IObservable<readonly T[]>>;
+	readonly store: DisposableStore;
+}
+
+class ObservableReferenceCollection<T> extends ReferenceCollection<Promise<IObservable<readonly T[]>>> {
+	private readonly stores = new Map<string, DisposableStore>();
+
+	constructor(
+		private readonly createObservable: () => IObservableReferenceEntry<T>,
+	) {
+		super();
+	}
+
+	protected createReferencedObject(key: string): Promise<IObservable<readonly T[]>> {
+		const { promise, store } = this.createObservable();
+		this.stores.set(key, store);
+		return promise;
+	}
+
+	protected destroyReferencedObject(key: string, _object: Promise<IObservable<readonly T[]>>): void {
+		this.stores.get(key)?.dispose();
+		this.stores.delete(key);
 	}
 }
 
@@ -217,6 +252,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 				this.getFileLocatorEvent(PromptsType.skill),
 				Event.filter(modelChangeEvent, e => e.promptType === PromptsType.prompt),
 				Event.filter(modelChangeEvent, e => e.promptType === PromptsType.skill),
+				Event.filter(this.configurationService.onDidChangeConfiguration, e => e.affectsConfiguration(PromptsConfig.USE_AGENT_SKILLS)),
 				this._onDidContributedWhenChange.event,
 				this._onDidPluginPromptFilesChange.event),
 		));
@@ -225,6 +261,7 @@ export class PromptsService extends Disposable implements IPromptsService {
 			(token) => this.computeSkillDiscovery(token),
 			() => Event.any(
 				this.getFileLocatorEvent(PromptsType.skill),
+				Event.filter(this.configurationService.onDidChangeConfiguration, e => e.affectsConfiguration(PromptsConfig.USE_AGENT_SKILLS)),
 				Event.filter(modelChangeEvent, e => e.promptType === PromptsType.skill),
 				this._onDidContributedWhenChange.event,
 				this._onDidPluginPromptFilesChange.event)
@@ -586,6 +623,40 @@ export class PromptsService extends Disposable implements IPromptsService {
 		return this.fileLocator.getResolvedSourceFolders(type);
 	}
 
+	/**
+	 * Creates a ref-counted observable for resolved prompt resources and disposes its listeners
+	 * once the last consumer releases the returned reference.
+	 */
+	private _createPromptResourceObservableRefs<T extends { readonly uri: URI; readonly contentHash: number }, TResult>(
+		cachedPromise: CachedPromise<TResult>,
+		getItems: (result: TResult, reader: IReader) => readonly T[],
+		label: string,
+	): AsyncReferenceCollection<IObservable<readonly T[]>> {
+		return new AsyncReferenceCollection(new ObservableReferenceCollection<T>(() => {
+			const store = new DisposableStore();
+			const cts = new CancellationTokenSource();
+			store.add(toDisposable(() => cts.dispose(true)));
+			const obs = derivedOpts({ equalsFn: equalsPromptResources }, (reader: IReader) => {
+				const result = cachedPromise.cachedValue.read(reader);
+				if (result?.data) {
+					return getItems(result.data, reader);
+				}
+				return [];
+			});
+			store.add(cachedPromise.onDidChangePromise(() => {
+				if (!cts.token.isCancellationRequested) {
+					void cachedPromise.get(cts.token).catch(e => {
+						this.logger.error(`[promptsService] Failed to recompute ${label} observable`, e);
+					});
+				}
+			}));
+			return {
+				store,
+				promise: cachedPromise.get(cts.token).then(() => obs),
+			};
+		}));
+	}
+
 	// slash prompt commands
 
 	/**
@@ -601,6 +672,20 @@ export class PromptsService extends Disposable implements IPromptsService {
 	 */
 	public get slashCommandsCachedValue(): IObservable<PromiseResult<ISlashCommandDiscoveryInfo> | undefined> {
 		return this.cachedSlashCommands.cachedValue;
+	}
+
+	private _slashCommandsObservableRefs: AsyncReferenceCollection<IObservable<readonly IChatPromptSlashCommand[]>> | undefined;
+
+	/**
+	 * Gets a reference-counted observable of the resolved prompt slash commands.
+	 */
+	public getPromptSlashCommandsObservable(): Promise<IReference<IObservable<readonly IChatPromptSlashCommand[]>>> {
+		this._slashCommandsObservableRefs ??= this._createPromptResourceObservableRefs(
+			this.cachedSlashCommands,
+			discoveryInfo => Array.from(this.slashCommandsFromDiscoveryInfo(discoveryInfo)),
+			'slash commands',
+		);
+		return this._slashCommandsObservableRefs.acquire('slashCommands');
 	}
 
 	public async getPromptSlashCommands(token: CancellationToken): Promise<readonly IChatPromptSlashCommand[]> {
@@ -739,24 +824,18 @@ export class PromptsService extends Disposable implements IPromptsService {
 		return this.cachedCustomAgents.onDidChangePromise;
 	}
 
-	/**
-	 * Internal observable state used by the main-thread chat bridge to publish updates
-	 * once custom agent discovery has actually finished recomputing.
-	 */
-	public get customAgentsCachedValue(): IObservable<PromiseResult<IAgentDiscoveryInfo> | undefined> {
-		return this.cachedCustomAgents.cachedValue;
-	}
-
-	public get onDidChangeInstructions(): Event<void> {
-		return this.cachedInstructions.onDidChangePromise;
-	}
+	private _customAgentsObservableRefs: AsyncReferenceCollection<IObservable<readonly ICustomAgent[]>> | undefined;
 
 	/**
-	 * Internal observable state used by the main-thread chat bridge to publish updates
-	 * once instruction discovery has actually finished recomputing.
+	 * Gets a reference-counted observable of the resolved custom agents.
 	 */
-	public get instructionsCachedValue(): IObservable<PromiseResult<IInstructionDiscoveryInfo> | undefined> {
-		return this.cachedInstructions.cachedValue;
+	public getCustomAgentsObservable(): Promise<IReference<IObservable<readonly ICustomAgent[]>>> {
+		this._customAgentsObservableRefs ??= this._createPromptResourceObservableRefs(
+			this.cachedCustomAgents,
+			discoveryInfo => Array.from(this.agentsFromDiscoveryInfo(discoveryInfo)),
+			'custom agents',
+		);
+		return this._customAgentsObservableRefs.acquire('customAgents');
 	}
 
 	public async getCustomAgents(token: CancellationToken): Promise<readonly ICustomAgent[]> {
@@ -1173,39 +1252,18 @@ export class PromptsService extends Disposable implements IPromptsService {
 		return this.cachedSkills.onDidChangePromise;
 	}
 
-	private _skillsObservable: Promise<IObservable<IAgentSkill[]>> | undefined;
+	private _skillsObservableRefs: AsyncReferenceCollection<IObservable<readonly IAgentSkill[]>> | undefined;
 
 	/**
-	 * Get an observable of the resolved skills.
+	 * Gets a reference-counted observable of the resolved skills.
 	 */
-	public getSkillsObservable(token: CancellationToken): Promise<IObservable<IAgentSkill[]>> {
-		if (!this._skillsObservable) {
-			this._skillsObservable = (async () => {
-				const equalsFn = arrayEqualsC((a: IAgentSkill, b: IAgentSkill) => {
-					return (a.contentHash === b.contentHash) && (a.contentHash !== -1) && isEqual(a.uri, b.uri);
-				});
-				const obs = derivedOpts({ equalsFn }, (reader: IReader) => {
-					if (observableConfigValue(PromptsConfig.USE_AGENT_SKILLS, true, this.configurationService).read(reader) === false) {
-						return [];
-					}
-					const discoveryInfo = this.cachedSkills.cachedValue.read(reader);
-					if (discoveryInfo?.data) {
-						return this.skillsFromDiscoveryInfo(discoveryInfo?.data);
-					}
-					return [];
-				});
-				await this.cachedSkills.get(token); // trigger a computation so the observacble will get a value
-				this._register(this.onDidChangeSkills(() => {
-					if (!token.isCancellationRequested) {
-						void this.cachedSkills.get(token).catch(e => { // retrigger on change
-							this.logger.error('[promptsservice] skillsObservable failed to recomute skill', e);
-						});
-					}
-				}));
-				return obs;
-			})();
-		}
-		return this._skillsObservable;
+	public getSkillsObservable(): Promise<IReference<IObservable<readonly IAgentSkill[]>>> {
+		this._skillsObservableRefs ??= this._createPromptResourceObservableRefs(
+			this.cachedSkills,
+			discoveryInfo => this.skillsFromDiscoveryInfo(discoveryInfo),
+			'skills',
+		);
+		return this._skillsObservableRefs.acquire('skills');
 	}
 
 	public get onDidChangeHooks(): Event<void> {
@@ -1217,7 +1275,6 @@ export class PromptsService extends Disposable implements IPromptsService {
 		if (!useAgentSkills) {
 			return undefined;
 		}
-
 		const discoveryInfo = await this.cachedSkills.get(token);
 		const result = this.skillsFromDiscoveryInfo(discoveryInfo);
 		return result;
@@ -1408,10 +1465,6 @@ export class PromptsService extends Disposable implements IPromptsService {
 
 	private withPromptPathMetadata(promptPath: IPromptPath, name: string | undefined, description: string | undefined): IPromptPath {
 		return { ...promptPath, name, description };
-	}
-
-	private async computeInstructionFiles(token: CancellationToken): Promise<IInstructionDiscoveryInfo> {
-		return await this.getInstructionsDiscoveryInfo(token);
 	}
 
 	private async computeHooks(token: CancellationToken): Promise<IHookDiscoveryInfo> {
@@ -1606,6 +1659,10 @@ export class PromptsService extends Disposable implements IPromptsService {
 	 * Returns the discovery results for skill files.
 	 */
 	private async computeSkillDiscoveryInfo(token: CancellationToken): Promise<IPromptFileDiscoveryResult[]> {
+		const useAgentSkills = this.configurationService.getValue(PromptsConfig.USE_AGENT_SKILLS);
+		if (!useAgentSkills) {
+			return [];
+		}
 		const files: IPromptFileDiscoveryResult[] = [];
 		const seenNames = new Set<string>();
 		const nameToUri = new Map<string, URI>();
@@ -1688,7 +1745,27 @@ export class PromptsService extends Disposable implements IPromptsService {
 		return files;
 	}
 
-	private async getInstructionsDiscoveryInfo(token: CancellationToken): Promise<IInstructionDiscoveryInfo> {
+	// Instructions
+
+	public get onDidChangeInstructions(): Event<void> {
+		return this.cachedInstructions.onDidChangePromise;
+	}
+
+	private _instructionsObservableRefs: AsyncReferenceCollection<IObservable<readonly IInstructionFile[]>> | undefined;
+
+	/**
+	 * Gets a reference-counted observable of the resolved instruction files.
+	 */
+	public getInstructionsObservable(): Promise<IReference<IObservable<readonly IInstructionFile[]>>> {
+		this._instructionsObservableRefs ??= this._createPromptResourceObservableRefs(
+			this.cachedInstructions,
+			discoveryInfo => this.instructionsFromDiscoveryInfo(discoveryInfo),
+			'instructions',
+		);
+		return this._instructionsObservableRefs.acquire('instructions');
+	}
+
+	private async computeInstructionFiles(token: CancellationToken): Promise<IInstructionDiscoveryInfo> {
 		const stopWatch = StopWatch.create(true);
 		const files: IInstructionDiscoveryResult[] = [];
 
