@@ -28,9 +28,8 @@ import { IChatSendRequestOptions, IChatService } from '../../../../workbench/con
 import { IChatSessionFileChange, IChatSessionsService } from '../../../../workbench/contrib/chat/common/chatSessionsService.js';
 import { ChatAgentLocation, ChatModeKind } from '../../../../workbench/contrib/chat/common/constants.js';
 import { ILanguageModelsService } from '../../../../workbench/contrib/chat/common/languageModels.js';
-import { ISessionChangeEvent, ISendRequestOptions, ISessionsBrowseAction, ISessionsProvider, ISessionType } from '../../sessions/browser/sessionsProvider.js';
-import { CopilotCLISessionType } from '../../sessions/browser/sessionTypes.js';
-import { ISession, IChat, IGitHubInfo, ISessionWorkspace, SessionStatus } from '../../sessions/common/sessionData.js';
+import { ISessionChangeEvent, ISendRequestOptions, ISessionsProvider } from '../../../services/sessions/common/sessionsProvider.js';
+import { ISession, IChat, IGitHubInfo, ISessionWorkspace, ISessionWorkspaceBrowseAction, SessionStatus, CopilotCLISessionType, ISessionType } from '../../../services/sessions/common/session.js';
 
 interface IChatData {
 	/** Globally unique session ID (`providerId:localId`). */
@@ -79,8 +78,6 @@ interface IChatData {
 export interface IRemoteAgentHostSessionsProviderConfig {
 	readonly address: string;
 	readonly name: string;
-	/** Optional hook to establish a connection on demand (e.g. tunnel relay). */
-	readonly connectOnDemand?: () => Promise<void>;
 }
 
 /**
@@ -180,7 +177,7 @@ export class RemoteAgentHostSessionsProvider extends Disposable implements ISess
 	private readonly _onDidReplaceSession = this._register(new Emitter<{ readonly from: ISession; readonly to: ISession }>());
 	readonly onDidReplaceSession: Event<{ readonly from: ISession; readonly to: ISession }> = this._onDidReplaceSession.event;
 
-	readonly browseActions: readonly ISessionsBrowseAction[];
+	readonly browseActions: readonly ISessionWorkspaceBrowseAction[];
 
 	/** Cache of adapted sessions, keyed by raw session ID. */
 	private readonly _sessionCache = new Map<string, RemoteSessionAdapter>();
@@ -203,7 +200,6 @@ export class RemoteAgentHostSessionsProvider extends Disposable implements ISess
 	private readonly _connectionListeners = this._register(new DisposableStore());
 	private readonly _onDidDisconnect = this._register(new Emitter<void>());
 	private readonly _connectionAuthority: string;
-	private readonly _connectOnDemand: (() => Promise<void>) | undefined;
 
 	constructor(
 		config: IRemoteAgentHostSessionsProviderConfig,
@@ -218,7 +214,6 @@ export class RemoteAgentHostSessionsProvider extends Disposable implements ISess
 		super();
 
 		this._connectionAuthority = agentHostAuthority(config.address);
-		this._connectOnDemand = config.connectOnDemand;
 		const displayName = config.name || config.address;
 
 		this.id = `agenthost-${this._connectionAuthority}`;
@@ -232,7 +227,7 @@ export class RemoteAgentHostSessionsProvider extends Disposable implements ISess
 			// label: localize('browseRemote', "Browse Folders ({0})...", displayName),
 			icon: Codicon.remote,
 			providerId: this.id,
-			execute: () => this._browseForFolder(),
+			run: () => this._browseForFolder(),
 		}];
 	}
 
@@ -771,11 +766,6 @@ export class RemoteAgentHostSessionsProvider extends Disposable implements ISess
 	// -- Private: Browse --
 
 	private async _browseForFolder(): Promise<ISessionWorkspace | undefined> {
-		// Establish connection on demand if a hook is provided (e.g. tunnel relay)
-		if (!this._connection && this._connectOnDemand) {
-			await this._connectOnDemand();
-		}
-
 		if (!this._connection) {
 			this._notificationService.error(localize('notConnected', "Unable to connect to remote agent host '{0}'.", this.label));
 			return undefined;
