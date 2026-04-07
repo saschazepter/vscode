@@ -290,7 +290,14 @@
 		setupNLS<T>(configuration);
 
 		// Compute base URL and set as global
-		const baseUrl = new URL(`${fileUriFromPath(configuration.appRoot, { isWindows: safeProcess.platform === 'win32', scheme: 'vscode-file', fallbackAuthority: 'vscode-app' })}/out/`);
+		// When a remote dev server URL is set, use its origin as the base so that
+		// all modules (JS and CSS) are loaded from the remote server instead of local files.
+		// The remote server is expected to serve the out/ directory at its root, so that
+		// e.g. http://host:port/vs/workbench/workbench.desktop.main.js resolves correctly.
+		const devServerUrl = !!safeProcess.env['VSCODE_DEV'] && safeProcess.env['VSCODE_DEV_SERVER_URL'];
+		const baseUrl = devServerUrl
+			? new URL('/', new URL(devServerUrl))
+			: new URL(`${fileUriFromPath(configuration.appRoot, { isWindows: safeProcess.platform === 'win32', scheme: 'vscode-file', fallbackAuthority: 'vscode-app' })}/out/`);
 		globalThis._VSCODE_FILE_ROOT = baseUrl.toString();
 
 		// Dev only: CSS import map tricks
