@@ -647,6 +647,7 @@ interface IPartVisibilityState {
 | Date | Change |
 |------|--------|
 | 2026-04-03 | Updated `SessionsTitleBarWidget` to format active session titles as `{Title} · {repo name} ({git branch/worktree name})` when repository detail metadata is available, falling back to the worktree folder name when needed. |
+| 2026-04-07 | Increased sessions titlebar height from 35px to 42px (aligned to the 4px grid); introduced `SESSIONS_TITLEBAR_HEIGHT = 42` constant in `sessions/browser/parts/titlebarPart.ts` and updated `minimumHeight` to use it instead of the shared `DEFAULT_CUSTOM_TITLEBAR_HEIGHT` |
 | 2026-04-03 | Reduced the sessions left sidebar minimum resizable width from 270px to 170px so it can shrink significantly more while keeping the default 300px width unchanged |
 | 2026-03-30 | Adjusted `.agent-sessions-titlebar-container` padding so it sits flush when the sidebar is visible and restores 16px left padding when the sidebar is hidden |
 | 2026-03-26 | Updated the sessions sidebar appear animation so only the body content (`.part.sidebar > .content`) slides/fades in during reveal while the sidebar title/header and footer remain fixed |
