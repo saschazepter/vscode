@@ -16,6 +16,7 @@ import { bindContextKey } from '../../../../platform/observable/common/platformO
 import { ActiveSessionContextKeys, CHANGES_VIEW_ID } from '../common/changes.js';
 import { IsSessionsWindowContext } from '../../../../workbench/common/contextkeys.js';
 import { IOpenerService } from '../../../../platform/opener/common/opener.js';
+import { ChatContextKeys } from '../../../../workbench/contrib/chat/common/actions/chatContextKeys.js';
 
 const openChangesViewActionOptions: IAction2Options = {
 	id: 'workbench.action.agentSessions.openChangesView',
@@ -73,6 +74,7 @@ class OpenPullRequestAction extends Action2 {
 			title: localize2('openPullRequest', "Open Pull Request"),
 			icon: Codicon.gitPullRequest,
 			f1: false,
+			precondition: ChatContextKeys.requestInProgress.negate(),
 			menu: {
 				id: MenuId.ChatEditingSessionChangesToolbar,
 				group: 'navigation',
