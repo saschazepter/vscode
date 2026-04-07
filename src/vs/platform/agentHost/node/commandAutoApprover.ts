@@ -172,7 +172,7 @@ export class CommandAutoApprover extends Disposable {
 
 	private async _initTreeSitter(): Promise<void> {
 		try {
-			const TreeSitter = await import('@vscode/tree-sitter-wasm');
+			const { default: TreeSitter } = (await import('@vscode/tree-sitter-wasm'));
 
 			// Resolve WASM files from node_modules
 			const moduleRoot = URI.joinPath(FileAccess.asFileUri(''), '..', 'node_modules', '@vscode', 'tree-sitter-wasm', 'wasm');
