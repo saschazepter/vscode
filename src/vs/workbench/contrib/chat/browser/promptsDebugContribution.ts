@@ -5,21 +5,26 @@
 
 import { CancellationToken, CancellationTokenSource } from '../../../../base/common/cancellation.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
+import { OS } from '../../../../base/common/platform.js';
 import { generateUuid } from '../../../../base/common/uuid.js';
 import { localize } from '../../../../nls.js';
+import { IFileService } from '../../../../platform/files/common/files.js';
+import { ILabelService } from '../../../../platform/label/common/label.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
+import { IRemoteAgentService } from '../../../services/remote/common/remoteAgentService.js';
 import { IWorkbenchContribution } from '../../../common/contributions.js';
+import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
+import { IPathService } from '../../../services/path/common/pathService.js';
 import { IChatDebugCustomizationLogEntry, IChatDebugEventFileListContent, IChatDebugResolvedEventContent, IChatDebugService } from '../common/chatDebugService.js';
 import { IChatAgentService } from '../common/participants/chatAgents.js';
 import { IChatService } from '../common/chatService/chatService.js';
-import { ChatRequestHooks } from '../common/promptSyntax/hookSchema.js';
-import { HookType } from '../common/promptSyntax/hookTypes.js';
 import { PromptsType } from '../common/promptSyntax/promptTypes.js';
 import { IHookDiscoveryInfo, type InstructionsCollectionEvent, IPromptDiscoveryInfo, IPromptsService } from '../common/promptSyntax/service/promptsService.js';
+import { type IParsedHook, parseAllHookFiles } from './promptSyntax/hookUtils.js';
 
 interface ICustomizationEventData {
 	readonly collectionEvent: InstructionsCollectionEvent;
-	readonly hooks: ChatRequestHooks | undefined;
+	readonly parsedHooks: readonly IParsedHook[];
 }
 
 /**
@@ -45,6 +50,11 @@ export class PromptsDebugContribution extends Disposable implements IWorkbenchCo
 		@IChatService chatService: IChatService,
 		@IChatDebugService chatDebugService: IChatDebugService,
 		@ILogService logService: ILogService,
+		@IFileService private readonly fileService: IFileService,
+		@ILabelService private readonly labelService: ILabelService,
+		@IWorkspaceContextService private readonly workspaceService: IWorkspaceContextService,
+		@IPathService private readonly pathService: IPathService,
+		@IRemoteAgentService private readonly remoteAgentService: IRemoteAgentService,
 	) {
 		super();
 
@@ -125,27 +135,34 @@ export class PromptsDebugContribution extends Disposable implements IWorkbenchCo
 			// Log resolved customizations from the last instructions collection.
 			const collectionEvent = this.promptsService.lastInstructionsCollectionEvent;
 			if (!isFirstInvocation && collectionEvent) {
-				// Also fetch the resolved hooks so they appear in the customization summary.
-				let resolvedHooks: ChatRequestHooks | undefined;
+				// Fetch the resolved hooks so they appear in the customization summary.
+				let parsedHooks: IParsedHook[] = [];
 				try {
-					const hooksInfo = await this.promptsService.getHooks(CancellationToken.None);
-					resolvedHooks = hooksInfo?.hooks;
+					// Parse all hook files to get per-command source file URIs.
+					const remoteEnv = await this.remoteAgentService.getEnvironment();
+					const targetOS = remoteEnv?.os ?? OS;
+					const workspaceRootUri = this.workspaceService.getWorkspace().folders[0]?.uri;
+					const userHome = (await this.pathService.userHome()).fsPath;
+					parsedHooks = await parseAllHookFiles(
+						this.promptsService, this.fileService, this.labelService,
+						workspaceRootUri, userHome, targetOS, CancellationToken.None,
+					);
 				} catch (error) {
 					logService.warn('Error while fetching hooks for customization debug event', error);
 				}
 
 				const parts: string[] = [];
 				if (collectionEvent.applyingInstructionsCount > 0) {
-					parts.push(`${collectionEvent.applyingInstructionsCount} applying`);
+					parts.push(localize('customizations.applying', '{0} applying', collectionEvent.applyingInstructionsCount));
 				}
 				if (collectionEvent.referencedInstructionsCount > 0) {
-					parts.push(`${collectionEvent.referencedInstructionsCount} referenced`);
+					parts.push(localize('customizations.referenced', '{0} referenced', collectionEvent.referencedInstructionsCount));
 				}
 				if (collectionEvent.agentInstructionsCount > 0) {
-					parts.push(`${collectionEvent.agentInstructionsCount} agent`);
+					parts.push(localize('customizations.agent', '{0} agent', collectionEvent.agentInstructionsCount));
 				}
 				if (collectionEvent.listedInstructionsCount > 0) {
-					parts.push(`${collectionEvent.listedInstructionsCount} listed`);
+					parts.push(localize('customizations.listed', '{0} listed', collectionEvent.listedInstructionsCount));
 				}
 				const durationStr = collectionEvent.durationInMillis.toFixed(1);
 				const summary = parts.length > 0
@@ -160,7 +177,7 @@ export class PromptsDebugContribution extends Disposable implements IWorkbenchCo
 					: summary;
 
 				const customizationEventId = generateUuid();
-				this._customizationEventDetails.set(customizationEventId, { collectionEvent, hooks: resolvedHooks });
+				this._customizationEventDetails.set(customizationEventId, { collectionEvent, parsedHooks });
 
 				// Evict oldest entries when the map exceeds the cap.
 				if (this._customizationEventDetails.size > PromptsDebugContribution.MAX_DISCOVERY_DETAILS) {
@@ -198,28 +215,28 @@ export class PromptsDebugContribution extends Disposable implements IWorkbenchCo
 		switch (discoveryInfo.type) {
 			case PromptsType.prompt:
 				return {
-					name: localize('promptsService.loadSlashCommands', 'Load Slash Commands'),
+					name: localize('promptsService.loadSlashCommands', 'Slash Commands Discovery'),
 					details: loadedCount === 1
 						? localize('promptsDebugContribution.resolvedSlashCommand', 'Resolved {0} slash command in {1}ms', loadedCount, durationInMillis)
 						: localize('promptsDebugContribution.resolvedSlashCommands', 'Resolved {0} slash commands in {1}ms', loadedCount, durationInMillis)
 				};
 			case PromptsType.agent:
 				return {
-					name: localize('promptsService.loadAgents', 'Load Agents'),
+					name: localize('promptsService.loadAgents', 'Agent Discovery'),
 					details: loadedCount === 1
 						? localize('promptsDebugContribution.resolvedAgent', 'Resolved {0} agent in {1}ms', loadedCount, durationInMillis)
 						: localize('promptsDebugContribution.resolvedAgents', 'Resolved {0} agents in {1}ms', loadedCount, durationInMillis)
 				};
 			case PromptsType.skill:
 				return {
-					name: localize('promptsService.loadSkills', 'Load Skills'),
+					name: localize('promptsService.loadSkills', 'Skill Discovery'),
 					details: loadedCount === 1
 						? localize('promptsDebugContribution.resolvedSkill', 'Resolved {0} skill in {1}ms', loadedCount, durationInMillis)
 						: localize('promptsDebugContribution.resolvedSkills', 'Resolved {0} skills in {1}ms', loadedCount, durationInMillis)
 				};
 			case PromptsType.instructions:
 				return {
-					name: localize('promptsService.loadInstructions', 'Load Instructions'),
+					name: localize('promptsService.loadInstructions', 'Instructions Discovery'),
 					details: loadedCount === 1
 						? localize('promptsDebugContribution.resolvedInstruction', 'Resolved {0} instruction in {1}ms', loadedCount, durationInMillis)
 						: localize('promptsDebugContribution.resolvedInstructions', 'Resolved {0} instructions in {1}ms', loadedCount, durationInMillis)
@@ -235,7 +252,7 @@ export class PromptsDebugContribution extends Disposable implements IWorkbenchCo
 						? localize('promptsDebugContribution.resolvedHook', 'Resolved {0} hook in {1}ms', hookCount, durationInMillis)
 						: localize('promptsDebugContribution.resolvedHooks', 'Resolved {0} hooks in {1}ms', hookCount, durationInMillis);
 				return {
-					name: localize('promptsService.loadHooks', 'Load Hooks'),
+					name: localize('promptsService.loadHooks', 'Hook Discovery'),
 					details
 				};
 			}
@@ -257,24 +274,17 @@ export class PromptsDebugContribution extends Disposable implements IWorkbenchCo
 			return undefined;
 		}
 
-		const { collectionEvent, hooks } = data;
+		const { collectionEvent, parsedHooks } = data;
 		const logs: IChatDebugCustomizationLogEntry[] = [...collectionEvent.debugDetails];
 
-		// Add hook entries from the resolved hooks.
-		if (hooks) {
-			for (const hookType of Object.values(HookType)) {
-				const commands = hooks[hookType];
-				if (commands && commands.length > 0) {
-					for (const cmd of commands) {
-						const commandStr = cmd.command ?? cmd.osx ?? cmd.linux ?? cmd.windows ?? 'unknown';
-						logs.push({
-							category: 'hook',
-							name: hookType,
-							reason: commandStr,
-						});
-					}
-				}
-			}
+		// Add hook entries from the parsed hooks, each with its source file URI.
+		for (const hook of parsedHooks) {
+			logs.push({
+				category: 'hook',
+				name: hook.commandLabel,
+				reason: hook.hookType,
+				uri: hook.fileUri,
+			});
 		}
 
 		return {
