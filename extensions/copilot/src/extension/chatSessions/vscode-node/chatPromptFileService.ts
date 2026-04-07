@@ -37,14 +37,17 @@ export class ChatPromptFileService extends Disposable implements IChatPromptFile
 		super();
 
 		this._register(vscode.chat.onDidChangeCustomAgents(() => {
+			this.logService.info(`[ChatPromptFileService] Detected change in custom agents, refreshing...`);
 			this.triggerRefreshCustomAgents();
 		}));
 
 		this._register(vscode.chat.onDidChangeInstructions(() => {
+			this.logService.info(`[ChatPromptFileService] Detected change in instructions, refreshing...`);
 			this._onDidChangeInstructions.fire();
 		}));
 
 		this._register(vscode.chat.onDidChangeSkills(() => {
+			this.logService.info(`[ChatPromptFileService] Detected change in skills, refreshing...`);
 			this._onDidChangeSkills.fire();
 		}));
 
@@ -108,6 +111,7 @@ export class ChatPromptFileService extends Disposable implements IChatPromptFile
 	private async refreshCustomAgents(token: CancellationToken): Promise<void> {
 		const parsedAgents = coalesce(await Promise.all(vscode.chat.customAgents.map(async resource => {
 			try {
+				console.log(`Parsing custom agent prompt file: ${resource.uri.toString()}`);
 				return await this.promptsService.parseFile(resource.uri, token);
 			} catch (error) {
 				if (isCancellationError(error) || token.isCancellationRequested) {
