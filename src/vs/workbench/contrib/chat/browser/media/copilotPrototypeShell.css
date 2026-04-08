@@ -173,7 +173,11 @@
 	flex-direction: column;
 	gap: 10px;
 	padding: 8px;
-	min-width: 560px;
+	min-width: 640px;
+}
+
+.monaco-hover .hover-contents:has(.copilot-prototype-coin-widget) {
+	max-width: none;
 }
 
 .copilot-prototype-coin-widget-title {

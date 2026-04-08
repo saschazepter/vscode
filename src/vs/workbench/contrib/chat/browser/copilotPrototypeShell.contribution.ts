@@ -642,7 +642,7 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 	}
 
 	private static readonly SKUS = ['Edu/Free', 'Pro/Pro+ No O', 'Pro/Pro+', 'Max', 'Ent/Bus ULB', 'Ent/Bus'];
-	private static readonly STATES = ['First Time', 'Default', 'Session Approached', 'Session Reached', 'Session Reset', 'Weekly Approached', 'Weekly Reached', 'Weekly Reset', 'Overage Approached', 'Overage Reached', 'Overage Reset'];
+	private static readonly STATES = ['Default', 'Session Approached', 'Session Reached', 'Session Reset', 'Weekly Approached', 'Weekly Reached', 'Weekly Reset', 'Overage Approached', 'Overage Reached', 'Overage Reset'];
 	private static readonly EXCLUDED_CELLS: ReadonlySet<string> = new Set([
 		'Edu/Free|Overage Approached',
 		'Edu/Free|Overage Reached',
@@ -687,7 +687,7 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 
 		const grid = mainWindow.document.createElement('div');
 		grid.className = 'copilot-prototype-coin-grid';
-		grid.style.gridTemplateColumns = `auto repeat(${skus.length}, 1fr)`;
+		grid.style.gridTemplateColumns = `auto repeat(${skus.length}, minmax(70px, 1fr))`;
 		grid.style.gridTemplateRows = `auto repeat(${states.length}, 1fr)`;
 
 		// Top-left corner: empty cell
