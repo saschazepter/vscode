@@ -74,10 +74,9 @@
  * Cannot add/remove the folder dropdown group.
  *
  * **rebuildInputState** (external state changes):
- * Full rebuild of all groups via provideChatSessionProviderOptionGroups.
+ * Full rebuild of all groups
  * Used when git repos are discovered/closed or workspace folders
  * change, since these can add/remove entire dropdown groups.
- * Serialized via a Sequencer to prevent race conditions.
  *
  * **updateInputStateAfterFolderSelection** (Browse folders… flow):
  * Same pattern as handleInputStateChange — updates folder selection,
