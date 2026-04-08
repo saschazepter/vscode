@@ -411,6 +411,16 @@ class CloseAllBrowserTabsInGroupAction extends Action2 {
 	}
 }
 
+// Register in View menu
+MenuRegistry.appendMenuItem(MenuId.MenubarViewMenu, {
+	group: '4_auxbar',
+	command: {
+		id: BrowserViewCommandId.QuickOpen,
+		title: localize({ key: 'miOpenBrowser', comment: ['&& denotes a mnemonic'] }, "&&Browser")
+	},
+	order: 2
+});
+
 // Register as "Close All Browser Tabs" action in editor title menu to align with the regular "Close All" action
 MenuRegistry.appendMenuItem(MenuId.EditorTitleContext, { command: { id: BrowserViewCommandId.CloseAllInGroup, title: localize('browser.closeAllInGroupShort', "Close All Browser Tabs") }, group: '1_close', order: 55, when: BROWSER_EDITOR_ACTIVE });
 
