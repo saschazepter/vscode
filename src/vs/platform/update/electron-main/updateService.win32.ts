@@ -61,6 +61,10 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 	private availableUpdate: IAvailableUpdate | undefined;
 	private updateCancellationTokenSource: CancellationTokenSource | undefined;
 
+	private isFastUpdatesEnabled(): boolean {
+		return this.configurationService.getValue<boolean>('update.enableWindowsBackgroundUpdates') && this.productService.target === 'user';
+	}
+
 	@memoize
 	get cachePath(): Promise<string> {
 		const result = path.join(tmpdir(), `vscode-${this.productService.quality}-${this.productService.target}-${process.arch}`);
@@ -164,10 +168,9 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 				// updatingVersionPath will be deleted by inno setup.
 			}
 		} else {
-			const fastUpdatesEnabled = this.configurationService.getValue('update.enableWindowsBackgroundUpdates');
 			// GC for background updates in system setup happens via inno_setup since it requires
 			// elevated permissions.
-			if (fastUpdatesEnabled && this.productService.target === 'user' && this.productService.commit) {
+			if (this.isFastUpdatesEnabled() && this.productService.commit) {
 				const versionedResourcesFolder = this.productService.commit.substring(0, 10);
 				const innoUpdater = path.join(exeDir, versionedResourcesFolder, 'tools', 'inno_updater.exe');
 				const exeName = basename(exePath);
@@ -296,8 +299,7 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 						this.saveUpdateMetadata(update);
 						this.setState(State.Downloaded(update, explicit, this._overwrite));
 
-						const fastUpdatesEnabled = this.configurationService.getValue('update.enableWindowsBackgroundUpdates');
-						if (fastUpdatesEnabled && this.productService.target === 'user') {
+						if (this.isFastUpdatesEnabled()) {
 							this.doApplyUpdate();
 						} else {
 							this.setState(State.Ready(update, explicit, this._overwrite));
@@ -392,9 +394,13 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 		// Track the process so we can cancel it if needed
 		this.availableUpdate.updateProcess = child;
 
+		// Reset state on installer exit, but only if update was not overwritten.
+		const exitUpdate = this.availableUpdate;
 		child.once('exit', () => {
-			this.availableUpdate = undefined;
-			this.setState(State.Idle(getUpdateType()));
+			if (this.availableUpdate === exitUpdate) {
+				this.availableUpdate = undefined;
+				this.setState(State.Idle(getUpdateType()));
+			}
 		});
 
 		const readyMutexName = `${this.productService.win32MutexName}-ready`;
@@ -498,14 +504,22 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 
 		this.logService.trace('update#quitAndInstall(): running raw#quitAndInstall()');
 
-		if (this.availableUpdate.updateFilePath) {
+		if (this.availableUpdate.updateFilePath && this.availableUpdate.updateProcess?.exitCode === null) {
+			// Background installer is still alive — signal it to proceed by deleting the flag file it is waiting on.
 			try {
 				unlinkSync(this.availableUpdate.updateFilePath);
 			} catch {
 				// ignore
 			}
 		} else {
-			spawn(this.availableUpdate.packagePath, ['/silent', '/log', '/mergetasks=runcode,!desktopicon,!quicklaunchicon'], {
+			// No live background installer — launch the setup directly with approprate flags based on config.
+			const installerArgs = [
+				this.isFastUpdatesEnabled() ? '/verysilent' : '/silent',
+				'/log',
+				'/mergetasks=runcode,!desktopicon,!quicklaunchicon'
+			];
+
+			spawn(this.availableUpdate.packagePath, installerArgs, {
 				detached: true,
 				stdio: ['ignore', 'ignore', 'ignore'],
 				env: { ...process.env, __COMPAT_LAYER: 'RunAsInvoker' }
@@ -546,14 +560,13 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 			return;
 		}
 
-		const fastUpdatesEnabled = this.configurationService.getValue('update.enableWindowsBackgroundUpdates');
 		const update: IUpdate = await this.loadUpdateMetadata() ?? { version: 'unknown', productVersion: 'unknown' };
 
 		this.setState(State.Downloading(update, true, false));
 		this.availableUpdate = { packagePath };
 		this.setState(State.Downloaded(update, true, false));
 
-		if (fastUpdatesEnabled && this.productService.target === 'user') {
+		if (this.isFastUpdatesEnabled()) {
 			this.doApplyUpdate();
 		} else {
 			this.setState(State.Ready(update, true, false));
