@@ -59,6 +59,7 @@ suite('withStreamIdleTimeout', () => {
 			async () => {
 				const iter = withStreamIdleTimeout(stream);
 				const nextPromise = iter.next();
+				nextPromise.catch(() => { }); // prevent unhandled rejection during timer advancement
 				await vi.advanceTimersByTimeAsync(SSE_FIRST_CHUNK_TIMEOUT_MS + 1);
 				await nextPromise;
 			},
@@ -83,6 +84,7 @@ suite('withStreamIdleTimeout', () => {
 		await assert.rejects(
 			async () => {
 				const nextPromise = iter.next();
+				nextPromise.catch(() => { }); // prevent unhandled rejection during timer advancement
 				await vi.advanceTimersByTimeAsync(SSE_IDLE_TIMEOUT_MS + 1);
 				await nextPromise;
 			},
@@ -135,6 +137,24 @@ suite('withStreamIdleTimeout', () => {
 
 		await done;
 		assert.deepStrictEqual(collected, ['delayed-first']);
+	});
+
+	test('consumer break releases the underlying reader lock', async () => {
+		const { stream, push } = createControllableStream<string>();
+		push('a');
+
+		const collected: string[] = [];
+		for await (const chunk of withStreamIdleTimeout(stream)) {
+			collected.push(chunk);
+			if (chunk === 'b') {
+				break;
+			}
+			push('b');
+		}
+
+		assert.deepStrictEqual(collected, ['a', 'b']);
+		// After breaking, destroy() should still work without a dangling reader lock
+		await stream.destroy();
 	});
 
 	test('consumer processing time longer than idle timeout does not cause false timeout', async () => {

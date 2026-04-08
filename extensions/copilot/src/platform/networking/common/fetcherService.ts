@@ -365,6 +365,7 @@ export async function* withStreamIdleTimeout<T>(
 		}
 	} finally {
 		clearTimer();
+		await iterator.return?.();
 	}
 
 	if (timedOut) {
