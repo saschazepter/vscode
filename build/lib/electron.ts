@@ -105,7 +105,7 @@ const { electronVersion, msBuildId } = util.getElectronVersion();
 
 export const config = {
 	version: electronVersion,
-	tag: 'v39.8.5-13734640-dev',
+	tag: 'v39.8.5-13767220-dev',
 	productAppName: product.nameLong,
 	companyName: 'Microsoft Corporation',
 	copyright: 'Copyright (C) 2026 Microsoft. All rights reserved',
