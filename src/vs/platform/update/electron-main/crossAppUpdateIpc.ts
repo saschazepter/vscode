@@ -5,7 +5,7 @@
 
 import { crossAppIPC } from 'electron';
 import { Emitter, Event } from '../../../base/common/event.js';
-import { Disposable } from '../../../base/common/lifecycle.js';
+import { Disposable, IDisposable } from '../../../base/common/lifecycle.js';
 import { ILifecycleMainService } from '../../lifecycle/electron-main/lifecycleMainService.js';
 import { ILogService } from '../../log/common/log.js';
 import { IUpdateService, State } from '../common/update.js';
@@ -29,8 +29,12 @@ const enum CrossAppUpdateMessageType {
 	InitialState = 'update/initialState',
 	/** Client → Server: Request initial state */
 	RequestInitialState = 'update/requestInitialState',
-	/** Server → Client: Quit for update (the server will restart after installing) */
-	QuitForUpdate = 'update/quitForUpdate',
+	/** Server → Client: Ask client to quit for an upcoming update */
+	PrepareForQuit = 'update/prepareForQuit',
+	/** Client → Server: Client confirms it will quit */
+	QuitConfirmed = 'update/quitConfirmed',
+	/** Client → Server: Client's quit was vetoed by the user */
+	QuitVetoed = 'update/quitVetoed',
 }
 
 interface CrossAppUpdateMessage {
@@ -65,6 +69,9 @@ export class CrossAppUpdateCoordinator extends Disposable implements IUpdateServ
 	private readonly _onStateChange = this._register(new Emitter<State>());
 	readonly onStateChange: Event<State> = this._onStateChange.event;
 
+	/** Disposed when entering client mode, re-registered on disconnect. */
+	private localStateListener: IDisposable | undefined;
+
 	get state(): State { return this._state; }
 
 	constructor(
@@ -78,12 +85,14 @@ export class CrossAppUpdateCoordinator extends Disposable implements IUpdateServ
 		this._state = this.localUpdateService.state;
 
 		// Track local service state changes (used in standalone/server mode)
-		this._register(this.localUpdateService.onStateChange(state => {
-			if (this.mode !== 'client') {
-				this.updateState(state);
-				this.broadcastState(state);
-			}
-		}));
+		this.registerLocalStateListener();
+	}
+
+	private registerLocalStateListener(): void {
+		this.localStateListener = this.localUpdateService.onStateChange(state => {
+			this.updateState(state);
+			this.broadcastState(state);
+		});
 	}
 
 	initialize(): void {
@@ -104,8 +113,12 @@ export class CrossAppUpdateCoordinator extends Disposable implements IUpdateServ
 				this.broadcastState(this.localUpdateService.state);
 			} else {
 				this.mode = 'client';
-				// Suspend the local update service to prevent duplicate checks/downloads
+				// Suspend the local update service and stop listening to its state
+				// changes. All update operations are proxied to the server, so
+				// neither automatic nor manual checks go through the local service.
 				this.localUpdateService.suspend();
+				this.localStateListener?.dispose();
+				this.localStateListener = undefined;
 				// Request current state from the server
 				this.sendMessage({ type: CrossAppUpdateMessageType.RequestInitialState });
 			}
@@ -121,6 +134,7 @@ export class CrossAppUpdateCoordinator extends Disposable implements IUpdateServ
 			if (this.mode === 'client') {
 				// Resume the local update service — we're now the only app
 				this.localUpdateService.resume();
+				this.registerLocalStateListener();
 				// Sync coordinator state with the local service
 				this.updateState(this.localUpdateService.state);
 			}
@@ -149,9 +163,18 @@ export class CrossAppUpdateCoordinator extends Disposable implements IUpdateServ
 				}
 				break;
 
-			case CrossAppUpdateMessageType.QuitForUpdate:
-				this.logService.info('CrossAppUpdateCoordinator: peer requested quit for update');
-				this.lifecycleMainService.quit();
+			case CrossAppUpdateMessageType.PrepareForQuit:
+				if (this.mode === 'client') {
+					this.logService.info('CrossAppUpdateCoordinator: server requested quit for update');
+					this.lifecycleMainService.quit().then(veto => {
+						if (veto) {
+							this.logService.info('CrossAppUpdateCoordinator: client quit was vetoed');
+							this.sendMessage({ type: CrossAppUpdateMessageType.QuitVetoed });
+						} else {
+							this.sendMessage({ type: CrossAppUpdateMessageType.QuitConfirmed });
+						}
+					});
+				}
 				break;
 
 			// --- Messages handled by the server ---
@@ -181,8 +204,20 @@ export class CrossAppUpdateCoordinator extends Disposable implements IUpdateServ
 
 			case CrossAppUpdateMessageType.QuitAndInstall:
 				if (this.mode === 'server') {
-					// Client requested quit-and-install; the client quits itself
+					this.doCoordinatedQuitAndInstall();
+				}
+				break;
+
+			case CrossAppUpdateMessageType.QuitConfirmed:
+				if (this.mode === 'server') {
+					this.logService.info('CrossAppUpdateCoordinator: client confirmed quit, proceeding with quitAndInstall');
 					this.localUpdateService.quitAndInstall();
+				}
+				break;
+
+			case CrossAppUpdateMessageType.QuitVetoed:
+				if (this.mode === 'server') {
+					this.logService.info('CrossAppUpdateCoordinator: client vetoed quit, aborting quitAndInstall');
 				}
 				break;
 		}
@@ -231,15 +266,29 @@ export class CrossAppUpdateCoordinator extends Disposable implements IUpdateServ
 		}
 	}
 
+	/**
+	 * Coordinates quit-and-install when a peer is connected.
+	 * Asks the client to quit first; only proceeds with the server's
+	 * quitAndInstall if the client confirms. If the client's quit is
+	 * vetoed (e.g. unsaved editors), the whole operation is aborted.
+	 *
+	 * If no peer is connected (standalone), proceeds directly.
+	 */
+	private doCoordinatedQuitAndInstall(): void {
+		if (this.ipc?.connected) {
+			// Ask the client to quit; it will respond with QuitConfirmed/QuitVetoed
+			this.sendMessage({ type: CrossAppUpdateMessageType.PrepareForQuit });
+		} else {
+			this.localUpdateService.quitAndInstall();
+		}
+	}
+
 	async quitAndInstall(): Promise<void> {
 		if (this.mode === 'client') {
-			// Tell the server to quit-and-install, then quit ourselves
+			// Ask the server to start the coordinated quit flow
 			this.sendMessage({ type: CrossAppUpdateMessageType.QuitAndInstall });
-			this.lifecycleMainService.quit();
 		} else {
-			// Tell the client to quit, then do the local quit-and-install
-			this.sendMessage({ type: CrossAppUpdateMessageType.QuitForUpdate });
-			await this.localUpdateService.quitAndInstall();
+			this.doCoordinatedQuitAndInstall();
 		}
 	}
 
@@ -256,6 +305,7 @@ export class CrossAppUpdateCoordinator extends Disposable implements IUpdateServ
 	}
 
 	override dispose(): void {
+		this.localStateListener?.dispose();
 		this.ipc?.close();
 		super.dispose();
 	}

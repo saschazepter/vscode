@@ -298,8 +298,9 @@ export abstract class AbstractUpdateService implements IUpdateService {
 	}
 
 	/**
-	 * Prevents automatic update checks from running. Used by the
-	 * cross-app update coordinator when another app owns the update client.
+	 * Prevents all update checks (automatic and manual) from running.
+	 * Used by the cross-app update coordinator when another app owns
+	 * the update client.
 	 */
 	suspend(): void {
 		this._suspended = true;
