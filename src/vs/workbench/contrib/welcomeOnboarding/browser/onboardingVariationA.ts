@@ -10,6 +10,7 @@ import { isCancellationError } from '../../../../base/common/errors.js';
 import { StopWatch } from '../../../../base/common/stopwatch.js';
 import { URI } from '../../../../base/common/uri.js';
 import { isWindows, isMacintosh, isLinux } from '../../../../base/common/platform.js';
+import { assertDefined } from '../../../../base/common/types.js';
 import { ILayoutService } from '../../../../platform/layout/browser/layoutService.js';
 import { KeyCode } from '../../../../base/common/keyCodes.js';
 import { StandardKeyboardEvent } from '../../../../base/browser/keyboardEvent.js';
@@ -70,14 +71,8 @@ type OnboardingActionEvent = {
 	argument: string | undefined;
 };
 
-const defaultChat = {
-	publicCodeMatchesUrl: product.defaultChatAgent?.publicCodeMatchesUrl ?? '',
-	provider: product.defaultChatAgent?.provider ?? { default: { id: 'github', name: 'GitHub' }, enterprise: { id: 'github-enterprise', name: 'GitHub Enterprise' }, apple: { id: '', name: '' }, google: { id: '', name: '' } },
-	manageSettingsUrl: product.defaultChatAgent?.manageSettingsUrl ?? '',
-	providerUriSetting: product.defaultChatAgent?.providerUriSetting ?? 'github-enterprise.uri',
-	termsStatementUrl: product.defaultChatAgent?.termsStatementUrl ?? '',
-	privacyStatementUrl: product.defaultChatAgent?.privacyStatementUrl ?? ''
-};
+assertDefined(product.defaultChatAgent, 'Onboarding requires a default chat agent product configuration.');
+const defaultChat = product.defaultChatAgent;
 
 /**
  * Variation A — Classic Wizard Modal
