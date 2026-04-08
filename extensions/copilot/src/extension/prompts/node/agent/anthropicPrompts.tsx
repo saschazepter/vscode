@@ -5,7 +5,7 @@
 
 import { BasePromptElementProps, PromptElement, PromptElementProps, PromptPiece, PromptSizing } from '@vscode/prompt-tsx';
 import type { LanguageModelToolInformation } from 'vscode';
-import { IConfigurationService } from '../../../../platform/configuration/common/configurationService';
+import { ConfigKey, IConfigurationService } from '../../../../platform/configuration/common/configurationService';
 import { isHiddenModelG } from '../../../../platform/endpoint/common/chatModelCapabilities';
 import { CUSTOM_TOOL_SEARCH_NAME, isAnthropicContextEditingEnabled, isAnthropicCustomToolSearchEnabled, isAnthropicToolSearchEnabled, TOOL_SEARCH_TOOL_NAME } from '../../../../platform/networking/common/anthropic';
 import { IToolDeferralService } from '../../../../platform/networking/common/toolDeferralService';
@@ -261,7 +261,18 @@ class Claude45DefaultPrompt extends PromptElement<DefaultAgentPromptProps> {
 				When working on multi-step tasks, combine independent read-only operations in parallel batches when appropriate. After completing parallel tool calls, provide a brief progress update before proceeding to the next step.<br />
 				For context gathering, parallelize discovery efficiently - launch varied queries together, read results, and deduplicate paths. Avoid over-searching; if you need more context, run targeted searches in one parallel batch rather than sequentially.<br />
 				Get enough context quickly to act, then proceed with implementation. Balance thorough understanding with forward momentum.<br />
-				{tools[ToolName.CoreManageTodoList] && <>
+				{this.configurationService.getExperimentBasedConfig(ConfigKey.Advanced.BackgroundProgressMonitorEnabled, this.experimentationService) ? <>
+					<br />
+					<Tag name='taskTracking'>
+						For complex, multi-step tasks, begin your first response with a numbered plan listing the key steps you will take. Format the plan as a numbered list at the start of your first text response, for example:<br />
+						1. Step one description<br />
+						2. Step two description<br />
+						3. Step three description<br />
+						<br />
+						Keep the plan concise (3-7 steps). Do NOT use a separate tool call for the plan — include it directly in your response text. After stating the plan, proceed immediately with the first tool calls. Progress is tracked automatically.<br />
+						Skip the plan for simple, single-step operations.<br />
+					</Tag>
+				</> : tools[ToolName.CoreManageTodoList] && <>
 					<br />
 					<Tag name='taskTracking'>
 						Utilize the {ToolName.CoreManageTodoList} tool extensively to organize work and provide visibility into your progress. This is essential for planning and ensures important steps aren't forgotten.<br />
@@ -458,7 +469,12 @@ class Claude46OptimizedBasePrompt extends PromptElement<DefaultAgentPromptProps>
 				- Don't create helpers or abstractions for one-time operations<br />
 			</Tag>
 			{this.renderParallelizationStrategy()}
-			{tools[ToolName.CoreManageTodoList] && <>
+			{this.configurationService.getExperimentBasedConfig(ConfigKey.Advanced.BackgroundProgressMonitorEnabled, this.experimentationService) ? <>
+				<Tag name='taskTracking'>
+					For complex, multi-step tasks, begin your first response with a numbered plan (3-7 steps). Format as a numbered list in your response text. Do NOT use a separate tool for the plan. After stating the plan, proceed immediately with tool calls. Progress is tracked automatically.<br />
+					Skip the plan for simple, single-step operations.<br />
+				</Tag>
+			</> : tools[ToolName.CoreManageTodoList] && <>
 				<Tag name='taskTracking'>
 					Use the {ToolName.CoreManageTodoList} tool when working on multi-step tasks that benefit from tracking. Update task status consistently: mark in-progress when starting, completed immediately after finishing. Skip task tracking for simple, single-step operations.<br />
 				</Tag>

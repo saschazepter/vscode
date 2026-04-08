@@ -387,6 +387,11 @@ export class DefaultIntentRequestHandler {
 			}
 
 			const result = await loop.run(this.stream, this.token);
+
+			// Notify the invocation that the loop is done so it can finalize
+			// background work (e.g. the background progress monitor).
+			intentInvocation.onToolCallingComplete?.(result.toolCallRounds);
+
 			if (!result.round.toolCalls.length || result.response.type !== ChatFetchResponseType.Success) {
 				loop.telemetry.sendToolCallingTelemetry(result.toolCallRounds, result.availableTools, this.token.isCancellationRequested ? 'cancelled' : result.response.type);
 			}

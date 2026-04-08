@@ -31,6 +31,7 @@ import { IWorkspaceService } from '../../../platform/workspace/common/workspaceS
 
 import { isCancellationError } from '../../../util/vs/base/common/errors';
 import { Iterable } from '../../../util/vs/base/common/iterator';
+import { CancellationToken } from '../../../util/vs/base/common/cancellation';
 import { IInstantiationService, ServicesAccessor } from '../../../util/vs/platform/instantiation/common/instantiation';
 
 import { ChatResponseProgressPart2 } from '../../../vscodeTypes';
@@ -38,7 +39,7 @@ import { ICommandService } from '../../commands/node/commandService';
 import { Intent } from '../../common/constants';
 import { ChatVariablesCollection } from '../../prompt/common/chatVariablesCollection';
 import { Conversation, normalizeSummariesOnRounds, RenderedUserMessageMetadata, TurnStatus } from '../../prompt/common/conversation';
-import { IBuildPromptContext } from '../../prompt/common/intents';
+import { IBuildPromptContext, IToolCallRound } from '../../prompt/common/intents';
 import { getRequestedToolCallIterationLimit, IContinueOnErrorConfirmation } from '../../prompt/common/specialRequestTypes';
 import { ChatTelemetryBuilder } from '../../prompt/node/chatParticipantTelemetry';
 import { IDefaultIntentRequestHandlerOptions } from '../../prompt/node/defaultIntentRequestHandler';
@@ -46,6 +47,7 @@ import { IDocumentContext } from '../../prompt/node/documentContext';
 import { IBuildPromptResult, IIntent, IIntentInvocation } from '../../prompt/node/intents';
 import { AgentPrompt, AgentPromptProps } from '../../prompts/node/agent/agentPrompt';
 import { BackgroundSummarizationState, BackgroundSummarizer, IBackgroundSummarizationResult } from '../../prompts/node/agent/backgroundSummarizer';
+import { BackgroundProgressMonitor, parsePlanFromResponse, SetTodosFn } from '../../prompts/node/agent/backgroundProgressMonitor';
 import { AgentPromptCustomizations, PromptRegistry } from '../../prompts/node/agent/promptRegistry';
 import { SummarizedConversationHistory, SummarizedConversationHistoryMetadata, SummarizedConversationHistoryPropsBuilder } from '../../prompts/node/agent/summarizedConversationHistory';
 import { PromptRenderer } from '../../prompts/node/base/promptRenderer';
@@ -122,6 +124,12 @@ export const getAgentTools = async (accessor: ServicesAccessor, request: vscode.
 		allowTools[ToolName.CoreManageTodoList] = false;
 	}
 
+	// Disable the todo tool when the background progress monitor is enabled —
+	// progress is inferred from tool call rounds instead.
+	if (configurationService.getExperimentBasedConfig(ConfigKey.Advanced.BackgroundProgressMonitorEnabled, experimentationService)) {
+		allowTools[ToolName.CoreManageTodoList] = false;
+	}
+
 	// Enable task_complete in autopilot mode so the model can signal task completion.
 	// The tool is registered in core as a built-in but needs explicit opt-in here.
 	allowTools['task_complete'] = request.permissionLevel === 'autopilot';
@@ -178,6 +186,7 @@ export class AgentIntent extends EditCodeIntent {
 	override readonly id = AgentIntent.ID;
 
 	private readonly _backgroundSummarizers = new Map<string, BackgroundSummarizer>();
+	private readonly _backgroundProgressMonitors = new Map<string, BackgroundProgressMonitor>();
 
 	constructor(
 		@IInstantiationService instantiationService: IInstantiationService,
@@ -196,6 +205,11 @@ export class AgentIntent extends EditCodeIntent {
 				summarizer.cancel();
 				this._backgroundSummarizers.delete(sessionId);
 			}
+			const monitor = this._backgroundProgressMonitors.get(sessionId);
+			if (monitor) {
+				monitor.stop();
+				this._backgroundProgressMonitors.delete(sessionId);
+			}
 		});
 	}
 
@@ -206,6 +220,20 @@ export class AgentIntent extends EditCodeIntent {
 			this._backgroundSummarizers.set(sessionId, summarizer);
 		}
 		return summarizer;
+	}
+
+	getOrCreateBackgroundProgressMonitor(
+		sessionId: string,
+		endpointProvider: IEndpointProvider,
+		logService: ILogService,
+		setTodos: SetTodosFn,
+	): BackgroundProgressMonitor {
+		let monitor = this._backgroundProgressMonitors.get(sessionId);
+		if (!monitor) {
+			monitor = new BackgroundProgressMonitor(endpointProvider, logService, setTodos);
+			this._backgroundProgressMonitors.set(sessionId, monitor);
+		}
+		return monitor;
 	}
 
 	protected override getIntentHandlerOptions(request: vscode.ChatRequest): IDefaultIntentRequestHandlerOptions | undefined {
@@ -356,6 +384,8 @@ export class AgentIntentInvocation extends EditCodeIntentInvocation implements I
 
 	private _lastRenderTokenCount: number = 0;
 
+	private _backgroundProgressMonitor: BackgroundProgressMonitor | undefined;
+
 	constructor(
 		intent: IIntent,
 		location: ChatLocation,
@@ -366,7 +396,7 @@ export class AgentIntentInvocation extends EditCodeIntentInvocation implements I
 		@ICodeMapperService codeMapperService: ICodeMapperService,
 		@IEnvService envService: IEnvService,
 		@IPromptPathRepresentationService promptPathRepresentationService: IPromptPathRepresentationService,
-		@IEndpointProvider endpointProvider: IEndpointProvider,
+		@IEndpointProvider private readonly _agentEndpointProvider: IEndpointProvider,
 		@IWorkspaceService workspaceService: IWorkspaceService,
 		@IToolsService toolsService: IToolsService,
 		@IConfigurationService configurationService: IConfigurationService,
@@ -379,11 +409,25 @@ export class AgentIntentInvocation extends EditCodeIntentInvocation implements I
 		@IAutomodeService private readonly automodeService: IAutomodeService,
 		@IOTelService override readonly otelService: IOTelService,
 	) {
-		super(intent, location, endpoint, request, intentOptions, instantiationService, codeMapperService, envService, promptPathRepresentationService, endpointProvider, workspaceService, toolsService, configurationService, editLogService, commandService, telemetryService, notebookService, otelService);
+		super(intent, location, endpoint, request, intentOptions, instantiationService, codeMapperService, envService, promptPathRepresentationService, _agentEndpointProvider, workspaceService, toolsService, configurationService, editLogService, commandService, telemetryService, notebookService, otelService);
 	}
 
 	public override getAvailableTools(): Promise<vscode.LanguageModelToolInformation[]> {
 		return this.instantiationService.invokeFunction(getAgentTools, this.request);
+	}
+
+	/**
+	 * Called after the tool-calling loop finishes. Feeds the final rounds to
+	 * the background progress monitor and marks all steps as completed.
+	 */
+	onToolCallingComplete(toolCallRounds: IToolCallRound[]): void {
+		const monitor = this._backgroundProgressMonitor;
+		if (monitor?.isMonitoring) {
+			// Feed any remaining rounds so the last check covers all work
+			monitor.feedRounds(toolCallRounds);
+			// Mark everything completed
+			monitor.complete();
+		}
 	}
 
 	override async buildPrompt(
@@ -433,6 +477,30 @@ export class AgentIntentInvocation extends EditCodeIntentInvocation implements I
 		const endpoint = toolTokens > 0 ? this.endpoint.cloneWithTokenOverride(safeBudget) : this.endpoint;
 
 		this.logService.debug(`AgentIntent: rendering with budget=${safeBudget} (baseBudget: ${baseBudget}, toolTokens: ${toolTokens}, totalTools: ${tools?.length ?? 0}, toolSearchEnabled: ${toolSearchEnabled}), summarizationEnabled=${summarizationEnabled}`);
+
+		// ── Background progress monitor ──────────────────────────────────
+		// When enabled, parse the plan from the first response and track
+		// progress via a cheap background LLM call instead of the todo tool.
+		const bgProgressEnabled = this.configurationService.getExperimentBasedConfig(ConfigKey.Advanced.BackgroundProgressMonitorEnabled, this.expService);
+		if (bgProgressEnabled && promptContext.toolCallRounds && promptContext.toolCallRounds.length > 0) {
+			const monitor = this._backgroundProgressMonitor ??= this._getOrCreateBackgroundProgressMonitor(promptContext.conversation?.sessionId);
+			if (monitor && !monitor.isMonitoring) {
+				// Scan all rounds for a plan — the model may do exploratory
+				// tool calls before stating its plan in a later round.
+				for (const round of promptContext.toolCallRounds) {
+					const responseText = typeof round.response === 'string' ? round.response : '';
+					const plan = parsePlanFromResponse(responseText);
+					if (plan) {
+						monitor.start(plan, token);
+						break;
+					}
+				}
+			}
+			if (monitor?.isMonitoring) {
+				monitor.feedRounds(promptContext.toolCallRounds);
+			}
+		}
+
 		let result: RenderPromptResult;
 		const props: AgentPromptProps = {
 			endpoint,
@@ -901,6 +969,28 @@ export class AgentIntentInvocation extends EditCodeIntentInvocation implements I
 			return undefined;
 		}
 		return this.intent.getOrCreateBackgroundSummarizer(sessionId, this.endpoint.modelMaxPromptTokens);
+	}
+
+	/**
+	 * Returns the `BackgroundProgressMonitor` for this session, or `undefined`
+	 * if the intent is not an `AgentIntent`.
+	 */
+	private _getOrCreateBackgroundProgressMonitor(sessionId: string | undefined): BackgroundProgressMonitor | undefined {
+		if (!sessionId || !(this.intent instanceof AgentIntent)) {
+			return undefined;
+		}
+		const setTodos: SetTodosFn = (todos) => {
+			const toolInvocationToken = this.request.toolInvocationToken;
+			const chatSessionResource = this.request.sessionResource?.toString();
+			const promise = this.toolsService.invokeTool(ToolName.CoreManageTodoList, {
+				input: { todoList: todos, chatSessionResource },
+				toolInvocationToken,
+			} as unknown as vscode.LanguageModelToolInvocationOptions<object>, CancellationToken.None);
+			Promise.resolve(promise).catch((err: Error) => {
+				this.logService.error(err, '[BackgroundProgressMonitor] Failed to set todos via tool invocation');
+			});
+		};
+		return this.intent.getOrCreateBackgroundProgressMonitor(sessionId, this._agentEndpointProvider, this.logService, setTodos);
 	}
 
 	/**

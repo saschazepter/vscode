@@ -98,7 +98,7 @@ export class ManageTodoListTool extends Disposable implements IToolImpl {
 	async invoke(invocation: IToolInvocation, _countTokens: any, _progress: any, _token: CancellationToken): Promise<IToolResult> {
 		const args = invocation.parameters as IManageTodoListToolInputParams;
 		let chatSessionResource = invocation.context?.sessionResource;
-		if (!chatSessionResource && args.operation === 'read' && args.chatSessionResource) {
+		if (!chatSessionResource && args.chatSessionResource) {
 			try {
 				chatSessionResource = URI.parse(args.chatSessionResource);
 			} catch (error) {

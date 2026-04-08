@@ -670,6 +670,9 @@ export namespace ConfigKey {
 		export const BatchReplaceStringDescriptions = defineSetting<boolean>('chat.edits.batchReplaceStringDescriptions', ConfigType.ExperimentBased, false);
 		export const AgentOmitFileAttachmentContents = defineSetting<boolean>('chat.agent.omitFileAttachmentContents', ConfigType.ExperimentBased, false);
 
+		/** When enabled, uses a background progress monitor to infer todo progress from tool call rounds instead of the todo tool. */
+		export const BackgroundProgressMonitorEnabled = defineSetting<boolean>('chat.backgroundProgressMonitor.enabled', ConfigType.ExperimentBased, false);
+
 		/**
 		 * Settings for switch between old tools and new skills
 		 */

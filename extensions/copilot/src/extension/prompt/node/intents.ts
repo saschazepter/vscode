@@ -18,7 +18,7 @@ import { StreamPipe, forEachStreamed } from '../../prompts/node/inline/utils/str
 import { ContributedToolName } from '../../tools/common/toolNames';
 import { ChatVariablesCollection } from '../common/chatVariablesCollection';
 import { Conversation, PromptMetadata, Turn } from '../common/conversation';
-import { IBuildPromptContext } from '../common/intents';
+import { IBuildPromptContext, IToolCallRound } from '../common/intents';
 import { ChatTelemetryBuilder } from './chatParticipantTelemetry';
 import { IDocumentContext } from './documentContext';
 import { AsyncReader, ClassifiedTextPiece, IStreamingEditsStrategy, IStreamingTextPieceClassifier, StreamingEditsResult, TextPieceKind, streamLines } from './streamingEdits';
@@ -208,6 +208,13 @@ export interface IIntentInvocation extends Partial<IResponseProcessor> {
 	modifyErrorDetails?(errorDetails: vscode.ChatErrorDetails, response: ChatResponse): vscode.ChatErrorDetails;
 
 	getAdditionalVariables?(context: IBuildPromptContext): ChatVariablesCollection | undefined;
+
+	/**
+	 * Called after the tool-calling loop finishes with the complete set of
+	 * rounds. Implementations can use this to finalize background work such
+	 * as the background progress monitor.
+	 */
+	onToolCallingComplete?(toolCallRounds: IToolCallRound[]): void;
 }
 
 export class NullIntentInvocation implements IIntentInvocation {
