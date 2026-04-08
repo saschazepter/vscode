@@ -123,6 +123,11 @@ export class AICustomizationWelcomePage extends Disposable {
 			}));
 		}
 
+		// Centered separator
+		const divider = DOM.append(welcomeInner, $('.welcome-section-divider'));
+		const dividerLabel = DOM.append(divider, $('span.welcome-section-divider-label'));
+		dividerLabel.textContent = localize('orConfigureIndividually', "or configure individually");
+
 		this.cardsContainer = DOM.append(welcomeInner, $('.welcome-cards'));
 	}
 
