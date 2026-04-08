@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type * as vscode from 'vscode';
 import { IEndpointProvider } from '../../../../../platform/endpoint/common/endpointProvider';
 import { IChatEndpoint } from '../../../../../platform/networking/common/networking';
-import { Emitter, Event } from '../../../../../util/vs/base/common/event';
+import { Emitter } from '../../../../../util/vs/base/common/event';
 import { DisposableStore } from '../../../../../util/vs/base/common/lifecycle';
 import { IInstantiationService } from '../../../../../util/vs/platform/instantiation/common/instantiation';
 import { createExtensionUnitTestingServices } from '../../../../test/node/services';
@@ -53,31 +53,6 @@ function createMockEndpoint(overrides: {
 }
 
 /**
- * Mock endpoint provider for testing ClaudeCodeModels
- */
-class MockEndpointProvider implements IEndpointProvider {
-	declare readonly _serviceBrand: undefined;
-	readonly onDidModelsRefresh = Event.None;
-
-	constructor(private readonly endpoints: IChatEndpoint[]) { }
-
-	async getAllChatEndpoints(): Promise<IChatEndpoint[]> {
-		return this.endpoints;
-	}
-
-	// Not used in ClaudeCodeModels tests
-	getChatEndpoint(): Promise<IChatEndpoint> {
-		throw new Error('Not implemented');
-	}
-	getEmbeddingsEndpoint(): Promise<any> {
-		throw new Error('Not implemented');
-	}
-	getAllCompletionModels(): Promise<any[]> {
-		throw new Error('Not implemented');
-	}
-}
-
-/**
  * Mock endpoint provider that supports firing onDidModelsRefresh and updating endpoints.
  */
 class RefreshableMockEndpointProvider implements IEndpointProvider {
@@ -118,164 +93,6 @@ describe('ClaudeCodeModels', () => {
 
 	afterEach(() => {
 		store.clear();
-	});
-
-	function createServiceWithEndpoints(endpoints: IChatEndpoint[]): ClaudeCodeModels {
-		const serviceCollection = store.add(createExtensionUnitTestingServices());
-		serviceCollection.set(IEndpointProvider, new MockEndpointProvider(endpoints));
-		const instantiationService = serviceCollection.createTestingAccessor().get(IInstantiationService);
-		return instantiationService.createInstance(ClaudeCodeModels);
-	}
-
-	describe('_parseFamilyString', () => {
-		it('parses family with decimal version', async () => {
-			const service = createServiceWithEndpoints([
-				createMockEndpoint({ model: 'claude-opus-4.5-model', name: 'Claude Opus 4.5', family: 'claude-opus-4.5' }),
-			]);
-
-			const models = await service.getModels();
-
-			expect(models).toHaveLength(1);
-			expect(models[0].id).toBe('claude-opus-4.5-model');
-		});
-
-		it('parses family with two-digit version (41 -> 4.1)', async () => {
-			const service = createServiceWithEndpoints([
-				createMockEndpoint({ model: 'claude-opus-41-model', name: 'Claude Opus 4.1', family: 'claude-opus-41' }),
-			]);
-
-			const models = await service.getModels();
-
-			expect(models).toHaveLength(1);
-			expect(models[0].id).toBe('claude-opus-41-model');
-		});
-
-		it('parses family with single-digit version', async () => {
-			const service = createServiceWithEndpoints([
-				createMockEndpoint({ model: 'claude-haiku-4-model', name: 'Claude Haiku 4', family: 'claude-haiku-4' }),
-			]);
-
-			const models = await service.getModels();
-
-			expect(models).toHaveLength(1);
-			expect(models[0].id).toBe('claude-haiku-4-model');
-		});
-	});
-
-	describe('filtering', () => {
-		it('returns all Claude models with Messages API support', async () => {
-			const service = createServiceWithEndpoints([
-				createMockEndpoint({ model: 'claude-opus-4.1-model', name: 'Claude Opus 4.1', family: 'claude-opus-41' }),
-				createMockEndpoint({ model: 'claude-opus-4.5-model', name: 'Claude Opus 4.5', family: 'claude-opus-4.5' }),
-				createMockEndpoint({ model: 'claude-sonnet-35-model', name: 'Claude Sonnet 3.5', family: 'claude-sonnet-35' }),
-				createMockEndpoint({ model: 'claude-sonnet-4-model', name: 'Claude Sonnet 4', family: 'claude-sonnet-4' }),
-			]);
-
-			const models = await service.getModels();
-
-			expect(models).toHaveLength(4);
-
-			const modelIds = models.map(m => m.id).sort();
-			expect(modelIds).toEqual(['claude-opus-4.1-model', 'claude-opus-4.5-model', 'claude-sonnet-35-model', 'claude-sonnet-4-model']);
-		});
-
-		it('handles multiple families correctly', async () => {
-			const service = createServiceWithEndpoints([
-				createMockEndpoint({ model: 'claude-opus-4.5-model', name: 'Claude Opus 4.5', family: 'claude-opus-4.5' }),
-				createMockEndpoint({ model: 'claude-sonnet-4-model', name: 'Claude Sonnet 4', family: 'claude-sonnet-4' }),
-				createMockEndpoint({ model: 'claude-haiku-4.5-model', name: 'Claude Haiku 4.5', family: 'claude-haiku-4.5' }),
-			]);
-
-			const models = await service.getModels();
-
-			expect(models).toHaveLength(3);
-
-			const modelIds = models.map(m => m.id).sort();
-			expect(modelIds).toEqual([
-				'claude-haiku-4.5-model',
-				'claude-opus-4.5-model',
-				'claude-sonnet-4-model',
-			]);
-		});
-
-		it('filters out non-Claude models', async () => {
-			const service = createServiceWithEndpoints([
-				createMockEndpoint({ model: 'claude-sonnet-4-model', name: 'Claude Sonnet 4', family: 'claude-sonnet-4' }),
-				createMockEndpoint({ model: 'gpt-4o', name: 'GPT-4o', family: 'gpt-4' }),
-			]);
-
-			const models = await service.getModels();
-
-			expect(models).toHaveLength(1);
-			expect(models[0].id).toBe('claude-sonnet-4-model');
-		});
-
-		it('includes unparseable family as-is', async () => {
-			const service = createServiceWithEndpoints([
-				createMockEndpoint({ model: 'claude-custom', name: 'Claude Custom', family: 'claude-custom' }),
-				createMockEndpoint({ model: 'claude-sonnet-4-model', name: 'Claude Sonnet 4', family: 'claude-sonnet-4' }),
-			]);
-
-			const models = await service.getModels();
-
-			expect(models).toHaveLength(2);
-
-			const modelIds = models.map(m => m.id).sort();
-			expect(modelIds).toEqual(['claude-custom', 'claude-sonnet-4-model']);
-		});
-	});
-
-	describe('no models available', () => {
-		it('returns empty array when no Claude models with Messages API found', async () => {
-			const service = createServiceWithEndpoints([
-				createMockEndpoint({ model: 'gpt-4o', name: 'GPT-4o', family: 'gpt-4' }),
-				createMockEndpoint({ model: 'gpt-4o-mini', name: 'GPT-4o Mini', family: 'gpt-4-mini' }),
-			]);
-
-			const models = await service.getModels();
-
-			expect(models).toHaveLength(0);
-		});
-
-		it('does filter by showInModelPicker', async () => {
-			const service = createServiceWithEndpoints([
-				createMockEndpoint({ model: 'claude-sonnet-4-model', name: 'Claude Sonnet 4', family: 'claude-sonnet-4', showInModelPicker: true }),
-				createMockEndpoint({ model: 'claude-hidden', name: 'Claude Hidden', family: 'claude-hidden-1', showInModelPicker: false }),
-			]);
-
-			const models = await service.getModels();
-
-			expect(models).toHaveLength(1);
-			const modelIds = models.map(m => m.id).sort();
-			expect(modelIds).toEqual(['claude-sonnet-4-model']);
-		});
-	});
-
-	describe('multiplier', () => {
-		it('returns multiplier from endpoint', async () => {
-			const service = createServiceWithEndpoints([
-				createMockEndpoint({ model: 'claude-opus-4.5-model', name: 'Claude Opus 4.5', family: 'claude-opus-4.5', multiplier: 5 }),
-				createMockEndpoint({ model: 'claude-sonnet-4-model', name: 'Claude Sonnet 4', family: 'claude-sonnet-4', multiplier: 1 }),
-			]);
-
-			const models = await service.getModels();
-
-			const opusModel = models.find(m => m.id === 'claude-opus-4.5-model');
-			const sonnetModel = models.find(m => m.id === 'claude-sonnet-4-model');
-
-			expect(opusModel?.multiplier).toBe(5);
-			expect(sonnetModel?.multiplier).toBe(1);
-		});
-
-		it('returns undefined multiplier when not set', async () => {
-			const service = createServiceWithEndpoints([
-				createMockEndpoint({ model: 'claude-sonnet-4-model', name: 'Claude Sonnet 4', family: 'claude-sonnet-4' }),
-			]);
-
-			const models = await service.getModels();
-
-			expect(models[0].multiplier).toBeUndefined();
-		});
 	});
 
 	describe('registerLanguageModelChatProvider', () => {
@@ -371,8 +188,8 @@ describe('ClaudeCodeModels', () => {
 			const service = store.add(instantiationService.createInstance(ClaudeCodeModels));
 
 			// Initial fetch
-			const modelsBefore = await service.getModels();
-			expect(modelsBefore).toHaveLength(1);
+			const endpointsBefore = await service.getEndpoints();
+			expect(endpointsBefore).toHaveLength(1);
 
 			// Update endpoints and fire refresh
 			endpointProvider.setEndpoints([
@@ -382,8 +199,8 @@ describe('ClaudeCodeModels', () => {
 			endpointProvider.fireRefresh();
 
 			// After refresh, stale cache should be cleared
-			const modelsAfter = await service.getModels();
-			expect(modelsAfter).toHaveLength(2);
+			const endpointsAfter = await service.getEndpoints();
+			expect(endpointsAfter).toHaveLength(2);
 		});
 
 		it('returns cached models when no refresh has occurred', async () => {
@@ -402,8 +219,8 @@ describe('ClaudeCodeModels', () => {
 			const instantiationService = serviceCollection.createTestingAccessor().get(IInstantiationService);
 			const service = store.add(instantiationService.createInstance(ClaudeCodeModels));
 
-			await service.getModels();
-			await service.getModels();
+			await service.getEndpoints();
+			await service.getEndpoints();
 
 			// Should only have fetched once due to caching
 			expect(fetchCount).toBe(1);

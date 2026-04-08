@@ -11,15 +11,8 @@ import { createServiceIdentifier } from '../../../../util/common/services';
 import { Emitter } from '../../../../util/vs/base/common/event';
 import { Disposable } from '../../../../util/vs/base/common/lifecycle';
 
-export interface ClaudeCodeModelInfo {
-	id: string;
-	name: string;
-	multiplier?: number;
-}
-
 export interface IClaudeCodeModels {
 	readonly _serviceBrand: undefined;
-	getModels(): Promise<ClaudeCodeModelInfo[]>;
 	/**
 	 * Gets the filtered list of Claude chat endpoints that support the Messages API.
 	 */
@@ -94,14 +87,9 @@ export class ClaudeCodeModels extends Disposable implements IClaudeCodeModels {
 					toolCalling: endpoint.supportsToolCalls,
 					editTools: endpoint.supportedEditTools ? [...endpoint.supportedEditTools] : undefined,
 				},
-				targetChatSessionType: 'claude-code',
+				targetChatSessionType: 'claude-code'
 			};
 		});
-	}
-
-	public async getModels(): Promise<ClaudeCodeModelInfo[]> {
-		const endpoints = await this._getEndpoints();
-		return endpoints.map(e => ({ id: e.model, name: e.name, multiplier: e.multiplier }));
 	}
 
 	public async getEndpoints(): Promise<IChatEndpoint[]> {
