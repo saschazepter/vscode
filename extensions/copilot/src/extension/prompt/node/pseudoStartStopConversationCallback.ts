@@ -47,21 +47,32 @@ export class PseudoStopStartResponseProcessor implements IResponseProcessor {
 	}
 
 	async doProcessResponse(responseStream: AsyncIterable<IResponsePart>, progress: ChatResponseStream, token: CancellationToken): Promise<void> {
-		for await (const { delta } of responseStream) {
-			if (token.isCancellationRequested) {
-				return;
+		try {
+			for await (const { delta } of responseStream) {
+				if (token.isCancellationRequested) {
+					return;
+				}
+				this.applyDelta(delta, progress);
 			}
-			this.applyDelta(delta, progress);
+		} finally {
+			if (token.isCancellationRequested) {
+				this._clearPendingToolStreamUpdates();
+			} else {
+				this._flushPendingToolStreamUpdates(progress);
+			}
 		}
-		this._flushPendingToolStreamUpdates(progress);
+	}
+
+	private _clearPendingToolStreamUpdates(): void {
+		this._pendingToolStreamUpdates.clear();
+		this._lastToolStreamUpdate.clear();
 	}
 
 	private _flushPendingToolStreamUpdates(progress: ChatResponseStream): void {
 		for (const update of this._pendingToolStreamUpdates.values()) {
 			progress.updateToolInvocation(update.id, { partialInput: tryParsePartialToolInput(update.arguments) });
 		}
-		this._pendingToolStreamUpdates.clear();
-		this._lastToolStreamUpdate.clear();
+		this._clearPendingToolStreamUpdates();
 	}
 
 	protected applyDeltaToProgress(delta: IResponseDelta, progress: ChatResponseStream) {
@@ -198,6 +209,7 @@ export class PseudoStopStartResponseProcessor implements IResponseProcessor {
 			this.currentStartStop = undefined;
 			this.nonReportedDeltas = [];
 			this.thinkingActive = false;
+			this._clearPendingToolStreamUpdates();
 			if (delta.retryReason === 'network_error' || delta.retryReason === 'server_error') {
 				progress.clearToPreviousToolInvocation(ChatResponseClearToPreviousToolInvocationReason.NoReason);
 			} else if (delta.retryReason === FilterReason.Copyright) {
