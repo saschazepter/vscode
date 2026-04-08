@@ -716,9 +716,9 @@ suite('CopilotChatSessionsProvider', () => {
 			await provider.deleteSession(sessionId);
 			assert.strictEqual(provider.getSessions().length, 0, 'session should be removed after deleteSession');
 
-			// Clean up in-flight request so _sendFirstChat resolves quickly
+			// Cancellation after delete should resolve cleanly
 			cancelRequest();
-			await sendPromise.catch(() => { /* expected to reject */ });
+			await assert.doesNotReject(sendPromise);
 		});
 
 		test('archiveSession archives a temp session that is awaiting commit', async () => {
@@ -737,8 +737,9 @@ suite('CopilotChatSessionsProvider', () => {
 			assert.strictEqual(provider.getSessions().length, 1, 'session should still be in the list after archiveSession');
 			assert.strictEqual(provider.getSessions()[0].isArchived.get(), true, 'session should be archived');
 
+			// Cancellation after archive should resolve cleanly
 			cancelRequest();
-			await sendPromise.catch(() => { /* expected to reject */ });
+			await assert.doesNotReject(sendPromise);
 
 			// Clean up to avoid leaked disposable
 			await provider.deleteSession(sessionId);
