@@ -257,8 +257,12 @@ export class LlmNESTelemetryBuilder extends Disposable {
 		if (this._doc && collectEnhancedData) {
 			const fullDoc = this._doc.value.get();
 			const maxDocBytes = 84 * 1024;
+			// Structuring a new string via concatenation forces V8 to create an
+			// independent copy instead of a sliced string that retains the
+			// entire parent string in memory.
+			const truncatedDoc = fullDoc.value.length > maxDocBytes ? new StringText((' ' + fullDoc.value.substring(0, maxDocBytes)).slice(1)) : fullDoc;
 			this.editCollectingInfo = {
-				originalDoc: fullDoc.value.length > maxDocBytes ? new StringText(fullDoc.value.substring(0, maxDocBytes)) : fullDoc,
+				originalDoc: truncatedDoc,
 				originalDocLength: fullDoc.value.length,
 				originalSelection: this._doc.selection.get(),
 				originalSelectionLine: this._doc.primarySelectionLine.get(),
