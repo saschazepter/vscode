@@ -440,6 +440,8 @@ export class BrowserViewModel extends Disposable implements IBrowserViewModel {
 			this._title = title || '';
 			this._favicon = favicon;
 			this._loading = true;
+			this._error = undefined;
+			this._certificateError = undefined;
 
 			void this.loadURL(url); // Non-blocking
 		}
