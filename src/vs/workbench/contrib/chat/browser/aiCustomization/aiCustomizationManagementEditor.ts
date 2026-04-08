@@ -776,6 +776,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 				},
 			},
 			this.commandService,
+			this.workspaceService,
 		));
 		this.welcomePage.rebuildCards(new Set(this.sections.map(s => s.id)));
 	}

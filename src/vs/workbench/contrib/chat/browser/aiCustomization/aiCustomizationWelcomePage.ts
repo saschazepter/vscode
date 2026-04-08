@@ -5,17 +5,15 @@
 
 import './media/aiCustomizationWelcome.css';
 import * as DOM from '../../../../../base/browser/dom.js';
-import { Disposable } from '../../../../../base/common/lifecycle.js';
+import { DisposableStore, Disposable } from '../../../../../base/common/lifecycle.js';
 import { localize } from '../../../../../nls.js';
 import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
-import { InputBox } from '../../../../../base/browser/ui/inputbox/inputBox.js';
-import { defaultInputBoxStyles } from '../../../../../platform/theme/browser/defaultStyles.js';
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
 import { AICustomizationManagementSection } from './aiCustomizationManagement.js';
 import { agentIcon, instructionsIcon, skillIcon, hookIcon, pluginIcon } from './aiCustomizationIcons.js';
 import { PromptsType } from '../../common/promptSyntax/promptTypes.js';
-import { IWelcomePageFeatures } from '../../common/aiCustomizationWorkspaceService.js';
+import { IAICustomizationWorkspaceService, IWelcomePageFeatures } from '../../common/aiCustomizationWorkspaceService.js';
 
 const $ = DOM.$;
 
@@ -25,8 +23,6 @@ interface ICategoryDescription {
 	readonly icon: ThemeIcon;
 	readonly description: string;
 	readonly promptType?: PromptsType;
-	/** Example prompts shown as chips that prepopulate chat. */
-	readonly chips?: readonly { readonly label: string; readonly prompt: string }[];
 }
 
 export interface IWelcomePageCallbacks {
@@ -36,17 +32,16 @@ export interface IWelcomePageCallbacks {
 
 /**
  * Renders the welcome page for the Chat Customizations editor.
- *
- * Layout:
- *   "Analyze Your Project and Configure AI" header + description
- *   Input box (describe your project → opens /agent-customization in chat)
- *   2×3 grid of category cards with actionable chip examples
+ * This is the original welcome page layout: heading, subtitle,
+ * "Configure Your AI" banner, and a responsive card grid.
  */
 export class AICustomizationWelcomePage extends Disposable {
 
+	private readonly cardDisposables = this._register(new DisposableStore());
+
 	readonly container: HTMLElement;
-	private inputBox: InputBox | undefined;
-	private workflowSection: HTMLElement | undefined;
+	private cardsContainer: HTMLElement | undefined;
+	private gettingStartedButton: HTMLElement | undefined;
 
 	private readonly categoryDescriptions: ICategoryDescription[] = [
 		{
@@ -55,10 +50,6 @@ export class AICustomizationWelcomePage extends Disposable {
 			icon: agentIcon,
 			description: localize('agentsDesc', "Define custom agents with specialized personas, tool access, and instructions for specific tasks."),
 			promptType: PromptsType.agent,
-			chips: [
-				{ label: localize('agentChip.review', "/create-agent code review specialist"), prompt: 'Create a code review agent that checks for best practices and security issues' },
-				{ label: localize('agentChip.docs', "/create-agent documentation writer"), prompt: 'Create a documentation agent that writes and maintains project docs' },
-			],
 		},
 		{
 			id: AICustomizationManagementSection.Skills,
@@ -66,10 +57,6 @@ export class AICustomizationWelcomePage extends Disposable {
 			icon: skillIcon,
 			description: localize('skillsDesc', "Create reusable skill files that provide domain-specific knowledge and workflows."),
 			promptType: PromptsType.skill,
-			chips: [
-				{ label: localize('skillChip.arch', "/create-skill architecture patterns"), prompt: 'Create a skill that documents our architecture patterns and conventions' },
-				{ label: localize('skillChip.debug', "/create-skill debugging workflow"), prompt: 'Create a skill with step-by-step debugging workflows for common issues' },
-			],
 		},
 		{
 			id: AICustomizationManagementSection.Instructions,
@@ -77,10 +64,6 @@ export class AICustomizationWelcomePage extends Disposable {
 			icon: instructionsIcon,
 			description: localize('instructionsDesc', "Set always-on instructions that guide AI behavior across your workspace or user profile."),
 			promptType: PromptsType.instructions,
-			chips: [
-				{ label: localize('instrChip.style', "/create-instructions coding style"), prompt: 'Create instructions that enforce our coding style and naming conventions' },
-				{ label: localize('instrChip.security', "/create-instructions security guidelines"), prompt: 'Create instructions with security best practices for our stack' },
-			],
 		},
 		{
 			id: AICustomizationManagementSection.Hooks,
@@ -88,10 +71,6 @@ export class AICustomizationWelcomePage extends Disposable {
 			icon: hookIcon,
 			description: localize('hooksDesc', "Configure automated actions triggered by events like saving files or running tasks."),
 			promptType: PromptsType.hook,
-			chips: [
-				{ label: localize('hookChip.commit', "/create-hook generate commit messages"), prompt: 'Create a hook that generates commit messages from staged changes' },
-				{ label: localize('hookChip.lint', "/create-hook auto-fix lint on save"), prompt: 'Create a hook that automatically fixes lint errors when saving files' },
-			],
 		},
 		{
 			id: AICustomizationManagementSection.McpServers,
@@ -112,126 +91,110 @@ export class AICustomizationWelcomePage extends Disposable {
 		private readonly welcomePageFeatures: IWelcomePageFeatures | undefined,
 		private readonly callbacks: IWelcomePageCallbacks,
 		private readonly commandService: ICommandService,
+		private readonly workspaceService: IAICustomizationWorkspaceService,
 	) {
 		super();
 
 		this.container = DOM.append(parent, $('.welcome-content-container'));
 		const welcomeInner = DOM.append(this.container, $('.welcome-inner'));
 
-		const intro = DOM.append(welcomeInner, $('.welcome-intro'));
-		const introHeading = DOM.append(intro, $('h2.welcome-intro-heading'));
-		introHeading.textContent = localize('welcomeIntroHeading', "Chat Customizations");
-		const introDescription = DOM.append(intro, $('p.welcome-intro-description'));
-		introDescription.textContent = localize('welcomeIntroDescription', "Tailor how AI agents work in your projects. Configure workspace customizations for the entire team, or create personal ones that follow you across projects.");
+		const heading = DOM.append(welcomeInner, $('h2.welcome-heading'));
+		heading.textContent = localize('welcomeHeading', "Chat Customizations");
 
-		// Input box (gated on welcomePageFeatures)
+		const subtitle = DOM.append(welcomeInner, $('p.welcome-subtitle'));
+		subtitle.textContent = localize('welcomeSubtitle', "Tailor how AI agents work in your projects. Configure workspace customizations for the entire team, or create personal ones that follow you across projects.");
+
+		// Getting Started banner
 		if (this.welcomePageFeatures?.showGettingStartedBanner !== false) {
-			this.workflowSection = DOM.append(welcomeInner, $('.welcome-workflow-section'));
-
-			const workflowHeader = DOM.append(this.workflowSection, $('.welcome-workflow-header'));
-			const workflowIcon = DOM.append(workflowHeader, $('span.welcome-workflow-icon.codicon.codicon-sparkle'));
-			workflowIcon.setAttribute('aria-hidden', 'true');
-			const workflowTitle = DOM.append(workflowHeader, $('span.welcome-workflow-title'));
-			workflowTitle.textContent = localize('configureWorkflowTitle', "Analyze Your Project and Configure AI");
-
-			const workflowDesc = DOM.append(this.workflowSection, $('p.welcome-workflow-desc'));
-			workflowDesc.textContent = localize('configureWorkflowDesc', "Describe your project and coding patterns. Copilot can analyze your codebase, suggest the right AI customizations, and generate a starting point you can refine over time.");
-
-			const workflowInputRow = DOM.append(this.workflowSection, $('.welcome-workflow-input-row'));
-
-			this.inputBox = this._register(new InputBox(workflowInputRow, undefined, {
-				placeholder: localize('workflowInputPlaceholder', "Describe your project, e.g. A TypeScript monorepo using React, Node, and PostgreSQL..."),
-				ariaLabel: localize('workflowInputAriaLabel', "Describe your project and workflow"),
-				inputBoxStyles: defaultInputBoxStyles,
-			}));
-			this.inputBox.element.classList.add('welcome-workflow-input');
-
-			const submitBtn = DOM.append(workflowInputRow, $('button.welcome-workflow-submit'));
-			submitBtn.setAttribute('aria-label', localize('workflowSubmitAriaLabel', "Configure with AI"));
-			const submitIcon = DOM.append(submitBtn, $('span.codicon.codicon-arrow-right'));
-			submitIcon.setAttribute('aria-hidden', 'true');
-
-			const openChatWithPrompt = (prompt?: string) => {
+			const gettingStarted = DOM.append(welcomeInner, $('button.welcome-getting-started'));
+			this.gettingStartedButton = gettingStarted;
+			const gettingStartedIcon = DOM.append(gettingStarted, $('span.welcome-getting-started-icon.codicon.codicon-sparkle'));
+			gettingStartedIcon.setAttribute('aria-hidden', 'true');
+			const gettingStartedText = DOM.append(gettingStarted, $('.welcome-getting-started-text'));
+			const gettingStartedTitle = DOM.append(gettingStartedText, $('span.welcome-getting-started-title'));
+			gettingStartedTitle.textContent = localize('gettingStartedTitle', "Configure Your AI");
+			const gettingStartedDesc = DOM.append(gettingStartedText, $('span.welcome-getting-started-desc'));
+			gettingStartedDesc.textContent = localize('gettingStartedDesc', "Describe your project and coding patterns. Copilot will generate agents, skills, and instructions tailored to your workflow.");
+			const gettingStartedChevron = DOM.append(gettingStarted, $('span.welcome-getting-started-chevron.codicon.codicon-chevron-right'));
+			gettingStartedChevron.setAttribute('aria-hidden', 'true');
+			this._register(DOM.addDisposableListener(gettingStarted, 'click', () => {
 				this.callbacks.closeEditor();
-				const value = prompt ?? this.inputBox?.value?.trim();
-				const query = value ? `/agent-customization ${value}` : '/agent-customization ';
-				this.commandService.executeCommand('workbench.action.chat.open', { query, isPartialQuery: !value });
-			};
+				this.commandService.executeCommand('workbench.action.chat.open', { query: '/agent-customization ', isPartialQuery: true });
+			}));
+		}
 
-			this._register(DOM.addDisposableListener(submitBtn, 'click', () => openChatWithPrompt()));
-			this.inputBox.onDidChange(() => {
-				submitBtn.classList.toggle('has-value', !!this.inputBox?.value?.trim());
-			});
-			this._register(DOM.addDisposableListener(this.inputBox.inputElement, 'keydown', (e: KeyboardEvent) => {
-				if (e.key === 'Enter') {
-					e.preventDefault();
-					openChatWithPrompt();
-				}
+		this.cardsContainer = DOM.append(welcomeInner, $('.welcome-cards'));
+	}
+
+	/**
+	 * Rebuilds the card grid based on the currently visible sections.
+	 */
+	rebuildCards(visibleSectionIds: ReadonlySet<AICustomizationManagementSection>): void {
+		if (!this.cardsContainer) {
+			return;
+		}
+		this.cardDisposables.clear();
+		DOM.clearNode(this.cardsContainer);
+
+		for (const category of this.categoryDescriptions) {
+			if (!visibleSectionIds.has(category.id)) {
+				continue;
+			}
+
+			const card = DOM.append(this.cardsContainer, $('.welcome-card'));
+			card.setAttribute('tabindex', '0');
+			card.setAttribute('role', 'button');
+
+			const cardHeader = DOM.append(card, $('.welcome-card-header'));
+			const iconEl = DOM.append(cardHeader, $('.welcome-card-icon'));
+			iconEl.classList.add(...ThemeIcon.asClassNameArray(category.icon));
+			const labelEl = DOM.append(cardHeader, $('span.welcome-card-label'));
+			labelEl.textContent = category.label;
+
+			const descEl = DOM.append(card, $('p.welcome-card-description'));
+			descEl.textContent = category.description;
+
+			const cardFooter = DOM.append(card, $('.welcome-card-footer'));
+
+			// "Browse" button navigates to the section
+			const browseBtn = DOM.append(cardFooter, $('button.welcome-card-browse'));
+			browseBtn.textContent = localize('browse', "Browse");
+			this.cardDisposables.add(DOM.addDisposableListener(browseBtn, 'click', (e) => {
+				e.stopPropagation();
+				this.callbacks.selectSection(category.id);
 			}));
 
-			// Centered separator with text
-			const divider = DOM.append(this.workflowSection, $('.welcome-section-divider'));
-			const dividerLabel = DOM.append(divider, $('span.welcome-section-divider-label'));
-			dividerLabel.textContent = localize('orConfigureIndividually', "or configure individually");
-
-			// Full-width category list
-			const list = DOM.append(this.workflowSection, $('.welcome-category-list'));
-			for (const category of this.categoryDescriptions) {
-				const row = DOM.append(list, $('.welcome-category-item'));
-				row.setAttribute('tabindex', '0');
-				row.setAttribute('role', 'button');
-
-				const content = DOM.append(row, $('.welcome-category-item-content'));
-				const titleRow = DOM.append(content, $('.welcome-category-item-title-row'));
-				const iconEl = DOM.append(titleRow, $('span.welcome-category-item-icon'));
-				iconEl.classList.add(...ThemeIcon.asClassNameArray(category.icon));
-				const labelEl = DOM.append(titleRow, $('span.welcome-category-item-label'));
-				labelEl.textContent = category.label;
-				const descEl = DOM.append(content, $('p.welcome-category-item-desc'));
-				descEl.textContent = category.description;
-
-				if (category.chips) {
-					const chipsArea = DOM.append(content, $('div.welcome-category-item-commands'));
-					for (const chip of category.chips) {
-						const chipBtn = DOM.append(chipsArea, $('button.welcome-category-command'));
-						chipBtn.textContent = chip.label;
-						const prompt = chip.prompt;
-						this._register(DOM.addDisposableListener(chipBtn, 'click', (e) => {
-							e.stopPropagation();
-							openChatWithPrompt(prompt);
-						}));
-					}
-				}
-
-				this._register(DOM.addDisposableListener(row, 'click', () => {
-					this.callbacks.selectSection(category.id);
-				}));
-				this._register(DOM.addDisposableListener(row, 'keydown', (e) => {
-					if (e.key === 'Enter' || e.key === ' ') {
-						e.preventDefault();
-						this.callbacks.selectSection(category.id);
-					}
+			// "Generate with AI" button (only for prompt-based sections when enabled)
+			if (category.promptType && this.workspaceService.welcomePageFeatures?.showGenerateActions !== false) {
+				const generateBtn = DOM.append(cardFooter, $('button.welcome-card-generate'));
+				DOM.append(generateBtn, $('span.codicon.codicon-sparkle'));
+				const generateLabel = DOM.append(generateBtn, $('span'));
+				generateLabel.textContent = localize('generateWithAI', "Generate with AI");
+				const promptType = category.promptType;
+				this.cardDisposables.add(DOM.addDisposableListener(generateBtn, 'click', (e) => {
+					e.stopPropagation();
+					this.callbacks.closeEditor();
+					this.workspaceService.generateCustomization(promptType);
 				}));
 			}
+
+			// Clicking the card itself navigates to the section
+			this.cardDisposables.add(DOM.addDisposableListener(card, 'click', () => {
+				this.callbacks.selectSection(category.id);
+			}));
+			this.cardDisposables.add(DOM.addDisposableListener(card, 'keydown', (e) => {
+				if (e.key === 'Enter' || e.key === ' ') {
+					e.preventDefault();
+					this.callbacks.selectSection(category.id);
+				}
+			}));
 		}
 	}
 
 	/**
-	 * No-op — the grid is rendered from `categoryDescriptions` in the constructor.
-	 * Kept for API compatibility with the editor.
-	 */
-	rebuildCards(_visibleSectionIds: ReadonlySet<AICustomizationManagementSection>): void {
-		// Cards are static — no rebuild needed
-	}
-
-	/**
-	 * Focuses the input box when the welcome page receives focus.
+	 * Focuses the getting-started button if available.
 	 */
 	focus(): void {
-		if (this.inputBox) {
-			this.inputBox.focus();
-		} else {
-			this.workflowSection?.focus();
-		}
+		this.gettingStartedButton?.focus();
 	}
 }
