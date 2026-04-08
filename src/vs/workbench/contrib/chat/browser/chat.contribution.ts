@@ -24,7 +24,7 @@ import { McpAccessValue, McpAutoStartValue, mcpAccessConfig, mcpAutoStartConfig,
 import product from '../../../../platform/product/common/product.js';
 import { Registry } from '../../../../platform/registry/common/platform.js';
 import { EditorPaneDescriptor, IEditorPaneRegistry } from '../../../browser/editor.js';
-import { Extensions, IConfigurationMigrationRegistry } from '../../../common/configuration.js';
+import { type ConfigurationKeyValuePairs, Extensions, IConfigurationMigrationRegistry } from '../../../common/configuration.js';
 import { ITelemetryService } from '../../../../platform/telemetry/common/telemetry.js';
 import { IWorkbenchContribution, WorkbenchPhase, registerWorkbenchContribution2 } from '../../../common/contributions.js';
 import { EditorExtensions, IEditorFactoryRegistry } from '../../../common/editor.js';
@@ -1550,31 +1550,47 @@ Registry.as<IConfigurationMigrationRegistry>(Extensions.ConfigurationMigration).
 	},
 	{
 		key: AgentNetworkDomainSettingId.DeprecatedSandboxAllowedNetworkDomains,
-		migrateFn: (value, _accessor) => ([
-			[AgentNetworkDomainSettingId.DeprecatedSandboxAllowedNetworkDomains, { value: undefined }],
-			[AgentNetworkDomainSettingId.AllowedNetworkDomains, { value }]
-		])
+		migrateFn: (value, accessor) => {
+			const pairs: ConfigurationKeyValuePairs = [];
+			pairs.push([AgentNetworkDomainSettingId.DeprecatedSandboxAllowedNetworkDomains, { value: undefined }]);
+			if (value !== undefined && accessor(AgentNetworkDomainSettingId.AllowedNetworkDomains) === undefined) {
+				pairs.push([AgentNetworkDomainSettingId.AllowedNetworkDomains, { value }]);
+			}
+			return pairs;
+		}
 	},
 	{
 		key: AgentNetworkDomainSettingId.DeprecatedSandboxDeniedNetworkDomains,
-		migrateFn: (value, _accessor) => ([
-			[AgentNetworkDomainSettingId.DeprecatedSandboxDeniedNetworkDomains, { value: undefined }],
-			[AgentNetworkDomainSettingId.DeniedNetworkDomains, { value }]
-		])
+		migrateFn: (value, accessor) => {
+			const pairs: ConfigurationKeyValuePairs = [];
+			pairs.push([AgentNetworkDomainSettingId.DeprecatedSandboxDeniedNetworkDomains, { value: undefined }]);
+			if (value !== undefined && accessor(AgentNetworkDomainSettingId.DeniedNetworkDomains) === undefined) {
+				pairs.push([AgentNetworkDomainSettingId.DeniedNetworkDomains, { value }]);
+			}
+			return pairs;
+		}
 	},
 	{
 		key: AgentNetworkDomainSettingId.DeprecatedOldAllowedNetworkDomains,
-		migrateFn: (value, _accessor) => ([
-			[AgentNetworkDomainSettingId.DeprecatedOldAllowedNetworkDomains, { value: undefined }],
-			[AgentNetworkDomainSettingId.AllowedNetworkDomains, { value }]
-		])
+		migrateFn: (value, accessor) => {
+			const pairs: ConfigurationKeyValuePairs = [];
+			pairs.push([AgentNetworkDomainSettingId.DeprecatedOldAllowedNetworkDomains, { value: undefined }]);
+			if (value !== undefined && accessor(AgentNetworkDomainSettingId.AllowedNetworkDomains) === undefined) {
+				pairs.push([AgentNetworkDomainSettingId.AllowedNetworkDomains, { value }]);
+			}
+			return pairs;
+		}
 	},
 	{
 		key: AgentNetworkDomainSettingId.DeprecatedOldDeniedNetworkDomains,
-		migrateFn: (value, _accessor) => ([
-			[AgentNetworkDomainSettingId.DeprecatedOldDeniedNetworkDomains, { value: undefined }],
-			[AgentNetworkDomainSettingId.DeniedNetworkDomains, { value }]
-		])
+		migrateFn: (value, accessor) => {
+			const pairs: ConfigurationKeyValuePairs = [];
+			pairs.push([AgentNetworkDomainSettingId.DeprecatedOldDeniedNetworkDomains, { value: undefined }]);
+			if (value !== undefined && accessor(AgentNetworkDomainSettingId.DeniedNetworkDomains) === undefined) {
+				pairs.push([AgentNetworkDomainSettingId.DeniedNetworkDomains, { value }]);
+			}
+			return pairs;
+		}
 	},
 ]);
 

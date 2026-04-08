@@ -25,13 +25,8 @@ export interface IAgentNetworkFilterService {
 	readonly _serviceBrand: undefined;
 
 	/**
-	 * Checks whether the given domain is allowed by the configured network domain filter.
-	 * When both allowed and denied lists are empty, all domains are allowed.
-	 */
-	isAllowed(domain: string): boolean;
-
-	/**
-	 * Convenience method: extracts the domain from a URI and checks it against the filter.
+	 * Extracts the domain from a URI and checks it against the configured
+	 * allowed/denied domain filter.
 	 * File URIs and URIs without an authority always pass.
 	 * @returns `true` if the URI's domain is allowed, `false` if blocked.
 	 */
@@ -74,10 +69,6 @@ export class AgentNetworkFilterService extends Disposable implements IAgentNetwo
 		this.deniedPatterns = this.configurationService.getValue<string[]>(AgentNetworkDomainSettingId.DeniedNetworkDomains) ?? [];
 	}
 
-	isAllowed(domain: string): boolean {
-		return isDomainAllowed(domain, this.allowedPatterns, this.deniedPatterns);
-	}
-
 	isUriAllowed(uri: URI): boolean {
 		// File URIs and URIs without authority always pass
 		if (uri.scheme === 'file' || !uri.authority) {
@@ -87,6 +78,6 @@ export class AgentNetworkFilterService extends Disposable implements IAgentNetwo
 		if (!domain) {
 			return true;
 		}
-		return this.isAllowed(domain);
+		return isDomainAllowed(domain, this.allowedPatterns, this.deniedPatterns);
 	}
 }

@@ -125,7 +125,7 @@ export function matchesDomainPattern(domain: string, pattern: string): boolean {
 
 /**
  * Extracts and normalizes a domain from a URI.
- * Strips port numbers and `www.` prefix.
+ * Strips port numbers and trailing dots.
  *
  * @param uri The URI to extract the domain from.
  * @returns The normalized domain, or `undefined` if no valid domain could be extracted.

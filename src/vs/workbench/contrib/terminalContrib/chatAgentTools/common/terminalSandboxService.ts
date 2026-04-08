@@ -560,8 +560,8 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 			await this._initTempDir();
 		}
 		if (this._tempDir) {
-			const allowedDomainsSetting = this._getSettingValue<string[]>(AgentNetworkDomainSettingId.AllowedNetworkDomains, AgentNetworkDomainSettingId.DeprecatedSandboxAllowedNetworkDomains) ?? [];
-			const deniedDomainsSetting = this._getSettingValue<string[]>(AgentNetworkDomainSettingId.DeniedNetworkDomains, AgentNetworkDomainSettingId.DeprecatedSandboxDeniedNetworkDomains) ?? [];
+			const allowedDomainsSetting = this._getSettingValue<string[]>(AgentNetworkDomainSettingId.AllowedNetworkDomains, AgentNetworkDomainSettingId.DeprecatedSandboxAllowedNetworkDomains, AgentNetworkDomainSettingId.DeprecatedOldAllowedNetworkDomains) ?? [];
+			const deniedDomainsSetting = this._getSettingValue<string[]>(AgentNetworkDomainSettingId.DeniedNetworkDomains, AgentNetworkDomainSettingId.DeprecatedSandboxDeniedNetworkDomains, AgentNetworkDomainSettingId.DeprecatedOldDeniedNetworkDomains) ?? [];
 			const linuxFileSystemSetting = this._os === OperatingSystem.Linux
 				? this._getSettingValue<{ denyRead?: string[]; allowWrite?: string[]; denyWrite?: string[] }>(TerminalChatAgentToolsSettingId.AgentSandboxLinuxFileSystem, TerminalChatAgentToolsSettingId.DeprecatedAgentSandboxLinuxFileSystem) ?? {}
 				: {};
@@ -645,8 +645,8 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 	}
 
 	public getResolvedNetworkDomains(): ITerminalSandboxResolvedNetworkDomains {
-		const allowedDomains = this._getSettingValue<string[]>(AgentNetworkDomainSettingId.AllowedNetworkDomains, AgentNetworkDomainSettingId.DeprecatedSandboxAllowedNetworkDomains) ?? [];
-		const deniedDomains = this._getSettingValue<string[]>(AgentNetworkDomainSettingId.DeniedNetworkDomains, AgentNetworkDomainSettingId.DeprecatedSandboxDeniedNetworkDomains) ?? [];
+		const allowedDomains = this._getSettingValue<string[]>(AgentNetworkDomainSettingId.AllowedNetworkDomains, AgentNetworkDomainSettingId.DeprecatedSandboxAllowedNetworkDomains, AgentNetworkDomainSettingId.DeprecatedOldAllowedNetworkDomains) ?? [];
+		const deniedDomains = this._getSettingValue<string[]>(AgentNetworkDomainSettingId.DeniedNetworkDomains, AgentNetworkDomainSettingId.DeprecatedSandboxDeniedNetworkDomains, AgentNetworkDomainSettingId.DeprecatedOldDeniedNetworkDomains) ?? [];
 		return {
 			allowedDomains,
 			deniedDomains
@@ -679,13 +679,17 @@ export class TerminalSandboxService extends Disposable implements ITerminalSandb
 		return value === true || value === TerminalChatAgentToolsSandboxEnabledValue.On;
 	}
 
-	private _getSettingValue<T>(settingId: TerminalChatAgentToolsSettingId | AgentNetworkDomainSettingId, deprecatedSettingId?: TerminalChatAgentToolsSettingId | AgentNetworkDomainSettingId): T | undefined {
+	private _getSettingValue<T>(settingId: TerminalChatAgentToolsSettingId | AgentNetworkDomainSettingId, ...deprecatedSettingIds: (TerminalChatAgentToolsSettingId | AgentNetworkDomainSettingId)[]): T | undefined {
 		const setting = this._configurationService.inspect<T>(settingId);
-		const deprecatedSetting = deprecatedSettingId ? this._configurationService.inspect<T>(deprecatedSettingId) : undefined;
-
-		if (setting.userValue === undefined && deprecatedSetting?.userValue !== undefined) {
-			this._logService.warn(`TerminalSandboxService: Using deprecated setting ${deprecatedSettingId} because ${settingId} is not set. Please update your settings to use ${settingId} instead.`);
-			return deprecatedSetting.value;
+		if (setting.userValue !== undefined) {
+			return setting.value;
+		}
+		for (const deprecatedId of deprecatedSettingIds) {
+			const deprecated = this._configurationService.inspect<T>(deprecatedId);
+			if (deprecated.userValue !== undefined) {
+				this._logService.warn(`TerminalSandboxService: Using deprecated setting ${deprecatedId} because ${settingId} is not set. Please update your settings to use ${settingId} instead.`);
+				return deprecated.value;
+			}
 		}
 		return setting.value;
 	}

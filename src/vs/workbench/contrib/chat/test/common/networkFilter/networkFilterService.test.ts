@@ -47,30 +47,30 @@ suite('AgentNetworkFilterService', () => {
 
 	test('allows all domains when both lists are empty', () => {
 		const service = createService();
-		assert.strictEqual(service.isAllowed('example.com'), true);
-		assert.strictEqual(service.isAllowed('anything.test'), true);
+		assert.strictEqual(service.isUriAllowed(URI.parse('https://example.com')), true);
+		assert.strictEqual(service.isUriAllowed(URI.parse('https://anything.test')), true);
 	});
 
 	test('blocks denied domains', () => {
 		configService.setUserConfiguration(AgentNetworkDomainSettingId.DeniedNetworkDomains, ['evil.com']);
 		const service = createService();
-		assert.strictEqual(service.isAllowed('evil.com'), false);
-		assert.strictEqual(service.isAllowed('good.com'), true);
+		assert.strictEqual(service.isUriAllowed(URI.parse('https://evil.com')), false);
+		assert.strictEqual(service.isUriAllowed(URI.parse('https://good.com')), true);
 	});
 
 	test('restricts to allowed domains', () => {
 		configService.setUserConfiguration(AgentNetworkDomainSettingId.AllowedNetworkDomains, ['example.com']);
 		const service = createService();
-		assert.strictEqual(service.isAllowed('example.com'), true);
-		assert.strictEqual(service.isAllowed('other.com'), false);
+		assert.strictEqual(service.isUriAllowed(URI.parse('https://example.com')), true);
+		assert.strictEqual(service.isUriAllowed(URI.parse('https://other.com')), false);
 	});
 
 	test('denied takes precedence over allowed', () => {
 		configService.setUserConfiguration(AgentNetworkDomainSettingId.AllowedNetworkDomains, ['*.com']);
 		configService.setUserConfiguration(AgentNetworkDomainSettingId.DeniedNetworkDomains, ['evil.com']);
 		const service = createService();
-		assert.strictEqual(service.isAllowed('safe.com'), true);
-		assert.strictEqual(service.isAllowed('evil.com'), false);
+		assert.strictEqual(service.isUriAllowed(URI.parse('https://safe.com')), true);
+		assert.strictEqual(service.isUriAllowed(URI.parse('https://evil.com')), false);
 	});
 
 	suite('isUriAllowed', () => {
@@ -108,11 +108,11 @@ suite('AgentNetworkFilterService', () => {
 
 	test('updates filtering after configuration change', async () => {
 		const service = createService();
-		assert.strictEqual(service.isAllowed('example.com'), true);
+		assert.strictEqual(service.isUriAllowed(URI.parse('https://example.com')), true);
 
 		configService.setUserConfiguration(AgentNetworkDomainSettingId.DeniedNetworkDomains, ['example.com']);
 		fireConfigChange(AgentNetworkDomainSettingId.DeniedNetworkDomains);
 
-		assert.strictEqual(service.isAllowed('example.com'), false);
+		assert.strictEqual(service.isUriAllowed(URI.parse('https://example.com')), false);
 	});
 });
