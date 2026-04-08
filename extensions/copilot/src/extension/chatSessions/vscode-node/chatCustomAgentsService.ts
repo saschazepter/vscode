@@ -53,7 +53,21 @@ export class ChatCustomAgentsService extends Disposable implements IChatCustomAg
 	}
 
 	private async refreshCustomAgents(token: CancellationToken): Promise<void> {
-		this.customAgents = await vscode.chat.getCustomAgents(token);
-		this._onDidChangeCustomAgents.fire();
+		try {
+			const customAgents = await vscode.chat.getCustomAgents(token);
+
+			if (token.isCancellationRequested) {
+				return;
+			}
+
+			this.customAgents = customAgents;
+			this._onDidChangeCustomAgents.fire();
+		} catch (error) {
+			if (token.isCancellationRequested) {
+				return;
+			}
+
+			console.error('Failed to refresh custom agents', error);
+		}
 	}
 }
