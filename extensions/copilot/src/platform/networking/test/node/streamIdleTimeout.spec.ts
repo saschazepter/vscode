@@ -55,14 +55,13 @@ suite('withStreamIdleTimeout', () => {
 	test('throws StreamIdleTimeoutError when first chunk never arrives', async () => {
 		const { stream } = createControllableStream<string>();
 
-		const iter = withStreamIdleTimeout(stream);
-		const nextPromise = iter.next();
-
-		// Advance past the first-chunk timeout
-		await vi.advanceTimersByTimeAsync(SSE_FIRST_CHUNK_TIMEOUT_MS + 1);
-
 		await assert.rejects(
-			() => nextPromise,
+			async () => {
+				const iter = withStreamIdleTimeout(stream);
+				const nextPromise = iter.next();
+				await vi.advanceTimersByTimeAsync(SSE_FIRST_CHUNK_TIMEOUT_MS + 1);
+				await nextPromise;
+			},
 			(err: StreamIdleTimeoutError) => {
 				assert.strictEqual(err.name, 'StreamIdleTimeoutError');
 				assert.ok(err.message.includes('first chunk'));
@@ -81,12 +80,12 @@ suite('withStreamIdleTimeout', () => {
 		const first = await iter.next();
 		assert.deepStrictEqual(first, { value: 'first', done: false });
 
-		// Now no more chunks — advance past the idle timeout
-		const nextPromise = iter.next();
-		await vi.advanceTimersByTimeAsync(SSE_IDLE_TIMEOUT_MS + 1);
-
 		await assert.rejects(
-			() => nextPromise,
+			async () => {
+				const nextPromise = iter.next();
+				await vi.advanceTimersByTimeAsync(SSE_IDLE_TIMEOUT_MS + 1);
+				await nextPromise;
+			},
 			(err: StreamIdleTimeoutError) => {
 				assert.strictEqual(err.name, 'StreamIdleTimeoutError');
 				assert.ok(err.message.includes('inactivity'));
