@@ -15,6 +15,7 @@ import { memoize } from '../../../base/common/decorators.js';
 import { hash } from '../../../base/common/hash.js';
 import * as path from '../../../base/common/path.js';
 import { basename } from '../../../base/common/path.js';
+import { INodeProcess } from '../../../base/common/platform.js';
 import { transform } from '../../../base/common/stream.js';
 import { URI } from '../../../base/common/uri.js';
 import { checksum } from '../../../base/node/crypto.js';
@@ -381,7 +382,13 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 			this.setState(State.Idle(getUpdateType()));
 		});
 
-		const readyMutexName = `${this.productService.win32MutexName}-ready`;
+		// The InnoSetup installer creates the -ready mutex using the host app's
+		// mutex name ({#AppMutex}). When running as the embedded app, use
+		// win32SetupMutexName (the host's mutex) to find the correct signal.
+		const setupMutexName = (process as INodeProcess).isEmbeddedApp
+			? this.productService.win32SetupMutexName
+			: this.productService.win32MutexName;
+		const readyMutexName = `${setupMutexName}-ready`;
 		const mutex = await import('@vscode/windows-mutex');
 
 		this.updateCancellationTokenSource?.dispose(true);
