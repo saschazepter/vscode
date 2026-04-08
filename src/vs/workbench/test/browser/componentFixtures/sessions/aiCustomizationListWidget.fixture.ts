@@ -14,6 +14,7 @@ import { IListService, ListService } from '../../../../../platform/list/browser/
 import { IWorkspace, IWorkspaceContextService } from '../../../../../platform/workspace/common/workspace.js';
 import { IAICustomizationWorkspaceService, IStorageSourceFilter } from '../../../../contrib/chat/common/aiCustomizationWorkspaceService.js';
 import { CustomizationHarness, ICustomizationHarnessService, IHarnessDescriptor, createVSCodeHarnessDescriptor } from '../../../../contrib/chat/common/customizationHarnessService.js';
+import { PromptsServiceCustomizationProvider } from '../../../../contrib/chat/browser/aiCustomization/promptsServiceCustomizationProvider.js';
 import { IAgentPluginService } from '../../../../contrib/chat/common/plugins/agentPluginService.js';
 import { IChatSessionsService } from '../../../../contrib/chat/common/chatSessionsService.js';
 import { PromptsType } from '../../../../contrib/chat/common/promptSyntax/promptTypes.js';
@@ -62,6 +63,8 @@ function createMockPromptsService(instructionFiles: IFixtureInstructionFile[], a
 		}
 		override async listAgentInstructions() { return agentInstructionFiles; }
 		override async getCustomAgents() { return []; }
+		override async findAgentSkills() { return []; }
+		override async getPromptSlashCommands() { return []; }
 		override async getInstructionFiles() {
 			return instructionFiles.map(f => ({
 				uri: f.promptPath.uri,
@@ -109,11 +112,16 @@ function createMockWorkspaceService(): IAICustomizationWorkspaceService {
 		override readonly hasOverrideProjectRoot = observableValue('hasOverride', false);
 		override getActiveProjectRoot() { return URI.file('/workspace'); }
 		override getStorageSourceFilter() { return defaultFilter; }
+		override getSkillUIIntegrations() { return new Map<string, string>(); }
 	}();
 }
 
-function createMockHarnessService(): ICustomizationHarnessService {
-	const descriptor = createVSCodeHarnessDescriptor([PromptsStorage.extension]);
+function createMockHarnessService(promptsService: IPromptsService, workspaceService: IAICustomizationWorkspaceService): ICustomizationHarnessService {
+	const baseDescriptor = createVSCodeHarnessDescriptor([PromptsStorage.extension]);
+	const provider = new PromptsServiceCustomizationProvider(
+		baseDescriptor, promptsService, workspaceService, new class extends mock<IProductService>() { }(),
+	);
+	const descriptor: IHarnessDescriptor = { ...baseDescriptor, itemProvider: provider };
 	return new class extends mock<ICustomizationHarnessService>() {
 		override readonly activeHarness = observableValue<string>('activeHarness', CustomizationHarness.VSCode);
 		override readonly availableHarnesses = observableValue<readonly IHarnessDescriptor[]>('harnesses', [descriptor]);
@@ -156,6 +164,9 @@ async function renderInstructionsTab(ctx: ComponentFixtureContext, instructionFi
 		override layout(): void { }
 	};
 
+	const promptsService = createMockPromptsService(instructionFiles, agentInstructionFiles);
+	const workspaceService = createMockWorkspaceService();
+
 	const instantiationService = createEditorServices(ctx.disposableStore, {
 		colorTheme: ctx.theme,
 		additionalServices: (reg) => {
@@ -163,9 +174,9 @@ async function renderInstructionsTab(ctx: ComponentFixtureContext, instructionFi
 			reg.defineInstance(IContextMenuService, contextMenuService);
 			reg.defineInstance(IContextViewService, contextViewService);
 			reg.define(IListService, ListService);
-			reg.defineInstance(IPromptsService, createMockPromptsService(instructionFiles, agentInstructionFiles));
-			reg.defineInstance(IAICustomizationWorkspaceService, createMockWorkspaceService());
-			reg.defineInstance(ICustomizationHarnessService, createMockHarnessService());
+			reg.defineInstance(IPromptsService, promptsService);
+			reg.defineInstance(IAICustomizationWorkspaceService, workspaceService);
+			reg.defineInstance(ICustomizationHarnessService, createMockHarnessService(promptsService, workspaceService));
 			reg.defineInstance(IWorkspaceContextService, createMockWorkspaceContextService());
 			reg.defineInstance(IChatSessionsService, new class extends mock<IChatSessionsService>() {
 				override readonly onDidChangeCustomizations = Event.None;

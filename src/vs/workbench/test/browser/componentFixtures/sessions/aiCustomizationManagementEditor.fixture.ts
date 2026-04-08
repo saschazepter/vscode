@@ -30,6 +30,7 @@ import { IWorkingCopyService } from '../../../../services/workingCopy/common/wor
 import { IWebviewService } from '../../../../contrib/webview/browser/webview.js';
 import { IAICustomizationWorkspaceService, AICustomizationManagementSection } from '../../../../contrib/chat/common/aiCustomizationWorkspaceService.js';
 import { CustomizationHarness, ICustomizationHarnessService, IHarnessDescriptor, createVSCodeHarnessDescriptor, createCliHarnessDescriptor, getCliUserRoots } from '../../../../contrib/chat/common/customizationHarnessService.js';
+import { PromptsServiceCustomizationProvider } from '../../../../contrib/chat/browser/aiCustomization/promptsServiceCustomizationProvider.js';
 import { IChatSessionsService } from '../../../../contrib/chat/common/chatSessionsService.js';
 import { PromptsType } from '../../../../contrib/chat/common/promptSyntax/promptTypes.js';
 import { IPromptsService, AgentInstructionFileType, PromptsStorage, IAgentSkill, IChatPromptSlashCommand, IAgentInstructionFile } from '../../../../contrib/chat/common/promptSyntax/service/promptsService.js';
@@ -430,10 +431,39 @@ async function renderEditor(ctx: ComponentFixtureContext, options: IRenderEditor
 		AICustomizationManagementSection.McpServers,
 		AICustomizationManagementSection.Plugins,
 	];
-	const availableHarnesses = options.availableHarnesses ?? [
+	const promptsService = createMockPromptsService(allFiles, agentInstructions);
+	const mockProductService = new class extends mock<IProductService>() { }();
+	const mockWorkspaceService = new class extends mock<IAICustomizationWorkspaceService>() {
+		override readonly isSessionsWindow = isSessionsWindow;
+		override readonly welcomePageFeatures = {
+			showGettingStartedBanner: !isSessionsWindow,
+			showGenerateActions: !isSessionsWindow,
+		};
+		override readonly activeProjectRoot = observableValue('root', URI.file('/workspace'));
+		override readonly hasOverrideProjectRoot = observableValue('hasOverride', false);
+		override getActiveProjectRoot() { return URI.file('/workspace'); }
+		override getStorageSourceFilter() { return { sources: [PromptsStorage.local, PromptsStorage.user, PromptsStorage.extension, PromptsStorage.plugin, BUILTIN_STORAGE] }; }
+		override clearOverrideProjectRoot() { }
+		override setOverrideProjectRoot() { }
+		override readonly managementSections = managementSections;
+		override async generateCustomization() { }
+		override getSkillUIIntegrations() { return skillUIIntegrations; }
+	}();
+
+	// Ensure every harness descriptor has an itemProvider so the provider-based
+	// code path in the list widget can display items.
+	const rawHarnesses = options.availableHarnesses ?? [
 		createVSCodeHarnessDescriptor([PromptsStorage.extension, BUILTIN_STORAGE]),
 		createCliHarnessDescriptor(getCliUserRoots(userHome), []),
 	];
+	const availableHarnesses = rawHarnesses.map(h => {
+		if (h.itemProvider) {
+			return h;
+		}
+		const provider = new PromptsServiceCustomizationProvider(h, promptsService, mockWorkspaceService, mockProductService);
+		ctx.disposableStore.add(provider);
+		return { ...h, itemProvider: provider };
+	});
 
 	const allMcpServers = [...mcpWorkspaceServers, ...mcpUserServers];
 
@@ -456,23 +486,8 @@ async function renderEditor(ctx: ComponentFixtureContext, options: IRenderEditor
 				}();
 				override getSession() { return undefined; }
 			}());
-			reg.defineInstance(IPromptsService, createMockPromptsService(allFiles, agentInstructions));
-			reg.defineInstance(IAICustomizationWorkspaceService, new class extends mock<IAICustomizationWorkspaceService>() {
-				override readonly isSessionsWindow = isSessionsWindow;
-				override readonly welcomePageFeatures = {
-					showGettingStartedBanner: !isSessionsWindow,
-					showGenerateActions: !isSessionsWindow,
-				};
-				override readonly activeProjectRoot = observableValue('root', URI.file('/workspace'));
-				override readonly hasOverrideProjectRoot = observableValue('hasOverride', false);
-				override getActiveProjectRoot() { return URI.file('/workspace'); }
-				override getStorageSourceFilter(type: PromptsType) { return harnessService.getStorageSourceFilter(type); }
-				override clearOverrideProjectRoot() { }
-				override setOverrideProjectRoot() { }
-				override readonly managementSections = managementSections;
-				override async generateCustomization() { }
-				override getSkillUIIntegrations() { return skillUIIntegrations; }
-			}());
+			reg.defineInstance(IPromptsService, promptsService);
+			reg.defineInstance(IAICustomizationWorkspaceService, mockWorkspaceService);
 			reg.defineInstance(ICustomizationHarnessService, harnessService);
 			reg.defineInstance(IChatSessionsService, new class extends mock<IChatSessionsService>() {
 				override readonly onDidChangeCustomizations = Event.None;
