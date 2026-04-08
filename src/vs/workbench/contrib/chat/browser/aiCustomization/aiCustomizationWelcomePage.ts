@@ -191,9 +191,9 @@ export class AICustomizationWelcomePage extends Disposable {
 				descEl.textContent = category.description;
 
 				if (category.chips) {
-					const chipsArea = DOM.append(content, $('div.welcome-category-item-chips'));
+					const chipsArea = DOM.append(content, $('div.welcome-category-item-commands'));
 					for (const chip of category.chips) {
-						const chipBtn = DOM.append(chipsArea, $('button.welcome-category-chip'));
+						const chipBtn = DOM.append(chipsArea, $('button.welcome-category-command'));
 						chipBtn.textContent = chip.label;
 						const prompt = chip.prompt;
 						this._register(DOM.addDisposableListener(chipBtn, 'click', (e) => {

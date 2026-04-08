@@ -12,30 +12,30 @@
 }
 
 .ai-customization-management-editor .welcome-inner {
-	max-width: 760px;
+	max-width: 820px;
 	margin: 0 auto;
-	padding-top: 12px;
+	padding-top: 16px;
 }
 
 /* Intro */
 .ai-customization-management-editor .welcome-intro {
-	margin-bottom: 20px;
+	margin-bottom: 28px;
 }
 
 .ai-customization-management-editor .welcome-intro-heading {
-	font-size: 24px;
+	font-size: 28px;
 	font-weight: 600;
 	line-height: 1.2;
-	margin: 0 0 8px;
+	margin: 0 0 10px;
 	color: var(--vscode-foreground);
 }
 
 .ai-customization-management-editor .welcome-intro-description {
-	font-size: 14px;
+	font-size: 15px;
 	line-height: 1.6;
 	margin: 0;
 	color: var(--vscode-descriptionForeground);
-	max-width: 700px;
+	max-width: 760px;
 }
 
 /* Workflow Section */
@@ -56,17 +56,17 @@
 }
 
 .ai-customization-management-editor .welcome-workflow-title {
-	font-size: 18px;
+	font-size: 20px;
 	font-weight: 600;
 	color: var(--vscode-foreground);
 }
 
 .ai-customization-management-editor .welcome-workflow-desc {
-	font-size: 14px;
+	font-size: 15px;
 	color: var(--vscode-descriptionForeground);
-	margin: 0 0 16px;
+	margin: 0 0 18px;
 	line-height: 1.6;
-	max-width: 700px;
+	max-width: 760px;
 }
 
 /* Chat-style input box */
@@ -76,7 +76,7 @@
 	border: 1px solid var(--vscode-input-border, var(--vscode-widget-border));
 	border-radius: var(--vscode-cornerRadius-large, 8px);
 	background: var(--vscode-input-background);
-	padding: 8px;
+	padding: 10px;
 	transition: border-color 0.15s ease;
 }
 
@@ -95,8 +95,8 @@
 }
 
 .ai-customization-management-editor .welcome-workflow-input .monaco-inputbox > .ibwrapper > input {
-	padding: 10px 10px;
-	font-size: 15px;
+	padding: 12px 12px;
+	font-size: 16px;
 	line-height: 1.5;
 }
 
@@ -104,8 +104,8 @@
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	width: 36px;
-	height: 36px;
+	width: 40px;
+	height: 40px;
 	flex-shrink: 0;
 	border: none;
 	border-radius: 8px;
@@ -131,7 +131,7 @@
 	display: flex;
 	align-items: center;
 	gap: 12px;
-	margin: 28px 0 24px;
+	margin: 32px 0 28px;
 }
 
 .ai-customization-management-editor .welcome-section-divider::before,
@@ -148,37 +148,37 @@
 	white-space: nowrap;
 }
 
-/* Category list (stacked, full width) */
+/* Category list (stacked, lightweight sections) */
 .ai-customization-management-editor .welcome-category-list {
 	display: flex;
 	flex-direction: column;
-	gap: 12px;
+	gap: 20px;
 }
 
 .ai-customization-management-editor .welcome-category-item {
 	display: flex;
-	padding: 14px 16px;
-	border-radius: 8px;
+	padding: 0 0 20px;
+	border-radius: 0;
 	cursor: pointer;
-	transition: background-color 0.15s ease, border-color 0.15s ease;
-	border: 1px solid var(--vscode-widget-border);
-	background: var(--vscode-editor-background);
+	transition: opacity 0.15s ease;
+	border: none;
+	border-bottom: 1px solid var(--vscode-widget-border);
+	background: transparent;
 }
 
 .ai-customization-management-editor .welcome-category-item:hover {
-	background: var(--vscode-list-hoverBackground);
-	border-color: var(--vscode-focusBorder);
+	opacity: 0.96;
 }
 
 .ai-customization-management-editor .welcome-category-item:focus-visible {
 	outline: 1px solid var(--vscode-focusBorder);
-	outline-offset: -1px;
+	outline-offset: 4px;
 }
 
 .ai-customization-management-editor .welcome-category-item-content {
 	display: flex;
 	flex-direction: column;
-	gap: 8px;
+	gap: 10px;
 	width: 100%;
 	min-width: 0;
 }
@@ -196,42 +196,40 @@
 }
 
 .ai-customization-management-editor .welcome-category-item-label {
-	font-size: 16px;
+	font-size: 18px;
 	font-weight: 600;
 	color: var(--vscode-foreground);
 }
 
 .ai-customization-management-editor .welcome-category-item-desc {
-	font-size: 14px;
+	font-size: 15px;
 	color: var(--vscode-descriptionForeground);
 	line-height: 1.5;
 	margin: 0;
 }
 
-.ai-customization-management-editor .welcome-category-item-chips {
+.ai-customization-management-editor .welcome-category-item-commands {
 	display: flex;
 	flex-wrap: wrap;
-	gap: 6px;
+	gap: 8px 20px;
+	align-items: flex-start;
 }
 
-.ai-customization-management-editor .welcome-category-chip {
-	display: inline-flex;
-	align-items: center;
-	height: 26px;
-	padding: 0 10px;
-	border-radius: 4px;
-	background-color: var(--vscode-editorWidget-background);
-	border: 1px solid var(--vscode-widget-border);
+.ai-customization-management-editor .welcome-category-command {
+	display: inline-block;
+	padding: 0;
+	border: none;
+	background: transparent;
 	color: var(--vscode-textLink-foreground, var(--vscode-foreground));
-	font-family: inherit;
 	font-family: var(--monaco-monospace-font), monospace;
-	font-size: 12px;
+	font-size: 13px;
+	line-height: 1.6;
 	cursor: pointer;
 	white-space: nowrap;
-	transition: background-color 0.15s ease, border-color 0.15s ease;
+	text-align: left;
+	transition: color 0.15s ease, text-decoration-color 0.15s ease;
 }
 
-.ai-customization-management-editor .welcome-category-chip:hover {
-	background-color: var(--vscode-list-hoverBackground);
-	border-color: var(--vscode-focusBorder);
+.ai-customization-management-editor .welcome-category-command:hover {
+	text-decoration: underline;
 }
