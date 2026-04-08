@@ -324,6 +324,11 @@ class TitleBarAccountWidget extends BaseActionViewItem {
 		this.labelElement = append(container, $('span.sessions-account-titlebar-widget-label'));
 		this.badgeElement = append(container, $('span.sessions-account-titlebar-widget-badge'));
 
+		// If account data was resolved before render(), set the avatar src now
+		if (this.accountName && this.accountProviderId === 'github') {
+			this.avatarElement.src = `https://github.com/${encodeURIComponent(this.accountName)}.png?size=64`;
+		}
+
 		this.renderState();
 	}
 
