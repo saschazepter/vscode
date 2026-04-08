@@ -5,7 +5,7 @@
 
 import { IMarkdownString, MarkdownString } from '../../../../../../base/common/htmlContent.js';
 import { URI } from '../../../../../../base/common/uri.js';
-import { ToolCallStatus, TurnState, ResponsePartKind, getToolFileEdits, getToolOutputText, type IActiveTurn, type ICompletedToolCall, type IToolCallState, type ITurn, FileEditKind } from '../../../../../../platform/agentHost/common/state/sessionState.js';
+import { ToolCallStatus, TurnState, ResponsePartKind, getToolFileEdits, getToolOutputText, getToolSubagentContent, type IActiveTurn, type ICompletedToolCall, type IToolCallState, type ITurn, FileEditKind } from '../../../../../../platform/agentHost/common/state/sessionState.js';
 import { getToolKind, getToolLanguage } from '../../../../../../platform/agentHost/common/state/sessionReducers.js';
 import { type IChatProgress, type IChatTerminalToolInvocationData, type IChatToolInputInvocationData, type IChatToolInvocationSerialized, ToolConfirmKind } from '../../../common/chatService/chatService.js';
 import { type IChatSessionHistoryItem } from '../../../common/chatSessionsService.js';
@@ -132,6 +132,32 @@ function completedToolCallToSerialized(tc: ICompletedToolCall): IChatToolInvocat
 	const isSuccess = tc.status === ToolCallStatus.Completed && tc.success;
 	const invocationMsg = stringOrMarkdownToString(tc.invocationMessage) ?? '';
 
+	// Check for subagent content
+	const subagentContent = tc.status === ToolCallStatus.Completed ? getToolSubagentContent(tc) : undefined;
+	if (subagentContent && tc.status === ToolCallStatus.Completed) {
+		const resultText = getToolOutputText(tc);
+		return {
+			kind: 'toolInvocationSerialized',
+			toolCallId: tc.toolCallId,
+			toolId: tc.toolName,
+			source: ToolDataSource.Internal,
+			invocationMessage: invocationMsg,
+			originMessage: undefined,
+			pastTenseMessage: stringOrMarkdownToString(tc.pastTenseMessage) ?? invocationMsg,
+			isConfirmed: isSuccess
+				? { type: ToolConfirmKind.ConfirmationNotNeeded }
+				: { type: ToolConfirmKind.Denied },
+			isComplete: true,
+			presentation: undefined,
+			toolSpecificData: {
+				kind: 'subagent',
+				description: subagentContent.description ?? subagentContent.title,
+				agentName: subagentContent.agentName,
+				result: resultText,
+			},
+		};
+	}
+
 	let toolSpecificData: IChatTerminalToolInvocationData | undefined;
 	if (isTerminal) {
 		const ptyTerminal = getPtyTerminalData(tc._meta);
@@ -233,7 +259,7 @@ function stringOrMarkdownToString(value: string | { readonly markdown: string } 
  * Creates a live {@link ChatToolInvocation} from the protocol's tool-call
  * state. Used during active turns to represent running tool calls in the UI.
  */
-export function toolCallStateToInvocation(tc: IToolCallState): ChatToolInvocation {
+export function toolCallStateToInvocation(tc: IToolCallState, subAgentInvocationId?: string): ChatToolInvocation {
 	const toolData: IToolData = {
 		id: tc.toolName,
 		source: ToolDataSource.Internal,
@@ -272,12 +298,12 @@ export function toolCallStateToInvocation(tc: IToolCallState): ChatToolInvocatio
 			},
 			toolData,
 			tc.toolCallId,
-			undefined,
+			subAgentInvocationId,
 			undefined,
 		);
 	}
 
-	const invocation = new ChatToolInvocation(undefined, toolData, tc.toolCallId, undefined, undefined);
+	const invocation = new ChatToolInvocation(undefined, toolData, tc.toolCallId, subAgentInvocationId, undefined);
 	invocation.invocationMessage = stringOrMarkdownToString(tc.invocationMessage) ?? '';
 
 	if (getToolKind(tc) === 'terminal') {
@@ -289,9 +315,65 @@ export function toolCallStateToInvocation(tc: IToolCallState): ChatToolInvocatio
 			language: getToolLanguage(tc) ?? 'shellscript',
 			terminalCommandOutput: ptyTerminal?.output !== undefined ? { text: ptyTerminal.output } : undefined,
 		} satisfies IChatTerminalToolInvocationData;
+	} else if (getToolKind(tc) === 'subagent') {
+		// Subagent-spawning tool: set subagent toolSpecificData eagerly so the
+		// renderer groups it correctly from the start (before content arrives).
+		// Agent metadata is extracted from tool arguments in the event mapper.
+		const metaDesc = tc._meta?.subagentDescription;
+		const metaAgent = tc._meta?.subagentAgentName;
+		invocation.toolSpecificData = {
+			kind: 'subagent',
+			description: typeof metaDesc === 'string' ? metaDesc : undefined,
+			agentName: typeof metaAgent === 'string' ? metaAgent : undefined,
+		};
+	} else if (tc.status === ToolCallStatus.Running) {
+		// Check for subagent content on initial creation (e.g. from snapshot)
+		const subagentContent = getToolSubagentContent(tc);
+		if (subagentContent) {
+			invocation.toolSpecificData = {
+				kind: 'subagent',
+				description: subagentContent.description ?? subagentContent.title,
+				agentName: subagentContent.agentName,
+			};
+		}
 	}
 
 	return invocation;
+}
+
+/**
+ * Updates a running tool invocation's `toolSpecificData` based on the
+ * protocol tool call state. Handles terminal and subagent content detection.
+ *
+ * Called from the session handler when a tool transitions to Running state
+ * to set the initial `toolSpecificData`, or when content changes arrive.
+ */
+export function updateRunningToolSpecificData(existing: ChatToolInvocation, tc: IToolCallState): void {
+	if (tc.status !== ToolCallStatus.Running) {
+		return;
+	}
+	existing.invocationMessage = typeof tc.invocationMessage === 'string'
+		? tc.invocationMessage
+		: new MarkdownString(tc.invocationMessage.markdown);
+	if (getToolKind(tc) === 'terminal' && tc.toolInput) {
+		existing.toolSpecificData = {
+			kind: 'terminal',
+			commandLine: { original: tc.toolInput },
+			language: getToolLanguage(tc) ?? 'shellscript',
+		};
+	} else {
+		const subagentContent = getToolSubagentContent(tc);
+		if (subagentContent) {
+			existing.toolSpecificData = {
+				kind: 'subagent',
+				description: subagentContent.description ?? subagentContent.title,
+				agentName: subagentContent.agentName,
+			};
+			// toolSpecificData is a plain property — notify state observers
+			// so ChatSubagentContentPart re-reads the updated metadata.
+			existing.notifyToolSpecificDataChanged();
+		}
+	}
 }
 
 /**
@@ -329,6 +411,20 @@ export function finalizeToolInvocation(invocation: ChatToolInvocation, tc: ITool
 
 	if ((isCompleted || isCancelled) && hasKey(tc, { invocationMessage: true })) {
 		invocation.invocationMessage = stringOrMarkdownToString(tc.invocationMessage) ?? invocation.invocationMessage;
+	}
+
+	// Check for subagent content — set toolSpecificData so the UI renders a subagent widget
+	if (isCompleted) {
+		const subagentContent = getToolSubagentContent(tc);
+		if (subagentContent) {
+			const resultText = getToolOutputText(tc);
+			invocation.toolSpecificData = {
+				kind: 'subagent',
+				description: subagentContent.description ?? subagentContent.title,
+				agentName: subagentContent.agentName,
+				result: resultText,
+			};
+		}
 	}
 
 	if (isTerminal && (isCompleted || isCancelled)) {

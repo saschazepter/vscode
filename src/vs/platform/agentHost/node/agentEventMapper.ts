@@ -90,6 +90,22 @@ export class AgentEventMapper {
 				// We emit both toolCallStart (streaming → created) and toolCallReady
 				// (params complete → running with auto-confirm) as a pair.
 				const e = event as IAgentToolStartEvent;
+				const meta: Record<string, unknown> = { toolKind: e.toolKind, language: e.language };
+
+				// For subagent tools, extract agent metadata from tool arguments
+				// so the renderer can display the name/description immediately.
+				if (e.toolKind === 'subagent' && e.toolArguments) {
+					try {
+						const args = JSON.parse(e.toolArguments) as Record<string, unknown>;
+						if (typeof args.description === 'string') {
+							meta.subagentDescription = args.description;
+						}
+						if (typeof args.agentName === 'string') {
+							meta.subagentAgentName = args.agentName;
+						}
+					} catch { /* ignore parse errors */ }
+				}
+
 				const startAction: IToolCallStartAction = {
 					type: ActionType.SessionToolCallStart,
 					session,
@@ -97,7 +113,7 @@ export class AgentEventMapper {
 					toolCallId: e.toolCallId,
 					toolName: e.toolName,
 					displayName: e.displayName,
-					_meta: { toolKind: e.toolKind, language: e.language },
+					_meta: meta,
 				};
 				const readyAction: IToolCallReadyAction = {
 					type: ActionType.SessionToolCallReady,

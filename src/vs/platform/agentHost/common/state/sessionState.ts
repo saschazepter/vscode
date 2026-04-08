@@ -23,6 +23,8 @@ import {
 	type IToolCallCompletedState,
 	type IToolCallResult,
 	type IToolCallState,
+	type IToolResultContent,
+	type IToolResultSubagentContent,
 	type IToolResultTextContent,
 	type IUserMessage,
 } from './protocol/state.js';
@@ -60,6 +62,7 @@ export {
 	type IToolResultEmbeddedResourceContent as IToolResultBinaryContent,
 	type IToolResultContent,
 	type IToolResultFileEditContent,
+	type IToolResultSubagentContent,
 	type IToolResultTextContent,
 	type ITurn,
 	type IUsageInfo,
@@ -154,6 +157,55 @@ export function getToolFileEdits(result: IToolCallResult): IToolResultFileEditCo
 		}
 	}
 	return edits;
+}
+
+/**
+ * Extracts the first subagent content entry from a tool call's `content` array.
+ * Works with both completed tool call results and running tool call states.
+ * Returns `undefined` if there are no subagent content parts.
+ */
+export function getToolSubagentContent(result: { content?: readonly IToolResultContent[] }): IToolResultSubagentContent | undefined {
+	if (!result.content || result.content.length === 0) {
+		return undefined;
+	}
+	for (const c of result.content) {
+		if (hasKey(c, { type: true }) && c.type === ToolResultContentType.Subagent) {
+			return c as IToolResultSubagentContent;
+		}
+	}
+	return undefined;
+}
+
+// ---- Subagent URI helpers ---------------------------------------------------
+
+/**
+ * Builds a subagent session URI from a parent session URI and tool call ID.
+ * Convention: `{parentSessionUri}/subagent/{toolCallId}`
+ */
+export function buildSubagentSessionUri(parentSession: string, toolCallId: string): string {
+	return `${parentSession}/subagent/${toolCallId}`;
+}
+
+/**
+ * Parses a subagent session URI into its parent session URI and tool call ID.
+ * Returns `undefined` if the URI does not follow the subagent convention.
+ */
+export function parseSubagentSessionUri(uri: string): { parentSession: string; toolCallId: string } | undefined {
+	const idx = uri.indexOf('/subagent/');
+	if (idx < 0) {
+		return undefined;
+	}
+	return {
+		parentSession: uri.substring(0, idx),
+		toolCallId: uri.substring(idx + '/subagent/'.length),
+	};
+}
+
+/**
+ * Returns whether a session URI represents a subagent session.
+ */
+export function isSubagentSession(uri: string): boolean {
+	return uri.includes('/subagent/');
 }
 
 // ---- Factory helpers --------------------------------------------------------

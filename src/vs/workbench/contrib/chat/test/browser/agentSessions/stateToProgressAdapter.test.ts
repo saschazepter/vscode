@@ -4,12 +4,13 @@
  *--------------------------------------------------------------------------------------------*/
 
 import assert from 'assert';
+import { autorun } from '../../../../../../base/common/observable.js';
 import { URI } from '../../../../../../base/common/uri.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/test/common/utils.js';
 import { ToolCallStatus, ToolCallConfirmationReason, ToolResultContentType, TurnState, ResponsePartKind, type IActiveTurn, type ICompletedToolCall, type IToolCallRunningState, type ITurn, type IToolCallResponsePart, ToolCallCancellationReason } from '../../../../../../platform/agentHost/common/state/sessionState.js';
 import { IChatToolInvocationSerialized, type IChatMarkdownContent } from '../../../common/chatService/chatService.js';
 import { ToolDataSource } from '../../../common/tools/languageModelToolsService.js';
-import { turnsToHistory, activeTurnToProgress, toolCallStateToInvocation, finalizeToolInvocation } from '../../../browser/agentSessions/agentHost/stateToProgressAdapter.js';
+import { turnsToHistory, activeTurnToProgress, toolCallStateToInvocation, finalizeToolInvocation, updateRunningToolSpecificData } from '../../../browser/agentSessions/agentHost/stateToProgressAdapter.js';
 
 // ---- Helper factories -------------------------------------------------------
 
@@ -205,6 +206,27 @@ suite('stateToProgressAdapter', () => {
 
 			const invocation = toolCallStateToInvocation(tc);
 			assert.strictEqual(invocation.toolCallId, 'tc-1');
+		});
+
+		test('sets subagent toolSpecificData from _meta for subagent toolKind', () => {
+			const tc = createToolCallState({
+				_meta: { toolKind: 'subagent', subagentDescription: 'Review code', subagentAgentName: 'code-reviewer' },
+			});
+
+			const invocation = toolCallStateToInvocation(tc);
+			assert.ok(invocation.toolSpecificData);
+			assert.strictEqual(invocation.toolSpecificData.kind, 'subagent');
+			if (invocation.toolSpecificData.kind === 'subagent') {
+				assert.strictEqual(invocation.toolSpecificData.description, 'Review code');
+				assert.strictEqual(invocation.toolSpecificData.agentName, 'code-reviewer');
+			}
+		});
+
+		test('passes subAgentInvocationId to ChatToolInvocation', () => {
+			const tc = createToolCallState({});
+
+			const invocation = toolCallStateToInvocation(tc, 'parent-tc-42');
+			assert.strictEqual(invocation.subAgentInvocationId, 'parent-tc-42');
 		});
 	});
 
@@ -511,6 +533,63 @@ suite('stateToProgressAdapter', () => {
 			assert.strictEqual(result.length, 4);
 			assert.strictEqual(result[0].kind, 'thinking');
 			assert.strictEqual(result[1].kind, 'markdownContent');
+		});
+	});
+
+	suite('updateRunningToolSpecificData', () => {
+
+		test('sets subagent toolSpecificData from content and notifies state observers', () => {
+			const tc = createToolCallState({
+				_meta: { toolKind: 'subagent' },
+			});
+			const invocation = toolCallStateToInvocation(tc);
+			assert.strictEqual(invocation.toolSpecificData?.kind, 'subagent');
+
+			// Simulate subagent content arriving via SessionToolCallContentChanged
+			const runningTc: IToolCallRunningState = {
+				...tc,
+				status: ToolCallStatus.Running,
+				content: [{
+					type: ToolResultContentType.Subagent,
+					resource: 'copilot://session/subagent/tc-1',
+					title: 'Explore',
+					agentName: 'explore',
+					description: 'Explores the codebase',
+				}],
+			};
+
+			let stateChanged = false;
+			const disposable = autorun(r => {
+				invocation.state.read(r);
+				stateChanged = true;
+			});
+			stateChanged = false; // reset after initial read
+			const before = invocation.toolSpecificData;
+
+			updateRunningToolSpecificData(invocation, runningTc);
+
+			assert.strictEqual(stateChanged, true, 'state observers should be notified');
+			assert.notStrictEqual(invocation.toolSpecificData, before, 'toolSpecificData should be replaced');
+			assert.strictEqual(invocation.toolSpecificData?.kind, 'subagent');
+			if (invocation.toolSpecificData?.kind === 'subagent') {
+				assert.strictEqual(invocation.toolSpecificData.agentName, 'explore');
+				assert.strictEqual(invocation.toolSpecificData.description, 'Explores the codebase');
+			}
+			disposable.dispose();
+		});
+
+		test('does not notify when no subagent content is present', () => {
+			const tc = createToolCallState({});
+			const invocation = toolCallStateToInvocation(tc);
+			const originalData = invocation.toolSpecificData;
+
+			const runningTc: IToolCallRunningState = {
+				...tc,
+				status: ToolCallStatus.Running,
+			};
+
+			updateRunningToolSpecificData(invocation, runningTc);
+			assert.strictEqual(invocation.toolSpecificData, originalData, 'toolSpecificData should not change');
 		});
 	});
 });

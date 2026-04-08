@@ -16,8 +16,8 @@ export { rootReducer, sessionReducer, softAssertNever, isClientDispatchable } fr
 /**
  * Extracts the VS Code-specific `toolKind` rendering hint from a tool call's `_meta`.
  */
-export function getToolKind(tc: IToolCallState | ICompletedToolCall): 'terminal' | undefined {
-	return tc._meta?.toolKind as 'terminal' | undefined;
+export function getToolKind(tc: IToolCallState | ICompletedToolCall): 'terminal' | 'subagent' | undefined {
+	return tc._meta?.toolKind as 'terminal' | 'subagent' | undefined;
 }
 
 /**

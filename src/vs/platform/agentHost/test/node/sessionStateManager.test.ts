@@ -9,7 +9,7 @@ import { URI } from '../../../../base/common/uri.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/common/utils.js';
 import { NullLogService } from '../../../log/common/log.js';
 import { ActionType, NotificationType, type IActionEnvelope, type INotification } from '../../common/state/sessionActions.js';
-import { ISessionSummary, ResponsePartKind, ROOT_STATE_URI, SessionLifecycle, SessionStatus, TurnState, type IMarkdownResponsePart, type ISessionState } from '../../common/state/sessionState.js';
+import { ISessionSummary, ResponsePartKind, ROOT_STATE_URI, SessionLifecycle, SessionStatus, TurnState, buildSubagentSessionUri, isSubagentSession, parseSubagentSessionUri, type IMarkdownResponsePart, type ISessionState } from '../../common/state/sessionState.js';
 import { SessionStateManager } from '../../node/sessionStateManager.js';
 
 suite('SessionStateManager', () => {
@@ -294,5 +294,34 @@ suite('SessionStateManager', () => {
 		manager.restoreSession(makeSessionSummary(), []);
 
 		assert.strictEqual(notifications.length, 0, 'should not emit notification for restored sessions');
+	});
+});
+
+suite('Subagent URI helpers', () => {
+
+	ensureNoDisposablesAreLeakedInTestSuite();
+
+	test('buildSubagentSessionUri creates correct URI', () => {
+		assert.strictEqual(
+			buildSubagentSessionUri('copilot:/session-1', 'tc-1'),
+			'copilot:/session-1/subagent/tc-1',
+		);
+	});
+
+	test('parseSubagentSessionUri extracts parent and toolCallId', () => {
+		const parsed = parseSubagentSessionUri('copilot:/session-1/subagent/tc-1');
+		assert.deepStrictEqual(parsed, {
+			parentSession: 'copilot:/session-1',
+			toolCallId: 'tc-1',
+		});
+	});
+
+	test('parseSubagentSessionUri returns undefined for non-subagent URIs', () => {
+		assert.strictEqual(parseSubagentSessionUri('copilot:/session-1'), undefined);
+	});
+
+	test('isSubagentSession identifies subagent URIs', () => {
+		assert.strictEqual(isSubagentSession('copilot:/session-1/subagent/tc-1'), true);
+		assert.strictEqual(isSubagentSession('copilot:/session-1'), false);
 	});
 });

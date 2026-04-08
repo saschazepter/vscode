@@ -60,6 +60,20 @@ export class SessionStateManager extends Disposable {
 		return this._serverSeq;
 	}
 
+	/**
+	 * Returns all session URIs whose keys start with the given prefix.
+	 * Used to discover subagent sessions for a given parent.
+	 */
+	getSessionUrisWithPrefix(prefix: string): string[] {
+		const result: string[] = [];
+		for (const key of this._sessionStates.keys()) {
+			if (key.startsWith(prefix)) {
+				result.push(key);
+			}
+		}
+		return result;
+	}
+
 	// ---- Snapshots ----------------------------------------------------------
 
 	/**

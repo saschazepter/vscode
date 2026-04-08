@@ -630,6 +630,18 @@ export class ChatSubagentContentPart extends ChatCollapsibleContentPart implemen
 					}
 					this.renderPromptSection();
 					this.updateTitle();
+				} else if (this._isDefaultDescription && toolInvocation.toolSpecificData?.kind === 'subagent') {
+					// toolSpecificData was updated after initial render (e.g.
+					// subagent content arrived via SessionToolCallContentChanged).
+					// Re-read metadata and update the title if real values are
+					// now available.
+					const { description, isDefaultDescription, agentName } = ChatSubagentContentPart.extractSubagentInfo(toolInvocation);
+					if (!isDefaultDescription || agentName) {
+						this.description = description;
+						this._isDefaultDescription = isDefaultDescription;
+						this.agentName = agentName;
+						this.updateTitle();
+					}
 				}
 			}));
 		} else if (toolInvocation.toolSpecificData?.kind === 'subagent' && toolInvocation.toolSpecificData.result) {

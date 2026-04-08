@@ -312,4 +312,23 @@ suite('AgentEventMapper', () => {
 		const result = mapper.mapProgressEventToActions(event, session.toString(), turnId);
 		assert.strictEqual(result, undefined);
 	});
+
+	test('tool_start with subagent toolKind extracts agent metadata from toolArguments', () => {
+		const event: IAgentToolStartEvent = {
+			session,
+			type: 'tool_start',
+			toolCallId: 'tc-sub',
+			toolName: 'task',
+			displayName: 'Task',
+			invocationMessage: 'Delegating...',
+			toolKind: 'subagent',
+			toolArguments: JSON.stringify({ description: 'Review the code', agentName: 'code-reviewer' }),
+		};
+
+		const actions = mapToArray(mapper.mapProgressEventToActions(event, session.toString(), turnId));
+		const startAction = actions[0] as IToolCallStartAction;
+		assert.strictEqual(startAction._meta?.toolKind, 'subagent');
+		assert.strictEqual(startAction._meta?.subagentDescription, 'Review the code');
+		assert.strictEqual(startAction._meta?.subagentAgentName, 'code-reviewer');
+	});
 });

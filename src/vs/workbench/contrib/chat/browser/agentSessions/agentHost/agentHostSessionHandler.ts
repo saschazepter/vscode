@@ -20,8 +20,7 @@ import { ICustomizationRef, type IProtectedResourceMetadata } from '../../../../
 import { ActionType, type ISessionAction } from '../../../../../../platform/agentHost/common/state/sessionActions.js';
 import { SessionClientState } from '../../../../../../platform/agentHost/common/state/sessionClientState.js';
 import { AHP_AUTH_REQUIRED, ProtocolError } from '../../../../../../platform/agentHost/common/state/sessionProtocol.js';
-import { getToolKind, getToolLanguage } from '../../../../../../platform/agentHost/common/state/sessionReducers.js';
-import { AttachmentType, getToolFileEdits, PendingMessageKind, ResponsePartKind, ToolCallCancellationReason, ToolCallConfirmationReason, ToolCallStatus, TurnState, type IMessageAttachment, type ISessionState, type IToolCallState, type ITurn } from '../../../../../../platform/agentHost/common/state/sessionState.js';
+import { AttachmentType, buildSubagentSessionUri, getToolFileEdits, getToolSubagentContent, PendingMessageKind, ResponsePartKind, ToolCallCancellationReason, ToolCallConfirmationReason, ToolCallStatus, TurnState, type IMessageAttachment, type IResponsePart, type ISessionState, type IToolCallState, type ITurn } from '../../../../../../platform/agentHost/common/state/sessionState.js';
 import { ExtensionIdentifier } from '../../../../../../platform/extensions/common/extensions.js';
 import { IInstantiationService } from '../../../../../../platform/instantiation/common/instantiation.js';
 import { ILogService } from '../../../../../../platform/log/common/log.js';
@@ -35,7 +34,8 @@ import { ChatToolInvocation } from '../../../common/model/chatProgressTypes/chat
 import { IChatAgentData, IChatAgentImplementation, IChatAgentRequest, IChatAgentResult, IChatAgentService } from '../../../common/participants/chatAgents.js';
 import { getAgentHostIcon } from '../agentSessions.js';
 import { AgentHostEditingSession } from './agentHostEditingSession.js';
-import { activeTurnToProgress, finalizeToolInvocation, toolCallStateToInvocation, turnsToHistory } from './stateToProgressAdapter.js';
+import { activeTurnToProgress, finalizeToolInvocation, toolCallStateToInvocation, turnsToHistory, updateRunningToolSpecificData } from './stateToProgressAdapter.js';
+import { getToolKind } from '../../../../../../platform/agentHost/common/state/sessionReducers.js';
 
 // =============================================================================
 // AgentHostSessionHandler - renderer-side handler for a single agent host
@@ -635,6 +635,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		const sessionStr = backendSession.toString();
 		const activeToolInvocations = new Map<string, ChatToolInvocation>();
 		const lastEmittedLengths = new Map<string, number>();
+		const observedSubagentToolIds = new Set<string>();
 		const throttler = new Throttler();
 		turnDisposables.add(throttler);
 
@@ -716,16 +717,13 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 									this._awaitToolConfirmation(confirmInvocation, toolCallId, backendSession, turnId, CancellationToken.None);
 								}
 							} else if (tc.status === ToolCallStatus.Running) {
-								existing.invocationMessage = typeof tc.invocationMessage === 'string'
-									? tc.invocationMessage
-									: new MarkdownString(tc.invocationMessage.markdown);
-								if (getToolKind(tc) === 'terminal' && tc.toolInput) {
-									existing.toolSpecificData = {
-										kind: 'terminal',
-										commandLine: { original: tc.toolInput },
-										language: getToolLanguage(tc) ?? 'shellscript',
-									};
-								}
+								updateRunningToolSpecificData(existing, tc);
+							}
+
+							// Start observing the child subagent session if this is a subagent tool
+							if (existing && !observedSubagentToolIds.has(toolCallId) && (getToolKind(tc) === 'subagent' || ((tc.status === ToolCallStatus.Running || tc.status === ToolCallStatus.Completed) && getToolSubagentContent(tc)))) {
+								observedSubagentToolIds.add(toolCallId);
+								this._observeSubagentSession(backendSession, toolCallId, progress, turnDisposables, observedSubagentToolIds);
 							}
 
 							if (existing && (tc.status === ToolCallStatus.Completed || tc.status === ToolCallStatus.Cancelled) && !IChatToolInvocation.isComplete(existing)) {
@@ -858,6 +856,9 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		// Track last-emitted content lengths per response part to compute deltas
 		const lastEmittedLengths = new Map<string, number>();
 
+		// Track subagent child sessions we're already observing
+		const observedSubagentToolIds = new Set<string>();
+
 		const turnDisposables = new DisposableStore();
 
 		// We throttle updates because generation of edits is async, if this breaks
@@ -949,16 +950,13 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 									}
 								} else if (tc.status === ToolCallStatus.Running) {
 									// Streaming → Running: update with now-available parameters.
-									existing.invocationMessage = typeof tc.invocationMessage === 'string'
-										? tc.invocationMessage
-										: new MarkdownString(tc.invocationMessage.markdown);
-									if (getToolKind(tc) === 'terminal' && tc.toolInput) {
-										existing.toolSpecificData = {
-											kind: 'terminal',
-											commandLine: { original: tc.toolInput },
-											language: getToolLanguage(tc) ?? 'shellscript',
-										};
-									}
+									updateRunningToolSpecificData(existing, tc);
+								}
+
+								// Start observing the child subagent session if this is a subagent tool
+								if (existing && !observedSubagentToolIds.has(toolCallId) && (getToolKind(tc) === 'subagent' || ((tc.status === ToolCallStatus.Running || tc.status === ToolCallStatus.Completed) && getToolSubagentContent(tc)))) {
+									observedSubagentToolIds.add(toolCallId);
+									this._observeSubagentSession(session, toolCallId, progress, turnDisposables, observedSubagentToolIds);
 								}
 
 								// Finalize terminal-state tools (whether just created or pre-existing)
@@ -1049,6 +1047,119 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		});
 	}
 
+	// ---- Subagent child session observation ---------------------------------
+
+	/**
+	 * Subscribes to a child subagent session and forwards its tool calls
+	 * as progress parts into the parent session's response, with
+	 * `subAgentInvocationId` set so the renderer groups them under the parent
+	 * subagent widget.
+	 */
+	private _observeSubagentSession(
+		parentSession: URI,
+		parentToolCallId: string,
+		emitProgress: (parts: IChatProgress[]) => void,
+		disposables: DisposableStore,
+		observedSet: Set<string>,
+	): void {
+		const childSessionUri = buildSubagentSessionUri(parentSession.toString(), parentToolCallId);
+		const childSessionParsed = URI.parse(childSessionUri);
+
+		// Subscribe to the child session state
+		this._config.connection.subscribe(childSessionParsed).then(snapshot => {
+			if (disposables.isDisposed) {
+				// Subscription completed after parent was disposed -- clean up immediately
+				this._config.connection.unsubscribe(childSessionParsed);
+				return;
+			}
+			if (snapshot?.state) {
+				this._clientState.handleSnapshot(childSessionUri, snapshot.state, snapshot.fromSeq);
+			}
+
+			const activeChildToolInvocations = new Map<string, ChatToolInvocation>();
+			const childCts = new CancellationTokenSource();
+			disposables.add(toDisposable(() => childCts.dispose(true)));
+
+			// Helper to process response parts from a child turn
+			const processChildParts = (responseParts: readonly IResponsePart[], turnId: string) => {
+				for (const rp of responseParts) {
+					switch (rp.kind) {
+						case ResponsePartKind.ToolCall: {
+							const tc = rp.toolCall;
+							let existing = activeChildToolInvocations.get(tc.toolCallId);
+
+							if (!existing) {
+								existing = toolCallStateToInvocation(tc, parentToolCallId);
+								activeChildToolInvocations.set(tc.toolCallId, existing);
+								emitProgress([existing]);
+
+								if (tc.status === ToolCallStatus.PendingConfirmation) {
+									this._awaitToolConfirmation(existing, tc.toolCallId, childSessionParsed, turnId, childCts.token);
+								}
+							} else if (tc.status === ToolCallStatus.PendingConfirmation) {
+								const existingState = existing.state.get();
+								if (existingState.type !== IChatToolInvocation.StateKind.WaitingForConfirmation) {
+									existing.didExecuteTool(undefined);
+									const confirmInvocation = toolCallStateToInvocation(tc, parentToolCallId);
+									activeChildToolInvocations.set(tc.toolCallId, confirmInvocation);
+									emitProgress([confirmInvocation]);
+									this._awaitToolConfirmation(confirmInvocation, tc.toolCallId, childSessionParsed, turnId, childCts.token);
+								}
+							} else if (tc.status === ToolCallStatus.Running) {
+								updateRunningToolSpecificData(existing, tc);
+							}
+
+							if (existing && (tc.status === ToolCallStatus.Completed || tc.status === ToolCallStatus.Cancelled) && !IChatToolInvocation.isComplete(existing)) {
+								finalizeToolInvocation(existing, tc);
+							}
+							break;
+						}
+					}
+				}
+			};
+
+			// Attach the state listener BEFORE replaying the snapshot so any
+			// state change arriving in the gap is not lost. This mirrors the
+			// pattern used for parent turn observation.
+			disposables.add(this._clientState.onDidChangeSessionState(e => {
+				if (e.session !== childSessionUri || disposables.isDisposed) {
+					return;
+				}
+
+				const activeTurn = e.state.activeTurn;
+				const turnId = activeTurn?.id ?? e.state.turns[e.state.turns.length - 1]?.id;
+				const responseParts = activeTurn?.responseParts
+					?? e.state.turns[e.state.turns.length - 1]?.responseParts;
+
+				if (responseParts && turnId) {
+					processChildParts(responseParts, turnId);
+				}
+			}));
+
+			// Replay any existing content from the child session snapshot
+			// (handles both active turns and already-completed ones)
+			const childState = this._clientState.getSessionState(childSessionUri);
+			if (childState) {
+				for (const turn of childState.turns) {
+					processChildParts(turn.responseParts, turn.id);
+				}
+				if (childState.activeTurn) {
+					processChildParts(childState.activeTurn.responseParts, childState.activeTurn.id);
+				}
+			}
+
+			// Clean up when disposables are disposed
+			disposables.add(toDisposable(() => {
+				this._clientState.unsubscribe(childSessionUri);
+				this._config.connection.unsubscribe(childSessionParsed);
+			}));
+		}).catch(err => {
+			// Remove from observed set so a later state change can retry
+			observedSet.delete(parentToolCallId);
+			this._logService.warn(`[AgentHost] Failed to subscribe to subagent session: ${childSessionUri}`, err);
+		});
+	}
+
 	// ---- Reconnection to active turn ----------------------------------------
 
 	/**
@@ -1088,6 +1199,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		}
 
 		const reconnectDisposables = chatSession.registerDisposable(new DisposableStore());
+		const observedSubagentToolIds = new Set<string>();
 		const throttler = new Throttler();
 		reconnectDisposables.add(throttler);
 
@@ -1107,11 +1219,16 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 
 		// Wire up awaitConfirmation for tool calls that were already pending
 		// confirmation at snapshot time so the user can approve/deny them.
+		// Also start observing any subagent tools that were already running.
 		const cts = new CancellationTokenSource();
 		reconnectDisposables.add(toDisposable(() => cts.dispose(true)));
 		for (const [toolCallId, invocation] of activeToolInvocations) {
 			if (!IChatToolInvocation.isComplete(invocation)) {
 				this._awaitToolConfirmation(invocation, toolCallId, backendSession, turnId, cts.token);
+			}
+			if (invocation.toolSpecificData?.kind === 'subagent' && !observedSubagentToolIds.has(toolCallId)) {
+				observedSubagentToolIds.add(toolCallId);
+				this._observeSubagentSession(backendSession, toolCallId, (parts) => chatSession.appendProgress(parts), reconnectDisposables, observedSubagentToolIds);
 			}
 		}
 
@@ -1168,16 +1285,13 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 									this._awaitToolConfirmation(confirmInvocation, toolCallId, backendSession, turnId, cts.token);
 								}
 							} else if (tc.status === ToolCallStatus.Running) {
-								existing.invocationMessage = typeof tc.invocationMessage === 'string'
-									? tc.invocationMessage
-									: new MarkdownString(tc.invocationMessage.markdown);
-								if (getToolKind(tc) === 'terminal' && tc.toolInput) {
-									existing.toolSpecificData = {
-										kind: 'terminal',
-										commandLine: { original: tc.toolInput },
-										language: getToolLanguage(tc) ?? 'shellscript',
-									};
-								}
+								updateRunningToolSpecificData(existing, tc);
+							}
+
+							// Start observing the child subagent session if this is a subagent tool
+							if (existing && !observedSubagentToolIds.has(toolCallId) && (getToolKind(tc) === 'subagent' || ((tc.status === ToolCallStatus.Running || tc.status === ToolCallStatus.Completed) && getToolSubagentContent(tc)))) {
+								observedSubagentToolIds.add(toolCallId);
+								this._observeSubagentSession(backendSession, toolCallId, (parts) => chatSession.appendProgress(parts), reconnectDisposables, observedSubagentToolIds);
 							}
 
 							// Finalize terminal-state tools

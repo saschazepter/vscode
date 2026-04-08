@@ -16,7 +16,7 @@ import { NullLogService } from '../../../log/common/log.js';
 import { AgentSession, IAgent } from '../../common/agentService.js';
 import { ISessionDatabase, ISessionDataService } from '../../common/sessionDataService.js';
 import { ActionType, IActionEnvelope, ISessionAction } from '../../common/state/sessionActions.js';
-import { PendingMessageKind, SessionStatus } from '../../common/state/sessionState.js';
+import { PendingMessageKind, ResponsePartKind, SessionStatus, ToolCallStatus, ToolResultContentType } from '../../common/state/sessionState.js';
 import { AgentService } from '../../node/agentService.js';
 import { AgentSideEffects } from '../../node/agentSideEffects.js';
 import { SessionDatabase } from '../../node/sessionDatabase.js';
@@ -867,6 +867,181 @@ suite('AgentSideEffects', () => {
 			const state = localService.stateManager.getSessionState(sessionResource.toString());
 			assert.ok(state);
 			assert.strictEqual(state!.summary.title, 'Restored Title');
+		});
+	});
+
+	// ---- Subagent sessions ----------------------------------------------
+
+	suite('subagent sessions', () => {
+
+		test('subagent_started creates a subagent session and dispatches content on parent tool call', () => {
+			setupSession();
+			startTurn('turn-1');
+			disposables.add(sideEffects.registerProgressListener(agent));
+
+			// Start a parent tool call
+			agent.fireProgress({
+				session: sessionUri,
+				type: 'tool_start',
+				toolCallId: 'tc-1',
+				toolName: 'runSubagent',
+				displayName: 'Run Subagent',
+				invocationMessage: 'Delegating task...',
+			});
+
+			// Fire subagent_started
+			agent.fireProgress({
+				session: sessionUri,
+				type: 'subagent_started',
+				toolCallId: 'tc-1',
+				agentName: 'code-reviewer',
+				agentDisplayName: 'Code Reviewer',
+				agentDescription: 'Reviews code',
+			});
+
+			// Verify the subagent session was created
+			const subagentUri = `${sessionUri.toString()}/subagent/tc-1`;
+			const subState = stateManager.getSessionState(subagentUri);
+			assert.ok(subState, 'subagent session should exist');
+			assert.strictEqual(subState!.summary.title, 'Code Reviewer');
+			assert.ok(subState!.activeTurn, 'subagent should have an active turn');
+
+			// Verify content was dispatched on the parent tool call
+			const parentState = stateManager.getSessionState(sessionUri.toString());
+			assert.ok(parentState?.activeTurn);
+			const parentToolCall = parentState!.activeTurn!.responseParts.find(
+				rp => rp.kind === ResponsePartKind.ToolCall && rp.toolCall.toolCallId === 'tc-1'
+			);
+			assert.ok(parentToolCall);
+			if (parentToolCall?.kind === ResponsePartKind.ToolCall && parentToolCall.toolCall.status === ToolCallStatus.Running) {
+				assert.ok(parentToolCall.toolCall.content);
+				assert.strictEqual(parentToolCall.toolCall.content![0].type, ToolResultContentType.Subagent);
+			}
+		});
+
+		test('events with parentToolCallId route to subagent session', () => {
+			setupSession();
+			startTurn('turn-1');
+			disposables.add(sideEffects.registerProgressListener(agent));
+
+			// Start parent tool + subagent
+			agent.fireProgress({ session: sessionUri, type: 'tool_start', toolCallId: 'tc-1', toolName: 'runSubagent', displayName: 'Run Subagent', invocationMessage: 'Delegating...' });
+			agent.fireProgress({ session: sessionUri, type: 'subagent_started', toolCallId: 'tc-1', agentName: 'helper', agentDisplayName: 'Helper', agentDescription: 'Helps' });
+
+			// Fire an inner tool start with parentToolCallId
+			agent.fireProgress({
+				session: sessionUri,
+				type: 'tool_start',
+				toolCallId: 'inner-tc-1',
+				toolName: 'readFile',
+				displayName: 'Read File',
+				invocationMessage: 'Reading file...',
+				parentToolCallId: 'tc-1',
+			});
+
+			// Verify the inner tool call is on the subagent session's turn, not the parent
+			const subagentUri = `${sessionUri.toString()}/subagent/tc-1`;
+			const subState = stateManager.getSessionState(subagentUri);
+			assert.ok(subState?.activeTurn);
+			const innerTool = subState!.activeTurn!.responseParts.find(
+				rp => rp.kind === ResponsePartKind.ToolCall && rp.toolCall.toolCallId === 'inner-tc-1'
+			);
+			assert.ok(innerTool, 'inner tool call should be in subagent session');
+
+			// Verify the parent session does NOT have the inner tool call
+			const parentState = stateManager.getSessionState(sessionUri.toString());
+			const parentInnerTool = parentState!.activeTurn!.responseParts.find(
+				rp => rp.kind === ResponsePartKind.ToolCall && rp.toolCall.toolCallId === 'inner-tc-1'
+			);
+			assert.strictEqual(parentInnerTool, undefined, 'inner tool call should NOT be in parent session');
+		});
+
+		test('completeSubagentSession completes the subagent turn when parent tool completes', () => {
+			setupSession();
+			startTurn('turn-1');
+			disposables.add(sideEffects.registerProgressListener(agent));
+
+			// Start parent tool + subagent
+			agent.fireProgress({ session: sessionUri, type: 'tool_start', toolCallId: 'tc-1', toolName: 'runSubagent', displayName: 'Run Subagent', invocationMessage: 'Delegating...' });
+			agent.fireProgress({ session: sessionUri, type: 'subagent_started', toolCallId: 'tc-1', agentName: 'helper', agentDisplayName: 'Helper', agentDescription: 'Helps' });
+
+			// Complete the parent tool call
+			agent.fireProgress({
+				session: sessionUri,
+				type: 'tool_complete',
+				toolCallId: 'tc-1',
+				result: { success: true, pastTenseMessage: 'Done' },
+			});
+
+			// Verify the subagent session's turn was completed
+			const subagentUri = `${sessionUri.toString()}/subagent/tc-1`;
+			const subState = stateManager.getSessionState(subagentUri);
+			assert.ok(subState);
+			assert.strictEqual(subState!.activeTurn, undefined, 'subagent turn should be completed');
+			assert.strictEqual(subState!.turns.length, 1);
+		});
+
+		test('cancelSubagentSessions cancels all subagent sessions', () => {
+			setupSession();
+			startTurn('turn-1');
+			disposables.add(sideEffects.registerProgressListener(agent));
+
+			// Start two parent tool calls with subagents
+			agent.fireProgress({ session: sessionUri, type: 'tool_start', toolCallId: 'tc-1', toolName: 'runSubagent', displayName: 'Sub 1', invocationMessage: 'Delegating 1...' });
+			agent.fireProgress({ session: sessionUri, type: 'subagent_started', toolCallId: 'tc-1', agentName: 'sub1', agentDisplayName: 'Sub 1', agentDescription: 'First' });
+
+			agent.fireProgress({ session: sessionUri, type: 'tool_start', toolCallId: 'tc-2', toolName: 'runSubagent', displayName: 'Sub 2', invocationMessage: 'Delegating 2...' });
+			agent.fireProgress({ session: sessionUri, type: 'subagent_started', toolCallId: 'tc-2', agentName: 'sub2', agentDisplayName: 'Sub 2', agentDescription: 'Second' });
+
+			// Cancel via parent turn cancellation
+			sideEffects.handleAction({
+				type: ActionType.SessionTurnCancelled,
+				session: sessionUri.toString(),
+				turnId: 'turn-1',
+			});
+
+			// Both subagent sessions should have their turns completed (cancelled)
+			const sub1 = stateManager.getSessionState(`${sessionUri.toString()}/subagent/tc-1`);
+			const sub2 = stateManager.getSessionState(`${sessionUri.toString()}/subagent/tc-2`);
+			assert.strictEqual(sub1?.activeTurn, undefined, 'sub1 turn should be cancelled');
+			assert.strictEqual(sub2?.activeTurn, undefined, 'sub2 turn should be cancelled');
+		});
+
+		test('removeSubagentSessions removes all subagent sessions from state', () => {
+			setupSession();
+			startTurn('turn-1');
+			disposables.add(sideEffects.registerProgressListener(agent));
+
+			agent.fireProgress({ session: sessionUri, type: 'tool_start', toolCallId: 'tc-1', toolName: 'runSubagent', displayName: 'Sub 1', invocationMessage: 'Delegating...' });
+			agent.fireProgress({ session: sessionUri, type: 'subagent_started', toolCallId: 'tc-1', agentName: 'sub', agentDisplayName: 'Sub', agentDescription: 'Has subagent' });
+
+			const subagentUri = `${sessionUri.toString()}/subagent/tc-1`;
+			assert.ok(stateManager.getSessionState(subagentUri));
+
+			sideEffects.removeSubagentSessions(sessionUri.toString());
+
+			assert.strictEqual(stateManager.getSessionState(subagentUri), undefined, 'subagent session should be removed');
+		});
+
+		test('deltas with parentToolCallId route to subagent session', () => {
+			setupSession();
+			startTurn('turn-1');
+			disposables.add(sideEffects.registerProgressListener(agent));
+
+			agent.fireProgress({ session: sessionUri, type: 'tool_start', toolCallId: 'tc-1', toolName: 'runSubagent', displayName: 'Run Subagent', invocationMessage: 'Delegating...' });
+			agent.fireProgress({ session: sessionUri, type: 'subagent_started', toolCallId: 'tc-1', agentName: 'helper', agentDisplayName: 'Helper', agentDescription: 'Helps' });
+
+			// Fire a delta with parentToolCallId
+			agent.fireProgress({ session: sessionUri, type: 'delta', messageId: 'msg-sub', content: 'thinking...', parentToolCallId: 'tc-1' });
+
+			// Verify the delta went to the subagent session
+			const subagentUri = `${sessionUri.toString()}/subagent/tc-1`;
+			const subState = stateManager.getSessionState(subagentUri);
+			assert.ok(subState?.activeTurn);
+			const markdownPart = subState!.activeTurn!.responseParts.find(
+				rp => rp.kind === ResponsePartKind.Markdown
+			);
+			assert.ok(markdownPart, 'delta should create a markdown part in subagent session');
 		});
 	});
 });

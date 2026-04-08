@@ -11,11 +11,11 @@ import { URI } from '../../../base/common/uri.js';
 import { generateUuid } from '../../../base/common/uuid.js';
 import { FileSystemProviderErrorCode, IFileService, toFileSystemProviderErrorCode } from '../../files/common/files.js';
 import { ILogService } from '../../log/common/log.js';
-import { AgentProvider, AgentSession, IAgent, IAgentCreateSessionConfig, IAgentMessageEvent, IAgentService, IAgentSessionMetadata, IAgentToolCompleteEvent, IAgentToolStartEvent, IAuthenticateParams, IAuthenticateResult } from '../common/agentService.js';
+import { AgentProvider, AgentSession, IAgent, IAgentCreateSessionConfig, IAgentMessageEvent, IAgentService, IAgentSessionMetadata, IAgentSubagentStartedEvent, IAgentToolCompleteEvent, IAgentToolStartEvent, IAuthenticateParams, IAuthenticateResult } from '../common/agentService.js';
 import { ISessionDataService } from '../common/sessionDataService.js';
 import { ActionType, IActionEnvelope, INotification, ISessionAction } from '../common/state/sessionActions.js';
 import { AhpErrorCodes, AHP_SESSION_NOT_FOUND, ContentEncoding, JSON_RPC_INTERNAL_ERROR, ProtocolError, type IDirectoryEntry, type IResourceCopyParams, type IResourceCopyResult, type IResourceDeleteParams, type IResourceDeleteResult, type IResourceListResult, type IResourceMoveParams, type IResourceMoveResult, type IResourceReadResult, type IResourceWriteParams, type IResourceWriteResult, type IStateSnapshot } from '../common/state/sessionProtocol.js';
-import { ResponsePartKind, SessionStatus, ToolCallConfirmationReason, ToolCallStatus, TurnState, type IResponsePart, type ISessionSummary, type IToolCallCompletedState, type ITurn } from '../common/state/sessionState.js';
+import { ResponsePartKind, SessionStatus, ToolCallConfirmationReason, ToolCallStatus, ToolResultContentType, TurnState, buildSubagentSessionUri, parseSubagentSessionUri, type IResponsePart, type ISessionSummary, type IToolCallCompletedState, type IToolResultSubagentContent, type ITurn } from '../common/state/sessionState.js';
 import { AgentSideEffects } from './agentSideEffects.js';
 import { ISessionDbUriFields, parseSessionDbUri } from './copilot/fileEditTracker.js';
 import { SessionStateManager } from './sessionStateManager.js';
@@ -219,6 +219,8 @@ export class AgentService extends Disposable implements IAgentService {
 			await provider.disposeSession(session);
 			this._sessionToProvider.delete(session.toString());
 		}
+		// Remove all subagent sessions for this parent
+		this._sideEffects.removeSubagentSessions(session.toString());
 		this._stateManager.deleteSession(session.toString());
 	}
 
@@ -228,7 +230,13 @@ export class AgentService extends Disposable implements IAgentService {
 		this._logService.trace(`[AgentService] subscribe: ${resource.toString()}`);
 		let snapshot = this._stateManager.getSnapshot(resource.toString());
 		if (!snapshot) {
-			await this.restoreSession(resource);
+			// Try subagent restore before regular session restore
+			const parsed = parseSubagentSessionUri(resource.toString());
+			if (parsed) {
+				await this._restoreSubagentSession(resource.toString(), parsed.parentSession, parsed.toolCallId);
+			} else {
+				await this.restoreSession(resource);
+			}
 			snapshot = this._stateManager.getSnapshot(resource.toString());
 		}
 		if (!snapshot) {
@@ -478,9 +486,12 @@ export class AgentService extends Disposable implements IAgentService {
 	 * closes it.
 	 */
 	private _buildTurnsFromMessages(
-		messages: readonly (IAgentMessageEvent | IAgentToolStartEvent | IAgentToolCompleteEvent)[],
+		messages: readonly (IAgentMessageEvent | IAgentToolStartEvent | IAgentToolCompleteEvent | IAgentSubagentStartedEvent)[],
 	): ITurn[] {
 		const turns: ITurn[] = [];
+		// Track subagent metadata by parent tool call ID so we can inject
+		// IToolResultSubagentContent into the parent tool call's completion content
+		const subagentsByToolCallId = new Map<string, IAgentSubagentStartedEvent>();
 		let currentTurn: {
 			id: string;
 			userMessage: { text: string };
@@ -528,12 +539,28 @@ export class AgentService extends Disposable implements IAgentService {
 					finalizeTurn(currentTurn, TurnState.Complete);
 					currentTurn = undefined;
 				}
+			} else if (msg.type === 'subagent_started') {
+				subagentsByToolCallId.set(msg.toolCallId, msg);
 			} else if (msg.type === 'tool_start') {
 				currentTurn?.pendingTools.set(msg.toolCallId, msg);
 			} else if (msg.type === 'tool_complete') {
 				if (currentTurn) {
 					const start = currentTurn.pendingTools.get(msg.toolCallId);
 					currentTurn.pendingTools.delete(msg.toolCallId);
+
+					// Inject subagent content if this tool call spawned a subagent
+					const subagentEvent = subagentsByToolCallId.get(msg.toolCallId);
+					const contentWithSubagent = msg.result.content ? [...msg.result.content] : [];
+					if (subagentEvent) {
+						const parentSessionStr = msg.session.toString();
+						contentWithSubagent.push({
+							type: ToolResultContentType.Subagent,
+							resource: buildSubagentSessionUri(parentSessionStr, msg.toolCallId),
+							title: subagentEvent.agentDisplayName,
+							agentName: subagentEvent.agentName,
+							description: subagentEvent.agentDescription,
+						});
+					}
 
 					const tc: IToolCallCompletedState = {
 						status: ToolCallStatus.Completed,
@@ -544,7 +571,7 @@ export class AgentService extends Disposable implements IAgentService {
 						toolInput: start?.toolInput,
 						success: msg.result.success,
 						pastTenseMessage: msg.result.pastTenseMessage,
-						content: msg.result.content,
+						content: contentWithSubagent.length > 0 ? contentWithSubagent : undefined,
 						error: msg.result.error,
 						confirmed: ToolCallConfirmationReason.NotNeeded,
 						_meta: start ? {
@@ -587,6 +614,79 @@ export class AgentService extends Disposable implements IAgentService {
 		} finally {
 			ref.dispose();
 		}
+	}
+
+	/**
+	 * Restores a subagent session from its parent session's completed turn data.
+	 * Creates an empty session shell with metadata from the parent's
+	 * {@link IToolResultSubagentContent}.
+	 */
+	private async _restoreSubagentSession(subagentUri: string, parentSession: string, toolCallId: string): Promise<void> {
+		// Ensure the parent session is loaded first
+		const parentUri = URI.parse(parentSession);
+		if (!this._stateManager.getSessionState(parentSession)) {
+			try {
+				await this.restoreSession(parentUri);
+			} catch {
+				this._logService.warn(`[AgentService] Cannot restore parent session for subagent: ${parentSession}`);
+				return;
+			}
+		}
+
+		const parentState = this._stateManager.getSessionState(parentSession);
+		if (!parentState) {
+			return;
+		}
+
+		// Search completed turns and active turn for the subagent content
+		const allTurns = [...parentState.turns];
+		if (parentState.activeTurn) {
+			allTurns.push(parentState.activeTurn as ITurn);
+		}
+
+		let subagentContent: IToolResultSubagentContent | undefined;
+		for (const turn of allTurns) {
+			for (const part of turn.responseParts) {
+				if (part.kind === ResponsePartKind.ToolCall) {
+					const tc = part.toolCall;
+					// Check both completed and running tool calls — running
+					// tool calls receive subagent content via ContentChanged
+					const content = tc.status === ToolCallStatus.Completed
+						? tc.content
+						: (tc.status === ToolCallStatus.Running ? tc.content : undefined);
+					if (content) {
+						for (const c of content) {
+							if (c.type === ToolResultContentType.Subagent && c.resource === subagentUri) {
+								subagentContent = c;
+								break;
+							}
+						}
+					}
+				}
+			}
+			if (subagentContent) {
+				break;
+			}
+		}
+
+		if (!subagentContent) {
+			this._logService.warn(`[AgentService] Subagent content not found in parent turns: ${subagentUri}`);
+			return;
+		}
+
+		// Create empty subagent session from the content metadata
+		this._stateManager.restoreSession(
+			{
+				resource: subagentUri,
+				provider: 'subagent',
+				title: subagentContent.title,
+				status: SessionStatus.Idle,
+				createdAt: Date.now(),
+				modifiedAt: Date.now(),
+			},
+			[],
+		);
+		this._logService.info(`[AgentService] Restored subagent session: ${subagentUri}`);
 	}
 
 	private _findProviderForSession(session: URI | string): IAgent | undefined {
