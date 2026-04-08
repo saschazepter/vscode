@@ -1180,8 +1180,9 @@ describe('SessionOptionGroupBuilder', () => {
 
 			// User selects /repo2
 			const initialGroups = await builder.provideChatSessionProviderOptionGroups(undefined);
-			const repoGroup = initialGroups.find(g => g.id === REPOSITORY_OPTION_ID)!;
-			repoGroup.selected = repoGroup.items.find(i => i.id === URI.file('/repo2').fsPath);
+			const repoGroupIndex = initialGroups.findIndex(g => g.id === REPOSITORY_OPTION_ID);
+			const repoGroup = initialGroups[repoGroupIndex];
+			initialGroups[repoGroupIndex] = { ...repoGroup, selected: repoGroup.items.find(i => i.id === URI.file('/repo2').fsPath) };
 
 			const state: vscode.ChatSessionInputState = {
 				onDidChange: Event.None,
