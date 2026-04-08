@@ -2341,6 +2341,60 @@ describe('XtabProvider integration', () => {
 				expect(finalReason.v.message).not.toBe('cursorLineDiverged');
 			}
 		});
+
+		it('cancels on divergence when cursor is not on the first line of the edit window', async () => {
+			const provider = createProvider();
+
+			//  Doc at request time: "const a = 1;\nfunction fi\n}"
+			//  Offsets: "const a = 1;" = 0..11, \n = 12, "function fi" = 13..23, \n = 24, "}" = 25
+			//  Cursor on line 1 (0-based), insertionOffset 23 = last 'i' of "function fi"
+			//  Edit window: all 3 lines, cursorOriginalLinesOffset = 1
+			//
+			//  User typed "x" at offset 24 (end of "function fi") → "function fix"
+			//  Model responds with "function fibonacci(n): number"
+			//  → "x" doesn't match model → cancel
+			const request = createDivergenceRequest(
+				['const a = 1;', 'function fi', '}'],
+				{ insertionOffset: 23, insertedText: 'i' },
+			);
+
+			request.intermediateUserEdit = StringEdit.single(
+				new StringReplacement(OffsetRange.emptyAt(24), 'x')
+			);
+
+			streamingFetcher.setStreamingLines(['const a = 1;', 'function fibonacci(n): number', '}']);
+
+			const gen = provider.provideNextEdit(request, createMockLogger(), createLogContext(), CancellationToken.None);
+			const { edits, finalReason } = await collectEdits(gen);
+
+			expect(edits.length).toBe(0);
+			expect(finalReason.v).toBeInstanceOf(NoNextEditReason.GotCancelled);
+			expect((finalReason.v as NoNextEditReason.GotCancelled).message).toBe('cursorLineDiverged');
+		});
+
+		it('does not cancel on compatible typing when cursor is not on the first line', async () => {
+			const provider = createProvider();
+
+			//  Same setup but user typed "b" → "function fib", compatible with model
+			const request = createDivergenceRequest(
+				['const a = 1;', 'function fi', '}'],
+				{ insertionOffset: 23, insertedText: 'i' },
+			);
+
+			request.intermediateUserEdit = StringEdit.single(
+				new StringReplacement(OffsetRange.emptyAt(24), 'b')
+			);
+
+			streamingFetcher.setStreamingLines(['const a = 1;', 'function fibonacci(n): number', '}']);
+
+			const gen = provider.provideNextEdit(request, createMockLogger(), createLogContext(), CancellationToken.None);
+			const { finalReason } = await collectEdits(gen);
+
+			// Should not be cancelled due to cursor-line divergence
+			if (finalReason.v instanceof NoNextEditReason.GotCancelled) {
+				expect(finalReason.v.message).not.toBe('cursorLineDiverged');
+			}
+		});
 	});
 });
 suite('filterOutEditsWithSubstrings', () => {
