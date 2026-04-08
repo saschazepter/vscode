@@ -617,6 +617,7 @@ export namespace ConfigKey {
 		export const CLIIsolationOption = defineSetting<boolean>('chat.cli.isolationOption.enabled', ConfigType.Simple, true);
 		export const CLIAutoCommitEnabled = defineSetting<boolean>('chat.cli.autoCommit.enabled', ConfigType.Simple, true);
 		export const CLISessionController = defineSetting<boolean>('chat.cli.sessionController.enabled', ConfigType.Simple, false);
+		export const CLIThinkingEffortEnabled = defineSetting<boolean>('chat.cli.thinkingEffort.enabled', ConfigType.Simple, false);
 		export const CLISessionControllerForSessionsApp = defineSetting<boolean>('chat.cli.sessionControllerForSessionsApp.enabled', ConfigType.Simple, false);
 		export const CLITerminalLinks = defineSetting<boolean>('chat.cli.terminalLinks.enabled', ConfigType.Simple, true);
 		export const RequestLoggerMaxEntries = defineAndMigrateSetting<number>('chat.advanced.debug.requestLogger.maxEntries', 'chat.debug.requestLogger.maxEntries', 100);
@@ -812,6 +813,7 @@ export namespace ConfigKey {
 		export const InlineEditsXtabDiffUseRelativePaths = defineTeamInternalSetting<boolean>('chat.advanced.inlineEdits.xtabProvider.diffUseRelativePaths', ConfigType.ExperimentBased, xtabPromptOptions.DEFAULT_OPTIONS.diffHistory.useRelativePaths);
 		export const InlineEditsXtabNNonSignificantLinesToConverge = defineTeamInternalSetting<number>('chat.advanced.inlineEdits.xtabProvider.nNonSignificantLinesToConverge', ConfigType.ExperimentBased, ResponseProcessor.DEFAULT_DIFF_PARAMS.nLinesToConverge);
 		export const InlineEditsXtabNSignificantLinesToConverge = defineTeamInternalSetting<number>('chat.advanced.inlineEdits.xtabProvider.nSignificantLinesToConverge', ConfigType.ExperimentBased, ResponseProcessor.DEFAULT_DIFF_PARAMS.nSignificantLinesToConverge);
+		export const InlineEditsXtabEarlyCursorLineDivergenceCancellation = defineTeamInternalSetting<boolean>('chat.advanced.inlineEdits.xtabProvider.earlyCursorLineDivergenceCancellation', ConfigType.ExperimentBased, false);
 		export const InlineEditsXtabLanguageContextEnabled = defineTeamInternalSetting<boolean>('chat.advanced.inlineEdits.xtabProvider.languageContext.enabled', ConfigType.ExperimentBased, xtabPromptOptions.DEFAULT_OPTIONS.languageContext.enabled);
 		export const InlineEditsXtabLanguageContextMaxTokens = defineTeamInternalSetting<number>('chat.advanced.inlineEdits.xtabProvider.languageContext.maxTokens', ConfigType.ExperimentBased, xtabPromptOptions.DEFAULT_OPTIONS.languageContext.maxTokens);
 		export const InlineEditsXtabMaxMergeConflictLines = defineTeamInternalSetting<number | undefined>('chat.advanced.inlineEdits.xtabProvider.maxMergeConflictLines', ConfigType.ExperimentBased, undefined);
