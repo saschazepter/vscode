@@ -1088,7 +1088,7 @@ suite('SSHRemoteAgentHostMainService - _connectSSH auth config', () => {
 		await service.testConnectSSH(makeConfig({ authMethod: SSHAuthMethod.Agent }));
 
 		assert.ok(service.lastConnectConfig, 'connectConfig should be captured');
-		assert.ok(service.lastConnectConfig.agent !== undefined, 'should set agent');
+		assert.ok(Object.hasOwn(service.lastConnectConfig, 'agent'), 'should set agent');
 		assert.strictEqual(service.lastConnectConfig.privateKey, keyContents, 'should include fallback privateKey');
 	});
 
@@ -1098,7 +1098,7 @@ suite('SSHRemoteAgentHostMainService - _connectSSH auth config', () => {
 		await service.testConnectSSH(makeConfig({ authMethod: SSHAuthMethod.Agent }));
 
 		assert.ok(service.lastConnectConfig, 'connectConfig should be captured');
-		assert.ok(service.lastConnectConfig.agent !== undefined, 'should set agent');
+		assert.ok(Object.hasOwn(service.lastConnectConfig, 'agent'), 'should set agent');
 		assert.strictEqual(service.lastConnectConfig.privateKey, undefined, 'should not include privateKey');
 	});
 
