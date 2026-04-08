@@ -72,6 +72,9 @@ export class CrossAppUpdateCoordinator extends Disposable implements IUpdateServ
 	/** Disposed when entering client mode, re-registered on disconnect. */
 	private localStateListener: IDisposable | undefined;
 
+	/** True when the server has sent PrepareForQuit and is waiting for a response. */
+	private pendingQuitAndInstall = false;
+
 	get state(): State { return this._state; }
 
 	constructor(
@@ -137,6 +140,18 @@ export class CrossAppUpdateCoordinator extends Disposable implements IUpdateServ
 				this.registerLocalStateListener();
 				// Sync coordinator state with the local service
 				this.updateState(this.localUpdateService.state);
+			}
+
+			// If the server was waiting for a quit confirmation and the client
+			// disconnected, treat it as an implicit confirmation — the client
+			// quit successfully but the IPC pipe was torn down before the
+			// QuitConfirmed message could be delivered.
+			if (this.mode === 'server' && this.pendingQuitAndInstall) {
+				this.logService.info('CrossAppUpdateCoordinator: client disconnected during pending quit, treating as confirmed');
+				this.pendingQuitAndInstall = false;
+				this.mode = 'standalone';
+				this.localUpdateService.quitAndInstall();
+				return;
 			}
 
 			this.mode = 'standalone';
@@ -211,6 +226,7 @@ export class CrossAppUpdateCoordinator extends Disposable implements IUpdateServ
 			case CrossAppUpdateMessageType.QuitConfirmed:
 				if (this.mode === 'server') {
 					this.logService.info('CrossAppUpdateCoordinator: client confirmed quit, proceeding with quitAndInstall');
+					this.pendingQuitAndInstall = false;
 					this.localUpdateService.quitAndInstall();
 				}
 				break;
@@ -218,6 +234,7 @@ export class CrossAppUpdateCoordinator extends Disposable implements IUpdateServ
 			case CrossAppUpdateMessageType.QuitVetoed:
 				if (this.mode === 'server') {
 					this.logService.info('CrossAppUpdateCoordinator: client vetoed quit, aborting quitAndInstall');
+					this.pendingQuitAndInstall = false;
 				}
 				break;
 		}
@@ -276,7 +293,9 @@ export class CrossAppUpdateCoordinator extends Disposable implements IUpdateServ
 	 */
 	private doCoordinatedQuitAndInstall(): void {
 		if (this.ipc?.connected) {
-			// Ask the client to quit; it will respond with QuitConfirmed/QuitVetoed
+			// Ask the client to quit; it will respond with QuitConfirmed/QuitVetoed,
+			// or disconnect (treated as implicit confirmation).
+			this.pendingQuitAndInstall = true;
 			this.sendMessage({ type: CrossAppUpdateMessageType.PrepareForQuit });
 		} else {
 			this.localUpdateService.quitAndInstall();
