@@ -1189,25 +1189,24 @@ export class AICustomizationListWidget extends Disposable {
 
 	/**
 	 * Fetches and filters items for a given section.
-	 * Delegates to the provider path based on the active harness.
+	 * Every harness has an itemProvider — static harnesses wrap promptsService,
+	 * extension-contributed harnesses supply their own.
 	 */
 	private async fetchItemsForSection(section: AICustomizationManagementSection): Promise<IAICustomizationListItem[]> {
 		const promptType = sectionToPromptType(section);
-		const activeDescriptor = this.harnessService.getActiveDescriptor();
-
-		if (activeDescriptor.itemProvider && promptType) {
-			return this.fetchProviderItemsForSection(activeDescriptor, promptType);
-		}
-
-		return [];
+		return this.fetchProviderItemsForSection(this.harnessService.getActiveDescriptor(), promptType);
 	}
 
 	/**
 	 * Fetches items from an external customization provider.
 	 * When a syncProvider is present, blends remote items with local sync items.
+	 * Harnesses with only a syncProvider (e.g. remote agent host) skip the
+	 * remote fetch and return only local syncable items.
 	 */
 	private async fetchProviderItemsForSection(descriptor: ReturnType<ICustomizationHarnessService['getActiveDescriptor']>, promptType: PromptsType): Promise<IAICustomizationListItem[]> {
-		const remoteItems = await this.fetchItemsFromProvider(descriptor.itemProvider!, promptType);
+		const remoteItems = descriptor.itemProvider
+			? await this.fetchItemsFromProvider(descriptor.itemProvider, promptType)
+			: [];
 		if (!descriptor.syncProvider) {
 			return remoteItems;
 		}

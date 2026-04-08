@@ -13,7 +13,7 @@ import { IFileService } from '../../../../../platform/files/common/files.js';
 import { IListService, ListService } from '../../../../../platform/list/browser/listService.js';
 import { IWorkspace, IWorkspaceContextService } from '../../../../../platform/workspace/common/workspace.js';
 import { IAICustomizationWorkspaceService, IStorageSourceFilter } from '../../../../contrib/chat/common/aiCustomizationWorkspaceService.js';
-import { CustomizationHarness, ICustomizationHarnessService, IHarnessDescriptor, createVSCodeHarnessDescriptor } from '../../../../contrib/chat/common/customizationHarnessService.js';
+import { CustomizationHarness, ICustomizationHarnessService, IHarnessDescriptor, createPromptsServiceItemProvider, createVSCodeHarnessDescriptor } from '../../../../contrib/chat/common/customizationHarnessService.js';
 import { IAgentPluginService } from '../../../../contrib/chat/common/plugins/agentPluginService.js';
 import { IChatSessionsService } from '../../../../contrib/chat/common/chatSessionsService.js';
 import { PromptsType } from '../../../../contrib/chat/common/promptSyntax/promptTypes.js';
@@ -62,6 +62,7 @@ function createMockPromptsService(instructionFiles: IFixtureInstructionFile[], a
 		}
 		override async listAgentInstructions() { return agentInstructionFiles; }
 		override async getCustomAgents() { return []; }
+		override async findAgentSkills() { return []; }
 		override async getInstructionFiles() {
 			return instructionFiles.map(f => ({
 				uri: f.promptPath.uri,
@@ -112,8 +113,9 @@ function createMockWorkspaceService(): IAICustomizationWorkspaceService {
 	}();
 }
 
-function createMockHarnessService(): ICustomizationHarnessService {
-	const descriptor = createVSCodeHarnessDescriptor([PromptsStorage.extension]);
+function createMockHarnessService(promptsService: IPromptsService): ICustomizationHarnessService {
+	const { itemProvider } = createPromptsServiceItemProvider(promptsService);
+	const descriptor: IHarnessDescriptor = { ...createVSCodeHarnessDescriptor([PromptsStorage.extension]), itemProvider };
 	return new class extends mock<ICustomizationHarnessService>() {
 		override readonly activeHarness = observableValue<string>('activeHarness', CustomizationHarness.VSCode);
 		override readonly availableHarnesses = observableValue<readonly IHarnessDescriptor[]>('harnesses', [descriptor]);
@@ -156,6 +158,8 @@ async function renderInstructionsTab(ctx: ComponentFixtureContext, instructionFi
 		override layout(): void { }
 	};
 
+	const promptsService = createMockPromptsService(instructionFiles, agentInstructionFiles);
+
 	const instantiationService = createEditorServices(ctx.disposableStore, {
 		colorTheme: ctx.theme,
 		additionalServices: (reg) => {
@@ -163,9 +167,9 @@ async function renderInstructionsTab(ctx: ComponentFixtureContext, instructionFi
 			reg.defineInstance(IContextViewService, contextViewService);
 			registerWorkbenchServices(reg);
 			reg.define(IListService, ListService);
-			reg.defineInstance(IPromptsService, createMockPromptsService(instructionFiles, agentInstructionFiles));
+			reg.defineInstance(IPromptsService, promptsService);
 			reg.defineInstance(IAICustomizationWorkspaceService, createMockWorkspaceService());
-			reg.defineInstance(ICustomizationHarnessService, createMockHarnessService());
+			reg.defineInstance(ICustomizationHarnessService, createMockHarnessService(promptsService));
 			reg.defineInstance(IWorkspaceContextService, createMockWorkspaceContextService());
 			reg.defineInstance(IChatSessionsService, new class extends mock<IChatSessionsService>() {
 				override readonly onDidChangeCustomizations = Event.None;
