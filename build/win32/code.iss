@@ -1417,7 +1417,7 @@ end;
 
 var
 	ShouldRestartTunnelService: Boolean;
-#ifdef ProxyExeBasename
+#ifdef ProxyMutex
 	ProxyWasRunning: Boolean;
 #endif
 
@@ -1520,7 +1520,7 @@ begin
     Result := True;
 end;
 
-#ifdef ProxyExeBasename
+#ifdef ProxyMutex
 function ShouldRunProxyAfterUpdate(): Boolean;
 begin
   // Relaunch the proxy app after a background update if it was
@@ -1621,11 +1621,11 @@ begin
   if IsBackgroundUpdate() then
     Result := ''
   else
-    Result := '{#AppMutex}'
-      {#ifdef ProxyMutex}
-        + ',{#ProxyMutex}'
-      {#endif}
-    ;
+#ifdef ProxyMutex
+    Result := '{#AppMutex},{#ProxyMutex}';
+#else
+    Result := '{#AppMutex}';
+#endif
 end;
 
 function GetSetupMutex(Value: string): string;
@@ -1634,10 +1634,11 @@ begin
   // During background updates, also create a -updating mutex that VS Code checks
   // to avoid launching while an update is in progress.
   if IsBackgroundUpdate() then
+#ifdef ProxyMutex
+    Result := '{#AppMutex}setup,{#AppMutex}-updating,{#ProxyMutex}-updating'
+#else
     Result := '{#AppMutex}setup,{#AppMutex}-updating'
-      {#ifdef ProxyMutex}
-        + ',{#ProxyMutex}-updating'
-      {#endif}
+#endif
   else
     Result := '{#AppMutex}setup';
 end;
@@ -1813,22 +1814,22 @@ begin
 
     if IsBackgroundUpdate() then
     begin
-      {#ifdef ProxyMutex}
+#ifdef ProxyMutex
       // Snapshot whether the proxy app is running before we wait for it to exit
       ProxyWasRunning := CheckForMutexes('{#ProxyMutex}');
       Log('Proxy app was running: ' + BoolToStr(ProxyWasRunning));
-      {#endif}
+#endif
 
       SaveStringToFile(ExpandConstant('{app}\updating_version'), '{#Commit}', False);
       CreateMutex('{#AppMutex}-ready');
       DeleteFile(GetUpdateProgressFilePath());
 
       Log('Checking whether application is still running...');
-      while (CheckForMutexes('{#AppMutex}'
-        {#ifdef ProxyMutex}
-          + ',{#ProxyMutex}'
-        {#endif}
-      )) do
+#ifdef ProxyMutex
+      while (CheckForMutexes('{#AppMutex},{#ProxyMutex}')) do
+#else
+      while (CheckForMutexes('{#AppMutex}')) do
+#endif
       begin
         if CancelFileExists() then
         begin
