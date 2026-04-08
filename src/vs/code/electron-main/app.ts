@@ -1240,7 +1240,8 @@ export class CodeApplication extends Disposable {
 		// Update (with cross-app coordination on macOS/Windows where crossAppIPC is available)
 		const localUpdateService = accessor.get(IUpdateService);
 		let effectiveUpdateService: IUpdateService = localUpdateService;
-		if (isMacintosh || isWindows) {
+		const isInsiderOrExploration = this.productService.quality === 'insider' || this.productService.quality === 'exploration';
+		if ((isMacintosh || isWindows) && isInsiderOrExploration) {
 			const updateCoordinator = this._register(new CrossAppUpdateCoordinator(
 				localUpdateService as AbstractUpdateService,
 				this.logService,
