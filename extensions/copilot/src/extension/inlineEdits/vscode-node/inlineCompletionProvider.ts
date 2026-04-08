@@ -637,6 +637,10 @@ export class InlineCompletionProviderImpl extends Disposable implements InlineCo
 			if (!item.isEditInAnotherDocument) {
 				this._trackSurvivalRate(info);
 			}
+			// Release document data after all sync consumers have read it.
+			// _trackSurvivalRate reads documentBeforeEdits synchronously before
+			// its first await, so this is safe to call here.
+			info.suggestion.releaseDocumentData();
 		} else {
 			this.model.diagnosticsBasedProvider?.handleAcceptance(info.documentId, info.suggestion);
 		}
@@ -713,6 +717,7 @@ export class InlineCompletionProviderImpl extends Disposable implements InlineCo
 		const info = completionItem.info;
 		if (isLlmCompletionInfo(info)) {
 			this.model.nextEditProvider.handleRejection(info.documentId, info.suggestion);
+			info.suggestion.releaseDocumentData();
 		} else {
 			this.model.diagnosticsBasedProvider?.handleRejection(info.documentId, info.suggestion);
 		}
@@ -727,6 +732,7 @@ export class InlineCompletionProviderImpl extends Disposable implements InlineCo
 		const supersededBySuggestion = supersededBy ? supersededBy.info.suggestion : undefined;
 		if (isLlmCompletionInfo(info)) {
 			this.model.nextEditProvider.handleIgnored(info.documentId, info.suggestion, supersededBySuggestion);
+			info.suggestion.releaseDocumentData();
 		} else {
 			this.model.diagnosticsBasedProvider?.handleIgnored(info.documentId, info.suggestion, supersededBySuggestion);
 		}

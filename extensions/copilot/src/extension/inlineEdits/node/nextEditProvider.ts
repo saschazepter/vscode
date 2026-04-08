@@ -710,16 +710,9 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 		// includes a setContent entry with the full document base value, and
 		// JSON.stringify creates a multi-MB transient string on every trigger.
 		const docSize = doc.value.get().value.length;
-		const maxRecordingBytes = 256 * 1024;
-		let cappedRecording: ReturnType<DebugRecorder['getRecentLog']> | undefined;
-		if (docSize <= maxRecordingBytes) {
-			const recording = this._debugRecorder?.getRecentLog();
-			const recordingJson = recording ? JSON.stringify(recording) : undefined;
-			cappedRecording = recordingJson && recordingJson.length > maxRecordingBytes ? undefined : recording;
-			h3_getRecentLog(recording?.length ?? 0, recordingJson?.length ?? 0, cappedRecording === undefined && recording !== undefined);
-		} else {
-			h3_getRecentLog(0, 0, true);
-		}
+		const maxRecordingDocSize = 256 * 1024;
+		const cappedRecording = docSize <= maxRecordingDocSize ? this._debugRecorder?.getRecentLog() : undefined;
+		h3_getRecentLog(cappedRecording?.length ?? 0, 0, docSize > maxRecordingDocSize);
 
 		const logContext = req.log;
 
@@ -1224,13 +1217,8 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 		logContext.setStatelessNextEditProviderId(this._statelessNextEditProvider.ID);
 
 		// Skip recording for large documents to avoid multi-MB transient allocations
-		const maxRecordingBytes = 256 * 1024;
-		const specDocSize = postEditContent.length;
-		let cappedRecording: ReturnType<DebugRecorder['getRecentLog']> | undefined;
-		if (specDocSize <= maxRecordingBytes) {
-			const recording = this._debugRecorder?.getRecentLog();
-			cappedRecording = recording && JSON.stringify(recording).length > maxRecordingBytes ? undefined : recording;
-		}
+		const maxRecordingDocSize = 256 * 1024;
+		const cappedRecording = postEditContent.length <= maxRecordingDocSize ? this._debugRecorder?.getRecentLog() : undefined;
 
 		const logger = parentLogger.createSubLogger('_createSpeculativeRequest');
 
@@ -1471,8 +1459,6 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 		} else {
 			logger.trace('NOT setting shouldExpandEditWindow to true because suggestion is not the last suggestion');
 		}
-
-		suggestion.releaseDocumentData();
 	}
 
 	public handleRejection(docId: DocumentId, suggestion: NextEditResult) {
@@ -1495,8 +1481,6 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 		this._lastOutcome = NesOutcome.Rejected;
 
 		this._statelessNextEditProvider.handleRejection?.();
-
-		suggestion.releaseDocumentData();
 	}
 
 	public handleIgnored(docId: DocumentId, suggestion: NextEditResult, supersededBy: INextEditResult | undefined): void {
@@ -1511,8 +1495,6 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 			this._cancelSpeculativeRequest();
 			this._statelessNextEditProvider.handleIgnored?.();
 		}
-
-		suggestion.releaseDocumentData();
 	}
 
 	private async runSnippy(docId: DocumentId, suggestion: NextEditResult) {
