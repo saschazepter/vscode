@@ -113,7 +113,11 @@ export class AICustomizationWelcomePage extends Disposable {
 			this.inputBox = this._register(new InputBox(inputRow, undefined, {
 				placeholder: localize('workflowInputPlaceholder', "Describe your project and coding patterns..."),
 				ariaLabel: localize('workflowInputAriaLabel', "Describe your project to configure AI"),
-				inputBoxStyles: defaultInputBoxStyles,
+				inputBoxStyles: {
+					...defaultInputBoxStyles,
+					inputBorder: 'transparent',
+					inputBackground: 'transparent',
+				},
 			}));
 			this.inputBox.element.classList.add('welcome-input');
 
