@@ -65,7 +65,7 @@ import { nes41Miniv3SystemPrompt, simplifiedPrompt, systemPromptTemplate, unifie
 import { PromptTags, ResponseTags } from '../common/tags';
 import { TerminalMonitor } from '../common/terminalOutput';
 import { CurrentDocument } from '../common/xtabCurrentDocument';
-import { isModelCursorLineCompatible } from './cursorLineDivergence';
+import { getCurrentCursorLine, isModelCursorLineCompatible } from './cursorLineDivergence';
 import { XtabCustomDiffPatchResponseHandler } from './xtabCustomDiffPatchResponseHandler';
 import { XtabEndpoint } from './xtabEndpoint';
 import { CursorJumpPrediction, XtabNextCursorPredictor } from './xtabNextCursorPredictor';
@@ -1001,11 +1001,9 @@ export class XtabProvider implements IStatelessNextEditProvider {
 					if (lineIdx === cursorOriginalLinesOffset) {
 						const intermediateEdit = request.intermediateUserEdit;
 						if (intermediateEdit && !intermediateEdit.isEmpty()) {
-							const currentDoc = intermediateEdit.apply(request.documentBeforeEdits.value);
 							const cursorDocLineIdx = editWindowLineRange.start + cursorOriginalLinesOffset;
-							const currentLines = currentDoc.split('\n');
-							if (cursorDocLineIdx < currentLines.length) {
-								const currentCursorLine = currentLines[cursorDocLineIdx];
+							const currentCursorLine = getCurrentCursorLine(request.documentBeforeEdits.getTransformer(), cursorDocLineIdx, intermediateEdit);
+							if (currentCursorLine !== undefined) {
 								const originalCursorLine = editWindowLines[cursorOriginalLinesOffset];
 								if (currentCursorLine !== originalCursorLine // user changed the cursor line
 									&& !isModelCursorLineCompatible(originalCursorLine, currentCursorLine, line) // model's cursor line isn't compatible with user's typing

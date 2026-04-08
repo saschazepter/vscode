@@ -3,6 +3,67 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import { StringEdit } from '../../../util/vs/editor/common/core/edits/stringEdit';
+import { Position } from '../../../util/vs/editor/common/core/position';
+import { PositionOffsetTransformer } from '../../../util/vs/editor/common/core/text/positionToOffset';
+
+/**
+ * Resolves the current content of the cursor line after applying an intermediate
+ * user edit to the original document.
+ *
+ * The cursor line's 0-based index in the original document may no longer be
+ * valid after the user inserts or deletes lines above the cursor. This function
+ * maps the cursor line's character offset through the edit to find the correct
+ * line in the resulting document.
+ *
+ * @param originalDoc A transformer for the original document text (reused to
+ *                    avoid recomputing line offsets).
+ * @param cursorDocLineIdx 0-based line index in the original document.
+ * @returns The line content, or `undefined` if the cursor line index is out of
+ *          bounds or the original position falls inside a replacement range
+ *          (making the mapping ambiguous).
+ */
+export function getCurrentCursorLine(
+	originalDoc: PositionOffsetTransformer,
+	cursorDocLineIdx: number,
+	intermediateEdit: StringEdit,
+): string | undefined {
+	const lineNumber = cursorDocLineIdx + 1; // 1-based
+	const lineCount = originalDoc.textLength.lineCount + 1;
+
+	if (lineNumber < 1 || lineNumber > lineCount) {
+		return undefined;
+	}
+
+	const cursorLineStartOffset = originalDoc.getOffset(new Position(lineNumber, 1));
+
+	// Walk through the edit's replacements (sorted, non-overlapping) and
+	// accumulate the character-offset delta for replacements entirely before
+	// the cursor line start.
+	let delta = 0;
+	for (const replacement of intermediateEdit.replacements) {
+		if (replacement.replaceRange.endExclusive <= cursorLineStartOffset) {
+			delta += replacement.newText.length - replacement.replaceRange.length;
+		} else if (replacement.replaceRange.start < cursorLineStartOffset) {
+			// The cursor line start falls inside a replacement — ambiguous.
+			return undefined;
+		} else {
+			break;
+		}
+	}
+
+	const mappedOffset = cursorLineStartOffset + delta;
+	const currentDoc = intermediateEdit.apply(originalDoc.text);
+	const currentTransformer = new PositionOffsetTransformer(currentDoc);
+
+	// Map the offset back to a position in the current document, then extract
+	// the full line content.
+	const currentPos = currentTransformer.getPosition(mappedOffset);
+	const lineStart = currentTransformer.getOffset(new Position(currentPos.lineNumber, 1));
+	const lineLen = currentTransformer.getLineLength(currentPos.lineNumber);
+	return currentDoc.substring(lineStart, lineStart + lineLen);
+}
+
 /**
  * A minimal single-line edit: the text between `startOffset` and `endOffset`
  * in the original was replaced with `inserted`.

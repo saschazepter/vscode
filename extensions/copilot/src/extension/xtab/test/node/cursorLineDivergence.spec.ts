@@ -4,7 +4,10 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { describe, expect, it } from 'vitest';
-import { isModelCursorLineCompatible } from '../../node/cursorLineDivergence';
+import { StringEdit, StringReplacement } from '../../../../util/vs/editor/common/core/edits/stringEdit';
+import { OffsetRange } from '../../../../util/vs/editor/common/core/ranges/offsetRange';
+import { PositionOffsetTransformer } from '../../../../util/vs/editor/common/core/text/positionToOffset';
+import { getCurrentCursorLine, isModelCursorLineCompatible } from '../../node/cursorLineDivergence';
 
 // ============================================================================
 // isModelCursorLineCompatible — unit tests
@@ -445,6 +448,140 @@ describe('isModelCursorLineCompatible', () => {
 				'const x = 1;!',
 				'const x;',
 			)).toBe(false);
+		});
+	});
+});
+
+// ============================================================================
+// getCurrentCursorLine — unit tests
+// ============================================================================
+
+describe('getCurrentCursorLine', () => {
+
+	function t(doc: string): PositionOffsetTransformer {
+		return new PositionOffsetTransformer(doc);
+	}
+
+	/**
+	 * Helper: builds a StringEdit that inserts `text` at `offset` in the
+	 * original document (a pure insertion, no deletion).
+	 */
+	function insertAt(offset: number, text: string): StringEdit {
+		return StringEdit.single(new StringReplacement(OffsetRange.emptyAt(offset), text));
+	}
+
+	/**
+	 * Helper: builds a StringEdit that deletes `length` characters starting at
+	 * `offset` in the original document.
+	 */
+	function deleteAt(offset: number, length: number): StringEdit {
+		return StringEdit.single(new StringReplacement(new OffsetRange(offset, offset + length), ''));
+	}
+
+	describe('no line-shifting edits', () => {
+
+		it('returns the cursor line when the edit only modifies the cursor line', () => {
+			//  Doc: "aaa\nbbb\nccc"  (cursor on line 1 = "bbb")
+			//  User typed "X" at offset 4 (start of "bbb") → "aaa\nXbbb\nccc"
+			const doc = 'aaa\nbbb\nccc';
+			const edit = insertAt(4, 'X');
+
+			expect(getCurrentCursorLine(t(doc), 1, edit)).toBe('Xbbb');
+		});
+
+		it('returns the unmodified cursor line when the edit is empty', () => {
+			const doc = 'aaa\nbbb\nccc';
+
+			expect(getCurrentCursorLine(t(doc), 1, StringEdit.empty)).toBe('bbb');
+		});
+	});
+
+	describe('line inserted above cursor', () => {
+
+		it('returns the correct cursor line after a newline is inserted above', () => {
+			//  Doc: "aaa\nbbb\nccc"  (cursor on line 2 = "ccc")
+			//  User inserts "\nNEW" at offset 3 (end of "aaa") → "aaa\nNEW\nbbb\nccc"
+			//  Cursor line 2 in the original ("ccc") is now at line 3.
+			//  Without the fix, naively reading line 2 would give "bbb".
+			const doc = 'aaa\nbbb\nccc';
+			const edit = insertAt(3, '\nNEW');
+
+			expect(getCurrentCursorLine(t(doc), 2, edit)).toBe('ccc');
+		});
+
+		it('handles multiple lines inserted above the cursor', () => {
+			//  Doc: "L0\nL1\nL2"  (cursor on line 2 = "L2")
+			//  Insert two new lines after L0: "\nA\nB"
+			//  New doc: "L0\nA\nB\nL1\nL2"
+			//  Cursor line should still resolve to "L2"
+			const doc = 'L0\nL1\nL2';
+			const edit = insertAt(2, '\nA\nB');
+
+			expect(getCurrentCursorLine(t(doc), 2, edit)).toBe('L2');
+		});
+	});
+
+	describe('line deleted above cursor', () => {
+
+		it('returns the correct cursor line after a line above is deleted', () => {
+			//  Doc: "aaa\nbbb\nccc\nddd"  (cursor on line 3 = "ddd")
+			//  User deletes "bbb\n" (offsets 4..8) → "aaa\nccc\nddd"
+			//  Cursor line 3 ("ddd") is now at line 2.
+			const doc = 'aaa\nbbb\nccc\nddd';
+			const edit = deleteAt(4, 4); // delete "bbb\n"
+
+			expect(getCurrentCursorLine(t(doc), 3, edit)).toBe('ddd');
+		});
+	});
+
+	describe('edit on a line below cursor', () => {
+
+		it('does not affect the cursor line', () => {
+			//  Doc: "aaa\nbbb\nccc"  (cursor on line 0 = "aaa")
+			//  User edits line 2 → "aaa\nbbb\nCCC"
+			const doc = 'aaa\nbbb\nccc';
+			const edit = StringEdit.single(new StringReplacement(new OffsetRange(8, 11), 'CCC'));
+
+			expect(getCurrentCursorLine(t(doc), 0, edit)).toBe('aaa');
+		});
+	});
+
+	describe('edge cases', () => {
+
+		it('cursor on the first line', () => {
+			const doc = 'hello\nworld';
+			const edit = insertAt(0, 'XY');
+
+			expect(getCurrentCursorLine(t(doc), 0, edit)).toBe('XYhello');
+		});
+
+		it('cursor on the last line', () => {
+			const doc = 'aaa\nbbb';
+			const edit = insertAt(3, '\nNEW');
+
+			expect(getCurrentCursorLine(t(doc), 1, edit)).toBe('bbb');
+		});
+
+		it('returns undefined for out-of-bounds line index', () => {
+			const doc = 'aaa\nbbb';
+
+			expect(getCurrentCursorLine(t(doc), 5, StringEdit.empty)).toBeUndefined();
+		});
+
+		it('returns undefined when cursor line start is inside a replacement', () => {
+			//  Doc: "aaa\nbbb\nccc"  (cursor on line 1, starts at offset 4)
+			//  Edit replaces offsets 2..6 (spans across line boundary including cursor line start)
+			const doc = 'aaa\nbbb\nccc';
+			const edit = StringEdit.single(new StringReplacement(new OffsetRange(2, 6), 'Z'));
+
+			expect(getCurrentCursorLine(t(doc), 1, edit)).toBeUndefined();
+		});
+
+		it('single-line document, cursor on line 0', () => {
+			const doc = 'hello';
+			const edit = insertAt(5, ' world');
+
+			expect(getCurrentCursorLine(t(doc), 0, edit)).toBe('hello world');
 		});
 	});
 });

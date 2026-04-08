@@ -2301,6 +2301,46 @@ describe('XtabProvider integration', () => {
 			expect(finalReason.v).toBeInstanceOf(NoNextEditReason.GotCancelled);
 			expect((finalReason.v as NoNextEditReason.GotCancelled).message).toBe('cursorLineDiverged');
 		});
+
+		it('does not false-cancel when user inserted a line above the cursor', async () => {
+			const provider = createProvider();
+
+			//  Request created with 3-line document:
+			//    line 0: "import foo"
+			//    line 1: "function fi"    ← cursor line (line index 1)
+			//    line 2: "}"
+			//
+			//  After the request, the user inserts a blank line after "import foo",
+			//  shifting the cursor line down. Without mapping the cursor line
+			//  through the edit, the code would read the wrong line ("") at
+			//  index 1 and false-cancel.
+			//
+			//  The user also typed "b" on the cursor line → "function fib"
+			//  Model responds with a compatible continuation.
+			const request = createDivergenceRequest(
+				['import foo', 'function fi', '}'],
+				{ insertionOffset: 21, insertedText: 'i' },
+			);
+
+			// intermediateUserEdit (in original doc coordinates):
+			//   offset 10 = '\n' after "import foo" → insert extra '\n' (new blank line)
+			//   offset 22 = '\n' after "function fi" → insert 'b' (user typing)
+			request.intermediateUserEdit = StringEdit.create([
+				new StringReplacement(OffsetRange.emptyAt(10), '\n'),
+				new StringReplacement(OffsetRange.emptyAt(22), 'b'),
+			]);
+
+			// Model output: compatible with user's typing ("b" → "bonacci…")
+			streamingFetcher.setStreamingLines(['import foo', 'function fibonacci(n): number', '}']);
+
+			const gen = provider.provideNextEdit(request, createMockLogger(), createLogContext(), CancellationToken.None);
+			const { finalReason } = await collectEdits(gen);
+
+			// The key assertion: no false cancellation due to line-shift
+			if (finalReason.v instanceof NoNextEditReason.GotCancelled) {
+				expect(finalReason.v.message).not.toBe('cursorLineDiverged');
+			}
+		});
 	});
 });
 suite('filterOutEditsWithSubstrings', () => {
