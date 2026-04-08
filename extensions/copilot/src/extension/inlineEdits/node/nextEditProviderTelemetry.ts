@@ -174,7 +174,7 @@ export class LlmNESTelemetryBuilder extends Disposable {
 				};
 			}
 			alternativeAction = {
-				text: originalText.length > maxAlternativeActionFieldBytes ? originalText.substring(0, maxAlternativeActionFieldBytes) : originalText,
+				text: originalText.length > maxAlternativeActionFieldBytes ? (' ' + originalText.substring(0, maxAlternativeActionFieldBytes)).slice(1) : originalText,
 				textLength: this.editCollectingInfo.originalDocLength,
 				selection: this.editCollectingInfo.originalSelection.map(range => ({
 					start: range.start,
