@@ -105,6 +105,7 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 	private _autoAdvanceStates: string[] | undefined;
 	private _autoAdvanceIndex = 0;
 	private _resumed = false;
+	private _chatCountForAdvance = 0;
 
 	constructor(
 		@IStatusbarService statusbarService: IStatusbarService,
@@ -152,6 +153,19 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 		this.setActiveCell(this._activeSku, this._autoAdvanceStates[this._autoAdvanceIndex]);
 	}
 
+	private advanceFromApproached(): void {
+		// Map Approached states to their corresponding Exhausted/Reached states
+		const advanceMap: Record<string, string> = {
+			'Session Approached': 'Session Reached',
+			'Weekly Approached': 'Weekly Reached',
+			'Overage Approached': 'Overage Reached',
+		};
+		const nextState = advanceMap[this._activeState];
+		if (nextState) {
+			this.setActiveCell(this._activeSku, nextState);
+		}
+	}
+
 	private setupInputInterceptor(): void {
 		const tryAttach = () => {
 			const container = this.layoutService.getContainer(mainWindow);
@@ -178,7 +192,18 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 					this.clearResumedState();
 					if (this._autoAdvanceStates) {
 						// Schedule advance after the message is sent
-						setTimeout(() => this.advanceState(), 1500);
+						this._chatCountForAdvance++;
+						if (this._chatCountForAdvance >= 2) {
+							this._chatCountForAdvance = 0;
+							setTimeout(() => this.advanceState(), 1500);
+						}
+					} else if (this._activeState.includes('Approached')) {
+						// Approached → Exhausted/Reached on chat submit
+						this._chatCountForAdvance++;
+						if (this._chatCountForAdvance >= 2) {
+							this._chatCountForAdvance = 0;
+							setTimeout(() => this.advanceFromApproached(), 1500);
+						}
 					}
 				}
 			}, true);
@@ -195,7 +220,17 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 				} else {
 					this.clearResumedState();
 					if (this._autoAdvanceStates) {
-						setTimeout(() => this.advanceState(), 1500);
+						this._chatCountForAdvance++;
+						if (this._chatCountForAdvance >= 2) {
+							this._chatCountForAdvance = 0;
+							setTimeout(() => this.advanceState(), 1500);
+						}
+					} else if (this._activeState.includes('Approached')) {
+						this._chatCountForAdvance++;
+						if (this._chatCountForAdvance >= 2) {
+							this._chatCountForAdvance = 0;
+							setTimeout(() => this.advanceFromApproached(), 1500);
+						}
 					}
 				}
 			}, true);
@@ -263,6 +298,7 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 		this._activeState = state;
 		this._bannerDismissed = false;
 		this._resumed = false;
+		this._chatCountForAdvance = 0;
 		// Update the dashboard entry so next tooltip render uses new state
 		this._dashboardEntryAccessor.update(this.getDashboardEntryProps());
 		// Clear any existing warning card
