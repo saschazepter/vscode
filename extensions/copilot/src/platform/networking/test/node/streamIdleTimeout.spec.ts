@@ -136,4 +136,31 @@ suite('withStreamIdleTimeout', () => {
 		await done;
 		assert.deepStrictEqual(collected, ['delayed-first']);
 	});
+
+	test('consumer processing time longer than idle timeout does not cause false timeout', async () => {
+		const { stream, push, close } = createControllableStream<string>();
+
+		const collected: string[] = [];
+		const done = (async () => {
+			for await (const chunk of withStreamIdleTimeout(stream)) {
+				collected.push(chunk);
+				// Simulate slow consumer: advance time well past the idle timeout
+				// while processing each chunk. This must NOT trigger a timeout
+				// because the timer should only run during iterator.next(), not
+				// while the consumer holds the yielded value.
+				await vi.advanceTimersByTimeAsync(SSE_IDLE_TIMEOUT_MS * 3);
+			}
+		})();
+
+		push('a');
+		await vi.advanceTimersByTimeAsync(1);
+		push('b');
+		await vi.advanceTimersByTimeAsync(1);
+		push('c');
+		await vi.advanceTimersByTimeAsync(1);
+		close();
+
+		await done;
+		assert.deepStrictEqual(collected, ['a', 'b', 'c']);
+	});
 });

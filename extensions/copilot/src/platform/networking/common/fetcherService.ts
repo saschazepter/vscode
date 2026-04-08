@@ -343,16 +343,25 @@ export async function* withStreamIdleTimeout<T>(
 		clearTimer();
 		timer = setTimeout(() => {
 			timedOut = true;
-			stream.destroy();
+			void stream.destroy().catch(() => { });
 		}, timeoutMs);
 	};
 
-	startTimer(SSE_FIRST_CHUNK_TIMEOUT_MS);
+	const iterator = stream[Symbol.asyncIterator]();
 	try {
-		for await (const chunk of stream) {
+		while (true) {
+			// Timer runs only while awaiting the next chunk from the network
+			startTimer(isFirstChunk ? SSE_FIRST_CHUNK_TIMEOUT_MS : SSE_IDLE_TIMEOUT_MS);
+			const result = await iterator.next();
+			clearTimer();
+
+			if (result.done) {
+				break;
+			}
+
 			isFirstChunk = false;
-			startTimer(SSE_IDLE_TIMEOUT_MS);
-			yield chunk;
+			// Consumer processing time is NOT timed — the timer is cleared above
+			yield result.value;
 		}
 	} finally {
 		clearTimer();
