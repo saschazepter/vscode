@@ -1069,6 +1069,7 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 		let exitCode: number | undefined;
 		let altBufferResult: IToolResult | undefined;
 		let didTimeout = false;
+		let didInputNeeded = false;
 		// Covers both terminals that start as background (persistentSession) and
 		// foreground terminals that later move to background (timeout/continue-in-bg).
 		let isBackgroundExecution = executionOptions.persistentSession;
@@ -1209,6 +1210,12 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 						resultText += `${outputAnalyzerMessage}\n`;
 					}
 					resultText += pollingResult.output;
+					const isAutoApproved = isSessionAutoApproveLevel(chatSessionResource, this._configurationService, this._chatWidgetService, this._chatService);
+					if (isAutoApproved) {
+						resultText += `\nIf the command is waiting for input, you MUST determine the appropriate response from context and immediately call ${TerminalToolId.SendToTerminal} with id "${termId}" to provide it.`;
+					} else {
+						resultText += `\nIf the command is waiting for input, you MUST call the askQuestions tool to ask the user what input to provide, then call ${TerminalToolId.SendToTerminal} with id "${termId}" to send their response.`;
+					}
 				} else if (pollingResult) {
 					resultText += `\n The command is still running, with output:\n`;
 					if (outputAnalyzerMessage) {
@@ -1256,6 +1263,7 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 					// Convert to background so the terminal stays alive for send_to_terminal.
 					this._logService.debug(`RunInTerminalTool: Output monitor detected input needed in foreground terminal, returning output to agent`);
 					error = 'inputNeeded';
+					didInputNeeded = true;
 					isBackgroundExecution = true;
 					toolTerminal.isBackground = true;
 					this._sessionTerminalAssociations.delete(chatSessionResource);
@@ -1445,7 +1453,14 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 				resultText.push(`Note: This terminal execution was moved to the background using the ID ${termId}\n`);
 			}
 		}
-		if (didTimeout && timeoutValue !== undefined && timeoutValue > 0) {
+		if (didInputNeeded) {
+			const isAutoApproved = isSessionAutoApproveLevel(chatSessionResource, this._configurationService, this._chatWidgetService, this._chatService);
+			if (isAutoApproved) {
+				resultText.push(`Note: The command is running in terminal ID ${termId} and is waiting for input. You MUST determine the appropriate response from context and immediately call ${TerminalToolId.SendToTerminal} with id "${termId}" to provide it.\n\n`);
+			} else {
+				resultText.push(`Note: The command is running in terminal ID ${termId} and is waiting for input. You MUST call the askQuestions tool to ask the user what input to provide, then call ${TerminalToolId.SendToTerminal} with id "${termId}" to send their response.\n\n`);
+			}
+		} else if (didTimeout && timeoutValue !== undefined && timeoutValue > 0) {
 			const notificationHint = this._configurationService.getValue(TerminalChatAgentToolsSettingId.BackgroundNotifications)
 				? ' You will be automatically notified on your next turn when it completes.'
 				: '';

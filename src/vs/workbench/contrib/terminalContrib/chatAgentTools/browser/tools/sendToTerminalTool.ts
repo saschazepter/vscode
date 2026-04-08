@@ -7,24 +7,16 @@ import type { CancellationToken } from '../../../../../../base/common/cancellati
 import { Codicon } from '../../../../../../base/common/codicons.js';
 import { createCommandUri, MarkdownString } from '../../../../../../base/common/htmlContent.js';
 import { Disposable } from '../../../../../../base/common/lifecycle.js';
-import { generateUuid } from '../../../../../../base/common/uuid.js';
 import { localize } from '../../../../../../nls.js';
 import { CommandsRegistry } from '../../../../../../platform/commands/common/commands.js';
 import { IConfigurationService } from '../../../../../../platform/configuration/common/configuration.js';
-import { IInstantiationService } from '../../../../../../platform/instantiation/common/instantiation.js';
-import { IStorageService } from '../../../../../../platform/storage/common/storage.js';
-import { ITerminalLogService } from '../../../../../../platform/terminal/common/terminal.js';
 import { IChatWidgetService } from '../../../../chat/browser/chat.js';
 import { IChatService } from '../../../../chat/common/chatService/chatService.js';
 import { ToolDataSource, type CountTokensCallback, type IPreparedToolInvocation, type IToolData, type IToolImpl, type IToolInvocation, type IToolInvocationPreparationContext, type IToolResult, type ToolProgress } from '../../../../chat/common/tools/languageModelToolsService.js';
 import { ITerminalService } from '../../../../terminal/browser/terminal.js';
-import { buildCommandDisplayText, isPowerShell, normalizeCommandForExecution } from '../runInTerminalHelpers.js';
-import { RunInTerminalToolTelemetry } from '../runInTerminalToolTelemetry.js';
-import { TreeSitterCommandParser, TreeSitterCommandParserLanguage } from '../treeSitterCommandParser.js';
-import type { ICommandLineAnalyzerOptions } from './commandLineAnalyzer/commandLineAnalyzer.js';
-import { CommandLineAutoApproveAnalyzer } from './commandLineAnalyzer/commandLineAutoApproveAnalyzer.js';
-import { RunInTerminalTool, TerminalProfileFetcher } from './runInTerminalTool.js';
-import { isSessionAutoApproveLevel, isTerminalAutoApproveAllowed } from './terminalToolAutoApprove.js';
+import { buildCommandDisplayText, normalizeCommandForExecution } from '../runInTerminalHelpers.js';
+import { RunInTerminalTool } from './runInTerminalTool.js';
+import { isSessionAutoApproveLevel } from './terminalToolAutoApprove.js';
 import { TerminalToolId } from './toolIds.js';
 
 export const SendToTerminalToolData: IToolData = {
@@ -63,8 +55,6 @@ export interface ISendToTerminalInputParams {
 	command: string;
 }
 
-const SEND_TO_TERMINAL_REFERENCE_NAME = 'sendToTerminal';
-
 const FocusTerminalByIdCommandId = 'workbench.action.terminal.chat.focusTerminalById';
 CommandsRegistry.registerCommand(FocusTerminalByIdCommandId, (accessor, instanceId: number) => {
 	const terminalService = accessor.get(ITerminalService);
@@ -89,29 +79,13 @@ function toMarkdownInlineCode(text: string): string {
 
 export class SendToTerminalTool extends Disposable implements IToolImpl {
 
-	private readonly _autoApproveAnalyzer: CommandLineAutoApproveAnalyzer;
-	private readonly _profileFetcher: TerminalProfileFetcher;
-
 	constructor(
 		@IConfigurationService private readonly _configurationService: IConfigurationService,
-		@IInstantiationService instantiationService: IInstantiationService,
-		@IStorageService private readonly _storageService: IStorageService,
-		@ITerminalLogService private readonly _logService: ITerminalLogService,
 		@IChatService private readonly _chatService: IChatService,
 		@IChatWidgetService private readonly _chatWidgetService: IChatWidgetService,
 		@ITerminalService private readonly _terminalService: ITerminalService,
 	) {
 		super();
-
-		const treeSitterCommandParser = this._register(instantiationService.createInstance(TreeSitterCommandParser));
-		const telemetry = instantiationService.createInstance(RunInTerminalToolTelemetry);
-		this._autoApproveAnalyzer = this._register(instantiationService.createInstance(
-			CommandLineAutoApproveAnalyzer,
-			treeSitterCommandParser,
-			telemetry,
-			(message: string, ...args: unknown[]) => this._logService.info(`SendToTerminalTool#CommandLineAutoApproveAnalyzer: ${message}`, ...args),
-		));
-		this._profileFetcher = instantiationService.createInstance(TerminalProfileFetcher);
 	}
 
 	async prepareToolInvocation(context: IToolInvocationPreparationContext, _token: CancellationToken): Promise<IPreparedToolInvocation | undefined> {
@@ -143,43 +117,12 @@ export class SendToTerminalTool extends Disposable implements IToolImpl {
 		const chatSessionResource = context.chatSessionResource;
 		const isSessionAutoApproved = chatSessionResource && isSessionAutoApproveLevel(chatSessionResource, this._configurationService, this._chatWidgetService, this._chatService);
 
-		let isFinalAutoApproved = false;
-		if (!isSessionAutoApproved) {
-			const isAutoApproveAllowed = isTerminalAutoApproveAllowed(SEND_TO_TERMINAL_REFERENCE_NAME, this._configurationService, this._storageService);
-
-			// Only run the analyzer when auto-approve is allowed; otherwise the command
-			// will always require manual confirmation and running the analyzer is unnecessary.
-			if (isAutoApproveAllowed) {
-				const [os, shell] = await Promise.all([
-					this._profileFetcher.osBackend,
-					this._profileFetcher.getCopilotShell(),
-				]);
-
-				const execution = args.id ? RunInTerminalTool.getExecution(args.id) : undefined;
-				const foregroundInstance = args.terminalId !== undefined ? this._terminalService.getInstanceFromId(args.terminalId) : undefined;
-				const cwd = execution ? await execution.instance.getCwdResource() : foregroundInstance ? await foregroundInstance.getCwdResource() : undefined;
-
-				const analyzerOptions: ICommandLineAnalyzerOptions = {
-					commandLine: args.command,
-					cwd,
-					os,
-					shell,
-					treeSitterLanguage: isPowerShell(shell, os) ? TreeSitterCommandParserLanguage.PowerShell : TreeSitterCommandParserLanguage.Bash,
-					terminalToolSessionId: generateUuid(),
-					chatSessionResource,
-					requiresUnsandboxConfirmation: false,
-				};
-
-				const analyzerResult = await this._autoApproveAnalyzer.analyze(analyzerOptions);
-				const wouldBeAutoApproved = (
-					analyzerResult.isAutoApproved === true &&
-					analyzerResult.isAutoApproveAllowed
-				);
-				isFinalAutoApproved = analyzerResult.isAutoApproveAllowed && (wouldBeAutoApproved || !!analyzerResult.forceAutoApproval);
-			}
-		}
-
-		const shouldShowConfirmation = (!isFinalAutoApproved && !isSessionAutoApproved) || context.forceConfirmationReason !== undefined;
+		// send_to_terminal always requires confirmation in default approvals mode.
+		// Unlike run_in_terminal, the text sent here may be arbitrary input to a
+		// waiting prompt (e.g. a name, password, or confirmation) rather than a
+		// shell command, so the command-line auto-approve analyzer cannot reliably
+		// determine safety.
+		const shouldShowConfirmation = !isSessionAutoApproved || context.forceConfirmationReason !== undefined;
 		const confirmationMessages = shouldShowConfirmation ? {
 			title: localize('send.confirm.title', "Send to Terminal"),
 			message: confirmationMessage,
