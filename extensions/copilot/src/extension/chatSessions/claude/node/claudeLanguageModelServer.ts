@@ -23,6 +23,7 @@ import { ITokenizer, TokenizerType } from '../../../../util/common/tokenizer';
 import { AsyncIterableObject } from '../../../../util/vs/base/common/async';
 import { CancellationToken, CancellationTokenSource } from '../../../../util/vs/base/common/cancellation';
 import { Disposable, toDisposable } from '../../../../util/vs/base/common/lifecycle';
+import { tryParseClaudeModelId } from './claudeModelId';
 import { SSEParser } from '../../../../util/vs/base/common/sseParser';
 import { generateUuid } from '../../../../util/vs/base/common/uuid';
 import { IInstantiationService } from '../../../../util/vs/platform/instantiation/common/instantiation';
@@ -163,9 +164,12 @@ export class ClaudeLanguageModelServer extends Disposable {
 				return;
 			}
 
-			const endpointModel = sessionId ? this.sessionStateService.getModelIdForSession(sessionId) : undefined;
-			let selectedEndpoint = endpoints.find(e => e.model === endpointModel);
-			selectedEndpoint ??= this.selectEndpoint(endpoints, requestBody.model);
+			let selectedEndpoint = this.selectEndpoint(endpoints, requestBody.model);
+			if (!selectedEndpoint) {
+				// Fall back to session state model if the SDK's requested model doesn't match any endpoint
+				const parsedModelId = sessionId ? this.sessionStateService.getModelIdForSession(sessionId) : undefined;
+				selectedEndpoint = parsedModelId ? endpoints.find(e => e.model === parsedModelId.toEndpointModelId()) : undefined;
+			}
 			if (!selectedEndpoint) {
 				this.error('No model found matching criteria');
 				this.sendErrorResponse(res, 404, 'not_found_error', 'No model found matching criteria');
@@ -251,17 +255,7 @@ export class ClaudeLanguageModelServer extends Disposable {
 
 	private selectEndpoint(endpoints: readonly IChatEndpoint[], requestedModel?: string): IChatEndpoint | undefined {
 		if (requestedModel) {
-			// Handle Claude model name mapping
-			// e.g. claude-sonnet-4-20250514 -> claude-sonnet-4.20250514
-			let mappedModel = requestedModel;
-			if (requestedModel.startsWith('claude-')) {
-				const parts = requestedModel.split('-');
-				if (parts.length >= 4) {
-					// claude-sonnet-4-20250514 -> ['claude', 'sonnet', '4', '20250514']
-					const [claude, model, major, minor] = parts;
-					mappedModel = `${claude}-${model}-${major}.${minor}`;
-				}
-			}
+			const mappedModel = tryParseClaudeModelId(requestedModel)?.toEndpointModelId() ?? requestedModel;
 
 			// Try to find exact match first by family or model
 			let selectedEndpoint = endpoints.find(e => e.family === mappedModel || e.model === mappedModel);
