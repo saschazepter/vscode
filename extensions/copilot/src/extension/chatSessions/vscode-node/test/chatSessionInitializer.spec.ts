@@ -6,6 +6,7 @@
 import type { SweCustomAgent } from '@github/copilot/sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as vscode from 'vscode';
+import { IConfigurationService } from '../../../../platform/configuration/common/configurationService';
 import { ILogService } from '../../../../platform/log/common/logService';
 import { IPromptsService } from '../../../../platform/promptFiles/common/promptsService';
 import { IWorkspaceService, NullWorkspaceService } from '../../../../platform/workspace/common/workspaceService';
@@ -76,7 +77,7 @@ class TestModels extends mock<ICopilotCLIModels>() {
 
 class TestAgents extends mock<ICopilotCLIAgents>() {
 	declare readonly _serviceBrand: undefined;
-	override resolveAgent = vi.fn(async () => undefined);
+	override resolveAgent = vi.fn(async (): Promise<SweCustomAgent | undefined> => undefined);
 }
 
 class TestPromptsService extends mock<IPromptsService>() {
@@ -87,6 +88,11 @@ class TestPromptsService extends mock<IPromptsService>() {
 class TestMetadataStore extends mock<IChatSessionMetadataStore>() {
 	declare readonly _serviceBrand: undefined;
 	override updateRequestDetails = vi.fn(async () => { });
+}
+
+class TestConfigurationService extends mock<IConfigurationService>() {
+	declare readonly _serviceBrand: undefined;
+	override getConfig = vi.fn(() => undefined as any);
 }
 
 class TestLogService extends mock<ILogService>() {
@@ -135,7 +141,7 @@ function makeStream(): vscode.ChatResponseStream {
 	} as unknown as vscode.ChatResponseStream;
 }
 
-function makeChatSessionContext(sessionId: string = 'untitled:new-session', initialOptions?: vscode.ChatSessionInitialOption[]): vscode.ChatSessionContext {
+function makeChatSessionContext(sessionId: string = 'untitled:new-session', initialOptions?: { optionId: string; value: string }[]): vscode.ChatSessionContext {
 	return {
 		chatSessionItem: {
 			resource: URI.from({ scheme: 'copilotcli', path: `/${sessionId}` }) as unknown as vscode.Uri,
@@ -156,6 +162,7 @@ function createInitializer(overrides?: {
 	promptsService?: TestPromptsService;
 	metadataStore?: TestMetadataStore;
 	logService?: TestLogService;
+	configurationService?: TestConfigurationService;
 }) {
 	const sessionService = overrides?.sessionService ?? new TestSessionService();
 	const folderRepoManager = overrides?.folderRepoManager ?? new TestFolderRepositoryManager();
@@ -167,6 +174,7 @@ function createInitializer(overrides?: {
 	const promptsService = overrides?.promptsService ?? new TestPromptsService();
 	const metadataStore = overrides?.metadataStore ?? new TestMetadataStore();
 	const logService = overrides?.logService ?? new TestLogService();
+	const configurationService = overrides?.configurationService ?? new TestConfigurationService();
 
 	const initializer = new CopilotCLIChatSessionInitializer(
 		sessionService,
@@ -179,9 +187,10 @@ function createInitializer(overrides?: {
 		promptsService,
 		metadataStore,
 		logService,
+		configurationService,
 	);
 
-	return { initializer, sessionService, folderRepoManager, worktreeService, workspaceFolderService, models, agents, promptsService, metadataStore, logService };
+	return { initializer, sessionService, folderRepoManager, worktreeService, workspaceFolderService, models, agents, promptsService, metadataStore, logService, configurationService };
 }
 
 // ─── Tests ───────────────────────────────────────────────────────
@@ -196,27 +205,27 @@ describe('ChatSessionInitializer', () => {
 			const { initializer } = createInitializer();
 			const request = makeRequest({ model: { id: 'known-model' } } as Partial<vscode.ChatRequest>);
 			const result = await initializer.resolveModel(request, CancellationToken.None);
-			expect(result).toBe('resolved-model');
+			expect(result).toEqual(expect.objectContaining({ model: 'resolved-model' }));
 		});
 
 		it('falls back to default model when request model is not resolvable', async () => {
 			const { initializer } = createInitializer();
 			const request = makeRequest({ model: { id: 'unknown-model' } } as Partial<vscode.ChatRequest>);
 			const result = await initializer.resolveModel(request, CancellationToken.None);
-			expect(result).toBe('default-model');
+			expect(result).toEqual(expect.objectContaining({ model: 'default-model' }));
 		});
 
 		it('returns default model when request is undefined', async () => {
 			const { initializer } = createInitializer();
 			const result = await initializer.resolveModel(undefined, CancellationToken.None);
-			expect(result).toBe('default-model');
+			expect(result).toEqual(expect.objectContaining({ model: 'default-model' }));
 		});
 
 		it('returns default model when request has no model', async () => {
 			const { initializer } = createInitializer();
 			const request = makeRequest({ model: undefined } as Partial<vscode.ChatRequest>);
 			const result = await initializer.resolveModel(request, CancellationToken.None);
-			expect(result).toBe('default-model');
+			expect(result).toEqual(expect.objectContaining({ model: 'default-model' }));
 		});
 	});
 
@@ -407,11 +416,11 @@ describe('ChatSessionInitializer', () => {
 			sessionService.isNewSessionId.mockReturnValue(true);
 			const { initializer, folderRepoManager } = createInitializer({ sessionService });
 
-			const options: vscode.ChatSessionInitialOption[] = [
+			const options = [
 				{ optionId: 'repository', value: '/selected-repo' },
 				{ optionId: 'branch', value: 'feature-branch' },
 				{ optionId: 'isolation', value: IsolationMode.Worktree },
-			] as unknown as vscode.ChatSessionInitialOption[];
+			];
 			const context = makeChatSessionContext('untitled:new', options);
 
 			await initializer.initializeWorkingDirectory(
@@ -445,7 +454,7 @@ describe('ChatSessionInitializer', () => {
 
 			expect(result.session).toBeDefined();
 			expect(result.isNewSession).toBe(true);
-			expect(result.model).toBe('resolved-model');
+			expect(result.model).toEqual(expect.objectContaining({ model: 'resolved-model' }));
 			expect(result.trusted).toBe(true);
 			expect(sessionService.createSession).toHaveBeenCalled();
 			expect(result.session!.object.attachStream).toHaveBeenCalledWith(stream);
@@ -599,7 +608,7 @@ describe('ChatSessionInitializer', () => {
 			);
 
 			expect(result.session).toBeDefined();
-			expect(result.model).toBe('resolved-model');
+			expect(result.model).toEqual(expect.objectContaining({ model: 'resolved-model' }));
 			expect(sessionService.createSession).toHaveBeenCalled();
 			expect(workspaceFolderService.trackSessionWorkspaceFolder).toHaveBeenCalled();
 			expect(metadataStore.updateRequestDetails).toHaveBeenCalled();
