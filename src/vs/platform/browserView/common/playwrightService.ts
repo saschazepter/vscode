@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Event } from '../../../base/common/event.js';
+import { URI } from '../../../base/common/uri.js';
 import { createDecorator } from '../../instantiation/common/instantiation.js';
 
 export const IPlaywrightService = createDecorator<IPlaywrightService>('playwrightService');
@@ -60,7 +61,7 @@ export interface IPlaywrightService {
 	 * @param url The URL to open in the new page.
 	 * @returns An object containing the new page's view ID and a summary of its initial state.
 	 */
-	openPage(url: string): Promise<{ pageId: string; summary: string }>;
+	openPage(url: string, options?: { isDomainAllowed?: (uri: URI) => boolean }): Promise<{ pageId: string; summary: string }>;
 
 	/**
 	 * Gets a summary of the page's current state, including its DOM and visual representation.

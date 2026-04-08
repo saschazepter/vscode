@@ -279,9 +279,17 @@ export class WebPageLoader extends Disposable {
 		}
 
 		this.trace(`Received 'will-navigate' or 'will-redirect' event, url: ${url}`);
-		if (!this._options?.followRedirects) {
-			const toURI = URI.parse(url);
 
+		// Check domain filter policy first — this applies regardless of followRedirects
+		const toURI = URI.parse(url);
+		if (this._options?.isDomainAllowed && !this._options.isDomainAllowed(toURI)) {
+			this.trace(`Blocking navigation to ${url} (blocked by domain filter policy)`);
+			event.preventDefault();
+			this._onResult({ status: 'error', error: `Access to ${toURI.authority} is blocked by network domain policy.` });
+			return;
+		}
+
+		if (!this._options?.followRedirects) {
 			// Allow redirect if authority is the same when ignoring www prefix
 			if (this.normalizeAuthority(toURI.authority) === this.normalizeAuthority(this._uri.authority)) {
 				return;

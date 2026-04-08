@@ -546,6 +546,60 @@ suite('WebPageLoader', () => {
 		assert.strictEqual(result.status, 'ok');
 	}));
 
+	test('navigation to domain blocked by isDomainAllowed returns error', async () => {
+		const uri = URI.parse('https://example.com/page');
+		const blockedUrl = 'https://blocked-domain.com/path';
+
+		const loader = createWebPageLoader(uri, {
+			followRedirects: true,
+			isDomainAllowed: (u) => u.authority !== 'blocked-domain.com',
+		});
+
+		window.webContents.debugger.sendCommand.resolves({});
+
+		const loadPromise = loader.load();
+
+		const mockEvent: MockElectronEvent = {
+			preventDefault: sinon.stub()
+		};
+		window.webContents.emit('will-navigate', mockEvent, blockedUrl);
+
+		const result = await loadPromise;
+
+		assert.ok((mockEvent.preventDefault!).called);
+		assert.strictEqual(result.status, 'error');
+		if (result.status === 'error') {
+			assert.ok(result.error?.includes('blocked-domain.com'));
+		}
+	});
+
+	test('navigation to allowed domain is not blocked by isDomainAllowed', () => runWithFakedTimers({ useFakeTimers: true }, async () => {
+		const uri = URI.parse('https://example.com/page');
+		const allowedUrl = 'https://allowed-domain.com/path';
+
+		const loader = createWebPageLoader(uri, {
+			followRedirects: true,
+			isDomainAllowed: (u) => u.authority !== 'blocked-domain.com',
+		});
+		setupDebuggerMock();
+
+		const loadPromise = loader.load();
+
+		const mockEvent: MockElectronEvent = {
+			preventDefault: sinon.stub()
+		};
+		window.webContents.emit('will-navigate', mockEvent, allowedUrl);
+
+		// Should not prevent navigation to allowed domain
+		assert.ok(!(mockEvent.preventDefault!).called);
+
+		window.webContents.emit('did-start-loading');
+		window.webContents.emit('did-finish-load');
+
+		const result = await loadPromise;
+		assert.strictEqual(result.status, 'ok');
+	}));
+
 	//#endregion
 
 	//#region HTTP Error Tests

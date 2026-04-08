@@ -6,6 +6,7 @@
 import { Disposable, DisposableMap, DisposableStore, IDisposable } from '../../../base/common/lifecycle.js';
 import { DeferredPromise, disposableTimeout, raceTimeout } from '../../../base/common/async.js';
 import { Emitter, Event } from '../../../base/common/event.js';
+import { URI } from '../../../base/common/uri.js';
 import { ILogService } from '../../log/common/log.js';
 import { IInvokeFunctionResult, IPlaywrightService } from '../common/playwrightService.js';
 import { IBrowserViewGroupRemoteService } from '../node/browserViewGroupRemoteService.js';
@@ -145,9 +146,9 @@ export class PlaywrightService extends Disposable implements IPlaywrightService 
 		return this._initPromise;
 	}
 
-	async openPage(url: string): Promise<{ pageId: string; summary: string }> {
+	async openPage(url: string, options?: { isDomainAllowed?: (uri: URI) => boolean }): Promise<{ pageId: string; summary: string }> {
 		await this.initialize();
-		const pageId = await this._pages.newPage(url);
+		const pageId = await this._pages.newPage(url, options);
 		const summary = await this._pages.getSummary(pageId);
 		return { pageId, summary };
 	}
@@ -371,7 +372,7 @@ class PlaywrightPageManager extends Disposable {
 	 * Create a new page in the browser and return its associated page ID.
 	 * The page is automatically added to the tracked set.
 	 */
-	async newPage(url: string): Promise<string> {
+	async newPage(url: string, options?: { isDomainAllowed?: (uri: URI) => boolean }): Promise<string> {
 		if (!this._browser) {
 			throw new Error('PlaywrightPageManager has not been initialized');
 		}
@@ -382,6 +383,27 @@ class PlaywrightPageManager extends Disposable {
 		}
 
 		const page = await this._openContext.newPage();
+
+		// Set up domain filtering via route interception if a filter callback is provided
+		if (options?.isDomainAllowed) {
+			const { isDomainAllowed } = options;
+			await page.route('**/*', (route) => {
+				const requestUrl = route.request().url();
+				try {
+					const uri = URI.parse(requestUrl);
+					if (uri.scheme === 'http' || uri.scheme === 'https') {
+						if (!isDomainAllowed(uri)) {
+							route.abort('blockedbyclient').catch(() => { });
+							return;
+						}
+					}
+				} catch {
+					// If we can't parse the URL, let it through
+				}
+				route.continue().catch(() => { });
+			});
+		}
+
 		const viewId = await this.onPageAdded(page);
 
 		this._trackedPages.add(viewId);

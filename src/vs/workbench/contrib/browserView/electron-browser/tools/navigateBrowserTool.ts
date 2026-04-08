@@ -6,9 +6,11 @@
 import type { CancellationToken } from '../../../../../base/common/cancellation.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { MarkdownString } from '../../../../../base/common/htmlContent.js';
+import { URI } from '../../../../../base/common/uri.js';
 import { localize } from '../../../../../nls.js';
 import { IPlaywrightService } from '../../../../../platform/browserView/common/playwrightService.js';
 import { ToolDataSource, type CountTokensCallback, type IPreparedToolInvocation, type IToolData, type IToolImpl, type IToolInvocation, type IToolInvocationPreparationContext, type IToolResult, type ToolProgress } from '../../../chat/common/tools/languageModelToolsService.js';
+import { IAgentNetworkFilterService } from '../../../chat/common/networkFilter/networkFilterService.js';
 import { createBrowserPageLink, errorResult, playwrightInvoke } from './browserToolHelpers.js';
 import { OpenPageToolId } from './openBrowserTool.js';
 
@@ -50,6 +52,7 @@ interface INavigateBrowserToolParams {
 export class NavigateBrowserTool implements IToolImpl {
 	constructor(
 		@IPlaywrightService private readonly playwrightService: IPlaywrightService,
+		@IAgentNetworkFilterService private readonly agentNetworkFilterService: IAgentNetworkFilterService,
 	) { }
 
 	async prepareToolInvocation(context: IToolInvocationPreparationContext, _token: CancellationToken): Promise<IPreparedToolInvocation | undefined> {
@@ -111,6 +114,10 @@ export class NavigateBrowserTool implements IToolImpl {
 			case 'forward':
 				return playwrightInvoke(this.playwrightService, params.pageId, (page) => page.goForward({ waitUntil: 'domcontentloaded' }));
 			default: {
+				const uri = URI.parse(params.url!);
+				if (!this.agentNetworkFilterService.isUriAllowed(uri)) {
+					return errorResult(localize('browser.navigate.blockedByPolicy', 'Access to {0} is blocked by network domain policy.', params.url!));
+				}
 				return playwrightInvoke(this.playwrightService, params.pageId, (page, url) => {
 					return page.goto(url, { waitUntil: 'domcontentloaded' });
 				}, params.url!);
