@@ -5,10 +5,11 @@
 
 import type { CancellationToken } from '../../../../../../base/common/cancellation.js';
 import { Codicon } from '../../../../../../base/common/codicons.js';
-import { MarkdownString } from '../../../../../../base/common/htmlContent.js';
+import { createCommandUri, MarkdownString } from '../../../../../../base/common/htmlContent.js';
 import { Disposable } from '../../../../../../base/common/lifecycle.js';
 import { generateUuid } from '../../../../../../base/common/uuid.js';
 import { localize } from '../../../../../../nls.js';
+import { CommandsRegistry } from '../../../../../../platform/commands/common/commands.js';
 import { IConfigurationService } from '../../../../../../platform/configuration/common/configuration.js';
 import { IInstantiationService } from '../../../../../../platform/instantiation/common/instantiation.js';
 import { IStorageService } from '../../../../../../platform/storage/common/storage.js';
@@ -16,6 +17,7 @@ import { ITerminalLogService } from '../../../../../../platform/terminal/common/
 import { IChatWidgetService } from '../../../../chat/browser/chat.js';
 import { IChatService } from '../../../../chat/common/chatService/chatService.js';
 import { ToolDataSource, type CountTokensCallback, type IPreparedToolInvocation, type IToolData, type IToolImpl, type IToolInvocation, type IToolInvocationPreparationContext, type IToolResult, type ToolProgress } from '../../../../chat/common/tools/languageModelToolsService.js';
+import { ITerminalService } from '../../../../terminal/browser/terminal.js';
 import { buildCommandDisplayText, isPowerShell, normalizeCommandForExecution } from '../runInTerminalHelpers.js';
 import { RunInTerminalToolTelemetry } from '../runInTerminalToolTelemetry.js';
 import { TreeSitterCommandParser, TreeSitterCommandParserLanguage } from '../treeSitterCommandParser.js';
@@ -29,7 +31,7 @@ export const SendToTerminalToolData: IToolData = {
 	id: TerminalToolId.SendToTerminal,
 	toolReferenceName: 'sendToTerminal',
 	displayName: localize('sendToTerminalTool.displayName', 'Send to Terminal'),
-	modelDescription: `Send a command to an existing persistent terminal session started with ${TerminalToolId.RunInTerminal} in async mode (legacy: isBackground=true). Use this for long-running terminal workflows. The ID must be the exact opaque value returned by ${TerminalToolId.RunInTerminal}. After sending, use ${TerminalToolId.GetTerminalOutput} to check updated output.`,
+	modelDescription: `Send a command to a terminal session. This can target either a persistent terminal started with ${TerminalToolId.RunInTerminal} in async mode (using 'id') or any foreground terminal visible in the terminal panel (using 'terminalId'). After sending, use ${TerminalToolId.GetTerminalOutput} to check updated output for persistent terminals.`,
 	icon: Codicon.terminal,
 	source: ToolDataSource.Internal,
 	inputSchema: {
@@ -37,8 +39,12 @@ export const SendToTerminalToolData: IToolData = {
 		properties: {
 			id: {
 				type: 'string',
-				description: `The ID of the persistent terminal session to send a command to (returned by ${TerminalToolId.RunInTerminal} in async mode).`,
+				description: `The ID of a persistent terminal session to send a command to (returned by ${TerminalToolId.RunInTerminal} in async mode). Provide either 'id' or 'terminalId', not both.`,
 				pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$'
+			},
+			terminalId: {
+				type: 'number',
+				description: 'The numeric instanceId of a terminal. Use this to send input to terminals not started by the agent (e.g., user-created terminals or terminals that need interactive input). Provide either \'id\' or \'terminalId\', not both.'
 			},
 			command: {
 				type: 'string',
@@ -46,18 +52,28 @@ export const SendToTerminalToolData: IToolData = {
 			},
 		},
 		required: [
-			'id',
 			'command',
 		]
 	}
 };
 
 export interface ISendToTerminalInputParams {
-	id: string;
+	id?: string;
+	terminalId?: number;
 	command: string;
 }
 
 const SEND_TO_TERMINAL_REFERENCE_NAME = 'sendToTerminal';
+
+const FocusTerminalByIdCommandId = 'workbench.action.terminal.chat.focusTerminalById';
+CommandsRegistry.registerCommand(FocusTerminalByIdCommandId, (accessor, instanceId: number) => {
+	const terminalService = accessor.get(ITerminalService);
+	const instance = terminalService.getInstanceFromId(instanceId);
+	if (instance) {
+		terminalService.setActiveInstance(instance);
+		terminalService.revealActiveTerminal(true);
+	}
+});
 
 /**
  * Wraps arbitrary text in a markdown inline code span using a backtick fence
@@ -83,6 +99,7 @@ export class SendToTerminalTool extends Disposable implements IToolImpl {
 		@ITerminalLogService private readonly _logService: ITerminalLogService,
 		@IChatService private readonly _chatService: IChatService,
 		@IChatWidgetService private readonly _chatWidgetService: IChatWidgetService,
+		@ITerminalService private readonly _terminalService: ITerminalService,
 	) {
 		super();
 
@@ -102,14 +119,25 @@ export class SendToTerminalTool extends Disposable implements IToolImpl {
 		const displayCommand = buildCommandDisplayText(args.command);
 		const safeInlineCode = toMarkdownInlineCode(displayCommand);
 
+		// Resolve a human-friendly terminal label from the instance title
+		const terminalLabel = this._getTerminalLabel(args);
+
 		const invocationMessage = new MarkdownString();
 		invocationMessage.appendMarkdown(localize('send.progressive', "Sending {0} to terminal", safeInlineCode));
 
 		const pastTenseMessage = new MarkdownString();
 		pastTenseMessage.appendMarkdown(localize('send.past', "Sent {0} to terminal", safeInlineCode));
 
-		const confirmationMessage = new MarkdownString();
-		confirmationMessage.appendText(localize('send.confirm.message', "Run {0} in background terminal {1}", displayCommand, args.id));
+		// Build the confirmation message with a "Focus Terminal" command link
+		const instanceId = this._getTerminalInstanceId(args);
+		const confirmationMessage = new MarkdownString('', { isTrusted: { enabledCommands: [FocusTerminalByIdCommandId] } });
+		const baseMessage = localize('send.confirm.message', "Run {0} in terminal {1}", displayCommand, toMarkdownInlineCode(terminalLabel));
+		if (instanceId !== undefined) {
+			const focusUri = createCommandUri(FocusTerminalByIdCommandId, instanceId);
+			confirmationMessage.appendMarkdown(`${baseMessage} — [$(terminal) ${localize('focusTerminal', "Focus Terminal")}](${focusUri})`);
+		} else {
+			confirmationMessage.appendMarkdown(baseMessage);
+		}
 
 		// Determine auto-approval, aligned with runInTerminal
 		const chatSessionResource = context.chatSessionResource;
@@ -127,8 +155,9 @@ export class SendToTerminalTool extends Disposable implements IToolImpl {
 					this._profileFetcher.getCopilotShell(),
 				]);
 
-				const execution = RunInTerminalTool.getExecution(args.id);
-				const cwd = execution ? await execution.instance.getCwdResource() : undefined;
+				const execution = args.id ? RunInTerminalTool.getExecution(args.id) : undefined;
+				const foregroundInstance = args.terminalId !== undefined ? this._terminalService.getInstanceFromId(args.terminalId) : undefined;
+				const cwd = execution ? await execution.instance.getCwdResource() : foregroundInstance ? await foregroundInstance.getCwdResource() : undefined;
 
 				const analyzerOptions: ICommandLineAnalyzerOptions = {
 					commandLine: args.command,
@@ -164,10 +193,80 @@ export class SendToTerminalTool extends Disposable implements IToolImpl {
 		};
 	}
 
+	/**
+	 * Returns a human-friendly label for the target terminal, using the
+	 * terminal instance title (which reflects the running process) instead
+	 * of the raw UUID or numeric id.
+	 */
+	private _getTerminalLabel(args: ISendToTerminalInputParams): string {
+		if (args.id) {
+			const execution = RunInTerminalTool.getExecution(args.id);
+			if (execution) {
+				return execution.instance.title;
+			}
+		}
+		if (args.terminalId !== undefined) {
+			const instance = this._terminalService.getInstanceFromId(args.terminalId);
+			if (instance) {
+				return instance.title;
+			}
+		}
+		return args.id ?? String(args.terminalId ?? '');
+	}
+
+	/**
+	 * Returns the numeric terminal instanceId for the target terminal, used
+	 * to build command URIs for the "Focus Terminal" link.
+	 */
+	private _getTerminalInstanceId(args: ISendToTerminalInputParams): number | undefined {
+		if (args.terminalId !== undefined) {
+			return args.terminalId;
+		}
+		if (args.id) {
+			const execution = RunInTerminalTool.getExecution(args.id);
+			if (execution) {
+				return execution.instance.instanceId;
+			}
+		}
+		return undefined;
+	}
+
 	async invoke(invocation: IToolInvocation, _countTokens: CountTokensCallback, _progress: ToolProgress, _token: CancellationToken): Promise<IToolResult> {
 		const args = invocation.parameters as ISendToTerminalInputParams;
 
-		const execution = RunInTerminalTool.getExecution(args.id);
+		if (!args.id && args.terminalId === undefined) {
+			return {
+				content: [{
+					kind: 'text',
+					value: 'Error: Either \'id\' (persistent terminal UUID) or \'terminalId\' (foreground terminal instanceId) must be provided.'
+				}]
+			};
+		}
+
+		// Foreground terminal path
+		if (args.terminalId !== undefined) {
+			const instance = this._terminalService.getInstanceFromId(args.terminalId);
+			if (!instance) {
+				return {
+					content: [{
+						kind: 'text',
+						value: `Error: No terminal found with instanceId ${args.terminalId}. The terminal may have been closed.`
+					}]
+				};
+			}
+
+			await instance.sendText(normalizeCommandForExecution(args.command), true);
+
+			return {
+				content: [{
+					kind: 'text',
+					value: `Successfully sent command to foreground terminal ${args.terminalId}. Use ${TerminalToolId.GetTerminalOutput} with terminalId ${args.terminalId} to check for updated output.`
+				}]
+			};
+		}
+
+		// Persistent (background) terminal path
+		const execution = RunInTerminalTool.getExecution(args.id!);
 		if (!execution) {
 			return {
 				content: [{

@@ -219,77 +219,6 @@ suite('OutputMonitor', () => {
 		});
 	});
 
-	test('auto reply sends first option when model lookup is unavailable', async () => {
-		instantiationService.stub(IConfigurationService, new TestConfigurationService({
-			[TerminalChatAgentToolsSettingId.AutoReplyToPrompts]: true
-		}));
-		instantiationService.stub(ILanguageModelsService, {
-			selectLanguageModels: async () => []
-		});
-
-		const monitorCts = new CancellationTokenSource();
-		monitorCts.cancel();
-		monitor = store.add(instantiationService.createInstance(OutputMonitor, execution, undefined, createTestContext('1'), monitorCts.token, 'test command'));
-
-		const outputMonitorWithPrivateMethod = monitor as unknown as {
-			[key: string]: ((prompt: { prompt: string; options: string[]; detectedRequestForFreeFormInput: boolean }, token: CancellationToken) => Promise<{ suggestedOption: string | { description: string; option: string }; sentToTerminal: boolean } | undefined>) | undefined;
-		};
-		const optionResult = await outputMonitorWithPrivateMethod['_selectAndHandleOption']!({
-			prompt: 'Continue?',
-			options: ['y', 'n'],
-			detectedRequestForFreeFormInput: false
-		}, CancellationToken.None);
-		await Event.toPromise(monitor.onDidFinishCommand);
-		monitorCts.dispose();
-
-		assert.strictEqual(sendTextCalled, true, 'sendText should be called when auto reply is enabled');
-		assert.strictEqual(optionResult?.sentToTerminal, true, 'option should be auto-sent');
-		assert.strictEqual(optionResult?.suggestedOption, 'y', 'first option should be used as fallback');
-	});
-
-	test('auto reply uses fallback model to derive suggested option', async () => {
-		instantiationService.stub(IConfigurationService, new TestConfigurationService({
-			[TerminalChatAgentToolsSettingId.AutoReplyToPrompts]: true
-		}));
-
-		let fallbackModelRequested = false;
-		instantiationService.stub(ILanguageModelsService, {
-			selectLanguageModels: async (selector: { id?: string }) => {
-				if (selector.id === 'copilot-fast') {
-					fallbackModelRequested = true;
-					return ['copilot-fast'];
-				}
-				return [];
-			},
-			sendChatRequest: async () => ({
-				stream: (async function* () {
-					yield { type: 'text', value: 'n' };
-				})(),
-				result: Promise.resolve(undefined)
-			})
-		});
-
-		const monitorCts = new CancellationTokenSource();
-		monitorCts.cancel();
-		monitor = store.add(instantiationService.createInstance(OutputMonitor, execution, undefined, createTestContext('1'), monitorCts.token, 'test command'));
-
-		const outputMonitorWithPrivateMethod = monitor as unknown as {
-			[key: string]: ((prompt: { prompt: string; options: string[]; detectedRequestForFreeFormInput: boolean }, token: CancellationToken) => Promise<{ suggestedOption: string | { description: string; option: string }; sentToTerminal: boolean } | undefined>) | undefined;
-		};
-		const optionResult = await outputMonitorWithPrivateMethod['_selectAndHandleOption']!({
-			prompt: 'Continue?',
-			options: ['y', 'n'],
-			detectedRequestForFreeFormInput: false
-		}, CancellationToken.None);
-		await Event.toPromise(monitor.onDidFinishCommand);
-		monitorCts.dispose();
-
-		assert.strictEqual(fallbackModelRequested, true, 'fallback model should be requested via _getLanguageModel');
-		assert.strictEqual(sendTextCalled, true, 'sendText should be called when auto reply is enabled');
-		assert.strictEqual(optionResult?.sentToTerminal, true, 'option should be auto-sent');
-		assert.strictEqual(optionResult?.suggestedOption, 'n', 'suggested option should be derived from fallback model response');
-	});
-
 	test('auto reply stops on generic press any key prompts', async () => {
 		instantiationService.stub(IConfigurationService, new TestConfigurationService({
 			[TerminalChatAgentToolsSettingId.AutoReplyToPrompts]: true
@@ -312,36 +241,45 @@ suite('OutputMonitor', () => {
 		assert.strictEqual(idleResult.shouldContinuePolling, false, 'monitor should stop polling for free-form prompts in auto reply mode');
 	});
 
-	test('auto reply does not propagate free-form input requests without explicit input', async () => {
-		instantiationService.stub(IConfigurationService, new TestConfigurationService({
-			[TerminalChatAgentToolsSettingId.AutoReplyToPrompts]: true
-		}));
-
+	test('onDidDetectInputNeeded fires for input-required patterns in foreground mode', async () => {
+		execution.getOutput = () => 'Continue? (y/n) ';
 		const monitorCts = new CancellationTokenSource();
 		monitorCts.cancel();
 		monitor = store.add(instantiationService.createInstance(OutputMonitor, execution, undefined, createTestContext('1'), monitorCts.token, 'test command'));
 
-		const outputMonitorWithPrivateMethod = monitor as unknown as {
-			[key: string]: unknown;
-		};
-		let freeFormRequestShown = false;
-		outputMonitorWithPrivateMethod['_determineUserInputOptions'] = async () => ({
-			prompt: 'Password:',
-			options: [],
-			detectedRequestForFreeFormInput: true
-		});
-		outputMonitorWithPrivateMethod['_requestFreeFormTerminalInput'] = async () => {
-			freeFormRequestShown = true;
-			return true;
-		};
+		let inputNeededFired = false;
+		store.add(monitor.onDidDetectInputNeeded(() => { inputNeededFired = true; }));
 
-		const idleResult = await (outputMonitorWithPrivateMethod['_handleIdleState'] as (token: CancellationToken) => Promise<{ shouldContinuePolling: boolean }>)(CancellationToken.None);
+		const outputMonitorWithPrivateMethod = monitor as unknown as {
+			[key: string]: ((token: CancellationToken) => Promise<{ shouldContinuePolling: boolean; output?: string }>) | undefined;
+		};
+		const idleResult = await outputMonitorWithPrivateMethod['_handleIdleState']!(CancellationToken.None);
 		await Event.toPromise(monitor.onDidFinishCommand);
 		monitorCts.dispose();
 
-		assert.strictEqual(freeFormRequestShown, false, 'free-form elicitation should not be shown when auto reply is enabled');
-		assert.strictEqual(sendTextCalled, false, 'sensitive free-form prompt should not be auto-replied');
-		assert.strictEqual(idleResult.shouldContinuePolling, false, 'monitor should stop instead of propagating free-form prompt');
+		assert.strictEqual(inputNeededFired, true, 'onDidDetectInputNeeded should fire for input-required pattern');
+		assert.strictEqual(idleResult.shouldContinuePolling, false, 'monitor should stop polling after signaling agent');
+		assert.strictEqual(idleResult.output, 'Continue? (y/n) ', 'output should be returned');
+		assert.strictEqual(sendTextCalled, false, 'no elicitation or auto-reply should send text');
+	});
+
+	test('onDidDetectInputNeeded does not fire for non-input output', async () => {
+		execution.getOutput = () => 'Build complete successfully';
+		const monitorCts = new CancellationTokenSource();
+		monitorCts.cancel();
+		monitor = store.add(instantiationService.createInstance(OutputMonitor, execution, undefined, createTestContext('1'), monitorCts.token, 'test command'));
+
+		let inputNeededFired = false;
+		store.add(monitor.onDidDetectInputNeeded(() => { inputNeededFired = true; }));
+
+		const outputMonitorWithPrivateMethod = monitor as unknown as {
+			[key: string]: ((token: CancellationToken) => Promise<{ shouldContinuePolling: boolean }>) | undefined;
+		};
+		await outputMonitorWithPrivateMethod['_handleIdleState']!(CancellationToken.None);
+		await Event.toPromise(monitor.onDidFinishCommand);
+		monitorCts.dispose();
+
+		assert.strictEqual(inputNeededFired, false, 'onDidDetectInputNeeded should not fire for non-input output');
 	});
 
 	suite('detectsInputRequiredPattern', () => {

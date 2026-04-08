@@ -1221,6 +1221,7 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 					toolMetadata: {
 						exitCode: undefined,
 						id: termId,
+						terminalId: toolTerminal.instance.instanceId,
 						cwd: endCwd?.toString(),
 					},
 					content: [{
@@ -1229,17 +1230,41 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 					}],
 				};
 			} else {
-				// Foreground mode: race execution completion against continue in background
-				const raceCandidates: Promise<{ type: 'completed'; result: ITerminalExecuteStrategyResult } | { type: 'background' } | { type: 'timeout' }>[] = [
+				// Foreground mode: race execution completion against continue in background.
+				// Also race on output monitor input-needed so that interactive prompts
+				// return output to the agent early instead of waiting for timeout.
+				const raceCleanup = new DisposableStore();
+				const raceCandidates: Promise<{ type: 'completed'; result: ITerminalExecuteStrategyResult } | { type: 'background' } | { type: 'timeout' } | { type: 'inputNeeded' }>[] = [
 					executionPromise.then(result => ({ type: 'completed' as const, result })),
-					continueInBackgroundPromise.then(() => ({ type: 'background' as const }))
+					continueInBackgroundPromise.then(() => ({ type: 'background' as const })),
+					new Promise<{ type: 'inputNeeded' }>(resolve => {
+						startMarkerPromise.then(() => {
+							if (outputMonitor && !raceCleanup.isDisposed) {
+								raceCleanup.add(outputMonitor.onDidDetectInputNeeded(() => resolve({ type: 'inputNeeded' as const })));
+							}
+						});
+					})
 				];
 				if (timeoutRacePromise) {
 					raceCandidates.push(timeoutRacePromise);
 				}
 				const raceResult = await Promise.race(raceCandidates);
+				raceCleanup.dispose();
 
-				if (raceResult.type === 'background') {
+				if (raceResult.type === 'inputNeeded') {
+					// Output monitor detected the terminal is waiting for input.
+					// Convert to background so the terminal stays alive for send_to_terminal.
+					this._logService.debug(`RunInTerminalTool: Output monitor detected input needed in foreground terminal, returning output to agent`);
+					pollingResult = outputMonitor?.pollingResult;
+					error = 'inputNeeded';
+					isBackgroundExecution = true;
+					toolTerminal.isBackground = true;
+					this._sessionTerminalAssociations.delete(chatSessionResource);
+					await this._associateProcessIdWithSession(toolTerminal.instance, chatSessionResource, termId, toolTerminal.shellIntegrationQuality, true);
+					const idleOutput = pollingResult?.output ?? execution.getOutput();
+					outputLineCount = idleOutput ? count(idleOutput.trim(), '\n') + 1 : 0;
+					terminalResult = idleOutput ?? '';
+				} else if (raceResult.type === 'background') {
 					// Moved to background - execution continues running, just return current output
 					this._logService.debug(`RunInTerminalTool: Continue in background triggered, returning output collected so far`);
 					error = 'continueInBackground';
@@ -1279,6 +1304,7 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 							toolMetadata: {
 								exitCode: undefined,
 								id: termId,
+								terminalId: toolTerminal.instance.instanceId,
 								cwd: altBufferCwd?.toString(),
 							},
 							content: [{
@@ -1439,6 +1465,7 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 			toolMetadata: {
 				exitCode: exitCode,
 				id: termId,
+				terminalId: toolTerminal.instance.instanceId,
 				cwd: endCwd?.toString(),
 				timedOut: didTimeout || undefined,
 				timeoutMs: didTimeout ? timeoutValue : undefined,
