@@ -3,29 +3,15 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import type { IMarker as XtermMarker } from '@xterm/xterm';
-import { IAction } from '../../../../../../../base/common/actions.js';
-import { timeout, type MaybePromise } from '../../../../../../../base/common/async.js';
+import { timeout } from '../../../../../../../base/common/async.js';
 import { CancellationToken, CancellationTokenSource } from '../../../../../../../base/common/cancellation.js';
 import { Emitter, Event } from '../../../../../../../base/common/event.js';
-import { MarkdownString } from '../../../../../../../base/common/htmlContent.js';
 import { Disposable, MutableDisposable, toDisposable, type IDisposable } from '../../../../../../../base/common/lifecycle.js';
-import { URI } from '../../../../../../../base/common/uri.js';
 import { localize } from '../../../../../../../nls.js';
-import { IChatWidgetService } from '../../../../../chat/browser/chat.js';
-import { ChatElicitationRequestPart } from '../../../../../chat/common/model/chatProgressTypes/chatElicitationRequestPart.js';
-import { ChatModel, ChatRequestModel } from '../../../../../chat/common/model/chatModel.js';
-import { ElicitationState, IChatService } from '../../../../../chat/common/chatService/chatService.js';
-import { ChatRequestTextPart } from '../../../../../chat/common/requestParser/chatParserTypes.js';
-import { OffsetRange } from '../../../../../../../editor/common/core/ranges/offsetRange.js';
-import { ChatPermissionLevel } from '../../../../../chat/common/constants.js';
 import { IToolInvocationContext } from '../../../../../chat/common/tools/languageModelToolsService.js';
 import { ITaskService } from '../../../../../tasks/common/taskService.js';
 import { ILinkLocation } from '../../taskHelpers.js';
-import { IConfirmationPrompt, IExecution, IPollingResult, OutputMonitorState, PollingConsts } from './types.js';
-import { IConfigurationService } from '../../../../../../../platform/configuration/common/configuration.js';
-import { TerminalChatAgentToolsSettingId } from '../../../common/terminalChatAgentToolsConfiguration.js';
-import { ITerminalService } from '../../../../../terminal/browser/terminal.js';
+import { IExecution, IPollingResult, OutputMonitorState, PollingConsts } from './types.js';
 import { ITerminalLogService } from '../../../../../../../platform/terminal/common/terminal.js';
 
 export interface IOutputMonitor extends Disposable {
@@ -67,10 +53,6 @@ export class OutputMonitor extends Disposable implements IOutputMonitor {
 		return lastLine.length > 200 ? lastLine.slice(0, 200) + '…' : lastLine;
 	}
 
-	private _lastPromptMarker: XtermMarker | undefined;
-
-	private _promptPart: ChatElicitationRequestPart | undefined;
-
 	private _pollingResult: IPollingResult & { pollDurationMs: number } | undefined;
 	get pollingResult(): IPollingResult & { pollDurationMs: number } | undefined { return this._pollingResult; }
 
@@ -99,9 +81,6 @@ export class OutputMonitor extends Disposable implements IOutputMonitor {
 	private readonly _onDidDetectInputNeeded = this._register(new Emitter<void>());
 	readonly onDidDetectInputNeeded: Event<void> = this._onDidDetectInputNeeded.event;
 
-	/** The chat session resource for this tool invocation, used to check permission level. */
-	private readonly _sessionResource: URI | undefined;
-
 	private _asyncMode = false;
 	private _command = '';
 	private _invocationContext: IToolInvocationContext | undefined;
@@ -114,15 +93,10 @@ export class OutputMonitor extends Disposable implements IOutputMonitor {
 		token: CancellationToken,
 		command: string,
 		@ITaskService private readonly _taskService: ITaskService,
-		@IChatService private readonly _chatService: IChatService,
-		@IChatWidgetService private readonly _chatWidgetService: IChatWidgetService,
-		@IConfigurationService private readonly _configurationService: IConfigurationService,
 		@ITerminalLogService private readonly _logService: ITerminalLogService,
-		@ITerminalService private readonly _terminalService: ITerminalService,
 	) {
 		super();
 
-		this._sessionResource = invocationContext?.sessionResource;
 		this._command = command;
 		this._invocationContext = invocationContext;
 		this._register(toDisposable(() => this._currentMonitoringCts?.dispose()));
@@ -172,8 +146,6 @@ export class OutputMonitor extends Disposable implements IOutputMonitor {
 							this._state = OutputMonitorState.PollingForIdle;
 							continue;
 						} else {
-							this._promptPart?.hide();
-							this._promptPart = undefined;
 							break;
 						}
 					}
@@ -222,15 +194,6 @@ export class OutputMonitor extends Disposable implements IOutputMonitor {
 			};
 			// Clean up idle input listener if still active
 			this._userInputListener.clear();
-			const promptPart = this._promptPart;
-			this._promptPart = undefined;
-			if (promptPart) {
-				try {
-					promptPart.hide();
-				} catch (err) {
-					this._logService.error('OutputMonitor: Failed to hide prompt', err);
-				}
-			}
 			this._onDidFinishCommand.fire();
 		}
 	}
@@ -285,7 +248,7 @@ export class OutputMonitor extends Disposable implements IOutputMonitor {
 
 
 	private async _handleIdleState(token: CancellationToken): Promise<{ resources?: ILinkLocation[]; shouldContinuePolling: boolean; output?: string }> {
-		const output = this._execution.getOutput(this._lastPromptMarker);
+		const output = this._execution.getOutput();
 		this._logService.trace(`OutputMonitor: Idle output summary: len=${output.length}, lastLine=${this._formatLastLineForLog(output)}`);
 
 		if (detectsNonInteractiveHelpPattern(output)) {
@@ -306,35 +269,10 @@ export class OutputMonitor extends Disposable implements IOutputMonitor {
 		// Check for generic "press any key" prompts from scripts.
 		// Only shown for non-task executions since task finish messages are handled above.
 		if (!isTask && detectsGenericPressAnyKeyPattern(output)) {
-			this._logService.trace('OutputMonitor: Idle -> generic "press any key" detected');
-			const autoReply = this._configurationService.getValue(TerminalChatAgentToolsSettingId.AutoReplyToPrompts) || this._isAutopilotMode();
-			if (autoReply) {
-				this._logService.trace('OutputMonitor: Auto-reply enabled -> not showing free-form prompt for "press any key", stopping');
-				this._cleanupIdleInputListener();
-				return { shouldContinuePolling: false, output };
-			}
-			this._logService.trace('OutputMonitor: Requesting free-form input for "press any key"');
-			// Register a marker to track this prompt position so we don't re-detect it
-			const currentMarker = this._execution.instance.registerMarker();
-			if (currentMarker) {
-				this._lastPromptMarker = currentMarker;
-			}
+			this._logService.trace('OutputMonitor: Idle -> generic "press any key" detected, signaling agent');
+			this._onDidDetectInputNeeded.fire();
 			this._cleanupIdleInputListener();
-			this._outputMonitorTelemetryCounters.inputToolFreeFormInputShownCount++;
-			const lastLine = output.trimEnd().split(/\r?\n/).pop() || '';
-			const receivedTerminalInput = await this._requestFreeFormTerminalInput(token, this._execution, {
-				prompt: lastLine,
-				options: [],
-				detectedRequestForFreeFormInput: true
-			}, true /* acceptAnyKey */);
-			if (receivedTerminalInput) {
-				this._logService.trace('OutputMonitor: Free-form input received for "press any key", continue polling');
-				await timeout(200);
-				return { shouldContinuePolling: true };
-			} else {
-				this._logService.trace('OutputMonitor: Free-form input declined for "press any key", stopping');
-				return { shouldContinuePolling: false };
-			}
+			return { shouldContinuePolling: false, output };
 		}
 
 		// Check if user already inputted since idle was detected (before we even got here)
@@ -345,32 +283,11 @@ export class OutputMonitor extends Disposable implements IOutputMonitor {
 		}
 
 		// In async mode, use regex-based detection for input-required patterns
-		// (passwords, [Y/n], etc.) and show elicitation UI so the user can
-		// provide input while the terminal runs in the background.
+		// (passwords, [Y/n], etc.) and signal the agent to handle via send_to_terminal.
 		if (this._asyncMode) {
 			if (detectsInputRequiredPattern(output)) {
-				this._logService.trace('OutputMonitor: Async mode - input-required pattern detected, showing free-form input');
+				this._logService.trace('OutputMonitor: Async mode - input-required pattern detected, signaling agent');
 				this._onDidDetectInputNeeded.fire();
-				const autoReply = this._configurationService.getValue(TerminalChatAgentToolsSettingId.AutoReplyToPrompts) || this._isAutopilotMode();
-				if (!autoReply) {
-					const currentMarker = this._execution.instance.registerMarker();
-					if (currentMarker) {
-						this._lastPromptMarker = currentMarker;
-					}
-					this._cleanupIdleInputListener();
-					this._outputMonitorTelemetryCounters.inputToolFreeFormInputShownCount++;
-					const lastLine = output.trimEnd().split(/\r?\n/).pop() || '';
-					const receivedTerminalInput = await this._requestFreeFormTerminalInput(token, this._execution, {
-						prompt: lastLine,
-						options: [],
-						detectedRequestForFreeFormInput: true
-					});
-					if (receivedTerminalInput) {
-						this._logService.trace('OutputMonitor: Async mode - free-form input received, continue polling');
-						await timeout(200);
-						return { shouldContinuePolling: true };
-					}
-				}
 			}
 			this._cleanupIdleInputListener();
 			return { shouldContinuePolling: false, output };
@@ -519,208 +436,6 @@ export class OutputMonitor extends Disposable implements IOutputMonitor {
 	 * In Autopilot, terminal prompts should be auto-replied to so the agent can
 	 * work autonomously from start to finish.
 	 */
-	private _isAutopilotMode(): boolean {
-		if (!this._sessionResource) {
-			return false;
-		}
-		// Check the live widget picker level
-		const widget = this._chatWidgetService.getWidgetBySessionResource(this._sessionResource)
-			?? this._chatWidgetService.lastFocusedWidget;
-		if (widget?.input.currentModeInfo.permissionLevel === ChatPermissionLevel.Autopilot) {
-			return true;
-		}
-		// Fall back to the request-stamped level
-		const model = this._chatService.getSession(this._sessionResource);
-		const request = model?.getRequests().at(-1);
-		return request?.modeInfo?.permissionLevel === ChatPermissionLevel.Autopilot;
-	}
-
-	private async _requestFreeFormTerminalInput(token: CancellationToken, execution: IExecution, confirmationPrompt: IConfirmationPrompt, acceptAnyKey: boolean = false): Promise<boolean> {
-		const focusTerminalSelection = Symbol('focusTerminalSelection');
-		const { promise: userPrompt, part } = this._createElicitationPart<boolean | typeof focusTerminalSelection>(
-			token,
-			execution.sessionResource,
-			new MarkdownString(localize('poll.terminal.inputRequest', "The terminal is awaiting input.")),
-			new MarkdownString(localize('poll.terminal.requireInput', "{0}\nPlease provide the required input to the terminal.\n\n", confirmationPrompt.prompt)),
-			'',
-			localize('poll.terminal.enterInput', 'Focus terminal'),
-			undefined,
-			() => {
-				this._showInstance(execution.instance.instanceId);
-				return focusTerminalSelection;
-			}
-		);
-
-		let inputDataDisposable: IDisposable = Disposable.None;
-		let instanceDisposedDisposable: IDisposable = Disposable.None;
-		const inputPromise = new Promise<boolean>(resolve => {
-			let settled = false;
-			const settle = (value: boolean, state: OutputMonitorState) => {
-				if (settled) {
-					return;
-				}
-				settled = true;
-				part.hide();
-				inputDataDisposable.dispose();
-				instanceDisposedDisposable.dispose();
-				this._state = state;
-				resolve(value);
-			};
-			inputDataDisposable = this._register(execution.instance.onDidInputData((data) => {
-				// For "press any key" prompts, accept any non-empty input
-				// For other free-form inputs (like passwords), only accept on Enter
-				if ((acceptAnyKey && data.length > 0) || (!acceptAnyKey && (data === '\r' || data === '\n' || data === '\r\n'))) {
-					this._outputMonitorTelemetryCounters.inputToolFreeFormInputCount++;
-					settle(true, OutputMonitorState.PollingForIdle);
-				}
-			}));
-			instanceDisposedDisposable = this._register(execution.instance.onDisposed(() => {
-				settle(false, OutputMonitorState.Cancelled);
-			}));
-		});
-
-		const disposeListeners = () => {
-			inputDataDisposable.dispose();
-			instanceDisposedDisposable.dispose();
-		};
-
-		const result = await Promise.race([userPrompt, inputPromise]);
-		if (result === focusTerminalSelection) {
-			execution.instance.focus(true);
-			return await inputPromise;
-		}
-		if (result === undefined) {
-			disposeListeners();
-			// Prompt was dismissed without providing input
-			return false;
-		}
-		disposeListeners();
-		return !!result;
-	}
-
-	private _showInstance(instanceId?: number): void {
-		if (!instanceId) {
-			return;
-		}
-		const instance = this._terminalService.getInstanceFromId(instanceId);
-		if (!instance) {
-			return;
-		}
-		this._terminalService.setActiveInstance(instance);
-		this._terminalService.revealActiveTerminal(true);
-	}
-	// Helper to create, register, and wire a ChatElicitationRequestPart. Returns the promise that
-	// resolves when the part is accepted/rejected and the registered part itself so callers can
-	// attach additional listeners (e.g., onDidRequestHide) or compose with other promises.
-	private _createElicitationPart<T>(
-		token: CancellationToken,
-		sessionResource: URI | undefined,
-		title: MarkdownString,
-		detail: MarkdownString,
-		subtitle: string,
-		acceptLabel: string,
-		rejectLabel?: string,
-		onAccept?: (value: IAction | true) => MaybePromise<T | undefined>,
-		onReject?: () => MaybePromise<T | undefined>,
-		moreActions?: IAction[] | undefined
-	): { promise: Promise<T | undefined>; part: ChatElicitationRequestPart } {
-		const chatModel = sessionResource && this._chatService.getSession(sessionResource);
-		if (!(chatModel instanceof ChatModel)) {
-			throw new Error('No model');
-		}
-		// In async mode the last request may be an implicit (hidden) steering request.
-		// Attach the elicitation to the last visible request so it renders in the UI.
-		const requests = chatModel.getRequests();
-		let request: ChatRequestModel | undefined;
-		if (this._asyncMode) {
-			// In async mode the previous response is already complete.
-			// Create a new system-initiated request so the data model properly
-			// represents a finished response followed by a new request/response
-			// rather than reopening the completed response.
-			const message = localize('terminalPromptDetected', "Terminal is waiting for input");
-			const parts = [new ChatRequestTextPart(new OffsetRange(0, message.length), { startColumn: 1, startLineNumber: 1, endColumn: 1, endLineNumber: 1 }, message)];
-			request = chatModel.addRequest(
-				{ text: message, parts },
-				{ variables: [] },
-				0, // attempt
-				undefined, // modeInfo
-				undefined, // chatAgent
-				undefined, // slashCommand
-				undefined, // confirmation
-				undefined, // locationData
-				undefined, // attachments
-				undefined, // isCompleteAddedRequest
-				undefined, // modelId
-				undefined, // userSelectedTools
-				undefined, // id
-				true, // isSystemInitiated
-				localize('backgroundTaskInputNeeded', "Background task `{0}` input needed", this._command), // systemInitiatedLabel
-			);
-		} else {
-			request = requests.findLast(r => !r.isSystemInitiated) ?? requests.at(-1);
-		}
-		if (!request) {
-			throw new Error('No request');
-		}
-		let part!: ChatElicitationRequestPart;
-		const asyncRequest = this._asyncMode ? request : undefined;
-		const promise = new Promise<T | undefined>(resolve => {
-			const thePart = part = new ChatElicitationRequestPart(
-				title,
-				detail,
-				subtitle,
-				acceptLabel,
-				rejectLabel,
-				async (value: IAction | true) => {
-					try {
-						const r = await (onAccept ? onAccept(value) : undefined);
-						resolve(r as T | undefined);
-						// Don't hide if return value is a Symbol (e.g., focusTerminalSelection)
-						// This keeps the elicitation visible while user focuses terminal to provide input
-						if (typeof r === 'symbol') {
-							return ElicitationState.Pending;
-						}
-					} catch {
-						resolve(undefined);
-					}
-					thePart.hide();
-					this._promptPart = undefined;
-					asyncRequest?.response?.complete();
-					return ElicitationState.Accepted;
-				},
-				async () => {
-					try {
-						const r = await (onReject ? onReject() : undefined);
-						resolve(r as T | undefined);
-						// Don't hide if return value is a Symbol (e.g., focusTerminalSelection)
-						// This keeps the elicitation visible while user focuses terminal to provide input
-						if (typeof r === 'symbol') {
-							return ElicitationState.Pending;
-						}
-					} catch {
-						resolve(undefined);
-					}
-					thePart.hide();
-					this._promptPart = undefined;
-					asyncRequest?.response?.complete();
-					return ElicitationState.Rejected;
-				},
-				undefined, // source
-				moreActions,
-				() => this._outputMonitorTelemetryCounters.inputToolManualShownCount++
-			);
-
-			chatModel.acceptResponseProgress(request, thePart);
-			this._promptPart = thePart;
-		});
-
-		this._register(token.onCancellationRequested(() => {
-			part.hide();
-			asyncRequest?.response?.complete();
-		}));
-
-		return { promise, part };
-	}
 }
 
 export function matchTerminalPromptOption(options: readonly string[], suggestedOption: string): { option: string | undefined; index: number } {

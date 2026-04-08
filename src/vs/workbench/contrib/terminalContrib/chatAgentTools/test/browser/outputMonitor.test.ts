@@ -9,20 +9,13 @@ import { CancellationToken, CancellationTokenSource } from '../../../../../../ba
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/test/common/utils.js';
 import { IExecution, IPollingResult, OutputMonitorState } from '../../browser/tools/monitoring/types.js';
 import { TestInstantiationService } from '../../../../../../platform/instantiation/test/common/instantiationServiceMock.js';
-import { ILanguageModelsService } from '../../../../chat/common/languageModels.js';
-import { IChatService } from '../../../../chat/common/chatService/chatService.js';
 import { Emitter, Event } from '../../../../../../base/common/event.js';
-import { ChatModel } from '../../../../chat/common/model/chatModel.js';
 import { NullLogService } from '../../../../../../platform/log/common/log.js';
 import { ITerminalLogService } from '../../../../../../platform/terminal/common/terminal.js';
 import { runWithFakedTimers } from '../../../../../../base/test/common/timeTravelScheduler.js';
 import { IToolInvocationContext } from '../../../../chat/common/tools/languageModelToolsService.js';
 import { LocalChatSessionUri } from '../../../../chat/common/model/chatUri.js';
 import { isNumber } from '../../../../../../base/common/types.js';
-import { IConfigurationService } from '../../../../../../platform/configuration/common/configuration.js';
-import { TestConfigurationService } from '../../../../../../platform/configuration/test/common/testConfigurationService.js';
-import { TerminalChatAgentToolsSettingId } from '../../common/terminalChatAgentToolsConfiguration.js';
-import { IChatWidgetService } from '../../../../chat/browser/chat.js';
 
 suite('OutputMonitor', () => {
 	const store = ensureNoDisposablesAreLeakedInTestSuite();
@@ -31,12 +24,10 @@ suite('OutputMonitor', () => {
 	let cts: CancellationTokenSource;
 	let instantiationService: TestInstantiationService;
 	let sendTextCalled: boolean;
-	let sentText: string | undefined;
 	let dataEmitter: Emitter<string>;
 
 	setup(() => {
 		sendTextCalled = false;
-		sentText = undefined;
 		dataEmitter = new Emitter<string>();
 		execution = {
 			getOutput: () => 'test output',
@@ -45,7 +36,6 @@ suite('OutputMonitor', () => {
 				instanceId: 1,
 				sendText: async (text?: string) => {
 					sendTextCalled = true;
-					sentText = text;
 				},
 				onDidInputData: dataEmitter.event,
 				onDisposed: Event.None,
@@ -58,36 +48,7 @@ suite('OutputMonitor', () => {
 		};
 		instantiationService = new TestInstantiationService();
 
-		instantiationService.stub(
-			ILanguageModelsService,
-			{
-				selectLanguageModels: async () => []
-			}
-		);
-		instantiationService.stub(
-			IChatService,
-			{
-				// eslint-disable-next-line local/code-no-any-casts
-				getSession: () => ({
-					sessionId: '1',
-					onDidDispose: { event: () => { }, dispose: () => { } },
-					onDidChange: { event: () => { }, dispose: () => { } },
-					initialLocation: undefined,
-					requests: [],
-					responses: [],
-					addRequest: () => { },
-					addResponse: () => { },
-					dispose: () => { }
-				} as any)
-			}
-		);
 		instantiationService.stub(ITerminalLogService, new NullLogService());
-		instantiationService.stub(IConfigurationService, new TestConfigurationService({
-			[TerminalChatAgentToolsSettingId.AutoReplyToPrompts]: false
-		}));
-		instantiationService.stub(IChatWidgetService, {
-			getWidgetsByLocations: () => []
-		});
 		cts = new CancellationTokenSource();
 	});
 
@@ -150,12 +111,6 @@ suite('OutputMonitor', () => {
 	test('non-interactive help completes without prompting', async () => {
 		return runWithFakedTimers({}, async () => {
 			execution.getOutput = () => 'press h + enter to show help';
-			instantiationService.stub(
-				ILanguageModelsService,
-				{
-					selectLanguageModels: async () => { throw new Error('language model should not be consulted'); }
-				}
-			);
 			monitor = store.add(instantiationService.createInstance(OutputMonitor, execution, undefined, createTestContext('1'), cts.token, 'test command'));
 			await Event.toPromise(monitor.onDidFinishCommand);
 			const pollingResult = monitor.pollingResult;
@@ -182,15 +137,7 @@ suite('OutputMonitor', () => {
 	});
 	test('timeout prompt unanswered → continues polling and completes when idle', async () => {
 		return runWithFakedTimers({}, async () => {
-			// Fake a ChatModel enough to pass instanceof and the two methods used
-			const fakeChatModel: any = {
-				getRequests: () => [{}],
-				acceptResponseProgress: () => { }
-			};
-			Object.setPrototypeOf(fakeChatModel, ChatModel.prototype);
-			instantiationService.stub(IChatService, { getSession: () => fakeChatModel });
-
-			// Poller: first pass times out (to show the prompt), second pass goes idle
+			// Poller: first pass times out, second pass goes idle
 			let pass = 0;
 			const timeoutThenIdle = async (): Promise<IPollingResult> => {
 				pass++;
@@ -219,15 +166,14 @@ suite('OutputMonitor', () => {
 		});
 	});
 
-	test('auto reply stops on generic press any key prompts', async () => {
-		instantiationService.stub(IConfigurationService, new TestConfigurationService({
-			[TerminalChatAgentToolsSettingId.AutoReplyToPrompts]: true
-		}));
-
+	test('press any key fires onDidDetectInputNeeded and stops polling', async () => {
 		execution.getOutput = () => 'Press any key to continue...';
 		const monitorCts = new CancellationTokenSource();
 		monitorCts.cancel();
 		monitor = store.add(instantiationService.createInstance(OutputMonitor, execution, undefined, createTestContext('1'), monitorCts.token, 'test command'));
+
+		let inputNeededFired = false;
+		store.add(monitor.onDidDetectInputNeeded(() => { inputNeededFired = true; }));
 
 		const outputMonitorWithPrivateMethod = monitor as unknown as {
 			[key: string]: ((token: CancellationToken) => Promise<{ shouldContinuePolling: boolean }>) | undefined;
@@ -236,9 +182,9 @@ suite('OutputMonitor', () => {
 		await Event.toPromise(monitor.onDidFinishCommand);
 		monitorCts.dispose();
 
-		assert.strictEqual(sendTextCalled, false, 'sendText should not be called when auto reply is enabled for free-form prompts');
-		assert.strictEqual(sentText, undefined, 'no terminal input should be sent');
-		assert.strictEqual(idleResult.shouldContinuePolling, false, 'monitor should stop polling for free-form prompts in auto reply mode');
+		assert.strictEqual(inputNeededFired, true, 'onDidDetectInputNeeded should fire for press any key');
+		assert.strictEqual(sendTextCalled, false, 'sendText should not be called');
+		assert.strictEqual(idleResult.shouldContinuePolling, false, 'monitor should stop polling');
 	});
 
 	test('onDidDetectInputNeeded fires for input-required patterns in foreground mode', async () => {
