@@ -231,12 +231,12 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 		}
 		const hasOverage = this._activeSku === 'Pro/Pro+' || this._activeSku === 'Max';
 		// For Pro with overage, only show warning/error icons for overage states
-		const isWarning = !this._bannerDismissed && (
+		const isWarning = (
 			hasOverage
 				? this._activeState === 'Overage Approached'
 				: this._activeState.includes('Approached')
 		);
-		const isError = !this._bannerDismissed && (
+		const isError = (
 			hasOverage
 				? this._activeState === 'Overage Reached'
 				: this._activeState.includes('Reached')
@@ -784,69 +784,71 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 
 		const isEnterprise = sku === 'Ent/Bus' || sku === 'Ent/Bus ULB';
 
-		// Header row: title + icons
-		const header = append(dashboard, $('div.copilot-prototype-dashboard-header'));
-		const titleText = append(header, $('div.copilot-prototype-dashboard-title'));
 		if (isEnterprise) {
+			// Enterprise: single combined view with title header, no tabs
+			const header = append(dashboard, $('div.copilot-prototype-dashboard-header'));
+			const titleText = append(header, $('div.copilot-prototype-dashboard-title'));
 			titleText.textContent = localize('dashboardTitleEnterprise', "Copilot Enterprise Usage");
-		} else {
-			const isPro = sku !== 'Edu/Free';
-			titleText.textContent = isPro ? localize('dashboardTitlePro', "Copilot  Pro  Usage") : localize('dashboardTitle', "Copilot Free Usage");
-		}
 
-		const headerActions = append(header, $('div.copilot-prototype-dashboard-header-actions'));
-		const cardIcon = append(headerActions, $('div.copilot-prototype-dashboard-tab'));
-		cardIcon.append(...renderLabelWithIcons('$(credit-card)'));
-		cardIcon.title = localize('billing', "Billing");
-		cardIcon.tabIndex = 0;
-		const settingsIcon = append(headerActions, $('div.copilot-prototype-dashboard-tab'));
-		settingsIcon.append(...renderLabelWithIcons('$(settings-gear)'));
-		settingsIcon.title = localize('settings', "Settings");
-		settingsIcon.tabIndex = 0;
+			const headerActions = append(header, $('div.copilot-prototype-dashboard-header-actions'));
+			const settingsIcon = append(headerActions, $('div.copilot-prototype-dashboard-icon'));
+			settingsIcon.append(...renderLabelWithIcons('$(settings)'));
+			settingsIcon.title = localize('settings', "Settings");
+			settingsIcon.tabIndex = 0;
 
-		if (isEnterprise) {
-			// Enterprise: single combined view — no tab separation
 			const contentWrapper = append(dashboard, $('div.copilot-prototype-dashboard-content-wrapper'));
 			const combinedContent = append(contentWrapper, $('div.copilot-prototype-dashboard-content.active'));
 			this.renderEnterpriseCombinedTab(combinedContent, disposables, sku, state);
 			return dashboard;
 		}
 
+		// Non-enterprise: labeled tab bar header with plan label on right
+		const header = append(dashboard, $('div.copilot-prototype-dashboard-header'));
+
+		// Tab buttons on the left
+		const tabsContainer = append(header, $('div.copilot-prototype-dashboard-tabs'));
+		const tokenUsageTab = append(tabsContainer, $('div.copilot-prototype-dashboard-header-tab.active'));
+		tokenUsageTab.append(...renderLabelWithIcons('$(comment-discussion)'));
+		tokenUsageTab.title = localize('tab.tokenUsage', "Token Usage");
+		tokenUsageTab.tabIndex = 0;
+		tokenUsageTab.role = 'tab';
+		const inlineSuggestionsTab = append(tabsContainer, $('div.copilot-prototype-dashboard-header-tab'));
+		inlineSuggestionsTab.append(...renderLabelWithIcons('$(lightbulb-sparkle)'));
+		inlineSuggestionsTab.title = localize('tab.inlineSuggestions', "Inline Suggestions");
+		inlineSuggestionsTab.tabIndex = 0;
+		inlineSuggestionsTab.role = 'tab';
+
+		// Plan label + settings icon on the right
+		const planLabel = append(header, $('div.copilot-prototype-dashboard-plan-label'));
+		const isPro = sku !== 'Edu/Free';
+		const shortName = isPro ? localize('planShortPro', "Copilot Pro") : localize('planShortFree', "Copilot Free");
+		append(planLabel, $('span.copilot-prototype-dashboard-plan-name', undefined, shortName));
+		const settingsIcon = append(planLabel, $('div.copilot-prototype-dashboard-icon'));
+		settingsIcon.append(...renderLabelWithIcons('$(settings)'));
+		settingsIcon.title = localize('settings', "Settings");
+		settingsIcon.tabIndex = 0;
+
 		// Tab content wrapper (grid overlap so both tabs size the container)
 		const contentWrapper = append(dashboard, $('div.copilot-prototype-dashboard-content-wrapper'));
 		const copilotContent = append(contentWrapper, $('div.copilot-prototype-dashboard-content.active'));
 		const inlineContent = append(contentWrapper, $('div.copilot-prototype-dashboard-content'));
 
-		// === Copilot Tab Content ===
+		// === Token Usage Tab Content ===
 		this.renderCopilotTab(copilotContent, disposables, sku, state);
 
 		// === Inline Suggestions Tab Content ===
 		this.renderInlineTab(inlineContent, disposables, sku, state);
 
-		// Bottom tab bar
-		const tabBar = append(dashboard, $('div.copilot-prototype-dashboard-bottom-tabs'));
-		const copilotTabBtn = append(tabBar, $('div.copilot-prototype-dashboard-tab.active'));
-		copilotTabBtn.append(...renderLabelWithIcons('$(comment-discussion)'));
-		copilotTabBtn.title = localize('copilotTab', "Copilot");
-		copilotTabBtn.tabIndex = 0;
-		copilotTabBtn.role = 'tab';
-
-		const inlineTabBtn = append(tabBar, $('div.copilot-prototype-dashboard-tab'));
-		inlineTabBtn.append(...renderLabelWithIcons('$(lightbulb-sparkle)'));
-		inlineTabBtn.title = localize('inlineTab', "Inline Suggestions");
-		inlineTabBtn.tabIndex = 0;
-		inlineTabBtn.role = 'tab';
-
 		// Tab switching
-		copilotTabBtn.addEventListener('click', () => {
-			copilotTabBtn.classList.add('active');
-			inlineTabBtn.classList.remove('active');
+		tokenUsageTab.addEventListener('click', () => {
+			tokenUsageTab.classList.add('active');
+			inlineSuggestionsTab.classList.remove('active');
 			copilotContent.classList.add('active');
 			inlineContent.classList.remove('active');
 		});
-		inlineTabBtn.addEventListener('click', () => {
-			inlineTabBtn.classList.add('active');
-			copilotTabBtn.classList.remove('active');
+		inlineSuggestionsTab.addEventListener('click', () => {
+			inlineSuggestionsTab.classList.add('active');
+			tokenUsageTab.classList.remove('active');
 			inlineContent.classList.add('active');
 			copilotContent.classList.remove('active');
 		});
@@ -949,8 +951,8 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 			// Pro/Pro+ No O: not configured
 			this.createGauge(content, localize('notConfigured', "Not Configured"), 0, localize('runoverBudgetBold', "**Runover Budget**"), true);
 		} else if (!isPro) {
-			// Edu/Free: unavailable
-			this.createGauge(content, localize('unavailable', "Unavailable"), 0, localize('runoverDescBold', "**Runover Budget** For Pro, Pro+, and Max users"), true);
+			// Edu/Free: no runover budget
+			this.createGauge(content, localize('zeroUsed', "0% Used"), 0, localize('runoverDescBold', "**Runover Budget** For Pro, Pro+, and Max users"), true);
 		} else {
 			// Pro/Pro+ with overage
 			this.createGauge(content, localize('overageConfigured', "Configured"), 0, localize('runoverBudgetBold', "**Runover Budget**"));
@@ -1112,20 +1114,24 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 		nesRow.appendChild(nesCheckbox.domNode);
 		append(nesRow, $('span.copilot-prototype-dashboard-setting-label')).textContent = localize('nextEditSuggestions', "Next edit suggestions");
 
-		// Eagerness selector
-		const eagernessRow = append(settings, $('div.copilot-prototype-dashboard-eagerness'));
+		// Model selector
+		const modelRow = append(settings, $('div.copilot-prototype-dashboard-dropdown-row'));
+		append(modelRow, $('span.copilot-prototype-dashboard-setting-label')).textContent = localize('model', "Model");
+		const modelSelect = append(modelRow, $('select.copilot-prototype-dashboard-select'));
+		for (const model of ['dd_5minichat_edits_xtab_300_unified', 'gpt-4o-mini', 'claude-3.5-sonnet']) {
+			const option = append(modelSelect, $('option'));
+			option.textContent = model;
+			option.value = model;
+		}
+
+		// Eagerness selector (dropdown)
+		const eagernessRow = append(settings, $('div.copilot-prototype-dashboard-dropdown-row'));
 		append(eagernessRow, $('span.copilot-prototype-dashboard-setting-label')).textContent = localize('eagerness', "Eagerness");
-		const eagernessOptions = ['Auto', 'Low', 'Medium', 'High'];
-		const eagernessGroup = append(eagernessRow, $('div.copilot-prototype-dashboard-eagerness-group'));
-		for (const opt of eagernessOptions) {
-			const optBtn = disposables.add(new Button(eagernessGroup, {
-				...defaultButtonStyles,
-				secondary: true,
-			}));
-			optBtn.label = opt;
-			if (opt === 'Auto') {
-				optBtn.element.classList.add('active');
-			}
+		const eagernessSelect = append(eagernessRow, $('select.copilot-prototype-dashboard-select'));
+		for (const opt of ['Auto', 'Low', 'Medium', 'High']) {
+			const option = append(eagernessSelect, $('option'));
+			option.textContent = opt;
+			option.value = opt;
 		}
 
 		// Snooze
