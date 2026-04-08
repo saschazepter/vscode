@@ -782,14 +782,18 @@ export class SSHRemoteAgentHostMainService extends Disposable implements ISSHRem
 		'~/.ssh/id_xmss',
 	];
 
-	private async _findDefaultKeyFile(): Promise<{ path: string; contents: Buffer } | undefined> {
+	protected async _findDefaultKeyFile(): Promise<{ path: string; contents: Buffer } | undefined> {
 		for (const keyPath of SSHRemoteAgentHostMainService._defaultKeyPaths) {
 			const resolved = keyPath.replace(/^~/, os.homedir());
 			try {
 				const contents = await fsp.readFile(resolved);
 				return { path: keyPath, contents };
-			} catch {
-				// key file doesn't exist, try next
+			} catch (error) {
+				const errorCode = (error as NodeJS.ErrnoException).code;
+				if (errorCode === 'ENOENT' || errorCode === 'ENOTDIR') {
+					continue;
+				}
+				this._logService.warn(`${LOG_PREFIX} Failed to read default SSH key file ${resolved}`, error);
 			}
 		}
 		return undefined;
