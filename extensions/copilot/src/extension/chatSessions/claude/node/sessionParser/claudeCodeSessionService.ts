@@ -37,6 +37,7 @@ import {
 	ISubagentSession,
 } from './claudeSessionSchema';
 import { buildClaudeCodeSession, sdkSessionInfoToSessionInfo, sdkSubagentMessagesToSubagentSession, SubagentCorrelationMap } from './sdkSessionAdapter';
+import { toErrorMessage } from '../../../../../util/common/errorMessage';
 
 // #region Service Interface
 
@@ -172,7 +173,8 @@ export class ClaudeCodeSessionService implements IClaudeCodeSessionService {
 		let agentIds: string[];
 		try {
 			agentIds = await this._sdkService.listSubagents(sessionId, { dir });
-		} catch {
+		} catch (error) {
+			this._logService.warn(`[ClaudeCodeSessionService] listSubagents failed: ${toErrorMessage(error)}`);
 			return { subagents: [], correlationMap: new Map() };
 		}
 
@@ -220,8 +222,8 @@ export class ClaudeCodeSessionService implements IClaudeCodeSessionService {
 		try {
 			const messages = await this._sdkService.getSubagentMessages(sessionId, agentId, { dir });
 			return sdkSubagentMessagesToSubagentSession(agentId, messages);
-		} catch {
-			this._logService.debug(`[ClaudeCodeSessionService] Failed to load subagent ${agentId} for session ${sessionId}`);
+		} catch (error) {
+			this._logService.warn(`[ClaudeCodeSessionService] Failed to load subagent ${agentId} for session ${sessionId}: ${toErrorMessage(error)}`);
 			return null;
 		}
 	}

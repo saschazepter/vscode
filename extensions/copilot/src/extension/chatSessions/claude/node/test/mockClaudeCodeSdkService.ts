@@ -3,8 +3,8 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { ForkSessionOptions, ForkSessionResult, GetSubagentMessagesOptions, ListSubagentsOptions, Options, Query, SDKAssistantMessage, SDKResultMessage, SDKSessionInfo, SDKUserMessage, SessionMessage } from '@anthropic-ai/claude-agent-sdk';
-import { IClaudeCodeSdkService } from '../claudeCodeSdkService';
+import type { ForkSessionOptions, ForkSessionResult, GetSubagentMessagesOptions, ListSubagentsOptions, Options, Query, SDKAssistantMessage, SDKResultMessage, SDKSessionInfo, SDKUserMessage, SessionMessage } from '@anthropic-ai/claude-agent-sdk';
+import type { IClaudeCodeSdkService } from '../claudeCodeSdkService';
 
 /**
  * Mock implementation of IClaudeCodeService for testing
