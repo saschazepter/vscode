@@ -519,24 +519,28 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 				const budgetBtn = mainWindow.document.createElement('button');
 				budgetBtn.className = i === 0 ? 'copilot-prototype-inline-warning-btn' : 'copilot-prototype-inline-warning-btn budget';
 				budgetBtn.textContent = content.budgetButtons[i];
+				budgetBtn.addEventListener('click', () => this.advanceState());
 				btnContainer.appendChild(budgetBtn);
 			}
 			if (content.buttonLabel) {
 				const otherBtn = mainWindow.document.createElement('button');
 				otherBtn.className = 'copilot-prototype-inline-warning-btn secondary';
 				otherBtn.textContent = content.buttonLabel;
+				otherBtn.addEventListener('click', () => this.advanceState());
 				btnContainer.appendChild(otherBtn);
 			}
 		} else if (content.buttonLabel) {
 			const btn = mainWindow.document.createElement('button');
 			btn.className = 'copilot-prototype-inline-warning-btn';
 			btn.textContent = content.buttonLabel;
+			btn.addEventListener('click', () => this.advanceState());
 			btnContainer.appendChild(btn);
 
 			if (content.secondaryButtonLabel) {
 				const secondaryBtn = mainWindow.document.createElement('button');
 				secondaryBtn.className = 'copilot-prototype-inline-warning-btn secondary';
 				secondaryBtn.textContent = content.secondaryButtonLabel;
+				secondaryBtn.addEventListener('click', () => this.advanceState());
 				btnContainer.appendChild(secondaryBtn);
 			}
 		}
@@ -964,24 +968,30 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 			// Microtransaction: quick budget buttons
 			const fiveBtn = disposables.add(new Button(actions, { ...defaultButtonStyles }));
 			fiveBtn.label = '+$5';
+			disposables.add(fiveBtn.onDidClick(() => this.advanceState()));
 			for (const amount of ['+$10', '+$20']) {
 				const budgetBtn = disposables.add(new Button(actions, { ...defaultButtonStyles, secondary: true }));
 				budgetBtn.label = amount;
+				disposables.add(budgetBtn.onDidClick(() => this.advanceState()));
 			}
 			const otherBtn = disposables.add(new Button(actions, { ...defaultButtonStyles, secondary: true }));
 			otherBtn.label = localize('otherBudget', "Other");
+			disposables.add(otherBtn.onDidClick(() => this.advanceState()));
 		} else if (isPro && !hasOverage) {
 			const configOverageBtn = disposables.add(new Button(actions, { ...defaultButtonStyles, secondary: true }));
 			configOverageBtn.label = localize('configureBudget', "Configure Budget");
+			disposables.add(configOverageBtn.onDidClick(() => this.advanceState()));
 			const upgradeLimitsBtn = disposables.add(new Button(actions, { ...defaultButtonStyles, secondary: true }));
 			upgradeLimitsBtn.label = localize('upgrade', "Upgrade");
 			upgradeLimitsBtn.enabled = false;
 		} else if (!isPro) {
 			const upgradeBtn = disposables.add(new Button(actions, { ...defaultButtonStyles, secondary: true }));
 			upgradeBtn.label = localize('upgrade', "Upgrade");
+			disposables.add(upgradeBtn.onDidClick(() => this.advanceState()));
 		} else {
 			const configBudgetBtn = disposables.add(new Button(actions, { ...defaultButtonStyles, secondary: true }));
 			configBudgetBtn.label = localize('configureBudget', "Configure Budget");
+			disposables.add(configBudgetBtn.onDidClick(() => this.advanceState()));
 		}
 	}
 
@@ -1059,17 +1069,22 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 			// Microtransaction: quick budget buttons
 			const fiveBtn = disposables.add(new Button(actions, { ...defaultButtonStyles }));
 			fiveBtn.label = '+$5';
+			disposables.add(fiveBtn.onDidClick(() => this.advanceState()));
 			for (const amount of ['+$10', '+$20']) {
 				const budgetBtn = disposables.add(new Button(actions, { ...defaultButtonStyles, secondary: true }));
 				budgetBtn.label = amount;
+				disposables.add(budgetBtn.onDidClick(() => this.advanceState()));
 			}
 			const otherBtn = disposables.add(new Button(actions, { ...defaultButtonStyles, secondary: true }));
 			otherBtn.label = localize('otherBudget', "Other");
+			disposables.add(otherBtn.onDidClick(() => this.advanceState()));
 		} else {
 			const editOverageBtn = disposables.add(new Button(actions, { ...defaultButtonStyles, secondary: true }));
 			editOverageBtn.label = localize('editBudget', "Edit Budget");
+			disposables.add(editOverageBtn.onDidClick(() => this.advanceState()));
 			const upgradeLimitsBtn = disposables.add(new Button(actions, { ...defaultButtonStyles, secondary: true }));
 			upgradeLimitsBtn.label = localize('upgrade', "Upgrade");
+			disposables.add(upgradeLimitsBtn.onDidClick(() => this.advanceState()));
 		}
 	}
 
