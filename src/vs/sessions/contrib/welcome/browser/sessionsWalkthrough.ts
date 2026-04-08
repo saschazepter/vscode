@@ -7,6 +7,7 @@ import './media/sessionsWalkthrough.css';
 import { disposableTimeout } from '../../../../base/common/async.js';
 import { Disposable, DisposableStore, MutableDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { $, append, EventType, addDisposableListener, getActiveElement, isHTMLElement } from '../../../../base/browser/dom.js';
+import { asCSSUrl } from '../../../../base/browser/cssValue.js';
 import { localize } from '../../../../nls.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
@@ -115,7 +116,12 @@ export class SessionsWalkthroughOverlay extends Disposable {
 		// Horizontal layout: icon left, text + buttons right
 		const layout = append(this.contentContainer, $('.sessions-walkthrough-hero'));
 
-		append(layout, $('div.sessions-walkthrough-logo'));
+		const logo = append(layout, $('div.sessions-walkthrough-logo'));
+		const githubAuthExt = this.extensionService.extensions.find(e => e.identifier.value === 'vscode.github-authentication');
+		if (githubAuthExt) {
+			const iconUri = URI.joinPath(githubAuthExt.extensionLocation, 'media', 'sessions-icon.svg');
+			logo.style.backgroundImage = asCSSUrl(iconUri);
+		}
 
 		const right = append(layout, $('.sessions-walkthrough-hero-text'));
 		const titleEl = append(right, $('h2', undefined, localize('walkthrough.step1.title', "Welcome to Agents")));
