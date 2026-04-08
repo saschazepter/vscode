@@ -5,8 +5,8 @@ parameters:
 steps:
 
   # TODO@joaomoreno
-  - script: cat extensions/copilot/package.json
-    displayName: Inspect copilot package.json
+  - script: tree .
+    displayName: Inspect repo
 
   # Setup copilot test environment (tokens, env vars)
   - task: AzureCLI@2
