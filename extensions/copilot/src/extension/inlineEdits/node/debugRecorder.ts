@@ -8,6 +8,7 @@ import { serializeStringEdit } from '../../../platform/inlineEdits/common/dataTy
 import { LanguageId } from '../../../platform/inlineEdits/common/dataTypes/languageId';
 import { DebugRecorderBookmark } from '../../../platform/inlineEdits/common/debugRecorderBookmark';
 import { ObservableWorkspace } from '../../../platform/inlineEdits/common/observableWorkspace';
+import { h3_baseValueUpdate, h3_cleanUpHistory } from '../../../platform/inlineEdits/node/nesMemDebug';
 import { autorunWithChanges } from '../../../platform/inlineEdits/common/utils/observable';
 import { Instant, now } from '../../../platform/inlineEdits/common/utils/utils';
 import { ISerializedOffsetRange, LogEntry } from '../../../platform/workspaceRecorder/common/workspaceLog';
@@ -158,13 +159,20 @@ class DocumentHistory {
 	public cleanUpHistory(): void {
 		const windowSizeMs = 5 * 60 * 1000; // 5 minutes
 		const earliestTime = this.getNow() - windowSizeMs;
+		let evictedCount = 0;
 		while (this._edits.length > 0 && this._edits[0].instant < earliestTime) {
 			const edit = this._edits.shift()!;
 			if (edit.kind === 'selections') {
 				continue; // we drop selection changes
 			}
+			evictedCount++;
+			const oldSize = this._baseValue.value.length;
 			this._baseValue = edit.edit.applyOnText(this._baseValue);
+			h3_baseValueUpdate(this.docId.uri, oldSize, this._baseValue.value.length);
 			this._baseValueTime = edit.instant;
+		}
+		if (evictedCount > 0 || this._edits.length > 50) {
+			h3_cleanUpHistory(this.docId.uri, this._baseValue.value.length, this._edits.length, evictedCount);
 		}
 	}
 

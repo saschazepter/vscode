@@ -24,6 +24,7 @@ import { OffsetRange } from '../../../util/vs/editor/common/core/ranges/offsetRa
 import { StringText } from '../../../util/vs/editor/common/core/text/abstractText';
 import { Uri } from '../../../vscodeTypes';
 import { DebugRecorder } from './debugRecorder';
+import { h2_enterIdle, h2_removed, h2_scheduled, h2_sent } from '../../../platform/inlineEdits/node/nesMemDebug';
 import { INesConfigs } from './nesConfigs';
 import { INextEditDisplayLocation, INextEditResult } from './nextEditResult';
 
@@ -866,9 +867,11 @@ export class TelemetrySender implements IDisposable {
 			this._enterIdleDetection(requestId, builder);
 		}, /* 2 minutes */ 2 * 60 * 1000);
 		this._map.set(requestId, { builder, timeout });
+		h2_scheduled(requestId, this._map.size);
 	}
 
 	private _enterIdleDetection(requestId: number, builder: NextEditProviderTelemetryBuilder): void {
+		h2_enterIdle(requestId, this._map.size);
 		const workspace = this._workspace;
 		if (!workspace) {
 			this._buildAndSendEnhancedTelemetry(requestId, builder, { reason: 'idle', details: { idleTimeoutMs: 0 } });
@@ -954,6 +957,7 @@ export class TelemetrySender implements IDisposable {
 			this._releaseIdleDetector();
 		}
 		this._map.delete(requestId);
+		h2_sent(requestId, reason.reason, this._map.size);
 
 		let telemetry: INextEditProviderTelemetry;
 		try {
@@ -971,6 +975,7 @@ export class TelemetrySender implements IDisposable {
 			this._releaseIdleDetector();
 		}
 		this._map.delete(requestId);
+		h2_removed(requestId, 'removeEntry', this._map.size);
 	}
 
 	private _buildAndSendEnhancedTelemetry(requestId: number, builder: NextEditProviderTelemetryBuilder, sendingReason: IEnhancedTelemetrySendingReason): void {

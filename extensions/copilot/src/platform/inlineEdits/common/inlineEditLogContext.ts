@@ -248,7 +248,15 @@ export class InlineEditRequestLogContext {
 	setRequestInput(nextEditRequest: StatelessNextEditRequest): void {
 		this._isVisible = true;
 		this._nextEditRequestMarkdown = nextEditRequest.toMarkdown();
-		this._nextEditRequestSerialized = nextEditRequest.serialize();
+		const serialized = nextEditRequest.serialize();
+		// Estimate size: each document carries documentBeforeEdits (full doc string)
+		// and documentLinesBeforeEdit (array of line strings). For large files this
+		// can be tens of MB and would be retained for the lifetime of the cache /
+		// completion handler. Drop the serialized copy when it's too large — the
+		// markdown summary is still available for debugging.
+		const estimatedSize = serialized.documents.reduce(
+			(sum, d) => sum + (d.documentBeforeEdits?.length ?? 0), 0);
+		this._nextEditRequestSerialized = estimatedSize > 200 * 1024 ? undefined : serialized;
 		this.fireDidChange();
 	}
 

@@ -43,6 +43,7 @@ import { checkEditConsistency } from '../common/editRebase';
 import { NesChangeHint } from '../common/nesTriggerHint';
 import { RejectionCollector } from '../common/rejectionCollector';
 import { DebugRecorder } from './debugRecorder';
+import { h1_cancelled, h1_specCatchNoResolve, h1_streamBgEnd, h1_streamBgStart, h3_getRecentLog, h4_docValueGet, h4_newStatelessNextEditDoc, h4_newStatelessNextEditRequest } from '../../../platform/inlineEdits/node/nesMemDebug';
 import { INesConfigs } from './nesConfigs';
 import { CachedOrRebasedEdit, NextEditCache } from './nextEditCache';
 import { LlmNESTelemetryBuilder, ReusedRequestKind } from './nextEditProviderTelemetry';
@@ -243,6 +244,7 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 	private _cancelSpeculativeRequest(): void {
 		this._scheduledSpeculativeRequest = null;
 		if (this._speculativePendingRequest) {
+			h1_cancelled(this._speculativePendingRequest.request.seqid, '_cancelSpeculativeRequest');
 			this._speculativePendingRequest.request.cancellationTokenSource.cancel();
 			this._speculativePendingRequest = null;
 		}
@@ -263,6 +265,7 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 		}
 		const activeDoc = this._pendingStatelessNextEditRequest.getActiveDocument();
 		if (activeDoc.id === docId && activeDoc.documentAfterEdits.value !== docValue.value) {
+			h1_cancelled(this._pendingStatelessNextEditRequest.seqid, '_cancelPendingRequestDueToDocChange');
 			this._pendingStatelessNextEditRequest.cancellationTokenSource.cancel();
 		}
 	}
@@ -511,6 +514,7 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 			recentEdits,
 			lastSelectionInAfterEdits,
 		);
+		h4_newStatelessNextEditDoc(doc.docId.uri, documentBeforeEdits.value.length, nextEditDoc.documentAfterEdits.value.length, documentLinesBeforeEdit.length);
 
 		return {
 			recentEdit: doc.lastEdit,
@@ -702,13 +706,20 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 		const curDocId = doc.id;
 		const logger = parentLogger.createSubLogger('_executeNewNextEditRequest');
 
-		const recording = this._debugRecorder?.getRecentLog();
-
-		// Skip large recordings to prevent OOM on large files.
-		// The recording includes a full document setContent entry which
-		// duplicates multi-MB file contents on every request.
+		// Skip recording entirely when the document is large — getRecentLog()
+		// includes a setContent entry with the full document base value, and
+		// JSON.stringify creates a multi-MB transient string on every trigger.
+		const docSize = doc.value.get().value.length;
 		const maxRecordingBytes = 256 * 1024;
-		const cappedRecording = recording && JSON.stringify(recording).length > maxRecordingBytes ? undefined : recording;
+		let cappedRecording: ReturnType<DebugRecorder['getRecentLog']> | undefined;
+		if (docSize <= maxRecordingBytes) {
+			const recording = this._debugRecorder?.getRecentLog();
+			const recordingJson = recording ? JSON.stringify(recording) : undefined;
+			cappedRecording = recordingJson && recordingJson.length > maxRecordingBytes ? undefined : recording;
+			h3_getRecentLog(recording?.length ?? 0, recordingJson?.length ?? 0, cappedRecording === undefined && recording !== undefined);
+		} else {
+			h3_getRecentLog(0, 0, true);
+		}
 
 		const logContext = req.log;
 
@@ -725,10 +736,13 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 			? this._configService.getExperimentBasedConfig(ConfigKey.TeamInternal.InlineEditsAutoExpandEditWindowLines, this._expService)
 			: undefined);
 
+		const docValue = doc.value.get();
+		h4_docValueGet('_executeNewNextEditRequest', docValue.value.length);
+
 		const nextEditRequest = new StatelessNextEditRequest(
 			req.headerRequestId,
 			req.opportunityId,
-			doc.value.get(),
+			docValue,
 			projectedDocuments.map(d => d.nextEditDoc),
 			activeDocAndIdx.idx,
 			xtabEditHistory,
@@ -740,9 +754,15 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 			cappedRecording,
 			req.providerRequestStartDateTime,
 		);
+		{
+			const docs = nextEditRequest.documents;
+			const totalDocBytes = docs.reduce((sum, d) => sum + d.documentBeforeEdits.value.length + d.documentAfterEdits.value.length, 0);
+			h4_newStatelessNextEditRequest(nextEditRequest.seqid, docValue.value.length, docs.length, totalDocBytes);
+		}
 		let nextEditResult: StatelessNextEditResult | undefined;
 
 		if (this._pendingStatelessNextEditRequest) {
+			h1_cancelled(this._pendingStatelessNextEditRequest.seqid, '_executeNewNextEditRequest:superseded');
 			this._pendingStatelessNextEditRequest.cancellationTokenSource.cancel();
 			this._pendingStatelessNextEditRequest = null;
 			// Clear any scheduled (but not yet triggered) speculative request tied to the
@@ -918,6 +938,7 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 				processEdit(firstStreamedEdit, firstTelemetry);
 
 				// Continue streaming remaining edits in the background (unawaited)
+				h1_streamBgStart(nextEditRequest.seqid);
 				(async () => {
 					try {
 						res = await editStream.next();
@@ -936,8 +957,10 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 
 						// Stream completed
 						const completionReason = res.value.v;
+						h1_streamBgEnd(nextEditRequest.seqid, 'completed');
 						handleStreamEnd(completionReason, res.value.telemetryBuilder);
 					} catch (err) {
+						h1_streamBgEnd(nextEditRequest.seqid, `error:${ErrorUtils.toString(err)}`);
 						logger.trace(`Error while streaming further edits: ${ErrorUtils.toString(err)}`);
 						const errorReason = new NoNextEditReason.Unexpected(ErrorUtils.fromUnknown(err));
 						handleStreamEnd(errorReason, firstTelemetry);
@@ -976,6 +999,7 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 			}
 			if (!nextEditRequest.fetchIssued) {
 				// fetch not issued => cancel!
+				h1_cancelled(nextEditRequest.seqid, '_hookupCancellation:fetchNotIssued');
 				nextEditRequest.cancellationTokenSource.cancel();
 				attachedDisposable?.dispose();
 				return;
@@ -985,6 +1009,7 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 					// there are others depending on this request
 					return;
 				}
+				h1_cancelled(nextEditRequest.seqid, '_hookupCancellation:timedCancel');
 				nextEditRequest.cancellationTokenSource.cancel();
 				attachedDisposable?.dispose();
 			}, 1000); // This needs to be longer than the pause between two requests from Core otherwise we cancel running requests too early.
@@ -1195,12 +1220,17 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 	): Promise<StatelessNextEditRequest<CachedOrRebasedEdit> | undefined> {
 		const curDocId = doc.id;
 
-		const recording = this._debugRecorder?.getRecentLog();
 		const logContext = req.log;
 		logContext.setStatelessNextEditProviderId(this._statelessNextEditProvider.ID);
 
-		// Skip large recordings to prevent OOM on large files
-		const cappedRecording = recording && JSON.stringify(recording).length > 256 * 1024 ? undefined : recording;
+		// Skip recording for large documents to avoid multi-MB transient allocations
+		const maxRecordingBytes = 256 * 1024;
+		const specDocSize = postEditContent.length;
+		let cappedRecording: ReturnType<DebugRecorder['getRecentLog']> | undefined;
+		if (specDocSize <= maxRecordingBytes) {
+			const recording = this._debugRecorder?.getRecentLog();
+			cappedRecording = recording && JSON.stringify(recording).length > maxRecordingBytes ? undefined : recording;
+		}
 
 		const logger = parentLogger.createSubLogger('_createSpeculativeRequest');
 
@@ -1413,6 +1443,7 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 
 			logger.trace(`speculative request completed with ${ithEdit + 1} edits`);
 		} catch (e) {
+			h1_specCatchNoResolve(nextEditRequest.seqid, ErrorUtils.toString(e));
 			logger.trace(`speculative provider call error: ${ErrorUtils.toString(e)}`);
 		}
 	}

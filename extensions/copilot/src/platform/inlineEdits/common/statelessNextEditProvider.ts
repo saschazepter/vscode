@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Raw } from '@vscode/prompt-tsx';
+import { h1_requestCreated, h1_resultError, h1_resultSet, h1_startPeriodicDump } from '../node/nesMemDebug';
 import { Result } from '../../../util/common/result';
 import { assert, assertNever } from '../../../util/vs/base/common/assert';
 import { DeferredPromise } from '../../../util/vs/base/common/async';
@@ -115,13 +116,17 @@ export class StatelessNextEditRequest<TFirstEdit = any> {
 	) {
 		assert(documents.length > 0);
 		assert(activeDocumentIdx >= 0 && activeDocumentIdx < documents.length);
+		h1_requestCreated(this.seqid, isSpeculative, documentBeforeEdits.value.length);
+		h1_startPeriodicDump();
 	}
 
 	public setResult(nextEditResult: StatelessNextEditResult) {
+		h1_resultSet(this.seqid);
 		this._result.complete(nextEditResult);
 	}
 
 	public setResultError(err: any) {
+		h1_resultError(this.seqid);
 		this._result.error(err);
 	}
 
