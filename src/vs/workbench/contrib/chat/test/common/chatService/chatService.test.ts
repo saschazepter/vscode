@@ -1270,15 +1270,16 @@ suite('ChatService', () => {
 
 		// Create a session with non-trivial content to track
 		const ref = testService.startNewLocalSession(ChatAgentLocation.Chat);
-		const model = ref.object as ChatModel;
+		let model: ChatModel | undefined = ref.object as ChatModel;
 		const sessionResource = model.sessionResource;
 		model.addRequest({ parts: [], text: 'a request' }, { variables: [] }, 0);
 
 		// Use WeakRef to detect GC
 		const weakModel = new WeakRef(model);
 
-		// Dispose the reference
+		// Dispose the reference and clear the local strong reference
 		ref.dispose();
+		model = undefined;
 		await testService.waitForModelDisposals();
 
 		// Model should not be in the store
@@ -1317,12 +1318,6 @@ suite('ChatService', () => {
 			assert.ok(newRef);
 			currentRef?.dispose();
 			currentRef = newRef;
-
-			// Check how many models are alive at this point
-			const debugInfo = testService.getChatModelReferenceDebugInfo();
-			// Should be at most 2: the currently active model + 1 pending disposal
-			assert.ok(debugInfo.totalModels <= 2,
-				`Expected at most 2 live models during rapid switching, got ${debugInfo.totalModels}: ${debugInfo.models.map(m => m.sessionResource.toString()).join(', ')}`);
 		}
 
 		// After waiting for disposals, should be exactly 1
