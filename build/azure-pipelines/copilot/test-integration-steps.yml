@@ -4,9 +4,9 @@ parameters:
 
 steps:
 
-  # TODO@joaomoreno
-  - script: tree .
-    displayName: Inspect repo
+  # TODO@sandy081: we should not need to restore the copilot extension from git, but currently the test setup modifies files in the extension and causes issues for subsequent runs. We should fix the test setup to avoid modifying files in place and then remove this step.
+  - script: git checkout -- extensions/copilot
+    displayName: Restore copilot extension
 
   # Setup copilot test environment (tokens, env vars)
   - task: AzureCLI@2
