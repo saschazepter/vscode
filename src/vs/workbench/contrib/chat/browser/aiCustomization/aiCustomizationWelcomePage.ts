@@ -163,33 +163,29 @@ export class AICustomizationWelcomePage extends Disposable {
 				}
 			}));
 
-			// Separator between input and grid
-			DOM.append(this.workflowSection, $('.welcome-section-divider'));
+			// Centered separator with text
+			const divider = DOM.append(this.workflowSection, $('.welcome-section-divider'));
+			const dividerLabel = DOM.append(divider, $('span.welcome-section-divider-label'));
+			dividerLabel.textContent = localize('orConfigureIndividually', "or configure individually");
 
-			// Grid section header
-			const gridHeader = DOM.append(this.workflowSection, $('p.welcome-grid-header'));
-			gridHeader.textContent = localize('orConfigureIndividually', "Or configure individual customizations:");
-
-			// 2x3 category card grid
-			const grid = DOM.append(this.workflowSection, $('.welcome-category-grid'));
+			// Full-width category list
+			const list = DOM.append(this.workflowSection, $('.welcome-category-list'));
 			for (const category of this.categoryDescriptions) {
-				const card = DOM.append(grid, $('.welcome-category-card'));
-				card.setAttribute('tabindex', '0');
-				card.setAttribute('role', 'button');
+				const row = DOM.append(list, $('.welcome-category-item'));
+				row.setAttribute('tabindex', '0');
+				row.setAttribute('role', 'button');
 
-				const cardHeader = DOM.append(card, $('.welcome-category-card-header'));
-				const iconEl = DOM.append(cardHeader, $('span.welcome-category-card-icon'));
+				const iconEl = DOM.append(row, $('span.welcome-category-item-icon'));
 				iconEl.classList.add(...ThemeIcon.asClassNameArray(category.icon));
-				const labelEl = DOM.append(cardHeader, $('span.welcome-category-card-label'));
+				const labelEl = DOM.append(row, $('span.welcome-category-item-label'));
 				labelEl.textContent = category.label;
-
-				const descEl = DOM.append(card, $('p.welcome-category-card-desc'));
+				const descEl = DOM.append(row, $('span.welcome-category-item-desc'));
 				descEl.textContent = category.description;
 
 				if (category.chips) {
-					const chipsRow = DOM.append(card, $('.welcome-category-card-chips'));
+					const chipsArea = DOM.append(row, $('span.welcome-category-item-chips'));
 					for (const chip of category.chips) {
-						const chipBtn = DOM.append(chipsRow, $('button.welcome-category-chip'));
+						const chipBtn = DOM.append(chipsArea, $('button.welcome-category-chip'));
 						chipBtn.textContent = chip.label;
 						const prompt = chip.prompt;
 						this._register(DOM.addDisposableListener(chipBtn, 'click', (e) => {
@@ -199,11 +195,10 @@ export class AICustomizationWelcomePage extends Disposable {
 					}
 				}
 
-				// Clicking the card navigates to the section
-				this._register(DOM.addDisposableListener(card, 'click', () => {
+				this._register(DOM.addDisposableListener(row, 'click', () => {
 					this.callbacks.selectSection(category.id);
 				}));
-				this._register(DOM.addDisposableListener(card, 'keydown', (e) => {
+				this._register(DOM.addDisposableListener(row, 'keydown', (e) => {
 					if (e.key === 'Enter' || e.key === ' ') {
 						e.preventDefault();
 						this.callbacks.selectSection(category.id);
