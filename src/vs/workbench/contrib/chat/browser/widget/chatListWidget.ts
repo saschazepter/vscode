@@ -10,7 +10,7 @@ import { ITreeContextMenuEvent, ITreeElement, ITreeFilter } from '../../../../..
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { Emitter, Event } from '../../../../../base/common/event.js';
 import { FuzzyScore } from '../../../../../base/common/filters.js';
-import { Disposable, toDisposable } from '../../../../../base/common/lifecycle.js';
+import { Disposable, MutableDisposable, toDisposable } from '../../../../../base/common/lifecycle.js';
 import { ScrollEvent } from '../../../../../base/common/scrollable.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { MenuId } from '../../../../../platform/actions/common/actions.js';
@@ -196,6 +196,10 @@ export class ChatListWidget extends Disposable {
 	private readonly _getCurrentModeInfo: (() => IChatRequestModeInfo | undefined) | undefined;
 	private readonly _renderStyle: 'compact' | 'minimal' | undefined;
 
+	/** Pending height updates to batch into a single tree update per animation frame. */
+	private readonly _pendingHeightUpdates = new Map<ChatTreeItem, number>();
+	private readonly _pendingHeightFlush = this._register(new MutableDisposable());
+
 	//#endregion
 
 	//#region Properties
@@ -326,15 +330,15 @@ export class ChatListWidget extends Disposable {
 		}));
 
 		this._register(this._renderer.onDidChangeItemHeight(e => {
-			this._updateElementHeight(e.element, e.height);
+			// Batch height updates: collect all ResizeObserver-triggered height changes
+			// and apply them in a single animation frame to avoid layout thrashing.
+			this._pendingHeightUpdates.set(e.element, e.height);
 
-			// If the second-to-last item's height changed, update the last item's min height
-			const secondToLastItem = this._viewModel?.getItems().at(-2);
-			if (e.element.id === secondToLastItem?.id) {
-				this.updateLastItemMinHeight();
+			if (!this._pendingHeightFlush.value) {
+				this._pendingHeightFlush.value = dom.scheduleAtNextAnimationFrame(dom.getWindow(this._container), () => {
+					this._flushPendingHeightUpdates();
+				});
 			}
-
-			this._onDidChangeItemHeight.fire(e);
 		}));
 
 		// Handle rerun with agent or command detection internally
@@ -657,6 +661,40 @@ export class ChatListWidget extends Disposable {
 			this._withPersistedAutoScroll(() => {
 				this._tree.updateElementHeight(element, height);
 			});
+		}
+	}
+
+	/**
+	 * Flush all batched height updates in a single pass, coalescing
+	 * multiple ResizeObserver callbacks into one tree update + scroll.
+	 */
+	private _flushPendingHeightUpdates(): void {
+		if (this._pendingHeightUpdates.size === 0) {
+			return;
+		}
+
+		const updates = new Map(this._pendingHeightUpdates);
+		this._pendingHeightUpdates.clear();
+
+		// Apply all height updates inside a single auto-scroll guard
+		this._withPersistedAutoScroll(() => {
+			for (const [element, height] of updates) {
+				if (this._tree.hasElement(element) && this._visible) {
+					this._tree.updateElementHeight(element, height);
+				}
+			}
+		});
+
+		// Check if the second-to-last item changed (for min height updates)
+		const secondToLastItem = this._viewModel?.getItems().at(-2);
+		if (secondToLastItem && updates.has(secondToLastItem)) {
+			this.updateLastItemMinHeight();
+		}
+
+		// Fire a single height change event for the last update
+		const lastEntry = [...updates.entries()].at(-1);
+		if (lastEntry) {
+			this._onDidChangeItemHeight.fire({ element: lastEntry[0], height: lastEntry[1] });
 		}
 	}
 
