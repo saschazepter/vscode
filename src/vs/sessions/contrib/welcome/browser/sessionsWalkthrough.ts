@@ -117,11 +117,15 @@ export class SessionsWalkthroughOverlay extends Disposable {
 		const layout = append(this.contentContainer, $('.sessions-walkthrough-hero'));
 
 		const logo = append(layout, $('div.sessions-walkthrough-logo'));
-		const githubAuthExt = this.extensionService.extensions.find(e => e.identifier.value === 'vscode.github-authentication');
-		if (githubAuthExt) {
-			const iconUri = URI.joinPath(githubAuthExt.extensionLocation, 'media', 'sessions-icon.svg');
-			logo.style.backgroundImage = asCSSUrl(iconUri);
-		}
+		const updateLogo = () => {
+			const githubAuthExt = this.extensionService.extensions.find(e => e.identifier.value === 'vscode.github-authentication');
+			if (githubAuthExt) {
+				const iconUri = URI.joinPath(githubAuthExt.extensionLocation, 'media', 'sessions-icon.svg');
+				logo.style.backgroundImage = asCSSUrl(iconUri);
+			}
+		};
+		updateLogo();
+		this.extensionService.whenInstalledExtensionsRegistered().then(() => updateLogo());
 
 		const right = append(layout, $('.sessions-walkthrough-hero-text'));
 		const titleEl = append(right, $('h2', undefined, localize('walkthrough.step1.title', "Welcome to Agents")));
