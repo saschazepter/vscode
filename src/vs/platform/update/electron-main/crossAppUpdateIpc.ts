@@ -156,9 +156,11 @@ export class CrossAppUpdateCoordinator extends Disposable implements IUpdateServ
 
 			this.mode = 'standalone';
 
-			// Reconnect to wait for the peer's next launch
+			// Reconnect to wait for the peer's next launch.
+			// Delay briefly to allow the old Mach bootstrap service to be
+			// deregistered before re-creating the server endpoint (macOS).
 			if (reason === 'peer-disconnected') {
-				ipc.connect();
+				setTimeout(() => ipc.connect(), 1000);
 			}
 		});
 
