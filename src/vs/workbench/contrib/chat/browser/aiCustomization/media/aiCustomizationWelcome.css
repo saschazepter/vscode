@@ -32,63 +32,59 @@
 	line-height: 1.6;
 }
 
-/* Getting Started banner */
-.ai-customization-management-editor .welcome-getting-started {
+/* Chat-style input box */
+.ai-customization-management-editor .welcome-input-row {
+	display: flex;
+	align-items: flex-end;
+	border: 1px solid var(--vscode-input-border, var(--vscode-widget-border));
+	border-radius: var(--vscode-cornerRadius-large, 8px);
+	background: var(--vscode-input-background);
+	padding: 0 6px 6px 0;
+	margin-bottom: 0;
+}
+
+.ai-customization-management-editor .welcome-input-row:focus-within {
+	border-color: var(--vscode-focusBorder);
+}
+
+.ai-customization-management-editor .welcome-input {
+	flex: 1;
+	min-width: 0;
+}
+
+.ai-customization-management-editor .welcome-input .monaco-inputbox {
+	border: none;
+	background: transparent;
+}
+
+.ai-customization-management-editor .welcome-input .monaco-inputbox > .ibwrapper > input {
+	padding: 10px 12px;
+	font-size: 14px;
+}
+
+.ai-customization-management-editor .welcome-input-submit {
 	display: flex;
 	align-items: center;
-	gap: 12px;
-	width: 100%;
-	padding: 12px 16px;
-	margin-bottom: 20px;
-	border: 1px solid var(--vscode-button-background, #007acc);
+	justify-content: center;
+	width: 32px;
+	height: 32px;
+	flex-shrink: 0;
+	border: none;
 	border-radius: 6px;
-	background: color-mix(in srgb, var(--vscode-button-background, #007acc) 8%, transparent);
+	background: transparent;
+	color: var(--vscode-descriptionForeground);
 	cursor: pointer;
-	transition: background-color 0.15s ease;
-	font-family: inherit;
-	font-size: inherit;
-	color: inherit;
-	text-align: left;
-	outline: none;
+	transition: color 0.15s ease, background-color 0.15s ease;
 }
 
-.ai-customization-management-editor .welcome-getting-started:hover {
-	background: color-mix(in srgb, var(--vscode-button-background, #007acc) 14%, transparent);
+.ai-customization-management-editor .welcome-input-submit:hover {
+	color: var(--vscode-button-foreground);
+	background: var(--vscode-button-background);
 }
 
-.ai-customization-management-editor .welcome-getting-started:focus-visible {
+.ai-customization-management-editor .welcome-input-submit:focus-visible {
 	outline: 1px solid var(--vscode-focusBorder);
 	outline-offset: -1px;
-}
-
-.ai-customization-management-editor .welcome-getting-started-icon {
-	font-size: 20px;
-	color: var(--vscode-button-background);
-	flex-shrink: 0;
-}
-
-.ai-customization-management-editor .welcome-getting-started-text {
-	display: flex;
-	flex-direction: column;
-	gap: 2px;
-}
-
-.ai-customization-management-editor .welcome-getting-started-title {
-	font-size: 13px;
-	font-weight: 500;
-	color: var(--vscode-foreground);
-}
-
-.ai-customization-management-editor .welcome-getting-started-desc {
-	font-size: 12px;
-	color: var(--vscode-descriptionForeground);
-}
-
-.ai-customization-management-editor .welcome-getting-started-chevron {
-	margin-left: auto;
-	font-size: 16px;
-	color: var(--vscode-descriptionForeground);
-	flex-shrink: 0;
 }
 
 /* Centered separator */

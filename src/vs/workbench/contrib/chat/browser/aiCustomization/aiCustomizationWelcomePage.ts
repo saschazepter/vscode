@@ -9,6 +9,8 @@ import { DisposableStore, Disposable } from '../../../../../base/common/lifecycl
 import { localize } from '../../../../../nls.js';
 import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
+import { InputBox } from '../../../../../base/browser/ui/inputbox/inputBox.js';
+import { defaultInputBoxStyles } from '../../../../../platform/theme/browser/defaultStyles.js';
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
 import { AICustomizationManagementSection } from './aiCustomizationManagement.js';
 import { agentIcon, instructionsIcon, skillIcon, hookIcon, pluginIcon } from './aiCustomizationIcons.js';
@@ -41,7 +43,7 @@ export class AICustomizationWelcomePage extends Disposable {
 
 	readonly container: HTMLElement;
 	private cardsContainer: HTMLElement | undefined;
-	private gettingStartedButton: HTMLElement | undefined;
+	private inputBox: InputBox | undefined;
 
 	private readonly categoryDescriptions: ICategoryDescription[] = [
 		{
@@ -104,22 +106,36 @@ export class AICustomizationWelcomePage extends Disposable {
 		const subtitle = DOM.append(welcomeInner, $('p.welcome-subtitle'));
 		subtitle.textContent = localize('welcomeSubtitle', "Tailor how AI agents work in your projects. Configure workspace customizations for the entire team, or create personal ones that follow you across projects.");
 
-		// Getting Started banner
+		// Chat-style input box
 		if (this.welcomePageFeatures?.showGettingStartedBanner !== false) {
-			const gettingStarted = DOM.append(welcomeInner, $('button.welcome-getting-started'));
-			this.gettingStartedButton = gettingStarted;
-			const gettingStartedIcon = DOM.append(gettingStarted, $('span.welcome-getting-started-icon.codicon.codicon-sparkle'));
-			gettingStartedIcon.setAttribute('aria-hidden', 'true');
-			const gettingStartedText = DOM.append(gettingStarted, $('.welcome-getting-started-text'));
-			const gettingStartedTitle = DOM.append(gettingStartedText, $('span.welcome-getting-started-title'));
-			gettingStartedTitle.textContent = localize('gettingStartedTitle', "Configure Your AI");
-			const gettingStartedDesc = DOM.append(gettingStartedText, $('span.welcome-getting-started-desc'));
-			gettingStartedDesc.textContent = localize('gettingStartedDesc', "Describe your project and coding patterns. Copilot will generate agents, skills, and instructions tailored to your workflow.");
-			const gettingStartedChevron = DOM.append(gettingStarted, $('span.welcome-getting-started-chevron.codicon.codicon-chevron-right'));
-			gettingStartedChevron.setAttribute('aria-hidden', 'true');
-			this._register(DOM.addDisposableListener(gettingStarted, 'click', () => {
+			const inputRow = DOM.append(welcomeInner, $('.welcome-input-row'));
+
+			this.inputBox = this._register(new InputBox(inputRow, undefined, {
+				placeholder: localize('workflowInputPlaceholder', "Describe your project and coding patterns..."),
+				ariaLabel: localize('workflowInputAriaLabel', "Describe your project to configure AI"),
+				inputBoxStyles: defaultInputBoxStyles,
+			}));
+			this.inputBox.element.classList.add('welcome-input');
+
+			const submitBtn = DOM.append(inputRow, $('button.welcome-input-submit'));
+			submitBtn.setAttribute('aria-label', localize('workflowSubmitAriaLabel', "Configure with AI"));
+			DOM.append(submitBtn, $('span.codicon.codicon-arrow-right'));
+
+			const submit = () => {
+				const value = this.inputBox?.value?.trim();
 				this.callbacks.closeEditor();
-				this.commandService.executeCommand('workbench.action.chat.open', { query: '/agent-customization ', isPartialQuery: true });
+				const query = value
+					? `/agent-customization ${value}`
+					: '/agent-customization ';
+				this.commandService.executeCommand('workbench.action.chat.open', { query, isPartialQuery: !value });
+			};
+
+			this._register(DOM.addDisposableListener(submitBtn, 'click', submit));
+			this._register(DOM.addDisposableListener(this.inputBox.inputElement, 'keydown', (e: KeyboardEvent) => {
+				if (e.key === 'Enter') {
+					e.preventDefault();
+					submit();
+				}
 			}));
 		}
 
@@ -200,6 +216,6 @@ export class AICustomizationWelcomePage extends Disposable {
 	 * Focuses the getting-started button if available.
 	 */
 	focus(): void {
-		this.gettingStartedButton?.focus();
+		this.inputBox?.focus();
 	}
 }
