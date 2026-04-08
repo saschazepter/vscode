@@ -133,6 +133,29 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Fontconfig diagnostics and cache reset
+        run: |
+          set -e
+          echo "--- Font package versions ---"
+          dpkg -l | grep -E 'libexpat|fontconfig|libfreetype|libpango' || true
+          echo ""
+          echo "--- Installed font packages ---"
+          apt list --installed 2>/dev/null | grep -E 'fonts-|fontconfig' || true
+          echo ""
+          echo "--- Verify fonts.conf integrity ---"
+          xmllint --noout /etc/fonts/fonts.conf 2>&1 || echo "WARNING: fonts.conf is invalid or missing"
+          for f in /etc/fonts/conf.d/*.conf; do
+            xmllint --noout "$f" 2>&1 || echo "WARNING: $f is invalid"
+          done
+          echo ""
+          echo "--- Clear and rebuild font cache ---"
+          rm -rf ~/.cache/fontconfig /var/cache/fontconfig 2>/dev/null || true
+          fc-cache -f -v 2>&1 | tail -5
+          echo ""
+          echo "--- fontconfig version ---"
+          fc-cache --version 2>&1 | head -1
+        continue-on-error: true
+
       - name: Transpile client and extensions
         run: npm run gulp transpile-client-esbuild transpile-extensions
 
