@@ -32,7 +32,7 @@ export class NextEditResult implements INextEditResult {
 		public readonly source: NextEditFetchRequest,
 		public readonly result: {
 			edit?: StringReplacement;
-			documentBeforeEdits: StringText;
+			documentBeforeEdits: StringText | undefined;
 			displayLocation?: INextEditDisplayLocation;
 			targetDocumentId?: DocumentId;
 			action?: Command;
@@ -41,4 +41,14 @@ export class NextEditResult implements INextEditResult {
 			isSubsequentEdit: boolean;
 		} | undefined,
 	) { }
+
+	/**
+	 * Release large document data that is no longer needed after the result
+	 * has been consumed (speculative request triggered, telemetry scheduled).
+	 */
+	releaseDocumentData(): void {
+		if (this.result) {
+			(this.result as { documentBeforeEdits: StringText | undefined }).documentBeforeEdits = undefined;
+		}
+	}
 }

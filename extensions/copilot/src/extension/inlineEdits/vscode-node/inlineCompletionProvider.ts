@@ -649,7 +649,10 @@ export class InlineCompletionProviderImpl extends Disposable implements InlineCo
 			return;
 		}
 
-		const docBeforeEdits = result.documentBeforeEdits.value;
+		const docBeforeEdits = result.documentBeforeEdits?.value;
+		if (!docBeforeEdits) {
+			return;
+		}
 		const docAfterEdits = result.edit.toEdit().apply(docBeforeEdits);
 
 		const recorder = this._instantiationService.createInstance(DocumentEditRecorder, item.document);
@@ -666,7 +669,7 @@ export class InlineCompletionProviderImpl extends Disposable implements InlineCo
 		this._instantiationService.createInstance(
 			EditSurvivalReporter,
 			item.document,
-			result.documentBeforeEdits.value,
+			docBeforeEdits,
 			diffedNextEdit,
 			userEdits,
 			{ includeArc: true },

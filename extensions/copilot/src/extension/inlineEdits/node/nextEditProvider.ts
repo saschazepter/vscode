@@ -28,6 +28,7 @@ import { DeferredPromise, timeout, TimeoutTimer } from '../../../util/vs/base/co
 import { CachedFunction } from '../../../util/vs/base/common/cache';
 import { CancellationToken } from '../../../util/vs/base/common/cancellation';
 import { BugIndicatingError } from '../../../util/vs/base/common/errors';
+import { stringHash } from '../../../util/vs/base/common/hash';
 import { Disposable, DisposableStore, IDisposable, toDisposable } from '../../../util/vs/base/common/lifecycle';
 import { mapObservableArrayCached, runOnChange } from '../../../util/vs/base/common/observable';
 import { StopWatch } from '../../../util/vs/base/common/stopwatch';
@@ -161,6 +162,7 @@ interface ProcessedDoc {
 export class NextEditProvider extends Disposable implements INextEditProvider<NextEditResult, LlmNESTelemetryBuilder> {
 
 	public readonly ID = this._statelessNextEditProvider.ID;
+	private static _patchLogged = false;
 
 	private readonly _rejectionCollector = this._register(new RejectionCollector(this._workspace, this._logService));
 	private readonly _nextEditCache: NextEditCache;
@@ -175,7 +177,7 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 	private _speculativePendingRequest: {
 		request: StatelessNextEditRequest<CachedOrRebasedEdit>;
 		docId: DocumentId;
-		postEditContent: string;
+		postEditContentHash: number;
 	} | null = null;
 
 	/**
@@ -273,6 +275,12 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 		telemetryBuilder: LlmNESTelemetryBuilder
 	): Promise<NextEditResult> {
 		const now = Date.now();
+
+		// [DEBUG] Confirm patched extension is loaded
+		if (!NextEditProvider._patchLogged) {
+			NextEditProvider._patchLogged = true;
+			console.log('[NES-OOM-FIX] patched extension loaded (2026-04-08 sliced-string fix v2)');
+		}
 
 		this._lastTriggerTime = now;
 
@@ -540,7 +548,7 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 
 		// Check if we can reuse the speculative pending request (from when a suggestion was shown)
 		const speculativeRequestMatches = this._speculativePendingRequest?.docId === curDocId
-			&& this._speculativePendingRequest?.postEditContent === documentAtInvocationTime.value
+			&& this._speculativePendingRequest?.postEditContentHash === stringHash(documentAtInvocationTime.value, 0)
 			&& !this._speculativePendingRequest.request.cancellationTokenSource.token.isCancellationRequested
 			&& cursorInRequestEditWindow(this._speculativePendingRequest.request);
 		const speculativeRequest = speculativeRequestMatches ? this._speculativePendingRequest?.request : undefined;
@@ -747,7 +755,7 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 		// of this new request — it was built for a different document or post-edit state.
 		if (this._speculativePendingRequest
 			&& (this._speculativePendingRequest.docId !== curDocId
-				|| this._speculativePendingRequest.postEditContent !== nextEditRequest.documentBeforeEdits.value)
+				|| this._speculativePendingRequest.postEditContentHash !== stringHash(nextEditRequest.documentBeforeEdits.value, 0))
 		) {
 			this._cancelSpeculativeRequest();
 		}
@@ -1052,7 +1060,7 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 
 	private async _triggerSpeculativeRequest(suggestion: NextEditResult): Promise<void> {
 		const result = suggestion.result;
-		if (!result?.edit) {
+		if (!result?.edit || !result.documentBeforeEdits) {
 			return;
 		}
 
@@ -1114,7 +1122,7 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 		}
 
 		// Check if we already have a speculative request for this post-edit state
-		if (this._speculativePendingRequest?.docId === docId && this._speculativePendingRequest?.postEditContent === postEditContent) {
+		if (this._speculativePendingRequest?.docId === docId && this._speculativePendingRequest?.postEditContentHash === stringHash(postEditContent, 0)) {
 			logger.trace('already have speculative request for post-edit state');
 			return;
 		}
@@ -1161,7 +1169,7 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 				this._speculativePendingRequest = {
 					request: speculativeRequest,
 					docId,
-					postEditContent,
+					postEditContentHash: stringHash(postEditContent, 0),
 				};
 			}
 		} catch (e) {
@@ -1432,6 +1440,8 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 		} else {
 			logger.trace('NOT setting shouldExpandEditWindow to true because suggestion is not the last suggestion');
 		}
+
+		suggestion.releaseDocumentData();
 	}
 
 	public handleRejection(docId: DocumentId, suggestion: NextEditResult) {
@@ -1454,6 +1464,8 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 		this._lastOutcome = NesOutcome.Rejected;
 
 		this._statelessNextEditProvider.handleRejection?.();
+
+		suggestion.releaseDocumentData();
 	}
 
 	public handleIgnored(docId: DocumentId, suggestion: NextEditResult, supersededBy: INextEditResult | undefined): void {
@@ -1468,10 +1480,12 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 			this._cancelSpeculativeRequest();
 			this._statelessNextEditProvider.handleIgnored?.();
 		}
+
+		suggestion.releaseDocumentData();
 	}
 
 	private async runSnippy(docId: DocumentId, suggestion: NextEditResult) {
-		if (suggestion.result === undefined || suggestion.result.edit === undefined) {
+		if (suggestion.result === undefined || suggestion.result.edit === undefined || suggestion.result.documentBeforeEdits === undefined) {
 			return;
 		}
 		this._snippyService.handlePostInsertion(docId.toUri(), suggestion.result.documentBeforeEdits, suggestion.result.edit);

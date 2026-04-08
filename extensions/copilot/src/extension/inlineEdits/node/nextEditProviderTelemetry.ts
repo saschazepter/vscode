@@ -828,7 +828,7 @@ class IdleDetector {
 
 export class TelemetrySender implements IDisposable {
 
-	private readonly _map = new Map<INextEditResult, { builder: NextEditProviderTelemetryBuilder; timeout: TimeoutHandle; hardCapTimeout?: TimeoutHandle }>();
+	private readonly _map = new Map<number, { builder: NextEditProviderTelemetryBuilder; timeout: TimeoutHandle; hardCapTimeout?: TimeoutHandle }>();
 	private _idleDetector: IdleDetector | undefined;
 
 	constructor(
@@ -853,24 +853,25 @@ export class TelemetrySender implements IDisposable {
 	 * so activity in those files won't reset the idle timer. This matches the scope of {@link DebugRecorder}.
 	 */
 	public scheduleSendingEnhancedTelemetry(nextEditResult: INextEditResult, builder: NextEditProviderTelemetryBuilder): void {
-		const existing = this._map.get(nextEditResult);
+		const requestId = nextEditResult.requestId;
+		const existing = this._map.get(requestId);
 		if (existing) {
 			if (existing.builder !== builder) {
 				existing.builder.dispose();
 			}
-			this._removeEntry(nextEditResult, existing);
+			this._removeEntry(requestId, existing);
 		}
 
 		const timeout = setTimeout(() => {
-			this._enterIdleDetection(nextEditResult, builder);
+			this._enterIdleDetection(requestId, builder);
 		}, /* 2 minutes */ 2 * 60 * 1000);
-		this._map.set(nextEditResult, { builder, timeout });
+		this._map.set(requestId, { builder, timeout });
 	}
 
-	private _enterIdleDetection(nextEditResult: INextEditResult, builder: NextEditProviderTelemetryBuilder): void {
+	private _enterIdleDetection(requestId: number, builder: NextEditProviderTelemetryBuilder): void {
 		const workspace = this._workspace;
 		if (!workspace) {
-			this._buildAndSendEnhancedTelemetry(nextEditResult, builder, { reason: 'idle', details: { idleTimeoutMs: 0 } });
+			this._buildAndSendEnhancedTelemetry(requestId, builder, { reason: 'idle', details: { idleTimeoutMs: 0 } });
 			return;
 		}
 
@@ -890,10 +891,10 @@ export class TelemetrySender implements IDisposable {
 
 		const hardCapMs = 30_000;
 		const hardCapTimeout = setTimeout(() => {
-			this._sendForEntry(nextEditResult, { reason: 'hard_cap', details: { hardCapTimeoutMs: hardCapMs } });
+			this._sendForEntry(requestId, { reason: 'hard_cap', details: { hardCapTimeoutMs: hardCapMs } });
 		}, hardCapMs);
 
-		const entry = this._map.get(nextEditResult);
+		const entry = this._map.get(requestId);
 		if (entry) {
 			entry.hardCapTimeout = hardCapTimeout;
 		}
@@ -908,32 +909,32 @@ export class TelemetrySender implements IDisposable {
 
 	/** Send all entries that are in the idle-detection phase (have no initial timeout pending) with a shared reason. */
 	private _sendAllPendingInIdlePhase(reason: IEnhancedTelemetrySendingReason): void {
-		const entriesToSend: INextEditResult[] = [];
-		for (const [result, data] of this._map) {
+		const entriesToSend: number[] = [];
+		for (const [requestId, data] of this._map) {
 			if (data.hardCapTimeout !== undefined) {
-				entriesToSend.push(result);
+				entriesToSend.push(requestId);
 			}
 		}
-		for (const result of entriesToSend) {
-			this._sendForEntry(result, reason);
+		for (const requestId of entriesToSend) {
+			this._sendForEntry(requestId, reason);
 		}
 	}
 
 	/** Send all entries in idle-detection phase with user_jump, using per-entry `from` positions. */
 	private _sendAllPendingInIdlePhaseWithJump(toDocId: string, toLine: number | undefined): void {
-		const entriesToSend: [INextEditResult, NextEditProviderTelemetryBuilder][] = [];
-		for (const [result, data] of this._map) {
+		const entriesToSend: [number, NextEditProviderTelemetryBuilder][] = [];
+		for (const [requestId, data] of this._map) {
 			if (data.hardCapTimeout !== undefined) {
-				entriesToSend.push([result, data.builder]);
+				entriesToSend.push([requestId, data.builder]);
 			}
 		}
-		for (const [result, builder] of entriesToSend) {
+		for (const [requestId, builder] of entriesToSend) {
 			const nesDocId: string | undefined = builder.doc?.id.uri;
 			const nesDocLine: number | undefined = builder.nesBuilder.originalSelectionLine;
 			const from = nesDocId !== undefined && nesDocLine !== undefined
 				? { file: nesDocId, line: nesDocLine }
 				: undefined;
-			this._sendForEntry(result, {
+			this._sendForEntry(requestId, {
 				reason: 'user_jump',
 				details: {
 					from,
@@ -944,15 +945,15 @@ export class TelemetrySender implements IDisposable {
 	}
 
 	/** Send enhanced telemetry for a single entry that's in the idle-detection phase. */
-	private _sendForEntry(nextEditResult: INextEditResult, reason: IEnhancedTelemetrySendingReason): void {
-		const data = this._map.get(nextEditResult);
+	private _sendForEntry(requestId: number, reason: IEnhancedTelemetrySendingReason): void {
+		const data = this._map.get(requestId);
 		if (!data) { return; }
 
 		if (data.hardCapTimeout !== undefined) {
 			clearTimeout(data.hardCapTimeout);
 			this._releaseIdleDetector();
 		}
-		this._map.delete(nextEditResult);
+		this._map.delete(requestId);
 
 		let telemetry: INextEditProviderTelemetry;
 		try {
@@ -963,18 +964,18 @@ export class TelemetrySender implements IDisposable {
 		this._doSendEnhancedTelemetry(telemetry, reason);
 	}
 
-	private _removeEntry(nextEditResult: INextEditResult, data: { builder: NextEditProviderTelemetryBuilder; timeout: TimeoutHandle; hardCapTimeout?: TimeoutHandle }): void {
+	private _removeEntry(requestId: number, data: { builder: NextEditProviderTelemetryBuilder; timeout: TimeoutHandle; hardCapTimeout?: TimeoutHandle }): void {
 		clearTimeout(data.timeout);
 		if (data.hardCapTimeout !== undefined) {
 			clearTimeout(data.hardCapTimeout);
 			this._releaseIdleDetector();
 		}
-		this._map.delete(nextEditResult);
+		this._map.delete(requestId);
 	}
 
-	private _buildAndSendEnhancedTelemetry(nextEditResult: INextEditResult, builder: NextEditProviderTelemetryBuilder, sendingReason: IEnhancedTelemetrySendingReason): void {
+	private _buildAndSendEnhancedTelemetry(requestId: number, builder: NextEditProviderTelemetryBuilder, sendingReason: IEnhancedTelemetrySendingReason): void {
 		let telemetry: INextEditProviderTelemetry;
-		this._map.delete(nextEditResult);
+		this._map.delete(requestId);
 		try {
 			telemetry = builder.build(true);
 		} finally {
@@ -988,9 +989,10 @@ export class TelemetrySender implements IDisposable {
 	 */
 	public sendTelemetry(nextEditResult: INextEditResult | undefined, builder: NextEditProviderTelemetryBuilder): void {
 		if (nextEditResult) {
-			const data = this._map.get(nextEditResult);
+			const requestId = nextEditResult.requestId;
+			const data = this._map.get(requestId);
 			if (data) {
-				this._removeEntry(nextEditResult, data);
+				this._removeEntry(requestId, data);
 			}
 		}
 		const telemetry = builder.build(true);
