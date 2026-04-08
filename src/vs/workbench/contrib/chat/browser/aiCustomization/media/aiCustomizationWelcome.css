@@ -36,11 +36,12 @@
 .ai-customization-management-editor .welcome-input-row {
 	display: flex;
 	align-items: flex-end;
-	border: 1px solid var(--vscode-input-border, var(--vscode-widget-border));
+	border: 1px solid var(--vscode-input-border, transparent);
 	border-radius: var(--vscode-cornerRadius-large, 8px);
 	background: var(--vscode-input-background);
 	padding: 0 6px 6px 0;
 	margin-bottom: 0;
+	overflow: hidden;
 }
 
 .ai-customization-management-editor .welcome-input-row:focus-within {
@@ -53,13 +54,22 @@
 }
 
 .ai-customization-management-editor .welcome-input .monaco-inputbox {
-	border: none;
-	background: transparent;
+	border: none !important;
+	background: transparent !important;
+	outline: none !important;
 }
 
 .ai-customization-management-editor .welcome-input .monaco-inputbox > .ibwrapper > input {
 	padding: 10px 12px;
 	font-size: 14px;
+	outline: none !important;
+	border: none !important;
+	background: transparent;
+	color: var(--vscode-input-foreground);
+}
+
+.ai-customization-management-editor .welcome-input .monaco-inputbox > .ibwrapper > input::placeholder {
+	color: var(--vscode-input-placeholderForeground);
 }
 
 .ai-customization-management-editor .welcome-input-submit {
