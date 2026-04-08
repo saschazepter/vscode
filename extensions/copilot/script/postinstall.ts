@@ -100,7 +100,7 @@ async function copyCopilotCliQueryFiles() {
 	await copyCopilotCLIFolders(sourceDir, targetDir);
 }
 
-async function copyCopilotCliPreBuiltFiles() {
+async function copyCopilotCliPrebuildFiles() {
 	const sourceDir = path.join(REPO_ROOT, 'node_modules', '@github', 'copilot', 'prebuilds');
 	const targetDir = path.join(REPO_ROOT, 'node_modules', '@github', 'copilot', 'sdk', 'prebuilds');
 
@@ -113,7 +113,6 @@ async function copyCopilotCliPreBuiltFiles() {
 				if (fs.statSync(src).isFile()) {
 					return src.endsWith('computer.node');
 				}
-				console.error(`Skipping file from ${src} to ${targetDir}`);
 				return true;
 			} catch {
 				return true;
@@ -179,7 +178,7 @@ async function main() {
 	await copyCopilotCliDefinitionFiles();
 	await copyCopilotCliSkillsFiles();
 	await copyCopilotCliQueryFiles();
-	await copyCopilotCliPreBuiltFiles();
+	await copyCopilotCliPrebuildFiles();
 
 	// Check if the base cache file exists (dev-only sanity check, non-fatal in CI)
 	const baseCachePath = path.join('test', 'simulation', 'cache', 'base.sqlite');
