@@ -193,6 +193,36 @@
             "included": true
         },
         {
+            "key": "chat.agent.allowedNetworkDomains",
+            "name": "ChatAgentAllowedNetworkDomains",
+            "category": "InteractiveSession",
+            "minimumVersion": "1.116",
+            "localization": {
+                "description": {
+                    "key": "chat.agent.allowedNetworkDomains",
+                    "value": "Allowed domains for network access by agent tools (fetch tool, integrated browser). When `#chat.agent.sandbox.enabled#` is enabled, these also apply to the terminal sandbox. Supports wildcards like `*.example.com`. An empty list means no domain restrictions. Denied domains (see `#chat.agent.deniedNetworkDomains#`) take precedence."
+                }
+            },
+            "type": "array",
+            "default": [],
+            "included": true
+        },
+        {
+            "key": "chat.agent.deniedNetworkDomains",
+            "name": "ChatAgentDeniedNetworkDomains",
+            "category": "InteractiveSession",
+            "minimumVersion": "1.116",
+            "localization": {
+                "description": {
+                    "key": "chat.agent.deniedNetworkDomains",
+                    "value": "Denied domains for network access by agent tools (fetch tool, integrated browser). When `#chat.agent.sandbox.enabled#` is enabled, these also apply to the terminal sandbox. Takes precedence over `#chat.agent.allowedNetworkDomains#`. Supports wildcards like `*.example.com`."
+                }
+            },
+            "type": "array",
+            "default": [],
+            "included": true
+        },
+        {
             "key": "chat.editMode.hidden",
             "name": "DeprecatedEditModeHidden",
             "category": "InteractiveSession",
