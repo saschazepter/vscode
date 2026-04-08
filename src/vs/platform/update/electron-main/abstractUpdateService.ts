@@ -96,7 +96,11 @@ export abstract class AbstractUpdateService implements IUpdateService {
 	}
 
 	protected setState(state: State): void {
-		this.logService.info('update#setState', state.type);
+		if (state.type === StateType.Updating) {
+			this.logService.trace('update#setState', state.type);
+		} else {
+			this.logService.info('update#setState', state.type);
+		}
 		this._state = state;
 		this._onStateChange.fire(state);
 
