@@ -15,7 +15,6 @@ import { URI } from '../../../util/vs/base/common/uri';
 import { ChatResponseClearToPreviousToolInvocationReason } from '../../../vscodeTypes';
 import { getContributedToolName } from '../../tools/common/toolNames';
 import { IResponseProcessor, IResponseProcessorContext } from './intents';
-console.log('@@@');
 disableErrorLogging();
 
 export interface StartStopMapping {
