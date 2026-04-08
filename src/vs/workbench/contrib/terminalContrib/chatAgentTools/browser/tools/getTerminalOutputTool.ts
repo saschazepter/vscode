@@ -69,8 +69,8 @@ export class GetTerminalOutputTool extends Disposable implements IToolImpl {
 			};
 		}
 
-		// Foreground terminal path
-		if (args.terminalId !== undefined) {
+		// Foreground terminal path — only when no persistent id is provided
+		if (args.terminalId !== undefined && !args.id) {
 			const instance = this._terminalService.getInstanceFromId(args.terminalId);
 			if (!instance) {
 				return {

@@ -131,7 +131,7 @@ export class SendToTerminalTool extends Disposable implements IToolImpl {
 		// Build the confirmation message with a "Focus Terminal" command link
 		const instanceId = this._getTerminalInstanceId(args);
 		const confirmationMessage = new MarkdownString('', { isTrusted: { enabledCommands: [FocusTerminalByIdCommandId] } });
-		const baseMessage = localize('send.confirm.message', "Run {0} in terminal {1}", displayCommand, toMarkdownInlineCode(terminalLabel));
+		const baseMessage = localize('send.confirm.message', "Run {0} in terminal {1}", safeInlineCode, toMarkdownInlineCode(terminalLabel));
 		if (instanceId !== undefined) {
 			const focusUri = createCommandUri(FocusTerminalByIdCommandId, instanceId);
 			confirmationMessage.appendMarkdown(`${baseMessage} — [$(terminal) ${localize('focusTerminal', "Focus Terminal")}](${focusUri})`);
@@ -243,8 +243,8 @@ export class SendToTerminalTool extends Disposable implements IToolImpl {
 			};
 		}
 
-		// Foreground terminal path
-		if (args.terminalId !== undefined) {
+		// Foreground terminal path — only when no persistent id is provided
+		if (args.terminalId !== undefined && !args.id) {
 			const instance = this._terminalService.getInstanceFromId(args.terminalId);
 			if (!instance) {
 				return {

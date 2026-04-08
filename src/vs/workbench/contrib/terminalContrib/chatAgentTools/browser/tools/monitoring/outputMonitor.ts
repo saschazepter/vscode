@@ -430,12 +430,6 @@ export class OutputMonitor extends Disposable implements IOutputMonitor {
 	private _isSensitivePrompt(prompt: string): boolean {
 		return /(password|passphrase|token|api\s*key|secret)/i.test(prompt);
 	}
-
-	/**
-	 * Returns true if the current session is in Autopilot mode (not Bypass Approvals).
-	 * In Autopilot, terminal prompts should be auto-replied to so the agent can
-	 * work autonomously from start to finish.
-	 */
 }
 
 export function matchTerminalPromptOption(options: readonly string[], suggestedOption: string): { option: string | undefined; index: number } {
