@@ -407,13 +407,6 @@ export interface IOnboardingExtension {
  */
 export const ONBOARDING_RECOMMENDED_EXTENSIONS: readonly IOnboardingExtension[] = [
 	{
-		id: 'ms-vscode.cpptools',
-		name: localize('ext.cpp', "C/C++"),
-		publisher: 'Microsoft',
-		description: localize('ext.cpp.desc', "IntelliSense, debugging, and code browsing for C and C++"),
-		icon: 'symbol-misc',
-	},
-	{
 		id: 'ms-vscode-remote.remote-containers',
 		name: localize('ext.devContainers', "Dev Containers"),
 		publisher: 'Microsoft',
@@ -440,13 +433,6 @@ export const ONBOARDING_RECOMMENDED_EXTENSIONS: readonly IOnboardingExtension[] 
 		publisher: 'GitHub',
 		description: localize('ext.ghPr.desc', "Review and manage GitHub pull requests and issues"),
 		icon: 'git-pull-request',
-	},
-	{
-		id: 'esbenp.prettier-vscode',
-		name: localize('ext.prettier', "Prettier"),
-		publisher: 'Prettier',
-		description: localize('ext.prettier.desc', "Code formatter for JavaScript, TypeScript, CSS, and more"),
-		icon: 'wand',
 	},
 	{
 		id: 'ms-python.python',

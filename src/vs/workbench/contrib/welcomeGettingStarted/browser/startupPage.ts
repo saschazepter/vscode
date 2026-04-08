@@ -80,7 +80,7 @@ export class StartupPageEditorResolverContribution extends Disposable implements
 export class StartupPageRunnerContribution extends Disposable implements IWorkbenchContribution {
 
 	static readonly ID = 'workbench.contrib.startupPageRunner';
-	private readonly onboardingModal: OnboardingVariationA;
+	private onboardingModal: OnboardingVariationA | undefined;
 
 	constructor(
 		@IConfigurationService private readonly configurationService: IConfigurationService,
@@ -95,13 +95,9 @@ export class StartupPageRunnerContribution extends Disposable implements IWorkbe
 		@IStorageService private readonly storageService: IStorageService,
 		@INotificationService private readonly notificationService: INotificationService,
 		@IContextKeyService private readonly contextKeyService: IContextKeyService,
-		@IInstantiationService instantiationService: IInstantiationService,
+		@IInstantiationService private readonly instantiationService: IInstantiationService,
 	) {
 		super();
-		this.onboardingModal = this._register(instantiationService.createInstance(OnboardingVariationA));
-		this._register(this.onboardingModal.onDidDismiss(() => {
-			this.storageService.store(ONBOARDING_STORAGE_KEY, true, StorageScope.PROFILE, StorageTarget.USER);
-		}));
 		this.run().then(undefined, onUnexpectedError);
 		this._register(this.editorService.onDidCloseEditor((e) => {
 			if (e.editor instanceof GettingStartedInput) {
@@ -146,7 +142,11 @@ export class StartupPageRunnerContribution extends Disposable implements IWorkbe
 				if (startupEditorSetting.value === 'readme') {
 					await this.openReadme();
 				} else if (startupEditorSetting.value === 'welcomePage' || startupEditorSetting.value === 'welcomePageInEmptyWorkbench') {
-					await this.tryShowOnboarding();
+					if (this.configurationService.getValue<boolean>('workbench.welcomePage.experimentalOnboarding')) {
+						await this.tryShowOnboarding();
+					} else {
+						await this.openGettingStarted();
+					}
 				} else if (startupEditorSetting.value === 'terminal') {
 					this.commandService.executeCommand(TerminalCommandId.CreateTerminalEditor);
 				}
@@ -239,9 +239,20 @@ export class StartupPageRunnerContribution extends Disposable implements IWorkbe
 			return false; // onboarding already completed
 		}
 
-		this.onboardingModal.show();
+		this.getOnboardingModal().show();
 
 		return true;
+	}
+
+	private getOnboardingModal(): OnboardingVariationA {
+		if (!this.onboardingModal) {
+			this.onboardingModal = this._register(this.instantiationService.createInstance(OnboardingVariationA));
+			this._register(this.onboardingModal.onDidDismiss(() => {
+				this.storageService.store(ONBOARDING_STORAGE_KEY, true, StorageScope.PROFILE, StorageTarget.USER);
+			}));
+		}
+
+		return this.onboardingModal;
 	}
 }
 
