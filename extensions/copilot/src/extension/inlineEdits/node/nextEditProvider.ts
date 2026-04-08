@@ -209,7 +209,7 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 		return this._lastOutcome;
 	}
 
-	private _lastNextEditResult: NextEditResult | undefined;
+	private _lastNextEditResultId: number | undefined;
 	private _shouldExpandEditWindow = false;
 
 	private _logger: ILogger;
@@ -298,7 +298,7 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 			telemetryBuilder.markEndTime();
 		}
 
-		this._lastNextEditResult = result;
+		this._lastNextEditResultId = result.requestId;
 
 		return result;
 	}
@@ -696,6 +696,12 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 
 		const recording = this._debugRecorder?.getRecentLog();
 
+		// Skip large recordings to prevent OOM on large files.
+		// The recording includes a full document setContent entry which
+		// duplicates multi-MB file contents on every request.
+		const maxRecordingBytes = 256 * 1024;
+		const cappedRecording = recording && JSON.stringify(recording).length > maxRecordingBytes ? undefined : recording;
+
 		const logContext = req.log;
 
 		const activeDocAndIdx = assertDefined(historyContext.getDocumentAndIdx(curDocId));
@@ -723,7 +729,7 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 			false, // isSpeculative
 			logContext,
 			req.log.recordingBookmark,
-			recording,
+			cappedRecording,
 			req.providerRequestStartDateTime,
 		);
 		let nextEditResult: StatelessNextEditResult | undefined;
@@ -1185,6 +1191,9 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 		const logContext = req.log;
 		logContext.setStatelessNextEditProviderId(this._statelessNextEditProvider.ID);
 
+		// Skip large recordings to prevent OOM on large files
+		const cappedRecording = recording && JSON.stringify(recording).length > 256 * 1024 ? undefined : recording;
+
 		const logger = parentLogger.createSubLogger('_createSpeculativeRequest');
 
 		const activeDocAndIdx = historyContext.getDocumentAndIdx(curDocId);
@@ -1265,7 +1274,7 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 			true, // isSpeculative
 			logContext,
 			undefined, // recordingBookmark
-			recording,
+			cappedRecording,
 			undefined, // providerRequestStartDateTime
 		);
 
@@ -1417,7 +1426,7 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 		this._lastOutcome = NesOutcome.Accepted;
 
 		const logger = this._logger.createSubLogger(suggestion.source.opportunityId.substring(4, 8)).createSubLogger('handleAcceptance');
-		if (suggestion === this._lastNextEditResult) {
+		if (suggestion.requestId === this._lastNextEditResultId) {
 			logger.trace('setting shouldExpandEditWindow to true due to acceptance of last suggestion');
 			this._shouldExpandEditWindow = true;
 		} else {

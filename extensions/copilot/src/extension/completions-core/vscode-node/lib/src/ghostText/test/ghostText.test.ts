@@ -68,7 +68,7 @@ suite('Isolated GhostText tests', function () {
 
 		// Setup closures with the state as default
 		function requestGhostText(completionState = state) {
-			const telemetryBuilder = new LlmNESTelemetryBuilder(undefined, undefined, undefined, 'ghostText', undefined);
+			const telemetryBuilder = new LlmNESTelemetryBuilder(undefined, undefined, undefined, 'ghostText', undefined, false);
 			const logService = accessor.get(ILogService);
 			return getGhostText(accessor, completionState, token, {}, new GhostTextLogContext(filePath, doc.version, undefined), telemetryBuilder, logService);
 		}
@@ -657,7 +657,7 @@ suite('Isolated GhostText tests', function () {
 		configProvider.setConfig(ConfigKey.AlwaysRequestMultiline, true);
 		currentGhostText.hasAcceptedCurrentCompletion = () => true;
 
-		const telemetryBuilder = new LlmNESTelemetryBuilder(undefined, undefined, undefined, 'ghostText', undefined);
+		const telemetryBuilder = new LlmNESTelemetryBuilder(undefined, undefined, undefined, 'ghostText', undefined, false);
 		const logService = accessor.get(ILogService);
 		const response = await getGhostText(accessor, state, undefined, { isSpeculative: true }, new GhostTextLogContext('file:///fizzbuzz.go', doc.version, undefined), telemetryBuilder, logService);
 

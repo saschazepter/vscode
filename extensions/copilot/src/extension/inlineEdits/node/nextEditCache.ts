@@ -10,6 +10,7 @@ import { autorunWithChanges } from '../../../platform/inlineEdits/common/utils/o
 import { ILogger, ILogService } from '../../../platform/log/common/logService';
 import { IExperimentationService } from '../../../platform/telemetry/common/nullExperimentationService';
 import { LRUCache } from '../../../util/common/cache';
+import { stringHash } from '../../../util/vs/base/common/hash';
 import { Disposable, toDisposable } from '../../../util/vs/base/common/lifecycle';
 import { mapObservableArrayCached } from '../../../util/vs/base/common/observableInternal';
 import { AnnotatedStringReplacement, StringEdit, StringReplacement } from '../../../util/vs/editor/common/core/edits/stringEdit';
@@ -18,6 +19,8 @@ import { StringText } from '../../../util/vs/editor/common/core/text/abstractTex
 import { checkEditConsistency, EditDataWithIndex, NesRebaseConfigs, tryRebase } from '../common/editRebase';
 import { NextEditFetchRequest } from './nextEditProvider';
 import { RebaseFailureInfo, type RebaseResult } from './rebaseResult';
+
+
 
 export interface CachedEditOpts {
 	isFromCursorJump: boolean;
@@ -325,6 +328,9 @@ class DocumentEditCache {
 	}
 
 	private _getKey(val: string): string {
-		return JSON.stringify([this.docId.uri, val]);
+		// Use a hash instead of the full document string to avoid duplicating
+		// the entire document content in each cache key.
+		const h = stringHash(val, stringHash(this.docId.uri, 0));
+		return String(h);
 	}
 }

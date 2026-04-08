@@ -52,6 +52,9 @@ export class SpyingTelemetryService implements ITelemetryService {
 	sendEnhancedGHTelemetryErrorEvent(eventName: string, properties?: TelemetryEventProperties | undefined, measurements?: TelemetryEventMeasurements | undefined): void {
 		this.addEvent(TelemetryServiceEventType.internal, eventName, properties, measurements);
 	}
+	isEnhancedTelemetryEnabled(): boolean {
+		return true;
+	}
 	sendGHTelemetryErrorEvent(eventName: string, properties?: TelemetryEventProperties | undefined, measurements?: TelemetryEventMeasurements | undefined): void {
 		this.addEvent(TelemetryServiceEventType.error, eventName, properties, measurements);
 	}

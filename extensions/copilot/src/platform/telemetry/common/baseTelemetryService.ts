@@ -85,6 +85,9 @@ export class BaseTelemetryService implements ITelemetryService {
 		properties = { ...properties, ...this._sharedProperties };
 		this._ghTelemetrySender.sendEnhancedTelemetryEvent(eventName, properties, measurements);
 	}
+	isEnhancedTelemetryEnabled(): boolean {
+		return this._ghTelemetrySender.isEnhancedTelemetryEnabled;
+	}
 	sendEnhancedGHTelemetryErrorEvent(eventName: string, properties?: TelemetryEventProperties | undefined, measurements?: TelemetryEventMeasurements | undefined): void {
 		properties = { ...properties, ...this._sharedProperties };
 		this._ghTelemetrySender.sendEnhancedTelemetryErrorEvent(eventName, properties, measurements);

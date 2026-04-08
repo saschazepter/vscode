@@ -90,7 +90,7 @@ export class InlineEditRequestLogContext {
 		lines.push(`URL: ${this._endpointInfo?.url ?? '<NOT-SET>'}`);
 		lines.push('```');
 
-		const fromCacheStatus = this._logContextOfCachedEdit ? `(cached #${this._logContextOfCachedEdit.requestId})` : '(not cached)';
+		const fromCacheStatus = this._cachedFromRequestId !== undefined ? `(cached #${this._cachedFromRequestId})` : '(not cached)';
 
 		lines.push(`Opportunity ID: ${this._context ? this._context.requestUuid : '<NOT-SET>'}`);
 		if (this.headerRequestId) {
@@ -98,10 +98,10 @@ export class InlineEditRequestLogContext {
 			lines.push(`Header Request ID: ${this.headerRequestId} ${fromCacheStatus}`);
 		}
 
-		if (this._nextEditRequest) {
+		if (this._nextEditRequestMarkdown) {
 			lines.push(`## Latest user edits ${fromCacheStatus}`);
 			lines.push('<details open><summary>Edit</summary>\n');
-			lines.push(this._nextEditRequest.toMarkdown());
+			lines.push(this._nextEditRequestMarkdown);
 			lines.push('\n</details>\n');
 		}
 
@@ -220,7 +220,7 @@ export class InlineEditRequestLogContext {
 		}
 
 		lines.push(`### Info:`);
-		lines.push(`**From cache:** ${this._logContextOfCachedEdit ? `YES (Request: ${this._logContextOfCachedEdit.requestId})` : 'NO'}`);
+		lines.push(`**From cache:** ${this._cachedFromRequestId !== undefined ? `YES (Request: ${this._cachedFromRequestId})` : 'NO'}`);
 		if (this._context) {
 			lines.push(`**Trigger Kind:** ${this._context.triggerKind === 0 ? 'Manual' : 'Automatic'}`);
 			lines.push(`**Request UUID:** ${this._context.requestUuid}`);
@@ -235,11 +235,20 @@ export class InlineEditRequestLogContext {
 		this._statelessNextEditProviderId = id;
 	}
 
-	private _nextEditRequest: StatelessNextEditRequest | undefined = undefined;
+	/**
+	 * Eagerly-serialized forms of the StatelessNextEditRequest.
+	 * We avoid retaining the live object to prevent holding the entire request
+	 * graph (document snapshots, recording, xtab history) in memory through
+	 * the cache retention chain (CachedEdit → NextEditFetchRequest → log →
+	 * _nextEditRequest → massive object graph).
+	 */
+	private _nextEditRequestMarkdown: string | undefined = undefined;
+	private _nextEditRequestSerialized: ISerializedNextEditRequest | undefined = undefined;
 
 	setRequestInput(nextEditRequest: StatelessNextEditRequest): void {
 		this._isVisible = true;
-		this._nextEditRequest = nextEditRequest;
+		this._nextEditRequestMarkdown = nextEditRequest.toMarkdown();
+		this._nextEditRequestSerialized = nextEditRequest.serialize();
 		this.fireDidChange();
 	}
 
@@ -266,18 +275,23 @@ export class InlineEditRequestLogContext {
 		return this;
 	}
 
-	private _logContextOfCachedEdit: InlineEditRequestLogContext | undefined = undefined;
+	/**
+	 * The request ID of the cached edit's log context, if this result came from cache.
+	 * We store only the ID (not the full context) to avoid a chain of retained
+	 * InlineEditRequestLogContext objects that would keep old request data alive.
+	 */
+	private _cachedFromRequestId: number | undefined = undefined;
 
 	setIsCachedResult(logContextOfCachedEdit: InlineEditRequestLogContext): void {
 
-		this._logContextOfCachedEdit = logContextOfCachedEdit;
+		this._cachedFromRequestId = logContextOfCachedEdit.requestId;
 
 		{ // inherit stateless provider state from cached log context
 			this.recordingBookmark = logContextOfCachedEdit.recordingBookmark;
 
-			if (logContextOfCachedEdit._nextEditRequest) {
-				this._nextEditRequest = logContextOfCachedEdit._nextEditRequest;
-
+			if (logContextOfCachedEdit._nextEditRequestMarkdown) {
+				this._nextEditRequestMarkdown = logContextOfCachedEdit._nextEditRequestMarkdown;
+				this._nextEditRequestSerialized = logContextOfCachedEdit._nextEditRequestSerialized;
 			}
 			if (logContextOfCachedEdit._resultEdit) {
 				this.setResult(logContextOfCachedEdit._resultEdit);
@@ -666,10 +680,10 @@ export class InlineEditRequestLogContext {
 			filePath: this.filePath,
 			version: this.version,
 			statelessNextEditProviderId: this._statelessNextEditProviderId,
-			nextEditRequest: this._nextEditRequest?.serialize(),
+			nextEditRequest: this._nextEditRequestSerialized,
 			diagnosticsResultEdit: this._diagnosticsResultEdit?.toString(),
 			resultEdit: this._resultEdit?.toString(),
-			isCachedResult: !!this._logContextOfCachedEdit,
+			isCachedResult: this._cachedFromRequestId !== undefined,
 			prompt: this.prompt,
 			error: String(this.error),
 			response: this.fullResponse,

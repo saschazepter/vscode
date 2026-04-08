@@ -149,68 +149,33 @@ export interface INextEditProviderTelemetry extends ILlmNESTelemetry, IDiagnosti
 export class LlmNESTelemetryBuilder extends Disposable {
 
 	public build(includeAlternativeAction: boolean): ILlmNESTelemetry {
-		let documentsCount: number | undefined = undefined;
-		let editsCount: number | undefined = undefined;
-		let activeDocumentEditsCount: number | undefined = undefined;
-		let activeDocumentLanguageId: string | undefined = undefined;
-		let activeDocumentOriginalLineCount: number | undefined = undefined;
-		let isNotebook: boolean = false;
-		let notebookType: string | undefined = undefined;
-		let activeDocumentRepository: string | undefined = undefined;
-		let repositoryUrls: string[] | undefined = undefined;
-
-		if (this._request) {
-			const activeDoc = this._request.getActiveDocument();
-			documentsCount = this._request.documents.length;
-			editsCount = this._request.documents.reduce((acc, doc) => acc + doc.recentEdits.edits.length, 0);
-			activeDocumentEditsCount = activeDoc.recentEdits.edits.length;
-			activeDocumentLanguageId = activeDoc.languageId;
-			activeDocumentOriginalLineCount = activeDoc.documentAfterEditsLines.length;
-			isNotebook = activeDoc.id.toUri().scheme === Schemas.vscodeNotebookCell || this._notebookService?.hasSupportedNotebooks(activeDoc.id.toUri()) || false;
-			notebookType = this._workspaceService === undefined ? undefined : findNotebook(activeDoc.id.toUri(), this._workspaceService.notebookDocuments)?.notebookType;
-			const git = this._gitExtensionService?.getExtensionApi();
-			if (git) {
-				const activeDocRepository = git.getRepository(Uri.parse(activeDoc.id.uri));
-				if (activeDocRepository) {
-					const remoteName = activeDocRepository.state.HEAD?.upstream?.remote;
-					const remote = activeDocRepository.state.remotes.find(r => r.name === remoteName);
-					if (remote?.fetchUrl) {
-						activeDocumentRepository = remote.pushUrl || remote.fetchUrl;
-					}
-				}
-
-				const remoteUrlSet = new Set<string>();
-				const repositories = [...new Set(this._request.documents.map(doc => git.getRepository(Uri.parse(doc.id.uri))).filter(Boolean))];
-				for (const repository of repositories) {
-					const remoteName = repository?.state.HEAD?.upstream?.remote;
-					const remote = repository?.state.remotes.find(r => r.name === remoteName);
-					if (remote?.fetchUrl) {
-						remoteUrlSet.add(remote.fetchUrl);
-					}
-					if (remote?.pushUrl) {
-						remoteUrlSet.add(remote.pushUrl);
-					}
-				}
-				repositoryUrls = [...remoteUrlSet];
-			}
-		}
+		const documentsCount = this._extractedRequestMetrics?.documentsCount;
+		const editsCount = this._extractedRequestMetrics?.editsCount;
+		const activeDocumentEditsCount = this._extractedRequestMetrics?.activeDocumentEditsCount;
+		const activeDocumentLanguageId = this._extractedRequestMetrics?.activeDocumentLanguageId;
+		const activeDocumentOriginalLineCount = this._extractedRequestMetrics?.activeDocumentOriginalLineCount;
+		const isNotebook = this._extractedRequestMetrics?.isNotebook ?? false;
+		const notebookType = this._extractedRequestMetrics?.notebookType;
+		const activeDocumentRepository = this._extractedRequestMetrics?.activeDocumentRepository;
+		const repositoryUrls = this._extractedRequestMetrics?.repositoryUrls;
 
 		let alternativeAction: IAlternativeAction | undefined;
 		if (includeAlternativeAction && this.editCollectingInfo !== undefined) {
 			const originalText = this.editCollectingInfo.originalDoc.value;
+			const maxAlternativeActionFieldBytes = 84 * 1024;
 			let recording: ITelemetryRecording | undefined;
 			if (this._debugRecorder && this._requestBookmark) {
 				const entries = this._debugRecorder.getRecentLog();
 				const entriesSize = JSON.stringify(entries)?.length || 0;
 				recording = {
-					entries: entriesSize > 200 * 1024 ? undefined : entries,
+					entries: entriesSize > maxAlternativeActionFieldBytes ? undefined : entries,
 					entriesSize: entriesSize,
 					requestTime: this._requestBookmark.timeMs,
 				};
 			}
 			alternativeAction = {
-				text: originalText.length > 200 * 1024 ? undefined : originalText,
-				textLength: originalText.length,
+				text: originalText.length > maxAlternativeActionFieldBytes ? originalText.substring(0, maxAlternativeActionFieldBytes) : originalText,
+				textLength: this.editCollectingInfo.originalDocLength,
 				selection: this.editCollectingInfo.originalSelection.map(range => ({
 					start: range.start,
 					endExclusive: range.endExclusive,
@@ -263,6 +228,7 @@ export class LlmNESTelemetryBuilder extends Disposable {
 	/** Dependent on the observable document to track edits and selections */
 	private editCollectingInfo: undefined | {
 		originalDoc: StringText;
+		originalDocLength: number;
 		originalSelection: readonly OffsetRange[];
 		originalSelectionLine: number | undefined;
 		edits: { time: Date; edit: StringEdit }[];
@@ -281,15 +247,19 @@ export class LlmNESTelemetryBuilder extends Disposable {
 		private readonly _workspaceService: IWorkspaceService | undefined,
 		private readonly _providerId: string,
 		private readonly _doc: IObservableDocument | undefined,
+		collectEnhancedData: boolean,
 		private readonly _debugRecorder?: DebugRecorder,
 		private readonly _requestBookmark?: DebugRecorderBookmark,
 	) {
 		super();
 		this._startTime = Date.now();
 
-		if (this._doc) {
+		if (this._doc && collectEnhancedData) {
+			const fullDoc = this._doc.value.get();
+			const maxDocBytes = 84 * 1024;
 			this.editCollectingInfo = {
-				originalDoc: this._doc.value.get(),
+				originalDoc: fullDoc.value.length > maxDocBytes ? new StringText(fullDoc.value.substring(0, maxDocBytes)) : fullDoc,
+				originalDocLength: fullDoc.value.length,
 				originalSelection: this._doc.selection.get(),
 				originalSelectionLine: this._doc.primarySelectionLine.get(),
 				edits: [],
@@ -339,9 +309,68 @@ export class LlmNESTelemetryBuilder extends Disposable {
 		return this;
 	}
 
-	private _request: StatelessNextEditRequest | undefined;
+	private _extractedRequestMetrics: {
+		readonly documentsCount: number;
+		readonly editsCount: number;
+		readonly activeDocumentEditsCount: number;
+		readonly activeDocumentLanguageId: string;
+		readonly activeDocumentOriginalLineCount: number;
+		readonly isNotebook: boolean;
+		readonly notebookType: string | undefined;
+		readonly activeDocumentRepository: string | undefined;
+		readonly repositoryUrls: string[] | undefined;
+	} | undefined;
+
 	public setRequest(request: StatelessNextEditRequest): this {
-		this._request = request;
+		const activeDoc = request.getActiveDocument();
+		const documentsCount = request.documents.length;
+		const editsCount = request.documents.reduce((acc, doc) => acc + doc.recentEdits.edits.length, 0);
+		const activeDocumentEditsCount = activeDoc.recentEdits.edits.length;
+		const activeDocumentLanguageId = activeDoc.languageId;
+		const activeDocumentOriginalLineCount = activeDoc.documentAfterEditsLines.length;
+		const isNotebook = activeDoc.id.toUri().scheme === Schemas.vscodeNotebookCell || this._notebookService?.hasSupportedNotebooks(activeDoc.id.toUri()) || false;
+		const notebookType = this._workspaceService === undefined ? undefined : findNotebook(activeDoc.id.toUri(), this._workspaceService.notebookDocuments)?.notebookType;
+
+		let activeDocumentRepository: string | undefined;
+		let repositoryUrls: string[] | undefined;
+		const git = this._gitExtensionService?.getExtensionApi();
+		if (git) {
+			const activeDocRepo = git.getRepository(Uri.parse(activeDoc.id.uri));
+			if (activeDocRepo) {
+				const remoteName = activeDocRepo.state.HEAD?.upstream?.remote;
+				const remote = activeDocRepo.state.remotes.find(r => r.name === remoteName);
+				if (remote?.fetchUrl) {
+					activeDocumentRepository = remote.pushUrl || remote.fetchUrl;
+				}
+			}
+
+			const remoteUrlSet = new Set<string>();
+			const repositories = [...new Set(request.documents.map(doc => git.getRepository(Uri.parse(doc.id.uri))).filter(Boolean))];
+			for (const repository of repositories) {
+				const remoteName = repository?.state.HEAD?.upstream?.remote;
+				const remote = repository?.state.remotes.find(r => r.name === remoteName);
+				if (remote?.fetchUrl) {
+					remoteUrlSet.add(remote.fetchUrl);
+				}
+				if (remote?.pushUrl) {
+					remoteUrlSet.add(remote.pushUrl);
+				}
+			}
+			repositoryUrls = [...remoteUrlSet];
+		}
+
+		this._extractedRequestMetrics = {
+			documentsCount,
+			editsCount,
+			activeDocumentEditsCount,
+			activeDocumentLanguageId,
+			activeDocumentOriginalLineCount,
+			isNotebook,
+			notebookType,
+			activeDocumentRepository,
+			repositoryUrls,
+		};
+		// Do not retain the request object — it holds multiple full document copies
 		return this;
 	}
 
@@ -506,6 +535,7 @@ export class NextEditProviderTelemetryBuilder extends Disposable {
 		workspaceService: IWorkspaceService | undefined,
 		providerId: string,
 		public readonly doc: IObservableDocument | undefined,
+		collectEnhancedData: boolean = true,
 		debugRecorder?: DebugRecorder,
 		requestBookmark?: DebugRecorderBookmark,
 	) {
@@ -515,7 +545,7 @@ export class NextEditProviderTelemetryBuilder extends Disposable {
 		this._requestN = ++requestN;
 		NextEditProviderTelemetryBuilder.providerIdToReqN.set(providerId, requestN);
 
-		this._nesBuilder = this._register(new LlmNESTelemetryBuilder(gitExtensionService, notebookService, workspaceService, providerId, doc, debugRecorder, requestBookmark));
+		this._nesBuilder = this._register(new LlmNESTelemetryBuilder(gitExtensionService, notebookService, workspaceService, providerId, doc, collectEnhancedData, debugRecorder, requestBookmark));
 		this._diagnosticsBuilder = new DiagnosticsTelemetryBuilder();
 	}
 

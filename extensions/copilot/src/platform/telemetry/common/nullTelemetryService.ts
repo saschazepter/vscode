@@ -52,5 +52,8 @@ export class NullTelemetryService implements ITelemetryService {
 	sendEnhancedGHTelemetryErrorEvent(eventName: string, properties?: TelemetryEventProperties | undefined, measurements?: TelemetryEventMeasurements | undefined): void {
 		return;
 	}
+	isEnhancedTelemetryEnabled(): boolean {
+		return false;
+	}
 
 }

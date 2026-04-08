@@ -314,6 +314,7 @@ class NESProvider extends Disposable implements INESProvider<NESResult> {
 			this._workspaceService,
 			this._nextEditProvider.ID,
 			document,
+			false, // collectEnhancedData
 			this._debugRecorder,
 			logContext.recordingBookmark
 		);
@@ -628,6 +629,9 @@ class SimpleTelemetryService implements ITelemetryService {
 	sendEnhancedGHTelemetryErrorEvent(eventName: string, properties?: TelemetryEventProperties | undefined, measurements?: TelemetryEventMeasurements | undefined): void {
 		return;
 	}
+	isEnhancedTelemetryEnabled(): boolean {
+		return false;
+	}
 }
 
 export type IDocumentContext = DocumentContext;
@@ -759,7 +763,7 @@ class InlineCompletionsProvider extends Disposable implements IInlineCompletions
 	}
 
 	async getInlineCompletions(textDocument: ITextDocument, position: Position, token?: CancellationToken, options?: IGetInlineCompletionsOptions): Promise<CopilotCompletion[] | undefined> {
-		const telemetryBuilder = new LlmNESTelemetryBuilder(undefined, undefined, undefined, 'ghostText', undefined);
+		const telemetryBuilder = new LlmNESTelemetryBuilder(undefined, undefined, undefined, 'ghostText', undefined, false);
 		return await this.ghostText.getInlineCompletions(textDocument, position, token ?? CancellationToken.None, options, new GhostTextLogContext(textDocument.uri, textDocument.version, undefined), telemetryBuilder, this._logService);
 	}
 

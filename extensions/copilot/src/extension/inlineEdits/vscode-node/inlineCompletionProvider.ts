@@ -275,7 +275,7 @@ export class InlineCompletionProviderImpl extends Disposable implements InlineCo
 		logContext.recordingBookmark = this.model.debugRecorder.createBookmark();
 		this.logger.addLive(logContext);
 
-		const telemetryBuilder = new NextEditProviderTelemetryBuilder(this._gitExtensionService, this._notebookService, this._workspaceService, this.model.nextEditProvider.ID, doc, this.model.debugRecorder, logContext.recordingBookmark);
+		const telemetryBuilder = new NextEditProviderTelemetryBuilder(this._gitExtensionService, this._notebookService, this._workspaceService, this.model.nextEditProvider.ID, doc, this._telemetryService.isEnhancedTelemetryEnabled(), this.model.debugRecorder, logContext.recordingBookmark);
 		telemetryBuilder.setOpportunityId(context.requestUuid);
 		telemetryBuilder.setConfigIsDiagnosticsNESEnabled(!!this.model.diagnosticsBasedProvider);
 		telemetryBuilder.setIsNaturalLanguageDominated(LineCheck.isNaturalLanguageDominated(document, position));
