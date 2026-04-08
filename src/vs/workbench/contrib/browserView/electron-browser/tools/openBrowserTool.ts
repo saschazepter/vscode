@@ -12,7 +12,7 @@ import { IPlaywrightService } from '../../../../../platform/browserView/common/p
 import { IEditorService } from '../../../../services/editor/common/editorService.js';
 import { ToolDataSource, type CountTokensCallback, type IPreparedToolInvocation, type IToolData, type IToolImpl, type IToolInvocation, type IToolInvocationPreparationContext, type IToolResult, type ToolProgress } from '../../../chat/common/tools/languageModelToolsService.js';
 import { IAgentNetworkFilterService } from '../../../chat/common/networkFilter/networkFilterService.js';
-import { alreadyOpenResult, createBrowserPageLink, findExistingPageByHost } from './browserToolHelpers.js';
+import { createBrowserPageLink, getExistingPagesResult } from './browserToolHelpers.js';
 
 export const OpenPageToolId = 'open_browser_page';
 
@@ -85,9 +85,9 @@ export class OpenBrowserTool implements IToolImpl {
 		}
 
 		if (!params.forceNew) {
-			const existing = await findExistingPageByHost(this.editorService, this.playwrightService, params.url);
-			if (existing) {
-				return alreadyOpenResult(existing);
+			const existingResult = await getExistingPagesResult(this.editorService, this.playwrightService, params.url);
+			if (existingResult) {
+				return existingResult;
 			}
 		}
 
