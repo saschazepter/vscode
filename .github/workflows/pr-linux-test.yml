@@ -143,13 +143,22 @@ jobs:
           apt list --installed 2>/dev/null | grep -E 'fonts-|fontconfig' || true
           echo ""
           echo "--- Verify fonts.conf integrity ---"
-          xmllint --noout /etc/fonts/fonts.conf 2>&1 || echo "WARNING: fonts.conf is invalid or missing"
-          for f in /etc/fonts/conf.d/*.conf; do
-            xmllint --noout "$f" 2>&1 || echo "WARNING: $f is invalid"
-          done
+          python3 -c "
+          import xml.etree.ElementTree as ET, glob, sys
+          for f in ['/etc/fonts/fonts.conf'] + sorted(glob.glob('/etc/fonts/conf.d/*.conf')):
+              try:
+                  ET.parse(f)
+              except Exception as e:
+                  print(f'WARNING: {f} is invalid: {e}', file=sys.stderr)
+          print('Font config XML validation complete')
+          "
+          echo ""
+          echo "--- Check for symlink loops in font dirs ---"
+          find /usr/share/fonts -maxdepth 3 -type l -exec test -d {} \; -print 2>/dev/null | head -10 || true
           echo ""
           echo "--- Clear and rebuild font cache ---"
-          rm -rf ~/.cache/fontconfig /var/cache/fontconfig 2>/dev/null || true
+          sudo rm -rf /var/cache/fontconfig 2>/dev/null || true
+          rm -rf ~/.cache/fontconfig 2>/dev/null || true
           fc-cache -f -v 2>&1 | tail -5
           echo ""
           echo "--- fontconfig version ---"
