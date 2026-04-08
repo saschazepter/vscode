@@ -56,8 +56,8 @@ export class AICustomizationWelcomePage extends Disposable {
 			description: localize('agentsDesc', "Define custom agents with specialized personas, tool access, and instructions for specific tasks."),
 			promptType: PromptsType.agent,
 			chips: [
-				{ label: localize('agentChip.review', "Code review agent"), prompt: 'Create a code review agent that checks for best practices and security issues' },
-				{ label: localize('agentChip.docs', "Documentation agent"), prompt: 'Create a documentation agent that writes and maintains project docs' },
+				{ label: localize('agentChip.review', "/create-agent code review specialist"), prompt: 'Create a code review agent that checks for best practices and security issues' },
+				{ label: localize('agentChip.docs', "/create-agent documentation writer"), prompt: 'Create a documentation agent that writes and maintains project docs' },
 			],
 		},
 		{
@@ -67,8 +67,8 @@ export class AICustomizationWelcomePage extends Disposable {
 			description: localize('skillsDesc', "Create reusable skill files that provide domain-specific knowledge and workflows."),
 			promptType: PromptsType.skill,
 			chips: [
-				{ label: localize('skillChip.arch', "Architecture patterns"), prompt: 'Create a skill that documents our architecture patterns and conventions' },
-				{ label: localize('skillChip.debug', "Debugging workflow"), prompt: 'Create a skill with step-by-step debugging workflows for common issues' },
+				{ label: localize('skillChip.arch', "/create-skill architecture patterns"), prompt: 'Create a skill that documents our architecture patterns and conventions' },
+				{ label: localize('skillChip.debug', "/create-skill debugging workflow"), prompt: 'Create a skill with step-by-step debugging workflows for common issues' },
 			],
 		},
 		{
@@ -78,8 +78,8 @@ export class AICustomizationWelcomePage extends Disposable {
 			description: localize('instructionsDesc', "Set always-on instructions that guide AI behavior across your workspace or user profile."),
 			promptType: PromptsType.instructions,
 			chips: [
-				{ label: localize('instrChip.style', "Enforce coding style"), prompt: 'Create instructions that enforce our coding style and naming conventions' },
-				{ label: localize('instrChip.security', "Security guidelines"), prompt: 'Create instructions with security best practices for our stack' },
+				{ label: localize('instrChip.style', "/create-instructions coding style"), prompt: 'Create instructions that enforce our coding style and naming conventions' },
+				{ label: localize('instrChip.security', "/create-instructions security guidelines"), prompt: 'Create instructions with security best practices for our stack' },
 			],
 		},
 		{
@@ -89,8 +89,8 @@ export class AICustomizationWelcomePage extends Disposable {
 			description: localize('hooksDesc', "Configure automated actions triggered by events like saving files or running tasks."),
 			promptType: PromptsType.hook,
 			chips: [
-				{ label: localize('hookChip.commit', "Generate commit messages"), prompt: 'Create a hook that generates commit messages from staged changes' },
-				{ label: localize('hookChip.lint', "Auto-fix lint on save"), prompt: 'Create a hook that automatically fixes lint errors when saving files' },
+				{ label: localize('hookChip.commit', "/create-hook generate commit messages"), prompt: 'Create a hook that generates commit messages from staged changes' },
+				{ label: localize('hookChip.lint', "/create-hook auto-fix lint on save"), prompt: 'Create a hook that automatically fixes lint errors when saving files' },
 			],
 		},
 		{
@@ -118,6 +118,12 @@ export class AICustomizationWelcomePage extends Disposable {
 		this.container = DOM.append(parent, $('.welcome-content-container'));
 		const welcomeInner = DOM.append(this.container, $('.welcome-inner'));
 
+		const intro = DOM.append(welcomeInner, $('.welcome-intro'));
+		const introHeading = DOM.append(intro, $('h2.welcome-intro-heading'));
+		introHeading.textContent = localize('welcomeIntroHeading', "Chat Customizations");
+		const introDescription = DOM.append(intro, $('p.welcome-intro-description'));
+		introDescription.textContent = localize('welcomeIntroDescription', "Tailor how AI agents work in your projects. Configure workspace customizations for the entire team, or create personal ones that follow you across projects.");
+
 		// Input box (gated on welcomePageFeatures)
 		if (this.welcomePageFeatures?.showGettingStartedBanner !== false) {
 			this.workflowSection = DOM.append(welcomeInner, $('.welcome-workflow-section'));
@@ -129,7 +135,7 @@ export class AICustomizationWelcomePage extends Disposable {
 			workflowTitle.textContent = localize('configureWorkflowTitle', "Analyze Your Project and Configure AI");
 
 			const workflowDesc = DOM.append(this.workflowSection, $('p.welcome-workflow-desc'));
-			workflowDesc.textContent = localize('configureWorkflowDesc', "Describe your project and coding patterns. Copilot will analyze your codebase and generate agents, skills, and instructions tailored to your workflow. You can always customize them later.");
+			workflowDesc.textContent = localize('configureWorkflowDesc', "Describe your project and coding patterns. Copilot can analyze your codebase, suggest the right AI customizations, and generate a starting point you can refine over time.");
 
 			const workflowInputRow = DOM.append(this.workflowSection, $('.welcome-workflow-input-row'));
 
@@ -175,15 +181,17 @@ export class AICustomizationWelcomePage extends Disposable {
 				row.setAttribute('tabindex', '0');
 				row.setAttribute('role', 'button');
 
-				const iconEl = DOM.append(row, $('span.welcome-category-item-icon'));
+				const content = DOM.append(row, $('.welcome-category-item-content'));
+				const titleRow = DOM.append(content, $('.welcome-category-item-title-row'));
+				const iconEl = DOM.append(titleRow, $('span.welcome-category-item-icon'));
 				iconEl.classList.add(...ThemeIcon.asClassNameArray(category.icon));
-				const labelEl = DOM.append(row, $('span.welcome-category-item-label'));
+				const labelEl = DOM.append(titleRow, $('span.welcome-category-item-label'));
 				labelEl.textContent = category.label;
-				const descEl = DOM.append(row, $('span.welcome-category-item-desc'));
+				const descEl = DOM.append(content, $('p.welcome-category-item-desc'));
 				descEl.textContent = category.description;
 
 				if (category.chips) {
-					const chipsArea = DOM.append(row, $('span.welcome-category-item-chips'));
+					const chipsArea = DOM.append(content, $('div.welcome-category-item-chips'));
 					for (const chip of category.chips) {
 						const chipBtn = DOM.append(chipsArea, $('button.welcome-category-chip'));
 						chipBtn.textContent = chip.label;
