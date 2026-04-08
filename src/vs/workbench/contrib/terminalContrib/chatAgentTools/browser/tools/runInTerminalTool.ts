@@ -1255,13 +1255,15 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 					// Output monitor detected the terminal is waiting for input.
 					// Convert to background so the terminal stays alive for send_to_terminal.
 					this._logService.debug(`RunInTerminalTool: Output monitor detected input needed in foreground terminal, returning output to agent`);
-					pollingResult = outputMonitor?.pollingResult;
 					error = 'inputNeeded';
 					isBackgroundExecution = true;
 					toolTerminal.isBackground = true;
 					this._sessionTerminalAssociations.delete(chatSessionResource);
 					await this._associateProcessIdWithSession(toolTerminal.instance, chatSessionResource, termId, toolTerminal.shellIntegrationQuality, true);
-					const idleOutput = pollingResult?.output ?? execution.getOutput();
+					// Read output directly from the execution rather than from pollingResult,
+					// because the output monitor may not have set pollingResult yet at this point
+					// (it is written in the finally block after onDidFinishCommand).
+					const idleOutput = execution.getOutput();
 					outputLineCount = idleOutput ? count(idleOutput.trim(), '\n') + 1 : 0;
 					terminalResult = idleOutput ?? '';
 				} else if (raceResult.type === 'background') {
