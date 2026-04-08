@@ -129,12 +129,12 @@ export class AICustomizationWelcomePage extends Disposable {
 			workflowTitle.textContent = localize('configureWorkflowTitle', "Analyze Your Project and Configure AI");
 
 			const workflowDesc = DOM.append(this.workflowSection, $('p.welcome-workflow-desc'));
-			workflowDesc.textContent = localize('configureWorkflowDesc', "Describe your project and coding patterns. Copilot will generate agents, skills, and instructions tailored to your workflow.");
+			workflowDesc.textContent = localize('configureWorkflowDesc', "Describe your project and coding patterns. Copilot will analyze your codebase and generate agents, skills, and instructions tailored to your workflow. You can always customize them later.");
 
 			const workflowInputRow = DOM.append(this.workflowSection, $('.welcome-workflow-input-row'));
 
 			this.inputBox = this._register(new InputBox(workflowInputRow, undefined, {
-				placeholder: localize('workflowInputPlaceholder', "e.g. A TypeScript monorepo using React, Node, and PostgreSQL..."),
+				placeholder: localize('workflowInputPlaceholder', "Describe your project, e.g. A TypeScript monorepo using React, Node, and PostgreSQL..."),
 				ariaLabel: localize('workflowInputAriaLabel', "Describe your project and workflow"),
 				inputBoxStyles: defaultInputBoxStyles,
 			}));
@@ -162,6 +162,13 @@ export class AICustomizationWelcomePage extends Disposable {
 					openChatWithPrompt();
 				}
 			}));
+
+			// Separator between input and grid
+			DOM.append(this.workflowSection, $('.welcome-section-divider'));
+
+			// Grid section header
+			const gridHeader = DOM.append(this.workflowSection, $('p.welcome-grid-header'));
+			gridHeader.textContent = localize('orConfigureIndividually', "Or configure individual customizations:");
 
 			// 2x3 category card grid
 			const grid = DOM.append(this.workflowSection, $('.welcome-category-grid'));

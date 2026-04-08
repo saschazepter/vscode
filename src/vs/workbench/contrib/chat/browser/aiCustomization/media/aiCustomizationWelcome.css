@@ -26,7 +26,7 @@
 	display: flex;
 	align-items: center;
 	gap: 8px;
-	margin-bottom: 6px;
+	margin-bottom: 4px;
 }
 
 .ai-customization-management-editor .welcome-workflow-icon {
@@ -41,22 +41,23 @@
 }
 
 .ai-customization-management-editor .welcome-workflow-desc {
-	font-size: 12px;
+	font-size: 13px;
 	color: var(--vscode-descriptionForeground);
-	margin: 0 0 10px;
+	margin: 0 0 14px;
 	line-height: 1.5;
 }
 
-/* Input row: input + submit button in a single bordered container */
+/* Input row: chat-style input with submit button inside */
 .ai-customization-management-editor .welcome-workflow-input-row {
 	display: flex;
-	align-items: stretch;
+	align-items: center;
 	gap: 0;
 	border: 1px solid var(--vscode-input-border, var(--vscode-widget-border));
-	border-radius: 6px;
+	border-radius: 8px;
 	background: var(--vscode-input-background);
 	overflow: hidden;
 	transition: border-color 0.15s ease;
+	padding: 4px;
 }
 
 .ai-customization-management-editor .welcome-workflow-input-row:focus-within {
@@ -74,17 +75,20 @@
 }
 
 .ai-customization-management-editor .welcome-workflow-input .monaco-inputbox > .ibwrapper > input {
-	padding: 8px 12px;
+	padding: 8px 10px;
 	font-size: 13px;
+	line-height: 1.4;
 }
 
 .ai-customization-management-editor .welcome-workflow-submit {
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	width: 36px;
+	width: 30px;
+	height: 30px;
 	flex-shrink: 0;
 	border: none;
+	border-radius: 6px;
 	background: transparent;
 	color: var(--vscode-descriptionForeground);
 	cursor: pointer;
@@ -93,8 +97,8 @@
 
 .ai-customization-management-editor .welcome-workflow-submit:hover,
 .ai-customization-management-editor .welcome-workflow-submit.has-value {
-	color: var(--vscode-button-background);
-	background: color-mix(in srgb, var(--vscode-button-background, #007acc) 10%, transparent);
+	color: var(--vscode-button-foreground);
+	background: var(--vscode-button-background);
 }
 
 .ai-customization-management-editor .welcome-workflow-submit:focus-visible {
@@ -102,18 +106,31 @@
 	outline-offset: -1px;
 }
 
+/* Section divider between input and grid */
+.ai-customization-management-editor .welcome-section-divider {
+	height: 1px;
+	background: var(--vscode-widget-border);
+	margin: 20px 0 16px;
+}
+
+.ai-customization-management-editor .welcome-grid-header {
+	font-size: 12px;
+	font-weight: 500;
+	color: var(--vscode-descriptionForeground);
+	margin: 0 0 10px;
+}
+
 /* 2x3 Category Card Grid */
 .ai-customization-management-editor .welcome-category-grid {
 	display: grid;
 	grid-template-columns: repeat(2, 1fr);
 	gap: 10px;
-	margin-top: 16px;
 }
 
 .ai-customization-management-editor .welcome-category-card {
 	display: flex;
 	flex-direction: column;
-	padding: 12px;
+	padding: 14px;
 	border: 1px solid var(--vscode-widget-border);
 	border-radius: 6px;
 	background: var(--vscode-sideBar-background);
@@ -135,7 +152,7 @@
 	display: flex;
 	align-items: center;
 	gap: 6px;
-	margin-bottom: 2px;
+	margin-bottom: 4px;
 }
 
 .ai-customization-management-editor .welcome-category-card-icon {
@@ -145,15 +162,15 @@
 
 .ai-customization-management-editor .welcome-category-card-label {
 	font-size: 13px;
-	font-weight: 500;
+	font-weight: 600;
 	color: var(--vscode-foreground);
 }
 
 .ai-customization-management-editor .welcome-category-card-desc {
-	font-size: 11px;
+	font-size: 12px;
 	color: var(--vscode-descriptionForeground);
 	line-height: 1.4;
-	margin: 0 0 8px;
+	margin: 0 0 10px;
 	flex: 1;
 }
 
