@@ -23,7 +23,6 @@ import { EXTENSION_INSTALL_SKIP_WALKTHROUGH_CONTEXT, IGalleryExtension, IExtensi
 import { IDefaultAccountService } from '../../../../platform/defaultAccount/common/defaultAccount.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { INotificationService, Severity } from '../../../../platform/notification/common/notification.js';
-import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { ConfigurationTarget, IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import product from '../../../../platform/product/common/product.js';
 import { IQuickInputService } from '../../../../platform/quickinput/common/quickInput.js';
@@ -131,7 +130,6 @@ export class OnboardingVariationA extends Disposable {
 		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@INotificationService private readonly notificationService: INotificationService,
 		@IQuickInputService private readonly quickInputService: IQuickInputService,
-		@ICommandService private readonly commandService: ICommandService,
 		@IFileService private readonly fileService: IFileService,
 		@IPathService private readonly pathService: IPathService,
 		@ITelemetryService private readonly telemetryService: ITelemetryService,
@@ -1106,28 +1104,13 @@ export class OnboardingVariationA extends Disposable {
 		const features = append(wrapper, $('.onboarding-a-sessions-features'));
 
 		// Left column: Local + Cloud — Right column: Copilot CLI + Inline
-		const { card: localCard } = this._createFeatureCard(features, Codicon.deviceDesktop, localize('onboarding.sessions.local', "Local Sessions"), localize('onboarding.sessions.local.desc', "Run agents locally with full access to your machine and tools."));
-		this.stepDisposables.add(addDisposableListener(localCard, EventType.CLICK, () => {
-			this._logAction('featureCardClick', undefined, 'local');
-			this._dismiss('complete');
-			this.commandService.executeCommand('workbench.action.chat.openNewChatSessionInPlace.local', 'sidebar');
-		}));
+		this._createFeatureCard(features, Codicon.deviceDesktop, localize('onboarding.sessions.local', "Local Sessions"), localize('onboarding.sessions.local.desc', "Run agents locally with full access to your machine and tools."));
 
-		const { card: parallelCard } = this._createFeatureCard(features, Codicon.worktree, localize('onboarding.sessions.worktree', "Copilot CLI"), localize('onboarding.sessions.worktree.desc', "Branch off and work in parallel with isolated worktrees."));
-		this.stepDisposables.add(addDisposableListener(parallelCard, EventType.CLICK, () => {
-			this._logAction('featureCardClick', undefined, 'copilot-cli');
-			this._dismiss('complete');
-			this.commandService.executeCommand('workbench.action.chat.openNewChatSessionInPlace.copilotcli', 'sidebar');
-		}));
+		this._createFeatureCard(features, Codicon.worktree, localize('onboarding.sessions.worktree', "Copilot CLI"), localize('onboarding.sessions.worktree.desc', "Branch off and work in parallel with isolated worktrees."));
 
-		const { card: cloudCard } = this._createFeatureCard(features, Codicon.cloud, localize('onboarding.sessions.cloud', "Cloud Sessions"), localize('onboarding.sessions.cloud.desc', "Run agents in the cloud. Code keeps running even when you close the window."));
-		this.stepDisposables.add(addDisposableListener(cloudCard, EventType.CLICK, () => {
-			this._logAction('featureCardClick', undefined, 'cloud');
-			this._dismiss('complete');
-			this.commandService.executeCommand('workbench.action.chat.openNewChatSessionInPlace.copilot-cloud-agent', 'sidebar');
-		}));
+		this._createFeatureCard(features, Codicon.cloud, localize('onboarding.sessions.cloud', "Cloud Sessions"), localize('onboarding.sessions.cloud.desc', "Run agents in the cloud. Code keeps running even when you close the window."));
 
-		const { card: inlineCard, descEl: inlineDesc } = this._createFeatureCard(features, Codicon.keyboardTab, localize('onboarding.sessions.inline', "Inline Suggestions"));
+		const inlineDesc = this._createFeatureCard(features, Codicon.keyboardTab, localize('onboarding.sessions.inline', "Inline Suggestions"));
 		inlineDesc.append(
 			localize('onboarding.sessions.inline.desc1', "As you type, AI suggests code inline. Press "),
 			this._createKbd(localize('onboarding.sessions.inline.tab', "Tab")),
@@ -1135,11 +1118,6 @@ export class OnboardingVariationA extends Disposable {
 			this._createKbd(localize('onboarding.sessions.inline.esc', "Esc")),
 			localize('onboarding.sessions.inline.desc3', " to dismiss."),
 		);
-		this.stepDisposables.add(addDisposableListener(inlineCard, EventType.CLICK, () => {
-			this._logAction('featureCardClick', undefined, 'inline');
-			this._dismiss('complete');
-			this.commandService.executeCommand('workbench.action.chat.open');
-		}));
 
 		// Doc links + optional sign-in nudge on the same row
 		const docs = append(wrapper, $('.onboarding-a-sessions-docs'));
@@ -1167,9 +1145,8 @@ export class OnboardingVariationA extends Disposable {
 		}));
 	}
 
-	private _createFeatureCard(parent: HTMLElement, icon: ThemeIcon, title: string, description?: string): { card: HTMLElement; descEl: HTMLElement } {
-		const card = this._registerStepFocusable(append(parent, $('button.onboarding-a-feature-card')));
-		(card as HTMLButtonElement).type = 'button';
+	private _createFeatureCard(parent: HTMLElement, icon: ThemeIcon, title: string, description?: string): HTMLElement {
+		const card = append(parent, $('div.onboarding-a-feature-card'));
 		const iconCol = append(card, $('div.onboarding-a-feature-icon'));
 		iconCol.appendChild(renderIcon(icon));
 		const textCol = append(card, $('div.onboarding-a-feature-text'));
@@ -1179,7 +1156,7 @@ export class OnboardingVariationA extends Disposable {
 		if (description) {
 			descEl.textContent = description;
 		}
-		return { card, descEl };
+		return descEl;
 	}
 
 	private _createKbd(label: string): HTMLElement {

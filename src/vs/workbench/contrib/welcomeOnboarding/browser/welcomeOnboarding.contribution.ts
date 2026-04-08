@@ -7,18 +7,17 @@
 import './media/variationA.css';
 
 import { localize2 } from '../../../../nls.js';
+import { Categories } from '../../../../platform/action/common/actionCommonCategories.js';
 import { Action2, registerAction2 } from '../../../../platform/actions/common/actions.js';
 import { IInstantiationService, ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
 import { OnboardingVariationA } from './onboardingVariationA.js';
-
-const category = localize2('welcome', "Welcome");
 
 registerAction2(class extends Action2 {
 	constructor() {
 		super({
 			id: 'workbench.action.welcomeOnboarding2026',
 			title: localize2('welcomeOnboarding2026', "Welcome Onboarding 2026"),
-			category,
+			category: Categories.Developer,
 			f1: true,
 		});
 	}
