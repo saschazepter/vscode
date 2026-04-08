@@ -250,7 +250,7 @@ registerAction2(class NewSessionForWorkspaceAction extends Action2 {
 			menu: [{
 				id: SessionSectionToolbarMenuId,
 				group: 'navigation',
-				order: 1,
+				order: 0,
 				when: ContextKeyExpr.equals(SessionSectionTypeContext.key, 'workspace'),
 			}]
 		});
@@ -281,7 +281,7 @@ registerAction2(class ArchiveSectionAction extends Action2 {
 			menu: [{
 				id: SessionSectionToolbarMenuId,
 				group: 'navigation',
-				order: 0,
+				order: 1,
 				when: ContextKeyExpr.notEquals(SessionSectionTypeContext.key, 'archived'),
 			}]
 		});
@@ -384,7 +384,7 @@ registerAction2(class PinSessionAction extends Action2 {
 			menu: [{
 				id: SessionItemToolbarMenuId,
 				group: 'navigation',
-				order: 2,
+				order: 1,
 				when: ContextKeyExpr.and(
 					ContextKeyExpr.equals(IsSessionPinnedContext.key, false),
 					ContextKeyExpr.equals(IsSessionArchivedContext.key, false),
@@ -422,7 +422,7 @@ registerAction2(class UnpinSessionAction extends Action2 {
 			menu: [{
 				id: SessionItemToolbarMenuId,
 				group: 'navigation',
-				order: 2,
+				order: 1,
 				when: ContextKeyExpr.and(
 					ContextKeyExpr.equals(IsSessionPinnedContext.key, true),
 					ContextKeyExpr.equals(IsSessionArchivedContext.key, false),
@@ -460,7 +460,7 @@ registerAction2(class ArchiveSessionAction extends Action2 {
 			menu: [{
 				id: SessionItemToolbarMenuId,
 				group: 'navigation',
-				order: 1,
+				order: 2,
 				when: ContextKeyExpr.equals(IsSessionArchivedContext.key, false),
 			}, {
 				id: SessionItemContextMenuId,
@@ -491,7 +491,7 @@ registerAction2(class UnarchiveSessionAction extends Action2 {
 			menu: [{
 				id: SessionItemToolbarMenuId,
 				group: 'navigation',
-				order: 1,
+				order: 2,
 				when: ContextKeyExpr.equals(IsSessionArchivedContext.key, true),
 			}, {
 				id: SessionItemContextMenuId,
