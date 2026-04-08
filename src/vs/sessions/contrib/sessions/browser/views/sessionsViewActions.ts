@@ -250,7 +250,7 @@ registerAction2(class NewSessionForWorkspaceAction extends Action2 {
 			menu: [{
 				id: SessionSectionToolbarMenuId,
 				group: 'navigation',
-				order: 0,
+				order: 1,
 				when: ContextKeyExpr.equals(SessionSectionTypeContext.key, 'workspace'),
 			}]
 		});
@@ -281,7 +281,7 @@ registerAction2(class ArchiveSectionAction extends Action2 {
 			menu: [{
 				id: SessionSectionToolbarMenuId,
 				group: 'navigation',
-				order: 1,
+				order: 0,
 				when: ContextKeyExpr.notEquals(SessionSectionTypeContext.key, 'archived'),
 			}]
 		});
