@@ -86,6 +86,7 @@ import { AgentPluginEditorInput } from '../agentPluginEditor/agentPluginEditorIn
 import { IAgentPluginItem } from '../agentPluginEditor/agentPluginItems.js';
 import { ICustomizationHarnessService, CustomizationHarness, matchesWorkspaceSubpath } from '../../common/customizationHarnessService.js';
 import { ChatConfiguration } from '../../common/constants.js';
+import { AICustomizationWelcomePage } from './aiCustomizationWelcomePage.js';
 
 const $ = DOM.$;
 
@@ -299,10 +300,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 	private selectedSection: AICustomizationManagementSection | undefined;
 
 	// Welcome page
-	private welcomeContentContainer: HTMLElement | undefined;
-	private welcomeCardsContainer: HTMLElement | undefined;
-	private welcomeGettingStartedButton: HTMLElement | undefined;
-	private readonly welcomeCardDisposables = this._register(new DisposableStore());
+	private welcomePage: AICustomizationWelcomePage | undefined;
 
 	private readonly editorDisposables = this._register(new DisposableStore());
 	private readonly promptsSectionCountScheduler = this._register(new RunOnceScheduler(() => this._doRefreshAllPromptsSectionCounts(), 100));
@@ -516,7 +514,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 		}
 
 		// Rebuild welcome cards to reflect new visible sections
-		this.rebuildWelcomeCards();
+		this.welcomePage?.rebuildCards(new Set(this.sections.map(s => s.id)));
 
 		// If the current selection is hidden, fall back to welcome page
 		if (this.selectedSection !== undefined && !this.sections.some(s => s.id === this.selectedSection) && this.sections.length > 0) {
@@ -765,151 +763,21 @@ export class AICustomizationManagementEditor extends EditorPane {
 		}
 	}
 
-	private readonly categoryDescriptions: { id: AICustomizationManagementSection; label: string; icon: ThemeIcon; description: string; promptType?: PromptsType }[] = [
-		{
-			id: AICustomizationManagementSection.Agents,
-			label: localize('agents', "Agents"),
-			icon: agentIcon,
-			description: localize('agentsDesc', "Define custom agents with specialized personas, tool access, and instructions for specific tasks."),
-			promptType: PromptsType.agent,
-		},
-		{
-			id: AICustomizationManagementSection.Skills,
-			label: localize('skills', "Skills"),
-			icon: skillIcon,
-			description: localize('skillsDesc', "Create reusable skill files that provide domain-specific knowledge and workflows."),
-			promptType: PromptsType.skill,
-		},
-		{
-			id: AICustomizationManagementSection.Instructions,
-			label: localize('instructions', "Instructions"),
-			icon: instructionsIcon,
-			description: localize('instructionsDesc', "Set always-on instructions that guide AI behavior across your workspace or user profile."),
-			promptType: PromptsType.instructions,
-		},
-		{
-			id: AICustomizationManagementSection.Hooks,
-			label: localize('hooks', "Hooks"),
-			icon: hookIcon,
-			description: localize('hooksDesc', "Configure automated actions triggered by events like saving files or running tasks."),
-			promptType: PromptsType.hook,
-		},
-		{
-			id: AICustomizationManagementSection.McpServers,
-			label: localize('mcpServers', "MCP Servers"),
-			icon: Codicon.server,
-			description: localize('mcpServersDesc', "Connect external tool servers that extend AI capabilities with custom tools and data sources."),
-		},
-		{
-			id: AICustomizationManagementSection.Plugins,
-			label: localize('plugins', "Plugins"),
-			icon: pluginIcon,
-			description: localize('pluginsDesc', "Install and manage agent plugins that add additional tools, skills, and integrations."),
-		},
-	];
-
 	private createWelcomePage(parent: HTMLElement): void {
-		this.welcomeContentContainer = DOM.append(parent, $('.welcome-content-container'));
-
-		const welcomeInner = DOM.append(this.welcomeContentContainer, $('.welcome-inner'));
-
-		const heading = DOM.append(welcomeInner, $('h2.welcome-heading'));
-		heading.textContent = localize('welcomeHeading', "Chat Customizations");
-
-		const subtitle = DOM.append(welcomeInner, $('p.welcome-subtitle'));
-		subtitle.textContent = localize('welcomeSubtitle', "Tailor how AI agents work in your projects. Configure workspace customizations for the entire team, or create personal ones that follow you across projects.");
-
-		const welcomePageFeatures = this.workspaceService.welcomePageFeatures;
-
-		// Getting Started banner
-		if (welcomePageFeatures?.showGettingStartedBanner !== false) {
-			const gettingStarted = DOM.append(welcomeInner, $('button.welcome-getting-started'));
-			this.welcomeGettingStartedButton = gettingStarted;
-			const gettingStartedIcon = DOM.append(gettingStarted, $('span.welcome-getting-started-icon.codicon.codicon-sparkle'));
-			gettingStartedIcon.setAttribute('aria-hidden', 'true');
-			const gettingStartedText = DOM.append(gettingStarted, $('.welcome-getting-started-text'));
-			const gettingStartedTitle = DOM.append(gettingStartedText, $('span.welcome-getting-started-title'));
-			gettingStartedTitle.textContent = localize('gettingStartedTitle', "Configure Your AI");
-			const gettingStartedDesc = DOM.append(gettingStartedText, $('span.welcome-getting-started-desc'));
-			gettingStartedDesc.textContent = localize('gettingStartedDesc', "Describe your project and coding patterns. Copilot will generate agents, skills, and instructions tailored to your workflow.");
-			const gettingStartedChevron = DOM.append(gettingStarted, $('span.welcome-getting-started-chevron.codicon.codicon-chevron-right'));
-			gettingStartedChevron.setAttribute('aria-hidden', 'true');
-			this.editorDisposables.add(DOM.addDisposableListener(gettingStarted, 'click', () => {
-				if (this.input) {
-					this.group.closeEditor(this.input);
-				}
-				this.commandService.executeCommand('workbench.action.chat.open', { query: '/agent-customization ', isPartialQuery: true });
-			}));
-		}
-
-		this.welcomeCardsContainer = DOM.append(welcomeInner, $('.welcome-cards'));
-		this.rebuildWelcomeCards();
-	}
-
-	private rebuildWelcomeCards(): void {
-		if (!this.welcomeCardsContainer) {
-			return;
-		}
-		this.welcomeCardDisposables.clear();
-		DOM.clearNode(this.welcomeCardsContainer);
-
-		const visibleSections = new Set(this.sections.map(s => s.id));
-
-		for (const category of this.categoryDescriptions) {
-			if (!visibleSections.has(category.id)) {
-				continue;
-			}
-
-			const card = DOM.append(this.welcomeCardsContainer, $('.welcome-card'));
-			card.setAttribute('tabindex', '0');
-			card.setAttribute('role', 'button');
-
-			const cardHeader = DOM.append(card, $('.welcome-card-header'));
-			const iconEl = DOM.append(cardHeader, $('.welcome-card-icon'));
-			iconEl.classList.add(...ThemeIcon.asClassNameArray(category.icon));
-			const labelEl = DOM.append(cardHeader, $('span.welcome-card-label'));
-			labelEl.textContent = category.label;
-
-			const descEl = DOM.append(card, $('p.welcome-card-description'));
-			descEl.textContent = category.description;
-
-			const cardFooter = DOM.append(card, $('.welcome-card-footer'));
-
-			// "Browse" button navigates to the section
-			const browseBtn = DOM.append(cardFooter, $('button.welcome-card-browse'));
-			browseBtn.textContent = localize('browse', "Browse");
-			this.welcomeCardDisposables.add(DOM.addDisposableListener(browseBtn, 'click', (e) => {
-				e.stopPropagation();
-				this.selectSection(category.id);
-			}));
-
-			// "Generate with AI" button (only for prompt-based sections when enabled)
-			if (category.promptType && this.workspaceService.welcomePageFeatures?.showGenerateActions !== false) {
-				const generateBtn = DOM.append(cardFooter, $('button.welcome-card-generate'));
-				DOM.append(generateBtn, $('span.codicon.codicon-sparkle'));
-				const generateLabel = DOM.append(generateBtn, $('span'));
-				generateLabel.textContent = localize('generateWithAI', "Generate with AI");
-				const promptType = category.promptType;
-				this.welcomeCardDisposables.add(DOM.addDisposableListener(generateBtn, 'click', (e) => {
-					e.stopPropagation();
+		this.welcomePage = this.editorDisposables.add(new AICustomizationWelcomePage(
+			parent,
+			this.workspaceService.welcomePageFeatures,
+			{
+				selectSection: (section) => this.selectSection(section),
+				closeEditor: () => {
 					if (this.input) {
 						this.group.closeEditor(this.input);
 					}
-					this.workspaceService.generateCustomization(promptType);
-				}));
-			}
-
-			// Clicking the card itself navigates to the section
-			this.welcomeCardDisposables.add(DOM.addDisposableListener(card, 'click', () => {
-				this.selectSection(category.id);
-			}));
-			this.welcomeCardDisposables.add(DOM.addDisposableListener(card, 'keydown', (e) => {
-				if (e.key === 'Enter' || e.key === ' ') {
-					e.preventDefault();
-					this.selectSection(category.id);
-				}
-			}));
-		}
+				},
+			},
+			this.commandService,
+		));
+		this.welcomePage.rebuildCards(new Set(this.sections.map(s => s.id)));
 	}
 
 	private createContent(): void {
@@ -1197,8 +1065,8 @@ export class AICustomizationManagementEditor extends EditorPane {
 		const isMcpSection = this.selectedSection === AICustomizationManagementSection.McpServers;
 		const isPluginsSection = this.selectedSection === AICustomizationManagementSection.Plugins;
 
-		if (this.welcomeContentContainer) {
-			this.welcomeContentContainer.style.display = isWelcome && !isEditorMode && !isDetailMode ? '' : 'none';
+		if (this.welcomePage) {
+			this.welcomePage.container.style.display = isWelcome && !isEditorMode && !isDetailMode ? '' : 'none';
 		}
 		if (this.promptsContentContainer) {
 			this.promptsContentContainer.style.display = !isEditorMode && !isDetailMode && isPromptsSection ? '' : 'none';
@@ -1492,7 +1360,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 			return;
 		}
 		if (this.selectedSection === undefined) {
-			this.welcomeGettingStartedButton?.focus();
+			this.welcomePage?.focus();
 			return;
 		}
 		if (this.selectedSection === AICustomizationManagementSection.McpServers) {

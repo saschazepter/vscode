@@ -1,0 +1,191 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+/* Welcome Page Container */
+.ai-customization-management-editor .welcome-content-container {
+	height: 100%;
+	overflow-y: auto;
+	padding: 24px;
+	box-sizing: border-box;
+}
+
+.ai-customization-management-editor .welcome-inner {
+	max-width: 800px;
+	margin: 0 auto;
+	padding-top: 16px;
+}
+
+/* Workflow Section (input + grid) */
+.ai-customization-management-editor .welcome-workflow-section {
+	margin-bottom: 0;
+}
+
+.ai-customization-management-editor .welcome-workflow-header {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-bottom: 6px;
+}
+
+.ai-customization-management-editor .welcome-workflow-icon {
+	font-size: 16px;
+	color: var(--vscode-button-background);
+}
+
+.ai-customization-management-editor .welcome-workflow-title {
+	font-size: 14px;
+	font-weight: 500;
+	color: var(--vscode-foreground);
+}
+
+.ai-customization-management-editor .welcome-workflow-desc {
+	font-size: 12px;
+	color: var(--vscode-descriptionForeground);
+	margin: 0 0 10px;
+	line-height: 1.5;
+}
+
+/* Input row: input + submit button in a single bordered container */
+.ai-customization-management-editor .welcome-workflow-input-row {
+	display: flex;
+	align-items: stretch;
+	gap: 0;
+	border: 1px solid var(--vscode-input-border, var(--vscode-widget-border));
+	border-radius: 6px;
+	background: var(--vscode-input-background);
+	overflow: hidden;
+	transition: border-color 0.15s ease;
+}
+
+.ai-customization-management-editor .welcome-workflow-input-row:focus-within {
+	border-color: var(--vscode-focusBorder);
+}
+
+.ai-customization-management-editor .welcome-workflow-input {
+	flex: 1;
+	min-width: 0;
+}
+
+.ai-customization-management-editor .welcome-workflow-input .monaco-inputbox {
+	border: none;
+	background: transparent;
+}
+
+.ai-customization-management-editor .welcome-workflow-input .monaco-inputbox > .ibwrapper > input {
+	padding: 8px 12px;
+	font-size: 13px;
+}
+
+.ai-customization-management-editor .welcome-workflow-submit {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 36px;
+	flex-shrink: 0;
+	border: none;
+	background: transparent;
+	color: var(--vscode-descriptionForeground);
+	cursor: pointer;
+	transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.ai-customization-management-editor .welcome-workflow-submit:hover,
+.ai-customization-management-editor .welcome-workflow-submit.has-value {
+	color: var(--vscode-button-background);
+	background: color-mix(in srgb, var(--vscode-button-background, #007acc) 10%, transparent);
+}
+
+.ai-customization-management-editor .welcome-workflow-submit:focus-visible {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: -1px;
+}
+
+/* 2x3 Category Card Grid */
+.ai-customization-management-editor .welcome-category-grid {
+	display: grid;
+	grid-template-columns: repeat(2, 1fr);
+	gap: 10px;
+	margin-top: 16px;
+}
+
+.ai-customization-management-editor .welcome-category-card {
+	display: flex;
+	flex-direction: column;
+	padding: 12px;
+	border: 1px solid var(--vscode-widget-border);
+	border-radius: 6px;
+	background: var(--vscode-sideBar-background);
+	cursor: pointer;
+	transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.ai-customization-management-editor .welcome-category-card:hover {
+	border-color: var(--vscode-focusBorder);
+	background: var(--vscode-list-hoverBackground);
+}
+
+.ai-customization-management-editor .welcome-category-card:focus-visible {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: -1px;
+}
+
+.ai-customization-management-editor .welcome-category-card-header {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	margin-bottom: 2px;
+}
+
+.ai-customization-management-editor .welcome-category-card-icon {
+	font-size: 14px;
+	color: var(--vscode-icon-foreground);
+}
+
+.ai-customization-management-editor .welcome-category-card-label {
+	font-size: 13px;
+	font-weight: 500;
+	color: var(--vscode-foreground);
+}
+
+.ai-customization-management-editor .welcome-category-card-desc {
+	font-size: 11px;
+	color: var(--vscode-descriptionForeground);
+	line-height: 1.4;
+	margin: 0 0 8px;
+	flex: 1;
+}
+
+.ai-customization-management-editor .welcome-category-card-chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+
+.ai-customization-management-editor .welcome-category-chip {
+	display: inline-flex;
+	align-items: center;
+	height: 22px;
+	padding: 0 8px;
+	border-radius: 4px;
+	background-color: var(--vscode-editorWidget-background);
+	border: 1px solid var(--vscode-widget-border);
+	color: var(--vscode-textLink-foreground, var(--vscode-foreground));
+	font-family: inherit;
+	font-size: 11px;
+	cursor: pointer;
+	white-space: nowrap;
+	transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.ai-customization-management-editor .welcome-category-chip:hover {
+	background-color: var(--vscode-list-hoverBackground);
+	border-color: var(--vscode-focusBorder);
+}
+
+.ai-customization-management-editor .welcome-category-chip:focus-visible {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: -1px;
+}
+
