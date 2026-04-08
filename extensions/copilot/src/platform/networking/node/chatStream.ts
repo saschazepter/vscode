@@ -481,7 +481,7 @@ export function sendResponsesApiCompactionTelemetry(
 			"outcome": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "Whether the server returned a compaction item or exceeded the threshold without returning one." },
 			"headerRequestId": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "Request ID from the response headers." },
 			"gitHubRequestId": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "GitHub request ID from the response headers if present." },
-			"model": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "Model family reported by the response." },
+			"model": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "Model identifier reported by the response." },
 			"compactThreshold": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "isMeasurement": true, "comment": "Compaction threshold configured for the request." },
 			"promptTokens": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "isMeasurement": true, "comment": "Prompt token count reported by the response." },
 			"totalTokens": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "isMeasurement": true, "comment": "Total token count reported by the response." }
