@@ -3,6 +3,11 @@ parameters:
     type: string # linux, darwin, win32
 
 steps:
+
+  # TODO@joaomoreno
+  - script: cat extensions/copilot/package.json
+    displayName: Inspect copilot package.json
+
   # Setup copilot test environment (tokens, env vars)
   - task: AzureCLI@2
     inputs:
