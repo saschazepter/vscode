@@ -4,19 +4,15 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as l10n from '@vscode/l10n';
-import { existsSync } from 'fs';
-import { homedir } from 'os';
-import { join } from 'path';
 import type * as vscode from 'vscode';
 import { IAuthenticationService } from '../../../platform/authentication/common/authentication';
 import { ICopilotTokenManager } from '../../../platform/authentication/common/copilotTokenManager';
 import { ChatLocation } from '../../../platform/chat/common/commonTypes';
-import { type RefRow, type SessionRow, ISessionStore } from '../../../platform/chronicle/common/sessionStore';
-import { SessionStore } from '../../../platform/chronicle/node/sessionStore';
+import { ISessionStore } from '../../../platform/chronicle/common/sessionStore';
 import { IEndpointProvider } from '../../../platform/endpoint/common/endpointProvider';
 import { CancellationToken } from '../../../util/vs/base/common/cancellation';
 import { LanguageModelChatMessage } from '../../../vscodeTypes';
-import { type AnnotatedRef, type AnnotatedSession, type SessionFileInfo, type SessionTurnInfo, SESSIONS_QUERY_SQLITE, buildFilesQuery, buildRefsQuery, buildStandupPrompt, buildTurnsQuery } from '../../chronicle/common/standupPrompt';
+import { type AnnotatedRef, type AnnotatedSession, type SessionFileInfo, type SessionTurnInfo, buildStandupPrompt } from '../../chronicle/common/standupPrompt';
 import { CloudSessionStoreClient } from '../../chronicle/node/cloudSessionStoreClient';
 import { Conversation } from '../../prompt/common/conversation';
 import { ChatTelemetryBuilder } from '../../prompt/node/chatParticipantTelemetry';
@@ -26,26 +22,8 @@ import { IIntent, IIntentInvocation, IIntentInvocationContext, IIntentSlashComma
 /** DuckDB-dialect sessions query (cloud uses DuckDB, not SQLite). */
 const SESSIONS_QUERY_DUCKDB = `SELECT id, summary, branch, repository, cwd, created_at, updated_at
 	FROM sessions
-	WHERE updated_at >= now() - INTERVAL '7 day'
-	ORDER BY updated_at DESC`;
-
-/** DuckDB-dialect refs query. */
-function buildRefsQueryDuckDB(sessionIds: string[]): string {
-	const ids = sessionIds.map(s => `'${s.replace(/'/g, '\'\'')}'`).join(',');
-	return `SELECT session_id, ref_type, ref_value FROM session_refs WHERE session_id IN (${ids})`;
-}
-
-/** DuckDB-dialect files query. */
-function buildFilesQueryDuckDB(sessionIds: string[]): string {
-	const ids = sessionIds.map(s => `'${s.replace(/'/g, '\'\'')}'`).join(',');
-	return `SELECT session_id, file_path, tool_name FROM session_files WHERE session_id IN (${ids})`;
-}
-
-/** DuckDB-dialect turns query. */
-function buildTurnsQueryDuckDB(sessionIds: string[]): string {
-	const ids = sessionIds.map(s => `'${s.replace(/'/g, '\'\'')}'`).join(',');
-	return `SELECT session_id, turn_index, left(user_message, 120) as user_message, left(assistant_response, 200) as assistant_response FROM turns WHERE session_id IN (${ids}) AND (user_message IS NOT NULL OR assistant_response IS NOT NULL) ORDER BY session_id, turn_index`;
-}
+	ORDER BY updated_at DESC
+	LIMIT 50`;
 
 const SUBCOMMANDS = ['standup', 'tips', 'improve'] as const;
 type ChronicleSubcommand = typeof SUBCOMMANDS[number];
@@ -63,7 +41,7 @@ export class ChronicleIntent implements IIntent {
 
 	constructor(
 		@IEndpointProvider private readonly endpointProvider: IEndpointProvider,
-		@ISessionStore private readonly sessionStore: ISessionStore,
+		@ISessionStore _sessionStore: ISessionStore, // temporarily unused — cloud-only testing
 		@ICopilotTokenManager private readonly _tokenManager: ICopilotTokenManager,
 		@IAuthenticationService private readonly _authService: IAuthenticationService,
 	) { }
@@ -119,28 +97,26 @@ export class ChronicleIntent implements IIntent {
 		request: vscode.ChatRequest,
 		token: CancellationToken,
 	): Promise<vscode.ChatResult> {
-		// Query VS Code's local session store
-		const vscodeSessions = this._queryStore(this.sessionStore, 'vscode');
+		console.log('[Chronicle] _handleStandup called');
+		// VS Code local store disabled temporarily for cloud-only testing
+		// const vscodeSessions = this._queryStore(this.sessionStore, 'vscode');
 
-		// Query CLI's session store if it exists (~/.copilot/session-store.db)
-		const cliSessions = this._queryCliStore();
+		// CLI store disabled temporarily
+		// const cliSessions = this._queryCliStore();
 
 		// Query cloud session store (cross-machine sessions)
 		const cloudSessions = await this._queryCloudStore();
 
-		// Skip dedup for now — always include cloud sessions to validate cloud is working
-		console.log(`[Chronicle] Cloud: ${cloudSessions.sessions.length} sessions (dedup disabled for demo)`);
+		console.log(`[Chronicle] Cloud: ${cloudSessions.sessions.length} sessions (cloud-only mode)`);
 
-		// Cap each source to top 20 most recent to keep prompt manageable
+		// Cloud-only for testing
 		const MAX_SESSIONS_PER_SOURCE = 20;
-		const cappedVscode = this._capResults(vscodeSessions, MAX_SESSIONS_PER_SOURCE);
-		const cappedCli = this._capResults(cliSessions, MAX_SESSIONS_PER_SOURCE);
 		const cappedCloud = this._capResults(cloudSessions, MAX_SESSIONS_PER_SOURCE);
 
-		const sessions: AnnotatedSession[] = [...cappedVscode.sessions, ...cappedCli.sessions, ...cappedCloud.sessions];
-		const refs: AnnotatedRef[] = [...cappedVscode.refs, ...cappedCli.refs, ...cappedCloud.refs];
-		const files: SessionFileInfo[] = [...cappedVscode.files, ...cappedCli.files, ...cappedCloud.files];
-		const turns: SessionTurnInfo[] = [...cappedVscode.turns, ...cappedCli.turns, ...cappedCloud.turns];
+		const sessions: AnnotatedSession[] = [...cappedCloud.sessions];
+		const refs: AnnotatedRef[] = [...cappedCloud.refs];
+		const files: SessionFileInfo[] = [...cappedCloud.files];
+		const turns: SessionTurnInfo[] = [...cappedCloud.turns];
 
 		// Sort merged results by updated_at descending
 		sessions.sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? ''));
@@ -153,14 +129,8 @@ export class ChronicleIntent implements IIntent {
 			return {};
 		}
 
-		const vscodeCount = vscodeSessions.sessions.length;
-		const cliCount = cliSessions.sessions.length;
 		const cloudCount = cloudSessions.sessions.length;
-		const parts = [`${vscodeCount} VS Code`, `${cliCount} CLI`];
-		if (cloudCount > 0) {
-			parts.push(`${cloudCount} cloud`);
-		}
-		stream.progress(l10n.t('Generating standup from {0} session(s) ({1})...', sessions.length, parts.join(', ')));
+		stream.progress(l10n.t('Generating standup from {0} cloud session(s)...', cloudCount));
 
 		const model = request.model;
 		const messages = [
@@ -176,6 +146,7 @@ export class ChronicleIntent implements IIntent {
 		return {};
 	}
 
+	/* Temporarily disabled — cloud-only testing
 	private _queryStore(store: ISessionStore, source: 'vscode' | 'cli'): { sessions: AnnotatedSession[]; refs: AnnotatedRef[]; files: SessionFileInfo[]; turns: SessionTurnInfo[] } {
 		try {
 			const rawSessions = store.executeReadOnly(SESSIONS_QUERY_SQLITE) as unknown as SessionRow[];
@@ -219,14 +190,37 @@ export class ChronicleIntent implements IIntent {
 			cliStore?.close();
 		}
 	}
+	*/
 
 	private async _queryCloudStore(): Promise<{ sessions: AnnotatedSession[]; refs: AnnotatedRef[]; files: SessionFileInfo[]; turns: SessionTurnInfo[] }> {
 		const empty = { sessions: [] as AnnotatedSession[], refs: [] as AnnotatedRef[], files: [] as SessionFileInfo[], turns: [] as SessionTurnInfo[] };
 		try {
 			const client = new CloudSessionStoreClient(this._tokenManager, this._authService);
 
+			// Diagnostics: check what tables and data exist
+			/*	const diagQueries = [
+					{ label: 'session count', sql: 'SELECT count(*) as total FROM sessions' },
+					{ label: 'event count', sql: 'SELECT count(*) as total FROM events' },
+					{ label: 'turns count', sql: 'SELECT count(*) as total FROM turns' },
+					{ label: 'session_files count', sql: 'SELECT count(*) as total FROM session_files' },
+					{ label: 'session_refs count', sql: 'SELECT count(*) as total FROM session_refs' },
+					{ label: 'tool_requests count', sql: 'SELECT count(*) as total FROM tool_requests' },
+					{ label: 'checkpoints count', sql: 'SELECT count(*) as total FROM checkpoints' },
+				];
+				for (const { label, sql } of diagQueries) {
+					try {
+						const r = await client.executeQuery(sql);
+						console.log(`[Chronicle] Diag [${label}]: ${r ? JSON.stringify(r.rows) : 'failed'}`);
+					} catch {
+						console.log(`[Chronicle] Diag [${label}]: query error`);
+					}
+				}*/
+
 			// Query sessions
+			console.log('[Chronicle] Querying cloud sessions...');
 			const sessionsResult = await client.executeQuery(SESSIONS_QUERY_DUCKDB);
+			console.log(`[Chronicle] Sessions query result: ${sessionsResult ? `${sessionsResult.rows.length} rows, truncated=${sessionsResult.truncated}` : 'undefined (query failed)'}`);
+
 			if (!sessionsResult || sessionsResult.rows.length === 0) {
 				console.log('[Chronicle] Cloud returned no sessions');
 				return empty;
@@ -244,33 +238,139 @@ export class ChronicleIntent implements IIntent {
 			}));
 
 			const ids = sessions.map(s => s.id);
+			const refs: AnnotatedRef[] = [];
+			const turns: SessionTurnInfo[] = [];
+			const files: SessionFileInfo[] = [];
 
-			// Query refs, files, turns in parallel
-			const [refsResult, filesResult, turnsResult] = await Promise.all([
-				client.executeQuery(buildRefsQueryDuckDB(ids)),
-				client.executeQuery(buildFilesQueryDuckDB(ids)),
-				client.executeQuery(buildTurnsQueryDuckDB(ids)),
-			]);
+			// Resolve session origin (producer) from session.start events
+			try {
+				const producerQuery = `SELECT session_id, producer
+					FROM events
+					WHERE session_id IN (${ids.map(s => `'${s.replace(/'/g, '\'\'')}'`).join(',')})
+					AND type = 'session.start'`;
+				const producerResult = await client.executeQuery(producerQuery);
+				console.log(`[Chronicle] Producer query returned ${producerResult?.rows.length ?? 'undefined'} rows`);
+				if (producerResult && producerResult.rows.length > 0) {
+					console.log('[Chronicle] Producer samples:', JSON.stringify(producerResult.rows.slice(0, 5)));
+					for (const row of producerResult.rows) {
+						const session = sessions.find(s => s.id === row.session_id);
+						if (session && row.producer) {
+							const producer = row.producer as string;
+							if (producer.includes('vscode')) {
+								session.host_type = 'vscode';
+							} else if (producer === 'copilot-agent') {
+								session.host_type = 'cli';
+							} else if (producer === 'sse-parser') {
+								session.host_type = 'pr-review';
+							} else {
+								session.host_type = producer;
+							}
+						}
+					}
+				}
+			} catch (err) {
+				// producer column may not exist — non-fatal
+				console.log('[Chronicle] Cloud producer query failed (non-fatal):', err);
+			}
 
-			const refs: AnnotatedRef[] = (refsResult?.rows ?? []).map(r => ({
-				session_id: r.session_id as string,
-				ref_type: r.ref_type as 'commit' | 'pr' | 'issue',
-				ref_value: r.ref_value as string,
-				source: 'cloud' as const,
-			}));
+			// Query the raw events table — MC stores our events here.
+			// The derived tables (turns, session_files) are not populated for VS Code sessions yet.
+			try {
+				// Use ROW_NUMBER to get up to 30 events per session, ensuring fair distribution
+				const eventsQuery = `SELECT session_id, type, user_content, assistant_content, tool_start_name
+					FROM (
+						SELECT *, ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY timestamp) as rn
+						FROM events
+						WHERE session_id IN (${ids.map(s => `'${s.replace(/'/g, '\'\'')}'`).join(',')})
+						AND type IN ('user.message', 'assistant.message', 'tool.execution_start', 'tool.execution_complete', 'session.requested')
+					) sub
+					WHERE rn <= 50
+					ORDER BY session_id, rn`;
+				const eventsResult = await client.executeQuery(eventsQuery);
+				console.log(`[Chronicle] Cloud events returned ${eventsResult?.rows.length ?? 0} rows`);
 
-			const files: SessionFileInfo[] = (filesResult?.rows ?? []).map(r => ({
-				session_id: r.session_id as string,
-				file_path: r.file_path as string,
-				tool_name: r.tool_name as string | undefined,
-			}));
+				if (eventsResult && eventsResult.rows.length > 0) {
+					// Log per-session event counts
+					const sessionEventCounts = new Map<string, number>();
+					for (const row of eventsResult.rows) {
+						const sid = row.session_id as string;
+						sessionEventCounts.set(sid, (sessionEventCounts.get(sid) ?? 0) + 1);
+					}
+					console.log(`[Chronicle] Events per session: ${JSON.stringify(Object.fromEntries(sessionEventCounts))}`);
 
-			const turns: SessionTurnInfo[] = (turnsResult?.rows ?? []).map(r => ({
-				session_id: r.session_id as string,
-				turn_index: r.turn_index as number,
-				user_message: r.user_message as string,
-				assistant_response: r.assistant_response as string | undefined,
-			}));
+					// Log event type distribution
+					const typeCounts = new Map<string, number>();
+					for (const row of eventsResult.rows) {
+						const type = row.type as string;
+						typeCounts.set(type, (typeCounts.get(type) ?? 0) + 1);
+					}
+					console.log(`[Chronicle] Event types: ${JSON.stringify(Object.fromEntries(typeCounts))}`);
+
+					// Log sample of session.requested to understand structure
+					const firstRequested = eventsResult.rows.find(r => r.type === 'session.requested');
+					if (firstRequested) {
+						console.log('[Chronicle] Sample session.requested:', JSON.stringify(firstRequested));
+					}
+
+					// Synthesize turns from events
+					let turnIndex = 0;
+					const toolNames = new Set<string>();
+
+					for (const row of eventsResult.rows) {
+						const sessionId = row.session_id as string;
+						const type = row.type as string;
+
+						// user.message or session.requested → user turn
+						if (type === 'user.message' || type === 'session.requested') {
+							const content = (row.user_content ?? row.assistant_content) as string | undefined;
+							if (content) {
+								turns.push({
+									session_id: sessionId,
+									turn_index: turnIndex++,
+									user_message: content.length > 500 ? content.slice(0, 500) + '...' : content,
+								});
+							}
+						}
+
+						// assistant.message → attach to previous turn or create standalone
+						if (type === 'assistant.message') {
+							const content = (row.assistant_content ?? row.user_content) as string | undefined;
+							if (content) {
+								const lastTurn = turns.length > 0 ? turns[turns.length - 1] : undefined;
+								if (lastTurn && lastTurn.session_id === sessionId && !lastTurn.assistant_response) {
+									lastTurn.assistant_response = content.length > 1000 ? content.slice(0, 1000) + '...' : content;
+								} else {
+									turns.push({
+										session_id: sessionId,
+										turn_index: turnIndex++,
+										assistant_response: content.length > 1000 ? content.slice(0, 1000) + '...' : content,
+									});
+								}
+							}
+						}
+
+						// tool events → collect tool names
+						if ((type === 'tool.execution_start' || type === 'tool.execution_complete') && row.tool_start_name) {
+							toolNames.add(`${sessionId}::${row.tool_start_name as string}`);
+						}
+					}
+
+					// Synthesize tool usage entries
+					for (const key of toolNames) {
+						const [sessionId, toolName] = key.split('::');
+						files.push({ session_id: sessionId, file_path: toolName, tool_name: toolName });
+					}
+				}
+			} catch (err) {
+				console.error('[Chronicle] Cloud events query failed:', err);
+			}
+
+			// Log per-session turn counts
+			const turnsBySessionId = new Map<string, number>();
+			for (const t of turns) {
+				turnsBySessionId.set(t.session_id, (turnsBySessionId.get(t.session_id) ?? 0) + 1);
+			}
+			console.log(`[Chronicle] Turns per session: ${JSON.stringify(Object.fromEntries(turnsBySessionId))}`);
 
 			console.log(`[Chronicle] Cloud returned ${sessions.length} sessions, ${refs.length} refs, ${files.length} files, ${turns.length} turns`);
 			return { sessions, refs, files, turns };

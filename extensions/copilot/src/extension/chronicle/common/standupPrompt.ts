@@ -17,7 +17,7 @@ export interface AnnotatedRef extends RefRow {
 }
 
 /** Sessions query — SQLite dialect, no time filter (demo) */
-export const SESSIONS_QUERY_SQLITE = `SELECT id, summary, branch, repository, cwd, created_at, updated_at
+export const SESSIONS_QUERY_SQLITE = `SELECT id, summary, branch, repository, cwd, host_type, created_at, updated_at
 	FROM sessions
 	ORDER BY updated_at DESC`;
 
@@ -50,7 +50,7 @@ export interface SessionFileInfo {
 export interface SessionTurnInfo {
 	session_id: string;
 	turn_index: number;
-	user_message: string;
+	user_message?: string;
 	assistant_response?: string;
 }
 
@@ -68,11 +68,7 @@ export function buildStandupPrompt(
 		return 'The user ran /standup but no sessions were found in the last 24 hours. Let them know there\'s no recent activity to report.';
 	}
 
-	const vscodeSessions = sessions.filter(s => s.source === 'vscode');
-	const cliSessions = sessions.filter(s => s.source === 'cli');
 	const cloudSessions = sessions.filter(s => s.source === 'cloud');
-	const vscodeRefs = refs.filter(r => r.source === 'vscode');
-	const cliRefs = refs.filter(r => r.source === 'cli');
 	const cloudRefs = refs.filter(r => r.source === 'cloud');
 
 	// Group files and turns by session ID for inline rendering
@@ -112,17 +108,20 @@ export function buildStandupPrompt(
 
 		const sessionTurns = turnsBySession.get(s.id);
 		if (sessionTurns && sessionTurns.length > 0) {
-			// Show user messages as a brief activity log (skip slash commands)
+			// Show conversation activity — user messages and/or assistant responses
 			const meaningful = sessionTurns
-				.filter(t => t.user_message && !t.user_message.startsWith('/'))
-				.slice(0, 5);
+				.filter(t => (t.user_message && !t.user_message.startsWith('/')) || t.assistant_response)
+				.slice(0, 10);
 			if (meaningful.length > 0) {
 				const turnLines = meaningful.map(t => {
-					let entry = t.user_message.trim();
-					if (t.assistant_response) {
-						entry += ` → ${t.assistant_response.trim()}`;
+					if (t.user_message) {
+						let entry = t.user_message.trim();
+						if (t.assistant_response) {
+							entry += ` → ${t.assistant_response.trim()}`;
+						}
+						return entry;
 					}
-					return entry;
+					return `[assistant] ${(t.assistant_response ?? '').trim()}`;
 				});
 				line += `\n    Conversation:\n${turnLines.map(t => `      - ${t}`).join('\n')}`;
 			}
@@ -135,24 +134,14 @@ export function buildStandupPrompt(
 		`- ${r.session_id} | ${r.ref_type}: ${r.ref_value}`;
 
 	let prompt = `The user ran /standup. Generate a concise standup update from the pre-fetched data below.
-Data comes from three sources — VS Code (local editor sessions), CLI (terminal copilot sessions), and Cloud (sessions from other machines/surfaces).
 
 ## Pre-fetched Session Data (last 7 days)
-
-### 🖥️ VS Code Sessions (${vscodeSessions.length})
-${vscodeSessions.length > 0 ? vscodeSessions.map(formatSession).join('\n') : 'No VS Code sessions found.'}
-
-### ⌨️ CLI Sessions (${cliSessions.length})
-${cliSessions.length > 0 ? cliSessions.map(formatSession).join('\n') : 'No CLI sessions found.'}
 
 ### ☁️ Cloud Sessions (${cloudSessions.length})
 ${cloudSessions.length > 0 ? cloudSessions.map(formatSession).join('\n') : 'No cloud sessions found.'}
 
 ### References (PRs, Issues, Commits)
-${vscodeRefs.length > 0 ? '**VS Code refs:**\n' + vscodeRefs.map(formatRef).join('\n') : ''}
-${cliRefs.length > 0 ? '**CLI refs:**\n' + cliRefs.map(formatRef).join('\n') : ''}
-${cloudRefs.length > 0 ? '**Cloud refs:**\n' + cloudRefs.map(formatRef).join('\n') : ''}
-${refs.length === 0 ? 'No references found.' : ''}
+${cloudRefs.length > 0 ? '**Cloud refs:**\n' + cloudRefs.map(formatRef).join('\n') : 'No references found.'}
 
 ## Next Steps
 
@@ -160,47 +149,32 @@ ${refs.length === 0 ? 'No references found.' : ''}
 
 ## Output Format
 
-Format the update grouped by source first (VS Code, CLI, Cloud), then by work stream (branch). Show up to 10 items per section. For each session, provide rich detail. Use exactly this structure:
+Present EACH session as a separate entry — do NOT merge multiple sessions into one even if they share the same branch and repository. Use exactly this structure:
 
 Standup for <date>:
 
-**🖥️ VS Code Sessions**
-
 **✅ Done**
 
-**Feature name** (\`branch-name\` branch, \`repository\`)
-  - Detailed summary of what was accomplished (use conversation and file data)
+**[source-label] Session \`session-id\`** — \`branch-name\` branch, \`repository\`
+  - Detailed summary of what was accomplished in THIS session
   - Key files modified: \`file1.ts\`, \`file2.ts\`
-  - Tools used: apply_patch, run_in_terminal, etc.
-  - References: [#123](link) if any
-  - Session: \`full-session-id\`
+  - Conversation activity: what the user asked and what was done
   - Last active: <timestamp>
 
 **🚧 In Progress**
 
-**Feature name** (\`branch-name\` branch, \`repository\`)
-  - What was started and current state of work
-  - Key files being worked on: \`file1.ts\`, \`file2.ts\`
-  - What's next / blockers if apparent
-  - Session: \`full-session-id\`
+**[source-label] Session \`session-id\`** — \`branch-name\` branch, \`repository\`
+  - What was started and current state of work in THIS session
+  - Key files being worked on (if available)
+  - Conversation activity (if available)
   - Last active: <timestamp>
 
-**⌨️ CLI Sessions**
-
-(Same detailed format as above)
-
-**☁️ Cloud Sessions**
-
-(Same detailed format as above)
-
 Formatting rules:
-- Show up to 10 items per source section. Do NOT truncate or summarize multiple sessions into one.
+- CRITICAL: Each session ID gets its own separate entry. NEVER combine multiple sessions.
 - Include ALL detail available: file paths, conversation snippets, tool names, timestamps.
 - Link PRs and issues using markdown link syntax.
 - Use the conversation activity data to generate rich descriptions — don't just repeat the summary.
 - Show the working directory if repository/branch is unknown.
-- CRITICAL: You MUST keep VS Code, CLI, and Cloud sessions in separate sections. NEVER mix them.
-- CRITICAL: You MUST include ALL three sections (VS Code, CLI, Cloud) if they have data. If a section has no sessions, show "No activity" under it.
 - Omit the Done or In Progress subsection if there are no items for it.`;
 
 	if (extra) {
