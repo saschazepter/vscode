@@ -62,7 +62,7 @@ export class PlaywrightTab {
 			.on('dialog', dialog => this._handleDialog(dialog))
 			.on('download', download => this._handleDownload(download));
 
-		// Block outgoing network requests to domains not on the allow list.
+		// Block outgoing network requests according to agent network policy.
 		page.route('**/*', (route) => {
 			const requestUrl = route.request().url();
 			try {
