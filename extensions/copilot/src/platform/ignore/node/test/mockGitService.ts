@@ -10,7 +10,7 @@ import { IObservable } from '../../../../util/vs/base/common/observableInternal'
 import { observableValue } from '../../../../util/vs/base/common/observableInternal/observables/observableValue';
 import { URI } from '../../../../util/vs/base/common/uri';
 import { IGitService, RepoContext } from '../../../git/common/gitService';
-import { Branch, Change, Commit, CommitOptions, CommitShortStat, DiffChange, LogOptions, Ref, RefQuery, RepositoryAccessDetails, RepositoryState } from '../../../git/vscode/git';
+import { Branch, Change, Commit, CommitOptions, CommitShortStat, DiffChange, LogOptions, Ref, RefQuery, RepositoryAccessDetails } from '../../../git/vscode/git';
 
 /**
  * A configurable mock implementation of IGitService for testing.
@@ -62,10 +62,6 @@ export class MockGitService implements IGitService {
 		return Promise.resolve(undefined);
 	}
 
-	getRepositoryState(uri: URI, forceOpen?: boolean): Promise<RepositoryState | undefined> {
-		return Promise.resolve(undefined);
-	}
-
 	initialize(): Promise<void> {
 		return Promise.resolve();
 	}
@@ -114,7 +110,7 @@ export class MockGitService implements IGitService {
 		return Promise.resolve(undefined);
 	}
 
-	createWorktree(_uri: URI, _options?: { path?: string; commitish?: string; branch?: string }): Promise<string | undefined> {
+	createWorktree(_uri: URI, _options?: { path?: string; commitish?: string; branch?: string; noTrack?: boolean }): Promise<string | undefined> {
 		return Promise.resolve(undefined);
 	}
 
