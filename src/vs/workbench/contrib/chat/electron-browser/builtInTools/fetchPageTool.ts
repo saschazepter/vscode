@@ -21,6 +21,7 @@ import { ChatImageMimeType } from '../../common/languageModels.js';
 import { CountTokensCallback, IPreparedToolInvocation, IToolData, IToolImpl, IToolInvocation, IToolInvocationPreparationContext, IToolResult, IToolResultDataPart, IToolResultTextPart, ToolDataSource, ToolProgress } from '../../common/tools/languageModelToolsService.js';
 import { InternalFetchWebPageToolId } from '../../common/tools/builtinTools/tools.js';
 import { IAgentNetworkFilterService } from '../../common/networkFilter/networkFilterService.js';
+import { AgentNetworkDomainSettingId } from '../../common/networkFilter/settings.js';
 
 export const FetchWebPageToolData: IToolData = {
 	id: InternalFetchWebPageToolId,
@@ -131,7 +132,7 @@ export class FetchWebPageTool implements IToolImpl {
 		let fileIndex = 0;
 		for (const url of urls) {
 			if (blockedUris.has(url)) {
-				results.push(localize('fetchWebPage.blockedByPolicy', 'Access to {0} is blocked by network domain policy.', url));
+				results.push(localize('fetchWebPage.blockedByPolicy', 'Access to {0} is blocked by network domain policy. See `{1}` setting.', url, AgentNetworkDomainSettingId.AllowedNetworkDomains));
 			} else if (invalidUris.has(url)) {
 				results.push(undefined);
 			} else if (webUris.has(url)) {

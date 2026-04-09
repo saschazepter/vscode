@@ -12,6 +12,7 @@ import { IPlaywrightService } from '../../../../../platform/browserView/common/p
 import { IEditorService } from '../../../../services/editor/common/editorService.js';
 import { ToolDataSource, type CountTokensCallback, type IPreparedToolInvocation, type IToolData, type IToolImpl, type IToolInvocation, type IToolInvocationPreparationContext, type IToolResult, type ToolProgress } from '../../../chat/common/tools/languageModelToolsService.js';
 import { IAgentNetworkFilterService } from '../../../chat/common/networkFilter/networkFilterService.js';
+import { AgentNetworkDomainSettingId } from '../../../chat/common/networkFilter/settings.js';
 import { createBrowserPageLink, getExistingPagesResult } from './browserToolHelpers.js';
 
 export const OpenPageToolId = 'open_browser_page';
@@ -80,7 +81,7 @@ export class OpenBrowserTool implements IToolImpl {
 		const uri = URI.parse(params.url);
 		if (!this.agentNetworkFilterService.isUriAllowed(uri)) {
 			return {
-				content: [{ kind: 'text', value: localize('browser.open.blockedByPolicy', 'Access to {0} is blocked by network domain policy.', params.url) }]
+				content: [{ kind: 'text', value: localize('browser.open.blockedByPolicy', 'Access to {0} is blocked by network domain policy. See `{1}` setting.', params.url, AgentNetworkDomainSettingId.AllowedNetworkDomains) }]
 			};
 		}
 

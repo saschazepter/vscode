@@ -13,6 +13,7 @@ import { ToolDataSource, type CountTokensCallback, type IPreparedToolInvocation,
 import { IAgentNetworkFilterService } from '../../../chat/common/networkFilter/networkFilterService.js';
 import { createBrowserPageLink, errorResult, playwrightInvoke } from './browserToolHelpers.js';
 import { OpenPageToolId } from './openBrowserTool.js';
+import { AgentNetworkDomainSettingId } from '../../../chat/common/networkFilter/settings.js';
 
 export const NavigateBrowserToolData: IToolData = {
 	id: 'navigate_page',
@@ -116,7 +117,7 @@ export class NavigateBrowserTool implements IToolImpl {
 			default: {
 				const uri = URI.parse(params.url!);
 				if (!this.agentNetworkFilterService.isUriAllowed(uri)) {
-					return errorResult(localize('browser.navigate.blockedByPolicy', 'Access to {0} is blocked by network domain policy.', params.url!));
+					return errorResult(localize('browser.navigate.blockedByPolicy', 'Access to {0} is blocked by network domain policy. See `{1}` setting.', params.url!, AgentNetworkDomainSettingId.AllowedNetworkDomains));
 				}
 				return playwrightInvoke(this.playwrightService, params.pageId, (page, url) => {
 					return page.goto(url, { waitUntil: 'domcontentloaded' });
