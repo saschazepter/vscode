@@ -9,6 +9,7 @@ import { DebugRecorderBookmark } from '../../../platform/inlineEdits/common/debu
 import { IObservableDocument, ObservableWorkspace } from '../../../platform/inlineEdits/common/observableWorkspace';
 import { IStatelessNextEditTelemetry, StatelessNextEditRequest } from '../../../platform/inlineEdits/common/statelessNextEditProvider';
 import { autorunWithChanges } from '../../../platform/inlineEdits/common/utils/observable';
+import { h2_enterIdle, h2_removed, h2_scheduled, h2_sent } from '../../../platform/inlineEdits/node/nesMemDebug';
 import { APIUsage } from '../../../platform/networking/common/openai';
 import { INotebookService } from '../../../platform/notebook/common/notebookService';
 import { ITelemetryService, multiplexProperties, TelemetryEventMeasurements, TelemetryEventProperties } from '../../../platform/telemetry/common/telemetry';
@@ -24,7 +25,6 @@ import { OffsetRange } from '../../../util/vs/editor/common/core/ranges/offsetRa
 import { StringText } from '../../../util/vs/editor/common/core/text/abstractText';
 import { Uri } from '../../../vscodeTypes';
 import { DebugRecorder } from './debugRecorder';
-import { h2_enterIdle, h2_removed, h2_scheduled, h2_sent } from '../../../platform/inlineEdits/node/nesMemDebug';
 import { INesConfigs } from './nesConfigs';
 import { INextEditDisplayLocation, INextEditResult } from './nextEditResult';
 
