@@ -264,13 +264,9 @@ class Claude45DefaultPrompt extends PromptElement<DefaultAgentPromptProps> {
 				{this.configurationService.getExperimentBasedConfig(ConfigKey.Advanced.BackgroundProgressMonitorEnabled, this.experimentationService) ? <>
 					<br />
 					<Tag name='taskTracking'>
-						For complex, multi-step tasks, begin your first response with a numbered plan listing the key steps you will take. Format the plan as a numbered list at the start of your first text response, for example:<br />
-						1. Step one description<br />
-						2. Step two description<br />
-						3. Step three description<br />
+						MANDATORY: For any task that requires more than one step, you MUST create a plan before doing anything else. Your very first action must be to search for the {ToolName.CoreManageTodoList} tool using tool search, then immediately call it with your step-by-step plan. Each step should be concise (3-7 words). Do NOT start working on the task until the plan is created.<br />
 						<br />
-						Keep the plan concise (3-7 steps). Do NOT use a separate tool call for the plan — include it directly in your response text. After stating the plan, proceed immediately with the first tool calls. Progress is tracked automatically.<br />
-						Skip the plan for simple, single-step operations.<br />
+						After creating the plan, do NOT call {ToolName.CoreManageTodoList} again — progress is tracked automatically. Only skip the plan for truly trivial, single-step operations.<br />
 					</Tag>
 				</> : tools[ToolName.CoreManageTodoList] && <>
 					<br />
@@ -471,8 +467,9 @@ class Claude46OptimizedBasePrompt extends PromptElement<DefaultAgentPromptProps>
 			{this.renderParallelizationStrategy()}
 			{this.configurationService.getExperimentBasedConfig(ConfigKey.Advanced.BackgroundProgressMonitorEnabled, this.experimentationService) ? <>
 				<Tag name='taskTracking'>
-					For complex, multi-step tasks, begin your first response with a numbered plan (3-7 steps). Format as a numbered list in your response text. Do NOT use a separate tool for the plan. After stating the plan, proceed immediately with tool calls. Progress is tracked automatically.<br />
-					Skip the plan for simple, single-step operations.<br />
+					MANDATORY: For any task that requires more than one step, you MUST create a plan before doing anything else. Your very first action must be to search for the {ToolName.CoreManageTodoList} tool using tool search, then immediately call it with your step-by-step plan. Each step should be concise (3-7 words). Do NOT start working on the task until the plan is created.<br />
+					<br />
+					After creating the plan, do NOT call {ToolName.CoreManageTodoList} again — progress is tracked automatically. Only skip the plan for truly trivial, single-step operations.<br />
 				</Tag>
 			</> : tools[ToolName.CoreManageTodoList] && <>
 				<Tag name='taskTracking'>

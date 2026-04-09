@@ -47,7 +47,7 @@ import { IDocumentContext } from '../../prompt/node/documentContext';
 import { IBuildPromptResult, IIntent, IIntentInvocation } from '../../prompt/node/intents';
 import { AgentPrompt, AgentPromptProps } from '../../prompts/node/agent/agentPrompt';
 import { BackgroundSummarizationState, BackgroundSummarizer, IBackgroundSummarizationResult } from '../../prompts/node/agent/backgroundSummarizer';
-import { BackgroundProgressMonitor, parsePlanFromResponse, SetTodosFn } from '../../prompts/node/agent/backgroundProgressMonitor';
+import { BackgroundProgressMonitor, parsePlanFromToolCall, SetTodosFn } from '../../prompts/node/agent/backgroundProgressMonitor';
 import { AgentPromptCustomizations, PromptRegistry } from '../../prompts/node/agent/promptRegistry';
 import { SummarizedConversationHistory, SummarizedConversationHistoryMetadata, SummarizedConversationHistoryPropsBuilder } from '../../prompts/node/agent/summarizedConversationHistory';
 import { PromptRenderer } from '../../prompts/node/base/promptRenderer';
@@ -121,12 +121,6 @@ export const getAgentTools = async (accessor: ServicesAccessor, request: vscode.
 	allowTools[ToolName.ExecutionSubagent] = isGptOrAnthropic && executionSubagentEnabled;
 
 	if (model.family.includes('grok-code')) {
-		allowTools[ToolName.CoreManageTodoList] = false;
-	}
-
-	// Disable the todo tool when the background progress monitor is enabled —
-	// progress is inferred from tool call rounds instead.
-	if (configurationService.getExperimentBasedConfig(ConfigKey.Advanced.BackgroundProgressMonitorEnabled, experimentationService)) {
 		allowTools[ToolName.CoreManageTodoList] = false;
 	}
 
@@ -418,15 +412,12 @@ export class AgentIntentInvocation extends EditCodeIntentInvocation implements I
 
 	/**
 	 * Called after the tool-calling loop finishes. Feeds the final rounds to
-	 * the background progress monitor and marks all steps as completed.
+	 * the background progress monitor.
 	 */
 	onToolCallingComplete(toolCallRounds: IToolCallRound[]): void {
 		const monitor = this._backgroundProgressMonitor;
 		if (monitor?.isMonitoring) {
-			// Feed any remaining rounds so the last check covers all work
 			monitor.feedRounds(toolCallRounds.length);
-			// Mark everything completed
-			monitor.complete();
 		}
 	}
 
@@ -486,14 +477,25 @@ export class AgentIntentInvocation extends EditCodeIntentInvocation implements I
 			const monitor = this._backgroundProgressMonitor ??= this._getOrCreateBackgroundProgressMonitor(promptContext.conversation?.sessionId);
 			this.logService.debug(`[AgentIntent] bgProgress: monitor=${!!monitor}, isMonitoring=${monitor?.isMonitoring}, rounds=${promptContext.toolCallRounds.length}`);
 			if (monitor && !monitor.isMonitoring) {
-				// Scan all rounds for a plan — the model may do exploratory
-				// tool calls before stating its plan in a later round.
+				// Scan all rounds for a manage_todo_list tool call — the
+				// agent creates the initial plan via this tool call.
 				for (const round of promptContext.toolCallRounds) {
-					const responseText = typeof round.response === 'string' ? round.response : '';
-					const plan = parsePlanFromResponse(responseText);
-					if (plan) {
-						this.logService.debug(`[AgentIntent] bgProgress: parsed plan with ${plan.steps.length} steps from round ${round.id}`);
-						monitor.start(plan, token);
+					for (const tc of round.toolCalls) {
+						if (tc.name === ToolName.CoreManageTodoList) {
+							try {
+								const args = JSON.parse(tc.arguments);
+								const plan = parsePlanFromToolCall(args.todoList);
+								if (plan) {
+									this.logService.debug(`[AgentIntent] bgProgress: parsed plan with ${plan.steps.length} steps from tool call in round ${round.id}`);
+									monitor.start(plan, token);
+									break;
+								}
+							} catch {
+								this.logService.debug(`[AgentIntent] bgProgress: failed to parse manage_todo_list args in round ${round.id}`);
+							}
+						}
+					}
+					if (monitor.isMonitoring) {
 						break;
 					}
 				}

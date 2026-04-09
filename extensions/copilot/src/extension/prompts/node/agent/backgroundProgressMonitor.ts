@@ -8,6 +8,7 @@ import { CancellationToken, CancellationTokenSource } from '../../../../util/vs/
 import { toTextParts } from '../../../../platform/chat/common/globalStringUtils';
 import { ChatFetchResponseType, ChatLocation } from '../../../../platform/chat/common/commonTypes';
 import { IChatEndpoint } from '../../../../platform/networking/common/networking';
+import { FinishedCallback, ICopilotToolCall, OpenAiFunctionTool } from '../../../../platform/networking/common/fetch';
 import { ILogService } from '../../../../platform/log/common/logService';
 import { ITelemetryService } from '../../../../platform/telemetry/common/telemetry';
 
@@ -51,37 +52,27 @@ const enum MonitorState {
 const ROUNDS_CHECK_THRESHOLD = 1;
 
 /** Maximum tokens for the background progress-check response. */
-const PROGRESS_CHECK_MAX_TOKENS = 256;
+const PROGRESS_CHECK_MAX_TOKENS = 2000;
+
+/** Tool name as registered by the workbench. */
+const MANAGE_TODO_LIST_TOOL_NAME = 'manage_todo_list';
 
 // ── Plan Parser ──────────────────────────────────────────────────────────
 
 /**
- * Parses a numbered plan from the model's first response text.
+ * Parses a plan from a `manage_todo_list` tool call's `todoList` argument.
  *
- * Looks for patterns like:
- *   1. Step description
- *   2. Step description
- *
- * Returns `undefined` if fewer than 2 numbered items are found.
+ * Returns `undefined` if fewer than 2 items are found.
  */
-export function parsePlanFromResponse(responseText: string): IParsedPlan | undefined {
-	const lines = responseText.split('\n');
-	const steps: IParsedPlanStep[] = [];
-	const numberedLineRegex = /^\s*(?<num>\d+)\.\s+(?<text>.+)/;
-
-	for (const line of lines) {
-		const match = numberedLineRegex.exec(line);
-		if (match?.groups) {
-			steps.push({
-				id: steps.length + 1,
-				title: match.groups['text'].replace(/\*\*/g, '').trim(),
-			});
-		}
-	}
-
-	if (steps.length < 2) {
+export function parsePlanFromToolCall(todoList: readonly { id: number; title: string; status: string }[]): IParsedPlan | undefined {
+	if (!todoList || todoList.length < 2) {
 		return undefined;
 	}
+
+	const steps: IParsedPlanStep[] = todoList.map(item => ({
+		id: item.id,
+		title: item.title,
+	}));
 
 	return { steps };
 }
@@ -110,8 +101,6 @@ export class BackgroundProgressMonitor {
 	private _lastFedRoundIndex = -1;
 	private _cts: CancellationTokenSource | undefined;
 	private _checkInFlight = false;
-	/** When true, `complete()` was called while a check was in-flight and will be retried. */
-	private _completePending = false;
 	/** Status string per step id from the last _setTodos call, used to skip no-op updates. */
 	private _lastEmittedStatuses = new Map<number, ITodoUpdate['status']>();
 
@@ -148,7 +137,7 @@ export class BackgroundProgressMonitor {
 	updateSessionContext(endpoint: IChatEndpoint, renderedMessages: Raw.ChatMessage[]): void {
 		this._endpoint = endpoint;
 		this._lastRenderedMessages = renderedMessages;
-		this._logService.debug(`[BackgroundProgressMonitor] Session context updated: endpoint=${endpoint.model}, messageCount=${renderedMessages.length}`);
+		this._logService.info(`[BackgroundProgressMonitor] Session context updated: endpoint=${endpoint.model}, messageCount=${renderedMessages.length}`);
 	}
 
 	/**
@@ -165,7 +154,6 @@ export class BackgroundProgressMonitor {
 		this._cts = new CancellationTokenSource(parentToken);
 		this._roundsSinceLastCheck = 0;
 		this._lastFedRoundIndex = -1;
-		this._completePending = false;
 
 		// Seed initial todos — first step in-progress since the agent is
 		// already working by the time we parse the plan from round 0.
@@ -175,7 +163,7 @@ export class BackgroundProgressMonitor {
 			status: i === 0 ? 'in-progress' as const : 'not-started' as const,
 		}));
 		this._emitIfChanged(initialTodos);
-		this._logService.debug(`[BackgroundProgressMonitor] Started with ${plan.steps.length} steps`);
+		this._logService.info(`[BackgroundProgressMonitor] Started with ${plan.steps.length} steps`);
 	}
 
 	/**
@@ -186,7 +174,7 @@ export class BackgroundProgressMonitor {
 	 */
 	feedRounds(roundCount: number): void {
 		if (this._state !== MonitorState.Monitoring || !this._plan) {
-			this._logService.debug(`[BackgroundProgressMonitor] feedRounds(${roundCount}) — skipped (state=${this._state}, plan=${!!this._plan})`);
+			this._logService.info(`[BackgroundProgressMonitor] feedRounds(${roundCount}) — skipped (state=${this._state}, plan=${!!this._plan})`);
 			return;
 		}
 
@@ -196,46 +184,11 @@ export class BackgroundProgressMonitor {
 			this._lastFedRoundIndex = roundCount - 1;
 		}
 
-		this._logService.debug(`[BackgroundProgressMonitor] feedRounds(${roundCount}): newRounds=${newRounds}, roundsSinceLastCheck=${this._roundsSinceLastCheck}, checkInFlight=${this._checkInFlight}, hasEndpoint=${!!this._endpoint}, hasMessages=${!!this._lastRenderedMessages?.length}`);
+		this._logService.info(`[BackgroundProgressMonitor] feedRounds(${roundCount}): newRounds=${newRounds}, roundsSinceLastCheck=${this._roundsSinceLastCheck}, checkInFlight=${this._checkInFlight}, hasEndpoint=${!!this._endpoint}, hasMessages=${!!this._lastRenderedMessages?.length}`);
 
 		if (this._roundsSinceLastCheck >= ROUNDS_CHECK_THRESHOLD && !this._checkInFlight) {
 			this._triggerCheck();
 		}
-	}
-
-	/**
-	 * Marks all plan steps as completed and writes the final state to the
-	 * todo list. Call this when the tool-calling loop finishes (the agent
-	 * response is done) so the UI reflects 100% completion.
-	 *
-	 * If a background check is in-flight, defers completion until it settles.
-	 */
-	complete(): void {
-		this._logService.debug(`[BackgroundProgressMonitor] complete() called — state=${this._state}, checkInFlight=${this._checkInFlight}, currentStatuses=${[...this._lastEmittedStatuses.entries()].map(([id, s]) => `${id}:${s}`).join(', ')}`);
-
-		if (this._state !== MonitorState.Monitoring || !this._plan) {
-			this._logService.debug('[BackgroundProgressMonitor] complete() — skipped (not monitoring or no plan)');
-			return;
-		}
-
-		if (this._checkInFlight) {
-			this._logService.debug('[BackgroundProgressMonitor] complete() — deferred (check in-flight)');
-			this._completePending = true;
-			return;
-		}
-
-		// The loop finishing is the definitive signal that the agent
-		// considers the task done. Mark all steps as completed regardless
-		// of their current status — background checks may not have caught
-		// up to the agent's actual progress.
-		const finalTodos: ITodoUpdate[] = this._plan.steps.map(step => ({
-			id: step.id,
-			title: step.title,
-			status: 'completed' as const,
-		}));
-		this._emitIfChanged(finalTodos);
-		this._logService.debug(`[BackgroundProgressMonitor] Finalized steps: ${finalTodos.map(t => `${t.id}:${t.status}`).join(', ')}`);
-		this.stop();
 	}
 
 	/**
@@ -247,7 +200,6 @@ export class BackgroundProgressMonitor {
 		this._cts?.dispose();
 		this._cts = undefined;
 		this._plan = undefined;
-		this._completePending = false;
 		this._lastEmittedStatuses.clear();
 	}
 
@@ -284,7 +236,7 @@ export class BackgroundProgressMonitor {
 	 */
 	private _triggerCheck(): void {
 		if (!this._plan || !this._cts || this._cts.token.isCancellationRequested) {
-			this._logService.debug('[BackgroundProgressMonitor] _triggerCheck — skipped (no plan, no cts, or cancelled)');
+			this._logService.info('[BackgroundProgressMonitor] _triggerCheck — skipped (no plan, no cts, or cancelled)');
 			return;
 		}
 
@@ -292,11 +244,11 @@ export class BackgroundProgressMonitor {
 		// _roundsSinceLastCheck is left unmodified so the next feedRounds
 		// call will retry.
 		if (!this._endpoint || !this._lastRenderedMessages?.length) {
-			this._logService.debug(`[BackgroundProgressMonitor] _triggerCheck — deferred (hasEndpoint=${!!this._endpoint}, messageCount=${this._lastRenderedMessages?.length ?? 0})`);
+			this._logService.info(`[BackgroundProgressMonitor] _triggerCheck — deferred (hasEndpoint=${!!this._endpoint}, messageCount=${this._lastRenderedMessages?.length ?? 0})`);
 			return;
 		}
 
-		this._logService.debug(`[BackgroundProgressMonitor] _triggerCheck — firing background check (roundsSinceLastCheck=${this._roundsSinceLastCheck}, prefixMessages=${this._lastRenderedMessages.length})`);
+		this._logService.info(`[BackgroundProgressMonitor] _triggerCheck — firing background check (roundsSinceLastCheck=${this._roundsSinceLastCheck}, prefixMessages=${this._lastRenderedMessages.length})`);
 		this._checkInFlight = true;
 		const roundsInThisCheck = this._roundsSinceLastCheck;
 		this._roundsSinceLastCheck = 0;
@@ -309,11 +261,11 @@ export class BackgroundProgressMonitor {
 			updatedTodos => {
 				this._checkInFlight = false;
 				const durationMs = Date.now() - startTime;
-				this._logService.debug(`[BackgroundProgressMonitor] Check completed in ${durationMs}ms — result=${updatedTodos ? updatedTodos.map(t => `${t.id}:${t.status}`).join(', ') : 'undefined'}`);
+				this._logService.info(`[BackgroundProgressMonitor] Check completed in ${durationMs}ms — result=${updatedTodos ? updatedTodos.map(t => `${t.id}:${t.status}`).join(', ') : 'undefined'}`);
 				if (updatedTodos && this._state === MonitorState.Monitoring) {
 					const emitted = this._emitIfChanged(updatedTodos);
 					if (emitted) {
-						this._logService.debug(
+						this._logService.info(
 							`[BackgroundProgressMonitor] Updated todos: ${updatedTodos.map(t => `${t.id}:${t.status}`).join(', ')}`,
 						);
 					}
@@ -321,22 +273,12 @@ export class BackgroundProgressMonitor {
 				} else {
 					this._sendTelemetry('skipped', durationMs, roundsInThisCheck, undefined);
 				}
-				// If complete() was called while we were in-flight, run it now.
-				if (this._completePending) {
-					this._completePending = false;
-					this.complete();
-				}
 			},
 			err => {
 				this._checkInFlight = false;
 				const durationMs = Date.now() - startTime;
 				this._logService.error(err, '[BackgroundProgressMonitor] Background progress check failed');
 				this._sendTelemetry('llmError', durationMs, roundsInThisCheck, undefined);
-				// If complete() was called while we were in-flight, run it now.
-				if (this._completePending) {
-					this._completePending = false;
-					this.complete();
-				}
 			},
 		);
 	}
@@ -400,34 +342,74 @@ export class BackgroundProgressMonitor {
 				role: Raw.ChatRole.User,
 				content: toTextParts(
 					'[INTERNAL — progress tracking, not visible to the user]\n\n' +
-					'You are tracking the progress of a multi-step coding task. ' +
-					'The conversation above shows the work done so far by a coding agent. ' +
-					'Below is a numbered plan with each step\'s current status in brackets.\n\n' +
+					'You are a progress tracker. Your ONLY job is to call the manage_todo_list tool. ' +
+					'Do NOT call any other tools. Do NOT read files. Do NOT search. Do NOT write text.\n\n' +
+					'The conversation above shows work done by a coding agent. ' +
+					'Review what has been accomplished and call manage_todo_list with updated statuses.\n\n' +
 					'Rules:\n' +
-					'- A step is "completed" ONLY if ALL the work for that step is clearly finished in the conversation (files edited, tests passed, etc.).\n' +
-					'- A step is "in-progress" if the agent has started working on it but hasn\'t finished (e.g., file read but not yet edited, or edits made but not validated).\n' +
-					'- A step is "not-started" if there is no evidence of work on it yet.\n' +
-					'- The task is still in progress — do NOT mark all steps as completed. At least one step must be "in-progress" or "not-started".\n' +
-					'- Steps should progress in order: earlier steps should be completed before later steps are in-progress.\n' +
+					'- "completed": ALL work for the step is clearly finished.\n' +
+					'- "in-progress": work has started but is not finished.\n' +
+					'- "not-started": no evidence of work yet.\n' +
+					'- Do NOT mark all steps completed. At least one must be "in-progress" or "not-started".\n' +
 					'- Be conservative — when in doubt, keep the current status.\n\n' +
-					`Plan (current status in brackets):\n${planText}\n\n` +
-					'Respond with ONLY a JSON array. Each element: {"id": <number>, "title": "<string>", "status": "<not-started|in-progress|completed>"}.\n' +
-					'No markdown fences, no explanation, no extra text.',
+					`Current plan:\n${planText}\n\n` +
+					'Now call manage_todo_list with the updated todoList. Nothing else.',
 				),
 			};
 
 			const messages = [...prefixMessages, progressCheckMessage];
 
-			this._logService.debug(`[BackgroundProgressMonitor] Sending progress check: prefixMessages=${prefixMessages.length}, endpoint=${endpoint.model}`);
+			// Build the manage_todo_list tool definition inline to avoid
+			// cross-layer imports from the workbench.
+			const todoTool: OpenAiFunctionTool = {
+				type: 'function',
+				function: {
+					name: MANAGE_TODO_LIST_TOOL_NAME,
+					description: 'Update the todo list with current progress statuses.',
+					parameters: {
+						type: 'object',
+						properties: {
+							todoList: {
+								type: 'array',
+								items: {
+									type: 'object',
+									properties: {
+										id: { type: 'number' },
+										title: { type: 'string' },
+										status: { type: 'string', enum: ['not-started', 'in-progress', 'completed'] },
+									},
+									required: ['id', 'title', 'status'],
+								},
+							},
+						},
+						required: ['todoList'],
+					},
+				},
+			};
+
+			// Capture tool calls from the streaming response via finishedCb.
+			const collectedToolCalls: ICopilotToolCall[] = [];
+			const finishedCb: FinishedCallback = async (_text, _index, delta) => {
+				if (delta.copilotToolCalls) {
+					collectedToolCalls.push(...delta.copilotToolCalls);
+				}
+				return undefined;
+			};
+
+			this._logService.info(`[BackgroundProgressMonitor] Sending progress check: prefixMessages=${prefixMessages.length}, endpoint=${endpoint.model}`);
 
 			const fetchResult = await endpoint.makeChatRequest(
 				'backgroundProgressMonitor',
 				messages,
-				undefined,
+				finishedCb,
 				token,
 				ChatLocation.Other,
 				undefined,
-				{ max_tokens: PROGRESS_CHECK_MAX_TOKENS },
+				{
+					max_tokens: PROGRESS_CHECK_MAX_TOKENS,
+					tools: [todoTool],
+					tool_choice: { type: 'function', function: { name: MANAGE_TODO_LIST_TOOL_NAME } },
+				},
 			);
 
 			if (fetchResult.type !== ChatFetchResponseType.Success) {
@@ -437,9 +419,16 @@ export class BackgroundProgressMonitor {
 				return undefined;
 			}
 
-			this._logService.debug(`[BackgroundProgressMonitor] LLM raw response (first 300 chars): ${fetchResult.value.slice(0, 300)}`);
+			// Extract the todoList from the tool call arguments.
+			const toolCall = collectedToolCalls.find(tc => tc.name === MANAGE_TODO_LIST_TOOL_NAME);
+			if (!toolCall) {
+				this._logService.warn('[BackgroundProgressMonitor] No manage_todo_list tool call in response');
+				// Fall back to parsing the text response as JSON for robustness.
+				return this._parseProgressResponse(fetchResult.value, plan);
+			}
 
-			return this._parseProgressResponse(fetchResult.value, plan);
+			this._logService.info(`[BackgroundProgressMonitor] Tool call captured: ${toolCall.arguments.slice(0, 300)}`);
+			return this._parseToolCallResult(toolCall.arguments, plan);
 		} catch (err) {
 			if (!token.isCancellationRequested) {
 				this._logService.error(err, '[BackgroundProgressMonitor] Error during progress check');
@@ -448,6 +437,33 @@ export class BackgroundProgressMonitor {
 		}
 	}
 
+	/**
+	 * Parses the `todoList` argument from a `manage_todo_list` tool call
+	 * and applies monotonic forward progression.
+	 */
+	private _parseToolCallResult(
+		toolCallArgs: string,
+		plan: IParsedPlan,
+	): ITodoUpdate[] | undefined {
+		try {
+			const parsed = JSON.parse(toolCallArgs);
+			const todoList = parsed.todoList;
+			if (!Array.isArray(todoList)) {
+				return undefined;
+			}
+			return this._applyMonotonicProgression(todoList, plan);
+		} catch {
+			this._logService.warn(
+				`[BackgroundProgressMonitor] Failed to parse tool call args: ${toolCallArgs.slice(0, 200)}`,
+			);
+			return undefined;
+		}
+	}
+
+	/**
+	 * Fallback: parses a JSON text response into todo updates.
+	 * Used when the model responds with text instead of a tool call.
+	 */
 	private _parseProgressResponse(
 		responseText: string,
 		plan: IParsedPlan,
@@ -458,12 +474,10 @@ export class BackgroundProgressMonitor {
 		}
 
 		try {
-			// Strip markdown fences (```json ... ```) that models often add
-			// despite being asked not to.
 			let jsonText = trimmed;
 			const fenceMatch = /^```(?:json)?\s*\n?([\s\S]*?)\n?```\s*$/.exec(jsonText);
 			if (fenceMatch) {
-				this._logService.debug('[BackgroundProgressMonitor] Stripped markdown fences from response');
+				this._logService.info('[BackgroundProgressMonitor] Stripped markdown fences from response');
 				jsonText = fenceMatch[1].trim();
 			}
 
@@ -472,57 +486,57 @@ export class BackgroundProgressMonitor {
 				return undefined;
 			}
 
-			const validStatuses = new Set(['not-started', 'in-progress', 'completed']);
-			const statusByIndex = new Map<number, ITodoUpdate['status']>();
-			for (const item of parsed as { id: number; status?: string }[]) {
-				const planIdx = plan.steps.findIndex(s => s.id === item.id);
-				if (planIdx >= 0) {
-					const raw = validStatuses.has(item.status ?? '') ? item.status! as ITodoUpdate['status'] : 'not-started';
-					statusByIndex.set(planIdx, raw);
-				}
-			}
-
-			// Find the highest step index that the LLM considers at least
-			// "in-progress". This is the current frontier of work.
-			let frontierIndex = 0;
-			for (let i = plan.steps.length - 1; i >= 0; i--) {
-				const s = statusByIndex.get(i);
-				if (s === 'in-progress' || s === 'completed') {
-					frontierIndex = i;
-					break;
-				}
-			}
-
-			// If the LLM marked the frontier step as "completed", advance
-			// the frontier to the next step so it becomes "in-progress".
-			// This ensures that completing a step always makes the next one
-			// in-progress (unless it's the very last step).
-			const frontierStatus = statusByIndex.get(frontierIndex);
-			if (frontierStatus === 'completed' && frontierIndex < plan.steps.length - 1) {
-				frontierIndex++;
-			}
-
-			// Enforce monotonic forward progression:
-			//   - steps before the frontier: completed
-			//   - the frontier step: in-progress
-			//   - steps after the frontier: not-started
-			// This ensures a background check can NEVER mark all steps
-			// completed — only `complete()` can do that.
-			const result = plan.steps.map((step, i) => ({
-				id: step.id,
-				title: step.title,
-				status:
-					i < frontierIndex ? 'completed' as const :
-						i === frontierIndex ? 'in-progress' as const :
-							'not-started' as const,
-			}));
-			this._logService.debug(`[BackgroundProgressMonitor] Parsed response — LLM raw statuses: ${[...statusByIndex.entries()].map(([i, s]) => `${i}:${s}`).join(', ')}, frontier=${frontierIndex}, final: ${result.map(t => `${t.id}:${t.status}`).join(', ')}`);
-			return result;
+			return this._applyMonotonicProgression(parsed, plan);
 		} catch {
 			this._logService.warn(
 				`[BackgroundProgressMonitor] Failed to parse LLM response: ${trimmed.slice(0, 200)}`,
 			);
 			return undefined;
 		}
+	}
+
+	/**
+	 * Applies monotonic forward progression to raw status data from the LLM.
+	 * Ensures a background check can NEVER mark all steps completed —
+	 * only `complete()` can do that.
+	 */
+	private _applyMonotonicProgression(
+		items: { id: number; status?: string }[],
+		plan: IParsedPlan,
+	): ITodoUpdate[] | undefined {
+		const validStatuses = new Set(['not-started', 'in-progress', 'completed']);
+		const statusByIndex = new Map<number, ITodoUpdate['status']>();
+		for (const item of items) {
+			const planIdx = plan.steps.findIndex(s => s.id === item.id);
+			if (planIdx >= 0) {
+				const raw = validStatuses.has(item.status ?? '') ? item.status! as ITodoUpdate['status'] : 'not-started';
+				statusByIndex.set(planIdx, raw);
+			}
+		}
+
+		let frontierIndex = 0;
+		for (let i = plan.steps.length - 1; i >= 0; i--) {
+			const s = statusByIndex.get(i);
+			if (s === 'in-progress' || s === 'completed') {
+				frontierIndex = i;
+				break;
+			}
+		}
+
+		const frontierStatus = statusByIndex.get(frontierIndex);
+		if (frontierStatus === 'completed' && frontierIndex < plan.steps.length - 1) {
+			frontierIndex++;
+		}
+
+		const result = plan.steps.map((step, i) => ({
+			id: step.id,
+			title: step.title,
+			status:
+				i < frontierIndex ? 'completed' as const :
+					i === frontierIndex ? 'in-progress' as const :
+						'not-started' as const,
+		}));
+		this._logService.info(`[BackgroundProgressMonitor] Monotonic progression — LLM raw: ${[...statusByIndex.entries()].map(([i, s]) => `${i}:${s}`).join(', ')}, frontier=${frontierIndex}, final: ${result.map(t => `${t.id}:${t.status}`).join(', ')}`);
+		return result;
 	}
 }
