@@ -10,10 +10,10 @@ import { URI } from '../../../../../base/common/uri.js';
 import { localize } from '../../../../../nls.js';
 import { IPlaywrightService } from '../../../../../platform/browserView/common/playwrightService.js';
 import { ToolDataSource, type CountTokensCallback, type IPreparedToolInvocation, type IToolData, type IToolImpl, type IToolInvocation, type IToolInvocationPreparationContext, type IToolResult, type ToolProgress } from '../../../chat/common/tools/languageModelToolsService.js';
-import { IAgentNetworkFilterService } from '../../../chat/common/networkFilter/networkFilterService.js';
+import { IAgentNetworkFilterService } from '../../../../../platform/networkFilter/common/networkFilterService.js';
+import { AgentNetworkDomainSettingId } from '../../../../../platform/networkFilter/common/settings.js';
 import { createBrowserPageLink, errorResult, playwrightInvoke } from './browserToolHelpers.js';
 import { OpenPageToolId } from './openBrowserTool.js';
-import { AgentNetworkDomainSettingId } from '../../../chat/common/networkFilter/settings.js';
 
 export const NavigateBrowserToolData: IToolData = {
 	id: 'navigate_page',
@@ -87,6 +87,10 @@ export class NavigateBrowserTool implements IToolImpl {
 					throw new Error('You must provide a complete, valid URL.');
 				}
 
+				if (!this.agentNetworkFilterService.isUriAllowed(URI.parse(params.url))) {
+					throw new Error(localize('browser.navigate.blockedByPolicy', 'Access to {0} is blocked by network domain policy. See `{1}` setting.', params.url, AgentNetworkDomainSettingId.AllowedNetworkDomains));
+				}
+
 				return {
 					invocationMessage: new MarkdownString(localize('browser.navigate.invocation', "Navigating to {0} in {1}", parsed.href, link)),
 					pastTenseMessage: new MarkdownString(localize('browser.navigate.past', "Navigated to {0} in {1}", parsed.href, link)),
@@ -115,10 +119,6 @@ export class NavigateBrowserTool implements IToolImpl {
 			case 'forward':
 				return playwrightInvoke(this.playwrightService, params.pageId, (page) => page.goForward({ waitUntil: 'domcontentloaded' }));
 			default: {
-				const uri = URI.parse(params.url!);
-				if (!this.agentNetworkFilterService.isUriAllowed(uri)) {
-					return errorResult(localize('browser.navigate.blockedByPolicy', 'Access to {0} is blocked by network domain policy. See `{1}` setting.', params.url!, AgentNetworkDomainSettingId.AllowedNetworkDomains));
-				}
 				return playwrightInvoke(this.playwrightService, params.pageId, (page, url) => {
 					return page.goto(url, { waitUntil: 'domcontentloaded' });
 				}, params.url!);

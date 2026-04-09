@@ -27,7 +27,7 @@ export interface IWebContentExtractorOptions {
 	 * Optional callback to check whether a domain is allowed by filter policy.
 	 * When provided, redirects and navigations to blocked domains are prevented.
 	 */
-	isDomainAllowed: (uri: URI) => boolean;
+	isDomainAllowed?: (uri: URI) => boolean;
 }
 
 export type WebContentExtractResult =

@@ -21,7 +21,7 @@ import { upcastDeepPartial } from '../../../../../../../base/test/common/mock.js
 import { IChatService } from '../../../../common/chatService/chatService.js';
 import { LocalChatSessionUri } from '../../../../common/model/chatUri.js';
 import { Event } from '../../../../../../../base/common/event.js';
-import { IAgentNetworkFilterService } from '../../../../common/networkFilter/networkFilterService.js';
+import { IAgentNetworkFilterService } from '../../../../../../../platform/networkFilter/common/networkFilterService.js';
 
 class TestWebContentExtractorService implements IWebContentExtractorService {
 	_serviceBrand: undefined;

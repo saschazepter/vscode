@@ -8,6 +8,8 @@ import type * as playwright from 'playwright-core';
 import { Emitter, Event } from '../../../base/common/event.js';
 import { CancellationToken } from '../../../base/common/cancellation.js';
 import { createCancelablePromise, raceCancellablePromises, timeout } from '../../../base/common/async.js';
+import { URI } from '../../../base/common/uri.js';
+import { IAgentNetworkFilterService } from '../../networkFilter/common/networkFilterService.js';
 
 type IAiAriaSnapshotOptions = NonNullable<Parameters<playwright.Locator['ariaSnapshot']>[0]> & { _track?: string };
 
@@ -51,13 +53,29 @@ export class PlaywrightTab {
 		 * @deprecated prefer accessing the page via safeRunAgainstPage.
 		 * Only use this directly if you are sure it cannot be blocked by dialogs.
 		 */
-		private readonly page: playwright.Page
+		private readonly page: playwright.Page,
+		private readonly agentNetworkFilterService: IAgentNetworkFilterService,
 	) {
 		page.on('console', event => this._handleConsoleMessage(event))
 			.on('pageerror', error => this._handlePageError(error))
 			.on('requestfailed', request => this._handleRequestFailed(request))
 			.on('dialog', dialog => this._handleDialog(dialog))
 			.on('download', download => this._handleDownload(download));
+
+		// Block outgoing network requests to domains not on the allow list.
+		page.route('**/*', (route) => {
+			const requestUrl = route.request().url();
+			try {
+				const uri = URI.parse(requestUrl);
+				if (!this.agentNetworkFilterService.isUriAllowed(uri)) {
+					route.abort('blockedbyclient').catch(() => { });
+					return;
+				}
+			} catch {
+				// If we can't parse the URL, let it through
+			}
+			route.continue().catch(() => { });
+		}).catch(() => { });
 
 		this._initialized = this._initialize();
 	}
@@ -141,6 +159,21 @@ export class PlaywrightTab {
 	async safeRunAgainstPage<T>(action: (page: playwright.Page, token: CancellationToken) => Promise<T>): Promise<T> {
 		if (this._dialog) {
 			throw new Error(`Cannot perform action while a dialog is open`);
+		}
+
+		// Block agent actions when the current page URL is on the deny list.
+		const currentUrl = this.page.url();
+		if (currentUrl && currentUrl !== 'about:blank') {
+			try {
+				const uri = URI.parse(currentUrl);
+				if (!this.agentNetworkFilterService.isUriAllowed(uri)) {
+					throw new Error(`Access to ${currentUrl} is blocked by network domain policy`);
+				}
+			} catch (e) {
+				if (e instanceof Error && e.message.includes('blocked by network domain policy')) {
+					throw e;
+				}
+			}
 		}
 
 		let actionDidComplete = false;

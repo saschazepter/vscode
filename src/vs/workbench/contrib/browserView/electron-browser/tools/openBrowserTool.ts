@@ -11,8 +11,8 @@ import { localize } from '../../../../../nls.js';
 import { IPlaywrightService } from '../../../../../platform/browserView/common/playwrightService.js';
 import { IEditorService } from '../../../../services/editor/common/editorService.js';
 import { ToolDataSource, type CountTokensCallback, type IPreparedToolInvocation, type IToolData, type IToolImpl, type IToolInvocation, type IToolInvocationPreparationContext, type IToolResult, type ToolProgress } from '../../../chat/common/tools/languageModelToolsService.js';
-import { IAgentNetworkFilterService } from '../../../chat/common/networkFilter/networkFilterService.js';
-import { AgentNetworkDomainSettingId } from '../../../chat/common/networkFilter/settings.js';
+import { IAgentNetworkFilterService } from '../../../../../platform/networkFilter/common/networkFilterService.js';
+import { AgentNetworkDomainSettingId } from '../../../../../platform/networkFilter/common/settings.js';
 import { createBrowserPageLink, getExistingPagesResult } from './browserToolHelpers.js';
 
 export const OpenPageToolId = 'open_browser_page';
@@ -64,6 +64,10 @@ export class OpenBrowserTool implements IToolImpl {
 			throw new Error('You must provide a complete, valid URL.');
 		}
 
+		if (!this.agentNetworkFilterService.isUriAllowed(URI.parse(params.url))) {
+			throw new Error(localize('browser.open.blockedByPolicy', 'Access to {0} is blocked by network domain policy. See `{1}` setting.', params.url, AgentNetworkDomainSettingId.AllowedNetworkDomains));
+		}
+
 		return {
 			invocationMessage: localize('browser.open.invocation', "Opening browser page at {0}", parsed.href),
 			pastTenseMessage: localize('browser.open.past', "Opened browser page at {0}", parsed.href),
@@ -78,13 +82,6 @@ export class OpenBrowserTool implements IToolImpl {
 	async invoke(invocation: IToolInvocation, _countTokens: CountTokensCallback, _progress: ToolProgress, _token: CancellationToken): Promise<IToolResult> {
 		const params = invocation.parameters as IOpenBrowserToolParams;
 
-		const uri = URI.parse(params.url);
-		if (!this.agentNetworkFilterService.isUriAllowed(uri)) {
-			return {
-				content: [{ kind: 'text', value: localize('browser.open.blockedByPolicy', 'Access to {0} is blocked by network domain policy. See `{1}` setting.', params.url, AgentNetworkDomainSettingId.AllowedNetworkDomains) }]
-			};
-		}
-
 		if (!params.forceNew) {
 			const existingResult = await getExistingPagesResult(this.editorService, this.playwrightService, params.url);
 			if (existingResult) {
@@ -92,9 +89,7 @@ export class OpenBrowserTool implements IToolImpl {
 			}
 		}
 
-		const { pageId, summary } = await this.playwrightService.openPage(params.url, {
-			isDomainAllowed: (uri) => this.agentNetworkFilterService.isUriAllowed(uri),
-		});
+		const { pageId, summary } = await this.playwrightService.openPage(params.url);
 
 		return {
 			content: [{

@@ -43,7 +43,7 @@ import type { ICommandLinePresenter } from '../../browser/tools/commandLinePrese
 import { createRunInTerminalToolData, RunInTerminalTool, type IRunInTerminalInputParams } from '../../browser/tools/runInTerminalTool.js';
 import { ShellIntegrationQuality } from '../../browser/toolTerminalCreator.js';
 import { terminalChatAgentToolsConfiguration, TerminalChatAgentToolsSandboxEnabledValue, TerminalChatAgentToolsSettingId } from '../../common/terminalChatAgentToolsConfiguration.js';
-import { AgentNetworkDomainSettingId } from '../../../../chat/common/networkFilter/settings.js';
+import { AgentNetworkDomainSettingId } from '../../../../../../platform/networkFilter/common/settings.js';
 import { TerminalChatService } from '../../../chat/browser/terminalChatService.js';
 import type { IMarkdownString } from '../../../../../../base/common/htmlContent.js';
 import { IAgentSessionsService } from '../../../../chat/browser/agentSessions/agentSessionsService.js';

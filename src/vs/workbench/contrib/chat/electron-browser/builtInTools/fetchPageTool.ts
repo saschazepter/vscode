@@ -20,8 +20,8 @@ import { IChatService } from '../../common/chatService/chatService.js';
 import { ChatImageMimeType } from '../../common/languageModels.js';
 import { CountTokensCallback, IPreparedToolInvocation, IToolData, IToolImpl, IToolInvocation, IToolInvocationPreparationContext, IToolResult, IToolResultDataPart, IToolResultTextPart, ToolDataSource, ToolProgress } from '../../common/tools/languageModelToolsService.js';
 import { InternalFetchWebPageToolId } from '../../common/tools/builtinTools/tools.js';
-import { IAgentNetworkFilterService } from '../../common/networkFilter/networkFilterService.js';
-import { AgentNetworkDomainSettingId } from '../../common/networkFilter/settings.js';
+import { IAgentNetworkFilterService } from '../../../../../platform/networkFilter/common/networkFilterService.js';
+import { AgentNetworkDomainSettingId } from '../../../../../platform/networkFilter/common/settings.js';
 
 export const FetchWebPageToolData: IToolData = {
 	id: InternalFetchWebPageToolId,

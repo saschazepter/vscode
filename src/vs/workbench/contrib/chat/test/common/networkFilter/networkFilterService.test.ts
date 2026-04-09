@@ -9,8 +9,8 @@ import { DisposableStore } from '../../../../../../base/common/lifecycle.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/test/common/utils.js';
 import { ConfigurationTarget } from '../../../../../../platform/configuration/common/configuration.js';
 import { TestConfigurationService } from '../../../../../../platform/configuration/test/common/testConfigurationService.js';
-import { AgentNetworkFilterService } from '../../../common/networkFilter/networkFilterService.js';
-import { AgentNetworkDomainSettingId } from '../../../common/networkFilter/settings.js';
+import { AgentNetworkFilterService } from '../../../../../../platform/networkFilter/common/networkFilterService.js';
+import { AgentNetworkDomainSettingId } from '../../../../../../platform/networkFilter/common/settings.js';
 
 suite('AgentNetworkFilterService', () => {
 

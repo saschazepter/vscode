@@ -21,8 +21,8 @@ import { createDecorator } from '../../../../../platform/instantiation/common/in
 import { ILogService } from '../../../../../platform/log/common/log.js';
 import { IRemoteAgentService } from '../../../../services/remote/common/remoteAgentService.js';
 import { TerminalChatAgentToolsSandboxEnabledValue, TerminalChatAgentToolsSettingId } from './terminalChatAgentToolsConfiguration.js';
-import { AgentNetworkDomainSettingId } from '../../../chat/common/networkFilter/settings.js';
-import { matchesDomainPattern, normalizeDomain } from '../../../chat/common/networkFilter/domainMatcher.js';
+import { AgentNetworkDomainSettingId } from '../../../../../platform/networkFilter/common/settings.js';
+import { matchesDomainPattern, normalizeDomain } from '../../../../../platform/networkFilter/common/domainMatcher.js';
 import { IRemoteAgentEnvironment } from '../../../../../platform/remote/common/remoteAgentEnvironment.js';
 import { IWorkspaceContextService } from '../../../../../platform/workspace/common/workspace.js';
 import { IProductService } from '../../../../../platform/product/common/productService.js';

@@ -6,8 +6,8 @@
 import { Disposable, DisposableMap, DisposableStore, IDisposable } from '../../../base/common/lifecycle.js';
 import { DeferredPromise, disposableTimeout, raceTimeout } from '../../../base/common/async.js';
 import { Emitter, Event } from '../../../base/common/event.js';
-import { URI } from '../../../base/common/uri.js';
 import { ILogService } from '../../log/common/log.js';
+import { IAgentNetworkFilterService } from '../../networkFilter/common/networkFilterService.js';
 import { IInvokeFunctionResult, IPlaywrightService } from '../common/playwrightService.js';
 import { IBrowserViewGroupRemoteService } from '../node/browserViewGroupRemoteService.js';
 import { IBrowserViewGroup } from '../common/browserViewGroup.js';
@@ -59,9 +59,10 @@ export class PlaywrightService extends Disposable implements IPlaywrightService 
 		private readonly windowId: number,
 		private readonly browserViewGroupRemoteService: IBrowserViewGroupRemoteService,
 		private readonly logService: ILogService,
+		agentNetworkFilterService: IAgentNetworkFilterService,
 	) {
 		super();
-		this._pages = this._register(new PlaywrightPageManager(logService));
+		this._pages = this._register(new PlaywrightPageManager(logService, agentNetworkFilterService));
 		this.onDidChangeTrackedPages = this._pages.onDidChangeTrackedPages;
 	}
 
@@ -146,9 +147,9 @@ export class PlaywrightService extends Disposable implements IPlaywrightService 
 		return this._initPromise;
 	}
 
-	async openPage(url: string, options?: { isDomainAllowed?: (uri: URI) => boolean }): Promise<{ pageId: string; summary: string }> {
+	async openPage(url: string): Promise<{ pageId: string; summary: string }> {
 		await this.initialize();
-		const pageId = await this._pages.newPage(url, options);
+		const pageId = await this._pages.newPage(url);
 		const summary = await this._pages.getSummary(pageId);
 		return { pageId, summary };
 	}
@@ -326,6 +327,7 @@ class PlaywrightPageManager extends Disposable {
 
 	constructor(
 		private readonly logService: ILogService,
+		private readonly agentNetworkFilterService: IAgentNetworkFilterService,
 	) {
 		super();
 	}
@@ -372,7 +374,7 @@ class PlaywrightPageManager extends Disposable {
 	 * Create a new page in the browser and return its associated page ID.
 	 * The page is automatically added to the tracked set.
 	 */
-	async newPage(url: string, options?: { isDomainAllowed?: (uri: URI) => boolean }): Promise<string> {
+	async newPage(url: string): Promise<string> {
 		if (!this._browser) {
 			throw new Error('PlaywrightPageManager has not been initialized');
 		}
@@ -383,26 +385,6 @@ class PlaywrightPageManager extends Disposable {
 		}
 
 		const page = await this._openContext.newPage();
-
-		// Set up domain filtering via route interception if a filter callback is provided
-		if (options?.isDomainAllowed) {
-			const { isDomainAllowed } = options;
-			await page.route('**/*', (route) => {
-				const requestUrl = route.request().url();
-				try {
-					const uri = URI.parse(requestUrl);
-					if (uri.scheme === 'http' || uri.scheme === 'https') {
-						if (!isDomainAllowed(uri)) {
-							route.abort('blockedbyclient').catch(() => { });
-							return;
-						}
-					}
-				} catch {
-					// If we can't parse the URL, let it through
-				}
-				route.continue().catch(() => { });
-			});
-		}
 
 		const viewId = await this.onPageAdded(page);
 
@@ -604,7 +586,7 @@ class PlaywrightPageManager extends Disposable {
 		this.onContextAdded(page.context());
 		page.once('close', () => this.onPageRemoved(page));
 		page.setDefaultTimeout(10000);
-		this._tabs.set(page, new PlaywrightTab(page));
+		this._tabs.set(page, new PlaywrightTab(page, this.agentNetworkFilterService));
 
 		const deferred = new DeferredPromise<string>();
 		const timeout = setTimeout(() => deferred.error(new Error(`Timed out waiting for browser view`)), timeoutMs);

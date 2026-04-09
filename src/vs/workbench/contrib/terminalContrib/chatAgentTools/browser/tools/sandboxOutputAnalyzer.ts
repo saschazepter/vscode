@@ -8,7 +8,7 @@ import { OperatingSystem } from '../../../../../../base/common/platform.js';
 import { ITerminalSandboxService } from '../../common/terminalSandboxService.js';
 import type { IOutputAnalyzer, IOutputAnalyzerOptions } from './outputAnalyzer.js';
 import { TerminalChatAgentToolsSettingId } from '../../common/terminalChatAgentToolsConfiguration.js';
-import { AgentNetworkDomainSettingId } from '../../../../chat/common/networkFilter/settings.js';
+import { AgentNetworkDomainSettingId } from '../../../../../../platform/networkFilter/common/settings.js';
 
 export class SandboxOutputAnalyzer extends Disposable implements IOutputAnalyzer {
 	constructor(

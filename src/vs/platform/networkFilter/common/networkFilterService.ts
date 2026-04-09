@@ -3,11 +3,11 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Emitter, Event } from '../../../../../base/common/event.js';
-import { Disposable } from '../../../../../base/common/lifecycle.js';
-import { URI } from '../../../../../base/common/uri.js';
-import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
-import { createDecorator } from '../../../../../platform/instantiation/common/instantiation.js';
+import { Emitter, Event } from '../../../base/common/event.js';
+import { Disposable } from '../../../base/common/lifecycle.js';
+import { URI } from '../../../base/common/uri.js';
+import { IConfigurationService } from '../../configuration/common/configuration.js';
+import { createDecorator } from '../../instantiation/common/instantiation.js';
 import { AgentNetworkDomainSettingId } from './settings.js';
 import { extractDomainFromUri, isDomainAllowed } from './domainMatcher.js';
 
