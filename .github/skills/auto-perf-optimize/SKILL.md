@@ -66,6 +66,7 @@ Important runner behavior:
 
 **Safety: chat runs execute on the real machine.** The Code OSS instance launched by these runners is a full VS Code with Copilot auth on the user's actual computer — not a sandbox. Chat prompts you craft will be sent to a real LLM, and any tool calls the agent makes (terminal commands, file edits, etc.) will execute for real. Be responsible:
 
+- **Use a throwaway workspace**, not the real repo. Pass `--workspace <scratch-folder>` pointing to a temporary or gitignored directory (e.g., the runner's scratchpad subfolder, or a folder under `.build/`). The default workspace in checked-in runners is the repo root for convenience, but scratchpad runners for Chat scenarios should always override it to avoid accidental file modifications in the source tree.
 - Use **safe, read-only commands** for prompts that trigger terminal tools (e.g., `touch /tmp/foo`, `git log --oneline`, `ls`). Never instruct the agent to delete files, run destructive commands, or modify the user's workspace.
 - If you need tool calls for testing, use harmless operations and clean up any temp files afterward.
 - Don't be afraid to run terminal commands — just be thoughtful about what you ask.
@@ -111,6 +112,8 @@ Organize scratchpad work into **dated subfolders** named `YYYY-MM-DD-short-descr
 
 - The investigation scripts (`.mts`, `.mjs`, etc.)
 - A **`findings.md`** file documenting the full investigation: all ideas considered, which ones led to changes and which were rejected (and why), before/after measurements, and a summary of the outcome. This lets the user review the agent's reasoning, decide which changes to keep, and follow up on deferred ideas.
+
+**Import path depth:** Scripts in dated subfolders are 6 levels below the repo root (`.github/skills/auto-perf-optimize/scratchpad/YYYY-MM-DD-name/script.mts`), not 4 like the checked-in `scripts/*.mts` runners. Adjust relative imports accordingly — use 5 `..` segments to reach the repo root from a dated subfolder (e.g., `'../../../../../src/vs/base/common/stopwatch.ts'`), and `'../../scripts/userDataProfile.mts'` to reach sibling checked-in scripts.
 
 Suggested watch loop for the bundled Chat runner:
 
@@ -217,6 +220,7 @@ Reuse these patterns from the checked-in scripts ([chat-memory-smoke.mts](./scri
 
 - launch `scripts/code.sh` or `scripts/code.bat`
 - pass `--enable-smoke-test-driver`, `--disable-workspace-trust`, a known `--remote-debugging-port`, explicit `--user-data-dir`, explicit `--extensions-dir`, `--skip-welcome`, and `--skip-release-notes`
+- use a **throwaway workspace** (`--workspace <scratch-folder>`) instead of the repo root to prevent Chat tool calls from modifying real source files
 - connect Playwright with `chromium.connectOverCDP`
 - wait for `globalThis.driver?.whenWorkbenchRestored?.()`
 - enable CDP `Performance` and `HeapProfiler`
