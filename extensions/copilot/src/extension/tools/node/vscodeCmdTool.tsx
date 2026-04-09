@@ -94,11 +94,13 @@ class VSCodeCmdTool implements vscode.LanguageModelTool<IVSCodeCmdToolToolInput>
 		// Populate the Quick Open box with command ID rather than command name to avoid issues where Copilot didn't use the precise name,
 		// or when the Copilot response language (Spanish, French, etc.) might be different here than the UI one.
 		const commandStr = commandUri(quickOpenCommand, ['>' + commandId]);
-		let message = l10n.t(`Copilot will execute the [{0}]({1}) (\`{2}\`) command.`, options.input.name, commandStr, options.input.commandId);
-		if (options.input.args?.length) {
-			message += `\n\n${l10n.t('Arguments')}:\n\n\`\`\`json\n${JSON.stringify(options.input.args, undefined, 2)}\n\`\`\``;
+		const hasArguments = !!options.input.args?.length;
+		const markdownString = new MarkdownString();
+		markdownString.appendMarkdown(l10n.t(`Copilot will execute the [{0}]({1}) (\`{2}\`) command.`, options.input.name, commandStr, options.input.commandId));
+		if (hasArguments) {
+			markdownString.appendMarkdown(`\n\n${l10n.t('Arguments')}:\n\n`);
+			markdownString.appendCodeblock(JSON.stringify(options.input.args, undefined, 2), 'json');
 		}
-		const markdownString = new MarkdownString(message);
 		markdownString.isTrusted = { enabledCommands: [quickOpenCommand] };
 		return {
 			invocationMessage,
@@ -106,10 +108,10 @@ class VSCodeCmdTool implements vscode.LanguageModelTool<IVSCodeCmdToolToolInput>
 				title: l10n.t`Run Command \`${options.input.name}\` (\`${options.input.commandId}\`)?`,
 				message: markdownString,
 				approveCombination: {
-					message: options.input.args
+					message: hasArguments
 						? l10n.t`Allow running command \`${options.input.commandId}\` with specific arguments`
 						: l10n.t`Allow running command \`${options.input.commandId}\` without arguments`,
-					arguments: JSON.stringify(options.input.args),
+					arguments: hasArguments ? JSON.stringify(options.input.args) : undefined,
 				},
 			},
 		};

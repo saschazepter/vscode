@@ -953,7 +953,7 @@ export class LanguageModelToolsConfirmationService extends Disposable implements
 			} else if (item.type === 'manage') {
 				(item as ILanguageModelToolConfirmationContributionQuickTreeItem).onDidChangeChecked?.(!!item.checked);
 			} else if (item.type === 'combination' && item.combinationKey) {
-				this._combinationConfirmStore.setAutoConfirmation(item.combinationKey, newState);
+				this._combinationConfirmStore.setAutoConfirmation(item.combinationKey, newState, item.label, item.combinationArgs);
 				quickTree.setItemTree(buildTreeItems());
 			}
 		}));
