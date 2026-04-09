@@ -117,8 +117,8 @@ class MockInlineEditsModelService implements IInlineEditsModelService {
 
 	async setCurrentModelId(_modelId: string): Promise<void> { }
 
-	selectedModelConfiguration(): ModelConfiguration {
-		return this._selectedConfig;
+	selectedModel(): { config: ModelConfiguration; source: string } {
+		return { config: this._selectedConfig, source: 'hardCodedDefault' };
 	}
 
 	defaultModelConfiguration(): ModelConfiguration {
@@ -827,7 +827,7 @@ describe('XtabProvider integration', () => {
 			const request = createRequestWithEdit(lines, { insertionOffset: 5, insertedText: 'c' });
 
 			// Make the model service throw during config assembly
-			vi.spyOn(mockModelService, 'selectedModelConfiguration').mockImplementation(() => {
+			vi.spyOn(mockModelService, 'selectedModel').mockImplementation(() => {
 				throw new Error('test-unexpected-error');
 			});
 
@@ -955,7 +955,7 @@ describe('XtabProvider integration', () => {
 	// ========================================================================
 
 	describe('model configuration', () => {
-		it('uses selectedModelConfiguration from model service', async () => {
+		it('uses selectedModel from model service', async () => {
 			const provider = createProvider();
 
 			mockModelService.setSelectedConfig({
