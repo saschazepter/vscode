@@ -282,15 +282,14 @@ export class RunScriptContribution extends Disposable implements IWorkbenchContr
 			// New session — create the first chat
 			await this._sessionManagementService.sendAndCreateChat(session, { query });
 		} else {
-			// Existing session — send to the active chat widget directly
-			const activeSession = this._sessionManagementService.activeSession.get();
-			if (!activeSession) {
-				return;
-			}
-			const chatResource = activeSession.activeChat.get().resource;
+			// Existing session — send to the active chat widget directly when available,
+			// otherwise fall back to the session service so the action is not a silent no-op.
+			const chatResource = session.mainChat.resource;
 			const widget = this._chatWidgetService.getWidgetBySessionResource(chatResource);
 			if (widget) {
 				await widget.acceptInput(query);
+			} else {
+				await this._sessionManagementService.sendAndCreateChat(session, { query });
 			}
 		}
 	}
