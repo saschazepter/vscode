@@ -245,6 +245,7 @@ export interface IProductConfiguration {
 	parentPolicyConfig?: {
 		win32RegValueName?: string;
 		darwinBundleIdentifier?: string;
+		urlProtocol?: string;
 	};
 }
 

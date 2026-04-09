@@ -7,8 +7,6 @@ import './media/sessionsPolicyBlocked.css';
 import { Disposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { $, append, EventType, addDisposableListener, getWindow } from '../../../../base/browser/dom.js';
 import { localize } from '../../../../nls.js';
-import { ThemeIcon } from '../../../../base/common/themables.js';
-import { Codicon } from '../../../../base/common/codicons.js';
 import { Button } from '../../../../base/browser/ui/button/button.js';
 import { defaultButtonStyles } from '../../../../platform/theme/browser/defaultStyles.js';
 import { IOpenerService } from '../../../../platform/opener/common/opener.js';
@@ -59,9 +57,8 @@ export class SessionsPolicyBlockedOverlay extends Disposable {
 			}
 		}));
 
-		// Copilot icon
-		const icon = append(card, $('div.sessions-policy-blocked-icon'));
-		icon.classList.add(...ThemeIcon.asClassNameArray(Codicon.agent));
+		// Sessions logo
+		append(card, $('div.sessions-policy-blocked-logo'));
 
 		// Title
 		append(card, $('h2', undefined, localize('policyBlocked.title', "Agents Disabled by Policy")));
@@ -85,14 +82,7 @@ export class SessionsPolicyBlockedOverlay extends Disposable {
 	}
 
 	private _openVSCode(): void {
-		const scheme = this.productService.quality === 'stable'
-			? 'vscode'
-			: this.productService.quality === 'exploration'
-				? 'vscode-exploration'
-				: this.productService.quality === 'insider'
-					? 'vscode-insiders'
-					: this.productService.urlProtocol;
-
+		const scheme = this.productService.parentPolicyConfig?.urlProtocol ?? this.productService.urlProtocol;
 		this.openerService.open(URI.from({ scheme, query: 'windowId=_blank' }), { openExternal: true });
 	}
 }

@@ -28,11 +28,19 @@
 	padding: 32px;
 }
 
-.sessions-policy-blocked-card .sessions-policy-blocked-icon.codicon {
-	font-size: 64px !important;
-	line-height: 1;
+.sessions-policy-blocked-card .sessions-policy-blocked-logo {
+	width: 64px;
+	height: 64px;
+	background-image: url('./sessions-logo-light.svg');
+	background-size: contain;
+	background-repeat: no-repeat;
+	background-position: center;
 	opacity: 0.4;
-	color: var(--vscode-descriptionForeground);
+}
+
+.vs .sessions-policy-blocked-card .sessions-policy-blocked-logo,
+.hc-light .sessions-policy-blocked-card .sessions-policy-blocked-logo {
+	background-image: url('./sessions-logo-dark.svg');
 }
 
 .sessions-policy-blocked-card h2 {

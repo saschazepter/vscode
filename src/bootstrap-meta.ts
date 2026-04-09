@@ -26,6 +26,7 @@ if ((process as INodeProcess).isEmbeddedApp) {
 	productObj.parentPolicyConfig = {
 		win32RegValueName: productObj.win32RegValueName,
 		darwinBundleIdentifier: productObj.darwinBundleIdentifier,
+		urlProtocol: productObj.urlProtocol,
 	};
 
 	try {
