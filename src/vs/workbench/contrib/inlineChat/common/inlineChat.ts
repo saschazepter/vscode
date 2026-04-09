@@ -22,6 +22,7 @@ export const enum InlineChatConfigKeys {
 	Affordance = 'inlineChat.affordance',
 	RenderMode = 'inlineChat.renderMode',
 	FixDiagnostics = 'inlineChat.fixDiagnostics',
+	AskInChat = 'inlineChat.askInChat',
 }
 
 Registry.as<IConfigurationRegistry>(Extensions.Configuration).registerConfiguration({
@@ -54,10 +55,9 @@ Registry.as<IConfigurationRegistry>(Extensions.Configuration).registerConfigurat
 			description: localize('affordance', "Controls whether an inline chat affordance is shown when text is selected."),
 			default: 'off',
 			type: 'string',
-			enum: ['off', 'gutter', 'editor'],
+			enum: ['off', 'editor'],
 			enumDescriptions: [
 				localize('affordance.off', "No affordance is shown."),
-				localize('affordance.gutter', "Show an affordance in the gutter."),
 				localize('affordance.editor', "Show an affordance in the editor at the cursor position."),
 			],
 			experiment: {
@@ -87,7 +87,12 @@ Registry.as<IConfigurationRegistry>(Extensions.Configuration).registerConfigurat
 				mode: 'auto'
 			},
 			tags: ['experimental']
-		}
+		},
+		[InlineChatConfigKeys.AskInChat]: {
+			description: localize('askInChat', "Controls whether files in a chat editing session use Ask in Chat instead of Inline Chat."),
+			default: true,
+			type: 'boolean',
+		},
 	}
 });
 
@@ -138,6 +143,7 @@ export const CTX_INLINE_CHAT_V2_ENABLED = ContextKeyExpr.or(
 
 export const CTX_HOVER_MODE = ContextKeyExpr.equals('config.inlineChat.renderMode', 'hover');
 export const CTX_FIX_DIAGNOSTICS_ENABLED = ContextKeyExpr.equals('config.inlineChat.fixDiagnostics', true);
+export const CTX_ASK_IN_CHAT_ENABLED = ContextKeyExpr.equals('config.inlineChat.askInChat', true);
 
 // --- (selected) action identifier
 

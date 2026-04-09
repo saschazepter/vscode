@@ -122,7 +122,6 @@ export const enum TerminalSettingId {
 	FontLigaturesFallbackLigatures = 'terminal.integrated.fontLigatures.fallbackLigatures',
 	EnableKittyKeyboardProtocol = 'terminal.integrated.enableKittyKeyboardProtocol',
 	EnableWin32InputMode = 'terminal.integrated.enableWin32InputMode',
-	ExperimentalAiProfileGrouping = 'terminal.integrated.experimental.aiProfileGrouping',
 	AllowInUntrustedWorkspace = 'terminal.integrated.allowInUntrustedWorkspace',
 
 	// Developer/debug settings
@@ -724,6 +723,7 @@ export interface IShellLaunchConfigDto {
 	reconnectionProperties?: IReconnectionProperties;
 	type?: 'Task' | 'Local';
 	isFeatureTerminal?: boolean;
+	forceShellIntegration?: boolean;
 	tabActions?: ITerminalTabAction[];
 	shellIntegrationEnvironmentReporting?: boolean;
 	titleTemplate?: string;
@@ -1063,6 +1063,10 @@ export const enum ShellIntegrationInjectionFailureReason {
 	 * For zsh, we failed to create a temp directory for the shell integration script.
 	 */
 	FailedToCreateTmpDir = 'failedToCreateTmpDir',
+}
+
+export const enum ShellIntegrationTimeoutOverride {
+	DisableForTests = -2
 }
 
 export enum TerminalExitReason {

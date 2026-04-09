@@ -4,12 +4,19 @@
  *--------------------------------------------------------------------------------------------*/
 
 import assert from 'assert';
+import { VSBuffer } from '../../../../base/common/buffer.js';
 import { DisposableStore, toDisposable } from '../../../../base/common/lifecycle.js';
+import { Schemas } from '../../../../base/common/network.js';
 import { URI } from '../../../../base/common/uri.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/common/utils.js';
 import { NullLogService } from '../../../log/common/log.js';
+import { FileService } from '../../../files/common/fileService.js';
+import { InMemoryFileSystemProvider } from '../../../files/common/inMemoryFilesystemProvider.js';
 import { AgentSession } from '../../common/agentService.js';
-import { IActionEnvelope } from '../../common/state/sessionActions.js';
+import { SessionDatabase } from '../../node/sessionDatabase.js';
+import { ActionType, IActionEnvelope } from '../../common/state/sessionActions.js';
+import { ResponsePartKind, SessionLifecycle, ToolCallConfirmationReason, ToolCallStatus, ToolResultContentType, TurnState, type IMarkdownResponsePart, type IToolCallCompletedState, type IToolCallResponsePart } from '../../common/state/sessionState.js';
+import { createNullSessionDataService, createSessionDataService } from '../common/sessionTestHelpers.js';
 import { AgentService } from '../../node/agentService.js';
 import { MockAgent } from './mockAgent.js';
 
@@ -18,9 +25,17 @@ suite('AgentService (node dispatcher)', () => {
 	const disposables = new DisposableStore();
 	let service: AgentService;
 	let copilotAgent: MockAgent;
+	let fileService: FileService;
 
-	setup(() => {
-		service = disposables.add(new AgentService(new NullLogService()));
+	setup(async () => {
+		fileService = disposables.add(new FileService(new NullLogService()));
+		disposables.add(fileService.registerProvider(Schemas.inMemory, disposables.add(new InMemoryFileSystemProvider())));
+
+		// Seed a directory for browseDirectory tests
+		await fileService.createFolder(URI.from({ scheme: Schemas.inMemory, path: '/testDir' }));
+		await fileService.writeFile(URI.from({ scheme: Schemas.inMemory, path: '/testDir/file.txt' }), VSBuffer.fromString('hello'));
+
+		service = disposables.add(new AgentService(new NullLogService(), fileService, createNullSessionDataService()));
 		copilotAgent = new MockAgent('copilot');
 		disposables.add(toDisposable(() => copilotAgent.dispose()));
 	});
@@ -50,7 +65,7 @@ suite('AgentService (node dispatcher)', () => {
 
 			// Start a turn so there's an active turn to map events to
 			service.dispatchAction(
-				{ type: 'session/turnStarted', session, turnId: 'turn-1', userMessage: { text: 'hello' } },
+				{ type: ActionType.SessionTurnStarted, session: session.toString(), turnId: 'turn-1', userMessage: { text: 'hello' } },
 				'test-client', 1,
 			);
 
@@ -58,25 +73,7 @@ suite('AgentService (node dispatcher)', () => {
 			disposables.add(service.onDidAction(e => envelopes.push(e)));
 
 			copilotAgent.fireProgress({ session, type: 'delta', messageId: 'msg-1', content: 'hello' });
-			assert.ok(envelopes.some(e => e.action.type === 'session/delta'));
-		});
-	});
-
-	// ---- listAgents -----------------------------------------------------
-
-	suite('listAgents', () => {
-
-		test('returns descriptors from all registered providers', async () => {
-			service.registerProvider(copilotAgent);
-
-			const agents = await service.listAgents();
-			assert.strictEqual(agents.length, 1);
-			assert.ok(agents.some(a => a.provider === 'copilot'));
-		});
-
-		test('returns empty array when no providers are registered', async () => {
-			const agents = await service.listAgents();
-			assert.strictEqual(agents.length, 0);
+			assert.ok(envelopes.some(e => e.action.type === ActionType.SessionResponsePart));
 		});
 	});
 
@@ -125,20 +122,6 @@ suite('AgentService (node dispatcher)', () => {
 		});
 	});
 
-	// ---- setAuthToken ---------------------------------------------------
-
-	suite('setAuthToken', () => {
-
-		test('broadcasts token to all registered providers', async () => {
-			service.registerProvider(copilotAgent);
-
-			await service.setAuthToken('my-token');
-
-			assert.strictEqual(copilotAgent.setAuthTokenCalls.length, 1);
-			assert.strictEqual(copilotAgent.setAuthTokenCalls[0], 'my-token');
-		});
-	});
-
 	// ---- listSessions / listModels --------------------------------------
 
 	suite('aggregation', () => {
@@ -152,19 +135,63 @@ suite('AgentService (node dispatcher)', () => {
 			assert.strictEqual(sessions.length, 1);
 		});
 
-		test('refreshModels publishes models in root state via agentsChanged', async () => {
+		test('listSessions overlays custom title from session database', async () => {
+			// Pre-seed a custom title in an in-memory database
+			const db = disposables.add(await SessionDatabase.open(':memory:'));
+			await db.setMetadata('customTitle', 'My Custom Title');
+
+			const sessionId = 'test-session-abc';
+			const sessionUri = AgentSession.uri('copilot', sessionId);
+
+			const sessionDataService = createSessionDataService(db);
+
+			// Create a mock that returns a session with that ID
+			const agent = new MockAgent('copilot');
+			disposables.add(toDisposable(() => agent.dispose()));
+			agent.sessionMetadataOverrides = { summary: 'SDK Title' };
+			// Manually add the session to the mock
+			(agent as unknown as { _sessions: Map<string, URI> })._sessions.set(sessionId, sessionUri);
+
+			const svc = disposables.add(new AgentService(new NullLogService(), fileService, sessionDataService));
+			svc.registerProvider(agent);
+
+			const sessions = await svc.listSessions();
+			assert.strictEqual(sessions.length, 1);
+			assert.strictEqual(sessions[0].summary, 'My Custom Title');
+		});
+
+		test('listSessions uses SDK title when no custom title exists', async () => {
+			service.registerProvider(copilotAgent);
+			copilotAgent.sessionMetadataOverrides = { summary: 'Auto-generated Title' };
+
+			await service.createSession({ provider: 'copilot' });
+
+			const sessions = await service.listSessions();
+			assert.strictEqual(sessions.length, 1);
+			assert.strictEqual(sessions[0].summary, 'Auto-generated Title');
+		});
+	});
+
+	// ---- authenticate ---------------------------------------------------
+
+	suite('authenticate', () => {
+
+		test('routes token to provider matching the resource', async () => {
 			service.registerProvider(copilotAgent);
 
-			const envelopes: IActionEnvelope[] = [];
-			disposables.add(service.onDidAction(e => envelopes.push(e)));
+			const result = await service.authenticate({ resource: 'https://api.github.com', token: 'ghp_test123' });
 
-			service.refreshModels();
+			assert.deepStrictEqual(result, { authenticated: true });
+			assert.deepStrictEqual(copilotAgent.authenticateCalls, [{ resource: 'https://api.github.com', token: 'ghp_test123' }]);
+		});
 
-			// Model fetch is async inside AgentSideEffects — wait for it
-			await new Promise(r => setTimeout(r, 50));
+		test('returns not authenticated for unknown resource', async () => {
+			service.registerProvider(copilotAgent);
 
-			const agentsChanged = envelopes.find(e => e.action.type === 'root/agentsChanged');
-			assert.ok(agentsChanged);
+			const result = await service.authenticate({ resource: 'https://unknown.example.com', token: 'tok' });
+
+			assert.deepStrictEqual(result, { authenticated: false });
+			assert.strictEqual(copilotAgent.authenticateCalls.length, 0);
 		});
 	});
 
@@ -180,6 +207,110 @@ suite('AgentService (node dispatcher)', () => {
 
 			await service.shutdown();
 			assert.ok(copilotShutdown);
+		});
+	});
+
+	// ---- restoreSession -------------------------------------------------
+
+	suite('restoreSession', () => {
+
+		test('restores a session with message history', async () => {
+			service.registerProvider(copilotAgent);
+			const session = await copilotAgent.createSession();
+			const sessions = await copilotAgent.listSessions();
+			const sessionResource = sessions[0].session;
+
+			copilotAgent.sessionMessages = [
+				{ type: 'message', session, role: 'user', messageId: 'msg-1', content: 'Hello', toolRequests: [] },
+				{ type: 'message', session, role: 'assistant', messageId: 'msg-2', content: 'Hi there!', toolRequests: [] },
+			];
+
+			await service.restoreSession(sessionResource);
+
+			const state = service.stateManager.getSessionState(sessionResource.toString());
+			assert.ok(state, 'session should be in state manager');
+			assert.strictEqual(state!.lifecycle, SessionLifecycle.Ready);
+			assert.strictEqual(state!.turns.length, 1);
+			assert.strictEqual(state!.turns[0].userMessage.text, 'Hello');
+			const mdPart = state!.turns[0].responseParts.find((p): p is IMarkdownResponsePart => p.kind === ResponsePartKind.Markdown);
+			assert.ok(mdPart);
+			assert.strictEqual(mdPart.content, 'Hi there!');
+			assert.strictEqual(state!.turns[0].state, TurnState.Complete);
+		});
+
+		test('restores a session with tool calls', async () => {
+			service.registerProvider(copilotAgent);
+			const session = await copilotAgent.createSession();
+			const sessions = await copilotAgent.listSessions();
+			const sessionResource = sessions[0].session;
+
+			copilotAgent.sessionMessages = [
+				{ type: 'message', session, role: 'user', messageId: 'msg-1', content: 'Run a command', toolRequests: [] },
+				{ type: 'message', session, role: 'assistant', messageId: 'msg-2', content: 'I will run a command.', toolRequests: [{ toolCallId: 'tc-1', name: 'shell' }] },
+				{ type: 'tool_start', session, toolCallId: 'tc-1', toolName: 'shell', displayName: 'Shell', invocationMessage: 'Running command...' },
+				{ type: 'tool_complete', session, toolCallId: 'tc-1', result: { success: true, pastTenseMessage: 'Ran command', content: [{ type: ToolResultContentType.Text, text: 'output' }] } },
+				{ type: 'message', session, role: 'assistant', messageId: 'msg-3', content: 'Done!', toolRequests: [] },
+			];
+
+			await service.restoreSession(sessionResource);
+
+			const state = service.stateManager.getSessionState(sessionResource.toString());
+			assert.ok(state);
+			const turn = state!.turns[0];
+			const toolCallParts = turn.responseParts.filter((p): p is IToolCallResponsePart => p.kind === ResponsePartKind.ToolCall);
+			assert.strictEqual(toolCallParts.length, 1);
+			const tc = toolCallParts[0].toolCall as IToolCallCompletedState;
+			assert.strictEqual(tc.status, ToolCallStatus.Completed);
+			assert.strictEqual(tc.toolCallId, 'tc-1');
+			assert.strictEqual(tc.confirmed, ToolCallConfirmationReason.NotNeeded);
+		});
+
+		test('flushes interrupted turns', async () => {
+			service.registerProvider(copilotAgent);
+			const session = await copilotAgent.createSession();
+			const sessions = await copilotAgent.listSessions();
+			const sessionResource = sessions[0].session;
+
+			copilotAgent.sessionMessages = [
+				{ type: 'message', session, role: 'user', messageId: 'msg-1', content: 'Interrupted', toolRequests: [] },
+				{ type: 'message', session, role: 'user', messageId: 'msg-2', content: 'Retried', toolRequests: [] },
+				{ type: 'message', session, role: 'assistant', messageId: 'msg-3', content: 'Answer', toolRequests: [] },
+			];
+
+			await service.restoreSession(sessionResource);
+
+			const state = service.stateManager.getSessionState(sessionResource.toString());
+			assert.ok(state);
+			assert.strictEqual(state!.turns.length, 2);
+			assert.strictEqual(state!.turns[0].state, TurnState.Cancelled);
+			assert.strictEqual(state!.turns[1].state, TurnState.Complete);
+		});
+
+		test('throws when session is not found on backend', async () => {
+			service.registerProvider(copilotAgent);
+			await assert.rejects(
+				() => service.restoreSession(AgentSession.uri('copilot', 'nonexistent')),
+				/Session not found on backend/,
+			);
+		});
+	});
+
+	// ---- resourceList ------------------------------------------------
+
+	suite('resourceList', () => {
+
+		test('throws when the directory does not exist', async () => {
+			await assert.rejects(
+				() => service.resourceList(URI.from({ scheme: Schemas.inMemory, path: '/nonexistent' })),
+				/Directory not found/,
+			);
+		});
+
+		test('throws when the target is not a directory', async () => {
+			await assert.rejects(
+				() => service.resourceList(URI.from({ scheme: Schemas.inMemory, path: '/testDir/file.txt' })),
+				/Not a directory/,
+			);
 		});
 	});
 });

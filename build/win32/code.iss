@@ -1294,6 +1294,15 @@ Root: {#SoftwareClassesRootKey}; Subkey: "Software\Classes\Drive\shell\{#RegValu
 Root: {#SoftwareClassesRootKey}; Subkey: "Software\Classes\Drive\shell\{#RegValueName}"; ValueType: expandsz; ValueName: "Icon"; ValueData: "{app}\{#ExeBasename}.exe"; Check: ShouldInstallLegacyFolderContextMenu
 Root: {#SoftwareClassesRootKey}; Subkey: "Software\Classes\Drive\shell\{#RegValueName}\command"; ValueType: expandsz; ValueName: ""; ValueData: """{app}\{#ExeBasename}.exe"" ""%V"""; Check: ShouldInstallLegacyFolderContextMenu
 
+; URL Protocol handler for proxy executable
+#ifdef ProxyExeBasename
+#ifdef ProxyExeUrlProtocol
+Root: HKCU; Subkey: "Software\Classes\{#ProxyExeUrlProtocol}"; ValueType: string; ValueName: ""; ValueData: "URL:{#ProxyExeUrlProtocol}"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\{#ProxyExeUrlProtocol}"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\{#ProxyExeUrlProtocol}\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#ProxyExeBasename}.exe"" --open-url -- ""%1"""; Flags: uninsdeletekey
+#endif
+#endif
+
 ; Environment
 #if "user" == InstallTarget
 #define EnvironmentRootKey "HKCU"
@@ -1799,13 +1808,13 @@ begin
       if not SessionEndFileExists() and not CancelFileExists() then begin
         StopTunnelServiceIfNeeded();
         Log('Invoking inno_updater for background update');
-        Exec(ExpandConstant('{app}\{#VersionedResourcesFolder}\tools\inno_updater.exe'), ExpandConstant('"{app}\{#ExeBasename}.exe" ' + BoolToStr(LockFileExists()) + ' "{cm:UpdatingVisualStudioCode}"'), '', SW_SHOW, ewWaitUntilTerminated, UpdateResultCode);
+        Exec(ExpandConstant('{app}\{#VersionedResourcesFolder}\tools\inno_updater.exe'), ExpandConstant('"{app}\{#ExeBasename}.exe" ' + BoolToStr(LockFileExists()) + ' "{cm:UpdatingVisualStudioCode}"' {#ifdef ProxyExeBasename} + ' "{#ProxyExeBasename}.exe"' {#endif}), '', SW_SHOW, ewWaitUntilTerminated, UpdateResultCode);
         DeleteFile(ExpandConstant('{app}\updating_version'));
         Log('inno_updater completed successfully');
         #if "system" == InstallTarget
           if IsVersionedUpdate() then begin
             Log('Invoking inno_updater to remove previous installation folder');
-            Exec(ExpandConstant('{app}\{#VersionedResourcesFolder}\tools\inno_updater.exe'), ExpandConstant('"--gc" "{app}\{#ExeBasename}.exe" "{#VersionedResourcesFolder}"'), '', SW_SHOW, ewWaitUntilTerminated, UpdateResultCode);
+            Exec(ExpandConstant('{app}\{#VersionedResourcesFolder}\tools\inno_updater.exe'), ExpandConstant('"--gc" "{app}\{#ExeBasename}.exe" "{#VersionedResourcesFolder}" "{#ExeBasename}.exe"' {#ifdef ProxyExeBasename} + ' "{#ProxyExeBasename}.exe"' {#endif}), '', SW_SHOW, ewWaitUntilTerminated, UpdateResultCode);
             Log('inno_updater completed gc successfully');
           end;
         #endif
@@ -1815,7 +1824,7 @@ begin
     end else begin
       if IsVersionedUpdate() then begin
         Log('Invoking inno_updater to remove previous installation folder');
-        Exec(ExpandConstant('{app}\{#VersionedResourcesFolder}\tools\inno_updater.exe'), ExpandConstant('"--gc" "{app}\{#ExeBasename}.exe" "{#VersionedResourcesFolder}"'), '', SW_SHOW, ewWaitUntilTerminated, UpdateResultCode);
+        Exec(ExpandConstant('{app}\{#VersionedResourcesFolder}\tools\inno_updater.exe'), ExpandConstant('"--gc" "{app}\{#ExeBasename}.exe" "{#VersionedResourcesFolder}" "{#ExeBasename}.exe"' {#ifdef ProxyExeBasename} + ' "{#ProxyExeBasename}.exe"' {#endif}), '', SW_SHOW, ewWaitUntilTerminated, UpdateResultCode);
         Log('inno_updater completed gc successfully');
       end;
     end;

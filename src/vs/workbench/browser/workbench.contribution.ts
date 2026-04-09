@@ -359,11 +359,7 @@ const registry = Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Con
 					localize('useModal.all', "All editors open in a centered modal overlay."),
 				],
 				'description': localize('useModal', "Controls whether editors open in a modal overlay."),
-				'default': product.quality !== 'stable' ? 'some' : 'off', // TODO@bpasero figure out the default
-				tags: ['experimental'],
-				experiment: {
-					mode: 'auto'
-				}
+				'default': 'some'
 			},
 			'workbench.editor.swipeToNavigate': {
 				'type': 'boolean',
@@ -783,6 +779,11 @@ const registry = Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Con
 				'type': 'boolean',
 				'default': true,
 				'description': localize('tips.enabled', "When enabled, will show the watermark tips when no editor is open.")
+			},
+			[LayoutSettings.SHADOWS]: {
+				'type': 'boolean',
+				'default': true,
+				'description': localize('shadows', "Controls whether shadow effects are shown around the side panels and other workbench elements.")
 			},
 		}
 	});

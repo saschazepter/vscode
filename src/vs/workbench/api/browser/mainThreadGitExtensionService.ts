@@ -38,11 +38,11 @@ function toGitRepositoryState(dto: GitRepositoryStateDto | undefined): GitReposi
 			name: dto.HEAD.name,
 			commit: dto.HEAD.commit,
 			remote: dto.HEAD.remote,
-			base: dto.HEAD.base,
 			upstream: dto.HEAD.upstream,
 			ahead: dto.HEAD.ahead,
 			behind: dto.HEAD.behind,
 		} satisfies GitBranch : undefined,
+		remotes: dto?.remotes ?? [],
 		mergeChanges: dto?.mergeChanges?.map(c => ({
 			uri: URI.revive(c.uri),
 			originalUri: c.originalUri ? URI.revive(c.originalUri) : undefined,
@@ -162,6 +162,16 @@ export class MainThreadGitExtensionService extends Disposable implements MainThr
 		}
 
 		const result = await this._proxy.$diffBetweenWithStats(handle, ref1, ref2, path);
+		return result.map(toGitDiffChange);
+	}
+
+	async diffBetweenWithStats2(root: URI, ref: string, path?: string): Promise<GitDiffChange[]> {
+		const handle = this._repositoryHandles.get(root);
+		if (handle === undefined) {
+			return [];
+		}
+
+		const result = await this._proxy.$diffBetweenWithStats2(handle, ref, path);
 		return result.map(toGitDiffChange);
 	}
 
