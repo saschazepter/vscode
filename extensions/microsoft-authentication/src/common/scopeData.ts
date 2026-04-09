@@ -57,7 +57,7 @@ export class ScopeData {
 		this.scopeStr = modifiedScopes.join(' ');
 		this.claims = claims;
 		this.scopesToSend = this.getScopesToSend(modifiedScopes);
-		this.clientId = clientId ?? this.getClientId(this.allScopes);
+		this.clientId = clientId?.trim() || this.getClientId(this.allScopes);
 		this.tenant = this.getTenant(this.allScopes, authorizationServer);
 		this.tenantId = this.getTenantId(this.tenant);
 	}
