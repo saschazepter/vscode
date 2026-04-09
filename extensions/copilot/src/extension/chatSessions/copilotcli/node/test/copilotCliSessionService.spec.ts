@@ -67,7 +67,7 @@ class NullChatSessionWorkspaceFolderService extends mock<IChatSessionWorkspaceFo
 	override getSessionWorkspaceFolder = vi.fn(async () => undefined);
 	override handleRequestCompleted = vi.fn(async () => { });
 	override getWorkspaceChanges = vi.fn(async () => undefined);
-	override clearWorkspaceChanges = vi.fn(() => { });
+	override clearWorkspaceChanges = vi.fn((..._args: any[]) => { return [] as string[]; });
 }
 
 class NullChatSessionWorktreeService extends mock<IChatSessionWorktreeService>() {
