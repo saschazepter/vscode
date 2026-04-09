@@ -1568,7 +1568,7 @@ export function registerCLIChatCommands(
 		});
 	}));
 
-	disposableStore.add(vscode.commands.registerCommand('github.copilot.cli.sessions.commitToWorktree', async (args?: { worktreeUri?: vscode.Uri; fileUri?: vscode.Uri }) => {
+	disposableStore.add(vscode.commands.registerCommand('github.copilot.cli.sessions.commitToWorktree', async (args?: { worktreeUri?: vscode.Uri; fileUri?: vscode.Uri; sessionUri?: vscode.Uri }) => {
 		logService.trace(`[commitToWorktree] Command invoked, args: ${JSON.stringify(args, null, 2)}`);
 		if (!args?.worktreeUri || !args?.fileUri) {
 			logService.debug('[commitToWorktree] Missing worktreeUri or fileUri, aborting');
@@ -1585,7 +1585,9 @@ export function registerCLIChatCommands(
 			logService.trace('[commitToWorktree] Commit successful');
 
 			// Clear the worktree changes cache so getWorktreeChanges() recomputes
-			const sessionId = await copilotCLIWorktreeManagerService.getSessionIdForWorktree(worktreeUri);
+			const sessionId = args.sessionUri
+				? SessionIdForCLI.parse(vscode.Uri.from(args.sessionUri))
+				: await copilotCLIWorktreeManagerService.getSessionIdForWorktree(worktreeUri);
 			if (sessionId) {
 				const props = await copilotCLIWorktreeManagerService.getWorktreeProperties(sessionId);
 				if (props) {
@@ -1614,7 +1616,7 @@ export function registerCLIChatCommands(
 		}
 	}));
 
-	disposableStore.add(vscode.commands.registerCommand('github.copilot.cli.sessions.commitToRepository', async (args?: { repositoryUri?: vscode.Uri; fileUri?: vscode.Uri }) => {
+	disposableStore.add(vscode.commands.registerCommand('github.copilot.cli.sessions.commitToRepository', async (args?: { repositoryUri?: vscode.Uri; fileUri?: vscode.Uri; sessionUri?: vscode.Uri }) => {
 		logService.trace(`[commitToRepository] Command invoked, args: ${JSON.stringify(args, null, 2)}`);
 		if (!args?.repositoryUri || !args?.fileUri) {
 			logService.debug('[commitToRepository] Missing repositoryUri or fileUri, aborting');

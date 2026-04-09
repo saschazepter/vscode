@@ -124,13 +124,14 @@ export class SessionsAICustomizationWorkspaceService implements IAICustomization
 	 */
 	async commitFiles(_projectRoot: URI, fileUris: URI[]): Promise<void> {
 		const session = this.sessionsService.activeSession.get();
+		const sessionUri = session?.resource;
 		const repo = session?.workspace.get()?.repositories[0];
-		if (!repo?.uri) {
+		if (!sessionUri || !repo?.uri) {
 			return;
 		}
 
 		for (const fileUri of fileUris) {
-			await this.commitFileToRepos(fileUri, repo.uri, repo.workingDirectory);
+			await this.commitFileToRepos(sessionUri, fileUri, repo.uri, repo.workingDirectory);
 		}
 	}
 
@@ -141,13 +142,14 @@ export class SessionsAICustomizationWorkspaceService implements IAICustomization
 	 */
 	async deleteFiles(_projectRoot: URI, fileUris: URI[]): Promise<void> {
 		const session = this.sessionsService.activeSession.get();
+		const sessionUri = session?.resource;
 		const repo = session?.workspace.get()?.repositories[0];
-		if (!repo?.uri) {
+		if (!sessionUri || !repo?.uri) {
 			return;
 		}
 
 		for (const fileUri of fileUris) {
-			await this.commitDeletionToRepos(fileUri, repo.uri, repo.workingDirectory);
+			await this.commitDeletionToRepos(sessionUri, fileUri, repo.uri, repo.workingDirectory);
 		}
 	}
 
@@ -170,7 +172,7 @@ export class SessionsAICustomizationWorkspaceService implements IAICustomization
 	 * Commits a single file to the main repository and optionally the worktree.
 	 * Copies the file content between trees when needed.
 	 */
-	private async commitFileToRepos(fileUri: URI, repositoryUri: URI, worktreeUri: URI | undefined): Promise<void> {
+	private async commitFileToRepos(sessionUri: URI, fileUri: URI, repositoryUri: URI, worktreeUri: URI | undefined): Promise<void> {
 		const relPath = this.getRelativePath(fileUri, repositoryUri, worktreeUri);
 		if (!relPath) {
 			return;
@@ -186,7 +188,7 @@ export class SessionsAICustomizationWorkspaceService implements IAICustomization
 			}
 			await this.commandService.executeCommand(
 				'github.copilot.cli.sessions.commitToRepository',
-				{ repositoryUri, fileUri: repoFileUri }
+				{ repositoryUri, fileUri: repoFileUri, sessionUri }
 			);
 		} catch (error) {
 			this.logService.error('[SessionsAICustomizationWorkspaceService] Failed to commit to repository:', error);
@@ -208,7 +210,7 @@ export class SessionsAICustomizationWorkspaceService implements IAICustomization
 				}
 				await this.commandService.executeCommand(
 					'github.copilot.cli.sessions.commitToWorktree',
-					{ worktreeUri, fileUri: worktreeFileUri }
+					{ worktreeUri, fileUri: worktreeFileUri, sessionUri }
 				);
 			} catch (error) {
 				this.logService.error('[SessionsAICustomizationWorkspaceService] Failed to commit to worktree:', error);
@@ -221,7 +223,7 @@ export class SessionsAICustomizationWorkspaceService implements IAICustomization
 	 * the worktree. The file is already deleted from disk before this is called;
 	 * `git add` on a deleted path stages the removal.
 	 */
-	private async commitDeletionToRepos(fileUri: URI, repositoryUri: URI, worktreeUri: URI | undefined): Promise<void> {
+	private async commitDeletionToRepos(sessionUri: URI, fileUri: URI, repositoryUri: URI, worktreeUri: URI | undefined): Promise<void> {
 		const relPath = this.getRelativePath(fileUri, repositoryUri, worktreeUri);
 		if (!relPath) {
 			return;
@@ -236,7 +238,7 @@ export class SessionsAICustomizationWorkspaceService implements IAICustomization
 			}
 			await this.commandService.executeCommand(
 				'github.copilot.cli.sessions.commitToRepository',
-				{ repositoryUri, fileUri: repoFileUri }
+				{ repositoryUri, fileUri: repoFileUri, sessionUri }
 			);
 		} catch (error) {
 			this.logService.error('[SessionsAICustomizationWorkspaceService] Failed to commit deletion to repository:', error);
@@ -255,7 +257,7 @@ export class SessionsAICustomizationWorkspaceService implements IAICustomization
 				// The file may already be deleted from the worktree by the caller
 				await this.commandService.executeCommand(
 					'github.copilot.cli.sessions.commitToWorktree',
-					{ worktreeUri, fileUri: worktreeFileUri }
+					{ worktreeUri, fileUri: worktreeFileUri, sessionUri }
 				);
 			} catch (error) {
 				this.logService.error('[SessionsAICustomizationWorkspaceService] Failed to commit deletion to worktree:', error);
