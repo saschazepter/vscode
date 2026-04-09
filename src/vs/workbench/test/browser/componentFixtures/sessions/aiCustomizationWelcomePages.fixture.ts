@@ -93,6 +93,7 @@ function renderClassicWelcomePage(ctx: ComponentFixtureContext): void {
 		{
 			selectSection: () => { },
 			closeEditor: () => { },
+			prefillChat: () => { },
 		},
 		createMockCommandService(),
 		workspaceService,
@@ -109,8 +110,10 @@ function renderPromptLaunchersWelcomePage(ctx: ComponentFixtureContext): void {
 		{
 			selectSection: () => { },
 			closeEditor: () => { },
+			prefillChat: () => { },
 		},
 		createMockCommandService(),
+		workspaceService,
 	));
 	page.rebuildCards(visibleSections);
 }
@@ -127,6 +130,7 @@ function renderSelectedWelcomePage(ctx: ComponentFixtureContext, variant: AICust
 		{
 			selectSection: () => { },
 			closeEditor: () => { },
+			prefillChat: () => { },
 		},
 		createMockCommandService(),
 		workspaceService,

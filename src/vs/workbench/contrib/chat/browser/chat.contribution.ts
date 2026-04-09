@@ -211,7 +211,7 @@ configurationRegistry.registerConfiguration({
 				nls.localize('chat.customizations.welcomePageVariant.promptLaunchers', "Uses the experimental welcome page with grouped command prompt launchers."),
 			],
 			description: nls.localize('chat.customizations.welcomePageVariant', "Controls which welcome page implementation is shown in Agent Customizations."),
-			default: 'classic',
+			default: 'promptLaunchers',
 			tags: ['experimental'],
 			scope: ConfigurationScope.APPLICATION,
 		},

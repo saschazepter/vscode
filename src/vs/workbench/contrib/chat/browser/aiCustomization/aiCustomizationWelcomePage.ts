@@ -17,6 +17,11 @@ const $ = DOM.$;
 export interface IWelcomePageCallbacks {
 	selectSection(section: AICustomizationManagementSection): void;
 	closeEditor(): void;
+	/**
+	 * Prefill the chat input with a query. In the sessions window this
+	 * uses the sessions chat widget; in core VS Code it opens the chat view.
+	 */
+	prefillChat(query: string, options?: { isPartialQuery?: boolean }): void;
 }
 
 export interface IAICustomizationWelcomePageImplementation extends IDisposable {
@@ -75,7 +80,7 @@ export class AICustomizationWelcomePage extends Disposable {
 	private createImplementation(): IAICustomizationWelcomePageImplementation {
 		switch (this.getVariant()) {
 			case 'promptLaunchers':
-				return new PromptLaunchersAICustomizationWelcomePage(this.container, this.welcomePageFeatures, this.callbacks, this.commandService);
+				return new PromptLaunchersAICustomizationWelcomePage(this.container, this.welcomePageFeatures, this.callbacks, this.commandService, this.workspaceService);
 			case 'classic':
 			default:
 				return new ClassicAICustomizationWelcomePage(this.container, this.welcomePageFeatures, this.callbacks, this.commandService, this.workspaceService);
@@ -84,6 +89,6 @@ export class AICustomizationWelcomePage extends Disposable {
 
 	private getVariant(): AICustomizationWelcomePageVariant {
 		const configured = this.configurationService.getValue<string>(AI_CUSTOMIZATION_WELCOME_PAGE_VARIANT_SETTING);
-		return configured === 'promptLaunchers' ? configured : 'classic';
+		return configured === 'classic' ? configured : 'promptLaunchers';
 	}
 }

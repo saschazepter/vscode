@@ -87,6 +87,7 @@ import { IAgentPluginItem } from '../agentPluginEditor/agentPluginItems.js';
 import { ICustomizationHarnessService, CustomizationHarness, matchesWorkspaceSubpath } from '../../common/customizationHarnessService.js';
 import { ChatConfiguration } from '../../common/constants.js';
 import { AICustomizationWelcomePage } from './aiCustomizationWelcomePage.js';
+import { IViewsService } from '../../../../services/views/common/viewsService.js';
 
 const $ = DOM.$;
 
@@ -345,6 +346,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 		@IFileService private readonly fileService: IFileService,
 		@INotificationService private readonly notificationService: INotificationService,
 		@ICustomizationHarnessService private readonly harnessService: ICustomizationHarnessService,
+		@IViewsService private readonly viewsService: IViewsService,
 	) {
 		super(AICustomizationManagementEditor.ID, group, telemetryService, themeService, storageService);
 
@@ -772,6 +774,21 @@ export class AICustomizationManagementEditor extends EditorPane {
 				closeEditor: () => {
 					if (this.input) {
 						this.group.closeEditor(this.input);
+					}
+				},
+				prefillChat: (query, options) => {
+					if (this.workspaceService.isSessionsWindow) {
+						const sessionsViewId = 'workbench.view.sessions.chat';
+						this.viewsService.openView(sessionsViewId, true).then(view => {
+							const chatView = view as unknown as { prefillInput?(text: string): void; sendQuery?(text: string): void } | undefined;
+							if (options?.isPartialQuery && chatView?.prefillInput) {
+								chatView.prefillInput(query);
+							} else if (chatView?.sendQuery) {
+								chatView.sendQuery(query);
+							}
+						});
+					} else {
+						this.commandService.executeCommand('workbench.action.chat.open', { query, isPartialQuery: options?.isPartialQuery ?? false });
 					}
 				},
 			},
