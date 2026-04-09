@@ -273,7 +273,7 @@
 /* ---- Dashboard (two-tab billing view — status bar tooltip) ---- */
 
 .copilot-prototype-dashboard {
-	width: 660px;
+	width: 480px;
 	padding: 4px 0;
 }
 
@@ -408,7 +408,7 @@
 .copilot-prototype-dashboard-card {
 	flex: 1;
 	min-width: 0;
-	padding: 8px;
+	padding: 6px;
 	border-radius: var(--vscode-cornerRadius-small);
 	border: 1px solid var(--vscode-editorWidget-border, rgba(255,255,255,0.08));
 	overflow: hidden;
@@ -426,14 +426,14 @@
 .copilot-prototype-dashboard-card-title {
 	display: flex;
 	align-items: center;
-	gap: 6px;
-	flex-wrap: nowrap;
-	margin-bottom: 6px;
+	gap: 4px;
+	flex-wrap: wrap;
+	margin-bottom: 4px;
 }
 
 .copilot-prototype-dashboard-card-name {
 	font-weight: 600;
-	font-size: 12px;
+	font-size: 11px;
 	color: var(--vscode-foreground);
 	white-space: nowrap;
 }
@@ -456,9 +456,9 @@
 
 .copilot-prototype-dashboard-card-percent {
 	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: 4px;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 2px;
 	margin-bottom: 6px;
 	min-width: 0;
 }
@@ -471,7 +471,7 @@
 }
 
 .copilot-prototype-dashboard-card-percent-value {
-	font-size: 18px;
+	font-size: 16px;
 	font-weight: 600;
 	color: var(--vscode-foreground);
 	line-height: 1;
@@ -486,7 +486,7 @@
 }
 
 .copilot-prototype-dashboard-card-percent-label {
-	font-size: 12px;
+	font-size: 11px;
 	color: var(--vscode-descriptionForeground);
 }
 
@@ -586,7 +586,8 @@
 .copilot-prototype-dashboard-footer {
 	display: flex;
 	align-items: center;
-	gap: 8px;
+	flex-wrap: wrap;
+	gap: 6px;
 	padding-top: 10px;
 	border-top: 1px solid var(--vscode-editorWidget-border, rgba(255,255,255,0.08));
 }
