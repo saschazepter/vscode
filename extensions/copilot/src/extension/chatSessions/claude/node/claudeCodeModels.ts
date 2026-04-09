@@ -146,7 +146,7 @@ export class ClaudeCodeModels extends Disposable implements IClaudeCodeModels {
 			);
 
 			if (claudeEndpoints.length === 0) {
-				this.logService.trace('[ClaudeCodeModels] No Claude models with Messages API found');
+				this.logService.trace('[ClaudeCodeModels] No Anthropic models with Messages API found');
 				return [];
 			}
 
