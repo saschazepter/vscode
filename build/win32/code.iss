@@ -1419,6 +1419,7 @@ var
 	ShouldRestartTunnelService: Boolean;
 #ifdef ProxyMutex
 	ProxyWasRunning: Boolean;
+	AppWasRunning: Boolean;
 #endif
 
 function StopTunnelOtherProcesses(): Boolean;
@@ -1515,7 +1516,11 @@ end;
 function ShouldRunAfterUpdate(): Boolean;
 begin
   if IsBackgroundUpdate() then
+#ifdef ProxyMutex
+    Result := (not LockFileExists()) and AppWasRunning
+#else
     Result := not LockFileExists()
+#endif
   else
     Result := True;
 end;
@@ -1815,8 +1820,10 @@ begin
     if IsBackgroundUpdate() then
     begin
 #ifdef ProxyMutex
-      // Snapshot whether the proxy app is running before we wait for it to exit
+      // Snapshot whether each app is running before we wait for them to exit
       ProxyWasRunning := CheckForMutexes('{#ProxyMutex}');
+      AppWasRunning := CheckForMutexes('{#AppMutex}');
+      Log('App was running: ' + BoolToStr(AppWasRunning));
       Log('Proxy app was running: ' + BoolToStr(ProxyWasRunning));
 #endif
 
