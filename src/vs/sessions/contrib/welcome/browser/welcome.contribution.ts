@@ -16,8 +16,10 @@ import { IInstantiationService, ServicesAccessor } from '../../../../platform/in
 import { Action2, registerAction2 } from '../../../../platform/actions/common/actions.js';
 import { Categories } from '../../../../platform/action/common/actionCommonCategories.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
+import { ISecretStorageService } from '../../../../platform/secrets/common/secrets.js';
 import { IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { IWorkbenchEnvironmentService } from '../../../../workbench/services/environment/common/environmentService.js';
+import { IAuthenticationService } from '../../../../workbench/services/authentication/common/authentication.js';
 import { SessionsWalkthroughOverlay, WalkthroughOutcome } from './sessionsWalkthrough.js';
 
 const WELCOME_COMPLETE_KEY = 'workbench.agentsession.welcomeComplete';
@@ -54,6 +56,8 @@ export class SessionsWelcomeContribution extends Disposable implements IWorkbenc
 		@IStorageService private readonly storageService: IStorageService,
 		@IContextKeyService private readonly contextKeyService: IContextKeyService,
 		@IWorkbenchEnvironmentService private readonly environmentService: IWorkbenchEnvironmentService,
+		@IAuthenticationService private readonly authenticationService: IAuthenticationService,
+		@ISecretStorageService private readonly secretStorageService: ISecretStorageService,
 		@ILogService private readonly logService: ILogService,
 	) {
 		super();
@@ -75,7 +79,17 @@ export class SessionsWelcomeContribution extends Disposable implements IWorkbenc
 
 		const isFirstLaunch = !this.storageService.getBoolean(WELCOME_COMPLETE_KEY, StorageScope.APPLICATION, false);
 		if (isFirstLaunch) {
-			this.showWalkthrough();
+			// On first launch, check if a GitHub session already exists (e.g. from
+			// a redirect-based OAuth flow that stored a token before the workbench
+			// booted). If so, persist completion and skip the walkthrough.
+			this._hasExistingGitHubSession().then(hasSession => {
+				if (hasSession) {
+					this.logService.info('[sessions welcome] GitHub session found, skipping walkthrough');
+					this.storageService.store(WELCOME_COMPLETE_KEY, true, StorageScope.APPLICATION, StorageTarget.MACHINE);
+					return;
+				}
+				this.showWalkthrough();
+			});
 		} else {
 			this.showWalkthroughIfNeeded();
 		}
@@ -83,7 +97,14 @@ export class SessionsWelcomeContribution extends Disposable implements IWorkbenc
 
 	private showWalkthroughIfNeeded(): void {
 		if (this._needsChatSetup()) {
-			this.showWalkthrough();
+			// Check if user already has a GitHub session (e.g. from a previous
+			// device code flow). If so, skip the walkthrough — the entitlement
+			// state may never flip in OSS/web builds without Copilot product config.
+			this._hasExistingGitHubSession().then(hasSession => {
+				if (!hasSession) {
+					this.showWalkthrough();
+				}
+			});
 		} else {
 			this.watchEntitlementState();
 		}
@@ -115,6 +136,34 @@ export class SessionsWelcomeContribution extends Disposable implements IWorkbenc
 
 	private _needsChatSetup(includeUnknown: boolean = true): boolean {
 		return needsChatSetup(this.chatEntitlementService, includeUnknown);
+	}
+
+	private async _hasExistingGitHubSession(): Promise<boolean> {
+		// Check secret storage directly for GitHub auth sessions stored by
+		// the vscode.dev sessions bootstrap (before extensions activate).
+		// The key format matches what the github-authentication extension uses.
+		try {
+			const key = JSON.stringify({ extensionId: 'vscode.github-authentication', key: 'github.auth' });
+			const raw = await this.secretStorageService.get(key);
+			if (raw) {
+				const sessions = JSON.parse(raw);
+				if (Array.isArray(sessions) && sessions.length > 0) {
+					return true;
+				}
+			}
+		} catch (e) {
+			this.logService.warn('[sessions welcome] Error checking secret storage:', e);
+		}
+
+		// Fallback: try the authentication service (may not work if extensions
+		// haven't loaded yet)
+		try {
+			const sessions = await this.authenticationService.getSessions('github');
+			return sessions.length > 0;
+		} catch (e) {
+			this.logService.warn('[sessions welcome] authService.getSessions failed:', e);
+			return false;
+		}
 	}
 
 	private showWalkthrough(): void {

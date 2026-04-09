@@ -7,8 +7,9 @@ import './media/sessionsWalkthrough.css';
 import { disposableTimeout } from '../../../../base/common/async.js';
 import { Disposable, DisposableStore, MutableDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { $, append, EventType, addDisposableListener, getActiveElement, isHTMLElement } from '../../../../base/browser/dom.js';
+import { mainWindow } from '../../../../base/browser/window.js';
 import { localize } from '../../../../nls.js';
-import { ICommandService } from '../../../../platform/commands/common/commands.js';
+import { ICommandService, CommandsRegistry } from '../../../../platform/commands/common/commands.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { IOpenerService } from '../../../../platform/opener/common/opener.js';
 import { IProductService } from '../../../../platform/product/common/productService.js';
@@ -17,6 +18,8 @@ import { ChatEntitlement, ChatEntitlementService, IChatEntitlementService } from
 import { CHAT_SETUP_SUPPORT_ANONYMOUS_ACTION_ID } from '../../../../workbench/contrib/chat/browser/actions/chatActions.js';
 import { ChatSetupStrategy } from '../../../../workbench/contrib/chat/browser/chatSetup/chatSetup.js';
 import { URI } from '../../../../base/common/uri.js';
+import { IRemoteAgentHostService, RemoteAgentHostEntryType } from '../../../../platform/agentHost/common/remoteAgentHostService.js';
+import { ISecretStorageService } from '../../../../platform/secrets/common/secrets.js';
 
 export type WalkthroughOutcome = 'completed' | 'dismissed';
 
@@ -56,6 +59,8 @@ export class SessionsWalkthroughOverlay extends Disposable {
 		@IChatEntitlementService private readonly chatEntitlementService: ChatEntitlementService,
 		@ICommandService private readonly commandService: ICommandService,
 		@IExtensionService private readonly extensionService: IExtensionService,
+		@IRemoteAgentHostService private readonly remoteAgentHostService: IRemoteAgentHostService,
+		@ISecretStorageService private readonly secretStorageService: ISecretStorageService,
 		@IOpenerService private readonly openerService: IOpenerService,
 		@IProductService private readonly productService: IProductService,
 		@ILogService private readonly logService: ILogService,
@@ -222,29 +227,164 @@ export class SessionsWalkthroughOverlay extends Disposable {
 		this.contentContainer.classList.remove('sessions-walkthrough-fade-out');
 
 		try {
-			const success = await this.commandService.executeCommand<boolean>(CHAT_SETUP_SUPPORT_ANONYMOUS_ACTION_ID, {
-				setupStrategy: strategy
-			});
+			// Check if the chat setup command is available (it may not be registered
+			// when the entitlement service has no context, e.g. in web sessions)
+			const hasSetupCommand = !!CommandsRegistry.getCommand(CHAT_SETUP_SUPPORT_ANONYMOUS_ACTION_ID);
+
+			let success: boolean;
+			let usedDeviceCodeFlow = false;
+			if (hasSetupCommand) {
+				success = !!await this.commandService.executeCommand<boolean>(CHAT_SETUP_SUPPORT_ANONYMOUS_ACTION_ID, {
+					setupStrategy: strategy
+				});
+			} else {
+				// Fallback: use GitHub device code flow via the tunnel discovery
+				// auth proxy, which uses VS Code's production OAuth App client ID
+				// (trusted by Dev Tunnels). Works without a client secret.
+				this.logService.info('[sessions walkthrough] Chat setup command not available, starting device code flow');
+
+				try {
+					// Step 1: Request a device code
+					const codeResp = await fetch('/agents/api/hosts/auth/device/code', {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+					});
+					if (!codeResp.ok) { throw new Error(`Device code request failed: ${codeResp.status}`); }
+					const codeData = await codeResp.json() as {
+						device_code: string;
+						user_code: string;
+						verification_uri: string;
+						interval: number;
+						expires_in: number;
+					};
+
+					// Step 2: Show the code to the user
+					titleEl.textContent = codeData.user_code;
+					titleEl.style.letterSpacing = '4px';
+					titleEl.style.fontFamily = 'monospace';
+					subtitleEl.textContent = localize('walkthrough.enterCode', "Enter this code at {0}", codeData.verification_uri);
+
+					// Open GitHub in new tab
+					this.openerService.open(URI.parse(codeData.verification_uri));
+
+					// Step 3: Poll for token
+					const interval = Math.max((codeData.interval || 5) * 1000, 5000);
+					const deadline = Date.now() + (codeData.expires_in || 900) * 1000;
+					let accessToken: string | undefined;
+
+					while (Date.now() < deadline) {
+						await new Promise(r => setTimeout(r, interval));
+						if (this._shouldAbortUpdate(titleEl, subtitleEl)) { return; }
+
+						const tokenResp = await fetch('/agents/api/hosts/auth/device/token', {
+							method: 'POST',
+							headers: { 'Content-Type': 'application/json' },
+							body: JSON.stringify({ device_code: codeData.device_code }),
+						});
+						const tokenData = await tokenResp.json() as { access_token?: string; error?: string };
+
+						if (tokenData.access_token) {
+							accessToken = tokenData.access_token;
+							break;
+						}
+						if (tokenData.error === 'expired_token' || tokenData.error === 'access_denied') {
+							throw new Error(tokenData.error);
+						}
+						// authorization_pending or slow_down → keep polling
+					}
+
+					if (accessToken) {
+						this.logService.info('[sessions walkthrough] Device code flow succeeded, discovering tunnels');
+
+						// Store token in localStorage for tunnel discovery
+						localStorage.setItem('sessions.tunnel.token', accessToken);
+
+						// Store as a GitHub auth session in secret storage so that
+						// IAuthenticationService.getSessions('github') finds it.
+						// This is the same format the github-authentication extension uses.
+						const authKey = JSON.stringify({ extensionId: 'vscode.github-authentication', key: 'github.auth' });
+						try {
+							const existing = await this.secretStorageService.get(authKey);
+							const sessions = existing ? JSON.parse(existing) : [];
+							sessions.push({
+								id: crypto.randomUUID(),
+								accessToken,
+								scopes: ['user:email', 'read:org']
+							});
+							await this.secretStorageService.set(authKey, JSON.stringify(sessions));
+							this.logService.info('[sessions walkthrough] Stored GitHub auth session in secret storage');
+						} catch (e) {
+							this.logService.warn('[sessions walkthrough] Failed to store auth session:', e);
+						}
+
+						// Discover tunnels
+						const hostsResp = await fetch('/agents/api/hosts', {
+							headers: { 'Authorization': `Bearer ${accessToken}` },
+						});
+						if (hostsResp.ok) {
+							const hostsData = await hostsResp.json() as { hosts: { hostId: string; clusterId?: string; name: string; tunnelUrl: string; connectionToken?: string }[] };
+							this.logService.info(`[sessions walkthrough] Discovered ${hostsData.hosts?.length ?? 0} tunnels`);
+
+							// Connect to each discovered tunnel via relay proxy
+							for (const host of hostsData.hosts ?? []) {
+								const loc = mainWindow.location;
+								const wsScheme = loc.protocol === 'https:' ? 'wss:' : 'ws:';
+								const params = new URLSearchParams({
+									tunnelId: host.hostId,
+									clusterId: host.clusterId ?? '',
+									token: accessToken,
+								});
+								const proxyAddress = `${wsScheme}//${loc.host}/agents/tunnel?${params.toString()}`;
+
+								try {
+									this.logService.info(`[sessions walkthrough] Connecting to ${host.name || host.hostId} via proxy`);
+									await this.remoteAgentHostService.addRemoteAgentHost({
+										name: host.name || host.hostId,
+										connectionToken: host.connectionToken,
+										connection: { type: RemoteAgentHostEntryType.WebSocket, address: proxyAddress },
+									});
+									this.logService.info(`[sessions walkthrough] Connected to ${host.name || host.hostId}!`);
+								} catch (connErr) {
+									this.logService.warn(`[sessions walkthrough] Failed to connect to ${host.name || host.hostId}:`, connErr);
+								}
+							}
+						}
+
+						success = true;
+						usedDeviceCodeFlow = true;
+					} else {
+						throw new Error('Device code expired');
+					}
+				} catch (err) {
+					this.logService.warn('[sessions walkthrough] Device code flow failed:', err);
+					success = false;
+				}
+			}
+
 			if (this._shouldAbortUpdate(titleEl, subtitleEl)) {
 				return;
 			}
 
 			if (success) {
-				// Update title and subtitle for the finishing phase
-				titleEl.textContent = localize('walkthrough.signingIn', "Finishing setup\u2026");
-				subtitleEl.textContent = localize('walkthrough.finishingSubtitle', "Getting everything ready for you.");
+				if (!usedDeviceCodeFlow) {
+					// Only restart extension hosts for the Copilot setup command path.
+					// The device code flow already connected to the agent host directly,
+					// and restarting would tear down that connection.
+					titleEl.textContent = localize('walkthrough.signingIn', "Finishing setup\u2026");
+					subtitleEl.textContent = localize('walkthrough.finishingSubtitle', "Getting everything ready for you.");
 
-				this.logService.info('[sessions walkthrough] Restarting extension host after setup');
-				const stopped = await this.extensionService.stopExtensionHosts(
-					localize('walkthrough.restart', "Completing Agents setup")
-				);
-				if (this._shouldAbortUpdate(titleEl, subtitleEl)) {
-					return;
-				}
-				if (stopped) {
-					await this.extensionService.startExtensionHosts();
+					this.logService.info('[sessions walkthrough] Restarting extension host after setup');
+					const stopped = await this.extensionService.stopExtensionHosts(
+						localize('walkthrough.restart', "Completing Agents setup")
+					);
 					if (this._shouldAbortUpdate(titleEl, subtitleEl)) {
 						return;
+					}
+					if (stopped) {
+						await this.extensionService.startExtensionHosts();
+						if (this._shouldAbortUpdate(titleEl, subtitleEl)) {
+							return;
+						}
 					}
 				}
 
