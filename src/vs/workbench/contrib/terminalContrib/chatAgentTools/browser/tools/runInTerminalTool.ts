@@ -1395,8 +1395,11 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 					}
 				});
 				// Register a listener to notify the agent when commands complete in this
-				// background terminal, and continue the output monitor for prompt-for-input detection
-				if (this._configurationService.getValue(TerminalChatAgentToolsSettingId.BackgroundNotifications)) {
+				// background terminal, and continue the output monitor for prompt-for-input detection.
+				// Skip notifications for subagent-initiated terminals: the subagent runs in its
+				// own tool calling loop and cannot receive steering messages. It can poll with
+				// get_terminal_output instead.
+				if (this._configurationService.getValue(TerminalChatAgentToolsSettingId.BackgroundNotifications) && !invocation.subAgentInvocationId) {
 					this._registerCompletionNotification(toolTerminal.instance, termId, chatSessionResource, command, outputMonitor);
 				} else {
 					outputMonitor?.dispose();
