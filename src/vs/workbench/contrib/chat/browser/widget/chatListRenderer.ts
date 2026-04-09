@@ -2122,6 +2122,7 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 
 		// For cases not handled above (no thinking part, no subagent, etc.), create the part now
 		const { part } = createToolPart();
+		let inlinePartAnchor: HTMLElement | undefined;
 
 		// Watch for future confirmation transitions and route to carousel
 		if (this.configService.getValue<boolean>(ChatConfiguration.ToolConfirmationCarousel) &&
@@ -2136,6 +2137,37 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 					this._announcedToolProgressKeys,
 					codeBlockStartIndex
 				);
+				const routePartToCarousel = (): boolean => {
+					inlinePartAnchor ??= this.createInlinePartAnchor(part);
+					if (!inlinePartAnchor) {
+						return false;
+					}
+
+					dom.show(part.domNode);
+					widget.inputPart.addToolToConfirmationCarousel(toolInvocation, factory, undefined, undefined, undefined, part);
+					if (part.domNode.parentElement === inlinePartAnchor.parentElement) {
+						part.domNode.remove();
+					}
+					return true;
+				};
+				let hasScheduledCarouselRoute = false;
+				const scheduleRoutePartToCarousel = () => {
+					if (hasScheduledCarouselRoute) {
+						return;
+					}
+
+					hasScheduledCarouselRoute = true;
+					part.addDisposable(dom.scheduleAtNextAnimationFrame(dom.getWindow(part.domNode), () => {
+						hasScheduledCarouselRoute = false;
+						const state = toolInvocation.state.get();
+						if (state.type === IChatToolInvocation.StateKind.WaitingForConfirmation && state.confirmationMessages?.title &&
+							toolInvocation.presentation !== 'hidden' &&
+							toolInvocation.source.type !== 'mcp' &&
+							!this.viewModel?.editing) {
+							routePartToCarousel();
+						}
+					}));
+				};
 				part.addDisposable(autorun(reader => {
 					const state = toolInvocation.state.read(reader);
 					const isCarouselConfirmation = state.type === IChatToolInvocation.StateKind.WaitingForConfirmation &&
@@ -2145,11 +2177,14 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 						!this.viewModel?.editing;
 
 					if (isCarouselConfirmation) {
-						widget.inputPart.addToolToConfirmationCarousel(toolInvocation, factory);
-						dom.hide(part.domNode);
+						if (!routePartToCarousel()) {
+							scheduleRoutePartToCarousel();
+						}
 					} else if (IChatToolInvocation.isEffectivelyHidden(toolInvocation, reader)) {
+						this.restoreInlinePart(part, inlinePartAnchor);
 						dom.hide(part.domNode);
 					} else {
+						this.restoreInlinePart(part, inlinePartAnchor);
 						dom.show(part.domNode);
 					}
 				}));
@@ -2157,6 +2192,25 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		}
 
 		return part;
+	}
+
+	private createInlinePartAnchor(part: ChatToolInvocationPart): HTMLElement | undefined {
+		const parent = part.domNode?.parentElement;
+		if (!parent) {
+			return undefined;
+		}
+
+		const anchor = dom.$('.chat-tool-carousel-inline-anchor');
+		anchor.style.display = 'none';
+		parent.insertBefore(anchor, part.domNode);
+		part.addDisposable(toDisposable(() => anchor.remove()));
+		return anchor;
+	}
+
+	private restoreInlinePart(part: ChatToolInvocationPart, anchor: HTMLElement | undefined): void {
+		if (anchor?.parentElement && part.domNode?.parentElement !== anchor.parentElement) {
+			anchor.parentElement.insertBefore(part.domNode, anchor.nextSibling);
+		}
 	}
 
 	// watch for confirmation part transition when tool invocation is streaming

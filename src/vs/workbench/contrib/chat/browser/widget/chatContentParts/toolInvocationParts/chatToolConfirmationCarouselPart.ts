@@ -8,8 +8,9 @@ import { StandardKeyboardEvent } from '../../../../../../../base/browser/keyboar
 import { Button } from '../../../../../../../base/browser/ui/button/button.js';
 import { Codicon } from '../../../../../../../base/common/codicons.js';
 import { Emitter } from '../../../../../../../base/common/event.js';
+import { IMarkdownString } from '../../../../../../../base/common/htmlContent.js';
 import { KeyCode } from '../../../../../../../base/common/keyCodes.js';
-import { Disposable, DisposableStore } from '../../../../../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore, toDisposable } from '../../../../../../../base/common/lifecycle.js';
 import { autorun } from '../../../../../../../base/common/observable.js';
 import { localize } from '../../../../../../../nls.js';
 import { defaultButtonStyles } from '../../../../../../../platform/theme/browser/defaultStyles.js';
@@ -28,6 +29,7 @@ interface ICarouselToolItem {
 	readonly subAgentInvocationId?: string;
 	readonly agentName?: string;
 	readonly scrollToSubagent?: ScrollToSubagentCallback;
+	ownsToolPart: boolean;
 	toolPart?: ChatToolInvocationPart;
 }
 
@@ -134,14 +136,18 @@ export class ChatToolConfirmationCarouselPart extends Disposable {
 		return this.toolCallIds.has(toolCallId);
 	}
 
-	addToolInvocation(tool: IChatToolInvocation, subAgentInvocationId?: string, agentName?: string, scrollToSubagent?: ScrollToSubagentCallback): void {
+	addToolInvocation(tool: IChatToolInvocation, subAgentInvocationId?: string, agentName?: string, scrollToSubagent?: ScrollToSubagentCallback, toolPart?: ChatToolInvocationPart): void {
 		if (this.toolCallIds.has(tool.toolCallId)) {
+			const existing = this.items.find(item => item.toolCallId === tool.toolCallId);
+			if (existing && toolPart) {
+				this.replaceExternalToolPart(existing, toolPart);
+			}
 			return;
 		}
 
 		this.toolCallIds.add(tool.toolCallId);
 
-		const disposables = new DisposableStore();
+		const disposables = this._register(new DisposableStore());
 
 		const item: ICarouselToolItem = {
 			tool,
@@ -150,8 +156,13 @@ export class ChatToolConfirmationCarouselPart extends Disposable {
 			subAgentInvocationId,
 			agentName,
 			scrollToSubagent,
+			ownsToolPart: !toolPart,
+			toolPart,
 		};
 		this.items.push(item);
+		if (toolPart) {
+			this.watchExternalToolPart(item, toolPart);
+		}
 
 		disposables.add(autorun(reader => {
 			const currentState = tool.state.read(reader);
@@ -167,6 +178,40 @@ export class ChatToolConfirmationCarouselPart extends Disposable {
 		}
 	}
 
+	private replaceExternalToolPart(item: ICarouselToolItem, toolPart: ChatToolInvocationPart): void {
+		if (item.toolPart === toolPart) {
+			return;
+		}
+
+		if (item.toolPart && item.ownsToolPart) {
+			item.toolPart.dispose();
+		}
+
+		item.toolPart = toolPart;
+		item.ownsToolPart = false;
+		this.watchExternalToolPart(item, toolPart);
+		if (this.items[this.activeIndex] === item) {
+			this.renderActiveContent();
+		}
+	}
+
+	private watchExternalToolPart(item: ICarouselToolItem, toolPart: ChatToolInvocationPart): void {
+		let isItemAlive = true;
+		item.disposables.add(toDisposable(() => isItemAlive = false));
+
+		toolPart.addDisposable(toDisposable(() => {
+			if (!isItemAlive || item.toolPart !== toolPart) {
+				return;
+			}
+
+			item.toolPart = undefined;
+			item.ownsToolPart = true;
+			if (this.items[this.activeIndex] === item) {
+				this.renderActiveContent();
+			}
+		}));
+	}
+
 	private removeItem(toolCallId: string): void {
 		const index = this.items.findIndex(i => i.toolCallId === toolCallId);
 		if (index < 0) {
@@ -175,7 +220,7 @@ export class ChatToolConfirmationCarouselPart extends Disposable {
 
 		const [removed] = this.items.splice(index, 1);
 		this.toolCallIds.delete(toolCallId);
-		if (removed.toolPart) {
+		if (removed.toolPart && removed.ownsToolPart) {
 			removed.toolPart.dispose();
 		}
 		removed.disposables.dispose();
@@ -326,7 +371,9 @@ export class ChatToolConfirmationCarouselPart extends Disposable {
 
 		if (!item.toolPart) {
 			item.toolPart = this.toolPartFactory(item.tool);
-			item.disposables.add(item.toolPart);
+			if (item.ownsToolPart) {
+				item.disposables.add(item.toolPart);
+			}
 		}
 
 		this.contentContainer.appendChild(item.toolPart.domNode);
@@ -338,12 +385,6 @@ export class ChatToolConfirmationCarouselPart extends Disposable {
 		}
 	}
 
-	skipAll(): void {
-		for (const item of [...this.items]) {
-			IChatToolInvocation.confirmWith(item.tool, { type: ToolConfirmKind.Skipped });
-		}
-	}
-
 	private getToolTitle(item: ICarouselToolItem | undefined): string | undefined {
 		if (!item) {
 			return undefined;
@@ -352,7 +393,33 @@ export class ChatToolConfirmationCarouselPart extends Disposable {
 		if (!messages?.title) {
 			return undefined;
 		}
-		return typeof messages.title === 'string' ? messages.title : messages.title.value;
+		return this.truncateTitle(this.toPlainText(messages.title));
+	}
+
+	private truncateTitle(text: string): string {
+		text = text.replace(/\s+/g, ' ').trim();
+		const maxLength = 100;
+		return text.length > maxLength ? `${text.substring(0, maxLength)}\u2026` : text;
+	}
+
+	private toPlainText(message: string | IMarkdownString): string {
+		const markdown = typeof message === 'string' ? message : message.value;
+		return markdown
+			.replace(/\[([^\]]*)\]\(([^)]+)\)/g, (_match, text, url) => text || this.basename(url))
+			.replace(/\*\*([^*]+)\*\*/g, '$1')
+			.replace(/__([^_]+)__/g, '$1')
+			.replace(/`([^`]+)`/g, '$1')
+			.replace(/[\\*_#>]/g, '');
+	}
+
+	private basename(url: string): string {
+		try {
+			const path = decodeURIComponent(url.split('?')[0].split('#')[0]);
+			const segments = path.split('/').filter(Boolean);
+			return segments.at(-1) ?? url;
+		} catch {
+			return url;
+		}
 	}
 
 	private scrollToActiveSubagent(): void {
