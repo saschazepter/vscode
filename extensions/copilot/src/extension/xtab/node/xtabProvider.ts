@@ -815,6 +815,9 @@ export class XtabProvider implements IStatelessNextEditProvider {
 				logContext.setResponse(responseSoFar);
 			});
 
+		const getFetchFailure = (): NoNextEditReason | undefined =>
+			chatResponseFailure ? mapChatFetcherErrorToNoNextEditReason(chatResponseFailure) : undefined;
+
 		const llmLinesStream = AsyncIterUtilsExt.splitLines(AsyncIterUtils.map(fetchStreamSource.stream, (chunk) => chunk.delta.text));
 
 		// logging of times
@@ -847,6 +850,13 @@ export class XtabProvider implements IStatelessNextEditProvider {
 			// Parse the edit_intent from the response
 			const { editIntent, remainingLinesStream, parseError } = await parseEditIntentFromStream(linesStream, tracer, parseMode);
 
+			{
+				const fetchFailure = getFetchFailure();
+				if (fetchFailure) {
+					return fetchFailure;
+				}
+			}
+
 			// Log the edit intent for telemetry
 			telemetry.setEditIntent(editIntent);
 
@@ -875,14 +885,17 @@ export class XtabProvider implements IStatelessNextEditProvider {
 				activeDoc.workspaceRoot,
 				pseudoEditWindow,
 				tracer,
-				() => chatResponseFailure ? mapChatFetcherErrorToNoNextEditReason(chatResponseFailure) : undefined,
+				getFetchFailure,
 			);
 		} else if (responseOpts.responseFormat === xtabPromptOptions.ResponseFormat.UnifiedWithXml) {
 			const linesIter = linesStream[Symbol.asyncIterator]();
 			const firstLine = await linesIter.next();
 
-			if (chatResponseFailure !== undefined) { // handle fetch failure
-				return new NoNextEditReason.Unexpected(ErrorUtils.fromUnknown(chatResponseFailure));
+			{
+				const fetchFailure = getFetchFailure();
+				if (fetchFailure) {
+					return fetchFailure;
+				}
 			}
 
 			if (firstLine.done) { // no lines in response -- unexpected case but take as no suggestions
@@ -900,6 +913,14 @@ export class XtabProvider implements IStatelessNextEditProvider {
 				if (lineWithCursorContinued.done || lineWithCursorContinued.value.includes(ResponseTags.INSERT.end)) {
 					return new NoNextEditReason.NoSuggestions(request.documentBeforeEdits, editWindow);
 				}
+
+				{
+					const fetchFailure = getFetchFailure();
+					if (fetchFailure) {
+						return fetchFailure;
+					}
+				}
+
 				const cursorColumnOffsetZeroBased = promptPieces.currentDocument.cursorPosition.column - 1;
 				const edit = new LineReplacement(
 					new LineRange(editWindowLineRange.start + cursorOriginalLinesOffset + 1 /* 0-based to 1-based */, editWindowLineRange.start + cursorOriginalLinesOffset + 2),
@@ -916,6 +937,13 @@ export class XtabProvider implements IStatelessNextEditProvider {
 						lines.push(v.value);
 					}
 					v = await linesIter.next();
+				}
+
+				{
+					const fetchFailure = getFetchFailure();
+					if (fetchFailure) {
+						return fetchFailure;
+					}
 				}
 
 				const line = editWindowLineRange.start + cursorOriginalLinesOffset + 2;
@@ -938,6 +966,9 @@ export class XtabProvider implements IStatelessNextEditProvider {
 					let v = await linesIter.next();
 					while (!v.done) {
 						if (v.value.includes(ResponseTags.EDIT.end)) {
+							return;
+						}
+						if (getFetchFailure()) {
 							return;
 						}
 						yield v.value;
@@ -1010,6 +1041,13 @@ export class XtabProvider implements IStatelessNextEditProvider {
 					break;
 				}
 
+				{
+					const fetchFailure = getFetchFailure();
+					if (fetchFailure) {
+						return fetchFailure;
+					}
+				}
+
 				tracer.trace(`ResponseProcessor streamed edit #${i} with latency ${fetchRequestStopWatch.elapsed()} ms`);
 
 				const singleLineEdits: LineReplacement[] = [];
@@ -1042,10 +1080,6 @@ export class XtabProvider implements IStatelessNextEditProvider {
 					}
 				}
 
-				if (chatResponseFailure) { // do not emit edits if chat response failed
-					break;
-				}
-
 				logContext.setResponse(responseSoFar);
 
 				for (const singleLineEdit of singleLineEdits) {
@@ -1072,8 +1106,11 @@ export class XtabProvider implements IStatelessNextEditProvider {
 				return new NoNextEditReason.GotCancelled('cursorLineDiverged');
 			}
 
-			if (chatResponseFailure) {
-				return mapChatFetcherErrorToNoNextEditReason(chatResponseFailure);
+			{
+				const fetchFailure = getFetchFailure();
+				if (fetchFailure) {
+					return fetchFailure;
+				}
 			}
 
 			return new NoNextEditReason.NoSuggestions(request.documentBeforeEdits, editWindow);
