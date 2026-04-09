@@ -33,7 +33,7 @@ export interface MarkdownLoggable {
  * - `cached`: result is from NES cache
  * - `cachedFromGhostText`: result is from ghost text cache
  * - `skipped`: request was skipped or fetch-cancelled
- * - `cancelled`: request was cancelled via CancellationToken
+ * - `cancelled`: request was cancelled via CancellationToken (shown as skipped)
  * - `errored`: an error occurred
  */
 type LogContextOutcome = 'pending' | 'succeeded' | 'noSuggestions' | 'cached' | 'cachedFromGhostText' | 'skipped' | 'cancelled' | 'errored';
@@ -374,8 +374,8 @@ export class InlineEditRequestLogContext {
 			case 'noSuggestions': return Icon.circleSlash;
 			case 'cached':
 			case 'cachedFromGhostText': return Icon.database;
-			case 'skipped': return Icon.skipped;
-			case 'cancelled': return Icon.loading;
+			case 'skipped':
+			case 'cancelled': return Icon.skipped;
 			case 'errored': return Icon.error;
 		}
 	}
