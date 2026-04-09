@@ -551,6 +551,8 @@ export class ChangesViewPane extends ViewPane {
 				this.filesCountBadge.textContent = `${files}`;
 				this.filesCountBadge.style.display = '';
 			}
+
+			this.layoutSplitView();
 		}));
 
 		// Update summary text (line counts only, file count is shown in badge)
