@@ -28,6 +28,7 @@ import { toErrorMessage } from '../../../../util/common/errorMessage';
 import { ITokenizer } from '../../../../util/common/tokenizer';
 import { CancellationToken } from '../../../../util/vs/base/common/cancellation';
 import { isCancellationError } from '../../../../util/vs/base/common/errors';
+import { getExtensionForMimeType } from '../../../../util/vs/base/common/mime';
 import { URI, UriComponents } from '../../../../util/vs/base/common/uri';
 import { IInstantiationService, ServicesAccessor } from '../../../../util/vs/platform/instantiation/common/instantiation';
 import { ServiceCollection } from '../../../../util/vs/platform/instantiation/common/serviceCollection';
@@ -79,8 +80,12 @@ export class ChatToolCalls extends PromptElement<ChatToolCallsProps, void> {
 			new ServiceCollection([IBuildPromptContext, this.props.promptContext])
 		);
 
+		// Shared budget to limit total image data across all tool results in this turn.
+		// Prevents 413 errors when many image-returning tools run in parallel.
+		const sharedImageBudget: SharedImageBudget = { remaining: 5 * 1024 * 1024 };
+
 		const toolCallRounds = this.props.toolCallRounds.flatMap((round, i) => {
-			return this.renderOneToolCallRound(round, i, this.props.toolCallRounds!.length, hydratedInstantiationService, token);
+			return this.renderOneToolCallRound(round, i, this.props.toolCallRounds!.length, hydratedInstantiationService, sharedImageBudget, token);
 		});
 		if (!toolCallRounds.length) {
 			return;
@@ -97,7 +102,7 @@ export class ChatToolCalls extends PromptElement<ChatToolCallsProps, void> {
 	/**
 	 * Render one round of tool calling: the assistant message text, its tool calls, and the results of those tool calls.
 	 */
-	private renderOneToolCallRound(round: IToolCallRound, index: number, total: number, hydratedInstantiationService: IInstantiationService, token?: CancellationToken): PromptElement[] {
+	private renderOneToolCallRound(round: IToolCallRound, index: number, total: number, hydratedInstantiationService: IInstantiationService, sharedImageBudget: SharedImageBudget, token?: CancellationToken): PromptElement[] {
 		let fixedNameToolCalls = round.toolCalls.map(tc => ({ ...tc, name: this.toolsService.validateToolName(tc.name) ?? tc.name }));
 		if (this.props.isHistorical) {
 			fixedNameToolCalls = fixedNameToolCalls.filter(tc => tc.id && this.props.toolCallResults?.[tc.id]);
@@ -150,6 +155,9 @@ export class ChatToolCalls extends PromptElement<ChatToolCallsProps, void> {
 						enableCacheBreakpoints: this.props.enableCacheBreakpoints ?? false,
 						truncateAt: this.props.truncateAt,
 						sessionId: this.props.promptContext.request?.sessionId,
+						// Strip images from historical turns and non-latest rounds to avoid 413 errors
+						stripImages: !!this.props.isHistorical || index < total - 1,
+						sharedImageBudget,
 						token: token ?? CancellationToken.None,
 					})}
 				</KeepWith>,
@@ -165,6 +173,15 @@ export class ChatToolCalls extends PromptElement<ChatToolCallsProps, void> {
 	}
 }
 
+/**
+ * Shared mutable counter that limits the total image data rendered across
+ * all tool results within a turn, preventing 413 (request too large) errors
+ * when many image-returning tools (e.g. view_image) run in parallel.
+ */
+interface SharedImageBudget {
+	remaining: number;
+}
+
 interface ToolResultOpts {
 	readonly toolCall: IToolCall;
 	readonly toolInvocationToken: ChatParticipantToolToken | undefined;
@@ -177,6 +194,8 @@ interface ToolResultOpts {
 	readonly enableCacheBreakpoints: boolean;
 	readonly truncateAt?: number;
 	readonly sessionId: string | undefined;
+	readonly stripImages?: boolean;
+	readonly sharedImageBudget?: SharedImageBudget;
 	readonly token: CancellationToken;
 }
 
@@ -332,6 +351,8 @@ function buildToolResultElement(accessor: ServicesAccessor, props: ToolResultOpt
 		toolCall={props.toolCall}
 		isLast={props.isLast}
 		sessionId={props.sessionId}
+		stripImages={props.stripImages}
+		sharedImageBudget={props.sharedImageBudget}
 	/>;
 }
 
@@ -389,6 +410,48 @@ interface IToolResultElementActualProps {
 	toolCall: IToolCall;
 	sessionId: string | undefined;
 	isLast: boolean;
+	stripImages?: boolean;
+	sharedImageBudget?: SharedImageBudget;
+}
+
+function imageExtForMimeType(mimeType: string): string {
+	return getExtensionForMimeType(mimeType) ?? '.bin';
+}
+
+function buildImageUri(sessionId: string | undefined, toolCallId: string | undefined, imageIndex: number | undefined, mimeType: string): string | undefined {
+	if (!sessionId || imageIndex === undefined) {
+		return undefined;
+	}
+	const coreToolCallId = toolCallId?.split('__vscode')[0] ?? '';
+	return buildToolImageResourceUri(sessionId, coreToolCallId, imageIndex, imageExtForMimeType(mimeType));
+}
+
+function makeImagePlaceholderText(message: string, uri: string | undefined): string {
+	const uriRef = uri ? ` Image URI: ${uri}` : '';
+	return `[${message}${uriRef}]`;
+}
+
+/**
+ * Replaces image data parts with text placeholders in tool results.
+ * Used for historical turns and non-latest rounds within the current turn
+ * to prevent large base64 image data from accumulating and causing
+ * 413 (request too large) errors from the API.
+ */
+function replaceImagesWithPlaceholders(
+	content: LanguageModelToolResult2['content'],
+	toolCallId: string | undefined,
+	sessionId: string | undefined,
+): LanguageModelToolResult2['content'] {
+	if (!content.some(part => isImageDataPart(part))) {
+		return content;
+	}
+	return content.map((part, index) => {
+		if (!isImageDataPart(part)) {
+			return part;
+		}
+		const uri = buildImageUri(sessionId, toolCallId, index, part.mimeType);
+		return new LanguageModelTextPart(makeImagePlaceholderText('Image was previously shown to you.', uri));
+	});
 }
 
 /**
@@ -397,13 +460,20 @@ interface IToolResultElementActualProps {
 class ToolResultElement extends PromptElement<IToolResultElementActualProps & BasePromptElementProps, void> {
 	async render(state: void, sizing: PromptSizing) {
 		const { extraMetadata, toolResult, isCancelled } = await this.props.call(sizing);
+
+		// For historical turns and non-latest rounds, replace image data with text placeholders
+		// to avoid accumulating large base64 payloads across conversation turns (413 errors)
+		const content = this.props.stripImages
+			? replaceImagesWithPlaceholders(toolResult.content, this.props.toolCall.id, this.props.sessionId)
+			: toolResult.content;
+
 		const toolResultElement = this.props.enableCacheBreakpoints ?
 			<>
 				<Chunk>
-					<ToolResult content={toolResult.content} truncate={this.props.truncateAt} toolCallId={this.props.toolCall.id} sessionId={this.props.sessionId} toolName={this.props.toolCall.name} />
+					<ToolResult content={content} truncate={this.props.truncateAt} toolCallId={this.props.toolCall.id} sessionId={this.props.sessionId} toolName={this.props.toolCall.name} sharedImageBudget={this.props.sharedImageBudget} />
 				</Chunk>
 			</> :
-			<ToolResult content={toolResult.content} truncate={this.props.truncateAt} toolCallId={this.props.toolCall.id} sessionId={this.props.sessionId} toolName={this.props.toolCall.name} />;
+			<ToolResult content={content} truncate={this.props.truncateAt} toolCallId={this.props.toolCall.id} sessionId={this.props.sessionId} toolName={this.props.toolCall.name} sharedImageBudget={this.props.sharedImageBudget} />;
 
 		return (
 			<ToolMessage toolCallId={this.props.toolCall.id!}>
@@ -748,6 +818,10 @@ export interface IToolResultProps extends IPrimitiveToolResultProps {
 	 * The name of the tool that produced this result.
 	 */
 	toolName?: string;
+	/**
+	 * Shared budget limiting total image data across all tool results in a turn.
+	 */
+	sharedImageBudget?: SharedImageBudget;
 }
 
 
@@ -778,14 +852,32 @@ export class ToolResult extends PrimitiveToolResult<IToolResultProps> {
 	}
 
 	protected override async onImage(part: LanguageModelDataPart, imageIndex?: number): Promise<PromptPiece | undefined> {
+		// Check shared image budget across all tool results in this turn
+		const budget = this.props.sharedImageBudget;
+		if (budget && isImageDataPart(part)) {
+			if (budget.remaining < 0) {
+				return this.makeImagePlaceholder(part, imageIndex, true);
+			} else if (part.data.length > budget.remaining) {
+				budget.remaining = -1;
+				return this.makeImagePlaceholder(part, imageIndex, false);
+			}
+			budget.remaining -= part.data.length;
+		}
+
 		const image = await super.onImage(part, imageIndex);
 		if (!image || imageIndex === undefined || !this.props.toolCallId || !this.props.sessionId) {
 			return image;
 		}
-		const coreToolCallId = this.props.toolCallId.split('__vscode')[0];
-		const ext = part.mimeType === 'image/png' ? '.png' : part.mimeType === 'image/jpeg' ? '.jpg' : part.mimeType === 'image/gif' ? '.gif' : part.mimeType === 'image/webp' ? '.webp' : '.bin';
-		const uri = buildToolImageResourceUri(this.props.sessionId, coreToolCallId, imageIndex, ext);
-		return <>{image}{`\n[Image URI: ${uri}]`}</>;
+		const uri = buildImageUri(this.props.sessionId, this.props.toolCallId, imageIndex, part.mimeType);
+		return <>{image}{uri && `\n[Image URI: ${uri}]`}</>;
+	}
+
+	private makeImagePlaceholder(part: LanguageModelDataPart, imageIndex: number | undefined, alreadyExceeded: boolean): PromptPiece {
+		const uri = buildImageUri(this.props.sessionId, this.props.toolCallId, imageIndex, part.mimeType);
+		const message = alreadyExceeded
+			? 'Image omitted — context image budget exceeded.'
+			: 'Image omitted — too many images in this conversation. Try viewing fewer images at once or reference this image by URI.';
+		return <>{makeImagePlaceholderText(message, uri)}</>;
 	}
 
 	protected override async onText(content: string): Promise<string> {
