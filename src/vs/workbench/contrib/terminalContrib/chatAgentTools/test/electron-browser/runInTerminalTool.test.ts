@@ -36,7 +36,7 @@ import { IChatWidgetService } from '../../../../chat/browser/chat.js';
 import { ChatPermissionLevel } from '../../../../chat/common/constants.js';
 import { LocalChatSessionUri } from '../../../../chat/common/model/chatUri.js';
 import { ITerminalSandboxService, TerminalSandboxPrerequisiteCheck, type ITerminalSandboxPrerequisiteCheckResult } from '../../common/terminalSandboxService.js';
-import { ILanguageModelToolsService, IPreparedToolInvocation, IToolData, IToolImpl, IToolInvocationPreparationContext, ToolDataSource, ToolSet, type ToolConfirmationAction } from '../../../../chat/common/tools/languageModelToolsService.js';
+import { ILanguageModelToolsService, IPreparedToolInvocation, IToolData, IToolImpl, IToolInvocation, IToolInvocationPreparationContext, ToolDataSource, ToolSet, type ToolConfirmationAction } from '../../../../chat/common/tools/languageModelToolsService.js';
 import { ITerminalChatService, ITerminalService, type ITerminalInstance } from '../../../../terminal/browser/terminal.js';
 import { ITerminalProfileResolverService } from '../../../../terminal/common/terminal.js';
 import type { ICommandLinePresenter } from '../../browser/tools/commandLinePresenter/commandLinePresenter.js';
@@ -383,6 +383,46 @@ suite('RunInTerminalTool', () => {
 
 			const terminalData = preparedInvocation.toolSpecificData as IChatTerminalToolInvocationData;
 			strictEqual(terminalData.commandLine.isSandboxWrapped, true);
+		});
+	});
+
+	suite('subagent background notifications', () => {
+		test('should skip background notification messaging for subagent invocations', async () => {
+			setAutoApprove({ echo: true });
+			setConfig(TerminalChatAgentToolsSettingId.BackgroundNotifications, true);
+			createdTerminalInstance.sendText = async () => { };
+
+			const sessionResource = LocalChatSessionUri.forSession('subagent-session');
+			const preparedInvocation = await runInTerminalTool.prepareToolInvocation({
+				parameters: {
+					command: 'echo hello',
+					explanation: 'Print hello',
+					goal: 'Print hello',
+					mode: 'sync',
+					timeout: 1,
+				} as IRunInTerminalInputParams,
+				chatSessionResource: sessionResource,
+			} as IToolInvocationPreparationContext, CancellationToken.None);
+
+			ok(preparedInvocation, 'Expected prepared invocation to be defined');
+			let didRegisterCompletionNotification = false;
+			(runInTerminalTool as unknown as { _registerCompletionNotification: (...args: unknown[]) => void })._registerCompletionNotification = () => {
+				didRegisterCompletionNotification = true;
+			};
+
+			const result = await runInTerminalTool.invoke({
+				callId: 'call-id',
+				toolId: TerminalToolId.RunInTerminal,
+				parameters: {},
+				context: { sessionResource },
+				toolSpecificData: preparedInvocation.toolSpecificData,
+				subAgentInvocationId: 'subagent-1',
+			} as IToolInvocation, async () => 0, { report: () => { } }, CancellationToken.None);
+
+			const textResult = result.content.find(part => part.kind === 'text');
+			ok(textResult && textResult.kind === 'text', 'Expected text output');
+			ok(!textResult.value.includes('automatically notified on your next turn when it completes'), 'Expected no completion notification hint for subagent invocation');
+			ok(!didRegisterCompletionNotification, 'Expected no completion notification registration for subagent invocation');
 		});
 	});
 
