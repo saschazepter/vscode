@@ -334,7 +334,7 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 			throw new BugIndicatingError(`Document "${docId.baseName}" not found`);
 		}
 
-		const documentAtInvocationTime = doc.value.get();
+		let documentAtInvocationTime: StringText | undefined = doc.value.get();
 		const selections = doc.selection.get();
 
 		const nesConfigs = this.determineNesConfigs(telemetryBuilder, logContext);
@@ -455,6 +455,9 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 		}
 
 		logContext.setResult(RootedLineEdit.fromEdit(new RootedEdit(documentAtInvocationTime, new StringEdit([edit.actualEdit]))));
+		// Release the document snapshot so the async function's generator scope
+		// does not pin the 16 MB StringText after this point.
+		documentAtInvocationTime = undefined;
 
 		assert(currentDocument !== undefined, 'should be defined if edit is defined');
 
@@ -529,7 +532,7 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 			return Result.error(new NoNextEditReason.Unexpected(new Error('DocumentMissingInHistoryContext')));
 		}
 
-		const documentAtInvocationTime = doc.value.get();
+		let documentAtInvocationTime: StringText | undefined = doc.value.get();
 		const selectionAtInvocationTime = doc.selection.get();
 
 		const logContext = req.log;
@@ -644,7 +647,7 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 				}
 
 				// Rebase failed (or result had error). Check if there is a new pending request. Otherwise continue with a new request below.
-				const pendingRequestStillCurrent2 = documentAtInvocationTime.value === this._pendingStatelessNextEditRequest?.documentBeforeEdits?.value;
+				const pendingRequestStillCurrent2 = documentAtInvocationTime?.value === this._pendingStatelessNextEditRequest?.documentBeforeEdits?.value;
 				const existingNextEditRequest2 = pendingRequestStillCurrent2 && !this._pendingStatelessNextEditRequest?.cancellationTokenSource.token.isCancellationRequested
 					&& this._pendingStatelessNextEditRequest || undefined;
 				if (existingNextEditRequest2) {
@@ -657,6 +660,10 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 				logger.trace('creating new next edit request after rebase failed');
 			}
 		}
+
+		// Release document snapshot so the async function's generator scope
+		// does not pin the 16 MB StringText after this point.
+		documentAtInvocationTime = undefined;
 
 		const res = await this._executeNewNextEditRequest(req, doc, historyContext, nesConfigs, shouldExpandEditWindow, logger, telemetryBuilder, cancellationToken);
 		const nextEditRequest = res.nextEditRequest;
