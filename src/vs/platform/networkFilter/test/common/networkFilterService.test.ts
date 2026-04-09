@@ -4,13 +4,13 @@
  *--------------------------------------------------------------------------------------------*/
 
 import assert from 'assert';
-import { URI } from '../../../../../../base/common/uri.js';
-import { DisposableStore } from '../../../../../../base/common/lifecycle.js';
-import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/test/common/utils.js';
-import { ConfigurationTarget } from '../../../../../../platform/configuration/common/configuration.js';
-import { TestConfigurationService } from '../../../../../../platform/configuration/test/common/testConfigurationService.js';
-import { AgentNetworkFilterService } from '../../../../../../platform/networkFilter/common/networkFilterService.js';
-import { AgentNetworkDomainSettingId } from '../../../../../../platform/networkFilter/common/settings.js';
+import { URI } from '../../../../base/common/uri.js';
+import { DisposableStore } from '../../../../base/common/lifecycle.js';
+import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/common/utils.js';
+import { ConfigurationTarget } from '../../../configuration/common/configuration.js';
+import { TestConfigurationService } from '../../../configuration/test/common/testConfigurationService.js';
+import { AgentNetworkFilterService } from '../../common/networkFilterService.js';
+import { AgentNetworkDomainSettingId } from '../../common/settings.js';
 
 suite('AgentNetworkFilterService', () => {
 
