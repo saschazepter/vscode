@@ -6245,7 +6245,7 @@
 		"watch:tsc-extension": "tsc --noEmit --watch --project tsconfig.json",
 		"watch:tsc-extension-web": "tsc --noEmit --watch --project tsconfig.worker.json",
 		"watch:tsc-simulation-workbench": "tsc --noEmit --watch --project test/simulation/workbench/tsconfig.json",
-		"typecheck": "tsc --noEmit --project tsconfig.json && tsc --noEmit --project test/simulation/workbench/tsconfig.json && tsc --noEmit --project tsconfig.worker.json && tsc --noEmit --project src/extension/completions-core/vscode-node/extension/src/copilotPanel/webView/tsconfig.json",
+		"typecheck": "tsgo --noEmit --project tsconfig.json && tsgo --noEmit --project test/simulation/workbench/tsconfig.json && tsgo --noEmit --project tsconfig.worker.json && tsgo --noEmit --project src/extension/completions-core/vscode-node/extension/src/copilotPanel/webView/tsconfig.json",
 		"lint": "eslint . --max-warnings=0",
 		"lint-staged": "eslint --max-warnings=0",
 		"tsfmt": "npx tsfmt -r --verify",
