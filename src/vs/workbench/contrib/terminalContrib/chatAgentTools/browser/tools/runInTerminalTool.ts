@@ -137,6 +137,13 @@ function createPowerShellModelDescription(shell: string, isSandboxEnabled: boole
 		'- Be specific with Select-Object properties to avoid excessive output',
 		'- Avoid printing credentials unless absolutely required',
 		`- NEVER run Start-Sleep or similar wait commands.${backgroundNotifications ? ' You will be automatically notified on your next turn when async terminal commands complete or need input.' : ''} Use ${TerminalToolId.GetTerminalOutput} to check output before then`,
+		'',
+		'Interactive Input Handling:',
+		'- It is OK to ask the user for all prompt values up front.',
+		`- When sending input to an interactive terminal program, send exactly one answer per prompt using ${TerminalToolId.SendToTerminal}.`,
+		'- Never send multiple answers in a single terminal send.',
+		`- After each send, read terminal output using ${TerminalToolId.GetTerminalOutput} and confirm the next prompt before sending the next answer.`,
+		'- Continue until the command finishes.',
 	);
 
 	return parts.join('\n');
@@ -210,7 +217,14 @@ Best Practices:
 - Use find with -exec or xargs for file operations
 - Be specific with commands to avoid excessive output
 - Avoid printing credentials unless absolutely required
-- NEVER run sleep or similar wait commands in a terminal.${backgroundNotifications ? ' You will be automatically notified on your next turn when async terminal commands complete or need input.' : ''} Use ${TerminalToolId.GetTerminalOutput} to check output before then`);
+- NEVER run sleep or similar wait commands in a terminal.${backgroundNotifications ? ' You will be automatically notified on your next turn when async terminal commands complete or need input.' : ''} Use ${TerminalToolId.GetTerminalOutput} to check output before then
+
+Interactive Input Handling:
+- It is OK to ask the user for all prompt values up front.
+- When sending input to an interactive terminal program, send exactly one answer per prompt using ${TerminalToolId.SendToTerminal}.
+- Never send multiple answers in a single terminal send.
+- After each send, read terminal output using ${TerminalToolId.GetTerminalOutput} and confirm the next prompt before sending the next answer.
+- Continue until the command finishes.`);
 
 	return parts.join('');
 }
