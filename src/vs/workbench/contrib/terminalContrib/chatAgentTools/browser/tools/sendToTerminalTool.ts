@@ -23,7 +23,7 @@ export const SendToTerminalToolData: IToolData = {
 	id: TerminalToolId.SendToTerminal,
 	toolReferenceName: 'sendToTerminal',
 	displayName: localize('sendToTerminalTool.displayName', 'Send to Terminal'),
-	modelDescription: `Send a command to a terminal session. This can target either a persistent terminal started with ${TerminalToolId.RunInTerminal} in async mode (using 'id') or any foreground terminal visible in the terminal panel (using 'terminalId'). After sending, use ${TerminalToolId.GetTerminalOutput} to check updated output for persistent terminals.`,
+	modelDescription: `Send input text to a terminal session. This can target either a persistent terminal started with ${TerminalToolId.RunInTerminal} in async mode (using 'id') or any foreground terminal visible in the terminal panel (using 'terminalId'). The 'command' field may be empty or whitespace to press Enter (useful for interactive prompts). After sending, use ${TerminalToolId.GetTerminalOutput} to check updated output for persistent terminals.`,
 	icon: Codicon.terminal,
 	source: ToolDataSource.Internal,
 	inputSchema: {
@@ -40,7 +40,7 @@ export const SendToTerminalToolData: IToolData = {
 			},
 			command: {
 				type: 'string',
-				description: 'The command to send to the terminal. The text will be sent followed by Enter to execute it.'
+				description: 'The input text to send to the terminal. The text is sent followed by Enter. Provide an empty or whitespace string to send just Enter (for interactive prompts).'
 			},
 		},
 		required: [
