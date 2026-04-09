@@ -224,13 +224,13 @@ export class AgentIntent extends EditCodeIntent {
 
 	getOrCreateBackgroundProgressMonitor(
 		sessionId: string,
-		endpointProvider: IEndpointProvider,
 		logService: ILogService,
+		telemetryService: ITelemetryService,
 		setTodos: SetTodosFn,
 	): BackgroundProgressMonitor {
 		let monitor = this._backgroundProgressMonitors.get(sessionId);
 		if (!monitor) {
-			monitor = new BackgroundProgressMonitor(endpointProvider, logService, setTodos);
+			monitor = new BackgroundProgressMonitor(logService, telemetryService, setTodos);
 			this._backgroundProgressMonitors.set(sessionId, monitor);
 		}
 		return monitor;
@@ -396,7 +396,7 @@ export class AgentIntentInvocation extends EditCodeIntentInvocation implements I
 		@ICodeMapperService codeMapperService: ICodeMapperService,
 		@IEnvService envService: IEnvService,
 		@IPromptPathRepresentationService promptPathRepresentationService: IPromptPathRepresentationService,
-		@IEndpointProvider private readonly _agentEndpointProvider: IEndpointProvider,
+		@IEndpointProvider endpointProvider: IEndpointProvider,
 		@IWorkspaceService workspaceService: IWorkspaceService,
 		@IToolsService toolsService: IToolsService,
 		@IConfigurationService configurationService: IConfigurationService,
@@ -409,7 +409,7 @@ export class AgentIntentInvocation extends EditCodeIntentInvocation implements I
 		@IAutomodeService private readonly automodeService: IAutomodeService,
 		@IOTelService override readonly otelService: IOTelService,
 	) {
-		super(intent, location, endpoint, request, intentOptions, instantiationService, codeMapperService, envService, promptPathRepresentationService, _agentEndpointProvider, workspaceService, toolsService, configurationService, editLogService, commandService, telemetryService, notebookService, otelService);
+		super(intent, location, endpoint, request, intentOptions, instantiationService, codeMapperService, envService, promptPathRepresentationService, endpointProvider, workspaceService, toolsService, configurationService, editLogService, commandService, telemetryService, notebookService, otelService);
 	}
 
 	public override getAvailableTools(): Promise<vscode.LanguageModelToolInformation[]> {
@@ -424,7 +424,7 @@ export class AgentIntentInvocation extends EditCodeIntentInvocation implements I
 		const monitor = this._backgroundProgressMonitor;
 		if (monitor?.isMonitoring) {
 			// Feed any remaining rounds so the last check covers all work
-			monitor.feedRounds(toolCallRounds);
+			monitor.feedRounds(toolCallRounds.length);
 			// Mark everything completed
 			monitor.complete();
 		}
@@ -484,6 +484,7 @@ export class AgentIntentInvocation extends EditCodeIntentInvocation implements I
 		const bgProgressEnabled = this.configurationService.getExperimentBasedConfig(ConfigKey.Advanced.BackgroundProgressMonitorEnabled, this.expService);
 		if (bgProgressEnabled && promptContext.toolCallRounds && promptContext.toolCallRounds.length > 0) {
 			const monitor = this._backgroundProgressMonitor ??= this._getOrCreateBackgroundProgressMonitor(promptContext.conversation?.sessionId);
+			this.logService.debug(`[AgentIntent] bgProgress: monitor=${!!monitor}, isMonitoring=${monitor?.isMonitoring}, rounds=${promptContext.toolCallRounds.length}`);
 			if (monitor && !monitor.isMonitoring) {
 				// Scan all rounds for a plan — the model may do exploratory
 				// tool calls before stating its plan in a later round.
@@ -491,13 +492,17 @@ export class AgentIntentInvocation extends EditCodeIntentInvocation implements I
 					const responseText = typeof round.response === 'string' ? round.response : '';
 					const plan = parsePlanFromResponse(responseText);
 					if (plan) {
+						this.logService.debug(`[AgentIntent] bgProgress: parsed plan with ${plan.steps.length} steps from round ${round.id}`);
 						monitor.start(plan, token);
 						break;
 					}
 				}
+				if (!monitor.isMonitoring) {
+					this.logService.debug(`[AgentIntent] bgProgress: no plan found in ${promptContext.toolCallRounds.length} rounds`);
+				}
 			}
 			if (monitor?.isMonitoring) {
-				monitor.feedRounds(promptContext.toolCallRounds);
+				monitor.feedRounds(promptContext.toolCallRounds.length);
 			}
 		}
 
@@ -856,6 +861,13 @@ export class AgentIntentInvocation extends EditCodeIntentInvocation implements I
 
 		addCacheBreakpoints(result.messages);
 
+		// Update the background progress monitor with the final rendered
+		// messages so the next background check reuses the same prefix
+		// (Anthropic prompt caching).
+		if (bgProgressEnabled && this._backgroundProgressMonitor?.isMonitoring) {
+			this._backgroundProgressMonitor.updateSessionContext(endpoint, result.messages);
+		}
+
 		if (this.request.command === 'error') {
 			// Should trigger a 400
 			result.messages.push({
@@ -990,7 +1002,7 @@ export class AgentIntentInvocation extends EditCodeIntentInvocation implements I
 				this.logService.error(err, '[BackgroundProgressMonitor] Failed to set todos via tool invocation');
 			});
 		};
-		return this.intent.getOrCreateBackgroundProgressMonitor(sessionId, this._agentEndpointProvider, this.logService, setTodos);
+		return this.intent.getOrCreateBackgroundProgressMonitor(sessionId, this.logService, this.telemetryService, setTodos);
 	}
 
 	/**
