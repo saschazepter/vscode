@@ -106,6 +106,9 @@ suite('ChatToolProgressSubPart', () => {
 				confirmed: { type: ToolConfirmKind.ConfirmationNotNeeded },
 				progress: observableValue('progress', { message: undefined, progress: undefined })
 			}),
+			canContinueInBackground: observableValue('canContinueInBackground', false),
+			backgroundRequested: observableValue('backgroundRequested', false),
+			doContinueInBackground: () => { },
 			isAttachedToThinking: false,
 			kind: 'toolInvocation',
 			toJSON: () => createSerializedToolInvocation({ source, toolId, invocationMessage: options.invocationMessage })

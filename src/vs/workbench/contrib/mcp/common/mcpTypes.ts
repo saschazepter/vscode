@@ -1012,3 +1012,41 @@ export interface IMcpIcons {
 	/** Gets the image URI appropriate to the approximate display size */
 	getUrl(size: number): { dark: URI; light?: URI } | undefined;
 }
+
+//#region Background Tasks
+
+export const enum BackgroundTaskStatus {
+	Working = 'working',
+	Completed = 'completed',
+	Failed = 'failed',
+	Cancelled = 'cancelled',
+}
+
+/**
+ * A background MCP task tracked within a chat session. Created when the user
+ * clicks "Continue in Background" on a task-based MCP tool invocation.
+ */
+export interface IChatBackgroundTask {
+	readonly taskId: string;
+	readonly toolName: string;
+	readonly toolCallId: string;
+	readonly server: McpDefinitionReference;
+	readonly status: IObservable<BackgroundTaskStatus>;
+	readonly statusMessage: IObservable<string | undefined>;
+	readonly result: IObservable<MCP.CallToolResult | undefined>;
+	cancel(): void;
+}
+
+/**
+ * Serializable snapshot of a background task, stored in session data so that
+ * tasks can be restored across reloads.
+ */
+export interface ISerializedBackgroundTask {
+	readonly taskId: string;
+	readonly toolName: string;
+	readonly toolCallId: string;
+	readonly server: McpDefinitionReference;
+	readonly status: BackgroundTaskStatus;
+}
+
+//#endregion

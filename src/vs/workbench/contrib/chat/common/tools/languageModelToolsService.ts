@@ -14,6 +14,7 @@ import { Disposable, IDisposable, toDisposable } from '../../../../../base/commo
 import { Schemas } from '../../../../../base/common/network.js';
 import { derived, IObservable, IReader, ITransaction, ObservableSet } from '../../../../../base/common/observable.js';
 import { ThemeIcon } from '../../../../../base/common/themables.js';
+import { hasKey } from '../../../../../base/common/types.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { Location } from '../../../../../editor/common/languages.js';
 import { localize } from '../../../../../nls.js';
@@ -100,6 +101,18 @@ export interface IToolProgressStep {
 }
 
 export type ToolProgress = IProgress<IToolProgressStep>;
+
+/**
+ * Extended progress that carries a "continue in background" signal.
+ * Tools that support backgrounding can observe `backgroundRequested`.
+ */
+export interface ToolProgressWithBackground extends ToolProgress {
+	backgroundRequested: IObservable<boolean>;
+}
+
+export function isToolProgressWithBackground(progress: ToolProgress | ToolProgressWithBackground): progress is ToolProgressWithBackground {
+	return hasKey(progress, { backgroundRequested: true });
+}
 
 export type ToolDataSource =
 	| {
@@ -374,6 +387,8 @@ export interface IPreparedToolInvocation {
 	presentation?: ToolInvocationPresentation;
 	icon?: ThemeIcon;
 	toolSpecificData?: IChatTerminalToolInvocationData | IChatToolInputInvocationData | IChatExtensionsContent | IChatTodoListContent | IChatSubagentToolInvocationData | IChatSimpleToolInvocationData | IChatModifiedFilesConfirmationData;
+	/** When true, the tool supports continuing in background (e.g. MCP task-backed calls). */
+	canContinueInBackground?: boolean;
 }
 
 export interface IToolImpl {

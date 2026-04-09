@@ -1572,3 +1572,31 @@ function addBasicContextMenu(accessor: ServicesAccessor, widget: HTMLElement, sc
 }
 
 export const chatAttachmentResourceContextKey = new RawContextKey<string>('chatAttachmentResource', undefined, { type: 'URI', description: localize('resource', "The full value of the chat attachment resource, including scheme and path") });
+
+export class BackgroundTaskAttachmentWidget extends AbstractChatAttachmentWidget {
+	constructor(
+		attachment: import('../../common/attachments/chatVariableEntries.js').IChatBackgroundTaskVariableEntry,
+		currentLanguageModel: ILanguageModelChatMetadataAndIdentifier | undefined,
+		options: { shouldFocusClearButton: boolean; supportsDeletion: boolean },
+		container: HTMLElement,
+		contextResourceLabels: ResourceLabels,
+		@ICommandService commandService: ICommandService,
+		@IOpenerService openerService: IOpenerService,
+		@IConfigurationService configurationService: IConfigurationService,
+		@IHoverService private readonly hoverService: IHoverService,
+	) {
+		super(attachment, options, container, contextResourceLabels, currentLanguageModel, commandService, openerService, configurationService);
+
+		const icon = Codicon.loading;
+		this.label.setLabel(`$(${ThemeIcon.modify(icon, 'spin').id})\u00A0${attachment.name}`, undefined);
+		this.element.classList.add('shimmer-progress');
+
+		const hoverText = localize('bgTask.hover.working', "Background task '{0}' is running on server '{1}'", attachment.name, attachment.server.label);
+		this.element.ariaLabel = this.appendDeletionHint(localize('bgTask.ariaLabel', "Background task, {0}", attachment.name));
+
+		this._register(this.hoverService.setupDelayedHover(this.element, {
+			...commonHoverOptions,
+			content: hoverText,
+		}, commonHoverLifecycleOptions));
+	}
+}

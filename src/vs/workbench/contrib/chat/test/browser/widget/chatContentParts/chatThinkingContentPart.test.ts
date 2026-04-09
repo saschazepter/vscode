@@ -1211,6 +1211,9 @@ suite('ChatThinkingContentPart', () => {
 					partialInput: observableValue('partialInput', undefined),
 					streamingMessage: observableValue('streamingMessage', undefined),
 				}),
+				canContinueInBackground: observableValue('canContinueInBackground', false),
+				backgroundRequested: observableValue('backgroundRequested', false),
+				doContinueInBackground: () => { },
 				toJSON: () => ({} as IChatToolInvocationSerialized),
 			} as IChatToolInvocation;
 		}
@@ -1234,6 +1237,9 @@ suite('ChatThinkingContentPart', () => {
 					parameters: {},
 					confirmationMessages: undefined,
 				}),
+				canContinueInBackground: observableValue('canContinueInBackground', false),
+				backgroundRequested: observableValue('backgroundRequested', false),
+				doContinueInBackground: () => { },
 				toJSON: () => ({} as IChatToolInvocationSerialized),
 			} as IChatToolInvocation;
 		}

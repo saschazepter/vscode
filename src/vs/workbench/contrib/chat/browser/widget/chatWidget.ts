@@ -71,6 +71,8 @@ import { IHandOff, PromptHeader } from '../../common/promptSyntax/promptFilePars
 import { IPromptsService, PromptsStorage } from '../../common/promptSyntax/service/promptsService.js';
 import { GENERATE_AGENT_INSTRUCTIONS_COMMAND_ID, handleModeSwitch } from '../actions/chatActions.js';
 import { ChatTreeItem, IChatAcceptInputOptions, IChatAccessibilityService, IChatCodeBlockInfo, IChatFileTreeInfo, IChatListItemRendererOptions, IChatWidget, IChatWidgetService, IChatWidgetViewContext, IChatWidgetViewModelChangeEvent, IChatWidgetViewOptions, isIChatResourceViewContext, isIChatViewViewContext } from '../chat.js';
+import { IChatBackgroundTaskService } from '../chatBackgroundTaskService.js';
+import { BackgroundTaskStatus } from '../../../mcp/common/mcpTypes.js';
 import { ChatAttachmentModel } from '../attachments/chatAttachmentModel.js';
 import { IChatAttachmentResolveService } from '../attachments/chatAttachmentResolveService.js';
 import { ChatDynamicVariableModel } from '../attachments/chatDynamicVariables.js';
@@ -413,6 +415,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		@IChatAttachmentResolveService private readonly chatAttachmentResolveService: IChatAttachmentResolveService,
 		@IChatTipService private readonly chatTipService: IChatTipService,
 		@IChatDebugService private readonly chatDebugService: IChatDebugService,
+		@IChatBackgroundTaskService private readonly _chatBackgroundTaskService: IChatBackgroundTaskService,
 	) {
 		super();
 
@@ -2449,6 +2452,9 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		this.updateChatViewVisibility();
 		this.input.acceptInput(options?.storeToHistory ?? isUserQuery);
 
+		// Evict completed background tasks now that the request has been submitted
+		this.evictCompletedBackgroundTasks();
+
 		const sent = ChatSendResult.isQueued(result) ? await result.deferred : result;
 		if (!ChatSendResult.isSent(sent)) {
 			return;
@@ -2503,6 +2509,18 @@ export class ChatWidget extends Disposable implements IChatWidget {
 
 		const resolved = await Promise.all(imagePromises);
 		return resolved.flat();
+	}
+
+	private evictCompletedBackgroundTasks(): void {
+		if (!this.viewModel) {
+			return;
+		}
+		const tasks = this._chatBackgroundTaskService.getTasksForSession(this.viewModel.sessionResource).get();
+		for (const task of tasks) {
+			if (task.status.get() === BackgroundTaskStatus.Completed) {
+				this._chatBackgroundTaskService.evictTask(task.taskId);
+			}
+		}
 	}
 
 	private async confirmPendingRequestsBeforeSend(model: IChatModel, options: IChatAcceptInputOptions): Promise<boolean> {

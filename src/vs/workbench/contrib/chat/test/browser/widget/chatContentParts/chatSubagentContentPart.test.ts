@@ -148,6 +148,9 @@ suite('ChatSubagentContentPart', () => {
 			toolCallId: toolCallId,
 			subAgentInvocationId: options.subAgentInvocationId,
 			state: observableValue('state', stateValue),
+			canContinueInBackground: observableValue('canContinueInBackground', false),
+			backgroundRequested: observableValue('backgroundRequested', false),
+			doContinueInBackground: () => { },
 			isAttachedToThinking: false,
 			kind: 'toolInvocation',
 			toJSON: () => createMockSerializedToolInvocation({

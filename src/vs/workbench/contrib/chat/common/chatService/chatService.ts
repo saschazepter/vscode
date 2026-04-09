@@ -622,6 +622,12 @@ export interface IChatToolInvocation {
 	readonly subAgentInvocationId?: string;
 	readonly icon?: ThemeIcon;
 	readonly state: IObservable<IChatToolInvocation.State>;
+	/** Whether this tool invocation supports continuing in the background. */
+	readonly canContinueInBackground: IObservable<boolean>;
+	/** Whether the user has requested to continue in the background. */
+	readonly backgroundRequested: IObservable<boolean>;
+	/** Trigger background continuation of this tool invocation. */
+	doContinueInBackground(): void;
 	generatedTitle?: string;
 	isAttachedToThinking: boolean;
 

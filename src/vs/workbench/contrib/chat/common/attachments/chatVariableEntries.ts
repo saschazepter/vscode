@@ -19,6 +19,7 @@ import { IChatRequestVariableValue } from './chatVariables.js';
 import { IToolData, IToolSet } from '../tools/languageModelToolsService.js';
 import { decodeBase64, encodeBase64, VSBuffer } from '../../../../../base/common/buffer.js';
 import { Mutable } from '../../../../../base/common/types.js';
+import { McpDefinitionReference } from '../../../mcp/common/mcpTypes.js';
 
 
 interface IBaseChatRequestVariableEntry {
@@ -332,6 +333,13 @@ export interface IChatRequestSessionReferenceVariableEntry extends IBaseChatRequ
 	readonly value: URI;
 }
 
+export interface IChatBackgroundTaskVariableEntry extends IBaseChatRequestVariableEntry {
+	readonly kind: 'backgroundTask';
+	readonly taskId: string;
+	readonly toolCallId: string;
+	readonly server: McpDefinitionReference;
+}
+
 export type IChatRequestVariableEntry = IGenericChatRequestVariableEntry | IChatRequestImplicitVariableEntry | IChatRequestPasteVariableEntry
 	| ISymbolVariableEntry | ICommandResultVariableEntry | IDiagnosticVariableEntry | IImageVariableEntry
 	| IChatRequestToolEntry | IChatRequestToolSetEntry
@@ -339,7 +347,7 @@ export type IChatRequestVariableEntry = IGenericChatRequestVariableEntry | IChat
 	| IPromptFileVariableEntry | IPromptTextVariableEntry
 	| ISCMHistoryItemVariableEntry | ISCMHistoryItemChangeVariableEntry | ISCMHistoryItemChangeRangeVariableEntry | ITerminalVariableEntry
 	| IChatRequestStringVariableEntry | IChatRequestWorkspaceVariableEntry | IDebugVariableEntry | IAgentFeedbackVariableEntry
-	| IChatRequestDebugEventsVariableEntry | IChatRequestSessionReferenceVariableEntry;
+	| IChatRequestDebugEventsVariableEntry | IChatRequestSessionReferenceVariableEntry | IChatBackgroundTaskVariableEntry;
 
 export namespace IChatRequestVariableEntry {
 
@@ -438,6 +446,10 @@ export function isDiagnosticsVariableEntry(obj: IChatRequestVariableEntry): obj 
 
 export function isChatRequestFileEntry(obj: IChatRequestVariableEntry): obj is IChatRequestFileEntry {
 	return obj.kind === 'file';
+}
+
+export function isBackgroundTaskVariableEntry(obj: IChatRequestVariableEntry): obj is IChatBackgroundTaskVariableEntry {
+	return obj.kind === 'backgroundTask';
 }
 
 export function isPromptFileVariableEntry(obj: IChatRequestVariableEntry): obj is IPromptFileVariableEntry {

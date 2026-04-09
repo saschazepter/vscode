@@ -4,9 +4,14 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as dom from '../../../../../../../base/browser/dom.js';
+import { ActionBar } from '../../../../../../../base/browser/ui/actionbar/actionbar.js';
+import { Action } from '../../../../../../../base/common/actions.js';
+import { Codicon } from '../../../../../../../base/common/codicons.js';
 import { Emitter } from '../../../../../../../base/common/event.js';
-import { Disposable, DisposableStore, IDisposable } from '../../../../../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore, IDisposable, MutableDisposable } from '../../../../../../../base/common/lifecycle.js';
 import { autorun, derived } from '../../../../../../../base/common/observable.js';
+import { ThemeIcon } from '../../../../../../../base/common/themables.js';
+import { localize } from '../../../../../../../nls.js';
 import { IInstantiationService } from '../../../../../../../platform/instantiation/common/instantiation.js';
 import { IMarkdownRenderer } from '../../../../../../../platform/markdown/browser/markdownRenderer.js';
 import { IChatToolInvocation, IChatToolInvocationSerialized, isLegacyChatTerminalToolInvocationData, ToolConfirmKind } from '../../../../common/chatService/chatService.js';
@@ -50,6 +55,7 @@ export class ChatToolInvocationPart extends Disposable implements IChatContentPa
 
 	private subPart!: BaseChatToolInvocationSubPart;
 	private mcpAppPart: ChatMcpAppSubPart | undefined;
+	private readonly _continueInBackgroundAction = this._register(new MutableDisposable());
 
 	private readonly _onDidRemount = this._register(new Emitter<void>());
 
@@ -125,6 +131,32 @@ export class ChatToolInvocationPart extends Disposable implements IChatContentPa
 				this.subPart instanceof ExtensionsInstallConfirmationWidgetSubPart ||
 				this.subPart instanceof ChatToolPostExecuteConfirmationPart;
 			this.domNode.classList.toggle('has-confirmation', isConfirmation);
+
+			// Add "Continue in Background" button for task-backed tools
+			if (toolInvocation.kind === 'toolInvocation') {
+				partStore.add(autorun(reader => {
+					const canBackground = toolInvocation.canContinueInBackground.read(reader);
+					const state = toolInvocation.state.read(reader);
+					if (canBackground && state.type === IChatToolInvocation.StateKind.Executing) {
+						const actionBar = new ActionBar(this.subPart.domNode, {});
+						partStore.add(actionBar);
+						const action = new Action(
+							'chat.tool.continueInBackground',
+							localize('continueInBackground', "Continue in Background"),
+							ThemeIcon.asClassName(Codicon.debugContinue),
+							true,
+							() => {
+								toolInvocation.doContinueInBackground();
+								actionBar.dispose();
+							}
+						);
+						actionBar.push(action, { icon: true, label: false });
+						this._continueInBackgroundAction.value = actionBar;
+					} else {
+						this._continueInBackgroundAction.clear();
+					}
+				}));
+			}
 
 			partStore.add(this.subPart.onNeedsRerender(render));
 		};

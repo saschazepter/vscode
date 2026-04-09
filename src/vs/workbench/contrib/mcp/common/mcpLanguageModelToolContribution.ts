@@ -26,11 +26,13 @@ import { IWorkbenchContribution } from '../../../common/contributions.js';
 import { isContributionEnabled } from '../../chat/common/enablement.js';
 import { ChatResponseResource, getAttachableImageExtension } from '../../chat/common/model/chatModel.js';
 import { LanguageModelPartAudience } from '../../chat/common/languageModels.js';
-import { CountTokensCallback, ILanguageModelToolsService, IPreparedToolInvocation, IToolConfirmationMessages, IToolData, IToolImpl, IToolInvocation, IToolInvocationPreparationContext, IToolResult, IToolResultInputOutputDetails, ToolDataSource, ToolProgress, ToolSet } from '../../chat/common/tools/languageModelToolsService.js';
+import { CountTokensCallback, ILanguageModelToolsService, IPreparedToolInvocation, isToolProgressWithBackground, IToolConfirmationMessages, IToolData, IToolImpl, IToolInvocation, IToolInvocationPreparationContext, IToolResult, IToolResultInputOutputDetails, ToolDataSource, ToolProgress, ToolSet } from '../../chat/common/tools/languageModelToolsService.js';
 import { IMcpRegistry } from './mcpRegistryTypes.js';
 import { IMcpServer, IMcpService, IMcpTool, IMcpToolResourceLinkContents, McpResourceURI, McpToolResourceLinkMimeType, McpToolVisibility } from './mcpTypes.js';
 import { mcpServerToSourceData } from './mcpTypesUtils.js';
+import { MCP } from './modelContextProtocol.js';
 import { ILifecycleService } from '../../../services/lifecycle/common/lifecycle.js';
+import { IChatBackgroundTaskService } from '../../chat/browser/chatBackgroundTaskService.js';
 import { McpServer } from './mcpServer.js';
 
 interface ISyncedToolData {
@@ -200,6 +202,7 @@ export class McpLanguageModelToolContribution extends Disposable implements IWor
 }
 
 class McpToolImplementation implements IToolImpl {
+
 	constructor(
 		private readonly _tool: IMcpTool,
 		private readonly _server: IMcpServer,
@@ -207,7 +210,9 @@ class McpToolImplementation implements IToolImpl {
 		@IProductService private readonly _productService: IProductService,
 		@IFileService private readonly _fileService: IFileService,
 		@IImageResizeService private readonly _imageResizeService: IImageResizeService,
-	) { }
+		@IChatBackgroundTaskService private readonly _chatBackgroundTaskService: IChatBackgroundTaskService,
+	) {
+	}
 
 	async prepareToolInvocation(context: IToolInvocationPreparationContext): Promise<IPreparedToolInvocation> {
 		const tool = this._tool;
@@ -243,11 +248,15 @@ class McpToolImplementation implements IToolImpl {
 
 		const mcpUiEnabled = this._configurationService.getValue<boolean>(mcpAppsEnabledConfig);
 
+		const taskHint = tool.definition.execution?.taskSupport;
+		const canContinueInBackground = taskHint === 'optional' || taskHint === 'required';
+
 		return {
 			confirmationMessages: confirm,
 			invocationMessage: new MarkdownString(localize('msg.run', "Running {0}", title)),
 			pastTenseMessage: new MarkdownString(localize('msg.ran', "Ran {0} ", title)),
 			originMessage: localize('msg.subtitle', "{0} (MCP Server)", server.definition.label),
+			canContinueInBackground,
 			toolSpecificData: {
 				kind: 'input',
 				rawInput: context.parameters,
@@ -260,13 +269,62 @@ class McpToolImplementation implements IToolImpl {
 		};
 	}
 
-	async invoke(invocation: IToolInvocation, _countTokens: CountTokensCallback, progress: ToolProgress, token: CancellationToken) {
+	async invoke(invocation: IToolInvocation, _countTokens: CountTokensCallback, progress: ToolProgress, token: CancellationToken): Promise<IToolResult> {
 
-		const result: IToolResult = {
-			content: []
-		};
+		const callPromise = this._tool.callWithProgress(invocation.parameters as Record<string, unknown>, progress, { chatRequestId: invocation.chatRequestId, chatSessionResource: invocation.context?.sessionResource }, token);
 
-		const callResult = await this._tool.callWithProgress(invocation.parameters as Record<string, unknown>, progress, { chatRequestId: invocation.chatRequestId, chatSessionResource: invocation.context?.sessionResource }, token);
+		// If the caller supports backgrounding, race the tool call against
+		// the user's "Continue in Background" signal.
+		if (isToolProgressWithBackground(progress)) {
+			let backgroundCheck: IDisposable;
+			let result: MCP.CallToolResult | 'backgrounded';
+			try {
+				result = await new Promise((resolve, reject) => {
+					callPromise.then(resolve, reject);
+					backgroundCheck = autorun(reader => {
+						if (progress.backgroundRequested.read(reader)) {
+							resolve('backgrounded');
+						}
+					});
+				});
+			} finally {
+				backgroundCheck!.dispose();
+			}
+
+			if (result === 'backgrounded') {
+				// Register the still-running promise as a background task
+				if (invocation.context?.sessionResource) {
+					this._chatBackgroundTaskService.createBackgroundTask(
+						invocation.context.sessionResource,
+						`mcp-task-${invocation.callId}`,
+						this._tool.definition.annotations?.title || this._tool.definition.title || this._tool.definition.name,
+						invocation.chatStreamToolCallId ?? invocation.callId,
+						this._server.definition,
+						callPromise,
+					);
+				}
+
+				return {
+					content: [{
+						kind: 'text',
+						value: 'Task is running in the background. The user will provide you with the result when complete.',
+					}],
+					toolResultDetails: {
+						input: JSON.stringify(invocation.parameters, undefined, 2),
+						output: [{ type: 'embed', isText: true, value: localize('bgTask.running', "Running in background...") }],
+						isError: false,
+					},
+				};
+			}
+			// Tool completed before the user clicked — process normally.
+			return this._processCallResult(invocation, result, { content: [] }, progress);
+		}
+
+		const callResult = await callPromise;
+		return this._processCallResult(invocation, callResult, { content: [] }, progress);
+	}
+
+	private async _processCallResult(invocation: IToolInvocation, callResult: MCP.CallToolResult, result: IToolResult, progress: ToolProgress): Promise<IToolResult> {
 		const details: Mutable<IToolResultInputOutputDetails> = {
 			input: JSON.stringify(invocation.parameters, undefined, 2),
 			output: [],

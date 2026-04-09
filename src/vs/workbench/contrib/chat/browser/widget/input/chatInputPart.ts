@@ -82,7 +82,7 @@ import { getSimpleCodeEditorWidgetOptions, getSimpleEditorOptions, setupSimpleEd
 import { InlineChatConfigKeys } from '../../../../inlineChat/common/inlineChat.js';
 import { IChatViewTitleActionContext } from '../../../common/actions/chatActions.js';
 import { ChatContextKeys } from '../../../common/actions/chatContextKeys.js';
-import { ChatRequestVariableSet, IChatRequestVariableEntry, isElementVariableEntry, isImageVariableEntry, isNotebookOutputVariableEntry, isPasteVariableEntry, isPromptFileVariableEntry, isPromptTextVariableEntry, isSCMHistoryItemChangeRangeVariableEntry, isSCMHistoryItemChangeVariableEntry, isSCMHistoryItemVariableEntry, isStringVariableEntry, MAX_IMAGES_PER_REQUEST, OmittedState } from '../../../common/attachments/chatVariableEntries.js';
+import { ChatRequestVariableSet, IChatBackgroundTaskVariableEntry, IChatRequestVariableEntry, isElementVariableEntry, isImageVariableEntry, isNotebookOutputVariableEntry, isPasteVariableEntry, isPromptFileVariableEntry, isPromptTextVariableEntry, isSCMHistoryItemChangeRangeVariableEntry, isSCMHistoryItemChangeVariableEntry, isSCMHistoryItemVariableEntry, isStringVariableEntry, MAX_IMAGES_PER_REQUEST, OmittedState } from '../../../common/attachments/chatVariableEntries.js';
 import { ChatMode, getModeNameForTelemetry, IChatMode, IChatModeService } from '../../../common/chatModes.js';
 import { IChatFollowup, IChatQuestionCarousel } from '../../../common/chatService/chatService.js';
 import { IChatSessionProviderOptionGroup, IChatSessionProviderOptionItem, IChatSessionsService, isIChatSessionFileChange2, localChatSessionType } from '../../../common/chatSessionsService.js';
@@ -101,7 +101,9 @@ import { AgentSessionProviders, getAgentSessionProvider } from '../../agentSessi
 import { IAgentSessionsService } from '../../agentSessions/agentSessionsService.js';
 import { ChatAttachmentModel } from '../../attachments/chatAttachmentModel.js';
 import { IChatAttachmentWidgetRegistry } from '../../attachments/chatAttachmentWidgetRegistry.js';
-import { DefaultChatAttachmentWidget, ElementChatAttachmentWidget, FileAttachmentWidget, ImageAttachmentWidget, NotebookCellOutputChatAttachmentWidget, PasteAttachmentWidget, PromptFileAttachmentWidget, PromptTextAttachmentWidget, SCMHistoryItemAttachmentWidget, SCMHistoryItemChangeAttachmentWidget, SCMHistoryItemChangeRangeAttachmentWidget, TerminalCommandAttachmentWidget, ToolSetOrToolItemAttachmentWidget } from '../../attachments/chatAttachmentWidgets.js';
+import { BackgroundTaskAttachmentWidget, DefaultChatAttachmentWidget, ElementChatAttachmentWidget, FileAttachmentWidget, ImageAttachmentWidget, NotebookCellOutputChatAttachmentWidget, PasteAttachmentWidget, PromptFileAttachmentWidget, PromptTextAttachmentWidget, SCMHistoryItemAttachmentWidget, SCMHistoryItemChangeAttachmentWidget, SCMHistoryItemChangeRangeAttachmentWidget, TerminalCommandAttachmentWidget, ToolSetOrToolItemAttachmentWidget } from '../../attachments/chatAttachmentWidgets.js';
+import { IChatBackgroundTaskService } from '../../chatBackgroundTaskService.js';
+import { BackgroundTaskStatus } from '../../../../mcp/common/mcpTypes.js';
 import { ChatImplicitContexts } from '../../attachments/chatImplicitContext.js';
 import { ImplicitContextAttachmentWidget } from '../../attachments/implicitContextAttachment.js';
 import { IChatWidget, IChatWidgetViewModelChangeEvent, ISessionTypePickerDelegate, isIChatResourceViewContext, isIChatViewViewContext, IWorkspacePickerDelegate } from '../../chat.js';
@@ -263,6 +265,29 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 	public getAttachedContext() {
 		const contextArr = new ChatRequestVariableSet();
 		contextArr.add(...this.attachmentModel.attachments, ...this.chatContextService.getWorkspaceContextItems());
+
+		// Include completed background tasks as attachments
+		const sessionResource = this._widget?.viewModel?.model.sessionResource;
+		if (sessionResource) {
+			const tasks = this._chatBackgroundTaskService.getTasksForSession(sessionResource).get();
+			for (const task of tasks) {
+				if (task.status.get() === BackgroundTaskStatus.Completed) {
+					contextArr.add({
+						kind: 'backgroundTask',
+						id: `backgroundTask:${task.taskId}`,
+						name: task.toolName,
+						fullName: localize('bgTask.fullName', "Background Task: {0}", task.toolName),
+						icon: Codicon.check,
+						value: '',
+						modelDescription: localize('bgTask.modelDesc', "Background task result from MCP tool '{0}' on server '{1}'", task.toolName, task.server.label),
+						taskId: task.taskId,
+						toolCallId: task.toolCallId,
+						server: task.server,
+					} satisfies IChatBackgroundTaskVariableEntry);
+				}
+			}
+		}
+
 		return contextArr;
 	}
 
@@ -547,6 +572,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		@IWorkbenchLayoutService private readonly layoutService: IWorkbenchLayoutService,
 		@IViewDescriptorService private readonly viewDescriptorService: IViewDescriptorService,
 		@IChatAttachmentWidgetRegistry private readonly _chatAttachmentWidgetRegistry: IChatAttachmentWidgetRegistry,
+		@IChatBackgroundTaskService private readonly _chatBackgroundTaskService: IChatBackgroundTaskService,
 	) {
 		super();
 
@@ -2590,6 +2616,39 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 
 			store.add(attachmentWidget.onDidOpen(e => {
 				this.handleAttachmentOpen(index, attachment);
+			}));
+		}
+
+		// Render background task widgets from the background task service
+		const bgTaskContainer = dom.append(container, dom.$('.chat-background-tasks'));
+		const sessionResource = this._widget?.viewModel?.model.sessionResource;
+		if (sessionResource) {
+			const bgTaskStore = new DisposableStore();
+			store.add(bgTaskStore);
+			store.add(autorun(reader => {
+				const tasks = this._chatBackgroundTaskService.getTasksForSession(sessionResource).read(reader);
+				bgTaskStore.clear();
+				dom.clearNode(bgTaskContainer);
+				for (const task of tasks) {
+					const attachment: IChatBackgroundTaskVariableEntry = {
+						kind: 'backgroundTask',
+						id: `backgroundTask:${task.taskId}`,
+						name: task.toolName,
+						icon: Codicon.loading,
+						value: '',
+						modelDescription: '',
+						taskId: task.taskId,
+						toolCallId: task.toolCallId,
+						server: task.server,
+					};
+					const widget = this.instantiationService.createInstance(BackgroundTaskAttachmentWidget, attachment, this._currentLanguageModel.get(), { shouldFocusClearButton: false, supportsDeletion: true }, bgTaskContainer, this._contextResourceLabels);
+					bgTaskStore.add(widget);
+					bgTaskStore.add(widget.onDidDelete(() => {
+						this._chatBackgroundTaskService.evictTask(task.taskId);
+					}));
+				}
+				dom.setVisibility(Boolean(this.options.renderInputToolbarBelowInput || hasAttachments || hasImplicitContext || tasks.length > 0), this.attachmentsContainer);
+				dom.setVisibility(hasAttachments || hasImplicitContext || tasks.length > 0, this.attachedContextContainer);
 			}));
 		}
 

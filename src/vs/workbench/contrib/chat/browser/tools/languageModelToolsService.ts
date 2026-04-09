@@ -49,7 +49,7 @@ import { ChatToolInvocation } from '../../common/model/chatProgressTypes/chatToo
 import { chatSessionResourceToId, getChatSessionType } from '../../common/model/chatUri.js';
 import { HookType } from '../../common/promptSyntax/hookTypes.js';
 import { ILanguageModelToolsConfirmationService } from '../../common/tools/languageModelToolsConfirmationService.js';
-import { CountTokensCallback, createToolSchemaUri, IBeginToolCallOptions, IExternalPreToolUseHookResult, ILanguageModelToolsService, IPreparedToolInvocation, isToolSet, IToolAndToolSetEnablementMap, IToolData, IToolImpl, IToolInvocation, IToolInvokedEvent, IToolResult, IToolResultInputOutputDetails, IToolSet, SpecedToolAliases, stringifyPromptTsxPart, ToolDataSource, ToolInvocationPresentation, toolMatchesModel, ToolSet, ToolSetForModel, VSCodeToolReference } from '../../common/tools/languageModelToolsService.js';
+import { CountTokensCallback, createToolSchemaUri, IBeginToolCallOptions, IExternalPreToolUseHookResult, ILanguageModelToolsService, IPreparedToolInvocation, isToolSet, IToolAndToolSetEnablementMap, IToolData, IToolImpl, IToolInvocation, IToolInvokedEvent, IToolResult, IToolResultInputOutputDetails, IToolSet, SpecedToolAliases, stringifyPromptTsxPart, ToolDataSource, ToolInvocationPresentation, toolMatchesModel, ToolProgress, ToolProgressWithBackground, ToolSet, ToolSetForModel, VSCodeToolReference } from '../../common/tools/languageModelToolsService.js';
 import { getToolConfirmationAlert } from '../accessibility/chatAccessibilityProvider.js';
 import { IChatWidgetService } from '../chat.js';
 
@@ -638,14 +638,24 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 				throw new CancellationError();
 			}
 
+			// Enable "Continue in Background" for task-backed tools
+			const canContinueInBackground = !!preparedInvocation?.canContinueInBackground;
+
 			invocationTimeWatch = StopWatch.create(true);
-			toolResult = await tool.impl.invoke(dto, countTokens, {
-				report: step => {
-					toolInvocation?.acceptProgress(step);
-				}
-			}, token);
+
+			// Build the progress reporter. When the tool supports backgrounding,
+			// attach the observable so the tool can cooperatively resolve early.
+			const toolProgress: ToolProgress = {
+				report: step => toolInvocation?.acceptProgress(step),
+			};
+			if (canContinueInBackground && toolInvocation) {
+				(toolProgress as ToolProgressWithBackground).backgroundRequested = toolInvocation.backgroundRequested;
+			}
+
+			toolResult = await tool.impl.invoke(dto, countTokens, toolProgress, token);
 			invocationTimeWatch.stop();
-			this.ensureToolDetails(dto, toolResult, tool.data, toolInvocation);
+
+			this.ensureToolDetails(dto, toolResult!, tool.data, toolInvocation);
 
 			const afterExecuteState = await toolInvocation?.didExecuteTool(toolResult, undefined, () =>
 				this.shouldAutoConfirmPostExecution(tool.data.id, tool.data.runsInWorkspace, tool.data.source, dto.parameters, dto.context?.sessionResource, dto.chatRequestId));
@@ -676,7 +686,7 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 					prepareTimeMs: prepareTimeWatch?.elapsed(),
 					invocationTimeMs: invocationTimeWatch?.elapsed(),
 				});
-			return toolResult;
+			return toolResult!;
 		} catch (err) {
 			const result = isCancellationError(err) ? 'userCancelled' : 'error';
 			this._telemetryService.publicLog2<LanguageModelToolInvokedEvent, LanguageModelToolInvokedClassification>(
