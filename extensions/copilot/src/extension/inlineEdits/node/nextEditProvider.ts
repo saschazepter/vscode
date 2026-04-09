@@ -282,7 +282,7 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 		// [DEBUG] Confirm patched extension is loaded
 		if (!NextEditProvider._patchLogged) {
 			NextEditProvider._patchLogged = true;
-			console.log('[NES-OOM-FIX] patched extension loaded (2026-04-08 sliced-string fix v2)');
+			console.log('[NES-OOM-FIX] patched extension loaded (built 2026-04-09T10:15Z, keepNames)');
 		}
 
 		this._lastTriggerTime = now;

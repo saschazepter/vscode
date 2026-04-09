@@ -19,11 +19,12 @@ const sourceMapOutDir = './dist-sourcemaps';
 const baseBuildOptions = {
 	bundle: true,
 	logLevel: 'info',
-	minify: !isDev,
+	// TODO: just for debugging, remove. Disabling minify so heap snapshot shows real names.
+	minify: false, // was: !isDev,
+	keepNames: true,
 	outdir: './dist',
-	// In dev mode, use linked source maps for debugging.
-	// With --sourcemaps flag, generate external source maps (no sourceMappingURL comment in output).
-	sourcemap: isDev ? 'linked' : (generateSourceMaps ? 'external' : false),
+	// TODO: just for debugging, remove. Linked sourcemap so heap snapshot links to .ts source.
+	sourcemap: 'linked',
 	sourcesContent: false,
 	treeShaking: true
 } satisfies esbuild.BuildOptions;
@@ -269,9 +270,10 @@ async function typeScriptServerPluginPackageJsonInstall(): Promise<void> {
 const typeScriptServerPluginBuildOptions = {
 	bundle: true,
 	format: 'cjs',
-	// keepNames: true,
+	// TODO: just for debugging, remove. Disabling minify so heap snapshot shows real names.
+	keepNames: true,
 	logLevel: 'info',
-	minify: !isDev,
+	minify: false, // was: !isDev,
 	outdir: './node_modules/@vscode/copilot-typescript-server-plugin/dist',
 	platform: 'node',
 	sourcemap: isDev ? 'linked' : false,
