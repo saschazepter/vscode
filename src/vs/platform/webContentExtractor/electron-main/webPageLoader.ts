@@ -11,6 +11,7 @@ import { Disposable, toDisposable } from '../../../base/common/lifecycle.js';
 import { URI } from '../../../base/common/uri.js';
 import { generateUuid } from '../../../base/common/uuid.js';
 import { ILogService } from '../../log/common/log.js';
+import { AgentNetworkDomainSettingId } from '../../networkFilter/common/settings.js';
 import { IWebContentExtractorOptions, WebContentExtractResult } from '../common/webContentExtractor.js';
 import { AXNode, convertAXTreeToMarkdown } from './cdpAccessibilityDomain.js';
 
@@ -286,7 +287,7 @@ export class WebPageLoader extends Disposable {
 		if (!this._isDomainAllowed(toURI)) {
 			this.trace(`Blocking navigation to ${url} (blocked by domain filter policy)`);
 			event.preventDefault();
-			this._onResult({ status: 'error', error: `Access to ${toURI.authority} is blocked by network domain policy.` });
+			this._onResult({ status: 'error', error: `Access to ${toURI.authority} is blocked by network domain policy. See \`${AgentNetworkDomainSettingId.AllowedNetworkDomains}\` setting.` });
 			return;
 		}
 
