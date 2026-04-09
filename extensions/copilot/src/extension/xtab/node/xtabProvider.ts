@@ -787,7 +787,7 @@ export class XtabProvider implements IStatelessNextEditProvider {
 			}
 			// diff-patch based model returns no choices if it has no edits to suggest
 			if (fetchRes.type === ChatFetchResponseType.Unknown && fetchRes.reason === RESPONSE_CONTAINED_NO_CHOICES) {
-				return new NoNextEditReason.NoSuggestions(request.documentBeforeEdits, editWindow);
+				return new NoNextEditReason.NoSuggestions(request.documentBeforeEdits!, editWindow);
 			}
 			return mapChatFetcherErrorToNoNextEditReason(fetchRes);
 		}
@@ -885,7 +885,7 @@ export class XtabProvider implements IStatelessNextEditProvider {
 			}
 
 			if (firstLine.done) { // no lines in response -- unexpected case but take as no suggestions
-				return new NoNextEditReason.NoSuggestions(request.documentBeforeEdits, editWindow);
+				return new NoNextEditReason.NoSuggestions(request.documentBeforeEdits!, editWindow);
 			}
 
 			const trimmedLines = firstLine.value.trim();
@@ -897,7 +897,7 @@ export class XtabProvider implements IStatelessNextEditProvider {
 			if (trimmedLines === ResponseTags.INSERT.start) {
 				const lineWithCursorContinued = await linesIter.next();
 				if (lineWithCursorContinued.done || lineWithCursorContinued.value.includes(ResponseTags.INSERT.end)) {
-					return new NoNextEditReason.NoSuggestions(request.documentBeforeEdits, editWindow);
+					return new NoNextEditReason.NoSuggestions(request.documentBeforeEdits!, editWindow);
 				}
 				const cursorColumnOffsetZeroBased = promptPieces.currentDocument.cursorPosition.column - 1;
 				const edit = new LineReplacement(
@@ -929,7 +929,7 @@ export class XtabProvider implements IStatelessNextEditProvider {
 					targetDocument,
 				};
 
-				return new NoNextEditReason.NoSuggestions(request.documentBeforeEdits, editWindow);
+				return new NoNextEditReason.NoSuggestions(request.documentBeforeEdits!, editWindow);
 			}
 
 			if (trimmedLines === ResponseTags.EDIT.start) {
@@ -978,7 +978,7 @@ export class XtabProvider implements IStatelessNextEditProvider {
 						const intermediateEdit = request.intermediateUserEdit;
 						if (intermediateEdit && !intermediateEdit.isEmpty()) {
 							const cursorDocLineIdx = editWindowLineRange.start + cursorOriginalLinesOffset;
-							const currentCursorLine = getCurrentCursorLine(request.documentBeforeEdits.getTransformer(), cursorDocLineIdx, intermediateEdit);
+							const currentCursorLine = getCurrentCursorLine(request.documentBeforeEdits!.getTransformer(), cursorDocLineIdx, intermediateEdit);
 							if (currentCursorLine !== undefined) {
 								const originalCursorLine = editWindowLines[cursorOriginalLinesOffset];
 								if (currentCursorLine !== originalCursorLine // user changed the cursor line
@@ -1075,7 +1075,7 @@ export class XtabProvider implements IStatelessNextEditProvider {
 				return mapChatFetcherErrorToNoNextEditReason(chatResponseFailure);
 			}
 
-			return new NoNextEditReason.NoSuggestions(request.documentBeforeEdits, editWindow);
+			return new NoNextEditReason.NoSuggestions(request.documentBeforeEdits!, editWindow);
 
 		} catch (err) {
 			logContext.setError(err);
@@ -1095,7 +1095,7 @@ export class XtabProvider implements IStatelessNextEditProvider {
 		const { tracer, telemetry } = tracing;
 		const { editWindowInfo: { editWindow }, modelServiceConfig, promptPieces } = editStreamCtx;
 
-		const noSuggestions = new NoNextEditReason.NoSuggestions(request.documentBeforeEdits, editWindow);
+		const noSuggestions = new NoNextEditReason.NoSuggestions(request.documentBeforeEdits!, editWindow);
 
 		const nextCursorLinePrediction = this.nextCursorPredictor.determineEnablement(modelServiceConfig.supportsNextCursorLinePrediction);
 
@@ -1160,7 +1160,7 @@ export class XtabProvider implements IStatelessNextEditProvider {
 		switch (nextCursorLinePrediction) {
 			case NextCursorLinePrediction.Jump: {
 				const nextCursorPosition = new Position(nextCursorLineOneBased, nextCursorColumn);
-				return new NoNextEditReason.NoSuggestions(request.documentBeforeEdits, editWindow, nextCursorPosition);
+				return new NoNextEditReason.NoSuggestions(request.documentBeforeEdits!, editWindow, nextCursorPosition);
 			}
 			case NextCursorLinePrediction.OnlyWithEdit: {
 				const v = this.doGetNextEditWithSelection(
@@ -1196,7 +1196,7 @@ export class XtabProvider implements IStatelessNextEditProvider {
 		if (!workspaceRoot && !isAbsolute(prediction.filePath)) {
 			tracer.trace('Predicted cross-file cursor jump error: noWorkspaceRoot');
 			telemetry.setNextCursorLineError('crossFile:noWorkspaceRoot');
-			return new NoNextEditReason.NoSuggestions(request.documentBeforeEdits, editWindow);
+			return new NoNextEditReason.NoSuggestions(request.documentBeforeEdits!, editWindow);
 		}
 
 		const targetUri = isAbsolute(prediction.filePath)
@@ -1211,7 +1211,7 @@ export class XtabProvider implements IStatelessNextEditProvider {
 
 		switch (nextCursorLinePrediction) {
 			case NextCursorLinePrediction.Jump: {
-				return new NoNextEditReason.NoSuggestions(request.documentBeforeEdits, editWindow, nextCursorPosition, targetDocumentId);
+				return new NoNextEditReason.NoSuggestions(request.documentBeforeEdits!, editWindow, nextCursorPosition, targetDocumentId);
 			}
 			case NextCursorLinePrediction.OnlyWithEdit: {
 				let targetTextDoc;
@@ -1220,7 +1220,7 @@ export class XtabProvider implements IStatelessNextEditProvider {
 				} catch (err) {
 					tracer.trace(`Failed to open target file for cross-file edit: ${ErrorUtils.fromUnknown(err).message}`);
 					telemetry.setNextCursorLineError('crossFile:failedToOpenFile');
-					return new NoNextEditReason.NoSuggestions(request.documentBeforeEdits, editWindow, nextCursorPosition, targetDocumentId);
+					return new NoNextEditReason.NoSuggestions(request.documentBeforeEdits!, editWindow, nextCursorPosition, targetDocumentId);
 				}
 
 				if (cancellationToken.isCancellationRequested) {
@@ -1237,7 +1237,6 @@ export class XtabProvider implements IStatelessNextEditProvider {
 					targetDocumentId,
 					promptPieces.activeDoc.workspaceRoot,
 					LanguageId.create(targetTextDoc.languageId),
-					targetContent.getLines(),
 					LineEdit.empty,
 					targetContent,
 					new Edits(StringEdit, []),

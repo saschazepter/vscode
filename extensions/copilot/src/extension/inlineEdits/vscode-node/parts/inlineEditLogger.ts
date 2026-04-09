@@ -32,6 +32,7 @@ export class InlineEditLogger extends Disposable {
 			markdownContent: () => request.toLogDocument(),
 			onDidChange: request.onDidChange,
 			isVisible: () => request.includeInLogTree,
+			get retainedSizeEstimate() { return request.retainedDocumentBytes; },
 		});
 		this._pushRequest(request);
 	}
@@ -45,12 +46,14 @@ export class InlineEditLogger extends Disposable {
 			return;
 		}
 
+		const content = request.toLogDocument();
 		this._requestLogger.addEntry({
 			type: LoggedRequestKind.MarkdownContentRequest,
 			debugName: request.getDebugName(),
 			icon: request.getIcon(),
 			startTimeMs: request.time,
-			markdownContent: request.toLogDocument(),
+			markdownContent: content,
+			retainedSizeEstimate: content.length * 2,
 		});
 		this._pushRequest(request);
 	}

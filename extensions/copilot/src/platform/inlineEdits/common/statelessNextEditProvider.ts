@@ -4,7 +4,6 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Raw } from '@vscode/prompt-tsx';
-import { h1_requestCreated, h1_resultError, h1_resultSet, h1_startPeriodicDump } from '../node/nesMemDebug';
 import { Result } from '../../../util/common/result';
 import { assert, assertNever } from '../../../util/vs/base/common/assert';
 import { DeferredPromise } from '../../../util/vs/base/common/async';
@@ -18,6 +17,7 @@ import { StringText } from '../../../util/vs/editor/common/core/text/abstractTex
 import { ChatFetchResponseType, FetchResponse } from '../../chat/common/commonTypes';
 import { ILogger } from '../../log/common/logService';
 import { ISerializedOffsetRange, LogEntry, serializeOffsetRange } from '../../workspaceRecorder/common/workspaceLog';
+import { h1_requestCreated, h1_resultError, h1_resultSet, h1_startPeriodicDump } from '../node/nesMemDebug';
 import { DocumentId } from './dataTypes/documentId';
 import { Edits } from './dataTypes/edit';
 import { SerializedEdit } from './dataTypes/editUtils';
@@ -102,32 +102,48 @@ export class StatelessNextEditRequest<TFirstEdit = any> {
 		public readonly headerRequestId: string,
 		public readonly opportunityId: string,
 		/** this's the active document current contents (not sure "before" which edits this's named after -- maybe NES edits) */
-		public readonly documentBeforeEdits: StringText,
-		public readonly documents: readonly StatelessNextEditDocument[],
+		public documentBeforeEdits: StringText | undefined,
+		public documents: readonly StatelessNextEditDocument[],
 		public readonly activeDocumentIdx: number,
-		public readonly xtabEditHistory: readonly IXtabHistoryEntry[],
+		public xtabEditHistory: readonly IXtabHistoryEntry[],
 		public readonly firstEdit: DeferredPromise<Result<TFirstEdit, NoNextEditReason>>,
 		public readonly expandedEditWindowNLines: number | undefined,
 		public readonly isSpeculative: boolean,
-		public readonly logContext: InlineEditRequestLogContext,
+		public logContext: InlineEditRequestLogContext | undefined,
 		public readonly recordingBookmark: DebugRecorderBookmark | undefined,
-		public readonly recording: LogEntry[] | undefined,
+		public recording: LogEntry[] | undefined,
 		public readonly providerRequestStartDateTime: number | undefined,
 	) {
 		assert(documents.length > 0);
 		assert(activeDocumentIdx >= 0 && activeDocumentIdx < documents.length);
-		h1_requestCreated(this.seqid, isSpeculative, documentBeforeEdits.value.length);
+		h1_requestCreated(this.seqid, isSpeculative, documentBeforeEdits?.value.length ?? 0);
 		h1_startPeriodicDump();
 	}
 
 	public setResult(nextEditResult: StatelessNextEditResult) {
 		h1_resultSet(this.seqid);
 		this._result.complete(nextEditResult);
+		this.releaseDocumentData();
 	}
 
 	public setResultError(err: any) {
 		h1_resultError(this.seqid);
 		this._result.error(err);
+		this.releaseDocumentData();
+	}
+
+	/**
+	 * Release large document data that is no longer needed after the request
+	 * is complete. Generators captured by V8 retain their locals
+	 * (parameters_and_registers) even after .return(); clearing references
+	 * here breaks the 16 MB StringText retention chain.
+	 */
+	private releaseDocumentData(): void {
+		this.documentBeforeEdits = undefined;
+		this.documents = [];
+		this.xtabEditHistory = [];
+		this.recording = undefined;
+		this.logContext = undefined;
 	}
 
 	public hasDocument(docId: DocumentId): boolean {
@@ -176,12 +192,19 @@ export class StatelessNextEditDocument {
 		public readonly id: DocumentId,
 		public readonly workspaceRoot: URI | undefined,
 		public readonly languageId: LanguageId,
-		public readonly documentLinesBeforeEdit: string[],
 		public readonly recentEdit: LineEdit,
 		public readonly documentBeforeEdits: StringText,
 		public readonly recentEdits: Edits,
 		public readonly lastSelectionInAfterEdit: OffsetRange | undefined = undefined,
 	) { }
+
+	/**
+	 * Computed lazily from documentBeforeEdits to avoid retaining 121K sliced
+	 * strings that pin the entire parent string in V8 memory.
+	 */
+	get documentLinesBeforeEdit(): string[] {
+		return this.documentBeforeEdits.getLines();
+	}
 
 	serialize(): ISerializedNextEditDocument {
 		return {
@@ -246,7 +269,7 @@ export namespace NoNextEditReason {
 		public readonly kind = 'noSuggestions';
 
 		constructor(
-			public readonly documentBeforeEdits: StringText,
+			public readonly documentBeforeEdits: StringText | undefined,
 			public readonly window: OffsetRange | undefined,
 			public readonly nextCursorPosition?: Position | undefined,
 			public readonly nextCursorDocumentId?: DocumentId | undefined,

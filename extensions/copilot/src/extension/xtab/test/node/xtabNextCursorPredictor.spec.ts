@@ -56,7 +56,6 @@ function createTestPromptPieces(): PromptPieces {
 		documentId,
 		undefined, // workspaceRoot
 		LanguageId.create('typescript'),
-		currentDocLines,
 		LineEdit.empty,
 		docText,
 		new Edits(StringEdit, [])

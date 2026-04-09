@@ -28,7 +28,6 @@ function createActiveDocument(docId: DocumentId, text: StringText): StatelessNex
 		docId,
 		undefined,
 		LanguageId.PlainText,
-		text.getLines(),
 		LineEdit.empty,
 		text,
 		new Edits(StringEdit, []),

@@ -16,6 +16,7 @@ import { IStatelessNextEditProvider, IStatelessNextEditTelemetry, NoNextEditReas
 import { autorunWithChanges } from '../../../platform/inlineEdits/common/utils/observable';
 import { DocumentHistory, HistoryContext, IHistoryContextProvider } from '../../../platform/inlineEdits/common/workspaceEditTracker/historyContextProvider';
 import { IXtabHistoryEditEntry, IXtabHistoryEntry, NesXtabHistoryTracker } from '../../../platform/inlineEdits/common/workspaceEditTracker/nesXtabHistoryTracker';
+import { getNesBuildTimestamp, h1_cancelled, h1_specCatchNoResolve, h1_streamBgEnd, h1_streamBgStart, h3_getRecentLog, h4_docValueGet, h4_newStatelessNextEditDoc, h4_newStatelessNextEditRequest } from '../../../platform/inlineEdits/node/nesMemDebug';
 import { ILogger, ILogService, LogTarget } from '../../../platform/log/common/logService';
 import { CapturingToken } from '../../../platform/requestLogger/common/capturingToken';
 import { IRequestLogger, LoggedRequestKind } from '../../../platform/requestLogger/node/requestLogger';
@@ -43,7 +44,6 @@ import { checkEditConsistency } from '../common/editRebase';
 import { NesChangeHint } from '../common/nesTriggerHint';
 import { RejectionCollector } from '../common/rejectionCollector';
 import { DebugRecorder } from './debugRecorder';
-import { h1_cancelled, h1_specCatchNoResolve, h1_streamBgEnd, h1_streamBgStart, h3_getRecentLog, h4_docValueGet, h4_newStatelessNextEditDoc, h4_newStatelessNextEditRequest } from '../../../platform/inlineEdits/node/nesMemDebug';
 import { INesConfigs } from './nesConfigs';
 import { CachedOrRebasedEdit, NextEditCache } from './nextEditCache';
 import { LlmNESTelemetryBuilder, ReusedRequestKind } from './nextEditProviderTelemetry';
@@ -282,7 +282,7 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 		// [DEBUG] Confirm patched extension is loaded
 		if (!NextEditProvider._patchLogged) {
 			NextEditProvider._patchLogged = true;
-			console.log('[NES-OOM-FIX] patched extension loaded (built 2026-04-09T10:15Z, keepNames)');
+			console.log(`[NES-OOM-FIX] patched extension loaded (built ${getNesBuildTimestamp()})`);
 		}
 
 		this._lastTriggerTime = now;
@@ -492,8 +492,6 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 	}
 
 	private _processDoc(doc: DocumentHistory): ProcessedDoc {
-		const documentLinesBeforeEdit = doc.lastEdit.base.getLines();
-
 		const recentEdits = doc.lastEdits;
 
 		const recentEdit = RootedLineEdit.fromEdit(new RootedEdit(doc.lastEdit.base, doc.lastEdits.compose())).removeCommonSuffixPrefixLines().edit;
@@ -508,13 +506,12 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 			doc.docId,
 			workspaceRoot,
 			doc.languageId,
-			documentLinesBeforeEdit,
 			recentEdit,
 			documentBeforeEdits,
 			recentEdits,
 			lastSelectionInAfterEdits,
 		);
-		h4_newStatelessNextEditDoc(doc.docId.uri, documentBeforeEdits.value.length, nextEditDoc.documentAfterEdits.value.length, documentLinesBeforeEdit.length);
+		h4_newStatelessNextEditDoc(doc.docId.uri, documentBeforeEdits.value.length, nextEditDoc.documentAfterEdits.value.length, nextEditDoc.documentLinesBeforeEdit.length);
 
 		return {
 			recentEdit: doc.lastEdit,
@@ -544,7 +541,7 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 			!nesConfigs.isCheckEditWindowOnReuse || !request.requestEditWindow || !cursorAtInvocationTime || request.requestEditWindow.containsCursor(cursorAtInvocationTime);
 
 		// Check if we can reuse the regular pending request
-		const pendingRequestStillCurrent = documentAtInvocationTime.value === this._pendingStatelessNextEditRequest?.documentBeforeEdits.value;
+		const pendingRequestStillCurrent = documentAtInvocationTime.value === this._pendingStatelessNextEditRequest?.documentBeforeEdits?.value;
 		const cursorWithinPendingEditWindow = !this._pendingStatelessNextEditRequest || cursorInRequestEditWindow(this._pendingStatelessNextEditRequest);
 		const existingNextEditRequest = (pendingRequestStillCurrent || nesConfigs.isAsyncCompletions) && cursorWithinPendingEditWindow
 			&& !this._pendingStatelessNextEditRequest?.cancellationTokenSource.token.isCancellationRequested
@@ -647,7 +644,7 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 				}
 
 				// Rebase failed (or result had error). Check if there is a new pending request. Otherwise continue with a new request below.
-				const pendingRequestStillCurrent2 = documentAtInvocationTime.value === this._pendingStatelessNextEditRequest?.documentBeforeEdits.value;
+				const pendingRequestStillCurrent2 = documentAtInvocationTime.value === this._pendingStatelessNextEditRequest?.documentBeforeEdits?.value;
 				const existingNextEditRequest2 = pendingRequestStillCurrent2 && !this._pendingStatelessNextEditRequest?.cancellationTokenSource.token.isCancellationRequested
 					&& this._pendingStatelessNextEditRequest || undefined;
 				if (existingNextEditRequest2) {
@@ -674,7 +671,7 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 
 		telemetryBuilder.setRequest(nextEditRequest);
 		logContext.setRequestInput(nextEditRequest);
-		logContext.setIsCachedResult(nextEditRequest.logContext);
+		logContext.setIsCachedResult(nextEditRequest.logContext!);
 
 		const disp = this._hookupCancellation(nextEditRequest, cancellationToken);
 		try {
@@ -729,7 +726,7 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 			? this._configService.getExperimentBasedConfig(ConfigKey.TeamInternal.InlineEditsAutoExpandEditWindowLines, this._expService)
 			: undefined);
 
-		const docValue = doc.value.get();
+		let docValue: StringText | undefined = doc.value.get();
 		h4_docValueGet('_executeNewNextEditRequest', docValue.value.length);
 
 		const nextEditRequest = new StatelessNextEditRequest(
@@ -752,6 +749,9 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 			const totalDocBytes = docs.reduce((sum, d) => sum + d.documentBeforeEdits.value.length + d.documentAfterEdits.value.length, 0);
 			h4_newStatelessNextEditRequest(nextEditRequest.seqid, docValue.value.length, docs.length, totalDocBytes);
 		}
+		// Release the local reference so the generator doesn't pin the 16 MB string
+		// via its parameters_and_registers after the StatelessNextEditRequest owns it.
+		docValue = undefined;
 		let nextEditResult: StatelessNextEditResult | undefined;
 
 		if (this._pendingStatelessNextEditRequest) {
@@ -768,7 +768,7 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 		// of this new request — it was built for a different document or post-edit state.
 		if (this._speculativePendingRequest
 			&& (this._speculativePendingRequest.docId !== curDocId
-				|| this._speculativePendingRequest.postEditContentHash !== stringHash(nextEditRequest.documentBeforeEdits.value, 0))
+				|| this._speculativePendingRequest.postEditContentHash !== stringHash(nextEditRequest.documentBeforeEdits!.value, 0))
 		) {
 			this._cancelSpeculativeRequest();
 		}
@@ -796,7 +796,7 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 			value: doc.value,
 		}, data => {
 			data.value.changes.forEach(edit => {
-				if (nextEditRequest.intermediateUserEdit && !edit.isEmpty()) {
+				if (nextEditRequest.intermediateUserEdit && nextEditRequest.documentBeforeEdits && !edit.isEmpty()) {
 					nextEditRequest.intermediateUserEdit = nextEditRequest.intermediateUserEdit.compose(edit);
 					if (!checkEditConsistency(nextEditRequest.documentBeforeEdits.value, nextEditRequest.intermediateUserEdit, data.value.value.value, logger)) {
 						nextEditRequest.intermediateUserEdit = undefined;
@@ -809,6 +809,13 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 		const statePerDoc = createDocStateLookupMap(projectedDocuments, xtabEditHistory);
 
 		const editStream = this._statelessNextEditProvider.provideNextEdit(nextEditRequest, logger, logContext, nextEditRequest.cancellationTokenSource.token);
+
+		// When the request is cancelled, explicitly return the async generator
+		// to release captured locals (StringText, InlineEditRequestLogContext, etc.)
+		// that would otherwise be pinned in the generator's parameters_and_registers.
+		const cancelSub = nextEditRequest.cancellationTokenSource.token.onCancellationRequested(() => {
+			editStream.return(undefined as any);
+		});
 
 		let ithEdit = -1;
 
@@ -886,10 +893,10 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 				myLogger.trace(`${statePerDoc.get(curDocId).nextEdits.length} edits returned`);
 			} else {
 				myLogger.trace(`no edit, reason: ${completionReason.kind}`);
-				if (completionReason instanceof NoNextEditReason.NoSuggestions) {
-					const { documentBeforeEdits, window } = completionReason;
-					const reducedWindow = window ? computeReducedWindow(window, activeDocSelection, documentBeforeEdits) : undefined;
-					this._nextEditCache.setNoNextEdit(curDocId, documentBeforeEdits, reducedWindow, req);
+				if (completionReason instanceof NoNextEditReason.NoSuggestions && completionReason.documentBeforeEdits) {
+					const docBeforeEdits = completionReason.documentBeforeEdits;
+					const reducedWindow = completionReason.window ? computeReducedWindow(completionReason.window, activeDocSelection, docBeforeEdits) : undefined;
+					this._nextEditCache.setNoNextEdit(curDocId, docBeforeEdits, reducedWindow, req);
 				}
 			}
 
@@ -904,6 +911,7 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 			nextEditRequest.setResult(result);
 
 			disp.dispose();
+			cancelSub.dispose();
 			removeFromPending();
 
 			// Fire any scheduled speculative request — the last shown edit
@@ -964,6 +972,7 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 			}
 
 		} catch (err) {
+			cancelSub.dispose();
 			nextEditRequest.setResultError(err);
 			throw err;
 		}
@@ -1134,7 +1143,7 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 		}
 
 		// Check if we already have a pending request for the post-edit state
-		if (this._pendingStatelessNextEditRequest?.documentBeforeEdits.value === postEditContent) {
+		if (this._pendingStatelessNextEditRequest?.documentBeforeEdits?.value === postEditContent) {
 			logger.trace('already have pending request for post-edit state');
 			return;
 		}
@@ -1246,7 +1255,6 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 					curDocId,
 					workspaceRoot,
 					docHist.languageId,
-					doc.value.get().getLines(), // lines before the NES edit
 					postEditLineEdit, // the NES edit as LineEdit
 					doc.value.get(), // document before NES edit
 					Edits.single(postEditEdit), // the NES edit as Edits
@@ -1348,12 +1356,17 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 			nextEditRequest.cancellationTokenSource.token
 		);
 
+		const cancelSub = nextEditRequest.cancellationTokenSource.token.onCancellationRequested(() => {
+			editStream.return(undefined as any);
+		});
+
 		let ithEdit = -1;
 
 		try {
 			let res = await editStream.next();
 
 			if (res.done) {
+				cancelSub.dispose();
 				nextEditRequest.firstEdit.complete(Result.error(res.value.v));
 				nextEditRequest.setResult(new StatelessNextEditResult(
 					Result.error(res.value.v),
@@ -1417,6 +1430,7 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 						res = await editStream.next();
 					}
 				})().finally(() => {
+					cancelSub.dispose();
 					if (!nextEditRequest.firstEdit.isSettled) {
 						nextEditRequest.firstEdit.complete(Result.error(new NoNextEditReason.Uncategorized(new Error('Speculative request ended without edits'))));
 						nextEditRequest.setResult(
@@ -1431,6 +1445,7 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 
 			logger.trace(`speculative request completed with ${ithEdit + 1} edits`);
 		} catch (e) {
+			cancelSub.dispose();
 			h1_specCatchNoResolve(nextEditRequest.seqid, ErrorUtils.toString(e));
 			logger.trace(`speculative provider call error: ${ErrorUtils.toString(e)}`);
 		}
@@ -1508,12 +1523,14 @@ export class NextEditProvider extends Disposable implements INextEditProvider<Ne
 		if (!logContext.includeInLogTree) {
 			return;
 		}
+		const content = logContext.toLogDocument();
 		this._requestLogger.addEntry({
 			type: LoggedRequestKind.MarkdownContentRequest,
 			debugName: debugNameOverride ?? logContext.getDebugName(),
 			icon: logContext.getIcon(),
 			startTimeMs: logContext.time,
-			markdownContent: logContext.toLogDocument(),
+			markdownContent: content,
+			retainedSizeEstimate: content.length * 2,
 		});
 	}
 

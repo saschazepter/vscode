@@ -30,6 +30,60 @@ import { IInstantiationService } from '../../../util/vs/platform/instantiation/c
 import { renderDataPartToString, renderToolResultToStringNoBudget } from './requestLoggerToolResult';
 import { WorkspaceEditRecorder } from './workspaceEditRecorder';
 
+import * as fs from 'fs';
+import * as path from 'path';
+
+const maxTotalEntrySizeBytes = 50 * 1024 * 1024; // 50 MB
+
+// ─── DEBUG: request logger memory tracking (TODO: remove before PR) ────────
+import { getNesDebugDir } from '../../../platform/inlineEdits/node/nesMemDebug';
+const h5File = 'h5-request-logger.log';
+
+function h5_log(line: string): void {
+	try {
+		const h5Dir = getNesDebugDir();
+		if (!fs.existsSync(h5Dir)) {
+			fs.mkdirSync(h5Dir, { recursive: true });
+		}
+		const heap = Math.round(process.memoryUsage().heapUsed / 1024 / 1024);
+		fs.appendFileSync(path.join(h5Dir, h5File), `${new Date().toISOString()} heap=${heap}MB | ${line}\n`);
+	} catch {
+		// ignore
+	}
+}
+// ─── END DEBUG ─────────────────────────────────────────────────────────────
+
+/**
+ * Estimate the in-memory size of a logged entry by measuring its large string fields.
+ * For MarkdownContentRequest entries, uses the caller-provided retainedSizeEstimate
+ * which reflects the actual document data retained by closures.
+ */
+function estimateLoggedEntrySize(entry: LoggedInfo): number {
+	let size = 0;
+	if (entry.kind === LoggedInfoKind.Request) {
+		const req = entry.entry;
+		if (req.type === LoggedRequestKind.MarkdownContentRequest) {
+			if (req.retainedSizeEstimate !== undefined) {
+				size += req.retainedSizeEstimate;
+			} else if (typeof req.markdownContent === 'string') {
+				size += req.markdownContent.length * 2;
+			}
+		} else {
+			for (const msg of req.chatParams.messages) {
+				for (const part of msg.content) {
+					if ('text' in part && typeof part.text === 'string') {
+						size += part.text.length * 2;
+					}
+				}
+			}
+		}
+	} else if (entry.kind === LoggedInfoKind.ToolCall) {
+		const argsStr = typeof entry.args === 'string' ? entry.args : '';
+		size += argsStr.length * 2;
+	}
+	return size;
+}
+
 // Utility function to process deltas into a message string
 function processDeltasToMessage(deltas: IResponseDelta[]): string {
 	return deltas.map((d, i) => {
@@ -276,6 +330,8 @@ export class RequestLogger extends AbstractRequestLogger {
 
 	private _didRegisterLinkProvider = false;
 	private readonly _entries: LoggedInfo[] = [];
+	private readonly _entrySizes = new Map<string, number>();
+	private _totalEntrySizeBytes = 0;
 	private readonly _entryDisposables = new Map<string, IDisposable>();
 	private _workspaceEditRecorder: WorkspaceEditRecorder | undefined;
 	private readonly _onDidChangeDocument = this._register(new Emitter<Uri>());
@@ -330,6 +386,20 @@ export class RequestLogger extends AbstractRequestLogger {
 
 	private _onDidChangeRequests = this._register(new Emitter<void>());
 	public readonly onDidChangeRequests = this._onDidChangeRequests.event;
+
+	// Throttle tree refresh and document change events to avoid blocking
+	// the event loop when many entries are added in quick succession.
+	private _pendingRefresh: ReturnType<typeof setTimeout> | undefined;
+	private _scheduleRefresh(): void {
+		if (this._pendingRefresh !== undefined) {
+			return;
+		}
+		this._pendingRefresh = setTimeout(() => {
+			this._pendingRefresh = undefined;
+			this._onDidChangeRequests.fire();
+			this._onDidChangeDocument.fire(Uri.parse(ChatRequestScheme.buildUri({ kind: 'latest' })));
+		}, 200);
+	}
 
 	public override logModelListCall(id: string, requestMetadata: RequestMetadata, models: IModelAPIResponse[]): void {
 		this._chatDebugFileLoggerService.setModelSnapshot(models);
@@ -405,14 +475,32 @@ export class RequestLogger extends AbstractRequestLogger {
 			.catch(e => this._logService.error(e));
 	}
 
+	private _pendingEntries = 0;
+	private static readonly _maxPendingEntries = 10;
+
 	public addEntry(entry: LoggedRequest): void {
 		const id = generateUuid().substring(0, 8);
 		if (!this._shouldLog(entry)) {
 			return;
 		}
-		this._addEntry(new LoggedRequestInfo(id, entry, this.currentRequest))
-			.then(ok => {
-				if (ok) {
+
+		// Drop entries if too many are queued — avoids flooding the event loop
+		// during rapid NES triggers on large files.
+		if (this._pendingEntries >= RequestLogger._maxPendingEntries) {
+			return;
+		}
+
+		this._pendingEntries++;
+		this._addEntryAsync(id, entry);
+	}
+
+	private async _addEntryAsync(id: string, entry: LoggedRequest): Promise<void> {
+		try {
+			// Yield to the event loop so we don't block during rapid adds
+			await new Promise<void>(resolve => setTimeout(resolve, 0));
+
+			const ok = await this._addEntry(new LoggedRequestInfo(id, entry, this.currentRequest));
+			if (ok) {
 					this._ensureLinkProvider();
 
 					// Subscribe to live entry changes for dynamic content/icon refresh
@@ -459,8 +547,11 @@ export class RequestLogger extends AbstractRequestLogger {
 
 					this._logService.info(`${ChatRequestScheme.buildUri({ kind: 'request', id: id })} | ${extraData}`);
 				}
-			})
-			.catch(e => this._logService.error(e));
+		} catch (e) {
+			this._logService.error(e);
+		} finally {
+			this._pendingEntries--;
+		}
 	}
 
 	private _shouldLog(entry: LoggedRequest) {
@@ -483,18 +574,42 @@ export class RequestLogger extends AbstractRequestLogger {
 			this._logService.info(`Latest entry: ${ChatRequestScheme.buildUri({ kind: 'latest' })}`);
 		}
 
-
+		const entrySize = estimateLoggedEntrySize(entry);
 		this._entries.push(entry);
+		this._entrySizes.set(entry.id, entrySize);
+
+		// Recompute total from all entries since live entries' retainedSizeEstimate
+		// is a getter that updates after setRequestInput() is called.
+		this._totalEntrySizeBytes = 0;
+		for (const e of this._entries) {
+			const size = estimateLoggedEntrySize(e);
+			this._entrySizes.set(e.id, size);
+			this._totalEntrySizeBytes += size;
+		}
+
+		const entryKind = entry.kind === LoggedInfoKind.Request ? `req:${entry.entry.type}` : entry.kind === LoggedInfoKind.ToolCall ? `tool:${entry.name}` : 'element';
+		h5_log(`ADD id=${entry.id} kind=${entryKind} entrySize=${(entrySize / 1024).toFixed(1)}KB entries=${this._entries.length} totalSize=${(this._totalEntrySizeBytes / 1024 / 1024).toFixed(2)}MB`);
+
 		const maxEntries = this._configService.getConfig(ConfigKey.Advanced.RequestLoggerMaxEntries);
-		if (this._entries.length > maxEntries) {
+		let evictedCount = 0;
+		while (this._entries.length > maxEntries || this._totalEntrySizeBytes > maxTotalEntrySizeBytes) {
+			if (this._entries.length <= 1) {
+				break;
+			}
 			const evicted = this._entries.shift();
 			if (evicted) {
+				const evictedSize = this._entrySizes.get(evicted.id) ?? 0;
+				this._totalEntrySizeBytes -= evictedSize;
+				this._entrySizes.delete(evicted.id);
 				this._entryDisposables.get(evicted.id)?.dispose();
 				this._entryDisposables.delete(evicted.id);
+				evictedCount++;
 			}
 		}
-		this._onDidChangeRequests.fire();
-		this._onDidChangeDocument.fire(Uri.parse(ChatRequestScheme.buildUri({ kind: 'latest' })));
+		if (evictedCount > 0) {
+			h5_log(`EVICT count=${evictedCount} remaining=${this._entries.length} totalSize=${(this._totalEntrySizeBytes / 1024 / 1024).toFixed(2)}MB reason=${this._entries.length >= maxEntries ? 'maxEntries' : 'maxSize'}`);
+		}
+		this._scheduleRefresh();
 		return true;
 	}
 

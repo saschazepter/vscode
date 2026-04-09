@@ -566,7 +566,6 @@ describe('getUserPrompt', () => {
 			documentId,
 			undefined,
 			LanguageId.create('typescript'),
-			currentDocLines,
 			LineEdit.empty,
 			docText,
 			new Edits(StringEdit, []),

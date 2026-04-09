@@ -229,6 +229,11 @@ export interface IMarkdownContentRequest {
 	 * Used for live entries that may become hidden (e.g. skipped/cancelled NES requests).
 	 */
 	isVisible?: () => boolean;
+	/**
+	 * Estimated size in bytes of data retained by this entry (e.g. via closures).
+	 * Used for size-based eviction when entries capture large objects like document snapshots.
+	 */
+	retainedSizeEstimate?: number;
 }
 
 export function resolveMarkdownContent(entry: IMarkdownContentRequest): string {

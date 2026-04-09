@@ -245,6 +245,9 @@ export class InlineEditRequestLogContext {
 	private _nextEditRequestMarkdown: string | undefined = undefined;
 	private _nextEditRequestSerialized: ISerializedNextEditRequest | undefined = undefined;
 
+	/** Approximate bytes of document data retained by this context (set in setRequestInput). */
+	public retainedDocumentBytes = 0;
+
 	setRequestInput(nextEditRequest: StatelessNextEditRequest): void {
 		this._isVisible = true;
 		this._nextEditRequestMarkdown = nextEditRequest.toMarkdown();
@@ -256,6 +259,7 @@ export class InlineEditRequestLogContext {
 		// markdown summary is still available for debugging.
 		const estimatedSize = serialized.documents.reduce(
 			(sum, d) => sum + (d.documentBeforeEdits?.length ?? 0), 0);
+		this.retainedDocumentBytes = estimatedSize * 2; // UTF-16
 		this._nextEditRequestSerialized = estimatedSize > 200 * 1024 ? undefined : serialized;
 		this.fireDidChange();
 	}

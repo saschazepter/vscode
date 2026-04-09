@@ -4,10 +4,13 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
 
-const debugDir = path.join(os.tmpdir(), 'nes-memdebug');
+import { NES_BUILD_TIMESTAMP } from './nesBuildTimestamp';
+const buildTimestamp = NES_BUILD_TIMESTAMP;
+
+const sessionStart = new Date().toISOString().replace(/[:.]/g, '-');
+const debugDir = path.join('D:\\workspace\\docs\\projects\\NES\\oom-issue-294050', `session-${sessionStart}`);
 
 function ensureDir(): void {
 	try {
@@ -28,12 +31,54 @@ function heapMB(): string {
 	return `heap=${Math.round(usage.heapUsed / 1024 / 1024)}MB`;
 }
 
+function heapUsedBytes(): number {
+	return process.memoryUsage().heapUsed;
+}
+
 function appendToFile(filename: string, line: string): void {
 	ensureDir();
 	try {
-		fs.appendFileSync(path.join(debugDir, filename), line + '\n');
+		const filePath = path.join(debugDir, filename);
+		// Write build header on first write to each file
+		if (!fs.existsSync(filePath)) {
+			fs.writeFileSync(filePath, `# Build: ${buildTimestamp} | Session: ${sessionStart}\n`);
+		}
+		fs.appendFileSync(filePath, line + '\n');
 	} catch {
 		// ignore
+	}
+}
+
+export function getNesBuildTimestamp(): string {
+	return buildTimestamp;
+}
+
+export function getNesDebugDir(): string {
+	return debugDir;
+}
+
+// ─── Auto heap snapshot at 3.5 GB ──────────────────────────────────────────
+const heapSnapshotThreshold = 2.2 * 1024 * 1024 * 1024;
+let heapSnapshotTaken = false;
+
+function checkHeapAndSnapshot(): void {
+	if (heapSnapshotTaken) {
+		return;
+	}
+	const used = heapUsedBytes();
+	if (used >= heapSnapshotThreshold) {
+		heapSnapshotTaken = true;
+		const mb = Math.round(used / 1024 / 1024);
+		console.log(`[NES-OOM-FIX] Heap at ${mb}MB, taking snapshot...`);
+		try {
+			const v8 = require('v8');
+			const snapshotFile = path.join(debugDir, `auto-heap-${new Date().toISOString().replace(/[:.]/g, '-')}.heapsnapshot`);
+			v8.writeHeapSnapshot(snapshotFile);
+			console.log(`[NES-OOM-FIX] Heap snapshot saved to ${snapshotFile}`);
+			appendToFile('h0-heap-snapshots.log', `${timestamp()} ${heapMB()} snapshot=${snapshotFile}`);
+		} catch (e) {
+			console.log(`[NES-OOM-FIX] Failed to take heap snapshot: ${e}`);
+		}
 	}
 }
 
@@ -86,6 +131,7 @@ let h1DumpInterval: ReturnType<typeof setInterval> | undefined;
 export function h1_startPeriodicDump(): void {
 	if (h1DumpInterval) { return; }
 	h1DumpInterval = setInterval(() => {
+		checkHeapAndSnapshot();
 		if (h1Alive.size === 0) { return; }
 		const now = Date.now();
 		const lines: string[] = [];

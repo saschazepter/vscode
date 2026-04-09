@@ -358,7 +358,6 @@ function makeActiveDocument(lines: string[], opts?: { workspaceRoot?: URI; langu
 		DocumentId.create('file:///test/file.ts'),
 		opts?.workspaceRoot,
 		LanguageId.create(opts?.languageId ?? 'typescript'),
-		lines,
 		LineEdit.empty,
 		text,
 		new Edits(StringEdit, []),
@@ -933,7 +932,6 @@ describe('XtabProvider integration', () => {
 
 		const beforeText = afterText.slice(0, insertionOffset) + afterText.slice(insertionOffset + insertedText.length);
 		const beforeStringText = new StringText(beforeText);
-		const beforeLines = beforeText.split('\n');
 
 		const recentStringEdit = StringEdit.single(
 			new StringReplacement(OffsetRange.emptyAt(insertionOffset), insertedText)
@@ -944,7 +942,6 @@ describe('XtabProvider integration', () => {
 			DocumentId.create('file:///test/file.ts'),
 			opts?.workspaceRoot,
 			LanguageId.create(opts?.languageId ?? 'typescript'),
-			beforeLines,
 			LineEdit.empty,
 			beforeStringText,
 			recentEdits,
@@ -1039,7 +1036,6 @@ describe('XtabProvider integration', () => {
 				DocumentId.create('file:///test/file.ts'),
 				undefined,
 				LanguageId.create('typescript'),
-				lines,
 				LineEdit.empty,
 				text,
 				new Edits(StringEdit, []),
@@ -1067,7 +1063,6 @@ describe('XtabProvider integration', () => {
 				DocumentId.create('file:///test/file.ts'),
 				undefined,
 				LanguageId.create('typescript'),
-				lines,
 				LineEdit.empty,
 				text,
 				new Edits(StringEdit, []), // no recent edits → null selection
