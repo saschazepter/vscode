@@ -58,6 +58,7 @@ export class WebPageLoader extends Disposable {
 		private readonly _uri: URI,
 		private readonly _options: IWebContentExtractorOptions | undefined,
 		private readonly _isTrustedDomain: (uri: URI) => boolean,
+		private readonly _isDomainAllowed: (uri: URI) => boolean,
 	) {
 		super();
 
@@ -282,7 +283,7 @@ export class WebPageLoader extends Disposable {
 
 		// Check domain filter policy first — this applies regardless of followRedirects
 		const toURI = URI.parse(url);
-		if (this._options?.isDomainAllowed && !this._options.isDomainAllowed(toURI)) {
+		if (!this._isDomainAllowed(toURI)) {
 			this.trace(`Blocking navigation to ${url} (blocked by domain filter policy)`);
 			event.preventDefault();
 			this._onResult({ status: 'error', error: `Access to ${toURI.authority} is blocked by network domain policy.` });

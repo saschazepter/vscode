@@ -78,10 +78,7 @@ export class FetchWebPageTool implements IToolImpl {
 		let webContents: WebContentExtractResult[] = [];
 		if (webUris.size > 0) {
 			const trustedDomains = this._trustedDomainService.trustedDomains;
-			webContents = await this._readerModeService.extract([...webUris.values()], {
-				trustedDomains,
-				isDomainAllowed: (uri) => this._agentNetworkFilterService.isUriAllowed(uri),
-			});
+			webContents = await this._readerModeService.extract([...webUris.values()], { trustedDomains });
 		}
 
 		// Get contents from file URIs

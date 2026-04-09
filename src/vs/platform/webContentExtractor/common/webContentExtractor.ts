@@ -22,12 +22,6 @@ export interface IWebContentExtractorOptions {
 	 * List of trusted domain patterns for redirect validation.
 	 */
 	trustedDomains?: string[];
-
-	/**
-	 * Optional callback to check whether a domain is allowed by filter policy.
-	 * When provided, redirects and navigations to blocked domains are prevented.
-	 */
-	isDomainAllowed?: (uri: URI) => boolean;
 }
 
 export type WebContentExtractResult =

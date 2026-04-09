@@ -118,12 +118,12 @@ suite('WebPageLoader', () => {
 		sinon.restore();
 	});
 
-	function createWebPageLoader(uri: URI, options?: IWebContentExtractorOptions, isTrustedDomain?: (uri: URI) => boolean): WebPageLoader {
+	function createWebPageLoader(uri: URI, options?: IWebContentExtractorOptions, isTrustedDomain?: (uri: URI) => boolean, isDomainAllowed?: (uri: URI) => boolean): WebPageLoader {
 		const loader = new WebPageLoader((options) => {
 			window = new MockBrowserWindow(options);
 			// eslint-disable-next-line local/code-no-any-casts
 			return window as any;
-		}, new NullLogService(), uri, options, isTrustedDomain ?? (() => false));
+		}, new NullLogService(), uri, options, isTrustedDomain ?? (() => false), isDomainAllowed ?? (() => true));
 		disposables.add(loader);
 		return loader;
 	}
@@ -550,10 +550,7 @@ suite('WebPageLoader', () => {
 		const uri = URI.parse('https://example.com/page');
 		const blockedUrl = 'https://blocked-domain.com/path';
 
-		const loader = createWebPageLoader(uri, {
-			followRedirects: true,
-			isDomainAllowed: (u) => u.authority !== 'blocked-domain.com',
-		});
+		const loader = createWebPageLoader(uri, { followRedirects: true }, undefined, (u) => u.authority !== 'blocked-domain.com');
 
 		window.webContents.debugger.sendCommand.resolves({});
 
@@ -577,10 +574,7 @@ suite('WebPageLoader', () => {
 		const uri = URI.parse('https://example.com/page');
 		const allowedUrl = 'https://allowed-domain.com/path';
 
-		const loader = createWebPageLoader(uri, {
-			followRedirects: true,
-			isDomainAllowed: (u) => u.authority !== 'blocked-domain.com',
-		});
+		const loader = createWebPageLoader(uri, { followRedirects: true }, undefined, (u) => u.authority !== 'blocked-domain.com');
 		setupDebuggerMock();
 
 		const loadPromise = loader.load();
