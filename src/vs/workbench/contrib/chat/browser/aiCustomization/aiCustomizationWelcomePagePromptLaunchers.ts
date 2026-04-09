@@ -7,10 +7,12 @@ import './media/aiCustomizationWelcomePromptLaunchers.css';
 import * as DOM from '../../../../../base/browser/dom.js';
 import { Disposable, DisposableStore } from '../../../../../base/common/lifecycle.js';
 import { localize } from '../../../../../nls.js';
+import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { InputBox } from '../../../../../base/browser/ui/inputbox/inputBox.js';
 import { defaultInputBoxStyles } from '../../../../../platform/theme/browser/defaultStyles.js';
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
 import { AICustomizationManagementSection } from './aiCustomizationManagement.js';
+import { agentIcon, hookIcon, instructionsIcon, mcpServerIcon, pluginIcon, promptIcon, skillIcon } from './aiCustomizationIcons.js';
 import { IWelcomePageFeatures } from '../../common/aiCustomizationWorkspaceService.js';
 import type { IAICustomizationWelcomePageImplementation, IWelcomePageCallbacks } from './aiCustomizationWelcomePage.js';
 
@@ -18,12 +20,15 @@ const $ = DOM.$;
 
 interface IPromptExample {
 	readonly query: string;
+	readonly label: string;
+	readonly isWildcard?: boolean;
 	readonly ariaLabel: string;
 }
 
 interface ICategoryDescription {
 	readonly id: AICustomizationManagementSection;
 	readonly label: string;
+	readonly icon: ThemeIcon;
 	readonly description: string;
 	readonly examples: readonly IPromptExample[];
 }
@@ -40,71 +45,78 @@ export class PromptLaunchersAICustomizationWelcomePage extends Disposable implem
 		{
 			id: AICustomizationManagementSection.Agents,
 			label: localize('agents', "Agents"),
-			description: localize('agentsDesc', "Define custom agents with specialized personas, tool access, and instructions for specific tasks."),
+			icon: agentIcon,
+			description: localize('agentsDesc', "Create specialized agents with focused roles, tools, and instructions."),
 			examples: [
-				{ query: '/create-agent Create a reviewer agent that checks pull requests for risky changes, missing tests, and accessibility issues.', ariaLabel: localize('agentsExampleReviewAria', "Create a reviewer agent example") },
-				{ query: '/create-agent Create a release agent that prepares changelogs, verifies docs, and summarizes ship blockers.', ariaLabel: localize('agentsExampleReleaseAria', "Create a release agent example") },
-				{ query: '/create-agent ', ariaLabel: localize('agentsExampleWildcardAria', "Start with create agent command") },
+				{ query: '/create-agent Create a reviewer agent for risky changes, missing tests, and accessibility issues.', label: localize('agentsExampleReviewLabel', "Reviewer for risky changes"), ariaLabel: localize('agentsExampleReviewAria', "Create a reviewer agent example") },
+				{ query: '/create-agent Create a release agent for changelogs, docs, and ship blockers.', label: localize('agentsExampleReleaseLabel', "Release coordinator for ship prep"), ariaLabel: localize('agentsExampleReleaseAria', "Create a release agent example") },
+				{ query: '/create-agent ', label: localize('agentsExampleWildcardLabel', "/create-agent"), isWildcard: true, ariaLabel: localize('agentsExampleWildcardAria', "Start with create agent command") },
 			],
 		},
 		{
 			id: AICustomizationManagementSection.Skills,
 			label: localize('skills', "Skills"),
-			description: localize('skillsDesc', "Create reusable skill files that provide domain-specific knowledge and workflows."),
+			icon: skillIcon,
+			description: localize('skillsDesc', "Save reusable knowledge and workflows you can invoke across projects."),
 			examples: [
-				{ query: '/create-skill Create a skill for our TypeScript conventions, repo commands, and test patterns.', ariaLabel: localize('skillsExampleTypescriptAria', "Create a TypeScript conventions skill example") },
-				{ query: '/create-skill Create a skill for triaging CI failures and gathering the right logs first.', ariaLabel: localize('skillsExampleCiAria', "Create a CI triage skill example") },
-				{ query: '/create-skill ', ariaLabel: localize('skillsExampleWildcardAria', "Start with create skill command") },
+				{ query: '/create-skill Create a skill for our TypeScript conventions, repo commands, and test patterns.', label: localize('skillsExampleTypescriptLabel', "Team TypeScript playbook"), ariaLabel: localize('skillsExampleTypescriptAria', "Create a TypeScript conventions skill example") },
+				{ query: '/create-skill Create a skill for triaging CI failures and gathering the right logs first.', label: localize('skillsExampleCiLabel', "CI triage workflow"), ariaLabel: localize('skillsExampleCiAria', "Create a CI triage skill example") },
+				{ query: '/create-skill ', label: localize('skillsExampleWildcardLabel', "/create-skill"), isWildcard: true, ariaLabel: localize('skillsExampleWildcardAria', "Start with create skill command") },
 			],
 		},
 		{
 			id: AICustomizationManagementSection.Instructions,
 			label: localize('instructions', "Instructions"),
-			description: localize('instructionsDesc', "Set always-on instructions that guide AI behavior across your workspace or user profile."),
+			icon: instructionsIcon,
+			description: localize('instructionsDesc', "Set always-on guidance for your workspace or personal profile."),
 			examples: [
-				{ query: '/create-instructions Create workspace instructions for coding style, testing expectations, and review checklist.', ariaLabel: localize('instructionsExampleWorkspaceAria', "Create workspace instructions example") },
-				{ query: '/create-instructions Create user instructions that prefer concise diffs, reused helpers, and explicit error handling.', ariaLabel: localize('instructionsExampleUserAria', "Create user instructions example") },
-				{ query: '/create-instructions ', ariaLabel: localize('instructionsExampleWildcardAria', "Start with create instructions command") },
+				{ query: '/create-instructions Create workspace instructions for coding style, testing expectations, and review checklists.', label: localize('instructionsExampleWorkspaceLabel', "Workspace coding rules"), ariaLabel: localize('instructionsExampleWorkspaceAria', "Create workspace instructions example") },
+				{ query: '/create-instructions Create user instructions that prefer concise diffs, reused helpers, and explicit errors.', label: localize('instructionsExampleUserLabel', "Personal editing preferences"), ariaLabel: localize('instructionsExampleUserAria', "Create user instructions example") },
+				{ query: '/create-instructions ', label: localize('instructionsExampleWildcardLabel', "/create-instructions"), isWildcard: true, ariaLabel: localize('instructionsExampleWildcardAria', "Start with create instructions command") },
 			],
 		},
 		{
 			id: AICustomizationManagementSection.Prompts,
 			label: localize('prompts', "Prompts"),
-			description: localize('promptsDesc', "Save reusable prompts you can run again for planning, analysis, and repeatable authoring tasks."),
+			icon: promptIcon,
+			description: localize('promptsDesc', "Save reusable prompt starters for planning, analysis, and authoring."),
 			examples: [
-				{ query: '/create-prompt Create a reusable prompt that drafts release notes from recent user-facing changes.', ariaLabel: localize('promptsExampleReleaseNotesAria', "Create a release notes prompt example") },
-				{ query: '/create-prompt Create a reusable prompt that turns a bug report into repro steps, expected behavior, and likely owners.', ariaLabel: localize('promptsExampleBugAria', "Create a bug report prompt example") },
-				{ query: '/create-prompt ', ariaLabel: localize('promptsExampleWildcardAria', "Start with create prompt command") },
+				{ query: '/create-prompt Create a reusable prompt that drafts release notes from recent user-facing changes.', label: localize('promptsExampleReleaseNotesLabel', "Reusable release-notes prompt"), ariaLabel: localize('promptsExampleReleaseNotesAria', "Create a release notes prompt example") },
+				{ query: '/create-prompt Create a reusable prompt that turns a bug report into repro steps, expected behavior, and likely owners.', label: localize('promptsExampleBugLabel', "Bug report to investigation brief"), ariaLabel: localize('promptsExampleBugAria', "Create a bug report prompt example") },
+				{ query: '/create-prompt ', label: localize('promptsExampleWildcardLabel', "/create-prompt"), isWildcard: true, ariaLabel: localize('promptsExampleWildcardAria', "Start with create prompt command") },
 			],
 		},
 		{
 			id: AICustomizationManagementSection.Hooks,
 			label: localize('hooks', "Hooks"),
-			description: localize('hooksDesc', "Configure automated actions triggered by events like saving files or running tasks."),
+			icon: hookIcon,
+			description: localize('hooksDesc', "Add automated actions that run when files or tasks change."),
 			examples: [
-				{ query: '/create-hook Create a hook that reminds the agent to run TypeScript compile checks before tests.', ariaLabel: localize('hooksExampleCompileAria', "Create a compile check hook example") },
-				{ query: '/create-hook Create a hook that suggests updating tests and docs when exported behavior changes.', ariaLabel: localize('hooksExampleTestsAria', "Create a tests and docs hook example") },
-				{ query: '/create-hook ', ariaLabel: localize('hooksExampleWildcardAria', "Start with create hook command") },
+				{ query: '/create-hook Create a hook that reminds the agent to run TypeScript compile checks before tests.', label: localize('hooksExampleCompileLabel', "Before-test compile reminder"), ariaLabel: localize('hooksExampleCompileAria', "Create a compile check hook example") },
+				{ query: '/create-hook Create a hook that suggests updating tests and docs when exported behavior changes.', label: localize('hooksExampleTestsLabel', "Code-change follow-up automation"), ariaLabel: localize('hooksExampleTestsAria', "Create a tests and docs hook example") },
+				{ query: '/create-hook ', label: localize('hooksExampleWildcardLabel', "/create-hook"), isWildcard: true, ariaLabel: localize('hooksExampleWildcardAria', "Start with create hook command") },
 			],
 		},
 		{
 			id: AICustomizationManagementSection.McpServers,
 			label: localize('mcpServers', "MCP Servers"),
-			description: localize('mcpServersDesc', "Connect external tool servers that extend AI capabilities with custom tools and data sources."),
+			icon: mcpServerIcon,
+			description: localize('mcpServersDesc', "Connect tool servers that give agents access to extra tools and data."),
 			examples: [
-				{ query: '/agent-customization Help me configure an MCP server that exposes our internal docs and scripts to agents.', ariaLabel: localize('mcpExampleDocsAria', "Configure an MCP server for internal docs example") },
-				{ query: '/agent-customization Suggest an MCP server setup for local CLI tools, logs, and project search.', ariaLabel: localize('mcpExampleCliAria', "Configure an MCP server for local tools example") },
-				{ query: '/agent-customization ', ariaLabel: localize('mcpExampleWildcardAria', "Start with agent customization command for MCP servers") },
+				{ query: '/agent-customization Help me configure an MCP server for internal docs and scripts.', label: localize('mcpExampleDocsLabel', "Internal docs tool server"), ariaLabel: localize('mcpExampleDocsAria', "Configure an MCP server for internal docs example") },
+				{ query: '/agent-customization Suggest an MCP server setup for local CLI tools, logs, and search.', label: localize('mcpExampleCliLabel', "Local tools and logs server"), ariaLabel: localize('mcpExampleCliAria', "Configure an MCP server for local tools example") },
+				{ query: '/agent-customization ', label: localize('mcpExampleWildcardLabel', "/agent-customization"), isWildcard: true, ariaLabel: localize('mcpExampleWildcardAria', "Start with agent customization command for MCP servers") },
 			],
 		},
 		{
 			id: AICustomizationManagementSection.Plugins,
 			label: localize('plugins', "Plugins"),
-			description: localize('pluginsDesc', "Install and manage agent plugins that add additional tools, skills, and integrations."),
+			icon: pluginIcon,
+			description: localize('pluginsDesc', "Install plugins that add tools, skills, and integrations."),
 			examples: [
-				{ query: '/agent-customization Suggest agent plugins that add code review, planning, and diagnostics workflows.', ariaLabel: localize('pluginsExampleReviewAria', "Suggest agent plugins for review and planning example") },
-				{ query: '/agent-customization Help me configure plugins for repository analysis and automation tasks.', ariaLabel: localize('pluginsExampleAutomationAria', "Configure plugins for automation example") },
-				{ query: '/agent-customization ', ariaLabel: localize('pluginsExampleWildcardAria', "Start with agent customization command for plugins") },
+				{ query: '/agent-customization Suggest plugins for code review, planning, and diagnostics workflows.', label: localize('pluginsExampleReviewLabel', "Review and planning add-ons"), ariaLabel: localize('pluginsExampleReviewAria', "Suggest agent plugins for review and planning example") },
+				{ query: '/agent-customization Help me configure plugins for repository analysis and automation.', label: localize('pluginsExampleAutomationLabel', "Repo automation add-ons"), ariaLabel: localize('pluginsExampleAutomationAria', "Configure plugins for automation example") },
+				{ query: '/agent-customization ', label: localize('pluginsExampleWildcardLabel', "/agent-customization"), isWildcard: true, ariaLabel: localize('pluginsExampleWildcardAria', "Start with agent customization command for plugins") },
 			],
 		},
 	];
@@ -124,13 +136,17 @@ export class PromptLaunchersAICustomizationWelcomePage extends Disposable implem
 		heading.textContent = localize('welcomeHeading', "Agent Customizations");
 
 		const subtitle = DOM.append(welcomeInner, $('p.welcome-prompts-subtitle'));
-		subtitle.textContent = localize('welcomeSubtitle', "Tailor how your agents behave in each project. Create shared customizations for your team, or keep personal ones that follow you across workspaces.");
-
-		const description = DOM.append(welcomeInner, $('p.welcome-prompts-description'));
-		description.textContent = localize('welcomeDescription', "Start by describing your codebase to generate a setup with AI, or configure agents, skills, instructions, hooks, MCP servers, and plugins individually.");
+		subtitle.textContent = localize('welcomeSubtitle', "Tailor how your agents behave in each project. Describe your codebase to generate a workflow with AI, or start from a focused customization below.");
 
 		if (this.welcomePageFeatures?.showGettingStartedBanner !== false) {
-			const inputRow = DOM.append(welcomeInner, $('.welcome-prompts-input-row'));
+			const primarySection = DOM.append(welcomeInner, $('.welcome-prompts-primary'));
+			const primaryLabel = DOM.append(primarySection, $('.welcome-prompts-section-label'));
+			const primaryIcon = DOM.append(primaryLabel, $('span.welcome-prompts-section-label-icon.codicon.codicon-sparkle'));
+			primaryIcon.setAttribute('aria-hidden', 'true');
+			const primaryLabelText = DOM.append(primaryLabel, $('span'));
+			primaryLabelText.textContent = localize('generateSetupLabel', "Generate Workflow");
+
+			const inputRow = DOM.append(primarySection, $('.welcome-prompts-input-row'));
 
 			this.inputBox = this._register(new InputBox(inputRow, undefined, {
 				placeholder: localize('workflowInputPlaceholder', "Describe your project and coding patterns..."),
@@ -162,15 +178,18 @@ export class PromptLaunchersAICustomizationWelcomePage extends Disposable implem
 				}
 			}));
 
-			const inputHelper = DOM.append(welcomeInner, $('p.welcome-prompts-input-helper'));
-			inputHelper.textContent = localize('workflowInputHelper', "Describe your stack, coding patterns, and team conventions to draft a starting setup for your agents.");
+			const inputHelper = DOM.append(primarySection, $('p.welcome-prompts-input-helper'));
+			inputHelper.textContent = localize('workflowInputHelper', "Describe your stack, conventions, and workflow to draft agents, skills, and instructions.");
 		}
 
-		const divider = DOM.append(welcomeInner, $('.welcome-prompts-section-divider'));
-		const dividerLabel = DOM.append(divider, $('span.welcome-prompts-section-divider-label'));
-		dividerLabel.textContent = localize('orConfigureIndividually', "or configure individually");
+		const separator = DOM.append(welcomeInner, $('.welcome-prompts-separator'));
+		DOM.append(separator, $('span.welcome-prompts-separator-line'));
+		const separatorLabel = DOM.append(separator, $('span.welcome-prompts-separator-label'));
+		separatorLabel.textContent = localize('individualSetupSeparatorLabel', "Or configure individually");
+		DOM.append(separator, $('span.welcome-prompts-separator-line'));
 
-		this.groupsContainer = DOM.append(welcomeInner, $('.welcome-prompts-groups'));
+		const secondarySection = DOM.append(welcomeInner, $('.welcome-prompts-secondary'));
+		this.groupsContainer = DOM.append(secondarySection, $('.welcome-prompts-groups'));
 	}
 
 	rebuildCards(visibleSectionIds: ReadonlySet<AICustomizationManagementSection>): void {
@@ -187,7 +206,11 @@ export class PromptLaunchersAICustomizationWelcomePage extends Disposable implem
 			}
 
 			const group = DOM.append(this.groupsContainer, $('.welcome-prompts-group'));
-			const label = DOM.append(group, $('h3.welcome-prompts-group-label'));
+			const header = DOM.append(group, $('.welcome-prompts-group-header'));
+			const icon = DOM.append(header, $('span.welcome-prompts-group-icon'));
+			icon.classList.add(...ThemeIcon.asClassNameArray(category.icon));
+			icon.setAttribute('aria-hidden', 'true');
+			const label = DOM.append(header, $('h3.welcome-prompts-group-label'));
 			label.textContent = category.label;
 
 			const description = DOM.append(group, $('p.welcome-prompts-group-description'));
@@ -197,17 +220,14 @@ export class PromptLaunchersAICustomizationWelcomePage extends Disposable implem
 			for (const example of category.examples) {
 				const button = DOM.append(examples, $('button.welcome-prompts-example'));
 				button.setAttribute('aria-label', example.ariaLabel);
-				const content = DOM.append(button, $('span.welcome-prompts-example-content'));
-				const [command, ...rest] = example.query.split(' ');
-				const commandLabel = DOM.append(content, $('span.welcome-prompts-example-command'));
-				commandLabel.textContent = command;
-				const body = rest.join(' ').trim();
-				if (body) {
-					const bodyLabel = DOM.append(content, $('span.welcome-prompts-example-body'));
-					bodyLabel.textContent = body;
-				} else {
-					button.classList.add('welcome-prompts-example-command-only');
+				if (example.isWildcard) {
+					button.classList.add('welcome-prompts-example-wildcard');
 				}
+				const content = DOM.append(button, $('span.welcome-prompts-example-content'));
+				const bodyLabel = DOM.append(content, $('span.welcome-prompts-example-body'));
+				bodyLabel.textContent = example.label;
+				const chevron = DOM.append(button, $('span.welcome-prompts-example-chevron.codicon.codicon-arrow-right'));
+				chevron.setAttribute('aria-hidden', 'true');
 				this.cardDisposables.add(DOM.addDisposableListener(button, 'click', () => {
 					this.callbacks.closeEditor();
 					this.commandService.executeCommand('workbench.action.chat.open', {

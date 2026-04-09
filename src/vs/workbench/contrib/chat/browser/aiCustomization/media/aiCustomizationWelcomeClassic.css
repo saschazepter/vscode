@@ -13,7 +13,7 @@
 .ai-customization-management-editor .welcome-classic-inner {
 	max-width: 800px;
 	margin: 0 auto;
-	padding-top: 16px;
+	padding-top: 52px;
 }
 
 .ai-customization-management-editor .welcome-classic-heading {
@@ -33,40 +33,28 @@
 
 .ai-customization-management-editor .welcome-classic-getting-started {
 	display: flex;
-	align-items: center;
-	gap: 12px;
+	flex-direction: column;
+	gap: 10px;
 	width: 100%;
-	padding: 14px 16px;
-	margin-bottom: 20px;
-	border: 1px solid var(--vscode-widget-border);
-	border-radius: 8px;
-	background: var(--vscode-sideBar-background);
-	cursor: pointer;
-	text-align: left;
-	transition: background-color 0.15s ease, border-color 0.15s ease;
+	padding: 16px;
+	margin: 12px 0 24px;
+	border: 1px solid color-mix(in srgb, var(--vscode-widget-border) 85%, transparent);
+	border-radius: 14px;
+	background:
+		linear-gradient(180deg, color-mix(in srgb, var(--vscode-editorWidget-background, var(--vscode-editor-background)) 84%, var(--vscode-list-hoverBackground) 16%) 0%, color-mix(in srgb, var(--vscode-editorWidget-background, var(--vscode-editor-background)) 94%, var(--vscode-editor-background) 6%) 100%);
+	box-shadow: 0 1px 2px rgb(0 0 0 / 4%);
 }
 
-.ai-customization-management-editor .welcome-classic-getting-started:hover {
-	border-color: var(--vscode-focusBorder);
-	background: var(--vscode-list-hoverBackground);
-}
-
-.ai-customization-management-editor .welcome-classic-getting-started:focus-visible {
-	outline: 1px solid var(--vscode-focusBorder);
-	outline-offset: -1px;
+.ai-customization-management-editor .welcome-classic-getting-started-header {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
 }
 
 .ai-customization-management-editor .welcome-classic-getting-started-icon {
-	font-size: 16px;
-	color: var(--vscode-textLink-foreground);
+	font-size: 14px;
+	color: var(--vscode-descriptionForeground);
 	flex-shrink: 0;
-}
-
-.ai-customization-management-editor .welcome-classic-getting-started-text {
-	display: flex;
-	flex-direction: column;
-	gap: 2px;
-	min-width: 0;
 }
 
 .ai-customization-management-editor .welcome-classic-getting-started-title {
@@ -75,14 +63,85 @@
 	color: var(--vscode-foreground);
 }
 
+.ai-customization-management-editor .welcome-classic-input-row {
+	display: flex;
+	align-items: center;
+	min-height: 54px;
+	border: 1px solid var(--vscode-input-border, transparent);
+	border-radius: 12px;
+	background: var(--vscode-input-background);
+	padding: 0 8px;
+	overflow: hidden;
+}
+
+.ai-customization-management-editor .welcome-classic-input {
+	flex: 1;
+	min-width: 0;
+}
+
+.ai-customization-management-editor .welcome-classic-input .monaco-inputbox {
+	display: flex;
+	align-items: center;
+	min-height: 54px;
+	border: none !important;
+	background: transparent !important;
+	outline: none !important;
+}
+
+.ai-customization-management-editor .welcome-classic-input .monaco-inputbox > .ibwrapper {
+	display: flex;
+	align-items: center;
+	width: 100%;
+	min-height: 54px;
+}
+
+.ai-customization-management-editor .welcome-classic-input .monaco-inputbox > .ibwrapper > input {
+	height: 54px;
+	padding: 0 12px;
+	font-size: 13px;
+	outline: none !important;
+	border: none !important;
+	background: transparent;
+	color: var(--vscode-input-foreground);
+}
+
+.ai-customization-management-editor .welcome-classic-input .monaco-inputbox > .ibwrapper > input::placeholder {
+	color: var(--vscode-input-placeholderForeground);
+}
+
+.ai-customization-management-editor .welcome-classic-input-submit {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 36px;
+	height: 36px;
+	flex-shrink: 0;
+	border: none;
+	border-radius: 9px;
+	background: transparent;
+	color: var(--vscode-descriptionForeground);
+	cursor: pointer;
+	transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.ai-customization-management-editor .welcome-classic-input-submit:hover {
+	color: var(--vscode-foreground);
+	background: color-mix(in srgb, var(--vscode-list-hoverBackground) 75%, transparent);
+}
+
+.ai-customization-management-editor .welcome-classic-input-submit:focus-visible {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: -1px;
+}
+
 .ai-customization-management-editor .welcome-classic-getting-started-desc {
 	font-size: 12px;
 	line-height: 1.5;
 	color: var(--vscode-descriptionForeground);
+	margin: 0;
 }
 
 .ai-customization-management-editor .welcome-classic-getting-started-chevron {
-	margin-left: auto;
 	font-size: 16px;
 	color: var(--vscode-descriptionForeground);
 	flex-shrink: 0;
@@ -90,14 +149,14 @@
 
 .ai-customization-management-editor .welcome-classic-cards {
 	display: grid;
-	grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-	gap: 10px;
+	grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+	gap: 8px;
 }
 
 .ai-customization-management-editor .welcome-classic-card {
 	display: flex;
 	flex-direction: column;
-	padding: 16px;
+	padding: 13px 14px;
 	border: 1px solid var(--vscode-widget-border);
 	border-radius: 6px;
 	background: var(--vscode-sideBar-background);
@@ -119,25 +178,25 @@
 	display: flex;
 	align-items: center;
 	gap: 8px;
-	margin-bottom: 8px;
+	margin-bottom: 6px;
 }
 
 .ai-customization-management-editor .welcome-classic-card-icon {
-	font-size: 16px;
+	font-size: 14px;
 	color: var(--vscode-icon-foreground);
 }
 
 .ai-customization-management-editor .welcome-classic-card-label {
-	font-size: 13px;
+	font-size: 12px;
 	font-weight: 500;
 	color: var(--vscode-foreground);
 }
 
 .ai-customization-management-editor .welcome-classic-card-description {
-	font-size: 12px;
+	font-size: 11px;
 	color: var(--vscode-descriptionForeground);
-	line-height: 1.5;
-	margin: 0 0 12px;
+	line-height: 1.45;
+	margin: 0 0 10px;
 	flex: 1;
 }
 
@@ -145,24 +204,23 @@
 	display: flex;
 	align-items: center;
 	gap: 4px;
+	margin-top: auto;
 }
 
-.ai-customization-management-editor .welcome-classic-card-browse,
 .ai-customization-management-editor .welcome-classic-card-generate {
-	font-size: 11px;
+	font-size: 10px;
 	color: var(--vscode-foreground);
 	text-decoration: none;
 	cursor: pointer;
 	display: flex;
 	align-items: center;
 	gap: 4px;
-	padding: 3px 8px;
+	padding: 2px 7px;
 	border-radius: 4px;
 	background: var(--vscode-button-secondaryBackground);
 	border: none;
 }
 
-.ai-customization-management-editor .welcome-classic-card-browse:hover,
 .ai-customization-management-editor .welcome-classic-card-generate:hover {
 	background: var(--vscode-button-secondaryHoverBackground);
 }

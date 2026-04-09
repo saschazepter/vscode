@@ -9,7 +9,9 @@ import { Disposable, DisposableStore } from '../../../../../base/common/lifecycl
 import { localize } from '../../../../../nls.js';
 import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
+import { InputBox } from '../../../../../base/browser/ui/inputbox/inputBox.js';
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
+import { defaultInputBoxStyles } from '../../../../../platform/theme/browser/defaultStyles.js';
 import { AICustomizationManagementSection } from './aiCustomizationManagement.js';
 import { agentIcon, instructionsIcon, pluginIcon, skillIcon, hookIcon } from './aiCustomizationIcons.js';
 import { IAICustomizationWorkspaceService, IWelcomePageFeatures } from '../../common/aiCustomizationWorkspaceService.js';
@@ -32,7 +34,7 @@ export class ClassicAICustomizationWelcomePage extends Disposable implements IAI
 
 	readonly container: HTMLElement;
 	private cardsContainer: HTMLElement | undefined;
-	private gettingStartedButton: HTMLButtonElement | undefined;
+	private inputBox: InputBox | undefined;
 
 	private readonly categoryDescriptions: IClassicCategoryDescription[] = [
 		{
@@ -93,24 +95,49 @@ export class ClassicAICustomizationWelcomePage extends Disposable implements IAI
 		heading.textContent = localize('welcomeHeading', "Agent Customizations");
 
 		const subtitle = DOM.append(welcomeInner, $('p.welcome-classic-subtitle'));
-		subtitle.textContent = localize('welcomeSubtitle', "Tailor how AI agents work in your projects. Configure workspace customizations for the entire team, or create personal ones that follow you across projects.");
+		subtitle.textContent = localize('welcomeSubtitle', "Tailor how your agents work in your projects. Configure workspace customizations for the entire team, or create personal ones that follow you across projects.");
 
 		if (this.welcomePageFeatures?.showGettingStartedBanner !== false) {
-			const gettingStarted = DOM.append(welcomeInner, $('button.welcome-classic-getting-started')) as HTMLButtonElement;
-			this.gettingStartedButton = gettingStarted;
-			const icon = DOM.append(gettingStarted, $('span.welcome-classic-getting-started-icon.codicon.codicon-sparkle'));
+			const gettingStarted = DOM.append(welcomeInner, $('.welcome-classic-getting-started'));
+			const header = DOM.append(gettingStarted, $('.welcome-classic-getting-started-header'));
+			const icon = DOM.append(header, $('span.welcome-classic-getting-started-icon.codicon.codicon-sparkle'));
 			icon.setAttribute('aria-hidden', 'true');
-			const text = DOM.append(gettingStarted, $('.welcome-classic-getting-started-text'));
-			const title = DOM.append(text, $('span.welcome-classic-getting-started-title'));
-			title.textContent = localize('gettingStartedTitle', "Configure Your AI");
-			const description = DOM.append(text, $('span.welcome-classic-getting-started-desc'));
-			description.textContent = localize('gettingStartedDesc', "Describe your project and coding patterns. Copilot will generate agents, skills, and instructions tailored to your workflow.");
-			const chevron = DOM.append(gettingStarted, $('span.welcome-classic-getting-started-chevron.codicon.codicon-chevron-right'));
-			chevron.setAttribute('aria-hidden', 'true');
-			this._register(DOM.addDisposableListener(gettingStarted, 'click', () => {
-				this.callbacks.closeEditor();
-				this.commandService.executeCommand('workbench.action.chat.open', { query: '/agent-customization ', isPartialQuery: true });
+			const title = DOM.append(header, $('span.welcome-classic-getting-started-title'));
+			title.textContent = localize('gettingStartedTitle', "Generate Workflow");
+
+			const inputRow = DOM.append(gettingStarted, $('.welcome-classic-input-row'));
+			this.inputBox = this._register(new InputBox(inputRow, undefined, {
+				placeholder: localize('workflowInputPlaceholder', "Describe your project and coding patterns..."),
+				ariaLabel: localize('workflowInputAriaLabel', "Describe your project to generate a workflow"),
+				inputBoxStyles: {
+					...defaultInputBoxStyles,
+					inputBorder: 'transparent',
+					inputBackground: 'transparent',
+				},
 			}));
+			this.inputBox.element.classList.add('welcome-classic-input');
+
+			const submitBtn = DOM.append(inputRow, $('button.welcome-classic-input-submit'));
+			submitBtn.setAttribute('aria-label', localize('workflowSubmitAriaLabel', "Generate workflow"));
+			const chevron = DOM.append(submitBtn, $('span.welcome-classic-getting-started-chevron.codicon.codicon-arrow-up'));
+			chevron.setAttribute('aria-hidden', 'true');
+
+			const submit = () => {
+				const value = this.inputBox?.value?.trim();
+				this.callbacks.closeEditor();
+				const query = value ? `/agent-customization ${value}` : '/agent-customization ';
+				this.commandService.executeCommand('workbench.action.chat.open', { query, isPartialQuery: !value });
+			};
+			this._register(DOM.addDisposableListener(submitBtn, 'click', submit));
+			this._register(DOM.addDisposableListener(this.inputBox.inputElement, 'keydown', (e: KeyboardEvent) => {
+				if (e.key === 'Enter') {
+					e.preventDefault();
+					submit();
+				}
+			}));
+
+			const description = DOM.append(gettingStarted, $('p.welcome-classic-getting-started-desc'));
+			description.textContent = localize('gettingStartedDesc', "Describe your stack, conventions, and workflow to draft agents, skills, and instructions.");
 		}
 
 		this.cardsContainer = DOM.append(welcomeInner, $('.welcome-classic-cards'));
@@ -143,22 +170,20 @@ export class ClassicAICustomizationWelcomePage extends Disposable implements IAI
 			descEl.textContent = category.description;
 
 			const footer = DOM.append(card, $('.welcome-classic-card-footer'));
-			const browseBtn = DOM.append(footer, $('button.welcome-classic-card-browse'));
-			browseBtn.textContent = localize('browse', "Browse");
-			this.cardDisposables.add(DOM.addDisposableListener(browseBtn, 'click', e => {
-				e.stopPropagation();
-				this.callbacks.selectSection(category.id);
-			}));
-
 			if (category.promptType && this.welcomePageFeatures?.showGenerateActions !== false) {
 				const generateBtn = DOM.append(footer, $('button.welcome-classic-card-generate'));
-				DOM.append(generateBtn, $('span.codicon.codicon-sparkle'));
-				const label = DOM.append(generateBtn, $('span'));
-				label.textContent = localize('generateWithAI', "Generate with AI");
+				generateBtn.textContent = localize('new', "New...");
 				this.cardDisposables.add(DOM.addDisposableListener(generateBtn, 'click', e => {
 					e.stopPropagation();
 					this.callbacks.closeEditor();
 					this.workspaceService.generateCustomization(category.promptType!);
+				}));
+			} else {
+				const createBtn = DOM.append(footer, $('button.welcome-classic-card-generate'));
+				createBtn.textContent = localize('browse', "Browse...");
+				this.cardDisposables.add(DOM.addDisposableListener(createBtn, 'click', e => {
+					e.stopPropagation();
+					this.callbacks.selectSection(category.id);
 				}));
 			}
 
@@ -175,6 +200,6 @@ export class ClassicAICustomizationWelcomePage extends Disposable implements IAI
 	}
 
 	focus(): void {
-		this.gettingStartedButton?.focus();
+		this.inputBox?.focus();
 	}
 }
