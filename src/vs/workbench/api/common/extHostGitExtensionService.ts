@@ -216,6 +216,8 @@ export class ExtHostGitExtensionService extends Disposable implements IExtHostGi
 		if (existingHandle !== undefined) {
 			if (this._repositories.get(existingHandle) !== repository) {
 				this._repositories.set(existingHandle, repository);
+				this._repositoryByUri.set(repository.rootUri, existingHandle);
+
 				this._setRepositoryStateChangeListener(existingHandle, repository);
 			}
 
