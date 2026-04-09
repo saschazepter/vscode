@@ -54,7 +54,6 @@ export class ChatSessionWorkspaceFolderService extends Disposable implements ICh
 			this.sessionsAssociatedWithFolders.get(folderUri)?.delete(sessionId);
 		}
 		this.workspaceState.delete(sessionId);
-		this.workspaceFolderChanges.delete(sessionId);
 		await this.metadataStore.deleteSessionMetadata(sessionId);
 	}
 
