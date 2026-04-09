@@ -29,6 +29,7 @@ import { IAction, Separator, SubmenuAction, toAction } from '../../../base/commo
 import { StringSHA1 } from '../../../base/common/hash.js';
 import { GestureEvent } from '../../../base/browser/touch.js';
 import { IPaneCompositePart } from './paneCompositePart.js';
+import { IPaneComposite } from '../../common/panecomposite.js';
 import { IConfigurationService } from '../../../platform/configuration/common/configuration.js';
 import { IViewsService } from '../../services/views/common/viewsService.js';
 
@@ -112,7 +113,7 @@ export class PaneCompositeBar extends Disposable {
 		super();
 
 		this.dndHandler = new CompositeDragAndDrop(this.viewDescriptorService, this.location, this.options.orientation,
-			async (id: string, focus?: boolean) => { return await this.paneCompositePart.openPaneComposite(id, focus) ?? null; },
+			async (id: string, focus?: boolean) => { return await this.openPaneComposite(id, focus) ?? null; },
 			(from: string, to: string, before?: Before2D) => this.compositeBar.move(from, to, this.options.orientation === ActionsOrientation.VERTICAL ? before?.verticallyBefore : before?.horizontallyBefore),
 			() => this.compositeBar.getCompositeBarItems(),
 		);
@@ -138,7 +139,7 @@ export class PaneCompositeBar extends Disposable {
 			activityHoverOptions: this.options.activityHoverOptions,
 			preventLoopNavigation: this.options.preventLoopNavigation,
 			openComposite: async (compositeId, preserveFocus) => {
-				return (await this.paneCompositePart.openPaneComposite(compositeId, !preserveFocus)) ?? null;
+				return (await this.openPaneComposite(compositeId, !preserveFocus)) ?? null;
 			},
 			getActivityAction: compositeId => this.getCompositeActions(compositeId).activityAction,
 			getCompositePinnedAction: compositeId => this.getCompositeActions(compositeId).pinnedAction,
@@ -152,6 +153,10 @@ export class PaneCompositeBar extends Disposable {
 			overflowActionSize: this.options.overflowActionSize,
 			colors: theme => this.options.colors(theme),
 		}));
+	}
+
+	protected openPaneComposite(id?: string, focus?: boolean): Promise<IPaneComposite | undefined> {
+		return this.paneCompositePart.openPaneComposite(id, focus);
 	}
 
 	private getContextMenuActionsForComposite(compositeId: string): IAction[] {
@@ -313,14 +318,14 @@ export class PaneCompositeBar extends Disposable {
 			if (viewContainer) {
 				const viewContainerModel = this.viewDescriptorService.getViewContainerModel(viewContainer);
 				compositeActions = {
-					activityAction: this._register(this.instantiationService.createInstance(ViewContainerActivityAction, this.toCompositeBarActionItemFrom(viewContainerModel), this.part, this.paneCompositePart)),
+					activityAction: this._register(this.instantiationService.createInstance(ViewContainerActivityAction, this.toCompositeBarActionItemFrom(viewContainerModel), this.part, this.paneCompositePart, (id?: string, focus?: boolean) => this.openPaneComposite(id, focus))),
 					pinnedAction: this._register(new ToggleCompositePinnedAction(this.toCompositeBarActionItemFrom(viewContainerModel), this.compositeBar)),
 					badgeAction: this._register(new ToggleCompositeBadgeAction(this.toCompositeBarActionItemFrom(viewContainerModel), this.compositeBar))
 				};
 			} else {
 				const cachedComposite = this.cachedViewContainers.filter(c => c.id === compositeId)[0];
 				compositeActions = {
-					activityAction: this._register(this.instantiationService.createInstance(PlaceHolderViewContainerActivityAction, this.toCompositeBarActionItem(compositeId, cachedComposite?.name ?? compositeId, cachedComposite?.icon, undefined), this.part, this.paneCompositePart)),
+					activityAction: this._register(this.instantiationService.createInstance(PlaceHolderViewContainerActivityAction, this.toCompositeBarActionItem(compositeId, cachedComposite?.name ?? compositeId, cachedComposite?.icon, undefined), this.part, this.paneCompositePart, (id?: string, focus?: boolean) => this.openPaneComposite(id, focus))),
 					pinnedAction: this._register(new PlaceHolderToggleCompositePinnedAction(compositeId, this.compositeBar)),
 					badgeAction: this._register(new PlaceHolderToggleCompositeBadgeAction(compositeId, this.compositeBar))
 				};
@@ -773,6 +778,7 @@ class ViewContainerActivityAction extends CompositeBarAction {
 		compositeBarActionItem: ICompositeBarActionItem,
 		private readonly part: Parts,
 		private readonly paneCompositePart: IPaneCompositePart,
+		private readonly openPaneComposite: (id?: string, focus?: boolean) => Promise<IPaneComposite | undefined>,
 		@IWorkbenchLayoutService private readonly layoutService: IWorkbenchLayoutService,
 		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@IActivityService private readonly activityService: IActivityService,
@@ -816,7 +822,7 @@ class ViewContainerActivityAction extends CompositeBarAction {
 			if (sideBarVisible && activeViewlet?.getId() === this.compositeBarActionItem.id) {
 				switch (focusBehavior) {
 					case 'focus':
-						this.paneCompositePart.openPaneComposite(this.compositeBarActionItem.id, focus);
+						this.openPaneComposite(this.compositeBarActionItem.id, focus);
 						break;
 					case 'toggle':
 					default:
@@ -829,7 +835,7 @@ class ViewContainerActivityAction extends CompositeBarAction {
 			}
 		}
 
-		await this.paneCompositePart.openPaneComposite(this.compositeBarActionItem.id, focus);
+		await this.openPaneComposite(this.compositeBarActionItem.id, focus);
 		return this.activate();
 	}
 }

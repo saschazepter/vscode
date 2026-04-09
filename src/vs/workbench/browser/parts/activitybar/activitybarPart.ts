@@ -41,6 +41,7 @@ import { IViewsService } from '../../../services/views/common/viewsService.js';
 import { SwitchCompositeViewAction } from '../compositeBarActions.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { ChatShortcutViewContainerId } from '../../../contrib/chat/browser/chat.js';
+import { IPaneComposite } from '../../../common/panecomposite.js';
 
 export class ActivitybarPart extends Part {
 
@@ -270,29 +271,8 @@ export class ActivityBarCompositeBar extends PaneCompositeBar {
 		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@IMenuService private readonly menuService: IMenuService,
 		@IWorkbenchLayoutService layoutService: IWorkbenchLayoutService,
-		@ICommandService commandService: ICommandService,
+		@ICommandService private readonly commandService: ICommandService,
 	) {
-		// Use a Proxy to intercept opens of the Chat shortcut container.
-		// When the user clicks the Chat icon in the Activity Bar, toggle Chat in its
-		// configured location instead of opening the sidebar composite.
-		// All other method calls are forwarded to the original part, bound to the
-		// original target so that instance state is always accessed correctly.
-		const wrappedPart = new Proxy(paneCompositePart, {
-			get(target, prop) {
-				if (prop === 'openPaneComposite') {
-					return async (id?: string, focus?: boolean) => {
-						if (id === ChatShortcutViewContainerId) {
-							await commandService.executeCommand('workbench.action.chat.toggle');
-							return undefined;
-						}
-						return target.openPaneComposite(id, focus);
-					};
-				}
-				const value = Reflect.get(target, prop, target);
-				return typeof value === 'function' ? value.bind(target) : value;
-			}
-		}) as IPaneCompositePart;
-
 		super(location,
 			{
 				...options,
@@ -300,7 +280,7 @@ export class ActivityBarCompositeBar extends PaneCompositeBar {
 					options.fillExtraContextMenuActions(actions, e);
 					this.fillContextMenuActions(actions, e);
 				}
-			}, part, wrappedPart, instantiationService, storageService, extensionService, viewDescriptorService, viewService, contextKeyService, environmentService, layoutService);
+			}, part, paneCompositePart, instantiationService, storageService, extensionService, viewDescriptorService, viewService, contextKeyService, environmentService, layoutService);
 
 		if (showGlobalActivities) {
 			this.globalCompositeBar = this._register(instantiationService.createInstance(GlobalCompositeBar, () => this.getContextMenuActions(), (theme: IColorTheme) => this.options.colors(theme), this.options.activityHoverOptions));
@@ -316,6 +296,14 @@ export class ActivityBarCompositeBar extends PaneCompositeBar {
 				}
 			}
 		}));
+	}
+
+	protected override async openPaneComposite(id?: string, focus?: boolean): Promise<IPaneComposite | undefined> {
+		if (id === ChatShortcutViewContainerId) {
+			await this.commandService.executeCommand('workbench.action.chat.toggle');
+			return undefined;
+		}
+		return super.openPaneComposite(id, focus);
 	}
 
 	private fillContextMenuActions(actions: IAction[], e?: MouseEvent | GestureEvent) {
