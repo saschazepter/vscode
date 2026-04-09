@@ -90,22 +90,30 @@ export class SendToTerminalTool extends Disposable implements IToolImpl {
 
 	async prepareToolInvocation(context: IToolInvocationPreparationContext, _token: CancellationToken): Promise<IPreparedToolInvocation | undefined> {
 		const args = context.parameters as ISendToTerminalInputParams;
-		const displayCommand = buildCommandDisplayText(args.command);
-		const safeInlineCode = toMarkdownInlineCode(displayCommand);
+		const isEmptyInput = !args.command || !args.command.trim();
 
 		// Resolve a human-friendly terminal label from the instance title
 		const terminalLabel = this._getTerminalLabel(args);
 
 		const invocationMessage = new MarkdownString();
-		invocationMessage.appendMarkdown(localize('send.progressive', "Sending {0} to terminal", safeInlineCode));
-
 		const pastTenseMessage = new MarkdownString();
-		pastTenseMessage.appendMarkdown(localize('send.past', "Sent {0} to terminal", safeInlineCode));
+		if (isEmptyInput) {
+			invocationMessage.appendMarkdown(localize('send.progressive.enter', "Pressing Enter in terminal"));
+			pastTenseMessage.appendMarkdown(localize('send.past.enter', "Pressed Enter in terminal"));
+		} else {
+			const displayCommand = buildCommandDisplayText(args.command);
+			const safeInlineCode = toMarkdownInlineCode(displayCommand);
+			invocationMessage.appendMarkdown(localize('send.progressive', "Sending {0} to terminal", safeInlineCode));
+			pastTenseMessage.appendMarkdown(localize('send.past', "Sent {0} to terminal", safeInlineCode));
+		}
 
 		// Build the confirmation message with a "Focus Terminal" command link
 		const instanceId = this._getTerminalInstanceId(args);
 		const confirmationMessage = new MarkdownString('', { isTrusted: { enabledCommands: [FocusTerminalByIdCommandId] } });
-		const baseMessage = localize('send.confirm.message', "Run {0} in terminal {1}", safeInlineCode, toMarkdownInlineCode(terminalLabel));
+		const safeTerminalLabel = toMarkdownInlineCode(terminalLabel);
+		const baseMessage = isEmptyInput
+			? localize('send.confirm.message.enter', "Press Enter in terminal {0}", safeTerminalLabel)
+			: localize('send.confirm.message', "Run {0} in terminal {1}", toMarkdownInlineCode(buildCommandDisplayText(args.command)), safeTerminalLabel);
 		if (instanceId !== undefined) {
 			const focusUri = createCommandUri(FocusTerminalByIdCommandId, instanceId);
 			confirmationMessage.appendMarkdown(`${baseMessage} — [$(terminal) ${localize('focusTerminal', "Focus Terminal")}](${focusUri})`);

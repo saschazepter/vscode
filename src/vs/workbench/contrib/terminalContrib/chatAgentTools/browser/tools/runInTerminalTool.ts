@@ -112,7 +112,7 @@ function createPowerShellModelDescription(shell: string, isSandboxEnabled: boole
 		'Async Mode:',
 		'- For long-running tasks (e.g., servers), use mode=async',
 		'- Returns a terminal ID for checking status and runtime later',
-		`- Use ${TerminalToolId.SendToTerminal} to send commands to a persistent terminal session (async mode)`,
+		`- Use ${TerminalToolId.SendToTerminal} to send commands or input to a persistent terminal session`,
 		'- Use Start-Job for background PowerShell jobs',
 	];
 
@@ -139,11 +139,10 @@ function createPowerShellModelDescription(shell: string, isSandboxEnabled: boole
 		`- NEVER run Start-Sleep or similar wait commands.${backgroundNotifications ? ' You will be automatically notified on your next turn when async terminal commands complete or need input.' : ''} Use ${TerminalToolId.GetTerminalOutput} to check output before then`,
 		'',
 		'Interactive Input Handling:',
-		'- It is OK to ask the user for all prompt values up front.',
-		`- When sending input to an interactive terminal program, send exactly one answer per prompt using ${TerminalToolId.SendToTerminal}.`,
-		'- Never send multiple answers in a single terminal send.',
-		`- After each send, read terminal output using ${TerminalToolId.GetTerminalOutput} and confirm the next prompt before sending the next answer.`,
-		'- Continue until the command finishes.',
+		'- When a terminal command is waiting for interactive input, do NOT suggest alternatives or ask the user whether to proceed. Instead, use the vscode_askQuestions tool to collect the needed values from the user, then send them.',
+		`- Send exactly one answer per prompt using ${TerminalToolId.SendToTerminal}. Never send multiple answers in a single send.`,
+		`- After each send, call ${TerminalToolId.GetTerminalOutput} to read the next prompt before sending the next answer.`,
+		'- Continue one prompt at a time until the command finishes.',
 	);
 
 	return parts.join('\n');
@@ -198,7 +197,7 @@ Program Execution:
 Async Mode:
 - For long-running tasks (e.g., servers), use mode=async
 - Returns a terminal ID for checking status and runtime later
-- Use ${TerminalToolId.SendToTerminal} to send commands to a persistent terminal session`];
+- Use ${TerminalToolId.SendToTerminal} to send commands or input to a persistent terminal session`];
 
 	if (isSandboxEnabled) {
 		parts.push(createSandboxLines(networkDomains).join('\n'));
@@ -220,11 +219,10 @@ Best Practices:
 - NEVER run sleep or similar wait commands in a terminal.${backgroundNotifications ? ' You will be automatically notified on your next turn when async terminal commands complete or need input.' : ''} Use ${TerminalToolId.GetTerminalOutput} to check output before then
 
 Interactive Input Handling:
-- It is OK to ask the user for all prompt values up front.
-- When sending input to an interactive terminal program, send exactly one answer per prompt using ${TerminalToolId.SendToTerminal}.
-- Never send multiple answers in a single terminal send.
-- After each send, read terminal output using ${TerminalToolId.GetTerminalOutput} and confirm the next prompt before sending the next answer.
-- Continue until the command finishes.`);
+- When a terminal command is waiting for interactive input, do NOT suggest alternatives or ask the user whether to proceed. Instead, use the vscode_askQuestions tool to collect the needed values from the user, then send them.
+- Send exactly one answer per prompt using ${TerminalToolId.SendToTerminal}. Never send multiple answers in a single send.
+- After each send, call ${TerminalToolId.GetTerminalOutput} to read the next prompt before sending the next answer.
+- Continue one prompt at a time until the command finishes.`);
 
 	return parts.join('');
 }
@@ -1226,9 +1224,9 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 					resultText += pollingResult.output;
 					const isAutoApproved = isSessionAutoApproveLevel(chatSessionResource, this._configurationService, this._chatWidgetService, this._chatService);
 					if (isAutoApproved) {
-						resultText += `\nEvaluate the terminal output to determine if the command is waiting for input (e.g. a password prompt, confirmation, or interactive question). A normal shell prompt does NOT count as waiting for input. If it IS waiting for input, determine the appropriate response from context and immediately call ${TerminalToolId.SendToTerminal} with id "${termId}" to provide it.`;
+						resultText += `\nEvaluate the terminal output to determine if the command is waiting for input (e.g. a password prompt, confirmation, or interactive question). A normal shell prompt does NOT count as waiting for input. If it IS waiting for input, determine the best answer for the current prompt from context and immediately call ${TerminalToolId.SendToTerminal} with id "${termId}" to send ONLY that one answer. Then call ${TerminalToolId.GetTerminalOutput} to read the next prompt. Repeat one prompt at a time until the command finishes. Do NOT send multiple answers at once. Do NOT ask the user or respond with a text message.`;
 					} else {
-						resultText += `\nEvaluate the terminal output to determine if the command is waiting for input (e.g. a password prompt, confirmation, or interactive question). A normal shell prompt does NOT count as waiting for input. If it IS waiting for input, call the askQuestions tool to ask the user what input to provide, then call ${TerminalToolId.SendToTerminal} with id "${termId}" to send their response.`;
+						resultText += `\nEvaluate the terminal output to determine if the command is waiting for input (e.g. a password prompt, confirmation, or interactive question). A normal shell prompt does NOT count as waiting for input. If it IS waiting for input, you MUST call the vscode_askQuestions tool to ask the user what values to provide. Do NOT respond with a text message asking the user — use the tool. Then send ONLY the answer for the current prompt using ${TerminalToolId.SendToTerminal} with id "${termId}", call ${TerminalToolId.GetTerminalOutput} to read the next prompt, and repeat one prompt at a time.`;
 					}
 				} else if (pollingResult) {
 					resultText += `\n The command is still running, with output:\n`;
@@ -1470,15 +1468,19 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 		if (didInputNeeded) {
 			const isAutoApproved = isSessionAutoApproveLevel(chatSessionResource, this._configurationService, this._chatWidgetService, this._chatService);
 			if (isAutoApproved) {
-				resultText.push(`Note: The command is running in terminal ID ${termId} and may be waiting for input. Evaluate the terminal output to determine if the command is actually waiting for input (e.g. a password prompt, confirmation, or interactive question). A normal shell prompt does NOT count as waiting for input. If it IS waiting for input, determine the appropriate response from context and immediately call ${TerminalToolId.SendToTerminal} with id "${termId}" to provide it.\n\n`);
+				resultText.push(`Note: The command is running in terminal ID ${termId} and may be waiting for input. Evaluate the terminal output to determine if the command is actually waiting for input (e.g. a password prompt, confirmation, or interactive question). A normal shell prompt does NOT count as waiting for input. If it IS waiting for input, determine the best answer for the current prompt from context and immediately call ${TerminalToolId.SendToTerminal} with id "${termId}" to send ONLY that one answer. Then call ${TerminalToolId.GetTerminalOutput} to read the next prompt. Repeat one prompt at a time until the command finishes. Do NOT send multiple answers at once. Do NOT ask the user or respond with a text message.\n\n`);
 			} else {
-				resultText.push(`Note: The command is running in terminal ID ${termId} and may be waiting for input. Evaluate the terminal output to determine if the command is actually waiting for input (e.g. a password prompt, confirmation, or interactive question). A normal shell prompt does NOT count as waiting for input. If it IS waiting for input, call the askQuestions tool to ask the user what input to provide, then call ${TerminalToolId.SendToTerminal} with id "${termId}" to send their response.\n\n`);
+				resultText.push(`Note: The command is running in terminal ID ${termId} and may be waiting for input. Evaluate the terminal output to determine if the command is actually waiting for input (e.g. a password prompt, confirmation, or interactive question). A normal shell prompt does NOT count as waiting for input. If it IS waiting for input, you MUST call the vscode_askQuestions tool to ask the user what values to provide. Do NOT respond with a text message asking the user — use the tool. Then send ONLY the answer for the current prompt using ${TerminalToolId.SendToTerminal} with id "${termId}", call ${TerminalToolId.GetTerminalOutput} to read the next prompt, and repeat one prompt at a time.\n\n`);
 			}
 		} else if (didTimeout && timeoutValue !== undefined && timeoutValue > 0) {
 			const notificationHint = this._configurationService.getValue(TerminalChatAgentToolsSettingId.BackgroundNotifications)
 				? ' You will be automatically notified on your next turn when it completes.'
 				: '';
-			resultText.push(`Note: Command timed out after ${timeoutValue}ms. The command may still be running in terminal ID ${termId}.${notificationHint} Use ${TerminalToolId.GetTerminalOutput} to check output before then, ${TerminalToolId.SendToTerminal} to send further input, or ${TerminalToolId.KillTerminal} to stop it. Do NOT use sleep or manual polling to wait. Evaluate the terminal output to determine if the command is waiting for input (e.g. a password prompt, confirmation, or interactive question). A normal shell prompt does NOT count as waiting for input.\n\n`);
+			const isAutoApprovedTimeout = isSessionAutoApproveLevel(chatSessionResource, this._configurationService, this._chatWidgetService, this._chatService);
+			const inputAction = isAutoApprovedTimeout
+				? `If it IS waiting for input, determine the best answer for the current prompt from context and immediately call ${TerminalToolId.SendToTerminal} with id "${termId}" to send ONLY that one answer. Then call ${TerminalToolId.GetTerminalOutput} to read the next prompt. Repeat one prompt at a time until the command finishes. Do NOT send multiple answers at once. Do NOT ask the user or respond with a text message.`
+				: `If it IS waiting for input, you MUST call the vscode_askQuestions tool to ask the user what values to provide. Do NOT respond with a text message asking the user — use the tool. Then send ONLY the answer for the current prompt using ${TerminalToolId.SendToTerminal} with id "${termId}", call ${TerminalToolId.GetTerminalOutput} to read the next prompt, and repeat one prompt at a time.`;
+			resultText.push(`Note: Command timed out after ${timeoutValue}ms. The command may still be running in terminal ID ${termId}.${notificationHint} Use ${TerminalToolId.GetTerminalOutput} to check output before then, ${TerminalToolId.SendToTerminal} to send further input, or ${TerminalToolId.KillTerminal} to stop it. Do NOT use sleep or manual polling to wait. Evaluate the terminal output to determine if the command is waiting for input (e.g. a password prompt, confirmation, or interactive question). A normal shell prompt does NOT count as waiting for input. ${inputAction}\n\n`);
 		}
 		const outputAnalyzerMessage = await this._getOutputAnalyzerMessage(exitCode, terminalResult, command, didSandboxWrapCommand);
 		if (outputAnalyzerMessage) {
@@ -1898,6 +1900,32 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 			}));
 			store.add(outputMonitor);
 			outputMonitor.continueMonitoringAsync(bgCts.token);
+
+			// When the output monitor detects the terminal is waiting for input,
+			// send a steering message so the agent handles it via send_to_terminal.
+			store.add(outputMonitor.onDidDetectInputNeeded(() => {
+				const execution = RunInTerminalTool._activeExecutions.get(termId);
+				if (!execution) {
+					return;
+				}
+				const currentOutput = execution.getOutput();
+				const isAutoApproved = isSessionAutoApproveLevel(chatSessionResource, this._configurationService, this._chatWidgetService, this._chatService);
+				const inputAction = isAutoApproved
+					? `Determine the best answer for the current prompt from context and immediately call ${TerminalToolId.SendToTerminal} with id "${termId}" to send ONLY that one answer. Then call ${TerminalToolId.GetTerminalOutput} to read the next prompt. Repeat one prompt at a time until the command finishes. Do NOT send multiple answers at once. Do NOT ask the user or respond with a text message.`
+					: `You MUST call the vscode_askQuestions tool to ask the user what values to provide. Do NOT respond with a text message asking the user — use the tool. Then send ONLY the answer for the current prompt using ${TerminalToolId.SendToTerminal} with id "${termId}", call ${TerminalToolId.GetTerminalOutput} to read the next prompt, and repeat one prompt at a time.`;
+				const message = `[Terminal ${termId} notification: command is waiting for input. ${inputAction}]\nTerminal output:\n${currentOutput}`;
+
+				this._logService.debug(`RunInTerminalTool: Input needed in background terminal ${termId}, notifying chat session`);
+
+				this._chatService.sendRequest(chatSessionResource, message, {
+					queue: ChatRequestQueueKind.Steering,
+					isSystemInitiated: true,
+					systemInitiatedLabel: localize('backgroundTaskNeedsInput', "Background task `{0}` needs input", commandName),
+					...sendOptions,
+				}).catch(e => {
+					this._logService.warn(`RunInTerminalTool: Failed to send input-needed notification for terminal ${termId}`, e);
+				});
+			}));
 		}
 
 		store.add(sessionRef);
