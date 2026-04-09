@@ -127,17 +127,18 @@ const shellIntegrationSupportedShellTypes: (PosixShellType | GeneralShellType | 
 ];
 
 /**
- * Patterns used to detect agent CLIs from the title they set via OSC 0/2 (`\x1b]0;...\x07`).
- * These CLIs typically run as Node.js processes, so on macOS/Linux the pty's process name only
- * reports `node` (or version strings) and cannot identify them. The OSC title is the only
- * reliable cross-platform signal.
+ * Patterns for detecting agent CLIs from the title CLI send via OSC 0/2
+ *
+ * Most of these CLIs run on Node.js, so the pty only sees `node` as the process name — not
+ * super helpful for figuring out which CLI is actually running. The title they write is the
+ * one signal we can rely on across platforms.
  */
 const agentCliTitlePatterns: ReadonlyMap<GeneralShellType, RegExp> = new Map([
 	[GeneralShellType.Claude, /claude\s*code/i],
+	// Codex's default title has no "codex" keyword; handled by the Node+sequence fallback instead.
+	// [GeneralShellType.Codex, /\bcodex\b/i],
 	[GeneralShellType.Copilot, /\bcopilot\b/i],
-	// TODO: Verify the actual OSC titles emitted by these CLIs and add patterns:
-	// [GeneralShellType.Codex, /.../i],
-	// [GeneralShellType.Gemini, /.../i],
+	[GeneralShellType.Gemini, /\bgemini\b/i],
 ]);
 
 export class TerminalInstance extends Disposable implements ITerminalInstance {
@@ -2697,6 +2698,12 @@ export class TerminalLabelComputer extends Disposable {
 	refreshLabel(instance: Pick<ITerminalInstance, 'shellLaunchConfig' | 'shellType' | 'cwd' | 'fixedCols' | 'fixedRows' | 'initialCwd' | 'processName' | 'sequence' | 'userHome' | 'workspaceFolder' | 'staticTitle' | 'capabilities' | 'title' | 'description'>, reset?: boolean): void {
 		const titleTemplate = instance.shellLaunchConfig.titleTemplate
 			?? (TerminalLabelComputer._agentCliShellTypes.has(instance.shellType ?? '') ? '${sequence}' : undefined)
+			// Fallback for node-based agent CLIs whose titles do not match a specific pattern
+			// above (e.g. Codex, whose default title is just the project name). The pty only
+			// sees `node` as the foreground process, so when a node process has set an OSC
+			// title, treat it as a CLI-managed tab label — matching the behavior of terminals
+			// like Ghostty and iTerm2 that always show the OSC title.
+			?? (instance.shellType === GeneralShellType.Node && instance.sequence ? '${sequence}' : undefined)
 			?? this._terminalConfigurationService.config.tabs.title;
 		this._title = this.computeLabel(instance, titleTemplate, TerminalLabelType.Title, reset);
 		this._description = this.computeLabel(instance, this._terminalConfigurationService.config.tabs.description, TerminalLabelType.Description);
