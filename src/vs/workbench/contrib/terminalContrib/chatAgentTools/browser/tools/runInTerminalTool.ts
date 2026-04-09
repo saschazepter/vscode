@@ -136,7 +136,7 @@ function createPowerShellModelDescription(shell: string, isSandboxEnabled: boole
 		'- Use Test-Path to check file/directory existence',
 		'- Be specific with Select-Object properties to avoid excessive output',
 		'- Avoid printing credentials unless absolutely required',
-		`- NEVER run Start-Sleep or similar wait commands.${backgroundNotifications ? ' In main-agent turns, you are typically automatically notified on your next turn when async terminal commands complete or need input (this is not guaranteed in all contexts, such as subagent invocations).' : ''} Use ${TerminalToolId.GetTerminalOutput} to check output before then`,
+		`- NEVER run Start-Sleep or similar wait commands.${backgroundNotifications ? ' You will be automatically notified on your next turn when async terminal commands complete or need input.' : ''} Use ${TerminalToolId.GetTerminalOutput} to check output before then`,
 	);
 
 	return parts.join('\n');
@@ -210,7 +210,7 @@ Best Practices:
 - Use find with -exec or xargs for file operations
 - Be specific with commands to avoid excessive output
 - Avoid printing credentials unless absolutely required
-- NEVER run sleep or similar wait commands in a terminal.${backgroundNotifications ? ' In main-agent turns, you are typically automatically notified on your next turn when async terminal commands complete or need input (this is not guaranteed in all contexts, such as subagent invocations).' : ''} Use ${TerminalToolId.GetTerminalOutput} to check output before then`);
+- NEVER run sleep or similar wait commands in a terminal.${backgroundNotifications ? ' You will be automatically notified on your next turn when async terminal commands complete or need input.' : ''} Use ${TerminalToolId.GetTerminalOutput} to check output before then`);
 
 	return parts.join('');
 }
@@ -310,7 +310,7 @@ export async function createRunInTerminalToolData(
 		toolReferenceName: TOOL_REFERENCE_NAME,
 		legacyToolReferenceFullNames: LEGACY_TOOL_REFERENCE_FULL_NAMES,
 		displayName: localize('runInTerminalTool.displayName', 'Run in Terminal'),
-		modelDescription: `${modelDescription}\n\nExecution mode:\n- mode='sync': wait for completion up to timeout; if still running, return with a terminal ID.\n- mode='async': wait for an initial idle/output signal, then return with terminal output snapshot and ID. Timeout caps how long to wait for the initial idle/output signal.${backgroundNotifications ? `\n\nAsync terminal notifications: In main-agent turns, when a command finishes in an async terminal, you are typically automatically notified on your next turn with the exit code and terminal output. You may also be notified if the terminal needs input. This is not guaranteed in all contexts (for example, subagent invocations). Use ${TerminalToolId.GetTerminalOutput} to check output before then. Do NOT poll or sleep to wait for completion.` : `\n\nUse ${TerminalToolId.GetTerminalOutput} to check on async terminal output. Do NOT poll or sleep to wait for completion.`}`,
+		modelDescription: `${modelDescription}\n\nExecution mode:\n- mode='sync': wait for completion up to timeout; if still running, return with a terminal ID.\n- mode='async': wait for an initial idle/output signal, then return with terminal output snapshot and ID. Timeout caps how long to wait for the initial idle/output signal.${backgroundNotifications ? `\n\nAsync terminal notifications: When a command finishes in an async terminal, you will be automatically notified on your next turn with the exit code and terminal output. You will also be notified if the terminal needs input. Use ${TerminalToolId.GetTerminalOutput} to check output before then. Do NOT poll or sleep to wait for completion.` : `\n\nUse ${TerminalToolId.GetTerminalOutput} to check on async terminal output. Do NOT poll or sleep to wait for completion.`}`,
 		userDescription: localize('runInTerminalTool.userDescription', 'Run commands in the terminal'),
 		source: ToolDataSource.Internal,
 		icon: Codicon.terminal,
