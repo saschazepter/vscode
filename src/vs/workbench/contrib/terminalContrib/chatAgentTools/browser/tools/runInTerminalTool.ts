@@ -114,7 +114,7 @@ function createPowerShellModelDescription(shell: string, isSandboxEnabled: boole
 		'- Returns a terminal ID for checking status and runtime later',
 		'- Use Start-Job for background PowerShell jobs',
 		'',
-		`Use ${TerminalToolId.SendToTerminal} to send commands or input to a persistent terminal session.`,
+		`Use ${TerminalToolId.SendToTerminal} to send commands or input to a terminal session.`,
 	];
 
 	if (isSandboxEnabled) {
@@ -199,7 +199,7 @@ Async Mode:
 - For long-running tasks (e.g., servers), use mode=async
 - Returns a terminal ID for checking status and runtime later
 
-Use ${TerminalToolId.SendToTerminal} to send commands or input to a persistent terminal session.`];
+Use ${TerminalToolId.SendToTerminal} to send commands or input to a terminal session.`];
 
 	if (isSandboxEnabled) {
 		parts.push(createSandboxLines(networkDomains).join('\n'));
