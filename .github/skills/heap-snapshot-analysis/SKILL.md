@@ -1,27 +1,30 @@
 ---
 name: heap-snapshot-analysis
-description: "Analyze V8 heap snapshots to investigate memory leaks and retention issues. Use when given .heapsnapshot files, asked to find what retains objects, or investigating why memory grows across a workflow. Provides helper scripts and a scratchpad for writing investigation-specific analysis."
+description: "Analyze V8 heap snapshots to investigate memory leaks and retention issues. Use when given .heapsnapshot files, asked to compare before/after snapshots, asked to find what retains objects, or investigating why objects survive GC. Provides snapshot parsing, comparison, retainer-path helpers, and scratchpad scripts."
 ---
 
 # Heap Snapshot Analysis
 
-Investigate memory leaks from V8 heap snapshots (`.heapsnapshot` files). This skill provides reusable helpers and a scratchpad workflow for writing investigation-specific scripts.
+Investigate memory leaks from V8 heap snapshots (`.heapsnapshot` files). This skill starts when snapshots already exist: either the user provided them, DevTools exported them, or another workflow produced them. Use the helpers here to compare snapshots, group object deltas, and trace retainer paths.
 
 ## When to Use
 
 - User provides `.heapsnapshot` files (before/after a workflow)
-- Investigating why heap size grows across session switches, editor opens, etc.
+- User has heap snapshots captured by another skill or script
 - Need to find what retains disposed objects (retainer path analysis)
 - Comparing object counts/sizes between two snapshots
+- Investigating why particular objects survive GC
 
 ## Workflow
 
+If the user needs the agent to launch VS Code, drive a scenario, and capture snapshots first, use the VS Code performance workflow skill before returning here for low-level snapshot analysis.
+
 ### 1. Parse Snapshots
 
-Use the helpers in `helpers/parseSnapshot.ts` to load snapshots. The files are often >500MB and too large for `JSON.parse` as a string — the helpers use Buffer-based extraction.
+Use the helpers in [parseSnapshot.ts](./helpers/parseSnapshot.ts) to load snapshots. The files are often >500MB and too large for `JSON.parse` as a string — the helpers use Buffer-based extraction. In scratchpad scripts, import helpers from `../helpers/*.js`.
 
 ```typescript
-import { parseSnapshot, buildGraph } from './helpers/parseSnapshot';
+import { parseSnapshot, buildGraph } from '../helpers/parseSnapshot.js';
 
 const data = parseSnapshot('/path/to/snapshot.heapsnapshot');
 const graph = buildGraph(data);
@@ -29,10 +32,10 @@ const graph = buildGraph(data);
 
 ### 2. Compare Before/After
 
-Use `helpers/compareSnapshots.ts` to diff two snapshots:
+Use [compareSnapshots.ts](./helpers/compareSnapshots.ts) to diff two snapshots:
 
 ```typescript
-import { compareSnapshots } from './helpers/compareSnapshots';
+import { compareSnapshots } from '../helpers/compareSnapshots.js';
 
 const result = compareSnapshots('/path/to/before.heapsnapshot', '/path/to/after.heapsnapshot');
 // result.topBySize, result.topByCount, result.newObjectGroups, result.summary
@@ -40,10 +43,10 @@ const result = compareSnapshots('/path/to/before.heapsnapshot', '/path/to/after.
 
 ### 3. Find Retainer Paths
 
-Use `helpers/findRetainers.ts` to trace why an object is alive:
+Use [findRetainers.ts](./helpers/findRetainers.ts) to trace why an object is alive:
 
 ```typescript
-import { findRetainerPaths } from './helpers/findRetainers';
+import { findRetainerPaths } from '../helpers/findRetainers.js';
 
 // Find what keeps ChatModel instances alive (skipping weak edges)
 findRetainerPaths(graph, 'ChatModel', { maxPaths: 5, maxDepth: 25 });
@@ -51,7 +54,7 @@ findRetainerPaths(graph, 'ChatModel', { maxPaths: 5, maxDepth: 25 });
 
 ### 4. Write Investigation Scripts
 
-Write investigation-specific scripts in the `scratchpad/` directory. This folder is gitignored — use it freely for one-off analysis. Scripts here can import the helpers:
+Write investigation-specific scripts in the [scratchpad](./scratchpad/) directory. This folder is gitignored — use it freely for one-off analysis. Scripts here can import the helpers:
 
 ```bash
 cd .github/skills/heap-snapshot-analysis
