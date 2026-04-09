@@ -170,15 +170,10 @@ export class PlaywrightTab {
 		// Block agent actions when the current page URL is on the deny list.
 		const currentUrl = this.page.url();
 		if (currentUrl && currentUrl !== 'about:blank') {
-			try {
-				const uri = URI.parse(currentUrl);
-				if (!this.agentNetworkFilterService.isUriAllowed(uri)) {
-					throw new Error(`Access to ${currentUrl} is blocked by network domain policy. See \`${AgentNetworkDomainSettingId.AllowedNetworkDomains}\` setting.`);
-				}
-			} catch (e) {
-				if (e instanceof Error && e.message.includes('blocked by network domain policy')) {
-					throw e;
-				}
+			let uri: URI | undefined;
+			try { uri = URI.parse(currentUrl); } catch { }
+			if (uri && !this.agentNetworkFilterService.isUriAllowed(uri)) {
+				throw new Error(`Access to ${currentUrl} is blocked by network domain policy. See \`${AgentNetworkDomainSettingId.AllowedNetworkDomains}\` setting.`);
 			}
 		}
 
