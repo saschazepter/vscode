@@ -918,7 +918,7 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 		}
 
 		const commandId = toolSpecificData.terminalCommandId;
-		const shouldSendBackgroundNotifications = this._configurationService.getValue(TerminalChatAgentToolsSettingId.BackgroundNotifications) && !invocation.subAgentInvocationId;
+		const shouldSendBackgroundNotifications = this._configurationService.getValue(TerminalChatAgentToolsSettingId.BackgroundNotifications) === true && !invocation.subAgentInvocationId;
 		if (toolSpecificData.alternativeRecommendation) {
 			return {
 				content: [{
