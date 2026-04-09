@@ -49,7 +49,7 @@ const enum MonitorState {
 // ── Constants ────────────────────────────────────────────────────────────
 
 /** How many new rounds to accumulate before triggering a background check. */
-const ROUNDS_CHECK_THRESHOLD = 1;
+const ROUNDS_CHECK_THRESHOLD = 10;
 
 /** Maximum tokens for the background progress-check response. */
 const PROGRESS_CHECK_MAX_TOKENS = 2000;
