@@ -4294,6 +4294,15 @@
 							"experimental"
 						]
 					},
+					"github.copilot.chat.backgroundProgressMonitor.enabled": {
+						"type": "boolean",
+						"default": false,
+						"markdownDescription": "%github.copilot.config.backgroundProgressMonitor.enabled%",
+						"tags": [
+							"advanced",
+							"experimental"
+						]
+					},
 					"github.copilot.chat.agent.largeToolResultsToDisk.enabled": {
 						"type": "boolean",
 						"default": true,
