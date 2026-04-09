@@ -48,6 +48,11 @@ export class ChatSessionWorkspaceFolderService extends Disposable implements ICh
 
 	async deleteTrackedWorkspaceFolder(sessionId: string): Promise<void> {
 		this.invalidateSessionCache(sessionId);
+		const entry = this.workspaceState.get(sessionId);
+		if (entry?.folderPath) {
+			const folderUri = vscode.Uri.file(entry.folderPath);
+			this.sessionsAssociatedWithFolders.get(folderUri)?.delete(sessionId);
+		}
 		this.workspaceState.delete(sessionId);
 		this.workspaceFolderChanges.delete(sessionId);
 		await this.metadataStore.deleteSessionMetadata(sessionId);
@@ -59,6 +64,13 @@ export class ChatSessionWorkspaceFolderService extends Disposable implements ICh
 			timestamp: Date.now()
 		};
 		this.workspaceState.set(sessionId, entry);
+
+		// Associate session with workspace folder for cache invalidation
+		const folderUri = vscode.Uri.file(workspaceFolderUri);
+		const sessionIds = this.sessionsAssociatedWithFolders.get(folderUri) ?? new Set<string>();
+		sessionIds.add(sessionId);
+		this.sessionsAssociatedWithFolders.set(folderUri, sessionIds);
+
 		await this.metadataStore.storeWorkspaceFolderInfo(sessionId, entry);
 		if (repositoryProperties) {
 			this.sessionsWithNoRepoProperties.delete(sessionId);
