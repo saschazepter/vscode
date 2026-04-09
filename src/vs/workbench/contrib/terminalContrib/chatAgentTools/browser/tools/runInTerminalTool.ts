@@ -85,6 +85,7 @@ import type { IJSONSchemaMap } from '../../../../../../base/common/jsonSchema.js
 const TERMINAL_SANDBOX_DOCUMENTATION_URL = 'https://aka.ms/vscode-sandboxing';
 const TOOL_REFERENCE_NAME = 'runInTerminal';
 const LEGACY_TOOL_REFERENCE_FULL_NAMES = ['runCommands/runInTerminal'];
+const INPUT_NEEDED_NOTIFICATION_THROTTLE_MS = 5000;
 
 function createPowerShellModelDescription(shell: string, isSandboxEnabled: boolean, backgroundNotifications: boolean, networkDomains?: ITerminalSandboxResolvedNetworkDomains): string {
 	const isWinPwsh = isWindowsPowerShell(shell);
@@ -1893,6 +1894,8 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 		// resource cost is proportional to actual terminal activity.
 		const store = new DisposableStore();
 		if (outputMonitor) {
+			let lastInputNeededOutput = '';
+			let lastInputNeededNotificationTime = 0;
 			const bgCts = new CancellationTokenSource();
 			store.add(toDisposable(() => {
 				// Cancel before dispose so that onCancellationRequested handlers fire
@@ -1910,7 +1913,15 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 				if (!execution) {
 					return;
 				}
+
 				const currentOutput = execution.getOutput();
+				const now = Date.now();
+				const isDuplicate = currentOutput === lastInputNeededOutput && now - lastInputNeededNotificationTime < INPUT_NEEDED_NOTIFICATION_THROTTLE_MS;
+				if (isDuplicate) {
+					return;
+				}
+				lastInputNeededOutput = currentOutput;
+				lastInputNeededNotificationTime = now;
 				const isAutoApproved = isSessionAutoApproveLevel(chatSessionResource, this._configurationService, this._chatWidgetService, this._chatService);
 				const inputAction = isAutoApproved
 					? `Determine the best answer for the current prompt from context and immediately call ${TerminalToolId.SendToTerminal} with id "${termId}" to send ONLY that one answer. Then call ${TerminalToolId.GetTerminalOutput} to read the next prompt. Repeat one prompt at a time until the command finishes. Do NOT send multiple answers at once. Do NOT ask the user or respond with a text message.`
