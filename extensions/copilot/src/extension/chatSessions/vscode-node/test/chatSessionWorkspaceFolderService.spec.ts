@@ -318,8 +318,8 @@ describe('ChatSessionWorkspaceFolderService', () => {
 				baseBranchName: 'origin/main',
 			};
 
-			await metadataStore.storeRepositoryProperties(sessionId1, sharedProperties);
-			await metadataStore.storeRepositoryProperties(sessionId2, sharedProperties);
+			await service.trackSessionWorkspaceFolder(sessionId1, '/repo', sharedProperties);
+			await service.trackSessionWorkspaceFolder(sessionId2, '/repo', sharedProperties);
 
 			await service.getWorkspaceChanges(sessionId1);
 			await service.deleteTrackedWorkspaceFolder(sessionId1);
@@ -495,6 +495,26 @@ describe('ChatSessionWorkspaceFolderService', () => {
 				expect(result2).toEqual([]);
 				// Should only read metadata once — subsequent call uses the negative cache
 				expect(metadataStore.getRepositoryProperties).toHaveBeenCalledTimes(1);
+			});
+
+			it('should clear negative cache when repository properties are later provided via trackSessionWorkspaceFolder', async () => {
+				const repo = makeRepoContext();
+				gitService.getRepository = vi.fn().mockResolvedValue(repo);
+
+				// First call: no repo properties → negative-cached, returns []
+				const result1 = await service.getWorkspaceChanges('late-init-session');
+				expect(result1).toEqual([]);
+
+				// Later: repo properties are provided via trackSessionWorkspaceFolder
+				await service.trackSessionWorkspaceFolder('late-init-session', '/repo', {
+					repositoryPath: '/repo',
+					branchName: 'main',
+				});
+
+				// Second call: negative cache should be cleared, should re-read metadata
+				const result2 = await service.getWorkspaceChanges('late-init-session');
+				expect(result2).toBeDefined();
+				expect(metadataStore.getRepositoryProperties).toHaveBeenCalledTimes(2);
 			});
 
 			it('should not re-fetch when cache is valid for a folder', async () => {

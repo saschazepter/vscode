@@ -58,6 +58,7 @@ export class ChatSessionWorkspaceFolderService extends Disposable implements ICh
 		this.workspaceState.set(sessionId, entry);
 		await this.metadataStore.storeWorkspaceFolderInfo(sessionId, entry);
 		if (repositoryProperties) {
+			this.sessionsWithNoRepoProperties.delete(sessionId);
 			await this.metadataStore.storeRepositoryProperties(sessionId, repositoryProperties);
 		}
 		this.logService.trace(`[ChatSessionWorkspaceFolderService] Tracked workspace folder ${workspaceFolderUri} for session ${sessionId}`);
