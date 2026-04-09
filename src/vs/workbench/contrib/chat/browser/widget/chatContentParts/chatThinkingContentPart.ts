@@ -480,10 +480,11 @@ export class ChatThinkingContentPart extends ChatCollapsibleContentPart implemen
 			// Observe child elements for resizes (e.g. terminal output growing)
 			// so we can update scroll dimensions when the wrapper box is pinned at max-height.
 			this.childResizeObserver = this._register(new DisposableResizeObserver(() => {
-				if (!this.streamingCompleted) {
-					this.refreshContentHeight();
-					this.updateScrollDimensionsFromCache();
+				if (this.streamingCompleted || !this.domNode.classList.contains('chat-used-context-collapsed')) {
+					return;
 				}
+
+				this.syncDimensionsAndScheduleScroll();
 			}));
 			if (this.textContainer) {
 				this._register(this.childResizeObserver.observe(this.textContainer));
