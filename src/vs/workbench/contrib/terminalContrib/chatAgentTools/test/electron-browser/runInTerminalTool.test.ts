@@ -40,7 +40,7 @@ import { ILanguageModelToolsService, IPreparedToolInvocation, IToolData, IToolIm
 import { ITerminalChatService, ITerminalService, type ITerminalInstance } from '../../../../terminal/browser/terminal.js';
 import { ITerminalProfileResolverService } from '../../../../terminal/common/terminal.js';
 import type { ICommandLinePresenter } from '../../browser/tools/commandLinePresenter/commandLinePresenter.js';
-import { createRunInTerminalToolData, RunInTerminalTool, type IRunInTerminalInputParams } from '../../browser/tools/runInTerminalTool.js';
+import { createRunInTerminalToolData, RunInTerminalTool, shouldAutomaticallyRetryUnsandboxed, type IRunInTerminalInputParams } from '../../browser/tools/runInTerminalTool.js';
 import { ShellIntegrationQuality } from '../../browser/toolTerminalCreator.js';
 import { terminalChatAgentToolsConfiguration, TerminalChatAgentToolsSandboxEnabledValue, TerminalChatAgentToolsSettingId } from '../../common/terminalChatAgentToolsConfiguration.js';
 import { TerminalChatService } from '../../../chat/browser/terminalChatService.js';
@@ -383,6 +383,48 @@ suite('RunInTerminalTool', () => {
 
 			const terminalData = preparedInvocation.toolSpecificData as IChatTerminalToolInvocationData;
 			strictEqual(terminalData.commandLine.isSandboxWrapped, true);
+		});
+	});
+
+	suite('automatic sandbox retry', () => {
+		const baseRetryOptions = {
+			didSandboxWrapCommand: true,
+			requestUnsandboxedExecution: false,
+			isPersistentSession: false,
+			isBackgroundExecution: false,
+			didTimeout: false,
+			exitCode: 1,
+			output: '/bin/bash: /workspace/out.txt: Operation not permitted',
+		};
+
+		test('should retry completed foreground sandbox commands when output indicates sandbox block', () => {
+			strictEqual(shouldAutomaticallyRetryUnsandboxed(baseRetryOptions), true);
+		});
+
+		test('should not retry when the command is already unsandboxed', () => {
+			strictEqual(shouldAutomaticallyRetryUnsandboxed({
+				...baseRetryOptions,
+				requestUnsandboxedExecution: true,
+			}), false);
+		});
+
+		test('should not retry background, timed-out, successful, or non-sandbox-blocked results', () => {
+			strictEqual(shouldAutomaticallyRetryUnsandboxed({
+				...baseRetryOptions,
+				isBackgroundExecution: true,
+			}), false);
+			strictEqual(shouldAutomaticallyRetryUnsandboxed({
+				...baseRetryOptions,
+				didTimeout: true,
+			}), false);
+			strictEqual(shouldAutomaticallyRetryUnsandboxed({
+				...baseRetryOptions,
+				exitCode: 0,
+			}), false);
+			strictEqual(shouldAutomaticallyRetryUnsandboxed({
+				...baseRetryOptions,
+				output: 'regular command failure',
+			}), false);
 		});
 	});
 
