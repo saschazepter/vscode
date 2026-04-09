@@ -1212,9 +1212,9 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 					resultText += pollingResult.output;
 					const isAutoApproved = isSessionAutoApproveLevel(chatSessionResource, this._configurationService, this._chatWidgetService, this._chatService);
 					if (isAutoApproved) {
-						resultText += `\nIf the command is waiting for input, you MUST determine the appropriate response from context and immediately call ${TerminalToolId.SendToTerminal} with id "${termId}" to provide it.`;
+						resultText += `\nEvaluate the terminal output to determine if the command is waiting for input (e.g. a password prompt, confirmation, or interactive question). A normal shell prompt does NOT count as waiting for input. If it IS waiting for input, determine the appropriate response from context and immediately call ${TerminalToolId.SendToTerminal} with id "${termId}" to provide it.`;
 					} else {
-						resultText += `\nIf the command is waiting for input, you MUST call the askQuestions tool to ask the user what input to provide, then call ${TerminalToolId.SendToTerminal} with id "${termId}" to send their response.`;
+						resultText += `\nEvaluate the terminal output to determine if the command is waiting for input (e.g. a password prompt, confirmation, or interactive question). A normal shell prompt does NOT count as waiting for input. If it IS waiting for input, call the askQuestions tool to ask the user what input to provide, then call ${TerminalToolId.SendToTerminal} with id "${termId}" to send their response.`;
 					}
 				} else if (pollingResult) {
 					resultText += `\n The command is still running, with output:\n`;
@@ -1456,9 +1456,9 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 		if (didInputNeeded) {
 			const isAutoApproved = isSessionAutoApproveLevel(chatSessionResource, this._configurationService, this._chatWidgetService, this._chatService);
 			if (isAutoApproved) {
-				resultText.push(`Note: The command is running in terminal ID ${termId} and is waiting for input. You MUST determine the appropriate response from context and immediately call ${TerminalToolId.SendToTerminal} with id "${termId}" to provide it.\n\n`);
+				resultText.push(`Note: The command is running in terminal ID ${termId} and may be waiting for input. Evaluate the terminal output to determine if the command is actually waiting for input (e.g. a password prompt, confirmation, or interactive question). A normal shell prompt does NOT count as waiting for input. If it IS waiting for input, determine the appropriate response from context and immediately call ${TerminalToolId.SendToTerminal} with id "${termId}" to provide it.\n\n`);
 			} else {
-				resultText.push(`Note: The command is running in terminal ID ${termId} and is waiting for input. You MUST call the askQuestions tool to ask the user what input to provide, then call ${TerminalToolId.SendToTerminal} with id "${termId}" to send their response.\n\n`);
+				resultText.push(`Note: The command is running in terminal ID ${termId} and may be waiting for input. Evaluate the terminal output to determine if the command is actually waiting for input (e.g. a password prompt, confirmation, or interactive question). A normal shell prompt does NOT count as waiting for input. If it IS waiting for input, call the askQuestions tool to ask the user what input to provide, then call ${TerminalToolId.SendToTerminal} with id "${termId}" to send their response.\n\n`);
 			}
 		} else if (didTimeout && timeoutValue !== undefined && timeoutValue > 0) {
 			const notificationHint = this._configurationService.getValue(TerminalChatAgentToolsSettingId.BackgroundNotifications)
