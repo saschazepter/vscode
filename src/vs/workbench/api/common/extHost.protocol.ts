@@ -1695,6 +1695,8 @@ export interface IChatResourceDto {
 
 export interface ICustomAgentDto extends IChatResourceDto {
 	readonly argumentHint?: string;
+	readonly tools?: readonly string[];
+	readonly model?: readonly string[];
 	readonly userInvocable: boolean;
 	readonly disableModelInvocation: boolean;
 }
@@ -3754,8 +3756,16 @@ export interface GitDiffChangeDto extends GitChangeDto {
 	readonly deletions: number;
 }
 
+export interface GitRemoteDto {
+	readonly name: string;
+	readonly fetchUrl?: string;
+	readonly pushUrl?: string;
+	readonly isReadOnly: boolean;
+}
+
 export interface GitRepositoryStateDto {
 	readonly HEAD?: GitBranchDto;
+	readonly remotes: readonly GitRemoteDto[];
 	readonly mergeChanges: readonly GitChangeDto[];
 	readonly indexChanges: readonly GitChangeDto[];
 	readonly workingTreeChanges: readonly GitChangeDto[];
