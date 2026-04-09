@@ -13,6 +13,6 @@
 #   node --max-old-space-size=16384 scratchpad/2026-04-09-chat-model-retainers/analyze.mjs
 #
 # Import helpers like:
-#   import { parseSnapshot, buildGraph } from '../helpers/parseSnapshot.js';
-#   import { compareSnapshots, printComparison } from '../helpers/compareSnapshots.js';
-#   import { findRetainerPaths } from '../helpers/findRetainers.js';
+#   import { parseSnapshot, buildGraph } from '../helpers/parseSnapshot.ts';
+#   import { compareSnapshots, printComparison } from '../helpers/compareSnapshots.ts';
+#   import { findRetainerPaths } from '../helpers/findRetainers.ts';

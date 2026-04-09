@@ -66,7 +66,9 @@ export function parseSnapshot(path: string): SnapshotData {
 
 	// Parse meta
 	const metaKeyPos = buf.indexOf(Buffer.from('"meta"'));
+	if (metaKeyPos === -1) { throw new Error('meta section not found in snapshot'); }
 	const metaBraceStart = buf.indexOf(Buffer.from('{'), metaKeyPos);
+	if (metaBraceStart === -1) { throw new Error('meta section opening brace not found'); }
 	let depth = 0, metaBraceEnd = -1;
 	for (let i = metaBraceStart; i < buf.length; i++) {
 		if (buf[i] === 0x7B) { depth++; }
@@ -79,6 +81,7 @@ export function parseSnapshot(path: string): SnapshotData {
 	// Extract nodes array
 	const nodesKeyBuf = Buffer.from('"nodes":[');
 	const nodesPos = buf.indexOf(nodesKeyBuf);
+	if (nodesPos === -1) { throw new Error('nodes array not found in snapshot'); }
 	const nodesArrayStart = nodesPos + 8;
 	const nodesEnd = buf.indexOf(Buffer.from(']'), nodesArrayStart);
 	const nodes = buf.subarray(nodesArrayStart + 1, nodesEnd).toString('utf8').split(',').map(Number);
@@ -88,6 +91,7 @@ export function parseSnapshot(path: string): SnapshotData {
 	// Extract edges array
 	const edgesKeyBuf = Buffer.from('"edges":[');
 	const edgesPos = buf.indexOf(edgesKeyBuf);
+	if (edgesPos === -1) { throw new Error('edges array not found in snapshot'); }
 	const edgesArrayStart = edgesPos + 8;
 	const edgesEnd = buf.indexOf(Buffer.from(']'), edgesArrayStart);
 	const edges = buf.subarray(edgesArrayStart + 1, edgesEnd).toString('utf8').split(',').map(Number);

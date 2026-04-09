@@ -169,19 +169,23 @@ export function formatBytes(bytes: number): string {
 /**
  * Print a comparison result to the console.
  */
+function formatSigned(value: number, formatter: (v: number) => string): string {
+	return `${value >= 0 ? '+' : ''}${formatter(value)}`;
+}
+
 export function printComparison(result: ComparisonResult): void {
 	const s = result.summary;
 	console.log(`\nBefore: ${s.beforeNodes} nodes, ${formatBytes(s.beforeSize)}`);
 	console.log(`After:  ${s.afterNodes} nodes, ${formatBytes(s.afterSize)}`);
-	console.log(`Delta:  +${s.nodeDelta} nodes, +${formatBytes(s.sizeDelta)}\n`);
+	console.log(`Delta:  ${formatSigned(s.nodeDelta, String)} nodes, ${formatSigned(s.sizeDelta, formatBytes)}\n`);
 
 	console.log('=== TOP by SIZE increase ===');
 	for (const d of result.topBySize.slice(0, 30)) {
-		console.log(`  ${d.key}: ${d.beforeCount} → ${d.afterCount} (+${d.countDiff}) | +${formatBytes(d.sizeDiff)}`);
+		console.log(`  ${d.key}: ${d.beforeCount} → ${d.afterCount} (${formatSigned(d.countDiff, String)}) | ${formatSigned(d.sizeDiff, formatBytes)}`);
 	}
 
 	console.log('\n=== TOP by COUNT increase ===');
 	for (const d of result.topByCount.slice(0, 30)) {
-		console.log(`  ${d.key}: ${d.beforeCount} → ${d.afterCount} (+${d.countDiff}) | +${formatBytes(d.sizeDiff)}`);
+		console.log(`  ${d.key}: ${d.beforeCount} → ${d.afterCount} (${formatSigned(d.countDiff, String)}) | ${formatSigned(d.sizeDiff, formatBytes)}`);
 	}
 }

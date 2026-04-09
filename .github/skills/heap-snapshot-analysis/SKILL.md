@@ -24,7 +24,7 @@ If the user needs the agent to launch VS Code, drive a scenario, and capture sna
 Use the helpers in [parseSnapshot.ts](./helpers/parseSnapshot.ts) to load snapshots. The files are often >500MB and too large for `JSON.parse` as a string — the helpers use Buffer-based extraction. In scratchpad scripts, import helpers from `../helpers/*.ts`.
 
 ```typescript
-import { parseSnapshot, buildGraph } from '../helpers/parseSnapshot.js';
+import { parseSnapshot, buildGraph } from '../helpers/parseSnapshot.ts';
 
 const data = parseSnapshot('/path/to/snapshot.heapsnapshot');
 const graph = buildGraph(data);
@@ -35,7 +35,7 @@ const graph = buildGraph(data);
 Use [compareSnapshots.ts](./helpers/compareSnapshots.ts) to diff two snapshots:
 
 ```typescript
-import { compareSnapshots } from '../helpers/compareSnapshots.js';
+import { compareSnapshots } from '../helpers/compareSnapshots.ts';
 
 const result = compareSnapshots('/path/to/before.heapsnapshot', '/path/to/after.heapsnapshot');
 // result.topBySize, result.topByCount, result.newObjectGroups, result.summary
@@ -46,7 +46,7 @@ const result = compareSnapshots('/path/to/before.heapsnapshot', '/path/to/after.
 Use [findRetainers.ts](./helpers/findRetainers.ts) to trace why an object is alive:
 
 ```typescript
-import { findRetainerPaths } from '../helpers/findRetainers.js';
+import { findRetainerPaths } from '../helpers/findRetainers.ts';
 
 // Find what keeps ChatModel instances alive (skipping weak edges)
 findRetainerPaths(graph, 'ChatModel', { maxPaths: 5, maxDepth: 25, maxAttempts: 200 });

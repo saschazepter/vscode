@@ -498,7 +498,7 @@ async function clearChatInput(page: Page): Promise<void> {
 
 async function createNewChatSession(page: Page): Promise<void> {
 	// Use the new chat keyboard shortcut
-	const shortcut = process.platform === 'darwin' ? 'Meta+L' : 'Control+L';
+	const shortcut = 'Control+L';
 	await page.keyboard.press(shortcut);
 	await delay(500);
 	await waitForVisibleChatInputEditor(page);

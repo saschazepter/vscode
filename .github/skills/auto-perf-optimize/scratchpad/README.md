@@ -55,9 +55,12 @@ These are reusable, generic runners. Use them directly or as templates:
 
 ## Tips
 
-- Always use `--user-data-dir .build/chat-memory-smoke/user-data` (the
+- Always use `--user-data-dir .build/auto-perf-optimize/user-data` (the
   persistent profile with Copilot auth). Never create a fresh user-data-dir.
 - Use `--skip-prelaunch` to avoid re-downloading Electron on every run.
-- Kill orphaned Code instances with `pkill -f 'Electron'` before starting.
+- If you need to clean up an orphaned test instance, stop only the specific
+  Code - OSS process (e.g. by killing the PID that was logged at launch, or
+  `lsof -ti :<port> | xargs kill`). Avoid `pkill -f 'Electron'` — it can
+  kill unrelated Electron apps.
 - For heap snapshot analysis, use the `heap-snapshot-analysis` skill's
   scratchpad and helpers.
