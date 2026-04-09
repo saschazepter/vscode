@@ -11,6 +11,7 @@ import { StopWatch } from '../../../../base/common/stopwatch.js';
 import { URI } from '../../../../base/common/uri.js';
 import { isWindows, isMacintosh, isLinux } from '../../../../base/common/platform.js';
 import { assertDefined } from '../../../../base/common/types.js';
+import { FileAccess } from '../../../../base/common/network.js';
 import { ILayoutService } from '../../../../platform/layout/browser/layoutService.js';
 import { KeyCode } from '../../../../base/common/keyCodes.js';
 import { StandardKeyboardEvent } from '../../../../base/browser/keyboardEvent.js';
@@ -23,6 +24,7 @@ import { EXTENSION_INSTALL_SKIP_WALKTHROUGH_CONTEXT, IGalleryExtension, IExtensi
 import { IDefaultAccountService } from '../../../../platform/defaultAccount/common/defaultAccount.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { INotificationService, Severity } from '../../../../platform/notification/common/notification.js';
+import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { ConfigurationTarget, IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import product from '../../../../platform/product/common/product.js';
 import { IQuickInputService } from '../../../../platform/quickinput/common/quickInput.js';
@@ -35,8 +37,6 @@ import {
 	ONBOARDING_STEPS,
 	ONBOARDING_THEME_OPTIONS,
 	ONBOARDING_THEME_OPTIONS_EXPANDED,
-	ONBOARDING_KEYMAP_OPTIONS,
-	ONBOARDING_RECOMMENDED_EXTENSIONS,
 	ONBOARDING_AI_PREFERENCE_OPTIONS,
 	AiCollaborationMode,
 	IOnboardingThemeOption,
@@ -133,6 +133,7 @@ export class OnboardingVariationA extends Disposable {
 		@IFileService private readonly fileService: IFileService,
 		@IPathService private readonly pathService: IPathService,
 		@ITelemetryService private readonly telemetryService: ITelemetryService,
+		@ICommandService private readonly commandService: ICommandService,
 	) {
 		super();
 
@@ -463,18 +464,43 @@ export class OnboardingVariationA extends Disposable {
 
 		const footer = append(wrapper, $('.onboarding-a-signin-footer'));
 
-		const disclaimer = append(footer, $('.onboarding-a-signin-disclaimer'));
-		disclaimer.append(localize('onboarding.signIn.disclaimer.prefix', "By continuing, you agree to {0}'s ", defaultChat.provider.default.name));
-		this._createInlineLink(disclaimer, localize('onboarding.signIn.disclaimer.terms', "Terms"), defaultChat.termsStatementUrl);
-		disclaimer.append(localize('onboarding.signIn.disclaimer.middle', " and "));
-		this._createInlineLink(disclaimer, localize('onboarding.signIn.disclaimer.privacy', "Privacy Statement"), defaultChat.privacyStatementUrl);
-		disclaimer.append(localize('onboarding.signIn.disclaimer.copilotPrefix', ". {0} Copilot may show ", defaultChat.provider.default.name));
-		this._createInlineLink(disclaimer, localize('onboarding.signIn.disclaimer.publicCode', "public code"), defaultChat.publicCodeMatchesUrl);
-		disclaimer.append(localize('onboarding.signIn.disclaimer.improveSuffix', " suggestions and use your data to improve the product."));
-		disclaimer.appendChild(document.createElement('br'));
-		disclaimer.append(localize('onboarding.signIn.disclaimer.settingsPrefix', "You can change these "));
-		this._createInlineLink(disclaimer, localize('onboarding.signIn.disclaimer.settings', "settings"), defaultChat.manageSettingsUrl);
-		disclaimer.append(localize('onboarding.signIn.disclaimer.suffix', " anytime."));
+		const disclaimerCol = append(footer, $('.onboarding-a-signin-disclaimer-col'));
+
+		// VS Code telemetry disclaimer
+		const telemetryDisclaimer = append(disclaimerCol, $('.onboarding-a-signin-disclaimer'));
+		const telemetryTitle = append(telemetryDisclaimer, $('strong'));
+		telemetryTitle.textContent = localize('onboarding.signIn.disclaimer.telemetryTitle', "VS Code: ");
+		telemetryDisclaimer.append(localize('onboarding.signIn.telemetry', "{0} collects usage data. Read our ", product.nameShort));
+		if (product.privacyStatementUrl) {
+			this._createInlineLink(telemetryDisclaimer, localize('onboarding.signIn.telemetry.privacy', "privacy statement"), product.privacyStatementUrl);
+		} else {
+			telemetryDisclaimer.append(localize('onboarding.signIn.telemetry.privacyPlain', "privacy statement"));
+		}
+		telemetryDisclaimer.append(localize('onboarding.signIn.telemetry.optOut', " and learn how to "));
+		const optOutLink = this._registerStepFocusable(append(telemetryDisclaimer, $<HTMLAnchorElement>('a.onboarding-a-inline-link')));
+		optOutLink.textContent = localize('onboarding.signIn.telemetry.optOutLink', "opt out");
+		optOutLink.href = '#';
+		this.stepDisposables.add(addDisposableListener(optOutLink, EventType.CLICK, (e) => {
+			e.preventDefault();
+			this.commandService.executeCommand('settings.filterByTelemetry');
+		}));
+		telemetryDisclaimer.append('.');
+
+		// GitHub Copilot disclaimer
+		const copilotDisclaimer = append(disclaimerCol, $('.onboarding-a-signin-disclaimer'));
+		const copilotTitle = append(copilotDisclaimer, $('strong'));
+		copilotTitle.textContent = localize('onboarding.signIn.disclaimer.copilotTitle', "GitHub Copilot: ");
+		copilotDisclaimer.append(localize('onboarding.signIn.disclaimer.prefix', "By signing in, you agree to {0}'s ", defaultChat.provider.default.name));
+		this._createInlineLink(copilotDisclaimer, localize('onboarding.signIn.disclaimer.terms', "Terms"), defaultChat.termsStatementUrl);
+		copilotDisclaimer.append(localize('onboarding.signIn.disclaimer.middle', " and "));
+		this._createInlineLink(copilotDisclaimer, localize('onboarding.signIn.disclaimer.privacy', "Privacy Statement"), defaultChat.privacyStatementUrl);
+		copilotDisclaimer.append(localize('onboarding.signIn.disclaimer.copilotPrefix', ". {0} Copilot may show ", defaultChat.provider.default.name));
+		this._createInlineLink(copilotDisclaimer, localize('onboarding.signIn.disclaimer.publicCode', "public code"), defaultChat.publicCodeMatchesUrl);
+		copilotDisclaimer.append(localize('onboarding.signIn.disclaimer.improveSuffix', " suggestions and use your data to improve the product."));
+		copilotDisclaimer.append(' ');
+		copilotDisclaimer.append(localize('onboarding.signIn.disclaimer.settingsPrefix', "You can change these "));
+		this._createInlineLink(copilotDisclaimer, localize('onboarding.signIn.disclaimer.settings', "settings"), defaultChat.manageSettingsUrl);
+		copilotDisclaimer.append(localize('onboarding.signIn.disclaimer.suffix', " anytime."));
 	}
 
 	private _createSignInButton(parent: HTMLElement, providerClass: 'github' | 'github-enterprise' | 'google' | 'apple', label: string, options?: { emphasized?: boolean; iconOnly?: boolean; textOnly?: boolean; label?: string }): HTMLButtonElement {
@@ -625,14 +651,13 @@ export class OnboardingVariationA extends Disposable {
 		const wrapper = append(container, $('.onboarding-a-personalize'));
 
 		// Theme section
-		const themeSection = append(wrapper, $('div.onboarding-a-personalize-section.onboarding-a-personalize-section-theme'));
-		const themeLabel = append(themeSection, $('div.onboarding-a-section-label'));
+		const themeLabel = append(wrapper, $('div.onboarding-a-section-label'));
 		themeLabel.textContent = localize('onboarding.personalize.theme', "Color Theme");
 
-		const themeHint = append(themeSection, $('div.onboarding-a-theme-hint'));
+		const themeHint = append(wrapper, $('div.onboarding-a-theme-hint'));
 		themeHint.textContent = localize('onboarding.personalize.themeHint', "You can browse and install more themes later from the Extensions view.");
 
-		const themeGrid = append(themeSection, $('.onboarding-a-theme-grid'));
+		const themeGrid = append(wrapper, $('.onboarding-a-theme-grid'));
 		themeGrid.setAttribute('role', 'radiogroup');
 		themeGrid.setAttribute('aria-label', localize('onboarding.personalize.themeLabel', "Choose a color theme"));
 
@@ -640,7 +665,6 @@ export class OnboardingVariationA extends Disposable {
 		const themes = hasOtherEditors ? ONBOARDING_THEME_OPTIONS : ONBOARDING_THEME_OPTIONS_EXPANDED;
 
 		if (!hasOtherEditors) {
-			themeSection.classList.add('theme-only');
 			themeGrid.classList.add('theme-grid-expanded');
 		}
 
@@ -651,18 +675,17 @@ export class OnboardingVariationA extends Disposable {
 
 		// Keyboard Mapping section — only shown when another editor is detected
 		const keymapOptions = this._detectedEditorIds
-			? ONBOARDING_KEYMAP_OPTIONS.filter(k => this._detectedEditorIds!.has(k.id))
+			? (product.onboardingKeymaps ?? []).filter(k => this._detectedEditorIds!.has(k.id))
 			: [];
 
 		if (hasOtherEditors) {
-			const keymapSection = append(wrapper, $('div.onboarding-a-personalize-section.onboarding-a-personalize-section-keymap'));
-			const keymapLabel = append(keymapSection, $('div.onboarding-a-section-label'));
+			const keymapLabel = append(wrapper, $('div.onboarding-a-section-label.onboarding-a-section-label-keymap'));
 			keymapLabel.textContent = localize('onboarding.personalize.keymap', "Keyboard Mapping");
 
-			const keymapHint = append(keymapSection, $('div.onboarding-a-theme-hint'));
+			const keymapHint = append(wrapper, $('div.onboarding-a-theme-hint'));
 			keymapHint.textContent = localize('onboarding.personalize.keymapHint', "Coming from another editor? Import your keyboard mapping to feel right at home.");
 
-			const keymapList = append(keymapSection, $('.onboarding-a-keymap-list'));
+			const keymapList = append(wrapper, $('.onboarding-a-keymap-list'));
 			keymapList.setAttribute('role', 'radiogroup');
 			keymapList.setAttribute('aria-label', localize('onboarding.personalize.keymapLabel', "Choose a keyboard mapping"));
 
@@ -724,10 +747,11 @@ export class OnboardingVariationA extends Disposable {
 			card.classList.add('selected');
 		}
 
-		// Mini VS Code skeleton preview
+		// SVG preview image
 		const preview = append(card, $('div.onboarding-a-theme-preview'));
-		preview.style.backgroundColor = theme.preview.background;
-		this._renderEditorSkeleton(preview, theme);
+		const img = append(preview, $<HTMLImageElement>('img.onboarding-a-theme-preview-img'));
+		img.alt = '';
+		img.src = FileAccess.asBrowserUri(`vs/workbench/contrib/welcomeOnboarding/browser/media/theme-preview-${theme.id}.svg`).toString(true);
 
 		// Label
 		const label = append(card, $('div.onboarding-a-theme-label'));
@@ -752,53 +776,6 @@ export class OnboardingVariationA extends Disposable {
 		}));
 	}
 
-	/**
-	 * Renders a mini VS Code editor skeleton with sidebar, tabs, and code area.
-	 */
-	private _renderEditorSkeleton(container: HTMLElement, theme: IOnboardingThemeOption): void {
-		const skeleton = append(container, $('div.onboarding-a-skeleton'));
-
-		// Sidebar (narrow strip — uses actual theme sidebar color)
-		const sidebar = append(skeleton, $('div.onboarding-a-skeleton-sidebar'));
-		sidebar.style.backgroundColor = theme.preview.sidebarBackground;
-		for (let i = 0; i < 4; i++) {
-			const icon = append(sidebar, $('div.onboarding-a-skeleton-sidebar-icon'));
-			icon.style.backgroundColor = theme.preview.lineNumber;
-		}
-
-		// Main area
-		const main = append(skeleton, $('div.onboarding-a-skeleton-main'));
-
-		// Tab bar (uses actual theme tab bar background)
-		const tabBar = append(main, $('div.onboarding-a-skeleton-tabs'));
-		tabBar.style.backgroundColor = theme.preview.tabBarBackground;
-		tabBar.style.borderBottom = `1px solid ${theme.preview.lineNumber}40`;
-		const activeTab = append(tabBar, $('div.onboarding-a-skeleton-tab'));
-		activeTab.style.borderBottom = `2px solid ${theme.preview.tabActiveBorder}`;
-		activeTab.style.color = theme.preview.foreground;
-		activeTab.textContent = 'index.ts';
-		const inactiveTab = append(tabBar, $('div.onboarding-a-skeleton-tab.inactive'));
-		inactiveTab.style.color = theme.preview.lineNumber;
-		inactiveTab.textContent = 'app.ts';
-
-		// Code area with lines
-		const codeArea = append(main, $('div.onboarding-a-skeleton-code'));
-		const lines = [
-			[{ text: 'function ', color: theme.preview.keyword }, { text: 'greet', color: theme.preview.function }, { text: '() {', color: theme.preview.foreground }],
-			[{ text: '  ', color: theme.preview.foreground }, { text: '// hello', color: theme.preview.comment }],
-			[{ text: '  ', color: theme.preview.foreground }, { text: 'return ', color: theme.preview.keyword }, { text: '"Hi"', color: theme.preview.string }],
-			[{ text: '}', color: theme.preview.foreground }],
-		];
-		for (const line of lines) {
-			const lineEl = append(codeArea, $('div.onboarding-a-code-line'));
-			for (const token of line) {
-				const span = append(lineEl, $('span'));
-				span.textContent = token.text;
-				span.style.color = token.color;
-			}
-		}
-	}
-
 	// =====================================================================
 	// Step: Extensions
 	// =====================================================================
@@ -811,7 +788,7 @@ export class OnboardingVariationA extends Disposable {
 		// Build a map of icon elements so we can update them once gallery data arrives
 		const iconElements = new Map<string, HTMLElement>();
 
-		for (const ext of ONBOARDING_RECOMMENDED_EXTENSIONS) {
+		for (const ext of (product.onboardingExtensions ?? [])) {
 			const row = append(extList, $('div.onboarding-a-ext-row'));
 
 			const iconEl = append(row, $('div.onboarding-a-ext-icon'));
@@ -855,7 +832,7 @@ export class OnboardingVariationA extends Disposable {
 
 	private async _prefetchGalleryExtensions(): Promise<void> {
 		try {
-			const ids = ONBOARDING_RECOMMENDED_EXTENSIONS.map(ext => ({ id: ext.id }));
+			const ids = (product.onboardingExtensions ?? []).map(ext => ({ id: ext.id }));
 			const extensions = await this.extensionGalleryService.getExtensions(ids, CancellationToken.None);
 			const map = new Map<string, IGalleryExtension>();
 			for (const ext of extensions) {
@@ -934,7 +911,7 @@ export class OnboardingVariationA extends Disposable {
 	}
 
 	private async _applyKeymap(keymapId: string): Promise<void> {
-		const keymap = ONBOARDING_KEYMAP_OPTIONS.find(k => k.id === keymapId);
+		const keymap = (product.onboardingKeymaps ?? []).find(k => k.id === keymapId);
 		if (!keymap?.extensionId) {
 			return; // VS Code default, nothing to install
 		}
@@ -954,7 +931,7 @@ export class OnboardingVariationA extends Disposable {
 
 	private _hasOtherEditors(): boolean {
 		const keymapOptions = this._detectedEditorIds
-			? ONBOARDING_KEYMAP_OPTIONS.filter(k => this._detectedEditorIds!.has(k.id))
+			? (product.onboardingKeymaps ?? []).filter(k => this._detectedEditorIds!.has(k.id))
 			: [];
 		return keymapOptions.some(k => k.id !== 'vscode');
 	}
@@ -1103,16 +1080,22 @@ export class OnboardingVariationA extends Disposable {
 
 		const features = append(wrapper, $('.onboarding-a-sessions-features'));
 
-		// Left column: Local + Cloud — Right column: Copilot CLI + Inline
-		this._createFeatureCard(features, Codicon.deviceDesktop, localize('onboarding.sessions.local', "Local Sessions"), localize('onboarding.sessions.local.desc', "Run agents locally with full access to your machine and tools."));
+		this._createFeatureCard(features, Codicon.deviceDesktop,
+			localize('onboarding.sessions.local', "Local Sessions"),
+			localize('onboarding.sessions.local.desc', "Run agents interactively in the editor with full access to your workspace, tools, and terminal. Best for hands-on work where you want to review changes as they happen."));
 
-		this._createFeatureCard(features, Codicon.worktree, localize('onboarding.sessions.worktree', "Copilot CLI"), localize('onboarding.sessions.worktree.desc', "Branch off and work in parallel with isolated worktrees."));
+		this._createFeatureCard(features, Codicon.cloud,
+			localize('onboarding.sessions.cloud', "Cloud Sessions"),
+			localize('onboarding.sessions.cloud.desc', "Delegate tasks to a cloud agent that creates a branch, implements changes, and opens a pull request — even after you close VS Code."));
 
-		this._createFeatureCard(features, Codicon.cloud, localize('onboarding.sessions.cloud', "Cloud Sessions"), localize('onboarding.sessions.cloud.desc', "Run agents in the cloud. Code keeps running even when you close the window."));
+		this._createFeatureCard(features, Codicon.worktree,
+			localize('onboarding.sessions.worktree', "Background Agents"),
+			localize('onboarding.sessions.worktree.desc', "Run agents autonomously in an isolated worktree on your machine. Work on something else while the agent builds, tests, and iterates in the background."));
 
-		const inlineDesc = this._createFeatureCard(features, Codicon.keyboardTab, localize('onboarding.sessions.inline', "Inline Suggestions"));
+		const inlineDesc = this._createFeatureCard(features, Codicon.sparkle,
+			localize('onboarding.sessions.inline', "Inline Suggestions"));
 		inlineDesc.append(
-			localize('onboarding.sessions.inline.desc1', "As you type, AI suggests code inline. Press "),
+			localize('onboarding.sessions.inline.desc1', "As you type, AI suggests completions and next edit predictions inline. Press "),
 			this._createKbd(localize('onboarding.sessions.inline.tab', "Tab")),
 			localize('onboarding.sessions.inline.desc2', " to accept or "),
 			this._createKbd(localize('onboarding.sessions.inline.esc', "Esc")),
@@ -1121,6 +1104,7 @@ export class OnboardingVariationA extends Disposable {
 
 		// Doc links + optional sign-in nudge on the same row
 		const docs = append(wrapper, $('.onboarding-a-sessions-docs'));
+		this._createDocLink(docs, localize('onboarding.sessions.agentTutorial', "Agents tutorial"), 'https://code.visualstudio.com/docs/copilot/agents/agents-tutorial', 'agentTutorial');
 		this._createDocLink(docs, localize('onboarding.sessions.videoTutorials', "Watch video tutorials"), 'https://aka.ms/vscode-getting-started-video', 'videoTutorials');
 
 		// Conditional sign-in nudge if user skipped sign-in on step 1

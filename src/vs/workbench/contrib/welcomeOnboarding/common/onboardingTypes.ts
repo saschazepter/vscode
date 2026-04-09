@@ -71,30 +71,80 @@ export interface IOnboardingThemeOption {
 	readonly label: string;
 	readonly themeId: string;
 	readonly type: 'dark' | 'light' | 'hcDark' | 'hcLight';
-	readonly preview: {
-		readonly background: string;
-		readonly foreground: string;
-		readonly keyword: string;
-		readonly string: string;
-		readonly comment: string;
-		readonly function: string;
-		readonly lineNumber: string;
-		readonly selection: string;
-		readonly sidebarBackground: string;
-		readonly tabBarBackground: string;
-		readonly tabActiveBorder: string;
-	};
 }
 
 /**
- * Keymap option for the onboarding personalization step.
+ * Built-in theme options.
  */
-export interface IOnboardingKeymapOption {
-	readonly id: string;
-	readonly label: string;
-	readonly extensionId: string | undefined;
-	readonly description: string;
-}
+export const ONBOARDING_THEME_OPTIONS: readonly IOnboardingThemeOption[] = [
+	{
+		id: 'dark-2026',
+		label: localize('onboarding.theme.dark2026', "Dark 2026"),
+		themeId: 'Dark 2026',
+		type: 'dark',
+	},
+	{
+		id: 'light-2026',
+		label: localize('onboarding.theme.light2026', "Light 2026"),
+		themeId: 'Light 2026',
+		type: 'light',
+	},
+	{
+		id: 'hc-dark',
+		label: localize('onboarding.theme.hcDark', "Dark High Contrast"),
+		themeId: 'Default High Contrast',
+		type: 'hcDark',
+	},
+	{
+		id: 'hc-light',
+		label: localize('onboarding.theme.hcLight', "Light High Contrast"),
+		themeId: 'Default High Contrast Light',
+		type: 'hcLight',
+	},
+];
+
+/**
+ * Expanded theme options shown when no keymap section is needed.
+ * Organized as: dark row, then light row.
+ */
+export const ONBOARDING_THEME_OPTIONS_EXPANDED: readonly IOnboardingThemeOption[] = [
+	{
+		id: 'dark-2026',
+		label: localize('onboarding.theme.dark2026.exp', "Dark 2026"),
+		themeId: 'Dark 2026',
+		type: 'dark',
+	},
+	{
+		id: 'hc-dark',
+		label: localize('onboarding.theme.hcDark.exp', "Dark High Contrast"),
+		themeId: 'Default High Contrast',
+		type: 'hcDark',
+	},
+	{
+		id: 'solarized-dark',
+		label: localize('onboarding.theme.solarizedDark', "Solarized Dark"),
+		themeId: 'Solarized Dark',
+		type: 'dark',
+	},
+	{
+		id: 'light-2026',
+		label: localize('onboarding.theme.light2026.exp', "Light 2026"),
+		themeId: 'Light 2026',
+		type: 'light',
+	},
+	{
+		id: 'hc-light',
+		label: localize('onboarding.theme.hcLight.exp', "Light High Contrast"),
+		themeId: 'Default High Contrast Light',
+		type: 'hcLight',
+	},
+	{
+		id: 'solarized-light',
+		label: localize('onboarding.theme.solarizedLight', "Solarized Light"),
+		themeId: 'Solarized Light',
+		type: 'light',
+	},
+];
 
 /**
  * AI collaboration preference for the AI style step.
@@ -140,312 +190,6 @@ export const ONBOARDING_AI_PREFERENCE_OPTIONS: readonly IAiPreferenceOption[] = 
 ];
 
 /**
- * Built-in theme options.
- */
-export const ONBOARDING_THEME_OPTIONS: readonly IOnboardingThemeOption[] = [
-	{
-		id: 'dark-2026',
-		label: localize('onboarding.theme.dark2026', "Dark 2026"),
-		themeId: 'Dark 2026',
-		type: 'dark',
-		preview: {
-			background: '#121314',
-			foreground: '#BBBEBF',
-			keyword: '#ff7b72',
-			string: '#a5d6ff',
-			comment: '#8b949e',
-			function: '#d2a8ff',
-			lineNumber: '#858889',
-			selection: '#276782',
-			sidebarBackground: '#191A1B',
-			tabBarBackground: '#191A1B',
-			tabActiveBorder: '#3994BC',
-		},
-	},
-	{
-		id: 'light-2026',
-		label: localize('onboarding.theme.light2026', "Light 2026"),
-		themeId: 'Light 2026',
-		type: 'light',
-		preview: {
-			background: '#FFFFFF',
-			foreground: '#202020',
-			keyword: '#cf222e',
-			string: '#0a3069',
-			comment: '#6e7781',
-			function: '#8250df',
-			lineNumber: '#606060',
-			selection: '#0069CC40',
-			sidebarBackground: '#FAFAFD',
-			tabBarBackground: '#FAFAFD',
-			tabActiveBorder: '#000000',
-		},
-	},
-	{
-		id: 'hc-dark',
-		label: localize('onboarding.theme.hcDark', "Dark High Contrast"),
-		themeId: 'Default High Contrast',
-		type: 'hcDark',
-		preview: {
-			background: '#000000',
-			foreground: '#ffffff',
-			keyword: '#569cd6',
-			string: '#ce9178',
-			comment: '#7ca668',
-			function: '#dcdcaa',
-			lineNumber: '#858585',
-			selection: '#264f78',
-			sidebarBackground: '#000000',
-			tabBarBackground: '#000000',
-			tabActiveBorder: '#569cd6',
-		},
-	},
-	{
-		id: 'hc-light',
-		label: localize('onboarding.theme.hcLight', "Light High Contrast"),
-		themeId: 'Default High Contrast Light',
-		type: 'hcLight',
-		preview: {
-			background: '#ffffff',
-			foreground: '#292929',
-			keyword: '#0f4a85',
-			string: '#a31515',
-			comment: '#008000',
-			function: '#5e2cbc',
-			lineNumber: '#292929',
-			selection: '#add6ff',
-			sidebarBackground: '#ffffff',
-			tabBarBackground: '#ffffff',
-			tabActiveBorder: '#0f4a85',
-		},
-	},
-];
-
-/**
- * Expanded theme options shown when no keymap section is needed.
- * Organized as: dark row, then light row.
- */
-export const ONBOARDING_THEME_OPTIONS_EXPANDED: readonly IOnboardingThemeOption[] = [
-	{
-		id: 'dark-2026',
-		label: localize('onboarding.theme.dark2026.exp', "Dark 2026"),
-		themeId: 'Dark 2026',
-		type: 'dark',
-		preview: {
-			background: '#121314',
-			foreground: '#BBBEBF',
-			keyword: '#ff7b72',
-			string: '#a5d6ff',
-			comment: '#8b949e',
-			function: '#d2a8ff',
-			lineNumber: '#858889',
-			selection: '#276782',
-			sidebarBackground: '#191A1B',
-			tabBarBackground: '#191A1B',
-			tabActiveBorder: '#3994BC',
-		},
-	},
-	{
-		id: 'hc-dark',
-		label: localize('onboarding.theme.hcDark.exp', "Dark High Contrast"),
-		themeId: 'Default High Contrast',
-		type: 'hcDark',
-		preview: {
-			background: '#000000',
-			foreground: '#ffffff',
-			keyword: '#569cd6',
-			string: '#ce9178',
-			comment: '#7ca668',
-			function: '#dcdcaa',
-			lineNumber: '#858585',
-			selection: '#264f78',
-			sidebarBackground: '#000000',
-			tabBarBackground: '#000000',
-			tabActiveBorder: '#569cd6',
-		},
-	},
-	{
-		id: 'solarized-dark',
-		label: localize('onboarding.theme.solarizedDark', "Solarized Dark"),
-		themeId: 'Solarized Dark',
-		type: 'dark',
-		preview: {
-			background: '#002B36',
-			foreground: '#839496',
-			keyword: '#859900',
-			string: '#2AA198',
-			comment: '#586E75',
-			function: '#268BD2',
-			lineNumber: '#586E75',
-			selection: '#274642',
-			sidebarBackground: '#00212B',
-			tabBarBackground: '#004052',
-			tabActiveBorder: '#268BD2',
-		},
-	},
-	{
-		id: 'light-2026',
-		label: localize('onboarding.theme.light2026.exp', "Light 2026"),
-		themeId: 'Light 2026',
-		type: 'light',
-		preview: {
-			background: '#FFFFFF',
-			foreground: '#202020',
-			keyword: '#cf222e',
-			string: '#0a3069',
-			comment: '#6e7781',
-			function: '#8250df',
-			lineNumber: '#606060',
-			selection: '#0069CC40',
-			sidebarBackground: '#FAFAFD',
-			tabBarBackground: '#FAFAFD',
-			tabActiveBorder: '#000000',
-		},
-	},
-	{
-		id: 'hc-light',
-		label: localize('onboarding.theme.hcLight.exp', "Light High Contrast"),
-		themeId: 'Default High Contrast Light',
-		type: 'hcLight',
-		preview: {
-			background: '#ffffff',
-			foreground: '#292929',
-			keyword: '#0f4a85',
-			string: '#a31515',
-			comment: '#008000',
-			function: '#5e2cbc',
-			lineNumber: '#292929',
-			selection: '#add6ff',
-			sidebarBackground: '#ffffff',
-			tabBarBackground: '#ffffff',
-			tabActiveBorder: '#0f4a85',
-		},
-	},
-	{
-		id: 'solarized-light',
-		label: localize('onboarding.theme.solarizedLight', "Solarized Light"),
-		themeId: 'Solarized Light',
-		type: 'light',
-		preview: {
-			background: '#FDF6E3',
-			foreground: '#657B83',
-			keyword: '#859900',
-			string: '#2AA198',
-			comment: '#93A1A1',
-			function: '#268BD2',
-			lineNumber: '#93A1A1',
-			selection: '#EEE8D5',
-			sidebarBackground: '#EEE8D5',
-			tabBarBackground: '#D9D2C2',
-			tabActiveBorder: '#268BD2',
-		},
-	},
-];
-
-/**
- * Keymap options — keyboard shortcut presets from popular IDEs.
- */
-export const ONBOARDING_KEYMAP_OPTIONS: readonly IOnboardingKeymapOption[] = [
-	{
-		id: 'vscode',
-		label: localize('onboarding.keymap.vscode', "VS Code"),
-		extensionId: undefined,
-		description: localize('onboarding.keymap.vscode.desc', "Default keyboard mapping"),
-	},
-	{
-		id: 'sublime',
-		label: localize('onboarding.keymap.sublime', "Sublime Text"),
-		extensionId: 'ms-vscode.sublime-keybindings',
-		description: localize('onboarding.keymap.sublime.desc', "Keyboard mapping from Sublime Text"),
-	},
-	{
-		id: 'intellij',
-		label: localize('onboarding.keymap.intellij', "IntelliJ / JetBrains"),
-		extensionId: 'k--kato.intellij-idea-keybindings',
-		description: localize('onboarding.keymap.intellij.desc', "Keyboard mapping from IntelliJ IDEA"),
-	},
-	{
-		id: 'vim',
-		label: localize('onboarding.keymap.vim', "Vim"),
-		extensionId: 'vscodevim.vim',
-		description: localize('onboarding.keymap.vim.desc', "Vim modal editing"),
-	},
-	{
-		id: 'eclipse',
-		label: localize('onboarding.keymap.eclipse', "Eclipse"),
-		extensionId: 'alphabotsec.vscode-eclipse-keybindings',
-		description: localize('onboarding.keymap.eclipse.desc', "Keyboard mapping from Eclipse"),
-	},
-	{
-		id: 'notepadpp',
-		label: localize('onboarding.keymap.notepadpp', "Notepad++"),
-		extensionId: 'ms-vscode.notepadplusplus-keybindings',
-		description: localize('onboarding.keymap.notepadpp.desc', "Keyboard mapping from Notepad++"),
-	},
-];
-
-
-
-/**
  * Storage key for persisting onboarding completion state.
  */
 export const ONBOARDING_STORAGE_KEY = 'welcomeOnboarding.state';
-
-/**
- * Recommended extension for the Extensions step.
- */
-export interface IOnboardingExtension {
-	readonly id: string;
-	readonly name: string;
-	readonly publisher: string;
-	readonly description: string;
-	readonly icon: string;
-}
-
-/**
- * Top recommended extensions shown in the Extensions step.
- */
-export const ONBOARDING_RECOMMENDED_EXTENSIONS: readonly IOnboardingExtension[] = [
-	{
-		id: 'ms-vscode-remote.remote-containers',
-		name: localize('ext.devContainers', "Dev Containers"),
-		publisher: 'Microsoft',
-		description: localize('ext.devContainers.desc', "Develop inside a container with a full-featured editor"),
-		icon: 'remote-explorer',
-	},
-	{
-		id: 'ms-azuretools.vscode-docker',
-		name: localize('ext.docker', "Docker"),
-		publisher: 'Microsoft',
-		description: localize('ext.docker.desc', "Build, manage, and deploy containerized applications"),
-		icon: 'package',
-	},
-	{
-		id: 'dbaeumer.vscode-eslint',
-		name: localize('ext.eslint', "ESLint"),
-		publisher: 'Microsoft',
-		description: localize('ext.eslint.desc', "Find and fix problems in your JavaScript code"),
-		icon: 'lightbulb',
-	},
-	{
-		id: 'GitHub.vscode-pull-request-github',
-		name: localize('ext.ghPr', "GitHub Pull Requests"),
-		publisher: 'GitHub',
-		description: localize('ext.ghPr.desc', "Review and manage GitHub pull requests and issues"),
-		icon: 'git-pull-request',
-	},
-	{
-		id: 'ms-python.python',
-		name: localize('ext.python', "Python"),
-		publisher: 'Microsoft',
-		description: localize('ext.python.desc', "Rich Python language support with IntelliSense and debugging"),
-		icon: 'symbol-misc',
-	},
-	{
-		id: 'ms-vscode-remote.remote-ssh',
-		name: localize('ext.remoteSsh', "Remote - SSH"),
-		publisher: 'Microsoft',
-		description: localize('ext.remoteSsh.desc', "Open folders and files on a remote machine via SSH"),
-		icon: 'remote',
-	},
-];

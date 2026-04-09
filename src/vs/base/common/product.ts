@@ -231,6 +231,24 @@ export interface IProductConfiguration {
 	readonly remoteDefaultExtensionsIfInstalledLocally?: string[];
 
 	readonly extensionConfigurationPolicy?: IStringDictionary<IPolicy>;
+
+	readonly onboardingKeymaps?: readonly IProductOnboardingKeymap[];
+	readonly onboardingExtensions?: readonly IProductOnboardingExtension[];
+}
+
+export interface IProductOnboardingKeymap {
+	readonly id: string;
+	readonly label: string;
+	readonly extensionId?: string;
+	readonly description: string;
+}
+
+export interface IProductOnboardingExtension {
+	readonly id: string;
+	readonly name: string;
+	readonly publisher: string;
+	readonly description: string;
+	readonly icon: string;
 }
 
 export interface ITunnelApplicationConfig {
