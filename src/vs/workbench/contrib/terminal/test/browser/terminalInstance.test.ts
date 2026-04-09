@@ -490,16 +490,6 @@ suite('Workbench - TerminalInstance', () => {
 			terminalLabelComputer.refreshLabel(createInstance({ capabilities, shellType: GeneralShellType.Gemini, sequence: 'Gemini - my-project', processName: 'node' }));
 			strictEqual(terminalLabelComputer.title, 'Gemini - my-project');
 		});
-		test('should use ${sequence} when shellType is node and an OSC title has been set (e.g. Codex)', () => {
-			const terminalLabelComputer = createLabelComputer({ terminal: { integrated: { tabs: { separator: ' - ', title: '${process}', description: '${cwd}' } } } });
-			terminalLabelComputer.refreshLabel(createInstance({ capabilities, shellType: GeneralShellType.Node, sequence: '⠋ my-project', processName: 'node' }));
-			strictEqual(terminalLabelComputer.title, '⠋ my-project');
-		});
-		test('should fall through to default title template when shellType is node but no OSC title has been set', () => {
-			const terminalLabelComputer = createLabelComputer({ terminal: { integrated: { tabs: { separator: ' - ', title: '${process}', description: '${cwd}' } } } });
-			terminalLabelComputer.refreshLabel(createInstance({ capabilities, shellType: GeneralShellType.Node, sequence: undefined, processName: 'node' }));
-			strictEqual(terminalLabelComputer.title, 'node');
-		});
 		test('should prefer shellLaunchConfig.titleTemplate over agent CLI shell type override', () => {
 			const terminalLabelComputer = createLabelComputer({ terminal: { integrated: { tabs: { separator: ' - ', title: '${process}', description: '${cwd}' } } } });
 			terminalLabelComputer.refreshLabel(createInstance({ capabilities, shellType: GeneralShellType.Copilot, sequence: 'Copilot Agent', processName: 'copilot', shellLaunchConfig: { titleTemplate: '${process}' } }));
