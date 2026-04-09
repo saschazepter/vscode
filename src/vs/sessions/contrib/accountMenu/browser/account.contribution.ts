@@ -125,7 +125,7 @@ async function runSessionsUpdateAction(
 ): Promise<void> {
 	if (state.type === StateType.AvailableForDownload) {
 		const isInsiderOrExploration = productService.quality === 'insider' || productService.quality === 'exploration';
-		const hasCrossAppCoordinator = (isMacintosh || isWindows) && isInsiderOrExploration;
+		const hasCrossAppCoordinator = isWindows && isInsiderOrExploration;
 		if (!hasCrossAppCoordinator) {
 			const { confirmed } = await dialogService.confirm({
 				message: localize('sessionsUpdateFromVSCode.title', "Update from VS Code"),

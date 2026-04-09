@@ -1241,7 +1241,7 @@ export class CodeApplication extends Disposable {
 		const localUpdateService = accessor.get(IUpdateService);
 		let effectiveUpdateService: IUpdateService = localUpdateService;
 		const isInsiderOrExploration = this.productService.quality === 'insider' || this.productService.quality === 'exploration';
-		if ((isMacintosh || isWindows) && isInsiderOrExploration) {
+		if (isWindows && isInsiderOrExploration) {
 			const updateCoordinator = this._register(new CrossAppUpdateCoordinator(
 				localUpdateService as AbstractUpdateService,
 				this.logService,
