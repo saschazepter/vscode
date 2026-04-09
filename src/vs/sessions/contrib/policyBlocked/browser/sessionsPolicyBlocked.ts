@@ -85,6 +85,14 @@ export class SessionsPolicyBlockedOverlay extends Disposable {
 	}
 
 	private _openVSCode(): void {
-		this.openerService.open(URI.from({ scheme: this.productService.urlProtocol, path: '/' }), { openExternal: true });
+		const scheme = this.productService.quality === 'stable'
+			? 'vscode'
+			: this.productService.quality === 'exploration'
+				? 'vscode-exploration'
+				: this.productService.quality === 'insider'
+					? 'vscode-insiders'
+					: this.productService.urlProtocol;
+
+		this.openerService.open(URI.from({ scheme, query: 'windowId=_blank' }), { openExternal: true });
 	}
 }

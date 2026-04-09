@@ -45,6 +45,7 @@ export interface IPolicyData {
 	readonly mcp?: boolean;
 	readonly chat_preview_features_enabled?: boolean;
 	readonly chat_agent_enabled?: boolean;
+	readonly agents_app_enabled?: boolean;
 	readonly mcpRegistryUrl?: string;
 	readonly mcpAccess?: 'allow_all' | 'registry_only';
 }
