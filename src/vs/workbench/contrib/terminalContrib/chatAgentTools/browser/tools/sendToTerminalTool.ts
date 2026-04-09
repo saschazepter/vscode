@@ -98,8 +98,8 @@ export class SendToTerminalTool extends Disposable implements IToolImpl {
 		const invocationMessage = new MarkdownString();
 		const pastTenseMessage = new MarkdownString();
 		if (isEmptyInput) {
-			invocationMessage.appendMarkdown(localize('send.progressive.enter', "Pressing Enter in terminal"));
-			pastTenseMessage.appendMarkdown(localize('send.past.enter', "Pressed Enter in terminal"));
+			invocationMessage.appendMarkdown(localize('send.progressive.enter', "Pressing `Enter` in terminal"));
+			pastTenseMessage.appendMarkdown(localize('send.past.enter', "Pressed `Enter` in terminal"));
 		} else {
 			const displayCommand = buildCommandDisplayText(args.command);
 			const safeInlineCode = toMarkdownInlineCode(displayCommand);
@@ -112,7 +112,7 @@ export class SendToTerminalTool extends Disposable implements IToolImpl {
 		const confirmationMessage = new MarkdownString('', { isTrusted: { enabledCommands: [FocusTerminalByIdCommandId] } });
 		const safeTerminalLabel = toMarkdownInlineCode(terminalLabel);
 		const baseMessage = isEmptyInput
-			? localize('send.confirm.message.enter', "Press Enter in terminal {0}", safeTerminalLabel)
+			? localize('send.confirm.message.enter', "Press `Enter` in terminal {0}", safeTerminalLabel)
 			: localize('send.confirm.message', "Run {0} in terminal {1}", toMarkdownInlineCode(buildCommandDisplayText(args.command)), safeTerminalLabel);
 		if (instanceId !== undefined) {
 			const focusUri = createCommandUri(FocusTerminalByIdCommandId, instanceId);
