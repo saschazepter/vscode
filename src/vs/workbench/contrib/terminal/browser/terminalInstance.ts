@@ -126,17 +126,6 @@ const shellIntegrationSupportedShellTypes: (PosixShellType | GeneralShellType | 
 	GeneralShellType.Python,
 ];
 
-/**
- * Patterns for detecting agent CLIs from the OSC title they emit.
- */
-const agentCliTitlePatterns: ReadonlyMap<GeneralShellType, RegExp> = new Map([
-	[GeneralShellType.Claude, /claude\s*code/i],
-	// Codex's default title has no "codex" keyword; handled by the Node+sequence fallback instead.
-	// [GeneralShellType.Codex, /\bcodex\b/i],
-	[GeneralShellType.Copilot, /\bcopilot\b/i],
-	[GeneralShellType.Gemini, /\bgemini\b/i],
-]);
-
 export class TerminalInstance extends Disposable implements ITerminalInstance {
 	private static _lastKnownCanvasDimensions: ICanvasDimensions | undefined;
 	private static _lastKnownGridDimensions: IGridDimensions | undefined;
@@ -165,12 +154,6 @@ export class TerminalInstance extends Disposable implements ITerminalInstance {
 	private _exitReason: TerminalExitReason | undefined;
 	private _skipTerminalCommands: string[];
 	private _shellType: TerminalShellType | undefined;
-	/**
-	 * The agent CLI shell type detected from the OSC title sequence, if any. Used to suppress
-	 * false `Node`/`undefined` shell type reports from the pty while the agent is running, since
-	 * the pty only sees the agent's runtime (Node) as the foreground process.
-	 */
-	private _agentShellTypeFromSequence: GeneralShellType | undefined;
 	private _title: string = '';
 	private _titleSource: TitleEventSource = TitleEventSource.Process;
 	private _container: HTMLElement | undefined;
@@ -1537,21 +1520,9 @@ export class TerminalInstance extends Disposable implements ITerminalInstance {
 				case ProcessPropertyType.ResolvedShellLaunchConfig:
 					this._setResolvedShellLaunchConfig(value as IProcessPropertyMap[ProcessPropertyType.ResolvedShellLaunchConfig]);
 					break;
-				case ProcessPropertyType.ShellType: {
-					const ptyShellType = value as IProcessPropertyMap[ProcessPropertyType.ShellType];
-					if (this._agentShellTypeFromSequence) {
-						// Agent CLI detected via OSC title. The pty's process name will report
-						// `node` (or unrecognized values mapping to undefined) for as long as
-						// the agent is running, so suppress those. Any other value means the
-						// agent has exited and the parent shell is back in the foreground.
-						if (ptyShellType === GeneralShellType.Node || ptyShellType === undefined) {
-							break;
-						}
-						this._agentShellTypeFromSequence = undefined;
-					}
-					this.setShellType(ptyShellType);
+				case ProcessPropertyType.ShellType:
+					this.setShellType(value as IProcessPropertyMap[ProcessPropertyType.ShellType]);
 					break;
-				}
 				case ProcessPropertyType.HasChildProcesses:
 					this._onDidChangeHasChildProcesses.fire(value as IProcessPropertyMap[ProcessPropertyType.HasChildProcesses]);
 					break;
@@ -1884,7 +1855,6 @@ export class TerminalInstance extends Disposable implements ITerminalInstance {
 
 		// Set the new shell launch config
 		this._shellLaunchConfig = shell; // Must be done before calling _createProcess()
-		this._agentShellTypeFromSequence = undefined;
 		await this._processManager.relaunch(this._shellLaunchConfig, this._cols || Constants.DefaultCols, this._rows || Constants.DefaultRows, reset).then(result => {
 			if (result) {
 				if (hasKey(result, { message: true })) {
@@ -1909,17 +1879,6 @@ export class TerminalInstance extends Disposable implements ITerminalInstance {
 	private _onTitleChange(title: string): void {
 		if (this.isTitleSetByProcess) {
 			this._setTitle(title, TitleEventSource.Sequence);
-		}
-		// Detect agent CLIs from their OSC title. The pty cannot identify them by process name
-		// (they appear as `node`), so this is the only reliable cross-platform signal. The
-		// resulting shell type is reset when the pty reports a real shell as the foreground
-		// process again (see the ProcessPropertyType.ShellType handler).
-		for (const [shellType, pattern] of agentCliTitlePatterns) {
-			if (pattern.test(title)) {
-				this._agentShellTypeFromSequence = shellType;
-				this.setShellType(shellType);
-				break;
-			}
 		}
 	}
 
@@ -2676,6 +2635,17 @@ export class TerminalLabelComputer extends Disposable {
 	private readonly _onDidChangeLabel = this._register(new Emitter<{ title: string; description: string }>());
 	readonly onDidChangeLabel = this._onDidChangeLabel.event;
 
+	/**
+	 * Agent CLIs whose tab title should come from their own escape sequences rather
+	 * than the configured template or a static profile name.
+	 */
+	static readonly agentCliShellTypes: ReadonlySet<string> = new Set([
+		GeneralShellType.Claude,
+		GeneralShellType.Codex,
+		GeneralShellType.Copilot,
+		GeneralShellType.Gemini,
+	]);
+
 	constructor(
 		@IFileService private readonly _fileService: IFileService,
 		@ITerminalConfigurationService private readonly _terminalConfigurationService: ITerminalConfigurationService,
@@ -2686,7 +2656,7 @@ export class TerminalLabelComputer extends Disposable {
 
 	refreshLabel(instance: Pick<ITerminalInstance, 'shellLaunchConfig' | 'shellType' | 'cwd' | 'fixedCols' | 'fixedRows' | 'initialCwd' | 'processName' | 'sequence' | 'userHome' | 'workspaceFolder' | 'staticTitle' | 'capabilities' | 'title' | 'description'>, reset?: boolean): void {
 		const titleTemplate = instance.shellLaunchConfig.titleTemplate
-			?? (agentCliTitlePatterns.has(instance.shellType as GeneralShellType) ? '${sequence}' : undefined)
+			?? (TerminalLabelComputer.agentCliShellTypes.has(instance.shellType ?? '') ? '${sequence}' : undefined)
 			?? this._terminalConfigurationService.config.tabs.title;
 		this._title = this.computeLabel(instance, titleTemplate, TerminalLabelType.Title, reset);
 		this._description = this.computeLabel(instance, this._terminalConfigurationService.config.tabs.description, TerminalLabelType.Description);
