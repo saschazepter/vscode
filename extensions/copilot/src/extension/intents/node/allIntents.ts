@@ -51,5 +51,5 @@ IntentRegistry.setIntents([
 	new SyncDescriptor(AskAgentIntent),
 	new SyncDescriptor(NotebookEditorIntent),
 	new SyncDescriptor(InlineChatIntent),
-	new SyncDescriptor(ChronicleIntent)
+	new SyncDescriptor(ChronicleIntent),
 ]);

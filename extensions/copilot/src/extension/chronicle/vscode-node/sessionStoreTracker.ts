@@ -61,6 +61,9 @@ export class SessionStoreTracker extends Disposable implements IExtensionContrib
 	/** Last time each session had a timestamp-only upsert flushed (ms since epoch). */
 	private readonly _lastSessionTimestamp = new Map<string, number>();
 
+	/** Per-session turn counter to avoid collisions between buffered writes and DB state. */
+	private readonly _turnCounters = new Map<string, number>();
+
 	constructor(
 		@ISessionStore private readonly _sessionStore: ISessionStore,
 		@IOTelService private readonly _otelService: IOTelService,
@@ -91,6 +94,7 @@ export class SessionStoreTracker extends Disposable implements IExtensionContrib
 		this._register(this._chatSessionService.onDidDisposeChatSession(sessionId => {
 			this._initializedSessions.delete(sessionId);
 			this._lastSessionTimestamp.delete(sessionId);
+			this._turnCounters.delete(sessionId);
 		}));
 	}
 
@@ -241,12 +245,15 @@ export class SessionStoreTracker extends Disposable implements IExtensionContrib
 		// Extract assistant response from OUTPUT_MESSAGES attribute
 		const assistantResponse = this._extractAssistantResponse(span);
 
-		// We need the current max turn index to assign absolute indices.
-		// This is a read, not a write — it's fast and safe to do inline.
-		const currentMax = this._sessionStore.getMaxTurnIndex(sessionId);
+		// Use in-memory turn counter to avoid collisions with buffered-but-unflushed turns.
+		// Initialize from DB on first use, then increment in memory.
+		if (!this._turnCounters.has(sessionId)) {
+			this._turnCounters.set(sessionId, this._sessionStore.getMaxTurnIndex(sessionId) + 1);
+		}
 		for (let i = 0; i < userMessages.length; i++) {
 			const msg = userMessages[i];
-			const absoluteTurnIndex = currentMax + 1 + msg.turnIndex;
+			const absoluteTurnIndex = this._turnCounters.get(sessionId)!;
+			this._turnCounters.set(sessionId, absoluteTurnIndex + 1);
 			this._buffer.turns.push({
 				session_id: sessionId,
 				turn_index: absoluteTurnIndex,

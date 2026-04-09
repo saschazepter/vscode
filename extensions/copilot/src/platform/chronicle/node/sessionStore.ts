@@ -118,8 +118,8 @@ export class SessionStore implements ISessionStore {
 				host_type TEXT,
 				branch TEXT,
 				summary TEXT,
-				created_at TEXT DEFAULT (datetime('now')),
-				updated_at TEXT DEFAULT (datetime('now'))
+				created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+				updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 			);
 
 			CREATE TABLE IF NOT EXISTS turns (
@@ -128,7 +128,7 @@ export class SessionStore implements ISessionStore {
 				turn_index INTEGER NOT NULL,
 				user_message TEXT,
 				assistant_response TEXT,
-				timestamp TEXT DEFAULT (datetime('now')),
+				timestamp TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
 				UNIQUE(session_id, turn_index)
 			);
 
@@ -143,7 +143,7 @@ export class SessionStore implements ISessionStore {
 				technical_details TEXT,
 				important_files TEXT,
 				next_steps TEXT,
-				created_at TEXT DEFAULT (datetime('now')),
+				created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
 				UNIQUE(session_id, checkpoint_number)
 			);
 
@@ -153,7 +153,7 @@ export class SessionStore implements ISessionStore {
 				file_path TEXT NOT NULL,
 				tool_name TEXT,
 				turn_index INTEGER,
-				first_seen_at TEXT DEFAULT (datetime('now')),
+				first_seen_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
 				UNIQUE(session_id, file_path)
 			);
 
@@ -163,7 +163,7 @@ export class SessionStore implements ISessionStore {
 				ref_type TEXT NOT NULL,
 				ref_value TEXT NOT NULL,
 				turn_index INTEGER,
-				created_at TEXT DEFAULT (datetime('now')),
+				created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
 				UNIQUE(session_id, ref_type, ref_value)
 			);
 
@@ -440,25 +440,26 @@ export class SessionStore implements ISessionStore {
 		// Use setAuthorizer to enforce read-only when available (Node.js 24.2+)
 		const hasAuthorizer = typeof (db as DatabaseSync & { setAuthorizer?: unknown }).setAuthorizer === 'function';
 
-		if (hasAuthorizer) {
-			(db as DatabaseSync & { setAuthorizer: (cb: ((actionCode: number, p1: string | null) => number) | null) => void }).setAuthorizer((actionCode: number, p1: string | null) => {
-				if (READ_ONLY_ACTION_CODES.has(actionCode)) {
-					return SQLITE_OK;
-				}
-				// FTS5 internally uses PRAGMA data_version to detect DB changes
-				if (actionCode === SQLITE_PRAGMA && p1 === 'data_version') {
-					return SQLITE_OK;
-				}
-				return SQLITE_DENY;
-			});
+		if (!hasAuthorizer) {
+			// Fail closed: refuse to execute arbitrary SQL without engine-level enforcement
+			throw new Error('executeReadOnly requires SQLite authorizer support (Node.js 24.2+)');
 		}
+
+		(db as DatabaseSync & { setAuthorizer: (cb: ((actionCode: number, p1: string | null) => number) | null) => void }).setAuthorizer((actionCode: number, p1: string | null) => {
+			if (READ_ONLY_ACTION_CODES.has(actionCode)) {
+				return SQLITE_OK;
+			}
+			// FTS5 internally uses PRAGMA data_version to detect DB changes
+			if (actionCode === SQLITE_PRAGMA && p1 === 'data_version') {
+				return SQLITE_OK;
+			}
+			return SQLITE_DENY;
+		});
 
 		try {
 			return db.prepare(sql).all() as Record<string, unknown>[];
 		} finally {
-			if (hasAuthorizer) {
-				(db as DatabaseSync & { setAuthorizer: (cb: null) => void }).setAuthorizer(null);
-			}
+			(db as DatabaseSync & { setAuthorizer: (cb: null) => void }).setAuthorizer(null);
 		}
 	}
 

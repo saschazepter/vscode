@@ -10,6 +10,7 @@ import { CopilotChatAttr, GenAiAttr, GenAiOperationName } from '../../../platfor
 import { type ICompletedSpanData, IOTelService } from '../../../platform/otel/common/otelService';
 import { getGitHubRepoInfoFromContext, IGitService } from '../../../platform/git/common/gitService';
 import { IGithubRepositoryService } from '../../../platform/github/common/githubService';
+import { IVSCodeExtensionContext } from '../../../platform/extContext/common/extensionContext';
 import { Disposable } from '../../../util/vs/base/common/lifecycle';
 import { IExtensionContribution } from '../../common/contributions';
 import { CircuitBreaker, CircuitState } from '../common/circuitBreaker';
@@ -21,6 +22,7 @@ import {
 } from '../common/eventTranslator';
 import type { GitHubRepository, McSessionIds, SessionEvent, WorkingDirectoryContext } from '../common/missionControlTypes';
 import { filterSecretsFromObj, addSecretValues } from '../common/secretFilter';
+import { SessionIndexingPreference } from '../common/sessionIndexingPreference';
 import { MissionControlClient } from '../node/missionControlClient';
 
 // ── Configuration ───────────────────────────────────────────────────────────────
@@ -82,6 +84,9 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 	private _repository: GitHubRepository | undefined;
 	private _repositoryResolved = false;
 
+	/** User's session indexing preference (resolved once per repo). */
+	private readonly _indexingPreference: SessionIndexingPreference;
+
 	constructor(
 		@IOTelService private readonly _otelService: IOTelService,
 		@IChatSessionService private readonly _chatSessionService: IChatSessionService,
@@ -89,9 +94,11 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 		@IAuthenticationService private readonly _authService: IAuthenticationService,
 		@IGitService private readonly _gitService: IGitService,
 		@IGithubRepositoryService private readonly _githubRepoService: IGithubRepositoryService,
+		@IVSCodeExtensionContext private readonly _extensionContext: IVSCodeExtensionContext,
 	) {
 		super();
 
+		this._indexingPreference = new SessionIndexingPreference(this._extensionContext);
 		this._mcClient = new MissionControlClient(this._tokenManager, this._authService);
 		this._circuitBreaker = new CircuitBreaker({
 			failureThreshold: 5,
@@ -234,10 +241,33 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 				return;
 			}
 
+			// Check user's session indexing preference
+			const repoNwo = `${repo.owner}/${repo.repo}`;
+			let preference = this._indexingPreference.getPreference(repoNwo);
+			console.log(`[RemoteSessionExporter] Indexing preference for ${repoNwo}: ${preference ?? 'not set (will prompt)'}`);
+
+			if (!preference) {
+				// First time for this repo — prompt user
+				preference = await this._indexingPreference.promptUser(repoNwo);
+				if (!preference) {
+					// User dismissed — default to local (no upload)
+					console.log('[RemoteSessionExporter] User dismissed indexing prompt, defaulting to local');
+					this._disabledSessions.add(sessionId);
+					return;
+				}
+			}
+
+			if (preference === 'local') {
+				console.log('[RemoteSessionExporter] User preference is local-only, skipping remote export');
+				this._disabledSessions.add(sessionId);
+				return;
+			}
+
 			const result = await this._mcClient.createSession(
 				repo.repoIds.ownerId,
 				repo.repoIds.repoId,
 				sessionId,
+				preference,
 			);
 
 			if (!result.ok) {

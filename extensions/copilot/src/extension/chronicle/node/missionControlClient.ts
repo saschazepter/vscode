@@ -40,6 +40,7 @@ export class MissionControlClient {
 		ownerId: number,
 		repoId: number,
 		sessionId: string,
+		indexingLevel: 'user' | 'repo_and_user' = 'user',
 	): Promise<CreateSessionResult> {
 		try {
 			const { url, headers } = await this._buildRequest(SESSIONS_PATH);
@@ -51,7 +52,7 @@ export class MissionControlClient {
 				owner_id: ownerId,
 				repo_id: repoId,
 				agent_task_id: sessionId,
-				indexing_level: 'user',
+				indexing_level: indexingLevel,
 			};
 
 			const res = await fetch(url, {

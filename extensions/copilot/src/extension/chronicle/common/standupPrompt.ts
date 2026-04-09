@@ -65,7 +65,7 @@ export function buildStandupPrompt(
 	turns?: SessionTurnInfo[],
 ): string {
 	if (sessions.length === 0) {
-		return 'The user ran /standup but no sessions were found in the last 24 hours. Let them know there\'s no recent activity to report.';
+		return 'The user ran /standup but no sessions were found. Let them know there\'s no recent activity to report.';
 	}
 
 	const cloudSessions = sessions.filter(s => s.source === 'cloud');
@@ -135,7 +135,7 @@ export function buildStandupPrompt(
 
 	let prompt = `The user ran /standup. Generate a concise standup update from the pre-fetched data below.
 
-## Pre-fetched Session Data (last 7 days)
+## Pre-fetched Session Data (most recent sessions)
 
 ### ☁️ Cloud Sessions (${cloudSessions.length})
 ${cloudSessions.length > 0 ? cloudSessions.map(formatSession).join('\n') : 'No cloud sessions found.'}

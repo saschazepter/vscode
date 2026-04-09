@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { randomUUID } from 'crypto';
+import { generateUuid } from '../../../util/vs/base/common/uuid';
 import { CopilotChatAttr, GenAiAttr, GenAiOperationName } from '../../../platform/otel/common/genAiAttributes';
 import type { ICompletedSpanData } from '../../../platform/otel/common/otelService';
 import type { SessionEvent, WorkingDirectoryContext } from './missionControlTypes';
@@ -97,7 +97,7 @@ export function translateSpan(
 		if (!state.started) {
 			state.started = true;
 			events.push(makeEvent(state, 'session.start', {
-				sessionId: getSessionId(span) ?? randomUUID(),
+				sessionId: getSessionId(span) ?? generateUuid(),
 				version: 1,
 				producer: 'vscode-copilot-chat',
 				copilotVersion: '1.0.0',
@@ -127,7 +127,7 @@ export function translateSpan(
 		const toolRequests = extractToolRequests(span);
 		if (assistantText || toolRequests.length > 0) {
 			events.push(makeEvent(state, 'assistant.message', {
-				messageId: randomUUID(),
+				messageId: generateUuid(),
 				content: truncate(assistantText ?? '', MAX_ASSISTANT_MESSAGE_SIZE),
 				toolRequests: toolRequests.length > 0 ? toolRequests : undefined,
 			}));
@@ -146,7 +146,7 @@ export function translateSpan(
 	if (operationName === GenAiOperationName.EXECUTE_TOOL) {
 		const toolName = span.attributes[GenAiAttr.TOOL_NAME] as string | undefined;
 		if (toolName) {
-			const toolCallId = (span.attributes[GenAiAttr.TOOL_CALL_ID] as string | undefined) ?? randomUUID();
+			const toolCallId = (span.attributes[GenAiAttr.TOOL_CALL_ID] as string | undefined) ?? generateUuid();
 			const resultText = span.attributes['gen_ai.tool.result'] as string | undefined;
 			const success = span.status.code !== 2; // SpanStatusCode.ERROR = 2
 			const truncatedResult = resultText ? truncate(resultText, MAX_TOOL_RESULT_SIZE) : '';
@@ -201,7 +201,7 @@ function makeEvent(
 	data: Record<string, unknown>,
 	ephemeral?: boolean,
 ): SessionEvent {
-	const id = randomUUID();
+	const id = generateUuid();
 	const event: SessionEvent = {
 		id,
 		timestamp: new Date().toISOString(),
