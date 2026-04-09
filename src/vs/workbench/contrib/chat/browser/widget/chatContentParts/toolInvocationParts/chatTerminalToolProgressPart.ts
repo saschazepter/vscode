@@ -1476,9 +1476,9 @@ class ChatTerminalToolOutputSection extends Disposable {
 		// _outputBody.clientHeight. The DOM measurement races with xterm's async
 		// rendering — when new lines arrive, clientHeight reflects the stale
 		// (pre-render) size, causing the viewport to be too short and clipping the
-		// last line. The +1 buffer row in _getOutputContentHeight provides enough
-		// headroom for any mismatch between the calculated rowHeight and xterm's
-		// actual cell height.
+		// last line. The calculated height still has enough headroom because it
+		// includes the output padding and may round slightly differently from
+		// xterm's actual rendered cell height.
 		scrollableDomNode.style.height = clampedHeight < maxHeight ? `${clampedHeight}px` : '';
 		this._scrollableContainer.scanDomNode();
 	}
