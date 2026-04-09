@@ -9,8 +9,6 @@ import { Disposable, DisposableStore } from '../../../../../base/common/lifecycl
 import { localize } from '../../../../../nls.js';
 import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
-import { InputBox } from '../../../../../base/browser/ui/inputbox/inputBox.js';
-import { defaultInputBoxStyles } from '../../../../../platform/theme/browser/defaultStyles.js';
 import type { ICommandService } from '../../../../../platform/commands/common/commands.js';
 import { AICustomizationManagementSection } from './aiCustomizationManagement.js';
 import { agentIcon, instructionsIcon, pluginIcon, skillIcon, hookIcon } from './aiCustomizationIcons.js';
@@ -34,7 +32,7 @@ export class PromptLaunchersAICustomizationWelcomePage extends Disposable implem
 
 	readonly container: HTMLElement;
 	private cardsContainer: HTMLElement | undefined;
-	private inputBox: InputBox | undefined;
+	private inputElement: HTMLInputElement | undefined;
 
 	private readonly categoryDescriptions: IPromptLaunchersCategoryDescription[] = [
 		{
@@ -105,17 +103,14 @@ export class PromptLaunchersAICustomizationWelcomePage extends Disposable implem
 			const title = DOM.append(header, $('span'));
 			title.textContent = localize('gettingStartedTitle', "Generate Workflow");
 
+			const description = DOM.append(gettingStarted, $('p.welcome-prompts-input-helper'));
+			description.textContent = localize('gettingStartedDesc', "Describe your stack, conventions, and workflow to draft agents, skills, and instructions.");
+
 			const inputRow = DOM.append(gettingStarted, $('.welcome-prompts-input-row'));
-			this.inputBox = this._register(new InputBox(inputRow, undefined, {
-				placeholder: localize('workflowInputPlaceholder', "Describe your project and coding patterns..."),
-				ariaLabel: localize('workflowInputAriaLabel', "Describe your project to generate a workflow"),
-				inputBoxStyles: {
-					...defaultInputBoxStyles,
-					inputBorder: 'transparent',
-					inputBackground: 'transparent',
-				},
-			}));
-			this.inputBox.element.classList.add('welcome-prompts-input');
+			this.inputElement = DOM.append(inputRow, $('input.welcome-prompts-input')) as HTMLInputElement;
+			this.inputElement.type = 'text';
+			this.inputElement.placeholder = localize('workflowInputPlaceholder', "Describe your project and coding patterns...");
+			this.inputElement.setAttribute('aria-label', localize('workflowInputAriaLabel', "Describe your project to generate a workflow"));
 
 			const submitBtn = DOM.append(inputRow, $('button.welcome-prompts-input-submit'));
 			submitBtn.setAttribute('aria-label', localize('workflowSubmitAriaLabel', "Generate workflow"));
@@ -123,21 +118,18 @@ export class PromptLaunchersAICustomizationWelcomePage extends Disposable implem
 			chevron.setAttribute('aria-hidden', 'true');
 
 			const submit = () => {
-				const value = this.inputBox?.value?.trim();
+				const value = this.inputElement?.value?.trim();
 				this.callbacks.closeEditor();
 				const query = value ? `/agent-customization ${value}` : '/agent-customization ';
 				this.callbacks.prefillChat(query, { isPartialQuery: !value });
 			};
 			this._register(DOM.addDisposableListener(submitBtn, 'click', submit));
-			this._register(DOM.addDisposableListener(this.inputBox.inputElement, 'keydown', (e: KeyboardEvent) => {
+			this._register(DOM.addDisposableListener(this.inputElement, 'keydown', (e: KeyboardEvent) => {
 				if (e.key === 'Enter') {
 					e.preventDefault();
 					submit();
 				}
 			}));
-
-			const description = DOM.append(gettingStarted, $('p.welcome-prompts-input-helper'));
-			description.textContent = localize('gettingStartedDesc', "Describe your stack, conventions, and workflow to draft agents, skills, and instructions.");
 		}
 
 		this.cardsContainer = DOM.append(welcomeInner, $('.welcome-prompts-cards'));
@@ -200,6 +192,6 @@ export class PromptLaunchersAICustomizationWelcomePage extends Disposable implem
 	}
 
 	focus(): void {
-		this.inputBox?.focus();
+		this.inputElement?.focus();
 	}
 }

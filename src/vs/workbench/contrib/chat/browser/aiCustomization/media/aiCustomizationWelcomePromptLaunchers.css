@@ -65,47 +65,42 @@
 .ai-customization-management-editor .welcome-prompts-input-row {
 	display: flex;
 	align-items: center;
-	min-height: 54px;
-	/* No extra border — the outer card box is the only frame */
+	min-height: 44px;
 	border: none;
-	border-radius: 8px;
+	border-radius: 14px;
 	background: var(--vscode-input-background);
-	padding: 0 8px;
-	overflow: hidden;
+	padding: 0 6px 0 16px;
 }
 
 .ai-customization-management-editor .welcome-prompts-input {
 	flex: 1;
 	min-width: 0;
-}
-
-.ai-customization-management-editor .welcome-prompts-input .monaco-inputbox {
-	display: flex;
-	align-items: center;
-	min-height: 54px;
-	border: none !important;
-	background: transparent !important;
-	outline: none !important;
-}
-
-.ai-customization-management-editor .welcome-prompts-input .monaco-inputbox > .ibwrapper {
-	display: flex;
-	align-items: center;
-	width: 100%;
-	min-height: 54px;
-}
-
-.ai-customization-management-editor .welcome-prompts-input .monaco-inputbox > .ibwrapper > input {
-	height: 54px;
-	padding: 0 12px;
+	height: 42px;
+	padding: 0;
 	font-size: 13px;
-	outline: none !important;
-	border: none !important;
+	font-family: inherit;
+	border: none;
+	outline: none;
+	box-shadow: none;
 	background: transparent;
 	color: var(--vscode-input-foreground);
+	-webkit-appearance: none;
+	appearance: none;
 }
 
-.ai-customization-management-editor .welcome-prompts-input .monaco-inputbox > .ibwrapper > input::placeholder {
+/* Override the global .monaco-workbench input[type="text"]:focus outline */
+.monaco-workbench .ai-customization-management-editor .welcome-prompts-input,
+.monaco-workbench .ai-customization-management-editor .welcome-prompts-input:focus,
+.monaco-workbench .ai-customization-management-editor .welcome-prompts-input:active,
+.monaco-workbench .ai-customization-management-editor .welcome-prompts-input:focus-visible,
+.monaco-workbench .ai-customization-management-editor input[type="text"].welcome-prompts-input:focus {
+	outline: none !important;
+	outline-width: 0 !important;
+	border: none !important;
+	box-shadow: none !important;
+}
+
+.ai-customization-management-editor .welcome-prompts-input::placeholder {
 	color: var(--vscode-input-placeholderForeground);
 }
 
@@ -113,11 +108,11 @@
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	width: 36px;
-	height: 36px;
+	width: 32px;
+	height: 32px;
 	flex-shrink: 0;
 	border: none;
-	border-radius: 9px;
+	border-radius: 10px;
 	background: transparent;
 	color: var(--vscode-descriptionForeground);
 	cursor: pointer;
