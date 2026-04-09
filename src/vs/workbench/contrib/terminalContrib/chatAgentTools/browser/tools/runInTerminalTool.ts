@@ -142,7 +142,7 @@ function createPowerShellModelDescription(shell: string, isSandboxEnabled: boole
 		'Interactive Input Handling:',
 		'- When a terminal command is waiting for interactive input, do NOT suggest alternatives or ask the user whether to proceed. Instead, use the vscode_askQuestions tool to collect the needed values from the user, then send them.',
 		`- Send exactly one answer per prompt using ${TerminalToolId.SendToTerminal}. Never send multiple answers in a single send.`,
-		`- After each send, call ${TerminalToolId.GetTerminalOutput} to read the next prompt before sending the next answer.`,
+		...(backgroundNotifications ? [] : [`- After each send, call ${TerminalToolId.GetTerminalOutput} to read the next prompt before sending the next answer.`]),
 		'- Continue one prompt at a time until the command finishes.',
 	);
 
@@ -223,8 +223,8 @@ Best Practices:
 Interactive Input Handling:
 - When a terminal command is waiting for interactive input, do NOT suggest alternatives or ask the user whether to proceed. Instead, use the vscode_askQuestions tool to collect the needed values from the user, then send them.
 - Send exactly one answer per prompt using ${TerminalToolId.SendToTerminal}. Never send multiple answers in a single send.
-- After each send, call ${TerminalToolId.GetTerminalOutput} to read the next prompt before sending the next answer.
-- Continue one prompt at a time until the command finishes.`);
+${backgroundNotifications ? '' : `- After each send, call ${TerminalToolId.GetTerminalOutput} to read the next prompt before sending the next answer.
+`}- Continue one prompt at a time until the command finishes.`);
 
 	return parts.join('');
 }
