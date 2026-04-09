@@ -635,6 +635,15 @@ export class CopilotCloudSessionsProvider extends Disposable implements vscode.C
 			cacheHit: 'false',
 		});
 
+		// Track unexpected status codes (429 rate-limit, 5xx, etc.) as errors so they surface in dashboards
+		const knownStatusCodes = new Set([401, 403, 422]);
+		if (result.statusCode !== undefined && !knownStatusCodes.has(result.statusCode)) {
+			this.telemetry.sendTelemetryErrorEvent('copilot.codingAgent.CCAIsEnabledUnexpectedStatus', { microsoft: true, github: false }, {
+				statusCode: String(result.statusCode),
+				isRateLimited: String(result.statusCode === 429),
+			});
+		}
+
 		this.logService.trace(`copilotCloudSessionsProvider#checkCCAEnabled: fetched CCA enabled status for ${owner}/${repo}: ${result.enabled}`);
 		return result;
 	}
