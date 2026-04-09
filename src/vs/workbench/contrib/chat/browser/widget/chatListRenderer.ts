@@ -1720,7 +1720,7 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		const lastSubagent = this.getSubagentPart(templateData.renderedParts, subagentId);
 		if (lastSubagent) {
 			// Enable carousel mode before appendToolInvocation creates an inline part.
-			this.maybeRouteSubagentToolToCarousel(toolInvocation, lastSubagent, context, templateData, codeBlockStartIndex);
+			this.maybeRouteSubagentToolToCarousel(toolInvocation, lastSubagent, context, codeBlockStartIndex);
 
 			// Append to existing subagent part with matching ID
 			// But skip the parent subagent tool itself - we only want child tools
@@ -1743,7 +1743,7 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 			this._announcedToolProgressKeys,
 		);
 		// Enable carousel mode before appendToolInvocation creates an inline part.
-		this.maybeRouteSubagentToolToCarousel(toolInvocation, subagentPart, context, templateData, codeBlockStartIndex);
+		this.maybeRouteSubagentToolToCarousel(toolInvocation, subagentPart, context, codeBlockStartIndex);
 
 		// Don't append the parent subagent tool itself - its description is already shown in the title
 		// Only append child tools (those with subAgentInvocationId)
@@ -1759,7 +1759,6 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		toolInvocation: IChatToolInvocation | IChatToolInvocationSerialized,
 		subagentPart: ChatSubagentContentPart,
 		context: IChatContentPartRenderContext,
-		templateData: IChatListItemTemplate,
 		codeBlockStartIndex: number,
 	): void {
 		if (!this.configService.getValue<boolean>(ChatConfiguration.ToolConfirmationCarousel)) {

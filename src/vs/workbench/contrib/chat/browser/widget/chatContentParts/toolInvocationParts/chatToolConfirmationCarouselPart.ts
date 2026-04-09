@@ -147,7 +147,7 @@ export class ChatToolConfirmationCarouselPart extends Disposable {
 
 		this.toolCallIds.add(tool.toolCallId);
 
-		const disposables = this._register(new DisposableStore());
+		const disposables = new DisposableStore();
 
 		const item: ICarouselToolItem = {
 			tool,
@@ -210,6 +210,18 @@ export class ChatToolConfirmationCarouselPart extends Disposable {
 				this.renderActiveContent();
 			}
 		}));
+	}
+
+	override dispose(): void {
+		for (const item of this.items) {
+			if (item.toolPart && item.ownsToolPart) {
+				item.toolPart.dispose();
+			}
+			item.disposables.dispose();
+		}
+		this.items.splice(0);
+		this.toolCallIds.clear();
+		super.dispose();
 	}
 
 	private removeItem(toolCallId: string): void {

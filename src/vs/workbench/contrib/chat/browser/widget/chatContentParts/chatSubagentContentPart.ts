@@ -332,6 +332,9 @@ export class ChatSubagentContentPart extends ChatCollapsibleContentPart implemen
 		// Materialize any deferred content now that wrapper exists
 		// This handles the case where the subclass autorun ran before this base class autorun
 		this.materializePendingContent();
+		if (this.isActive && !this.isInitiallyComplete && !this.hasToolsWaitingForConfirmation) {
+			this.showWorkingSpinner();
+		}
 
 		// Use ResizeObserver to trigger layout when wrapper content changes
 		const resizeObserver = this._register(new DisposableResizeObserver(() => this.layoutScheduler.schedule()));
