@@ -163,6 +163,8 @@ const CCA_ENABLED_CACHE_TTL_MS = 30 * 60 * 1_000; // 30 minutes
 // Shorter TTL for caching /enabled responses when CCA is disabled or undetermined,
 // so users aren't stuck but we don't hammer the endpoint on every options query
 const CCA_DISABLED_CACHE_TTL_MS = 5 * 60 * 1_000; // 5 minutes
+// Status codes that are expected/handled by isCCAEnabled; anything else is unexpected
+const CCA_KNOWN_STATUS_CODES = new Set([401, 403, 422]);
 // TTL for caching session provider options (custom agents, models, partner agents, etc.)
 const OPTIONS_CACHE_TTL_MS = 15 * 60 * 1_000; // 15 minutes
 
@@ -636,8 +638,15 @@ export class CopilotCloudSessionsProvider extends Disposable implements vscode.C
 		});
 
 		// Track unexpected status codes (429 rate-limit, 5xx, etc.) as errors so they surface in dashboards
-		const knownStatusCodes = new Set([401, 403, 422]);
-		if (result.statusCode !== undefined && !knownStatusCodes.has(result.statusCode)) {
+		if (result.statusCode !== undefined && !CCA_KNOWN_STATUS_CODES.has(result.statusCode)) {
+			/* __GDPR__
+				"copilot.codingAgent.CCAIsEnabledUnexpectedStatus" : {
+					"owner": "joshspicer",
+					"comment": "Fired when the /enabled endpoint returns an unexpected HTTP status code (e.g. 429 rate-limit or 5xx).",
+					"statusCode": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "The unexpected HTTP status code returned by the /enabled endpoint." },
+					"isRateLimited": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "True if the status code is 429 (rate limited)." }
+				}
+			*/
 			this.telemetry.sendTelemetryErrorEvent('copilot.codingAgent.CCAIsEnabledUnexpectedStatus', { microsoft: true, github: false }, {
 				statusCode: String(result.statusCode),
 				isRateLimited: String(result.statusCode === 429),
