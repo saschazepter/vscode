@@ -167,8 +167,9 @@ export class InlineEditsModelService extends Disposable implements IInlineEditsM
 					modelListNames: models.map(m => m.modelName).join(','),
 					modelListSources: models.map(m => m.source).join(','),
 					fetchedNesModels: fetchedNames,
-					hasCopilotToken: copilotToken ? '1' : '0',
-					isFreeUser: copilotToken?.isFreeUser ? '1' : '0',
+				}, {
+					hasCopilotToken: copilotToken ? 1 : 0,
+					isFreeUser: copilotToken?.isFreeUser ? 1 : 0,
 				});
 				this._logger.info(`NES model changed: ${previousModelName} → ${modelName} (source: ${currentModel.source}, fetched: [${fetchedNames}])`);
 			}

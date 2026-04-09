@@ -1343,7 +1343,7 @@ export class XtabProvider implements IStatelessNextEditProvider {
 		return new OffsetRange(codeToEditStart, codeToEditEndExcl);
 	}
 
-	private determineModelConfiguration(activeDocument: StatelessNextEditDocument): { promptOptions: ModelConfig; modelServiceConfig: xtabPromptOptions.ModelConfiguration } {
+	private determineModelConfiguration(activeDocument: StatelessNextEditDocument): { promptOptions: ModelConfig; modelServiceConfig: xtabPromptOptions.ModelConfiguration; modelSource: string } {
 		if (this.forceUseDefaultModel) {
 			const defaultOptions = {
 				modelName: undefined,
@@ -1352,7 +1352,8 @@ export class XtabProvider implements IStatelessNextEditProvider {
 			const defaultModelConfig = this.modelService.defaultModelConfiguration();
 			return {
 				promptOptions: overrideModelConfig(defaultOptions, defaultModelConfig),
-				modelServiceConfig: defaultModelConfig
+				modelServiceConfig: defaultModelConfig,
+				modelSource: 'forceUseDefaultModel',
 			};
 		}
 
