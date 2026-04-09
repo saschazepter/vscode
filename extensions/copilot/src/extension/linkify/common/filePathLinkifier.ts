@@ -24,6 +24,10 @@ import { IStatCache } from './statCache';
  */
 const lineColumnSuffixRe = /^(?<filePath>.+?):(?<line>\d+)(?::(?<column>\d+))?$/;
 
+/**
+ * Parses a trailing `:line` or `:line:column` suffix from a file path text.
+ * Returns the clean file path and 1-based line/column numbers, or undefined if no valid suffix is found.
+ */
 function parseLineColumnSuffix(pathText: string): { path: string; line: number; column: number | undefined } | undefined {
 	const match = lineColumnSuffixRe.exec(pathText);
 	if (!match?.groups) {
@@ -35,6 +39,9 @@ function parseLineColumnSuffix(pathText: string): { path: string; line: number; 
 	}
 	const colStr = match.groups['column'];
 	const column = colStr ? parseInt(colStr, 10) : undefined;
+	if (column !== undefined && column < 1) {
+		return undefined;
+	}
 	return { path: match.groups['filePath'], line, column };
 }
 
