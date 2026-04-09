@@ -31,7 +31,7 @@ import { IWorkbenchLayoutService } from '../../../../workbench/services/layout/b
 import { SessionsCategories } from '../../../common/categories.js';
 import { ISessionsManagementService } from '../../../services/sessions/common/sessionsManagement.js';
 import { IsActiveSessionBackgroundProviderContext, SessionsWelcomeVisibleContext } from '../../../common/contextkeys.js';
-import { ISession, SessionStatus } from '../../../services/sessions/common/session.js';
+import { ISession } from '../../../services/sessions/common/session.js';
 import { IChatWidgetService } from '../../../../workbench/contrib/chat/browser/chat.js';
 import { Menus } from '../../../browser/menus.js';
 import { INonSessionTaskEntry, ISessionsConfigurationService, ISessionTaskWithTarget, ITaskEntry, TaskStorageTarget } from './sessionsConfigurationService.js';
@@ -278,19 +278,13 @@ export class RunScriptContribution extends Disposable implements IWorkbenchContr
 
 	private async _generateNewTask(session: ISession): Promise<void> {
 		const query = '/generate-run-commands';
-		if (session.status.get() === SessionStatus.Untitled) {
-			// New session — create the first chat
-			await this._sessionManagementService.sendAndCreateChat(session, { query });
+		// Prefer sending to the already-open chat widget for the session;
+		// fall back to sendAndCreateChat for untitled sessions or when no widget is loaded.
+		const widget = this._chatWidgetService.getWidgetBySessionResource(session.mainChat.resource);
+		if (widget) {
+			await widget.acceptInput(query);
 		} else {
-			// Existing session — send to the active chat widget directly when available,
-			// otherwise fall back to the session service so the action is not a silent no-op.
-			const chatResource = session.mainChat.resource;
-			const widget = this._chatWidgetService.getWidgetBySessionResource(chatResource);
-			if (widget) {
-				await widget.acceptInput(query);
-			} else {
-				await this._sessionManagementService.sendAndCreateChat(session, { query });
-			}
+			await this._sessionManagementService.sendAndCreateChat(session, { query });
 		}
 	}
 
