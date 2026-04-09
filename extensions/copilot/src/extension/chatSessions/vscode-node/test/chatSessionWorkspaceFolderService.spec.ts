@@ -486,6 +486,17 @@ describe('ChatSessionWorkspaceFolderService', () => {
 				expect(result).toEqual([]);
 			});
 
+			it('should cache empty result when session has no repository properties', async () => {
+				// Session with no stored repository properties
+				const result1 = await service.getWorkspaceChanges('no-repo-session');
+				const result2 = await service.getWorkspaceChanges('no-repo-session');
+
+				expect(result1).toEqual([]);
+				expect(result2).toEqual([]);
+				// Should only read metadata once — subsequent call uses the negative cache
+				expect(metadataStore.getRepositoryProperties).toHaveBeenCalledTimes(1);
+			});
+
 			it('should not re-fetch when cache is valid for a folder', async () => {
 				const repo = makeRepoContext();
 				gitService.getRepository = vi.fn().mockResolvedValue(repo);

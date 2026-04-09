@@ -29,6 +29,7 @@ export class ChatSessionWorkspaceFolderService extends Disposable implements ICh
 
 	private readonly workspaceState = new Map<string, WorkspaceFolderEntry>();
 	private readonly sessionRepoKeys = new Map<string, string>();
+	private readonly sessionsWithNoRepoProperties = new Set<string>();
 	private readonly workspaceFolderChanges = new Map<string, ChatSessionWorktreeFile[]>();
 
 	private readonly workspaceChangesSequencer = new SequencerByKey<string>();
@@ -90,6 +91,11 @@ export class ChatSessionWorkspaceFolderService extends Disposable implements ICh
 	async getWorkspaceChanges(sessionId: string): Promise<readonly ChatSessionWorktreeFile[] | undefined> {
 		return this.workspaceChangesSequencer.queue(sessionId, async () => {
 
+			// Fast path: session previously had no repository properties
+			if (this.sessionsWithNoRepoProperties.has(sessionId)) {
+				return [];
+			}
+
 			// Fast path: check if we already have the repo key and a cached result
 			const existingRepoKey = this.sessionRepoKeys.get(sessionId);
 			const cachedChanges = existingRepoKey ? this.workspaceFolderChanges.get(existingRepoKey) : undefined;
@@ -100,9 +106,7 @@ export class ChatSessionWorkspaceFolderService extends Disposable implements ICh
 			const repositoryProperties = await this.getRepositoryProperties(sessionId);
 			if (!repositoryProperties) {
 				this.logService.warn(`[ChatSessionWorkspaceFolderService][getWorkspaceChanges] No repository properties found for session ${sessionId}`);
-				if (existingRepoKey) {
-					this.workspaceFolderChanges.set(existingRepoKey, []);
-				}
+				this.sessionsWithNoRepoProperties.add(sessionId);
 				return [];
 			}
 
@@ -205,6 +209,7 @@ export class ChatSessionWorkspaceFolderService extends Disposable implements ICh
 	private invalidateSessionCache(sessionId: string): void {
 		const repoKey = this.sessionRepoKeys.get(sessionId);
 		this.sessionRepoKeys.delete(sessionId);
+		this.sessionsWithNoRepoProperties.delete(sessionId);
 		if (repoKey) {
 			this.workspaceFolderChanges.delete(repoKey);
 		}
