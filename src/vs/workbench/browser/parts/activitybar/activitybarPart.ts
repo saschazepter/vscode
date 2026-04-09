@@ -40,7 +40,6 @@ import { IWorkbenchEnvironmentService } from '../../../services/environment/comm
 import { IViewsService } from '../../../services/views/common/viewsService.js';
 import { SwitchCompositeViewAction } from '../compositeBarActions.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
-import { ChatShortcutViewContainerId } from '../../../contrib/chat/browser/chat.js';
 import { IPaneComposite } from '../../../common/panecomposite.js';
 
 export class ActivitybarPart extends Part {
@@ -299,7 +298,7 @@ export class ActivityBarCompositeBar extends PaneCompositeBar {
 	}
 
 	protected override async openPaneComposite(id?: string, focus?: boolean): Promise<IPaneComposite | undefined> {
-		if (id === ChatShortcutViewContainerId) {
+		if (id === 'workbench.panel.chatShortcut') {
 			await this.commandService.executeCommand('workbench.action.chat.toggle');
 			return undefined;
 		}
