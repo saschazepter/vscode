@@ -1059,7 +1059,7 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 	private _prependAutomaticUnsandboxRetryNote(result: IToolResult): IToolResult {
 		const note = localize(
 			'runInTerminal.unsandboxed.autoRetry.note',
-			'Note: The first sandboxed execution appeared blocked by the sandbox, so the command was automatically retried outside the sandbox.\n\n'
+			'Note: The first sandboxed execution appeared blocked by the sandbox, so after you approved it, the command was retried outside the sandbox.\n\n'
 		);
 		const firstTextPart = result.content.find(part => part.kind === 'text');
 		if (firstTextPart?.kind === 'text') {
