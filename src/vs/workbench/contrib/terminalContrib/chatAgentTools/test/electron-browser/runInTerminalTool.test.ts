@@ -392,7 +392,7 @@ suite('RunInTerminalTool', () => {
 			setConfig(TerminalChatAgentToolsSettingId.BackgroundNotifications, true);
 			createdTerminalInstance.sendText = async () => { };
 
-			const sessionResource = LocalChatSessionUri.forSession('subagent-session');
+			const sessionResource = LocalChatSessionUri.forSession('subagent-1-session');
 			const preparedInvocation = await runInTerminalTool.prepareToolInvocation({
 				parameters: {
 					command: 'echo hello',
