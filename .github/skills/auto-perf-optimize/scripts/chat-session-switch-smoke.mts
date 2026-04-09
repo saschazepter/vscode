@@ -12,9 +12,9 @@
  *
  * Intended workflow:
  * - Fast health check:
- *   node .github/skills/vscode-performance-workflow/scripts/chat-session-switch-smoke.mts --switch-iterations 3 --no-heap-snapshots
+ *   node .github/skills/auto-perf-optimize/scripts/chat-session-switch-smoke.mts --switch-iterations 3 --no-heap-snapshots
  * - Targeted snapshots:
- *   node .github/skills/vscode-performance-workflow/scripts/chat-session-switch-smoke.mts --switch-iterations 8 --heap-snapshot-label 04-switch-01 --heap-snapshot-label 04-switch-08
+ *   node .github/skills/auto-perf-optimize/scripts/chat-session-switch-smoke.mts --switch-iterations 8 --heap-snapshot-label 04-switch-01 --heap-snapshot-label 04-switch-08
  */
 
 import { chromium, type Browser, type CDPSession, type Page } from 'playwright-core';
@@ -148,7 +148,7 @@ async function main(): Promise<void> {
 	await mkdir(path.join(outputDir, 'heap'), { recursive: true });
 	const { userDataDir, ownsUserDataDir } = await prepareUserDataProfile({
 		outputDir,
-		persistentUserDataDir: path.join(root, '.build', 'vscode-performance-workflow', 'user-data'),
+		persistentUserDataDir: path.join(root, '.build', 'auto-perf-optimize', 'user-data'),
 		temporaryUserData: options.temporaryUserData,
 		keepOpen: options.keepOpen,
 		keepUserData: false,
@@ -911,7 +911,7 @@ function parseIntegerArg(flag: string, value: string, min: number): number {
 
 function printHelp(): void {
 	console.log([
-		'Usage: node .github/skills/vscode-performance-workflow/scripts/chat-session-switch-smoke.mts [options]',
+		'Usage: node .github/skills/auto-perf-optimize/scripts/chat-session-switch-smoke.mts [options]',
 		'',
 		'Creates multiple Chat sessions with different content types, then repeatedly',
 		'switches between them via the sessions list to verify no memory leaks.',
@@ -931,6 +931,6 @@ function printHelp(): void {
 		'  --verbose                       Show Code stdout/stderr',
 		'',
 		'Example:',
-		'  node .github/skills/vscode-performance-workflow/scripts/chat-session-switch-smoke.mts --switch-iterations 3 --no-heap-snapshots',
+		'  node .github/skills/auto-perf-optimize/scripts/chat-session-switch-smoke.mts --switch-iterations 3 --no-heap-snapshots',
 	].join('\n'));
 }

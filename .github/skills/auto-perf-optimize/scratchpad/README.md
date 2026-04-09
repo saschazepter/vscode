@@ -35,7 +35,7 @@ import { chromium } from 'playwright-core';
 EOF
 
 # Run it
-node .github/skills/vscode-performance-workflow/scratchpad/my-scenario.mts
+node .github/skills/auto-perf-optimize/scratchpad/my-scenario.mts
 ```
 
 ## Checked-in scripts (in `scripts/`)

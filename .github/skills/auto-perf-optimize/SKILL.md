@@ -1,5 +1,5 @@
 ---
-name: vscode-performance-workflow
+name: auto-perf-optimize
 description: "Run agent-driven VS Code performance or memory investigations. Use when asked to launch Code OSS, automate a VS Code scenario, run the Chat memory smoke runner, capture renderer heap snapshots, take workflow screenshots, compare run summaries, or drive a repeatable scenario before heap-snapshot analysis."
 ---
 
@@ -43,24 +43,24 @@ Use the bundled [Chat memory smoke runner](./scripts/chat-memory-smoke.mts) when
 Fast health check:
 
 ```bash
-node .github/skills/vscode-performance-workflow/scripts/chat-memory-smoke.mts --iterations 3 --no-heap-snapshots
+node .github/skills/auto-perf-optimize/scripts/chat-memory-smoke.mts --iterations 3 --no-heap-snapshots
 ```
 
 Targeted post-warmup snapshots:
 
 ```bash
-node .github/skills/vscode-performance-workflow/scripts/chat-memory-smoke.mts --iterations 8 --heap-snapshot-label 03-iteration-01 --heap-snapshot-label 03-iteration-08
+node .github/skills/auto-perf-optimize/scripts/chat-memory-smoke.mts --iterations 8 --heap-snapshot-label 03-iteration-01 --heap-snapshot-label 03-iteration-08
 ```
 
 User-described Chat scenario:
 
 ```bash
-node .github/skills/vscode-performance-workflow/scripts/chat-memory-smoke.mts --iterations 8 --message 'For memory investigation iteration {iteration}, summarize the active workspace in one paragraph.' --heap-snapshot-label 03-iteration-01 --heap-snapshot-label 03-iteration-08
+node .github/skills/auto-perf-optimize/scripts/chat-memory-smoke.mts --iterations 8 --message 'For memory investigation iteration {iteration}, summarize the active workspace in one paragraph.' --heap-snapshot-label 03-iteration-01 --heap-snapshot-label 03-iteration-08
 ```
 
 Important runner behavior:
 
-- The default profile is persistent at `.build/vscode-performance-workflow/user-data` so auth can be reused by all runners in this skill.
+- The default profile is persistent at `.build/auto-perf-optimize/user-data` so auth can be reused by all runners in this skill.
 - Pass `--temporary-user-data` only if a clean profile is part of the scenario.
 - Pass `--seed-user-data-dir <path>` to copy a logged-in profile into a fresh target profile before launch. The target profile may contain auth secrets; keep it inside ignored local `.build/...` folders and never attach it to issues or PRs.
 
@@ -77,7 +77,7 @@ Important runner behavior:
 Prefer the shared persistent performance profile for routine runs:
 
 ```bash
-node .github/skills/vscode-performance-workflow/scripts/chat-memory-smoke.mts --keep-open --iterations 1 --no-heap-snapshots
+node .github/skills/auto-perf-optimize/scripts/chat-memory-smoke.mts --keep-open --iterations 1 --no-heap-snapshots
 ```
 
 If Chat asks for auth, let the user sign in once, close the Code window, then rerun the fast smoke without `--keep-open`. The same profile is reused by the bundled Chat runner and by other runners that follow this skill's profile convention.
@@ -85,13 +85,13 @@ If Chat asks for auth, let the user sign in once, close the Code window, then re
 To bootstrap the shared performance profile from an older logged-in automation profile, copy it once into the default target:
 
 ```bash
-node .github/skills/vscode-performance-workflow/scripts/chat-memory-smoke.mts --seed-user-data-dir .build/chat-memory-smoke/user-data --keep-open --iterations 1 --no-heap-snapshots
+node .github/skills/auto-perf-optimize/scripts/chat-memory-smoke.mts --seed-user-data-dir .build/chat-memory-smoke/user-data --keep-open --iterations 1 --no-heap-snapshots
 ```
 
 To run a fresh disposable copy of a logged-in seed:
 
 ```bash
-node .github/skills/vscode-performance-workflow/scripts/chat-memory-smoke.mts --temporary-user-data --seed-user-data-dir .build/vscode-performance-workflow/user-data --iterations 3 --no-heap-snapshots
+node .github/skills/auto-perf-optimize/scripts/chat-memory-smoke.mts --temporary-user-data --seed-user-data-dir .build/auto-perf-optimize/user-data --iterations 3 --no-heap-snapshots
 ```
 
 Seed-copy rules:
@@ -115,7 +115,7 @@ Organize scratchpad work into **dated subfolders** named `YYYY-MM-DD-short-descr
 Suggested watch loop for the bundled Chat runner:
 
 ```bash
-node .github/skills/vscode-performance-workflow/scripts/chat-memory-smoke.mts --keep-open --iterations 1 --no-heap-snapshots --port 9224 --output .build/chat-memory-smoke/watch-chat
+node .github/skills/auto-perf-optimize/scripts/chat-memory-smoke.mts --keep-open --iterations 1 --no-heap-snapshots --port 9224 --output .build/chat-memory-smoke/watch-chat
 ```
 
 While that Code window is open, inspect it with agent-browser from the repo root:
@@ -193,20 +193,20 @@ Example scratchpad workflow:
 
 ```bash
 # Create a dated investigation folder
-mkdir -p .github/skills/vscode-performance-workflow/scratchpad/2026-04-09-editor-tab-leak
+mkdir -p .github/skills/auto-perf-optimize/scratchpad/2026-04-09-editor-tab-leak
 
 # Write a runner inside it
-cat > .github/skills/vscode-performance-workflow/scratchpad/2026-04-09-editor-tab-leak/scenario.mts << 'EOF'
+cat > .github/skills/auto-perf-optimize/scratchpad/2026-04-09-editor-tab-leak/scenario.mts << 'EOF'
 // ... your scenario using patterns from the checked-in scripts
 EOF
 
 # Validate without snapshots first
-node .github/skills/vscode-performance-workflow/scratchpad/2026-04-09-editor-tab-leak/scenario.mts \
+node .github/skills/auto-perf-optimize/scratchpad/2026-04-09-editor-tab-leak/scenario.mts \
   --iterations 3 --no-heap-snapshots --skip-prelaunch \
   --user-data-dir .build/chat-memory-smoke/user-data
 
 # Then capture targeted snapshots
-node .github/skills/vscode-performance-workflow/scratchpad/2026-04-09-editor-tab-leak/scenario.mts \
+node .github/skills/auto-perf-optimize/scratchpad/2026-04-09-editor-tab-leak/scenario.mts \
   --iterations 10 --heap-snapshot-label baseline --heap-snapshot-label final \
   --skip-prelaunch --user-data-dir .build/chat-memory-smoke/user-data
 

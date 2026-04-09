@@ -7,11 +7,11 @@
  * Chat memory smoke runner.
  *
  * Intended workflow:
- * - Run `node .github/skills/vscode-performance-workflow/scripts/chat-memory-smoke.mts --iterations 3 --no-heap-snapshots` for a fast health check.
- * - Run `node .github/skills/vscode-performance-workflow/scripts/chat-memory-smoke.mts --iterations 8 --heap-snapshot-label 03-iteration-01 --heap-snapshot-label 03-iteration-08` when comparing post-warmup heap snapshots.
+ * - Run `node .github/skills/auto-perf-optimize/scripts/chat-memory-smoke.mts --iterations 3 --no-heap-snapshots` for a fast health check.
+ * - Run `node .github/skills/auto-perf-optimize/scripts/chat-memory-smoke.mts --iterations 8 --heap-snapshot-label 03-iteration-01 --heap-snapshot-label 03-iteration-08` when comparing post-warmup heap snapshots.
  * - Inspect the output folder's summary.json, screenshots, and optional heap/*.heapsnapshot files.
  *
- * The default profile is persistent at .build/vscode-performance-workflow/user-data so auth can be reused across performance runners.
+ * The default profile is persistent at .build/auto-perf-optimize/user-data so auth can be reused across performance runners.
  * Pass --temporary-user-data when a clean, disposable profile is required; combine it with --seed-user-data-dir to start from a logged-in seed.
  */
 
@@ -135,7 +135,7 @@ async function main(): Promise<void> {
 	await mkdir(path.join(outputDir, 'heap'), { recursive: true });
 	const { userDataDir, ownsUserDataDir } = await prepareUserDataProfile({
 		outputDir,
-		persistentUserDataDir: path.join(root, '.build', 'vscode-performance-workflow', 'user-data'),
+		persistentUserDataDir: path.join(root, '.build', 'auto-perf-optimize', 'user-data'),
 		temporaryUserData: options.temporaryUserData,
 		keepOpen: options.keepOpen,
 		keepUserData: options.keepUserData,
@@ -827,7 +827,7 @@ function parseIntegerArg(flag: string, value: string, min: number): number {
 function printHelp(): void {
 	const tmp = path.join(os.tmpdir(), 'vscode-chat-memory-smoke');
 	console.log([
-		'Usage: node .github/skills/vscode-performance-workflow/scripts/chat-memory-smoke.mts [options]',
+		'Usage: node .github/skills/auto-perf-optimize/scripts/chat-memory-smoke.mts [options]',
 		'',
 		'Launches Code - OSS, opens Chat with Playwright, runs a small chat scenario, and writes renderer heap snapshots plus summary.json.',
 		'',
@@ -849,9 +849,9 @@ function printHelp(): void {
 		'  --runtime-arg <arg>             Forward one extra argument to scripts/code.sh. Repeatable',
 		'',
 		'Example:',
-		`  node .github/skills/vscode-performance-workflow/scripts/chat-memory-smoke.mts --iterations 5 --output ${tmp}`,
+		`  node .github/skills/auto-perf-optimize/scripts/chat-memory-smoke.mts --iterations 5 --output ${tmp}`,
 		'',
 		'Watch/login/retry example:',
-		'  node .github/skills/vscode-performance-workflow/scripts/chat-memory-smoke.mts --keep-open --iterations 1 --no-heap-snapshots',
+		'  node .github/skills/auto-perf-optimize/scripts/chat-memory-smoke.mts --keep-open --iterations 1 --no-heap-snapshots',
 	].join('\n'));
 }
