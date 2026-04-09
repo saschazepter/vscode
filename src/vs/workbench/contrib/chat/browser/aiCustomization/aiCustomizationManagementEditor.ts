@@ -99,7 +99,7 @@ type CustomizationEditorOpenedEvent = {
 type CustomizationEditorOpenedClassification = {
 	section: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The initially selected section when the editor opens.' };
 	owner: 'joshspicer';
-	comment: 'Tracks when the Chat Customizations editor is opened.';
+	comment: 'Tracks when the Agent Customizations editor is opened.';
 };
 
 type CustomizationEditorSectionChangedEvent = {
@@ -109,7 +109,7 @@ type CustomizationEditorSectionChangedEvent = {
 type CustomizationEditorSectionChangedClassification = {
 	section: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The section the user navigated to.' };
 	owner: 'joshspicer';
-	comment: 'Tracks section navigation within the Chat Customizations editor.';
+	comment: 'Tracks section navigation within the Agent Customizations editor.';
 };
 
 type CustomizationEditorItemSelectedEvent = {
@@ -123,7 +123,7 @@ type CustomizationEditorItemSelectedClassification = {
 	promptType: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The prompt type of the selected item.' };
 	storage: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The storage location of the selected item (local, user, extension, plugin, builtin).' };
 	owner: 'joshspicer';
-	comment: 'Tracks item selection in the Chat Customizations editor.';
+	comment: 'Tracks item selection in the Agent Customizations editor.';
 };
 
 type CustomizationEditorCreateItemEvent = {
@@ -139,7 +139,7 @@ type CustomizationEditorCreateItemClassification = {
 	creationMode: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'Whether the item was created via AI-guided flow or manual creation.' };
 	target: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The target storage for the new item (workspace, user).' };
 	owner: 'joshspicer';
-	comment: 'Tracks customization creation in the Chat Customizations editor.';
+	comment: 'Tracks customization creation in the Agent Customizations editor.';
 };
 
 type CustomizationEditorSaveItemEvent = {
@@ -153,7 +153,7 @@ type CustomizationEditorSaveItemClassification = {
 	storage: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The original storage location of the item.' };
 	saveTarget: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The target storage for the save (workspace, user, existing).' };
 	owner: 'joshspicer';
-	comment: 'Tracks save actions in the Chat Customizations editor.';
+	comment: 'Tracks save actions in the Agent Customizations editor.';
 };
 
 //#endregion
@@ -161,7 +161,7 @@ type CustomizationEditorSaveItemClassification = {
 export const aiCustomizationManagementSashBorder = registerColor(
 	'aiCustomizationManagement.sashBorder',
 	PANEL_BORDER,
-	localize('aiCustomizationManagementSashBorder', "The color of the Chat Customization Management editor splitview sash border.")
+	localize('aiCustomizationManagementSashBorder', "The color of the Agent Customizations editor splitview sash border.")
 );
 
 //#region Sidebar Section Item
@@ -545,7 +545,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 				horizontalScrolling: false,
 				accessibilityProvider: {
 					getAriaLabel: (item: ISectionItem) => item.label,
-					getWidgetAriaLabel: () => localize('sectionsAriaLabel', "Chat Customization Sections"),
+					getWidgetAriaLabel: () => localize('sectionsAriaLabel', "Agent Customization Sections"),
 				},
 				openOnSingleClick: true,
 				identityProvider: {
@@ -777,6 +777,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 			},
 			this.commandService,
 			this.workspaceService,
+			this.configurationService,
 		));
 		this.welcomePage.rebuildCards(new Set(this.sections.map(s => s.id)));
 	}
