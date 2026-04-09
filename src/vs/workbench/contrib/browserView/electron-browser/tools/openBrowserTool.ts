@@ -12,7 +12,6 @@ import { IPlaywrightService } from '../../../../../platform/browserView/common/p
 import { IEditorService } from '../../../../services/editor/common/editorService.js';
 import { ToolDataSource, type CountTokensCallback, type IPreparedToolInvocation, type IToolData, type IToolImpl, type IToolInvocation, type IToolInvocationPreparationContext, type IToolResult, type ToolProgress } from '../../../chat/common/tools/languageModelToolsService.js';
 import { IAgentNetworkFilterService } from '../../../../../platform/networkFilter/common/networkFilterService.js';
-import { AgentNetworkDomainSettingId } from '../../../../../platform/networkFilter/common/settings.js';
 import { createBrowserPageLink, getExistingPagesResult } from './browserToolHelpers.js';
 
 export const OpenPageToolId = 'open_browser_page';
@@ -59,13 +58,15 @@ export class OpenBrowserTool implements IToolImpl {
 		if (!params.url) {
 			throw new Error('The "url" parameter is required.');
 		}
+
 		const parsed = URL.parse(params.url);
 		if (!parsed) {
 			throw new Error('You must provide a complete, valid URL.');
 		}
 
-		if (!this.agentNetworkFilterService.isUriAllowed(URI.parse(params.url))) {
-			throw new Error(localize('browser.open.blockedByPolicy', 'Access to {0} is blocked by network domain policy. See `{1}` setting.', params.url, AgentNetworkDomainSettingId.AllowedNetworkDomains));
+		const uri = URI.parse(params.url);
+		if (!this.agentNetworkFilterService.isUriAllowed(uri)) {
+			throw new Error(this.agentNetworkFilterService.formatError(uri));
 		}
 
 		return {

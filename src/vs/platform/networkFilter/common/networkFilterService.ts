@@ -5,11 +5,13 @@
 
 import { Emitter, Event } from '../../../base/common/event.js';
 import { Disposable } from '../../../base/common/lifecycle.js';
+import { LRUCache } from '../../../base/common/map.js';
 import { URI } from '../../../base/common/uri.js';
+import { localize } from '../../../nls.js';
 import { IConfigurationService } from '../../configuration/common/configuration.js';
 import { createDecorator } from '../../instantiation/common/instantiation.js';
-import { AgentNetworkDomainSettingId } from './settings.js';
 import { extractDomainFromUri, isDomainAllowed } from './domainMatcher.js';
+import { AgentNetworkDomainSettingId } from './settings.js';
 
 export const IAgentNetworkFilterService = createDecorator<IAgentNetworkFilterService>('agentNetworkFilterService');
 
@@ -33,6 +35,13 @@ export interface IAgentNetworkFilterService {
 	isUriAllowed(uri: URI): boolean;
 
 	/**
+	 * Formats an error message for a blocked URI based on the current filter configuration.
+	 * @param uri The URI that was blocked.
+	 * @returns A localized error message explaining that access to the URI is blocked by policy.
+	 */
+	formatError(uri: URI): string;
+
+	/**
 	 * Fires when the filter configuration changes.
 	 */
 	readonly onDidChange: Event<void>;
@@ -43,6 +52,7 @@ export class AgentNetworkFilterService extends Disposable implements IAgentNetwo
 
 	private allowedPatterns: string[] = [];
 	private deniedPatterns: string[] = [];
+	private readonly domainCache = new LRUCache<string, boolean>(100);
 
 	private readonly onDidChangeEmitter = this._register(new Emitter<void>());
 	readonly onDidChange = this.onDidChangeEmitter.event;
@@ -67,6 +77,7 @@ export class AgentNetworkFilterService extends Disposable implements IAgentNetwo
 	private readConfiguration(): void {
 		this.allowedPatterns = this.configurationService.getValue<string[]>(AgentNetworkDomainSettingId.AllowedNetworkDomains) ?? [];
 		this.deniedPatterns = this.configurationService.getValue<string[]>(AgentNetworkDomainSettingId.DeniedNetworkDomains) ?? [];
+		this.domainCache.clear();
 	}
 
 	isUriAllowed(uri: URI): boolean {
@@ -74,10 +85,29 @@ export class AgentNetworkFilterService extends Disposable implements IAgentNetwo
 		if (uri.scheme === 'file' || !uri.authority) {
 			return true;
 		}
+
 		const domain = extractDomainFromUri(uri);
 		if (!domain) {
 			return true;
 		}
-		return isDomainAllowed(domain, this.allowedPatterns, this.deniedPatterns);
+
+		let result = this.domainCache.get(domain);
+		if (result === undefined) {
+			result = isDomainAllowed(domain, this.allowedPatterns, this.deniedPatterns);
+			this.domainCache.set(domain, result);
+		}
+
+		return result;
+	}
+
+	formatError(uri: URI): string {
+		const domain = extractDomainFromUri(uri);
+		return localize(
+			'networkFilter.blockedByPolicy',
+			'Access to {0} is blocked by network domain policy (see `{1}` and `{2}` settings).',
+			domain ?? uri.authority,
+			AgentNetworkDomainSettingId.AllowedNetworkDomains,
+			AgentNetworkDomainSettingId.DeniedNetworkDomains,
+		);
 	}
 }

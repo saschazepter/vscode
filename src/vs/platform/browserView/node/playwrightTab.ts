@@ -10,7 +10,6 @@ import { CancellationToken } from '../../../base/common/cancellation.js';
 import { createCancelablePromise, raceCancellablePromises, timeout } from '../../../base/common/async.js';
 import { URI } from '../../../base/common/uri.js';
 import { IAgentNetworkFilterService } from '../../networkFilter/common/networkFilterService.js';
-import { AgentNetworkDomainSettingId } from '../../networkFilter/common/settings.js';
 
 type IAiAriaSnapshotOptions = NonNullable<Parameters<playwright.Locator['ariaSnapshot']>[0]> & { _track?: string };
 
@@ -72,7 +71,7 @@ export class PlaywrightTab {
 					this._logs.push({
 						type: 'requestBlocked',
 						time: Date.now(),
-						description: `Request to ${requestUrl} blocked by network domain policy. See \`${AgentNetworkDomainSettingId.AllowedNetworkDomains}\` setting.`
+						description: this.agentNetworkFilterService.formatError(uri)
 					});
 					route.abort('blockedbyclient').catch(() => { });
 					return;
@@ -173,7 +172,7 @@ export class PlaywrightTab {
 			let uri: URI | undefined;
 			try { uri = URI.parse(currentUrl); } catch { }
 			if (uri && !this.agentNetworkFilterService.isUriAllowed(uri)) {
-				throw new Error(`Access to ${currentUrl} is blocked by network domain policy. See \`${AgentNetworkDomainSettingId.AllowedNetworkDomains}\` setting.`);
+				throw new Error(this.agentNetworkFilterService.formatError(uri));
 			}
 		}
 

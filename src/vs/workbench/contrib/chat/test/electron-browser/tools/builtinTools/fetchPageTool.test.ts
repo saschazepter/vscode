@@ -79,6 +79,7 @@ class MockAgentNetworkFilterService implements IAgentNetworkFilterService {
 	_serviceBrand: undefined;
 	onDidChange = Event.None;
 	isUriAllowed(_uri: URI): boolean { return true; }
+	formatError(uri: URI): string { return `Access to ${uri.authority} is blocked by network domain policy.`; }
 }
 
 suite('FetchWebPageTool', () => {

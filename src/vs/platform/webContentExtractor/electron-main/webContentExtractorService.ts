@@ -52,7 +52,7 @@ export class NativeWebContentExtractorService extends Disposable implements IWeb
 			uri,
 			options,
 			(uri) => isURLDomainTrusted(uri, options?.trustedDomains || []),
-			(uri) => this._agentNetworkFilterService.isUriAllowed(uri));
+			this._agentNetworkFilterService);
 
 		try {
 			const result = await loader.load();
