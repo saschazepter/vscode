@@ -104,6 +104,8 @@ export class OnboardingVariationA extends Disposable {
 	private backButton: HTMLButtonElement | undefined;
 	private nextButton: HTMLButtonElement | undefined;
 	private skipButton: HTMLButtonElement | undefined;
+	private footerLeft: HTMLElement | undefined;
+	private _footerSignInBtn: HTMLButtonElement | undefined;
 
 	private currentStepIndex = 0;
 	private readonly steps = ONBOARDING_STEPS;
@@ -192,7 +194,8 @@ export class OnboardingVariationA extends Disposable {
 		// Footer
 		const footer = append(this.card, $('.onboarding-a-footer'));
 
-		this.skipButton = append(footer, $<HTMLButtonElement>('button.onboarding-a-btn.onboarding-a-btn-ghost'));
+		this.footerLeft = append(footer, $('.onboarding-a-footer-left'));
+		this.skipButton = append(this.footerLeft, $<HTMLButtonElement>('button.onboarding-a-btn.onboarding-a-btn-ghost'));
 		this.skipButton.textContent = localize('onboarding.skip', "Skip");
 		this.skipButton.type = 'button';
 		this.footerFocusableElements.push(this.skipButton);
@@ -400,8 +403,29 @@ export class OnboardingVariationA extends Disposable {
 				? localize('onboarding.getStarted', "Get Started")
 				: localize('onboarding.next', "Continue");
 		}
-		if (this.skipButton) {
-			this.skipButton.style.visibility = this._isLastStep() ? 'hidden' : 'visible';
+		if (this.skipButton && this.footerLeft) {
+			if (this._isLastStep()) {
+				this.skipButton.style.display = 'none';
+				// Show sign-in nudge in footer
+				if (!this._footerSignInBtn && !this._userSignedIn) {
+					this._footerSignInBtn = append(this.footerLeft, $<HTMLButtonElement>('button.onboarding-a-signin-nudge-btn'));
+					this._footerSignInBtn.type = 'button';
+					this._footerSignInBtn.textContent = localize('onboarding.sessions.signInNudge', "Sign in for AI Powered Features");
+					this.stepDisposables.add(addDisposableListener(this._footerSignInBtn, EventType.CLICK, async () => {
+						this._logAction('signInNudge');
+						await this._handleSignIn();
+						if (this._userSignedIn && this._footerSignInBtn) {
+							this._footerSignInBtn.style.display = 'none';
+						}
+					}));
+				}
+			} else {
+				this.skipButton.style.display = '';
+				if (this._footerSignInBtn) {
+					this._footerSignInBtn.remove();
+					this._footerSignInBtn = undefined;
+				}
+			}
 		}
 	}
 
@@ -1089,7 +1113,7 @@ export class OnboardingVariationA extends Disposable {
 			localize('onboarding.sessions.cloud.desc', "Delegate tasks to a cloud agent that creates a branch, implements changes, and opens a pull request — even after you close VS Code."));
 
 		this._createFeatureCard(features, Codicon.worktree,
-			localize('onboarding.sessions.worktree', "Background Agents"),
+			localize('onboarding.sessions.worktree', "Copilot CLI"),
 			localize('onboarding.sessions.worktree.desc', "Run agents autonomously in an isolated worktree on your machine. Work on something else while the agent builds, tests, and iterates in the background."));
 
 		const inlineDesc = this._createFeatureCard(features, Codicon.sparkle,
@@ -1102,31 +1126,9 @@ export class OnboardingVariationA extends Disposable {
 			localize('onboarding.sessions.inline.desc3', " to dismiss."),
 		);
 
-		// Doc links + optional sign-in nudge on the same row
-		const docs = append(wrapper, $('.onboarding-a-sessions-docs'));
-		this._createDocLink(docs, localize('onboarding.sessions.agentTutorial', "Agents tutorial"), 'https://code.visualstudio.com/docs/copilot/agents/agents-tutorial', 'agentTutorial');
-		this._createDocLink(docs, localize('onboarding.sessions.videoTutorials', "Watch video tutorials"), 'https://aka.ms/vscode-getting-started-video', 'videoTutorials');
-
-		// Conditional sign-in nudge if user skipped sign-in on step 1
-		if (!this._userSignedIn) {
-			this._renderSignInNudge(docs);
-		}
-	}
-
-	private _renderSignInNudge(parent: HTMLElement): void {
-		const nudge = append(parent, $('.onboarding-a-signin-nudge'));
-
-		const btn = this._registerStepFocusable(append(nudge, $<HTMLButtonElement>('button.onboarding-a-signin-nudge-btn')));
-		btn.type = 'button';
-		btn.textContent = localize('onboarding.sessions.signInNudge', "Sign in for AI Powered Features");
-		this.stepDisposables.add(addDisposableListener(btn, EventType.CLICK, async () => {
-			this._logAction('signInNudge');
-			await this._handleSignIn();
-			if (this._userSignedIn) {
-				// Remove nudge after successful sign-in and re-render
-				nudge.remove();
-			}
-		}));
+		// Tutorial link at bottom of content, above footer
+		const docsRow = append(wrapper, $('.onboarding-a-sessions-docs'));
+		this._createDocLink(docsRow, localize('onboarding.sessions.videoTutorials', "Watch video tutorials"), 'https://aka.ms/vscode-getting-started-video', 'videoTutorials');
 	}
 
 	private _createFeatureCard(parent: HTMLElement, icon: ThemeIcon, title: string, description?: string): HTMLElement {
@@ -1263,6 +1265,8 @@ export class OnboardingVariationA extends Disposable {
 		this.backButton = undefined;
 		this.nextButton = undefined;
 		this.skipButton = undefined;
+		this.footerLeft = undefined;
+		this._footerSignInBtn = undefined;
 		this.footerFocusableElements.length = 0;
 		this.stepFocusableElements.length = 0;
 		this._isShowing = false;

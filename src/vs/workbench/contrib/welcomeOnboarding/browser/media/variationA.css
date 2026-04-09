@@ -143,6 +143,12 @@
 	border-top: 1px solid var(--vscode-widget-border, rgba(255, 255, 255, 0.08));
 }
 
+.onboarding-a-footer-left {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+}
+
 .onboarding-a-footer-right {
 	display: flex;
 	gap: 8px;
@@ -711,12 +717,10 @@
 
 .onboarding-a-sessions-docs {
 	display: flex;
-	flex-wrap: wrap;
 	align-items: center;
 	gap: 16px;
 	margin-top: auto;
 	padding-top: 10px;
-	border-top: 1px solid var(--vscode-widget-border, rgba(255, 255, 255, 0.08));
 }
 
 /* Tip banner */
@@ -748,7 +752,7 @@
 .onboarding-a-signin-nudge-btn {
 	padding: 4px 12px;
 	border-radius: 6px;
-	border: 1px solid var(--vscode-button-border, transparent);
+	border: 1px solid var(--vscode-widget-border, rgba(255, 255, 255, 0.1));
 	background: var(--vscode-button-secondaryBackground);
 	color: var(--vscode-button-secondaryForeground);
 	font-size: 12px;
@@ -771,9 +775,13 @@
 	font-size: 12px;
 	color: var(--vscode-textLink-foreground, #3794ff);
 	text-decoration: none;
-	display: flex;
+	display: inline-flex;
 	align-items: center;
 	gap: 4px;
+}
+
+.onboarding-a-doc-link .codicon {
+	color: var(--vscode-textLink-foreground, #3794ff);
 }
 
 .onboarding-a-doc-link:hover {
