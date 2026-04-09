@@ -157,6 +157,7 @@
 		]
 	},
 	"builtInExtensionsEnabledWithAutoUpdates": [
-		"GitHub.copilot-chat"
+		"GitHub.copilot-chat",
+		"sandy081.hello-version"
 	]
 }

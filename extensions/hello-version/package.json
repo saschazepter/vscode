@@ -1,0 +1,38 @@
+{
+	"name": "hello-version",
+	"displayName": "Hello Version",
+	"description": "A Hello World VS Code extension that displays its version.",
+	"version": "0.0.1",
+	"publisher": "sandy081",
+	"engines": {
+		"vscode": "^1.114.0"
+	},
+	"main": "./out/extension.js",
+	"contributes": {
+		"commands": [
+			{
+				"command": "helloVersion.showVersion",
+				"title": "Hello Version: Show Version"
+			}
+		]
+	},
+	"scripts": {
+		"compile": "tsc -p ./",
+		"watch": "tsc -watch -p ./"
+	},
+	"devDependencies": {
+		"@types/node": "^20.14.12",
+		"@types/vscode": "^1.90.0",
+		"typescript": "^5.5.4"
+	},
+	"__metadata": {
+		"id": "2a0ef18b-937c-4ed6-9376-4caaa8c0e77e",
+		"publisherId": {
+			"publisherId": "35c78e7b-356d-41c4-bcc1-3d57372775d5",
+			"publisherName": "sandy081",
+			"displayName": "Sandeep Somavarapu",
+			"flags": "verified"
+		},
+		"publisherDisplayName": "Sandeep Somavarapu"
+	}
+}
