@@ -193,21 +193,6 @@
             "included": true
         },
         {
-            "key": "chat.agentsApp.enabled",
-            "name": "AgentsAppEnabled",
-            "category": "InteractiveSession",
-            "minimumVersion": "1.116",
-            "localization": {
-                "description": {
-                    "key": "chat.agentsApp.enabled.description",
-                    "value": "When enabled, the Agents app can be launched and used."
-                }
-            },
-            "type": "boolean",
-            "default": true,
-            "included": true
-        },
-        {
             "key": "chat.editMode.hidden",
             "name": "DeprecatedEditModeHidden",
             "category": "InteractiveSession",

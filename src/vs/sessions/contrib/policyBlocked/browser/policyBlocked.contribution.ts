@@ -27,14 +27,14 @@ export class SessionsPolicyBlockedContribution extends Disposable implements IWo
 		this.update();
 
 		this._register(this.configurationService.onDidChangeConfiguration(e => {
-			if (e.affectsConfiguration(ChatConfiguration.AgentsAppEnabled)) {
+			if (e.affectsConfiguration(ChatConfiguration.AgentEnabled)) {
 				this.update();
 			}
 		}));
 	}
 
 	private update(): void {
-		const enabled = this.configurationService.getValue<boolean>(ChatConfiguration.AgentsAppEnabled);
+		const enabled = this.configurationService.getValue<boolean>(ChatConfiguration.AgentEnabled);
 
 		if (enabled === false) {
 			if (!this.overlayRef.value) {

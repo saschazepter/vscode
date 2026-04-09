@@ -64,11 +64,11 @@ export class SessionsPolicyBlockedOverlay extends Disposable {
 		icon.classList.add(...ThemeIcon.asClassNameArray(Codicon.agent));
 
 		// Title
-		append(card, $('h2', undefined, localize('policyBlocked.title', "Agents Disabled")));
+		append(card, $('h2', undefined, localize('policyBlocked.title', "Agents Disabled by Policy")));
 
 		// Description
 		const description = append(card, $('p'));
-		append(description, document.createTextNode(localize('policyBlocked.description', "Agents has been disabled by your organization's policy.")));
+		append(description, document.createTextNode(localize('policyBlocked.description', "Your organization has disabled Agents via policy.")));
 		append(description, document.createTextNode(' '));
 		const learnMore = append(description, $('a.sessions-policy-blocked-link')) as HTMLAnchorElement;
 		learnMore.textContent = localize('policyBlocked.learnMore', "Learn more");

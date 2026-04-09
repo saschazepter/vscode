@@ -782,24 +782,6 @@ configurationRegistry.registerConfiguration({
 				}
 			}
 		},
-		[ChatConfiguration.AgentsAppEnabled]: {
-			type: 'boolean',
-			description: nls.localize('chat.agentsApp.enabled.description', "When enabled, the Agents app can be launched and used."),
-			default: true,
-			scope: ConfigurationScope.APPLICATION,
-			policy: {
-				name: 'AgentsAppEnabled',
-				category: PolicyCategory.InteractiveSession,
-				minimumVersion: '1.116',
-				value: (policyData) => policyData.agents_app_enabled === false ? false : undefined,
-				localization: {
-					description: {
-						key: 'chat.agentsApp.enabled.description',
-						value: nls.localize('chat.agentsApp.enabled.description', "When enabled, the Agents app can be launched and used."),
-					}
-				}
-			}
-		},
 		[ChatConfiguration.DefaultNewSessionMode]: {
 			type: 'string',
 			description: nls.localize('chat.newSession.defaultMode', "The default mode for new chat sessions. When empty, the chat view's default mode is used."),
