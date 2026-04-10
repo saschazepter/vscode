@@ -18,7 +18,7 @@ import type { ICreateTerminalParams } from '../common/state/protocol/commands.js
 import { AhpErrorCodes, AHP_SESSION_NOT_FOUND, ContentEncoding, JSON_RPC_INTERNAL_ERROR, ProtocolError, type IDirectoryEntry, type IResourceCopyParams, type IResourceCopyResult, type IResourceDeleteParams, type IResourceDeleteResult, type IResourceListResult, type IResourceMoveParams, type IResourceMoveResult, type IResourceReadResult, type IResourceWriteParams, type IResourceWriteResult, type IStateSnapshot } from '../common/state/sessionProtocol.js';
 import { ResponsePartKind, SessionStatus, ToolCallConfirmationReason, ToolCallStatus, TurnState, type IResponsePart, type ISessionFileDiff, type ISessionSummary, type IToolCallCompletedState, type ITurn } from '../common/state/sessionState.js';
 import { AgentSideEffects } from './agentSideEffects.js';
-import { AgentHostTerminalManager } from './agentHostTerminalManager.js';
+import { AgentHostTerminalManager, type IAgentHostTerminalManager } from './agentHostTerminalManager.js';
 import { ISessionDbUriFields, parseSessionDbUri } from './copilot/fileEditTracker.js';
 import { AgentHostStateManager } from './agentHostStateManager.js';
 
@@ -58,6 +58,9 @@ export class AgentService extends Disposable implements IAgentService {
 	private readonly _sideEffects: AgentSideEffects;
 	/** Manages PTY-backed terminals for the agent host protocol. */
 	private readonly _terminalManager: AgentHostTerminalManager;
+
+	/** Exposes the terminal manager for use by agent providers. */
+	get terminalManager(): IAgentHostTerminalManager { return this._terminalManager; }
 
 	constructor(
 		private readonly _logService: ILogService,
@@ -154,8 +157,17 @@ export class AgentService extends Disposable implements IAgentService {
 			return s;
 		}));
 
-		this._logService.trace(`[AgentService] listSessions returned ${result.length} sessions`);
-		return result;
+		// Overlay live session status from the state manager
+		const withStatus = result.map(s => {
+			const liveState = this._stateManager.getSessionState(s.session.toString());
+			if (liveState) {
+				return { ...s, status: liveState.summary.status };
+			}
+			return s;
+		});
+
+		this._logService.trace(`[AgentService] listSessions returned ${withStatus.length} sessions`);
+		return withStatus;
 	}
 
 	async createSession(config?: IAgentCreateSessionConfig): Promise<URI> {
