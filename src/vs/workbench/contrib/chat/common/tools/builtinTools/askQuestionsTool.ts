@@ -337,7 +337,7 @@ export class AskQuestionsTool extends Disposable implements IToolImpl {
 					if (state.type === IChatToolInvocation.StateKind.Completed && state.contentForModel) {
 						for (const item of state.contentForModel) {
 							if (item.kind === 'text') {
-								const idMatch = item.value.match(/terminal ID (\S+)/);
+								const idMatch = item.value.match(/terminal ID ([0-9a-fA-F-]+)/);
 								if (idMatch) {
 									return idMatch[1];
 								}

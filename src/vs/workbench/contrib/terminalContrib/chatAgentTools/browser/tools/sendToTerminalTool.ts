@@ -126,9 +126,13 @@ export class SendToTerminalTool extends Disposable implements IToolImpl {
 		}
 
 		if (questionText) {
-			const suffix = ` (${localize('send.replyingTo', "replying to: {0}", questionText)})`;
-			invocationMessage.appendMarkdown(suffix);
-			pastTenseMessage.appendMarkdown(suffix);
+			const replyPrefix = ` (${localize('send.replyingTo', "replying to: ")}`;
+			invocationMessage.appendMarkdown(replyPrefix);
+			invocationMessage.appendText(questionText);
+			invocationMessage.appendMarkdown(')');
+			pastTenseMessage.appendMarkdown(replyPrefix);
+			pastTenseMessage.appendText(questionText);
+			pastTenseMessage.appendMarkdown(')');
 		}
 
 		// Build the confirmation message with a "Focus Terminal" command link
@@ -262,7 +266,7 @@ export class SendToTerminalTool extends Disposable implements IToolImpl {
 					}
 
 					// Multiple questions: match the command text against submitted answers
-					if (commandText && carousel.data) {
+					if (carousel.data) {
 						for (const question of carousel.questions) {
 							const answer = carousel.data[question.id];
 							if (this._answerMatchesCommand(answer, commandText)) {
