@@ -634,11 +634,19 @@ export class KeybindingsEditor extends EditorPane<IKeybindingsEditorMemento> imp
 	}
 
 	private getAriaLabel(keybindingsEntries: IKeybindingItemEntry[]): string {
+		let label: string;
 		if (this.sortByPrecedenceAction.checked) {
-			return localize('show sorted keybindings', "Showing {0} Keybindings in precedence order", keybindingsEntries.length);
+			label = localize('show sorted keybindings', "Showing {0} Keybindings in precedence order", keybindingsEntries.length);
 		} else {
-			return localize('show keybindings', "Showing {0} Keybindings in alphabetical order", keybindingsEntries.length);
+			label = localize('show keybindings', "Showing {0} Keybindings in alphabetical order", keybindingsEntries.length);
 		}
+		if (this.configurationService.getValue(AccessibilityVerbositySettingId.KeybindingsEditor)) {
+			const kb = this.keybindingsService.lookupKeybinding('widgetNavigation.focusNext')?.getAriaLabel();
+			if (kb) {
+				label += '. ' + localize('navigateToResults', "Use {0} to navigate to the results table.", kb);
+			}
+		}
+		return label;
 	}
 
 	private layoutKeybindingsTable(): void {
