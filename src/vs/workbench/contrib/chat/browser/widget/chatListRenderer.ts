@@ -2295,7 +2295,8 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 			part.addDisposable(autorun(reader => {
 				const currentState = toolInvocation.state.read(reader);
 				if (currentState.type === IChatToolInvocation.StateKind.WaitingForConfirmation && currentState.confirmationMessages?.title) {
-					widget.inputPart.addToolToConfirmationCarousel(toolInvocation, factory, undefined, undefined, undefined, part);
+					dom.hide(part.domNode);
+					widget.inputPart.addToolToConfirmationCarousel(toolInvocation, factory);
 				} else if (IChatToolInvocation.isEffectivelyHidden(toolInvocation, reader)) {
 					dom.hide(part.domNode);
 				} else {

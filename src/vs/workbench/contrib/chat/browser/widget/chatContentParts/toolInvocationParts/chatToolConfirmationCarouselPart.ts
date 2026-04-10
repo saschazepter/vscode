@@ -36,6 +36,7 @@ interface ICarouselToolItem {
 	readonly subAgentInvocationId?: string;
 	readonly agentName?: string;
 	readonly scrollToSubagent?: ScrollToSubagentCallback;
+	readonly toolPartFactory: ToolInvocationPartFactory;
 	ownsToolPart: boolean;
 	toolPart?: ChatToolInvocationPart;
 }
@@ -169,7 +170,7 @@ export class ChatToolConfirmationCarouselPart extends Disposable {
 		return this.toolCallIds.has(toolCallId);
 	}
 
-	addToolInvocation(tool: IChatToolInvocation, subAgentInvocationId?: string, agentName?: string, scrollToSubagent?: ScrollToSubagentCallback, toolPart?: ChatToolInvocationPart): void {
+	addToolInvocation(tool: IChatToolInvocation, subAgentInvocationId?: string, agentName?: string, scrollToSubagent?: ScrollToSubagentCallback, toolPart?: ChatToolInvocationPart, toolPartFactory = this.toolPartFactory): void {
 		if (this.toolCallIds.has(tool.toolCallId)) {
 			const existing = this.items.find(item => item.toolCallId === tool.toolCallId);
 			if (existing && toolPart) {
@@ -189,6 +190,7 @@ export class ChatToolConfirmationCarouselPart extends Disposable {
 			subAgentInvocationId,
 			agentName,
 			scrollToSubagent,
+			toolPartFactory,
 			ownsToolPart: !toolPart,
 			toolPart,
 		};
@@ -271,12 +273,15 @@ export class ChatToolConfirmationCarouselPart extends Disposable {
 		removed.disposables.dispose();
 
 		if (this.items.length === 0) {
+			this.activeIndex = 0;
 			dom.hide(this.domNode);
 			this._onDidEmpty.fire();
 			return;
 		}
 
-		if (this.activeIndex >= this.items.length) {
+		if (index < this.activeIndex) {
+			this.activeIndex--;
+		} else if (this.activeIndex >= this.items.length) {
 			this.activeIndex = this.items.length - 1;
 		}
 
@@ -435,7 +440,7 @@ export class ChatToolConfirmationCarouselPart extends Disposable {
 		}
 
 		if (!item.toolPart) {
-			item.toolPart = this.toolPartFactory(item.tool);
+			item.toolPart = item.toolPartFactory(item.tool);
 			if (item.ownsToolPart) {
 				item.disposables.add(item.toolPart);
 			}
