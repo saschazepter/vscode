@@ -59,14 +59,17 @@ function buildConfigurationSchema(endpoint: IChatEndpoint): { configurationSchem
 		return {};
 	}
 
-	// Only enable effort picker for Claude and GPT models
 	const family = endpoint.family.toLowerCase();
-	if (!family.startsWith('claude') && !family.startsWith('gpt-')) {
+	if (family.startsWith('gemini')) {
 		return {};
 	}
 
-	const preferred = family.startsWith('claude') ? 'high' : 'medium';
-	const defaultEffort = effortLevels.includes(preferred) ? preferred : undefined;
+	let defaultEffort: string | undefined;
+	if (family.startsWith('claude')) {
+		defaultEffort = effortLevels.includes('high') ? 'high' : undefined;
+	} else if (family.startsWith('gpt-')) {
+		defaultEffort = effortLevels.includes('medium') ? 'medium' : undefined;
+	}
 
 	return {
 		configurationSchema: {
@@ -263,13 +266,7 @@ export class LanguageModelAccess extends Disposable implements IExtensionContrib
 			if (endpoint.degradationReason) {
 				modelTooltip = endpoint.degradationReason;
 			} else if (endpoint instanceof AutoChatEndpoint) {
-				if (this._authenticationService.copilotToken?.isNoAuthUser || (endpoint.discountRange.low === 0 && endpoint.discountRange.high === 0)) {
-					modelTooltip = vscode.l10n.t('Auto selects the best model for your request based on capacity and performance.');
-				} else if (endpoint.discountRange.low === endpoint.discountRange.high) {
-					modelTooltip = vscode.l10n.t('Auto selects the best model for your request based on capacity and performance. Auto is given a {0}% discount.', endpoint.discountRange.low * 100);
-				} else {
-					modelTooltip = vscode.l10n.t('Auto selects the best model for your request based on capacity and performance. Auto is given a {0}% to {1}% discount.', endpoint.discountRange.low * 100, endpoint.discountRange.high * 100);
-				}
+				modelTooltip = vscode.l10n.t('Auto selects the best model for your request based on capacity and performance.');
 			} else {
 				modelTooltip = getModelCapabilitiesDescription(endpoint);
 			}
@@ -626,7 +623,9 @@ export class CopilotLanguageModelWrapper extends Disposable {
 			requestOptions: options,
 			userInitiatedRequest: !!extensionId,
 			telemetryProperties,
-			reasoningEffort: typeof _options.modelConfiguration?.reasoningEffort === 'string' ? _options.modelConfiguration.reasoningEffort : undefined,
+			modelCapabilities: {
+				reasoningEffort: typeof _options.modelConfiguration?.reasoningEffort === 'string' ? _options.modelConfiguration.reasoningEffort : undefined,
+			},
 		}, token);
 
 		// Run request within the parent OTel context (no extra span) so chat spans in chatMLFetcher inherit the agent trace

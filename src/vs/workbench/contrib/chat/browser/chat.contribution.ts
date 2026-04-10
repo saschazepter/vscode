@@ -132,6 +132,7 @@ import './chatManagement/chatManagement.contribution.js';
 import './aiCustomization/aiCustomizationWorkspaceService.js';
 import './aiCustomization/customizationHarnessService.js';
 import './aiCustomization/aiCustomizationManagement.contribution.js';
+import { AI_CUSTOMIZATION_WELCOME_PAGE_VARIANT_SETTING } from './aiCustomization/aiCustomizationManagement.js';
 
 import { ChatOutputRendererService, IChatOutputRendererService } from './chatOutputItemRenderer.js';
 import { ChatCompatibilityNotifier, ChatExtensionPointHandler } from './chatParticipant.contribution.js';
@@ -201,6 +202,18 @@ configurationRegistry.registerConfiguration({
 			description: nls.localize('chat.experimentalSessionsWindowOverride', "When true, enables sessions-window-specific behavior for extensions."),
 			default: false,
 			tags: ['experimental'],
+		},
+		[AI_CUSTOMIZATION_WELCOME_PAGE_VARIANT_SETTING]: {
+			type: 'string',
+			enum: ['classic', 'promptLaunchers'],
+			enumDescriptions: [
+				nls.localize('chat.customizations.welcomePageVariant.classic', "Uses the original welcome page layout from the baseline implementation."),
+				nls.localize('chat.customizations.welcomePageVariant.promptLaunchers', "Uses the experimental welcome page with grouped command prompt launchers."),
+			],
+			description: nls.localize('chat.customizations.welcomePageVariant', "Controls which welcome page implementation is shown in Agent Customizations."),
+			default: 'promptLaunchers',
+			tags: ['experimental'],
+			scope: ConfigurationScope.APPLICATION,
 		},
 		'chat.fontSize': {
 			type: 'number',
@@ -504,13 +517,6 @@ configurationRegistry.registerConfiguration({
 			type: 'boolean',
 			tags: ['experimental']
 		},
-		[ChatConfiguration.ArtifactsMode]: {
-			default: 'rules',
-			description: nls.localize('chat.artifacts.mode', "Controls how artifacts are populated. 'rules' extracts artifacts deterministically from the conversation. 'tool' lets the model set artifacts via a tool call."),
-			type: 'string',
-			enum: ['rules', 'tool'],
-			tags: ['experimental']
-		},
 		[ChatConfiguration.ArtifactsRulesByMimeType]: {
 			default: {
 				'image/*': { groupName: 'Screenshots', onlyShowGroup: true }
@@ -538,6 +544,22 @@ configurationRegistry.registerConfiguration({
 				properties: {
 					groupName: { type: 'string', description: nls.localize('chat.artifacts.rules.byFilePath.groupName', "Display name for the artifact group.") },
 					onlyShowGroup: { type: 'boolean', description: nls.localize('chat.artifacts.rules.byFilePath.onlyShowGroup', "When true, show only the group header instead of individual items.") }
+				},
+				required: ['groupName']
+			},
+			tags: ['experimental']
+		},
+		[ChatConfiguration.ArtifactsRulesByMemoryFilePath]: {
+			default: {
+				'**/*plan*.md': { groupName: 'Plans' }
+			},
+			description: nls.localize('chat.artifacts.rules.byMemoryFilePath', "Rules for extracting artifacts from memory tool calls by memory file path pattern. Maps glob patterns to group configuration."),
+			type: 'object',
+			additionalProperties: {
+				type: 'object',
+				properties: {
+					groupName: { type: 'string', description: nls.localize('chat.artifacts.rules.byMemoryFilePath.groupName', "Display name for the artifact group.") },
+					onlyShowGroup: { type: 'boolean', description: nls.localize('chat.artifacts.rules.byMemoryFilePath.onlyShowGroup', "When true, show only the group header instead of individual items.") }
 				},
 				required: ['groupName']
 			},
@@ -1397,14 +1419,8 @@ configurationRegistry.registerConfiguration({
 		[ChatConfiguration.ChatCustomizationHarnessSelectorEnabled]: {
 			type: 'boolean',
 			tags: ['preview'],
-			description: nls.localize('chat.customizations.harnessSelector.enabled', "Controls whether the harness selector (Local, Copilot CLI, Claude) is shown in the Chat Customizations editor sidebar. When disabled, the editor always shows all customizations without filtering."),
+			description: nls.localize('chat.customizations.harnessSelector.enabled', "Controls whether the harness selector is shown in the Chat Customizations editor sidebar. When disabled, the editor always shows all customizations without filtering."),
 			default: true,
-		},
-		[ChatConfiguration.CustomizationsProviderApi]: {
-			type: 'boolean',
-			description: nls.localize('chat.customizations.providerApi.enabled', "When enabled, the Customizations management UI reads items from the session type's customizations provider instead of built-in discovery."),
-			default: true,
-			tags: ['preview'],
 		},
 	}
 });

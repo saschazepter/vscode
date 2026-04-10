@@ -24,7 +24,7 @@ import { IWorkspaceSymbol } from '../../../search/common/search.js';
 import { IChatRequestVariableEntry } from '../attachments/chatVariableEntries.js';
 import { IChatRequestVariableValue } from '../attachments/chatVariables.js';
 import { ReadonlyChatSessionOptionsMap } from '../chatSessionsService.js';
-import { ChatAgentLocation } from '../constants.js';
+import { ChatAgentLocation, ChatModeKind } from '../constants.js';
 import { IChatEditingSession } from '../editing/chatEditingService.js';
 import { IChatModel, IChatRequestModeInfo, IChatRequestModel, IChatRequestVariableData, IChatResponseModel, IExportableChatData, ISerializableChatData } from '../model/chatModel.js';
 import type { IChatModelReferenceDebugSnapshot } from '../model/chatModelStore.js';
@@ -613,6 +613,12 @@ export type ConfirmedReason =
 export interface IChatToolInvocation {
 	readonly presentation: IPreparedToolInvocation['presentation'];
 	readonly toolSpecificData?: IChatTerminalToolInvocationData | ILegacyChatTerminalToolInvocationData | IChatToolInputInvocationData | IChatExtensionsContent | IChatPullRequestContent | IChatTodoListContent | IChatSubagentToolInvocationData | IChatSimpleToolInvocationData | IChatToolResourcesInvocationData | IChatModifiedFilesConfirmationData;
+	/**
+	 * Observable that tracks the `kind` of `toolSpecificData`. Used by the
+	 * tool invocation part to re-render when the kind changes (e.g. from
+	 * `'input'` to `'terminal'` when terminal content arrives).
+	 */
+	readonly toolSpecificDataKind: IObservable<string | undefined>;
 	readonly originMessage: string | IMarkdownString | undefined;
 	readonly invocationMessage: string | IMarkdownString;
 	readonly pastTenseMessage: string | IMarkdownString | undefined;
@@ -1420,7 +1426,16 @@ export interface IChatSendRequestOptions {
 	 */
 	systemInitiatedLabel?: string;
 
-
+	/**
+	 * When set, the chat service will collect automatic instructions
+	 * (for example `.instructions.md` files and skills) asynchronously after showing
+	 * the request in the UI, rather than blocking the UI on collection.
+	 */
+	instructionContext?: {
+		modeKind: ChatModeKind;
+		enabledTools?: UserSelectedTools;
+		enabledSubAgents?: readonly string[];
+	};
 }
 
 export type IChatModelReference = IReference<IChatModel>;

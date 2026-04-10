@@ -112,6 +112,10 @@ export class SessionsAICustomizationWorkspaceService implements IAICustomization
 
 	readonly isSessionsWindow = true;
 
+	readonly welcomePageFeatures = {
+		showGettingStartedBanner: true,
+	};
+
 	/**
 	 * Commits customization files. Always commits to the main repository
 	 * so the change persists across worktrees. When a worktree is active
