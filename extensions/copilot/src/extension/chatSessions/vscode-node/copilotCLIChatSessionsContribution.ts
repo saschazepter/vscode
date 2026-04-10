@@ -238,7 +238,7 @@ export class CopilotCLIChatSessionItemProvider extends Disposable implements vsc
 
 	public async toChatSessionItem(session: ICopilotCLISessionItem): Promise<vscode.ChatSessionItem> {
 		const resource = this.sdkToUntitledUriMapping.get(session.id) ?? SessionIdForCLI.getResource(this.untitledSessionIdMapping.get(session.id) ?? session.id);
-		const worktreeProperties = await this.worktreeManager.getWorktreeProperties(session.id);
+		let worktreeProperties = await this.worktreeManager.getWorktreeProperties(session.id);
 		const workingDirectory = worktreeProperties?.worktreePath ? vscode.Uri.file(worktreeProperties.worktreePath)
 			: session.workingDirectory;
 
@@ -291,6 +291,11 @@ export class CopilotCLIChatSessionItemProvider extends Disposable implements vsc
 		// Metadata
 		let metadata: { readonly [key: string]: unknown };
 
+		// We need to get an updated version of worktree properties here because when the
+		// changes are being computed, the worktree properties are also updated with the
+		// repository state which we are passing along through the metadata
+		worktreeProperties = await this.worktreeManager.getWorktreeProperties(session.id);
+
 		if (worktreeProperties) {
 			// Worktree
 			metadata = {
@@ -320,6 +325,15 @@ export class CopilotCLIChatSessionItemProvider extends Disposable implements vsc
 					: undefined,
 				lastCheckpointRef: worktreeProperties.version === 2
 					? worktreeProperties.lastCheckpointRef
+					: undefined,
+				hasIncomingChanges: worktreeProperties.version === 2
+					? worktreeProperties.hasIncomingChanges
+					: undefined,
+				hasOutgoingChanges: worktreeProperties.version === 2
+					? worktreeProperties.hasOutgoingChanges
+					: undefined,
+				hasUncommittedChanges: worktreeProperties.version === 2
+					? worktreeProperties.hasUncommittedChanges
 					: undefined
 			} satisfies { readonly [key: string]: unknown };
 		} else {

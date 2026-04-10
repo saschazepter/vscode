@@ -45,6 +45,10 @@ export interface ChatSessionWorktreePropertiesV2 extends ChatSessionWorktreeBase
 	readonly firstCheckpointRef?: string;
 	readonly baseCheckpointRef?: string;
 	readonly lastCheckpointRef?: string;
+	readonly hasGitHubRemote?: boolean;
+	readonly hasIncomingChanges?: boolean;
+	readonly hasOutgoingChanges?: boolean;
+	readonly hasUncommittedChanges?: boolean;
 }
 
 export type ChatSessionWorktreeProperties = ChatSessionWorktreePropertiesV1 | ChatSessionWorktreePropertiesV2;
