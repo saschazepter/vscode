@@ -360,6 +360,9 @@ export class CopilotCLIChatSessionItemProvider extends Disposable implements vsc
 				branchName: repositoryProperties?.branchName,
 				baseBranchName: repositoryProperties?.baseBranchName,
 				workingDirectoryPath: workingDirectory?.fsPath,
+				hasIncomingChanges: repositoryProperties?.hasIncomingChanges,
+				hasOutgoingChanges: repositoryProperties?.hasOutgoingChanges,
+				hasUncommittedChanges: repositoryProperties?.hasUncommittedChanges,
 				firstCheckpointRef,
 				lastCheckpointRef
 			} satisfies { readonly [key: string]: unknown };

@@ -114,7 +114,12 @@ export class ChatSessionWorktreeService extends Disposable implements IChatSessi
 					baseCommit = refs.length === 1 && refs[0].commit ? refs[0].commit : undefined;
 				}
 
-				const gitHubRemote = getGitHubRepoInfoFromContext(activeRepository) !== undefined;
+				const gitHubRemote = getGitHubRepoInfoFromContext(activeRepository);
+				const hasIncomingChanges = (activeRepository.headIncomingChanges ?? 0) > 0;
+				const hasOutgoingChanges = (activeRepository.headOutgoingChanges ?? 0) > 0;
+				const hasUncommittedChanges = (activeRepository.changes?.indexChanges.length ?? 0) > 0 ||
+					(activeRepository.changes?.workingTree.length ?? 0) > 0 ||
+					(activeRepository.changes?.untrackedChanges.length ?? 0) > 0;
 
 				return {
 					autoCommit,
@@ -123,6 +128,9 @@ export class ChatSessionWorktreeService extends Disposable implements IChatSessi
 					baseBranchName,
 					baseBranchProtected,
 					hasGitHubRemote: gitHubRemote !== undefined,
+					hasIncomingChanges,
+					hasOutgoingChanges,
+					hasUncommittedChanges,
 					repositoryPath: activeRepository.rootUri.fsPath,
 					worktreePath,
 					version: 2
