@@ -28,6 +28,7 @@ export const dirs = [
 	'extensions/github-authentication',
 	'extensions/grunt',
 	'extensions/gulp',
+	'extensions/hello-version',
 	'extensions/html-language-features',
 	'extensions/html-language-features/server',
 	'extensions/ipynb',
