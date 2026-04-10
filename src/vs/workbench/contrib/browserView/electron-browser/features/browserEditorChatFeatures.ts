@@ -23,8 +23,6 @@ import { IStorageService, StorageScope, StorageTarget } from '../../../../../pla
 import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry.js';
 import { IWorkspaceTrustManagementService } from '../../../../../platform/workspace/common/workspaceTrust.js';
 import { URI } from '../../../../../base/common/uri.js';
-import { IAgentNetworkFilterService } from '../../../../../platform/networkFilter/common/networkFilterService.js';
-import { INotificationService, Severity } from '../../../../../platform/notification/common/notification.js';
 import { IChatWidgetService } from '../../../chat/browser/chat.js';
 import { IChatRequestVariableEntry } from '../../../chat/common/attachments/chatVariableEntries.js';
 import { ChatContextKeys } from '../../../chat/common/actions/chatContextKeys.js';
@@ -83,8 +81,6 @@ export class BrowserEditorChatIntegration extends BrowserEditorContribution {
 		@IDialogService private readonly dialogService: IDialogService,
 		@IStorageService private readonly storageService: IStorageService,
 		@IWorkspaceTrustManagementService private readonly workspaceTrustManagementService: IWorkspaceTrustManagementService,
-		@IAgentNetworkFilterService private readonly agentNetworkFilterService: IAgentNetworkFilterService,
-		@INotificationService private readonly notificationService: INotificationService,
 	) {
 		super(editor);
 		this._elementSelectionActiveContext = CONTEXT_BROWSER_ELEMENT_SELECTION_ACTIVE.bindTo(contextKeyService);
@@ -152,21 +148,6 @@ export class BrowserEditorChatIntegration extends BrowserEditorContribution {
 		if (!model) {
 			return;
 		}
-
-		// Prevent sharing when the current page URL is blocked by network policy.
-		if (!model.sharedWithAgent && model.url) {
-			try {
-				const uri = URI.parse(model.url);
-				if (!this.agentNetworkFilterService.isUriAllowed(uri)) {
-					this.notificationService.notify({
-						severity: Severity.Warning,
-						message: this.agentNetworkFilterService.formatError(uri),
-					});
-					return;
-				}
-			} catch { }
-		}
-
 		model.setSharedWithAgent(!model.sharedWithAgent);
 	}
 

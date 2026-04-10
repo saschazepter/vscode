@@ -153,6 +153,23 @@ export class PlaywrightTab {
 	}
 
 	/**
+	 * Returns a blocked-by-policy error message if the current page URL is
+	 * denied by the network filter, or `undefined` if the URL is allowed.
+	 */
+	private _getBlockedURLErrorMessage(): string | undefined {
+		const url = this.page.url();
+		if (!url || url === 'about:blank') {
+			return undefined;
+		}
+		let uri: URI | undefined;
+		try { uri = URI.parse(url); } catch { }
+		if (uri && !this.agentNetworkFilterService.isUriAllowed(uri)) {
+			return this.agentNetworkFilterService.formatError(uri);
+		}
+		return undefined;
+	}
+
+	/**
 	 * Run a callback against the page and wait for it to complete.
 	 *
 	 * Because dialogs pause the page, execution races against any dialog that opens -- if a dialog
@@ -167,13 +184,9 @@ export class PlaywrightTab {
 		}
 
 		// Block agent actions when the current page URL is on the deny list.
-		const currentUrl = this.page.url();
-		if (currentUrl && currentUrl !== 'about:blank') {
-			let uri: URI | undefined;
-			try { uri = URI.parse(currentUrl); } catch { }
-			if (uri && !this.agentNetworkFilterService.isUriAllowed(uri)) {
-				throw new Error(this.agentNetworkFilterService.formatError(uri));
-			}
+		const blockedError = this._getBlockedURLErrorMessage();
+		if (blockedError) {
+			throw new Error(blockedError);
 		}
 
 		let actionDidComplete = false;
@@ -211,14 +224,9 @@ export class PlaywrightTab {
 		// When the current page URL is blocked by network policy, return only a
 		// policy error — do not expose title, URL, console logs, or snapshot to
 		// avoid prompt-injection via blocked content.
-		const currentUrl = this.page.url();
-		if (currentUrl && currentUrl !== 'about:blank') {
-			let uri: URI | undefined;
-			try { uri = URI.parse(currentUrl); } catch { }
-			if (uri && !this.agentNetworkFilterService.isUriAllowed(uri)) {
-				this._logs = [];
-				return this.agentNetworkFilterService.formatError(uri);
-			}
+		const blockedError = this._getBlockedURLErrorMessage();
+		if (blockedError) {
+			return blockedError;
 		}
 
 		if (full && this._needsFullSnapshot) {
