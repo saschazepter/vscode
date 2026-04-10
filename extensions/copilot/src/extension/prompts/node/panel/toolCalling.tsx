@@ -824,7 +824,7 @@ class PrimitiveToolResult<T extends IPrimitiveToolResultProps> extends PromptEle
 	}
 
 	protected sharedBudgetPlaceholder(): string {
-		return 'Image omitted — context image budget exceeded. Try viewing fewer images at once.';
+		return '[Image omitted — context image budget exceeded. Try viewing fewer images at once.]';
 	}
 }
 
