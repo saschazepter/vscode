@@ -359,11 +359,11 @@ export class ExternalIngestIndex extends Disposable {
 						"externalIngestIndex.updateIndex.success" : {
 							"owner": "mjbvz",
 							"comment": "Logged when external ingest index update completes successfully",
-"workspaceSearchSource": { "classification": "SystemMetaData", "purpose": "FeatureInsight",  "comment": "Caller of the operation" },
-					"workspaceSearchCorrelationId": { "classification": "SystemMetaData", "purpose": "FeatureInsight",  "comment": "Correlation id for the operation" },
-					"durationMs": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "isMeasurement": true, "comment": "Time taken to complete the update in milliseconds" },
-					"totalFileCount": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "isMeasurement": true, "comment": "Total number of files in the index" },
-					"updatedFileCount": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "isMeasurement": true, "comment": "Number of files that were updated" }
+							"workspaceSearchSource": { "classification": "SystemMetaData", "purpose": "FeatureInsight",  "comment": "Caller of the operation" },
+							"workspaceSearchCorrelationId": { "classification": "SystemMetaData", "purpose": "FeatureInsight",  "comment": "Correlation id for the operation" },
+							"durationMs": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "isMeasurement": true, "comment": "Time taken to complete the update in milliseconds" },
+							"totalFileCount": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "isMeasurement": true, "comment": "Total number of files in the index" },
+							"updatedFileCount": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "isMeasurement": true, "comment": "Number of files that were updated" }
 					}
 				*/
 					this._telemetryService.sendMSFTTelemetryEvent('externalIngestIndex.updateIndex.success', {
@@ -378,9 +378,9 @@ export class ExternalIngestIndex extends Disposable {
 							"owner": "mjbvz",
 							"comment": "Logged when external ingest index update fails",
 							"error": { "classification": "CallstackOrException", "purpose": "PerformanceAndHealth", "comment": "The error message" },
-					"workspaceSearchSource": { "classification": "SystemMetaData", "purpose": "FeatureInsight",  "comment": "Caller of the operation" },
-					"workspaceSearchCorrelationId": { "classification": "SystemMetaData", "purpose": "FeatureInsight",  "comment": "Correlation id for the operation" },
-					"durationMs": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "isMeasurement": true, "comment": "Time taken before failure in milliseconds" }
+							"workspaceSearchSource": { "classification": "SystemMetaData", "purpose": "FeatureInsight",  "comment": "Caller of the operation" },
+							"workspaceSearchCorrelationId": { "classification": "SystemMetaData", "purpose": "FeatureInsight",  "comment": "Correlation id for the operation" },
+							"durationMs": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "isMeasurement": true, "comment": "Time taken before failure in milliseconds" }
 					}
 				*/
 					this._telemetryService.sendMSFTTelemetryErrorEvent('externalIngestIndex.updateIndex.error', {
@@ -403,9 +403,9 @@ export class ExternalIngestIndex extends Disposable {
 						"owner": "mjbvz",
 						"comment": "Logged when external ingest index update throws an exception",
 						"error": { "classification": "CallstackOrException", "purpose": "PerformanceAndHealth", "comment": "The exception message" },
-					"workspaceSearchSource": { "classification": "SystemMetaData", "purpose": "FeatureInsight",  "comment": "Caller of the operation" },
-					"workspaceSearchCorrelationId": { "classification": "SystemMetaData", "purpose": "FeatureInsight",  "comment": "Correlation id for the operation" },
-					"durationMs": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "isMeasurement": true, "comment": "Time taken before exception in milliseconds" }
+						"workspaceSearchSource": { "classification": "SystemMetaData", "purpose": "FeatureInsight",  "comment": "Caller of the operation" },
+						"workspaceSearchCorrelationId": { "classification": "SystemMetaData", "purpose": "FeatureInsight",  "comment": "Correlation id for the operation" },
+						"durationMs": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "isMeasurement": true, "comment": "Time taken before exception in milliseconds" }
 					}
 				*/
 				this._telemetryService.sendMSFTTelemetryErrorEvent('externalIngestIndex.updateIndex.exception', {
