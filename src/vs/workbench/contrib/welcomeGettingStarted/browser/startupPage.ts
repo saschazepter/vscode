@@ -98,7 +98,7 @@ export class StartupPageRunnerContribution extends Disposable implements IWorkbe
 		super();
 
 		// Show onboarding overlay immediately (before waiting for lifecycle restore)
-		if (this.configurationService.getValue<boolean>('workbench.welcomePage.experimentalOnboarding')) {
+		if (!this.environmentService.skipWelcome && this.configurationService.getValue<boolean>('workbench.welcomePage.experimentalOnboarding')) {
 			this.tryShowOnboarding();
 		}
 
