@@ -10,7 +10,7 @@ import { Codicon } from '../../../../../../../base/common/codicons.js';
 import { Emitter } from '../../../../../../../base/common/event.js';
 import { IMarkdownString } from '../../../../../../../base/common/htmlContent.js';
 import { KeyCode } from '../../../../../../../base/common/keyCodes.js';
-import { Disposable, DisposableStore, toDisposable } from '../../../../../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore, MutableDisposable, toDisposable } from '../../../../../../../base/common/lifecycle.js';
 import { autorun } from '../../../../../../../base/common/observable.js';
 import { generateUuid } from '../../../../../../../base/common/uuid.js';
 import { localize } from '../../../../../../../nls.js';
@@ -232,7 +232,8 @@ export class ChatToolConfirmationCarouselPart extends Disposable {
 		let isItemAlive = true;
 		item.disposables.add(toDisposable(() => isItemAlive = false));
 
-		toolPart.addDisposable(toDisposable(() => {
+		const externalPartDisposeWatcher = new MutableDisposable();
+		externalPartDisposeWatcher.value = toDisposable(() => {
 			if (!isItemAlive || item.toolPart !== toolPart) {
 				return;
 			}
@@ -242,7 +243,9 @@ export class ChatToolConfirmationCarouselPart extends Disposable {
 			if (this.items[this.activeIndex] === item) {
 				this.renderActiveContent();
 			}
-		}));
+		});
+		toolPart.addDisposable(externalPartDisposeWatcher);
+		item.disposables.add(toDisposable(() => externalPartDisposeWatcher.clear()));
 	}
 
 	override dispose(): void {
