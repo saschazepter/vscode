@@ -115,11 +115,12 @@ export class ChatSessionWorktreeService extends Disposable implements IChatSessi
 				}
 
 				const gitHubRemote = getGitHubRepoInfoFromContext(activeRepository);
-				const hasIncomingChanges = (activeRepository.headIncomingChanges ?? 0) > 0;
-				const hasOutgoingChanges = (activeRepository.headOutgoingChanges ?? 0) > 0;
-				const hasUncommittedChanges = (activeRepository.changes?.indexChanges.length ?? 0) > 0 ||
-					(activeRepository.changes?.workingTree.length ?? 0) > 0 ||
-					(activeRepository.changes?.untrackedChanges.length ?? 0) > 0;
+				const incomingChanges = activeRepository.headIncomingChanges ?? 0;
+				const outgoingChanges = activeRepository.headOutgoingChanges ?? 0;
+				const uncommittedChanges = (activeRepository.changes?.mergeChanges.length ?? 0) +
+					(activeRepository.changes?.indexChanges.length ?? 0) +
+					(activeRepository.changes?.workingTree.length ?? 0) +
+					(activeRepository.changes?.untrackedChanges.length ?? 0);
 
 				return {
 					autoCommit,
@@ -128,9 +129,9 @@ export class ChatSessionWorktreeService extends Disposable implements IChatSessi
 					baseBranchName,
 					baseBranchProtected,
 					hasGitHubRemote: gitHubRemote !== undefined,
-					hasIncomingChanges,
-					hasOutgoingChanges,
-					hasUncommittedChanges,
+					incomingChanges,
+					outgoingChanges,
+					uncommittedChanges,
 					repositoryPath: activeRepository.rootUri.fsPath,
 					worktreePath,
 					version: 2
@@ -716,9 +717,9 @@ export class ChatSessionWorktreeService extends Disposable implements IChatSessi
 
 	private async _getWorktreeChanges(sessionId: string, worktreeProperties: ChatSessionWorktreeProperties): Promise<{
 		readonly changes: readonly ChatSessionWorktreeFile[];
-		readonly hasIncomingChanges?: boolean;
-		readonly hasOutgoingChanges?: boolean;
-		readonly hasUncommittedChanges?: boolean;
+		readonly incomingChanges?: number;
+		readonly outgoingChanges?: number;
+		readonly uncommittedChanges?: number;
 	} | undefined> {
 		if (worktreeProperties.version !== 2) {
 			this.logService.warn(`[ChatSessionWorktreeService][_getWorktreeChanges] Worktree properties for session ${sessionId} is not version 2.`);
@@ -798,11 +799,13 @@ export class ChatSessionWorktreeService extends Disposable implements IChatSessi
 		} satisfies ChatSessionWorktreeFile));
 
 		const repositoryState = {
-			hasIncomingChanges: (worktreeRepository.headIncomingChanges ?? 0) > 0,
-			hasOutgoingChanges: (worktreeRepository.headOutgoingChanges ?? 0) > 0,
-			hasUncommittedChanges: (worktreeRepository.changes?.indexChanges.length ?? 0) > 0 ||
-				(worktreeRepository.changes?.workingTree.length ?? 0) > 0 ||
-				(worktreeRepository.changes?.untrackedChanges.length ?? 0) > 0
+			incomingChanges: worktreeRepository.headIncomingChanges ?? 0,
+			outgoingChanges: worktreeRepository.headOutgoingChanges ?? 0,
+			uncommittedChanges:
+				(worktreeRepository.changes?.mergeChanges.length ?? 0) +
+				(worktreeRepository.changes?.indexChanges.length ?? 0) +
+				(worktreeRepository.changes?.workingTree.length ?? 0) +
+				(worktreeRepository.changes?.untrackedChanges.length ?? 0)
 		};
 
 		return { changes, ...repositoryState };

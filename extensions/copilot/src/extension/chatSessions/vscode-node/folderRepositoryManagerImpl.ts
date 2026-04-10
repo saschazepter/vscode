@@ -175,11 +175,12 @@ export abstract class FolderRepositoryManager extends Disposable implements IFol
 				const gitHubRemote = repoContext
 					? getGitHubRepoInfoFromContext(repoContext)
 					: undefined;
-				const hasIncomingChanges = (repoContext?.headIncomingChanges ?? 0) > 0;
-				const hasOutgoingChanges = (repoContext?.headOutgoingChanges ?? 0) > 0;
-				const hasUncommittedChanges = (repoContext?.changes?.indexChanges.length ?? 0) > 0 ||
-					(repoContext?.changes?.workingTree.length ?? 0) > 0 ||
-					(repoContext?.changes?.untrackedChanges.length ?? 0) > 0;
+				const incomingChanges = repoContext?.headIncomingChanges ?? 0;
+				const outgoingChanges = repoContext?.headOutgoingChanges ?? 0;
+				const uncommittedChanges = (repoContext?.changes?.mergeChanges.length ?? 0) +
+					(repoContext?.changes?.indexChanges.length ?? 0) +
+					(repoContext?.changes?.workingTree.length ?? 0) +
+					(repoContext?.changes?.untrackedChanges.length ?? 0);
 
 				repositoryUri = repoContext?.rootUri;
 				repositoryProperties = repoContext
@@ -190,9 +191,9 @@ export abstract class FolderRepositoryManager extends Disposable implements IFol
 							? `${branchBase.remote}/${branchBase.name}`
 							: undefined,
 						hasGitHubRemote: gitHubRemote !== undefined,
-						hasIncomingChanges,
-						hasOutgoingChanges,
-						hasUncommittedChanges
+						incomingChanges,
+						outgoingChanges,
+						uncommittedChanges
 					} satisfies RepositoryProperties
 					: undefined;
 			}

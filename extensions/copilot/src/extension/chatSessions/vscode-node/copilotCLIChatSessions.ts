@@ -445,14 +445,17 @@ export class CopilotCLIChatSessionContentProvider extends Disposable implements 
 				lastCheckpointRef: worktreeProperties.version === 2
 					? worktreeProperties.lastCheckpointRef
 					: undefined,
-				hasIncomingChanges: worktreeProperties.version === 2
-					? worktreeProperties.hasIncomingChanges
+				hasGitHubRemote: worktreeProperties.version === 2
+					? worktreeProperties.hasGitHubRemote
 					: undefined,
-				hasOutgoingChanges: worktreeProperties.version === 2
-					? worktreeProperties.hasOutgoingChanges
+				incomingChanges: worktreeProperties.version === 2
+					? worktreeProperties.incomingChanges
 					: undefined,
-				hasUncommittedChanges: worktreeProperties.version === 2
-					? worktreeProperties.hasUncommittedChanges
+				outgoingChanges: worktreeProperties.version === 2
+					? worktreeProperties.outgoingChanges
+					: undefined,
+				uncommittedChanges: worktreeProperties.version === 2
+					? worktreeProperties.uncommittedChanges
 					: undefined
 			} satisfies { readonly [key: string]: unknown };
 		}
@@ -482,9 +485,9 @@ export class CopilotCLIChatSessionContentProvider extends Disposable implements 
 			baseBranchName: repositoryProperties?.baseBranchName,
 			workingDirectoryPath: workingDirectory?.fsPath,
 			hasGitHubRemote: repositoryProperties?.hasGitHubRemote,
-			hasIncomingChanges: repositoryProperties?.hasIncomingChanges,
-			hasOutgoingChanges: repositoryProperties?.hasOutgoingChanges,
-			hasUncommittedChanges: repositoryProperties?.hasUncommittedChanges,
+			incomingChanges: repositoryProperties?.incomingChanges,
+			outgoingChanges: repositoryProperties?.outgoingChanges,
+			uncommittedChanges: repositoryProperties?.uncommittedChanges,
 			firstCheckpointRef,
 			lastCheckpointRef
 		} satisfies { readonly [key: string]: unknown };

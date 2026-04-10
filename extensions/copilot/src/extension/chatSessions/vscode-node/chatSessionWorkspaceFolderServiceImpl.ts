@@ -139,15 +139,15 @@ export class ChatSessionWorkspaceFolderService extends Disposable implements ICh
 				this.workspaceFolderChanges.set(repoKey, properties.changes);
 
 				if (
-					properties.hasIncomingChanges !== undefined &&
-					properties.hasOutgoingChanges !== undefined &&
-					properties.hasUncommittedChanges !== undefined
+					properties.incomingChanges !== undefined &&
+					properties.outgoingChanges !== undefined &&
+					properties.uncommittedChanges !== undefined
 				) {
 					await this.metadataStore.storeRepositoryProperties(sessionId, {
 						...repositoryProperties,
-						hasIncomingChanges: properties.hasIncomingChanges,
-						hasOutgoingChanges: properties.hasOutgoingChanges,
-						hasUncommittedChanges: properties.hasUncommittedChanges
+						incomingChanges: properties.incomingChanges,
+						outgoingChanges: properties.outgoingChanges,
+						uncommittedChanges: properties.uncommittedChanges
 					});
 				}
 
@@ -158,9 +158,9 @@ export class ChatSessionWorkspaceFolderService extends Disposable implements ICh
 
 	private async computeWorkspaceChanges(repositoryProperties: RepositoryProperties, sessionId: string): Promise<{
 		readonly changes: ChatSessionWorktreeFile[];
-		readonly hasIncomingChanges?: boolean;
-		readonly hasOutgoingChanges?: boolean;
-		readonly hasUncommittedChanges?: boolean;
+		readonly incomingChanges?: number;
+		readonly outgoingChanges?: number;
+		readonly uncommittedChanges?: number;
 	}> {
 		const repository = await this.gitService.getRepository(vscode.Uri.file(repositoryProperties.repositoryPath));
 		if (repository) {
@@ -246,11 +246,13 @@ export class ChatSessionWorkspaceFolderService extends Disposable implements ICh
 		} satisfies ChatSessionWorktreeFile));
 
 		const repositoryState = {
-			hasIncomingChanges: (repository.headIncomingChanges ?? 0) > 0,
-			hasOutgoingChanges: (repository.headOutgoingChanges ?? 0) > 0,
-			hasUncommittedChanges: (repository.changes?.indexChanges.length ?? 0) > 0 ||
-				(repository.changes?.workingTree.length ?? 0) > 0 ||
-				(repository.changes?.untrackedChanges.length ?? 0) > 0
+			incomingChanges: repository.headIncomingChanges ?? 0,
+			outgoingChanges: repository.headOutgoingChanges ?? 0,
+			uncommittedChanges:
+				(repository.changes?.mergeChanges.length ?? 0) +
+				(repository.changes?.indexChanges.length ?? 0) +
+				(repository.changes?.workingTree.length ?? 0) +
+				(repository.changes?.untrackedChanges.length ?? 0)
 		};
 
 		return { changes, ...repositoryState };
