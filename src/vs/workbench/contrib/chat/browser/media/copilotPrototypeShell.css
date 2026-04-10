@@ -280,7 +280,6 @@
 .copilot-prototype-ft-container {
 	display: flex;
 	flex-direction: column;
-	min-height: 380px;
 }
 
 .copilot-prototype-ft-actions {
@@ -497,6 +496,11 @@
 	background-color: rgba(255, 200, 0, 0.04);
 }
 
+.copilot-prototype-dashboard-card.highlight.info {
+	border-color: var(--vscode-focusBorder);
+	background-color: rgba(0, 120, 212, 0.04);
+}
+
 .copilot-prototype-dashboard-card.highlight.error {
 	border-color: var(--vscode-editorError-foreground);
 	background-color: rgba(255, 0, 0, 0.04);
@@ -562,6 +566,10 @@
 	color: var(--vscode-gauge-warningForeground);
 }
 
+.copilot-prototype-dashboard-card-percent-value.info {
+	color: var(--vscode-focusBorder);
+}
+
 .copilot-prototype-dashboard-card-percent-value.error {
 	color: var(--vscode-gauge-errorForeground);
 }
@@ -586,6 +594,14 @@
 
 .copilot-prototype-dashboard-card-bar.warning .copilot-prototype-dashboard-card-bar-fill {
 	background-color: var(--vscode-gauge-warningForeground);
+}
+
+.copilot-prototype-dashboard-card-bar.info {
+	background-color: rgba(0, 120, 212, 0.15);
+}
+
+.copilot-prototype-dashboard-card-bar.info .copilot-prototype-dashboard-card-bar-fill {
+	background-color: var(--vscode-focusBorder);
 }
 
 .copilot-prototype-dashboard-card-bar.error {
@@ -1106,9 +1122,7 @@
 	font-size: 11px;
 	color: var(--vscode-foreground);
 	flex: 1;
-	white-space: nowrap;
-	overflow: hidden;
-	text-overflow: ellipsis;
+	line-height: 1.4;
 }
 
 .copilot-prototype-chat-banner-dismiss {
