@@ -258,35 +258,6 @@ In corporate networks: [Troubleshooting firewall settings for GitHub Copilot](ht
 			} catch (err: any) {
 				result.certificateCount = `Error: ${err?.message}`;
 			}
-			if (typeof (tls as any).getSystemCACertificatesErrors === 'function') {
-				try {
-					const errors = (tls as any).getSystemCACertificatesErrors();
-					if (errors && typeof errors === 'object') {
-						const counts = new Map<string, { error: string; count: number; code: number | string }>();
-						for (const [category, entries] of Object.entries(errors)) {
-							if (Array.isArray(entries)) {
-								for (const entry of entries as { errorMessage?: string; errorCode?: number }[]) {
-									const code = entry.errorCode ?? 'missing code';
-									const error = `${category}: ${entry.errorMessage ?? 'missing message'}`;
-									const key = `${error} (${code})`;
-									const existing = counts.get(key);
-									if (existing) {
-										existing.count++;
-									} else {
-										counts.set(key, { error, code, count: 1 });
-									}
-								}
-							}
-						}
-						result.errorSummary = [...counts.values()].sort((a, b) => b.count - a.count);
-					}
-					result.errors = errors;
-				} catch (err: any) {
-					result.errors = `Error: ${err?.message}`;
-				}
-			} else {
-				result.errors = 'tls.getSystemCACertificatesErrors is not available';
-			}
 			const document = await vscode.workspace.openTextDocument({ language: 'json', content: JSON.stringify(result, null, 2) });
 			await vscode.window.showTextDocument(document);
 		}));
