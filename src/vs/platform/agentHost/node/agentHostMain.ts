@@ -13,6 +13,7 @@ import { URI } from '../../../base/common/uri.js';
 import * as os from 'os';
 import { AgentHostIpcChannels } from '../common/agentService.js';
 import { AgentService } from './agentService.js';
+import { IAgentHostTerminalManager } from './agentHostTerminalManager.js';
 import { CopilotAgent } from './copilot/copilotAgent.js';
 import { ProtocolServerHandler } from './protocolServerHandler.js';
 import { WebSocketProtocolServer } from './webSocketTransport.js';
@@ -34,6 +35,8 @@ import { InstantiationService } from '../../instantiation/common/instantiationSe
 import { ServiceCollection } from '../../instantiation/common/serviceCollection.js';
 import { SessionDataService } from './sessionDataService.js';
 import { ISessionDataService } from '../common/sessionDataService.js';
+import { IDiffComputeService } from '../common/diffComputeService.js';
+import { NodeWorkerDiffComputeService } from './diffComputeService.js';
 import { AgentHostClientFileSystemProvider } from '../common/agentHostClientFileSystemProvider.js';
 import { AGENT_CLIENT_SCHEME } from '../common/agentClientUri.js';
 import { IAgentPluginManager } from '../common/agentPluginManager.js';
@@ -83,6 +86,11 @@ function startAgentHost(): void {
 		diServices.set(IFileService, fileService);
 		diServices.set(ISessionDataService, sessionDataService);
 		diServices.set(IAgentPluginManager, pluginManager);
+
+		const diffComputeService = disposables.add(new NodeWorkerDiffComputeService(logService));
+		diServices.set(IDiffComputeService, diffComputeService);
+
+		diServices.set(IAgentHostTerminalManager, agentService.terminalManager);
 		const instantiationService = new InstantiationService(diServices);
 		agentService.registerProvider(instantiationService.createInstance(CopilotAgent));
 	} catch (err) {

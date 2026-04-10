@@ -45,6 +45,8 @@ import { ICustomizationHarnessService } from '../../../common/customizationHarne
 import { IAgentPluginService } from '../../../common/plugins/agentPluginService.js';
 import { IStorageService, InMemoryStorageService } from '../../../../../../platform/storage/common/storage.js';
 import { IAgentSubscription } from '../../../../../../platform/agentHost/common/state/agentSubscription.js';
+import { ITerminalChatService } from '../../../../terminal/browser/terminal.js';
+import { IAgentHostTerminalService } from '../../../../terminal/browser/agentHostTerminalService.js';
 
 // ---- Mock agent host service ------------------------------------------------
 
@@ -187,6 +189,20 @@ class MockAgentHostService extends mock<IAgentHostService>() {
 			},
 		};
 	}
+	override getSubscriptionUnmanaged<T>(_kind: StateComponents, resource: URI): IAgentSubscription<T> | undefined {
+		const entry = this._liveSubscriptions.get(resource.toString());
+		if (!entry) {
+			return undefined;
+		}
+		const self = this;
+		return {
+			get value() { return self._liveSubscriptions.get(resource.toString())?.state as unknown as T; },
+			get verifiedValue() { return self._liveSubscriptions.get(resource.toString())?.state as unknown as T; },
+			onDidChange: entry.emitter.event as unknown as Event<T>,
+			onWillApplyAction: Event.None,
+			onDidApplyAction: Event.None,
+		} satisfies IAgentSubscription<T>;
+	}
 	override dispatch(action: ISessionAction | ITerminalAction): void {
 		this.dispatchedActions.push({ action, clientId: this.clientId, clientSeq: this._nextSeq++ });
 		// Apply state-management actions optimistically so state-dependent
@@ -290,6 +306,13 @@ function createTestServices(disposables: DisposableStore) {
 	instantiationService.stub(IAgentPluginService, {
 		plugins: observableValue('plugins', []),
 	});
+	instantiationService.stub(ITerminalChatService, {
+		onDidContinueInBackground: Event.None,
+		registerTerminalInstanceWithToolSession: () => { },
+	});
+	instantiationService.stub(IAgentHostTerminalService, {
+		reviveTerminal: async () => undefined!,
+	});
 
 	return { instantiationService, agentHostService, chatAgentService };
 }
@@ -297,7 +320,7 @@ function createTestServices(disposables: DisposableStore) {
 function createContribution(disposables: DisposableStore) {
 	const { instantiationService, agentHostService, chatAgentService } = createTestServices(disposables);
 
-	const listController = disposables.add(instantiationService.createInstance(AgentHostSessionListController, 'agent-host-copilot', 'copilot', agentHostService, undefined));
+	const listController = disposables.add(instantiationService.createInstance(AgentHostSessionListController, 'agent-host-copilot', 'copilot', agentHostService, undefined, 'local'));
 	const sessionHandler = disposables.add(instantiationService.createInstance(AgentHostSessionHandler, {
 		provider: 'copilot' as const,
 		agentId: 'agent-host-copilot',
@@ -1618,7 +1641,7 @@ suite('AgentHostChatContribution', () => {
 			const { instantiationService, agentHostService } = createTestServices(disposables);
 
 			const controller = disposables.add(instantiationService.createInstance(
-				AgentHostSessionListController, 'remote-test', 'copilot', agentHostService, 'My Remote Host'));
+				AgentHostSessionListController, 'remote-test', 'copilot', agentHostService, 'My Remote Host', 'local'));
 
 			agentHostService.addSession({ session: AgentSession.uri('copilot', 'sess-1'), startTime: 1000, modifiedTime: 2000, summary: 'Test session' });
 			await controller.refresh(CancellationToken.None);
@@ -1631,7 +1654,7 @@ suite('AgentHostChatContribution', () => {
 			const { instantiationService, agentHostService } = createTestServices(disposables);
 
 			const controller = disposables.add(instantiationService.createInstance(
-				AgentHostSessionListController, 'agent-host-copilot', 'copilot', agentHostService, undefined));
+				AgentHostSessionListController, 'agent-host-copilot', 'copilot', agentHostService, undefined, 'local'));
 
 			agentHostService.addSession({ session: AgentSession.uri('copilot', 'sess-2'), startTime: 1000, modifiedTime: 2000, summary: 'Test' });
 			await controller.refresh(CancellationToken.None);
