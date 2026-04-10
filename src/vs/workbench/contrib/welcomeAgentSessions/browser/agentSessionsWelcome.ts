@@ -60,6 +60,7 @@ import { IWorkspaceTrustManagementService } from '../../../../platform/workspace
 import { IViewDescriptorService, ViewContainerLocation } from '../../../common/views.js';
 import { toErrorMessage } from '../../../../base/common/errorMessage.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
+import { canShowAgentsBanner, createAgentsBanner } from '../../chat/browser/agentSessions/agentSessionsBanner.js';
 
 const configurationKey = 'workbench.startupEditor';
 const MAX_SESSIONS = 6;
@@ -593,13 +594,18 @@ export class AgentSessionsWelcomePage extends EditorPane {
 			this.layoutSessionsControl();
 		}));
 
-		// "View all sessions" link
-		const openButton = append(container, $('button.agentSessionsWelcome-openSessionsButton'));
-		openButton.textContent = localize('viewAllSessions', "View All Sessions");
-		openButton.onclick = () => {
-			this._closedBy = 'viewAllSessions';
-			this.revealMaximizedChat();
-		};
+		// "Try out the new Agents app" banner
+		if (canShowAgentsBanner(this.productService)) {
+			const agentsBanner = createAgentsBanner(
+				'agentSessionsWelcome-agentsBanner',
+				'agentSessionsWelcome',
+				this.commandService,
+				this.telemetryService,
+				() => { this._closedBy = 'viewAllSessions'; },
+			);
+			this.sessionsControlDisposables.add(agentsBanner.disposables);
+			append(container, agentsBanner.element);
+		}
 	}
 
 	private buildWalkthroughs(container: HTMLElement): void {

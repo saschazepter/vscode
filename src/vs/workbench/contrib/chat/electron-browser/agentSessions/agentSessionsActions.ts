@@ -34,7 +34,7 @@ export class OpenAgentsWindowAction extends Action2 {
 		});
 	}
 
-	async run(accessor: ServicesAccessor) {
+	async run(accessor: ServicesAccessor, options?: { forceNewWindow?: boolean }) {
 		const openerService = accessor.get(IOpenerService);
 		const productService = accessor.get(IProductService);
 		const environmentService = accessor.get(IWorkbenchEnvironmentService);
@@ -43,7 +43,7 @@ export class OpenAgentsWindowAction extends Action2 {
 			await openerService.open(URI.from({ scheme: productService.embedded.urlProtocol, authority: Schemas.file }), { openExternal: true });
 		} else {
 			const nativeHostService = accessor.get(INativeHostService);
-			await nativeHostService.openAgentsWindow();
+			await nativeHostService.openAgentsWindow({ forceNewWindow: options?.forceNewWindow });
 		}
 	}
 }
