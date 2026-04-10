@@ -696,6 +696,10 @@ class McpLinkedResourceToolResult extends PromptElement<{ resourceUri: URI; mime
 
 interface IPrimitiveToolResultProps extends BasePromptElementProps {
 	content: LanguageModelToolResult2['content'];
+	/**
+	 * Shared budget limiting total image data across all tool results in a turn.
+	 */
+	sharedImageBudget?: SharedImageBudget;
 }
 
 class PrimitiveToolResult<T extends IPrimitiveToolResultProps> extends PromptElement<T> {
@@ -766,15 +770,27 @@ class PrimitiveToolResult<T extends IPrimitiveToolResultProps> extends PromptEle
 			return '[Image content is not available because vision is not supported by the current model or is disabled by your organization.]';
 		}
 
-		const githubToken = (await this.authService.getGitHubSession('any', { silent: true }))?.accessToken;
 		const uploadsEnabled = this.configurationService && this.experimentationService
 			? this.configurationService.getExperimentBasedConfig(ConfigKey.EnableChatImageUpload, this.experimentationService)
 			: false;
+		const canUpload = uploadsEnabled && modelCanUseMcpResultImageURL(this.endpoint);
 
-		// Anthropic (from CAPI) currently does not support image uploads from tool calls.
-		const uploadToken = uploadsEnabled && modelCanUseMcpResultImageURL(this.endpoint) ? githubToken : undefined;
+		// Enforce image budgets only when images will be inlined as base64.
+		// When uploads are available, the request body stays small (URL reference).
+		if (!canUpload) {
+			// Enforce shared cross-tool budget (prevents 413s when many tools return images)
+			const sharedBudget = this.props.sharedImageBudget;
+			if (sharedBudget) {
+				if (sharedBudget.remaining < 0) {
+					return this.makeSharedBudgetPlaceholder(_imageIndex, part.mimeType);
+				} else if (part.data.length > sharedBudget.remaining) {
+					sharedBudget.remaining = -1;
+					return this.makeSharedBudgetPlaceholder(_imageIndex, part.mimeType);
+				}
+				sharedBudget.remaining -= part.data.length;
+			}
 
-		if (!uploadToken) {
+			// Enforce per-tool budget
 			if (this.imageSizeBudgetLeft < 0) {
 				return ''; // already exceeded and messages about it
 			} else if (part.data.length > this.imageSizeBudgetLeft) {
@@ -783,6 +799,12 @@ class PrimitiveToolResult<T extends IPrimitiveToolResultProps> extends PromptEle
 			} else {
 				this.imageSizeBudgetLeft -= part.data.length; // bookkeep
 			}
+		}
+
+		// Only call getGitHubSession when uploads are potentially available
+		let uploadToken: string | undefined;
+		if (canUpload) {
+			uploadToken = (await this.authService.getGitHubSession('any', { silent: true }))?.accessToken;
 		}
 
 		return Promise.resolve(imageDataPartToTSX(part, uploadToken, this.endpoint.urlOrRequestMetadata, this.logService, this.imageService));
@@ -798,6 +820,10 @@ class PrimitiveToolResult<T extends IPrimitiveToolResultProps> extends PromptEle
 
 	protected onResourceLink(data: string) {
 		return '';
+	}
+
+	protected makeSharedBudgetPlaceholder(_imageIndex: number | undefined, _mimeType: string): string {
+		return 'Image omitted — context image budget exceeded. Try viewing fewer images at once.';
 	}
 }
 
@@ -818,10 +844,6 @@ export interface IToolResultProps extends IPrimitiveToolResultProps {
 	 * The name of the tool that produced this result.
 	 */
 	toolName?: string;
-	/**
-	 * Shared budget limiting total image data across all tool results in a turn.
-	 */
-	sharedImageBudget?: SharedImageBudget;
 }
 
 
@@ -852,18 +874,6 @@ export class ToolResult extends PrimitiveToolResult<IToolResultProps> {
 	}
 
 	protected override async onImage(part: LanguageModelDataPart, imageIndex?: number): Promise<PromptPiece | undefined> {
-		// Only enforce shared budget when the model supports vision.
-		const budget = this.props.sharedImageBudget;
-		if (budget && this.endpoint.supportsVision) {
-			if (budget.remaining < 0) {
-				return this.makeImagePlaceholder(part, imageIndex);
-			} else if (part.data.length > budget.remaining) {
-				budget.remaining = -1;
-				return this.makeImagePlaceholder(part, imageIndex);
-			}
-			budget.remaining -= part.data.length;
-		}
-
 		const image = await super.onImage(part, imageIndex);
 		if (!image || imageIndex === undefined || !this.props.toolCallId || !this.props.sessionId) {
 			return image;
@@ -872,9 +882,9 @@ export class ToolResult extends PrimitiveToolResult<IToolResultProps> {
 		return <>{image}{uri && `\n[Image URI: ${uri}]`}</>;
 	}
 
-	private makeImagePlaceholder(part: LanguageModelDataPart, imageIndex: number | undefined): PromptPiece {
-		const uri = buildImageUri(this.props.sessionId, this.props.toolCallId, imageIndex, part.mimeType);
-		return <>{makeImagePlaceholderText('Image omitted — context image budget exceeded. Try viewing fewer images at once or reference this image by URI.', uri)}</>;
+	protected override makeSharedBudgetPlaceholder(imageIndex: number | undefined, mimeType: string): string {
+		const uri = buildImageUri(this.props.sessionId, this.props.toolCallId, imageIndex, mimeType);
+		return makeImagePlaceholderText('Image omitted — context image budget exceeded. Try viewing fewer images at once or reference this image by URI.', uri);
 	}
 
 	protected override async onText(content: string): Promise<string> {

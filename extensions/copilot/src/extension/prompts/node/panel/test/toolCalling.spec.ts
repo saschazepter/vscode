@@ -6,6 +6,7 @@
 import { describe, expect, test } from 'vitest';
 import type * as vscode from 'vscode';
 import { IChatHookService, type IPreToolUseHookResult } from '../../../../../platform/chat/common/chatHookService';
+import { ConfigKey, IConfigurationService } from '../../../../../platform/configuration/common/configurationService';
 import { IEndpointProvider } from '../../../../../platform/endpoint/common/endpointProvider';
 import { DeferredPromise } from '../../../../../util/vs/base/common/async';
 import { CancellationToken } from '../../../../../util/vs/base/common/cancellation';
@@ -535,6 +536,10 @@ describe('ChatToolCalls (toolCalling.tsx)', () => {
 		const instantiationService = accessor.get(IInstantiationService);
 		const endpointProvider = accessor.get(IEndpointProvider);
 		const endpoint = await endpointProvider.getChatEndpoint('copilot-base');
+
+		// Disable image uploads so images go through the base64 path where the budget applies
+		const configService = accessor.get(IConfigurationService);
+		await configService.setConfig(ConfigKey.EnableChatImageUpload, false);
 
 		// Each image is 3MB — individually exceeds the 2.5MB shared budget (half of 5MB CAPI limit)
 		const bigImage = new Uint8Array(3 * 1024 * 1024);
