@@ -72,6 +72,7 @@ export class ChatSessionWorktreeService extends Disposable implements IChatSessi
 
 			const autoCommit = this.configurationService.getConfig<boolean>(ConfigKey.Advanced.CLIAutoCommitEnabled);
 
+			let baseCommit: string | undefined = undefined;
 			const branch = await this.generateBranchName(branchName, activeRepository);
 
 			// When a base branch is provided, we attempt to resolve it, to see whether it has an
@@ -89,6 +90,7 @@ export class ChatSessionWorktreeService extends Disposable implements IChatSessi
 							const upstreamBranch = await this.gitService.getBranch(activeRepository.rootUri, upstreamBranchName);
 							if (upstreamBranch) {
 								baseBranch = upstreamBranchName;
+								baseCommit = upstreamBranch.commit;
 							}
 						} catch (error) {
 							const errorMessage = error instanceof Error ? error.message : String(error);
@@ -107,8 +109,7 @@ export class ChatSessionWorktreeService extends Disposable implements IChatSessi
 				const baseBranchName = baseBranch ?? activeRepository.headBranchName;
 				const baseBranchProtected = await this.gitService.isBranchProtected(activeRepository.rootUri, baseBranchName);
 
-				let baseCommit: string | undefined = undefined;
-				if (baseBranch) {
+				if (baseBranch && !baseCommit) {
 					const refs = await this.gitService.getRefs(activeRepository.rootUri, { pattern: `refs/heads/${baseBranch}` });
 					baseCommit = refs.length === 1 && refs[0].commit ? refs[0].commit : undefined;
 				}
