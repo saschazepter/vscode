@@ -174,7 +174,8 @@ export function activeTurnToProgress(activeTurn: IActiveTurn): IChatProgress[] {
  * tool invocation suitable for history replay.
  */
 export function completedToolCallToSerialized(tc: ICompletedToolCall, subAgentInvocationId?: string): IChatToolInvocationSerialized {
-	const isTerminal = getToolKind(tc) === 'terminal';
+	const terminalContentUri = tc.status === ToolCallStatus.Completed ? getTerminalContentUri(tc.content) : undefined;
+	const isTerminal = getToolKind(tc) === 'terminal' || !!terminalContentUri;
 	const isSuccess = tc.status === ToolCallStatus.Completed && tc.success;
 	const invocationMsg = stringOrMarkdownToString(tc.invocationMessage) ?? '';
 
@@ -214,17 +215,15 @@ export function completedToolCallToSerialized(tc: ICompletedToolCall, subAgentIn
 		const ptyTerminal = getPtyTerminalData(tc._meta);
 		const commandInput = ptyTerminal?.input ?? tc.toolInput;
 		const toolOutput = tc.status === ToolCallStatus.Completed ? (ptyTerminal?.output ?? getToolOutputText(tc)) : undefined;
-		if (!commandInput && toolOutput === undefined) {
-			toolSpecificData = undefined;
-		} else {
-			toolSpecificData = {
-				kind: 'terminal',
-				commandLine: { original: commandInput ?? '' },
-				language: getToolLanguage(tc) ?? 'shellscript',
-				terminalCommandOutput: toolOutput !== undefined ? { text: toolOutput } : undefined,
-				terminalCommandState: { exitCode: isSuccess ? 0 : 1 },
-			};
-		}
+		toolSpecificData = {
+			kind: 'terminal',
+			commandLine: { original: commandInput ?? '' },
+			language: getToolLanguage(tc) ?? 'shellscript',
+			terminalToolSessionId: terminalContentUri,
+			terminalCommandUri: terminalContentUri ? URI.parse(terminalContentUri) : undefined,
+			terminalCommandOutput: toolOutput !== undefined ? { text: toolOutput } : undefined,
+			terminalCommandState: { exitCode: isSuccess ? 0 : 1 },
+		};
 	}
 
 	const pastTenseMsg = isSuccess
@@ -358,13 +357,18 @@ export function toolCallStateToInvocation(tc: IToolCallState, subAgentInvocation
 	const invocation = new ChatToolInvocation(undefined, toolData, tc.toolCallId, subAgentInvocationId, undefined);
 	invocation.invocationMessage = stringOrMarkdownToString(tc.invocationMessage) ?? '';
 
-	if (getToolKind(tc) === 'terminal') {
+	const terminalContentUri = (tc.status === ToolCallStatus.Running || tc.status === ToolCallStatus.Completed)
+		? getTerminalContentUri(tc.content)
+		: undefined;
+	if (getToolKind(tc) === 'terminal' || terminalContentUri) {
 		const ptyTerminal = getPtyTerminalData(tc._meta);
 		const commandInput = ptyTerminal?.input ?? (tc.status !== ToolCallStatus.Streaming ? (tc.toolInput ?? '') : '');
 		invocation.toolSpecificData = {
 			kind: 'terminal',
 			commandLine: { original: commandInput },
 			language: getToolLanguage(tc) ?? 'shellscript',
+			terminalToolSessionId: terminalContentUri,
+			terminalCommandUri: terminalContentUri ? URI.parse(terminalContentUri) : undefined,
 			terminalCommandOutput: ptyTerminal?.output !== undefined ? { text: ptyTerminal.output } : undefined,
 		} satisfies IChatTerminalToolInvocationData;
 	} else if (getToolKind(tc) === 'subagent' || isSubagentToolName(tc.toolName)) {
