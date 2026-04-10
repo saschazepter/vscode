@@ -293,7 +293,7 @@
 .sessions-walkthrough-logo {
 	width: 112px;
 	height: 112px;
-	background-image: url('../../../browser/media/sessions-icon.svg');
+	background-image: url('../../../../browser/media/sessions-icon.svg');
 	background-size: contain;
 	background-repeat: no-repeat;
 	background-position: center;
