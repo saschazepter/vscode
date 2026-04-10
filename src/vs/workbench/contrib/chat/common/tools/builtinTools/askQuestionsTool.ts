@@ -296,8 +296,7 @@ export class AskQuestionsTool extends Disposable implements IToolImpl {
 			}
 			// Fall back to the most recent request in the session if we can't find a match
 			if (!request) {
-				const requests = model.getRequests();
-				request = [...requests].reverse().find(r => !!r.terminalExecutionId) ?? requests.at(-1);
+				request = model.getRequests().at(-1);
 			}
 		}
 
