@@ -357,13 +357,14 @@ class SessionsManagementService extends Disposable implements ISessionsManagemen
 			this._activeSession.set(activeSession, undefined);
 
 			// Track archived state changes for the active session
-			const wasArchivedOnActivation = session.isArchived.get();
+			let wasArchived = session.isArchived.get();
 			this._activeSessionDisposables.add(autorun(reader => {
 				const isArchived = session.isArchived.read(reader);
 				this._isActiveSessionArchived.set(isArchived);
-				if (isArchived && !wasArchivedOnActivation) {
+				if (isArchived && !wasArchived) {
 					this.openNewSessionView();
 				}
+				wasArchived = isArchived;
 			}));
 		} else {
 			this._activeChatObservable = undefined;
