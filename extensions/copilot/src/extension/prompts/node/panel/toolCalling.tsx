@@ -428,11 +428,6 @@ function buildImageUri(sessionId: string | undefined, toolCallId: string | undef
 	return buildToolImageResourceUri(sessionId, coreToolCallId, imageIndex, getExtensionForMimeType(mimeType) ?? '.bin');
 }
 
-function makeImagePlaceholderText(message: string, uri: string | undefined): string {
-	const uriRef = uri ? ` Image URI: ${uri}` : '';
-	return `[${message}${uriRef}]`;
-}
-
 /**
  * Replaces image data parts with text placeholders in tool results.
  * Used for historical turns to prevent large base64 image data from
@@ -451,7 +446,8 @@ function replaceImagesWithPlaceholders(
 			return part;
 		}
 		const uri = buildImageUri(sessionId, toolCallId, index, part.mimeType);
-		return new LanguageModelTextPart(makeImagePlaceholderText('Image was previously shown to you.', uri));
+		const uriRef = uri ? ` Image URI: ${uri}` : '';
+		return new LanguageModelTextPart(`[Image was previously shown to you.${uriRef}]`);
 	});
 }
 
@@ -787,10 +783,10 @@ class PrimitiveToolResult<T extends IPrimitiveToolResultProps> extends PromptEle
 			const sharedBudget = this.props.sharedImageBudget;
 			if (sharedBudget) {
 				if (sharedBudget.remaining < 0) {
-					return this.makeSharedBudgetPlaceholder(_imageIndex, part.mimeType);
+					return this.sharedBudgetPlaceholder();
 				} else if (part.data.length > sharedBudget.remaining) {
 					sharedBudget.remaining = -1;
-					return this.makeSharedBudgetPlaceholder(_imageIndex, part.mimeType);
+					return this.sharedBudgetPlaceholder();
 				}
 				sharedBudget.remaining -= part.data.length;
 			}
@@ -827,7 +823,7 @@ class PrimitiveToolResult<T extends IPrimitiveToolResultProps> extends PromptEle
 		return '';
 	}
 
-	protected makeSharedBudgetPlaceholder(_imageIndex: number | undefined, _mimeType: string): string {
+	protected sharedBudgetPlaceholder(): string {
 		return 'Image omitted — context image budget exceeded. Try viewing fewer images at once.';
 	}
 }
@@ -887,9 +883,8 @@ export class ToolResult extends PrimitiveToolResult<IToolResultProps> {
 		return <>{image}{uri && `\n[Image URI: ${uri}]`}</>;
 	}
 
-	protected override makeSharedBudgetPlaceholder(imageIndex: number | undefined, mimeType: string): string {
-		const uri = buildImageUri(this.props.sessionId, this.props.toolCallId, imageIndex, mimeType);
-		return makeImagePlaceholderText('Image omitted — context image budget exceeded. Try viewing fewer images at once or reference this image by URI.', uri);
+	protected override sharedBudgetPlaceholder(): string {
+		return '[Image omitted — context image budget exceeded. Try viewing fewer images at once or reference this image by URI.]';
 	}
 
 	protected override async onText(content: string): Promise<string> {
