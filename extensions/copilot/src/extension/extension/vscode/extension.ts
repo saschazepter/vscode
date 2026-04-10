@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as l10n from '@vscode/l10n';
-import { commands, env, ExtensionContext, ExtensionMode, l10n as vscodeL10n } from 'vscode';
+import { commands, env, ExtensionContext, ExtensionMode, l10n as vscodeL10n, window, StatusBarAlignment } from 'vscode';
 import { isScenarioAutomation } from '../../../platform/env/common/envService';
 import { isProduction } from '../../../platform/env/common/packagejson';
 import { IIgnoreService } from '../../../platform/ignore/common/ignoreService';
@@ -79,6 +79,17 @@ export async function baseActivate(configuration: IExtensionActivationConfigurat
 	if (ExtensionMode.Test === context.extensionMode && !isScenarioAutomation) {
 		return instantiationService; // The returned accessor is used in tests
 	}
+
+	// ===== SIDELOAD TEST MARKER — visually flag this modified copy =====
+	console.log('[SIDELOAD-TEST] *** Modified copilot-chat VSIX activated ***');
+	const sideloadStatusBar = window.createStatusBarItem(StatusBarAlignment.Left, 1000);
+	sideloadStatusBar.text = '$(beaker) Copilot Chat SIDELOADED';
+	sideloadStatusBar.tooltip = 'This is a locally-built sideloaded copy of GitHub Copilot Chat';
+	sideloadStatusBar.backgroundColor = { id: 'statusBarItem.warningBackground' };
+	sideloadStatusBar.show();
+	context.subscriptions.push(sideloadStatusBar);
+	window.showInformationMessage('Sideloaded Copilot Chat extension activated (modified build)');
+	// ===== END SIDELOAD TEST MARKER =====
 
 	const result = {
 		getAPI(version: number) {
