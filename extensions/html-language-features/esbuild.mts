@@ -24,6 +24,7 @@ await Promise.all([
 	// Build server
 	run({
 		platform: 'node',
+		format: 'esm',
 		entryPoints: {
 			'htmlServerMain': path.join(extensionRoot, 'server', 'src', 'node', 'htmlServerNodeMain.ts'),
 		},
