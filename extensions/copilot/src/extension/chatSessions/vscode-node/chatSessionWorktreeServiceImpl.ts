@@ -82,8 +82,18 @@ export class ChatSessionWorktreeService extends Disposable implements IChatSessi
 					// Attempt to resolve the provided base branch
 					const branchDetails = await this.gitService.getBranch(activeRepository.rootUri, baseBranch);
 					if (branchDetails?.upstream?.remote && branchDetails.upstream?.name) {
-						// If the base branch has an upstream, use it as the base for the worktree
-						baseBranch = `${branchDetails.upstream.remote}/${branchDetails.upstream.name}`;
+						const upstreamBranchName = `${branchDetails.upstream.remote}/${branchDetails.upstream.name}`;
+
+						try {
+							// Attempt to resolve the upstream branch before using it as the base for the worktree
+							const upstreamBranch = await this.gitService.getBranch(activeRepository.rootUri, upstreamBranchName);
+							if (upstreamBranch) {
+								baseBranch = upstreamBranchName;
+							}
+						} catch (error) {
+							const errorMessage = error instanceof Error ? error.message : String(error);
+							this.logService.warn(`[ChatSessionWorktreeService][_createWorktree] Failed to resolve upstream branch ${upstreamBranchName}. Error: ${errorMessage}`);
+						}
 					}
 				} catch (error) {
 					const errorMessage = error instanceof Error ? error.message : String(error);
