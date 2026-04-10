@@ -8,6 +8,7 @@
 .chat-status-bar-entry-tooltip {
 	margin-top: 4px;
 	margin-bottom: 4px;
+	min-width: 320px;
 }
 
 .chat-status-bar-entry-tooltip hr {

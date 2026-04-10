@@ -1016,8 +1016,8 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 			const header = append(dashboard, $('div.copilot-prototype-dashboard-header'));
 			const titleText = append(header, $('div.copilot-prototype-dashboard-title'));
 			const entTitle = sku === 'Ent/Bus ULB'
-				? localize('dashboardTitleEntULB', "Enterprise ULB Usage")
-				: localize('dashboardTitleEnterprise', "Enterprise Usage");
+				? localize('dashboardTitleEntULB', "Copilot Enterprise ULB")
+				: localize('dashboardTitleEnterprise', "Copilot Enterprise");
 			titleText.textContent = entTitle;
 
 			const headerActions = append(header, $('div.copilot-prototype-dashboard-header-actions'));
@@ -1035,11 +1035,11 @@ class CopilotPrototypeShellCoinStatusBarContribution extends Disposable implemen
 		// Non-enterprise: title row, then tabs below
 		let planTitle: string;
 		switch (sku) {
-			case 'Edu/Free': planTitle = localize('dashboardTitleFree', "Free Usage"); break;
-			case 'Pro/Pro+ No O': planTitle = localize('dashboardTitleProNoO', "Pro Usage"); break;
-			case 'Pro/Pro+': planTitle = localize('dashboardTitlePro', "Pro+ Usage"); break;
-			case 'Max': planTitle = localize('dashboardTitleMax', "Max Usage"); break;
-			default: planTitle = localize('dashboardTitleDefault', "Usage"); break;
+			case 'Edu/Free': planTitle = localize('dashboardTitleFree', "Copilot Free"); break;
+			case 'Pro/Pro+ No O': planTitle = localize('dashboardTitleProNoO', "Copilot Pro"); break;
+			case 'Pro/Pro+': planTitle = localize('dashboardTitlePro', "Copilot Pro+"); break;
+			case 'Max': planTitle = localize('dashboardTitleMax', "Copilot Max"); break;
+			default: planTitle = localize('dashboardTitleDefault', "Copilot"); break;
 		}
 
 		const titleRow = append(dashboard, $('div.copilot-prototype-dashboard-header'));
