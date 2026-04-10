@@ -935,8 +935,10 @@ export class GettingStartedPage extends EditorPane {
 		const footerChildren: HTMLElement[] = [];
 		if (canShowAgentsBanner(this.productService)) {
 			const agentsBanner = createAgentsBanner(
-				'getting-started-category.agents-banner',
-				'welcomePage',
+				{
+					cssClass: 'getting-started-category.agents-banner',
+					source: 'welcomePage',
+				},
 				this.commandService,
 				this.telemetryService,
 			);

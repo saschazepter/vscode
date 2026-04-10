@@ -39,38 +39,42 @@ export function canShowAgentsBanner(productService: IProductService): boolean {
 		&& !!CommandsRegistry.getCommand(OPEN_AGENTS_WINDOW_COMMAND);
 }
 
+export interface IAgentsBannerOptions {
+	/** Dot-separated CSS classes for the banner container (e.g. 'my-banner' or 'foo.bar'). */
+	readonly cssClass: string;
+	/** Identifies where the banner is displayed (e.g. 'welcomePage', 'agentSessionsWelcome'). */
+	readonly source: string;
+	/** Override the default button label. */
+	readonly label?: string;
+	/** Optional callback invoked when the banner button is clicked. */
+	readonly onButtonClick?: () => void;
+}
+
 /**
  * Creates a banner that promotes the Agents app.
  * The banner contains a button that opens the Agents window.
- *
- * @param cssClass Dot-separated CSS classes for the banner container (e.g. 'my-banner' or 'foo.bar').
- * @param source Identifies where the banner is displayed (e.g. 'welcomePage', 'agentSessionsWelcome').
- * @param commandService Used to execute the open command.
- * @param telemetryService Used to log banner interactions.
- * @param onButtonClick Optional callback invoked when the banner button is clicked.
  */
 export function createAgentsBanner(
-	cssClass: string,
-	source: string,
+	options: IAgentsBannerOptions,
 	commandService: ICommandService,
 	telemetryService: ITelemetryService,
-	onButtonClick?: () => void,
 ): IAgentsBannerResult {
 	const disposables = new DisposableStore();
+	const label = options.label ?? localize('agentsBanner.tryAgentsAppLabel', "Try out the new Agents app");
 
 	const button = $('button.agents-banner-button', {
-		title: localize('agentsBanner.tryAgentsApp', "Try out the new Agents app"),
+		title: label,
 	},
 		$('.codicon.codicon-agent.icon-widget'),
-		$('span.category-title', {}, localize('agentsBanner.tryAgentsAppLabel', "Try out the new Agents app")),
+		$('span.category-title', {}, label),
 	);
 	disposables.add(addDisposableListener(button, 'click', () => {
-		onButtonClick?.();
-		telemetryService.publicLog2<AgentsBannerClickedEvent, AgentsBannerClickedClassification>('agentsBanner.clicked', { source, action: 'openAgentsWindow' });
+		options.onButtonClick?.();
+		telemetryService.publicLog2<AgentsBannerClickedEvent, AgentsBannerClickedClassification>('agentsBanner.clicked', { source: options.source, action: 'openAgentsWindow' });
 		commandService.executeCommand(OPEN_AGENTS_WINDOW_COMMAND, { forceNewWindow: true });
 	}));
 
-	const element = $(`.${cssClass}`, {}, button);
+	const element = $(`.${options.cssClass}`, {}, button);
 
 	return { element, disposables };
 }

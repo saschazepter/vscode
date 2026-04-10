@@ -597,11 +597,14 @@ export class AgentSessionsWelcomePage extends EditorPane {
 		// "Try out the new Agents app" banner
 		if (canShowAgentsBanner(this.productService)) {
 			const agentsBanner = createAgentsBanner(
-				'agentSessionsWelcome-agentsBanner',
-				'agentSessionsWelcome',
+				{
+					cssClass: 'agentSessionsWelcome-agentsBanner',
+					source: 'agentSessionsWelcome',
+					label: localize('viewAllSessions', "View All Sessions"),
+					onButtonClick: () => { this._closedBy = 'viewAllSessions'; },
+				},
 				this.commandService,
 				this.telemetryService,
-				() => { this._closedBy = 'viewAllSessions'; },
 			);
 			this.sessionsControlDisposables.add(agentsBanner.disposables);
 			append(container, agentsBanner.element);
