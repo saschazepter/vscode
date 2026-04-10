@@ -386,7 +386,7 @@ export class SessionStore implements ISessionStore {
 	search(query: string, limit: number = 20): SearchResult[] {
 		const db = this.ensureDb();
 		const stmt = db.prepare(`
-			SELECT content, session_id, source_type, rank
+			SELECT content, session_id, source_type, bm25(search_index) AS rank
 			FROM search_index
 			WHERE search_index MATCH ?
 			ORDER BY rank

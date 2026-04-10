@@ -87,7 +87,7 @@ class ChatAgents implements IDisposable {
 		this._disposables.add(vscode.commands.registerCommand('github.copilot.sessionSearch.resetConsent', async () => {
 			await this._indexingPreference.resetConsent();
 			this._consentCheckedRepos.clear();
-			vscode.window.showInformationMessage('Session search consent has been reset. You will be prompted again on your next chat.');
+			vscode.window.showInformationMessage(vscode.l10n.t('Session search consent has been reset. You will be prompted again on your next chat.'));
 		}));
 	}
 

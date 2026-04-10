@@ -43,9 +43,6 @@ const MAX_BUFFER_SIZE = 1_000;
 /** Soft cap — switch to faster drain. */
 const SOFT_BUFFER_CAP = 500;
 
-/** Timeout for the final flush on dispose (ms). */
-const FINAL_FLUSH_TIMEOUT_MS = 5_000;
-
 /**
  * Exports VS Code chat session events to Mission Control in real-time.
  *
@@ -74,7 +71,8 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 
 	// ── Shared state ─────────────────────────────────────────────────────────────
 
-	private readonly _eventBuffer: SessionEvent[] = [];
+	/** Buffered events tagged with their chat session ID for correct routing. */
+	private readonly _eventBuffer: Array<{ chatSessionId: string; event: SessionEvent }> = [];
 	private readonly _mcClient: MissionControlClient;
 	private readonly _circuitBreaker: CircuitBreaker;
 
@@ -132,10 +130,8 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 		const pending = this._eventBuffer.length;
 		if (pending > 0) {
 			console.log(`[RemoteSessionExporter] Disposing with ${pending} buffered events, attempting final flush`);
-			// Fire-and-forget with timeout — cannot block dispose
-			const controller = new AbortController();
-			const timeout = setTimeout(() => controller.abort(), FINAL_FLUSH_TIMEOUT_MS);
-			this._flushBatch().finally(() => clearTimeout(timeout));
+			// Fire-and-forget — cannot block dispose
+			this._flushBatch().catch(() => { /* best effort */ });
 		}
 
 		this._mcSessions.clear();
@@ -177,7 +173,7 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 			const events = translateSpan(span, state, context);
 
 			if (events.length > 0) {
-				this._bufferEvents(events);
+				this._bufferEvents(sessionId, events);
 				this._ensureFlushTimer();
 			}
 		} catch (err) {
@@ -409,9 +405,8 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 	private _handleSessionDispose(sessionId: string): void {
 		const state = this._translationStates.get(sessionId);
 		if (state && this._mcSessions.has(sessionId)) {
-			// Emit session.shutdown event
 			const event = makeShutdownEvent(state);
-			this._bufferEvents([event]);
+			this._bufferEvents(sessionId, [event]);
 		}
 
 		this._mcSessions.delete(sessionId);
@@ -422,8 +417,10 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 
 	// ── Buffering ────────────────────────────────────────────────────────────────
 
-	private _bufferEvents(events: SessionEvent[]): void {
-		this._eventBuffer.push(...events);
+	private _bufferEvents(chatSessionId: string, events: SessionEvent[]): void {
+		for (const event of events) {
+			this._eventBuffer.push({ chatSessionId, event });
+		}
 
 		// Hard cap — drop oldest events
 		if (this._eventBuffer.length > MAX_BUFFER_SIZE) {
@@ -465,7 +462,6 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 			return;
 		}
 
-		// Nothing to send and no active MC sessions — stop the timer
 		if (this._eventBuffer.length === 0) {
 			if (this._mcSessions.size === 0) {
 				this._stopFlushTimer();
@@ -473,9 +469,7 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 			return;
 		}
 
-		// Circuit breaker check
 		if (!this._circuitBreaker.canRequest()) {
-			// Cap buffer while circuit is open
 			if (this._eventBuffer.length > MAX_BUFFER_SIZE) {
 				const dropped = this._eventBuffer.length - MAX_BUFFER_SIZE;
 				this._eventBuffer.splice(0, dropped);
@@ -484,60 +478,60 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 		}
 
 		this._isFlushing = true;
-		const events = this._eventBuffer.splice(0, MAX_EVENTS_PER_FLUSH);
+		const batch = this._eventBuffer.splice(0, MAX_EVENTS_PER_FLUSH);
 
 		try {
-			// Find the MC session to send to. For now, use the first active session.
-			// Events from different sessions could theoretically be routed to different
-			// MC sessions, but keep it simple for now
-			const mcSessionId = this._getTargetMcSession();
-			if (!mcSessionId) {
-				// No active MC session yet — re-queue events
-				this._eventBuffer.unshift(...events);
-				return;
+			// Group events by chat session ID for correct MC session routing
+			const eventsBySession = new Map<string, SessionEvent[]>();
+			const orphanedEntries: typeof batch = [];
+
+			for (const entry of batch) {
+				const mcIds = this._mcSessions.get(entry.chatSessionId);
+				if (mcIds) {
+					const arr = eventsBySession.get(mcIds.mcSessionId) ?? [];
+					arr.push(entry.event);
+					eventsBySession.set(mcIds.mcSessionId, arr);
+				} else {
+					orphanedEntries.push(entry);
+				}
 			}
 
-			// Redact secrets before transmitting to Mission Control.
-			// filterSecretsFromObj returns new objects so the originals in
-			// the buffer stay intact for local persistence / re-queue on failure.
-			const filteredEvents = events.map(e => filterSecretsFromObj(e));
+			// Re-queue events with no MC session (session not initialized yet)
+			if (orphanedEntries.length > 0) {
+				this._eventBuffer.unshift(...orphanedEntries);
+			}
 
-			const success = await this._mcClient.submitSessionEvents(mcSessionId, filteredEvents);
+			// Submit each session's events to the correct MC session
+			let allSuccess = true;
+			for (const [mcSessionId, events] of eventsBySession) {
+				const filteredEvents = events.map(e => filterSecretsFromObj(e));
+				const success = await this._mcClient.submitSessionEvents(mcSessionId, filteredEvents);
+				if (!success) {
+					allSuccess = false;
+				}
+			}
 
-			if (success) {
+			if (allSuccess && eventsBySession.size > 0) {
 				this._circuitBreaker.recordSuccess();
-			} else {
-				// Re-queue and record failure
-				this._eventBuffer.unshift(...events);
+			} else if (!allSuccess) {
 				this._circuitBreaker.recordFailure();
-
 				if (this._circuitBreaker.getState() === CircuitState.OPEN) {
-					console.warn(
-						`[RemoteSessionExporter] Circuit opened after ${this._circuitBreaker.getFailureCount()} failures`
-					);
+					console.warn(`[RemoteSessionExporter] Circuit opened after ${this._circuitBreaker.getFailureCount()} failures`);
 				}
 			}
 		} catch (err) {
 			// Re-queue on unexpected error
-			this._eventBuffer.unshift(...events);
+			this._eventBuffer.unshift(...batch);
 			this._circuitBreaker.recordFailure();
 			console.error('[RemoteSessionExporter] Unexpected flush error:', err);
 		} finally {
 			this._isFlushing = false;
 		}
 
-		// Adjust timer interval based on buffer pressure
 		if (this._eventBuffer.length > SOFT_BUFFER_CAP && this._flushTimer !== undefined) {
 			this._stopFlushTimer();
 			this._ensureFlushTimer();
 		}
 	}
 
-	private _getTargetMcSession(): string | undefined {
-		// Return the first active MC session ID
-		for (const [, mcIds] of this._mcSessions) {
-			return mcIds.mcSessionId;
-		}
-		return undefined;
-	}
 }

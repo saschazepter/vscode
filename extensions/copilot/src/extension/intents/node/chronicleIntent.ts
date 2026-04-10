@@ -311,7 +311,6 @@ export class ChronicleIntent implements IIntent {
 				const producerResult = await client.executeQuery(producerQuery);
 				console.log(`[Chronicle] Producer query returned ${producerResult?.rows.length ?? 'undefined'} rows`);
 				if (producerResult && producerResult.rows.length > 0) {
-					console.log('[Chronicle] Producer samples:', JSON.stringify(producerResult.rows.slice(0, 5)));
 					for (const row of producerResult.rows) {
 						const session = sessions.find(s => s.id === row.session_id);
 						if (session && row.producer) {
@@ -365,12 +364,6 @@ export class ChronicleIntent implements IIntent {
 						typeCounts.set(type, (typeCounts.get(type) ?? 0) + 1);
 					}
 					console.log(`[Chronicle] Event types: ${JSON.stringify(Object.fromEntries(typeCounts))}`);
-
-					// Log sample of session.requested to understand structure
-					const firstRequested = eventsResult.rows.find(r => r.type === 'session.requested');
-					if (firstRequested) {
-						console.log('[Chronicle] Sample session.requested:', JSON.stringify(firstRequested));
-					}
 
 					// Synthesize turns from events
 					let turnIndex = 0;

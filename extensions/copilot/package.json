@@ -2443,7 +2443,7 @@
 			},
 			{
 				"command": "github.copilot.sessionSearch.resetConsent",
-				"title": "Reset Session Search Consent",
+				"title": "%github.copilot.command.resetSessionSearchConsent%",
 				"category": "Chat"
 			},
 			{
