@@ -93,6 +93,8 @@ class ChatAgents implements IDisposable {
 
 	private readonly _indexingPreference: SessionIndexingPreference;
 	private _consentCheckedRepos = new Set<string>();
+	/** Cached NWO to avoid git resolution on every chat message. */
+	private _lastRepoNwo: string | undefined;
 
 	dispose() {
 		this._disposables.dispose();
@@ -271,7 +273,7 @@ Learn more about [GitHub Copilot](https://docs.github.com/copilot/using-github-c
 
 				const handler = this.instantiationService.createInstance(ChatParticipantRequestHandler, context.history, request, stream, token, { agentName: name, agentId: id, intentId }, () => context.yieldRequested, telemetryMessageId);
 
-				// Check session indexing consent on first chat in a repo
+				// Check session indexing consent — no-op unless feature enabled + first chat in new repo
 				await this._checkSessionIndexingConsent(request, token);
 
 				let result = await handler.getResult();
@@ -358,6 +360,11 @@ Learn more about [GitHub Copilot](https://docs.github.com/copilot/using-github-c
 				return;
 			}
 
+			// If we already checked this repo, skip all work
+			if (this._lastRepoNwo && this._consentCheckedRepos.has(this._lastRepoNwo)) {
+				return;
+			}
+
 			const repoContext = this._gitService.activeRepository?.get();
 			if (!repoContext) {
 				return;
@@ -367,6 +374,7 @@ Learn more about [GitHub Copilot](https://docs.github.com/copilot/using-github-c
 				return;
 			}
 			const repoNwo = `${repoInfo.id.org}/${repoInfo.id.repo}`;
+			this._lastRepoNwo = repoNwo;
 
 			// Skip if already checked this VS Code session or preference exists
 			if (this._consentCheckedRepos.has(repoNwo)) {

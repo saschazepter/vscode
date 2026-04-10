@@ -139,7 +139,7 @@ export function filterSecrets(text: string): string {
 
 	// 2. Literal value matching (dynamic secrets from env vars and runtime)
 	for (const secret of getDynamicSecrets()) {
-		if (secret.length >= 8 && result.includes(secret)) {
+		if (secret.length >= 8) {
 			result = result.replaceAll(secret, REDACTED);
 		}
 	}
