@@ -146,7 +146,7 @@ export class StartupPageRunnerContribution extends Disposable implements IWorkbe
 					if (this.configurationService.getValue<boolean>('workbench.welcomePage.experimentalOnboarding')) {
 						await this.tryShowOnboarding();
 					} else {
-						await this.openGettingStarted();
+						await this.openGettingStarted(true);
 					}
 				} else if (startupEditorSetting.value === 'terminal') {
 					this.commandService.executeCommand(TerminalCommandId.CreateTerminalEditor);
