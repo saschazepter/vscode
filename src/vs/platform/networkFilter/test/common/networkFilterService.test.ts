@@ -20,6 +20,7 @@ suite('AgentNetworkFilterService', () => {
 	setup(() => {
 		disposables = new DisposableStore();
 		configService = new TestConfigurationService();
+		configService.setUserConfiguration(AgentNetworkDomainSettingId.NetworkFilter, true);
 		configService.setUserConfiguration(AgentNetworkDomainSettingId.AllowedNetworkDomains, []);
 		configService.setUserConfiguration(AgentNetworkDomainSettingId.DeniedNetworkDomains, []);
 	});
@@ -45,10 +46,17 @@ suite('AgentNetworkFilterService', () => {
 		});
 	}
 
-	test('allows all domains when both lists are empty', () => {
+	test('allows all domains when filter is disabled', () => {
+		configService.setUserConfiguration(AgentNetworkDomainSettingId.NetworkFilter, false);
 		const service = createService();
 		assert.strictEqual(service.isUriAllowed(URI.parse('https://example.com')), true);
 		assert.strictEqual(service.isUriAllowed(URI.parse('https://anything.test')), true);
+	});
+
+	test('denies all domains when both lists are empty', () => {
+		const service = createService();
+		assert.strictEqual(service.isUriAllowed(URI.parse('https://example.com')), false);
+		assert.strictEqual(service.isUriAllowed(URI.parse('https://anything.test')), false);
 	});
 
 	test('blocks denied domains', () => {
@@ -107,6 +115,7 @@ suite('AgentNetworkFilterService', () => {
 	});
 
 	test('updates filtering after configuration change', async () => {
+		configService.setUserConfiguration(AgentNetworkDomainSettingId.AllowedNetworkDomains, ['example.com']);
 		const service = createService();
 		assert.strictEqual(service.isUriAllowed(URI.parse('https://example.com')), true);
 

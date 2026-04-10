@@ -19,7 +19,8 @@ export const IAgentNetworkFilterService = createDecorator<IAgentNetworkFilterSer
  * Service that filters network requests made by agent tools (fetch tool,
  * integrated browser) based on the configured allowed/denied domain lists.
  *
- * When both lists are empty the filter is permissive and all domains pass.
+ * Filtering is only active when the `chat.agent.networkFilter` setting is
+ * enabled.  When both domain lists are empty, all domains are denied.
  * When a domain appears on the denied list it is always blocked, even if it
  * also matches an entry on the allowed list.
  */
@@ -50,6 +51,7 @@ export interface IAgentNetworkFilterService {
 export class AgentNetworkFilterService extends Disposable implements IAgentNetworkFilterService {
 	readonly _serviceBrand: undefined;
 
+	private enabled = false;
 	private allowedPatterns: string[] = [];
 	private deniedPatterns: string[] = [];
 	private readonly domainCache = new LRUCache<string, boolean>(100);
@@ -65,6 +67,7 @@ export class AgentNetworkFilterService extends Disposable implements IAgentNetwo
 
 		this._register(this.configurationService.onDidChangeConfiguration(e => {
 			if (
+				e.affectsConfiguration(AgentNetworkDomainSettingId.NetworkFilter) ||
 				e.affectsConfiguration(AgentNetworkDomainSettingId.AllowedNetworkDomains) ||
 				e.affectsConfiguration(AgentNetworkDomainSettingId.DeniedNetworkDomains)
 			) {
@@ -75,12 +78,18 @@ export class AgentNetworkFilterService extends Disposable implements IAgentNetwo
 	}
 
 	private readConfiguration(): void {
+		this.enabled = this.configurationService.getValue<boolean>(AgentNetworkDomainSettingId.NetworkFilter) ?? false;
 		this.allowedPatterns = this.configurationService.getValue<string[]>(AgentNetworkDomainSettingId.AllowedNetworkDomains) ?? [];
 		this.deniedPatterns = this.configurationService.getValue<string[]>(AgentNetworkDomainSettingId.DeniedNetworkDomains) ?? [];
 		this.domainCache.clear();
 	}
 
 	isUriAllowed(uri: URI): boolean {
+		// When the network filter is disabled, allow all requests.
+		if (!this.enabled) {
+			return true;
+		}
+
 		// File URIs and URIs without authority always pass
 		if (uri.scheme === 'file' || !uri.authority) {
 			return true;

@@ -208,6 +208,19 @@ export class PlaywrightTab {
 	async getSummary(full = this._needsFullSnapshot): Promise<string> {
 		await this._initialized;
 
+		// When the current page URL is blocked by network policy, return only a
+		// policy error — do not expose title, URL, console logs, or snapshot to
+		// avoid prompt-injection via blocked content.
+		const currentUrl = this.page.url();
+		if (currentUrl && currentUrl !== 'about:blank') {
+			let uri: URI | undefined;
+			try { uri = URI.parse(currentUrl); } catch { }
+			if (uri && !this.agentNetworkFilterService.isUriAllowed(uri)) {
+				this._logs = [];
+				return this.agentNetworkFilterService.formatError(uri);
+			}
+		}
+
 		if (full && this._needsFullSnapshot) {
 			this._needsFullSnapshot = false;
 		}

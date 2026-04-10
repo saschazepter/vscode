@@ -149,7 +149,7 @@ export function extractDomainFromUri(uri: URI): string | undefined {
  * Determines whether a domain is allowed based on allow and deny lists.
  *
  * Rules:
- * - If both lists are empty, the domain is allowed (permissive default).
+ * - If both lists are empty, the domain is denied (restrictive default).
  * - Denied patterns take precedence: if the domain matches any denied pattern, it is blocked.
  * - If only denied patterns are configured (allowed is empty), any non-denied domain is allowed.
  * - If allowed patterns are configured, the domain must match at least one to be allowed.
@@ -160,9 +160,9 @@ export function extractDomainFromUri(uri: URI): string | undefined {
  * @returns `true` if the domain is allowed, `false` if it is blocked.
  */
 export function isDomainAllowed(domain: string, allowedPatterns: string[], deniedPatterns: string[]): boolean {
-	// Permissive default: no filtering when both lists are empty.
+	// Restrictive default: deny all when both lists are empty.
 	if (allowedPatterns.length === 0 && deniedPatterns.length === 0) {
-		return true;
+		return false;
 	}
 
 	// Denied patterns take precedence.

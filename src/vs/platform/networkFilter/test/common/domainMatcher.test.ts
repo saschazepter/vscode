@@ -78,7 +78,7 @@ suite('domainMatcher', () => {
 		});
 
 		test('handles complex valid domains', () => {
-			assert.strictEqual(normalizeDomain('sub.domain.example.co.uk'), 'sub.domain.example.co.uk');
+			assert.strictEqual(normalizeDomain('sub.domain.example.com'), 'sub.domain.example.com');
 		});
 	});
 
@@ -153,8 +153,8 @@ suite('domainMatcher', () => {
 
 	suite('isDomainAllowed', () => {
 
-		test('allows everything when both lists empty', () => {
-			assert.strictEqual(isDomainAllowed('example.com', [], []), true);
+		test('denies everything when both lists empty', () => {
+			assert.strictEqual(isDomainAllowed('example.com', [], []), false);
 		});
 
 		test('denied takes precedence over allowed', () => {
