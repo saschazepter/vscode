@@ -23,18 +23,9 @@ import { IChatSendRequestOptions, IChatService } from '../../../../workbench/con
 import { IChatSessionFileChange, IChatSessionsService } from '../../../../workbench/contrib/chat/common/chatSessionsService.js';
 import { ChatAgentLocation, ChatModeKind } from '../../../../workbench/contrib/chat/common/constants.js';
 import { ILanguageModelsService } from '../../../../workbench/contrib/chat/common/languageModels.js';
+import { agentHostSessionWorkspaceKey, buildAgentHostSessionWorkspace } from '../../../common/agentHostSessionWorkspace.js';
 import { ISendRequestOptions, ISessionChangeEvent, ISessionsProvider } from '../../../services/sessions/common/sessionsProvider.js';
 import { IChat, ISession, ISessionWorkspace, ISessionWorkspaceBrowseAction, SessionStatus, type IGitHubInfo, ISessionType } from '../../../services/sessions/common/session.js';
-
-interface ISessionProjectSummary {
-	readonly uri: URI;
-	readonly displayName: string;
-}
-
-function workspaceKey(workspace: ISessionWorkspace | undefined): string | undefined {
-	const repository = workspace?.repositories[0];
-	return workspace && repository ? `${workspace.label}\n${repository.uri.toString()}\n${repository.workingDirectory?.toString() ?? ''}` : undefined;
-}
 
 const LOCAL_PROVIDER_ID = 'local-agent-host';
 
@@ -155,7 +146,7 @@ class LocalSessionAdapter implements ISession {
 		}
 
 		const workspace = LocalAgentHostSessionsProvider.buildWorkspace(metadata.project, metadata.workingDirectory);
-		if (workspaceKey(workspace) !== workspaceKey(this.workspace.get())) {
+		if (agentHostSessionWorkspaceKey(workspace) !== agentHostSessionWorkspaceKey(this.workspace.get())) {
 			this.workspace.set(workspace, undefined);
 			didChange = true;
 		}
@@ -263,28 +254,8 @@ export class LocalAgentHostSessionsProvider extends Disposable implements ISessi
 
 	// -- Workspaces --
 
-	static buildWorkspace(project: ISessionProjectSummary | undefined, workingDirectory: URI | undefined): ISessionWorkspace | undefined {
-		if (project) {
-			const repositoryWorkingDirectory = workingDirectory?.toString() !== project.uri.toString() ? workingDirectory : undefined;
-			return {
-				label: project.displayName,
-				icon: Codicon.repo,
-				repositories: [{ uri: project.uri, workingDirectory: repositoryWorkingDirectory, detail: undefined, baseBranchName: undefined, baseBranchProtected: undefined }],
-				requiresWorkspaceTrust: true,
-			};
-		}
-
-		if (!workingDirectory) {
-			return undefined;
-		}
-
-		const folderName = basename(workingDirectory) || workingDirectory.path;
-		return {
-			label: folderName,
-			icon: Codicon.folder,
-			repositories: [{ uri: workingDirectory, workingDirectory: undefined, detail: undefined, baseBranchName: undefined, baseBranchProtected: undefined }],
-			requiresWorkspaceTrust: true,
-		};
+	static buildWorkspace(project: IAgentSessionMetadata['project'], workingDirectory: URI | undefined): ISessionWorkspace | undefined {
+		return buildAgentHostSessionWorkspace(project, workingDirectory, { fallbackIcon: Codicon.folder, requiresWorkspaceTrust: true });
 	}
 
 	resolveWorkspace(repositoryUri: URI): ISessionWorkspace {

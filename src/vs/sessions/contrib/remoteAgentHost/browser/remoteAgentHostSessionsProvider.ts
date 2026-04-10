@@ -28,18 +28,9 @@ import { IChatSendRequestOptions, IChatService } from '../../../../workbench/con
 import { IChatSessionFileChange, IChatSessionsService } from '../../../../workbench/contrib/chat/common/chatSessionsService.js';
 import { ChatAgentLocation, ChatModeKind } from '../../../../workbench/contrib/chat/common/constants.js';
 import { ILanguageModelsService } from '../../../../workbench/contrib/chat/common/languageModels.js';
+import { agentHostSessionWorkspaceKey, buildAgentHostSessionWorkspace } from '../../../common/agentHostSessionWorkspace.js';
 import { ISessionChangeEvent, ISendRequestOptions, ISessionsProvider } from '../../../services/sessions/common/sessionsProvider.js';
 import { ISession, IChat, IGitHubInfo, ISessionWorkspace, ISessionWorkspaceBrowseAction, SessionStatus, CopilotCLISessionType, ISessionType } from '../../../services/sessions/common/session.js';
-
-interface ISessionProjectSummary {
-	readonly uri: URI;
-	readonly displayName: string;
-}
-
-function workspaceKey(workspace: ISessionWorkspace | undefined): string | undefined {
-	const repository = workspace?.repositories[0];
-	return workspace && repository ? `${workspace.label}\n${repository.uri.toString()}\n${repository.workingDirectory?.toString() ?? ''}` : undefined;
-}
 
 function toLocalProjectUri(uri: URI, connectionAuthority: string): URI {
 	return uri.scheme === Schemas.file ? toAgentHostUri(uri, connectionAuthority) : uri;
@@ -163,7 +154,7 @@ class RemoteSessionAdapter implements IChatData {
 			this.isArchived.set(metadata.isDone, undefined);
 		}
 		const workspace = RemoteAgentHostSessionsProvider.buildWorkspace(metadata.project, metadata.workingDirectory, this._providerLabel);
-		if (workspaceKey(workspace) !== workspaceKey(this.workspace.get())) {
+		if (agentHostSessionWorkspaceKey(workspace) !== agentHostSessionWorkspaceKey(this.workspace.get())) {
 			this.workspace.set(workspace, undefined);
 		}
 	}
@@ -346,28 +337,8 @@ export class RemoteAgentHostSessionsProvider extends Disposable implements ISess
 	/**
 	 * Builds workspace metadata from a working directory path on the remote host.
 	 */
-	static buildWorkspace(project: ISessionProjectSummary | undefined, workingDirectory: URI | undefined, providerLabel: string): ISessionWorkspace | undefined {
-		if (project) {
-			const repositoryWorkingDirectory = workingDirectory?.toString() !== project.uri.toString() ? workingDirectory : undefined;
-			return {
-				label: project.displayName,
-				icon: Codicon.repo,
-				repositories: [{ uri: project.uri, workingDirectory: repositoryWorkingDirectory, detail: providerLabel, baseBranchName: undefined, baseBranchProtected: undefined }],
-				requiresWorkspaceTrust: false,
-			};
-		}
-
-		if (!workingDirectory) {
-			return undefined;
-		}
-
-		const folderName = basename(workingDirectory) || workingDirectory.path;
-		return {
-			label: `${folderName} [${providerLabel}]`,
-			icon: Codicon.remote,
-			repositories: [{ uri: workingDirectory, workingDirectory: undefined, detail: providerLabel, baseBranchName: undefined, baseBranchProtected: undefined }],
-			requiresWorkspaceTrust: false,
-		};
+	static buildWorkspace(project: IAgentSessionMetadata['project'], workingDirectory: URI | undefined, providerLabel: string): ISessionWorkspace | undefined {
+		return buildAgentHostSessionWorkspace(project, workingDirectory, { providerLabel, fallbackIcon: Codicon.remote, requiresWorkspaceTrust: false });
 	}
 
 	private _buildWorkspaceFromUri(uri: URI): ISessionWorkspace {
