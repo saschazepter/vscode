@@ -227,8 +227,7 @@ export class SendToTerminalTool extends Disposable implements IToolImpl {
 		}
 
 		// Resolve the terminal ID that will match the carousel's terminalId
-		const termId = args.id ?? (args.terminalId !== undefined ? String(args.terminalId) : undefined);
-		if (!termId) {
+		if (!args.id && args.terminalId === undefined) {
 			return undefined;
 		}
 
@@ -246,7 +245,14 @@ export class SendToTerminalTool extends Disposable implements IToolImpl {
 				const part = parts[j];
 				if (part.kind === 'questionCarousel') {
 					const carousel = part as IChatQuestionCarousel;
-					if (carousel.terminalId !== termId || carousel.questions.length === 0) {
+					if (!carousel.terminalId || carousel.questions.length === 0) {
+						continue;
+					}
+					// Match by execution UUID or by resolving the carousel's UUID to an instance ID
+					const matchesById = !!args.id && carousel.terminalId === args.id;
+					const matchesByInstanceId = args.terminalId !== undefined &&
+						RunInTerminalTool.getExecution(carousel.terminalId)?.instance.instanceId === args.terminalId;
+					if (!matchesById && !matchesByInstanceId) {
 						continue;
 					}
 
