@@ -89,6 +89,11 @@ const TOOL_REFERENCE_NAME = 'runInTerminal';
 const LEGACY_TOOL_REFERENCE_FULL_NAMES = ['runCommands/runInTerminal'];
 const INPUT_NEEDED_NOTIFICATION_THROTTLE_MS = 5000;
 
+type IRunInTerminalToolInvocationData = IChatTerminalToolInvocationData & {
+	/** Whether prepareToolInvocation showed/required the normal tool confirmation. */
+	requiresConfirmationForRetry?: boolean;
+};
+
 function createPowerShellModelDescription(shell: string, isSandboxEnabled: boolean, backgroundNotifications: boolean, networkDomains?: ITerminalSandboxResolvedNetworkDomains): string {
 	const isWinPwsh = isWindowsPowerShell(shell);
 	const parts = [
@@ -869,6 +874,7 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 
 		// If forceConfirmationReason is set, always show confirmation regardless of auto-approval
 		const shouldShowConfirmation = (!isFinalAutoApproved && !isSessionAutoApproved) || context.forceConfirmationReason !== undefined;
+		(toolSpecificData as IRunInTerminalToolInvocationData).requiresConfirmationForRetry = shouldShowConfirmation;
 		const confirmationMessage = requiresUnsandboxConfirmation
 			? new MarkdownString(localize(
 				'runInTerminal.unsandboxed.confirmationMessage',
@@ -988,7 +994,11 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 		};
 	}
 
-	private async _confirmAutomaticUnsandboxRetry(sessionResource: URI | undefined, command: string, shell: string, blockedDomains: string[] | undefined, token: CancellationToken): Promise<boolean> {
+	private async _confirmAutomaticUnsandboxRetry(sessionResource: URI | undefined, command: string, shell: string, blockedDomains: string[] | undefined, requiresConfirmationForRetry: boolean | undefined, token: CancellationToken): Promise<boolean> {
+		if (requiresConfirmationForRetry === false) {
+			return true;
+		}
+
 		const chatModel = sessionResource && this._chatService.getSession(sessionResource);
 		if (!(chatModel instanceof ChatModel)) {
 			return false;
@@ -1070,20 +1080,6 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 			toolSpecificData,
 		};
 		chatModel.acceptResponseProgress(request, progress);
-	}
-
-	private _prependAutomaticUnsandboxRetryNote(result: IToolResult): IToolResult {
-		const note = localize(
-			'runInTerminal.unsandboxed.autoRetry.note',
-			'Note: The first sandboxed execution appeared blocked by the sandbox, so the command was automatically retried outside the sandbox.\n\n'
-		);
-		const firstTextPart = result.content.find(part => part.kind === 'text');
-		if (firstTextPart?.kind === 'text') {
-			firstTextPart.value = `${note}${firstTextPart.value}`;
-		} else {
-			result.content.unshift({ kind: 'text', value: note });
-		}
-		return result;
 	}
 
 	async invoke(invocation: IToolInvocation, _countTokens: CountTokensCallback, _progress: ToolProgress, token: CancellationToken): Promise<IToolResult> {
@@ -1654,7 +1650,7 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 			});
 			const rewrittenRetryReason = retryRewriteResult.requestUnsandboxedExecutionReason ?? retryReason;
 			const retryConfirmationCommand = toolSpecificData.presentationOverrides?.commandLine ?? command;
-			const shouldRetry = await this._confirmAutomaticUnsandboxRetry(invocation.context.sessionResource, retryConfirmationCommand, shell, retryRewriteResult.blockedDomains, token);
+			const shouldRetry = await this._confirmAutomaticUnsandboxRetry(invocation.context.sessionResource, retryConfirmationCommand, shell, retryRewriteResult.blockedDomains, (toolSpecificData as IRunInTerminalToolInvocationData).requiresConfirmationForRetry, token);
 			if (shouldRetry) {
 				const retryToolSpecificData: IChatTerminalToolInvocationData = {
 					...toolSpecificData,
@@ -1676,7 +1672,7 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 				const retryToolCallId = `automatic-unsandbox-retry-${generateUuid()}`;
 				this._acceptAutomaticUnsandboxRetryToolInvocationUpdate(invocation.context.sessionResource, retryToolCallId, retryToolSpecificData, false);
 
-				const retryResult = await this.invoke({
+				return await this.invoke({
 					...invocation,
 					parameters: {
 						...args,
@@ -1686,9 +1682,6 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 					},
 					toolSpecificData: retryToolSpecificData,
 				}, _countTokens, _progress, token);
-				this._acceptAutomaticUnsandboxRetryToolInvocationUpdate(invocation.context.sessionResource, retryToolCallId, retryToolSpecificData, true, retryResult.toolResultMessage);
-
-				return this._prependAutomaticUnsandboxRetryNote(retryResult);
 			}
 		}
 

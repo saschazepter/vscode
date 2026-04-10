@@ -66,6 +66,8 @@ class TestRunInTerminalTool extends RunInTerminalTool {
 	}
 }
 
+type ITestRunInTerminalToolInvocationData = IChatTerminalToolInvocationData & { requiresConfirmationForRetry?: boolean };
+
 suite('RunInTerminalTool', () => {
 	const store = ensureNoDisposablesAreLeakedInTestSuite();
 
@@ -274,6 +276,10 @@ suite('RunInTerminalTool', () => {
 		}
 	}
 
+	function confirmAutomaticUnsandboxRetry(tool: RunInTerminalTool, sessionResource: URI | undefined, command: string, shell: string, blockedDomains: string[] | undefined, requiresConfirmationForRetry: boolean | undefined): Promise<boolean> {
+		return (tool as unknown as Record<string, (sessionResource: URI | undefined, command: string, shell: string, blockedDomains: string[] | undefined, requiresConfirmationForRetry: boolean | undefined, token: CancellationToken) => Promise<boolean>>)['_confirmAutomaticUnsandboxRetry'](sessionResource, command, shell, blockedDomains, requiresConfirmationForRetry, CancellationToken.None);
+	}
+
 	suite('sandbox invocation messaging', () => {
 		test('should instruct models to use $TMPDIR instead of /tmp when sandboxed', async () => {
 			sandboxEnabled = true;
@@ -439,6 +445,59 @@ suite('RunInTerminalTool', () => {
 				...baseRetryOptions,
 				output: 'regular command failure',
 			}), false);
+		});
+
+		test('should not show retry elicitation when prepared invocation was auto-approved', async () => {
+			setAutoApprove({ echo: true });
+
+			const preparedInvocation = await executeToolTest({ command: 'echo hello' });
+			assertAutoApproved(preparedInvocation);
+			const terminalData = preparedInvocation!.toolSpecificData as ITestRunInTerminalToolInvocationData;
+			strictEqual(terminalData.requiresConfirmationForRetry, false);
+
+			const shouldRetry = await confirmAutomaticUnsandboxRetry(runInTerminalTool, undefined, 'echo hello', 'bash', undefined, terminalData.requiresConfirmationForRetry);
+
+			strictEqual(shouldRetry, true);
+		});
+
+		test('should not show retry elicitation when prepared invocation was session auto-approved', async () => {
+			const sessionResource = LocalChatSessionUri.forSession('auto-retry-approval-session');
+			instantiationService.stub(IChatWidgetService, {
+				getWidgetBySessionResource: (() => ({ input: { currentModeInfo: { permissionLevel: ChatPermissionLevel.AutoApprove } } })) as unknown as IChatWidgetService['getWidgetBySessionResource'],
+				lastFocusedWidget: undefined,
+			});
+			const autoApproveRunInTerminalTool = store.add(instantiationService.createInstance(TestRunInTerminalTool));
+			const preparedInvocation = await autoApproveRunInTerminalTool.prepareToolInvocation({
+				parameters: {
+					command: 'rm dangerous-file.txt',
+					explanation: 'Remove a file',
+					goal: 'Remove a file',
+					mode: 'sync',
+					timeout: 30000,
+				} as IRunInTerminalInputParams,
+				chatSessionResource: sessionResource,
+			} as IToolInvocationPreparationContext, CancellationToken.None);
+
+			assertAutoApproved(preparedInvocation);
+			const terminalData = preparedInvocation!.toolSpecificData as ITestRunInTerminalToolInvocationData;
+			strictEqual(terminalData.requiresConfirmationForRetry, false);
+
+			const shouldRetry = await confirmAutomaticUnsandboxRetry(autoApproveRunInTerminalTool, sessionResource, 'rm dangerous-file.txt', 'bash', undefined, terminalData.requiresConfirmationForRetry);
+
+			strictEqual(shouldRetry, true);
+		});
+
+		test('should show retry elicitation when prepared invocation required confirmation', async () => {
+			setAutoApprove({});
+
+			const preparedInvocation = await executeToolTest({ command: 'rm dangerous-file.txt' });
+			assertConfirmationRequired(preparedInvocation);
+			const terminalData = preparedInvocation!.toolSpecificData as ITestRunInTerminalToolInvocationData;
+			strictEqual(terminalData.requiresConfirmationForRetry, true);
+
+			const shouldRetry = await confirmAutomaticUnsandboxRetry(runInTerminalTool, undefined, 'rm dangerous-file.txt', 'bash', undefined, terminalData.requiresConfirmationForRetry);
+
+			strictEqual(shouldRetry, false);
 		});
 	});
 
