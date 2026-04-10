@@ -126,6 +126,16 @@ const shellIntegrationSupportedShellTypes: (PosixShellType | GeneralShellType | 
 	GeneralShellType.Python,
 ];
 
+/**
+ * Patterns for detecting agent CLIs from the OSC title they emit.
+ */
+const agentCliTitlePatterns: ReadonlyMap<GeneralShellType, RegExp> = new Map([
+	[GeneralShellType.Claude, /claude\s*code/i],
+	// [GeneralShellType.Codex, /\bcodex\b/i], // codex does not report osc title.
+	[GeneralShellType.Copilot, /\bcopilot\b/i],
+	[GeneralShellType.Gemini, /\bgemini\b/i],
+]);
+
 export class TerminalInstance extends Disposable implements ITerminalInstance {
 	private static _lastKnownCanvasDimensions: ICanvasDimensions | undefined;
 	private static _lastKnownGridDimensions: IGridDimensions | undefined;
@@ -154,6 +164,7 @@ export class TerminalInstance extends Disposable implements ITerminalInstance {
 	private _exitReason: TerminalExitReason | undefined;
 	private _skipTerminalCommands: string[];
 	private _shellType: TerminalShellType | undefined;
+	private _agentShellTypeFromSequence: GeneralShellType | undefined;
 	private _title: string = '';
 	private _titleSource: TitleEventSource = TitleEventSource.Process;
 	private _container: HTMLElement | undefined;
@@ -1521,7 +1532,7 @@ export class TerminalInstance extends Disposable implements ITerminalInstance {
 					this._setResolvedShellLaunchConfig(value as IProcessPropertyMap[ProcessPropertyType.ResolvedShellLaunchConfig]);
 					break;
 				case ProcessPropertyType.ShellType:
-					this.setShellType(value as IProcessPropertyMap[ProcessPropertyType.ShellType]);
+					this._handleShellTypeChange(value as IProcessPropertyMap[ProcessPropertyType.ShellType]);
 					break;
 				case ProcessPropertyType.HasChildProcesses:
 					this._onDidChangeHasChildProcesses.fire(value as IProcessPropertyMap[ProcessPropertyType.HasChildProcesses]);
@@ -1855,6 +1866,7 @@ export class TerminalInstance extends Disposable implements ITerminalInstance {
 
 		// Set the new shell launch config
 		this._shellLaunchConfig = shell; // Must be done before calling _createProcess()
+		this._agentShellTypeFromSequence = undefined;
 		await this._processManager.relaunch(this._shellLaunchConfig, this._cols || Constants.DefaultCols, this._rows || Constants.DefaultRows, reset).then(result => {
 			if (result) {
 				if (hasKey(result, { message: true })) {
@@ -1880,6 +1892,26 @@ export class TerminalInstance extends Disposable implements ITerminalInstance {
 		if (this.isTitleSetByProcess) {
 			this._setTitle(title, TitleEventSource.Sequence);
 		}
+		// Agent CLIs run as `node`, so the OSC title is our only cross-platform signal.
+		for (const [shellType, pattern] of agentCliTitlePatterns) {
+			if (pattern.test(title)) {
+				this._agentShellTypeFromSequence = shellType;
+				this.setShellType(shellType);
+				break;
+			}
+		}
+	}
+
+	private _handleShellTypeChange(shellType: TerminalShellType | undefined): void {
+		// Once an agent CLI is locked in, ignore stale `node`/undefined reports from the pty
+		// until a real shell takes over (meaning the agent exited).
+		if (this._agentShellTypeFromSequence) {
+			if (shellType === GeneralShellType.Node || shellType === undefined) {
+				return;
+			}
+			this._agentShellTypeFromSequence = undefined;
+		}
+		this.setShellType(shellType);
 	}
 
 	private async _trust(): Promise<boolean> {
