@@ -337,6 +337,13 @@ export class KeybindingsEditor extends EditorPane<IKeybindingsEditorMemento> imp
 		this.ariaLabelElement = DOM.append(parent, DOM.$(''));
 		this.ariaLabelElement.setAttribute('id', 'keybindings-editor-aria-label-element');
 		this.ariaLabelElement.setAttribute('aria-live', 'assertive');
+		this.ariaLabelElement.style.position = 'absolute';
+		this.ariaLabelElement.style.width = '1px';
+		this.ariaLabelElement.style.height = '1px';
+		this.ariaLabelElement.style.overflow = 'hidden';
+		this.ariaLabelElement.style.clip = 'rect(1px, 1px, 1px, 1px)';
+		this.ariaLabelElement.style.clipPath = 'inset(50%)';
+		this.ariaLabelElement.style.whiteSpace = 'nowrap';
 	}
 
 	private createOverlayContainer(parent: HTMLElement): void {
@@ -602,8 +609,9 @@ export class KeybindingsEditor extends EditorPane<IKeybindingsEditorMemento> imp
 		if (this.keybindingsEditorModel) {
 			const filter = this.searchWidget.getValue();
 			const keybindingsEntries: IKeybindingItemEntry[] = this.keybindingsEditorModel.fetch(filter, this.sortByPrecedenceAction.checked);
-			this.accessibilityService.alert(localize('foundResults', "{0} results", keybindingsEntries.length));
-			this.ariaLabelElement.setAttribute('aria-label', this.getAriaLabel(keybindingsEntries));
+			const ariaLabel = this.getAriaLabel(keybindingsEntries);
+			this.accessibilityService.alert(ariaLabel);
+			this.ariaLabelElement.textContent = ariaLabel;
 
 			if (keybindingsEntries.length === 0) {
 				this.latestEmptyFilters.push(filter);
