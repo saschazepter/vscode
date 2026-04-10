@@ -9,11 +9,19 @@ import { URI } from '../../../base/common/uri.js';
  * Common file extensions that are unlikely to be network domains.
  * Used to filter false positives when extracting domains from freeform text.
  */
-export const fileExtensionSuffixes = new Set([
+const fileExtensionSuffixes = new Set([
 	'7z', 'bz2', 'cjs', 'class', 'cpp', 'cs', 'css', 'csv', 'dll', 'exe', 'gif', 'gz', 'ico', 'jar',
 	'env', 'java', 'jpeg', 'jpg', 'js', 'json', 'jsx', 'lock', 'log', 'md', 'mjs', 'pdf', 'php', 'png',
 	'py', 'rar', 'rs', 'so', 'sql', 'svg', 'tar', 'tgz', 'toml', 'ts', 'tsx', 'txt', 'wasm', 'webp',
 	'xml', 'yaml', 'yml', 'zip'
+]);
+
+/**
+ * Bare host detection is a heuristic used only to prompt before running commands that appear to access the network.
+ * Keep this list intentionally conservative and focused on TLDs commonly used for coding-related hosts and services.
+ */
+const wellKnownDomainSuffixes = new Set([
+	'ai', 'cloud', 'com', 'dev', 'io', 'me', 'net', 'org', 'tech'
 ]);
 
 /**
@@ -73,6 +81,9 @@ export function normalizeDomain(value: string | undefined, fromUrl: boolean = fa
 	if (!fromUrl) {
 		const lastLabel = host.slice(host.lastIndexOf('.') + 1);
 		if (fileExtensionSuffixes.has(lastLabel)) {
+			return undefined;
+		}
+		if (!wellKnownDomainSuffixes.has(lastLabel)) {
 			return undefined;
 		}
 	}
