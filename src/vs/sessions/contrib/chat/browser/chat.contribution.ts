@@ -48,6 +48,7 @@ import { SessionsChatAccessibilityHelp } from './sessionsChatAccessibilityHelp.j
 import { AGENT_HOST_SCHEME, fromAgentHostUri } from '../../../../platform/agentHost/common/agentHostUri.js';
 import { IRemoteAgentHostService, IRemoteAgentHostSSHConnection, RemoteAgentHostEntryType } from '../../../../platform/agentHost/common/remoteAgentHostService.js';
 import { ISessionsProvidersService } from '../../../services/sessions/browser/sessionsProvidersService.js';
+import { encodeHex, VSBuffer } from '../../../../base/common/buffer.js';
 
 export class OpenSessionWorktreeInVSCodeAction extends Action2 {
 	static readonly ID = 'chat.openSessionWorktreeInVSCode';
@@ -190,13 +191,8 @@ export function sshAuthorityString(connection: IRemoteAgentHostSSHConnection): s
 		obj.port = connection.port;
 	}
 
-	// Hex-encode the JSON string (UTF-8 bytes → hex pairs)
 	const json = JSON.stringify(obj);
-	let hex = '';
-	for (let i = 0; i < json.length; i++) {
-		hex += json.charCodeAt(i).toString(16).padStart(2, '0');
-	}
-	return hex;
+	return encodeHex(VSBuffer.fromString(json));
 }
 
 class NewChatInSessionsWindowAction extends Action2 {

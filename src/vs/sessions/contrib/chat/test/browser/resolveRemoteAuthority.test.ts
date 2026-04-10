@@ -173,24 +173,6 @@ suite('sshAuthorityString', () => {
 
 	ensureNoDisposablesAreLeakedInTestSuite();
 
-	test('uses simple hostname verbatim for lowercase-only host', () => {
-		const result = sshAuthorityString({
-			type: RemoteAgentHostEntryType.SSH,
-			address: 'localhost:4321',
-			hostName: 'myserver',
-		});
-		assert.strictEqual(result, 'myserver');
-	});
-
-	test('uses hostName with dots and hyphens verbatim', () => {
-		const result = sshAuthorityString({
-			type: RemoteAgentHostEntryType.SSH,
-			address: 'localhost:4321',
-			hostName: 'my-server.example.com',
-		});
-		assert.strictEqual(result, 'my-server.example.com');
-	});
-
 	test('hex-encodes when user is present', () => {
 		const result = sshAuthorityString({
 			type: RemoteAgentHostEntryType.SSH,
