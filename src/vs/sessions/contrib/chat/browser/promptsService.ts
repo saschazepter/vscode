@@ -255,14 +255,14 @@ class AgenticPromptFilesLocator extends PromptFilesLocator {
 
 	/**
 	 * Filter out Claude-specific source folders in the sessions app.
-	 * The sessions window only supports .github and .copilot customization directories.
+	 * Claude customization directories are not supported in the sessions window.
 	 */
 	protected override getPromptSourceFolders(type: PromptsType): IPromptSourceFolder[] {
-		return super.getPromptSourceFolders(type).filter(f => !isClaudeSource(f.source));
+		return super.getPromptSourceFolders(type).filter(f => !isClaudeFolder(f));
 	}
 
 	protected override getDefaultSourceFolders(type: PromptsType): readonly IPromptSourceFolder[] {
-		return super.getDefaultSourceFolders(type).filter(f => !isClaudeSource(f.source));
+		return super.getDefaultSourceFolders(type).filter(f => !isClaudeFolder(f));
 	}
 
 	public override async getHookSourceFolders(): Promise<readonly URI[]> {
@@ -314,12 +314,17 @@ function sanitizeSkillText(text: string, maxLength: number): string {
 }
 
 /**
- * Returns whether the given source is a Claude-specific location.
- * The sessions app does not support Claude customization directories.
+ * Returns whether the given source folder targets a Claude-specific location.
+ * Checks both the typed source enum and the path string to also catch
+ * user-configured entries that use ConfigWorkspace/ConfigPersonal sources.
  */
-function isClaudeSource(source: PromptFileSource): boolean {
-	return source === PromptFileSource.ClaudePersonal
-		|| source === PromptFileSource.ClaudeWorkspace
-		|| source === PromptFileSource.ClaudeWorkspaceLocal;
+function isClaudeFolder(folder: IPromptSourceFolder): boolean {
+	if (folder.source === PromptFileSource.ClaudePersonal
+		|| folder.source === PromptFileSource.ClaudeWorkspace
+		|| folder.source === PromptFileSource.ClaudeWorkspaceLocal) {
+		return true;
+	}
+	// User-configured paths get Config* source types, so also check the path
+	return folder.path.startsWith('.claude/') || folder.path.includes('/.claude/');
 }
 

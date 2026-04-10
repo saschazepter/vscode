@@ -261,7 +261,7 @@ export class PromptFilesLocator {
 
 	/**
 	 * Gets the hook source folders for creating new hooks.
-	 * Returns folders from config, excluding user storage and Claude paths (which are read-only).
+	 * Returns configured hook folders, excluding Claude paths (which are read-only).
 	 */
 	public async getHookSourceFolders(): Promise<readonly URI[]> {
 		const configuredLocations = this.getPromptSourceFolders(PromptsType.hook);
