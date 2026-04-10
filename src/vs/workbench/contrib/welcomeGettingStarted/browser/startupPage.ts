@@ -96,9 +96,12 @@ export class StartupPageRunnerContribution extends Disposable implements IWorkbe
 		@IOnboardingService private readonly onboardingService: IOnboardingService,
 	) {
 		super();
-		this._register(this.onboardingService.onDidDismiss(() => {
-			this.storageService.store(ONBOARDING_STORAGE_KEY, true, StorageScope.PROFILE, StorageTarget.USER);
-		}));
+
+		// Show onboarding overlay immediately (before waiting for lifecycle restore)
+		if (this.configurationService.getValue<boolean>('workbench.welcomePage.experimentalOnboarding')) {
+			this.tryShowOnboarding();
+		}
+
 		this.run().then(undefined, onUnexpectedError);
 		this._register(this.editorService.onDidCloseEditor((e) => {
 			if (e.editor instanceof GettingStartedInput) {
@@ -143,11 +146,7 @@ export class StartupPageRunnerContribution extends Disposable implements IWorkbe
 				if (startupEditorSetting.value === 'readme') {
 					await this.openReadme();
 				} else if (startupEditorSetting.value === 'welcomePage' || startupEditorSetting.value === 'welcomePageInEmptyWorkbench') {
-					if (this.configurationService.getValue<boolean>('workbench.welcomePage.experimentalOnboarding')) {
-						await this.tryShowOnboarding();
-					} else {
-						await this.openGettingStarted(true);
-					}
+					await this.openGettingStarted(true);
 				} else if (startupEditorSetting.value === 'terminal') {
 					this.commandService.executeCommand(TerminalCommandId.CreateTerminalEditor);
 				}
@@ -235,14 +234,18 @@ export class StartupPageRunnerContribution extends Disposable implements IWorkbe
 		return true; // do not steal focus
 	}
 
-	private async tryShowOnboarding(): Promise<boolean> {
+	private tryShowOnboarding(): void {
 		if (this.storageService.get(ONBOARDING_STORAGE_KEY, StorageScope.PROFILE)) {
-			return false; // onboarding already completed
+			return; // onboarding already completed
 		}
 
+		// Show the onboarding overlay on top of the welcome page
 		this.onboardingService.show();
 
-		return true;
+		// Mark onboarding as completed when dismissed
+		this._register(this.onboardingService.onDidDismiss(() => {
+			this.storageService.store(ONBOARDING_STORAGE_KEY, true, StorageScope.PROFILE, StorageTarget.USER);
+		}));
 	}
 }
 
