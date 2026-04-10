@@ -541,7 +541,10 @@ export async function imageDataPartToTSX(part: LanguageModelDataPart, githubToke
 
 		const base64 = Buffer.from(imageData).toString('base64');
 		let imageSource = `data:${mimeType};base64,${base64}`;
-		const isChatRequest = typeof urlOrRequestMetadata !== 'string' && (urlOrRequestMetadata?.type === RequestType.ChatCompletions || urlOrRequestMetadata?.type === RequestType.ChatMessages);
+		const isChatRequest = typeof urlOrRequestMetadata !== 'string' && (
+			urlOrRequestMetadata?.type === RequestType.ChatCompletions ||
+			urlOrRequestMetadata?.type === RequestType.ChatResponses ||
+			urlOrRequestMetadata?.type === RequestType.ChatMessages);
 		if (githubToken && isChatRequest && imageService) {
 			try {
 				const uri = await imageService.uploadChatImageAttachment(imageData, 'tool-result-image', mimeType ?? 'image/png', githubToken);
