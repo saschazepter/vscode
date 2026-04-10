@@ -10,7 +10,7 @@ import { URI } from '../../../../base/common/uri.js';
 import { type ISyncedCustomization } from '../../common/agentPluginManager.js';
 import { AgentSession, type AgentProvider, type IAgent, type IAgentAttachment, type IAgentCreateSessionConfig, type IAgentDescriptor, type IAgentMessageEvent, type IAgentModelInfo, type IAgentProgressEvent, type IAgentSessionMetadata, type IAgentSubagentStartedEvent, type IAgentToolCompleteEvent, type IAgentToolStartEvent } from '../../common/agentService.js';
 import { IProtectedResourceMetadata } from '../../common/state/protocol/state.js';
-import { CustomizationStatus, SessionInputResponseKind, ToolResultContentType, type ICustomizationRef, type IPendingMessage, type ISessionInputAnswer, type IToolCallResult } from '../../common/state/sessionState.js';
+import { CustomizationStatus, ToolResultContentType, type ICustomizationRef, type IPendingMessage, type IToolCallResult } from '../../common/state/sessionState.js';
 
 /** Well-known auto-generated title used by the 'with-title' prompt. */
 export const MOCK_AUTO_TITLE = 'Automatically generated title';
@@ -99,8 +99,8 @@ export class MockAgent implements IAgent {
 		this.respondToPermissionCalls.push({ requestId, approved });
 	}
 
-	respondToUserInputRequest(_requestId: string, _response: SessionInputResponseKind, _answers?: Record<string, ISessionInputAnswer>): void {
-		// no-op in mock
+	respondToUserInputRequest(): void {
+		// no-op for tests
 	}
 
 	async changeModel(session: URI, model: string): Promise<void> {
@@ -441,8 +441,8 @@ export class ScriptedMockAgent implements IAgent {
 		}
 	}
 
-	respondToUserInputRequest(_requestId: string, _response: SessionInputResponseKind, _answers?: Record<string, ISessionInputAnswer>): void {
-		// no-op in mock
+	respondToUserInputRequest(): void {
+		// no-op for tests
 	}
 
 	async authenticate(_resource: string, _token: string): Promise<boolean> {

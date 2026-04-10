@@ -193,7 +193,9 @@ export function getToolSubagentContent(result: { content?: readonly IToolResultC
  * Convention: `{parentSessionUri}/subagent/{toolCallId}`
  */
 export function buildSubagentSessionUri(parentSession: string, toolCallId: string): string {
-	return `${parentSession}/subagent/${toolCallId}`;
+	// Normalize: strip trailing slash from parent to avoid double-slash in URI
+	const parent = parentSession.endsWith('/') ? parentSession.slice(0, -1) : parentSession;
+	return `${parent}/subagent/${toolCallId}`;
 }
 
 /**
@@ -201,13 +203,17 @@ export function buildSubagentSessionUri(parentSession: string, toolCallId: strin
  * Returns `undefined` if the URI does not follow the subagent convention.
  */
 export function parseSubagentSessionUri(uri: string): { parentSession: string; toolCallId: string } | undefined {
-	const idx = uri.indexOf('/subagent/');
+	const idx = uri.lastIndexOf('/subagent/');
 	if (idx < 0) {
+		return undefined;
+	}
+	const toolCallId = uri.substring(idx + '/subagent/'.length);
+	if (!toolCallId) {
 		return undefined;
 	}
 	return {
 		parentSession: uri.substring(0, idx),
-		toolCallId: uri.substring(idx + '/subagent/'.length),
+		toolCallId,
 	};
 }
 

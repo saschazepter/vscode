@@ -7,7 +7,7 @@ import assert from 'assert';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { VSBuffer } from '../../../../base/common/buffer.js';
-import { DisposableStore, toDisposable } from '../../../../base/common/lifecycle.js';
+import { DisposableStore, IReference, toDisposable } from '../../../../base/common/lifecycle.js';
 import { Schemas } from '../../../../base/common/network.js';
 import { URI } from '../../../../base/common/uri.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/common/utils.js';
@@ -16,10 +16,10 @@ import { NullLogService } from '../../../log/common/log.js';
 import { FileService } from '../../../files/common/fileService.js';
 import { InMemoryFileSystemProvider } from '../../../files/common/inMemoryFilesystemProvider.js';
 import { AgentSession } from '../../common/agentService.js';
+import { ISessionDatabase, ISessionDataService } from '../../common/sessionDataService.js';
 import { SessionDatabase } from '../../node/sessionDatabase.js';
 import { ActionType, IActionEnvelope } from '../../common/state/sessionActions.js';
 import { ResponsePartKind, SessionLifecycle, ToolCallConfirmationReason, ToolCallStatus, ToolResultContentType, TurnState, buildSubagentSessionUri, type IMarkdownResponsePart, type IToolCallCompletedState, type IToolCallResponsePart } from '../../common/state/sessionState.js';
-import { createNullSessionDataService, createSessionDataService } from '../common/sessionTestHelpers.js';
 import { AgentService } from '../../node/agentService.js';
 import { MockAgent } from './mockAgent.js';
 import { mapSessionEvents, type ISessionEvent } from '../../node/copilot/mapSessionEvents.js';
@@ -36,10 +36,13 @@ import { mapSessionEvents, type ISessionEvent } from '../../node/copilot/mapSess
 async function loadFixtureMessages(fixtureName: string, session: URI) {
 	// Resolve the fixture from the source tree (test-cases/ is not compiled to out/)
 	const thisFile = fileURLToPath(import.meta.url);
-	// Navigate from out/vs/... to src/vs/... by replacing the out/ prefix
-	const srcFile = thisFile.replace(/[/\\]out[/\\]/, '/src/');
-	const fixtureDir = srcFile.substring(0, srcFile.lastIndexOf('/'));
-	const raw = readFileSync(`${fixtureDir}/test-cases/${fixtureName}`, 'utf-8');
+	// Navigate from out/vs/... to src/vs/... by replacing the out/ prefix.
+	// Use a regex that handles both / and \ separators for Windows compat.
+	const srcFile = thisFile.replace(/[/\\]out[/\\]/, (m) => m.replace('out', 'src'));
+	const lastSep = Math.max(srcFile.lastIndexOf('/'), srcFile.lastIndexOf('\\'));
+	const fixtureDir = srcFile.substring(0, lastSep);
+	const sep = srcFile.includes('\\') ? '\\' : '/';
+	const raw = readFileSync(`${fixtureDir}${sep}test-cases${sep}${fixtureName}`, 'utf-8');
 	const events: ISessionEvent[] = raw.trim().split('\n').map(line => JSON.parse(line));
 	return mapSessionEvents(session, undefined, events);
 }
@@ -52,6 +55,15 @@ suite('AgentService (node dispatcher)', () => {
 	let fileService: FileService;
 
 	setup(async () => {
+		const nullSessionDataService: ISessionDataService = {
+			_serviceBrand: undefined,
+			getSessionDataDir: () => URI.parse('inmemory:/session-data'),
+			getSessionDataDirById: () => URI.parse('inmemory:/session-data'),
+			openDatabase: () => { throw new Error('not implemented'); },
+			tryOpenDatabase: async () => undefined,
+			deleteSessionData: async () => { },
+			cleanupOrphanedData: async () => { },
+		};
 		fileService = disposables.add(new FileService(new NullLogService()));
 		disposables.add(fileService.registerProvider(Schemas.inMemory, disposables.add(new InMemoryFileSystemProvider())));
 
@@ -59,7 +71,7 @@ suite('AgentService (node dispatcher)', () => {
 		await fileService.createFolder(URI.from({ scheme: Schemas.inMemory, path: '/testDir' }));
 		await fileService.writeFile(URI.from({ scheme: Schemas.inMemory, path: '/testDir/file.txt' }), VSBuffer.fromString('hello'));
 
-		service = disposables.add(new AgentService(new NullLogService(), fileService, createNullSessionDataService()));
+		service = disposables.add(new AgentService(new NullLogService(), fileService, nullSessionDataService));
 		copilotAgent = new MockAgent('copilot');
 		disposables.add(toDisposable(() => copilotAgent.dispose()));
 	});
@@ -167,7 +179,21 @@ suite('AgentService (node dispatcher)', () => {
 			const sessionId = 'test-session-abc';
 			const sessionUri = AgentSession.uri('copilot', sessionId);
 
-			const sessionDataService = createSessionDataService(db);
+			const sessionDataService: ISessionDataService = {
+				_serviceBrand: undefined,
+				getSessionDataDir: () => URI.parse('inmemory:/session-data'),
+				getSessionDataDirById: () => URI.parse('inmemory:/session-data'),
+				openDatabase: (): IReference<ISessionDatabase> => ({
+					object: db,
+					dispose: () => { },
+				}),
+				tryOpenDatabase: async (): Promise<IReference<ISessionDatabase> | undefined> => ({
+					object: db,
+					dispose: () => { },
+				}),
+				deleteSessionData: async () => { },
+				cleanupOrphanedData: async () => { },
+			};
 
 			// Create a mock that returns a session with that ID
 			const agent = new MockAgent('copilot');

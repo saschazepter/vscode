@@ -1395,12 +1395,19 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 
 				try {
 					const childSub = this._ensureSessionSubscription(childSessionUri);
-					if (!this._getSessionState(childSessionUri)) {
+					let childState = this._getSessionState(childSessionUri);
+					if (!childState) {
+						if (childSub.value instanceof Error) {
+							throw childSub.value;
+						}
 						await new Promise<void>(resolve => {
 							const d = childSub.onDidChange(() => { d.dispose(); resolve(); });
 						});
+						if (childSub.value instanceof Error) {
+							throw childSub.value;
+						}
+						childState = this._getSessionState(childSessionUri);
 					}
-					const childState = this._getSessionState(childSessionUri);
 					if (childState) {
 						const innerParts: IChatProgress[] = [];
 						for (const turn of childState.turns) {
