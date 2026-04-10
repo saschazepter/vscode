@@ -43,6 +43,7 @@ import {
 	getOnboardingStepTitle,
 	getOnboardingStepSubtitle,
 } from '../common/onboardingTypes.js';
+import { IOnboardingService } from '../common/onboardingService.js';
 
 type OnboardingStepViewClassification = {
 	owner: 'cwebster-99';
@@ -85,7 +86,9 @@ const defaultChat = product.defaultChatAgent;
  * 2. Personalize — Theme selection grid + keymap pills
  * 3. Agent Sessions — Feature cards showcasing AI capabilities
  */
-export class OnboardingVariationA extends Disposable {
+export class OnboardingVariationA extends Disposable implements IOnboardingService {
+
+	declare readonly _serviceBrand: undefined;
 
 	private readonly _onDidComplete = this._register(new Emitter<void>());
 	readonly onDidComplete: Event<void> = this._onDidComplete.event;
@@ -696,6 +699,8 @@ export class OnboardingVariationA extends Disposable {
 		for (const theme of themes) {
 			this._createThemeCard(themeGrid, theme, themeCards);
 		}
+		const selectedThemeIndex = themes.findIndex(t => t.id === this.selectedThemeId);
+		this._setupRadioGroupNavigation(themeCards, Math.max(0, selectedThemeIndex));
 
 		// Keyboard Mapping section — only shown when another editor is detected
 		const keymapOptions = this._detectedEditorIds
@@ -741,6 +746,8 @@ export class OnboardingVariationA extends Disposable {
 					pill.setAttribute('aria-checked', 'true');
 				}));
 			}
+			const selectedKeymapIndex = keymapOptions.findIndex(k => k.id === this.selectedKeymapId);
+			this._setupRadioGroupNavigation(keymapPills, Math.max(0, selectedKeymapIndex));
 		}
 
 	}
@@ -765,7 +772,6 @@ export class OnboardingVariationA extends Disposable {
 		card.setAttribute('role', 'radio');
 		card.setAttribute('aria-checked', theme.id === this.selectedThemeId ? 'true' : 'false');
 		card.setAttribute('aria-label', theme.label);
-		card.setAttribute('tabindex', '0');
 
 		if (theme.id === this.selectedThemeId) {
 			card.classList.add('selected');
@@ -808,12 +814,16 @@ export class OnboardingVariationA extends Disposable {
 		const wrapper = append(container, $('div.onboarding-a-extensions'));
 
 		const extList = append(wrapper, $('div.onboarding-a-ext-list'));
+		extList.setAttribute('role', 'list');
+		extList.setAttribute('aria-label', localize('onboarding.ext.listLabel', "Recommended extensions"));
 
 		// Build a map of icon elements so we can update them once gallery data arrives
 		const iconElements = new Map<string, HTMLElement>();
 
 		for (const ext of (product.onboardingExtensions ?? [])) {
 			const row = append(extList, $('div.onboarding-a-ext-row'));
+			row.setAttribute('role', 'listitem');
+			row.setAttribute('aria-label', localize('onboarding.ext.row.aria', "{0} by {1}: {2}", ext.name, ext.publisher, ext.description));
 
 			const iconEl = append(row, $('div.onboarding-a-ext-icon'));
 			// Start with a codicon placeholder
@@ -1024,12 +1034,16 @@ export class OnboardingVariationA extends Disposable {
 		const wrapper = append(container, $('.onboarding-a-ai-pref'));
 
 		const cards = append(wrapper, $('.onboarding-a-ai-pref-cards'));
+		cards.setAttribute('role', 'radiogroup');
+		cards.setAttribute('aria-label', localize('onboarding.aiPref.label', "Choose your AI collaboration style"));
 
 		const allCards: HTMLButtonElement[] = [];
 		for (const option of ONBOARDING_AI_PREFERENCE_OPTIONS) {
 			const card = this._registerStepFocusable(append(cards, $<HTMLButtonElement>('button.onboarding-a-ai-pref-card')));
 			card.type = 'button';
 			card.dataset.id = option.id;
+			card.setAttribute('role', 'radio');
+			card.setAttribute('aria-checked', option.id === this.selectedAiMode ? 'true' : 'false');
 			allCards.push(card);
 
 			if (option.id === this.selectedAiMode) {
@@ -1052,10 +1066,13 @@ export class OnboardingVariationA extends Disposable {
 				this.selectedAiMode = option.id;
 				for (const c of allCards) {
 					c.classList.toggle('selected', c.dataset.id === option.id);
+					c.setAttribute('aria-checked', c.dataset.id === option.id ? 'true' : 'false');
 				}
 				this._applyAiPreference(option.id);
 			}));
 		}
+		const selectedAiIndex = ONBOARDING_AI_PREFERENCE_OPTIONS.findIndex(o => o.id === this.selectedAiMode);
+		this._setupRadioGroupNavigation(allCards, Math.max(0, selectedAiIndex));
 
 		const hint = append(wrapper, $('div.onboarding-a-ai-pref-hint'));
 		hint.textContent = localize('onboarding.aiPref.hint', "You can change this anytime in Settings.");
@@ -1082,7 +1099,7 @@ export class OnboardingVariationA extends Disposable {
 	private _renderAgentSessionsSubtitle(el: HTMLElement): void {
 		clearNode(el);
 		const keys = isMacintosh
-			? ['\u2318', '\u2325', 'I']  // ⌘, ⌥, I
+			? ['\u2318', '\u2303', 'I']  // Cmd+Control+I
 			: ['Ctrl', 'Alt', 'I'];
 		const shortcut = keys.map(k => this._createKbd(k));
 		el.append(
@@ -1172,6 +1189,49 @@ export class OnboardingVariationA extends Disposable {
 		link.target = '_blank';
 		link.rel = 'noopener';
 		return link;
+	}
+
+	// =====================================================================
+	// Radio-group keyboard navigation (roving tabindex)
+	// =====================================================================
+
+	/**
+	 * Sets up WAI-ARIA radio-group keyboard navigation on a set of elements:
+	 * - Arrow keys move focus between items (with wrap-around)
+	 * - Only the focused item has tabindex=0; the rest have tabindex=-1
+	 * - Space/Enter on a focused item fires its click handler
+	 */
+	private _setupRadioGroupNavigation(items: HTMLElement[], selectedIndex: number): void {
+		// Initialise roving tabindex: only the selected item is tab-reachable
+		for (let i = 0; i < items.length; i++) {
+			items[i].setAttribute('tabindex', i === selectedIndex ? '0' : '-1');
+		}
+
+		for (let i = 0; i < items.length; i++) {
+			this.stepDisposables.add(addDisposableListener(items[i], EventType.KEY_DOWN, (e: KeyboardEvent) => {
+				const event = new StandardKeyboardEvent(e);
+				let newIndex: number | undefined;
+
+				if (event.keyCode === KeyCode.RightArrow || event.keyCode === KeyCode.DownArrow) {
+					newIndex = (i + 1) % items.length;
+				} else if (event.keyCode === KeyCode.LeftArrow || event.keyCode === KeyCode.UpArrow) {
+					newIndex = (i - 1 + items.length) % items.length;
+				} else if (event.keyCode === KeyCode.Home) {
+					newIndex = 0;
+				} else if (event.keyCode === KeyCode.End) {
+					newIndex = items.length - 1;
+				}
+
+				if (newIndex !== undefined) {
+					e.preventDefault();
+					e.stopPropagation();
+					items[i].setAttribute('tabindex', '-1');
+					items[newIndex].setAttribute('tabindex', '0');
+					items[newIndex].focus();
+					items[newIndex].click();
+				}
+			}));
+		}
 	}
 
 	// =====================================================================

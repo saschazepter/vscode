@@ -31,7 +31,7 @@ import { IContextKeyService } from '../../../../platform/contextkey/common/conte
 import { AuxiliaryBarMaximizedContext } from '../../../common/contextkeys.js';
 import { mainWindow } from '../../../../base/browser/window.js';
 import { getActiveElement } from '../../../../base/browser/dom.js';
-import { OnboardingVariationA } from '../../welcomeOnboarding/browser/onboardingVariationA.js';
+import { IOnboardingService } from '../../welcomeOnboarding/common/onboardingService.js';
 import { ONBOARDING_STORAGE_KEY } from '../../welcomeOnboarding/common/onboardingTypes.js';
 
 export const restoreWalkthroughsConfigurationKey = 'workbench.welcomePage.restorableWalkthroughs';
@@ -80,8 +80,6 @@ export class StartupPageEditorResolverContribution extends Disposable implements
 export class StartupPageRunnerContribution extends Disposable implements IWorkbenchContribution {
 
 	static readonly ID = 'workbench.contrib.startupPageRunner';
-	private onboardingModal: OnboardingVariationA | undefined;
-
 	constructor(
 		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@IEditorService private readonly editorService: IEditorService,
@@ -95,9 +93,12 @@ export class StartupPageRunnerContribution extends Disposable implements IWorkbe
 		@IStorageService private readonly storageService: IStorageService,
 		@INotificationService private readonly notificationService: INotificationService,
 		@IContextKeyService private readonly contextKeyService: IContextKeyService,
-		@IInstantiationService private readonly instantiationService: IInstantiationService,
+		@IOnboardingService private readonly onboardingService: IOnboardingService,
 	) {
 		super();
+		this._register(this.onboardingService.onDidDismiss(() => {
+			this.storageService.store(ONBOARDING_STORAGE_KEY, true, StorageScope.PROFILE, StorageTarget.USER);
+		}));
 		this.run().then(undefined, onUnexpectedError);
 		this._register(this.editorService.onDidCloseEditor((e) => {
 			if (e.editor instanceof GettingStartedInput) {
@@ -239,20 +240,9 @@ export class StartupPageRunnerContribution extends Disposable implements IWorkbe
 			return false; // onboarding already completed
 		}
 
-		this.getOnboardingModal().show();
+		this.onboardingService.show();
 
 		return true;
-	}
-
-	private getOnboardingModal(): OnboardingVariationA {
-		if (!this.onboardingModal) {
-			this.onboardingModal = this._register(this.instantiationService.createInstance(OnboardingVariationA));
-			this._register(this.onboardingModal.onDidDismiss(() => {
-				this.storageService.store(ONBOARDING_STORAGE_KEY, true, StorageScope.PROFILE, StorageTarget.USER);
-			}));
-		}
-
-		return this.onboardingModal;
 	}
 }
 

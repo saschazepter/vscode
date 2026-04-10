@@ -9,8 +9,12 @@ import './media/variationA.css';
 import { localize2 } from '../../../../nls.js';
 import { Categories } from '../../../../platform/action/common/actionCommonCategories.js';
 import { Action2, registerAction2 } from '../../../../platform/actions/common/actions.js';
-import { IInstantiationService, ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
+import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
+import { ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
+import { IOnboardingService } from '../common/onboardingService.js';
 import { OnboardingVariationA } from './onboardingVariationA.js';
+
+registerSingleton(IOnboardingService, OnboardingVariationA, InstantiationType.Delayed);
 
 registerAction2(class extends Action2 {
 	constructor() {
@@ -23,9 +27,7 @@ registerAction2(class extends Action2 {
 	}
 
 	run(accessor: ServicesAccessor): void {
-		const instantiationService = accessor.get(IInstantiationService);
-		const modal = instantiationService.createInstance(OnboardingVariationA);
-		modal.onDidDismiss(() => modal.dispose());
-		modal.show();
+		const onboardingService = accessor.get(IOnboardingService);
+		onboardingService.show();
 	}
 });
