@@ -865,6 +865,9 @@ export namespace ConfigKey {
 		export const ResponsesApiReasoningEffort = defineTeamInternalSetting<'low' | 'medium' | 'high' | 'xhigh' | undefined>('chat.advanced.responsesApiReasoningEffort', ConfigType.Simple, undefined);
 		/** Internal: configure reasoning effort for Anthropic thinking. Used by evals. */
 		export const AnthropicThinkingEffort = defineTeamInternalSetting<'low' | 'medium' | 'high' | undefined>('chat.advanced.anthropicThinkingEffort', ConfigType.Simple, undefined);
+
+		/** Enable session search features (chronicle, remote session upload). Team-internal only. */
+		export const SessionSearchEnabled = defineTeamInternalSetting<boolean>('chat.advanced.sessionSearch.enabled', ConfigType.Simple, false, vBoolean());
 	}
 
 	/**

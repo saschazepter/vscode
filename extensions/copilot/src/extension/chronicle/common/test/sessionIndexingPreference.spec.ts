@@ -25,21 +25,21 @@ describe('SessionIndexingPreference', () => {
 	});
 
 	it('returns repo-specific preference', () => {
-		const ctx = createMockContext({ 'copilot.sessionIndexing.microsoft/vscode': 'user' });
+		const ctx = createMockContext({ 'copilot.sessionSearch.microsoft/vscode': 'user' });
 		const pref = new SessionIndexingPreference(ctx);
 		expect(pref.getPreference('microsoft/vscode')).toBe('user');
 	});
 
 	it('falls back to global wildcard preference', () => {
-		const ctx = createMockContext({ 'copilot.sessionIndexing.*': 'local' });
+		const ctx = createMockContext({ 'copilot.sessionSearch.*': 'local' });
 		const pref = new SessionIndexingPreference(ctx);
 		expect(pref.getPreference('microsoft/vscode')).toBe('local');
 	});
 
 	it('repo-specific takes priority over global wildcard', () => {
 		const ctx = createMockContext({
-			'copilot.sessionIndexing.*': 'local',
-			'copilot.sessionIndexing.microsoft/vscode': 'repo_and_user',
+			'copilot.sessionSearch.*': 'local',
+			'copilot.sessionSearch.microsoft/vscode': 'repo_and_user',
 		});
 		const pref = new SessionIndexingPreference(ctx);
 		expect(pref.getPreference('microsoft/vscode')).toBe('repo_and_user');
@@ -47,8 +47,8 @@ describe('SessionIndexingPreference', () => {
 
 	it('different repos can have different preferences', () => {
 		const ctx = createMockContext({
-			'copilot.sessionIndexing.microsoft/vscode': 'user',
-			'copilot.sessionIndexing.microsoft/tas-client': 'local',
+			'copilot.sessionSearch.microsoft/vscode': 'user',
+			'copilot.sessionSearch.microsoft/tas-client': 'local',
 		});
 		const pref = new SessionIndexingPreference(ctx);
 		expect(pref.getPreference('microsoft/vscode')).toBe('user');

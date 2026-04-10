@@ -8,12 +8,17 @@ import type * as vscode from 'vscode';
 import { IAuthenticationService } from '../../../platform/authentication/common/authentication';
 import { ICopilotTokenManager } from '../../../platform/authentication/common/copilotTokenManager';
 import { ChatLocation } from '../../../platform/chat/common/commonTypes';
+import { ConfigKey, IConfigurationService } from '../../../platform/configuration/common/configurationService';
 import { ISessionStore } from '../../../platform/chronicle/common/sessionStore';
 import { IEndpointProvider } from '../../../platform/endpoint/common/endpointProvider';
+import { IVSCodeExtensionContext } from '../../../platform/extContext/common/extensionContext';
+import { getGitHubRepoInfoFromContext, IGitService } from '../../../platform/git/common/gitService';
 import { CancellationToken } from '../../../util/vs/base/common/cancellation';
 import { LanguageModelChatMessage } from '../../../vscodeTypes';
 import { type AnnotatedRef, type AnnotatedSession, type SessionFileInfo, type SessionTurnInfo, buildStandupPrompt } from '../../chronicle/common/standupPrompt';
+import { SessionIndexingPreference } from '../../chronicle/common/sessionIndexingPreference';
 import { CloudSessionStoreClient } from '../../chronicle/node/cloudSessionStoreClient';
+import { IToolsService } from '../../tools/common/toolsService';
 import { Conversation } from '../../prompt/common/conversation';
 import { ChatTelemetryBuilder } from '../../prompt/node/chatParticipantTelemetry';
 import { IDocumentContext } from '../../prompt/node/documentContext';
@@ -44,7 +49,15 @@ export class ChronicleIntent implements IIntent {
 		@ISessionStore _sessionStore: ISessionStore, // temporarily unused — cloud-only testing
 		@ICopilotTokenManager private readonly _tokenManager: ICopilotTokenManager,
 		@IAuthenticationService private readonly _authService: IAuthenticationService,
-	) { }
+		@IToolsService private readonly _toolsService: IToolsService,
+		@IVSCodeExtensionContext private readonly _extensionContext: IVSCodeExtensionContext,
+		@IGitService private readonly _gitService: IGitService,
+		@IConfigurationService private readonly _configService: IConfigurationService,
+	) {
+		this._indexingPreference = new SessionIndexingPreference(this._extensionContext);
+	}
+
+	private readonly _indexingPreference: SessionIndexingPreference;
 
 	async handleRequest(
 		_conversation: Conversation,
@@ -56,6 +69,11 @@ export class ChronicleIntent implements IIntent {
 		_location: ChatLocation,
 		_chatTelemetry: ChatTelemetryBuilder,
 	): Promise<vscode.ChatResult> {
+		if (!this._configService.getConfig(ConfigKey.TeamInternal.SessionSearchEnabled)) {
+			stream.markdown(l10n.t('Session search is not enabled. Set `github.copilot.chat.advanced.sessionSearch.enabled` to `true` in settings to enable this feature.'));
+			return {};
+		}
+
 		const { subcommand, rest } = this._parseSubcommand(request.prompt);
 
 		switch (subcommand) {
@@ -97,6 +115,10 @@ export class ChronicleIntent implements IIntent {
 		request: vscode.ChatRequest,
 		token: CancellationToken,
 	): Promise<vscode.ChatResult> {
+		// Check if user needs to consent to session indexing
+		// This shows the inline askQuestions UI on first use per repo
+		await this._checkSessionIndexingConsent(request, token);
+
 		console.log('[Chronicle] _handleStandup called');
 		// VS Code local store disabled temporarily for cloud-only testing
 		// const vscodeSessions = this._queryStore(this.sessionStore, 'vscode');
@@ -191,6 +213,44 @@ export class ChronicleIntent implements IIntent {
 		}
 	}
 	*/
+
+	/**
+	 * Check if the user has consented to session indexing for the current repo.
+	 * If not, show the inline askQuestions consent UI.
+	 */
+	private async _checkSessionIndexingConsent(
+		request: vscode.ChatRequest,
+		token: CancellationToken,
+	): Promise<void> {
+		try {
+			// Resolve repo NWO from active git repository
+			const repoContext = this._gitService.activeRepository?.get();
+			if (!repoContext) {
+				return;
+			}
+			const repoInfo = getGitHubRepoInfoFromContext(repoContext);
+			if (!repoInfo) {
+				return;
+			}
+			const repoNwo = `${repoInfo.id.org}/${repoInfo.id.repo}`;
+
+			const existing = this._indexingPreference.getPreference(repoNwo);
+			if (existing) {
+				return; // Already consented
+			}
+
+			// Show inline consent UI
+			const level = await this._indexingPreference.promptUserInline(
+				repoNwo,
+				this._toolsService,
+				request.toolInvocationToken,
+				token,
+			);
+			console.log(`[Chronicle] User selected indexing level: ${level ?? 'dismissed'} for ${repoNwo}`);
+		} catch (err) {
+			console.error('[Chronicle] Consent check failed:', err);
+		}
+	}
 
 	private async _queryCloudStore(): Promise<{ sessions: AnnotatedSession[]; refs: AnnotatedRef[]; files: SessionFileInfo[]; turns: SessionTurnInfo[] }> {
 		const empty = { sessions: [] as AnnotatedSession[], refs: [] as AnnotatedRef[], files: [] as SessionFileInfo[], turns: [] as SessionTurnInfo[] };

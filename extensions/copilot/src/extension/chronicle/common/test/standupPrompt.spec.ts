@@ -15,7 +15,7 @@ describe('buildStandupPrompt', () => {
 
 	it('includes session data in prompt', () => {
 		const sessions: AnnotatedSession[] = [
-			{ id: 'sess-1', branch: 'feature/auth', repository: 'owner/repo', summary: 'Added OAuth', updated_at: '2026-04-06T10:00:00Z', source: 'vscode' },
+			{ id: 'sess-1', branch: 'feature/auth', repository: 'owner/repo', summary: 'Added OAuth', updated_at: '2026-04-06T10:00:00Z', source: 'cloud' },
 		];
 		const result = buildStandupPrompt(sessions, []);
 		expect(result).toContain('Sessions (1)');
@@ -27,11 +27,11 @@ describe('buildStandupPrompt', () => {
 
 	it('includes refs in prompt', () => {
 		const sessions: AnnotatedSession[] = [
-			{ id: 'sess-1', branch: 'main', summary: 'Fix', source: 'vscode' },
+			{ id: 'sess-1', branch: 'main', summary: 'Fix', source: 'cloud' },
 		];
 		const refs: AnnotatedRef[] = [
-			{ session_id: 'sess-1', ref_type: 'pr', ref_value: '42', source: 'vscode' },
-			{ session_id: 'sess-1', ref_type: 'commit', ref_value: 'abc123', source: 'vscode' },
+			{ session_id: 'sess-1', ref_type: 'pr', ref_value: '42', source: 'cloud' },
+			{ session_id: 'sess-1', ref_type: 'commit', ref_value: 'abc123', source: 'cloud' },
 		];
 		const result = buildStandupPrompt(sessions, refs);
 		expect(result).toContain('pr: 42');
@@ -39,27 +39,27 @@ describe('buildStandupPrompt', () => {
 	});
 
 	it('shows "No references found" when refs empty', () => {
-		const sessions: AnnotatedSession[] = [{ id: 'sess-1', branch: 'main', summary: 'Fix', source: 'vscode' }];
+		const sessions: AnnotatedSession[] = [{ id: 'sess-1', branch: 'main', summary: 'Fix', source: 'cloud' }];
 		const result = buildStandupPrompt(sessions, []);
 		expect(result).toContain('No references found.');
 	});
 
 	it('includes extra context when provided', () => {
-		const sessions: AnnotatedSession[] = [{ id: 'sess-1', summary: 'Work', source: 'vscode' }];
+		const sessions: AnnotatedSession[] = [{ id: 'sess-1', summary: 'Work', source: 'cloud' }];
 		const result = buildStandupPrompt(sessions, [], 'Focus on backend changes');
 		expect(result).toContain('Additional context: Focus on backend changes');
 	});
 
 	it('shows "unknown" for missing branch and repo', () => {
-		const sessions: AnnotatedSession[] = [{ id: 'sess-1', summary: 'Work', source: 'vscode' }];
+		const sessions: AnnotatedSession[] = [{ id: 'sess-1', summary: 'Work', source: 'cloud' }];
 		const result = buildStandupPrompt(sessions, []);
 		expect(result).toContain('unknown (unknown)');
 	});
 
 	it('handles multiple sessions from different branches', () => {
 		const sessions: AnnotatedSession[] = [
-			{ id: 'sess-1', branch: 'feature/a', repository: 'org/repo', summary: 'Feature A', source: 'vscode' },
-			{ id: 'sess-2', branch: 'feature/b', repository: 'org/repo', summary: 'Feature B', source: 'vscode' },
+			{ id: 'sess-1', branch: 'feature/a', repository: 'org/repo', summary: 'Feature A', source: 'cloud' },
+			{ id: 'sess-2', branch: 'feature/b', repository: 'org/repo', summary: 'Feature B', source: 'cloud' },
 		];
 		const result = buildStandupPrompt(sessions, []);
 		expect(result).toContain('Sessions (2)');
@@ -67,18 +67,17 @@ describe('buildStandupPrompt', () => {
 		expect(result).toContain('feature/b');
 	});
 
-	it('shows source tags for mixed VS Code and CLI sessions', () => {
+	it('shows source tags for cloud sessions', () => {
 		const sessions: AnnotatedSession[] = [
-			{ id: 'vscode-1', branch: 'main', summary: 'VS Code work', source: 'vscode' },
-			{ id: 'cli-1', branch: 'feature/x', summary: 'CLI work', source: 'cli' },
+			{ id: 'cloud-1', branch: 'main', summary: 'Cloud work 1', source: 'cloud' },
+			{ id: 'cloud-2', branch: 'feature/x', summary: 'Cloud work 2', source: 'cloud' },
 		];
 		const refs: AnnotatedRef[] = [
-			{ session_id: 'cli-1', ref_type: 'pr', ref_value: '99', source: 'cli' },
+			{ session_id: 'cloud-2', ref_type: 'pr', ref_value: '99', source: 'cloud' },
 		];
 		const result = buildStandupPrompt(sessions, refs);
-		expect(result).toContain('VS Code Sessions (1)');
-		expect(result).toContain('CLI Sessions (1)');
-		expect(result).toContain('cli-1 | pr: 99');
+		expect(result).toContain('Cloud Sessions (2)');
+		expect(result).toContain('cloud-2 | pr: 99');
 	});
 });
 

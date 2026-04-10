@@ -41,6 +41,8 @@ const missingPermissiveSessionContextKey = 'github.copilot.auth.missingPermissiv
 
 export const prExtensionInstalledContextKey = 'github.copilot.prExtensionInstalled';
 
+const sessionSearchEnabledContextKey = 'github.copilot.sessionSearch.enabled';
+
 export class ContextKeysContribution extends Disposable {
 
 	private _needsOfflineCheck = false;
@@ -76,6 +78,11 @@ export class ContextKeysContribution extends Disposable {
 		const debugReportFeedback = this._configService.getConfigObservable(ConfigKey.TeamInternal.DebugReportFeedback);
 		this._register(autorun(reader => {
 			commands.executeCommand('setContext', debugReportFeedbackContextKey, debugReportFeedback.read(reader));
+		}));
+
+		const sessionSearchEnabled = this._configService.getConfigObservable(ConfigKey.TeamInternal.SessionSearchEnabled);
+		this._register(autorun(reader => {
+			commands.executeCommand('setContext', sessionSearchEnabledContextKey, sessionSearchEnabled.read(reader));
 		}));
 
 		// Listen for extension changes to update PR extension installed context

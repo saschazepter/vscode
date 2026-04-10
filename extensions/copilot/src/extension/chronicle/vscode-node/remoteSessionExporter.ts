@@ -6,6 +6,7 @@
 import { IAuthenticationService } from '../../../platform/authentication/common/authentication';
 import { ICopilotTokenManager } from '../../../platform/authentication/common/copilotTokenManager';
 import { IChatSessionService } from '../../../platform/chat/common/chatSessionService';
+import { ConfigKey, IConfigurationService } from '../../../platform/configuration/common/configurationService';
 import { CopilotChatAttr, GenAiAttr, GenAiOperationName } from '../../../platform/otel/common/genAiAttributes';
 import { type ICompletedSpanData, IOTelService } from '../../../platform/otel/common/otelService';
 import { getGitHubRepoInfoFromContext, IGitService } from '../../../platform/git/common/gitService';
@@ -22,7 +23,7 @@ import {
 } from '../common/eventTranslator';
 import type { GitHubRepository, McSessionIds, SessionEvent, WorkingDirectoryContext } from '../common/missionControlTypes';
 import { filterSecretsFromObj, addSecretValues } from '../common/secretFilter';
-import { SessionIndexingPreference } from '../common/sessionIndexingPreference';
+import { SessionIndexingPreference, type SessionIndexingLevel } from '../common/sessionIndexingPreference';
 import { MissionControlClient } from '../node/missionControlClient';
 
 // ── Configuration ───────────────────────────────────────────────────────────────
@@ -95,6 +96,7 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 		@IGitService private readonly _gitService: IGitService,
 		@IGithubRepositoryService private readonly _githubRepoService: IGithubRepositoryService,
 		@IVSCodeExtensionContext private readonly _extensionContext: IVSCodeExtensionContext,
+		@IConfigurationService private readonly _configService: IConfigurationService,
 	) {
 		super();
 
@@ -148,6 +150,11 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 
 	private _handleSpan(span: ICompletedSpanData): void {
 		try {
+			// Check if session search feature is enabled
+			if (!this._isFeatureEnabled()) {
+				return;
+			}
+
 			const sessionId = this._getSessionId(span);
 			if (!sessionId || this._disabledSessions.has(sessionId)) {
 				return;
@@ -182,6 +189,13 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 		return (span.attributes[CopilotChatAttr.CHAT_SESSION_ID] as string | undefined)
 			?? (span.attributes[GenAiAttr.CONVERSATION_ID] as string | undefined)
 			?? (span.attributes[CopilotChatAttr.SESSION_ID] as string | undefined);
+	}
+
+	/**
+	 * Check if the session search feature is enabled via settings.
+	 */
+	private _isFeatureEnabled(): boolean {
+		return this._configService.getConfig(ConfigKey.TeamInternal.SessionSearchEnabled);
 	}
 
 	private _getOrCreateTranslationState(sessionId: string): SessionTranslationState {
@@ -241,20 +255,17 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 				return;
 			}
 
-			// Check user's session indexing preference
+			// Check user's session indexing preference — if not set, wait for
+			// the consent flow to be triggered from the chat handler via notifyConsent().
 			const repoNwo = `${repo.owner}/${repo.repo}`;
-			let preference = this._indexingPreference.getPreference(repoNwo);
-			console.log(`[RemoteSessionExporter] Indexing preference for ${repoNwo}: ${preference ?? 'not set (will prompt)'}`);
+			const preference = this._indexingPreference.getPreference(repoNwo);
+			console.log(`[RemoteSessionExporter] Indexing preference for ${repoNwo}: ${preference ?? 'not set (awaiting consent)'}`);
 
 			if (!preference) {
-				// First time for this repo — prompt user
-				preference = await this._indexingPreference.promptUser(repoNwo);
-				if (!preference) {
-					// User dismissed — default to local (no upload)
-					console.log('[RemoteSessionExporter] User dismissed indexing prompt, defaulting to local');
-					this._disabledSessions.add(sessionId);
-					return;
-				}
+				// No preference yet — consent will be shown inline in the chat panel
+				// by ChatAgents._checkSessionIndexingConsent(). Buffer events meanwhile.
+				console.log('[RemoteSessionExporter] Consent pending, buffering events for session', sessionId);
+				return;
 			}
 
 			if (preference === 'local') {
@@ -263,38 +274,93 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 				return;
 			}
 
-			const result = await this._mcClient.createSession(
-				repo.repoIds.ownerId,
-				repo.repoIds.repoId,
-				sessionId,
-				preference,
-			);
-
-			if (!result.ok) {
-				console.error(`[RemoteSessionExporter] Failed to create MC session: ${result.reason}`);
-				this._disabledSessions.add(sessionId);
-				return;
-			}
-
-			if (!result.response.task_id) {
-				console.error('[RemoteSessionExporter] MC session created without task_id');
-				this._disabledSessions.add(sessionId);
-				return;
-			}
-
-			const mcIds: McSessionIds = {
-				mcSessionId: result.response.id,
-				mcTaskId: result.response.task_id,
-			};
-
-			this._mcSessions.set(sessionId, mcIds);
-			console.log(`[RemoteSessionExporter] MC session created: ${mcIds.mcSessionId} for chat session ${sessionId}`);
+			await this._createMcSession(sessionId, repo, preference);
 		} catch (err) {
 			console.error('[RemoteSessionExporter] Session initialization failed:', err);
 			this._disabledSessions.add(sessionId);
 		} finally {
 			this._initializingSessions.delete(sessionId);
 		}
+	}
+
+	/**
+	 * Called by the chat handler after the user completes the consent prompt.
+	 * Creates the MC session for any pending sessions that were waiting for consent.
+	 */
+	async notifyConsent(level: SessionIndexingLevel): Promise<void> {
+		if (level === 'local') {
+			for (const sessionId of this._translationStates.keys()) {
+				if (!this._mcSessions.has(sessionId)) {
+					this._disabledSessions.add(sessionId);
+				}
+			}
+			return;
+		}
+
+		const repo = this._repository;
+		if (!repo) {
+			return;
+		}
+
+		for (const sessionId of this._translationStates.keys()) {
+			if (!this._mcSessions.has(sessionId) && !this._disabledSessions.has(sessionId)) {
+				await this._createMcSession(sessionId, repo, level);
+			}
+		}
+	}
+
+	/**
+	 * Get the repo NWO if resolved, for use by the consent flow.
+	 */
+	getRepoNwo(): string | undefined {
+		if (this._repository) {
+			return `${this._repository.owner}/${this._repository.repo}`;
+		}
+		return undefined;
+	}
+
+	/**
+	 * Check if consent is needed (preference not set for the current repo).
+	 */
+	needsConsent(): boolean {
+		const repoNwo = this.getRepoNwo();
+		if (!repoNwo) {
+			return false;
+		}
+		return this._indexingPreference.getPreference(repoNwo) === undefined;
+	}
+
+	private async _createMcSession(
+		sessionId: string,
+		repo: GitHubRepository,
+		indexingLevel: SessionIndexingLevel,
+	): Promise<void> {
+		const result = await this._mcClient.createSession(
+			repo.repoIds.ownerId,
+			repo.repoIds.repoId,
+			sessionId,
+			indexingLevel === 'repo_and_user' ? 'repo_and_user' : 'user',
+		);
+
+		if (!result.ok) {
+			console.error(`[RemoteSessionExporter] Failed to create MC session: ${result.reason}`);
+			this._disabledSessions.add(sessionId);
+			return;
+		}
+
+		if (!result.response.task_id) {
+			console.error('[RemoteSessionExporter] MC session created without task_id');
+			this._disabledSessions.add(sessionId);
+			return;
+		}
+
+		const mcIds: McSessionIds = {
+			mcSessionId: result.response.id,
+			mcTaskId: result.response.task_id,
+		};
+
+		this._mcSessions.set(sessionId, mcIds);
+		console.log(`[RemoteSessionExporter] MC session created: ${mcIds.mcSessionId} for chat session ${sessionId}`);
 	}
 
 	/**

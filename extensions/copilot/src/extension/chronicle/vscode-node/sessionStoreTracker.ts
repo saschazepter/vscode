@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { IChatSessionService } from '../../../platform/chat/common/chatSessionService';
+import { ConfigKey, IConfigurationService } from '../../../platform/configuration/common/configurationService';
 import { type FileRow, type RefRow, type SessionRow, type TurnRow, ISessionStore } from '../../../platform/chronicle/common/sessionStore';
 import { CopilotChatAttr, GenAiAttr, GenAiOperationName } from '../../../platform/otel/common/genAiAttributes';
 import { type ICompletedSpanData, IOTelService } from '../../../platform/otel/common/otelService';
@@ -68,6 +69,7 @@ export class SessionStoreTracker extends Disposable implements IExtensionContrib
 		@ISessionStore private readonly _sessionStore: ISessionStore,
 		@IOTelService private readonly _otelService: IOTelService,
 		@IChatSessionService private readonly _chatSessionService: IChatSessionService,
+		@IConfigurationService private readonly _configService: IConfigurationService,
 	) {
 		super();
 
@@ -111,6 +113,11 @@ export class SessionStoreTracker extends Disposable implements IExtensionContrib
 	// ── Span handling (produces buffered writes, no direct DB calls) ─────
 
 	private _handleSpan(span: ICompletedSpanData): void {
+		// Only track sessions when session search is enabled
+		if (!this._configService.getConfig(ConfigKey.TeamInternal.SessionSearchEnabled)) {
+			return;
+		}
+
 		try {
 			const sessionId = this._getSessionId(span);
 			if (!sessionId) {

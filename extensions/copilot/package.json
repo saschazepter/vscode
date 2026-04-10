@@ -1509,7 +1509,8 @@
 					},
 					{
 						"name": "chronicle",
-						"description": "%copilot.chronicle.description%"
+						"description": "%copilot.chronicle.description%",
+						"when": "github.copilot.sessionSearch.enabled"
 					},
 					{
 						"name": "explain",
@@ -2438,6 +2439,11 @@
 			{
 				"command": "github.copilot.chat.tools.memory.clearMemories",
 				"title": "%github.copilot.command.clearMemories%",
+				"category": "Chat"
+			},
+			{
+				"command": "github.copilot.sessionSearch.resetConsent",
+				"title": "Reset Session Search Consent",
 				"category": "Chat"
 			},
 			{
