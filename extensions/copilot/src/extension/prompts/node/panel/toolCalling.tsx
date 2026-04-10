@@ -852,9 +852,9 @@ export class ToolResult extends PrimitiveToolResult<IToolResultProps> {
 	}
 
 	protected override async onImage(part: LanguageModelDataPart, imageIndex?: number): Promise<PromptPiece | undefined> {
-		// Check shared image budget across all tool results in this turn
+		// Only enforce shared budget when the model supports vision.
 		const budget = this.props.sharedImageBudget;
-		if (budget) {
+		if (budget && this.endpoint.supportsVision) {
 			if (budget.remaining < 0) {
 				return this.makeImagePlaceholder(part, imageIndex);
 			} else if (part.data.length > budget.remaining) {

@@ -577,7 +577,7 @@ describe('ChatToolCalls (toolCalling.tsx)', () => {
 		});
 
 		const serialized = JSON.stringify(messages);
-		// Both images exceed the 5MB shared budget and should be replaced with placeholders
+		// Both images exceed the 2.5MB shared budget and should be replaced with placeholders
 		expect(serialized).toContain('context image budget exceeded');
 		expect(serialized).not.toContain('image_url');
 	});
