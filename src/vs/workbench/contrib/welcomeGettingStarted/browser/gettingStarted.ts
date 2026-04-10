@@ -491,6 +491,10 @@ export class GettingStartedPage extends EditorPane {
 				}
 				break;
 			}
+			case 'openAgentsWindow': {
+				this.commandService.executeCommand('workbench.action.openAgentsWindow');
+				break;
+			}
 			case 'openLink': {
 				this.openerService.open(argument);
 				break;
@@ -931,7 +935,27 @@ export class GettingStartedPage extends EditorPane {
 		const recentList = this.buildRecentlyOpenedList();
 		const gettingStartedList = this.buildGettingStartedWalkthroughsList();
 
+		const learnMoreLink = $('a.learn-more-link', {}, localize('welcomePage.learnMore', "Learn more"));
+		this.categoriesSlideDisposables.add(addDisposableListener(learnMoreLink, 'click', (e) => {
+			e.stopPropagation();
+			e.preventDefault();
+			this.telemetryService.publicLog2<GettingStartedActionEvent, GettingStartedActionClassification>('gettingStarted.ActionExecuted', { command: 'openAgentsLearnMore', argument: undefined, walkthroughId: this.currentWalkthrough?.id });
+			this.openerService.open('https://code.visualstudio.com');
+		}));
+
+		const agentsBannerButton = $('button.getting-started-category.agents-banner', {
+			'x-dispatch': 'openAgentsWindow',
+			title: localize('welcomePage.tryAgentsApp', "Try out the new Agents app"),
+		},
+			$('.main-content', {},
+				$('.codicon.codicon-agent.icon-widget'),
+				$('h3.category-title.max-lines-3', {}, localize('welcomePage.tryAgentsAppLabel', "Try out the new Agents app")),
+				learnMoreLink,
+			),
+		);
+
 		const footer = $('.footer', {},
+			agentsBannerButton,
 			$('p.showOnStartup', {},
 				showOnStartupCheckbox.domNode,
 				showOnStartupLabel,
