@@ -143,7 +143,7 @@ export class ChatSessionWorkspaceFolderService extends Disposable implements ICh
 					properties.hasOutgoingChanges !== undefined &&
 					properties.hasUncommittedChanges !== undefined
 				) {
-					this.metadataStore.storeRepositoryProperties(sessionId, {
+					await this.metadataStore.storeRepositoryProperties(sessionId, {
 						...repositoryProperties,
 						hasIncomingChanges: properties.hasIncomingChanges,
 						hasOutgoingChanges: properties.hasOutgoingChanges,

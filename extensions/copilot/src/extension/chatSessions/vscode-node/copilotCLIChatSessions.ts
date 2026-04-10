@@ -481,6 +481,10 @@ export class CopilotCLIChatSessionContentProvider extends Disposable implements 
 			branchName: repositoryProperties?.branchName,
 			baseBranchName: repositoryProperties?.baseBranchName,
 			workingDirectoryPath: workingDirectory?.fsPath,
+			hasGitHubRemote: repositoryProperties?.hasGitHubRemote,
+			hasIncomingChanges: repositoryProperties?.hasIncomingChanges,
+			hasOutgoingChanges: repositoryProperties?.hasOutgoingChanges,
+			hasUncommittedChanges: repositoryProperties?.hasUncommittedChanges,
 			firstCheckpointRef,
 			lastCheckpointRef
 		} satisfies { readonly [key: string]: unknown };
