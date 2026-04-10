@@ -54,6 +54,7 @@ export class ChatToolProgressSubPart extends BaseChatToolInvocationSubPart {
 			return part.domNode;
 		} else {
 			const container = document.createElement('div');
+			let currentPart: ChatProgressContentPart | undefined;
 			this._register(autorun(reader => {
 				let progressContent: IMarkdownString | string | undefined;
 				const key = this.getAnnouncementKey('progress');
@@ -77,11 +78,23 @@ export class ChatToolProgressSubPart extends BaseChatToolInvocationSubPart {
 				// Don't render anything if there's no meaningful content
 				if (!this.hasMeaningfulContent(progressContent)) {
 					dom.clearNode(container);
+					currentPart = undefined;
 					return;
 				}
+
+				const contentAsMarkdown = typeof progressContent === 'string'
+					? new MarkdownString().appendText(progressContent)
+					: progressContent instanceof MarkdownString ? progressContent : MarkdownString.lift(progressContent);
+
+				// Reuse existing part if possible — just update the message text
+				if (currentPart) {
+					currentPart.updateMessage(contentAsMarkdown);
+					return;
+				}
+
 				const shouldAnnounce = this.toolInvocation.kind === 'toolInvocation' && this.hasMeaningfulContent(progressContent) ? this.computeShouldAnnounce(key) : false;
-				const part = reader.store.add(this.renderProgressContent(progressContent, shouldAnnounce));
-				dom.reset(container, part.domNode);
+				currentPart = this._register(this.renderProgressContent(contentAsMarkdown, shouldAnnounce));
+				dom.reset(container, currentPart.domNode);
 			}));
 			return container;
 		}

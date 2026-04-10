@@ -48,12 +48,14 @@ export class ChatToolStreamingSubPart extends BaseChatToolInvocationSubPart {
 		}
 
 		// Observe streaming message changes
+		let currentPart: ChatProgressContentPart | undefined;
 		this._register(autorun(reader => {
 			const currentState = toolInvocation.state.read(reader);
 			if (currentState.type !== IChatToolInvocation.StateKind.Streaming) {
 				// State changed - clear the container DOM before triggering re-render
 				// This prevents the old streaming message from lingering
 				dom.clearNode(container);
+				currentPart = undefined;
 				this._onNeedsRerender.fire();
 				return;
 			}
@@ -66,6 +68,7 @@ export class ChatToolStreamingSubPart extends BaseChatToolInvocationSubPart {
 			const messageText = typeof displayMessage === 'string' ? displayMessage : displayMessage.value;
 			if (!messageText || messageText.trim().length === 0) {
 				dom.clearNode(container);
+				currentPart = undefined;
 				return;
 			}
 
@@ -73,12 +76,18 @@ export class ChatToolStreamingSubPart extends BaseChatToolInvocationSubPart {
 				? new MarkdownString().appendText(displayMessage)
 				: displayMessage;
 
+			// Reuse existing part if possible — just update the message text
+			if (currentPart) {
+				currentPart.updateMessage(content instanceof MarkdownString ? content : MarkdownString.lift(content));
+				return;
+			}
+
 			const progressMessage: IChatProgressMessage = {
 				kind: 'progressMessage',
 				content
 			};
 
-			const part = reader.store.add(this.instantiationService.createInstance(
+			currentPart = this._register(this.instantiationService.createInstance(
 				ChatProgressContentPart,
 				progressMessage,
 				this.renderer,
@@ -90,7 +99,7 @@ export class ChatToolStreamingSubPart extends BaseChatToolInvocationSubPart {
 				false
 			));
 
-			dom.reset(container, part.domNode);
+			dom.reset(container, currentPart.domNode);
 		}));
 
 		return container;
