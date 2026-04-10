@@ -211,17 +211,19 @@
 			overflow: hidden;
 		}
 
+		.chat-confirmation-widget-message-scrollable {
+			flex: 1;
+			min-height: 0;
+		}
+
 		.chat-confirmation-widget-message {
 			flex: 1;
 			min-height: 0;
-			overflow: auto;
 			max-height: min(200px, 30vh);
 		}
 
 		.chat-confirmation-message-terminal-editor .interactive-result-code-block {
 			background-color: var(--vscode-sideBar-background);
-			max-height: min(150px, 25vh);
-			overflow: auto;
 		}
 
 		.chat-confirmation-message-terminal-editor .interactive-result-editor {
@@ -231,10 +233,6 @@
 		.chat-tool-carousel-content-expanded & {
 			.chat-confirmation-widget-message {
 				max-height: min(500px, 55vh);
-			}
-
-			.chat-confirmation-message-terminal-editor .interactive-result-code-block {
-				max-height: min(420px, 50vh);
 			}
 		}
 
