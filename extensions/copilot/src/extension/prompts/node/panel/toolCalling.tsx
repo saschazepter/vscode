@@ -82,7 +82,7 @@ export class ChatToolCalls extends PromptElement<ChatToolCallsProps, void> {
 
 		// Shared budget to limit total image data across all tool results in this turn.
 		// Prevents 413 errors when many image-returning tools run in parallel.
-		const sharedImageBudget: SharedImageBudget = { remaining: 5 * 1024 * 1024 };
+		const sharedImageBudget: SharedImageBudget = { remaining: CAPI_IMAGE_BUDGET_BYTES };
 
 		const toolCallRounds = this.props.toolCallRounds.flatMap((round, i) => {
 			return this.renderOneToolCallRound(round, i, this.props.toolCallRounds!.length, hydratedInstantiationService, sharedImageBudget, token);
@@ -155,8 +155,8 @@ export class ChatToolCalls extends PromptElement<ChatToolCallsProps, void> {
 						enableCacheBreakpoints: this.props.enableCacheBreakpoints ?? false,
 						truncateAt: this.props.truncateAt,
 						sessionId: this.props.promptContext.request?.sessionId,
-						// Strip images from historical turns and non-latest rounds to avoid 413 errors
-						stripImages: !!this.props.isHistorical || index < total - 1,
+						// Strip images from historical turns to avoid 413 errors
+						stripImages: !!this.props.isHistorical,
 						sharedImageBudget,
 						token: token ?? CancellationToken.None,
 					})}
@@ -172,6 +172,12 @@ export class ChatToolCalls extends PromptElement<ChatToolCallsProps, void> {
 		return children;
 	}
 }
+
+/**
+ * Half the CAPI body-size limit (5 MB), used to cap image data so the rest
+ * of the prompt still fits.  Shared by both the per-tool and cross-tool budgets.
+ */
+const CAPI_IMAGE_BUDGET_BYTES = (5 * 1024 * 1024) / 2;
 
 /**
  * Shared mutable counter that limits the total image data rendered across
@@ -414,16 +420,12 @@ interface IToolResultElementActualProps {
 	sharedImageBudget?: SharedImageBudget;
 }
 
-function imageExtForMimeType(mimeType: string): string {
-	return getExtensionForMimeType(mimeType) ?? '.bin';
-}
-
 function buildImageUri(sessionId: string | undefined, toolCallId: string | undefined, imageIndex: number | undefined, mimeType: string): string | undefined {
-	if (!sessionId || imageIndex === undefined) {
+	if (!sessionId || !toolCallId || imageIndex === undefined) {
 		return undefined;
 	}
-	const coreToolCallId = toolCallId?.split('__vscode')[0] ?? '';
-	return buildToolImageResourceUri(sessionId, coreToolCallId, imageIndex, imageExtForMimeType(mimeType));
+	const coreToolCallId = toolCallId.split('__vscode')[0];
+	return buildToolImageResourceUri(sessionId, coreToolCallId, imageIndex, getExtensionForMimeType(mimeType) ?? '.bin');
 }
 
 function makeImagePlaceholderText(message: string, uri: string | undefined): string {
@@ -433,9 +435,8 @@ function makeImagePlaceholderText(message: string, uri: string | undefined): str
 
 /**
  * Replaces image data parts with text placeholders in tool results.
- * Used for historical turns and non-latest rounds within the current turn
- * to prevent large base64 image data from accumulating and causing
- * 413 (request too large) errors from the API.
+ * Used for historical turns to prevent large base64 image data from
+ * accumulating and causing 413 (request too large) errors from the API.
  */
 function replaceImagesWithPlaceholders(
 	content: LanguageModelToolResult2['content'],
@@ -461,7 +462,7 @@ class ToolResultElement extends PromptElement<IToolResultElementActualProps & Ba
 	async render(state: void, sizing: PromptSizing) {
 		const { extraMetadata, toolResult, isCancelled } = await this.props.call(sizing);
 
-		// For historical turns and non-latest rounds, replace image data with text placeholders
+		// For historical turns, replace image data with text placeholders
 		// to avoid accumulating large base64 payloads across conversation turns (413 errors)
 		const content = this.props.stripImages
 			? replaceImagesWithPlaceholders(toolResult.content, this.props.toolCall.id, this.props.sessionId)
@@ -703,10 +704,9 @@ class PrimitiveToolResult<T extends IPrimitiveToolResultProps> extends PromptEle
 	/**
 	 * Some models do not yet support CAPI image uploads. For these cases,
 	 * track the number of images bytes we're sending and truncate any images
-	 * that would exceed that budget. Current CAPI default is 5MB, so allow
-	 * images to use half of that.
+	 * that would exceed that budget.
 	 */
-	private imageSizeBudgetLeft = (5 * 1024 * 1024) / 2; // 5MB
+	private imageSizeBudgetLeft = CAPI_IMAGE_BUDGET_BYTES;
 
 	constructor(
 		props: T,
@@ -854,12 +854,12 @@ export class ToolResult extends PrimitiveToolResult<IToolResultProps> {
 	protected override async onImage(part: LanguageModelDataPart, imageIndex?: number): Promise<PromptPiece | undefined> {
 		// Check shared image budget across all tool results in this turn
 		const budget = this.props.sharedImageBudget;
-		if (budget && isImageDataPart(part)) {
+		if (budget) {
 			if (budget.remaining < 0) {
-				return this.makeImagePlaceholder(part, imageIndex, true);
+				return this.makeImagePlaceholder(part, imageIndex);
 			} else if (part.data.length > budget.remaining) {
 				budget.remaining = -1;
-				return this.makeImagePlaceholder(part, imageIndex, false);
+				return this.makeImagePlaceholder(part, imageIndex);
 			}
 			budget.remaining -= part.data.length;
 		}
@@ -872,12 +872,9 @@ export class ToolResult extends PrimitiveToolResult<IToolResultProps> {
 		return <>{image}{uri && `\n[Image URI: ${uri}]`}</>;
 	}
 
-	private makeImagePlaceholder(part: LanguageModelDataPart, imageIndex: number | undefined, alreadyExceeded: boolean): PromptPiece {
+	private makeImagePlaceholder(part: LanguageModelDataPart, imageIndex: number | undefined): PromptPiece {
 		const uri = buildImageUri(this.props.sessionId, this.props.toolCallId, imageIndex, part.mimeType);
-		const message = alreadyExceeded
-			? 'Image omitted — context image budget exceeded.'
-			: 'Image omitted — too many images in this conversation. Try viewing fewer images at once or reference this image by URI.';
-		return <>{makeImagePlaceholderText(message, uri)}</>;
+		return <>{makeImagePlaceholderText('Image omitted — context image budget exceeded. Try viewing fewer images at once or reference this image by URI.', uri)}</>;
 	}
 
 	protected override async onText(content: string): Promise<string> {
