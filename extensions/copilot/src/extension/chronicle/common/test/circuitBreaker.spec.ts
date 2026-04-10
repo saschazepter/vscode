@@ -3,10 +3,18 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CircuitBreaker, CircuitState } from '../circuitBreaker';
 
 describe('CircuitBreaker', () => {
+	beforeEach(() => {
+		vi.useFakeTimers();
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
 	it('starts in CLOSED state', () => {
 		const cb = new CircuitBreaker();
 		expect(cb.getState()).toBe(CircuitState.CLOSED);
@@ -36,13 +44,8 @@ describe('CircuitBreaker', () => {
 		cb.recordFailure();
 		expect(cb.getState()).toBe(CircuitState.OPEN);
 
-		// Wait for reset timeout
-		return new Promise<void>(resolve => {
-			setTimeout(() => {
-				expect(cb.getState()).toBe(CircuitState.HALF_OPEN);
-				resolve();
-			}, 20);
-		});
+		vi.advanceTimersByTime(10);
+		expect(cb.getState()).toBe(CircuitState.HALF_OPEN);
 	});
 
 	it('allows one probe in HALF_OPEN state', () => {
@@ -70,16 +73,11 @@ describe('CircuitBreaker', () => {
 		cb.recordFailure();
 		expect(cb.getState()).toBe(CircuitState.OPEN);
 
-		return new Promise<void>(resolve => {
-			setTimeout(() => {
-				// Should have transitioned to HALF_OPEN
-				expect(cb.getState()).toBe(CircuitState.HALF_OPEN);
-				cb.canRequest(); // take probe
-				cb.recordFailure(); // probe fails → back to OPEN
-				expect(cb.getState()).toBe(CircuitState.OPEN);
-				resolve();
-			}, 15);
-		});
+		vi.advanceTimersByTime(10);
+		expect(cb.getState()).toBe(CircuitState.HALF_OPEN);
+		cb.canRequest(); // take probe
+		cb.recordFailure(); // probe fails → back to OPEN
+		expect(cb.getState()).toBe(CircuitState.OPEN);
 	});
 
 	it('resets to CLOSED state', () => {
@@ -115,28 +113,22 @@ describe('CircuitBreaker', () => {
 		cb.recordFailure();
 		expect(cb.getState()).toBe(CircuitState.OPEN);
 
-		// Wait for first reset (10ms)
-		return new Promise<void>(resolve => {
-			setTimeout(() => {
-				expect(cb.getState()).toBe(CircuitState.HALF_OPEN);
-				cb.canRequest(); // take the probe
-				cb.recordFailure(); // probe fails → back to OPEN
+		// Advance past first reset timeout (10ms)
+		vi.advanceTimersByTime(10);
+		expect(cb.getState()).toBe(CircuitState.HALF_OPEN);
+		cb.canRequest(); // take the probe
+		cb.recordFailure(); // probe fails → back to OPEN
 
-				expect(cb.getState()).toBe(CircuitState.OPEN);
-				// Now timeout should be 20ms (doubled)
+		expect(cb.getState()).toBe(CircuitState.OPEN);
+		// Now timeout should be 20ms (doubled)
 
-				// Wait 15ms — should still be OPEN (timeout is now 20ms)
-				setTimeout(() => {
-					expect(cb.getState()).toBe(CircuitState.OPEN);
+		// Advance 15ms — should still be OPEN (timeout is now 20ms)
+		vi.advanceTimersByTime(15);
+		expect(cb.getState()).toBe(CircuitState.OPEN);
 
-					// Wait another 10ms — now past 20ms, should be HALF_OPEN
-					setTimeout(() => {
-						expect(cb.getState()).toBe(CircuitState.HALF_OPEN);
-						resolve();
-					}, 10);
-				}, 15);
-			}, 15);
-		});
+		// Advance another 5ms — now past 20ms, should be HALF_OPEN
+		vi.advanceTimersByTime(5);
+		expect(cb.getState()).toBe(CircuitState.HALF_OPEN);
 	});
 
 	it('probe timeout prevents permanent deadlock', () => {
@@ -152,13 +144,9 @@ describe('CircuitBreaker', () => {
 		// Probe is in-flight, second request blocked
 		expect(cb.canRequest()).toBe(false);
 
-		// Wait for probe timeout
-		return new Promise<void>(resolve => {
-			setTimeout(() => {
-				// Probe timed out, should allow another
-				expect(cb.canRequest()).toBe(true);
-				resolve();
-			}, 15);
-		});
+		// Advance past probe timeout
+		vi.advanceTimersByTime(10);
+		// Probe timed out, should allow another
+		expect(cb.canRequest()).toBe(true);
 	});
 });
