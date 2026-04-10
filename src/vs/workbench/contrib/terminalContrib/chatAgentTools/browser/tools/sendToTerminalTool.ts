@@ -68,7 +68,7 @@ CommandsRegistry.registerCommand(FocusTerminalByIdCommandId, async (accessor, in
 	}
 });
 
-export const FocusTerminalByExecutionIdCommandId = 'workbench.action.terminal.chat.focusTerminalByExecutionId';
+const FocusTerminalByExecutionIdCommandId = 'workbench.action.terminal.chat.focusTerminalByExecutionId';
 CommandsRegistry.registerCommand(FocusTerminalByExecutionIdCommandId, async (accessor, executionId: string) => {
 	const execution = RunInTerminalTool.getExecution(executionId);
 	if (execution) {

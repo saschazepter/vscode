@@ -1966,6 +1966,9 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 		// unblocked and the carousel doesn't linger. Also suppress future
 		// input-needed notifications since the user is handling prompts.
 		store.add(terminalInstance.onDidInputData(() => {
+			if (userIsReplyingDirectly) {
+				return;
+			}
 			userIsReplyingDirectly = true;
 			this._dismissPendingCarouselsForTerminal(chatSessionResource, termId);
 		}));
@@ -2036,18 +2039,23 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 			return;
 		}
 
-		for (const request of model.getRequests()) {
-			const response = request.response;
+		// Walk in reverse — there should be at most one pending carousel per terminal.
+		const requests = model.getRequests();
+		for (let i = requests.length - 1; i >= 0; i--) {
+			const response = requests[i].response;
 			if (!response) {
 				continue;
 			}
-			for (const part of response.response.value) {
+			const parts = response.response.value;
+			for (let j = parts.length - 1; j >= 0; j--) {
+				const part = parts[j];
 				if (part instanceof ChatQuestionCarouselData && part.terminalId === termId && !part.isUsed) {
 					this._logService.debug(`RunInTerminalTool: Dismissing pending carousel for terminal ${termId} because user typed directly in terminal`);
 					part.data = {};
 					part.isUsed = true;
 					part.dismissedByTerminalInput = true;
 					part.completion.complete({ answers: undefined });
+					return;
 				}
 			}
 		}
