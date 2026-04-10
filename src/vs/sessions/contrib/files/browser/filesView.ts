@@ -66,6 +66,6 @@ export class SessionsExplorerEmptyView extends ViewPane {
 		welcomeIcon.classList.add(...ThemeIcon.asClassNameArray(Codicon.files));
 
 		const welcomeMessage = dom.append(welcomeContainer, $('.files-empty-welcome-message'));
-		welcomeMessage.textContent = localize('filesView.noFiles', "Folder and files will appear here.");
+		welcomeMessage.textContent = localize('filesView.noFiles', "Folders and files will appear here.");
 	}
 }
