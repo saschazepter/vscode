@@ -711,7 +711,7 @@ export class OTelChatDebugLogProviderContribution extends Disposable implements 
 				if (token.isCancellationRequested) {
 					return undefined;
 				}
-				const encoded = Buffer.from(id).toString('base64');
+				const encoded = Buffer.from(id).toString('base64url');
 				const uri = vscode.Uri.parse(`vscode-chat-session://local/${encoded}`);
 
 				let title: string | undefined;

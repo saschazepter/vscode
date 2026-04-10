@@ -508,7 +508,7 @@ export class ChatDebugServiceImpl extends Disposable implements IChatDebugServic
 			return;
 		}
 		this._availableSessionsFetchStarted = true;
-		// Fire-and-forget: dont block the caller.
+		// Fire-and-forget: don't block the caller.
 		const fetcher = this._availableSessionsFetcher;
 		fetcher(CancellationToken.None).then(entries => {
 			if (entries.length > 0) {

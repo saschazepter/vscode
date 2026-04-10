@@ -174,13 +174,6 @@ export class ChatDebugEditor extends EditorPane {
 			}
 		}));
 
-		// When historical sessions are discovered from disk, refresh home if visible
-		this._register(this.chatDebugService.onDidChangeAvailableSessionResources(() => {
-			if (this.viewState === ViewState.Home) {
-				this.homeView?.render();
-			}
-		}));
-
 		this._register(this.chatService.onDidCreateModel(model => {
 			// Track title changes per model, disposing the previous listener
 			// for the same model URI to avoid leaks.

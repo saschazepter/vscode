@@ -92,16 +92,18 @@ export class ChatDebugHomeView extends Disposable {
 	}
 
 	render(): void {
-		const sessionResources = this._getFilteredSessionResources(
-			this.chatDebugService.getAvailableSessionResources()
-		);
+		const isFileLoggingEnabled = this.configurationService.getValue<boolean>(AGENT_DEBUG_LOG_FILE_LOGGING_ENABLED_SETTING);
 		this._lastKnownSessionCount = this.chatDebugService.getSessionResources().length;
+
+		const sessionResources = isFileLoggingEnabled
+			? this._getFilteredSessionResources(this.chatDebugService.getAvailableSessionResources())
+			: [];
 		this._renderWithSessions(sessionResources);
 	}
 
 	private _getFilteredSessionResources(resources: readonly URI[]): URI[] {
 		const cliSessionTypes = new Set(['copilotcli', 'claude-code']);
-		return [...resources].reverse()
+		return [...resources]
 			.filter(r => !cliSessionTypes.has(getChatSessionType(r)) || !isUntitledChatSession(r));
 	}
 
