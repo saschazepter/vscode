@@ -7,6 +7,7 @@ import { match as globMatch } from '../../../base/common/glob.js';
 import { Disposable, DisposableStore, IDisposable } from '../../../base/common/lifecycle.js';
 import { autorun, IObservable } from '../../../base/common/observable.js';
 import { extUriBiasedIgnorePathCase, normalizePath } from '../../../base/common/resources.js';
+import { hasKey } from '../../../base/common/types.js';
 import { URI } from '../../../base/common/uri.js';
 import { generateUuid } from '../../../base/common/uuid.js';
 import { ILogService } from '../../log/common/log.js';
@@ -272,6 +273,25 @@ export class AgentSideEffects extends Disposable {
 				if (e.type === 'tool_ready') {
 					if (this._tryAutoApproveToolReady(e, sessionKey, agent)) {
 						return;
+					}
+				}
+
+				// When a parent tool call has an associated subagent session,
+				// preserve the subagent content metadata in the completion
+				// result. The SDK's tool_complete provides its own content
+				// which would overwrite the IToolResultSubagentContent that
+				// was set via SessionToolCallContentChanged while running.
+				if (e.type === 'tool_complete') {
+					const subagentKey = `${sessionKey}:${e.toolCallId}`;
+					const subagentUri = this._subagentSessions.get(subagentKey);
+					if (subagentUri) {
+						const parentState = this._stateManager.getSessionState(sessionKey);
+						const runningContent = this._getRunningToolCallContent(parentState, turnId, e.toolCallId);
+						const subagentEntry = runningContent.find(c => hasKey(c, { type: true }) && c.type === ToolResultContentType.Subagent);
+						if (subagentEntry) {
+							const mergedContent = [...(e.result.content ?? []), subagentEntry];
+							e = { ...e, result: { ...e.result, content: mergedContent } };
+						}
 					}
 				}
 

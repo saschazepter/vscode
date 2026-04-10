@@ -14,6 +14,36 @@ import { type IToolConfirmationMessages, type IToolData, ToolDataSource, ToolInv
 import { isEqual } from '../../../../../../base/common/resources.js';
 import { hasKey } from '../../../../../../base/common/types.js';
 
+/**
+ * Extracts the task description from `_meta.subagentDescription`, which is
+ * populated from the tool's arguments at `tool_start` time by the event
+ * mapper. This is the short task description (e.g., "Find related files"),
+ * NOT the agent's own description.
+ */
+function getSubagentTaskDescription(tc: { _meta?: Record<string, unknown> }): string | undefined {
+	const v = tc._meta?.subagentDescription;
+	return typeof v === 'string' && v.length > 0 ? v : undefined;
+}
+
+/**
+ * Extracts the agent name from `_meta.subagentAgentName`.
+ */
+function getSubagentAgentName(tc: { _meta?: Record<string, unknown> }): string | undefined {
+	const v = tc._meta?.subagentAgentName;
+	return typeof v === 'string' && v.length > 0 ? v : undefined;
+}
+
+/**
+ * Known tool names that spawn subagent sessions. Used as a client-side
+ * fallback when the server hasn't set `_meta.toolKind` or subagent content
+ * (e.g. sessions restored by an older server version).
+ */
+const SUBAGENT_TOOL_NAMES: ReadonlySet<string> = new Set(['task']);
+
+function isSubagentToolName(toolName: string): boolean {
+	return SUBAGENT_TOOL_NAMES.has(toolName);
+}
+
 function getPtyTerminalData(meta: Record<string, unknown> | undefined): { input?: string; output?: string } | undefined {
 	if (!meta) {
 		return undefined;
@@ -127,15 +157,19 @@ export function activeTurnToProgress(activeTurn: IActiveTurn): IChatProgress[] {
  * Converts a completed tool call from the protocol state into a serialized
  * tool invocation suitable for history replay.
  */
-function completedToolCallToSerialized(tc: ICompletedToolCall): IChatToolInvocationSerialized {
+export function completedToolCallToSerialized(tc: ICompletedToolCall, subAgentInvocationId?: string): IChatToolInvocationSerialized {
 	const isTerminal = getToolKind(tc) === 'terminal';
 	const isSuccess = tc.status === ToolCallStatus.Completed && tc.success;
 	const invocationMsg = stringOrMarkdownToString(tc.invocationMessage) ?? '';
 
 	// Check for subagent content
 	const subagentContent = tc.status === ToolCallStatus.Completed ? getToolSubagentContent(tc) : undefined;
-	if (subagentContent && tc.status === ToolCallStatus.Completed) {
+	const isSubagent = subagentContent || getToolKind(tc) === 'subagent' || isSubagentToolName(tc.toolName);
+	if (isSubagent && tc.status === ToolCallStatus.Completed) {
 		const resultText = getToolOutputText(tc);
+		const pastTenseMsg = isSuccess
+			? stringOrMarkdownToString(tc.pastTenseMessage) ?? invocationMsg
+			: invocationMsg;
 		return {
 			kind: 'toolInvocationSerialized',
 			toolCallId: tc.toolCallId,
@@ -143,16 +177,17 @@ function completedToolCallToSerialized(tc: ICompletedToolCall): IChatToolInvocat
 			source: ToolDataSource.Internal,
 			invocationMessage: invocationMsg,
 			originMessage: undefined,
-			pastTenseMessage: stringOrMarkdownToString(tc.pastTenseMessage) ?? invocationMsg,
+			pastTenseMessage: pastTenseMsg,
 			isConfirmed: isSuccess
 				? { type: ToolConfirmKind.ConfirmationNotNeeded }
 				: { type: ToolConfirmKind.Denied },
 			isComplete: true,
 			presentation: undefined,
+			subAgentInvocationId: subAgentInvocationId,
 			toolSpecificData: {
 				kind: 'subagent',
-				description: subagentContent.description ?? subagentContent.title,
-				agentName: subagentContent.agentName,
+				description: getSubagentTaskDescription(tc) ?? tc.displayName,
+				agentName: subagentContent?.agentName ?? getSubagentAgentName(tc),
 				result: resultText,
 			},
 		};
@@ -193,6 +228,7 @@ function completedToolCallToSerialized(tc: ICompletedToolCall): IChatToolInvocat
 			: { type: ToolConfirmKind.Denied },
 		isComplete: true,
 		presentation: undefined,
+		subAgentInvocationId: subAgentInvocationId,
 		toolSpecificData,
 	};
 }
@@ -202,7 +238,7 @@ function completedToolCallToSerialized(tc: ICompletedToolCall): IChatToolInvocat
  * produced file edits. Returns an empty array if the tool call has no edits.
  * These parts replay the undo stops and code-block UI when restoring history.
  */
-function completedToolCallToEditParts(tc: ICompletedToolCall): IChatProgress[] {
+export function completedToolCallToEditParts(tc: ICompletedToolCall): IChatProgress[] {
 	if (tc.status !== ToolCallStatus.Completed) {
 		return [];
 	}
@@ -315,7 +351,7 @@ export function toolCallStateToInvocation(tc: IToolCallState, subAgentInvocation
 			language: getToolLanguage(tc) ?? 'shellscript',
 			terminalCommandOutput: ptyTerminal?.output !== undefined ? { text: ptyTerminal.output } : undefined,
 		} satisfies IChatTerminalToolInvocationData;
-	} else if (getToolKind(tc) === 'subagent') {
+	} else if (getToolKind(tc) === 'subagent' || isSubagentToolName(tc.toolName)) {
 		// Subagent-spawning tool: set subagent toolSpecificData eagerly so the
 		// renderer groups it correctly from the start (before content arrives).
 		// Agent metadata is extracted from tool arguments in the event mapper.
@@ -332,7 +368,7 @@ export function toolCallStateToInvocation(tc: IToolCallState, subAgentInvocation
 		if (subagentContent) {
 			invocation.toolSpecificData = {
 				kind: 'subagent',
-				description: subagentContent.description ?? subagentContent.title,
+				description: getSubagentTaskDescription(tc),
 				agentName: subagentContent.agentName,
 			};
 		}
@@ -366,7 +402,7 @@ export function updateRunningToolSpecificData(existing: ChatToolInvocation, tc: 
 		if (subagentContent) {
 			existing.toolSpecificData = {
 				kind: 'subagent',
-				description: subagentContent.description ?? subagentContent.title,
+				description: getSubagentTaskDescription(tc),
 				agentName: subagentContent.agentName,
 			};
 			// toolSpecificData is a plain property — notify state observers
@@ -420,7 +456,7 @@ export function finalizeToolInvocation(invocation: ChatToolInvocation, tc: ITool
 			const resultText = getToolOutputText(tc);
 			invocation.toolSpecificData = {
 				kind: 'subagent',
-				description: subagentContent.description ?? subagentContent.title,
+				description: getSubagentTaskDescription(tc),
 				agentName: subagentContent.agentName,
 				result: resultText,
 			};

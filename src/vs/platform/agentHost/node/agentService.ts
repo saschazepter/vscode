@@ -25,6 +25,25 @@ import { SessionStateManager } from './sessionStateManager.js';
  * process. Dispatches to registered {@link IAgent} instances based
  * on the provider identifier in the session configuration.
  */
+/**
+ * Extracts subagent metadata from a tool start event's arguments,
+ * matching the event mapper's extraction for the eager toolKind path.
+ */
+function extractSubagentMeta(start: IAgentToolStartEvent | undefined): { subagentDescription?: string; subagentAgentName?: string } {
+	if (!start?.toolKind || start.toolKind !== 'subagent' || !start.toolArguments) {
+		return {};
+	}
+	try {
+		const args = JSON.parse(start.toolArguments) as Record<string, unknown>;
+		return {
+			subagentDescription: typeof args.description === 'string' && args.description.length > 0 ? args.description : undefined,
+			subagentAgentName: typeof args.agentName === 'string' && args.agentName.length > 0 ? args.agentName : undefined,
+		};
+	} catch {
+		return {};
+	}
+}
+
 export class AgentService extends Disposable implements IAgentService {
 	declare readonly _serviceBrand: undefined;
 
@@ -523,6 +542,12 @@ export class AgentService extends Disposable implements IAgentService {
 				}
 				currentTurn = startTurn(msg.messageId, msg.content);
 			} else if (msg.type === 'message' && msg.role === 'assistant') {
+				// Skip inner assistant messages from subagent sessions.
+				// These have parentToolCallId set and belong to the child
+				// session, not the parent turn.
+				if (msg.parentToolCallId) {
+					continue;
+				}
 				if (!currentTurn) {
 					currentTurn = startTurn(msg.messageId, '');
 				}
@@ -542,8 +567,17 @@ export class AgentService extends Disposable implements IAgentService {
 			} else if (msg.type === 'subagent_started') {
 				subagentsByToolCallId.set(msg.toolCallId, msg);
 			} else if (msg.type === 'tool_start') {
+				// Skip inner tool calls from subagent sessions — they belong
+				// to the child session, not the parent turn.
+				if (msg.parentToolCallId) {
+					continue;
+				}
 				currentTurn?.pendingTools.set(msg.toolCallId, msg);
 			} else if (msg.type === 'tool_complete') {
+				// Skip inner tool completions from subagent sessions.
+				if (msg.parentToolCallId) {
+					continue;
+				}
 				if (currentTurn) {
 					const start = currentTurn.pendingTools.get(msg.toolCallId);
 					currentTurn.pendingTools.delete(msg.toolCallId);
@@ -574,10 +608,11 @@ export class AgentService extends Disposable implements IAgentService {
 						content: contentWithSubagent.length > 0 ? contentWithSubagent : undefined,
 						error: msg.result.error,
 						confirmed: ToolCallConfirmationReason.NotNeeded,
-						_meta: start ? {
-							toolKind: start.toolKind,
-							language: start.language,
-						} : undefined,
+						_meta: {
+							toolKind: start?.toolKind,
+							language: start?.language,
+							...extractSubagentMeta(start),
+						},
 					};
 					currentTurn.responseParts.push({
 						kind: ResponsePartKind.ToolCall,
@@ -592,6 +627,117 @@ export class AgentService extends Disposable implements IAgentService {
 		}
 
 		return turns;
+	}
+
+	/**
+	 * Builds turns for a subagent child session by extracting events
+	 * from the parent session's messages that have the matching
+	 * `parentToolCallId`. Creates a single turn containing all inner
+	 * tool calls.
+	 */
+	private _buildSubagentTurns(
+		parentMessages: readonly (IAgentMessageEvent | IAgentToolStartEvent | IAgentToolCompleteEvent | IAgentSubagentStartedEvent)[],
+		parentToolCallId: string,
+		childSessionUri: string,
+	): ITurn[] {
+		// Collect all inner tool call IDs that belong to this subagent
+		const innerToolCallIds = new Set<string>();
+		for (const msg of parentMessages) {
+			if ((msg.type === 'tool_start' || msg.type === 'tool_complete') && msg.parentToolCallId === parentToolCallId) {
+				innerToolCallIds.add(msg.toolCallId);
+			}
+		}
+
+		// Collect subagent_started events for nested subagents spawned by
+		// inner tool calls of this child session
+		const subagentsByToolCallId = new Map<string, IAgentSubagentStartedEvent>();
+		for (const msg of parentMessages) {
+			if (msg.type === 'subagent_started' && innerToolCallIds.has(msg.toolCallId)) {
+				subagentsByToolCallId.set(msg.toolCallId, msg);
+			}
+		}
+
+		// Filter for events belonging to this subagent
+		const innerMessages = parentMessages.filter(msg => {
+			if (msg.type === 'tool_start' || msg.type === 'tool_complete') {
+				return msg.parentToolCallId === parentToolCallId;
+			}
+			if (msg.type === 'message') {
+				return msg.parentToolCallId === parentToolCallId;
+			}
+			return false;
+		});
+
+		if (innerMessages.length === 0) {
+			return [];
+		}
+
+		// Build a single turn with all inner tool calls
+		const responseParts: IResponsePart[] = [];
+		const pendingTools = new Map<string, IAgentToolStartEvent>();
+
+		for (const msg of innerMessages) {
+			if (msg.type === 'tool_start') {
+				pendingTools.set(msg.toolCallId, msg);
+			} else if (msg.type === 'tool_complete') {
+				const start = pendingTools.get(msg.toolCallId);
+				pendingTools.delete(msg.toolCallId);
+
+				// Inject nested subagent content if applicable
+				const subagentEvent = subagentsByToolCallId.get(msg.toolCallId);
+				const contentWithSubagent = msg.result.content ? [...msg.result.content] : [];
+				if (subagentEvent) {
+					contentWithSubagent.push({
+						type: ToolResultContentType.Subagent,
+						resource: buildSubagentSessionUri(childSessionUri, msg.toolCallId),
+						title: subagentEvent.agentDisplayName,
+						agentName: subagentEvent.agentName,
+						description: subagentEvent.agentDescription,
+					});
+				}
+
+				const tc: IToolCallCompletedState = {
+					status: ToolCallStatus.Completed,
+					toolCallId: msg.toolCallId,
+					toolName: start?.toolName ?? 'unknown',
+					displayName: start?.displayName ?? 'Unknown Tool',
+					invocationMessage: start?.invocationMessage ?? '',
+					toolInput: start?.toolInput,
+					success: msg.result.success,
+					pastTenseMessage: msg.result.pastTenseMessage,
+					content: contentWithSubagent.length > 0 ? contentWithSubagent : undefined,
+					error: msg.result.error,
+					confirmed: ToolCallConfirmationReason.NotNeeded,
+					_meta: {
+						toolKind: start?.toolKind,
+						language: start?.language,
+						...extractSubagentMeta(start),
+					},
+				};
+				responseParts.push({
+					kind: ResponsePartKind.ToolCall,
+					toolCall: tc,
+				});
+			} else if (msg.type === 'message' && msg.role === 'assistant' && msg.content) {
+				responseParts.push({
+					kind: ResponsePartKind.Markdown,
+					id: generateUuid(),
+					content: msg.content,
+				});
+			}
+		}
+
+		if (responseParts.length === 0) {
+			return [];
+		}
+
+		return [{
+			id: generateUuid(),
+			userMessage: { text: '' },
+			responseParts,
+			usage: undefined,
+			state: TurnState.Complete,
+		}];
 	}
 
 	private async _fetchSessionDbContent(fields: ISessionDbUriFields): Promise<IResourceReadResult> {
@@ -617,9 +763,10 @@ export class AgentService extends Disposable implements IAgentService {
 	}
 
 	/**
-	 * Restores a subagent session from its parent session's completed turn data.
-	 * Creates an empty session shell with metadata from the parent's
-	 * {@link IToolResultSubagentContent}.
+	 * Restores a subagent session from its parent session's event history.
+	 * Loads the parent's raw messages, filters for events belonging to
+	 * the subagent (by `parentToolCallId`), and builds the child session's
+	 * turns from those events.
 	 */
 	private async _restoreSubagentSession(subagentUri: string, parentSession: string, toolCallId: string): Promise<void> {
 		// Ensure the parent session is loaded first
@@ -638,7 +785,7 @@ export class AgentService extends Disposable implements IAgentService {
 			return;
 		}
 
-		// Search completed turns and active turn for the subagent content
+		// Search completed turns and active turn for the subagent content metadata
 		const allTurns = [...parentState.turns];
 		if (parentState.activeTurn) {
 			allTurns.push(parentState.activeTurn as ITurn);
@@ -669,24 +816,33 @@ export class AgentService extends Disposable implements IAgentService {
 			}
 		}
 
-		if (!subagentContent) {
-			this._logService.warn(`[AgentService] Subagent content not found in parent turns: ${subagentUri}`);
-			return;
+		// Load parent's raw messages and extract inner events for this subagent
+		let childTurns: ITurn[] = [];
+		const agent = this._findProviderForSession(parentUri);
+		if (agent) {
+			try {
+				const messages = await agent.getSessionMessages(parentUri);
+				childTurns = this._buildSubagentTurns(messages, toolCallId, subagentUri);
+			} catch (err) {
+				this._logService.warn(`[AgentService] Failed to load parent messages for subagent restore: ${subagentUri}`, err);
+			}
 		}
 
-		// Create empty subagent session from the content metadata
+		// Use metadata from subagent content if available, otherwise synthesize
+		const title = subagentContent?.title ?? 'Subagent';
+
 		this._stateManager.restoreSession(
 			{
 				resource: subagentUri,
 				provider: 'subagent',
-				title: subagentContent.title,
+				title,
 				status: SessionStatus.Idle,
 				createdAt: Date.now(),
 				modifiedAt: Date.now(),
 			},
-			[],
+			childTurns,
 		);
-		this._logService.info(`[AgentService] Restored subagent session: ${subagentUri}`);
+		this._logService.info(`[AgentService] Restored subagent session: ${subagentUri} with ${childTurns.length} turn(s)`);
 	}
 
 	private _findProviderForSession(session: URI | string): IAgent | undefined {

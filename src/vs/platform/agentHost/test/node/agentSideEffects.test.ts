@@ -8,6 +8,7 @@ import { VSBuffer } from '../../../../base/common/buffer.js';
 import { DisposableStore, IReference, toDisposable } from '../../../../base/common/lifecycle.js';
 import { Schemas } from '../../../../base/common/network.js';
 import { observableValue } from '../../../../base/common/observable.js';
+import { hasKey } from '../../../../base/common/types.js';
 import { URI } from '../../../../base/common/uri.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/common/utils.js';
 import { FileService } from '../../../files/common/fileService.js';
@@ -1042,6 +1043,42 @@ suite('AgentSideEffects', () => {
 				rp => rp.kind === ResponsePartKind.Markdown
 			);
 			assert.ok(markdownPart, 'delta should create a markdown part in subagent session');
+		});
+
+		test('tool_complete preserves subagent content in completed tool call', () => {
+			setupSession();
+			startTurn('turn-1');
+			disposables.add(sideEffects.registerProgressListener(agent));
+
+			agent.fireProgress({ session: sessionUri, type: 'tool_start', toolCallId: 'tc-1', toolName: 'task', displayName: 'Task', invocationMessage: 'Delegating...' });
+			agent.fireProgress({ session: sessionUri, type: 'subagent_started', toolCallId: 'tc-1', agentName: 'explore', agentDisplayName: 'Explore', agentDescription: 'Explores' });
+
+			// Verify subagent content is on the running tool
+			const runningState = stateManager.getSessionState(sessionUri.toString());
+			const runningTool = runningState?.activeTurn?.responseParts.find(
+				rp => rp.kind === ResponsePartKind.ToolCall && rp.toolCall.toolCallId === 'tc-1'
+			);
+			assert.ok(runningTool?.kind === ResponsePartKind.ToolCall);
+			assert.strictEqual(runningTool.toolCall.status, ToolCallStatus.Running);
+
+			// Complete the tool — the SDK result has its own content
+			agent.fireProgress({
+				session: sessionUri, type: 'tool_complete', toolCallId: 'tc-1',
+				result: { success: true, pastTenseMessage: 'Delegated', content: [{ type: ToolResultContentType.Text, text: 'Done' }] },
+			});
+
+			// Verify the completed tool still has the subagent content entry
+			const completedState = stateManager.getSessionState(sessionUri.toString());
+			const completedTool = completedState?.activeTurn?.responseParts.find(
+				rp => rp.kind === ResponsePartKind.ToolCall && rp.toolCall.toolCallId === 'tc-1'
+			);
+			assert.ok(completedTool?.kind === ResponsePartKind.ToolCall);
+			assert.strictEqual(completedTool.toolCall.status, ToolCallStatus.Completed);
+			const content = completedTool.toolCall.content ?? [];
+			const subagentEntry = content.find(c => hasKey(c, { type: true }) && c.type === ToolResultContentType.Subagent);
+			assert.ok(subagentEntry, 'Completed tool should preserve subagent content entry');
+			const textEntry = content.find(c => hasKey(c, { type: true }) && c.type === ToolResultContentType.Text);
+			assert.ok(textEntry, 'Completed tool should also have the SDK result content');
 		});
 	});
 });

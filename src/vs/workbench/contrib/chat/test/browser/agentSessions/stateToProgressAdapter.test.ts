@@ -116,6 +116,65 @@ suite('stateToProgressAdapter', () => {
 			assert.strictEqual(termData.terminalCommandState.exitCode, 0);
 		});
 
+		test('subagent tool call in history has correct subagent data', () => {
+			const turn = createTurn({
+				responseParts: [{
+					kind: ResponsePartKind.ToolCall, toolCall: createCompletedToolCall({
+						_meta: { toolKind: 'subagent', subagentDescription: 'Find related files' },
+						content: [
+							{ type: ToolResultContentType.Text, text: 'Agent result' },
+							{ type: ToolResultContentType.Subagent, resource: 'copilot://session/subagent/tc-1', title: 'Explore', agentName: 'explore', description: 'Explores the codebase' },
+						],
+						success: true,
+					})
+				} as IToolCallResponsePart],
+			});
+
+			const history = turnsToHistory([turn], 'p');
+			const response = history[1];
+			assert.strictEqual(response.type, 'response');
+			if (response.type !== 'response') { return; }
+			const serialized = response.parts[0] as IChatToolInvocationSerialized;
+
+			assert.ok(serialized.toolSpecificData);
+			assert.strictEqual(serialized.toolSpecificData.kind, 'subagent');
+			if (serialized.toolSpecificData.kind === 'subagent') {
+				assert.strictEqual(serialized.toolSpecificData.agentName, 'explore');
+				// description is the TASK description from _meta, not the agent description
+				assert.strictEqual(serialized.toolSpecificData.description, 'Find related files');
+				assert.strictEqual(serialized.toolSpecificData.result, 'Agent result');
+			}
+		});
+
+		test('subagent tool without content falls back to toolKind meta', () => {
+			// This happens when the in-memory state lost subagent content
+			// (e.g. tool_complete overwrote it before the merge fix)
+			const turn = createTurn({
+				responseParts: [{
+					kind: ResponsePartKind.ToolCall, toolCall: createCompletedToolCall({
+						toolName: 'task',
+						displayName: 'Task',
+						_meta: { toolKind: 'subagent' },
+						content: [{ type: ToolResultContentType.Text, text: 'Result text' }],
+						success: true,
+					})
+				} as IToolCallResponsePart],
+			});
+
+			const history = turnsToHistory([turn], 'p');
+			const response = history[1];
+			assert.strictEqual(response.type, 'response');
+			if (response.type !== 'response') { return; }
+			const serialized = response.parts[0] as IChatToolInvocationSerialized;
+
+			assert.ok(serialized.toolSpecificData);
+			assert.strictEqual(serialized.toolSpecificData.kind, 'subagent');
+			if (serialized.toolSpecificData.kind === 'subagent') {
+				assert.strictEqual(serialized.toolSpecificData.description, 'Task');
+				assert.strictEqual(serialized.toolSpecificData.result, 'Result text');
+			}
+		});
+
 		test('turn with responseText produces markdown content in history', () => {
 			const turn = createTurn({
 				responseParts: [{ kind: ResponsePartKind.Markdown, id: 'md-1', content: 'Hello world' }],
@@ -540,7 +599,7 @@ suite('stateToProgressAdapter', () => {
 
 		test('sets subagent toolSpecificData from content and notifies state observers', () => {
 			const tc = createToolCallState({
-				_meta: { toolKind: 'subagent' },
+				_meta: { toolKind: 'subagent', subagentDescription: 'Find related files' },
 			});
 			const invocation = toolCallStateToInvocation(tc);
 			assert.strictEqual(invocation.toolSpecificData?.kind, 'subagent');
@@ -549,6 +608,7 @@ suite('stateToProgressAdapter', () => {
 			const runningTc: IToolCallRunningState = {
 				...tc,
 				status: ToolCallStatus.Running,
+				_meta: { toolKind: 'subagent', subagentDescription: 'Find related files' },
 				content: [{
 					type: ToolResultContentType.Subagent,
 					resource: 'copilot://session/subagent/tc-1',
@@ -573,7 +633,8 @@ suite('stateToProgressAdapter', () => {
 			assert.strictEqual(invocation.toolSpecificData?.kind, 'subagent');
 			if (invocation.toolSpecificData?.kind === 'subagent') {
 				assert.strictEqual(invocation.toolSpecificData.agentName, 'explore');
-				assert.strictEqual(invocation.toolSpecificData.description, 'Explores the codebase');
+				// description is the TASK description from _meta, not the agent description
+				assert.strictEqual(invocation.toolSpecificData.description, 'Find related files');
 			}
 			disposable.dispose();
 		});

@@ -20,7 +20,7 @@ import { ICustomizationRef, type IProtectedResourceMetadata } from '../../../../
 import { ActionType, type ISessionAction } from '../../../../../../platform/agentHost/common/state/sessionActions.js';
 import { SessionClientState } from '../../../../../../platform/agentHost/common/state/sessionClientState.js';
 import { AHP_AUTH_REQUIRED, ProtocolError } from '../../../../../../platform/agentHost/common/state/sessionProtocol.js';
-import { AttachmentType, buildSubagentSessionUri, getToolFileEdits, getToolSubagentContent, PendingMessageKind, ResponsePartKind, ToolCallCancellationReason, ToolCallConfirmationReason, ToolCallStatus, TurnState, type IMessageAttachment, type IResponsePart, type ISessionState, type IToolCallState, type ITurn } from '../../../../../../platform/agentHost/common/state/sessionState.js';
+import { AttachmentType, buildSubagentSessionUri, getToolFileEdits, getToolSubagentContent, PendingMessageKind, ResponsePartKind, ToolCallCancellationReason, ToolCallConfirmationReason, ToolCallStatus, TurnState, type ICompletedToolCall, type IMessageAttachment, type IResponsePart, type ISessionState, type IToolCallState, type ITurn } from '../../../../../../platform/agentHost/common/state/sessionState.js';
 import { ExtensionIdentifier } from '../../../../../../platform/extensions/common/extensions.js';
 import { IInstantiationService } from '../../../../../../platform/instantiation/common/instantiation.js';
 import { ILogService } from '../../../../../../platform/log/common/log.js';
@@ -32,9 +32,10 @@ import { ChatAgentLocation, ChatModeKind } from '../../../common/constants.js';
 import { IChatEditingService } from '../../../common/editing/chatEditingService.js';
 import { ChatToolInvocation } from '../../../common/model/chatProgressTypes/chatToolInvocation.js';
 import { IChatAgentData, IChatAgentImplementation, IChatAgentRequest, IChatAgentResult, IChatAgentService } from '../../../common/participants/chatAgents.js';
+import { ToolInvocationPresentation } from '../../../common/tools/languageModelToolsService.js';
 import { getAgentHostIcon } from '../agentSessions.js';
 import { AgentHostEditingSession } from './agentHostEditingSession.js';
-import { activeTurnToProgress, finalizeToolInvocation, toolCallStateToInvocation, turnsToHistory, updateRunningToolSpecificData } from './stateToProgressAdapter.js';
+import { activeTurnToProgress, completedToolCallToEditParts, completedToolCallToSerialized, finalizeToolInvocation, toolCallStateToInvocation, turnsToHistory, updateRunningToolSpecificData } from './stateToProgressAdapter.js';
 import { getToolKind } from '../../../../../../platform/agentHost/common/state/sessionReducers.js';
 
 // =============================================================================
@@ -262,6 +263,11 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 					const sessionState = this._clientState.getSessionState(resolvedSession.toString());
 					if (sessionState) {
 						history.push(...turnsToHistory(sessionState.turns, this._config.agentId));
+
+						// Enrich history with inner tool calls from subagent
+						// child sessions. Subscribes to each child session so
+						// its tool calls appear grouped under the parent widget.
+						await this._enrichHistoryWithSubagentCalls(history, resolvedSession);
 
 						// Store turns with file edits so the editing session
 						// can be hydrated when it's created lazily.
@@ -1048,6 +1054,81 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 	}
 
 	// ---- Subagent child session observation ---------------------------------
+
+	/**
+	 * Enriches serialized history with inner tool calls from subagent child
+	 * sessions. For each subagent tool call found in the history, subscribes
+	 * to the corresponding child session and appends its inner tool calls
+	 * (with `subAgentInvocationId` set) to the response parts.
+	 */
+	private async _enrichHistoryWithSubagentCalls(
+		history: IChatSessionHistoryItem[],
+		parentSession: URI,
+	): Promise<void> {
+		const parentSessionStr = parentSession.toString();
+
+		for (const item of history) {
+			if (item.type !== 'response') {
+				continue;
+			}
+
+			// Collect subagent tool calls from this response's parts
+			const subagentInsertions: { index: number; toolCallId: string }[] = [];
+			for (let i = 0; i < item.parts.length; i++) {
+				const part = item.parts[i];
+				if (part.kind === 'toolInvocationSerialized' && part.toolSpecificData?.kind === 'subagent') {
+					subagentInsertions.push({ index: i, toolCallId: part.toolCallId });
+				}
+			}
+
+			// Process insertions in reverse order so indices remain valid
+			for (let j = subagentInsertions.length - 1; j >= 0; j--) {
+				const { index, toolCallId } = subagentInsertions[j];
+				const childSessionUri = buildSubagentSessionUri(parentSessionStr, toolCallId);
+				const childSessionParsed = URI.parse(childSessionUri);
+
+				let subscribed = false;
+				try {
+					const snapshot = await this._config.connection.subscribe(childSessionParsed);
+					subscribed = true;
+					if (snapshot?.state) {
+						this._clientState.handleSnapshot(childSessionUri, snapshot.state, snapshot.fromSeq);
+					}
+					const childState = this._clientState.getSessionState(childSessionUri);
+					if (childState) {
+						const innerParts: IChatProgress[] = [];
+						for (const turn of childState.turns) {
+							for (const rp of turn.responseParts) {
+								if (rp.kind === ResponsePartKind.ToolCall) {
+									const tc = rp.toolCall;
+									if (tc.status === ToolCallStatus.Completed || tc.status === ToolCallStatus.Cancelled) {
+										const completedTc = tc as ICompletedToolCall;
+										const fileEditParts = completedToolCallToEditParts(completedTc);
+										const serialized = completedToolCallToSerialized(completedTc, toolCallId);
+										if (fileEditParts.length > 0) {
+											serialized.presentation = ToolInvocationPresentation.Hidden;
+										}
+										innerParts.push(serialized);
+										innerParts.push(...fileEditParts);
+									}
+								}
+							}
+						}
+						if (innerParts.length > 0) {
+							// Insert inner tool calls right after the subagent tool call
+							item.parts.splice(index + 1, 0, ...innerParts);
+						}
+					}
+				} catch (err) {
+					this._logService.warn(`[AgentHost] Failed to enrich history with subagent calls: ${childSessionUri}`, err);
+				} finally {
+					if (subscribed) {
+						this._config.connection.unsubscribe(childSessionParsed);
+					}
+				}
+			}
+		}
+	}
 
 	/**
 	 * Subscribes to a child subagent session and forwards its tool calls

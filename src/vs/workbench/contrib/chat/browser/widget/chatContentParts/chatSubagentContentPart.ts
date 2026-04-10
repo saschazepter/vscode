@@ -185,7 +185,8 @@ export class ChatSubagentContentPart extends ChatCollapsibleContentPart implemen
 		const { description, isDefaultDescription, agentName, prompt, modelName } = ChatSubagentContentPart.extractSubagentInfo(toolInvocation);
 
 		// Build title: "AgentName: description" or "Subagent: description"
-		const prefix = agentName || localize('chat.subagent.prefix', 'Subagent');
+		const rawPrefix = agentName || localize('chat.subagent.prefix', 'Subagent');
+		const prefix = rawPrefix.charAt(0).toUpperCase() + rawPrefix.slice(1);
 		const initialTitle = `${prefix}: ${description}`;
 		super(initialTitle, context, undefined, hoverService, configurationService);
 
@@ -447,7 +448,8 @@ export class ChatSubagentContentPart extends ChatCollapsibleContentPart implemen
 	}
 
 	private updateTitle(): void {
-		const prefix = this.agentName || localize('chat.subagent.prefix', 'Subagent');
+		const rawName = this.agentName || localize('chat.subagent.prefix', 'Subagent');
+		const prefix = rawName.charAt(0).toUpperCase() + rawName.slice(1);
 		const shimmerText = `${prefix}: ${this.description}`;
 		const toolCallText = this.currentRunningToolMessage && this.isActive ? ` \u2014 ${this.currentRunningToolMessage}` : ``;
 
