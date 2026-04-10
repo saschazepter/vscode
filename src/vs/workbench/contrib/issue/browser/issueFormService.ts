@@ -99,36 +99,51 @@ export class IssueFormService implements IIssueFormService {
 			this.closeOverlay();
 		}));
 
-		// Handle screenshot request — capture only the workbench area, not the wizard
+		// Handle screenshot request — capture full page, then crop out the wizard area
 		this.overlayDisposables.add(this.overlay.onDidRequestScreenshot(async () => {
-			this.overlay?.hideForCapture();
 			try {
-				// Small delay to let the UI hide before capture
-				await new Promise(r => setTimeout(r, 100));
-				// Capture only the workbench container region, excluding the wizard panel
-				const container = this.layoutService.mainContainer;
-				const bounds = container.getBoundingClientRect();
-				const dpr = container.ownerDocument.defaultView?.devicePixelRatio ?? 1;
-				const rect = {
-					x: Math.round(bounds.x * dpr),
-					y: Math.round(bounds.y * dpr),
-					width: Math.round(bounds.width * dpr),
-					height: Math.round(bounds.height * dpr),
-				};
-				const dataUrl = await this.screenshotService.captureScreenshot(rect);
-				if (dataUrl && this.overlay) {
-					const img = new Image();
-					img.onload = () => {
-						this.overlay?.addScreenshot({
-							dataUrl,
-							width: img.naturalWidth,
-							height: img.naturalHeight,
-						});
-					};
-					img.src = dataUrl;
+				// Capture the entire window (includes wizard + workbench)
+				const fullDataUrl = await this.screenshotService.captureScreenshot();
+				if (!fullDataUrl || !this.overlay) {
+					return;
 				}
-			} finally {
-				this.overlay?.showAfterCapture();
+
+				// Load full image to get dimensions
+				const fullImg = await new Promise<HTMLImageElement>((resolve, reject) => {
+					const img = new Image();
+					img.onload = () => resolve(img);
+					img.onerror = reject;
+					img.src = fullDataUrl;
+				});
+
+				// Calculate wizard height in device pixels to crop it out
+				const wizardHeight = this.overlay.getWizardHeight();
+				const dpr = window.devicePixelRatio ?? 1;
+				const cropY = Math.round(wizardHeight * dpr);
+				const cropHeight = fullImg.naturalHeight - cropY;
+
+				if (cropHeight <= 0) {
+					return;
+				}
+
+				// Crop using canvas
+				const canvas = document.createElement('canvas');
+				canvas.width = fullImg.naturalWidth;
+				canvas.height = cropHeight;
+				const ctx = canvas.getContext('2d');
+				if (!ctx) {
+					return;
+				}
+				ctx.drawImage(fullImg, 0, cropY, fullImg.naturalWidth, cropHeight, 0, 0, fullImg.naturalWidth, cropHeight);
+				const croppedDataUrl = canvas.toDataURL('image/jpeg', 0.95);
+
+				this.overlay.addScreenshot({
+					dataUrl: croppedDataUrl,
+					width: fullImg.naturalWidth,
+					height: cropHeight,
+				});
+			} catch (err) {
+				this.logService.error('[IssueFormService] Screenshot failed:', err);
 			}
 		}));
 
@@ -192,6 +207,10 @@ export class IssueFormService implements IIssueFormService {
 
 			if (hasAttachments && data.githubAccessToken) {
 				this.logService.info(`[IssueFormService] Mobile API upload: ${screenshots.length} screenshots, ${recordings.length} recordings`);
+
+				// Show uploading state
+				this.overlay?.setUploading(true);
+
 				try {
 					// Resolve repo ID for the target repo
 					const repoId = await this.githubUploadService.resolveRepositoryId('microsoft', 'vscode');
@@ -211,19 +230,37 @@ export class IssueFormService implements IIssueFormService {
 						filesToUpload.push({ name: `recording.${ext}`, bytes: fileContent.value.buffer, contentType });
 					}
 
+					// Upload one file at a time with per-attachment progress
 					if (filesToUpload.length > 0) {
-						const results = await this.githubUploadService.uploadViaMobileApi(data.githubAccessToken, repoId, filesToUpload);
+						// Mark all as pending
+						for (let i = 0; i < filesToUpload.length; i++) {
+							this.overlay?.setAttachmentUploadState(i, 'pending');
+						}
+
+						const uploadResults: import('./githubUploadService.js').IGitHubUploadResult[] = [];
+						for (let i = 0; i < filesToUpload.length; i++) {
+							this.overlay?.setAttachmentUploadState(i, 'uploading');
+							const file = filesToUpload[i];
+							const result = await this.githubUploadService.uploadViaMobileApi(
+								data.githubAccessToken, repoId, [file]
+							);
+							uploadResults.push(...result);
+							this.overlay?.setAttachmentUploadState(i, 'done');
+						}
+
 						mediaMarkdown = '\n\n### Attachments\n\n';
-						for (const r of results) {
+						for (const r of uploadResults) {
 							mediaMarkdown += r.contentType.startsWith('video/')
 								? `${r.assetUrl}\n\n`
 								: `![${r.fileName}](${r.assetUrl})\n\n`;
 						}
-						this.logService.info(`[IssueFormService] Upload done: ${results.length} files`);
+						this.logService.info(`[IssueFormService] Upload done: ${uploadResults.length} files`);
 					}
 				} catch (err) {
 					this.logService.error('[IssueFormService] Upload failed:', err);
 					mediaMarkdown = '\n\n### Attachments\n\n> Upload failed. Please drag and drop attachments manually.\n\n';
+				} finally {
+					this.overlay?.setUploading(false);
 				}
 			}
 

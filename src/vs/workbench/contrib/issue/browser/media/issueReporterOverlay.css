@@ -332,9 +332,8 @@ body.wizard-resizing {
 	display: flex;
 	gap: 10px;
 	flex-wrap: wrap;
-	margin-top: 8px;
+	align-content: flex-start;
 	min-height: 50px;
-	flex-shrink: 0;
 }
 
 .wizard-screenshots-empty {
@@ -406,12 +405,12 @@ body.wizard-resizing {
 	color: var(--vscode-focusBorder, #007acc);
 }
 
-/* ── Screenshot Actions ── */
+/* ── Screenshot Controls ── */
+
 .wizard-screenshot-actions {
 	display: flex;
 	align-items: center;
 	gap: 12px;
-	margin-top: 8px;
 	flex-shrink: 0;
 }
 
@@ -495,15 +494,99 @@ body.wizard-resizing {
 .wizard-review-details {
 	display: flex;
 	flex-direction: column;
-	gap: 12px;
-	margin-top: 12px;
+	gap: 10px;
+	margin-top: 8px;
+}
+
+.review-info-row {
+	display: flex;
+	gap: 24px;
+}
+
+.review-thumbnails {
+	display: flex;
+	gap: 10px;
+	margin-top: 4px;
+	flex-wrap: wrap;
+}
+
+/* Review attachment cards — same size as step 3 cards */
+.review-attachment-card {
+	cursor: pointer;
+}
+
+/* ── Upload Progress Overlay ── */
+.review-progress-overlay {
+	position: absolute;
+	inset: 0;
+	display: none;
+	align-items: center;
+	justify-content: center;
+	background: rgba(0, 0, 0, 0.6);
+	border-radius: 5px;
+	z-index: 2;
+}
+
+.upload-pending .review-progress-overlay,
+.upload-uploading .review-progress-overlay,
+.upload-done .review-progress-overlay {
+	display: flex;
+}
+
+/* Spinning ring */
+.review-progress-ring {
+	width: 28px;
+	height: 28px;
+	border: 3px solid rgba(255, 255, 255, 0.3);
+	border-top-color: var(--vscode-focusBorder, #007acc);
+	border-radius: 50%;
+}
+
+.upload-uploading .review-progress-ring {
+	animation: spin 0.8s linear infinite;
+}
+
+.upload-pending .review-progress-ring {
+	border-top-color: rgba(255, 255, 255, 0.3);
+}
+
+/* Checkmark */
+.review-progress-check {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	border-radius: 50%;
+	background: var(--vscode-testing-runAction, #73c991);
+	color: #000;
+	font-size: 16px;
+}
+
+/* Button spinner */
+.wizard-nav-btn.uploading {
+	pointer-events: none;
+	opacity: 0.8;
+}
+
+.wizard-btn-spinner {
+	display: inline-block;
+	width: 14px;
+	height: 14px;
+	border: 2px solid rgba(255, 255, 255, 0.3);
+	border-top-color: #fff;
+	border-radius: 50%;
+	animation: spin 0.8s linear infinite;
+	vertical-align: middle;
+	margin-left: 6px;
+}
+
+@keyframes spin {
+	to { transform: rotate(360deg); }
 }
 
 .wizard-submit-buttons {
-	display: flex;
-	gap: 8px;
-	margin-top: 16px;
-	flex-wrap: wrap;
+	display: none;
 }
 
 .wizard-submit-btn {
@@ -542,6 +625,10 @@ body.wizard-resizing {
 	background: var(--vscode-list-hoverBackground, #2a2d2e);
 }
 
+.wizard-step-review {
+	gap: 8px;
+}
+
 .review-section {
 	display: flex;
 	flex-direction: column;
@@ -574,6 +661,7 @@ body.wizard-resizing {
 	background: var(--vscode-editor-background, #1e1e1e);
 }
 
+/* ── Navigation buttons ── */
 .wizard-nav-btn {
 	display: flex;
 	align-items: center;

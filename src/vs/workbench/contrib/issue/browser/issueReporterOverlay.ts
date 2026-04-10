@@ -76,6 +76,8 @@ export class IssueReporterOverlay {
 
 	// Step 4: Review
 	private titleInput!: HTMLInputElement;
+	private reviewThumbCards: HTMLElement[] = [];
+	private uploading = false;
 
 	// Navigation
 	private stepIndicator!: HTMLElement;
@@ -133,7 +135,7 @@ export class IssueReporterOverlay {
 		this.stepIndicator = append(progressArea, $('span.wizard-step-indicator'));
 		this.stepLabel = append(progressArea, $('span.wizard-step-label'));
 
-		// Collapse/expand toggle
+		// Collapse/expand toggle (stays in toolbar)
 		this.collapseToggle = append(toolbar, $('div.wizard-nav-btn.primary.wizard-collapse-toggle'));
 		this.collapseToggle.setAttribute('role', 'button');
 		this.collapseToggle.setAttribute('tabindex', '0');
@@ -170,8 +172,6 @@ export class IssueReporterOverlay {
 		backLabel.textContent = localize('back', "Back");
 		this.backButton.setAttribute('role', 'button');
 		this.backButton.setAttribute('tabindex', '0');
-
-		append(nav, $('div.spacer'));
 
 		this.nextButton = append(nav, $('div.wizard-nav-btn.wizard-next.primary'));
 		const nextLabel = append(this.nextButton, $('span.wizard-next-label'));
@@ -277,8 +277,6 @@ export class IssueReporterOverlay {
 
 		const actions = append(page, $('div.wizard-screenshot-actions'));
 
-		this.screenshotContainer = append(page, $('div.wizard-screenshots'));
-
 		// Delay dropdown
 		const delayGroup = append(actions, $('div.wizard-delay-group'));
 		const delaySelectLabel = append(delayGroup, $('label.wizard-delay-label'));
@@ -309,10 +307,7 @@ export class IssueReporterOverlay {
 		this.captureLabel.textContent = localize('addScreenshot', "Add screenshot");
 
 		this.disposables.add(addDisposableListener(this.captureBtn, EventType.CLICK, () => {
-			if (this.getTotalAttachments() >= MAX_ATTACHMENTS) {
-				return;
-			}
-			if (this.captureBtn.classList.contains('disabled')) {
+			if (this.getTotalAttachments() >= MAX_ATTACHMENTS || this.captureBtn.classList.contains('disabled')) {
 				return;
 			}
 			if (this.screenshotDelay > 0) {
@@ -357,18 +352,17 @@ export class IssueReporterOverlay {
 				}
 			}));
 		}
+
+		this.screenshotContainer = append(page, $('div.wizard-screenshots'));
 	}
 
 	// ── Step 4: Review & Submit ──
 	private createStep4Review(): void {
-		const page = append(this.stepContainer, $('div.wizard-step'));
+		const page = append(this.stepContainer, $('div.wizard-step.wizard-step-review'));
 		this.stepPages.push(page);
 
 		const heading = append(page, $('h2.wizard-heading'));
 		heading.textContent = localize('reviewSubmit', "Review and submit");
-
-		const subtitle = append(page, $('p.wizard-subtitle'));
-		subtitle.textContent = localize('reviewSubtitle', "Please review all info before submission. You can navigate back to adjust your feedback any time.");
 
 		// Title input
 		const titleGroup = append(page, $('div.wizard-field'));
@@ -385,16 +379,8 @@ export class IssueReporterOverlay {
 			this.titleInput.classList.remove('invalid-input');
 		}));
 
-		// Review details (filled dynamically)
+		// Review details (filled dynamically) — compact horizontal layout
 		append(page, $('div.wizard-review-details'));
-
-		// Submit button
-		const submitGroup = append(page, $('div.wizard-submit-buttons'));
-
-		const submitBtn = append(submitGroup, $('button.wizard-submit-btn.wizard-submit-preview'));
-		submitBtn.textContent = localize('previewOnGitHub', "Preview on GitHub");
-		submitBtn.title = 'Upload attachments and open issue on GitHub';
-		this.disposables.add(addDisposableListener(submitBtn, EventType.CLICK, () => this.submit()));
 	}
 
 	private toggleCollapsed(): void {
@@ -636,14 +622,13 @@ export class IssueReporterOverlay {
 		const nextArrow = this.nextButton.querySelector('.wizard-next-arrow');
 		if (this.currentStep === WizardStep.Review) {
 			if (nextLabel) {
-				nextLabel.textContent = this.data.githubAccessToken
-					? localize('submitIssue', "Submit")
-					: localize('previewOnGitHub', "Preview on GitHub");
+				nextLabel.textContent = localize('previewOnGitHub', "Preview on GitHub");
 			}
 			if (nextArrow) {
-				nextArrow.textContent = ' \u2713'; // ✓
+				nextArrow.textContent = ' \u2192'; // →
 			}
-			this.nextButton.classList.add('submit');
+			this.nextButton.classList.remove('submit');
+			this.nextButton.classList.add('primary');
 		} else if (this.currentStep === WizardStep.Screenshots) {
 			if (nextLabel) {
 				nextLabel.textContent = this.screenshots.length === 0
@@ -663,6 +648,9 @@ export class IssueReporterOverlay {
 			}
 			this.nextButton.classList.remove('submit');
 		}
+
+		// Show/hide toolbar media controls
+		this.updateToolbarActionsSlot();
 	}
 
 	private updateReviewDetails(): void {
@@ -673,13 +661,16 @@ export class IssueReporterOverlay {
 		}
 		details.textContent = '';
 
-		const descSection = append(details as HTMLElement, $('div.review-section'));
+		// Compact: Description · Category on one row
+		const infoRow = append(details as HTMLElement, $('div.review-info-row'));
+
+		const descSection = append(infoRow, $('div.review-section'));
 		const descLabel = append(descSection, $('div.review-label'));
 		descLabel.textContent = localize('description', "Description");
 		const descValue = append(descSection, $('div.review-value'));
 		descValue.textContent = this.descriptionTextarea.value.trim() || localize('noDescription', "(no description)");
 
-		const catSection = append(details as HTMLElement, $('div.review-section'));
+		const catSection = append(infoRow, $('div.review-section'));
 		const catLabel = append(catSection, $('div.review-label'));
 		catLabel.textContent = localize('category', "Category");
 		const catValue = append(catSection, $('div.review-value'));
@@ -690,14 +681,113 @@ export class IssueReporterOverlay {
 		};
 		catValue.textContent = typeLabels[this.selectedIssueType] ?? localize('unknown', "Unknown");
 
-		if (this.screenshots.length > 0) {
-			const ssSection = append(details as HTMLElement, $('div.review-section'));
-			const ssLabel = append(ssSection, $('div.review-label'));
-			ssLabel.textContent = localize('screenshots', "Screenshots");
-			const ssValue = append(ssSection, $('div.review-value'));
-			ssValue.textContent = this.screenshots.length === 1
-				? localize('oneScreenshot', "1 screenshot")
-				: localize('nScreenshots', "{0} screenshots", this.screenshots.length);
+		// Attachments row with full-size clickable thumbnails
+		const totalAttachments = this.screenshots.length + this.recordings.length;
+		if (totalAttachments > 0) {
+			const attachSection = append(details as HTMLElement, $('div.review-section'));
+			const attachLabel = append(attachSection, $('div.review-label'));
+			attachLabel.textContent = localize('attachments', "Attachments ({0})", totalAttachments);
+			const thumbRow = append(attachSection, $('div.review-thumbnails'));
+			this.reviewThumbCards = [];
+
+			for (let i = 0; i < this.screenshots.length; i++) {
+				const s = this.screenshots[i];
+				const card = append(thumbRow, $('div.wizard-screenshot-card.review-attachment-card'));
+				const img = append(card, $('img')) as HTMLImageElement;
+				img.src = s.annotatedDataUrl ?? s.dataUrl;
+				img.alt = localize('screenshotAlt', "Screenshot {0}", i + 1);
+
+				// Progress overlay (hidden initially)
+				const progressOverlay = append(card, $('div.review-progress-overlay'));
+				append(progressOverlay, $('div.review-progress-ring'));
+
+				this.disposables.add(addDisposableListener(card, EventType.CLICK, () => {
+					if (!this.uploading) {
+						this.openAnnotationEditor(i);
+					}
+				}));
+				this.reviewThumbCards.push(card);
+			}
+
+			for (let i = 0; i < this.recordings.length; i++) {
+				const rec = this.recordings[i];
+				const card = append(thumbRow, $('div.wizard-screenshot-card.wizard-recording-card.review-attachment-card'));
+				if (rec.thumbnailDataUrl) {
+					const thumbImg = append(card, $('img'));
+					thumbImg.setAttribute('src', rec.thumbnailDataUrl);
+					thumbImg.setAttribute('draggable', 'false');
+				}
+				const playOverlay = append(card, $('div.wizard-recording-play'));
+				playOverlay.appendChild(renderIcon(Codicon.play));
+
+				const durSec = Math.floor(rec.durationMs / 1000);
+				const durLabel = append(card, $('div.wizard-recording-duration'));
+				durLabel.textContent = `${Math.floor(durSec / 60)}:${(durSec % 60).toString().padStart(2, '0')}`;
+
+				// Progress overlay (hidden initially)
+				const progressOverlay = append(card, $('div.review-progress-overlay'));
+				append(progressOverlay, $('div.review-progress-ring'));
+
+				this.disposables.add(addDisposableListener(card, EventType.CLICK, () => {
+					if (!this.uploading) {
+						this._onDidRequestOpenRecording.fire(rec.filePath);
+					}
+				}));
+				this.reviewThumbCards.push(card);
+			}
+		}
+	}
+
+	/** Called by the form service to show upload progress */
+	setUploading(uploading: boolean): void {
+		this.uploading = uploading;
+		const nextLabel = this.nextButton.querySelector('.wizard-next-label');
+		const nextArrow = this.nextButton.querySelector('.wizard-next-arrow');
+
+		if (uploading) {
+			this.nextButton.classList.add('uploading');
+			if (nextLabel) {
+				nextLabel.textContent = localize('uploading', "Uploading...");
+			}
+			if (nextArrow) {
+				nextArrow.textContent = '';
+				const spinner = document.createElement('span');
+				spinner.className = 'wizard-btn-spinner';
+				nextArrow.appendChild(spinner);
+			}
+			this.backButton.style.display = 'none';
+		} else {
+			this.nextButton.classList.remove('uploading');
+			if (nextLabel) {
+				nextLabel.textContent = localize('previewOnGitHub', "Preview on GitHub");
+			}
+			if (nextArrow) {
+				nextArrow.textContent = ' \u2192';
+			}
+		}
+	}
+
+	/** Mark a specific attachment as uploading / done */
+	setAttachmentUploadState(index: number, state: 'pending' | 'uploading' | 'done'): void {
+		const card = this.reviewThumbCards[index];
+		if (!card) {
+			return;
+		}
+		card.classList.remove('upload-pending', 'upload-uploading', 'upload-done');
+		card.classList.add(`upload-${state}`);
+
+		const overlay = card.querySelector('.review-progress-overlay') as HTMLElement | null;
+		if (!overlay) {
+			return;
+		}
+
+		if (state === 'done') {
+			// Replace ring with checkmark
+			overlay.textContent = '';
+			const check = document.createElement('span');
+			check.className = 'review-progress-check';
+			check.appendChild(renderIcon(Codicon.check));
+			overlay.appendChild(check);
 		}
 	}
 
@@ -943,14 +1033,22 @@ export class IssueReporterOverlay {
 		return this.visible;
 	}
 
+	getWizardHeight(): number {
+		return this.wizardPanel.offsetHeight + this.resizeSash.offsetHeight;
+	}
+
 	hideForCapture(): void {
-		this.wizardPanel.style.visibility = 'hidden';
-		this.resizeSash.style.visibility = 'hidden';
+		// Fully collapse the wizard so the workbench fills the entire window
+		this.wizardPanel.style.display = 'none';
+		this.resizeSash.style.display = 'none';
+		// Force layout reflow
+		this.layoutService.layout();
 	}
 
 	showAfterCapture(): void {
-		this.wizardPanel.style.visibility = '';
-		this.resizeSash.style.visibility = '';
+		this.wizardPanel.style.display = '';
+		this.resizeSash.style.display = '';
+		this.layoutService.layout();
 	}
 
 	setRecordingState(state: RecordingState): void {
