@@ -308,6 +308,9 @@ export class CopilotCLIChatSessionItemProvider extends Disposable implements vsc
 					? worktreeProperties.baseBranchProtected === true
 					: undefined,
 				branchName: worktreeProperties?.branchName,
+				upstreamBranchName: worktreeProperties.version === 2
+					? worktreeProperties.upstreamBranchName
+					: undefined,
 				isolationMode: IsolationMode.Worktree,
 				repositoryPath: worktreeProperties?.repositoryPath,
 				worktreePath: worktreeProperties?.worktreePath,
@@ -362,6 +365,7 @@ export class CopilotCLIChatSessionItemProvider extends Disposable implements vsc
 				repositoryPath: repositoryProperties?.repositoryPath,
 				branchName: repositoryProperties?.branchName,
 				baseBranchName: repositoryProperties?.baseBranchName,
+				upstreamBranchName: repositoryProperties?.upstreamBranchName,
 				workingDirectoryPath: workingDirectory?.fsPath,
 				hasGitHubRemote: repositoryProperties?.hasGitHubRemote,
 				incomingChanges: repositoryProperties?.incomingChanges,

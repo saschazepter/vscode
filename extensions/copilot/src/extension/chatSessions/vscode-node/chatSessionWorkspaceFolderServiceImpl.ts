@@ -145,6 +145,7 @@ export class ChatSessionWorkspaceFolderService extends Disposable implements ICh
 				) {
 					await this.metadataStore.storeRepositoryProperties(sessionId, {
 						...repositoryProperties,
+						upstreamBranchName: properties.upstreamBranchName,
 						incomingChanges: properties.incomingChanges,
 						outgoingChanges: properties.outgoingChanges,
 						uncommittedChanges: properties.uncommittedChanges
@@ -158,6 +159,7 @@ export class ChatSessionWorkspaceFolderService extends Disposable implements ICh
 
 	private async computeWorkspaceChanges(repositoryProperties: RepositoryProperties, sessionId: string): Promise<{
 		readonly changes: ChatSessionWorktreeFile[];
+		readonly upstreamBranchName?: string;
 		readonly incomingChanges?: number;
 		readonly outgoingChanges?: number;
 		readonly uncommittedChanges?: number;
@@ -246,6 +248,9 @@ export class ChatSessionWorkspaceFolderService extends Disposable implements ICh
 		} satisfies ChatSessionWorktreeFile));
 
 		const repositoryState = {
+			upstreamBranchName: repository.upstreamRemote && repository.upstreamBranchName
+				? `${repository.upstreamRemote}/${repository.upstreamBranchName}`
+				: undefined,
 			incomingChanges: repository.headIncomingChanges ?? 0,
 			outgoingChanges: repository.headOutgoingChanges ?? 0,
 			uncommittedChanges:

@@ -190,6 +190,9 @@ export abstract class FolderRepositoryManager extends Disposable implements IFol
 						baseBranchName: branchBase && branchBase.remote && branchBase.name
 							? `${branchBase.remote}/${branchBase.name}`
 							: undefined,
+						upstreamBranchName: repoContext?.upstreamRemote && repoContext?.upstreamBranchName
+							? `${repoContext.upstreamRemote}/${repoContext.upstreamBranchName}`
+							: undefined,
 						hasGitHubRemote: gitHubRemote !== undefined,
 						incomingChanges,
 						outgoingChanges,
