@@ -2471,8 +2471,8 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		this.renderAttachedContext();
 
 		const inputResizeObserver = this._register(new dom.DisposableResizeObserver(() => {
+			this.updateToolConfirmationCarouselMaxHeight();
 			const newHeight = this.container.offsetHeight;
-			this.updateToolConfirmationCarouselMaxHeight(newHeight);
 			this.height.set(newHeight, undefined);
 		}));
 		this._register(inputResizeObserver.observe(this.container));
@@ -2891,7 +2891,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 	addToolToConfirmationCarousel(tool: IChatToolInvocation, factory: ToolInvocationPartFactory, subAgentInvocationId?: string, agentName?: string, scrollToSubagent?: ScrollToSubagentCallback, toolPart?: ChatToolInvocationPart): void {
 		const existing = this._currentToolConfirmationCarousel;
 		if (existing) {
-			existing.addToolInvocation(tool, subAgentInvocationId, agentName, scrollToSubagent, toolPart, factory);
+			existing.addToolInvocation(tool, subAgentInvocationId, agentName, scrollToSubagent, toolPart);
 			this.updateToolConfirmationCarouselMaxHeight();
 		} else {
 			this.renderToolConfirmationCarousel(tool, factory, subAgentInvocationId, agentName, scrollToSubagent, toolPart);
@@ -3280,7 +3280,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		this.updateToolConfirmationCarouselMaxHeight();
 	}
 
-	private updateToolConfirmationCarouselMaxHeight(containerHeight = this.container.offsetHeight): void {
+	private updateToolConfirmationCarouselMaxHeight(): void {
 		const carousel = this._currentToolConfirmationCarousel;
 		if (!carousel) {
 			return;
@@ -3292,7 +3292,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		}
 
 		const carouselHeight = this.chatToolConfirmationCarouselContainer.offsetHeight;
-		const otherInputHeight = Math.max(0, containerHeight - carouselHeight);
+		const otherInputHeight = Math.max(0, this.container.offsetHeight - carouselHeight);
 		carousel.setMaxHeight(this._maxHeight - otherInputHeight);
 	}
 
