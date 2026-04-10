@@ -5,6 +5,7 @@
 
 import * as dom from '../../../../../../../base/browser/dom.js';
 import { IMarkdownString, MarkdownString } from '../../../../../../../base/common/htmlContent.js';
+import { MutableDisposable } from '../../../../../../../base/common/lifecycle.js';
 import { autorun } from '../../../../../../../base/common/observable.js';
 import { IMarkdownRenderer } from '../../../../../../../platform/markdown/browser/markdownRenderer.js';
 import { IInstantiationService } from '../../../../../../../platform/instantiation/common/instantiation.js';
@@ -48,14 +49,14 @@ export class ChatToolStreamingSubPart extends BaseChatToolInvocationSubPart {
 		}
 
 		// Observe streaming message changes
-		let currentPart: ChatProgressContentPart | undefined;
+		const currentPart = this._register(new MutableDisposable<ChatProgressContentPart>());
 		this._register(autorun(reader => {
 			const currentState = toolInvocation.state.read(reader);
 			if (currentState.type !== IChatToolInvocation.StateKind.Streaming) {
 				// State changed - clear the container DOM before triggering re-render
 				// This prevents the old streaming message from lingering
 				dom.clearNode(container);
-				currentPart = undefined;
+				currentPart.clear();
 				this._onNeedsRerender.fire();
 				return;
 			}
@@ -68,7 +69,7 @@ export class ChatToolStreamingSubPart extends BaseChatToolInvocationSubPart {
 			const messageText = typeof displayMessage === 'string' ? displayMessage : displayMessage.value;
 			if (!messageText || messageText.trim().length === 0) {
 				dom.clearNode(container);
-				currentPart = undefined;
+				currentPart.clear();
 				return;
 			}
 
@@ -77,8 +78,8 @@ export class ChatToolStreamingSubPart extends BaseChatToolInvocationSubPart {
 				: displayMessage;
 
 			// Reuse existing part if possible — just update the message text
-			if (currentPart) {
-				currentPart.updateMessage(content instanceof MarkdownString ? content : MarkdownString.lift(content));
+			if (currentPart.value) {
+				currentPart.value.updateMessage(content instanceof MarkdownString ? content : MarkdownString.lift(content));
 				return;
 			}
 
@@ -87,7 +88,7 @@ export class ChatToolStreamingSubPart extends BaseChatToolInvocationSubPart {
 				content
 			};
 
-			currentPart = this._register(this.instantiationService.createInstance(
+			currentPart.value = this.instantiationService.createInstance(
 				ChatProgressContentPart,
 				progressMessage,
 				this.renderer,
@@ -97,9 +98,9 @@ export class ChatToolStreamingSubPart extends BaseChatToolInvocationSubPart {
 				this.getIcon(),
 				toolInvocation,
 				false
-			));
+			);
 
-			dom.reset(container, currentPart.domNode);
+			dom.reset(container, currentPart.value.domNode);
 		}));
 
 		return container;

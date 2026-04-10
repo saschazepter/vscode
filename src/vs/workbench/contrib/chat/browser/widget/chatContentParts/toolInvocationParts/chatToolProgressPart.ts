@@ -8,6 +8,7 @@ import { renderAsPlaintext } from '../../../../../../../base/browser/markdownRen
 import { status } from '../../../../../../../base/browser/ui/aria/aria.js';
 import { IMarkdownString, MarkdownString } from '../../../../../../../base/common/htmlContent.js';
 import { stripIcons } from '../../../../../../../base/common/iconLabels.js';
+import { MutableDisposable } from '../../../../../../../base/common/lifecycle.js';
 import { autorun } from '../../../../../../../base/common/observable.js';
 import { IMarkdownRenderer } from '../../../../../../../platform/markdown/browser/markdownRenderer.js';
 import { IConfigurationService } from '../../../../../../../platform/configuration/common/configuration.js';
@@ -54,7 +55,7 @@ export class ChatToolProgressSubPart extends BaseChatToolInvocationSubPart {
 			return part.domNode;
 		} else {
 			const container = document.createElement('div');
-			let currentPart: ChatProgressContentPart | undefined;
+			const currentPart = this._register(new MutableDisposable<ChatProgressContentPart>());
 			this._register(autorun(reader => {
 				let progressContent: IMarkdownString | string | undefined;
 				const key = this.getAnnouncementKey('progress');
@@ -78,7 +79,7 @@ export class ChatToolProgressSubPart extends BaseChatToolInvocationSubPart {
 				// Don't render anything if there's no meaningful content
 				if (!this.hasMeaningfulContent(progressContent)) {
 					dom.clearNode(container);
-					currentPart = undefined;
+					currentPart.clear();
 					return;
 				}
 
@@ -87,14 +88,14 @@ export class ChatToolProgressSubPart extends BaseChatToolInvocationSubPart {
 					: progressContent instanceof MarkdownString ? progressContent : MarkdownString.lift(progressContent);
 
 				// Reuse existing part if possible — just update the message text
-				if (currentPart) {
-					currentPart.updateMessage(contentAsMarkdown);
+				if (currentPart.value) {
+					currentPart.value.updateMessage(contentAsMarkdown);
 					return;
 				}
 
 				const shouldAnnounce = this.toolInvocation.kind === 'toolInvocation' && this.hasMeaningfulContent(progressContent) ? this.computeShouldAnnounce(key) : false;
-				currentPart = this._register(this.renderProgressContent(contentAsMarkdown, shouldAnnounce));
-				dom.reset(container, currentPart.domNode);
+				currentPart.value = this.renderProgressContent(contentAsMarkdown, shouldAnnounce);
+				dom.reset(container, currentPart.value.domNode);
 			}));
 			return container;
 		}

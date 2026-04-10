@@ -88,9 +88,11 @@ suite('ChatToolProgressSubPart', () => {
 		source?: ToolDataSourceType;
 		toolId?: string;
 		invocationMessage?: string;
+		progressObservable?: ReturnType<typeof observableValue<{ message?: string | IMarkdownString; progress: number | undefined }>>;
 	} = {}): IChatToolInvocation {
 		const source = options.source ?? ToolDataSource.Internal;
 		const toolId = options.toolId ?? 'test_tool';
+		const progress = options.progressObservable ?? observableValue('progress', { message: undefined as string | IMarkdownString | undefined, progress: undefined as number | undefined });
 		return {
 			presentation: undefined,
 			toolSpecificData: undefined,
@@ -104,7 +106,7 @@ suite('ChatToolProgressSubPart', () => {
 				type: IChatToolInvocation.StateKind.Executing,
 				parameters: undefined,
 				confirmed: { type: ToolConfirmKind.ConfirmationNotNeeded },
-				progress: observableValue('progress', { message: undefined, progress: undefined })
+				progress
 			}),
 			toolSpecificDataKind: observableValue('test', undefined),
 			isAttachedToThinking: false,
@@ -241,5 +243,69 @@ suite('ChatToolProgressSubPart', () => {
 		));
 
 		assert.strictEqual(part.domNode.querySelector('.shimmer-progress'), null);
+	});
+
+	test('reuses the same progress content part when progress message updates', () => {
+		const progressObs = observableValue<{ message?: string | IMarkdownString; progress: number | undefined }>('progress', { message: 'initialMessage', progress: undefined });
+		const tool = createToolInvocation({ progressObservable: progressObs });
+
+		const part = disposables.add(instantiationService.createInstance(
+			ChatToolProgressSubPart,
+			tool,
+			createRenderContext(false),
+			mockMarkdownRenderer,
+			new Set<string>()
+		));
+
+		// Should render initial progress message
+		assert.ok(part.domNode.textContent?.includes('initialMessage'));
+
+		// Update the progress message
+		progressObs.set({ message: 'updatedMessage', progress: undefined }, undefined);
+
+		// Should show updated message (reused part via updateMessage)
+		assert.ok(part.domNode.textContent?.includes('updatedMessage'));
+	});
+
+	test('clears container when progress content becomes empty', () => {
+		const progressObs = observableValue<{ message?: string | IMarkdownString; progress: number | undefined }>('progress', { message: 'working', progress: undefined });
+		const tool = createToolInvocation({ progressObservable: progressObs });
+
+		const part = disposables.add(instantiationService.createInstance(
+			ChatToolProgressSubPart,
+			tool,
+			createRenderContext(false),
+			mockMarkdownRenderer,
+			new Set<string>()
+		));
+
+		assert.ok(part.domNode.textContent?.includes('working'));
+
+		// Set progress to empty — should clear the container
+		progressObs.set({ message: '   ', progress: undefined }, undefined);
+		assert.strictEqual(part.domNode.textContent?.trim(), '');
+	});
+
+	test('creates fresh part after clearing then providing new content', () => {
+		const progressObs = observableValue<{ message?: string | IMarkdownString; progress: number | undefined }>('progress', { message: 'first', progress: undefined });
+		const tool = createToolInvocation({ progressObservable: progressObs });
+
+		const part = disposables.add(instantiationService.createInstance(
+			ChatToolProgressSubPart,
+			tool,
+			createRenderContext(false),
+			mockMarkdownRenderer,
+			new Set<string>()
+		));
+
+		assert.ok(part.domNode.textContent?.includes('first'));
+
+		// Clear
+		progressObs.set({ message: '', progress: undefined }, undefined);
+		assert.strictEqual(part.domNode.textContent?.trim(), '');
+
+		// New content after clear — should create a fresh part
+		progressObs.set({ message: 'second', progress: undefined }, undefined);
+		assert.ok(part.domNode.textContent?.includes('second'));
 	});
 });
