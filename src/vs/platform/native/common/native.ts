@@ -210,6 +210,9 @@ export interface ICommonNativeHostService {
 	makeTempDir(prefix: string): Promise<string>;
 	removeTempDir(dirPath: string): Promise<void>;
 
+	// GitHub mobile upload API (runs in main process to avoid CORS)
+	uploadFileViaMobileApi(token: string, repoId: string, fileName: string, fileBytes: VSBuffer, contentType: string): Promise<{ fileName: string; assetUrl: string; contentType: string }>;
+
 	// Process
 	getProcessId(): Promise<number | undefined>;
 	killProcess(pid: number, code: string): Promise<void>;

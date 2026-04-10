@@ -22,6 +22,7 @@ export interface IGitHubUploadService {
 	resolveRepositoryId(owner: string, repo: string): Promise<string>;
 	uploadAsset(owner: string, repo: string, repoId: string, fileName: string, fileBytes: Uint8Array, contentType: string): Promise<IGitHubUploadResult>;
 	uploadViaGist(token: string, files: { name: string; bytes: Uint8Array }[]): Promise<IGitHubUploadResult[]>;
+	uploadViaMobileApi(token: string, repoId: string, files: { name: string; bytes: Uint8Array; contentType: string }[]): Promise<IGitHubUploadResult[]>;
 	saveAttachmentsToFolder(screenshots: { name: string; bytes: Uint8Array }[], recordings: { name: string; bytes: Uint8Array }[]): Promise<string>;
 }
 
@@ -37,5 +38,6 @@ export class BrowserGitHubUploadService implements IGitHubUploadService {
 	async resolveRepositoryId(): Promise<string> { throw new Error('Not supported in browser'); }
 	async uploadAsset(): Promise<IGitHubUploadResult> { throw new Error('Not supported in browser'); }
 	async uploadViaGist(): Promise<IGitHubUploadResult[]> { throw new Error('Not supported in browser'); }
+	async uploadViaMobileApi(): Promise<IGitHubUploadResult[]> { throw new Error('Not supported in browser'); }
 	async saveAttachmentsToFolder(): Promise<string> { throw new Error('Not supported in browser'); }
 }

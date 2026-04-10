@@ -11,17 +11,27 @@ import Severity from '../../../../base/common/severity.js';
 import { localize } from '../../../../nls.js';
 import { IMenuService, MenuId } from '../../../../platform/actions/common/actions.js';
 import { IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
-import { IDialogService } from '../../../../platform/dialogs/common/dialogs.js';
+import { IDialogService, IFileDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 import { ExtensionIdentifier, ExtensionIdentifierSet } from '../../../../platform/extensions/common/extensions.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
+import { ILayoutService } from '../../../../platform/layout/browser/layoutService.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
+import { IOpenerService } from '../../../../platform/opener/common/opener.js';
 import product from '../../../../platform/product/common/product.js';
 import { IRectangle } from '../../../../platform/window/common/window.js';
 import { AuxiliaryWindowMode, IAuxiliaryWindowService } from '../../../services/auxiliaryWindow/browser/auxiliaryWindowService.js';
 import { IHostService } from '../../../services/host/browser/host.js';
 import { IIssueFormService, IssueReporterData } from '../common/issue.js';
+import { IssueReporterOverlay } from './issueReporterOverlay.js';
 import BaseHtml from './issueReporterPage.js';
 import { IssueWebReporter } from './issueReporterService.js';
+import { IRecordingService, RecordingState } from './recordingService.js';
+import { IScreenshotService } from './screenshotService.js';
+import { IGitHubUploadService } from './githubUploadService.js';
+import { IFileService } from '../../../../platform/files/common/files.js';
+import { IEnvironmentService } from '../../../../platform/environment/common/environment.js';
+import { VSBuffer } from '../../../../base/common/buffer.js';
+import { URI } from '../../../../base/common/uri.js';
 import './media/issueReporter.css';
 
 export interface IssuePassData {
@@ -42,6 +52,9 @@ export class IssueFormService implements IIssueFormService {
 	protected release: string = '';
 	protected type: string = '';
 
+	private overlayDisposables: DisposableStore | undefined;
+	private overlay: IssueReporterOverlay | undefined;
+
 	constructor(
 		@IInstantiationService protected readonly instantiationService: IInstantiationService,
 		@IAuxiliaryWindowService protected readonly auxiliaryWindowService: IAuxiliaryWindowService,
@@ -49,7 +62,15 @@ export class IssueFormService implements IIssueFormService {
 		@IContextKeyService protected readonly contextKeyService: IContextKeyService,
 		@ILogService protected readonly logService: ILogService,
 		@IDialogService protected readonly dialogService: IDialogService,
-		@IHostService protected readonly hostService: IHostService
+		@IHostService protected readonly hostService: IHostService,
+		@ILayoutService protected readonly layoutService: ILayoutService,
+		@IScreenshotService protected readonly screenshotService: IScreenshotService,
+		@IOpenerService protected readonly openerService: IOpenerService,
+		@IRecordingService protected readonly recordingService: IRecordingService,
+		@IFileDialogService protected readonly fileDialogService: IFileDialogService,
+		@IFileService protected readonly fileService: IFileService,
+		@IEnvironmentService protected readonly environmentService: IEnvironmentService,
+		@IGitHubUploadService protected readonly githubUploadService: IGitHubUploadService,
 	) { }
 
 	async openReporter(data: IssueReporterData): Promise<void> {
@@ -57,6 +78,279 @@ export class IssueFormService implements IIssueFormService {
 			return;
 		}
 
+		this.openOverlayReporter(data);
+	}
+
+	protected openOverlayReporter(data: IssueReporterData): void {
+		// If already open, close first
+		this.closeOverlay();
+
+		this.overlayDisposables = new DisposableStore();
+
+		this.overlay = new IssueReporterOverlay(
+			data,
+			this.layoutService as import('../../../services/layout/browser/layoutService.js').IWorkbenchLayoutService,
+			this.recordingService.isSupported,
+		);
+		this.overlayDisposables.add(this.overlay);
+
+		// Handle close
+		this.overlayDisposables.add(this.overlay.onDidClose(() => {
+			this.closeOverlay();
+		}));
+
+		// Handle screenshot request — capture only the workbench area, not the wizard
+		this.overlayDisposables.add(this.overlay.onDidRequestScreenshot(async () => {
+			this.overlay?.hideForCapture();
+			try {
+				// Small delay to let the UI hide before capture
+				await new Promise(r => setTimeout(r, 100));
+				// Capture only the workbench container region, excluding the wizard panel
+				const container = this.layoutService.mainContainer;
+				const bounds = container.getBoundingClientRect();
+				const dpr = container.ownerDocument.defaultView?.devicePixelRatio ?? 1;
+				const rect = {
+					x: Math.round(bounds.x * dpr),
+					y: Math.round(bounds.y * dpr),
+					width: Math.round(bounds.width * dpr),
+					height: Math.round(bounds.height * dpr),
+				};
+				const dataUrl = await this.screenshotService.captureScreenshot(rect);
+				if (dataUrl && this.overlay) {
+					const img = new Image();
+					img.onload = () => {
+						this.overlay?.addScreenshot({
+							dataUrl,
+							width: img.naturalWidth,
+							height: img.naturalHeight,
+						});
+					};
+					img.src = dataUrl;
+				}
+			} finally {
+				this.overlay?.showAfterCapture();
+			}
+		}));
+
+		// Handle recording start
+		this.overlayDisposables.add(this.overlay.onDidRequestStartRecording(async () => {
+			try {
+				await this.recordingService.startRecording('video/mp4');
+				this.overlay?.setRecordingState(RecordingState.Recording);
+			} catch (err) {
+				this.logService.error('[IssueFormService] Failed to start recording:', err);
+				this.overlay?.setRecordingState(RecordingState.Idle);
+			}
+		}));
+
+		// Handle recording stop
+		this.overlayDisposables.add(this.overlay.onDidRequestStopRecording(async () => {
+			const recordingData = await this.recordingService.stopRecording();
+			if (recordingData) {
+				await this.saveRecordingToUserData(recordingData);
+			}
+			this.overlay?.setRecordingState(RecordingState.Idle);
+		}));
+
+		// Handle external recording stop (max duration / OS stop sharing)
+		this.overlayDisposables.add(this.recordingService.onDidChangeState(state => {
+			if (state === RecordingState.Stopped) {
+				this.recordingService.stopRecording().then(d => {
+					if (d) {
+						this.saveRecordingToUserData(d);
+					}
+					this.overlay?.setRecordingState(RecordingState.Idle);
+				});
+			}
+		}));
+
+		// Handle open recording — use openerService to open with OS default player
+		this.overlayDisposables.add(this.overlay.onDidRequestOpenRecording(filePath => {
+			this.openerService.open(URI.file(filePath));
+		}));
+
+		// Handle submit
+		this.overlayDisposables.add(this.overlay.onDidSubmit(async ({ title, body }) => {
+			const screenshots = this.overlay?.getScreenshots() ?? [];
+			const recordings = this.overlay?.getRecordings() ?? [];
+
+			// Determine the issue URL
+			let issueUrl = data.privateUri
+				? URI.revive(data.privateUri).toString()
+				: product.reportIssueUrl ?? '';
+
+			const selectedExtension = data.extensionId
+				? data.enabledExtensions.find(ext => ext.id.toLocaleLowerCase() === data.extensionId?.toLocaleLowerCase())
+				: undefined;
+
+			if (selectedExtension?.uri) {
+				issueUrl = URI.revive(selectedExtension.uri).toString();
+			}
+
+			let mediaMarkdown = '';
+			const hasAttachments = screenshots.length > 0 || recordings.length > 0;
+
+			if (hasAttachments && data.githubAccessToken) {
+				this.logService.info(`[IssueFormService] Mobile API upload: ${screenshots.length} screenshots, ${recordings.length} recordings`);
+				try {
+					// Resolve repo ID for the target repo
+					const repoId = await this.githubUploadService.resolveRepositoryId('microsoft', 'vscode');
+
+					// Collect files to upload
+					const filesToUpload: { name: string; bytes: Uint8Array; contentType: string }[] = [];
+					for (let i = 0; i < screenshots.length; i++) {
+						const bytes = this.dataUrlToBytes(screenshots[i].annotatedDataUrl ?? screenshots[i].dataUrl);
+						if (bytes) {
+							filesToUpload.push({ name: `screenshot-${i + 1}.png`, bytes, contentType: 'image/png' });
+						}
+					}
+					for (const rec of recordings) {
+						const fileContent = await this.fileService.readFile(URI.file(rec.filePath));
+						const ext = rec.filePath.endsWith('.mp4') ? 'mp4' : 'webm';
+						const contentType = ext === 'mp4' ? 'video/mp4' : 'video/webm';
+						filesToUpload.push({ name: `recording.${ext}`, bytes: fileContent.value.buffer, contentType });
+					}
+
+					if (filesToUpload.length > 0) {
+						const results = await this.githubUploadService.uploadViaMobileApi(data.githubAccessToken, repoId, filesToUpload);
+						mediaMarkdown = '\n\n### Attachments\n\n';
+						for (const r of results) {
+							mediaMarkdown += r.contentType.startsWith('video/')
+								? `${r.assetUrl}\n\n`
+								: `![${r.fileName}](${r.assetUrl})\n\n`;
+						}
+						this.logService.info(`[IssueFormService] Upload done: ${results.length} files`);
+					}
+				} catch (err) {
+					this.logService.error('[IssueFormService] Upload failed:', err);
+					mediaMarkdown = '\n\n### Attachments\n\n> Upload failed. Please drag and drop attachments manually.\n\n';
+				}
+			}
+
+			const issueBody = body + mediaMarkdown;
+			this.logService.info(`[IssueFormService] Opening issue preview: bodyLen=${issueBody.length}`);
+
+			// Open issue creation URL
+			{
+				let url = `${issueUrl}${issueUrl.indexOf('?') === -1 ? '?' : '&'}title=${encodeURIComponent(title)}&body=${encodeURIComponent(issueBody)}`;
+
+				if (url.length > 7500) {
+					const shouldWrite = await this.showClipboardDialog();
+					if (!shouldWrite) {
+						return;
+					}
+					url = `${issueUrl}${issueUrl.indexOf('?') === -1 ? '?' : '&'}title=${encodeURIComponent(title)}&body=${encodeURIComponent(localize('pasteData', "We have written the needed data into your clipboard because it was too large to send. Please paste."))}`;
+				}
+
+				await this.openerService.open(URI.parse(url));
+			}
+
+			this.closeOverlay();
+		}));
+
+		this.overlay.show();
+	}
+
+	private dataUrlToBytes(dataUrl: string): Uint8Array | undefined {
+		const commaIndex = dataUrl.indexOf(',');
+		if (commaIndex === -1) {
+			return undefined;
+		}
+		const base64 = dataUrl.substring(commaIndex + 1);
+		const binaryString = atob(base64);
+		const bytes = new Uint8Array(binaryString.length);
+		for (let i = 0; i < binaryString.length; i++) {
+			bytes[i] = binaryString.charCodeAt(i);
+		}
+		return bytes;
+	}
+
+	private closeOverlay(): void {
+		if (this.recordingService.state === RecordingState.Recording) {
+			this.recordingService.discardRecording();
+		}
+		this.overlayDisposables?.dispose();
+		this.overlayDisposables = undefined;
+		this.overlay = undefined;
+	}
+
+	private async saveRecordingToUserData(data: import('./recordingService.js').IRecordingData): Promise<void> {
+		try {
+			const extension = data.mimeType.includes('mp4') ? 'mp4' : 'webm';
+			const fileName = `vscode-recording-${new Date().toISOString().replace(/[:.]/g, '-')}.${extension}`;
+			const target = URI.joinPath(this.environmentService.userRoamingDataHome, 'issue-recordings', fileName);
+
+			const arrayBuffer = await data.blob.arrayBuffer();
+			await this.fileService.writeFile(target, VSBuffer.wrap(new Uint8Array(arrayBuffer)));
+			this.logService.info(`[IssueFormService] Recording saved to ${target.toString()}`);
+
+			const thumbnailDataUrl = await this.generateVideoThumbnail(data.blob, data.mimeType);
+			this.overlay?.addRecording(target.fsPath, data.durationMs, thumbnailDataUrl);
+		} catch (err) {
+			this.logService.error('[IssueFormService] Failed to save recording:', err);
+		}
+	}
+
+	private generateVideoThumbnail(blob: Blob, _mimeType: string): Promise<string | undefined> {
+		return new Promise(resolve => {
+			const timeout = setTimeout(() => {
+				cleanup();
+				resolve(undefined);
+			}, 5000);
+
+			let cleaned = false;
+			const cleanup = () => {
+				if (cleaned) {
+					return;
+				}
+				cleaned = true;
+				clearTimeout(timeout);
+				URL.revokeObjectURL(url);
+				video.remove();
+			};
+
+			const url = URL.createObjectURL(blob);
+			const video = document.createElement('video');
+			video.muted = true;
+			video.preload = 'auto';
+			video.style.cssText = 'position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;';
+			document.body.appendChild(video);
+			video.src = url;
+
+			video.addEventListener('loadeddata', () => {
+				video.currentTime = Math.min(0.5, video.duration / 2);
+			}, { once: true });
+
+			video.addEventListener('seeked', () => {
+				try {
+					const canvas = document.createElement('canvas');
+					canvas.width = video.videoWidth;
+					canvas.height = video.videoHeight;
+					const ctx = canvas.getContext('2d');
+					if (ctx) {
+						ctx.drawImage(video, 0, 0);
+						const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+						cleanup();
+						resolve(dataUrl);
+					} else {
+						cleanup();
+						resolve(undefined);
+					}
+				} catch {
+					cleanup();
+					resolve(undefined);
+				}
+			}, { once: true });
+
+			video.addEventListener('error', () => {
+				cleanup();
+				resolve(undefined);
+			}, { once: true });
+		});
+	}
+
+	/** @deprecated Use openOverlayReporter instead. Kept for web fallback. */
+	async openAuxIssueReporterLegacy(data: IssueReporterData): Promise<void> {
 		await this.openAuxIssueReporter(data);
 
 		if (this.issueReporterWindow) {
@@ -173,6 +467,7 @@ export class IssueFormService implements IIssueFormService {
 	//#region used by issue reporter
 
 	async closeReporter(): Promise<void> {
+		this.closeOverlay();
 		this.issueReporterWindow?.close();
 	}
 
@@ -231,6 +526,10 @@ export class IssueFormService implements IIssueFormService {
 		if (data.extensionId && this.extensionIdentifierSet.has(data.extensionId)) {
 			this.currentData = data;
 			this.issueReporterWindow?.focus();
+			return true;
+		}
+
+		if (this.overlay?.isVisible()) {
 			return true;
 		}
 

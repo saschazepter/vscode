@@ -192,6 +192,7 @@ export class TestNativeHostService implements INativeHostService {
 	async writeFileToPath(): Promise<void> { }
 	async makeTempDir(): Promise<string> { return ''; }
 	async removeTempDir(): Promise<void> { }
+	async uploadFileViaMobileApi(): Promise<{ fileName: string; assetUrl: string; contentType: string }> { return { fileName: '', assetUrl: '', contentType: '' }; }
 	async showToast(options: IToastOptions): Promise<IToastResult> { return { supported: false, clicked: false }; }
 	async clearToast(id: string): Promise<void> { }
 	async clearToasts(): Promise<void> { }

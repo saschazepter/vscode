@@ -311,6 +311,22 @@ export class NativeGitHubUploadService extends Disposable implements IGitHubUplo
 		}
 	}
 
+	async uploadViaMobileApi(token: string, repoId: string, files: { name: string; bytes: Uint8Array; contentType: string }[]): Promise<IGitHubUploadResult[]> {
+		this.logService.info(`[GitHubUpload/MobileAPI] Uploading ${files.length} files via main process...`);
+		const results: IGitHubUploadResult[] = [];
+
+		for (const file of files) {
+			this.logService.info(`[GitHubUpload/MobileAPI] Uploading ${file.name} (${file.bytes.length} bytes, ${file.contentType})`);
+			const result = await this.nativeHostService.uploadFileViaMobileApi(
+				token, repoId, file.name, VSBuffer.wrap(file.bytes), file.contentType
+			);
+			this.logService.info(`[GitHubUpload/MobileAPI] Done: ${file.name} -> ${result.assetUrl}`);
+			results.push(result);
+		}
+
+		return results;
+	}
+
 	async saveAttachmentsToFolder(screenshots: { name: string; bytes: Uint8Array }[], recordings: { name: string; bytes: Uint8Array }[]): Promise<string> {
 		const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
 		const dirPath = await this.nativeHostService.makeTempDir(`vscode-issue-attachments-${timestamp}`);
