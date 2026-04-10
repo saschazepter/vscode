@@ -773,6 +773,8 @@ class PrimitiveToolResult<T extends IPrimitiveToolResultProps> extends PromptEle
 		const uploadsEnabled = this.configurationService && this.experimentationService
 			? this.configurationService.getExperimentBasedConfig(ConfigKey.EnableChatImageUpload, this.experimentationService)
 			: false;
+
+		// Anthropic (from CAPI) currently does not support image uploads from tool calls.
 		const canUpload = uploadsEnabled && modelCanUseMcpResultImageURL(this.endpoint);
 
 		// Enforce image budgets only when images will be inlined as base64.
