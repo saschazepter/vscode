@@ -662,7 +662,7 @@ export class ChatResponseViewModel extends Disposable implements IChatResponseVi
 		const wordCountScheduler = this.liveUpdateTracker ? this._register(new RunOnceScheduler(() => {
 			const wordCount = countWords(_model.entireResponse.getMarkdown());
 			this.liveUpdateTracker!.update({ totalWordCount: wordCount });
-		}, 0)) : undefined;
+		}, 200)) : undefined;
 
 		this._register(_model.onDidChange(() => {
 			wordCountScheduler?.schedule();

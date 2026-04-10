@@ -42,6 +42,9 @@ const linkPattern =
 	/**/r`\s*(?:"[^"]*"|'[^']*'|\([^\(\)]*\))?\s*` +
 	r`\)`;
 
+const backtick = '`';
+const wordRegExp = new RegExp('(?:' + linkPattern + ')|(?:' + markedKatexExtension.mathInlineRegExp.source + r`)|\p{sc=Han}|=+|\++|-+|[^\s\|\p{sc=Han}|=|\+|\-|${backtick}]+`, 'gu');
+
 export function getNWords(str: string, numWordsToCount: number): IWordCountResult {
 	// This regex matches each word and skips over whitespace and separators. A word is:
 	// A markdown link
@@ -49,9 +52,7 @@ export function getNWords(str: string, numWordsToCount: number): IWordCountResul
 	// One chinese character
 	// One or more + - =, handled so that code like "a=1+2-3" is broken up better
 	// One or more characters that aren't whitepace or any of the above
-	const backtick = '`';
-
-	const wordRegExp = new RegExp('(?:' + linkPattern + ')|(?:' + markedKatexExtension.mathInlineRegExp.source + r`)|\p{sc=Han}|=+|\++|-+|[^\s\|\p{sc=Han}|=|\+|\-|${backtick}]+`, 'gu');
+	wordRegExp.lastIndex = 0;
 	const allWordMatches = Array.from(str.matchAll(wordRegExp));
 
 	const targetWords = allWordMatches.slice(0, numWordsToCount);
