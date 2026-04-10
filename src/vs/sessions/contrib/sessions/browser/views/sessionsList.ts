@@ -29,11 +29,10 @@ import { IInstantiationService } from '../../../../../platform/instantiation/com
 import { IKeybindingService } from '../../../../../platform/keybinding/common/keybinding.js';
 import { ServiceCollection } from '../../../../../platform/instantiation/common/serviceCollection.js';
 import { WorkbenchObjectTree } from '../../../../../platform/list/browser/listService.js';
-import { IStyleOverride, defaultButtonStyles } from '../../../../../platform/theme/browser/defaultStyles.js';
+import { IStyleOverride, defaultButtonStyles, defaultFindWidgetStyles, defaultToggleStyles } from '../../../../../platform/theme/browser/defaultStyles.js';
 import { asCssVariable } from '../../../../../platform/theme/common/colorUtils.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
-import { GITHUB_REMOTE_FILE_SCHEME, ISession, ISessionWorkspace, SessionStatus } from '../../common/sessionData.js';
-import { ISessionsManagementService } from '../sessionsManagementService.js';
+import { CopilotCLISessionType, GITHUB_REMOTE_FILE_SCHEME, ISession, ISessionWorkspace, SessionStatus } from '../../../../services/sessions/common/session.js';
 import { AgentSessionApprovalModel, IAgentSessionApprovalInfo } from '../../../../../workbench/contrib/chat/browser/agentSessions/agentSessionApprovalModel.js';
 import { Button } from '../../../../../base/browser/ui/button/button.js';
 import { IMarkdownRendererService } from '../../../../../platform/markdown/browser/markdownRenderer.js';
@@ -41,7 +40,7 @@ import { Separator } from '../../../../../base/common/actions.js';
 import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
 import { HoverStyle } from '../../../../../base/browser/ui/hover/hover.js';
 import { HoverPosition } from '../../../../../base/browser/ui/hover/hoverWidget.js';
-import { CopilotCLISessionType } from '../sessionTypes.js';
+import { ISessionsManagementService } from '../../../../services/sessions/common/sessionsManagement.js';
 
 const $ = DOM.$;
 
@@ -269,11 +268,23 @@ class SessionItemRenderer implements ITreeRenderer<SessionListItem, FuzzyScore, 
 			DOM.clearNode(template.detailsRow);
 			const parts: HTMLElement[] = [];
 
+			const isWorkspaceSession = workspace &&
+				workspace.repositories.length > 0 &&
+				workspace?.repositories[0].workingDirectory === undefined;
+
 			// Session type icon in details row
 			// Disabling background icon - hacky but couldn't figure out how to do it from the new provider
 			if (element.sessionType !== CopilotCLISessionType.id) {
 				const typeIconEl = DOM.append(template.detailsRow, $('span.session-details-icon'));
 				DOM.append(typeIconEl, $(`span${ThemeIcon.asCSSSelector(element.icon)}`));
+				parts.push(typeIconEl);
+			} else if (
+				element.sessionType === CopilotCLISessionType.id &&
+				sessionStatus !== SessionStatus.InProgress &&
+				isWorkspaceSession
+			) {
+				const typeIconEl = DOM.append(template.detailsRow, $('span.session-details-icon'));
+				DOM.append(typeIconEl, $(`span${ThemeIcon.asCSSSelector(Codicon.folder)}`));
 				parts.push(typeIconEl);
 			}
 
@@ -587,7 +598,9 @@ class SessionsAccessibilityProvider {
 		if (isSessionShowMore(element)) {
 			return localize('showMoreAria', "Show {0} more sessions", element.remainingCount);
 		}
-		return element.title.get();
+		const title = element.title.get();
+		const created = fromNow(element.createdAt, true);
+		return localize('sessionItemAria', "{0}, created {1}", title, created);
 	}
 }
 
@@ -599,6 +612,7 @@ export interface ISessionsListControlOptions {
 	readonly overrideStyles?: IStyleOverride<IListStyles>;
 	readonly grouping: () => SessionsGrouping;
 	readonly sorting: () => SessionsSorting;
+	readonly findWidgetContainer?: HTMLElement;
 	onSessionOpen(resource: URI, preserveFocus: boolean): void;
 }
 
@@ -610,6 +624,7 @@ export type ISessionsListOptions = ISessionsListControlOptions;
 export interface ISessionsList {
 	readonly element: HTMLElement;
 	readonly onDidUpdate: Event<void>;
+	readonly onDidChangeFindOpenState: Event<boolean>;
 	refresh(): void;
 	reveal(sessionResource: URI): boolean;
 	clearFocus(): void;
@@ -619,6 +634,7 @@ export interface ISessionsList {
 	focus(): void;
 	update(expandAll?: boolean): void;
 	openFind(): void;
+	closeFind(): void;
 	resetSectionCollapseState(): void;
 	pinSession(session: ISession): void;
 	unpinSession(session: ISession): void;
@@ -662,6 +678,9 @@ export class SessionsList extends Disposable implements ISessionsList {
 
 	private readonly _onDidUpdate = this._register(new Emitter<void>());
 	readonly onDidUpdate: Event<void> = this._onDidUpdate.event;
+
+	private readonly _onDidChangeFindOpenState = this._register(new Emitter<boolean>());
+	readonly onDidChangeFindOpenState: Event<boolean> = this._onDidChangeFindOpenState.event;
 
 	get element(): HTMLElement { return this.listContainer; }
 
@@ -738,6 +757,14 @@ export class SessionsList extends Disposable implements ISessionsList {
 				indent: 0,
 				findWidgetEnabled: true,
 				defaultFindMode: TreeFindMode.Filter,
+				findWidgetContainer: this.options.findWidgetContainer,
+				findWidgetStyles: {
+					...defaultFindWidgetStyles,
+					toggleStyles: {
+						...defaultToggleStyles,
+						inputActiveOptionBorder: 'transparent',
+					},
+				},
 				keyboardNavigationLabelProvider: {
 					getKeyboardNavigationLabel: (element: SessionListItem) => {
 						if (isSessionSection(element)) {
@@ -787,6 +814,7 @@ export class SessionsList extends Disposable implements ISessionsList {
 
 		this._register(this.tree.onDidChangeFindOpenState(open => {
 			this.findOpen = open;
+			this._onDidChangeFindOpenState.fire(open);
 			this.update();
 		}));
 
@@ -867,7 +895,7 @@ export class SessionsList extends Disposable implements ISessionsList {
 
 		// Add archived section at the bottom
 		if (archived.length > 0) {
-			sections.push({ id: 'archived', label: localize('archived', "Archived"), sessions: archived });
+			sections.push({ id: 'archived', label: localize('archived', "Done"), sessions: archived });
 		}
 
 		const hasTodaySessions = sections.some(s => s.id === 'today' && s.sessions.length > 0);
@@ -967,6 +995,10 @@ export class SessionsList extends Disposable implements ISessionsList {
 
 	openFind(): void {
 		this.tree.openFind();
+	}
+
+	closeFind(): void {
+		this.tree.closeFind();
 	}
 
 	// Context menu

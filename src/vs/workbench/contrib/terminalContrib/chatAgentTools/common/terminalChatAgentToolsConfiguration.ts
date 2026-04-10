@@ -18,7 +18,6 @@ export const enum TerminalChatAgentToolsSettingId {
 	IgnoreDefaultAutoApproveRules = 'chat.tools.terminal.ignoreDefaultAutoApproveRules',
 	BlockDetectedFileWrites = 'chat.tools.terminal.blockDetectedFileWrites',
 	ShellIntegrationTimeout = 'chat.tools.terminal.shellIntegrationTimeout',
-	AutoReplyToPrompts = 'chat.tools.terminal.autoReplyToPrompts',
 	OutputLocation = 'chat.tools.terminal.outputLocation',
 	AgentSandboxEnabled = 'chat.agent.sandbox.enabled',
 	AgentSandboxNetworkAllowedDomains = 'chat.agent.sandbox.allowedNetworkDomains',
@@ -28,6 +27,7 @@ export const enum TerminalChatAgentToolsSettingId {
 	PreventShellHistory = 'chat.tools.terminal.preventShellHistory',
 	EnforceTimeoutFromModel = 'chat.tools.terminal.enforceTimeoutFromModel',
 	DetachBackgroundProcesses = 'chat.tools.terminal.detachBackgroundProcesses',
+	BackgroundNotifications = 'chat.tools.terminal.backgroundNotifications',
 	IdlePollInterval = 'chat.tools.terminal.idlePollInterval',
 
 	TerminalProfileLinux = 'chat.tools.terminal.terminalProfile.linux',
@@ -513,12 +513,6 @@ export const terminalChatAgentToolsConfiguration: IStringDictionary<IConfigurati
 			}
 		]
 	},
-	[TerminalChatAgentToolsSettingId.AutoReplyToPrompts]: {
-		type: 'boolean',
-		default: false,
-		tags: ['experimental'],
-		markdownDescription: localize('autoReplyToPrompts.key', "Whether to automatically respond to prompts in the terminal such as `Confirm? y/n`. This is an experimental feature and may not work in all scenarios.\n\n**This feature is inherently risky to use as you're deferring potentially sensitive decisions to an LLM. Use at your own risk.**"),
-	},
 	[TerminalChatAgentToolsSettingId.OutputLocation]: {
 		markdownDescription: localize('outputLocation.description', "Where to show the output from the run in terminal tool."),
 		type: 'string',
@@ -654,6 +648,16 @@ export const terminalChatAgentToolsConfiguration: IStringDictionary<IConfigurati
 		default: false,
 		tags: ['experimental'],
 		markdownDescription: localize('detachBackgroundProcesses.description', "Whether to detach persistent terminal processes so they survive when VS Code exits. When enabled, commands started with `mode: \"async\"` (legacy: `isBackground: true`) are wrapped with `nohup` (POSIX) or `Start-Process` (Windows) so the process continues running after the terminal is disposed."),
+	},
+	[TerminalChatAgentToolsSettingId.BackgroundNotifications]: {
+		restricted: true,
+		type: 'boolean',
+		default: false,
+		tags: ['experimental'],
+		experiment: {
+			mode: 'auto'
+		},
+		markdownDescription: localize('backgroundNotifications.description', "Whether to automatically notify the agent when a background terminal command completes or needs input. When enabled, a steering message is sent to the chat session with the exit code and terminal output, and the output monitor continues running to detect prompts for input."),
 	}
 };
 

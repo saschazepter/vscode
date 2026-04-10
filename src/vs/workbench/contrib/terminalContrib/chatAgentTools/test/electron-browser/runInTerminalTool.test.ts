@@ -77,6 +77,7 @@ suite('RunInTerminalTool', () => {
 	let terminalServiceDisposeEmitter: Emitter<ITerminalInstance>;
 	let chatServiceDisposeEmitter: Emitter<{ sessionResources: URI[]; reason: 'cleared' }>;
 	let chatSessionArchivedEmitter: Emitter<IAgentSession>;
+	let capturedSteeringRequests: { sessionResource: URI; message: string }[];
 	let sandboxEnabled: boolean;
 	let sandboxPrereqResult: ITerminalSandboxPrerequisiteCheckResult;
 	let terminalSandboxService: ITerminalSandboxService;
@@ -129,21 +130,42 @@ suite('RunInTerminalTool', () => {
 		terminalServiceDisposeEmitter = new Emitter<ITerminalInstance>();
 		chatServiceDisposeEmitter = new Emitter<{ sessionResources: URI[]; reason: 'cleared' }>();
 		chatSessionArchivedEmitter = new Emitter<IAgentSession>();
+		capturedSteeringRequests = [];
 
 		instantiationService = workbenchInstantiationService({
 			configurationService: () => configurationService,
 			fileService: () => fileService,
 		}, store);
 
-		instantiationService.stub(IChatService, {
+		const chatServiceStub = {
 			onDidDisposeSession: chatServiceDisposeEmitter.event,
 			getSession: () => undefined,
-		});
+			sendRequest: async (sessionResource: URI, message: string) => {
+				capturedSteeringRequests.push({ sessionResource, message });
+				return { kind: 'rejected', reason: 'test' };
+			},
+			acquireExistingSession: () => ({
+				object: {
+					lastRequest: undefined,
+					onDidChange: Event.None,
+				},
+				dispose: () => { },
+			}) as unknown as NonNullable<ReturnType<IChatService['acquireExistingSession']>>,
+		} as unknown as IChatService;
+		instantiationService.stub(IChatService, chatServiceStub);
 		instantiationService.stub(IAgentSessionsService, {
 			onDidChangeSessionArchivedState: chatSessionArchivedEmitter.event,
 			model: {
 				onDidChangeSessionArchivedState: chatSessionArchivedEmitter.event,
 			} as IAgentSessionsService['model']
+		});
+		instantiationService.stub(ITerminalService, {
+			createTerminal: async () => createdTerminalInstance,
+			onDidDisposeInstance: terminalServiceDisposeEmitter.event,
+			onDidChangeInstances: Event.None,
+			revealTerminal: async () => { },
+			setActiveInstance: () => { },
+			setNextCommandId: async () => { }
 		});
 		instantiationService.stub(ITerminalChatService, store.add(instantiationService.createInstance(TerminalChatService)));
 		instantiationService.stub(IWorkspaceContextService, workspaceContextService);
@@ -181,13 +203,6 @@ suite('RunInTerminalTool', () => {
 			getTools() {
 				return [];
 			},
-		});
-		instantiationService.stub(ITerminalService, {
-			createTerminal: async () => createdTerminalInstance,
-			onDidDisposeInstance: terminalServiceDisposeEmitter.event,
-			revealTerminal: async () => { },
-			setActiveInstance: () => { },
-			setNextCommandId: async () => { }
 		});
 		instantiationService.stub(ITerminalProfileResolverService, {
 			getDefaultProfile: async () => ({ path: 'bash' } as ITerminalProfile)
@@ -274,9 +289,13 @@ suite('RunInTerminalTool', () => {
 
 			const toolData = await instantiationService.invokeFunction(createRunInTerminalToolData);
 			const properties = toolData.inputSchema?.properties as Record<string, object> | undefined;
+			const requestUnsandboxedExecutionProperty = properties?.['requestUnsandboxedExecution'] as { description?: string } | undefined;
+			const requestUnsandboxedExecutionReasonProperty = properties?.['requestUnsandboxedExecutionReason'] as { description?: string } | undefined;
 
 			ok(properties?.['requestUnsandboxedExecution'], 'Expected requestUnsandboxedExecution in schema when sandbox is enabled');
 			ok(properties?.['requestUnsandboxedExecutionReason'], 'Expected requestUnsandboxedExecutionReason in schema when sandbox is enabled');
+			ok(requestUnsandboxedExecutionProperty?.description?.includes('after first executing the command in sandbox and observing that sandboxing caused the failure'), 'Expected schema description to require a sandboxed first attempt');
+			ok(requestUnsandboxedExecutionReasonProperty?.description?.includes('sandboxed execution failure or blocked-domain requirement'), 'Expected reason schema description to require concrete sandbox justification');
 		});
 
 		test('should not include requestUnsandboxedExecution in schema when sandbox is disabled', async () => {
@@ -343,6 +362,7 @@ suite('RunInTerminalTool', () => {
 
 			ok(toolData.modelDescription?.includes('github.com, npmjs.org'), 'Expected allowed domains in description');
 			ok(toolData.modelDescription?.includes('evil.com'), 'Expected denied domains in description');
+			ok(toolData.modelDescription?.includes('without first executing the command in sandbox mode'), 'Expected model description to require a sandboxed first attempt before unsandboxing');
 		});
 
 		test('should exclude denied domains from effective allowed list', async () => {
@@ -678,7 +698,7 @@ suite('RunInTerminalTool', () => {
 			ok(actions, 'Expected custom actions to be defined');
 			strictEqual(actions.length, 11);
 			ok(!isSeparator(actions[0]));
-			strictEqual(actions[0].label, 'Allow `unsandboxed:echo …` in this Session');
+			strictEqual(actions[0].label, 'Allow `echo …` in this Session');
 			ok(!isSeparator(actions[4]));
 			strictEqual(actions[4].label, 'Allow Exact Command Line in this Session');
 			ok(!isSeparator(actions[10]));
@@ -1717,6 +1737,45 @@ suite('RunInTerminalTool', () => {
 		});
 	});
 
+	test('should dedupe rapid repeated background input-needed notifications', () => {
+		const termId = 'test-input-needed-term';
+		const sessionResource = LocalChatSessionUri.forSession('test-input-needed-session');
+		let output = 'Enter value:';
+
+		const commandFinishedEmitter = new Emitter<{ exitCode: number | undefined }>();
+		const terminalDisposedEmitter = new Emitter<void>();
+		const inputNeededEmitter = new Emitter<void>();
+
+		const terminalInstance = {
+			capabilities: {
+				get: (cap: TerminalCapability) => cap === TerminalCapability.CommandDetection ? { onCommandFinished: commandFinishedEmitter.event } : undefined,
+			},
+			onDisposed: terminalDisposedEmitter.event,
+		} as unknown as ITerminalInstance;
+
+		const outputMonitor = {
+			onDidDetectInputNeeded: inputNeededEmitter.event,
+			continueMonitoringAsync: () => { },
+			dispose: () => { },
+		} as unknown as { onDidDetectInputNeeded: Event<void>; continueMonitoringAsync: () => void; dispose: () => void };
+
+		(runInTerminalTool.constructor as unknown as { _activeExecutions: Map<string, { getOutput(): string }> })._activeExecutions.set(termId, {
+			getOutput: () => output,
+		});
+
+		// eslint-disable-next-line @typescript-eslint/naming-convention
+		(runInTerminalTool as unknown as { _registerCompletionNotification: (terminal: ITerminalInstance, termId: string, session: URI, commandName: string, outputMonitor: { onDidDetectInputNeeded: Event<void>; continueMonitoringAsync: () => void; dispose: () => void }) => void })
+			._registerCompletionNotification(terminalInstance, termId, sessionResource, 'npm init', outputMonitor);
+
+		inputNeededEmitter.fire();
+		inputNeededEmitter.fire();
+		strictEqual(capturedSteeringRequests.length, 1, 'Expected duplicate rapid input-needed events to be suppressed');
+
+		output = 'Confirm (y/N):';
+		inputNeededEmitter.fire();
+		strictEqual(capturedSteeringRequests.length, 2, 'Expected a changed prompt to trigger a new notification');
+	});
+
 	suite('auto approve warning acceptance mechanism', () => {
 		test('should require confirmation for auto-approvable commands when warning not accepted', async () => {
 			setConfig(TerminalChatAgentToolsSettingId.EnableAutoApprove, true);
@@ -2070,6 +2129,12 @@ suite('ChatAgentToolsContribution - tool registration refresh', () => {
 				onDidChangeSessionArchivedState: chatSessionArchivedEmitter.event,
 			} as IAgentSessionsService['model']
 		});
+		const terminalInstancesChangedEmitter = store.add(new Emitter<void>());
+		instantiationService.stub(ITerminalService, {
+			onDidDisposeInstance: terminalServiceDisposeEmitter.event,
+			onDidChangeInstances: terminalInstancesChangedEmitter.event,
+			setNextCommandId: async () => { }
+		});
 		instantiationService.stub(ITerminalChatService, store.add(instantiationService.createInstance(TerminalChatService)));
 		instantiationService.stub(IHistoryService, {
 			getLastActiveWorkspaceRoot: () => undefined
@@ -2097,10 +2162,6 @@ suite('ChatAgentToolsContribution - tool registration refresh', () => {
 		treeSitterLibraryService.isTest = true;
 		instantiationService.stub(ITreeSitterLibraryService, treeSitterLibraryService);
 
-		instantiationService.stub(ITerminalService, {
-			onDidDisposeInstance: terminalServiceDisposeEmitter.event,
-			setNextCommandId: async () => { }
-		});
 		instantiationService.stub(ITerminalProfileResolverService, {
 			getDefaultProfile: async () => ({ path: 'bash' } as ITerminalProfile)
 		});
