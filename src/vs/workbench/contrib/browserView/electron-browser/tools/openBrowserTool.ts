@@ -84,7 +84,7 @@ export class OpenBrowserTool implements IToolImpl {
 		const params = invocation.parameters as IOpenBrowserToolParams;
 
 		if (!params.forceNew) {
-			const existingResult = await getExistingPagesResult(this.editorService, this.playwrightService, params.url);
+			const existingResult = await getExistingPagesResult(this.editorService, this.playwrightService, params.url, { agentNetworkFilterService: this.agentNetworkFilterService });
 			if (existingResult) {
 				return existingResult;
 			}
