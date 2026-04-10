@@ -79,7 +79,7 @@ async function main(buildDir?: string): Promise<void> {
 	const appName = product.nameLong + '.app';
 	const infoPlistPath = path.resolve(appRoot, appName, 'Contents', 'Info.plist');
 	const embeddedInfoPlistPath = product.embedded
-		? path.resolve(appRoot, appName, 'Contents', 'Applications', `${product.embedded.nameShort}.app`, 'Contents', 'Info.plist')
+		? path.resolve(appRoot, appName, 'Contents', 'Applications', `${product.embedded.nameLong}.app`, 'Contents', 'Info.plist')
 		: undefined;
 
 	const appOpts: SignOptions = {
