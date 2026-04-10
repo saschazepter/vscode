@@ -125,6 +125,11 @@ export class RemoteAgentHostService extends Disposable implements IRemoteAgentHo
 	}
 
 	async addRemoteAgentHost(input: IRemoteAgentHostEntry): Promise<IRemoteAgentHostConnectionInfo> {
+		const enabled = this._configurationService.getValue<boolean>(RemoteAgentHostsEnabledSettingId) ?? true;
+		if (!enabled) {
+			throw new Error('Remote agent host connections are disabled.');
+		}
+
 		const address = normalizeRemoteAgentHostAddress(getEntryAddress(input));
 
 		// Check if already connected
@@ -190,11 +195,20 @@ export class RemoteAgentHostService extends Disposable implements IRemoteAgentHo
 	}
 
 	private _reconcileConnections(): void {
+		const enabled = this._configurationService.getValue<boolean>(RemoteAgentHostsEnabledSettingId) ?? true;
+		if (!enabled) {
+			// Disconnect all when disabled
+			for (const address of [...this._entries.keys()]) {
+				this._removeConnection(address);
+			}
+			return;
+		}
+
 		const rawEntries: IRemoteAgentHostEntry[] = this._configurationService.getValue<IRemoteAgentHostEntry[]>(RemoteAgentHostsSettingId) ?? [];
 		const entries = rawEntries.map(e => ({ entry: e, address: normalizeRemoteAgentHostAddress(getEntryAddress(e)) }));
 		const desired = new Set(entries.map(e => e.address));
 
-		this._logService.info(`[RemoteAgentHost] Reconciling: desired=[${[...desired].join(', ')}], current=[${[...this._entries.keys()].map(a => `${a}(${this._entries.get(a)!.connected ? 'connected' : 'pending'})`).join(', ')}]`);
+		this._logService.info(`[RemoteAgentHost] Reconciling: desired=${desired.size} entries, current=${this._entries.size} connections`);
 
 		// Update name map and detect name changes for existing connections
 		let namesChanged = false;

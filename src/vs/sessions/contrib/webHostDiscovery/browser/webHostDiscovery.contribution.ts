@@ -98,11 +98,11 @@ class WebHostDiscoveryContribution extends Disposable implements IWorkbenchContr
 								token: token
 							});
 						} catch (authErr) {
-							console.warn(`[WebHostDiscovery] Failed to push token to ${name}:`, authErr);
+							this._logService.warn(`[WebHostDiscovery] Failed to push token to ${name}:`, authErr);
 						}
 					}
 				} catch (e) {
-					console.warn(`[WebHostDiscovery] Failed to add host ${name}:`, e);
+					this._logService.warn(`[WebHostDiscovery] Failed to add host ${name}:`, e);
 				}
 			}
 		} catch (e) {

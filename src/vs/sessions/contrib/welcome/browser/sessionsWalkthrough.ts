@@ -268,12 +268,12 @@ export class SessionsWalkthroughOverlay extends Disposable {
 					this.openerService.open(URI.parse(codeData.verification_uri));
 
 					// Step 3: Poll for token
-					const interval = Math.max((codeData.interval || 5) * 1000, 5000);
+					let pollingInterval = Math.max((codeData.interval || 5) * 1000, 5000);
 					const deadline = Date.now() + (codeData.expires_in || 900) * 1000;
 					let accessToken: string | undefined;
 
 					while (Date.now() < deadline) {
-						await new Promise(r => setTimeout(r, interval));
+						await new Promise(r => setTimeout(r, pollingInterval));
 						if (this._shouldAbortUpdate(titleEl, subtitleEl)) { return; }
 
 						const tokenResp = await fetch('/agents/api/hosts/auth/device/token', {
@@ -281,6 +281,7 @@ export class SessionsWalkthroughOverlay extends Disposable {
 							headers: { 'Content-Type': 'application/json' },
 							body: JSON.stringify({ device_code: codeData.device_code }),
 						});
+						if (!tokenResp.ok) { continue; }
 						const tokenData = await tokenResp.json() as { access_token?: string; error?: string };
 
 						if (tokenData.access_token) {
@@ -290,13 +291,19 @@ export class SessionsWalkthroughOverlay extends Disposable {
 						if (tokenData.error === 'expired_token' || tokenData.error === 'access_denied') {
 							throw new Error(tokenData.error);
 						}
-						// authorization_pending or slow_down → keep polling
+						if (tokenData.error === 'slow_down') {
+							pollingInterval += 5000;
+						}
+						// authorization_pending → keep polling
 					}
 
 					if (accessToken) {
 						this.logService.info('[sessions walkthrough] Device code flow succeeded, discovering tunnels');
 
-						// Store token in localStorage for tunnel discovery
+						// Store token in secret storage for webHostDiscovery and
+						// IAuthenticationService. Also keep in localStorage for the
+						// webHostDiscovery polling fallback (secret storage may not
+						// be readable before extensions activate).
 						localStorage.setItem('sessions.tunnel.token', accessToken);
 
 						// Store as a GitHub auth session in secret storage so that

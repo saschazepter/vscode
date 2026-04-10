@@ -15,10 +15,10 @@ import { URI } from '../../../base/common/uri.js';
 import { generateUuid } from '../../../base/common/uuid.js';
 import { ILogService } from '../../log/common/log.js';
 import { AgentSession, IAgentConnection, IAgentCreateSessionConfig, IAgentDescriptor, IAgentSessionMetadata, IAuthenticateParams, IAuthenticateResult } from '../common/agentService.js';
-import type { IClientNotificationMap, ICommandMap } from '../common/state/protocol/messages.js';
+import type { IClientNotificationMap, ICommandMap, IJsonRpcNotification, IJsonRpcRequest } from '../common/state/protocol/messages.js';
 import type { IActionEnvelope, INotification, ISessionAction } from '../common/state/sessionActions.js';
 import { PROTOCOL_VERSION } from '../common/state/sessionCapabilities.js';
-import { isJsonRpcNotification, isJsonRpcResponse, type IJsonRpcResponse, type IProtocolMessage, type IResourceCopyParams, type IResourceCopyResult, type IResourceDeleteParams, type IResourceDeleteResult, type IResourceListResult, type IResourceMoveParams, type IResourceMoveResult, type IResourceReadResult, type IResourceWriteParams, type IResourceWriteResult, type IStateSnapshot } from '../common/state/sessionProtocol.js';
+import { isJsonRpcNotification, isJsonRpcResponse, type IProtocolMessage, type IResourceCopyParams, type IResourceCopyResult, type IResourceDeleteParams, type IResourceDeleteResult, type IResourceListResult, type IResourceMoveParams, type IResourceMoveResult, type IResourceReadResult, type IResourceWriteParams, type IResourceWriteResult, type IStateSnapshot } from '../common/state/sessionProtocol.js';
 import type { ISessionSummary } from '../common/state/sessionState.js';
 import { WebSocketClientTransport } from './webSocketClientTransport.js';
 
@@ -58,7 +58,7 @@ export class RemoteAgentHostProtocolClient extends Disposable implements IAgentC
 	}
 
 	get address(): string {
-		return this._transport['_address'];
+		return this._transport.address;
 	}
 
 	get defaultDirectory(): string | undefined {
@@ -73,7 +73,10 @@ export class RemoteAgentHostProtocolClient extends Disposable implements IAgentC
 		super();
 		this._transport = this._register(new WebSocketClientTransport(address, connectionToken));
 		this._register(this._transport.onMessage(msg => this._handleMessage(msg)));
-		this._register(this._transport.onClose(() => this._onDidClose.fire()));
+		this._register(this._transport.onClose(() => {
+			this._rejectAllPendingRequests('Remote agent host connection closed.');
+			this._onDidClose.fire();
+		}));
 	}
 
 	/**
@@ -250,9 +253,8 @@ export class RemoteAgentHostProtocolClient extends Disposable implements IAgentC
 
 	/** Send a typed JSON-RPC notification for a protocol-defined method. */
 	private _sendNotification<M extends keyof IClientNotificationMap>(method: M, params: IClientNotificationMap[M]['params']): void {
-		// Generic M can't satisfy the distributive IAhpNotification union directly
-		// eslint-disable-next-line local/code-no-dangerous-type-assertions
-		this._transport.send({ jsonrpc: '2.0' as const, method, params } as IProtocolMessage);
+		const message: IJsonRpcNotification = { jsonrpc: '2.0', method, params };
+		this._transport.send(message);
 	}
 
 	/** Send a typed JSON-RPC request for a protocol-defined method. */
@@ -260,9 +262,8 @@ export class RemoteAgentHostProtocolClient extends Disposable implements IAgentC
 		const id = this._nextRequestId++;
 		const deferred = new DeferredPromise<unknown>();
 		this._pendingRequests.set(id, deferred);
-		// Generic M can't satisfy the distributive IAhpRequest union directly
-		// eslint-disable-next-line local/code-no-dangerous-type-assertions
-		this._transport.send({ jsonrpc: '2.0' as const, id, method, params } as IProtocolMessage);
+		const message: IJsonRpcRequest = { jsonrpc: '2.0', id, method, params };
+		this._transport.send(message);
 		return deferred.p as Promise<ICommandMap[M]['result']>;
 	}
 
@@ -271,9 +272,8 @@ export class RemoteAgentHostProtocolClient extends Disposable implements IAgentC
 		const id = this._nextRequestId++;
 		const deferred = new DeferredPromise<unknown>();
 		this._pendingRequests.set(id, deferred);
-		// Cast: extension methods aren't in the typed protocol maps yet
-		// eslint-disable-next-line local/code-no-dangerous-type-assertions
-		this._transport.send({ jsonrpc: '2.0', id, method, params } as unknown as IJsonRpcResponse);
+		const message: IJsonRpcRequest = { jsonrpc: '2.0', id, method, params };
+		this._transport.send(message);
 		return deferred.p;
 	}
 
@@ -282,5 +282,21 @@ export class RemoteAgentHostProtocolClient extends Disposable implements IAgentC
 	 */
 	nextClientSeq(): number {
 		return this._nextClientSeq++;
+	}
+
+	override dispose(): void {
+		this._rejectAllPendingRequests('Remote agent host connection disposed.');
+		super.dispose();
+	}
+
+	private _rejectAllPendingRequests(reason: string): void {
+		if (this._pendingRequests.size === 0) {
+			return;
+		}
+		const error = new Error(reason);
+		for (const pending of this._pendingRequests.values()) {
+			pending.error(error);
+		}
+		this._pendingRequests.clear();
 	}
 }
