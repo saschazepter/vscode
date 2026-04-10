@@ -140,28 +140,28 @@ async function main(buildDir?: string): Promise<void> {
 				'-insert',
 				'NSAppleEventsUsageDescription',
 				'-string',
-				`An application in ${product.embedded.nameShort} wants to use AppleScript.`,
+				`An application in ${product.embedded.nameLong} wants to use AppleScript.`,
 				`${embeddedInfoPlistPath}`
 			]);
 			await spawn('plutil', [
 				'-replace',
 				'NSMicrophoneUsageDescription',
 				'-string',
-				`An application in ${product.embedded.nameShort} wants to use the Microphone.`,
+				`An application in ${product.embedded.nameLong} wants to use the Microphone.`,
 				`${embeddedInfoPlistPath}`
 			]);
 			await spawn('plutil', [
 				'-replace',
 				'NSCameraUsageDescription',
 				'-string',
-				`An application in ${product.embedded.nameShort} wants to use the Camera.`,
+				`An application in ${product.embedded.nameLong} wants to use the Camera.`,
 				`${embeddedInfoPlistPath}`
 			]);
 			await spawn('plutil', [
 				'-replace',
 				'NSAudioCaptureUsageDescription',
 				'-string',
-				`An application in ${product.embedded.nameShort} wants to use Audio Capture.`,
+				`An application in ${product.embedded.nameLong} wants to use Audio Capture.`,
 				`${embeddedInfoPlistPath}`
 			]);
 			await spawn('plutil', [
