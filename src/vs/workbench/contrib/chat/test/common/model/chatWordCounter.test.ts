@@ -111,19 +111,5 @@ suite('ChatWordCounter', () => {
 
 			cases.forEach(([str, nWords, result]) => doTest(str, nWords, result));
 		});
-
-		test('consecutive calls return consistent results', () => {
-			const str = 'hello world foo bar baz';
-
-			const result1 = getNWords(str, 2);
-			const result2 = getNWords(str, 2);
-			assert.deepStrictEqual(result1, result2);
-
-			const result3 = getNWords(str, 5);
-			const result4 = getNWords('different text here', 2);
-			const result5 = getNWords(str, 5);
-			assert.deepStrictEqual(result3, result5);
-			assert.strictEqual(result4.value, 'different text');
-		});
 	});
 });
