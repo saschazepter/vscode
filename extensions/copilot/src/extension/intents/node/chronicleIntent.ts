@@ -37,8 +37,10 @@ export class ChronicleIntent implements IIntent {
 
 	static readonly ID = 'chronicle';
 	readonly id = ChronicleIntent.ID;
-	readonly locations = [ChatLocation.Panel];
 	readonly description = l10n.t('Session history tools and insights (standup, tips, improve)');
+	get locations(): ChatLocation[] {
+		return this._configService.getConfig(ConfigKey.TeamInternal.SessionSearchEnabled) ? [ChatLocation.Panel] : [];
+	}
 
 	readonly commandInfo: IIntentSlashCommandInfo = {
 		allowsEmptyArgs: true,
