@@ -238,7 +238,7 @@ export class CopilotCLIChatSessionItemProvider extends Disposable implements vsc
 
 	public async toChatSessionItem(session: ICopilotCLISessionItem): Promise<vscode.ChatSessionItem> {
 		const resource = this.sdkToUntitledUriMapping.get(session.id) ?? SessionIdForCLI.getResource(this.untitledSessionIdMapping.get(session.id) ?? session.id);
-		const worktreeProperties = await this.worktreeManager.getWorktreeProperties(session.id);
+		let worktreeProperties = await this.worktreeManager.getWorktreeProperties(session.id);
 		const workingDirectory = worktreeProperties?.worktreePath ? vscode.Uri.file(worktreeProperties.worktreePath)
 			: session.workingDirectory;
 
@@ -291,6 +291,11 @@ export class CopilotCLIChatSessionItemProvider extends Disposable implements vsc
 		// Metadata
 		let metadata: { readonly [key: string]: unknown };
 
+		// We need to get an updated version of worktree properties here because when the
+		// changes are being computed, the worktree properties are also updated with the
+		// repository state which we are passing along through the metadata
+		worktreeProperties = await this.worktreeManager.getWorktreeProperties(session.id);
+
 		if (worktreeProperties) {
 			// Worktree
 			metadata = {
@@ -303,6 +308,9 @@ export class CopilotCLIChatSessionItemProvider extends Disposable implements vsc
 					? worktreeProperties.baseBranchProtected === true
 					: undefined,
 				branchName: worktreeProperties?.branchName,
+				upstreamBranchName: worktreeProperties.version === 2
+					? worktreeProperties.upstreamBranchName
+					: undefined,
 				isolationMode: IsolationMode.Worktree,
 				repositoryPath: worktreeProperties?.repositoryPath,
 				worktreePath: worktreeProperties?.worktreePath,
@@ -320,6 +328,18 @@ export class CopilotCLIChatSessionItemProvider extends Disposable implements vsc
 					: undefined,
 				lastCheckpointRef: worktreeProperties.version === 2
 					? worktreeProperties.lastCheckpointRef
+					: undefined,
+				hasGitHubRemote: worktreeProperties.version === 2
+					? worktreeProperties.hasGitHubRemote
+					: undefined,
+				incomingChanges: worktreeProperties.version === 2
+					? worktreeProperties.incomingChanges
+					: undefined,
+				outgoingChanges: worktreeProperties.version === 2
+					? worktreeProperties.outgoingChanges
+					: undefined,
+				uncommittedChanges: worktreeProperties.version === 2
+					? worktreeProperties.uncommittedChanges
 					: undefined
 			} satisfies { readonly [key: string]: unknown };
 		} else {
@@ -345,7 +365,12 @@ export class CopilotCLIChatSessionItemProvider extends Disposable implements vsc
 				repositoryPath: repositoryProperties?.repositoryPath,
 				branchName: repositoryProperties?.branchName,
 				baseBranchName: repositoryProperties?.baseBranchName,
+				upstreamBranchName: repositoryProperties?.upstreamBranchName,
 				workingDirectoryPath: workingDirectory?.fsPath,
+				hasGitHubRemote: repositoryProperties?.hasGitHubRemote,
+				incomingChanges: repositoryProperties?.incomingChanges,
+				outgoingChanges: repositoryProperties?.outgoingChanges,
+				uncommittedChanges: repositoryProperties?.uncommittedChanges,
 				firstCheckpointRef,
 				lastCheckpointRef
 			} satisfies { readonly [key: string]: unknown };
@@ -1124,7 +1149,12 @@ export class CopilotCLIChatSessionParticipant extends Disposable {
 		return this.handleRequest.bind(this);
 	}
 
-	private readonly contextForRequest = new Map<string, { prompt: string; attachments: Attachment[] }>();
+	private readonly contextForRequest = new Map<string, {
+		prompt: string; attachments: Attachment[]; model?: {
+			model: string;
+			reasoningEffort?: string | undefined;
+		};
+	}>();
 
 	/**
 	 * Map to track pending requests for untitled sessions.
@@ -1285,7 +1315,7 @@ export class CopilotCLIChatSessionParticipant extends Disposable {
 				throw new Error(vscode.l10n.t('Authorization failed. Please sign into GitHub and try again.'));
 			}
 
-			if (!chatSessionContext) {
+			if (!chatSessionContext || !SessionIdForCLI.isCLIResource(request.sessionResource)) {
 				// Delegating from another chat session
 				return await this.handleDelegationFromAnotherChat(request, undefined, request.references, context, stream, authInfo, token);
 			}
@@ -1308,8 +1338,11 @@ export class CopilotCLIChatSessionParticipant extends Disposable {
 				return {};
 			}
 
+			// Check if we have context stored for this request
+			const contextForRequest = this.contextForRequest.get(sessionId);
+			this.contextForRequest.delete(sessionId);
 			const [model, agent] = await Promise.all([
-				this.getModelId(request, token),
+				contextForRequest?.model ? Promise.resolve(contextForRequest.model) : this.getModelId(request, token),
 				this.getAgent(id, request, token),
 			]);
 
@@ -1353,15 +1386,11 @@ export class CopilotCLIChatSessionParticipant extends Disposable {
 			requestsForSession.add(request);
 			this.pendingRequestBySession.set(session.object.sessionId, requestsForSession);
 
-			// Check if we have context stored for this request (created in createCLISessionAndSubmitRequest, work around)
-			const contextForRequest = this.contextForRequest.get(session.object.sessionId);
-			this.contextForRequest.delete(session.object.sessionId);
 			if (request.command === 'delegate') {
 				await this.handleDelegationToCloud(session.object, request, context, stream, token);
 			} else if (contextForRequest) {
 				// This is a request that was created in createCLISessionAndSubmitRequest with attachments already resolved.
 				const { prompt, attachments } = contextForRequest;
-				this.contextForRequest.delete(session.object.sessionId);
 				await session.object.handleRequest(request, { prompt }, attachments, model, authInfo, token);
 				await this.commitWorktreeChangesIfNeeded(request, session.object, token);
 			} else if (request.command && !request.prompt && !isUntitled) {
@@ -1880,33 +1909,15 @@ export class CopilotCLIChatSessionParticipant extends Disposable {
 			void this.workspaceFolderService.trackSessionWorkspaceFolder(session.object.sessionId, workingDirectory.fsPath, workspaceInfo.repositoryProperties);
 		}
 
-		try {
-			this.contextForRequest.set(session.object.sessionId, { prompt, attachments });
-			this.sessionItemProvider.notifySessionsChange();
-			// TODO @DonJayamanne I don't think we need to refresh the list of session here just yet, or perhaps we do,
-			// Same as getOrCreate session, we need a dummy title or the initial prompt to show in the sessions list.
-			await vscode.commands.executeCommand('workbench.action.chat.openSessionWithPrompt.copilotcli', {
-				resource: SessionIdForCLI.getResource(session.object.sessionId),
-				prompt: userPrompt || request.prompt,
-				attachedContext: references.map(ref => convertReferenceToVariable(ref, attachments))
-			});
-		} catch {
-			this.contextForRequest.delete(session.object.sessionId);
-			// TODO@rebornix: handle potential missing command
-			// We don't want to block the caller anymore.
-			// The caller is most likely a chat editor or the like.
-			// Now that we've delegated it to a session, we can get out of here.
-			// Else if the request takes say 10 minutes, the caller would be blocked for that long.
-			session.object.handleRequest(request, { prompt }, attachments, model, authInfo, token)
-				.then(() => this.commitWorktreeChangesIfNeeded(request, session.object, token))
-				.catch(error => {
-					this.logService.error(`Failed to handle CLI session request: ${error}`);
-					// Optionally: stream.error(error) to notify the user
-				})
-				.finally(() => {
-					session.dispose();
-				});
-		}
+		this.contextForRequest.set(session.object.sessionId, { prompt, attachments, model });
+		this.sessionItemProvider.notifySessionsChange();
+		// TODO @DonJayamanne I don't think we need to refresh the list of session here just yet, or perhaps we do,
+		// Same as getOrCreate session, we need a dummy title or the initial prompt to show in the sessions list.
+		void vscode.commands.executeCommand('workbench.action.chat.openSessionWithPrompt.copilotcli', {
+			resource: SessionIdForCLI.getResource(session.object.sessionId),
+			prompt: userPrompt || request.prompt,
+			attachedContext: references.map(ref => convertReferenceToVariable(ref, attachments))
+		});
 
 		stream.markdown(l10n.t('A Copilot CLI session has begun working on your request. Follow its progress in the sessions list.'));
 
