@@ -21,6 +21,10 @@ parameters:
     type: boolean
     default: false
 
+variables:
+  - name: VSCODE_QUALITY
+    value: stable
+
 extends:
   template: azure-pipelines/extension/stable.yml@templates
   parameters:
