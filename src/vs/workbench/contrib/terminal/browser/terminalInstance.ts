@@ -2639,7 +2639,7 @@ export class TerminalLabelComputer extends Disposable {
 	 * Agent CLIs whose tab title should come from their own escape sequences rather
 	 * than the configured template or a static profile name.
 	 */
-	static readonly agentCliShellTypes: ReadonlySet<string> = new Set([
+	static readonly agentCliShellTypes: ReadonlySet<GeneralShellType> = new Set([
 		GeneralShellType.Claude,
 		GeneralShellType.Codex,
 		GeneralShellType.Copilot,
@@ -2655,11 +2655,11 @@ export class TerminalLabelComputer extends Disposable {
 	}
 
 	refreshLabel(instance: Pick<ITerminalInstance, 'shellLaunchConfig' | 'shellType' | 'cwd' | 'fixedCols' | 'fixedRows' | 'initialCwd' | 'processName' | 'sequence' | 'userHome' | 'workspaceFolder' | 'staticTitle' | 'capabilities' | 'title' | 'description'>, reset?: boolean): void {
-		const titleTemplate = instance.shellLaunchConfig.titleTemplate
-			?? (TerminalLabelComputer.agentCliShellTypes.has(instance.shellType ?? '') ? '${sequence}' : undefined)
-			?? this._terminalConfigurationService.config.tabs.title;
+		const tabs = this._terminalConfigurationService.config.tabs;
+		const useAgentCliTitle = tabs.allowAgentCliTitle && TerminalLabelComputer.agentCliShellTypes.has(instance.shellType as GeneralShellType);
+		const titleTemplate = instance.shellLaunchConfig.titleTemplate ?? (useAgentCliTitle ? '${sequence}' : tabs.title);
 		this._title = this.computeLabel(instance, titleTemplate, TerminalLabelType.Title, reset);
-		this._description = this.computeLabel(instance, this._terminalConfigurationService.config.tabs.description, TerminalLabelType.Description);
+		this._description = this.computeLabel(instance, tabs.description, TerminalLabelType.Description);
 		if (this._title !== instance.title || this._description !== instance.description || reset) {
 			this._onDidChangeLabel.fire({ title: this._title, description: this._description });
 		}
