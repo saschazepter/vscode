@@ -17,7 +17,7 @@ import { IFileService } from '../../../files/common/files.js';
 import { IInstantiationService } from '../../../instantiation/common/instantiation.js';
 import { ILogService } from '../../../log/common/log.js';
 import { IAgentPluginManager, ISyncedCustomization } from '../../common/agentPluginManager.js';
-import { AgentSession, IAgent, IAgentAttachment, IAgentCreateSessionConfig, IAgentDescriptor, IAgentMessageEvent, IAgentModelInfo, IAgentProgressEvent, IAgentSessionMetadata, IAgentSubagentStartedEvent, IAgentToolCompleteEvent, IAgentToolStartEvent } from '../../common/agentService.js';
+import { AgentSession, IAgent, IAgentAttachment, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentDescriptor, IAgentMessageEvent, IAgentModelInfo, IAgentProgressEvent, IAgentSessionMetadata, IAgentSubagentStartedEvent, IAgentToolCompleteEvent, IAgentToolStartEvent } from '../../common/agentService.js';
 import { ISessionDataService } from '../../common/sessionDataService.js';
 import { CustomizationStatus, ICustomizationRef, SessionInputResponseKind, type ISessionInputAnswer, type IPendingMessage, type PolicyState } from '../../common/state/sessionState.js';
 import { CopilotAgentSession, SessionWrapperFactory } from './copilotAgentSession.js';
@@ -26,6 +26,7 @@ import { CopilotSessionWrapper } from './copilotSessionWrapper.js';
 import { forkCopilotSessionOnDisk, getCopilotDataDir, truncateCopilotSessionOnDisk } from './copilotAgentForking.js';
 import { IProtectedResourceMetadata } from '../../common/state/protocol/state.js';
 import { IAgentHostTerminalManager } from '../agentHostTerminalManager.js';
+import { projectFromCopilotContext } from './copilotGitProject.js';
 import { createShellTools, ShellManager } from './copilotShellTools.js';
 
 /**
@@ -161,12 +162,16 @@ export class CopilotAgent extends Disposable implements IAgent {
 		this._logService.info('[Copilot] Listing sessions...');
 		const client = await this._ensureClient();
 		const sessions = await client.listSessions();
-		const result: IAgentSessionMetadata[] = sessions.map(s => ({
-			session: AgentSession.uri(this.id, s.sessionId),
-			startTime: s.startTime.getTime(),
-			modifiedTime: s.modifiedTime.getTime(),
-			summary: s.summary,
-			workingDirectory: typeof s.context?.cwd === 'string' ? URI.file(s.context.cwd) : undefined,
+		const result: IAgentSessionMetadata[] = await Promise.all(sessions.map(async s => {
+			const project = await projectFromCopilotContext(s.context);
+			return {
+				session: AgentSession.uri(this.id, s.sessionId),
+				startTime: s.startTime.getTime(),
+				modifiedTime: s.modifiedTime.getTime(),
+				...(project ? { project } : {}),
+				summary: s.summary,
+				workingDirectory: typeof s.context?.cwd === 'string' ? URI.file(s.context.cwd) : undefined,
+			};
 		}));
 		this._logService.info(`[Copilot] Found ${result.length} sessions`);
 		return result;
@@ -192,7 +197,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 		return result;
 	}
 
-	async createSession(config?: IAgentCreateSessionConfig): Promise<URI> {
+	async createSession(config?: IAgentCreateSessionConfig): Promise<IAgentCreateSessionResult> {
 		this._logService.info(`[Copilot] Creating session... ${config?.model ? `model=${config.model}` : ''}`);
 		const client = await this._ensureClient();
 		const parsedPlugins = await this._plugins.getAppliedPlugins();
@@ -220,7 +225,8 @@ export class CopilotAgent extends Disposable implements IAgent {
 				const agentSession = await this._resumeSession(newSessionId);
 				const session = agentSession.sessionUri;
 				this._logService.info(`[Copilot] Forked session created: ${session.toString()}`);
-				return session;
+				const project = await projectFromCopilotContext({ cwd: config.workingDirectory?.fsPath });
+				return { session, ...(project ? { project } : {}) };
 			});
 		}
 
@@ -250,7 +256,8 @@ export class CopilotAgent extends Disposable implements IAgent {
 
 		const session = agentSession.sessionUri;
 		this._logService.info(`[Copilot] Session created: ${session.toString()}`);
-		return session;
+		const project = await projectFromCopilotContext({ cwd: config?.workingDirectory?.fsPath });
+		return { session, ...(project ? { project } : {}) };
 	}
 
 	async setClientCustomizations(clientId: string, customizations: ICustomizationRef[], progress?: (results: ISyncedCustomization[]) => void): Promise<ISyncedCustomization[]> {

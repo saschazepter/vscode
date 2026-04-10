@@ -9,6 +9,7 @@ import { Codicon } from '../../../../base/common/codicons.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { IMarkdownString, MarkdownString } from '../../../../base/common/htmlContent.js';
 import { Disposable, DisposableStore } from '../../../../base/common/lifecycle.js';
+import { Schemas } from '../../../../base/common/network.js';
 import { basename } from '../../../../base/common/resources.js';
 import { constObservable, IObservable, ISettableObservable, observableValue } from '../../../../base/common/observable.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
@@ -29,6 +30,20 @@ import { ChatAgentLocation, ChatModeKind } from '../../../../workbench/contrib/c
 import { ILanguageModelsService } from '../../../../workbench/contrib/chat/common/languageModels.js';
 import { ISessionChangeEvent, ISendRequestOptions, ISessionsProvider } from '../../../services/sessions/common/sessionsProvider.js';
 import { ISession, IChat, IGitHubInfo, ISessionWorkspace, ISessionWorkspaceBrowseAction, SessionStatus, CopilotCLISessionType, ISessionType } from '../../../services/sessions/common/session.js';
+
+interface ISessionProjectSummary {
+	readonly uri: URI;
+	readonly displayName: string;
+}
+
+function workspaceKey(workspace: ISessionWorkspace | undefined): string | undefined {
+	const repository = workspace?.repositories[0];
+	return workspace && repository ? `${workspace.label}\n${repository.uri.toString()}\n${repository.workingDirectory?.toString() ?? ''}` : undefined;
+}
+
+function toLocalProjectUri(uri: URI, connectionAuthority: string): URI {
+	return uri.scheme === Schemas.file ? toAgentHostUri(uri, connectionAuthority) : uri;
+}
 
 interface IChatData {
 	/** Globally unique session ID (`providerId:localId`). */
@@ -114,8 +129,7 @@ class RemoteSessionAdapter implements IChatData {
 		providerId: string,
 		resourceScheme: string,
 		logicalSessionType: string,
-		providerLabel: string,
-		connectionAuthority: string,
+		private readonly _providerLabel: string,
 	) {
 		const rawId = AgentSession.id(metadata.session);
 		this.agentProvider = AgentSession.provider(metadata.session) ?? 'copilot';
@@ -127,10 +141,8 @@ class RemoteSessionAdapter implements IChatData {
 		this.title = observableValue('title', metadata.summary ?? `Session ${rawId.substring(0, 8)}`);
 		this.updatedAt = observableValue('updatedAt', new Date(metadata.modifiedTime));
 		this.lastTurnEnd = observableValue('lastTurnEnd', metadata.modifiedTime ? new Date(metadata.modifiedTime) : undefined);
-		this.description = observableValue('description', new MarkdownString().appendText(providerLabel));
-		this.workspace = observableValue('workspace', metadata.workingDirectory
-			? RemoteAgentHostSessionsProvider.buildWorkspace(metadata.workingDirectory, providerLabel, connectionAuthority)
-			: undefined);
+		this.description = observableValue('description', new MarkdownString().appendText(this._providerLabel));
+		this.workspace = observableValue('workspace', RemoteAgentHostSessionsProvider.buildWorkspace(metadata.project, metadata.workingDirectory, this._providerLabel));
 
 		if (metadata.isRead === false) {
 			this.isRead.set(false, undefined);
@@ -149,6 +161,10 @@ class RemoteSessionAdapter implements IChatData {
 		}
 		if (metadata.isDone !== undefined) {
 			this.isArchived.set(metadata.isDone, undefined);
+		}
+		const workspace = RemoteAgentHostSessionsProvider.buildWorkspace(metadata.project, metadata.workingDirectory, this._providerLabel);
+		if (workspaceKey(workspace) !== workspaceKey(this.workspace.get())) {
+			this.workspace.set(workspace, undefined);
 		}
 	}
 }
@@ -330,7 +346,21 @@ export class RemoteAgentHostSessionsProvider extends Disposable implements ISess
 	/**
 	 * Builds workspace metadata from a working directory path on the remote host.
 	 */
-	static buildWorkspace(workingDirectory: URI, providerLabel: string, _connectionAuthority: string): ISessionWorkspace {
+	static buildWorkspace(project: ISessionProjectSummary | undefined, workingDirectory: URI | undefined, providerLabel: string): ISessionWorkspace | undefined {
+		if (project) {
+			const repositoryWorkingDirectory = workingDirectory?.toString() !== project.uri.toString() ? workingDirectory : undefined;
+			return {
+				label: project.displayName,
+				icon: Codicon.repo,
+				repositories: [{ uri: project.uri, workingDirectory: repositoryWorkingDirectory, detail: providerLabel, baseBranchName: undefined, baseBranchProtected: undefined }],
+				requiresWorkspaceTrust: false,
+			};
+		}
+
+		if (!workingDirectory) {
+			return undefined;
+		}
+
 		const folderName = basename(workingDirectory) || workingDirectory.path;
 		return {
 			label: `${folderName} [${providerLabel}]`,
@@ -615,7 +645,7 @@ export class RemoteAgentHostSessionsProvider extends Disposable implements ISess
 					existing.update(meta);
 					changed.push(this._chatToSession(existing));
 				} else {
-					const cached = new RemoteSessionAdapter(meta, this.id, this._sessionTypeForProvider(provider), this.sessionTypes[0].id, this.label, this._connectionAuthority);
+					const cached = new RemoteSessionAdapter(meta, this.id, this._sessionTypeForProvider(provider), this.sessionTypes[0].id, this.label);
 					this._sessionCache.set(rawId, cached);
 					added.push(this._chatToSession(cached));
 				}
@@ -673,7 +703,7 @@ export class RemoteAgentHostSessionsProvider extends Disposable implements ISess
 		}
 	}
 
-	private _handleSessionAdded(summary: { resource: string; provider: string; title: string; createdAt: number; modifiedAt: number; workingDirectory?: string; isRead?: boolean; isDone?: boolean }): void {
+	private _handleSessionAdded(summary: { resource: string; provider: string; title: string; createdAt: number; modifiedAt: number; project?: { uri: string; displayName: string }; workingDirectory?: string; isRead?: boolean; isDone?: boolean }): void {
 		const sessionUri = URI.parse(summary.resource);
 		const rawId = AgentSession.id(sessionUri);
 		if (this._sessionCache.has(rawId)) {
@@ -689,11 +719,12 @@ export class RemoteAgentHostSessionsProvider extends Disposable implements ISess
 			startTime: summary.createdAt,
 			modifiedTime: summary.modifiedAt,
 			summary: summary.title,
+			...(summary.project ? { project: { uri: toLocalProjectUri(URI.parse(summary.project.uri), this._connectionAuthority), displayName: summary.project.displayName } } : {}),
 			workingDirectory: workingDir,
 			isRead: summary.isRead,
 			isDone: summary.isDone,
 		};
-		const cached = new RemoteSessionAdapter(meta, this.id, this._sessionTypeForProvider(provider), this.sessionTypes[0].id, this.label, this._connectionAuthority);
+		const cached = new RemoteSessionAdapter(meta, this.id, this._sessionTypeForProvider(provider), this.sessionTypes[0].id, this.label);
 		this._sessionCache.set(rawId, cached);
 		this._onDidChangeSessions.fire({ added: [this._chatToSession(cached)], removed: [], changed: [] });
 	}
