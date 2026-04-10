@@ -722,6 +722,11 @@ export class LanguageModelToolsConfirmationService extends Disposable implements
 						continue;
 					}
 
+					// Skip tools with no active approvals and no children
+					if (checked === false && toolChildren.length === 0) {
+						continue;
+					}
+
 					serverChildren.push({
 						type: 'tool',
 						toolId: tool.id,
@@ -860,6 +865,11 @@ export class LanguageModelToolsConfirmationService extends Disposable implements
 						// No approval capabilities - shouldn't happen but handle it
 						checked = false;
 					}
+				}
+
+				// Skip tools with no active approvals and no children
+				if (checked === false && toolChildren.length === 0) {
+					continue;
 				}
 
 				treeItems.push({
