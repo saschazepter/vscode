@@ -24,6 +24,7 @@ import { ThemeIcon } from '../../../../../../base/common/themables.js';
 import { Codicon } from '../../../../../../base/common/codicons.js';
 import { raceCancellation } from '../../../../../../base/common/async.js';
 import { URI } from '../../../../../../base/common/uri.js';
+import { TerminalToolId } from '../terminalToolIds.js';
 
 /**
  * Response returned to the model when the user is not available (autopilot mode).
@@ -332,7 +333,7 @@ export class AskQuestionsTool extends Disposable implements IToolImpl {
 			const parts = response.response.value;
 			for (let i = parts.length - 1; i >= 0; i--) {
 				const part = parts[i];
-				if (part.kind === 'toolInvocation' && part.toolId === 'run_in_terminal') {
+				if (part.kind === 'toolInvocation' && part.toolId === TerminalToolId.RunInTerminal) {
 					const state = part.state.get();
 					if (state.type === IChatToolInvocation.StateKind.Completed && state.contentForModel) {
 						for (const item of state.contentForModel) {

@@ -1481,6 +1481,9 @@ export class ChatService extends Disposable implements IChatService {
 		// requests simultaneously — picking one arbitrarily would misattribute the
 		// notification, so we drop the ID when they conflict.
 		const terminalIds = new Set(allRequests.map(req => req.sendOptions.terminalExecutionId).filter((id): id is string => !!id));
+		if (terminalIds.size > 1) {
+			this.info('processNextPendingRequest', `Dropping terminalExecutionId: ${terminalIds.size} conflicting terminal IDs (${[...terminalIds].join(', ')})`);
+		}
 		const mergedTerminalExecutionId = terminalIds.size === 1 ? [...terminalIds][0] : undefined;
 
 		const sendOptions: IChatSendRequestOptions = {
