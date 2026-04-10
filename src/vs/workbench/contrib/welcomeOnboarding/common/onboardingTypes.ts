@@ -5,6 +5,7 @@
 
 import { localize } from '../../../../nls.js';
 import { isMacintosh } from '../../../../base/common/platform.js';
+import { IProductOnboardingTheme } from '../../../../base/common/product.js';
 
 /**
  * Step identifiers for the onboarding walkthrough.
@@ -65,86 +66,9 @@ export const ONBOARDING_STEPS: readonly OnboardingStepId[] = [
 
 /**
  * Theme option for the onboarding personalization step.
+ * Sourced from product.json via `onboardingThemes`.
  */
-export interface IOnboardingThemeOption {
-	readonly id: string;
-	readonly label: string;
-	readonly themeId: string;
-	readonly type: 'dark' | 'light' | 'hcDark' | 'hcLight';
-}
-
-/**
- * Built-in theme options.
- */
-export const ONBOARDING_THEME_OPTIONS: readonly IOnboardingThemeOption[] = [
-	{
-		id: 'dark-2026',
-		label: localize('onboarding.theme.dark2026', "Dark 2026"),
-		themeId: 'Dark 2026',
-		type: 'dark',
-	},
-	{
-		id: 'light-2026',
-		label: localize('onboarding.theme.light2026', "Light 2026"),
-		themeId: 'Light 2026',
-		type: 'light',
-	},
-	{
-		id: 'hc-dark',
-		label: localize('onboarding.theme.hcDark', "Dark High Contrast"),
-		themeId: 'Default High Contrast',
-		type: 'hcDark',
-	},
-	{
-		id: 'hc-light',
-		label: localize('onboarding.theme.hcLight', "Light High Contrast"),
-		themeId: 'Default High Contrast Light',
-		type: 'hcLight',
-	},
-];
-
-/**
- * Expanded theme options shown when no keymap section is needed.
- * Organized as: dark row, then light row.
- */
-export const ONBOARDING_THEME_OPTIONS_EXPANDED: readonly IOnboardingThemeOption[] = [
-	{
-		id: 'dark-2026',
-		label: localize('onboarding.theme.dark2026.exp', "Dark 2026"),
-		themeId: 'Dark 2026',
-		type: 'dark',
-	},
-	{
-		id: 'hc-dark',
-		label: localize('onboarding.theme.hcDark.exp', "Dark High Contrast"),
-		themeId: 'Default High Contrast',
-		type: 'hcDark',
-	},
-	{
-		id: 'solarized-dark',
-		label: localize('onboarding.theme.solarizedDark', "Solarized Dark"),
-		themeId: 'Solarized Dark',
-		type: 'dark',
-	},
-	{
-		id: 'light-2026',
-		label: localize('onboarding.theme.light2026.exp', "Light 2026"),
-		themeId: 'Light 2026',
-		type: 'light',
-	},
-	{
-		id: 'hc-light',
-		label: localize('onboarding.theme.hcLight.exp', "Light High Contrast"),
-		themeId: 'Default High Contrast Light',
-		type: 'hcLight',
-	},
-	{
-		id: 'solarized-light',
-		label: localize('onboarding.theme.solarizedLight', "Solarized Light"),
-		themeId: 'Solarized Light',
-		type: 'light',
-	},
-];
+export type IOnboardingThemeOption = IProductOnboardingTheme;
 
 /**
  * AI collaboration preference for the AI style step.

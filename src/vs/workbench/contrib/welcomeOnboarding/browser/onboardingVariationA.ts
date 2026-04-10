@@ -35,8 +35,6 @@ import { InstallChatEvent, InstallChatClassification } from '../../chat/browser/
 import {
 	OnboardingStepId,
 	ONBOARDING_STEPS,
-	ONBOARDING_THEME_OPTIONS,
-	ONBOARDING_THEME_OPTIONS_EXPANDED,
 	ONBOARDING_AI_PREFERENCE_OPTIONS,
 	AiCollaborationMode,
 	IOnboardingThemeOption,
@@ -144,8 +142,8 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 
 		// Detect currently active theme
 		const currentTheme = this.themeService.getColorTheme();
-		const matchingTheme = ONBOARDING_THEME_OPTIONS.find(t => t.themeId === currentTheme.settingsId)
-			?? ONBOARDING_THEME_OPTIONS_EXPANDED.find(t => t.themeId === currentTheme.settingsId);
+		const allThemes = product.onboardingThemes ?? [];
+		const matchingTheme = allThemes.find(t => t.themeId === currentTheme.settingsId);
 		if (matchingTheme) {
 			this.selectedThemeId = matchingTheme.id;
 		}
@@ -689,7 +687,11 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 		themeGrid.setAttribute('aria-label', localize('onboarding.personalize.themeLabel', "Choose a color theme"));
 
 		const hasOtherEditors = this._hasOtherEditors();
-		const themes = hasOtherEditors ? ONBOARDING_THEME_OPTIONS : ONBOARDING_THEME_OPTIONS_EXPANDED;
+		const allThemes = product.onboardingThemes ?? [];
+		// When other editors are detected, show a compact set (exclude solarized variants).
+		const themes: readonly IOnboardingThemeOption[] = hasOtherEditors
+			? allThemes.filter(t => !t.id.startsWith('solarized'))
+			: allThemes;
 
 		if (!hasOtherEditors) {
 			themeGrid.classList.add('theme-grid-expanded');
