@@ -2488,8 +2488,8 @@
 				"category": "Developer"
 			},
 			{
-				"command": "github.copilot.debug.showNodeSystemCertificatesErrors",
-				"title": "%github.copilot.command.showNodeSystemCertificatesErrors%",
+				"command": "github.copilot.debug.showNodeSystemCertificates",
+				"title": "%github.copilot.command.showNodeSystemCertificates%",
 				"category": "Developer"
 			},
 			{
