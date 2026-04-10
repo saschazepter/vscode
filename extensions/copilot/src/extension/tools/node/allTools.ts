@@ -34,7 +34,6 @@ import './runNotebookCellTool';
 import './scmChangesTool';
 import './searchSubagentTool';
 import './searchWorkspaceSymbolsTool';
-import './standupTool';
 import './testFailureTool';
 import './toolSearchTool';
 import './viewImageTool';

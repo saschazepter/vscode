@@ -71,7 +71,6 @@ export enum ToolName {
 	ToolSearch = 'tool_search',
 	ResolveMemoryFileUri = 'resolve_memory_file_uri',
 	ExecutionSubagent = 'execution_subagent',
-	ChronicleStandup = 'chronicle_standup',
 }
 
 export enum ContributedToolName {
@@ -225,7 +224,6 @@ export const toolCategories: Record<ToolName, ToolCategory> = {
 	[ToolName.Memory]: ToolCategory.VSCodeInteraction,
 	[ToolName.ToolSearch]: ToolCategory.Core,
 	[ToolName.ResolveMemoryFileUri]: ToolCategory.Core,
-	[ToolName.ChronicleStandup]: ToolCategory.Core,
 } as const;
 
 
