@@ -56,6 +56,7 @@ import { CommandLineFileWriteAnalyzer } from './commandLineAnalyzer/commandLineF
 import { CommandLineSandboxAnalyzer } from './commandLineAnalyzer/commandLineSandboxAnalyzer.js';
 import { OutputMonitor } from './monitoring/outputMonitor.js';
 import { IPollingResult, OutputMonitorState } from './monitoring/types.js';
+import { ChatQuestionCarouselData } from '../../../../chat/common/model/chatProgressTypes/chatQuestionCarouselData.js';
 import { chatSessionResourceToId, LocalChatSessionUri } from '../../../../chat/common/model/chatUri.js';
 import { TerminalToolId } from './toolIds.js';
 import { URI } from '../../../../../../base/common/uri.js';
@@ -1413,8 +1414,12 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 					}
 				});
 				// Register a listener to notify the agent when commands complete in this
-				// background terminal, and continue the output monitor for prompt-for-input detection
-				if (shouldSendBackgroundNotifications) {
+				// background terminal, and continue the output monitor for prompt-for-input detection.
+				// Always register when the terminal moved to background due to input-needed or timeout
+				// (the agent promised "you will be notified when the command completes"), regardless
+				// of the background notifications setting.
+				const movedToBackground = !executionOptions.persistentSession;
+				if (shouldSendBackgroundNotifications || movedToBackground) {
 					this._registerCompletionNotification(toolTerminal.instance, termId, chatSessionResource, command, outputMonitor);
 				} else {
 					outputMonitor?.dispose();
@@ -1896,6 +1901,12 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 		// The monitor wakes only on new terminal data (not on a fixed interval), so
 		// resource cost is proportional to actual terminal activity.
 		const store = new DisposableStore();
+
+		// Track whether the user has started replying to terminal prompts directly.
+		// Once set, all future input-needed notifications are suppressed so the agent
+		// stops asking questions and lets the user finish interacting with the terminal.
+		let userIsReplyingDirectly = false;
+
 		if (outputMonitor) {
 			let lastInputNeededOutput = '';
 			let lastInputNeededNotificationTime = 0;
@@ -1912,6 +1923,11 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 			// When the output monitor detects the terminal is waiting for input,
 			// send a steering message so the agent handles it via send_to_terminal.
 			store.add(outputMonitor.onDidDetectInputNeeded(() => {
+				if (userIsReplyingDirectly) {
+					this._logService.debug(`RunInTerminalTool: Suppressing input-needed notification for terminal ${termId} because user is replying directly`);
+					return;
+				}
+
 				const execution = RunInTerminalTool._activeExecutions.get(termId);
 				if (!execution) {
 					return;
@@ -1934,15 +1950,25 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 				this._logService.debug(`RunInTerminalTool: Input needed in background terminal ${termId}, notifying chat session`);
 
 				this._chatService.sendRequest(chatSessionResource, message, {
+					...sendOptions,
 					queue: ChatRequestQueueKind.Steering,
 					isSystemInitiated: true,
 					systemInitiatedLabel: localize('backgroundTaskNeedsInput', "Background task `{0}` needs input", commandName),
-					...sendOptions,
+					terminalExecutionId: termId,
 				}).catch(e => {
 					this._logService.warn(`RunInTerminalTool: Failed to send input-needed notification for terminal ${termId}`, e);
 				});
 			}));
 		}
+
+		// When the user types directly in the terminal, dismiss any pending
+		// question carousel for this terminal so the tool invocation is
+		// unblocked and the carousel doesn't linger. Also suppress future
+		// input-needed notifications since the user is handling prompts.
+		store.add(terminalInstance.onDidInputData(() => {
+			userIsReplyingDirectly = true;
+			this._dismissPendingCarouselsForTerminal(chatSessionResource, termId);
+		}));
 
 		store.add(sessionRef);
 
@@ -1967,10 +1993,11 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 			this._logService.debug(`RunInTerminalTool: Command completed in background terminal ${termId}, notifying chat session`);
 
 			this._chatService.sendRequest(chatSessionResource, message, {
+				...sendOptions,
 				queue: ChatRequestQueueKind.Steering,
 				isSystemInitiated: true,
 				systemInitiatedLabel: localize('backgroundTaskCompleted', "Background task `{0}` completed", commandName),
-				...sendOptions,
+				terminalExecutionId: termId,
 			}).catch(e => {
 				this._logService.warn(`RunInTerminalTool: Failed to send completion notification for terminal ${termId}`, e);
 			});
@@ -1996,6 +2023,34 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 		}));
 
 		this._backgroundNotifications.set(termId, store);
+	}
+
+	/**
+	 * Find and dismiss any pending (not yet answered) question carousels that
+	 * are associated with the given terminal. This is called when the user
+	 * types directly into the terminal, bypassing the carousel UI.
+	 */
+	private _dismissPendingCarouselsForTerminal(chatSessionResource: URI, termId: string): void {
+		const model = this._chatService.getSession(chatSessionResource);
+		if (!model) {
+			return;
+		}
+
+		for (const request of model.getRequests()) {
+			const response = request.response;
+			if (!response) {
+				continue;
+			}
+			for (const part of response.response.value) {
+				if (part instanceof ChatQuestionCarouselData && part.terminalId === termId && !part.isUsed) {
+					this._logService.debug(`RunInTerminalTool: Dismissing pending carousel for terminal ${termId} because user typed directly in terminal`);
+					part.data = {};
+					part.isUsed = true;
+					part.dismissedByTerminalInput = true;
+					part.completion.complete({ answers: undefined });
+				}
+			}
+		}
 	}
 	// #endregion
 }

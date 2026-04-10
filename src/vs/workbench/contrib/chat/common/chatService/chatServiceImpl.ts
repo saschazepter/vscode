@@ -830,6 +830,7 @@ export class ChatService extends Disposable implements IChatService {
 			userSelectedTools: options.userSelectedTools?.get(),
 			isSystemInitiated: options.isSystemInitiated,
 			systemInitiatedLabel: options.systemInitiatedLabel,
+			terminalExecutionId: options.terminalExecutionId,
 		});
 
 		const deferred = new DeferredPromise<ChatSendResult>();
@@ -1154,7 +1155,7 @@ export class ChatService extends Disposable implements IChatService {
 					const initialAgent = agentPart?.agent ?? defaultAgent;
 					const initialCommand = agentSlashCommandPart?.command;
 					const initVariableData: IChatRequestVariableData = { variables: [] };
-					request = model.addRequest(parsedRequest, initVariableData, attempt, options?.modeInfo, initialAgent, initialCommand, options?.confirmation, options?.locationData, options?.attachedContext, undefined, options?.userSelectedModelId, options?.userSelectedTools?.get(), undefined, options?.isSystemInitiated, options?.systemInitiatedLabel);
+					request = model.addRequest(parsedRequest, initVariableData, attempt, options?.modeInfo, initialAgent, initialCommand, options?.confirmation, options?.locationData, options?.attachedContext, undefined, options?.userSelectedModelId, options?.userSelectedTools?.get(), undefined, options?.isSystemInitiated, options?.systemInitiatedLabel, options?.terminalExecutionId);
 					const thisRequest = request;
 					completeResponseCreated();
 
@@ -1474,8 +1475,11 @@ export class ChatService extends Disposable implements IChatService {
 
 		// Build send options from the first request, combining attachments from all
 		const firstRequest = allRequests[0];
+		const latestTerminalMetadataRequest = [...allRequests].reverse().find(req => !!req.sendOptions.terminalExecutionId);
 		const sendOptions: IChatSendRequestOptions = {
 			...firstRequest.sendOptions,
+			// Preserve terminal correlation when multiple steering requests are merged.
+			terminalExecutionId: latestTerminalMetadataRequest?.sendOptions.terminalExecutionId ?? firstRequest.sendOptions.terminalExecutionId,
 			attachedContext: allRequests.flatMap(req => req.request.variableData.variables.slice()),
 		};
 
