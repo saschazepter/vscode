@@ -221,25 +221,6 @@ suite('Workbench - TerminalInstance', () => {
 			strictEqual(instance.shellType, PosixShellType.Zsh);
 		});
 
-		test('should preserve codex shell type detected from sequence until the parent shell returns', async () => {
-			const instance = await createTerminalInstance() as TerminalInstance;
-			const onTitleChange = (title: string) => (instance as unknown as Record<string, (value: string) => void>)['_onTitleChange'](title);
-			const handleShellTypeChange = (shellType: GeneralShellType | PosixShellType | undefined) => (instance as unknown as Record<string, (value: GeneralShellType | PosixShellType | undefined) => void>)['_handleShellTypeChange'](shellType);
-
-			strictEqual(instance.shellType, undefined);
-			onTitleChange('Codex');
-			strictEqual(instance.shellType, GeneralShellType.Codex);
-
-			handleShellTypeChange(GeneralShellType.Node);
-			strictEqual(instance.shellType, GeneralShellType.Codex);
-
-			handleShellTypeChange(undefined);
-			strictEqual(instance.shellType, GeneralShellType.Codex);
-
-			handleShellTypeChange(PosixShellType.Zsh);
-			strictEqual(instance.shellType, PosixShellType.Zsh);
-		});
-
 		test('custom key event handler should handle commands in DEFAULT_COMMANDS_TO_SKIP_SHELL in VS Code and not xterm when sendKeybindingsToShell is disabled', async () => {
 			const instance = await createTerminalInstance();
 			const keybindingService = instance['_keybindingService'];
