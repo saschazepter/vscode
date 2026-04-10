@@ -480,6 +480,7 @@ The Sessions view is registered in `contrib/sessions/browser/sessions.contributi
 - **Container**: Sessions container in `ViewContainerLocation.Sidebar` (default)
 - **View**: `SessionsViewId` with `SessionsView` (`contrib/sessions/browser/views/sessionsView.ts`)
 - **Window visibility**: `WindowVisibility.Sessions`
+- **Header layout**: The sessions sidebar header keeps the "Sessions" label visible while the find widget is closed and truncates it with CSS ellipsis when horizontal space is constrained instead of hiding it outright
 - **Primary action**: The sidebar content starts with a left-aligned secondary "New Session" button rendered as `$(plus) Session`, with an inline shortcut hint that reflects the active `workbench.action.sessions.newChat` keybinding when one is available
 
 ---
@@ -648,6 +649,7 @@ interface IPartVisibilityState {
 
 | Date | Change |
 |------|--------|
+| 2026-04-10 | Updated the sessions sidebar header so the "Sessions" label stays visible while the find widget is closed and truncates with ellipsis under tight widths instead of being hidden by layout logic. |
 | 2026-04-08 | Darkened the light-theme-only chat, auxiliary bar, and panel card borders with a sessions-specific CSS `border-color` override that uses `editorWidget.border`; dark and high-contrast themes continue using the existing part border tokens. |
 | 2026-04-08 | Rounded the sessions workbench sash hover indicators and orthogonal drag handles via `browser/media/style.css` so resize handles use rounded corners instead of square edges. |
 | 2026-04-04 | Inverted the default light-theme surface mapping so the sessions window background uses the off-white workbench/sidebar surface while the chat, changes, and panel cards use the brighter editor background; dark and high-contrast mappings remain unchanged. |

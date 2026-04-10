@@ -85,6 +85,11 @@
 	}
 
 	.agent-sessions-header-label {
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 		font-size: 12px;
 		font-weight: 500;
 		color: var(--vscode-sideBar-foreground, var(--vscode-foreground));
@@ -93,6 +98,7 @@
 	.agent-sessions-header-actions {
 		display: flex;
 		align-items: center;
+		flex-shrink: 0;
 		gap: 4px;
 		margin-left: auto;
 	}
