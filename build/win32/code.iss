@@ -74,6 +74,10 @@ Type: filesandordirs; Name: "{app}\{#VersionedResourcesFolder}\resources\app\nod
 Type: filesandordirs; Name: "{app}\{#VersionedResourcesFolder}\resources\app\node_modules.asar.unpacked"; Check: IsNotBackgroundUpdate
 Type: files; Name: "{app}\{#VersionedResourcesFolder}\resources\app\node_modules.asar"; Check: IsNotBackgroundUpdate
 Type: files; Name: "{app}\{#VersionedResourcesFolder}\resources\app\Credits_45.0.2454.85.html"; Check: IsNotBackgroundUpdate
+#ifdef ProxyExeBasename
+; Clean up legacy Start Menu shortcut that used ProxyExeBasename instead of ProxyNameLong
+Type: files; Name: "{group}\{#ProxyExeBasename}.lnk"
+#endif
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}\_"
