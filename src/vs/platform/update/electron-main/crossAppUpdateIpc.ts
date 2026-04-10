@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { crossAppIPC } from 'electron';
+import * as electron from 'electron';
 import { Emitter, Event } from '../../../base/common/event.js';
 import { Disposable, IDisposable } from '../../../base/common/lifecycle.js';
 import { ILifecycleMainService } from '../../lifecycle/electron-main/lifecycleMainService.js';
@@ -99,6 +99,8 @@ export class CrossAppUpdateCoordinator extends Disposable implements IUpdateServ
 	}
 
 	initialize(): void {
+		const crossAppIPC: Electron.CrossAppIPCModule | undefined = electron.crossAppIPC;
+
 		if (!crossAppIPC) {
 			this.logService.info('CrossAppUpdateCoordinator: crossAppIPC not available, running in standalone mode');
 			return;
