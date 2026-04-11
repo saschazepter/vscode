@@ -496,14 +496,14 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 		this.logService.trace('update#quitAndInstall(): running raw#quitAndInstall()');
 
 		if (this.availableUpdate.updateFilePath && this.availableUpdate.updateProcess?.exitCode === null) {
-			// Background installer is still alive — signal it to proceed by deleting the flag file it is waiting on.
+			// Background installer is still alive; signal it to proceed by deleting the flag file it is waiting on.
 			try {
 				unlinkSync(this.availableUpdate.updateFilePath);
 			} catch {
 				// ignore
 			}
 		} else {
-			// No live background installer — launch the setup directly with approprate flags based on config.
+			// No live background installer; launch the setup directly with appropriate flags based on config.
 			const installerArgs = [
 				this.isFastUpdatesEnabled() ? '/verysilent' : '/silent',
 				'/log',
