@@ -246,15 +246,19 @@ function logToolResult(
 	}
 
 	// Request logger
-	const resultContent = typeof toolResult.content === 'string'
-		? toolResult.content
-		: JSON.stringify(toolResult.content, undefined, 2);
-	const response = { content: [new LanguageModelTextPart(resultContent)] };
-	if (capturingToken) {
-		void requestLogger.captureInvocation(capturingToken, async () =>
-			requestLogger.logToolCall(toolUseId, toolUse.name, toolUse.input, response));
-	} else {
-		requestLogger.logToolCall(toolUseId, toolUse.name, toolUse.input, response);
+	try {
+		const resultContent = typeof toolResult.content === 'string'
+			? toolResult.content
+			: JSON.stringify(toolResult.content, undefined, 2) ?? '';
+		const response = { content: [new LanguageModelTextPart(resultContent)] };
+		if (capturingToken) {
+			void requestLogger.captureInvocation(capturingToken, async () =>
+				requestLogger.logToolCall(toolUseId, toolUse.name, toolUse.input, response));
+		} else {
+			requestLogger.logToolCall(toolUseId, toolUse.name, toolUse.input, response);
+		}
+	} catch (e) {
+		logService.warn(`[ClaudeMessageDispatch] Failed to log tool result: ${e}`);
 	}
 }
 
