@@ -262,6 +262,8 @@ export class SessionsWalkthroughOverlay extends Disposable {
 					titleEl.textContent = codeData.user_code;
 					titleEl.style.letterSpacing = '4px';
 					titleEl.style.fontFamily = 'monospace';
+					titleEl.style.userSelect = 'text';
+					titleEl.style.cursor = 'text';
 					subtitleEl.textContent = localize('walkthrough.enterCode', "Enter this code at {0}", codeData.verification_uri);
 
 					// Open GitHub in new tab
