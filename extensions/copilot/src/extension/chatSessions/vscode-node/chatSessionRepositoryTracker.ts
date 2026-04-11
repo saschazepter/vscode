@@ -36,7 +36,7 @@ export class ChatSessionRepositoryTracker extends Disposable {
 
 		// Add watchers
 		for (const added of e.added) {
-			this.createRepositoryWatcher(added.uri);
+			await this.createRepositoryWatcher(added.uri);
 		}
 
 		// Dispose watchers
@@ -58,13 +58,13 @@ export class ChatSessionRepositoryTracker extends Disposable {
 		}
 
 		const disposables = new DisposableStore();
-		disposables.add(repository.state.onDidChange(() => this.onDidChangesRepositoryState(uri)));
+		disposables.add(repository.state.onDidChange(() => this.onDidChangeRepositoryState(uri)));
 
 		this.repositories.set(uri, disposables);
 	}
 
-	private async onDidChangesRepositoryState(uri: vscode.Uri): Promise<void> {
-		this.logService.trace(`[ChatSessionRepositoryTracker][onDidChangesRepositoryState] Repository state changed for ${uri.toString()}. Updating session properties.`);
+	private async onDidChangeRepositoryState(uri: vscode.Uri): Promise<void> {
+		this.logService.trace(`[ChatSessionRepositoryTracker][onDidChangeRepositoryState] Repository state changed for ${uri.toString()}. Updating session properties.`);
 
 		const worktreeSessionId = await this.worktreeService.getSessionIdForWorktree(uri);
 		const workspaceSessionIds = this.workspaceFolderService.clearWorkspaceChanges(uri);
@@ -82,16 +82,16 @@ export class ChatSessionRepositoryTracker extends Disposable {
 			});
 
 			await this.sessionItemProvider.refreshSession({ reason: 'update', sessionId: worktreeSessionId });
-			this.logService.trace(`[ChatSessionRepositoryTracker][onDidChangesRepositoryState] Updated session properties for worktree ${uri.toString()}.`);
+			this.logService.trace(`[ChatSessionRepositoryTracker][onDidChangeRepositoryState] Updated session properties for worktree ${uri.toString()}.`);
 		} else if (workspaceSessionIds.length > 0) {
 			// Workspace
 			// This is still using the old ChatSessionItem API so there is no need to refresh each session
 			// associated with the workspace folder. When the new controller API is fully adopted we will
 			// have to refresh each session.
 			await this.sessionItemProvider.refreshSession({ reason: 'update', sessionIds: workspaceSessionIds });
-			this.logService.trace(`[ChatSessionRepositoryTracker][onDidChangesRepositoryState] Updated session properties for workspace ${uri.toString()}.`);
+			this.logService.trace(`[ChatSessionRepositoryTracker][onDidChangeRepositoryState] Updated session properties for workspace ${uri.toString()}.`);
 		} else {
-			this.logService.trace(`[ChatSessionRepositoryTracker][onDidChangesRepositoryState] No session associated with workspace ${uri.toString()}.`);
+			this.logService.trace(`[ChatSessionRepositoryTracker][onDidChangeRepositoryState] No session associated with workspace ${uri.toString()}.`);
 		}
 	}
 
