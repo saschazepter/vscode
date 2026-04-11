@@ -148,7 +148,7 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 		const isAdminNoUac = await this.canBackgroundUpdateAdminInstall();
 		this.telemetryService.publicLog2<WindowsUpdateInitEvent, WindowsUpdateInitClassification>('windowsUpdateInit', { osRelease, osNodeRelease, isAdminNoUac });
 
-		if (this.productService.target === 'user' && await this.nativeHostMainService.isAdmin(undefined)) {
+		if (this.productService.target === 'user' && await this.nativeHostMainService.isAdmin(undefined) && !await isUACDisabled()) {
 			this.setState(State.Disabled(DisablementReason.RunningAsAdmin));
 			this.logService.info('update#ctor - updates are disabled due to running as Admin in user setup');
 			return;
