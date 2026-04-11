@@ -21,7 +21,7 @@ import { URI } from '../../../base/common/uri.js';
 import { checksum } from '../../../base/node/crypto.js';
 import * as pfs from '../../../base/node/pfs.js';
 import { killTree } from '../../../base/node/processes.js';
-import { getWindowsRelease } from '../../../base/node/windowsVersion.js';
+import { getUACInfo, getWindowsRelease, isElevationPromptDisabled, isUACDisabled } from '../../../base/node/windowsVersion.js';
 import { IConfigurationService } from '../../configuration/common/configuration.js';
 import { IEnvironmentMainService } from '../../environment/electron-main/environmentMainService.js';
 import { IFileService } from '../../files/common/files.js';
@@ -60,10 +60,7 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 
 	private availableUpdate: IAvailableUpdate | undefined;
 	private updateCancellationTokenSource: CancellationTokenSource | undefined;
-
-	private isFastUpdatesEnabled(): boolean {
-		return this.configurationService.getValue<boolean>('update.enableWindowsBackgroundUpdates') && this.productService.target === 'user';
-	}
+	private _canBackgroundUpdateAdminInstall: Promise<boolean> | undefined;
 
 	@memoize
 	get cachePath(): Promise<string> {
@@ -88,6 +85,38 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 
 		lifecycleMainService.setRelaunchHandler(this);
 	}
+
+	/**
+	 * Returns whether background updates can be applied for a system/admin install.
+	 * This is true when UAC is disabled and the process is already running elevated,
+	 * meaning the spawned Inno Setup installer inherits admin privileges and can
+	 * write to Program Files without a UAC prompt.
+	 */
+	private canBackgroundUpdateAdminInstall(): Promise<boolean> {
+		if (!this._canBackgroundUpdateAdminInstall) {
+			this._canBackgroundUpdateAdminInstall = (async () => {
+				if (this.productService.target === 'user') {
+					return false;
+				}
+				try {
+					const [isAdmin, elevationPromptDisabled] = await Promise.all([
+						this.nativeHostMainService.isAdmin(undefined),
+						isElevationPromptDisabled()
+					]);
+					return isAdmin && elevationPromptDisabled;
+				} catch (error) {
+					this.logService.warn('update#canBackgroundUpdateAdminInstall(): failed to determine admin/UAC state, falling back to false', error);
+					return false;
+				}
+			})();
+		}
+		return this._canBackgroundUpdateAdminInstall;
+	}
+
+	private isBackgroundUpdateEnabled(): Promise<boolean> {
+		return this.configurationService.getValue<boolean>('update.enableWindowsBackgroundUpdates') && this.productService.target === 'user';
+	}
+
 
 	handleRelaunch(options?: IRelaunchOptions): boolean {
 		if (options?.addArgs || options?.removeArgs) {
@@ -115,18 +144,26 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 		type WindowsUpdateInitEvent = {
 			osRelease: string;
 			osNodeRelease: string;
+			enableLUA: boolean;
+			consentPromptBehaviorAdmin: number;
 		};
 		type WindowsUpdateInitClassification = {
 			osRelease: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The Windows OS release version from registry.' };
 			osNodeRelease: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The Windows OS release version from os.release().' };
+			enableLUA: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The EnableLUA registry value which controls whether UAC is enabled.' };
+			consentPromptBehaviorAdmin: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The ConsentPromptBehaviorAdmin registry value which controls UAC prompt behavior for admins.' };
 			owner: 'dmitriv';
 			comment: 'Tracks Windows OS release information during update initialization.';
 		};
-		const osRelease = await getWindowsRelease();
-		const osNodeRelease = release();
-		this.telemetryService.publicLog2<WindowsUpdateInitEvent, WindowsUpdateInitClassification>('windowsUpdateInit', { osRelease, osNodeRelease });
+		const uacInfo = await getUACInfo();
+		this.telemetryService.publicLog2<WindowsUpdateInitEvent, WindowsUpdateInitClassification>('windowsUpdateInit', {
+			osRelease: await getWindowsRelease(),
+			osNodeRelease: release(),
+			enableLUA: uacInfo.enableLUA,
+			consentPromptBehaviorAdmin: uacInfo.consentPromptBehaviorAdmin
+		});
 
-		if (this.productService.target === 'user' && await this.nativeHostMainService.isAdmin(undefined)) {
+		if (this.productService.target === 'user' && await this.nativeHostMainService.isAdmin(undefined) && !await isUACDisabled()) {
 			this.setState(State.Disabled(DisablementReason.RunningAsAdmin));
 			this.logService.info('update#ctor - updates are disabled due to running as Admin in user setup');
 			return;
@@ -162,7 +199,7 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 		} else {
 			// GC for background updates in system setup happens via inno_setup since it requires
 			// elevated permissions.
-			if (this.isFastUpdatesEnabled() && this.productService.commit) {
+			if (await this.isBackgroundUpdateEnabled() && this.productService.commit) {
 				const versionedResourcesFolder = this.productService.commit.substring(0, 10);
 				const innoUpdater = path.join(exeDir, versionedResourcesFolder, 'tools', 'inno_updater.exe');
 				const exeName = basename(exePath);
@@ -279,12 +316,12 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 								.then(() => pfs.Promises.rename(downloadPath, updatePackagePath, false /* no retry */))
 								.then(() => updatePackagePath);
 						});
-					}).then(packagePath => {
+					}).then(async packagePath => {
 						this.availableUpdate = { packagePath };
 						this.saveUpdateMetadata(update);
 						this.setState(State.Downloaded(update, explicit, this._overwrite));
 
-						if (this.isFastUpdatesEnabled()) {
+						if (await this.isBackgroundUpdateEnabled()) {
 							this.doApplyUpdate();
 						} else {
 							this.setState(State.Ready(update, explicit, this._overwrite));
@@ -496,21 +533,13 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 		this.logService.trace('update#quitAndInstall(): running raw#quitAndInstall()');
 
 		if (this.availableUpdate.updateFilePath && this.availableUpdate.updateProcess?.exitCode === null) {
-			// Background installer is still alive; signal it to proceed by deleting the flag file it is waiting on.
 			try {
 				unlinkSync(this.availableUpdate.updateFilePath);
 			} catch {
 				// ignore
 			}
 		} else {
-			// No live background installer; launch the setup directly with appropriate flags based on config.
-			const installerArgs = [
-				this.isFastUpdatesEnabled() ? '/verysilent' : '/silent',
-				'/log',
-				'/mergetasks=runcode,!desktopicon,!quicklaunchicon'
-			];
-
-			spawn(this.availableUpdate.packagePath, installerArgs, {
+			spawn(this.availableUpdate.packagePath, ['/silent', '/log', '/mergetasks=runcode,!desktopicon,!quicklaunchicon'], {
 				detached: true,
 				stdio: ['ignore', 'ignore', 'ignore'],
 				env: { ...process.env, __COMPAT_LAYER: 'RunAsInvoker' }
@@ -557,7 +586,7 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 		this.availableUpdate = { packagePath };
 		this.setState(State.Downloaded(update, true, false));
 
-		if (this.isFastUpdatesEnabled()) {
+		if (await this.isBackgroundUpdateEnabled()) {
 			this.doApplyUpdate();
 		} else {
 			this.setState(State.Ready(update, true, false));
