@@ -98,11 +98,16 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 				if (this.productService.target === 'user') {
 					return false;
 				}
-				const [isAdmin, uacDisabled] = await Promise.all([
-					this.nativeHostMainService.isAdmin(undefined),
-					isUACDisabled()
-				]);
-				return isAdmin && uacDisabled;
+				try {
+					const [isAdmin, uacDisabled] = await Promise.all([
+						this.nativeHostMainService.isAdmin(undefined),
+						isUACDisabled()
+					]);
+					return isAdmin && uacDisabled;
+				} catch (error) {
+					this.logService.warn('update#canBackgroundUpdateAdminInstall(): failed to determine admin/UAC state, falling back to false', error);
+					return false;
+				}
 			})();
 		}
 		return this._canBackgroundUpdateAdminInstall;
