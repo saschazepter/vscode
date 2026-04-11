@@ -1082,6 +1082,20 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 		chatModel.acceptResponseProgress(request, progress);
 	}
 
+	private _prependAutomaticUnsandboxRetryNote(result: IToolResult): IToolResult {
+		const note = localize(
+			'runInTerminal.unsandboxed.autoRetry.note',
+			'Note: The first sandboxed execution appeared blocked by the sandbox, so after you approved it, the command was retried outside the sandbox.\n\n'
+		);
+		const firstTextPart = result.content.find(part => part.kind === 'text');
+		if (firstTextPart?.kind === 'text') {
+			firstTextPart.value = `${note}${firstTextPart.value}`;
+		} else {
+			result.content.unshift({ kind: 'text', value: note });
+		}
+		return result;
+	}
+
 	async invoke(invocation: IToolInvocation, _countTokens: CountTokensCallback, _progress: ToolProgress, token: CancellationToken): Promise<IToolResult> {
 		const toolSpecificData = invocation.toolSpecificData as IChatTerminalToolInvocationData | undefined;
 		if (!toolSpecificData) {
@@ -1672,7 +1686,7 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 				const retryToolCallId = `automatic-unsandbox-retry-${generateUuid()}`;
 				this._acceptAutomaticUnsandboxRetryToolInvocationUpdate(invocation.context.sessionResource, retryToolCallId, retryToolSpecificData, false);
 
-				return await this.invoke({
+				const retryResult = await this.invoke({
 					...invocation,
 					parameters: {
 						...args,
@@ -1682,6 +1696,9 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 					},
 					toolSpecificData: retryToolSpecificData,
 				}, _countTokens, _progress, token);
+				this._acceptAutomaticUnsandboxRetryToolInvocationUpdate(invocation.context.sessionResource, retryToolCallId, retryToolSpecificData, true, retryResult.toolResultMessage);
+
+				return this._prependAutomaticUnsandboxRetryNote(retryResult);
 			}
 		}
 
