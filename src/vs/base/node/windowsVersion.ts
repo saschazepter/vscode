@@ -100,36 +100,67 @@ export function getWindowsReleaseSync(): string {
 	return versionInfo?.release ?? os.release();
 }
 
-let _isUACDisabled: boolean | undefined;
+let uacInfo: { enableLUA: boolean; consentPromptBehaviorAdmin: number } | undefined;
 
 /**
- * Checks whether UAC (User Account Control) is disabled on Windows by reading
- * the `EnableLUA` registry value under `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System`.
- *
- * When `EnableLUA` is `0`, UAC is disabled and admin users run with full elevated
- * privileges without prompts.
- *
- * @returns `true` if UAC is disabled, `false` otherwise (including on non-Windows platforms).
+ * Reads and caches UAC-related registry values from
+ * `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System`.
  */
-export async function isUACDisabled(): Promise<boolean> {
-	if (_isUACDisabled !== undefined) {
-		return _isUACDisabled;
+async function getUACInfo(): Promise<{ enableLUA: boolean; consentPromptBehaviorAdmin: number }> {
+	if (uacInfo) {
+		return uacInfo;
 	}
 
 	if (!isWindows) {
-		_isUACDisabled = false;
-		return false;
+		uacInfo = { enableLUA: true, consentPromptBehaviorAdmin: 5 };
+		return uacInfo;
 	}
 
 	try {
 		const Registry = await import('@vscode/windows-registry');
-		const enableLUA = Registry.GetDWORDRegKey('HKEY_LOCAL_MACHINE', 'SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System', 'EnableLUA');
-		_isUACDisabled = enableLUA === 0;
+		const policyKey = 'SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System';
+		const enableLUA = Registry.GetDWORDRegKey('HKEY_LOCAL_MACHINE', policyKey, 'EnableLUA');
+		const consentPromptBehaviorAdmin = Registry.GetDWORDRegKey('HKEY_LOCAL_MACHINE', policyKey, 'ConsentPromptBehaviorAdmin');
+		uacInfo = {
+			enableLUA: enableLUA !== 0,
+			consentPromptBehaviorAdmin: consentPromptBehaviorAdmin ?? 5
+		};
 	} catch {
-		_isUACDisabled = false;
+		uacInfo = { enableLUA: true, consentPromptBehaviorAdmin: 5 };
 	}
 
-	return _isUACDisabled;
+	return uacInfo;
+}
+
+/**
+ * Checks whether Admin Approval Mode is completely disabled on Windows
+ * (`EnableLUA` = 0). When disabled, admin users always run with full elevated
+ * privileges and there is no token splitting — every process runs elevated.
+ *
+ * This is distinct from the UAC slider being set to "Never notify", which
+ * keeps Admin Approval Mode enabled but suppresses elevation prompts.
+ *
+ * @returns `true` if Admin Approval Mode is disabled, `false` otherwise.
+ */
+export async function isUACDisabled(): Promise<boolean> {
+	return !(await getUACInfo()).enableLUA;
+}
+
+/**
+ * Checks whether elevation can occur without showing a UAC prompt.
+ * This is true in two cases:
+ *
+ * 1. `EnableLUA` = 0 — Admin Approval Mode is off entirely, processes always
+ *    run with the full admin token.
+ * 2. `ConsentPromptBehaviorAdmin` = 0 — Admin Approval Mode is on (token
+ *    splitting exists) but elevation requests are auto-approved without any
+ *    prompt. This corresponds to the UAC slider at "Never notify".
+ *
+ * @returns `true` if elevation will not show a prompt, `false` otherwise.
+ */
+export async function isElevationPromptDisabled(): Promise<boolean> {
+	const info = await getUACInfo();
+	return !info.enableLUA || info.consentPromptBehaviorAdmin === 0;
 }
 
 /**

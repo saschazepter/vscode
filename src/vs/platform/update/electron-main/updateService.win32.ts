@@ -21,7 +21,7 @@ import { URI } from '../../../base/common/uri.js';
 import { checksum } from '../../../base/node/crypto.js';
 import * as pfs from '../../../base/node/pfs.js';
 import { killTree } from '../../../base/node/processes.js';
-import { getWindowsRelease, isUACDisabled } from '../../../base/node/windowsVersion.js';
+import { getWindowsRelease, isElevationPromptDisabled, isUACDisabled } from '../../../base/node/windowsVersion.js';
 import { IConfigurationService } from '../../configuration/common/configuration.js';
 import { IEnvironmentMainService } from '../../environment/electron-main/environmentMainService.js';
 import { IFileService } from '../../files/common/files.js';
@@ -99,11 +99,11 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 					return false;
 				}
 				try {
-					const [isAdmin, uacDisabled] = await Promise.all([
+					const [isAdmin, elevationPromptDisabled] = await Promise.all([
 						this.nativeHostMainService.isAdmin(undefined),
-						isUACDisabled()
+						isElevationPromptDisabled()
 					]);
-					return isAdmin && uacDisabled;
+					return isAdmin && elevationPromptDisabled;
 				} catch (error) {
 					this.logService.warn('update#canBackgroundUpdateAdminInstall(): failed to determine admin/UAC state, falling back to false', error);
 					return false;
