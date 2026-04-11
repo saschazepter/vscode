@@ -131,7 +131,7 @@ export function isLikelyNaturalLanguage(text: string): boolean {
 
 	// Code expressions with many tokens typically contain punctuation like
 	// parentheses, brackets, operators, etc. that natural language lacks.
-	if (/[()[\]{}<>=:;@#]/.test(text)) {
+	if (/[()[\]{}<>=:;@#.&|*+/%^~]/.test(text)) {
 		return false;
 	}
 

@@ -35,5 +35,14 @@ suite('isLikelyNaturalLanguage', () => {
 		expect(isLikelyNaturalLanguage('const a = new Map()')).toBe(false);
 		expect(isLikelyNaturalLanguage('a === b ? c : d')).toBe(false);
 		expect(isLikelyNaturalLanguage('Array<string | number>')).toBe(false);
+		expect(isLikelyNaturalLanguage('foo.bar.baz method call')).toBe(false);
+		expect(isLikelyNaturalLanguage('a & b | c ^ d')).toBe(false);
+		expect(isLikelyNaturalLanguage('result = a + b / c')).toBe(false);
+	});
+
+	test('should handle edge cases', () => {
+		expect(isLikelyNaturalLanguage('')).toBe(false);
+		expect(isLikelyNaturalLanguage('   ')).toBe(false);
+		expect(isLikelyNaturalLanguage('  a  ')).toBe(false);
 	});
 });
