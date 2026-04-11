@@ -46,12 +46,13 @@ export function getNWords(str: string, numWordsToCount: number): IWordCountResul
 	// This regex matches each word and skips over whitespace and separators. A word is:
 	// A markdown link
 	// Inline math
+	// Inline code (backtick-enclosed), treated as a single unit to avoid unclosed backticks causing flicker
 	// One chinese character
 	// One or more + - =, handled so that code like "a=1+2-3" is broken up better
 	// One or more characters that aren't whitepace or any of the above
 	const backtick = '`';
 
-	const wordRegExp = new RegExp('(?:' + linkPattern + ')|(?:' + markedKatexExtension.mathInlineRegExp.source + r`)|\p{sc=Han}|=+|\++|-+|[^\s\|\p{sc=Han}|=|\+|\-|${backtick}]+`, 'gu');
+	const wordRegExp = new RegExp('(?:' + linkPattern + ')|(?:' + markedKatexExtension.mathInlineRegExp.source + r`)|${backtick}[^${backtick}\n]+${backtick}|\p{sc=Han}|=+|\++|-+|[^\s\|\p{sc=Han}|=|\+|\-|${backtick}]+`, 'gu');
 	const allWordMatches = Array.from(str.matchAll(wordRegExp));
 
 	const targetWords = allWordMatches.slice(0, numWordsToCount);
