@@ -24,6 +24,7 @@ export const enum TerminalChatAgentToolsSettingId {
 	AgentSandboxNetworkDeniedDomains = 'chat.agent.sandbox.deniedNetworkDomains',
 	AgentSandboxLinuxFileSystem = 'chat.agent.sandbox.fileSystem.linux',
 	AgentSandboxMacFileSystem = 'chat.agent.sandbox.fileSystem.mac',
+	AgentSandboxAdvancedRuntime = 'chat.agent.sandbox.advanced.runtime',
 	PreventShellHistory = 'chat.tools.terminal.preventShellHistory',
 	EnforceTimeoutFromModel = 'chat.tools.terminal.enforceTimeoutFromModel',
 	DetachBackgroundProcesses = 'chat.tools.terminal.detachBackgroundProcesses',
@@ -617,6 +618,15 @@ export const terminalChatAgentToolsConfiguration: IStringDictionary<IConfigurati
 			allowWrite: ['.'],
 			denyWrite: []
 		},
+		tags: ['preview'],
+		restricted: true,
+	},
+	[TerminalChatAgentToolsSettingId.AgentSandboxAdvancedRuntime]: {
+		included: false,
+		markdownDescription: localize('agentSandbox.runtimeSetting', "Note: this setting is applicable only when {0} is enabled. Key/value pairs are passed through to the root of the sandbox runtime configuration.", `\`#${TerminalChatAgentToolsSettingId.AgentSandboxEnabled}#\``),
+		type: 'object',
+		default: {},
+		additionalProperties: true,
 		tags: ['preview'],
 		restricted: true,
 	},
