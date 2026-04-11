@@ -1035,7 +1035,7 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 					buildCommandDisplayText(command)
 				)),
 				'',
-				localize('allowOnce', 'Allow Once'),
+				localize('allow', 'Allow'),
 				localize('skip', 'Skip'),
 				async () => {
 					resolveOnce(true);
