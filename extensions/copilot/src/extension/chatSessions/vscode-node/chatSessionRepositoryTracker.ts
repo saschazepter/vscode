@@ -59,8 +59,11 @@ export class ChatSessionRepositoryTracker extends Disposable {
 
 		const disposables = new DisposableStore();
 		disposables.add(repository.state.onDidChange(() => this.onDidChangeRepositoryState(uri)));
-
 		this.repositories.set(uri, disposables);
+
+		// Trigger an initial update to set the session
+		// properties based on the current repository state
+		void this.onDidChangeRepositoryState(uri);
 	}
 
 	private async onDidChangeRepositoryState(uri: vscode.Uri): Promise<void> {
