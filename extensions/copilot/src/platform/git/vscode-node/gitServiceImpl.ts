@@ -23,7 +23,7 @@ import { ILogService } from '../../log/common/logService';
 import { IGitExtensionService } from '../common/gitExtensionService';
 import { IGitService, RepoContext } from '../common/gitService';
 import { parseGitRemotes } from '../common/utils';
-import { API, APIState, Branch, Change, Commit, CommitOptions, CommitShortStat, DiffChange, LogOptions, Ref, RefQuery, Repository, RepositoryAccessDetails, RepositoryState } from '../vscode/git';
+import { API, APIState, Branch, Change, Commit, CommitOptions, CommitShortStat, DiffChange, LogOptions, Ref, RefQuery, Repository, RepositoryAccessDetails } from '../vscode/git';
 
 const execFileAsync = promisify(execFile);
 
@@ -128,16 +128,6 @@ export class GitServiceImpl extends Disposable implements IGitService {
 
 		await this.waitForRepositoryState(repository);
 		return GitServiceImpl.repoToRepoContext(repository);
-	}
-
-	async getRepositoryState(uri: URI, forceOpen = true): Promise<RepositoryState | undefined> {
-		const repository = await this._getRepository(uri, forceOpen);
-		if (!repository) {
-			return undefined;
-		}
-
-		await this.waitForRepositoryState(repository);
-		return repository.state;
 	}
 
 	private async _getRepository(uri: URI, forceOpen = true): Promise<Repository | undefined> {
@@ -554,6 +544,8 @@ export class RepoContextImpl implements RepoContext {
 	public readonly kind = this._repo.kind;
 	public readonly headBranchName = this._repo.state.HEAD?.name;
 	public readonly headCommitHash = this._repo.state.HEAD?.commit;
+	public readonly headIncomingChanges = this._repo.state.HEAD?.behind;
+	public readonly headOutgoingChanges = this._repo.state.HEAD?.ahead;
 	public readonly upstreamBranchName = this._repo.state.HEAD?.upstream?.name;
 	public readonly upstreamRemote = this._repo.state.HEAD?.upstream?.remote;
 	public readonly isRebasing = this._repo.state.rebaseCommit !== null;
