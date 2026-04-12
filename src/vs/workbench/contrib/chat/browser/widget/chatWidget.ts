@@ -1970,6 +1970,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 				this.finishedEditing();
 			}
 			this.viewModel = undefined;
+			this.listWidget.setViewModel(undefined);
 			this.onDidChangeItems();
 			this._hasPendingRequestsContextKey.set(false);
 			return;

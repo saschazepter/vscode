@@ -2920,6 +2920,11 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 			this._onDidDispose.fire(templateData);
 		}
 
+		// Dispose rendered content parts so they don't accumulate in the row
+		// cache. When a template is reused, renderElement will create fresh
+		// content parts anyway, so keeping them alive is unnecessary.
+		this.clearRenderedParts(templateData);
+
 		// Don't retain the toolbar context which includes chat viewmodels
 		if (templateData.titleToolbar) {
 			templateData.titleToolbar.context = undefined;

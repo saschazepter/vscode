@@ -107,7 +107,7 @@ export class TreePool extends Disposable {
 		const container = $('.interactive-response-progress-tree');
 		store.add(createFileIconThemableTreeContainerScope(container, this.themeService));
 
-		const tree = this.instantiationService.createInstance(
+		const tree = store.add(this.instantiationService.createInstance(
 			WorkbenchCompressibleAsyncDataTree<IChatResponseProgressFileTreeData, IChatResponseProgressFileTreeData>,
 			'ChatListRenderer',
 			container,
@@ -126,7 +126,7 @@ export class TreePool extends Disposable {
 					getWidgetAriaLabel: () => localize('treeAriaLabel', "File Tree")
 				},
 				alwaysConsumeMouseWheel: false
-			});
+			}));
 
 		return {
 			tree,

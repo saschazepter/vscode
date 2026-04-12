@@ -883,9 +883,11 @@ export class Response extends AbstractResponse implements IDisposable {
 				// Stop listening for progress updates once the task settles
 				disp.dispose();
 
-				// Replace the resolving part's content with the resolved response
-				if (typeof content === 'string') {
-					(this._responseParts[responsePosition] as IChatTask).content = new MarkdownString(content);
+				// Replace the resolving part's content with the resolved response.
+				// Guard: parts may have been cleared if the response was disposed/reset.
+				const part = this._responseParts[responsePosition];
+				if (part && typeof content === 'string') {
+					(part as IChatTask).content = new MarkdownString(content);
 				}
 				this._contentChanged(false);
 			});
