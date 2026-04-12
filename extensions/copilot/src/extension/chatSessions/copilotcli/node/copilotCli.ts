@@ -20,7 +20,7 @@ import { createServiceIdentifier } from '../../../../util/common/services';
 import { Emitter, Event } from '../../../../util/vs/base/common/event';
 import { Lazy } from '../../../../util/vs/base/common/lazy';
 import { Disposable } from '../../../../util/vs/base/common/lifecycle';
-import { basename } from '../../../../util/vs/base/common/resources';
+import { basename, isEqual } from '../../../../util/vs/base/common/resources';
 import { URI } from '../../../../util/vs/base/common/uri';
 import { IInstantiationService } from '../../../../util/vs/platform/instantiation/common/instantiation';
 import { IChatCustomAgentsService } from '../../common/chatCustomAgentsService';
@@ -303,11 +303,26 @@ export class CopilotCLIAgents extends Disposable implements ICopilotCLIAgents {
 
 	async resolveAgent(agentId: string): Promise<SweCustomAgent | undefined> {
 		const customAgents = await this.getAgents();
+		let agentIdUri: URI | undefined;
+		try {
+			agentIdUri = URI.parse(agentId);
+		} catch {
+			// Not a URI, continue with string matching.
+		}
 		agentId = agentId.toLowerCase();
+		if (agentIdUri) {
+			const match = customAgents.find(a => isEqual(a.sourceUri, agentIdUri));
+			if (match) {
+				return this.cloneAgent(match.agent);
+			}
+			const customMatch = this.chatCustomAgentsService.getCustomAgents().find(customAgent => isEqual(customAgent.uri, agentIdUri));
+			if (customMatch) {
+				return this.toCustomAgent(customMatch)?.agent;
+			}
+		}
+
 		const match = customAgents.find(a => {
-			if (a.agent.name.toLowerCase() === agentId ||
-				a.agent.displayName?.toLowerCase() === agentId ||
-				a.sourceUri.toString().toLowerCase() === agentId) {
+			if (a.agent.name.toLowerCase() === agentId || a.agent.displayName?.toLowerCase() === agentId) {
 				return true;
 			}
 			return false;
@@ -317,7 +332,7 @@ export class CopilotCLIAgents extends Disposable implements ICopilotCLIAgents {
 		}
 
 		for (const customAgent of this.chatCustomAgentsService.getCustomAgents()) {
-			if (agentId === customAgent.uri.toString() || agentId === customAgent.name) {
+			if (agentId === customAgent.name) {
 				return this.toCustomAgent(customAgent)?.agent;
 			}
 		}
