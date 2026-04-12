@@ -534,6 +534,11 @@ export function buildChatHistoryFromEvents(sessionId: string, modelId: string | 
 	const currentAssistantMessage: { chunks: string[] } = { chunks: [] };
 	const processedMessages = new Set<string>();
 
+	// Track model and reasoning effort from session.model_change events.
+	// These are sticky — they carry forward from one request to the next unless overridden.
+	let currentModel: string | undefined;
+	let currentReasoningEffort: string | undefined;
+
 	function processAssistantMessage(content: string) {
 		// Extract PR metadata if present
 		const { cleanedContent, prPart } = extractPRMetadata(content);
@@ -660,7 +665,9 @@ export function buildChatHistoryFromEvents(sessionId: string, modelId: string | 
 						isBuiltin: defaultModeInstructionsForLastRequest.isBuiltin,
 					};
 				}
-				turns.push(new ChatRequestTurn2(prompt, undefined, references, '', [], undefined, details?.requestId ?? event.id, modelId, modeInstructions2));
+				const requestModelId = currentModel ?? modelId;
+				const modelConfiguration = currentReasoningEffort ? { 'reasoningEffort': currentReasoningEffort } : undefined;
+				turns.push(new ChatRequestTurn2(prompt, undefined, references, '', [], undefined, details?.requestId ?? event.id, requestModelId, modeInstructions2, modelConfiguration));
 				break;
 			}
 			case 'assistant.message_delta': {
@@ -698,6 +705,11 @@ export function buildChatHistoryFromEvents(sessionId: string, modelId: string | 
 					event.data.agentDescription,
 					pendingToolInvocations
 				);
+				break;
+			}
+			case 'session.model_change': {
+				currentModel = event.data.newModel;
+				currentReasoningEffort = event.data.reasoningEffort;
 				break;
 			}
 			case 'subagent.completed':

@@ -9,6 +9,7 @@ import { IMarkdownString } from '../../../../base/common/htmlContent.js';
 import { IDisposable } from '../../../../base/common/lifecycle.js';
 import { IObservable } from '../../../../base/common/observable.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
+import { IStringDictionary } from '../../../../base/common/collections.js';
 import { URI } from '../../../../base/common/uri.js';
 import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
 import { IChatAgentAttachmentCapabilities, IChatAgentRequest } from './participants/chatAgents.js';
@@ -146,6 +147,7 @@ export type IChatSessionHistoryItem = {
 	command?: string;
 	variableData?: IChatRequestVariableData;
 	modelId?: string;
+	modelConfiguration?: IStringDictionary<unknown>;
 	modeInstructions?: IChatRequestModeInstructions;
 } | {
 	type: 'response';

@@ -672,8 +672,12 @@ export class ChatService extends Disposable implements IChatService {
 					undefined, // attachments
 					false, // Do not treat as requests completed, else edit pills won't show.
 					message.modelId,
-					undefined,
-					message.id
+					undefined, // userSelectedTools
+					message.id,
+					undefined, // isSystemInitiated
+					undefined, // systemInitiatedLabel
+					undefined, // terminalExecutionId
+					message.modelConfiguration,
 				);
 			} else {
 				// response

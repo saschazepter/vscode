@@ -947,6 +947,7 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 			command: turn.command,
 			variableData: variables.length > 0 ? { variables } : undefined,
 			modelId: turn.modelId,
+			modelConfiguration: turn.modelConfiguration,
 			modeInstructions: typeConvert.ChatRequestModeInstructions.from(turn.modeInstructions2),
 		};
 	}

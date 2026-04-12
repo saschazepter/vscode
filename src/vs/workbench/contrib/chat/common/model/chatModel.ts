@@ -19,6 +19,7 @@ import { basename, isEqual } from '../../../../../base/common/resources.js';
 import { hasKey, WithDefinedProps } from '../../../../../base/common/types.js';
 import { URI, UriDto } from '../../../../../base/common/uri.js';
 import { generateUuid } from '../../../../../base/common/uuid.js';
+import { IStringDictionary } from '../../../../../base/common/collections.js';
 import { IRange } from '../../../../../editor/common/core/range.js';
 import { OffsetRange } from '../../../../../editor/common/core/ranges/offsetRange.js';
 import { ISelection } from '../../../../../editor/common/core/selection.js';
@@ -128,6 +129,7 @@ export interface IChatRequestModel {
 	readonly shouldBeBlocked: IObservable<boolean>;
 	setShouldBeBlocked(value: boolean): void;
 	readonly modelId?: string;
+	readonly modelConfiguration?: IStringDictionary<unknown>;
 	readonly userSelectedTools?: UserSelectedTools;
 	readonly isSystemInitiated?: boolean;
 	readonly systemInitiatedLabel?: string;
@@ -351,6 +353,7 @@ export interface IChatRequestModelParameters {
 	attachedContext?: IChatRequestVariableEntry[];
 	isCompleteAddedRequest?: boolean;
 	modelId?: string;
+	modelConfiguration?: IStringDictionary<unknown>;
 	restoredId?: string;
 	editedFileEvents?: IChatAgentEditedFileEvent[];
 	userSelectedTools?: UserSelectedTools;
@@ -367,6 +370,7 @@ export class ChatRequestModel implements IChatRequestModel {
 	public readonly message: IParsedChatRequest;
 	public readonly isCompleteAddedRequest: boolean;
 	public readonly modelId?: string;
+	public readonly modelConfiguration?: IStringDictionary<unknown>;
 	public readonly modeInfo?: IChatRequestModeInfo;
 	public readonly userSelectedTools?: UserSelectedTools;
 	public readonly isSystemInitiated?: boolean;
@@ -440,6 +444,7 @@ export class ChatRequestModel implements IChatRequestModel {
 		this._attachedContext = params.attachedContext;
 		this.isCompleteAddedRequest = params.isCompleteAddedRequest ?? false;
 		this.modelId = params.modelId;
+		this.modelConfiguration = params.modelConfiguration;
 		this.id = params.restoredId ?? 'request_' + generateUuid();
 		this._editedFileEvents = params.editedFileEvents;
 		this.userSelectedTools = params.userSelectedTools;
@@ -2619,7 +2624,8 @@ export class ChatModel extends Disposable implements IChatModel {
 		id?: string,
 		isSystemInitiated?: boolean,
 		systemInitiatedLabel?: string,
-		terminalExecutionId?: string
+		terminalExecutionId?: string,
+		modelConfiguration?: IStringDictionary<unknown>,
 	): ChatRequestModel {
 		const editedFileEvents = [...this.currentEditedFileEvents.values()];
 		this.currentEditedFileEvents.clear();
@@ -2636,6 +2642,7 @@ export class ChatModel extends Disposable implements IChatModel {
 			attachedContext: attachments,
 			isCompleteAddedRequest,
 			modelId,
+			modelConfiguration,
 			editedFileEvents: editedFileEvents.length ? editedFileEvents : undefined,
 			userSelectedTools,
 			isSystemInitiated,

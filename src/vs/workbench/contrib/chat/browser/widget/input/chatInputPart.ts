@@ -1205,10 +1205,14 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		}
 
 		// Find the modelId from the last request that has one
-		const lastModelId = findLast(requests, req => !!req.modelId)?.modelId;
+		const lastRequest = findLast(requests, req => !!req.modelId);
+		const lastModelId = lastRequest?.modelId;
 		if (!lastModelId) {
 			return;
 		}
+
+		// Find the modelConfiguration (e.g. reasoning effort) from the last request that has one
+		const lastModelConfiguration = lastRequest?.modelConfiguration;
 
 		const tryMatch = () => {
 			const models = this.getModels();
@@ -1221,9 +1225,16 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 			return match;
 		};
 
+		const applyModelAndConfiguration = (model: ILanguageModelChatMetadataAndIdentifier) => {
+			this.setCurrentLanguageModel(model);
+			if (lastModelConfiguration) {
+				this.languageModelsService.setModelConfiguration(model.identifier, lastModelConfiguration);
+			}
+		};
+
 		const match = tryMatch();
 		if (match) {
-			this.setCurrentLanguageModel(match);
+			applyModelAndConfiguration(match);
 			return;
 		}
 
@@ -1232,7 +1243,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 			const found = tryMatch();
 			if (found) {
 				this._waitForPersistedLanguageModel.clear();
-				this.setCurrentLanguageModel(found);
+				applyModelAndConfiguration(found);
 			}
 		});
 	}
