@@ -143,9 +143,10 @@ suite('Annotations', function () {
 		});
 
 		test('returns undefined for invalid URI content inside codeblock uri tag', () => {
-			// Backtick at start of content causes URI.parse to throw because
-			// the scheme contains illegal characters
-			const invalidTag = '<vscode_codeblock_uri>`typescript`</vscode_codeblock_uri>';
+			// When content contains backticks and a colon, URI.parse extracts
+			// the text before the colon as the scheme. Backticks are illegal
+			// scheme characters, causing URI.parse to throw.
+			const invalidTag = '<vscode_codeblock_uri>```typescript\nconst uri: string\n```</vscode_codeblock_uri>';
 			const result = extractCodeblockUrisFromText(invalidTag);
 			assert.strictEqual(result, undefined);
 		});
