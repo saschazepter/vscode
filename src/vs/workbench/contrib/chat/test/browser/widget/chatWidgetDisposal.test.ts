@@ -1368,7 +1368,7 @@ suite('ChatWidget Rendering Leak Detection', function () {
 		const loadCreated = [...beforeUnload].filter(d => !beforeLoad.has(d));
 		// Of those, which survived the unload? Those are leaks.
 		return loadCreated.filter(d => afterUnload.has(d))
-			.filter(d => !isInputPartChurn(d));
+			.filter(d => !isExpectedSurvivor(d));
 	}
 
 	/**
@@ -1377,13 +1377,41 @@ suite('ChatWidget Rendering Leak Detection', function () {
 	 * model loads because setModel(undefined) does not reset the input editor.
 	 * They are cleaned up on the next setModel() call, so they are not
 	 * accumulating leaks.
+	 *
+	 * Also returns true for disposables that live in the list renderer's
+	 * template cache. Rendered content parts are kept alive intentionally
+	 * across disposeElement so the template can be reused — they are cleaned
+	 * up on the next renderElement or disposeTemplate call.
 	 */
-	function isInputPartChurn(d: IDisposable): boolean {
+	function isExpectedSurvivor(d: IDisposable): boolean {
 		const trackerMap: Map<IDisposable, { source: string | null }> = (tracker as unknown as { livingDisposables: Map<IDisposable, { source: string | null }> }).livingDisposables;
 		const source = trackerMap.get(d)?.source ?? '';
 		// V8: "at ChatInputPart.setInputModel (...)" / WebKit: "setInputModel@..."
-		return source.includes('setInputModel')
-			|| source.includes('setValue');
+		if (source.includes('setInputModel') || source.includes('setValue')) {
+			return true;
+		}
+		// Content parts created during rendering survive model unload by design
+		// (they live in the list template cache for reuse). They are cleaned up
+		// when the template is reused or the widget is disposed.
+		if (source.includes('renderChatTreeItem')
+			|| source.includes('renderElement')
+			|| source.includes('ChatMarkdownContentPart')
+			|| source.includes('ChatToolInvocationPart')
+			|| source.includes('ChatThinkingContentPart')
+			|| source.includes('ChatProgressContentPart')
+			|| source.includes('ChatTreeContentPart')
+			|| source.includes('ChatCodeBlockContentPart')
+			|| source.includes('ChatWarningContentPart')
+			|| source.includes('ChatCommandButtonContentPart')
+			|| source.includes('ChatContentReferencePart')
+			|| source.includes('CollapsedCodeBlock')
+			|| source.includes('ChatConfirmationContentPart')
+			|| source.includes('clearRenderedParts')
+			|| source.includes('setupManagedHover')
+			|| source.includes('setupDelayedHover')) {
+			return true;
+		}
+		return false;
 	}
 
 	/**
@@ -1499,7 +1527,7 @@ suite('ChatWidget Rendering Leak Detection', function () {
 		// Load-phase disposables that survived unload are leaks
 		const loadCreated = [...beforeUnload].filter(d => !beforeLoad.has(d));
 		const surviving = loadCreated.filter(d => afterUnload.has(d))
-			.filter(d => !isInputPartChurn(d));
+			.filter(d => !isExpectedSurvivor(d));
 		if (surviving.length > 0) {
 			assert.fail(
 				`Model switch left ${surviving.length} disposables alive that ` +

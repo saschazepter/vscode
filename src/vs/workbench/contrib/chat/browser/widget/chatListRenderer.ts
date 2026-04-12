@@ -651,9 +651,8 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 	}
 
 	/**
-	 * Dispose the rendered parts in the template. Called both in disposeElement
-	 * (to free parts when a row leaves the viewport) and in renderElement
-	 * (to replace stale parts when a row is reused for a new element).
+	 * Dispose the rendered parts in the template, which aren't done in disposeElement
+	 * so they can be reused when a new render is started.
 	 */
 	private clearRenderedParts(templateData: IChatListItemTemplate): void {
 		if (templateData.renderedParts) {
@@ -2920,11 +2919,6 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		if (isRequestVM(node.element) && node.element.id === this.viewModel?.editing?.id && details?.onScroll) {
 			this._onDidDispose.fire(templateData);
 		}
-
-		// Dispose rendered content parts so they don't accumulate in the row
-		// cache. When a template is reused, renderElement will create fresh
-		// content parts anyway, so keeping them alive is unnecessary.
-		this.clearRenderedParts(templateData);
 
 		// Don't retain the toolbar context which includes chat viewmodels
 		if (templateData.titleToolbar) {
