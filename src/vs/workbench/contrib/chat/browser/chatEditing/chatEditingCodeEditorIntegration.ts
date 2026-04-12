@@ -761,7 +761,7 @@ class DiffHunkWidget implements IOverlayWidget, IModifiedFileEntryChangeHunk {
 	}
 
 	showToolbar(): void {
-		if (this._toolbarStore.value) {
+		if (this._toolbarStore.value || this._removed) {
 			return;
 		}
 		const store = this._toolbarStore.value = new DisposableStore();
