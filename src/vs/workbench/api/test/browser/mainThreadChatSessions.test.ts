@@ -276,6 +276,7 @@ suite('ObservableChatSession', function () {
 			variableData: undefined,
 			modelId: undefined,
 			modeInstructions: undefined,
+			modelConfiguration: undefined,
 		};
 		const result = await session.forkSession?.(request, CancellationToken.None);
 
