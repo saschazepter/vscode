@@ -205,16 +205,13 @@ declare module 'vscode' {
 		 * Per-model configuration provided by the user. Contains resolved values based on the model's
 		 * {@linkcode LanguageModelChatInformation.configurationSchema configurationSchema},
 		 * with user overrides applied on top of schema defaults.
-		 *
-		 * This is the same data that is sent as {@linkcode ProvideLanguageModelChatResponseOptions.configuration}
-		 * when the model is invoked via the language model API.
 		 */
-		readonly modelConfiguration?: { readonly [key: string]: any };
+		readonly modelConfiguration?: { readonly [key: string]: unknown };
 
 		/**
 		 * @hidden
 		 */
-		constructor(prompt: string, command: string | undefined, references: ChatPromptReference[], participant: string, toolReferences: ChatLanguageModelToolReference[], editedFileEvents: ChatRequestEditedFileEvent[] | undefined, id: string | undefined, modelId: string | undefined, modeInstructions2: ChatRequestModeInstructions | undefined, modelConfiguration?: { readonly [key: string]: any });
+		constructor(prompt: string, command: string | undefined, references: ChatPromptReference[], participant: string, toolReferences: ChatLanguageModelToolReference[], editedFileEvents: ChatRequestEditedFileEvent[] | undefined, id: string | undefined, modelId: string | undefined, modeInstructions2: ChatRequestModeInstructions | undefined, modelConfiguration?: { readonly [key: string]: unknown });
 	}
 
 	export class ChatResponseTurn2 {
