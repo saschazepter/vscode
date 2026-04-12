@@ -37,7 +37,7 @@ import { IChatMarkdownAnchorService } from '../../../browser/widget/chatContentP
 import { IChatAgentService } from '../../../common/participants/chatAgents.js';
 import { ChatModel } from '../../../common/model/chatModel.js';
 import { ChatRequestTextPart } from '../../../common/requestParser/chatParserTypes.js';
-import { ElicitationState, IChatService, IChatTask, IChatToolInvocation, ToolConfirmKind, ChatMultiDiffData } from '../../../common/chatService/chatService.js';
+import { ElicitationState, IChatContentReference, IChatService, IChatTask, IChatToolInvocation, IChatWarningMessage, ToolConfirmKind, ChatMultiDiffData } from '../../../common/chatService/chatService.js';
 import { ChatAgentLocation } from '../../../common/constants.js';
 import { ChatToolInvocation } from '../../../common/model/chatProgressTypes/chatToolInvocation.js';
 import { ChatElicitationRequestPart } from '../../../common/model/chatProgressTypes/chatElicitationRequestPart.js';
@@ -372,7 +372,7 @@ suite('ChatWidget Disposal', function () {
 
 	function createProgressTask(content: string, settled: boolean): IChatTask {
 		const deferred = new DeferredPromise<string | void>();
-		const emitter = disposables.add(new Emitter<any>());
+		const emitter = disposables.add(new Emitter<IChatWarningMessage | IChatContentReference>());
 
 		const task: IChatTask = {
 			content: new MarkdownString(content),

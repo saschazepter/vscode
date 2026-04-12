@@ -651,8 +651,9 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 	}
 
 	/**
-	 * Dispose the rendered parts in the template, which aren't done in disposeElement
-	 * so they can be reused when a new render is started.
+	 * Dispose the rendered parts in the template. Called both in disposeElement
+	 * (to free parts when a row leaves the viewport) and in renderElement
+	 * (to replace stale parts when a row is reused for a new element).
 	 */
 	private clearRenderedParts(templateData: IChatListItemTemplate): void {
 		if (templateData.renderedParts) {
