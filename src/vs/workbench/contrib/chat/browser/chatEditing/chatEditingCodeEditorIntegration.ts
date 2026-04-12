@@ -7,7 +7,7 @@ import './media/chatEditorController.css';
 
 import { getTotalWidth } from '../../../../../base/browser/dom.js';
 import { Event } from '../../../../../base/common/event.js';
-import { DisposableStore, dispose, IDisposable, toDisposable } from '../../../../../base/common/lifecycle.js';
+import { DisposableStore, dispose, IDisposable, MutableDisposable, toDisposable } from '../../../../../base/common/lifecycle.js';
 import { autorun, constObservable, derived, IObservable, observableFromEvent, observableValue } from '../../../../../base/common/observable.js';
 import { basename, isEqual } from '../../../../../base/common/resources.js';
 import { themeColorFromId } from '../../../../../base/common/themables.js';
@@ -453,6 +453,7 @@ export class ChatEditingCodeEditorIntegration implements IModifiedFileEntryEdito
 						widget.update(diff, diffEntry, this._editor.getModel()!.getVersionId(), isCreatedContent ? 0 : extraLines);
 					}
 					this._diffHunksRenderStore.add(toDisposable(() => {
+						widget.hideToolbar();
 						this._diffHunkWidgetPool.putBack(widget);
 					}));
 
@@ -741,7 +742,7 @@ class DiffHunkWidget implements IOverlayWidget, IModifiedFileEntryChangeHunk {
 	private readonly _id: string = `diff-change-widget-${DiffHunkWidget._idPool++}`;
 
 	private readonly _domNode: HTMLElement;
-	private readonly _store = new DisposableStore();
+	private readonly _toolbarStore = new MutableDisposable<DisposableStore>();
 	private _position: IOverlayWidgetPosition | undefined;
 	private _lastStartLineNumber: number | undefined;
 	private _removed: boolean = false;
@@ -752,12 +753,19 @@ class DiffHunkWidget implements IOverlayWidget, IModifiedFileEntryChangeHunk {
 		private _change: DetailedLineRangeMapping,
 		private _versionId: number,
 		private _lineDelta: number,
-		@IInstantiationService instaService: IInstantiationService,
+		@IInstantiationService private readonly _instaService: IInstantiationService,
 	) {
 		this._domNode = document.createElement('div');
 		this._domNode.className = 'chat-diff-change-content-widget';
+		this._editor.addOverlayWidget(this);
+	}
 
-		const toolbar = instaService.createInstance(MenuWorkbenchToolBar, this._domNode, MenuId.ChatEditingEditorHunk, {
+	showToolbar(): void {
+		if (this._toolbarStore.value) {
+			return;
+		}
+		const store = this._toolbarStore.value = new DisposableStore();
+		const toolbar = this._instaService.createInstance(MenuWorkbenchToolBar, this._domNode, MenuId.ChatEditingEditorHunk, {
 			telemetrySource: 'chatEditingEditorHunk',
 			hiddenItemStrategy: HiddenItemStrategy.NoHide,
 			toolbarOptions: { primaryGroup: () => true, },
@@ -783,10 +791,12 @@ class DiffHunkWidget implements IOverlayWidget, IModifiedFileEntryChangeHunk {
 				return undefined;
 			}
 		});
+		store.add(toolbar);
+		store.add(toolbar.actionRunner.onWillRun(_ => this._editor.focus()));
+	}
 
-		this._store.add(toolbar);
-		this._store.add(toolbar.actionRunner.onWillRun(_ => _editor.focus()));
-		this._editor.addOverlayWidget(this);
+	hideToolbar(): void {
+		this._toolbarStore.clear();
 	}
 
 	update(diffInfo: IDocumentDiff2, change: DetailedLineRangeMapping, versionId: number, lineDelta: number): void {
@@ -797,7 +807,7 @@ class DiffHunkWidget implements IOverlayWidget, IModifiedFileEntryChangeHunk {
 	}
 
 	dispose(): void {
-		this._store.dispose();
+		this._toolbarStore.dispose();
 		this._editor.removeOverlayWidget(this);
 		this._removed = true;
 	}
@@ -830,11 +840,17 @@ class DiffHunkWidget implements IOverlayWidget, IModifiedFileEntryChangeHunk {
 	}
 
 	remove(): void {
+		this.hideToolbar();
 		this._editor.removeOverlayWidget(this);
 		this._removed = true;
 	}
 
 	toggle(show: boolean) {
+		if (show) {
+			this.showToolbar();
+		} else {
+			this.hideToolbar();
+		}
 		this._domNode.classList.toggle('hover', show);
 		if (this._lastStartLineNumber) {
 			this.layout(this._lastStartLineNumber);
