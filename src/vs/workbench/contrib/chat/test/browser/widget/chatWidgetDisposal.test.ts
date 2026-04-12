@@ -7,13 +7,14 @@ import * as assert from 'assert';
 import { mainWindow } from '../../../../../../base/browser/window.js';
 import { Emitter, Event } from '../../../../../../base/common/event.js';
 import { MarkdownString } from '../../../../../../base/common/htmlContent.js';
-import { DisposableStore, DisposableTracker, IDisposable, setDisposableTracker, toDisposable } from '../../../../../../base/common/lifecycle.js';
+import { DisposableStore, DisposableTracker, IDisposable, IReference, setDisposableTracker, toDisposable } from '../../../../../../base/common/lifecycle.js';
 import { observableValue, constObservable } from '../../../../../../base/common/observable.js';
 import { URI } from '../../../../../../base/common/uri.js';
 import { mock } from '../../../../../../base/test/common/mock.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/test/common/utils.js';
 import { Range } from '../../../../../../editor/common/core/range.js';
 import { OffsetRange } from '../../../../../../editor/common/core/ranges/offsetRange.js';
+import { ITextModel } from '../../../../../../editor/common/model.js';
 import { ServiceCollection } from '../../../../../../platform/instantiation/common/serviceCollection.js';
 import { ILogService, NullLogService } from '../../../../../../platform/log/common/log.js';
 import { IConfigurationService } from '../../../../../../platform/configuration/common/configuration.js';
@@ -69,6 +70,7 @@ import { ITerminalService, ITerminalChatService, ITerminalEditorService, ITermin
 import { IAiEditTelemetryService } from '../../../../editTelemetry/browser/telemetry/aiEditTelemetry/aiEditTelemetryService.js';
 import { IHoverService } from '../../../../../../platform/hover/browser/hover.js';
 import type { IManagedHoverContent, IManagedHoverOptions } from '../../../../../../base/browser/ui/hover/hover.js';
+import { ITextModelContentProvider, ITextModelService, IResolvedTextEditorModel } from '../../../../../../editor/common/services/resolverService.js';
 
 function createChatServiceCollection(disposables: DisposableStore): ServiceCollection {
 	const collection = new ServiceCollection();
@@ -256,6 +258,19 @@ function createChatServiceCollection(disposables: DisposableStore): ServiceColle
 		showAndFocusLastHover: () => undefined,
 		showManagedHover: () => undefined,
 	} satisfies IHoverService);
+	// Override the real TextModelResolverService (set up by workbenchInstantiationService)
+	// with a mock that resolves synchronously. The real service creates a
+	// TextResourceEditorModel with an async disposal chain that cannot be
+	// reliably flushed in WebKit browser tests.
+	collection.set(ITextModelService, new class extends mock<ITextModelService>() {
+		override async createModelReference(): Promise<IReference<IResolvedTextEditorModel>> {
+			const ref = toDisposable(() => { });
+			return Object.assign(ref, { object: { textEditorModel: null! as ITextModel, isReadonly: () => false } });
+		}
+		override registerTextModelContentProvider(_scheme: string, _provider: ITextModelContentProvider) {
+			return toDisposable(() => { });
+		}
+	}());
 	return collection;
 }
 
@@ -294,15 +309,9 @@ suite('ChatWidget Disposal', function () {
 	let parentElement: HTMLElement;
 
 	async function flushMicrotasks() {
-		// Flush microtask queue multiple rounds to allow nested async
-		// chains to settle (e.g. TextModelResolverService.destroyReferencedObject).
-		// Mix in macrotask yields (setTimeout 0) for platforms where chained
-		// awaits schedule through the macrotask queue (WebKit browser).
-		for (let round = 0; round < 3; round++) {
-			for (let i = 0; i < 20; i++) {
-				await new Promise<void>(r => queueMicrotask(r));
-			}
-			await new Promise<void>(r => setTimeout(r, 0));
+		// Flush microtask queue to allow nested async chains to settle.
+		for (let i = 0; i < 20; i++) {
+			await new Promise<void>(r => queueMicrotask(r));
 		}
 	}
 
