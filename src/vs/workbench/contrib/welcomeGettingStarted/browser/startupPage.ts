@@ -243,7 +243,7 @@ export class StartupPageRunnerContribution extends Disposable implements IWorkbe
 			return; // only show onboarding for new users who have never used the product before
 		}
 
-		if (this.storageService.get(ONBOARDING_STORAGE_KEY, StorageScope.APPLICATION)) {
+		if (this.storageService.getBoolean(ONBOARDING_STORAGE_KEY, StorageScope.APPLICATION)) {
 			return; // onboarding already completed
 		}
 
