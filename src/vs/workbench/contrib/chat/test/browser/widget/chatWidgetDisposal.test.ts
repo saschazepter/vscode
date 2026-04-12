@@ -294,6 +294,14 @@ suite('ChatWidget Disposal', function () {
 	let parentElement: HTMLElement;
 
 	async function flushMicrotasks() {
+		// Flush microtask queue multiple rounds to allow nested async
+		// chains to settle (e.g. TextModelResolverService.destroyReferencedObject).
+		// Mix in a macrotask (setTimeout 0) for platforms where chained
+		// awaits schedule through the macrotask queue (WebKit browser).
+		for (let i = 0; i < 20; i++) {
+			await new Promise<void>(r => queueMicrotask(r));
+		}
+		await new Promise<void>(r => setTimeout(r, 0));
 		for (let i = 0; i < 20; i++) {
 			await new Promise<void>(r => queueMicrotask(r));
 		}
@@ -733,6 +741,18 @@ suite('ChatWidget Disposal', function () {
 
 	setup(() => {
 		disposables = store.add(new DisposableStore());
+
+		// Suppress benign ResizeObserver loop errors that fire during macrotask
+		// flushing after widget disposal (needed for the setTimeout flush below).
+		const origOnError = mainWindow.onerror;
+		mainWindow.onerror = function (event, ...rest) {
+			if (typeof event === 'string' && event.includes('ResizeObserver')) {
+				return true;
+			}
+			return origOnError?.call(this, event, ...rest);
+		};
+		disposables.add(toDisposable(() => { mainWindow.onerror = origOnError; }));
+
 		const env = setupChatWidgetEnvironment(disposables);
 		instantiationService = env.instantiationService;
 		parentElement = env.parentElement;
@@ -825,16 +845,6 @@ suite('ChatWidget Disposal', function () {
 	});
 
 	test('progressive session: stream content, confirm/deny tools, then complete - no leaks', async function () {
-		// ResizeObserver loop errors are benign and expected when progressively adding content
-		const origOnError = mainWindow.onerror;
-		mainWindow.onerror = function (event, ...rest) {
-			if (typeof event === 'string' && event.includes('ResizeObserver')) {
-				return true; // suppress
-			}
-			return origOnError?.call(this, event, ...rest);
-		};
-		disposables.add(toDisposable(() => { mainWindow.onerror = origOnError; }));
-
 		const model = disposables.add(instantiationService.createInstance(
 			ChatModel,
 			undefined,
@@ -1372,8 +1382,9 @@ suite('ChatWidget Rendering Leak Detection', function () {
 	function isInputPartChurn(d: IDisposable): boolean {
 		const trackerMap: Map<IDisposable, { source: string | null }> = (tracker as unknown as { livingDisposables: Map<IDisposable, { source: string | null }> }).livingDisposables;
 		const source = trackerMap.get(d)?.source ?? '';
-		return source.includes('ChatInputPart.setInputModel')
-			|| source.includes('TextModel.setValue');
+		// V8: "at ChatInputPart.setInputModel (...)" / WebKit: "setInputModel@..."
+		return source.includes('setInputModel')
+			|| source.includes('setValue');
 	}
 
 	/**
