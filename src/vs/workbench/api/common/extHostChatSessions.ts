@@ -816,6 +816,7 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 			request.id,
 			request.modelId,
 			typeConvert.ChatRequestModeInstructions.to(request.modeInstructions),
+			request.modelConfiguration,
 		);
 	}
 

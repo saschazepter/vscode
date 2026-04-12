@@ -6,6 +6,7 @@
 import type { Uri } from 'vscode';
 import { URI } from '../../../../util/vs/base/common/uri';
 
+export const COPILOT_CLI_REASONING_EFFORT_PROPERTY = 'reasoningEffort';
 export namespace SessionIdForCLI {
 	export function getResource(sessionId: string): Uri {
 		return URI.from({ scheme: 'copilotcli', path: `/${sessionId}` }) as unknown as Uri;

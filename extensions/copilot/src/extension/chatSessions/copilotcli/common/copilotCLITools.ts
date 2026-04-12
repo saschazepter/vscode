@@ -25,7 +25,7 @@ import { formatUriForFileWidget } from '../../../tools/common/toolUtils';
 import { StoredModeInstructions } from '../../common/chatSessionMetadataStore';
 import { extractChatPromptReferences, getFolderAttachmentPath } from './copilotCLIPrompt';
 import { IChatDelegationSummaryService } from './delegationSummaryService';
-
+import { COPILOT_CLI_REASONING_EFFORT_PROPERTY } from './utils';
 
 interface CreateTool {
 	toolName: 'create';
@@ -666,7 +666,7 @@ export function buildChatHistoryFromEvents(sessionId: string, modelId: string | 
 					};
 				}
 				const requestModelId = currentModel ?? modelId;
-				const modelConfiguration = currentReasoningEffort ? { 'reasoningEffort': currentReasoningEffort } : undefined;
+				const modelConfiguration = currentReasoningEffort ? { [COPILOT_CLI_REASONING_EFFORT_PROPERTY]: currentReasoningEffort } : undefined;
 				turns.push(new ChatRequestTurn2(prompt, undefined, references, '', [], undefined, details?.requestId ?? event.id, requestModelId, modeInstructions2, modelConfiguration));
 				break;
 			}
@@ -705,6 +705,20 @@ export function buildChatHistoryFromEvents(sessionId: string, modelId: string | 
 					event.data.agentDescription,
 					pendingToolInvocations
 				);
+				break;
+			}
+			case 'session.start': {
+				if (event.data.selectedModel) {
+					currentModel = event.data.selectedModel;
+					currentReasoningEffort = event.data.reasoningEffort;
+				}
+				break;
+			}
+			case 'session.resume': {
+				if (event.data.selectedModel) {
+					currentModel = event.data.selectedModel;
+					currentReasoningEffort = event.data.reasoningEffort;
+				}
 				break;
 			}
 			case 'session.model_change': {

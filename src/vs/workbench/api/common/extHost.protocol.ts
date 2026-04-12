@@ -3652,6 +3652,7 @@ export type IChatSessionHistoryItemDto = {
 	command?: string;
 	variableData?: Dto<IChatRequestVariableData>;
 	modelId?: string;
+	modelConfiguration?: { readonly [key: string]: unknown };
 	modeInstructions?: Dto<IChatRequestModeInstructions>;
 } | {
 	type: 'response';
