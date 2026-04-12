@@ -296,14 +296,13 @@ suite('ChatWidget Disposal', function () {
 	async function flushMicrotasks() {
 		// Flush microtask queue multiple rounds to allow nested async
 		// chains to settle (e.g. TextModelResolverService.destroyReferencedObject).
-		// Mix in a macrotask (setTimeout 0) for platforms where chained
+		// Mix in macrotask yields (setTimeout 0) for platforms where chained
 		// awaits schedule through the macrotask queue (WebKit browser).
-		for (let i = 0; i < 20; i++) {
-			await new Promise<void>(r => queueMicrotask(r));
-		}
-		await new Promise<void>(r => setTimeout(r, 0));
-		for (let i = 0; i < 20; i++) {
-			await new Promise<void>(r => queueMicrotask(r));
+		for (let round = 0; round < 3; round++) {
+			for (let i = 0; i < 20; i++) {
+				await new Promise<void>(r => queueMicrotask(r));
+			}
+			await new Promise<void>(r => setTimeout(r, 0));
 		}
 	}
 
