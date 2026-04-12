@@ -120,17 +120,11 @@ export function copyCopilotNativeDeps(platform: string, arch: string, nodeModule
  * - marker:   node_modules/@github/copilot/shims.txt
  *
  * Failures throw to fail the build because built-in packaging must guarantee
- * these artifacts are present. If the target product does not ship the built-in
- * copilot extension at all (for example Code - OSS), this helper skips.
+ * these artifacts are present.
  */
 export function prepareBuiltInCopilotExtensionShims(platform: string, arch: string, builtInCopilotExtensionDir: string, appNodeModulesDir: string): void {
 	const { nodePlatform, nodeArch } = toNodePlatformArch(platform, arch);
 	const platformArch = `${nodePlatform}-${nodeArch}`;
-
-	if (!fs.existsSync(builtInCopilotExtensionDir)) {
-		console.log(`[prepareBuiltInCopilotExtensionShims] Built-in copilot extension not found at ${builtInCopilotExtensionDir}, skipping`);
-		return;
-	}
 
 	const extensionNodeModules = path.join(builtInCopilotExtensionDir, 'node_modules');
 	const copilotBase = path.join(extensionNodeModules, '@github', 'copilot');
