@@ -1193,6 +1193,32 @@
 				"legacyToolReferenceFullNames": [
 					"editFiles"
 				]
+			},
+			{
+				"name": "copilot_sessionStoreSql",
+				"displayName": "Session Store SQL",
+				"toolReferenceName": "sessionStoreSql",
+				"userDescription": "Query your Copilot session history using SQL",
+				"modelDescription": "Execute read-only SQL queries against the Copilot session store. Use this to investigate session history, usage patterns, file changes, and conversation data. Available tables: sessions (id, repository, branch, summary, created_at, updated_at), turns (session_id, turn_index, user_message, assistant_response), session_files (session_id, file_path, tool_name), session_refs (session_id, ref_type, ref_value). Only SELECT queries are allowed.",
+				"tags": [],
+				"canBeReferencedInPrompt": false,
+				"inputSchema": {
+					"type": "object",
+					"properties": {
+						"query": {
+							"type": "string",
+							"description": "A read-only SQL query to execute against the session store. Only SELECT statements are allowed."
+						},
+						"description": {
+							"type": "string",
+							"description": "A 2-5 word summary of what this query does (e.g. 'Recent sessions overview', 'Find PR sessions')."
+						}
+					},
+					"required": [
+						"query",
+						"description"
+					]
+				}
 			}
 		],
 		"languageModelToolSets": [
@@ -4754,6 +4780,28 @@
 						"type": "boolean",
 						"default": false,
 						"markdownDescription": "Enable SQLite DB span exporter. Persists OTel spans to a local SQLite database. Automatically enables OTel when set to true. Requires window reload.",
+						"tags": [
+							"advanced"
+						]
+					},
+					"github.copilot.chat.advanced.sessionSearch.storageLevel": {
+						"type": "string",
+						"enum": [
+							"none",
+							"local",
+							"user",
+							"repo_and_user"
+						],
+						"enumDescriptions": [
+							"%github.copilot.config.sessionSearch.storageLevel.none%",
+							"%github.copilot.config.sessionSearch.storageLevel.local%",
+							"%github.copilot.config.sessionSearch.storageLevel.user%",
+							"%github.copilot.config.sessionSearch.storageLevel.repo_and_user%"
+						],
+						"default": "none",
+						"scope": "resource",
+						"markdownDescription": "%github.copilot.config.sessionSearch.storageLevel%",
+						"when": "github.copilot.sessionSearch.enabled",
 						"tags": [
 							"advanced"
 						]

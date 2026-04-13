@@ -138,6 +138,13 @@ export interface ISessionStore {
 	/** Execute a raw read-only SQL query (enforced via SQLite authorizer). */
 	executeReadOnly(sql: string): Record<string, unknown>[];
 
+	/**
+	 * Execute a read-only SQL query without authorizer enforcement.
+	 * Used as a fallback when the authorizer API is unavailable (Node.js < 24.2).
+	 * Callers MUST validate SQL safety before calling this method.
+	 */
+	executeReadOnlyFallback(sql: string): Record<string, unknown>[];
+
 	/** Run a function inside a SQLite transaction. */
 	runInTransaction(fn: () => void): void;
 

@@ -8,10 +8,10 @@ import { ICopilotTokenManager } from '../../../platform/authentication/common/co
 import { IChatSessionService } from '../../../platform/chat/common/chatSessionService';
 import { ConfigKey, IConfigurationService } from '../../../platform/configuration/common/configurationService';
 import { CopilotChatAttr, GenAiAttr, GenAiOperationName } from '../../../platform/otel/common/genAiAttributes';
+import { IExperimentationService } from '../../../platform/telemetry/common/nullExperimentationService';
 import { type ICompletedSpanData, IOTelService } from '../../../platform/otel/common/otelService';
 import { getGitHubRepoInfoFromContext, IGitService } from '../../../platform/git/common/gitService';
 import { IGithubRepositoryService } from '../../../platform/github/common/githubService';
-import { IVSCodeExtensionContext } from '../../../platform/extContext/common/extensionContext';
 import { Disposable } from '../../../util/vs/base/common/lifecycle';
 import { IExtensionContribution } from '../../common/contributions';
 import { CircuitBreaker, CircuitState } from '../common/circuitBreaker';
@@ -93,12 +93,12 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 		@IAuthenticationService private readonly _authService: IAuthenticationService,
 		@IGitService private readonly _gitService: IGitService,
 		@IGithubRepositoryService private readonly _githubRepoService: IGithubRepositoryService,
-		@IVSCodeExtensionContext private readonly _extensionContext: IVSCodeExtensionContext,
 		@IConfigurationService private readonly _configService: IConfigurationService,
+		@IExperimentationService private readonly _expService: IExperimentationService,
 	) {
 		super();
 
-		this._indexingPreference = new SessionIndexingPreference(this._extensionContext);
+		this._indexingPreference = new SessionIndexingPreference(this._configService);
 		this._mcClient = new MissionControlClient(this._tokenManager, this._authService);
 		this._circuitBreaker = new CircuitBreaker({
 			failureThreshold: 5,
@@ -191,7 +191,7 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 	 * Check if the session search feature is enabled via settings.
 	 */
 	private _isFeatureEnabled(): boolean {
-		return this._configService.getConfig(ConfigKey.TeamInternal.SessionSearchEnabled);
+		return this._configService.getExperimentBasedConfig(ConfigKey.TeamInternal.SessionSearchEnabled, this._expService);
 	}
 
 	private _getOrCreateTranslationState(sessionId: string): SessionTranslationState {
@@ -251,26 +251,16 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 				return;
 			}
 
-			// Check user's session indexing preference — if not set, wait for
-			// the consent flow to be triggered from the chat handler via notifyConsent().
-			const repoNwo = `${repo.owner}/${repo.repo}`;
-			const preference = this._indexingPreference.getPreference(repoNwo);
-			console.log(`[RemoteSessionExporter] Indexing preference for ${repoNwo}: ${preference ?? 'not set (awaiting consent)'}`);
+			// Only export remotely if the user has explicitly opted in to cloud storage
+			const storageLevel = this._indexingPreference.getStorageLevel();
 
-			if (!preference) {
-				// No preference yet — consent will be shown inline in the chat panel
-				// by ChatAgents._checkSessionIndexingConsent(). Buffer events meanwhile.
-				console.log('[RemoteSessionExporter] Consent pending, buffering events for session', sessionId);
-				return;
-			}
-
-			if (preference === 'local') {
-				console.log('[RemoteSessionExporter] User preference is local-only, skipping remote export');
+			if (storageLevel !== 'user' && storageLevel !== 'repo_and_user') {
+				console.log(`[RemoteSessionExporter] Storage level is '${storageLevel}', skipping remote export`);
 				this._disabledSessions.add(sessionId);
 				return;
 			}
 
-			await this._createMcSession(sessionId, repo, preference);
+			await this._createMcSession(sessionId, repo, storageLevel);
 		} catch (err) {
 			console.error('[RemoteSessionExporter] Session initialization failed:', err);
 			this._disabledSessions.add(sessionId);
@@ -282,6 +272,10 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 	/**
 	 * Called by the chat handler after the user completes the consent prompt.
 	 * Creates the MC session for any pending sessions that were waiting for consent.
+	 */
+	/**
+	 * Called when the storage level setting changes.
+	 * Creates MC sessions for any pending sessions if cloud sync is now enabled.
 	 */
 	async notifyConsent(level: SessionIndexingLevel): Promise<void> {
 		if (level === 'local') {
@@ -303,27 +297,6 @@ export class RemoteSessionExporter extends Disposable implements IExtensionContr
 				await this._createMcSession(sessionId, repo, level);
 			}
 		}
-	}
-
-	/**
-	 * Get the repo NWO if resolved, for use by the consent flow.
-	 */
-	getRepoNwo(): string | undefined {
-		if (this._repository) {
-			return `${this._repository.owner}/${this._repository.repo}`;
-		}
-		return undefined;
-	}
-
-	/**
-	 * Check if consent is needed (preference not set for the current repo).
-	 */
-	needsConsent(): boolean {
-		const repoNwo = this.getRepoNwo();
-		if (!repoNwo) {
-			return false;
-		}
-		return this._indexingPreference.getPreference(repoNwo) === undefined;
 	}
 
 	private async _createMcSession(

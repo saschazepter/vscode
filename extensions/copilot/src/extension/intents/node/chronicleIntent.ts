@@ -9,20 +9,28 @@ import { IAuthenticationService } from '../../../platform/authentication/common/
 import { ICopilotTokenManager } from '../../../platform/authentication/common/copilotTokenManager';
 import { ChatLocation } from '../../../platform/chat/common/commonTypes';
 import { ConfigKey, IConfigurationService } from '../../../platform/configuration/common/configurationService';
-import { ISessionStore } from '../../../platform/chronicle/common/sessionStore';
+import { type SessionRow, type RefRow, ISessionStore } from '../../../platform/chronicle/common/sessionStore';
+import { IExperimentationService } from '../../../platform/telemetry/common/nullExperimentationService';
 import { IEndpointProvider } from '../../../platform/endpoint/common/endpointProvider';
-import { IVSCodeExtensionContext } from '../../../platform/extContext/common/extensionContext';
-import { getGitHubRepoInfoFromContext, IGitService } from '../../../platform/git/common/gitService';
+import { IChatEndpoint } from '../../../platform/networking/common/networking';
+import { IGitService } from '../../../platform/git/common/gitService';
 import { CancellationToken } from '../../../util/vs/base/common/cancellation';
+import { IInstantiationService } from '../../../util/vs/platform/instantiation/common/instantiation';
 import { LanguageModelChatMessage } from '../../../vscodeTypes';
-import { type AnnotatedRef, type AnnotatedSession, type SessionFileInfo, type SessionTurnInfo, buildStandupPrompt } from '../../chronicle/common/standupPrompt';
+import { type AnnotatedRef, type AnnotatedSession, SESSIONS_QUERY_SQLITE, buildRefsQuery, buildStandupPrompt } from '../../chronicle/common/standupPrompt';
 import { SessionIndexingPreference } from '../../chronicle/common/sessionIndexingPreference';
 import { CloudSessionStoreClient } from '../../chronicle/node/cloudSessionStoreClient';
+import { ITelemetryService } from '../../../platform/telemetry/common/telemetry';
 import { IToolsService } from '../../tools/common/toolsService';
+import { ToolName } from '../../tools/common/toolNames';
 import { Conversation } from '../../prompt/common/conversation';
+import { IBuildPromptContext } from '../../prompt/common/intents';
 import { ChatTelemetryBuilder } from '../../prompt/node/chatParticipantTelemetry';
 import { IDocumentContext } from '../../prompt/node/documentContext';
-import { IIntent, IIntentInvocation, IIntentInvocationContext, IIntentSlashCommandInfo, NullIntentInvocation } from '../../prompt/node/intents';
+import { DefaultIntentRequestHandler } from '../../prompt/node/defaultIntentRequestHandler';
+import { IIntent, IIntentInvocation, IIntentInvocationContext, IIntentSlashCommandInfo, IntentLinkificationOptions } from '../../prompt/node/intents';
+import { PromptRenderer, RendererIntentInvocation } from '../../prompts/node/base/promptRenderer';
+import { ChroniclePrompt } from '../../prompts/node/panel/chroniclePrompt';
 
 /** DuckDB-dialect sessions query (cloud uses DuckDB, not SQLite). */
 const SESSIONS_QUERY_DUCKDB = `SELECT id, summary, branch, repository, cwd, created_at, updated_at
@@ -39,7 +47,7 @@ export class ChronicleIntent implements IIntent {
 	readonly id = ChronicleIntent.ID;
 	readonly description = l10n.t('Session history tools and insights (standup, tips, improve)');
 	get locations(): ChatLocation[] {
-		return this._configService.getConfig(ConfigKey.TeamInternal.SessionSearchEnabled) ? [ChatLocation.Panel] : [];
+		return this._configService.getExperimentBasedConfig(ConfigKey.TeamInternal.SessionSearchEnabled, this._expService) ? [ChatLocation.Panel] : [];
 	}
 
 	readonly commandInfo: IIntentSlashCommandInfo = {
@@ -48,30 +56,34 @@ export class ChronicleIntent implements IIntent {
 
 	constructor(
 		@IEndpointProvider private readonly endpointProvider: IEndpointProvider,
-		@ISessionStore _sessionStore: ISessionStore, // temporarily unused — cloud-only testing
+		@ISessionStore private readonly _sessionStore: ISessionStore,
 		@ICopilotTokenManager private readonly _tokenManager: ICopilotTokenManager,
 		@IAuthenticationService private readonly _authService: IAuthenticationService,
-		@IToolsService private readonly _toolsService: IToolsService,
-		@IVSCodeExtensionContext private readonly _extensionContext: IVSCodeExtensionContext,
-		@IGitService private readonly _gitService: IGitService,
+		@IGitService _gitService: IGitService,
 		@IConfigurationService private readonly _configService: IConfigurationService,
+		@IInstantiationService private readonly _instantiationService: IInstantiationService,
+		@ITelemetryService private readonly _telemetryService: ITelemetryService,
+		@IExperimentationService private readonly _expService: IExperimentationService,
 	) {
-		this._indexingPreference = new SessionIndexingPreference(this._extensionContext);
+		this._indexingPreference = new SessionIndexingPreference(this._configService);
 	}
 
 	private readonly _indexingPreference: SessionIndexingPreference;
 
+	/** Stashed system prompt for tool-calling subcommands (tips, free-form). */
+	private _pendingSystemPrompt: string | undefined;
+
 	async handleRequest(
-		_conversation: Conversation,
+		conversation: Conversation,
 		request: vscode.ChatRequest,
 		stream: vscode.ChatResponseStream,
 		token: CancellationToken,
-		_documentContext: IDocumentContext | undefined,
+		documentContext: IDocumentContext | undefined,
 		_agentName: string,
-		_location: ChatLocation,
-		_chatTelemetry: ChatTelemetryBuilder,
+		location: ChatLocation,
+		chatTelemetry: ChatTelemetryBuilder,
 	): Promise<vscode.ChatResult> {
-		if (!this._configService.getConfig(ConfigKey.TeamInternal.SessionSearchEnabled)) {
+		if (!this._configService.getExperimentBasedConfig(ConfigKey.TeamInternal.SessionSearchEnabled, this._expService)) {
 			stream.markdown(l10n.t('Session search is not enabled. Set `github.copilot.chat.advanced.sessionSearch.enabled` to `true` in settings to enable this feature.'));
 			return {};
 		}
@@ -82,17 +94,12 @@ export class ChronicleIntent implements IIntent {
 			case 'standup':
 				return this._handleStandup(rest, stream, request, token);
 			case 'tips':
+				return this._handleTips(rest, stream, request, token, conversation, documentContext, location, chatTelemetry);
 			case 'improve':
-				stream.markdown(l10n.t('`/chronicle {0}` is not yet implemented. Try `/chronicle standup`.', subcommand));
+				stream.markdown(l10n.t('`/chronicle {0}` is not yet implemented. Try `/chronicle standup` or `/chronicle tips`.', subcommand));
 				return {};
-			default: {
-				stream.markdown(l10n.t(
-					'Unknown subcommand `{0}`. Available subcommands: {1}',
-					subcommand,
-					SUBCOMMANDS.join(', '),
-				));
-				return {};
-			}
+			default:
+				return this._handleFreeForm(request.prompt ?? '', stream, request, token, conversation, documentContext, location, chatTelemetry);
 		}
 	}
 
@@ -119,42 +126,71 @@ export class ChronicleIntent implements IIntent {
 	): Promise<vscode.ChatResult> {
 		// Check if user needs to consent to session indexing
 		// This shows the inline askQuestions UI on first use per repo
-		await this._checkSessionIndexingConsent(request, token);
+		await this._checkSessionStorageConfig(stream);
 
-		console.log('[Chronicle] _handleStandup called');
-		// VS Code local store disabled temporarily for cloud-only testing
-		// const vscodeSessions = this._queryStore(this.sessionStore, 'vscode');
+		// Always query local SQLite (has current machine's sessions)
+		const localSessions = this._queryLocalStore();
 
-		// CLI store disabled temporarily
-		// const cliSessions = this._queryCliStore();
+		// Query cloud if user has cloud consent for any repo
+		let cloudSessions: { sessions: AnnotatedSession[]; refs: AnnotatedRef[] } = { sessions: [], refs: [] };
+		if (this._indexingPreference.hasCloudConsent()) {
+			cloudSessions = await this._queryCloudStore();
+		}
 
-		// Query cloud session store (cross-machine sessions)
-		const cloudSessions = await this._queryCloudStore();
+		// Merge and dedup by session ID (cloud wins on conflict since it has cross-machine data)
+		const seenIds = new Set<string>();
+		const sessions: AnnotatedSession[] = [];
+		const refs: AnnotatedRef[] = [];
 
-		console.log(`[Chronicle] Cloud: ${cloudSessions.sessions.length} sessions (cloud-only mode)`);
+		// Add cloud sessions first (higher priority)
+		for (const s of cloudSessions.sessions) {
+			if (!seenIds.has(s.id)) {
+				seenIds.add(s.id);
+				sessions.push(s);
+			}
+		}
+		// Add local sessions not already in cloud
+		for (const s of localSessions.sessions) {
+			if (!seenIds.has(s.id)) {
+				seenIds.add(s.id);
+				sessions.push(s);
+			}
+		}
+		// Merge refs (dedup by session_id + ref_type + ref_value)
+		const seenRefs = new Set<string>();
+		for (const r of [...cloudSessions.refs, ...localSessions.refs]) {
+			const key = `${r.session_id}:${r.ref_type}:${r.ref_value}`;
+			if (!seenRefs.has(key)) {
+				seenRefs.add(key);
+				refs.push(r);
+			}
+		}
 
-		// Cloud-only for testing
-		const MAX_SESSIONS_PER_SOURCE = 20;
-		const cappedCloud = this._capResults(cloudSessions, MAX_SESSIONS_PER_SOURCE);
-
-		const sessions: AnnotatedSession[] = [...cappedCloud.sessions];
-		const refs: AnnotatedRef[] = [...cappedCloud.refs];
-		const files: SessionFileInfo[] = [...cappedCloud.files];
-		const turns: SessionTurnInfo[] = [...cappedCloud.turns];
-
-		// Sort merged results by updated_at descending
+		// Sort by updated_at descending, cap to 20
 		sessions.sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? ''));
+		const capped = sessions.slice(0, 20);
+		const cappedIds = new Set(capped.map(s => s.id));
+		const cappedRefs = refs.filter(r => cappedIds.has(r.session_id));
 
-		const standupPrompt = buildStandupPrompt(sessions, refs, extra, files, turns);
-		console.log(`[Chronicle] Prompt size: ${standupPrompt.length} chars, cloud sessions in prompt: ${sessions.filter(s => s.source === 'cloud').length}`);
+		const standupPrompt = buildStandupPrompt(capped, cappedRefs, extra);
 
-		if (sessions.length === 0) {
-			stream.markdown(l10n.t('No sessions found in the last 24 hours. There\'s nothing to report for a standup.'));
+		if (capped.length === 0) {
+			stream.markdown(l10n.t('No sessions found. There\'s nothing to report for a standup.'));
 			return {};
 		}
 
-		const cloudCount = cloudSessions.sessions.length;
-		stream.progress(l10n.t('Generating standup from {0} cloud session(s)...', cloudCount));
+		const localCount = capped.filter(s => s.source !== 'cloud').length;
+		const cloudCount = capped.filter(s => s.source === 'cloud').length;
+
+		this._sendTelemetry('standup', localCount, cloudCount);
+
+		if (cloudCount > 0 && localCount > 0) {
+			stream.progress(l10n.t('Generating standup from {0} cloud and {1} local session(s)...', cloudCount, localCount));
+		} else if (cloudCount > 0) {
+			stream.progress(l10n.t('Generating standup from {0} cloud session(s)...', cloudCount));
+		} else {
+			stream.progress(l10n.t('Generating standup from {0} local session(s)...', localCount));
+		}
 
 		const model = request.model;
 		const messages = [
@@ -170,121 +206,178 @@ export class ChronicleIntent implements IIntent {
 		return {};
 	}
 
-	/* Temporarily disabled — cloud-only testing
-	private _queryStore(store: ISessionStore, source: 'vscode' | 'cli'): { sessions: AnnotatedSession[]; refs: AnnotatedRef[]; files: SessionFileInfo[]; turns: SessionTurnInfo[] } {
-		try {
-			const rawSessions = store.executeReadOnly(SESSIONS_QUERY_SQLITE) as unknown as SessionRow[];
-			const sessions: AnnotatedSession[] = rawSessions.map(s => ({ ...s, source }));
-
-			let refs: AnnotatedRef[] = [];
-			let files: SessionFileInfo[] = [];
-			let turns: SessionTurnInfo[] = [];
-			if (sessions.length > 0) {
-				const ids = sessions.map(s => s.id);
-				const rawRefs = store.executeReadOnly(buildRefsQuery(ids)) as unknown as RefRow[];
-				refs = rawRefs.map(r => ({ ...r, source }));
-				files = store.executeReadOnly(buildFilesQuery(ids)) as unknown as SessionFileInfo[];
-				turns = store.executeReadOnly(buildTurnsQuery(ids)) as unknown as SessionTurnInfo[];
-			}
-
-			return { sessions, refs, files, turns };
-		} catch {
-			return { sessions: [], refs: [], files: [], turns: [] };
-		}
-	}
-
-	private _queryCliStore(): { sessions: AnnotatedSession[]; refs: AnnotatedRef[]; files: SessionFileInfo[]; turns: SessionTurnInfo[] } {
-		const cliDbPath = join(homedir(), '.copilot', 'session-store.db');
-		if (!existsSync(cliDbPath)) {
-			console.log('[Chronicle] CLI DB not found at', cliDbPath);
-			return { sessions: [], refs: [], files: [], turns: [] };
-		}
-
-		let cliStore: SessionStore | undefined;
-		try {
-			console.log('[Chronicle] Opening CLI DB at', cliDbPath);
-			cliStore = new SessionStore(cliDbPath);
-			const result = this._queryStore(cliStore, 'cli');
-			console.log(`[Chronicle] CLI DB returned ${result.sessions.length} sessions, ${result.refs.length} refs, ${result.files.length} files, ${result.turns.length} turns`);
-			return result;
-		} catch (err) {
-			console.error('[Chronicle] Error querying CLI DB:', err);
-			return { sessions: [], refs: [], files: [], turns: [] };
-		} finally {
-			cliStore?.close();
-		}
-	}
-	*/
-
-	/**
-	 * Check if the user has consented to session indexing for the current repo.
-	 * If not, show the inline askQuestions consent UI.
-	 */
-	private async _checkSessionIndexingConsent(
+	private async _handleTips(
+		extra: string | undefined,
+		stream: vscode.ChatResponseStream,
 		request: vscode.ChatRequest,
 		token: CancellationToken,
-	): Promise<void> {
+		conversation: Conversation,
+		documentContext: IDocumentContext | undefined,
+		location: ChatLocation,
+		chatTelemetry: ChatTelemetryBuilder,
+	): Promise<vscode.ChatResult> {
+		const hasCloud = this._indexingPreference.hasCloudConsent();
+		const schema = this._getSchemaDescription(hasCloud);
+
+		let prompt = `You have access to the session_store_sql tool that can execute read-only SQL queries against the user's Copilot session database.
+
+Your task: Analyze the user's Copilot usage patterns and provide personalized recommendations.
+
+Database schema:
+
+${schema}
+
+Instructions:
+1. IMMEDIATELY call the session_store_sql tool to query recent sessions. Do not explain what you will do first.
+2. After getting results, make additional queries for tool usage, prompting patterns, and session durations.
+3. Based on the data, provide 3-5 specific, actionable tips grounded in actual usage data.
+4. Consider VS Code features like inline chat, @workspace, agent mode, custom instructions, and prompt files.`;
+
+		if (extra) {
+			prompt += `\n\nThe user is especially interested in: ${extra}`;
+		}
+
+		this._pendingSystemPrompt = prompt;
+		this._sendTelemetry('tips', 0, 0);
+		return this._delegateToToolCallingHandler(conversation, request, stream, token, documentContext, location, chatTelemetry);
+	}
+
+	private async _handleFreeForm(
+		userQuery: string,
+		stream: vscode.ChatResponseStream,
+		request: vscode.ChatRequest,
+		token: CancellationToken,
+		conversation: Conversation,
+		documentContext: IDocumentContext | undefined,
+		location: ChatLocation,
+		chatTelemetry: ChatTelemetryBuilder,
+	): Promise<vscode.ChatResult> {
+		await this._checkSessionStorageConfig(stream);
+
+		const hasCloud = this._indexingPreference.hasCloudConsent();
+		const schema = this._getSchemaDescription(hasCloud);
+
+		this._pendingSystemPrompt = `The user is asking about their Copilot session history. Use the session_store_sql tool to query the data and answer their question.
+
+${schema}
+
+User's question: ${userQuery}
+
+Use the session_store_sql tool to run queries. Start with a broad query, then drill down as needed. Only SELECT queries are allowed.`;
+
+		this._sendTelemetry('freeform', 0, 0);
+		return this._delegateToToolCallingHandler(conversation, request, stream, token, documentContext, location, chatTelemetry);
+	}
+
+	private async _delegateToToolCallingHandler(
+		conversation: Conversation,
+		request: vscode.ChatRequest,
+		stream: vscode.ChatResponseStream,
+		token: CancellationToken,
+		documentContext: IDocumentContext | undefined,
+		location: ChatLocation,
+		chatTelemetry: ChatTelemetryBuilder,
+	): Promise<vscode.ChatResult> {
+		const handler = this._instantiationService.createInstance(
+			DefaultIntentRequestHandler,
+			this,
+			conversation,
+			request,
+			stream,
+			token,
+			documentContext,
+			location,
+			chatTelemetry,
+			{ maxToolCallIterations: 5, temperature: 0 },
+			undefined,
+		);
+		return handler.getResult();
+	}
+
+	private _sendTelemetry(subcommand: string, localSessionCount: number, cloudSessionCount: number): void {
+		const hasCloudConsent = this._indexingPreference.hasCloudConsent();
+		const querySource = hasCloudConsent ? (localSessionCount > 0 ? 'both' : 'cloud') : 'local';
+		this._telemetryService.sendMSFTTelemetryEvent('chronicle', {
+			subcommand,
+			querySource,
+		}, {
+			localSessionCount,
+			cloudSessionCount,
+			totalSessionCount: localSessionCount + cloudSessionCount,
+		});
+	}
+
+	private _getSchemaDescription(hasCloud: boolean): string {
+		return hasCloud
+			? `Available tables (DuckDB SQL syntax — cloud):
+- **sessions**: id, repository, branch, summary, created_at, updated_at (TIMESTAMP). NOTE: cwd is always NULL in the cloud.
+- **turns**: session_id, turn_index, user_message, assistant_response, timestamp (TIMESTAMP)
+- **session_files**: session_id, file_path, tool_name, turn_index
+- **session_refs**: session_id, ref_type (commit/pr/issue), ref_value, turn_index
+
+Use \`now() - INTERVAL '1 day'\` for date math, \`ILIKE\` for text search.`
+			: `Available tables (SQLite syntax — local):
+- **sessions**: id, cwd, repository, branch, summary, created_at, updated_at
+- **turns**: session_id, turn_index, user_message, assistant_response, timestamp
+- **session_files**: session_id, file_path, tool_name, turn_index
+- **session_refs**: session_id, ref_type (commit/pr/issue), ref_value, turn_index
+- **search_index**: FTS5 table. Use \`WHERE search_index MATCH 'query'\`
+
+Use \`datetime('now', '-1 day')\` for date math.`;
+	}
+
+	/**
+	 * Query the local SQLite session store for sessions and refs.
+	 */
+	private _queryLocalStore(): { sessions: AnnotatedSession[]; refs: AnnotatedRef[] } {
 		try {
-			// Resolve repo NWO from active git repository
-			const repoContext = this._gitService.activeRepository?.get();
-			if (!repoContext) {
-				return;
-			}
-			const repoInfo = getGitHubRepoInfoFromContext(repoContext);
-			if (!repoInfo) {
-				return;
-			}
-			const repoNwo = `${repoInfo.id.org}/${repoInfo.id.repo}`;
+			const rawSessions = this._sessionStore.executeReadOnly(SESSIONS_QUERY_SQLITE) as unknown as SessionRow[];
+			const sessions: AnnotatedSession[] = rawSessions.map(s => ({ ...s, source: 'vscode' as const }));
 
-			const existing = this._indexingPreference.getPreference(repoNwo);
-			if (existing) {
-				return; // Already consented
+			let refs: AnnotatedRef[] = [];
+			if (sessions.length > 0) {
+				const ids = sessions.map(s => s.id);
+				const rawRefs = this._sessionStore.executeReadOnly(buildRefsQuery(ids)) as unknown as RefRow[];
+				refs = rawRefs.map(r => ({ ...r, source: 'vscode' as const }));
 			}
 
-			// Show inline consent UI
-			const level = await this._indexingPreference.promptUserInline(
-				repoNwo,
-				this._toolsService,
-				request.toolInvocationToken,
-				token,
-			);
-			console.log(`[Chronicle] User selected indexing level: ${level ?? 'dismissed'} for ${repoNwo}`);
-		} catch (err) {
-			console.error('[Chronicle] Consent check failed:', err);
+			return { sessions, refs };
+		} catch {
+			return { sessions: [], refs: [] };
 		}
 	}
 
-	private async _queryCloudStore(): Promise<{ sessions: AnnotatedSession[]; refs: AnnotatedRef[]; files: SessionFileInfo[]; turns: SessionTurnInfo[] }> {
-		const empty = { sessions: [] as AnnotatedSession[], refs: [] as AnnotatedRef[], files: [] as SessionFileInfo[], turns: [] as SessionTurnInfo[] };
+	/**
+	 * Check if session storage is configured. If not, show a notification.
+	 */
+	private async _checkSessionStorageConfig(
+		stream?: vscode.ChatResponseStream,
+	): Promise<void> {
+		if (!this._indexingPreference.needsPrompt()) {
+			return;
+		}
+
+		stream?.markdown(l10n.t('Session search needs to be configured.\n\n'));
+		const level = await this._indexingPreference.showFirstUseNotification();
+		if (level) {
+			const levelLabels: Record<string, string> = {
+				local: l10n.t('local only'),
+				user: l10n.t('synced to your account'),
+				repo_and_user: l10n.t('synced to the repository'),
+			};
+			stream?.markdown(l10n.t('✓ Session storage set to **{0}**.\n\n---\n\n', levelLabels[level] ?? level));
+		} else {
+			stream?.markdown(l10n.t('You can configure this anytime in Settings → `sessionSearch.storageLevel`.\n\n'));
+		}
+	}
+
+	private async _queryCloudStore(): Promise<{ sessions: AnnotatedSession[]; refs: AnnotatedRef[] }> {
+		const empty = { sessions: [] as AnnotatedSession[], refs: [] as AnnotatedRef[] };
 		try {
 			const client = new CloudSessionStoreClient(this._tokenManager, this._authService);
 
-			// Diagnostics: check what tables and data exist
-			/*	const diagQueries = [
-					{ label: 'session count', sql: 'SELECT count(*) as total FROM sessions' },
-					{ label: 'event count', sql: 'SELECT count(*) as total FROM events' },
-					{ label: 'turns count', sql: 'SELECT count(*) as total FROM turns' },
-					{ label: 'session_files count', sql: 'SELECT count(*) as total FROM session_files' },
-					{ label: 'session_refs count', sql: 'SELECT count(*) as total FROM session_refs' },
-					{ label: 'tool_requests count', sql: 'SELECT count(*) as total FROM tool_requests' },
-					{ label: 'checkpoints count', sql: 'SELECT count(*) as total FROM checkpoints' },
-				];
-				for (const { label, sql } of diagQueries) {
-					try {
-						const r = await client.executeQuery(sql);
-						console.log(`[Chronicle] Diag [${label}]: ${r ? JSON.stringify(r.rows) : 'failed'}`);
-					} catch {
-						console.log(`[Chronicle] Diag [${label}]: query error`);
-					}
-				}*/
-
-			// Query sessions
-			console.log('[Chronicle] Querying cloud sessions...');
 			const sessionsResult = await client.executeQuery(SESSIONS_QUERY_DUCKDB);
-			console.log(`[Chronicle] Sessions query result: ${sessionsResult ? `${sessionsResult.rows.length} rows, truncated=${sessionsResult.truncated}` : 'undefined (query failed)'}`);
-
 			if (!sessionsResult || sessionsResult.rows.length === 0) {
-				console.log('[Chronicle] Cloud returned no sessions');
 				return empty;
 			}
 
@@ -293,171 +386,78 @@ export class ChronicleIntent implements IIntent {
 				summary: r.summary as string | undefined,
 				branch: r.branch as string | undefined,
 				repository: r.repository as string | undefined,
-				cwd: r.cwd as string | undefined,
 				created_at: r.created_at as string | undefined,
 				updated_at: r.updated_at as string | undefined,
 				source: 'cloud' as const,
 			}));
 
+			// Query refs for these sessions
 			const ids = sessions.map(s => s.id);
-			const refs: AnnotatedRef[] = [];
-			const turns: SessionTurnInfo[] = [];
-			const files: SessionFileInfo[] = [];
-
-			// Resolve session origin (producer) from session.start events
+			let refs: AnnotatedRef[] = [];
 			try {
-				const producerQuery = `SELECT session_id, producer
-					FROM events
-					WHERE session_id IN (${ids.map(s => `'${s.replace(/'/g, '\'\'')}'`).join(',')})
-					AND type = 'session.start'`;
-				const producerResult = await client.executeQuery(producerQuery);
-				console.log(`[Chronicle] Producer query returned ${producerResult?.rows.length ?? 'undefined'} rows`);
-				if (producerResult && producerResult.rows.length > 0) {
-					for (const row of producerResult.rows) {
-						const session = sessions.find(s => s.id === row.session_id);
-						if (session && row.producer) {
-							const producer = row.producer as string;
-							if (producer.includes('vscode')) {
-								session.host_type = 'vscode';
-							} else if (producer === 'copilot-agent') {
-								session.host_type = 'cli';
-							} else if (producer === 'sse-parser') {
-								session.host_type = 'pr-review';
-							} else {
-								session.host_type = producer;
-							}
-						}
-					}
+				const refsQuery = `SELECT session_id, ref_type, ref_value FROM session_refs WHERE session_id IN (${ids.map(s => `'${s.replace(/'/g, '\'\'')}'`).join(',')})`;
+				const refsResult = await client.executeQuery(refsQuery);
+				if (refsResult && refsResult.rows.length > 0) {
+					refs = refsResult.rows.map(r => ({
+						session_id: r.session_id as string,
+						ref_type: r.ref_type as 'commit' | 'pr' | 'issue',
+						ref_value: r.ref_value as string,
+						source: 'cloud' as const,
+					}));
 				}
-			} catch (err) {
-				// producer column may not exist — non-fatal
-				console.log('[Chronicle] Cloud producer query failed (non-fatal):', err);
+			} catch {
+				// session_refs may not be populated — non-fatal
 			}
 
-			// Query the raw events table — MC stores our events here.
-			// The derived tables (turns, session_files) are not populated for VS Code sessions yet.
-			try {
-				// Use ROW_NUMBER to get up to 30 events per session, ensuring fair distribution
-				const eventsQuery = `SELECT session_id, type, user_content, assistant_content, tool_start_name
-					FROM (
-						SELECT *, ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY timestamp) as rn
-						FROM events
-						WHERE session_id IN (${ids.map(s => `'${s.replace(/'/g, '\'\'')}'`).join(',')})
-						AND type IN ('user.message', 'assistant.message', 'tool.execution_start', 'tool.execution_complete', 'session.requested')
-					) sub
-					WHERE rn <= 50
-					ORDER BY session_id, rn`;
-				const eventsResult = await client.executeQuery(eventsQuery);
-				console.log(`[Chronicle] Cloud events returned ${eventsResult?.rows.length ?? 0} rows`);
-
-				if (eventsResult && eventsResult.rows.length > 0) {
-					// Log per-session event counts
-					const sessionEventCounts = new Map<string, number>();
-					for (const row of eventsResult.rows) {
-						const sid = row.session_id as string;
-						sessionEventCounts.set(sid, (sessionEventCounts.get(sid) ?? 0) + 1);
-					}
-					console.log(`[Chronicle] Events per session: ${JSON.stringify(Object.fromEntries(sessionEventCounts))}`);
-
-					// Log event type distribution
-					const typeCounts = new Map<string, number>();
-					for (const row of eventsResult.rows) {
-						const type = row.type as string;
-						typeCounts.set(type, (typeCounts.get(type) ?? 0) + 1);
-					}
-					console.log(`[Chronicle] Event types: ${JSON.stringify(Object.fromEntries(typeCounts))}`);
-
-					// Synthesize turns from events
-					let turnIndex = 0;
-					const toolNames = new Set<string>();
-
-					for (const row of eventsResult.rows) {
-						const sessionId = row.session_id as string;
-						const type = row.type as string;
-
-						// user.message or session.requested → user turn
-						if (type === 'user.message' || type === 'session.requested') {
-							const content = (row.user_content ?? row.assistant_content) as string | undefined;
-							if (content) {
-								turns.push({
-									session_id: sessionId,
-									turn_index: turnIndex++,
-									user_message: content.length > 500 ? content.slice(0, 500) + '...' : content,
-								});
-							}
-						}
-
-						// assistant.message → attach to previous turn or create standalone
-						if (type === 'assistant.message') {
-							const content = (row.assistant_content ?? row.user_content) as string | undefined;
-							if (content) {
-								const lastTurn = turns.length > 0 ? turns[turns.length - 1] : undefined;
-								if (lastTurn && lastTurn.session_id === sessionId && !lastTurn.assistant_response) {
-									lastTurn.assistant_response = content.length > 1000 ? content.slice(0, 1000) + '...' : content;
-								} else {
-									turns.push({
-										session_id: sessionId,
-										turn_index: turnIndex++,
-										assistant_response: content.length > 1000 ? content.slice(0, 1000) + '...' : content,
-									});
-								}
-							}
-						}
-
-						// tool events → collect tool names
-						if ((type === 'tool.execution_start' || type === 'tool.execution_complete') && row.tool_start_name) {
-							toolNames.add(`${sessionId}::${row.tool_start_name as string}`);
-						}
-					}
-
-					// Synthesize tool usage entries
-					for (const key of toolNames) {
-						const [sessionId, toolName] = key.split('::');
-						files.push({ session_id: sessionId, file_path: toolName, tool_name: toolName });
-					}
-				}
-			} catch (err) {
-				console.error('[Chronicle] Cloud events query failed:', err);
-			}
-
-			// Log per-session turn counts
-			const turnsBySessionId = new Map<string, number>();
-			for (const t of turns) {
-				turnsBySessionId.set(t.session_id, (turnsBySessionId.get(t.session_id) ?? 0) + 1);
-			}
-			console.log(`[Chronicle] Turns per session: ${JSON.stringify(Object.fromEntries(turnsBySessionId))}`);
-
-			console.log(`[Chronicle] Cloud returned ${sessions.length} sessions, ${refs.length} refs, ${files.length} files, ${turns.length} turns`);
-			return { sessions, refs, files, turns };
+			return { sessions, refs };
 		} catch (err) {
 			console.error('[Chronicle] Cloud query failed:', err);
 			return empty;
 		}
 	}
 
-	/**
-	 * Cap query results to the N most recent sessions, keeping only related refs/files/turns.
-	 */
-	private _capResults(
-		results: { sessions: AnnotatedSession[]; refs: AnnotatedRef[]; files: SessionFileInfo[]; turns: SessionTurnInfo[] },
-		max: number,
-	): { sessions: AnnotatedSession[]; refs: AnnotatedRef[]; files: SessionFileInfo[]; turns: SessionTurnInfo[] } {
-		if (results.sessions.length <= max) {
-			return results;
-		}
-		const kept = results.sessions.slice(0, max);
-		const keptIds = new Set(kept.map(s => s.id));
-		return {
-			sessions: kept,
-			refs: results.refs.filter(r => keptIds.has(r.session_id)),
-			files: results.files.filter(f => keptIds.has(f.session_id)),
-			turns: results.turns.filter(t => keptIds.has(t.session_id)),
-		};
-	}
-
 	async invoke(invocationContext: IIntentInvocationContext): Promise<IIntentInvocation> {
 		const { location, request } = invocationContext;
 		const endpoint = await this.endpointProvider.getChatEndpoint(request);
-		return new NullIntentInvocation(this, location, endpoint);
+		const systemPrompt = this._pendingSystemPrompt ?? '';
+		this._pendingSystemPrompt = undefined;
+		return this._instantiationService.createInstance(
+			ChronicleIntentInvocation, this, location, endpoint, request, systemPrompt
+		);
+	}
+}
+
+class ChronicleIntentInvocation extends RendererIntentInvocation implements IIntentInvocation {
+
+	readonly linkification: IntentLinkificationOptions = { disable: false };
+
+	constructor(
+		intent: IIntent,
+		location: ChatLocation,
+		endpoint: IChatEndpoint,
+		private readonly request: vscode.ChatRequest,
+		private readonly systemPrompt: string,
+		@IInstantiationService private readonly instantiationService: IInstantiationService,
+		@IToolsService private readonly toolsService: IToolsService,
+	) {
+		super(intent, location, endpoint);
+	}
+
+	async createRenderer(promptContext: IBuildPromptContext, endpoint: IChatEndpoint, _progress: vscode.Progress<vscode.ChatResponseProgressPart | vscode.ChatResponseReferencePart>, _token: vscode.CancellationToken) {
+		return PromptRenderer.create(this.instantiationService, endpoint, ChroniclePrompt, {
+			endpoint,
+			promptContext,
+			systemPrompt: this.systemPrompt,
+		});
+	}
+
+	getAvailableTools(): vscode.LanguageModelToolInformation[] | Promise<vscode.LanguageModelToolInformation[]> | undefined {
+		const allTools = this.toolsService.getEnabledTools(this.request, this.endpoint);
+		console.log(`[Chronicle] all enabled tools: ${allTools.length}`, allTools.map(t => t.name));
+		const tools = this.toolsService.getEnabledTools(this.request, this.endpoint,
+			tool => tool.name === ToolName.SessionStoreSql
+		);
+		console.log(`[Chronicle] filtered tools: ${tools?.length ?? 0}`, tools?.map(t => t.name));
+		return tools;
 	}
 }

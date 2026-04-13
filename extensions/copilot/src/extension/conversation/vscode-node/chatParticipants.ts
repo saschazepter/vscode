@@ -26,10 +26,6 @@ import { IFeedbackReporter } from '../../prompt/node/feedbackReporter';
 import { IPromptCategorizerService } from '../../prompt/node/promptCategorizer';
 import { ChatSummarizerProvider } from '../../prompt/node/summarizer';
 import { ChatTitleProvider } from '../../prompt/node/title';
-import { getGitHubRepoInfoFromContext, IGitService } from '../../../platform/git/common/gitService';
-import { IVSCodeExtensionContext } from '../../../platform/extContext/common/extensionContext';
-import { SessionIndexingPreference } from '../../chronicle/common/sessionIndexingPreference';
-import { IToolsService } from '../../tools/common/toolsService';
 import { IUserFeedbackService } from './userActions';
 import { getAdditionalWelcomeMessage } from './welcomeMessageProvider';
 
@@ -76,25 +72,19 @@ class ChatAgents implements IDisposable {
 		@IPromptCategorizerService private readonly promptCategorizerService: IPromptCategorizerService,
 		@ITelemetryService private readonly telemetryService: ITelemetryService,
 		@IChatSessionService chatSessionService: IChatSessionService,
-		@IToolsService private readonly _toolsService: IToolsService,
-		@IGitService private readonly _gitService: IGitService,
-		@IVSCodeExtensionContext private readonly _extensionContext: IVSCodeExtensionContext,
 	) {
 		this._disposables.add(chatSessionService.onDidDisposeChatSession(sessionId => clearChatExtMarks(sessionId)));
-		this._indexingPreference = new SessionIndexingPreference(this._extensionContext);
 
-		// Register command to reset session search consent
+		// Register command to reset session search storage level
 		this._disposables.add(vscode.commands.registerCommand('github.copilot.sessionSearch.resetConsent', async () => {
-			await this._indexingPreference.resetConsent();
-			this._consentCheckedRepos.clear();
-			vscode.window.showInformationMessage(vscode.l10n.t('Session search consent has been reset. You will be prompted again on your next chat.'));
+			await vscode.workspace.getConfiguration('github.copilot').update(
+				'chat.advanced.sessionSearch.storageLevel',
+				'none',
+				vscode.ConfigurationTarget.Global,
+			);
+			vscode.window.showInformationMessage(vscode.l10n.t('Session search storage level has been reset. You will be prompted again on your next /chronicle use.'));
 		}));
 	}
-
-	private readonly _indexingPreference: SessionIndexingPreference;
-	private _consentCheckedRepos = new Set<string>();
-	/** Cached NWO to avoid git resolution on every chat message. */
-	private _lastRepoNwo: string | undefined;
 
 	dispose() {
 		this._disposables.dispose();
@@ -273,9 +263,6 @@ Learn more about [GitHub Copilot](https://docs.github.com/copilot/using-github-c
 
 				const handler = this.instantiationService.createInstance(ChatParticipantRequestHandler, context.history, request, stream, token, { agentName: name, agentId: id, intentId }, () => context.yieldRequested, telemetryMessageId);
 
-				// Check session indexing consent — no-op unless feature enabled + first chat in new repo
-				await this._checkSessionIndexingConsent(request, token);
-
 				let result = await handler.getResult();
 
 				// Auto-retry with Auto model when the setting is enabled and the handler signals it
@@ -345,60 +332,6 @@ Learn more about [GitHub Copilot](https://docs.github.com/copilot/using-github-c
 		return request;
 	}
 
-	/**
-	 * Check if the user has consented to session indexing for the current repo.
-	 * Shows the inline askQuestions UI on first use per repo.
-	 * Non-blocking: errors are caught and logged — never blocks the chat request.
-	 */
-	private async _checkSessionIndexingConsent(
-		request: vscode.ChatRequest,
-		token: vscode.CancellationToken,
-	): Promise<void> {
-		try {
-			// Only show consent when session search feature is enabled
-			if (!this.configurationService.getConfig(ConfigKey.TeamInternal.SessionSearchEnabled)) {
-				return;
-			}
-
-			// If we already checked this repo, skip all work
-			if (this._lastRepoNwo && this._consentCheckedRepos.has(this._lastRepoNwo)) {
-				return;
-			}
-
-			const repoContext = this._gitService.activeRepository?.get();
-			if (!repoContext) {
-				return;
-			}
-			const repoInfo = getGitHubRepoInfoFromContext(repoContext);
-			if (!repoInfo) {
-				return;
-			}
-			const repoNwo = `${repoInfo.id.org}/${repoInfo.id.repo}`;
-			this._lastRepoNwo = repoNwo;
-
-			// Skip if already checked this VS Code session or preference exists
-			if (this._consentCheckedRepos.has(repoNwo)) {
-				return;
-			}
-			this._consentCheckedRepos.add(repoNwo);
-
-			const existing = this._indexingPreference.getPreference(repoNwo);
-			if (existing) {
-				return;
-			}
-
-			// Show inline consent UI
-			await this._indexingPreference.promptUserInline(
-				repoNwo,
-				this._toolsService,
-				request.toolInvocationToken,
-				token,
-			);
-		} catch (err) {
-			// Non-fatal — never block the chat request
-			console.error('[ChatAgents] Session indexing consent check failed:', err);
-		}
-	}
 }
 
 type IntentOrGetter = Intent | ((request: vscode.ChatRequest) => Intent);

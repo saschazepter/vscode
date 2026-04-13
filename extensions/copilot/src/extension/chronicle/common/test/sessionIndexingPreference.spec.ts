@@ -6,52 +6,75 @@
 import { describe, expect, it } from 'vitest';
 import { SessionIndexingPreference } from '../sessionIndexingPreference';
 
-function createMockContext(state: Record<string, unknown> = {}) {
-	const storage = new Map<string, unknown>(Object.entries(state));
+function createMockConfigService(storageLevel: string = 'none') {
 	return {
-		globalState: {
-			get: <T>(key: string, defaultValue?: T) => (storage.get(key) as T) ?? defaultValue,
-			update: async (key: string, value: unknown) => { storage.set(key, value); },
+		getConfig: (key: unknown) => {
+			if (typeof key === 'object' && key !== null && 'key' in key) {
+				return storageLevel;
+			}
+			return storageLevel;
 		},
-		_storage: storage,
-	} as unknown as import('../../../../platform/extContext/common/extensionContext').IVSCodeExtensionContext;
+	} as unknown as import('../../../../platform/configuration/common/configurationService').IConfigurationService;
 }
 
 describe('SessionIndexingPreference', () => {
-	it('returns undefined when no preference is set', () => {
-		const ctx = createMockContext();
-		const pref = new SessionIndexingPreference(ctx);
-		expect(pref.getPreference('microsoft/vscode')).toBeUndefined();
+	it('returns undefined when storage level is none', () => {
+		const config = createMockConfigService('none');
+		const pref = new SessionIndexingPreference(config);
+		expect(pref.getStorageLevel()).toBeUndefined();
 	});
 
-	it('returns repo-specific preference', () => {
-		const ctx = createMockContext({ 'copilot.sessionSearch.microsoft/vscode': 'user' });
-		const pref = new SessionIndexingPreference(ctx);
-		expect(pref.getPreference('microsoft/vscode')).toBe('user');
+	it('returns local when configured', () => {
+		const config = createMockConfigService('local');
+		const pref = new SessionIndexingPreference(config);
+		expect(pref.getStorageLevel()).toBe('local');
 	});
 
-	it('falls back to global wildcard preference', () => {
-		const ctx = createMockContext({ 'copilot.sessionSearch.*': 'local' });
-		const pref = new SessionIndexingPreference(ctx);
-		expect(pref.getPreference('microsoft/vscode')).toBe('local');
+	it('returns user when configured', () => {
+		const config = createMockConfigService('user');
+		const pref = new SessionIndexingPreference(config);
+		expect(pref.getStorageLevel()).toBe('user');
 	});
 
-	it('repo-specific takes priority over global wildcard', () => {
-		const ctx = createMockContext({
-			'copilot.sessionSearch.*': 'local',
-			'copilot.sessionSearch.microsoft/vscode': 'repo_and_user',
-		});
-		const pref = new SessionIndexingPreference(ctx);
-		expect(pref.getPreference('microsoft/vscode')).toBe('repo_and_user');
+	it('returns repo_and_user when configured', () => {
+		const config = createMockConfigService('repo_and_user');
+		const pref = new SessionIndexingPreference(config);
+		expect(pref.getStorageLevel()).toBe('repo_and_user');
 	});
 
-	it('different repos can have different preferences', () => {
-		const ctx = createMockContext({
-			'copilot.sessionSearch.microsoft/vscode': 'user',
-			'copilot.sessionSearch.microsoft/tas-client': 'local',
-		});
-		const pref = new SessionIndexingPreference(ctx);
-		expect(pref.getPreference('microsoft/vscode')).toBe('user');
-		expect(pref.getPreference('microsoft/tas-client')).toBe('local');
+	it('needsPrompt returns true when none', () => {
+		const config = createMockConfigService('none');
+		const pref = new SessionIndexingPreference(config);
+		expect(pref.needsPrompt()).toBe(true);
+	});
+
+	it('needsPrompt returns false when configured', () => {
+		const config = createMockConfigService('user');
+		const pref = new SessionIndexingPreference(config);
+		expect(pref.needsPrompt()).toBe(false);
+	});
+
+	it('hasCloudConsent returns true for user', () => {
+		const config = createMockConfigService('user');
+		const pref = new SessionIndexingPreference(config);
+		expect(pref.hasCloudConsent()).toBe(true);
+	});
+
+	it('hasCloudConsent returns true for repo_and_user', () => {
+		const config = createMockConfigService('repo_and_user');
+		const pref = new SessionIndexingPreference(config);
+		expect(pref.hasCloudConsent()).toBe(true);
+	});
+
+	it('hasCloudConsent returns false for local', () => {
+		const config = createMockConfigService('local');
+		const pref = new SessionIndexingPreference(config);
+		expect(pref.hasCloudConsent()).toBe(false);
+	});
+
+	it('hasCloudConsent returns false for none', () => {
+		const config = createMockConfigService('none');
+		const pref = new SessionIndexingPreference(config);
+		expect(pref.hasCloudConsent()).toBe(false);
 	});
 });

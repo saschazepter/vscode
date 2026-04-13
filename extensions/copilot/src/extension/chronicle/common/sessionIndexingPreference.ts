@@ -4,13 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as l10n from '@vscode/l10n';
-import type * as vscode from 'vscode';
-import type { IVSCodeExtensionContext } from '../../../platform/extContext/common/extensionContext';
-import { CancellationToken } from '../../../util/vs/base/common/cancellation';
-import { LanguageModelTextPart } from '../../../vscodeTypes';
-import type { IAnswerResult } from '../../tools/common/askQuestionsTypes';
-import { ToolName } from '../../tools/common/toolNames';
-import type { IToolsService } from '../../tools/common/toolsService';
+import { ConfigKey, IConfigurationService } from '../../../platform/configuration/common/configurationService';
 
 /**
  * Session indexing levels — matches CLI's MissionControlIndexingLevel.
@@ -20,166 +14,83 @@ import type { IToolsService } from '../../tools/common/toolsService';
  */
 export type SessionIndexingLevel = 'local' | 'user' | 'repo_and_user';
 
-/** GlobalState key prefix for per-repo preferences. */
-const PREF_KEY_PREFIX = 'copilot.sessionSearch.';
-
-/** GlobalState key for the global wildcard preference. */
-const PREF_KEY_GLOBAL = `${PREF_KEY_PREFIX}*`;
-
-/** Map option labels to indexing levels. */
-const LEVEL_OPTIONS: { label: string; description: string; level: SessionIndexingLevel }[] = [
-	{ label: 'Keep on this device only', description: 'Sessions stay local, not synced to cloud', level: 'local' },
-	{ label: 'Sync to my account', description: 'Sessions synced to cloud, visible only to you', level: 'user' },
-	{ label: 'Sync to the repository for my team', description: 'Sessions synced to cloud, visible to repo collaborators', level: 'repo_and_user' },
-];
-
-/** Scope options vary by level. */
-const SCOPE_OPTIONS_BY_LEVEL: Record<SessionIndexingLevel, { label: string; description: string; scope: 'session' | 'repo' | 'global' }[]> = {
-	local: [
-		{ label: 'This session', description: 'Only applies to the current session', scope: 'session' },
-		{ label: 'This repository', description: 'Only applies to the current repository', scope: 'repo' },
-		{ label: 'All repositories', description: 'Applies across all repositories', scope: 'global' },
-	],
-	user: [
-		{ label: 'This session', description: 'Only applies to the current session', scope: 'session' },
-		{ label: 'This repository', description: 'Only applies to the current repository', scope: 'repo' },
-	],
-	repo_and_user: [
-		{ label: 'This repository', description: 'Only applies to the current repository', scope: 'repo' },
-	],
-};
+/**
+ * Storage level setting values (includes 'none' for first-use notification).
+ */
+export type StorageLevelSetting = 'none' | SessionIndexingLevel;
 
 /**
- * Manages user preferences for session indexing (local vs cloud sync).
+ * Manages user preferences for session indexing via VS Code settings.
  *
- * Uses the vscode_askQuestions tool to show an inline consent UI in the
- * chat panel. The preference is persisted in globalState.
+ * Uses the `github.copilot.chat.advanced.sessionSearch.storageLevel` setting
+ * (workspace-scoped) instead of inline chat consent.
+ *
+ * When the setting is 'none' (default), a one-time notification is shown
+ * on first `/chronicle` use, with buttons to set the value.
  */
 export class SessionIndexingPreference {
 
+	/** Track whether we've shown the notification in this session to avoid spamming. */
+	private _notificationShown = false;
+
 	constructor(
-		private readonly _extensionContext: IVSCodeExtensionContext,
+		private readonly _configService: IConfigurationService,
 	) { }
 
 	/**
-	 * Get the stored preference for a repository, or undefined if not set.
+	 * Get the current storage level from settings.
+	 * Returns the level, or undefined if set to 'none' (not yet configured).
 	 */
-	getPreference(repoNwo: string): SessionIndexingLevel | undefined {
-		const repoKey = `${PREF_KEY_PREFIX}${repoNwo}`;
-		const repoPref = this._extensionContext.globalState.get<SessionIndexingLevel>(repoKey);
-		if (repoPref) {
-			return repoPref;
-		}
-		return this._extensionContext.globalState.get<SessionIndexingLevel>(PREF_KEY_GLOBAL);
-	}
-
-	/**
-	 * Prompt the user inline in the chat panel using vscode_askQuestions.
-	 * Requires a toolsService and toolInvocationToken from the chat request context.
-	 *
-	 * Returns the chosen level, or undefined if dismissed/skipped.
-	 */
-	async promptUserInline(
-		repoNwo: string,
-		toolsService: IToolsService,
-		toolInvocationToken: vscode.ChatParticipantToolToken,
-		token: CancellationToken,
-	): Promise<SessionIndexingLevel | undefined> {
-		try {
-			// Step 1: Ask for storage level
-			const levelResult = await toolsService.invokeTool(ToolName.CoreAskQuestions, {
-				input: {
-					questions: [{
-						header: 'Session storage',
-						question: l10n.t('Choose how your Copilot sessions are stored.'),
-						options: LEVEL_OPTIONS.map(o => ({ label: o.label, description: o.description })),
-						allowFreeformInput: false,
-					}],
-				},
-				toolInvocationToken,
-			}, token);
-
-			const levelPart = levelResult.content.at(0);
-			if (!(levelPart instanceof LanguageModelTextPart)) {
-				return undefined;
-			}
-			const levelAnswers: IAnswerResult = JSON.parse(levelPart.value);
-			const storageAnswer = levelAnswers.answers['Session storage'];
-			if (!storageAnswer || storageAnswer.skipped || storageAnswer.selected.length === 0) {
-				return undefined;
-			}
-			const selectedLabel = storageAnswer.selected[0];
-			const level = LEVEL_OPTIONS.find(o => o.label === selectedLabel)?.level;
-			if (!level) {
-				return undefined;
-			}
-
-			// Step 2: Ask for scope (options depend on level)
-			const scopeOptions = SCOPE_OPTIONS_BY_LEVEL[level];
-			let scope: 'session' | 'repo' | 'global' = 'repo';
-
-			if (scopeOptions.length > 1) {
-				const scopeResult = await toolsService.invokeTool(ToolName.CoreAskQuestions, {
-					input: {
-						questions: [{
-							header: 'Scope',
-							question: l10n.t('What scope should this setting apply to?'),
-							options: scopeOptions.map(o => ({ label: o.label, description: o.description })),
-							allowFreeformInput: false,
-						}],
-					},
-					toolInvocationToken,
-				}, token);
-
-				const scopePart = scopeResult.content.at(0);
-				if (scopePart instanceof LanguageModelTextPart) {
-					const scopeAnswers: IAnswerResult = JSON.parse(scopePart.value);
-					const scopeAnswer = scopeAnswers.answers['Scope'];
-					const scopeLabel = scopeAnswer?.selected?.[0];
-					scope = scopeOptions.find(o => o.label === scopeLabel)?.scope ?? 'repo';
-				}
-			}
-			// repo_and_user only has 'repo' scope — no need to ask
-
-			if (scope === 'session') {
-				// "This session" — don't persist, just return the level for this session
-				return level;
-			}
-
-			await this._savePreference(repoNwo, scope === 'global' ? 'global' : 'repo', level);
-			return level;
-		} catch (err) {
-			console.error('[SessionIndexingPreference] askQuestions failed:', err);
+	getStorageLevel(): SessionIndexingLevel | undefined {
+		const value = this._configService.getConfig(ConfigKey.TeamInternal.SessionSearchStorageLevel);
+		if (value === 'none' || !value) {
 			return undefined;
 		}
+		return value as SessionIndexingLevel;
 	}
 
 	/**
-	 * Save the preference to globalState.
+	 * Check if the user needs to be prompted (setting is 'none').
 	 */
-	private async _savePreference(
-		repoNwo: string,
-		scope: 'repo' | 'global',
-		level: SessionIndexingLevel,
-	): Promise<void> {
-		if (scope === 'global') {
-			await this._extensionContext.globalState.update(PREF_KEY_GLOBAL, level);
-		} else {
-			const repoKey = `${PREF_KEY_PREFIX}${repoNwo}`;
-			await this._extensionContext.globalState.update(repoKey, level);
-		}
+	needsPrompt(): boolean {
+		const value = this._configService.getConfig(ConfigKey.TeamInternal.SessionSearchStorageLevel);
+		return value === 'none' || !value;
 	}
 
 	/**
-	 * Reset all session search consent preferences.
-	 * Clears both repo-specific and global wildcard entries.
+	 * Show a one-time notification asking the user to configure session storage.
+	 * Uses vscode.window.showInformationMessage with action buttons.
+	 *
+	 * Returns the chosen level, or undefined if dismissed.
 	 */
-	async resetConsent(): Promise<void> {
-		const keys = this._extensionContext.globalState.keys();
-		for (const key of keys) {
-			if (key.startsWith(PREF_KEY_PREFIX)) {
-				await this._extensionContext.globalState.update(key, undefined);
-			}
+	async showFirstUseNotification(): Promise<SessionIndexingLevel | undefined> {
+		if (this._notificationShown) {
+			return undefined;
 		}
+		this._notificationShown = true;
+
+		// Dynamic import to avoid circular deps — vscode is only available at runtime
+		const vscode = await import('vscode');
+
+		const openSettings = l10n.t('Open Settings');
+
+		const choice = await vscode.window.showInformationMessage(
+			l10n.t('Configure how Copilot stores your session history. This enables features like /chronicle.'),
+			openSettings,
+		);
+
+		if (choice === openSettings) {
+			await vscode.commands.executeCommand('workbench.action.openSettings', 'github.copilot.chat.advanced.sessionSearch.storageLevel');
+		}
+
+		return undefined;
+	}
+
+	/**
+	 * Check if the current storage level enables cloud sync.
+	 */
+	hasCloudConsent(): boolean {
+		const level = this.getStorageLevel();
+		return level === 'user' || level === 'repo_and_user';
 	}
 }

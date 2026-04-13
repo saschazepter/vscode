@@ -6,10 +6,12 @@
 import { IChatSessionService } from '../../../platform/chat/common/chatSessionService';
 import { ConfigKey, IConfigurationService } from '../../../platform/configuration/common/configurationService';
 import { type FileRow, type RefRow, type SessionRow, type TurnRow, ISessionStore } from '../../../platform/chronicle/common/sessionStore';
+import { IExperimentationService } from '../../../platform/telemetry/common/nullExperimentationService';
 import { CopilotChatAttr, GenAiAttr, GenAiOperationName } from '../../../platform/otel/common/genAiAttributes';
 import { type ICompletedSpanData, IOTelService } from '../../../platform/otel/common/otelService';
 import { Disposable } from '../../../util/vs/base/common/lifecycle';
 import { IExtensionContribution } from '../../common/contributions';
+import { SessionIndexingPreference } from '../common/sessionIndexingPreference';
 import {
 	extractFilePath,
 	extractRefsFromMcpTool,
@@ -70,6 +72,7 @@ export class SessionStoreTracker extends Disposable implements IExtensionContrib
 		@IOTelService private readonly _otelService: IOTelService,
 		@IChatSessionService private readonly _chatSessionService: IChatSessionService,
 		@IConfigurationService private readonly _configService: IConfigurationService,
+		@IExperimentationService private readonly _expService: IExperimentationService,
 	) {
 		super();
 
@@ -113,9 +116,13 @@ export class SessionStoreTracker extends Disposable implements IExtensionContrib
 	// ── Span handling (produces buffered writes, no direct DB calls) ─────
 
 	private _handleSpan(span: ICompletedSpanData): void {
-		// Only track sessions when session search is enabled
-		if (!this._configService.getConfig(ConfigKey.TeamInternal.SessionSearchEnabled)) {
+		// Only track sessions when session search is enabled and user has chosen a storage level
+		if (!this._configService.getExperimentBasedConfig(ConfigKey.TeamInternal.SessionSearchEnabled, this._expService)) {
 			return;
+		}
+		const pref = new SessionIndexingPreference(this._configService);
+		if (!pref.getStorageLevel()) {
+			return; // storageLevel is 'none' — user hasn't configured yet
 		}
 
 		try {

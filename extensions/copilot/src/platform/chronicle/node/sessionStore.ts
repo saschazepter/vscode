@@ -464,6 +464,16 @@ export class SessionStore implements ISessionStore {
 	}
 
 	/**
+	 * Execute a read-only SQL query without authorizer enforcement.
+	 * Used as a fallback when the authorizer API is unavailable (Node.js < 24.2).
+	 * Callers MUST validate SQL safety before calling this method.
+	 */
+	executeReadOnlyFallback(sql: string): Record<string, unknown>[] {
+		const db = this.ensureDb();
+		return db.prepare(sql).all() as Record<string, unknown>[];
+	}
+
+	/**
 	 * Get the highest turn_index for a session, or -1 if no turns exist.
 	 */
 	getMaxTurnIndex(sessionId: string): number {

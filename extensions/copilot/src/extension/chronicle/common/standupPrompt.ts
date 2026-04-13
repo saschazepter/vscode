@@ -61,121 +61,59 @@ export function buildStandupPrompt(
 	sessions: AnnotatedSession[],
 	refs: AnnotatedRef[],
 	extra?: string,
-	files?: SessionFileInfo[],
-	turns?: SessionTurnInfo[],
 ): string {
 	if (sessions.length === 0) {
 		return 'The user ran /standup but no sessions were found. Let them know there\'s no recent activity to report.';
 	}
 
-	const cloudSessions = sessions.filter(s => s.source === 'cloud');
-	const cloudRefs = refs.filter(r => r.source === 'cloud');
-
-	// Group files and turns by session ID for inline rendering
-	const filesBySession = new Map<string, SessionFileInfo[]>();
-	for (const f of files ?? []) {
-		const arr = filesBySession.get(f.session_id) ?? [];
-		arr.push(f);
-		filesBySession.set(f.session_id, arr);
-	}
-	const turnsBySession = new Map<string, SessionTurnInfo[]>();
-	for (const t of turns ?? []) {
-		const arr = turnsBySession.get(t.session_id) ?? [];
-		arr.push(t);
-		turnsBySession.set(t.session_id, arr);
-	}
-
-	const formatSession = (s: AnnotatedSession) => {
+	const sessionLines = sessions.map(s => {
 		const branch = s.branch ?? 'unknown';
 		const repo = s.repository ?? 'unknown';
-		const cwd = (s as SessionRow & { cwd?: string }).cwd;
-		const hostType = s.host_type;
 		const summary = s.summary ?? 'No summary';
-		let sourceLabel = s.source === 'cli' ? 'CLI' : s.source === 'cloud' ? 'Cloud' : 'VS Code';
-		if (s.source === 'cloud' && hostType) {
-			sourceLabel = `Cloud/${hostType}`;
-		}
-		let line = `- [${sourceLabel}] ${s.id} | ${repo} (${branch}) | ${summary} | updated ${s.updated_at}`;
-		if (cwd && repo === 'unknown') {
-			line += `\n    Working directory: ${cwd}`;
-		}
+		return `- ${s.id} | ${repo} (${branch}) | ${summary} | updated ${s.updated_at}`;
+	});
 
-		const sessionFiles = filesBySession.get(s.id);
-		if (sessionFiles && sessionFiles.length > 0) {
-			const fileList = sessionFiles.slice(0, 10).map(f => f.file_path).join(', ');
-			line += `\n    Files touched: ${fileList}${sessionFiles.length > 10 ? ` (+${sessionFiles.length - 10} more)` : ''}`;
-		}
+	const refLines = refs.map(r => `- ${r.session_id} | ${r.ref_type}: ${r.ref_value}`);
 
-		const sessionTurns = turnsBySession.get(s.id);
-		if (sessionTurns && sessionTurns.length > 0) {
-			// Show conversation activity — user messages and/or assistant responses
-			const meaningful = sessionTurns
-				.filter(t => (t.user_message && !t.user_message.startsWith('/')) || t.assistant_response)
-				.slice(0, 10);
-			if (meaningful.length > 0) {
-				const turnLines = meaningful.map(t => {
-					if (t.user_message) {
-						let entry = t.user_message.trim();
-						if (t.assistant_response) {
-							entry += ` → ${t.assistant_response.trim()}`;
-						}
-						return entry;
-					}
-					return `[assistant] ${(t.assistant_response ?? '').trim()}`;
-				});
-				line += `\n    Conversation:\n${turnLines.map(t => `      - ${t}`).join('\n')}`;
-			}
-		}
+	let prompt = `The user ran /chronicle standup. Generate a concise standup update from the pre-fetched data below.
 
-		return line;
-	};
+## Pre-fetched Session Data (last 7 days)
 
-	const formatRef = (r: AnnotatedRef) =>
-		`- ${r.session_id} | ${r.ref_type}: ${r.ref_value}`;
-
-	let prompt = `The user ran /standup. Generate a concise standup update from the pre-fetched data below.
-
-## Pre-fetched Session Data (most recent sessions)
-
-### ☁️ Cloud Sessions (${cloudSessions.length})
-${cloudSessions.length > 0 ? cloudSessions.map(formatSession).join('\n') : 'No cloud sessions found.'}
+### Sessions (${sessions.length})
+${sessionLines.join('\n')}
 
 ### References (PRs, Issues, Commits)
-${cloudRefs.length > 0 ? '**Cloud refs:**\n' + cloudRefs.map(formatRef).join('\n') : 'No references found.'}
+${refLines.length > 0 ? refLines.join('\n') : 'No references found.'}
 
 ## Next Steps
 
 1. For any PR references above, use GitHub tools to check their current status (open, merged, draft, closed).
+2. If you need more detail on any session, ask the user for specifics.
 
 ## Output Format
 
-Present EACH session as a separate entry — do NOT merge multiple sessions into one even if they share the same branch and repository. Use exactly this structure:
+Format the update grouped by work stream (branch). Use exactly this structure:
 
 Standup for <date>:
 
 **✅ Done**
 
-**[source-label] Session \`session-id\`** — \`branch-name\` branch, \`repository\`
-  - Detailed summary of what was accomplished in THIS session
-  - Key files modified: \`file1.ts\`, \`file2.ts\`
-  - Conversation activity: what the user asked and what was done
-  - Last active: <timestamp>
+Feature name (\`branch-name\` branch)
+  - 3-7 words describing the status
+  - Merged: [#123](https://github.com/owner/repo/pull/123)
+  - Session: \`full-session-id\`
 
 **🚧 In Progress**
 
-**[source-label] Session \`session-id\`** — \`branch-name\` branch, \`repository\`
-  - What was started and current state of work in THIS session
-  - Key files being worked on (if available)
-  - Conversation activity (if available)
-  - Last active: <timestamp>
+Feature name (\`branch-name\` branch)
+  - 3-7 words describing the current state of work
+  - Draft: [#789](https://github.com/owner/repo/pull/789)
+  - Session: \`full-session-id\`
 
 Formatting rules:
-- CRITICAL: Each session ID gets its own separate entry. NEVER combine multiple sessions.
-- Include ALL detail available: file paths, conversation snippets, tool names, timestamps.
+- Keep it concise and succinct. The user can always ask follow up questions
 - Link PRs and issues using markdown link syntax.
-- Use the conversation activity data to generate rich descriptions — don't just repeat the summary.
-- Show the working directory if repository/branch is unknown.
-- Omit the Done or In Progress subsection if there are no items for it.`;
+- For sessions, only show the most recent session per feature/branch.`;
 
 	if (extra) {
 		prompt += `\n\nAdditional context: ${extra}`;

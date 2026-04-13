@@ -866,7 +866,9 @@ export namespace ConfigKey {
 		export const AnthropicThinkingEffort = defineTeamInternalSetting<'low' | 'medium' | 'high' | undefined>('chat.advanced.anthropicThinkingEffort', ConfigType.Simple, undefined);
 
 		/** Enable session search features (chronicle, remote session upload). Team-internal only. */
-		export const SessionSearchEnabled = defineTeamInternalSetting<boolean>('chat.advanced.sessionSearch.enabled', ConfigType.Simple, false, vBoolean());
+		export const SessionSearchEnabled = defineTeamInternalSetting<boolean>('chat.advanced.sessionSearch.enabled', ConfigType.ExperimentBased, false, vBoolean());
+		/** Session data storage level: how Copilot session data is stored. */
+		export const SessionSearchStorageLevel = defineSetting<'none' | 'local' | 'user' | 'repo_and_user'>('chat.advanced.sessionSearch.storageLevel', ConfigType.Simple, 'none');
 	}
 
 	/**

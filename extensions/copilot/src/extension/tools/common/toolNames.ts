@@ -71,6 +71,7 @@ export enum ToolName {
 	ToolSearch = 'tool_search',
 	ResolveMemoryFileUri = 'resolve_memory_file_uri',
 	ExecutionSubagent = 'execution_subagent',
+	SessionStoreSql = 'session_store_sql',
 }
 
 export enum ContributedToolName {
@@ -112,6 +113,7 @@ export enum ContributedToolName {
 	EditFilesPlaceholder = 'copilot_editFiles',
 	SwitchAgent = 'copilot_switchAgent',
 	ResolveMemoryFileUri = 'copilot_resolveMemoryFileUri',
+	SessionStoreSql = 'copilot_sessionStoreSql',
 }
 
 export const byokEditToolNamesToToolNames = {
@@ -224,6 +226,7 @@ export const toolCategories: Record<ToolName, ToolCategory> = {
 	[ToolName.Memory]: ToolCategory.VSCodeInteraction,
 	[ToolName.ToolSearch]: ToolCategory.Core,
 	[ToolName.ResolveMemoryFileUri]: ToolCategory.Core,
+	[ToolName.SessionStoreSql]: ToolCategory.Core,
 } as const;
 
 
