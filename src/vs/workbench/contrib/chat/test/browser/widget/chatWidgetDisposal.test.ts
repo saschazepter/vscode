@@ -14,7 +14,6 @@ import { mock } from '../../../../../../base/test/common/mock.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/test/common/utils.js';
 import { Range } from '../../../../../../editor/common/core/range.js';
 import { OffsetRange } from '../../../../../../editor/common/core/ranges/offsetRange.js';
-import { ITextModel } from '../../../../../../editor/common/model.js';
 import { ServiceCollection } from '../../../../../../platform/instantiation/common/serviceCollection.js';
 import { ILogService, NullLogService } from '../../../../../../platform/log/common/log.js';
 import { IConfigurationService } from '../../../../../../platform/configuration/common/configuration.js';
@@ -265,7 +264,7 @@ function createChatServiceCollection(disposables: DisposableStore): ServiceColle
 	collection.set(ITextModelService, new class extends mock<ITextModelService>() {
 		override async createModelReference(): Promise<IReference<IResolvedTextEditorModel>> {
 			const ref = toDisposable(() => { });
-			return Object.assign(ref, { object: { textEditorModel: null! as ITextModel, isReadonly: () => false } });
+			return Object.assign(ref, { object: { textEditorModel: null!, isReadonly: () => false } as unknown as IResolvedTextEditorModel });
 		}
 		override registerTextModelContentProvider(_scheme: string, _provider: ITextModelContentProvider) {
 			return toDisposable(() => { });
