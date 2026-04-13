@@ -815,9 +815,6 @@ export class AICustomizationManagementEditor extends EditorPane {
 					}
 				},
 				prefillChat: async (query, options) => {
-					if (options?.newChat) {
-						await this.commandService.executeCommand('workbench.action.chat.newChat');
-					}
 					if (this.workspaceService.isSessionsWindow) {
 						const widget = this.chatWidgetService.lastFocusedWidget;
 						if (widget) {
@@ -837,6 +834,9 @@ export class AICustomizationManagementEditor extends EditorPane {
 							});
 						}
 					} else {
+						if (options?.newChat) {
+							await this.commandService.executeCommand('workbench.action.chat.newChat');
+						}
 						this.commandService.executeCommand('workbench.action.chat.open', { query, isPartialQuery: options?.isPartialQuery ?? false });
 					}
 				},
