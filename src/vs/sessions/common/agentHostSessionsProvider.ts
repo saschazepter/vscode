@@ -24,9 +24,9 @@ export interface IAgentHostSessionsProvider extends ISessionsProvider {
 
 	// -- Dynamic Session Config --
 
-	/** Fires when dynamic configuration for a new session changes. */
+	/** Fires when dynamic configuration for a session changes. */
 	readonly onDidChangeSessionConfig: Event<string>;
-	/** Returns the last resolved dynamic configuration for a new session. */
+	/** Returns the last resolved dynamic configuration for a session. */
 	getSessionConfig(sessionId: string): IResolveSessionConfigResult | undefined;
 	/** Sets one dynamic configuration property and re-resolves the schema. */
 	setSessionConfigValue(sessionId: string, property: string, value: string): Promise<void>;
@@ -41,7 +41,10 @@ export interface IAgentHostSessionsProvider extends ISessionsProvider {
 const LOCAL_AGENT_HOST_PROVIDER_ID = 'local-agent-host';
 const REMOTE_AGENT_HOST_PROVIDER_PREFIX = 'agenthost-';
 
-/** Type guard that checks whether a provider implements {@link IAgentHostSessionsProvider}. */
+/**
+ * Checks whether a provider is an agent host provider based on its
+ * reserved provider ID (`local-agent-host` or `agenthost-*` prefix).
+ */
 export function isAgentHostProvider(provider: ISessionsProvider): provider is IAgentHostSessionsProvider {
 	return provider.id === LOCAL_AGENT_HOST_PROVIDER_ID || provider.id.startsWith(REMOTE_AGENT_HOST_PROVIDER_PREFIX);
 }
