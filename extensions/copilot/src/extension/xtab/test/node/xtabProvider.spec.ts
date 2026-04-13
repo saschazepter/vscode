@@ -2408,13 +2408,9 @@ describe('XtabProvider integration', () => {
 			streamingFetcher.setStreamingLines(['const b = 2;', 'function fibonacci(n): number', '}']);
 
 			const gen = provider.provideNextEdit(request, createMockLogger(), createLogContext(), CancellationToken.None);
-			const { edits, finalReason } = await collectEdits(gen);
-
-			// The result should be cancellation due to cursor-line divergence
+			const { finalReason } = await collectEdits(gen);
 			expect(finalReason.v).toBeInstanceOf(NoNextEditReason.GotCancelled);
 			expect((finalReason.v as NoNextEditReason.GotCancelled).message).toBe('cursorLineDiverged');
-			// Edits from line 0 (before cursor) may or may not have been yielded
-			// depending on timing, but the stream terminates at the cursor line.
 		});
 
 		it('compatible with auto-close pair typing end-to-end', async () => {

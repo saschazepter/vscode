@@ -929,24 +929,18 @@ describe('getCurrentCursorLine', () => {
 
 	describe('cursor line replaced with multiple lines', () => {
 
-		it('returns undefined when cursor line is entirely replaced by multi-line text', () => {
+		it('returns first replacement line when cursor line start coincides with replacement start', () => {
 			//  Doc: "aaa\nbbb\nccc"  (cursor on line 1 = "bbb", starts at offset 4)
 			//  Edit replaces "bbb" (offsets 4..7) with "X\nY\nZ"
 			//  The cursor line start offset (4) falls at the start of the replacement.
-			//  After applying, the offset maps to the beginning of the replacement text,
-			//  which is "X". The replacement range is [4, 7), and cursor line start is 4,
-			//  which is >= replacement start.
-			//  Actually cursor line start == replacement start, so it's not "inside" the
-			//  replacement by the check (replacement.replaceRange.start < cursorLineStartOffset
-			//  is false since 4 < 4 is false). So it falls through and delta stays 0.
-			//  mappedOffset = 4 + 0 = 4. In new doc "aaa\nX\nY\nZ\nccc", offset 4 is "X".
+			//  The check `replacement.replaceRange.start < cursorLineStartOffset` is
+			//  false (4 < 4 is false), so the mapping is unambiguous.
+			//  mappedOffset = 4 + 0 = 4. In new doc "aaa\nX\nY\nZ\nccc", offset 4 → "X".
 			const doc = 'aaa\nbbb\nccc';
 			const edit = StringEdit.single(
 				new StringReplacement(new OffsetRange(4, 7), 'X\nY\nZ')
 			);
 
-			// The cursor line start coincides with the replacement start, so the
-			// mapping is unambiguous: offset 4 → "X" line.
 			expect(getCurrentCursorLine(t(doc), 1, edit)).toBe('X');
 		});
 	});
