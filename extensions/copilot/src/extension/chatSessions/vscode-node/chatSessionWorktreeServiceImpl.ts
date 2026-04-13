@@ -719,7 +719,7 @@ export class ChatSessionWorktreeService extends Disposable implements IChatSessi
 		// If the repository is using a virtual file system, we need to
 		// disable rename detection to avoid expensive git operations
 		const noRenamesArg = worktreeRepository.isUsingVirtualFileSystem
-			? ['-no-renames']
+			? ['--no-renames']
 			: [];
 
 		const diffChanges: DiffChange[] = [];
