@@ -12,7 +12,7 @@ import { ILogService } from '../../../../platform/log/common/logService';
 import { GenAiMetrics } from '../../../../platform/otel/common/genAiMetrics';
 import { CopilotChatAttr, GenAiAttr, GenAiOperationName, IOTelService, ISpanHandle, SpanKind, SpanStatusCode, truncateForOTel } from '../../../../platform/otel/common/index';
 import { CapturingToken } from '../../../../platform/requestLogger/common/capturingToken';
-import { IRequestLogger, LoggedRequestKind } from '../../../../platform/requestLogger/node/requestLogger';
+import { IRequestLogger, LoggedRequestKind } from '../../../../platform/requestLogger/common/requestLogger';
 import { IWorkspaceService } from '../../../../platform/workspace/common/workspaceService';
 import { raceCancellation } from '../../../../util/vs/base/common/async';
 import { CancellationToken } from '../../../../util/vs/base/common/cancellation';
@@ -86,7 +86,7 @@ export interface ICopilotCLISession extends IDisposable {
 		request: { id: string; toolInvocationToken: ChatParticipantToolToken; sessionResource?: vscode.Uri },
 		input: CopilotCLISessionInput,
 		attachments: Attachment[],
-		modelId: string | undefined,
+		model: { model: string; reasoningEffort?: string } | undefined,
 		authInfo: NonNullable<SessionOptions['authInfo']>,
 		token: vscode.CancellationToken
 	): Promise<void>;
@@ -213,7 +213,7 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 		request: { id: string; toolInvocationToken: ChatParticipantToolToken; sessionResource?: vscode.Uri },
 		input: CopilotCLISessionInput,
 		attachments: Attachment[],
-		modelId: string | undefined,
+		model: { model: string; reasoningEffort?: string } | undefined,
 		authInfo: NonNullable<SessionOptions['authInfo']>,
 		token: vscode.CancellationToken
 	): Promise<void> {
@@ -229,12 +229,12 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 		const previousRequestSnapshot = this.previousRequest;
 
 		const handled = this._requestLogger.captureInvocation(capturingToken, async () => {
-			await this.updateModel(modelId, authInfo, token);
+			await this.updateModel(model?.model, model?.reasoningEffort, authInfo, token);
 
 			if (isAlreadyBusyWithAnotherRequest) {
-				return this._handleRequestSteering(input, attachments, modelId, previousRequestSnapshot, token);
+				return this._handleRequestSteering(input, attachments, model, previousRequestSnapshot, token);
 			} else {
-				return this._handleRequestImpl(request, input, attachments, modelId, token);
+				return this._handleRequestImpl(request, input, attachments, model, token);
 			}
 		});
 
@@ -261,7 +261,7 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 	private async _handleRequestSteering(
 		input: CopilotCLISessionInput,
 		attachments: Attachment[],
-		modelId: string | undefined,
+		model: { model: string; reasoningEffort?: string } | undefined,
 		previousRequestPromise: Promise<unknown>,
 		token: vscode.CancellationToken,
 	): Promise<void> {
@@ -281,9 +281,9 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 			// previous request to finish, so this promise settles only once all
 			// in-flight work is done.
 			await Promise.all([previousRequestPromise, this.sendRequestInternal(input, attachments, true, logStartTime)]);
-			this._logConversation(prompt, '', modelId || '', attachments, logStartTime, 'Completed');
+			this._logConversation(prompt, '', model?.model || '', attachments, logStartTime, 'Completed');
 		} catch (error) {
-			this._logConversation(prompt, '', modelId || '', attachments, logStartTime, 'Failed', error instanceof Error ? error.message : String(error));
+			this._logConversation(prompt, '', model?.model || '', attachments, logStartTime, 'Failed', error instanceof Error ? error.message : String(error));
 			throw error;
 		} finally {
 			disposables.dispose();
@@ -294,9 +294,10 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 		request: { id: string; toolInvocationToken: ChatParticipantToolToken },
 		input: CopilotCLISessionInput,
 		attachments: Attachment[],
-		modelId: string | undefined,
+		model: { model: string; reasoningEffort?: string } | undefined,
 		token: vscode.CancellationToken
 	): Promise<void> {
+		const modelId = model?.model;
 		return this._otelService.startActiveSpan(
 			'invoke_agent copilotcli',
 			{
@@ -472,20 +473,25 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 						this._sdkSession.respondToExitPlanMode(event.data.requestId, { approved: false });
 						return;
 					}
-					const actionDescriptions: Record<ActionType, string> = {
-						'autopilot': l10n.t('Auto-approve all tool calls and continue until the task is done'),
-						'interactive': l10n.t('Let the agent continue in interactive mode, asking for user input and approval for each action.'),
-						'exit_only': l10n.t('Exit plan mode, but do not execute the plan. I will execute the plan myself after reviewing it.'),
-						'autopilot_fleet': l10n.t('Auto-approve all tool calls, including fleet management actions, and continue until the task is done.'),
-					};
+					const actionDescriptions: Record<string, { label: string; description: string }> = {
+						'autopilot': { label: 'Autopilot', description: l10n.t('Auto-approve all tool calls and continue until the task is done') },
+						'interactive': { label: 'Interactive', description: l10n.t('Let the agent continue in interactive mode, asking for input and approval for each action.') },
+						'exit_only': { label: 'Approve and exit', description: l10n.t('Exit planning, but do not execute the plan. I will execute the plan myself.') },
+						'autopilot_fleet': { label: 'Autopilot Fleet', description: l10n.t('Auto-approve all tool calls, including fleet management actions, and continue until the task is done.') },
+					} satisfies Record<ActionType, { label: string; description: string }>;
 
 					const approved = true;
-					event.data.actions;
 					try {
+						const planPath = this._sdkSession.getPlanPath();
+
 						const userInputRequest: IQuestion = {
-							question: l10n.t('Approve this plan?'),
+							question: planPath ? l10n.t('Approve this plan {0}?', `[Plan.md](${Uri.file(planPath).toString()})`) : l10n.t('Approve this plan?'),
 							header: l10n.t('Approve this plan?'),
-							options: event.data.actions.map(a => ({ label: (actionDescriptions as Record<string, string>)[a] ?? a, recommended: a === event.data.recommendedAction })),
+							options: event.data.actions.map(a => ({
+								label: actionDescriptions[a]?.label ?? a,
+								recommended: a === event.data.recommendedAction,
+								description: actionDescriptions[a]?.description ?? '',
+							})),
 							allowFreeformInput: true,
 						};
 						const answer = await this._userQuestionHandler.askUserQuestion(userInputRequest, this._toolInvocationToken as unknown as never, token);
@@ -498,8 +504,8 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 							this._sdkSession.respondToExitPlanMode(event.data.requestId, { approved: false, feedback: answer.freeText });
 						} else {
 							let selectedAction: ActionType = answer.selected[0] as ActionType;
-							Object.entries(actionDescriptions).forEach(([action, description]) => {
-								if (description === selectedAction) {
+							Object.entries(actionDescriptions).forEach(([action, item]) => {
+								if (item.label === selectedAction) {
 									selectedAction = action as ActionType;
 								}
 							});
@@ -766,7 +772,7 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 		}
 	}
 
-	private async updateModel(modelId: string | undefined, authInfo: NonNullable<SessionOptions['authInfo']>, token: CancellationToken): Promise<void> {
+	private async updateModel(modelId: string | undefined, reasoningEffort: string | undefined, authInfo: NonNullable<SessionOptions['authInfo']>, token: CancellationToken): Promise<void> {
 		// Where possible try to avoid an extra call to getSelectedModel by using cached value.
 		let currentModel: string | undefined = undefined;
 		if (modelId) {
@@ -782,9 +788,17 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 		if (authInfo) {
 			this._sdkSession.setAuthInfo(authInfo);
 		}
-		if (modelId && modelId !== currentModel) {
-			this._lastUsedModel = modelId;
-			await raceCancellation(this._sdkSession.setSelectedModel(modelId), token);
+		if (modelId) {
+			if (modelId !== currentModel) {
+				this._lastUsedModel = modelId;
+				if (this.configurationService.getConfig(ConfigKey.Advanced.CLIThinkingEffortEnabled)) {
+					await raceCancellation(this._sdkSession.setSelectedModel(modelId, reasoningEffort), token);
+				} else {
+					await raceCancellation(this._sdkSession.setSelectedModel(modelId), token);
+				}
+			} else if (reasoningEffort && this._sdkSession.getReasoningEffort() !== reasoningEffort && this.configurationService.getConfig(ConfigKey.Advanced.CLIThinkingEffortEnabled)) {
+				await raceCancellation(this._sdkSession.setSelectedModel(modelId, reasoningEffort), token);
+			}
 		}
 	}
 
