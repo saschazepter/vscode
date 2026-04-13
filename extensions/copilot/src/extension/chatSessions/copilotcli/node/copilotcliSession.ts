@@ -521,7 +521,7 @@ export class CopilotCLISession extends DisposableStore implements ICopilotCLISes
 			}
 			disposables.add(toDisposable(this._sdkSession.on('user_input.requested', async (event) => {
 				if (!(this._toolInvocationToken as unknown)) {
-					this.logService.warn('[AskQuestionsTool] No stream available, cannot show question carousel');
+					this.logService.warn('[AskQuestionsTool] No tool invocation token available, cannot show question carousel');
 					this._sdkSession.respondToUserInput(event.data.requestId, { answer: '', wasFreeform: false });
 					return;
 				}
