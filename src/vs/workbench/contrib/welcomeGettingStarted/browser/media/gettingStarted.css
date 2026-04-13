@@ -927,7 +927,7 @@
 .monaco-workbench .part.editor > .content .gettingStartedContainer .gettingStartedSlideCategories > .gettingStartedCategoriesContainer > .footer > .agents-banner .agents-banner-button {
 	display: flex;
 	align-items: center;
-	padding: 8px 10px;
+	padding: 6px 12px;
 	border-radius: 50px;
 	cursor: pointer;
 	font-family: inherit;

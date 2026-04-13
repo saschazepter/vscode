@@ -223,7 +223,7 @@
 .agentSessionsWelcome-agentsBanner .agents-banner-button {
 	display: flex;
 	align-items: center;
-	padding: 10px;
+	padding: 6px 10px;
 	border: none;
 	border-radius: 6px;
 	background-color: var(--vscode-toolbar-hoverBackground);
