@@ -276,7 +276,7 @@ class AgentHostSessionConfigPicker extends Disposable {
 		}
 
 		for (const [property, schema] of Object.entries(resolvedConfig.schema.properties)) {
-			if (property === AgentHostSessionConfigBranchNameHintKey) {
+			if (property === AgentHostSessionConfigBranchNameHintKey || property === AUTO_APPROVE_PROPERTY) {
 				continue;
 			}
 			const value = resolvedConfig.values[property] ?? schema.default;
@@ -422,6 +422,11 @@ class AgentHostSessionConfigPickerContribution extends Disposable implements IWo
 			() => new PickerActionViewItem(instantiationService.createInstance(AgentHostSessionConfigPicker)),
 		));
 		this._register(actionViewItemService.register(
+			Menus.NewSessionControl,
+			NEW_SESSION_APPROVE_PICKER_ID,
+			() => new PickerActionViewItem(instantiationService.createInstance(AgentHostNewSessionApprovePicker)),
+		));
+		this._register(actionViewItemService.register(
 			MenuId.ChatInputSecondary,
 			RUNNING_SESSION_CONFIG_PICKER_ID,
 			() => new PickerActionViewItem(instantiationService.createInstance(AgentHostRunningSessionConfigPicker)),
@@ -429,7 +434,179 @@ class AgentHostSessionConfigPickerContribution extends Disposable implements IWo
 	}
 }
 
-// ---- Running session config picker (titlebar) ----
+// ---- New session auto-approve picker (left side, NewSessionControl) ----
+
+const NEW_SESSION_APPROVE_PICKER_ID = 'sessions.agentHost.newSessionApprovePicker';
+
+registerAction2(class extends Action2 {
+	constructor() {
+		super({
+			id: NEW_SESSION_APPROVE_PICKER_ID,
+			title: localize2('agentHostNewSessionApprovePicker', "Session Approvals"),
+			f1: false,
+			menu: [{
+				id: Menus.NewSessionControl,
+				group: 'navigation',
+				order: 1,
+				when: ContextKeyExpr.or(IsActiveSessionLocalAgentHost, IsActiveSessionRemoteAgentHost),
+			}],
+		});
+	}
+
+	override async run(): Promise<void> { }
+});
+
+/**
+ * Renders the auto-approve picker in the new session welcome view (left side).
+ * Only renders the autoApprove property from the session config.
+ */
+class AgentHostNewSessionApprovePicker extends Disposable {
+	private readonly _renderDisposables = this._register(new DisposableStore());
+	private readonly _providerListeners = this._register(new DisposableMap<string>());
+	private _container: HTMLElement | undefined;
+
+	constructor(
+		@IActionWidgetService private readonly _actionWidgetService: IActionWidgetService,
+		@IConfigurationService private readonly _configurationService: IConfigurationService,
+		@IDialogService private readonly _dialogService: IDialogService,
+		@ISessionsManagementService private readonly _sessionsManagementService: ISessionsManagementService,
+		@ISessionsProvidersService private readonly _sessionsProvidersService: ISessionsProvidersService,
+	) {
+		super();
+
+		this._register(autorun(reader => {
+			const session = this._sessionsManagementService.activeSession.read(reader);
+			if (session) {
+				session.loading.read(reader);
+			}
+			this._render();
+		}));
+
+		this._register(this._sessionsProvidersService.onDidChangeProviders(e => {
+			for (const provider of e.removed) {
+				this._providerListeners.deleteAndDispose(provider.id);
+			}
+			this._watchProviders(e.added);
+			this._render();
+		}));
+		this._watchProviders(this._sessionsProvidersService.getProviders());
+	}
+
+	private _watchProviders(providers: readonly ISessionsProvider[]): void {
+		for (const provider of providers) {
+			if (!provider.onDidChangeSessionConfig || this._providerListeners.has(provider.id)) {
+				continue;
+			}
+			this._providerListeners.set(provider.id, provider.onDidChangeSessionConfig(() => this._render()));
+		}
+	}
+
+	render(container: HTMLElement): void {
+		this._container = dom.append(container, dom.$('.sessions-chat-agent-host-config'));
+		this._render();
+	}
+
+	private _render(): void {
+		if (!this._container) {
+			return;
+		}
+
+		this._renderDisposables.clear();
+		dom.clearNode(this._container);
+
+		const session = this._sessionsManagementService.activeSession.get();
+		const provider = session ? this._sessionsProvidersService.getProvider(session.providerId) : undefined;
+		const config = session && provider?.getSessionConfig?.(session.sessionId);
+		if (!session || !provider || !config) {
+			return;
+		}
+
+		const schema = config.schema.properties[AUTO_APPROVE_PROPERTY];
+		if (!schema) {
+			return;
+		}
+
+		const value = config.values[AUTO_APPROVE_PROPERTY] ?? schema.default;
+		const slot = dom.append(this._container, dom.$('.sessions-chat-picker-slot'));
+		const trigger = renderPickerTrigger(slot, false, this._renderDisposables, () => this._showPicker(provider, session.sessionId, schema, trigger));
+		this._renderTrigger(trigger, schema, value);
+	}
+
+	private _renderTrigger(trigger: HTMLElement, schema: ISessionConfigPropertySchema, value: string | undefined): void {
+		dom.clearNode(trigger);
+		const icon = getConfigIcon(AUTO_APPROVE_PROPERTY, value);
+		if (icon) {
+			dom.append(trigger, renderIcon(icon));
+		}
+		const labelSpan = dom.append(trigger, dom.$('span.sessions-chat-dropdown-label'));
+		const label = this._getLabel(schema, value);
+		labelSpan.textContent = label;
+		trigger.setAttribute('aria-label', localize('agentHostNewSessionApprove.triggerAria', "{0}: {1}", schema.title, label));
+		dom.append(trigger, renderIcon(Codicon.chevronDown));
+		applyAutoApproveTriggerStyles(trigger, AUTO_APPROVE_PROPERTY, value);
+	}
+
+	private async _showPicker(provider: ISessionsProvider, sessionId: string, schema: ISessionConfigPropertySchema, trigger: HTMLElement): Promise<void> {
+		if (this._actionWidgetService.isVisible) {
+			return;
+		}
+
+		const rawItems = (schema.enum ?? []).map((value, index) => ({
+			value,
+			label: schema.enumLabels?.[index] ?? value,
+			description: schema.enumDescriptions?.[index],
+		}));
+
+		const { items, policyRestricted } = applyAutoApproveFiltering(rawItems, AUTO_APPROVE_PROPERTY, this._configurationService);
+
+		if (items.length === 0) {
+			return;
+		}
+
+		const currentValue = provider.getSessionConfig?.(sessionId)?.values[AUTO_APPROVE_PROPERTY];
+		const actionItems = toActionItems(AUTO_APPROVE_PROPERTY, items, currentValue, policyRestricted);
+
+		const delegate: IActionListDelegate<IConfigPickerItem> = {
+			onSelect: async item => {
+				this._actionWidgetService.hide();
+
+				if (item.value === 'autoApprove' || item.value === 'autopilot') {
+					const confirmed = await confirmAutoApproveLevel(item.value, this._dialogService);
+					if (!confirmed) {
+						return;
+					}
+				}
+
+				provider.setSessionConfigValue?.(sessionId, AUTO_APPROVE_PROPERTY, item.value).catch(() => { /* best-effort */ });
+			},
+			onHide: () => trigger.focus(),
+		};
+
+		this._actionWidgetService.show<IConfigPickerItem>(
+			`agentHostNewSessionConfig.${AUTO_APPROVE_PROPERTY}`,
+			false,
+			actionItems,
+			delegate,
+			trigger,
+			undefined,
+			[],
+			{
+				getAriaLabel: item => item.label ?? '',
+				getWidgetAriaLabel: () => localize('agentHostNewSessionApprove.ariaLabel', "{0} Picker", schema.title),
+			},
+		);
+	}
+
+	private _getLabel(schema: ISessionConfigPropertySchema, value: string | undefined): string {
+		if (typeof value === 'string') {
+			const index = schema.enum?.indexOf(value) ?? -1;
+			return index >= 0 ? schema.enumLabels?.[index] ?? value : value;
+		}
+		return schema.title;
+	}
+}
+
+// ---- Running session config picker (ChatInputSecondary) ----
 
 const RUNNING_SESSION_CONFIG_PICKER_ID = 'sessions.agentHost.runningSessionConfigPicker';
 
