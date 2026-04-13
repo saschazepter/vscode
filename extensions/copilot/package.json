@@ -2761,13 +2761,6 @@
 				"category": "GitHub Copilot"
 			},
 			{
-				"command": "github.copilot.chat.updateCopilotCLIAgentSessionChanges.update",
-				"title": "%github.copilot.chat.updateCopilotCLIAgentSessionChanges.update%",
-				"enablement": "!chatSessionRequestInProgress",
-				"icon": "$(download)",
-				"category": "GitHub Copilot"
-			},
-			{
 				"command": "github.copilot.sessions.commit",
 				"title": "%github.copilot.command.sessions.commit%",
 				"enablement": "!chatSessionRequestInProgress",
@@ -5205,10 +5198,6 @@
 				},
 				{
 					"command": "github.copilot.chat.mergeCopilotCLIAgentSessionChanges.mergeAndSync",
-					"when": "false"
-				},
-				{
-					"command": "github.copilot.chat.updateCopilotCLIAgentSessionChanges.update",
 					"when": "false"
 				},
 				{
