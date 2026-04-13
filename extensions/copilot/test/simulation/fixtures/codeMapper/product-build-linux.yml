@@ -24,9 +24,11 @@ steps:
       fetchDepth: 1
       retryCountOnTaskFailure: 3
 
-  - task: UseNode@1
+  - task: NodeTool@0
     inputs:
+      versionSource: fromFile
       versionFilePath: .nvmrc
+      nodejsMirror: https://github.com/joaomoreno/node-mirror/releases/download
 
   - ${{ if ne(parameters.VSCODE_QUALITY, 'oss') }}:
     - template: ../distro/download-distro.yml@self
