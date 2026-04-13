@@ -108,7 +108,6 @@ export class ClassicAICustomizationWelcomePage extends Disposable implements IAI
 			const chevron = DOM.append(gettingStarted, $('span.welcome-classic-getting-started-chevron.codicon.codicon-chevron-right'));
 			chevron.setAttribute('aria-hidden', 'true');
 			this._register(DOM.addDisposableListener(gettingStarted, 'click', () => {
-				this.callbacks.closeEditor();
 				if (this.workspaceService.isSessionsWindow) {
 					this.callbacks.prefillChat('Generate agent customizations. ', { isPartialQuery: true });
 				} else {
@@ -166,7 +165,6 @@ export class ClassicAICustomizationWelcomePage extends Disposable implements IAI
 				label.textContent = localize('generateWithAI', "Generate with AI");
 				this.cardDisposables.add(DOM.addDisposableListener(generateBtn, 'click', e => {
 					e.stopPropagation();
-					this.callbacks.closeEditor();
 					if (this.workspaceService.isSessionsWindow) {
 						const typeLabel = category.label.toLowerCase().replace(/s$/, '');
 						this.callbacks.prefillChat(`Create me a custom ${typeLabel} that `, { isPartialQuery: true });

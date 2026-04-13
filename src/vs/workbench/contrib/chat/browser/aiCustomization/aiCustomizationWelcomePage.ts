@@ -21,8 +21,11 @@ export interface IWelcomePageCallbacks {
 	/**
 	 * Prefill the chat input with a query. In the sessions window this
 	 * uses the sessions chat widget; in core VS Code it opens the chat view.
+	 *
+	 * @param options.newChat When true, always opens a new chat instead of
+	 * reusing the active one.
 	 */
-	prefillChat(query: string, options?: { isPartialQuery?: boolean }): void;
+	prefillChat(query: string, options?: { isPartialQuery?: boolean; newChat?: boolean }): void;
 }
 
 export interface IAICustomizationWelcomePageImplementation extends IDisposable {

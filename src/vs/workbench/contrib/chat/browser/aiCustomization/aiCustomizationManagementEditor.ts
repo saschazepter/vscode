@@ -814,7 +814,10 @@ export class AICustomizationManagementEditor extends EditorPane {
 						this.group.closeEditor(this.input);
 					}
 				},
-				prefillChat: (query, options) => {
+				prefillChat: async (query, options) => {
+					if (options?.newChat) {
+						await this.commandService.executeCommand('workbench.action.chat.newChat');
+					}
 					if (this.workspaceService.isSessionsWindow) {
 						const widget = this.chatWidgetService.lastFocusedWidget;
 						if (widget) {

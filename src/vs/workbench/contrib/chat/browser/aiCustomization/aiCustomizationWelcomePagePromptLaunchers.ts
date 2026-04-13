@@ -114,19 +114,22 @@ export class PromptLaunchersAICustomizationWelcomePage extends Disposable implem
 
 			const submitBtn = DOM.append(inputRow, $('button.welcome-prompts-input-submit'));
 			submitBtn.setAttribute('aria-label', localize('workflowSubmitAriaLabel', "Customize agent"));
+			submitBtn.title = localize('workflowSubmitTooltip', "Open in Chat");
 			const chevron = DOM.append(submitBtn, $('span.codicon.codicon-arrow-up'));
 			chevron.setAttribute('aria-hidden', 'true');
 
 			const submit = () => {
 				const value = this.inputElement?.value?.trim();
-				this.callbacks.closeEditor();
+				if (!value) {
+					return;
+				}
 				let query: string;
 				if (this.workspaceService.isSessionsWindow) {
-					query = value ? `Generate agent customizations. ${value}` : 'Generate agent customizations. ';
+					query = `Generate agent customizations. ${value}`;
 				} else {
-					query = value ? `/init ${value}` : '/init ';
+					query = `/init ${value}`;
 				}
-				this.callbacks.prefillChat(query, { isPartialQuery: !value });
+				this.callbacks.prefillChat(query, { isPartialQuery: false, newChat: true });
 			};
 			this._register(DOM.addDisposableListener(submitBtn, 'click', submit));
 			this._register(DOM.addDisposableListener(this.inputElement, 'keydown', (e: KeyboardEvent) => {
@@ -172,7 +175,6 @@ export class PromptLaunchersAICustomizationWelcomePage extends Disposable implem
 				generateBtn.textContent = localize('new', "New...");
 				this.cardDisposables.add(DOM.addDisposableListener(generateBtn, 'click', e => {
 					e.stopPropagation();
-					this.callbacks.closeEditor();
 					if (this.workspaceService.isSessionsWindow) {
 						const typeLabel = category.label.toLowerCase().replace(/s$/, '');
 						this.callbacks.prefillChat(`Create me a custom ${typeLabel} that `, { isPartialQuery: true });
