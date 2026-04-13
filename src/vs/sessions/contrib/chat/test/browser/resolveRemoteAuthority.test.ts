@@ -8,6 +8,7 @@ import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/tes
 import { getEntryAddress, IRemoteAgentHostEntry, IRemoteAgentHostService, RemoteAgentHostEntryType } from '../../../../../platform/agentHost/common/remoteAgentHostService.js';
 import { ISessionsProvidersService } from '../../../../services/sessions/browser/sessionsProvidersService.js';
 import { resolveRemoteAuthority, sshAuthorityString } from '../../browser/chat.contribution.js';
+import { decodeHex } from '../../../../../base/common/buffer.js';
 
 suite('resolveRemoteAuthority', () => {
 
@@ -97,7 +98,7 @@ suite('resolveRemoteAuthority', () => {
 		assert.ok(result?.startsWith('ssh-remote+'));
 		// The authority should be hex-encoded JSON
 		const authority = result!.slice('ssh-remote+'.length);
-		const decoded = Buffer.from(authority, 'hex').toString('utf-8');
+		const decoded = decodeHex(authority).toString();
 		assert.deepStrictEqual(JSON.parse(decoded), {
 			hostName: 'myserver.example.com',
 			user: 'admin',
@@ -180,7 +181,7 @@ suite('sshAuthorityString', () => {
 			hostName: 'myserver',
 			user: 'admin',
 		});
-		const decoded = Buffer.from(result, 'hex').toString('utf-8');
+		const decoded = decodeHex(result).toString();
 		assert.deepStrictEqual(JSON.parse(decoded), { hostName: 'myserver', user: 'admin' });
 	});
 
@@ -191,7 +192,7 @@ suite('sshAuthorityString', () => {
 			hostName: 'myserver',
 			port: 2222,
 		});
-		const decoded = Buffer.from(result, 'hex').toString('utf-8');
+		const decoded = decodeHex(result).toString();
 		assert.deepStrictEqual(JSON.parse(decoded), { hostName: 'myserver', port: 2222 });
 	});
 
@@ -201,7 +202,7 @@ suite('sshAuthorityString', () => {
 			address: 'localhost:4321',
 			hostName: 'MyServer',
 		});
-		const decoded = Buffer.from(result, 'hex').toString('utf-8');
+		const decoded = decodeHex(result).toString();
 		assert.deepStrictEqual(JSON.parse(decoded), { hostName: 'MyServer' });
 	});
 
@@ -213,7 +214,7 @@ suite('sshAuthorityString', () => {
 			user: 'root',
 			port: 22,
 		});
-		const decoded = Buffer.from(result, 'hex').toString('utf-8');
+		const decoded = decodeHex(result).toString();
 		assert.deepStrictEqual(JSON.parse(decoded), {
 			hostName: 'MyServer.example.com',
 			user: 'root',
