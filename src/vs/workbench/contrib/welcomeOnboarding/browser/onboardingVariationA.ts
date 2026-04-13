@@ -30,7 +30,8 @@ import { IQuickInputService } from '../../../../platform/quickinput/common/quick
 import { IFileService } from '../../../../platform/files/common/files.js';
 import { IPathService } from '../../../services/path/common/pathService.js';
 import { ITelemetryService } from '../../../../platform/telemetry/common/telemetry.js';
-import { InstallChatEvent, InstallChatClassification } from '../../chat/browser/chatSetup/chatSetup.js';
+import { InstallChatEvent, InstallChatClassification, ChatSetupStrategy } from '../../chat/browser/chatSetup/chatSetup.js';
+import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import {
 	OnboardingStepId,
 	ONBOARDING_STEPS,
@@ -135,6 +136,7 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 		@IFileService private readonly fileService: IFileService,
 		@IPathService private readonly pathService: IPathService,
 		@ITelemetryService private readonly telemetryService: ITelemetryService,
+		@ICommandService private readonly commandService: ICommandService,
 	) {
 		super();
 
@@ -561,6 +563,11 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 			if (account) {
 				this._userSignedIn = true;
 				this.telemetryService.publicLog2<InstallChatEvent, InstallChatClassification>('commandCenter.chatInstall', { installResult: 'installed', installDuration: watch.elapsed(), signUpErrorCode: undefined, provider });
+				// Run chat setup in the background (sign-up, extension install, entitlement resolution)
+				this.commandService.executeCommand('workbench.action.chat.triggerSetup', undefined, {
+					disableChatViewReveal: true,
+					setupStrategy: ChatSetupStrategy.DefaultSetup,
+				});
 				this._nextStep();
 			}
 		} catch (error) {
@@ -592,6 +599,10 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 			if (account) {
 				this._userSignedIn = true;
 				this.telemetryService.publicLog2<InstallChatEvent, InstallChatClassification>('commandCenter.chatInstall', { installResult: 'installed', installDuration: watch.elapsed(), signUpErrorCode: undefined, provider });
+				this.commandService.executeCommand('workbench.action.chat.triggerSetup', undefined, {
+					disableChatViewReveal: true,
+					setupStrategy: ChatSetupStrategy.DefaultSetup,
+				});
 				this._nextStep();
 			}
 		} catch (error) {
