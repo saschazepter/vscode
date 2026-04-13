@@ -23,6 +23,8 @@ import { KeybindingWeight } from '../../../../platform/keybinding/common/keybind
 import { IPaneCompositePartService } from '../../../../workbench/services/panecomposite/browser/panecomposite.js';
 import { ViewContainerLocation } from '../../../../workbench/common/views.js';
 import { ChangesViewPane } from './changesView.js';
+import { SESSIONS_FILES_CONTAINER_ID } from '../../files/browser/files.contribution.js';
+import { SESSIONS_FILES_VIEW_ID } from '../../files/browser/filesView.js';
 
 const openChangesViewActionOptions: IAction2Options = {
 	id: 'workbench.action.agentSessions.openChangesView',
@@ -87,8 +89,13 @@ registerAction2(class FocusChangesFileViewAction extends Action2 {
 		});
 	}
 	async run(accessor: ServicesAccessor): Promise<void> {
+		const paneCompositeService = accessor.get(IPaneCompositePartService);
 		const viewsService = accessor.get(IViewsService);
-		await viewsService.openView('sessions.files.explorer', true);
+		await paneCompositeService.openPaneComposite(SESSIONS_FILES_CONTAINER_ID, ViewContainerLocation.AuxiliaryBar, true);
+		const view = await viewsService.openView(SESSIONS_FILES_VIEW_ID, true);
+		if (view) {
+			view.focus();
+		}
 	}
 });
 
