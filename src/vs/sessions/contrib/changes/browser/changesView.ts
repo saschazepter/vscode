@@ -602,6 +602,13 @@ export class ChangesViewPane extends ViewPane {
 
 				logChangesViewFileSelect(this.telemetryService, e.element.changeType);
 
+				// If diff preview is open, scroll to the file instead of opening modal
+				const part = (this.paneCompositeService as AgenticPaneCompositePartService).getPartByLocation(ViewContainerLocation.AuxiliaryBar);
+				if (part instanceof AuxiliaryBarPart && part.isDiffPreviewVisible) {
+					part.revealInDiffPreview(e.element.uri);
+					return;
+				}
+
 				const items = changesObs.get();
 				this._openFileItem(e.element, items, e.sideBySide, !!e.editorOptions?.preserveFocus, !!e.editorOptions?.pinned, items.length > 1);
 			}));
@@ -962,6 +969,13 @@ export class ChangesViewPane extends ViewPane {
 
 		const changes = toIChangesFileItem(items);
 		await this._openFileItem(changes[0], changes, false, false, false, changes.length > 1);
+	}
+
+	/**
+	 * Open a specific file in the modal diff editor.
+	 */
+	async openFileInModal(item: IChangesFileItem, allItems: IChangesFileItem[]): Promise<void> {
+		await this._openFileItem(item, allItems, false, false, false, allItems.length > 1);
 	}
 
 	private async _openFileItem(item: IChangesFileItem, items: IChangesFileItem[], sideBySide: boolean, preserveFocus: boolean, pinned: boolean, includeSidebar: boolean): Promise<void> {

@@ -438,6 +438,7 @@
 	background: var(--vscode-list-inactiveSelectionBackground);
 	border-radius: var(--vscode-cornerRadius-small);
 	border-top: none;
+	padding: 2px 5px;
 }
 
 /* Editor area uses editor background */

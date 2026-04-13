@@ -6,6 +6,7 @@
 import '../../../workbench/browser/parts/auxiliarybar/media/auxiliaryBarPart.css';
 import './media/auxiliaryBarPart.css';
 import * as dom from '../../../base/browser/dom.js';
+import { URI } from '../../../base/common/uri.js';
 import { localize } from '../../../nls.js';
 import { IContextKeyService, IContextKey } from '../../../platform/contextkey/common/contextkey.js';
 import { IContextMenuService } from '../../../platform/contextview/browser/contextView.js';
@@ -231,6 +232,15 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 
 	get isDiffPreviewVisible(): boolean {
 		return this.diffPreviewWidget?.visible ?? false;
+	}
+
+	/**
+	 * Scroll to reveal a specific file in the diff preview.
+	 */
+	revealInDiffPreview(uri: URI): void {
+		if (this.diffPreviewWidget?.visible) {
+			this.diffPreviewWidget.revealFile(uri);
+		}
 	}
 
 	/**

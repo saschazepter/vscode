@@ -5,6 +5,7 @@
 
 import { Codicon } from '../../../../base/common/codicons.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
+import { URI } from '../../../../base/common/uri.js';
 import { localize2 } from '../../../../nls.js';
 import { Action2, IAction2Options, MenuId, registerAction2 } from '../../../../platform/actions/common/actions.js';
 import { ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
@@ -223,6 +224,39 @@ registerAction2(class ToggleDiffPreviewAction extends Action2 {
 			const view = viewsService.getViewWithId<ChangesViewPane>(CHANGES_VIEW_ID);
 			const files = view ? toIChangesFileItem(view.viewModel.activeSessionChangesObs.get()) : undefined;
 			part.toggleDiffPreview(files);
+		}
+	}
+});
+
+registerAction2(class OpenDiffInModalAction extends Action2 {
+	constructor() {
+		super({
+			id: 'workbench.action.agentSessions.openDiffInModal',
+			title: localize2('openDiffInModal', "Open in Editor"),
+			icon: Codicon.goToFile,
+			f1: false,
+			precondition: IsSessionsWindowContext,
+			menu: [{
+				id: MenuId.MultiDiffEditorFileToolbar,
+				group: 'navigation',
+				order: -10,
+				when: IsSessionsWindowContext,
+			}],
+		});
+	}
+	async run(accessor: ServicesAccessor, uri: URI): Promise<void> {
+		if (!uri) {
+			return;
+		}
+		const viewsService = accessor.get(IViewsService);
+		const view = viewsService.getViewWithId<ChangesViewPane>(CHANGES_VIEW_ID);
+		if (!view) {
+			return;
+		}
+		const changes = toIChangesFileItem(view.viewModel.activeSessionChangesObs.get());
+		const item = changes.find(c => c.uri.toString() === uri.toString());
+		if (item) {
+			view.openFileInModal(item, changes);
 		}
 	}
 });

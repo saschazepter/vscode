@@ -125,7 +125,7 @@ export class DiffEditorItemTemplate extends Disposable implements IPooledObject<
 			? this._register(this._workbenchUIElementFactory.createResourceLabel(this._elements.secondaryPath))
 			: undefined;
 		this._dataStore = this._register(new DisposableStore());
-		this._headerHeight = 40;
+		this._headerHeight = 32;
 		this._lastScrollTop = -1;
 		this._isSettingScrollTop = false;
 

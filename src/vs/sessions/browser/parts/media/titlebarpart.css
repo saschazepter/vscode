@@ -31,7 +31,7 @@
 
 .agent-sessions-workbench.monaco-workbench .part.titlebar > .sessions-titlebar-container > .titlebar-center {
 	flex: 1;
-	max-width: none;
+	max-width: none !important;
 }
 
 .agent-sessions-workbench.monaco-workbench .part.titlebar > .sessions-titlebar-container > .titlebar-center .window-title {
