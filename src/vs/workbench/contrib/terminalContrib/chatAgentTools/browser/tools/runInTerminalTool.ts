@@ -967,7 +967,7 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 			});
 			if (rewriteResult) {
 				rewrittenCommand = rewriteResult.rewritten;
-				forDisplayCommand = rewriteResult.forDisplay ?? forDisplayCommand;
+				forDisplayCommand = forDisplayCommand ?? rewriteResult.forDisplay;
 				if (rewriteResult.isSandboxWrapped) {
 					isSandboxWrapped = true;
 				} else if (rewriteResult.isSandboxWrapped === false) {
