@@ -304,7 +304,11 @@ export class CopilotAgent extends Disposable implements IAgent {
 			? params.config.isolation
 			: gitInfo ? 'worktree' : 'folder';
 
-		const values: Record<string, string> = { isolation: isolationValue };
+		const autoApproveValue = params.config?.autoApprove === 'default' || params.config?.autoApprove === 'autoApprove' || params.config?.autoApprove === 'autopilot'
+			? params.config.autoApprove
+			: 'default';
+
+		const values: Record<string, string> = { isolation: isolationValue, autoApprove: autoApproveValue };
 		if (gitInfo) {
 			values.branch = typeof params.config?.branch === 'string' && isolationValue === 'worktree'
 				? params.config.branch
@@ -321,6 +325,24 @@ export class CopilotAgent extends Disposable implements IAgent {
 				enumDescriptions: gitInfo ? [localize('agentHost.sessionConfig.isolation.folderDescription', "Work directly in the folder"), localize('agentHost.sessionConfig.isolation.worktreeDescription', "Create a Git worktree for isolation")] : [localize('agentHost.sessionConfig.isolation.folderDescription', "Work directly in the folder")],
 				default: gitInfo ? 'worktree' : 'folder',
 				readOnly: !gitInfo,
+			},
+			autoApprove: {
+				type: 'string',
+				title: localize('agentHost.sessionConfig.autoApprove', "Approvals"),
+				description: localize('agentHost.sessionConfig.autoApproveDescription', "Tool approval behavior for this session"),
+				enum: ['default', 'autoApprove', 'autopilot'],
+				enumLabels: [
+					localize('agentHost.sessionConfig.autoApprove.default', "Default Approvals"),
+					localize('agentHost.sessionConfig.autoApprove.bypass', "Bypass Approvals"),
+					localize('agentHost.sessionConfig.autoApprove.autopilot', "Autopilot (Preview)"),
+				],
+				enumDescriptions: [
+					localize('agentHost.sessionConfig.autoApprove.defaultDescription', "Copilot uses your configured settings"),
+					localize('agentHost.sessionConfig.autoApprove.bypassDescription', "All tool calls are auto-approved"),
+					localize('agentHost.sessionConfig.autoApprove.autopilotDescription', "Autonomously iterates from start to finish"),
+				],
+				default: 'default',
+				sessionMutable: true,
 			},
 		};
 
