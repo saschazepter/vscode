@@ -33,6 +33,8 @@ export interface IAICustomizationWelcomePageImplementation extends IDisposable {
 	readonly container: HTMLElement;
 	rebuildCards(visibleSectionIds: ReadonlySet<AICustomizationManagementSection>): void;
 	focus(): void;
+	/** Called when the welcome page becomes visible after navigation — clears any transient state. */
+	reset?(): void;
 }
 
 /**
@@ -75,6 +77,10 @@ export class AICustomizationWelcomePage extends Disposable {
 
 	focus(): void {
 		this.implementation.value?.focus();
+	}
+
+	reset(): void {
+		this.implementation.value?.reset?.();
 	}
 
 	private renderImplementation(): void {

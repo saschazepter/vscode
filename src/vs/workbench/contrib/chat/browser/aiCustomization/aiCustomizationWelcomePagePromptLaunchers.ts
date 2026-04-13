@@ -36,6 +36,10 @@ export class PromptLaunchersAICustomizationWelcomePage extends Disposable implem
 	private cardsContainer: HTMLElement | undefined;
 	private inputElement: HTMLInputElement | undefined;
 
+	private sentLabel: HTMLElement | undefined;
+	private submitBtn: HTMLElement | undefined;
+	private inputRow: HTMLElement | undefined;
+
 	private readonly categoryDescriptions: IPromptLaunchersCategoryDescription[] = [
 		{
 			id: AICustomizationManagementSection.Agents,
@@ -110,22 +114,22 @@ export class PromptLaunchersAICustomizationWelcomePage extends Disposable implem
 			description.textContent = localize('gettingStartedDesc', "Describe your preferences and conventions to draft agents, skills, and instructions.");
 
 			const inputRow = DOM.append(gettingStarted, $('.welcome-prompts-input-row'));
+			this.inputRow = inputRow;
 			this.inputElement = DOM.append(inputRow, $('input.welcome-prompts-input')) as HTMLInputElement;
 			this.inputElement.type = 'text';
 			this.inputElement.placeholder = localize('workflowInputPlaceholder', "Prefer concise commits, thorough reviews, and tested code...");
 			this.inputElement.setAttribute('aria-label', localize('workflowInputAriaLabel', "Describe your preferences to customize your agent"));
 
 			const submitBtn = DOM.append(inputRow, $('button.welcome-prompts-input-submit'));
+			this.submitBtn = submitBtn;
 			submitBtn.setAttribute('aria-label', localize('workflowSubmitAriaLabel', "Customize agent"));
 			this._register(this.hoverService.setupManagedHover(getDefaultHoverDelegate('element'), submitBtn, localize('workflowSubmitTooltip', "Open in Chat")));
 			const chevron = DOM.append(submitBtn, $('span.codicon.codicon-arrow-up'));
 			chevron.setAttribute('aria-hidden', 'true');
 
-			let sentLabel: HTMLElement | undefined;
-
 			const updateSubmitState = () => {
 				const hasValue = !!(this.inputElement?.value?.trim());
-				submitBtn.disabled = !hasValue;
+				(submitBtn as HTMLButtonElement).disabled = !hasValue;
 				submitBtn.classList.toggle('welcome-prompts-input-submit-disabled', !hasValue);
 			};
 
@@ -149,11 +153,11 @@ export class PromptLaunchersAICustomizationWelcomePage extends Disposable implem
 				updateSubmitState();
 				inputRow.classList.add('sent');
 				submitBtn.style.display = 'none';
-				if (sentLabel) {
-					sentLabel.remove();
+				if (this.sentLabel) {
+					this.sentLabel.remove();
 				}
-				sentLabel = DOM.append(inputRow, $('span.welcome-prompts-sent-label'));
-				sentLabel.textContent = localize('sentToChat', "Sent to chat \u2713");
+				this.sentLabel = DOM.append(inputRow, $('span.welcome-prompts-sent-label'));
+				this.sentLabel.textContent = localize('sentToChat', "Sent to chat \u2713");
 
 				this.callbacks.prefillChat(query, { isPartialQuery: false, newChat: true });
 			};
@@ -168,17 +172,29 @@ export class PromptLaunchersAICustomizationWelcomePage extends Disposable implem
 			this._register(DOM.addDisposableListener(this.inputElement, 'input', () => {
 				updateSubmitState();
 				// Typing restores the input row from sent state
-				if (sentLabel) {
-					sentLabel.remove();
-					sentLabel = undefined;
-					submitBtn.style.display = '';
-					inputRow.classList.remove('sent');
-				}
+				this._clearSentState();
 			}));
 			updateSubmitState();
 		}
 
 		this.cardsContainer = DOM.append(welcomeInner, $('.welcome-prompts-cards'));
+	}
+
+	private _clearSentState(): void {
+		if (this.sentLabel) {
+			this.sentLabel.remove();
+			this.sentLabel = undefined;
+		}
+		if (this.submitBtn) {
+			this.submitBtn.style.display = '';
+		}
+		if (this.inputRow) {
+			this.inputRow.classList.remove('sent');
+		}
+	}
+
+	reset(): void {
+		this._clearSentState();
 	}
 
 	rebuildCards(visibleSectionIds: ReadonlySet<AICustomizationManagementSection>): void {
