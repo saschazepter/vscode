@@ -14,6 +14,7 @@ import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase 
 import { IViewContainersRegistry, IViewsRegistry, ViewContainerLocation, Extensions as ViewContainerExtensions, WindowVisibility } from '../../../../workbench/common/views.js';
 import { OutputViewPane } from '../../../../workbench/contrib/output/browser/outputView.js';
 import { OUTPUT_VIEW_ID } from '../../../../workbench/services/output/common/output.js';
+import { IsMobileLayoutContext } from '../../../common/contextkeys.js';
 
 const SESSIONS_LOGS_CONTAINER_ID = 'workbench.sessions.panel.logsContainer';
 
@@ -59,6 +60,7 @@ class RegisterLogsViewContainerContribution implements IWorkbenchContribution {
 			ctorDescriptor: new SyncDescriptor(OutputViewPane),
 			canToggleVisibility: true,
 			canMoveView: false,
+			when: IsMobileLayoutContext.negate(),
 			windowVisibility: WindowVisibility.Sessions,
 		}], logsViewContainer);
 	}

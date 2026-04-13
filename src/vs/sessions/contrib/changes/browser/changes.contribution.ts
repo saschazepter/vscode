@@ -13,6 +13,7 @@ import { IViewContainersRegistry, ViewContainerLocation, IViewsRegistry, Extensi
 import { CHANGES_VIEW_CONTAINER_ID, CHANGES_VIEW_ID } from '../common/changes.js';
 import { ChangesViewPane, ChangesViewPaneContainer } from './changesView.js';
 import { ChangesTitleBarContribution } from './changesTitleBarWidget.js';
+import { IsMobileLayoutContext } from '../../../common/contextkeys.js';
 import './changesViewActions.js';
 import './checksActions.js';
 import { KeyCode, KeyMod } from '../../../../base/common/keyCodes.js';
@@ -54,6 +55,7 @@ viewsRegistry.registerViews([{
 	canMoveView: false,
 	weight: 100,
 	order: 1,
+	when: IsMobileLayoutContext.negate(),
 	windowVisibility: WindowVisibility.Sessions,
 }], changesViewContainer);
 

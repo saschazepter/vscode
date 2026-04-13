@@ -38,3 +38,11 @@ export const SessionsWelcomeVisibleContext = new RawContextKey<boolean>('session
 export const EditorMaximizedContext = new RawContextKey<boolean>('editorMaximized', false, localize('editorMaximized', "Whether the editor area is maximized"));
 
 //#endregion
+
+//#region < --- Mobile Layout --- >
+
+export const ViewportClassContext = new RawContextKey<string>('sessionsViewportClass', 'desktop', localize('sessionsViewportClass', "The current viewport class: phone, tablet, or desktop"));
+export const IsMobileLayoutContext = new RawContextKey<boolean>('sessionsIsMobileLayout', false, localize('sessionsIsMobileLayout', "Whether the current layout is mobile (phone or tablet)"));
+export const KeyboardVisibleContext = new RawContextKey<boolean>('sessionsKeyboardVisible', false, localize('sessionsKeyboardVisible', "Whether the virtual keyboard is visible"));
+
+//#endregion
