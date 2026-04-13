@@ -1262,6 +1262,18 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 			return true;
 		}
 
+		// Quick check: if the stream hasn't delivered any new words since we last
+		// rendered, skip the expensive getNextProgressiveRenderContent call entirely.
+		// This keeps the keep-alive timer cheap during idle periods.
+		const renderData = element.renderData;
+		if (renderData && !element.isComplete) {
+			const lastWordCount = element.contentUpdateTimings?.lastWordCount ?? 0;
+			if (lastWordCount > 0 && renderData.renderedWordCount >= lastWordCount) {
+				this.traceLayout('doNextProgressiveRender', 'no new words from stream, skipping');
+				return false;
+			}
+		}
+
 		templateData.rowContainer.classList.toggle('chat-response-loading', true);
 		this.traceLayout('doNextProgressiveRender', `START progressive render, index=${index}`);
 		const contentForThisTurn = this.getNextProgressiveRenderContent(element, templateData);
