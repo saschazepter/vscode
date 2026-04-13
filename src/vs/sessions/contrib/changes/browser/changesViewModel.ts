@@ -14,7 +14,7 @@ import { IStorageService, StorageScope, StorageTarget } from '../../../../platfo
 import { IAgentSessionsService } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsService.js';
 import { IChatSessionFileChange, IChatSessionFileChange2 } from '../../../../workbench/contrib/chat/common/chatSessionsService.js';
 import { GitDiffChange, IGitService } from '../../../../workbench/contrib/git/common/gitService.js';
-import { COPILOT_CLOUD_SESSION_TYPE, IChat } from '../../../services/sessions/common/session.js';
+import { COPILOT_CLOUD_SESSION_TYPE } from '../../../services/sessions/common/session.js';
 import { ISessionsManagementService } from '../../../services/sessions/common/sessionsManagement.js';
 import { IAgentFeedbackService } from '../../agentFeedback/browser/agentFeedbackService.js';
 import { CodeReviewStateKind, getCodeReviewFilesFromSessionChanges, getCodeReviewVersion, ICodeReviewService, PRReviewStateKind } from '../../codeReview/browser/codeReviewService.js';
@@ -40,9 +40,9 @@ function toIChatSessionFileChange2(changes: GitDiffChange[], originalRef: string
 	} satisfies IChatSessionFileChange2));
 }
 
-function sortChatByLastTurnEndDesc(chatA: IChat, chatB: IChat): number {
-	const chatALastTurnEnd = chatA.lastTurnEnd.get();
-	const chatBLastTurnEnd = chatB.lastTurnEnd.get();
+function sortDateDesc(dateA: Date | undefined, dateB: Date | undefined): number {
+	const chatALastTurnEnd = dateA?.getTime();
+	const chatBLastTurnEnd = dateB?.getTime();
 
 	if (!chatALastTurnEnd && !chatBLastTurnEnd) {
 		return 0;
@@ -56,7 +56,7 @@ function sortChatByLastTurnEndDesc(chatA: IChat, chatB: IChat): number {
 		return -1;
 	}
 
-	return chatBLastTurnEnd.getTime() - chatALastTurnEnd.getTime();
+	return chatBLastTurnEnd - chatALastTurnEnd;
 }
 
 export interface ActiveSessionState {
@@ -160,7 +160,13 @@ export class ChangesViewModel extends Disposable {
 			}
 
 			// Session has multiple chats - find the last chat that completed
-			const chatsSortedByLastTurnEnd = activeSessionChats.toSorted(sortChatByLastTurnEndDesc);
+			const chatsSortedByLastTurnEnd = activeSessionChats.toSorted((chatA, chatB) => {
+				const chatALastTurnEnd = chatA.lastTurnEnd.read(reader);
+				const chatBLastTurnEnd = chatB.lastTurnEnd.read(reader);
+
+				return sortDateDesc(chatALastTurnEnd, chatBLastTurnEnd);
+			});
+
 			const model = this.agentSessionsService.getSession(chatsSortedByLastTurnEnd[0].resource);
 			return model?.metadata?.lastCheckpointRef as string | undefined;
 		});
