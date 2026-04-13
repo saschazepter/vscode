@@ -639,10 +639,6 @@ export interface ISessionsList {
 	pinSession(session: ISession): void;
 	unpinSession(session: ISession): void;
 	isSessionPinned(session: ISession): boolean;
-	markRead(session: ISession): void;
-	markUnread(session: ISession): void;
-	isSessionRead(session: ISession): boolean;
-	markAllRead(): void;
 	setSessionTypeExcluded(sessionTypeId: string, excluded: boolean): void;
 	isSessionTypeExcluded(sessionTypeId: string): boolean;
 	setStatusExcluded(status: SessionStatus, excluded: boolean): void;
@@ -1072,10 +1068,6 @@ export class SessionsList extends Disposable implements ISessionsList {
 
 	isSessionRead(session: ISession): boolean {
 		return this._sessionsListModelService.isSessionRead(session);
-	}
-
-	markAllRead(): void {
-		this._sessionsListModelService.markAllRead(this.sessions);
 	}
 
 	// -- Session type filtering --

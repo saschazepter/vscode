@@ -25,6 +25,7 @@ import { IsWorkspaceGroupCappedContext, SessionsViewFilterOptionsSubMenu, Sessio
 import { SessionsViewId as NewChatViewId, NewChatViewPane } from '../../../chat/browser/newChatViewPane.js';
 import { Menus } from '../../../../browser/menus.js';
 import { ActiveSessionSupportsMultiChatContext, ISessionsManagementService } from '../../../../services/sessions/common/sessionsManagement.js';
+import { ISessionsListModelService } from './sessionsListModelService.js';
 import { ChatContextKeys } from '../../../../../workbench/contrib/chat/common/actions/chatContextKeys.js';
 
 //  Constants
@@ -590,10 +591,9 @@ registerAction2(class MarkSessionReadAction extends Action2 {
 			return;
 		}
 		const sessions = Array.isArray(context) ? context : [context];
-		const viewsService = accessor.get(IViewsService);
-		const view = viewsService.getViewWithId<SessionsView>(SessionsViewId);
+		const sessionsListModelService = accessor.get(ISessionsListModelService);
 		for (const session of sessions) {
-			view?.sessionsControl?.markRead(session);
+			sessionsListModelService.markRead(session);
 		}
 	}
 });
@@ -619,10 +619,9 @@ registerAction2(class MarkSessionUnreadAction extends Action2 {
 			return;
 		}
 		const sessions = Array.isArray(context) ? context : [context];
-		const viewsService = accessor.get(IViewsService);
-		const view = viewsService.getViewWithId<SessionsView>(SessionsViewId);
+		const sessionsListModelService = accessor.get(ISessionsListModelService);
 		for (const session of sessions) {
-			view?.sessionsControl?.markUnread(session);
+			sessionsListModelService.markUnread(session);
 		}
 	}
 });
@@ -671,9 +670,11 @@ registerAction2(class MarkAllSessionsReadAction extends Action2 {
 		});
 	}
 	run(accessor: ServicesAccessor): void {
-		const viewsService = accessor.get(IViewsService);
-		const view = viewsService.getViewWithId<SessionsView>(SessionsViewId);
-		view?.sessionsControl?.markAllRead();
+		const sessionsManagementService = accessor.get(ISessionsManagementService);
+		const sessionsListModelService = accessor.get(ISessionsListModelService);
+		const sessions = sessionsManagementService.getSessions()
+			.filter(s => !s.isArchived.get() && !sessionsListModelService.isSessionRead(s));
+		sessionsListModelService.markAllRead(sessions);
 	}
 });
 

@@ -17,8 +17,7 @@ export const enum SessionListModelChangeKind {
 }
 
 export interface ISessionListModelChangeEvent {
-	readonly sessionId: string;
-	readonly kind: SessionListModelChangeKind;
+	readonly changes: ReadonlyArray<{ readonly sessionId: string; readonly kind: SessionListModelChangeKind }>;
 }
 
 /**
@@ -54,8 +53,8 @@ export class SessionsListModelService extends Disposable implements ISessionsLis
 
 	declare readonly _serviceBrand: undefined;
 
-	private static readonly PINNED_SESSIONS_KEY = 'sessionsListModel.pinnedSessions';
-	private static readonly READ_SESSIONS_KEY = 'sessionsListModel.readSessions';
+	private static readonly PINNED_SESSIONS_KEY = 'sessionsListControl.pinnedSessions';
+	private static readonly READ_SESSIONS_KEY = 'sessionsListControl.readSessions';
 
 	private readonly _onDidChange = this._register(new Emitter<ISessionListModelChangeEvent>());
 	readonly onDidChange: Event<ISessionListModelChangeEvent> = this._onDidChange.event;
@@ -87,7 +86,7 @@ export class SessionsListModelService extends Disposable implements ISessionsLis
 		}
 		this._pinnedSessionIds.add(session.sessionId);
 		this.saveSet(SessionsListModelService.PINNED_SESSIONS_KEY, this._pinnedSessionIds);
-		this._onDidChange.fire({ sessionId: session.sessionId, kind: SessionListModelChangeKind.Pinned });
+		this._onDidChange.fire({ changes: [{ sessionId: session.sessionId, kind: SessionListModelChangeKind.Pinned }] });
 	}
 
 	unpinSession(session: ISession): void {
@@ -96,7 +95,7 @@ export class SessionsListModelService extends Disposable implements ISessionsLis
 		}
 		this._pinnedSessionIds.delete(session.sessionId);
 		this.saveSet(SessionsListModelService.PINNED_SESSIONS_KEY, this._pinnedSessionIds);
-		this._onDidChange.fire({ sessionId: session.sessionId, kind: SessionListModelChangeKind.Pinned });
+		this._onDidChange.fire({ changes: [{ sessionId: session.sessionId, kind: SessionListModelChangeKind.Pinned }] });
 	}
 
 	isSessionPinned(session: ISession): boolean {
@@ -111,7 +110,7 @@ export class SessionsListModelService extends Disposable implements ISessionsLis
 		}
 		this._readSessionIds.add(session.sessionId);
 		this.saveSet(SessionsListModelService.READ_SESSIONS_KEY, this._readSessionIds);
-		this._onDidChange.fire({ sessionId: session.sessionId, kind: SessionListModelChangeKind.Read });
+		this._onDidChange.fire({ changes: [{ sessionId: session.sessionId, kind: SessionListModelChangeKind.Read }] });
 	}
 
 	markUnread(session: ISession): void {
@@ -120,7 +119,7 @@ export class SessionsListModelService extends Disposable implements ISessionsLis
 		}
 		this._readSessionIds.delete(session.sessionId);
 		this.saveSet(SessionsListModelService.READ_SESSIONS_KEY, this._readSessionIds);
-		this._onDidChange.fire({ sessionId: session.sessionId, kind: SessionListModelChangeKind.Read });
+		this._onDidChange.fire({ changes: [{ sessionId: session.sessionId, kind: SessionListModelChangeKind.Read }] });
 	}
 
 	isSessionRead(session: ISession): boolean {
@@ -128,25 +127,33 @@ export class SessionsListModelService extends Disposable implements ISessionsLis
 	}
 
 	markAllRead(sessions: ISession[]): void {
+		const changed: { sessionId: string; kind: SessionListModelChangeKind }[] = [];
 		for (const session of sessions) {
 			if (!this._readSessionIds.has(session.sessionId)) {
 				this._readSessionIds.add(session.sessionId);
-				this._onDidChange.fire({ sessionId: session.sessionId, kind: SessionListModelChangeKind.Read });
+				changed.push({ sessionId: session.sessionId, kind: SessionListModelChangeKind.Read });
 			}
 		}
-		this.saveSet(SessionsListModelService.READ_SESSIONS_KEY, this._readSessionIds);
+		if (changed.length > 0) {
+			this.saveSet(SessionsListModelService.READ_SESSIONS_KEY, this._readSessionIds);
+			this._onDidChange.fire({ changes: changed });
+		}
 	}
 
 	// -- Cleanup --
 
 	private deleteSession(session: ISession): void {
+		const changes: { sessionId: string; kind: SessionListModelChangeKind }[] = [];
 		if (this._pinnedSessionIds.delete(session.sessionId)) {
 			this.saveSet(SessionsListModelService.PINNED_SESSIONS_KEY, this._pinnedSessionIds);
-			this._onDidChange.fire({ sessionId: session.sessionId, kind: SessionListModelChangeKind.Pinned });
+			changes.push({ sessionId: session.sessionId, kind: SessionListModelChangeKind.Pinned });
 		}
 		if (this._readSessionIds.delete(session.sessionId)) {
 			this.saveSet(SessionsListModelService.READ_SESSIONS_KEY, this._readSessionIds);
-			this._onDidChange.fire({ sessionId: session.sessionId, kind: SessionListModelChangeKind.Read });
+			changes.push({ sessionId: session.sessionId, kind: SessionListModelChangeKind.Read });
+		}
+		if (changes.length > 0) {
+			this._onDidChange.fire({ changes });
 		}
 	}
 

@@ -9,7 +9,7 @@ import { Emitter } from '../../../../../base/common/event.js';
 import { observableValue } from '../../../../../base/common/observable.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
-import { IStorageService, InMemoryStorageService } from '../../../../../platform/storage/common/storage.js';
+import { IStorageService, InMemoryStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
 import { IChat, ISession, SessionStatus } from '../../../../services/sessions/common/session.js';
 import { ISessionsChangeEvent, ISessionsManagementService } from '../../../../services/sessions/common/sessionsManagement.js';
 import { ISessionListModelChangeEvent, SessionListModelChangeKind, SessionsListModelService } from '../../browser/views/sessionsListModelService.js';
@@ -207,7 +207,7 @@ suite('SessionsListModelService', () => {
 
 	// -- onDidChange --
 
-	test('onDidChange includes sessionId and kind for each mutation', () => {
+	test('onDidChange includes changes array with sessionId and kind', () => {
 		const session = createSession('s1');
 		const events: ISessionListModelChangeEvent[] = [];
 		disposables.add(service.onDidChange(e => events.push(e)));
@@ -218,14 +218,14 @@ suite('SessionsListModelService', () => {
 		service.markUnread(session);
 
 		assert.deepStrictEqual(events, [
-			{ sessionId: 's1', kind: SessionListModelChangeKind.Pinned },
-			{ sessionId: 's1', kind: SessionListModelChangeKind.Pinned },
-			{ sessionId: 's1', kind: SessionListModelChangeKind.Read },
-			{ sessionId: 's1', kind: SessionListModelChangeKind.Read },
+			{ changes: [{ sessionId: 's1', kind: SessionListModelChangeKind.Pinned }] },
+			{ changes: [{ sessionId: 's1', kind: SessionListModelChangeKind.Pinned }] },
+			{ changes: [{ sessionId: 's1', kind: SessionListModelChangeKind.Read }] },
+			{ changes: [{ sessionId: 's1', kind: SessionListModelChangeKind.Read }] },
 		]);
 	});
 
-	test('markAllRead fires per session', () => {
+	test('markAllRead fires single event with all sessions', () => {
 		const s1 = createSession('s1');
 		const s2 = createSession('s2');
 		const events: ISessionListModelChangeEvent[] = [];
@@ -234,8 +234,12 @@ suite('SessionsListModelService', () => {
 		service.markAllRead([s1, s2]);
 
 		assert.deepStrictEqual(events, [
-			{ sessionId: 's1', kind: SessionListModelChangeKind.Read },
-			{ sessionId: 's2', kind: SessionListModelChangeKind.Read },
+			{
+				changes: [
+					{ sessionId: 's1', kind: SessionListModelChangeKind.Read },
+					{ sessionId: 's2', kind: SessionListModelChangeKind.Read },
+				]
+			},
 		]);
 	});
 
@@ -254,8 +258,12 @@ suite('SessionsListModelService', () => {
 		assert.strictEqual(service.isSessionPinned(session), false);
 		assert.strictEqual(service.isSessionRead(session), false);
 		assert.deepStrictEqual(events, [
-			{ sessionId: 's1', kind: SessionListModelChangeKind.Pinned },
-			{ sessionId: 's1', kind: SessionListModelChangeKind.Read },
+			{
+				changes: [
+					{ sessionId: 's1', kind: SessionListModelChangeKind.Pinned },
+					{ sessionId: 's1', kind: SessionListModelChangeKind.Read },
+				]
+			},
 		]);
 	});
 
@@ -287,8 +295,8 @@ suite('SessionsListModelService', () => {
 		const storageService = disposables.add(new InMemoryStorageService());
 
 		// Pre-populate storage
-		storageService.store('sessionsListModel.pinnedSessions', JSON.stringify(['s1']), 0 /* PROFILE */, 0 /* USER */);
-		storageService.store('sessionsListModel.readSessions', JSON.stringify(['s2']), 0 /* PROFILE */, 0 /* USER */);
+		storageService.store('sessionsListControl.pinnedSessions', JSON.stringify(['s1']), StorageScope.PROFILE, StorageTarget.USER);
+		storageService.store('sessionsListControl.readSessions', JSON.stringify(['s2']), StorageScope.PROFILE, StorageTarget.USER);
 
 		const instantiationService = disposables.add(new TestInstantiationService());
 		instantiationService.stub(IStorageService, storageService);
@@ -303,7 +311,7 @@ suite('SessionsListModelService', () => {
 
 	test('corrupt storage data is handled gracefully', () => {
 		const storageService = disposables.add(new InMemoryStorageService());
-		storageService.store('sessionsListModel.pinnedSessions', 'not-valid-json{', 0 /* PROFILE */, 0 /* USER */);
+		storageService.store('sessionsListControl.pinnedSessions', 'not-valid-json{', StorageScope.PROFILE, StorageTarget.USER);
 
 		const instantiationService = disposables.add(new TestInstantiationService());
 		instantiationService.stub(IStorageService, storageService);
