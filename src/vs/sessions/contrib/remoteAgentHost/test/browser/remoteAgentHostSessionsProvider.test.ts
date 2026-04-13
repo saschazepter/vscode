@@ -500,19 +500,6 @@ suite('RemoteAgentHostSessionsProvider', () => {
 		assert.strictEqual(remaining.find((s) => s.title.get() === 'To Delete'), undefined);
 	});
 
-	test('setRead toggles read state locally', () => {
-		const provider = createProvider(disposables, connection);
-		fireSessionAdded(connection, 'read-sess', { title: 'Read Test' });
-
-		const sessions = provider.getSessions();
-		const target = sessions.find((s) => s.title.get() === 'Read Test');
-		assert.ok(target, 'Session should exist');
-
-		assert.strictEqual(target!.isRead.get(), true);
-		provider.setRead(target!.sessionId, false);
-		assert.strictEqual(target!.isRead.get(), false);
-	});
-
 	// ---- Rename -------
 
 	test('renameSession dispatches SessionTitleChanged action with correct session URI', async () => {

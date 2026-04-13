@@ -590,9 +590,10 @@ registerAction2(class MarkSessionReadAction extends Action2 {
 			return;
 		}
 		const sessions = Array.isArray(context) ? context : [context];
-		const sessionsManagementService = accessor.get(ISessionsManagementService);
+		const viewsService = accessor.get(IViewsService);
+		const view = viewsService.getViewWithId<SessionsView>(SessionsViewId);
 		for (const session of sessions) {
-			sessionsManagementService.setRead(session, true);
+			view?.sessionsControl?.markRead(session);
 		}
 	}
 });
@@ -618,9 +619,10 @@ registerAction2(class MarkSessionUnreadAction extends Action2 {
 			return;
 		}
 		const sessions = Array.isArray(context) ? context : [context];
-		const sessionsManagementService = accessor.get(ISessionsManagementService);
+		const viewsService = accessor.get(IViewsService);
+		const view = viewsService.getViewWithId<SessionsView>(SessionsViewId);
 		for (const session of sessions) {
-			sessionsManagementService.setRead(session, false);
+			view?.sessionsControl?.markUnread(session);
 		}
 	}
 });
@@ -669,13 +671,9 @@ registerAction2(class MarkAllSessionsReadAction extends Action2 {
 		});
 	}
 	run(accessor: ServicesAccessor): void {
-		const sessionsManagementService = accessor.get(ISessionsManagementService);
-		const sessions = sessionsManagementService.getSessions();
-		for (const session of sessions) {
-			if (!session.isArchived.get() && !session.isRead.get()) {
-				sessionsManagementService.setRead(session, true);
-			}
-		}
+		const viewsService = accessor.get(IViewsService);
+		const view = viewsService.getViewWithId<SessionsView>(SessionsViewId);
+		view?.sessionsControl?.markAllRead();
 	}
 });
 
@@ -723,7 +721,6 @@ registerAction2(class MarkSessionAsDoneAction extends Action2 {
 
 	async run(accessor: ServicesAccessor): Promise<void> {
 		const sessionsManagementService = accessor.get(ISessionsManagementService);
-
 		const activeSession = sessionsManagementService.activeSession.get();
 		if (!activeSession || activeSession.status.get() === SessionStatus.Untitled) {
 			return;

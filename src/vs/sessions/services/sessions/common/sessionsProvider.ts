@@ -115,8 +115,6 @@ export interface ISessionsProvider {
 	deleteSession(sessionId: string): Promise<void>;
 	/** Delete a single chat from a session. */
 	deleteChat(sessionId: string, chatUri: URI): Promise<void>;
-	/** Mark a session as read or unread. */
-	setRead(sessionId: string, read: boolean): void;
 
 	// -- Send --
 	/** Send a request, creating a new chat in the session. */

@@ -510,16 +510,6 @@ export class LocalAgentHostSessionsProvider extends Disposable implements ISessi
 		// Agent host sessions don't support deleting individual chats
 	}
 
-	setRead(sessionId: string, read: boolean): void {
-		const rawId = this._rawIdFromChatId(sessionId);
-		const cached = rawId ? this._sessionCache.get(rawId) : undefined;
-		if (cached && rawId) {
-			cached.isRead.set(read, undefined);
-			const action = { type: ActionType.SessionIsReadChanged as const, session: AgentSession.uri(cached.agentProvider, rawId).toString(), isRead: read };
-			this._agentHostService.dispatch(action);
-		}
-	}
-
 	async sendAndCreateChat(chatId: string, options: ISendRequestOptions): Promise<ISession> {
 		const session = this._currentNewSession;
 		if (!session || session.sessionId !== chatId) {

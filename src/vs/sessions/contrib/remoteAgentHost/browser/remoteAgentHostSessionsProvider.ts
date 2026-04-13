@@ -641,18 +641,6 @@ export class RemoteAgentHostSessionsProvider extends Disposable implements ISess
 		// Agent host sessions don't support deleting individual chats
 	}
 
-	setRead(sessionId: string, read: boolean): void {
-		const rawId = this._rawIdFromChatId(sessionId);
-		const cached = rawId ? this._sessionCache.get(rawId) : undefined;
-		if (cached) {
-			cached.isRead.set(read, undefined);
-			if (this._connection && rawId) {
-				const action = { type: ActionType.SessionIsReadChanged as const, session: AgentSession.uri(cached.agentProvider, rawId).toString(), isRead: read };
-				this._connection.dispatch(action);
-			}
-		}
-	}
-
 	async sendAndCreateChat(chatId: string, options: ISendRequestOptions): Promise<ISession> {
 		if (!this._connection) {
 			throw new Error(localize('notConnectedSend', "Cannot send request: not connected to remote agent host '{0}'.", this.label));

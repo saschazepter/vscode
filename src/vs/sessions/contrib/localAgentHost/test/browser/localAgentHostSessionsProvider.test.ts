@@ -517,19 +517,6 @@ suite('LocalAgentHostSessionsProvider', () => {
 		assert.strictEqual(provider.getSessions().find(s => s.title.get() === 'To Delete'), undefined);
 	});
 
-	test('setRead toggles read state locally', () => {
-		const provider = createProvider(disposables, agentHost);
-		fireSessionAdded(agentHost, 'read-sess', { title: 'Read Test' });
-
-		const sessions = provider.getSessions();
-		const target = sessions.find(s => s.title.get() === 'Read Test');
-		assert.ok(target);
-
-		assert.strictEqual(target!.isRead.get(), true);
-		provider.setRead(target!.sessionId, false);
-		assert.strictEqual(target!.isRead.get(), false);
-	});
-
 	// ---- Rename -------
 
 	test('renameChat dispatches SessionTitleChanged action', async () => {
