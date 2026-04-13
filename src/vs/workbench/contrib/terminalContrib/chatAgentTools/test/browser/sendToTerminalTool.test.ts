@@ -207,4 +207,71 @@ suite('SendToTerminalTool', () => {
 		assert.ok(prepared);
 		assert.strictEqual(prepared.confirmationMessages, undefined, 'should skip confirmation when the command matches a carousel answer');
 	});
+
+	test('prepareToolInvocation does not skip confirmation when the command does not match a carousel answer', async () => {
+		const sessionResource = URI.parse('chat-session://test-session');
+		const mockSession = {
+			getRequests: () => [{
+				response: {
+					response: {
+						value: [{
+							kind: 'questionCarousel' as const,
+							terminalId: KNOWN_TERMINAL_ID,
+							questions: [{ id: 'q1', title: 'package name?', message: 'package name?' }],
+							data: { q1: 'my-package' },
+						}]
+					}
+				}
+			}],
+		};
+		instantiationService.stub(IChatService, 'getSession', () => mockSession);
+		tool = store.add(instantiationService.createInstance(SendToTerminalTool));
+
+		const prepared = await tool.prepareToolInvocation(
+			createPreparationContext(KNOWN_TERMINAL_ID, 'different-package', sessionResource),
+			CancellationToken.None,
+		);
+
+		assert.ok(prepared);
+		assert.ok(prepared.confirmationMessages, 'should require confirmation when the command does not match a carousel answer');
+	});
+
+	test('prepareToolInvocation skips confirmation only for exact matches in multi-question carousels', async () => {
+		const sessionResource = URI.parse('chat-session://test-session');
+		const mockSession = {
+			getRequests: () => [{
+				response: {
+					response: {
+						value: [{
+							kind: 'questionCarousel' as const,
+							terminalId: KNOWN_TERMINAL_ID,
+							questions: [
+								{ id: 'q1', title: 'package name?', message: 'package name?' },
+								{ id: 'q2', title: 'entry point?', message: 'entry point?' }
+							],
+							data: { q1: 'my-package', q2: 'src/index.ts' },
+						}]
+					}
+				}
+			}],
+		};
+		instantiationService.stub(IChatService, 'getSession', () => mockSession);
+		tool = store.add(instantiationService.createInstance(SendToTerminalTool));
+
+		const exactMatchPrepared = await tool.prepareToolInvocation(
+			createPreparationContext(KNOWN_TERMINAL_ID, 'src/index.ts', sessionResource),
+			CancellationToken.None,
+		);
+
+		assert.ok(exactMatchPrepared);
+		assert.strictEqual(exactMatchPrepared.confirmationMessages, undefined, 'should skip confirmation when the command exactly matches a carousel answer');
+
+		const mismatchedPrepared = await tool.prepareToolInvocation(
+			createPreparationContext(KNOWN_TERMINAL_ID, 'src/index.js', sessionResource),
+			CancellationToken.None,
+		);
+
+		assert.ok(mismatchedPrepared);
+		assert.ok(mismatchedPrepared.confirmationMessages, 'should require confirmation when the command does not exactly match any carousel answer');
+	});
 });

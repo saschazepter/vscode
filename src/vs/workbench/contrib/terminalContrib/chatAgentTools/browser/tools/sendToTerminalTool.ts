@@ -262,12 +262,10 @@ export class SendToTerminalTool extends Disposable implements IToolImpl {
 						continue;
 					}
 
-					// If there's only one question, return it directly
-					if (carousel.questions.length === 1) {
-						return this._getQuestionText(carousel.questions[0]);
-					}
-
-					// Multiple questions: match the command text against submitted answers
+					// Match the command text against submitted answers;
+					// only return a question when the command exactly matches
+					// an answer so that unrelated send_to_terminal calls do
+					// not accidentally skip confirmation.
 					if (carousel.data) {
 						for (const question of carousel.questions) {
 							const answer = carousel.data[question.id];
@@ -276,9 +274,6 @@ export class SendToTerminalTool extends Disposable implements IToolImpl {
 							}
 						}
 					}
-
-					// Fallback: return the first question's text
-					return this._getQuestionText(carousel.questions[0]);
 				}
 			}
 		}
