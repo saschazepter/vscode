@@ -256,26 +256,31 @@ export default defineThemedFixtureGroup({ path: 'sessions/' }, {
 
 	Expanded: defineComponentFixture({
 		labels: { kind: 'screenshot' },
+		expectedVisualDescriptions: 'The "Customizations" header is visible with all 7 categories listed below: Agents, Skills, Instructions, Prompts, Hooks, MCP Servers, Plugins — each with an icon and no count badges.',
 		render: (ctx) => renderWidget(ctx),
 	}),
 
 	Collapsed: defineComponentFixture({
 		labels: { kind: 'screenshot' },
+		expectedVisualDescriptions: 'Only the "Customizations" header bar is visible; the category list is collapsed/hidden.',
 		render: (ctx) => renderWidget(ctx, { collapsed: true }),
 	}),
 
 	WithMcpServers: defineComponentFixture({
 		labels: { kind: 'screenshot' },
+		expectedVisualDescriptions: 'All 7 categories are listed. MCP Servers row shows a count badge of "3". All other categories have no badge.',
 		render: (ctx) => renderWidget(ctx, { mcpServerCount: 3 }),
 	}),
 
 	CollapsedWithMcpServers: defineComponentFixture({
 		labels: { kind: 'screenshot' },
+		expectedVisualDescriptions: 'Only the "Customizations" header bar is visible (collapsed), with a count badge of "3" on the right side.',
 		render: (ctx) => renderWidget(ctx, { mcpServerCount: 3, collapsed: true }),
 	}),
 
 	WithCounts: defineComponentFixture({
 		labels: { kind: 'screenshot' },
+		expectedVisualDescriptions: 'All 7 categories listed with count badges: Agents 2, Skills 30, Instructions 16, Prompts 17, Hooks 4, MCP Servers 2, Plugins has no badge.',
 		render: (ctx) => renderWidget(ctx, {
 			mcpServerCount: 2,
 			counts: { agents: 2, skills: 30, instructions: 16, prompts: 17, hooks: 4 },

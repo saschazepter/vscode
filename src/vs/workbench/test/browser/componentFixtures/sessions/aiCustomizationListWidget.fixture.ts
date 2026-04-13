@@ -203,6 +203,7 @@ export default defineThemedFixtureGroup({ path: 'chat/aiCustomizations/' }, {
 
 	InstructionsTabWithItems: defineComponentFixture({
 		labels: { kind: 'screenshot' },
+		expectedVisualDescriptions: 'Instructions tab list widget with items. Shows instruction files grouped by type: always-active (no applyTo), always-included (applyTo: **), and on-demand (with glob patterns like "**/*.test.ts", "src/auth/**"). Agent instruction files (AGENTS.md, copilot-instructions.md) are shown at the top.',
 		render: ctx => renderInstructionsTab(ctx, [
 			// Always-active instructions (no applyTo)
 			{ promptPath: { uri: URI.file('/workspace/.github/instructions/coding-standards.instructions.md'), storage: PromptsStorage.local, type: PromptsType.instructions }, name: 'Coding Standards', description: 'Repository-wide coding standards' },
@@ -222,6 +223,7 @@ export default defineThemedFixtureGroup({ path: 'chat/aiCustomizations/' }, {
 
 	InstructionsTabEmpty: defineComponentFixture({
 		labels: { kind: 'screenshot' },
+		expectedVisualDescriptions: 'Instructions tab list widget with no items. An empty state message or empty list is shown.',
 		render: ctx => renderInstructionsTab(ctx, []),
 	}),
 });
