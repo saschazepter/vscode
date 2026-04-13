@@ -199,7 +199,7 @@ export class InlineCompletionProviderImpl extends Disposable implements InlineCo
 		this._displayNextEditorNES = this._configurationService.getExperimentBasedConfig(ConfigKey.Advanced.UseAlternativeNESNotebookFormat, this._expService);
 		this._renameSymbolSuggestions = this._configurationService.getExperimentBasedConfigObservable(ConfigKey.Advanced.InlineEditsRenameSymbolSuggestions, this._expService);
 		this._inlineCompletionsAdvanced = this._configurationService.getExperimentBasedConfigObservable(ConfigKey.TeamInternal.InlineEditsInlineCompletionsAdvanced, this._expService);
-		this._ghostTextTrackingEnabled = this._configurationService.getConfig(ConfigKey.TeamInternal.InlineEditsGhostTextTracking);
+		this._ghostTextTrackingEnabled = this._configurationService.getExperimentBasedConfig(ConfigKey.TeamInternal.InlineEditsDoNotChangeGhostTextRendering, this._expService);
 
 		// Clean up ghost text tracking data when documents are closed to prevent memory leaks
 		if (this._ghostTextTrackingEnabled) {
