@@ -262,24 +262,6 @@ class DocumentEditCache {
 			if (editWindow && !inEditWindow && !inOriginalWindow) {
 				return undefined;
 			}
-			// If the cursor moved farther from the edit's start line than it was at cache time,
-			// reject the cached edit so the same suggestion is not shown again.
-			// Only applies to non-rebased, non-subsequent edits.
-			if (cacheCursorDistanceCheck
-				&& cachedEdit.edit
-				&& (cachedEdit.subsequentN === undefined || cachedEdit.subsequentN === 0)
-				&& cachedEdit.cursorOffsetAtCacheTime !== undefined
-				&& cursorRange
-			) {
-				const transformer = currentDocumentContents.getTransformer();
-				const editStartLine = transformer.getPosition(cachedEdit.edit.replaceRange.start).lineNumber;
-				const originalCursorLine = transformer.getPosition(cachedEdit.cursorOffsetAtCacheTime).lineNumber;
-				const currentCursorLine = transformer.getPosition(cursorRange.start).lineNumber;
-				if (Math.abs(currentCursorLine - editStartLine) > Math.abs(originalCursorLine - editStartLine)) {
-					cachedEdit.rejected = true;
-					return cachedEdit;
-				}
-			}
 			return cachedEdit;
 		}
 		for (const cachedEdit of this._trackedCachedEdits) {
