@@ -376,3 +376,72 @@
 	padding-left: 4px;
 	padding-right: 4px;
 }
+
+/* ---- Diff Preview Split ---- */
+
+/* Diff preview widget */
+.diff-preview-widget {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	width: 100%;
+	overflow: hidden;
+}
+
+.diff-preview-widget > .diff-preview-editor {
+	flex: 1;
+	min-height: 0;
+	min-width: 0;
+	overflow: hidden;
+	position: relative;
+	padding: 10px;
+	box-sizing: border-box;
+}
+
+/* Empty state */
+.diff-preview-widget > .diff-preview-empty {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	flex: 1;
+	padding: 32px;
+	text-align: center;
+	gap: 8px;
+}
+
+.diff-preview-widget > .diff-preview-empty .diff-preview-empty-icon.codicon {
+	font-size: 32px !important;
+	color: var(--vscode-descriptionForeground);
+	opacity: 0.4;
+}
+
+.diff-preview-widget > .diff-preview-empty .diff-preview-empty-message {
+	color: var(--vscode-descriptionForeground);
+	font-size: 12px;
+}
+
+/* Use editor background for the multi-diff editor in the diff preview */
+.diff-preview-widget .monaco-component.multiDiffEditor {
+	background: var(--vscode-sideBar-background);
+}
+
+/* Disable the active/focus highlight border on diff entries */
+.diff-preview-widget .monaco-component.multiDiffEditor .multiDiffEntry.active {
+	--vscode-multiDiffEditor-border: var(--vscode-sideBarSectionHeader-border);
+	border-radius: var(--vscode-cornerRadius-small);
+}
+
+/* Header styling for agents app diff preview */
+.diff-preview-widget .monaco-component.multiDiffEditor .multiDiffEntry .header .header-content {
+	margin: 0;
+	background: var(--vscode-list-inactiveSelectionBackground);
+	border-radius: var(--vscode-cornerRadius-small);
+	border-top: none;
+}
+
+/* Editor area uses editor background */
+.diff-preview-widget .monaco-component.multiDiffEditor .multiDiffEntry .editorParent {
+	border-bottom: none;
+	border-radius: var(--vscode-cornerRadius-small);
+}

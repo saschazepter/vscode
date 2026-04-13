@@ -18,6 +18,12 @@ export const ChatSessionProviderIdContext = new RawContextKey<string>('chatSessi
 
 //#endregion
 
+//#region < --- Diff Preview --- >
+
+export const DiffPreviewVisibleContext = new RawContextKey<boolean>('sessions.diffPreviewVisible', false);
+
+//#endregion
+
 //#region < --- Chat Bar --- >
 
 export const ActiveChatBarContext = new RawContextKey<string>('activeChatBar', '', localize('activeChatBar', "The identifier of the active chat bar panel"));

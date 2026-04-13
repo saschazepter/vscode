@@ -5,8 +5,9 @@
 
 import '../../../workbench/browser/parts/auxiliarybar/media/auxiliaryBarPart.css';
 import './media/auxiliaryBarPart.css';
+import * as dom from '../../../base/browser/dom.js';
 import { localize } from '../../../nls.js';
-import { IContextKeyService } from '../../../platform/contextkey/common/contextkey.js';
+import { IContextKeyService, IContextKey } from '../../../platform/contextkey/common/contextkey.js';
 import { IContextMenuService } from '../../../platform/contextview/browser/contextView.js';
 import { IInstantiationService } from '../../../platform/instantiation/common/instantiation.js';
 import { IKeybindingService } from '../../../platform/keybinding/common/keybinding.js';
@@ -36,6 +37,9 @@ import { IBaseActionViewItemOptions } from '../../../base/browser/ui/actionbar/a
 import { getFlatContextMenuActions } from '../../../platform/actions/browser/menuEntryActionViewItem.js';
 import { IDisposable, MutableDisposable } from '../../../base/common/lifecycle.js';
 import { Extensions } from '../../../workbench/browser/panecomposite.js';
+import { DiffPreviewWidget, IDiffPreviewFile } from './diffPreviewWidget.js';
+import { DiffPreviewVisibleContext } from '../../common/contextkeys.js';
+import { Sash, Orientation as SashOrientation, ISashEvent, SashState } from '../../../base/browser/ui/sash/sash.js';
 
 /**
  * Auxiliary bar part specifically for agent sessions workbench.
@@ -89,6 +93,14 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 
 	readonly priority = LayoutPriority.Low;
 
+	// Diff preview state
+	private diffPreviewContainer: HTMLElement | undefined;
+	private diffPreviewWidget: DiffPreviewWidget | undefined;
+	private diffPreviewSash: Sash | undefined;
+	private diffPreviewWidth = 0;
+	private diffPreviewVisibleContextKey: IContextKey<boolean>;
+	private lastLayoutWidth = 0;
+
 	constructor(
 		@INotificationService notificationService: INotificationService,
 		@IStorageService storageService: IStorageService,
@@ -135,12 +147,99 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 			menuService,
 		);
 
+		this.diffPreviewVisibleContextKey = DiffPreviewVisibleContext.bindTo(contextKeyService);
 	}
 
 	override create(parent: HTMLElement): void {
 		super.create(parent);
 		parent.setAttribute('role', 'complementary');
 		parent.setAttribute('aria-label', localize('auxiliaryBarAriaLabel', "Session Details"));
+
+		// Add the diff preview container as the first child. It's absolutely positioned
+		// and does not interfere with the existing title/content direct-child selectors.
+		this.diffPreviewContainer = dom.$('.auxbar-diff-preview');
+		this.diffPreviewContainer.style.display = 'none';
+		parent.insertBefore(this.diffPreviewContainer, parent.firstChild);
+		parent.classList.add('has-diff-preview-host');
+
+		// Create the sash between diff preview and content — placed directly in the part
+		this.diffPreviewSash = this._register(new Sash(parent, {
+			getVerticalSashLeft: () => this.diffPreviewWidth,
+		}, { orientation: SashOrientation.VERTICAL }));
+		this.diffPreviewSash.state = SashState.Disabled;
+
+		let sashStartWidth = 0;
+		this._register(this.diffPreviewSash.onDidStart((e: ISashEvent) => {
+			sashStartWidth = this.diffPreviewWidth;
+		}));
+		this._register(this.diffPreviewSash.onDidChange((e: ISashEvent) => {
+			const delta = e.currentX - e.startX;
+			const newWidth = Math.max(200, Math.min(sashStartWidth + delta, this.lastLayoutWidth - 270));
+			this.diffPreviewWidth = newWidth;
+			this.relayoutWithDiffPreview();
+		}));
+
+		// Create the diff preview widget
+		this.diffPreviewWidget = this._register(this.instantiationService.createInstance(DiffPreviewWidget, this.diffPreviewContainer));
+	}
+
+	/**
+	 * Toggle the diff preview pane. Expands/retracts the aux bar width.
+	 */
+	toggleDiffPreview(files?: readonly IDiffPreviewFile[]): void {
+		if (!this.diffPreviewContainer || !this.diffPreviewWidget || !this.diffPreviewSash) {
+			return;
+		}
+
+		const isVisible = this.diffPreviewContainer.style.display !== 'none';
+
+		if (isVisible) {
+			// Hide
+			this.diffPreviewWidget.hide();
+			this.diffPreviewContainer.style.display = 'none';
+			this.diffPreviewSash.state = SashState.Disabled;
+			const previousWidth = this.diffPreviewWidth;
+			this.diffPreviewWidth = 0;
+			this.diffPreviewVisibleContextKey.set(false);
+			this.relayoutWithDiffPreview();
+			this.layoutService.resizePart(Parts.AUXILIARYBAR_PART, -previousWidth, 0);
+		} else {
+			// Expand aux bar first
+			this.diffPreviewWidth = DiffPreviewWidget.PREFERRED_WIDTH;
+			this.layoutService.resizePart(Parts.AUXILIARYBAR_PART, DiffPreviewWidget.PREFERRED_WIDTH, 0);
+			this.diffPreviewContainer.style.display = '';
+			this.diffPreviewWidget.show();
+			this.diffPreviewSash.state = SashState.Enabled;
+			this.diffPreviewVisibleContextKey.set(true);
+
+			if (files) {
+				this.diffPreviewWidget.setFiles(files);
+			}
+
+			this.relayoutWithDiffPreview();
+		}
+	}
+
+	/**
+	 * Update the diff preview files (if visible).
+	 */
+	setDiffPreviewFiles(files: readonly IDiffPreviewFile[]): void {
+		if (this.diffPreviewWidget?.visible) {
+			this.diffPreviewWidget.setFiles(files);
+		}
+	}
+
+	get isDiffPreviewVisible(): boolean {
+		return this.diffPreviewWidget?.visible ?? false;
+	}
+
+	/**
+	 * Re-layout the diff preview and part content at the current dimensions.
+	 */
+	private relayoutWithDiffPreview(): void {
+		if (this.dimension) {
+			this.layout(this.dimension.width, this.dimension.height, this.contentPosition?.top ?? 0, this.contentPosition?.left ?? 0);
+		}
 	}
 
 	override updateStyles(): void {
@@ -271,14 +370,49 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 
 		// Layout content with reduced dimensions to account for visual margins and border
 		const borderTotal = 2; // 1px border on each side
-		super.layout(
-			width - AuxiliaryBarPart.MARGIN_RIGHT - borderTotal,
-			height - AuxiliaryBarPart.MARGIN_TOP - AuxiliaryBarPart.MARGIN_BOTTOM - borderTotal,
-			top, left
-		);
+		const adjustedWidth = width - AuxiliaryBarPart.MARGIN_RIGHT - borderTotal;
+		const adjustedHeight = height - AuxiliaryBarPart.MARGIN_TOP - AuxiliaryBarPart.MARGIN_BOTTOM - borderTotal;
+
+		// Store adjusted width for sash clamping
+		this.lastLayoutWidth = adjustedWidth;
+
+		// Clamp diff preview width to available space
+		if (this.diffPreviewWidth > 0) {
+			this.diffPreviewWidth = Math.min(this.diffPreviewWidth, Math.max(200, adjustedWidth - 270));
+		}
+
+		if (this.diffPreviewWidth > 0 && this.diffPreviewContainer) {
+			// Size the diff preview container
+			this.diffPreviewContainer.style.width = `${this.diffPreviewWidth}px`;
+			this.diffPreviewContainer.style.height = `${adjustedHeight}px`;
+			this.diffPreviewWidget?.layout(this.diffPreviewWidth, adjustedHeight);
+
+			// Layout part content with reduced width (minus diff preview)
+			const contentWidth = Math.max(270, adjustedWidth - this.diffPreviewWidth);
+			super.layout(contentWidth, adjustedHeight, top, left);
+
+			// Shift the title and content area to the right of the diff preview
+			if (this.titleArea) {
+				this.titleArea.style.marginLeft = `${this.diffPreviewWidth}px`;
+			}
+			if (this.contentArea) {
+				this.contentArea.style.marginLeft = `${this.diffPreviewWidth}px`;
+			}
+		} else {
+			// Reset margins
+			if (this.titleArea) {
+				this.titleArea.style.marginLeft = '';
+			}
+			if (this.contentArea) {
+				this.contentArea.style.marginLeft = '';
+			}
+			super.layout(adjustedWidth, adjustedHeight, top, left);
+		}
+
+		// Position the sash
+		this.diffPreviewSash?.layout();
 
 		// Restore the full grid-allocated dimensions so that Part.relayout() works correctly.
-		// Part.layout() only stores _dimension and _contentPosition - no other side effects.
 		Part.prototype.layout.call(this, width, height, top, left);
 	}
 

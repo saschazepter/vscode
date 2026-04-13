@@ -15,6 +15,7 @@ import { ContextKeyExpr, IContextKeyService } from '../../../../platform/context
 import { bindContextKey } from '../../../../platform/observable/common/platformObservableUtils.js';
 import { ActiveSessionContextKeys, CHANGES_VIEW_CONTAINER_ID, CHANGES_VIEW_ID } from '../common/changes.js';
 import { IsSessionsWindowContext } from '../../../../workbench/common/contextkeys.js';
+import { DiffPreviewVisibleContext } from '../../../common/contextkeys.js';
 import { IOpenerService } from '../../../../platform/opener/common/opener.js';
 import { ChatContextKeys } from '../../../../workbench/contrib/chat/common/actions/chatContextKeys.js';
 import { Categories } from '../../../../platform/action/common/actionCommonCategories.js';
@@ -23,6 +24,9 @@ import { KeybindingWeight } from '../../../../platform/keybinding/common/keybind
 import { IPaneCompositePartService } from '../../../../workbench/services/panecomposite/browser/panecomposite.js';
 import { ViewContainerLocation } from '../../../../workbench/common/views.js';
 import { ChangesViewPane } from './changesView.js';
+import { toIChangesFileItem } from './changesViewRenderer.js';
+import { AgenticPaneCompositePartService } from '../../../browser/paneCompositePartService.js';
+import { AuxiliaryBarPart } from '../../../browser/parts/auxiliaryBarPart.js';
 
 const openChangesViewActionOptions: IAction2Options = {
 	id: 'workbench.action.agentSessions.openChangesView',
@@ -186,3 +190,39 @@ class OpenPullRequestAction extends Action2 {
 }
 
 registerAction2(OpenPullRequestAction);
+
+registerAction2(class ToggleDiffPreviewAction extends Action2 {
+	constructor() {
+		super({
+			id: 'workbench.action.agentSessions.toggleDiffPreview',
+			title: localize2('toggleDiffPreview', "Toggle Diff Preview"),
+			icon: Codicon.openPreview,
+			category: Categories.View,
+			precondition: IsSessionsWindowContext,
+			f1: true,
+			toggled: DiffPreviewVisibleContext,
+			menu: [{
+				id: MenuId.ChatEditingSessionTitleToolbar,
+				group: 'navigation',
+				order: 0,
+				when: IsSessionsWindowContext,
+			}],
+			keybinding: {
+				weight: KeybindingWeight.WorkbenchContrib,
+				primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyD,
+				when: IsSessionsWindowContext,
+			},
+		});
+	}
+	async run(accessor: ServicesAccessor): Promise<void> {
+		const paneCompositeService = accessor.get(IPaneCompositePartService) as AgenticPaneCompositePartService;
+		const viewsService = accessor.get(IViewsService);
+
+		const part = paneCompositeService.getPartByLocation(ViewContainerLocation.AuxiliaryBar);
+		if (part instanceof AuxiliaryBarPart) {
+			const view = viewsService.getViewWithId<ChangesViewPane>(CHANGES_VIEW_ID);
+			const files = view ? toIChangesFileItem(view.viewModel.activeSessionChangesObs.get()) : undefined;
+			part.toggleDiffPreview(files);
+		}
+	}
+});

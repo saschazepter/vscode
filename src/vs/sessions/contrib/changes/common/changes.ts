@@ -27,7 +27,7 @@ export const enum IsolationMode {
 
 export const ChangesContextKeys = {
 	VersionMode: new RawContextKey<ChangesVersionMode>('sessions.changesVersionMode', ChangesVersionMode.BranchChanges),
-	ViewMode: new RawContextKey<ChangesViewMode>('sessions.changesViewMode', ChangesViewMode.List)
+	ViewMode: new RawContextKey<ChangesViewMode>('sessions.changesViewMode', ChangesViewMode.List),
 };
 
 export const ActiveSessionContextKeys = {

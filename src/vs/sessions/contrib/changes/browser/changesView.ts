@@ -47,7 +47,7 @@ import { fillEditorsDragData } from '../../../../workbench/browser/dnd.js';
 import { ResourceLabels } from '../../../../workbench/browser/labels.js';
 import { ViewPane, IViewPaneOptions, ViewAction } from '../../../../workbench/browser/parts/views/viewPane.js';
 import { ViewPaneContainer } from '../../../../workbench/browser/parts/views/viewPaneContainer.js';
-import { IViewDescriptorService } from '../../../../workbench/common/views.js';
+import { IViewDescriptorService, ViewContainerLocation } from '../../../../workbench/common/views.js';
 import { CHAT_CATEGORY } from '../../../../workbench/contrib/chat/browser/actions/chatActions.js';
 import { IAgentSessionsService } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsService.js';
 import { ChatContextKeys } from '../../../../workbench/contrib/chat/common/actions/chatContextKeys.js';
@@ -55,6 +55,9 @@ import { createFileIconThemableTreeContainerScope } from '../../../../workbench/
 import { ACTIVE_GROUP, IEditorService, SIDE_GROUP } from '../../../../workbench/services/editor/common/editorService.js';
 import { IExtensionService } from '../../../../workbench/services/extensions/common/extensions.js';
 import { IWorkbenchLayoutService } from '../../../../workbench/services/layout/browser/layoutService.js';
+import { IPaneCompositePartService } from '../../../../workbench/services/panecomposite/browser/panecomposite.js';
+import { AgenticPaneCompositePartService } from '../../../browser/paneCompositePartService.js';
+import { AuxiliaryBarPart } from '../../../browser/parts/auxiliaryBarPart.js';
 import { ISessionsManagementService } from '../../../services/sessions/common/sessionsManagement.js';
 import { CodeReviewStateKind, getCodeReviewFilesFromSessionChanges, getCodeReviewVersion, ICodeReviewService, PRReviewStateKind } from '../../codeReview/browser/codeReviewService.js';
 import { CIStatusWidget } from './checksWidget.js';
@@ -72,6 +75,7 @@ import { ChangesViewModel } from './changesViewModel.js';
 import { ResourceTree } from '../../../../base/common/resourceTree.js';
 import { structuralEquals } from '../../../../base/common/equals.js';
 import { compareFileNames, comparePaths } from '../../../../base/common/comparers.js';
+
 
 const $ = dom.$;
 
@@ -269,6 +273,7 @@ export class ChangesViewPane extends ViewPane {
 		@ILabelService private readonly labelService: ILabelService,
 		@ILogService private readonly logService: ILogService,
 		@ITelemetryService private readonly telemetryService: ITelemetryService,
+		@IPaneCompositePartService private readonly paneCompositeService: IPaneCompositePartService,
 	) {
 		super({ ...options, titleMenuId: MenuId.ChatEditingSessionTitleToolbar }, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
 
@@ -638,6 +643,9 @@ export class ChangesViewPane extends ViewPane {
 			}
 
 			this.layoutSplitView();
+
+			// Keep the diff preview in sync with file changes
+			this.updateDiffPreview(changes);
 		}));
 	}
 
@@ -711,6 +719,30 @@ export class ChangesViewPane extends ViewPane {
 	private getTreeSelection(): IChangesFileItem[] {
 		const selection = this.tree?.getSelection() ?? [];
 		return selection.filter(item => !!item && isChangesFileItem(item));
+	}
+
+	/**
+	 * Toggle the diff preview pane on the auxiliary bar.
+	 */
+	toggleDiffPreview(): void {
+		const part = (this.paneCompositeService as AgenticPaneCompositePartService).getPartByLocation(ViewContainerLocation.AuxiliaryBar);
+		if (part instanceof AuxiliaryBarPart) {
+			const changes = toIChangesFileItem(this.viewModel.activeSessionChangesObs.get());
+			part.toggleDiffPreview(changes);
+		}
+	}
+
+	/**
+	 * Update diff preview content with the given files, or all changes if no files given.
+	 */
+	private updateDiffPreview(files?: readonly IChangesFileItem[]): void {
+		const part = (this.paneCompositeService as AgenticPaneCompositePartService).getPartByLocation(ViewContainerLocation.AuxiliaryBar);
+		if (!(part instanceof AuxiliaryBarPart) || !part.isDiffPreviewVisible) {
+			return;
+		}
+
+		const items = files ?? toIChangesFileItem(this.viewModel.activeSessionChangesObs.get());
+		part.setDiffPreviewFiles(items);
 	}
 
 	private getTreeRootInfo(items: readonly IChangesFileItem[]): IChangesTreeRootInfo | undefined {
