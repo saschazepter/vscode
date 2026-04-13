@@ -2132,6 +2132,15 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 					return;
 				}
 
+				// If the user manually stopped the agent, do not interject with
+				// new steering requests. Dispose the background notification so
+				// no further events fire.
+				if (sessionRef.object.lastRequest?.response?.isCanceled) {
+					this._logService.debug(`RunInTerminalTool: Suppressing input-needed notification for terminal ${termId} because session was cancelled`);
+					disposeNotification();
+					return;
+				}
+
 				const execution = RunInTerminalTool._activeExecutions.get(termId);
 				if (!execution) {
 					return;
@@ -2181,6 +2190,14 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 		store.add(commandDetection.onCommandFinished(command => {
 			const execution = RunInTerminalTool._activeExecutions.get(termId);
 			if (!execution) {
+				disposeNotification();
+				return;
+			}
+
+			// If the user manually stopped the agent, do not interject with
+			// new steering requests.
+			if (sessionRef.object.lastRequest?.response?.isCanceled) {
+				this._logService.debug(`RunInTerminalTool: Suppressing completion notification for terminal ${termId} because session was cancelled`);
 				disposeNotification();
 				return;
 			}
