@@ -642,11 +642,10 @@ export const terminalChatAgentToolsConfiguration: IStringDictionary<IConfigurati
 	[TerminalChatAgentToolsSettingId.BackgroundNotifications]: {
 		restricted: true,
 		type: 'boolean',
-		default: false,
+		default: true,
 		tags: ['experimental'],
-		experiment: {
-			mode: 'auto'
-		},
+		deprecated: true,
+		markdownDeprecationMessage: localize('backgroundNotifications.deprecated', "This setting is deprecated. Terminal completion and input-needed notifications are now always enabled."),
 		markdownDescription: localize('backgroundNotifications.description', "Whether to automatically notify the agent when a background terminal command completes or needs input. When enabled, a steering message is sent to the chat session with the exit code and terminal output, and the output monitor continues running to detect prompts for input."),
 	}
 };
