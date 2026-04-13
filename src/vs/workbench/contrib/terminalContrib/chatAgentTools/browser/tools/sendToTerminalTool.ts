@@ -153,12 +153,14 @@ export class SendToTerminalTool extends Disposable implements IToolImpl {
 		const chatSessionResource = context.chatSessionResource;
 		const isSessionAutoApproved = chatSessionResource && isSessionAutoApproveLevel(chatSessionResource, this._configurationService, this._chatWidgetService, this._chatService);
 
-		// send_to_terminal always requires confirmation in default approvals mode.
-		// Unlike run_in_terminal, the text sent here may be arbitrary input to a
-		// waiting prompt (e.g. a name, password, or confirmation) rather than a
-		// shell command, so the command-line auto-approve analyzer cannot reliably
-		// determine safety.
-		const shouldShowConfirmation = !isSessionAutoApproved || context.forceConfirmationReason !== undefined;
+		// send_to_terminal normally requires confirmation in default approvals mode
+		// because the text may be arbitrary input (passwords, confirmations, etc.)
+		// that the command-line auto-approve analyzer cannot assess. However, when
+		// the text being sent was just collected via askQuestions for the same
+		// terminal, the user already explicitly provided the answer so a second
+		// confirmation is redundant.
+		const isAnsweringQuestion = questionText !== undefined;
+		const shouldShowConfirmation = (!isSessionAutoApproved && !isAnsweringQuestion) || context.forceConfirmationReason !== undefined;
 		const confirmationMessages = shouldShowConfirmation ? {
 			title: localize('send.confirm.title', "Send to Terminal"),
 			message: confirmationMessage,

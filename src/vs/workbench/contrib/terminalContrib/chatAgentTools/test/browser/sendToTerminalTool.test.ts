@@ -16,6 +16,7 @@ import { ITerminalChatService, type ITerminalInstance } from '../../../../termin
 import { workbenchInstantiationService } from '../../../../../test/browser/workbenchTestServices.js';
 import type { TestInstantiationService } from '../../../../../../platform/instantiation/test/common/instantiationServiceMock.js';
 import { IChatService } from '../../../../chat/common/chatService/chatService.js';
+import { URI } from '../../../../../../base/common/uri.js';
 
 suite('SendToTerminalTool', () => {
 	const store = ensureNoDisposablesAreLeakedInTestSuite();
@@ -134,10 +135,11 @@ suite('SendToTerminalTool', () => {
 		assert.strictEqual(mockExecution.sentTexts[0].shouldExecute, true);
 	});
 
-	function createPreparationContext(id: string, command: string): IToolInvocationPreparationContext {
+	function createPreparationContext(id: string, command: string, chatSessionResource?: URI): IToolInvocationPreparationContext {
 		return {
 			parameters: { id, command },
 			toolCallId: 'test-call',
+			chatSessionResource,
 		} as unknown as IToolInvocationPreparationContext;
 	}
 
@@ -176,5 +178,33 @@ suite('SendToTerminalTool', () => {
 		assert.ok(prepared);
 		const message = prepared.invocationMessage as IMarkdownString;
 		assert.ok(!message.value.includes('\n'), 'newlines should be collapsed to spaces');
+	});
+
+	test('prepareToolInvocation skips confirmation when answering a question carousel', async () => {
+		const sessionResource = URI.parse('chat-session://test-session');
+		const mockSession = {
+			getRequests: () => [{
+				response: {
+					response: {
+						value: [{
+							kind: 'questionCarousel' as const,
+							terminalId: KNOWN_TERMINAL_ID,
+							questions: [{ id: 'q1', title: 'package name?', message: 'package name?' }],
+							data: { q1: 'my-package' },
+						}]
+					}
+				}
+			}],
+		};
+		instantiationService.stub(IChatService, 'getSession', () => mockSession);
+		tool = store.add(instantiationService.createInstance(SendToTerminalTool));
+
+		const prepared = await tool.prepareToolInvocation(
+			createPreparationContext(KNOWN_TERMINAL_ID, 'my-package', sessionResource),
+			CancellationToken.None,
+		);
+
+		assert.ok(prepared);
+		assert.strictEqual(prepared.confirmationMessages, undefined, 'should skip confirmation when the command matches a carousel answer');
 	});
 });
