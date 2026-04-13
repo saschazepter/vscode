@@ -162,7 +162,7 @@ export class PromptLaunchersAICustomizationWelcomePage extends Disposable implem
 				sentLabel.textContent = localize('sentToChat', "Sent to chat \u2713");
 			};
 
-			this._register(DOM.addDisposableListener(submitBtn, 'click', submit));
+			this._register(DOM.addDisposableListener(submitBtn, 'click', e => { e.stopPropagation(); submit(); }));
 			this._register(DOM.addDisposableListener(this.inputElement, 'keydown', (e: KeyboardEvent) => {
 				if (e.key === 'Enter') {
 					e.preventDefault();
