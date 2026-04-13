@@ -4522,7 +4522,7 @@
 					},
 					"github.copilot.chat.cli.planExitMode.enabled": {
 						"type": "boolean",
-						"default": false,
+						"default": true,
 						"markdownDescription": "%github.copilot.config.cli.planExitMode.enabled%",
 						"tags": [
 							"advanced"
