@@ -367,6 +367,8 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 			this._renderAgentSessionsSubtitle(this.subtitleEl);
 		} else if (stepId === OnboardingStepId.Personalize) {
 			this._renderPersonalizeSubtitle(this.subtitleEl);
+		} else if (stepId === OnboardingStepId.Extensions) {
+			this._renderExtensionsSubtitle(this.subtitleEl);
 		} else {
 			this.subtitleEl.textContent = getOnboardingStepSubtitle(stepId);
 		}
@@ -773,6 +775,20 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 			'+',
 			this._createKbd(localize('onboarding.personalize.tip.p', "P")),
 			localize('onboarding.personalize.tip.suffix', " to access all VS Code commands."),
+		);
+	}
+
+	private _renderExtensionsSubtitle(container: HTMLElement): void {
+		clearNode(container);
+		const modifier = isMacintosh ? 'Cmd' : 'Ctrl';
+		container.append(
+			localize('onboarding.extensions.subtitle.prefix', "Install extensions to enhance your workflow. Press "),
+			this._createKbd(localize({ key: 'onboarding.extensions.subtitle.modifier', comment: ['Keyboard modifier key'] }, "{0}", modifier)),
+			'+',
+			this._createKbd(localize('onboarding.extensions.subtitle.shift', "Shift")),
+			'+',
+			this._createKbd(localize('onboarding.extensions.subtitle.x', "X")),
+			localize('onboarding.extensions.subtitle.suffix', " to browse the Extension Marketplace."),
 		);
 	}
 
