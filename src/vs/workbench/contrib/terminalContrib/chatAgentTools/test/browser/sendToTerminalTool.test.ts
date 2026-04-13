@@ -238,19 +238,26 @@ suite('SendToTerminalTool', () => {
 
 	test('prepareToolInvocation skips confirmation only for exact matches in multi-question carousels', async () => {
 		const sessionResource = URI.parse('chat-session://test-session');
+		const carousel = {
+			kind: 'questionCarousel' as const,
+			terminalId: KNOWN_TERMINAL_ID,
+			questions: [
+				{ id: 'q1', title: 'package name?', message: 'package name?' },
+				{ id: 'q2', title: 'entry point?', message: 'entry point?' }
+			],
+			data: { q1: 'my-package', q2: 'src/index.ts' },
+		};
+		// Simulate one prior send_to_terminal invocation after the carousel
+		// so that positional matching targets question[1] (entry point)
+		const priorSendInvocation = {
+			kind: 'toolInvocation' as const,
+			toolId: 'send_to_terminal',
+		};
 		const mockSession = {
 			getRequests: () => [{
 				response: {
 					response: {
-						value: [{
-							kind: 'questionCarousel' as const,
-							terminalId: KNOWN_TERMINAL_ID,
-							questions: [
-								{ id: 'q1', title: 'package name?', message: 'package name?' },
-								{ id: 'q2', title: 'entry point?', message: 'entry point?' }
-							],
-							data: { q1: 'my-package', q2: 'src/index.ts' },
-						}]
+						value: [carousel, priorSendInvocation]
 					}
 				}
 			}],
@@ -273,5 +280,75 @@ suite('SendToTerminalTool', () => {
 
 		assert.ok(mismatchedPrepared);
 		assert.ok(mismatchedPrepared.confirmationMessages, 'should require confirmation when the command does not exactly match any carousel answer');
+	});
+
+	test('prepareToolInvocation uses positional matching for identical answers (all defaults)', async () => {
+		const sessionResource = URI.parse('chat-session://test-session');
+		const carousel = {
+			kind: 'questionCarousel' as const,
+			terminalId: KNOWN_TERMINAL_ID,
+			questions: [
+				{ id: 'q1', title: 'package name?', message: 'package name?' },
+				{ id: 'q2', title: 'version?', message: 'version?' },
+				{ id: 'q3', title: 'description?', message: 'description?' },
+			],
+			data: { q1: '', q2: '', q3: '' },
+		};
+
+		// First call: no prior send_to_terminal → positional index 0 → "package name?"
+		const mockSession0 = {
+			getRequests: () => [{
+				response: { response: { value: [carousel] } }
+			}],
+		};
+		instantiationService.stub(IChatService, 'getSession', () => mockSession0);
+		tool = store.add(instantiationService.createInstance(SendToTerminalTool));
+
+		const first = await tool.prepareToolInvocation(
+			createPreparationContext(KNOWN_TERMINAL_ID, '', sessionResource),
+			CancellationToken.None,
+		);
+		assert.ok(first);
+		assert.strictEqual(first.confirmationMessages, undefined);
+		const firstMsg = first.pastTenseMessage as IMarkdownString;
+		assert.ok(firstMsg.value.includes('package'), 'first call should show package name question');
+
+		// Second call: one prior send_to_terminal → positional index 1 → "version?"
+		const priorSend1 = { kind: 'toolInvocation' as const, toolId: 'send_to_terminal' };
+		const mockSession1 = {
+			getRequests: () => [{
+				response: { response: { value: [carousel, priorSend1] } }
+			}],
+		};
+		instantiationService.stub(IChatService, 'getSession', () => mockSession1);
+		tool = store.add(instantiationService.createInstance(SendToTerminalTool));
+
+		const second = await tool.prepareToolInvocation(
+			createPreparationContext(KNOWN_TERMINAL_ID, '', sessionResource),
+			CancellationToken.None,
+		);
+		assert.ok(second);
+		assert.strictEqual(second.confirmationMessages, undefined);
+		const secondMsg = second.pastTenseMessage as IMarkdownString;
+		assert.ok(secondMsg.value.includes('version'), 'second call should show version question');
+
+		// Third call: two prior send_to_terminal → positional index 2 → "description?"
+		const priorSend2 = { kind: 'toolInvocation' as const, toolId: 'send_to_terminal' };
+		const mockSession2 = {
+			getRequests: () => [{
+				response: { response: { value: [carousel, priorSend1, priorSend2] } }
+			}],
+		};
+		instantiationService.stub(IChatService, 'getSession', () => mockSession2);
+		tool = store.add(instantiationService.createInstance(SendToTerminalTool));
+
+		const third = await tool.prepareToolInvocation(
+			createPreparationContext(KNOWN_TERMINAL_ID, '', sessionResource),
+			CancellationToken.None,
+		);
+		assert.ok(third);
+		assert.strictEqual(third.confirmationMessages, undefined);
+		const thirdMsg = third.pastTenseMessage as IMarkdownString;
+		assert.ok(thirdMsg.value.includes('description'), 'third call should show description question');
 	});
 });
