@@ -105,7 +105,7 @@ class RemoteSessionAdapter implements IChatData {
 	readonly updatedAt: ISettableObservable<Date>;
 	readonly status = observableValue<SessionStatus>('status', SessionStatus.Completed);
 	readonly changes = observableValue<readonly IChatSessionFileChange[]>('changes', []);
-	readonly modelId = observableValue<string | undefined>('modelId', undefined);
+	readonly modelId: ISettableObservable<string | undefined>;
 	readonly mode = observableValue<{ readonly id: string; readonly kind: string } | undefined>('mode', undefined);
 	readonly loading = observableValue('loading', false);
 	readonly isArchived = observableValue('isArchived', false);
@@ -133,6 +133,7 @@ class RemoteSessionAdapter implements IChatData {
 		this.createdAt = new Date(metadata.startTime);
 		this.title = observableValue('title', metadata.summary ?? `Session ${rawId.substring(0, 8)}`);
 		this.updatedAt = observableValue('updatedAt', new Date(metadata.modifiedTime));
+		this.modelId = observableValue<string | undefined>('modelId', metadata.model ? `${logicalSessionType}:${metadata.model}` : undefined);
 		this.lastTurnEnd = observableValue('lastTurnEnd', metadata.modifiedTime ? new Date(metadata.modifiedTime) : undefined);
 		this.description = observableValue('description', new MarkdownString().appendText(this._providerLabel));
 		this.workspace = observableValue('workspace', RemoteAgentHostSessionsProvider.buildWorkspace(metadata.project, metadata.workingDirectory, this._providerLabel));
@@ -155,6 +156,7 @@ class RemoteSessionAdapter implements IChatData {
 		if (metadata.isDone !== undefined) {
 			this.isArchived.set(metadata.isDone, undefined);
 		}
+		this.modelId.set(metadata.model ? `${this.sessionType}:${metadata.model}` : undefined, undefined);
 		const workspace = RemoteAgentHostSessionsProvider.buildWorkspace(metadata.project, metadata.workingDirectory, this._providerLabel);
 		if (agentHostSessionWorkspaceKey(workspace) !== agentHostSessionWorkspaceKey(this.workspace.get())) {
 			this.workspace.set(workspace, undefined);
@@ -230,6 +232,8 @@ export class RemoteAgentHostSessionsProvider extends Disposable implements ISess
 	private _selectedModelId: string | undefined;
 	/** Settable status for the current new session, kept to avoid unsafe cast from IObservable. */
 	private _currentNewSessionStatus: ISettableObservable<SessionStatus> | undefined;
+	/** Settable model for the current new session, kept to avoid unsafe cast from IObservable. */
+	private _currentNewSessionModelId: ISettableObservable<string | undefined> | undefined;
 
 	private _connection: IAgentConnection | undefined;
 	private _defaultDirectory: string | undefined;
@@ -322,6 +326,8 @@ export class RemoteAgentHostSessionsProvider extends Disposable implements ISess
 				this._refreshSessions(cts.token).finally(() => cts.dispose());
 			} else if (e.action.type === ActionType.SessionTitleChanged && isSessionAction(e.action)) {
 				this._handleTitleChanged(e.action.session, e.action.title);
+			} else if (e.action.type === ActionType.SessionModelChanged && isSessionAction(e.action)) {
+				this._handleModelChanged(e.action.session, e.action.model);
 			} else if (e.action.type === ActionType.SessionIsReadChanged && isSessionAction(e.action)) {
 				this._handleIsReadChanged(e.action.session, e.action.isRead);
 			} else if (e.action.type === ActionType.SessionIsDoneChanged && isSessionAction(e.action)) {
@@ -500,10 +506,12 @@ export class RemoteAgentHostSessionsProvider extends Disposable implements ISess
 		// Reset draft state from any prior unsent session
 		this._currentNewSession = undefined;
 		this._selectedModelId = undefined;
+		this._currentNewSessionModelId = undefined;
 
 		const built = this._buildNewSessionData(workspace, defaultType);
 		this._currentNewSession = built.data;
 		this._currentNewSessionStatus = built.status;
+		this._currentNewSessionModelId = built.modelId;
 		return this._chatToSession(built.data);
 	}
 
@@ -517,9 +525,10 @@ export class RemoteAgentHostSessionsProvider extends Disposable implements ISess
 	 * state transitions (e.g. to {@link SessionStatus.InProgress}) without
 	 * casting away the readonly declaration on {@link IChatData.status}.
 	 */
-	private _buildNewSessionData(workspace: ISessionWorkspace, sessionType: ISessionType): { data: IChatData; status: ISettableObservable<SessionStatus> } {
+	private _buildNewSessionData(workspace: ISessionWorkspace, sessionType: ISessionType): { data: IChatData; status: ISettableObservable<SessionStatus>; modelId: ISettableObservable<string | undefined> } {
 		const resource = URI.from({ scheme: sessionType.id, path: `/untitled-${generateUuid()}` });
 		const status = observableValue<SessionStatus>(this, SessionStatus.Untitled);
+		const modelId = observableValue<string | undefined>(this, undefined);
 		const data: IChatData = {
 			id: `${this.id}:${resource.toString()}`,
 			resource,
@@ -532,7 +541,7 @@ export class RemoteAgentHostSessionsProvider extends Disposable implements ISess
 			updatedAt: observableValue(this, new Date()),
 			status,
 			changes: observableValue<readonly IChatSessionFileChange[]>(this, []),
-			modelId: observableValue(this, undefined),
+			modelId,
 			mode: observableValue(this, undefined),
 			loading: observableValue(this, false),
 			isArchived: observableValue(this, false),
@@ -541,7 +550,7 @@ export class RemoteAgentHostSessionsProvider extends Disposable implements ISess
 			lastTurnEnd: observableValue(this, undefined),
 			gitHubInfo: observableValue(this, undefined),
 		};
-		return { data, status };
+		return { data, status, modelId };
 	}
 
 	/**
@@ -575,6 +584,7 @@ export class RemoteAgentHostSessionsProvider extends Disposable implements ISess
 		this._selectedModelId = undefined;
 		this._currentNewSession = rebuilt.data;
 		this._currentNewSessionStatus = rebuilt.status;
+		this._currentNewSessionModelId = rebuilt.modelId;
 
 		const fromSession = this._chatToSession(prev);
 		const toSession = this._chatToSession(rebuilt.data);
@@ -585,6 +595,18 @@ export class RemoteAgentHostSessionsProvider extends Disposable implements ISess
 	setModel(sessionId: string, modelId: string): void {
 		if (this._currentNewSession?.id === sessionId) {
 			this._selectedModelId = modelId;
+			this._currentNewSessionModelId?.set(modelId, undefined);
+			return;
+		}
+
+		const rawId = this._rawIdFromChatId(sessionId);
+		const cached = rawId ? this._sessionCache.get(rawId) : undefined;
+		if (cached && rawId && this._connection) {
+			cached.modelId.set(modelId, undefined);
+			this._onDidChangeSessions.fire({ added: [], removed: [], changed: [this._chatToSession(cached)] });
+			const rawModelId = modelId.startsWith(`${cached.sessionType}:`) ? modelId.substring(cached.sessionType.length + 1) : modelId;
+			const action = { type: ActionType.SessionModelChanged as const, session: AgentSession.uri(cached.agentProvider, rawId).toString(), model: rawModelId };
+			this._connection.dispatch(action);
 		}
 	}
 
@@ -724,6 +746,7 @@ export class RemoteAgentHostSessionsProvider extends Disposable implements ISess
 
 		this._selectedModelId = undefined;
 		this._currentNewSessionStatus = undefined;
+		this._currentNewSessionModelId = undefined;
 
 		// Wait for the real backend session to appear (via server notification
 		// after the handler creates it), then replace the temporary entry.
@@ -731,6 +754,7 @@ export class RemoteAgentHostSessionsProvider extends Disposable implements ISess
 			const committedSession = await this._waitForNewSession(existingKeys);
 			if (committedSession) {
 				this._currentNewSession = undefined;
+				this._currentNewSessionModelId = undefined;
 				this._onDidReplaceSession.fire({ from: newSession, to: committedSession });
 				return committedSession;
 			}
@@ -742,6 +766,7 @@ export class RemoteAgentHostSessionsProvider extends Disposable implements ISess
 
 		// Fallback: keep the temp session visible
 		this._currentNewSession = undefined;
+		this._currentNewSessionModelId = undefined;
 		return newSession;
 	}
 
@@ -836,7 +861,7 @@ export class RemoteAgentHostSessionsProvider extends Disposable implements ISess
 		}
 	}
 
-	private _handleSessionAdded(summary: { resource: string; provider: string; title: string; createdAt: number; modifiedAt: number; project?: { uri: string; displayName: string }; workingDirectory?: string; isRead?: boolean; isDone?: boolean }): void {
+	private _handleSessionAdded(summary: { resource: string; provider: string; title: string; createdAt: number; modifiedAt: number; project?: { uri: string; displayName: string }; model?: string; workingDirectory?: string; isRead?: boolean; isDone?: boolean }): void {
 		const sessionUri = URI.parse(summary.resource);
 		const rawId = AgentSession.id(sessionUri);
 		if (this._sessionCache.has(rawId)) {
@@ -852,6 +877,7 @@ export class RemoteAgentHostSessionsProvider extends Disposable implements ISess
 			modifiedTime: summary.modifiedAt,
 			summary: summary.title,
 			...(summary.project ? { project: { uri: toLocalProjectUri(URI.parse(summary.project.uri), this._connectionAuthority), displayName: summary.project.displayName } } : {}),
+			model: summary.model,
 			workingDirectory: workingDir,
 			isRead: summary.isRead,
 			isDone: summary.isDone,
@@ -886,6 +912,16 @@ export class RemoteAgentHostSessionsProvider extends Disposable implements ISess
 		const cached = this._sessionCache.get(rawId);
 		if (cached) {
 			cached.title.set(title, undefined);
+			this._onDidChangeSessions.fire({ added: [], removed: [], changed: [this._chatToSession(cached)] });
+		}
+	}
+
+	private _handleModelChanged(session: string, model: string): void {
+		const rawId = AgentSession.id(session);
+		const cached = this._sessionCache.get(rawId);
+		const modelId = cached ? `${cached.sessionType}:${model}` : undefined;
+		if (cached && cached.modelId.get() !== modelId) {
+			cached.modelId.set(modelId, undefined);
 			this._onDidChangeSessions.fire({ added: [], removed: [], changed: [this._chatToSession(cached)] });
 		}
 	}

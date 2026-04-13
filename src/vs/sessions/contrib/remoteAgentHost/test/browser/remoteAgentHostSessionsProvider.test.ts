@@ -113,12 +113,13 @@ class MockAgentConnection extends mock<IAgentConnection>() {
 
 // ---- Test helpers -----------------------------------------------------------
 
-function createSession(id: string, opts?: { provider?: string; summary?: string; project?: { uri: URI; displayName: string }; workingDirectory?: URI; startTime?: number; modifiedTime?: number }): IAgentSessionMetadata {
+function createSession(id: string, opts?: { provider?: string; summary?: string; model?: string; project?: { uri: URI; displayName: string }; workingDirectory?: URI; startTime?: number; modifiedTime?: number }): IAgentSessionMetadata {
 	return {
 		session: AgentSession.uri(opts?.provider ?? 'copilot', id),
 		startTime: opts?.startTime ?? 1000,
 		modifiedTime: opts?.modifiedTime ?? 2000,
 		summary: opts?.summary,
+		model: opts?.model,
 		project: opts?.project,
 		workingDirectory: opts?.workingDirectory,
 	};
@@ -155,7 +156,7 @@ function createProvider(disposables: DisposableStore, connection: MockAgentConne
 	return provider;
 }
 
-function fireSessionAdded(connection: MockAgentConnection, rawId: string, opts?: { provider?: string; title?: string; project?: { uri: string; displayName: string }; workingDirectory?: string }): void {
+function fireSessionAdded(connection: MockAgentConnection, rawId: string, opts?: { provider?: string; title?: string; model?: string; project?: { uri: string; displayName: string }; workingDirectory?: string }): void {
 	const provider = opts?.provider ?? 'copilot';
 	const sessionUri = AgentSession.uri(provider, rawId);
 	connection.fireNotification({
@@ -167,6 +168,7 @@ function fireSessionAdded(connection: MockAgentConnection, rawId: string, opts?:
 			status: ProtocolSessionStatus.Idle,
 			createdAt: Date.now(),
 			modifiedAt: Date.now(),
+			model: opts?.model,
 			project: opts?.project,
 			workingDirectory: opts?.workingDirectory,
 		},
@@ -388,6 +390,42 @@ suite('RemoteAgentHostSessionsProvider', () => {
 		assert.strictEqual(sessions.length, 2);
 	}));
 
+	test('uses model metadata as selected model for listed sessions', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {
+		connection.addSession(createSession('model-1', { summary: 'Model Session', model: 'claude-sonnet-4.5' }));
+
+		const provider = createProvider(disposables, connection);
+		provider.getSessions();
+		await timeout(0);
+
+		const session = provider.getSessions().find(s => s.title.get() === 'Model Session');
+		assert.strictEqual(session?.modelId.get(), 'remote-localhost__4321-copilot:claude-sonnet-4.5');
+	}));
+
+	test('uses model metadata from session added notification', () => {
+		const provider = createProvider(disposables, connection);
+		fireSessionAdded(connection, 'notif-model', { title: 'Notif Model Session', model: 'gpt-5' });
+
+		const session = provider.getSessions().find(s => s.title.get() === 'Notif Model Session');
+		assert.strictEqual(session?.modelId.get(), 'remote-localhost__4321-copilot:gpt-5');
+	});
+
+	test('setModel updates existing session model and dispatches raw model', () => {
+		const provider = createProvider(disposables, connection);
+		fireSessionAdded(connection, 'set-model', { title: 'Set Model Session', model: 'old-model' });
+
+		const session = provider.getSessions().find(s => s.title.get() === 'Set Model Session');
+		assert.ok(session);
+
+		provider.setModel(session!.sessionId, 'remote-localhost__4321-copilot:new-model');
+
+		assert.strictEqual(session!.modelId.get(), 'remote-localhost__4321-copilot:new-model');
+		assert.deepStrictEqual(connection.dispatchedActions.at(-1)?.action, {
+			type: ActionType.SessionModelChanged,
+			session: AgentSession.uri('copilot', 'set-model').toString(),
+			model: 'new-model',
+		});
+	});
+
 	// ---- Session lifecycle -------
 
 	test('createNewSession returns session with correct fields', () => {
@@ -597,6 +635,31 @@ suite('RemoteAgentHostSessionsProvider', () => {
 		} as IActionEnvelope);
 
 		assert.strictEqual(target!.title.get(), 'Server Title');
+		assert.strictEqual(changes.length, 1);
+		assert.strictEqual(changes[0].changed.length, 1);
+	});
+
+	test('server-echoed SessionModelChanged updates cached model', () => {
+		const provider = createProvider(disposables, connection);
+		fireSessionAdded(connection, 'model-change', { title: 'Model Change', model: 'old-model' });
+
+		const target = provider.getSessions().find(s => s.title.get() === 'Model Change');
+		assert.ok(target);
+
+		const changes: ISessionChangeEvent[] = [];
+		disposables.add(provider.onDidChangeSessions((e: ISessionChangeEvent) => changes.push(e)));
+
+		connection.fireAction({
+			action: {
+				type: ActionType.SessionModelChanged,
+				session: AgentSession.uri('copilot', 'model-change').toString(),
+				model: 'new-model',
+			},
+			serverSeq: 1,
+			origin: undefined,
+		} as IActionEnvelope);
+
+		assert.strictEqual(target!.modelId.get(), 'remote-localhost__4321-copilot:new-model');
 		assert.strictEqual(changes.length, 1);
 		assert.strictEqual(changes[0].changed.length, 1);
 	});

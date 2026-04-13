@@ -166,6 +166,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 		const projectByContext = new Map<string, Promise<IAgentSessionProjectInfo | undefined>>();
 		const result: IAgentSessionMetadata[] = await Promise.all(sessions.map(async s => {
 			const session = AgentSession.uri(this.id, s.sessionId);
+			const metadata = await this._readSessionMetadata(session);
 			let { project, resolved } = await this._readSessionProject(session);
 			if (!resolved) {
 				project = await this._resolveSessionProject(s.context, projectLimiter, projectByContext);
@@ -177,6 +178,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 				modifiedTime: s.modifiedTime.getTime(),
 				...(project ? { project } : {}),
 				summary: s.summary,
+				model: metadata.model,
 				workingDirectory: typeof s.context?.cwd === 'string' ? URI.file(s.context.cwd) : undefined,
 			};
 		}));
@@ -233,7 +235,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 				const session = agentSession.sessionUri;
 				this._logService.info(`[Copilot] Forked session created: ${session.toString()}`);
 				const project = await projectFromCopilotContext({ cwd: config.workingDirectory?.fsPath });
-				this._storeSessionMetadata(session, undefined, config.workingDirectory, project, true);
+				this._storeSessionMetadata(session, config.model, config.workingDirectory, project, true);
 				return { session, ...(project ? { project } : {}) };
 			});
 		}
@@ -467,11 +469,12 @@ export class CopilotAgent extends Disposable implements IAgent {
 		const parsedPlugins = await this._plugins.getAppliedPlugins();
 
 		const sessionUri = AgentSession.uri(this.id, sessionId);
+		const storedMetadata = await this._readSessionMetadata(sessionUri);
 		const sessionMetadata = await client.getSessionMetadata(sessionId).catch(err => {
 			this._logService.warn(`[Copilot:${sessionId}] getSessionMetadata failed`, err);
 			return undefined;
 		});
-		const workingDirectory = typeof sessionMetadata?.context?.cwd === 'string' ? URI.file(sessionMetadata.context.cwd) : undefined;
+		const workingDirectory = typeof sessionMetadata?.context?.cwd === 'string' ? URI.file(sessionMetadata.context.cwd) : storedMetadata.workingDirectory;
 		const shellManager = this._instantiationService.createInstance(ShellManager, sessionUri);
 		const sessionConfig = this._buildSessionConfig(parsedPlugins, shellManager);
 
@@ -492,13 +495,12 @@ export class CopilotAgent extends Disposable implements IAgent {
 				}
 
 				this._logService.warn(`[Copilot:${sessionId}] Resume failed (session not found in SDK), recreating`);
-				const metadata = await this._readSessionMetadata(sessionUri);
 				const raw = await client.createSession({
 					...config,
 					sessionId,
 					streaming: true,
-					model: metadata.model,
-					workingDirectory: metadata.workingDirectory?.fsPath,
+					model: storedMetadata.model,
+					workingDirectory: workingDirectory?.fsPath,
 				});
 
 				return new CopilotSessionWrapper(raw);

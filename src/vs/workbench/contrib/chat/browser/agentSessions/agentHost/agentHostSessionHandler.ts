@@ -368,7 +368,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 				}
 				const sessionState = this._getSessionState(resolvedSession.toString());
 				if (sessionState) {
-					history.push(...turnsToHistory(sessionState.turns, this._config.agentId));
+					history.push(...turnsToHistory(sessionState.turns, this._config.agentId, this._toLanguageModelId(sessionResource, sessionState.summary.model)));
 
 					// Enrich history with inner tool calls from subagent
 					// child sessions. Subscribes to each child session so
@@ -1779,7 +1779,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 
 		const chatModel = this._chatService.getSession(sessionResource);
 
-		const forkedSession = await this._createAndSubscribe(sessionResource, undefined, {
+		const forkedSession = await this._createAndSubscribe(sessionResource, protocolState?.summary.model, {
 			session: backendSession,
 			turnIndex,
 		});
@@ -1917,6 +1917,14 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 			return languageModelIdentifier.substring(prefix.length);
 		}
 		return languageModelIdentifier;
+	}
+
+	private _toLanguageModelId(sessionResource: URI, rawModelId: string | undefined): string | undefined {
+		if (!rawModelId) {
+			return undefined;
+		}
+		const prefix = `${sessionResource.scheme}:`;
+		return rawModelId.startsWith(prefix) ? rawModelId : `${prefix}${rawModelId}`;
 	}
 
 	private _convertVariablesToAttachments(request: IChatAgentRequest): IAgentAttachment[] {

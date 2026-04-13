@@ -180,7 +180,7 @@ export class AgentService extends Disposable implements IAgentService {
 		const withStatus = result.map(s => {
 			const liveState = this._stateManager.getSessionState(s.session.toString());
 			if (liveState) {
-				return { ...s, status: liveState.summary.status };
+				return { ...s, status: liveState.summary.status, model: liveState.summary.model ?? s.model };
 			}
 			return s;
 		});
@@ -230,6 +230,7 @@ export class AgentService extends Disposable implements IAgentService {
 				createdAt: Date.now(),
 				modifiedAt: Date.now(),
 				...(created.project ? { project: { uri: created.project.uri.toString(), displayName: created.project.displayName } } : {}),
+				model: config?.model,
 				workingDirectory: config.workingDirectory?.toString(),
 			};
 			const state = this._stateManager.createSession(summary);
@@ -244,6 +245,7 @@ export class AgentService extends Disposable implements IAgentService {
 				createdAt: Date.now(),
 				modifiedAt: Date.now(),
 				...(created.project ? { project: { uri: created.project.uri.toString(), displayName: created.project.displayName } } : {}),
+				model: config?.model,
 				workingDirectory: config?.workingDirectory?.toString(),
 			};
 			this._stateManager.createSession(summary);
@@ -423,6 +425,7 @@ export class AgentService extends Disposable implements IAgentService {
 			createdAt: meta.startTime,
 			modifiedAt: meta.modifiedTime,
 			...(meta.project ? { project: { uri: meta.project.uri.toString(), displayName: meta.project.displayName } } : {}),
+			model: meta.model,
 			workingDirectory: meta.workingDirectory?.toString(),
 			isRead,
 			isDone,

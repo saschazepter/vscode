@@ -386,6 +386,7 @@ export class ProtocolServerHandler extends Disposable {
 				createdAt: s.startTime,
 				modifiedAt: s.modifiedTime,
 				...(s.project ? { project: { uri: s.project.uri.toString(), displayName: s.project.displayName } } : {}),
+				model: s.model,
 				workingDirectory: s.workingDirectory?.toString(),
 				isRead: s.isRead,
 				isDone: s.isDone,
