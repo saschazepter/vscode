@@ -112,6 +112,47 @@ describe('ShownGhostTextTracker', () => {
 		expect(tracker.shouldFilter(docUri, 'edit2', true, 1, 0, 4)).toBe(true); // different position → filtered
 		expect(tracker.shouldFilter(docUri, 'edit3', true, 1, 0, 1)).toBe(false); // untracked
 	});
+
+	test('clearDocument removes all tracking for that document', () => {
+		const tracker = new ShownGhostTextTracker();
+
+		tracker.recordRejected(docUri, 'edit1');
+		tracker.recordIgnored(docUri, 'edit2', { cursorLine: 1, cursorCharacter: 0, documentVersion: 1 });
+
+		tracker.clearDocument(docUri);
+
+		expect(tracker.shouldFilter(docUri, 'edit1', true, 1, 0, 1)).toBe(false);
+		expect(tracker.shouldFilter(docUri, 'edit2', true, 5, 0, 2)).toBe(false);
+	});
+
+	test('clearDocument does not affect other documents', () => {
+		const tracker = new ShownGhostTextTracker();
+		const doc1 = 'file:///a.ts';
+		const doc2 = 'file:///b.ts';
+
+		tracker.recordRejected(doc1, 'edit1');
+		tracker.recordRejected(doc2, 'edit1');
+
+		tracker.clearDocument(doc1);
+
+		expect(tracker.shouldFilter(doc1, 'edit1', true, 1, 0, 1)).toBe(false);
+		expect(tracker.shouldFilter(doc2, 'edit1', true, 1, 0, 1)).toBe(true);
+	});
+
+	test('evicts oldest entries when per-document cap is exceeded', () => {
+		const tracker = new ShownGhostTextTracker();
+
+		// Fill up with 201 rejected entries (exceeds the 200 cap)
+		for (let i = 0; i < 201; i++) {
+			tracker.recordRejected(docUri, `edit-${i}`);
+		}
+
+		// The oldest entries should have been evicted
+		expect(tracker.shouldFilter(docUri, 'edit-0', true, 1, 0, 1)).toBe(false);
+
+		// The newest entries should still be tracked
+		expect(tracker.shouldFilter(docUri, 'edit-200', true, 1, 0, 1)).toBe(true);
+	});
 });
 
 describe('computeGhostTextEditKey', () => {

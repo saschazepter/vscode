@@ -201,6 +201,13 @@ export class InlineCompletionProviderImpl extends Disposable implements InlineCo
 		this._inlineCompletionsAdvanced = this._configurationService.getExperimentBasedConfigObservable(ConfigKey.TeamInternal.InlineEditsInlineCompletionsAdvanced, this._expService);
 		this._ghostTextTrackingEnabled = this._configurationService.getConfig(ConfigKey.TeamInternal.InlineEditsGhostTextTracking);
 
+		// Clean up ghost text tracking data when documents are closed to prevent memory leaks
+		if (this._ghostTextTrackingEnabled) {
+			this._register(workspace.onDidCloseTextDocument(doc => {
+				this._ghostTextTracker.clearDocument(doc.uri.toString());
+			}));
+		}
+
 		this.setCurrentModelId = (modelId: string) => this._modelService.setCurrentModelId(modelId);
 
 		const modelListUpdatedObs = observableFromEvent(this, this._modelService.onModelListUpdated, () => this._modelService.modelInfo);
@@ -472,20 +479,23 @@ export class InlineCompletionProviderImpl extends Disposable implements InlineCo
 				return emptyList;
 			}
 
-			// Ghost text tracking: compute context once, use for both filtering and recording
+			// Ghost text tracking: compute context once, use for both filtering and recording.
+			// Use targetDocument for identity/version — completions may target a different document
+			// than the one requesting completions (e.g., cross-file edits).
 			let ghostTextCtx: { editKey: string; docUri: string; cursorLine: number; cursorCharacter: number; documentVersion: number } | undefined;
-			if (this._ghostTextTrackingEnabled && completionItem.range) {
+			if (this._ghostTextTrackingEnabled && completionItem.range && targetDocument) {
 				const r = completionItem.range;
 				const insertTextStr = typeof completionItem.insertText === 'string' ? completionItem.insertText : completionItem.insertText?.value ?? '';
+				const ghostTextDocUri = targetDocument.uri.toString();
 				ghostTextCtx = {
 					editKey: computeGhostTextEditKey(r.start.line, r.start.character, r.end.line, r.end.character, insertTextStr),
-					docUri: document.uri.toString(),
+					docUri: ghostTextDocUri,
 					cursorLine: position.line,
 					cursorCharacter: position.character,
-					documentVersion: document.version,
+					documentVersion: targetDocument.version,
 				};
 
-				if (this._ghostTextTracker.shouldFilter(ghostTextCtx.docUri, ghostTextCtx.editKey, isInlineCompletion, position.line, position.character, document.version)) {
+				if (this._ghostTextTracker.shouldFilter(ghostTextCtx.docUri, ghostTextCtx.editKey, isInlineCompletion, position.line, position.character, targetDocument.version)) {
 					logger.trace('ghost text tracking: filtered out previously shown suggestion');
 					this.telemetrySender.scheduleSendingEnhancedTelemetry(suggestionInfo.suggestion, telemetryBuilder);
 					return emptyList;
