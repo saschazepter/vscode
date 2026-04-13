@@ -111,13 +111,15 @@ suite('SessionsWelcomeContribution', () => {
 		await Promise.resolve();
 	}
 
-	test('first launch shows overlay', () => {
+	test('first launch shows overlay', async () => {
 		// First launch with no entitlement — should show overlay
 		mockEntitlementService.entitlementObs.set(ChatEntitlement.Unknown, undefined);
 		mockEntitlementService.sentimentObs.set({ completed: false, installed: false } as IChatSentiment, undefined);
 
 		const contribution = disposables.add(instantiationService.createInstance(SessionsWelcomeContribution));
 		assert.ok(contribution);
+		await flushMicrotasks();
+		await flushMicrotasks();
 		assert.strictEqual(isOverlayVisible(), true);
 	});
 
@@ -236,6 +238,8 @@ suite('SessionsWelcomeContribution', () => {
 
 		const contribution = disposables.add(instantiationService.createInstance(SessionsWelcomeContribution));
 		assert.ok(contribution);
+		await flushMicrotasks();
+		await flushMicrotasks();
 		assert.strictEqual(isOverlayVisible(), true, 'should show on first launch');
 
 		// Simulate setup completion; the walkthrough remains visible until it resolves
@@ -499,6 +503,8 @@ suite('SessionsWelcomeContribution', () => {
 
 		const contribution = disposables.add(instantiationService.createInstance(SessionsWelcomeContribution));
 		assert.ok(contribution);
+		await flushMicrotasks();
+		await flushMicrotasks();
 		assert.strictEqual(isOverlayVisible(), true);
 
 		walkthrough.resolve('dismissed');
@@ -518,6 +524,8 @@ suite('SessionsWelcomeContribution', () => {
 
 		const contribution = disposables.add(instantiationService.createInstance(SessionsWelcomeContribution));
 		assert.ok(contribution);
+		await flushMicrotasks();
+		await flushMicrotasks();
 		assert.strictEqual(isOverlayVisible(), true);
 
 		walkthrough.resolve('completed');
