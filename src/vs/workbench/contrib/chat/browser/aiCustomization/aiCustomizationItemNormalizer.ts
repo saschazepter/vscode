@@ -6,7 +6,6 @@
 import { ResourceMap } from '../../../../../base/common/map.js';
 import { Schemas } from '../../../../../base/common/network.js';
 import { basename, isEqualOrParent } from '../../../../../base/common/resources.js';
-import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { ExtensionIdentifier } from '../../../../../platform/extensions/common/extensions.js';
 import { ILabelService } from '../../../../../platform/label/common/label.js';
@@ -18,22 +17,10 @@ import { PromptsType } from '../../common/promptSyntax/promptTypes.js';
 import { PromptsStorage } from '../../common/promptSyntax/service/promptsService.js';
 import { IExternalCustomizationItem } from '../../common/customizationHarnessService.js';
 import { BUILTIN_STORAGE } from './aiCustomizationManagement.js';
-import { extensionIcon, instructionsIcon, pluginIcon, userIcon, workspaceIcon } from './aiCustomizationIcons.js';
+import { storageToIcon } from './aiCustomizationIcons.js';
 import { IAICustomizationListItem } from './aiCustomizationListItem.js';
 import { extractExtensionIdFromPath } from './aiCustomizationListWidgetUtils.js';
-
-/**
- * Returns the icon for a given storage type.
- */
-export function storageToIcon(storage: PromptsStorage): ThemeIcon {
-	switch (storage) {
-		case PromptsStorage.local: return workspaceIcon;
-		case PromptsStorage.user: return userIcon;
-		case PromptsStorage.extension: return extensionIcon;
-		case PromptsStorage.plugin: return pluginIcon;
-		default: return instructionsIcon;
-	}
-}
+import { isChatExtensionItem } from './aiCustomizationItemSourceUtils.js';
 
 /**
  * Converts provider-shaped customization rows into the rich list model used by the management UI.
@@ -97,7 +84,7 @@ export class AICustomizationItemNormalizer {
 			case PromptsStorage.user:
 			case PromptsStorage.extension:
 			case PromptsStorage.plugin:
-				return { ...inferred, storage: item.groupKey };
+				return { storage: item.groupKey, extensionLabel: inferred.extensionLabel };
 			case BUILTIN_STORAGE:
 				return { ...inferred, storage: PromptsStorage.extension, groupKey: BUILTIN_STORAGE, isBuiltin: true };
 			default:
@@ -130,18 +117,13 @@ export class AICustomizationItemNormalizer {
 		const extensionId = extractExtensionIdFromPath(uri.path);
 		if (extensionId) {
 			const extensionIdentifier = new ExtensionIdentifier(extensionId);
-			if (this.isChatExtensionItem(extensionIdentifier)) {
+			if (isChatExtensionItem(extensionIdentifier, this.productService)) {
 				return { storage: PromptsStorage.extension, groupKey: BUILTIN_STORAGE, isBuiltin: true };
 			}
 			return { storage: PromptsStorage.extension, extensionLabel: extensionIdentifier.value };
 		}
 
 		return { storage: PromptsStorage.user };
-	}
-
-	private isChatExtensionItem(extensionId: ExtensionIdentifier): boolean {
-		const chatExtensionId = this.productService.defaultChatAgent?.chatExtensionId;
-		return !!chatExtensionId && ExtensionIdentifier.equals(extensionId, chatExtensionId);
 	}
 
 	private findPluginUri(itemUri: URI): URI | undefined {
