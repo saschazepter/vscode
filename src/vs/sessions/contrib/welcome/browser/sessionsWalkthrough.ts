@@ -9,7 +9,7 @@ import { Disposable, DisposableStore, MutableDisposable, toDisposable } from '..
 import { $, append, EventType, addDisposableListener, getActiveElement, isHTMLElement } from '../../../../base/browser/dom.js';
 import { mainWindow } from '../../../../base/browser/window.js';
 import { localize } from '../../../../nls.js';
-import { ICommandService, CommandsRegistry } from '../../../../platform/commands/common/commands.js';
+import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { IOpenerService } from '../../../../platform/opener/common/opener.js';
 import { IProductService } from '../../../../platform/product/common/productService.js';
@@ -228,25 +228,25 @@ export class SessionsWalkthroughOverlay extends Disposable {
 		this.contentContainer.classList.remove('sessions-walkthrough-fade-out');
 
 		try {
-			// Check if the chat setup command is available (it may not be registered
-			// when the entitlement service has no context, e.g. in web sessions)
-			const hasSetupCommand = !!CommandsRegistry.getCommand(CHAT_SETUP_SUPPORT_ANONYMOUS_ACTION_ID);
-
 			let success: boolean;
 			let usedDeviceCodeFlow = false;
-			if (hasSetupCommand) {
+
+			// Try the standard chat setup command first. Fall back to the
+			// web device-code flow only when the command is unavailable.
+			try {
 				success = !!await this.commandService.executeCommand<boolean>(CHAT_SETUP_SUPPORT_ANONYMOUS_ACTION_ID, {
 					setupStrategy: strategy
 				});
-			} else if (isWeb) {
+			} catch (cmdErr) {
+				if (!isWeb) {
+					throw cmdErr;
+				}
 				// Web-only fallback: device code flow via the tunnel discovery
 				// auth proxy, then discover and connect to agent host tunnels.
+				this.logService.info('[sessions walkthrough] Chat setup command failed, starting device code flow', cmdErr);
 				const result = await this._runWebDeviceCodeSignIn(titleEl, subtitleEl);
 				success = result.success;
 				usedDeviceCodeFlow = result.usedDeviceCodeFlow;
-			} else {
-				this.logService.warn('[sessions walkthrough] No setup command available and not running on web');
-				success = false;
 			}
 
 			if (this._shouldAbortUpdate(titleEl, subtitleEl)) {
@@ -411,8 +411,6 @@ export class SessionsWalkthroughOverlay extends Disposable {
 	 * fallback) and in secret storage (so IAuthenticationService finds it).
 	 */
 	private async _storeWebAuthToken(accessToken: string): Promise<void> {
-		localStorage.setItem('sessions.tunnel.token', accessToken);
-
 		const authKey = JSON.stringify({ extensionId: 'vscode.github-authentication', key: 'github.auth' });
 		try {
 			const existing = await this.secretStorageService.get(authKey);

@@ -26,9 +26,9 @@ const GITHUB_AUTH_SECRET_KEY = JSON.stringify({ extensionId: 'vscode.github-auth
  * On web, discovers agent hosts from the vscode.dev host registry
  * and registers them with {@link IRemoteAgentHostService}.
  *
- * Reacts to GitHub auth token availability: checks localStorage and
- * secret storage on startup, and listens for new tokens stored by the
- * welcome overlay's device code flow.
+ * Reacts to GitHub auth token availability in secret storage: checks on
+ * startup and listens for new tokens stored by the welcome overlay's
+ * device code flow.
  */
 class WebHostDiscoveryContribution extends Disposable implements IWorkbenchContribution {
 
@@ -48,27 +48,41 @@ class WebHostDiscoveryContribution extends Disposable implements IWorkbenchContr
 		}
 
 		// Check if a token is already available (returning user)
-		const existingToken = this._getLocalStorageToken();
-		if (existingToken) {
-			this._discoverHosts(existingToken);
-			return;
-		}
+		this._getSecretStorageToken().then(token => {
+			if (token && !this._discovered) {
+				this._discoverHosts(token);
+			}
+		});
 
-		// No token yet — listen for when the walkthrough stores one
+		// Listen for when the walkthrough stores a new token
 		this._register(this._secretStorageService.onDidChangeSecret(key => {
 			if (key === GITHUB_AUTH_SECRET_KEY && !this._discovered) {
-				const token = this._getLocalStorageToken();
-				if (token) {
-					this._discoverHosts(token);
-				}
+				this._getSecretStorageToken().then(token => {
+					if (token && !this._discovered) {
+						this._discoverHosts(token);
+					}
+				});
 			}
 		}));
 	}
 
-	private _getLocalStorageToken(): string | undefined {
-		return globalThis.localStorage?.getItem('sessions.tunnel.token') ??
-			globalThis.localStorage?.getItem('sessions.github.token') ??
-			undefined;
+	/**
+	 * Read the GitHub access token from secret storage. The walkthrough stores
+	 * auth sessions in the same format as the github-authentication extension.
+	 */
+	private async _getSecretStorageToken(): Promise<string | undefined> {
+		try {
+			const raw = await this._secretStorageService.get(GITHUB_AUTH_SECRET_KEY);
+			if (raw) {
+				const sessions = JSON.parse(raw) as { accessToken?: string }[];
+				if (Array.isArray(sessions) && sessions.length > 0 && sessions[0].accessToken) {
+					return sessions[0].accessToken;
+				}
+			}
+		} catch {
+			// Secret storage not available or parse error
+		}
+		return undefined;
 	}
 
 	private async _discoverHosts(token: string): Promise<void> {
@@ -115,8 +129,6 @@ class WebHostDiscoveryContribution extends Disposable implements IWorkbenchContr
 					});
 
 					// Push GitHub token to the agent host for Copilot API access.
-					// On web, IAuthenticationService doesn't have a valid session,
-					// so we push the token from localStorage directly.
 					const connection = this._remoteAgentHostService.getConnection(address);
 					if (connection && token) {
 						try {

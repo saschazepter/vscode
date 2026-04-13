@@ -135,18 +135,21 @@ export class SessionsWelcomeContribution extends Disposable implements IWorkbenc
 
 		const isFirstLaunch = !this.storageService.getBoolean(WELCOME_COMPLETE_KEY, StorageScope.APPLICATION, false);
 		if (isFirstLaunch) {
-			// On first launch in web, check if a GitHub session already exists
-			// (e.g. from a redirect-based OAuth flow that stored a token before
-			// the workbench booted). If so, persist completion and skip the
-			// walkthrough. On desktop, extensions handle auth natively.
-			this._hasExistingWebGitHubSession().then(hasSession => {
-				if (hasSession) {
-					this.logService.info('[sessions welcome] GitHub session found, skipping walkthrough');
-					this.storageService.store(WELCOME_COMPLETE_KEY, true, StorageScope.APPLICATION, StorageTarget.MACHINE);
-					return;
-				}
+			if (isWeb) {
+				// On web, check if a GitHub session already exists (e.g. from a
+				// redirect-based OAuth flow that stored a token before the workbench
+				// booted). If so, persist completion and skip the walkthrough.
+				this._hasExistingWebGitHubSession().then(hasSession => {
+					if (hasSession) {
+						this.logService.info('[sessions welcome] GitHub session found, skipping walkthrough');
+						this.storageService.store(WELCOME_COMPLETE_KEY, true, StorageScope.APPLICATION, StorageTarget.MACHINE);
+						return;
+					}
+					this.showWalkthrough();
+				});
+			} else {
 				this.showWalkthrough();
-			});
+			}
 		} else {
 			this.showWalkthroughIfNeeded();
 		}
@@ -154,15 +157,19 @@ export class SessionsWelcomeContribution extends Disposable implements IWorkbenc
 
 	private showWalkthroughIfNeeded(): void {
 		if (this._needsChatSetup()) {
-			// On web, check if user already has a GitHub session (e.g. from a
-			// previous device code flow). If so, skip the walkthrough — the
-			// entitlement state may never flip in OSS/web builds without Copilot
-			// product config. On desktop, always show the walkthrough.
-			this._hasExistingWebGitHubSession().then(hasSession => {
-				if (!hasSession) {
-					this.showWalkthrough();
-				}
-			});
+			if (isWeb) {
+				// On web, check if user already has a GitHub session (e.g. from a
+				// previous device code flow). If so, skip the walkthrough — the
+				// entitlement state may never flip in OSS/web builds without
+				// Copilot product config.
+				this._hasExistingWebGitHubSession().then(hasSession => {
+					if (!hasSession) {
+						this.showWalkthrough();
+					}
+				});
+			} else {
+				this.showWalkthrough();
+			}
 		} else {
 			this.watchEntitlementState();
 		}
