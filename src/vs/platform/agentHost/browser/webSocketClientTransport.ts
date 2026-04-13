@@ -9,7 +9,7 @@
 import { Emitter } from '../../../base/common/event.js';
 import { Disposable } from '../../../base/common/lifecycle.js';
 import { connectionTokenQueryName } from '../../../base/common/network.js';
-import type { IAhpServerNotification, IJsonRpcNotification, IJsonRpcResponse, IProtocolMessage } from '../common/state/sessionProtocol.js';
+import type { IAhpServerNotification, IJsonRpcResponse, IProtocolMessage } from '../common/state/sessionProtocol.js';
 import type { IClientTransport } from '../common/state/sessionTransport.js';
 
 // ---- Client transport -------------------------------------------------------
@@ -34,10 +34,6 @@ export class WebSocketClientTransport extends Disposable implements IClientTrans
 
 	get isOpen(): boolean {
 		return this._ws?.readyState === WebSocket.OPEN;
-	}
-
-	get address(): string {
-		return this._address;
 	}
 
 	constructor(
@@ -118,7 +114,7 @@ export class WebSocketClientTransport extends Disposable implements IClientTrans
 		});
 	}
 
-	send(message: IProtocolMessage | IAhpServerNotification | IJsonRpcNotification | IJsonRpcResponse): void {
+	send(message: IProtocolMessage | IAhpServerNotification | IJsonRpcResponse): void {
 		if (this._ws?.readyState === WebSocket.OPEN) {
 			this._ws.send(JSON.stringify(message));
 		}
