@@ -35,7 +35,7 @@ if (process.env.BUILD_ARTIFACTSTAGINGDIRECTORY || process.env.GITHUB_WORKSPACE) 
 
 const mocha = new Mocha(options);
 
-glob.sync(path.join(testRoot, '../out/test/**/*.test.js'))
+glob.sync(path.posix.join(testRoot, '../out/test/**/*.test.js'))
 	.forEach(file => mocha.addFile(file));
 
 mocha.run(failures => process.exit(failures ? -1 : 0));
