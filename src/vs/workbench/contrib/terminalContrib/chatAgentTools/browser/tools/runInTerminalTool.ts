@@ -28,7 +28,7 @@ import { ITerminalLogService, ITerminalProfile } from '../../../../../../platfor
 import { IRemoteAgentService } from '../../../../../services/remote/common/remoteAgentService.js';
 import { TerminalToolConfirmationStorageKeys } from '../../../../chat/browser/widget/chatContentParts/toolInvocationParts/chatTerminalToolConfirmationSubPart.js';
 import { IChatService, ChatRequestQueueKind, ElicitationState, type IChatExternalToolInvocationUpdate, type IChatTerminalToolInvocationData } from '../../../../chat/common/chatService/chatService.js';
-import { constObservable, type IObservable } from '../../../../../../base/common/observable.js';
+import { autorun, constObservable, type IObservable } from '../../../../../../base/common/observable.js';
 import { ChatModel, type IChatRequestModeInfo } from '../../../../chat/common/model/chatModel.js';
 import type { UserSelectedTools } from '../../../../chat/common/participants/chatAgents.js';
 import { CountTokensCallback, ILanguageModelToolsService, IPreparedToolInvocation, IToolConfirmationMessages, IStreamedToolInvocation, IToolData, IToolImpl, IToolInvocation, IToolInvocationPreparationContext, IToolInvocationStreamContext, IToolResult, ToolDataSource, ToolInvocationPresentation, ToolProgress } from '../../../../chat/common/tools/languageModelToolsService.js';
@@ -2115,13 +2115,28 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 
 		// If the user manually stopped the agent, suppress background
 		// steering requests and tear down the notification listeners.
-		const isSessionCancelled = () => {
+		const handleSessionCancelled = (): boolean => {
 			if (sessionRef.object.lastRequest?.response?.isCanceled) {
 				disposeNotification();
 				return true;
 			}
 			return false;
 		};
+
+		// Proactively detect session cancellation so that all background
+		// listeners are torn down immediately, rather than waiting for the
+		// next terminal event to fire and discover the cancelled state.
+		store.add(autorun(reader => {
+			const request = sessionRef.object.lastRequestObs.read(reader);
+			if (!request?.response) {
+				return;
+			}
+			reader.store.add(request.response.onDidChange(ev => {
+				if (ev.reason === 'completedRequest' && request.response!.isCanceled) {
+					disposeNotification();
+				}
+			}));
+		}));
 
 		if (outputMonitor) {
 			let lastInputNeededOutput = '';
@@ -2144,7 +2159,7 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 					return;
 				}
 
-				if (isSessionCancelled()) {
+				if (handleSessionCancelled()) {
 					return;
 				}
 
@@ -2199,7 +2214,7 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 				return;
 			}
 
-			if (isSessionCancelled()) {
+			if (handleSessionCancelled()) {
 				return;
 			}
 
