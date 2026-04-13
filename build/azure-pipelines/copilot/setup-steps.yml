@@ -1,7 +1,7 @@
 steps:
-  - task: NodeTool@0
+  - task: UseNode@1
     inputs:
-      versionSpec: "22.21.x"
+      version: "22.21.x"
 
   - task: AzureKeyVault@2
     displayName: "Azure Key Vault: Get Secrets"

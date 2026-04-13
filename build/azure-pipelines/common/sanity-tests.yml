@@ -94,9 +94,8 @@ jobs:
           displayName: Install Node.js (Windows ARM64)
 
       - ${{ else }}:
-        - task: NodeTool@0
+        - task: UseNode@1
           inputs:
-            versionSource: fromFile
             versionFilePath: .nvmrc
           displayName: Install Node.js
 

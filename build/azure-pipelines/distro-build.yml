@@ -8,8 +8,7 @@ trigger:
 pr: none
 
 steps:
-  - task: NodeTool@0
+  - task: UseNode@1
     inputs:
-      versionSource: fromFile
       versionFilePath: .nvmrc
   - template: ./distro/download-distro.yml@self

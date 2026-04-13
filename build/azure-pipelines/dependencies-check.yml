@@ -28,9 +28,8 @@ jobs:
     variables:
       VSCODE_ARCH: x64
     steps:
-      - task: NodeTool@0
+      - task: UseNode@1
         inputs:
-          versionSource: fromFile
           versionFilePath: .nvmrc
 
       - script: |
