@@ -5,23 +5,16 @@
 
 import { CancellationToken } from '../../../../../base/common/cancellation.js';
 import { Event } from '../../../../../base/common/event.js';
-import { parse as parseJSONC } from '../../../../../base/common/json.js';
-import { Schemas } from '../../../../../base/common/network.js';
-import { OS } from '../../../../../base/common/platform.js';
 import { basename } from '../../../../../base/common/resources.js';
-import { localize } from '../../../../../nls.js';
 import { IFileService } from '../../../../../platform/files/common/files.js';
 import { IPathService } from '../../../../services/path/common/pathService.js';
 import { IAICustomizationWorkspaceService } from '../../common/aiCustomizationWorkspaceService.js';
-import { HOOK_METADATA } from '../../common/promptSyntax/hookTypes.js';
-import { parseHooksFromFile } from '../../common/promptSyntax/hookCompatibility.js';
-import { formatHookCommandLabel } from '../../common/promptSyntax/hookSchema.js';
 import { PromptsType } from '../../common/promptSyntax/promptTypes.js';
 import { IPromptsService, PromptsStorage } from '../../common/promptSyntax/service/promptsService.js';
 import { ICustomizationSyncProvider, IExternalCustomizationItem, IExternalCustomizationItemProvider } from '../../common/customizationHarnessService.js';
 import { AICustomizationItemNormalizer } from './aiCustomizationItemNormalizer.js';
 import { IAICustomizationItemSource, IAICustomizationListItem } from './aiCustomizationListItem.js';
-import { getFriendlyName } from './aiCustomizationItemSourceUtils.js';
+import { expandHookFileItems, getFriendlyName } from './aiCustomizationItemSourceUtils.js';
 
 interface ITypeScopedCustomizationItemProvider extends IExternalCustomizationItemProvider {
 	provideCustomizations(promptType: PromptsType, token: CancellationToken): Promise<IExternalCustomizationItem[] | undefined>;
@@ -82,7 +75,10 @@ export class ProviderCustomizationItemSource implements IAICustomizationItemSour
 				return [];
 			}
 			providerItems = promptType === PromptsType.hook
-				? await this.expandProviderHookItems(allItems)
+				? await expandHookFileItems(
+					allItems.filter(item => item.type === PromptsType.hook),
+					this.workspaceService, this.fileService, this.pathService,
+				)
 				: allItems.filter(item => item.type === promptType);
 		}
 
@@ -105,51 +101,6 @@ export class ProviderCustomizationItemSource implements IAICustomizationItemSour
 		return items.map(item => item.description
 			? item
 			: { ...item, description: descriptionsByUri.get(item.uri.toString()) });
-	}
-
-	private async expandProviderHookItems(allItems: readonly IExternalCustomizationItem[]): Promise<IExternalCustomizationItem[]> {
-		const hookFileItems = allItems.filter(item => item.type === PromptsType.hook);
-		const items: IExternalCustomizationItem[] = [];
-		const activeRoot = this.workspaceService.getActiveProjectRoot();
-		const userHomeUri = await this.pathService.userHome();
-		const userHome = userHomeUri.scheme === Schemas.file ? userHomeUri.fsPath : userHomeUri.path;
-
-		for (const item of hookFileItems) {
-			let parsedHooks = false;
-			try {
-				const content = await this.fileService.readFile(item.uri);
-				const json = parseJSONC(content.value.toString());
-				const { hooks } = parseHooksFromFile(item.uri, json, activeRoot, userHome);
-
-				if (hooks.size > 0) {
-					parsedHooks = true;
-					for (const [hookType, entry] of hooks) {
-						const hookMeta = HOOK_METADATA[hookType];
-						for (let i = 0; i < entry.hooks.length; i++) {
-							const hook = entry.hooks[i];
-							const cmdLabel = formatHookCommandLabel(hook, OS);
-							const truncatedCmd = cmdLabel.length > 60 ? cmdLabel.substring(0, 57) + '...' : cmdLabel;
-							items.push({
-								uri: item.uri,
-								type: PromptsType.hook,
-								name: hookMeta?.label ?? entry.originalId,
-								description: truncatedCmd || localize('hookUnset', "(unset)"),
-								enabled: item.enabled,
-								groupKey: item.groupKey,
-							});
-						}
-					}
-				}
-			} catch {
-				// Parse failed - fall through to show raw file.
-			}
-
-			if (!parsedHooks) {
-				items.push(item);
-			}
-		}
-
-		return items;
 	}
 
 	private async fetchLocalSyncableItems(promptType: PromptsType, syncProvider: ICustomizationSyncProvider): Promise<IAICustomizationListItem[]> {

@@ -5,9 +5,7 @@
 
 import { CancellationToken } from '../../../../../base/common/cancellation.js';
 import { Event } from '../../../../../base/common/event.js';
-import { parse as parseJSONC } from '../../../../../base/common/json.js';
 import { ResourceMap, ResourceSet } from '../../../../../base/common/map.js';
-import { Schemas } from '../../../../../base/common/network.js';
 import { OS } from '../../../../../base/common/platform.js';
 import { basename, dirname, isEqualOrParent } from '../../../../../base/common/resources.js';
 import { localize } from '../../../../../nls.js';
@@ -17,13 +15,12 @@ import { IProductService } from '../../../../../platform/product/common/productS
 import { IPathService } from '../../../../services/path/common/pathService.js';
 import { IAICustomizationWorkspaceService, applyStorageSourceFilter } from '../../common/aiCustomizationWorkspaceService.js';
 import { HookType, HOOK_METADATA } from '../../common/promptSyntax/hookTypes.js';
-import { parseHooksFromFile } from '../../common/promptSyntax/hookCompatibility.js';
 import { formatHookCommandLabel } from '../../common/promptSyntax/hookSchema.js';
 import { PromptsType } from '../../common/promptSyntax/promptTypes.js';
 import { IPromptsService, PromptsStorage } from '../../common/promptSyntax/service/promptsService.js';
 import { IExternalCustomizationItem, IExternalCustomizationItemProvider, IHarnessDescriptor, matchesInstructionFileFilter, matchesWorkspaceSubpath } from '../../common/customizationHarnessService.js';
 import { BUILTIN_STORAGE } from './aiCustomizationManagement.js';
-import { getFriendlyName } from './aiCustomizationItemSourceUtils.js';
+import { expandHookFileItems, getFriendlyName, isChatExtensionItem } from './aiCustomizationItemSourceUtils.js';
 
 interface IPromptsServiceCustomizationItem extends IExternalCustomizationItem {
 	readonly storage?: PromptsStorage;
@@ -165,52 +162,29 @@ export class PromptsServiceCustomizationItemProvider implements IExternalCustomi
 
 	private async fetchPromptServiceHooks(items: IPromptsServiceCustomizationItem[], disabledUris: ResourceSet, promptType: PromptsType): Promise<void> {
 		const hookFiles = await this.promptsService.listPromptFiles(PromptsType.hook, CancellationToken.None);
-		const activeRoot = this.workspaceService.getActiveProjectRoot();
-		const userHomeUri = await this.pathService.userHome();
-		const userHome = userHomeUri.scheme === Schemas.file ? userHomeUri.fsPath : userHomeUri.path;
 
+		// Convert hook files to provider-shaped items for shared expansion.
+		// Plugin hooks are pre-expanded by plugin manifests and kept as-is.
+		const hookFileItems: IExternalCustomizationItem[] = hookFiles
+			.filter(f => f.storage !== PromptsStorage.plugin)
+			.map(f => ({
+				uri: f.uri,
+				type: promptType,
+				name: f.name || getFriendlyName(basename(f.uri)),
+				enabled: !disabledUris.has(f.uri),
+			}));
+
+		const expanded = await expandHookFileItems(
+			hookFileItems, this.workspaceService, this.fileService, this.pathService,
+		);
+		const storageByUri = new Map(hookFiles.map(f => [f.uri.toString(), f.storage]));
+		for (const item of expanded) {
+			items.push({ ...item, storage: storageByUri.get(item.uri.toString()) });
+		}
+
+		// Plugin hooks are pre-expanded; add them directly.
 		for (const hookFile of hookFiles) {
 			if (hookFile.storage === PromptsStorage.plugin) {
-				items.push({
-					uri: hookFile.uri,
-					type: promptType,
-					name: hookFile.name || getFriendlyName(basename(hookFile.uri)),
-					storage: hookFile.storage,
-					enabled: !disabledUris.has(hookFile.uri),
-				});
-				continue;
-			}
-
-			let parsedHooks = false;
-			try {
-				const content = await this.fileService.readFile(hookFile.uri);
-				const json = parseJSONC(content.value.toString());
-				const { hooks } = parseHooksFromFile(hookFile.uri, json, activeRoot, userHome);
-
-				if (hooks.size > 0) {
-					parsedHooks = true;
-					for (const [hookType, entry] of hooks) {
-						const hookMeta = HOOK_METADATA[hookType];
-						for (let i = 0; i < entry.hooks.length; i++) {
-							const hook = entry.hooks[i];
-							const cmdLabel = formatHookCommandLabel(hook, OS);
-							const truncatedCmd = cmdLabel.length > 60 ? cmdLabel.substring(0, 57) + '...' : cmdLabel;
-							items.push({
-								uri: hookFile.uri,
-								type: promptType,
-								name: hookMeta?.label ?? entry.originalId,
-								description: truncatedCmd || localize('hookUnset', "(unset)"),
-								storage: hookFile.storage,
-								enabled: !disabledUris.has(hookFile.uri),
-							});
-						}
-					}
-				}
-			} catch {
-				// Parse failed - fall through to show raw file.
-			}
-
-			if (!parsedHooks) {
 				items.push({
 					uri: hookFile.uri,
 					type: promptType,
@@ -221,6 +195,7 @@ export class PromptsServiceCustomizationItemProvider implements IExternalCustomi
 			}
 		}
 
+		// Agent-embedded hooks (not in sessions window).
 		const agents = !this.workspaceService.isSessionsWindow ? await this.promptsService.getCustomAgents(CancellationToken.None) : [];
 		for (const agent of agents) {
 			if (!agent.hooks) {
@@ -321,8 +296,7 @@ export class PromptsServiceCustomizationItemProvider implements IExternalCustomi
 			if (!extInfo) {
 				return item;
 			}
-			const isBuiltin = this.isChatExtensionItem(extInfo.id);
-			if (isBuiltin) {
+			if (isChatExtensionItem(extInfo.id, this.productService)) {
 				return {
 					...item,
 					groupKey: item.groupKey ?? BUILTIN_STORAGE,
@@ -336,35 +310,35 @@ export class PromptsServiceCustomizationItemProvider implements IExternalCustomi
 		const filter = this.workspaceService.getStorageSourceFilter(promptType);
 		const withStorage = groupedItems.filter((item): item is IPromptsServiceCustomizationItem & { readonly storage: PromptsStorage } => item.storage !== undefined);
 		const withoutStorage = groupedItems.filter(item => item.storage === undefined);
-		const items = [...applyStorageSourceFilter(withStorage, filter), ...withoutStorage];
+		let items = [...applyStorageSourceFilter(withStorage, filter), ...withoutStorage];
 
 		const descriptor = this.getActiveDescriptor();
 		const subpaths = descriptor.workspaceSubpaths;
 		const instrFilter = descriptor.instructionFileFilter;
+
 		if (subpaths) {
 			const projectRoot = this.workspaceService.getActiveProjectRoot();
-			for (let i = items.length - 1; i >= 0; i--) {
-				const item = items[i];
-				if (item.storage === PromptsStorage.local && projectRoot && isEqualOrParent(item.uri, projectRoot)) {
-					if (!matchesWorkspaceSubpath(item.uri.path, subpaths)) {
-						if (instrFilter && promptType === PromptsType.instructions && matchesInstructionFileFilter(item.uri.path, instrFilter)) {
-							continue;
-						}
-						if (item.groupKey === 'agent-instructions') {
-							continue;
-						}
-						items.splice(i, 1);
-					}
+			items = items.filter(item => {
+				if (item.storage !== PromptsStorage.local || !projectRoot || !isEqualOrParent(item.uri, projectRoot)) {
+					return true;
 				}
-			}
+				if (matchesWorkspaceSubpath(item.uri.path, subpaths)) {
+					return true;
+				}
+				// Keep instruction files matching the harness's native patterns
+				if (instrFilter && promptType === PromptsType.instructions && matchesInstructionFileFilter(item.uri.path, instrFilter)) {
+					return true;
+				}
+				// Keep agent instruction files (AGENTS.md, CLAUDE.md, copilot-instructions.md)
+				if (item.groupKey === 'agent-instructions') {
+					return true;
+				}
+				return false;
+			});
 		}
 
 		if (instrFilter && promptType === PromptsType.instructions) {
-			for (let i = items.length - 1; i >= 0; i--) {
-				if (!matchesInstructionFileFilter(items[i].uri.path, instrFilter)) {
-					items.splice(i, 1);
-				}
-			}
+			items = items.filter(item => matchesInstructionFileFilter(item.uri.path, instrFilter));
 		}
 
 		return items;
@@ -375,11 +349,6 @@ export class PromptsServiceCustomizationItemProvider implements IExternalCustomi
 			...item,
 			groupKey: item.groupKey ?? storage,
 		}));
-	}
-
-	private isChatExtensionItem(extensionId: ExtensionIdentifier): boolean {
-		const chatExtensionId = this.productService.defaultChatAgent?.chatExtensionId;
-		return !!chatExtensionId && ExtensionIdentifier.equals(extensionId, chatExtensionId);
 	}
 
 }

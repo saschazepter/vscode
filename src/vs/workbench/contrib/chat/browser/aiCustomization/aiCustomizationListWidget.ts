@@ -533,6 +533,7 @@ export class AICustomizationListWidget extends Disposable {
 	private readonly delayedFilter = new Delayer<void>(200);
 	private readonly itemNormalizer: AICustomizationItemNormalizer;
 	private readonly promptsServiceItemProvider: PromptsServiceCustomizationItemProvider;
+	private cachedItemSource: { descriptorId: string; source: IAICustomizationItemSource } | undefined;
 
 	private readonly _onDidSelectItem = this._register(new Emitter<IAICustomizationListItem>());
 	readonly onDidSelectItem: Event<IAICustomizationListItem> = this._onDidSelectItem.event;
@@ -615,6 +616,7 @@ export class AICustomizationListWidget extends Disposable {
 		this._register(autorun(reader => {
 			this.harnessService.activeHarness.read(reader);
 			this.harnessService.availableHarnesses.read(reader);
+			this.cachedItemSource = undefined;
 			const activeDescriptor = this.harnessService.getActiveDescriptor();
 			itemSourceChangeDisposable.value = this.getItemSource(activeDescriptor).onDidChange(() => this.refresh());
 		}));
@@ -1153,10 +1155,15 @@ export class AICustomizationListWidget extends Disposable {
 
 	/**
 	 * Returns the rich, browser-internal item source for a harness descriptor.
+	 * The source is cached per descriptor id and reused across fetch and
+	 * subscription calls to avoid redundant event composition.
 	 */
 	private getItemSource(descriptor: ReturnType<ICustomizationHarnessService['getActiveDescriptor']>): IAICustomizationItemSource {
+		if (this.cachedItemSource && this.cachedItemSource.descriptorId === descriptor.id) {
+			return this.cachedItemSource.source;
+		}
 		const itemProvider = descriptor.itemProvider ?? (descriptor.syncProvider ? undefined : this.promptsServiceItemProvider);
-		return new ProviderCustomizationItemSource(
+		const source = new ProviderCustomizationItemSource(
 			itemProvider,
 			descriptor.syncProvider,
 			this.promptsService,
@@ -1165,6 +1172,8 @@ export class AICustomizationListWidget extends Disposable {
 			this.pathService,
 			this.itemNormalizer,
 		);
+		this.cachedItemSource = { descriptorId: descriptor.id, source };
+		return source;
 	}
 
 	/**
