@@ -59,6 +59,8 @@ type RepoInfoTelemetryProperties = {
 	repoId: string | undefined;
 	repoType: 'github' | 'ado';
 	headCommitHash: string | undefined;
+	headBranchName: string | undefined;
+	fileRelativePaths: string | undefined;
 	diffsJSON: string | undefined;
 	result: RepoInfoTelemetryResult;
 };
@@ -86,8 +88,8 @@ function shouldSendEndTelemetry(result: RepoInfoTelemetryResult | undefined): bo
 
 /*
 * Handles sending telemetry about the current git repository.
-* Repo metadata (remoteUrl, repoId, repoType, headCommitHash) is sent via sendEnhancedGHTelemetryEvent (diffsJSON is excluded).
-* Full repo info including diffsJSON is additionally sent for internal users via sendInternalMSFTTelemetryEvent.
+* Repo metadata and diffsJSON are sent via sendEnhancedGHTelemetryEvent.
+* Full repo info is additionally sent for internal users via sendInternalMSFTTelemetryEvent.
 */
 export class RepoInfoTelemetry {
 	private _beginTelemetrySent = false;
@@ -164,15 +166,15 @@ export class RepoInfoTelemetry {
 
 		const isInternal = !!this._copilotTokenStore.copilotToken?.isInternal;
 		if (isInternal) {
-			this._telemetryService.sendInternalMSFTTelemetryEvent('request.repoInfo', internalProperties, repoInfo.measurements);
+			const { headBranchName: _, fileRelativePaths: _2, ...msftProperties } = internalProperties;
+			this._telemetryService.sendInternalMSFTTelemetryEvent('request.repoInfo', msftProperties, repoInfo.measurements);
 		}
-		const { diffsJSON: _, ...ghProperties } = internalProperties;
-		this._telemetryService.sendEnhancedGHTelemetryEvent('request.repoInfo', ghProperties, repoInfo.measurements);
+		this._telemetryService.sendEnhancedGHTelemetryEvent('request.repoInfo', internalProperties, repoInfo.measurements);
 
 		return repoInfo;
 	}
 
-	private async _resolveRepoContext(): Promise<{ repoContext: RepoContext; repoInfo: ResolvedRepoRemoteInfo; repository: Repository; upstreamCommit: string } | undefined> {
+	private async _resolveRepoContext(): Promise<{ repoContext: RepoContext; repoInfo: ResolvedRepoRemoteInfo; repository: Repository; upstreamCommit: string; headBranchName: string | undefined } | undefined> {
 		const repoContext = this._gitService.activeRepository?.get();
 		if (!repoContext) {
 			return;
@@ -202,7 +204,8 @@ export class RepoInfoTelemetry {
 			return;
 		}
 
-		return { repoContext, repoInfo, repository, upstreamCommit };
+		const headBranchName = repository.state.HEAD?.name;
+		return { repoContext, repoInfo, repository, upstreamCommit, headBranchName };
 	}
 
 	private async _getRepoInfoTelemetry(): Promise<RepoInfoTelemetryData | undefined> {
@@ -211,7 +214,7 @@ export class RepoInfoTelemetry {
 			return;
 		}
 
-		const { repoContext, repoInfo, repository, upstreamCommit } = ctx;
+		const { repoContext, repoInfo, repository, upstreamCommit, headBranchName } = ctx;
 		const normalizedFetchUrl = normalizeFetchUrl(repoInfo.fetchUrl!);
 
 		const skipDiffResult = (result: RepoInfoTelemetryResult): RepoInfoTelemetryData => ({
@@ -220,6 +223,8 @@ export class RepoInfoTelemetry {
 				repoId: repoInfo.repoId.toString(),
 				repoType: repoInfo.repoId.type,
 				headCommitHash: upstreamCommit,
+				headBranchName,
+				fileRelativePaths: undefined,
 				diffsJSON: undefined,
 				result,
 			},
@@ -284,11 +289,12 @@ export class RepoInfoTelemetry {
 		const deleteDisposable = watcher.onDidDelete(() => filesChanged = true);
 
 		try {
-			const baseProperties: Omit<RepoInfoTelemetryProperties, 'diffsJSON' | 'result'> = {
+			const baseProperties: Omit<RepoInfoTelemetryProperties, 'diffsJSON' | 'fileRelativePaths' | 'result'> = {
 				remoteUrl: normalizedFetchUrl,
 				repoId: repoInfo.repoId.toString(),
 				repoType: repoInfo.repoId.type,
 				headCommitHash: upstreamCommit,
+				headBranchName,
 			};
 
 			// Workspace file index will be used to get a rough count of files in the repository
@@ -326,7 +332,7 @@ export class RepoInfoTelemetry {
 
 			if (!changes || changes.length === 0) {
 				return {
-					properties: { ...baseProperties, diffsJSON: undefined, result: 'noChanges' },
+					properties: { ...baseProperties, fileRelativePaths: undefined, diffsJSON: undefined, result: 'noChanges' },
 					measurements
 				};
 			}
@@ -335,7 +341,7 @@ export class RepoInfoTelemetry {
 			// Check if there are too many changes (e.g., mass renames)
 			if (changes.length > MAX_CHANGES) {
 				return {
-					properties: { ...baseProperties, diffsJSON: undefined, result: 'tooManyChanges' },
+					properties: { ...baseProperties, fileRelativePaths: undefined, diffsJSON: undefined, result: 'tooManyChanges' },
 					measurements
 				};
 			}
@@ -343,7 +349,7 @@ export class RepoInfoTelemetry {
 			// Check if files changed during the git diff operation
 			if (filesChanged) {
 				return {
-					properties: { ...baseProperties, diffsJSON: undefined, result: 'filesChanged' },
+					properties: { ...baseProperties, fileRelativePaths: undefined, diffsJSON: undefined, result: 'filesChanged' },
 					measurements
 				};
 			}
@@ -361,10 +367,18 @@ export class RepoInfoTelemetry {
 			// Check if files changed during the individual file diffs
 			if (filesChanged) {
 				return {
-					properties: { ...baseProperties, diffsJSON: undefined, result: 'filesChanged' },
+					properties: { ...baseProperties, fileRelativePaths: undefined, diffsJSON: undefined, result: 'filesChanged' },
 					measurements
 				};
 			}
+
+			const rootPath = repoContext.rootUri.path.endsWith('/') ? repoContext.rootUri.path : repoContext.rootUri.path + '/';
+			const fileRelativePaths = JSON.stringify(
+				changes.map(c => {
+					const filePath = c.uri.path;
+					return filePath.startsWith(rootPath) ? filePath.slice(rootPath.length) : filePath;
+				})
+			);
 
 			const diffsJSON = diffs.length > 0 ? JSON.stringify(diffs) : undefined;
 
@@ -375,14 +389,14 @@ export class RepoInfoTelemetry {
 
 				if (diffSizeBytes > MAX_DIFFS_JSON_SIZE) {
 					return {
-						properties: { ...baseProperties, diffsJSON: undefined, result: 'diffTooLarge' },
+						properties: { ...baseProperties, fileRelativePaths, diffsJSON: undefined, result: 'diffTooLarge' },
 						measurements
 					};
 				}
 			}
 
 			return {
-				properties: { ...baseProperties, diffsJSON, result: 'success' },
+				properties: { ...baseProperties, fileRelativePaths, diffsJSON, result: 'success' },
 				measurements
 			};
 		} finally {
