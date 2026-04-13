@@ -65,6 +65,10 @@ class ChatSessionInputStateImpl implements vscode.ChatSessionInputState {
 	_setGroups(groups: readonly vscode.ChatSessionProviderOptionGroup[]): void {
 		this.#groups = groups;
 	}
+
+	dispose(): void {
+		this.#onDidChangeEmitter.dispose();
+	}
 }
 
 // #endregion
@@ -435,7 +439,8 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 			},
 		};
 
-		this._chatSessionItemControllers.set(controllerHandle, { chatSessionType: chatSessionType, controller, extension, disposable: disposables, onDidChangeChatSessionItemStateEmitter, inputStates: new Set() });
+		const legacyInputStates = new Set<ChatSessionInputStateImpl>();
+		this._chatSessionItemControllers.set(controllerHandle, { chatSessionType: chatSessionType, controller, extension, disposable: disposables, onDidChangeChatSessionItemStateEmitter, inputStates: legacyInputStates });
 		this._proxy.$registerChatSessionItemController(controllerHandle, chatSessionType);
 
 		if (provider.onDidChangeChatSessionItems) {
@@ -459,6 +464,10 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 			dispose: () => {
 				this._chatSessionItemControllers.delete(controllerHandle);
 				this._clearInputStateCacheForScheme(chatSessionType);
+				for (const state of legacyInputStates) {
+					state.dispose();
+				}
+				legacyInputStates.clear();
 				disposables.dispose();
 				this._proxy.$unregisterChatSessionItemController(controllerHandle);
 			}
@@ -560,6 +569,10 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 		disposables.add(toDisposable(() => {
 			this._chatSessionItemControllers.delete(controllerHandle);
 			this._clearInputStateCacheForScheme(id);
+			for (const state of inputStates) {
+				state.dispose();
+			}
+			inputStates.clear();
 			this._proxy.$unregisterChatSessionItemController(controllerHandle);
 		}));
 
@@ -619,7 +632,7 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 		);
 
 		// Seed the cache so the first $invokeAgent call after session open gets a cache hit
-		this._inputStateCache.set(sessionResource, inputState);
+		this._setCachedInputState(sessionResource, inputState);
 
 		const session = await provider.provider.provideChatSessionContent(sessionResource, token, {
 			sessionOptions: context?.initialSessionOptions ?? [],
@@ -780,7 +793,7 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 		entry.disposeCts.cancel();
 		entry.sessionObj.sessionDisposables.dispose();
 		this._extHostChatSessions.delete(uri);
-		this._inputStateCache.delete(uri);
+		this._disposeAndRemoveCachedInputState(uri);
 	}
 
 	async $invokeChatSessionRequestHandler(handle: number, sessionResource: UriComponents, request: IChatAgentRequest, history: any[], token: CancellationToken): Promise<IChatAgentResult> {
@@ -876,7 +889,7 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 	 * Called from ExtHostChatAgents2 when a session is released.
 	 */
 	clearInputStateCache(resource: URI): void {
-		this._inputStateCache.delete(resource);
+		this._disposeAndRemoveCachedInputState(resource);
 	}
 
 	/**
@@ -886,7 +899,44 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 	private _clearInputStateCacheForScheme(scheme: string): void {
 		for (const [uri] of this._inputStateCache) {
 			if (uri.scheme === scheme) {
-				this._inputStateCache.delete(uri);
+				this._disposeAndRemoveCachedInputState(uri);
+			}
+		}
+	}
+
+	/**
+	 * Disposes the cached input state for a session resource.
+	 * If the cached value is a `ChatSessionInputStateImpl`, disposes it and removes it
+	 * from the controller's `inputStates` set.
+	 */
+	private _disposeAndRemoveCachedInputState(resource: URI): void {
+		const old = this._inputStateCache.get(resource);
+		this._inputStateCache.delete(resource);
+		if (old instanceof ChatSessionInputStateImpl) {
+			this._removeInputStateFromController(old);
+			old.dispose();
+		}
+	}
+
+	/**
+	 * Replaces the cached input state for a session, disposing the previous one if present.
+	 */
+	private _setCachedInputState(resource: URI, inputState: vscode.ChatSessionInputState): void {
+		const old = this._inputStateCache.get(resource);
+		if (old !== inputState && old instanceof ChatSessionInputStateImpl) {
+			this._removeInputStateFromController(old);
+			old.dispose();
+		}
+		this._inputStateCache.set(resource, inputState);
+	}
+
+	/**
+	 * Removes an input state from its controller's `inputStates` set.
+	 */
+	private _removeInputStateFromController(inputState: ChatSessionInputStateImpl): void {
+		for (const controllerData of this._chatSessionItemControllers.values()) {
+			if (controllerData.inputStates.delete(inputState)) {
+				break;
 			}
 		}
 	}
@@ -918,14 +968,14 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 			);
 			if (result) {
 				if (sessionResource) {
-					this._inputStateCache.set(sessionResource, result);
+					this._setCachedInputState(sessionResource, result);
 				}
 				return result;
 			}
 		}
 		const fallback = this._createInputStateFromOptions(controllerData?.optionGroups ?? [], initialSessionOptions);
 		if (sessionResource) {
-			this._inputStateCache.set(sessionResource, fallback);
+			this._setCachedInputState(sessionResource, fallback);
 		}
 		return fallback;
 	}
